@@ -1,7 +1,7 @@
 'use client'
 
 import { create } from 'zustand'
-import type { Message, ThoughtChain, Project, Task, Skill, FileContent, Plugin, ConfigCategory, ModelConfig } from './types'
+import type { Message, ThoughtChain, Project, Task, Skill, FileContent, Plugin, ConfigCategory, ModelConfig, ToolGroup } from './types'
 
 const API_BASE = 'http://localhost:8000/api'
 
@@ -49,6 +49,10 @@ interface AppState {
   }) => Promise<void>
   removeTask: (id: string) => Promise<void>
   stopTask: (id: string) => Promise<void>
+
+  // Tool Groups
+  toolGroups: ToolGroup[];
+  fetchToolGroups: () => Promise<void>;
   
   // Skills
   skills: Skill[]
@@ -131,13 +135,25 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       const res = await fetch(`${API_BASE}/thought-chain`)
       const data = await res.json()
-      set({ 
-        thoughtChain: data.map((t: any, index: number) => ({
-          id: index.toString(),
-          step: index + 1,
-          thought: t.content || t.thought || JSON.stringify(t),
-          timestamp: new Date()
-        })) 
+      set({
+        thoughtChain: (Array.isArray(data) ? data : []).map((t: any, index: number) => {
+          const rawTimestamp = t?.timestamp ?? t?.time ?? t?.created_at ?? t?.createdAt
+          let timestamp = new Date()
+          if (typeof rawTimestamp === 'number') {
+            timestamp = new Date(rawTimestamp > 1e12 ? rawTimestamp : rawTimestamp * 1000)
+          } else if (typeof rawTimestamp === 'string') {
+            const d = new Date(rawTimestamp)
+            timestamp = isNaN(d.getTime()) ? new Date() : d
+          }
+
+          return {
+            id: String(t?.id ?? index),
+            role: t?.role ?? t?.message?.role ?? t?.sender ?? undefined,
+            type: t?.type ?? t?.kind ?? t?.message_type ?? undefined,
+            content: t?.content ?? t?.message?.content ?? t,
+            timestamp,
+          }
+        }),
       })
     } catch (e) {
       console.error('Failed to fetch thought chain:', e)
@@ -181,7 +197,26 @@ export const useAppStore = create<AppState>((set, get) => ({
             ? (p.state === 'error' ? 'failed' : (p.state === 'killed' ? 'failed' : p.state)) 
             : 'pending',
           progress: p.state === 'completed' ? 100 : (p.progress || 50),
-          pipeline: p.pipeline || [],
+          pipeline: Array.isArray(p.pipeline)
+            ? p.pipeline.map((step: any, index: number) => {
+                const rawStatus = step?.status ?? step?.state
+                const status =
+                  rawStatus === 'running' || rawStatus === 'pending' || rawStatus === 'completed' || rawStatus === 'failed'
+                    ? rawStatus
+                    : rawStatus === 'error' || rawStatus === 'killed'
+                      ? 'failed'
+                      : 'pending'
+
+                return {
+                  id: step?.id ?? `${p.id}-step-${index}`,
+                  name: step?.name ?? `Step ${index + 1}`,
+                  status,
+                  progress: typeof step?.progress === 'number' ? step.progress : 0,
+                  startedAt: step?.startedAt ? new Date(step.startedAt) : undefined,
+                  completedAt: step?.completedAt ? new Date(step.completedAt) : undefined,
+                }
+              })
+            : [],
           history: p.history || [],
           createdAt: p.createdAt ? new Date(p.createdAt) : new Date(),
           updatedAt: p.updatedAt ? new Date(p.updatedAt) : new Date()
@@ -271,6 +306,18 @@ export const useAppStore = create<AppState>((set, get) => ({
       get().fetchTasks()
     } catch (e) {
       console.error('Failed to stop task:', e)
+    }
+  },
+
+  toolGroups: [],
+  fetchToolGroups: async () => {
+    try {
+      const res = await fetch(`${API_BASE}/tools`);
+      const data = await res.json();
+      set({ toolGroups: data });
+    } catch (error) {
+      console.error("Failed to fetch tool groups:", error);
+      set({ toolGroups: [] });
     }
   },
   

@@ -9,10 +9,9 @@ export interface Message {
 
 export interface ThoughtChain {
   id: string
-  step: number
-  thought: string
-  action?: string
-  observation?: string
+  role?: string
+  type?: string
+  content: any
   timestamp: Date
 }
 
@@ -32,7 +31,7 @@ export interface Project {
   description?: string
   status: 'running' | 'pending' | 'completed' | 'failed'
   progress: number
-  pipeline: any[]
+  pipeline: PipelineStep[]
   history?: any[]
   createdAt: Date
   updatedAt: Date
@@ -86,15 +85,26 @@ export interface Plugin {
 
 // 配置项类型
 export interface ConfigItem {
-  key: string
-  value: any
-  type: 'string' | 'number' | 'boolean' | 'object'
-  description?: string
+  key: string;
+  value: any;
+  type: 'string' | 'number' | 'boolean' | 'object';
+  description?: string;
 }
 
 export interface ConfigCategory {
-  name: string
-  items: ConfigItem[]
+  name: string;
+  items: ConfigItem[];
+}
+
+export interface Tool {
+  name: string;
+  description: string;
+}
+
+export interface ToolGroup {
+  name: string;
+  description: string;
+  tools: Tool[];
 }
 
 // 文件内容类型

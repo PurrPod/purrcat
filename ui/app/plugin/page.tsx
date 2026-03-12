@@ -3,12 +3,11 @@
 import { useAppStore } from '@/lib/store'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
-import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Puzzle, FolderOpen, CheckCircle, XCircle, Plus, UploadCloud, Info, Trash2, Wrench } from 'lucide-react'
+import { Puzzle, CheckCircle, XCircle, Plus, UploadCloud, Info, Trash2, Wrench } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import {
   Dialog,
@@ -19,10 +18,22 @@ import {
   DialogFooter,
   DialogTrigger,
 } from '@/components/ui/dialog'
+import type { Plugin } from '@/lib/types'
 
 
-function PluginDetailDialog({ plugin, onUnregister }: { plugin: any; onUnregister: (name: string) => void }) {
-  const [open, setOpen] = useState(false);
+function PluginDetailDialog({ plugin, onUnregister }: { plugin: Plugin; onUnregister: (name: string) => void }) {
+  const [open, setOpen] = useState(false)
+  const toolGroups = useAppStore((state) => state.toolGroups)
+  const fetchToolGroups = useAppStore((state) => state.fetchToolGroups)
+
+  useEffect(() => {
+    if (!open) return
+    fetchToolGroups()
+  }, [open, fetchToolGroups])
+
+  const group = toolGroups.find((g) => g.name === plugin.name)
+  const tools = group?.tools ?? []
+  const description = group?.description || plugin.description || "这个插件没有提供详细描述。"
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -38,26 +49,32 @@ function PluginDetailDialog({ plugin, onUnregister }: { plugin: any; onUnregiste
             {plugin.name}
           </DialogTitle>
           <DialogDescription className="pt-2">
-            {plugin.description || "这个插件没有提供详细描述。"}
+            {description}
           </DialogDescription>
         </DialogHeader>
         
         <div className="py-4">
-          <h3 className="font-semibold mb-3 text-sm">包含的工具 ({plugin.tools?.length || 0})</h3>
+          <h3 className="font-semibold mb-3 text-sm">包含的工具 ({tools.length})</h3>
           <ScrollArea className="h-[200px] rounded-md border p-3 bg-muted/50">
-            {plugin.tools && plugin.tools.length > 0 ? (
+            {tools.length > 0 ? (
               <div className="space-y-2">
-                {plugin.tools.map((tool: any) => (
-                  <div key={tool.name} className="flex items-center gap-2 text-xs p-2 bg-background rounded">
-                    <Wrench className="size-3.5 text-amber-500 shrink-0" />
-                    <span className="font-mono font-semibold text-primary">{tool.name}</span>
-                    <p className="text-muted-foreground truncate">{tool.description}</p>
+                {tools.map((tool) => (
+                  <div key={tool.name} className="flex items-start gap-2 text-xs p-2 bg-background rounded">
+                    <Wrench className="size-3.5 text-amber-500 shrink-0 mt-0.5" />
+                    <div className="min-w-0 flex-1">
+                      <div className="font-mono font-semibold text-primary leading-tight break-words">
+                        {tool.name}
+                      </div>
+                      <div className="text-muted-foreground whitespace-normal break-words leading-snug mt-0.5">
+                        {tool.description || ''}
+                      </div>
+                    </div>
                   </div>
                 ))}
               </div>
             ) : (
               <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
-                此插件未定义任何工具。
+                {toolGroups.length === 0 ? '工具列表加载中…' : '此插件未定义任何工具。'}
               </div>
             )}
           </ScrollArea>
@@ -67,22 +84,24 @@ function PluginDetailDialog({ plugin, onUnregister }: { plugin: any; onUnregiste
           <div className="text-xs text-muted-foreground font-mono">
             版本: {plugin.version || 'N/A'}
           </div>
-          <Button 
+          <Button
             variant="destructive"
+            size="icon"
+            className="h-8 w-8"
             onClick={() => {
               if (confirm(`确定要注销并删除插件 '${plugin.name}' 吗？此操作不可逆！`)) {
-                onUnregister(plugin.name);
-                setOpen(false);
+                onUnregister(plugin.name)
+                setOpen(false)
               }
             }}
+            aria-label={`注销并删除插件 ${plugin.name}`}
           >
-            <Trash2 className="size-4 mr-2" />
-            注销并删除插件
+            <Trash2 className="size-4" />
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  );
+  )
 }
 
 

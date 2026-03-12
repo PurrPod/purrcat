@@ -38,26 +38,25 @@ export const mockMessages: Message[] = [
 export const mockThoughtChain: ThoughtChain[] = [
   {
     id: 't1',
-    step: 1,
-    thought: '用户想要分析代码文件，我需要先读取文件内容',
-    action: 'read_file("/src/main.py")',
-    observation: '成功读取文件，共 150 行代码',
+    role: 'assistant',
+    type: 'message',
+    content: '用户想要分析代码文件，我需要先读取文件内容',
     timestamp: new Date('2026-03-12T10:00:02'),
   },
   {
     id: 't2',
-    step: 2,
-    thought: '文件已读取，现在需要分析代码结构和功能',
-    action: 'analyze_code(content)',
-    observation: '识别出 3 个类，5 个函数',
+    role: 'assistant',
+    type: 'tool_calling',
+    content: {
+      name: 'analyze_code',
+      arguments: { target: 'content' },
+    },
     timestamp: new Date('2026-03-12T10:00:04'),
   },
   {
     id: 't3',
-    step: 3,
-    thought: '用户询问性能优化，我需要检查代码中的性能瓶颈',
-    action: 'find_performance_issues(code)',
-    observation: '发现 2 个潜在的性能问题',
+    role: 'user',
+    content: { type: 'warning', content: '能否优化这段代码的性能？' },
     timestamp: new Date('2026-03-12T10:01:05'),
   },
 ]
@@ -91,6 +90,7 @@ export const mockProjects: Project[] = [
       { id: 'ps7', name: '生成 Markdown', status: 'pending', progress: 0 },
     ],
     createdAt: new Date('2026-03-12T09:45:00'),
+    updatedAt: new Date('2026-03-12T09:45:00'),
   },
   {
     id: 'p3',
@@ -149,6 +149,7 @@ export const mockTasks: Task[] = [
     progress: 0,
     logs: [],
     createdAt: new Date('2026-03-12T09:30:03'),
+    updatedAt: new Date('2026-03-12T09:30:03'),
   },
   {
     id: 't4',

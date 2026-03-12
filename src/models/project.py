@@ -32,7 +32,7 @@ def kill_project(project_id):
         PROJECT_INSTANCES[project_id].kill()
         return True
     return False
-
+USER_QA_QUEUE = {}
 AGENT_QA_QUEUE = {}
 class Project:
     def __init__(
@@ -164,6 +164,13 @@ class Project:
 
     def ask_user(self, questions):
         answers = {}
+        q_list = []
+        if isinstance(questions, list):
+            q_list = [q for q in questions if q]
+        elif isinstance(questions, dict):
+            q_list = [q for k, q in questions.items() if k and q]
+        if not q_list:
+            return answers
         if self.is_agent:
             q_list = []
             if isinstance(questions, list):
@@ -202,14 +209,32 @@ class Project:
                     break
                 time.sleep(1)
         else:
-            if isinstance(questions, list):
-                for q in questions:
-                    if q:
-                        answers[q] = input(f"{q}\nYour answer: ")
-            elif isinstance(questions, dict):
-                for k, q in questions.items():
-                    if k and q:
-                        answers[q] = input(f"{q}\nYour answer: ")
+            # 面向 UI 模式的改造
+            print(f"等待用户在界面输入以下问题: {q_list}")
+            self.state = "waiting"  # 告诉 UI 项目正在等待输入
+            set_project_state(self.id, self.state)
+
+            # 将问题暴露给 UI
+            USER_QA_QUEUE[self.id] = {
+                "questions": q_list,
+                "answers": None
+            }
+
+            # 非阻塞轮询等待UI层写入答案
+            max_count = 1800
+            count = 0
+            while True:
+                if count > max_count:
+                    return answers
+                self._check_kill()  # 【关键】在等待期间持续检查 kill 信号！
+                if self.id in USER_QA_QUEUE and USER_QA_QUEUE[self.id].get("answers") is not None:
+                    # 假设 UI 层构造了对应的 dict 并塞进 answers
+                    answers = USER_QA_QUEUE[self.id]["answers"]
+                    del USER_QA_QUEUE[self.id]
+                    self.state = "running"
+                    set_project_state(self.id, self.state)
+                    break
+                time.sleep(1)  # 防止CPU空转
         return answers
     def refine_prompt(self):
         sys_msg = (

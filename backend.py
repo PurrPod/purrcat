@@ -253,6 +253,7 @@ class ProjectCreate(BaseModel):
     refine_mode: bool = False
     judge_mode: bool = False
     is_agent: bool = True
+    available_tools: List[str] = []
 
 @app.post("/api/projects")
 async def create_project_endpoint(project: ProjectCreate):
@@ -265,7 +266,8 @@ async def create_project_endpoint(project: ProjectCreate):
             check_mode=project.check_mode,
             refine_mode=project.refine_mode,
             judge_mode=project.judge_mode,
-            is_agent=project.is_agent
+            is_agent=project.is_agent,
+            available_tools=project.available_tools
         )
         return {"status": "success", "message": msg}
     except Exception as e:
@@ -368,6 +370,37 @@ async def unregister_plugin_endpoint(plugin_name: str):
         raise HTTPException(status_code=404, detail=f"Plugin '{plugin_name}' not found.")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to unregister plugin: {e}")
+
+@app.get("/api/tools")
+async def get_tools():
+    """获取所有分组的工具信息."""
+    try:
+        config = load_global_tool_yaml()
+        tool_groups = []
+        for plugin_name, plugin_data in config.items():
+            if not isinstance(plugin_data, dict):
+                continue
+
+            tools = []
+            functions = plugin_data.get('functions', {})
+            if isinstance(functions, dict):
+                for func_key, func_data in functions.items():
+                    if isinstance(func_data, dict) and 'function' in func_data:
+                        func_details = func_data['function']
+                        tools.append({
+                            "name": func_details.get('name', func_key),
+                            "description": func_details.get('description', 'No description')
+                        })
+
+            tool_groups.append({
+                "name": plugin_name,
+                "description": plugin_data.get('desc', 'No description'),
+                "tools": tools
+            })
+        return tool_groups
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to load tools: {e}")
+
 
 
 

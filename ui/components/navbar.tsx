@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
-import { Home, FolderKanban, ListTodo, Settings, Puzzle } from 'lucide-react'
+import { Home, FolderKanban, ListTodo, Settings, Puzzle, Cat } from 'lucide-react'
 
 const navItems = [
   { href: '/', label: 'Home', icon: Home },
@@ -20,10 +20,10 @@ export function Navbar() {
     <nav className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="flex h-14 items-center px-6">
         <div className="mr-8 flex items-center gap-2">
-          <div className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground font-bold">
-            A
+          <div className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+            <Cat className="size-5" />
           </div>
-          <span className="font-semibold text-lg">Agent UI</span>
+          <span className="font-semibold text-lg">CatinCup</span>
         </div>
         
         <div className="flex items-center gap-1">

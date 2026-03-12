@@ -1,44 +1,275 @@
 'use client'
 
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { useAppStore } from '@/lib/store'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Brain, Play, Eye, Send, AlertCircle, RefreshCcw, ChevronDown } from 'lucide-react'
+import { Brain, Send, AlertCircle, RefreshCcw, ChevronDown, User, Wrench, MessageSquare, AlertTriangle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import type { ThoughtChain } from '@/lib/types'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+import { cn } from '@/lib/utils'
 
-function ThoughtItem({ thought }: { thought: ThoughtChain }) {
+type Severity = 'error' | 'warning' | 'normal'
+
+function normalizeRole(role: unknown): 'assistant' | 'user' | 'tool' | 'system' | 'unknown' {
+  const r = String(role ?? '').toLowerCase()
+  if (r === 'agent') return 'assistant'
+  if (r.includes('assistant')) return 'assistant'
+  if (r.includes('user') || r.includes('owner')) return 'user'
+  if (r.includes('tool') || r.includes('function')) return 'tool'
+  if (r.includes('system')) return 'system'
+  return 'unknown'
+}
+
+function tryParseTypedMessage(value: unknown): { type?: string; content?: any } | null {
+  if (value && typeof value === 'object' && 'type' in value && 'content' in value) {
+    const v = value as any
+    return { type: typeof v.type === 'string' ? v.type : undefined, content: v.content }
+  }
+  if (typeof value === 'string') {
+    const s = value.trim()
+    if (!s) return null
+    if (!((s.startsWith('{') && s.endsWith('}')) || (s.startsWith('[') && s.endsWith(']')))) return null
+    try {
+      const parsed = JSON.parse(s)
+      if (parsed && typeof parsed === 'object' && 'type' in parsed && 'content' in parsed) {
+        return { type: typeof (parsed as any).type === 'string' ? (parsed as any).type : undefined, content: (parsed as any).content }
+      }
+      return null
+    } catch {
+      return null
+    }
+  }
+  return null
+}
+
+function severityFromType(type: unknown): Severity {
+  const t = String(type ?? '').toLowerCase()
+  if (t === 'error') return 'error'
+  if (t === 'warning') return 'warning'
+  return 'normal'
+}
+
+function stringifyContent(value: unknown) {
+  if (typeof value === 'string') return value
+  if (value === null || value === undefined) return ''
+  try {
+    const s = JSON.stringify(value, null, 2)
+    return typeof s === 'string' ? s : String(value)
+  } catch {
+    return String(value)
+  }
+}
+
+function safeParseJson(value: unknown) {
+  if (typeof value !== 'string') return null
+  const s = value.trim()
+  if (!s) return null
+  if (!((s.startsWith('{') && s.endsWith('}')) || (s.startsWith('[') && s.endsWith(']')))) return null
+  try {
+    return JSON.parse(s)
+  } catch {
+    return null
+  }
+}
+
+function findToolCall(value: unknown, depth = 0): { name?: string; args?: any; raw?: any } | null {
+  if (depth > 4) return null
+  const parsed = safeParseJson(value)
+  const v: any = parsed ?? value
+  if (!v || typeof v !== 'object') return null
+
+  const toolCalls = v.tool_calls ?? v.toolCalls
+  if (Array.isArray(toolCalls) && toolCalls.length > 0) {
+    const first = toolCalls[0]
+    const fn = first?.function ?? first?.fn ?? first
+    const name = fn?.name ?? first?.name
+    const args = fn?.arguments ?? first?.arguments
+    if (typeof name === 'string' && name.trim()) return { name, args, raw: first }
+  }
+
+  const toolCall = v.tool_call ?? v.toolCall
+  if (toolCall && typeof toolCall === 'object') {
+    const fn = (toolCall as any).function ?? toolCall
+    const name = fn?.name
+    const args = fn?.arguments
+    if (typeof name === 'string' && name.trim()) return { name, args, raw: toolCall }
+  }
+
+  const functionCall = v.function_call ?? v.functionCall
+  if (functionCall && typeof functionCall === 'object') {
+    const name = (functionCall as any).name
+    const args = (functionCall as any).arguments
+    if (typeof name === 'string' && name.trim()) return { name, args, raw: functionCall }
+  }
+
+  if (typeof v.name === 'string' && v.name.trim() && ('arguments' in v || 'args' in v)) {
+    return { name: v.name, args: v.arguments ?? v.args, raw: v }
+  }
+
+  if ('content' in v) {
+    const found = findToolCall(v.content, depth + 1)
+    if (found) return found
+  }
+
+  if ('message' in v) {
+    const found = findToolCall(v.message, depth + 1)
+    if (found) return found
+  }
+
+  return null
+}
+
+function ThoughtItem({ item }: { item: ThoughtChain }) {
+  const contentRoot = (item?.content && typeof item.content === 'object') ? (item.content as any) : undefined
+  const role = normalizeRole(item.role ?? contentRoot?.role ?? contentRoot?.sender)
+  const rawType = item.type ?? contentRoot?.type ?? contentRoot?.kind ?? contentRoot?.message_type
+
+  const isAssistant = role === 'assistant'
+  const isToolCalling =
+    isAssistant &&
+    (String(rawType ?? '').toLowerCase().includes('tool') ||
+      Boolean(contentRoot?.tool_calls || contentRoot?.tool_call || contentRoot?.function_call) ||
+      (contentRoot?.name && contentRoot?.arguments))
+
+  const typedPayload = useMemo(() => {
+    if (isAssistant) return null
+    const candidate = tryParseTypedMessage(item.content) ?? tryParseTypedMessage(contentRoot) ?? null
+    if (candidate) return candidate
+    if (item.type) return { type: item.type, content: item.content }
+    return { type: undefined, content: item.content }
+  }, [contentRoot, isAssistant, item.content, item.type])
+
+  const severity = useMemo(() => {
+    if (typedPayload?.type) return severityFromType(typedPayload.type)
+    return 'normal' as const
+  }, [typedPayload?.type])
+
+  const timestampText = useMemo(() => {
+    try {
+      return item.timestamp.toLocaleTimeString('zh-CN')
+    } catch {
+      return ''
+    }
+  }, [item.timestamp])
+
+  const headerIcon = (() => {
+    if (severity === 'error') return AlertCircle
+    if (severity === 'warning') return AlertTriangle
+    if (role === 'user') return User
+    if (role === 'assistant') return isToolCalling ? Wrench : MessageSquare
+    if (role === 'tool') return Wrench
+    return Brain
+  })()
+
+  const headerLabel = (() => {
+    if (role === 'user') return 'USER'
+    if (role === 'assistant') return isToolCalling ? 'ASSISTANT · TOOL' : 'ASSISTANT · MESSAGE'
+    if (role === 'tool') return 'TOOL'
+    if (role === 'system') return 'SYSTEM'
+    return 'UNKNOWN'
+  })()
+
+  const containerClassName = 'rounded-lg border p-3'
+
+  const HeaderIcon = headerIcon
+
   return (
-    <div className="rounded-lg border bg-card p-3 shadow-sm transition-all hover:shadow-md">
-      <div className="flex items-center gap-2 mb-2">
-        <div className="flex items-center justify-center size-5 rounded-full bg-primary/10 text-primary text-[10px] font-bold">
-          {thought.step}
+    <div className={containerClassName}>
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <HeaderIcon
+            className={cn(
+              'size-4 shrink-0',
+              severity === 'error' && 'text-destructive',
+              severity === 'warning' && 'text-amber-500',
+              severity === 'normal' && role === 'user' && 'text-emerald-600',
+              severity === 'normal' && role === 'assistant' && (isToolCalling ? 'text-violet-600' : 'text-blue-600'),
+              severity === 'normal' && role === 'tool' && 'text-amber-600',
+            )}
+          />
+          <span className="text-[10px] font-mono text-muted-foreground uppercase tracking-wider truncate">
+            {headerLabel}
+          </span>
+          {typedPayload?.type && (
+            <span
+              className={cn(
+                'text-[10px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded border',
+                severity === 'error' && 'border-destructive/40 text-destructive',
+                severity === 'warning' && 'border-amber-500/40 text-amber-600',
+                severity === 'normal' && 'border-border text-muted-foreground',
+              )}
+            >
+              {String(typedPayload.type)}
+            </span>
+          )}
         </div>
-        <span className="text-[10px] text-muted-foreground font-mono">
-          {thought.timestamp.toLocaleTimeString('zh-CN')}
-        </span>
+        <span className="text-[10px] text-muted-foreground font-mono shrink-0">{timestampText}</span>
       </div>
-      
-      <div className="space-y-2 pl-7">
-        <div className="flex items-start gap-2">
-          <Brain className="size-3.5 text-blue-500 mt-0.5 shrink-0" />
-          <div className="text-sm leading-relaxed text-foreground/90">
-            {thought.thought}
+
+      {isAssistant ? (
+        isToolCalling ? (
+          <div className="rounded-md border p-2">
+            {(() => {
+              const toolCall =
+                findToolCall(contentRoot) ??
+                findToolCall(item.content) ??
+                (typeof rawType === 'string' && rawType.toLowerCase().includes('tool') ? { name: rawType } : null)
+
+              const name = toolCall?.name
+              const args = toolCall?.args
+
+              const signature =
+                typeof name === 'string' && name.trim()
+                  ? `${name}()`
+                  : 'tool_calling'
+
+              const argsText = (() => {
+                if (args === undefined || args === null) return ''
+                if (typeof args === 'string') return args.trim()
+                const s = stringifyContent(args)
+                return s.trim()
+              })()
+
+              return (
+                <>
+                  <div className="text-xs font-mono text-muted-foreground break-all">
+                    {signature}
+                  </div>
+                  {argsText ? (
+                    <pre className="mt-2 text-xs font-mono whitespace-pre-wrap break-words leading-snug text-muted-foreground">
+                      {argsText}
+                    </pre>
+                  ) : null}
+                </>
+              )
+            })()}
           </div>
+        ) : (
+          <div className="prose prose-sm dark:prose-invert max-w-none prose-p:text-[13px] prose-li:text-[13px] prose-code:text-[13px] prose-pre:text-[13px] prose-pre:bg-muted prose-pre:text-muted-foreground prose-pre:overflow-x-auto">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              {(() => {
+                const raw = contentRoot?.content ?? item.content
+                if (typeof raw === 'string') return raw.trim() ? raw : stringifyContent(item.content)
+                if (raw && typeof raw === 'object' && typeof (raw as any).content === 'string') return (raw as any).content
+                return stringifyContent(raw)
+              })()}
+            </ReactMarkdown>
+          </div>
+        )
+      ) : (
+        <div
+          className={cn(
+            'text-sm whitespace-pre-wrap break-words leading-relaxed',
+            role === 'system' && 'text-muted-foreground italic',
+          )}
+        >
+          {(() => stringifyContent(typedPayload?.content ?? item.content))()}
         </div>
-        
-        {thought.action && (
-          <div className="flex items-start gap-2 bg-muted/30 p-2 rounded-md border border-border/50">
-            <Play className="size-3.5 text-green-500 mt-0.5 shrink-0" />
-            <div className="text-xs font-mono break-all">
-              <span className="text-muted-foreground block mb-1 uppercase tracking-tighter text-[9px]">Action</span>
-              {thought.action}
-            </div>
-          </div>
-        )}
-      </div>
+      )}
     </div>
   )
 }
@@ -175,13 +406,11 @@ export function ThoughtChainPanel() {
       </div>
       
       <div className="flex-1 relative min-h-0 overflow-hidden group/scroll">
-        <ScrollArea ref={scrollRef} className="h-full">
+        <ScrollArea type="always" ref={scrollRef} className="h-full">
           <div className="flex flex-col gap-3 pr-4 pb-4">
-            {thoughtChain
-              .sort((a, b) => Number(a.id) - Number(b.id))
-              .map((thought) => (
-                <ThoughtItem key={thought.id} thought={thought} />
-              ))}
+            {thoughtChain.map((item) => (
+              <ThoughtItem key={item.id} item={item} />
+            ))}
           </div>
         </ScrollArea>
 

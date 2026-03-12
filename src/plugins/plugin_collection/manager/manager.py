@@ -2,14 +2,14 @@ import json
 import os
 import threading
 import uuid
-from typing import List, Any
+from typing import List, Any, Optional
 from src.agent.agent import add_message
 
 from src.models.task import Task
 def _format_response(msg_type: str, content: Any) -> str:
     return json.dumps({"type": msg_type, "content": content}, ensure_ascii=False)
 def add_project(name: str, prompt: str, core: str, check_mode: bool = False, refine_mode: bool = False,
-                judge_mode: bool = False, is_agent: bool = True) -> str:
+                judge_mode: bool = False, is_agent: bool = True, available_tools: Optional[List[str]] = None) -> str:
     from src.models.project import Project
     new_project = Project(
         name=name,
@@ -18,7 +18,8 @@ def add_project(name: str, prompt: str, core: str, check_mode: bool = False, ref
         check_mode=check_mode,
         refine_mode=refine_mode,
         judge_mode=judge_mode,
-        is_agent=is_agent
+        is_agent=is_agent,
+        available_tools=available_tools or []
     )
     project_id = new_project.id
     def _run_project():

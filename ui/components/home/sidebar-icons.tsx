@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useAppStore } from '@/lib/store'
 import { Button } from '@/components/ui/button'
 import {
@@ -11,12 +11,13 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/textarea'
-import { User, BookOpen, Sparkles, Save, Eye, Edit3 } from 'lucide-react'
+import { User, BookOpen, Sparkles, Save, Eye, Edit3, Bot } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
 type FileKey = 'user_profile' | 'me' | 'soul'
 
@@ -45,9 +46,36 @@ export function SidebarIcons() {
   const [activeDialog, setActiveDialog] = useState<FileKey | null>(null)
   const [editContent, setEditContent] = useState('')
   const [viewMode, setViewMode] = useState<'edit' | 'preview'>('preview')
+  const [agentDialogOpen, setAgentDialogOpen] = useState(false)
+  const [agentModelDraft, setAgentModelDraft] = useState('')
   
   const files = useAppStore((state) => state.files)
   const updateFile = useAppStore((state) => state.updateFile)
+  const modelConfig = useAppStore((state) => state.modelConfig)
+  const fetchModelConfig = useAppStore((state) => state.fetchModelConfig)
+  const updateModelConfig = useAppStore((state) => state.updateModelConfig)
+
+  const modelNames = useMemo(() => {
+    const models = (modelConfig?.models ?? {}) as Record<string, any>
+    return Object.keys(models)
+  }, [modelConfig])
+
+  useEffect(() => {
+    if (!agentDialogOpen) return
+    fetchModelConfig()
+  }, [agentDialogOpen, fetchModelConfig])
+
+  useEffect(() => {
+    if (!agentDialogOpen) return
+    const configured = (modelConfig as any)?.agent?.model as string | undefined
+    if (configured && agentModelDraft !== configured) {
+      setAgentModelDraft(configured)
+      return
+    }
+    if (!configured && !agentModelDraft && modelNames.length > 0) {
+      setAgentModelDraft(modelNames[0])
+    }
+  }, [agentDialogOpen, modelConfig, modelNames, agentModelDraft])
 
   const handleOpen = (key: FileKey) => {
     setEditContent(files[key]?.content || '')
@@ -83,6 +111,18 @@ export function SidebarIcons() {
             <item.icon className="size-5" />
           </Button>
         ))}
+
+        <div className="h-px bg-border/60 my-1" />
+
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => setAgentDialogOpen(true)}
+          className="size-10 rounded-lg hover:bg-accent"
+          title="配置主 Agent 模型"
+        >
+          <Bot className="size-5" />
+        </Button>
       </div>
 
       <Dialog open={activeDialog !== null} onOpenChange={(open) => !open && handleClose()}>
@@ -147,6 +187,59 @@ export function SidebarIcons() {
             <Button size="sm" onClick={handleSave}>
               <Save className="size-4 mr-2" />
               保存更改
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={agentDialogOpen} onOpenChange={setAgentDialogOpen}>
+        <DialogContent className="sm:max-w-[520px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Bot className="size-5 text-primary" />
+              主 Agent 模型
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="py-4 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium">模型名称</span>
+              <span className="text-xs text-muted-foreground">{modelNames.length} 个可选</span>
+            </div>
+            <Select value={agentModelDraft} onValueChange={setAgentModelDraft}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="选择主 Agent 使用的模型" />
+              </SelectTrigger>
+              <SelectContent>
+                {modelNames.length > 0 ? (
+                  modelNames.map((name) => (
+                    <SelectItem key={name} value={name}>
+                      {name}
+                    </SelectItem>
+                  ))
+                ) : (
+                  <SelectItem value="__empty__" disabled>
+                    未加载到 models 列表
+                  </SelectItem>
+                )}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAgentDialogOpen(false)}>
+              取消
+            </Button>
+            <Button
+              onClick={async () => {
+                const currentAgent = ((modelConfig as any)?.agent ?? {}) as Record<string, any>
+                await updateModelConfig('agent', { ...currentAgent, model: agentModelDraft })
+                setAgentDialogOpen(false)
+              }}
+              disabled={!agentModelDraft}
+            >
+              <Save className="size-4 mr-2" />
+              保存
             </Button>
           </DialogFooter>
         </DialogContent>
