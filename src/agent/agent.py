@@ -78,7 +78,7 @@ class Agent:
         return result if result is not None else "Success (No Output)"
 
     def force_push(self, content):
-        self.current_history.append({"role": "role", "content": "[System Warning] You should suspend your action and handle this message first!\n"+content})
+        self._append_history({"role": "user", "content": "[System Warning] You should suspend your action and handle this message first!\n"+content})
 
     def process_message(self, message: dict):
         self.state = "handling"

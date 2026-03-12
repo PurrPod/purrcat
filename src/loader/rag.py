@@ -1,11 +1,14 @@
 import os
 import json
 import numpy as np
-import faiss
+try:
+    import faiss
+except ImportError:
+    faiss = None
 import jieba
 import logging
 from rank_bm25 import BM25Okapi
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 from sentence_transformers import SentenceTransformer
 
 jieba.setLogLevel(logging.INFO)
@@ -16,13 +19,16 @@ class VectorDB:
     def __init__(self, db_name: str, base_dir: str):
         self.db_name = db_name
         self.db_path = os.path.join(base_dir, db_name)
-        self.index: Optional[faiss.Index] = None
+        self.index: Optional[Any] = None
         self.documents: List[Dict] = []
         self.bm25: Optional[BM25Okapi] = None
         self.doc_lookup: Dict[tuple, str] = {}
         self._load_from_disk()
 
     def _load_from_disk(self):
+        if faiss is None:
+            print(f"⚠️ 警告: faiss 未安装，无法加载知识库 '{self.db_name}'。")
+            return
         index_file = f"{self.db_path}/{self.db_name}.index"
         docs_file = f"{self.db_path}/{self.db_name}.json"
         if not os.path.exists(index_file):

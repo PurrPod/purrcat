@@ -7,9 +7,7 @@ import uuid
 from src.models.model import Model
 from src.plugins.plugin_manager import get_plugin_tool_info, get_plugin_config, init_config_data
 
-TASK_POOL = [{"name":"xxx", "id":"xxx", "state":"running"},
-                {"name":"xxx", "id":"xxx", "state":"completed"},
-                {"name":"xxx", "id":"xxx", "state":"error"},]
+TASK_POOL = []
 TASK_INSTANCES = {}
 def set_task_state(task_id, state):
     for t in TASK_POOL:

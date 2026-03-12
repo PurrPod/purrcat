@@ -9,10 +9,7 @@ from src.agent.agent import add_message
 from src.models.model import Model
 from src.models.task import Task
 from src.plugins.plugin_manager import get_plugin_tool_info
-PROJECT_POOL = [{"name":"xxx", "id":"xxx", "state":"running"},
-                {"name":"xxx", "id":"xxx", "state":"completed"},
-                {"name":"xxx", "id":"xxx", "state":"error"},
-                {"name": "xxx", "id": "xxx", "state": "waiting"}]
+PROJECT_POOL = []
 PROJECT_INSTANCES = {}  # 映射表：id -> Project 实例，用于随时调用类内方法
 
 def set_project_state(project_id, state):

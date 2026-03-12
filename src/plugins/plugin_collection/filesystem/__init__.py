@@ -1,6 +1,6 @@
 from .filesystem import (
     set_allowed_directories,
-    list_allowed_directories,
+    list_special_directories,
     list_file_in_dir,
     write_text_file,
     read_media_file,
@@ -12,7 +12,7 @@ from .filesystem import (
 
 __all__ = [
     'set_allowed_directories',
-    'list_allowed_directories',
+    'list_special_directories',
     'list_file_in_dir',
     'write_text_file',
     'read_media_file',

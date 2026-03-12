@@ -1,14 +1,14 @@
 import os
 import json
 from typing import List, Optional, Any
-from src.loader.rag import RAGRetriever
 
-_retriever_instance: Optional[RAGRetriever] = None
+_retriever_instance: Optional[Any] = None
 
 
-def _get_retriever() -> RAGRetriever:
+def _get_retriever() -> Any:
     global _retriever_instance
     if _retriever_instance is None:
+        from src.loader.rag import RAGRetriever
         # 仅仅实例化对象，不加载任何数据库，实现真正的懒加载
         _retriever_instance = RAGRetriever(base_dir="data/database")
     return _retriever_instance

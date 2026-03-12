@@ -12,11 +12,23 @@ MAX_READ_WINDOW = 200
 MAX_EDITABLE_FILE_SIZE = 5 * 1024 * 1024
 MAX_MEDIA_SIZE = 20 * 1024 * 1024
 file_config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))), "data\\config\\file_config.json")
-with open(file_config_path, "r", encoding="utf-8") as f:
-    config = json.load(f)
-_SANDBOX_DIRS: List[str] = config["sandbox_dirs"]
-_SKILL_DIRS: List[str] = config["skill_dir"]
-_DONT_READ_DIRS: List[str] = config["dont_read_dirs"]
+try:
+    with open(file_config_path, "r", encoding="utf-8") as f:
+        config = json.load(f)
+except (FileNotFoundError, json.JSONDecodeError):
+    config = {
+        "sandbox_dirs": ["sandbox", "sandbox1", "sandbox2", "data/skill/remotion", "src/agent/core"],
+        "skill_dir": ["data/skill"],
+        "dont_read_dirs": ["src/"]
+    }
+    # Ensure directory exists and write default config
+    os.makedirs(os.path.dirname(file_config_path), exist_ok=True)
+    with open(file_config_path, "w", encoding="utf-8") as f:
+        json.dump(config, f, indent=4)
+
+_SANDBOX_DIRS: List[str] = config.get("sandbox_dirs", [])
+_SKILL_DIRS: List[str] = config.get("skill_dir", [])
+_DONT_READ_DIRS: List[str] = config.get("dont_read_dirs", [])
 def _get_allow(action: str, path: str) -> bool:
     abs_path = os.path.abspath(path)
     if action == "read":
@@ -33,10 +45,14 @@ def _get_allow(action: str, path: str) -> bool:
 
 def set_allowed_directories(directories: List[str]) -> str:
     global _SANDBOX_DIRS
-    _SANDBOX_DIRS.extend([os.path.abspath(d) for d in directories])
+    # Use a set to deduplicate paths and only store absolute paths
+    new_dirs = set(_SANDBOX_DIRS)
+    for d in directories:
+        new_dirs.add(os.path.abspath(d))
+    _SANDBOX_DIRS = sorted(list(new_dirs))
     config["sandbox_dirs"] = _SANDBOX_DIRS
     with open(file_config_path, "w", encoding="utf-8") as f:
-        f.write(config)
+        json.dump(config, f, indent=4, ensure_ascii=False)
     return _format_response("text", f"sandbox directories set to: {_SANDBOX_DIRS}")
 
 def list_special_directories() -> str:
