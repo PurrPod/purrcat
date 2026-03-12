@@ -254,7 +254,7 @@ def close_shell() -> str:
     if _shell_instance is not None:
         _shell_instance.close()
         _shell_instance = None
-        return json.dumps({"type": "info", "content": "Shell 会话已成功关闭。"}, ensure_ascii=False)
-    return json.dumps({"type": "info", "content": "没有活跃的 Shell 会话。"}, ensure_ascii=False)
+        return json.dumps({"type": "text", "content": "Shell 会话已成功关闭。"}, ensure_ascii=False)
+    return json.dumps({"type": "text", "content": "没有活跃的 Shell 会话。"}, ensure_ascii=False)
 
 

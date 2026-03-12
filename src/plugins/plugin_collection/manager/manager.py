@@ -2,11 +2,12 @@ import json
 import os
 import threading
 import uuid
-from typing import List
+from typing import List, Any
 from src.agent.agent import add_message
 
 from src.models.task import Task
-
+def _format_response(msg_type: str, content: Any) -> str:
+    return json.dumps({"type": msg_type, "content": content}, ensure_ascii=False)
 def add_project(name: str, prompt: str, core: str, check_mode: bool = False, refine_mode: bool = False,
                 judge_mode: bool = False, is_agent: bool = True) -> str:
     from src.models.project import Project
@@ -28,18 +29,18 @@ def add_project(name: str, prompt: str, core: str, check_mode: bool = False, ref
             add_message({"type": "project_message", "content": f"\n[Project异常] 项目 {project_id} 运行时崩溃: {e}"})
     t = threading.Thread(target=_run_project, daemon=True)
     t.start()
-    return (f"成功创建并启动后台项目 '{name}'。\n"
+    return _format_response("text",(f"成功创建并启动后台项目 '{name}'。\n"
             f"项目 ID 为: {project_id}\n"
-            f"请注意：项目正在异步执行。如果遇到阻碍或需要决策，系统会通知你做出反馈。")
+            f"请注意：项目正在异步执行。如果遇到阻碍或需要决策，系统会通知你做出反馈。"))
 
 def answer(project_id: str, answer_text: str) -> str:
     from src.models.project import AGENT_QA_QUEUE
     if project_id not in AGENT_QA_QUEUE:
-        return f"回答失败：队列中未找到项目ID {project_id} 的等待记录。可能原因：ID错误，或该项目尚未发起提问。"
+        return _format_response("text",f"回答失败：队列中未找到项目ID {project_id} 的等待记录。可能原因：ID错误，或该项目尚未发起提问。")
     if AGENT_QA_QUEUE[project_id].get("answer") is not None:
-        return f"提示：项目 {project_id} 当前的问题已经被回答，无需重复提交。"
+        return _format_response("text",f"提示：项目 {project_id} 当前的问题已经被回答，无需重复提交。")
     AGENT_QA_QUEUE[project_id]["answer"] = answer_text
-    return f"回答成功提交！项目 {project_id} 已拿到你的反馈，正在继续执行流水线。"
+    return _format_response("text",f"回答成功提交！项目 {project_id} 已拿到你的反馈，正在继续执行流水线。")
 
 
 
@@ -79,7 +80,7 @@ def add_simple_task(
             result_history = single_task.run_pipeline()
             SIMPLE_TASK_STATUS[task_id]["status"] = "completed"
             SIMPLE_TASK_STATUS[task_id]["result"] = result_history
-            notify_msg = f"🔔 [系统通知] 后台子任务 '{title}' (ID: {task_id}) 已执行完毕。请使用 check_task_result 工具提取交付物。"
+            notify_msg = f"🔔 [系统通知] 后台子任务 '{title}' (ID: {task_id}) 已执行完毕。执行过程和结果如下：\n{result_history}"
             add_message({"type": "task_message", "content": notify_msg})
         except Exception as e:
             SIMPLE_TASK_STATUS[task_id]["status"] = "failed"
@@ -88,56 +89,42 @@ def add_simple_task(
             add_message({"type": "task_message", "content": error_msg})
     t = threading.Thread(target=_run_task, daemon=True)
     t.start()
-    return (
+    return _format_response("text",(
         f"✅ 子任务 '{title}' 已成功提交到后台线程执行。\n"
         f"任务 ID 分配为: {task_id}\n"
         f"请注意：任务不会立即完成。您可以继续处理其他事务，系统会在执行完毕后发消息通知您"
-    )
-
-
-def check_task_result(task_id: str) -> str:
-    if task_id not in SIMPLE_TASK_STATUS:
-        return f"查询失败：系统中找不到任务 ID 为 '{task_id}' 的记录。请检查 ID 是否正确。"
-    status_info = SIMPLE_TASK_STATUS[task_id]
-    if status_info["status"] == "running":
-        return f"⏳ 任务 {task_id} 仍在后台执行中，请耐心等待通知或稍后再试。"
-    elif status_info["status"] == "failed":
-        return f"❌ 任务 {task_id} 执行过程中发生崩溃，错误信息如下：\n{status_info['result']}"
-    else:
-        result_str = json.dumps(status_info["result"], ensure_ascii=False)
-        del SIMPLE_TASK_STATUS[task_id]
-        return f"✅ 任务 {task_id} 已执行完毕。详细执行结果与最终交付物如下：\n{result_str}"
+    ))
 
 def check_pending_questions() -> str:
     from src.models.project import AGENT_QA_QUEUE
     if not AGENT_QA_QUEUE:
-        return "当前没有项目在等待你的回答。"
+        return _format_response("text","当前没有项目在等待你的回答。")
     msgs = []
     for pid, data in AGENT_QA_QUEUE.items():
         if data.get("answer") is None:
             msgs.append(f"- 项目ID: {pid} | 等待的问题: {data['question']}")
-    return "当前等待回答的项目列表如下：\n" + "\n".join(msgs)
+    return _format_response("text","当前等待回答的项目列表如下：\n" + "\n".join(msgs))
 
 def list_tool() -> str:
     from src.plugins.plugin_manager import load_global_tool_yaml
     config = load_global_tool_yaml()
     if not config:
-        return "当前未加载任何工具。"
+        return _format_response("text","当前未加载任何工具。")
     lines = []
     for idx, (tool_key, tool_info) in enumerate(config.items(), 1):
         desc = tool_info.get("desc", "无描述")
         lines.append(f"[{idx}]\"{tool_key}\" | {desc}")
     
-    return "\n".join(lines)
+    return _format_response("text", "\n".join(lines))
 
 def list_worker() -> str:
     with open(os.path.join(os.getcwd(), "data", "config", "model_config.json"), "r") as f:
         json_config = json.load(f)
         json_config = json_config["models"]
-    model_list = ["\""+model_name+"\"" for model_name in json_config.keys()]
+    model_list = [f"\"{model_name}\" | {json_config[model_name]["description"]}\n" for model_name in json_config.keys()]
     if not model_list:
-        return "无可用工人"
-    return "\n".join(model_list)
+        return _format_response("text", "无可用工人")
+    return _format_response("text", "\n".join(model_list))
 
 def fetch_tool(tool_name_list: List[str]) -> str:
     """挑选下一步行动需要用到的工具（清空旧工具，仅保留新请求的工具）"""

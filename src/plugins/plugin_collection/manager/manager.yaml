@@ -95,18 +95,6 @@ manager:
               type: "string"
               description: "任务历史"
           required: ["title", "desc", "deliverable", "worker", "judger", "available_tools", "prompt"]
-    check_task_result:
-      type: function
-      function:
-        name: "manager__check_task_result"
-        description: "检查简单后台子任务的结果。"
-        parameters:
-          type: "object"
-          properties:
-            task_id:
-              type: "string"
-              description: "任务 ID"
-          required: ["task_id"]
     list_tool:
       type: function
       function:

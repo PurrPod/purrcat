@@ -15,6 +15,8 @@ client = lark.Client.builder() \
     .log_level(lark.LogLevel.INFO) \
     .build()
 
+def _format_response(msg_type: str, content: Any) -> str:
+    return json.dumps({"type": msg_type, "content": content}, ensure_ascii=False)
 
 
 # 全局缓冲队列与线程锁
@@ -53,7 +55,7 @@ def get_message():
     res = "【飞书未读消息列表】\n"
     for i, msg in enumerate(batch):
         res += f"第 {i + 1} 条 - [会话: {msg['chat_id']}] 内容: {msg['text']}\n"
-    return res
+    return _format_response("text", res)
 
 def send_message(receive_id: str, text: str, mode: str, receive_id_type: str = "chat_id") -> str:
     """
@@ -74,10 +76,10 @@ def send_message(receive_id: str, text: str, mode: str, receive_id_type: str = "
         resp = client.im.v1.message.create(req)
         if resp.success():
             if mode == "continue":
-                return f"🌟 飞书发送成功！请继续你的工作"
+                return _format_response("text","🌟 飞书发送成功！")
             return "__AGENT_PAUSE__"
         else:
-            return f"❌ 飞书发送失败 | Code: {resp.code} | Msg: {resp.msg} | LogId: {resp.get_log_id()}"
+            return _format_response("error",f"❌ 飞书发送失败 | Code: {resp.code} | Msg: {resp.msg} | LogId: {resp.get_log_id()}")
 
     except Exception as e:
-        return f"❌ 飞书发送工具发生异常: {str(e)}"
+        return _format_response("error",f"❌ 飞书发送工具发生异常: {str(e)}")

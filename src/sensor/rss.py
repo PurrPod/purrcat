@@ -93,7 +93,7 @@ class RSSListener:
             return "暂无新的内容更新。"
         output_lines = ["【RSS订阅源每日推送】\n"]+output_lines
         result_text = "\n".join(output_lines).strip()
-        add_message({"type":"系统推送", "content":result_text})
+        add_message({"type":"rss_update", "content":result_text})
         return result_text
 
 

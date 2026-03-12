@@ -1,6 +1,7 @@
 import json
 import os
 import uuid
+from typing import Any
 
 with open("data/config/config.json", "r") as f:
     config = json.load(f)
@@ -21,7 +22,8 @@ def _read_json(filepath):
 def _write_json(filepath, data):
     with open(filepath, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
-
+def _format_response(msg_type: str, content: Any) -> str:
+    return json.dumps({"type": msg_type, "content": content}, ensure_ascii=False)
 def add_schedule(title: str, start_time: str, end_time: str, description: str = "") -> str:
     """添加跨天/跨月的日程。时间格式推荐 YYYY-MM-DD HH:MM"""
     schedules = _read_json(SCHEDULE_FILE)
@@ -34,15 +36,15 @@ def add_schedule(title: str, start_time: str, end_time: str, description: str = 
     }
     schedules.append(item)
     _write_json(SCHEDULE_FILE, schedules)
-    return f"✅ 日程添加成功: {title} ({start_time} 至 {end_time})"
+    return _format_response("text",f"✅ 日程添加成功: {title} ({start_time} 至 {end_time})")
 
 def delete_schedule(schedule_id: str) -> str:
     """删除日程"""
     schedules = _read_json(SCHEDULE_FILE)
     filtered = [s for s in schedules if s["id"] != schedule_id]
-    if len(filtered) == len(schedules): return f"❌ 找不到日程ID: {schedule_id}"
+    if len(filtered) == len(schedules): return _format_response("error",f"❌ 找不到日程ID: {schedule_id}")
     _write_json(SCHEDULE_FILE, filtered)
-    return f"✅ 日程 {schedule_id} 删除成功"
+    return _format_response("text",f"✅ 日程 {schedule_id} 删除成功")
 
 def update_schedule(schedule_id: str, title: str = None, start_time: str = None, end_time: str = None, description: str = None) -> str:
     """修改日程"""
@@ -54,15 +56,15 @@ def update_schedule(schedule_id: str, title: str = None, start_time: str = None,
             if end_time is not None: s["end_time"] = end_time
             if description is not None: s["description"] = description
             _write_json(SCHEDULE_FILE, schedules)
-            return f"✅ 日程 {schedule_id} 修改成功"
-    return f"❌ 找不到日程ID: {schedule_id}"
+            return _format_response("text",f"✅ 日程 {schedule_id} 修改成功")
+    return _format_response("error",f"❌ 找不到日程ID: {schedule_id}")
 
 def get_schedules(date_str: str = None) -> str:
     """获取所有日程，或者根据特定日期 (YYYY-MM-DD) 检索"""
     schedules = _read_json(SCHEDULE_FILE)
     if date_str:
         schedules = [s for s in schedules if date_str in s["start_time"] or date_str in s["end_time"]]
-    return json.dumps(schedules, ensure_ascii=False)
+    return _format_response("text","\n".join(str(schedules)))
 
 def add_cron(title: str, trigger_time: str, repeat_rule: str = "none") -> str:
     """
@@ -80,15 +82,15 @@ def add_cron(title: str, trigger_time: str, repeat_rule: str = "none") -> str:
     }
     crons.append(item)
     _write_json(CRON_FILE, crons)
-    return f"✅ 闹钟设定成功: {title} ({trigger_time}, 规则: {repeat_rule})"
+    return _format_response("text",f"✅ 闹钟设定成功: {title} ({trigger_time}, 规则: {repeat_rule})")
 
 def delete_cron(cron_id: str) -> str:
     """删除闹钟"""
     crons = _read_json(CRON_FILE)
     filtered = [c for c in crons if c["id"] != cron_id]
-    if len(filtered) == len(crons): return f"❌ 找不到闹钟ID: {cron_id}"
+    if len(filtered) == len(crons): return _format_response("error",f"❌ 找不到闹钟ID: {cron_id}")
     _write_json(CRON_FILE, filtered)
-    return f"✅ 闹钟 {cron_id} 删除成功"
+    return _format_response("text",f"✅ 闹钟 {cron_id} 删除成功")
 
 def update_cron(cron_id: str, title: str = None, trigger_time: str = None, repeat_rule: str = None, active: bool = None) -> str:
     """修改闹钟（可以用于开启/关闭特定闹钟）"""
@@ -100,13 +102,13 @@ def update_cron(cron_id: str, title: str = None, trigger_time: str = None, repea
             if repeat_rule is not None: c["repeat_rule"] = repeat_rule
             if active is not None: c["active"] = active
             _write_json(CRON_FILE, crons)
-            return f"✅ 闹钟 {cron_id} 修改成功"
-    return f"❌ 找不到闹钟ID: {cron_id}"
+            return _format_response("text",f"✅ 闹钟 {cron_id} 修改成功")
+    return _format_response("error",f"❌ 找不到闹钟ID: {cron_id}")
 
 def get_crons() -> str:
     """获取设定的所有闹钟"""
     crons = _read_json(CRON_FILE)
-    return json.dumps(crons, ensure_ascii=False)
+    return _format_response("text", str(crons))
 
 
 

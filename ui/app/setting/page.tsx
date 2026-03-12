@@ -211,12 +211,12 @@ export default function SettingPage() {
         </div>
       </ScrollArea>
 
-      {/* 回到顶部按钮 */}
       {showScrollTop && (
         <Button
-          size="icon"
-          className="fixed bottom-8 right-8 rounded-full shadow-lg z-50 animate-in fade-in zoom-in duration-300"
           onClick={scrollToTop}
+          variant="outline"
+          size="icon"
+          className="fixed bottom-8 right-8 z-50 rounded-full shadow-lg animate-in fade-in-50 slide-in-from-bottom-4"
         >
           <ArrowUp className="size-5" />
         </Button>

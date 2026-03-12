@@ -271,6 +271,106 @@ async def create_project_endpoint(project: ProjectCreate):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
+# --- Plugin Upload Endpoint ---
+from fastapi import File, UploadFile
+import shutil
+import re
+
+@app.post("/api/plugins/upload")
+async def upload_plugin(files: List[UploadFile] = File(...)):
+    if not files:
+        raise HTTPException(status_code=400, detail="No files uploaded.")
+
+    # Use the relative path of the first file to determine the folder name
+    first_file_path = Path(files[0].filename)
+    plugin_name = first_file_path.parts[0]
+
+    # 1. Validate plugin name
+    if not re.match(r"^[a-zA-Z0-9-]+$", plugin_name):
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Invalid plugin name '{plugin_name}'. Only letters, numbers, and hyphens are allowed."
+        )
+
+    plugin_dir = PLUGIN_COLLECTION_DIR / plugin_name
+    if plugin_dir.exists():
+        raise HTTPException(
+            status_code=409, 
+            detail=f"Plugin '{plugin_name}' already exists. Please delete the existing folder first."
+        )
+
+    # Create a temporary directory to store uploaded files
+    temp_dir = Path("temp_plugin_upload")
+    temp_dir.mkdir(exist_ok=True)
+    temp_plugin_path = temp_dir / plugin_name
+    temp_plugin_path.mkdir(exist_ok=True)
+
+    has_init_yaml = False
+
+    try:
+        # Save all files to the temporary directory
+        for file in files:
+            file_path = Path(file.filename)
+            # The full path inside the temp dir
+            save_path = temp_dir / file_path
+            save_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            with save_path.open("wb") as buffer:
+                shutil.copyfileobj(file.file, buffer)
+
+            # 2. Check for init.yaml in the root of the plugin folder
+            if file_path.name == "init.yaml" and len(file_path.parts) == 2:
+                has_init_yaml = True
+
+        # 3. Perform validation
+        if not has_init_yaml:
+            raise HTTPException(
+                status_code=400, 
+                detail="The plugin must contain an 'init.yaml' file in its root directory."
+            )
+
+        # If validation passes, move the folder to the final destination
+        shutil.move(str(temp_plugin_path), str(PLUGIN_COLLECTION_DIR))
+
+        # Re-register the new plugin
+        try:
+            register_plugin(plugin_name)
+        except Exception as e:
+            # If registration fails, it's not a critical error for the upload itself
+            print(f"Warning: Plugin '{plugin_name}' uploaded but failed to register: {e}")
+
+        return {"status": "success", "message": f"Plugin '{plugin_name}' installed successfully."}
+
+    except HTTPException as e:
+        # Re-raise HTTP exceptions from our validation
+        raise e
+    except Exception as e:
+        # Catch other potential errors
+        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {e}")
+    finally:
+        # Clean up the temporary directory
+        if temp_dir.exists():
+            shutil.rmtree(temp_dir)
+
+
+@app.delete("/api/plugins/{plugin_name}")
+async def unregister_plugin_endpoint(plugin_name: str):
+    # Basic security check for plugin_name to prevent path traversal
+    if not re.match(r"^[a-zA-Z0-9-]+$", plugin_name) or ".." in plugin_name:
+        raise HTTPException(status_code=400, detail="Invalid plugin name.")
+
+    try:
+        from src.plugins.plugin_manager import unregister_plugin
+        message = unregister_plugin(plugin_name)
+        return {"status": "success", "message": message}
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Plugin '{plugin_name}' not found.")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to unregister plugin: {e}")
+
+
+
 class TaskCreate(BaseModel):
     title: str
     desc: str

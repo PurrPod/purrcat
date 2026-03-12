@@ -138,24 +138,52 @@ def register_plugin(plugin_name: str) -> bool:
         return False
 
 
-def unregister_plugin(plugin_name: str) -> bool:
-    print(f"正在尝试注销插件: {plugin_name} ...")
+def unregister_plugin(plugin_name: str) -> str:
+    """注销并删除一个插件."""
+    print(f"正在尝试注销并删除插件: {plugin_name} ...")
+    
+    # 1. 从 tool.yaml 中移除配置
     try:
-        with open(GLOBAL_TOOL_YAML, 'r', encoding='utf-8') as f:
-            current = yaml.safe_load(f) or {}
+        current = {}
+        if os.path.exists(GLOBAL_TOOL_YAML):
+            with open(GLOBAL_TOOL_YAML, 'r', encoding='utf-8') as f:
+                current = yaml.safe_load(f) or {}
 
-        if plugin_name in current:
-            del current[plugin_name]
-            with open(GLOBAL_TOOL_YAML, 'w', encoding='utf-8') as f:
-                if not current:
-                    f.write("")
-                else:
-                    yaml.dump(current, f, allow_unicode=True, sort_keys=False, indent=2)
-            init_config_data()  # 刷新
-        return True
+        if plugin_name not in current:
+            raise FileNotFoundError(f"配置中未找到插件 '{plugin_name}'，可能已被注销。")
+
+        del current[plugin_name]
+        
+        with open(GLOBAL_TOOL_YAML, 'w', encoding='utf-8') as f:
+            if not current:
+                f.write("")  # 如果文件为空，则写入空字符串
+            else:
+                yaml.dump(current, f, allow_unicode=True, sort_keys=False, indent=2)
+        
+        init_config_data()  # 刷新内存中的配置
+        print(f"插件 '{plugin_name}' 的配置已成功从 tool.yaml 中移除。")
+
     except Exception as e:
-        print(f"注销插件异常：{e}")
-        return False
+        error_message = f"注销插件配置时发生异常：{e}"
+        print(error_message)
+        raise RuntimeError(error_message)
+
+    # 2. 删除插件物理文件夹
+    plugin_dir = os.path.join(PLUGIN_COLLECTION_DIR, plugin_name)
+    if os.path.isdir(plugin_dir):
+        try:
+            import shutil
+            shutil.rmtree(plugin_dir)
+            print(f"插件文件夹 '{plugin_dir}' 已被成功删除。")
+        except Exception as e:
+            error_message = f"删除插件文件夹 '{plugin_dir}' 时失败：{e}"
+            print(error_message)
+            # 即便文件夹删除失败，配置也已注销，所以我们不在这里抛出致命错误，而是返回一个警告
+            return f"插件 '{plugin_name}' 配置已注销，但物理文件夹删除失败: {e}"
+    else:
+        print(f"插件文件夹 '{plugin_dir}' 不存在，无需删除。")
+
+    return f"插件 '{plugin_name}' 已被成功注销和删除。"
 
 
 if __name__ == '__main__':

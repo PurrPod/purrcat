@@ -1,6 +1,7 @@
 import json
 import os
 import uuid
+from typing import Any
 
 import requests
 import warnings
@@ -20,7 +21,8 @@ with open("data\config\web_config.json","r") as f:
     config = json.load(f)
 os.environ["TAVILY_API_KEY"] = config["TAVILY_API_KEY"]
 _tool_instance = None
-
+def _format_response(msg_type: str, content: Any) -> str:
+    return json.dumps({"type": msg_type, "content": content}, ensure_ascii=False)
 def get_tool():
     global _tool_instance
     if _tool_instance is None:
@@ -138,9 +140,9 @@ class WebTools:
             if resp.status_code == 200:
                 content = resp.text
                 file_path = self._save_to_buffer(content, prefix="fetch")
-                return f"已将结果存放至文件{file_path}"
+                return _format_response("text", "已将结果存放至文件{file_path}")
         except Exception as e:
-            print(f"⚠️ [Debug] Jina API failed: {e}. Falling back to local scraper...")
+            print(f"⚠️ Jina API failed: {e}. Falling back to local scraper...")
 
         # 优先级 2: 本地 BeautifulSoup 暴力清洗
         try:
@@ -168,7 +170,7 @@ class WebTools:
 
 
             file_path = self._save_to_buffer(final_text, prefix="fetch")
-            return f"已将结果存放至文件{file_path}"
+            return _format_response("text",f"已将结果存放至文件{file_path}")
 
         except Exception as e:
             return json.dumps({"type": "error", "content": f"Failed to fetch content from {url}: {str(e)}"},
