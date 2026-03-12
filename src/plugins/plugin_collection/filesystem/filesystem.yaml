@@ -1,0 +1,125 @@
+filesystem:
+  # 插件基础信息
+  name: "文件系统"
+  desc: "提供对本地文件系统的操作，包括读写、删除、搜索等，具备沙箱保护"
+  dir_path: plugin_collection/filesystem/
+  # 工具函数列表（对齐DeepSeek/OpenAI function规范）
+  functions:
+    write_text_file:
+      type: function
+      function:
+        name: "filesystem__write_text_file"
+        description: "Write content to a text file. Must be within the sandbox whitelist."
+        parameters:
+          type: "object"
+          properties:
+            path:
+              type: "string"
+              description: "The absolute path of the file to write."
+            content:
+              type: "string"
+              description: "The content to write to the file."
+          required: ["path", "content"]
+    read_media_file:
+      type: function
+      function:
+        name: "filesystem__read_media_file"
+        description: "Read a media file (image, audio, etc.) and return its base64 encoded content."
+        parameters:
+          type: "object"
+          properties:
+            path:
+              type: "string"
+              description: "The absolute path of the media file."
+          required: ["path"]
+    delete_file:
+      type: function
+      function:
+        name: "filesystem__delete_file"
+        description: "Delete a file or directory. Must be within the sandbox whitelist."
+        parameters:
+          type: "object"
+          properties:
+            path:
+              type: "string"
+              description: "The absolute path of the file or directory to delete."
+          required: ["path"]
+    read_file_lines:
+      type: function
+      function:
+        name: "filesystem__read_file_lines"
+        description: "Read specific lines from a file."
+        parameters:
+          type: "object"
+          properties:
+            path:
+              type: "string"
+              description: "The absolute path of the file."
+            start:
+              type: "integer"
+              description: "The starting line number (1-based)."
+            end:
+              type: "integer"
+              description: "The ending line number (inclusive)."
+          required: ["path", "start", "end"]
+    search_in_file:
+      type: function
+      function:
+        name: "filesystem__search_in_file"
+        description: "Search for a keyword in a file."
+        parameters:
+          type: "object"
+          properties:
+            path:
+              type: "string"
+              description: "The absolute path of the file."
+            keyword:
+              type: "string"
+              description: "The keyword to search for."
+            limit:
+              type: "integer"
+              description: "Maximum number of matches to return (default 20)."
+          required: ["path", "keyword"]
+    replace_file_lines:
+      type: function
+      function:
+        name: "filesystem__replace_file_lines"
+        description: "Replace specific lines in a file with new code."
+        parameters:
+          type: "object"
+          properties:
+            path:
+              type: "string"
+              description: "The absolute path of the file."
+            start:
+              type: "integer"
+              description: "The starting line number (1-based)."
+            end:
+              type: "integer"
+              description: "The ending line number (inclusive)."
+            new_code:
+              type: "string"
+              description: "The new content to replace the specified lines."
+          required: ["path", "start", "end", "new_code"]
+    list_special_directories:
+      type: function
+      function:
+        name: "filesystem__list_special_directories"
+        description: "List all special directories including sandbox, skill and so on."
+        parameters:
+          type: "object"
+          properties: {}
+          required: []
+    list_file_in_dir:
+      type: function
+      function:
+        name: "filesystem__list_file_in_dir"
+        description: "List files and directories within a given path."
+        parameters:
+          type: "object"
+          properties:
+            path:
+              type: "string"
+              description: "The absolute path of the directory to list."
+          required: ["path"]
+

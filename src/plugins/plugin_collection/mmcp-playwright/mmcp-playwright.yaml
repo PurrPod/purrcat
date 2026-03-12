@@ -1,0 +1,195 @@
+mmcp-playwright:
+  name: "Playwright 全功能浏览器"
+  desc: "基于官方 Playwright 协议的 Python 原生全功能实现。支持网页浏览、交互、抓包、视觉操作、PDF/截图落地、多标签页管理等。"
+  dir_path: plugin_collection/mmcp-playwright/
+
+  functions:
+    # --- Core ---
+    browser_navigate:
+      type: function
+      function:
+        name: "mmcp-playwright__browser_navigate"
+        description: "Visit a URL."
+        parameters:
+          type: "object"
+          properties:
+            url: {type: "string"}
+          required: ["url"]
+
+    browser_navigate_back:
+      type: function
+      function:
+        name: "mmcp-playwright__browser_navigate_back"
+        description: "Go back to previous page."
+        parameters: {type: "object", properties: {}}
+
+    browser_snapshot:
+      type: function
+      function:
+        name: "mmcp-playwright__browser_snapshot"
+        description: "Get page content as Markdown (Structure)."
+        parameters: {type: "object", properties: {}}
+
+    browser_take_screenshot:
+      type: function
+      function:
+        name: "mmcp-playwright__browser_take_screenshot"
+        description: "Save screenshot to local file."
+        parameters:
+          type: "object"
+          properties:
+            file_path: {type: "string", description: "Relative path to save, e.g. 'screens/home.png'"}
+            full_page: {type: "boolean"}
+          required: ["file_path"]
+
+    browser_click:
+      type: function
+      function:
+        name: "mmcp-playwright__browser_click"
+        description: "Click element by selector."
+        parameters:
+          type: "object"
+          properties:
+            selector: {type: "string"}
+          required: ["selector"]
+
+    browser_type:
+      type: function
+      function:
+        name: "mmcp-playwright__browser_type"
+        description: "Type text into element."
+        parameters:
+          type: "object"
+          properties:
+            selector: {type: "string"}
+            text: {type: "string"}
+            submit: {type: "boolean", description: "Press Enter after typing?"}
+          required: ["selector", "text"]
+
+    browser_fill_form:
+      type: function
+      function:
+        name: "mmcp-playwright__browser_fill_form"
+        description: "Fill multiple fields at once."
+        parameters:
+          type: "object"
+          properties:
+            fields:
+              type: "array"
+              items:
+                type: "object"
+                properties:
+                  selector: {type: "string"}
+                  value: {type: "string"}
+          required: ["fields"]
+
+    browser_evaluate:
+      type: function
+      function:
+        name: "mmcp-playwright__browser_evaluate"
+        description: "Execute JS and return JSON result."
+        parameters:
+          type: "object"
+          properties:
+            script: {type: "string"}
+          required: ["script"]
+
+    browser_network_requests:
+      type: function
+      function:
+        name: "mmcp-playwright__browser_network_requests"
+        description: "Get recent network logs (API/XHR)."
+        parameters:
+          type: "object"
+          properties:
+            include_static: {type: "boolean"}
+          required: []
+
+    browser_wait_for:
+      type: function
+      function:
+        name: "mmcp-playwright__browser_wait_for"
+        description: "Wait for element to appear."
+        parameters:
+          type: "object"
+          properties:
+            selector: {type: "string"}
+            timeout: {type: "integer"}
+          required: ["selector"]
+
+    # --- File/IO ---
+    browser_pdf_save:
+      type: function
+      function:
+        name: "mmcp-playwright__browser_pdf_save"
+        description: "Save page as PDF locally."
+        parameters:
+          type: "object"
+          properties:
+            file_path: {type: "string", description: "e.g. 'docs/page.pdf'"}
+          required: ["file_path"]
+
+    browser_file_upload:
+      type: function
+      function:
+        name: "mmcp-playwright__browser_file_upload"
+        description: "Upload a local file to a file input."
+        parameters:
+          type: "object"
+          properties:
+            selector: {type: "string"}
+            file_path: {type: "string", description: "Path of file in downloads folder"}
+          required: ["selector", "file_path"]
+
+    # --- Tabs ---
+    browser_tabs:
+      type: function
+      function:
+        name: "mmcp-playwright__browser_tabs"
+        description: "Manage tabs: list, create, switch, close."
+        parameters:
+          type: "object"
+          properties:
+            action: {type: "string", enum: ["list", "create", "switch", "close"]}
+            index: {type: "integer"}
+          required: ["action"]
+
+    # --- Vision ---
+    browser_mouse_click_xy:
+      type: function
+      function:
+        name: "mmcp-playwright__browser_mouse_click_xy"
+        description: "Click at coordinates."
+        parameters:
+          type: "object"
+          properties:
+            x: {type: "number"}
+            y: {type: "number"}
+          required: ["x", "y"]
+
+    # --- Tracing ---
+    browser_start_tracing:
+      type: function
+      function:
+        name: "mmcp-playwright__browser_start_tracing"
+        description: "Start recording execution trace."
+        parameters: {type: "object", properties: {}}
+
+    browser_stop_tracing:
+      type: function
+      function:
+        name: "mmcp-playwright__browser_stop_tracing"
+        description: "Stop recording and save trace file."
+        parameters:
+          type: "object"
+          properties:
+            file_path: {type: "string", description: "e.g. 'trace.zip'"}
+          required: ["file_path"]
+
+    # --- Install ---
+    browser_install:
+      type: function
+      function:
+        name: "mmcp-playwright__browser_install"
+        description: "Install Playwright browsers."
+        parameters: {type: "object", properties: {}}

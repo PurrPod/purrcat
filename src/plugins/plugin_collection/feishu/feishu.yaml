@@ -1,0 +1,36 @@
+feishu:
+  name: "飞书插件"
+  desc: "提供飞书消息的发送与接收功能，支持 chat_id、open_id 等多种标识符。"
+  dir_path: plugin_collection/feishu/
+  functions:
+    send_message:
+      type: function
+      function:
+        name: "feishu__send_message"
+        description: "给飞书发送文本消息。"
+        parameters:
+          type: "object"
+          properties:
+            receive_id:
+              type: "string"
+              description: "接收者的 ID (如 chat_id 或 open_id)"
+            text:
+              type: "string"
+              description: "消息文本内容"
+            mode:
+              type: "string"
+              description: "发送完消息你准备开启下一个任务还是继续当前任务，继续当前任务则填continue，否则填next"
+            receive_id_type:
+              type: "string"
+              description: "ID 类型，默认为 'chat_id' (可选)"
+          required: ["receive_id", "text"]
+
+    get_message:
+      type: function
+      function:
+        name: "feishu__get_message"
+        description: "获取当前缓冲区中所有未读的飞书消息。调用后缓冲区将被清空。"
+        parameters:
+          type: "object"
+          properties: {}
+          required: []

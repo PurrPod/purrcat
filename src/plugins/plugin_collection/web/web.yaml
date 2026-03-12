@@ -1,0 +1,34 @@
+web:
+  name: "网络搜索工具"
+  desc: "提供网页搜索和网页内容提取功能，结果将自动保存至 buffer 文件夹。"
+  dir_path: plugin_collection/web/
+
+  functions:
+    web_search:
+      type: function
+      function:
+        name: "web__web_search"
+        description: "搜索互联网内容并获取相关链接及摘要。结果将以 Markdown 格式保存至 buffer 文件夹。"
+        parameters:
+          type: "object"
+          properties:
+            query:
+              type: "string"
+              description: "搜索关键词"
+            max_results:
+              type: "integer"
+              description: "返回的最大结果数量（默认为5）"
+          required: ["query"]
+
+    fetch_web_content:
+      type: function
+      function:
+        name: "web__fetch_web_content"
+        description: "抓取指定 URL 的网页内容。结果将以 Markdown 格式保存至 buffer 文件夹。"
+        parameters:
+          type: "object"
+          properties:
+            url:
+              type: "string"
+              description: "网页的完整 URL"
+          required: ["url"]

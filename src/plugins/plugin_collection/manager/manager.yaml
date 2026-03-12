@@ -1,0 +1,141 @@
+manager:
+  name: "项目管理插件"
+  desc: "启动子项目并管理子项目提出的提问及回答逻辑，也是调度自身工具的接口"
+  dir_path: plugin_collection/manager/
+  functions:
+    add_project:
+      type: function
+      function:
+        name: "manager__add_project"
+        description: "启动一个新的后台子项目。适合复杂任务和项目开发"
+        parameters:
+          type: "object"
+          properties:
+            name:
+              type: "string"
+              description: "项目名称"
+            prompt:
+              type: "string"
+              description: "项目的核心任务描述"
+            core:
+              type: "string"
+              description: "该项目分配的经理代号，如“[2]openai:deepseek-chat”"
+            check_mode:
+              type: "boolean"
+              description: "是否开启分步检查模式，默认为 false。"
+              default: false
+            refine_mode:
+              type: "boolean"
+              description: "是否开启提示词优化模式，开启的话工人将会和你沟通需求，默认为 false。"
+              default: false
+            judge_mode:
+              type: "boolean"
+              description: "是否开启子任务质检模式，默认为 false。"
+              default: false
+          required: ["name", "prompt", "core"]
+    answer:
+      type: function
+      function:
+        name: "manager__answer"
+        description: "回答来自特定子项目的提问，推动异步项目继续执行。"
+        parameters:
+          type: "object"
+          properties:
+            project_id:
+              type: "string"
+              description: "子项目的唯一 ID"
+            answer_text:
+              type: "string"
+              description: "你针对提问给出的回答或决策内容"
+          required: ["project_id", "answer_text"]
+    check_pending_questions:
+      type: function
+      function:
+        name: "manager__check_pending_questions"
+        description: "查看当前所有正在等待回答问题的子项目列表。"
+        parameters:
+          type: "object"
+          properties: {}
+          required: []
+    add_simple_task:
+      type: function
+      function:
+        name: "manager__add_simple_task"
+        description: "启动一个简单的后台子任务。"
+        parameters:
+          type: "object"
+          properties:
+            title:
+              type: "string"
+              description: "任务标题"
+            desc:
+              type: "string"
+              description: "任务描述"
+            deliverable:
+              type: "string"
+              description: "任务交付物"
+            worker:
+              type: "string"
+              description: "执行任务的工人"
+            judger:
+              type: "string"
+              description: "质检任务的工人"
+            available_tools:
+              type: "array"
+              items:
+                type: "string"
+              description: "可用的工具列表"
+            prompt:
+              type: "string"
+              description: "系统提示"
+            judge_mode:
+              type: "boolean"
+              description: "是否开启质检模式"
+            task_histories:
+              type: "string"
+              description: "任务历史"
+          required: ["title", "desc", "deliverable", "worker", "judger", "available_tools", "prompt"]
+    check_task_result:
+      type: function
+      function:
+        name: "manager__check_task_result"
+        description: "检查简单后台子任务的结果。"
+        parameters:
+          type: "object"
+          properties:
+            task_id:
+              type: "string"
+              description: "任务 ID"
+          required: ["task_id"]
+    list_tool:
+      type: function
+      function:
+        name: "manager__list_tool"
+        description: "获取当前所有可派给工人使用的工具及其描述的清单。"
+        parameters:
+          type: "object"
+          properties: {}
+          required: []
+    fetch_tool:
+      type: function
+      function:
+        name: "manager__fetch_tool"
+        description: "挑选下一步行动需要用到的工具（清空旧工具，仅保留新请求的工具）。"
+        parameters:
+          type: "object"
+          properties:
+            tool_name_list:
+              type: "array"
+              items:
+                type: "string"
+              description: "需要保留的工具名称列表"
+          required: ["tool_name_list"]
+    list_worker:
+      type: function
+      function:
+        name: "manager__list_worker"
+        description: "获取当前所有可用的工人及其描述的清单。"
+        parameters:
+          type: "object"
+          properties: {}
+          required: []

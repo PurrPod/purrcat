@@ -1,0 +1,43 @@
+{
+  "Lilian Weng's Blog": [
+    "https://lilianweng.github.io/lil-log/2022/02/20/active-learning",
+    "https://lilianweng.github.io/lil-log/2021/01/02/controllable-neural-text-generation",
+    "https://lilianweng.github.io/lil-log/2021/07/11/diffusion-models",
+    "https://lilianweng.github.io/lil-log/2021/03/21/reducing-toxicity-in-language-models",
+    "https://lilianweng.github.io/lil-log/2021/12/05/semi-supervised-learning",
+    "https://lilianweng.github.io/lil-log/2021/09/25/train-large-neural-networks",
+    "https://lilianweng.github.io/lil-log/2021/05/31/contrastive-representation-learning",
+    "https://lilianweng.github.io/lil-log/2020/08/06/neural-architecture-search",
+    "https://lilianweng.github.io/lil-log/2020/10/29/open-domain-question-answering",
+    "https://lilianweng.github.io/lil-log/2020/06/07/exploration-strategies-in-deep-reinforcement-learning"
+  ],
+  "Ahead of AI (by Sebastian Raschka)": [
+    "https://magazine.sebastianraschka.com/p/coding-the-kv-cache-in-llms",
+    "https://magazine.sebastianraschka.com/p/the-state-of-llm-reasoning-model-training",
+    "https://magazine.sebastianraschka.com/p/state-of-llm-reasoning-and-inference-scaling",
+    "https://magazine.sebastianraschka.com/p/llm-research-papers-2025-list-one",
+    "https://magazine.sebastianraschka.com/p/from-gpt-2-to-gpt-oss-analyzing-the",
+    "https://magazine.sebastianraschka.com/p/qwen3-from-scratch",
+    "https://magazine.sebastianraschka.com/p/beyond-standard-llms",
+    "https://magazine.sebastianraschka.com/p/llm-research-papers-2025-part2",
+    "https://magazine.sebastianraschka.com/p/ai-research-papers-2024-part-1",
+    "https://magazine.sebastianraschka.com/p/state-of-llms-2025",
+    "https://magazine.sebastianraschka.com/p/understanding-reasoning-llms",
+    "https://magazine.sebastianraschka.com/p/coding-llms-from-the-ground-up",
+    "https://magazine.sebastianraschka.com/p/first-look-at-reasoning-from-scratch",
+    "https://magazine.sebastianraschka.com/p/a-dream-of-spring-for-open-weight",
+    "https://magazine.sebastianraschka.com/p/llm-evaluation-4-approaches",
+    "https://magazine.sebastianraschka.com/p/the-big-llm-architecture-comparison",
+    "https://magazine.sebastianraschka.com/p/ai-research-papers-2024-part-2",
+    "https://magazine.sebastianraschka.com/p/technical-deepseek",
+    "https://magazine.sebastianraschka.com/p/llm-research-papers-the-2024-list",
+    "https://magazine.sebastianraschka.com/p/categories-of-inference-time-scaling"
+  ],
+  "Latepost 晚点": [
+    "latepost-3450",
+    "latepost-3446",
+    "latepost-3445",
+    "latepost-3451",
+    "latepost-3447"
+  ]
+}
