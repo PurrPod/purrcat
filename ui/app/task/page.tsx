@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import * as ScrollAreaPrimitive from '@radix-ui/react-scroll-area'
 import { useAppStore } from '@/lib/store'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -96,21 +97,26 @@ function ToolPickerPanel({
     })
   }, [filteredGroups, searchTerm])
 
-  const toggleTool = (toolIdentifier: string) => {
-    const next = selectedTools.includes(toolIdentifier)
-      ? selectedTools.filter((t) => t !== toolIdentifier)
-      : [...selectedTools, toolIdentifier]
+  const toggleTool = (groupName: string, toolName: string, groupToolNames: string[]) => {
+    let next = selectedTools
+
+    if (next.includes(groupName)) {
+      const expanded = new Set(next.filter((t) => t !== groupName))
+      for (const n of groupToolNames) expanded.add(n)
+      next = Array.from(expanded)
+    }
+
+    next = next.includes(toolName) ? next.filter((t) => t !== toolName) : [...next, toolName]
     onSelectionChange(next)
   }
 
   const setGroupSelection = (groupName: string, toolNames: string[], checked: boolean) => {
-    const identifiers = toolNames.map((toolName) => `${groupName}/${toolName}`)
     if (checked) {
-      const merged = new Set([...selectedTools, ...identifiers])
-      onSelectionChange(Array.from(merged))
+      const remaining = selectedTools.filter((t) => t !== groupName && !toolNames.includes(t))
+      onSelectionChange(Array.from(new Set([...remaining, groupName])))
       return
     }
-    onSelectionChange(selectedTools.filter((t) => !identifiers.includes(t)))
+    onSelectionChange(selectedTools.filter((t) => t !== groupName && !toolNames.includes(t)))
   }
 
   return (
@@ -148,10 +154,10 @@ function ToolPickerPanel({
                   >
                     {(() => {
                       const toolNames = group.tools.map((t) => t.name)
-                      const identifiers = toolNames.map((n) => `${group.name}/${n}`)
-                      const selectedCount = identifiers.filter((id) => selectedTools.includes(id)).length
-                      const totalCount = identifiers.length
-                      const groupChecked = totalCount === 0 ? false : selectedCount === 0 ? false : selectedCount === totalCount ? true : 'indeterminate'
+                      const groupSelected = selectedTools.includes(group.name)
+                      const selectedCount = groupSelected ? toolNames.length : toolNames.filter((n) => selectedTools.includes(n)).length
+                      const totalCount = toolNames.length
+                      const groupChecked = totalCount === 0 ? false : groupSelected ? true : selectedCount === 0 ? false : selectedCount === totalCount ? true : 'indeterminate'
 
                       return (
                         <>
@@ -189,12 +195,12 @@ function ToolPickerPanel({
                             <div className="p-2 space-y-1">
                               {group.tools.map((tool) => {
                                 const toolIdentifier = `${group.name}/${tool.name}`
-                                const isSelected = selectedTools.includes(toolIdentifier)
+                                const isSelected = groupSelected || selectedTools.includes(tool.name)
                                 return (
                                   <button
                                     key={toolIdentifier}
                                     type="button"
-                                    onClick={() => toggleTool(toolIdentifier)}
+                                    onClick={() => toggleTool(group.name, tool.name, toolNames)}
                                     className={cn(
                                       'w-full rounded-md px-2 py-2 text-left hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
                                       isSelected && 'bg-accent',
@@ -301,6 +307,7 @@ function TaskCard({
     <ContextMenu>
       <ContextMenuTrigger>
         <Card 
+          id={`task-card-${task.id}`}
           className={cn(
             'cursor-pointer transition-all hover:border-primary/50',
             isSelected && 'border-primary ring-1 ring-primary'
@@ -599,9 +606,20 @@ export default function TaskPage() {
   const removeTask = useAppStore((state) => state.removeTask)
   const stopTask = useAppStore((state) => state.stopTask)
   const [selectedId, setSelectedId] = useState<string | null>(tasks[0]?.id || null)
+  const searchParams = useSearchParams()
   
   const selectedTask = tasks.find((t) => t.id === selectedId)
   const runningCount = tasks.filter((t) => t.status === 'running').length
+
+  useEffect(() => {
+    const taskId = searchParams.get('taskId')
+    if (!taskId) return
+    if (!tasks.some((t) => t.id === taskId)) return
+    setSelectedId(taskId)
+    window.setTimeout(() => {
+      document.getElementById(`task-card-${taskId}`)?.scrollIntoView({ block: 'center' })
+    }, 0)
+  }, [searchParams, tasks])
 
   return (
     <div className="h-[calc(100vh-4rem)] flex">

@@ -33,6 +33,14 @@ export interface Project {
   progress: number
   pipeline: PipelineStep[]
   history?: any[]
+  core?: string
+  createTime?: string
+  availableTools?: string[]
+  availableWorkers?: string[]
+  checkMode?: boolean
+  refineMode?: boolean
+  judgeMode?: boolean
+  isAgent?: boolean
   createdAt: Date
   updatedAt: Date
 }

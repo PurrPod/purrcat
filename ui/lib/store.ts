@@ -218,6 +218,14 @@ export const useAppStore = create<AppState>((set, get) => ({
               })
             : [],
           history: p.history || [],
+          core: p.core,
+          createTime: p.creat_time,
+          availableTools: Array.isArray(p.available_tools) ? p.available_tools : [],
+          availableWorkers: Array.isArray(p.available_workers) ? p.available_workers : [],
+          checkMode: typeof p.check_mode === 'boolean' ? p.check_mode : undefined,
+          refineMode: typeof p.refine_mode === 'boolean' ? p.refine_mode : undefined,
+          judgeMode: typeof p.judge_mode === 'boolean' ? p.judge_mode : undefined,
+          isAgent: typeof p.is_agent === 'boolean' ? p.is_agent : undefined,
           createdAt: p.createdAt ? new Date(p.createdAt) : new Date(),
           updatedAt: p.updatedAt ? new Date(p.updatedAt) : new Date()
         })) 

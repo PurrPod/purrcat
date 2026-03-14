@@ -2,6 +2,8 @@ data/config/*
 
 requirements.txt
 Dockerfile
+sandbox*
+data/checkpoints
 
 __pycache__/
 *.py[cod]

@@ -172,6 +172,102 @@ async def get_projects():
         projects.append(project_data)
     return projects
 
+PROJECT_LOG_PATH_CACHE: Dict[str, str] = {}
+
+def _resolve_project_log_path(project_id: str) -> Optional[str]:
+    cached = PROJECT_LOG_PATH_CACHE.get(project_id)
+    if cached:
+        return cached
+
+    instance = project_module.PROJECT_INSTANCES.get(project_id)
+    if instance:
+        log_dir = os.path.join("data", "checkpoints", "project", f"{instance.name}_{instance.creat_time}")
+        log_path = os.path.join(log_dir, "log.jsonl")
+        PROJECT_LOG_PATH_CACHE[project_id] = log_path
+        return log_path
+
+    base_dir = os.path.join("data", "checkpoints", "project")
+    if not os.path.isdir(base_dir):
+        return None
+
+    try:
+        for entry in os.listdir(base_dir):
+            checkpoint_path = os.path.join(base_dir, entry, "checkpoint.json")
+            if not os.path.isfile(checkpoint_path):
+                continue
+            try:
+                with open(checkpoint_path, "r", encoding="utf-8") as f:
+                    state = json.load(f)
+                if state.get("id") == project_id:
+                    log_path = os.path.join(base_dir, entry, "log.jsonl")
+                    PROJECT_LOG_PATH_CACHE[project_id] = log_path
+                    return log_path
+            except Exception:
+                continue
+    except Exception:
+        return None
+
+    return None
+
+@app.get("/api/projects/dirty")
+async def get_dirty_projects(clear: bool = True):
+    with project_module.set_lock:
+        dirty = list(project_module.dirty_projects)
+        if clear:
+            project_module.dirty_projects.clear()
+    return {"dirty": dirty}
+
+@app.get("/api/projects/{project_id}/log")
+async def get_project_log(project_id: str, cursor: int = 0, limit: int = 500):
+    if cursor < 0:
+        cursor = 0
+    if limit < 1:
+        limit = 1
+    if limit > 2000:
+        limit = 2000
+
+    log_path = _resolve_project_log_path(project_id)
+    if not log_path or not os.path.exists(log_path):
+        return {"entries": [], "nextCursor": cursor, "exists": False}
+
+    entries: List[Dict[str, Any]] = []
+    next_cursor = cursor
+
+    try:
+        with open(log_path, "r", encoding="utf-8") as f:
+            for idx, line in enumerate(f):
+                if idx < cursor:
+                    continue
+                if len(entries) >= limit:
+                    break
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    payload = json.loads(line)
+                except Exception:
+                    payload = {"card_type": "error", "content": line, "metadata": {"level": "warning"}}
+                payload["id"] = f"{project_id}:{idx}"
+                entries.append(payload)
+                next_cursor = idx + 1
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    return {"entries": entries, "nextCursor": next_cursor, "exists": True}
+
+class ProjectAnswer(BaseModel):
+    answer: str
+
+@app.post("/api/projects/{project_id}/answer")
+async def answer_project(project_id: str, payload: ProjectAnswer):
+    queue = project_module.USER_QA_QUEUE.get(project_id)
+    if not queue:
+        raise HTTPException(status_code=404, detail="No pending question for this project")
+    if queue.get("answers") is not None:
+        return {"status": "already_answered"}
+    queue["answers"] = {"用户回复": payload.answer}
+    return {"status": "success"}
+
 @app.post("/api/projects/{project_id}/stop")
 async def stop_project_endpoint(project_id: str):
     if project_module.kill_project(project_id):

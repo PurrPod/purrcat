@@ -4,21 +4,30 @@ import ast
 import os
 import time
 import uuid
+import threading
 
 from src.agent.agent import add_message
 from src.models.model import Model
 from src.models.task import Task
 from src.plugins.plugin_manager import get_plugin_tool_info
+
 PROJECT_POOL = []
 PROJECT_INSTANCES = {}  # 映射表：id -> Project 实例，用于随时调用类内方法
+
+# 全局变量
+dirty_projects = set()
+set_lock = threading.Lock()  # 保护 set 的线程锁
+
 
 def set_project_state(project_id, state):
     for p in PROJECT_POOL:
         if p["id"] == project_id:
             p["state"] = state
+            p["updatedAt"] = datetime.datetime.now().isoformat()
             break
     if project_id in PROJECT_INSTANCES:
         PROJECT_INSTANCES[project_id].state = state
+
 
 def delete_project(project_id):
     global PROJECT_POOL
@@ -26,14 +35,19 @@ def delete_project(project_id):
     if project_id in PROJECT_INSTANCES:
         del PROJECT_INSTANCES[project_id]
 
+
 def kill_project(project_id):
     """全局方法：阶段性 Kill 指定的项目"""
     if project_id in PROJECT_INSTANCES:
         PROJECT_INSTANCES[project_id].kill()
         return True
     return False
+
+
 USER_QA_QUEUE = {}
 AGENT_QA_QUEUE = {}
+
+
 class Project:
     def __init__(
             self,
@@ -55,7 +69,7 @@ class Project:
         self.creat_time = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
         self.sub_tasks = sub_tasks
         self.available_tools = available_tools or []
-        self.available_workers = available_workers or []
+        self.available_workers = available_workers or [self.core]
         self.check_mode = check_mode
         self.refine_mode = refine_mode
         self.judge_mode = judge_mode
@@ -66,8 +80,30 @@ class Project:
         self.id = project_id or str(uuid.uuid4())
         self.state = "running"
         self._killed = False
-        PROJECT_POOL.append({"name": self.name, "id": self.id, "state": self.state})
+        now_iso = datetime.datetime.now().isoformat()
+        PROJECT_POOL.append({
+            "name": self.name,
+            "id": self.id,
+            "state": self.state,
+            "creat_time": self.creat_time,
+            "core": self.core,
+            "available_tools": self.available_tools,
+            "available_workers": self.available_workers,
+            "check_mode": self.check_mode,
+            "refine_mode": self.refine_mode,
+            "judge_mode": self.judge_mode,
+            "is_agent": self.is_agent,
+            "createdAt": now_iso,
+            "updatedAt": now_iso,
+        })# 固定元信息
         PROJECT_INSTANCES[self.id] = self
+
+        # 1. 初始化时：推流文本类型的浅灰色卡片，显示用户的原始提示词
+        self.log_and_notify(
+            card_type="text",
+            content=f"📝 用户的原始提示词：\n{self.ori_prompt}",
+            metadata={"style": "light_gray"}
+        )
 
     def kill(self):
         """类内方法：接收外部 kill 信号"""
@@ -80,24 +116,19 @@ class Project:
         if self._killed:
             self.save_checkpoint()  # 重点：保持原有的节点状态
             raise InterruptedError(f"项目 {self.id} 已被手动中止 (Kill)。")
+
     def send_to_core(self, prompt, is_stateless=False, response_format=None):
-        """
-        向核心模型发送请求，统一的通信出口。
-        """
         self._check_kill()
         if ':' not in self.core:
             raise ValueError("The model name must include the provider prefix (e.g., openai:gpt-4o)")
-
         model_name = self.core.split(":")[-1]
         client = Model(self.core).client
-
         if isinstance(prompt, str):
             messages = self.current_history + [{"role": "user", "content": prompt}]
         elif isinstance(prompt, list):
             messages = prompt
         else:
             raise TypeError("Prompt must be a string or a list of messages.")
-
         try:
             kwargs = {
                 "model": model_name,
@@ -105,10 +136,8 @@ class Project:
             }
             if response_format:
                 kwargs["response_format"] = response_format
-
             response = client.chat.completions.create(**kwargs)
             result = response.choices[0].message.content
-
             if not is_stateless:
                 if isinstance(prompt, str):
                     self.current_history.append({"role": "user", "content": prompt})
@@ -117,23 +146,16 @@ class Project:
                 self.current_history.append({"role": "assistant", "content": result})
 
             return result
-
         except Exception as e:
             return f"Error: API call failed - {e}"
 
     def _ask_core_for_json(self, prompt, max_retries: int = 3):
-        """
-        利用原生的 JSON Mode 获取可靠的 JSON 数据。
-        prompt 可以是字符串(sys_msg)，也可以是完整的 messages 列表。
-        所有调用此方法的请求均被视为“辅助请求(is_stateless=True)”，不计入主线历史。
-        """
-        # 如果是字符串，包成 system message
         if isinstance(prompt, str):
             if "json" not in prompt.lower():
                 prompt += "\nEnsure the output is a valid JSON object."
             messages = [{"role": "system", "content": prompt}]
         else:
-            messages = prompt.copy() # 如果是列表，复制一份避免污染
+            messages = prompt.copy()
         json_str = self.send_to_core(
             prompt=messages,
             is_stateless=True,
@@ -171,31 +193,20 @@ class Project:
             q_list = [q for k, q in questions.items() if k and q]
         if not q_list:
             return answers
+
         if self.is_agent:
-            q_list = []
-            if isinstance(questions, list):
-                q_list = [q for q in questions if q]
-            elif isinstance(questions, dict):
-                q_list = [q for k, q in questions.items() if k and q]
-
-            if not q_list:
-                return answers
-
             formatted_questions = "\n".join([f"{idx + 1}. {q}" for idx, q in enumerate(q_list)])
-
             prompt_to_agent = (
                 f"项目执行挂起，需要您针对以下 {len(q_list)} 个问题提供决策或补充（请在一条消息中综合回答）：\n\n"
                 f"{formatted_questions}"
             )
-
             AGENT_QA_QUEUE[self.id] = {
                 "question": prompt_to_agent,
                 "answer": None
             }
-
             notify_msg = f"🔔 [项目系统通知] 您的后台项目(ID: {self.id})已暂停，等待您回答 {len(q_list)} 个问题。请使用 check_pending_questions 工具查看，并使用 answer 工具直接输入您的回答。"
             print(f"\n[Agent通知] 发送通知: {notify_msg}")
-            add_message({"type": "project_notice","content": notify_msg})
+            add_message({"type": "project_notice", "content": notify_msg})
             self.state = "waiting"
             set_project_state(self.id, self.state)
             while True:
@@ -209,43 +220,42 @@ class Project:
                     break
                 time.sleep(1)
         else:
-            # 面向 UI 模式的改造
             print(f"等待用户在界面输入以下问题: {q_list}")
-            self.state = "waiting"  # 告诉 UI 项目正在等待输入
+            self.state = "waiting"
             set_project_state(self.id, self.state)
 
-            # 将问题暴露给 UI
             USER_QA_QUEUE[self.id] = {
                 "questions": q_list,
                 "answers": None
             }
 
-            # 非阻塞轮询等待UI层写入答案
             max_count = 1800
             count = 0
             while True:
                 if count > max_count:
                     return answers
-                self._check_kill()  # 【关键】在等待期间持续检查 kill 信号！
+                self._check_kill()
                 if self.id in USER_QA_QUEUE and USER_QA_QUEUE[self.id].get("answers") is not None:
-                    # 假设 UI 层构造了对应的 dict 并塞进 answers
                     answers = USER_QA_QUEUE[self.id]["answers"]
                     del USER_QA_QUEUE[self.id]
                     self.state = "running"
                     set_project_state(self.id, self.state)
                     break
-                time.sleep(1)  # 防止CPU空转
+                time.sleep(1)
         return answers
+
     def refine_prompt(self):
         sys_msg = (
-                "[system] You are a prompt optimization assistant. The user will provide an original prompt, "
-                "and you need to collect necessary details by asking questions to optimize it. "
-                "Please list all questions at once in the following JSON format: {\"questions\": [\"Question 1\", \"Question 2\"]}. \n"
-                "Here is the user's original prompt:\n[User Original Prompt] " + self.prompt
+                "[system] 你是一个提示词优化助手，用户会为你提供原始提示词。 "
+                "你需要通过提问来获取优化这个原始提示词有关的细节 "
+                "请用这样的JSON格式来列出你想问的所有问题: {\"questions\": [\"Question 1\", \"Question 2\"]}. \n"
+                "这是用户的原始提示词:\n[User Original Prompt] " + self.prompt
         )
-
         data, raw_json_reply = self._ask_core_for_json(sys_msg)
         questions = data.get("questions", data)
+        q_text = "\n".join(questions) if isinstance(questions, list) else str(questions)
+        self.log_and_notify("text", f"🤖 Agent 提问：\n{q_text}", {"sender": "agent", "style": "gray"})
+        self.log_and_notify("input", "✍️ 请提供您的补充要求", {"input_type": "text"})
         answers = self.ask_user(questions)
         context_messages = [
             {"role": "system", "content": sys_msg},
@@ -264,56 +274,46 @@ class Project:
         return prompt
 
     def slice_tasks(self):
-        worker_info = [Model(model).get_info() for model in self.available_workers]
-        tool_info = [get_plugin_tool_info(self.available_tools)]
-        available_worker_names = [m.split(':')[-1] if ':' in m else m for m in self.available_workers]
-        available_tool_names = self.available_tools
-
         sys_msg = (
             "你是一个任务切分助手，擅长把用户需求切分成数个子任务！！"
             "子任务会依次流经不同工人的手上，确保能承上启下完美继承，合理分配。\n"
             "请确保答案是这种纯JSON格式，不要包含Markdown或其他说明：\n"
             "{\"subtask1\": {\"title\": \"xxx\", \"desc\": \"xxx\", \"deliverable\": \"xxx\", \"worker\": \"xxx\", \"judger\": \"xxx\", \"available_tools\": [\"xxx\"]}, ...}\n"
-            f"对于可用工人(worker/judger)，请必须从以下列表中严格选择：\n{available_worker_names}\n"
-            f"对于可用工具(available_tools)，参考：\n{tool_info}\n"
+            f"对于可用工人(worker/judger)，请必须从以下列表中严格选择：\n{self.available_workers}\n"
+            f"对于可用工具(available_tools)，参考：\n{self.available_tools}\n"
             f"---\n[User Request] {self.prompt}\n"
             f"请开始切分子任务！"
         )
-
         max_retries = 3
         retry_count = 0
         current_messages = [{"role": "system", "content": sys_msg}]
-
         while retry_count < max_retries:
             sub_tasks, raw_json = self._ask_core_for_json(current_messages)
-
             is_valid = True
             error_details = []
-
             for key, value in sub_tasks.items():
                 ai_worker = value.get("worker")
-                if ai_worker and ai_worker not in available_worker_names and ai_worker not in self.available_workers:
+                if ai_worker and ai_worker not in self.available_workers:
                     is_valid = False
                     error_details.append(
-                        f"任务 {key} 的 worker '{ai_worker}' 不在可用列表 {available_worker_names} 中。")
-
+                        f"任务 {key} 的 worker '{ai_worker}' 不在可用列表 {self.available_workers} 中。")
                 ai_judger = value.get("judger")
-                if ai_judger and ai_judger not in available_worker_names and ai_judger not in self.available_workers:
+                if ai_judger and ai_judger not in self.available_workers:
                     is_valid = False
                     error_details.append(
-                        f"任务 {key} 的 judger '{ai_judger}' 不在可用列表 {available_worker_names} 中。")
-
+                        f"任务 {key} 的 judger '{ai_judger}' 不在可用列表 {self.available_workers} 中。")
                 ai_tools = value.get("available_tools", [])
                 if isinstance(ai_tools, list):
                     for tool in ai_tools:
-                        if tool not in available_tool_names:
+                        if tool not in self.available_tools:
                             is_valid = False
-                            error_details.append(f"任务 {key} 的工具 '{tool}' 不在可用列表 {available_tool_names} 中。")
+                            error_details.append(f"任务 {key} 的工具 '{tool}' 不在可用列表 {self.available_tools} 中。")
 
             if is_valid:
                 for key, value in sub_tasks.items():
                     if not value.get("worker"): value["worker"] = self.core
                     if not value.get("judger"): value["judger"] = self.core
+                    if not value.get("tool"): value["tool"] = ["web", "filesystem"]
                 self.sub_tasks = sub_tasks
                 print(f"✅ 任务切分验证通过。")
                 return
@@ -322,35 +322,38 @@ class Project:
                 error_feedback = "\n".join(error_details)
                 print(f"❌ 任务切分验证失败 (逻辑重修尝试 {retry_count}/{max_retries}):\n{error_feedback}")
                 current_messages.append({"role": "assistant", "content": raw_json})
-                current_messages.append({"role": "user",
-                                         "content": f"注意！你上一次生成的任务切分存在以下越界或错误：\n{error_feedback}\n请务必对照可用列表修正后，重新输出纯JSON格式。"})
+                current_messages.append({"role": "user","content": f"注意！你上一次生成的任务切分存在以下越界或错误：\n{error_feedback}\n请务必对照可用列表修正后，重新输出纯JSON格式。"})
 
         print("⚠️ 任务切分验证连续失败，将强制使用默认执行者，并忽略不合法的工具。")
         for key, value in sub_tasks.items():
             value["worker"] = self.core
             value["judger"] = self.core
-            valid_tools = [t for t in value.get("available_tools", []) if t in available_tool_names]
-            value["available_tools"] = valid_tools
+            value["available_tools"] = [t for t in value.get("available_tools", []) if t in self.available_tools]
         self.sub_tasks = sub_tasks
 
     def run_tasks(self):
-        """
-        依次执行所有子任务。
-        成功返回: (True, "All tasks completed successfully.")
-        失败返回: (False, "错误详情信息")
-        """
         task_histories_str = "[第1次执行任务集]\n" if not self.task_story else f"{self.task_story}\n[第2次执行任务集]\n"
-
+        for task_key, task_detail in self.sub_tasks.items():
+            if "task_id" not in task_detail:
+                task_detail["task_id"] = str(uuid.uuid4())
+            self.log_and_notify(
+                card_type="task_status",
+                content=f"⏳ 任务等待中: {task_detail.get('title', task_key)}",
+                metadata={"task_id": task_detail["task_id"], "status": "wait"}
+            )
         for task_key, task_detail in self.sub_tasks.items():
             self._check_kill()
+            task_id = task_detail["task_id"]
+            self.log_and_notify(
+                card_type="task_status",
+                content=f"⚙️ 正在执行: {task_detail.get('title', task_key)}",
+                metadata={"task_id": task_id, "status": "running"}
+            )
             print(f"Ready to execute: {task_key} -> {task_detail.get('title', '')}")
             system_prompt = f"[用户核心项目]{self.prompt}\n[项目子任务]{self.sub_tasks}\n[当前阶段]{task_detail}\n"
-
             single_task = Task(task_detail, judge_mode=self.judge_mode, system_prompt=system_prompt,
-                               task_histories=task_histories_str)
+                               task_histories=task_histories_str, task_id=task_id)
             run_result = single_task.run_pipeline()
-
-            # 将每个任务的执行结果写入项目的 current_history
             self.current_history.append({task_key: str(run_result)})
 
             try:
@@ -370,22 +373,35 @@ class Project:
                 task_histories_str += task_story
                 self.task_story = task_histories_str
 
-                if not is_success:
+                if is_success:
+                    self.log_and_notify("task_status", f"✅ 执行成功: {task_detail.get('title', task_key)}",
+                                        {"task_id": task_id, "status": "success"})
+                else:
+                    self.log_and_notify("task_status", f"❌ 执行失败: {task_detail.get('title', task_key)}",
+                                        {"task_id": task_id, "status": "failed"})
                     error_msg = last_res.get("summary",
                                              last_res.get("suggestion", last_res.get("desc", "未知子任务执行错误")))
                     return False, f"子任务 {task_key} 失败: {error_msg}\n完整历史: {task_story}"
-
             except Exception as e:
+                self.log_and_notify("task_status", f"⚠️ 解析异常: {task_detail.get('title', task_key)}",
+                                    {"task_id": task_id, "status": "failed"})
                 return False, f"子任务 {task_key} 返回了不可解析的结果格式。报错: {e}"
-
         return True, "All tasks completed successfully."
 
     def run_pipeline(self):
         try:
             # 1. 需求优化阶段
             if self.refine_mode:
+                self.log_and_notify("stage", "🪄 Refine Prompt", {"style": "dark_white"})
                 prompt = self.refine_prompt()
+
                 if self.check_mode:
+                    # 推流包含按钮的 text 卡片，询问是否接受
+                    self.log_and_notify(
+                        card_type="text_with_action",
+                        content=f"✨ 优化后的提示词如下：\n{prompt}\n🤔 是否接受？(请在后台回复 y/n)",
+                        metadata={"actions": ["Accept", "Reject"]}
+                    )
                     ans = self.ask_user(
                         [f"The current Prompt is as follows. Is it OK? (y/n)\n\n---\n\n{prompt}\n\n---\n\n"])
                     first_ans = list(ans.values())[0] if ans else 'n'
@@ -393,55 +409,144 @@ class Project:
                         self.prompt = prompt
                 else:
                     self.prompt = prompt
+                    self.log_and_notify("text", f"✅ 已优化提示词：\n{self.prompt}", {"style": "white"})
+
                 self.save_history("refine_prompt", f"[原]: {self.ori_prompt} -> [优]: {self.prompt}")
 
-            # 2. 任务切分阶段
             if not self.sub_tasks:
+                self.log_and_notify("stage", "🧩 Slice Tasks", {"style": "white"})
                 self.slice_tasks()
+
+                self.log_and_notify("task_list", "📑 任务拆解完成", {"tasks": self.sub_tasks, "style": "gray"})
                 self.save_history("slice_tasks", f"子任务组：{json.dumps(self.sub_tasks, ensure_ascii=False)}")
 
-            # 3. 第一次执行任务集
-            self.current_history = []  # 开始执行前，重置主线对话历史
+            self.log_and_notify("stage", "🚀 First Run Tasks", {"style": "white"})
+            self.current_history = []
             success, msg = self.run_tasks()
             self.save_history("first_run_tasks", f"运行日志：\n{self.task_story}")
 
-            # 4. 容错编排机制
             if not success:
+                self.log_and_notify("stage", "🔄 Re-Orchestrate", {"style": "white"})
                 print(f"[项目遇到阻碍] {msg}\n正在请求核心模型重新编排任务...")
+
                 worker_info = [Model(model).get_info() for model in self.available_workers]
                 tool_info = [get_plugin_tool_info(self.available_tools)]
+                available_worker_names = self.available_workers
+                available_tool_names = self.available_tools
+
+                clean_sub_tasks = {}
+                for k, v in self.sub_tasks.items():
+                    clean_task = v.copy()
+                    clean_task.pop("task_id", None)
+                    clean_sub_tasks[k] = clean_task
 
                 retry_prompt = (
-                    f"你是一个项目经理, 针对需求 '{self.prompt}', 将任务切分为: {self.sub_tasks}。\n"
+                    f"你是一个项目经理, 针对需求 '{self.prompt}', 原本将任务切分为: {json.dumps(clean_sub_tasks, ensure_ascii=False)}。\n"
                     f"执行发生中断，原因：{msg}\n"
-                    f"请判断能否调整切分方式解决中断。返回纯JSON格式: {{\"retry\": bool, \"desc\": \"<简短说明>\", \"sub_tasks\": dict或null}}。\n"
-                    f"Available Workers: {self.available_workers}\nTools: {self.available_tools}"
-                    f"Worker_info: {worker_info}\nTool_info: {tool_info}"
+                    f"请调整任务切分方式来解决中断。\n"
+                    f"【重要警告】：返回的 sub_tasks 字典中，必须包含从头到尾完整的任务流（包括那些之前已经成功的任务），绝对不能只返回剩余的任务！\n"
+                    f"返回纯JSON格式: {{\"retry\": bool, \"desc\": \"<简短说明>\", \"sub_tasks\": dict或null}}。\n"
+                    f"对于可用工人(worker/judger)，请必须从以下列表中严格选择：\n{available_worker_names}\n"
+                    f"对于可用工具(available_tools)，参考：\n{available_tool_names}\n"
+                    f"{tool_info}"
                 )
 
+                max_retries = 3
+                retry_count = 0
+                current_messages = [{"role": "system", "content": retry_prompt}]
+
                 try:
-                    result_json, _ = self._ask_core_for_json(retry_prompt)
-                    self.save_history("re_orchestrate", f"重新编排意见：{json.dumps(result_json, ensure_ascii=False)}")
+                    while retry_count < max_retries:
+                        result_json, raw_json = self._ask_core_for_json(current_messages)
 
-                    if result_json.get("retry") and result_json.get("sub_tasks"):
-                        self.sub_tasks = result_json["sub_tasks"]
-                        self.task_story += f"\n[retry]重新划分任务集：\n{json.dumps(self.sub_tasks, ensure_ascii=False)}\n"
+                        # 如果大模型判断无法重试，或者没返回任务，直接退出重试流
+                        if not result_json.get("retry") or not result_json.get("sub_tasks"):
+                            self.save_history("re_orchestrate",
+                                              f"模型认为无法重试或未返回新任务集：{json.dumps(result_json, ensure_ascii=False)}")
+                            msg = f"项目重试失败：模型认为无法通过重新编排解决问题。原错误：{msg}"
+                            break
 
-                        # 清空对话历史，给第二次执行一张白纸
-                        self.current_history = []
-                        success, retry_msg = self.run_tasks()
-                        self.save_history("second_run_tasks",
-                                          f"运行日志：{json.dumps(self.current_history, ensure_ascii=False)}")
+                        new_sub_tasks = result_json["sub_tasks"]
+                        is_valid = True
+                        error_details = []
 
-                        if not success:
-                            msg = f"项目重试后依然失败。最终错误：{retry_msg}"
+                        for key, value in new_sub_tasks.items():
+                            ai_worker = value.get("worker")
+                            if ai_worker and ai_worker not in available_worker_names and ai_worker not in self.available_workers:
+                                is_valid = False
+                                error_details.append(
+                                    f"任务 {key} 的 worker '{ai_worker}' 不在可用列表 {available_worker_names} 中。")
+
+                            ai_judger = value.get("judger")
+                            if ai_judger and ai_judger not in available_worker_names and ai_judger not in self.available_workers:
+                                is_valid = False
+                                error_details.append(
+                                    f"任务 {key} 的 judger '{ai_judger}' 不在可用列表 {available_worker_names} 中。")
+
+                            ai_tools = value.get("available_tools", [])
+                            if isinstance(ai_tools, list):
+                                for tool in ai_tools:
+                                    if tool not in available_tool_names:
+                                        is_valid = False
+                                        error_details.append(
+                                            f"任务 {key} 的工具 '{tool}' 不在可用列表 {available_tool_names} 中。")
+
+                        if is_valid:
+                            for key, value in new_sub_tasks.items():
+                                if not value.get("worker"): value["worker"] = self.core
+                                if not value.get("judger"): value["judger"] = self.core
+                            for key, value in new_sub_tasks.items():
+                                value["task_id"] = str(uuid.uuid4())
+                            self.sub_tasks = new_sub_tasks
+                            self.task_story += f"\n[retry]重新划分任务集：\n{json.dumps(self.sub_tasks, ensure_ascii=False)}\n"
+
+                            self.log_and_notify("task_list", "📋 重新拆解任务完毕",
+                                                {"tasks": self.sub_tasks, "style": "gray"})
+                            self.save_history("re_orchestrate",
+                                              f"重新编排成功：{json.dumps(result_json, ensure_ascii=False)}")
+
+                            # 触发第二次运行
+                            self.current_history = []
+                            self.log_and_notify("stage", "🔁 Second Run Tasks", {"style": "white"})
+                            success, retry_msg = self.run_tasks()
+                            self.save_history("second_run_tasks",
+                                              f"运行日志：{json.dumps(self.current_history, ensure_ascii=False)}")
+
+                            if not success:
+                                msg = f"项目重试后依然失败。最终错误：{retry_msg}"
+                            break  # 执行完毕，跳出校验重试循环
+
+                        else:
+                            # 校验失败：打回要求大模型重写
+                            retry_count += 1
+                            error_feedback = "\n".join(error_details)
+                            print(
+                                f"❌ 重新编排任务切分验证失败 (逻辑重修尝试 {retry_count}/{max_retries}):\n{error_feedback}")
+
+                            current_messages.append({"role": "assistant", "content": raw_json})
+                            current_messages.append({
+                                "role": "user",
+                                "content": f"注意！你上一次生成的任务切分存在以下越界或错误：\n{error_feedback}\n请务必对照可用列表修正后，重新输出纯JSON格式。"
+                            })
+
+                    # 如果超过最大重试次数还没修正对
+                    if retry_count >= max_retries:
+                        msg = "🚫 项目重试失败：重新编排的任务连续多次未通过合法性校验。"
+                        self.log_and_notify("error", msg, {"level": "error"})
+
                 except Exception as e:
                     self.save_history("re_orchestrate", f"重新编排时解析异常：{e}")
+                    self.log_and_notify("error", f"💥 重新编排失败: {e}", {"level": "error"})
                     success = False
                     msg = f"重新编排模型输出异常: {e}"
 
             # 5. 生成报告
+            self.log_and_notify("stage", "📊 Run Summary", {"style": "white"})
             summary = self.run_summary(success, msg)
+
+            # 推流 Markdown 最终报告渲染块
+            self.log_and_notify("markdown", summary, {"title": "📑 项目最终执行报告"})
+            self.save_history("summary", summary)
             if success:
                 set_project_state(self.id, "completed")
             else:
@@ -450,14 +555,14 @@ class Project:
         except InterruptedError as e:
             set_project_state(self.id, "killed")
             error_msg = f"⏸️ [项目挂起] 遇到意外中断: {e}。当前进度已在上一成功节点保存，可稍后通过 load_checkpoint 恢复执行。"
+            self.log_and_notify("error", error_msg, {"level": "warning"})
             print(error_msg)
             set_project_state(self.id, self.state)
             return error_msg
         except Exception as e:
-            # ====== 新增：发生未知崩溃 ======
             set_project_state(self.id, "error")
-
             self.save_history("fatal_error", f"致命异常: {str(e)}")
+            self.log_and_notify("error", f"🚨 系统致命异常: {str(e)}", {"level": "fatal"})
             return self.run_summary(False, f"致命异常: {str(e)}")
 
     def run_summary(self, success: bool, msg: str):
@@ -514,9 +619,9 @@ class Project:
 
     def save_checkpoint(self):
         """将当前项目的所有状态序列化保存到本地"""
-        checkpoint_dir = f"data/checkpoints/{self.name}/"
+        checkpoint_dir = f"data/checkpoints/project/{self.name}_{self.creat_time}/"
         os.makedirs(checkpoint_dir, exist_ok=True)
-        filepath = os.path.join(checkpoint_dir, f"{self.name}_{self.creat_time}.json")
+        filepath = os.path.join(checkpoint_dir, f"checkpoint.json")
         state = self.__dict__.copy()
         with open(filepath, 'w', encoding='utf-8') as f:
             json.dump(state, f, ensure_ascii=False, indent=4)
@@ -537,6 +642,28 @@ class Project:
         return project
 
     def save_history(self, stage_name: str, content: str):
-        """记录关键节点信息，并触发自动存档"""
+        """记录关键节点信息留给总结报告，并触发自动存档方便断点续传"""
         self.stage_histories[stage_name] = content
-        self.save_checkpoint()  # 自动存档点
+        self.save_checkpoint()
+
+    def log_and_notify(self, card_type: str, content: str, metadata: dict = None):
+        """为前端专门准备的结构化执行日志数据"""
+        # 修复：确保存放 log.jsonl 的父文件夹一定存在，避免由于系统未生成 checkpoint_dir 导致写文件闪退
+        log_dir = f"data/checkpoints/project/{self.name}_{self.creat_time}/"
+        os.makedirs(log_dir, exist_ok=True)
+
+        # 增加前端要求的规范结构：card_type 和 metadata (带容错兜底)
+        log_data = {
+            "project_id": self.id,
+            "timestamp": time.time(),
+            "card_type": card_type,
+            "content": content,
+            "metadata": metadata or {}
+        }
+
+        with open(os.path.join(log_dir, "log.jsonl"), "a", encoding="utf-8") as f:
+            f.write(json.dumps(log_data, ensure_ascii=False) + "\n")
+            f.flush()
+
+        with set_lock:
+            dirty_projects.add(self.id)

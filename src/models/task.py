@@ -6,20 +6,28 @@ from typing import Dict, Optional
 import uuid
 from src.models.model import Model
 from src.plugins.plugin_manager import get_plugin_tool_info, get_plugin_config, init_config_data
-
+import os             # 新增
+import time           # 新增
+import datetime       # 新增
+import threading
 TASK_POOL = []
 TASK_INSTANCES = {}
+dirty_tasks = set()
+task_set_lock = threading.Lock()
+
 def set_task_state(task_id, state):
     for t in TASK_POOL:
         if t["id"] == task_id:
             t["state"] = state
             break
 
+
 def delete_task(task_id):
     global TASK_POOL
     TASK_POOL = [t for t in TASK_POOL if t["id"] != task_id]
     if task_id in TASK_INSTANCES:
         del TASK_INSTANCES[task_id]
+
 
 def kill_task(task_id):
     """全局方法：强制关闭 Task 线程"""
@@ -29,9 +37,18 @@ def kill_task(task_id):
         return True
     return False
 
+def inject_task_instruction(task_id: str, content: str):
+    """全局方法：向指定的 Task 强行注入干预指令"""
+    if task_id in TASK_INSTANCES:
+        TASK_INSTANCES[task_id].force_push(content)
+        return True
+    return False
+
 class Task:
     VALID_STATES = ["waiting", "handling", "completed"]
-    def __init__(self, task_detail: Dict, judge_mode: bool, system_prompt: str, task_histories: str = None, task_id: str = None):
+
+    def __init__(self, task_detail: Dict, judge_mode: bool, system_prompt: str, task_histories: str = None,
+                 task_id: str = None):
         self.run_result = None
         for key in ["title", "desc", "deliverable", "worker", "judger", "available_tools"]:
             if key not in task_detail.keys():
@@ -41,15 +58,18 @@ class Task:
         self.client = Model(task_detail['worker']).client
         if judge_mode:
             self.eval_client = Model(task_detail['judger']).client
-        self.max_len = 20
+        self.max_len = 50
         self.current_history = []
         self.eval_history = []
         self.system_prompt = system_prompt
         self.task_histories = task_histories
         self.task_id = task_id or str(uuid.uuid4())
         self._killed = False
+        self.name = task_detail.get('title', 'Unknown')
+        self.creat_time = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
         TASK_POOL.append({"name": task_detail.get('title', 'Unknown'), "id": self.task_id, "state": "running"})
         TASK_INSTANCES[self.task_id] = self
+        self.log_and_notify("text", self.system_prompt)
     def _clean_json_string(self, text: str) -> str:
         """辅助方法：清理模型输出的 Markdown 标记，提取纯 JSON 字符串"""
         text = text.strip()
@@ -61,36 +81,65 @@ class Task:
             text = text[:-3]
         return text.strip()
 
+    def log_and_notify(self, card_type: str, content: str, metadata: dict = None):
+        """为前端专门准备的结构化执行日志数据，同时输出到控制台"""
+        print(content)
+        log_dir = f"data/checkpoints/task/{self.name}_{self.creat_time}/"
+        os.makedirs(log_dir, exist_ok=True)
+        log_data = {
+            "task_id": self.task_id,
+            "timestamp": time.time(),
+            "card_type": card_type,
+            "content": content,
+            "metadata": metadata or {}
+        }
+        with open(os.path.join(log_dir, "log.jsonl"), "a", encoding="utf-8") as f:
+            f.write(json.dumps(log_data, ensure_ascii=False) + "\n")
+            f.flush()
+        with task_set_lock:
+            dirty_tasks.add(self.task_id)
+
+    def force_push(self, content: str):
+        warning_prompt = (
+            f"【系统紧急干预】请立刻停止你当前做的事，优先执行此指令！\n"
+            f"{content}"
+        )
+        self.current_history.append({
+            "role": "user",
+            "content": warning_prompt
+        })
+        self.log_and_notify("system", f"⚠️ [Task {self.task_id}] 已强行注入干预指令：\n{content}")
     def kill(self):
         self._killed = True
-        print(f"⚠️ [Task] 收到Kill指令，准备直接关闭任务 {self.task_id} 线程...")
+        self.log_and_notify("system", f"⚠️ [Task] 收到Kill指令，准备直接关闭任务 {self.task_id} 线程...")
 
     def _check_kill(self):
         """无需保留节点状态，直接抛异常中止"""
         if self._killed:
             raise InterruptedError(f"任务 {self.task_id} 被手动强制关闭。")
 
-    def run(self, suggestion: str = None, max_steps: int = 50):
+    def run(self, suggestion: str = None, max_steps: int = 500):
         init_config_data()
-
         if not suggestion:
             sys_prompt = (
                 "你是一个高级智能助手（Worker），负责执行子任务并善用工具。\n"
-                "【严格输出规范：必须返回纯JSON对象，不要输出任何额外的说明文字】\n"
-                "1. 当你需要思考或计划调用工具时，返回：{\"status\": \"working\", \"thought\": \"你的思考过程\"}\n"
-                "2. 当你最终完成任务或确认无法完成时，返回：{\"status\": \"completed\", \"task_result\": true或false, \"summary\": \"最终交付物或失败原因\"}\n"
                 "【重要交付规范】\n"
-                "1. 质检员（QA）只能看到你 completed 状态下的 summary，看不到你之前的 thought。\n"
-                "2. 如果没有直接产生文件，必须把交付的完整文本写在 summary 里；如果有生成文件，写明文件绝对路径和内容简要说明。"
+                "1. 在执行任务期间，你可以正常输出文本思考并调用工具。\n"
+                "2. 当你认为任务最终完成或确认无法完成，【且不再需要调用任何工具时】，你的最后一次回复必须是一个合法的纯JSON对象，不要包含任何多余的说明文字或Markdown标记！\n"
+                "3. 最终的JSON格式必须为：{\"status\": \"completed\", \"task_result\": true或false, \"summary\": \"最终交付物或失败原因\"}\n"
+                "4. 质检员（QA）只能看到你 completed 状态下的 summary，看不到你之前的 thought。\n"
+                "5. 如果没有直接产生文件，必须把交付的完整文本写在 summary 里；如果有生成文件，写明文件绝对路径和内容简要说明。"
             )
             self.current_history.append({"role": "system", "content": sys_prompt})
-            prompt = f"{self.system_prompt}\n\n请你完成当前阶段的子任务。\n记住，你的回复必须是合法的纯JSON格式，不需要任何Markdown标记！"
+
+            prompt = f"{self.system_prompt}\n\n请你开始执行当前阶段的子任务。"
             if self.task_histories:
                 prompt += f"\n\n[前置任务情况]\n{self.task_histories}"
             self.current_history.append({"role": "user", "content": prompt})
         else:
             self.current_history.append(
-                {"role": "user", "content": f"QA反馈不通过：{suggestion}\n请修正后重新提交(保持纯JSON格式)。"})
+                {"role": "user",
+                 "content": f"QA反馈不通过：{suggestion}\n请修正后重新提交。记得最终交付时不再调用工具，并直接输出规范的JSON格式。"})
 
         available_tools = self.task_detail.get('available_tools', [])
         if isinstance(available_tools, str):
@@ -99,8 +148,8 @@ class Task:
 
         model_name = self.task_detail["worker"].split(":")[-1] if ':' in self.task_detail["worker"] else \
             self.task_detail["worker"]
-
         step = 0
+
         while step < max_steps:
             self.memory_flush()
             self._check_kill()
@@ -127,46 +176,146 @@ class Task:
                     ]
                 self.current_history.append(assist_msg)
 
-                content_dict = {}
                 if message.content and message.content.strip():
-                    raw_content = message.content.strip()
-                    print(f"| 🤖 Worker: {raw_content}")
-
-                    cleaned_content = self._clean_json_string(raw_content)
-                    try:
-                        content_dict = json.loads(cleaned_content)
-                    except json.JSONDecodeError as e:
-                        self.current_history.append({"role": "user",
-                                                     "content": f"输出非合法JSON，请修正。请只输出纯JSON，不要包含多余文字。错误: {e}"})
-                        continue
-
-                if content_dict.get("status") == "completed" and not message.tool_calls:
-                    self.run_result = content_dict
-                    return content_dict
+                    self.log_and_notify("text", f"🤖 Worker: {message.content.strip()}")
 
                 if message.tool_calls:
                     for tool_call in message.tool_calls:
                         tool_name = tool_call.function.name
                         arguments_str = tool_call.function.arguments
-                        print(f"| 🔎 Worker Tool: {tool_name}({arguments_str})")
+                        self.log_and_notify("tool_call", f"🔎 Worker Tool: {tool_name}({arguments_str})", {"tool_name": tool_name})
                         try:
                             mcp_type, func_name = tool_name.split('__', 1)
                             arguments = json.loads(arguments_str) if arguments_str else {}
                             result = self._execute_tool(mcp_type, func_name, arguments)
+                        except json.JSONDecodeError as e:
+                            result = f"Tool Execution Error: Invalid JSON format generated for arguments. Error details: {str(e)}. Please try calling the tool again with valid JSON."
                         except Exception as e:
                             result = f"Tool Execution Error: {str(e)}"
-                        print(f"| 😇 Tool Result: {str(result)[:200]}...")
+                        self.log_and_notify("tool_result", f"😇 Tool Result: {str(result)[:200]}...")
                         self.current_history.append({
                             "role": "tool",
                             "tool_call_id": tool_call.id,
                             "name": tool_name,
                             "content": str(result)
                         })
+                else:
+                    raw_content = message.content.strip() if message.content else ""
+                    cleaned_content = self._clean_json_string(raw_content)
+
+                    try:
+                        content_dict = json.loads(cleaned_content)
+                        if content_dict.get("status") == "completed":
+                            self.run_result = content_dict
+                            return content_dict
+                        else:
+                            self.current_history.append({
+                                "role": "user",
+                                "content": "你没有调用任何工具，系统判断你需要交付结果。但你输出的JSON缺少 '\"status\": \"completed\"'。请输出规范的纯JSON对象。"
+                            })
+                    except json.JSONDecodeError as e:
+                        self.current_history.append({
+                            "role": "user",
+                            "content": f"任务执行已结束(无工具调用)，此时你需要提交最终交付物。请把你最终的结果按规范格式转化为纯JSON对象输出，不要包含任何前言后语。JSON解析错误: {e}"
+                        })
+            except Exception as e:
+                self.log_and_notify("error", f"❌ API 调用发生意外异常: {e}")
+                raise InterruptedError(f"API意外中断: {e}")
+        return {"task_result": False, "summary": f"Worker超出最大思考步数({max_steps})，被强制终止。"}
+
+    def run_eval(self, max_steps: int = 30):
+        self.eval_history = []
+        sys_prompt = (
+            "你是一个严格且专业的项目质检员（QA）。\n"
+            "【质检核心标准】\n"
+            "严格对照当前子任务要求进行逐项检查。发现遗漏、幻觉、格式错误判定为不通过。绝不能代替Worker执行任务！\n"
+            "【重要交付规范】\n"
+            "1. 质检过程中你可以正常输出文本思考或调用工具查验。\n"
+            "2. 当质检完成，【且不再调用工具时】，你必须直接返回纯JSON对象，不要包含其他说明文字。\n"
+            "3. 最终的JSON格式必须为：{\"status\": \"completed\", \"eval_result\": true或false, \"suggestion\": \"失败原因/修改建议 或 成功的评价\"}"
+        )
+        self.eval_history.append({"role": "system", "content": sys_prompt})
+
+        prompt = f"{self.system_prompt}\n\n请完成当前阶段的质检：\nWorker的交付内容：{json.dumps(self.run_result, ensure_ascii=False)}\n【参考】前置任务日志：{self.task_histories}"
+        self.eval_history.append({"role": "user", "content": prompt})
+
+        available_tools = self.task_detail.get('available_tools', [])
+        if isinstance(available_tools, str):
+            available_tools = [available_tools] if available_tools else []
+        tools_info = get_plugin_tool_info(available_tools)
+
+        model_name = self.task_detail["judger"].split(":")[-1] if ':' in self.task_detail["judger"] else \
+            self.task_detail["judger"]
+
+        step = 0
+        while step < max_steps:
+            self._check_kill()
+            step += 1
+            try:
+                kwargs = {
+                    "model": model_name,
+                    "messages": self.eval_history,
+                }
+                if tools_info:
+                    kwargs["tools"] = tools_info
+                response = self.eval_client.chat.completions.create(**kwargs)
+                message = response.choices[0].message
+                assist_msg = {"role": "assistant", "content": message.content}
+                if message.tool_calls:
+                    assist_msg["tool_calls"] = [
+                        {
+                            "id": t.id, "type": t.type,
+                            "function": {"name": t.function.name, "arguments": t.function.arguments}
+                        } for t in message.tool_calls
+                    ]
+                self.eval_history.append(assist_msg)
+
+                if message.content and message.content.strip():
+                    self.log_and_notify("text", f"🤖 Judger: {message.content.strip()}")
+
+                if message.tool_calls:
+                    for tool_call in message.tool_calls:
+                        tool_name = tool_call.function.name
+                        arguments_str = tool_call.function.arguments
+                        self.log_and_notify("tool_call", f"🔎 Judger Tool: {tool_name}({arguments_str})", {"tool_name": tool_name})
+
+                        try:
+                            mcp_type, func_name = tool_name.split('__', 1)
+                            arguments = json.loads(arguments_str) if arguments_str else {}
+                            result = self._execute_tool(mcp_type, func_name, arguments)
+                        except Exception as e:
+                            result = f"Tool Execution Error: {str(e)}"
+
+                        self.log_and_notify("tool_result", f"😇 Tool Result: {str(result)[:200]}...")
+                        self.eval_history.append({
+                            "role": "tool",
+                            "tool_call_id": tool_call.id,
+                            "name": tool_name,
+                            "content": str(result)
+                        })
+                else:
+                    raw_content = message.content.strip() if message.content else ""
+                    cleaned_content = self._clean_json_string(raw_content)
+                    try:
+                        content_dict = json.loads(cleaned_content)
+                        if content_dict.get("status") == "completed":
+                            return content_dict
+                        else:
+                            self.eval_history.append({
+                                "role": "user",
+                                "content": "请输出包含 '\"status\": \"completed\"' 的JSON对象完成质检。"
+                            })
+                    except json.JSONDecodeError as e:
+                        self.eval_history.append({
+                            "role": "user",
+                            "content": f"质检结束请直接输出纯JSON判定结果，不要包含多余文字。JSON解析错误: {e}"
+                        })
+
             except Exception as e:
                 print(f"API 调用发生意外异常: {e}")
                 raise InterruptedError(f"API意外中断: {e}")
 
-        return {"task_result": False, "summary": f"Worker超出最大思考步数({max_steps})，被强制终止。"}
+        return {"eval_result": False, "suggestion": "QA质检过程超出最大思考步数。"}
 
     def _execute_tool(self, mcp_type: str, func_name: str, arguments: dict):
         plugin_config = get_plugin_config(mcp_type)
@@ -202,96 +351,6 @@ class Task:
 
         return result if result else "Success (No Output)"
 
-    def run_eval(self, max_steps: int = 30):
-        self.eval_history = []
-        sys_prompt = (
-            "你是一个严格且专业的项目质检员（QA）。\n"
-            "【严格输出规范：必须返回纯JSON对象，不要包含其他说明文字】\n"
-            "1. 当你需要分析、思考或调用工具检查交付物时，返回：{\"status\": \"evaluating\", \"thought\": \"你的评估思路\"}\n"
-            "2. 质检完成时，返回：{\"status\": \"completed\", \"eval_result\": true或false, \"suggestion\": \"失败原因/修改建议 或 成功的评价\"}\n"
-            "【质检核心标准】\n"
-            "严格对照当前子任务要求进行逐项检查。发现遗漏、幻觉、格式错误判定为不通过。绝不能代替Worker执行任务！"
-        )
-        self.eval_history.append({"role": "system", "content": sys_prompt})
-        prompt = f"{self.system_prompt}\n\n请完成当前阶段的质检：\nWorker的交付内容：{json.dumps(self.run_result, ensure_ascii=False)}\n【参考】前置任务日志：{self.task_histories}\n请直接输出合法的纯JSON格式回复。"
-        self.eval_history.append({"role": "user", "content": prompt})
-
-        available_tools = self.task_detail.get('available_tools', [])
-        if isinstance(available_tools, str):
-            available_tools = [available_tools] if available_tools else []
-        tools_info = get_plugin_tool_info(available_tools)
-
-        model_name = self.task_detail["judger"].split(":")[-1] if ':' in self.task_detail["judger"] else \
-            self.task_detail["judger"]
-
-        step = 0
-        while step < max_steps:
-            self._check_kill()
-            step += 1
-            try:
-                kwargs = {
-                    "model": model_name,
-                    "messages": self.eval_history,
-                }
-                if tools_info:
-                    kwargs["tools"] = tools_info
-
-                response = self.eval_client.chat.completions.create(**kwargs)
-                message = response.choices[0].message
-
-                assist_msg = {"role": "assistant", "content": message.content}
-                if message.tool_calls:
-                    assist_msg["tool_calls"] = [
-                        {
-                            "id": t.id, "type": t.type,
-                            "function": {"name": t.function.name, "arguments": t.function.arguments}
-                        } for t in message.tool_calls
-                    ]
-                self.eval_history.append(assist_msg)
-
-                content_dict = {}
-                if message.content and message.content.strip():
-                    raw_content = message.content.strip()
-                    print(f"| 🤖 Judger: {raw_content}")
-
-                    cleaned_content = self._clean_json_string(raw_content)
-                    try:
-                        content_dict = json.loads(cleaned_content)
-                    except json.JSONDecodeError as e:
-                        self.eval_history.append(
-                            {"role": "user", "content": f"输出非合法JSON，请修正。请只输出纯JSON，错误: {e}"})
-                        continue
-
-                if content_dict.get("status") == "completed" and not message.tool_calls:
-                    return content_dict
-
-                if message.tool_calls:
-                    for tool_call in message.tool_calls:
-                        tool_name = tool_call.function.name
-                        arguments_str = tool_call.function.arguments
-                        print(f"| 🔎 Judger Tool: {tool_name}({arguments_str})")
-
-                        try:
-                            mcp_type, func_name = tool_name.split('__', 1)
-                            arguments = json.loads(arguments_str) if arguments_str else {}
-                            result = self._execute_tool(mcp_type, func_name, arguments)
-                        except Exception as e:
-                            result = f"Tool Execution Error: {str(e)}"
-
-                        print(f"| 😇 Tool Result: {str(result)[:200]}...")
-                        self.eval_history.append({
-                            "role": "tool",
-                            "tool_call_id": tool_call.id,
-                            "name": tool_name,
-                            "content": str(result)
-                        })
-
-            except Exception as e:
-                print(f"API 调用发生意外异常: {e}")
-                raise InterruptedError(f"API意外中断: {e}")
-
-        return {"eval_result": False, "suggestion": "QA质检过程超出最大思考步数。"}
-
     def run_pipeline(self):
         try:
             result_history = []
@@ -302,7 +361,7 @@ class Task:
                 result_history.append(str(eval_result))
                 if not eval_result.get("eval_result"):
                     suggestion = f"该阶段的质检不通过；质检建议：{eval_result.get('suggestion')}"
-                    print(f"[QA 打回修改] {suggestion}")
+                    self.log_and_notify("qa_reject", f"🔁 QA 打回修改: {suggestion}")
                     run_result = self.run(suggestion=suggestion)
                     result_history.append(str(run_result))
                     eval_result = self.run_eval()
@@ -323,10 +382,9 @@ class Task:
     def memory_flush(self, check_mode=True, max_tokens=100000):
         """
         阶段性记忆压缩：结合轮数与 Token 数量进行双重判断。
-        直接在 current_history 上让大模型总结，随后抹除中间部分的旧记忆。
+        - check_mode=True: 检查 token 是否超过 100000，或轮数是否达到 max_len(50)。均未超出则不压缩。
+        - check_mode=False: 强制无论如何都要执行压缩逻辑。
         """
-        if not check_mode:
-            return
         messages_str = json.dumps(self.current_history, ensure_ascii=False)
         try:
             import tiktoken
@@ -335,43 +393,68 @@ class Task:
         except ImportError:
             current_tokens = len(messages_str) // 2  # 更保守的估算
 
-        if len(self.current_history) <= self.max_len and current_tokens <= max_tokens:
-            return
-        print(f"⚠️ [Memory Flush] 触发记忆压缩：当前 {len(self.current_history)} 轮，共计约 {current_tokens} tokens。")
+        # 【逻辑修正】：当开启 check_mode 时，才进行条件拦截
+        if check_mode:
+            # 只有轮数和 Token 都处于安全范围内时，才跳过压缩
+            if len(self.current_history) < self.max_len and current_tokens < max_tokens:
+                return
+
+        # 如果 check_mode 为 False，或者上述任一条件超出阈值，直接开始执行以下归档流程
+        self.log_and_notify("system", f"⚠️ Memory Flush: 当前 {len(self.current_history)} 轮，共计约 {current_tokens} tokens。")
+
+        # 换用与 agent.py 风格一致的强烈归档 Prompt
+        alert_prompt = """【系统严重警告：大脑记忆容量即将溢出！！！】
+为了防止记忆断层，系统即将物理抹除你最早期的一批记忆。
+请你现在亲自对**此前的所有对话、事件和执行记录**进行全面总结，提取出核心事件、任务进度、你的关键决策以及目前遇到的阻碍，形成一份“早期记忆备忘录”。
+直接用自然语言输出。这份备忘录将作为你未来回忆那段时光的唯一凭证，也是你承上启下的节点，请务必保证包含影响任务推进的关键信息！"""
+
         self.current_history.append({
             "role": "user",
-            "content": "【系统紧急通知】已达最大记忆容量或 Token 限制，即将压缩前面的对话记录。请先梳理一下关键重要信息，做一下阶段性总结和存档再继续任务。"
+            "content": alert_prompt
         })
-        model_name = self.task_detail["worker"].split(":")[-1] if ':' in self.task_detail["worker"] else \
-        self.task_detail["worker"]
-        kwargs = {
-            "model": model_name,
-            "messages": self.current_history,
-        }
-        response = self.client.chat.completions.create(**kwargs)
-        message = response.choices[0].message
-        assist_msg = {"role": "assistant", "content": message.content}
-        self.current_history.append(assist_msg)
-        print(f"🧠 Task归档完成，生成备忘录长度: {len(message.content)} 字符")
-        start_idx = 2  # 必须保留前2条（System Prompt 和 初始 User Prompt）
-        keep_recent = 18  # 期望保留的尾部记录数（注意：这里包含了刚刚生成的1条通知 + 1条总结）
 
-        split_idx = len(self.current_history) - keep_recent
+        try:
+            model_name = self.task_detail["worker"].split(":")[-1] if ':' in self.task_detail["worker"] else \
+            self.task_detail["worker"]
+            kwargs = {
+                "model": model_name,
+                "messages": self.current_history,
+            }
+            response = self.client.chat.completions.create(**kwargs)
+            archive_content = response.choices[0].message.content.strip()
 
-        if split_idx > start_idx:
-            # 往前寻找安全边界，避开切断 tool_call 链条
-            while split_idx > start_idx:
-                curr_msg = self.current_history[split_idx]
-                prev_msg = self.current_history[split_idx - 1]
-                if curr_msg.get("role") == "tool":
-                    split_idx -= 1
-                    continue
-                if prev_msg.get("role") == "assistant" and prev_msg.get("tool_calls"):
-                    split_idx -= 1
-                    continue
-                break
-        if split_idx < start_idx:
-            split_idx = start_idx
-        self.current_history = self.current_history[0:start_idx] + self.current_history[split_idx:]
+            self.log_and_notify("system", f"🧠 Task归档完成，生成备忘录长度: {len(archive_content)} 字符")
 
-        print("✅ [Memory Flush] 记忆清理完毕！已安全避开 Tool Call 链条完成流水线截断。")
+            # 使用显式的备忘录抬头保存
+            self.current_history.append({
+                "role": "assistant",
+                "content": f"【早期记忆备忘录】\n{archive_content}"
+            })
+
+            # Task 专属逻辑：保留 System Prompt (idx=0) 和 初始 User Task Prompt (idx=1)
+            start_idx = 2
+            keep_recent = 20  # 对齐 Agent 保持 20 条较长上下文
+
+            split_idx = len(self.current_history) - keep_recent
+
+            if split_idx > start_idx:
+                # 往前寻找安全边界，避开切断 tool_call 链条
+                while split_idx > start_idx:
+                    curr_msg = self.current_history[split_idx]
+                    prev_msg = self.current_history[split_idx - 1]
+                    if curr_msg.get("role") == "tool":
+                        split_idx -= 1
+                        continue
+                    if prev_msg.get("role") == "assistant" and prev_msg.get("tool_calls"):
+                        split_idx -= 1
+                        continue
+                    break
+
+            if split_idx < start_idx:
+                split_idx = start_idx
+
+            self.current_history = self.current_history[0:start_idx] + self.current_history[split_idx:]
+            self.log_and_notify("system", "✅ Memory Flush: 记忆清理完毕！")
+
+        except Exception as e:
+            self.log_and_notify("error", f"❌ 记忆存档发生异常: {e}")
