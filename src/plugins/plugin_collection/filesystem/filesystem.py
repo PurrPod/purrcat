@@ -95,24 +95,63 @@ def list_file_in_dir(path: str) -> str:
         return _format_response("text", res.strip())
     except Exception as e:
         return _format_response("error", f"Failed to list directory: {str(e)}")
-def read_media_file(path: str) -> str:
+
+
+import uuid
+import datetime
+
+
+# 注意：如果你文件开头还没导入这两个库，记得加上
+
+def parse_document(path: str) -> str:
+    """使用 MarkItDown 解析各种非纯文本的富文本文档（并支持超长内容 Buffer 暂存）"""
     if not _get_allow("read", path):
         return _format_response("error", f"Permission denied: Reading {path} is blocked by sandbox.")
     if not os.path.exists(path):
         return _format_response("error", f"File not found: {path}")
+    ext = os.path.splitext(path)[1].lower()
+    text_extensions = {
+        ".txt", ".csv", ".tsv", ".json", ".md", ".py", ".js",
+        ".html", ".css", ".yaml", ".yml", ".xml", ".sh", ".log", ".ini"
+    }
+    if ext in text_extensions:
+        return _format_response("error",f"File '{path}' is a plain text or CSV file. Please use 'filesystem__read_file_lines' or 'filesystem__search_in_file' to read it directly.")
     if os.path.getsize(path) > MAX_MEDIA_SIZE:
-        return _format_response("error", f"Media file too large. Max allowed is {MAX_MEDIA_SIZE//1024//1024}MB.")
+        return _format_response("error", f"File too large to parse. Max allowed is {MAX_MEDIA_SIZE // 1024 // 1024}MB.")
     try:
-        mime_type, _ = mimetypes.guess_type(path)
-        with open(path, 'rb') as f:
-            data = base64.b64encode(f.read()).decode('utf-8')
-        content = {
-            "mime_type": mime_type or "application/octet-stream",
-            "data": data
-        }
-        return _format_response("media", content)
+        from markitdown import MarkItDown
+        md = MarkItDown()
+        result = md.convert(path)
+        text_content = result.text_content
+        if not text_content or not text_content.strip():
+            return _format_response("warning","Parsed successfully, but the document appears to be empty or contains no extractable text.")
+        max_chars = 15000
+        if len(text_content) > max_chars:
+            buffer_dir = os.path.abspath(os.path.join(os.path.dirname(file_config_path), "..", "buffer"))
+            os.makedirs(buffer_dir, exist_ok=True)
+            marker_id = uuid.uuid4().hex[:8]
+            timestamp = datetime.datetime.now().strftime("%Y%m%d")
+            buffer_filename = f"parsed_{timestamp}_{marker_id}.md"
+            buffer_path = os.path.join(buffer_dir, buffer_filename)
+            with open(buffer_path, "w", encoding="utf-8", errors="replace") as f:
+                f.write(text_content)
+            preview = text_content[:3000]
+            return _format_response(
+                "text",
+                f"{preview}\n\n"
+                f"...\n\n"
+                f"==================================================\n"
+                f"⚠️ [注意] 文档内容过长（共 {len(text_content)} 字符）。\n"
+                f"为防止上下文溢出，完整解析结果已转换为 Markdown 并保存至本地文件：\n"
+                f"📂 {buffer_path}\n"
+                f"👆 如果你需要阅读后续内容，请务必使用 'filesystem__read_file_lines' 或 'filesystem__search_in_file' 工具来读取上述文件。\n"
+                f"=================================================="
+            )
+        return _format_response("text", text_content.strip())
+    except ImportError:
+        return _format_response("error","The 'markitdown' library is not installed. Please run: pip install markitdown[all]")
     except Exception as e:
-        return _format_response("error", f"Failed to read media file: {str(e)}")
+        return _format_response("error", f"MarkItDown failed to parse {path}: {str(e)}")
 
 def delete_file(path: str) -> str:
     if not _get_allow("delete", path):

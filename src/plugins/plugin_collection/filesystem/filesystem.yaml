@@ -20,18 +20,6 @@ filesystem:
               type: "string"
               description: "The content to write to the file."
           required: ["path", "content"]
-    read_media_file:
-      type: function
-      function:
-        name: "filesystem__read_media_file"
-        description: "Read a media file (image, audio, etc.) and return its base64 encoded content."
-        parameters:
-          type: "object"
-          properties:
-            path:
-              type: "string"
-              description: "The absolute path of the media file."
-          required: ["path"]
     delete_file:
       type: function
       function:
@@ -44,6 +32,18 @@ filesystem:
               type: "string"
               description: "The absolute path of the file or directory to delete."
           required: ["path"]
+    parse_document:
+      type: function
+      function:
+        name: "filesystem__parse_document"
+        description: "Parse and extract text from rich/binary documents (e.g., PDF, DOCX, XLSX, PPTX) using MarkItDown. DO NOT use this for plain text or CSV files (use read_file_lines instead)."
+        parameters:
+          type: "object"
+          properties:
+            path:
+              type: "string"
+              description: "The absolute path of the document file to parse."
+          required: [ "path" ]
     read_file_lines:
       type: function
       function:

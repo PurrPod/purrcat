@@ -3,11 +3,11 @@ from .filesystem import (
     list_special_directories,
     list_file_in_dir,
     write_text_file,
-    read_media_file,
     delete_file,
     read_file_lines,
     search_in_file,
-    replace_file_lines
+    replace_file_lines,
+    parse_document
 )
 
 __all__ = [
@@ -15,9 +15,9 @@ __all__ = [
     'list_special_directories',
     'list_file_in_dir',
     'write_text_file',
-    'read_media_file',
     'delete_file',
     'read_file_lines',
     'search_in_file',
-    'replace_file_lines'
+    'replace_file_lines',
+    'parse_document'
 ]
