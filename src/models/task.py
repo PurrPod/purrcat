@@ -10,23 +10,86 @@ import os             # 新增
 import time           # 新增
 import datetime       # 新增
 import threading
+import shutil
+
+# Use absolute paths so task log and checkpoint operations work regardless of current working directory.
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.abspath(os.path.join(BASE_DIR, "..", "..", "data"))
+
 TASK_POOL = []
 TASK_INSTANCES = {}
 dirty_tasks = set()
 task_set_lock = threading.Lock()
 
+def _resolve_task_log_path(task_id: str):
+    instance = TASK_INSTANCES.get(task_id)
+    if instance:
+        log_dir = os.path.join(DATA_DIR, "checkpoints", "task", f"{instance.name}_{instance.creat_time}")
+        return os.path.join(log_dir, "log.jsonl")
+    base_dir = os.path.join(DATA_DIR, "checkpoints", "task")
+    if not os.path.isdir(base_dir):
+        return None
+    try:
+        for entry in os.listdir(base_dir):
+            log_path = os.path.join(base_dir, entry, "log.jsonl")
+            if os.path.isfile(log_path):
+                try:
+                    with open(log_path, "r", encoding="utf-8") as f:
+                        for line in f:
+                            line = line.strip()
+                            if line:
+                                payload = json.loads(line)
+                                if payload.get("task_id") == task_id:
+                                    return log_path
+                except:
+                    pass
+    except:
+        pass
+    return None
+
 def set_task_state(task_id, state):
+    # Update the global TASK_POOL record
     for t in TASK_POOL:
         if t["id"] == task_id:
             t["state"] = state
             break
 
+    # Also update the running instance (if exists), so checkpoint saving uses the correct state
+    instance = TASK_INSTANCES.get(task_id)
+    if instance:
+        instance.state = state
+
 
 def delete_task(task_id):
     global TASK_POOL
-    TASK_POOL = [t for t in TASK_POOL if t["id"] != task_id]
+    checkpoint_dir = None
+
     if task_id in TASK_INSTANCES:
+        instance = TASK_INSTANCES[task_id]
+        checkpoint_dir = os.path.join(DATA_DIR, "checkpoints", "task", f"{instance.name}_{instance.creat_time}")
         del TASK_INSTANCES[task_id]
+    else:
+        for t in TASK_POOL:
+            if t.get("id") == task_id:
+                name = t.get("name")
+                creat_time = t.get("creat_time")
+                if name and creat_time:
+                    checkpoint_dir = os.path.join(DATA_DIR, "checkpoints", "task", f"{name}_{creat_time}")
+                break
+
+    # 如果还找不到对应目录，尝试通过 log.jsonl 找文件夹（兼容仅存在 log 的情况）
+    if not checkpoint_dir:
+        log_path = _resolve_task_log_path(task_id)
+        if log_path:
+            checkpoint_dir = os.path.dirname(log_path)
+
+    TASK_POOL = [t for t in TASK_POOL if t.get("id") != task_id]
+
+    if checkpoint_dir and os.path.isdir(checkpoint_dir):
+        try:
+            shutil.rmtree(checkpoint_dir, ignore_errors=True)
+        except Exception:
+            pass
 
 
 def kill_task(task_id):
@@ -48,7 +111,7 @@ class Task:
     VALID_STATES = ["waiting", "handling", "completed"]
 
     def __init__(self, task_detail: Dict, judge_mode: bool, system_prompt: str, task_histories: str = None,
-                 task_id: str = None):
+                 task_id: str = None, register: bool = True):
         self.run_result = None
         for key in ["title", "desc", "deliverable", "worker", "judger", "available_tools"]:
             if key not in task_detail.keys():
@@ -65,11 +128,38 @@ class Task:
         self.task_histories = task_histories
         self.task_id = task_id or str(uuid.uuid4())
         self._killed = False
+        self.pending_force_push = None
         self.name = task_detail.get('title', 'Unknown')
         self.creat_time = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
-        TASK_POOL.append({"name": task_detail.get('title', 'Unknown'), "id": self.task_id, "state": "running"})
-        TASK_INSTANCES[self.task_id] = self
-        self.log_and_notify("text", self.system_prompt)
+        # Track the current state so it is reflected in checkpoints and UI.
+        self.state = "running"
+
+        # 注册到全局任务池（用于前端展示、管理）
+        if register:
+            existing = [t for t in TASK_POOL if t.get("id") == self.task_id]
+            if existing:
+                # already exists, just update its reference/state
+                for t in existing:
+                    t["name"] = task_detail.get('title', 'Unknown')
+                    t["state"] = "running"
+                    t["progress"] = 50
+                    t["creat_time"] = self.creat_time
+                    t["worker"] = task_detail.get('worker')
+                    t["judger"] = task_detail.get('judger')
+            else:
+                TASK_POOL.append(
+                    {
+                        "name": task_detail.get('title', 'Unknown'),
+                        "id": self.task_id,
+                        "state": "running",
+                        "progress": 50,
+                        "creat_time": self.creat_time,
+                        "worker": task_detail.get('worker'),
+                        "judger": task_detail.get('judger'),
+                    }
+                )
+            TASK_INSTANCES[self.task_id] = self
+            self.log_and_notify("text", self.system_prompt)
     def _clean_json_string(self, text: str) -> str:
         """辅助方法：清理模型输出的 Markdown 标记，提取纯 JSON 字符串"""
         text = text.strip()
@@ -84,7 +174,7 @@ class Task:
     def log_and_notify(self, card_type: str, content: str, metadata: dict = None):
         """为前端专门准备的结构化执行日志数据，同时输出到控制台"""
         print(content)
-        log_dir = f"data/checkpoints/task/{self.name}_{self.creat_time}/"
+        log_dir = os.path.join(DATA_DIR, "checkpoints", "task", f"{self.name}_{self.creat_time}")
         os.makedirs(log_dir, exist_ok=True)
         log_data = {
             "task_id": self.task_id,
@@ -99,16 +189,100 @@ class Task:
         with task_set_lock:
             dirty_tasks.add(self.task_id)
 
+    def save_checkpoint(self):
+        """保存Task的当前状态到checkpoint.json"""
+        checkpoint_dir = os.path.join(DATA_DIR, "checkpoints", "task", f"{self.name}_{self.creat_time}")
+        os.makedirs(checkpoint_dir, exist_ok=True)
+        checkpoint_path = os.path.join(checkpoint_dir, "checkpoint.json")
+        # Ensure checkpoint stores the most up-to-date state.
+        current_state = getattr(self, 'state', None)
+        if not current_state:
+            # Fallback to TASK_POOL record if available
+            for t in TASK_POOL:
+                if t.get("id") == self.task_id:
+                    current_state = t.get("state")
+                    break
+        state = {
+            "task_id": self.task_id,
+            "name": self.name,
+            "creat_time": self.creat_time,
+            "task_detail": self.task_detail,
+            "judge_mode": self.judge_mode,
+            "system_prompt": self.system_prompt,
+            "task_histories": self.task_histories,
+            "current_history": self.current_history,
+            "eval_history": self.eval_history,
+            "run_result": self.run_result,
+            "state": current_state or "running",
+            "pending_force_push": self.pending_force_push
+        }
+        try:
+            with open(checkpoint_path, "w", encoding="utf-8") as f:
+                json.dump(state, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            print(f"⚠️ [Task Checkpoint] 保存失败: {e}")
+
+    @classmethod
+    def load_checkpoint(cls, checkpoint_path: str):
+        """从checkpoint加载Task"""
+        try:
+            with open(checkpoint_path, "r", encoding="utf-8") as f:
+                state = json.load(f)
+            # 从checkpoint恢复时不要重复注册到TASK_POOL（避免重复条目）
+            task = cls(
+                task_detail=state["task_detail"],
+                judge_mode=state["judge_mode"],
+                system_prompt=state["system_prompt"],
+                task_histories=state.get("task_histories"),
+                task_id=state["task_id"],
+                register=False,
+            )
+            task.current_history = state.get("current_history", [])
+            task.eval_history = state.get("eval_history", [])
+            task.run_result = state.get("run_result")
+            task.pending_force_push = state.get("pending_force_push")
+            task.state = state.get("state", "running")
+            # Ensure we restore the original folder timestamp so logs/checkpoints stay consistent
+            task.creat_time = state.get("creat_time", task.creat_time)
+
+            # 确保 TASK_POOL 中只保留一份任务（按 task_id 唯一）
+            existing = [t for t in TASK_POOL if t.get("id") == task.task_id]
+            if not existing:
+                TASK_POOL.append({
+                    "name": task.name,
+                    "id": task.task_id,
+                    "state": state.get("state", "running"),
+                    "progress": 100 if task.run_result else 50,
+                    "creat_time": task.creat_time,
+                    "worker": (task.task_detail or {}).get("worker") or (state.get("task_detail") or {}).get("worker"),
+                    "judger": (task.task_detail or {}).get("judger") or (state.get("task_detail") or {}).get("judger"),
+                })
+            else:
+                # 更新状态/进度
+                for t in existing:
+                    t["state"] = state.get("state", t.get("state", "running"))
+                    t["progress"] = 100 if task.run_result else t.get("progress", 50)
+
+            # 保证实例可用
+            TASK_INSTANCES[task.task_id] = task
+            return task
+        except Exception as e:
+            print(f"❌ [Task Checkpoint] 加载失败 {checkpoint_path}: {e}")
+            return None
+
     def force_push(self, content: str):
-        warning_prompt = (
-            f"【系统紧急干预】请立刻停止你当前做的事，优先执行此指令！\n"
-            f"{content}"
-        )
-        self.current_history.append({
-            "role": "user",
-            "content": warning_prompt
-        })
-        self.log_and_notify("system", f"⚠️ [Task {self.task_id}] 已强行注入干预指令：\n{content}")
+        if self.current_history and self.current_history[-1].get('role') == 'assistant' and self.current_history[-1].get('tool_calls'):
+            self.pending_force_push = content
+        else:
+            warning_prompt = (
+                f"【系统紧急干预】请立刻停止你当前做的事，优先执行此指令！\n"
+                f"{content}"
+            )
+            self.current_history.append({
+                "role": "user",
+                "content": warning_prompt
+            })
+            self.log_and_notify("system", f"⚠️ [Task {self.task_id}] 已强行注入干预指令：\n{content}")
     def kill(self):
         self._killed = True
         self.log_and_notify("system", f"⚠️ [Task] 收到Kill指令，准备直接关闭任务 {self.task_id} 线程...")
@@ -199,6 +373,18 @@ class Task:
                             "name": tool_name,
                             "content": str(result)
                         })
+
+                    if self.pending_force_push:
+                        warning_prompt = (
+                            f"【系统紧急干预】请立刻停止你当前做的事，优先执行此指令！\n"
+                            f"{self.pending_force_push}"
+                        )
+                        self.current_history.append({
+                            "role": "user",
+                            "content": warning_prompt
+                        })
+                        self.log_and_notify("system", f"⚠️ [Task {self.task_id}] 已强行注入干预指令：\n{self.pending_force_push}")
+                        self.pending_force_push = None
                 else:
                     raw_content = message.content.strip() if message.content else ""
                     cleaned_content = self._clean_json_string(raw_content)
@@ -207,6 +393,8 @@ class Task:
                         content_dict = json.loads(cleaned_content)
                         if content_dict.get("status") == "completed":
                             self.run_result = content_dict
+                            set_task_state(self.task_id, "completed")
+                            self.save_checkpoint()
                             return content_dict
                         else:
                             self.current_history.append({
@@ -220,7 +408,11 @@ class Task:
                         })
             except Exception as e:
                 self.log_and_notify("error", f"❌ API 调用发生意外异常: {e}")
+                set_task_state(self.task_id, "error")
+                self.save_checkpoint()
                 raise InterruptedError(f"API意外中断: {e}")
+        set_task_state(self.task_id, "error")
+        self.save_checkpoint()
         return {"task_result": False, "summary": f"Worker超出最大思考步数({max_steps})，被强制终止。"}
 
     def run_eval(self, max_steps: int = 30):
@@ -293,12 +485,26 @@ class Task:
                             "name": tool_name,
                             "content": str(result)
                         })
+
+                    if self.pending_force_push:
+                        warning_prompt = (
+                            f"【系统紧急干预】请立刻停止你当前做的事，优先执行此指令！\n"
+                            f"{self.pending_force_push}"
+                        )
+                        self.eval_history.append({
+                            "role": "user",
+                            "content": warning_prompt
+                        })
+                        self.log_and_notify("system", f"⚠️ [Task {self.task_id}] 已强行注入干预指令：\n{self.pending_force_push}")
+                        self.pending_force_push = None
                 else:
                     raw_content = message.content.strip() if message.content else ""
                     cleaned_content = self._clean_json_string(raw_content)
                     try:
                         content_dict = json.loads(cleaned_content)
                         if content_dict.get("status") == "completed":
+                            set_task_state(self.task_id, "completed")
+                            self.save_checkpoint()
                             return content_dict
                         else:
                             self.eval_history.append({
@@ -313,8 +519,12 @@ class Task:
 
             except Exception as e:
                 print(f"API 调用发生意外异常: {e}")
+                set_task_state(self.task_id, "error")
+                self.save_checkpoint()
                 raise InterruptedError(f"API意外中断: {e}")
 
+        set_task_state(self.task_id, "error")
+        self.save_checkpoint()
         return {"eval_result": False, "suggestion": "QA质检过程超出最大思考步数。"}
 
     def _execute_tool(self, mcp_type: str, func_name: str, arguments: dict):

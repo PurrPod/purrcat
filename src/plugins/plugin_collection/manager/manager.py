@@ -43,9 +43,6 @@ def answer(project_id: str, answer_text: str) -> str:
     AGENT_QA_QUEUE[project_id]["answer"] = answer_text
     return _format_response("text",f"回答成功提交！项目 {project_id} 已拿到你的反馈，正在继续执行流水线。")
 
-
-
-
 SIMPLE_TASK_STATUS = {}
 def add_simple_task(
         title: str,

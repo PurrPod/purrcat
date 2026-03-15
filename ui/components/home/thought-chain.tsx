@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { useAppStore } from '@/lib/store'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Brain, Send, AlertCircle, RefreshCcw, ChevronDown, User, Wrench, MessageSquare, AlertTriangle } from 'lucide-react'
+import { Brain, Send, AlertCircle, RefreshCcw, ChevronDown, User, Wrench, MessageSquare, AlertTriangle, CupSoda, Cat } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import type { ThoughtChain } from '@/lib/types'
@@ -160,20 +160,23 @@ function ThoughtItem({ item }: { item: ThoughtChain }) {
     if (severity === 'error') return AlertCircle
     if (severity === 'warning') return AlertTriangle
     if (role === 'user') return User
-    if (role === 'assistant') return isToolCalling ? Wrench : MessageSquare
+    if (role === 'assistant') return Cat
     if (role === 'tool') return Wrench
     return Brain
   })()
 
   const headerLabel = (() => {
     if (role === 'user') return 'USER'
-    if (role === 'assistant') return isToolCalling ? 'ASSISTANT · TOOL' : 'ASSISTANT · MESSAGE'
+    if (role === 'assistant') return isToolCalling ? 'AGENT · TOOL' : 'AGENT · MESSAGE'
     if (role === 'tool') return 'TOOL'
     if (role === 'system') return 'SYSTEM'
     return 'UNKNOWN'
   })()
 
-  const containerClassName = 'rounded-lg border p-3'
+  const containerClassName = cn(
+    'rounded-lg border p-3',
+    role === 'tool' && 'bg-muted/30'
+  )
 
   const HeaderIcon = headerIcon
 
@@ -184,11 +187,11 @@ function ThoughtItem({ item }: { item: ThoughtChain }) {
           <HeaderIcon
             className={cn(
               'size-4 shrink-0',
+              // 错误与警告仍然用颜色强调
               severity === 'error' && 'text-destructive',
               severity === 'warning' && 'text-amber-500',
-              severity === 'normal' && role === 'user' && 'text-emerald-600',
-              severity === 'normal' && role === 'assistant' && (isToolCalling ? 'text-violet-600' : 'text-blue-600'),
-              severity === 'normal' && role === 'tool' && 'text-amber-600',
+              // 其它角色一律灰度，保持整体简洁
+              severity === 'normal' && (role === 'assistant' && !isToolCalling ? 'text-yellow-500' : 'text-muted-foreground'),
             )}
           />
           <span className="text-[10px] font-mono text-muted-foreground uppercase tracking-wider truncate">
@@ -211,64 +214,77 @@ function ThoughtItem({ item }: { item: ThoughtChain }) {
       </div>
 
       {isAssistant ? (
-        isToolCalling ? (
+        <>
+          {(() => {
+            const raw = contentRoot?.content ?? item.content
+            const hasContent = (typeof raw === 'string' && raw.trim()) || (typeof raw === 'object' && raw?.content && typeof raw.content === 'string' && raw.content.trim())
+            return hasContent ? (
+              <div className="prose prose-sm dark:prose-invert max-w-none prose-p:text-[9px] prose-li:text-[9px] prose-code:text-[9px] prose-pre:text-[9px] prose-pre:bg-muted prose-pre:text-muted-foreground prose-pre:overflow-x-auto mb-3">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  {typeof raw === 'string' ? raw : raw?.content || ''}
+                </ReactMarkdown>
+              </div>
+            ) : null
+          })()}
+          {isToolCalling ? (
+            <div className="rounded-md border p-2">
+              {(() => {
+                const toolCall =
+                  findToolCall(contentRoot) ??
+                  findToolCall(item.content) ??
+                  (typeof rawType === 'string' && rawType.toLowerCase().includes('tool') ? { name: rawType } : null)
+
+                const name = toolCall?.name
+                const args = toolCall?.args
+
+                const signature =
+                  typeof name === 'string' && name.trim()
+                    ? `${name}()`
+                    : 'tool_calling'
+
+                const argsText = (() => {
+                  if (args === undefined || args === null) return ''
+                  if (typeof args === 'string') return args.trim()
+                  const s = stringifyContent(args)
+                  return s.trim()
+                })()
+
+                return (
+                  <>
+                    <div className="text-xs font-mono text-muted-foreground break-all">
+                      {signature}
+                    </div>
+                    {argsText ? (
+                      <pre className="mt-2 text-xs font-mono whitespace-pre-wrap break-words leading-snug text-muted-foreground">
+                        {argsText}
+                      </pre>
+                    ) : null}
+                  </>
+                )
+              })()}
+            </div>
+          ) : null}
+        </>
+      ) : (
+        role === 'tool' ? (
           <div className="rounded-md border p-2">
-            {(() => {
-              const toolCall =
-                findToolCall(contentRoot) ??
-                findToolCall(item.content) ??
-                (typeof rawType === 'string' && rawType.toLowerCase().includes('tool') ? { name: rawType } : null)
-
-              const name = toolCall?.name
-              const args = toolCall?.args
-
-              const signature =
-                typeof name === 'string' && name.trim()
-                  ? `${name}()`
-                  : 'tool_calling'
-
-              const argsText = (() => {
-                if (args === undefined || args === null) return ''
-                if (typeof args === 'string') return args.trim()
-                const s = stringifyContent(args)
-                return s.trim()
-              })()
-
-              return (
-                <>
-                  <div className="text-xs font-mono text-muted-foreground break-all">
-                    {signature}
-                  </div>
-                  {argsText ? (
-                    <pre className="mt-2 text-xs font-mono whitespace-pre-wrap break-words leading-snug text-muted-foreground">
-                      {argsText}
-                    </pre>
-                  ) : null}
-                </>
-              )
-            })()}
+            <div className="text-xs font-mono text-muted-foreground break-all">
+              Tool Result
+            </div>
+            <pre className="mt-2 text-xs font-mono whitespace-pre-wrap break-words leading-snug text-muted-foreground">
+              {(() => stringifyContent(typedPayload?.content ?? item.content))()}
+            </pre>
           </div>
         ) : (
-          <div className="prose prose-sm dark:prose-invert max-w-none prose-p:text-[13px] prose-li:text-[13px] prose-code:text-[13px] prose-pre:text-[13px] prose-pre:bg-muted prose-pre:text-muted-foreground prose-pre:overflow-x-auto">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>
-              {(() => {
-                const raw = contentRoot?.content ?? item.content
-                if (typeof raw === 'string') return raw.trim() ? raw : stringifyContent(item.content)
-                if (raw && typeof raw === 'object' && typeof (raw as any).content === 'string') return (raw as any).content
-                return stringifyContent(raw)
-              })()}
-            </ReactMarkdown>
+          <div
+            className={cn(
+              'text-sm whitespace-pre-wrap break-words leading-relaxed',
+              role === 'system' && 'text-muted-foreground italic',
+            )}
+          >
+            {(() => stringifyContent(typedPayload?.content ?? item.content))()}
           </div>
         )
-      ) : (
-        <div
-          className={cn(
-            'text-sm whitespace-pre-wrap break-words leading-relaxed',
-            role === 'system' && 'text-muted-foreground italic',
-          )}
-        >
-          {(() => stringifyContent(typedPayload?.content ?? item.content))()}
-        </div>
       )}
     </div>
   )
@@ -276,6 +292,7 @@ function ThoughtItem({ item }: { item: ThoughtChain }) {
 
 export function ThoughtChainPanel() {
   const thoughtChain = useAppStore((state) => state.thoughtChain)
+  const fetchThoughtChain = useAppStore((state) => state.fetchThoughtChain)
   const forcePush = useAppStore((state) => state.forcePush)
   const summarizeMemory = useAppStore((state) => state.summarizeMemory)
   const [pushContent, setPushContent] = useState('')
@@ -335,6 +352,17 @@ export function ThoughtChainPanel() {
       scrollToBottom('smooth')
     }
   }, [thoughtChain, isAtBottom, scrollToBottom])
+
+  // Auto-refresh thought chain
+  useEffect(() => {
+    const timer = window.setInterval(async () => {
+      try {
+        await fetchThoughtChain()
+      } catch {
+      }
+    }, 1000)
+    return () => window.clearInterval(timer)
+  }, [fetchThoughtChain])
 
   const handleForcePush = async (e: React.FormEvent) => {
     e.preventDefault()

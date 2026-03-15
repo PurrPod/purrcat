@@ -49,6 +49,29 @@ interface AppState {
   }) => Promise<void>
   removeTask: (id: string) => Promise<void>
   stopTask: (id: string) => Promise<void>
+  injectTask: (taskId: string, content: string) => Promise<void>
+
+  // Schedule + Alarm
+  scheduleItems: ScheduleItem[]
+  fetchSchedule: () => Promise<void>
+  addSchedule: (item: {
+    title: string
+    start_time: string
+    end_time?: string
+    description?: string
+  }) => Promise<void>
+  removeSchedule: (id: string) => Promise<void>
+
+  alarms: AlarmItem[]
+  fetchAlarms: () => Promise<void>
+  addAlarm: (item: {
+    title: string
+    trigger_time: string
+    repeat_rule: string
+    active?: boolean
+  }) => Promise<void>
+  updateAlarm: (id: string, updates: Partial<{ title: string; trigger_time: string; repeat_rule: string; active: boolean }>) => Promise<void>
+  removeAlarm: (id: string) => Promise<void>
 
   // Tool Groups
   toolGroups: ToolGroup[];
@@ -146,11 +169,20 @@ export const useAppStore = create<AppState>((set, get) => ({
             timestamp = isNaN(d.getTime()) ? new Date() : d
           }
 
+          let content: any = t?.content ?? t?.message?.content
+          if (content === undefined || content === null || (typeof content === 'string' && content.trim() === '')) {
+            content = t
+          }
+          // If has tool_calls, always use the full object
+          if (t?.tool_calls || t?.toolCalls) {
+            content = t
+          }
+
           return {
             id: String(t?.id ?? index),
             role: t?.role ?? t?.message?.role ?? t?.sender ?? undefined,
             type: t?.type ?? t?.kind ?? t?.message_type ?? undefined,
-            content: t?.content ?? t?.message?.content ?? t,
+            content,
             timestamp,
           }
         }),
@@ -278,6 +310,9 @@ export const useAppStore = create<AppState>((set, get) => ({
             ? (t.state === 'error' ? 'failed' : t.state) 
             : 'pending',
           progress: t.state === 'completed' ? 100 : (t.progress || 50),
+          worker: t.worker,
+          judger: t.judger,
+          creat_time: t.creat_time,
           logs: t.logs || [],
           history: t.history || [],
           createdAt: t.createdAt ? new Date(t.createdAt) : new Date(),
@@ -314,6 +349,92 @@ export const useAppStore = create<AppState>((set, get) => ({
       get().fetchTasks()
     } catch (e) {
       console.error('Failed to stop task:', e)
+    }
+  },
+  injectTask: async (taskId, content) => {
+    try {
+      await fetch(`${API_BASE}/tasks/${taskId}/inject`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content })
+      })
+    } catch (e) {
+      console.error('Failed to inject task:', e)
+    }
+  },
+
+  // Schedule & Alarm
+  scheduleItems: [],
+  fetchSchedule: async () => {
+    try {
+      const res = await fetch(`${API_BASE}/schedule`)
+      const data = await res.json()
+      set({ scheduleItems: Array.isArray(data) ? data : [] })
+    } catch (e) {
+      console.error('Failed to fetch schedule:', e)
+    }
+  },
+  addSchedule: async (item) => {
+    try {
+      await fetch(`${API_BASE}/schedule`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(item)
+      })
+      get().fetchSchedule()
+    } catch (e) {
+      console.error('Failed to add schedule:', e)
+    }
+  },
+  removeSchedule: async (id) => {
+    try {
+      await fetch(`${API_BASE}/schedule/${id}`, { method: 'DELETE' })
+      get().fetchSchedule()
+    } catch (e) {
+      console.error('Failed to remove schedule:', e)
+    }
+  },
+
+  alarms: [],
+  fetchAlarms: async () => {
+    try {
+      const res = await fetch(`${API_BASE}/cron`)
+      const data = await res.json()
+      set({ alarms: Array.isArray(data) ? data : [] })
+    } catch (e) {
+      console.error('Failed to fetch alarms:', e)
+    }
+  },
+  addAlarm: async (item) => {
+    try {
+      await fetch(`${API_BASE}/cron`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(item)
+      })
+      get().fetchAlarms()
+    } catch (e) {
+      console.error('Failed to add alarm:', e)
+    }
+  },
+  updateAlarm: async (id, updates) => {
+    try {
+      await fetch(`${API_BASE}/cron/${id}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates)
+      })
+      get().fetchAlarms()
+    } catch (e) {
+      console.error('Failed to update alarm:', e)
+    }
+  },
+  removeAlarm: async (id) => {
+    try {
+      await fetch(`${API_BASE}/cron/${id}`, { method: 'DELETE' })
+      get().fetchAlarms()
+    } catch (e) {
+      console.error('Failed to remove alarm:', e)
     }
   },
 

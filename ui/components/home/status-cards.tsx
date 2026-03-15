@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/dialog'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Input } from '@/components/ui/input'
-import { FolderKanban, ListTodo, Cpu, Puzzle, Wand2, Search } from 'lucide-react'
+import { FolderKanban, ListTodo, Cpu, Puzzle, Wand2, Search, Calendar, Bell } from 'lucide-react'
 
 export function StatusCards() {
   const router = useRouter()
@@ -21,12 +21,24 @@ export function StatusCards() {
   const modelConfig = useAppStore((state) => state.modelConfig)
   const plugins = useAppStore((state) => state.plugins)
   const skills = useAppStore((state) => state.skills)
+  const scheduleItems = useAppStore((state) => state.scheduleItems)
+  const alarms = useAppStore((state) => state.alarms)
   const modelCount = modelConfig?.models ? Object.keys(modelConfig.models).length : 0
   const pluginCount = plugins.length
   const skillCount = skills.length
 
   const runningProjects = projects.filter((p) => p.status === 'running').length
   const runningTasks = tasks.filter((t) => t.status === 'running').length
+  const runningMonthSchedules = scheduleItems.filter((i) => {
+    if (!i.start_time) return false
+    try {
+      const date = new Date(i.start_time)
+      return date.getFullYear() === new Date().getFullYear() && date.getMonth() === new Date().getMonth()
+    } catch {
+      return false
+    }
+  }).length
+  const activeAlarms = alarms.filter((a) => a.active).length
   const [skillDialogOpen, setSkillDialogOpen] = useState(false)
   const [skillSearch, setSkillSearch] = useState('')
 
@@ -75,6 +87,42 @@ export function StatusCards() {
             <div>
               <div className="text-2xl font-bold">{runningTasks}</div>
               <div className="text-xs text-muted-foreground">运行中任务</div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Schedule 卡片 */}
+      <Card
+        className="cursor-pointer hover:bg-accent/50 transition-colors py-4"
+        onClick={() => router.push('/schedule')}
+      >
+        <CardContent className="p-0 px-4">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center justify-center size-10 rounded-lg bg-violet-500/10 text-violet-500">
+              <Calendar className="size-5" />
+            </div>
+            <div>
+              <div className="text-2xl font-bold">{runningMonthSchedules}</div>
+              <div className="text-xs text-muted-foreground">本月日程数</div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Alarm 卡片 */}
+      <Card
+        className="cursor-pointer hover:bg-accent/50 transition-colors py-4"
+        onClick={() => router.push('/schedule')}
+      >
+        <CardContent className="p-0 px-4">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center justify-center size-10 rounded-lg bg-pink-500/10 text-pink-500">
+              <Bell className="size-5" />
+            </div>
+            <div>
+              <div className="text-2xl font-bold">{activeAlarms}</div>
+              <div className="text-xs text-muted-foreground">已设定闹钟数</div>
             </div>
           </div>
         </CardContent>

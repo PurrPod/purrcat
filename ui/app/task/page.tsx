@@ -1,7 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as ScrollAreaPrimitive from '@radix-ui/react-scroll-area'
 import { useAppStore } from '@/lib/store'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -13,7 +12,27 @@ import {
   ContextMenuItem,
   ContextMenuTrigger,
 } from '@/components/ui/context-menu'
-import { ListTodo, Clock, CheckCircle, XCircle, Loader2, Trash2, StopCircle, Terminal, Plus, Search, Check, ChevronDown } from 'lucide-react'
+import {
+  ListTodo,
+  Clock,
+  CheckCircle,
+  XCircle,
+  Loader2,
+  Trash2,
+  StopCircle,
+  Terminal,
+  Plus,
+  Search,
+  Check,
+  ChevronDown,
+  AlertCircle,
+  Send,
+  RefreshCcw,
+  Info,
+  Paperclip,
+  Wand2,
+  Database,
+} from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Task } from '@/lib/types'
 import { Button } from '@/components/ui/button'
@@ -38,6 +57,17 @@ const statusConfig = {
   pending: { icon: Clock, color: 'text-amber-500', bg: 'bg-amber-500/10', label: '等待中' },
   completed: { icon: CheckCircle, color: 'text-green-500', bg: 'bg-green-500/10', label: '已完成' },
   failed: { icon: XCircle, color: 'text-red-500', bg: 'bg-red-500/10', label: '失败' },
+}
+
+const API_BASE = 'http://localhost:8000/api'
+
+type TaskLogEntry = {
+  id: string
+  task_id?: string
+  timestamp: number
+  card_type: string
+  content: string
+  metadata: Record<string, any>
 }
 
 function ToolPickerPanel({
@@ -302,6 +332,7 @@ function TaskCard({
 }) {
   const config = statusConfig[task.status]
   const Icon = config.icon
+  const [metaOpen, setMetaOpen] = useState(false)
 
   return (
     <ContextMenu>
@@ -317,10 +348,60 @@ function TaskCard({
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center justify-between text-sm">
               <span className="truncate">{task.name}</span>
-              <span className={cn('flex items-center gap-1 text-xs px-2 py-1 rounded-full shrink-0', config.bg, config.color)}>
-                <Icon className={cn('size-3', task.status === 'running' && 'animate-spin')} />
-                {config.label}
-              </span>
+              <div className="flex items-center gap-2">
+                <Dialog open={metaOpen} onOpenChange={setMetaOpen}>
+                  <DialogTrigger asChild>
+                    <button
+                      type="button"
+                      onClick={(e) => e.stopPropagation()}
+                      className="rounded-full p-1 hover:bg-muted/40"
+                      aria-label="任务信息"
+                    >
+                      <Info className="size-4" />
+                    </button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>任务信息</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">ID</span>
+                        <span className="font-medium break-all">{task.id}</span>
+                      </div>
+                      {task.worker && (
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Worker</span>
+                          <span className="font-medium break-all">{task.worker}</span>
+                        </div>
+                      )}
+                      {task.judger && (
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Judger</span>
+                          <span className="font-medium break-all">{task.judger}</span>
+                        </div>
+                      )}
+                      {task.creat_time && (
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">创建时间</span>
+                          <span className="font-medium">{task.creat_time}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">状态</span>
+                        <span className="font-medium">{config.label}</span>
+                      </div>
+                    </div>
+                    <DialogFooter>
+                      <Button onClick={() => setMetaOpen(false)}>关闭</Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+                <span className={cn('flex items-center gap-1 text-xs px-2 py-1 rounded-full shrink-0', config.bg, config.color)}>
+                  <Icon className={cn('size-3', task.status === 'running' && 'animate-spin')} />
+                  {config.label}
+                </span>
+              </div>
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
@@ -353,16 +434,144 @@ function TaskCard({
 }
 
 function TaskDetailView({ task }: { task: Task }) {
+  const [entries, setEntries] = useState<TaskLogEntry[]>([])
+  const cursorRef = useRef(0)
+  const fetchingRef = useRef(false)
+  const [isFetching, setIsFetching] = useState(false)
+  const injectTask = useAppStore((state) => state.injectTask)
+  const [pushContent, setPushContent] = useState('')
+  const [isPushing, setIsPushing] = useState(false)
+
+  const handleForcePush = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!pushContent.trim() || isPushing) return
+    
+    setIsPushing(true)
+    try {
+      await injectTask(task.id, pushContent)
+      setPushContent('')
+    } finally {
+      setIsPushing(false)
+    }
+  }
+
+  const normalizeEntry = useCallback(
+    (raw: any): TaskLogEntry => {
+      const metadata = raw?.metadata && typeof raw.metadata === 'object' ? raw.metadata : {}
+      const content =
+        typeof raw?.content === 'string'
+          ? raw.content
+          : raw?.content != null
+            ? JSON.stringify(raw.content, null, 2)
+            : ''
+      return {
+        id: String(raw?.id ?? `${task.id}:${Math.random().toString(16).slice(2)}`),
+        task_id: raw?.task_id,
+        timestamp: typeof raw?.timestamp === 'number' ? raw.timestamp : Date.now() / 1000,
+        card_type: String(raw?.card_type ?? 'text'),
+        content,
+        metadata,
+      }
+    },
+    [task.id],
+  )
+
+  const fetchMore = useCallback(async () => {
+    if (fetchingRef.current) return
+    fetchingRef.current = true
+    setIsFetching(true)
+    try {
+      const res = await fetch(`${API_BASE}/tasks/${task.id}/log?cursor=${cursorRef.current}&limit=500`)
+      const data = await res.json()
+      const nextEntries = Array.isArray(data?.entries) ? data.entries.map(normalizeEntry) : []
+      setEntries((prev) => [...prev, ...nextEntries])
+      if (typeof data?.nextCursor === 'number') {
+        cursorRef.current = data.nextCursor
+      } else {
+        cursorRef.current += nextEntries.length
+      }
+    } catch {
+    } finally {
+      setIsFetching(false)
+      fetchingRef.current = false
+    }
+  }, [normalizeEntry, task.id])
+
+  useEffect(() => {
+    setEntries([])
+    cursorRef.current = 0
+    fetchMore()
+  }, [fetchMore, task.id])
+
+  useEffect(() => {
+    const timer = window.setInterval(async () => {
+      try {
+        const res = await fetch(`${API_BASE}/tasks/dirty`)
+        const data = await res.json()
+        if (Array.isArray(data?.dirty) && data.dirty.includes(task.id)) {
+          await fetchMore()
+        }
+      } catch {
+      }
+    }, 1000)
+    return () => window.clearInterval(timer)
+  }, [fetchMore, task.id])
+
+  const renderEntry = (entry: TaskLogEntry) => {
+    const style = entry.metadata?.style
+    const surfaceClass = (() => {
+      if (style === 'light_gray') return 'bg-muted/50 border'
+      if (style === 'gray') return 'bg-muted border'
+      if (style === 'dark_white') return 'bg-muted/30 border'
+      if (style === 'white') return 'bg-background border'
+      return 'bg-background border'
+    })()
+
+    if (entry.card_type === 'error') {
+      return (
+        <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-3">
+          <div className="text-sm font-medium text-destructive mb-1">错误</div>
+          <div className="text-xs whitespace-pre-wrap break-words">{entry.content}</div>
+        </div>
+      )
+    }
+
+    if (entry.card_type === 'system') {
+      return (
+        <div className={cn('rounded-lg p-3 text-xs text-muted-foreground', surfaceClass)}>
+          <div className="font-medium text-foreground mb-1">系统</div>
+          <div className="whitespace-pre-wrap break-words">{entry.content}</div>
+        </div>
+      )
+    }
+
+    if (entry.card_type === 'tool_call' || entry.card_type === 'tool_result') {
+      return (
+        <div className="rounded-lg p-3 text-xs bg-muted/30 border">
+          <div className="whitespace-pre-wrap break-words text-muted-foreground">{entry.content}</div>
+        </div>
+      )
+    }
+
+    return (
+      <div className={cn('rounded-lg p-3', surfaceClass)}>
+        <div className="text-sm whitespace-pre-wrap break-words leading-relaxed">{entry.content}</div>
+      </div>
+    )
+  }
+
   return (
     <Card className="h-full flex flex-col overflow-hidden">
       <CardHeader className="shrink-0">
         <CardTitle className="flex items-center justify-between">
           <span>{task.name}</span>
-          <span className={cn(
-            'text-xs px-2 py-1 rounded-full',
-            statusConfig[task.status].bg,
-            statusConfig[task.status].color
-          )}>
+          <span
+            className={cn(
+              'text-xs px-2 py-1 rounded-full',
+              statusConfig[task.status].bg,
+              statusConfig[task.status].color,
+            )}
+          >
             {statusConfig[task.status].label}
           </span>
         </CardTitle>
@@ -390,51 +599,20 @@ function TaskDetailView({ task }: { task: Task }) {
           <div className="flex-1 flex flex-col min-h-0">
             <div className="flex items-center gap-2 mb-2 shrink-0">
               <Terminal className="size-4" />
-              <h4 className="text-sm font-medium">对话历史 (Worker)</h4>
-            </div>
-            <ScrollArea className="flex-1 rounded-md border bg-muted/30 min-h-0">
-              <div className="p-3 space-y-3">
-                {task.history && task.history.length > 0 ? (
-                  task.history.map((msg, index) => (
-                    <div key={index} className={cn(
-                      "p-2 rounded-lg text-xs break-words",
-                      msg.role === 'user' ? "bg-primary/10 ml-4" : 
-                      msg.role === 'system' ? "bg-muted text-muted-foreground italic text-center mx-2" :
-                      "bg-accent mr-4"
-                    )}>
-                      <div className="font-bold mb-1 uppercase text-[10px] opacity-70">
-                        {msg.role}
-                      </div>
-                      <div className="whitespace-pre-wrap">
-                        {typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content)}
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="text-muted-foreground italic text-xs text-center py-4">暂无对话历史</div>
-                )}
-              </div>
-            </ScrollArea>
-          </div>
-
-          <div className="h-48 flex flex-col shrink-0">
-            <div className="flex items-center gap-2 mb-2 shrink-0">
-              <Terminal className="size-4" />
               <h4 className="text-sm font-medium">执行日志</h4>
             </div>
             <ScrollArea className="flex-1 rounded-md border bg-muted/30 min-h-0">
-              <div className="p-3 font-mono text-xs space-y-1">
-                {task.logs && task.logs.length > 0 ? (
-                  task.logs.map((log, index) => (
-                    <div key={index} className="text-muted-foreground">
-                      {log}
-                    </div>
-                  ))
+              <div className="p-3 space-y-3">
+                {entries.length ? (
+                  entries.map((entry) => <div key={entry.id}>{renderEntry(entry)}</div>)
                 ) : (
-                  <div className="text-muted-foreground italic">暂无日志</div>
+                  <div className="text-muted-foreground italic text-xs text-center py-4">暂无日志</div>
                 )}
               </div>
             </ScrollArea>
+            {isFetching ? (
+              <div className="text-[11px] text-muted-foreground mt-1 text-right pr-1">同步中…</div>
+            ) : null}
           </div>
         </div>
 
@@ -445,6 +623,42 @@ function TaskDetailView({ task }: { task: Task }) {
           )}
         </div>
       </CardContent>
+
+      {/* Force Push 输入框 */}
+      <div className="mt-3 pt-3 border-t shrink-0 px-1">
+        <form onSubmit={handleForcePush} className="space-y-2">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="size-3 text-amber-500" />
+            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Force Push 注入</span>
+          </div>
+          <div className="flex items-stretch gap-2">
+            <div className="relative flex-1">
+              <Input
+                value={pushContent}
+                onChange={(e) => setPushContent(e.target.value)}
+                placeholder="强行注入任务指令..."
+                className="text-xs h-9 bg-muted/20 border-border focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:border-primary/40 transition-all pr-8 shadow-none outline-none ring-0"
+              />
+              <div className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none opacity-30">
+                <Send className="size-3" />
+              </div>
+            </div>
+            <Button 
+              type="submit" 
+              size="sm" 
+              variant="secondary" 
+              className="h-9 px-4 border border-border/50 font-medium text-xs shadow-sm active:scale-95 transition-all shrink-0"
+              disabled={isPushing || !pushContent.trim()}
+            >
+              {isPushing ? (
+                <RefreshCcw className="size-3.5 animate-spin" />
+              ) : (
+                '注入'
+              )}
+            </Button>
+          </div>
+        </form>
+      </div>
     </Card>
   )
 }
@@ -455,6 +669,13 @@ function AddTaskDialog() {
   const fetchModelConfig = useAppStore((state) => state.fetchModelConfig)
   const fetchToolGroups = useAppStore((state) => state.fetchToolGroups)
   const modelConfig = useAppStore((state) => state.modelConfig)
+  const skills = useAppStore((state) => state.skills)
+  const databases = useAppStore((state) => state.databases)
+  const fetchSkills = useAppStore((state) => state.fetchSkills)
+  const fetchDatabases = useAppStore((state) => state.fetchDatabases)
+  const [skillDialogOpen, setSkillDialogOpen] = useState(false)
+  const [dbDialogOpen, setDbDialogOpen] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [formData, setFormData] = useState({
     title: '',
     desc: '',
@@ -476,7 +697,9 @@ function AddTaskDialog() {
     if (!open) return
     fetchModelConfig()
     fetchToolGroups()
-  }, [open, fetchModelConfig, fetchToolGroups])
+    fetchSkills()
+    fetchDatabases()
+  }, [open, fetchModelConfig, fetchToolGroups, fetchSkills, fetchDatabases])
 
   useEffect(() => {
     if (!open) return
@@ -487,6 +710,29 @@ function AddTaskDialog() {
       judger: modelNames.includes(prev.judger) ? prev.judger : modelNames[0],
     }))
   }, [open, modelNames])
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      // 模拟文件路径（实际应用中会是真实路径）
+      const fakePath = `/uploads/${file.name}`
+      setFormData((prev) => ({ ...prev, prompt: prev.prompt + (prev.prompt ? '\n' : '') + `[文件: ${fakePath}]` }))
+    }
+    // Reset input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
+  }
+
+  const handleSkillSelect = (skillPath: string) => {
+    setFormData((prev) => ({ ...prev, prompt: prev.prompt + (prev.prompt ? '\n' : '') + `[Skill: ${skillPath}]` }))
+    setSkillDialogOpen(false)
+  }
+
+  const handleDatabaseSelect = (dbName: string) => {
+    setFormData((prev) => ({ ...prev, prompt: prev.prompt + (prev.prompt ? '\n' : '') + `[数据库: ${dbName}]` }))
+    setDbDialogOpen(false)
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -563,6 +809,94 @@ function AddTaskDialog() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="prompt">任务描述</Label>
+                  <div className="flex gap-2 mb-2">
+                    {/* 上传文件按钮 */}
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      className="hidden"
+                      onChange={handleFileSelect}
+                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => fileInputRef.current?.click()}
+                    >
+                      <Paperclip className="size-4 mr-1" />
+                      上传文件
+                    </Button>
+
+                    {/* 选择 Skill 按钮 */}
+                    <Dialog open={skillDialogOpen} onOpenChange={setSkillDialogOpen}>
+                      <DialogTrigger asChild>
+                        <Button variant="outline" size="sm">
+                          <Wand2 className="size-4 mr-1" />
+                          选择 Skill
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent>
+                        <DialogHeader>
+                          <DialogTitle>选择 Skill</DialogTitle>
+                        </DialogHeader>
+                        <ScrollArea className="h-64">
+                          <div className="flex flex-col gap-2">
+                            {skills.map((skill) => (
+                              <button
+                                key={skill.name}
+                                onClick={() => handleSkillSelect(skill.path)}
+                                className="flex flex-col items-start p-3 rounded-lg border hover:bg-accent transition-colors text-left"
+                              >
+                                <span className="font-medium text-sm">{skill.name}</span>
+                                {skill.description && (
+                                  <span className="text-xs text-muted-foreground">
+                                    {skill.description}
+                                  </span>
+                                )}
+                                <span className="text-xs text-muted-foreground mt-1 font-mono">
+                                  {skill.path}
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        </ScrollArea>
+                      </DialogContent>
+                    </Dialog>
+
+                    {/* 插入数据库按钮 */}
+                    <Dialog open={dbDialogOpen} onOpenChange={setDbDialogOpen}>
+                      <DialogTrigger asChild>
+                        <Button variant="outline" size="sm">
+                          <Database className="size-4 mr-1" />
+                          插入数据库
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent>
+                        <DialogHeader>
+                          <DialogTitle>选择数据库</DialogTitle>
+                        </DialogHeader>
+                        <ScrollArea className="h-60">
+                          <div className="flex flex-col gap-2 p-1">
+                            {databases.map((dbName) => (
+                              <Button
+                                key={dbName}
+                                variant="ghost"
+                                className="justify-start font-normal"
+                                onClick={() => handleDatabaseSelect(dbName)}
+                              >
+                                <Database className="size-4 mr-2" />
+                                {dbName}
+                              </Button>
+                            ))}
+                            {databases.length === 0 && (
+                              <div className="text-center py-8 text-muted-foreground text-sm">
+                                未发现可用数据库
+                              </div>
+                            )}
+                          </div>
+                        </ScrollArea>
+                      </DialogContent>
+                    </Dialog>
+                  </div>
                   <Textarea
                     id="prompt"
                     value={formData.prompt}
@@ -603,23 +937,17 @@ function AddTaskDialog() {
 
 export default function TaskPage() {
   const tasks = useAppStore((state) => state.tasks)
+  const fetchTasks = useAppStore((state) => state.fetchTasks)
   const removeTask = useAppStore((state) => state.removeTask)
   const stopTask = useAppStore((state) => state.stopTask)
   const [selectedId, setSelectedId] = useState<string | null>(tasks[0]?.id || null)
-  const searchParams = useSearchParams()
   
   const selectedTask = tasks.find((t) => t.id === selectedId)
   const runningCount = tasks.filter((t) => t.status === 'running').length
 
   useEffect(() => {
-    const taskId = searchParams.get('taskId')
-    if (!taskId) return
-    if (!tasks.some((t) => t.id === taskId)) return
-    setSelectedId(taskId)
-    window.setTimeout(() => {
-      document.getElementById(`task-card-${taskId}`)?.scrollIntoView({ block: 'center' })
-    }, 0)
-  }, [searchParams, tasks])
+    fetchTasks()
+  }, [fetchTasks])
 
   return (
     <div className="h-[calc(100vh-4rem)] flex">

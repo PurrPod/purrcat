@@ -3,12 +3,13 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
-import { Home, FolderKanban, ListTodo, Settings, Puzzle, Cat } from 'lucide-react'
+import { Home, FolderKanban, ListTodo, Settings, Puzzle, Cat, Calendar } from 'lucide-react'
 
 const navItems = [
   { href: '/', label: 'Home', icon: Home },
   { href: '/project', label: 'Project', icon: FolderKanban },
   { href: '/task', label: 'Task', icon: ListTodo },
+  { href: '/schedule', label: 'Schedule', icon: Calendar },
   { href: '/setting', label: 'Setting', icon: Settings },
   { href: '/plugin', label: 'Plugin', icon: Puzzle },
 ]

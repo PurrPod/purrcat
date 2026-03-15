@@ -59,7 +59,7 @@ export default function HomePage() {
             <div className="flex-1 flex min-h-0 overflow-hidden">
               <ResizablePanelGroup direction="horizontal">
                 {/* 消息列表 */}
-                <ResizablePanel defaultSize={30} minSize={20}>
+                <ResizablePanel defaultSize={25} minSize={20}>
                   <div className="h-full flex flex-col min-w-0 border-r overflow-hidden">
                     <div className="p-3 border-b bg-muted/10">
                       <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">

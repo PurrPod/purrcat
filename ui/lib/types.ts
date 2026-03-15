@@ -52,6 +52,9 @@ export interface Task {
   description?: string
   status: 'running' | 'pending' | 'completed' | 'failed'
   progress: number
+  worker?: string
+  judger?: string
+  creat_time?: string
   logs: string[]
   history?: any[]
   createdAt: Date
@@ -116,6 +119,24 @@ export interface ToolGroup {
 }
 
 // 文件内容类型
+export interface ScheduleItem {
+  id: string
+  title: string
+  start_time: string
+  end_time?: string
+  description?: string
+  createdAt?: string
+}
+
+export interface AlarmItem {
+  id: string
+  title: string
+  trigger_time: string
+  repeat_rule: string
+  active: boolean
+  createdAt?: string
+}
+
 export interface FileContent {
   path: string
   content: string

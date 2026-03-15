@@ -10,8 +10,8 @@ from src.sensor.const import start_sensors
 from src.sensor.feishu import start_lark_sensor
 
 async def main():
-    start_lark_sensor()
     agent = Agent().load_checkpoint()
+    start_lark_sensor(agent)
     await agent.sensor()
 
 if __name__ == "__main__":

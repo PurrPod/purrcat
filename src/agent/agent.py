@@ -28,8 +28,11 @@ def add_message(message: dict):
 GLOBAL_AGENT_TOOLS = ["manager", "feishu"]
 
 class Agent:
-    def __init__(self, name="[1]openai:deepseek-chat", max_len=150, checkpoint_path="src\\agent\\checkpoint.json", warm_up=None):
+    def __init__(self, name=None, max_len=150, checkpoint_path="src\\agent\\checkpoint.json", warm_up=None):
         init_config_data()
+        if not name:
+            with open("data\\config\\model_config.json", "r") as f:
+                name = json.loads(f.read())["agent"]
         self.name = name
         self.state = "idle"
         self.client = Model(self.name).client
@@ -42,6 +45,7 @@ class Agent:
         self.max_len = max_len
         self.memory = Memory()
         self.checkpoint_path = checkpoint_path
+        self.pending_force_push = None
         if warm_up:
             with open(warm_up, "r") as f:
                 warm_up_content = json.loads(f.read())
@@ -78,7 +82,10 @@ class Agent:
         return result if result is not None else "Success (No Output)"
 
     def force_push(self, content):
-        self._append_history({"role": "user", "content": "[System Warning] You should suspend your action and handle this message first!\n"+content})
+        if self.current_history and self.current_history[-1].get('role') == 'assistant' and self.current_history[-1].get('tool_calls'):
+            self.pending_force_push = content
+        else:
+            self._append_history({"role": "user", "content": "[System Warning] You should suspend your action and handle this message first!\n"+content})
 
     def process_message(self, message: dict):
         self.state = "handling"
@@ -121,6 +128,7 @@ class Agent:
                     print(f"🤖 助手思考: {msg_resp.content}")
                 if not msg_resp.tool_calls:
                     print("✅ 消息处理闭环结束。")
+                    self.state = "idle"
                     break
 
                 for tool_call in msg_resp.tool_calls:
@@ -154,6 +162,10 @@ class Agent:
                         "content": str(result)
                     })
 
+                if self.pending_force_push:
+                    self._append_history({"role": "user", "content": "[System Warning] You should suspend your action and handle this message first!\n"+self.pending_force_push})
+                    self.pending_force_push = None
+
             except Exception as e:
                 print(f"❌ 大模型交互断层: {e}")
                 break
@@ -183,7 +195,7 @@ class Agent:
         alert_prompt = """【系统严重警告：大脑记忆容量即将溢出！！！】
 为了防止记忆断层，系统即将物理抹除你最早期的一批记忆。
 请你现在亲自对**此前的所有对话、事件和执行记录**进行全面总结，提取出核心事件、任务进度、你的关键决策以及对用户的认知，形成一份“早期记忆备忘录”。
-直接用自然语言输出。这份备忘录将作为你未来回忆那段时光的唯一凭证，也是你承上启下的节点，请务必保证包含影响任务推进的关键信息！"""
+直接用自然语言输出。这份备忘录将作为你未来回忆那段时光的唯一凭证，也是你承上启下的节点，请务必保证包含影响任务推进的关键信息！但也要尽量保持简洁和少废话，防止备忘录越来越长！"""
 
         # 使用 _append_history，保证这句警告也能记录到本地日志中
         self._append_history({"role": "user", "content": alert_prompt})

@@ -60,7 +60,10 @@ def clock_sensor():
                     if start_time_str:
                         try:
                             # 长度判断兼容带秒和不带秒
-                            fmt = "%Y-%m-%d %H:%M:%S" if len(start_time_str) > 16 else "%Y-%m-%d %H:%M"
+                            if 'T' in start_time_str:
+                                fmt = "%Y-%m-%dT%H:%M:%S" if len(start_time_str) > 16 else "%Y-%m-%dT%H:%M"
+                            else:
+                                fmt = "%Y-%m-%d %H:%M:%S" if len(start_time_str) > 16 else "%Y-%m-%d %H:%M"
                             st_dt = datetime.datetime.strptime(start_time_str, fmt)
                             # 计算距离开始的误差
                             delta = (st_dt - now).total_seconds()

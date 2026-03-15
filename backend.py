@@ -1,3 +1,6 @@
+import datetime
+import uuid
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -8,6 +11,10 @@ import time
 from typing import List, Optional, Dict, Any
 from pathlib import Path
 from contextlib import asynccontextmanager
+
+# Use absolute paths so the backend can find data/ even if started from a different cwd
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.join(BASE_DIR, "data")
 
 # Import existing logic
 from src.agent import agent as agent_module
@@ -28,8 +35,6 @@ async def lifespan(app: FastAPI):
     os.environ.pop("http_proxy", None)
     os.environ.pop("https_proxy", None)
     
-    start_lark_sensor()
-    
     # Register plugins
     for tool in ["database", "filesystem", "feishu", "manager", "schedule", "web"]:
         try:
@@ -39,7 +44,7 @@ async def lifespan(app: FastAPI):
             
     # Set up filesystem
     try:
-        config_path = os.path.join("data", "config", "file_config.json")
+        config_path = os.path.join(DATA_DIR, "config", "file_config.json")
         if os.path.exists(config_path):
             with open(config_path, "r") as f:
                 config = json.load(f)
@@ -59,11 +64,17 @@ async def lifespan(app: FastAPI):
         
     start_sensors()
     
+    # Load checkpoints
+    _ensure_projects_loaded_from_checkpoints()
+    _ensure_tasks_loaded_from_checkpoints()
+    
     # Start Agent in a separate thread
     global agent
     agent = agent_module.Agent.load_checkpoint()
     asyncio.create_task(asyncio.to_thread(agent.sensor))
     
+    # Start Lark sensor with agent instance
+    start_lark_sensor(agent)
     yield
     # --- Shutdown logic ---
     print("Shutting down backend...")
@@ -160,8 +171,93 @@ async def summarize_memory():
     agent._check_and_summarize_memory(check_mode=False)
     return {"status": "success"}
 
+def _ensure_projects_loaded_from_checkpoints():
+    """Scan data/checkpoints/project to backfill PROJECT_POOL after backend restart."""
+    base_dir = os.path.join(DATA_DIR, "checkpoints", "project")
+    if not os.path.isdir(base_dir):
+        return
+
+    existing_ids = {p.get("id") for p in project_module.PROJECT_POOL}
+
+    for entry in os.listdir(base_dir):
+        checkpoint_path = os.path.join(base_dir, entry, "checkpoint.json")
+        if not os.path.isfile(checkpoint_path):
+            continue
+        try:
+            with open(checkpoint_path, "r", encoding="utf-8") as f:
+                state = json.load(f)
+        except Exception:
+            continue
+
+        project_id = state.get("id")
+        if not project_id or project_id in existing_ids:
+            continue
+
+        now_iso = datetime.datetime.now().isoformat()
+        # 这里尊重 checkpoint 中保存的真实状态（running/completed/error/killed 等），
+        # 具体的展示含义由前端再做一次映射。
+        progress = 0
+        stage_histories = state.get('stage_histories', {})
+        if 'summary' in stage_histories:
+            progress = 100
+        elif 'second_run_tasks' in stage_histories:
+            progress = 75
+        elif 'first_run_tasks' in stage_histories:
+            progress = 50
+        elif 'slice_tasks' in stage_histories:
+            progress = 25
+        else:
+            progress = 10
+        project_record = {
+            "name": state.get("name", "Unknown"),
+            "id": project_id,
+            "state": state.get("state", "completed"),
+            "creat_time": state.get("creat_time", entry.split("_")[-1] if "_" in entry else ""),
+            "core": state.get("core"),
+            "available_tools": state.get("available_tools", []),
+            "available_workers": state.get("available_workers", []),
+            "check_mode": state.get("check_mode", False),
+            "refine_mode": state.get("refine_mode", False),
+            "judge_mode": state.get("judge_mode", False),
+            "is_agent": state.get("is_agent", False),
+            "progress": progress,
+            "createdAt": now_iso,
+            "updatedAt": now_iso,
+        }
+        project_module.PROJECT_POOL.append(project_record)
+        existing_ids.add(project_id)
+
+
+def _ensure_tasks_loaded_from_checkpoints():
+    """Scan data/checkpoints/task to backfill TASK_POOL after backend restart."""
+    base_dir = os.path.join(DATA_DIR, "checkpoints", "task")
+    if not os.path.isdir(base_dir):
+        return
+
+    existing_ids = {t.get("id") for t in task_module.TASK_POOL}
+
+    for entry in os.listdir(base_dir):
+        checkpoint_path = os.path.join(base_dir, entry, "checkpoint.json")
+        if not os.path.isfile(checkpoint_path):
+            continue
+        try:
+            task = task_module.Task.load_checkpoint(checkpoint_path)
+            if task and task.task_id not in existing_ids:
+                task_module.TASK_POOL.append({
+                    "name": task.name,
+                    "id": task.task_id,
+                    "state": task.state if hasattr(task, 'state') else "completed",
+                    "progress": 100 if task.run_result else 50,
+                    "creat_time": task.creat_time,
+                })
+                existing_ids.add(task.task_id)
+        except Exception as e:
+            print(f"Error loading task checkpoint {checkpoint_path}: {e}")
+
+
 @app.get("/api/projects")
 async def get_projects():
+    _ensure_projects_loaded_from_checkpoints()
     projects = []
     for p in project_module.PROJECT_POOL:
         project_data = p.copy()
@@ -172,6 +268,26 @@ async def get_projects():
         projects.append(project_data)
     return projects
 
+@app.get("/api/tasks")
+async def get_tasks():
+    # Ensure tasks are backfilled from disk when backend restarts.
+    # Some tasks only have log.jsonl (no checkpoint.json), so we need both methods.
+    _ensure_tasks_loaded_from_checkpoints()
+    _ensure_tasks_loaded_from_logs()
+
+    # De-duplicate by task_id (防止出现重复key导致前端报错)
+    task_map = {}
+    for t in task_module.TASK_POOL:
+        task_id = t.get("id")
+        if not task_id:
+            continue
+        task_data = t.copy()
+        instance = task_module.TASK_INSTANCES.get(task_id)
+        if instance:
+            task_data["history"] = instance.current_history
+        task_map[task_id] = task_data
+    return list(task_map.values())
+
 PROJECT_LOG_PATH_CACHE: Dict[str, str] = {}
 
 def _resolve_project_log_path(project_id: str) -> Optional[str]:
@@ -181,12 +297,12 @@ def _resolve_project_log_path(project_id: str) -> Optional[str]:
 
     instance = project_module.PROJECT_INSTANCES.get(project_id)
     if instance:
-        log_dir = os.path.join("data", "checkpoints", "project", f"{instance.name}_{instance.creat_time}")
+        log_dir = os.path.join(DATA_DIR, "checkpoints", "project", f"{instance.name}_{instance.creat_time}")
         log_path = os.path.join(log_dir, "log.jsonl")
         PROJECT_LOG_PATH_CACHE[project_id] = log_path
         return log_path
 
-    base_dir = os.path.join("data", "checkpoints", "project")
+    base_dir = os.path.join(DATA_DIR, "checkpoints", "project")
     if not os.path.isdir(base_dir):
         return None
 
@@ -280,22 +396,199 @@ async def remove_project_endpoint(project_id: str):
     project_module.delete_project(project_id)
     return {"status": "success"}
 
+TASK_LOG_PATH_CACHE: Dict[str, str] = {}
+
+
+def _ensure_tasks_loaded_from_logs():
+    """Scan data/checkpoints/task to backfill TASK_POOL after backend restart."""
+    base_dir = os.path.join(DATA_DIR, "checkpoints", "task")
+    if not os.path.isdir(base_dir):
+        return
+
+    existing_ids = {t.get("id") for t in task_module.TASK_POOL}
+
+    for entry in os.listdir(base_dir):
+        log_path = os.path.join(base_dir, entry, "log.jsonl")
+        if not os.path.isfile(log_path):
+            continue
+
+        # Derive task name and create time from folder name: <name>_<YYYYmmddHHMMSS>
+        folder_name = entry
+        task_name = folder_name
+        creat_time = ""
+        if "_" in folder_name:
+            maybe_time = folder_name.split("_")[-1]
+            task_name = folder_name[: -(len(maybe_time) + 1)] or folder_name
+            creat_time = maybe_time
+
+        task_id = None
+        first_ts = None
+        try:
+            with open(log_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        payload = json.loads(line)
+                    except Exception:
+                        continue
+                    if not task_id:
+                        task_id = payload.get("task_id")
+                    if not first_ts:
+                        first_ts = payload.get("timestamp")
+                    # If we've found both identifying pieces, stop scanning.
+                    if task_id and first_ts:
+                        break
+        except Exception:
+            continue
+
+        if not task_id or task_id in existing_ids:
+            continue
+
+        created_iso = (
+            datetime.datetime.fromtimestamp(first_ts).isoformat()
+            if isinstance(first_ts, (int, float))
+            else datetime.datetime.now().isoformat()
+        )
+
+        task_record = {
+            "name": task_name or "Unknown",
+            "id": task_id,
+            # 对于只有日志而没有 checkpoint 的任务，我们无法确定它是否真的完成。
+            # 使用 running/50 作为默认状态，避免错误地显示为“已完成”。
+            "state": "running",
+            "creat_time": creat_time,
+            "progress": 50,
+            "createdAt": created_iso,
+            "updatedAt": created_iso,
+        }
+        task_module.TASK_POOL.append(task_record)
+        existing_ids.add(task_id)
+
+
 @app.get("/api/tasks")
 async def get_tasks():
+    # 确保重启后磁盘中的 task 也能回填到内存池
+    _ensure_tasks_loaded_from_logs()
     tasks = []
     for t in task_module.TASK_POOL:
         task_data = t.copy()
         # Add history if instance exists
-        instance = task_module.TASK_INSTANCES.get(t["id"])
+        instance = task_module.TASK_INSTANCES.get(t.get("id"))
         if instance:
             task_data["history"] = instance.current_history
         tasks.append(task_data)
     return tasks
 
-@app.post("/api/tasks/{task_id}/stop")
-async def stop_task_endpoint(task_id: str):
-    if task_module.kill_task(task_id):
+
+def _resolve_task_log_path(task_id: str) -> Optional[str]:
+    cached = TASK_LOG_PATH_CACHE.get(task_id)
+    if cached:
+        return cached
+
+    instance = task_module.TASK_INSTANCES.get(task_id)
+    if instance:
+        log_dir = os.path.join(DATA_DIR, "checkpoints", "task", f"{instance.name}_{instance.creat_time}")
+        log_path = os.path.join(log_dir, "log.jsonl")
+        if os.path.exists(log_path):
+            TASK_LOG_PATH_CACHE[task_id] = log_path
+            return log_path
+        # If the folder/time is stale (e.g. creat_time changed), fall back to scan to find the real log file
+
+    base_dir = os.path.join(DATA_DIR, "checkpoints", "task")
+    if not os.path.isdir(base_dir):
+        return None
+
+    try:
+        for entry in os.listdir(base_dir):
+            log_path = os.path.join(base_dir, entry, "log.jsonl")
+            if not os.path.isfile(log_path):
+                continue
+
+            # 1) 常规：通过 log 内容中的 task_id 查找
+            try:
+                with open(log_path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        try:
+                            payload = json.loads(line)
+                        except Exception:
+                            continue
+                        if payload.get("task_id") == task_id:
+                            TASK_LOG_PATH_CACHE[task_id] = log_path
+                            return log_path
+            except Exception:
+                pass
+
+            # 2) 兼容：folder 名称可能就是 task_id（或包含 task_id），直接使用
+            if entry == task_id or task_id in entry:
+                TASK_LOG_PATH_CACHE[task_id] = log_path
+                return log_path
+
+        return None
+    except Exception:
+        return None
+
+    return None
+
+
+@app.get("/api/tasks/dirty")
+async def get_dirty_tasks(clear: bool = True):
+    with task_module.task_set_lock:
+        dirty = list(task_module.dirty_tasks)
+        if clear:
+            task_module.dirty_tasks.clear()
+    return {"dirty": dirty}
+
+
+@app.get("/api/tasks/{task_id}/log")
+async def get_task_log(task_id: str, cursor: int = 0, limit: int = 500):
+    if cursor < 0:
+        cursor = 0
+    if limit < 1:
+        limit = 1
+    if limit > 2000:
+        limit = 2000
+
+    log_path = _resolve_task_log_path(task_id)
+    if not log_path or not os.path.exists(log_path):
+        return {"entries": [], "nextCursor": cursor, "exists": False}
+
+    entries: List[Dict[str, Any]] = []
+    next_cursor = cursor
+
+    try:
+        with open(log_path, "r", encoding="utf-8") as f:
+            for idx, line in enumerate(f):
+                if idx < cursor:
+                    continue
+                if len(entries) >= limit:
+                    break
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    payload = json.loads(line)
+                except Exception:
+                    payload = {"card_type": "error", "content": line, "metadata": {"level": "warning"}}
+                payload["id"] = f"{task_id}:{idx}"
+                entries.append(payload)
+                next_cursor = idx + 1
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    return {"entries": entries, "nextCursor": next_cursor, "exists": True}
+
+@app.post("/api/tasks/{task_id}/inject")
+async def inject_task(task_id: str, request: ForcePushRequest):
+    print(f"[DEBUG] Inject task {task_id} with {request.content}")
+    if task_module.inject_task_instruction(task_id, request.content):
+        print(f"[DEBUG] Inject success")
         return {"status": "success"}
+    print(f"[DEBUG] Inject failed")
     raise HTTPException(status_code=404, detail="Task not found")
 
 @app.delete("/api/tasks/{task_id}")
@@ -541,11 +834,128 @@ async def get_config():
                     configs[filename] = json.load(f)
     return configs
 
+
+# --- Schedule & Alarm (Cron) Endpoints ---
+
+def _load_schedule_paths():
+    """Read schedule/cron file paths from config, with sensible defaults."""
+    try:
+        with open("data/config/config.json", "r", encoding="utf-8") as f:
+            cfg = json.load(f)
+        schedule_file = cfg.get("schedule_daily", "data/schedule/schedule.json")
+        cron_file = cfg.get("schedule_cron", "data/schedule/cron.json")
+    except Exception:
+        schedule_file = "data/schedule/schedule.json"
+        cron_file = "data/schedule/cron.json"
+    return schedule_file, cron_file
+
+
+def _read_json_file(path: str, default=None):
+    try:
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return default
+
+
+def _write_json_file(path: str, data):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+class ScheduleItem(BaseModel):
+    title: str
+    start_time: str
+    end_time: Optional[str] = None
+    description: Optional[str] = None
+
+
+class AlarmItem(BaseModel):
+    title: str
+    trigger_time: str
+    repeat_rule: str = "none"
+    active: bool = True
+
+
+@app.get("/api/schedule")
+async def get_schedule():
+    schedule_file, _ = _load_schedule_paths()
+    return _read_json_file(schedule_file, [])
+
+
+@app.post("/api/schedule")
+async def add_schedule(item: ScheduleItem):
+    schedule_file, _ = _load_schedule_paths()
+    schedules = _read_json_file(schedule_file, []) or []
+    new_item = item.dict()
+    new_item["id"] = str(uuid.uuid4())
+    new_item["createdAt"] = datetime.datetime.now().isoformat()
+    schedules.append(new_item)
+    _write_json_file(schedule_file, schedules)
+    return {"status": "success", "item": new_item}
+
+
+@app.delete("/api/schedule/{item_id}")
+async def delete_schedule(item_id: str):
+    schedule_file, _ = _load_schedule_paths()
+    schedules = _read_json_file(schedule_file, []) or []
+    schedules = [s for s in schedules if s.get("id") != item_id]
+    _write_json_file(schedule_file, schedules)
+    return {"status": "success"}
+
+
+@app.get("/api/cron")
+async def get_cron():
+    _, cron_file = _load_schedule_paths()
+    return _read_json_file(cron_file, [])
+
+
+@app.post("/api/cron")
+async def add_cron(item: AlarmItem):
+    _, cron_file = _load_schedule_paths()
+    crons = _read_json_file(cron_file, []) or []
+    new_item = item.dict()
+    new_item["id"] = str(uuid.uuid4())
+    new_item["createdAt"] = datetime.datetime.now().isoformat()
+    crons.append(new_item)
+    _write_json_file(cron_file, crons)
+    return {"status": "success", "item": new_item}
+
+
+@app.delete("/api/cron/{item_id}")
+async def delete_cron(item_id: str):
+    _, cron_file = _load_schedule_paths()
+    crons = _read_json_file(cron_file, []) or []
+    crons = [c for c in crons if c.get("id") != item_id]
+    _write_json_file(cron_file, crons)
+    return {"status": "success"}
+
+
+@app.post("/api/cron/{item_id}")
+async def update_cron_endpoint(item_id: str, updates: dict):
+    _, cron_file = _load_schedule_paths()
+    crons = _read_json_file(cron_file, []) or []
+    updated = False
+    for c in crons:
+        if c.get("id") == item_id:
+            for key in ["title", "trigger_time", "repeat_rule", "active"]:
+                if key in updates:
+                    c[key] = updates[key]
+            updated = True
+            break
+    if updated:
+        _write_json_file(cron_file, crons)
+        return {"status": "success"}
+    raise HTTPException(status_code=404, detail="Alarm not found")
+
 @app.post("/api/config/{filename}")
 async def update_config(filename: str, config: Dict[str, Any]):
     if not filename.endswith(".json"):
         filename += ".json"
-    file_path = os.path.join("data", "config", filename)
+    file_path = os.path.join(DATA_DIR, "config", filename)
     with open(file_path, "w", encoding="utf-8") as f:
         json.dump(config, f, indent=4, ensure_ascii=False)
     return {"status": "success"}

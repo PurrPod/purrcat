@@ -4,7 +4,7 @@ requirements.txt
 Dockerfile
 sandbox*
 data/checkpoints
-
+data/buffer
 __pycache__/
 *.py[cod]
 *$py.class

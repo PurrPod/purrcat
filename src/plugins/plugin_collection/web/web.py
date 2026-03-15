@@ -17,18 +17,22 @@ with warnings.catch_warnings():
         except ImportError:
             DDGS = None
 
-with open("data\config\web_config.json","r") as f:
+with open("data\config\web_config.json", "r", encoding="utf-8") as f:
     config = json.load(f)
 os.environ["TAVILY_API_KEY"] = config["TAVILY_API_KEY"]
 _tool_instance = None
+
+
 def _format_response(msg_type: str, content: Any) -> str:
     return json.dumps({"type": msg_type, "content": content}, ensure_ascii=False)
+
+
 def get_tool():
     global _tool_instance
     if _tool_instance is None:
-        # 默认 buffer 路径在当前文件所在目录下的 buffer 文件夹
-        _tool_instance = WebTools(buffer_path=os.path.join(os.path.dirname(__file__), "buffer"))
+        _tool_instance = WebTools(buffer_path=os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))),"data", "buffer"))
     return _tool_instance
+
 
 class WebTools:
     def __init__(self, buffer_path: str = "data\\buffer"):
@@ -36,17 +40,33 @@ class WebTools:
         if not os.path.exists(self.buffer_path):
             os.makedirs(self.buffer_path)
 
-
     def _save_to_buffer(self, content: str, prefix: str = "fetch") -> str:
         marker_id = uuid.uuid4().hex[:10]
         timestamp = datetime.datetime.now().strftime("%Y%m%d")
         filename = f"{prefix}_{timestamp}{marker_id}.md"
         file_path = os.path.join(self.buffer_path, filename)
-        
+
         with open(file_path, "w", encoding="utf-8") as f:
             f.write(content)
-        
+
         return file_path
+
+    def _process_content(self, content: str, prefix: str) -> str:
+        """
+        处理返回内容：判断是否超过 3000 字符限制。
+        超过则存入文件并截断返回，未超过则直接返回完整内容。
+        """
+        TOKEN_LIMIT = 3000
+
+        if len(content) <= TOKEN_LIMIT:
+            return content
+        else:
+            # 超过字数限制，触发保存文件
+            file_path = self._save_to_buffer(content, prefix=prefix)
+            # 截取前3000个字符
+            truncated_content = content[:TOKEN_LIMIT]
+            # 附加提示信息
+            return f"{truncated_content}\n\n...\n[超过字数限制，已将结果完整保留在 {file_path} 文件里]"
 
     def web_search(self, query: str, max_results: int = 5) -> str:
         """
@@ -68,12 +88,12 @@ class WebTools:
                     tavily_data = resp.json()
                     for res in tavily_data.get("results", []):
                         results.append({"title": res["title"], "url": res["url"], "snippet": res["content"]})
-                    
+
                     md_content = f"# Search Results for: {query}\n\n"
                     for res in results:
                         md_content += f"## {res['title']}\n- URL: {res['url']}\n- Snippet: {res['snippet']}\n\n"
-                    file_path = self._save_to_buffer(md_content, prefix="search")
-                    return f"已将结果存放至文件{file_path}"
+
+                    return self._process_content(md_content, prefix="search")
                 else:
                     error_logs.append(f"Tavily API Error: {resp.status_code} - {resp.text}")
             except Exception as e:
@@ -92,12 +112,12 @@ class WebTools:
                     for item in google_data.get("items", []):
                         results.append(
                             {"title": item.get("title"), "url": item.get("link"), "snippet": item.get("snippet")})
-                    
+
                     md_content = f"# Search Results for: {query}\n\n"
                     for res in results:
                         md_content += f"## {res['title']}\n- URL: {res['url']}\n- Snippet: {res['snippet']}\n\n"
-                    file_path = self._save_to_buffer(md_content, prefix="search")
-                    return f"已将结果存放至文件{file_path}"
+
+                    return self._process_content(md_content, prefix="search")
                 else:
                     error_logs.append(f"Google API Error: {resp.status_code} - {resp.text}")
             except Exception as e:
@@ -112,16 +132,16 @@ class WebTools:
                         for r in ddg_results:
                             results.append(
                                 {"title": r.get("title", ""), "url": r.get("href", ""), "snippet": r.get("body", "")})
-                        
+
                         md_content = f"# Search Results for: {query}\n\n"
                         for res in results:
                             md_content += f"## {res['title']}\n- URL: {res['url']}\n- Snippet: {res['snippet']}\n\n"
-                        file_path = self._save_to_buffer(md_content, prefix="search")
-                        return f"已将结果存放至文件{file_path}"
+
+                        return self._process_content(md_content, prefix="search")
         except Exception as e:
             error_logs.append(f"DDGS Fallback Exception: {str(e)}")
 
-        # 如果全军覆没，返回所有错误日志，方便你排查是不是 Key 没配对或者网络断了
+        # 如果全军覆没，返回所有错误日志
         return json.dumps({
             "type": "error",
             "content": f"All web APIs failed. Please check your network or API Keys. Logs: {' | '.join(error_logs)}"
@@ -139,8 +159,8 @@ class WebTools:
 
             if resp.status_code == 200:
                 content = resp.text
-                file_path = self._save_to_buffer(content, prefix="fetch")
-                return _format_response("text", "已将结果存放至文件{file_path}")
+                result_text = self._process_content(content, prefix="fetch")
+                return _format_response("text", result_text)
         except Exception as e:
             print(f"⚠️ Jina API failed: {e}. Falling back to local scraper...")
 
@@ -168,18 +188,18 @@ class WebTools:
             lines = [line.strip() for line in clean_text.splitlines()]
             final_text = "\n".join(line for line in lines if line)
 
-
-            file_path = self._save_to_buffer(final_text, prefix="fetch")
-            return _format_response("text",f"已将结果存放至文件{file_path}")
+            result_text = self._process_content(final_text, prefix="fetch")
+            return _format_response("text", result_text)
 
         except Exception as e:
             return json.dumps({"type": "error", "content": f"Failed to fetch content from {url}: {str(e)}"},
                               ensure_ascii=False)
 
+
 # Top-level wrappers
 def web_search(query: str, max_results: int = 5) -> str:
     return get_tool().web_search(query, max_results)
 
+
 def fetch_web_content(url: str) -> str:
     return get_tool().fetch_web_content(url)
-

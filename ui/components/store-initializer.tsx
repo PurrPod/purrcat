@@ -14,6 +14,8 @@ export function StoreInitializer() {
   const fetchThoughtChain = useAppStore((state) => state.fetchThoughtChain)
   const fetchModelConfig = useAppStore((state) => state.fetchModelConfig)
   const fetchFile = useAppStore((state) => state.fetchFile)
+  const fetchSchedule = useAppStore((state) => state.fetchSchedule)
+  const fetchAlarms = useAppStore((state) => state.fetchAlarms)
 
   useEffect(() => {
     // Initial fetch
@@ -26,7 +28,9 @@ export function StoreInitializer() {
     fetchDatabases()
     fetchThoughtChain()
     fetchModelConfig()
-    
+    fetchSchedule()
+    fetchAlarms()
+
     // Fetch system files for sidebar
     fetchFile('user_profile')
     fetchFile('me')
@@ -39,6 +43,8 @@ export function StoreInitializer() {
       fetchTasks()
       fetchThoughtChain()
       fetchModelConfig()
+      fetchSchedule()
+      fetchAlarms()
     }, 5000)
 
     return () => clearInterval(interval)

@@ -13,7 +13,7 @@ import {
   ContextMenuItem,
   ContextMenuTrigger,
 } from '@/components/ui/context-menu'
-import { FolderKanban, Clock, CheckCircle, XCircle, Loader2, Trash2, StopCircle, Plus, Search, Check, ChevronDown, Info } from 'lucide-react'
+import { FolderKanban, Clock, CheckCircle, XCircle, Loader2, Trash2, StopCircle, Plus, Search, Check, ChevronDown, Info, Paperclip, Wand2, Database } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Project } from '@/lib/types'
 import { Button } from '@/components/ui/button'
@@ -760,6 +760,13 @@ function AddProjectDialog() {
   const fetchModelConfig = useAppStore((state) => state.fetchModelConfig)
   const fetchToolGroups = useAppStore((state) => state.fetchToolGroups)
   const modelConfig = useAppStore((state) => state.modelConfig)
+  const skills = useAppStore((state) => state.skills)
+  const databases = useAppStore((state) => state.databases)
+  const fetchSkills = useAppStore((state) => state.fetchSkills)
+  const fetchDatabases = useAppStore((state) => state.fetchDatabases)
+  const [skillDialogOpen, setSkillDialogOpen] = useState(false)
+  const [dbDialogOpen, setDbDialogOpen] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [formData, setFormData] = useState({
     name: '',
     prompt: '',
@@ -780,7 +787,9 @@ function AddProjectDialog() {
     if (!open) return
     fetchModelConfig()
     fetchToolGroups()
-  }, [open, fetchModelConfig, fetchToolGroups])
+    fetchSkills()
+    fetchDatabases()
+  }, [open, fetchModelConfig, fetchToolGroups, fetchSkills, fetchDatabases])
 
   useEffect(() => {
     if (!open) return
@@ -790,6 +799,29 @@ function AddProjectDialog() {
       core: modelNames.includes(prev.core) ? prev.core : modelNames[0],
     }))
   }, [open, modelNames])
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      // 模拟文件路径（实际应用中会是真实路径）
+      const fakePath = `/uploads/${file.name}`
+      setFormData((prev) => ({ ...prev, prompt: prev.prompt + (prev.prompt ? '\n' : '') + `[文件: ${fakePath}]` }))
+    }
+    // Reset input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
+  }
+
+  const handleSkillSelect = (skillPath: string) => {
+    setFormData((prev) => ({ ...prev, prompt: prev.prompt + (prev.prompt ? '\n' : '') + `[Skill: ${skillPath}]` }))
+    setSkillDialogOpen(false)
+  }
+
+  const handleDatabaseSelect = (dbName: string) => {
+    setFormData((prev) => ({ ...prev, prompt: prev.prompt + (prev.prompt ? '\n' : '') + `[数据库: ${dbName}]` }))
+    setDbDialogOpen(false)
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -834,6 +866,94 @@ function AddProjectDialog() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="prompt">项目需求 (Prompt)</Label>
+                  <div className="flex gap-2 mb-2">
+                    {/* 上传文件按钮 */}
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      className="hidden"
+                      onChange={handleFileSelect}
+                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => fileInputRef.current?.click()}
+                    >
+                      <Paperclip className="size-4 mr-1" />
+                      上传文件
+                    </Button>
+
+                    {/* 选择 Skill 按钮 */}
+                    <Dialog open={skillDialogOpen} onOpenChange={setSkillDialogOpen}>
+                      <DialogTrigger asChild>
+                        <Button variant="outline" size="sm">
+                          <Wand2 className="size-4 mr-1" />
+                          选择 Skill
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent>
+                        <DialogHeader>
+                          <DialogTitle>选择 Skill</DialogTitle>
+                        </DialogHeader>
+                        <ScrollArea className="h-64">
+                          <div className="flex flex-col gap-2">
+                            {skills.map((skill) => (
+                              <button
+                                key={skill.name}
+                                onClick={() => handleSkillSelect(skill.path)}
+                                className="flex flex-col items-start p-3 rounded-lg border hover:bg-accent transition-colors text-left"
+                              >
+                                <span className="font-medium text-sm">{skill.name}</span>
+                                {skill.description && (
+                                  <span className="text-xs text-muted-foreground">
+                                    {skill.description}
+                                  </span>
+                                )}
+                                <span className="text-xs text-muted-foreground mt-1 font-mono">
+                                  {skill.path}
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        </ScrollArea>
+                      </DialogContent>
+                    </Dialog>
+
+                    {/* 插入数据库按钮 */}
+                    <Dialog open={dbDialogOpen} onOpenChange={setDbDialogOpen}>
+                      <DialogTrigger asChild>
+                        <Button variant="outline" size="sm">
+                          <Database className="size-4 mr-1" />
+                          插入数据库
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent>
+                        <DialogHeader>
+                          <DialogTitle>选择数据库</DialogTitle>
+                        </DialogHeader>
+                        <ScrollArea className="h-60">
+                          <div className="flex flex-col gap-2 p-1">
+                            {databases.map((dbName) => (
+                              <Button
+                                key={dbName}
+                                variant="ghost"
+                                className="justify-start font-normal"
+                                onClick={() => handleDatabaseSelect(dbName)}
+                              >
+                                <Database className="size-4 mr-2" />
+                                {dbName}
+                              </Button>
+                            ))}
+                            {databases.length === 0 && (
+                              <div className="text-center py-8 text-muted-foreground text-sm">
+                                未发现可用数据库
+                              </div>
+                            )}
+                          </div>
+                        </ScrollArea>
+                      </DialogContent>
+                    </Dialog>
+                  </div>
                   <Textarea
                     id="prompt"
                     value={formData.prompt}
@@ -907,12 +1027,17 @@ function AddProjectDialog() {
 
 export default function ProjectPage() {
   const projects = useAppStore((state) => state.projects)
+  const fetchProjects = useAppStore((state) => state.fetchProjects)
   const removeProject = useAppStore((state) => state.removeProject)
   const stopProject = useAppStore((state) => state.stopProject)
   const [selectedId, setSelectedId] = useState<string | null>(projects[0]?.id || null)
   
   const selectedProject = projects.find((p) => p.id === selectedId)
   const runningCount = projects.filter((p) => p.status === 'running').length
+
+  useEffect(() => {
+    fetchProjects()
+  }, [fetchProjects])
 
   return (
     <div className="h-[calc(100vh-4rem)] flex">

@@ -1,9 +1,7 @@
 from .feishu import (
-    send_message,
-    get_message,
+    send_feishu_message,
 )
 
 __all__ = [
-    "send_message",
-    "get_message",
+    "send_feishu_message",
 ]

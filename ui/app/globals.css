@@ -196,3 +196,10 @@
 .animate-steam-3 {
   animation: steam-3 2s ease-in-out infinite 0.6s;
 }
+
+/* 日历样式覆盖 */
+.rdp-day_selected {
+  background-color: #f5f5dc !important; /* 米黄色 */
+  color: black !important;
+  font-weight: bold !important;
+}

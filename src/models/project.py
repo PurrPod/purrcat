@@ -5,6 +5,7 @@ import os
 import time
 import uuid
 import threading
+import shutil
 
 from src.agent.agent import add_message
 from src.models.model import Model
@@ -27,20 +28,50 @@ def set_project_state(project_id, state):
             break
     if project_id in PROJECT_INSTANCES:
         PROJECT_INSTANCES[project_id].state = state
+        PROJECT_INSTANCES[project_id].save_checkpoint()
 
 
 def delete_project(project_id):
     global PROJECT_POOL
-    PROJECT_POOL = [p for p in PROJECT_POOL if p["id"] != project_id]
+    checkpoint_dir = None
+
     if project_id in PROJECT_INSTANCES:
+        instance = PROJECT_INSTANCES[project_id]
+        checkpoint_dir = f"data/checkpoints/project/{instance.name}_{instance.creat_time}/"
         del PROJECT_INSTANCES[project_id]
+    else:
+        for p in PROJECT_POOL:
+            if p.get("id") == project_id:
+                name = p.get("name")
+                creat_time = p.get("creat_time")
+                if name and creat_time:
+                    checkpoint_dir = f"data/checkpoints/project/{name}_{creat_time}/"
+                break
+
+    PROJECT_POOL = [p for p in PROJECT_POOL if p.get("id") != project_id]
+
+    if checkpoint_dir and os.path.isdir(checkpoint_dir):
+        try:
+            shutil.rmtree(checkpoint_dir, ignore_errors=True)
+        except Exception:
+            pass
 
 
 def kill_project(project_id):
     """全局方法：阶段性 Kill 指定的项目"""
+    # 如果项目实例正在运行，则直接触发 kill 信号
     if project_id in PROJECT_INSTANCES:
         PROJECT_INSTANCES[project_id].kill()
         return True
+
+    # 如果项目不在运行实例中，但仍存在于 PROJECT_POOL（例如后端重启后从 checkpoint 载入）
+    # 允许前端仍然调用 stop 操作，让状态在界面上保持一致。
+    for p in PROJECT_POOL:
+        if p.get("id") == project_id:
+            p["state"] = "killed"
+            p["updatedAt"] = datetime.datetime.now().isoformat()
+            return True
+
     return False
 
 
