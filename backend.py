@@ -36,7 +36,7 @@ async def lifespan(app: FastAPI):
     os.environ.pop("https_proxy", None)
     
     # Register plugins
-    for tool in ["database", "filesystem", "feishu", "manager", "schedule", "web"]:
+    for tool in ["database", "filesystem", "feishu", "manager", "schedule", "web", "mcptool"]:
         try:
             register_plugin(tool)
         except Exception as e:

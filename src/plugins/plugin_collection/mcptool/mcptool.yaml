@@ -4,6 +4,7 @@ mcptool:
   dir_path: plugin_collection/mini_github/
   functions:
     get_mcp_menu:
+      type: function
       function:
         name: mcptool__get_mcp_menu
         description: "获取当前可用的所有 MCP 外部服务菜单和工具简述"
@@ -11,6 +12,7 @@ mcptool:
           type: object
           properties: {}
     get_tool_details:
+      type: function
       function:
         name: mcptool__get_tool_details
         description: "获取特定 MCP 工具的详细参数说明 (JSON Schema)"
@@ -25,6 +27,7 @@ mcptool:
               description: 工具的名称
           required: ["server_name", "tool_name"]
     call_mcp_tool:
+      type: function
       function:
         name: mcptool__call_mcp_tool
         description: "执行特定的 MCP 工具，需要传入严格按照 mcptool__get_tool_details 的参数格式"
