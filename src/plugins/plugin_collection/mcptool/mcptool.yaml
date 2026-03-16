@@ -1,0 +1,41 @@
+mcptool:
+  name: "MCP 服务调用器"
+  desc: "提供外部 MCP 工具，仅支持白名单内MCP工具"
+  dir_path: plugin_collection/mini_github/
+  functions:
+    get_mcp_menu:
+      function:
+        name: mcptool__get_mcp_menu
+        description: "获取当前可用的所有 MCP 外部服务菜单和工具简述"
+        parameters:
+          type: object
+          properties: {}
+    get_tool_details:
+      function:
+        name: mcptool__get_tool_details
+        description: "获取特定 MCP 工具的详细参数说明 (JSON Schema)"
+        parameters:
+          type: object
+          properties:
+            server_name:
+              type: string
+              description: MCP Server 的名称
+            tool_name:
+              type: string
+              description: 工具的名称
+          required: ["server_name", "tool_name"]
+    call_mcp_tool:
+      function:
+        name: mcptool__call_mcp_tool
+        description: "执行特定的 MCP 工具，需要传入严格按照 mcptool__get_tool_details 的参数格式"
+        parameters:
+          type: object
+          properties:
+            server_name:
+              type: string
+            tool_name:
+              type: string
+            arguments:
+              type: string
+              description: 工具所需的 JSON 格式的参数字符串
+          required: ["server_name", "tool_name", "arguments"]
