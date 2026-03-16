@@ -9,6 +9,7 @@ __pycache__/
 *.py[cod]
 *$py.class
 test.py
+src/agent/checkpoint.json
 *.so
 
 venv/

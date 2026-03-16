@@ -58,11 +58,16 @@ class RAGRetriever:
             with(open(f"data\\config\\config.json", 'r', encoding='utf-8')) as f:
                 json_config = json.load(f)
                 model_name = json_config["embedding_model"]
-        # 初始化时只加载大模型
-        print(f"⏳ 正在启动 RAG 引擎，加载嵌入模型 {model_name}...")
-        self.model = SentenceTransformer(model_name)
+        # 延迟加载嵌入模型
+        self.model_name = model_name
+        self.model = None
         self.base_dir = base_dir
         self.buffer_pool: Dict[str, VectorDB] = {}
+
+    def _load_model(self):
+        if self.model is None:
+            print(f"⏳ 正在启动 RAG 引擎，加载嵌入模型 {self.model_name}...")
+            self.model = SentenceTransformer(self.model_name)
     def _get_or_load_db(self, db_name: str) -> Optional[VectorDB]:
         if db_name not in self.buffer_pool:
             db_path = os.path.join(self.base_dir, db_name)
@@ -76,6 +81,7 @@ class RAGRetriever:
     def search(self, query: str, target_dbs: List[str], top_k: int = 5, candidate_k: int = 60, rrf_k: int = 60) -> List[
         Dict]:
         """RAG + 关键词混合得分排名检索方法"""
+        self._load_model()  # 延迟加载模型
         if not target_dbs:
             return []
         query_embedding = self.model.encode([query], normalize_embeddings=True)
