@@ -308,7 +308,7 @@ class Task:
 
             prompt = f"{self.system_prompt}\n\n请你开始执行当前阶段的子任务。"
             if self.task_histories:
-                prompt += f"\n\n[前置任务情况]\n{self.task_histories}"
+                prompt += f"\n\n🕦 前置任务情况\n{self.task_histories}"
             self.current_history.append({"role": "user", "content": prompt})
         else:
             self.current_history.append(
@@ -316,6 +316,11 @@ class Task:
                  "content": f"QA反馈不通过：{suggestion}\n请修正后重新提交。记得最终交付时不再调用工具，并直接输出规范的JSON格式。"})
 
         available_tools = self.task_detail.get('available_tools', [])
+        for available_tool in available_tools:
+            if available_tool.startswith("filesystem"):
+                available_tools.remove(available_tool)
+        if "filesystem" not in available_tools:
+            available_tools.append("filesystem") # 兜底必须有filesystem
         if isinstance(available_tools, str):
             available_tools = [available_tools] if available_tools else []
         tools_info = get_plugin_tool_info(available_tools)
@@ -418,9 +423,10 @@ class Task:
     def run_eval(self, max_steps: int = 30):
         self.eval_history = []
         sys_prompt = (
-            "你是一个严格且专业的项目质检员（QA）。\n"
+            "你是一个严格但灵活、专业的项目质检员（QA）。\n"
             "【质检核心标准】\n"
             "严格对照当前子任务要求进行逐项检查。发现遗漏、幻觉、格式错误判定为不通过。绝不能代替Worker执行任务！\n"
+            "如果Worker因非自身原因无法交付实物，但在summary里交付了对应的完整结果，可酌情让其通过。\n"
             "【重要交付规范】\n"
             "1. 质检过程中你可以正常输出文本思考或调用工具查验。\n"
             "2. 当质检完成，【且不再调用工具时】，你必须直接返回纯JSON对象，不要包含其他说明文字。\n"
@@ -428,7 +434,7 @@ class Task:
         )
         self.eval_history.append({"role": "system", "content": sys_prompt})
 
-        prompt = f"{self.system_prompt}\n\n请完成当前阶段的质检：\nWorker的交付内容：{json.dumps(self.run_result, ensure_ascii=False)}\n【参考】前置任务日志：{self.task_histories}"
+        prompt = f"{self.system_prompt}\n\n请完成当前阶段的质检：\nWorker的交付详情：{json.dumps(self.run_result, ensure_ascii=False)}"
         self.eval_history.append({"role": "user", "content": prompt})
 
         available_tools = self.task_detail.get('available_tools', [])

@@ -381,7 +381,15 @@ class Project:
                 metadata={"task_id": task_id, "status": "running"}
             )
             print(f"Ready to execute: {task_key} -> {task_detail.get('title', '')}")
-            system_prompt = f"[用户核心项目]{self.prompt}\n[项目子任务]{self.sub_tasks}\n[当前阶段]{task_detail}\n"
+
+
+            sub_tasks_prompt = ""
+            for task in self.sub_tasks.keys():
+                sub_tasks_prompt += f"- {task}:{self.sub_tasks[task]["title"]}\n  desc:{self.sub_tasks[task]["desc"]}\n  deliverable:{self.sub_tasks[task]["deliverable"]}\n"
+            task_detail_prompt = f"- title:{task_detail["title"]}\n"
+            task_detail_prompt += f"- desc:{task_detail["desc"]}\n"
+            task_detail_prompt += f"- deliverable:{task_detail["deliverable"]}\n"
+            system_prompt = f"🐱 用户核心项目\n{self.prompt}\n\n🧩 项目子任务\n{sub_tasks_prompt}\n🤖 当前阶段\n{task_detail_prompt}\n"
             single_task = Task(task_detail, judge_mode=self.judge_mode, system_prompt=system_prompt,
                                task_histories=task_histories_str, task_id=task_id)
             run_result = single_task.run_pipeline()
@@ -474,9 +482,10 @@ class Project:
                 retry_prompt = (
                     f"你是一个项目经理, 针对需求 '{self.prompt}', 原本将任务切分为: {json.dumps(clean_sub_tasks, ensure_ascii=False)}。\n"
                     f"执行发生中断，原因：{msg}\n"
-                    f"请调整任务切分方式来解决中断。\n"
+                    f"请对项目进行重新审视。如果中断原因无法通过重新编排任务，安排工具来解决，那就及时报告并中断项目，如果你认为可以通过重新编排来解决，请调整任务切分方式来解决中断。\n"
                     f"【重要警告】：返回的 sub_tasks 字典中，必须包含从头到尾完整的任务流（包括那些之前已经成功的任务），绝对不能只返回剩余的任务！\n"
                     f"返回纯JSON格式: {{\"retry\": bool, \"desc\": \"<简短说明>\", \"sub_tasks\": dict或null}}。\n"
+                    f"决定重新编排则retry字段填true，否则填false；请务必全方位考虑，既考虑任务合理性，又考虑失败重试后仍失败的token成本。"
                     f"对于可用工人(worker/judger)，请必须从以下列表中严格选择：\n{available_worker_names}\n"
                     f"对于可用工具(available_tools)，参考：\n{available_tool_names}\n"
                     f"{tool_info}"
