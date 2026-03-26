@@ -6,7 +6,7 @@ database:
     list_databases:
       type: function
       function:
-        name: "database__list_databases"
+        name: "list_databases"
         description: "List all available databases on disk. Use this first if you do not know which database to search."
         parameters:
           type: "object"
@@ -16,7 +16,7 @@ database:
     rag_search:
       type: function
       function:
-        name: "database__rag_search"
+        name: "rag_search"
         description: "Perform RAG search on specific local databases. You MUST provide the target_dbs parameter."
         parameters:
           type: "object"
@@ -37,7 +37,7 @@ database:
     expand_database_context:
       type: function
       function:
-        name: "database__expand_database_context"
+        name: "expand_database_context"
         description: "Expand the text context around a specific matched chunk in a database."
         parameters:
           type: "object"

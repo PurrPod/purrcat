@@ -58,8 +58,8 @@ const statusConfig = {
   completed: { icon: CheckCircle, color: 'text-green-500', bg: 'bg-green-500/10', label: '已完成' },
   failed: { icon: XCircle, color: 'text-red-500', bg: 'bg-red-500/10', label: '失败' },
 }
-
-const API_BASE = 'http://localhost:8000/api'
+const LOG_PAGE_SIZE = 200
+const TASK_LOG_CACHE = new Map<string, { entries: TaskLogEntry[]; cursor: number }>()
 
 type TaskLogEntry = {
   id: string
@@ -346,9 +346,11 @@ function TaskCard({
           onClick={onSelect}
         >
           <CardHeader className="pb-2">
-            <CardTitle className="flex items-center justify-between text-sm">
-              <span className="truncate">{task.name}</span>
-              <div className="flex items-center gap-2">
+            <CardTitle className="flex items-center justify-between text-sm min-w-0">
+              <div className="min-w-0 flex-1">
+                <span className="truncate block" title={task.name}>{task.name}</span>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
                 <Dialog open={metaOpen} onOpenChange={setMetaOpen}>
                   <DialogTrigger asChild>
                     <button
@@ -434,10 +436,13 @@ function TaskCard({
 }
 
 function TaskDetailView({ task }: { task: Task }) {
+  const apiFetch = useAppStore((state) => state.apiFetch)
   const [entries, setEntries] = useState<TaskLogEntry[]>([])
   const cursorRef = useRef(0)
   const fetchingRef = useRef(false)
   const [isFetching, setIsFetching] = useState(false)
+  const initialFetchRef = useRef(true)
+  const [visibleCount, setVisibleCount] = useState(LOG_PAGE_SIZE)
   const injectTask = useAppStore((state) => state.injectTask)
   const [pushContent, setPushContent] = useState('')
   const [isPushing, setIsPushing] = useState(false)
@@ -481,15 +486,21 @@ function TaskDetailView({ task }: { task: Task }) {
     fetchingRef.current = true
     setIsFetching(true)
     try {
-      const res = await fetch(`${API_BASE}/tasks/${task.id}/log?cursor=${cursorRef.current}&limit=500`)
+      const query = initialFetchRef.current
+        ? `tail=true&limit=${LOG_PAGE_SIZE}`
+        : `cursor=${cursorRef.current}&limit=${LOG_PAGE_SIZE}`
+      const res = await apiFetch(`/tasks/${task.id}/log?${query}`)
       const data = await res.json()
       const nextEntries = Array.isArray(data?.entries) ? data.entries.map(normalizeEntry) : []
-      setEntries((prev) => [...prev, ...nextEntries])
-      if (typeof data?.nextCursor === 'number') {
-        cursorRef.current = data.nextCursor
-      } else {
-        cursorRef.current += nextEntries.length
-      }
+      const nextCursor =
+        typeof data?.nextCursor === 'number' ? data.nextCursor : cursorRef.current + nextEntries.length
+      cursorRef.current = nextCursor
+      setEntries((prev) => {
+        const merged = [...prev, ...nextEntries]
+        TASK_LOG_CACHE.set(task.id, { entries: merged, cursor: nextCursor })
+        return merged
+      })
+      initialFetchRef.current = false
     } catch {
     } finally {
       setIsFetching(false)
@@ -498,15 +509,24 @@ function TaskDetailView({ task }: { task: Task }) {
   }, [normalizeEntry, task.id])
 
   useEffect(() => {
-    setEntries([])
-    cursorRef.current = 0
+    setVisibleCount(LOG_PAGE_SIZE)
+    const cached = TASK_LOG_CACHE.get(task.id)
+    if (cached) {
+      setEntries(cached.entries)
+      cursorRef.current = cached.cursor
+      initialFetchRef.current = false
+    } else {
+      setEntries([])
+      cursorRef.current = 0
+      initialFetchRef.current = true
+    }
     fetchMore()
   }, [fetchMore, task.id])
 
   useEffect(() => {
     const timer = window.setInterval(async () => {
       try {
-        const res = await fetch(`${API_BASE}/tasks/dirty`)
+        const res = await apiFetch('/tasks/dirty')
         const data = await res.json()
         if (Array.isArray(data?.dirty) && data.dirty.includes(task.id)) {
           await fetchMore()
@@ -560,6 +580,11 @@ function TaskDetailView({ task }: { task: Task }) {
     )
   }
 
+  const visibleEntries = useMemo(() => {
+    const start = Math.max(0, entries.length - visibleCount)
+    return entries.slice(start)
+  }, [entries, visibleCount])
+
   return (
     <Card className="h-full flex flex-col overflow-hidden">
       <CardHeader className="shrink-0">
@@ -603,8 +628,22 @@ function TaskDetailView({ task }: { task: Task }) {
             </div>
             <ScrollArea className="flex-1 rounded-md border bg-muted/30 min-h-0">
               <div className="p-3 space-y-3">
-                {entries.length ? (
-                  entries.map((entry) => <div key={entry.id}>{renderEntry(entry)}</div>)
+                {visibleEntries.length ? (
+                  <>
+                    {entries.length > visibleCount ? (
+                      <div className="flex justify-center">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setVisibleCount((v) => v + LOG_PAGE_SIZE)}
+                        >
+                          显示更早日志（已显示 {visibleEntries.length}/{entries.length}）
+                        </Button>
+                      </div>
+                    ) : null}
+                    {visibleEntries.map((entry) => <div key={entry.id}>{renderEntry(entry)}</div>)}
+                  </>
                 ) : (
                   <div className="text-muted-foreground italic text-xs text-center py-4">暂无日志</div>
                 )}
@@ -937,17 +976,12 @@ function AddTaskDialog() {
 
 export default function TaskPage() {
   const tasks = useAppStore((state) => state.tasks)
-  const fetchTasks = useAppStore((state) => state.fetchTasks)
   const removeTask = useAppStore((state) => state.removeTask)
   const stopTask = useAppStore((state) => state.stopTask)
   const [selectedId, setSelectedId] = useState<string | null>(tasks[0]?.id || null)
   
   const selectedTask = tasks.find((t) => t.id === selectedId)
   const runningCount = tasks.filter((t) => t.status === 'running').length
-
-  useEffect(() => {
-    fetchTasks()
-  }, [fetchTasks])
 
   return (
     <div className="h-[calc(100vh-4rem)] flex">

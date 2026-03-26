@@ -3,6 +3,9 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
+import { useAppStore } from '@/lib/store'
+import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { Home, FolderKanban, ListTodo, Settings, Puzzle, Cat, Calendar } from 'lucide-react'
 
 const navItems = [
@@ -16,6 +19,7 @@ const navItems = [
 
 export function Navbar() {
   const pathname = usePathname()
+
 
   return (
     <nav className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -49,6 +53,8 @@ export function Navbar() {
             )
           })}
         </div>
+
+
       </div>
     </nav>
   )

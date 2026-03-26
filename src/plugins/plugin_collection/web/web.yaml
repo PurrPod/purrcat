@@ -7,7 +7,7 @@ web:
     web_search:
       type: function
       function:
-        name: "web__web_search"
+        name: "web_search"
         description: "搜索互联网内容并获取相关链接及摘要。结果将以 Markdown 格式保存至 buffer 文件夹。"
         parameters:
           type: "object"
@@ -23,7 +23,7 @@ web:
     fetch_web_content:
       type: function
       function:
-        name: "web__fetch_web_content"
+        name: "fetch_web_content"
         description: "抓取指定 URL 的网页内容。结果将以 Markdown 格式保存至 buffer 文件夹。"
         parameters:
           type: "object"

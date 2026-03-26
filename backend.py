@@ -1,47 +1,62 @@
 import datetime
 import uuid
-
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import asyncio
 import json
 import os
 import time
+import threading
+import shutil
+import re
 from typing import List, Optional, Dict, Any
 from pathlib import Path
 from contextlib import asynccontextmanager
+from collections import deque
+import yaml
 
 # Use absolute paths so the backend can find data/ even if started from a different cwd
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
+PLUGIN_COLLECTION_DIR = Path(os.path.join(BASE_DIR, "src", "plugins", "plugin_collection"))
 
 # Import existing logic
 from src.agent import agent as agent_module
 from src.models import project as project_module
 from src.models import task as task_module
 from src.plugins.plugin_collection.filesystem.filesystem import set_allowed_directories, list_special_directories
-from src.plugins.plugin_manager import register_plugin, get_plugin_config, GLOBAL_TOOL_YAML, PLUGIN_COLLECTION_DIR, load_global_tool_yaml, get_config_data
+
+# ====== 拥抱新架构：引入新版工具管理器 ======
+from src.plugins.plugin_manager import init_tool, TOOL_INDEX_FILE, BASE_TOOLS
+from src.plugins.plugin_collection.local_manager import register_plugin, unregister_plugin
+
 from src.sensor.const import start_sensors
 from src.sensor.feishu import start_lark_sensor
-import yaml
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # --- Startup logic (mirroring main.py) ---
-    # Clear proxy env vars to avoid Lark connection issues if proxy is down
+    # --- Startup logic ---
     os.environ.pop("HTTP_PROXY", None)
     os.environ.pop("HTTPS_PROXY", None)
     os.environ.pop("http_proxy", None)
     os.environ.pop("https_proxy", None)
-    
-    # Register plugins
-    for tool in ["database", "filesystem", "feishu", "manager", "schedule", "web", "mcptool", "multimodal"]:
-        try:
-            register_plugin(tool)
-        except Exception as e:
-            print(f"Error registering plugin {tool}: {e}")
-            
+
+    # 1. 自动初始化基础插件 (仅在首次运行或 local_tool.yaml 丢失时)
+    local_yaml = os.path.join(PLUGIN_COLLECTION_DIR, "local_tool.yaml")
+    if not os.path.exists(local_yaml) or os.path.getsize(local_yaml) < 10:
+        print("首次启动：自动注册核心基础插件...")
+        for tool in ["database", "filesystem", "feishu", "manager", "schedule", "web", "mcptool", "multimodal"]:
+            try:
+                register_plugin(tool)
+            except Exception as e:
+                print(f"自动注册 {tool} 失败: {e}")
+
+    # 2. 构建全局工具注册表 (替代旧版的各种手工加载)
+    print("🔄 初始化全局工具注册表...")
+    init_tool()
+
     # Set up filesystem
     try:
         config_path = os.path.join(DATA_DIR, "config", "file_config.json")
@@ -55,31 +70,43 @@ async def lifespan(app: FastAPI):
             set_allowed_directories(sandbox_dirs)
     except Exception as e:
         print(f"Error setting up filesystem: {e}")
-     
-    # Try listing special directories
+
     try:
         print(list_special_directories())
     except Exception as e:
         print(f"Error listing special directories: {e}")
-        
+
     start_sensors()
-    
-    # Load checkpoints
+
     _ensure_projects_loaded_from_checkpoints()
     _ensure_tasks_loaded_from_checkpoints()
-    
+
     # Start Agent in a separate thread
     global agent
     agent = agent_module.Agent.load_checkpoint()
-    asyncio.create_task(asyncio.to_thread(agent.sensor))
-    
+    agent_sensor_task = asyncio.create_task(asyncio.to_thread(agent.sensor))
+
     # Start Lark sensor with agent instance
     start_lark_sensor(agent)
     yield
+
     # --- Shutdown logic ---
     print("Shutting down backend...")
+    try:
+        agent.stop()
+    except Exception:
+        pass
+    try:
+        await asyncio.wait_for(agent_sensor_task, timeout=2)
+    except Exception:
+        try:
+            agent_sensor_task.cancel()
+        except Exception:
+            pass
+
 
 app = FastAPI(lifespan=lifespan)
+
 
 @app.get("/")
 async def root():
@@ -90,7 +117,8 @@ async def root():
         "frontend": "http://localhost:3000"
     }
 
-# Enable CORS for Next.js
+
+# Enable CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -99,23 +127,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Helper function to get messages from PriorityQueue without popping
+
 def get_all_messages():
-    # PriorityQueue doesn't support viewing without popping
-    # We'll temporarily empty it and refill it
     messages = []
     temp_list = []
     while not agent_module.MESSAGE_QUEUE.empty():
         temp_list.append(agent_module.MESSAGE_QUEUE.get())
-    
+
     for item in temp_list:
         agent_module.MESSAGE_QUEUE.put(item)
-        # item is (-priority, timestamp, message_dict)
         msg = item[2].copy()
         msg["id"] = f"{item[0]}-{item[1]}"
         msg["timestamp"] = item[1]
         messages.append(msg)
     return messages
+
 
 def remove_message_from_queue(msg_id: str):
     temp_list = []
@@ -127,15 +153,16 @@ def remove_message_from_queue(msg_id: str):
             removed = True
             continue
         temp_list.append(item)
-    
+
     for item in temp_list:
         agent_module.MESSAGE_QUEUE.put(item)
     return removed
 
-# API Endpoints
+
 @app.get("/api/messages")
 async def get_messages():
     return get_all_messages()
+
 
 @app.delete("/api/messages/{msg_id}")
 async def delete_message(msg_id: str):
@@ -143,36 +170,41 @@ async def delete_message(msg_id: str):
         return {"status": "success"}
     raise HTTPException(status_code=404, detail="Message not found")
 
+
 class MessageCreate(BaseModel):
     type: str
     content: str
     chat_id: Optional[str] = "owner"
+
 
 @app.post("/api/messages")
 async def create_message(msg: MessageCreate):
     agent_module.add_message(msg.dict())
     return {"status": "success"}
 
+
 @app.get("/api/thought-chain")
 async def get_thought_chain():
-    # Return history as thought chain
     return agent.current_history
+
 
 class ForcePushRequest(BaseModel):
     content: str
+
 
 @app.post("/api/agent/force-push")
 async def force_push(request: ForcePushRequest):
     agent.force_push(request.content)
     return {"status": "success"}
 
+
 @app.post("/api/agent/summarize-memory")
 async def summarize_memory():
     agent._check_and_summarize_memory(check_mode=False)
     return {"status": "success"}
 
+
 def _ensure_projects_loaded_from_checkpoints():
-    """Scan data/checkpoints/project to backfill PROJECT_POOL after backend restart."""
     base_dir = os.path.join(DATA_DIR, "checkpoints", "project")
     if not os.path.isdir(base_dir):
         return
@@ -194,8 +226,6 @@ def _ensure_projects_loaded_from_checkpoints():
             continue
 
         now_iso = datetime.datetime.now().isoformat()
-        # 这里尊重 checkpoint 中保存的真实状态（running/completed/error/killed 等），
-        # 具体的展示含义由前端再做一次映射。
         progress = 0
         stage_histories = state.get('stage_histories', {})
         if 'summary' in stage_histories:
@@ -208,6 +238,7 @@ def _ensure_projects_loaded_from_checkpoints():
             progress = 25
         else:
             progress = 10
+
         project_record = {
             "name": state.get("name", "Unknown"),
             "id": project_id,
@@ -229,7 +260,6 @@ def _ensure_projects_loaded_from_checkpoints():
 
 
 def _ensure_tasks_loaded_from_checkpoints():
-    """Scan data/checkpoints/task to backfill TASK_POOL after backend restart."""
     base_dir = os.path.join(DATA_DIR, "checkpoints", "task")
     if not os.path.isdir(base_dir):
         return
@@ -251,8 +281,8 @@ def _ensure_tasks_loaded_from_checkpoints():
                     "creat_time": task.creat_time,
                 })
                 existing_ids.add(task.task_id)
-        except Exception as e:
-            print(f"Error loading task checkpoint {checkpoint_path}: {e}")
+        except Exception:
+            pass
 
 
 @app.get("/api/projects")
@@ -261,21 +291,81 @@ async def get_projects():
     projects = []
     for p in project_module.PROJECT_POOL:
         project_data = p.copy()
-        # Add history if instance exists
         instance = project_module.PROJECT_INSTANCES.get(p["id"])
         if instance:
             project_data["history"] = instance.current_history
         projects.append(project_data)
     return projects
 
+
+def _ensure_tasks_loaded_from_logs():
+    base_dir = os.path.join(DATA_DIR, "checkpoints", "task")
+    if not os.path.isdir(base_dir):
+        return
+
+    existing_ids = {t.get("id") for t in task_module.TASK_POOL}
+
+    for entry in os.listdir(base_dir):
+        log_path = os.path.join(base_dir, entry, "log.jsonl")
+        if not os.path.isfile(log_path):
+            continue
+
+        folder_name = entry
+        task_name = folder_name
+        creat_time = ""
+        if "_" in folder_name:
+            maybe_time = folder_name.split("_")[-1]
+            task_name = folder_name[: -(len(maybe_time) + 1)] or folder_name
+            creat_time = maybe_time
+
+        task_id = None
+        first_ts = None
+        try:
+            with open(log_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        payload = json.loads(line)
+                    except Exception:
+                        continue
+                    if not task_id:
+                        task_id = payload.get("task_id")
+                    if not first_ts:
+                        first_ts = payload.get("timestamp")
+                    if task_id and first_ts:
+                        break
+        except Exception:
+            continue
+
+        if not task_id or task_id in existing_ids:
+            continue
+
+        created_iso = (
+            datetime.datetime.fromtimestamp(first_ts).isoformat()
+            if isinstance(first_ts, (int, float))
+            else datetime.datetime.now().isoformat()
+        )
+
+        task_record = {
+            "name": task_name or "Unknown",
+            "id": task_id,
+            "state": "running",
+            "creat_time": creat_time,
+            "progress": 50,
+            "createdAt": created_iso,
+            "updatedAt": created_iso,
+        }
+        task_module.TASK_POOL.append(task_record)
+        existing_ids.add(task_id)
+
+
 @app.get("/api/tasks")
 async def get_tasks():
-    # Ensure tasks are backfilled from disk when backend restarts.
-    # Some tasks only have log.jsonl (no checkpoint.json), so we need both methods.
     _ensure_tasks_loaded_from_checkpoints()
     _ensure_tasks_loaded_from_logs()
 
-    # De-duplicate by task_id (防止出现重复key导致前端报错)
     task_map = {}
     for t in task_module.TASK_POOL:
         task_id = t.get("id")
@@ -288,7 +378,13 @@ async def get_tasks():
         task_map[task_id] = task_data
     return list(task_map.values())
 
+
 PROJECT_LOG_PATH_CACHE: Dict[str, str] = {}
+PROJECT_CHECKPOINT_PATH_CACHE: Dict[str, str] = {}
+LOG_READ_LOCK = threading.Lock()
+PROJECT_LOG_READ_CACHE: Dict[str, Dict[str, Any]] = {}
+TASK_LOG_READ_CACHE: Dict[str, Dict[str, Any]] = {}
+
 
 def _resolve_project_log_path(project_id: str) -> Optional[str]:
     cached = PROJECT_LOG_PATH_CACHE.get(project_id)
@@ -322,8 +418,136 @@ def _resolve_project_log_path(project_id: str) -> Optional[str]:
                 continue
     except Exception:
         return None
-
     return None
+
+
+def _resolve_project_checkpoint_path(project_id: str) -> Optional[str]:
+    cached = PROJECT_CHECKPOINT_PATH_CACHE.get(project_id)
+    if cached:
+        return cached
+
+    instance = project_module.PROJECT_INSTANCES.get(project_id)
+    if instance:
+        checkpoint_dir = os.path.join(DATA_DIR, "checkpoints", "project", f"{instance.name}_{instance.creat_time}")
+        checkpoint_path = os.path.join(checkpoint_dir, "checkpoint.json")
+        PROJECT_CHECKPOINT_PATH_CACHE[project_id] = checkpoint_path
+        return checkpoint_path
+
+    base_dir = os.path.join(DATA_DIR, "checkpoints", "project")
+    if not os.path.isdir(base_dir):
+        return None
+
+    try:
+        for entry in os.listdir(base_dir):
+            checkpoint_path = os.path.join(base_dir, entry, "checkpoint.json")
+            if not os.path.isfile(checkpoint_path):
+                continue
+            try:
+                with open(checkpoint_path, "r", encoding="utf-8") as f:
+                    state = json.load(f)
+                if state.get("id") == project_id:
+                    PROJECT_CHECKPOINT_PATH_CACHE[project_id] = checkpoint_path
+                    return checkpoint_path
+            except Exception:
+                continue
+    except Exception:
+        return None
+    return None
+
+
+def _read_jsonl_entries(log_path, cache, cache_key, id_prefix, cursor, limit, tail):
+    if tail:
+        dq = deque(maxlen=limit)
+        line_idx = 0
+        offset = 0
+        with open(log_path, "rb") as f:
+            while True:
+                b = f.readline()
+                if not b:
+                    break
+                offset = f.tell()
+                line = b.decode("utf-8", "replace").strip()
+                if not line:
+                    line_idx += 1
+                    continue
+                try:
+                    payload = json.loads(line)
+                except Exception:
+                    payload = {"card_type": "error", "content": line, "metadata": {"level": "warning"}}
+                payload["id"] = f"{id_prefix}:{line_idx}"
+                dq.append(payload)
+                line_idx += 1
+        with LOG_READ_LOCK:
+            cache[cache_key] = {"path": log_path, "cursor": line_idx, "offset": offset}
+        return {"entries": list(dq), "nextCursor": line_idx, "exists": True}
+
+    with LOG_READ_LOCK:
+        state = cache.get(cache_key) or {}
+        cached_path = state.get("path")
+        cached_cursor = state.get("cursor")
+        cached_offset = state.get("offset")
+
+    if cached_path == log_path and isinstance(cached_cursor, int) and isinstance(cached_offset,
+                                                                                 int) and cached_cursor == cursor:
+        entries = []
+        line_idx = cursor
+        offset = cached_offset
+        with open(log_path, "rb") as f:
+            try:
+                f.seek(offset)
+            except Exception:
+                f.seek(0)
+                line_idx = 0
+            while len(entries) < limit:
+                b = f.readline()
+                if not b:
+                    break
+                offset = f.tell()
+                line = b.decode("utf-8", "replace").strip()
+                if not line:
+                    line_idx += 1
+                    continue
+                try:
+                    payload = json.loads(line)
+                except Exception:
+                    payload = {"card_type": "error", "content": line, "metadata": {"level": "warning"}}
+                payload["id"] = f"{id_prefix}:{line_idx}"
+                entries.append(payload)
+                line_idx += 1
+        with LOG_READ_LOCK:
+            cache[cache_key] = {"path": log_path, "cursor": line_idx, "offset": offset}
+        return {"entries": entries, "nextCursor": line_idx, "exists": True}
+
+    entries = []
+    line_idx = 0
+    offset = 0
+    with open(log_path, "rb") as f:
+        while line_idx < cursor:
+            b = f.readline()
+            if not b:
+                break
+            line_idx += 1
+        offset = f.tell()
+        while len(entries) < limit:
+            b = f.readline()
+            if not b:
+                break
+            offset = f.tell()
+            line = b.decode("utf-8", "replace").strip()
+            if not line:
+                line_idx += 1
+                continue
+            try:
+                payload = json.loads(line)
+            except Exception:
+                payload = {"card_type": "error", "content": line, "metadata": {"level": "warning"}}
+            payload["id"] = f"{id_prefix}:{line_idx}"
+            entries.append(payload)
+            line_idx += 1
+    with LOG_READ_LOCK:
+        cache[cache_key] = {"path": log_path, "cursor": line_idx, "offset": offset}
+    return {"entries": entries, "nextCursor": line_idx, "exists": True}
+
 
 @app.get("/api/projects/dirty")
 async def get_dirty_projects(clear: bool = True):
@@ -333,46 +557,25 @@ async def get_dirty_projects(clear: bool = True):
             project_module.dirty_projects.clear()
     return {"dirty": dirty}
 
+
 @app.get("/api/projects/{project_id}/log")
-async def get_project_log(project_id: str, cursor: int = 0, limit: int = 500):
-    if cursor < 0:
-        cursor = 0
-    if limit < 1:
-        limit = 1
-    if limit > 2000:
-        limit = 2000
+async def get_project_log(project_id: str, cursor: int = 0, limit: int = 500, tail: bool = False):
+    if cursor < 0: cursor = 0
+    if limit < 1: limit = 1
+    if limit > 2000: limit = 2000
 
     log_path = _resolve_project_log_path(project_id)
     if not log_path or not os.path.exists(log_path):
         return {"entries": [], "nextCursor": cursor, "exists": False}
-
-    entries: List[Dict[str, Any]] = []
-    next_cursor = cursor
-
     try:
-        with open(log_path, "r", encoding="utf-8") as f:
-            for idx, line in enumerate(f):
-                if idx < cursor:
-                    continue
-                if len(entries) >= limit:
-                    break
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    payload = json.loads(line)
-                except Exception:
-                    payload = {"card_type": "error", "content": line, "metadata": {"level": "warning"}}
-                payload["id"] = f"{project_id}:{idx}"
-                entries.append(payload)
-                next_cursor = idx + 1
+        return _read_jsonl_entries(log_path, PROJECT_LOG_READ_CACHE, project_id, project_id, cursor, limit, tail)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-    return {"entries": entries, "nextCursor": next_cursor, "exists": True}
 
 class ProjectAnswer(BaseModel):
     answer: str
+
 
 @app.post("/api/projects/{project_id}/answer")
 async def answer_project(project_id: str, payload: ProjectAnswer):
@@ -384,11 +587,46 @@ async def answer_project(project_id: str, payload: ProjectAnswer):
     queue["answers"] = {"用户回复": payload.answer}
     return {"status": "success"}
 
+
 @app.post("/api/projects/{project_id}/stop")
 async def stop_project_endpoint(project_id: str):
     if project_module.kill_project(project_id):
         return {"status": "success"}
     raise HTTPException(status_code=404, detail="Project not found")
+
+
+@app.post("/api/projects/{project_id}/resume")
+async def resume_project_endpoint(project_id: str):
+    _ensure_projects_loaded_from_checkpoints()
+
+    instance = project_module.PROJECT_INSTANCES.get(project_id)
+    if instance:
+        runner = getattr(instance, "_runner_thread", None)
+        if runner and getattr(runner, "is_alive", None) and runner.is_alive():
+            return {"status": "already_running"}
+
+    checkpoint_path = _resolve_project_checkpoint_path(project_id)
+    if not checkpoint_path or not os.path.isfile(checkpoint_path):
+        raise HTTPException(status_code=404, detail="Project checkpoint not found")
+
+    project = project_module.Project.load_checkpoint(checkpoint_path)
+    project._killed = False
+    project_module.set_project_state(project.id, "running")
+
+    def _run_project():
+        try:
+            result = project.run_pipeline()
+            agent_module.add_message(
+                {"type": "project_message", "content": f"[Project通知] 项目 {project_id} 执行结束。\n结论: {result}"})
+        except Exception as e:
+            agent_module.add_message(
+                {"type": "project_message", "content": f"\n[Project异常] 项目 {project_id} 运行时崩溃: {e}"})
+
+    t = threading.Thread(target=_run_project, daemon=True)
+    project._runner_thread = t
+    t.start()
+    return {"status": "success"}
+
 
 @app.delete("/api/projects/{project_id}")
 async def remove_project_endpoint(project_id: str):
@@ -396,90 +634,8 @@ async def remove_project_endpoint(project_id: str):
     project_module.delete_project(project_id)
     return {"status": "success"}
 
+
 TASK_LOG_PATH_CACHE: Dict[str, str] = {}
-
-
-def _ensure_tasks_loaded_from_logs():
-    """Scan data/checkpoints/task to backfill TASK_POOL after backend restart."""
-    base_dir = os.path.join(DATA_DIR, "checkpoints", "task")
-    if not os.path.isdir(base_dir):
-        return
-
-    existing_ids = {t.get("id") for t in task_module.TASK_POOL}
-
-    for entry in os.listdir(base_dir):
-        log_path = os.path.join(base_dir, entry, "log.jsonl")
-        if not os.path.isfile(log_path):
-            continue
-
-        # Derive task name and create time from folder name: <name>_<YYYYmmddHHMMSS>
-        folder_name = entry
-        task_name = folder_name
-        creat_time = ""
-        if "_" in folder_name:
-            maybe_time = folder_name.split("_")[-1]
-            task_name = folder_name[: -(len(maybe_time) + 1)] or folder_name
-            creat_time = maybe_time
-
-        task_id = None
-        first_ts = None
-        try:
-            with open(log_path, "r", encoding="utf-8") as f:
-                for line in f:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        payload = json.loads(line)
-                    except Exception:
-                        continue
-                    if not task_id:
-                        task_id = payload.get("task_id")
-                    if not first_ts:
-                        first_ts = payload.get("timestamp")
-                    # If we've found both identifying pieces, stop scanning.
-                    if task_id and first_ts:
-                        break
-        except Exception:
-            continue
-
-        if not task_id or task_id in existing_ids:
-            continue
-
-        created_iso = (
-            datetime.datetime.fromtimestamp(first_ts).isoformat()
-            if isinstance(first_ts, (int, float))
-            else datetime.datetime.now().isoformat()
-        )
-
-        task_record = {
-            "name": task_name or "Unknown",
-            "id": task_id,
-            # 对于只有日志而没有 checkpoint 的任务，我们无法确定它是否真的完成。
-            # 使用 running/50 作为默认状态，避免错误地显示为“已完成”。
-            "state": "running",
-            "creat_time": creat_time,
-            "progress": 50,
-            "createdAt": created_iso,
-            "updatedAt": created_iso,
-        }
-        task_module.TASK_POOL.append(task_record)
-        existing_ids.add(task_id)
-
-
-@app.get("/api/tasks")
-async def get_tasks():
-    # 确保重启后磁盘中的 task 也能回填到内存池
-    _ensure_tasks_loaded_from_logs()
-    tasks = []
-    for t in task_module.TASK_POOL:
-        task_data = t.copy()
-        # Add history if instance exists
-        instance = task_module.TASK_INSTANCES.get(t.get("id"))
-        if instance:
-            task_data["history"] = instance.current_history
-        tasks.append(task_data)
-    return tasks
 
 
 def _resolve_task_log_path(task_id: str) -> Optional[str]:
@@ -494,7 +650,6 @@ def _resolve_task_log_path(task_id: str) -> Optional[str]:
         if os.path.exists(log_path):
             TASK_LOG_PATH_CACHE[task_id] = log_path
             return log_path
-        # If the folder/time is stale (e.g. creat_time changed), fall back to scan to find the real log file
 
     base_dir = os.path.join(DATA_DIR, "checkpoints", "task")
     if not os.path.isdir(base_dir):
@@ -505,14 +660,11 @@ def _resolve_task_log_path(task_id: str) -> Optional[str]:
             log_path = os.path.join(base_dir, entry, "log.jsonl")
             if not os.path.isfile(log_path):
                 continue
-
-            # 1) 常规：通过 log 内容中的 task_id 查找
             try:
                 with open(log_path, "r", encoding="utf-8") as f:
                     for line in f:
                         line = line.strip()
-                        if not line:
-                            continue
+                        if not line: continue
                         try:
                             payload = json.loads(line)
                         except Exception:
@@ -522,16 +674,12 @@ def _resolve_task_log_path(task_id: str) -> Optional[str]:
                             return log_path
             except Exception:
                 pass
-
-            # 2) 兼容：folder 名称可能就是 task_id（或包含 task_id），直接使用
             if entry == task_id or task_id in entry:
                 TASK_LOG_PATH_CACHE[task_id] = log_path
                 return log_path
-
         return None
     except Exception:
         return None
-
     return None
 
 
@@ -545,51 +693,26 @@ async def get_dirty_tasks(clear: bool = True):
 
 
 @app.get("/api/tasks/{task_id}/log")
-async def get_task_log(task_id: str, cursor: int = 0, limit: int = 500):
-    if cursor < 0:
-        cursor = 0
-    if limit < 1:
-        limit = 1
-    if limit > 2000:
-        limit = 2000
+async def get_task_log(task_id: str, cursor: int = 0, limit: int = 500, tail: bool = False):
+    if cursor < 0: cursor = 0
+    if limit < 1: limit = 1
+    if limit > 2000: limit = 2000
 
     log_path = _resolve_task_log_path(task_id)
     if not log_path or not os.path.exists(log_path):
         return {"entries": [], "nextCursor": cursor, "exists": False}
-
-    entries: List[Dict[str, Any]] = []
-    next_cursor = cursor
-
     try:
-        with open(log_path, "r", encoding="utf-8") as f:
-            for idx, line in enumerate(f):
-                if idx < cursor:
-                    continue
-                if len(entries) >= limit:
-                    break
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    payload = json.loads(line)
-                except Exception:
-                    payload = {"card_type": "error", "content": line, "metadata": {"level": "warning"}}
-                payload["id"] = f"{task_id}:{idx}"
-                entries.append(payload)
-                next_cursor = idx + 1
+        return _read_jsonl_entries(log_path, TASK_LOG_READ_CACHE, task_id, task_id, cursor, limit, tail)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-    return {"entries": entries, "nextCursor": next_cursor, "exists": True}
 
 @app.post("/api/tasks/{task_id}/inject")
 async def inject_task(task_id: str, request: ForcePushRequest):
-    print(f"[DEBUG] Inject task {task_id} with {request.content}")
     if task_module.inject_task_instruction(task_id, request.content):
-        print(f"[DEBUG] Inject success")
         return {"status": "success"}
-    print(f"[DEBUG] Inject failed")
     raise HTTPException(status_code=404, detail="Task not found")
+
 
 @app.delete("/api/tasks/{task_id}")
 async def remove_task_endpoint(task_id: str):
@@ -597,9 +720,9 @@ async def remove_task_endpoint(task_id: str):
     task_module.delete_task(task_id)
     return {"status": "success"}
 
+
 @app.get("/api/files")
 async def get_files(path: str):
-    # Allowed files: user_profile.md, me.md, SOUL.md
     allowed_files = {
         "user_profile": "src/agent/core/user_profile.md",
         "me": "src/agent/core/me.md",
@@ -607,16 +730,17 @@ async def get_files(path: str):
     }
     if path not in allowed_files:
         raise HTTPException(status_code=403, detail="File not allowed")
-    
+
     file_path = allowed_files[path]
     if not os.path.exists(file_path):
         return {"content": ""}
-    
     with open(file_path, "r", encoding="utf-8") as f:
         return {"content": f.read()}
 
+
 class FileUpdate(BaseModel):
     content: str
+
 
 @app.post("/api/files")
 async def update_file(path: str, update: FileUpdate):
@@ -627,12 +751,13 @@ async def update_file(path: str, update: FileUpdate):
     }
     if path not in allowed_files:
         raise HTTPException(status_code=403, detail="File not allowed")
-    
+
     file_path = allowed_files[path]
     os.makedirs(os.path.dirname(file_path), exist_ok=True)
     with open(file_path, "w", encoding="utf-8") as f:
         f.write(update.content)
     return {"status": "success"}
+
 
 class ProjectCreate(BaseModel):
     name: str
@@ -643,6 +768,7 @@ class ProjectCreate(BaseModel):
     judge_mode: bool = False
     is_agent: bool = True
     available_tools: List[str] = []
+
 
 @app.post("/api/projects")
 async def create_project_endpoint(project: ProjectCreate):
@@ -663,35 +789,21 @@ async def create_project_endpoint(project: ProjectCreate):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# --- Plugin Upload Endpoint ---
-from fastapi import File, UploadFile
-import shutil
-import re
-
 @app.post("/api/plugins/upload")
 async def upload_plugin(files: List[UploadFile] = File(...)):
     if not files:
         raise HTTPException(status_code=400, detail="No files uploaded.")
 
-    # Use the relative path of the first file to determine the folder name
     first_file_path = Path(files[0].filename)
     plugin_name = first_file_path.parts[0]
 
-    # 1. Validate plugin name
     if not re.match(r"^[a-zA-Z0-9-]+$", plugin_name):
-        raise HTTPException(
-            status_code=400, 
-            detail=f"Invalid plugin name '{plugin_name}'. Only letters, numbers, and hyphens are allowed."
-        )
+        raise HTTPException(status_code=400, detail=f"Invalid plugin name '{plugin_name}'.")
 
     plugin_dir = PLUGIN_COLLECTION_DIR / plugin_name
     if plugin_dir.exists():
-        raise HTTPException(
-            status_code=409, 
-            detail=f"Plugin '{plugin_name}' already exists. Please delete the existing folder first."
-        )
+        raise HTTPException(status_code=409, detail=f"Plugin '{plugin_name}' already exists.")
 
-    # Create a temporary directory to store uploaded files
     temp_dir = Path("temp_plugin_upload")
     temp_dir.mkdir(exist_ok=True)
     temp_plugin_path = temp_dir / plugin_name
@@ -700,97 +812,133 @@ async def upload_plugin(files: List[UploadFile] = File(...)):
     has_init_yaml = False
 
     try:
-        # Save all files to the temporary directory
         for file in files:
             file_path = Path(file.filename)
-            # The full path inside the temp dir
             save_path = temp_dir / file_path
             save_path.parent.mkdir(parents=True, exist_ok=True)
-            
+
             with save_path.open("wb") as buffer:
                 shutil.copyfileobj(file.file, buffer)
 
-            # 2. Check for init.yaml in the root of the plugin folder
             if file_path.name == "init.yaml" and len(file_path.parts) == 2:
                 has_init_yaml = True
 
-        # 3. Perform validation
         if not has_init_yaml:
-            raise HTTPException(
-                status_code=400, 
-                detail="The plugin must contain an 'init.yaml' file in its root directory."
-            )
+            raise HTTPException(status_code=400, detail="The plugin must contain an 'init.yaml'.")
 
-        # If validation passes, move the folder to the final destination
         shutil.move(str(temp_plugin_path), str(PLUGIN_COLLECTION_DIR))
 
-        # Re-register the new plugin
         try:
+            # 注册新插件并立即刷新全局缓存
             register_plugin(plugin_name)
+            init_tool()
         except Exception as e:
-            # If registration fails, it's not a critical error for the upload itself
             print(f"Warning: Plugin '{plugin_name}' uploaded but failed to register: {e}")
 
         return {"status": "success", "message": f"Plugin '{plugin_name}' installed successfully."}
-
     except HTTPException as e:
-        # Re-raise HTTP exceptions from our validation
         raise e
     except Exception as e:
-        # Catch other potential errors
         raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {e}")
     finally:
-        # Clean up the temporary directory
         if temp_dir.exists():
             shutil.rmtree(temp_dir)
 
 
 @app.delete("/api/plugins/{plugin_name}")
 async def unregister_plugin_endpoint(plugin_name: str):
-    # Basic security check for plugin_name to prevent path traversal
     if not re.match(r"^[a-zA-Z0-9-]+$", plugin_name) or ".." in plugin_name:
         raise HTTPException(status_code=400, detail="Invalid plugin name.")
-
     try:
-        from src.plugins.plugin_manager import unregister_plugin
-        message = unregister_plugin(plugin_name)
-        return {"status": "success", "message": message}
-    except FileNotFoundError:
-        raise HTTPException(status_code=404, detail=f"Plugin '{plugin_name}' not found.")
+        unregister_plugin(plugin_name)
+        init_tool()  # 刷新全局索引
+        return {"status": "success", "message": "Plugin unregistered successfully."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to unregister plugin: {e}")
 
+
+# ====== 获取所有工具大重构：完美兼容 Local + MCP ======
 @app.get("/api/tools")
 async def get_tools():
-    """获取所有分组的工具信息."""
+    """获取所有工具信息（支持 Local 和 MCP），直读全局注册表."""
     try:
-        config = load_global_tool_yaml()
-        tool_groups = []
-        for plugin_name, plugin_data in config.items():
-            if not isinstance(plugin_data, dict):
-                continue
+        tools_list = []
+        if os.path.exists(TOOL_INDEX_FILE):
+            with open(TOOL_INDEX_FILE, "r", encoding="utf-8") as f:
+                for line in f:
+                    if line.strip():
+                        tools_list.append(json.loads(line))
 
-            tools = []
-            functions = plugin_data.get('functions', {})
-            if isinstance(functions, dict):
-                for func_key, func_data in functions.items():
-                    if isinstance(func_data, dict) and 'function' in func_data:
-                        func_details = func_data['function']
-                        tools.append({
-                            "name": func_details.get('name', func_key),
-                            "description": func_details.get('description', 'No description')
-                        })
-
-            tool_groups.append({
-                "name": plugin_name,
-                "description": plugin_data.get('desc', 'No description'),
-                "tools": tools
+        # 按 plugin/server 进行聚合
+        grouped = {}
+        for t in tools_list:
+            p_name = t["plugin"]
+            if p_name not in grouped:
+                grouped[p_name] = {
+                    "name": p_name,
+                    "description": f"[{t['route'].upper()}] 插件/服务",
+                    "tools": []
+                }
+            grouped[p_name]["tools"].append({
+                "name": t["func"],
+                "description": t["desc"]
             })
-        return tool_groups
+
+        # 加上核心基础工具
+        base_plugin = {
+            "name": "system_core",
+            "description": "[CORE] 系统核心指令",
+            "tools": []
+        }
+        for bt in BASE_TOOLS:
+            base_plugin["tools"].append({
+                "name": bt["function"]["name"],
+                "description": bt["function"]["description"]
+            })
+
+        result = [base_plugin] + list(grouped.values())
+        return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to load tools: {e}")
 
 
+@app.get("/api/plugins")
+async def get_plugins():
+    plugins = []
+    local_yaml = os.path.join(PLUGIN_COLLECTION_DIR, "local_tool.yaml")
+    active_plugins = {}
+    if os.path.exists(local_yaml):
+        with open(local_yaml, "r", encoding="utf-8") as f:
+            active_plugins = yaml.safe_load(f) or {}
+
+    if os.path.exists(PLUGIN_COLLECTION_DIR):
+        for name in os.listdir(PLUGIN_COLLECTION_DIR):
+            full_path = os.path.join(PLUGIN_COLLECTION_DIR, name)
+            if os.path.isdir(full_path) and not name.startswith("__"):
+                plugins.append({
+                    "name": name,
+                    "enabled": name in active_plugins,
+                    "path": full_path
+                })
+    return plugins
+
+
+@app.post("/api/plugins/{name}/toggle")
+async def toggle_plugin(name: str):
+    local_yaml = os.path.join(PLUGIN_COLLECTION_DIR, "local_tool.yaml")
+    active_plugins = {}
+    if os.path.exists(local_yaml):
+        with open(local_yaml, "r", encoding="utf-8") as f:
+            active_plugins = yaml.safe_load(f) or {}
+
+    if name in active_plugins:
+        unregister_plugin(name)
+        init_tool()  # 刷新工具列表
+        return {"enabled": False}
+    else:
+        register_plugin(name)
+        init_tool()  # 刷新工具列表
+        return {"enabled": True}
 
 
 class TaskCreate(BaseModel):
@@ -803,6 +951,7 @@ class TaskCreate(BaseModel):
     prompt: str
     judge_mode: bool = False
     task_histories: str = ""
+
 
 @app.post("/api/tasks")
 async def create_task_endpoint(task: TaskCreate):
@@ -823,6 +972,7 @@ async def create_task_endpoint(task: TaskCreate):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.get("/api/config")
 async def get_config():
     config_dir = "data/config"
@@ -835,10 +985,7 @@ async def get_config():
     return configs
 
 
-# --- Schedule & Alarm (Cron) Endpoints ---
-
 def _load_schedule_paths():
-    """Read schedule/cron file paths from config, with sensible defaults."""
     try:
         with open("data/config/config.json", "r", encoding="utf-8") as f:
             cfg = json.load(f)
@@ -951,6 +1098,7 @@ async def update_cron_endpoint(item_id: str, updates: dict):
         return {"status": "success"}
     raise HTTPException(status_code=404, detail="Alarm not found")
 
+
 @app.post("/api/config/{filename}")
 async def update_config(filename: str, config: Dict[str, Any]):
     if not filename.endswith(".json"):
@@ -960,34 +1108,6 @@ async def update_config(filename: str, config: Dict[str, Any]):
         json.dump(config, f, indent=4, ensure_ascii=False)
     return {"status": "success"}
 
-@app.get("/api/plugins")
-async def get_plugins():
-    plugin_dir = "src/plugins/plugin_collection"
-    plugins = []
-    if os.path.exists(plugin_dir):
-        for name in os.listdir(plugin_dir):
-            if os.path.isdir(os.path.join(plugin_dir, name)):
-                # Check if registered
-                config = get_plugin_config(name)
-                plugins.append({
-                    "name": name,
-                    "enabled": config is not None,
-                    "path": os.path.join(plugin_dir, name)
-                })
-    return plugins
-
-@app.post("/api/plugins/{name}/toggle")
-async def toggle_plugin(name: str):
-    config = get_plugin_config(name)
-    if config:
-        # Currently no unregister_plugin in plugin_manager.py but let's assume it exists or we just don't list it
-        # Based on user requirement: "支持调用register_plugin和unregister_plugin函数"
-        from src.plugins.plugin_manager import unregister_plugin
-        unregister_plugin(name)
-        return {"enabled": False}
-    else:
-        register_plugin(name)
-        return {"enabled": True}
 
 @app.get("/api/skills")
 async def get_skills():
@@ -1002,13 +1122,18 @@ async def get_skills():
                 })
     return skills
 
+
 @app.get("/api/databases")
 async def get_databases():
     from src.plugins.plugin_collection.database.database import list_databases
-    import json
     res = list_databases()
     return json.loads(res)["content"]["available_databases"]
 
+
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    import logging
+
+    logging.getLogger("uvicorn").setLevel(logging.WARNING)
+    logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
+    uvicorn.run(app, host="0.0.0.0", port=8000, log_level="warning")

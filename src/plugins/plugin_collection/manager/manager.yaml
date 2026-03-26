@@ -6,7 +6,7 @@ manager:
     add_project:
       type: function
       function:
-        name: "manager__add_project"
+        name: "add_project"
         description: "启动一个新的后台子项目。适合复杂任务和项目开发"
         parameters:
           type: "object"
@@ -36,7 +36,7 @@ manager:
     answer:
       type: function
       function:
-        name: "manager__answer"
+        name: "answer"
         description: "回答来自特定子项目的提问，推动异步项目继续执行。"
         parameters:
           type: "object"
@@ -51,7 +51,7 @@ manager:
     check_pending_questions:
       type: function
       function:
-        name: "manager__check_pending_questions"
+        name: "check_pending_questions"
         description: "查看当前所有正在等待回答问题的子项目列表。"
         parameters:
           type: "object"
@@ -60,7 +60,7 @@ manager:
     add_simple_task:
       type: function
       function:
-        name: "manager__add_simple_task"
+        name: "add_simple_task"
         description: "启动一个简单的后台子任务。"
         parameters:
           type: "object"
@@ -95,33 +95,10 @@ manager:
               type: "string"
               description: "任务历史"
           required: ["title", "desc", "deliverable", "worker", "judger", "available_tools", "prompt"]
-    list_tool:
-      type: function
-      function:
-        name: "manager__list_tool"
-        description: "获取当前所有可派给工人使用的工具及其描述的清单。"
-        parameters:
-          type: "object"
-          properties: {}
-          required: []
-    fetch_tool:
-      type: function
-      function:
-        name: "manager__fetch_tool"
-        description: "挑选下一步行动需要用到的工具（清空旧工具，仅保留新请求的工具）。"
-        parameters:
-          type: "object"
-          properties:
-            tool_name_list:
-              type: "array"
-              items:
-                type: "string"
-              description: "需要保留的工具名称列表"
-          required: ["tool_name_list"]
     list_worker:
       type: function
       function:
-        name: "manager__list_worker"
+        name: "list_worker"
         description: "获取当前所有可用的工人及其描述的清单。"
         parameters:
           type: "object"

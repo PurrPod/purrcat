@@ -7,7 +7,7 @@ mini_github:
     search_repositories:
       type: function
       function:
-        name: "mini_github__search_repositories"
+        name: "search_repositories"
         description: "搜索 GitHub 仓库"
         parameters:
           type: "object"
@@ -18,7 +18,7 @@ mini_github:
     read_file:
       type: function
       function:
-        name: "mini_github__read_file"
+        name: "read_file"
         description: "读取 GitHub 仓库中的文件内容"
         parameters:
           type: "object"
@@ -31,7 +31,7 @@ mini_github:
     create_or_update_file:
       type: function
       function:
-        name: "mini_github__create_or_update_file"
+        name: "create_or_update_file"
         description: "创建或更新仓库文件"
         parameters:
           type: "object"
@@ -46,7 +46,7 @@ mini_github:
     search_code:
       type: function
       function:
-        name: "mini_github__search_code"
+        name: "search_code"
         description: "搜索代码"
         parameters:
           type: "object"
@@ -58,7 +58,7 @@ mini_github:
     get_tree:
       type: function
       function:
-        name: "mini_github__get_tree"
+        name: "get_tree"
         description: "获取仓库文件树"
         parameters:
           type: "object"
@@ -71,7 +71,7 @@ mini_github:
     create_issue:
       type: function
       function:
-        name: "mini_github__create_issue"
+        name: "create_issue"
         description: "创建一个新的 Issue"
         parameters:
           type: "object"
@@ -85,7 +85,7 @@ mini_github:
     list_issues:
       type: function
       function:
-        name: "mini_github__list_issues"
+        name: "list_issues"
         description: "列出仓库的 Issue"
         parameters:
           type: "object"
@@ -97,7 +97,7 @@ mini_github:
     get_issue:
       type: function
       function:
-        name: "mini_github__get_issue"
+        name: "get_issue"
         description: "获取特定 Issue 的详情"
         parameters:
           type: "object"
@@ -109,7 +109,7 @@ mini_github:
     update_issue:
       type: function
       function:
-        name: "mini_github__update_issue"
+        name: "update_issue"
         description: "更新 Issue 状态或内容"
         parameters:
           type: "object"
@@ -123,7 +123,7 @@ mini_github:
     add_issue_comment:
       type: function
       function:
-        name: "mini_github__add_issue_comment"
+        name: "add_issue_comment"
         description: "评论 Issue"
         parameters:
           type: "object"
@@ -136,7 +136,7 @@ mini_github:
     create_pull_request:
       type: function
       function:
-        name: "mini_github__create_pull_request"
+        name: "create_pull_request"
         description: "创建 Pull Request"
         parameters:
           type: "object"
@@ -151,7 +151,7 @@ mini_github:
     list_pull_requests:
       type: function
       function:
-        name: "mini_github__list_pull_requests"
+        name: "list_pull_requests"
         description: "列出 PR"
         parameters:
           type: "object"
@@ -163,7 +163,7 @@ mini_github:
     get_pull_request:
       type: function
       function:
-        name: "mini_github__get_pull_request"
+        name: "get_pull_request"
         description: "获取 PR 详情"
         parameters:
           type: "object"
@@ -175,7 +175,7 @@ mini_github:
     add_pr_comment:
       type: function
       function:
-        name: "mini_github__add_pr_comment"
+        name: "add_pr_comment"
         description: "Add a comment to a pull request."
         parameters:
           type: "object"
@@ -188,7 +188,7 @@ mini_github:
     merge_pull_request:
       type: function
       function:
-        name: "mini_github__merge_pull_request"
+        name: "merge_pull_request"
         description: "合并 PR"
         parameters:
           type: "object"
@@ -201,7 +201,7 @@ mini_github:
     create_branch:
       type: function
       function:
-        name: "mini_github__create_branch"
+        name: "create_branch"
         description: "创建新分支"
         parameters:
           type: "object"
@@ -214,7 +214,7 @@ mini_github:
     list_branches:
       type: function
       function:
-        name: "mini_github__list_branches"
+        name: "list_branches"
         description: "列出所有分支"
         parameters:
           type: "object"
@@ -225,7 +225,7 @@ mini_github:
     list_commits:
       type: function
       function:
-        name: "mini_github__list_commits"
+        name: "list_commits"
         description: "查看提交历史"
         parameters:
           type: "object"
@@ -238,7 +238,7 @@ mini_github:
     get_commit:
       type: function
       function:
-        name: "mini_github__get_commit"
+        name: "get_commit"
         description: "查看提交详情"
         parameters:
           type: "object"
@@ -250,7 +250,7 @@ mini_github:
     fork_repository:
       type: function
       function:
-        name: "mini_github__fork_repository"
+        name: "fork_repository"
         description: "Fork 仓库"
         parameters:
           type: "object"
@@ -260,7 +260,7 @@ mini_github:
     get_current_user:
       type: function
       function:
-        name: "mini_github__get_current_user"
+        name: "get_current_user"
         description: "获取当前配置的 GitHub Token 所属的用户信息（我是谁？）"
         parameters:
           type: "object"
@@ -269,7 +269,7 @@ mini_github:
     list_user_repos:
       type: function
       function:
-        name: "mini_github__list_user_repos"
+        name: "list_user_repos"
         description: "列出当前用户拥有或有权限操作的仓库列表"
         parameters:
           type: "object"

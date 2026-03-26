@@ -72,6 +72,8 @@ def write_text_file(path: str, content: str) -> str:
         return _format_response("text", f"Successfully wrote to {path}")
     except Exception as e:
         return _format_response("error", f"Failed to write file: {str(e)}")
+
+
 def list_file_in_dir(path: str) -> str:
     if not _get_allow("read", path):
         return _format_response("error", f"Permission denied: Reading {path} is blocked by sandbox.")

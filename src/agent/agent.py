@@ -1,14 +1,15 @@
 import os
 import time
 import json
-import importlib
+import threading
 from queue import PriorityQueue, Empty
 from src.loader.memory import Memory
 from src.models.model import Model
-from src.plugins.plugin_manager import get_plugin_tool_info, get_plugin_config, init_config_data, register_plugin
+from src.plugins.plugin_manager import BASE_TOOLS, parse_tool
+from json_repair import repair_json
+
 
 MESSAGE_QUEUE = PriorityQueue()
-PENDING_TASKS = {}
 
 PRIORITY_MAP = {
     "owner_message": 100,
@@ -20,16 +21,15 @@ PRIORITY_MAP = {
 
 ROOT = False
 
+
 def add_message(message: dict):
     msg_type = message.get("type", "heartbeat")
     priority = PRIORITY_MAP.get(msg_type, 10)
     MESSAGE_QUEUE.put((-priority, time.time(), message))
 
-GLOBAL_AGENT_TOOLS = ["manager", "feishu"]
 
 class Agent:
     def __init__(self, name=None, max_len=150, checkpoint_path="src\\agent\\checkpoint.json", warm_up=None):
-        init_config_data()
         if not name:
             with open("data\\config\\model_config.json", "r") as f:
                 name = json.loads(f.read())["agent"]
@@ -38,18 +38,22 @@ class Agent:
         self.client = Model(self.name).client
         with open("src/agent/SOUL.md", "r") as f:
             soul_md = f.read()
-        self.system_prompt = (
-            soul_md
-        )
+        self.system_prompt = soul_md
         self.current_history = [{"role": "system", "content": self.system_prompt}]
-        self.max_len = max_len
+        self.max_len = 150
         self.memory = Memory()
         self.checkpoint_path = checkpoint_path
         self.pending_force_push = None
+        self._stop_event = threading.Event()
+        self.dynamic_tools = []
         if warm_up:
             with open(warm_up, "r") as f:
                 warm_up_content = json.loads(f.read())
                 self.current_history.extend(warm_up_content)
+
+    def stop(self):
+        self._stop_event.set()
+
     def _append_history(self, message: dict):
         """统一管理对话历史：加入内存列表的同时，直接落盘到 Memory 文件"""
         self.current_history.append(message)
@@ -59,56 +63,38 @@ class Agent:
         except Exception as e:
             print(f"⚠️ [Memory] 落盘失败: {e}")
 
-    def _execute_tool(self, mcp_type: str, func_name: str, arguments: dict):
-        plugin_config = get_plugin_config(mcp_type)
-        if not plugin_config:
-            try:
-                register_plugin(mcp_type)
-            except Exception as e:
-                return f"❌ [Error]{mcp_type}:{e}"
-        try:
-            try:
-                module_path = f"src.plugins.plugin_collection.{mcp_type}.{mcp_type}"
-                plugin_module = importlib.import_module(module_path)
-            except ImportError:
-                module_path = f"src.plugins.plugin_collection.{mcp_type}"
-                plugin_module = importlib.import_module(module_path)
-        except ImportError as e:
-            return f"❌ 导入插件包失败 {mcp_type}:{e}"
-        if not hasattr(plugin_module, func_name):
-            return f"❌ 插件包中无函数：{func_name}"
-        target_func = getattr(plugin_module, func_name)
-        result = target_func(**arguments)
-        return result if result is not None else "Success (No Output)"
-
     def force_push(self, content):
-        if self.current_history and self.current_history[-1].get('role') == 'assistant' and self.current_history[-1].get('tool_calls'):
+        if self.current_history and self.current_history[-1].get('role') == 'assistant' and self.current_history[
+            -1].get('tool_calls'):
             self.pending_force_push = content
         else:
-            self._append_history({"role": "user", "content": "[System Warning] You should suspend your action and handle this message first!\n"+content})
+            self._append_history({"role": "user", "content": "[System Warning] You should suspend your action and handle this message first!\n" + content})
 
     def process_message(self, message: dict):
+        self.dynamic_tools.clear()
         self.state = "handling"
         msg_type = message.get("type")
         msg_content = message.get("content")
-        chat_id = message.get("chat_id", "owner")
         print(f"\n🔔 [Agent 抓取消息] 类型: {msg_type} | 内容: {msg_content}")
         self._append_history(
             {"role": "user", "content": f"🔔 收到系统消息 (类型: {msg_type}):\n{msg_content}"})
-
-        init_config_data()
 
         model_name = self.name.split(":")[-1] if ":" in self.name else self.name
         max_steps = 1000
 
         for step in range(max_steps):
             try:
-                tools_info = get_plugin_tool_info(GLOBAL_AGENT_TOOLS)
+                # 只需合并 BASE_TOOLS 和 大模型自己 fetch 的动态工具，极其清爽
+                current_tools = list(BASE_TOOLS)
+                if self.dynamic_tools:
+                    current_tools.extend([item["schema"] for item in self.dynamic_tools])
+
                 kwargs = {"model": model_name, "messages": self.current_history}
-                
+                if current_tools:
+                    kwargs["tools"] = current_tools
+
                 self._check_and_summarize_memory()
-                if tools_info:
-                    kwargs["tools"] = tools_info
+
                 response = self.client.chat.completions.create(**kwargs)
                 msg_resp = response.choices[0].message
 
@@ -134,37 +120,60 @@ class Agent:
                 for tool_call in msg_resp.tool_calls:
                     tool_name = tool_call.function.name
                     arguments_str = tool_call.function.arguments
-                    print(f"🔧 助手调起工具: {tool_name}({arguments_str})")
-                    try:
-                        delimiter = '__' if '__' in tool_name else '/'
-                        mcp_type, func_name = tool_name.split(delimiter, 1) if delimiter in tool_name else (tool_name,tool_name)
-                        arguments = json.loads(arguments_str) if arguments_str else {}
-                        result = self._execute_tool(mcp_type, func_name, arguments)
+                    arguments = {}
+                    if arguments_str:
+                        try:
+                            arguments = json.loads(arguments_str)
+                        except json.JSONDecodeError as e:
+                            print(f"⚠️ 标准 JSON 解析失败，尝试容错修复: {e}")
+                            if repair_json:
+                                try:
+                                    arguments = repair_json(arguments_str, return_objects=True)
+                                    print("✅ json-repair 修复成功！")
+                                except Exception as repair_e:
+                                    print(f"❌ json-repair 修复失败: {repair_e}")
+                            else:
+                                print("💡 强烈建议终端运行 `pip install json-repair` 来自动修复此问题！")
 
-                        if result == "__AGENT_PAUSE__":
-                            print("⏸️ Agent 已将当前任务放入挂起表，准备处理下一条消息...")
-                            self._append_history({
-                                "role": "tool",
-                                "tool_call_id": tool_call.id,
-                                "name": tool_name,
-                                "content": "工具调用成功，正在挂起任务，请耐心等待处理"
-                            })
-                            self.state = "idle"
-                            return
-                    except Exception as e:
-                        result = f"Error: {str(e)}"
-                    print(f"📦 工具回传结果: {str(result)}...")
+                    print(f"🔧 助手调起工具: {tool_name}")
+                    target_route = None
+                    target_plugin = None
+                    for tool_item in self.dynamic_tools:
+                        if tool_item.get("funct") == tool_name:
+                            target_route = tool_item.get("route")
+                            target_plugin = tool_item.get("plugin")
+                            break
+                    result_str, new_schema_info = parse_tool(tool_name, arguments, route=target_route, plugin=target_plugin)
+                    if new_schema_info:
+                        schemas_to_add = new_schema_info if isinstance(new_schema_info, list) else [new_schema_info]
+                        for schema_item in schemas_to_add:
+                            new_funct_name = schema_item["funct"]
+                            self.dynamic_tools = [item for item in self.dynamic_tools if
+                                                  item.get("funct") != new_funct_name]
+                            self.dynamic_tools.append(schema_item)
+                    if result_str == "__AGENT_PAUSE__":
+                        print("⏸️ Agent 已将当前任务放入挂起表，准备处理下一条消息...")
+                        self._append_history({
+                            "role": "tool",
+                            "tool_call_id": tool_call.id,
+                            "name": tool_name,
+                            "content": "工具调用成功，正在挂起任务，请耐心等待处理"
+                        })
+                        self.state = "idle"
+                        return
 
+                    print(f"📦 工具回传结果: {result_str[:100]}...")
                     self._append_history({
                         "role": "tool",
                         "tool_call_id": tool_call.id,
                         "name": tool_name,
-                        "content": str(result)
+                        "content": result_str
                     })
 
-                if self.pending_force_push:
-                    self._append_history({"role": "user", "content": "[System Warning] You should suspend your action and handle this message first!\n"+self.pending_force_push})
-                    self.pending_force_push = None
+                    if self.pending_force_push:
+                        self._append_history({"role": "user",
+                                              "content": "[System Warning] You should suspend your action and handle this message first!\n" + self.pending_force_push})
+                        self.pending_force_push = None
 
             except Exception as e:
                 print(f"❌ 大模型交互断层: {e}")
@@ -187,7 +196,7 @@ class Agent:
             current_tokens = len(messages_str) // 2
 
         if check_mode:
-            if len(self.current_history) < self.max_len and current_tokens < max_tokens:
+            if len(self.current_history) < 150 and current_tokens < max_tokens:
                 return
 
         print(f"🗜️ 记忆容量到达 {len(self.current_history)} 条 (约 {current_tokens} tokens)，触发自我归档...")
@@ -197,7 +206,6 @@ class Agent:
 请你现在亲自对**此前的所有对话、事件和执行记录**进行全面总结，提取出核心事件、任务进度、你的关键决策以及对用户的认知，形成一份“早期记忆备忘录”。
 直接用自然语言输出。这份备忘录将作为你未来回忆那段时光的唯一凭证，也是你承上启下的节点，请务必保证包含影响任务推进的关键信息！但也要尽量保持简洁和少废话，防止备忘录越来越长！"""
 
-        # 使用 _append_history，保证这句警告也能记录到本地日志中
         self._append_history({"role": "user", "content": alert_prompt})
 
         try:
@@ -207,22 +215,18 @@ class Agent:
                 "messages": self.current_history
             }
 
-            # 2. 让大模型基于当前完整的上下文自己做个总结
             response = self.client.chat.completions.create(**kwargs)
             archive_content = response.choices[0].message.content.strip()
             print(f"🧠 Agent归档完成，生成备忘录长度: {len(archive_content)} 字符")
 
-            # 同样使用 _append_history 落盘
             self._append_history({"role": "assistant", "content": f"【早期记忆备忘录】\n{archive_content}"})
 
-            # 3. 物理抹除旧记忆：寻找安全切分点
-            start_idx = 1  # Agent 必须保留第 1 条（System Prompt: SOUL.md）
-            keep_recent = 20  # Agent 需要的上下文更长，保留最近 20 条（包含刚才的通知和总结）
+            start_idx = 1
+            keep_recent = 20
 
             split_idx = len(self.current_history) - keep_recent
 
             if split_idx > start_idx:
-                # 往前寻找安全边界，避开切断 tool_call 链条
                 while split_idx > start_idx:
                     curr_msg = self.current_history[split_idx]
                     prev_msg = self.current_history[split_idx - 1]
@@ -240,14 +244,14 @@ class Agent:
             self.current_history = [self.current_history[0]] + self.current_history[split_idx:]
 
             print("✅ Agent记忆清理完毕！已安全避开 Tool Call 链条完成流水线截断。")
-            self.save_checkpoint()  # 保存截断后的新状态
+            self.save_checkpoint()
 
         except Exception as e:
             print(f"❌ 记忆存档发生异常: {e}")
 
     def sensor(self):
         print("🟢 Agent 主核运转，正在监听优先队列...")
-        while True:
+        while not self._stop_event.is_set():
             try:
                 priority, timestamp, msg = MESSAGE_QUEUE.get(timeout=1)
                 self.process_message(msg)
@@ -258,17 +262,15 @@ class Agent:
                 print(f"❌ 队列处理异常: {e}")
 
     def save_checkpoint(self, filepath="src\\agent\\checkpoint.json"):
-        """将当前的 current_history 落盘保存到文件"""
         save_path = filepath or self.checkpoint_path
         try:
             with open(save_path, "w", encoding="utf-8") as f:
-                # 使用 indent=2 保证生成的 JSON 文件具备可读性
                 json.dump(self.current_history, f, ensure_ascii=False, indent=2)
         except Exception as e:
             print(f"⚠️ [Checkpoint] 保存检查点失败: {e}")
+
     @classmethod
-    def load_checkpoint(cls, filepath="src/agent/checkpoint.json", name="[1]openai:deepseek-chat",
-                        max_len=150):
+    def load_checkpoint(cls, filepath="src/agent/checkpoint.json", name="[1]openai:deepseek-chat", max_len=150):
         agent = cls(name=name, max_len=max_len, checkpoint_path=filepath)
 
         try:

@@ -29,6 +29,7 @@ def add_project(name: str, prompt: str, core: str, check_mode: bool = False, ref
         except Exception as e:
             add_message({"type": "project_message", "content": f"\n[Project异常] 项目 {project_id} 运行时崩溃: {e}"})
     t = threading.Thread(target=_run_project, daemon=True)
+    new_project._runner_thread = t
     t.start()
     return _format_response("text",(f"成功创建并启动后台项目 '{name}'。\n"
             f"项目 ID 为: {project_id}\n"
@@ -103,18 +104,6 @@ def check_pending_questions() -> str:
             msgs.append(f"- 项目ID: {pid} | 等待的问题: {data['question']}")
     return _format_response("text","当前等待回答的项目列表如下：\n" + "\n".join(msgs))
 
-def list_tool() -> str:
-    from src.plugins.plugin_manager import load_global_tool_yaml
-    config = load_global_tool_yaml()
-    if not config:
-        return _format_response("text","当前未加载任何工具。")
-    lines = []
-    for idx, (tool_key, tool_info) in enumerate(config.items(), 1):
-        desc = tool_info.get("desc", "无描述")
-        lines.append(f"[{idx}]\"{tool_key}\" | {desc}")
-    
-    return _format_response("text", "\n".join(lines))
-
 def list_worker() -> str:
     with open(os.path.join(os.getcwd(), "data", "config", "model_config.json"), "r") as f:
         json_config = json.load(f)
@@ -124,29 +113,3 @@ def list_worker() -> str:
         return _format_response("text", "无可用工人")
     return _format_response("text", "\n".join(model_list))
 
-def fetch_tool(tool_name_list: List[str]) -> str:
-    """挑选下一步行动需要用到的工具（清空旧工具，仅保留新请求的工具）"""
-    from src.agent.agent import GLOBAL_AGENT_TOOLS
-    if not tool_name_list:
-        GLOBAL_AGENT_TOOLS.clear()
-        return json.dumps({
-            "type": "text",
-            "content": "Successfully cleared all tools. No tools are currently available."
-        }, ensure_ascii=False)
-    result = []
-    for tool_name in tool_name_list:
-        plugin_dir = os.path.join(os.getcwd(), "src", "plugins", "plugin_collection", tool_name)
-        if not os.path.exists(plugin_dir):
-            return json.dumps({
-                "type": "error",
-                "content": f"Failed: Tool '{tool_name}' does not exist in the registry. The previous tool list remains unchanged. Please check the tool list by manager__list_tool."
-            }, ensure_ascii=False)
-        result.append(tool_name)
-    GLOBAL_AGENT_TOOLS.clear()
-    GLOBAL_AGENT_TOOLS.extend(result)
-    GLOBAL_AGENT_TOOLS.extend(["manager","feishu"])
-    fetched_tools_str = ", ".join(result)
-    return json.dumps({
-        "type": "text",
-        "content": f"Successfully cleared old tools and loaded: [{fetched_tools_str}]. These are now your ONLY available tools for the next action."
-    }, ensure_ascii=False)

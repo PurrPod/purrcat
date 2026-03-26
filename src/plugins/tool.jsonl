@@ -1,0 +1,57 @@
+{"route": "local", "plugin": "database", "func": "list_databases", "desc": "List all available databases on disk. Use this first if you do not know which database to search."}
+{"route": "local", "plugin": "database", "func": "rag_search", "desc": "Perform RAG search on specific local databases. You MUST provide the target_dbs parameter."}
+{"route": "local", "plugin": "database", "func": "expand_database_context", "desc": "Expand the text context around a specific matched chunk in a database."}
+{"route": "local", "plugin": "filesystem", "func": "write_text_file", "desc": "Write content to a text file. Must be within the sandbox whitelist."}
+{"route": "local", "plugin": "filesystem", "func": "delete_file", "desc": "Delete a file or directory. Must be within the sandbox whitelist."}
+{"route": "local", "plugin": "filesystem", "func": "parse_document", "desc": "Parse and extract text from rich/binary documents (e.g., PDF, DOCX, XLSX, PPTX) using MarkItDown. DO NOT use this for plain text or CSV files (use read_file_lines instead)."}
+{"route": "local", "plugin": "filesystem", "func": "read_file_lines", "desc": "Read specific lines from a file."}
+{"route": "local", "plugin": "filesystem", "func": "search_in_file", "desc": "Search for a keyword in a file."}
+{"route": "local", "plugin": "filesystem", "func": "replace_file_lines", "desc": "Replace specific lines in a file with new code."}
+{"route": "local", "plugin": "filesystem", "func": "list_special_directories", "desc": "List all special directories including sandbox, skill and so on."}
+{"route": "local", "plugin": "filesystem", "func": "list_file_in_dir", "desc": "List files and directories within a given path."}
+{"route": "local", "plugin": "feishu", "func": "send_feishu_message", "desc": "给飞书发送文本消息。"}
+{"route": "local", "plugin": "manager", "func": "add_project", "desc": "启动一个新的后台子项目。适合复杂任务和项目开发"}
+{"route": "local", "plugin": "manager", "func": "answer", "desc": "回答来自特定子项目的提问，推动异步项目继续执行。"}
+{"route": "local", "plugin": "manager", "func": "check_pending_questions", "desc": "查看当前所有正在等待回答问题的子项目列表。"}
+{"route": "local", "plugin": "manager", "func": "add_simple_task", "desc": "启动一个简单的后台子任务。"}
+{"route": "local", "plugin": "manager", "func": "list_worker", "desc": "获取当前所有可用的工人及其描述的清单。"}
+{"route": "local", "plugin": "schedule", "func": "add_schedule", "desc": "添加跨天/跨月的日程。时间格式推荐 YYYY-MM-DD HH:MM"}
+{"route": "local", "plugin": "schedule", "func": "delete_schedule", "desc": "删除日程"}
+{"route": "local", "plugin": "schedule", "func": "update_schedule", "desc": "修改日程"}
+{"route": "local", "plugin": "schedule", "func": "get_schedules", "desc": "获取所有日程，或者根据特定日期 (YYYY-MM-DD) 检索"}
+{"route": "local", "plugin": "schedule", "func": "add_cron", "desc": "添加闹钟"}
+{"route": "local", "plugin": "schedule", "func": "delete_cron", "desc": "删除闹钟"}
+{"route": "local", "plugin": "schedule", "func": "update_cron", "desc": "修改闹钟"}
+{"route": "local", "plugin": "schedule", "func": "get_crons", "desc": "获取设定的所有闹钟"}
+{"route": "local", "plugin": "web", "func": "web_search", "desc": "搜索互联网内容并获取相关链接及摘要。结果将以 Markdown 格式保存至 buffer 文件夹。"}
+{"route": "local", "plugin": "web", "func": "fetch_web_content", "desc": "抓取指定 URL 的网页内容。结果将以 Markdown 格式保存至 buffer 文件夹。"}
+{"route": "local", "plugin": "multimodal", "func": "generate_image", "desc": "根据提示生成图片，并保存到 data/buffer（或自定义输出目录）。"}
+{"route": "local", "plugin": "multimodal", "func": "image_to_text", "desc": "对一张或多张图片进行视觉识别并返回文本结果。"}
+{"route": "local", "plugin": "multimodal", "func": "generate_video", "desc": "根据提示生成视频，并保存到 data/buffer（或自定义输出目录）。"}
+{"route": "local", "plugin": "multimodal", "func": "video_to_text", "desc": "从视频中抽帧并使用视觉模型进行文本描述。"}
+{"route": "local", "plugin": "multimodal", "func": "generate_audio", "desc": "根据文本提示生成音频，并保存到本地。"}
+{"route": "local", "plugin": "multimodal", "func": "audio_to_text", "desc": "将音频转录为文本。"}
+{"route": "mcp", "plugin": "leetcode", "func": "get_daily_challenge", "desc": "Retrieves today's LeetCode Daily Challenge problem with complete details, including problem description, constraints, and examples"}
+{"route": "mcp", "plugin": "leetcode", "func": "get_problem", "desc": "Retrieves details about a specific LeetCode problem, including its description, examples, constraints, and related information"}
+{"route": "mcp", "plugin": "leetcode", "func": "search_problems", "desc": "Searches for LeetCode problems based on multiple filter criteria including categories, tags, difficulty levels, and keywords, with pagination support"}
+{"route": "mcp", "plugin": "leetcode", "func": "get_user_profile", "desc": "Retrieves profile information about a LeetCode user, including user stats, solved problems, and profile details"}
+{"route": "mcp", "plugin": "leetcode", "func": "get_recent_ac_submissions", "desc": "Retrieves a user's recent accepted (AC) submissions on LeetCode China, with details about each successfully solved problem"}
+{"route": "mcp", "plugin": "leetcode", "func": "get_user_status", "desc": "Retrieves the current user's status on LeetCode, including login status, premium membership details, and user information (requires authentication)"}
+{"route": "mcp", "plugin": "leetcode", "func": "get_problem_submission_report", "desc": "Retrieves detailed information about a specific LeetCode submission by its ID, including source code, runtime stats, and test results (requires authentication)"}
+{"route": "mcp", "plugin": "leetcode", "func": "get_problem_progress", "desc": "Retrieves the current user's problem-solving status with filtering options, including detailed solution history for attempted or solved questions (requires authentication)"}
+{"route": "mcp", "plugin": "leetcode", "func": "get_all_submissions", "desc": "Retrieves a list of the current user's submissions on LeetCode China with extensive filtering options, including pagination support via lastKey parameter (requires authentication)"}
+{"route": "mcp", "plugin": "leetcode", "func": "get_user_contest_ranking", "desc": "Retrieves a user's contest ranking information on LeetCode, including overall ranking, participation history, and performance metrics across contests"}
+{"route": "mcp", "plugin": "leetcode", "func": "list_problem_solutions", "desc": "Retrieves a list of community solutions for a specific LeetCode problem, including only metadata like article slug. To view the full content of a solution, use the 'get_problem_solution' tool with the slug returned by this tool."}
+{"route": "mcp", "plugin": "leetcode", "func": "get_problem_solution", "desc": "Retrieves the complete content and metadata of a specific solution, including the full article text, author information, and related navigation links"}
+{"route": "mcp", "plugin": "leetcode", "func": "search_notes", "desc": "Searches for user notes on LeetCode with filtering options, returning note content and associated problem information (requires authentication)"}
+{"route": "mcp", "plugin": "leetcode", "func": "get_note", "desc": "Retrieves user notes for a specific LeetCode problem by its question ID, returning the complete note content and metadata (requires authentication)"}
+{"route": "mcp", "plugin": "leetcode", "func": "create_note", "desc": "Creates a new note for a specific LeetCode problem, allowing users to save personal comments and observations for future reference (requires authentication, CN only)"}
+{"route": "mcp", "plugin": "leetcode", "func": "update_note", "desc": "Updates an existing note with new content or title, allowing users to refine their saved observations (requires authentication, CN only)"}
+{"route": "mcp", "plugin": "bilibili-search", "func": "bilibili-search-summary", "desc": "搜索B站视频内容简介列表"}
+{"route": "mcp", "plugin": "bilibili-search", "func": "bilibili-hot", "desc": "获取B站热门内容"}
+{"route": "mcp", "plugin": "bilibili-search", "func": "bilibili-video-detail", "desc": "获取B站视频详情信息"}
+{"route": "mcp", "plugin": "bilibili-search", "func": "bilibili-user-info", "desc": "获取UP主基本信息"}
+{"route": "mcp", "plugin": "bilibili-search", "func": "bilibili-user-stat", "desc": "获取UP主统计信息（粉丝数、关注数等）"}
+{"route": "mcp", "plugin": "bilibili-search", "func": "bilibili-user-videos", "desc": "暂不支持-获取UP主视频列表"}
+{"route": "mcp", "plugin": "bilibili-search", "func": "bilibili-user-complete", "desc": "获取UP主完整信息（包含基本信息和统计信息）"}
+{"route": "mcp", "plugin": "bilibili-search", "func": "bilibili-bangumi-timeline", "desc": "获取B站番剧时间表，支持查询指定时间范围内的番剧播出信息"}

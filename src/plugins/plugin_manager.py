@@ -1,190 +1,275 @@
+import json
 import os
-import re
-
 import yaml
 from typing import Dict, Optional, List
+LOCAL_TOOL_YAML = os.path.join(os.path.dirname(__file__), "plugin_collection", "local_tool.yaml")
+TOOL_INDEX_FILE = os.path.join(os.path.dirname(__file__), "tool.jsonl")
 
-GLOBAL_TOOL_YAML = os.path.join(os.path.dirname(__file__), "tool.yaml")
-PLUGIN_COLLECTION_DIR = os.path.join(os.path.dirname(__file__), "plugin_collection")
-
+# 配置缓存
 CONFIG_DATA = {}
 
 
-def load_global_tool_yaml() -> Dict:
-    """加载全局tool.yaml配置（返回扁平字典，顶层为mcp_type）"""
-    try:
-        with open(GLOBAL_TOOL_YAML, "r", encoding="utf-8") as f:
-            global CONFIG_DATA
-            CONFIG_DATA = yaml.safe_load(f) or {}
-        if not isinstance(CONFIG_DATA, dict):
-            raise TypeError(f"tool.yaml格式错误，需为字典结构（当前类型：{type(CONFIG_DATA)}）")
-        return CONFIG_DATA
-    except yaml.YAMLError as e:
-        raise ValueError(f"解析tool.yaml失败：{str(e)}")
-    except Exception as e:
-        # 首次启动可能文件不存在，允许返回空
-        if isinstance(e, FileNotFoundError):
-            return {}
-        raise RuntimeError(f"加载tool.yaml异常：{str(e)}")
-
-
 def get_config_data():
+    """获取配置数据"""
     return CONFIG_DATA
 
 
-def init_config_data():
-    load_global_tool_yaml()
+def load_local_tool_yaml():
+    """加载本地工具配置"""
+    global CONFIG_DATA
+    if not os.path.exists(LOCAL_TOOL_YAML):
+        with open(LOCAL_TOOL_YAML, "w") as f:
+            pass
+    with open(LOCAL_TOOL_YAML, "r", encoding="utf-8") as f:
+            CONFIG_DATA = yaml.safe_load(f) or {}
 
 
-def get_plugin_config(mcp_type: str) -> Optional[Dict]:
-    """根据mcp_type读取插件完整配置"""
-    if not isinstance(mcp_type, str) or not mcp_type.strip():
-        raise ValueError("mcp_type必须是非空字符串")
+
+BASE_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "get_menu",
+            "description": "获取当前可用的插件/服务总览菜单。你需要先通过此工具浏览有哪些功能可用。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "route": {"type": "string", "enum": ["local", "mcp", "all"],
+                              "description": "筛选查看的路由，默认为 all"}
+                },
+                "required": ["route"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_tool",
+            "description": "通过自然语言关键词搜索相关工具。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "搜索关键词"}
+                },
+                "required": ["query"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "fetch_tool",
+            "description": "获取指定工具的详细信息，并将其立即加载到你的可用工具列表中。支持一次性加载同一个插件下的多个工具。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "route": {"type": "string", "enum": ["local", "mcp"]},
+                    "plugin_name": {"type": "string", "description": "插件名或 MCP Server 名"},
+                    "tool_names": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "具体的工具名列表，支持一次性传入多个，如 ['search', 'get_video']"
+                    }
+                },
+                "required": ["route", "plugin_name", "tool_names"]
+            }
+        }
+    }
+]
+
+
+def fetch_tool_schemas(route: str, plugin_name: str, tool_names: list) -> list:
+    """批量获取工具 schemas"""
+    schemas = []
+    if route == "local":
+        try:
+            load_local_tool_yaml()
+            plugin_config = CONFIG_DATA.get(plugin_name, {})
+            funcs = plugin_config.get("functions", {})
+            for tool_name in tool_names:
+                func_config = funcs.get(tool_name)
+                if func_config and "function" in func_config:
+                    schemas.append({"type": "function", "function": func_config["function"]})
+        except Exception as e:
+            print(f"❌ 读取 Local Schema 失败: {e}")
+    elif route == "mcp":
+        from src.plugins.route.mcptool import get_mcp_tool_schemas_sync
+        # 一次性丢给底层去查
+        schemas = get_mcp_tool_schemas_sync(plugin_name, tool_names)
+
+    return schemas if schemas else []
+
+
+def parse_tool(tool_name: str, arguments: dict, route: str = None, plugin: str = None) -> tuple[str, dict]:
+    """
+    核心枢纽：统一处理工具调用的路由和执行。
+    """
+    new_schema_info = None
+    result_content = ""
+
     try:
-        global_config = get_config_data()
-        return global_config.get(mcp_type)
-    except Exception as e:
-        print(f"加载配置发生错误：{e}")
-        return {}
+        # 1. 拦截：get_menu
+        if tool_name == "get_menu":
+            target_route = arguments.get("route", "all")
+            result_content = get_menu(target_route)
 
+        # 2. 拦截：search_tool
+        elif tool_name == "search_tool":
+            result_content = search_tool(arguments.get("query", ""))
 
-def get_plugin_tool_info(tools: List[str]) -> Optional[List[Dict]]:
-    init_config_data()
-    global_config = get_config_data()
-    tool_pool = []
-    added_func_names = set()
-    for tool_identifier in tools:
-        if not tool_identifier: continue
-        if '/' in tool_identifier or '__' in tool_identifier:
-            try:
-                if '/' in tool_identifier:
-                    mcp_type, func_name = tool_identifier.split('/', 1)
-                else:
-                    mcp_type, func_name = tool_identifier.split('__', 1)
-                if mcp_type not in global_config:
-                    try:
-                        register_plugin(mcp_type)
-                        global_config = get_config_data()
-                    except Exception as e:
-                        # 修复了漏掉的 f 字符串前缀
-                        print(f"Warning: 插件 {mcp_type} 不存在或无导出函数. 错误: {e}")
+        # 3. 拦截：fetch_tool (加载Schema闭环)
+        elif tool_name == "fetch_tool":
+            fetch_route = arguments.get("route")
+            p_name = arguments.get("plugin_name")
 
-                if mcp_type in global_config and 'functions' in global_config[mcp_type]:
-                    tool_config = global_config[mcp_type]['functions'].get(func_name)
-                    if tool_config:
-                        real_name = tool_config.get('function', {}).get('name')
-                        if real_name and real_name not in added_func_names:
-                            tool_pool.append(tool_config)
-                            added_func_names.add(real_name)
+            # 支持新版 tool_names 列表，也容错处理大模型发神经只传 tool_name 的情况
+            t_names = arguments.get("tool_names", [])
+            if not t_names and "tool_name" in arguments:
+                t_names = [arguments.get("tool_name")]
+
+            new_schema_info = []
+            success_tools = []
+            failed_tools = []
+
+            # 核心修正：单次底层调用，批量获取！
+            fetched_schemas = fetch_tool_schemas(fetch_route, p_name, t_names)
+
+            # 转为字典方便后续核对状态
+            fetched_dict = {s["function"]["name"]: s for s in fetched_schemas}
+
+            for t_name in t_names:
+                if t_name in fetched_dict:
+                    schema_dict = fetched_dict[t_name]
+                    real_func_name = schema_dict["function"]["name"]
+
+                    if real_func_name in ["get_menu", "search_tool", "fetch_tool"]:
+                        failed_tools.append(f"{t_name}(保留关键字被拒绝)")
                     else:
-                        print(f"Warning: 函数 {func_name} 未在 {mcp_type} 中定义")
-            except Exception as e:
-                print(f"Error parsing tool identifier '{tool_identifier}': {e}")
+                        new_schema_info.append({
+                            "route": fetch_route,
+                            "plugin": p_name,
+                            "funct": real_func_name,
+                            "schema": schema_dict
+                        })
+                        success_tools.append(t_name)
+                else:
+                    failed_tools.append(t_name)
+
+            # 拼装返回给大模型的结果
+            res_messages = []
+            if success_tools:
+                res_messages.append(f"✅ 成功加载工具: {', '.join(success_tools)}。现已支持原生调用。")
+            if failed_tools:
+                res_messages.append(f"❌ 以下工具找不到或加载失败: {', '.join(failed_tools)}")
+
+            result_content = "\n".join(res_messages)
 
         else:
-            mcp_type = tool_identifier
-            if mcp_type not in global_config:
-                try:
-                    register_plugin(mcp_type)
-                    global_config = get_config_data()
-                except Exception as e:
-                    print(f"Warning: 插件 {mcp_type} 不存在或无导出函数. 错误: {e}")
-
-            if mcp_type in global_config and 'functions' in global_config[mcp_type]:
-                all_funcs = global_config[mcp_type]['functions']
-                for _, tool_config in all_funcs.items():
-                    real_name = tool_config.get('function', {}).get('name')
-                    if real_name and real_name not in added_func_names:
-                        tool_pool.append(tool_config)
-                        added_func_names.add(real_name)
+            if route == "local":
+                from src.plugins.route.localtool import call_local_tool
+                result_content = call_local_tool(plugin, tool_name, arguments)
+            elif route == "mcp":
+                from src.plugins.route.mcptool import call_mcp_tool
+                result_content = call_mcp_tool(plugin, tool_name, arguments)
             else:
-                print(f"Warning: 插件 {mcp_type} 仍未找到有效配置")
+                result_content = f"❌ 调度失败：未找到 {tool_name} 的底层路由映射。请确认它是否通过 fetch_tool 正常加载。"
 
-    return tool_pool
-
-def register_plugin(plugin_name: str) -> bool:
-    print(f"正在尝试注册插件: {plugin_name} ...")
-    plugin_dir = os.path.join(PLUGIN_COLLECTION_DIR, plugin_name)
-    config_file = os.path.join(plugin_dir, f"{plugin_name}.yaml")
-
-    if not os.path.isdir(plugin_dir) or not os.path.isfile(config_file):
-        print(f"错误：插件目录或配置文件不存在 -> {plugin_dir}")
-        return False
-
-    try:
-        with open(config_file, 'r', encoding='utf-8') as f:
-            new_config = yaml.safe_load(f)
-
-        # 提取配置内容
-        content = new_config
-        if isinstance(new_config, dict) and len(new_config) == 1 and plugin_name in new_config:
-            content = new_config[plugin_name]
-
-        # 读取全局配置
-        current = {}
-        if os.path.exists(GLOBAL_TOOL_YAML):
-            with open(GLOBAL_TOOL_YAML, 'r', encoding='utf-8') as f:
-                current = yaml.safe_load(f) or {}
-
-        # 写入
-        current[plugin_name] = content
-        with open(GLOBAL_TOOL_YAML, 'w', encoding='utf-8') as f:
-            yaml.dump(current, f, allow_unicode=True, sort_keys=False, indent=2)
-
-        init_config_data()  # 刷新内存
-        return True
     except Exception as e:
-        print(f"注册插件异常：{e}")
-        return False
+        result_content = f"❌ 工具调度/执行异常: {str(e)}"
+
+    return str(result_content), new_schema_info
 
 
-def unregister_plugin(plugin_name: str) -> str:
-    """注销并删除一个插件."""
-    print(f"正在尝试注销并删除插件: {plugin_name} ...")
+def get_menu(route: str = "all") -> str:
+    """获取工具菜单"""
+    if not os.path.exists(TOOL_INDEX_FILE):
+        # 如果 tool.jsonl 不存在，先初始化
+        init_tool()
+        if not os.path.exists(TOOL_INDEX_FILE):
+            return "❌ 工具注册表未初始化，找不到 tool.jsonl。"
+
+    result = f"【可用工具总览菜单】 (过滤条件: {route})\n"
+    result += "💡 提示：使用 fetch_tool 获取参数 Schema 后即可调用。\n"
+
+    count = 0
+    try:
+        with open(TOOL_INDEX_FILE, "r", encoding="utf-8") as f:
+            for line in f:
+                if not line.strip(): continue
+                tool = json.loads(line)
+
+                if route == "all" or tool["route"] == route:
+                    result += f"\n👉 [{tool['route'].upper()}] 归属: {tool['plugin']} | 工具名: {tool['func']}\n"
+                    result += f"   描述: {tool['desc']}\n"
+                    count += 1
+    except Exception as e:
+        return f"❌ 读取工具菜单失败: {e}"
+
+    if count == 0:
+        return f"当前路由 '{route}' 下没有可用的工具。"
+    return result
+
+
+def search_tool(query: str) -> str:
+    """搜索工具"""
+    if not os.path.exists(TOOL_INDEX_FILE):
+        init_tool()
+        if not os.path.exists(TOOL_INDEX_FILE):
+            return "❌ 工具注册表未初始化，找不到 tool.jsonl"
     
-    # 1. 从 tool.yaml 中移除配置
+    query_lower = query.lower()
+    results = []
+    with open(TOOL_INDEX_FILE, "r", encoding="utf-8") as f:
+        for line in f:
+            if not line.strip(): continue
+            tool = json.loads(line)
+            if (query_lower in tool['func'].lower() or
+                    query_lower in tool['desc'].lower() or
+                    query_lower in tool['plugin'].lower()):
+                results.append(tool)
+    
+    if not results:
+        return f"没有找到与 '{query}' 相关的工具。请尝试使用 get_menu 浏览所有工具。"
+    
+    res_str = f"【搜索结果】找到 {len(results)} 个与 '{query}' 相关的工具：\n"
+    for t in results:
+        res_str += f"\n🔧 工具名: {t['func']} (归属: {t['plugin']}, 路由: {t['route']})\n"
+        res_str += f"   描述: {t['desc']}\n"
+        res_str += f"   👉 获取指令: fetch_tool(route='{t['route']}', plugin_name='{t['plugin']}', tool_names=['{t['func']}'])\n"
+    return res_str
+
+
+def init_tool():
+    tools_index = []
     try:
-        current = {}
-        if os.path.exists(GLOBAL_TOOL_YAML):
-            with open(GLOBAL_TOOL_YAML, 'r', encoding='utf-8') as f:
-                current = yaml.safe_load(f) or {}
-
-        if plugin_name not in current:
-            raise FileNotFoundError(f"配置中未找到插件 '{plugin_name}'，可能已被注销。")
-
-        del current[plugin_name]
-        
-        with open(GLOBAL_TOOL_YAML, 'w', encoding='utf-8') as f:
-            if not current:
-                f.write("")  # 如果文件为空，则写入空字符串
-            else:
-                yaml.dump(current, f, allow_unicode=True, sort_keys=False, indent=2)
-        
-        init_config_data()  # 刷新内存中的配置
-        print(f"插件 '{plugin_name}' 的配置已成功从 tool.yaml 中移除。")
-
+        from src.plugins.plugin_collection.local_manager import init_local_config_data
+        init_local_config_data()
+        if os.path.exists(LOCAL_TOOL_YAML):
+            with open(LOCAL_TOOL_YAML, "r", encoding="utf-8") as f:
+                local_config = yaml.safe_load(f) or {}
+                for plugin_name, plugin_data in local_config.items():
+                    functions = plugin_data.get("functions", {})
+                    for func_name, func_data in functions.items():
+                        desc = func_data.get("function", {}).get("description", "无描述")
+                        tools_index.append({
+                            "route": "local",
+                            "plugin": plugin_name,
+                            "func": func_name,
+                            "desc": desc
+                        })
     except Exception as e:
-        error_message = f"注销插件配置时发生异常：{e}"
-        print(error_message)
-        raise RuntimeError(error_message)
+        pass
+    try:
+        from src.plugins.route.mcptool import extract_mcp_fingerprints_sync
+        mcp_tools = extract_mcp_fingerprints_sync()
+        if mcp_tools:
+            tools_index.extend(mcp_tools)
+    except Exception as e:
+        print(f"❌ 扫描 MCP 工具异常: {e}")
+    try:
+        with open(TOOL_INDEX_FILE, "w", encoding="utf-8") as f:
+            for tool_info in tools_index:
+                f.write(json.dumps(tool_info, ensure_ascii=False) + "\n")
+    except Exception as e:
+        pass
 
-    # 2. 删除插件物理文件夹
-    plugin_dir = os.path.join(PLUGIN_COLLECTION_DIR, plugin_name)
-    if os.path.isdir(plugin_dir):
-        try:
-            import shutil
-            shutil.rmtree(plugin_dir)
-            print(f"插件文件夹 '{plugin_dir}' 已被成功删除。")
-        except Exception as e:
-            error_message = f"删除插件文件夹 '{plugin_dir}' 时失败：{e}"
-            print(error_message)
-            # 即便文件夹删除失败，配置也已注销，所以我们不在这里抛出致命错误，而是返回一个警告
-            return f"插件 '{plugin_name}' 配置已注销，但物理文件夹删除失败: {e}"
-    else:
-        print(f"插件文件夹 '{plugin_dir}' 不存在，无需删除。")
-
-    return f"插件 '{plugin_name}' 已被成功注销和删除。"
-
-
-if __name__ == '__main__':
-    print(get_plugin_tool_info(["mock"]))

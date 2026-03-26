@@ -1,11 +1,50 @@
 'use client'
 
 import { create } from 'zustand'
-import type { Message, ThoughtChain, Project, Task, Skill, FileContent, Plugin, ConfigCategory, ModelConfig, ToolGroup } from './types'
+import type { Message, ThoughtChain, Project, Task, Skill, FileContent, Plugin, ConfigCategory, ModelConfig, ToolGroup, ScheduleItem, AlarmItem } from './types'
 
-const API_BASE = 'http://localhost:8000/api'
+export const API_BASE = 'http://localhost:8000/api'
+export const API_ORIGIN = API_BASE.replace(/\/api\/?$/, '')
+
+type ConnectionStatus = 'connected' | 'disconnected' | 'reconnecting'
+
+function toErrorMessage(error: unknown): string {
+  if (typeof error === 'string') return error
+  if (error && typeof error === 'object' && 'message' in error && typeof (error as any).message === 'string') {
+    return (error as any).message
+  }
+  try {
+    return JSON.stringify(error)
+  } catch {
+    return String(error)
+  }
+}
+
+async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit | undefined, timeoutMs: number) {
+  if (!timeoutMs || timeoutMs <= 0) return fetch(input, init)
+
+  const controller = new AbortController()
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs)
+
+  try {
+    return await fetch(input, { ...init, signal: controller.signal })
+  } finally {
+    window.clearTimeout(timer)
+  }
+}
 
 interface AppState {
+  connectionStatus: ConnectionStatus
+  connectionError: string | null
+  lastConnectedAt: number | null
+  apiFetch: (pathOrUrl: string, init?: RequestInit, opts?: { timeoutMs?: number; treat5xxAsDisconnected?: boolean }) => Promise<Response>
+  pingBackend: (opts?: { timeoutMs?: number }) => Promise<boolean>
+  reconnectNow: () => Promise<boolean>
+  refreshAll: () => Promise<void>
+  setConnectionStatus: (status: ConnectionStatus, error?: string | null) => void
+  resumeProject: (projectId: string) => Promise<boolean>
+  resumeInterruptedProjects: () => Promise<void>
+
   // Messages
   messages: Message[]
   fetchMessages: () => Promise<void>
@@ -111,10 +150,107 @@ interface AppState {
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
+  connectionStatus: 'connected',
+  connectionError: null,
+  lastConnectedAt: null,
+  setConnectionStatus: (status, error) => {
+    set((prev) => ({
+      connectionStatus: status,
+      connectionError: error === undefined ? prev.connectionError : error,
+      lastConnectedAt: status === 'connected' ? Date.now() : prev.lastConnectedAt,
+    }))
+  },
+  apiFetch: async (pathOrUrl, init, opts) => {
+    const timeoutMs = opts?.timeoutMs ?? 8000
+    const treat5xxAsDisconnected = opts?.treat5xxAsDisconnected ?? true
+
+    const state = get()
+    if (typeof window !== 'undefined' && 'onLine' in window.navigator && window.navigator.onLine === false) {
+      state.setConnectionStatus('disconnected', 'offline')
+      throw new Error('offline')
+    }
+
+    const url = /^https?:\/\//i.test(pathOrUrl)
+      ? pathOrUrl
+      : `${API_BASE}${pathOrUrl.startsWith('/') ? pathOrUrl : `/${pathOrUrl}`}`
+
+    try {
+      const res = await fetchWithTimeout(url, init, timeoutMs)
+      if (treat5xxAsDisconnected && res.status >= 500) {
+        state.setConnectionStatus('disconnected', `server_${res.status}`)
+      } else {
+        state.setConnectionStatus('connected', null)
+      }
+      return res
+    } catch (e) {
+      state.setConnectionStatus('disconnected', toErrorMessage(e))
+      throw e
+    }
+  },
+  pingBackend: async (opts) => {
+    const timeoutMs = opts?.timeoutMs ?? 2500
+    try {
+      const res = await fetchWithTimeout(`${API_ORIGIN}/`, { method: 'GET' }, timeoutMs)
+      if (!res.ok) {
+        get().setConnectionStatus('disconnected', `ping_${res.status}`)
+        return false
+      }
+      get().setConnectionStatus('connected', null)
+      return true
+    } catch (e) {
+      get().setConnectionStatus('disconnected', toErrorMessage(e))
+      return false
+    }
+  },
+  refreshAll: async () => {
+    await Promise.allSettled([
+      get().fetchMessages(),
+      get().fetchProjects(),
+      get().fetchTasks(),
+      get().fetchConfigs(),
+      get().fetchPlugins(),
+      get().fetchSkills(),
+      get().fetchDatabases(),
+      get().fetchThoughtChain(),
+      get().fetchModelConfig(),
+      get().fetchSchedule(),
+      get().fetchAlarms(),
+      get().fetchToolGroups(),
+    ])
+  },
+  resumeProject: async (projectId) => {
+    try {
+      const res = await get().apiFetch(`/projects/${projectId}/resume`, { method: 'POST' })
+      const data = await res.json().catch(() => ({}))
+      await get().fetchProjects()
+      return data?.status === 'success' || data?.status === 'already_running'
+    } catch {
+      return false
+    }
+  },
+  resumeInterruptedProjects: async () => {
+    const candidates = get().projects
+      .filter((p) => p.rawState === 'killed')
+      .map((p) => p.id)
+    if (candidates.length === 0) return
+
+    await Promise.allSettled(candidates.map((id) => get().resumeProject(id)))
+  },
+  reconnectNow: async () => {
+    const state = get()
+    state.setConnectionStatus('reconnecting')
+    const ok = await state.pingBackend({ timeoutMs: 3000 })
+    if (!ok) return false
+    await state.refreshAll()
+    await state.resumeInterruptedProjects()
+    state.setConnectionStatus('connected', null)
+    return true
+  },
+
   messages: [],
   fetchMessages: async () => {
      try {
-       const res = await fetch(`${API_BASE}/messages`)
+       const res = await get().apiFetch('/messages')
        const data = await res.json()
        set({ 
          messages: data.map((m: any) => ({
@@ -131,7 +267,7 @@ export const useAppStore = create<AppState>((set, get) => ({
    },
   addMessage: async (message) => {
     try {
-      await fetch(`${API_BASE}/messages`, {
+      await get().apiFetch('/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -146,7 +282,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   removeMessage: async (id) => {
     try {
-      await fetch(`${API_BASE}/messages/${id}`, { method: 'DELETE' })
+      await get().apiFetch(`/messages/${id}`, { method: 'DELETE' })
       get().fetchMessages()
     } catch (e) {
       console.error('Failed to remove message:', e)
@@ -156,7 +292,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   thoughtChain: [],
   fetchThoughtChain: async () => {
     try {
-      const res = await fetch(`${API_BASE}/thought-chain`)
+      const res = await get().apiFetch('/thought-chain')
       const data = await res.json()
       set({
         thoughtChain: (Array.isArray(data) ? data : []).map((t: any, index: number) => {
@@ -193,7 +329,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   forcePush: async (content) => {
     try {
-      await fetch(`${API_BASE}/agent/force-push`, {
+      await get().apiFetch('/agent/force-push', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content })
@@ -205,7 +341,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   summarizeMemory: async () => {
     try {
-      await fetch(`${API_BASE}/agent/summarize-memory`, {
+      await get().apiFetch('/agent/summarize-memory', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
       })
@@ -218,8 +354,18 @@ export const useAppStore = create<AppState>((set, get) => ({
   projects: [],
   fetchProjects: async () => {
     try {
-      const res = await fetch(`${API_BASE}/projects`)
+      console.log('[DEBUG] Fetching projects...')
+      const res = await get().apiFetch('/projects')
+      console.log('[DEBUG] Response status:', res.status)
       const data = await res.json()
+      console.log('[DEBUG] Response data:', data)
+      
+      if (!Array.isArray(data)) {
+        console.error('[DEBUG] Projects data is not an array:', data)
+        set({ projects: [] })
+        return
+      }
+      
       set({ 
         projects: data.map((p: any) => ({
           id: p.id,
@@ -228,6 +374,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           status: (p.state === 'running' || p.state === 'pending' || p.state === 'completed' || p.state === 'error' || p.state === 'killed') 
             ? (p.state === 'error' ? 'failed' : (p.state === 'killed' ? 'failed' : p.state)) 
             : 'pending',
+          rawState: p.state,
           progress: p.state === 'completed' ? 100 : (p.progress || 50),
           pipeline: Array.isArray(p.pipeline)
             ? p.pipeline.map((step: any, index: number) => {
@@ -262,13 +409,14 @@ export const useAppStore = create<AppState>((set, get) => ({
           updatedAt: p.updatedAt ? new Date(p.updatedAt) : new Date()
         })) 
       })
+      console.log('[DEBUG] Projects loaded successfully')
     } catch (e) {
       console.error('Failed to fetch projects:', e)
     }
   },
   addProject: async (project) => {
     try {
-      await fetch(`${API_BASE}/projects`, {
+      await get().apiFetch('/projects', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(project)
@@ -280,7 +428,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   removeProject: async (id) => {
     try {
-      await fetch(`${API_BASE}/projects/${id}`, { method: 'DELETE' })
+      await get().apiFetch(`/projects/${id}`, { method: 'DELETE' })
       get().fetchProjects()
     } catch (e) {
       console.error('Failed to remove project:', e)
@@ -288,7 +436,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   stopProject: async (id) => {
     try {
-      await fetch(`${API_BASE}/projects/${id}/stop`, { method: 'POST' })
+      await get().apiFetch(`/projects/${id}/stop`, { method: 'POST' })
       get().fetchProjects()
     } catch (e) {
       console.error('Failed to stop project:', e)
@@ -298,7 +446,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   tasks: [],
   fetchTasks: async () => {
     try {
-      const res = await fetch(`${API_BASE}/tasks`)
+      const res = await get().apiFetch('/tasks')
       const data = await res.json()
       set({ 
         tasks: data.map((t: any) => ({
@@ -325,7 +473,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   addTask: async (task) => {
     try {
-      await fetch(`${API_BASE}/tasks`, {
+      await get().apiFetch('/tasks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(task)
@@ -337,7 +485,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   removeTask: async (id) => {
     try {
-      await fetch(`${API_BASE}/tasks/${id}`, { method: 'DELETE' })
+      await get().apiFetch(`/tasks/${id}`, { method: 'DELETE' })
       get().fetchTasks()
     } catch (e) {
       console.error('Failed to remove task:', e)
@@ -345,7 +493,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   stopTask: async (id) => {
     try {
-      await fetch(`${API_BASE}/tasks/${id}/stop`, { method: 'POST' })
+      await get().apiFetch(`/tasks/${id}/stop`, { method: 'POST' })
       get().fetchTasks()
     } catch (e) {
       console.error('Failed to stop task:', e)
@@ -353,7 +501,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   injectTask: async (taskId, content) => {
     try {
-      await fetch(`${API_BASE}/tasks/${taskId}/inject`, {
+      await get().apiFetch(`/tasks/${taskId}/inject`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content })
@@ -367,7 +515,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   scheduleItems: [],
   fetchSchedule: async () => {
     try {
-      const res = await fetch(`${API_BASE}/schedule`)
+      const res = await get().apiFetch('/schedule')
       const data = await res.json()
       set({ scheduleItems: Array.isArray(data) ? data : [] })
     } catch (e) {
@@ -376,7 +524,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   addSchedule: async (item) => {
     try {
-      await fetch(`${API_BASE}/schedule`, {
+      await get().apiFetch('/schedule', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(item)
@@ -388,7 +536,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   removeSchedule: async (id) => {
     try {
-      await fetch(`${API_BASE}/schedule/${id}`, { method: 'DELETE' })
+      await get().apiFetch(`/schedule/${id}`, { method: 'DELETE' })
       get().fetchSchedule()
     } catch (e) {
       console.error('Failed to remove schedule:', e)
@@ -398,7 +546,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   alarms: [],
   fetchAlarms: async () => {
     try {
-      const res = await fetch(`${API_BASE}/cron`)
+      const res = await get().apiFetch('/cron')
       const data = await res.json()
       set({ alarms: Array.isArray(data) ? data : [] })
     } catch (e) {
@@ -407,7 +555,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   addAlarm: async (item) => {
     try {
-      await fetch(`${API_BASE}/cron`, {
+      await get().apiFetch('/cron', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(item)
@@ -419,7 +567,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   updateAlarm: async (id, updates) => {
     try {
-      await fetch(`${API_BASE}/cron/${id}`, {
+      await get().apiFetch(`/cron/${id}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updates)
@@ -431,7 +579,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   removeAlarm: async (id) => {
     try {
-      await fetch(`${API_BASE}/cron/${id}`, { method: 'DELETE' })
+      await get().apiFetch(`/cron/${id}`, { method: 'DELETE' })
       get().fetchAlarms()
     } catch (e) {
       console.error('Failed to remove alarm:', e)
@@ -441,7 +589,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   toolGroups: [],
   fetchToolGroups: async () => {
     try {
-      const res = await fetch(`${API_BASE}/tools`);
+      const res = await get().apiFetch('/tools');
       const data = await res.json();
       set({ toolGroups: data });
     } catch (error) {
@@ -453,7 +601,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   skills: [],
   fetchSkills: async () => {
     try {
-      const res = await fetch(`${API_BASE}/skills`)
+      const res = await get().apiFetch('/skills')
       const data = await res.json()
       set({ skills: data })
     } catch (e) {
@@ -464,7 +612,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   modelConfig: {},
   fetchModelConfig: async () => {
     try {
-      const res = await fetch(`${API_BASE}/config`)
+      const res = await get().apiFetch('/config')
       const data = await res.json()
       if (data['model_config.json']) {
         set({ modelConfig: data['model_config.json'] })
@@ -477,7 +625,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       const current = get().modelConfig
       const updated = { ...current, [key]: config }
-      await fetch(`${API_BASE}/config/model_config.json`, {
+      await get().apiFetch('/config/model_config.json', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updated)
@@ -491,7 +639,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   files: {},
   fetchFile: async (path) => {
     try {
-      const res = await fetch(`${API_BASE}/files?path=${path}`)
+      const res = await get().apiFetch(`/files?path=${path}`)
       const data = await res.json()
       set((state) => ({
         files: {
@@ -509,7 +657,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   updateFile: async (path, content) => {
     try {
-      await fetch(`${API_BASE}/files?path=${path}`, {
+      await get().apiFetch(`/files?path=${path}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content })
@@ -523,7 +671,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   plugins: [],
   fetchPlugins: async () => {
     try {
-      const res = await fetch(`${API_BASE}/plugins`)
+      const res = await get().apiFetch('/plugins')
       const data = await res.json()
       set({ plugins: data })
     } catch (e) {
@@ -532,7 +680,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   togglePlugin: async (name) => {
     try {
-      await fetch(`${API_BASE}/plugins/${name}/toggle`, { method: 'POST' })
+      await get().apiFetch(`/plugins/${name}/toggle`, { method: 'POST' })
       get().fetchPlugins()
     } catch (e) {
        console.error('Failed to toggle plugin:', e)
@@ -542,7 +690,7 @@ export const useAppStore = create<AppState>((set, get) => ({
    databases: [],
    fetchDatabases: async () => {
      try {
-       const res = await fetch(`${API_BASE}/databases`)
+       const res = await get().apiFetch('/databases')
        const data = await res.json()
        set({ databases: data })
      } catch (e) {
@@ -553,7 +701,7 @@ export const useAppStore = create<AppState>((set, get) => ({
    configs: [],
   fetchConfigs: async () => {
     try {
-      const res = await fetch(`${API_BASE}/config`)
+      const res = await get().apiFetch('/config')
       const data = await res.json()
       const categories: ConfigCategory[] = Object.entries(data).map(([filename, content]: [string, any]) => ({
         name: filename,
@@ -589,7 +737,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         configObj[item.key] = item.value
       })
       
-      await fetch(`${API_BASE}/config/${categoryName}`, {
+      await get().apiFetch(`/config/${categoryName}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(configObj)

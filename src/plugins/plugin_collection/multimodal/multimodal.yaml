@@ -6,7 +6,7 @@ multimodal:
     generate_image:
       type: function
       function:
-        name: "multimodal__generate_image"
+        name: "generate_image"
         description: "根据提示生成图片，并保存到 data/buffer（或自定义输出目录）。"
         parameters:
           type: object
@@ -22,7 +22,7 @@ multimodal:
     image_to_text:
       type: function
       function:
-        name: "multimodal__image_to_text"
+        name: "image_to_text"
         description: "对一张或多张图片进行视觉识别并返回文本结果。"
         parameters:
           type: object
@@ -41,7 +41,7 @@ multimodal:
     generate_video:
       type: function
       function:
-        name: "multimodal__generate_video"
+        name: "generate_video"
         description: "根据提示生成视频，并保存到 data/buffer（或自定义输出目录）。"
         parameters:
           type: object
@@ -57,7 +57,7 @@ multimodal:
     video_to_text:
       type: function
       function:
-        name: "multimodal__video_to_text"
+        name: "video_to_text"
         description: "从视频中抽帧并使用视觉模型进行文本描述。"
         parameters:
           type: object
@@ -76,7 +76,7 @@ multimodal:
     generate_audio:
       type: function
       function:
-        name: "multimodal__generate_audio"
+        name: "generate_audio"
         description: "根据文本提示生成音频，并保存到本地。"
         parameters:
           type: object
@@ -92,7 +92,7 @@ multimodal:
     audio_to_text:
       type: function
       function:
-        name: "multimodal__audio_to_text"
+        name: "audio_to_text"
         description: "将音频转录为文本。"
         parameters:
           type: object

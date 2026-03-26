@@ -7,7 +7,7 @@ schedule:
     add_schedule:
       type: function
       function:
-        name: "schedule__add_schedule"
+        name: "add_schedule"
         description: "添加跨天/跨月的日程。时间格式推荐 YYYY-MM-DD HH:MM"
         parameters:
           type: "object"
@@ -29,7 +29,7 @@ schedule:
     delete_schedule:
       type: function
       function:
-        name: "schedule__delete_schedule"
+        name: "delete_schedule"
         description: "删除日程"
         parameters:
           type: "object"
@@ -42,7 +42,7 @@ schedule:
     update_schedule:
       type: function
       function:
-        name: "schedule__update_schedule"
+        name: "update_schedule"
         description: "修改日程"
         parameters:
           type: "object"
@@ -67,7 +67,7 @@ schedule:
     get_schedules:
       type: function
       function:
-        name: "schedule__get_schedules"
+        name: "get_schedules"
         description: "获取所有日程，或者根据特定日期 (YYYY-MM-DD) 检索"
         parameters:
           type: "object"
@@ -80,7 +80,7 @@ schedule:
     add_cron:
       type: function
       function:
-        name: "schedule__add_cron"
+        name: "add_cron"
         description: "添加闹钟"
         parameters:
           type: "object"
@@ -99,7 +99,7 @@ schedule:
     delete_cron:
       type: function
       function:
-        name: "schedule__delete_cron"
+        name: "delete_cron"
         description: "删除闹钟"
         parameters:
           type: "object"
@@ -112,7 +112,7 @@ schedule:
     update_cron:
       type: function
       function:
-        name: "schedule__update_cron"
+        name: "update_cron"
         description: "修改闹钟"
         parameters:
           type: "object"
@@ -137,7 +137,7 @@ schedule:
     get_crons:
       type: function
       function:
-        name: "schedule__get_crons"
+        name: "get_crons"
         description: "获取设定的所有闹钟"
         parameters:
           type: "object"

@@ -6,7 +6,7 @@ feishu:
     send_feishu_message:
       type: function
       function:
-        name: "feishu__send_feishu_message"
+        name: "send_feishu_message"
         description: "给飞书发送文本消息。"
         parameters:
           type: "object"

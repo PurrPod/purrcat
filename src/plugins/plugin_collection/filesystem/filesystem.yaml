@@ -8,7 +8,7 @@ filesystem:
     write_text_file:
       type: function
       function:
-        name: "filesystem__write_text_file"
+        name: "write_text_file"
         description: "Write content to a text file. Must be within the sandbox whitelist."
         parameters:
           type: "object"
@@ -23,7 +23,7 @@ filesystem:
     delete_file:
       type: function
       function:
-        name: "filesystem__delete_file"
+        name: "delete_file"
         description: "Delete a file or directory. Must be within the sandbox whitelist."
         parameters:
           type: "object"
@@ -35,7 +35,7 @@ filesystem:
     parse_document:
       type: function
       function:
-        name: "filesystem__parse_document"
+        name: "parse_document"
         description: "Parse and extract text from rich/binary documents (e.g., PDF, DOCX, XLSX, PPTX) using MarkItDown. DO NOT use this for plain text or CSV files (use read_file_lines instead)."
         parameters:
           type: "object"
@@ -47,7 +47,7 @@ filesystem:
     read_file_lines:
       type: function
       function:
-        name: "filesystem__read_file_lines"
+        name: "read_file_lines"
         description: "Read specific lines from a file."
         parameters:
           type: "object"
@@ -65,7 +65,7 @@ filesystem:
     search_in_file:
       type: function
       function:
-        name: "filesystem__search_in_file"
+        name: "search_in_file"
         description: "Search for a keyword in a file."
         parameters:
           type: "object"
@@ -83,7 +83,7 @@ filesystem:
     replace_file_lines:
       type: function
       function:
-        name: "filesystem__replace_file_lines"
+        name: "replace_file_lines"
         description: "Replace specific lines in a file with new code."
         parameters:
           type: "object"
@@ -104,7 +104,7 @@ filesystem:
     list_special_directories:
       type: function
       function:
-        name: "filesystem__list_special_directories"
+        name: "list_special_directories"
         description: "List all special directories including sandbox, skill and so on."
         parameters:
           type: "object"
@@ -113,7 +113,7 @@ filesystem:
     list_file_in_dir:
       type: function
       function:
-        name: "filesystem__list_file_in_dir"
+        name: "list_file_in_dir"
         description: "List files and directories within a given path."
         parameters:
           type: "object"

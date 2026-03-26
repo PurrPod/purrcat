@@ -5,7 +5,6 @@ import json
 from typing import Dict, Optional
 import uuid
 from src.models.model import Model
-from src.plugins.plugin_manager import get_plugin_tool_info, get_plugin_config, init_config_data
 import os             # 新增
 import time           # 新增
 import datetime       # 新增
@@ -159,7 +158,7 @@ class Task:
                     }
                 )
             TASK_INSTANCES[self.task_id] = self
-            self.log_and_notify("text", self.system_prompt)
+            self.log_and_notify("system", "🧾 已加载任务上下文", {"style": "light_gray"})
     def _clean_json_string(self, text: str) -> str:
         """辅助方法：清理模型输出的 Markdown 标记，提取纯 JSON 字符串"""
         text = text.strip()
@@ -296,13 +295,13 @@ class Task:
         init_config_data()
         if not suggestion:
             sys_prompt = (
-                "你是一个高级智能助手（Worker），负责执行子任务并善用工具。\n"
+                "你是一个高级智能助手（Worker），负责执行子任务并善用工具。如果用户提供了skill技能手册，应当在执行任务环节时常翻阅，按照skill手册的规范执行任务。\n"
                 "【重要交付规范】\n"
                 "1. 在执行任务期间，你可以正常输出文本思考并调用工具。\n"
                 "2. 当你认为任务最终完成或确认无法完成，【且不再需要调用任何工具时】，你的最后一次回复必须是一个合法的纯JSON对象，不要包含任何多余的说明文字或Markdown标记！\n"
                 "3. 最终的JSON格式必须为：{\"status\": \"completed\", \"task_result\": true或false, \"summary\": \"最终交付物或失败原因\"}\n"
                 "4. 质检员（QA）只能看到你 completed 状态下的 summary，看不到你之前的 thought。\n"
-                "5. 如果没有直接产生文件，必须把交付的完整文本写在 summary 里；如果有生成文件，写明文件绝对路径和内容简要说明。"
+                "5. 如果没有直接产生文件，必须把交付的简洁的完整文本写在 summary 里；如果有生成文件，写明文件绝对路径和内容简要说明。"
             )
             self.current_history.append({"role": "system", "content": sys_prompt})
 
@@ -534,38 +533,7 @@ class Task:
         return {"eval_result": False, "suggestion": "QA质检过程超出最大思考步数。"}
 
     def _execute_tool(self, mcp_type: str, func_name: str, arguments: dict):
-        plugin_config = get_plugin_config(mcp_type)
-        if not plugin_config:
-            raise ValueError(f"未找到插件配置：{mcp_type}")
-        try:
-            module_path = f"src.plugins.plugin_collection.{mcp_type}"
-            plugin_module = importlib.import_module(module_path)
-        except ImportError as e:
-            try:
-                plugin_module = importlib.import_module(mcp_type)
-            except ImportError:
-                raise ValueError(f"导入插件包失败 {mcp_type}: {e}")
-        if not hasattr(plugin_module, func_name):
-            raise ValueError(f"插件包 {mcp_type} 中无函数：{func_name}")
-
-        target_func = getattr(plugin_module, func_name)
-
-        if inspect.iscoroutinefunction(target_func):
-            try:
-                loop = asyncio.get_running_loop()
-            except RuntimeError:
-                loop = None
-
-            if loop and loop.is_running():
-                import nest_asyncio
-                nest_asyncio.apply()
-                result = asyncio.get_event_loop().run_until_complete(target_func(**arguments))
-            else:
-                result = asyncio.run(target_func(**arguments))
-        else:
-            result = target_func(**arguments)
-
-        return result if result else "Success (No Output)"
+        pass
 
     def run_pipeline(self):
         try:

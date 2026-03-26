@@ -7,17 +7,18 @@ import threading
 import uuid
 import datetime
 from contextlib import AsyncExitStack
-from typing import Any
+from typing import Any, List, Dict
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
 
-try:
-    from mcp import ClientSession, StdioServerParameters
-    from mcp.client.stdio import stdio_client
-except ImportError:
-    raise ImportError("请先安装必需的库: pip install mcp")
 
 CONFIG_PATH = "data\\config\\mcp_config.json"
+
+
 def _format_response(msg_type: str, content: Any) -> str:
     return json.dumps({"type": msg_type, "content": content}, ensure_ascii=False)
+
+
 def load_configs() -> dict:
     if not os.path.exists(CONFIG_PATH):
         return {}
@@ -29,14 +30,12 @@ def load_configs() -> dict:
         print(f"[MCP 网关] 加载配置文件失败: {e}")
         return {}
 
-async def _get_mcp_menu_async() -> str:
+
+async def _extract_mcp_fingerprints_async() -> List[Dict]:
+    """为生成统一 tool.jsonl 提供所有 MCP 工具的指纹"""
     servers = load_configs()
-    if not servers:
-        return _format_response("warning", "当前未配置任何 MCP Server。请在 mcp/mcp_servers.json 中添加配置。")
-    result = "【MCP 总览菜单】\n"
-    result += "💡 提示：如需调用特定工具，请务必先使用 mcptool__get_tool_details 获取其详细的参数 Schema。\n"
+    tools_index = []
     for server_name, config in servers.items():
-        result += f"\n👉 Server: {server_name}\n"
         try:
             server_params = StdioServerParameters(
                 command=config["command"],
@@ -48,20 +47,25 @@ async def _get_mcp_menu_async() -> str:
                 session = await stack.enter_async_context(ClientSession(read, write))
                 await session.initialize()
                 tools_response = await session.list_tools()
-                if not tools_response.tools:
-                    result += "   - (该服务当前未提供任何工具)\n"
                 for tool in tools_response.tools:
-                    desc = tool.description or "无描述"
-                    result += f"   - 🔧 工具名: {tool.name} | 描述: {desc}\n"
+                    tools_index.append({
+                        "route": "mcp",
+                        "plugin": server_name,
+                        "func": tool.name,
+                        "desc": tool.description or "无描述"
+                    })
         except Exception as e:
-            result += f"   ❌ [连接失败或获取工具异常]: {str(e)}\n"
-    return _format_response("text", result)
+            print(f"❌ [MCP] 获取 {server_name} 工具指纹失败: {e}")
+    return tools_index
 
-async def _get_tool_details_async(server_name: str, tool_name: str) -> str:
+
+async def _get_mcp_tool_schemas_async(server_name: str, tool_names: list) -> list:
+    """批量获取 dict 格式的 Schema 列表供 fetch_tool 使用，保证只建立一次连接"""
     servers = load_configs()
     if server_name not in servers:
-        return _format_response("error", f"❌ 未知的 MCP Server '{server_name}'")
+        return []
     config = servers[server_name]
+    schemas = []
     try:
         server_params = StdioServerParameters(
             command=config["command"],
@@ -73,19 +77,25 @@ async def _get_tool_details_async(server_name: str, tool_name: str) -> str:
             session = await stack.enter_async_context(ClientSession(read, write))
             await session.initialize()
             tools_response = await session.list_tools()
+
+            # 一次请求拉取所有工具，然后在内存里做批量匹配
             for tool in tools_response.tools:
-                if tool.name == tool_name:
-                    schema_str = json.dumps(tool.inputSchema, ensure_ascii=False, indent=2)
-                    content = (f"【工具详细说明书】\n"
-                               f"Server: {server_name}\n"
-                               f"工具名: {tool.name}\n"
-                               f"描述: {tool.description or '无描述'}\n"
-                               f"参数 Schema:\n{schema_str}\n\n"
-                               f"⚠️ 接下来，请严格按照上述 Schema 构造合法的 JSON 字符串，传递给 mcp__call_mcp_tool。")
-                    return _format_response("text", content)
-            return _format_response("error", f"❌ 在 Server '{server_name}' 中未找到工具 '{tool_name}'")
+                if tool.name in tool_names:
+                    schemas.append({
+                        "type": "function",
+                        "function": {
+                            "name": tool.name,
+                            "description": tool.description or "无描述",
+                            "parameters": tool.inputSchema
+                        }
+                    })
     except Exception as e:
-        return _format_response("error", f"❌ 获取工具详情时发生异常: {str(e)}")
+        print(f"❌ [MCP] 批量拉取 {server_name} 的 Schema 失败: {e}")
+    return schemas
+
+
+
+
 
 async def _call_tool_async(server_name: str, tool_name: str, arguments: dict) -> str:
     servers = load_configs()
@@ -132,6 +142,7 @@ async def _call_tool_async(server_name: str, tool_name: str, arguments: dict) ->
                         output.append(f"❌ [{content.type} 类型解析/保存失败: {str(e)}]")
                 else:
                     output.append(f"[{content.type} 类型内容]: {str(getattr(content, '__dict__', content))}")
+
             final_result = "\n".join(output)
             if len(final_result) > 5000:
                 base_dir = os.path.dirname(
@@ -140,21 +151,18 @@ async def _call_tool_async(server_name: str, tool_name: str, arguments: dict) ->
                 os.makedirs(buffer_dir, exist_ok=True)
                 marker_id = uuid.uuid4().hex[:8]
                 timestamp = datetime.datetime.now().strftime("%Y%m%d")
-                buffer_filename = f"mcp_result_{timestamp}_{marker_id}.txt"
-                buffer_path = os.path.join(buffer_dir, buffer_filename)
+                buffer_path = os.path.join(buffer_dir, f"mcp_result_{timestamp}_{marker_id}.txt")
                 with open(buffer_path, "w", encoding="utf-8") as f:
                     f.write(final_result)
                 return _format_response(
                     "warning",
-                    f"⚠️ [注意] MCP 工具执行成功，但返回结果过长（共 {len(final_result)} 字符）。\n"
-                    f"为防止上下文溢出，完整结果已保存至本地文件：\n"
-                    f"📂 {buffer_path}\n"
-                    f"👆 请使用 'filesystem__read_file_lines' 或 search 相关工具读取该文件内容。"
+                    f"⚠️ [注意] 返回结果过长，已保存至：\n📂 {buffer_path}\n请读取文件获取。"
                 )
-
             return _format_response("text", final_result)
     except Exception as e:
         return _format_response("error", f"❌ 调用 MCP 进程时发生异常: {str(e)}")
+
+
 def _run_sync(coro_func, *args, **kwargs):
     result = None
     exception = None
@@ -166,21 +174,17 @@ def _run_sync(coro_func, *args, **kwargs):
             exception = e
     t = threading.Thread(target=worker)
     t.start()
-    t.join()  # 阻塞当前环境，直到线程（及内部的异步任务）执行完毕
+    t.join()
     if exception:
         raise exception
     return result
-def get_mcp_menu(**kwargs):
-    return _run_sync(_get_mcp_menu_async)
 
+def extract_mcp_fingerprints_sync():
+    return _run_sync(_extract_mcp_fingerprints_async)
 
-def get_tool_details(server_name: str, tool_name: str, **kwargs):
-    return _run_sync(_get_tool_details_async, server_name, tool_name)
+def get_mcp_tool_schemas_sync(server_name: str, tool_names: list):
+    """同步调用批量获取"""
+    return _run_sync(_get_mcp_tool_schemas_async, server_name, tool_names)
 
-
-def call_mcp_tool(server_name: str, tool_name: str, arguments: str, **kwargs):
-    try:
-        args_dict = json.loads(arguments) if arguments else {}
-    except json.JSONDecodeError:
-        return _format_response("error", "执行失败：arguments 必须是合法的 JSON 字符串格式")
-    return _run_sync(_call_tool_async, server_name, tool_name, args_dict)
+def call_mcp_tool(server_name: str, tool_name: str, arguments: dict, **kwargs):
+    return _run_sync(_call_tool_async, server_name, tool_name, arguments)

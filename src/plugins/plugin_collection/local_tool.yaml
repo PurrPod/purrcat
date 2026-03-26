@@ -6,7 +6,7 @@ database:
     list_databases:
       type: function
       function:
-        name: database__list_databases
+        name: list_databases
         description: List all available databases on disk. Use this first if you do
           not know which database to search.
         parameters:
@@ -16,7 +16,7 @@ database:
     rag_search:
       type: function
       function:
-        name: database__rag_search
+        name: rag_search
         description: Perform RAG search on specific local databases. You MUST provide
           the target_dbs parameter.
         parameters:
@@ -40,7 +40,7 @@ database:
     expand_database_context:
       type: function
       function:
-        name: database__expand_database_context
+        name: expand_database_context
         description: Expand the text context around a specific matched chunk in a
           database.
         parameters:
@@ -67,7 +67,7 @@ filesystem:
     write_text_file:
       type: function
       function:
-        name: filesystem__write_text_file
+        name: write_text_file
         description: Write content to a text file. Must be within the sandbox whitelist.
         parameters:
           type: object
@@ -84,7 +84,7 @@ filesystem:
     delete_file:
       type: function
       function:
-        name: filesystem__delete_file
+        name: delete_file
         description: Delete a file or directory. Must be within the sandbox whitelist.
         parameters:
           type: object
@@ -97,7 +97,7 @@ filesystem:
     parse_document:
       type: function
       function:
-        name: filesystem__parse_document
+        name: parse_document
         description: Parse and extract text from rich/binary documents (e.g., PDF,
           DOCX, XLSX, PPTX) using MarkItDown. DO NOT use this for plain text or CSV
           files (use read_file_lines instead).
@@ -112,7 +112,7 @@ filesystem:
     read_file_lines:
       type: function
       function:
-        name: filesystem__read_file_lines
+        name: read_file_lines
         description: Read specific lines from a file.
         parameters:
           type: object
@@ -133,7 +133,7 @@ filesystem:
     search_in_file:
       type: function
       function:
-        name: filesystem__search_in_file
+        name: search_in_file
         description: Search for a keyword in a file.
         parameters:
           type: object
@@ -153,7 +153,7 @@ filesystem:
     replace_file_lines:
       type: function
       function:
-        name: filesystem__replace_file_lines
+        name: replace_file_lines
         description: Replace specific lines in a file with new code.
         parameters:
           type: object
@@ -178,7 +178,7 @@ filesystem:
     list_special_directories:
       type: function
       function:
-        name: filesystem__list_special_directories
+        name: list_special_directories
         description: List all special directories including sandbox, skill and so
           on.
         parameters:
@@ -188,7 +188,7 @@ filesystem:
     list_file_in_dir:
       type: function
       function:
-        name: filesystem__list_file_in_dir
+        name: list_file_in_dir
         description: List files and directories within a given path.
         parameters:
           type: object
@@ -206,7 +206,7 @@ feishu:
     send_feishu_message:
       type: function
       function:
-        name: feishu__send_feishu_message
+        name: send_feishu_message
         description: 给飞书发送文本消息。
         parameters:
           type: object
@@ -228,7 +228,7 @@ manager:
     add_project:
       type: function
       function:
-        name: manager__add_project
+        name: add_project
         description: 启动一个新的后台子项目。适合复杂任务和项目开发
         parameters:
           type: object
@@ -261,7 +261,7 @@ manager:
     answer:
       type: function
       function:
-        name: manager__answer
+        name: answer
         description: 回答来自特定子项目的提问，推动异步项目继续执行。
         parameters:
           type: object
@@ -278,7 +278,7 @@ manager:
     check_pending_questions:
       type: function
       function:
-        name: manager__check_pending_questions
+        name: check_pending_questions
         description: 查看当前所有正在等待回答问题的子项目列表。
         parameters:
           type: object
@@ -287,7 +287,7 @@ manager:
     add_simple_task:
       type: function
       function:
-        name: manager__add_simple_task
+        name: add_simple_task
         description: 启动一个简单的后台子任务。
         parameters:
           type: object
@@ -329,34 +329,10 @@ manager:
           - judger
           - available_tools
           - prompt
-    list_tool:
-      type: function
-      function:
-        name: manager__list_tool
-        description: 获取当前所有可派给工人使用的工具及其描述的清单。
-        parameters:
-          type: object
-          properties: {}
-          required: []
-    fetch_tool:
-      type: function
-      function:
-        name: manager__fetch_tool
-        description: 挑选下一步行动需要用到的工具（清空旧工具，仅保留新请求的工具）。
-        parameters:
-          type: object
-          properties:
-            tool_name_list:
-              type: array
-              items:
-                type: string
-              description: 需要保留的工具名称列表
-          required:
-          - tool_name_list
     list_worker:
       type: function
       function:
-        name: manager__list_worker
+        name: list_worker
         description: 获取当前所有可用的工人及其描述的清单。
         parameters:
           type: object
@@ -370,7 +346,7 @@ schedule:
     add_schedule:
       type: function
       function:
-        name: schedule__add_schedule
+        name: add_schedule
         description: 添加跨天/跨月的日程。时间格式推荐 YYYY-MM-DD HH:MM
         parameters:
           type: object
@@ -394,7 +370,7 @@ schedule:
     delete_schedule:
       type: function
       function:
-        name: schedule__delete_schedule
+        name: delete_schedule
         description: 删除日程
         parameters:
           type: object
@@ -407,7 +383,7 @@ schedule:
     update_schedule:
       type: function
       function:
-        name: schedule__update_schedule
+        name: update_schedule
         description: 修改日程
         parameters:
           type: object
@@ -432,7 +408,7 @@ schedule:
     get_schedules:
       type: function
       function:
-        name: schedule__get_schedules
+        name: get_schedules
         description: 获取所有日程，或者根据特定日期 (YYYY-MM-DD) 检索
         parameters:
           type: object
@@ -444,7 +420,7 @@ schedule:
     add_cron:
       type: function
       function:
-        name: schedule__add_cron
+        name: add_cron
         description: 添加闹钟
         parameters:
           type: object
@@ -464,7 +440,7 @@ schedule:
     delete_cron:
       type: function
       function:
-        name: schedule__delete_cron
+        name: delete_cron
         description: 删除闹钟
         parameters:
           type: object
@@ -477,7 +453,7 @@ schedule:
     update_cron:
       type: function
       function:
-        name: schedule__update_cron
+        name: update_cron
         description: 修改闹钟
         parameters:
           type: object
@@ -502,7 +478,7 @@ schedule:
     get_crons:
       type: function
       function:
-        name: schedule__get_crons
+        name: get_crons
         description: 获取设定的所有闹钟
         parameters:
           type: object
@@ -516,7 +492,7 @@ web:
     web_search:
       type: function
       function:
-        name: web__web_search
+        name: web_search
         description: 搜索互联网内容并获取相关链接及摘要。结果将以 Markdown 格式保存至 buffer 文件夹。
         parameters:
           type: object
@@ -532,7 +508,7 @@ web:
     fetch_web_content:
       type: function
       function:
-        name: web__fetch_web_content
+        name: fetch_web_content
         description: 抓取指定 URL 的网页内容。结果将以 Markdown 格式保存至 buffer 文件夹。
         parameters:
           type: object
@@ -542,55 +518,6 @@ web:
               description: 网页的完整 URL
           required:
           - url
-mcptool:
-  name: MCP 服务调用器
-  desc: 提供外部 MCP 工具，仅支持白名单内MCP工具
-  dir_path: plugin_collection/mini_github/
-  functions:
-    get_mcp_menu:
-      type: function
-      function:
-        name: mcptool__get_mcp_menu
-        description: 获取当前可用的所有 MCP 外部服务菜单和工具简述
-        parameters:
-          type: object
-          properties: {}
-    get_tool_details:
-      type: function
-      function:
-        name: mcptool__get_tool_details
-        description: 获取特定 MCP 工具的详细参数说明 (JSON Schema)
-        parameters:
-          type: object
-          properties:
-            server_name:
-              type: string
-              description: MCP Server 的名称
-            tool_name:
-              type: string
-              description: 工具的名称
-          required:
-          - server_name
-          - tool_name
-    call_mcp_tool:
-      type: function
-      function:
-        name: mcptool__call_mcp_tool
-        description: 执行特定的 MCP 工具，需要传入严格按照 mcptool__get_tool_details 的参数格式
-        parameters:
-          type: object
-          properties:
-            server_name:
-              type: string
-            tool_name:
-              type: string
-            arguments:
-              type: string
-              description: 工具所需的 JSON 格式的参数字符串
-          required:
-          - server_name
-          - tool_name
-          - arguments
 multimodal:
   name: 多模态插件
   desc: 提供图像/视频/音频生成及识别的多模态工具。
@@ -599,7 +526,7 @@ multimodal:
     generate_image:
       type: function
       function:
-        name: multimodal__generate_image
+        name: generate_image
         description: 根据提示生成图片，并保存到 data/buffer（或自定义输出目录）。
         parameters:
           type: object
@@ -615,7 +542,7 @@ multimodal:
     image_to_text:
       type: function
       function:
-        name: multimodal__image_to_text
+        name: image_to_text
         description: 对一张或多张图片进行视觉识别并返回文本结果。
         parameters:
           type: object
@@ -634,7 +561,7 @@ multimodal:
     generate_video:
       type: function
       function:
-        name: multimodal__generate_video
+        name: generate_video
         description: 根据提示生成视频，并保存到 data/buffer（或自定义输出目录）。
         parameters:
           type: object
@@ -650,7 +577,7 @@ multimodal:
     video_to_text:
       type: function
       function:
-        name: multimodal__video_to_text
+        name: video_to_text
         description: 从视频中抽帧并使用视觉模型进行文本描述。
         parameters:
           type: object
@@ -669,7 +596,7 @@ multimodal:
     generate_audio:
       type: function
       function:
-        name: multimodal__generate_audio
+        name: generate_audio
         description: 根据文本提示生成音频，并保存到本地。
         parameters:
           type: object
@@ -685,7 +612,7 @@ multimodal:
     audio_to_text:
       type: function
       function:
-        name: multimodal__audio_to_text
+        name: audio_to_text
         description: 将音频转录为文本。
         parameters:
           type: object

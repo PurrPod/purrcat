@@ -30,6 +30,7 @@ export interface Project {
   name: string
   description?: string
   status: 'running' | 'pending' | 'completed' | 'failed'
+  rawState?: string
   progress: number
   pipeline: PipelineStep[]
   history?: any[]

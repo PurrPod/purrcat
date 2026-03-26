@@ -8,7 +8,7 @@ shell:
     run_command:
       type: function
       function:
-        name: "shell__run_command"
+        name: "run_command"
         description: "执行 Shell 命令（严禁执行删除沙盒外文件等危险指令）。支持跨调用持久化（如环境变量、当前目录）。完成任务后需手动close"
         parameters:
           type: "object"
@@ -20,7 +20,7 @@ shell:
     close_shell:
       type: function
       function:
-        name: "shell__close_shell"
+        name: "close_shell"
         description: "关闭当前的持久化 Shell 会话并释放相关系统资源（如进程和线程）。"
         parameters:
           type: "object"

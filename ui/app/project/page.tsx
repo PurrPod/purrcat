@@ -13,7 +13,7 @@ import {
   ContextMenuItem,
   ContextMenuTrigger,
 } from '@/components/ui/context-menu'
-import { FolderKanban, Clock, CheckCircle, XCircle, Loader2, Trash2, StopCircle, Plus, Search, Check, ChevronDown, Info, Paperclip, Wand2, Database } from 'lucide-react'
+import { FolderKanban, Clock, CheckCircle, XCircle, Loader2, Trash2, StopCircle, Plus, Search, Check, ChevronDown, Info, Paperclip, Wand2, Database, RefreshCw } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Project } from '@/lib/types'
 import { Button } from '@/components/ui/button'
@@ -35,6 +35,11 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import rehypeSlug from 'rehype-slug'
+import rehypeAutolinkHeadings from 'rehype-autolink-headings'
+import rehypeCodeTitle from 'rehype-code-title'
+import rehypeHighlight from 'rehype-highlight'
+import 'highlight.js/styles/github.css'
 
 const statusConfig = {
   running: { icon: Loader2, color: 'text-blue-500', bg: 'bg-blue-500/10', label: '运行中' },
@@ -43,7 +48,8 @@ const statusConfig = {
   failed: { icon: XCircle, color: 'text-red-500', bg: 'bg-red-500/10', label: '失败' },
 }
 
-const API_BASE = 'http://localhost:8000/api'
+const LOG_PAGE_SIZE = 200
+const PROJECT_LOG_CACHE = new Map<string, { entries: ProjectLogEntry[]; cursor: number }>()
 
 type ProjectLogEntry = {
   id: string
@@ -307,12 +313,14 @@ function ProjectCard({
   onSelect,
   onStop,
   onDelete,
+  onResume,
 }: { 
   project: Project
   isSelected: boolean
   onSelect: () => void
   onStop: () => void
   onDelete: () => void
+  onResume: () => void
 }) {
   const config = statusConfig[project.status]
   const Icon = config.icon
@@ -328,9 +336,9 @@ function ProjectCard({
           onClick={onSelect}
         >
           <CardHeader className="pb-2">
-            <CardTitle className="flex items-center justify-between text-sm">
-              <div className="flex items-center gap-1 min-w-0">
-                <span className="truncate">{project.name}</span>
+            <CardTitle className="flex items-center justify-between text-sm min-w-0">
+              <div className="flex items-center gap-1 min-w-0 flex-1">
+                <span className="truncate" title={project.name}>{project.name}</span>
                 <Popover>
                   <PopoverTrigger asChild>
                     <Button
@@ -371,10 +379,26 @@ function ProjectCard({
                   </PopoverContent>
                 </Popover>
               </div>
-              <span className={cn('flex items-center gap-1 text-xs px-2 py-1 rounded-full shrink-0', config.bg, config.color)}>
-                <Icon className={cn('size-3', project.status === 'running' && 'animate-spin')} />
-                {config.label}
-              </span>
+              <div className="flex items-center gap-2">
+                {project.status === 'failed' && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="size-6 shrink-0"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onResume();
+                    }}
+                  >
+                    <RefreshCw className="size-4 text-muted-foreground hover:text-primary" />
+                  </Button>
+                )}
+                <span className={cn('flex items-center gap-1 text-xs px-2 py-1 rounded-full shrink-0', config.bg, config.color)}>
+                  <Icon className={cn('size-3', project.status === 'running' && 'animate-spin')} />
+                  {config.label}
+                </span>
+              </div>
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
@@ -407,10 +431,13 @@ function ProjectCard({
 
 function ProjectLogView({ project }: { project: Project }) {
   const router = useRouter()
+  const apiFetch = useAppStore((state) => state.apiFetch)
   const [entries, setEntries] = useState<ProjectLogEntry[]>([])
   const cursorRef = useRef(0)
   const fetchingRef = useRef(false)
   const [isFetching, setIsFetching] = useState(false)
+  const initialFetchRef = useRef(true)
+  const [visibleCount, setVisibleCount] = useState(LOG_PAGE_SIZE)
   const [collapsedInputs, setCollapsedInputs] = useState<Record<string, boolean>>({})
   const [inputDrafts, setInputDrafts] = useState<Record<string, string>>({})
   const [actionTaken, setActionTaken] = useState<Record<string, 'Accept' | 'Reject'>>({})
@@ -438,17 +465,21 @@ function ProjectLogView({ project }: { project: Project }) {
     fetchingRef.current = true
     setIsFetching(true)
     try {
-      const res = await fetch(
-        `${API_BASE}/projects/${project.id}/log?cursor=${cursorRef.current}&limit=500`,
-      )
+      const query = initialFetchRef.current
+        ? `tail=true&limit=${LOG_PAGE_SIZE}`
+        : `cursor=${cursorRef.current}&limit=${LOG_PAGE_SIZE}`
+      const res = await apiFetch(`/projects/${project.id}/log?${query}`)
       const data = await res.json()
       const nextEntries = Array.isArray(data?.entries) ? data.entries.map(normalizeEntry) : []
-      setEntries((prev) => [...prev, ...nextEntries])
-      if (typeof data?.nextCursor === 'number') {
-        cursorRef.current = data.nextCursor
-      } else {
-        cursorRef.current += nextEntries.length
-      }
+      const nextCursor =
+        typeof data?.nextCursor === 'number' ? data.nextCursor : cursorRef.current + nextEntries.length
+      cursorRef.current = nextCursor
+      setEntries((prev) => {
+        const merged = [...prev, ...nextEntries]
+        PROJECT_LOG_CACHE.set(project.id, { entries: merged, cursor: nextCursor })
+        return merged
+      })
+      initialFetchRef.current = false
     } catch {
     } finally {
       setIsFetching(false)
@@ -457,18 +488,27 @@ function ProjectLogView({ project }: { project: Project }) {
   }, [normalizeEntry, project.id])
 
   useEffect(() => {
-    setEntries([])
+    setVisibleCount(LOG_PAGE_SIZE)
     setCollapsedInputs({})
     setInputDrafts({})
     setActionTaken({})
-    cursorRef.current = 0
+    const cached = PROJECT_LOG_CACHE.get(project.id)
+    if (cached) {
+      setEntries(cached.entries)
+      cursorRef.current = cached.cursor
+      initialFetchRef.current = false
+    } else {
+      setEntries([])
+      cursorRef.current = 0
+      initialFetchRef.current = true
+    }
     fetchMore()
   }, [fetchMore, project.id])
 
   useEffect(() => {
     const timer = window.setInterval(async () => {
       try {
-        const res = await fetch(`${API_BASE}/projects/dirty`)
+        const res = await apiFetch('/projects/dirty')
         const data = await res.json()
         if (Array.isArray(data?.dirty) && data.dirty.includes(project.id)) {
           await fetchMore()
@@ -504,8 +544,13 @@ function ProjectLogView({ project }: { project: Project }) {
     return { displayItems, latestTaskById }
   }, [entries])
 
+  const visibleItems = useMemo(() => {
+    const start = Math.max(0, displayItems.length - visibleCount)
+    return displayItems.slice(start)
+  }, [displayItems, visibleCount])
+
   const submitAnswer = async (answer: string) => {
-    await fetch(`${API_BASE}/projects/${project.id}/answer`, {
+    await apiFetch(`/projects/${project.id}/answer`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ answer }),
@@ -660,8 +705,30 @@ function ProjectLogView({ project }: { project: Project }) {
       return (
         <div className={cn('rounded-lg p-3', surfaceClass)}>
           {entry.metadata?.title ? <div className="text-sm font-medium mb-2">{entry.metadata.title}</div> : null}
-          <div className="prose prose-sm dark:prose-invert max-w-none prose-pre:bg-muted prose-pre:text-muted-foreground prose-pre:overflow-x-auto">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{entry.content || '*内容为空*'}</ReactMarkdown>
+          <div className="overflow-x-auto">
+            <div className="prose prose-sm dark:prose-invert max-w-none prose-pre:bg-muted prose-pre:text-muted-foreground prose-pre:overflow-x-auto prose-pre:rounded prose-pre:p-4 prose-headings:scroll-mt-20 prose-table:border prose-table:border-muted prose-thead:bg-muted prose-th:border prose-td:border prose-th:py-2 prose-td:py-2 prose-th:px-4 prose-td:px-4 prose-th:text-left prose-td:text-left prose-ul:list-disc prose-ol:list-decimal prose-li:pl-2 prose-blockquote:border-l-4 prose-blockquote:border-primary prose-blockquote:pl-4 prose-blockquote:italic prose-a:underline prose-a:text-primary prose-strong:font-bold prose-em:italic prose-h1:mt-0 prose-h2:mt-4 prose-h3:mt-3 prose-p:my-2 prose-ul:my-2 prose-ol:my-2 prose-blockquote:my-3">
+              <ReactMarkdown 
+                remarkPlugins={[remarkGfm]}
+                rehypePlugins={[
+                  rehypeSlug,
+                  rehypeCodeTitle,
+                  rehypeHighlight,
+                  [rehypeAutolinkHeadings, {
+                    properties: {
+                      className: 'absolute -left-6 top-1/2 -translate-y-1/2 opacity-0 hover:opacity-100 transition-opacity duration-200',
+                      ariaHidden: true,
+                      tabIndex: -1
+                    },
+                    content: {
+                      type: 'text',
+                      value: '#'
+                    }
+                  }]
+                ]}
+              >
+                {entry.content || '*内容为空*'}
+              </ReactMarkdown>
+            </div>
           </div>
         </div>
       )
@@ -733,15 +800,29 @@ function ProjectLogView({ project }: { project: Project }) {
       <CardContent className="flex-1 min-h-0 overflow-hidden">
         <ScrollArea type="always" className="h-full rounded-md border bg-muted/20">
           <div className="p-4 space-y-3 pr-3">
-            {displayItems.length ? (
-              displayItems.map((item) => {
+            {visibleItems.length ? (
+              <>
+                {displayItems.length > visibleCount ? (
+                  <div className="flex justify-center">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setVisibleCount((v) => v + LOG_PAGE_SIZE)}
+                    >
+                      显示更早日志（已显示 {visibleItems.length}/{displayItems.length}）
+                    </Button>
+                  </div>
+                ) : null}
+                {visibleItems.map((item) => {
                 if (item.kind === 'entry') {
                   return <div key={item.entry.id}>{renderEntry(item.entry)}</div>
                 }
                 const latest = latestTaskById.get(item.taskId)
                 if (!latest) return null
                 return <div key={`task-${item.taskId}`}>{renderTaskCard(item.taskId, latest)}</div>
-              })
+              })}
+              </>
             ) : (
               <div className="text-xs text-muted-foreground italic text-center py-10">
                 暂无日志
@@ -1027,17 +1108,13 @@ function AddProjectDialog() {
 
 export default function ProjectPage() {
   const projects = useAppStore((state) => state.projects)
-  const fetchProjects = useAppStore((state) => state.fetchProjects)
   const removeProject = useAppStore((state) => state.removeProject)
   const stopProject = useAppStore((state) => state.stopProject)
+  const resumeProject = useAppStore((state) => state.resumeProject)
   const [selectedId, setSelectedId] = useState<string | null>(projects[0]?.id || null)
   
   const selectedProject = projects.find((p) => p.id === selectedId)
   const runningCount = projects.filter((p) => p.status === 'running').length
-
-  useEffect(() => {
-    fetchProjects()
-  }, [fetchProjects])
 
   return (
     <div className="h-[calc(100vh-4rem)] flex">
@@ -1065,6 +1142,7 @@ export default function ProjectPage() {
                     setSelectedId(projects.find((p) => p.id !== project.id)?.id || null)
                   }
                 }}
+                onResume={() => resumeProject(project.id)}
               />
             ))}
             {projects.length === 0 && (
