@@ -1,3 +1,4 @@
+# src/models/project.py
 import datetime
 import json
 import ast
@@ -10,11 +11,12 @@ import shutil
 from src.agent.agent import add_message
 from src.models.model import Model
 from src.models.task import Task
+from src.plugins.plugin_manager import BASE_TOOLS
 
 PROJECT_POOL = []
-PROJECT_INSTANCES = {}  # 映射表：id -> Project 实例，用于随时调用类内方法
+PROJECT_INSTANCES = {}
 dirty_projects = set()
-set_lock = threading.Lock()  # 保护 set 的线程锁
+set_lock = threading.Lock()
 
 
 def set_project_state(project_id, state):
@@ -55,14 +57,10 @@ def delete_project(project_id):
 
 
 def kill_project(project_id):
-    """全局方法：阶段性 Kill 指定的项目"""
-    # 如果项目实例正在运行，则直接触发 kill 信号
     if project_id in PROJECT_INSTANCES:
         PROJECT_INSTANCES[project_id].kill()
         return True
 
-    # 如果项目不在运行实例中，但仍存在于 PROJECT_POOL（例如后端重启后从 checkpoint 载入）
-    # 允许前端仍然调用 stop 操作，让状态在界面上保持一致。
     for p in PROJECT_POOL:
         if p.get("id") == project_id:
             p["state"] = "killed"
@@ -81,9 +79,9 @@ class Project:
             name: str,
             prompt: str,
             core: str,
-            check_mode: bool = False, # 需求优化确认
-            refine_mode: bool = False, # 需求优化模式
-            judge_mode: bool = False, #自检模式
+            check_mode: bool = False,
+            refine_mode: bool = False,
+            judge_mode: bool = False,
             sub_tasks=None,
             available_tools=None,
             available_workers=None,
@@ -124,7 +122,7 @@ class Project:
                 "is_agent": self.is_agent,
                 "createdAt": now_iso,
                 "updatedAt": now_iso,
-            })# 固定元信息
+            })
             PROJECT_INSTANCES[self.id] = self
 
             self.log_and_notify(
@@ -134,15 +132,13 @@ class Project:
             )
 
     def kill(self):
-        """类内方法：接收外部 kill 信号"""
         self._killed = True
         set_project_state(self.id, "killed")
         print(f"⚠️ [Project] 收到Kill指令，准备在下一节点挂起并中止项目 {self.id}...")
 
     def _check_kill(self):
-        """检查中断标志，执行保存并抛出异常关闭当前线程"""
         if self._killed:
-            self.save_checkpoint()  # 重点：保持原有的节点状态
+            self.save_checkpoint()
             raise InterruptedError(f"项目 {self.id} 已被手动中止 (Kill)。")
 
     def send_to_core(self, prompt, is_stateless=False, response_format=None):
@@ -350,7 +346,8 @@ class Project:
                 error_feedback = "\n".join(error_details)
                 print(f"❌ 任务切分验证失败 (逻辑重修尝试 {retry_count}/{max_retries}):\n{error_feedback}")
                 current_messages.append({"role": "assistant", "content": raw_json})
-                current_messages.append({"role": "user","content": f"注意！你上一次生成的任务切分存在以下越界或错误：\n{error_feedback}\n请务必对照可用列表修正后，重新输出纯JSON格式。"})
+                current_messages.append({"role": "user",
+                                         "content": f"注意！你上一次生成的任务切分存在以下越界或错误：\n{error_feedback}\n请务必对照可用列表修正后，重新输出纯JSON格式。"})
 
         print("⚠️ 任务切分验证连续失败，将强制使用默认执行者，并忽略不合法的工具。")
         for key, value in sub_tasks.items():
@@ -383,13 +380,12 @@ class Project:
             )
             print(f"Ready to execute: {task_key} -> {task_detail.get('title', '')}")
 
-
             sub_tasks_prompt = ""
             for task in self.sub_tasks.keys():
-                sub_tasks_prompt += f"- {task}:{self.sub_tasks[task]["title"]}\n  desc:{self.sub_tasks[task]["desc"]}\n  deliverable:{self.sub_tasks[task]["deliverable"]}\n"
-            task_detail_prompt = f"- title:{task_detail["title"]}\n"
-            task_detail_prompt += f"- desc:{task_detail["desc"]}\n"
-            task_detail_prompt += f"- deliverable:{task_detail["deliverable"]}\n"
+                sub_tasks_prompt += f"- {task}:{self.sub_tasks[task]['title']}\n  desc:{self.sub_tasks[task]['desc']}\n  deliverable:{self.sub_tasks[task]['deliverable']}\n"
+            task_detail_prompt = f"- title:{task_detail['title']}\n"
+            task_detail_prompt += f"- desc:{task_detail['desc']}\n"
+            task_detail_prompt += f"- deliverable:{task_detail['deliverable']}\n"
             system_prompt = f"🐱 用户核心项目\n{self.prompt}\n\n🧩 项目子任务\n{sub_tasks_prompt}\n🤖 当前阶段\n{task_detail_prompt}\n"
             single_task = Task(task_detail, judge_mode=self.judge_mode, system_prompt=system_prompt,
                                task_histories=task_histories_str, task_id=task_id)
@@ -400,7 +396,7 @@ class Project:
                 task_story = f"\n[{task_key} 完整执行日志]:\n"
                 is_success = False
                 last_res = None
-                
+
                 for step, res_str in enumerate(run_result):
                     try:
                         res_dict = ast.literal_eval(res_str)
@@ -412,13 +408,12 @@ class Project:
                             task_story += f"  - [{status}]: {res_dict.get('suggestion', '无修改建议')}\n"
                     except Exception as e:
                         task_story += f"  - [解析异常]: {e}\n"
-                
+
                 try:
                     last_res = ast.literal_eval(run_result[-1])
                     is_success = last_res.get("task_result", last_res.get("eval_result", False))
                 except Exception as e:
-                    # 如果无法解析最后一个结果，尝试从任务状态判断
-                    is_success = True  # 假设任务成功完成
+                    is_success = True
 
                 task_histories_str += task_story
                 self.task_story = task_histories_str
@@ -437,7 +432,6 @@ class Project:
                                              last_res.get("suggestion", last_res.get("desc", "未知子任务执行错误")))
                     return False, f"子任务 {task_key} 失败: {error_msg}\n完整历史: {task_story}"
             except Exception as e:
-                # 即使解析失败，也将任务标记为成功，以确保项目能够完成
                 task_detail["status"] = "success"
                 self.save_checkpoint()
                 self.log_and_notify("task_status", f"✅ 执行成功: {task_detail.get('title', task_key)}",
@@ -447,18 +441,126 @@ class Project:
                 self.task_story = task_histories_str
         return True, "All tasks completed successfully."
 
+    def re_orchestrate(self, error_msg: str) -> tuple[bool, str]:
+        """将失败后的重试与任务重新编排逻辑剥离出来的独立方法"""
+        self.log_and_notify("stage", "🔄 Re-Orchestrate", {"style": "white"})
+        print(f"[项目遇到阻碍] {error_msg}\n正在请求核心模型重新编排任务...")
+
+        worker_info = [Model(model).get_info() for model in self.available_workers]
+        # 使用最新的 BASE_TOOLS 架构
+        from src.plugins.plugin_manager import BASE_TOOLS
+        tool_info = json.dumps(BASE_TOOLS, ensure_ascii=False)
+        available_worker_names = self.available_workers
+        available_tool_names = self.available_tools
+
+        clean_sub_tasks = {}
+        for k, v in self.sub_tasks.items():
+            clean_task = v.copy()
+            clean_task.pop("task_id", None)
+            clean_sub_tasks[k] = clean_task
+
+        retry_prompt = (
+            f"你是一个项目经理, 针对需求 '{self.prompt}', 原本将任务切分为: {json.dumps(clean_sub_tasks, ensure_ascii=False)}。\n"
+            f"执行发生中断，原因：{error_msg}\n"
+            f"请对项目进行重新审视。如果中断原因无法通过重新编排任务，安排工具来解决，那就及时报告并中断项目，如果你认为可以通过重新编排来解决，请调整任务切分方式来解决中断。\n"
+            f"【重要警告】：返回的 sub_tasks 字典中，必须包含从头到尾完整的任务流（包括那些之前已经成功的任务），绝对不能只返回剩余的任务！\n"
+            f"返回纯JSON格式: {{\"retry\": bool, \"desc\": \"<简短说明>\", \"sub_tasks\": dict或null}}。\n"
+            f"决定重新编排则retry字段填true，否则填false；请务必全方位考虑，既考虑任务合理性，又考虑失败重试后仍失败的token成本。"
+            f"对于可用工人(worker/judger)，请必须从以下列表中严格选择：\n{available_worker_names}\n"
+            f"对于可用工具(available_tools)，参考：\n{available_tool_names}\n"
+            f"{tool_info}"
+        )
+
+        max_retries = 3
+        retry_count = 0
+        current_messages = [{"role": "system", "content": retry_prompt}]
+
+        try:
+            while retry_count < max_retries:
+                result_json, raw_json = self._ask_core_for_json(current_messages)
+
+                # 模型认为无法重编或未提供新任务流
+                if not result_json.get("retry") or not result_json.get("sub_tasks"):
+                    self.save_history("re_orchestrate",
+                                      f"模型认为无法重试或未返回新任务集：{json.dumps(result_json, ensure_ascii=False)}")
+                    return False, f"项目重试失败：模型认为无法通过重新编排解决问题。原错误：{error_msg}"
+
+                new_sub_tasks = result_json["sub_tasks"]
+                is_valid = True
+                error_details = []
+
+                for key, value in new_sub_tasks.items():
+                    ai_worker = value.get("worker")
+                    if ai_worker and ai_worker not in available_worker_names and ai_worker not in self.available_workers:
+                        is_valid = False
+                        error_details.append(
+                            f"任务 {key} 的 worker '{ai_worker}' 不在可用列表 {available_worker_names} 中。")
+
+                    ai_judger = value.get("judger")
+                    if ai_judger and ai_judger not in available_worker_names and ai_judger not in self.available_workers:
+                        is_valid = False
+                        error_details.append(
+                            f"任务 {key} 的 judger '{ai_judger}' 不在可用列表 {available_worker_names} 中。")
+
+                    ai_tools = value.get("available_tools", [])
+                    if isinstance(ai_tools, list):
+                        for tool in ai_tools:
+                            if tool not in available_tool_names:
+                                is_valid = False
+                                error_details.append(
+                                    f"任务 {key} 的工具 '{tool}' 不在可用列表 {available_tool_names} 中。")
+
+                if is_valid:
+                    for key, value in new_sub_tasks.items():
+                        if not value.get("worker"): value["worker"] = self.core
+                        if not value.get("judger"): value["judger"] = self.core
+                        value["task_id"] = str(uuid.uuid4())
+
+                    self.sub_tasks = new_sub_tasks
+                    self.task_story += f"\n[retry]重新划分任务集：\n{json.dumps(self.sub_tasks, ensure_ascii=False)}\n"
+                    self.log_and_notify("task_list", "📋 重新拆解任务完毕", {"tasks": self.sub_tasks, "style": "gray"})
+                    self.save_history("re_orchestrate", f"重新编排成功：{json.dumps(result_json, ensure_ascii=False)}")
+                    # 触发第二次运行
+                    self.current_history = []
+                    self.log_and_notify("stage", "🔁 Second Run Tasks", {"style": "white"})
+                    success, retry_msg = self.run_tasks()
+                    self.save_history("second_run_tasks",
+                                      f"运行日志：{json.dumps(self.current_history, ensure_ascii=False)}")
+                    if not success:
+                        return False, f"项目重试后依然失败。最终错误：{retry_msg}"
+                    return True, "重排并二次执行成功"
+                else:
+                    # 校验失败：打回要求大模型重写
+                    retry_count += 1
+                    error_feedback = "\n".join(error_details)
+                    print(f"❌ 重新编排任务切分验证失败 (逻辑重修尝试 {retry_count}/{max_retries}):\n{error_feedback}")
+
+                    current_messages.append({"role": "assistant", "content": raw_json})
+                    current_messages.append({
+                        "role": "user",
+                        "content": f"注意！你上一次生成的任务切分存在以下越界或错误：\n{error_feedback}\n请务必对照可用列表修正后，重新输出纯JSON格式。"
+                    })
+
+            # 如果超过最大重试次数还没修正对
+            msg = "🚫 项目重试失败：重新编排的任务连续多次未通过合法性校验。"
+            self.log_and_notify("error", msg, {"level": "error"})
+            return False, msg
+
+        except Exception as e:
+            self.save_history("re_orchestrate", f"重新编排时解析异常：{e}")
+            self.log_and_notify("error", f"💥 重新编排失败: {e}", {"level": "error"})
+            return False, f"重新编排模型输出异常: {e}"
+
     def run_pipeline(self):
         try:
             if self.stage_histories and "summary" in self.stage_histories and self.state == "completed":
                 return self.stage_histories.get("summary")
 
-            # 1. 需求优化阶段
             if self.refine_mode and "refine_prompt" not in self.stage_histories:
                 self.log_and_notify("stage", "🪄 Refine Prompt", {"style": "dark_white"})
                 prompt = self.refine_prompt()
 
                 if self.check_mode:
-                    # 推流包含按钮的 text 卡片，询问是否接受
                     self.log_and_notify(
                         card_type="text_with_action",
                         content=f"✨ 优化后的提示词如下：\n{prompt}\n🤔 是否接受？(请在后台回复 y/n)",
@@ -486,128 +588,11 @@ class Project:
             self.current_history = []
             success, msg = self.run_tasks()
             self.save_history("first_run_tasks", f"运行日志：\n{self.task_story}")
-
             if not success:
-                self.log_and_notify("stage", "🔄 Re-Orchestrate", {"style": "white"})
-                print(f"[项目遇到阻碍] {msg}\n正在请求核心模型重新编排任务...")
-
-                worker_info = [Model(model).get_info() for model in self.available_workers]
-                tool_info = [get_plugin_tool_info(self.available_tools)]
-                available_worker_names = self.available_workers
-                available_tool_names = self.available_tools
-
-                clean_sub_tasks = {}
-                for k, v in self.sub_tasks.items():
-                    clean_task = v.copy()
-                    clean_task.pop("task_id", None)
-                    clean_sub_tasks[k] = clean_task
-
-                retry_prompt = (
-                    f"你是一个项目经理, 针对需求 '{self.prompt}', 原本将任务切分为: {json.dumps(clean_sub_tasks, ensure_ascii=False)}。\n"
-                    f"执行发生中断，原因：{msg}\n"
-                    f"请对项目进行重新审视。如果中断原因无法通过重新编排任务，安排工具来解决，那就及时报告并中断项目，如果你认为可以通过重新编排来解决，请调整任务切分方式来解决中断。\n"
-                    f"【重要警告】：返回的 sub_tasks 字典中，必须包含从头到尾完整的任务流（包括那些之前已经成功的任务），绝对不能只返回剩余的任务！\n"
-                    f"返回纯JSON格式: {{\"retry\": bool, \"desc\": \"<简短说明>\", \"sub_tasks\": dict或null}}。\n"
-                    f"决定重新编排则retry字段填true，否则填false；请务必全方位考虑，既考虑任务合理性，又考虑失败重试后仍失败的token成本。"
-                    f"对于可用工人(worker/judger)，请必须从以下列表中严格选择：\n{available_worker_names}\n"
-                    f"对于可用工具(available_tools)，参考：\n{available_tool_names}\n"
-                    f"{tool_info}"
-                )
-
-                max_retries = 3
-                retry_count = 0
-                current_messages = [{"role": "system", "content": retry_prompt}]
-
-                try:
-                    while retry_count < max_retries:
-                        result_json, raw_json = self._ask_core_for_json(current_messages)
-
-                        # 如果大模型判断无法重试，或者没返回任务，直接退出重试流
-                        if not result_json.get("retry") or not result_json.get("sub_tasks"):
-                            self.save_history("re_orchestrate",
-                                              f"模型认为无法重试或未返回新任务集：{json.dumps(result_json, ensure_ascii=False)}")
-                            msg = f"项目重试失败：模型认为无法通过重新编排解决问题。原错误：{msg}"
-                            break
-
-                        new_sub_tasks = result_json["sub_tasks"]
-                        is_valid = True
-                        error_details = []
-
-                        for key, value in new_sub_tasks.items():
-                            ai_worker = value.get("worker")
-                            if ai_worker and ai_worker not in available_worker_names and ai_worker not in self.available_workers:
-                                is_valid = False
-                                error_details.append(
-                                    f"任务 {key} 的 worker '{ai_worker}' 不在可用列表 {available_worker_names} 中。")
-
-                            ai_judger = value.get("judger")
-                            if ai_judger and ai_judger not in available_worker_names and ai_judger not in self.available_workers:
-                                is_valid = False
-                                error_details.append(
-                                    f"任务 {key} 的 judger '{ai_judger}' 不在可用列表 {available_worker_names} 中。")
-
-                            ai_tools = value.get("available_tools", [])
-                            if isinstance(ai_tools, list):
-                                for tool in ai_tools:
-                                    if tool not in available_tool_names:
-                                        is_valid = False
-                                        error_details.append(
-                                            f"任务 {key} 的工具 '{tool}' 不在可用列表 {available_tool_names} 中。")
-
-                        if is_valid:
-                            for key, value in new_sub_tasks.items():
-                                if not value.get("worker"): value["worker"] = self.core
-                                if not value.get("judger"): value["judger"] = self.core
-                            for key, value in new_sub_tasks.items():
-                                value["task_id"] = str(uuid.uuid4())
-                            self.sub_tasks = new_sub_tasks
-                            self.task_story += f"\n[retry]重新划分任务集：\n{json.dumps(self.sub_tasks, ensure_ascii=False)}\n"
-
-                            self.log_and_notify("task_list", "📋 重新拆解任务完毕",
-                                                {"tasks": self.sub_tasks, "style": "gray"})
-                            self.save_history("re_orchestrate",
-                                              f"重新编排成功：{json.dumps(result_json, ensure_ascii=False)}")
-
-                            # 触发第二次运行
-                            self.current_history = []
-                            self.log_and_notify("stage", "🔁 Second Run Tasks", {"style": "white"})
-                            success, retry_msg = self.run_tasks()
-                            self.save_history("second_run_tasks",
-                                              f"运行日志：{json.dumps(self.current_history, ensure_ascii=False)}")
-
-                            if not success:
-                                msg = f"项目重试后依然失败。最终错误：{retry_msg}"
-                            break  # 执行完毕，跳出校验重试循环
-
-                        else:
-                            # 校验失败：打回要求大模型重写
-                            retry_count += 1
-                            error_feedback = "\n".join(error_details)
-                            print(
-                                f"❌ 重新编排任务切分验证失败 (逻辑重修尝试 {retry_count}/{max_retries}):\n{error_feedback}")
-
-                            current_messages.append({"role": "assistant", "content": raw_json})
-                            current_messages.append({
-                                "role": "user",
-                                "content": f"注意！你上一次生成的任务切分存在以下越界或错误：\n{error_feedback}\n请务必对照可用列表修正后，重新输出纯JSON格式。"
-                            })
-
-                    # 如果超过最大重试次数还没修正对
-                    if retry_count >= max_retries:
-                        msg = "🚫 项目重试失败：重新编排的任务连续多次未通过合法性校验。"
-                        self.log_and_notify("error", msg, {"level": "error"})
-
-                except Exception as e:
-                    self.save_history("re_orchestrate", f"重新编排时解析异常：{e}")
-                    self.log_and_notify("error", f"💥 重新编排失败: {e}", {"level": "error"})
-                    success = False
-                    msg = f"重新编排模型输出异常: {e}"
-
-            # 5. 生成报告
+                success, msg = self.re_orchestrate(msg)
             self.log_and_notify("stage", "📊 Run Summary", {"style": "white"})
             summary = self.run_summary(success, msg)
 
-            # 推流 Markdown 最终报告渲染块
             self.log_and_notify("markdown", summary, {"title": "📑 项目最终执行报告"})
             self.save_history("summary", summary)
             if success:
@@ -629,10 +614,6 @@ class Project:
             return self.run_summary(False, f"致命异常: {str(e)}")
 
     def run_summary(self, success: bool, msg: str):
-        """
-        项目经理总览整个项目流程，生成 Markdown 格式的总结报告。
-        重点包含对“失败与重新编排”的深度反思。
-        """
         system_prompt = (
             "你是一个经验丰富的项目经理。请基于以下提供的项目执行完整历史，生成一份详尽的 Markdown 报告。\n"
             "报告必须包含以下三部分：\n"
@@ -681,16 +662,13 @@ class Project:
         return report
 
     def save_checkpoint(self):
-        """将当前项目的所有状态序列化保存到本地"""
         checkpoint_dir = f"data/checkpoints/project/{self.name}_{self.creat_time}/"
         os.makedirs(checkpoint_dir, exist_ok=True)
         filepath = os.path.join(checkpoint_dir, f"checkpoint.json")
         state = self.__dict__.copy()
-        # 移除不可序列化的属性
         for key in list(state.keys()):
             if key.startswith('_') and key not in ['_killed', '_id']:
                 del state[key]
-        # 确保没有线程对象等不可序列化的属性
         for key in list(state.keys()):
             value = state[key]
             if isinstance(value, (threading.Thread, threading.Lock)):
@@ -701,7 +679,6 @@ class Project:
 
     @classmethod
     def load_checkpoint(cls, filepath: str):
-        """类方法：从存档文件中恢复 Project 实例"""
         with open(filepath, 'r', encoding='utf-8') as f:
             state = json.load(f)
         project = cls(
@@ -741,17 +718,13 @@ class Project:
         return project
 
     def save_history(self, stage_name: str, content: str):
-        """记录关键节点信息留给总结报告，并触发自动存档方便断点续传"""
         self.stage_histories[stage_name] = content
         self.save_checkpoint()
 
     def log_and_notify(self, card_type: str, content: str, metadata: dict = None):
-        """为前端专门准备的结构化执行日志数据"""
-        # 修复：确保存放 log.jsonl 的父文件夹一定存在，避免由于系统未生成 checkpoint_dir 导致写文件闪退
         log_dir = f"data/checkpoints/project/{self.name}_{self.creat_time}/"
         os.makedirs(log_dir, exist_ok=True)
 
-        # 增加前端要求的规范结构：card_type 和 metadata (带容错兜底)
         log_data = {
             "project_id": self.id,
             "timestamp": time.time(),

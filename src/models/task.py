@@ -1,17 +1,17 @@
-import asyncio
-import importlib
-import inspect
+# src/models/task.py
 import json
-from typing import Dict, Optional
 import uuid
-from src.models.model import Model
-import os             # 新增
-import time           # 新增
-import datetime       # 新增
+import os
+import time
+import datetime
 import threading
 import shutil
+from typing import Dict
 
-# Use absolute paths so task log and checkpoint operations work regardless of current working directory.
+from src.models.model import Model
+from src.plugins.plugin_manager import BASE_TOOLS, parse_tool
+from json_repair import repair_json
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.abspath(os.path.join(BASE_DIR, "..", "..", "data"))
 
@@ -19,6 +19,7 @@ TASK_POOL = []
 TASK_INSTANCES = {}
 dirty_tasks = set()
 task_set_lock = threading.Lock()
+
 
 def _resolve_task_log_path(task_id: str):
     instance = TASK_INSTANCES.get(task_id)
@@ -46,14 +47,13 @@ def _resolve_task_log_path(task_id: str):
         pass
     return None
 
+
 def set_task_state(task_id, state):
-    # Update the global TASK_POOL record
     for t in TASK_POOL:
         if t["id"] == task_id:
             t["state"] = state
             break
 
-    # Also update the running instance (if exists), so checkpoint saving uses the correct state
     instance = TASK_INSTANCES.get(task_id)
     if instance:
         instance.state = state
@@ -76,7 +76,6 @@ def delete_task(task_id):
                     checkpoint_dir = os.path.join(DATA_DIR, "checkpoints", "task", f"{name}_{creat_time}")
                 break
 
-    # 如果还找不到对应目录，尝试通过 log.jsonl 找文件夹（兼容仅存在 log 的情况）
     if not checkpoint_dir:
         log_path = _resolve_task_log_path(task_id)
         if log_path:
@@ -92,19 +91,19 @@ def delete_task(task_id):
 
 
 def kill_task(task_id):
-    """全局方法：强制关闭 Task 线程"""
     if task_id in TASK_INSTANCES:
         TASK_INSTANCES[task_id].kill()
         set_task_state(task_id, "killed")
         return True
     return False
 
+
 def inject_task_instruction(task_id: str, content: str):
-    """全局方法：向指定的 Task 强行注入干预指令"""
     if task_id in TASK_INSTANCES:
         TASK_INSTANCES[task_id].force_push(content)
         return True
     return False
+
 
 class Task:
     VALID_STATES = ["waiting", "handling", "completed"]
@@ -130,14 +129,12 @@ class Task:
         self.pending_force_push = None
         self.name = task_detail.get('title', 'Unknown')
         self.creat_time = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
-        # Track the current state so it is reflected in checkpoints and UI.
         self.state = "running"
+        self.dynamic_tools = []
 
-        # 注册到全局任务池（用于前端展示、管理）
         if register:
             existing = [t for t in TASK_POOL if t.get("id") == self.task_id]
             if existing:
-                # already exists, just update its reference/state
                 for t in existing:
                     t["name"] = task_detail.get('title', 'Unknown')
                     t["state"] = "running"
@@ -159,8 +156,8 @@ class Task:
                 )
             TASK_INSTANCES[self.task_id] = self
             self.log_and_notify("system", "🧾 已加载任务上下文", {"style": "light_gray"})
+
     def _clean_json_string(self, text: str) -> str:
-        """辅助方法：清理模型输出的 Markdown 标记，提取纯 JSON 字符串"""
         text = text.strip()
         if text.startswith("```json"):
             text = text[7:]
@@ -171,7 +168,6 @@ class Task:
         return text.strip()
 
     def log_and_notify(self, card_type: str, content: str, metadata: dict = None):
-        """为前端专门准备的结构化执行日志数据，同时输出到控制台"""
         print(content)
         log_dir = os.path.join(DATA_DIR, "checkpoints", "task", f"{self.name}_{self.creat_time}")
         os.makedirs(log_dir, exist_ok=True)
@@ -189,14 +185,11 @@ class Task:
             dirty_tasks.add(self.task_id)
 
     def save_checkpoint(self):
-        """保存Task的当前状态到checkpoint.json"""
         checkpoint_dir = os.path.join(DATA_DIR, "checkpoints", "task", f"{self.name}_{self.creat_time}")
         os.makedirs(checkpoint_dir, exist_ok=True)
         checkpoint_path = os.path.join(checkpoint_dir, "checkpoint.json")
-        # Ensure checkpoint stores the most up-to-date state.
         current_state = getattr(self, 'state', None)
         if not current_state:
-            # Fallback to TASK_POOL record if available
             for t in TASK_POOL:
                 if t.get("id") == self.task_id:
                     current_state = t.get("state")
@@ -213,7 +206,8 @@ class Task:
             "eval_history": self.eval_history,
             "run_result": self.run_result,
             "state": current_state or "running",
-            "pending_force_push": self.pending_force_push
+            "pending_force_push": self.pending_force_push,
+            "dynamic_tools": self.dynamic_tools
         }
         try:
             with open(checkpoint_path, "w", encoding="utf-8") as f:
@@ -223,11 +217,9 @@ class Task:
 
     @classmethod
     def load_checkpoint(cls, checkpoint_path: str):
-        """从checkpoint加载Task"""
         try:
             with open(checkpoint_path, "r", encoding="utf-8") as f:
                 state = json.load(f)
-            # 从checkpoint恢复时不要重复注册到TASK_POOL（避免重复条目）
             task = cls(
                 task_detail=state["task_detail"],
                 judge_mode=state["judge_mode"],
@@ -241,10 +233,9 @@ class Task:
             task.run_result = state.get("run_result")
             task.pending_force_push = state.get("pending_force_push")
             task.state = state.get("state", "running")
-            # Ensure we restore the original folder timestamp so logs/checkpoints stay consistent
             task.creat_time = state.get("creat_time", task.creat_time)
+            task.dynamic_tools = state.get("dynamic_tools", [])
 
-            # 确保 TASK_POOL 中只保留一份任务（按 task_id 唯一）
             existing = [t for t in TASK_POOL if t.get("id") == task.task_id]
             if not existing:
                 TASK_POOL.append({
@@ -257,12 +248,10 @@ class Task:
                     "judger": (task.task_detail or {}).get("judger") or (state.get("task_detail") or {}).get("judger"),
                 })
             else:
-                # 更新状态/进度
                 for t in existing:
                     t["state"] = state.get("state", t.get("state", "running"))
                     t["progress"] = 100 if task.run_result else t.get("progress", 50)
 
-            # 保证实例可用
             TASK_INSTANCES[task.task_id] = task
             return task
         except Exception as e:
@@ -270,7 +259,8 @@ class Task:
             return None
 
     def force_push(self, content: str):
-        if self.current_history and self.current_history[-1].get('role') == 'assistant' and self.current_history[-1].get('tool_calls'):
+        if self.current_history and self.current_history[-1].get('role') == 'assistant' and self.current_history[
+            -1].get('tool_calls'):
             self.pending_force_push = content
         else:
             warning_prompt = (
@@ -282,17 +272,16 @@ class Task:
                 "content": warning_prompt
             })
             self.log_and_notify("system", f"⚠️ [Task {self.task_id}] 已强行注入干预指令：\n{content}")
+
     def kill(self):
         self._killed = True
         self.log_and_notify("system", f"⚠️ [Task] 收到Kill指令，准备直接关闭任务 {self.task_id} 线程...")
 
     def _check_kill(self):
-        """无需保留节点状态，直接抛异常中止"""
         if self._killed:
             raise InterruptedError(f"任务 {self.task_id} 被手动强制关闭。")
 
     def run(self, suggestion: str = None, max_steps: int = 500):
-        init_config_data()
         if not suggestion:
             sys_prompt = (
                 "你是一个高级智能助手（Worker），负责执行子任务并善用工具。如果用户提供了skill技能手册，应当在执行任务环节时常翻阅，按照skill手册的规范执行任务。\n"
@@ -314,18 +303,8 @@ class Task:
                 {"role": "user",
                  "content": f"QA反馈不通过：{suggestion}\n请修正后重新提交。记得最终交付时不再调用工具，并直接输出规范的JSON格式。"})
 
-        available_tools = self.task_detail.get('available_tools', [])
-        for available_tool in available_tools:
-            if available_tool.startswith("filesystem"):
-                available_tools.remove(available_tool)
-        if "filesystem" not in available_tools:
-            available_tools.append("filesystem") # 兜底必须有filesystem
-        if isinstance(available_tools, str):
-            available_tools = [available_tools] if available_tools else []
-        tools_info = get_plugin_tool_info(available_tools)
-
         model_name = self.task_detail["worker"].split(":")[-1] if ':' in self.task_detail["worker"] else \
-            self.task_detail["worker"]
+        self.task_detail["worker"]
         step = 0
 
         while step < max_steps:
@@ -333,18 +312,21 @@ class Task:
             self._check_kill()
             step += 1
             try:
+                current_tools = list(BASE_TOOLS)
+                if self.dynamic_tools:
+                    current_tools.extend([item["schema"] for item in self.dynamic_tools])
+
                 kwargs = {
                     "model": model_name,
                     "messages": self.current_history,
                 }
-                if tools_info:
-                    kwargs["tools"] = tools_info
+                if current_tools:
+                    kwargs["tools"] = current_tools
 
                 response = self.client.chat.completions.create(**kwargs)
                 message = response.choices[0].message
 
-                # 记录模型的原始回复
-                assist_msg = {"role": "assistant", "content": message.content}
+                assist_msg = {"role": "assistant", "content": message.content or ""}
                 if message.tool_calls:
                     assist_msg["tool_calls"] = [
                         {
@@ -361,21 +343,54 @@ class Task:
                     for tool_call in message.tool_calls:
                         tool_name = tool_call.function.name
                         arguments_str = tool_call.function.arguments
-                        self.log_and_notify("tool_call", f"🔎 Worker Tool: {tool_name}({arguments_str})", {"tool_name": tool_name})
+                        self.log_and_notify("tool_call", f"🔎 Worker Tool: {tool_name}({arguments_str})",
+                                            {"tool_name": tool_name})
+
+                        arguments = {}
+                        if arguments_str:
+                            try:
+                                arguments = json.loads(arguments_str)
+                            except json.JSONDecodeError as e:
+                                print(f"⚠️ 标准 JSON 解析失败，尝试容错修复: {e}")
+                                if repair_json:
+                                    try:
+                                        arguments = repair_json(arguments_str, return_objects=True)
+                                        print("✅ json-repair 修复成功！")
+                                    except Exception as repair_e:
+                                        print(f"❌ json-repair 修复失败: {repair_e}")
+
+                        target_route = None
+                        target_plugin = None
+                        for tool_item in self.dynamic_tools:
+                            if tool_item.get("funct") == tool_name:
+                                target_route = tool_item.get("route")
+                                target_plugin = tool_item.get("plugin")
+                                break
+
                         try:
-                            mcp_type, func_name = tool_name.split('__', 1)
-                            arguments = json.loads(arguments_str) if arguments_str else {}
-                            result = self._execute_tool(mcp_type, func_name, arguments)
-                        except json.JSONDecodeError as e:
-                            result = f"Tool Execution Error: Invalid JSON format generated for arguments. Error details: {str(e)}. Please try calling the tool again with valid JSON."
+                            result_str, new_schema_info = parse_tool(tool_name, arguments, route=target_route,
+                                                                     plugin=target_plugin)
+                            if new_schema_info:
+                                schemas_to_add = new_schema_info if isinstance(new_schema_info, list) else [
+                                    new_schema_info]
+                                for schema_item in schemas_to_add:
+                                    new_funct_name = schema_item["funct"]
+                                    self.dynamic_tools = [item for item in self.dynamic_tools if
+                                                          item.get("funct") != new_funct_name]
+                                    self.dynamic_tools.append(schema_item)
+
+                            if result_str == "__AGENT_PAUSE__":
+                                result_str = "工具调用成功，正在挂起任务，请耐心等待处理"
+
                         except Exception as e:
-                            result = f"Tool Execution Error: {str(e)}"
-                        self.log_and_notify("tool_result", f"😇 Tool Result: {str(result)[:200]}...")
+                            result_str = f"Tool Execution Error: {str(e)}"
+
+                        self.log_and_notify("tool_result", f"😇 Tool Result: {str(result_str)[:200]}...")
                         self.current_history.append({
                             "role": "tool",
                             "tool_call_id": tool_call.id,
                             "name": tool_name,
-                            "content": str(result)
+                            "content": str(result_str)
                         })
 
                     if self.pending_force_push:
@@ -387,7 +402,8 @@ class Task:
                             "role": "user",
                             "content": warning_prompt
                         })
-                        self.log_and_notify("system", f"⚠️ [Task {self.task_id}] 已强行注入干预指令：\n{self.pending_force_push}")
+                        self.log_and_notify("system",
+                                            f"⚠️ [Task {self.task_id}] 已强行注入干预指令：\n{self.pending_force_push}")
                         self.pending_force_push = None
                 else:
                     raw_content = message.content.strip() if message.content else ""
@@ -415,6 +431,7 @@ class Task:
                 set_task_state(self.task_id, "error")
                 self.save_checkpoint()
                 raise InterruptedError(f"API意外中断: {e}")
+
         set_task_state(self.task_id, "error")
         self.save_checkpoint()
         return {"task_result": False, "summary": f"Worker超出最大思考步数({max_steps})，被强制终止。"}
@@ -436,28 +453,29 @@ class Task:
         prompt = f"{self.system_prompt}\n\n请完成当前阶段的质检：\nWorker的交付详情：{json.dumps(self.run_result, ensure_ascii=False)}"
         self.eval_history.append({"role": "user", "content": prompt})
 
-        available_tools = self.task_detail.get('available_tools', [])
-        if isinstance(available_tools, str):
-            available_tools = [available_tools] if available_tools else []
-        tools_info = get_plugin_tool_info(available_tools)
-
         model_name = self.task_detail["judger"].split(":")[-1] if ':' in self.task_detail["judger"] else \
-            self.task_detail["judger"]
+        self.task_detail["judger"]
 
         step = 0
         while step < max_steps:
             self._check_kill()
             step += 1
             try:
+                current_tools = list(BASE_TOOLS)
+                if self.dynamic_tools:
+                    current_tools.extend([item["schema"] for item in self.dynamic_tools])
+
                 kwargs = {
                     "model": model_name,
                     "messages": self.eval_history,
                 }
-                if tools_info:
-                    kwargs["tools"] = tools_info
+                if current_tools:
+                    kwargs["tools"] = current_tools
+
                 response = self.eval_client.chat.completions.create(**kwargs)
                 message = response.choices[0].message
-                assist_msg = {"role": "assistant", "content": message.content}
+
+                assist_msg = {"role": "assistant", "content": message.content or ""}
                 if message.tool_calls:
                     assist_msg["tool_calls"] = [
                         {
@@ -474,21 +492,48 @@ class Task:
                     for tool_call in message.tool_calls:
                         tool_name = tool_call.function.name
                         arguments_str = tool_call.function.arguments
-                        self.log_and_notify("tool_call", f"🔎 Judger Tool: {tool_name}({arguments_str})", {"tool_name": tool_name})
+                        self.log_and_notify("tool_call", f"🔎 Judger Tool: {tool_name}({arguments_str})",
+                                            {"tool_name": tool_name})
+
+                        arguments = {}
+                        if arguments_str:
+                            try:
+                                arguments = json.loads(arguments_str)
+                            except json.JSONDecodeError as e:
+                                if repair_json:
+                                    try:
+                                        arguments = repair_json(arguments_str, return_objects=True)
+                                    except Exception:
+                                        pass
+
+                        target_route = None
+                        target_plugin = None
+                        for tool_item in self.dynamic_tools:
+                            if tool_item.get("funct") == tool_name:
+                                target_route = tool_item.get("route")
+                                target_plugin = tool_item.get("plugin")
+                                break
 
                         try:
-                            mcp_type, func_name = tool_name.split('__', 1)
-                            arguments = json.loads(arguments_str) if arguments_str else {}
-                            result = self._execute_tool(mcp_type, func_name, arguments)
+                            result_str, new_schema_info = parse_tool(tool_name, arguments, route=target_route,
+                                                                     plugin=target_plugin)
+                            if new_schema_info:
+                                schemas_to_add = new_schema_info if isinstance(new_schema_info, list) else [
+                                    new_schema_info]
+                                for schema_item in schemas_to_add:
+                                    new_funct_name = schema_item["funct"]
+                                    self.dynamic_tools = [item for item in self.dynamic_tools if
+                                                          item.get("funct") != new_funct_name]
+                                    self.dynamic_tools.append(schema_item)
                         except Exception as e:
-                            result = f"Tool Execution Error: {str(e)}"
+                            result_str = f"Tool Execution Error: {str(e)}"
 
-                        self.log_and_notify("tool_result", f"😇 Tool Result: {str(result)[:200]}...")
+                        self.log_and_notify("tool_result", f"😇 Tool Result: {str(result_str)[:200]}...")
                         self.eval_history.append({
                             "role": "tool",
                             "tool_call_id": tool_call.id,
                             "name": tool_name,
-                            "content": str(result)
+                            "content": str(result_str)
                         })
 
                     if self.pending_force_push:
@@ -500,7 +545,8 @@ class Task:
                             "role": "user",
                             "content": warning_prompt
                         })
-                        self.log_and_notify("system", f"⚠️ [Task {self.task_id}] 已强行注入干预指令：\n{self.pending_force_push}")
+                        self.log_and_notify("system",
+                                            f"⚠️ [Task {self.task_id}] 已强行注入干预指令：\n{self.pending_force_push}")
                         self.pending_force_push = None
                 else:
                     raw_content = message.content.strip() if message.content else ""
@@ -532,9 +578,6 @@ class Task:
         self.save_checkpoint()
         return {"eval_result": False, "suggestion": "QA质检过程超出最大思考步数。"}
 
-    def _execute_tool(self, mcp_type: str, func_name: str, arguments: dict):
-        pass
-
     def run_pipeline(self):
         try:
             result_history = []
@@ -558,35 +601,26 @@ class Task:
         except InterruptedError as e:
             set_task_state(self.task_id, "killed")
             raise e
-
         except Exception as e:
             set_task_state(self.task_id, "error")
             raise e
 
     def memory_flush(self, check_mode=True, max_tokens=100000):
-        """
-        阶段性记忆压缩：结合轮数与 Token 数量进行双重判断。
-        - check_mode=True: 检查 token 是否超过 100000，或轮数是否达到 max_len(50)。均未超出则不压缩。
-        - check_mode=False: 强制无论如何都要执行压缩逻辑。
-        """
         messages_str = json.dumps(self.current_history, ensure_ascii=False)
         try:
             import tiktoken
             encoding = tiktoken.get_encoding("cl100k_base")
             current_tokens = len(encoding.encode(messages_str))
         except ImportError:
-            current_tokens = len(messages_str) // 2  # 更保守的估算
+            current_tokens = len(messages_str) // 2
 
-        # 【逻辑修正】：当开启 check_mode 时，才进行条件拦截
         if check_mode:
-            # 只有轮数和 Token 都处于安全范围内时，才跳过压缩
-            if len(self.current_history) < self.max_len and current_tokens < max_tokens:
+            if current_tokens <= 100000 or len(self.current_history) <= 50:
                 return
 
-        # 如果 check_mode 为 False，或者上述任一条件超出阈值，直接开始执行以下归档流程
-        self.log_and_notify("system", f"⚠️ Memory Flush: 当前 {len(self.current_history)} 轮，共计约 {current_tokens} tokens。")
+        self.log_and_notify("system",
+                            f"⚠️ Memory Flush: 当前 {len(self.current_history)} 轮，共计约 {current_tokens} tokens。")
 
-        # 换用与 agent.py 风格一致的强烈归档 Prompt
         alert_prompt = """【系统严重警告：大脑记忆容量即将溢出！！！】
 为了防止记忆断层，系统即将物理抹除你最早期的一批记忆。
 请你现在亲自对**此前的所有对话、事件和执行记录**进行全面总结，提取出核心事件、任务进度、你的关键决策以及目前遇到的阻碍，形成一份“早期记忆备忘录”。
@@ -609,20 +643,17 @@ class Task:
 
             self.log_and_notify("system", f"🧠 Task归档完成，生成备忘录长度: {len(archive_content)} 字符")
 
-            # 使用显式的备忘录抬头保存
             self.current_history.append({
                 "role": "assistant",
                 "content": f"【早期记忆备忘录】\n{archive_content}"
             })
 
-            # Task 专属逻辑：保留 System Prompt (idx=0) 和 初始 User Task Prompt (idx=1)
             start_idx = 2
-            keep_recent = 20  # 对齐 Agent 保持 20 条较长上下文
+            keep_recent = 20
 
             split_idx = len(self.current_history) - keep_recent
 
             if split_idx > start_idx:
-                # 往前寻找安全边界，避开切断 tool_call 链条
                 while split_idx > start_idx:
                     curr_msg = self.current_history[split_idx]
                     prev_msg = self.current_history[split_idx - 1]
