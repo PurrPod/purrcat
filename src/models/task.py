@@ -9,7 +9,6 @@ import shutil
 from typing import Dict
 
 from src.models.model import Model
-from src.plugins.plugin_manager import BASE_TOOLS, parse_tool
 from json_repair import repair_json
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -108,17 +107,18 @@ def inject_task_instruction(task_id: str, content: str):
 class Task:
     VALID_STATES = ["waiting", "handling", "completed"]
 
-    def __init__(self, task_detail: Dict, judge_mode: bool, system_prompt: str, task_histories: str = None,
+    def __init__(self, task_detail: Dict, judge_mode: bool, system_prompt: str, core: str, task_histories: str = None,
                  task_id: str = None, register: bool = True):
         self.run_result = None
-        for key in ["title", "desc", "deliverable", "worker", "judger", "available_tools"]:
+        for key in ["title", "desc", "deliverable"]:
             if key not in task_detail.keys():
                 raise ValueError(f"Missing key '{key}' in task details")
         self.judge_mode = judge_mode
         self.task_detail = task_detail
-        self.client = Model(task_detail['worker']).client
+        self.core = core
+        self.client = Model(core).client
         if judge_mode:
-            self.eval_client = Model(task_detail['judger']).client
+            self.eval_client = Model(core).client
         self.max_len = 50
         self.current_history = []
         self.eval_history = []
@@ -303,10 +303,9 @@ class Task:
                 {"role": "user",
                  "content": f"QA反馈不通过：{suggestion}\n请修正后重新提交。记得最终交付时不再调用工具，并直接输出规范的JSON格式。"})
 
-        model_name = self.task_detail["worker"].split(":")[-1] if ':' in self.task_detail["worker"] else \
-        self.task_detail["worker"]
+        model_name = self.core.split(":")[-1] if ':' in self.core else self.core
         step = 0
-
+        from src.plugins.plugin_manager import BASE_TOOLS, parse_tool, TOOL_INDEX_FILE
         while step < max_steps:
             self.memory_flush()
             self._check_kill()
@@ -366,6 +365,19 @@ class Task:
                                 target_route = tool_item.get("route")
                                 target_plugin = tool_item.get("plugin")
                                 break
+                        
+                        # 如果在 dynamic_tools 中没找到，尝试从 tool.jsonl 中查找
+                        if not target_route or not target_plugin:
+                            if os.path.exists(TOOL_INDEX_FILE):
+                                with open(TOOL_INDEX_FILE, "r", encoding="utf-8") as f:
+                                    for line in f:
+                                        if not line.strip():
+                                            continue
+                                        tool_info = json.loads(line)
+                                        if tool_info["func"] == tool_name:
+                                            target_route = tool_info["route"]
+                                            target_plugin = tool_info["plugin"]
+                                            break
 
                         try:
                             result_str, new_schema_info = parse_tool(tool_name, arguments, route=target_route,
@@ -453,8 +465,8 @@ class Task:
         prompt = f"{self.system_prompt}\n\n请完成当前阶段的质检：\nWorker的交付详情：{json.dumps(self.run_result, ensure_ascii=False)}"
         self.eval_history.append({"role": "user", "content": prompt})
 
-        model_name = self.task_detail["judger"].split(":")[-1] if ':' in self.task_detail["judger"] else \
-        self.task_detail["judger"]
+        model_name = self.core.split(":")[-1] if ':' in self.core else self.core
+        from src.plugins.plugin_manager import BASE_TOOLS, parse_tool, TOOL_INDEX_FILE
 
         step = 0
         while step < max_steps:
@@ -513,6 +525,19 @@ class Task:
                                 target_route = tool_item.get("route")
                                 target_plugin = tool_item.get("plugin")
                                 break
+                        
+                        # 如果在 dynamic_tools 中没找到，尝试从 tool.jsonl 中查找
+                        if not target_route or not target_plugin:
+                            if os.path.exists(TOOL_INDEX_FILE):
+                                with open(TOOL_INDEX_FILE, "r", encoding="utf-8") as f:
+                                    for line in f:
+                                        if not line.strip():
+                                            continue
+                                        tool_info = json.loads(line)
+                                        if tool_info["func"] == tool_name:
+                                            target_route = tool_info["route"]
+                                            target_plugin = tool_info["plugin"]
+                                            break
 
                         try:
                             result_str, new_schema_info = parse_tool(tool_name, arguments, route=target_route,
@@ -632,8 +657,7 @@ class Task:
         })
 
         try:
-            model_name = self.task_detail["worker"].split(":")[-1] if ':' in self.task_detail["worker"] else \
-            self.task_detail["worker"]
+            model_name = self.core.split(":")[-1] if ':' in self.core else self.core
             kwargs = {
                 "model": model_name,
                 "messages": self.current_history,

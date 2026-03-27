@@ -18,9 +18,7 @@ if __name__ == "__main__":
     a = Project(
         name="Project 1",
         prompt="测试所提供的工具能否正常使用",
-        core="[2]openai:deepseek-chat",
-        available_tools=["web"],
-        available_workers=["[2]openai:deepseek-chat"]
+        core="[2]openai:deepseek-chat"
     )
     for tool in ["database", "filesystem", "feishu", "manager", "schedule", "web"]:
         plugin = register_plugin(tool)

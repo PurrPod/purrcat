@@ -81,7 +81,6 @@ interface AppState {
     deliverable: string,
     worker: string,
     judger: string,
-    available_tools: string[],
     prompt: string,
     judge_mode: boolean,
     task_histories: string

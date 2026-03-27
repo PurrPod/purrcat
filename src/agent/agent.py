@@ -5,7 +5,9 @@ import threading
 from queue import PriorityQueue, Empty
 from src.loader.memory import Memory
 from src.models.model import Model
-from src.plugins.plugin_manager import BASE_TOOLS, parse_tool
+from src.plugins.plugin_manager import BASE_TOOLS, parse_tool, TOOL_INDEX_FILE
+from src.plugins.agent_tool import AGENT_TOOLS
+
 from json_repair import repair_json
 
 
@@ -84,8 +86,8 @@ class Agent:
 
         for step in range(max_steps):
             try:
-                # 只需合并 BASE_TOOLS 和 大模型自己 fetch 的动态工具，极其清爽
-                current_tools = list(BASE_TOOLS)
+                # 合并 BASE_TOOLS、AGENT_TOOLS 和 大模型自己 fetch 的动态工具
+                current_tools = list(BASE_TOOLS) + list(AGENT_TOOLS)
                 if self.dynamic_tools:
                     current_tools.extend([item["schema"] for item in self.dynamic_tools])
 
@@ -138,11 +140,34 @@ class Agent:
                     print(f"🔧 助手调起工具: {tool_name}")
                     target_route = None
                     target_plugin = None
-                    for tool_item in self.dynamic_tools:
-                        if tool_item.get("funct") == tool_name:
-                            target_route = tool_item.get("route")
-                            target_plugin = tool_item.get("plugin")
-                            break
+
+                    # 从 AGENT_TOOL_FUNCTIONS 获取 Agent 专属工具名列表
+                    from src.plugins.agent_tool import AGENT_TOOL_FUNCTIONS
+                    agent_tool_names = list(AGENT_TOOL_FUNCTIONS.keys())
+
+                    # 检查是否是 AGENT_TOOLS 中的工具
+                    if tool_name in agent_tool_names:
+                        target_route = "agent"
+                        target_plugin = "agent_tool"
+                    else:
+                        for tool_item in self.dynamic_tools:
+                            if tool_item.get("funct") == tool_name:
+                                target_route = tool_item.get("route")
+                                target_plugin = tool_item.get("plugin")
+                                break
+
+                        # 如果在 dynamic_tools 中没找到，尝试从 tool.jsonl 中查找
+                        if not target_route or not target_plugin:
+                            if os.path.exists(TOOL_INDEX_FILE):
+                                with open(TOOL_INDEX_FILE, "r", encoding="utf-8") as f:
+                                    for line in f:
+                                        if not line.strip():
+                                            continue
+                                        tool_info = json.loads(line)
+                                        if tool_info["func"] == tool_name:
+                                            target_route = tool_info["route"]
+                                            target_plugin = tool_info["plugin"]
+                                            break
                     result_str, new_schema_info = parse_tool(tool_name, arguments, route=target_route, plugin=target_plugin)
                     if new_schema_info:
                         schemas_to_add = new_schema_info if isinstance(new_schema_info, list) else [new_schema_info]

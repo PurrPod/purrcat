@@ -83,8 +83,6 @@ class Project:
             refine_mode: bool = False,
             judge_mode: bool = False,
             sub_tasks=None,
-            available_tools=None,
-            available_workers=None,
             is_agent: bool = False,
             project_id=None,
             register: bool = True):
@@ -94,8 +92,6 @@ class Project:
         self.core = core
         self.creat_time = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
         self.sub_tasks = sub_tasks
-        self.available_tools = available_tools or []
-        self.available_workers = available_workers or [self.core]
         self.check_mode = check_mode
         self.refine_mode = refine_mode
         self.judge_mode = judge_mode
@@ -114,8 +110,6 @@ class Project:
                 "state": self.state,
                 "creat_time": self.creat_time,
                 "core": self.core,
-                "available_tools": self.available_tools,
-                "available_workers": self.available_workers,
                 "check_mode": self.check_mode,
                 "refine_mode": self.refine_mode,
                 "judge_mode": self.judge_mode,
@@ -302,59 +296,15 @@ class Project:
             "你是一个任务切分助手，擅长把用户需求切分成数个子任务！！"
             "子任务会依次流经不同工人的手上，确保能承上启下完美继承，合理分配。\n"
             "请确保答案是这种纯JSON格式，不要包含Markdown或其他说明：\n"
-            "{\"subtask1\": {\"title\": \"xxx\", \"desc\": \"xxx\", \"deliverable\": \"xxx\", \"worker\": \"xxx\", \"judger\": \"xxx\", \"available_tools\": [\"xxx\"]}, ...}\n"
-            f"对于可用工人(worker/judger)，请必须从以下列表中严格选择：\n{self.available_workers}\n"
-            f"对于可用工具(available_tools)，参考：\n{self.available_tools}\n"
+            "{\"subtask1\": {\"title\": \"xxx\", \"desc\": \"xxx\", \"deliverable\": \"xxx\"}, ...}\n"
             f"---\n[User Request] {self.prompt}\n"
             f"请开始切分子任务！"
         )
-        max_retries = 3
-        retry_count = 0
         current_messages = [{"role": "system", "content": sys_msg}]
-        while retry_count < max_retries:
-            sub_tasks, raw_json = self._ask_core_for_json(current_messages)
-            is_valid = True
-            error_details = []
-            for key, value in sub_tasks.items():
-                ai_worker = value.get("worker")
-                if ai_worker and ai_worker not in self.available_workers:
-                    is_valid = False
-                    error_details.append(
-                        f"任务 {key} 的 worker '{ai_worker}' 不在可用列表 {self.available_workers} 中。")
-                ai_judger = value.get("judger")
-                if ai_judger and ai_judger not in self.available_workers:
-                    is_valid = False
-                    error_details.append(
-                        f"任务 {key} 的 judger '{ai_judger}' 不在可用列表 {self.available_workers} 中。")
-                ai_tools = value.get("available_tools", [])
-                if isinstance(ai_tools, list):
-                    for tool in ai_tools:
-                        if tool not in self.available_tools:
-                            is_valid = False
-                            error_details.append(f"任务 {key} 的工具 '{tool}' 不在可用列表 {self.available_tools} 中。")
-
-            if is_valid:
-                for key, value in sub_tasks.items():
-                    if not value.get("worker"): value["worker"] = self.core
-                    if not value.get("judger"): value["judger"] = self.core
-                    if not value.get("tool"): value["tool"] = ["web", "filesystem"]
-                self.sub_tasks = sub_tasks
-                print(f"✅ 任务切分验证通过。")
-                return
-            else:
-                retry_count += 1
-                error_feedback = "\n".join(error_details)
-                print(f"❌ 任务切分验证失败 (逻辑重修尝试 {retry_count}/{max_retries}):\n{error_feedback}")
-                current_messages.append({"role": "assistant", "content": raw_json})
-                current_messages.append({"role": "user",
-                                         "content": f"注意！你上一次生成的任务切分存在以下越界或错误：\n{error_feedback}\n请务必对照可用列表修正后，重新输出纯JSON格式。"})
-
-        print("⚠️ 任务切分验证连续失败，将强制使用默认执行者，并忽略不合法的工具。")
-        for key, value in sub_tasks.items():
-            value["worker"] = self.core
-            value["judger"] = self.core
-            value["available_tools"] = [t for t in value.get("available_tools", []) if t in self.available_tools]
+        sub_tasks, raw_json = self._ask_core_for_json(current_messages)
         self.sub_tasks = sub_tasks
+        print(f"✅ 任务切分完成，所有任务默认使用 {self.core} 作为工人和质检员。")
+        return
 
     def run_tasks(self):
         task_histories_str = "[第1次执行任务集]\n" if not self.task_story else f"{self.task_story}\n[第2次执行任务集]\n"
@@ -388,7 +338,7 @@ class Project:
             task_detail_prompt += f"- deliverable:{task_detail['deliverable']}\n"
             system_prompt = f"🐱 用户核心项目\n{self.prompt}\n\n🧩 项目子任务\n{sub_tasks_prompt}\n🤖 当前阶段\n{task_detail_prompt}\n"
             single_task = Task(task_detail, judge_mode=self.judge_mode, system_prompt=system_prompt,
-                               task_histories=task_histories_str, task_id=task_id)
+                               core=self.core, task_histories=task_histories_str, task_id=task_id)
             run_result = single_task.run_pipeline()
             self.current_history.append({task_key: str(run_result)})
 
@@ -446,12 +396,9 @@ class Project:
         self.log_and_notify("stage", "🔄 Re-Orchestrate", {"style": "white"})
         print(f"[项目遇到阻碍] {error_msg}\n正在请求核心模型重新编排任务...")
 
-        worker_info = [Model(model).get_info() for model in self.available_workers]
         # 使用最新的 BASE_TOOLS 架构
         from src.plugins.plugin_manager import BASE_TOOLS
         tool_info = json.dumps(BASE_TOOLS, ensure_ascii=False)
-        available_worker_names = self.available_workers
-        available_tool_names = self.available_tools
 
         clean_sub_tasks = {}
         for k, v in self.sub_tasks.items():
@@ -466,85 +413,39 @@ class Project:
             f"【重要警告】：返回的 sub_tasks 字典中，必须包含从头到尾完整的任务流（包括那些之前已经成功的任务），绝对不能只返回剩余的任务！\n"
             f"返回纯JSON格式: {{\"retry\": bool, \"desc\": \"<简短说明>\", \"sub_tasks\": dict或null}}。\n"
             f"决定重新编排则retry字段填true，否则填false；请务必全方位考虑，既考虑任务合理性，又考虑失败重试后仍失败的token成本。"
-            f"对于可用工人(worker/judger)，请必须从以下列表中严格选择：\n{available_worker_names}\n"
-            f"对于可用工具(available_tools)，参考：\n{available_tool_names}\n"
             f"{tool_info}"
         )
 
-        max_retries = 3
-        retry_count = 0
         current_messages = [{"role": "system", "content": retry_prompt}]
 
         try:
-            while retry_count < max_retries:
-                result_json, raw_json = self._ask_core_for_json(current_messages)
+            result_json, raw_json = self._ask_core_for_json(current_messages)
 
-                # 模型认为无法重编或未提供新任务流
-                if not result_json.get("retry") or not result_json.get("sub_tasks"):
-                    self.save_history("re_orchestrate",
-                                      f"模型认为无法重试或未返回新任务集：{json.dumps(result_json, ensure_ascii=False)}")
-                    return False, f"项目重试失败：模型认为无法通过重新编排解决问题。原错误：{error_msg}"
+            # 模型认为无法重编或未提供新任务流
+            if not result_json.get("retry") or not result_json.get("sub_tasks"):
+                self.save_history("re_orchestrate",
+                                  f"模型认为无法重试或未返回新任务集：{json.dumps(result_json, ensure_ascii=False)}")
+                return False, f"项目重试失败：模型认为无法通过重新编排解决问题。原错误：{error_msg}"
 
-                new_sub_tasks = result_json["sub_tasks"]
-                is_valid = True
-                error_details = []
+            new_sub_tasks = result_json["sub_tasks"]
 
-                for key, value in new_sub_tasks.items():
-                    ai_worker = value.get("worker")
-                    if ai_worker and ai_worker not in available_worker_names and ai_worker not in self.available_workers:
-                        is_valid = False
-                        error_details.append(
-                            f"任务 {key} 的 worker '{ai_worker}' 不在可用列表 {available_worker_names} 中。")
+            # 为所有任务设置唯一ID
+            for key, value in new_sub_tasks.items():
+                value["task_id"] = str(uuid.uuid4())
 
-                    ai_judger = value.get("judger")
-                    if ai_judger and ai_judger not in available_worker_names and ai_judger not in self.available_workers:
-                        is_valid = False
-                        error_details.append(
-                            f"任务 {key} 的 judger '{ai_judger}' 不在可用列表 {available_worker_names} 中。")
-
-                    ai_tools = value.get("available_tools", [])
-                    if isinstance(ai_tools, list):
-                        for tool in ai_tools:
-                            if tool not in available_tool_names:
-                                is_valid = False
-                                error_details.append(
-                                    f"任务 {key} 的工具 '{tool}' 不在可用列表 {available_tool_names} 中。")
-
-                if is_valid:
-                    for key, value in new_sub_tasks.items():
-                        if not value.get("worker"): value["worker"] = self.core
-                        if not value.get("judger"): value["judger"] = self.core
-                        value["task_id"] = str(uuid.uuid4())
-
-                    self.sub_tasks = new_sub_tasks
-                    self.task_story += f"\n[retry]重新划分任务集：\n{json.dumps(self.sub_tasks, ensure_ascii=False)}\n"
-                    self.log_and_notify("task_list", "📋 重新拆解任务完毕", {"tasks": self.sub_tasks, "style": "gray"})
-                    self.save_history("re_orchestrate", f"重新编排成功：{json.dumps(result_json, ensure_ascii=False)}")
-                    # 触发第二次运行
-                    self.current_history = []
-                    self.log_and_notify("stage", "🔁 Second Run Tasks", {"style": "white"})
-                    success, retry_msg = self.run_tasks()
-                    self.save_history("second_run_tasks",
-                                      f"运行日志：{json.dumps(self.current_history, ensure_ascii=False)}")
-                    if not success:
-                        return False, f"项目重试后依然失败。最终错误：{retry_msg}"
-                    return True, "重排并二次执行成功"
-                else:
-                    # 校验失败：打回要求大模型重写
-                    retry_count += 1
-                    error_feedback = "\n".join(error_details)
-                    print(f"❌ 重新编排任务切分验证失败 (逻辑重修尝试 {retry_count}/{max_retries}):\n{error_feedback}")
-
-                    current_messages.append({"role": "assistant", "content": raw_json})
-                    current_messages.append({
-                        "role": "user",
-                        "content": f"注意！你上一次生成的任务切分存在以下越界或错误：\n{error_feedback}\n请务必对照可用列表修正后，重新输出纯JSON格式。"
-                    })
-
-            # 如果超过最大重试次数还没修正对
-            msg = "🚫 项目重试失败：重新编排的任务连续多次未通过合法性校验。"
-            self.log_and_notify("error", msg, {"level": "error"})
-            return False, msg
+            self.sub_tasks = new_sub_tasks
+            self.task_story += f"\n[retry]重新划分任务集：\n{json.dumps(self.sub_tasks, ensure_ascii=False)}\n"
+            self.log_and_notify("task_list", "📋 重新拆解任务完毕", {"tasks": self.sub_tasks, "style": "gray"})
+            self.save_history("re_orchestrate", f"重新编排成功：{json.dumps(result_json, ensure_ascii=False)}")
+            # 触发第二次运行
+            self.current_history = []
+            self.log_and_notify("stage", "🔁 Second Run Tasks", {"style": "white"})
+            success, retry_msg = self.run_tasks()
+            self.save_history("second_run_tasks",
+                              f"运行日志：{json.dumps(self.current_history, ensure_ascii=False)}")
+            if not success:
+                return False, f"项目重试后依然失败。最终错误：{retry_msg}"
+            return True, "重排并二次执行成功"
 
         except Exception as e:
             self.save_history("re_orchestrate", f"重新编排时解析异常：{e}")
@@ -702,8 +603,6 @@ class Project:
             "state": getattr(project, "state", "running"),
             "creat_time": getattr(project, "creat_time", ""),
             "core": getattr(project, "core", None),
-            "available_tools": getattr(project, "available_tools", []) or [],
-            "available_workers": getattr(project, "available_workers", []) or [],
             "check_mode": getattr(project, "check_mode", False),
             "refine_mode": getattr(project, "refine_mode", False),
             "judge_mode": getattr(project, "judge_mode", False),

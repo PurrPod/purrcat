@@ -9,12 +9,6 @@
 {"route": "local", "plugin": "filesystem", "func": "replace_file_lines", "desc": "Replace specific lines in a file with new code."}
 {"route": "local", "plugin": "filesystem", "func": "list_special_directories", "desc": "List all special directories including sandbox, skill and so on."}
 {"route": "local", "plugin": "filesystem", "func": "list_file_in_dir", "desc": "List files and directories within a given path."}
-{"route": "local", "plugin": "feishu", "func": "send_feishu_message", "desc": "给飞书发送文本消息。"}
-{"route": "local", "plugin": "manager", "func": "add_project", "desc": "启动一个新的后台子项目。适合复杂任务和项目开发"}
-{"route": "local", "plugin": "manager", "func": "answer", "desc": "回答来自特定子项目的提问，推动异步项目继续执行。"}
-{"route": "local", "plugin": "manager", "func": "check_pending_questions", "desc": "查看当前所有正在等待回答问题的子项目列表。"}
-{"route": "local", "plugin": "manager", "func": "add_simple_task", "desc": "启动一个简单的后台子任务。"}
-{"route": "local", "plugin": "manager", "func": "list_worker", "desc": "获取当前所有可用的工人及其描述的清单。"}
 {"route": "local", "plugin": "schedule", "func": "add_schedule", "desc": "添加跨天/跨月的日程。时间格式推荐 YYYY-MM-DD HH:MM"}
 {"route": "local", "plugin": "schedule", "func": "delete_schedule", "desc": "删除日程"}
 {"route": "local", "plugin": "schedule", "func": "update_schedule", "desc": "修改日程"}
@@ -31,6 +25,7 @@
 {"route": "local", "plugin": "multimodal", "func": "video_to_text", "desc": "从视频中抽帧并使用视觉模型进行文本描述。"}
 {"route": "local", "plugin": "multimodal", "func": "generate_audio", "desc": "根据文本提示生成音频，并保存到本地。"}
 {"route": "local", "plugin": "multimodal", "func": "audio_to_text", "desc": "将音频转录为文本。"}
+{"route": "local", "plugin": "feishu", "func": "send_feishu_message", "desc": "给飞书发送文本消息。"}
 {"route": "mcp", "plugin": "leetcode", "func": "get_daily_challenge", "desc": "Retrieves today's LeetCode Daily Challenge problem with complete details, including problem description, constraints, and examples"}
 {"route": "mcp", "plugin": "leetcode", "func": "get_problem", "desc": "Retrieves details about a specific LeetCode problem, including its description, examples, constraints, and related information"}
 {"route": "mcp", "plugin": "leetcode", "func": "search_problems", "desc": "Searches for LeetCode problems based on multiple filter criteria including categories, tags, difficulty levels, and keywords, with pagination support"}

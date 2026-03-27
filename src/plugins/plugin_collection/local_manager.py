@@ -12,7 +12,7 @@ def init_local_config_data():
     current = {}
     with open(LOCAL_TOOL_YAML, 'r', encoding='utf-8') as f:
         current = yaml.safe_load(f) or {}
-    required_plugins = ["web", "feishu", "database", "manager", "filesystem"]
+    required_plugins = ["web", "feishu", "database", "filesystem"]
     for plugin in required_plugins:
         if plugin not in current:
             register_plugin(plugin)

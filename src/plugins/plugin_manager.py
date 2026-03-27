@@ -1,7 +1,8 @@
 import json
 import os
 import yaml
-from typing import Dict, Optional, List
+from src.plugins.agent_tool import call_agent_tool
+
 LOCAL_TOOL_YAML = os.path.join(os.path.dirname(__file__), "plugin_collection", "local_tool.yaml")
 TOOL_INDEX_FILE = os.path.join(os.path.dirname(__file__), "tool.jsonl")
 
@@ -76,7 +77,6 @@ BASE_TOOLS = [
         }
     }
 ]
-
 
 def fetch_tool_schemas(route: str, plugin_name: str, tool_names: list) -> list:
     """批量获取工具 schemas"""
@@ -165,14 +165,31 @@ def parse_tool(tool_name: str, arguments: dict, route: str = None, plugin: str =
             result_content = "\n".join(res_messages)
 
         else:
-            if route == "local":
-                from src.plugins.route.localtool import call_local_tool
-                result_content = call_local_tool(plugin, tool_name, arguments)
-            elif route == "mcp":
-                from src.plugins.route.mcptool import call_mcp_tool
-                result_content = call_mcp_tool(plugin, tool_name, arguments)
+            agent_tool_names = ["add_project", "answer", "check_pending_questions", "add_simple_task", "list_worker", "send_message"]
+            if tool_name in agent_tool_names:
+                result_content = call_agent_tool(tool_name, arguments)
             else:
-                result_content = f"❌ 调度失败：未找到 {tool_name} 的底层路由映射。请确认它是否通过 fetch_tool 正常加载。"
+                # 如果没有提供 route 和 plugin，尝试从 tool.jsonl 中查找
+                if not route or not plugin:
+                    if os.path.exists(TOOL_INDEX_FILE):
+                        with open(TOOL_INDEX_FILE, "r", encoding="utf-8") as f:
+                            for line in f:
+                                if not line.strip():
+                                    continue
+                                tool_info = json.loads(line)
+                                if tool_info["func"] == tool_name:
+                                    route = tool_info["route"]
+                                    plugin = tool_info["plugin"]
+                                    break
+
+                if route == "local":
+                    from src.plugins.route.localtool import call_local_tool
+                    result_content = call_local_tool(plugin, tool_name, arguments)
+                elif route == "mcp":
+                    from src.plugins.route.mcptool import call_mcp_tool
+                    result_content = call_mcp_tool(plugin, tool_name, arguments)
+                else:
+                    result_content = f"❌ 调度失败：未找到 {tool_name} 的底层路由映射。请确认它是否通过 fetch_tool 正常加载。"
 
     except Exception as e:
         result_content = f"❌ 工具调度/执行异常: {str(e)}"
@@ -241,6 +258,8 @@ def search_tool(query: str) -> str:
 
 def init_tool():
     tools_index = []
+    # AGENT_TOOLS 中的工具，不加入 tool.jsonl，仅在 agent 中可用
+    agent_plugins = ["manager"]
     try:
         from src.plugins.plugin_collection.local_manager import init_local_config_data
         init_local_config_data()
@@ -248,6 +267,9 @@ def init_tool():
             with open(LOCAL_TOOL_YAML, "r", encoding="utf-8") as f:
                 local_config = yaml.safe_load(f) or {}
                 for plugin_name, plugin_data in local_config.items():
+                    # 跳过 agent 专属插件
+                    if plugin_name in agent_plugins:
+                        continue
                     functions = plugin_data.get("functions", {})
                     for func_name, func_data in functions.items():
                         desc = func_data.get("function", {}).get("description", "无描述")

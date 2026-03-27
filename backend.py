@@ -767,7 +767,6 @@ class ProjectCreate(BaseModel):
     refine_mode: bool = False
     judge_mode: bool = False
     is_agent: bool = True
-    available_tools: List[str] = []
 
 
 @app.post("/api/projects")
@@ -781,8 +780,7 @@ async def create_project_endpoint(project: ProjectCreate):
             check_mode=project.check_mode,
             refine_mode=project.refine_mode,
             judge_mode=project.judge_mode,
-            is_agent=project.is_agent,
-            available_tools=project.available_tools
+            is_agent=project.is_agent
         )
         return {"status": "success", "message": msg}
     except Exception as e:
@@ -945,12 +943,10 @@ class TaskCreate(BaseModel):
     title: str
     desc: str
     deliverable: str
-    worker: str
-    judger: str
-    available_tools: List[str]
     prompt: str
     judge_mode: bool = False
     task_histories: str = ""
+    core: str = "core"
 
 
 @app.post("/api/tasks")
@@ -961,12 +957,10 @@ async def create_task_endpoint(task: TaskCreate):
             title=task.title,
             desc=task.desc,
             deliverable=task.deliverable,
-            worker=task.worker,
-            judger=task.judger,
-            available_tools=task.available_tools,
             prompt=task.prompt,
             judge_mode=task.judge_mode,
-            task_histories=task.task_histories
+            task_histories=task.task_histories,
+            core=task.core
         )
         return {"status": "success", "message": msg}
     except Exception as e:
