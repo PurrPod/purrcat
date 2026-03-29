@@ -1,3 +1,9 @@
-from .shell import run_command, close_shell
+from .shell import (
+    execute_command,
+    close_shell,
+)
 
-__all__ = ["run_command", "close_shell"]
+__all__ = [
+    "execute_command",
+    "close_shell"
+]

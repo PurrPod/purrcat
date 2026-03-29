@@ -2,7 +2,7 @@ data/config/*
 
 requirements.txt
 Dockerfile
-sandbox*
+agent_vm/*
 data/checkpoints
 data/buffer
 __pycache__/

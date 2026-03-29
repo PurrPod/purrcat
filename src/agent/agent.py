@@ -31,7 +31,7 @@ def add_message(message: dict):
 
 
 class Agent:
-    def __init__(self, name=None, max_len=150, checkpoint_path="src\\agent\\checkpoint.json", warm_up=None):
+    def __init__(self, name=None, checkpoint_path="src\\agent\\checkpoint.json", warm_up=None):
         if not name:
             with open("data\\config\\model_config.json", "r") as f:
                 name = json.loads(f.read())["agent"]
@@ -137,7 +137,8 @@ class Agent:
                             else:
                                 print("💡 强烈建议终端运行 `pip install json-repair` 来自动修复此问题！")
 
-                    print(f"🔧 助手调起工具: {tool_name}")
+                    args_str = ", ".join([f'{k}={repr(v)}' for k, v in arguments.items()])
+                    print(f"🔧 助手调起工具: {tool_name}({args_str})")
                     target_route = None
                     target_plugin = None
 
@@ -187,7 +188,7 @@ class Agent:
                         self.state = "idle"
                         return
 
-                    print(f"📦 工具回传结果: {result_str[:100]}...")
+                    print(f"📦 工具回传结果: {result_str}")
                     self._append_history({
                         "role": "tool",
                         "tool_call_id": tool_call.id,
@@ -296,7 +297,7 @@ class Agent:
 
     @classmethod
     def load_checkpoint(cls, filepath="src/agent/checkpoint.json", name="[1]openai:deepseek-chat", max_len=150):
-        agent = cls(name=name, max_len=max_len, checkpoint_path=filepath)
+        agent = cls(name=name, checkpoint_path=filepath)
 
         try:
             if not os.path.exists(filepath):

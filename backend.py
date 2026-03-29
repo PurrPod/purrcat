@@ -16,6 +16,8 @@ from contextlib import asynccontextmanager
 from collections import deque
 import yaml
 
+from src.plugins.plugin_collection.shell.shell import DockerManager
+
 # Use absolute paths so the backend can find data/ even if started from a different cwd
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
@@ -43,45 +45,14 @@ async def lifespan(app: FastAPI):
     os.environ.pop("http_proxy", None)
     os.environ.pop("https_proxy", None)
 
-    # 1. 自动初始化基础插件 (仅在首次运行或 local_tool.yaml 丢失时)
-    local_yaml = os.path.join(PLUGIN_COLLECTION_DIR, "local_tool.yaml")
-    if not os.path.exists(local_yaml) or os.path.getsize(local_yaml) < 10:
-        print("首次启动：自动注册核心基础插件...")
-        for tool in ["database", "filesystem", "feishu", "manager", "schedule", "web", "mcptool", "multimodal"]:
-            try:
-                register_plugin(tool)
-            except Exception as e:
-                print(f"自动注册 {tool} 失败: {e}")
-
-    # 2. 构建全局工具注册表 (替代旧版的各种手工加载)
     print("🔄 初始化全局工具注册表...")
     init_tool()
-
-    # Set up filesystem
-    try:
-        config_path = os.path.join(DATA_DIR, "config", "file_config.json")
-        if os.path.exists(config_path):
-            with open(config_path, "r") as f:
-                config = json.load(f)
-                sandbox_dirs = config.get("sandbox_dirs", [])
-            for test_dir in sandbox_dirs:
-                if not os.path.exists(test_dir):
-                    os.makedirs(test_dir, exist_ok=True)
-            set_allowed_directories(sandbox_dirs)
-    except Exception as e:
-        print(f"Error setting up filesystem: {e}")
-
-    try:
-        print(list_special_directories())
-    except Exception as e:
-        print(f"Error listing special directories: {e}")
 
     start_sensors()
 
     _ensure_projects_loaded_from_checkpoints()
     _ensure_tasks_loaded_from_checkpoints()
 
-    # Start Agent in a separate thread
     global agent
     agent = agent_module.Agent.load_checkpoint()
     agent_sensor_task = asyncio.create_task(asyncio.to_thread(agent.sensor))

@@ -1,8 +1,3 @@
-"""
-Agent 专属工具模块
-这些工具仅在 Agent 中可用，不通过 fetch_tool 暴露给 project/task
-"""
-
 import importlib
 import json
 import os
@@ -245,7 +240,6 @@ AGENT_TOOLS = [
 ]
 
 
-# 工具名称到函数的映射
 AGENT_TOOL_FUNCTIONS = {
     "add_project": add_project,
     "answer": answer,
@@ -257,16 +251,6 @@ AGENT_TOOL_FUNCTIONS = {
 
 
 def call_agent_tool(tool_name: str, arguments: dict) -> str:
-    """
-    调用 Agent 专属工具
-
-    Args:
-        tool_name: 工具名称
-        arguments: 工具参数
-
-    Returns:
-        工具执行结果
-    """
     if tool_name not in AGENT_TOOL_FUNCTIONS:
         return _format_response("error", f"未知的 Agent 工具: {tool_name}")
     func = AGENT_TOOL_FUNCTIONS[tool_name]

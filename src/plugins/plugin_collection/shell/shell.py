@@ -1,260 +1,279 @@
-import subprocess
-import threading
-import queue
-import uuid
-import time
-import json
 import os
-import platform
+import sys
+import json
+import uuid
 import re
-import getpass
+import threading
+from typing import Optional, Any
 
+import docker
+import pexpect
+from docker.errors import DockerException, NotFound
 
-class PersistentShellTool:
-    MAX_OUTPUT_CHARS = 20000
+# ==========================================
+# 0. 跨平台兼容层 (Windows / Linux / Mac)
+# ==========================================
 
-    def __init__(self, timeout=60):
-        self.is_windows = platform.system() == "Windows"
-        self.timeout = timeout
-        self.lock = threading.Lock()
+if sys.platform == 'win32':
+    from pexpect.popen_spawn import PopenSpawn
+    SpawnClass = PopenSpawn
+    DOCKER_EXEC_CMD = "docker exec -i {container_name} /bin/bash"
 
-        self._stop_event = threading.Event()
-        self.process = None
-        self.reader_thread = None
-        self.output_queue = None
+    def check_alive(p):
+        """Windows: 通过底层的 subprocess.Popen 检查进程状态"""
+        if p is None: return False
+        return p.proc.poll() is None
 
-        self.username = getpass.getuser()
-        self.hostname = platform.node() or "localhost"
-
-        self.venv_name = ""
-        if "VIRTUAL_ENV" in os.environ:
-            self.venv_name = os.path.basename(os.environ["VIRTUAL_ENV"])
-        elif "CONDA_DEFAULT_ENV" in os.environ:
-            self.venv_name = os.environ["CONDA_DEFAULT_ENV"]
-        self.venv_prefix = f"({self.venv_name}) " if self.venv_name else ""
-
-        self._start_shell()
-
-    def _start_shell(self):
-        if self.process:
-            self._stop_event.set()
-            try:
-                if self.process.stdin: self.process.stdin.close()
-                self.process.kill()
-                self.process.wait(timeout=1)
-            except Exception:
-                pass
-            if self.reader_thread and self.reader_thread.is_alive():
-                self.reader_thread.join(timeout=1)
-
-        self._stop_event.clear()
-        self.output_queue = queue.Queue()
-
-        shell_cmd = (
-            ["powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive"]
-            if self.is_windows else ["/bin/bash"]
-        )
-
-        self.process = subprocess.Popen(
-            shell_cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT, text=True, bufsize=1,
-            encoding="utf-8", errors="replace"
-        )
-
-        if self.is_windows:
-            init_cmd = "function prompt { '' }\n[Console]::OutputEncoding=[Text.UTF8Encoding]::UTF8\n"
-        else:
-            init_cmd = "export PS1=''\n"
-
+    def force_close(p):
+        """Windows: 使用 kill 终止进程"""
+        if p is None: return
         try:
-            self.process.stdin.write(init_cmd)
-            self.process.stdin.flush()
-        except:
-            pass
-
-        self.reader_thread = threading.Thread(target=self._reader, args=(self.process.stdout, self._stop_event),
-                                              daemon=True)
-        self.reader_thread.start()
-
-    def _reader(self, stdout_pipe, stop_event):
-        try:
-            for line in stdout_pipe:
-                if stop_event.is_set(): break
-                self.output_queue.put(line)
+            import signal
+            p.kill(signal.SIGTERM)
         except Exception:
             pass
+else:
+    SpawnClass = pexpect.spawn
+    DOCKER_EXEC_CMD = "docker exec -it {container_name} /bin/bash"
 
-    def _restart_shell_if_needed(self):
-        if self.process.poll() is not None:
-            self._start_shell()
+    def check_alive(p):
+        """Linux/Mac: 直接使用原生的 isalive"""
+        if p is None: return False
+        return p.isalive()
 
-    def _check_dangerous(self, command: str):
-        patterns = [
-            r"rm\s+-[A-Za-z]*r[A-Za-z]*f?[A-Za-z]*\s+(/|/\*|~|~/\*|\*)",
-            r"del\s+/f\s+/s\s+/q",
-            r"format\s+", r"mkfs", r"dd\s+.*of=/dev/", r">\s*/dev/sda",
-            r"shutdown", r"reboot", r"poweroff", r"init\s+0",
-            r":\(\)\{\s*:\|:&\s*\};:",
-            r"^\s*(exit|kill|pkill|killall)\b"
-        ]
-        return any(re.search(p, command.lower()) for p in patterns)
+    def force_close(p):
+        """Linux/Mac: 强制关闭"""
+        if p is None: return
+        p.close(force=True)
 
-    def _check_interactive(self, command: str):
-        strict_int = r'(^|\||&&|;|sudo\s+)\s*(vim|nano|top|htop|ssh|less|more)\b'
-        interp_int = r'(^|\||&&|;|sudo\s+)\s*(python|python3|node|bash|sh)\s*($|\||&&|;)'
-        cmd = command.lower()
-        return bool(re.search(strict_int, cmd) or bool(re.search(interp_int, cmd)))
+# ==========================================
+# 1. 统一的响应格式和懒加载管理
+# ==========================================
 
-    def run(self, command: str):
-        if self._check_dangerous(command):
-            return json.dumps({"type": "warning", "content": f"⚠️ 高危命令已拦截: {command}"}, ensure_ascii=False)
-        if self._check_interactive(command):
-            return json.dumps({"type": "error", "content": f"⚠️ 不支持交互式命令: {command}"}, ensure_ascii=False)
+_docker_manager_instance: Optional['DockerManager'] = None
 
-        with self.lock:
-            self._restart_shell_if_needed()
+
+def _format_response(msg_type: str, content: Any) -> str:
+    """与其他插件一致的返回格式"""
+    return json.dumps({"type": msg_type, "content": content}, ensure_ascii=False)
+
+
+def _get_manager() -> 'DockerManager':
+    """
+    懒加载并包含重试机制：
+    每次调用插件接口时，都会经过此处。它会保证 manager 存在，且尝试 start。
+    如果容器关闭了，start() 会静默拉起，从而实现“先自己试试，不直接报错”的容错。
+    """
+    global _docker_manager_instance
+    if _docker_manager_instance is None:
+        # 注意：这里的镜像和工作区可根据你的实际情况改成从配置文件读取
+        _docker_manager_instance = DockerManager(
+            image="my_agent_env:latest",
+            container_name="agent_computer",
+            workspace_dir=os.path.abspath("./my_project")
+        )
+
+    # 每次获取实例都检测并确保容器处于 running 状态
+    try:
+        _docker_manager_instance.start()
+    except Exception as e:
+        raise RuntimeError(f"Docker 容器唤醒失败: {str(e)}")
+
+    return _docker_manager_instance
+
+
+# ==========================================
+# 2. 提供给大模型 / Agent 的对外接口
+# ==========================================
+
+def execute_command(command: str, session_id: str = "default", timeout: int = 300) -> str:
+    """
+    提供给大模型：在指定的 Shell 会话中执行命令。
+    如果不指定 session_id，则默认使用 'default'。如果该会话不存在，会自动创建。
+    """
+    try:
+        manager = _get_manager()
+        exit_code, output, cwd = manager.execute(session_id, command, timeout)
+
+        result = {
+            "session_id": session_id,
+            "exit_code": exit_code,
+            "output": output,
+            "cwd": cwd
+        }
+
+        # 使用 warning 提示大模型命令可能出错（但仍返回具体报错供它自我修正）
+        if exit_code != 0:
+            return _format_response("warning", result)
+
+        return _format_response("text", result)
+    except Exception as e:
+        return _format_response("error", f"Command execution failed: {str(e)}")
+
+
+def close_shell(session_id: str = "default") -> str:
+    """提供给大模型：关闭并释放指定的 Shell 会话"""
+    try:
+        manager = _get_manager()
+        manager.close_shell(session_id)
+        return _format_response("text", f"Shell session '{session_id}' successfully closed.")
+    except Exception as e:
+        return _format_response("error", f"Failed to close shell: {str(e)}")
+
+
+# ==========================================
+# 3. 核心管理器实现 (包含持久化容器与自动会话逻辑)
+# ==========================================
+
+class DockerManager:
+    def __init__(
+            self,
+            image: str,
+            container_name: str = "agent_computer",
+            workspace_dir: str | None = None,
+    ):
+        if not image:
+            raise ValueError("A Docker image must be provided.")
+        self.client = docker.from_env()
+        self.image = image
+        self.container_name = container_name
+        self.workspace_dir = workspace_dir
+        self.container_workspace = "/workspace"
+        self.container = None
+
+        self.shell_pool = {}  # 格式: { session_id: {"process": SpawnClass, "lock": threading.Lock()} }
+        self.pool_lock = threading.Lock()  # 用于保护 shell_pool 字典本身的增删
+
+    def start(self):
+        """
+        初始化与重试检测逻辑：
+        判断容器 agent_computer 是否存在、是否运行。缺什么补什么。
+        """
+        try:
+            self.container = self.client.containers.get(self.container_name)
+            if self.container.status != "running":
+                self.container.start()
+        except NotFound:
+            run_kwargs = {
+                "name": self.container_name,
+                "command": "sleep infinity",
+                "detach": True,
+                "working_dir": self.container_workspace,
+            }
+            if self.workspace_dir is not None:
+                os.makedirs(self.workspace_dir, exist_ok=True)
+                run_kwargs["volumes"] = {
+                    os.path.abspath(self.workspace_dir): {
+                        "bind": self.container_workspace,
+                        "mode": "rw"
+                    },
+                }
+            self.container = self.client.containers.run(self.image, **run_kwargs)
+        except DockerException as e:
+            raise RuntimeError(f"Docker API error: {e}")
+
+    def stop(self):
+        """关闭后端时的清理钩子：仅关闭会话，不销毁容器，保证后台持久化"""
+        with self.pool_lock:
+            active_session_ids = list(self.shell_pool.keys())
+        for sid in active_session_ids:
+            self.close_shell(sid)
+        self.container = None
+
+    def _ensure_shell(self, session_id: str):
+        """内部方法：确保指定的 session_id 存在，不存在则自动创建"""
+        if not self.container:
+            raise RuntimeError("Container not running.")
+
+        with self.pool_lock:
+            if session_id in self.shell_pool:
+                return  # 已经存在，直接返回
+
+            print(f"[+] Auto-creating new shell session: '{session_id}'")
+            command = DOCKER_EXEC_CMD.format(container_name=self.container.name)
+            try:
+                shell_process = SpawnClass(command, encoding="utf-8", timeout=120)
+                init_cmds = (
+                    "stty -echo\n"
+                    "export PS1=''\n"
+                    "export TERM=dumb\n"
+                    "echo '__SHELL_READY__'\n"
+                )
+                shell_process.sendline(init_cmds)
+                shell_process.expect("__SHELL_READY__", timeout=10)
+
+                self.shell_pool[session_id] = {
+                    "process": shell_process,
+                    "lock": threading.Lock()
+                }
+            except pexpect.exceptions.TIMEOUT:
+                raise RuntimeError("Timeout initializing shell environment.")
+
+    def close_shell(self, session_id: str):
+        with self.pool_lock:
+            session = self.shell_pool.pop(session_id, None)
+
+        if session:
+            with session["lock"]:
+                process = session["process"]
+                if check_alive(process):
+                    force_close(process)
+            print(f"[-] Shell session closed: {session_id}")
+
+    def _restart_shell(self, session_id: str):
+        session = self.shell_pool.get(session_id)
+        if not session:
+            return
+
+        if check_alive(session["process"]):
+            force_close(session["process"])
+
+        command = DOCKER_EXEC_CMD.format(container_name=self.container.name)
+        new_process = SpawnClass(command, encoding="utf-8", timeout=120)
+        new_process.sendline("stty -echo\nexport PS1=''\nexport TERM=dumb\necho '__SHELL_READY__'\n")
+        new_process.expect("__SHELL_READY__", timeout=10)
+        session["process"] = new_process
+
+    def execute(self, session_id: str, command: str, timeout: int = 300) -> tuple[int, str, str]:
+        # 1. 自动检测并创建！
+        self._ensure_shell(session_id)
+
+        # 2. 获取锁定与会话
+        with self.pool_lock:
+            session = self.shell_pool[session_id]
+
+        with session["lock"]:
+            process = session["process"]
+
+            if not check_alive(process):
+                print(f"[yellow]Shell '{session_id}' died. Restarting...[/yellow]")
+                self._restart_shell(session_id)
+                process = session["process"]
 
             marker_id = uuid.uuid4().hex
-            start_marker = f"__START_{marker_id}__"
-            cwd_marker = f"__CWD_{marker_id}__"
-            end_marker = f"__END_{marker_id}__"
+            marker_str = f"__CMD_DONE_{marker_id}__"
+            full_payload = f"{command.strip()}\necho -e \"\\n{marker_str}$?|$(pwd)\""
 
-            if self.is_windows:
-                full_cmd = (
-                    f"Write-Output '{start_marker}'\n"
-                    f"{command}\n"
-                    f"Write-Output '{cwd_marker}'\n"
-                    f"(Get-Location).Path\n"
-                    f"Write-Output '{end_marker}'\n"
-                )
-            else:
-                full_cmd = (
-                    f"echo '{start_marker}'\n"
-                    f"{command}\n"
-                    f"echo '{cwd_marker}'\n"
-                    f"pwd\n"
-                    f"echo '{end_marker}'\n"
-                )
-
-            ignore_echo_lines = {l.strip() for l in command.split('\n') if l.strip()}
-            ignore_echo_lines.update({
-                f"Write-Output '{cwd_marker}'", f"echo '{cwd_marker}'",
-                "(Get-Location).Path", "pwd"
-            })
+            process.sendline(full_payload)
 
             try:
-                self.process.stdin.write(full_cmd)
-                self.process.stdin.flush()
-            except Exception as e:
-                self._start_shell()
-                return json.dumps({"type": "error", "content": f"Shell pipe write failed: {str(e)}"},
-                                  ensure_ascii=False)
-            state = "WAITING_START"
-            output_lines = []
-            cwd = "unknown"
-            start_time = time.time()
-            current_length = 0
-            is_truncated = False
+                process.expect(f"{marker_str}(\\d+)\\|(.*)", timeout=timeout)
+            except pexpect.exceptions.TIMEOUT:
+                partial_output = self._clean_ansi(process.before or "")
+                print(f"[red]⚠️ Shell '{session_id}' timed out. Resetting...[/red]")
+                self._restart_shell(session_id)
+                return -1, f"⚠️ Command timed out after {timeout} seconds.\nPartial Output:\n{partial_output.strip()}", "unknown"
 
-            while True:
-                if time.time() - start_time > self.timeout:
-                    self._start_shell()
-                    return json.dumps(
-                        {"type": "error", "content": f"⚠️ 命令执行超时 ({self.timeout}s)，后台 Shell 已强制重启清理。"},
-                        ensure_ascii=False)
+            exit_code = int(process.match.group(1))
+            cwd = process.match.group(2).strip()
 
-                try:
-                    line = self.output_queue.get(timeout=0.1)
-                except queue.Empty:
-                    continue
+            raw_output = process.before
+            cleaned_output = self._clean_ansi(raw_output).strip()
+            lines = [line for line in cleaned_output.splitlines() if line.strip() != command.strip()]
+            final_output = "\n".join(lines).strip()
 
-                line_str = line.strip()
+            return exit_code, final_output, cwd
 
-                if state == "WAITING_START":
-                    if line_str == start_marker:
-                        state = "READING_OUTPUT"
-                    continue
-
-                elif state == "READING_OUTPUT":
-                    if line_str == cwd_marker:
-                        state = "READING_CWD"
-                        continue
-
-                    if line_str in ignore_echo_lines or line_str.startswith(">> "):
-                        continue
-
-                    if not is_truncated:
-                        output_lines.append(line)
-                        current_length += len(line)
-                        if current_length > self.MAX_OUTPUT_CHARS:
-                            output_lines.append("\n\n...[Output truncated due to size limit]...\n")
-                            is_truncated = True
-
-                elif state == "READING_CWD":
-                    if line_str == end_marker:
-                        break
-                    if line_str:
-                        cwd = line_str
-            final_lines = []
-            for line in output_lines:
-                line_str = line.strip()
-                if (
-                        "__AGENT_MARKER_" in line_str or
-                        "__START_" in line_str or
-                        "__END_" in line_str or
-                        "__CWD_" in line_str or
-                        "Write-Output" in line_str or
-                        line_str.startswith("PS>") or
-                        line_str == command.strip()
-                ):
-                    continue
-                final_lines.append(line)
-
-            cleaned_output = "".join(final_lines).strip()
-
-            content = f"{cleaned_output}".strip()
-            if not cleaned_output.strip():
-                content += "\n(Command executed successfully with no output.)"
-
-            return json.dumps({
-                "type": "shell_output",
-                "content": content
-            }, ensure_ascii=False)
-
-    def close(self):
-        self._stop_event.set()
-        if self.process:
-            try:
-                if self.process.stdin: self.process.stdin.close()
-                if self.process.stdout: self.process.stdout.close()
-                self.process.terminate()
-                self.process.wait(timeout=2)
-            except:
-                try:
-                    self.process.kill()
-                except:
-                    pass
-
-# --- 插件导出接口 ---
-_shell_instance = None
-
-
-def run_command(command: str) -> str:
-    from src.agent.agent import ROOT
-    if not ROOT:
-        return "未被赋予ROOT权限，无法使用shell工具！"
-    global _shell_instance
-    if _shell_instance is None:
-        _shell_instance = PersistentShellTool()
-    return _shell_instance.run(command)
-
-
-def close_shell() -> str:
-    global _shell_instance
-    if _shell_instance is not None:
-        _shell_instance.close()
-        _shell_instance = None
-        return json.dumps({"type": "text", "content": "Shell 会话已成功关闭。"}, ensure_ascii=False)
-    return json.dumps({"type": "text", "content": "没有活跃的 Shell 会话。"}, ensure_ascii=False)
-
-
+    def _clean_ansi(self, text: str) -> str:
+        ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+        return ansi_escape.sub('', text)
