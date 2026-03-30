@@ -159,6 +159,11 @@ class DockerManager:
                 "command": "sleep infinity",
                 "detach": True,
                 "working_dir": self.container_workspace,
+                "environment": {
+                    "HTTP_PROXY": "http://host.docker.internal:7897",
+                    "HTTPS_PROXY": "http://host.docker.internal:7897",
+                    "ALL_PROXY": "socks5://host.docker.internal:7897"
+                }
             }
             if self.workspace_dir is not None:
                 os.makedirs(self.workspace_dir, exist_ok=True)
@@ -171,6 +176,29 @@ class DockerManager:
             self.container = self.client.containers.run(self.image, **run_kwargs)
         except DockerException as e:
             raise RuntimeError(f"Docker API error: {e}")
+        
+        # 复制 data/skill 文件夹到 agent_vm 文件夹
+        import shutil
+        import os
+        skill_dir = os.path.abspath("./data/skill")
+        agent_vm_dir = os.path.abspath("./agent_vm")
+        
+        if os.path.exists(skill_dir):
+            # 确保 agent_vm 文件夹存在
+            os.makedirs(agent_vm_dir, exist_ok=True)
+            
+            # 复制 data/skill 到 agent_vm 文件夹
+            target_dir = os.path.join(agent_vm_dir, "skill")
+            
+            # 先清空目标目录（如果存在）
+            if os.path.exists(target_dir):
+                shutil.rmtree(target_dir)
+            
+            # 复制整个文件夹
+            shutil.copytree(skill_dir, target_dir)
+            print("[+] data/skill 文件夹已成功复制到 agent_vm 文件夹")
+        else:
+            print("[!] data/skill 文件夹不存在，跳过复制")
 
     def stop(self):
         """关闭后端时的清理钩子：仅关闭会话，不销毁容器，保证后台持久化"""

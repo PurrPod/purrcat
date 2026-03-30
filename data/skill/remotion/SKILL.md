@@ -1,3 +1,8 @@
+---
+name: remotion
+description: Use this skills whenever you are dealing with Remotion code to obtain the domain-specific knowledge.
+---
+
 ## When to use
 
 Use this skills whenever you are dealing with Remotion code to obtain the domain-specific knowledge.
