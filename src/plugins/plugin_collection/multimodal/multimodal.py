@@ -6,32 +6,23 @@ import urllib.request
 from typing import List, Union
 
 from openai import OpenAI
-
-# 项目根目录（以便支持不同工作路径启动）
-ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".."))
-CONFIG_PATH = os.path.join(ROOT_DIR, "data", "config", "model_config.json")
-BUFFER_DIR = os.path.join(ROOT_DIR, "data", "buffer")
+from src.utils.config import get_specialized_model, BUFFER_DIR
 
 
 def _get_client(model_type: str):
-    """从 model_config.json 中读取对应模型配置，并构造 OpenAI 客户端。"""
-    if not os.path.exists(CONFIG_PATH):
-        raise FileNotFoundError(f"缺少配置文件：{CONFIG_PATH}")
+    """从 config.yaml 中读取对应模型配置，并构造 OpenAI 客户端。"""
+    info = get_specialized_model(model_type)
+    
+    if not info:
+        raise KeyError(f"配置文件中未找到 '{model_type}' 部分")
 
-    with open(CONFIG_PATH, "r", encoding="utf-8") as config_file:
-        model_config = json.load(config_file)
-
-    if model_type not in model_config:
-        raise KeyError(f"配置文件 {CONFIG_PATH} 中未找到 '{model_type}' 部分")
-
-    info = model_config[model_type]
     name = info.get("name") or ""
     api_key = info.get("api_key") or ""
     base_url = info.get("base_url") or ""
 
     if not name or not api_key or not base_url:
         raise ValueError(
-            f"请在 {CONFIG_PATH} 中补充 '{model_type}' 的 name/api_key/base_url 信息。"
+            f"请在 config.yaml 中补充 '{model_type}' 的 name/api_key/base_url 信息。"
         )
 
     client = OpenAI(api_key=api_key, base_url=base_url)

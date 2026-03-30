@@ -3,11 +3,11 @@ import threading
 import lark_oapi as lark
 from lark_oapi.api.im.v1 import *
 from src.agent.agent import add_message, MESSAGE_QUEUE
+from src.utils.config import get_feishu_config
 
-with open("data/config/feishu_config.json", "r", encoding="utf-8") as f:
-    config = json.load(f)
-APP_ID = config["APP_ID"]
-APP_SECRET = config["APP_SECRET"]
+feishu_config = get_feishu_config()
+APP_ID = feishu_config.get("app_id", "")
+APP_SECRET = feishu_config.get("app_secret", "")
 
 # 用于保存 cat-in-cup 的 Agent 实例
 GLOBAL_AGENT = None
@@ -71,9 +71,8 @@ def _format_response(msg_type: str, content: Any) -> str:
 
 
 def send_feishu_message(text: str, mode: str = "continue") -> str:
-    with open("data/config/feishu_config.json", "r", encoding="utf-8") as f:
-        config = json.load(f)
-    receive_id = config["CHAT_ID"]
+    feishu_config = get_feishu_config()
+    receive_id = feishu_config.get("chat_id", "")
     receive_id_type = "chat_id"
     try:
         req = CreateMessageRequest.builder() \

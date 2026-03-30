@@ -98,12 +98,11 @@ class RSSListener:
 
 
 if __name__ == "__main__":
-    config_path = "../../data/config/rss_config.json"
-    if os.path.exists(config_path):
-        with open(config_path, 'r', encoding='utf-8') as f:
-            my_config = json.load(f)
-        listener = RSSListener(my_config)
+    from src.utils.config import get_rss_subscriptions
+    rss_config = get_rss_subscriptions()
+    if rss_config:
+        listener = RSSListener(rss_config)
         result_text = listener.check_all()
         print(result_text)
     else:
-        print("未找到配置文件！")
+        print("未找到 RSS 配置！")

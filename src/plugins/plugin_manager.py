@@ -4,9 +4,7 @@ import yaml
 from src.plugins.agent_tool import call_agent_tool
 from pathlib import Path
 from typing import Dict, List, Optional, Any
-
-LOCAL_TOOL_YAML = os.path.join(os.path.dirname(__file__), "plugin_collection", "local_tool.yaml")
-TOOL_INDEX_FILE = os.path.join(os.path.dirname(__file__), "tool.jsonl")
+from src.utils.config import LOCAL_TOOL_YAML, TOOL_INDEX_FILE
 
 # 配置缓存
 CONFIG_DATA = {}

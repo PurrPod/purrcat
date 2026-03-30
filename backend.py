@@ -28,6 +28,7 @@ from src.agent import agent as agent_module
 from src.models import project as project_module
 from src.models import task as task_module
 from src.plugins.plugin_collection.filesystem.filesystem import set_allowed_directories, list_special_directories
+from src.utils.config import load_config, get_model_config_json, get_mcp_config_json, get_feishu_config, get_rss_subscriptions, get_web_api_config, reload_config
 
 # ====== 拥抱新架构：引入新版工具管理器 ======
 from src.plugins.plugin_manager import init_tool, TOOL_INDEX_FILE, BASE_TOOLS
@@ -940,25 +941,45 @@ async def create_task_endpoint(task: TaskCreate):
 
 @app.get("/api/config")
 async def get_config():
-    config_dir = "data/config"
+    """获取配置 - 优先从 config.yaml 读取，兼容旧版 JSON 配置"""
     configs = {}
-    if os.path.exists(config_dir):
-        for filename in os.listdir(config_dir):
-            if filename.endswith(".json"):
-                with open(os.path.join(config_dir, filename), "r", encoding="utf-8") as f:
-                    configs[filename] = json.load(f)
+    
+    # 从 config.yaml 读取主要配置
+    try:
+        # model_config.json 格式（兼容旧代码）
+        configs['model_config.json'] = get_model_config_json()
+        # mcp_config.json 格式
+        configs['mcp_config.json'] = get_mcp_config_json()
+        # feishu_config.json 格式
+        feishu = get_feishu_config()
+        configs['feishu_config.json'] = {
+            "APP_ID": feishu.get("app_id", ""),
+            "APP_SECRET": feishu.get("app_secret", ""),
+            "CHAT_ID": feishu.get("chat_id", "")
+        }
+        # rss_config.json 格式
+        rss_list = get_rss_subscriptions()
+        configs['rss_config.json'] = [{"name": r["name"], "rss_url": r["url"]} for r in rss_list]
+        # web_config.json 格式
+        web = get_web_api_config()
+        configs['web_config.json'] = {"TAVILY_API_KEY": web.get("tavily_api_key", "")}
+    except Exception as e:
+        print(f"[Config] 从 config.yaml 读取配置失败: {e}")
+        # 回退到读取 JSON 文件
+        config_dir = "data/config"
+        if os.path.exists(config_dir):
+            for filename in os.listdir(config_dir):
+                if filename.endswith(".json"):
+                    with open(os.path.join(config_dir, filename), "r", encoding="utf-8") as f:
+                        configs[filename] = json.load(f)
+    
     return configs
 
 
 def _load_schedule_paths():
-    try:
-        with open("data/config/config.json", "r", encoding="utf-8") as f:
-            cfg = json.load(f)
-        schedule_file = cfg.get("schedule_daily", "data/schedule/schedule.json")
-        cron_file = cfg.get("schedule_cron", "data/schedule/cron.json")
-    except Exception:
-        schedule_file = "data/schedule/schedule.json"
-        cron_file = "data/schedule/cron.json"
+    """加载调度文件路径 - 使用固定路径"""
+    schedule_file = "data/schedule/schedule.json"
+    cron_file = "data/schedule/cron.json"
     return schedule_file, cron_file
 
 
@@ -1066,11 +1087,64 @@ async def update_cron_endpoint(item_id: str, updates: dict):
 
 @app.post("/api/config/{filename}")
 async def update_config(filename: str, config: Dict[str, Any]):
+    """更新配置 - 同时更新 config.yaml 和对应的 JSON 文件（兼容旧代码）"""
     if not filename.endswith(".json"):
         filename += ".json"
+    
+    # 同时写入 JSON 文件（兼容旧代码）
     file_path = os.path.join(DATA_DIR, "config", filename)
     with open(file_path, "w", encoding="utf-8") as f:
         json.dump(config, f, indent=4, ensure_ascii=False)
+    
+    # 尝试更新 config.yaml
+    try:
+        yaml_config = load_config()
+        
+        if filename == "model_config.json":
+            # 更新模型配置
+            if "models" in config:
+                yaml_config["models"] = config["models"]
+            if "agent" in config:
+                yaml_config["agent_model"] = config["agent"]
+            # 更新专用模型
+            for key in ["image_generator", "image_converter", "video_generator", 
+                       "audio_generator", "audio_converter", "video_converter"]:
+                if key in config:
+                    yaml_config.setdefault("specialized_models", {})[key] = config[key]
+            if "embedding_model" in config:
+                yaml_config["embedding_model"] = config["embedding_model"]
+                
+        elif filename == "feishu_config.json":
+            yaml_config["feishu"] = {
+                "app_id": config.get("APP_ID", ""),
+                "app_secret": config.get("APP_SECRET", ""),
+                "chat_id": config.get("CHAT_ID", "")
+            }
+            
+        elif filename == "mcp_config.json":
+            yaml_config["mcp_servers"] = config.get("mcpServers", {})
+            
+        elif filename == "rss_config.json":
+            yaml_config["rss_subscriptions"] = [
+                {"name": item["name"], "url": item["rss_url"]} 
+                for item in config
+            ]
+            
+        elif filename == "web_config.json":
+            yaml_config["web_api"] = {"tavily_api_key": config.get("TAVILY_API_KEY", "")}
+        
+        # 写回 config.yaml
+        yaml_path = os.path.join(DATA_DIR, "config", "config.yaml")
+        with open(yaml_path, "w", encoding="utf-8") as f:
+            yaml.dump(yaml_config, f, allow_unicode=True, sort_keys=False)
+        
+        # 清除配置缓存
+        reload_config()
+        
+    except Exception as e:
+        print(f"[Config] 更新 config.yaml 失败: {e}")
+        # 继续返回成功，因为 JSON 文件已更新
+    
     return {"status": "success"}
 
 

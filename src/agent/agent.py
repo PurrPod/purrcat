@@ -5,8 +5,11 @@ import threading
 from queue import PriorityQueue, Empty
 from src.loader.memory import Memory
 from src.models.model import Model
-from src.plugins.plugin_manager import BASE_TOOLS, parse_tool, TOOL_INDEX_FILE
+from src.plugins.plugin_manager import BASE_TOOLS, parse_tool
 from src.plugins.agent_tool import AGENT_TOOLS
+from src.utils.config import (
+    get_agent_model, SOUL_MD_PATH, CHECKPOINT_PATH, TOOL_INDEX_FILE
+)
 
 from json_repair import repair_json
 
@@ -31,25 +34,24 @@ def add_message(message: dict):
 
 
 class Agent:
-    def __init__(self, name=None, checkpoint_path="src\\agent\\checkpoint.json", warm_up=None):
+    def __init__(self, name=None, checkpoint_path=None, warm_up=None):
         if not name:
-            with open("data\\config\\model_config.json", "r") as f:
-                name = json.loads(f.read())["agent"]
+            name = get_agent_model()
         self.name = name
         self.state = "idle"
         self.client = Model(self.name).client
-        with open("src/agent/SOUL.md", "r") as f:
+        with open(SOUL_MD_PATH, "r", encoding="utf-8") as f:
             soul_md = f.read()
         self.system_prompt = soul_md
         self.current_history = [{"role": "system", "content": self.system_prompt}]
         self.max_len = 150
         self.memory = Memory()
-        self.checkpoint_path = checkpoint_path
+        self.checkpoint_path = checkpoint_path or CHECKPOINT_PATH
         self.pending_force_push = None
         self._stop_event = threading.Event()
         self.dynamic_tools = []
         if warm_up:
-            with open(warm_up, "r") as f:
+            with open(warm_up, "r", encoding="utf-8") as f:
                 warm_up_content = json.loads(f.read())
                 self.current_history.extend(warm_up_content)
 

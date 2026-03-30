@@ -2,11 +2,7 @@ import json
 import os
 import uuid
 from typing import Any
-
-with open("data/config/config.json", "r") as f:
-    config = json.load(f)
-SCHEDULE_FILE = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../..", config["schedule_daily"]))
-CRON_FILE = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../..", config["schedule_cron"]))
+from src.utils.config import SCHEDULE_FILE, CRON_FILE
 USER_REPLY_FUTURES = {}
 def _ensure_file(filepath):
     os.makedirs(os.path.dirname(filepath), exist_ok=True)

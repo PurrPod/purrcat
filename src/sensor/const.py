@@ -4,6 +4,7 @@ import os
 import threading
 import datetime
 from src.agent.agent import add_message
+from src.utils.config import CRON_FILE, SCHEDULE_FILE
 
 
 def heartbeat():
@@ -13,10 +14,9 @@ def heartbeat():
 
 
 def clock_sensor():
-    with open("data/config/config.json", "r") as f:
-        config = json.load(f)
-    cron_file = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../", config["schedule_cron"]))
-    schedule_file = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../", config["schedule_daily"]))
+    # 使用固定路径
+    cron_file = CRON_FILE
+    schedule_file = SCHEDULE_FILE
     while True:
         now = datetime.datetime.now()
         current_time = now.strftime("%H:%M")

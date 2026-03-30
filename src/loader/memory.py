@@ -1,12 +1,12 @@
 import json
 import time
 from pathlib import Path
+from src.utils.config import MEMORY_DIR
 
 class Memory:
-    def __init__(self, memory_base_dir="data/memory"):
-        with open("data/config/config.json", "r") as f:
-            config = json.load(f)
-        self.memory_base_dir = Path(config.get("memory_base", memory_base_dir))
+    def __init__(self, memory_base_dir=None):
+        # 使用固定路径
+        self.memory_base_dir = Path(memory_base_dir) if memory_base_dir else Path(MEMORY_DIR)
         self.date = time.strftime("%Y-%m-%d", time.localtime())
         self.month_str = "-".join(self.date.split("-")[:2]) if self.date else None  # 提取出 "2026-03"
         self._resolve_path()

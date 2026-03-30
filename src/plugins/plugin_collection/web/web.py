@@ -17,9 +17,9 @@ with warnings.catch_warnings():
         except ImportError:
             DDGS = None
 
-with open("data\config\web_config.json", "r", encoding="utf-8") as f:
-    config = json.load(f)
-os.environ["TAVILY_API_KEY"] = config["TAVILY_API_KEY"]
+from src.utils.config import get_web_api_config, BUFFER_DIR
+web_config = get_web_api_config()
+os.environ["TAVILY_API_KEY"] = web_config.get("tavily_api_key", "")
 _tool_instance = None
 
 
@@ -30,7 +30,7 @@ def _format_response(msg_type: str, content: Any) -> str:
 def get_tool():
     global _tool_instance
     if _tool_instance is None:
-        _tool_instance = WebTools(buffer_path=os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))),"data", "buffer"))
+        _tool_instance = WebTools(buffer_path=BUFFER_DIR)
     return _tool_instance
 
 

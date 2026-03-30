@@ -55,9 +55,8 @@ class RAGRetriever:
     """RAG 全局检索器"""
     def __init__(self, base_dir: str = "data/database", model_name: str = None):
         if not model_name:
-            with(open(f"data\\config\\config.json", 'r', encoding='utf-8')) as f:
-                json_config = json.load(f)
-                model_name = json_config["embedding_model"]
+            from src.utils.config import get_embedding_model
+            model_name = get_embedding_model()
         # 延迟加载嵌入模型
         self.model_name = model_name
         self.model = None

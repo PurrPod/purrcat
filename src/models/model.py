@@ -2,6 +2,7 @@ import json
 import os
 
 from openai import OpenAI
+from src.utils.config import get_models_config
 
 MODEL_POOL = [
     {"model_name":"openai:deepseek-chat", "state":"idle"}
@@ -17,28 +18,18 @@ class Model:
             raise ValueError("模型名（name）不能为空")
         self.name = name.strip()
 
-        if config_path is None:
-            with open("data/config/config.json", "r", encoding="utf-8") as f:
-                main_config = json.load(f)
-            config_path = main_config["model_config"]
-
-
-        if not os.path.exists(config_path):
-            raise FileNotFoundError(f"Config file not found: {config_path}. Please create it.")
-        with open(config_path, "r", encoding="utf-8") as f:
-            config = json.load(f)
-        models_config = config.get("models", {})
+        # 使用新的配置模块获取模型配置
+        models_config = get_models_config()
+        
         if self.name not in models_config:
-            raise ValueError(f"Configuration for core '{self.name}' not found in {config_path}!")
+            raise ValueError(f"Configuration for core '{self.name}' not found in config.yaml!")
         model_info = models_config[self.name]
         api_key = model_info.get("api_key")
         base_url = model_info.get("base_url")
         if not api_key:
             raise ValueError(f"Core '{self.name}' is missing the 'api_key' configuration!")
         self.client = OpenAI(api_key=api_key, base_url=base_url)
-
-
-        self.desc = config.get("description")
+        self.desc = ""
         self.busy = False
         self.task_name = None
         self.task_id = None
@@ -60,28 +51,13 @@ class Model:
             f"Model(name={self.name!r}, description={self.desc!r}"
         )
 
-def add_model_to_config(model_name,api_key,base_url,desc="LLM",config_path="data/config/model_config.json"):
-    try:
-        with open(config_path, "r", encoding="utf-8") as f:
-            config = json.load(f)
-            config[model_name] = {"description":desc, "api_key": api_key, "base_url": base_url}
-            f.write(json.dumps(config))
-    except Exception as e:
-        return False
-    return True
+def add_model_to_config(model_name, api_key, base_url, desc="LLM", config_path=None):
+    """添加新模型到配置（使用 config.yaml）"""
+    from src.utils.config import add_model_to_config as _add_model
+    return _add_model(model_name, api_key, base_url, desc)
 
-def remove_model_from_config(model_name, config_path="data/config/model_config.json"):
-    try:
-        with open(config_path, "r+", encoding="utf-8") as f:
-            config = json.load(f)
-            if "models" in config and model_name in config["models"]:
-                del config["models"][model_name]
-                f.seek(0)
-                json.dump(config, f, indent=4)
-                f.truncate()
-            else:
-                return False
-    except Exception as e:
-        return False
-    return True
+def remove_model_from_config(model_name, config_path=None):
+    """从配置中删除模型（使用 config.yaml）"""
+    from src.utils.config import remove_model_from_config as _remove_model
+    return _remove_model(model_name)
 

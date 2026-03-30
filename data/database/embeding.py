@@ -115,10 +115,9 @@ def main():
     parser.add_argument("--base_dir", type=str, default="data/database", help="数据库根目录")
     parser.add_argument("--batch_size", type=int, default=500, help="每批次落盘的数据量")
     args = parser.parse_args()
-    with open("data\\config\\config.json", 'r', encoding='utf-8') as f:
-        config = json.load(f)
     if not args.model:
-        args.model = config["embedding_model"]
+        # 使用默认 embedding 模型
+        args.model = "BAAI/bge-small-zh-v1.5"
     db_dir = os.path.join(args.base_dir, args.db_name)
     md_path = os.path.join(db_dir, f"{args.db_name}.md")
     json_path = os.path.join(db_dir, f"{args.db_name}.json")

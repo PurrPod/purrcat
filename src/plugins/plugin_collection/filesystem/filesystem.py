@@ -7,28 +7,29 @@ import subprocess
 import ast
 import itertools
 from typing import Optional, Any, List
+from src.utils.config import FILE_CONFIG_PATH
 
 MAX_READ_WINDOW = 200
 MAX_EDITABLE_FILE_SIZE = 5 * 1024 * 1024
 MAX_MEDIA_SIZE = 20 * 1024 * 1024
-file_config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))), "data\\config\\file_config.json")
+
 try:
-    with open(file_config_path, "r", encoding="utf-8") as f:
+    with open(FILE_CONFIG_PATH, "r", encoding="utf-8") as f:
         config = json.load(f)
 except (FileNotFoundError, json.JSONDecodeError):
     config = {
-        "sandbox_dirs": ["sandbox", "sandbox1", "sandbox2", "data/skill/remotion", "src/agent/core"],
+        "sandbox_dirs": ["sandbox/", "agent_vm/"],
         "skill_dir": ["data/skill"],
         "dont_read_dirs": ["src/"]
     }
     # Ensure directory exists and write default config
-    os.makedirs(os.path.dirname(file_config_path), exist_ok=True)
-    with open(file_config_path, "w", encoding="utf-8") as f:
+    os.makedirs(os.path.dirname(FILE_CONFIG_PATH), exist_ok=True)
+    with open(FILE_CONFIG_PATH, "w", encoding="utf-8") as f:
         json.dump(config, f, indent=4)
 
-_SANDBOX_DIRS: List[str] = config.get("sandbox_dirs", [])
-_SKILL_DIRS: List[str] = config.get("skill_dir", [])
-_DONT_READ_DIRS: List[str] = config.get("dont_read_dirs", [])
+_SANDBOX_DIRS: List[str] = [os.path.abspath(d) for d in config.get("sandbox_dirs", [])]
+_SKILL_DIRS: List[str] = [os.path.abspath(d) for d in config.get("skill_dir", [])]
+_DONT_READ_DIRS: List[str] = [os.path.abspath(d) for d in config.get("dont_read_dirs", [])]
 def _get_allow(action: str, path: str) -> bool:
     abs_path = os.path.abspath(path)
     if action == "read":
@@ -47,13 +48,26 @@ def set_allowed_directories(directories: List[str]) -> str:
     global _SANDBOX_DIRS
     # Use a set to deduplicate paths and only store absolute paths
     new_dirs = set(_SANDBOX_DIRS)
+    added = []
+    skipped = []
     for d in directories:
-        new_dirs.add(os.path.abspath(d))
+        abs_path = os.path.abspath(d)
+        if os.path.exists(abs_path) and os.path.isdir(abs_path):
+            if abs_path not in new_dirs:
+                new_dirs.add(abs_path)
+                added.append(abs_path)
+        else:
+            skipped.append(d)
     _SANDBOX_DIRS = sorted(list(new_dirs))
     config["sandbox_dirs"] = _SANDBOX_DIRS
-    with open(file_config_path, "w", encoding="utf-8") as f:
+    with open(FILE_CONFIG_PATH, "w", encoding="utf-8") as f:
         json.dump(config, f, indent=4, ensure_ascii=False)
-    return _format_response("text", f"sandbox directories set to: {_SANDBOX_DIRS}")
+    message = f"sandbox directories set to: {_SANDBOX_DIRS}"
+    if added:
+        message += f"\nAdded: {added}"
+    if skipped:
+        message += f"\nSkipped (do not exist): {skipped}"
+    return _format_response("text", message)
 
 def list_special_directories() -> str:
     result = {"sandbox_dirs": _SANDBOX_DIRS, "skill_dir": _SKILL_DIRS, "dont_read_dirs": _DONT_READ_DIRS}
@@ -129,7 +143,7 @@ def parse_document(path: str) -> str:
             return _format_response("warning","Parsed successfully, but the document appears to be empty or contains no extractable text.")
         max_chars = 15000
         if len(text_content) > max_chars:
-            buffer_dir = os.path.abspath(os.path.join(os.path.dirname(file_config_path), "..", "buffer"))
+            buffer_dir = os.path.abspath(os.path.join(os.path.dirname(FILE_CONFIG_PATH), "..", "buffer"))
             os.makedirs(buffer_dir, exist_ok=True)
             marker_id = uuid.uuid4().hex[:8]
             timestamp = datetime.datetime.now().strftime("%Y%m%d")

@@ -10,9 +10,7 @@ from contextlib import AsyncExitStack
 from typing import Any, List, Dict
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
-
-
-CONFIG_PATH = "data\\config\\mcp_config.json"
+from src.utils.config import get_mcp_servers
 
 
 def _format_response(msg_type: str, content: Any) -> str:
@@ -20,12 +18,8 @@ def _format_response(msg_type: str, content: Any) -> str:
 
 
 def load_configs() -> dict:
-    if not os.path.exists(CONFIG_PATH):
-        return {}
     try:
-        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            return data.get("mcpServers", {})
+        return get_mcp_servers()
     except Exception as e:
         print(f"[MCP 网关] 加载配置文件失败: {e}")
         return {}

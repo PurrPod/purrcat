@@ -1,8 +1,6 @@
 import os
 import yaml
-
-LOCAL_TOOL_YAML = os.path.join(os.path.dirname(__file__), "local_tool.yaml")
-PLUGIN_COLLECTION_DIR = os.path.dirname(__file__)
+from src.utils.config import LOCAL_TOOL_YAML, PLUGIN_COLLECTION_DIR
 
 
 def init_local_config_data():

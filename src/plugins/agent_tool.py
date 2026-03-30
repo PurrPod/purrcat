@@ -6,6 +6,7 @@ import uuid
 from typing import Any
 
 from src.models.task import Task
+from src.utils.config import get_models_config
 
 
 def _format_response(msg_type: str, content: Any) -> str:
@@ -120,10 +121,8 @@ def check_pending_questions() -> str:
 
 def list_worker() -> str:
     """获取当前所有可用的工人及其描述的清单。"""
-    with open(os.path.join(os.getcwd(), "data", "config", "model_config.json"), "r") as f:
-        json_config = json.load(f)
-        json_config = json_config["models"]
-    model_list = [f"\"{model_name}\" | {json_config[model_name]['description']}\n" for model_name in json_config.keys()]
+    models = get_models_config()
+    model_list = [f"\"{model_name}\" | {models[model_name]['description']}\n" for model_name in models.keys()]
     if not model_list:
         return _format_response("text", "无可用工人")
     return _format_response("text", "".join(model_list))
