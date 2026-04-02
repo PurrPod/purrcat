@@ -54,6 +54,7 @@ class Task:
         self.current_plan = ""
         self.history.append({"role": "system", "content": self.system_prompt})
         self.history.append({"role": "user", "content": f"[User Request]: \n{self.prompt}\n"})
+        self.token_usage = 0
         if not TASK_INSTANCES.get(self.task_id, None):
             TASK_INSTANCES[self.task_id] = self
         self.log_and_notify("system", "🧾 已加载统一 Agent 工作流上下文")
@@ -67,6 +68,7 @@ class Task:
             self.step += 1
             try:
                 response = self._run_llm_step()
+                self._track_token_usage(response)
                 tool_calling = self._extract_tool_calling(response)
                 if not tool_calling:
                     self.history.append({"role":"user","content":"检测到你没有使用任何工具，如已完成，必须使用task_done工具结束任务，如未完成，请继续"})
@@ -94,7 +96,7 @@ class Task:
             self.state = "error"
             self.save_checkpoint()
             self.log_and_notify("error", f"❌ 任务失败: 超出最大思考步数 ({max_steps})")
-            return "renwushibai"
+            return f"❌ 任务失败: 超出最大思考步数 ({max_steps})"
 
     def save_checkpoint(self):
         checkpoint_dir = os.path.join("data", "checkpoints", "task", f"{self.task_name}_{self.create_time}")
@@ -115,7 +117,8 @@ class Task:
             "state": self.state,
             "dynamic_tool": self.dynamic_tool,
             "current_plan": self.current_plan,
-            "step": self.step
+            "step": self.step,
+            "token_usage": self.token_usage,
         }
         with open(checkpoint_path, "w", encoding="utf-8") as f:
             json.dump(state, f, ensure_ascii=False, indent=2)
@@ -132,6 +135,7 @@ class Task:
                 core="openai:gpt-4o",
             )
             task.state = state.get("state", None)
+            task.token_usage = state.get("token_usage", 0)
             task.creat_time = state.get("creat_time", task.creat_time)
             task.dynamic_tools = state.get("dynamic_tool", [])
             task.system_prompt = state.get("system_prompt", None)
@@ -143,7 +147,6 @@ class Task:
         except Exception as e:
             print(f"❌ [Task Checkpoint] 加载失败 {checkpoint_dir}: {e}")
             return None
-
     def _run_llm_step(self):
         """完全解耦的 LLM 请求封装"""
         model_name = self.core.split(":")[-1] if ':' in self.core else self.core
@@ -331,6 +334,22 @@ class Task:
                 "name": tool_name,
                 "content": result_str
             })
+
+    def _track_token_usage(self, response) -> dict:
+        usage_data = {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0  # 本轮总共消耗的 token
+        }
+
+        # 提取 OpenAI SDK 对象的 usage 属性
+        if hasattr(response, "usage") and response.usage is not None:
+            usage_data["prompt_tokens"] = response.usage.prompt_tokens
+            usage_data["completion_tokens"] = response.usage.completion_tokens
+            usage_data["total_tokens"] = response.usage.total_tokens
+        self.token_usage += usage_data["prompt_tokens"]
+        return usage_data
+
     
     
 
