@@ -25,10 +25,26 @@ PLUGIN_COLLECTION_DIR = Path(os.path.join(BASE_DIR, "src", "plugins", "plugin_co
 
 # Import existing logic
 from src.agent import agent as agent_module
-from src.models import project as project_module
 from src.models import task as task_module
 from src.plugins.plugin_collection.filesystem.filesystem import set_allowed_directories, list_special_directories
 from src.utils.config import load_config, get_model_config_json, get_mcp_config_json, get_feishu_config, get_rss_subscriptions, get_web_api_config, reload_config
+
+# 确保task_module中有必要的变量和函数
+if not hasattr(task_module, 'TASK_POOL'):
+    task_module.TASK_POOL = []
+
+if not hasattr(task_module, 'delete_task'):
+    def delete_task(task_id):
+        if hasattr(task_module, 'TASK_INSTANCES') and task_id in task_module.TASK_INSTANCES:
+            del task_module.TASK_INSTANCES[task_id]
+        if hasattr(task_module, 'TASK_POOL'):
+            task_module.TASK_POOL = [t for t in task_module.TASK_POOL if t.get('id') != task_id]
+        if hasattr(task_module, 'dirty_tasks') and hasattr(task_module, 'task_set_lock'):
+            with task_module.task_set_lock:
+                if task_id in task_module.dirty_tasks:
+                    task_module.dirty_tasks.remove(task_id)
+        return True
+    task_module.delete_task = delete_task
 
 # ====== 拥抱新架构：引入新版工具管理器 ======
 from src.plugins.plugin_manager import init_tool, TOOL_INDEX_FILE, BASE_TOOLS
@@ -51,7 +67,6 @@ async def lifespan(app: FastAPI):
 
     start_sensors()
 
-    _ensure_projects_loaded_from_checkpoints()
     _ensure_tasks_loaded_from_checkpoints()
 
     global agent
@@ -176,59 +191,7 @@ async def summarize_memory():
     return {"status": "success"}
 
 
-def _ensure_projects_loaded_from_checkpoints():
-    base_dir = os.path.join(DATA_DIR, "checkpoints", "project")
-    if not os.path.isdir(base_dir):
-        return
 
-    existing_ids = {p.get("id") for p in project_module.PROJECT_POOL}
-
-    for entry in os.listdir(base_dir):
-        checkpoint_path = os.path.join(base_dir, entry, "checkpoint.json")
-        if not os.path.isfile(checkpoint_path):
-            continue
-        try:
-            with open(checkpoint_path, "r", encoding="utf-8") as f:
-                state = json.load(f)
-        except Exception:
-            continue
-
-        project_id = state.get("id")
-        if not project_id or project_id in existing_ids:
-            continue
-
-        now_iso = datetime.datetime.now().isoformat()
-        progress = 0
-        stage_histories = state.get('stage_histories', {})
-        if 'summary' in stage_histories:
-            progress = 100
-        elif 'second_run_tasks' in stage_histories:
-            progress = 75
-        elif 'first_run_tasks' in stage_histories:
-            progress = 50
-        elif 'slice_tasks' in stage_histories:
-            progress = 25
-        else:
-            progress = 10
-
-        project_record = {
-            "name": state.get("name", "Unknown"),
-            "id": project_id,
-            "state": state.get("state", "completed"),
-            "creat_time": state.get("creat_time", entry.split("_")[-1] if "_" in entry else ""),
-            "core": state.get("core"),
-            "available_tools": state.get("available_tools", []),
-            "available_workers": state.get("available_workers", []),
-            "check_mode": state.get("check_mode", False),
-            "refine_mode": state.get("refine_mode", False),
-            "judge_mode": state.get("judge_mode", False),
-            "is_agent": state.get("is_agent", False),
-            "progress": progress,
-            "createdAt": now_iso,
-            "updatedAt": now_iso,
-        }
-        project_module.PROJECT_POOL.append(project_record)
-        existing_ids.add(project_id)
 
 
 def _ensure_tasks_loaded_from_checkpoints():
@@ -246,28 +209,18 @@ def _ensure_tasks_loaded_from_checkpoints():
             task = task_module.Task.load_checkpoint(checkpoint_path)
             if task and task.task_id not in existing_ids:
                 task_module.TASK_POOL.append({
-                    "name": task.name,
+                    "name": getattr(task, 'name', task.task_name),
                     "id": task.task_id,
                     "state": task.state if hasattr(task, 'state') else "completed",
-                    "progress": 100 if task.run_result else 50,
-                    "creat_time": task.creat_time,
+                    "progress": 100 if hasattr(task, 'run_result') and task.run_result else 50,
+                    "creat_time": getattr(task, 'creat_time', getattr(task, 'create_time', '')),
                 })
                 existing_ids.add(task.task_id)
         except Exception:
             pass
 
 
-@app.get("/api/projects")
-async def get_projects():
-    _ensure_projects_loaded_from_checkpoints()
-    projects = []
-    for p in project_module.PROJECT_POOL:
-        project_data = p.copy()
-        instance = project_module.PROJECT_INSTANCES.get(p["id"])
-        if instance:
-            project_data["history"] = instance.current_history
-        projects.append(project_data)
-    return projects
+
 
 
 def _ensure_tasks_loaded_from_logs():
@@ -351,80 +304,14 @@ async def get_tasks():
     return list(task_map.values())
 
 
-PROJECT_LOG_PATH_CACHE: Dict[str, str] = {}
-PROJECT_CHECKPOINT_PATH_CACHE: Dict[str, str] = {}
 LOG_READ_LOCK = threading.Lock()
-PROJECT_LOG_READ_CACHE: Dict[str, Dict[str, Any]] = {}
 TASK_LOG_READ_CACHE: Dict[str, Dict[str, Any]] = {}
 
 
-def _resolve_project_log_path(project_id: str) -> Optional[str]:
-    cached = PROJECT_LOG_PATH_CACHE.get(project_id)
-    if cached:
-        return cached
-
-    instance = project_module.PROJECT_INSTANCES.get(project_id)
-    if instance:
-        log_dir = os.path.join(DATA_DIR, "checkpoints", "project", f"{instance.name}_{instance.creat_time}")
-        log_path = os.path.join(log_dir, "log.jsonl")
-        PROJECT_LOG_PATH_CACHE[project_id] = log_path
-        return log_path
-
-    base_dir = os.path.join(DATA_DIR, "checkpoints", "project")
-    if not os.path.isdir(base_dir):
-        return None
-
-    try:
-        for entry in os.listdir(base_dir):
-            checkpoint_path = os.path.join(base_dir, entry, "checkpoint.json")
-            if not os.path.isfile(checkpoint_path):
-                continue
-            try:
-                with open(checkpoint_path, "r", encoding="utf-8") as f:
-                    state = json.load(f)
-                if state.get("id") == project_id:
-                    log_path = os.path.join(base_dir, entry, "log.jsonl")
-                    PROJECT_LOG_PATH_CACHE[project_id] = log_path
-                    return log_path
-            except Exception:
-                continue
-    except Exception:
-        return None
-    return None
 
 
-def _resolve_project_checkpoint_path(project_id: str) -> Optional[str]:
-    cached = PROJECT_CHECKPOINT_PATH_CACHE.get(project_id)
-    if cached:
-        return cached
 
-    instance = project_module.PROJECT_INSTANCES.get(project_id)
-    if instance:
-        checkpoint_dir = os.path.join(DATA_DIR, "checkpoints", "project", f"{instance.name}_{instance.creat_time}")
-        checkpoint_path = os.path.join(checkpoint_dir, "checkpoint.json")
-        PROJECT_CHECKPOINT_PATH_CACHE[project_id] = checkpoint_path
-        return checkpoint_path
 
-    base_dir = os.path.join(DATA_DIR, "checkpoints", "project")
-    if not os.path.isdir(base_dir):
-        return None
-
-    try:
-        for entry in os.listdir(base_dir):
-            checkpoint_path = os.path.join(base_dir, entry, "checkpoint.json")
-            if not os.path.isfile(checkpoint_path):
-                continue
-            try:
-                with open(checkpoint_path, "r", encoding="utf-8") as f:
-                    state = json.load(f)
-                if state.get("id") == project_id:
-                    PROJECT_CHECKPOINT_PATH_CACHE[project_id] = checkpoint_path
-                    return checkpoint_path
-            except Exception:
-                continue
-    except Exception:
-        return None
-    return None
 
 
 def _read_jsonl_entries(log_path, cache, cache_key, id_prefix, cursor, limit, tail):
@@ -521,90 +408,13 @@ def _read_jsonl_entries(log_path, cache, cache_key, id_prefix, cursor, limit, ta
     return {"entries": entries, "nextCursor": line_idx, "exists": True}
 
 
-@app.get("/api/projects/dirty")
-async def get_dirty_projects(clear: bool = True):
-    with project_module.set_lock:
-        dirty = list(project_module.dirty_projects)
-        if clear:
-            project_module.dirty_projects.clear()
-    return {"dirty": dirty}
 
 
-@app.get("/api/projects/{project_id}/log")
-async def get_project_log(project_id: str, cursor: int = 0, limit: int = 500, tail: bool = False):
-    if cursor < 0: cursor = 0
-    if limit < 1: limit = 1
-    if limit > 2000: limit = 2000
-
-    log_path = _resolve_project_log_path(project_id)
-    if not log_path or not os.path.exists(log_path):
-        return {"entries": [], "nextCursor": cursor, "exists": False}
-    try:
-        return _read_jsonl_entries(log_path, PROJECT_LOG_READ_CACHE, project_id, project_id, cursor, limit, tail)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
 
-class ProjectAnswer(BaseModel):
-    answer: str
 
 
-@app.post("/api/projects/{project_id}/answer")
-async def answer_project(project_id: str, payload: ProjectAnswer):
-    queue = project_module.USER_QA_QUEUE.get(project_id)
-    if not queue:
-        raise HTTPException(status_code=404, detail="No pending question for this project")
-    if queue.get("answers") is not None:
-        return {"status": "already_answered"}
-    queue["answers"] = {"用户回复": payload.answer}
-    return {"status": "success"}
 
-
-@app.post("/api/projects/{project_id}/stop")
-async def stop_project_endpoint(project_id: str):
-    if project_module.kill_project(project_id):
-        return {"status": "success"}
-    raise HTTPException(status_code=404, detail="Project not found")
-
-
-@app.post("/api/projects/{project_id}/resume")
-async def resume_project_endpoint(project_id: str):
-    _ensure_projects_loaded_from_checkpoints()
-
-    instance = project_module.PROJECT_INSTANCES.get(project_id)
-    if instance:
-        runner = getattr(instance, "_runner_thread", None)
-        if runner and getattr(runner, "is_alive", None) and runner.is_alive():
-            return {"status": "already_running"}
-
-    checkpoint_path = _resolve_project_checkpoint_path(project_id)
-    if not checkpoint_path or not os.path.isfile(checkpoint_path):
-        raise HTTPException(status_code=404, detail="Project checkpoint not found")
-
-    project = project_module.Project.load_checkpoint(checkpoint_path)
-    project._killed = False
-    project_module.set_project_state(project.id, "running")
-
-    def _run_project():
-        try:
-            result = project.run_pipeline()
-            agent_module.add_message(
-                {"type": "project_message", "content": f"[Project通知] 项目 {project_id} 执行结束。\n结论: {result}"})
-        except Exception as e:
-            agent_module.add_message(
-                {"type": "project_message", "content": f"\n[Project异常] 项目 {project_id} 运行时崩溃: {e}"})
-
-    t = threading.Thread(target=_run_project, daemon=True)
-    project._runner_thread = t
-    t.start()
-    return {"status": "success"}
-
-
-@app.delete("/api/projects/{project_id}")
-async def remove_project_endpoint(project_id: str):
-    project_module.kill_project(project_id)
-    project_module.delete_project(project_id)
-    return {"status": "success"}
 
 
 TASK_LOG_PATH_CACHE: Dict[str, str] = {}
@@ -731,32 +541,7 @@ async def update_file(path: str, update: FileUpdate):
     return {"status": "success"}
 
 
-class ProjectCreate(BaseModel):
-    name: str
-    prompt: str
-    core: str
-    check_mode: bool = False
-    refine_mode: bool = False
-    judge_mode: bool = False
-    is_agent: bool = True
 
-
-@app.post("/api/projects")
-async def create_project_endpoint(project: ProjectCreate):
-    from src.plugins.plugin_collection.manager.manager import add_project
-    try:
-        msg = add_project(
-            name=project.name,
-            prompt=project.prompt,
-            core=project.core,
-            check_mode=project.check_mode,
-            refine_mode=project.refine_mode,
-            judge_mode=project.judge_mode,
-            is_agent=project.is_agent
-        )
-        return {"status": "success", "message": msg}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/api/plugins/upload")
@@ -916,22 +701,17 @@ class TaskCreate(BaseModel):
     desc: str
     deliverable: str
     prompt: str
-    judge_mode: bool = False
-    task_histories: str = ""
-    core: str = "core"
+    skills: list = None
+    core: str = "[1]openai:deepseek-chat"
 
 
 @app.post("/api/tasks")
 async def create_task_endpoint(task: TaskCreate):
-    from src.plugins.plugin_collection.manager.manager import add_simple_task
+    from src.plugins.route.agent_tool import add_task
     try:
-        msg = add_simple_task(
-            title=task.title,
-            desc=task.desc,
-            deliverable=task.deliverable,
+        msg = add_task(
+            name=task.title,
             prompt=task.prompt,
-            judge_mode=task.judge_mode,
-            task_histories=task.task_histories,
             core=task.core
         )
         return {"status": "success", "message": msg}
@@ -1175,4 +955,4 @@ if __name__ == "__main__":
 
     logging.getLogger("uvicorn").setLevel(logging.WARNING)
     logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
-    uvicorn.run(app, host="0.0.0.0", port=8000, log_level="warning")
+    uvicorn.run(app, host="0.0.0.0", port=8001, log_level="warning")

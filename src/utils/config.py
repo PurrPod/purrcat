@@ -37,7 +37,7 @@ CHECKPOINT_PATH = os.path.join(AGENT_DIR, "checkpoint.json")
 PLUGINS_DIR = os.path.join(SRC_DIR, "plugins")
 PLUGIN_COLLECTION_DIR = os.path.join(PLUGINS_DIR, "plugin_collection")
 TOOL_INDEX_FILE = os.path.join(PLUGINS_DIR, "tool.jsonl")
-LOCAL_TOOL_YAML = os.path.join(PLUGINS_DIR, "local_tool.yaml")
+LOCAL_TOOL_YAML = os.path.join(PLUGIN_COLLECTION_DIR, "local_tool.yaml")
 
 # 文件系统配置路径（保留，因为需要动态修改）
 FILE_CONFIG_PATH = os.path.join(CONFIG_DIR, "file_config.json")

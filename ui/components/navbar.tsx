@@ -10,7 +10,6 @@ import { Home, FolderKanban, ListTodo, Settings, Puzzle, Cat, Calendar } from 'l
 
 const navItems = [
   { href: '/', label: 'Home', icon: Home },
-  { href: '/project', label: 'Project', icon: FolderKanban },
   { href: '/task', label: 'Task', icon: ListTodo },
   { href: '/schedule', label: 'Schedule', icon: Calendar },
   { href: '/setting', label: 'Setting', icon: Settings },

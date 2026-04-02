@@ -6,7 +6,7 @@ from queue import PriorityQueue, Empty
 from src.loader.memory import Memory
 from src.models.model import Model
 from src.plugins.plugin_manager import BASE_TOOLS, parse_tool
-from src.plugins.agent_tool import AGENT_TOOLS
+from src.plugins.route.agent_tool import AGENT_TOOLS
 from src.utils.config import (
     get_agent_model, SOUL_MD_PATH, CHECKPOINT_PATH, TOOL_INDEX_FILE
 )
@@ -145,7 +145,7 @@ class Agent:
                     target_plugin = None
 
                     # 从 AGENT_TOOL_FUNCTIONS 获取 Agent 专属工具名列表
-                    from src.plugins.agent_tool import AGENT_TOOL_FUNCTIONS
+                    from src.plugins.route.agent_tool import AGENT_TOOL_FUNCTIONS
                     agent_tool_names = list(AGENT_TOOL_FUNCTIONS.keys())
 
                     # 检查是否是 AGENT_TOOLS 中的工具

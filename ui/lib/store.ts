@@ -21,6 +21,12 @@ function toErrorMessage(error: unknown): string {
 }
 
 async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit | undefined, timeoutMs: number) {
+  // 检查是否在浏览器环境中
+  if (typeof window === 'undefined') {
+    // 在服务器端，使用标准的fetch函数
+    return fetch(input, init)
+  }
+
   if (!timeoutMs || timeoutMs <= 0) return fetch(input, init)
 
   const controller = new AbortController()
@@ -42,9 +48,6 @@ interface AppState {
   reconnectNow: () => Promise<boolean>
   refreshAll: () => Promise<void>
   setConnectionStatus: (status: ConnectionStatus, error?: string | null) => void
-  resumeProject: (projectId: string) => Promise<boolean>
-  resumeInterruptedProjects: () => Promise<void>
-
   // Messages
   messages: Message[]
   fetchMessages: () => Promise<void>
@@ -57,21 +60,6 @@ interface AppState {
   forcePush: (content: string) => Promise<void>
   summarizeMemory: () => Promise<void>
   
-  // Projects
-  projects: Project[]
-  fetchProjects: () => Promise<void>
-  addProject: (project: { 
-    name: string, 
-    prompt: string, 
-    core: string, 
-    check_mode: boolean, 
-    refine_mode: boolean, 
-    judge_mode: boolean,
-    is_agent: boolean
-  }) => Promise<void>
-  removeProject: (id: string) => Promise<void>
-  stopProject: (id: string) => Promise<void>
-  
   // Tasks
   tasks: Task[]
   fetchTasks: () => Promise<void>
@@ -79,11 +67,10 @@ interface AppState {
     title: string,
     desc: string,
     deliverable: string,
-    worker: string,
-    judger: string,
     prompt: string,
     judge_mode: boolean,
-    task_histories: string
+    task_histories: string,
+    core: string
   }) => Promise<void>
   removeTask: (id: string) => Promise<void>
   stopTask: (id: string) => Promise<void>
@@ -204,7 +191,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   refreshAll: async () => {
     await Promise.allSettled([
       get().fetchMessages(),
-      get().fetchProjects(),
       get().fetchTasks(),
       get().fetchConfigs(),
       get().fetchPlugins(),
@@ -217,24 +203,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       get().fetchToolGroups(),
     ])
   },
-  resumeProject: async (projectId) => {
-    try {
-      const res = await get().apiFetch(`/projects/${projectId}/resume`, { method: 'POST' })
-      const data = await res.json().catch(() => ({}))
-      await get().fetchProjects()
-      return data?.status === 'success' || data?.status === 'already_running'
-    } catch {
-      return false
-    }
-  },
-  resumeInterruptedProjects: async () => {
-    const candidates = get().projects
-      .filter((p) => p.rawState === 'killed')
-      .map((p) => p.id)
-    if (candidates.length === 0) return
 
-    await Promise.allSettled(candidates.map((id) => get().resumeProject(id)))
-  },
   reconnectNow: async () => {
     const state = get()
     state.setConnectionStatus('reconnecting')
@@ -350,97 +319,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
   
-  projects: [],
-  fetchProjects: async () => {
-    try {
-      console.log('[DEBUG] Fetching projects...')
-      const res = await get().apiFetch('/projects')
-      console.log('[DEBUG] Response status:', res.status)
-      const data = await res.json()
-      console.log('[DEBUG] Response data:', data)
-      
-      if (!Array.isArray(data)) {
-        console.error('[DEBUG] Projects data is not an array:', data)
-        set({ projects: [] })
-        return
-      }
-      
-      set({ 
-        projects: data.map((p: any) => ({
-          id: p.id,
-          name: p.name || '未命名项目',
-          description: p.description || '',
-          status: (p.state === 'running' || p.state === 'pending' || p.state === 'completed' || p.state === 'error' || p.state === 'killed') 
-            ? (p.state === 'error' ? 'failed' : (p.state === 'killed' ? 'failed' : p.state)) 
-            : 'pending',
-          rawState: p.state,
-          progress: p.state === 'completed' ? 100 : (p.progress || 50),
-          pipeline: Array.isArray(p.pipeline)
-            ? p.pipeline.map((step: any, index: number) => {
-                const rawStatus = step?.status ?? step?.state
-                const status =
-                  rawStatus === 'running' || rawStatus === 'pending' || rawStatus === 'completed' || rawStatus === 'failed'
-                    ? rawStatus
-                    : rawStatus === 'error' || rawStatus === 'killed'
-                      ? 'failed'
-                      : 'pending'
 
-                return {
-                  id: step?.id ?? `${p.id}-step-${index}`,
-                  name: step?.name ?? `Step ${index + 1}`,
-                  status,
-                  progress: typeof step?.progress === 'number' ? step.progress : 0,
-                  startedAt: step?.startedAt ? new Date(step.startedAt) : undefined,
-                  completedAt: step?.completedAt ? new Date(step.completedAt) : undefined,
-                }
-              })
-            : [],
-          history: p.history || [],
-          core: p.core,
-          createTime: p.creat_time,
-          availableTools: Array.isArray(p.available_tools) ? p.available_tools : [],
-          availableWorkers: Array.isArray(p.available_workers) ? p.available_workers : [],
-          checkMode: typeof p.check_mode === 'boolean' ? p.check_mode : undefined,
-          refineMode: typeof p.refine_mode === 'boolean' ? p.refine_mode : undefined,
-          judgeMode: typeof p.judge_mode === 'boolean' ? p.judge_mode : undefined,
-          isAgent: typeof p.is_agent === 'boolean' ? p.is_agent : undefined,
-          createdAt: p.createdAt ? new Date(p.createdAt) : new Date(),
-          updatedAt: p.updatedAt ? new Date(p.updatedAt) : new Date()
-        })) 
-      })
-      console.log('[DEBUG] Projects loaded successfully')
-    } catch (e) {
-      console.error('Failed to fetch projects:', e)
-    }
-  },
-  addProject: async (project) => {
-    try {
-      await get().apiFetch('/projects', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(project)
-      })
-      get().fetchProjects()
-    } catch (e) {
-      console.error('Failed to add project:', e)
-    }
-  },
-  removeProject: async (id) => {
-    try {
-      await get().apiFetch(`/projects/${id}`, { method: 'DELETE' })
-      get().fetchProjects()
-    } catch (e) {
-      console.error('Failed to remove project:', e)
-    }
-  },
-  stopProject: async (id) => {
-    try {
-      await get().apiFetch(`/projects/${id}/stop`, { method: 'POST' })
-      get().fetchProjects()
-    } catch (e) {
-      console.error('Failed to stop project:', e)
-    }
-  },
   
   tasks: [],
   fetchTasks: async () => {
@@ -457,8 +336,6 @@ export const useAppStore = create<AppState>((set, get) => ({
             ? (t.state === 'error' ? 'failed' : t.state) 
             : 'pending',
           progress: t.state === 'completed' ? 100 : (t.progress || 50),
-          worker: t.worker,
-          judger: t.judger,
           creat_time: t.creat_time,
           logs: t.logs || [],
           history: t.history || [],
@@ -704,7 +581,13 @@ export const useAppStore = create<AppState>((set, get) => ({
       const data = await res.json()
       const categories: ConfigCategory[] = Object.entries(data).map(([filename, content]: [string, any]) => ({
         name: filename,
-        items: Object.entries(content).map(([key, value]) => {
+        items: Array.isArray(content) ? [
+          {
+            key: 'rss_subscriptions',
+            value: content,
+            type: 'object'
+          }
+        ] : Object.entries(content).map(([key, value]) => {
           let type: 'string' | 'number' | 'boolean' | 'object' = 'string'
           if (typeof value === 'boolean') type = 'boolean'
           else if (typeof value === 'number') type = 'number'
@@ -727,14 +610,21 @@ export const useAppStore = create<AppState>((set, get) => ({
       const category = get().configs.find(c => c.name === categoryName)
       if (!category) return
       
-      const updatedItems = category.items.map(item => 
-        item.key === key ? { ...item, value } : item
-      )
+      let configObj: any
       
-      const configObj: any = {}
-      updatedItems.forEach(item => {
-        configObj[item.key] = item.value
-      })
+      // 处理 RSS 配置的特殊情况（数组类型）
+      if (categoryName === 'rss_config.json' && key === 'rss_subscriptions') {
+        configObj = value
+      } else {
+        const updatedItems = category.items.map(item => 
+          item.key === key ? { ...item, value } : item
+        )
+        
+        configObj = {}
+        updatedItems.forEach(item => {
+          configObj[item.key] = item.value
+        })
+      }
       
       await get().apiFetch(`/config/${categoryName}`, {
         method: 'POST',

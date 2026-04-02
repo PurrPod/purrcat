@@ -371,16 +371,10 @@ function TaskCard({
                         <span className="text-muted-foreground">ID</span>
                         <span className="font-medium break-all">{task.id}</span>
                       </div>
-                      {task.worker && (
+                      {task.core && (
                         <div className="flex justify-between">
-                          <span className="text-muted-foreground">Worker</span>
-                          <span className="font-medium break-all">{task.worker}</span>
-                        </div>
-                      )}
-                      {task.judger && (
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">Judger</span>
-                          <span className="font-medium break-all">{task.judger}</span>
+                          <span className="text-muted-foreground">核心模型</span>
+                          <span className="font-medium break-all">{task.core}</span>
                         </div>
                       )}
                       {task.creat_time && (
@@ -719,12 +713,9 @@ function AddTaskDialog() {
     title: '',
     desc: '',
     deliverable: '',
-    worker: '',
-    judger: '',
-    available_tools: [] as string[],
+    core: '',
     prompt: '',
-    judge_mode: false,
-    task_histories: ''
+    skills: []
   })
 
   const modelNames = useMemo(() => {
@@ -745,8 +736,7 @@ function AddTaskDialog() {
     if (modelNames.length === 0) return
     setFormData((prev) => ({
       ...prev,
-      worker: modelNames.includes(prev.worker) ? prev.worker : modelNames[0],
-      judger: modelNames.includes(prev.judger) ? prev.judger : modelNames[0],
+      core: modelNames.includes(prev.core) ? prev.core : modelNames[0],
     }))
   }, [open, modelNames])
 
@@ -775,19 +765,21 @@ function AddTaskDialog() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    await addTask(formData)
-    setOpen(false)
-    setFormData({
-      title: '',
-      desc: '',
-      deliverable: '',
-      worker: '',
-      judger: '',
-      available_tools: [],
-      prompt: '',
-      judge_mode: false,
-      task_histories: ''
-    })
+    try {
+      await addTask(formData)
+      setOpen(false)
+      setFormData({
+        title: '',
+        desc: '',
+        deliverable: '',
+        core: '',
+        prompt: '',
+        skills: []
+      })
+    } catch (error) {
+      console.error('Failed to create task:', error)
+      alert('创建任务失败，请检查后端服务器是否运行')
+    }
   }
 
   return (
@@ -802,10 +794,9 @@ function AddTaskDialog() {
           <DialogTitle>新建任务 (Simple Task)</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
-          <div className="grid gap-6 md:grid-cols-[1fr_340px] py-4 flex-1 min-h-0">
-            <div className="min-h-0 pr-4">
-              <ScrollArea className="max-h-[62vh]">
-                <div className="space-y-4 pr-4">
+          <div className="py-4 flex-1 min-h-0">
+            <ScrollArea className="max-h-[70vh]">
+              <div className="space-y-4 pr-4">
                 <div className="space-y-2">
                   <Label htmlFor="title">任务标题</Label>
                   <Input
@@ -817,6 +808,16 @@ function AddTaskDialog() {
                     required
                   />
                 </div>
+
+                <div className="space-y-2">
+                  <Label>核心模型 (Core)</Label>
+                  <ModelNameSelect
+                    value={formData.core}
+                    onValueChange={(v) => setFormData({ ...formData, core: v })}
+                    placeholder="选择核心模型"
+                  />
+                </div>
+                
                 <div className="space-y-2">
                   <Label htmlFor="deliverable">交付物要求</Label>
                   <Input
@@ -827,24 +828,6 @@ function AddTaskDialog() {
                     className="shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
                     required
                   />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>执行者 (Worker)</Label>
-                    <ModelNameSelect
-                      value={formData.worker}
-                      onValueChange={(v) => setFormData({ ...formData, worker: v })}
-                      placeholder="选择 Worker 模型"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>质检员 (Judger)</Label>
-                    <ModelNameSelect
-                      value={formData.judger}
-                      onValueChange={(v) => setFormData({ ...formData, judger: v })}
-                      placeholder="选择 Judger 模型"
-                    />
-                  </div>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="prompt">任务描述</Label>
@@ -946,24 +929,9 @@ function AddTaskDialog() {
                     required
                   />
                 </div>
-                <div className="flex items-center justify-between space-x-2 pt-2">
-                  <Label htmlFor="judge_mode">开启质检模式</Label>
-                  <Switch
-                    id="judge_mode"
-                    checked={formData.judge_mode}
-                    onCheckedChange={(checked) => setFormData({ ...formData, judge_mode: checked })}
-                  />
-                </div>
-                </div>
-              </ScrollArea>
-            </div>
 
-            <div className="min-h-0">
-              <ToolPickerPanel
-                selectedTools={formData.available_tools}
-                onSelectionChange={(tools) => setFormData({ ...formData, available_tools: tools })}
-              />
-            </div>
+              </div>
+            </ScrollArea>
           </div>
           <DialogFooter className="shrink-0 pt-4 border-t">
             <Button type="submit">提交并启动</Button>

@@ -7,7 +7,6 @@ export function StoreInitializer() {
   const refreshAll = useAppStore((state) => state.refreshAll)
   const fetchFile = useAppStore((state) => state.fetchFile)
   const fetchMessages = useAppStore((state) => state.fetchMessages)
-  const fetchProjects = useAppStore((state) => state.fetchProjects)
   const fetchTasks = useAppStore((state) => state.fetchTasks)
   const fetchThoughtChain = useAppStore((state) => state.fetchThoughtChain)
   const fetchModelConfig = useAppStore((state) => state.fetchModelConfig)
@@ -27,11 +26,10 @@ export function StoreInitializer() {
     fetchFile('me')
     fetchFile('soul')
 
-    // Refresh every 5 seconds for messages, projects, tasks
+    // Refresh every 5 seconds for messages, tasks
     const interval = setInterval(() => {
       if (useAppStore.getState().connectionStatus !== 'connected') return
       fetchMessages()
-      fetchProjects()
       fetchTasks()
       fetchThoughtChain()
       fetchModelConfig()
@@ -40,7 +38,7 @@ export function StoreInitializer() {
     }, 5000)
 
     return () => clearInterval(interval)
-  }, [fetchAlarms, fetchFile, fetchMessages, fetchModelConfig, fetchProjects, fetchSchedule, fetchTasks, fetchThoughtChain, refreshAll])
+  }, [fetchAlarms, fetchFile, fetchMessages, fetchModelConfig, fetchSchedule, fetchTasks, fetchThoughtChain, refreshAll])
 
   useEffect(() => {
     const onOnline = () => {

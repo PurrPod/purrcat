@@ -82,12 +82,32 @@ export default function SettingPage() {
     setTimeout(() => setSaved(false), 2000)
   }
 
+  const formatJson = (key: string) => {
+    const value = localConfigs[key]
+    try {
+      const parsed = JSON.parse(value)
+      const formatted = JSON.stringify(parsed, null, 2)
+      setLocalConfigs(prev => ({ ...prev, [key]: formatted }))
+    } catch (e) {
+      console.error('Failed to format JSON:', e)
+    }
+  }
+
   const categoryLabels: Record<string, string> = {
-    'general_config.json': '通用设置',
-    'agent_config.json': 'Agent 核心配置',
     'model_config.json': '模型服务配置',
-    'file_config.json': '文件系统配置',
-    'plugin_config.json': '插件系统配置',
+    'mcp_config.json': 'MCP 服务器配置',
+    'feishu_config.json': '飞书配置',
+    'rss_config.json': 'RSS 订阅配置',
+    'web_config.json': 'Web API 配置',
+  }
+
+  // 配置文件说明
+  const configDescriptions: Record<string, string> = {
+    'model_config.json': '管理模型服务配置，对应 config.yaml 中的 models 和 agent_model 部分',
+    'mcp_config.json': '管理 MCP 服务器配置，对应 config.yaml 中的 mcp_servers 部分',
+    'feishu_config.json': '管理飞书配置，对应 config.yaml 中的 feishu 部分',
+    'rss_config.json': '管理 RSS 订阅配置，对应 config.yaml 中的 rss_subscriptions 部分',
+    'web_config.json': '管理 Web API 配置，对应 config.yaml 中的 web_api 部分',
   }
 
   const getItemIcon = (type: string) => {
@@ -100,15 +120,15 @@ export default function SettingPage() {
   }
 
   return (
-    <div className="h-[calc(100vh-3.5rem)] flex flex-col bg-muted/10">
-      <div className="px-6 py-4 border-b bg-background flex items-center justify-between sticky top-0 z-10">
+    <div className="min-h-screen bg-background">
+      <div className="px-6 py-4 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 flex items-center justify-between sticky top-0 z-10">
         <div className="flex items-center gap-3">
           <div className="p-2 bg-primary/10 rounded-lg">
             <Settings className="size-5 text-primary" />
           </div>
           <div>
             <h1 className="font-bold text-lg leading-none">配置管理中心</h1>
-            <p className="text-xs text-muted-foreground mt-1.5">管理数据目录 data/config 下的所有 JSON 配置文件</p>
+            <p className="text-xs text-muted-foreground mt-1.5">管理系统配置文件</p>
           </div>
         </div>
         <Button size="sm" onClick={handleSave} className="shadow-sm">
@@ -117,11 +137,11 @@ export default function SettingPage() {
         </Button>
       </div>
 
-      <ScrollArea ref={scrollAreaRef} className="flex-1">
-        <div className="max-w-5xl mx-auto p-8 space-y-10">
+      <ScrollArea ref={scrollAreaRef} className="min-h-[calc(100vh-14rem)]">
+        <div className="max-w-5xl mx-auto p-6 md:p-8 space-y-8">
           {configs.map((category) => (
             <div key={category.name} id={`config-${category.name}`} className="space-y-4">
-              <div className="flex items-end justify-between px-1">
+              <div className="flex items-start justify-between px-1">
                 <div>
                   <h2 className="text-xl font-bold tracking-tight">
                     {categoryLabels[category.name] || category.name}
@@ -129,19 +149,21 @@ export default function SettingPage() {
                   <p className="text-sm text-muted-foreground font-mono mt-1">
                     {category.name}
                   </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {configDescriptions[category.name] || ''}
+                  </p>
                 </div>
               </div>
 
-              <Card className="border-none shadow-md bg-card overflow-hidden">
+              <Card className="border border-border/50 shadow-sm bg-card overflow-hidden">
                 <CardContent className="p-0">
                   <div className="divide-y divide-border/50">
                     {category.items.map((item) => {
-                      const isLongContent = typeof item.value === 'string' && item.value.length > 50;
                       const displayType = item.type;
 
                       return (
-                        <div key={item.key} className="group p-6 hover:bg-muted/5 transition-colors">
-                          <div className="flex items-start justify-between gap-8 mb-4">
+                        <div key={item.key} className="group p-5 hover:bg-muted/5 transition-colors">
+                          <div className="flex items-start justify-between gap-6 mb-3">
                             <div className="space-y-1 flex-1">
                               <div className="flex items-center gap-2">
                                 <span className="p-1 bg-muted rounded">
@@ -183,9 +205,18 @@ export default function SettingPage() {
                                 />
                               ) : (
                                 <div className="relative group/editor">
-                                  <div className="absolute top-2 right-3 z-10 opacity-0 group-hover/editor:opacity-100 transition-opacity">
+                                  <div className="absolute top-2 right-3 z-10 flex gap-1 opacity-0 group-hover/editor:opacity-100 transition-opacity">
+                                    {item.type === 'object' && (
+                                      <button
+                                        type="button"
+                                        onClick={() => formatJson(`${category.name}-${item.key}`)}
+                                        className="text-[10px] font-mono bg-background/80 px-1.5 py-0.5 rounded border border-border shadow-sm text-muted-foreground hover:text-primary transition-colors"
+                                      >
+                                        格式化
+                                      </button>
+                                    )}
                                     <span className="text-[10px] font-mono bg-background/80 px-1.5 py-0.5 rounded border border-border shadow-sm text-muted-foreground uppercase">
-                                      {displayType} editor
+                                      {displayType}
                                     </span>
                                   </div>
                                   <Textarea
@@ -193,7 +224,7 @@ export default function SettingPage() {
                                     onChange={(e) => {
                                       setLocalConfigs(prev => ({ ...prev, [`${category.name}-${item.key}`]: e.target.value }))
                                     }}
-                                    className="font-mono text-xs leading-relaxed bg-zinc-100 dark:bg-zinc-900 text-zinc-800 dark:text-zinc-300 border-zinc-200 dark:border-zinc-800 focus-visible:ring-zinc-400 dark:focus-visible:ring-zinc-700 min-h-[80px] selection:bg-zinc-200 dark:selection:bg-zinc-700"
+                                    className="font-mono text-xs leading-relaxed bg-muted/50 border-muted-foreground/30 focus-visible:ring-primary min-h-[80px] selection:bg-primary/20"
                                     spellCheck={false}
                                   />
                                 </div>
@@ -216,7 +247,7 @@ export default function SettingPage() {
           onClick={scrollToTop}
           variant="outline"
           size="icon"
-          className="fixed bottom-8 right-8 z-50 rounded-full shadow-lg animate-in fade-in-50 slide-in-from-bottom-4"
+          className="fixed bottom-6 right-6 z-50 rounded-full shadow-md animate-in fade-in-50 slide-in-from-bottom-4"
         >
           <ArrowUp className="size-5" />
         </Button>

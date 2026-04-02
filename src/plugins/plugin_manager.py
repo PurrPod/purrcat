@@ -1,7 +1,7 @@
 import json
 import os
 import yaml
-from src.plugins.agent_tool import call_agent_tool
+from src.plugins.route.agent_tool import call_agent_tool
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 from src.utils.config import LOCAL_TOOL_YAML, TOOL_INDEX_FILE
@@ -66,7 +66,7 @@ BASE_TOOLS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "route": {"type": "string", "enum": ["local", "mcp"]},
+                    "route": {"type": "string", "enum": ["local", "mcp", "extend"]},
                     "plugin_name": {"type": "string", "description": "插件名或 MCP Server 名"},
                     "tool_names": {
                         "type": "array",
@@ -122,9 +122,13 @@ def fetch_tool_schemas(route: str, plugin_name: str, tool_names: list) -> list:
         except Exception as e:
             print(f"❌ 读取 Local Schema 失败: {e}")
     elif route == "mcp":
-        from src.plugins.route.mcptool import get_mcp_tool_schemas_sync
+        from src.plugins.route.mcp_tool import get_mcp_tool_schemas_sync
         # 一次性丢给底层去查
         schemas = get_mcp_tool_schemas_sync(plugin_name, tool_names)
+    elif route == "extend":
+        from src.plugins.route.extend_tool import get_extend_tool_schemas
+        # 一次性丢给底层去查
+        schemas = get_extend_tool_schemas(plugin_name, tool_names)
 
     return schemas if schemas else []
 
@@ -204,11 +208,10 @@ def parse_tool(tool_name: str, arguments: dict, route: str = None, plugin: str =
             result_content = list_skill(page=page)
 
         else:
-            agent_tool_names = ["add_project", "answer", "check_pending_questions", "add_simple_task", "list_worker", "send_message"]
-            if tool_name in agent_tool_names:
+            from src.plugins.route.agent_tool import AGENT_TOOL_FUNCTIONS
+            if tool_name in AGENT_TOOL_FUNCTIONS:
                 result_content = call_agent_tool(tool_name, arguments)
             else:
-                # 如果没有提供 route 和 plugin，尝试从 tool.jsonl 中查找
                 if not route or not plugin:
                     if os.path.exists(TOOL_INDEX_FILE):
                         with open(TOOL_INDEX_FILE, "r", encoding="utf-8") as f:
@@ -222,11 +225,14 @@ def parse_tool(tool_name: str, arguments: dict, route: str = None, plugin: str =
                                     break
 
                 if route == "local":
-                    from src.plugins.route.localtool import call_local_tool
+                    from src.plugins.route.local_tool import call_local_tool
                     result_content = call_local_tool(plugin, tool_name, arguments)
                 elif route == "mcp":
-                    from src.plugins.route.mcptool import call_mcp_tool
+                    from src.plugins.route.mcp_tool import call_mcp_tool
                     result_content = call_mcp_tool(plugin, tool_name, arguments)
+                elif route == "extend":
+                    from src.plugins.route.extend_tool import call_extend_tool
+                    result_content = call_extend_tool(plugin, tool_name, arguments)
                 else:
                     result_content = f"❌ 调度失败：未找到 {tool_name} 的底层路由映射。请确认它是否通过 fetch_tool 正常加载。"
 
@@ -316,12 +322,19 @@ def init_tool():
     except Exception as e:
         pass
     try:
-        from src.plugins.route.mcptool import extract_mcp_fingerprints_sync
+        from src.plugins.route.mcp_tool import extract_mcp_fingerprints_sync
         mcp_tools = extract_mcp_fingerprints_sync()
         if mcp_tools:
             tools_index.extend(mcp_tools)
     except Exception as e:
         print(f"❌ 扫描 MCP 工具异常: {e}")
+    try:
+        from src.plugins.route.extend_tool import extract_extend_fingerprints
+        extend_tools = extract_extend_fingerprints()
+        if extend_tools:
+            tools_index.extend(extend_tools)
+    except Exception as e:
+        print(f"❌ 扫描 Extend 工具异常: {e}")
     try:
         with open(TOOL_INDEX_FILE, "w", encoding="utf-8") as f:
             for tool_info in tools_index:

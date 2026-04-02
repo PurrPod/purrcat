@@ -16,7 +16,6 @@ import { FolderKanban, ListTodo, Cpu, Puzzle, Wand2, Search, Calendar, Bell } fr
 
 export function StatusCards() {
   const router = useRouter()
-  const projects = useAppStore((state) => state.projects)
   const tasks = useAppStore((state) => state.tasks)
   const modelConfig = useAppStore((state) => state.modelConfig)
   const plugins = useAppStore((state) => state.plugins)
@@ -27,7 +26,6 @@ export function StatusCards() {
   const pluginCount = plugins.length
   const skillCount = skills.length
 
-  const runningProjects = projects.filter((p) => p.status === 'running').length
   const runningTasks = tasks.filter((t) => t.status === 'running').length
   const runningMonthSchedules = scheduleItems.filter((i) => {
     if (!i.start_time) return false
@@ -56,23 +54,7 @@ export function StatusCards() {
   return (
     <>
       <div className="flex flex-col gap-3">
-        {/* Project 卡片 */}
-      <Card
-        className="cursor-pointer hover:bg-accent/50 transition-colors py-4"
-        onClick={() => router.push('/project')}
-      >
-        <CardContent className="p-0 px-4">
-          <div className="flex items-center gap-3">
-            <div className="flex items-center justify-center size-10 rounded-lg bg-blue-500/10 text-blue-500">
-              <FolderKanban className="size-5" />
-            </div>
-            <div>
-              <div className="text-2xl font-bold">{runningProjects}</div>
-              <div className="text-xs text-muted-foreground">运行中项目</div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+  
 
       {/* Task 卡片 */}
       <Card

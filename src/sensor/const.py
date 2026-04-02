@@ -80,8 +80,9 @@ def clock_sensor():
         time.sleep(60)
 
 def start_sensors():
-    t1 = threading.Thread(target=heartbeat, daemon=True)
+    # t1 = threading.Thread(target=heartbeat, daemon=True)
     t2 = threading.Thread(target=clock_sensor, daemon=True)
-    t1.start()
+    # t1.start()
+    # 暂时不要系统心跳了，浪费token
     t2.start()
     print("📡 Heartbeat 与 Clock 传感器已上线。")

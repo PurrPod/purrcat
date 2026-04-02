@@ -1,93 +1,26 @@
-# src/models/task.py
-import json
-import uuid
-import os
-import time
 import datetime
+import json
+import os
 import threading
-import shutil
-from typing import Dict
+import uuid
+import time
+
+from json_repair import repair_json
 
 from src.models.model import Model
-from json_repair import repair_json
+from src.utils.config import TOOL_INDEX_FILE
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.abspath(os.path.join(BASE_DIR, "..", "..", "data"))
 
-TASK_POOL = []
 TASK_INSTANCES = {}
 dirty_tasks = set()
 task_set_lock = threading.Lock()
 
-
-def _resolve_task_log_path(task_id: str):
-    instance = TASK_INSTANCES.get(task_id)
-    if instance:
-        log_dir = os.path.join(DATA_DIR, "checkpoints", "task", f"{instance.name}_{instance.creat_time}")
-        return os.path.join(log_dir, "log.jsonl")
-    base_dir = os.path.join(DATA_DIR, "checkpoints", "task")
-    if not os.path.isdir(base_dir):
-        return None
-    try:
-        for entry in os.listdir(base_dir):
-            log_path = os.path.join(base_dir, entry, "log.jsonl")
-            if os.path.isfile(log_path):
-                try:
-                    with open(log_path, "r", encoding="utf-8") as f:
-                        for line in f:
-                            line = line.strip()
-                            if line:
-                                payload = json.loads(line)
-                                if payload.get("task_id") == task_id:
-                                    return log_path
-                except:
-                    pass
-    except:
-        pass
-    return None
-
-
 def set_task_state(task_id, state):
-    for t in TASK_POOL:
-        if t["id"] == task_id:
-            t["state"] = state
-            break
-
     instance = TASK_INSTANCES.get(task_id)
     if instance:
         instance.state = state
-
-
-def delete_task(task_id):
-    global TASK_POOL
-    checkpoint_dir = None
-
-    if task_id in TASK_INSTANCES:
-        instance = TASK_INSTANCES[task_id]
-        checkpoint_dir = os.path.join(DATA_DIR, "checkpoints", "task", f"{instance.name}_{instance.creat_time}")
-        del TASK_INSTANCES[task_id]
-    else:
-        for t in TASK_POOL:
-            if t.get("id") == task_id:
-                name = t.get("name")
-                creat_time = t.get("creat_time")
-                if name and creat_time:
-                    checkpoint_dir = os.path.join(DATA_DIR, "checkpoints", "task", f"{name}_{creat_time}")
-                break
-
-    if not checkpoint_dir:
-        log_path = _resolve_task_log_path(task_id)
-        if log_path:
-            checkpoint_dir = os.path.dirname(log_path)
-
-    TASK_POOL = [t for t in TASK_POOL if t.get("id") != task_id]
-
-    if checkpoint_dir and os.path.isdir(checkpoint_dir):
-        try:
-            shutil.rmtree(checkpoint_dir, ignore_errors=True)
-        except Exception:
-            pass
-
 
 def kill_task(task_id):
     if task_id in TASK_INSTANCES:
@@ -96,80 +29,157 @@ def kill_task(task_id):
         return True
     return False
 
-
 def inject_task_instruction(task_id: str, content: str):
     if task_id in TASK_INSTANCES:
         TASK_INSTANCES[task_id].force_push(content)
         return True
     return False
 
-
 class Task:
-    VALID_STATES = ["waiting", "handling", "completed"]
-
-    def __init__(self, task_detail: Dict, judge_mode: bool, system_prompt: str, core: str, task_histories: str = None,
-                 task_id: str = None, register: bool = True):
-        self.run_result = None
-        for key in ["title", "desc", "deliverable"]:
-            if key not in task_detail.keys():
-                raise ValueError(f"Missing key '{key}' in task details")
-        self.judge_mode = judge_mode
-        self.task_detail = task_detail
+    def __init__(self, prompt, core, task_name):
+        self.prompt = prompt
+        self.system_prompt = self._build_system_prompt()
         self.core = core
+        self.task_name = task_name
+        self.history = []
+        self.task_id = uuid.uuid4().hex
         self.client = Model(core).client
-        if judge_mode:
-            self.eval_client = Model(core).client
-        self.max_len = 50
-        self.current_history = []
-        self.eval_history = []
-        self.system_prompt = system_prompt
-        self.task_histories = task_histories
-        self.task_id = task_id or str(uuid.uuid4())
+        self.state = "ready"
+        self.step = 0
+        self.dynamic_tool = [] # 用于存放本次任务core所调用的所有fetch_tool的schema，每十轮对话清空一次
+        self._lock = threading.Lock()
         self._killed = False
         self.pending_force_push = None
-        self.name = task_detail.get('title', 'Unknown')
-        self.creat_time = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
-        self.state = "running"
-        self.dynamic_tools = []
-
-        if register:
-            existing = [t for t in TASK_POOL if t.get("id") == self.task_id]
-            if existing:
-                for t in existing:
-                    t["name"] = task_detail.get('title', 'Unknown')
-                    t["state"] = "running"
-                    t["progress"] = 50
-                    t["creat_time"] = self.creat_time
-                    t["worker"] = task_detail.get('worker')
-                    t["judger"] = task_detail.get('judger')
-            else:
-                TASK_POOL.append(
-                    {
-                        "name": task_detail.get('title', 'Unknown'),
-                        "id": self.task_id,
-                        "state": "running",
-                        "progress": 50,
-                        "creat_time": self.creat_time,
-                        "worker": task_detail.get('worker'),
-                        "judger": task_detail.get('judger'),
-                    }
-                )
+        self.create_time = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+        self.current_plan = ""
+        self.history.append({"role": "system", "content": self.system_prompt})
+        self.history.append({"role": "user", "content": f"[User Request]: \n{self.prompt}\n"})
+        if not TASK_INSTANCES.get(self.task_id, None):
             TASK_INSTANCES[self.task_id] = self
-            self.log_and_notify("system", "🧾 已加载任务上下文", {"style": "light_gray"})
+        self.log_and_notify("system", "🧾 已加载统一 Agent 工作流上下文")
+    def force_push(self, content):
+        self.pending_force_push = content
 
-    def _clean_json_string(self, text: str) -> str:
-        text = text.strip()
-        if text.startswith("```json"):
-            text = text[7:]
-        elif text.startswith("```"):
-            text = text[3:]
-        if text.endswith("```"):
-            text = text[:-3]
-        return text.strip()
+    def run(self):
+        max_steps = 150
+        self.state = "running"
+        while self.step < max_steps:
+            self.step += 1
+            try:
+                response = self._run_llm_step()
+                tool_calling = self._extract_tool_calling(response)
+                if not tool_calling:
+                    self.history.append({"role":"user","content":"检测到你没有使用任何工具，如已完成，必须使用task_done工具结束任务，如未完成，请继续"})
+                else:
+                    if self._is_completed(tool_calling):
+                        summary = self._extract_summary(tool_calling)
+                        self.state = "completed"
+                        self.save_checkpoint()
+                        return f"ok,{summary}"
+                    else:
+                        self._tool_calling(tool_calling)
+                self.checker() # 检查是否需要memory_flush, forch_push, _check_kill, clean_dynamic_tool, 还有自动检查意外中断并提供解决方法
+            except KeyboardInterrupt:
+                self.state = "error"
+                self.log_and_notify("system", "⚠️ 检测到强制中断 (Ctrl+C)，保存现场...")
+                self.save_checkpoint()
+                raise
+            except Exception as e:
+                self.state = "error"
+                self.log_and_notify("error", f"❌ 运行发生异常: {e}")
+                self.save_checkpoint()
+                raise InterruptedError(f"任务异常中断: {e}")
+
+        if self.state != "completed":
+            self.state = "error"
+            self.save_checkpoint()
+            self.log_and_notify("error", f"❌ 任务失败: 超出最大思考步数 ({max_steps})")
+            return "renwushibai"
+
+    def save_checkpoint(self):
+        checkpoint_dir = os.path.join("data", "checkpoints", "task", f"{self.task_name}_{self.create_time}")
+        os.makedirs(checkpoint_dir, exist_ok=True)
+        
+        history_path = os.path.join(checkpoint_dir, "history.json")
+        with open(history_path, "w", encoding="utf-8") as f:
+            json.dump(self.history, f, ensure_ascii=False, indent=2)
+        
+        checkpoint_path = os.path.join(checkpoint_dir, "checkpoint.json")
+        state = {
+            "task_id": self.task_id,
+            "name": self.task_name,
+            "create_time": self.create_time,
+            "prompt": self.prompt,
+            "system_prompt": self.system_prompt,
+            "history": self.history,
+            "state": self.state,
+            "dynamic_tool": self.dynamic_tool,
+            "current_plan": self.current_plan,
+            "step": self.step
+        }
+        with open(checkpoint_path, "w", encoding="utf-8") as f:
+            json.dump(state, f, ensure_ascii=False, indent=2)
+
+    @classmethod
+    def load_checkpoint(cls, checkpoint_dir: str):
+        try:
+            checkpoint_path = os.path.join(checkpoint_dir, "checkpoint.json")
+            with open(checkpoint_path, "r", encoding="utf-8") as f:
+                state = json.load(f)
+            task = cls(
+                task_name=state.get("name", "Unknown"),
+                prompt=state.get("prompt", ""),
+                core="openai:gpt-4o",
+            )
+            task.state = state.get("state", None)
+            task.creat_time = state.get("creat_time", task.creat_time)
+            task.dynamic_tools = state.get("dynamic_tool", [])
+            task.system_prompt = state.get("system_prompt", None)
+            task.current_plan = state.get("current_plan", None)
+            TASK_INSTANCES.pop(task.task_id, None)
+            task.task_id = state.get("task_id", None)
+            TASK_INSTANCES[task.task_id] = task
+            return task
+        except Exception as e:
+            print(f"❌ [Task Checkpoint] 加载失败 {checkpoint_dir}: {e}")
+            return None
+
+    def _run_llm_step(self):
+        """完全解耦的 LLM 请求封装"""
+        model_name = self.core.split(":")[-1] if ':' in self.core else self.core
+        from src.plugins.route.task_tool import TASK_TOOLS
+        from src.plugins.plugin_manager import BASE_TOOLS
+        current_tools = list(BASE_TOOLS) + list(TASK_TOOLS)
+        if self.dynamic_tool:
+            current_tools.extend([item["schema"] for item in self.dynamic_tool])
+        kwargs = {
+            "model": model_name,
+            "messages": self.history,
+        }
+        if current_tools:
+            kwargs["tools"] = current_tools
+        response = self.client.chat.completions.create(**kwargs)
+        message = response.choices[0].message
+        assist_msg = {"role": "assistant", "content": message.content or ""}
+        if message.tool_calls:
+            assist_msg["tool_calls"] = [
+                {"id": t.id, "type": t.type, "function": {"name": t.function.name, "arguments": t.function.arguments}}
+                for t in message.tool_calls
+            ]
+        self.history.append(assist_msg)
+        if message.content:
+            self.log_and_notify("thought", f"🤖 助手思考: {message.content.strip()[:200]}")
+        return message
+
+    def _is_completed(self, tool_calls: list) -> bool:
+        return any(tc.function.name == "task_done" for tc in tool_calls)
+
+    def _extract_tool_calling(self, message) -> list:
+        return message.tool_calls if getattr(message, "tool_calls", None) else []
 
     def log_and_notify(self, card_type: str, content: str, metadata: dict = None):
         print(content)
-        log_dir = os.path.join(DATA_DIR, "checkpoints", "task", f"{self.name}_{self.creat_time}")
+        log_dir = os.path.join(DATA_DIR, "checkpoints", "task", f"{self.task_name}_{self.create_time}")
         os.makedirs(log_dir, exist_ok=True)
         log_data = {
             "task_id": self.task_id,
@@ -184,516 +194,143 @@ class Task:
         with task_set_lock:
             dirty_tasks.add(self.task_id)
 
-    def save_checkpoint(self):
-        checkpoint_dir = os.path.join(DATA_DIR, "checkpoints", "task", f"{self.name}_{self.creat_time}")
-        os.makedirs(checkpoint_dir, exist_ok=True)
-        checkpoint_path = os.path.join(checkpoint_dir, "checkpoint.json")
-        current_state = getattr(self, 'state', None)
-        if not current_state:
-            for t in TASK_POOL:
-                if t.get("id") == self.task_id:
-                    current_state = t.get("state")
-                    break
-        state = {
-            "task_id": self.task_id,
-            "name": self.name,
-            "creat_time": self.creat_time,
-            "task_detail": self.task_detail,
-            "judge_mode": self.judge_mode,
-            "system_prompt": self.system_prompt,
-            "task_histories": self.task_histories,
-            "current_history": self.current_history,
-            "eval_history": self.eval_history,
-            "run_result": self.run_result,
-            "state": current_state or "running",
-            "pending_force_push": self.pending_force_push,
-            "dynamic_tools": self.dynamic_tools
-        }
-        try:
-            with open(checkpoint_path, "w", encoding="utf-8") as f:
-                json.dump(state, f, ensure_ascii=False, indent=2)
-        except Exception as e:
-            print(f"⚠️ [Task Checkpoint] 保存失败: {e}")
+    def _extract_summary(self, tool_calls: list) -> str:
+        for tc in tool_calls:
+            if tc.function.name == "task_done":
+                try:
+                    args = json.loads(tc.function.arguments) if tc.function.arguments else {}
+                    return args.get("summary", "无交付说明")
+                except Exception:
+                    return tc.function.arguments
+        return "无交付说明"
 
-    @classmethod
-    def load_checkpoint(cls, checkpoint_path: str):
-        try:
-            with open(checkpoint_path, "r", encoding="utf-8") as f:
-                state = json.load(f)
-            task = cls(
-                task_detail=state["task_detail"],
-                judge_mode=state["judge_mode"],
-                system_prompt=state["system_prompt"],
-                task_histories=state.get("task_histories"),
-                task_id=state["task_id"],
-                register=False,
-            )
-            task.current_history = state.get("current_history", [])
-            task.eval_history = state.get("eval_history", [])
-            task.run_result = state.get("run_result")
-            task.pending_force_push = state.get("pending_force_push")
-            task.state = state.get("state", "running")
-            task.creat_time = state.get("creat_time", task.creat_time)
-            task.dynamic_tools = state.get("dynamic_tools", [])
-
-            existing = [t for t in TASK_POOL if t.get("id") == task.task_id]
-            if not existing:
-                TASK_POOL.append({
-                    "name": task.name,
-                    "id": task.task_id,
-                    "state": state.get("state", "running"),
-                    "progress": 100 if task.run_result else 50,
-                    "creat_time": task.creat_time,
-                    "worker": (task.task_detail or {}).get("worker") or (state.get("task_detail") or {}).get("worker"),
-                    "judger": (task.task_detail or {}).get("judger") or (state.get("task_detail") or {}).get("judger"),
-                })
-            else:
-                for t in existing:
-                    t["state"] = state.get("state", t.get("state", "running"))
-                    t["progress"] = 100 if task.run_result else t.get("progress", 50)
-
-            TASK_INSTANCES[task.task_id] = task
-            return task
-        except Exception as e:
-            print(f"❌ [Task Checkpoint] 加载失败 {checkpoint_path}: {e}")
-            return None
-
-    def force_push(self, content: str):
-        if self.current_history and self.current_history[-1].get('role') == 'assistant' and self.current_history[
-            -1].get('tool_calls'):
-            self.pending_force_push = content
-        else:
-            warning_prompt = (
-                f"【系统紧急干预】请立刻停止你当前做的事，优先执行此指令！\n"
-                f"{content}"
-            )
-            self.current_history.append({
-                "role": "user",
-                "content": warning_prompt
-            })
-            self.log_and_notify("system", f"⚠️ [Task {self.task_id}] 已强行注入干预指令：\n{content}")
-
-    def kill(self):
-        self._killed = True
-        self.log_and_notify("system", f"⚠️ [Task] 收到Kill指令，准备直接关闭任务 {self.task_id} 线程...")
-
-    def _check_kill(self):
+    def checker(self):
+        """生命周期与环境维护检查器"""
         if self._killed:
-            raise InterruptedError(f"任务 {self.task_id} 被手动强制关闭。")
+            self.state = "killed"
+            raise InterruptedError(f"任务 {self.task_id} 被强杀。")
+        local_push = None
+        with self._lock:
+            if self.pending_force_push:
+                local_push = self.pending_force_push
+                self.pending_force_push = None
 
-    def run(self, suggestion: str = None, max_steps: int = 500):
-        if not suggestion:
-            sys_prompt = (
-                "你是一个高级智能助手（Worker），负责执行子任务并善用工具。如果用户提供了skill技能手册，应当在执行任务环节时常翻阅，按照skill手册的规范执行任务。\n"
-                "【重要交付规范】\n"
-                "1. 在执行任务期间，你可以正常输出文本思考并调用工具。\n"
-                "2. 当你认为任务最终完成或确认无法完成，【且不再需要调用任何工具时】，你的最后一次回复必须是一个合法的纯JSON对象，不要包含任何多余的说明文字或Markdown标记！\n"
-                "3. 最终的JSON格式必须为：{\"status\": \"completed\", \"task_result\": true或false, \"summary\": \"最终交付物或失败原因\"}\n"
-                "4. 质检员（QA）只能看到你 completed 状态下的 summary，看不到你之前的 thought。\n"
-                "5. 如果没有直接产生文件，必须把交付的简洁的完整文本写在 summary 里；如果有生成文件，写明文件绝对路径和内容简要说明。"
-            )
-            self.current_history.append({"role": "system", "content": sys_prompt})
+        if local_push:
+            self.history.append({
+                "role": "user",
+                "content": f"[System Warning] You should suspend your action and handle this message first!\n{local_push}"
+            })
 
-            prompt = f"{self.system_prompt}\n\n请你开始执行当前阶段的子任务。"
-            if self.task_histories:
-                prompt += f"\n\n🕦 前置任务情况\n{self.task_histories}"
-            self.current_history.append({"role": "user", "content": prompt})
-        else:
-            self.current_history.append(
-                {"role": "user",
-                 "content": f"QA反馈不通过：{suggestion}\n请修正后重新提交。记得最终交付时不再调用工具，并直接输出规范的JSON格式。"})
+        # 每 10 轮清理动态工具 schema 避免上下文爆炸
+        if self.step % 10 == 0:
+            self.dynamic_tool.clear()
+            self.log_and_notify("system", "🧹 已周期清理动态工具缓存")
 
-        model_name = self.core.split(":")[-1] if ':' in self.core else self.core
-        step = 0
-        from src.plugins.plugin_manager import BASE_TOOLS, parse_tool, TOOL_INDEX_FILE
-        while step < max_steps:
-            self.memory_flush()
-            self._check_kill()
-            step += 1
-            try:
-                current_tools = list(BASE_TOOLS)
-                if self.dynamic_tools:
-                    current_tools.extend([item["schema"] for item in self.dynamic_tools])
+        self.memory_flush()
 
-                kwargs = {
-                    "model": model_name,
-                    "messages": self.current_history,
-                }
-                if current_tools:
-                    kwargs["tools"] = current_tools
+    def _build_system_prompt(self):
+        return "你是一个顶级的 AI 软件工程专家..."
 
-                response = self.client.chat.completions.create(**kwargs)
-                message = response.choices[0].message
-
-                assist_msg = {"role": "assistant", "content": message.content or ""}
-                if message.tool_calls:
-                    assist_msg["tool_calls"] = [
-                        {
-                            "id": t.id, "type": t.type,
-                            "function": {"name": t.function.name, "arguments": t.function.arguments}
-                        } for t in message.tool_calls
-                    ]
-                self.current_history.append(assist_msg)
-
-                if message.content and message.content.strip():
-                    self.log_and_notify("text", f"🤖 Worker: {message.content.strip()}")
-
-                if message.tool_calls:
-                    for tool_call in message.tool_calls:
-                        tool_name = tool_call.function.name
-                        arguments_str = tool_call.function.arguments
-                        self.log_and_notify("tool_call", f"🔎 Worker Tool: {tool_name}({arguments_str})",
-                                            {"tool_name": tool_name})
-
-                        arguments = {}
-                        if arguments_str:
-                            try:
-                                arguments = json.loads(arguments_str)
-                            except json.JSONDecodeError as e:
-                                print(f"⚠️ 标准 JSON 解析失败，尝试容错修复: {e}")
-                                if repair_json:
-                                    try:
-                                        arguments = repair_json(arguments_str, return_objects=True)
-                                        print("✅ json-repair 修复成功！")
-                                    except Exception as repair_e:
-                                        print(f"❌ json-repair 修复失败: {repair_e}")
-
-                        target_route = None
-                        target_plugin = None
-                        for tool_item in self.dynamic_tools:
-                            if tool_item.get("funct") == tool_name:
-                                target_route = tool_item.get("route")
-                                target_plugin = tool_item.get("plugin")
-                                break
-                        
-                        # 如果在 dynamic_tools 中没找到，尝试从 tool.jsonl 中查找
-                        if not target_route or not target_plugin:
-                            if os.path.exists(TOOL_INDEX_FILE):
-                                with open(TOOL_INDEX_FILE, "r", encoding="utf-8") as f:
-                                    for line in f:
-                                        if not line.strip():
-                                            continue
-                                        tool_info = json.loads(line)
-                                        if tool_info["func"] == tool_name:
-                                            target_route = tool_info["route"]
-                                            target_plugin = tool_info["plugin"]
-                                            break
-
-                        try:
-                            result_str, new_schema_info = parse_tool(tool_name, arguments, route=target_route,
-                                                                     plugin=target_plugin)
-                            if new_schema_info:
-                                schemas_to_add = new_schema_info if isinstance(new_schema_info, list) else [
-                                    new_schema_info]
-                                for schema_item in schemas_to_add:
-                                    new_funct_name = schema_item["funct"]
-                                    self.dynamic_tools = [item for item in self.dynamic_tools if
-                                                          item.get("funct") != new_funct_name]
-                                    self.dynamic_tools.append(schema_item)
-
-                            if result_str == "__AGENT_PAUSE__":
-                                result_str = "工具调用成功，正在挂起任务，请耐心等待处理"
-
-                        except Exception as e:
-                            result_str = f"Tool Execution Error: {str(e)}"
-
-                        self.log_and_notify("tool_result", f"😇 Tool Result: {str(result_str)[:200]}...")
-                        self.current_history.append({
-                            "role": "tool",
-                            "tool_call_id": tool_call.id,
-                            "name": tool_name,
-                            "content": str(result_str)
-                        })
-
-                    if self.pending_force_push:
-                        warning_prompt = (
-                            f"【系统紧急干预】请立刻停止你当前做的事，优先执行此指令！\n"
-                            f"{self.pending_force_push}"
-                        )
-                        self.current_history.append({
-                            "role": "user",
-                            "content": warning_prompt
-                        })
-                        self.log_and_notify("system",
-                                            f"⚠️ [Task {self.task_id}] 已强行注入干预指令：\n{self.pending_force_push}")
-                        self.pending_force_push = None
-                else:
-                    raw_content = message.content.strip() if message.content else ""
-                    cleaned_content = self._clean_json_string(raw_content)
-
-                    try:
-                        content_dict = json.loads(cleaned_content)
-                        if content_dict.get("status") == "completed":
-                            self.run_result = content_dict
-                            set_task_state(self.task_id, "completed")
-                            self.save_checkpoint()
-                            return content_dict
-                        else:
-                            self.current_history.append({
-                                "role": "user",
-                                "content": "你没有调用任何工具，系统判断你需要交付结果。但你输出的JSON缺少 '\"status\": \"completed\"'。请输出规范的纯JSON对象。"
-                            })
-                    except json.JSONDecodeError as e:
-                        self.current_history.append({
-                            "role": "user",
-                            "content": f"任务执行已结束(无工具调用)，此时你需要提交最终交付物。请把你最终的结果按规范格式转化为纯JSON对象输出，不要包含任何前言后语。JSON解析错误: {e}"
-                        })
-            except Exception as e:
-                self.log_and_notify("error", f"❌ API 调用发生意外异常: {e}")
-                set_task_state(self.task_id, "error")
-                self.save_checkpoint()
-                raise InterruptedError(f"API意外中断: {e}")
-
-        set_task_state(self.task_id, "error")
-        self.save_checkpoint()
-        return {"task_result": False, "summary": f"Worker超出最大思考步数({max_steps})，被强制终止。"}
-
-    def run_eval(self, max_steps: int = 30):
-        self.eval_history = []
-        sys_prompt = (
-            "你是一个严格但灵活、专业的项目质检员（QA）。\n"
-            "【质检核心标准】\n"
-            "严格对照当前子任务要求进行逐项检查。发现遗漏、幻觉、格式错误判定为不通过。绝不能代替Worker执行任务！\n"
-            "如果Worker因非自身原因无法交付实物，但在summary里交付了对应的完整结果，可酌情让其通过。\n"
-            "【重要交付规范】\n"
-            "1. 质检过程中你可以正常输出文本思考或调用工具查验。\n"
-            "2. 当质检完成，【且不再调用工具时】，你必须直接返回纯JSON对象，不要包含其他说明文字。\n"
-            "3. 最终的JSON格式必须为：{\"status\": \"completed\", \"eval_result\": true或false, \"suggestion\": \"失败原因/修改建议 或 成功的评价\"}"
-        )
-        self.eval_history.append({"role": "system", "content": sys_prompt})
-
-        prompt = f"{self.system_prompt}\n\n请完成当前阶段的质检：\nWorker的交付详情：{json.dumps(self.run_result, ensure_ascii=False)}"
-        self.eval_history.append({"role": "user", "content": prompt})
-
-        model_name = self.core.split(":")[-1] if ':' in self.core else self.core
-        from src.plugins.plugin_manager import BASE_TOOLS, parse_tool, TOOL_INDEX_FILE
-
-        step = 0
-        while step < max_steps:
-            self._check_kill()
-            step += 1
-            try:
-                current_tools = list(BASE_TOOLS)
-                if self.dynamic_tools:
-                    current_tools.extend([item["schema"] for item in self.dynamic_tools])
-
-                kwargs = {
-                    "model": model_name,
-                    "messages": self.eval_history,
-                }
-                if current_tools:
-                    kwargs["tools"] = current_tools
-
-                response = self.eval_client.chat.completions.create(**kwargs)
-                message = response.choices[0].message
-
-                assist_msg = {"role": "assistant", "content": message.content or ""}
-                if message.tool_calls:
-                    assist_msg["tool_calls"] = [
-                        {
-                            "id": t.id, "type": t.type,
-                            "function": {"name": t.function.name, "arguments": t.function.arguments}
-                        } for t in message.tool_calls
-                    ]
-                self.eval_history.append(assist_msg)
-
-                if message.content and message.content.strip():
-                    self.log_and_notify("text", f"🤖 Judger: {message.content.strip()}")
-
-                if message.tool_calls:
-                    for tool_call in message.tool_calls:
-                        tool_name = tool_call.function.name
-                        arguments_str = tool_call.function.arguments
-                        self.log_and_notify("tool_call", f"🔎 Judger Tool: {tool_name}({arguments_str})",
-                                            {"tool_name": tool_name})
-
-                        arguments = {}
-                        if arguments_str:
-                            try:
-                                arguments = json.loads(arguments_str)
-                            except json.JSONDecodeError as e:
-                                if repair_json:
-                                    try:
-                                        arguments = repair_json(arguments_str, return_objects=True)
-                                    except Exception:
-                                        pass
-
-                        target_route = None
-                        target_plugin = None
-                        for tool_item in self.dynamic_tools:
-                            if tool_item.get("funct") == tool_name:
-                                target_route = tool_item.get("route")
-                                target_plugin = tool_item.get("plugin")
-                                break
-                        
-                        # 如果在 dynamic_tools 中没找到，尝试从 tool.jsonl 中查找
-                        if not target_route or not target_plugin:
-                            if os.path.exists(TOOL_INDEX_FILE):
-                                with open(TOOL_INDEX_FILE, "r", encoding="utf-8") as f:
-                                    for line in f:
-                                        if not line.strip():
-                                            continue
-                                        tool_info = json.loads(line)
-                                        if tool_info["func"] == tool_name:
-                                            target_route = tool_info["route"]
-                                            target_plugin = tool_info["plugin"]
-                                            break
-
-                        try:
-                            result_str, new_schema_info = parse_tool(tool_name, arguments, route=target_route,
-                                                                     plugin=target_plugin)
-                            if new_schema_info:
-                                schemas_to_add = new_schema_info if isinstance(new_schema_info, list) else [
-                                    new_schema_info]
-                                for schema_item in schemas_to_add:
-                                    new_funct_name = schema_item["funct"]
-                                    self.dynamic_tools = [item for item in self.dynamic_tools if
-                                                          item.get("funct") != new_funct_name]
-                                    self.dynamic_tools.append(schema_item)
-                        except Exception as e:
-                            result_str = f"Tool Execution Error: {str(e)}"
-
-                        self.log_and_notify("tool_result", f"😇 Tool Result: {str(result_str)[:200]}...")
-                        self.eval_history.append({
-                            "role": "tool",
-                            "tool_call_id": tool_call.id,
-                            "name": tool_name,
-                            "content": str(result_str)
-                        })
-
-                    if self.pending_force_push:
-                        warning_prompt = (
-                            f"【系统紧急干预】请立刻停止你当前做的事，优先执行此指令！\n"
-                            f"{self.pending_force_push}"
-                        )
-                        self.eval_history.append({
-                            "role": "user",
-                            "content": warning_prompt
-                        })
-                        self.log_and_notify("system",
-                                            f"⚠️ [Task {self.task_id}] 已强行注入干预指令：\n{self.pending_force_push}")
-                        self.pending_force_push = None
-                else:
-                    raw_content = message.content.strip() if message.content else ""
-                    cleaned_content = self._clean_json_string(raw_content)
-                    try:
-                        content_dict = json.loads(cleaned_content)
-                        if content_dict.get("status") == "completed":
-                            set_task_state(self.task_id, "completed")
-                            self.save_checkpoint()
-                            return content_dict
-                        else:
-                            self.eval_history.append({
-                                "role": "user",
-                                "content": "请输出包含 '\"status\": \"completed\"' 的JSON对象完成质检。"
-                            })
-                    except json.JSONDecodeError as e:
-                        self.eval_history.append({
-                            "role": "user",
-                            "content": f"质检结束请直接输出纯JSON判定结果，不要包含多余文字。JSON解析错误: {e}"
-                        })
-
-            except Exception as e:
-                print(f"API 调用发生意外异常: {e}")
-                set_task_state(self.task_id, "error")
-                self.save_checkpoint()
-                raise InterruptedError(f"API意外中断: {e}")
-
-        set_task_state(self.task_id, "error")
-        self.save_checkpoint()
-        return {"eval_result": False, "suggestion": "QA质检过程超出最大思考步数。"}
-
-    def run_pipeline(self):
-        try:
-            result_history = []
-            run_result = self.run()
-            result_history.append(str(run_result))
-            if run_result.get("task_result") and self.judge_mode:
-                eval_result = self.run_eval()
-                result_history.append(str(eval_result))
-                if not eval_result.get("eval_result"):
-                    suggestion = f"该阶段的质检不通过；质检建议：{eval_result.get('suggestion')}"
-                    self.log_and_notify("qa_reject", f"🔁 QA 打回修改: {suggestion}")
-                    run_result = self.run(suggestion=suggestion)
-                    result_history.append(str(run_result))
-                    eval_result = self.run_eval()
-                    result_history.append(str(eval_result))
-                    if not eval_result.get("eval_result"):
-                        final_failure = {"task_result": False, "desc": "模型尝试两次修改后均未通过QA，子任务宣告失败。"}
-                        result_history.append(str(final_failure))
-            set_task_state(self.task_id, "completed")
-            return result_history
-        except InterruptedError as e:
-            set_task_state(self.task_id, "killed")
-            raise e
-        except Exception as e:
-            set_task_state(self.task_id, "error")
-            raise e
-
-    def memory_flush(self, check_mode=True, max_tokens=100000):
-        messages_str = json.dumps(self.current_history, ensure_ascii=False)
-        try:
-            import tiktoken
-            encoding = tiktoken.get_encoding("cl100k_base")
-            current_tokens = len(encoding.encode(messages_str))
-        except ImportError:
-            current_tokens = len(messages_str) // 2
-
-        if check_mode:
-            if current_tokens <= 100000 or len(self.current_history) <= 50:
-                return
-
-        self.log_and_notify("system",
-                            f"⚠️ Memory Flush: 当前 {len(self.current_history)} 轮，共计约 {current_tokens} tokens。")
-
-        alert_prompt = """【系统严重警告：大脑记忆容量即将溢出！！！】
-为了防止记忆断层，系统即将物理抹除你最早期的一批记忆。
-请你现在亲自对**此前的所有对话、事件和执行记录**进行全面总结，提取出核心事件、任务进度、你的关键决策以及目前遇到的阻碍，形成一份“早期记忆备忘录”。
-直接用自然语言输出。这份备忘录将作为你未来回忆那段时光的唯一凭证，也是你承上启下的节点，请务必保证包含影响任务推进的关键信息！"""
-
-        self.current_history.append({
-            "role": "user",
-            "content": alert_prompt
-        })
-
+    def memory_flush(self, check_mode=True, max_tokens=120000):
+        messages_str = json.dumps(self.history, ensure_ascii=False)
+        current_tokens = len(messages_str)
+        if check_mode and (current_tokens <= max_tokens or len(self.history) <= 150):
+            return
+        self.log_and_notify("system", f"⚠️ 触发记忆截断: 当前共约 {current_tokens} tokens。正在进行上下文压缩...")
+        alert_prompt = """【系统警告：记忆容量即将溢出】
+系统即将物理抹除你最早期的一批交互记忆。
+请你现在对**此前的所有任务进度、关键决策、已发现的代码规律以及目前的阻塞点**进行全面总结，形成一份简单明了的“核心备忘录”，不要用markdown。
+这份备忘录将作为你承上启下的唯一凭证，务必包含所有关键信息！"""
+        self.history.append({"role": "user", "content": alert_prompt})
         try:
             model_name = self.core.split(":")[-1] if ':' in self.core else self.core
-            kwargs = {
-                "model": model_name,
-                "messages": self.current_history,
-            }
-            response = self.client.chat.completions.create(**kwargs)
+            response = self.client.chat.completions.create(model=model_name, messages=self.history)
             archive_content = response.choices[0].message.content.strip()
-
-            self.log_and_notify("system", f"🧠 Task归档完成，生成备忘录长度: {len(archive_content)} 字符")
-
-            self.current_history.append({
+            self.history.append({
                 "role": "assistant",
                 "content": f"【早期记忆备忘录】\n{archive_content}"
             })
-
             start_idx = 2
             keep_recent = 20
+            split_idx = max(start_idx, len(self.history) - keep_recent)
 
-            split_idx = len(self.current_history) - keep_recent
-
-            if split_idx > start_idx:
-                while split_idx > start_idx:
-                    curr_msg = self.current_history[split_idx]
-                    prev_msg = self.current_history[split_idx - 1]
-                    if curr_msg.get("role") == "tool":
-                        split_idx -= 1
-                        continue
-                    if prev_msg.get("role") == "assistant" and prev_msg.get("tool_calls"):
-                        split_idx -= 1
-                        continue
-                    break
-
-            if split_idx < start_idx:
-                split_idx = start_idx
-
-            self.current_history = self.current_history[0:start_idx] + self.current_history[split_idx:]
-            self.log_and_notify("system", "✅ Memory Flush: 记忆清理完毕！")
-
+            while split_idx > start_idx:
+                curr_msg = self.history[split_idx]
+                prev_msg = self.history[split_idx - 1]
+                if curr_msg.get("role") == "tool" or (
+                        prev_msg.get("role") == "assistant" and prev_msg.get("tool_calls")):
+                    split_idx -= 1
+                    continue
+                break
+            self.history = self.history[0:start_idx] + self.history[split_idx:]
+            self.log_and_notify("system", "✅ 上下文压缩完毕！")
         except Exception as e:
             self.log_and_notify("error", f"❌ 记忆存档发生异常: {e}")
+
+    def _tool_calling(self, tool_calling):
+        for tool_call in tool_calling:
+            tool_name = tool_call.function.name
+            arguments_str = tool_call.function.arguments
+            arguments = {}
+            if arguments_str:
+                try:
+                    arguments = json.loads(arguments_str)
+                except json.JSONDecodeError as e:
+                    print(f"⚠️ 标准 JSON 解析失败，尝试容错修复: {e}")
+                    if repair_json:
+                        try:
+                            arguments = repair_json(arguments_str, return_objects=True)
+                            print("✅ json-repair 修复成功！")
+                        except Exception as repair_e:
+                            print(f"❌ json-repair 修复失败: {repair_e}")
+                    else:
+                        print("💡 强烈建议终端运行 `pip install json-repair` 来自动修复此问题！")
+
+            args_str = ", ".join([f'{k}={repr(v)}' for k, v in arguments.items()])
+            print(f"🔧 助手调起工具: {tool_name}({args_str})")
+            target_route = None
+            target_plugin = None
+
+            from src.plugins.route.task_tool import TASK_TOOL_FUNCTIONS
+            task_tool_names = list(TASK_TOOL_FUNCTIONS.keys())
+
+            if tool_name in task_tool_names:
+                from src.plugins.route.task_tool import call_task_tool
+                result_str = call_task_tool(tool_name, arguments, self)
+            else:
+                for tool_item in self.dynamic_tool:
+                    if tool_item.get("funct") == tool_name:
+                        target_route = tool_item.get("route")
+                        target_plugin = tool_item.get("plugin")
+                        break
+
+                if not target_route or not target_plugin:
+                    if os.path.exists(TOOL_INDEX_FILE):
+                        with open(TOOL_INDEX_FILE, "r", encoding="utf-8") as f:
+                            for line in f:
+                                if not line.strip():
+                                    continue
+                                tool_info = json.loads(line)
+                                if tool_info["func"] == tool_name:
+                                    target_route = tool_info["route"]
+                                    target_plugin = tool_info["plugin"]
+                                    break
+                from src.plugins.plugin_manager import parse_tool
+                result_str, new_schema_info = parse_tool(tool_name, arguments, route=target_route, plugin=target_plugin)
+                if new_schema_info:
+                    schemas_to_add = new_schema_info if isinstance(new_schema_info, list) else [new_schema_info]
+                    for schema_item in schemas_to_add:
+                        new_funct_name = schema_item["funct"]
+                        self.dynamic_tool = [item for item in self.dynamic_tool if
+                                              item.get("funct") != new_funct_name]
+                        self.dynamic_tool.append(schema_item)
+                self.log_and_notify("tool",f"📦 工具回传结果: {result_str}")
+            self.history.append({
+                "role": "tool",
+                "tool_call_id": tool_call.id,
+                "name": tool_name,
+                "content": result_str
+            })
+    
+    
+
