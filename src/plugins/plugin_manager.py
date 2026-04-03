@@ -37,8 +37,8 @@ BASE_TOOLS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "route": {"type": "string", "enum": ["local", "mcp", "all"],
-                              "description": "筛选查看的路由，默认为 all"}
+                    "route": {"type": "string", "enum": ["local", "mcp", "extend"],
+                              "description": "筛选查看的路由，必须指定三大 route 之一: local、mcp 或 extend"}
                 },
                 "required": ["route"]
             }
@@ -242,8 +242,11 @@ def parse_tool(tool_name: str, arguments: dict, route: str = None, plugin: str =
     return str(result_content), new_schema_info
 
 
-def get_menu(route: str = "all") -> str:
+def get_menu(route: str) -> str:
     """获取工具菜单"""
+    if route not in ["local", "mcp", "extend"]:
+        return "❌ 无效的路由参数，必须指定三大 route 之一: local、mcp 或 extend"
+        
     if not os.path.exists(TOOL_INDEX_FILE):
         # 如果 tool.jsonl 不存在，先初始化
         init_tool()
@@ -260,7 +263,7 @@ def get_menu(route: str = "all") -> str:
                 if not line.strip(): continue
                 tool = json.loads(line)
 
-                if route == "all" or tool["route"] == route:
+                if tool["route"] == route:
                     result += f"\n👉 [{tool['route'].upper()}] 归属: {tool['plugin']} | 工具名: {tool['func']}\n"
                     result += f"   描述: {tool['desc']}\n"
                     count += 1

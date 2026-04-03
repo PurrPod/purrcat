@@ -8,9 +8,9 @@ def _format_response(msg_type: str, content: Any) -> str:
     return json.dumps({"type": msg_type, "content": content}, ensure_ascii=False)
 
 
-def task_done(summary: str) -> str:
+def task_done(result: bool, summary: str) -> str:
     """结束当前任务并交付结果"""
-    return _format_response("task_done", {"summary": summary})
+    return _format_response("task_done", {"result": result, "summary": summary})
 
 
 def update_plan(plan: str = "", current_step: str = "", steps: list = None) -> str:
@@ -30,9 +30,10 @@ TASK_TOOLS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "summary": {"type": "string", "description": "任务完成的摘要说明"}
+                    "result": {"type": "boolean", "description": "任务是否成功完成"},
+                    "summary": {"type": "string", "description": "任务的摘要说明"}
                 },
-                "required": ["summary"]
+                "required": ["result", "summary"]
             }
         }
     },
@@ -82,7 +83,12 @@ def call_task_tool(tool_name: str, arguments: dict, task: Task) -> str:
 
         if tool_name == "task_done":
             task.state = "completed"
-            task.log_and_notify("success", f"✅ 任务圆满完成: {arguments.get('summary', '无交付说明')}")
+            result = arguments.get('result', True)
+            summary = arguments.get('summary', '无交付说明')
+            if result:
+                task.log_and_notify("success", f"✅ 任务圆满完成: {summary}")
+            else:
+                task.log_and_notify("error", f"❌ 任务失败: {summary}")
             task.save_checkpoint()
         elif tool_name == "update_plan":
             task.current_plan = arguments

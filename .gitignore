@@ -11,7 +11,7 @@ __pycache__/
 test.py
 src/agent/checkpoint.json
 *.so
-
+todo.md
 venv/
 .venv/
 env/

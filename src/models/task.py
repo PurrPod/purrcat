@@ -36,8 +36,9 @@ def inject_task_instruction(task_id: str, content: str):
     return False
 
 class Task:
-    def __init__(self, prompt, core, task_name):
+    def __init__(self, prompt, core, task_name, judger):
         self.prompt = prompt
+        self.judger = judger
         self.system_prompt = self._build_system_prompt()
         self.core = core
         self.task_name = task_name
@@ -49,17 +50,22 @@ class Task:
         self.dynamic_tool = [] # 用于存放本次任务core所调用的所有fetch_tool的schema，每十轮对话清空一次
         self._lock = threading.Lock()
         self._killed = False
-        self.pending_force_push = None
+        self.pending_force_push = []
         self.create_time = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
         self.current_plan = ""
         self.history.append({"role": "system", "content": self.system_prompt})
         self.history.append({"role": "user", "content": f"[User Request]: \n{self.prompt}\n"})
         self.token_usage = 0
+        self.window_token = 0
         if not TASK_INSTANCES.get(self.task_id, None):
             TASK_INSTANCES[self.task_id] = self
         self.log_and_notify("system", "🧾 已加载统一 Agent 工作流上下文")
+        self.checkpoint_dir = os.path.join(DATA_DIR, "checkpoints", "task", f"{self.task_name}_{self.create_time}")
+        self.log_window = []
+
     def force_push(self, content):
-        self.pending_force_push = content
+        with self._lock:
+            self.pending_force_push.append(content)
 
     def run(self):
         max_steps = 150
@@ -74,10 +80,13 @@ class Task:
                     self.history.append({"role":"user","content":"检测到你没有使用任何工具，如已完成，必须使用task_done工具结束任务，如未完成，请继续"})
                 else:
                     if self._is_completed(tool_calling):
-                        summary = self._extract_summary(tool_calling)
+                        result, summary = self._extract_summary(tool_calling)
                         self.state = "completed"
                         self.save_checkpoint()
-                        return f"ok,{summary}"
+                        if result:
+                            return f"✅ 任务成功：{summary}"
+                        else:
+                            return f"❌ 任务失败：{summary}"
                     else:
                         self._tool_calling(tool_calling)
                 self.checker() # 检查是否需要memory_flush, forch_push, _check_kill, clean_dynamic_tool, 还有自动检查意外中断并提供解决方法
@@ -99,14 +108,13 @@ class Task:
             return f"❌ 任务失败: 超出最大思考步数 ({max_steps})"
 
     def save_checkpoint(self):
-        checkpoint_dir = os.path.join("data", "checkpoints", "task", f"{self.task_name}_{self.create_time}")
-        os.makedirs(checkpoint_dir, exist_ok=True)
+        os.makedirs(self.checkpoint_dir, exist_ok=True)
         
-        history_path = os.path.join(checkpoint_dir, "history.json")
+        history_path = os.path.join(self.checkpoint_dir, "history.json")
         with open(history_path, "w", encoding="utf-8") as f:
             json.dump(self.history, f, ensure_ascii=False, indent=2)
         
-        checkpoint_path = os.path.join(checkpoint_dir, "checkpoint.json")
+        checkpoint_path = os.path.join(self.checkpoint_dir, "checkpoint.json")
         state = {
             "task_id": self.task_id,
             "name": self.task_name,
@@ -119,6 +127,10 @@ class Task:
             "current_plan": self.current_plan,
             "step": self.step,
             "token_usage": self.token_usage,
+            "window_token": self.window_token,
+            "checkpoint_dir": self.checkpoint_dir,
+            "judger": self.judger,
+            "pending_force_push": self.pending_force_push,
         }
         with open(checkpoint_path, "w", encoding="utf-8") as f:
             json.dump(state, f, ensure_ascii=False, indent=2)
@@ -129,19 +141,25 @@ class Task:
             checkpoint_path = os.path.join(checkpoint_dir, "checkpoint.json")
             with open(checkpoint_path, "r", encoding="utf-8") as f:
                 state = json.load(f)
+
             task = cls(
                 task_name=state.get("name", "Unknown"),
                 prompt=state.get("prompt", ""),
-                core="openai:gpt-4o",
+                core=state.get("core", ""),
+                judger=state.get("judger", ""),
             )
             task.state = state.get("state", None)
             task.token_usage = state.get("token_usage", 0)
-            task.creat_time = state.get("creat_time", task.creat_time)
-            task.dynamic_tools = state.get("dynamic_tool", [])
+            task.create_time = state.get("create_time", task.create_time)
+            task.dynamic_tool = state.get("dynamic_tool", [])
             task.system_prompt = state.get("system_prompt", None)
             task.current_plan = state.get("current_plan", None)
+            task.pending_force_push = state.get("pending_force_push", [])
             TASK_INSTANCES.pop(task.task_id, None)
             task.task_id = state.get("task_id", None)
+            task.checkpoint_dir = state.get("checkpoint_dir", None)
+            task.history = state.get("history", None)
+            task.window_token = state.get("window_token", 0)
             TASK_INSTANCES[task.task_id] = task
             return task
         except Exception as e:
@@ -152,6 +170,7 @@ class Task:
         model_name = self.core.split(":")[-1] if ':' in self.core else self.core
         from src.plugins.route.task_tool import TASK_TOOLS
         from src.plugins.plugin_manager import BASE_TOOLS
+        self._append_dynamic_plan()
         current_tools = list(BASE_TOOLS) + list(TASK_TOOLS)
         if self.dynamic_tool:
             current_tools.extend([item["schema"] for item in self.dynamic_tool])
@@ -181,7 +200,7 @@ class Task:
         return message.tool_calls if getattr(message, "tool_calls", None) else []
 
     def log_and_notify(self, card_type: str, content: str, metadata: dict = None):
-        print(content)
+        self.log_window.append(content[:300] + ("[超过300字符，已截断]" if len(content) > 200 else ""))
         log_dir = os.path.join(DATA_DIR, "checkpoints", "task", f"{self.task_name}_{self.create_time}")
         os.makedirs(log_dir, exist_ok=True)
         log_data = {
@@ -197,31 +216,33 @@ class Task:
         with task_set_lock:
             dirty_tasks.add(self.task_id)
 
-    def _extract_summary(self, tool_calls: list) -> str:
+    def _extract_summary(self, tool_calls: list):
         for tc in tool_calls:
             if tc.function.name == "task_done":
                 try:
                     args = json.loads(tc.function.arguments) if tc.function.arguments else {}
-                    return args.get("summary", "无交付说明")
+                    return args.get("result", True), args.get("summary", "无交付说明")
                 except Exception:
-                    return tc.function.arguments
-        return "无交付说明"
+                    return True, tc.function.arguments
+        return True, "无交付说明"
 
     def checker(self):
         """生命周期与环境维护检查器"""
         if self._killed:
             self.state = "killed"
             raise InterruptedError(f"任务 {self.task_id} 被强杀。")
-        local_push = None
+        local_push = []
         with self._lock:
             if self.pending_force_push:
-                local_push = self.pending_force_push
-                self.pending_force_push = None
-
+                local_push = self.pending_force_push.copy()
+                self.pending_force_push.clear()
         if local_push:
+            for cnt, item in enumerate(local_push, 1):
+                local_push[cnt-1] = f"{cnt} | " + item
+            content = "\n".join(local_push)
             self.history.append({
                 "role": "user",
-                "content": f"[System Warning] You should suspend your action and handle this message first!\n{local_push}"
+                "content": f"[System Warning] You should suspend your action and handle this message first!\n{content}"
             })
 
         # 每 10 轮清理动态工具 schema 避免上下文爆炸
@@ -232,43 +253,54 @@ class Task:
         self.memory_flush()
 
     def _build_system_prompt(self):
-        return "你是一个顶级的 AI 软件工程专家..."
+        return "xxx"
+
+    def _append_dynamic_plan(self):
+        plan_context = f"__DYNAMIC_PLAN_CONTEXT__\n{self.current_plan}"
+        self.history.append({"role": "assistant", "content": plan_context})
 
     def memory_flush(self, check_mode=True, max_tokens=120000):
-        messages_str = json.dumps(self.history, ensure_ascii=False)
-        current_tokens = len(messages_str)
-        if check_mode and (current_tokens <= max_tokens or len(self.history) <= 150):
+        if check_mode and (self.window_token <= max_tokens or len(self.history) <= 150):
             return
-        self.log_and_notify("system", f"⚠️ 触发记忆截断: 当前共约 {current_tokens} tokens。正在进行上下文压缩...")
-        alert_prompt = """【系统警告：记忆容量即将溢出】
-系统即将物理抹除你最早期的一批交互记忆。
-请你现在对**此前的所有任务进度、关键决策、已发现的代码规律以及目前的阻塞点**进行全面总结，形成一份简单明了的“核心备忘录”，不要用markdown。
-这份备忘录将作为你承上启下的唯一凭证，务必包含所有关键信息！"""
-        self.history.append({"role": "user", "content": alert_prompt})
-        try:
-            model_name = self.core.split(":")[-1] if ':' in self.core else self.core
-            response = self.client.chat.completions.create(model=model_name, messages=self.history)
-            archive_content = response.choices[0].message.content.strip()
-            self.history.append({
-                "role": "assistant",
-                "content": f"【早期记忆备忘录】\n{archive_content}"
-            })
-            start_idx = 2
-            keep_recent = 20
-            split_idx = max(start_idx, len(self.history) - keep_recent)
+        self.log_and_notify("system", f"⚠️ 触发记忆截断: 当前共约 {self.window_token} tokens。正在进行上下文压缩...")
+        ask_result = {"result": True, "summary": ""}
+        if self.log_window:
+            eval_result = self._run_eval() # 对当前滑动窗口进行质检
+            if eval_result.get("has_hallucination", False):
+                ask_result = self._ask_for_continue(eval_result)
+        if ask_result.get("result", True):
+            alert_prompt = """【系统警告：记忆容量即将溢出】
+    系统即将物理抹除你最早期的一批交互记忆。
+    请你现在对**此前的所有任务进度、关键决策、已发现的代码规律以及目前的阻塞点**进行全面总结，形成一份简单明了的“核心备忘录”，不要用markdown。
+    这份备忘录将作为你承上启下的唯一凭证，务必包含所有关键信息！"""
+            self.history.append({"role": "user", "content": alert_prompt})
+            try:
+                model_name = self.core.split(":")[-1] if ':' in self.core else self.core
+                response = self.client.chat.completions.create(model=model_name, messages=self.history)
+                archive_content = response.choices[0].message.content.strip()
+                self.history.append({
+                    "role": "assistant",
+                    "content": f"【早期记忆备忘录】\n{archive_content}"
+                })
+                start_idx = 2
+                keep_recent = 20
+                split_idx = max(start_idx, len(self.history) - keep_recent)
 
-            while split_idx > start_idx:
-                curr_msg = self.history[split_idx]
-                prev_msg = self.history[split_idx - 1]
-                if curr_msg.get("role") == "tool" or (
-                        prev_msg.get("role") == "assistant" and prev_msg.get("tool_calls")):
-                    split_idx -= 1
-                    continue
-                break
-            self.history = self.history[0:start_idx] + self.history[split_idx:]
-            self.log_and_notify("system", "✅ 上下文压缩完毕！")
-        except Exception as e:
-            self.log_and_notify("error", f"❌ 记忆存档发生异常: {e}")
+                while split_idx > start_idx:
+                    curr_msg = self.history[split_idx]
+                    prev_msg = self.history[split_idx - 1]
+                    if curr_msg.get("role") == "tool" or (
+                            prev_msg.get("role") == "assistant" and prev_msg.get("tool_calls")):
+                        split_idx -= 1
+                        continue
+                    break
+                self.history = self.history[0:start_idx] + self.history[split_idx:]
+                self.log_and_notify("system", "✅ 上下文压缩完毕！")
+            except Exception as e:
+                self.log_and_notify("error", f"❌ 记忆存档发生异常: {e}")
+        else:
+            raise ValueError(f"Worker 在工作中出现幻觉，并决定终止任务，理由为：{ask_result.get('summary', '无理由')}")
+
 
     def _tool_calling(self, tool_calling):
         for tool_call in tool_calling:
@@ -347,8 +379,90 @@ class Task:
             usage_data["prompt_tokens"] = response.usage.prompt_tokens
             usage_data["completion_tokens"] = response.usage.completion_tokens
             usage_data["total_tokens"] = response.usage.total_tokens
-        self.token_usage += usage_data["prompt_tokens"]
+        self.token_usage += usage_data["total_tokens"]
+        self.window_token = usage_data["total_tokens"]
         return usage_data
+
+    def _run_eval(self):
+        # 1. 核心护栏提示词：明确幻觉的定义和输出格式
+        eval_system_prompt = """你是一个严格的 AI Agent 行为审查员。
+    你的任务是审查 Agent 在最近几个对话轮次（LOG SNAPSHOT）中的表现，重点排查是否存在“幻觉（Hallucination）”。
+    【幻觉的严格判定标准】：
+    1. 凭空捏造：使用了未通过工具读取、或未在上下文/LSP诊断中出现的变量名、函数名、文件路径或代码逻辑。
+    2. 盲目自信：没有调用相关工具获取信息（如搜索、查源码），却给出了笃定的事实性断言。
+    3. 无视客观反馈：工具返回了明确的错误（如 FileNotFoundError、编译报错），但 Agent 的最终回复却声称操作成功。
+    请严格以 JSON 格式输出你的审查结果，不要包含任何额外的 Markdown 标记：
+    {
+        "has_hallucination": true 或 false,
+        "reason": "如果为 true，请直接指出具体的幻觉表现和证据；如果为 false，简述其逻辑是如何基于工具反馈闭环的。"
+    }"""
+        prompt = "以下是准备被压缩的上下文日志快照 (LOG SNAPSHOT)：\n\n" + "\n".join(self.log_window)
+        client = Model(self.judger).client
+        temp_history = [
+            {"role": "system", "content": eval_system_prompt},
+            {"role": "user", "content": prompt}
+        ]
+        kwargs = {
+            "model": self.judger,
+            "messages": temp_history,
+            "response_format": {"type": "json_object"},
+            "temperature": 0.1,  # 审查任务需要极低的温度以保证客观性和确定性
+        }
+        try:
+            response = client.chat.completions.create(**kwargs)
+            message_content = response.choices[0].message.content
+            eval_result = json.loads(message_content)
+            self.log_window = []
+            return eval_result
+        except json.JSONDecodeError:
+            return {"has_hallucination": False, "reason": "审查解析失败，默认放行"}
+        except Exception as e:
+            print(f"[审查系统异常] API 请求失败: {str(e)}")
+            return {"has_hallucination": False, "reason": f"审查报错，默认放行: {str(e)}"}
+
+    def _ask_for_continue(self, eval_result=None):
+        """让 self.core 基于当前历史自我评估是否继续任务"""
+        model_name = self.core.split(":")[-1] if ':' in self.core else self.core
+
+        # 提取审查给出的幻觉理由
+        reason = eval_result.get("reason", "操作偏离预期或编造了不存在的信息。") if eval_result else "操作偏离预期或编造了不存在的信息。"
+
+        # 直接作为 user prompt 强力打断它当前的思路
+        reflection_prompt = f"""【系统严重警告：触发幻觉/错误拦截】请务必优先处理本条消息
+外部审查模块指出了你在最近几轮操作中的问题：
+{reason}
+你需要决定是纠错并继续，还是因为无法挽回而终止任务。请务必诚实回答，不轻易放弃但是一定不能盲目逞强！！
+请结合上述问题，严格以 JSON 格式输出你的决定，不要包含任何额外的 Markdown 标记：
+{{
+    "result": true 或 false,
+    "summary": "如果为 true，请反思并简述你接下来的『纠错计划』；如果为 false，请说明任务无法继续的客观理由。"
+}}"""
+        self.history.append({"role": "user", "content": reflection_prompt})
+        try:
+            self.log_and_notify("system", "🧠 触发自我反思：正在要求 Core 模型进行诊断和决策...")
+            response = self.client.chat.completions.create(
+                model=model_name,
+                messages=self.history,
+                response_format={"type": "json_object"},
+                temperature=0.3
+            )
+            message_content = response.choices[0].message.content
+            # 2. 把它的反思结果也塞进全局历史，让它“记住”自己的纠错计划
+            self.history.append({"role": "assistant", "content": message_content})
+            result_data = json.loads(message_content)
+            return {
+                "result": bool(result_data.get("result", True)),
+                "summary": str(result_data.get("summary", "Core 模型未提供明确的反思说明。"))
+            }
+        except json.JSONDecodeError:
+            self.log_and_notify("error", "❌ 自我反思结果解析失败，默认继续")
+            return {"result": True, "summary": "Core 模型返回了非标准的 JSON，默认继续"}
+        except Exception as e:
+            self.log_and_notify("error", f"❌ 请求 Core 模型反思失败: {e}，默认继续")
+            return {"result": True, "summary": f"反思请求发生异常: {e}，默认继续"}
+
+
+
 
     
     

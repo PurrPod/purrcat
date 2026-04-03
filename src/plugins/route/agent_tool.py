@@ -13,12 +13,14 @@ def _format_response(msg_type: str, content: Any) -> str:
 def add_task(
         name: str,
         prompt: str,
-        core: str = "[1]openai:deepseek-chat"
+        core: str = "[1]openai:deepseek-chat",
+        judger: str = "[1]openai:deepseek-chat"
 ) -> str:
     single_task = Task(
         task_name=name,
         prompt=prompt,
         core=core,
+        judger=judger,
     )
     def _run_task():
         from src.agent.agent import add_message
