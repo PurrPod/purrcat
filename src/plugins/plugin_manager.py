@@ -253,10 +253,7 @@ def get_menu(route: str) -> str:
         if not os.path.exists(TOOL_INDEX_FILE):
             return "❌ 工具注册表未初始化，找不到 tool.jsonl。"
 
-    result = f"【可用工具总览菜单】 (过滤条件: {route})\n"
-    result += "💡 提示：使用 fetch_tool 获取参数 Schema 后即可调用。\n"
-
-    count = 0
+    tools = []
     try:
         with open(TOOL_INDEX_FILE, "r", encoding="utf-8") as f:
             for line in f:
@@ -264,14 +261,24 @@ def get_menu(route: str) -> str:
                 tool = json.loads(line)
 
                 if tool["route"] == route:
-                    result += f"\n👉 [{tool['route'].upper()}] 归属: {tool['plugin']} | 工具名: {tool['func']}\n"
-                    result += f"   描述: {tool['desc']}\n"
-                    count += 1
+                    tools.append(tool)
     except Exception as e:
         return f"❌ 读取工具菜单失败: {e}"
 
-    if count == 0:
+    if not tools:
         return f"当前路由 '{route}' 下没有可用的工具。"
+
+    # 生成 Markdown 表格
+    result = f"## 可用工具总览 (Route: {route})\n\n"
+    result += "💡 提示：使用 fetch_tool 获取参数 Schema 后即可调用\n\n"
+    result += "| plugin | func | desc |\n"
+    result += "|--------|------|------|\n"
+    
+    for tool in tools:
+        result += f"| {tool['plugin']} | {tool['func']} | {tool['desc']} |\n"
+    
+    result += f"\n**总计: {len(tools)} 个工具**"
+    
     return result
 
 

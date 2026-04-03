@@ -31,7 +31,7 @@ def kill_task(task_id):
 
 def inject_task_instruction(task_id: str, content: str):
     if task_id in TASK_INSTANCES:
-        TASK_INSTANCES[task_id].force_push(content)
+        TASK_INSTANCES[task_id].submit_request(content)
         return True
     return False
 
@@ -61,11 +61,7 @@ class Task:
             TASK_INSTANCES[self.task_id] = self
         self.checkpoint_dir = os.path.join(DATA_DIR, "checkpoints", "task", f"{self.task_name}_{self.create_time}")
         self.log_window = []
-        self.log_and_notify("system", "🧾 已加载统一 Agent 工作流上下文")
-
-    def force_push(self, content):
-        with self._lock:
-            self.pending_force_push.append(content)
+        self.log_and_notify("system", f"🎯 用户需求: \n{self.prompt}")
 
     def run(self):
         max_steps = 150
@@ -80,6 +76,17 @@ class Task:
                     self.history.append({"role":"user","content":"检测到你没有使用任何工具，如已完成，必须使用task_done工具结束任务，如未完成，请继续"})
                 else:
                     if self._is_completed(tool_calling):
+                        self.log_and_notify("system", "⚖️ 正在进行最终交付验收审查...")
+                        eval_result = self._run_eval()
+                        if eval_result.get("has_hallucination", False):
+                            reason = eval_result.get('reason', '未知')
+                            reject_msg = f"【系统驳回交付】：你试图结束任务，但审查系统发现了严重问题：\n{reason}\n请务必修复上述问题，并用工具验证成功后，再尝试交付！"
+                            self.log_and_notify("warning", f"⚠️ 任务交付被驳回：{reason}")
+                            self.history.append({"role": "user", "content": reject_msg})
+                            self._tool_calling(tool_calling)
+                            self.checker()
+                            continue
+
                         result, summary = self._extract_summary(tool_calling)
                         self.state = "completed"
                         task_done_call = next((tc for tc in tool_calling if tc.function.name == "task_done"), None)
@@ -119,11 +126,13 @@ class Task:
 
     def save_checkpoint(self):
         os.makedirs(self.checkpoint_dir, exist_ok=True)
-        
+
+        # 1. 独立保存 history
         history_path = os.path.join(self.checkpoint_dir, "history.json")
         with open(history_path, "w", encoding="utf-8") as f:
             json.dump(self.history, f, ensure_ascii=False, indent=2)
-        
+
+        # 2. 保存全局 State
         checkpoint_path = os.path.join(self.checkpoint_dir, "checkpoint.json")
         state = {
             "task_id": self.task_id,
@@ -131,7 +140,8 @@ class Task:
             "create_time": self.create_time,
             "prompt": self.prompt,
             "system_prompt": self.system_prompt,
-            "history": self.history,
+            "core": self.core,
+            "judger": self.judger,
             "state": self.state,
             "dynamic_tool": self.dynamic_tool,
             "current_plan": self.current_plan,
@@ -139,7 +149,6 @@ class Task:
             "token_usage": self.token_usage,
             "window_token": self.window_token,
             "checkpoint_dir": self.checkpoint_dir,
-            "judger": self.judger,
             "pending_force_push": self.pending_force_push,
         }
         with open(checkpoint_path, "w", encoding="utf-8") as f:
@@ -149,28 +158,45 @@ class Task:
     def load_checkpoint(cls, checkpoint_dir: str):
         try:
             checkpoint_path = os.path.join(checkpoint_dir, "checkpoint.json")
+            history_path = os.path.join(checkpoint_dir, "history.json")
+
             with open(checkpoint_path, "r", encoding="utf-8") as f:
                 state = json.load(f)
 
-            task = cls(
-                task_name=state.get("name", "Unknown"),
-                prompt=state.get("prompt", ""),
-                core=state.get("core", ""),
-                judger=state.get("judger", ""),
-            )
-            task.state = state.get("state", None)
+            with open(history_path, "r", encoding="utf-8") as f:
+                history = json.load(f)
+
+            task = cls.__new__(cls)
+
+            # 恢复基本属性
+            task.task_id = state.get("task_id")
+            task.task_name = state.get("name", "Unknown")
+            task.create_time = state.get("create_time")
+            task.prompt = state.get("prompt", "")
+            task.system_prompt = state.get("system_prompt", "")
+            task.core = state.get("core", "")  # 读取真正的 core
+            task.judger = state.get("judger", "")
+
+            # 恢复运行状态
+            task.state = state.get("state", "ready")
+            task.step = state.get("step", 0)
             task.token_usage = state.get("token_usage", 0)
-            task.create_time = state.get("create_time", task.create_time)
-            task.dynamic_tool = state.get("dynamic_tool", [])
-            task.system_prompt = state.get("system_prompt", None)
-            task.current_plan = state.get("current_plan", None)
-            task.pending_force_push = state.get("pending_force_push", [])
-            TASK_INSTANCES.pop(task.task_id, None)
-            task.task_id = state.get("task_id", None)
-            task.checkpoint_dir = state.get("checkpoint_dir", None)
-            task.history = state.get("history", None)
             task.window_token = state.get("window_token", 0)
+            task.current_plan = state.get("current_plan", "")
+            task.dynamic_tool = state.get("dynamic_tool", [])
+            task.pending_force_push = state.get("pending_force_push", [])
+            task.checkpoint_dir = state.get("checkpoint_dir", checkpoint_dir)
+            task.history = history  # 读取真正的 history
+
+            # 恢复内存中需要的临时对象 (锁、客户端、日志滑动窗口)
+            task.client = Model(task.core).client if task.core else None
+            task._lock = threading.Lock()
+            task._killed = False
+            task.log_window = []
+
+            # 注册到全局实例管理器
             TASK_INSTANCES[task.task_id] = task
+
             return task
         except Exception as e:
             print(f"❌ [Task Checkpoint] 加载失败 {checkpoint_dir}: {e}")
@@ -180,13 +206,14 @@ class Task:
         model_name = self.core.split(":")[-1] if ':' in self.core else self.core
         from src.plugins.route.task_tool import TASK_TOOLS
         from src.plugins.plugin_manager import BASE_TOOLS
-        self._append_dynamic_plan()
         current_tools = list(BASE_TOOLS) + list(TASK_TOOLS)
         if self.dynamic_tool:
             current_tools.extend([item["schema"] for item in self.dynamic_tool])
+        plan_msg = self._get_dynamic_plan_msg()
+        request_messages = self.history + [plan_msg]
         kwargs = {
             "model": model_name,
-            "messages": self.history,
+            "messages": request_messages,
         }
         if current_tools:
             kwargs["tools"] = current_tools
@@ -265,9 +292,24 @@ class Task:
     def _build_system_prompt(self):
         return "xxx"
 
-    def _append_dynamic_plan(self):
-        plan_context = f"__DYNAMIC_PLAN_CONTEXT__\n{self.current_plan}"
-        self.history.append({"role": "assistant", "content": plan_context})
+    def _get_dynamic_plan_msg(self):
+        """生成临时的动态计划消息，将内部 JSON 解析为友好的 Markdown，并包含系统当前时间"""
+        if not self.current_plan:
+            plan_content = "暂未规划，等待调用 update_plan 工具初始化计划表 (action='init')"
+        else:
+            try:
+                p_dict = json.loads(self.current_plan)
+                plan_content = f"🎯 总目标: {p_dict.get('overall_goal', '未设定')}\n\n"
+                for s in p_dict.get("steps", []):
+                    status_icon = "✅" if s["status"] == "completed" else ("🏃" if s["status"] == "in_progress" else "⏳")
+                    plan_content += f"{status_icon} [ID: {s['id']}] {s['title']} ({s['status']})\n"
+                    if s.get("description"):
+                        plan_content += f"    📝 {s['description']}\n"
+            except:
+                plan_content = self.current_plan
+        current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        plan_context = f"【当前动态计划与系统状态】\n🕒 当前系统时间: {current_time}\n注意：可随时用 update_plan 工具修改计划\n\n{plan_content}"
+        return {"role": "system", "content": plan_context}
 
     def memory_flush(self, check_mode=True, max_tokens=120000):
         if check_mode and (self.window_token <= max_tokens or len(self.history) <= 150):
@@ -332,7 +374,7 @@ class Task:
                         print("💡 强烈建议终端运行 `pip install json-repair` 来自动修复此问题！")
 
             args_str = ", ".join([f'{k}={repr(v)}' for k, v in arguments.items()])
-            print(f"🔧 助手调起工具: {tool_name}({args_str})")
+            self.log_and_notify("tool_call", f"🔧 助手调起工具: {tool_name}({args_str})", metadata={"arguments": arguments})
             target_route = None
             target_plugin = None
 
@@ -423,11 +465,17 @@ class Task:
             message_content = response.choices[0].message.content
             eval_result = json.loads(message_content)
             self.log_window = []
+            if eval_result["has_hallucination"]:
+                self.log_and_notify("thought", f"🤖 质检审查: 审核不通过\n{eval_result['reason']}")
+            else:
+                self.log_and_notify("thought", f"🤖 质检审查: 审核通过\n{eval_result['reason']}")
             return eval_result
         except json.JSONDecodeError:
+            self.log_and_notify("thought", f"🤖 质检审查: 审查解析失败，默认放行")
             return {"has_hallucination": False, "reason": "审查解析失败，默认放行"}
         except Exception as e:
             print(f"[审查系统异常] API 请求失败: {str(e)}")
+            self.log_and_notify("thought", f"🤖 质检审查: 审查报错，默认放行: {str(e)}")
             return {"has_hallucination": False, "reason": f"审查报错，默认放行: {str(e)}"}
 
     def _ask_for_continue(self, eval_result=None):
@@ -471,9 +519,52 @@ class Task:
             self.log_and_notify("error", f"❌ 请求 Core 模型反思失败: {e}，默认继续")
             return {"result": True, "summary": f"反思请求发生异常: {e}，默认继续"}
 
+    def resume(self):
+        """从异常状态中恢复任务，包含自动排错。"""
+        self.log_and_notify("system", "🔄 尝试从断点恢复任务...")
+        if not self.history:
+            self.log_and_notify("error", "❌ 历史记录为空，无法恢复。")
+            return "❌ 恢复失败"
+        last_msg = self.history[-1]
+        # 1. 错误排查：工具回传缺失 (模型发起了 tool_calls，但紧接着中断了，最后一条不是 tool 结果)
+        if last_msg.get("role") == "assistant" and last_msg.get("tool_calls"):
+            self.log_and_notify("system", "🛠️ 检测到断点处缺失工具回传结果。策略：撤销最近一次未完成的思考，让模型重新规划。")
+            self.history.pop()
+        # 2. 错误排查：Token 濒临溢出或上下文过长 (预留 10000 token 余量)
+        max_tokens_threshold = 110000
+        if self.window_token > max_tokens_threshold or len(self.history) > 140:
+            self.log_and_notify("system", "⚠️ 检测到上下文过长或 Token 濒临溢出。策略：恢复前强制执行记忆压缩。")
+            try:
+                self.memory_flush(check_mode=False)  # 强制执行 flush
+            except Exception as e:
+                self.log_and_notify("error", f"❌ 恢复前压缩记忆失败: {e}")
+        # 3. 开始恢复运行
+        self.log_and_notify("system", "🚀 环境排错完成，重新启动任务流。")
+        self.state = "ready"
+        return self.run()
 
+    def submit_request(self, new_prompt: str):
+        """
+        统一的指令追加/任务下发接口。
+        自动判断当前任务状态：若在运行中则动态注入挂起队列；若已休眠则直接追加记录并通过安全检查后重启。
+        """
+        self.log_and_notify("system", f"🗣️ 收到追加指令/需求: {new_prompt}")
 
+        # 状态路由
+        if self.state in ["running", "ready"]:
+            # 任务正在跑，加锁并压入挂起队列，等待 Checker 拦截
+            with self._lock:
+                self.pending_force_push.append(
+                    f"【紧急追加请求】：用户刚刚下发了新的指示，请优先响应以下内容：\n{new_prompt}")
 
-    
-    
+            self.log_and_notify("system", "⚡ 任务正在执行中，已将追加指令动态注入到下一个思考循环。")
+            return "✅ 指令已动态注入当前工作流"
+        else:
+            # 任务已结束 (completed) 或异常休眠 (error/killed)
+            self.history.append({"role": "user", "content": f"[User Follow-up Request]: \n{new_prompt}\n"})
+            self.step = 0
+            self.state = "ready"
+            self.save_checkpoint()
+            self.log_and_notify("system", "🚀 任务休眠/已结束，上下文已就绪，正在重新唤醒执行...")
+            return self.resume()
 

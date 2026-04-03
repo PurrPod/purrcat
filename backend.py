@@ -29,23 +29,6 @@ from src.models import task as task_module
 from src.plugins.plugin_collection.filesystem.filesystem import set_allowed_directories, list_special_directories
 from src.utils.config import load_config, get_model_config_json, get_mcp_config_json, get_feishu_config, get_rss_subscriptions, get_web_api_config, reload_config
 
-# 确保task_module中有必要的变量和函数
-if not hasattr(task_module, 'TASK_POOL'):
-    task_module.TASK_POOL = []
-
-if not hasattr(task_module, 'delete_task'):
-    def delete_task(task_id):
-        if hasattr(task_module, 'TASK_INSTANCES') and task_id in task_module.TASK_INSTANCES:
-            del task_module.TASK_INSTANCES[task_id]
-        if hasattr(task_module, 'TASK_POOL'):
-            task_module.TASK_POOL = [t for t in task_module.TASK_POOL if t.get('id') != task_id]
-        if hasattr(task_module, 'dirty_tasks') and hasattr(task_module, 'task_set_lock'):
-            with task_module.task_set_lock:
-                if task_id in task_module.dirty_tasks:
-                    task_module.dirty_tasks.remove(task_id)
-        return True
-    task_module.delete_task = delete_task
-
 # ====== 拥抱新架构：引入新版工具管理器 ======
 from src.plugins.plugin_manager import init_tool, TOOL_INDEX_FILE, BASE_TOOLS
 from src.plugins.plugin_collection.local_manager import register_plugin, unregister_plugin
@@ -66,8 +49,6 @@ async def lifespan(app: FastAPI):
     init_tool()
 
     start_sensors()
-
-    _ensure_tasks_loaded_from_checkpoints()
 
     global agent
     agent = agent_module.Agent.load_checkpoint()
@@ -194,108 +175,106 @@ async def summarize_memory():
 
 
 
-def _ensure_tasks_loaded_from_checkpoints():
-    base_dir = os.path.join(DATA_DIR, "checkpoints", "task")
-    if not os.path.isdir(base_dir):
-        return
-
-    existing_ids = {t.get("id") for t in task_module.TASK_POOL}
-
-    for entry in os.listdir(base_dir):
-        checkpoint_path = os.path.join(base_dir, entry, "checkpoint.json")
-        checkpoint_dir = os.path.dirname(checkpoint_path)
-        if not os.path.isfile(checkpoint_path):
-            continue
-        try:
-            task = task_module.Task.load_checkpoint(checkpoint_dir)
-            if task and task.task_id not in existing_ids:
-                pass
-        except Exception:
-            pass
-
-
-
-
-
-def _ensure_tasks_loaded_from_logs():
-    base_dir = os.path.join(DATA_DIR, "checkpoints", "task")
-    if not os.path.isdir(base_dir):
-        return
-
-    existing_ids = {t.get("id") for t in task_module.TASK_POOL}
-
-    for entry in os.listdir(base_dir):
-        log_path = os.path.join(base_dir, entry, "log.jsonl")
-        if not os.path.isfile(log_path):
-            continue
-
-        folder_name = entry
-        task_name = folder_name
-        creat_time = ""
-        if "_" in folder_name:
-            maybe_time = folder_name.split("_")[-1]
-            task_name = folder_name[: -(len(maybe_time) + 1)] or folder_name
-            creat_time = maybe_time
-
-        task_id = None
-        first_ts = None
-        try:
-            with open(log_path, "r", encoding="utf-8") as f:
-                for line in f:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        payload = json.loads(line)
-                    except Exception:
-                        continue
-                    if not task_id:
-                        task_id = payload.get("task_id")
-                    if not first_ts:
-                        first_ts = payload.get("timestamp")
-                    if task_id and first_ts:
-                        break
-        except Exception:
-            continue
-
-        if not task_id or task_id in existing_ids:
-            continue
-
-        created_iso = (
-            datetime.datetime.fromtimestamp(first_ts).isoformat()
-            if isinstance(first_ts, (int, float))
-            else datetime.datetime.now().isoformat()
-        )
-
-        task_record = {
-            "name": task_name or "Unknown",
-            "id": task_id,
-            "state": "running",
-            "creat_time": creat_time,
-            "progress": 50,
-            "createdAt": created_iso,
-            "updatedAt": created_iso,
-        }
-        task_module.TASK_POOL.append(task_record)
-        existing_ids.add(task_id)
-
-
 @app.get("/api/tasks")
 async def get_tasks():
-    _ensure_tasks_loaded_from_checkpoints()
-    _ensure_tasks_loaded_from_logs()
+    tasks = []
+    
+    # 首先从 TASK_INSTANCES 获取运行中的任务
+    for task_id, task in task_module.TASK_INSTANCES.items():
+        # 读取日志文件
+        logs = []
+        try:
+            log_path = os.path.join(task.checkpoint_dir, "log.jsonl")
+            if os.path.exists(log_path):
+                with open(log_path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        if line.strip():
+                            log_entry = json.loads(line)
+                            logs.append(log_entry.get("content", ""))
+        except:
+            pass
 
-    task_map = {}
-    for t in task_module.TASK_POOL:
-        task_id = t.get("id")
-        if not task_id:
-            continue
-        task_data = t.copy()
-        instance = task_module.TASK_INSTANCES.get(task_id)
-        if instance:
-            task_data["history"] = instance.current_history
-        task_map[task_id] = task_data
-    return list(task_map.values())
+        # 创建时间 ISO 格式
+        try:
+            created_iso = datetime.datetime.strptime(task.create_time, "%Y%m%d%H%M%S").isoformat()
+        except:
+            created_iso = datetime.datetime.now().isoformat()
+
+        tasks.append({
+            "id": task.task_id,
+            "name": task.task_name,
+            "state": task.state,
+            "status": task.state,
+            "progress": 100 if task.state == "completed" else (0 if task.state == "ready" else 50),
+            "creat_time": task.create_time,
+            "logs": logs[-20:] if logs else [],  # 最近20条日志
+            "history": task.history[-10:] if task.history else [],  # 最近10条历史
+            "step": task.step,
+            "token_usage": task.token_usage,
+            "checkpoint_dir": task.checkpoint_dir,
+            "createdAt": created_iso,
+            "updatedAt": created_iso
+        })
+    
+    # 然后从日志文件中读取已完成的任务（不在 TASK_INSTANCES 中的）
+    base_dir = os.path.join(DATA_DIR, "checkpoints", "task")
+    if os.path.isdir(base_dir):
+        for entry in os.listdir(base_dir):
+            log_path = os.path.join(base_dir, entry, "log.jsonl")
+            if not os.path.exists(log_path):
+                continue
+            
+            # 从日志文件中读取任务信息
+            task_id = None
+            task_name = entry
+            create_time = ""
+            logs = []
+            
+            try:
+                with open(log_path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        if line.strip():
+                            log_entry = json.loads(line)
+                            if not task_id:
+                                task_id = log_entry.get("task_id")
+                            logs.append(log_entry.get("content", ""))
+            except:
+                continue
+            
+            # 如果任务已经在 TASK_INSTANCES 中，跳过
+            if task_id and task_id in task_module.TASK_INSTANCES:
+                continue
+            
+            # 解析任务名称和创建时间
+            if "_" in entry:
+                parts = entry.split("_")
+                create_time = parts[-1]
+                task_name = "_".join(parts[:-1])
+            
+            # 创建时间 ISO 格式
+            try:
+                created_iso = datetime.datetime.strptime(create_time, "%Y%m%d%H%M%S").isoformat()
+            except:
+                created_iso = datetime.datetime.now().isoformat()
+            
+            if task_id:
+                tasks.append({
+                    "id": task_id,
+                    "name": task_name,
+                    "state": "completed",  # 不在运行中的任务默认为已完成
+                    "status": "completed",
+                    "progress": 100,
+                    "creat_time": create_time,
+                    "logs": logs[-20:] if logs else [],
+                    "history": [],
+                    "step": 0,
+                    "token_usage": 0,
+                    "checkpoint_dir": os.path.join(base_dir, entry),
+                    "createdAt": created_iso,
+                    "updatedAt": created_iso
+                })
+    
+    return tasks
 
 
 LOG_READ_LOCK = threading.Lock()
@@ -421,7 +400,7 @@ def _resolve_task_log_path(task_id: str) -> Optional[str]:
 
     instance = task_module.TASK_INSTANCES.get(task_id)
     if instance:
-        log_dir = os.path.join(DATA_DIR, "checkpoints", "task", f"{instance.name}_{instance.creat_time}")
+        log_dir = os.path.join(DATA_DIR, "checkpoints", "task", f"{instance.task_name}_{instance.create_time}")
         log_path = os.path.join(log_dir, "log.jsonl")
         if os.path.exists(log_path):
             TASK_LOG_PATH_CACHE[task_id] = log_path
@@ -490,10 +469,47 @@ async def inject_task(task_id: str, request: ForcePushRequest):
     raise HTTPException(status_code=404, detail="Task not found")
 
 
+@app.post("/api/tasks/{task_id}/stop")
+async def stop_task_endpoint(task_id: str):
+    task_module.kill_task(task_id)
+    return {"status": "success"}
+
+
 @app.delete("/api/tasks/{task_id}")
 async def remove_task_endpoint(task_id: str):
+    # 停止任务
     task_module.kill_task(task_id)
-    task_module.delete_task(task_id)
+    
+    # 从 TASK_INSTANCES 中删除
+    if task_id in task_module.TASK_INSTANCES:
+        del task_module.TASK_INSTANCES[task_id]
+    
+    # 删除对应的日志文件和目录
+    base_dir = os.path.join(DATA_DIR, "checkpoints", "task")
+    dirs_to_delete = []
+    
+    if os.path.isdir(base_dir):
+        for entry in os.listdir(base_dir):
+            log_path = os.path.join(base_dir, entry, "log.jsonl")
+            if os.path.exists(log_path):
+                try:
+                    with open(log_path, "r", encoding="utf-8") as f:
+                        for line in f:
+                            if line.strip():
+                                log_entry = json.loads(line)
+                                if log_entry.get("task_id") == task_id:
+                                    dirs_to_delete.append(os.path.join(base_dir, entry))
+                                    break
+                except:
+                    pass
+    
+    # 在遍历完成后删除目录
+    for dir_path in dirs_to_delete:
+        try:
+            shutil.rmtree(dir_path)
+        except:
+            pass
+    
     return {"status": "success"}
 
 

@@ -147,7 +147,7 @@ filesystem:
       type: function
       function:
         name: read_file_lines
-        description: Read specific lines from a file.
+        description: Read specific lines from a file. Supports reading lines from start to end (inclusive). Returns line numbers with content. Limited to 5MB files and MAX_READ_WINDOW lines.
         parameters:
           type: object
           properties:

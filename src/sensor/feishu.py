@@ -26,12 +26,12 @@ def do_p2_im_message_receive_v1(data: P2ImMessageReceiveV1) -> None:
             add_message({
                 "type": "owner_message",
                 "chat_id": chat_id,
-                "content": f"【feishu指令】{user_text}"
+                "content": f"【收到来自 feishu 的指令】{user_text}"
             })
         else:
             # 状态 2：忙碌。强制塞入 pending_force_push 拦截器
             print("⚠️ Agent 正在忙碌，执行挂起强制注入...")
-            GLOBAL_AGENT.force_push(f"【feishu指令】{user_text}")
+            GLOBAL_AGENT.force_push(f"【收到来自 feishu 的指令】{user_text}")
     else:
         print("⚠️ [Feishu Sensor] 未绑定 Agent 实例，无法处理消息！")
 

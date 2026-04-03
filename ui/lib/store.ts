@@ -3,7 +3,7 @@
 import { create } from 'zustand'
 import type { Message, ThoughtChain, Project, Task, Skill, FileContent, Plugin, ConfigCategory, ModelConfig, ToolGroup, ScheduleItem, AlarmItem } from './types'
 
-export const API_BASE = 'http://localhost:8000/api'
+export const API_BASE = 'http://localhost:8001/api'
 export const API_ORIGIN = API_BASE.replace(/\/api\/?$/, '')
 
 type ConnectionStatus = 'connected' | 'disconnected' | 'reconnecting'

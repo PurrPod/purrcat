@@ -44,4 +44,4 @@ def call_local_tool(plugin_name: str, tool_name: str, arguments: dict, **kwargs)
         else:
             return _format_response("text", str(result) if result is not None else "Success (No Output)")
     except Exception as e:
-        return _format_response("error", f"❌ 调用本地工具时发生异常: {str(e)}")
+        return _format_response("error", f"❌ 调用本地工具时发生异常: {str(e)}，如果是传参错误，请调用fetch_tool获取详细的schema信息")
