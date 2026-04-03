@@ -203,19 +203,13 @@ def _ensure_tasks_loaded_from_checkpoints():
 
     for entry in os.listdir(base_dir):
         checkpoint_path = os.path.join(base_dir, entry, "checkpoint.json")
+        checkpoint_dir = os.path.dirname(checkpoint_path)
         if not os.path.isfile(checkpoint_path):
             continue
         try:
-            task = task_module.Task.load_checkpoint(checkpoint_path)
+            task = task_module.Task.load_checkpoint(checkpoint_dir)
             if task and task.task_id not in existing_ids:
-                task_module.TASK_POOL.append({
-                    "name": getattr(task, 'name', task.task_name),
-                    "id": task.task_id,
-                    "state": task.state if hasattr(task, 'state') else "completed",
-                    "progress": 100 if hasattr(task, 'run_result') and task.run_result else 50,
-                    "creat_time": getattr(task, 'creat_time', getattr(task, 'create_time', '')),
-                })
-                existing_ids.add(task.task_id)
+                pass
         except Exception:
             pass
 

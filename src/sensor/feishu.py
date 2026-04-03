@@ -17,20 +17,23 @@ def do_p2_im_message_receive_v1(data: P2ImMessageReceiveV1) -> None:
     user_text = msg_content.get("text", "")
     chat_id = data.event.message.chat_id
 
-    print(f"\n📩 [feishu Sensor] 收到飞书消息: {user_text} (准备强制注入)")
+    print(f"\n📩 [feishu Sensor] 收到飞书消息: {user_text}")
 
     if GLOBAL_AGENT:
-        # 1. 直接强插进 Agent 的对话历史 (支持携带 chat_id 供上下文参考)
-        GLOBAL_AGENT.force_push(f"【feishu指令】{user_text}")
-
         if GLOBAL_AGENT.state == "idle":
+            # 状态 1：空闲。直接作为真实消息投递，正常唤醒 Agent
+            print("🟢 Agent 处于空闲状态，直接投递至消息队列...")
             add_message({
                 "type": "owner_message",
                 "chat_id": chat_id,
-                "content": "收到新的feishu消息，请结合最新上下文给出回应或执行任务。如已处理，请忽略"
+                "content": f"【feishu指令】{user_text}"
             })
+        else:
+            # 状态 2：忙碌。强制塞入 pending_force_push 拦截器
+            print("⚠️ Agent 正在忙碌，执行挂起强制注入...")
+            GLOBAL_AGENT.force_push(f"【feishu指令】{user_text}")
     else:
-        print("⚠️ [Feishu Sensor] 未绑定 Agent 实例，无法执行 force_push！")
+        print("⚠️ [Feishu Sensor] 未绑定 Agent 实例，无法处理消息！")
 
 
 event_handler = lark.EventDispatcherHandler.builder("", "") \

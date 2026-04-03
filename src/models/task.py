@@ -59,9 +59,9 @@ class Task:
         self.window_token = 0
         if not TASK_INSTANCES.get(self.task_id, None):
             TASK_INSTANCES[self.task_id] = self
-        self.log_and_notify("system", "🧾 已加载统一 Agent 工作流上下文")
         self.checkpoint_dir = os.path.join(DATA_DIR, "checkpoints", "task", f"{self.task_name}_{self.create_time}")
         self.log_window = []
+        self.log_and_notify("system", "🧾 已加载统一 Agent 工作流上下文")
 
     def force_push(self, content):
         with self._lock:
@@ -82,6 +82,16 @@ class Task:
                     if self._is_completed(tool_calling):
                         result, summary = self._extract_summary(tool_calling)
                         self.state = "completed"
+                        task_done_call = next((tc for tc in tool_calling if tc.function.name == "task_done"), None)
+                        if task_done_call:
+                            return_content = "任务结果交付成功！"
+                            self.log_and_notify("tool", f"📦 任务结束交付: {return_content}")
+                            self.history.append({
+                                "role": "tool",
+                                "tool_call_id": task_done_call.id,
+                                "name": "task_done",
+                                "content": return_content
+                            })
                         self.save_checkpoint()
                         if result:
                             return f"✅ 任务成功：{summary}"

@@ -13,7 +13,6 @@ from src.utils.config import (
 
 from json_repair import repair_json
 
-
 MESSAGE_QUEUE = PriorityQueue()
 
 PRIORITY_MAP = {
@@ -47,7 +46,9 @@ class Agent:
         self.max_len = 150
         self.memory = Memory()
         self.checkpoint_path = checkpoint_path or CHECKPOINT_PATH
-        self.pending_force_push = None
+        self.pending_force_push = []
+        self._lock = threading.Lock()
+        self.window_token = 0
         self._stop_event = threading.Event()
         self.dynamic_tools = []
         if warm_up:
@@ -68,11 +69,40 @@ class Agent:
             print(f"⚠️ [Memory] 落盘失败: {e}")
 
     def force_push(self, content):
-        if self.current_history and self.current_history[-1].get('role') == 'assistant' and self.current_history[
-            -1].get('tool_calls'):
-            self.pending_force_push = content
-        else:
-            self._append_history({"role": "user", "content": "[System Warning] You should suspend your action and handle this message first!\n" + content})
+        """线程安全的强行消息注入"""
+        with self._lock:
+            self.pending_force_push.append(content)
+
+    def _track_token_usage(self, response):
+        """精准获取 API Token 消耗"""
+        if hasattr(response, "usage") and response.usage is not None:
+            self.window_token = response.usage.total_tokens
+
+    def _checker(self, step: int):
+        """生命周期与环境维护检查器"""
+        # 1. 拦截并处理挂起的强行注入
+        local_push = []
+        with self._lock:
+            if self.pending_force_push:
+                local_push = self.pending_force_push.copy()
+                self.pending_force_push.clear()
+
+        if local_push:
+            for cnt, item in enumerate(local_push, 1):
+                local_push[cnt - 1] = f"{cnt} | " + item
+            content = "\n".join(local_push)
+            self._append_history({
+                "role": "user",
+                "content": f"[System Warning] You should suspend your action and handle this message first!\n{content}"
+            })
+
+        # 2. 周期清理动态工具缓存，防止上下文堆积
+        if step > 0 and step % 10 == 0:
+            self.dynamic_tools.clear()
+            print("🧹 [Agent] 已周期清理动态工具缓存")
+
+        # 3. 记忆承载能力检查
+        self._check_and_summarize_memory()
 
     def process_message(self, message: dict):
         self.dynamic_tools.clear()
@@ -80,8 +110,7 @@ class Agent:
         msg_type = message.get("type")
         msg_content = message.get("content")
         print(f"\n🔔 [Agent 抓取消息] 类型: {msg_type} | 内容: {msg_content}")
-        self._append_history(
-            {"role": "user", "content": f"🔔 收到系统消息 (类型: {msg_type}):\n{msg_content}"})
+        self._append_history({"role": "user", "content": f"🔔 收到系统消息 (类型: {msg_type}):\n{msg_content}"})
 
         model_name = self.name.split(":")[-1] if ":" in self.name else self.name
         max_steps = 1000
@@ -92,15 +121,12 @@ class Agent:
                 current_tools = list(BASE_TOOLS) + list(AGENT_TOOLS)
                 if self.dynamic_tools:
                     current_tools.extend([item["schema"] for item in self.dynamic_tools])
-
                 kwargs = {"model": model_name, "messages": self.current_history}
                 if current_tools:
                     kwargs["tools"] = current_tools
-
-                self._check_and_summarize_memory()
-
                 response = self.client.chat.completions.create(**kwargs)
                 msg_resp = response.choices[0].message
+                self._track_token_usage(response)
 
                 assist_msg = {"role": "assistant", "content": msg_resp.content or ""}
                 if msg_resp.tool_calls:
@@ -113,7 +139,6 @@ class Agent:
                     ]
 
                 self._append_history(assist_msg)
-
                 if msg_resp.content:
                     print(f"🤖 助手思考: {msg_resp.content}")
                 if not msg_resp.tool_calls:
@@ -144,11 +169,9 @@ class Agent:
                     target_route = None
                     target_plugin = None
 
-                    # 从 AGENT_TOOL_FUNCTIONS 获取 Agent 专属工具名列表
                     from src.plugins.route.agent_tool import AGENT_TOOL_FUNCTIONS
                     agent_tool_names = list(AGENT_TOOL_FUNCTIONS.keys())
 
-                    # 检查是否是 AGENT_TOOLS 中的工具
                     if tool_name in agent_tool_names:
                         target_route = "agent"
                         target_plugin = "agent_tool"
@@ -159,7 +182,6 @@ class Agent:
                                 target_plugin = tool_item.get("plugin")
                                 break
 
-                        # 如果在 dynamic_tools 中没找到，尝试从 tool.jsonl 中查找
                         if not target_route or not target_plugin:
                             if os.path.exists(TOOL_INDEX_FILE):
                                 with open(TOOL_INDEX_FILE, "r", encoding="utf-8") as f:
@@ -172,13 +194,14 @@ class Agent:
                                             target_plugin = tool_info["plugin"]
                                             break
                     result_str, new_schema_info = parse_tool(tool_name, arguments, route=target_route, plugin=target_plugin)
+                    # Schema 更新闭环
                     if new_schema_info:
                         schemas_to_add = new_schema_info if isinstance(new_schema_info, list) else [new_schema_info]
                         for schema_item in schemas_to_add:
                             new_funct_name = schema_item["funct"]
-                            self.dynamic_tools = [item for item in self.dynamic_tools if
-                                                  item.get("funct") != new_funct_name]
+                            self.dynamic_tools = [item for item in self.dynamic_tools if item.get("funct") != new_funct_name]
                             self.dynamic_tools.append(schema_item)
+
                     if result_str == "__AGENT_PAUSE__":
                         print("⏸️ Agent 已将当前任务放入挂起表，准备处理下一条消息...")
                         self._append_history({
@@ -198,13 +221,16 @@ class Agent:
                         "content": result_str
                     })
 
-                    if self.pending_force_push:
-                        self._append_history({"role": "user",
-                                              "content": "[System Warning] You should suspend your action and handle this message first!\n" + self.pending_force_push})
-                        self.pending_force_push = None
+                self._checker(step)
 
+            except KeyboardInterrupt:
+                self.state = "idle"
+                print("⚠️ [Agent] 检测到强制中断 (Ctrl+C)，保存现场...")
+                self.save_checkpoint()
+                raise
             except Exception as e:
-                print(f"❌ 大模型交互断层: {e}")
+                print(f"❌ [Agent] 大模型交互断层: {e}")
+                self.save_checkpoint()
                 break
 
         self.state = "idle"
@@ -214,20 +240,12 @@ class Agent:
             print(f"压缩记忆失败：{e}")
 
     def _check_and_summarize_memory(self, check_mode=True):
-        messages_str = json.dumps(self.current_history, ensure_ascii=False)
         max_tokens = 100000
-        try:
-            import tiktoken
-            encoding = tiktoken.get_encoding("cl100k_base")
-            current_tokens = len(encoding.encode(messages_str))
-        except ImportError:
-            current_tokens = len(messages_str) // 2
 
-        if check_mode:
-            if len(self.current_history) < 150 and current_tokens < max_tokens:
-                return
+        if check_mode and len(self.current_history) < 150 and self.window_token < max_tokens:
+            return
 
-        print(f"🗜️ 记忆容量到达 {len(self.current_history)} 条 (约 {current_tokens} tokens)，触发自我归档...")
+        print(f"🗜️ 记忆容量到达 {len(self.current_history)} 条 (约 {self.window_token} tokens)，触发自我归档...")
 
         alert_prompt = """【系统严重警告：大脑记忆容量即将溢出！！！】
 为了防止记忆断层，系统即将物理抹除你最早期的一批记忆。
@@ -251,7 +269,6 @@ class Agent:
 
             start_idx = 1
             keep_recent = 20
-
             split_idx = len(self.current_history) - keep_recent
 
             if split_idx > start_idx:
@@ -272,6 +289,7 @@ class Agent:
             self.current_history = [self.current_history[0]] + self.current_history[split_idx:]
 
             print("✅ Agent记忆清理完毕！已安全避开 Tool Call 链条完成流水线截断。")
+            self.window_token = 0  # 归档后重置 Token 计算
             self.save_checkpoint()
 
         except Exception as e:
@@ -315,7 +333,6 @@ class Agent:
             else:
                 print(f"⚠️ [Checkpoint] 文件内容为空或格式错误，重置为全新状态。")
                 agent.save_checkpoint(filepath)
-
             return agent
 
         except Exception as e:
