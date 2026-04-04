@@ -31,7 +31,7 @@ import { cn } from '@/lib/utils'
 
 const API_BASE = 'http://localhost:8001/api'
 
-type TabKey = 'model' | 'mcp' | 'local' | 'skill' | 'soul'
+type TabKey = 'model' | 'mcp' | 'local' | 'skill' | 'channel' | 'tool' | 'permission' | 'soul'
 
 // 辅助组件：处理模型对象Key重命名时输入框脱焦问题
 function EditableKeyInput({
@@ -74,6 +74,24 @@ export default function ExtensionPage() {
   const [skills, setSkills] = useState<any[]>([])
   const [soulContent, setSoulContent] = useState("")
   const [toolsMap, setToolsMap] = useState<Record<string, any[]>>({})
+  const [channelConfig, setChannelConfig] = useState<Record<string, any>>({
+    feishu: {
+      app_id: '',
+      app_secret: '',
+      chat_id: ''
+    },
+    other: []
+  })
+  const [toolConfig, setToolConfig] = useState<Record<string, any>>({
+    web_api: {
+      tavily_api_key: ''
+    }
+  })
+  const [permissionConfig, setPermissionConfig] = useState<Record<string, any>>({
+    sandbox_dirs: ['sandbox/', 'agent_vm/'],
+    skill_dir: ['data/skill'],
+    dont_read_dirs: ['src/']
+  })
 
   const [selectedPlugin, setSelectedPlugin] = useState<any>(null)
   const [isPluginDialogOpen, setIsPluginDialogOpen] = useState(false)
@@ -110,6 +128,33 @@ export default function ExtensionPage() {
       const mcpConfig = configData['mcp_config.json'] || {}
       const servers = mcpConfig.mcpServers || {}
       setMcpServers(servers)
+
+      // 频道配置 (映射 secrets/feishu.yaml)
+      const channelConfig = configData['channel_config.json'] || {
+        feishu: {
+          app_id: '',
+          app_secret: '',
+          chat_id: ''
+        },
+        other: []
+      }
+      setChannelConfig(channelConfig)
+
+      // 工具配置 (映射 secrets/web_api.yaml)
+      const toolConfig = configData['tool_config.json'] || {
+        web_api: {
+          tavily_api_key: ''
+        }
+      }
+      setToolConfig(toolConfig)
+
+      // 权限设置 (映射 file_config.json)
+      const permissionConfig = configData['permission_config.json'] || {
+        sandbox_dirs: ['sandbox/', 'agent_vm/'],
+        skill_dir: ['data/skill'],
+        dont_read_dirs: ['src/']
+      }
+      setPermissionConfig(permissionConfig)
 
       setPlugins(await pluginsRes.json())
       setSkills(await skillsRes.json())
@@ -168,9 +213,45 @@ export default function ExtensionPage() {
     } catch (e) { toast({ title: "保存失败", variant: "destructive" }) }
   }
 
+  const handleSaveChannel = async () => {
+    try {
+      await fetch(`${API_BASE}/config/feishu_config.json`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(channelConfig)
+      })
+      toast({ title: "保存成功", description: "频道配置已同步至 feishu.yaml" })
+    } catch (e) { toast({ title: "保存失败", variant: "destructive" }) }
+  }
+
+  const handleSaveTool = async () => {
+    try {
+      await fetch(`${API_BASE}/config/web_api_config.json`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(toolConfig)
+      })
+      toast({ title: "保存成功", description: "工具配置已同步至 web_api.yaml" })
+    } catch (e) { toast({ title: "保存失败", variant: "destructive" }) }
+  }
+
+  const handleSavePermission = async () => {
+    try {
+      await fetch(`${API_BASE}/config/file_config.json`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(permissionConfig)
+      })
+      toast({ title: "保存成功", description: "权限设置已同步至 file_config.json" })
+    } catch (e) { toast({ title: "保存失败", variant: "destructive" }) }
+  }
+
   const handleCurrentSave = () => {
     if (activeTab === 'model') handleSaveModels()
     else if (activeTab === 'mcp') handleSaveMcp()
+    else if (activeTab === 'channel') handleSaveChannel()
+    else if (activeTab === 'tool') handleSaveTool()
+    else if (activeTab === 'permission') handleSavePermission()
     else if (activeTab === 'soul') handleSaveSoul()
     else toast({ title: "无需保存", description: "该页面的修改已实时生效" })
   }
@@ -327,6 +408,9 @@ export default function ExtensionPage() {
     { id: 'mcp', label: 'MCP 服务器', icon: Cpu },
     { id: 'local', label: '本地插件', icon: Puzzle },
     { id: 'skill', label: '技能目录', icon: Wrench },
+    { id: 'channel', label: '频道配置', icon: Server },
+    { id: 'tool', label: '工具配置', icon: Wrench },
+    { id: 'permission', label: '权限设置', icon: Settings2 },
     { id: 'soul', label: 'SOUL.md', icon: BookOpen },
   ] as const
 
@@ -750,6 +834,245 @@ export default function ExtensionPage() {
                 </div>
               )}
 
+              {/* ====== 频道配置 ====== */}
+              {activeTab === 'channel' && (
+                <div className="space-y-8 mt-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h2 className="text-2xl font-semibold flex items-center gap-3"><Server className="text-primary size-6"/> 频道配置</h2>
+                      <p className="text-sm text-muted-foreground mt-1">配置飞书等频道的连接信息</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* 飞书配置 */}
+                    <div className="p-6 rounded-[20px] border border-border/40 bg-muted/20 shadow-sm">
+                      <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                        <div className="size-2.5 rounded-full bg-blue-500" />
+                        飞书配置
+                      </h3>
+                      <div className="space-y-4">
+                        <div className="space-y-1.5">
+                          <Label className="text-[11px] uppercase tracking-wider text-muted-foreground font-bold">App ID</Label>
+                          <Input 
+                            value={channelConfig.feishu?.app_id || ''} 
+                            onChange={(e) => setChannelConfig({ ...channelConfig, feishu: { ...channelConfig.feishu, app_id: e.target.value } })} 
+                            className="h-9 bg-background" 
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label className="text-[11px] uppercase tracking-wider text-muted-foreground font-bold">App Secret</Label>
+                          <Input 
+                            type="password" 
+                            value={channelConfig.feishu?.app_secret || ''} 
+                            onChange={(e) => setChannelConfig({ ...channelConfig, feishu: { ...channelConfig.feishu, app_secret: e.target.value } })} 
+                            className="h-9 bg-background" 
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label className="text-[11px] uppercase tracking-wider text-muted-foreground font-bold">Chat ID</Label>
+                          <Input 
+                            value={channelConfig.feishu?.chat_id || ''} 
+                            onChange={(e) => setChannelConfig({ ...channelConfig, feishu: { ...channelConfig.feishu, chat_id: e.target.value } })} 
+                            className="h-9 bg-background" 
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 其他频道预留 */}
+                    <div className="p-6 rounded-[20px] border border-border/40 bg-muted/20 shadow-sm">
+                      <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                        <div className="size-2.5 rounded-full bg-gray-500" />
+                        其他频道预留
+                      </h3>
+                      <div className="text-center py-12 text-muted-foreground">
+                        <p>未来将支持 QQ、微信等其他频道</p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="h-24 w-full shrink-0" />
+                </div>
+              )}
+
+              {/* ====== 工具配置 ====== */}
+              {activeTab === 'tool' && (
+                <div className="space-y-8 mt-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h2 className="text-2xl font-semibold flex items-center gap-3"><Wrench className="text-primary size-6"/> 工具配置</h2>
+                      <p className="text-sm text-muted-foreground mt-1">配置 web_api 等工具的连接信息</p>
+                    </div>
+                  </div>
+
+                  <div className="p-6 rounded-[20px] border border-border/40 bg-muted/20 shadow-sm">
+                    <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                      <div className="size-2.5 rounded-full bg-green-500" />
+                      Web API 配置
+                    </h3>
+                    <div className="space-y-4">
+                      <div className="space-y-1.5">
+                        <Label className="text-[11px] uppercase tracking-wider text-muted-foreground font-bold">Tavily API Key</Label>
+                        <Input 
+                          type="password" 
+                          value={toolConfig.web_api?.tavily_api_key || ''} 
+                          onChange={(e) => setToolConfig({ ...toolConfig, web_api: { ...toolConfig.web_api, tavily_api_key: e.target.value } })} 
+                          className="h-9 bg-background" 
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  <div className="h-24 w-full shrink-0" />
+                </div>
+              )}
+
+              {/* ====== 权限设置 ====== */}
+              {activeTab === 'permission' && (
+                <div className="space-y-8 mt-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h2 className="text-2xl font-semibold flex items-center gap-3"><Settings2 className="text-primary size-6"/> 权限设置</h2>
+                      <p className="text-sm text-muted-foreground mt-1">配置特殊文件路径和权限相关设置</p>
+                    </div>
+                  </div>
+
+                  <div className="p-6 rounded-[20px] border border-border/40 bg-muted/20 shadow-sm">
+                    <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                      <div className="size-2.5 rounded-full bg-purple-500" />
+                      特殊文件路径设置
+                    </h3>
+                    <div className="space-y-4">
+                      <div className="space-y-1.5">
+                        <Label className="text-[11px] uppercase tracking-wider text-muted-foreground font-bold">沙盒目录</Label>
+                        <div className="space-y-2">
+                          {permissionConfig.sandbox_dirs?.map((dir: string, index: number) => (
+                            <div key={index} className="flex gap-2">
+                              <Input 
+                                value={dir} 
+                                onChange={(e) => {
+                                  const newDirs = [...permissionConfig.sandbox_dirs];
+                                  newDirs[index] = e.target.value;
+                                  setPermissionConfig({ ...permissionConfig, sandbox_dirs: newDirs });
+                                }} 
+                                className="h-9 bg-background flex-1" 
+                                placeholder="/path/to/sandbox"
+                              />
+                              <Button 
+                                variant="destructive" 
+                                size="sm" 
+                                onClick={() => {
+                                  const newDirs = permissionConfig.sandbox_dirs.filter((_: string, i: number) => i !== index);
+                                  setPermissionConfig({ ...permissionConfig, sandbox_dirs: newDirs });
+                                }}
+                              >
+                                <Trash2 className="size-4" />
+                              </Button>
+                            </div>
+                          ))}
+                          <Button 
+                            variant="outline" 
+                            size="sm" 
+                            onClick={() => {
+                              setPermissionConfig({ 
+                                ...permissionConfig, 
+                                sandbox_dirs: [...(permissionConfig.sandbox_dirs || []), ''] 
+                              });
+                            }}
+                          >
+                            <Plus className="size-4 mr-1" /> 添加目录
+                          </Button>
+                        </div>
+                      </div>
+                      
+                      <div className="space-y-1.5">
+                        <Label className="text-[11px] uppercase tracking-wider text-muted-foreground font-bold">技能目录</Label>
+                        <div className="space-y-2">
+                          {permissionConfig.skill_dir?.map((dir: string, index: number) => (
+                            <div key={index} className="flex gap-2">
+                              <Input 
+                                value={dir} 
+                                onChange={(e) => {
+                                  const newDirs = [...permissionConfig.skill_dir];
+                                  newDirs[index] = e.target.value;
+                                  setPermissionConfig({ ...permissionConfig, skill_dir: newDirs });
+                                }} 
+                                className="h-9 bg-background flex-1" 
+                                placeholder="/path/to/skills"
+                              />
+                              <Button 
+                                variant="destructive" 
+                                size="sm" 
+                                onClick={() => {
+                                  const newDirs = permissionConfig.skill_dir.filter((_: string, i: number) => i !== index);
+                                  setPermissionConfig({ ...permissionConfig, skill_dir: newDirs });
+                                }}
+                              >
+                                <Trash2 className="size-4" />
+                              </Button>
+                            </div>
+                          ))}
+                          <Button 
+                            variant="outline" 
+                            size="sm" 
+                            onClick={() => {
+                              setPermissionConfig({ 
+                                ...permissionConfig, 
+                                skill_dir: [...(permissionConfig.skill_dir || []), ''] 
+                              });
+                            }}
+                          >
+                            <Plus className="size-4 mr-1" /> 添加目录
+                          </Button>
+                        </div>
+                      </div>
+                      
+                      <div className="space-y-1.5">
+                        <Label className="text-[11px] uppercase tracking-wider text-muted-foreground font-bold">不读取目录</Label>
+                        <div className="space-y-2">
+                          {permissionConfig.dont_read_dirs?.map((dir: string, index: number) => (
+                            <div key={index} className="flex gap-2">
+                              <Input 
+                                value={dir} 
+                                onChange={(e) => {
+                                  const newDirs = [...permissionConfig.dont_read_dirs];
+                                  newDirs[index] = e.target.value;
+                                  setPermissionConfig({ ...permissionConfig, dont_read_dirs: newDirs });
+                                }} 
+                                className="h-9 bg-background flex-1" 
+                                placeholder="/path/to/exclude"
+                              />
+                              <Button 
+                                variant="destructive" 
+                                size="sm" 
+                                onClick={() => {
+                                  const newDirs = permissionConfig.dont_read_dirs.filter((_: string, i: number) => i !== index);
+                                  setPermissionConfig({ ...permissionConfig, dont_read_dirs: newDirs });
+                                }}
+                              >
+                                <Trash2 className="size-4" />
+                              </Button>
+                            </div>
+                          ))}
+                          <Button 
+                            variant="outline" 
+                            size="sm" 
+                            onClick={() => {
+                              setPermissionConfig({ 
+                                ...permissionConfig, 
+                                dont_read_dirs: [...(permissionConfig.dont_read_dirs || []), ''] 
+                              });
+                            }}
+                          >
+                            <Plus className="size-4 mr-1" /> 添加目录
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="h-24 w-full shrink-0" />
+                </div>
+              )}
+
               {/* ====== SOUL.md ====== */}
               {activeTab === 'soul' && (
                 <div className="space-y-6 mt-6 flex-1 flex flex-col">
@@ -775,7 +1098,7 @@ export default function ExtensionPage() {
           {/* 底部悬浮操作栏 */}
           <div className="absolute bottom-0 left-0 right-0 z-20 bg-gradient-to-t from-background via-background/90 to-transparent pt-32 pb-8 px-4 md:px-12 pointer-events-none">
             <div className="max-w-5xl mx-auto w-full pointer-events-auto flex justify-end">
-              {(activeTab === 'model' || activeTab === 'mcp' || activeTab === 'soul') && (
+              {(activeTab === 'model' || activeTab === 'mcp' || activeTab === 'channel' || activeTab === 'tool' || activeTab === 'permission' || activeTab === 'soul') && (
                 <Button size="lg" variant="secondary" className="bg-background/80 backdrop-blur-md rounded-[24px] shadow-[0_-10px_40px_rgba(0,0,0,0.05)] border border-border/20 p-4 px-8 shadow-sm active:scale-95 transition-all" onClick={handleCurrentSave}>
                   <Save className="size-4 mr-2" />
                   保存更改

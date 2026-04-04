@@ -90,6 +90,7 @@ interface AppState {
     title: string
     trigger_time: string
     repeat_rule: string
+    active?: boolean
   }) => Promise<void>
   updateAlarm: (id: string, updates: Partial<{ title: string; trigger_time: string; repeat_rule: string; active: boolean }>) => Promise<void>
   removeAlarm: (id: string) => Promise<void>
