@@ -21,13 +21,5 @@
     "trigger_time": "10:00",
     "repeat_rule": "everyday",
     "active": false
-  },
-  {
-    "title": "1",
-    "trigger_time": "08:00",
-    "repeat_rule": "none",
-    "active": false,
-    "id": "06b29657-49d5-407a-9361-dce244afa9c8",
-    "createdAt": "2026-04-04T20:02:52.420087"
   }
 ]

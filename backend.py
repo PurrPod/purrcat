@@ -27,7 +27,8 @@ PLUGIN_COLLECTION_DIR = Path(os.path.join(BASE_DIR, "src", "plugins", "plugin_co
 from src.agent import agent as agent_module
 from src.models import task as task_module
 from src.plugins.plugin_collection.filesystem.filesystem import set_allowed_directories, list_special_directories
-from src.utils.config import load_config, get_model_config_json, get_mcp_config_json, get_feishu_config, get_rss_subscriptions, get_web_api_config, reload_config
+from src.utils.config import load_config, get_model_config_json, get_mcp_config_json, get_feishu_config, \
+    get_rss_subscriptions, get_web_api_config, reload_config
 
 # ====== 拥抱新架构：引入新版工具管理器 ======
 from src.plugins.plugin_manager import init_tool, TOOL_INDEX_FILE, BASE_TOOLS
@@ -39,7 +40,6 @@ from src.sensor.feishu import start_lark_sensor
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # --- Startup logic ---
     os.environ.pop("HTTP_PROXY", None)
     os.environ.pop("HTTPS_PROXY", None)
     os.environ.pop("http_proxy", None)
@@ -47,18 +47,15 @@ async def lifespan(app: FastAPI):
 
     print("🔄 初始化全局工具注册表...")
     init_tool()
-
     start_sensors()
 
     global agent
     agent = agent_module.Agent.load_checkpoint()
     agent_sensor_task = asyncio.create_task(asyncio.to_thread(agent.sensor))
 
-    # Start Lark sensor with agent instance
     start_lark_sensor(agent)
     yield
 
-    # --- Shutdown logic ---
     print("Shutting down backend...")
     try:
         agent.stop()
@@ -78,15 +75,9 @@ app = FastAPI(lifespan=lifespan)
 
 @app.get("/")
 async def root():
-    return {
-        "status": "online",
-        "message": "Agent Backend API is running",
-        "docs": "/docs",
-        "frontend": "http://localhost:3000"
-    }
+    return {"status": "online", "message": "Agent Backend API is running"}
 
 
-# Enable CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -172,16 +163,10 @@ async def summarize_memory():
     return {"status": "success"}
 
 
-
-
-
 @app.get("/api/tasks")
 async def get_tasks():
     tasks = []
-    
-    # 首先从 TASK_INSTANCES 获取运行中的任务
     for task_id, task in task_module.TASK_INSTANCES.items():
-        # 读取日志文件
         logs = []
         try:
             log_path = os.path.join(task.checkpoint_dir, "log.jsonl")
@@ -194,7 +179,6 @@ async def get_tasks():
         except:
             pass
 
-        # 创建时间 ISO 格式
         try:
             created_iso = datetime.datetime.strptime(task.create_time, "%Y%m%d%H%M%S").isoformat()
         except:
@@ -207,29 +191,27 @@ async def get_tasks():
             "status": task.state,
             "progress": 100 if task.state == "completed" else (0 if task.state == "ready" else 50),
             "creat_time": task.create_time,
-            "logs": logs[-20:] if logs else [],  # 最近20条日志
-            "history": task.history[-10:] if task.history else [],  # 最近10条历史
+            "logs": logs[-20:] if logs else [],
+            "history": task.history[-10:] if task.history else [],
             "step": task.step,
             "token_usage": task.token_usage,
             "checkpoint_dir": task.checkpoint_dir,
             "createdAt": created_iso,
             "updatedAt": created_iso
         })
-    
-    # 然后从日志文件中读取已完成的任务（不在 TASK_INSTANCES 中的）
+
     base_dir = os.path.join(DATA_DIR, "checkpoints", "task")
     if os.path.isdir(base_dir):
         for entry in os.listdir(base_dir):
             log_path = os.path.join(base_dir, entry, "log.jsonl")
             if not os.path.exists(log_path):
                 continue
-            
-            # 从日志文件中读取任务信息
+
             task_id = None
             task_name = entry
             create_time = ""
             logs = []
-            
+
             try:
                 with open(log_path, "r", encoding="utf-8") as f:
                     for line in f:
@@ -240,28 +222,25 @@ async def get_tasks():
                             logs.append(log_entry.get("content", ""))
             except:
                 continue
-            
-            # 如果任务已经在 TASK_INSTANCES 中，跳过
+
             if task_id and task_id in task_module.TASK_INSTANCES:
                 continue
-            
-            # 解析任务名称和创建时间
+
             if "_" in entry:
                 parts = entry.split("_")
                 create_time = parts[-1]
                 task_name = "_".join(parts[:-1])
-            
-            # 创建时间 ISO 格式
+
             try:
                 created_iso = datetime.datetime.strptime(create_time, "%Y%m%d%H%M%S").isoformat()
             except:
                 created_iso = datetime.datetime.now().isoformat()
-            
+
             if task_id:
                 tasks.append({
                     "id": task_id,
                     "name": task_name,
-                    "state": "completed",  # 不在运行中的任务默认为已完成
+                    "state": "completed",
                     "status": "completed",
                     "progress": 100,
                     "creat_time": create_time,
@@ -273,18 +252,12 @@ async def get_tasks():
                     "createdAt": created_iso,
                     "updatedAt": created_iso
                 })
-    
+
     return tasks
 
 
 LOG_READ_LOCK = threading.Lock()
 TASK_LOG_READ_CACHE: Dict[str, Dict[str, Any]] = {}
-
-
-
-
-
-
 
 
 def _read_jsonl_entries(log_path, cache, cache_key, id_prefix, cursor, limit, tail):
@@ -381,15 +354,6 @@ def _read_jsonl_entries(log_path, cache, cache_key, id_prefix, cursor, limit, ta
     return {"entries": entries, "nextCursor": line_idx, "exists": True}
 
 
-
-
-
-
-
-
-
-
-
 TASK_LOG_PATH_CACHE: Dict[str, str] = {}
 
 
@@ -477,17 +441,13 @@ async def stop_task_endpoint(task_id: str):
 
 @app.delete("/api/tasks/{task_id}")
 async def remove_task_endpoint(task_id: str):
-    # 停止任务
     task_module.kill_task(task_id)
-    
-    # 从 TASK_INSTANCES 中删除
     if task_id in task_module.TASK_INSTANCES:
         del task_module.TASK_INSTANCES[task_id]
-    
-    # 删除对应的日志文件和目录
+
     base_dir = os.path.join(DATA_DIR, "checkpoints", "task")
     dirs_to_delete = []
-    
+
     if os.path.isdir(base_dir):
         for entry in os.listdir(base_dir):
             log_path = os.path.join(base_dir, entry, "log.jsonl")
@@ -502,14 +462,13 @@ async def remove_task_endpoint(task_id: str):
                                     break
                 except:
                     pass
-    
-    # 在遍历完成后删除目录
+
     for dir_path in dirs_to_delete:
         try:
             shutil.rmtree(dir_path)
         except:
             pass
-    
+
     return {"status": "success"}
 
 
@@ -549,9 +508,6 @@ async def update_file(path: str, update: FileUpdate):
     with open(file_path, "w", encoding="utf-8") as f:
         f.write(update.content)
     return {"status": "success"}
-
-
-
 
 
 @app.post("/api/plugins/upload")
@@ -594,7 +550,6 @@ async def upload_plugin(files: List[UploadFile] = File(...)):
         shutil.move(str(temp_plugin_path), str(PLUGIN_COLLECTION_DIR))
 
         try:
-            # 注册新插件并立即刷新全局缓存
             register_plugin(plugin_name)
             init_tool()
         except Exception as e:
@@ -616,16 +571,14 @@ async def unregister_plugin_endpoint(plugin_name: str):
         raise HTTPException(status_code=400, detail="Invalid plugin name.")
     try:
         unregister_plugin(plugin_name)
-        init_tool()  # 刷新全局索引
+        init_tool()
         return {"status": "success", "message": "Plugin unregistered successfully."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to unregister plugin: {e}")
 
 
-# ====== 获取所有工具大重构：完美兼容 Local + MCP ======
 @app.get("/api/tools")
 async def get_tools():
-    """获取所有工具信息（支持 Local 和 MCP），直读全局注册表."""
     try:
         tools_list = []
         if os.path.exists(TOOL_INDEX_FILE):
@@ -634,7 +587,6 @@ async def get_tools():
                     if line.strip():
                         tools_list.append(json.loads(line))
 
-        # 按 plugin/server 进行聚合
         grouped = {}
         for t in tools_list:
             p_name = t["plugin"]
@@ -646,10 +598,10 @@ async def get_tools():
                 }
             grouped[p_name]["tools"].append({
                 "name": t["func"],
-                "description": t["desc"]
+                "description": t["desc"],
+                "parameters": t.get("parameters", {})
             })
 
-        # 加上核心基础工具
         base_plugin = {
             "name": "system_core",
             "description": "[CORE] 系统核心指令",
@@ -658,7 +610,8 @@ async def get_tools():
         for bt in BASE_TOOLS:
             base_plugin["tools"].append({
                 "name": bt["function"]["name"],
-                "description": bt["function"]["description"]
+                "description": bt["function"]["description"],
+                "parameters": bt["function"].get("parameters", {})
             })
 
         result = [base_plugin] + list(grouped.values())
@@ -667,6 +620,9 @@ async def get_tools():
         raise HTTPException(status_code=500, detail=f"Failed to load tools: {e}")
 
 
+# ==========================================
+# 修改点：确保 Local Tool 正确解析 yaml 中的 description
+# ==========================================
 @app.get("/api/plugins")
 async def get_plugins():
     plugins = []
@@ -684,22 +640,56 @@ async def get_plugins():
                     "name": name,
                     "enabled": name in active_plugins,
                     "path": full_path,
-                    "config": {}
+                    "config": {},
+                    "description": ""
                 }
-                
-                # 尝试读取对应的 yaml 文件
                 yaml_path = os.path.join(full_path, f"{name}.yaml")
                 if not os.path.exists(yaml_path):
-                    # 备选：init.yaml
                     yaml_path = os.path.join(full_path, "init.yaml")
-                
+
                 if os.path.exists(yaml_path):
                     try:
                         with open(yaml_path, "r", encoding="utf-8") as f:
-                            plugin_info["config"] = yaml.safe_load(f) or {}
+                            config_data = yaml.safe_load(f) or {}
+                            plugin_info["config"] = config_data
+                            # 尝试从多个地方获取描述
+                            # 1. 直接在根目录下查找 description 或 desc
+                            if "description" in config_data:
+                                plugin_info["description"] = config_data["description"]
+                            elif "desc" in config_data:
+                                plugin_info["description"] = config_data["desc"]
+                            # 2. 查找插件名称对应的顶层键，然后在其下查找 desc
+                            elif name in config_data:
+                                plugin_config = config_data[name]
+                                if isinstance(plugin_config, dict):
+                                    if "description" in plugin_config:
+                                        plugin_info["description"] = plugin_config["description"]
+                                    elif "desc" in plugin_config:
+                                        plugin_info["description"] = plugin_config["desc"]
+                                    # 3. 尝试从 functions 中提取描述
+                                    elif "functions" in plugin_config and plugin_config["functions"]:
+                                        for func_name, func_info in plugin_config["functions"].items():
+                                            if isinstance(func_info, dict):
+                                                # 处理嵌套的 function 结构
+                                                if "function" in func_info and isinstance(func_info["function"], dict) and "description" in func_info["function"]:
+                                                    plugin_info["description"] = func_info["function"]["description"]
+                                                    break
+                                                elif "description" in func_info:
+                                                    plugin_info["description"] = func_info["description"]
+                                                    break
+                            # 4. 直接从根目录的 functions 中提取描述
+                            elif "functions" in config_data and config_data["functions"]:
+                                for func_name, func_info in config_data["functions"].items():
+                                    if isinstance(func_info, dict):
+                                        # 处理嵌套的 function 结构
+                                        if "function" in func_info and isinstance(func_info["function"], dict) and "description" in func_info["function"]:
+                                            plugin_info["description"] = func_info["function"]["description"]
+                                            break
+                                        elif "description" in func_info:
+                                            plugin_info["description"] = func_info["description"]
+                                            break
                     except Exception:
                         pass
-                
                 plugins.append(plugin_info)
     return plugins
 
@@ -714,11 +704,11 @@ async def toggle_plugin(name: str):
 
     if name in active_plugins:
         unregister_plugin(name)
-        init_tool()  # 刷新工具列表
+        init_tool()
         return {"enabled": False}
     else:
         register_plugin(name)
-        init_tool()  # 刷新工具列表
+        init_tool()
         return {"enabled": True}
 
 
@@ -749,43 +739,31 @@ async def create_task_endpoint(task: TaskCreate):
 
 @app.get("/api/config")
 async def get_config():
-    """获取配置 - 优先从 config.yaml 读取，兼容旧版 JSON 配置"""
     configs = {}
-    
-    # 从 config.yaml 读取主要配置
     try:
-        # model_config.json 格式（兼容旧代码）
         configs['model_config.json'] = get_model_config_json()
-        # mcp_config.json 格式
         configs['mcp_config.json'] = get_mcp_config_json()
-        # feishu_config.json 格式
         feishu = get_feishu_config()
         configs['feishu_config.json'] = {
             "APP_ID": feishu.get("app_id", ""),
             "APP_SECRET": feishu.get("app_secret", ""),
             "CHAT_ID": feishu.get("chat_id", "")
         }
-        # rss_config.json 格式
         rss_list = get_rss_subscriptions()
         configs['rss_config.json'] = [{"name": r["name"], "rss_url": r["url"]} for r in rss_list]
-        # web_config.json 格式
         web = get_web_api_config()
         configs['web_config.json'] = {"TAVILY_API_KEY": web.get("tavily_api_key", "")}
     except Exception as e:
-        print(f"[Config] 从 config.yaml 读取配置失败: {e}")
-        # 回退到读取 JSON 文件
         config_dir = "data/config"
         if os.path.exists(config_dir):
             for filename in os.listdir(config_dir):
                 if filename.endswith(".json"):
                     with open(os.path.join(config_dir, filename), "r", encoding="utf-8") as f:
                         configs[filename] = json.load(f)
-    
     return configs
 
 
 def _load_schedule_paths():
-    """加载调度文件路径 - 使用固定路径"""
     schedule_file = "data/schedule/schedule.json"
     cron_file = "data/schedule/cron.json"
     return schedule_file, cron_file
@@ -895,79 +873,111 @@ async def update_cron_endpoint(item_id: str, updates: dict):
 
 @app.post("/api/config/{filename}")
 async def update_config(filename: str, config: Dict[str, Any]):
-    """更新配置 - 同时更新 config.yaml 和对应的 JSON 文件（兼容旧代码）"""
     if not filename.endswith(".json"):
         filename += ".json"
-    
-    # 同时写入 JSON 文件（兼容旧代码）
+
     file_path = os.path.join(DATA_DIR, "config", filename)
+    os.makedirs(os.path.dirname(file_path), exist_ok=True)
     with open(file_path, "w", encoding="utf-8") as f:
         json.dump(config, f, indent=4, ensure_ascii=False)
-    
-    # 尝试更新 config.yaml
+
     try:
         yaml_config = load_config()
-        
         if filename == "model_config.json":
-            # 更新模型配置
             if "models" in config:
                 yaml_config["models"] = config["models"]
             if "agent" in config:
                 yaml_config["agent_model"] = config["agent"]
-            # 更新专用模型
-            for key in ["image_generator", "image_converter", "video_generator", 
-                       "audio_generator", "audio_converter", "video_converter"]:
+            for key in ["image_generator", "image_converter", "video_generator",
+                        "audio_generator", "audio_converter", "video_converter"]:
                 if key in config:
                     yaml_config.setdefault("specialized_models", {})[key] = config[key]
             if "embedding_model" in config:
                 yaml_config["embedding_model"] = config["embedding_model"]
-                
+
         elif filename == "feishu_config.json":
             yaml_config["feishu"] = {
                 "app_id": config.get("APP_ID", ""),
                 "app_secret": config.get("APP_SECRET", ""),
                 "chat_id": config.get("CHAT_ID", "")
             }
-            
+
         elif filename == "mcp_config.json":
             yaml_config["mcp_servers"] = config.get("mcpServers", {})
-            
+
         elif filename == "rss_config.json":
             yaml_config["rss_subscriptions"] = [
-                {"name": item["name"], "url": item["rss_url"]} 
+                {"name": item["name"], "url": item["rss_url"]}
                 for item in config
             ]
-            
+
         elif filename == "web_config.json":
             yaml_config["web_api"] = {"tavily_api_key": config.get("TAVILY_API_KEY", "")}
-        
-        # 写回 config.yaml
+
         yaml_path = os.path.join(DATA_DIR, "config", "config.yaml")
         with open(yaml_path, "w", encoding="utf-8") as f:
             yaml.dump(yaml_config, f, allow_unicode=True, sort_keys=False)
-        
-        # 清除配置缓存
         reload_config()
-        
     except Exception as e:
-        print(f"[Config] 更新 config.yaml 失败: {e}")
-        # 继续返回成功，因为 JSON 文件已更新
-    
+        pass
     return {"status": "success"}
 
 
+# ==========================================
+# 修改点：读取技能目录下的 SKILL.md 作为描述
+# ==========================================
 @app.get("/api/skills")
 async def get_skills():
-    skill_dir = "data/skill"
+    skill_dir = os.path.join(DATA_DIR, "skill")
     skills = []
     if os.path.exists(skill_dir):
         for name in os.listdir(skill_dir):
             if os.path.isdir(os.path.join(skill_dir, name)):
+                desc = ""
+                skill_md_path = os.path.join(skill_dir, name, "SKILL.md")
+                if os.path.exists(skill_md_path):
+                    try:
+                        with open(skill_md_path, "r", encoding="utf-8") as f:
+                            desc = f.read()
+                    except Exception:
+                        pass
                 skills.append({
                     "name": name,
-                    "path": os.path.join(skill_dir, name)
+                    "path": os.path.join(skill_dir, name),
+                    "description": desc
                 })
     return skills
+
+
+@app.post("/api/skills/upload")
+async def upload_skill(files: List[UploadFile] = File(...)):
+    if not files:
+        raise HTTPException(status_code=400, detail="No files uploaded.")
+
+    first_file_path = Path(files[0].filename)
+    skill_name = first_file_path.parts[0]
+    skill_dir = os.path.join(DATA_DIR, "skill", skill_name)
+    os.makedirs(skill_dir, exist_ok=True)
+
+    try:
+        for file in files:
+            file_path = Path(file.filename)
+            save_path = os.path.join(DATA_DIR, "skill", str(file_path))
+            os.makedirs(os.path.dirname(save_path), exist_ok=True)
+            with open(save_path, "wb") as buffer:
+                shutil.copyfileobj(file.file, buffer)
+        return {"status": "success", "message": f"Skill '{skill_name}' uploaded successfully."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/skills/{skill_name}")
+async def delete_skill(skill_name: str):
+    skill_dir = os.path.join(DATA_DIR, "skill", skill_name)
+    if os.path.exists(skill_dir):
+        shutil.rmtree(skill_dir)
+        return {"status": "success", "message": f"Skill '{skill_name}' deleted."}
+    raise HTTPException(status_code=404, detail="Skill not found")
 
 
 @app.get("/api/databases")

@@ -125,11 +125,27 @@
 }
 
 @layer base {
+  :root {
+    /* 将原本纯黑的 ring 改为带透明度的黑色或柔和灰色，作为高亮 */
+    --ring: rgba(17, 17, 17, 0.2);
+  }
+  
+  .dark {
+    --ring: rgba(255, 255, 255, 0.2);
+  }
+
   * {
-    @apply border-border outline-ring/50;
+    @apply border-border;
+    /* 去掉这里多余的 outline-ring/50 强制覆盖 */
   }
   body {
     @apply bg-background text-foreground;
+  }
+
+  /* 消除 Dialog 和 Radix 弹窗容器聚焦时的黑框 */
+  [role="dialog"],
+  [data-radix-focus-guard] {
+    outline: none !important;
   }
 }
 

@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as ScrollAreaPrimitive from '@radix-ui/react-scroll-area'
 import { useAppStore } from '@/lib/store'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Progress } from '@/components/ui/progress'
 import {
@@ -47,10 +46,10 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { Switch } from '@/components/ui/switch'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
 
 const statusConfig = {
   running: { icon: Loader2, color: 'text-blue-500', bg: 'bg-blue-500/10', label: '运行中' },
@@ -317,13 +316,13 @@ function ModelNameSelect({
   )
 }
 
-function TaskCard({ 
-  task, 
-  isSelected, 
+function TaskCard({
+  task,
+  isSelected,
   onSelect,
   onStop,
   onDelete,
-}: { 
+}: {
   task: Task
   isSelected: boolean
   onSelect: () => void
@@ -337,87 +336,91 @@ function TaskCard({
   return (
     <ContextMenu>
       <ContextMenuTrigger>
-        <Card 
+        <div
           id={`task-card-${task.id}`}
           className={cn(
-            'cursor-pointer transition-all hover:border-primary/50',
-            isSelected && 'border-primary ring-1 ring-primary'
+            'cursor-pointer transition-all duration-200 p-7 rounded-[16px]',
+            isSelected
+              ? 'bg-primary/5 shadow-sm'
+              : 'hover:bg-accent/50 bg-background/50'
           )}
           onClick={onSelect}
         >
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center justify-between text-sm min-w-0">
-              <div className="min-w-0 flex-1">
-                <span className="truncate block" title={task.name}>{task.name}</span>
-              </div>
-              <div className="flex items-center gap-2 shrink-0">
-                <Dialog open={metaOpen} onOpenChange={setMetaOpen}>
-                  <DialogTrigger asChild>
-                    <button
-                      type="button"
-                      onClick={(e) => e.stopPropagation()}
-                      className="rounded-full p-1 hover:bg-muted/40"
-                      aria-label="任务信息"
-                    >
-                      <Info className="size-4" />
-                    </button>
-                  </DialogTrigger>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>任务信息</DialogTitle>
-                    </DialogHeader>
-                    <div className="space-y-2 text-sm">
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">ID</span>
-                        <span className="font-medium break-all">{task.id}</span>
-                      </div>
-                      {task.core && (
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">核心模型</span>
-                          <span className="font-medium break-all">{task.core}</span>
-                        </div>
-                      )}
-                      {task.creat_time && (
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">创建时间</span>
-                          <span className="font-medium">{task.creat_time}</span>
-                        </div>
-                      )}
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">状态</span>
-                        <span className="font-medium">{config.label}</span>
-                      </div>
-                    </div>
-                    <DialogFooter>
-                      <Button onClick={() => setMetaOpen(false)}>关闭</Button>
-                    </DialogFooter>
-                  </DialogContent>
-                </Dialog>
-                <span className={cn('flex items-center gap-1 text-xs px-2 py-1 rounded-full shrink-0', config.bg, config.color)}>
-                  <Icon className={cn('size-3', task.status === 'running' && 'animate-spin')} />
-                  {config.label}
-                </span>
-              </div>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            <Progress value={task.progress} className="h-1.5" />
-            <div className="flex justify-between text-xs text-muted-foreground">
-              <span>{task.progress}% 完成</span>
-              {task.projectId && <span>项目: {task.projectId}</span>}
+          <div className="flex items-center justify-between text-sm min-w-0 mb-3">
+            <div className="min-w-0 flex-1">
+              <span className="truncate block font-medium" title={task.name}>{task.name}</span>
             </div>
-          </CardContent>
-        </Card>
+            <div className="flex items-center gap-2 shrink-0">
+              <Dialog open={metaOpen} onOpenChange={setMetaOpen}>
+                <DialogTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={(e) => e.stopPropagation()}
+                    className="rounded-full p-1 hover:bg-muted/60 transition-colors"
+                    aria-label="任务信息"
+                  >
+                    <Info className="size-4 text-muted-foreground" />
+                  </button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>任务信息</DialogTitle>
+                  </DialogHeader>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">ID</span>
+                      <span className="font-medium break-all">{task.id}</span>
+                    </div>
+                    {task.core && (
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">核心模型</span>
+                        <span className="font-medium break-all">{task.core}</span>
+                      </div>
+                    )}
+                    {task.creat_time && (
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">创建时间</span>
+                        <span className="font-medium">{task.creat_time}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">状态</span>
+                      <span className="font-medium">{config.label}</span>
+                    </div>
+                  </div>
+                  <DialogFooter>
+                    <Button onClick={() => setMetaOpen(false)}>关闭</Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+              <span className={cn('flex items-center gap-1 text-xs px-2 py-1 rounded-full shrink-0', config.bg, config.color)}>
+                <Icon className={cn('size-3', task.status === 'running' && 'animate-spin')} />
+                {config.label}
+              </span>
+            </div>
+          </div>
+          <div className="space-y-2.5">
+            <div className="flex items-center gap-3">
+              <Progress value={task.progress} className="h-1.5 flex-1" />
+              <span className="text-[11px] text-muted-foreground shrink-0">{task.progress}%</span>
+            </div>
+            {task.projectId && (
+              <div className="text-[11px] text-muted-foreground">
+                项目: {task.projectId}
+              </div>
+            )}
+          </div>
+        </div>
       </ContextMenuTrigger>
       <ContextMenuContent>
-        <ContextMenuItem 
+        <ContextMenuItem
           onClick={(e) => { e.stopPropagation(); onStop(); }}
           disabled={task.status !== 'running' && task.status !== 'pending'}
         >
           <StopCircle className="size-4 mr-2" />
           终止任务
         </ContextMenuItem>
-        <ContextMenuItem 
+        <ContextMenuItem
           onClick={(e) => { e.stopPropagation(); onDelete(); }}
           className="text-destructive"
         >
@@ -441,11 +444,42 @@ function TaskDetailView({ task }: { task: Task }) {
   const [pushContent, setPushContent] = useState('')
   const [isPushing, setIsPushing] = useState(false)
 
+  // Auto-scroll logic similar to home page
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const [isAtBottom, setIsAtBottom] = useState(true)
+
+  const handleScroll = useCallback(() => {
+    if (scrollContainerRef.current) {
+      const { scrollTop, scrollHeight, clientHeight } = scrollContainerRef.current
+      const atBottom = scrollHeight - scrollTop - clientHeight < 100
+      setIsAtBottom(atBottom)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (isAtBottom && scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTo({
+        top: scrollContainerRef.current.scrollHeight,
+        behavior: 'smooth'
+      })
+    }
+  }, [entries, isAtBottom])
+
   const handleForcePush = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!pushContent.trim() || isPushing) return
-    
+
     setIsPushing(true)
+    setIsAtBottom(true)
+
+    if (scrollContainerRef.current) {
+      setTimeout(() => {
+        if(scrollContainerRef.current) {
+           scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight
+        }
+      }, 50)
+    }
+
     try {
       await injectTask(task.id, pushContent)
       setPushContent('')
@@ -500,7 +534,7 @@ function TaskDetailView({ task }: { task: Task }) {
       setIsFetching(false)
       fetchingRef.current = false
     }
-  }, [normalizeEntry, task.id])
+  }, [normalizeEntry, task.id, apiFetch])
 
   useEffect(() => {
     setVisibleCount(LOG_PAGE_SIZE)
@@ -529,31 +563,35 @@ function TaskDetailView({ task }: { task: Task }) {
       }
     }, 1000)
     return () => window.clearInterval(timer)
-  }, [fetchMore, task.id])
+  }, [fetchMore, task.id, apiFetch])
 
   const renderEntry = (entry: TaskLogEntry) => {
     const style = entry.metadata?.style
     const surfaceClass = (() => {
-      if (style === 'light_gray') return 'bg-muted/50 border'
-      if (style === 'gray') return 'bg-muted border'
-      if (style === 'dark_white') return 'bg-muted/30 border'
-      if (style === 'white') return 'bg-background border'
-      return 'bg-background border'
+      if (style === 'light_gray') return 'bg-muted/50 border border-border/40'
+      if (style === 'gray') return 'bg-muted border border-border/40'
+      if (style === 'dark_white') return 'bg-muted/30 border border-border/40'
+      if (style === 'white') return 'bg-background border border-border/40 shadow-sm'
+      return 'bg-background border border-border/40 shadow-sm'
     })()
 
     if (entry.card_type === 'error') {
       return (
-        <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-3">
-          <div className="text-sm font-medium text-destructive mb-1">错误</div>
-          <div className="text-xs whitespace-pre-wrap break-words">{entry.content}</div>
+        <div className="rounded-[16px] border border-destructive/30 bg-destructive/10 p-4">
+          <div className="text-sm font-medium text-destructive mb-1 flex items-center gap-2">
+            <XCircle className="size-4" /> 错误
+          </div>
+          <div className="text-sm whitespace-pre-wrap break-words">{entry.content}</div>
         </div>
       )
     }
 
     if (entry.card_type === 'system') {
       return (
-        <div className={cn('rounded-lg p-3 text-xs text-muted-foreground', surfaceClass)}>
-          <div className="font-medium text-foreground mb-1">系统</div>
+        <div className={cn('rounded-[16px] p-4 text-sm text-muted-foreground', surfaceClass)}>
+          <div className="font-medium text-foreground mb-2 flex items-center gap-2">
+            <Info className="size-4" /> 系统
+          </div>
           <div className="whitespace-pre-wrap break-words">{entry.content}</div>
         </div>
       )
@@ -561,14 +599,14 @@ function TaskDetailView({ task }: { task: Task }) {
 
     if (entry.card_type === 'tool_call' || entry.card_type === 'tool_result') {
       return (
-        <div className="rounded-lg p-3 text-xs bg-muted/30 border">
-          <div className="whitespace-pre-wrap break-words text-muted-foreground">{entry.content}</div>
+        <div className="rounded-[16px] p-4 text-sm bg-muted/20 border border-border/40 font-mono text-muted-foreground">
+          <div className="whitespace-pre-wrap break-words">{entry.content}</div>
         </div>
       )
     }
 
     return (
-      <div className={cn('rounded-lg p-3', surfaceClass)}>
+      <div className={cn('rounded-[16px] p-4', surfaceClass)}>
         <div className="text-sm whitespace-pre-wrap break-words leading-relaxed">{entry.content}</div>
       </div>
     )
@@ -580,119 +618,126 @@ function TaskDetailView({ task }: { task: Task }) {
   }, [entries, visibleCount])
 
   return (
-    <Card className="h-full flex flex-col overflow-hidden">
-      <CardHeader className="shrink-0">
-        <CardTitle className="flex items-center justify-between">
-          <span>{task.name}</span>
-          <span
-            className={cn(
-              'text-xs px-2 py-1 rounded-full',
-              statusConfig[task.status].bg,
-              statusConfig[task.status].color,
-            )}
-          >
-            {statusConfig[task.status].label}
-          </span>
-        </CardTitle>
-        {task.description && (
-          <p className="text-sm text-muted-foreground">{task.description}</p>
-        )}
-      </CardHeader>
-      <CardContent className="flex-1 flex flex-col space-y-4 min-h-0 overflow-hidden">
-        <div className="space-y-2 shrink-0">
-          <div className="flex justify-between text-sm">
-            <span>任务进度</span>
-            <span className="font-medium">{task.progress}%</span>
-          </div>
-          <Progress value={task.progress} className="h-2" />
-        </div>
+    <div className="relative h-full w-full overflow-hidden bg-background">
+      {/* 顶部渐变层 */}
+      <div className="absolute top-0 left-0 right-0 z-10 bg-gradient-to-b from-background via-background/90 to-transparent pb-16 pointer-events-none" />
 
-        {task.projectId && (
-          <div className="text-sm shrink-0">
-            <span className="text-muted-foreground">所属项目: </span>
-            <span className="font-medium">{task.projectId}</span>
-          </div>
-        )}
-
-        <div className="flex-1 flex flex-col min-h-0 space-y-4">
-          <div className="flex-1 flex flex-col min-h-0">
-            <div className="flex items-center gap-2 mb-2 shrink-0">
-              <Terminal className="size-4" />
-              <h4 className="text-sm font-medium">执行日志</h4>
-            </div>
-            <ScrollArea className="flex-1 rounded-md border bg-muted/30 min-h-0">
-              <div className="p-3 space-y-3">
-                {visibleEntries.length ? (
-                  <>
-                    {entries.length > visibleCount ? (
-                      <div className="flex justify-center">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setVisibleCount((v) => v + LOG_PAGE_SIZE)}
-                        >
-                          显示更早日志（已显示 {visibleEntries.length}/{entries.length}）
-                        </Button>
-                      </div>
-                    ) : null}
-                    {visibleEntries.map((entry) => <div key={entry.id}>{renderEntry(entry)}</div>)}
-                  </>
-                ) : (
-                  <div className="text-muted-foreground italic text-xs text-center py-4">暂无日志</div>
-                )}
+      {/* 滑动内容层 */}
+      <div
+        ref={scrollContainerRef}
+        onScroll={handleScroll}
+        className="absolute inset-0 overflow-y-auto overflow-x-hidden pt-16 pb-4 md:pt-24 md:pb-8 scroll-smooth scrollbar-thin scrollbar-thumb-muted-foreground/20 hover:scrollbar-thumb-muted-foreground/40 scrollbar-track-transparent"
+      >
+        <div className="max-w-4xl mx-auto w-full px-4 md:px-8 pb-48 flex flex-col">
+          {/* Header 区域 */}
+          <div className="mb-8 space-y-6 pt-2">
+            <div>
+              <h3 className="flex items-center gap-4 text-2xl font-semibold tracking-tight">
+                <span>{task.name}</span>
+                <span
+                  className={cn(
+                    'text-xs px-3 py-1 rounded-full border border-current/20',
+                    statusConfig[task.status].bg,
+                    statusConfig[task.status].color,
+                  )}
+                >
+                  {statusConfig[task.status].label}
+                </span>
+              </h3>
+              {task.description && (
+                <p className="text-muted-foreground mt-3 leading-relaxed">{task.description}</p>
+              )}
+              <div className="text-sm text-muted-foreground mt-2">
+                创建时间: {task.createdAt.toLocaleString('zh-CN')}
               </div>
-            </ScrollArea>
-            {isFetching ? (
-              <div className="text-[11px] text-muted-foreground mt-1 text-right pr-1">同步中…</div>
-            ) : null}
+            </div>
+
+            <div className="bg-muted/20 p-5 rounded-[20px] border border-border/40">
+              <div className="space-y-3">
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground font-medium">任务进度</span>
+                  <span className="font-bold">{task.progress}%</span>
+                </div>
+                <Progress value={task.progress} className="h-2.5 bg-muted/50 w-full" />
+              </div>
+              {task.projectId && (
+                <div className="mt-4 text-sm">
+                  <div className="flex justify-between items-center">
+                    <span className="text-muted-foreground">所属项目</span>
+                    <span className="font-medium bg-background px-2 py-0.5 rounded-md border shadow-sm">{task.projectId}</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* 日志区域 */}
+          <div className="flex items-center justify-between mb-4 mt-6 shrink-0 border-b border-border/40 pb-3">
+            <div className="flex items-center gap-2">
+              <Terminal className="size-5 text-primary" />
+              <h4 className="text-base font-semibold">执行日志</h4>
+            </div>
+            {isFetching && <div className="text-xs text-muted-foreground animate-pulse">同步中…</div>}
+          </div>
+
+          <div className="flex-1 flex flex-col space-y-4">
+            {visibleEntries.length ? (
+              <>
+                {entries.length > visibleCount && (
+                  <div className="flex justify-center py-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="rounded-full shadow-sm hover:bg-muted/50"
+                      onClick={() => setVisibleCount((v) => v + LOG_PAGE_SIZE)}
+                    >
+                      加载更早日志 ({visibleEntries.length} / {entries.length})
+                    </Button>
+                  </div>
+                )}
+                {visibleEntries.map((entry) => <div key={entry.id}>{renderEntry(entry)}</div>)}
+              </>
+            ) : (
+              <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+                <Database className="size-12 mb-4 opacity-20" />
+                <span className="text-sm">尚未生成执行日志</span>
+              </div>
+            )}
+
+            {/* 底部占位 */}
+            <div className="h-8 w-full shrink-0" />
           </div>
         </div>
+      </div>
 
-        <div className="pt-4 border-t space-y-1 text-xs text-muted-foreground shrink-0">
-          <div>创建时间: {task.createdAt.toLocaleString('zh-CN')}</div>
-          {task.updatedAt && (
-            <div>更新时间: {task.updatedAt.toLocaleString('zh-CN')}</div>
-          )}
-        </div>
-      </CardContent>
-
-      {/* Force Push 输入框 */}
-      <div className="mt-3 pt-3 border-t shrink-0 px-1">
-        <form onSubmit={handleForcePush} className="space-y-2">
-          <div className="flex items-center gap-2">
-            <AlertCircle className="size-3 text-amber-500" />
-            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Force Push 注入</span>
-          </div>
-          <div className="flex items-stretch gap-2">
-            <div className="relative flex-1">
+      {/* 底部悬浮输入框（类似主页 Omnibar） */}
+      <div className="absolute bottom-0 left-0 right-0 z-10 bg-gradient-to-t from-background via-background/90 to-transparent pt-48 pb-8 px-4 md:px-8 pointer-events-none">
+        <div className="max-w-4xl mx-auto w-full pointer-events-auto">
+          <div className="bg-background/80 backdrop-blur-md rounded-[24px] shadow-[0_-10px_40px_rgba(0,0,0,0.05)] border border-border/20 p-4 dark:shadow-none">
+            <form onSubmit={handleForcePush} className="flex items-center gap-2">
               <Input
                 value={pushContent}
                 onChange={(e) => setPushContent(e.target.value)}
                 placeholder="强行注入任务指令..."
-                className="text-xs h-9 bg-muted/20 border-border focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:border-primary/40 transition-all pr-8 shadow-none outline-none ring-0"
+                className="h-12 flex-1 rounded-[16px] bg-muted/30 border-transparent focus-visible:bg-muted/50 focus-visible:ring-1 focus-visible:ring-primary/50 transition-all shadow-none pl-4 pr-4"
               />
-              <div className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none opacity-30">
-                <Send className="size-3" />
-              </div>
-            </div>
-            <Button 
-              type="submit" 
-              size="sm" 
-              variant="secondary" 
-              className="h-9 px-4 border border-border/50 font-medium text-xs shadow-sm active:scale-95 transition-all shrink-0"
-              disabled={isPushing || !pushContent.trim()}
-            >
-              {isPushing ? (
-                <RefreshCcw className="size-3.5 animate-spin" />
-              ) : (
-                '注入'
-              )}
-            </Button>
+              <Button
+                type="submit"
+                className="h-12 w-12 rounded-[16px] shadow-sm active:scale-95 transition-all shrink-0 flex items-center justify-center"
+                disabled={isPushing || !pushContent.trim()}
+              >
+                {isPushing ? (
+                  <RefreshCcw className="size-4 animate-spin" />
+                ) : (
+                  <Send className="size-4" />
+                )}
+              </Button>
+            </form>
           </div>
-        </form>
+        </div>
       </div>
-    </Card>
+    </div>
   )
 }
 
@@ -745,11 +790,9 @@ function AddTaskDialog() {
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
-      // 模拟文件路径（实际应用中会是真实路径）
       const fakePath = `/uploads/${file.name}`
       setFormData((prev) => ({ ...prev, prompt: prev.prompt + (prev.prompt ? '\n' : '') + `[文件: ${fakePath}]` }))
     }
-    // Reset input
     if (fileInputRef.current) {
       fileInputRef.current.value = ''
     }
@@ -768,14 +811,14 @@ function AddTaskDialog() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
+      // 在前端组合冗余的拆分字段，形成最终的 prompt 交给后端
+      const finalPrompt = `${formData.desc ? `【背景描述】：${formData.desc}\n` : ''}【交付物要求】：${formData.deliverable}\n\n【任务详情】：\n${formData.prompt}`
+
       await addTask({
-        title: formData.title,
-        desc: formData.desc,
-        deliverable: formData.deliverable,
-        prompt: formData.prompt,
-        judge_mode: !!formData.judger,
-        task_histories: '',
-        core: formData.core
+        task_name: formData.title,
+        prompt: finalPrompt,
+        core: formData.core,
+        judger: formData.judger // 正确传递 judger 模型名，而不是 judge_mode 布尔值
       })
       setOpen(false)
       setFormData({
@@ -796,7 +839,7 @@ function AddTaskDialog() {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button size="icon" variant="outline" className="size-8 rounded-full">
+        <Button size="icon" variant="secondary" className="size-8 rounded-full shadow-sm">
           <Plus className="size-4" />
         </Button>
       </DialogTrigger>
@@ -828,7 +871,7 @@ function AddTaskDialog() {
                     placeholder="选择核心模型"
                   />
                 </div>
-                
+
                 <div className="space-y-2">
                   <Label>评审模型 (Judger)</Label>
                   <ModelNameSelect
@@ -837,7 +880,7 @@ function AddTaskDialog() {
                     placeholder="选择评审模型"
                   />
                 </div>
-                
+
                 <div className="space-y-2">
                   <Label htmlFor="deliverable">交付物要求</Label>
                   <Input
@@ -852,7 +895,6 @@ function AddTaskDialog() {
                 <div className="space-y-2">
                   <Label htmlFor="prompt">任务描述</Label>
                   <div className="flex gap-2 mb-2">
-                    {/* 上传文件按钮 */}
                     <input
                       ref={fileInputRef}
                       type="file"
@@ -860,6 +902,7 @@ function AddTaskDialog() {
                       onChange={handleFileSelect}
                     />
                     <Button
+                      type="button"
                       variant="outline"
                       size="sm"
                       onClick={() => fileInputRef.current?.click()}
@@ -868,10 +911,9 @@ function AddTaskDialog() {
                       上传文件
                     </Button>
 
-                    {/* 选择 Skill 按钮 */}
                     <Dialog open={skillDialogOpen} onOpenChange={setSkillDialogOpen}>
                       <DialogTrigger asChild>
-                        <Button variant="outline" size="sm">
+                        <Button type="button" variant="outline" size="sm">
                           <Wand2 className="size-4 mr-1" />
                           选择 Skill
                         </Button>
@@ -885,12 +927,13 @@ function AddTaskDialog() {
                             {skills.map((skill) => (
                               <button
                                 key={skill.name}
+                                type="button"
                                 onClick={() => handleSkillSelect(skill.path)}
                                 className="flex flex-col items-start p-3 rounded-lg border hover:bg-accent transition-colors text-left"
                               >
                                 <span className="font-medium text-sm">{skill.name}</span>
                                 {skill.description && (
-                                  <span className="text-xs text-muted-foreground">
+                                  <span className="text-xs text-muted-foreground mt-0.5">
                                     {skill.description}
                                   </span>
                                 )}
@@ -904,10 +947,9 @@ function AddTaskDialog() {
                       </DialogContent>
                     </Dialog>
 
-                    {/* 插入数据库按钮 */}
                     <Dialog open={dbDialogOpen} onOpenChange={setDbDialogOpen}>
                       <DialogTrigger asChild>
-                        <Button variant="outline" size="sm">
+                        <Button type="button" variant="outline" size="sm">
                           <Database className="size-4 mr-1" />
                           插入数据库
                         </Button>
@@ -921,6 +963,7 @@ function AddTaskDialog() {
                             {databases.map((dbName) => (
                               <Button
                                 key={dbName}
+                                type="button"
                                 variant="ghost"
                                 className="justify-start font-normal"
                                 onClick={() => handleDatabaseSelect(dbName)}
@@ -967,57 +1010,71 @@ export default function TaskPage() {
   const removeTask = useAppStore((state) => state.removeTask)
   const stopTask = useAppStore((state) => state.stopTask)
   const [selectedId, setSelectedId] = useState<string | null>(tasks[0]?.id || null)
-  
+
   const selectedTask = tasks.find((t) => t.id === selectedId)
-  const runningCount = tasks.filter((t) => t.status === 'running').length
 
   return (
-    <div className="h-[calc(100vh-4rem)] flex">
-      {/* 左侧任务列表 */}
-      <div className="w-80 border-r flex flex-col min-h-0 overflow-hidden">
-        <div className="p-4 border-b flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <ListTodo className="size-5" />
-            <h1 className="font-semibold">任务队列</h1>
-          </div>
-          <AddTaskDialog />
-        </div>
-        <ScrollArea type="always" className="flex-1 min-h-0">
-          <div className="p-4 space-y-8 pr-3">
-            {tasks.map((task) => (
-              <TaskCard
-                key={task.id}
-                task={task}
-                isSelected={selectedId === task.id}
-                onSelect={() => setSelectedId(task.id)}
-                onStop={() => stopTask(task.id)}
-                onDelete={() => {
-                  removeTask(task.id)
-                  if (selectedId === task.id) {
-                    setSelectedId(tasks.find((t) => t.id !== task.id)?.id || null)
-                  }
-                }}
-              />
-            ))}
-            {tasks.length === 0 && (
-              <div className="text-center py-8 text-muted-foreground text-sm">
-                暂无任务
+    <div className="absolute inset-0 flex flex-col w-full bg-background overflow-hidden">
+      <ResizablePanelGroup direction="horizontal" className="h-full w-full">
+        {/* 左侧：任务列表面板 */}
+        <ResizablePanel
+          defaultSize={25}
+          minSize={20}
+          maxSize={35}
+          className="border-r border-border/10 bg-muted/10 z-20"
+        >
+          <div className="h-full flex flex-col">
+            <div className="h-16 px-6 flex items-center justify-between border-b border-border/10 shrink-0 bg-background/50 backdrop-blur-sm shadow-[0_2px_10px_rgba(0,0,0,0.02)]">
+              <div className="flex items-center gap-2">
+                <ListTodo className="size-5 text-primary" />
+                <h1 className="font-semibold tracking-tight">任务队列</h1>
               </div>
-            )}
+              <AddTaskDialog />
+            </div>
+            <ScrollArea className="flex-1">
+              <div className="p-4 space-y-3">
+                {tasks.map((task) => (
+                  <TaskCard
+                    key={task.id}
+                    task={task}
+                    isSelected={selectedId === task.id}
+                    onSelect={() => setSelectedId(task.id)}
+                    onStop={() => stopTask(task.id)}
+                    onDelete={() => {
+                      removeTask(task.id).then(() => {
+                        if (selectedId === task.id) {
+                          setSelectedId(tasks.find((t) => t.id !== task.id)?.id || null)
+                        }
+                      })
+                    }}
+                  />
+                ))}
+                {tasks.length === 0 && (
+                  <div className="flex flex-col items-center justify-center py-16 text-muted-foreground opacity-50">
+                    <ListTodo className="size-10 mb-3" />
+                    <span className="text-sm">暂无任务</span>
+                  </div>
+                )}
+              </div>
+            </ScrollArea>
           </div>
-        </ScrollArea>
-      </div>
+        </ResizablePanel>
 
-      {/* 右侧详情 */}
-      <div className="flex-1 p-6 min-h-0 overflow-hidden">
-        {selectedTask ? (
-          <TaskDetailView task={selectedTask} />
-        ) : (
-          <div className="h-full flex items-center justify-center text-muted-foreground">
-            选择一个任务查看详情
-          </div>
-        )}
-      </div>
+        {/* 调节滑块 */}
+        <ResizableHandle className="w-1.5 bg-transparent hover:bg-primary/20 transition-colors cursor-col-resize active:bg-primary/40" />
+
+        {/* 右侧：任务详情视窗 (沉浸式布局) */}
+        <ResizablePanel defaultSize={75} minSize={50} className="bg-background relative">
+          {selectedTask ? (
+            <TaskDetailView task={selectedTask} />
+          ) : (
+            <div className="h-full flex flex-col items-center justify-center text-muted-foreground">
+              <Wand2 className="size-16 mb-6 opacity-20" />
+              <div className="text-lg font-medium opacity-60">请在左侧选择一个任务查看详情</div>
+            </div>
+          )}
+        </ResizablePanel>
+      </ResizablePanelGroup>
     </div>
   )
 }

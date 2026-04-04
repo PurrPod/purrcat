@@ -64,13 +64,10 @@ interface AppState {
   tasks: Task[]
   fetchTasks: () => Promise<void>
   addTask: (task: {
-    title: string,
-    desc: string,
-    deliverable: string,
+    task_name: string,
     prompt: string,
-    judge_mode: boolean,
-    task_histories: string,
-    core: string
+    core: string,
+    judger: string
   }) => Promise<void>
   removeTask: (id: string) => Promise<void>
   stopTask: (id: string) => Promise<void>
@@ -93,7 +90,6 @@ interface AppState {
     title: string
     trigger_time: string
     repeat_rule: string
-    active?: boolean
   }) => Promise<void>
   updateAlarm: (id: string, updates: Partial<{ title: string; trigger_time: string; repeat_rule: string; active: boolean }>) => Promise<void>
   removeAlarm: (id: string) => Promise<void>
@@ -210,7 +206,6 @@ export const useAppStore = create<AppState>((set, get) => ({
     const ok = await state.pingBackend({ timeoutMs: 3000 })
     if (!ok) return false
     await state.refreshAll()
-    await state.resumeInterruptedProjects()
     state.setConnectionStatus('connected', null)
     return true
   },
@@ -365,6 +360,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       get().fetchTasks()
     } catch (e) {
       console.error('Failed to remove task:', e)
+      // 即使删除失败，也刷新任务列表，确保界面状态与实际一致
+      get().fetchTasks()
     }
   },
   stopTask: async (id) => {

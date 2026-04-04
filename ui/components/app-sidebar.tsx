@@ -29,8 +29,17 @@ export function AppSidebar() {
   const { 
     alarms, fetchAlarms, addAlarm, removeAlarm, updateAlarm,
     scheduleItems, fetchSchedule, addSchedule, removeSchedule,
-    databases, fetchDatabases
+    databases, fetchDatabases,
+    tasks, fetchTasks
   } = useAppStore()
+
+  // 计算运行中的任务数
+  const runningTasksCount = tasks.filter(task => task.status === 'running').length
+
+  // 组件加载时获取任务列表
+  React.useEffect(() => {
+    fetchTasks()
+  }, [fetchTasks])
 
   // Form states
   const [alarmForm, setAlarmForm] = React.useState({ title: '', trigger_time: '08:00', repeat_rule: 'none' })
@@ -78,20 +87,28 @@ export function AppSidebar() {
           {navItems.map((item) => {
             const Icon = item.icon
             const isActive = pathname === item.href
+            const isTaskItem = item.label === 'Task'
             
             return (
               <Link
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  'flex items-center gap-3 w-full p-3 rounded-xl transition-colors',
+                  'flex items-center justify-between w-full p-3 rounded-xl transition-colors',
                   isActive
                     ? 'bg-muted text-foreground'
                     : 'text-muted-foreground hover:bg-muted hover:text-foreground'
                 )}
               >
-                <Icon className="size-5 shrink-0" />
-                <span className="text-sm font-medium">{item.label}</span>
+                <div className="flex items-center gap-3">
+                  <Icon className="size-5 shrink-0" />
+                  <span className="text-sm font-medium">{item.label}</span>
+                </div>
+                {isTaskItem && runningTasksCount > 0 && (
+                  <span className="flex items-center justify-center size-5 rounded-full bg-primary text-primary-foreground text-xs font-bold">
+                    {runningTasksCount}
+                  </span>
+                )}
               </Link>
             )
           })}
@@ -146,7 +163,7 @@ export function AppSidebar() {
                 <Label htmlFor="alarm-title" className="text-right text-xs">标题</Label>
                 <Input 
                   id="alarm-title" 
-                  className="col-span-3 h-8 text-xs" 
+                  className="col-span-3 h-8 text-xs focus-visible:ring-0 focus-visible:border-primary/50 focus-visible:outline-none" 
                   value={alarmForm.title}
                   onChange={e => setAlarmForm(prev => ({ ...prev, title: e.target.value }))}
                   placeholder="闹钟名称" 
@@ -157,10 +174,29 @@ export function AppSidebar() {
                 <Input 
                   id="alarm-time" 
                   type="time" 
-                  className="col-span-3 h-8 text-xs" 
+                  className="col-span-3 h-8 text-xs focus-visible:ring-0 focus-visible:border-primary/50 focus-visible:outline-none" 
                   value={alarmForm.trigger_time}
                   onChange={e => setAlarmForm(prev => ({ ...prev, trigger_time: e.target.value }))}
                 />
+              </div>
+              <div className="grid grid-cols-4 items-center gap-3">
+                <Label htmlFor="alarm-repeat" className="text-right text-xs">重复</Label>
+                <select 
+                  id="alarm-repeat" 
+                  className="col-span-3 h-8 text-xs rounded border p-1 focus-visible:ring-0 focus-visible:border-primary/50 focus-visible:outline-none" 
+                  value={alarmForm.repeat_rule}
+                  onChange={e => setAlarmForm(prev => ({ ...prev, repeat_rule: e.target.value }))}
+                >
+                  <option value="none">仅一次</option>
+                  <option value="everyday">每天</option>
+                  <option value="weekly_1">每周一</option>
+                  <option value="weekly_2">每周二</option>
+                  <option value="weekly_3">每周三</option>
+                  <option value="weekly_4">每周四</option>
+                  <option value="weekly_5">每周五</option>
+                  <option value="weekly_6">每周六</option>
+                  <option value="weekly_7">每周日</option>
+                </select>
               </div>
               <Button size="sm" className="w-full mt-1 h-8 text-xs" onClick={handleAddAlarm}>
                 <Plus className="size-3 mr-1" /> 添加新闹钟
@@ -173,7 +209,7 @@ export function AppSidebar() {
                   <div key={alarm.id} className="flex items-center justify-between p-2 rounded-md border bg-background text-xs">
                     <div className="flex flex-col">
                       <span className="font-medium">{alarm.title}</span>
-                      <span className="text-muted-foreground">{alarm.trigger_time} ({alarm.repeat_rule})</span>
+                      <span className="text-muted-foreground">{alarm.trigger_time} ({alarm.repeat_rule === 'none' ? '仅一次' : alarm.repeat_rule === 'everyday' ? '每天' : alarm.repeat_rule.startsWith('weekly_') ? `每周${alarm.repeat_rule.slice(-1)}` : alarm.repeat_rule})</span>
                     </div>
                     <div className="flex items-center gap-2">
                       <Switch 

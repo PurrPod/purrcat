@@ -100,7 +100,7 @@ export function MessageQueue({ messages, className }: MessageQueueProps) {
                     exit={{ x: 10, opacity: 0 }}
                     onClick={() => setSelectedMessage(msg)}
                     className={cn(
-                      "p-3 rounded-lg border bg-background/60 shadow-sm transition-all duration-200 hover:bg-background cursor-pointer group",
+                      "p-5 rounded-lg border bg-background/60 shadow-sm transition-all duration-200 hover:bg-background cursor-pointer group",
                       msg.type === 'error' && "border-destructive/20",
                       msg.type === 'success' && "border-green-500/20",
                       msg.type === 'warning' && "border-amber-500/20",
@@ -117,22 +117,22 @@ export function MessageQueue({ messages, className }: MessageQueueProps) {
                         msg.type === 'info' && "text-blue-500",
                         msg.type === 'agent' && "text-primary"
                       )}>
-                        {msg.type === 'error' && <AlertCircle className="size-3.5" />}
-                        {msg.type === 'success' && <CheckCircle2 className="size-3.5" />}
-                        {msg.type === 'warning' && <AlertCircle className="size-3.5" />}
-                        {msg.type === 'info' && <Info className="size-3.5" />}
-                        {msg.type === 'agent' && <MessageSquare className="size-3.5" />}
+                        {msg.type === 'error' && <AlertCircle className="size-4" />}
+                        {msg.type === 'success' && <CheckCircle2 className="size-4" />}
+                        {msg.type === 'warning' && <AlertCircle className="size-4" />}
+                        {msg.type === 'info' && <Info className="size-4" />}
+                        {msg.type === 'agent' && <MessageSquare className="size-4" />}
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between mb-1">
-                          <p className="text-[11px] font-bold truncate leading-none text-foreground/80">
+                          <p className="text-sm font-bold truncate leading-none text-foreground/80">
                             {msg.title}
                           </p>
-                          <span className="text-[9px] text-muted-foreground whitespace-nowrap">
+                          <span className="text-xs text-muted-foreground whitespace-nowrap">
                             {msg.timestamp}
                           </span>
                         </div>
-                        <p className="text-[10px] text-muted-foreground leading-relaxed line-clamp-2">
+                        <p className="text-xs text-muted-foreground leading-relaxed line-clamp-2">
                           {msg.content}
                         </p>
                       </div>
@@ -158,19 +158,19 @@ export function MessageQueue({ messages, className }: MessageQueueProps) {
                     animate={{ x: 0, opacity: 1 }}
                     exit={{ x: 10, opacity: 0 }}
                     onClick={() => handleTaskClick(task.id)}
-                    className="p-3 rounded-lg border bg-background/60 shadow-sm transition-all duration-200 hover:bg-background cursor-pointer group"
+                    className="p-4 rounded-lg border bg-background/60 shadow-sm transition-all duration-200 hover:bg-background cursor-pointer group"
                   >
                     <div className="flex items-start gap-3">
                       <div className="mt-0.5 shrink-0 opacity-70 text-primary">
-                        <ListTodo className="size-3.5" />
+                        <ListTodo className="size-4" />
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between mb-1">
-                          <p className="text-[11px] font-bold truncate leading-none text-foreground/80">
+                          <p className="text-sm font-bold truncate leading-none text-foreground/80">
                             {task.name}
                           </p>
                           <span className={cn(
-                            'text-[10px] px-2 py-0.5 rounded-full shrink-0',
+                            'text-xs px-2 py-0.5 rounded-full shrink-0',
                             task.status === 'running' && 'bg-blue-500/10 text-blue-500',
                             task.status === 'pending' && 'bg-amber-500/10 text-amber-500',
                             task.status === 'completed' && 'bg-green-500/10 text-green-500',
@@ -182,10 +182,10 @@ export function MessageQueue({ messages, className }: MessageQueueProps) {
                             {task.status === 'failed' && '失败'}
                           </span>
                         </div>
-                        <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                        <div className="flex items-center justify-between text-xs text-muted-foreground">
                           <span>{task.progress}% 完成</span>
                           <button className="flex items-center gap-1 hover:text-primary transition-colors">
-                            查看 <ExternalLink className="size-2.5" />
+                            查看 <ExternalLink className="size-3" />
                           </button>
                         </div>
                       </div>

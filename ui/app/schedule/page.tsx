@@ -51,8 +51,8 @@ export default function SchedulePage() {
   })
   const [scheduleForm, setScheduleForm] = useState<ScheduleForm>({
     title: '',
-    start_time: format(new Date(), "yyyy-MM-dd'T'HH:mm"),
-    end_time: format(new Date(), "yyyy-MM-dd'T'HH:mm"),
+    start_time: format(new Date(), "yyyy-MM-dd HH:mm"),
+    end_time: format(new Date(), "yyyy-MM-dd HH:mm"),
     description: '',
   })
 
@@ -91,7 +91,12 @@ export default function SchedulePage() {
       toast({ title: '请填写闹钟标题', variant: 'destructive' })
       return
     }
-    await addAlarm(alarmForm)
+    // 仅发送后端需要的字段，避免 422 Unprocessable Entity
+    await addAlarm({
+      title: alarmForm.title,
+      trigger_time: alarmForm.trigger_time,
+      repeat_rule: alarmForm.repeat_rule
+    })
     setAlarmDialogOpen(false)
   }
 
@@ -278,6 +283,7 @@ export default function SchedulePage() {
                 value={alarmForm.title}
                 onChange={(e) => setAlarmForm((prev) => ({ ...prev, title: e.target.value }))}
                 placeholder="例如：喝水提醒"
+                className="focus-visible:ring-0 focus-visible:border-primary/50 focus-visible:outline-none"
               />
             </div>
             <div>
@@ -286,12 +292,13 @@ export default function SchedulePage() {
                 type="time"
                 value={alarmForm.trigger_time}
                 onChange={(e) => setAlarmForm((prev) => ({ ...prev, trigger_time: e.target.value }))}
+                className="focus-visible:ring-0 focus-visible:border-primary/50 focus-visible:outline-none"
               />
             </div>
             <div>
               <label className="text-sm font-medium">重复规则</label>
               <select
-                className="mt-2 w-full rounded border p-2"
+                className="mt-2 w-full rounded border p-2 focus-visible:ring-0 focus-visible:border-primary/50 focus-visible:outline-none"
                 value={alarmForm.repeat_rule}
                 onChange={(e) => setAlarmForm((prev) => ({ ...prev, repeat_rule: e.target.value }))}
               >
@@ -333,6 +340,7 @@ export default function SchedulePage() {
                 value={scheduleForm.title}
                 onChange={(e) => setScheduleForm((prev) => ({ ...prev, title: e.target.value }))}
                 placeholder="例如：团队会议"
+                className="focus-visible:ring-0 focus-visible:border-primary/50 focus-visible:outline-none"
               />
             </div>
             <div>
@@ -341,6 +349,7 @@ export default function SchedulePage() {
                 type="datetime-local"
                 value={scheduleForm.start_time}
                 onChange={(e) => setScheduleForm((prev) => ({ ...prev, start_time: e.target.value }))}
+                className="focus-visible:ring-0 focus-visible:border-primary/50 focus-visible:outline-none"
               />
             </div>
             <div>
@@ -349,6 +358,7 @@ export default function SchedulePage() {
                 type="datetime-local"
                 value={scheduleForm.end_time}
                 onChange={(e) => setScheduleForm((prev) => ({ ...prev, end_time: e.target.value }))}
+                className="focus-visible:ring-0 focus-visible:border-primary/50 focus-visible:outline-none"
               />
             </div>
             <div>
@@ -356,7 +366,7 @@ export default function SchedulePage() {
               <textarea
                 value={scheduleForm.description}
                 onChange={(e) => setScheduleForm((prev) => ({ ...prev, description: e.target.value }))}
-                className="w-full resize-none rounded border p-2"
+                className="w-full resize-none rounded border p-2 focus-visible:ring-0 focus-visible:border-primary/50 focus-visible:outline-none"
                 rows={4}
               />
             </div>
