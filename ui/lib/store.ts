@@ -3,6 +3,49 @@
 import { create } from 'zustand'
 import type { Message, ThoughtChain, Project, Task, Skill, FileContent, Plugin, ConfigCategory, ModelConfig, ToolGroup, ScheduleItem, AlarmItem } from './types'
 
+const DEFAULT_PORT = 8001
+const MAX_PORT_SCAN = 100
+const BACKEND_SERVICE_ID = 'cat-in-cup-backend-v1'
+
+let detectedPort: number | null = null
+
+async function verifyBackendService(port: number): Promise<boolean> {
+  try {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 1000)
+    const res = await fetch(`http://localhost:${port}/`, {
+      method: 'GET',
+      signal: controller.signal
+    })
+    clearTimeout(timer)
+    if (!res.ok) return false
+    const data = await res.json()
+    return data.service_id === BACKEND_SERVICE_ID
+  } catch {
+    return false
+  }
+}
+
+async function detectBackendPort(): Promise<number> {
+  if (detectedPort) return detectedPort
+  
+  for (let port = DEFAULT_PORT; port < DEFAULT_PORT + MAX_PORT_SCAN; port++) {
+    const isValid = await verifyBackendService(port)
+    if (isValid) {
+      detectedPort = port
+      console.log(`✅ 后端端口检测成功: ${port} (服务标识验证通过)`)
+      return port
+    }
+  }
+  console.warn(`⚠️ 无法检测到有效后端服务，使用默认端口 ${DEFAULT_PORT}`)
+  return DEFAULT_PORT
+}
+
+async function getApiBase(): Promise<string> {
+  const port = await detectBackendPort()
+  return `http://localhost:${port}/api`
+}
+
 export const API_BASE = 'http://localhost:8001/api'
 export const API_ORIGIN = API_BASE.replace(/\/api\/?$/, '')
 
@@ -59,6 +102,10 @@ interface AppState {
   fetchThoughtChain: () => Promise<void>
   forcePush: (content: string) => Promise<void>
   summarizeMemory: () => Promise<void>
+  
+  // Agent Status
+  agentStatus: { window_token: number; history_length: number; state: string }
+  fetchAgentStatus: () => Promise<void>
   
   // Tasks
   tasks: Task[]
@@ -153,9 +200,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       throw new Error('offline')
     }
 
+    const apiBase = await getApiBase()
     const url = /^https?:\/\//i.test(pathOrUrl)
       ? pathOrUrl
-      : `${API_BASE}${pathOrUrl.startsWith('/') ? pathOrUrl : `/${pathOrUrl}`}`
+      : `${apiBase}${pathOrUrl.startsWith('/') ? pathOrUrl : `/${pathOrUrl}`}`
 
     try {
       const res = await fetchWithTimeout(url, init, timeoutMs)
@@ -172,8 +220,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   pingBackend: async (opts) => {
     const timeoutMs = opts?.timeoutMs ?? 2500
+    const port = await detectBackendPort()
     try {
-      const res = await fetchWithTimeout(`${API_ORIGIN}/`, { method: 'GET' }, timeoutMs)
+      const res = await fetchWithTimeout(`http://localhost:${port}/`, { method: 'GET' }, timeoutMs)
       if (!res.ok) {
         get().setConnectionStatus('disconnected', `ping_${res.status}`)
         return false
@@ -273,7 +322,6 @@ export const useAppStore = create<AppState>((set, get) => ({
           if (content === undefined || content === null || (typeof content === 'string' && content.trim() === '')) {
             content = t
           }
-          // If has tool_calls, always use the full object
           if (t?.tool_calls || t?.toolCalls) {
             content = t
           }
@@ -284,6 +332,8 @@ export const useAppStore = create<AppState>((set, get) => ({
             type: t?.type ?? t?.kind ?? t?.message_type ?? undefined,
             content,
             timestamp,
+            tool_call_id: t?.tool_call_id,
+            name: t?.name,
           }
         }),
       })
@@ -312,6 +362,17 @@ export const useAppStore = create<AppState>((set, get) => ({
       get().fetchThoughtChain()
     } catch (e) {
       console.error('Failed to summarize memory:', e)
+    }
+  },
+  
+  agentStatus: { window_token: 0, history_length: 0, state: 'idle' },
+  fetchAgentStatus: async () => {
+    try {
+      const res = await get().apiFetch('/agent/status')
+      const data = await res.json()
+      set({ agentStatus: data })
+    } catch (e) {
+      console.error('Failed to fetch agent status:', e)
     }
   },
   

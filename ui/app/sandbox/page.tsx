@@ -23,6 +23,7 @@ import { useToast } from "@/components/ui/use-toast"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { useAppStore } from '@/lib/store'
 
 interface FileItem {
   name: string
@@ -45,8 +46,8 @@ export default function SandboxPage() {
   // 检查 Docker 状态
   const checkDockerStatus = useCallback(async () => {
     try {
-      // 假设后端提供此接口返回 docker 状态，如 { running: true }
-      const res = await fetch('/api/sandbox/status')
+      const apiFetch = useAppStore.getState().apiFetch
+      const res = await apiFetch('/sandbox/status')
       if (res.ok) {
         const data = await res.json()
         setDockerStatus(data.running ? 'running' : 'stopped')
@@ -54,7 +55,6 @@ export default function SandboxPage() {
         setDockerStatus('stopped')
       }
     } catch (e) {
-      // 网络请求失败或接口不存在时视为未运行
       setDockerStatus('stopped')
     }
   }, [])

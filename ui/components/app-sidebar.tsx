@@ -15,11 +15,11 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { format } from 'date-fns'
 
 const navItems = [
-  { href: '/', label: 'Home', icon: Home },
-  { href: '/task', label: 'Task', icon: ListTodo },
-  { href: '/sandbox', label: 'Sandbox', icon: Terminal },
-  { href: '/extension', label: 'Extension', icon: Puzzle },
-  { href: '/sensor', label: 'Sensor', icon: Eye },
+  { href: '/', label: '首页', icon: Home },
+  { href: '/task', label: '后台任务', icon: ListTodo },
+  { href: '/sandbox', label: '沙盒', icon: Terminal },
+  { href: '/extension', label: '拓展与配置', icon: Puzzle },
+  { href: '/sensor', label: '传感器', icon: Eye },
 ]
 
 export function AppSidebar() {

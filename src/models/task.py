@@ -438,29 +438,38 @@ class Task:
         return usage_data
 
     def _run_eval(self):
-        # 1. 核心护栏提示词：明确幻觉的定义和输出格式
         eval_system_prompt = """你是一个严格的 AI Agent 行为审查员。
-    你的任务是审查 Agent 在最近几个对话轮次（LOG SNAPSHOT）中的表现，重点排查是否存在“幻觉（Hallucination）”。
-    【幻觉的严格判定标准】：
-    1. 凭空捏造：使用了未通过工具读取、或未在上下文/LSP诊断中出现的变量名、函数名、文件路径或代码逻辑。
-    2. 盲目自信：没有调用相关工具获取信息（如搜索、查源码），却给出了笃定的事实性断言。
-    3. 无视客观反馈：工具返回了明确的错误（如 FileNotFoundError、编译报错），但 Agent 的最终回复却声称操作成功。
-    请严格以 JSON 格式输出你的审查结果，不要包含任何额外的 Markdown 标记：
-    {
-        "has_hallucination": true 或 false,
-        "reason": "如果为 true，请直接指出具体的幻觉表现和证据；如果为 false，简述其逻辑是如何基于工具反馈闭环的。"
-    }"""
+你的任务是审查 Agent 在最近几个对话轮次（LOG SNAPSHOT）中的表现，重点排查是否存在"幻觉（Hallucination）"。
+【幻觉的严格判定标准】：
+1. 凭空捏造：使用了未通过工具读取、或未在上下文/LSP诊断中出现的变量名、函数名、文件路径或代码逻辑。
+2. 盲目自信：没有调用相关工具获取信息（如搜索、查源码），却给出了笃定的事实性断言。
+3. 无视客观反馈：工具返回了明确的错误（如 FileNotFoundError、编译报错），但 Agent 的最终回复却声称操作成功。
+请严格以 JSON 格式输出你的审查结果，不要包含任何额外的 Markdown 标记：
+{
+    "has_hallucination": true 或 false,
+    "reason": "如果为 true，请直接指出具体的幻觉表现和证据；如果为 false，简述其逻辑是如何基于工具反馈闭环的。"
+}"""
         prompt = "以下是准备被压缩的上下文日志快照 (LOG SNAPSHOT)：\n\n" + "\n".join(self.log_window)
-        client = Model(self.judger).client
+        
+        judger_key = self.judger.split("]")[-1] if "]" in self.judger else self.judger
+        model_name = judger_key.split(":")[-1] if ":" in judger_key else judger_key
+        
+        try:
+            client = Model(judger_key).client
+        except Exception as e:
+            print(f"[审查系统异常] 无法初始化模型 {judger_key}: {str(e)}")
+            self.log_and_notify("thought", f"🤖 质检审查: 模型初始化失败，默认放行: {str(e)}")
+            return {"has_hallucination": False, "reason": f"模型初始化失败，默认放行: {str(e)}"}
+        
         temp_history = [
             {"role": "system", "content": eval_system_prompt},
             {"role": "user", "content": prompt}
         ]
         kwargs = {
-            "model": self.judger,
+            "model": model_name,
             "messages": temp_history,
             "response_format": {"type": "json_object"},
-            "temperature": 0.1,  # 审查任务需要极低的温度以保证客观性和确定性
+            "temperature": 0.1,
         }
         try:
             response = client.chat.completions.create(**kwargs)

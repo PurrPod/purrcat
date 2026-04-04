@@ -1,5 +1,6 @@
 import datetime
 import uuid
+import socket
 from fastapi import FastAPI, HTTPException, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -72,10 +73,15 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
+BACKEND_SERVICE_ID = "cat-in-cup-backend-v1"
 
 @app.get("/")
 async def root():
-    return {"status": "online", "message": "Agent Backend API is running"}
+    return {
+        "status": "online",
+        "message": "Agent Backend API is running",
+        "service_id": BACKEND_SERVICE_ID
+    }
 
 
 app.add_middleware(
@@ -145,6 +151,15 @@ async def create_message(msg: MessageCreate):
 @app.get("/api/thought-chain")
 async def get_thought_chain():
     return agent.current_history
+
+
+@app.get("/api/agent/status")
+async def get_agent_status():
+    return {
+        "window_token": agent.window_token,
+        "history_length": len(agent.current_history),
+        "state": agent.state
+    }
 
 
 class ForcePushRequest(BaseModel):
@@ -620,9 +635,6 @@ async def get_tools():
         raise HTTPException(status_code=500, detail=f"Failed to load tools: {e}")
 
 
-# ==========================================
-# 修改点：确保 Local Tool 正确解析 yaml 中的 description
-# ==========================================
 @app.get("/api/plugins")
 async def get_plugins():
     plugins = []
@@ -671,7 +683,9 @@ async def get_plugins():
                                         for func_name, func_info in plugin_config["functions"].items():
                                             if isinstance(func_info, dict):
                                                 # 处理嵌套的 function 结构
-                                                if "function" in func_info and isinstance(func_info["function"], dict) and "description" in func_info["function"]:
+                                                if "function" in func_info and isinstance(func_info["function"],
+                                                                                          dict) and "description" in \
+                                                        func_info["function"]:
                                                     plugin_info["description"] = func_info["function"]["description"]
                                                     break
                                                 elif "description" in func_info:
@@ -682,7 +696,9 @@ async def get_plugins():
                                 for func_name, func_info in config_data["functions"].items():
                                     if isinstance(func_info, dict):
                                         # 处理嵌套的 function 结构
-                                        if "function" in func_info and isinstance(func_info["function"], dict) and "description" in func_info["function"]:
+                                        if "function" in func_info and isinstance(func_info["function"],
+                                                                                  dict) and "description" in func_info[
+                                            "function"]:
                                             plugin_info["description"] = func_info["function"]["description"]
                                             break
                                         elif "description" in func_info:
@@ -743,23 +759,64 @@ async def get_config():
     try:
         configs['model_config.json'] = get_model_config_json()
         configs['mcp_config.json'] = get_mcp_config_json()
-        feishu = get_feishu_config()
-        configs['feishu_config.json'] = {
-            "APP_ID": feishu.get("app_id", ""),
-            "APP_SECRET": feishu.get("app_secret", ""),
-            "CHAT_ID": feishu.get("chat_id", "")
-        }
+
+        # 直接从 secrets 目录读取飞书配置
+        feishu_yaml_path = os.path.join(DATA_DIR, "config", "secrets", "feishu.yaml")
+        if os.path.exists(feishu_yaml_path):
+            with open(feishu_yaml_path, "r", encoding="utf-8") as f:
+                feishu_yaml = yaml.safe_load(f)
+            configs['channel_config.json'] = {
+                "feishu": {
+                    "app_id": feishu_yaml.get("feishu", {}).get("app_id", ""),
+                    "app_secret": feishu_yaml.get("feishu", {}).get("app_secret", ""),
+                    "chat_id": feishu_yaml.get("feishu", {}).get("chat_id", "")
+                },
+                "other": []
+            }
+        else:
+            configs['channel_config.json'] = {
+                "feishu": {
+                    "app_id": "",
+                    "app_secret": ""
+                },
+                "other": []
+            }
+        
+        # 直接从 secrets 目录读取 web_api 配置
+        web_api_yaml_path = os.path.join(DATA_DIR, "config", "secrets", "web_api.yaml")
+        if os.path.exists(web_api_yaml_path):
+            with open(web_api_yaml_path, "r", encoding="utf-8") as f:
+                web_api_yaml = yaml.safe_load(f)
+            configs['tool_config.json'] = {
+                "web_api": {
+                    "tavily_api_key": web_api_yaml.get("web_api", {}).get("tavily_api_key", "")
+                }
+            }
+        else:
+            configs['tool_config.json'] = {
+                "web_api": {
+                    "tavily_api_key": ""
+                }
+            }
+        
+        # 直接读取 file_config.json 文件
+        file_config_path = os.path.join(DATA_DIR, "config", "file_config.json")
+        if os.path.exists(file_config_path):
+            with open(file_config_path, "r", encoding="utf-8") as f:
+                file_config = json.load(f)
+            configs['permission_config.json'] = file_config
+        else:
+            configs['permission_config.json'] = {
+                "sandbox_dirs": ["sandbox/", "agent_vm/"],
+                "skill_dir": ["data/skill"],
+                "dont_read_dirs": ["src/"]
+            }
+
         rss_list = get_rss_subscriptions()
         configs['rss_config.json'] = [{"name": r["name"], "rss_url": r["url"]} for r in rss_list]
-        web = get_web_api_config()
-        configs['web_config.json'] = {"TAVILY_API_KEY": web.get("tavily_api_key", "")}
     except Exception as e:
-        config_dir = "data/config"
-        if os.path.exists(config_dir):
-            for filename in os.listdir(config_dir):
-                if filename.endswith(".json"):
-                    with open(os.path.join(config_dir, filename), "r", encoding="utf-8") as f:
-                        configs[filename] = json.load(f)
+        print(f"Error in get_config: {e}")
+
     return configs
 
 
@@ -877,9 +934,14 @@ async def update_config(filename: str, config: Dict[str, Any]):
         filename += ".json"
 
     file_path = os.path.join(DATA_DIR, "config", filename)
-    os.makedirs(os.path.dirname(file_path), exist_ok=True)
-    with open(file_path, "w", encoding="utf-8") as f:
-        json.dump(config, f, indent=4, ensure_ascii=False)
+
+    # 将属于 YAML 的配置拦截，不生成根目录的无用 JSON；而 file_config.json 将在这里正常存储
+    yaml_mapped_files = ["feishu_config.json", "web_api_config.json", "model_config.json", "mcp_config.json",
+                         "rss_config.json"]
+    if filename not in yaml_mapped_files:
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        with open(file_path, "w", encoding="utf-8") as f:
+            json.dump(config, f, indent=4, ensure_ascii=False)
 
     try:
         yaml_config = load_config()
@@ -896,36 +958,96 @@ async def update_config(filename: str, config: Dict[str, Any]):
                 yaml_config["embedding_model"] = config["embedding_model"]
 
         elif filename == "feishu_config.json":
-            yaml_config["feishu"] = {
-                "app_id": config.get("APP_ID", ""),
-                "app_secret": config.get("APP_SECRET", ""),
-                "chat_id": config.get("CHAT_ID", "")
-            }
+            feishu_data = config.get("feishu", {})
+            yaml_config["feishu"] = feishu_data
+
+            # --- 持久化写入到 secrets/feishu.yaml ---
+            feishu_yaml_path = os.path.join(DATA_DIR, "config", "secrets", "feishu.yaml")
+            os.makedirs(os.path.dirname(feishu_yaml_path), exist_ok=True)
+            with open(feishu_yaml_path, "w", encoding="utf-8") as f:
+                yaml.dump({"feishu": feishu_data}, f, allow_unicode=True, sort_keys=False)
+
+        elif filename == "web_api_config.json":
+            web_api_data = config.get("web_api", {})
+            yaml_config["web_api"] = web_api_data
+
+            # --- 持久化写入到 secrets/web_api.yaml ---
+            web_yaml_path = os.path.join(DATA_DIR, "config", "secrets", "web_api.yaml")
+            os.makedirs(os.path.dirname(web_yaml_path), exist_ok=True)
+            with open(web_yaml_path, "w", encoding="utf-8") as f:
+                yaml.dump({"web_api": web_api_data}, f, allow_unicode=True, sort_keys=False)
+                
+        elif filename == "channel_config.json":
+            # 处理频道配置
+            if "feishu" in config:
+                feishu_data = config["feishu"]
+                yaml_config["feishu"] = {
+                    "app_id": feishu_data.get("app_id", ""),
+                    "app_secret": feishu_data.get("app_secret", ""),
+                    "chat_id": feishu_data.get("chat_id", "")
+                }
+                
+                # 持久化写入到 secrets/feishu.yaml
+                feishu_yaml_path = os.path.join(DATA_DIR, "config", "secrets", "feishu.yaml")
+                os.makedirs(os.path.dirname(feishu_yaml_path), exist_ok=True)
+                with open(feishu_yaml_path, "w", encoding="utf-8") as f:
+                    yaml.dump({"feishu": yaml_config["feishu"]}, f, allow_unicode=True, sort_keys=False)
+                    
+        elif filename == "tool_config.json":
+            # 处理工具配置
+            if "web_api" in config:
+                web_api_data = config["web_api"]
+                yaml_config["web_api"] = {
+                    "tavily_api_key": web_api_data.get("tavily_api_key", "")
+                }
+                
+                # 持久化写入到 secrets/web_api.yaml
+                web_yaml_path = os.path.join(DATA_DIR, "config", "secrets", "web_api.yaml")
+                os.makedirs(os.path.dirname(web_yaml_path), exist_ok=True)
+                with open(web_yaml_path, "w", encoding="utf-8") as f:
+                    yaml.dump({"web_api": yaml_config["web_api"]}, f, allow_unicode=True, sort_keys=False)
+                    
+        elif filename == "permission_config.json":
+            # 处理权限设置
+            # 直接保存到 file_config.json 文件
+            file_config_path = os.path.join(DATA_DIR, "config", "file_config.json")
+            
+            # 保存到 file_config.json 文件
+            with open(file_config_path, "w", encoding="utf-8") as f:
+                json.dump(config, f, indent=4, ensure_ascii=False)
 
         elif filename == "mcp_config.json":
             yaml_config["mcp_servers"] = config.get("mcpServers", {})
+
+            mcp_yaml_path = os.path.join(DATA_DIR, "config", "configs", "mcp_servers.yaml")
+            os.makedirs(os.path.dirname(mcp_yaml_path), exist_ok=True)
+            with open(mcp_yaml_path, "w", encoding="utf-8") as f:
+                yaml.dump({"mcp_servers": yaml_config["mcp_servers"]}, f, allow_unicode=True, sort_keys=False)
 
         elif filename == "rss_config.json":
             yaml_config["rss_subscriptions"] = [
                 {"name": item["name"], "url": item["rss_url"]}
                 for item in config
             ]
+            rss_yaml_path = os.path.join(DATA_DIR, "config", "configs", "rss_subscriptions.yaml")
+            os.makedirs(os.path.dirname(rss_yaml_path), exist_ok=True)
+            with open(rss_yaml_path, "w", encoding="utf-8") as f:
+                yaml.dump({"rss_subscriptions": yaml_config["rss_subscriptions"]}, f, allow_unicode=True,
+                          sort_keys=False)
 
-        elif filename == "web_config.json":
-            yaml_config["web_api"] = {"tavily_api_key": config.get("TAVILY_API_KEY", "")}
-
+        # 更新整合的全局 config.yaml (这由 initialize_config() 热加载依赖)
         yaml_path = os.path.join(DATA_DIR, "config", "config.yaml")
         with open(yaml_path, "w", encoding="utf-8") as f:
             yaml.dump(yaml_config, f, allow_unicode=True, sort_keys=False)
+
         reload_config()
     except Exception as e:
+        print(f"Update Config Error: {e}")
         pass
+
     return {"status": "success"}
 
 
-# ==========================================
-# 修改点：读取技能目录下的 SKILL.md 作为描述
-# ==========================================
 @app.get("/api/skills")
 async def get_skills():
     skill_dir = os.path.join(DATA_DIR, "skill")
@@ -987,10 +1109,65 @@ async def get_databases():
     return json.loads(res)["content"]["available_databases"]
 
 
+@app.get("/api/sandbox/status")
+async def get_sandbox_status():
+    try:
+        from src.plugins.plugin_collection.shell.shell import _docker_manager_instance
+        if _docker_manager_instance and _docker_manager_instance.container:
+            _docker_manager_instance.container.reload()
+            running = _docker_manager_instance.container.status == "running"
+            return {"running": running, "status": _docker_manager_instance.container.status}
+        return {"running": False, "status": "not_initialized"}
+    except Exception as e:
+        return {"running": False, "status": "error", "error": str(e)}
+
+
+def is_port_available(port: int, host: str = "0.0.0.0") -> bool:
+    """检查端口是否可用"""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(1)
+            s.bind((host, port))
+            return True
+    except OSError:
+        return False
+
+
+def find_available_port(start_port: int, max_attempts: int = 100, host: str = "0.0.0.0") -> int:
+    """从指定端口开始寻找可用端口"""
+    for port in range(start_port, start_port + max_attempts):
+        if is_port_available(port, host):
+            return port
+    raise RuntimeError(f"无法找到可用端口 (尝试范围: {start_port}-{start_port + max_attempts - 1})")
+
+
+def write_port_file(port: int):
+    """将实际使用的端口写入文件，供前端读取"""
+    port_file = os.path.join(BASE_DIR, "data", "backend_port.json")
+    os.makedirs(os.path.dirname(port_file), exist_ok=True)
+    with open(port_file, "w", encoding="utf-8") as f:
+        json.dump({
+            "port": port,
+            "service_id": BACKEND_SERVICE_ID,
+            "timestamp": datetime.datetime.now().isoformat()
+        }, f)
+
+
 if __name__ == "__main__":
     import uvicorn
     import logging
 
     logging.getLogger("uvicorn").setLevel(logging.WARNING)
     logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
-    uvicorn.run(app, host="0.0.0.0", port=8001, log_level="warning")
+
+    DEFAULT_PORT = 8001
+    try:
+        port = find_available_port(DEFAULT_PORT)
+        if port != DEFAULT_PORT:
+            print(f"⚠️ 端口 {DEFAULT_PORT} 已被占用，自动切换到端口 {port}")
+        write_port_file(port)
+        print(f"🚀 后端服务启动于 http://0.0.0.0:{port}")
+        uvicorn.run(app, host="0.0.0.0", port=port, log_level="warning")
+    except RuntimeError as e:
+        print(f"❌ 启动失败: {e}")
+        raise

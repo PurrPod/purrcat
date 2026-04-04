@@ -6,7 +6,7 @@ import { Omnibar } from "@/components/catnip/omnibar"
 import { StreamBlocks, type StreamBlock } from "@/components/catnip/stream-blocks"
 import { ContextDrawer } from "@/components/catnip/context-drawer"
 import { StatusIndicator } from "@/components/catnip/status-indicator"
-import { Settings, LayoutPanelLeft } from "lucide-react"
+import { Settings, LayoutPanelLeft, Brain } from "lucide-react"
 import { MessageQueue } from "@/components/catnip/message-queue"
 import {
   ResizableHandle,
@@ -23,12 +23,16 @@ export default function HomePage() {
     connectionStatus,
     plugins,
     modelConfig,
-    refreshAll
+    refreshAll,
+    agentStatus,
+    fetchAgentStatus
   } = useAppStore()
 
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
   const [status, setStatus] = useState<"idle" | "running" | "error">("idle")
   const [showQueue, setShowQueue] = useState(true)
+  const [prevToken, setPrevToken] = useState(0)
+  const [tokenDelta, setTokenDelta] = useState<number | null>(null)
 
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const [isAtBottom, setIsAtBottom] = useState(true)
@@ -74,6 +78,21 @@ export default function HomePage() {
       }
     }
   }, [connectionStatus, thoughtChain])
+
+  useEffect(() => {
+    fetchAgentStatus()
+    const interval = setInterval(fetchAgentStatus, 3000)
+    return () => clearInterval(interval)
+  }, [fetchAgentStatus])
+
+  useEffect(() => {
+    const delta = agentStatus.window_token - prevToken
+    if (delta > 0 && prevToken > 0) {
+      setTokenDelta(delta)
+      setTimeout(() => setTokenDelta(null), 2000)
+    }
+    setPrevToken(agentStatus.window_token)
+  }, [agentStatus.window_token])
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -144,7 +163,7 @@ export default function HomePage() {
       } else if (role === 'tool') {
         const lastThoughtBlock = [...result].reverse().find(b => b.type === 'thought')
         if (lastThoughtBlock && lastThoughtBlock.toolCalls) {
-          const tcId = item.content?.tool_call_id || (item as any).tool_call_id || item.id;
+          const tcId = (item as any).tool_call_id
           const tc = lastThoughtBlock.toolCalls.find(tc => tc.id === tcId)
           if (tc) {
             tc.result = typeof item.content === 'string' ? item.content : (item.content?.content || JSON.stringify(item.content))
@@ -164,6 +183,27 @@ export default function HomePage() {
             
             {/* 顶部渐变层：与导航栏之间的过渡效果 */}
             <div className="absolute top-0 left-0 right-0 z-10 bg-gradient-to-b from-background via-background/90 to-transparent pb-16 pointer-events-none" />
+
+            {/* Token 计数悬浮框 */}
+            <div className="absolute top-20 right-4 z-20 pointer-events-none">
+              <div className="relative bg-gradient-to-br from-slate-100/60 via-gray-100/60 to-zinc-100/60 dark:from-slate-800/40 dark:via-gray-800/40 dark:to-zinc-800/40 backdrop-blur-sm rounded-xl px-3 py-1.5 border border-slate-200/30 dark:border-slate-700/30 shadow-sm">
+                <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                  <Brain className="size-3 text-slate-400 dark:text-slate-500" />
+                  <span className="font-mono">{agentStatus.window_token.toLocaleString()}</span>
+                  <span className="text-slate-400/60 dark:text-slate-500/60">tokens</span>
+                </div>
+                {tokenDelta && (
+                  <div 
+                    className="absolute left-1/2 -top-6 text-emerald-500 text-sm font-mono pointer-events-none whitespace-nowrap"
+                    style={{ 
+                      animation: 'floatUp 2s cubic-bezier(0.4, 0, 0.2, 1) forwards',
+                    }}
+                  >
+                    +{tokenDelta.toLocaleString()}
+                  </div>
+                )}
+              </div>
+            </div>
 
             {/* 1. 滑动层：去掉之前无效的 pb-96 */}
             <div
