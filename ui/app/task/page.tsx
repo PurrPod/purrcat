@@ -714,6 +714,7 @@ function AddTaskDialog() {
     desc: '',
     deliverable: '',
     core: '',
+    judger: '',
     prompt: '',
     skills: []
   })
@@ -737,6 +738,7 @@ function AddTaskDialog() {
     setFormData((prev) => ({
       ...prev,
       core: modelNames.includes(prev.core) ? prev.core : modelNames[0],
+      judger: modelNames.includes(prev.judger) ? prev.judger : modelNames[0],
     }))
   }, [open, modelNames])
 
@@ -766,13 +768,22 @@ function AddTaskDialog() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
-      await addTask(formData)
+      await addTask({
+        title: formData.title,
+        desc: formData.desc,
+        deliverable: formData.deliverable,
+        prompt: formData.prompt,
+        judge_mode: !!formData.judger,
+        task_histories: '',
+        core: formData.core
+      })
       setOpen(false)
       setFormData({
         title: '',
         desc: '',
         deliverable: '',
         core: '',
+        judger: '',
         prompt: '',
         skills: []
       })
@@ -815,6 +826,15 @@ function AddTaskDialog() {
                     value={formData.core}
                     onValueChange={(v) => setFormData({ ...formData, core: v })}
                     placeholder="选择核心模型"
+                  />
+                </div>
+                
+                <div className="space-y-2">
+                  <Label>评审模型 (Judger)</Label>
+                  <ModelNameSelect
+                    value={formData.judger}
+                    onValueChange={(v) => setFormData({ ...formData, judger: v })}
+                    placeholder="选择评审模型"
                   />
                 </div>
                 

@@ -680,11 +680,27 @@ async def get_plugins():
         for name in os.listdir(PLUGIN_COLLECTION_DIR):
             full_path = os.path.join(PLUGIN_COLLECTION_DIR, name)
             if os.path.isdir(full_path) and not name.startswith("__"):
-                plugins.append({
+                plugin_info = {
                     "name": name,
                     "enabled": name in active_plugins,
-                    "path": full_path
-                })
+                    "path": full_path,
+                    "config": {}
+                }
+                
+                # 尝试读取对应的 yaml 文件
+                yaml_path = os.path.join(full_path, f"{name}.yaml")
+                if not os.path.exists(yaml_path):
+                    # 备选：init.yaml
+                    yaml_path = os.path.join(full_path, "init.yaml")
+                
+                if os.path.exists(yaml_path):
+                    try:
+                        with open(yaml_path, "r", encoding="utf-8") as f:
+                            plugin_info["config"] = yaml.safe_load(f) or {}
+                    except Exception:
+                        pass
+                
+                plugins.append(plugin_info)
     return plugins
 
 
@@ -713,6 +729,7 @@ class TaskCreate(BaseModel):
     prompt: str
     skills: list = None
     core: str = "[1]openai:deepseek-chat"
+    judger: str = "[1]openai:deepseek-chat"
 
 
 @app.post("/api/tasks")
@@ -722,7 +739,8 @@ async def create_task_endpoint(task: TaskCreate):
         msg = add_task(
             name=task.title,
             prompt=task.prompt,
-            core=task.core
+            core=task.core,
+            judger=task.judger
         )
         return {"status": "success", "message": msg}
     except Exception as e:

@@ -12,6 +12,11 @@ export interface ThoughtChain {
   role?: string
   type?: string
   content: any
+  tool?: string
+  args?: any
+  tool_calls?: any[]
+  toolCalls?: any[]
+  tool_call_id?: string
   timestamp: Date
 }
 
@@ -55,6 +60,7 @@ export interface Task {
   progress: number
   worker?: string
   judger?: string
+  core?: string
   creat_time?: string
   logs: string[]
   history?: any[]

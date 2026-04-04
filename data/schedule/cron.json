@@ -20,6 +20,6 @@
     "title": "每天喝水提醒",
     "trigger_time": "10:00",
     "repeat_rule": "everyday",
-    "active": true
+    "active": false
   }
 ]

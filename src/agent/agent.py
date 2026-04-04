@@ -1,3 +1,4 @@
+import datetime
 import os
 import time
 import json
@@ -194,6 +195,7 @@ class Agent:
                                             target_plugin = tool_info["plugin"]
                                             break
                     result_str, new_schema_info = parse_tool(tool_name, arguments, route=target_route, plugin=target_plugin)
+                    finish_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     # Schema 更新闭环
                     if new_schema_info:
                         schemas_to_add = new_schema_info if isinstance(new_schema_info, list) else [new_schema_info]
@@ -204,21 +206,23 @@ class Agent:
 
                     if result_str == "__AGENT_PAUSE__":
                         print("⏸️ Agent 已将当前任务放入挂起表，准备处理下一条消息...")
+                        time_aware_content = f"[finish at {finish_time}]\n工具调用成功，正在挂起任务，请耐心等待处理"
                         self._append_history({
                             "role": "tool",
                             "tool_call_id": tool_call.id,
                             "name": tool_name,
-                            "content": "工具调用成功，正在挂起任务，请耐心等待处理"
+                            "content": time_aware_content
                         })
                         self.state = "idle"
                         return
 
                     print(f"📦 工具回传结果: {result_str}")
-                    self._append_history({
+                    time_aware_content = f"[finish at {finish_time}]\n{result_str}"
+                    self.current_history.append({
                         "role": "tool",
                         "tool_call_id": tool_call.id,
                         "name": tool_name,
-                        "content": result_str
+                        "content": time_aware_content
                     })
 
                 self._checker(step)

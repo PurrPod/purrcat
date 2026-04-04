@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { Analytics } from '@vercel/analytics/next'
 import { Navbar } from '@/components/navbar'
+import { AppSidebar } from '@/components/app-sidebar'
 import { StoreInitializer } from '@/components/store-initializer'
 import './globals.css'
 
@@ -34,12 +35,15 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="zh-CN">
-      <body className="font-sans antialiased min-h-screen bg-background">
+      <body className="font-sans antialiased min-h-screen bg-background overflow-hidden flex flex-col">
         <StoreInitializer />
         <Navbar />
-        <main className="flex-1">
-          {children}
-        </main>
+        <div className="flex flex-1 overflow-hidden">
+          <AppSidebar />
+          <main className="flex-1 overflow-hidden p-0 relative">
+            {children}
+          </main>
+        </div>
         <Analytics />
       </body>
     </html>

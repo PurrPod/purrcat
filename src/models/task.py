@@ -36,12 +36,12 @@ def inject_task_instruction(task_id: str, content: str):
     return False
 
 class Task:
-    def __init__(self, prompt, core, task_name, judger):
+    def __init__(self, task_name, prompt, core, judger):
+        self.task_name = task_name
         self.prompt = prompt
+        self.core = core
         self.judger = judger
         self.system_prompt = self._build_system_prompt()
-        self.core = core
-        self.task_name = task_name
         self.history = []
         self.task_id = uuid.uuid4().hex
         self.client = Model(core).client
@@ -412,11 +412,13 @@ class Task:
                                               item.get("funct") != new_funct_name]
                         self.dynamic_tool.append(schema_item)
                 self.log_and_notify("tool",f"📦 工具回传结果: {result_str}")
+            finish_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            time_aware_content = f"[finish at {finish_time}]\n{result_str}"
             self.history.append({
                 "role": "tool",
                 "tool_call_id": tool_call.id,
                 "name": tool_name,
-                "content": result_str
+                "content": time_aware_content
             })
 
     def _track_token_usage(self, response) -> dict:
