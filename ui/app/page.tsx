@@ -159,14 +159,17 @@ export default function HomePage() {
   return (
     <div className="absolute inset-0 flex flex-col w-full bg-background overflow-hidden">
       <ResizablePanelGroup direction="horizontal" className="h-full w-full">
-        <ResizablePanel defaultSize={75} minSize={50}>
+        <ResizablePanel defaultSize={75} minSize={60}>
           <div className="relative h-full w-full overflow-hidden">
+            
+            {/* 顶部渐变层：与导航栏之间的过渡效果 */}
+            <div className="absolute top-0 left-0 right-0 z-10 bg-gradient-to-b from-background via-background/90 to-transparent pb-16 pointer-events-none" />
 
             {/* 1. 滑动层：去掉之前无效的 pb-96 */}
             <div
               ref={scrollContainerRef}
               onScroll={handleScroll}
-              className="absolute inset-0 overflow-y-auto overflow-x-hidden p-4 md:p-8 scroll-smooth scrollbar-thin scrollbar-thumb-muted-foreground/20 hover:scrollbar-thumb-muted-foreground/40 scrollbar-track-transparent"
+              className="absolute inset-0 overflow-y-auto overflow-x-hidden pt-16 pb-4 md:pt-24 md:pb-8 scroll-smooth scrollbar-thin scrollbar-thumb-muted-foreground/20 hover:scrollbar-thumb-muted-foreground/40 scrollbar-track-transparent"
             >
               {/* 2. 内容层：把超级巨大的留白加在这里！pb-48 (12rem) 保证了绝对安全的间距 */}
               <div className="max-w-4xl mx-auto w-full pb-48">
@@ -189,14 +192,11 @@ export default function HomePage() {
         </ResizablePanel>
 
         {showQueue && (
-          <>
-            <ResizableHandle withHandle className="bg-border/40" />
-            <ResizablePanel defaultSize={25} minSize={15} maxSize={40}>
-              <div className="h-full bg-muted/10 border-l border-border/40">
-                <MessageQueue messages={queueMessages} />
-              </div>
-            </ResizablePanel>
-          </>
+          <ResizablePanel defaultSize={25} minSize={25} maxSize={25}>
+            <div className="h-full">
+              <MessageQueue messages={queueMessages} />
+            </div>
+          </ResizablePanel>
         )}
       </ResizablePanelGroup>
 

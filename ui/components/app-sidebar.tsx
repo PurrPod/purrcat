@@ -1,7 +1,10 @@
 'use client'
 
 import * as React from 'react'
-import { AlarmClock, Calendar, Database, Cat, Plus, Trash2, Clock, Calendar as CalendarIcon } from 'lucide-react'
+import Link from 'next/link'
+import { usePathname } from 'next/navigation'
+import { cn } from '@/lib/utils'
+import { AlarmClock, Calendar, Database, Cat, Plus, Trash2, Clock, Calendar as CalendarIcon, Home, ListTodo, Terminal, Puzzle, Eye } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { useAppStore } from '@/lib/store'
 import { Button } from '@/components/ui/button'
@@ -11,8 +14,17 @@ import { Switch } from '@/components/ui/switch'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { format } from 'date-fns'
 
+const navItems = [
+  { href: '/', label: 'Home', icon: Home },
+  { href: '/task', label: 'Task', icon: ListTodo },
+  { href: '/sandbox', label: 'Sandbox', icon: Terminal },
+  { href: '/extension', label: 'Extension', icon: Puzzle },
+  { href: '/sensor', label: 'Sensor', icon: Eye },
+]
+
 export function AppSidebar() {
   const [activeDialog, setActiveDialog] = React.useState<'alarm' | 'schedule' | 'database' | null>(null)
+  const pathname = usePathname()
   
   const { 
     alarms, fetchAlarms, addAlarm, removeAlarm, updateAlarm,
@@ -52,35 +64,67 @@ export function AppSidebar() {
 
   return (
     <>
-      <aside className="w-[64px] flex flex-col items-center py-4 border-r bg-background/50 backdrop-blur-sm z-30">
-        <div className="flex flex-col items-center gap-4 w-full">
+      <aside className="w-[200px] flex flex-col items-start py-4 border-r bg-background/50 backdrop-blur-sm z-30">
+        <div className="flex flex-col items-start gap-4 w-full px-3">
+          {/* Logo */}
+          <div className="flex items-center gap-2 mb-2 w-full p-3">
+            <div className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm">
+              <Cat className="size-5" />
+            </div>
+            <span className="text-lg font-semibold text-foreground">CatInCup</span>
+          </div>
+          
+          {/* Navigation Links */}
+          {navItems.map((item) => {
+            const Icon = item.icon
+            const isActive = pathname === item.href
+            
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={cn(
+                  'flex items-center gap-3 w-full p-3 rounded-xl transition-colors',
+                  isActive
+                    ? 'bg-muted text-foreground'
+                    : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                )}
+              >
+                <Icon className="size-5 shrink-0" />
+                <span className="text-sm font-medium">{item.label}</span>
+              </Link>
+            )
+          })}
+          
+          <div className="w-full h-px bg-border/60 my-2" />
+
+          {/* Feature Buttons */}
           <button 
             onClick={() => setActiveDialog('alarm')}
-            className="p-3 rounded-xl hover:bg-muted transition-all duration-200 group relative"
+            className="flex items-center gap-3 w-full p-3 rounded-xl hover:bg-muted transition-all duration-200 group relative"
             title="闹钟"
           >
-            <AlarmClock className="size-6 text-muted-foreground group-hover:text-primary" />
+            <AlarmClock className="size-5 text-muted-foreground group-hover:text-primary shrink-0" />
+            <span className="text-sm font-medium text-muted-foreground group-hover:text-primary">闹钟</span>
             <div className="absolute -right-1 -top-1 size-2 bg-primary rounded-full opacity-0 group-hover:opacity-100 transition-opacity" />
           </button>
-          
-          <div className="w-8 h-px bg-border/60" />
 
           <button 
             onClick={() => setActiveDialog('schedule')}
-            className="p-3 rounded-xl hover:bg-muted transition-all duration-200 group relative"
+            className="flex items-center gap-3 w-full p-3 rounded-xl hover:bg-muted transition-all duration-200 group relative"
             title="日程"
           >
-            <Calendar className="size-6 text-muted-foreground group-hover:text-primary" />
+            <Calendar className="size-5 text-muted-foreground group-hover:text-primary shrink-0" />
+            <span className="text-sm font-medium text-muted-foreground group-hover:text-primary">日程</span>
           </button>
-
-          <div className="w-8 h-px bg-border/60" />
 
           <button 
             onClick={() => setActiveDialog('database')}
-            className="p-3 rounded-xl hover:bg-muted transition-all duration-200 group relative"
+            className="flex items-center gap-3 w-full p-3 rounded-xl hover:bg-muted transition-all duration-200 group relative"
             title="数据库"
           >
-            <Database className="size-6 text-muted-foreground group-hover:text-primary" />
+            <Database className="size-5 text-muted-foreground group-hover:text-primary shrink-0" />
+            <span className="text-sm font-medium text-muted-foreground group-hover:text-primary">数据库</span>
           </button>
         </div>
       </aside>
