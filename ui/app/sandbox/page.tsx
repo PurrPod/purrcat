@@ -186,8 +186,8 @@ export default function SandboxPage() {
             </div>
 
             {/* 文件树列表 */}
-            <ScrollArea className="flex-1">
-              <div className="py-3">
+            <ScrollArea className="flex-1 overflow-hidden">
+              <div className="py-3 pr-4">
                 {isLoadingTree && files.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-16 text-muted-foreground opacity-50 animate-pulse">
                     <Loader2 className="size-8 mb-3 animate-spin" />

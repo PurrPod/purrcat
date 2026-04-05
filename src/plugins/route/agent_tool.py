@@ -160,7 +160,7 @@ AGENT_TOOLS = [
                     "name": {"type": "string", "description": "任务标题"},
                     "prompt": {"type": "string", "description": "系统提示"},
                     "core": {"type": "string",
-                             "description": "使用的核心模型，如\"[2]openai:deepseek-chat\"，可用list_worker查看"}
+                             "description": "使用的核心模型，如\"openai:deepseek-chat\"，可用list_worker查看"}
                 },
                 "required": ["name", "prompt", "core"]
             }

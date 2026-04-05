@@ -5,9 +5,7 @@ import threading
 from openai import OpenAI
 from src.utils.config import get_models_config
 
-MODEL_POOL = [
-    {"model_name":"openai:deepseek-chat", "state":"idle"}
-]
+MODEL_POOL = []
 
 class Model:
     def __init__(
@@ -25,8 +23,7 @@ class Model:
         if self.name not in models_config:
             raise ValueError(f"Configuration for core '{self.name}' not found in config.yaml!")
         model_info = models_config[self.name]
-        
-        # 支持 api_keys 列表（新）或 api_key 单值（旧，向后兼容）
+
         api_keys = model_info.get("api_keys")
         if not api_keys:
             api_key = model_info.get("api_key")
