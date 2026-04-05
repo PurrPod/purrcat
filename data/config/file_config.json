@@ -1,0 +1,12 @@
+{
+    "sandbox_dirs": [
+        "sandbox/",
+        "agent_vm/"
+    ],
+    "skill_dir": [
+        "data/skill"
+    ],
+    "dont_read_dirs": [
+        "src/"
+    ]
+}

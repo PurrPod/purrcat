@@ -96,6 +96,10 @@ def load_config() -> Dict[str, Any]:
     with open(CONFIG_YAML_PATH, "r", encoding="utf-8") as f:
         _config_cache = yaml.safe_load(f)
     
+    # 确保返回的是字典
+    if _config_cache is None:
+        _config_cache = initialize_config()
+    
     return _config_cache
 
 

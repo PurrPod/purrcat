@@ -42,19 +42,31 @@ event_handler = lark.EventDispatcherHandler.builder("", "") \
 
 
 def _run_ws_client():
-    ws_client = lark.ws.Client(
-        APP_ID,
-        APP_SECRET,
-        event_handler=event_handler,
-        log_level=lark.LogLevel.INFO
-    )
-    ws_client.start()
+    if not APP_ID or not APP_SECRET:
+        print("⚠️ [Feishu Sensor] 飞书配置不完整，跳过 WebSocket 连接")
+        return
+    
+    try:
+        ws_client = lark.ws.Client(
+            APP_ID,
+            APP_SECRET,
+            event_handler=event_handler,
+            log_level=lark.LogLevel.INFO
+        )
+        ws_client.start()
+    except Exception as e:
+        print(f"⚠️ [Feishu Sensor] 飞书 WebSocket 连接失败: {str(e)}")
 
 
 def start_lark_sensor(agent_instance=None):
     global GLOBAL_AGENT
     if agent_instance:
         GLOBAL_AGENT = agent_instance
+    
+    if not APP_ID or not APP_SECRET:
+        print("⚠️ [Feishu Sensor] 飞书配置不完整，跳过启动")
+        return
+    
     t = threading.Thread(target=_run_ws_client, daemon=True)
     t.start()
     print("📡 飞书 WebSocket 长连接传感器已启动！")

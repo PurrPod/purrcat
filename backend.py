@@ -1,6 +1,12 @@
 import datetime
 import uuid
 import socket
+import warnings
+
+# 抑制无关警告
+warnings.filterwarnings("ignore", category=RuntimeWarning, message="coroutine 'ExpiringCache._start_clear_cron' was never awaited")
+warnings.filterwarnings("ignore", category=UserWarning, message="pkg_resources is deprecated as an API")
+
 from fastapi import FastAPI, HTTPException, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -45,6 +51,10 @@ async def lifespan(app: FastAPI):
     os.environ.pop("HTTPS_PROXY", None)
     os.environ.pop("http_proxy", None)
     os.environ.pop("https_proxy", None)
+
+    print("🔄 初始化配置文件...")
+    from src.utils.config import initialize_config
+    initialize_config()
 
     print("🔄 初始化全局工具注册表...")
     init_tool()

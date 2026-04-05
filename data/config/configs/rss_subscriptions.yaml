@@ -1,0 +1,14 @@
+# ============================================
+# RSS 订阅配置
+# ============================================
+
+# RSS订阅源配置（暂未开放）
+rss_subscriptions:
+  - name: "Lilian Weng's Blog"
+    url: "https://lilianweng.github.io/lil-log/feed.xml"
+  
+  - name: "Ahead of AI (by Sebastian Raschka)"
+    url: "https://magazine.sebastianraschka.com/feed"
+  
+  - name: "Latepost 晚点"
+    url: "https://rsshub.rssforever.com/latepost"
