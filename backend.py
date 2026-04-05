@@ -1166,10 +1166,10 @@ def write_port_file(port: int):
 if __name__ == "__main__":
     import uvicorn
     import logging
-
     logging.getLogger("uvicorn").setLevel(logging.WARNING)
     logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
-
+    if not os.path.exists(os.path.join(BASE_DIR, "agent_vm")):
+        os.mkdir(os.path.join(BASE_DIR, "agent_vm"))
     DEFAULT_PORT = 8001
     try:
         port = find_available_port(DEFAULT_PORT)

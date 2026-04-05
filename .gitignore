@@ -1,8 +1,6 @@
-data/config/*
+data/config/
 
-requirements.txt
-Dockerfile
-agent_vm/*
+agent_vm/
 data/checkpoints
 data/buffer
 __pycache__/
