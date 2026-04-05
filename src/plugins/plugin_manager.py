@@ -52,7 +52,8 @@ BASE_TOOLS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "query": {"type": "string", "description": "搜索关键词"}
+                    "query": {"type": "string", "description": "搜索关键词"},
+                    "top_k": {"type": "integer", "description": "返回得分 topK 结果"},
                 },
                 "required": ["query"]
             }
@@ -282,32 +283,38 @@ def get_menu(route: str) -> str:
     return result
 
 
-def search_tool(query: str) -> str:
-    """搜索工具"""
+def search_tool(query: str, top_k: int = 5) -> str:
+    """搜索工具 (字符碰撞策略 + 强制 Top-K 截断)"""
     if not os.path.exists(TOOL_INDEX_FILE):
         init_tool()
         if not os.path.exists(TOOL_INDEX_FILE):
             return "❌ 工具注册表未初始化，找不到 tool.jsonl"
-    
-    query_lower = query.lower()
     results = []
+    query_chars = set(query.lower().replace(" ", ""))
     with open(TOOL_INDEX_FILE, "r", encoding="utf-8") as f:
         for line in f:
             if not line.strip(): continue
             tool = json.loads(line)
-            if (query_lower in tool['func'].lower() or
-                    query_lower in tool['desc'].lower() or
-                    query_lower in tool['plugin'].lower()):
-                results.append(tool)
-    
+            name_to_analyse = f"{tool['func']} {tool['desc']} {tool['plugin']}".lower()
+            score = 0
+            for char in name_to_analyse:
+                if char.isspace() or char in ".,!?，。！？()（）[]【】":
+                    continue
+
+                if char in query_chars:
+                    score += 1
+                else:
+                    score -= 0.05
+            tool['_score'] = score
+            results.append(tool)
     if not results:
         return f"没有找到与 '{query}' 相关的工具。请尝试使用 get_menu 浏览所有工具。"
-    
-    res_str = f"【搜索结果】找到 {len(results)} 个与 '{query}' 相关的工具：\n"
-    for t in results:
-        res_str += f"\n🔧 工具名: {t['func']} (归属: {t['plugin']}, 路由: {t['route']})\n"
-        res_str += f"   描述: {t['desc']}\n"
-        res_str += f"   👉 获取指令: fetch_tool(route='{t['route']}', plugin_name='{t['plugin']}', tool_names=['{t['func']}'])\n"
+    results.sort(key=lambda x: x['_score'], reverse=True)
+    top_results = results[:top_k]
+    res_str = f"【搜索结果】截取 Top-{len(top_results)} 相关工具：\n"
+    for idx, t in enumerate(top_results, 1):
+        res_str += f"\n{idx}. 🔧 工具名: {t['func']} (归属: {t['plugin']}, 路由: {t['route']})\n"
+        res_str += f"   📝 描述: {t['desc']}\n"
     return res_str
 
 
