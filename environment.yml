@@ -1,0 +1,44 @@
+name: CatInCup
+channels:
+  - conda-forge
+  - pytorch
+  - defaults
+dependencies:
+  - python=3.10
+  - pip
+  - numpy>=1.26.0
+  - faiss-cpu>=1.7.4
+  - pip:
+      # 核心与大模型
+      - PyYAML>=6.0.1
+      - nest-asyncio>=1.6.0
+      - requests>=2.31.0
+      - openai>=1.10.0
+      - json-repair>=0.30.0
+
+      # MCP 与 插件协议
+      - mcp>=0.1.0
+      - PyGithub>=2.1.1
+
+      # 传感器与通信
+      - lark-oapi>=1.2.4
+      - feedparser>=6.0.10
+
+      # Web 搜索与自动化
+      - duckduckgo-search>=6.0.0
+      - beautifulsoup4>=4.12.3
+      - html2text>=2024.2.26
+      - playwright>=1.41.0
+
+      # 系统与沙盒
+      - docker>=7.0.0
+      - pexpect>=4.9.0
+
+      # 多模态处理
+      - opencv-python>=4.9.0
+      - markitdown>=0.0.1
+
+      # RAG 检索
+      - jieba>=0.42.1
+      - rank_bm25>=0.2.2
+      - sentence-transformers>=2.3.1

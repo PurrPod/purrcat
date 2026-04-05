@@ -10,10 +10,6 @@ import docker
 import pexpect
 from docker.errors import DockerException, NotFound
 
-# ==========================================
-# 0. 跨平台兼容层 (Windows / Linux / Mac)
-# ==========================================
-
 if sys.platform == 'win32':
     from pexpect.popen_spawn import PopenSpawn
     SpawnClass = PopenSpawn
@@ -36,27 +32,23 @@ else:
     SpawnClass = pexpect.spawn
     DOCKER_EXEC_CMD = "docker exec -it {container_name} /bin/bash"
 
+
     def check_alive(p):
         """Linux/Mac: 直接使用原生的 isalive"""
         if p is None: return False
         return p.isalive()
+
 
     def force_close(p):
         """Linux/Mac: 强制关闭"""
         if p is None: return
         p.close(force=True)
 
-# ==========================================
-# 1. 统一的响应格式和懒加载管理
-# ==========================================
-
 _docker_manager_instance: Optional['DockerManager'] = None
-
 
 def _format_response(msg_type: str, content: Any) -> str:
     """与其他插件一致的返回格式"""
     return json.dumps({"type": msg_type, "content": content}, ensure_ascii=False)
-
 
 def _get_manager() -> 'DockerManager':
     """
@@ -66,25 +58,17 @@ def _get_manager() -> 'DockerManager':
     """
     global _docker_manager_instance
     if _docker_manager_instance is None:
-        # 注意：这里的镜像和工作区可根据你的实际情况改成从配置文件读取
         _docker_manager_instance = DockerManager(
             image="my_agent_env:latest",
             container_name="agent_computer",
-            workspace_dir=os.path.abspath("./my_project")
+            workspace_dir=os.path.abspath("./agent_vm")
         )
-
-    # 每次获取实例都检测并确保容器处于 running 状态
     try:
         _docker_manager_instance.start()
     except Exception as e:
         raise RuntimeError(f"Docker 容器唤醒失败: {str(e)}")
 
     return _docker_manager_instance
-
-
-# ==========================================
-# 2. 提供给大模型 / Agent 的对外接口
-# ==========================================
 
 def execute_command(command: str, session_id: str = "default", timeout: int = 300) -> str:
     """
@@ -102,7 +86,6 @@ def execute_command(command: str, session_id: str = "default", timeout: int = 30
             "cwd": cwd
         }
 
-        # 使用 warning 提示大模型命令可能出错（但仍返回具体报错供它自我修正）
         if exit_code != 0:
             return _format_response("warning", result)
 
@@ -120,11 +103,6 @@ def close_shell(session_id: str = "default") -> str:
     except Exception as e:
         return _format_response("error", f"Failed to close shell: {str(e)}")
 
-
-# ==========================================
-# 3. 核心管理器实现 (包含持久化容器与自动会话逻辑)
-# ==========================================
-
 class DockerManager:
     def __init__(
             self,
@@ -138,11 +116,10 @@ class DockerManager:
         self.image = image
         self.container_name = container_name
         self.workspace_dir = workspace_dir
-        self.container_workspace = "/workspace"
+        self.container_workspace = "/agent_vm"
         self.container = None
-
         self.shell_pool = {}  # 格式: { session_id: {"process": SpawnClass, "lock": threading.Lock()} }
-        self.pool_lock = threading.Lock()  # 用于保护 shell_pool 字典本身的增删
+        self.pool_lock = threading.Lock()
 
     def start(self):
         """
@@ -165,40 +142,29 @@ class DockerManager:
                     "ALL_PROXY": "socks5://host.docker.internal:7897"
                 }
             }
+
+            volumes = {}
+
+            # 1. 挂载主工作区
             if self.workspace_dir is not None:
                 os.makedirs(self.workspace_dir, exist_ok=True)
-                run_kwargs["volumes"] = {
-                    os.path.abspath(self.workspace_dir): {
-                        "bind": self.container_workspace,
-                        "mode": "rw"
-                    },
+                volumes[os.path.abspath(self.workspace_dir)] = {
+                    "bind": self.container_workspace,
+                    "mode": "rw"
                 }
+
+            # 2. 实时挂载 skill 目录！
+            skill_host_dir = os.path.abspath("./data/skill")
+            os.makedirs(skill_host_dir, exist_ok=True)
+            volumes[skill_host_dir] = {
+                "bind": f"{self.container_workspace}/skill",
+                "mode": "rw"  # 如果希望 agent 只能用不能改，可以改成 "ro" (只读)
+            }
+
+            run_kwargs["volumes"] = volumes
             self.container = self.client.containers.run(self.image, **run_kwargs)
         except DockerException as e:
             raise RuntimeError(f"Docker API error: {e}")
-        
-        # 复制 data/skill 文件夹到 agent_vm 文件夹
-        import shutil
-        import os
-        skill_dir = os.path.abspath("./data/skill")
-        agent_vm_dir = os.path.abspath("./agent_vm")
-        
-        if os.path.exists(skill_dir):
-            # 确保 agent_vm 文件夹存在
-            os.makedirs(agent_vm_dir, exist_ok=True)
-            
-            # 复制 data/skill 到 agent_vm 文件夹
-            target_dir = os.path.join(agent_vm_dir, "skill")
-            
-            # 先清空目标目录（如果存在）
-            if os.path.exists(target_dir):
-                shutil.rmtree(target_dir)
-            
-            # 复制整个文件夹
-            shutil.copytree(skill_dir, target_dir)
-            print("[+] data/skill 文件夹已成功复制到 agent_vm 文件夹")
-        else:
-            print("[!] data/skill 文件夹不存在，跳过复制")
 
     def stop(self):
         """关闭后端时的清理钩子：仅关闭会话，不销毁容器，保证后台持久化"""
@@ -215,8 +181,7 @@ class DockerManager:
 
         with self.pool_lock:
             if session_id in self.shell_pool:
-                return  # 已经存在，直接返回
-
+                return  # 已经存在，真正的持久化体现在这里直接 return
             print(f"[+] Auto-creating new shell session: '{session_id}'")
             command = DOCKER_EXEC_CMD.format(container_name=self.container.name)
             try:
