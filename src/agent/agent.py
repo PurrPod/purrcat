@@ -69,10 +69,19 @@ class Agent:
         except Exception as e:
             print(f"⚠️ [Memory] 落盘失败: {e}")
 
-    def force_push(self, content):
-        """线程安全的强行消息注入"""
-        with self._lock:
-            self.pending_force_push.append(content)
+    def force_push(self, content, source=None):
+        if source:
+            formatted_content = f"【收到来自 {source} 的指令】{content}"
+        else:
+            formatted_content = content
+        if self.state == "idle":
+            add_message({
+                "type": "owner_message",
+                "content": formatted_content
+            })
+        else:
+            with self._lock:
+                self.pending_force_push.append(formatted_content)
 
     def _track_token_usage(self, response):
         """精准获取 API Token 消耗"""
@@ -253,8 +262,8 @@ class Agent:
 
         alert_prompt = """【系统严重警告：大脑记忆容量即将溢出！！！】
 为了防止记忆断层，系统即将物理抹除你最早期的一批记忆。
-请你现在亲自对**此前的所有对话、事件和执行记录**进行全面总结，提取出核心事件、任务进度、你的关键决策以及对用户的认知，形成一份“早期记忆备忘录”。
-直接用自然语言输出。这份备忘录将作为你未来回忆那段时光的唯一凭证，也是你承上启下的节点，请务必保证包含影响任务推进的关键信息！但也要尽量保持简洁和少废话，防止备忘录越来越长！"""
+请你现在亲自对**此前的关键对话、事件**进行全面总结，提取出核心事件、任务进度、你的关键决策、当前需要加载的skill等，形成一份“早期记忆备忘录”。
+直接用自然语言输出。这份备忘录将作为你未来回忆那段时光的唯一凭证，也是你承上启下的节点，请务必保证包含影响任务推进的关键信息！但也要尽量保持简洁和少废话，防止备忘录越来越长！总结完本次对话后，如果已加载的skill记录消失，则需要在下轮对话重新加载遗失的skill"""
 
         self._append_history({"role": "user", "content": alert_prompt})
 

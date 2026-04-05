@@ -1112,6 +1112,21 @@ async def delete_skill(skill_name: str):
     raise HTTPException(status_code=404, detail="Skill not found")
 
 
+import subprocess
+
+@app.get("/api/sandbox/status")
+async def get_sandbox_status():
+    try:
+        # 检查 Docker 是否在运行
+        result = subprocess.run(["docker", "info"], capture_output=True, text=True, timeout=3)
+        if result.returncode == 0:
+            return {"running": True, "status": "running"}
+        else:
+            return {"running": False, "status": "stopped"}
+    except Exception as e:
+        return {"running": False, "status": "error", "message": str(e)}
+
+
 @app.get("/api/databases")
 async def get_databases():
     from src.plugins.plugin_collection.database.database import list_databases

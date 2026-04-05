@@ -1,14 +1,17 @@
 import importlib
 import json
 import threading
+import os
 from typing import Any
 
-from src.models.task import Task
+# 补充引入了原本就存在的 kill_task，为了防止与本文件的同名工具函数冲突，起个别名 core_kill_task
+from src.models.task import Task, TASK_INSTANCES, DATA_DIR, inject_task_instruction, kill_task as core_kill_task
 from src.utils.config import get_models_config
 
 
 def _format_response(msg_type: str, content: Any) -> str:
     return json.dumps({"type": msg_type, "content": content}, ensure_ascii=False)
+
 
 def add_task(
         name: str,
@@ -22,6 +25,7 @@ def add_task(
         core=core,
         judger=judger,
     )
+
     def _run_task():
         from src.agent.agent import add_message
         try:
@@ -33,6 +37,7 @@ def add_task(
             single_task.state = "error"
             error_msg = f"❌ [系统通知] 您派发的后台子任务 '{name}' (ID: {single_task.task_id})执行崩溃，原因: {e}"
             add_message({"type": "task_message", "content": error_msg})
+
     t = threading.Thread(target=_run_task, daemon=True)
     t.start()
     return _format_response("text", (
@@ -40,6 +45,85 @@ def add_task(
         f"ID : {single_task.task_id}\n"
         f"请注意：任务不会立即完成。您可以继续处理其他事务，系统会在执行完毕后发消息通知您"
     ))
+
+
+def reload_task(task_id: str) -> str:
+    """根据 task_id 重新加载并恢复休眠/中断的任务"""
+    task = TASK_INSTANCES.get(task_id)
+
+    # 如果内存中没有，尝试从磁盘扫描加载
+    if not task:
+        checkpoints_dir = os.path.join(DATA_DIR, "checkpoints", "task")
+        if os.path.exists(checkpoints_dir):
+            for folder in os.listdir(checkpoints_dir):
+                folder_path = os.path.join(checkpoints_dir, folder)
+                ckpt_path = os.path.join(folder_path, "checkpoint.json")
+                if os.path.exists(ckpt_path):
+                    try:
+                        with open(ckpt_path, "r", encoding="utf-8") as f:
+                            state = json.load(f)
+                        if state.get("task_id") == task_id:
+                            task = Task.load_checkpoint(folder_path)
+                            break
+                    except Exception:
+                        pass
+
+    if not task:
+        return _format_response("error", f"❌ 未找到ID为 {task_id} 的任务历史。")
+
+    if task.state in ["running", "ready"] and task.step > 0:
+        return _format_response("text", f"⚠️ 任务 (ID: {task_id}) 目前状态为 {task.state}，无需重载。")
+
+    # 在后台线程中执行恢复操作，防止阻塞 Agent
+    def _resume_task():
+        from src.agent.agent import add_message
+        try:
+            result = task.resume()
+            notify_msg = f"🔔 [系统通知] 恢复的任务 '{task.task_name}' (ID: {task_id}) 已执行完毕。结果如下：\n{result}"
+            add_message({"type": "task_message", "content": notify_msg})
+        except Exception as e:
+            task.state = "error"
+            error_msg = f"❌ [系统通知] 任务 '{task.task_name}' (ID: {task_id}) 恢复运行崩溃，原因: {e}"
+            add_message({"type": "task_message", "content": error_msg})
+
+    t = threading.Thread(target=_resume_task, daemon=True)
+    t.start()
+    return _format_response("text", f"✅ 任务 (ID: {task_id}) 正在后台恢复执行...")
+
+
+def submit_request(task_id: str, new_prompt: str) -> str:
+    """向指定的任务追加需求指令"""
+    task = TASK_INSTANCES.get(task_id)
+    if not task:
+        return _format_response("error", f"❌ 未在内存中找到任务 (ID: {task_id})，如果是旧任务请先调用 reload_task 唤醒。")
+
+    if task.state in ["running", "ready"]:
+        inject_task_instruction(task_id, new_prompt)
+        return _format_response("text", f"✅ 已成功向运行中的任务 (ID: {task_id}) 注入追加指令。")
+
+    def _inject_and_resume():
+        from src.agent.agent import add_message
+        try:
+            result = task.submit_request(new_prompt)
+            notify_msg = f"🔔 [系统通知] 任务 '{task.task_name}' (ID: {task_id}) 处理追加指令完毕。\n{result}"
+            add_message({"type": "task_message", "content": notify_msg})
+        except Exception as e:
+            task.state = "error"
+            error_msg = f"❌ [系统通知] 任务 '{task.task_name}' (ID: {task_id}) 处理指令崩溃: {e}"
+            add_message({"type": "task_message", "content": error_msg})
+
+    t = threading.Thread(target=_inject_and_resume, daemon=True)
+    t.start()
+    return _format_response("text", f"✅ 已向休眠的任务 (ID: {task_id}) 追加指令并重新唤醒执行。")
+
+
+def kill_task(task_id: str) -> str:
+    """强制终止指定的后台子任务"""
+    is_killed = core_kill_task(task_id)
+    if is_killed:
+        return _format_response("text", f"✅ 已成功向任务 (ID: {task_id}) 发送终止信号，任务将被安全强杀。")
+    else:
+        return _format_response("error", f"❌ 终止失败：未在内存中找到运行中的任务 (ID: {task_id})。")
 
 
 def list_worker() -> str:
@@ -75,9 +159,53 @@ AGENT_TOOLS = [
                 "properties": {
                     "name": {"type": "string", "description": "任务标题"},
                     "prompt": {"type": "string", "description": "系统提示"},
-                    "core": {"type": "string", "description": "使用的核心模型，如\"[2]openai:deepseek-chat\"，可用list_worker查看"}
+                    "core": {"type": "string",
+                             "description": "使用的核心模型，如\"[2]openai:deepseek-chat\"，可用list_worker查看"}
                 },
                 "required": ["name", "prompt", "core"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "reload_task",
+            "description": "通过任务ID恢复并重新启动一个异常中断或此前完成的休眠任务",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "task_id": {"type": "string", "description": "要恢复的任务的ID"}
+                },
+                "required": ["task_id"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "submit_request",
+            "description": "向指定的子任务下发追加指令或新需求",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "task_id": {"type": "string", "description": "目标任务的ID"},
+                    "new_prompt": {"type": "string", "description": "追加的指令或需求内容"}
+                },
+                "required": ["task_id", "new_prompt"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "kill_task",
+            "description": "强制终止指定的后台子任务",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "task_id": {"type": "string", "description": "要终止的目标任务的ID"}
+                },
+                "required": ["task_id"]
             }
         }
     },
@@ -111,9 +239,11 @@ AGENT_TOOLS = [
     }
 ]
 
-
 AGENT_TOOL_FUNCTIONS = {
     "add_task": add_task,
+    "reload_task": reload_task,
+    "submit_request": submit_request,
+    "kill_task": kill_task,
     "list_worker": list_worker,
     "send_message": send_message,
 }

@@ -19,7 +19,7 @@ export default function HomePage() {
   const {
     thoughtChain,
     messages,
-    addMessage,
+    forcePush,
     connectionStatus,
     plugins,
     modelConfig,
@@ -118,13 +118,13 @@ export default function HomePage() {
     }
 
     try {
-      await addMessage({ role: 'user', content: message })
+      await forcePush(message)
       setTimeout(refreshAll, 500)
     } catch (error) {
       console.error("Failed to send message:", error)
       setStatus("error")
     }
-  }, [addMessage, refreshAll])
+  }, [forcePush, refreshAll])
 
   const blocks = useMemo(() => {
     const result: StreamBlock[] = []
@@ -182,7 +182,7 @@ export default function HomePage() {
           <div className="relative h-full w-full overflow-hidden">
             
             {/* 顶部渐变层：与导航栏之间的过渡效果 */}
-            <div className="absolute top-0 left-0 right-0 z-10 bg-gradient-to-b from-background via-background/90 to-transparent pb-16 pointer-events-none" />
+            <div className="absolute top-0 left-0 right-0 z-10 bg-gradient-to-b from-background via-background/90 to-transparent pb-8 pointer-events-none" />
 
             {/* Token 计数悬浮框 */}
             <div className="absolute top-20 right-4 z-20 pointer-events-none">
@@ -220,7 +220,7 @@ export default function HomePage() {
             </div>
 
             {/* 3. 悬浮输入框与渐变层 */}
-            <div className="absolute bottom-0 left-0 right-0 z-10 bg-gradient-to-t from-background via-background/90 to-transparent pt-64 pb-16 px-4 md:px-8 pointer-events-none">
+            <div className="absolute bottom-0 left-0 right-0 z-10 bg-gradient-to-t from-background via-background/90 to-transparent pt-32 pb-16 px-4 md:px-8 pointer-events-none">
               <div className="max-w-4xl mx-auto w-full pointer-events-auto">
                 {/* 增加轻微的底色和阴影区分 */}
                 <div className="bg-background/80 backdrop-blur-md rounded-[24px] shadow-[0_-10px_40px_rgba(0,0,0,0.05)] dark:shadow-none">

@@ -6,7 +6,7 @@ import { TopBar } from '@/components/top-bar'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'Agent UI - AI Agent 控制面板',
+  title: 'Cat In Cup',
   description: 'AI Agent 交互与管理界面',
   generator: 'v0.app',
   icons: {

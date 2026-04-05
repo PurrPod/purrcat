@@ -54,9 +54,9 @@ export function Omnibar({
     <div className="w-full mx-auto">
       <div
         className={cn(
-          "flex items-end gap-2 bg-muted/40 p-1.5 pl-4 rounded-[24px] transition-all duration-300",
+          "flex items-end gap-2 bg-gradient-to-br from-slate-100/60 via-gray-100/60 to-zinc-100/60 dark:from-slate-800/40 dark:via-gray-800/40 dark:to-zinc-800/40 backdrop-blur-sm p-1.5 pl-4 rounded-[24px] border border-slate-200/30 dark:border-slate-700/30 shadow-sm transition-all duration-300",
           // 聚焦时微微加深背景并给一点阴影，保持极简
-          "focus-within:bg-muted/60 focus-within:shadow-sm"
+          "focus-within:from-slate-100/80 focus-within:via-gray-100/80 focus-within:to-zinc-100/80 dark:focus-within:from-slate-800/60 dark:focus-within:via-gray-800/60 dark:focus-within:to-zinc-800/60 focus-within:shadow-md"
         )}
       >
         <textarea

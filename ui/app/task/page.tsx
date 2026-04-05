@@ -337,17 +337,17 @@ function TaskCard({
     <ContextMenu>
       <ContextMenuTrigger>
         <div
-          id={`task-card-${task.id}`}
-          className={cn(
-            'cursor-pointer transition-all duration-200 p-7 rounded-[16px]',
-            isSelected
-              ? 'bg-primary/5 shadow-sm'
-              : 'hover:bg-accent/50 bg-background/50'
-          )}
-          onClick={onSelect}
-        >
+            id={`task-card-${task.id}`}
+            className={cn(
+              'cursor-pointer transition-all duration-200 py-4 px-3 rounded-[12px] overflow-hidden max-w-full',
+              isSelected
+                ? 'bg-primary/5 shadow-sm'
+                : 'hover:bg-accent/50 bg-background/50'
+            )}
+            onClick={onSelect}
+          >
           <div className="flex items-center justify-between text-sm min-w-0 mb-3">
-            <div className="min-w-0 flex-1">
+            <div className="min-w-0 flex-1 max-w-[40%]">
               <span className="truncate block font-medium" title={task.name}>{task.name}</span>
             </div>
             <div className="flex items-center gap-2 shrink-0">
@@ -632,11 +632,11 @@ function TaskDetailView({ task }: { task: Task }) {
           {/* Header 区域 */}
           <div className="mb-8 space-y-6 pt-2">
             <div>
-              <h3 className="flex items-center gap-4 text-2xl font-semibold tracking-tight">
-                <span>{task.name}</span>
+              <h3 className="flex items-center gap-4 text-2xl font-semibold tracking-tight min-w-0">
+                <span className="truncate flex-1 min-w-0">{task.name}</span>
                 <span
                   className={cn(
-                    'text-xs px-3 py-1 rounded-full border border-current/20',
+                    'text-xs px-3 py-1 rounded-full border border-current/20 shrink-0',
                     statusConfig[task.status].bg,
                     statusConfig[task.status].color,
                   )}
@@ -662,9 +662,9 @@ function TaskDetailView({ task }: { task: Task }) {
               </div>
               {task.projectId && (
                 <div className="mt-4 text-sm">
-                  <div className="flex justify-between items-center">
-                    <span className="text-muted-foreground">所属项目</span>
-                    <span className="font-medium bg-background px-2 py-0.5 rounded-md border shadow-sm">{task.projectId}</span>
+                  <div className="flex justify-between items-center min-w-0">
+                    <span className="text-muted-foreground shrink-0">所属项目</span>
+                    <span className="font-medium bg-background px-2 py-0.5 rounded-md border shadow-sm truncate max-w-[200px]">{task.projectId}</span>
                   </div>
                 </div>
               )}
@@ -1018,7 +1018,7 @@ export default function TaskPage() {
       <ResizablePanelGroup direction="horizontal" className="h-full w-full">
         {/* 左侧：任务列表面板 */}
         <ResizablePanel
-          defaultSize={25}
+          defaultSize={28}
           minSize={20}
           maxSize={35}
           className="border-r border-border/10 bg-muted/10 z-20"

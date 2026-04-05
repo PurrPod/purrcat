@@ -264,7 +264,9 @@ class DockerManager:
             cleaned_output = self._clean_ansi(raw_output).strip()
             lines = [line for line in cleaned_output.splitlines() if line.strip() != command.strip()]
             final_output = "\n".join(lines).strip()
-
+            if len(final_output) > 3000:
+                truncated_msg = "\n\n...[注意：输出过长已被截断，仅保留首尾字符，如有需要可结合其他指令获取被省略信息]...\n\n"
+                final_output = final_output[:1500] + truncated_msg + final_output[-1500:]
             return exit_code, final_output, cwd
 
     def _clean_ansi(self, text: str) -> str:

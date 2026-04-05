@@ -263,6 +263,12 @@ class Task:
                     return True, tc.function.arguments
         return True, "无交付说明"
 
+    def kill(self):
+        """终止任务"""
+        self._killed = True
+        self.state = "killed"
+        self.log_and_notify("system", f"⚠️ 任务 {self.task_id} 被强制终止")
+
     def checker(self):
         """生命周期与环境维护检查器"""
         if self._killed:

@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Info, AlertCircle, CheckCircle2, MessageSquare, ListTodo, ChevronDown, ExternalLink } from 'lucide-react'
+import { Info, AlertCircle, CheckCircle2, MessageSquare, ListTodo, ChevronDown, ExternalLink, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
   Dialog,
@@ -11,6 +11,12 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog"
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu"
 import { useAppStore } from '@/lib/store'
 import { useRouter } from 'next/navigation'
 
@@ -38,6 +44,25 @@ export function MessageQueue({ messages, className }: MessageQueueProps) {
     router.push(`/task`)
     // 这里可以添加逻辑来自动选择对应的任务
     // 由于需要状态管理，暂时只跳转到任务页面
+  }
+
+  const removeMessage = useAppStore((state) => state.removeMessage)
+  const removeTask = useAppStore((state) => state.removeTask)
+
+  const handleDeleteMessage = async (msgId: string) => {
+    try {
+      await removeMessage(msgId)
+    } catch (error) {
+      console.error('删除消息失败:', error)
+    }
+  }
+
+  const handleDeleteTask = async (taskId: string) => {
+    try {
+      await removeTask(taskId)
+    } catch (error) {
+      console.error('删除任务失败:', error)
+    }
   }
 
   return (
@@ -93,51 +118,64 @@ export function MessageQueue({ messages, className }: MessageQueueProps) {
                 </motion.div>
               ) : (
                 messages.slice().reverse().map((msg) => (
-                  <motion.div
-                    key={msg.id}
-                    initial={{ x: 10, opacity: 0 }}
-                    animate={{ x: 0, opacity: 1 }}
-                    exit={{ x: 10, opacity: 0 }}
-                    onClick={() => setSelectedMessage(msg)}
-                    className={cn(
-                      "p-5 rounded-lg border bg-background/60 shadow-sm transition-all duration-200 hover:bg-background cursor-pointer group",
-                      msg.type === 'error' && "border-destructive/20",
-                      msg.type === 'success' && "border-green-500/20",
-                      msg.type === 'warning' && "border-amber-500/20",
-                      msg.type === 'info' && "border-blue-500/20",
-                      msg.type === 'agent' && "border-primary/20"
-                    )}
-                  >
-                    <div className="flex items-start gap-3">
-                      <div className={cn(
-                        "mt-0.5 shrink-0 opacity-70",
-                        msg.type === 'error' && "text-destructive",
-                        msg.type === 'success' && "text-green-500",
-                        msg.type === 'warning' && "text-amber-500",
-                        msg.type === 'info' && "text-blue-500",
-                        msg.type === 'agent' && "text-primary"
-                      )}>
-                        {msg.type === 'error' && <AlertCircle className="size-4" />}
-                        {msg.type === 'success' && <CheckCircle2 className="size-4" />}
-                        {msg.type === 'warning' && <AlertCircle className="size-4" />}
-                        {msg.type === 'info' && <Info className="size-4" />}
-                        {msg.type === 'agent' && <MessageSquare className="size-4" />}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between mb-1">
-                          <p className="text-sm font-bold truncate leading-none text-foreground/80">
-                            {msg.title}
-                          </p>
-                          <span className="text-xs text-muted-foreground whitespace-nowrap">
-                            {msg.timestamp}
-                          </span>
+                  <ContextMenu key={msg.id}>
+                    <ContextMenuTrigger asChild>
+                      <motion.div
+                        initial={{ x: 10, opacity: 0 }}
+                        animate={{ x: 0, opacity: 1 }}
+                        exit={{ x: 10, opacity: 0 }}
+                        onClick={() => setSelectedMessage(msg)}
+                        className={cn(
+                          "p-5 rounded-lg border bg-background/60 shadow-sm transition-all duration-200 hover:bg-background cursor-pointer group",
+                          msg.type === 'error' && "border-destructive/20",
+                          msg.type === 'success' && "border-green-500/20",
+                          msg.type === 'warning' && "border-amber-500/20",
+                          msg.type === 'info' && "border-blue-500/20",
+                          msg.type === 'agent' && "border-primary/20"
+                        )}
+                      >
+                        <div className="flex items-start gap-3">
+                          <div className={cn(
+                            "mt-0.5 shrink-0 opacity-70",
+                            msg.type === 'error' && "text-destructive",
+                            msg.type === 'success' && "text-green-500",
+                            msg.type === 'warning' && "text-amber-500",
+                            msg.type === 'info' && "text-blue-500",
+                            msg.type === 'agent' && "text-primary"
+                          )}>
+                            {msg.type === 'error' && <AlertCircle className="size-4" />}
+                            {msg.type === 'success' && <CheckCircle2 className="size-4" />}
+                            {msg.type === 'warning' && <AlertCircle className="size-4" />}
+                            {msg.type === 'info' && <Info className="size-4" />}
+                            {msg.type === 'agent' && <MessageSquare className="size-4" />}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between mb-1">
+                              <p className="text-sm font-bold truncate leading-none text-foreground/80">
+                                {msg.title}
+                              </p>
+                              <span className="text-xs text-muted-foreground whitespace-nowrap">
+                                {msg.timestamp}
+                              </span>
+                            </div>
+                            <p className="text-xs text-muted-foreground leading-relaxed line-clamp-2">
+                              {msg.content}
+                            </p>
+                          </div>
                         </div>
-                        <p className="text-xs text-muted-foreground leading-relaxed line-clamp-2">
-                          {msg.content}
-                        </p>
-                      </div>
-                    </div>
-                  </motion.div>
+                      </motion.div>
+                    </ContextMenuTrigger>
+                    <ContextMenuContent>
+                      <ContextMenuItem onClick={() => setSelectedMessage(msg)}>
+                        <MessageSquare className="size-4 mr-2" />
+                        查看详情
+                      </ContextMenuItem>
+                      <ContextMenuItem className="text-destructive" onClick={() => handleDeleteMessage(msg.id)}>
+                        <Trash2 className="size-4 mr-2" />
+                        删除消息
+                      </ContextMenuItem>
+                    </ContextMenuContent>
+                  </ContextMenu>
                 ))
               )
             ) : (
@@ -152,45 +190,58 @@ export function MessageQueue({ messages, className }: MessageQueueProps) {
                 </motion.div>
               ) : (
                 tasks.map((task) => (
-                  <motion.div
-                    key={task.id}
-                    initial={{ x: 10, opacity: 0 }}
-                    animate={{ x: 0, opacity: 1 }}
-                    exit={{ x: 10, opacity: 0 }}
-                    onClick={() => handleTaskClick(task.id)}
-                    className="p-4 rounded-lg border bg-background/60 shadow-sm transition-all duration-200 hover:bg-background cursor-pointer group"
-                  >
-                    <div className="flex items-start gap-3">
-                      <div className="mt-0.5 shrink-0 opacity-70 text-primary">
-                        <ListTodo className="size-4" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between mb-1">
-                          <p className="text-sm font-bold truncate leading-none text-foreground/80">
-                            {task.name}
-                          </p>
-                          <span className={cn(
-                            'text-xs px-2 py-0.5 rounded-full shrink-0',
-                            task.status === 'running' && 'bg-blue-500/10 text-blue-500',
-                            task.status === 'pending' && 'bg-amber-500/10 text-amber-500',
-                            task.status === 'completed' && 'bg-green-500/10 text-green-500',
-                            task.status === 'failed' && 'bg-red-500/10 text-red-500'
-                          )}>
-                            {task.status === 'running' && '运行中'}
-                            {task.status === 'pending' && '等待中'}
-                            {task.status === 'completed' && '已完成'}
-                            {task.status === 'failed' && '失败'}
-                          </span>
+                  <ContextMenu key={task.id}>
+                    <ContextMenuTrigger asChild>
+                      <motion.div
+                        initial={{ x: 10, opacity: 0 }}
+                        animate={{ x: 0, opacity: 1 }}
+                        exit={{ x: 10, opacity: 0 }}
+                        onClick={() => handleTaskClick(task.id)}
+                        className="p-4 rounded-lg border bg-background/60 shadow-sm transition-all duration-200 hover:bg-background cursor-pointer group"
+                      >
+                        <div className="flex items-start gap-3">
+                          <div className="mt-0.5 shrink-0 opacity-70 text-primary">
+                            <ListTodo className="size-4" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between mb-1">
+                              <p className="text-sm font-bold truncate leading-none text-foreground/80">
+                                {task.name}
+                              </p>
+                              <span className={cn(
+                                'text-xs px-2 py-0.5 rounded-full shrink-0',
+                                task.status === 'running' && 'bg-blue-500/10 text-blue-500',
+                                task.status === 'pending' && 'bg-amber-500/10 text-amber-500',
+                                task.status === 'completed' && 'bg-green-500/10 text-green-500',
+                                task.status === 'failed' && 'bg-red-500/10 text-red-500'
+                              )}>
+                                {task.status === 'running' && '运行中'}
+                                {task.status === 'pending' && '等待中'}
+                                {task.status === 'completed' && '已完成'}
+                                {task.status === 'failed' && '失败'}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between text-xs text-muted-foreground">
+                              <span>{task.progress}% 完成</span>
+                              <button className="flex items-center gap-1 hover:text-primary transition-colors">
+                                查看 <ExternalLink className="size-3" />
+                              </button>
+                            </div>
+                          </div>
                         </div>
-                        <div className="flex items-center justify-between text-xs text-muted-foreground">
-                          <span>{task.progress}% 完成</span>
-                          <button className="flex items-center gap-1 hover:text-primary transition-colors">
-                            查看 <ExternalLink className="size-3" />
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </motion.div>
+                      </motion.div>
+                    </ContextMenuTrigger>
+                    <ContextMenuContent>
+                      <ContextMenuItem onClick={() => handleTaskClick(task.id)}>
+                        <ExternalLink className="size-4 mr-2" />
+                        查看任务
+                      </ContextMenuItem>
+                      <ContextMenuItem className="text-destructive" onClick={() => handleDeleteTask(task.id)}>
+                        <Trash2 className="size-4 mr-2" />
+                        删除任务
+                      </ContextMenuItem>
+                    </ContextMenuContent>
+                  </ContextMenu>
                 ))
               )
             )}

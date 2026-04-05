@@ -361,7 +361,6 @@ def init_tool():
 
 
 DEFAULT_SKILL_PATH = Path("data/skill")
-
 def _parse_skill_md(file_path: Path) -> Dict[str, Any]:
     with open(file_path, 'r', encoding='utf-8') as f:
         text = f.read()
@@ -386,14 +385,33 @@ def _parse_skill_md(file_path: Path) -> Dict[str, Any]:
 def load_skill(name: str):
     skill_path = DEFAULT_SKILL_PATH
     base_dir = Path(skill_path)
+    
+    # 先尝试直接使用name作为目录名
     target_dir = base_dir / name
     md_file = target_dir / "SKILL.md"
+    
+    # 如果直接使用name作为目录名找不到，就遍历所有目录查找匹配的技能名称
+    if not target_dir.is_dir() or not md_file.exists():
+        for item in base_dir.iterdir():
+            if item.is_dir():
+                item_md_file = item / "SKILL.md"
+                if item_md_file.exists():
+                    parsed_data = _parse_skill_md(item_md_file)
+                    metadata = parsed_data["metadata"]
+                    skill_name = metadata.get("name", item.name)
+                    if skill_name == name:
+                        target_dir = item
+                        md_file = item_md_file
+                        break
+    
     if not target_dir.is_dir() or not md_file.exists():
         return _format_response("text", f"Skill {name} not exist")
+    file_name = target_dir.name
     parsed_data = _parse_skill_md(md_file)
     metadata = parsed_data["metadata"]
     desc = metadata.get("description", metadata.get("desc", ""))
-    result = f"name: {name}\ndir_path: {str(target_dir.absolute())}\ndesc: {desc}\n---\ncontent:\n{parsed_data['content']}"
+    skill_name = metadata.get("name", target_dir.name)
+    result = f"name: {skill_name}\ndir_path: [sandbox]/agent_vm/skill/{file_name}\ndesc: {desc}\n---\ncontent:\n{parsed_data['content']}"
     return _format_response("text", result)
 
 
@@ -401,10 +419,8 @@ def list_skill(page: int = 1, size: int = 20) -> str:
     """按页列出所有可用的 Skill 并返回格式化字符串"""
     skill_path = DEFAULT_SKILL_PATH
     base_dir = Path(skill_path)
-
     if not base_dir.exists() or not base_dir.is_dir():
         return _format_response("text", "❌ Skill 目录不存在，未找到任何 Skill。")
-
     found_skills = []
     for item in base_dir.iterdir():
         if item.is_dir():
