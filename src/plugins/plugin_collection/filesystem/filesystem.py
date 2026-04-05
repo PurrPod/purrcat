@@ -183,6 +183,111 @@ def delete_file(path: str) -> str:
     except Exception as e:
         return _format_response("error", f"Failed to delete: {str(e)}")
 
+
+def copy_item_to(host_file_paths: List[str], vm_dir_path: str) -> str:
+    """
+    将主机文件批量复制到虚拟机目录下
+    
+    Args:
+        host_file_paths: 主机的文件路径列表
+        vm_dir_path: 虚拟机目录路径，格式为 /agent_vm/xxx
+        
+    Returns:
+        操作结果的JSON字符串
+    """
+    # 验证虚拟机目录路径格式
+    if not vm_dir_path.startswith('/agent_vm/'):
+        return _format_response("error", f"虚拟机目录路径必须以 '/agent_vm/' 开头，当前路径: {vm_dir_path}")
+    
+    # 转换虚拟机路径为实际主机路径
+    # 去掉开头的 /agent_vm/，得到相对路径
+    relative_path = vm_dir_path[len('/agent_vm/'):]
+    if not relative_path:
+        return _format_response("error", "虚拟机目录路径不能为空")
+    
+    # 构建实际的目标目录路径
+    # 从项目根目录开始构建agent_vm路径
+    # 使用BASE_DIR或从当前文件位置向上查找
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    # 向上查找直到找到包含agent_vm目录的目录
+    project_root = current_dir
+    while project_root and not os.path.exists(os.path.join(project_root, 'agent_vm')):
+        parent = os.path.dirname(project_root)
+        if parent == project_root:  # 到达根目录
+            break
+        project_root = parent
+    
+    if not project_root or not os.path.exists(os.path.join(project_root, 'agent_vm')):
+        # 回退到原来的计算方法
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+    
+    target_dir = os.path.join(project_root, 'agent_vm', relative_path)
+    target_dir = os.path.abspath(target_dir)
+    
+    # 检查目标目录是否存在且在沙箱范围内
+    if not _get_allow("write", target_dir):
+        return _format_response("error", f"目标目录不在沙箱允许范围内: {target_dir}")
+    
+    # 确保目标目录存在
+    try:
+        os.makedirs(target_dir, exist_ok=True)
+    except Exception as e:
+        return _format_response("error", f"无法创建目标目录: {str(e)}")
+    
+    copied_files = []
+    failed_files = []
+    
+    for host_path in host_file_paths:
+        try:
+            # 检查源文件是否存在
+            if not os.path.exists(host_path):
+                failed_files.append(f"{host_path}: 文件不存在")
+                continue
+            
+            # 检查源文件是否可读
+            if not os.access(host_path, os.R_OK):
+                failed_files.append(f"{host_path}: 文件不可读")
+                continue
+            
+            # 获取文件名
+            filename = os.path.basename(host_path)
+            target_path = os.path.join(target_dir, filename)
+            
+            # 检查是否会覆盖现有文件
+            if os.path.exists(target_path):
+                # 可以选择重命名或跳过，这里选择重命名
+                base, ext = os.path.splitext(filename)
+                counter = 1
+                while os.path.exists(os.path.join(target_dir, f"{base}_{counter}{ext}")):
+                    counter += 1
+                target_path = os.path.join(target_dir, f"{base}_{counter}{ext}")
+            
+            # 复制文件
+            if os.path.isdir(host_path):
+                shutil.copytree(host_path, target_path)
+            else:
+                shutil.copy2(host_path, target_path)
+            
+            copied_files.append(f"{host_path} -> {target_path}")
+            
+        except Exception as e:
+            failed_files.append(f"{host_path}: {str(e)}")
+    
+    result = {
+        "target_directory": target_dir,
+        "total_files": len(host_file_paths),
+        "copied_files": copied_files,
+        "failed_files": failed_files,
+        "success_count": len(copied_files),
+        "failure_count": len(failed_files)
+    }
+    
+    if failed_files:
+        return _format_response("warning", result)
+    else:
+        return _format_response("text", result)
+
+
 def _format_response(msg_type: str, content: Any) -> str:
     return json.dumps({"type": msg_type, "content": content}, ensure_ascii=False)
 

@@ -279,7 +279,60 @@ export default function ExtensionPage() {
     })
   }
 
-  const updateLlmModel = (id: string, field: string, value: string) => setLlmModels(prev => ({ ...prev, [id]: { ...prev[id], [field]: value } }))
+  const updateLlmModel = (id: string, field: string, value: string | string[]) => {
+    setLlmModels(prev => {
+      const model = { ...prev[id] };
+      
+      // 如果配置中既有 api_key 又有 api_keys，优先转为 api_keys
+      if (field === 'api_key' && typeof value === 'string') {
+        if (!model.api_keys) {
+          model.api_keys = value ? [value] : []
+        } else {
+          model.api_keys = [value]
+        }
+        delete model.api_key
+      } else if (field === 'api_keys' && Array.isArray(value)) {
+        model.api_keys = value
+        delete model.api_key
+      } else {
+        model[field] = value
+      }
+      
+      return { ...prev, [id]: model }
+    })
+  }
+  
+  const addApiKey = (id: string) => {
+    setLlmModels(prev => {
+      const model = { ...prev[id] };
+      if (!model.api_keys) model.api_keys = [];
+      model.api_keys.push("");
+      delete model.api_key;
+      return { ...prev, [id]: model }
+    })
+  }
+  
+  const removeApiKey = (id: string, index: number) => {
+    setLlmModels(prev => {
+      const model = { ...prev[id] };
+      if (!model.api_keys) return prev;
+      model.api_keys.splice(index, 1);
+      if (model.api_keys.length === 0) {
+        delete model.api_keys;
+        model.api_key = "";
+      }
+      return { ...prev, [id]: model }
+    })
+  }
+  
+  const updateApiKey = (id: string, index: number, value: string) => {
+    setLlmModels(prev => {
+      const model = { ...prev[id] };
+      if (!model.api_keys) model.api_keys = [];
+      model.api_keys[index] = value;
+      return { ...prev, [id]: model }
+    })
+  }
   const updateSpecModel = (type: string, field: string, value: string) => setSpecializedModels(prev => ({ ...prev, [type]: { ...prev[type], [field]: value } }))
 
   // --- MCP JSON Import Logic ---
@@ -494,7 +547,7 @@ export default function ExtensionPage() {
                     </div>
                     <Button variant="outline" className="rounded-full shadow-sm" onClick={() => {
                       const newId = `new_model_${Date.now()}`
-                      setLlmModels(prev => ({ ...prev, [newId]: { api_key: "", base_url: "", description: "" } }))
+                      setLlmModels(prev => ({ ...prev, [newId]: { api_keys: [""], base_url: "", description: "" } }))
                     }}>
                       <Plus className="size-4 mr-1" /> 添加模型
                     </Button>
@@ -514,19 +567,53 @@ export default function ExtensionPage() {
                             <Label className="text-[11px] uppercase tracking-wider text-muted-foreground font-bold">模型标识 (Key)</Label>
                             <EditableKeyInput initialKey={id} onRename={handleRenameLlmModel} />
                           </div>
-                          <div className="grid grid-cols-2 gap-4">
-                            <div className="space-y-1.5">
-                              <Label className="text-[11px] uppercase tracking-wider text-muted-foreground font-bold">API Key</Label>
-                              <Input type="password" value={config.api_key || ''} onChange={e => updateLlmModel(id, 'api_key', e.target.value)} className="h-9 font-mono text-xs bg-background" />
-                            </div>
-                            <div className="space-y-1.5">
-                              <Label className="text-[11px] uppercase tracking-wider text-muted-foreground font-bold">Base URL</Label>
-                              <Input value={config.base_url || ''} onChange={e => updateLlmModel(id, 'base_url', e.target.value)} className="h-9 font-mono text-xs bg-background" />
-                            </div>
+                          <div className="space-y-1.5">
+                            <Label className="text-[11px] uppercase tracking-wider text-muted-foreground font-bold">Base URL</Label>
+                            <Input value={config.base_url || ''} onChange={e => updateLlmModel(id, 'base_url', e.target.value)} className="h-9 font-mono text-xs bg-background" />
                           </div>
                           <div className="space-y-1.5">
                             <Label className="text-[11px] uppercase tracking-wider text-muted-foreground font-bold">Description</Label>
                             <Input value={config.description || ''} onChange={e => updateLlmModel(id, 'description', e.target.value)} className="h-9 text-sm bg-background" />
+                          </div>
+                          
+                          {/* API Keys 列表 */}
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                              <Label className="text-[11px] uppercase tracking-wider text-muted-foreground font-bold">API Keys</Label>
+                              <button
+                                onClick={() => addApiKey(id)}
+                                className="text-xs px-2 py-1 rounded bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+                              >
+                                <Plus className="size-3 inline mr-1" /> 添加
+                              </button>
+                            </div>
+                            <div className="space-y-2">
+                              {config.api_keys && config.api_keys.length > 0 ? (
+                                config.api_keys.map((key: string, idx: number) => (
+                                  <div key={idx} className="flex gap-2 items-start">
+                                    <div className="flex-1 space-y-1">
+                                      <Input 
+                                        type="password" 
+                                        value={key} 
+                                        onChange={e => updateApiKey(id, idx, e.target.value)}
+                                        placeholder={`API Key ${idx + 1}`}
+                                        className="h-8 font-mono text-xs bg-background" 
+                                      />
+                                    </div>
+                                    <button
+                                      onClick={() => removeApiKey(id, idx)}
+                                      className="px-2 py-1.5 text-muted-foreground hover:text-destructive transition-colors mt-1"
+                                    >
+                                      <Trash2 className="size-4" />
+                                    </button>
+                                  </div>
+                                ))
+                              ) : (
+                                <div className="text-xs text-muted-foreground italic p-2 bg-muted/30 rounded text-center">
+                                  暂无 API Key，点击"添加"创建
+                                </div>
+                              )}
+                            </div>
                           </div>
                         </div>
                       </div>

@@ -122,4 +122,20 @@ filesystem:
               type: "string"
               description: "The absolute path of the directory to list."
           required: ["path"]
-
+    copy_item_to:
+      type: function
+      function:
+        name: "copy_item_to"
+        description: "Copy files from host system to virtual machine directory. Host file paths are copied to the specified VM directory (must start with /agent_vm/). Files are automatically renamed if they would overwrite existing files."
+        parameters:
+          type: "object"
+          properties:
+            host_file_paths:
+              type: "array"
+              items:
+                type: "string"
+              description: "List of absolute file paths on the host system to copy."
+            vm_dir_path:
+              type: "string"
+              description: "Virtual machine directory path, must start with /agent_vm/ (e.g., /agent_vm/shared)."
+          required: ["host_file_paths", "vm_dir_path"]

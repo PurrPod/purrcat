@@ -2,11 +2,8 @@
 # MCP 服务器配置
 # ============================================
 
-
-# 这是一个示例，你可以按自己需求改来改去
 mcp_servers:
   bilibili-search:
     command: "npx"
     args:
       - "bilibili-mcp-js"
-

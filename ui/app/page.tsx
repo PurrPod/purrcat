@@ -33,9 +33,52 @@ export default function HomePage() {
   const [showQueue, setShowQueue] = useState(true)
   const [prevToken, setPrevToken] = useState(0)
   const [tokenDelta, setTokenDelta] = useState<number | null>(null)
+  const [currentAgentModel, setCurrentAgentModel] = useState<string>("")
 
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const [isAtBottom, setIsAtBottom] = useState(true)
+
+  // 从 modelConfig 中提取可用的 LLM 模型
+  const availableLlmModels = useMemo(() => {
+    if (!modelConfig?.models) return []
+    return Object.keys(modelConfig.models).filter(key => 
+      // 筛选出明确是 LLM worker 的模型（不包括专用模型）
+      key.includes('[') || key.includes('openai')
+    )
+  }, [modelConfig])
+
+  // 从 localStorage 或配置中获取当前 agent 模型
+  useEffect(() => {
+    const savedModel = localStorage.getItem('agent_model')
+    if (savedModel) {
+      setCurrentAgentModel(savedModel)
+    } else if (availableLlmModels.length > 0) {
+      setCurrentAgentModel(availableLlmModels[0])
+    }
+  }, [availableLlmModels])
+
+  // 处理模型切换
+  const handleModelChange = useCallback(async (newModel: string) => {
+    setCurrentAgentModel(newModel)
+    localStorage.setItem('agent_model', newModel)
+    
+    try {
+      // 调用后端 API 更新 agent 模型
+      const response = await fetch('http://localhost:8001/api/agent/model', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: newModel
+        })
+      })
+      
+      if (!response.ok) {
+        console.error('Failed to update agent model')
+      }
+    } catch (error) {
+      console.error('Error updating agent model:', error)
+    }
+  }, [])
 
   const handleScroll = useCallback(() => {
     if (scrollContainerRef.current) {
@@ -224,7 +267,13 @@ export default function HomePage() {
               <div className="max-w-4xl mx-auto w-full pointer-events-auto">
                 {/* 增加轻微的底色和阴影区分 */}
                 <div className="bg-background/80 backdrop-blur-md rounded-[24px] shadow-[0_-10px_40px_rgba(0,0,0,0.05)] dark:shadow-none">
-                  <Omnibar onSubmit={handleSubmit} status={status} />
+                  <Omnibar 
+                    onSubmit={handleSubmit} 
+                    status={status}
+                    models={availableLlmModels}
+                    currentModel={currentAgentModel}
+                    onModelChange={handleModelChange}
+                  />
                 </div>
               </div>
             </div>

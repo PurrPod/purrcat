@@ -35,7 +35,7 @@ from src.agent import agent as agent_module
 from src.models import task as task_module
 from src.plugins.plugin_collection.filesystem.filesystem import set_allowed_directories, list_special_directories
 from src.utils.config import load_config, get_model_config_json, get_mcp_config_json, get_feishu_config, \
-    get_rss_subscriptions, get_web_api_config, reload_config
+    get_rss_subscriptions, get_web_api_config, reload_config, save_config
 
 # ====== 拥抱新架构：引入新版工具管理器 ======
 from src.plugins.plugin_manager import init_tool, TOOL_INDEX_FILE, BASE_TOOLS
@@ -186,6 +186,43 @@ async def force_push(request: ForcePushRequest):
 async def summarize_memory():
     agent._check_and_summarize_memory(check_mode=False)
     return {"status": "success"}
+
+
+class UpdateAgentModelRequest(BaseModel):
+    model: str
+
+
+@app.post("/api/agent/model")
+async def update_agent_model(request: UpdateAgentModelRequest):
+    """更新 Agent 使用的模型"""
+    try:
+        config = load_config()
+        config["agent_model"] = request.model
+        save_config(config)
+        
+        # 这里可以选择重新加载 agent（如果需要）
+        # 当前不需要重新加载，下次请求时会自动使用新模型
+        
+        return {
+            "status": "success",
+            "message": f"Agent model updated to {request.model}",
+            "model": request.model
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/agent/model")
+async def get_agent_model():
+    """获取当前 Agent 模型"""
+    try:
+        config = load_config()
+        return {
+            "model": config.get("agent_model", ""),
+            "available_models": list(config.get("models", {}).keys())
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @app.get("/api/tasks")
@@ -744,8 +781,8 @@ class TaskCreate(BaseModel):
     deliverable: str
     prompt: str
     skills: list = None
-    core: str = "[1]openai:deepseek-chat"
-    judger: str = "[1]openai:deepseek-chat"
+    core: str = "openai:deepseek-chat"
+    judger: str = "openai:deepseek-chat"
 
 
 @app.post("/api/tasks")

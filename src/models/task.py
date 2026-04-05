@@ -6,6 +6,7 @@ import uuid
 import time
 
 from json_repair import repair_json
+from openai import RateLimitError, APIError
 
 from src.models.model import Model
 from src.utils.config import TOOL_INDEX_FILE
@@ -44,7 +45,8 @@ class Task:
         self.system_prompt = self._build_system_prompt()
         self.history = []
         self.task_id = uuid.uuid4().hex
-        self.client = Model(core).client
+        self.model = Model(core)  # 保存 Model 实例
+        self.client = self.model.client
         self.state = "ready"
         self.step = 0
         self.dynamic_tool = [] # 用于存放本次任务core所调用的所有fetch_tool的schema，每十轮对话清空一次
@@ -189,7 +191,8 @@ class Task:
             task.history = history  # 读取真正的 history
 
             # 恢复内存中需要的临时对象 (锁、客户端、日志滑动窗口)
-            task.client = Model(task.core).client if task.core else None
+            task.model = Model(task.core) if task.core else None
+            task.client = task.model.client if task.model else None
             task._lock = threading.Lock()
             task._killed = False
             task.log_window = []
@@ -201,6 +204,70 @@ class Task:
         except Exception as e:
             print(f"❌ [Task Checkpoint] 加载失败 {checkpoint_dir}: {e}")
             return None
+    
+    def _call_llm_with_retry(self, kwargs: dict, max_retries: int = 3):
+        """
+        调用 LLM 并自动处理限速异常，轮询不同 api-key
+        
+        Args:
+            kwargs: openai client.chat.completions.create 的参数字典
+            max_retries: 最大重试次数
+        
+        Returns:
+            response: LLM 响应
+        """
+        base_delay = 1.0
+        retries = 0
+        last_exception = None
+        model_name = kwargs.get("model", "unknown")
+        
+        while retries < max_retries:
+            try:
+                response = self.client.chat.completions.create(**kwargs)
+                self._track_token_usage(response)
+                return response
+            
+            except RateLimitError as e:
+                last_exception = e
+                retries += 1
+                masked_key = self.model.get_current_api_key_masked()
+                print(f"⚠️ [Task {self.task_id[:8]}] 限速异常 ({model_name}) api-key ({masked_key})，"
+                      f"将在 {base_delay:.1f} 秒后轮询下一个... (重试 {retries}/{max_retries})")
+                time.sleep(base_delay)
+                self.model.rotate_api_key()
+                self.client = self.model.client
+                base_delay = base_delay * 1.5
+            
+            except APIError as e:
+                error_msg = str(e).lower()
+                if "rate limit" in error_msg or "429" in error_msg:
+                    last_exception = e
+                    retries += 1
+                    masked_key = self.model.get_current_api_key_masked()
+                    print(f"⚠️ [Task {self.task_id[:8]}] API 限速 ({model_name}) api-key ({masked_key})，"
+                          f"将在 {base_delay:.1f} 秒后轮询下一个... (重试 {retries}/{max_retries})")
+                    time.sleep(base_delay)
+                    self.model.rotate_api_key()
+                    self.client = self.model.client
+                    base_delay = base_delay * 1.5
+                else:
+                    # 非限速的 API 错误，直接抛出
+                    raise
+            
+            except Exception as e:
+                # 其他异常直接抛出
+                raise
+        
+        # 超过最大重试次数，抛出最后一个异常
+        if last_exception:
+            print(f"❌ [Task {self.task_id[:8]}] 重试失败 ({model_name}) 已达到最大重试次数 ({max_retries})，放弃请求")
+            raise last_exception
+    
+    def _track_token_usage(self, response):
+        """精准获取 API Token 消耗"""
+        if hasattr(response, "usage") and response.usage is not None:
+            self.window_token = response.usage.total_tokens
+    
     def _run_llm_step(self):
         """完全解耦的 LLM 请求封装"""
         model_name = self.core.split(":")[-1] if ':' in self.core else self.core
@@ -217,7 +284,9 @@ class Task:
         }
         if current_tools:
             kwargs["tools"] = current_tools
-        response = self.client.chat.completions.create(**kwargs)
+        
+        # 使用新的重试机制调用 LLM
+        response = self._call_llm_with_retry(kwargs)
         message = response.choices[0].message
         assist_msg = {"role": "assistant", "content": message.content or ""}
         if message.tool_calls:
@@ -369,7 +438,8 @@ class Task:
             self.history.append({"role": "user", "content": alert_prompt})
             try:
                 model_name = self.core.split(":")[-1] if ':' in self.core else self.core
-                response = self.client.chat.completions.create(model=model_name, messages=self.history)
+                kwargs = {"model": model_name, "messages": self.history}
+                response = self._call_llm_with_retry(kwargs)
                 archive_content = response.choices[0].message.content.strip()
                 self.history.append({
                     "role": "assistant",
@@ -496,7 +566,7 @@ class Task:
         model_name = judger_key.split(":")[-1] if ":" in judger_key else judger_key
         
         try:
-            client = Model(judger_key).client
+            judger_model = Model(judger_key)
         except Exception as e:
             print(f"[审查系统异常] 无法初始化模型 {judger_key}: {str(e)}")
             self.log_and_notify("thought", f"🤖 质检审查: 模型初始化失败，默认放行: {str(e)}")
@@ -513,7 +583,32 @@ class Task:
             "temperature": 0.1,
         }
         try:
-            response = client.chat.completions.create(**kwargs)
+            # 使用 judger_model 实例的重试逻辑
+            base_delay = 1.0
+            retries = 0
+            last_exception = None
+            
+            while retries < 3:
+                try:
+                    response = judger_model.client.chat.completions.create(**kwargs)
+                    break
+                except (RateLimitError, APIError) as e:
+                    error_msg = str(e).lower()
+                    if "rate limit" not in error_msg and "429" not in error_msg:
+                        raise
+                    retries += 1
+                    if retries >= 3:
+                        last_exception = e
+                        break
+                    masked_key = judger_model.get_current_api_key_masked()
+                    print(f"⚠️ [审查系统] api-key ({masked_key}) 被限速，切换中... (重试 {retries}/3)")
+                    time.sleep(base_delay)
+                    judger_model.rotate_api_key()
+                    base_delay = base_delay * 1.5
+            
+            if last_exception:
+                raise last_exception
+            
             message_content = response.choices[0].message.content
             eval_result = json.loads(message_content)
             self.log_window = []
@@ -550,12 +645,13 @@ class Task:
         self.history.append({"role": "user", "content": reflection_prompt})
         try:
             self.log_and_notify("system", "🧠 触发自我反思：正在要求 Core 模型进行诊断和决策...")
-            response = self.client.chat.completions.create(
-                model=model_name,
-                messages=self.history,
-                response_format={"type": "json_object"},
-                temperature=0.3
-            )
+            kwargs = {
+                "model": model_name,
+                "messages": self.history,
+                "response_format": {"type": "json_object"},
+                "temperature": 0.3
+            }
+            response = self._call_llm_with_retry(kwargs)
             message_content = response.choices[0].message.content
             # 2. 把它的反思结果也塞进全局历史，让它“记住”自己的纠错计划
             self.history.append({"role": "assistant", "content": message_content})

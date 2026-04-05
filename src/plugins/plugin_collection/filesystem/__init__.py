@@ -7,7 +7,8 @@ from .filesystem import (
     read_file_lines,
     search_in_file,
     replace_file_lines,
-    parse_document
+    parse_document,
+    copy_item_to
 )
 
 __all__ = [
@@ -19,5 +20,6 @@ __all__ = [
     'read_file_lines',
     'search_in_file',
     'replace_file_lines',
-    'parse_document'
+    'parse_document',
+    'copy_item_to'
 ]

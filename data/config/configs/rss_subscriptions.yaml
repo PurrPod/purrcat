@@ -2,7 +2,6 @@
 # RSS 订阅配置
 # ============================================
 
-# RSS订阅源配置（暂未开放）
 rss_subscriptions:
   - name: "Lilian Weng's Blog"
     url: "https://lilianweng.github.io/lil-log/feed.xml"

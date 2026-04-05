@@ -2,8 +2,8 @@
 # 系统基本配置
 # ============================================
 
-# Agent 使用的默认模型（格式是->厂商:模型名称，厂商部分可以随意调整用来区分不同的api-key，只要含厂商名字即可）
-agent_model: "[1]openai:deepseek-chat"
+# Agent 使用的默认模型
+agent_model: "openai:deepseek-chat"
 
-# Embedding 模型（用于database的嵌入，但个人应该用不上）
+# Embedding 模型
 embedding_model: "BAAI/bge-small-zh-v1.5"

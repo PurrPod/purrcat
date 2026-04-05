@@ -4,6 +4,7 @@ import time
 import json
 import threading
 from queue import PriorityQueue, Empty
+from openai import RateLimitError, APIError
 from src.loader.memory import Memory
 from src.models.model import Model
 from src.plugins.plugin_manager import BASE_TOOLS, parse_tool
@@ -39,7 +40,8 @@ class Agent:
             name = get_agent_model()
         self.name = name
         self.state = "idle"
-        self.client = Model(self.name).client
+        self.model = Model(self.name)  # 保存 Model 实例，而不只是 client
+        self.client = self.model.client
         with open(SOUL_MD_PATH, "r", encoding="utf-8") as f:
             soul_md = f.read()
         self.system_prompt = soul_md
@@ -88,6 +90,64 @@ class Agent:
         if hasattr(response, "usage") and response.usage is not None:
             self.window_token = response.usage.total_tokens
 
+    def _call_llm_with_retry(self, kwargs: dict, max_retries: int = 3):
+        """
+        调用 LLM 并自动处理限速异常，轮询不同 api-key
+        
+        Args:
+            kwargs: openai client.chat.completions.create 的参数字典
+            max_retries: 最大重试次数
+        
+        Returns:
+            response: LLM 响应
+        """
+        base_delay = 1.0
+        retries = 0
+        last_exception = None
+        model_name = kwargs.get("model", "unknown")
+        
+        while retries < max_retries:
+            try:
+                response = self.client.chat.completions.create(**kwargs)
+                self._track_token_usage(response)
+                return response
+            
+            except RateLimitError as e:
+                last_exception = e
+                retries += 1
+                masked_key = self.model.get_current_api_key_masked()
+                print(f"⚠️ [限速异常] ({model_name}) api-key ({masked_key}) 被限速，"
+                      f"将在 {base_delay:.1f} 秒后轮询下一个... (重试 {retries}/{max_retries})")
+                time.sleep(base_delay)
+                self.model.rotate_api_key()
+                self.client = self.model.client  # 更新 client
+                base_delay = base_delay * 1.5
+            
+            except APIError as e:
+                error_msg = str(e).lower()
+                if "rate limit" in error_msg or "429" in error_msg:
+                    last_exception = e
+                    retries += 1
+                    masked_key = self.model.get_current_api_key_masked()
+                    print(f"⚠️ [API 限速] ({model_name}) api-key ({masked_key}) 触发限速，"
+                          f"将在 {base_delay:.1f} 秒后轮询下一个... (重试 {retries}/{max_retries})")
+                    time.sleep(base_delay)
+                    self.model.rotate_api_key()
+                    self.client = self.model.client
+                    base_delay = base_delay * 1.5
+                else:
+                    # 非限速的 API 错误，直接抛出
+                    raise
+            
+            except Exception as e:
+                # 其他异常直接抛出
+                raise
+        
+        # 超过最大重试次数，抛出最后一个异常
+        if last_exception:
+            print(f"❌ [重试失败] ({model_name}) 已达到最大重试次数 ({max_retries})，放弃请求")
+            raise last_exception
+
     def _checker(self, step: int):
         """生命周期与环境维护检查器"""
         # 1. 拦截并处理挂起的强行注入
@@ -134,9 +194,10 @@ class Agent:
                 kwargs = {"model": model_name, "messages": self.current_history}
                 if current_tools:
                     kwargs["tools"] = current_tools
-                response = self.client.chat.completions.create(**kwargs)
+                
+                # 使用新的重试机制调用 LLM
+                response = self._call_llm_with_retry(kwargs)
                 msg_resp = response.choices[0].message
-                self._track_token_usage(response)
 
                 assist_msg = {"role": "assistant", "content": msg_resp.content or ""}
                 if msg_resp.tool_calls:
@@ -274,7 +335,8 @@ class Agent:
                 "messages": self.current_history
             }
 
-            response = self.client.chat.completions.create(**kwargs)
+            # 使用新的重试机制调用 LLM
+            response = self._call_llm_with_retry(kwargs)
             archive_content = response.choices[0].message.content.strip()
             print(f"🧠 Agent归档完成，生成备忘录长度: {len(archive_content)} 字符")
 
@@ -329,7 +391,7 @@ class Agent:
             print(f"⚠️ [Checkpoint] 保存检查点失败: {e}")
 
     @classmethod
-    def load_checkpoint(cls, filepath="src/agent/checkpoint.json", name="[1]openai:deepseek-chat", max_len=150):
+    def load_checkpoint(cls, filepath="src/agent/checkpoint.json", name="openai:deepseek-chat", max_len=150):
         agent = cls(name=name, checkpoint_path=filepath)
 
         try:

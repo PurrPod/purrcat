@@ -319,13 +319,25 @@ def search_tool(query: str, top_k: int = 5) -> str:
 
 
 def init_tool():
+    """初始化工具索引，每次重启都强制重新生成"""
+    print("🔄 开始初始化工具索引...")
     tools_index = []
+    
+    # 本地工具 - 强制重新生成
     try:
+        print("📦 处理本地工具...")
         from src.plugins.plugin_collection.local_manager import init_local_config_data
+        # 删除缓存文件，强制重新生成
+        if os.path.exists(LOCAL_TOOL_YAML):
+            os.remove(LOCAL_TOOL_YAML)
+            print("🗑️ 已删除本地工具缓存")
+        
         init_local_config_data()
+        
         if os.path.exists(LOCAL_TOOL_YAML):
             with open(LOCAL_TOOL_YAML, "r", encoding="utf-8") as f:
                 local_config = yaml.safe_load(f) or {}
+                local_count = 0
                 for plugin_name, plugin_data in local_config.items():
                     functions = plugin_data.get("functions", {})
                     for func_name, func_data in functions.items():
@@ -336,28 +348,51 @@ def init_tool():
                             "func": func_name,
                             "desc": desc
                         })
+                        local_count += 1
+                print(f"✅ 本地工具: {local_count} 个")
+        else:
+            print("❌ 本地工具配置文件不存在")
     except Exception as e:
-        pass
+        print(f"❌ 初始化本地工具异常: {e}")
+        import traceback
+        traceback.print_exc()
+    
+    # MCP工具
     try:
+        print("🔌 处理MCP工具...")
         from src.plugins.route.mcp_tool import extract_mcp_fingerprints_sync
         mcp_tools = extract_mcp_fingerprints_sync()
         if mcp_tools:
             tools_index.extend(mcp_tools)
+            print(f"✅ MCP工具: {len(mcp_tools)} 个")
+        else:
+            print("ℹ️ 无MCP工具")
     except Exception as e:
-        print(f"❌ 扫描 MCP 工具异常: {e}")
+        print(f"❌ 扫描MCP工具异常: {e}")
+    
+    # Extend工具
     try:
+        print("🔧 处理扩展工具...")
         from src.plugins.route.extend_tool import extract_extend_fingerprints
         extend_tools = extract_extend_fingerprints()
         if extend_tools:
             tools_index.extend(extend_tools)
+            print(f"✅ 扩展工具: {len(extend_tools)} 个")
+        else:
+            print("ℹ️ 无扩展工具")
     except Exception as e:
-        print(f"❌ 扫描 Extend 工具异常: {e}")
+        print(f"❌ 扫描扩展工具异常: {e}")
+    
+    # 写入索引文件
     try:
         with open(TOOL_INDEX_FILE, "w", encoding="utf-8") as f:
             for tool_info in tools_index:
                 f.write(json.dumps(tool_info, ensure_ascii=False) + "\n")
+        print(f"✅ 工具索引已生成: {TOOL_INDEX_FILE} (共 {len(tools_index)} 个工具)")
     except Exception as e:
-        pass
+        print(f"❌ 写入工具索引异常: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 DEFAULT_SKILL_PATH = Path("data/skill")
