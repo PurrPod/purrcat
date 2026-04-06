@@ -569,7 +569,7 @@ export default function ExtensionPage() {
                     </div>
                     <Button variant="outline" className="rounded-full shadow-sm" onClick={() => {
                       const newId = `new_model_${Date.now()}`
-                      setLlmModels(prev => ({ ...prev, [newId]: { api_keys: [""], base_url: "", description: "" } }))
+                      setLlmModels(prev => ({ ...prev, [newId]: { api_keys: [], base_url: "", description: "" } }))
                     }}>
                       <Plus className="size-4 mr-1" /> 添加模型
                     </Button>
