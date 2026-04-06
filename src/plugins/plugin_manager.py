@@ -44,21 +44,7 @@ BASE_TOOLS = [
             }
         }
     },
-    {
-        "type": "function",
-        "function": {
-            "name": "search_tool",
-            "description": "通过自然语言关键词搜索相关工具。",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "搜索关键词"},
-                    "top_k": {"type": "integer", "description": "返回得分 topK 结果"},
-                },
-                "required": ["query"]
-            }
-        }
-    },
+
     {
         "type": "function",
         "function": {
@@ -147,9 +133,7 @@ def parse_tool(tool_name: str, arguments: dict, route: str = None, plugin: str =
             target_route = arguments.get("route", "all")
             result_content = get_menu(target_route)
 
-        # 2. 拦截：search_tool
-        elif tool_name == "search_tool":
-            result_content = search_tool(arguments.get("query", ""))
+
 
         # 3. 拦截：fetch_tool (加载Schema闭环)
         elif tool_name == "fetch_tool":
@@ -176,7 +160,7 @@ def parse_tool(tool_name: str, arguments: dict, route: str = None, plugin: str =
                     schema_dict = fetched_dict[t_name]
                     real_func_name = schema_dict["function"]["name"]
 
-                    if real_func_name in ["get_menu", "search_tool", "fetch_tool", "load_skill", "list_skill"]:
+                    if real_func_name in ["get_menu", "fetch_tool", "load_skill", "list_skill"]:
                         failed_tools.append(f"{t_name}(保留关键字被拒绝)")
                     else:
                         new_schema_info.append({
@@ -283,39 +267,7 @@ def get_menu(route: str) -> str:
     return result
 
 
-def search_tool(query: str, top_k: int = 5) -> str:
-    """搜索工具 (字符碰撞策略 + 强制 Top-K 截断)"""
-    if not os.path.exists(TOOL_INDEX_FILE):
-        init_tool()
-        if not os.path.exists(TOOL_INDEX_FILE):
-            return "❌ 工具注册表未初始化，找不到 tool.jsonl"
-    results = []
-    query_chars = set(query.lower().replace(" ", ""))
-    with open(TOOL_INDEX_FILE, "r", encoding="utf-8") as f:
-        for line in f:
-            if not line.strip(): continue
-            tool = json.loads(line)
-            name_to_analyse = f"{tool['func']} {tool['desc']} {tool['plugin']}".lower()
-            score = 0
-            for char in name_to_analyse:
-                if char.isspace() or char in ".,!?，。！？()（）[]【】":
-                    continue
 
-                if char in query_chars:
-                    score += 1
-                else:
-                    score -= 0.05
-            tool['_score'] = score
-            results.append(tool)
-    if not results:
-        return f"没有找到与 '{query}' 相关的工具。请尝试使用 get_menu 浏览所有工具。"
-    results.sort(key=lambda x: x['_score'], reverse=True)
-    top_results = results[:top_k]
-    res_str = f"【搜索结果】截取 Top-{len(top_results)} 相关工具：\n"
-    for idx, t in enumerate(top_results, 1):
-        res_str += f"\n{idx}. 🔧 工具名: {t['func']} (归属: {t['plugin']}, 路由: {t['route']})\n"
-        res_str += f"   📝 描述: {t['desc']}\n"
-    return res_str
 
 
 def init_tool():
