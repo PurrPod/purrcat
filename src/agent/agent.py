@@ -40,7 +40,7 @@ class Agent:
             name = get_agent_model()
         self.name = name
         self.state = "idle"
-        self.model = Model(self.name)  # 保存 Model 实例，而不只是 client
+        self.model = Model(self.name)
         self.client = self.model.client
         with open(SOUL_MD_PATH, "r", encoding="utf-8") as f:
             soul_md = f.read()
@@ -63,7 +63,6 @@ class Agent:
         self._stop_event.set()
 
     def _append_history(self, message: dict):
-        """统一管理对话历史：加入内存列表的同时，直接落盘到 Memory 文件"""
         self.current_history.append(message)
         try:
             self.memory.add(message)
@@ -86,32 +85,20 @@ class Agent:
                 self.pending_force_push.append(formatted_content)
 
     def _track_token_usage(self, response):
-        """精准获取 API Token 消耗"""
         if hasattr(response, "usage") and response.usage is not None:
             self.window_token = response.usage.total_tokens
 
     def _call_llm_with_retry(self, kwargs: dict, max_retries: int = 3):
-        """
-        调用 LLM 并自动处理限速异常，轮询不同 api-key
-        
-        Args:
-            kwargs: openai client.chat.completions.create 的参数字典
-            max_retries: 最大重试次数
-        
-        Returns:
-            response: LLM 响应
-        """
         base_delay = 1.0
         retries = 0
         last_exception = None
         model_name = kwargs.get("model", "unknown")
-        
         while retries < max_retries:
             try:
                 response = self.client.chat.completions.create(**kwargs)
                 self._track_token_usage(response)
                 return response
-            
+
             except RateLimitError as e:
                 last_exception = e
                 retries += 1
@@ -120,9 +107,9 @@ class Agent:
                       f"将在 {base_delay:.1f} 秒后轮询下一个... (重试 {retries}/{max_retries})")
                 time.sleep(base_delay)
                 self.model.rotate_api_key()
-                self.client = self.model.client  # 更新 client
+                self.client = self.model.client
                 base_delay = base_delay * 1.5
-            
+
             except APIError as e:
                 error_msg = str(e).lower()
                 if "rate limit" in error_msg or "429" in error_msg:
@@ -136,21 +123,14 @@ class Agent:
                     self.client = self.model.client
                     base_delay = base_delay * 1.5
                 else:
-                    # 非限速的 API 错误，直接抛出
                     raise
-            
             except Exception as e:
-                # 其他异常直接抛出
                 raise
-        
-        # 超过最大重试次数，抛出最后一个异常
         if last_exception:
             print(f"❌ [重试失败] ({model_name}) 已达到最大重试次数 ({max_retries})，放弃请求")
             raise last_exception
 
     def _checker(self, step: int):
-        """生命周期与环境维护检查器"""
-        # 1. 拦截并处理挂起的强行注入
         local_push = []
         with self._lock:
             if self.pending_force_push:
@@ -166,12 +146,10 @@ class Agent:
                 "content": f"[System Warning] You should suspend your action and handle this message first!\n{content}"
             })
 
-        # 2. 周期清理动态工具缓存，防止上下文堆积
         if step > 0 and step % 10 == 0:
             self.dynamic_tools.clear()
             print("🧹 [Agent] 已周期清理动态工具缓存")
 
-        # 3. 记忆承载能力检查
         self._check_and_summarize_memory()
 
     def process_message(self, message: dict):
@@ -187,15 +165,13 @@ class Agent:
 
         for step in range(max_steps):
             try:
-                # 合并 BASE_TOOLS、AGENT_TOOLS 和 大模型自己 fetch 的动态工具
                 current_tools = list(BASE_TOOLS) + list(AGENT_TOOLS)
                 if self.dynamic_tools:
                     current_tools.extend([item["schema"] for item in self.dynamic_tools])
                 kwargs = {"model": model_name, "messages": self.current_history}
                 if current_tools:
                     kwargs["tools"] = current_tools
-                
-                # 使用新的重试机制调用 LLM
+
                 response = self._call_llm_with_retry(kwargs)
                 msg_resp = response.choices[0].message
 
@@ -266,7 +242,6 @@ class Agent:
                                             break
                     result_str, new_schema_info = parse_tool(tool_name, arguments, route=target_route, plugin=target_plugin)
                     finish_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    # Schema 更新闭环
                     if new_schema_info:
                         schemas_to_add = new_schema_info if isinstance(new_schema_info, list) else [new_schema_info]
                         for schema_item in schemas_to_add:
@@ -297,37 +272,45 @@ class Agent:
 
                 self._checker(step)
 
+
             except KeyboardInterrupt:
                 self.state = "idle"
                 print("⚠️ [Agent] 检测到强制中断 (Ctrl+C)，保存现场...")
+                if self.current_history and self.current_history[-1].get("role") == "assistant" and self.current_history[-1].get("tool_calls"):
+                    self.current_history.pop()
+                    print("⚠️ 已自动撤销未完成的 tool_calls 记录")
+                self.current_history.append({
+                    "role": "assistant",
+                    "content": "⚠️ [系统提示] Agent 运行被用户或系统强制中断 (Ctrl+C)。"
+                })
                 self.save_checkpoint()
                 raise
             except Exception as e:
                 print(f"❌ [Agent] 大模型交互断层: {e}")
+                if self.current_history and self.current_history[-1].get("role") == "assistant" and self.current_history[-1].get("tool_calls"):
+                    self.current_history.pop()
+                    print("⚠️ 已自动撤销引发异常的 tool_calls 记录")
+                self.current_history.append({
+                    "role": "assistant",
+                    "content": f"❌ [系统报错] Agent 遭遇意外交互断层，当前处理已终止。错误信息：{e}"
+                })
                 self.save_checkpoint()
                 break
-
-        self.state = "idle"
+            self.state = "idle"
         try:
             self._check_and_summarize_memory()
         except Exception as e:
             print(f"压缩记忆失败：{e}")
-
     def _check_and_summarize_memory(self, check_mode=True):
         max_tokens = 100000
-
         if check_mode and len(self.current_history) < 150 and self.window_token < max_tokens:
             return
-
         print(f"🗜️ 记忆容量到达 {len(self.current_history)} 条 (约 {self.window_token} tokens)，触发自我归档...")
-
         alert_prompt = """【系统严重警告：大脑记忆容量即将溢出！！！】
 为了防止记忆断层，系统即将物理抹除你最早期的一批记忆。
 请你现在亲自对**此前的关键对话、事件**进行全面总结，提取出核心事件、任务进度、你的关键决策、当前需要加载的skill等，形成一份“早期记忆备忘录”。
 直接用自然语言输出。这份备忘录将作为你未来回忆那段时光的唯一凭证，也是你承上启下的节点，请务必保证包含影响任务推进的关键信息！但也要尽量保持简洁和少废话，防止备忘录越来越长！总结完本次对话后，如果已加载的skill记录消失，则需要在下轮对话重新加载遗失的skill"""
-
         self._append_history({"role": "user", "content": alert_prompt})
-
         try:
             model_name = self.name.split(":")[-1] if ":" in self.name else self.name
             kwargs = {
@@ -335,22 +318,17 @@ class Agent:
                 "messages": self.current_history
             }
 
-            # 使用新的重试机制调用 LLM
             response = self._call_llm_with_retry(kwargs)
             archive_content = response.choices[0].message.content.strip()
             print(f"🧠 Agent归档完成，生成备忘录长度: {len(archive_content)} 字符")
-
             self._append_history({"role": "assistant", "content": f"【早期记忆备忘录】\n{archive_content}"})
-
             start_idx = 1
             keep_recent = 20
             split_idx = len(self.current_history) - keep_recent
-
             if split_idx > start_idx:
                 while split_idx > start_idx:
                     curr_msg = self.current_history[split_idx]
                     prev_msg = self.current_history[split_idx - 1]
-
                     if curr_msg.get("role") == "tool":
                         split_idx -= 1
                         continue
@@ -358,15 +336,12 @@ class Agent:
                         split_idx -= 1
                         continue
                     break
-
             if split_idx < start_idx:
                 split_idx = start_idx
             self.current_history = [self.current_history[0]] + self.current_history[split_idx:]
-
             print("✅ Agent记忆清理完毕！已安全避开 Tool Call 链条完成流水线截断。")
-            self.window_token = 0  # 归档后重置 Token 计算
+            self.window_token = 0
             self.save_checkpoint()
-
         except Exception as e:
             print(f"❌ 记忆存档发生异常: {e}")
 
@@ -391,9 +366,8 @@ class Agent:
             print(f"⚠️ [Checkpoint] 保存检查点失败: {e}")
 
     @classmethod
-    def load_checkpoint(cls, filepath="src/agent/checkpoint.json", name="openai:deepseek-chat", max_len=150):
+    def load_checkpoint(cls, filepath="src/agent/checkpoint.json", name="openai:deepseek-chat"):
         agent = cls(name=name, checkpoint_path=filepath)
-
         try:
             if not os.path.exists(filepath):
                 print(f"⚠️ [Checkpoint] 找不到文件: {filepath}，将以全新状态启动并创建该文件。")
@@ -403,13 +377,16 @@ class Agent:
             with open(filepath, "r", encoding="utf-8") as f:
                 history = json.load(f)
             if isinstance(history, list) and len(history) > 0:
+                last_msg = history[-1]
+                if last_msg.get("role") == "assistant" and last_msg.get("tool_calls"):
+                    print("🛠️ [Checkpoint] 检测到断点处缺失工具回传结果，自动撤销最近一次未完成的思考...")
+                    history.pop()
                 agent.current_history = history
                 print(f"✅ 成功从 {filepath} 恢复对话历史，共加载了 {len(history)} 条记录。")
             else:
                 print(f"⚠️ [Checkpoint] 文件内容为空或格式错误，重置为全新状态。")
                 agent.save_checkpoint(filepath)
             return agent
-
         except Exception as e:
             print(f"❌ [Checkpoint] 恢复检查点失败: {e}，将以全新状态启动。")
             return agent
