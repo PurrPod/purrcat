@@ -327,7 +327,11 @@ export default function ExtensionPage() {
   const addApiKey = (id: string) => {
     setLlmModels(prev => {
       const model = { ...prev[id] };
-      if (!model.api_keys) model.api_keys = [];
+      if (!model.api_keys) {
+        model.api_keys = [];
+      } else {
+        model.api_keys = [...model.api_keys]; // 深拷贝数组
+      }
       model.api_keys.push("");
       delete model.api_key;
       return { ...prev, [id]: model }
@@ -338,6 +342,7 @@ export default function ExtensionPage() {
     setLlmModels(prev => {
       const model = { ...prev[id] };
       if (!model.api_keys) return prev;
+      model.api_keys = [...model.api_keys]; // 深拷贝数组
       model.api_keys.splice(index, 1);
       if (model.api_keys.length === 0) {
         delete model.api_keys;
@@ -350,7 +355,15 @@ export default function ExtensionPage() {
   const updateApiKey = (id: string, index: number, value: string) => {
     setLlmModels(prev => {
       const model = { ...prev[id] };
-      if (!model.api_keys) model.api_keys = [];
+      if (!model.api_keys) {
+        model.api_keys = [];
+      } else {
+        model.api_keys = [...model.api_keys]; // 深拷贝数组
+      }
+      // 确保数组长度足够，避免出现空元素
+      while (model.api_keys.length <= index) {
+        model.api_keys.push("");
+      }
       model.api_keys[index] = value;
       return { ...prev, [id]: model }
     })

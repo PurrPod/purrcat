@@ -1028,7 +1028,16 @@ async def update_config(filename: str, config: Dict[str, Any]):
         yaml_config = load_config()
         if filename == "model_config.json":
             if "models" in config:
-                yaml_config["models"] = config["models"]
+                # 保留 api_keys 数组，因为后端支持多个 API-key 轮询
+                models = config["models"]
+                for model_name, model_config in models.items():
+                    # 确保 api_keys 是数组格式
+                    if "api_keys" in model_config and not isinstance(model_config["api_keys"], list):
+                        model_config["api_keys"] = [model_config["api_keys"]]
+                    # 如果 api_keys 为空数组，删除它
+                    elif "api_keys" in model_config and not model_config["api_keys"]:
+                        del model_config["api_keys"]
+                yaml_config["models"] = models
             if "agent" in config:
                 yaml_config["agent_model"] = config["agent"]
             for key in ["image_generator", "image_converter", "video_generator",
@@ -1037,6 +1046,18 @@ async def update_config(filename: str, config: Dict[str, Any]):
                     yaml_config.setdefault("specialized_models", {})[key] = config[key]
             if "embedding_model" in config:
                 yaml_config["embedding_model"] = config["embedding_model"]
+            
+            # --- 持久化写入到 secrets/models.yaml --- 
+            models_data = {}
+            if "models" in yaml_config:
+                models_data["models"] = yaml_config["models"]
+            if "specialized_models" in yaml_config:
+                models_data["specialized_models"] = yaml_config["specialized_models"]
+            
+            models_yaml_path = os.path.join(DATA_DIR, "config", "secrets", "models.yaml")
+            os.makedirs(os.path.dirname(models_yaml_path), exist_ok=True)
+            with open(models_yaml_path, "w", encoding="utf-8") as f:
+                yaml.dump(models_data, f, allow_unicode=True, sort_keys=False)
 
         elif filename == "feishu_config.json":
             feishu_data = config.get("feishu", {})
