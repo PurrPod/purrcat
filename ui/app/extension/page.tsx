@@ -213,6 +213,28 @@ export default function ExtensionPage() {
     } catch (e) { toast({ title: "保存失败", variant: "destructive" }) }
   }
 
+  const handleApplySoul = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/agent/update-system-prompt`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: soulContent })
+      })
+      
+      if (response.ok) {
+        const data = await response.json()
+        toast({ 
+          title: "应用成功", 
+          description: "Agent系统提示词已更新并应用到历史记录" 
+        })
+      } else {
+        throw new Error("应用失败")
+      }
+    } catch (e) { 
+      toast({ title: "应用失败", variant: "destructive" })
+    }
+  }
+
   const handleSaveChannel = async () => {
     try {
       await fetch(`${API_BASE}/config/feishu_config.json`, {
@@ -1175,6 +1197,16 @@ export default function ExtensionPage() {
                       placeholder="# Your Agent's SOUL..."
                     />
                   </div>
+                  <div className="flex justify-end">
+                    <Button 
+                      size="lg" 
+                      variant="default" 
+                      className="bg-primary text-primary-foreground rounded-[24px] shadow-[0_-10px_40px_rgba(0,0,0,0.05)] p-4 px-8 shadow-sm active:scale-95 transition-all"
+                      onClick={handleApplySoul}
+                    >
+                      应用此更改
+                    </Button>
+                  </div>
                   <div className="h-24 w-full shrink-0" />
                 </div>
               )}
@@ -1185,7 +1217,7 @@ export default function ExtensionPage() {
           {/* 底部悬浮操作栏 */}
           <div className="absolute bottom-0 left-0 right-0 z-20 bg-gradient-to-t from-background via-background/90 to-transparent pt-32 pb-8 px-4 md:px-12 pointer-events-none">
             <div className="max-w-5xl mx-auto w-full pointer-events-auto flex justify-end">
-              {(activeTab === 'model' || activeTab === 'mcp' || activeTab === 'channel' || activeTab === 'tool' || activeTab === 'permission' || activeTab === 'soul') && (
+              {(activeTab === 'model' || activeTab === 'mcp' || activeTab === 'channel' || activeTab === 'tool' || activeTab === 'permission') && (
                 <Button size="lg" variant="secondary" className="bg-background/80 backdrop-blur-md rounded-[24px] shadow-[0_-10px_40px_rgba(0,0,0,0.05)] border border-border/20 p-4 px-8 shadow-sm active:scale-95 transition-all" onClick={handleCurrentSave}>
                   <Save className="size-4 mr-2" />
                   保存更改

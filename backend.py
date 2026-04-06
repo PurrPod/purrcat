@@ -188,6 +188,40 @@ async def summarize_memory():
     return {"status": "success"}
 
 
+class UpdateSystemPromptRequest(BaseModel):
+    content: str
+
+
+@app.post("/api/agent/update-system-prompt")
+async def update_system_prompt(request: UpdateSystemPromptRequest):
+    """更新Agent的系统提示词并更新历史记录"""
+    try:
+        # 更新SOUL.md文件
+        soul_path = "src/agent/SOUL.md"
+        os.makedirs(os.path.dirname(soul_path), exist_ok=True)
+        with open(soul_path, "w", encoding="utf-8") as f:
+            f.write(request.content)
+        
+        # 更新agent的系统提示词和历史记录
+        agent.system_prompt = request.content
+        if agent.current_history and agent.current_history[0].get("role") == "system":
+            agent.current_history[0]["content"] = request.content
+        else:
+            # 如果历史记录中没有系统提示词，添加一个
+            agent.current_history.insert(0, {"role": "system", "content": request.content})
+        
+        # 保存检查点
+        agent.save_checkpoint()
+        
+        return {
+            "status": "success",
+            "message": "Agent系统提示词已更新并应用",
+            "content": request.content
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 class UpdateAgentModelRequest(BaseModel):
     model: str
 

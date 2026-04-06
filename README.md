@@ -1,41 +1,55 @@
-# Cat In Cup 
+<div align="center">
 
-Cat In Cup 是一个高度可定制的开源 AI Agent 框架，致力于帮助开发者快速构建专属的智能助手。项目采用前后端分离架构，内置基于 Docker 的安全代码执行沙盒，并支持 MCP（Model Context Protocol）生态与多源传感器（如飞书、RSS），让你的 Agent 不仅能“思考”，还能“感知”和“行动”。
+# CatInCup
 
-### 🚀 快速开始：你与 Agent 的第一句话
+*A highly customizable local personal agent framework.*
 
-**1. 环境初始化（首次启动）**
-为了保证 Agent 具备安全独立的代码执行能力，需要先构建沙盒环境和 Python 运行环境：
+[![Python Version](https://img.shields.io/badge/python-3.8%2B-blue)]()
+[![License](https://img.shields.io/badge/license-GPLv3-green)]()
 
-```bash
-# 给 Agent 提供安全的沙盒环境，工作目录将映射为 agent_vm
-docker build -t my_agent_env:latest .  
+> 该项目仍在持续高频更新中
 
-# 配置并激活宿主机 Conda 环境
-conda env create -f environment.yml
-conda activate CatInCup
-```
+</div>
 
-**2. 启动服务**
-项目包含独立的后端引擎与 Web 前端，请在两个终端分别启动：
+---
 
-```bash
-# 终端 1：启动 Python 后端
-python backend.py
+## Introduction
 
-# 终端 2：启动前端 UI
-cd ui
-npm install  # 首次运行请先安装依赖
-npm run dev
-```
+CatInCup 是一个高度可定制化的本地私人 Agent 助理框架。项目使用 Python 构建，核心代码精简，易于初学者上手。有别于常规的云端应用，CatInCup 专注于本地运行，通过构建独立的沙盒环境来执行任务，并拥有管理和操作本地文件系统的能力。
 
-**3. 首次连通**
-服务启动后，在浏览器打开前端页面，进入**配置页**完善你的大语言模型 API 设置。配置完成后回到首页，试着向它发送一句“你好”，看看你的专属 Agent 是否已经成功苏醒。
+## Features
 
-### ⚙️ 个性化定制：打造独一无二的助手
+*   **Easy to Use**
+    *   使用 Python 构建，核心逻辑清晰，易于二次开发与定制。
+*   **Efficient**
+    *   独创的 Harness Engineering 经过数月实验验证，剔除了同类agent冗余的提示词工程，在保证稳定性的同时相比于同类 Agent 框架更加经济高效。
+*   **Stable and Reliable**
+    *   内置 API 轮询机制等异常处理模块，支持断点重连和数据备份，确保系统长效稳定运行。
+*   **Local Sandbox**
+    *   采用本地沙盒化运行机制。
 
-Cat In Cup 提供了极高的自由度，你可以通过 UI 界面和本地文件深度定制你的 Agent：
+## What's New
 
-* **注入灵魂**：修改 `src/agent/SOUL.md` 文件，为你的 Agent 设定独特的性格、语气和核心价值观。
-* **连接世界**：在配置页添加 Tavily Web API 赋予其强大的联网搜索能力，或完善 Feishu（飞书）相关配置将其接入你的日常工作流。
-* **扩展能力**：框架支持无缝接入各类 MCP 服务或 Skill，你可以根据需求为其装备不同的工具，无限扩展 Agent 的能力边界。
+*   **[2026/04/06]** 新增了 Docker 对 `data/skill` 的映射目录，赋予了 Agent 的自主技能扩展能力。
+
+## Documentation
+
+详细的安装配置指南、环境依赖说明以及使用文档正在编写中，敬请期待。
+
+> 本项目非盈利，涉及框架基础使用或环境配置等常规问题，请优先通过搜索引擎解决。本项目社区暂不提供基础教学解答。
+
+## Acknowledgments
+
+*   感谢 **Gemini Pro 3.1**：协助构建了精美的 UI 界面，本项目的 UI 代码全部由 AI 编写。
+
+---
+
+## License & Disclaimer
+
+本项目采用 **[GNU GPL-3.0 License](https://www.gnu.org/licenses/gpl-3.0.txt)** 协议开源。使用本项目代码时，您**必须**遵守以下条款：
+
+1.  **开源传染性（商用必开源）：** 任何基于本项目进行的二次开发、修改或衍生项目，只要对外分发（包括打包成新软件提供给他人使用），其全部源代码必须同样以 GPL-3.0 协议开源。
+2.  **绝对免责声明：** 
+    *   **高权限警告：** 本项目作为本地私人助理，具备直接修改、删除和操作本地文件的能力。
+    *   **风险自担：** 本项目代码“按原样”提供。**作者不对任何人因使用、修改或运行本项目代码（包括但不限于 Agent 误操作导致的本地数据丢失、系统损坏等任何直接或间接后果）承担任何法律责任。** 使用本框架造成的一切后果由使用者自行承担。
+3.  **合法合规使用：** 请严格遵守当地法律法规，严禁将本项目用于任何非法收集数据、恶意破坏他人系统等违规用途，由此造成的法律问题由使用者及违规教程提供者负责。
