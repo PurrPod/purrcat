@@ -2,7 +2,7 @@
 setlocal enabledelayedexpansion
 :: 设置控制台为 UTF-8 编码，防止中文乱码
 chcp 65001 >nul
-
+cd /d "%~dp0.."
 echo 🐱 欢迎安装 CatInCup 环境 (Windows 自动构建版)...
 echo ==========================================
 

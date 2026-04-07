@@ -1,7 +1,7 @@
 #!/bin/bash
 # 遇到错误立即退出
 set -e
-
+cd "$(dirname "$0")/.."
 echo "🐱 欢迎安装 CatInCup 环境 (macOS / Linux)..."
 echo "=========================================="
 
