@@ -4,7 +4,7 @@ import time
 import json
 import threading
 from queue import PriorityQueue, Empty
-from openai import RateLimitError, APIError
+
 from src.loader.memory import Memory
 from src.models.model import Model
 from src.plugins.plugin_manager import BASE_TOOLS, parse_tool
@@ -41,9 +41,10 @@ class Agent:
         self.name = name
         self.state = "idle"
         self.model = Model(self.name)
-        self.client = self.model.client
+
         with open(SOUL_MD_PATH, "r", encoding="utf-8") as f:
             soul_md = f.read()
+
         self.system_prompt = soul_md
         self.current_history = [{"role": "system", "content": self.system_prompt}]
         self.max_len = 150
@@ -85,50 +86,9 @@ class Agent:
                 self.pending_force_push.append(formatted_content)
 
     def _track_token_usage(self, response):
+        """精准统计 API Token，防止重复累加"""
         if hasattr(response, "usage") and response.usage is not None:
             self.window_token = response.usage.total_tokens
-
-    def _call_llm_with_retry(self, kwargs: dict, max_retries: int = 3):
-        base_delay = 1.0
-        retries = 0
-        last_exception = None
-        model_name = kwargs.get("model", "unknown")
-        while retries < max_retries:
-            try:
-                response = self.client.chat.completions.create(**kwargs)
-                self._track_token_usage(response)
-                return response
-
-            except RateLimitError as e:
-                last_exception = e
-                retries += 1
-                masked_key = self.model.get_current_api_key_masked()
-                print(f"⚠️ [限速异常] ({model_name}) api-key ({masked_key}) 被限速，"
-                      f"将在 {base_delay:.1f} 秒后轮询下一个... (重试 {retries}/{max_retries})")
-                time.sleep(base_delay)
-                self.model.rotate_api_key()
-                self.client = self.model.client
-                base_delay = base_delay * 1.5
-
-            except APIError as e:
-                error_msg = str(e).lower()
-                if "rate limit" in error_msg or "429" in error_msg:
-                    last_exception = e
-                    retries += 1
-                    masked_key = self.model.get_current_api_key_masked()
-                    print(f"⚠️ [API 限速] ({model_name}) api-key ({masked_key}) 触发限速，"
-                          f"将在 {base_delay:.1f} 秒后轮询下一个... (重试 {retries}/{max_retries})")
-                    time.sleep(base_delay)
-                    self.model.rotate_api_key()
-                    self.client = self.model.client
-                    base_delay = base_delay * 1.5
-                else:
-                    raise
-            except Exception as e:
-                raise
-        if last_exception:
-            print(f"❌ [重试失败] ({model_name}) 已达到最大重试次数 ({max_retries})，放弃请求")
-            raise last_exception
 
     def _checker(self, step: int):
         local_push = []
@@ -160,7 +120,6 @@ class Agent:
         print(f"\n🔔 [Agent 抓取消息] 类型: {msg_type} | 内容: {msg_content}")
         self._append_history({"role": "user", "content": f"🔔 收到系统消息 (类型: {msg_type}):\n{msg_content}"})
 
-        model_name = self.name.split(":")[-1] if ":" in self.name else self.name
         max_steps = 1000
 
         for step in range(max_steps):
@@ -168,14 +127,14 @@ class Agent:
                 current_tools = list(BASE_TOOLS) + list(AGENT_TOOLS)
                 if self.dynamic_tools:
                     current_tools.extend([item["schema"] for item in self.dynamic_tools])
-                kwargs = {"model": model_name, "messages": self.current_history}
-                if current_tools:
-                    kwargs["tools"] = current_tools
 
-                response = self._call_llm_with_retry(kwargs)
+                # 极简调用，把请求抛给底层专属线程处理
+                response = self.model.chat(messages=self.current_history, tools=current_tools)
+                self._track_token_usage(response)
+
                 msg_resp = response.choices[0].message
-
                 assist_msg = {"role": "assistant", "content": msg_resp.content or ""}
+
                 if msg_resp.tool_calls:
                     assist_msg["tool_calls"] = [
                         {
@@ -186,6 +145,7 @@ class Agent:
                     ]
 
                 self._append_history(assist_msg)
+
                 if msg_resp.content:
                     print(f"🤖 助手思考: {msg_resp.content}")
                 if not msg_resp.tool_calls:
@@ -208,10 +168,20 @@ class Agent:
                                     print("✅ json-repair 修复成功！")
                                 except Exception as repair_e:
                                     print(f"❌ json-repair 修复失败: {repair_e}")
-                            else:
-                                print("💡 强烈建议终端运行 `pip install json-repair` 来自动修复此问题！")
-
-                    args_str = ", ".join([f'{k}={repr(v)}' for k, v in arguments.items()])
+                    if not isinstance(arguments, dict):
+                        error_msg = "❌ 系统拦截：工具参数格式严重损坏（可能是因为你一次性写入的文件太长导致截断）。请分批次追加写入文件（使用 cat >>）！"
+                        print(error_msg)
+                        self._append_history({
+                            "role": "tool",
+                            "tool_call_id": tool_call.id,
+                            "name": tool_name,
+                            "content": error_msg
+                        })
+                        continue
+                    if isinstance(arguments, dict):
+                        args_str = ", ".join([f'{k}={repr(v)}' for k, v in arguments.items()])
+                    else:
+                        args_str = str(arguments)
                     print(f"🔧 助手调起工具: {tool_name}({args_str})")
                     target_route = None
                     target_plugin = None
@@ -240,8 +210,10 @@ class Agent:
                                             target_route = tool_info["route"]
                                             target_plugin = tool_info["plugin"]
                                             break
+
                     result_str, new_schema_info = parse_tool(tool_name, arguments, route=target_route, plugin=target_plugin)
                     finish_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
                     if new_schema_info:
                         schemas_to_add = new_schema_info if isinstance(new_schema_info, list) else [new_schema_info]
                         for schema_item in schemas_to_add:
@@ -272,7 +244,6 @@ class Agent:
 
                 self._checker(step)
 
-
             except KeyboardInterrupt:
                 self.state = "idle"
                 print("⚠️ [Agent] 检测到强制中断 (Ctrl+C)，保存现场...")
@@ -296,11 +267,14 @@ class Agent:
                 })
                 self.save_checkpoint()
                 break
+
             self.state = "idle"
+
         try:
             self._check_and_summarize_memory()
         except Exception as e:
             print(f"压缩记忆失败：{e}")
+
     def _check_and_summarize_memory(self, check_mode=True):
         max_tokens = 100000
         if check_mode and len(self.current_history) < 150 and self.window_token < max_tokens:
@@ -312,16 +286,13 @@ class Agent:
 直接用自然语言输出。这份备忘录将作为你未来回忆那段时光的唯一凭证，也是你承上启下的节点，请务必保证包含影响任务推进的关键信息！但也要尽量保持简洁和少废话，防止备忘录越来越长！总结完本次对话后，如果已加载的skill记录消失，则需要在下轮对话重新加载遗失的skill"""
         self._append_history({"role": "user", "content": alert_prompt})
         try:
-            model_name = self.name.split(":")[-1] if ":" in self.name else self.name
-            kwargs = {
-                "model": model_name,
-                "messages": self.current_history
-            }
+            response = self.model.chat(messages=self.current_history)
+            self._track_token_usage(response)
 
-            response = self._call_llm_with_retry(kwargs)
             archive_content = response.choices[0].message.content.strip()
             print(f"🧠 Agent归档完成，生成备忘录长度: {len(archive_content)} 字符")
             self._append_history({"role": "assistant", "content": f"【早期记忆备忘录】\n{archive_content}"})
+
             start_idx = 1
             keep_recent = 20
             split_idx = len(self.current_history) - keep_recent

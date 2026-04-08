@@ -19,6 +19,21 @@ def add_task(
         core: str = "openai:deepseek-chat",
         judger: str = "openai:deepseek-chat"
 ) -> str:
+    model_name = core
+    models = get_models_config()
+    if model_name not in models:
+        return _format_response("error", f"❌ 未找到模型 '{model_name}' 的配置")
+
+    model_info = models[model_name]
+    api_keys = model_info.get("api_keys") or [model_info.get("api_key")]
+    valid_api_keys = [key for key in api_keys if key and key.strip()]
+
+    if not valid_api_keys:
+        return _format_response("error", f"❌ 模型 '{model_name}' 未配置有效的 api-key")
+
+    # 【新架构优势】：不再需要检查 worker 状态！
+    # 任务直接创建，底层 LLMDispatcher 的全局队列会自动处理并发与排队。
+
     single_task = Task(
         task_name=name,
         prompt=prompt,
@@ -127,11 +142,21 @@ def kill_task(task_id: str) -> str:
 
 
 def list_worker() -> str:
-    """获取当前所有可用的工人及其描述的清单。"""
+    """获取当前所有模型节点及其专属线程的清单。"""
     models = get_models_config()
-    model_list = [f"\"{model_name}\" | {models[model_name]['description']}\n" for model_name in models.keys()]
+    model_list = []
+    for model_name in models.keys():
+        model_info = models[model_name]
+        api_keys = model_info.get("api_keys") or [model_info.get("api_key")]
+        valid_api_keys = [key for key in api_keys if key and key.strip()]
+
+        # 新架构下，有多少个合法的 api-key，该模型就有多少个专属并发 Worker 线程
+        worker_count = len(valid_api_keys)
+        model_desc = model_info.get('description', 'LLM')
+
+        model_list.append(f"\"{model_name}\" | {model_desc} | 工人数: {worker_count}\n")
     if not model_list:
-        return _format_response("text", "无可用工人")
+        return _format_response("text", "无可用工人(模型配置)")
     return _format_response("text", "".join(model_list))
 
 

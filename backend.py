@@ -33,7 +33,7 @@ PLUGIN_COLLECTION_DIR = Path(os.path.join(BASE_DIR, "src", "plugins", "plugin_co
 # Import existing logic
 from src.agent import agent as agent_module
 from src.models import task as task_module
-from src.plugins.plugin_collection.filesystem.filesystem import set_allowed_directories, list_special_directories
+from src.plugins.plugin_collection.filesystem.filesystem import set_allowed_directories
 from src.utils.config import load_config, get_model_config_json, get_mcp_config_json, get_feishu_config, \
     get_rss_subscriptions, get_web_api_config, reload_config, save_config
 

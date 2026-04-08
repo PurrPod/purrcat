@@ -211,16 +211,6 @@ filesystem:
           - start
           - end
           - new_code
-    list_special_directories:
-      type: function
-      function:
-        name: list_special_directories
-        description: List all special directories including sandbox, skill and so
-          on.
-        parameters:
-          type: object
-          properties: {}
-          required: []
     list_file_in_dir:
       type: function
       function:

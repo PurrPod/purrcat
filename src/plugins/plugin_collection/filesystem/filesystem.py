@@ -69,9 +69,7 @@ def set_allowed_directories(directories: List[str]) -> str:
         message += f"\nSkipped (do not exist): {skipped}"
     return _format_response("text", message)
 
-def list_special_directories() -> str:
-    result = {"sandbox_dirs": _SANDBOX_DIRS, "skill_dir": _SKILL_DIRS, "dont_read_dirs": _DONT_READ_DIRS}
-    return _format_response("text", result)
+
 
 def write_text_file(path: str, content: str) -> str:
     if not _get_allow("write", path):
