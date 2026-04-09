@@ -31,7 +31,7 @@ def add_task(
     if not valid_api_keys:
         return _format_response("error", f"❌ 模型 '{model_name}' 未配置有效的 api-key")
 
-    # 【新架构优势】：不再需要检查 worker 状态！
+    # 不再需要检查 worker 状态！
     # 任务直接创建，底层 LLMDispatcher 的全局队列会自动处理并发与排队。
 
     single_task = Task(
@@ -142,19 +142,25 @@ def kill_task(task_id: str) -> str:
 
 
 def list_worker() -> str:
-    """获取当前所有模型节点及其专属线程的清单。"""
+    """获取当前所有模型节点及其专属线程的清单（包含实时空闲状态）。"""
+    from src.models.model import LLMDispatcher
+    from src.utils.config import get_models_config
+    dispatcher = LLMDispatcher()
     models = get_models_config()
     model_list = []
-    for model_name in models.keys():
-        model_info = models[model_name]
-        api_keys = model_info.get("api_keys") or [model_info.get("api_key")]
-        valid_api_keys = [key for key in api_keys if key and key.strip()]
-
-        # 新架构下，有多少个合法的 api-key，该模型就有多少个专属并发 Worker 线程
-        worker_count = len(valid_api_keys)
+    for model_name, model_info in models.items():
         model_desc = model_info.get('description', 'LLM')
-
-        model_list.append(f"\"{model_name}\" | {model_desc} | 工人数: {worker_count}\n")
+        with dispatcher._lock:
+            if model_name in dispatcher.model_workers:
+                workers = dispatcher.model_workers[model_name]
+                total_workers = len(workers)
+                idle_workers = sum(1 for w in workers if w.work_queue.qsize() == 0)
+                model_list.append(f"\"{model_name}\" | {model_desc} | 总工人数: {total_workers} | 当前空闲: {idle_workers}\n")
+            else:
+                api_keys = model_info.get("api_keys") or [model_info.get("api_key")]
+                valid_api_keys = [key for key in api_keys if key and key.strip()]
+                total_workers = len(valid_api_keys)
+                model_list.append(f"\"{model_name}\" | {model_desc} | 总工人数: {total_workers} | 当前空闲: {total_workers}\n")
     if not model_list:
         return _format_response("text", "无可用工人(模型配置)")
     return _format_response("text", "".join(model_list))

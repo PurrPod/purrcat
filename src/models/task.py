@@ -51,6 +51,7 @@ class Task:
         self.history = []
         self.task_id = uuid.uuid4().hex
         self.model = Model(core)
+        self.model.bind_task(self.task_id, self.task_name)
         self.state = "ready"
         self.step = 0
         self.dynamic_tool = []
@@ -317,7 +318,7 @@ class Task:
 
 # 工具使用注意事项
 - **shell工具**：使用shell工具时，必须自己起一个唯一的section id，否则会和其他任务冲突。section id应该是一个唯一的字符串，例如包含任务ID或时间戳。
-- **shell工具**：使用shell工具运行命令时，如果命令过长，要分成几部分写入，如创建 html 文件时，最好要分多次追加写入。
+- **shell工具**：每次使用 cat >> 写入时，严禁超过 50 行代码，写完 50 行必须结束当前工具调用，在下一次回复中继续追加。
 
 # 核心设计原则（必须内化为你思考的本能）
 1. **架构与模块化**：优先考虑系统分层、模块边界、依赖方向。追求高内聚、低耦合。

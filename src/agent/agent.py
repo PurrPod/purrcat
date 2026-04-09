@@ -3,6 +3,7 @@ import os
 import time
 import json
 import threading
+import uuid
 from queue import PriorityQueue, Empty
 
 from src.loader.memory import Memory
@@ -41,7 +42,8 @@ class Agent:
         self.name = name
         self.state = "idle"
         self.model = Model(self.name)
-
+        self.agent_session_id = f"agent_main_{uuid.uuid4().hex[:8]}"
+        self.model.bind_task(self.agent_session_id, "AgentMain")
         with open(SOUL_MD_PATH, "r", encoding="utf-8") as f:
             soul_md = f.read()
 
