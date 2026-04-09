@@ -184,8 +184,6 @@ class Task:
             if task.state in ["running"]:
                 task.state = "interrupted"
             task.step = state.get("step", 0)
-            task.state = state.get("state", "ready")
-            task.step = state.get("step", 0)
             task.token_usage = state.get("token_usage", 0)
             task.window_token = state.get("window_token", 0)
             task.current_plan = state.get("current_plan", "")
@@ -194,6 +192,8 @@ class Task:
             task.checkpoint_dir = state.get("checkpoint_dir", checkpoint_dir)
             task.history = history
             task.model = Model(task.core) if task.core else None
+            if task.model:
+                task.model.bind_task(task.task_id, task.task_name)
             task._lock = threading.Lock()
             task._killed = False
             task.log_window = []
@@ -300,11 +300,6 @@ class Task:
                 "role": "user",
                 "content": f"[System Warning] You should suspend your action and handle this message first!\n{content}"
             })
-
-        if self.step % 10 == 0:
-            self.dynamic_tool.clear()
-            self.log_and_notify("system", "🧹 已周期清理动态工具缓存")
-
         self.memory_flush()
 
     def _build_system_prompt(self):
@@ -409,6 +404,7 @@ class Task:
                         continue
                     break
                 self.history = self.history[0:start_idx] + self.history[split_idx:]
+                self.dynamic_tool.clear()
                 self.log_and_notify("system", "✅ 上下文压缩完毕！")
             except Exception as e:
                 self.log_and_notify("error", f"❌ 记忆存档发生异常: {e}")
@@ -477,12 +473,21 @@ class Task:
                                     break
                 from src.plugins.plugin_manager import parse_tool
                 result_str, new_schema_info = parse_tool(tool_name, arguments, route=target_route, plugin=target_plugin)
+
                 if new_schema_info:
                     schemas_to_add = new_schema_info if isinstance(new_schema_info, list) else [new_schema_info]
                     for schema_item in schemas_to_add:
                         new_funct_name = schema_item["funct"]
-                        self.dynamic_tool = [item for item in self.dynamic_tool if item.get("funct") != new_funct_name]
-                        self.dynamic_tool.append(schema_item)
+                        # 原地替换，绝对不改变工具顺序，彻底保护 KV Cache
+                        found_idx = -1
+                        for i, existing_item in enumerate(self.dynamic_tool):
+                            if existing_item.get("funct") == new_funct_name:
+                                found_idx = i
+                                break
+                        if found_idx != -1:
+                            self.dynamic_tool[found_idx] = schema_item
+                        else:
+                            self.dynamic_tool.append(schema_item)
                 self.log_and_notify("tool", f"📦 工具回传结果: {result_str}")
             finish_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             time_aware_content = f"[finish at {finish_time}]\n{result_str}"

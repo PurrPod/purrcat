@@ -107,15 +107,9 @@ class Agent:
                 "role": "user",
                 "content": f"[System Warning] You should suspend your action and handle this message first!\n{content}"
             })
-
-        if step > 0 and step % 10 == 0:
-            self.dynamic_tools.clear()
-            print("🧹 [Agent] 已周期清理动态工具缓存")
-
         self._check_and_summarize_memory()
 
     def process_message(self, message: dict):
-        self.dynamic_tools.clear()
         self.state = "handling"
         msg_type = message.get("type")
         msg_content = message.get("content")
@@ -220,8 +214,16 @@ class Agent:
                         schemas_to_add = new_schema_info if isinstance(new_schema_info, list) else [new_schema_info]
                         for schema_item in schemas_to_add:
                             new_funct_name = schema_item["funct"]
-                            self.dynamic_tools = [item for item in self.dynamic_tools if item.get("funct") != new_funct_name]
-                            self.dynamic_tools.append(schema_item)
+                            # 原地替换，绝对不改变元素在列表中的顺序，保护 KV Cache！
+                            found_idx = -1
+                            for i, existing_item in enumerate(self.dynamic_tools):
+                                if existing_item.get("funct") == new_funct_name:
+                                    found_idx = i
+                                    break
+                            if found_idx != -1:
+                                self.dynamic_tools[found_idx] = schema_item
+                            else:
+                                self.dynamic_tools.append(schema_item)
 
                     if result_str == "__AGENT_PAUSE__":
                         print("⏸️ Agent 已将当前任务放入挂起表，准备处理下一条消息...")
@@ -312,6 +314,7 @@ class Agent:
             if split_idx < start_idx:
                 split_idx = start_idx
             self.current_history = [self.current_history[0]] + self.current_history[split_idx:]
+            self.dynamic_tools.clear()
             print("✅ Agent记忆清理完毕！已安全避开 Tool Call 链条完成流水线截断。")
             self.window_token = 0
             self.save_checkpoint()
