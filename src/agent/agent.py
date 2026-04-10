@@ -8,8 +8,10 @@ from queue import PriorityQueue, Empty
 
 from src.loader.memory import Memory
 from src.models.model import Model
-from src.plugins.plugin_manager import BASE_TOOLS, parse_tool
+from src.plugins.plugin_manager import parse_tool
+
 from src.plugins.route.agent_tool import AGENT_TOOLS
+from src.plugins.route.base_tool import BASE_TOOLS
 from src.utils.config import (
     get_agent_model, SOUL_MD_PATH, CHECKPOINT_PATH, TOOL_INDEX_FILE
 )
@@ -124,7 +126,6 @@ class Agent:
                 if self.dynamic_tools:
                     current_tools.extend([item["schema"] for item in self.dynamic_tools])
 
-                # 极简调用，把请求抛给底层专属线程处理
                 response = self.model.chat(messages=self.current_history, tools=current_tools)
                 self._track_token_usage(response)
 
@@ -165,7 +166,7 @@ class Agent:
                                 except Exception as repair_e:
                                     print(f"❌ json-repair 修复失败: {repair_e}")
                     if not isinstance(arguments, dict):
-                        error_msg = "❌ 系统拦截：工具参数格式严重损坏（可能是因为你一次性写入的文件太长导致截断）。请分批次追加写入文件（使用 cat >>）！"
+                        error_msg = "❌ 系统拦截：工具参数格式严重损坏。请分批次追加写入文件（使用 cat >>）！"
                         print(error_msg)
                         self._append_history({
                             "role": "tool",
@@ -174,6 +175,10 @@ class Agent:
                             "content": error_msg
                         })
                         continue
+
+                    if tool_name in ["execute_command", "close_shell"]:
+                        arguments["session_id"] = self.agent_session_id
+
                     if isinstance(arguments, dict):
                         args_str = ", ".join([f'{k}={repr(v)}' for k, v in arguments.items()])
                     else:
@@ -214,7 +219,6 @@ class Agent:
                         schemas_to_add = new_schema_info if isinstance(new_schema_info, list) else [new_schema_info]
                         for schema_item in schemas_to_add:
                             new_funct_name = schema_item["funct"]
-                            # 原地替换，绝对不改变元素在列表中的顺序，保护 KV Cache！
                             found_idx = -1
                             for i, existing_item in enumerate(self.dynamic_tools):
                                 if existing_item.get("funct") == new_funct_name:

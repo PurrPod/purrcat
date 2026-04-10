@@ -27,7 +27,6 @@ def set_task_state(task_id, state):
 def kill_task(task_id):
     if task_id in TASK_INSTANCES:
         task = TASK_INSTANCES[task_id]
-        task.model.unbind_task()
         task.kill()
         set_task_state(task_id, "killed")
         return True
@@ -70,6 +69,16 @@ class Task:
         self.log_window = []
         self.log_and_notify("system", f"🎯 用户需求: \n{self.prompt}")
 
+    def _cleanup_resources(self):
+        """【终极改造：隐式资源回收】清理当前任务相关的底层资源"""
+        try:
+            from src.plugins.plugin_manager import close_shell
+            # 自动释放该任务专属的 Shell 进程，防止僵尸进程和内存泄漏
+            close_shell(session_id=self.task_id)
+            self.log_and_notify("system", "🧹 已自动回收任务专属的 Shell 终端环境")
+        except Exception as e:
+            print(f"⚠️ 自动回收 Shell 失败: {e}")
+
     def run(self):
         max_steps = 150
         self.state = "running"
@@ -106,6 +115,7 @@ class Task:
                                 "content": return_content
                             })
                         self.model.unbind_task()
+                        self._cleanup_resources()  # 正常结束回收资源
                         self.save_checkpoint()
                         if result:
                             return f"✅ 任务成功：{summary}"
@@ -117,12 +127,14 @@ class Task:
             except KeyboardInterrupt:
                 self.state = "error"
                 self.model.unbind_task()
+                self._cleanup_resources()  # 强退回收资源
                 self.log_and_notify("system", "⚠️ 检测到强制中断 (Ctrl+C)，保存现场...")
                 self.save_checkpoint()
                 raise
             except Exception as e:
                 self.state = "error"
                 self.model.unbind_task()
+                self._cleanup_resources()  # 崩溃回收资源
                 self.log_and_notify("error", f"❌ 运行发生异常: {e}")
                 self.save_checkpoint()
                 raise InterruptedError(f"任务异常中断: {e}")
@@ -130,6 +142,7 @@ class Task:
         if self.state != "completed":
             self.state = "error"
             self.model.unbind_task()
+            self._cleanup_resources()  # 超时回收资源
             self.save_checkpoint()
             self.log_and_notify("error", f"❌ 任务失败: 超出最大思考步数 ({max_steps})")
             return f"❌ 任务失败: 超出最大思考步数 ({max_steps})"
@@ -205,7 +218,6 @@ class Task:
             return None
 
     def _track_token_usage(self, response) -> dict:
-        """全局唯一的精准 Token 统计函数，防重复累加"""
         usage_data = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         if hasattr(response, "usage") and response.usage is not None:
             usage_data["prompt_tokens"] = response.usage.prompt_tokens
@@ -216,9 +228,8 @@ class Task:
         return usage_data
 
     def _run_llm_step(self):
-        """完全解耦的 LLM 请求封装"""
         from src.plugins.route.task_tool import TASK_TOOLS
-        from src.plugins.plugin_manager import BASE_TOOLS
+        from src.plugins.route.base_tool import BASE_TOOLS
 
         current_tools = list(BASE_TOOLS) + list(TASK_TOOLS)
         if self.dynamic_tool:
@@ -227,7 +238,6 @@ class Task:
         plan_msg = self._get_dynamic_plan_msg()
         request_messages = self.history + [plan_msg]
 
-        # 极简调用
         response = self.model.chat(messages=request_messages, tools=current_tools)
         self._track_token_usage(response)
 
@@ -280,6 +290,8 @@ class Task:
     def kill(self):
         self._killed = True
         self.state = "killed"
+        self.model.unbind_task()
+        self._cleanup_resources()  # 强退回收资源
         self.log_and_notify("system", f"⚠️ 任务 {self.task_id} 被强制终止")
 
     def checker(self):
@@ -312,7 +324,6 @@ class Task:
 - **环境区分**：你要时刻区分自己在哪个环境下工作，一般来说根目录有/agent_vm就是沙盒环境
 
 # 工具使用注意事项
-- **shell工具**：使用shell工具时，必须自己起一个唯一的section id，否则会和其他任务冲突。section id应该是一个唯一的字符串，例如包含任务ID或时间戳。
 - **shell工具**：每次使用 cat >> 写入时，严禁超过 50 行代码，写完 50 行必须结束当前工具调用，在下一次回复中继续追加。
 
 # 核心设计原则（必须内化为你思考的本能）
@@ -344,7 +355,6 @@ class Task:
 - 多线程中不做同步，或使用粗粒度大锁导致性能瓶颈。
 - 手动内存管理后忘记释放，或不使用 RAII/智能指针。
 - 暴露内部可变状态给外部直接修改。
-- 使用shell工具时不设置唯一的section id。
 
 请记住：你的每行代码，都要能经得起代码审查与技术债务的考验。
 """
@@ -429,6 +439,8 @@ class Task:
                             print(f"❌ json-repair 修复失败: {repair_e}")
                     else:
                         print("💡 强烈建议终端运行 `pip install json-repair` 来自动修复此问题！")
+            if tool_name in ["execute_command", "close_shell"]:
+                arguments["session_id"] = self.task_id
             if not isinstance(arguments, dict):
                 error_msg = "❌ 系统拦截：工具参数格式严重损坏（可能是因为你一次性写入的文件太长导致截断）。请分批次追加写入文件（使用 cat >>）！"
                 self.history.append({
@@ -478,7 +490,6 @@ class Task:
                     schemas_to_add = new_schema_info if isinstance(new_schema_info, list) else [new_schema_info]
                     for schema_item in schemas_to_add:
                         new_funct_name = schema_item["funct"]
-                        # 原地替换，绝对不改变工具顺序，彻底保护 KV Cache
                         found_idx = -1
                         for i, existing_item in enumerate(self.dynamic_tool):
                             if existing_item.get("funct") == new_funct_name:
@@ -531,7 +542,6 @@ class Task:
                 response_format={"type": "json_object"},
                 temperature=0.1
             )
-            # 注意：审查消耗的 token 我们不记入当前 Agent 的负担
             message_content = response.choices[0].message.content
             eval_result = json.loads(message_content)
             self.log_window = []

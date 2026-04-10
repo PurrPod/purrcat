@@ -23,7 +23,7 @@ from contextlib import asynccontextmanager
 from collections import deque
 import yaml
 
-from src.plugins.plugin_collection.shell.shell import DockerManager
+from src.plugins.plugin_manager import DockerManager
 
 # Use absolute paths so the backend can find data/ even if started from a different cwd
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -1229,7 +1229,7 @@ async def get_databases():
 @app.get("/api/sandbox/status")
 async def get_sandbox_status():
     try:
-        from src.plugins.plugin_collection.shell.shell import _docker_manager_instance
+        from src.plugins.plugin_manager import _docker_manager_instance
         if _docker_manager_instance and _docker_manager_instance.container:
             _docker_manager_instance.container.reload()
             running = _docker_manager_instance.container.status == "running"
