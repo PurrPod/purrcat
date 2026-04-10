@@ -1,7 +1,7 @@
 filesystem:
   # 插件基础信息
   name: "文件系统"
-  desc: "提供对本地文件系统的操作，包括读写、删除、搜索等，具备沙箱保护"
+  desc: "提供对老板本地文件系统的操作（也可通过修改映射目录来直接修改沙盒环境），包括读写、删除、搜索等，具备沙箱保护"
   dir_path: plugin_collection/filesystem/
   # 工具函数列表（对齐DeepSeek/OpenAI function规范）
   functions:

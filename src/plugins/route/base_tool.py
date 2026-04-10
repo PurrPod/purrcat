@@ -67,8 +67,8 @@ BASE_TOOLS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "route": {"type": "string", "enum": ["local", "mcp", "extend"],
-                              "description": "筛选查看的路由，必须指定三大 route 之一: local、mcp 或 extend"}
+                    "route": {"type": "string", "enum": ["local", "mcp"],
+                              "description": "筛选查看的路由，必须指定两大 route 之一: local 或 mcp"}
                 },
                 "required": ["route"]
             }
@@ -82,7 +82,7 @@ BASE_TOOLS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "route": {"type": "string", "enum": ["local", "mcp", "extend"]},
+                    "route": {"type": "string", "enum": ["local", "mcp"]},
                     "plugin_name": {"type": "string", "description": "插件名或 MCP Server 名"},
                     "tool_names": {
                         "type": "array",
@@ -127,8 +127,8 @@ BASE_TOOL_NAMES = [tool["function"]["name"] for tool in BASE_TOOLS]
 
 def get_menu(route: str) -> str:
     """获取工具菜单"""
-    if route not in ["local", "mcp", "extend"]:
-        return _format_response("error", "❌ 无效的路由参数，必须指定三大 route 之一: local、mcp 或 extend")
+    if route not in ["local", "mcp"]:
+        return _format_response("error", "❌ 无效的路由参数，必须指定两大 route 之一: local 或 mcp")
 
     if not os.path.exists(TOOL_INDEX_FILE):
         init_tool()
@@ -200,16 +200,6 @@ def init_tool():
         print(f"❌ 扫描MCP工具异常: {e}")
 
     try:
-        print("🔧 处理扩展工具...")
-        from src.plugins.route.extend_tool import extract_extend_fingerprints
-        extend_tools = extract_extend_fingerprints()
-        if extend_tools:
-            tools_index.extend(extend_tools)
-            print(f"✅ 扩展工具: {len(extend_tools)} 个")
-    except Exception as e:
-        print(f"❌ 扫描扩展工具异常: {e}")
-
-    try:
         with open(TOOL_INDEX_FILE, "w", encoding="utf-8") as f:
             for tool_info in tools_index:
                 f.write(json.dumps(tool_info, ensure_ascii=False) + "\n")
@@ -234,9 +224,6 @@ def fetch_tool_schemas(route: str, plugin_name: str, tool_names: list) -> list:
     elif route == "mcp":
         from src.plugins.route.mcp_tool import get_mcp_tool_schemas_sync
         schemas = get_mcp_tool_schemas_sync(plugin_name, tool_names)
-    elif route == "extend":
-        from src.plugins.route.extend_tool import get_extend_tool_schemas
-        schemas = get_extend_tool_schemas(plugin_name, tool_names)
     return schemas if schemas else []
 
 
@@ -376,17 +363,16 @@ def list_skill(page: int = 1, size: int = 20) -> str:
 
     return _format_response("text", result)
 
+
 if sys.platform == 'win32':
     from pexpect.popen_spawn import PopenSpawn
 
     SpawnClass = PopenSpawn
     DOCKER_EXEC_CMD = "docker exec -i {container_name} /bin/bash"
 
-
     def check_alive(p):
         if p is None: return False
         return p.proc.poll() is None
-
 
     def force_close(p):
         if p is None: return
@@ -399,11 +385,9 @@ else:
     SpawnClass = pexpect.spawn
     DOCKER_EXEC_CMD = "docker exec -it {container_name} /bin/bash"
 
-
     def check_alive(p):
         if p is None: return False
         return p.isalive()
-
 
     def force_close(p):
         if p is None: return

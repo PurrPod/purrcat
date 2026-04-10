@@ -23,7 +23,7 @@ from contextlib import asynccontextmanager
 from collections import deque
 import yaml
 
-from src.plugins.plugin_manager import DockerManager
+from src.plugins.route.base_tool import DockerManager
 
 # Use absolute paths so the backend can find data/ even if started from a different cwd
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -38,7 +38,8 @@ from src.utils.config import load_config, get_model_config_json, get_mcp_config_
     get_rss_subscriptions, get_web_api_config, reload_config, save_config
 
 # ====== 拥抱新架构：引入新版工具管理器 ======
-from src.plugins.plugin_manager import init_tool, TOOL_INDEX_FILE, BASE_TOOLS
+from src.plugins.plugin_manager import TOOL_INDEX_FILE
+from src.plugins.route.base_tool import init_tool, BASE_TOOLS
 from src.plugins.plugin_collection.local_manager import register_plugin, unregister_plugin
 
 from src.sensor.const import start_sensors

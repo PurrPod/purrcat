@@ -19,7 +19,7 @@ def init_local_config_data():
             print(f"❌ 注册插件 {plugin} 失败: {e}")
     
     try:
-        from src.plugins.plugin_manager import load_local_tool_yaml
+        from src.plugins.route.base_tool import load_local_tool_yaml
         load_local_tool_yaml()
     except Exception as e:
         print(f"本地插件系统加载失败！{e}")

@@ -15,7 +15,6 @@ def parse_tool(tool_name: str, arguments: dict, route: str = None, plugin: str =
     """
     new_schema_info = None
     result_content = ""
-
     try:
         # 1. 尝试将请求路由给 base_tool
         from src.plugins.route.base_tool import BASE_TOOL_NAMES, call_base_tool
@@ -49,12 +48,8 @@ def parse_tool(tool_name: str, arguments: dict, route: str = None, plugin: str =
                 elif route == "mcp":
                     from src.plugins.route.mcp_tool import call_mcp_tool
                     result_content = call_mcp_tool(plugin, tool_name, arguments)
-                elif route == "extend":
-                    from src.plugins.route.extend_tool import call_extend_tool
-                    result_content = call_extend_tool(plugin, tool_name, arguments)
                 else:
-                    result_content = _format_response("error",
-                                                      f"❌ 调度失败：未找到 {tool_name} 的底层路由映射。请确认它是否通过 fetch_tool 正常加载。")
+                    result_content = _format_response("error", f"❌ 调度失败：未找到 {tool_name} 的底层路由映射。请确认它是否通过 fetch_tool 正常加载。")
 
     except Exception as e:
         result_content = _format_response("error", f"❌ 工具调度/执行异常: {str(e)}")
