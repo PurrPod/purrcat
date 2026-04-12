@@ -140,9 +140,9 @@ async def browser_snapshot():
 async def browser_take_screenshot(file_path: str, full_page: bool = False):
     try:
         page = await _ensure_page()
-        path = _resolve_path(file_path)
-        await page.screenshot(path=path, full_page=full_page)
-        return _success({"saved_path": path}, "Screenshot saved")
+        bytes_data = await page.screenshot(full_page=full_page)
+        b64_str = base64.b64encode(bytes_data).decode('utf-8')
+        return _success({"type": "image", "ext": ".png", "data": b64_str}, "Screenshot taken")
     except Exception as e:
         return _error(e)
 
@@ -392,9 +392,9 @@ async def browser_mouse_drag_xy(start_x: float, start_y: float, end_x: float, en
 async def browser_pdf_save(file_path: str):
     try:
         page = await _ensure_page()
-        path = _resolve_path(file_path)
-        await page.pdf(path=path)
-        return _success({"saved_path": path}, "PDF saved")
+        pdf_bytes = await page.pdf()
+        b64_str = base64.b64encode(pdf_bytes).decode('utf-8')
+        return _success({"type": "pdf", "ext": ".pdf", "data": b64_str}, "PDF generated")
     except Exception as e:
         return _error(e)
 

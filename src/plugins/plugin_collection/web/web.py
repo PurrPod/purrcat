@@ -35,29 +35,7 @@ def get_tool():
 
 
 class WebTools:
-    def __init__(self, buffer_path: str = ".buffer"):
-        self.buffer_path = os.path.abspath(buffer_path)
-        if not os.path.exists(self.buffer_path):
-            os.makedirs(self.buffer_path)
-
-    def _save_to_buffer(self, content: str, prefix: str = "fetch") -> str:
-        marker_id = uuid.uuid4().hex[:10]
-        timestamp = datetime.datetime.now().strftime("%Y%m%d")
-        filename = f"{prefix}_{timestamp}{marker_id}.md"
-        file_path = os.path.join(self.buffer_path, filename)
-
-        with open(file_path, "w", encoding="utf-8") as f:
-            f.write(content)
-
-        return file_path
-
-    def _process_content(self, content: str, prefix: str) -> str:
-        """
-        处理返回内容：直接返回完整内容，不做字数限制。
-        超长输出由上层 parse_tool 统一处理。
-        """
-        # ✅ 删除字数限制逻辑，直接返回完整内容
-        return content
+    pass
 
     def web_search(self, query: str, max_results: int = 5) -> str:
         """
@@ -84,7 +62,7 @@ class WebTools:
                     for res in results:
                         md_content += f"## {res['title']}\n- URL: {res['url']}\n- Snippet: {res['snippet']}\n\n"
 
-                    return self._process_content(md_content, prefix="search")
+                    return _format_response("text", md_content)
                 else:
                     error_logs.append(f"Tavily API Error: {resp.status_code} - {resp.text}")
             except Exception as e:
@@ -108,7 +86,7 @@ class WebTools:
                     for res in results:
                         md_content += f"## {res['title']}\n- URL: {res['url']}\n- Snippet: {res['snippet']}\n\n"
 
-                    return self._process_content(md_content, prefix="search")
+                    return _format_response("text", md_content)
                 else:
                     error_logs.append(f"Google API Error: {resp.status_code} - {resp.text}")
             except Exception as e:
@@ -128,7 +106,7 @@ class WebTools:
                         for res in results:
                             md_content += f"## {res['title']}\n- URL: {res['url']}\n- Snippet: {res['snippet']}\n\n"
 
-                        return self._process_content(md_content, prefix="search")
+                        return _format_response("text", md_content)
         except Exception as e:
             error_logs.append(f"DDGS Fallback Exception: {str(e)}")
 
@@ -150,8 +128,7 @@ class WebTools:
 
             if resp.status_code == 200:
                 content = resp.text
-                result_text = self._process_content(content, prefix="fetch")
-                return _format_response("text", result_text)
+                return _format_response("text", content)
         except Exception as e:
             print(f"⚠️ Jina API failed: {e}. Falling back to local scraper...")
 
@@ -179,8 +156,7 @@ class WebTools:
             lines = [line.strip() for line in clean_text.splitlines()]
             final_text = "\n".join(line for line in lines if line)
 
-            result_text = self._process_content(final_text, prefix="fetch")
-            return _format_response("text", result_text)
+            return _format_response("text", final_text)
 
         except Exception as e:
             return json.dumps({"type": "error", "content": f"Failed to fetch content from {url}: {str(e)}"},

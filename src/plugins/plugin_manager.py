@@ -3,6 +3,8 @@ import os
 import traceback
 import uuid
 import time
+import base64
+import mimetypes
 from typing import Any
 from src.utils.config import TOOL_INDEX_FILE
 
@@ -60,6 +62,55 @@ def parse_tool(tool_name: str, arguments: dict, route: str = None, plugin: str =
         try:
             parsed_res = json.loads(result_str)
             content_data = parsed_res.get("content", "")
+            # 检查是否为多媒体类型，需要在此处执行文件保存
+            if isinstance(content_data, dict) and content_data.get("type") in ["image", "video", "audio", "pdf", "mcp_media", "media_url", "media_base64"]:
+                media_type = content_data["type"]
+                buffer_dir = os.path.abspath(".buffer")
+                os.makedirs(buffer_dir, exist_ok=True)
+                timestamp = time.strftime("%Y%m%d_%H%M%S")
+                marker_id = uuid.uuid4().hex[:8]
+                
+                if media_type == "media_url":
+                    # 下载 URL
+                    import urllib.request
+                    url = content_data["url"]
+                    ext = content_data.get("ext", ".bin")
+                    filename = f"{tool_name}_{timestamp}_{marker_id}{ext}"
+                    filepath = os.path.join(buffer_dir, filename)
+                    urllib.request.urlretrieve(url, filepath)
+                elif media_type in ["image", "video", "audio", "pdf", "mcp_media"]:
+                    # 保存 Base64 数据
+                    data = content_data["data"]
+                    ext = content_data.get("ext", ".bin")
+                    if media_type == "mcp_media":
+                        ext = content_data.get("mimeType", ".bin")
+                        if ext.startswith("image/"):
+                            ext = ".png"  # 默认
+                        else:
+                            ext = mimetypes.guess_extension(ext) or ".bin"
+                    filename = f"{tool_name}_{timestamp}_{marker_id}{ext}"
+                    filepath = os.path.join(buffer_dir, filename)
+                    binary_data = base64.b64decode(data)
+                    with open(filepath, "wb") as f:
+                        f.write(binary_data)
+                elif media_type == "media_base64":
+                    # 兼容旧格式
+                    data = content_data["data"]
+                    ext = content_data.get("ext", ".bin")
+                    filename = f"{tool_name}_{timestamp}_{marker_id}{ext}"
+                    filepath = os.path.join(buffer_dir, filename)
+                    binary_data = base64.b64decode(data)
+                    with open(filepath, "wb") as f:
+                        f.write(binary_data)
+                
+                # 保存完毕后，改写为纯文本
+                parsed_res["type"] = "text"
+                parsed_res["content"] = f"🖼️ 文件已成功保存至本地: {filepath}"
+                result_content = json.dumps(parsed_res, ensure_ascii=False)
+                result_str = result_content
+                parsed_res = json.loads(result_str)
+                content_data = parsed_res.get("content", "")
+            
             # 为了准确计算长度，将字典格式的内容转为字符串（比如 execute_command 返回的是 dict）
             actual_content_str = json.dumps(content_data, ensure_ascii=False) if isinstance(content_data, dict) else str(content_data)
         except json.JSONDecodeError:

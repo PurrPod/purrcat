@@ -54,12 +54,7 @@ def generate_image(prompt: str, output_dir: str = None) -> str:
         n=1,
     )
     image_url = response.data[0].url
-    output_dir = output_dir or ".buffer"
-    os.makedirs(output_dir, exist_ok=True)
-    file_name = f"generated_img_{uuid.uuid4().hex[:8]}.png"
-    save_path = os.path.join(output_dir, file_name)
-    urllib.request.urlretrieve(image_url, save_path)
-    return save_path
+    return json.dumps({"type": "media_url", "ext": ".png", "url": image_url})
 
 
 def image_to_text(prompt: str, ref_path: Union[str, List[str]]) -> str:
@@ -95,12 +90,7 @@ def generate_video(prompt: str, ref_path: Union[str, List[str]] = None, output_d
     video_url = response.get("data", [{}])[0].get("url")
     if not video_url:
         raise ValueError("视频生成失败，未获取到视频URL")
-    output_dir = output_dir or ".buffer"
-    os.makedirs(output_dir, exist_ok=True)
-    file_name = f"generated_video_{uuid.uuid4().hex[:8]}.mp4"
-    save_path = os.path.join(output_dir, file_name)
-    urllib.request.urlretrieve(video_url, save_path)
-    return save_path
+    return json.dumps({"type": "media_url", "ext": ".mp4", "url": video_url})
 
 
 def video_to_text(prompt: str, ref_path: Union[str, List[str]]) -> str:
@@ -146,18 +136,15 @@ def video_to_text(prompt: str, ref_path: Union[str, List[str]]) -> str:
 
 
 def generate_audio(prompt: str, ref_path: Union[str, List[str]] = None, output_dir: str = None) -> str:
-    output_dir = output_dir or "."
-    os.makedirs(output_dir, exist_ok=True)
-    file_name = f"generated_audio_{uuid.uuid4().hex[:8]}.mp3"
-    save_path = os.path.join(output_dir, file_name)
     name, client = _get_client("audio_generator")
     with client.audio.speech.with_streaming_response.create(
             model=name,
             voice="alloy",  # 支持 alloy, echo, fable, onyx, nova, shimmer
             input=prompt
     ) as response:
-        response.stream_to_file(save_path)
-    return save_path
+        audio_bytes = response.read()
+    b64_str = base64.b64encode(audio_bytes).decode('utf-8')
+    return json.dumps({"type": "audio", "ext": ".mp3", "data": b64_str})
 
 def audio_to_text(prompt: str, ref_path: Union[str, List[str]]) -> str:
     ref_paths = _ensure_list(ref_path)

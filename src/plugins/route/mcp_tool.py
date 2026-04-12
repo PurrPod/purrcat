@@ -119,28 +119,16 @@ async def _call_tool_async(server_name: str, tool_name: str, arguments: dict) ->
             elif content.type == "image" or hasattr(content, "data"):
                 try:
                     mime_type = getattr(content, "mimeType", "image/png")
-                    ext = mimetypes.guess_extension(mime_type) or ".bin"
-                    base_dir = os.path.dirname(os.path.dirname(
-                        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
-                    buffer_dir = os.path.join(base_dir, ".buffer")
-                    os.makedirs(buffer_dir, exist_ok=True)
-                    marker_id = uuid.uuid4().hex[:8]
-                    timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
-                    filename = f"mcp_media_{timestamp}_{marker_id}{ext}"
-                    filepath = os.path.join(buffer_dir, filename)
                     b64_data = content.data
                     if "," in b64_data and b64_data.startswith("data:"):
                         b64_data = b64_data.split(",", 1)[1]
-                    binary_data = base64.b64decode(b64_data)
-                    with open(filepath, "wb") as f:
-                        f.write(binary_data)
-                    output.append(f"🖼️ [检测到 {content.type} 内容，已解码并保存至本地: {filepath} ]")
+                    output.append({"type": "mcp_media", "mimeType": mime_type, "data": b64_data})
                 except Exception as e:
-                    output.append(f"❌ [{content.type} 类型解析/保存失败: {str(e)}]")
+                    output.append(f"❌ [{content.type} 类型解析失败: {str(e)}]")
             else:
                 output.append(f"[{content.type} 类型内容]: {str(getattr(content, '__dict__', content))}")
 
-        final_result = "\n".join(output)
+        final_result = output  # 直接返回列表，不再 join
         # ✅ 删除字数限制逻辑，直接返回完整输出
         return _format_response("text", final_result)
 
