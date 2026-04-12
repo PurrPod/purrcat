@@ -2,7 +2,8 @@ data/config/
 
 agent_vm/
 data/checkpoints
-data/buffer
+.buffer/
+
 __pycache__/
 *.py[cod]
 *$py.class

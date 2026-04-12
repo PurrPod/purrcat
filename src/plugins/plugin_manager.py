@@ -118,11 +118,13 @@ def parse_tool(tool_name: str, arguments: dict, route: str = None, plugin: str =
             actual_content_str = result_str
 
         if len(actual_content_str) > MAX_LEN:
-            cache_dir = os.path.abspath("data/cache/tool_outputs")
-            os.makedirs(cache_dir, exist_ok=True)
+            # 按工具名称分类存储
+            buffer_dir = os.path.abspath(".buffer")
+            tool_dir = os.path.join(buffer_dir, tool_name)
+            os.makedirs(tool_dir, exist_ok=True)
             timestamp = time.strftime("%Y%m%d_%H%M%S")
-            file_name = f"{tool_name}_{timestamp}_{uuid.uuid4().hex[:4]}.txt"
-            cache_path = os.path.join(cache_dir, file_name)
+            file_name = f"{timestamp}_{uuid.uuid4().hex[:4]}.txt"
+            cache_path = os.path.join(tool_dir, file_name)
             with open(cache_path, "w", encoding="utf-8") as f:
                 f.write(actual_content_str)
             preview_front = actual_content_str[:MAX_LEN // 2]
@@ -130,7 +132,7 @@ def parse_tool(tool_name: str, arguments: dict, route: str = None, plugin: str =
             warning_msg = (
                 f"⚠️ [系统拦截] {tool_name} 输出总长 {len(actual_content_str)} 字符，超出阈值 {MAX_LEN}。完整结果已落盘：\n"
                 f"📂 宿主机路径: {cache_path}\n"
-                f"🐳 沙盒内路径: /agent_vm/cache/tool_outputs/{file_name} (假设做了目录挂载映射)\n"
+                f"🐳 沙盒内路径: /.buffer/{tool_name}/{file_name}\n"
                 f"\n--- 内容预览 (首尾各截取部分) ---\n"
                 f"{preview_front}\n\n... [中间 {len(actual_content_str) - MAX_LEN} 字符已折叠] ...\n\n{preview_back}"
             )
