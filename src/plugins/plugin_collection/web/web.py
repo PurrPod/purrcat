@@ -30,7 +30,7 @@ def _format_response(msg_type: str, content: Any) -> str:
 def get_tool():
     global _tool_instance
     if _tool_instance is None:
-        _tool_instance = WebTools(buffer_path=BUFFER_DIR)
+        _tool_instance = WebTools()
     return _tool_instance
 
 

@@ -57,7 +57,7 @@ def parse_tool(tool_name: str, arguments: dict, route: str = None, plugin: str =
                     result_content = call_mcp_tool(plugin, tool_name, arguments)
                 else:
                     raise ValueError(f"❌ 未找到 {tool_name} 的底层路由映射。请确认它是否通过 fetch_tool 正常加载。")
-        MAX_LEN = 3000  # 阈值可以根据需要调大，比如 5000
+        MAX_LEN = 6000  # 阈值可以根据需要调大
         result_str = str(result_content)
         try:
             parsed_res = json.loads(result_str)

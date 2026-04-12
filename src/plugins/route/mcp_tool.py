@@ -31,7 +31,7 @@ class MCPSessionManager:
         self.sessions = {}
         self.locks = {}
         self.lifecycle_tasks = {}  # 存储各 Server 的专属守护任务
-        self.DEFAULT_IDLE_TIMEOUT = 15
+        self.DEFAULT_IDLE_TIMEOUT = 60
         asyncio.run_coroutine_threadsafe(self._idle_cleaner_task(), _mcp_loop)
 
     async def _get_lock(self, server_name: str) -> asyncio.Lock:
@@ -243,7 +243,22 @@ async def _call_tool_async(server_name: str, tool_name: str, arguments: dict) ->
                     b64_data = content.data
                     if "," in b64_data and b64_data.startswith("data:"):
                         b64_data = b64_data.split(",", 1)[1]
-                    output.append({"type": "mcp_media", "mimeType": mime_type, "data": b64_data})
+                    
+                    # 1. 解析扩展名
+                    ext = mime_type.split('/')[-1] if '/' in mime_type else 'png'
+                    if ext == 'jpeg': ext = 'jpg'
+                    
+                    # 2. 确保存储目录存在
+                    save_dir = os.path.join(".buffer", "mcp_media")
+                    os.makedirs(save_dir, exist_ok=True)
+                    
+                    # 3. 将 Base64 解码并保存为实体文件
+                    file_path = os.path.join(save_dir, f"mcp_img_{uuid.uuid4().hex[:8]}.{ext}")
+                    with open(file_path, "wb") as f:
+                        f.write(base64.b64decode(b64_data))
+                    
+                    # 4. 只将文件路径返回给大模型（彻底告别上下文爆炸）
+                    output.append(f"🖼️ [截图/图片已生成并保存至宿主机]: {file_path}")
                 except Exception as e:
                     output.append(f"❌ [{content.type} 类型解析失败: {str(e)}]")
             else:
