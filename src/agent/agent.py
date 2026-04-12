@@ -166,7 +166,7 @@ class Agent:
                                 except Exception as repair_e:
                                     print(f"❌ json-repair 修复失败: {repair_e}")
                     if not isinstance(arguments, dict):
-                        error_msg = "❌ 系统拦截：工具参数格式严重损坏。请分批次追加写入文件（使用 cat >>）！"
+                        error_msg = "❌ 系统拦截：工具参数格式严重损坏。可能是由于命令过长导致的截断或转义错误，建议分批运行指令！！！"
                         print(error_msg)
                         self._append_history({
                             "role": "tool",
@@ -265,6 +265,7 @@ class Agent:
                 self.save_checkpoint()
                 raise
             except Exception as e:
+                self.state = "idle"
                 print(f"❌ [Agent] 大模型交互断层: {e}")
                 if self.current_history and self.current_history[-1].get("role") == "assistant" and self.current_history[-1].get("tool_calls"):
                     self.current_history.pop()
@@ -275,9 +276,6 @@ class Agent:
                 })
                 self.save_checkpoint()
                 break
-
-            self.state = "idle"
-
         try:
             self._check_and_summarize_memory()
         except Exception as e:

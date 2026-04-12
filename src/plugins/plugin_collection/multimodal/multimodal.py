@@ -54,7 +54,7 @@ def generate_image(prompt: str, output_dir: str = None) -> str:
         n=1,
     )
     image_url = response.data[0].url
-    output_dir = output_dir or "data\\buffer"
+    output_dir = output_dir or ".buffer"
     os.makedirs(output_dir, exist_ok=True)
     file_name = f"generated_img_{uuid.uuid4().hex[:8]}.png"
     save_path = os.path.join(output_dir, file_name)
@@ -95,7 +95,7 @@ def generate_video(prompt: str, ref_path: Union[str, List[str]] = None, output_d
     video_url = response.get("data", [{}])[0].get("url")
     if not video_url:
         raise ValueError("视频生成失败，未获取到视频URL")
-    output_dir = output_dir or "data\\buffer"
+    output_dir = output_dir or ".buffer"
     os.makedirs(output_dir, exist_ok=True)
     file_name = f"generated_video_{uuid.uuid4().hex[:8]}.mp4"
     save_path = os.path.join(output_dir, file_name)

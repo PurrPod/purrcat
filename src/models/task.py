@@ -442,7 +442,7 @@ class Task:
             if tool_name in ["execute_command", "close_shell"]:
                 arguments["session_id"] = self.task_id
             if not isinstance(arguments, dict):
-                error_msg = "❌ 系统拦截：工具参数格式严重损坏（可能是因为你一次性写入的文件太长导致截断）。请分批次追加写入文件（使用 cat >>）！"
+                error_msg = "❌ 系统拦截：工具参数格式严重损坏（可能是因为你一次性写入的文件太长导致截断进而导致转义失败）。请分批运行命令避免指令过长！！"
                 self.history.append({
                     "role": "tool",
                     "tool_call_id": tool_call.id,

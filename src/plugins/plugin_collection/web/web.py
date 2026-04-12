@@ -35,7 +35,7 @@ def get_tool():
 
 
 class WebTools:
-    def __init__(self, buffer_path: str = "data\\buffer"):
+    def __init__(self, buffer_path: str = ".buffer"):
         self.buffer_path = os.path.abspath(buffer_path)
         if not os.path.exists(self.buffer_path):
             os.makedirs(self.buffer_path)
@@ -53,20 +53,11 @@ class WebTools:
 
     def _process_content(self, content: str, prefix: str) -> str:
         """
-        处理返回内容：判断是否超过 3000 字符限制。
-        超过则存入文件并截断返回，未超过则直接返回完整内容。
+        处理返回内容：直接返回完整内容，不做字数限制。
+        超长输出由上层 parse_tool 统一处理。
         """
-        TOKEN_LIMIT = 3000
-
-        if len(content) <= TOKEN_LIMIT:
-            return content
-        else:
-            # 超过字数限制，触发保存文件
-            file_path = self._save_to_buffer(content, prefix=prefix)
-            # 截取前3000个字符
-            truncated_content = content[:TOKEN_LIMIT]
-            # 附加提示信息
-            return f"{truncated_content}\n\n...\n[超过字数限制，已将结果完整保留在 {file_path} 文件里]"
+        # ✅ 删除字数限制逻辑，直接返回完整内容
+        return content
 
     def web_search(self, query: str, max_results: int = 5) -> str:
         """

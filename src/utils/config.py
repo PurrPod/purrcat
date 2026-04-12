@@ -20,7 +20,7 @@ CONFIGS_DIR = os.path.join(CONFIG_DIR, "configs")
 MEMORY_DIR = os.path.join(DATA_DIR, "memory")
 SCHEDULE_DIR = os.path.join(DATA_DIR, "schedule")
 DATABASE_DIR = os.path.join(DATA_DIR, "database")
-BUFFER_DIR = os.path.join(DATA_DIR, "buffer")
+BUFFER_DIR = os.path.join(BASE_DIR, ".buffer")
 SKILL_DIR = os.path.join(DATA_DIR, "skill")
 
 # 调度文件路径

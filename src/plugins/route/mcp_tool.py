@@ -92,69 +92,57 @@ async def _get_mcp_tool_schemas_async(server_name: str, tool_names: list) -> lis
 
 
 async def _call_tool_async(server_name: str, tool_name: str, arguments: dict) -> str:
+    """
+    异步调用 MCP 工具（无异常拦截，直接抛给上层）
+    """
     servers = load_configs()
     if server_name not in servers:
-        return _format_response("error", f"执行失败：未知的 MCP Server '{server_name}'")
+        raise KeyError(f"未知的 MCP Server '{server_name}'")
     config = servers[server_name]
-    try:
-        server_params = StdioServerParameters(
-            command=config["command"],
-            args=config.get("args", []),
-            env={**os.environ, **config.get("env", {})}
-        )
-        async with AsyncExitStack() as stack:
-            read, write = await stack.enter_async_context(stdio_client(server_params))
-            session = await stack.enter_async_context(ClientSession(read, write))
-            await session.initialize()
-            result = await session.call_tool(tool_name, arguments)
-            if result.isError:
-                return _format_response("error", f"❌ 工具内部执行错误: {result.content}")
-            output = []
-            for content in result.content:
-                if content.type == "text":
-                    output.append(content.text)
-                elif content.type == "image" or hasattr(content, "data"):
-                    try:
-                        mime_type = getattr(content, "mimeType", "image/png")
-                        ext = mimetypes.guess_extension(mime_type) or ".bin"
-                        base_dir = os.path.dirname(os.path.dirname(
-                            os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
-                        buffer_dir = os.path.join(base_dir, "data", "buffer")
-                        os.makedirs(buffer_dir, exist_ok=True)
-                        marker_id = uuid.uuid4().hex[:8]
-                        timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
-                        filename = f"mcp_media_{timestamp}_{marker_id}{ext}"
-                        filepath = os.path.join(buffer_dir, filename)
-                        b64_data = content.data
-                        if "," in b64_data and b64_data.startswith("data:"):
-                            b64_data = b64_data.split(",", 1)[1]
-                        binary_data = base64.b64decode(b64_data)
-                        with open(filepath, "wb") as f:
-                            f.write(binary_data)
-                        output.append(f"🖼️ [检测到 {content.type} 内容，已解码并保存至本地: {filepath} ]")
-                    except Exception as e:
-                        output.append(f"❌ [{content.type} 类型解析/保存失败: {str(e)}]")
-                else:
-                    output.append(f"[{content.type} 类型内容]: {str(getattr(content, '__dict__', content))}")
+    
+    server_params = StdioServerParameters(
+        command=config["command"],
+        args=config.get("args", []),
+        env={**os.environ, **config.get("env", {})}
+    )
+    async with AsyncExitStack() as stack:
+        read, write = await stack.enter_async_context(stdio_client(server_params))
+        session = await stack.enter_async_context(ClientSession(read, write))
+        await session.initialize()
+        result = await session.call_tool(tool_name, arguments)
+        if result.isError:
+            raise RuntimeError(f"工具内部执行错误: {result.content}")
+        output = []
+        for content in result.content:
+            if content.type == "text":
+                output.append(content.text)
+            elif content.type == "image" or hasattr(content, "data"):
+                try:
+                    mime_type = getattr(content, "mimeType", "image/png")
+                    ext = mimetypes.guess_extension(mime_type) or ".bin"
+                    base_dir = os.path.dirname(os.path.dirname(
+                        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
+                    buffer_dir = os.path.join(base_dir, ".buffer")
+                    os.makedirs(buffer_dir, exist_ok=True)
+                    marker_id = uuid.uuid4().hex[:8]
+                    timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+                    filename = f"mcp_media_{timestamp}_{marker_id}{ext}"
+                    filepath = os.path.join(buffer_dir, filename)
+                    b64_data = content.data
+                    if "," in b64_data and b64_data.startswith("data:"):
+                        b64_data = b64_data.split(",", 1)[1]
+                    binary_data = base64.b64decode(b64_data)
+                    with open(filepath, "wb") as f:
+                        f.write(binary_data)
+                    output.append(f"🖼️ [检测到 {content.type} 内容，已解码并保存至本地: {filepath} ]")
+                except Exception as e:
+                    output.append(f"❌ [{content.type} 类型解析/保存失败: {str(e)}]")
+            else:
+                output.append(f"[{content.type} 类型内容]: {str(getattr(content, '__dict__', content))}")
 
-            final_result = "\n".join(output)
-            if len(final_result) > 5000:
-                base_dir = os.path.dirname(
-                    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
-                buffer_dir = os.path.join(base_dir, "data", "buffer")
-                os.makedirs(buffer_dir, exist_ok=True)
-                marker_id = uuid.uuid4().hex[:8]
-                timestamp = datetime.datetime.now().strftime("%Y%m%d")
-                buffer_path = os.path.join(buffer_dir, f"mcp_result_{timestamp}_{marker_id}.txt")
-                with open(buffer_path, "w", encoding="utf-8") as f:
-                    f.write(final_result)
-                return _format_response(
-                    "warning",
-                    f"⚠️ [注意] 返回结果过长，已保存至：\n📂 {buffer_path}\n请读取文件获取。"
-                )
-            return _format_response("text", final_result)
-    except Exception as e:
-        return _format_response("error", f"❌ 调用 MCP 进程时发生异常: {str(e)}")
+        final_result = "\n".join(output)
+        # ✅ 删除字数限制逻辑，直接返回完整输出
+        return _format_response("text", final_result)
 
 
 def _run_sync(coro_func, *args, **kwargs):

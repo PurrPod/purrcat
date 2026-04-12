@@ -46,7 +46,8 @@ async def _on_response(response: Response):
         try:
             # 尝试获取文本或JSON
             text = await response.text()
-            preview = text[:500] + "..." if len(text) > 500 else text
+            # ✅ 删除预览截断，保存完整内容
+            preview = text
         except:
             preview = "[Binary Data]"
 

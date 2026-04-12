@@ -104,8 +104,6 @@ def list_file_in_dir(path: str) -> str:
             res += "[Dirs]: " + ", ".join(dirs) + "\n"
         if files:
             res += "[Files]: " + ", ".join(files)
-        if len(res) > 600:
-            res = res[:600] + "\n... (Output truncated)"
         return _format_response("text", res.strip())
     except Exception as e:
         return _format_response("error", f"Failed to list directory: {str(e)}")
@@ -118,7 +116,7 @@ import datetime
 # 注意：如果你文件开头还没导入这两个库，记得加上
 
 def parse_document(path: str) -> str:
-    """使用 MarkItDown 解析各种非纯文本的富文本文档（并支持超长内容 Buffer 暂存）"""
+    """使用 MarkItDown 解析各种非纯文本的富文本文档"""
     if not _get_allow("read", path):
         return _format_response("error", f"Permission denied: Reading {path} is blocked by sandbox.")
     if not os.path.exists(path):
@@ -139,28 +137,7 @@ def parse_document(path: str) -> str:
         text_content = result.text_content
         if not text_content or not text_content.strip():
             return _format_response("warning","Parsed successfully, but the document appears to be empty or contains no extractable text.")
-        max_chars = 15000
-        if len(text_content) > max_chars:
-            buffer_dir = os.path.abspath(os.path.join(os.path.dirname(FILE_CONFIG_PATH), "..", "buffer"))
-            os.makedirs(buffer_dir, exist_ok=True)
-            marker_id = uuid.uuid4().hex[:8]
-            timestamp = datetime.datetime.now().strftime("%Y%m%d")
-            buffer_filename = f"parsed_{timestamp}_{marker_id}.md"
-            buffer_path = os.path.join(buffer_dir, buffer_filename)
-            with open(buffer_path, "w", encoding="utf-8", errors="replace") as f:
-                f.write(text_content)
-            preview = text_content[:3000]
-            return _format_response(
-                "text",
-                f"{preview}\n\n"
-                f"...\n\n"
-                f"==================================================\n"
-                f"⚠️ [注意] 文档内容过长（共 {len(text_content)} 字符）。\n"
-                f"为防止上下文溢出，完整解析结果已转换为 Markdown 并保存至本地文件：\n"
-                f"📂 {buffer_path}\n"
-                f"👆 如果你需要阅读后续内容，请务必使用 'filesystem__read_file_lines' 或 'filesystem__search_in_file' 工具来读取上述文件。\n"
-                f"=================================================="
-            )
+        # 超长输出由上层 parse_tool 统一处理
         return _format_response("text", text_content.strip())
     except ImportError:
         return _format_response("error","The 'markitdown' library is not installed. Please run: pip install markitdown[all]")
@@ -345,21 +322,15 @@ def read_file_lines(path: str, start: int, end: int) -> str:
                                 f"File too large ({file_size / 1024 / 1024:.1f}MB). Max allowed is 5MB. Please use 'shell' tools like 'head', 'tail', or 'grep'.")
     try:
         start = max(1, start)
-        if end - start + 1 > MAX_READ_WINDOW:
-            end = start + MAX_READ_WINDOW - 1
-
         snippet_lines = []
         total_lines = 0
         with open(path, "r", encoding="utf-8", errors="replace") as f:
             total_lines = sum(1 for _ in f)
         end = min(end, total_lines)
         width = len(str(total_lines))
-        truncated = (end - start + 1) == MAX_READ_WINDOW
         with open(path, "r", encoding="utf-8", errors="replace") as f:
             for i, line in enumerate(itertools.islice(f, start - 1, end), start):
                 snippet_lines.append(f"{i:>{width}} | {line.rstrip()}")
-        if truncated and end < total_lines:
-            snippet_lines.append(f"{'':>{width}} | ... (Output truncated to {MAX_READ_WINDOW} lines)")
         result = {
             "path": path,
             "start": start,

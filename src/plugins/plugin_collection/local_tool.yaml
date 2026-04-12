@@ -95,7 +95,7 @@ database:
           - center_chunk_id
 filesystem:
   name: 文件系统
-  desc: 提供对本地文件系统的操作，包括读写、删除、搜索等，具备沙箱保护
+  desc: 提供对老板本地文件系统的操作（也可通过修改映射目录来直接修改沙盒环境），包括读写、删除、搜索等，具备沙箱保护
   dir_path: plugin_collection/filesystem/
   functions:
     write_text_file:
@@ -246,42 +246,6 @@ filesystem:
           required:
           - host_file_paths
           - vm_dir_path
-shell:
-  name: Shell 工具集
-  desc: 提供一个具备持久化能力的 Shell 环境，支持执行系统命令、脚本，并具备跨调用的环境一致性（如 PWD, 环境变量）。内置高危命令拦截和交互式命令过滤，确保系统安全。
-  dir_path: plugin_collection/shell/
-  functions:
-    execute_command:
-      type: function
-      function:
-        name: execute_command
-        description: 在指定的 Shell 会话中执行命令。如果会话不存在会自动创建。支持跨调用持久化（如环境变量、当前目录）。
-        parameters:
-          type: object
-          properties:
-            command:
-              type: string
-              description: 要执行的 Shell 命令字符串。
-            session_id:
-              type: string
-              description: Shell 会话 ID，默认为 'default'。
-            timeout:
-              type: integer
-              description: 命令执行超时时间（秒），默认为 300。
-          required:
-          - command
-    close_shell:
-      type: function
-      function:
-        name: close_shell
-        description: 关闭并释放指定的 Shell 会话，释放相关系统资源（如进程和线程）。
-        parameters:
-          type: object
-          properties:
-            session_id:
-              type: string
-              description: 要关闭的 Shell 会话 ID，默认为 'default'。
-          required: []
 schedule:
   name: 智能助手工具
   desc: 提供日程安排和闹钟管理功能。

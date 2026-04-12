@@ -126,25 +126,22 @@ BASE_TOOLS = [
 BASE_TOOL_NAMES = [tool["function"]["name"] for tool in BASE_TOOLS]
 
 def get_menu(route: str) -> str:
-    """获取工具菜单"""
+    """获取工具菜单（无异常拦截，直接抛给上层）"""
     if route not in ["local", "mcp"]:
-        return _format_response("error", "❌ 无效的路由参数，必须指定两大 route 之一: local 或 mcp")
+        raise ValueError("无效的路由参数，必须指定两大 route 之一: local 或 mcp")
 
     if not os.path.exists(TOOL_INDEX_FILE):
         init_tool()
         if not os.path.exists(TOOL_INDEX_FILE):
-            return _format_response("error", "❌ 工具注册表未初始化，找不到 tool.jsonl。")
+            raise FileNotFoundError("工具注册表未初始化，找不到 tool.jsonl")
 
     tools = []
-    try:
-        with open(TOOL_INDEX_FILE, "r", encoding="utf-8") as f:
-            for line in f:
-                if not line.strip(): continue
-                tool = json.loads(line)
-                if tool["route"] == route:
-                    tools.append(tool)
-    except Exception as e:
-        return _format_response("error", f"❌ 读取工具菜单失败: {e}")
+    with open(TOOL_INDEX_FILE, "r", encoding="utf-8") as f:
+        for line in f:
+            if not line.strip(): continue
+            tool = json.loads(line)
+            if tool["route"] == route:
+                tools.append(tool)
 
     if not tools:
         return _format_response("text", f"当前路由 '{route}' 下没有可用的工具。")
@@ -208,19 +205,16 @@ def init_tool():
         print(f"❌ 写入工具索引异常: {e}")
 
 def fetch_tool_schemas(route: str, plugin_name: str, tool_names: list) -> list:
-    """批量获取工具 schemas"""
+    """批量获取工具 schemas（无异常拦截，直接抛给上层）"""
     schemas = []
     if route == "local":
-        try:
-            load_local_tool_yaml()
-            plugin_config = CONFIG_DATA.get(plugin_name, {})
-            funcs = plugin_config.get("functions", {})
-            for tool_name in tool_names:
-                func_config = funcs.get(tool_name)
-                if func_config and "function" in func_config:
-                    schemas.append({"type": "function", "function": func_config["function"]})
-        except Exception as e:
-            print(f"❌ 读取 Local Schema 失败: {e}")
+        load_local_tool_yaml()
+        plugin_config = CONFIG_DATA.get(plugin_name, {})
+        funcs = plugin_config.get("functions", {})
+        for tool_name in tool_names:
+            func_config = funcs.get(tool_name)
+            if func_config and "function" in func_config:
+                schemas.append({"type": "function", "function": func_config["function"]})
     elif route == "mcp":
         from src.plugins.route.mcp_tool import get_mcp_tool_schemas_sync
         schemas = get_mcp_tool_schemas_sync(plugin_name, tool_names)
@@ -289,6 +283,7 @@ def _parse_skill_md(file_path: Path) -> Dict[str, Any]:
 
 
 def load_skill(name: str):
+    """加载技能文件（无异常拦截，直接抛给上层）"""
     skill_path = DEFAULT_SKILL_PATH
     base_dir = Path(skill_path)
     target_dir = base_dir / name
@@ -304,7 +299,7 @@ def load_skill(name: str):
                         md_file = item_md_file
                         break
     if not target_dir.is_dir() or not md_file.exists():
-        return _format_response("error", f"❌ Skill '{name}' not exist")
+        raise FileNotFoundError(f"Skill '{name}' not exist")
     parsed_data = _parse_skill_md(md_file)
     metadata = parsed_data["metadata"]
     skill_name = metadata.get("name", target_dir.name)
@@ -329,9 +324,10 @@ def load_skill(name: str):
 
 
 def list_skill(page: int = 1, size: int = 20) -> str:
+    """列举所有技能（无异常拦截，直接抛给上层）"""
     base_dir = Path(DEFAULT_SKILL_PATH)
     if not base_dir.exists() or not base_dir.is_dir():
-        return _format_response("error", "❌ Skill 目录不存在，未找到任何 Skill。")
+        raise FileNotFoundError("Skill 目录不存在，未找到任何 Skill。")
 
     found_skills = []
     for item in base_dir.iterdir():
@@ -346,7 +342,7 @@ def list_skill(page: int = 1, size: int = 20) -> str:
                 })
 
     if not found_skills:
-        return _format_response("error", "❌ 当前目录下没有找到包含 SKILL.md 的有效 Skill。")
+        raise FileNotFoundError("当前目录下没有找到包含 SKILL.md 的有效 Skill。")
 
     found_skills.sort(key=lambda x: x["dir_name"])
     total_skills = len(found_skills)
@@ -434,6 +430,10 @@ class DockerManager:
             os.makedirs(skill_host_dir, exist_ok=True)
             volumes[skill_host_dir] = {"bind": f"{self.container_workspace}/skill", "mode": "rw"}
 
+            buffer_host_dir = os.path.abspath("./.buffer")
+            os.makedirs(buffer_host_dir, exist_ok=True)
+            volumes[buffer_host_dir] = {"bind": f"{self.container_workspace}/.buffer", "mode": "rw"}
+
             run_kwargs["volumes"] = volumes
             self.container = self.client.containers.run(self.image, **run_kwargs)
         except DockerException as e:
@@ -509,9 +509,7 @@ class DockerManager:
             cleaned_output = self._clean_ansi(process.before).strip()
             lines = [line for line in cleaned_output.splitlines() if line.strip() != command.strip()]
             final_output = "\n".join(lines).strip()
-            if len(final_output) > 3000:
-                truncated_msg = "\n\n...[注意：输出过长已被截断，仅保留首尾字符，如有需要可结合其他指令获取被省略信息]...\n\n"
-                final_output = final_output[:1500] + truncated_msg + final_output[-1500:]
+            # ✅ 删除字数限制逻辑，直接返回完整输出
             return exit_code, final_output, cwd
 
     def _clean_ansi(self, text: str) -> str:
@@ -530,21 +528,21 @@ def _get_manager() -> 'DockerManager':
 
 
 def execute_command(command: str, session_id: str = "default", timeout: int = 300) -> str:
-    try:
-        manager = _get_manager()
-        exit_code, output, cwd = manager.execute(session_id, command, timeout)
-        result = {"session_id": session_id, "exit_code": exit_code, "output": output, "cwd": cwd}
-        return _format_response("warning" if exit_code != 0 else "text", result)
-    except Exception as e:
-        return _format_response("error", f"Command execution failed: {str(e)}")
+    """
+    执行 Shell 命令（无异常拦截，直接抛给上层）
+    """
+    manager = _get_manager()
+    exit_code, output, cwd = manager.execute(session_id, command, timeout)
+    result = {"session_id": session_id, "exit_code": exit_code, "output": output, "cwd": cwd}
+    return _format_response("warning" if exit_code != 0 else "text", result)
 
 
 def close_shell(session_id: str = "default") -> str:
-    try:
-        _get_manager().close_shell(session_id)
-        return _format_response("text", f"Shell session '{session_id}' successfully closed.")
-    except Exception as e:
-        return _format_response("error", f"Failed to close shell: {str(e)}")
+    """
+    关闭 Shell 会话（无异常拦截，直接抛给上层）
+    """
+    _get_manager().close_shell(session_id)
+    return _format_response("text", f"Shell session '{session_id}' successfully closed.")
 
 
 # ==========================================
@@ -553,26 +551,25 @@ def close_shell(session_id: str = "default") -> str:
 def call_base_tool(tool_name: str, arguments: dict) -> tuple[str, list]:
     """
     统一调度 base_tool 模块下的工具
+    【已脱壳】不做任何异常拦截，直接抛给上层 parse_tool
     返回: (格式化后的JSON字符串, 新的schema数据)
     """
     new_schema_info = None
     result_content = ""
-    try:
-        if tool_name == "get_menu":
-            result_content = get_menu(arguments.get("route", "all"))
-        elif tool_name == "execute_command":
-            result_content = execute_command(**arguments)
-        elif tool_name == "fetch_tool":
-            result_content, new_schema_info = handle_fetch_tool(arguments)
-        elif tool_name == "load_skill":
-            result_content = load_skill(arguments.get("name"))
-        elif tool_name == "list_skill":
-            result_content = list_skill(arguments.get("page", 1))
-        elif tool_name == "close_shell":
-            result_content = close_shell(arguments.get("session_id", "default"))
-        else:
-            result_content = _format_response("error", f"未知的基础工具: {tool_name}")
-    except Exception as e:
-        result_content = _format_response("error", f"基础工具执行异常: {str(e)}")
+    
+    if tool_name == "get_menu":
+        result_content = get_menu(arguments.get("route", "all"))
+    elif tool_name == "execute_command":
+        result_content = execute_command(**arguments)
+    elif tool_name == "fetch_tool":
+        result_content, new_schema_info = handle_fetch_tool(arguments)
+    elif tool_name == "load_skill":
+        result_content = load_skill(arguments.get("name"))
+    elif tool_name == "list_skill":
+        result_content = list_skill(arguments.get("page", 1))
+    elif tool_name == "close_shell":
+        result_content = close_shell(arguments.get("session_id", "default"))
+    else:
+        raise ValueError(f"未知的基础工具: {tool_name}")
 
     return result_content, new_schema_info

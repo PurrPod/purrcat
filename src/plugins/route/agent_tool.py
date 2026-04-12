@@ -19,17 +19,18 @@ def add_task(
         core: str = "openai:deepseek-chat",
         judger: str = "openai:deepseek-chat"
 ) -> str:
+    """创建后台任务（无异常拦截，直接抛给上层）"""
     model_name = core
     models = get_models_config()
     if model_name not in models:
-        return _format_response("error", f"❌ 未找到模型 '{model_name}' 的配置")
+        raise KeyError(f"未找到模型 '{model_name}' 的配置")
 
     model_info = models[model_name]
     api_keys = model_info.get("api_keys") or [model_info.get("api_key")]
     valid_api_keys = [key for key in api_keys if key and key.strip()]
 
     if not valid_api_keys:
-        return _format_response("error", f"❌ 模型 '{model_name}' 未配置有效的 api-key")
+        raise ValueError(f"模型 '{model_name}' 未配置有效的 api-key")
 
     # 不再需要检查 worker 状态！
     # 任务直接创建，底层 LLMDispatcher 的全局队列会自动处理并发与排队。
@@ -84,7 +85,7 @@ def reload_task(task_id: str) -> str:
                         pass
 
     if not task:
-        return _format_response("error", f"❌ 未找到ID为 {task_id} 的任务历史。")
+        raise FileNotFoundError(f"未找到ID为 {task_id} 的任务历史。")
 
     if task.state in ["running", "ready"] and task.step > 0:
         return _format_response("text", f"⚠️ 任务 (ID: {task_id}) 目前状态为 {task.state}，无需重载。")
@@ -107,10 +108,10 @@ def reload_task(task_id: str) -> str:
 
 
 def submit_request(task_id: str, new_prompt: str) -> str:
-    """向指定的任务追加需求指令"""
+    """向指定的任务追加需求指令（无异常拦截，直接抛给上层）"""
     task = TASK_INSTANCES.get(task_id)
     if not task:
-        return _format_response("error", f"❌ 未在内存中找到任务 (ID: {task_id})，如果是旧任务请先调用 reload_task 唤醒。")
+        raise KeyError(f"未在内存中找到任务 (ID: {task_id})，如果是旧任务请先调用 reload_task 唤醒。")
 
     if task.state in ["running", "ready"]:
         inject_task_instruction(task_id, new_prompt)
@@ -133,12 +134,12 @@ def submit_request(task_id: str, new_prompt: str) -> str:
 
 
 def kill_task(task_id: str) -> str:
-    """强制终止指定的后台子任务"""
+    """强制终止指定的后台子任务（无异常拦截，直接抛给上层）"""
     is_killed = core_kill_task(task_id)
     if is_killed:
         return _format_response("text", f"✅ 已成功向任务 (ID: {task_id}) 发送终止信号，任务将被安全强杀。")
     else:
-        return _format_response("error", f"❌ 终止失败：未在内存中找到运行中的任务 (ID: {task_id})。")
+        raise RuntimeError(f"终止失败：未在内存中找到运行中的任务 (ID: {task_id})。")
 
 
 def list_worker() -> str:
@@ -167,15 +168,12 @@ def list_worker() -> str:
 
 
 def send_message(channel: str, content: str, mode: str) -> str:
-    """通过指定渠道发送消息"""
-    try:
-        module_path = f"src.sensor.{channel}"
-        plugin_module = importlib.import_module(module_path)
-        funct_name = f"send_{channel}_message"
-        target_func = getattr(plugin_module, funct_name)
-        return target_func(content, mode)
-    except Exception as e:
-        return _format_response("error", f"发送失败：{e}")
+    """通过指定渠道发送消息（无异常拦截，直接抛给上层）"""
+    module_path = f"src.sensor.{channel}"
+    plugin_module = importlib.import_module(module_path)
+    funct_name = f"send_{channel}_message"
+    target_func = getattr(plugin_module, funct_name)
+    return target_func(content, mode)
 
 
 # AGENT_TOOLS schema 定义
@@ -281,11 +279,11 @@ AGENT_TOOL_FUNCTIONS = {
 
 
 def call_agent_tool(tool_name: str, arguments: dict) -> str:
+    """
+    调用 Agent 工具（无异常拦截，直接抛给上层 parse_tool）
+    """
     if tool_name not in AGENT_TOOL_FUNCTIONS:
-        return _format_response("error", f"未知的 Agent 工具: {tool_name}")
+        raise KeyError(f"未知的 Agent 工具: {tool_name}")
     func = AGENT_TOOL_FUNCTIONS[tool_name]
-    try:
-        result = func(**arguments)
-        return result
-    except Exception as e:
-        return _format_response("error", f"工具执行异常: {str(e)}")
+    result = func(**arguments)
+    return result

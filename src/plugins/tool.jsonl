@@ -11,8 +11,6 @@
 {"route": "local", "plugin": "filesystem", "func": "replace_file_lines", "desc": "Replace specific lines in a file with new code."}
 {"route": "local", "plugin": "filesystem", "func": "list_file_in_dir", "desc": "List files and directories within a given path."}
 {"route": "local", "plugin": "filesystem", "func": "copy_item_to", "desc": "Copy files from host system to virtual machine directory. Host file paths are copied to the specified VM directory (must start with /agent_vm/). Files are automatically renamed if they would overwrite existing files."}
-{"route": "local", "plugin": "shell", "func": "execute_command", "desc": "在指定的 Shell 会话中执行命令。如果会话不存在会自动创建。支持跨调用持久化（如环境变量、当前目录）。"}
-{"route": "local", "plugin": "shell", "func": "close_shell", "desc": "关闭并释放指定的 Shell 会话，释放相关系统资源（如进程和线程）。"}
 {"route": "local", "plugin": "schedule", "func": "add_schedule", "desc": "添加跨天/跨月的日程。时间格式推荐 YYYY-MM-DD HH:MM"}
 {"route": "local", "plugin": "schedule", "func": "delete_schedule", "desc": "删除日程"}
 {"route": "local", "plugin": "schedule", "func": "update_schedule", "desc": "修改日程"}
@@ -51,3 +49,24 @@
 {"route": "mcp", "plugin": "bilibili-search", "func": "bilibili-user-videos", "desc": "暂不支持-获取UP主视频列表"}
 {"route": "mcp", "plugin": "bilibili-search", "func": "bilibili-user-complete", "desc": "获取UP主完整信息（包含基本信息和统计信息）"}
 {"route": "mcp", "plugin": "bilibili-search", "func": "bilibili-bangumi-timeline", "desc": "获取B站番剧时间表，支持查询指定时间范围内的番剧播出信息"}
+{"route": "mcp", "plugin": "playwright", "func": "browser_close", "desc": "Close the page"}
+{"route": "mcp", "plugin": "playwright", "func": "browser_resize", "desc": "Resize the browser window"}
+{"route": "mcp", "plugin": "playwright", "func": "browser_console_messages", "desc": "Returns all console messages"}
+{"route": "mcp", "plugin": "playwright", "func": "browser_handle_dialog", "desc": "Handle a dialog"}
+{"route": "mcp", "plugin": "playwright", "func": "browser_evaluate", "desc": "Evaluate JavaScript expression on page or element"}
+{"route": "mcp", "plugin": "playwright", "func": "browser_file_upload", "desc": "Upload one or multiple files"}
+{"route": "mcp", "plugin": "playwright", "func": "browser_fill_form", "desc": "Fill multiple form fields"}
+{"route": "mcp", "plugin": "playwright", "func": "browser_press_key", "desc": "Press a key on the keyboard"}
+{"route": "mcp", "plugin": "playwright", "func": "browser_type", "desc": "Type text into editable element"}
+{"route": "mcp", "plugin": "playwright", "func": "browser_navigate", "desc": "Navigate to a URL"}
+{"route": "mcp", "plugin": "playwright", "func": "browser_navigate_back", "desc": "Go back to the previous page in the history"}
+{"route": "mcp", "plugin": "playwright", "func": "browser_network_requests", "desc": "Returns all network requests since loading the page"}
+{"route": "mcp", "plugin": "playwright", "func": "browser_run_code", "desc": "Run Playwright code snippet"}
+{"route": "mcp", "plugin": "playwright", "func": "browser_take_screenshot", "desc": "Take a screenshot of the current page. You can't perform actions based on the screenshot, use browser_snapshot for actions."}
+{"route": "mcp", "plugin": "playwright", "func": "browser_snapshot", "desc": "Capture accessibility snapshot of the current page, this is better than screenshot"}
+{"route": "mcp", "plugin": "playwright", "func": "browser_click", "desc": "Perform click on a web page"}
+{"route": "mcp", "plugin": "playwright", "func": "browser_drag", "desc": "Perform drag and drop between two elements"}
+{"route": "mcp", "plugin": "playwright", "func": "browser_hover", "desc": "Hover over element on page"}
+{"route": "mcp", "plugin": "playwright", "func": "browser_select_option", "desc": "Select an option in a dropdown"}
+{"route": "mcp", "plugin": "playwright", "func": "browser_tabs", "desc": "List, create, close, or select a browser tab."}
+{"route": "mcp", "plugin": "playwright", "func": "browser_wait_for", "desc": "Wait for text to appear or disappear or a specified time to pass"}

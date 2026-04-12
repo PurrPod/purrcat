@@ -10,38 +10,41 @@ def _format_response(msg_type: str, content: Any) -> str:
 
 
 def call_local_tool(plugin_name: str, tool_name: str, arguments: dict, **kwargs) -> str:
-    """调用本地工具（支持同步和异步函数）"""
+    """
+    调用本地工具（支持同步和异步函数）
+    【已脱壳】不做任何异常拦截，直接抛异常给上层 parse_tool 统一处理
+    """
+    # 模块导入
     try:
+        module_path = f"src.plugins.plugin_collection.{plugin_name}.{plugin_name}"
+        plugin_module = importlib.import_module(module_path)
+    except ImportError:
+        module_path = f"src.plugins.plugin_collection.{plugin_name}"
+        plugin_module = importlib.import_module(module_path)
+
+    # 检查函数是否存在
+    if not hasattr(plugin_module, tool_name):
+        raise AttributeError(f"插件 '{plugin_name}' 中无函数：{tool_name}")
+
+    target_func = getattr(plugin_module, tool_name)
+
+    # 兼容异步本地工具执行
+    if inspect.iscoroutinefunction(target_func):
         try:
-            module_path = f"src.plugins.plugin_collection.{plugin_name}.{plugin_name}"
-            plugin_module = importlib.import_module(module_path)
-        except ImportError:
-            module_path = f"src.plugins.plugin_collection.{plugin_name}"
-            plugin_module = importlib.import_module(module_path)
-
-        if not hasattr(plugin_module, tool_name):
-            return _format_response("error", f"❌ 插件 '{plugin_name}' 中无函数：{tool_name}")
-
-        target_func = getattr(plugin_module, tool_name)
-
-        # 兼容异步本地工具执行
-        if inspect.iscoroutinefunction(target_func):
-            try:
-                loop = asyncio.get_running_loop()
-            except RuntimeError:
-                loop = None
-            if loop and loop.is_running():
-                import nest_asyncio
-                nest_asyncio.apply()
-                result = asyncio.get_event_loop().run_until_complete(target_func(**arguments))
-            else:
-                result = asyncio.run(target_func(**arguments))
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+        if loop and loop.is_running():
+            import nest_asyncio
+            nest_asyncio.apply()
+            result = asyncio.get_event_loop().run_until_complete(target_func(**arguments))
         else:
-            result = target_func(**arguments)
+            result = asyncio.run(target_func(**arguments))
+    else:
+        result = target_func(**arguments)
 
-        if isinstance(result, str):
-            return result
-        else:
-            return _format_response("text", str(result) if result is not None else "Success (No Output)")
-    except Exception as e:
-        return _format_response("error", f"❌ 调用本地工具时发生异常: {str(e)}，如果是传参错误，请调用fetch_tool获取详细的schema信息")
+    # 格式化返回结果
+    if isinstance(result, str):
+        return result
+    else:
+        return _format_response("text", str(result) if result is not None else "Success (No Output)")
