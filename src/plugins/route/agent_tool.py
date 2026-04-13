@@ -222,8 +222,9 @@ def update_memo(short_term: str, long_term: str = None) -> str:
                 }
             ]
             system_prompt = """你是一个专门负责知识库维护的后台记忆整理中枢。
-你的任务是将【新产生的关键记忆】智能地合并到【现存的核心记忆文档】中。
-你必须先调用 get 获取当前文档，然后结合新记忆，最后必须调用 update 工具写入新文档。保持文档精简，少废话。"""
+你的任务是将【新产生的关键记忆】智能（注意：不是简单的追加！！！要有判断和分析）地合并到【现存的核心记忆文档】中。
+你必须先调用 get 获取当前文档，然后结合新记忆，最后必须调用 update 工具写入新文档。
+保持文档精简，少废话。"""
             user_prompt = f"【新产生的近期记忆备忘录】:\n{flush_data}"
             bg_model = Model(get_agent_model())
             messages = [

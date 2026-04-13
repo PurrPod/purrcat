@@ -286,6 +286,7 @@ class Agent:
         if check_mode and len(self.current_history) < 150 and self.window_token < max_tokens:
             return
         print(f"🗜️ 记忆容量到达 {len(self.current_history)} 条 (约 {self.window_token} tokens)，触发自我归档...")
+        original_len = len(self.current_history)
         alert_prompt = """【系统警告：记忆容量即将溢出，触发自动记忆归档】
 为了防止对话断层，系统即将清理你最早期的一批记忆。
 你必须调用 `update_memo` 工具将当前记忆进行分类归档：
@@ -361,7 +362,7 @@ class Agent:
                 short_term_content = "未保存成功的早期上下文片段..."
             start_idx = 1
             keep_recent = 20
-            split_idx = len(self.current_history) - keep_recent
+            split_idx = original_len - keep_recent
             if split_idx > start_idx:
                 while split_idx > start_idx:
                     curr_msg = self.current_history[split_idx]
@@ -376,9 +377,9 @@ class Agent:
             if split_idx < start_idx:
                 split_idx = start_idx
             summary_msg = {"role": "assistant", "content": f"【早期工作状态与短期缓存】\n{short_term_content}"}
-            self.current_history = [self.current_history[0], summary_msg] + self.current_history[split_idx:]
+            self.current_history = [self.current_history[0], summary_msg] + self.current_history[split_idx:original_len]
             self.dynamic_tools.clear()
-            print("✅ Agent记忆清理完毕！已安全避开 Tool Call 链条完成流水线截断。")
+            print("✅ Agent记忆清理完毕！已安全避开 Tool Call 链条完成流水线截断，并隐藏了内部整理过程。")
             self.window_token = 0
             self.save_checkpoint()
         except Exception as e:
@@ -396,7 +397,7 @@ class Agent:
             except Exception as e:
                 print(f"❌ 队列处理异常: {e}")
 
-    def save_checkpoint(self, filepath="src\\agent\\checkpoint.json"):
+    def save_checkpoint(self, filepath="src/agent/checkpoint.json"):
         save_path = filepath or self.checkpoint_path
         try:
             with open(save_path, "w", encoding="utf-8") as f:
@@ -421,6 +422,8 @@ class Agent:
                     print("🛠️ [Checkpoint] 检测到断点处缺失工具回传结果，自动撤销最近一次未完成的思考...")
                     history.pop()
                 agent.current_history = history
+                if agent.current_history and agent.current_history[0].get("role") == "system":
+                    agent.current_history[0]["content"] = agent.system_prompt
                 print(f"✅ 成功从 {filepath} 恢复对话历史，共加载了 {len(history)} 条记录。")
             else:
                 print(f"⚠️ [Checkpoint] 文件内容为空或格式错误，重置为全新状态。")
