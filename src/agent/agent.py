@@ -30,6 +30,7 @@ PRIORITY_MAP = {
 
 ROOT = False
 
+MEMORY_MD_PATH = "src/agent/core/memory.md"
 
 def add_message(message: dict):
     msg_type = message.get("type", "heartbeat")
@@ -46,10 +47,7 @@ class Agent:
         self.model = Model(self.name)
         self.agent_session_id = f"agent_main_{uuid.uuid4().hex[:8]}"
         self.model.bind_task(self.agent_session_id, "AgentMain")
-        with open(SOUL_MD_PATH, "r", encoding="utf-8") as f:
-            soul_md = f.read()
-
-        self.system_prompt = soul_md
+        self.system_prompt = self._build_system_prompt()
         self.current_history = [{"role": "system", "content": self.system_prompt}]
         self.max_len = 150
         self.memory = Memory()
@@ -63,6 +61,26 @@ class Agent:
             with open(warm_up, "r", encoding="utf-8") as f:
                 warm_up_content = json.loads(f.read())
                 self.current_history.extend(warm_up_content)
+
+    def _build_system_prompt(self):
+        soul_md = ""
+        try:
+            if os.path.exists(SOUL_MD_PATH):
+                with open(SOUL_MD_PATH, "r", encoding="utf-8") as f:
+                    soul_md = f.read().strip()
+        except Exception as e:
+            print(f"⚠️ 读取 SOUL.md 失败: {e}")
+        memory_md = ""
+        try:
+            if os.path.exists(MEMORY_MD_PATH):
+                with open(MEMORY_MD_PATH, "r", encoding="utf-8") as f:
+                    memory_md = f.read().strip()
+        except Exception as e:
+            print(f"⚠️ 读取 memory.md 失败: {e}")
+        combined_prompt = soul_md
+        if memory_md:
+            combined_prompt += f"\n\n---\n\n# 【系统长期记忆档案】\n\n{memory_md}"
+        return combined_prompt
 
     def stop(self):
         self._stop_event.set()
@@ -379,6 +397,8 @@ class Agent:
             summary_msg = {"role": "assistant", "content": f"【早期工作状态与短期缓存】\n{short_term_content}"}
             self.current_history = [self.current_history[0], summary_msg] + self.current_history[split_idx:original_len]
             self.dynamic_tools.clear()
+            self.system_prompt = self._build_system_prompt()
+            self.current_history[0]["content"] = self.system_prompt
             print("✅ Agent记忆清理完毕！已安全避开 Tool Call 链条完成流水线截断，并隐藏了内部整理过程。")
             self.window_token = 0
             self.save_checkpoint()
