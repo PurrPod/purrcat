@@ -1,3 +1,4 @@
+import atexit
 import os
 import sys
 import json
@@ -444,6 +445,13 @@ class DockerManager:
             active_session_ids = list(self.shell_pool.keys())
         for sid in active_session_ids:
             self.close_shell(sid)
+        if self.container:
+            try:
+                print(f"🛑 正在关闭并清理 Docker 沙盒 ({self.container_name})...")
+                self.container.stop(timeout=2)
+                print("✅ 沙盒已成功关闭。")
+            except Exception as e:
+                print(f"⚠️ 关闭沙盒容器失败: {e}")
         self.container = None
 
     def _ensure_shell(self, session_id: str):
@@ -519,7 +527,11 @@ class DockerManager:
 def _get_manager() -> 'DockerManager':
     global _docker_manager_instance
     if _docker_manager_instance is None:
-        _docker_manager_instance = DockerManager(image="my_agent_env:latest")
+        _docker_manager_instance = DockerManager(
+            image="my_agent_env:latest",
+            workspace_dir="./agent_vm"
+        )
+        atexit.register(_docker_manager_instance.stop)
     try:
         _docker_manager_instance.start()
     except Exception as e:
