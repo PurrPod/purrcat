@@ -308,7 +308,7 @@ class Agent:
         alert_prompt = """【系统警告：记忆容量即将溢出，触发自动记忆归档】
 为了防止对话断层，系统即将清理你最早期的一批记忆。
 你必须调用 `update_memo` 工具将当前记忆进行分类归档：
-- short_term: 当前正在处理、被搁置的任务流，以及确立的全局变量。
+- short_term: 当前正在处理、被搁置的任务流，以及确立的全局变量或当前需要加载的工具、Skill等。
 - long_term: 发现的明确用户喜好、做事风格或避坑经验。
 注意：直接调用工具即可，无须输出废话。"""
         self._append_history({"role": "user", "content": alert_prompt})
@@ -394,8 +394,9 @@ class Agent:
                     break
             if split_idx < start_idx:
                 split_idx = start_idx
-            summary_msg = {"role": "assistant", "content": f"【早期工作状态与短期缓存】\n{short_term_content}"}
-            self.current_history = [self.current_history[0], summary_msg] + self.current_history[split_idx:original_len]
+            system_msg = {"role": "system", "content": self._build_system_prompt()}
+            summary_msg = {"role": "assistant", "content": f"【当前工作状态与短期缓存】\n{short_term_content}"}
+            self.current_history = [system_msg] + self.current_history[split_idx:original_len] + [summary_msg]
             self.dynamic_tools.clear()
             self.system_prompt = self._build_system_prompt()
             self.current_history[0]["content"] = self.system_prompt
