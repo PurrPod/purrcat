@@ -286,19 +286,79 @@ class Agent:
         if check_mode and len(self.current_history) < 150 and self.window_token < max_tokens:
             return
         print(f"🗜️ 记忆容量到达 {len(self.current_history)} 条 (约 {self.window_token} tokens)，触发自我归档...")
-        alert_prompt = """【系统严重警告：大脑记忆容量即将溢出！！！】
-为了防止记忆断层，系统即将物理抹除你最早期的一批记忆。
-请你现在亲自对**此前的关键对话、事件**进行全面总结，提取出核心事件、任务进度、你的关键决策、当前需要加载的skill等，形成一份“早期记忆备忘录”。
-直接用自然语言输出。这份备忘录将作为你未来回忆那段时光的唯一凭证，也是你承上启下的节点，请务必保证包含影响任务推进的关键信息！但也要尽量保持简洁和少废话，防止备忘录越来越长！总结完本次对话后，如果已加载的skill记录消失，则需要在下轮对话重新加载遗失的skill"""
+        alert_prompt = """【系统警告：记忆容量即将溢出，触发自动记忆归档】
+为了防止对话断层，系统即将清理你最早期的一批记忆。
+你必须调用 `update_memo` 工具将当前记忆进行分类归档：
+- short_term: 当前正在处理、被搁置的任务流，以及确立的全局变量。
+- long_term: 发现的明确用户喜好、做事风格或避坑经验。
+注意：直接调用工具即可，无须输出废话。"""
         self._append_history({"role": "user", "content": alert_prompt})
         try:
-            response = self.model.chat(messages=self.current_history)
-            self._track_token_usage(response)
-
-            archive_content = response.choices[0].message.content.strip()
-            print(f"🧠 Agent归档完成，生成备忘录长度: {len(archive_content)} 字符")
-            self._append_history({"role": "assistant", "content": f"【早期记忆备忘录】\n{archive_content}"})
-
+            current_tools = list(BASE_TOOLS) + list(AGENT_TOOLS)
+            if self.dynamic_tools:
+                current_tools.extend([item["schema"] for item in self.dynamic_tools])
+            max_retries = 3
+            archive_success = False
+            short_term_content = ""
+            for _ in range(max_retries):
+                response = self.model.chat(messages=self.current_history, tools=current_tools)
+                self._track_token_usage(response)
+                msg_resp = response.choices[0].message
+                assist_msg = {"role": "assistant", "content": msg_resp.content or ""}
+                if msg_resp.tool_calls:
+                    assist_msg["tool_calls"] = [
+                        {
+                            "id": t.id,
+                            "type": t.type,
+                            "function": {"name": t.function.name, "arguments": t.function.arguments}
+                        } for t in msg_resp.tool_calls
+                    ]
+                    self._append_history(assist_msg)
+                    has_update_memo = False
+                    for t in msg_resp.tool_calls:
+                        if t.function.name == "update_memo":
+                            has_update_memo = True
+                            try:
+                                args = json.loads(t.function.arguments)
+                                if "long_term" in args or "short_term" in args:
+                                    parse_tool("update_memo", args)
+                                short_term_content = args.get("short_term", "（无短期细节）")
+                                tool_response = '✅ 归档工具调用成功'
+                            except Exception as e:
+                                print(f"⚠️ update_memo 执行异常: {e}")
+                                try:
+                                    args = json.loads(t.function.arguments)
+                                    short_term_content = args.get("short_term", "")
+                                    if not short_term_content:
+                                        short_term_content = args
+                                except:
+                                    short_term_content = str(t.function.arguments)
+                                tool_response = f'⚠️ update_memo 执行异常但已提取参数: {str(e)[:100]}'
+                            self._append_history({
+                                "role": "tool",
+                                "tool_call_id": t.id,
+                                "name": t.function.name,
+                                "content": tool_response
+                            })
+                        else:
+                            self._append_history({
+                                "role": "tool",
+                                "tool_call_id": t.id,
+                                "name": t.function.name,
+                                "content": '❌ 系统拦截：当前处于强制记忆归档阶段，除 update_memo 外的工具调用已被挂起。请立刻调用 update_memo。'
+                            })
+                    if has_update_memo:
+                        archive_success = True
+                        print("🧠 Agent归档完成，成功拦截 update_memo 调用。")
+                        break
+                    else:
+                        self._append_history({"role": "user", "content": "打回：你必须调用 `update_memo` 工具来归档备忘录！"})
+                else:
+                    self._append_history(assist_msg)
+                    self._append_history({"role": "user", "content": "打回：你必须调用 `update_memo` 工具！请不要只回复纯文本。"})
+            if not archive_success:
+                print("⚠️ 未能成功调用 update_memo 工具，强制截断可能导致上下文丢失。")
+                short_term_content = "未保存成功的早期上下文片段..."
             start_idx = 1
             keep_recent = 20
             split_idx = len(self.current_history) - keep_recent
@@ -315,7 +375,8 @@ class Agent:
                     break
             if split_idx < start_idx:
                 split_idx = start_idx
-            self.current_history = [self.current_history[0]] + self.current_history[split_idx:]
+            summary_msg = {"role": "assistant", "content": f"【早期工作状态与短期缓存】\n{short_term_content}"}
+            self.current_history = [self.current_history[0], summary_msg] + self.current_history[split_idx:]
             self.dynamic_tools.clear()
             print("✅ Agent记忆清理完毕！已安全避开 Tool Call 链条完成流水线截断。")
             self.window_token = 0

@@ -175,9 +175,122 @@ def send_message(channel: str, content: str, mode: str) -> str:
     target_func = getattr(plugin_module, funct_name)
     return target_func(content, mode)
 
+import threading
+MEMO_FILE_LOCK = threading.Lock()
+def update_memo(short_term: str, long_term: str = None) -> str:
+    """更新系统备忘录，并异步触发核心档案更新"""
+    def _update_core_information(flush_data: str):
+        def background_task():
+            from src.models.model import Model
+            from src.utils.config import get_agent_model
+            from src.utils.config import SRC_DIR
+            profile_path = os.path.join(SRC_DIR, "agent", "core", "memory.md")
+            def get_profile():
+                with MEMO_FILE_LOCK:
+                    if os.path.exists(profile_path):
+                        with open(profile_path, "r", encoding="utf-8") as f:
+                            return f.read().strip() or "（当前档案为空）"
+                    return "（当前档案为空）"
+            def update_profile(content: str):
+                with MEMO_FILE_LOCK:
+                    os.makedirs(os.path.dirname(profile_path), exist_ok=True)
+                    with open(profile_path, "w", encoding="utf-8") as f:
+                        f.write(content)
+                    return "更新成功"
+            temp_tools = [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "get",
+                        "description": "读取当前核心档案内容",
+                        "parameters": {"type": "object", "properties": {}}
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "update",
+                        "description": "<覆盖>更新核心档案内容",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "content": {"type": "string", "description": "全新的完整档案内容，纯文本，不要有符号"}
+                            },
+                            "required": ["content"]
+                        }
+                    }
+                }
+            ]
+            system_prompt = """你是一个专门负责知识库维护的后台记忆整理中枢。
+你的任务是将【新产生的关键记忆】智能地合并到【现存的核心记忆文档】中。
+你必须先调用 get 获取当前文档，然后结合新记忆，最后必须调用 update 工具写入新文档。保持文档精简，少废话。"""
+            user_prompt = f"【新产生的近期记忆备忘录】:\n{flush_data}"
+            bg_model = Model(get_agent_model())
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ]
+            max_rounds = 5
+            for _ in range(max_rounds):
+                response = bg_model.chat(messages=messages, tools=temp_tools, temperature=0.1)
+                msg_resp = response.choices[0].message
+                assist_msg = {"role": "assistant", "content": msg_resp.content or ""}
+                tool_calls = msg_resp.tool_calls
+                if tool_calls:
+                    assist_msg["tool_calls"] = [
+                        {
+                            "id": t.id,
+                            "type": t.type,
+                            "function": {"name": t.function.name, "arguments": t.function.arguments}
+                        } for t in tool_calls
+                    ]
+                messages.append(assist_msg)
+                if not tool_calls:
+                    has_updated = any(m.get("name") == "update" for m in messages if m.get("role") == "tool")
+                    if has_updated:
+                        print("📝 [Background] 核心记忆档案合并与落盘成功！")
+                        break
+                    else:
+                        messages.append(
+                            {"role": "user", "content": "打回：你必须调用 update 工具来保存最终的结果！请立即调用。"})
+                        continue
+                for t in tool_calls:
+                    t_name = t.function.name
+                    res = ""
+                    if t_name == "get":
+                        res = get_profile()
+                    elif t_name == "update":
+                        try:
+                            args = json.loads(t.function.arguments)
+                            res = update_profile(args.get("content", ""))
+                        except Exception as e:
+                            res = f"参数解析失败: {e}"
+                    else:
+                        res = "未知工具"
+                    messages.append({"role": "tool", "tool_call_id": t.id, "name": t_name, "content": str(res)})
+        thread = threading.Thread(target=background_task)
+        thread.daemon = True
+        thread.start()
+    if long_term:
+        _update_core_information(long_term)
+    return _format_response("text", f"✅ 备忘录更新成功")
 
-# AGENT_TOOLS schema 定义
 AGENT_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "update_memo",
+            "description": "在系统提示记忆压缩时更新备忘录。分离短期状态缓存与长期用户画像。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "short_term": {"type": "string", "description": "当前工作细节、挂起任务、临时全局变量等短期上下文。"},
+                    "long_term": {"type": "string", "description": "提炼出的用户长期偏好、性格画像或核心避坑经验。"}
+                },
+                "required": ["short_term"]
+            }
+        }
+    },
     {
         "type": "function",
         "function": {
@@ -275,6 +388,7 @@ AGENT_TOOL_FUNCTIONS = {
     "kill_task": kill_task,
     "list_worker": list_worker,
     "send_message": send_message,
+    "update_memo": update_memo,
 }
 
 
