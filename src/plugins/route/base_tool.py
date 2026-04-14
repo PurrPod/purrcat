@@ -435,6 +435,17 @@ class DockerManager:
             os.makedirs(buffer_host_dir, exist_ok=True)
             volumes[buffer_host_dir] = {"bind": f"{self.container_workspace}/.buffer", "mode": "rw"}
 
+            from src.utils.config import FILE_CONFIG_PATH
+            with open(FILE_CONFIG_PATH, "r") as f:
+                docker_mount = json.load(f)
+                docker_mount = docker_mount.get("docker_mount",[])
+            for dirpath in docker_mount:
+                new_host_dir = os.path.abspath(dirpath)
+                os.makedirs(new_host_dir, exist_ok=True)
+                target_name = os.path.basename(os.path.normpath(dirpath))
+                container_bind_path = f"{self.container_workspace}/{target_name}"
+                volumes[new_host_dir] = {"bind": container_bind_path, "mode": "rw"}
+
             run_kwargs["volumes"] = volumes
             self.container = self.client.containers.run(self.image, **run_kwargs)
         except DockerException as e:
