@@ -56,7 +56,6 @@ class Agent:
         self._lock = threading.Lock()
         self.window_token = 0
         self._stop_event = threading.Event()
-        self.dynamic_tools = []
         if warm_up:
             with open(warm_up, "r", encoding="utf-8") as f:
                 warm_up_content = json.loads(f.read())
@@ -141,9 +140,6 @@ class Agent:
         for step in range(max_steps):
             try:
                 current_tools = list(BASE_TOOLS) + list(AGENT_TOOLS)
-                if self.dynamic_tools:
-                    current_tools.extend([item["schema"] for item in self.dynamic_tools])
-
                 response = self.model.chat(messages=self.current_history, tools=current_tools)
                 self._track_token_usage(response)
 
@@ -169,9 +165,11 @@ class Agent:
                     break
 
                 for tool_call in msg_resp.tool_calls:
-                    tool_name = tool_call.function.name
+                    original_tool_name = tool_call.function.name
+                    target_tool_name = original_tool_name
                     arguments_str = tool_call.function.arguments
                     arguments = {}
+                    
                     if arguments_str:
                         try:
                             arguments = json.loads(arguments_str)
@@ -183,69 +181,41 @@ class Agent:
                                     print("✅ json-repair 修复成功！")
                                 except Exception as repair_e:
                                     print(f"❌ json-repair 修复失败: {repair_e}")
+
+                    # --- 新增：代理工具无缝拆包拦截 ---
+                    if original_tool_name == "call_dynamic_tool" and isinstance(arguments, dict):
+                        target_tool_name = arguments.get("target_tool_name", "")
+                        target_args = arguments.get("arguments", {})
+                        if isinstance(target_args, str):
+                            try:
+                                arguments = json.loads(target_args)
+                            except Exception:
+                                if repair_json:
+                                    try:
+                                        arguments = repair_json(target_args, return_objects=True)
+                                    except:
+                                        arguments = target_args
+                        else:
+                            arguments = target_args
                     if not isinstance(arguments, dict):
                         error_msg = "❌ 系统拦截：工具参数格式严重损坏。可能是由于命令过长导致的截断或转义错误，建议分批运行指令！！！"
                         print(error_msg)
                         self._append_history({
                             "role": "tool",
                             "tool_call_id": tool_call.id,
-                            "name": tool_name,
+                            "name": original_tool_name,
                             "content": error_msg
                         })
                         continue
-
-                    if tool_name in ["execute_command", "close_shell"]:
+                    if target_tool_name in ["execute_command", "close_shell"]:
                         arguments["session_id"] = self.agent_session_id
-
                     if isinstance(arguments, dict):
                         args_str = ", ".join([f'{k}={repr(v)}' for k, v in arguments.items()])
                     else:
                         args_str = str(arguments)
-                    print(f"🔧 助手调起工具: {tool_name}({args_str})")
-                    target_route = None
-                    target_plugin = None
-
-                    from src.plugins.route.agent_tool import AGENT_TOOL_FUNCTIONS
-                    agent_tool_names = list(AGENT_TOOL_FUNCTIONS.keys())
-
-                    if tool_name in agent_tool_names:
-                        target_route = "agent"
-                        target_plugin = "agent_tool"
-                    else:
-                        for tool_item in self.dynamic_tools:
-                            if tool_item.get("funct") == tool_name:
-                                target_route = tool_item.get("route")
-                                target_plugin = tool_item.get("plugin")
-                                break
-
-                        if not target_route or not target_plugin:
-                            if os.path.exists(TOOL_INDEX_FILE):
-                                with open(TOOL_INDEX_FILE, "r", encoding="utf-8") as f:
-                                    for line in f:
-                                        if not line.strip():
-                                            continue
-                                        tool_info = json.loads(line)
-                                        if tool_info["func"] == tool_name:
-                                            target_route = tool_info["route"]
-                                            target_plugin = tool_info["plugin"]
-                                            break
-
-                    result_str, new_schema_info = parse_tool(tool_name, arguments, route=target_route, plugin=target_plugin)
+                    print(f"🔧 助手调起工具: {target_tool_name}({args_str})")
+                    result_str = parse_tool(target_tool_name, arguments)
                     finish_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-                    if new_schema_info:
-                        schemas_to_add = new_schema_info if isinstance(new_schema_info, list) else [new_schema_info]
-                        for schema_item in schemas_to_add:
-                            new_funct_name = schema_item["funct"]
-                            found_idx = -1
-                            for i, existing_item in enumerate(self.dynamic_tools):
-                                if existing_item.get("funct") == new_funct_name:
-                                    found_idx = i
-                                    break
-                            if found_idx != -1:
-                                self.dynamic_tools[found_idx] = schema_item
-                            else:
-                                self.dynamic_tools.append(schema_item)
 
                     if result_str == "__AGENT_PAUSE__":
                         print("⏸️ Agent 已将当前任务放入挂起表，准备处理下一条消息...")
@@ -253,7 +223,7 @@ class Agent:
                         self._append_history({
                             "role": "tool",
                             "tool_call_id": tool_call.id,
-                            "name": tool_name,
+                            "name": original_tool_name,
                             "content": time_aware_content
                         })
                         self.state = "idle"
@@ -264,7 +234,7 @@ class Agent:
                     self.current_history.append({
                         "role": "tool",
                         "tool_call_id": tool_call.id,
-                        "name": tool_name,
+                        "name": original_tool_name,
                         "content": time_aware_content
                     })
 
@@ -314,8 +284,6 @@ class Agent:
         self._append_history({"role": "user", "content": alert_prompt})
         try:
             current_tools = list(BASE_TOOLS) + list(AGENT_TOOLS)
-            if self.dynamic_tools:
-                current_tools.extend([item["schema"] for item in self.dynamic_tools])
             max_retries = 3
             archive_success = False
             short_term_content = ""
@@ -397,7 +365,6 @@ class Agent:
             system_msg = {"role": "system", "content": self._build_system_prompt()}
             summary_msg = {"role": "assistant", "content": f"【当前工作状态与短期缓存】\n{short_term_content}"}
             self.current_history = [system_msg] + self.current_history[split_idx:original_len] + [summary_msg]
-            self.dynamic_tools.clear()
             self.system_prompt = self._build_system_prompt()
             self.current_history[0]["content"] = self.system_prompt
             print("✅ Agent记忆清理完毕！已安全避开 Tool Call 链条完成流水线截断，并隐藏了内部整理过程。")

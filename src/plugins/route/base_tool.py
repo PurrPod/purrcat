@@ -98,6 +98,27 @@ BASE_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "call_dynamic_tool",
+            "description": "代理执行工具。用于调用你通过 fetch_tool 获取到的动态工具。你必须把动态工具的名称和符合其 schema 的参数传给本工具。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "target_tool_name": {
+                        "type": "string",
+                        "description": "要调用的动态工具名称"
+                    },
+                    "arguments": {
+                        "type": "string",
+                        "description": "符合该动态工具 schema 的完整 JSON 字符串格式参数"
+                    }
+                },
+                "required": ["target_tool_name", "arguments"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "load_skill",
             "description": "加载指定的 Skill 并返回其详细信息和内容。",
             "parameters": {
@@ -222,14 +243,13 @@ def fetch_tool_schemas(route: str, plugin_name: str, tool_names: list) -> list:
     return schemas if schemas else []
 
 
-def handle_fetch_tool(arguments: dict) -> tuple[str, list]:
+def handle_fetch_tool(arguments: dict) -> str:
     fetch_route = arguments.get("route")
     p_name = arguments.get("plugin_name")
     t_names = arguments.get("tool_names", [])
     if not t_names and "tool_name" in arguments:
         t_names = [arguments.get("tool_name")]
 
-    new_schema_info = []
     success_tools = []
     failed_tools = []
 
@@ -243,23 +263,24 @@ def handle_fetch_tool(arguments: dict) -> tuple[str, list]:
             if real_func_name in BASE_TOOL_NAMES:
                 failed_tools.append(f"{t_name}(保留关键字被拒绝)")
             else:
-                new_schema_info.append({
-                    "route": fetch_route,
-                    "plugin": p_name,
-                    "funct": real_func_name,
-                    "schema": schema_dict
-                })
                 success_tools.append(t_name)
         else:
             failed_tools.append(t_name)
 
     res_messages = []
     if success_tools:
-        res_messages.append(f"✅ 成功加载工具: {', '.join(success_tools)}。现已支持原生调用。")
+        res_messages.append(f"✅ 成功加载工具: {', '.join(success_tools)}。")
+        res_messages.append("⚠️ 注意：这些工具不在你的原生能力列表中，你必须使用 `call_dynamic_tool` 工具，将工具名和参数传给它来进行代理调用！")
+        res_messages.append("--- 以下是获取到的动态工具 Schema ---")
+        for t_name in success_tools:
+            schema_item = fetched_dict[t_name]
+            res_messages.append(json.dumps(schema_item["function"], ensure_ascii=False))
+        res_messages.append("--------------------------------------")
+        
     if failed_tools:
         res_messages.append(f"❌ 以下工具找不到或加载失败: {', '.join(failed_tools)}")
 
-    return _format_response("text", "\n".join(res_messages)), new_schema_info
+    return _format_response("text", "\n".join(res_messages))
 
 
 DEFAULT_SKILL_PATH = Path("data/skill")
@@ -571,13 +592,12 @@ def close_shell(session_id: str = "default") -> str:
 # ==========================================
 # 统一调度出口 (Call Base Tool)
 # ==========================================
-def call_base_tool(tool_name: str, arguments: dict) -> tuple[str, list]:
+def call_base_tool(tool_name: str, arguments: dict) -> str:
     """
     统一调度 base_tool 模块下的工具
     【已脱壳】不做任何异常拦截，直接抛给上层 parse_tool
-    返回: (格式化后的JSON字符串, 新的schema数据)
+    返回: 格式化后的 JSON 字符串
     """
-    new_schema_info = None
     result_content = ""
     
     if tool_name == "get_menu":
@@ -585,14 +605,16 @@ def call_base_tool(tool_name: str, arguments: dict) -> tuple[str, list]:
     elif tool_name == "execute_command":
         result_content = execute_command(**arguments)
     elif tool_name == "fetch_tool":
-        result_content, new_schema_info = handle_fetch_tool(arguments)
+        result_content = handle_fetch_tool(arguments)
     elif tool_name == "load_skill":
         result_content = load_skill(arguments.get("name"))
     elif tool_name == "list_skill":
         result_content = list_skill(arguments.get("page", 1))
     elif tool_name == "close_shell":
         result_content = close_shell(arguments.get("session_id", "default"))
+    elif tool_name == "call_dynamic_tool":
+        result_content = _format_response("error", "❌ 系统错误：代理工具拆包失败。请检查你传给 call_dynamic_tool 的 arguments 是否为合法的 JSON 字符串。")
     else:
         raise ValueError(f"未知的基础工具: {tool_name}")
 
-    return result_content, new_schema_info
+    return result_content

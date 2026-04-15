@@ -14,19 +14,18 @@ def _format_response(msg_type: str, content: Any) -> str:
     return json.dumps({"type": msg_type, "content": content}, ensure_ascii=False)
 
 
-def parse_tool(tool_name: str, arguments: dict, route: str = None, plugin: str = None) -> tuple[str, list]:
+def parse_tool(tool_name: str, arguments: dict, route: str = None, plugin: str = None) -> str:
     """
     核心枢纽：统一处理工具调用的路由和执行。
     【唯一异常拦截口】所有底层异常都在此被统一处理和格式化
     【全局字数检测】超长输出自动落盘缓存，防止大模型被撑爆
     """
-    new_schema_info = None
     result_content = ""
     try:
         # 1. 尝试将请求路由给 base_tool
         from src.plugins.route.base_tool import BASE_TOOL_NAMES, call_base_tool
         if tool_name in BASE_TOOL_NAMES or tool_name == "close_shell":
-            result_content, new_schema_info = call_base_tool(tool_name, arguments)
+            result_content = call_base_tool(tool_name, arguments)
 
         # 2. 如果不是 base_tool，走具体的路由和 Agent 逻辑
         else:
@@ -145,7 +144,7 @@ def parse_tool(tool_name: str, arguments: dict, route: str = None, plugin: str =
             else:
                 result_content = _format_response("warning", warning_msg)
     except Exception as e:
-        # 【黑洞异常处理】底层所有异常都冒泡到这里被统一捕获
+        # 底层所有异常都冒泡到这里被统一捕获
         traceback.print_exc()  # 打印完整报错栈便于本地开发调试
         result_content = _format_response("error", f"❌ 工具 [{tool_name}] 调度/执行发生异常: {str(e)}")
-    return str(result_content), new_schema_info
+    return str(result_content)

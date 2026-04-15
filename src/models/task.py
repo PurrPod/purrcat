@@ -53,7 +53,6 @@ class Task:
         self.model.bind_task(self.task_id, self.task_name)
         self.state = "ready"
         self.step = 0
-        self.dynamic_tool = []
         self._lock = threading.Lock()
         self._killed = False
         self.pending_force_push = []
@@ -163,7 +162,6 @@ class Task:
             "core": self.core,
             "judger": self.judger,
             "state": self.state,
-            "dynamic_tool": self.dynamic_tool,
             "current_plan": self.current_plan,
             "step": self.step,
             "token_usage": self.token_usage,
@@ -200,7 +198,6 @@ class Task:
             task.token_usage = state.get("token_usage", 0)
             task.window_token = state.get("window_token", 0)
             task.current_plan = state.get("current_plan", "")
-            task.dynamic_tool = state.get("dynamic_tool", [])
             task.pending_force_push = state.get("pending_force_push", [])
             task.checkpoint_dir = state.get("checkpoint_dir", checkpoint_dir)
             task.history = history
@@ -232,8 +229,6 @@ class Task:
         from src.plugins.route.base_tool import BASE_TOOLS
 
         current_tools = list(BASE_TOOLS) + list(TASK_TOOLS)
-        if self.dynamic_tool:
-            current_tools.extend([item["schema"] for item in self.dynamic_tool])
 
         plan_msg = self._get_dynamic_plan_msg()
         request_messages = self.history + [plan_msg]
@@ -414,7 +409,6 @@ class Task:
                         continue
                     break
                 self.history = self.history[0:start_idx] + self.history[split_idx:]
-                self.dynamic_tool.clear()
                 self.log_and_notify("system", "✅ 上下文压缩完毕！")
             except Exception as e:
                 self.log_and_notify("error", f"❌ 记忆存档发生异常: {e}")
@@ -423,7 +417,8 @@ class Task:
 
     def _tool_calling(self, tool_calling):
         for tool_call in tool_calling:
-            tool_name = tool_call.function.name
+            original_tool_name = tool_call.function.name
+            target_tool_name = original_tool_name
             arguments_str = tool_call.function.arguments
             arguments = {}
             if arguments_str:
@@ -439,14 +434,31 @@ class Task:
                             print(f"❌ json-repair 修复失败: {repair_e}")
                     else:
                         print("💡 强烈建议终端运行 `pip install json-repair` 来自动修复此问题！")
-            if tool_name in ["execute_command", "close_shell"]:
+            if original_tool_name == "call_dynamic_tool" and isinstance(arguments, dict):
+                target_tool_name = arguments.get("target_tool_name", "")
+                target_args = arguments.get("arguments", {})
+                if isinstance(target_args, str):
+                    try:
+                        arguments = json.loads(target_args)
+                    except Exception:
+                        if repair_json:
+                            try:
+                                arguments = repair_json(target_args, return_objects=True)
+                            except:
+                                arguments = target_args
+                        else:
+                            arguments = target_args
+                else:
+                    arguments = target_args
+
+            if target_tool_name in ["execute_command", "close_shell"]:
                 arguments["session_id"] = self.task_id
             if not isinstance(arguments, dict):
                 error_msg = "❌ 系统拦截：工具参数格式严重损坏（可能是因为你一次性写入的文件太长导致截断进而导致转义失败）。请分批运行命令避免指令过长！！"
                 self.history.append({
                     "role": "tool",
                     "tool_call_id": tool_call.id,
-                    "name": tool_name,
+                    "name": original_tool_name,
                     "content": error_msg
                 })
                 self.log_and_notify("system", "❌ 系统拦截：工具参数格式严重损坏")
@@ -455,57 +467,23 @@ class Task:
                 args_str = ", ".join([f'{k}={repr(v)}' for k, v in arguments.items()])
             else:
                 args_str = str(arguments)
-            self.log_and_notify("tool_call", f"🔧 助手调起工具: {tool_name}({args_str})", metadata={"arguments": arguments})
-            target_route = None
-            target_plugin = None
-
+            self.log_and_notify("tool_call", f"🔧 助手调起工具: {target_tool_name}({args_str})", metadata={"arguments": arguments})
             from src.plugins.route.task_tool import TASK_TOOL_FUNCTIONS
             task_tool_names = list(TASK_TOOL_FUNCTIONS.keys())
 
-            if tool_name in task_tool_names:
+            if target_tool_name in task_tool_names:
                 from src.plugins.route.task_tool import call_task_tool
-                result_str = call_task_tool(tool_name, arguments, self)
+                result_str = call_task_tool(target_tool_name, arguments, self)
             else:
-                for tool_item in self.dynamic_tool:
-                    if tool_item.get("funct") == tool_name:
-                        target_route = tool_item.get("route")
-                        target_plugin = tool_item.get("plugin")
-                        break
-
-                if not target_route or not target_plugin:
-                    if os.path.exists(TOOL_INDEX_FILE):
-                        with open(TOOL_INDEX_FILE, "r", encoding="utf-8") as f:
-                            for line in f:
-                                if not line.strip():
-                                    continue
-                                tool_info = json.loads(line)
-                                if tool_info["func"] == tool_name:
-                                    target_route = tool_info["route"]
-                                    target_plugin = tool_info["plugin"]
-                                    break
                 from src.plugins.plugin_manager import parse_tool
-                result_str, new_schema_info = parse_tool(tool_name, arguments, route=target_route, plugin=target_plugin)
-
-                if new_schema_info:
-                    schemas_to_add = new_schema_info if isinstance(new_schema_info, list) else [new_schema_info]
-                    for schema_item in schemas_to_add:
-                        new_funct_name = schema_item["funct"]
-                        found_idx = -1
-                        for i, existing_item in enumerate(self.dynamic_tool):
-                            if existing_item.get("funct") == new_funct_name:
-                                found_idx = i
-                                break
-                        if found_idx != -1:
-                            self.dynamic_tool[found_idx] = schema_item
-                        else:
-                            self.dynamic_tool.append(schema_item)
+                result_str = parse_tool(target_tool_name, arguments)
                 self.log_and_notify("tool", f"📦 工具回传结果: {result_str}")
             finish_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             time_aware_content = f"[finish at {finish_time}]\n{result_str}"
             self.history.append({
                 "role": "tool",
                 "tool_call_id": tool_call.id,
-                "name": tool_name,
+                "name": original_tool_name,
                 "content": time_aware_content
             })
 
