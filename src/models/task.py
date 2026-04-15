@@ -4,14 +4,12 @@ import os
 import threading
 import uuid
 import time
+import glob
 
 from json_repair import repair_json
 
 from src.models.model import Model
-from src.utils.config import TOOL_INDEX_FILE
-
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.abspath(os.path.join(BASE_DIR, "..", "..", "data"))
+from src.utils.config import TOOL_INDEX_FILE, DATA_DIR
 
 TASK_INSTANCES = {}
 dirty_tasks = set()
@@ -40,7 +38,12 @@ def inject_task_instruction(task_id: str, content: str):
     return False
 
 
-class Task:
+class BaseTask:
+    """
+    通用智能体任务基类 (BaseTask)
+    提供底层大模型通讯、工具解析、记忆管理、幻觉审查与断点恢复等基础设施。
+    """
+
     def __init__(self, task_name, prompt, core, judger):
         self.task_name = task_name
         self.prompt = prompt
@@ -49,8 +52,9 @@ class Task:
         self.system_prompt = self._build_system_prompt()
         self.history = []
         self.task_id = uuid.uuid4().hex
-        self.model = Model(core)
-        self.model.bind_task(self.task_id, self.task_name)
+        self.model = Model(core) if core else None
+        if self.model:
+            self.model.bind_task(self.task_id, self.task_name)
         self.state = "ready"
         self.step = 0
         self._lock = threading.Lock()
@@ -68,17 +72,31 @@ class Task:
         self.log_window = []
         self.log_and_notify("system", f"🎯 用户需求: \n{self.prompt}")
 
+    def _build_system_prompt(self):
+        """
+        基础系统提示词（子类可覆写）
+        提供最基础的 Agent 工具使用规范与交付要求。
+        """
+        return """# 角色定义
+你是一个通用型 AI 助手。你的核心任务是理解用户需求，并合理调度工具解决问题。
+
+# 核心行为规范
+1. **工具依赖**：遇到信息不足或需要操作外部环境时，必须主动使用工具，严禁凭空捏造（幻觉）。
+2. **制定计划**：复杂任务应使用 update_plan 工具生成计划，并在执行中随时更新。
+3. **交付验收**：当你认为任务完成时，必须调用 task_done 工具进行交付，说明任务成功与否，并给出详细总结。
+4. **及时求助**：如果发现现有条件无法完成任务，不应该自己编造幻觉，大胆承认不足，及时止损。"""
+
     def _cleanup_resources(self):
-        """【终极改造：隐式资源回收】清理当前任务相关的底层资源"""
+        """清理当前任务相关的底层资源"""
         try:
             from src.plugins.plugin_manager import close_shell
-            # 自动释放该任务专属的 Shell 进程，防止僵尸进程和内存泄漏
             close_shell(session_id=self.task_id)
             self.log_and_notify("system", "🧹 已自动回收任务专属的 Shell 终端环境")
         except Exception as e:
             print(f"⚠️ 自动回收 Shell 失败: {e}")
 
     def run(self):
+        """通用工作流：最大 150 步的单体工具循环"""
         max_steps = 150
         self.state = "running"
         while self.step < max_steps:
@@ -113,35 +131,32 @@ class Task:
                                 "name": "task_done",
                                 "content": return_content
                             })
-                        self.model.unbind_task()
-                        self._cleanup_resources()  # 正常结束回收资源
+                        if self.model: self.model.unbind_task()
+                        self._cleanup_resources()
                         self.save_checkpoint()
-                        if result:
-                            return f"✅ 任务成功：{summary}"
-                        else:
-                            return f"❌ 任务失败：{summary}"
+                        return f"✅ 任务成功：{summary}" if result else f"❌ 任务失败：{summary}"
                     else:
                         self._tool_calling(tool_calling)
                 self.checker()
             except KeyboardInterrupt:
                 self.state = "error"
-                self.model.unbind_task()
-                self._cleanup_resources()  # 强退回收资源
+                if self.model: self.model.unbind_task()
+                self._cleanup_resources()
                 self.log_and_notify("system", "⚠️ 检测到强制中断 (Ctrl+C)，保存现场...")
                 self.save_checkpoint()
                 raise
             except Exception as e:
                 self.state = "error"
-                self.model.unbind_task()
-                self._cleanup_resources()  # 崩溃回收资源
+                if self.model: self.model.unbind_task()
+                self._cleanup_resources()
                 self.log_and_notify("error", f"❌ 运行发生异常: {e}")
                 self.save_checkpoint()
                 raise InterruptedError(f"任务异常中断: {e}")
 
         if self.state != "completed":
             self.state = "error"
-            self.model.unbind_task()
-            self._cleanup_resources()  # 超时回收资源
+            if self.model: self.model.unbind_task()
+            self._cleanup_resources()
             self.save_checkpoint()
             self.log_and_notify("error", f"❌ 任务失败: 超出最大思考步数 ({max_steps})")
             return f"❌ 任务失败: 超出最大思考步数 ({max_steps})"
@@ -229,7 +244,6 @@ class Task:
         from src.plugins.route.base_tool import BASE_TOOLS
 
         current_tools = list(BASE_TOOLS) + list(TASK_TOOLS)
-
         plan_msg = self._get_dynamic_plan_msg()
         request_messages = self.history + [plan_msg]
 
@@ -285,8 +299,8 @@ class Task:
     def kill(self):
         self._killed = True
         self.state = "killed"
-        self.model.unbind_task()
-        self._cleanup_resources()  # 强退回收资源
+        if self.model: self.model.unbind_task()
+        self._cleanup_resources()
         self.log_and_notify("system", f"⚠️ 任务 {self.task_id} 被强制终止")
 
     def checker(self):
@@ -308,52 +322,6 @@ class Task:
                 "content": f"[System Warning] You should suspend your action and handle this message first!\n{content}"
             })
         self.memory_flush()
-
-    def _build_system_prompt(self):
-        prompt = """# 角色定义
-你是一名资深软件设计架构师与工程专家，拥有十年以上大规模系统开发经验。你不仅实现功能，更对代码的长期可维护性、健壮性、性能与安全性负责。
-
-# 你的工作环境简介
-- **沙盒环境**：你有一个自己的沙盒环境，也就是你的私人电脑，映射为物理地址agent_vm文件夹下。可用shell工具直接访问，你可以在沙盒环境的/agent_vm下进行工作，在沙盒里你有绝对的控制权和读写权，可以运行脚本、任意修改文件、运行命令行。注意：你的文件必须保存在/agent_vm下才不会被销毁！
-- **老板电脑**：你使用filesystem等插件系列工具，访问的都是老板的电脑，也就是说，你只有通过shell才会进入沙盒环境（或者，直接访问老板电脑的agent_vm文件夹，这个文件夹会映射到你的沙盒环境），其余时间你都会被分配到老板的电脑上，在老板的电脑上，你具有只读权限和修改少部分文件的权限。
-- **环境区分**：你要时刻区分自己在哪个环境下工作，一般来说根目录有/agent_vm就是沙盒环境
-
-# 工具使用注意事项
-- **shell工具**：每次使用 cat >> 写入时，严禁超过 50 行代码，写完 50 行必须结束当前工具调用，在下一次回复中继续追加。
-
-# 核心设计原则（必须内化为你思考的本能）
-1. **架构与模块化**：优先考虑系统分层、模块边界、依赖方向。追求高内聚、低耦合。
-2. **封装与抽象**：隐藏实现细节，暴露最小必要接口。为变化预留扩展点。
-3. **内存与资源管理**：明确对象生命周期，避免泄漏、悬垂指针、循环引用。在并发/嵌入式/高频场景下尤其谨慎。
-4. **并发与竞态**：识别共享资源，用锁、原子操作、无锁结构或消息传递保证正确性。避免死锁与活锁。
-5. **错误与边界处理**：不假设输入/环境可靠。处理异常、超时、重试、降级与熔断。
-6. **性能与可观测性**：评估时间/空间复杂度，避免过早优化，但绝不能引入明显低效设计。关键路径要可监控。
-7. **防御与安全**：校验所有外部输入，避免注入、溢出、未初始化内存等常见漏洞。
-8. **及时测试**：每完成一个任务，都要自己编写测试代码观察是否正常运行。你的每行代码，都要能经得起代码审查与技术债务的考验。
-9. **谦虚与及时纠错**：如果你发现现有条件无法完成任务，不应该自己编造幻觉，而应该大胆承认不足，及时止损，严禁凭空捏造！
-
-# 工作流程（每次回答问题前，先在内部执行）
-- **理解需求**：澄清问题中隐藏的约束与扩展场景。若用户只给简单需求，你需要主动补充缺失的边界条件（例如并发场景、资源释放策略）。
-- **评估设计**：思考多种方案，权衡简洁性、扩展性、性能与维护成本。禁止只给出“能跑就行”的代码。必须解释你的设计如何应对未来变化。你的每行代码，都要能经得起代码审查与技术债务的考验。
-- **识别风险**：主动指出可能的内存问题、竞态条件、边界失效、技术债务。
-- **制定计划**：使用原生update_plan生成计划，并在实际执行任务过程中随时调整计划。
-- **附加说明**：若有必要，补充测试策略、文档建议或重构方向。你的每行代码，都要能经得起代码审查与技术债务的考验。
-
-# 输出要求
-- 当你决定交付结果时，必须使用原生task_done工具进行交付，说明任务成功与否，并给出具体的说明（包括交付物的路径、对交付物的说明、设计时考虑的事物）
-- 禁止只给出“能跑就行”的代码。必须解释你的设计如何应对未来变化。
-- 语言风格：专业、精确、不废话。可以带批判性，例如“这样写虽然短，但会在高负载下产生内存碎片，因此建议改为池化”。
-
-# 典型反例（你必须避免！！！）
-- 全局变量满天飞，无依赖注入或模块解耦。
-- 在可能抛出异常的地方直接 `catch(...) { }` 吞掉错误。
-- 多线程中不做同步，或使用粗粒度大锁导致性能瓶颈。
-- 手动内存管理后忘记释放，或不使用 RAII/智能指针。
-- 暴露内部可变状态给外部直接修改。
-
-请记住：你的每行代码，都要能经得起代码审查与技术债务的考验。
-"""
-        return prompt
 
     def _get_dynamic_plan_msg(self):
         if not self.current_plan:
@@ -441,20 +409,14 @@ class Task:
                     try:
                         arguments = json.loads(target_args)
                     except Exception:
-                        if repair_json:
-                            try:
-                                arguments = repair_json(target_args, return_objects=True)
-                            except:
-                                arguments = target_args
-                        else:
-                            arguments = target_args
+                        arguments = repair_json(target_args, return_objects=True) if repair_json else target_args
                 else:
                     arguments = target_args
 
             if target_tool_name in ["execute_command", "close_shell"]:
                 arguments["session_id"] = self.task_id
             if not isinstance(arguments, dict):
-                error_msg = "❌ 系统拦截：工具参数格式严重损坏（可能是因为你一次性写入的文件太长导致截断进而导致转义失败）。请分批运行命令避免指令过长！！"
+                error_msg = "❌ 系统拦截：工具参数格式严重损坏。请分批运行命令避免指令过长！！"
                 self.history.append({
                     "role": "tool",
                     "tool_call_id": tool_call.id,
@@ -463,11 +425,9 @@ class Task:
                 })
                 self.log_and_notify("system", "❌ 系统拦截：工具参数格式严重损坏")
                 continue
-            if isinstance(arguments, dict):
-                args_str = ", ".join([f'{k}={repr(v)}' for k, v in arguments.items()])
-            else:
-                args_str = str(arguments)
+            args_str = ", ".join([f'{k}={repr(v)}' for k, v in arguments.items()]) if isinstance(arguments, dict) else str(arguments)
             self.log_and_notify("tool_call", f"🔧 助手调起工具: {target_tool_name}({args_str})", metadata={"arguments": arguments})
+
             from src.plugins.route.task_tool import TASK_TOOL_FUNCTIONS
             task_tool_names = list(TASK_TOOL_FUNCTIONS.keys())
 
@@ -489,88 +449,57 @@ class Task:
 
     def _run_eval(self):
         eval_system_prompt = """你是一个严格的 AI Agent 行为审查员。
-你的任务是审查 Agent 在最近几个对话轮次（LOG SNAPSHOT）中的表现，重点排查是否存在"幻觉（Hallucination）"。
-【幻觉的严格判定标准】：
-1. 凭空捏造：使用了未通过工具读取、或未在上下文/LSP诊断中出现的变量名、函数名、文件路径或代码逻辑。
-2. 盲目自信：没有调用相关工具获取信息（如搜索、查源码），却给出了笃定的事实性断言。
-3. 无视客观反馈：工具返回了明确的错误（如 FileNotFoundError、编译报错），但 Agent 的最终回复却声称操作成功。
-请严格以 JSON 格式输出你的审查结果，不要包含任何额外的 Markdown 标记：
+你的任务是审查 Agent 在最近几个对话轮次中的表现，重点排查是否存在"幻觉（Hallucination）"。
+请严格以 JSON 格式输出你的审查结果：
 {
     "has_hallucination": true 或 false,
-    "reason": "如果为 true，请直接指出具体的幻觉表现和证据；如果为 false，简述其逻辑是如何基于工具反馈闭环的。"
+    "reason": "如果为 true，请直接指出具体的幻觉表现和证据；如果为 false，简述其逻辑。"
 }"""
-        prompt = "以下是准备被压缩的上下文日志快照 (LOG SNAPSHOT)：\n\n" + "\n".join(self.log_window)
+        prompt = "以下是准备被压缩的上下文日志快照：\n\n" + "\n".join(self.log_window)
         judger_key = self.judger.split("]")[-1] if "]" in self.judger else self.judger
 
         try:
             judger_model = Model(judger_key)
-        except Exception as e:
-            print(f"[审查系统异常] 无法初始化模型 {judger_key}: {str(e)}")
-            self.log_and_notify("thought", f"🤖 质检审查: 模型初始化失败，默认放行: {str(e)}")
-            return {"has_hallucination": False, "reason": f"模型初始化失败，默认放行: {str(e)}"}
-
-        temp_history = [
-            {"role": "system", "content": eval_system_prompt},
-            {"role": "user", "content": prompt}
-        ]
-
-        try:
+            temp_history = [
+                {"role": "system", "content": eval_system_prompt},
+                {"role": "user", "content": prompt}
+            ]
             response = judger_model.chat(
                 messages=temp_history,
                 response_format={"type": "json_object"},
                 temperature=0.1
             )
-            message_content = response.choices[0].message.content
-            eval_result = json.loads(message_content)
+            eval_result = json.loads(response.choices[0].message.content)
             self.log_window = []
-            if eval_result["has_hallucination"]:
-                self.log_and_notify("thought", f"🤖 质检审查: 审核不通过\n{eval_result['reason']}")
-            else:
-                self.log_and_notify("thought", f"🤖 质检审查: 审核通过\n{eval_result['reason']}")
+            log_msg = f"🤖 质检审查: {'审核不通过' if eval_result['has_hallucination'] else '审核通过'}\n{eval_result['reason']}"
+            self.log_and_notify("thought", log_msg)
             return eval_result
-        except json.JSONDecodeError:
-            self.log_and_notify("thought", f"🤖 质检审查: 审查解析失败，默认放行")
-            return {"has_hallucination": False, "reason": "审查解析失败，默认放行"}
         except Exception as e:
-            print(f"[审查系统异常] API 请求失败: {str(e)}")
-            self.log_and_notify("thought", f"🤖 质检审查: 审查报错，默认放行: {str(e)}")
-            return {"has_hallucination": False, "reason": f"审查报错，默认放行: {str(e)}"}
+            self.log_and_notify("thought", f"🤖 质检审查: 默认放行 ({str(e)})")
+            return {"has_hallucination": False, "reason": f"审查异常，默认放行: {str(e)}"}
 
     def _ask_for_continue(self, eval_result=None):
         reason = eval_result.get("reason", "操作偏离预期或编造了不存在的信息。") if eval_result else "操作偏离预期或编造了不存在的信息。"
-
         reflection_prompt = f"""【系统严重警告：触发幻觉/错误拦截】请务必优先处理本条消息
-外部审查模块指出了你在最近几轮操作中的问题：
-{reason}
-你需要决定是纠错并继续，还是因为无法挽回而终止任务。请务必诚实回答，不轻易放弃但是一定不能盲目逞强！！
-请结合上述问题，严格以 JSON 格式输出你的决定，不要包含任何额外的 Markdown 标记：
+外部审查模块指出了你在最近几轮操作中的问题：{reason}
+你需要决定是纠错并继续，还是因为无法挽回而终止任务。
+请严格以 JSON 格式输出：
 {{
     "result": true 或 false,
-    "summary": "如果为 true，请反思并简述你接下来的『纠错计划』；如果为 false，请说明任务无法继续的客观理由。"
+    "summary": "如果为 true，简述纠错计划；如果为 false，说明客观理由。"
 }}"""
         self.history.append({"role": "user", "content": reflection_prompt})
         try:
             self.log_and_notify("system", "🧠 触发自我反思：正在要求 Core 模型进行诊断和决策...")
-            response = self.model.chat(
-                messages=self.history,
-                response_format={"type": "json_object"},
-                temperature=0.3
-            )
+            response = self.model.chat(messages=self.history, response_format={"type": "json_object"}, temperature=0.3)
             self._track_token_usage(response)
-
             message_content = response.choices[0].message.content
             self.history.append({"role": "assistant", "content": message_content})
             result_data = json.loads(message_content)
-            return {
-                "result": bool(result_data.get("result", True)),
-                "summary": str(result_data.get("summary", "Core 模型未提供明确的反思说明。"))
-            }
-        except json.JSONDecodeError:
-            self.log_and_notify("error", "❌ 自我反思结果解析失败，默认继续")
-            return {"result": True, "summary": "Core 模型返回了非标准的 JSON，默认继续"}
+            return {"result": bool(result_data.get("result", True)), "summary": str(result_data.get("summary", ""))}
         except Exception as e:
-            self.log_and_notify("error", f"❌ 请求 Core 模型反思失败: {e}，默认继续")
-            return {"result": True, "summary": f"反思请求发生异常: {e}，默认继续"}
+            self.log_and_notify("error", f"❌ 请求反思失败: {e}，默认继续")
+            return {"result": True, "summary": "❌ 反思异常，默认继续"}
 
     def resume(self):
         self.log_and_notify("system", "🔄 尝试从断点恢复任务...")
@@ -582,9 +511,8 @@ class Task:
             self.log_and_notify("system", "🛠️ 检测到断点处缺失工具回传结果。策略：撤销最近一次未完成的思考，让模型重新规划。")
             self.history.pop()
 
-        max_tokens_threshold = 110000
-        if self.window_token > max_tokens_threshold or len(self.history) > 140:
-            self.log_and_notify("system", "⚠️ 检测到上下文过长或 Token 濒临溢出。策略：恢复前强制执行记忆压缩。")
+        if self.window_token > 110000 or len(self.history) > 140:
+            self.log_and_notify("system", "⚠️ 策略：恢复前强制执行记忆压缩。")
             try:
                 self.memory_flush(check_mode=False)
             except Exception as e:
@@ -611,18 +539,12 @@ class Task:
             return self.resume()
 
 
-import glob
-
 def auto_load_all_tasks():
-    """开机时自动扫描并加载所有本地持久化的任务"""
     checkpoints_dir = os.path.join(DATA_DIR, "checkpoints", "task")
     if not os.path.exists(checkpoints_dir):
         return
-
-    # 遍历所有任务文件夹
     for task_dir in os.listdir(checkpoints_dir):
         full_path = os.path.join(checkpoints_dir, task_dir)
         if os.path.isdir(full_path) and os.path.exists(os.path.join(full_path, "checkpoint.json")):
-            task = Task.load_checkpoint(full_path)
-            if task:
-                print(f"✅ 成功恢复任务: {task.task_id}")
+            task = BaseTask.load_checkpoint(full_path)
+            if task: print(f"✅ 成功恢复任务: {task.task_id}")
