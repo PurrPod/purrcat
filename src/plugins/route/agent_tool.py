@@ -4,8 +4,10 @@ import threading
 import os
 from typing import Any
 
+from src.models.expert.coding.task import CodingTask
+from src.models.expert.trading.task import TradingTask
 # 补充引入了原本就存在的 kill_task，为了防止与本文件的同名工具函数冲突，起个别名 core_kill_task
-from src.models.task import Task, TASK_INSTANCES, DATA_DIR, inject_task_instruction, kill_task as core_kill_task
+from src.models.task import BaseTask, TASK_INSTANCES, DATA_DIR, inject_task_instruction, kill_task as core_kill_task
 from src.utils.config import get_models_config
 
 
@@ -16,8 +18,10 @@ def _format_response(msg_type: str, content: Any) -> str:
 def add_task(
         name: str,
         prompt: str,
+        expert: str,
         core: str = "openai:deepseek-chat",
-        judger: str = "openai:deepseek-chat"
+        judger: str = "openai:deepseek-chat",
+        expert_kwargs: dict = None
 ) -> str:
     """创建后台任务（无异常拦截，直接抛给上层）"""
     model_name = core
@@ -34,13 +38,22 @@ def add_task(
 
     # 不再需要检查 worker 状态！
     # 任务直接创建，底层 LLMDispatcher 的全局队列会自动处理并发与排队。
-
-    single_task = Task(
-        task_name=name,
-        prompt=prompt,
-        core=core,
-        judger=judger,
-    )
+    expert_kwargs = expert_kwargs or {}
+    if expert == "general":
+        single_task = BaseTask(task_name=name, prompt=prompt, core=core, judger=judger)
+    elif expert == "coding":
+        single_task = CodingTask(task_name=name, prompt=prompt, core=core, judger=judger)
+    elif expert == "trading":
+        company_name = expert_kwargs.get("company_name")
+        if not company_name:
+            raise ValueError("trading 型任务必须在 expert_kwargs 中提供 'company_name' 参数！")
+        trade_date = expert_kwargs.get("trade_date")
+        single_task = TradingTask(
+            task_name=name, prompt=prompt, core=core, judger=judger,
+            company_name=company_name, trade_date=trade_date
+        )
+    else:
+        raise ValueError(f"未知的子任务专家类型: {expert}")
 
     def _run_task():
         from src.agent.agent import add_message
@@ -64,9 +77,8 @@ def add_task(
 
 
 def reload_task(task_id: str) -> str:
-    """根据 task_id 重新加载并恢复休眠/中断的任务"""
+    """根据 task_id 重新加载并恢复休眠/中断的任务，支持多态恢复"""
     task = TASK_INSTANCES.get(task_id)
-
     # 如果内存中没有，尝试从磁盘扫描加载
     if not task:
         checkpoints_dir = os.path.join(DATA_DIR, "checkpoints", "task")
@@ -79,18 +91,23 @@ def reload_task(task_id: str) -> str:
                         with open(ckpt_path, "r", encoding="utf-8") as f:
                             state = json.load(f)
                         if state.get("task_id") == task_id:
-                            task = Task.load_checkpoint(folder_path)
+                            # 核心修复：读取 expert_type，多态加载实例
+                            expert_type = state.get("expert_type", "BaseTask")
+                            if expert_type == "TradingTask":
+                                task = TradingTask.load_checkpoint(folder_path)
+                            elif expert_type == "CodingTask":
+                                task = CodingTask.load_checkpoint(folder_path)
+                            else:
+                                task = BaseTask.load_checkpoint(folder_path)
                             break
-                    except Exception:
+                    except Exception as e:
+                        print(f"尝试加载检查点时发生异常: {e}")
                         pass
-
     if not task:
         raise FileNotFoundError(f"未找到ID为 {task_id} 的任务历史。")
 
     if task.state in ["running", "ready"] and task.step > 0:
         return _format_response("text", f"⚠️ 任务 (ID: {task_id}) 目前状态为 {task.state}，无需重载。")
-
-    # 在后台线程中执行恢复操作，防止阻塞 Agent
     def _resume_task():
         from src.agent.agent import add_message
         try:
@@ -101,11 +118,9 @@ def reload_task(task_id: str) -> str:
             task.state = "error"
             error_msg = f"❌ [系统通知] 任务 '{task.task_name}' (ID: {task_id}) 恢复运行崩溃，原因: {e}"
             add_message({"type": "task_message", "content": error_msg})
-
     t = threading.Thread(target=_resume_task, daemon=True)
     t.start()
     return _format_response("text", f"✅ 任务 (ID: {task_id}) 正在后台恢复执行...")
-
 
 def submit_request(task_id: str, new_prompt: str) -> str:
     """向指定的任务追加需求指令（无异常拦截，直接抛给上层）"""
@@ -300,12 +315,21 @@ AGENT_TOOLS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "name": {"type": "string", "description": "任务标题"},
-                    "prompt": {"type": "string", "description": "系统提示"},
+                    "name": {"type": "string", "description": "为后台子任务起一个名称"},
+                    "prompt": {"type": "string", "description": "告诉后台子任务要做什么"},
+                    "expert": {
+                        "type": "string",
+                        "enum": ["general", "coding", "trading"],
+                        "description": "选择子任务专家类型：general(标准全能通才), coding(资深代码架构师), trading(股市交易团队)"
+                    },
                     "core": {"type": "string",
-                             "description": "使用的核心模型，如\"openai:deepseek-chat\"，可用list_worker查看"}
+                             "description": "使用的工人代号，如\"openai:deepseek-chat\"，可用list_worker查看"},
+                    "expert_kwargs": {
+                        "type": "object",
+                        "description": "如果 expert 为 trading，必须传入包含标的的字典，如 {\"company_name\": \"AAPL\", \"trade_date\": \"2026-04-16\"}。其他专家无需此参数。"
+                    }
                 },
-                "required": ["name", "prompt", "core"]
+                "required": ["name", "prompt", "expert", "core"]
             }
         }
     },

@@ -171,6 +171,7 @@ class BaseTask:
         state = {
             "task_id": self.task_id,
             "name": self.task_name,
+            "expert_type": self.__class__.__name__,
             "create_time": self.create_time,
             "prompt": self.prompt,
             "system_prompt": self.system_prompt,
