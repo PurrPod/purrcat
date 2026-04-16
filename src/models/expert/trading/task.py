@@ -1,27 +1,30 @@
-# 一个测试用的 trading 专家，仅作 demo 用。
-
 import json
 import threading
 import concurrent.futures
 from src.models.task import BaseTask
 
-# 延迟导入可能缺失的依赖，防止模块级别导入失败
+# 导入解耦后的专家工具集与定义
+try:
+    from src.models.expert.trading.extend_tool import EXTEND_TOOL_FUNCTIONS, EXTEND_TOOLS_SCHEMA
+except ImportError as e:
+    print(f"⚠️ 交易专家扩展工具加载失败: {e}")
+    EXTEND_TOOL_FUNCTIONS = {}
+    EXTEND_TOOLS_SCHEMA = []
+
+# 延迟导入底层基础设施
 try:
     from src.models.model import Model
-except ImportError as e:
-    print(f"⚠️ Model 导入失败（缺依赖）: {e}")
+except ImportError:
     Model = None
 
 try:
     from src.loader.memory import Memory
-except ImportError as e:
-    print(f"⚠️ Memory 导入失败: {e}")
+except ImportError:
     Memory = None
 
 try:
     from src.plugins.plugin_manager import parse_tool
-except ImportError as e:
-    print(f"⚠️ parse_tool 导入失败: {e}")
+except ImportError:
     parse_tool = None
 
 
@@ -52,7 +55,7 @@ class TradingTask(
 
         # 1. 初始化独立的图状态
         self.agent_state = self._get_default_agent_state()
-        self.financial_memory = Memory()
+        self.financial_memory = Memory() if Memory else None
         self._token_lock = threading.Lock()
 
     def _get_default_agent_state(self):
@@ -71,7 +74,21 @@ class TradingTask(
             "final_trade_decision": ""
         }
 
-    # ================= 生命周期钩子 (完美对接 BaseTask) =================
+    def _get_available_tools(self):
+        """组装工人可见的工具集：CatInCup 基础工具 + 交易领域专用工具"""
+        tools = []
+        try:
+            from src.plugins.route.base_tool import BASE_TOOLS
+            tools.extend(BASE_TOOLS)
+        except Exception:
+            pass
+
+        # 合并来自 extend_tool/schema.py 的定义
+        tools.extend(EXTEND_TOOLS_SCHEMA)
+        return tools
+
+    # ================= 生命周期钩子 =================
+
     def _on_save_state(self) -> dict:
         """任务存档时，自动打包 TradingTask 的特有数据"""
         return {
@@ -82,14 +99,10 @@ class TradingTask(
 
     def _on_restore_state(self, state: dict):
         """任务读档恢复时，重建 TradingTask 的环境与数据"""
-        # 1. 恢复不可序列化的对象（避免 AttributeError 崩溃）
         self._token_lock = threading.Lock()
-        self.financial_memory = Memory()
+        self.financial_memory = Memory() if Memory else None
 
-        # 2. 从额外状态中恢复特定属性
         extra = state.get("extra_state", {})
-
-        # 向下兼容旧版“黑科技”存档：如果你有以前跑了一半的任务是用 current_plan 存的，这里顺手读出来
         old_plan = state.get("current_plan", "")
         if not extra and old_plan and old_plan.startswith("{"):
             try:
@@ -100,8 +113,6 @@ class TradingTask(
         self.company_name = extra.get("company_name", "Unknown")
         self.trade_date = extra.get("trade_date", "Current")
         self.agent_state = extra.get("agent_state", self._get_default_agent_state())
-
-        # 兜底旧版的嵌套 key
         if "company_of_interest" in self.agent_state:
             self.company_name = self.agent_state["company_of_interest"]
 
@@ -110,13 +121,11 @@ class TradingTask(
         with self._token_lock:
             return super()._track_token_usage(response)
 
-    def run(self):
-        """
-        【覆写运行逻辑】：引入了节点状态机，支持断点精准跳过，完美对接 Exception 现场保护
-        """
-        self.state = "running"
+    # ================= 核心运行逻辑 =================
 
-        # 定义执行流图节点
+    def run(self):
+        """覆写运行逻辑：引入了节点状态机，支持断点精准跳过"""
+        self.state = "running"
         nodes = [
             ("分析师团队执行", self._node_analysts),
             ("多空投资辩论", self._node_investment_debate),
@@ -126,7 +135,6 @@ class TradingTask(
         ]
 
         try:
-            # 巧妙利用底层的 self.step 来记录当前跑到哪个节点了！
             while self.step < len(nodes):
                 node_name, current_node_func = nodes[self.step]
                 self.log_and_notify("system",
@@ -135,11 +143,9 @@ class TradingTask(
                 # 执行图节点逻辑
                 current_node_func()
 
-                # 节点成功完成后：步数+1 -> 落盘保存！（内部会自动触发 _on_save_state 钩子）
+                # 节点成功完成后：步数+1 -> 落盘保存！
                 self.step += 1
                 self.save_checkpoint()
-
-                # 为了 UI 呈现，向主线历史注入一条简要节点总结
                 self.history.append({"role": "assistant", "content": f"✅ {node_name} 执行完毕，状态已保存。"})
 
             # 所有节点执行完毕
@@ -152,7 +158,6 @@ class TradingTask(
             self.history.append({"role": "assistant", "content": f"🎯 最终交易决策：\n{final_decision}"})
             return f"✅ 任务成功，最终决策：\n{final_decision}"
 
-        # ====== 完美复刻底层 BaseTask 的异常处理与资源回收 ======
         except KeyboardInterrupt:
             self.state = "error"
             if self.model: self.model.unbind_task()
@@ -169,14 +174,14 @@ class TradingTask(
             raise InterruptedError(f"交易任务异常中断: {e}")
 
     def resume(self):
-        """【覆写恢复逻辑】：让断点恢复支持有向无环图 (DAG)"""
+        """断点恢复"""
         self.log_and_notify("system", f"🔄 尝试从图谱断点恢复任务... 当前处于第 {self.step + 1} 个节点。")
         self.log_and_notify("system", "🚀 环境排错完成，跳过已完成节点，重新启动任务流。")
         self.state = "ready"
         return self.run()
 
     def _run_isolated_agent(self, role_name, system_prompt, user_prompt, tools=None):
-        """【隔离舱引擎】：透明化执行室，所有的思考、工具调用过程强制透传给前端，防止偷摸幻觉"""
+        """隔离舱引擎：透明化执行室，内置工具分发路由逻辑"""
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt}
@@ -189,8 +194,6 @@ class TradingTask(
                 msg = response.choices[0].message
 
                 assist_msg = {"role": "assistant", "content": msg.content or ""}
-
-                # 2. 如果模型在调用工具前输出了中间思考过程（如 DeepSeek-Chat 的 CoT），展示出来
                 if msg.content:
                     self.log_and_notify("thought", f"🧠 [{role_name}] 正在思考分析:\n{msg.content}")
 
@@ -204,25 +207,48 @@ class TradingTask(
 
                     for tc in msg.tool_calls:
                         args_str = tc.function.arguments or "{}"
-
-                        # 3. 拦截并展示调用的工具及参数（带上角色名字以防并发错乱）
                         self.log_and_notify("tool_call", f"🔧 [{role_name}] 决定调用工具: {tc.function.name}\n参数: {args_str}")
 
-                        args = json.loads(args_str)
-                        result_str = parse_tool(tc.function.name, args)
+                        try:
+                            args = json.loads(args_str)
+                        except json.JSONDecodeError:
+                            args = {}
 
-                        # 4. 展示工具的回传结果（截断以防刷屏，但能让你知道返回了什么，破除幻觉）
+                        target_tool_name = tc.function.name
+                        if target_tool_name == "call_dynamic_tool" and isinstance(args, dict):
+                            target_tool_name = args.get("target_tool_name", tc.function.name)
+                            inner_args = args.get("arguments", {})
+
+                            if isinstance(inner_args, str):
+                                try:
+                                    args = json.loads(inner_args)
+                                except Exception:
+                                    try:
+                                        from json_repair import repair_json
+                                        args = repair_json(inner_args, return_objects=True)
+                                    except ImportError:
+                                        args = inner_args
+                            else:
+                                args = inner_args
+                        if target_tool_name in EXTEND_TOOL_FUNCTIONS:
+                            try:
+                                result_str = EXTEND_TOOL_FUNCTIONS[target_tool_name](**args)
+                            except Exception as e:
+                                result_str = f"❌ extend_tool执行异常: {e}"
+                        else:
+                            if parse_tool:
+                                result_str = parse_tool(target_tool_name, args)
+                            else:
+                                result_str = "❌ 底层 parse_tool 未成功加载"
                         result_preview = str(result_str)
                         if len(result_preview) > 1500:
                             result_preview = result_preview[:1500] + "\n...(内容过长已截断)..."
 
                         self.log_and_notify("tool",
                                             f"📦 [{role_name}] 工具 {tc.function.name} 返回结果:\n{result_preview}")
-
                         messages.append({"role": "tool", "tool_call_id": tc.id, "name": tc.function.name,
                                          "content": str(result_str)[:2000]})
                 else:
-                    # 5. 最终结论产出
                     self.log_and_notify("thought", f"✅ [{role_name}] 阶段任务完成，最终输出:\n{msg.content}")
                     return msg.content
 
@@ -233,8 +259,6 @@ class TradingTask(
             response = self.model.chat(messages=messages)
             self._track_token_usage(response)
             content = response.choices[0].message.content
-
-            # 无工具调用的纯思考型 Agent，直接打印结果
             self.log_and_notify("thought", f"✅ [{role_name}] 完成思考，输出结论:\n{content}")
             return content
 
@@ -243,10 +267,8 @@ class TradingTask(
         results = {}
         with concurrent.futures.ThreadPoolExecutor(max_workers=len(task_dict)) as executor:
             future_to_name = {
-                executor.submit(
-                    self._run_isolated_agent,
-                    v["role"], v["sys"], v["user"], v.get("tools")
-                ): k for k, v in task_dict.items()
+                executor.submit(self._run_isolated_agent, v["role"], v["sys"], v["user"], v.get("tools")): k
+                for k, v in task_dict.items()
             }
             for future in concurrent.futures.as_completed(future_to_name):
                 name = future_to_name[future]
@@ -257,36 +279,38 @@ class TradingTask(
                     results[name] = f"分析失败: {exc}"
         return results
 
-    # ================= 节点实现 =================
+    # ================= 节点具体实现 =================
 
     def _node_analysts(self):
         """节点 1：分析师团队并发工作"""
         self.log_and_notify("system", "🔍 [Node 1: Analysts] 启动分析师团队，并发获取市场、情绪、新闻、基本面数据...")
 
+        available_tools = self._get_available_tools()
+
         analyst_tasks = {
             "market_report": {
                 "role": "Market_Analyst",
                 "sys": "你是市场技术分析师。请分析给定股票的技术指标（如 MACD, RSI, 均线等）和价格走势。",
-                "user": f"请给出 {self.company_name} 截至 {self.trade_date} 的市场技术面报告。",
-                "tools": None  # 此处接入 get_stock_data, get_indicators 工具
+                "user": f"请给出 {self.company_name} 截至 {self.trade_date} 的市场技术面报告。必须使用工具获取准确数据。",
+                "tools": available_tools
             },
             "sentiment_report": {
                 "role": "Social_Analyst",
                 "sys": "你是社交媒体情绪分析师。请总结大众情绪是看涨还是看跌。",
-                "user": f"请给出 {self.company_name} 在社交网络上的情绪倾向报告。",
-                "tools": None
+                "user": f"请给出 {self.company_name} 在社交网络上的情绪倾向报告。必须使用工具搜集全网数据。",
+                "tools": available_tools
             },
             "news_report": {
                 "role": "News_Analyst",
                 "sys": "你是宏观新闻分析师。关注全球宏观经济、行业政策与内幕交易事件。",
                 "user": f"请给出关于 {self.company_name} 的最新宏观及行业新闻研报。",
-                "tools": None  # 此处接入 get_news, get_global_news 工具
+                "tools": available_tools
             },
             "fundamentals_report": {
                 "role": "Fundamentals_Analyst",
                 "sys": "你是基本面分析师。负责剖析财报（资产负债表、现金流、利润表）。",
                 "user": f"请给出 {self.company_name} 的深度财务基本面研报。",
-                "tools": None  # 此处接入 get_fundamentals 工具
+                "tools": available_tools
             }
         }
         reports = self._execute_parallel(analyst_tasks)
@@ -351,12 +375,14 @@ class TradingTask(
         """节点 3：交易员提议"""
         self.log_and_notify("system", "🧑‍💼 [Node 3: Trader] 交易员结合历史相似行情，推演交易提案...")
 
-        # 提取过往相似记忆 (RAG)
         curr_situation = self.agent_state["investment_debate_state"]["judge_decision"]
         try:
-            past_memories = self.financial_memory.search(curr_situation, top_k=2)
-            past_memory_str = "\n".join(
-                [m.get("content", "") for m in past_memories]) if past_memories else "无相关历史交易记忆。"
+            if self.financial_memory:
+                past_memories = self.financial_memory.search(curr_situation, top_k=2)
+                past_memory_str = "\n".join(
+                    [m.get("content", "") for m in past_memories]) if past_memories else "无相关历史交易记忆。"
+            else:
+                past_memory_str = "无相关历史交易记忆。"
         except:
             past_memory_str = "无相关历史交易记忆。"
 
