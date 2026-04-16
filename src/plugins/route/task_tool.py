@@ -1,6 +1,6 @@
 import json
 from typing import Any
-from src.models.task import Task
+from src.models.task import BaseTask
 
 
 def _format_response(msg_type: str, content: Any) -> str:
@@ -17,9 +17,6 @@ def update_plan(**kwargs) -> str:
     pass
 
 
-# ---------------------------------------------------------
-# 1. 重构工具 Schema，支持精确的增删改查
-# ---------------------------------------------------------
 TASK_TOOLS = [
     {
         "type": "function",
@@ -95,10 +92,9 @@ TASK_TOOL_FUNCTIONS = {
 }
 
 
-def call_task_tool(tool_name: str, arguments: dict, task: Task) -> str:
+def call_task_tool(tool_name: str, arguments: dict, task) -> str:
     if tool_name not in TASK_TOOL_FUNCTIONS:
         return _format_response("error", f"未知的 Task 工具: {tool_name}")
-
     try:
         if tool_name == "task_done":
             func = TASK_TOOL_FUNCTIONS[tool_name]
@@ -114,9 +110,6 @@ def call_task_tool(tool_name: str, arguments: dict, task: Task) -> str:
             return result
 
         elif tool_name == "update_plan":
-            # ---------------------------------------------------------
-            # 2. 状态管理器拦截逻辑
-            # ---------------------------------------------------------
             current_plan_dict = {"overall_goal": "未设定", "steps": [], "next_id": 1}
 
             # 安全解析 task.current_plan（防范它是字符串或字典的各种情况）
@@ -197,10 +190,7 @@ def call_task_tool(tool_name: str, arguments: dict, task: Task) -> str:
                     if s.get("description"):
                         md_plan += f"    📝 {s['description']}\n"
 
-            # 记录 UI/文件日志
             task.log_and_notify("plan", f"📋 Agent 更新了计划 [{action}]:\n{md_plan}")
-
-            # 将当前最新状态回传给大模型，让它知道操作成功且能看到全貌
             return _format_response("plan_updated", f"✅ 操作 '{action}' 成功！当前最新计划表如下：\n{md_plan}")
 
     except Exception as e:

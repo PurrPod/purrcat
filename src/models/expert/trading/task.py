@@ -1,26 +1,59 @@
+# 一个测试用的 trading 专家，仅作 demo 用。
+
 import json
 import threading
 import concurrent.futures
 from src.models.task import BaseTask
-from src.models.model import Model
-from src.loader.memory import Memory
-from src.plugins.plugin_manager import parse_tool
+
+# 延迟导入可能缺失的依赖，防止模块级别导入失败
+try:
+    from src.models.model import Model
+except ImportError as e:
+    print(f"⚠️ Model 导入失败（缺依赖）: {e}")
+    Model = None
+
+try:
+    from src.loader.memory import Memory
+except ImportError as e:
+    print(f"⚠️ Memory 导入失败: {e}")
+    Memory = None
+
+try:
+    from src.plugins.plugin_manager import parse_tool
+except ImportError as e:
+    print(f"⚠️ parse_tool 导入失败: {e}")
+    parse_tool = None
 
 
-class TradingTask(BaseTask):
+class TradingTask(
+    BaseTask,
+    expert_type="trading",
+    description="量化交易专家，负责股票的多空辩论、基本面/技术面分析及风险定调。",
+    parameters={
+        "company_name": {
+            "type": "string",
+            "description": "要分析的公司名称或股票代码（如 '苹果', 'AAPL'）",
+            "required": True
+        },
+        "trade_date": {
+            "type": "string",
+            "description": "交易分析的基准日期，默认为 'Current'",
+            "required": False,
+            "default": "Current"
+        }
+    }
+):
     def __init__(self, task_name, prompt, core, judger, company_name, trade_date=None):
         super().__init__(task_name, prompt, core, judger)
         self.company_name = company_name
         self.trade_date = trade_date or "Current"
-        self.max_debate_rounds = 3
-        self.max_risk_discuss_rounds = 3
+        self.max_debate_rounds = 2
+        self.max_risk_discuss_rounds = 2
 
         # 1. 初始化独立的图状态
         self.agent_state = self._get_default_agent_state()
         self.financial_memory = Memory()
         self._token_lock = threading.Lock()
-
-        # 删除了旧版的 self._sync_state_from_base() 调用，现在由基类自动触发钩子恢复
 
     def _get_default_agent_state(self):
         """生成默认状态机"""
@@ -71,8 +104,6 @@ class TradingTask(BaseTask):
         # 兜底旧版的嵌套 key
         if "company_of_interest" in self.agent_state:
             self.company_name = self.agent_state["company_of_interest"]
-
-    # ==================================================================
 
     def _track_token_usage(self, response) -> dict:
         """保证多线程并发时的 Token 累加绝对安全"""

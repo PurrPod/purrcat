@@ -6,20 +6,5 @@
     "active": false,
     "id": "2b0b6214-dec2-401a-b39e-ef61dd78e829",
     "createdAt": "2026-03-15T17:39:00.432327"
-  },
-  {
-    "title": "跑步提醒",
-    "trigger_time": "17:40",
-    "repeat_rule": "none",
-    "active": false,
-    "id": "15a61e38-b094-422b-88b1-ad6745479ef8",
-    "createdAt": "2026-03-15T17:39:21.818070"
-  },
-  {
-    "id": "crn_867b5000",
-    "title": "每天喝水提醒",
-    "trigger_time": "10:00",
-    "repeat_rule": "everyday",
-    "active": false
   }
 ]

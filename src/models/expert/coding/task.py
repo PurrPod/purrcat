@@ -1,6 +1,11 @@
 from src.models.task import BaseTask
 
-class CodingTask(BaseTask):
+class CodingTask(
+    BaseTask,
+    expert_type="coding",
+    description="代码专家，负责独立完成工程代码的编写和测试",
+    parameters={}
+):
     """
     代码编写与架构专家任务。
     继承通用工作流，仅覆写 System Prompt 注入程序员灵魂与沙盒约束。

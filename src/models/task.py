@@ -43,6 +43,20 @@ class BaseTask:
     通用智能体任务基类 (BaseTask)
     提供底层大模型通讯、工具解析、记忆管理、幻觉审查与断点恢复等基础设施。
     """
+    _EXPERT_REGISTRY = {}
+    def __init_subclass__(cls, expert_type=None, description="", parameters=None, **kwargs):
+        """
+        当任何类继承 BaseTask 时，会自动触发这个钩子。
+        支持类定义时直接指定注册信息，避免循环导入。
+        """
+        super().__init_subclass__(**kwargs)
+        if expert_type:
+            cls._EXPERT_REGISTRY[expert_type] = {
+                "class": cls,
+                "description": description,
+                "parameters": parameters or {}
+            }
+            print(f"✅ 自动注册子任务专家: {expert_type} -> {cls.__name__}")
 
     def __init__(self, task_name, prompt, core, judger):
         self.task_name = task_name
@@ -544,12 +558,106 @@ class BaseTask:
             return self.resume()
 
 
+def auto_discover_experts():
+    """
+    自动扫描并导入所有专家模块，触发 __init_subclass__ 钩子进行注册。
+    同时确保 "general" 专家被注册到 BaseTask._EXPERT_REGISTRY。
+    """
+    import pkgutil
+    import importlib
+    if "general" not in BaseTask._EXPERT_REGISTRY:
+        BaseTask._EXPERT_REGISTRY["general"] = {
+            "class": BaseTask,
+            "description": "通用型任务专家，适用于常规查询、搜索、日常助理和简单的步骤执行。",
+            "parameters": {}
+        }
+        print(f"✅ 自动注册默认任务专家: general -> BaseTask")
+    try:
+        import src.models.expert
+        module_count = 0
+        failed_modules = []
+        for _, module_name, is_pkg in pkgutil.walk_packages(
+            src.models.expert.__path__, 
+            src.models.expert.__name__ + "."
+        ):
+            try:
+                importlib.import_module(module_name)
+                module_count += 1
+            except Exception as e:
+                failed_modules.append((module_name, str(e)))
+        if failed_modules and module_count == 0:
+            # 只有在所有模块都失败时才警告
+            print(f"⚠️ 所有专家模块加载失败:")
+            for mod, err in failed_modules:
+                print(f"   ├─ {mod}: {err}")
+        elif failed_modules:
+            # 部分模块失败，输出debug信息
+            print(f"📦 已成功加载 {module_count} 个专家模块, {len(failed_modules)} 个失败:")
+            for mod, err in failed_modules:
+                print(f"   ⚠️  {mod}: {err}")
+    except Exception as e:
+        print(f"❌ 扫描专家目录失败: {e}")
+        import traceback
+        traceback.print_exc()
+
+
+class TaskFactory:
+    @staticmethod
+    def create_task(expert_type: str, task_name: str, prompt: str, core: str, judger: str, **kwargs):
+        """
+        基于自动发现的注册表动态实例化专家任务
+        """
+        # 确保已自动发现和注册所有专家
+        auto_discover_experts()
+        if expert_type not in BaseTask._EXPERT_REGISTRY:
+            raise ValueError(f"❌ 注册表中未找到指定的专家类型: {expert_type}")
+        
+        registry_info = BaseTask._EXPERT_REGISTRY[expert_type]
+        TargetClass = registry_info["class"]
+        
+        # 动态参数校验与映射
+        validated_args = {}
+        for param_name, param_meta in registry_info["parameters"].items():
+            if param_meta.get("required", False) and param_name not in kwargs:
+                raise ValueError(f"❌ 创建 {expert_type} 专家任务失败：缺失必填参数 '{param_name}'")
+            
+            # 提取参数，若无则取默认值
+            validated_args[param_name] = kwargs.get(param_name, param_meta.get("default"))
+            
+        # 实例化目标任务
+        task_instance = TargetClass(
+            task_name=task_name, 
+            prompt=prompt, 
+            core=core, 
+            judger=judger, 
+            **validated_args
+        )
+        return task_instance
+
 def auto_load_all_tasks():
+    """自动从检查点目录恢复所有任务"""
+    auto_discover_experts()  # 先确保所有专家已注册
     checkpoints_dir = os.path.join(DATA_DIR, "checkpoints", "task")
     if not os.path.exists(checkpoints_dir):
         return
+    # 为了通过类名反查字典 key
+    class_name_to_expert = {info["class"].__name__: info["class"] for info in BaseTask._EXPERT_REGISTRY.values()}
+    
     for task_dir in os.listdir(checkpoints_dir):
         full_path = os.path.join(checkpoints_dir, task_dir)
-        if os.path.isdir(full_path) and os.path.exists(os.path.join(full_path, "checkpoint.json")):
-            task = BaseTask.load_checkpoint(full_path)
-            if task: print(f"✅ 成功恢复任务: {task.task_id}")
+        checkpoint_file = os.path.join(full_path, "checkpoint.json")
+        if os.path.isdir(full_path) and os.path.exists(checkpoint_file):
+            try:
+                with open(checkpoint_file, "r", encoding="utf-8") as f:
+                    state = json.load(f)
+                
+                # 读取原任务的类名，例如 "TradingTask"
+                expert_class_name = state.get("expert_type", "BaseTask")
+                TargetClass = class_name_to_expert.get(expert_class_name, BaseTask)
+                
+                # 使用真实子类的 load_checkpoint 恢复
+                task = TargetClass.load_checkpoint(full_path)
+                if task: 
+                    print(f"✅ 成功通过 [{expert_class_name}] 恢复任务: {task.task_id}")
+            except Exception as e:
+                print(f"❌ 自动恢复任务目录 {task_dir} 失败: {e}")

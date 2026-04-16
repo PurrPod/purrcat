@@ -4,10 +4,8 @@ import threading
 import os
 from typing import Any
 
-from src.models.expert.coding.task import CodingTask
-from src.models.expert.trading.task import TradingTask
 # 补充引入了原本就存在的 kill_task，为了防止与本文件的同名工具函数冲突，起个别名 core_kill_task
-from src.models.task import BaseTask, TASK_INSTANCES, DATA_DIR, inject_task_instruction, kill_task as core_kill_task
+from src.models.task import BaseTask, TASK_INSTANCES, DATA_DIR, inject_task_instruction, kill_task as core_kill_task, TaskFactory
 from src.utils.config import get_models_config
 
 
@@ -39,21 +37,18 @@ def add_task(
     # 不再需要检查 worker 状态！
     # 任务直接创建，底层 LLMDispatcher 的全局队列会自动处理并发与排队。
     expert_kwargs = expert_kwargs or {}
-    if expert == "general":
-        single_task = BaseTask(task_name=name, prompt=prompt, core=core, judger=judger)
-    elif expert == "coding":
-        single_task = CodingTask(task_name=name, prompt=prompt, core=core, judger=judger)
-    elif expert == "trading":
-        company_name = expert_kwargs.get("company_name")
-        if not company_name:
-            raise ValueError("trading 型任务必须在 expert_kwargs 中提供 'company_name' 参数！")
-        trade_date = expert_kwargs.get("trade_date")
-        single_task = TradingTask(
-            task_name=name, prompt=prompt, core=core, judger=judger,
-            company_name=company_name, trade_date=trade_date
+    try:
+        # 使用 TaskFactory 动态创建任务
+        single_task = TaskFactory.create_task(
+            expert_type=expert,
+            task_name=name,
+            prompt=prompt,
+            core=core,
+            judger=judger,
+            **expert_kwargs
         )
-    else:
-        raise ValueError(f"未知的子任务专家类型: {expert}")
+    except Exception as e:
+        return _format_response("text", f"❌ 创建任务失败: {e}")
 
     def _run_task():
         from src.agent.agent import add_message
@@ -91,12 +86,13 @@ def reload_task(task_id: str) -> str:
                         with open(ckpt_path, "r", encoding="utf-8") as f:
                             state = json.load(f)
                         if state.get("task_id") == task_id:
-                            # 核心修复：读取 expert_type，多态加载实例
+                            # 核心修复：读取 expert_type，从注册表获取对应的类进行多态加载
+                            from src.models.task import auto_discover_experts
+                            auto_discover_experts()
                             expert_type = state.get("expert_type", "BaseTask")
-                            if expert_type == "TradingTask":
-                                task = TradingTask.load_checkpoint(folder_path)
-                            elif expert_type == "CodingTask":
-                                task = CodingTask.load_checkpoint(folder_path)
+                            if expert_type in BaseTask._EXPERT_REGISTRY:
+                                TargetClass = BaseTask._EXPERT_REGISTRY[expert_type]["class"]
+                                task = TargetClass.load_checkpoint(folder_path)
                             else:
                                 task = BaseTask.load_checkpoint(folder_path)
                             break
@@ -324,9 +320,11 @@ AGENT_TOOLS = [
                     },
                     "core": {"type": "string",
                              "description": "使用的工人代号，如\"openai:deepseek-chat\"，可用list_worker查看"},
+                    "judger": {"type": "string",
+                               "description": "用于审查的工人代号，默认与core相同"},
                     "expert_kwargs": {
                         "type": "object",
-                        "description": "如果 expert 为 trading，必须传入包含标的的字典，如 {\"company_name\": \"AAPL\", \"trade_date\": \"2026-04-16\"}。其他专家无需此参数。"
+                        "description": "根据 expert 类型传递相应参数，例如 trading 需要 {\"company_name\": \"AAPL\", \"trade_date\": \"2026-04-16\"}"
                     }
                 },
                 "required": ["name", "prompt", "expert", "core"]

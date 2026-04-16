@@ -62,11 +62,7 @@ class MCPSessionManager:
                         "last_active": time.time(),
                         "close_event": close_event
                     }
-                    
-                    # 告诉等待的调用者：连接已就绪！
                     ready_event.set()
-                    
-                    # 让这个 Task 永久挂起，直到收到关闭信号
                     await close_event.wait()
                     
         except Exception as e:
