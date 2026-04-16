@@ -77,7 +77,8 @@ class TradingTask(BaseTask):
             # 巧妙利用底层的 self.step 来记录当前跑到哪个节点了！
             while self.step < len(nodes):
                 node_name, current_node_func = nodes[self.step]
-                self.log_and_notify("system", f"▶️ 正在执行阶段 [{self.step + 1}/{len(nodes)}]: {node_name}")
+                self.log_and_notify("system",
+                                    f"\n" + "=" * 40 + f"\n▶️ 正在执行阶段 [{self.step + 1}/{len(nodes)}]: {node_name}\n" + "=" * 40)
 
                 # 执行图节点逻辑
                 current_node_func()
@@ -128,13 +129,17 @@ class TradingTask(BaseTask):
         self.log_and_notify("system", "🚀 环境排错完成，跳过已完成节点，重新启动任务流。")
         self.state = "ready"
         return self.run()
+
     def _run_isolated_agent(self, role_name, system_prompt, user_prompt, tools=None):
-        """【隔离舱引擎】：为每个子角色开辟干净的上下文，防止 Token 污染。支持工具调用。"""
+        """【隔离舱引擎】：透明化执行室，所有的思考、工具调用过程强制透传给前端，防止偷摸幻觉"""
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt}
         ]
-        self.log_and_notify("thought", f"[{role_name}] 正在思考中...")
+
+        # 1. 向前端暴露该角色领到的任务设定，方便排查提示词是否正确
+        self.log_and_notify("thought",
+                            f"🚀 [{role_name}] 获得任务上下文启动:\n【系统设定】: {system_prompt[:150]}...\n【用户输入】: {user_prompt[:150]}...")
 
         if tools:
             for _ in range(25):
@@ -143,6 +148,11 @@ class TradingTask(BaseTask):
                 msg = response.choices[0].message
 
                 assist_msg = {"role": "assistant", "content": msg.content or ""}
+
+                # 2. 如果模型在调用工具前输出了中间思考过程（如 DeepSeek-Chat 的 CoT），展示出来
+                if msg.content:
+                    self.log_and_notify("thought", f"🧠 [{role_name}] 正在思考分析:\n{msg.content}")
+
                 if msg.tool_calls:
                     assist_msg["tool_calls"] = [
                         {"id": t.id, "type": t.type,
@@ -152,17 +162,41 @@ class TradingTask(BaseTask):
                     messages.append(assist_msg)
 
                     for tc in msg.tool_calls:
-                        args = json.loads(tc.function.arguments) if tc.function.arguments else {}
+                        args_str = tc.function.arguments or "{}"
+
+                        # 3. 拦截并展示调用的工具及参数（带上角色名字以防并发错乱）
+                        self.log_and_notify("tool",
+                                            f"🔧 [{role_name}] 决定调用工具: {tc.function.name}\n参数: {args_str}")
+
+                        args = json.loads(args_str)
                         result_str = parse_tool(tc.function.name, args)
+
+                        # 4. 展示工具的回传结果（截断以防刷屏，但能让你知道返回了什么，破除幻觉）
+                        result_preview = str(result_str)
+                        if len(result_preview) > 800:
+                            result_preview = result_preview[:800] + "\n...(内容过长已截断)..."
+
+                        self.log_and_notify("tool",
+                                            f"📦 [{role_name}] 工具 {tc.function.name} 返回结果:\n{result_preview}")
+
                         messages.append({"role": "tool", "tool_call_id": tc.id, "name": tc.function.name,
                                          "content": str(result_str)[:2000]})
                 else:
+                    # 5. 最终结论产出
+                    self.log_and_notify("thought", f"✅ [{role_name}] 阶段任务完成，最终输出:\n{msg.content}")
                     return msg.content
-            return "❌ 工具调用超时未能生成最终总结"
+
+            error_msg = f"❌ [{role_name}] 工具调用超过 25 次，强制阻断防止死循环"
+            self.log_and_notify("error", error_msg)
+            return error_msg
         else:
             response = self.model.chat(messages=messages)
             self._track_token_usage(response)
-            return response.choices[0].message.content
+            content = response.choices[0].message.content
+
+            # 无工具调用的纯思考型 Agent，直接打印结果
+            self.log_and_notify("thought", f"✅ [{role_name}] 完成思考，输出结论:\n{content}")
+            return content
 
     def _execute_parallel(self, task_dict):
         """多线程并发执行传入的任务字典"""
@@ -179,7 +213,7 @@ class TradingTask(BaseTask):
                 try:
                     results[name] = future.result()
                 except Exception as exc:
-                    self.log_and_notify("error", f"❌ {name} 节点执行失败: {exc}")
+                    self.log_and_notify("error", f"❌ 并发节点 [{name}] 执行崩溃: {exc}")
                     results[name] = f"分析失败: {exc}"
         return results
 
@@ -188,10 +222,6 @@ class TradingTask(BaseTask):
     def _node_analysts(self):
         """节点 1：分析师团队并发工作"""
         self.log_and_notify("system", "🔍 [Node 1: Analysts] 启动分析师团队，并发获取市场、情绪、新闻、基本面数据...")
-
-        # 这里的工具你需要从外部导入或注册，比如：
-        # market_tools = [{"type": "function", "function": {"name": "get_stock_data", ...}}]
-        # 为演示并发，我将其抽象为 None，代表你可以按需注入。
 
         analyst_tasks = {
             "market_report": {
@@ -220,18 +250,20 @@ class TradingTask(BaseTask):
             }
         }
         reports = self._execute_parallel(analyst_tasks)
-        with self._lock:
-            for key, report in reports.items():
-                self.agent_state[key] = report
+
+        # 因为没有了 self._lock，这里并不涉及跨线程写同一个变量的问题，单线程整合即可
+        for key, report in reports.items():
+            self.agent_state[key] = report
+
         report_summary = (
-            f"📊 **市场技术面**:\n{self.agent_state['market_report']}\n\n"
-            f"📰 **宏观与新闻**:\n{self.agent_state['news_report']}\n\n"
-            f"👥 **社交媒体情绪**:\n{self.agent_state['sentiment_report']}\n\n"
-            f"📑 **财务基本面**:\n{self.agent_state['fundamentals_report']}"
+            f"📊 **市场技术面**:\n{self.agent_state['market_report'][:200]}...\n\n"
+            f"📰 **宏观与新闻**:\n{self.agent_state['news_report'][:200]}...\n\n"
+            f"👥 **社交媒体情绪**:\n{self.agent_state['sentiment_report'][:200]}...\n\n"
+            f"📑 **财务基本面**:\n{self.agent_state['fundamentals_report'][:200]}..."
         )
         self.history.append(
             {"role": "assistant", "content": f"✅ 分析师团队四维研报已生成！详细内容如下：\n\n{report_summary}"})
-        self.log_and_notify("system", f"✅ 分析师团队四维研报已生成！详细内容：\n\n{report_summary}")
+        self.log_and_notify("system", f"✅ 分析师团队集结完毕！产出四维核心研报摘要：\n\n{report_summary}")
 
     def _node_investment_debate(self):
         """节点 2：多空辩论与投资法官"""
@@ -241,7 +273,7 @@ class TradingTask(BaseTask):
         base_context = f"【基础情况】\n技术面：{self.agent_state['market_report']}\n基本面：{self.agent_state['fundamentals_report']}\n新闻：{self.agent_state['news_report']}"
 
         for round_idx in range(self.max_debate_rounds):
-            self.log_and_notify("thought", f"🥊 投资辩论 第 {round_idx + 1} 轮...")
+            self.log_and_notify("system", f"🥊 投资辩论 第 {round_idx + 1} 轮 发车...")
 
             history_str = state["history"] if state["history"] else "（暂无历史辩论）"
 
@@ -269,14 +301,15 @@ class TradingTask(BaseTask):
             state["history"] += f"\n\n--- 轮次 {round_idx + 1} ---\n【多头】：{bull_arg}\n【空头】：{bear_arg}"
 
         # 法官裁决
-        self.log_and_notify("system", "👨‍⚖️ [Node 2: Invest Judge] 投资法官正在听取辩论并进行裁决...")
+        self.log_and_notify("system", "👨‍⚖️ [Node 2: Invest Judge] 投资法官正在听取辩论记录进行综合裁决...")
         judge_sys = "你是客观理性的投资法官。请总结多空双方的辩论，并给出一份综合的初步投资倾向报告。"
         judge_user = f"{base_context}\n\n【多空辩论全记录】：\n{state['history']}\n\n请下达你的综合裁决逻辑。"
 
         judge_decision = self._run_isolated_agent("Invest_Judge", judge_sys, judge_user)
         state["judge_decision"] = judge_decision
         self.history.append({"role": "assistant", "content": f"👨‍⚖️ **多空投资法官初步裁决**：\n\n{judge_decision}"})
-        self.log_and_notify("system", f"👨‍⚖️ **多空投资法官初步裁决**：\n\n{judge_decision}")
+        self.log_and_notify("system", f"👨‍⚖️ **多空投资法官初步裁决下发**：\n\n{judge_decision}")
+
     def _node_trader(self):
         """节点 3：交易员提议"""
         self.log_and_notify("system", "🧑‍💼 [Node 3: Trader] 交易员结合历史相似行情，推演交易提案...")
@@ -296,17 +329,17 @@ class TradingTask(BaseTask):
         trader_plan = self._run_isolated_agent("Trader", sys_prompt, user_prompt)
         self.agent_state["trader_investment_plan"] = trader_plan
         self.history.append({"role": "assistant", "content": f"🧑‍💼 **交易员推演操作提案**：\n\n{trader_plan}"})
-        self.log_and_notify("system", f"🧑‍💼 **交易员推演操作提案**：\n\n{trader_plan}")
+        self.log_and_notify("system", f"🧑‍💼 **交易员推演操作提案完成**：\n\n{trader_plan}")
 
     def _node_risk_debate(self):
         """节点 4：风控团队研讨与法官"""
-        self.log_and_notify("system", "🛡️ [Node 4: Risk Debate] 启动风控团队研讨室...")
+        self.log_and_notify("system", "🛡️ [Node 4: Risk Debate] 启动风控三巨头团队评估...")
         state = self.agent_state["risk_debate_state"]
 
         trader_plan = self.agent_state["trader_investment_plan"]
 
         for round_idx in range(self.max_risk_discuss_rounds):
-            self.log_and_notify("thought", f"🛑 风控评估 第 {round_idx + 1} 轮...")
+            self.log_and_notify("system", f"🛑 风控交叉评估 第 {round_idx + 1} 轮 发车...")
             history_str = state["history"] if state["history"] else "（暂无历史评估）"
 
             risk_tasks = {
@@ -332,20 +365,22 @@ class TradingTask(BaseTask):
             state["aggressive_history"].append(results["aggressive"])
             state["neutral_history"].append(results["neutral"])
             state["conservative_history"].append(results["conservative"])
-            state["history"] += f"\n\n--- 轮次 {round_idx + 1} ---\n激进：{results['aggressive']}\n中立：{results['neutral']}\n保守：{results['conservative']}"
+            state[
+                "history"] += f"\n\n--- 轮次 {round_idx + 1} ---\n激进：{results['aggressive']}\n中立：{results['neutral']}\n保守：{results['conservative']}"
 
         # 风控法官裁决
-        self.log_and_notify("system", "👨‍⚖️ [Node 4: Risk Judge] 风控法官正在进行风险定调...")
+        self.log_and_notify("system", "👨‍⚖️ [Node 4: Risk Judge] 风控法官正在对团队意见进行最终风险定调...")
         judge_sys = "你是风控主管法官。请总结激进、中立、保守三方的意见，对交易提案的风险等级进行定性。"
         judge_user = f"【交易提案】：{trader_plan}\n\n【风控研讨全记录】：\n{state['history']}\n\n请下达风险裁决。"
 
         judge_decision = self._run_isolated_agent("Risk_Judge", judge_sys, judge_user)
         state["judge_decision"] = judge_decision
         self.history.append({"role": "assistant", "content": f"🛡️ **风控法官一票否决权风险定调**：\n\n{judge_decision}"})
-        self.log_and_notify("system", f"🛡️ **风控法官一票否决权风险定调**：\n\n{judge_decision}")
+        self.log_and_notify("system", f"🛡️ **风控法官风险定调下发**：\n\n{judge_decision}")
+
     def _node_portfolio_manager(self):
         """节点 5：投资组合经理终裁"""
-        self.log_and_notify("system", "👑 [Node 5: Portfolio Manager] 基金经理正在综合所有报告，生成最终决策...")
+        self.log_and_notify("system", "👑 [Node 5: Portfolio Manager] 基金经理正在阅读各部门研报，生成一锤定音的指令...")
 
         pm_sys = "你是最终决策的投资组合经理 (Portfolio Manager)。你掌握资金生杀大权。你的任务是综合各项研报，输出最终结构化指令。"
 
@@ -360,4 +395,4 @@ class TradingTask(BaseTask):
 """
         final_decision = self._run_isolated_agent("Portfolio_Manager", pm_sys, pm_user)
         self.agent_state["final_trade_decision"] = final_decision
-        self.log_and_notify("tool", f"🎯 最终决策已生成！")
+        self.log_and_notify("system", f"🎯 最终投资组合决策生成完毕，任务闭环！")
