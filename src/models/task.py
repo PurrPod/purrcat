@@ -72,11 +72,15 @@ class BaseTask:
         self.log_window = []
         self.log_and_notify("system", f"🎯 用户需求: \n{self.prompt}")
 
+    def _on_save_state(self) -> dict:
+        """生命周期钩子：供子类重写，返回需要额外持久化的特有属性字典"""
+        return {}
+
+    def _on_restore_state(self, state: dict):
+        """生命周期钩子：供子类重写，根据 checkpoint 字典恢复特有属性和不可序列化对象"""
+        pass
+
     def _build_system_prompt(self):
-        """
-        基础系统提示词（子类可覆写）
-        提供最基础的 Agent 工具使用规范与交付要求。
-        """
         return """# 角色定义
 你是一个通用型 AI 助手。你的核心任务是理解用户需求，并合理调度工具解决问题。
 
@@ -87,16 +91,14 @@ class BaseTask:
 4. **及时求助**：如果发现现有条件无法完成任务，不应该自己编造幻觉，大胆承认不足，及时止损。"""
 
     def _cleanup_resources(self):
-        """清理当前任务相关的底层资源"""
         try:
-            from src.plugins.plugin_manager import close_shell
+            from src.plugins.route.base_tool import close_shell
             close_shell(session_id=self.task_id)
             self.log_and_notify("system", "🧹 已自动回收任务专属的 Shell 终端环境")
         except Exception as e:
             print(f"⚠️ 自动回收 Shell 失败: {e}")
 
     def run(self):
-        """通用工作流：最大 150 步的单体工具循环"""
         max_steps = 150
         self.state = "running"
         while self.step < max_steps:
@@ -184,6 +186,7 @@ class BaseTask:
             "window_token": self.window_token,
             "checkpoint_dir": self.checkpoint_dir,
             "pending_force_push": self.pending_force_push,
+            "extra_state": self._on_save_state(),
         }
         with open(checkpoint_path, "w", encoding="utf-8") as f:
             json.dump(state, f, ensure_ascii=False, indent=2)
@@ -224,6 +227,7 @@ class BaseTask:
             task._killed = False
             task.log_window = []
 
+            task._on_restore_state(state)
             TASK_INSTANCES[task.task_id] = task
             return task
         except Exception as e:

@@ -16,9 +16,17 @@ class TradingTask(BaseTask):
         self.max_risk_discuss_rounds = 3
 
         # 1. 初始化独立的图状态
-        self.agent_state = {
-            "company_of_interest": company_name,
-            "trade_date": self.trade_date,
+        self.agent_state = self._get_default_agent_state()
+        self.financial_memory = Memory()
+        self._token_lock = threading.Lock()
+
+        # 删除了旧版的 self._sync_state_from_base() 调用，现在由基类自动触发钩子恢复
+
+    def _get_default_agent_state(self):
+        """生成默认状态机"""
+        return {
+            "company_of_interest": getattr(self, "company_name", "Unknown"),
+            "trade_date": getattr(self, "trade_date", "Current"),
             "market_report": "",
             "sentiment_report": "",
             "news_report": "",
@@ -29,29 +37,42 @@ class TradingTask(BaseTask):
                                   "history": "", "judge_decision": ""},
             "final_trade_decision": ""
         }
-        self.financial_memory = Memory()
-        self._token_lock = threading.Lock()
 
-        # 2. 尝试从底层的 current_plan 恢复反序列化的状态 (断点重载核心)
-        self._sync_state_from_base()
-
-    def _sync_state_to_base(self):
-        """【黑科技】：将复杂的图状态压缩，伪装成 current_plan 让 BaseTask 自动帮我们存盘和加载"""
-        state_snapshot = {
-            "agent_state": self.agent_state,
-            "trade_date": self.trade_date
+    # ================= 生命周期钩子 (完美对接 BaseTask) =================
+    def _on_save_state(self) -> dict:
+        """任务存档时，自动打包 TradingTask 的特有数据"""
+        return {
+            "company_name": self.company_name,
+            "trade_date": self.trade_date,
+            "agent_state": self.agent_state
         }
-        self.current_plan = json.dumps(state_snapshot, ensure_ascii=False)
 
-    def _sync_state_from_base(self):
-        """如果在恢复任务，从底层缓存的 current_plan 中提取出图状态"""
-        if self.current_plan and self.current_plan.startswith("{"):
+    def _on_restore_state(self, state: dict):
+        """任务读档恢复时，重建 TradingTask 的环境与数据"""
+        # 1. 恢复不可序列化的对象（避免 AttributeError 崩溃）
+        self._token_lock = threading.Lock()
+        self.financial_memory = Memory()
+
+        # 2. 从额外状态中恢复特定属性
+        extra = state.get("extra_state", {})
+
+        # 向下兼容旧版“黑科技”存档：如果你有以前跑了一半的任务是用 current_plan 存的，这里顺手读出来
+        old_plan = state.get("current_plan", "")
+        if not extra and old_plan and old_plan.startswith("{"):
             try:
-                saved_data = json.loads(self.current_plan)
-                self.agent_state = saved_data.get("agent_state", self.agent_state)
-                self.trade_date = saved_data.get("trade_date", self.trade_date)
+                extra = json.loads(old_plan)
             except Exception as e:
-                self.log_and_notify("error", f"⚠️ 恢复状态机失败，将使用初始状态: {e}")
+                self.log_and_notify("warning", f"尝试读取旧版状态兼容失败: {e}")
+
+        self.company_name = extra.get("company_name", "Unknown")
+        self.trade_date = extra.get("trade_date", "Current")
+        self.agent_state = extra.get("agent_state", self._get_default_agent_state())
+
+        # 兜底旧版的嵌套 key
+        if "company_of_interest" in self.agent_state:
+            self.company_name = self.agent_state["company_of_interest"]
+
+    # ==================================================================
 
     def _track_token_usage(self, response) -> dict:
         """保证多线程并发时的 Token 累加绝对安全"""
@@ -83,9 +104,8 @@ class TradingTask(BaseTask):
                 # 执行图节点逻辑
                 current_node_func()
 
-                # 节点成功完成后：步数+1 -> 同步状态 -> 落盘保存！
+                # 节点成功完成后：步数+1 -> 落盘保存！（内部会自动触发 _on_save_state 钩子）
                 self.step += 1
-                self._sync_state_to_base()
                 self.save_checkpoint()
 
                 # 为了 UI 呈现，向主线历史注入一条简要节点总结
@@ -107,7 +127,6 @@ class TradingTask(BaseTask):
             if self.model: self.model.unbind_task()
             self._cleanup_resources()
             self.log_and_notify("system", "⚠️ 检测到强制中断 (Ctrl+C)，保存现场...")
-            self._sync_state_to_base()  # 抢救最新状态
             self.save_checkpoint()
             raise
         except Exception as e:
@@ -115,17 +134,12 @@ class TradingTask(BaseTask):
             if self.model: self.model.unbind_task()
             self._cleanup_resources()
             self.log_and_notify("error", f"❌ 运行发生异常: {e}")
-            self._sync_state_to_base()  # 抢救最新状态
             self.save_checkpoint()
             raise InterruptedError(f"交易任务异常中断: {e}")
 
     def resume(self):
         """【覆写恢复逻辑】：让断点恢复支持有向无环图 (DAG)"""
         self.log_and_notify("system", f"🔄 尝试从图谱断点恢复任务... 当前处于第 {self.step + 1} 个节点。")
-
-        # 确保从磁盘中还原了最新状态
-        self._sync_state_from_base()
-
         self.log_and_notify("system", "🚀 环境排错完成，跳过已完成节点，重新启动任务流。")
         self.state = "ready"
         return self.run()
@@ -136,10 +150,6 @@ class TradingTask(BaseTask):
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt}
         ]
-
-        # 1. 向前端暴露该角色领到的任务设定，方便排查提示词是否正确
-        self.log_and_notify("thought",
-                            f"🚀 [{role_name}] 获得任务上下文启动:\n【系统设定】: {system_prompt[:150]}...\n【用户输入】: {user_prompt[:150]}...")
 
         if tools:
             for _ in range(25):
@@ -165,16 +175,15 @@ class TradingTask(BaseTask):
                         args_str = tc.function.arguments or "{}"
 
                         # 3. 拦截并展示调用的工具及参数（带上角色名字以防并发错乱）
-                        self.log_and_notify("tool",
-                                            f"🔧 [{role_name}] 决定调用工具: {tc.function.name}\n参数: {args_str}")
+                        self.log_and_notify("tool_call", f"🔧 [{role_name}] 决定调用工具: {tc.function.name}\n参数: {args_str}")
 
                         args = json.loads(args_str)
                         result_str = parse_tool(tc.function.name, args)
 
                         # 4. 展示工具的回传结果（截断以防刷屏，但能让你知道返回了什么，破除幻觉）
                         result_preview = str(result_str)
-                        if len(result_preview) > 800:
-                            result_preview = result_preview[:800] + "\n...(内容过长已截断)..."
+                        if len(result_preview) > 1500:
+                            result_preview = result_preview[:1500] + "\n...(内容过长已截断)..."
 
                         self.log_and_notify("tool",
                                             f"📦 [{role_name}] 工具 {tc.function.name} 返回结果:\n{result_preview}")
@@ -251,7 +260,6 @@ class TradingTask(BaseTask):
         }
         reports = self._execute_parallel(analyst_tasks)
 
-        # 因为没有了 self._lock，这里并不涉及跨线程写同一个变量的问题，单线程整合即可
         for key, report in reports.items():
             self.agent_state[key] = report
 
@@ -290,10 +298,8 @@ class TradingTask(BaseTask):
                 }
             }
 
-            # 多空双方可以并发进行独立思考
             results = self._execute_parallel(debate_tasks)
 
-            # 更新辩论记录
             bull_arg = results["bull"]
             bear_arg = results["bear"]
             state["bull_history"].append(bull_arg)
