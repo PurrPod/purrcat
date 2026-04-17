@@ -79,7 +79,7 @@ if %ERRORLEVEL% equ 0 set BUILD_SUCCESS=1 & goto after_build
 :after_build
 if %BUILD_SUCCESS% equ 0 (
     echo ❌ 灾难性错误：所有已知镜像源均尝试失败！
-    echo 请检查您的网络连接，或开启全局代理后重试。
+    echo 如果您未打开 Docker 桌面版，请先打开桌面版，如果您打开了桌面版依旧不行，请检查您的网络连接，或开启全局代理后重试。
     pause
     exit /b 1
 )

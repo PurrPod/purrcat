@@ -188,7 +188,8 @@ class TradingTask(
         ]
 
         if tools:
-            for _ in range(25):
+            MAX_LOOPS = 25
+            for loop_idx in range(MAX_LOOPS):
                 response = self.model.chat(messages=messages, tools=tools)
                 self._track_token_usage(response)
                 msg = response.choices[0].message
@@ -209,37 +210,40 @@ class TradingTask(
                         args_str = tc.function.arguments or "{}"
                         self.log_and_notify("tool_call", f"🔧 [{role_name}] 决定调用工具: {tc.function.name}\n参数: {args_str}")
 
-                        try:
-                            args = json.loads(args_str)
-                        except json.JSONDecodeError:
-                            args = {}
-
-                        target_tool_name = tc.function.name
-                        if target_tool_name == "call_dynamic_tool" and isinstance(args, dict):
-                            target_tool_name = args.get("target_tool_name", tc.function.name)
-                            inner_args = args.get("arguments", {})
-
-                            if isinstance(inner_args, str):
-                                try:
-                                    args = json.loads(inner_args)
-                                except Exception:
-                                    try:
-                                        from json_repair import repair_json
-                                        args = repair_json(inner_args, return_objects=True)
-                                    except ImportError:
-                                        args = inner_args
-                            else:
-                                args = inner_args
-                        if target_tool_name in EXTEND_TOOL_FUNCTIONS:
-                            try:
-                                result_str = EXTEND_TOOL_FUNCTIONS[target_tool_name](**args)
-                            except Exception as e:
-                                result_str = f"❌ extend_tool执行异常: {e}"
+                        if loop_idx >= MAX_LOOPS - 5:
+                            result_str = "⚠️ 系统拦截：已达最大对话轮数！工具权限已被收回。请停止尝试调用工具，并立即根据当前已知信息输出你的最终结论！！！"
                         else:
-                            if parse_tool:
-                                result_str = parse_tool(target_tool_name, args)
+                            try:
+                                args = json.loads(args_str)
+                            except json.JSONDecodeError:
+                                args = {}
+
+                            target_tool_name = tc.function.name
+                            if target_tool_name == "call_dynamic_tool" and isinstance(args, dict):
+                                target_tool_name = args.get("target_tool_name", tc.function.name)
+                                inner_args = args.get("arguments", {})
+
+                                if isinstance(inner_args, str):
+                                    try:
+                                        args = json.loads(inner_args)
+                                    except Exception:
+                                        try:
+                                            from json_repair import repair_json
+                                            args = repair_json(inner_args, return_objects=True)
+                                        except ImportError:
+                                            args = inner_args
+                                else:
+                                    args = inner_args
+                            if target_tool_name in EXTEND_TOOL_FUNCTIONS:
+                                try:
+                                    result_str = EXTEND_TOOL_FUNCTIONS[target_tool_name](**args)
+                                except Exception as e:
+                                    result_str = f"❌ extend_tool执行异常: {e}"
                             else:
-                                result_str = "❌ 底层 parse_tool 未成功加载"
+                                if parse_tool:
+                                    result_str = parse_tool(target_tool_name, args)
+                                else:
+                                    result_str = "❌ 底层 parse_tool 未成功加载"
                         result_preview = str(result_str)
                         if len(result_preview) > 1500:
                             result_preview = result_preview[:1500] + "\n...(内容过长已截断)..."
@@ -251,8 +255,7 @@ class TradingTask(
                 else:
                     self.log_and_notify("thought", f"✅ [{role_name}] 阶段任务完成，最终输出:\n{msg.content}")
                     return msg.content
-
-            error_msg = f"❌ [{role_name}] 工具调用超过 25 次，强制阻断防止死循环"
+            error_msg = f"❌ [{role_name}] 工具调用超过 {MAX_LOOPS} 次，任务强制失败处理。"
             self.log_and_notify("error", error_msg)
             return error_msg
         else:
