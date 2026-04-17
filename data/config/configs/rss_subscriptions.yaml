@@ -2,7 +2,7 @@
 # RSS 订阅配置
 # ============================================
 
-rss_subscriptions:
+rss_subscriptions: # RSS 订阅源，但目前并不默认开放接收 RSS，可以去src/sensor文件夹改成活跃状态
   - name: "Lilian Weng's Blog"
     url: "https://lilianweng.github.io/lil-log/feed.xml"
   

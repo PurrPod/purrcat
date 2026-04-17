@@ -64,6 +64,7 @@ export interface Task {
   creat_time?: string
   logs: string[]
   history?: any[]
+  expert_type?: string
   createdAt: Date
   updatedAt: Date
 }

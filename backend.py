@@ -37,7 +37,6 @@ from src.plugins.plugin_collection.filesystem.filesystem import set_allowed_dire
 from src.utils.config import load_config, get_model_config_json, get_mcp_config_json, get_feishu_config, \
     get_rss_subscriptions, get_web_api_config, reload_config, save_config
 
-# ====== 拥抱新架构：引入新版工具管理器 ======
 from src.plugins.plugin_manager import TOOL_INDEX_FILE
 from src.plugins.route.base_tool import init_tool, BASE_TOOLS
 from src.plugins.plugin_collection.local_manager import register_plugin, unregister_plugin
@@ -293,6 +292,7 @@ async def get_tasks():
             "step": task.step,
             "token_usage": task.token_usage,
             "checkpoint_dir": task.checkpoint_dir,
+            "expert_type": task.__class__.__name__,
             "createdAt": created_iso,
             "updatedAt": created_iso
         })
@@ -301,6 +301,7 @@ async def get_tasks():
     if os.path.isdir(base_dir):
         for entry in os.listdir(base_dir):
             log_path = os.path.join(base_dir, entry, "log.jsonl")
+            checkpoint_path = os.path.join(base_dir, entry, "checkpoint.json")
             if not os.path.exists(log_path):
                 continue
 
@@ -308,6 +309,7 @@ async def get_tasks():
             task_name = entry
             create_time = ""
             logs = []
+            expert_type = None
 
             try:
                 with open(log_path, "r", encoding="utf-8") as f:
@@ -333,6 +335,14 @@ async def get_tasks():
             except:
                 created_iso = datetime.datetime.now().isoformat()
 
+            if os.path.exists(checkpoint_path):
+                try:
+                    with open(checkpoint_path, "r", encoding="utf-8") as f:
+                        checkpoint_data = json.load(f)
+                        expert_type = checkpoint_data.get("expert_type")
+                except:
+                    pass
+
             if task_id:
                 tasks.append({
                     "id": task_id,
@@ -346,6 +356,7 @@ async def get_tasks():
                     "step": 0,
                     "token_usage": 0,
                     "checkpoint_dir": os.path.join(base_dir, entry),
+                    "expert_type": expert_type,
                     "createdAt": created_iso,
                     "updatedAt": created_iso
                 })
@@ -816,6 +827,7 @@ class TaskCreate(BaseModel):
     deliverable: str
     prompt: str
     skills: list = None
+    expert: str = "general"
     core: str = "openai:deepseek-chat"
     judger: str = "openai:deepseek-chat"
 
@@ -827,6 +839,7 @@ async def create_task_endpoint(task: TaskCreate):
         msg = add_task(
             name=task.title,
             prompt=task.prompt,
+            expert=task.expert,
             core=task.core,
             judger=task.judger
         )
@@ -891,7 +904,8 @@ async def get_config():
             configs['permission_config.json'] = {
                 "sandbox_dirs": ["sandbox/", "agent_vm/"],
                 "skill_dir": ["data/skill"],
-                "dont_read_dirs": ["src/"]
+                "dont_read_dirs": ["src/"],
+                "docker_mount": []
             }
 
         rss_list = get_rss_subscriptions()

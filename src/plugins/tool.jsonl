@@ -70,3 +70,29 @@
 {"route": "mcp", "plugin": "playwright", "func": "browser_select_option", "desc": "Select an option in a dropdown"}
 {"route": "mcp", "plugin": "playwright", "func": "browser_tabs", "desc": "List, create, close, or select a browser tab."}
 {"route": "mcp", "plugin": "playwright", "func": "browser_wait_for", "desc": "Wait for text to appear or disappear or a specified time to pass"}
+{"route": "mcp", "plugin": "github", "func": "create_or_update_file", "desc": "Create or update a single file in a GitHub repository"}
+{"route": "mcp", "plugin": "github", "func": "search_repositories", "desc": "Search for GitHub repositories"}
+{"route": "mcp", "plugin": "github", "func": "create_repository", "desc": "Create a new GitHub repository in your account"}
+{"route": "mcp", "plugin": "github", "func": "get_file_contents", "desc": "Get the contents of a file or directory from a GitHub repository"}
+{"route": "mcp", "plugin": "github", "func": "push_files", "desc": "Push multiple files to a GitHub repository in a single commit"}
+{"route": "mcp", "plugin": "github", "func": "create_issue", "desc": "Create a new issue in a GitHub repository"}
+{"route": "mcp", "plugin": "github", "func": "create_pull_request", "desc": "Create a new pull request in a GitHub repository"}
+{"route": "mcp", "plugin": "github", "func": "fork_repository", "desc": "Fork a GitHub repository to your account or specified organization"}
+{"route": "mcp", "plugin": "github", "func": "create_branch", "desc": "Create a new branch in a GitHub repository"}
+{"route": "mcp", "plugin": "github", "func": "list_commits", "desc": "Get list of commits of a branch in a GitHub repository"}
+{"route": "mcp", "plugin": "github", "func": "list_issues", "desc": "List issues in a GitHub repository with filtering options"}
+{"route": "mcp", "plugin": "github", "func": "update_issue", "desc": "Update an existing issue in a GitHub repository"}
+{"route": "mcp", "plugin": "github", "func": "add_issue_comment", "desc": "Add a comment to an existing issue"}
+{"route": "mcp", "plugin": "github", "func": "search_code", "desc": "Search for code across GitHub repositories"}
+{"route": "mcp", "plugin": "github", "func": "search_issues", "desc": "Search for issues and pull requests across GitHub repositories"}
+{"route": "mcp", "plugin": "github", "func": "search_users", "desc": "Search for users on GitHub"}
+{"route": "mcp", "plugin": "github", "func": "get_issue", "desc": "Get details of a specific issue in a GitHub repository."}
+{"route": "mcp", "plugin": "github", "func": "get_pull_request", "desc": "Get details of a specific pull request"}
+{"route": "mcp", "plugin": "github", "func": "list_pull_requests", "desc": "List and filter repository pull requests"}
+{"route": "mcp", "plugin": "github", "func": "create_pull_request_review", "desc": "Create a review on a pull request"}
+{"route": "mcp", "plugin": "github", "func": "merge_pull_request", "desc": "Merge a pull request"}
+{"route": "mcp", "plugin": "github", "func": "get_pull_request_files", "desc": "Get the list of files changed in a pull request"}
+{"route": "mcp", "plugin": "github", "func": "get_pull_request_status", "desc": "Get the combined status of all status checks for a pull request"}
+{"route": "mcp", "plugin": "github", "func": "update_pull_request_branch", "desc": "Update a pull request branch with the latest changes from the base branch"}
+{"route": "mcp", "plugin": "github", "func": "get_pull_request_comments", "desc": "Get the review comments on a pull request"}
+{"route": "mcp", "plugin": "github", "func": "get_pull_request_reviews", "desc": "Get the reviews on a pull request"}

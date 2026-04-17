@@ -396,6 +396,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           creat_time: t.creat_time,
           logs: t.logs || [],
           history: t.history || [],
+          expert_type: t.expert_type,
           createdAt: t.createdAt ? new Date(t.createdAt) : new Date(),
           updatedAt: t.updatedAt ? new Date(t.updatedAt) : new Date()
         })) 

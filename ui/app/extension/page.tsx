@@ -150,9 +150,10 @@ export default function ExtensionPage() {
 
       // 权限设置 (映射 file_config.json)
       const permissionConfig = configData['permission_config.json'] || {
-        sandbox_dirs: ['sandbox/', 'agent_vm/'],
-        skill_dir: ['data/skill'],
-        dont_read_dirs: ['src/']
+        sandbox_dirs: [],
+        skill_dir: [],
+        dont_read_dirs: [],
+        docker_mount: []
       }
       setPermissionConfig(permissionConfig)
 
@@ -1149,7 +1150,7 @@ export default function ExtensionPage() {
                       </div>
                       
                       <div className="space-y-1.5">
-                        <Label className="text-[11px] uppercase tracking-wider text-muted-foreground font-bold">不读取目录</Label>
+                        <Label className="text-[11px] uppercase tracking-wider text-muted-foreground font-bold">不可读目录</Label>
                         <div className="space-y-2">
                           {permissionConfig.dont_read_dirs?.map((dir: string, index: number) => (
                             <div key={index} className="flex gap-2">
@@ -1182,6 +1183,48 @@ export default function ExtensionPage() {
                               setPermissionConfig({ 
                                 ...permissionConfig, 
                                 dont_read_dirs: [...(permissionConfig.dont_read_dirs || []), ''] 
+                              });
+                            }}
+                          >
+                            <Plus className="size-4 mr-1" /> 添加目录
+                          </Button>
+                        </div>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <Label className="text-[11px] uppercase tracking-wider text-muted-foreground font-bold">挂载目录</Label>
+                        <div className="space-y-2">
+                          {permissionConfig.docker_mount?.map((dir: string, index: number) => (
+                            <div key={index} className="flex gap-2">
+                              <Input 
+                                value={dir} 
+                                onChange={(e) => {
+                                  const newDirs = [...permissionConfig.docker_mount];
+                                  newDirs[index] = e.target.value;
+                                  setPermissionConfig({ ...permissionConfig, docker_mount: newDirs });
+                                }} 
+                                className="h-9 bg-background flex-1" 
+                                placeholder="/path/to/mount"
+                              />
+                              <Button 
+                                variant="destructive" 
+                                size="sm" 
+                                onClick={() => {
+                                  const newDirs = permissionConfig.docker_mount.filter((_: string, i: number) => i !== index);
+                                  setPermissionConfig({ ...permissionConfig, docker_mount: newDirs });
+                                }}
+                              >
+                                <Trash2 className="size-4" />
+                              </Button>
+                            </div>
+                          ))}
+                          <Button 
+                            variant="outline" 
+                            size="sm" 
+                            onClick={() => {
+                              setPermissionConfig({ 
+                                ...permissionConfig, 
+                                docker_mount: [...(permissionConfig.docker_mount || []), ''] 
                               });
                             }}
                           >

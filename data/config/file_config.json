@@ -8,5 +8,8 @@
     ],
     "dont_read_dirs": [
         "src/"
+    ],
+    "docker_mount": [
+        "sandbox/"
     ]
 }

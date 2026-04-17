@@ -301,6 +301,35 @@
   scrollbar-color: rgba(113, 113, 122, 0.4) transparent;
 }
 
+/* 自定义滚动条样式 - 始终可见 */
+.scrollbar-visible {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(113, 113, 122, 0.2) transparent;
+}
+
+.scrollbar-visible::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.scrollbar-visible::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar-visible::-webkit-scrollbar-thumb {
+  background-color: rgba(113, 113, 122, 0.2);
+  border-radius: 3px;
+  transition: background-color 0.2s;
+}
+
+.scrollbar-visible:hover::-webkit-scrollbar-thumb {
+  background-color: rgba(113, 113, 122, 0.4);
+}
+
+.scrollbar-visible:hover {
+  scrollbar-color: rgba(113, 113, 122, 0.4) transparent;
+}
+
 /* 完全隐藏滚动条 */
 .scrollbar-hide {
   scrollbar-width: none;

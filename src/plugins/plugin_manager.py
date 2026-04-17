@@ -116,7 +116,7 @@ def parse_tool(tool_name: str, arguments: dict, route: str = None, plugin: str =
             parsed_res = None
             actual_content_str = result_str
 
-        if len(actual_content_str) > MAX_LEN:
+        if len(actual_content_str) > MAX_LEN and tool_name != "load_skill":
             # 按工具名称分类存储
             buffer_dir = os.path.abspath(".buffer")
             tool_dir = os.path.join(buffer_dir, tool_name)
@@ -131,7 +131,8 @@ def parse_tool(tool_name: str, arguments: dict, route: str = None, plugin: str =
             warning_msg = (
                 f"⚠️ [系统拦截] {tool_name} 输出总长 {len(actual_content_str)} 字符，超出阈值 {MAX_LEN}。完整结果已落盘：\n"
                 f"📂 宿主机路径: {cache_path}\n"
-                f"🐳 沙盒内路径: /.buffer/{tool_name}/{file_name}\n"
+                f"🐳 沙盒内路径: /agent_vm/.buffer/{tool_name}/{file_name}\n"
+                f"请使用命令行工具或filesystem工具去对应缓存文件里阅读所有内容！"
                 f"\n--- 内容预览 (首尾各截取部分) ---\n"
                 f"{preview_front}\n\n... [中间 {len(actual_content_str) - MAX_LEN} 字符已折叠] ...\n\n{preview_back}"
             )

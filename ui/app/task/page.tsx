@@ -333,6 +333,10 @@ function TaskCard({
   const Icon = config.icon
   const [metaOpen, setMetaOpen] = useState(false)
 
+  const getExpertTypeName = (expertType?: string) => {
+    return expertType || 'BaseTask'
+  }
+
   return (
     <ContextMenu>
       <ContextMenuTrigger>
@@ -371,6 +375,12 @@ function TaskCard({
                       <span className="text-muted-foreground">ID</span>
                       <span className="font-medium break-all">{task.id}</span>
                     </div>
+                    {task.expert_type && (
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">子任务类型</span>
+                        <span className="font-medium">{getExpertTypeName(task.expert_type)}</span>
+                      </div>
+                    )}
                     {task.core && (
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">核心模型</span>
@@ -1031,7 +1041,7 @@ export default function TaskPage() {
               </div>
               <AddTaskDialog />
             </div>
-            <ScrollArea className="flex-1">
+            <ScrollArea className="flex-1 overflow-hidden scrollbar-visible">
               <div className="p-4 space-y-3">
                 {tasks.map((task) => (
                   <TaskCard
