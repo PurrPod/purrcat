@@ -557,12 +557,13 @@ class BaseTask:
             self.state = "ready"
             self.save_checkpoint()
             self.log_and_notify("system", "🚀 任务休眠/已结束，上下文已就绪，正在重新唤醒执行...")
-            return self.resume()
+            threading.Thread(target=self.resume, daemon=True).start()
+            return "✅ 指令已收到，任务正在后台重新唤醒"
 
 
 def auto_discover_experts():
-    import pkgutil
     import importlib
+    import os
     if "general" not in BaseTask._EXPERT_REGISTRY:
         BaseTask._EXPERT_REGISTRY["general"] = {
             "class": BaseTask,
@@ -571,18 +572,21 @@ def auto_discover_experts():
         }
         print(f"✅ 自动注册默认任务专家: general -> BaseTask")
     try:
-        import src.models.expert
+        expert_root = os.path.join(os.path.dirname(__file__), "expert")
+        if not os.path.isdir(expert_root):
+            return
         module_count = 0
         failed_modules = []
-        for _, module_name, is_pkg in pkgutil.walk_packages(
-                src.models.expert.__path__,
-                src.models.expert.__name__ + "."
-        ):
-            try:
-                importlib.import_module(module_name)
-                module_count += 1
-            except Exception as e:
-                failed_modules.append((module_name, str(e)))
+        for expert_name in os.listdir(expert_root):
+            expert_path = os.path.join(expert_root, expert_name)
+            task_file = os.path.join(expert_path, "task.py")
+            if os.path.isfile(task_file):
+                module_name = f"src.models.expert.{expert_name}.task"
+                try:
+                    importlib.import_module(module_name)
+                    module_count += 1
+                except Exception as e:
+                    failed_modules.append((module_name, str(e)))
         if failed_modules and module_count == 0:
             print(f"⚠️ 所有专家模块加载失败:")
             for mod, err in failed_modules:

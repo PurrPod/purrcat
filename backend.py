@@ -536,9 +536,50 @@ async def get_task_log(task_id: str, cursor: int = 0, limit: int = 500, tail: bo
 
 @app.post("/api/tasks/{task_id}/inject")
 async def inject_task(task_id: str, request: ForcePushRequest):
+    # 1. 如果任务已经在内存中，直接注入
     if task_module.inject_task_instruction(task_id, request.content):
         return {"status": "success"}
-    raise HTTPException(status_code=404, detail="Task not found")
+    
+    # 2. 如果不在内存中，尝试从磁盘寻找并复活这个死掉的任务
+    base_dir = os.path.join(DATA_DIR, "checkpoints", "task")
+    target_dir = None
+    if os.path.isdir(base_dir):
+        for entry in os.listdir(base_dir):
+            entry_path = os.path.join(base_dir, entry)
+            if os.path.isdir(entry_path):
+                checkpoint_path = os.path.join(entry_path, "checkpoint.json")
+                if os.path.exists(checkpoint_path):
+                    try:
+                        with open(checkpoint_path, "r", encoding="utf-8") as f:
+                            state = json.load(f)
+                        if state.get("task_id") == task_id:
+                            target_dir = entry_path
+                            break
+                    except Exception:
+                        pass
+                
+    if target_dir and os.path.exists(os.path.join(target_dir, "checkpoint.json")):
+        try:
+            # 读取 checkpoint 获取真实的 expert_type
+            with open(os.path.join(target_dir, "checkpoint.json"), "r", encoding="utf-8") as f:
+                state = json.load(f)
+            expert_type = state.get("expert_type", "BaseTask")
+            
+            # 从注册表中找对应的专家类
+            task_module.auto_discover_experts()
+            class_name_to_expert = {info["class"].__name__: info["class"] for info in task_module.BaseTask._EXPERT_REGISTRY.values()}
+            TargetClass = class_name_to_expert.get(expert_type, task_module.BaseTask)
+            
+            # 从磁盘反序列化复活任务，并放入内存的 TASK_INSTANCES
+            task = TargetClass.load_checkpoint(target_dir)
+            if task:
+                # 复活成功后，再次尝试注入指令
+                if task_module.inject_task_instruction(task_id, request.content):
+                    return {"status": "success", "message": "Task awakened from disk and injected."}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"尝试从磁盘唤醒任务失败: {str(e)}")
+
+    raise HTTPException(status_code=404, detail="Task not found in memory or disk")
 
 
 @app.post("/api/tasks/{task_id}/stop")

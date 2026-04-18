@@ -493,6 +493,9 @@ function TaskDetailView({ task }: { task: Task }) {
     try {
       await injectTask(task.id, pushContent)
       setPushContent('')
+    } catch (error) {
+      console.error('Failed to inject task:', error)
+      alert('发送指令失败，请检查后端服务是否正常运行')
     } finally {
       setIsPushing(false)
     }

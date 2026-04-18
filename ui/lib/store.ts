@@ -437,13 +437,19 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   injectTask: async (taskId, content) => {
     try {
-      await get().apiFetch(`/tasks/${taskId}/inject`, {
+      const res = await get().apiFetch(`/tasks/${taskId}/inject`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content })
       })
+      
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.detail || `HTTP error! status: ${res.status}`);
+      }
     } catch (e) {
       console.error('Failed to inject task:', e)
+      throw e
     }
   },
 
