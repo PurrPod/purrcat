@@ -77,7 +77,6 @@ class BaseTask:
         self._killed = False
         self.pending_force_push = []
         self.create_time = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
-        self.current_plan = ""
         self.history.append({"role": "system", "content": self.system_prompt})
         self.history.append({"role": "user", "content": f"[User Request]: \n{self.prompt}\n"})
         self.token_usage = 0
@@ -96,15 +95,28 @@ class BaseTask:
         """生命周期钩子：供子类重写，根据 checkpoint 字典恢复特有属性和不可序列化对象"""
         pass
 
+    def get_available_tools(self) -> list:
+        """生命周期钩子：动态获取当前任务可用的所有工具，子类可覆写追加专属工具"""
+        from src.plugins.route.task_tool import TASK_TOOLS
+        from src.plugins.route.base_tool import BASE_TOOLS
+        return list(BASE_TOOLS) + list(TASK_TOOLS)
+
+    def _get_extra_context_messages(self) -> list:
+        """生命周期钩子：每次请求大模型前，子类可追加额外的动态上下文注入（如计划表）"""
+        return []
+
+    def _handle_expert_tool(self, tool_name: str, arguments: dict) -> tuple[bool, str]:
+        """生命周期钩子：子类可重写此方法以拦截并执行专家的 Extend Tools"""
+        return False, ""
+
     def _build_system_prompt(self):
         return """# 角色定义
 你是一个通用型 AI 助手。你的核心任务是理解用户需求，并合理调度工具解决问题。
 
 # 核心行为规范
 1. **工具依赖**：遇到信息不足或需要操作外部环境时，必须主动使用工具，严禁凭空捏造（幻觉）。
-2. **制定计划**：复杂任务应使用 update_plan 工具生成计划，并在执行中随时更新。
-3. **交付验收**：当你认为任务完成时，必须调用 task_done 工具进行交付，说明任务成功与否，并给出详细总结。
-4. **及时求助**：如果发现现有条件无法完成任务，不应该自己编造幻觉，大胆承认不足，及时止损。"""
+2. **交付验收**：当你认为任务完成时，必须调用 task_done 工具进行交付，说明任务成功与否，并给出详细总结。
+3. **及时求助**：如果发现现有条件无法完成任务，大胆承认不足，及时止损。"""
 
     def _cleanup_resources(self):
         try:
@@ -130,25 +142,34 @@ class BaseTask:
                         eval_result = self._run_eval()
                         if eval_result.get("has_hallucination", False):
                             reason = eval_result.get('reason', '未知')
-                            reject_msg = f"【系统驳回交付】：你试图结束任务，但审查系统发现了严重问题：\n{reason}\n请务必修复上述问题，并用工具验证成功后，再尝试交付！"
                             self.log_and_notify("warning", f"⚠️ 任务交付被驳回：{reason}")
-                            self.history.append({"role": "user", "content": reject_msg})
-                            self._tool_calling(tool_calling)
+                            for tc in tool_calling:
+                                if tc.function.name == "task_done":
+                                    self.history.append({
+                                        "role": "tool",
+                                        "tool_call_id": tc.id,
+                                        "name": "task_done",
+                                        "content": f"❌ 交付被系统审查拦截驳回：\n{reason}\n请务必修复上述问题后，再尝试交付！"
+                                    })
+                                else:
+                                    self._tool_calling([tc])
                             self.checker()
                             continue
 
                         result, summary = self._extract_summary(tool_calling)
                         self.state = "completed"
-                        task_done_call = next((tc for tc in tool_calling if tc.function.name == "task_done"), None)
-                        if task_done_call:
-                            return_content = "任务结果交付成功！"
-                            self.log_and_notify("tool", f"📦 任务结束交付: {return_content}")
-                            self.history.append({
-                                "role": "tool",
-                                "tool_call_id": task_done_call.id,
-                                "name": "task_done",
-                                "content": return_content
-                            })
+                        for tc in tool_calling:
+                            if tc.function.name == "task_done":
+                                return_content = "任务结果交付成功！"
+                                self.log_and_notify("tool", f"📦 任务结束交付: {return_content}")
+                                self.history.append({
+                                    "role": "tool",
+                                    "tool_call_id": tc.id,
+                                    "name": "task_done",
+                                    "content": return_content
+                                })
+                            else:
+                                self._tool_calling([tc])
                         if self.model: self.model.unbind_task()
                         self._cleanup_resources()
                         self.save_checkpoint()
@@ -196,7 +217,6 @@ class BaseTask:
             "core": self.core,
             "judger": self.judger,
             "state": self.state,
-            "current_plan": self.current_plan,
             "step": self.step,
             "token_usage": self.token_usage,
             "window_token": self.window_token,
@@ -232,7 +252,6 @@ class BaseTask:
             task.step = state.get("step", 0)
             task.token_usage = state.get("token_usage", 0)
             task.window_token = state.get("window_token", 0)
-            task.current_plan = state.get("current_plan", "")
             task.pending_force_push = state.get("pending_force_push", [])
             task.checkpoint_dir = state.get("checkpoint_dir", checkpoint_dir)
             task.history = history
@@ -261,13 +280,8 @@ class BaseTask:
         return usage_data
 
     def _run_llm_step(self):
-        from src.plugins.route.task_tool import TASK_TOOLS
-        from src.plugins.route.base_tool import BASE_TOOLS
-
-        current_tools = list(BASE_TOOLS) + list(TASK_TOOLS)
-        plan_msg = self._get_dynamic_plan_msg()
-        request_messages = self.history + [plan_msg]
-
+        current_tools = self.get_available_tools()
+        request_messages = self.history + self._get_extra_context_messages()
         response = self.model.chat(messages=request_messages, tools=current_tools)
         self._track_token_usage(response)
 
@@ -343,24 +357,6 @@ class BaseTask:
                 "content": f"[System Warning] You should suspend your action and handle this message first!\n{content}"
             })
         self.memory_flush()
-
-    def _get_dynamic_plan_msg(self):
-        if not self.current_plan:
-            plan_content = "暂未规划，等待调用 update_plan 工具初始化计划表 (action='init')"
-        else:
-            try:
-                p_dict = json.loads(self.current_plan)
-                plan_content = f"🎯 总目标: {p_dict.get('overall_goal', '未设定')}\n\n"
-                for s in p_dict.get("steps", []):
-                    status_icon = "✅" if s["status"] == "completed" else ("🏃" if s["status"] == "in_progress" else "⏳")
-                    plan_content += f"{status_icon} [ID: {s['id']}] {s['title']} ({s['status']})\n"
-                    if s.get("description"):
-                        plan_content += f"    📝 {s['description']}\n"
-            except:
-                plan_content = self.current_plan
-        current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        plan_context = f"【当前动态计划与系统状态】\n🕒 当前系统时间: {current_time}\n注意：可随时用 update_plan 工具修改计划\n\n{plan_content}"
-        return {"role": "system", "content": plan_context}
 
     def memory_flush(self, check_mode=True, max_tokens=120000):
         if check_mode and (self.window_token <= max_tokens or len(self.history) <= 150):
@@ -449,16 +445,20 @@ class BaseTask:
             args_str = ", ".join([f'{k}={repr(v)}' for k, v in arguments.items()]) if isinstance(arguments, dict) else str(arguments)
             self.log_and_notify("tool_call", f"🔧 助手调起工具: {target_tool_name}({args_str})", metadata={"arguments": arguments})
 
-            from src.plugins.route.task_tool import TASK_TOOL_FUNCTIONS
-            task_tool_names = list(TASK_TOOL_FUNCTIONS.keys())
-
-            if target_tool_name in task_tool_names:
-                from src.plugins.route.task_tool import call_task_tool
-                result_str = call_task_tool(target_tool_name, arguments, self)
-            else:
-                from src.plugins.plugin_manager import parse_tool
-                result_str = parse_tool(target_tool_name, arguments)
-                self.log_and_notify("tool", f"📦 工具回传结果: {result_str}")
+            # 1. 优先尝试专家专属 Extend Tool 拦截
+            is_handled, result_str = self._handle_expert_tool(target_tool_name, arguments)
+            if not is_handled:
+                # 2. 尝试通用 Task Tool
+                from src.plugins.route.task_tool import TASK_TOOL_FUNCTIONS
+                task_tool_names = list(TASK_TOOL_FUNCTIONS.keys())
+                if target_tool_name in task_tool_names:
+                    from src.plugins.route.task_tool import call_task_tool
+                    result_str = call_task_tool(target_tool_name, arguments, self)
+                # 3. 退化为基础路由工具
+                else:
+                    from src.plugins.plugin_manager import parse_tool
+                    result_str = parse_tool(target_tool_name, arguments)
+                    self.log_and_notify("tool", f"📦 工具回传结果: {result_str}")
             finish_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             time_aware_content = f"[finish at {finish_time}]\n{result_str}"
             self.history.append({
@@ -561,10 +561,6 @@ class BaseTask:
 
 
 def auto_discover_experts():
-    """
-    自动扫描并导入所有专家模块，触发 __init_subclass__ 钩子进行注册。
-    同时确保 "general" 专家被注册到 BaseTask._EXPERT_REGISTRY。
-    """
     import pkgutil
     import importlib
     if "general" not in BaseTask._EXPERT_REGISTRY:
@@ -579,8 +575,8 @@ def auto_discover_experts():
         module_count = 0
         failed_modules = []
         for _, module_name, is_pkg in pkgutil.walk_packages(
-            src.models.expert.__path__, 
-            src.models.expert.__name__ + "."
+                src.models.expert.__path__,
+                src.models.expert.__name__ + "."
         ):
             try:
                 importlib.import_module(module_name)
@@ -588,12 +584,10 @@ def auto_discover_experts():
             except Exception as e:
                 failed_modules.append((module_name, str(e)))
         if failed_modules and module_count == 0:
-            # 只有在所有模块都失败时才警告
             print(f"⚠️ 所有专家模块加载失败:")
             for mod, err in failed_modules:
                 print(f"   ├─ {mod}: {err}")
         elif failed_modules:
-            # 部分模块失败，输出debug信息
             print(f"📦 已成功加载 {module_count} 个专家模块, {len(failed_modules)} 个失败:")
             for mod, err in failed_modules:
                 print(f"   ⚠️  {mod}: {err}")
@@ -606,45 +600,35 @@ def auto_discover_experts():
 class TaskFactory:
     @staticmethod
     def create_task(expert_type: str, task_name: str, prompt: str, core: str, judger: str, **kwargs):
-        """
-        基于自动发现的注册表动态实例化专家任务
-        """
-        # 确保已自动发现和注册所有专家
         auto_discover_experts()
         if expert_type not in BaseTask._EXPERT_REGISTRY:
             raise ValueError(f"❌ 注册表中未找到指定的专家类型: {expert_type}")
-        
+
         registry_info = BaseTask._EXPERT_REGISTRY[expert_type]
         TargetClass = registry_info["class"]
-        
-        # 动态参数校验与映射
+
         validated_args = {}
         for param_name, param_meta in registry_info["parameters"].items():
             if param_meta.get("required", False) and param_name not in kwargs:
                 raise ValueError(f"❌ 创建 {expert_type} 专家任务失败：缺失必填参数 '{param_name}'")
-            
-            # 提取参数，若无则取默认值
             validated_args[param_name] = kwargs.get(param_name, param_meta.get("default"))
-            
-        # 实例化目标任务
+
         task_instance = TargetClass(
-            task_name=task_name, 
-            prompt=prompt, 
-            core=core, 
-            judger=judger, 
+            task_name=task_name,
+            prompt=prompt,
+            core=core,
+            judger=judger,
             **validated_args
         )
         return task_instance
 
 def auto_load_all_tasks():
-    """自动从检查点目录恢复所有任务"""
-    auto_discover_experts()  # 先确保所有专家已注册
+    auto_discover_experts()
     checkpoints_dir = os.path.join(DATA_DIR, "checkpoints", "task")
     if not os.path.exists(checkpoints_dir):
         return
-    # 为了通过类名反查字典 key
     class_name_to_expert = {info["class"].__name__: info["class"] for info in BaseTask._EXPERT_REGISTRY.values()}
-    
+
     for task_dir in os.listdir(checkpoints_dir):
         full_path = os.path.join(checkpoints_dir, task_dir)
         checkpoint_file = os.path.join(full_path, "checkpoint.json")
@@ -652,14 +636,10 @@ def auto_load_all_tasks():
             try:
                 with open(checkpoint_file, "r", encoding="utf-8") as f:
                     state = json.load(f)
-                
-                # 读取原任务的类名，例如 "TradingTask"
                 expert_class_name = state.get("expert_type", "BaseTask")
                 TargetClass = class_name_to_expert.get(expert_class_name, BaseTask)
-                
-                # 使用真实子类的 load_checkpoint 恢复
                 task = TargetClass.load_checkpoint(full_path)
-                if task: 
+                if task:
                     print(f"✅ 成功通过 [{expert_class_name}] 恢复任务: {task.task_id}")
             except Exception as e:
                 print(f"❌ 自动恢复任务目录 {task_dir} 失败: {e}")
