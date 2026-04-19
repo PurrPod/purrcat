@@ -58,6 +58,8 @@ async def lifespan(app: FastAPI):
 
     print("🔄 初始化全局工具注册表...")
     init_tool()
+    from src.plugins.route.base_tool import _init_tool_async
+    _init_tool_async()
     start_sensors()
 
     global agent

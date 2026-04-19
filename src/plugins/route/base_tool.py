@@ -13,6 +13,11 @@ import docker
 import pexpect
 from docker.errors import DockerException, NotFound
 
+import jieba
+import numpy as np
+from deep_translator import GoogleTranslator
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 from src.utils.config import LOCAL_TOOL_YAML, TOOL_INDEX_FILE
 
 # 配置缓存
@@ -64,14 +69,36 @@ BASE_TOOLS = [
         "type": "function",
         "function": {
             "name": "get_menu",
-            "description": "获取当前可用的插件/服务总览菜单。你需要先通过此工具浏览有哪些功能可用。",
+            "description": "获取指定插件下所有功能(func)及其描述(desc)的菜单。",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "route": {"type": "string", "enum": ["local", "mcp"],
-                              "description": "筛选查看的路由，必须指定两大 route 之一: local 或 mcp"}
+                              "description": "路由类型，必须指定 local 或 mcp"},
+                    "plugin": {"type": "string", "description": "插件名称"}
                 },
-                "required": ["route"]
+                "required": ["route", "plugin"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_tool",
+            "description": "根据自然语言描述，使用语义和关键词搜索匹配度最高的工具/插件。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "你想要搜索的工具功能的自然语言描述，例如 '帮我获取昨天力扣的每日一题'"
+                    },
+                    "top_k": {
+                        "type": "integer",
+                        "description": "需要返回的最高匹配工具数量，默认返回前 3 个"
+                    }
+                },
+                "required": ["query"]
             }
         }
     },
@@ -147,7 +174,123 @@ BASE_TOOLS = [
 
 BASE_TOOL_NAMES = [tool["function"]["name"] for tool in BASE_TOOLS]
 
-def get_menu(route: str) -> str:
+class ToolSearcher:
+    def __init__(self, jsonl_path: str):
+        self.tools = []
+        self.corpus = []
+        self.translator = GoogleTranslator(source='zh-CN', target='en')
+        # 加载工具数据
+        self._load_tools(jsonl_path)
+        # 初始化并拟合 TF-IDF 模型
+        self.vectorizer = TfidfVectorizer()
+        # 对工具库的文本进行向量化
+        if self.corpus:
+            self.tfidf_matrix = self.vectorizer.fit_transform(self.corpus)
+
+    def _load_tools(self, jsonl_path: str):
+        """
+        读取 jsonl 文件，并将 plugin, func, desc 组合成用于匹配的语料文本。
+        """
+        if not os.path.exists(jsonl_path):
+            return
+        with open(jsonl_path, 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    tool = json.loads(line)
+                    self.tools.append(tool)
+                    # 拼接 plugin, func, desc 作为每个工具的文本表征
+                    text_representation = f"{tool.get('plugin', '')} {tool.get('func', '')} {tool.get('desc', '')}"
+                    self.corpus.append(text_representation)
+                except json.JSONDecodeError:
+                    continue
+
+    def _process_query(self, query: str) -> str:
+        """
+        核心处理逻辑：
+        1. 对 Query 进行中文分词
+        2. 剔除无效符号，对词汇进行英文翻译
+        3. 拼接原词和英文翻译，丰富召回特征
+        """
+        # 1. 使用 jieba 进行分词
+        words = jieba.lcut(query)
+        processed_tokens = []
+        for word in words:
+            word = word.strip()
+            # 过滤掉单字符的无意义标点
+            if len(word) == 0 or word in "，。！？、,!?()（）":
+                continue
+            # 保留原词
+            processed_tokens.append(word)
+            # 2. 对词汇进行翻译
+            # 为了避免把已经是英文的词也翻译一遍，可以加个简单的判断
+            if any('\u4e00' <= char <= '\u9fff' for char in word):
+                try:
+                    translated_word = self.translator.translate(word)
+                    if translated_word:
+                        processed_tokens.append(translated_word.lower())
+                except Exception as e:
+                    print(f"翻译 '{word}' 时出错: {e}")
+            else:
+                processed_tokens.append(word.lower())
+        # 3. 将处理后的特征词汇拼接成字符串
+        expanded_query = " ".join(processed_tokens)
+        return expanded_query
+
+    def search(self, query: str, top_k: int = 3) -> list:
+        """
+        执行搜索并返回匹配度最高的 Top K 个工具
+        """
+        if not self.corpus:
+            return []
+        # 对查询语句进行分词和翻译扩展
+        expanded_query = self._process_query(query)
+        # 将扩展后的查询转换为 TF-IDF 向量
+        query_vector = self.vectorizer.transform([expanded_query])
+        # 计算查询向量与所有工具向量的余弦相似度
+        similarities = cosine_similarity(query_vector, self.tfidf_matrix).flatten()
+        # 获取相似度最高的前 k 个索引（从大到小）
+        top_k_indices = np.argsort(similarities)[::-1][:top_k]
+        results = []
+        for idx in top_k_indices:
+            # 只有当相似度大于 0 时才返回
+            if similarities[idx] > 0:
+                results.append({
+                    "score": round(float(similarities[idx]), 4),
+                    "tool": self.tools[idx]
+                })
+        return results
+
+
+def search_tool(query: str, top_k: int = 3) -> str:
+    """工具搜索接口，提供给大模型调用"""
+    if not os.path.exists(TOOL_INDEX_FILE):
+        init_tool()
+        if not os.path.exists(TOOL_INDEX_FILE):
+            return _format_response("error", "工具注册表未初始化，找不到 tool.jsonl")
+    searcher = ToolSearcher(TOOL_INDEX_FILE)
+    results = searcher.search(query, top_k)
+    if not results:
+        return _format_response("text",
+                                f"未找到与 '{query}' 匹配度较高的可用工具。您可以尝试使用 search_tool 搜索或使用 get_menu 获取指定插件的工具清单。")
+    result_text = f"🎯 针对查询 '{query}' 的搜索结果 (Top {top_k}):\n\n"
+    result_text += "| 路由 (route) | 插件 (plugin) | 功能名 (func) | 匹配得分 | 描述 |\n"
+    result_text += "|-------------|---------------|---------------|---------|------|\n"
+    for res in results:
+        tool = res["tool"]
+        route = tool.get("route", "unknown")
+        plugin = tool.get("plugin", "unknown")
+        func = tool.get("func", "unknown")
+        desc = tool.get("desc", "无描述")
+        score = res["score"]
+        result_text += f"| {route} | {plugin} | {func} | {score} | {desc} |\n"
+    result_text += "\n💡 提示：你可以使用 fetch_tool 获取上述列表中的工具 Schema，然后使用 call_dynamic_tool 进行调用。"
+    return _format_response("text", result_text)
+
+
+def get_menu(route: str, plugin: str) -> str:
     """获取工具菜单（无异常拦截，直接抛给上层）"""
     if route not in ["local", "mcp"]:
         raise ValueError("无效的路由参数，必须指定两大 route 之一: local 或 mcp")
@@ -162,21 +305,20 @@ def get_menu(route: str) -> str:
         for line in f:
             if not line.strip(): continue
             tool = json.loads(line)
-            if tool["route"] == route:
+            if tool["route"] == route and tool["plugin"] == plugin:
                 tools.append(tool)
 
     if not tools:
-        return _format_response("text", f"当前路由 '{route}' 下没有可用的工具。")
+        return _format_response("text", f"当前路由 '{route}' 下插件 '{plugin}' 没有可用的工具。")
 
-    result = f"## 可用工具总览 (Route: {route})\n\n"
-    result += "💡 提示：使用 fetch_tool 获取参数 Schema 后即可调用\n\n"
-    result += "| plugin | func | desc |\n"
-    result += "|--------|------|------|\n"
+    result = f"## 插件工具菜单 (Route: {route}, Plugin: {plugin})\n\n"
+    result += "| func | desc |\n"
+    result += "|------|------|\n"
 
     for tool in tools:
-        result += f"| {tool['plugin']} | {tool['func']} | {tool['desc']} |\n"
+        result += f"| {tool['func']} | {tool['desc']} |\n"
 
-    result += f"\n**总计: {len(tools)} 个工具**"
+    result += f"\n**总计: {len(tools)} 个功能**"
     return _format_response("text", result)
 
 
@@ -209,22 +351,52 @@ def init_tool():
         print(f"❌ 初始化本地工具异常: {e}")
 
     try:
-        print("🔌 处理MCP工具...")
-        from src.plugins.route.mcp_tool import extract_mcp_fingerprints_sync
-        mcp_tools = extract_mcp_fingerprints_sync()
-        if mcp_tools:
-            tools_index.extend(mcp_tools)
-            print(f"✅ MCP工具: {len(mcp_tools)} 个")
-    except Exception as e:
-        print(f"❌ 扫描MCP工具异常: {e}")
-
-    try:
         with open(TOOL_INDEX_FILE, "w", encoding="utf-8") as f:
             for tool_info in tools_index:
                 f.write(json.dumps(tool_info, ensure_ascii=False) + "\n")
-        print(f"✅ 工具索引已生成: {TOOL_INDEX_FILE} (共 {len(tools_index)} 个工具)")
+        print(f"✅ 本地工具索引已生成: {TOOL_INDEX_FILE}")
     except Exception as e:
         print(f"❌ 写入工具索引异常: {e}")
+
+    return tools_index
+
+
+def _init_tool_async():
+    """后台异步初始化 MCP 工具索引"""
+    import threading
+    import asyncio
+
+    def _run_mcp_init():
+        try:
+            from src.plugins.route.mcp_tool import extract_mcp_fingerprints_sync
+            print("🔌 [后台] 开始处理MCP工具...")
+            mcp_tools = extract_mcp_fingerprints_sync()
+
+            if mcp_tools:
+                existing_tools = []
+                if os.path.exists(TOOL_INDEX_FILE):
+                    with open(TOOL_INDEX_FILE, "r", encoding="utf-8") as f:
+                        for line in f:
+                            if not line.strip():
+                                continue
+                            tool = json.loads(line)
+                            if tool.get("route") == "local":
+                                existing_tools.append(tool)
+
+                with open(TOOL_INDEX_FILE, "w", encoding="utf-8") as f:
+                    for tool_info in existing_tools:
+                        f.write(json.dumps(tool_info, ensure_ascii=False) + "\n")
+                    for tool_info in mcp_tools:
+                        f.write(json.dumps(tool_info, ensure_ascii=False) + "\n")
+                print(f"✅ [后台] MCP工具索引已更新: {len(mcp_tools)} 个")
+            else:
+                print("⚠️ [后台] 未发现可用的MCP工具")
+        except Exception as e:
+            print(f"❌ [后台] 扫描MCP工具异常: {e}")
+
+    thread = threading.Thread(target=_run_mcp_init, daemon=True)
+    thread.start()
+    return thread
 
 def fetch_tool_schemas(route: str, plugin_name: str, tool_names: list) -> list:
     """批量获取工具 schemas（无异常拦截，直接抛给上层）"""
@@ -276,7 +448,7 @@ def handle_fetch_tool(arguments: dict) -> str:
             schema_item = fetched_dict[t_name]
             res_messages.append(json.dumps(schema_item["function"], ensure_ascii=False))
         res_messages.append("--------------------------------------")
-        
+
     if failed_tools:
         res_messages.append(f"❌ 以下工具找不到或加载失败: {', '.join(failed_tools)}")
 
@@ -459,7 +631,7 @@ class DockerManager:
             from src.utils.config import FILE_CONFIG_PATH
             with open(FILE_CONFIG_PATH, "r") as f:
                 docker_mount = json.load(f)
-                docker_mount = docker_mount.get("docker_mount",[])
+                docker_mount = docker_mount.get("docker_mount", [])
             for dirpath in docker_mount:
                 new_host_dir = os.path.abspath(dirpath)
                 os.makedirs(new_host_dir, exist_ok=True)
@@ -599,9 +771,11 @@ def call_base_tool(tool_name: str, arguments: dict) -> str:
     返回: 格式化后的 JSON 字符串
     """
     result_content = ""
-    
+
     if tool_name == "get_menu":
-        result_content = get_menu(arguments.get("route", "all"))
+        result_content = get_menu(arguments.get("route"), arguments.get("plugin"))
+    elif tool_name == "search_tool":
+        result_content = search_tool(arguments.get("query"), arguments.get("top_k", 3))
     elif tool_name == "execute_command":
         result_content = execute_command(**arguments)
     elif tool_name == "fetch_tool":
