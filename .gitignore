@@ -3,7 +3,9 @@ data/config/
 agent_vm/
 data/checkpoints
 .buffer/
-
+scripts/start_mini.bat
+scripts/start_mini.sh
+widget/
 __pycache__/
 *.py[cod]
 *$py.class
