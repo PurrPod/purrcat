@@ -65,43 +65,8 @@ BASE_TOOLS = [
             }
         }
     },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_menu",
-            "description": "获取指定插件下所有功能(func)及其描述(desc)的菜单。",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "route": {"type": "string", "enum": ["local", "mcp"],
-                              "description": "路由类型，必须指定 local 或 mcp"},
-                    "plugin": {"type": "string", "description": "插件名称"}
-                },
-                "required": ["route", "plugin"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "search_tool",
-            "description": "根据自然语言描述，使用语义和关键词搜索匹配度最高的工具/插件。",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "你想要搜索的工具功能的自然语言描述，例如 '帮我获取昨天力扣的每日一题'"
-                    },
-                    "top_k": {
-                        "type": "integer",
-                        "description": "需要返回的最高匹配工具数量，默认返回前 3 个"
-                    }
-                },
-                "required": ["query"]
-            }
-        }
-    },
+
+
     {
         "type": "function",
         "function": {
@@ -160,13 +125,21 @@ BASE_TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "list_skill",
-            "description": "按页列出所有可用的 Skill 并返回格式化字符串",
+            "name": "search_in_system",
+            "description": "全局系统搜索工具。根据自然语言描述，同时在系统可用插件工具(Tools)和技能库(Skills)中搜索匹配度最高的能力。不知道怎么做某项任务时，优先用这个全局搜索。",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "page": {"type": "integer", "description": "页码，默认为 1"}
-                }
+                    "query": {
+                        "type": "string",
+                        "description": "你想要搜索的功能的自然语言描述，例如 '帮我获取昨天力扣的每日一题' 或 '如何抓取某个网页的数据'"
+                    },
+                    "top_k": {
+                        "type": "integer",
+                        "description": "需要为 Tool 和 Skill 各自返回的最高匹配数量，默认返回前 3 个"
+                    }
+                },
+                "required": ["query"]
             }
         }
     }
@@ -264,30 +237,7 @@ class ToolSearcher:
         return results
 
 
-def search_tool(query: str, top_k: int = 3) -> str:
-    """工具搜索接口，提供给大模型调用"""
-    if not os.path.exists(TOOL_INDEX_FILE):
-        init_tool()
-        if not os.path.exists(TOOL_INDEX_FILE):
-            return _format_response("error", "工具注册表未初始化，找不到 tool.jsonl")
-    searcher = ToolSearcher(TOOL_INDEX_FILE)
-    results = searcher.search(query, top_k)
-    if not results:
-        return _format_response("text",
-                                f"未找到与 '{query}' 匹配度较高的可用工具。您可以尝试使用 search_tool 搜索或使用 get_menu 获取指定插件的工具清单。")
-    result_text = f"🎯 针对查询 '{query}' 的搜索结果 (Top {top_k}):\n\n"
-    result_text += "| 路由 (route) | 插件 (plugin) | 功能名 (func) | 匹配得分 | 描述 |\n"
-    result_text += "|-------------|---------------|---------------|---------|------|\n"
-    for res in results:
-        tool = res["tool"]
-        route = tool.get("route", "unknown")
-        plugin = tool.get("plugin", "unknown")
-        func = tool.get("func", "unknown")
-        desc = tool.get("desc", "无描述")
-        score = res["score"]
-        result_text += f"| {route} | {plugin} | {func} | {score} | {desc} |\n"
-    result_text += "\n💡 提示：你可以使用 fetch_tool 获取上述列表中的工具 Schema，然后使用 call_dynamic_tool 进行调用。"
-    return _format_response("text", result_text)
+
 
 
 def get_menu(route: str, plugin: str) -> str:
@@ -447,7 +397,7 @@ def handle_fetch_tool(arguments: dict) -> str:
         for t_name in success_tools:
             schema_item = fetched_dict[t_name]
             res_messages.append(json.dumps(schema_item["function"], ensure_ascii=False))
-        res_messages.append("--------------------------------------")
+        res_messages.append("-----")
 
     if failed_tools:
         res_messages.append(f"❌ 以下工具找不到或加载失败: {', '.join(failed_tools)}")
@@ -456,6 +406,130 @@ def handle_fetch_tool(arguments: dict) -> str:
 
 
 DEFAULT_SKILL_PATH = Path("data/skill")
+
+
+class SkillSearcher:
+    def __init__(self, skill_dir: Path):
+        self.skills = []
+        self.corpus = []
+        self.translator = GoogleTranslator(source='zh-CN', target='en' )
+        # 加载技能数据
+        self._load_skills(skill_dir)
+        # 初始化并拟合 TF-IDF 模型
+        self.vectorizer = TfidfVectorizer()
+        if  self.corpus:
+            self.tfidf_matrix = self.vectorizer.fit_transform(self.corpus)
+
+    def _load_skills(self, skill_dir: Path):
+        """
+        遍历 Skill 目录，解析 SKILL.md，并将 name, description 和 content 组合成用于匹配的语料文本。
+        """
+        if not skill_dir.exists() or not  skill_dir.is_dir():
+            return
+        for item in  skill_dir.iterdir():
+            if  item.is_dir():
+                md_file = item / "SKILL.md"
+                if  md_file.exists():
+                    parsed_data = _parse_skill_md(md_file)
+                    metadata = parsed_data["metadata" ]
+                    name = metadata.get("name" , item.name)
+                    desc = metadata.get("description", metadata.get("desc", "" ))
+                    content = parsed_data.get("content", "" )
+                    
+                    self.skills.append({
+                        "name" : name,
+                        "description" : desc,
+                        "dir_name" : item.name
+                    })
+                    # 拼接元数据和内容作为文本表征
+                    text_representation = f"{name} {desc} {content}"
+                    self.corpus.append(text_representation)
+
+    def _process_query(self, query: str) -> str:
+        """
+        核心处理逻辑（与 ToolSearcher 相同）：
+        分词 -> 翻译扩展 -> 拼接
+        """
+        words = jieba.lcut(query)
+        processed_tokens = []
+        for word in  words:
+            word = word.strip()
+            if len(word) == 0 or word in "，。！？、,!?()（）" :
+                continue
+            processed_tokens.append(word)
+            if any('\u4e00' <= char <= '\u9fff' for char in  word):
+                try :
+                    translated_word = self.translator.translate(word)
+                    if  translated_word:
+                        processed_tokens.append(translated_word.lower())
+                except Exception as  e:
+                    print(f"翻译 '{word}' 时出错: {e}")
+            else :
+                processed_tokens.append(word.lower())
+        return " " .join(processed_tokens)
+
+    def search(self, query: str, top_k: int = 3) -> list:
+        """执行搜索并返回匹配度最高的前 K 个技能"""
+        if not  self.corpus:
+            return  []
+        expanded_query = self._process_query(query)
+        query_vector = self.vectorizer.transform([expanded_query])
+        similarities = cosine_similarity(query_vector, self.tfidf_matrix).flatten()
+        top_k_indices = np.argsort(similarities)[::-1 ][:top_k]
+        
+        results = []
+        for idx in  top_k_indices:
+            if similarities[idx] > 0 :
+                results.append({
+                    "score": round(float(similarities[idx]), 4 ),
+                    "skill" : self.skills[idx]
+                })
+        return  results
+
+def search_in_system(query: str, top_k: int = 3) -> str:
+    """全局统一搜索接口，同时搜索可用工具与技能"""
+    result_text = f"🎯 针对查询 '{query}' 的全局搜索结果 (Top {top_k}):\n\n"
+    
+    # 1. 搜索 Tools
+    tool_results_text = "【🔌 插件工具 (Tools)】\n"
+    if not os.path.exists(TOOL_INDEX_FILE):
+        init_tool()
+        
+    if not os.path.exists(TOOL_INDEX_FILE):
+        tool_results_text += "⚠️ 工具注册表未初始化，找不到 tool.jsonl\n"
+    else:
+        tool_searcher = ToolSearcher(TOOL_INDEX_FILE)
+        t_results = tool_searcher.search(query, top_k)
+        if not t_results:
+            tool_results_text += "未找到匹配度较高的可用工具。\n"
+        else:
+            tool_results_text += "| 路由 (route) | 插件 (plugin) | 功能名 (func) | 匹配得分 | 描述 |\n"
+            tool_results_text += "|-------------|---------------|---------------|---------|------|\n"
+            for res in t_results:
+                t = res["tool"]
+                tool_results_text += f"| {t.get('route', 'unknown')} | {t.get('plugin', 'unknown')} | {t.get('func', 'unknown')} | {res['score']} | {t.get('desc', '无描述')} |\n"
+
+    # 2. 搜索 Skills
+    skill_results_text = "\n【🧰 技能经验 (Skills)】\n"
+    try:
+        skill_searcher = SkillSearcher(DEFAULT_SKILL_PATH)
+        s_results = skill_searcher.search(query, top_k)
+        if not s_results:
+            skill_results_text += "未找到匹配度较高的可用 Skill。\n"
+        else:
+            skill_results_text += "| 技能名称 (Name) | 匹配得分 | 描述 (Desc) |\n"
+            skill_results_text += "|-----------------|---------|-------------|\n"
+            for res in s_results:
+                s = res["skill"]
+                skill_results_text += f"| {s.get('name', 'unknown')} | {res['score']} | {s.get('description', '无描述')} |\n"
+    except Exception as e:
+        skill_results_text += f"⚠️ Skill搜索异常: {e}\n"
+
+    result_text += tool_results_text
+    result_text += skill_results_text
+    result_text += "\n💡 提示：\n1. 对于工具，你可以使用 fetch_tool 获取 Schema 后用 call_dynamic_tool 调用。\n2. 对于技能，你可以使用 load_skill(name='技能名称') 获取详情及执行指南。"
+    
+    return _format_response("text", result_text)
 
 
 def _parse_skill_md(file_path: Path) -> Dict[str, Any]:
@@ -772,18 +846,14 @@ def call_base_tool(tool_name: str, arguments: dict) -> str:
     """
     result_content = ""
 
-    if tool_name == "get_menu":
-        result_content = get_menu(arguments.get("route"), arguments.get("plugin"))
-    elif tool_name == "search_tool":
-        result_content = search_tool(arguments.get("query"), arguments.get("top_k", 3))
+    if tool_name == "search_in_system":
+        result_content = search_in_system(arguments.get("query"), arguments.get("top_k", 3))
     elif tool_name == "execute_command":
         result_content = execute_command(**arguments)
     elif tool_name == "fetch_tool":
         result_content = handle_fetch_tool(arguments)
     elif tool_name == "load_skill":
         result_content = load_skill(arguments.get("name"))
-    elif tool_name == "list_skill":
-        result_content = list_skill(arguments.get("page", 1))
     elif tool_name == "close_shell":
         result_content = close_shell(arguments.get("session_id", "default"))
     elif tool_name == "call_dynamic_tool":
