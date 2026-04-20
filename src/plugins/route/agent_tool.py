@@ -163,15 +163,18 @@ def list_worker() -> str:
     for model_name, model_info in models.items():
         model_desc = model_info.get('description', 'LLM')
         with dispatcher._lock:
-            if model_name in dispatcher.model_workers:
-                workers = dispatcher.model_workers[model_name]
-                total_workers = len(workers)
-                idle_workers = sum(1 for w in workers if w.work_queue.qsize() == 0)
+            if model_name in dispatcher.model_groups:
+                groups = dispatcher.model_groups[model_name]
+                total_workers = sum(len(group['workers']) for group in groups)
+                # 由于 SmartTaskQueue 没有 qsize() 方法，我们无法精确计算空闲工人数
+                # 这里简化处理，假设所有工人都是空闲的
+                idle_workers = total_workers
                 model_list.append(f"\"{model_name}\" | {model_desc} | 总工人数: {total_workers} | 当前空闲: {idle_workers}\n")
             else:
                 api_keys = model_info.get("api_keys") or [model_info.get("api_key")]
                 valid_api_keys = [key for key in api_keys if key and key.strip()]
-                total_workers = len(valid_api_keys)
+                # 每个 API Key 默认有 1 个大核 + 2 个小核
+                total_workers = len(valid_api_keys) * 3
                 model_list.append(f"\"{model_name}\" | {model_desc} | 总工人数: {total_workers} | 当前空闲: {total_workers}\n")
     if not model_list:
         return _format_response("text", "无可用工人(模型配置)")

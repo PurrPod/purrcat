@@ -11,6 +11,32 @@ from src.utils.config import get_models_config
 MODEL_POOL = []
 
 
+class TokenLimiter:
+    """基于时间滑动窗口的轻量级 TPM 速率限制器"""
+    def __init__(self, tpm_limit: int):
+        self.tpm_limit = tpm_limit
+        self.tokens_used = 0
+        self.last_reset = time.time()
+        self._lock = threading.Lock()
+
+    def consume(self, estimated_tokens: int) -> bool:
+        """尝试消费 Token，如果够用返回 True，如果超限返回 False"""
+        with self._lock:
+            now = time.time()
+            # 简单窗口：每过去 60 秒，额度清空重置
+            if now - self.last_reset >= 60.0:
+                self.tokens_used = 0
+                self.last_reset = now
+            
+            # 如果加上本次请求会超限，拒绝放行
+            if self.tokens_used + estimated_tokens > self.tpm_limit:
+                return False
+                
+            # 扣除额度并放行
+            self.tokens_used += estimated_tokens
+            return True
+
+
 def calculate_tuning_params(rpm_limit: int, tpm_limit: int, max_concurrency: int):
     """自适应限流参数推导引擎"""
     # 1. 计算线程分配 (保证至少 1 个总并发)
@@ -26,8 +52,8 @@ def calculate_tuning_params(rpm_limit: int, tpm_limit: int, max_concurrency: int
     else:
         base_sleep = 1.5 # 默认兜底
     
-    # 限制休眠时间上下限 (最少歇0.5秒防DDoS，最多歇60秒)
-    worker_sleep_interval = max(0.5, min(base_sleep, 60.0))
+    # 限制休眠时间上下限 (最少歇0.5秒防DDoS，最多歇30秒)
+    worker_sleep_interval = max(0.5, min(base_sleep, 30.0))
 
     # 3. 计算 429 惩罚退避时间 (Base Delay)
     # 至少等待 1 个请求周期，兜底 2 秒
@@ -145,7 +171,7 @@ class LLMDispatcher:
             # 【修改点】：将默认并发修改为 1，并配合相对保守的安全速率
             rpm = limits.get("rpm", 60)          # 默认 60 RPM (够单核全速跑了)
             tpm = limits.get("tpm", 100000)      # 默认 10 万 TPM
-            concurrency = limits.get("concurrency", 1) # 默认 1 并发（1大核，0小核）
+            concurrency = limits.get("concurrency", 3) # 默认 1 并发（1大核，0小核）
 
             # 调用引擎推算最佳参数！
             tuning = calculate_tuning_params(rpm, tpm, concurrency)
@@ -156,12 +182,17 @@ class LLMDispatcher:
             for idx, api_key in enumerate(valid_api_keys):
                 # 每个 API-Key 拥有自己专属的智能队列，使用动态计算的轻量级任务阈值
                 key_queue = SmartTaskQueue(light_threshold=tuning["light_threshold"])
+                
+                # 【新增】：为每个 Key 初始化一个 TPM 限制器
+                token_limiter = TokenLimiter(tpm_limit=tpm)
+                
                 workers = []
 
                 # 启动 1 个主核
                 main_worker = APIKeyWorker(
                     model_name, api_key, base_url, key_queue,
                     worker_id=idx, is_main=True,
+                    token_limiter=token_limiter,
                     sleep_interval=tuning["worker_sleep"],
                     base_delay=tuning["base_delay"]
                 )
@@ -174,6 +205,7 @@ class LLMDispatcher:
                     light_worker = APIKeyWorker(
                         model_name, api_key, base_url, key_queue,
                         worker_id=f"{idx}_L{i}", is_main=False,
+                        token_limiter=token_limiter,
                         sleep_interval=tuning["worker_sleep"],
                         base_delay=tuning["base_delay"]
                     )
@@ -228,7 +260,7 @@ class APIKeyWorker(threading.Thread):
     （带有增强的底层错误穿透与堆栈追踪能力）
     """
 
-    def __init__(self, model_name: str, api_key: str, base_url: str, smart_queue: SmartTaskQueue, worker_id: int, is_main: bool, sleep_interval: float = 1.5, base_delay: float = 2.0):
+    def __init__(self, model_name: str, api_key: str, base_url: str, smart_queue: SmartTaskQueue, worker_id: int, is_main: bool, token_limiter: TokenLimiter, sleep_interval: float = 1.5, base_delay: float = 2.0):
         super().__init__(name=f"Worker-{model_name}-{worker_id}")
         self.model_name = model_name
         self.api_key = api_key
@@ -236,6 +268,7 @@ class APIKeyWorker(threading.Thread):
         self.smart_queue = smart_queue
         self.worker_id = worker_id
         self.worker_type = "main" if is_main else "light"
+        self.token_limiter = token_limiter  # 保存引用
         self.sleep_interval = sleep_interval
         self.base_delay = base_delay
 
@@ -256,6 +289,11 @@ class APIKeyWorker(threading.Thread):
             else:
                 llm_task = self.smart_queue.get_light()
             
+            # 【核心魔法】：在发请求前，检查本地 TPM 额度
+            # 如果额度爆了，本地线程就睡一小会儿，直到下一个 60 秒周期刷新
+            while not self.token_limiter.consume(llm_task.estimated_tokens):
+                time.sleep(5.0)
+                
             future, kwargs = llm_task.future, llm_task.kwargs
             
             try:

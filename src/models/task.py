@@ -394,7 +394,6 @@ class BaseTask:
                 start_idx = 2
                 keep_recent = 20
                 split_idx = max(start_idx, len(self.history) - keep_recent)
-
                 while split_idx > start_idx:
                     curr_msg = self.history[split_idx]
                     prev_msg = self.history[split_idx - 1]
@@ -479,32 +478,51 @@ class BaseTask:
             })
 
     def _run_eval(self):
-        eval_system_prompt = """你是一个严格的 AI Agent 行为审查员。
-你的任务是审查 Agent 在最近几个对话轮次中的表现，重点排查是否存在"幻觉（Hallucination）"。
+        eval_prompt = """【系统强制审查】
+在你继续操作或执行交付之前，请严格审查你在此前几个轮次的执行过程。
+重点排查：是否存在"幻觉"（如捏造未执行的命令结果、捏造文件内容）、是否偏离了原始需求。
 请严格以 JSON 格式输出你的审查结果：
 {
     "has_hallucination": true 或 false,
     "reason": "如果为 true，请直接指出具体的幻觉表现和证据；如果为 false，简述其逻辑。"
 }"""
-        prompt = "以下是准备被压缩的上下文日志快照：\n\n" + "\n".join(self.log_window)
-        judger_key = self.judger.split("]")[-1] if "]" in self.judger else self.judger
+        
+        # 1. 必须使用 deepcopy，防止下方的"降级操作"污染并破坏真实的全局历史
+        import copy
+        temp_history = copy.deepcopy(self.history)
+        
+        # 2. 【核心修复：API 规则规避】
+        # 如果最后一条消息是带有 tool_calls 的 assistant 消息（通常是被拦截的 task_done）
+        # 必须将 tool_calls 抹除并降级为纯文本，否则直接追加 User 消息会触发 400 报错
+        if temp_history and temp_history[-1].get("role") == "assistant" and temp_history[-1].get("tool_calls"):
+            last_msg = temp_history[-1]
+            pending_actions = []
+            for tc in last_msg["tool_calls"]:
+                name = tc.get("function", {}).get("name", "")
+                args = tc.get("function", {}).get("arguments", "{}")
+                pending_actions.append(f"[{name}] 参数: {args}")
+            
+            # 将准备调用的工具转化为可视文本，让大模型能"看到"自己刚打算交付的结果
+            new_content = (last_msg.get("content") or "") + "\n\n[拦截到的待执行动作，请审查]\n" + "\n".join(pending_actions)
+            last_msg["content"] = new_content
+            del last_msg["tool_calls"]  # 彻底抹除工具标记
+            
+        # 3. 现在可以安全合法地追加 User 审查指令了，KV Cache 命中率将高达 99%
+        temp_history.append({"role": "user", "content": eval_prompt})
 
         try:
-            judger_model = Model(judger_key)
-            temp_history = [
-                {"role": "system", "content": eval_system_prompt},
-                {"role": "user", "content": prompt}
-            ]
-            response = judger_model.chat(
+            response = self.model.chat(
                 messages=temp_history,
                 response_format={"type": "json_object"},
                 temperature=0.1
             )
+            self._track_token_usage(response)
             eval_result = json.loads(response.choices[0].message.content)
-            self.log_window = []
-            log_msg = f"🤖 质检审查: {'审核不通过' if eval_result['has_hallucination'] else '审核通过'}\n{eval_result['reason']}"
+            self.log_window = []  # 审查完毕，清空日志队列
+            log_msg = f"🤖 自我质检审查: {'审核不通过' if eval_result['has_hallucination'] else '审核通过'}\n{eval_result['reason']}"
             self.log_and_notify("thought", log_msg)
             return eval_result
+            
         except Exception as e:
             self.log_and_notify("thought", f"🤖 质检审查: 默认放行 ({str(e)})")
             return {"has_hallucination": False, "reason": f"审查异常，默认放行: {str(e)}"}
