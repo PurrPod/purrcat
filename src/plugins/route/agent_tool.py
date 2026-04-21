@@ -44,7 +44,6 @@ def add_task(
         prompt: str,
         expert: str,
         core: str = "openai:deepseek-chat",
-        judger: str = "openai:deepseek-chat",
         expert_kwargs: dict = None
 ) -> str:
     """创建后台任务（无异常拦截，直接抛给上层）"""
@@ -60,17 +59,13 @@ def add_task(
     if not valid_api_keys:
         raise ValueError(f"模型 '{model_name}' 未配置有效的 api-key")
 
-    # 不再需要检查 worker 状态！
-    # 任务直接创建，底层 LLMDispatcher 的全局队列会自动处理并发与排队。
     expert_kwargs = expert_kwargs or {}
     try:
-        # 使用 TaskFactory 动态创建任务
         single_task = TaskFactory.create_task(
             expert_type=expert,
             task_name=name,
             prompt=prompt,
             core=core,
-            judger=judger,
             **expert_kwargs
         )
     except Exception as e:
@@ -97,10 +92,9 @@ def add_task(
     ))
 
 
-def reload_task(task_id: str) -> str:
-    """根据 task_id 重新加载并恢复休眠/中断的任务，支持多态恢复"""
+def submit_request(task_id: str, new_prompt: str = "继续执行") -> str:
+    """统一的任务交互入口：支持追加指令/继续执行，也可从磁盘加载休眠任务"""
     task = TASK_INSTANCES.get(task_id)
-    # 如果内存中没有，尝试从磁盘扫描加载
     if not task:
         checkpoints_dir = os.path.join(DATA_DIR, "checkpoints", "task")
         if os.path.exists(checkpoints_dir):
@@ -112,7 +106,6 @@ def reload_task(task_id: str) -> str:
                         with open(ckpt_path, "r", encoding="utf-8") as f:
                             state = json.load(f)
                         if state.get("task_id") == task_id:
-                            # 核心修复：读取 expert_type，从注册表获取对应的类进行多态加载
                             from src.models.task import auto_discover_experts
                             auto_discover_experts()
                             expert_type = state.get("expert_type", "BaseTask")
@@ -127,28 +120,6 @@ def reload_task(task_id: str) -> str:
                         pass
     if not task:
         raise FileNotFoundError(f"未找到ID为 {task_id} 的任务历史。")
-
-    if task.state in ["running", "ready"] and task.step > 0:
-        return _format_response("text", f"⚠️ 任务 (ID: {task_id}) 目前状态为 {task.state}，无需重载。")
-    def _resume_task():
-        from src.agent.agent import add_message
-        try:
-            result = task.resume()
-            notify_msg = f"🔔 [系统通知] 恢复的任务 '{task.task_name}' (ID: {task_id}) 已执行完毕。结果如下：\n{result}"
-            add_message({"type": "task_message", "content": notify_msg})
-        except Exception as e:
-            task.state = "error"
-            error_msg = f"❌ [系统通知] 任务 '{task.task_name}' (ID: {task_id}) 恢复运行崩溃，原因: {e}"
-            add_message({"type": "task_message", "content": error_msg})
-    t = threading.Thread(target=_resume_task, daemon=True)
-    t.start()
-    return _format_response("text", f"✅ 任务 (ID: {task_id}) 正在后台恢复执行...")
-
-def submit_request(task_id: str, new_prompt: str) -> str:
-    """向指定的任务追加需求指令（无异常拦截，直接抛给上层）"""
-    task = TASK_INSTANCES.get(task_id)
-    if not task:
-        raise KeyError(f"未在内存中找到任务 (ID: {task_id})，如果是旧任务请先调用 reload_task 唤醒。")
 
     if task.state in ["running", "ready"]:
         inject_task_instruction(task_id, new_prompt)
@@ -342,12 +313,9 @@ AGENT_TOOLS = [
                 "properties": {
                     "name": {"type": "string", "description": "为后台子任务起一个名称"},
                     "prompt": {"type": "string", "description": "告诉后台子任务要做什么"},
-                    # 【核心修改】直接调用我们动态生成的 Schema
                     "expert": _get_dynamic_expert_schema(),
                     "core": {"type": "string",
                              "description": "使用的工人代号，如\"openai:deepseek-chat\"，可用list_worker查看"},
-                    "judger": {"type": "string",
-                               "description": "用于审查的工人代号，默认与core相同"},
                     "expert_kwargs": {
                         "type": "object",
                         "description": "根据 expert 类型传递相应参数，例如 trading 需要 {\"company_name\": \"AAPL\", \"trade_date\": \"2026-04-16\"}"
@@ -360,29 +328,15 @@ AGENT_TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "reload_task",
-            "description": "通过任务ID恢复并重新启动一个异常中断或此前完成的休眠任务",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "task_id": {"type": "string", "description": "要恢复的任务的ID"}
-                },
-                "required": ["task_id"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
             "name": "submit_request",
-            "description": "向指定的子任务下发追加指令或新需求",
+            "description": "统一的任务交互入口：向指定任务下发追加指令/新需求，或从磁盘恢复休眠任务继续执行",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "task_id": {"type": "string", "description": "目标任务的ID"},
-                    "new_prompt": {"type": "string", "description": "追加的指令或需求内容"}
+                    "new_prompt": {"type": "string", "description": "追加的指令或需求内容，默认为“继续执行”"}
                 },
-                "required": ["task_id", "new_prompt"]
+                "required": ["task_id"]
             }
         }
     },
@@ -432,7 +386,6 @@ AGENT_TOOLS = [
 
 AGENT_TOOL_FUNCTIONS = {
     "add_task": add_task,
-    "reload_task": reload_task,
     "submit_request": submit_request,
     "kill_task": kill_task,
     "list_worker": list_worker,

@@ -46,8 +46,8 @@ class TradingTask(
         }
     }
 ):
-    def __init__(self, task_name, prompt, core, judger, company_name, trade_date=None):
-        super().__init__(task_name, prompt, core, judger)
+    def __init__(self, task_name, prompt, core, company_name, trade_date=None):
+        super().__init__(task_name, prompt, core)
         self.company_name = company_name
         self.trade_date = trade_date or "Current"
         self.max_debate_rounds = 2

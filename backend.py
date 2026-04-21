@@ -877,7 +877,6 @@ class TaskCreate(BaseModel):
     skills: list = None
     expert: str = "general"
     core: str = "openai:deepseek-chat"
-    judger: str = "openai:deepseek-chat"
 
 
 @app.post("/api/tasks")
@@ -888,8 +887,7 @@ async def create_task_endpoint(task: TaskCreate):
             name=task.title,
             prompt=task.prompt,
             expert=task.expert,
-            core=task.core,
-            judger=task.judger
+            core=task.core
         )
         return {"status": "success", "message": msg}
     except Exception as e:

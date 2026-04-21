@@ -14,10 +14,9 @@ class CodingTask(
     继承通用工作流，通过钩子注入计划能力和资深程序员的 System Prompt。
     """
 
-    def __init__(self, task_name, prompt, core, judger):
-        # 1. 独立维护专家的专属状态
+    def __init__(self, task_name, prompt, core):
         self.current_plan = ""
-        super().__init__(task_name, prompt, core, judger)
+        super().__init__(task_name, prompt, core)
 
     def _on_save_state(self) -> dict:
         """持久化专属状态"""
