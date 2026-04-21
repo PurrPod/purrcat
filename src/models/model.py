@@ -8,6 +8,17 @@ import httpx
 from openai import OpenAI, RateLimitError, APIError
 from src.utils.config import get_models_config
 
+# 日志文件路径
+LOG_FILE = "log.txt"
+
+# 日志写入函数
+def log(message):
+    timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+    log_entry = f"[{timestamp}] {message}\n"
+    print(log_entry.strip())
+    with open(LOG_FILE, "a", encoding="utf-8") as f:
+        f.write(log_entry)
+
 MODEL_POOL = []
 
 
@@ -19,8 +30,8 @@ class TokenLimiter:
         self.last_reset = time.time()
         self._lock = threading.Lock()
 
-    def consume(self, estimated_tokens: int) -> bool:
-        """尝试消费 Token，如果够用返回 True，如果超限返回 False"""
+    def consume(self, estimated_tokens: int) -> float:
+        """尝试消费，够用返回 0，不够用返回需要等待的秒数"""
         with self._lock:
             now = time.time()
             # 简单窗口：每过去 60 秒，额度清空重置
@@ -28,13 +39,13 @@ class TokenLimiter:
                 self.tokens_used = 0
                 self.last_reset = now
             
-            # 如果加上本次请求会超限，拒绝放行
+            # 如果加上本次请求会超限，返回距离下一个 60 秒周期还剩多少秒
             if self.tokens_used + estimated_tokens > self.tpm_limit:
-                return False
+                return (self.last_reset + 60.0) - now
                 
             # 扣除额度并放行
             self.tokens_used += estimated_tokens
-            return True
+            return 0.0
 
 
 def calculate_tuning_params(rpm_limit: int, tpm_limit: int, max_concurrency: int):
@@ -78,7 +89,15 @@ class LLMTask:
         self.kwargs = kwargs
         
         msg_str = str(kwargs.get("messages", ""))
-        input_estimate = len(msg_str) // 3
+        # Token 估算：英文字母通常 3~4 个字符为一个 Token
+        # 但对于中文，很多模型可能 1 个汉字就占 1~2 个 Token
+        # 引入动态调整：检测是否包含中文，包含则放大系数
+        has_chinese = any('\u4e00' <= char <= '\u9fff' for char in msg_str)
+        if has_chinese:
+            input_estimate = int(len(msg_str) * 1.2)  # 中文环境兜底
+        else:
+            input_estimate = len(msg_str) // 3  # 英文环境
+        
         output_estimate = kwargs.get("max_tokens", 1000)
         self.estimated_tokens = input_estimate + output_estimate
         
@@ -98,6 +117,9 @@ class SmartTaskQueue:
 
     def put(self, task: LLMTask):
         with self.cv:
+            task_type = "light" if task.is_light else "heavy"
+            message_preview = str(task.kwargs.get("messages", ""))[:100] + ("..." if len(str(task.kwargs.get("messages", ""))) > 100 else "")
+            log(f"任务进入队列 - 类型: {task_type}, 消息预览: {message_preview}, 预估 tokens: {task.estimated_tokens}")
             if task.is_light:
                 self.light_tasks.append(task)
             else:
@@ -112,7 +134,10 @@ class SmartTaskQueue:
                 self.idle_light_workers += 1  
                 self.cv.wait()
                 self.idle_light_workers -= 1  
-            return self.light_tasks.pop(0)
+            task = self.light_tasks.pop(0)
+            message_preview = str(task.kwargs.get("messages", ""))[:100] + ("..." if len(str(task.kwargs.get("messages", ""))) > 100 else "")
+            log(f"小核工作线程取出任务 - 消息预览: {message_preview}")
+            return task
 
 
     def get_main(self) -> LLMTask:
@@ -120,10 +145,16 @@ class SmartTaskQueue:
         with self.cv:
             while True:
                 if self.heavy_tasks:
-                    return self.heavy_tasks.pop(0)
+                    task = self.heavy_tasks.pop(0)
+                    message_preview = str(task.kwargs.get("messages", ""))[:100] + ("..." if len(str(task.kwargs.get("messages", ""))) > 100 else "")
+                    log(f"大核工作线程取出大任务 - 消息预览: {message_preview}")
+                    return task
                 
                 if self.light_tasks and self.idle_light_workers == 0:
-                    return self.light_tasks.pop(0)
+                    task = self.light_tasks.pop(0)
+                    message_preview = str(task.kwargs.get("messages", ""))[:100] + ("..." if len(str(task.kwargs.get("messages", ""))) > 100 else "")
+                    log(f"大核工作线程偷取小任务 - 消息预览: {message_preview}")
+                    return task
                     
                 self.cv.wait()
 
@@ -170,7 +201,7 @@ class LLMDispatcher:
             
             # 【修改点】：将默认并发修改为 1，并配合相对保守的安全速率
             rpm = limits.get("rpm", 60)          # 默认 60 RPM (够单核全速跑了)
-            tpm = limits.get("tpm", 100000)      # 默认 10 万 TPM
+            tpm = limits.get("tpm", 1000000)      # 默认 100 万 TPM
             concurrency = limits.get("concurrency", 3) # 默认 1 并发（1大核，0小核）
 
             # 调用引擎推算最佳参数！
@@ -234,11 +265,18 @@ class LLMDispatcher:
             if task_id and task_id in self.task_bindings:
                 target_group = self.task_bindings[task_id]
             else:
-                # 寻找当前任务积压最少的群组 (大任务 + 小任务总数)
-                target_group = min(groups, key=lambda g: len(g["queue"].heavy_tasks) + len(g["queue"].light_tasks))
+                # 【核心修复】：基于"当前绑定的活跃会话数"进行负载均衡
+                # 计算每个群组目前绑定了多少个 task_id
+                group_task_counts = {g["api_key_id"]: 0 for g in groups}
+                for bound_group in self.task_bindings.values():
+                    group_task_counts[bound_group["api_key_id"]] += 1
+                
+                # 寻找当前绑定会话最少的群组
+                target_group = min(groups, key=lambda g: group_task_counts[g["api_key_id"]])
+                
                 if task_id:
                     self.task_bindings[task_id] = target_group
-                    print(f"🔗 [调度分配] 任务 '{task_id}' 绑定到 Key群组-{target_group['api_key_id']}")
+                    log(f"🔗 [调度分配] 任务 '{task_id}' 绑定到 Key群组-{target_group['api_key_id']} (该群组已承载 {group_task_counts[target_group['api_key_id']]} 个任务)")
 
         # 创建任务时传递轻量级任务阈值
         task = LLMTask(future, kwargs, target_group["queue"].light_threshold)
@@ -251,7 +289,7 @@ class LLMDispatcher:
         with self._lock:
             if task_id in self.task_bindings:
                 group = self.task_bindings.pop(task_id)
-                print(f"🔓 [调度释放] 任务 '{task_id}' 已解除与 Key群组-{group['api_key_id']} 的绑定")
+                log(f"🔓 [调度释放] 任务 '{task_id}' 已解除与 Key群组-{group['api_key_id']} 的绑定")
 
 
 class APIKeyWorker(threading.Thread):
@@ -282,7 +320,7 @@ class APIKeyWorker(threading.Thread):
         self.masked_key = self.api_key[:8] + "..." if len(self.api_key) > 8 else self.api_key
 
     def run(self):
-        print(f"🚀 [{self.worker_type.upper()}核心启动] 模型: {self.model_name} | Key: {self.masked_key}")
+        log(f"🚀 [{self.worker_type.upper()}核心启动] 模型: {self.model_name} | Key: {self.masked_key}")
         while True:
             if self.worker_type == "main":
                 llm_task = self.smart_queue.get_main()
@@ -290,21 +328,29 @@ class APIKeyWorker(threading.Thread):
                 llm_task = self.smart_queue.get_light()
             
             # 【核心魔法】：在发请求前，检查本地 TPM 额度
-            # 如果额度爆了，本地线程就睡一小会儿，直到下一个 60 秒周期刷新
-            while not self.token_limiter.consume(llm_task.estimated_tokens):
-                time.sleep(5.0)
+            # 如果额度爆了，本地线程就睡到下一个 60 秒周期刷新
+            wait_time = self.token_limiter.consume(llm_task.estimated_tokens)
+            if wait_time > 0:
+                log(f"⏳ [TPM超限] 等待 {wait_time:.1f} 秒后额度刷新...")
+                time.sleep(wait_time)
                 
             future, kwargs = llm_task.future, llm_task.kwargs
+            message_preview = str(kwargs.get("messages", ""))[:100] + ("..." if len(str(kwargs.get("messages", ""))) > 100 else "")
             
             try:
                 if future.set_running_or_notify_cancel():
+                    log(f"[{self.worker_type.upper()}核心] 开始处理任务 - 消息预览: {message_preview}")
+                    start_time = time.time()
                     result = self._process_with_retry(kwargs)
+                    end_time = time.time()
+                    log(f"[{self.worker_type.upper()}核心] 任务处理完成 - 耗时: {end_time - start_time:.2f}秒")
                     future.set_result(result)
             except Exception as e:
                 if not str(e).startswith(("API Error", "System Error", "CallFailed")):
-                    print(f"\n🚨 [Worker线程意外崩溃] {self.masked_key}:")
+                    log(f"\n🚨 [Worker线程意外崩溃] {self.masked_key}:")
                     traceback.print_exc()
                 
+                log(f"[{self.worker_type.upper()}核心] 任务处理失败 - 错误: {str(e)[:100]}")
                 future.set_exception(e)
             finally:
                 # 使用动态计算的常规休眠时间平滑 RPM
@@ -325,26 +371,25 @@ class APIKeyWorker(threading.Thread):
                 if "rate limit" in error_msg or "429" in error_msg:
                     last_exception = e
                     retries += 1
-                    print(
-                        f"⚠️ [Worker {self.masked_key}] 触发限速限制，退避休眠 {current_delay:.1f}s... (重试 {retries}/{max_retries})")
+                    log(f"⚠️ [Worker {self.masked_key}] 触发限速限制，退避休眠 {current_delay:.1f}s... (重试 {retries}/{max_retries})")
                     time.sleep(current_delay)
                     current_delay *= 2.0
                 else:
                     # 非限速 API 错误：控制台打堆栈，对外抛出精简文本
-                    print(f"\n🚨 [Worker {self.masked_key}] 非限速 API 异常:")
+                    log(f"\n🚨 [Worker {self.masked_key}] 非限速 API 异常:")
                     traceback.print_exc()
                     # 提取错误类型和第一行简要信息
                     short_msg = str(e).split('\n')[0]
                     raise Exception(f"API Error ({type(e).__name__}): {short_msg}")
             except Exception as e:
                 # 底层系统错误：控制台打堆栈，对外抛出精简文本
-                print(f"\n🚨 [Worker {self.masked_key}] 底层网络或系统异常:")
+                log(f"\n🚨 [Worker {self.masked_key}] 底层网络或系统异常:")
                 traceback.print_exc()
                 short_msg = str(e).split('\n')[0]
                 raise Exception(f"System Error ({type(e).__name__}): {short_msg}")
 
         # 超过最大重试次数：控制台打印最后一次死掉的堆栈
-        print(f"\n❌ [Worker {self.masked_key}] 达到最大重试次数 ({max_retries})，最后一次错误如下:")
+        log(f"\n❌ [Worker {self.masked_key}] 达到最大重试次数 ({max_retries})，最后一次错误如下:")
         if last_exception:
             traceback.print_exception(type(last_exception), last_exception, last_exception.__traceback__)
             

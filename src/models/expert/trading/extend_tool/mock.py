@@ -114,3 +114,10 @@ def search_on_social_media(source: str, query: str) -> str:
     except Exception as e:
         logger.error(f"搜索接口请求失败: {e}")
         return f"Tool Execution Error: 搜索请求失败 - {str(e)}"
+
+
+# 导出工具函数映射
+EXTEND_TOOL_FUNCTIONS = {
+    "get_stock_data": get_stock_data,
+    "search_on_social_media": search_on_social_media
+}

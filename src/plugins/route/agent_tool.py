@@ -5,8 +5,34 @@ import os
 from typing import Any
 
 # 补充引入了原本就存在的 kill_task，为了防止与本文件的同名工具函数冲突，起个别名 core_kill_task
-from src.models.task import BaseTask, TASK_INSTANCES, DATA_DIR, inject_task_instruction, kill_task as core_kill_task, TaskFactory
+from src.models.task import BaseTask, TASK_INSTANCES, DATA_DIR, inject_task_instruction, kill_task as core_kill_task, TaskFactory, auto_discover_experts
 from src.utils.config import get_models_config
+
+# 先确保在文件顶部触发了扫描
+auto_discover_experts()
+
+def _get_dynamic_expert_schema() -> dict:
+    enums = []
+    desc_lines = ["选择最合适的子任务专家类型。当前系统动态加载的专家职责规范如下："]
+    
+    # 直接遍历你完美构建的 _EXPERT_REGISTRY
+    for expert_type, expert_info in BaseTask._EXPERT_REGISTRY.items():
+        enums.append(expert_type)
+        
+        # 完美契合你源码中的 "description" 字段
+        description = expert_info.get("description", "无特定的职责描述")
+        description = description.strip().replace("\n", " ")
+        
+        desc_lines.append(f"{len(enums)}. {expert_type}: {description}")
+
+    if not enums:
+        enums = ["general"]
+
+    return {
+        "type": "string",
+        "enum": enums,
+        "description": "\n".join(desc_lines)
+    }
 
 
 def _format_response(msg_type: str, content: Any) -> str:
@@ -316,11 +342,8 @@ AGENT_TOOLS = [
                 "properties": {
                     "name": {"type": "string", "description": "为后台子任务起一个名称"},
                     "prompt": {"type": "string", "description": "告诉后台子任务要做什么"},
-                    "expert": {
-                        "type": "string",
-                        "enum": ["general", "coding", "trading"],
-                        "description": "选择子任务专家类型：general(标准全能通才), coding(资深代码架构师), trading(股市交易团队)"
-                    },
+                    # 【核心修改】直接调用我们动态生成的 Schema
+                    "expert": _get_dynamic_expert_schema(),
                     "core": {"type": "string",
                              "description": "使用的工人代号，如\"openai:deepseek-chat\"，可用list_worker查看"},
                     "judger": {"type": "string",

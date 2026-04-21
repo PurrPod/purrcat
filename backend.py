@@ -62,6 +62,11 @@ async def lifespan(app: FastAPI):
     _init_tool_async()
     start_sensors()
 
+    # 1. 唤醒并挂载所有后台专家任务
+    print("🔄 正在恢复后台专家任务...")
+    from src.models.task import auto_load_all_tasks
+    auto_load_all_tasks()
+
     global agent
     agent = agent_module.Agent.load_checkpoint()
     agent_sensor_task = asyncio.create_task(asyncio.to_thread(agent.sensor))

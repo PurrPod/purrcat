@@ -81,11 +81,18 @@ class BaseTask:
         self.history.append({"role": "user", "content": f"[User Request]: \n{self.prompt}\n"})
         self.token_usage = 0
         self.window_token = 0
+        
+        # 👇 修改点 1：将文件夹命名规则改为包含 task_id
+        self.checkpoint_dir = os.path.join(DATA_DIR, "checkpoints", "task", f"{self.task_name}_{self.task_id}")
+        
         if not TASK_INSTANCES.get(self.task_id, None):
             TASK_INSTANCES[self.task_id] = self
-        self.checkpoint_dir = os.path.join(DATA_DIR, "checkpoints", "task", f"{self.task_name}_{self.create_time}")
+            
         self.log_window = []
         self.log_and_notify("system", f"🎯 用户需求: \n{self.prompt}")
+        
+        # 👇 修改点 2：在任务初始化完毕后，立刻强制落盘一次，防止进程突然崩溃导致找不到该 ID 的存档
+        self.save_checkpoint()
 
     def _on_save_state(self) -> dict:
         """生命周期钩子：供子类重写，返回需要额外持久化的特有属性字典"""
@@ -248,7 +255,22 @@ class BaseTask:
             with open(history_path, "r", encoding="utf-8") as f:
                 history = json.load(f)
 
-            task = cls.__new__(cls)
+            # ====== 新增：智能多态实例化防御 ======
+            # 如果当前是 BaseTask 本身在调用，我们需要根据存档里的专家类型，动态切换到正确的子类去实例化
+            if cls is BaseTask:
+                expert_class_name = state.get("expert_type", "BaseTask")
+                # 兼容类名和别名映射
+                class_name_to_expert = {}
+                for k, info in cls._EXPERT_REGISTRY.items():
+                    class_name_to_expert[info["class"].__name__] = info["class"]
+                    class_name_to_expert[k] = info["class"]
+                
+                # 动态指向真正的类（比如 CodingTask）
+                TargetClass = class_name_to_expert.get(expert_class_name, BaseTask)
+                task = TargetClass.__new__(TargetClass)
+            else:
+                task = cls.__new__(cls)
+            # =======================================
             task.task_id = state.get("task_id")
             task.task_name = state.get("name", "Unknown")
             task.create_time = state.get("create_time")
@@ -263,7 +285,8 @@ class BaseTask:
             task.token_usage = state.get("token_usage", 0)
             task.window_token = state.get("window_token", 0)
             task.pending_force_push = state.get("pending_force_push", [])
-            task.checkpoint_dir = state.get("checkpoint_dir", checkpoint_dir)
+            # 始终使用新的路径格式：{task_name}_{task_id}，防止从旧路径加载后保存到错误位置
+            task.checkpoint_dir = os.path.join(DATA_DIR, "checkpoints", "task", f"{task.task_name}_{task.task_id}")
             task.history = history
             task.model = Model(task.core) if task.core else None
             if task.model:
@@ -273,6 +296,17 @@ class BaseTask:
             task.log_window = []
 
             task._on_restore_state(state)
+            
+            # 如果已存在该 task_id 的任务实例，先检查状态
+            existing_task = TASK_INSTANCES.get(task.task_id)
+            if existing_task:
+                # 如果旧任务正在运行，不覆盖；否则用新实例替换
+                if existing_task.state == "running":
+                    print(f"⚠️ 任务 {task.task_id} 已在运行中，跳过重复加载")
+                    return existing_task
+                else:
+                    print(f"🔄 替换旧的任务实例 {task.task_id} (状态: {existing_task.state})")
+            
             TASK_INSTANCES[task.task_id] = task
             return task
         except Exception as e:
@@ -368,7 +402,7 @@ class BaseTask:
             })
         self.memory_flush()
 
-    def memory_flush(self, check_mode=True, max_tokens=120000):
+    def memory_flush(self, check_mode=True, max_tokens=80000):
         if check_mode and (self.window_token <= max_tokens or len(self.history) <= 150):
             return
         self.log_and_notify("system", f"⚠️ 触发记忆截断: 当前共约 {self.window_token} tokens。正在进行上下文压缩...")
@@ -550,15 +584,49 @@ class BaseTask:
             self.log_and_notify("error", f"❌ 请求反思失败: {e}，默认继续")
             return {"result": True, "summary": "❌ 反思异常，默认继续"}
 
+    def _sanitize_history(self):
+        """核心修复：深度排查并修复未闭环的 tool_calls 断层"""
+        if not self.history:
+            return
+            
+        # 倒序寻找最后一个 assistant 消息
+        last_assistant_idx = -1
+        for i in range(len(self.history) - 1, -1, -1):
+            if self.history[i].get("role") == "assistant":
+                last_assistant_idx = i
+                break
+                
+        if last_assistant_idx != -1:
+            assistant_msg = self.history[last_assistant_idx]
+            tool_calls = assistant_msg.get("tool_calls", [])
+            
+            if tool_calls:
+                # 收集大模型要求调用的所有 ID
+                required_ids = {tc["id"] for tc in tool_calls}
+                found_ids = set()
+                is_valid = True
+                
+                # 检查这个 assistant 之后的所有消息
+                for i in range(last_assistant_idx + 1, len(self.history)):
+                    msg = self.history[i]
+                    if msg.get("role") != "tool":
+                        is_valid = False # 出现了 user 或其他消息，破坏了闭环
+                        break
+                    found_ids.add(msg.get("tool_call_id"))
+                    
+                # 如果没能完美闭环（缺结果，或者有杂质），全部截断回滚到 assistant 思考之前
+                if not is_valid or required_ids != found_ids:
+                    self.log_and_notify("system", "🛠️ 检测到断点处工具调用未完全闭环，执行状态安全回滚...")
+                    self.history = self.history[:last_assistant_idx]
+
     def resume(self):
         self.log_and_notify("system", "🔄 尝试从断点恢复任务...")
         if not self.history:
             self.log_and_notify("error", "❌ 历史记录为空，无法恢复。")
             return "❌ 恢复失败"
-        last_msg = self.history[-1]
-        if last_msg.get("role") == "assistant" and last_msg.get("tool_calls"):
-            self.log_and_notify("system", "🛠️ 检测到断点处缺失工具回传结果。策略：撤销最近一次未完成的思考，让模型重新规划。")
-            self.history.pop()
+            
+        # === 修改点：用全新的净化机制替代原来粗糙的 pop ===
+        self._sanitize_history()
 
         if self.window_token > 110000 or len(self.history) > 140:
             self.log_and_notify("system", "⚠️ 策略：恢复前强制执行记忆压缩。")
@@ -580,6 +648,9 @@ class BaseTask:
             self.log_and_notify("system", "⚡ 任务正在执行中，已将追加指令动态注入到下一个思考循环。")
             return "✅ 指令已动态注入当前工作流"
         else:
+            # === 新增：在追加 User 消息前，必须先净化历史断点！ ===
+            self._sanitize_history()
+            
             self.history.append({"role": "user", "content": f"[User Follow-up Request]: \n{new_prompt}\n"})
             self.step = 0
             self.state = "ready"
@@ -659,7 +730,12 @@ def auto_load_all_tasks():
     checkpoints_dir = os.path.join(DATA_DIR, "checkpoints", "task")
     if not os.path.exists(checkpoints_dir):
         return
-    class_name_to_expert = {info["class"].__name__: info["class"] for info in BaseTask._EXPERT_REGISTRY.values()}
+        
+    # 【修改这里】：同时兼容 "CodingTask" 和 "coding" 两种 Key 的映射
+    class_name_to_expert = {}
+    for expert_key, info in BaseTask._EXPERT_REGISTRY.items():
+        class_name_to_expert[info["class"].__name__] = info["class"] # 类名映射
+        class_name_to_expert[expert_key] = info["class"]             # 别名映射 (兼容老数据)
 
     for task_dir in os.listdir(checkpoints_dir):
         full_path = os.path.join(checkpoints_dir, task_dir)
@@ -675,3 +751,58 @@ def auto_load_all_tasks():
                     print(f"✅ 成功通过 [{expert_class_name}] 恢复任务: {task.task_id}")
             except Exception as e:
                 print(f"❌ 自动恢复任务目录 {task_dir} 失败: {e}")
+
+
+def reload_task_by_id(task_id: str):
+    """
+    根据 task_id 精准查找并恢复指定的任务实例。
+    """
+    # 1. 如果任务已经在内存中处于激活状态，直接返回
+    if task_id in TASK_INSTANCES:
+        return TASK_INSTANCES[task_id]
+
+    auto_discover_experts()
+    checkpoints_dir = os.path.join(DATA_DIR, "checkpoints", "task")
+    if not os.path.exists(checkpoints_dir):
+        print(f"❌ 找不到存档总目录: {checkpoints_dir}")
+        return None
+
+    # 2. 由于新的命名规则为 {task_name}_{task_id}，可以直接通过后缀匹配文件夹
+    target_dir = None
+    for dir_name in os.listdir(checkpoints_dir):
+        if dir_name.endswith(f"_{task_id}"):
+            target_dir = os.path.join(checkpoints_dir, dir_name)
+            break
+    
+    if not target_dir:
+        print(f"❌ 未找到 task_id 为 {task_id} 的存档文件夹")
+        return None
+        
+    checkpoint_file = os.path.join(target_dir, "checkpoint.json")
+    if not os.path.exists(checkpoint_file):
+        print(f"❌ 存档文件夹存在，但缺失 checkpoint.json: {target_dir}")
+        return None
+
+    # 3. 读取存档并动态实例化
+    try:
+        with open(checkpoint_file, "r", encoding="utf-8") as f:
+            state = json.load(f)
+            
+        expert_class_name = state.get("expert_type", "BaseTask")
+        
+        # 兼容类名和别名映射
+        class_name_to_expert = {}
+        for expert_key, info in BaseTask._EXPERT_REGISTRY.items():
+            class_name_to_expert[info["class"].__name__] = info["class"]
+            class_name_to_expert[expert_key] = info["class"]
+
+        TargetClass = class_name_to_expert.get(expert_class_name, BaseTask)
+        
+        # 调用子类/基类的 load_checkpoint 进行恢复
+        task = TargetClass.load_checkpoint(target_dir)
+        if task:
+            print(f"✅ 成功通过 [{expert_class_name}] 精准恢复任务: {task.task_id}")
+            return task
+    except Exception as e:
+        print(f"❌ 精准恢复任务 {task_id} 失败: {e}")
+        return None

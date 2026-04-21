@@ -6,7 +6,7 @@ from src.models.expert.coding.extend_tool.planning import PLAN_TOOL_SCHEMA, exec
 class CodingTask(
     BaseTask,
     expert_type="coding",
-    description="代码专家，负责独立完成工程代码的编写和测试",
+    description="代码专家，负责独立完成复杂的项目级工程代码的编写和测试",
     parameters={}
 ):
     """
