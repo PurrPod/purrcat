@@ -39,7 +39,7 @@ def add_message(message: dict):
 
 
 class Agent:
-    def __init__(self, name=None, checkpoint_path=None, warm_up=None):
+    def __init__(self, name=None, checkpoint_path=None):
         if not name:
             name = get_agent_model()
         self.name = name
@@ -56,10 +56,6 @@ class Agent:
         self._lock = threading.Lock()
         self.window_token = 0
         self._stop_event = threading.Event()
-        if warm_up:
-            with open(warm_up, "r", encoding="utf-8") as f:
-                warm_up_content = json.loads(f.read())
-                self.current_history.extend(warm_up_content)
 
     def _build_system_prompt(self):
         soul_md = ""

@@ -110,18 +110,20 @@ def execute_update_plan(arguments: dict, task) -> str:
     task.save_checkpoint()
 
     # 渲染 Markdown 日志
-    md_plan = f"🎯 **总目标**: {current_plan_dict.get('overall_goal', '未设置')}\n\n"
+    md_plan = f"🎯 总目标: {current_plan_dict.get('overall_goal', '未设置')}\n\n"
     if not current_plan_dict.get("steps"):
         md_plan += "暂无具体步骤"
     else:
-        md_plan += "📋 **执行计划**:\n"
+        md_plan += "📋 执行计划:\n"
         for s in current_plan_dict["steps"]:
             status_icon = "✅" if s["status"] == "completed" else ("🏃" if s["status"] == "in_progress" else "⏳")
-            md_plan += f"{status_icon} **[ID: {s['id']}]** {s['title']} ({s['status']})\n"
+            md_plan += f"{status_icon} [ID: {s['id']}] {s['title']} ({s['status']})\n"
             if s.get("description"):
                 md_plan += f"    📝 {s['description']}\n"
+    task.log_and_notify("plan", f"📋 Agent 更新了计划")
 
-    task.log_and_notify("plan", f"📋 Agent 更新了计划 [{action}]:\n{md_plan}")
-
-    response_data = {"type": "plan_updated", "content": f"✅ 操作 '{action}' 成功！"}
+    response_data = {"type": "plan_updated", "content": f"✅ 操作 '{action}' 成功！当前计划表：\n{md_plan}"}
     return json.dumps(response_data, ensure_ascii=False)
+
+def get_plan(task):
+    return json.dumps({"type": "text", "content": task.current_plan}, ensure_ascii=False)

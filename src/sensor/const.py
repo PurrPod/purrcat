@@ -85,4 +85,4 @@ def start_sensors():
     # t1.start()
     # 暂时不要系统心跳了，浪费token
     t2.start()
-    print("📡 Heartbeat 与 Clock 传感器已上线。")
+    print("📡 Clock 传感器已上线。")

@@ -1,0 +1,54 @@
+/* Cat-in-Cup TUI 样式文件 */
+
+/* 整体布局 */
+Horizontal {
+    height: 100%;
+}
+
+/* 侧边栏样式 */
+#sidebar {
+    width: 20;
+    background: #2d3748;
+    color: #e2e8f0;
+    border-right: solid #4a5568;
+}
+
+#sidebar ListItem {
+    padding: 1 2;
+    height: 3;
+}
+
+#sidebar ListItem:hover {
+    background: #4a5568;
+}
+
+#sidebar ListItem:focus {
+    background: #3182ce;
+    color: white;
+}
+
+/* 主内容区样式 */
+#main-content {
+    width: 1fr;
+    background: #1a202c;
+    color: #e2e8f0;
+    padding: 2;
+}
+
+/* 标题栏样式 */
+Header {
+    background: #2d3748;
+    color: #e2e8f0;
+}
+
+/* 底部栏样式 */
+Footer {
+    background: #2d3748;
+    color: #e2e8f0;
+}
+
+/* 内容容器样式 */
+#current-view-container {
+    height: 100%;
+    padding: 2;
+}

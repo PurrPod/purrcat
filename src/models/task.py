@@ -241,7 +241,6 @@ class BaseTask:
             with open(history_path, "r", encoding="utf-8") as f:
                 history = json.load(f)
 
-            # ====== 新增：智能多态实例化防御 ======
             # 如果当前是 BaseTask 本身在调用，我们需要根据存档里的专家类型，动态切换到正确的子类去实例化
             if cls is BaseTask:
                 expert_class_name = state.get("expert_type", "BaseTask")
