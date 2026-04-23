@@ -13,7 +13,7 @@ from tui.api import (
 )
 
 
-# ================= 修复：工具调用及扫描效果组件 =================
+# ================= 工具调用及扫描效果组件 (保持不变) =================
 class ToolCallWidget(Vertical):
     def __init__(self, tool_name: str, arguments: dict):
         super().__init__()
@@ -21,15 +21,11 @@ class ToolCallWidget(Vertical):
         self.arguments = arguments
         self._scanning = True
         self._scan_pos = 0
-        
-        # 💡 修复1：在 __init__ 中提前实例化 scan_label 
-        # 避免历史记录瞬间加载时，compose 还未执行就被 finish() 访问导致 AttributeError 卡死 
         self.scan_label = Static("  ⠋ 正在执行...", classes="tool-scanning")
 
     def compose(self) -> ComposeResult:
         args_str = json.dumps(self.arguments, ensure_ascii=False)
         yield Static(f"{self.tool_name}({args_str})", classes="tool-header")
-        # 直接 yield 已经在 __init__ 里实例化好的组件
         yield self.scan_label
 
     def on_mount(self):
@@ -47,26 +43,22 @@ class ToolCallWidget(Vertical):
         if hasattr(self, "_timer"):
             self._timer.stop()
 
-        # 💡 修复2：增加针对历史记录中 content 为 None 的空值容错，防止 strip() 再次引发崩溃
         if not result:
             result = "执行完毕"
 
-        # 提取时间戳，不显示完整结果
         import re
         timestamp_match = re.search(r'\[finish at ([^\]]+)\]', str(result))
         if timestamp_match:
             formatted_result = f"    └── [Finish at {timestamp_match.group(1)}]"
         else:
-            # 如果没有找到时间戳，显示简化的完成信息
             formatted_result = "    └── Finish"
 
-        # 此时即便还未上屏，update() 也能安全修改内部缓存的内容，渲染时直接就是完成态
         self.scan_label.update(formatted_result)
         self.scan_label.remove_class("tool-scanning")
         self.scan_label.add_class("tool-result")
 
 
-# ================= 修复：支持真实流式渲染的气泡 =================
+# ================= 支持真实流式渲染的气泡 (保持不变) =================
 class ChatMessage(Vertical):
     def __init__(self, role: str, text: str, is_new: bool = False):
         super().__init__()
@@ -89,21 +81,17 @@ class ChatMessage(Vertical):
                 self.md_widget = Markdown(self.text)
                 yield self.md_widget
             else:
-                # 当content为空时，不创建任何组件，避免空白占位
                 self.md_widget = None
 
     def on_mount(self):
         if self.role == "assistant":
             if self.text == "" and self.is_new:
-                # 只有新消息且content为空时，才显示加载spinner
-                # 历史记录中content为空的情况不显示spinning
                 if self.md_widget:
                     self.md_widget.update("⠋")
                     self._frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
                     self._frame_index = 0
                     self._spinner_timer = self.set_interval(0.1, self._update_spinner)
             elif self.is_new and self.text and str(self.text).strip():
-                # 只有新消息且有内容时才启动打字机效果
                 self._start_typing()
 
     def _update_spinner(self):
@@ -119,7 +107,7 @@ class ChatMessage(Vertical):
         self._typing_index = 0
         if self._typing_timer:
             self._typing_timer.stop()
-        self._typing_timer = self.set_interval(0.05, self._type_next_char)
+        self._typing_timer = self.set_interval(0.005, self._type_next_char)
 
     def _type_next_char(self):
         if self._typing_index < len(self._target_text):
@@ -137,44 +125,41 @@ class ChatMessage(Vertical):
             self._target_text = new_text
             if self._typing_timer:
                 self._typing_timer.stop()
-            # 只有当有内容时才启动打字机效果
             if new_text and str(new_text).strip():
-                # 如果当前没有md_widget或是Static组件，替换为Markdown组件
                 if not hasattr(self, "md_widget") or self.md_widget is None or isinstance(self.md_widget, Static):
                     if hasattr(self, "md_widget") and self.md_widget:
-                        # 移除旧的组件
                         self.md_widget.remove()
-                    # 创建新的Markdown组件
                     self.md_widget = Markdown(new_text)
-                    # 挂载新组件
                     self.mount(self.md_widget)
-                # 启动打字机效果
                 self._start_typing()
 
 
-# ================= 修复：完美还原 WebUI 的输入框 =================
+# ================= 拦截 /switch 指令 =================
 class ChatInput(TextArea):
-    """还原 WebUI 体验：Enter 发送，Shift+Enter 换行"""
+    def on_mount(self) -> None:
+        try:
+            self.soft_wrap = True
+        except AttributeError:
+            pass
 
     def on_key(self, event: Key) -> None:
-        if event.key == "enter":
-            # 阻止默认换行，执行发送
-            event.prevent_default()
-            text = self.text.strip()
-            if text:
-                self.app.query_one(MainView).handle_chat_submit(text)
-                self.clear()
-        elif event.key in ["shift+enter", "alt+enter"]:
-            # 阻止发送，在光标处插入原生换行符
+        if event.key == "ctrl+n":
             event.prevent_default()
             self.insert("\n")
+        elif event.key == "enter":
+            event.prevent_default()
+            text = self.text.strip()
+            if text == "/switch":
+                self.app.query_one(MainView).show_space_selector()
+                self.clear()
+            elif text:
+                self.app.query_one(MainView).handle_chat_submit(text)
+                self.clear()
 
 
-# ================= 修复：补全工具挂载逻辑的主视图 =================
-class MainView(Horizontal):
-    # [保留原有的 compose, on_mount, on_event, blink_cat 逻辑不变]
+# ================= 主视图：去掉侧边栏，改为 List 选择 =================
+class MainView(Vertical):
     def compose(self) -> ComposeResult:
-        # ======= 左侧区域 =======
         with Vertical(id="left-pane"):
             with Horizontal(id="top-zone"):
                 yield Static("  /\\_/\\\n ( o.o )\n  > ^ <", id="cat-ascii")
@@ -186,27 +171,25 @@ class MainView(Horizontal):
             chat_zone.border_title = "Chat History /"
             yield chat_zone
 
+            space_selector = ListView(id="space-selector")
+            space_selector.border_title = "Select Space (Use Up/Down to Navigate, Enter to Select) /"
+            yield space_selector
+
             input_zone = Vertical(id="input-zone")
-            input_zone.border_title = "Chat Input /"
+            input_zone.border_title = "Chat Input (Ctrl+N for new line, /switch to change space) /"
             with input_zone:
                 with Horizontal(id="input-row"):
                     yield Static("❯", id="prompt-char")
                     yield ChatInput(id="chat-input", show_line_numbers=False)
 
-        # ======= 右侧区域 =======
-        with VerticalScroll(id="right-pane"):
-            yield Static("Spaces", classes="sidebar-title")
-            yield ListView(
-                ListItem(Static("Main", classes="nav-item"), id="nav-main"),
-                id="sidebar-nav"
-            )
-
     def on_mount(self) -> None:
         self.current_space = "nav-main"
         self.last_activity_time = time.time()
         self.blink_state = False
+        self.is_selecting = False
         self.rendered_msg_counts = {"nav-main": 0}
         self.tool_widgets = {}
+
         self.query_one("#chat-input", ChatInput).focus()
         self.set_interval(3.0, self.blink_cat)
         self.set_interval(1.0, self.refresh_chat_state)
@@ -227,12 +210,39 @@ class MainView(Horizontal):
                 cat.update("  /\\_/\\\n ( -.- )\n  >   <")
             self.blink_state = not self.blink_state
 
-    @on(ListView.Selected, "#sidebar-nav")
+    def show_space_selector(self) -> None:
+        self.is_selecting = True
+
+        chat_zone = self.query_one("#chat-zone")
+        space_selector = self.query_one("#space-selector")
+
+        chat_zone.add_class("hidden")
+        space_selector.add_class("active")
+
+        space_selector.clear()
+        space_selector.append(ListItem(Static("Main Space", classes="nav-item"), id="nav-main"))
+        tasks = get_task_list()
+        for task in tasks:
+            space_selector.append(
+                ListItem(Static(f"Task: {task['name']}", classes="nav-item"), id=f"task-{task['id']}"))
+
+        space_selector.focus()
+
+    @on(ListView.Selected, "#space-selector")
     def switch_space(self, event: ListView.Selected):
         self.current_space = event.item.id
+        self.is_selecting = False
+
         chat_zone = self.query_one("#chat-zone")
+        space_selector = self.query_one("#space-selector")
+
+        space_selector.remove_class("active")
+        chat_zone.remove_class("hidden")
+        self.query_one("#chat-input").focus()
+
         for child in chat_zone.children:
             child.remove()
+
         self.rendered_msg_counts[self.current_space] = 0
         self.tool_widgets.clear()
         self.refresh_chat_state()
@@ -244,31 +254,18 @@ class MainView(Horizontal):
             task_id = self.current_space.replace("task-", "")
             force_push_task(task_id, text)
 
-        # 不直接挂载消息，让refresh_chat_state来处理
-        # 这样可以避免重复显示消息
         chat_zone = self.query_one("#chat-zone")
         chat_zone.scroll_end(animate=False)
 
     def refresh_chat_state(self):
-        tasks = get_task_list()
-        sidebar = self.query_one("#sidebar-nav", ListView)
-        existing_ids = [item.id for item in sidebar.children if item.id]
-
-        for task in tasks:
-            task_list_id = f"task-{task['id']}"
-            if task_list_id not in existing_ids:
-                new_item = ListItem(Static(f"{task['name']}", classes="nav-item"), id=task_list_id)
-                sidebar.append(new_item)
-                if task_list_id not in self.rendered_msg_counts:
-                    self.rendered_msg_counts[task_list_id] = 0
+        if self.is_selecting:
+            return
 
         if self.current_space == "nav-main":
-            history = get_agent_history()
             current_token = get_window_token()
             max_token = get_agent_max_token()
         else:
             task_id = self.current_space.replace("task-", "")
-            history = get_task_history(task_id)
             current_token = get_task_window_token(task_id)
             max_token = get_task_max_token()
 
@@ -277,12 +274,43 @@ class MainView(Horizontal):
         progress.update(progress=min(current_token, max_token))
 
         chat_zone = self.query_one("#chat-zone")
+
+        if self.current_space != "nav-main":
+            task_id = self.current_space.replace("task-", "")
+            import os
+            from src.utils.config import DATA_DIR
+
+            task_dir = None
+            checkpoints_dir = os.path.join(DATA_DIR, "checkpoints", "task")
+            if os.path.exists(checkpoints_dir):
+                for dir_name in os.listdir(checkpoints_dir):
+                    if dir_name.endswith(f"_{task_id}"):
+                        task_dir = os.path.join(checkpoints_dir, dir_name)
+                        break
+
+            if task_dir:
+                log_path = os.path.join(task_dir, "log.jsonl")
+            else:
+                log_path = f"data/checkpoints/task/unknown_task_{task_id}/log.jsonl"
+
+            if os.path.exists(log_path):
+                with open(log_path, "r", encoding="utf-8") as f:
+                    log_content = f.read()
+            else:
+                log_content = f"暂无日志内容 (未找到 {log_path})"
+
+            for child in chat_zone.children:
+                child.remove()
+
+            chat_zone.mount(Static(log_content, id=f"task-log-widget-{task_id}"))
+            chat_zone.scroll_end(animate=False)
+
+            return
+
+        history = get_agent_history()
         rendered_count = self.rendered_msg_counts.get(self.current_space, 0)
         visible_history = [msg for msg in history if msg.get("role") != "system"]
 
-        # === 修复：热更新时动态捕获大模型追加的 tool_calls ===
-        # 💡 安全锁：只有当没有未渲染的新消息时，才允许更新屏幕上最后一个气泡
-        # 防止流式输出“找错目标”强行覆盖旧气泡，导致双重渲染（两个一模一样的东西）
         if visible_history and rendered_count > 0 and len(visible_history) <= rendered_count:
             last_data = visible_history[-1]
             if last_data.get("role") == "assistant":
@@ -295,7 +323,6 @@ class MainView(Horizontal):
                             last_widget.update_content(new_content)
                             chat_zone.scroll_end(animate=False)
 
-                        # 【关键】抓取流式输出末尾新增的函数调用并挂载
                         tool_calls = last_data.get("tool_calls", [])
                         for tc in tool_calls:
                             tc_id = tc.get("id")
@@ -313,27 +340,19 @@ class MainView(Horizontal):
                                 chat_zone.mount(tw)
                                 chat_zone.scroll_end(animate=False)
 
-        # 增量挂载新消息
         if len(visible_history) > rendered_count:
-            # 判断是否是初始化加载历史消息
             is_initial_load = rendered_count == 0
-            
             for msg in visible_history[rendered_count:]:
                 role = msg.get("role")
                 content = msg.get("content", "")
 
                 if role == "user":
-                    # 用户消息不需要打字机效果
                     chat_zone.mount(ChatMessage("user", content, is_new=False))
 
                 elif role == "assistant":
-                    # 无论是否是初始化加载，只要是assistant消息，就挂载ChatMessage
-                    # 这样可以确保工具调用的assistant消息也能显示·CatInCup角色标识
-                    # 空content的情况由ChatMessage内部处理，只显示角色标识
                     is_new_msg = not is_initial_load
                     chat_zone.mount(ChatMessage("assistant", content, is_new=is_new_msg))
 
-                    # 无论有没有普通文本，工具调用都要照常解析和挂载
                     tool_calls = msg.get("tool_calls", [])
                     for tc in tool_calls:
                         tc_id = tc.get("id")
@@ -352,11 +371,9 @@ class MainView(Horizontal):
 
                 elif role == "tool":
                     tc_id = msg.get("tool_call_id")
-                    tool_name = msg.get("name")  # 后端可能带有 name 字段
-                    
+                    tool_name = msg.get("name")
                     tw = self.tool_widgets.get(tc_id)
-                    
-                    # 容错：如果 ID 没匹配上，尝试模糊匹配尚未完成的工具
+
                     if not tw:
                         for widget in self.tool_widgets.values():
                             if widget._scanning:
@@ -364,14 +381,12 @@ class MainView(Horizontal):
                                     tw = widget
                                     break
                                 elif not tool_name:
-                                    # 连 name 都没有时，按顺序消耗第一个还在 scanning 的工具
                                     tw = widget
                                     break
-                    
+
                     if tw:
                         tw.finish(content)
                     else:
-                        # 只有当找不到任何正在执行的对应工具时，才追加在最后
                         fallback_msg = f"   └── {content}"
                         chat_zone.mount(Static(fallback_msg, classes="tool-result"))
 

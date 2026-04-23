@@ -2,35 +2,45 @@
 Screen {
     background: transparent;
     color: #e4e4e7;
+    box-sizing: border-box;
+}
+
+/* 确保所有组件都使用border-box */
+* {
+    box-sizing: border-box;
 }
 
 /* 主容器：撑满全屏 */
 #main-layout {
-    layout: horizontal;
+    layout: vertical;
     width: 100%;
     height: 100%;
+    box-sizing: border-box;
 }
 
-/* 左侧主区：按比例占据 4 份 */
+/* 原本的左侧区，现在占据全部宽度 */
 #left-pane {
-    width: 4fr;
+    width: 100%;
     height: 100%;
     layout: vertical;
     padding: 0 1 0 0;
+    box-sizing: border-box;
 }
 
-/* === 左侧 1/5：顶部容器 === */
+/* === 顶部容器 === */
 #top-zone {
     height: 1fr;
-    border: round #d97706; /* 高级感的圆角边框，采用类似 Claude 的橙色 */
+    width: 100%;
+    border: round #d97706;
     layout: horizontal;
     padding: 1 2;
     margin-bottom: 1;
+    box-sizing: border-box;
 }
 
 #cat-ascii {
     width: 15;
-    color: #d97706; /* 小猫使用强调色 */
+    color: #d97706;
     text-style: bold;
     content-align: left middle;
 }
@@ -51,7 +61,6 @@ Screen {
     margin-bottom: 1;
 }
 
-/* 修改自带的进度条样式，使其扁平且符合配色 */
 ProgressBar {
     height: 1;
 }
@@ -60,107 +69,29 @@ ProgressBar > Bar {
     background: #27272a;
 }
 
-
-#input-row {
-    layout: horizontal;
-    height: 1fr;
-    align: left middle;
-}
-
-/* --- tui/styles/main.tcss 局部更新 --- */
-
+/* === 对话展示区 === */
 #chat-zone {
     height: 3fr;
-    border: round #52525b;
-    border-title-color: #a1a1aa;
-    border-title-align: left; /* 控制缺口标题在左上角 */
-    padding: 1 2;
+    width: 100%;
+    border: round #d97706;
+    border-title-color: #d97706;
+    border-title-align: left;
+    padding: 0 1;
     overflow-y: auto;
+    overflow-x: hidden;
     margin-bottom: 1;
     scrollbar-size: 1 1;
     scrollbar-color: #52525b;
 }
 
-#input-zone {
-    height: 1fr;
-    border: round #52525b;
-    border-title-color: #a1a1aa;
-    border-title-align: left; /* 控制缺口标题在左上角 */
-    padding: 1 2;
-    layout: vertical;
+#chat-zone.hidden {
+    display: none;
 }
 
-/* 适配 Textual 的 TextArea */
-#chat-input {
-    width: 1fr;
-    height: 100%;
-    border: none;
-    background: transparent;
-    color: #e4e4e7;
-    padding: 0;
-}
-
-#chat-input:focus {
-    border: none;
-}
-
-#shortcut-hint {
-    height: 1;
-    color: #52525b;
-    text-align: right;
-    width: 100%;
-}
-
-/* === 右侧侧边栏：按比例占据 1 份 === */
-#right-pane {
-    width: 1fr;
-    height: 100%;
-    border: round #52525b;
-    layout: vertical;
-    padding: 1 2;
-}
-
-.sidebar-title {
-    color: #d97706;
-    text-style: bold;
-    margin-bottom: 1;
-    width: 100%;
-    text-align: center;
-}
-
-ListView {
-    background: transparent;
-    border: none;
-}
-
-ListItem {
-    background: transparent;
-    padding: 0;
-    border: none;
-}
-
-.nav-item {
-    color: #a1a1aa;
-    padding: 1;
-}
-
-ListItem:hover .nav-item {
-    color: #e4e4e7;
-}
-
-ListItem.--highlight .nav-item {
-    color: #d97706;
-    text-style: bold;
-}
-
-
+/* === 角色文本样式 === */
 .role-user {
     color: #71717a;
     text-style: none;
-}
-
-.role-system {
-    color: #ef4444;
 }
 
 .role-ai {
@@ -172,49 +103,138 @@ ChatMessage {
     margin-bottom: 1;
     height: auto;
     width: 100%;
+    padding-right: 2;
+    overflow-x: hidden;
+    box-sizing: border-box;
 }
 
 Markdown {
     background: transparent;
     color: #e4e4e7;
-    margin-left: 2;
-    width: 100%; /* 锁死最大宽度，让文字引擎乖乖换行 */
+    padding-left: 2;
+    width: 100%;
+    overflow-x: hidden;
+    box-sizing: border-box;
+}
+
+/* === 输入区 === */
+#input-zone {
+    height: 5;
+    width: 100%;
+    border: round #a855f7;
+    border-title-color: #a855f7;
+    border-title-align: left;
+    padding: 0 1;
+    layout: vertical;
+    box-sizing: border-box;
+}
+
+#input-row {
+    layout: horizontal;
+    height: 1fr;
+    width: 100%;
+    align: left top;
+    box-sizing: border-box;
 }
 
 #prompt-char {
     width: 2;
+    height: 1;
     color: #d97706;
     text-style: bold;
     content-align: center middle;
 }
 
-/* 专注模式隐藏侧边栏 */
-.focus-mode #right-pane {
-    display: none;
+#chat-input {
+    width: 1fr;
+    height: 100%;
+    border: none;
+    background: transparent;
+    color: #e4e4e7;
+    padding: 0;
+    overflow-x: hidden;
+    box-sizing: border-box;
 }
 
-.focus-mode #left-pane {
-    width: 100%;
-    padding-right: 0;
+#chat-input:focus {
+    border: none;
 }
+
+/* === 会话选择器区 === */
+#space-selector {
+    height: 3fr;
+    width: 100%;
+    border: round #d97706;
+    border-title-color: #d97706;
+    border-title-align: left;
+    margin-bottom: 1;
+    display: none;
+    background: transparent;
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-size: 1 1;
+    scrollbar-color: #52525b;
+}
+
+#space-selector.active {
+    display: block;
+}
+
+/* 选择器 Item 的样式 */
+#space-selector ListView {
+    background: transparent;
+    border: none;
+    padding: 1 2;
+}
+
+#space-selector ListItem {
+    background: transparent;
+    padding: 0;
+    border: none;
+}
+
+#space-selector .nav-item {
+    color: #a1a1aa;
+    padding: 1;
+}
+
+#space-selector ListItem:hover .nav-item {
+    color: #e4e4e7;
+}
+
+#space-selector ListItem.--highlight .nav-item {
+    color: #fef3c7;
+    text-style: bold;
+    border-top: solid #d97706;
+    border-bottom: solid #d97706;
+    padding: 1 2;
+    margin: 0 -2;
+}
+
+#shortcut-hint {
+    height: 1;
+    color: #52525b;
+    text-align: right;
+    width: 100%;
+}
+
 .tool-header {
-    color: #d97706; /* 强调色，标识工具发起 */
+    color: #d97706;
     margin-top: 1;
     margin-left: 2;
 }
 
 .tool-scanning {
-    color: #a1a1aa; /* 扫面时的等待态（次要文本色） */
+    color: #a1a1aa;
     margin-left: 2;
 }
 
 .tool-result {
-    color: #f4f4f5; /* 完成并回填数据的状态（主文本色） */
+    color: #f4f4f5;
     margin-bottom: 1;
     margin-left: 2;
 }
 
-/* 修复工具调用区块空白问题 */
 ToolCallWidget {
     height: auto;
     width: 100%;
