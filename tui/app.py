@@ -1,9 +1,8 @@
-# tui/app.py
 from textual.app import App, ComposeResult
-from textual.containers import Vertical
 from textual.binding import Binding
 
-from .views.chat import ChatView
+# 改为引入重构后的 MainView
+from .views.chat import MainView
 
 class CatInCupApp(App):
     """Cat-in-Cup - Agentic CLI Edition"""
@@ -17,11 +16,11 @@ class CatInCupApp(App):
     ]
 
     def compose(self) -> ComposeResult:
-        with Vertical(id="main-content"):
-            yield ChatView()
+        # 直接挂载主视图
+        yield MainView(id="main-layout")
 
     def action_clear_screen(self):
-        chat_history = self.query_one("#chat-history")
+        # 清理当前激活的聊天窗口
+        chat_history = self.query_one("#chat-zone")
         for child in chat_history.children:
-            if child.id != "welcome-pet":
-                child.remove()
+            child.remove()
