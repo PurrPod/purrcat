@@ -1,54 +1,68 @@
-/* Cat-in-Cup TUI 样式文件 */
-
-/* 整体布局 */
-Horizontal {
-    height: 100%;
+/* 完全透明，融入原生终端 */
+Screen {
+    background: transparent;
 }
 
-/* 侧边栏样式 */
-#sidebar {
-    width: 20;
-    background: #2d3748;
-    color: #e2e8f0;
-    border-right: solid #4a5568;
-}
-
-#sidebar ListItem {
-    padding: 1 2;
-    height: 3;
-}
-
-#sidebar ListItem:hover {
-    background: #4a5568;
-}
-
-#sidebar ListItem:focus {
-    background: #3182ce;
-    color: white;
-}
-
-/* 主内容区样式 */
 #main-content {
-    width: 1fr;
-    background: #1a202c;
-    color: #e2e8f0;
-    padding: 2;
-}
-
-/* 标题栏样式 */
-Header {
-    background: #2d3748;
-    color: #e2e8f0;
-}
-
-/* 底部栏样式 */
-Footer {
-    background: #2d3748;
-    color: #e2e8f0;
-}
-
-/* 内容容器样式 */
-#current-view-container {
+    width: 100%;
     height: 100%;
-    padding: 2;
+    background: transparent;
+}
+
+/* 聊天历史记录区 */
+#chat-history {
+    height: 1fr;
+    padding: 0 1;
+    overflow-y: auto;
+    scrollbar-size: 1 1;
+}
+
+#welcome-pet {
+    margin-top: 1;
+    margin-bottom: 2;
+    color: #888888;
+}
+
+/* 消息气泡（无边框，仅通过颜色区分） */
+ChatMessage {
+    margin-bottom: 1;
+    padding: 0;
+    height: auto;
+}
+
+.role-user {
+    color: #a3e635; /* 亮绿色，类似 Claude Code 用户的标识 */
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+.role-ai {
+    color: #88aaee; /* 亮蓝色，AI 的标识 */
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+/* 底部命令输入区 */
+#input-area {
+    height: auto;
+    min-height: 1;
+    max-height: 10;
+    padding: 1 1;
+}
+
+#prompt-char {
+    width: 3;
+    color: #f5a623; /* 亮橙色提示符 */
+    text-style: bold;
+}
+
+#chat-input {
+    width: 1fr;
+    border: none;
+    background: transparent;
+    padding: 0;
+}
+
+#chat-input:focus {
+    border: none;
 }
