@@ -24,22 +24,20 @@ def get_global_agent():
 # ---------------------------------------------------------
 # Agent 相关接口
 # ---------------------------------------------------------
+from src.agent import agent as agent_module
+
 def get_agent_history():
-    """获取 agent 实例的当前历史记录 (对应 backend 中的 thought-chain)"""
-    agent = get_global_agent()
-    if agent:
-        # 注意：Agent 类中实际存储历史的属性名是 current_history
-        return agent.current_history
+    from tui.app import global_agent
+    if global_agent:
+        return global_agent.current_history
     return []
 
-
-def force_push_agent(content: str):
-    """消息注入，直接注入 agent 实例历史"""
-    agent = get_global_agent()
-    if agent:
-        agent.force_push(content)
-        return True
-    return False
+def force_push_agent(text: str):
+    # 直接推入 agent_module 的消息队列
+    agent_module.add_message({
+        "type": "owner_message",
+        "content": text
+    })
 
 
 def get_window_token():

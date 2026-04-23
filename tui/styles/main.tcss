@@ -67,13 +67,6 @@ ProgressBar > Bar {
     align: left middle;
 }
 
-#prompt-char {
-    width: 3;
-    color: #d97706;
-    text-style: bold;
-    content-align: center middle;
-}
-
 /* --- tui/styles/main.tcss 局部更新 --- */
 
 #chat-zone {
@@ -160,11 +153,6 @@ ListItem.--highlight .nav-item {
     text-style: bold;
 }
 
-/* === 消息气泡样式 === */
-ChatMessage {
-    margin-bottom: 1;
-    height: auto;
-}
 
 .role-user {
     color: #71717a;
@@ -180,10 +168,24 @@ ChatMessage {
     text-style: bold;
 }
 
+ChatMessage {
+    margin-bottom: 1;
+    height: auto;
+    width: 100%;
+}
+
 Markdown {
     background: transparent;
     color: #e4e4e7;
-    margin-left: 2; /* 让正文与前面的标签有些缩进，增加层次感 */
+    margin-left: 2;
+    width: 100%; /* 锁死最大宽度，让文字引擎乖乖换行 */
+}
+
+#prompt-char {
+    width: 2;
+    color: #d97706;
+    text-style: bold;
+    content-align: center middle;
 }
 
 /* 专注模式隐藏侧边栏 */
@@ -194,4 +196,26 @@ Markdown {
 .focus-mode #left-pane {
     width: 100%;
     padding-right: 0;
+}
+.tool-header {
+    color: #d97706; /* 强调色，标识工具发起 */
+    margin-top: 1;
+    margin-left: 2;
+}
+
+.tool-scanning {
+    color: #a1a1aa; /* 扫面时的等待态（次要文本色） */
+    margin-left: 2;
+}
+
+.tool-result {
+    color: #f4f4f5; /* 完成并回填数据的状态（主文本色） */
+    margin-bottom: 1;
+    margin-left: 2;
+}
+
+/* 修复工具调用区块空白问题 */
+ToolCallWidget {
+    height: auto;
+    width: 100%;
 }
