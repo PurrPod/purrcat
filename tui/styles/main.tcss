@@ -48,12 +48,7 @@ Screen {
 #status-container {
     width: 1fr;
     layout: vertical;
-    align: left middle;
-}
-
-#version-text {
-    color: #d97706;
-    text-style: bold;
+    align: right middle;
 }
 
 #sub-status {
@@ -63,10 +58,25 @@ Screen {
 
 ProgressBar {
     height: 1;
+    align: right middle;
 }
-ProgressBar > Bar {
-    color: #d97706;
-    background: #27272a;
+
+#token-progress {
+    align: right middle;
+    width: 100%;
+    text-align: right;
+}
+
+#token-progress.token-low {
+    color: #22c55e;
+}
+
+#token-progress.token-medium {
+    color: #eab308;
+}
+
+#token-progress.token-high {
+    color: #ef4444;
 }
 
 /* === 对话展示区 === */

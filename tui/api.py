@@ -5,23 +5,6 @@ from src.models import task as task_module
 from src.utils.config import DATA_DIR
 
 # ---------------------------------------------------------
-# 全局 Agent 实例单例引用
-# ---------------------------------------------------------
-_global_agent = None
-
-
-def set_global_agent(agent_instance):
-    """供 main.py 初始化时注册全局 Agent 实例"""
-    global _global_agent
-    _global_agent = agent_instance
-
-
-def get_global_agent():
-    """获取 main.py 初始化的 agent 实例"""
-    return _global_agent
-
-
-# ---------------------------------------------------------
 # Agent 相关接口
 # ---------------------------------------------------------
 from src.agent import agent as agent_module
@@ -42,9 +25,9 @@ def force_push_agent(text: str):
 
 def get_window_token():
     """获取 agent 实例当前窗口的 token 用量"""
-    agent = get_global_agent()
-    if agent:
-        return agent.window_token
+    from tui.app import global_agent
+    if global_agent:
+        return global_agent.window_token
     return 0
 
 

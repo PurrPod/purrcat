@@ -143,7 +143,7 @@ class ChatInput(TextArea):
             pass
 
     def on_key(self, event: Key) -> None:
-        if event.key == "ctrl+n":
+        if event.key == "ctrl+o":
             event.prevent_default()
             self.insert("\n")
         elif event.key == "enter":
@@ -161,12 +161,12 @@ class ChatInput(TextArea):
 class MainView(Vertical):
     def compose(self) -> ComposeResult:
         with Vertical(id="left-pane"):
-            with Horizontal(id="top-zone"):
-                yield Static("  /\\_/\\\n ( o.o )\n  > ^ <", id="cat-ascii")
+            top_zone = Horizontal(id="top-zone")
+            top_zone.border_title = "CatInCup v1.0.0 /"
+            with top_zone:
+                yield Static("  /\\_/\\\n ( O_O )\n  |>  <|⟆", id="cat-ascii")
                 with Vertical(id="status-container"):
-                    yield Static("Cat-in-Cup v1.0.0", id="version-text")
-                    yield ProgressBar(total=100, show_eta=False, id="token-progress")
-
+                    yield Static("[░░░░░░░░░░░░░░░░] 0%", id="token-progress")
             chat_zone = VerticalScroll(id="chat-zone")
             chat_zone.border_title = "Chat History /"
             yield chat_zone
@@ -176,7 +176,7 @@ class MainView(Vertical):
             yield space_selector
 
             input_zone = Vertical(id="input-zone")
-            input_zone.border_title = "Chat Input (Ctrl+N for new line, /switch to change space) /"
+            input_zone.border_title = "Chat Input (Ctrl+o for new line, /switch to change space) /"
             with input_zone:
                 with Horizontal(id="input-row"):
                     yield Static("❯", id="prompt-char")
@@ -191,7 +191,7 @@ class MainView(Vertical):
         self.tool_widgets = {}
 
         self.query_one("#chat-input", ChatInput).focus()
-        self.set_interval(3.0, self.blink_cat)
+        self.set_interval(0.25, self.blink_cat)
         self.set_interval(1.0, self.refresh_chat_state)
 
     async def on_event(self, event: Event) -> None:
@@ -202,13 +202,22 @@ class MainView(Vertical):
         cat = self.query_one("#cat-ascii", Static)
         idle_time = time.time() - self.last_activity_time
         if idle_time > 30:
-            cat.update("  /\\_/\\\n ( u.u )\n  >   < zZ")
+            cat.update(" /\\_/\\ zZ\n( u_u )\n  |>  <|⟆")
         else:
-            if self.blink_state:
-                cat.update("  /\\_/\\\n ( o.o )\n  >   <")
+            if not hasattr(self, "_blink_state"):
+                self._blink_state = 0
+                self._blink_counter = 0
+                self._blink_duration = [5, 1, 1]
+            if self._blink_state == 0:
+                cat.update("  /\\_/\\\n ( O_O )\n  |>  <|⟆")
+            elif self._blink_state == 1:
+                cat.update("  /\\_/\\\n ( O_O )\n  |>  <|⟆")
             else:
-                cat.update("  /\\_/\\\n ( -.- )\n  >   <")
-            self.blink_state = not self.blink_state
+                cat.update("  /\\_/\\\n ( -_- )\n  |>  <|⟆")
+            self._blink_counter += 1
+            if self._blink_counter >= self._blink_duration[self._blink_state]:
+                self._blink_counter = 0
+                self._blink_state = (self._blink_state + 1) % 3
 
     def show_space_selector(self) -> None:
         self.is_selecting = True
@@ -269,9 +278,20 @@ class MainView(Vertical):
             current_token = get_task_window_token(task_id)
             max_token = get_task_max_token()
 
-        progress = self.query_one("#token-progress", ProgressBar)
-        progress.total = max_token
-        progress.update(progress=min(current_token, max_token))
+        progress = self.query_one("#token-progress", Static)
+        percentage = (current_token / max_token * 100) if max_token > 0 else 0
+
+        progress.remove_class("token-low", "token-medium", "token-high")
+        if percentage <= 60:
+            progress.add_class("token-low")
+        elif percentage <= 90:
+            progress.add_class("token-medium")
+        else:
+            progress.add_class("token-high")
+
+        filled = int(percentage / 5)
+        bar = "█" * filled + "░" * (20 - filled)
+        progress.update(f"[{bar}] {int(percentage)}%")
 
         chat_zone = self.query_one("#chat-zone")
 
