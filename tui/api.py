@@ -129,3 +129,40 @@ def get_task_list():
             })
 
     return tasks
+
+
+def get_agent_max_token():
+    """获取 agent 触发记忆压缩的 token 阈值 (agent.py 源码硬编码)"""
+    return 100000
+
+
+def get_task_max_token():
+    """获取 task 触发记忆压缩的 token 阈值 (task.py 源码默认参数)"""
+    return 120000
+
+
+def get_task_window_token(task_id: str):
+    """获取指定任务的 window_token"""
+    import os, json
+    from src.models.task import TASK_INSTANCES
+    from src.utils.config import DATA_DIR
+
+    task_instance = TASK_INSTANCES.get(task_id)
+    if task_instance and hasattr(task_instance, 'window_token'):
+        return task_instance.window_token
+
+    # 若在内存中找不到活跃任务，尝试从磁盘状态中提取
+    base_dir = os.path.join(DATA_DIR, "checkpoints", "task")
+    if os.path.isdir(base_dir):
+        # 注意任务的持久化目录名规则是 {task_name}_{create_time}，这里可能需要遍历匹配 task_id
+        for task_dir in os.listdir(base_dir):
+            checkpoint_path = os.path.join(base_dir, task_dir, "checkpoint.json")
+            if os.path.exists(checkpoint_path):
+                try:
+                    with open(checkpoint_path, "r", encoding="utf-8") as f:
+                        state = json.load(f)
+                        if state.get("task_id") == task_id:
+                            return state.get("window_token", 0)
+                except Exception:
+                    continue
+    return 0

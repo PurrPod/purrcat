@@ -60,24 +60,6 @@ ProgressBar > Bar {
     background: #27272a;
 }
 
-/* === 左侧 3/5：聊天区域 === */
-#chat-zone {
-    height: 3fr;
-    border: round #52525b; /* 对话区采用稍微低调的灰色边框 */
-    padding: 1 2;
-    overflow-y: auto;
-    margin-bottom: 1;
-    scrollbar-size: 1 1;
-    scrollbar-color: #52525b;
-}
-
-/* === 左侧 1/5：输入区 === */
-#input-zone {
-    height: 1fr;
-    border: round #52525b;
-    padding: 1 2;
-    layout: vertical;
-}
 
 #input-row {
     layout: horizontal;
@@ -92,12 +74,37 @@ ProgressBar > Bar {
     content-align: center middle;
 }
 
+/* --- tui/styles/main.tcss 局部更新 --- */
+
+#chat-zone {
+    height: 3fr;
+    border: round #52525b;
+    border-title-color: #a1a1aa;
+    border-title-align: left; /* 控制缺口标题在左上角 */
+    padding: 1 2;
+    overflow-y: auto;
+    margin-bottom: 1;
+    scrollbar-size: 1 1;
+    scrollbar-color: #52525b;
+}
+
+#input-zone {
+    height: 1fr;
+    border: round #52525b;
+    border-title-color: #a1a1aa;
+    border-title-align: left; /* 控制缺口标题在左上角 */
+    padding: 1 2;
+    layout: vertical;
+}
+
+/* 适配 Textual 的 TextArea */
 #chat-input {
     width: 1fr;
+    height: 100%;
     border: none;
     background: transparent;
-    padding: 0;
     color: #e4e4e7;
+    padding: 0;
 }
 
 #chat-input:focus {

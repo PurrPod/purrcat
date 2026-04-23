@@ -1,19 +1,17 @@
+# --- tui/views/chat.py ---
+
 import os
-import json
-import yaml
-from datetime import datetime
+import time
 from textual import work, on
 from textual.app import ComposeResult
 from textual.containers import Vertical, Horizontal, VerticalScroll
-from textual.widgets import Static, Input, Markdown, ProgressBar, ListView, ListItem
+from textual.widgets import Static, Markdown, ProgressBar, ListView, ListItem, TextArea
+from textual.events import Event, Key
 
-try:
-    from src.agent.agent import Agent
-
-    chat_agent = Agent.load_checkpoint()
-except Exception as e:
-    chat_agent = None
-    init_error = str(e)
+from tui.api import (
+    get_task_list, get_agent_history, get_task_history, force_push_agent, force_push_task,
+    get_window_token, get_task_window_token, get_agent_max_token
+)
 
 
 class ChatMessage(Vertical):
@@ -33,167 +31,179 @@ class ChatMessage(Vertical):
         yield Markdown(self.text)
 
 
+class ChatInput(TextArea):
+    """支持 Shift+Enter 换行，Enter 发送的多行输入框"""
+    BINDINGS = [
+        ("enter", "submit", "Submit"),
+        ("shift+enter", "newline", "Newline")
+    ]
+
+    def action_submit(self):
+        text = self.text.strip()
+        if text:
+            # 触发父视图发送逻辑
+            self.app.query_one(MainView).handle_chat_submit(text)
+            self.clear()
+
+    def action_newline(self):
+        self.insert("\n")
+
+    def on_key(self, event: Key) -> None:
+        """底层拦截按键事件，防止被 TextArea 原生的换行覆盖"""
+        if event.key == "enter":
+            # 阻止默认的换行行为
+            event.prevent_default()
+            text = self.text.strip()
+            if text:
+                self.app.query_one(MainView).handle_chat_submit(text)
+                self.clear()
+        elif event.key in ["shift+enter", "alt+enter"]:
+            # 兼容性：某些老旧终端无法区分 shift+enter 和 enter
+            # 可以使用 Alt+Enter 兜底来实现换行
+            event.prevent_default()
+            self.insert("\n")
+
 class MainView(Horizontal):
-    """全局主视图：Claude Code 极简风格重构版"""
+    """全局主视图：Cat-in-Cup 增强版"""
 
     def compose(self) -> ComposeResult:
-        # ======= 左侧区域 (占 4/5) =======
+        # ======= 左侧区域 =======
         with Vertical(id="left-pane"):
-            # 1. 顶部 1/5：状态与小猫
             with Horizontal(id="top-zone"):
-                # ASCII 小猫
                 yield Static("  /\\_/\\\n ( o.o )\n  > ^ <", id="cat-ascii")
-                # 版本与 Token 进度
                 with Vertical(id="status-container"):
-                    yield Static("Cat-in-Cup v2.1.114", id="version-text")
+                    yield Static("Cat-in-Cup v1.0.0", id="version-text")
                     yield Static("Agent Initialized • Ready for tasks", id="sub-status")
                     yield ProgressBar(total=100, show_eta=False, id="token-progress")
 
-            # 2. 中部 3/5：聊天历史记录
-            with VerticalScroll(id="chat-zone"):
-                pass  # 动态挂载
+            # 聊天历史区，设置缺口标题
+            chat_zone = VerticalScroll(id="chat-zone")
+            chat_zone.border_title = "Chat History /"
+            yield chat_zone
 
-            # 3. 底部 1/5：输入区
-            with Vertical(id="input-zone"):
+            # 输入区，设置缺口标题，移除无关说明
+            input_zone = Vertical(id="input-zone")
+            input_zone.border_title = "Chat Input /"
+            with input_zone:
                 with Horizontal(id="input-row"):
                     yield Static("❯", id="prompt-char")
-                    yield Input(placeholder="Bypass permissions on (shift+tab to cycle)...", id="chat-input")
-                yield Static("Ctrl+Enter 发送 | Ctrl+K 聚焦 | Ctrl+L 清屏 | Ctrl+P 专注模式", id="shortcut-hint")
+                    yield ChatInput(id="chat-input", show_line_numbers=False)
 
-        # ======= 右侧区域 (占 1/5) =======
+        # ======= 右侧区域 (会话列表) =======
         with VerticalScroll(id="right-pane"):
             yield Static("Spaces", classes="sidebar-title")
             yield ListView(
                 ListItem(Static("Main", classes="nav-item"), id="nav-main"),
-                ListItem(Static("Task", classes="nav-item"), id="nav-task"),
                 id="sidebar-nav"
             )
 
     def on_mount(self) -> None:
-        self.histories = {
-            "nav-main": [],
-            "nav-task": [ChatMessage("system", "Task history initialized.")]
-        }
         self.current_space = "nav-main"
-        self.render_history()
-        self.query_one("#chat-input", Input).focus()
-
-        # 让小猫眨眼的互动逻辑
+        self.last_activity_time = time.time()
         self.blink_state = False
-        self.set_interval(3.5, self.blink_cat)
 
-        # 模拟 Token 进度条初始化
-        self.query_one("#token-progress", ProgressBar).advance(15)
+        # 记录已渲染的消息数量，实现增量渲染，防止闪烁
+        self.rendered_msg_counts = {"nav-main": 0}
+
+        self.query_one("#chat-input", ChatInput).focus()
+
+        # 挂载定时器：猫咪眨眼与闲置、聊天状态刷新
+        self.set_interval(3.0, self.blink_cat)
+        self.set_interval(1.0, self.refresh_chat_state)
+
+    async def on_event(self, event: Event) -> None:
+        """捕获全局事件，重置闲置计时器"""
+        self.last_activity_time = time.time()
+        await super().on_event(event)
 
     def blink_cat(self) -> None:
-        """定时切换小猫表情实现眨眼"""
+        """处理猫咪的眨眼与瞌睡状态"""
         cat = self.query_one("#cat-ascii", Static)
-        if self.blink_state:
-            cat.update("  /\\_/\\\n ( o.o )\n  > ^ <")
+        idle_time = time.time() - self.last_activity_time
+
+        # 闲置超过 30 秒则打瞌睡
+        if idle_time > 30:
+            cat.update("  /\\_/\\\n ( u.u )\n  >   < zZ")
         else:
-            cat.update("  /\\_/\\\n ( -.- )\n  > ^ <")
-        self.blink_state = not self.blink_state
+            if self.blink_state:
+                cat.update("  /\\_/\\\n ( o.o )\n  >   <")
+            else:
+                cat.update("  /\\_/\\\n ( -.- )\n  >   <")
+            self.blink_state = not self.blink_state
 
     @on(ListView.Selected, "#sidebar-nav")
     def switch_space(self, event: ListView.Selected):
+        """点击右侧边栏切换会话"""
         self.current_space = event.item.id
-        self.render_history()
-
-    def render_history(self):
+        # 切换时清空左侧聊天区，强制下次轮询全部重新渲染
         chat_zone = self.query_one("#chat-zone")
         for child in chat_zone.children:
             child.remove()
-        for msg in self.histories.get(self.current_space, []):
-            chat_zone.mount(msg)
-        chat_zone.scroll_end(animate=False)
 
-    def append_message(self, role: str, text: str):
-        msg = ChatMessage(role, text)
-        self.histories[self.current_space].append(msg)
+        self.rendered_msg_counts[self.current_space] = 0
+        self.refresh_chat_state()
+
+    def refresh_chat_state(self):
+        """定时拉取最新任务列表和当前会话的对话记录"""
+        from tui.api import (
+            get_task_list, get_agent_history, get_task_history,
+            get_window_token, get_task_window_token,
+            get_agent_max_token, get_task_max_token
+        )
+
+        # 1. 更新右侧 Task 列表 (仅添加不在列表中的新 Task)
+        sidebar = self.query_one("#sidebar-nav", ListView)
+        tasks = get_task_list()
+        existing_ids = [item.id for item in sidebar.children if item.id]
+
+        for task in tasks:
+            task_list_id = f"task-{task['id']}"
+            if task_list_id not in existing_ids:
+                new_item = ListItem(Static(f"{task['name']}", classes="nav-item"), id=task_list_id)
+                sidebar.append(new_item)
+                if task_list_id not in self.rendered_msg_counts:
+                    self.rendered_msg_counts[task_list_id] = 0
+
+        # 2. 根据选中的会话获取历史记录、当前 window_token 和对应压缩阈值 max_token
+        if self.current_space == "nav-main":
+            history = get_agent_history()
+            current_token = get_window_token()
+            max_token = get_agent_max_token()  # 100000
+        else:
+            task_id = self.current_space.replace("task-", "")
+            history = get_task_history(task_id)
+            current_token = get_task_window_token(task_id)
+            max_token = get_task_max_token()  # 120000
+
+        # 3. 更新 Token 进度条 (window_token / max_token)
+        progress = self.query_one("#token-progress", ProgressBar)
+        progress.total = max_token
+        progress.update(progress=min(current_token, max_token))
+
+        # 4. 增量渲染聊天历史
         chat_zone = self.query_one("#chat-zone")
-        chat_zone.mount(msg)
+        rendered_count = self.rendered_msg_counts.get(self.current_space, 0)
+
+        if len(history) > rendered_count:
+            for msg in history[rendered_count:]:
+                role = msg.get("role", "system")
+                content = msg.get("content", "")
+                if content:
+                    chat_zone.mount(ChatMessage(role, content))
+
+            self.rendered_msg_counts[self.current_space] = len(history)
+            chat_zone.scroll_end(animate=False)
+
+    def handle_chat_submit(self, text: str):
+        """处理输入内容的发送"""
+        if self.current_space == "nav-main":
+            force_push_agent(text)
+        else:
+            task_id = self.current_space.replace("task-", "")
+            force_push_task(task_id, text)
+
+        # 预加载用户消息到 UI 防止视觉延迟，稍后的轮询会自动校准
+        chat_zone = self.query_one("#chat-zone")
+        chat_zone.mount(ChatMessage("user", text))
+        self.rendered_msg_counts[self.current_space] += 1
         chat_zone.scroll_end(animate=False)
-        return msg
-
-    @on(Input.Submitted, "#chat-input")
-    def handle_force_push(self, event: Input.Submitted):
-        msg = event.value.strip()
-        if not msg: return
-        event.input.value = ""
-
-        if msg.startswith("/"):
-            self.execute_slash_command(msg)
-            return
-
-        self.append_message("user", msg)
-        loading_msg = self.append_message("ai", "...")
-        self.process_native_agent(msg, loading_msg)
-
-    @work(thread=True, exclusive=True)
-    def process_native_agent(self, msg: str, loading_widget: ChatMessage):
-        if chat_agent is None:
-            self.app.call_from_thread(
-                loading_widget.query_one(Markdown).update,
-                f"**System Error:** Agent failed to initialize.\n`{init_error}`"
-            )
-            return
-
-        try:
-            for i in range(3):
-                dots = "." * (i + 1)
-                self.app.call_from_thread(loading_widget.query_one(Markdown).update, f"{dots}")
-                import time;
-                time.sleep(0.3)
-
-            start_len = len(chat_agent.current_history)
-            chat_agent.process_message({"type": "owner_message", "content": msg})
-
-            # 模拟 Token 进度增长
-            self.app.call_from_thread(self.query_one("#token-progress", ProgressBar).advance, 5)
-
-            new_msgs = chat_agent.current_history[start_len:]
-            replies = [m.get("content", "") for m in new_msgs if m.get("role") == "assistant" and m.get("content")]
-            response_text = "\n\n".join(replies) if replies else "*(Agent 运算完毕)*"
-
-            self.typewriter_effect(loading_widget, response_text)
-
-        except Exception as e:
-            self.app.call_from_thread(
-                loading_widget.query_one(Markdown).update,
-                f"**Core Execution Error:**\n```python\n{str(e)}\n```"
-            )
-            self.app.call_from_thread(self.query_one("#chat-zone").scroll_end, animate=False)
-
-    def execute_slash_command(self, cmd: str):
-        self.append_message("user", cmd)
-        reply = f"System executed: {cmd}"
-        self.append_message("system", reply)
-
-    def typewriter_effect(self, widget: ChatMessage, text: str):
-        markdown = widget.query_one(Markdown)
-        current_text = ""
-        for char in text:
-            current_text += char
-            self.app.call_from_thread(markdown.update, current_text)
-            self.app.call_from_thread(self.query_one("#chat-zone").scroll_end, animate=False)
-            import time;
-            time.sleep(0.01)
-
-    def on_key(self, event):
-        if event.key == "ctrl+l":
-            chat_zone = self.query_one("#chat-zone")
-            for child in chat_zone.children:
-                child.remove()
-            self.histories[self.current_space] = []
-        elif event.key == "ctrl+k":
-            self.query_one("#chat-input", Input).focus()
-        elif event.key == "ctrl+enter":
-            input_widget = self.query_one("#chat-input", Input)
-            if input_widget.value.strip():
-                self.handle_force_push(Input.Submitted(input_widget, input_widget.value))
-        elif event.key == "ctrl+p":
-            main_layout = self.query_one("#main-layout")
-            if "focus-mode" in main_layout.classes:
-                main_layout.remove_class("focus-mode")
-            else:
-                main_layout.add_class("focus-mode")
