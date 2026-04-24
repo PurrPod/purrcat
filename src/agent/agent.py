@@ -90,7 +90,7 @@ class Agent:
 
     def force_push(self, content, source=None):
         if source:
-            formatted_content = f"【收到来自 {source} 的指令】{content}"
+            formatted_content = f"{content}"
         else:
             formatted_content = content
         if self.state == "idle":
@@ -383,9 +383,14 @@ class Agent:
 
     def save_checkpoint(self, filepath="src/agent/checkpoint.json"):
         save_path = filepath or self.checkpoint_path
+        temp_path = f"{save_path}.tmp"  # 临时文件
         try:
-            with open(save_path, "w", encoding="utf-8") as f:
+            # 1. 先把数据完整写入临时文件
+            with open(temp_path, "w", encoding="utf-8") as f:
                 json.dump(self.current_history, f, ensure_ascii=False, indent=2)
+            
+            # 2. 写入成功后，瞬间替换原文件（原子操作，绝对安全）
+            os.replace(temp_path, save_path)
         except Exception as e:
             print(f"⚠️ [Checkpoint] 保存检查点失败: {e}")
 

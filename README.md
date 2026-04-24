@@ -13,15 +13,6 @@
 
 ---
 
-## 🐱 写在最前
-
-本项目正在参加 AI 校园挑战赛，为此我录制了两个演示视频供评委观看：
-
-- [API 并发抗压演示](https://www.bilibili.com/video/BV1gedpB9EJJ/)
-
-- [权限控制、断点续传、Harness Engineering 定制化、Agent 自主进化演示](https://www.bilibili.com/video/BV1rbdHBMEtE/)
-
-
 ## 📖 Introduction
 
 [📚 CatInCup 官方文档（持续更新中）](https://purrpod.github.io/)

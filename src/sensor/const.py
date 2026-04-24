@@ -3,14 +3,16 @@ import json
 import os
 import threading
 import datetime
-from src.agent.agent import add_message
+from src.agent.manager import get_agent, is_initialized
 from src.utils.config import CRON_FILE, SCHEDULE_FILE
 
 
 def heartbeat():
     while True:
         time.sleep(1800)
-        add_message({"type": "heartbeat", "content": "系统心跳：可以主动进行工作学习，整理并更新自我画像（你对自己的认知与成长）和用户画像（使用filesystem修改core\\user_profile.md和core\\me.md）"})
+        agent = get_agent()
+        if agent:
+            agent.force_push("系统心跳：可以主动进行工作学习，整理并更新自我画像（你对自己的认知与成长）和用户画像（使用filesystem修改core\user_profile.md和core\me.md）", source="system")
 
 
 def clock_sensor():
@@ -37,10 +39,9 @@ def clock_sensor():
                         elif rule.startswith("weekly_") and rule.split("_")[1] == current_weekday:
                             is_match = True
                     if is_match:
-                        add_message({
-                            "type": "schedule",
-                            "content": f"⏰【闹钟铃声】时间到！事项: {c.get('title')}"
-                        })
+                        agent = get_agent()
+                        if agent:
+                            agent.force_push(f"⏰【闹钟铃声】时间到！事项: {c.get('title')}", source="schedule")
                         # 如果是不重复的闹钟，响完即关闭
                         if rule == "none":
                             c["active"] = False
@@ -69,10 +70,9 @@ def clock_sensor():
                             delta = (st_dt - now).total_seconds()
                             # 如果刚好落在 14-15 分钟的区间内
                             if 14 * 60 <= delta < 15 * 60:
-                                add_message({
-                                    "type": "schedule",
-                                    "content": f"📅【日程预警】15分钟后即将开始: {s.get('title')}。请做好准备。"
-                                })
+                                agent = get_agent()
+                                if agent:
+                                    agent.force_push(f"📅【日程预警】15分钟后即将开始: {s.get('title')}。请做好准备。", source="schedule")
                         except:
                             pass
             except Exception:

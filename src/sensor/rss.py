@@ -3,7 +3,7 @@ import json
 import os
 import requests
 
-from src.agent.agent import add_message
+from src.agent.manager import get_agent
 
 
 class RSSSensor:
@@ -93,7 +93,9 @@ class RSSListener:
             return "暂无新的内容更新。"
         output_lines = ["【RSS订阅源每日推送】\n"]+output_lines
         result_text = "\n".join(output_lines).strip()
-        add_message({"type":"rss_update", "content":result_text})
+        agent = get_agent()
+        if agent:
+            agent.force_push(result_text, source="rss")
         return result_text
 
 

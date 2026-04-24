@@ -3,6 +3,7 @@ import json
 import threading
 import os
 from typing import Any
+from src.agent.manager import get_agent
 
 # 补充引入了原本就存在的 kill_task，为了防止与本文件的同名工具函数冲突，起个别名 core_kill_task
 from src.models.task import BaseTask, TASK_INSTANCES, DATA_DIR, inject_task_instruction, kill_task as core_kill_task, TaskFactory, auto_discover_experts
@@ -72,16 +73,19 @@ def add_task(
         return _format_response("text", f"❌ 创建任务失败: {e}")
 
     def _run_task():
-        from src.agent.agent import add_message
         try:
             result = single_task.run()
             task_id = single_task.task_id
             notify_msg = f"任务 '{name}' (ID: {task_id}) 已执行完毕，结果交付如下：\n{result}"
-            add_message({"type": "task_message", "content": notify_msg})
+            agent = get_agent()
+            if agent:
+                agent.force_push(notify_msg, source="task")
         except Exception as e:
             single_task.state = "error"
             error_msg = f"任务 '{name}' (ID: {single_task.task_id}) 执行崩溃，原因：\n {e}"
-            add_message({"type": "task_message", "content": error_msg})
+            agent = get_agent()
+            if agent:
+                agent.force_push(error_msg, source="task")
 
     t = threading.Thread(target=_run_task, daemon=True)
     t.start()
@@ -126,15 +130,18 @@ def submit_request(task_id: str, new_prompt: str = "继续执行") -> str:
         return _format_response("text", f"✅ 已成功向运行中的任务 (ID: {task_id}) 注入追加指令。")
 
     def _inject_and_resume():
-        from src.agent.agent import add_message
         try:
             result = task.submit_request(new_prompt)
             notify_msg = f"任务 '{task.task_name}' (ID: {task_id}) 处理追加指令完毕。\n{result}"
-            add_message({"type": "task_message", "content": notify_msg})
+            agent = get_agent()
+            if agent:
+                agent.force_push(notify_msg, source="task")
         except Exception as e:
             task.state = "error"
             error_msg = f"任务 '{task.task_name}' (ID: {task_id}) 处理指令崩溃：\n{e}"
-            add_message({"type": "task_message", "content": error_msg})
+            agent = get_agent()
+            if agent:
+                agent.force_push(error_msg, source="task")
 
     t = threading.Thread(target=_inject_and_resume, daemon=True)
     t.start()

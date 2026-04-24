@@ -2,23 +2,22 @@ import json
 import threading
 import lark_oapi as lark
 from lark_oapi.api.im.v1 import *
-from src.agent.agent import add_message, MESSAGE_QUEUE
+from src.agent.manager import get_agent
 from src.utils.config import get_feishu_config
 
 feishu_config = get_feishu_config()
 APP_ID = feishu_config.get("app_id", "")
 APP_SECRET = feishu_config.get("app_secret", "")
 
-# 用于保存 cat-in-cup 的 Agent 实例
-GLOBAL_AGENT = None
 
 def do_p2_im_message_receive_v1(data: P2ImMessageReceiveV1) -> None:
     msg_content = json.loads(data.event.message.content)
     user_text = msg_content.get("text", "")
     chat_id = data.event.message.chat_id
     print(f"\n📩 [feishu Sensor] 收到飞书消息: {user_text}")
-    if GLOBAL_AGENT:
-        GLOBAL_AGENT.force_push(user_text, source="feishu")
+    agent = get_agent()
+    if agent:
+        agent.force_push(user_text, source="feishu")
     else:
         print("⚠️ [Feishu Sensor] 未绑定 Agent 实例，无法处理消息！")
 
@@ -46,10 +45,7 @@ def _run_ws_client():
 
 
 def start_lark_sensor(agent_instance=None):
-    global GLOBAL_AGENT
-    if agent_instance:
-        GLOBAL_AGENT = agent_instance
-    
+    # 现在不需要保存 agent_instance，直接使用 get_agent()
     if not APP_ID or not APP_SECRET:
         print("⚠️ [Feishu Sensor] 飞书配置不完整，跳过启动")
         return
@@ -57,7 +53,6 @@ def start_lark_sensor(agent_instance=None):
     t = threading.Thread(target=_run_ws_client, daemon=True)
     t.start()
     print("📡 飞书 WebSocket 长连接传感器已启动！")
-
 
 
 

@@ -4,32 +4,30 @@ import datetime
 import copy
 from src.models import task as task_module
 from src.utils.config import DATA_DIR
+from src.agent.manager import get_agent
 
 # ---------------------------------------------------------
 # Agent 相关接口
 # ---------------------------------------------------------
-from src.agent import agent as agent_module
-
 def get_agent_history():
-    from tui.app import global_agent
-    if global_agent:
+    agent = get_agent()
+    if agent:
         # 🟢 修复：必须深拷贝，防止后台正在思考写入时 UI 遍历导致崩溃
-        return copy.deepcopy(global_agent.current_history)
+        return copy.deepcopy(agent.current_history)
     return []
 
 def force_push_agent(text: str):
-    # 直接推入 agent_module 的消息队列
-    agent_module.add_message({
-        "type": "owner_message",
-        "content": text
-    })
+    # 直接推入 agent 的消息队列
+    agent = get_agent()
+    if agent:
+        agent.force_push(text)
 
 
 def get_window_token():
     """获取 agent 实例当前窗口的 token 用量"""
-    from tui.app import global_agent
-    if global_agent:
-        return global_agent.window_token
+    agent = get_agent()
+    if agent:
+        return agent.window_token
     return 0
 
 
