@@ -17,7 +17,7 @@ def do_p2_im_message_receive_v1(data: P2ImMessageReceiveV1) -> None:
     print(f"\n📩 [feishu Sensor] 收到飞书消息: {user_text}")
     agent = get_agent()
     if agent:
-        agent.force_push(user_text, source="feishu")
+        agent.force_push(user_text, type="feishu")
     else:
         print("⚠️ [Feishu Sensor] 未绑定 Agent 实例，无法处理消息！")
 

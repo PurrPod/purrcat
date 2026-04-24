@@ -72,6 +72,7 @@ class BaseTask:
         self.state = "ready"
         self.step = 0
         self._lock = threading.Lock()
+        self._io_lock = threading.Lock()
         self._killed = False
         self.pending_force_push = []
         self.create_time = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
@@ -276,6 +277,7 @@ class BaseTask:
             if task.model:
                 task.model.bind_task(task.task_id, task.task_name)
             task._lock = threading.Lock()
+            task._io_lock = threading.Lock()
             task._killed = False
             task._on_restore_state(state)
             existing_task = TASK_INSTANCES.get(task.task_id)
@@ -311,6 +313,8 @@ class BaseTask:
 
         message = response.choices[0].message
         assist_msg = {"role": "assistant", "content": message.content or ""}
+        if hasattr(message, "reasoning_content") and message.reasoning_content:
+            assist_msg["reasoning_content"] = message.reasoning_content
         if message.tool_calls:
             assist_msg["tool_calls"] = [
                 {"id": t.id, "type": t.type, "function": {"name": t.function.name, "arguments": t.function.arguments}}
@@ -338,9 +342,10 @@ class BaseTask:
             "content": content,
             "metadata": metadata or {}
         }
-        with open(os.path.join(log_dir, "log.jsonl"), "a", encoding="utf-8") as f:
-            f.write(json.dumps(log_data, ensure_ascii=False) + "\n")
-            f.flush()
+        with self._io_lock:
+            with open(os.path.join(log_dir, "log.jsonl"), "a", encoding="utf-8") as f:
+                f.write(json.dumps(log_data, ensure_ascii=False) + "\n")
+                f.flush()
         with task_set_lock:
             dirty_tasks.add(self.task_id)
 

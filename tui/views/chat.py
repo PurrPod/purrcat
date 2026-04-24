@@ -1,4 +1,3 @@
-import os
 import time
 import json
 from textual import work, on
@@ -10,7 +9,8 @@ from textual.events import Event, Key
 from src.models import task as task_module
 from tui.api import (
     get_task_list, get_agent_history, get_task_history, force_push_agent, force_push_task,
-    get_window_token, get_task_window_token, get_agent_max_token, get_task_max_token
+    get_window_token, get_task_window_token, get_agent_max_token, get_task_max_token,
+    format_task_log
 )
 
 
@@ -174,15 +174,15 @@ class ChatInput(TextArea):
 class MainView(Vertical):
     # 🟢 新增：彩虹颜色预设表
     RAINBOW_COLORS = [
-        {"id": "theme-white", "name": "⚪ 默认 (White)", "color": "#ffffff"},
-        {"id": "theme-red", "name": "🔴 绯红 (Red)", "color": "#ef4444"},
-        {"id": "theme-orange", "name": "🟠 橘黄 (Orange)", "color": "#f97316"},
-        {"id": "theme-yellow", "name": "🟡 明黄 (Yellow)", "color": "#eab308"},
-        {"id": "theme-green", "name": "🟢 翠绿 (Green)", "color": "#22c55e"},
-        {"id": "theme-cyan", "name": "🩵 青色 (Cyan)", "color": "#06b6d4"},
-        {"id": "theme-blue", "name": "🔵 蔚蓝 (Blue)", "color": "#3b82f6"},
-        {"id": "theme-purple", "name": "🟣 紫罗兰 (Purple)", "color": "#a855f7"},
-        {"id": "theme-pink", "name": "🩷 猛男粉 (Pink)", "color": "#ec4899"},
+        {"id": "theme-white", "name": "默认 (White)", "color": "#ffffff"},
+        {"id": "theme-red", "name": "绯红 (Red)", "color": "#ef4444"},
+        {"id": "theme-orange", "name": "橘黄 (Orange)", "color": "#f97316"},
+        {"id": "theme-yellow", "name": "明黄 (Yellow)", "color": "#eab308"},
+        {"id": "theme-green", "name": "翠绿 (Green)", "color": "#22c55e"},
+        {"id": "theme-cyan", "name": "青色 (Cyan)", "color": "#06b6d4"},
+        {"id": "theme-blue", "name": "蔚蓝 (Blue)", "color": "#3b82f6"},
+        {"id": "theme-purple", "name": "紫罗兰 (Purple)", "color": "#a855f7"},
+        {"id": "theme-pink", "name": "猛男粉 (Pink)", "color": "#ec4899"},
     ]
     def compose(self) -> ComposeResult:
         with Vertical(id="left-pane"):
@@ -422,19 +422,8 @@ class MainView(Vertical):
             if not needs_update:
                 return
 
-            # 3. 只有确认需要更新时，才去读取磁盘日志
-            tasks = get_task_list()
-            task_info = next((t for t in tasks if str(t['id']) == task_id), None)
-            log_content = f"暂无日志内容 (未找到任务 {task_id})"
-            
-            if task_info and "checkpoint_dir" in task_info:
-                log_path = os.path.join(task_info["checkpoint_dir"], "log.jsonl")
-                if os.path.exists(log_path):
-                    try:
-                        with open(log_path, "r", encoding="utf-8") as f:
-                            log_content = f.read()
-                    except Exception:
-                        pass
+            # 3. 只有确认需要更新时，才去读取并格式化磁盘日志
+            log_content = format_task_log(task_id)
 
             # 4. 挂载或更新 UI
             if log_widget:

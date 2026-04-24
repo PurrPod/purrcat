@@ -190,11 +190,16 @@ class TradingTask(
         if tools:
             MAX_LOOPS = 25
             for loop_idx in range(MAX_LOOPS):
+                if getattr(self, "_killed", False):
+                    self.log_and_notify("system", f"⚠️ [{role_name}] 收到全局终止指令，正在退出隔离舱...")
+                    return "任务已被外部终止"
                 response = self.model.chat(messages=messages, tools=tools)
                 self._track_token_usage(response)
                 msg = response.choices[0].message
 
                 assist_msg = {"role": "assistant", "content": msg.content or ""}
+                if hasattr(msg, "reasoning_content") and msg.reasoning_content:
+                    assist_msg["reasoning_content"] = msg.reasoning_content
                 if msg.content:
                     self.log_and_notify("thought", f"🧠 [{role_name}] 正在思考分析:\n{msg.content}")
 

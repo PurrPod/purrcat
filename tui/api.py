@@ -20,7 +20,7 @@ def force_push_agent(text: str):
     # 直接推入 agent 的消息队列
     agent = get_agent()
     if agent:
-        agent.force_push(text)
+        agent.force_push(text, type="user")
 
 
 def get_window_token():
@@ -132,10 +132,8 @@ def get_task_window_token(task_id: str):
     if task_instance and hasattr(task_instance, 'window_token'):
         return task_instance.window_token
 
-    # 若在内存中找不到活跃任务，尝试从磁盘状态中提取
     base_dir = os.path.join(DATA_DIR, "checkpoints", "task")
     if os.path.isdir(base_dir):
-        # 注意任务的持久化目录名规则是 {task_name}_{create_time}，这里可能需要遍历匹配 task_id
         for task_dir in os.listdir(base_dir):
             checkpoint_path = os.path.join(base_dir, task_dir, "checkpoint.json")
             if os.path.exists(checkpoint_path):
@@ -147,3 +145,93 @@ def get_task_window_token(task_id: str):
                 except Exception:
                     continue
     return 0
+
+
+def format_task_log(task_id: str) -> str:
+    """解析并格式化任务的日志输出，按card_type分组展示"""
+    from src.models.task import TASK_INSTANCES
+
+    task_instance = TASK_INSTANCES.get(task_id)
+    if task_instance and hasattr(task_instance, 'checkpoint_dir'):
+        checkpoint_dir = task_instance.checkpoint_dir
+    else:
+        base_dir = os.path.join(DATA_DIR, "checkpoints", "task")
+        checkpoint_dir = None
+        if os.path.isdir(base_dir):
+            for entry in os.listdir(base_dir):
+                if task_id in entry:
+                    checkpoint_dir = os.path.join(base_dir, entry)
+                    break
+
+    if not checkpoint_dir:
+        return f"任务 {task_id} 未找到"
+
+    log_path = os.path.join(checkpoint_dir, "log.jsonl")
+    if not os.path.exists(log_path):
+        return f"暂无日志内容 (任务 {task_id})"
+
+    try:
+        with open(log_path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+    except Exception:
+        return f"读取日志失败 (任务 {task_id})"
+
+    if not lines:
+        return f"暂无日志内容 (任务 {task_id})"
+
+    CARD_PREFIXES = {
+        "system": "🔔",
+        "thought": "💭",
+        "tool_call": "🔧",
+        "tool": "📦",
+        "warning": "⚠️",
+        "error": "❌",
+        "plan": "📋",
+    }
+
+    sections = {}
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+
+        card_type = entry.get("card_type", "unknown")
+        timestamp = entry.get("timestamp", 0)
+        content = entry.get("content", "")
+
+        if timestamp:
+            time_str = datetime.datetime.fromtimestamp(timestamp).strftime("%H:%M:%S")
+        else:
+            time_str = "??:??:??"
+
+        prefix = CARD_PREFIXES.get(card_type, "📄")
+        key = (card_type, prefix)
+        if key not in sections:
+            sections[key] = []
+        sections[key].append(f"[{time_str}] {content}")
+
+    if not sections:
+        return f"暂无日志内容 (任务 {task_id})"
+
+    output_parts = []
+    output_parts.append("=" * 60)
+    output_parts.append(f"📋 Task Log ({len(lines)} entries)")
+    output_parts.append("=" * 60)
+
+    order_priority = ["system", "thought", "tool_call", "tool", "warning", "error", "plan"]
+
+    for (card_type, prefix), entries in sorted(sections.items(), key=lambda x: order_priority.index(x[0][0]) if x[0][0] in order_priority else 99):
+        output_parts.append("")
+        output_parts.append(f"{prefix} [{card_type.upper()}] ({len(entries)} entries)")
+        output_parts.append("-" * 40)
+        for entry in entries:
+            output_parts.append(f"  {entry}")
+
+    output_parts.append("")
+    output_parts.append("=" * 60)
+
+    return "\n".join(output_parts)

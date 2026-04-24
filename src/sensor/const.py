@@ -3,7 +3,7 @@ import json
 import os
 import threading
 import datetime
-from src.agent.manager import get_agent, is_initialized
+from src.agent.manager import get_agent
 from src.utils.config import CRON_FILE, SCHEDULE_FILE
 
 
@@ -12,7 +12,8 @@ def heartbeat():
         time.sleep(1800)
         agent = get_agent()
         if agent:
-            agent.force_push("系统心跳：可以主动进行工作学习，整理并更新自我画像（你对自己的认知与成长）和用户画像（使用filesystem修改core\user_profile.md和core\me.md）", source="system")
+            if not agent.pending_force_push:
+                agent.force_push("系统心跳：可以主动进行工作学习...", type="heartbeat")
 
 
 def clock_sensor():
@@ -41,7 +42,7 @@ def clock_sensor():
                     if is_match:
                         agent = get_agent()
                         if agent:
-                            agent.force_push(f"⏰【闹钟铃声】时间到！事项: {c.get('title')}", source="schedule")
+                            agent.force_push(f"⏰【闹钟铃声】时间到！事项: {c.get('title')}", type="schedule")
                         # 如果是不重复的闹钟，响完即关闭
                         if rule == "none":
                             c["active"] = False
@@ -72,7 +73,7 @@ def clock_sensor():
                             if 14 * 60 <= delta < 15 * 60:
                                 agent = get_agent()
                                 if agent:
-                                    agent.force_push(f"📅【日程预警】15分钟后即将开始: {s.get('title')}。请做好准备。", source="schedule")
+                                    agent.force_push(f"📅【日程预警】15分钟后即将开始: {s.get('title')}。请做好准备。", type="schedule")
                         except:
                             pass
             except Exception:

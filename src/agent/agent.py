@@ -4,8 +4,6 @@ import time
 import json
 import threading
 import uuid
-from queue import PriorityQueue, Empty
-
 from src.loader.memory import Memory
 from src.models.model import Model
 from src.plugins.plugin_manager import parse_tool
@@ -18,8 +16,6 @@ from src.utils.config import (
 
 from json_repair import repair_json
 
-MESSAGE_QUEUE = PriorityQueue()
-
 PRIORITY_MAP = {
     "owner_message": 100,
     "project_message": 80,
@@ -31,11 +27,6 @@ PRIORITY_MAP = {
 ROOT = False
 
 MEMORY_MD_PATH = "src/agent/core/memory.md"
-
-def add_message(message: dict):
-    msg_type = message.get("type", "heartbeat")
-    priority = PRIORITY_MAP.get(msg_type, 10)
-    MESSAGE_QUEUE.put((-priority, time.time(), message))
 
 
 class Agent:
@@ -88,53 +79,34 @@ class Agent:
         except Exception as e:
             print(f"⚠️ [Memory] 落盘失败: {e}")
 
-    def force_push(self, content, source=None):
-        if source:
-            formatted_content = f"{content}"
-        else:
-            formatted_content = content
-        if self.state == "idle":
-            add_message({
-                "type": "owner_message",
-                "content": formatted_content
-            })
-        else:
-            with self._lock:
-                self.pending_force_push.append(formatted_content)
+    def force_push(self, content, type="unknown_type"):
+        with self._lock:
+            self.pending_force_push.append(f"<{type}>{content}</{type}>")
 
     def _track_token_usage(self, response):
         """精准统计 API Token，防止重复累加"""
         if hasattr(response, "usage") and response.usage is not None:
             self.window_token = response.usage.total_tokens
 
-    def _checker(self, step: int):
+    def _checker(self):
         local_push = []
         with self._lock:
             if self.pending_force_push:
                 local_push = self.pending_force_push.copy()
                 self.pending_force_push.clear()
-
+        self._check_and_summarize_memory()
         if local_push:
-            for cnt, item in enumerate(local_push, 1):
-                local_push[cnt - 1] = f"{cnt} | " + item
-            content = "\n".join(local_push)
+            len_messages = len(local_push)
+            formatted_messages = "\n\n".join(local_push)
             self._append_history({
                 "role": "user",
-                "content": f"[System Warning] You should suspend your action and handle this message first!\n{content}"
+                "content": f"[System] You receive {len_messages} message:\n\n{formatted_messages}"
             })
-        self._check_and_summarize_memory()
-
-    def process_message(self, message: dict):
+    def process_message(self):
         self.state = "handling"
-        msg_type = message.get("type")
-        msg_content = message.get("content")
-        print(f"\n🔔 [Agent 抓取消息] 类型: {msg_type} | 内容: {msg_content}")
-        self._append_history({"role": "user", "content": f"<|{msg_type}|>:\n{msg_content}"})
-
-        max_steps = 1000
-
-        for step in range(max_steps):
+        while True:
             try:
+                self._checker()
                 current_tools = list(BASE_TOOLS) + list(AGENT_TOOLS)
                 response = self.model.chat(messages=self.current_history, tools=current_tools)
                 self._track_token_usage(response)
@@ -142,6 +114,8 @@ class Agent:
                 msg_resp = response.choices[0].message
                 assist_msg = {"role": "assistant", "content": msg_resp.content or ""}
 
+                if hasattr(msg_resp, "reasoning_content") and msg_resp.reasoning_content:
+                    assist_msg["reasoning_content"] = msg_resp.reasoning_content
                 if msg_resp.tool_calls:
                     assist_msg["tool_calls"] = [
                         {
@@ -153,14 +127,17 @@ class Agent:
 
                 self._append_history(assist_msg)
 
+                if hasattr(msg_resp, "reasoning_content") and msg_resp.reasoning_content:
+                    print(f"🧠 模型深度思考:\n{msg_resp.reasoning_content}\n")
+
                 if msg_resp.content:
-                    print(f"🤖 助手思考: {msg_resp.content}")
+                    print(f"🤖 助手回复: {msg_resp.content}")
                 if not msg_resp.tool_calls:
                     print("✅ 消息处理闭环结束。")
                     self.state = "idle"
                     break
 
-                for tool_call in msg_resp.tool_calls:
+                for idx, tool_call in enumerate(msg_resp.tool_calls):
                     original_tool_name = tool_call.function.name
                     target_tool_name = original_tool_name
                     arguments_str = tool_call.function.arguments
@@ -222,6 +199,14 @@ class Agent:
                             "name": original_tool_name,
                             "content": time_aware_content
                         })
+                        remaining_tools = msg_resp.tool_calls[idx+1:]
+                        for rem_tool in remaining_tools:
+                            self._append_history({
+                                "role": "tool",
+                                "tool_call_id": rem_tool.id,
+                                "name": rem_tool.function.name,
+                                "content": "任务已被挂起，当前工具执行跳过。"
+                            })
                         self.state = "idle"
                         return
 
@@ -234,7 +219,7 @@ class Agent:
                         "content": time_aware_content
                     })
 
-                self._checker(step)
+
 
             except KeyboardInterrupt:
                 self.state = "idle"
@@ -288,6 +273,8 @@ class Agent:
                 self._track_token_usage(response)
                 msg_resp = response.choices[0].message
                 assist_msg = {"role": "assistant", "content": msg_resp.content or ""}
+                if hasattr(msg_resp, "reasoning_content") and msg_resp.reasoning_content:
+                    assist_msg["reasoning_content"] = msg_resp.reasoning_content
                 if msg_resp.tool_calls:
                     assist_msg["tool_calls"] = [
                         {
@@ -370,32 +357,34 @@ class Agent:
             print(f"❌ 记忆存档发生异常: {e}")
 
     def sensor(self):
-        print("🟢 Agent 主核运转，正在监听优先队列...")
+        print("Agent 主核运转...")
         while not self._stop_event.is_set():
             try:
-                priority, timestamp, msg = MESSAGE_QUEUE.get(timeout=1)
-                self.process_message(msg)
-                MESSAGE_QUEUE.task_done()
-            except Empty:
-                continue
+                has_pending = False
+                with self._lock:
+                    if self.pending_force_push:
+                        has_pending = True
+                if has_pending:
+                    self.process_message()
+                time.sleep(1)
             except Exception as e:
-                print(f"❌ 队列处理异常: {e}")
+                print(f"❌ 主核运转异常: {e}")
+                time.sleep(1)
 
     def save_checkpoint(self, filepath="src/agent/checkpoint.json"):
         save_path = filepath or self.checkpoint_path
-        temp_path = f"{save_path}.tmp"  # 临时文件
+        temp_path = f"{save_path}.tmp"
         try:
-            # 1. 先把数据完整写入临时文件
             with open(temp_path, "w", encoding="utf-8") as f:
                 json.dump(self.current_history, f, ensure_ascii=False, indent=2)
-            
-            # 2. 写入成功后，瞬间替换原文件（原子操作，绝对安全）
             os.replace(temp_path, save_path)
         except Exception as e:
             print(f"⚠️ [Checkpoint] 保存检查点失败: {e}")
 
     @classmethod
-    def load_checkpoint(cls, filepath="src/agent/checkpoint.json", name="openai:deepseek-chat"):
+    def load_checkpoint(cls, filepath="src/agent/checkpoint.json", name=None):
+        if not name:
+            name = get_agent_model()
         agent = cls(name=name, checkpoint_path=filepath)
         try:
             if not os.path.exists(filepath):

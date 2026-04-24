@@ -95,7 +95,7 @@ class RSSListener:
         result_text = "\n".join(output_lines).strip()
         agent = get_agent()
         if agent:
-            agent.force_push(result_text, source="rss")
+            agent.force_push(result_text, type="rss")
         return result_text
 
 

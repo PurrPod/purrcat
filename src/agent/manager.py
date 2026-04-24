@@ -42,12 +42,12 @@ class AgentManager:
             raise RuntimeError("Agent 尚未初始化，请先调用 init_agent()")
         return self._agent
 
-    def force_push(self, content: str, source: str = None):
+    def force_push(self, content: str, type: str = "owner_message"):
         """全局便捷入口：强制推送消息"""
         if self._agent is None:
             print("⚠️ Agent 未初始化，无法推送消息")
             return
-        self._agent.force_push(content, source)
+        self._agent.force_push(content, type)
 
     def shutdown(self):
         """优雅关闭 Agent"""
