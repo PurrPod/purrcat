@@ -1,0 +1,252 @@
+/* 全局透明背景，让终端原生的颜色透过来 */
+Screen {
+    background: transparent;
+    color: #e4e4e7;
+    box-sizing: border-box;
+}
+
+/* 确保所有组件都使用border-box */
+* {
+    box-sizing: border-box;
+}
+
+/* 主容器：撑满全屏 */
+#main-layout {
+    layout: vertical;
+    width: 100%;
+    height: 100%;
+    box-sizing: border-box;
+}
+
+/* 原本的左侧区，现在占据全部宽度 */
+#left-pane {
+    width: 100%;
+    height: 100%;
+    layout: vertical;
+    padding: 0 1 0 0;
+    box-sizing: border-box;
+}
+
+/* === 顶部容器 === */
+#top-zone {
+    height: 1fr;
+    width: 100%;
+    border: round #ffffff;
+    layout: horizontal;
+    padding: 1 2;
+    margin-bottom: 1;
+    box-sizing: border-box;
+}
+
+#cat-ascii {
+    width: 15;
+    color: #d97706;
+    text-style: bold;
+    content-align: left middle;
+}
+
+#status-container {
+    width: 1fr;
+    layout: vertical;
+    align: right middle;
+}
+
+#sub-status {
+    color: #a1a1aa;
+    margin-bottom: 1;
+}
+
+ProgressBar {
+    height: 1;
+    align: right middle;
+}
+
+#token-progress {
+    align: right middle;
+    width: 100%;
+    text-align: right;
+}
+
+#token-progress.token-low {
+    color: #22c55e;
+}
+
+#token-progress.token-medium {
+    color: #eab308;
+}
+
+#token-progress.token-high {
+    color: #ef4444;
+}
+
+/* === 对话展示区 === */
+#chat-zone {
+    height: 3fr;
+    width: 100%;
+    border: round #ffffff;
+    border-title-color: #ffffff;
+    border-title-align: left;
+    padding: 0 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    margin-bottom: 1;
+    scrollbar-size: 1 1;
+    scrollbar-color: #52525b;
+}
+
+#chat-zone.hidden {
+    display: none;
+}
+
+/* === 角色文本样式 === */
+.role-user {
+    color: #71717a;
+    text-style: none;
+}
+
+.role-ai {
+    color: #e4e4e7;
+    text-style: bold;
+}
+
+ChatMessage {
+    margin-bottom: 1;
+    height: auto;
+    width: 100%;
+    padding-right: 2;
+    overflow-x: hidden;
+    box-sizing: border-box;
+}
+
+Markdown {
+    background: transparent;
+    color: #e4e4e7;
+    padding-left: 2;
+    width: 100%;
+    overflow-x: hidden;
+    box-sizing: border-box;
+}
+
+/* === 输入区 === */
+#input-zone {
+    height: 5;
+    width: 100%;
+    border: round #ffffff;
+    border-title-color: #ffffff;
+    border-title-align: left;
+    padding: 0 1;
+    layout: vertical;
+    box-sizing: border-box;
+}
+
+#input-row {
+    layout: horizontal;
+    height: 1fr;
+    width: 100%;
+    align: left top;
+    box-sizing: border-box;
+}
+
+#prompt-char {
+    width: 2;
+    height: 1;
+    color: #d97706;
+    text-style: bold;
+    content-align: center middle;
+}
+
+#chat-input {
+    width: 1fr;
+    height: 100%;
+    border: none;
+    background: transparent;
+    color: #e4e4e7;
+    padding: 0;
+    overflow-x: hidden;
+    box-sizing: border-box;
+}
+
+#chat-input:focus {
+    border: none;
+}
+
+/* === 选单区 (复用给会话切换与主题配置) === */
+#space-selector, #config-selector {
+    height: 3fr;
+    width: 100%;
+    border: round #ffffff;
+    border-title-color: #ffffff;
+    border-title-align: left;
+    margin-bottom: 1;
+    display: none;
+    background: transparent;
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-size: 1 1;
+    scrollbar-color: #52525b;
+}
+
+#space-selector.active, #config-selector.active {
+    display: block;
+}
+
+/* 选择器 Item 的样式 */
+#space-selector ListView, #config-selector ListView {
+    background: transparent;
+    border: none;
+    padding: 1 2;
+}
+
+#space-selector ListItem, #config-selector ListItem {
+    background: transparent;
+    padding: 0;
+    border: none;
+}
+
+#space-selector .nav-item, #config-selector .nav-item {
+    color: #a1a1aa;
+    padding: 1;
+}
+
+#space-selector ListItem:hover .nav-item, #config-selector ListItem:hover .nav-item {
+    color: #e4e4e7;
+}
+
+/* 高亮选中条保持白色边框，与主题色的外框形成高级对比 */
+#space-selector ListItem.--highlight .nav-item, #config-selector ListItem.--highlight .nav-item {
+    color: #fef3c7;
+    text-style: bold;
+    border-top: solid #ffffff;
+    border-bottom: solid #ffffff;
+    padding: 1 2;
+    margin: 0 -2;
+}
+
+#shortcut-hint {
+    height: 1;
+    color: #52525b;
+    text-align: right;
+    width: 100%;
+}
+
+.tool-header {
+    color: #d97706;
+    margin-top: 1;
+    margin-left: 2;
+}
+
+.tool-scanning {
+    color: #a1a1aa;
+    margin-left: 2;
+}
+
+.tool-result {
+    color: #f4f4f5;
+    margin-bottom: 1;
+    margin-left: 2;
+}
+
+ToolCallWidget {
+    height: auto;
+    width: 100%;
+}

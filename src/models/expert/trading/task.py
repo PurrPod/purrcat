@@ -5,7 +5,7 @@ from src.models.task import BaseTask
 
 # 导入解耦后的专家工具集与定义
 try:
-    from src.models.expert.trading.extend_tool import EXTEND_TOOL_FUNCTIONS, EXTEND_TOOLS_SCHEMA
+    from src.models.expert.trading.extend_tool.mock import EXTEND_TOOL_FUNCTIONS, EXTEND_TOOLS_SCHEMA
 except ImportError as e:
     print(f"⚠️ 交易专家扩展工具加载失败: {e}")
     EXTEND_TOOL_FUNCTIONS = {}
@@ -46,8 +46,8 @@ class TradingTask(
         }
     }
 ):
-    def __init__(self, task_name, prompt, core, judger, company_name, trade_date=None):
-        super().__init__(task_name, prompt, core, judger)
+    def __init__(self, task_name, prompt, core, company_name, trade_date=None):
+        super().__init__(task_name, prompt, core)
         self.company_name = company_name
         self.trade_date = trade_date or "Current"
         self.max_debate_rounds = 2

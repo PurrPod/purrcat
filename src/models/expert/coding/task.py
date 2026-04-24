@@ -6,7 +6,7 @@ from src.models.expert.coding.extend_tool.planning import PLAN_TOOL_SCHEMA, exec
 class CodingTask(
     BaseTask,
     expert_type="coding",
-    description="代码专家，负责独立完成工程代码的编写和测试",
+    description="代码专家，负责独立完成复杂的项目级工程代码的编写和测试",
     parameters={}
 ):
     """
@@ -14,10 +14,9 @@ class CodingTask(
     继承通用工作流，通过钩子注入计划能力和资深程序员的 System Prompt。
     """
 
-    def __init__(self, task_name, prompt, core, judger):
-        # 1. 独立维护专家的专属状态
+    def __init__(self, task_name, prompt, core):
         self.current_plan = ""
-        super().__init__(task_name, prompt, core, judger)
+        super().__init__(task_name, prompt, core)
 
     def _on_save_state(self) -> dict:
         """持久化专属状态"""
@@ -38,26 +37,6 @@ class CodingTask(
         if tool_name == "update_plan":
             return True, execute_update_plan(arguments, self)
         return False, ""
-
-    def _get_extra_context_messages(self) -> list:
-        """【覆盖】动态向 LLM 注入当前计划表上下文"""
-        if not self.current_plan:
-            plan_content = "暂未规划，等待调用 update_plan 工具初始化计划表 (action='init')"
-        else:
-            try:
-                p_dict = json.loads(self.current_plan)
-                plan_content = f"🎯 总目标: {p_dict.get('overall_goal', '未设定')}\n\n"
-                for s in p_dict.get("steps", []):
-                    status_icon = "✅" if s["status"] == "completed" else ("🏃" if s["status"] == "in_progress" else "⏳")
-                    plan_content += f"{status_icon} [ID: {s['id']}] {s['title']} ({s['status']})\n"
-                    if s.get("description"):
-                        plan_content += f"    📝 {s['description']}\n"
-            except:
-                plan_content = self.current_plan
-
-        current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        plan_context = f"【当前动态计划与系统状态】\n🕒 当前系统时间: {current_time}\n注意：可随时用 update_plan 工具修改计划\n\n{plan_content}"
-        return [{"role": "system", "content": plan_context}]
 
     def _build_system_prompt(self):
         """【覆盖】注入资深程序员的专业约束与沙盒环境说明"""

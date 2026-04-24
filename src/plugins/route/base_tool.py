@@ -15,7 +15,6 @@ from docker.errors import DockerException, NotFound
 
 import jieba
 import numpy as np
-from deep_translator import GoogleTranslator
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from src.utils.config import LOCAL_TOOL_YAML, TOOL_INDEX_FILE
@@ -132,7 +131,7 @@ BASE_TOOLS = [
                 "properties": {
                     "query": {
                         "type": "string",
-                        "description": "你想要搜索的功能的自然语言描述，例如 '帮我获取昨天力扣的每日一题' 或 '如何抓取某个网页的数据'"
+                        "description": "你想要搜索的功能的自然语言描述，例如 '力扣 每日一题' 或 '抓取网页数据'"
                     },
                     "top_k": {
                         "type": "integer",
@@ -151,7 +150,6 @@ class ToolSearcher:
     def __init__(self, jsonl_path: str):
         self.tools = []
         self.corpus = []
-        self.translator = GoogleTranslator(source='zh-CN', target='en')
         # 加载工具数据
         self._load_tools(jsonl_path)
         # 初始化并拟合 TF-IDF 模型
@@ -197,17 +195,8 @@ class ToolSearcher:
                 continue
             # 保留原词
             processed_tokens.append(word)
-            # 2. 对词汇进行翻译
-            # 为了避免把已经是英文的词也翻译一遍，可以加个简单的判断
-            if any('\u4e00' <= char <= '\u9fff' for char in word):
-                try:
-                    translated_word = self.translator.translate(word)
-                    if translated_word:
-                        processed_tokens.append(translated_word.lower())
-                except Exception as e:
-                    print(f"翻译 '{word}' 时出错: {e}")
-            else:
-                processed_tokens.append(word.lower())
+            # 2. 禁用网络翻译，直接保留原词的小写形式即可
+            processed_tokens.append(word.lower())
         # 3. 将处理后的特征词汇拼接成字符串
         expanded_query = " ".join(processed_tokens)
         return expanded_query
@@ -412,7 +401,6 @@ class SkillSearcher:
     def __init__(self, skill_dir: Path):
         self.skills = []
         self.corpus = []
-        self.translator = GoogleTranslator(source='zh-CN', target='en' )
         # 加载技能数据
         self._load_skills(skill_dir)
         # 初始化并拟合 TF-IDF 模型
@@ -447,26 +435,17 @@ class SkillSearcher:
 
     def _process_query(self, query: str) -> str:
         """
-        核心处理逻辑（与 ToolSearcher 相同）：
-        分词 -> 翻译扩展 -> 拼接
+        核心处理逻辑：
+        分词 -> 直接保留小写形式
         """
         words = jieba.lcut(query)
         processed_tokens = []
-        for word in  words:
+        for word in words:
             word = word.strip()
-            if len(word) == 0 or word in "，。！？、,!?()（）" :
+            if len(word) == 0 or word in "，。！？、,!?()（）":
                 continue
-            processed_tokens.append(word)
-            if any('\u4e00' <= char <= '\u9fff' for char in  word):
-                try :
-                    translated_word = self.translator.translate(word)
-                    if  translated_word:
-                        processed_tokens.append(translated_word.lower())
-                except Exception as  e:
-                    print(f"翻译 '{word}' 时出错: {e}")
-            else :
-                processed_tokens.append(word.lower())
-        return " " .join(processed_tokens)
+            processed_tokens.append(word.lower())
+        return " ".join(processed_tokens)
 
     def search(self, query: str, top_k: int = 3) -> list:
         """执行搜索并返回匹配度最高的前 K 个技能"""
