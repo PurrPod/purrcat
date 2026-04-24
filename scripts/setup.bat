@@ -9,22 +9,7 @@ echo ==========================================
 :: 1. 自动检测与安装基础依赖
 echo 🔍 检查并补全系统依赖...
 
-:: 检测并安装 Node.js
-where npm >nul 2>&1
-if %ERRORLEVEL% neq 0 (
-    echo ⚠️ 未检测到 Node.js，正在自动下载安装包...
-    :: 下载 Node.js 20 LTS 版本的 MSI 安装包
-    curl -o nodejs_setup.msi "https://nodejs.org/dist/v20.12.2/node-v20.12.2-x64.msi"
-    echo ⏳ 正在静默安装 Node.js，请稍候...
-    :: /qn 表示静默安装，/norestart 表示不自动重启
-    start /wait msiexec /i nodejs_setup.msi /qn /norestart
-    del nodejs_setup.msi
-    :: 将 Node.js 临时加入当前运行环境的变量中，防止后续 npm 找不到
-    set "PATH=%PATH%;C:\Program Files\nodejs"
-    echo ✅ Node.js 安装完成！
-) else (
-    echo ✅ Node.js 已安装。
-)
+
 
 :: 检测并安装 Miniconda
 where conda >nul 2>&1
@@ -91,12 +76,7 @@ echo 🐍 正在配置 CatInCup 专属 Conda 环境...
 call "%USERPROFILE%\Miniconda3\condabin\conda.bat" env create -f environment.yml || call conda env create -f environment.yml
 echo ✅ Conda 环境配置完成！
 
-:: 4. 配置 Next.js 前端环境
-echo ⚛️ 正在配置前端依赖...
-cd ui
-call npm install
-cd ..
-echo ✅ 前端依赖安装完成！
+
 
 echo ==========================================
 echo 🎉 部署大功告成！CatInCup 已经完全准备就绪。

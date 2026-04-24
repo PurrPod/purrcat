@@ -8,7 +8,6 @@ echo "=========================================="
 # 1. 检查基础依赖
 echo "🔍 检查系统依赖..."
 command -v conda >/dev/null 2>&1 || { echo >&2 "❌ 未找到 conda，请先安装 Miniconda 或 Anaconda。"; exit 1; }
-command -v npm >/dev/null 2>&1 || { echo >&2 "❌ 未找到 npm，请先安装 Node.js。"; exit 1; }
 command -v docker >/dev/null 2>&1 || { echo >&2 "❌ 未找到 docker，请先安装 Docker。"; exit 1; }
 echo "✅ 基础依赖检查通过！"
 
@@ -38,12 +37,7 @@ else
 fi
 echo "✅ Conda 环境配置完成！"
 
-# 4. 配置 Next.js 前端环境
-echo "⚛️ 正在配置前端依赖..."
-cd ui
-npm install
-cd ..
-echo "✅ 前端依赖安装完成！"
+
 
 echo "=========================================="
 echo "🎉 部署完成！CatInCup 已经准备就绪。"
