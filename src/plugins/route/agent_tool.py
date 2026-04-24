@@ -76,11 +76,11 @@ def add_task(
         try:
             result = single_task.run()
             task_id = single_task.task_id
-            notify_msg = f"🔔 [系统通知] 后台子任务 '{name}' (ID: {task_id}) 已执行完毕。结果交付如下：\n{result}"
+            notify_msg = f"任务 '{name}' (ID: {task_id}) 已执行完毕，结果交付如下：\n{result}"
             add_message({"type": "task_message", "content": notify_msg})
         except Exception as e:
             single_task.state = "error"
-            error_msg = f"❌ [系统通知] 您派发的后台子任务 '{name}' (ID: {single_task.task_id})执行崩溃，原因: {e}"
+            error_msg = f"任务 '{name}' (ID: {single_task.task_id}) 执行崩溃，原因：\n {e}"
             add_message({"type": "task_message", "content": error_msg})
 
     t = threading.Thread(target=_run_task, daemon=True)
@@ -88,7 +88,7 @@ def add_task(
     return _format_response("text", (
         f"✅ 任务 '{name}' 已提交到后台线程执行。\n"
         f"ID : {single_task.task_id}\n"
-        f"请注意：任务不会立即完成。您可以继续处理其他事务，系统会在执行完毕后发消息通知您"
+        f"任务不会立即完成，您可以继续处理其他事务，系统会在执行完毕后发消息通知您"
     ))
 
 
@@ -129,11 +129,11 @@ def submit_request(task_id: str, new_prompt: str = "继续执行") -> str:
         from src.agent.agent import add_message
         try:
             result = task.submit_request(new_prompt)
-            notify_msg = f"🔔 [系统通知] 任务 '{task.task_name}' (ID: {task_id}) 处理追加指令完毕。\n{result}"
+            notify_msg = f"任务 '{task.task_name}' (ID: {task_id}) 处理追加指令完毕。\n{result}"
             add_message({"type": "task_message", "content": notify_msg})
         except Exception as e:
             task.state = "error"
-            error_msg = f"❌ [系统通知] 任务 '{task.task_name}' (ID: {task_id}) 处理指令崩溃: {e}"
+            error_msg = f"任务 '{task.task_name}' (ID: {task_id}) 处理指令崩溃：\n{e}"
             add_message({"type": "task_message", "content": error_msg})
 
     t = threading.Thread(target=_inject_and_resume, daemon=True)

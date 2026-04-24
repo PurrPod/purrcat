@@ -7,6 +7,7 @@ from textual.containers import Vertical, Horizontal, VerticalScroll
 from textual.widgets import Static, Markdown, ProgressBar, ListView, ListItem, TextArea
 from textual.events import Event, Key
 
+from src.models import task as task_module
 from tui.api import (
     get_task_list, get_agent_history, get_task_history, force_push_agent, force_push_task,
     get_window_token, get_task_window_token, get_agent_max_token, get_task_max_token
@@ -34,9 +35,12 @@ class ToolCallWidget(Vertical):
             self._timer = self.set_interval(0.1, self._update_scan)
 
     def _update_scan(self):
-        if self._scanning:
+        if self._scanning and self.is_mounted: # 🟢 增加 is_mounted 保护
             self._scan_pos = (self._scan_pos + 1) % len(self._frames)
-            self.scan_label.update(f"  {self._frames[self._scan_pos]} 正在执行...")
+            try:
+                self.scan_label.update(f"  {self._frames[self._scan_pos]} 正在执行...")
+            except Exception:
+                pass
 
     def finish(self, result: str):
         self._scanning = False
@@ -95,9 +99,12 @@ class ChatMessage(Vertical):
                 self._start_typing()
 
     def _update_spinner(self):
-        if hasattr(self, "md_widget"):
-            self.md_widget.update(self._frames[self._frame_index])
-            self._frame_index = (self._frame_index + 1) % len(self._frames)
+        if hasattr(self, "md_widget") and self.is_mounted: # 🟢 增加 is_mounted 保护
+            try:
+                self.md_widget.update(self._frames[self._frame_index])
+                self._frame_index = (self._frame_index + 1) % len(self._frames)
+            except Exception:
+                pass
 
     def _start_typing(self):
         if hasattr(self, "_spinner_timer"):
@@ -142,7 +149,8 @@ class ChatInput(TextArea):
         except AttributeError:
             pass
 
-    def on_key(self, event: Key) -> None:
+    # 🟢 1. 加上 async
+    async def on_key(self, event: Key) -> None:
         if event.key == "ctrl+o":
             event.prevent_default()
             self.insert("\n")
@@ -150,7 +158,12 @@ class ChatInput(TextArea):
             event.prevent_default()
             text = self.text.strip()
             if text == "/switch":
-                self.app.query_one(MainView).show_space_selector()
+                # 🟢 2. 加上 await
+                await self.app.query_one(MainView).show_space_selector()
+                self.clear()
+            # 🟢 新增：拦截 /config 指令
+            elif text == "/config":
+                await self.app.query_one(MainView).show_config_selector()
                 self.clear()
             elif text:
                 self.app.query_one(MainView).handle_chat_submit(text)
@@ -159,6 +172,18 @@ class ChatInput(TextArea):
 
 # ================= 主视图：去掉侧边栏，改为 List 选择 =================
 class MainView(Vertical):
+    # 🟢 新增：彩虹颜色预设表
+    RAINBOW_COLORS = [
+        {"id": "theme-white", "name": "⚪ 默认 (White)", "color": "#ffffff"},
+        {"id": "theme-red", "name": "🔴 绯红 (Red)", "color": "#ef4444"},
+        {"id": "theme-orange", "name": "🟠 橘黄 (Orange)", "color": "#f97316"},
+        {"id": "theme-yellow", "name": "🟡 明黄 (Yellow)", "color": "#eab308"},
+        {"id": "theme-green", "name": "🟢 翠绿 (Green)", "color": "#22c55e"},
+        {"id": "theme-cyan", "name": "🩵 青色 (Cyan)", "color": "#06b6d4"},
+        {"id": "theme-blue", "name": "🔵 蔚蓝 (Blue)", "color": "#3b82f6"},
+        {"id": "theme-purple", "name": "🟣 紫罗兰 (Purple)", "color": "#a855f7"},
+        {"id": "theme-pink", "name": "🩷 猛男粉 (Pink)", "color": "#ec4899"},
+    ]
     def compose(self) -> ComposeResult:
         with Vertical(id="left-pane"):
             top_zone = Horizontal(id="top-zone")
@@ -166,7 +191,7 @@ class MainView(Vertical):
             with top_zone:
                 yield Static("  /\\_/\\\n ( O_O )\n  |>  <|⟆", id="cat-ascii")
                 with Vertical(id="status-container"):
-                    yield Static("[░░░░░░░░░░░░░░░░] 0%", id="token-progress")
+                    yield Static("Token Window: [░░░░░░░░░░░░░░░░] 0%", id="token-progress")
             chat_zone = VerticalScroll(id="chat-zone")
             chat_zone.border_title = "Chat History /"
             yield chat_zone
@@ -174,6 +199,11 @@ class MainView(Vertical):
             space_selector = ListView(id="space-selector")
             space_selector.border_title = "Select Space (Use Up/Down to Navigate, Enter to Select) /"
             yield space_selector
+
+            # 🟢 新增：将配置选择器渲染到 DOM 中
+            config_selector = ListView(id="config-selector")
+            config_selector.border_title = "Theme Config (Select a color) /"
+            yield config_selector
 
             input_zone = Vertical(id="input-zone")
             input_zone.border_title = "Chat Input (Ctrl+o for new line, /switch to change space) /"
@@ -219,7 +249,8 @@ class MainView(Vertical):
                 self._blink_counter = 0
                 self._blink_state = (self._blink_state + 1) % 3
 
-    def show_space_selector(self) -> None:
+    # 🟢 1. 加上 async
+    async def show_space_selector(self) -> None:
         self.is_selecting = True
 
         chat_zone = self.query_one("#chat-zone")
@@ -227,8 +258,11 @@ class MainView(Vertical):
 
         chat_zone.add_class("hidden")
         space_selector.add_class("active")
+        self.query_one("#config-selector").remove_class("active") # 🟢 新增：打开切换任务时，确保主题菜单关闭
 
-        space_selector.clear()
+        # 🟢 2. 加上 await！强制等待旧节点销毁完毕，避免 ID 冲突
+        await space_selector.clear()
+
         space_selector.append(ListItem(Static("Main Space", classes="nav-item"), id="nav-main"))
         tasks = get_task_list()
         for task in tasks:
@@ -236,6 +270,25 @@ class MainView(Vertical):
                 ListItem(Static(f"Task: {task['name']}", classes="nav-item"), id=f"task-{task['id']}"))
 
         space_selector.focus()
+
+    # 🟢 新增：弹出主题颜色菜单
+    async def show_config_selector(self) -> None:
+        self.is_selecting = True
+        chat_zone = self.query_one("#chat-zone")
+        space_selector = self.query_one("#space-selector")
+        config_selector = self.query_one("#config-selector")
+
+        chat_zone.add_class("hidden")
+        space_selector.remove_class("active")
+        config_selector.add_class("active")
+
+        await config_selector.clear()
+
+        for color_option in self.RAINBOW_COLORS:
+            config_selector.append(
+                ListItem(Static(color_option["name"], classes="nav-item"), id=color_option["id"])
+            )
+        config_selector.focus()
 
     @on(ListView.Selected, "#space-selector")
     def switch_space(self, event: ListView.Selected):
@@ -249,11 +302,60 @@ class MainView(Vertical):
         chat_zone.remove_class("hidden")
         self.query_one("#chat-input").focus()
 
-        for child in chat_zone.children:
-            child.remove()
+        # 🟢 终极修复：彻底抛弃 remove_children()！用显示/隐藏代替销毁/重建
+        if self.current_space == "nav-main":
+            # 切回 Main：隐藏所有 Task 的组件，显示 Main 的组件
+            for child in chat_zone.children:
+                if child.id and str(child.id).startswith("task-log-widget"):
+                    child.display = False
+                else:
+                    child.display = True
+            chat_zone.scroll_end(animate=False)
+        else:
+            # 切到 Task：只显示当前 Task 的组件，把 Main 的气泡全藏起来
+            current_task_id = self.current_space.replace("task-", "")
+            target_widget_id = f"task-log-widget-{current_task_id}"
+            for child in chat_zone.children:
+                if child.id == target_widget_id:
+                    child.display = True
+                else:
+                    child.display = False
 
-        self.rendered_msg_counts[self.current_space] = 0
-        self.tool_widgets.clear()
+        # ⚠️ 极其重要：删掉原本清空 rendered_msg_counts 和 tool_widgets 的两行代码！
+        # 让 nav-main 记住它已经渲染了多少条消息，切回来时直接复用，绝不从头渲染！
+        
+        self.refresh_chat_state()
+
+    # 🟢 新增：捕获菜单选择并动态修改整个 TUI 的边框颜色
+    @on(ListView.Selected, "#config-selector")
+    def switch_theme(self, event: ListView.Selected):
+        selected_id = event.item.id
+        
+        # 🟢 修复：从预设表中根据 ID 查找对应的颜色 Hex 值
+        color_hex = "#ffffff" # 默认值
+        for option in self.RAINBOW_COLORS:
+            if option["id"] == selected_id:
+                color_hex = option["color"]
+                break
+
+        self.is_selecting = False
+        chat_zone = self.query_one("#chat-zone")
+        config_selector = self.query_one("#config-selector")
+
+        config_selector.remove_class("active")
+        chat_zone.remove_class("hidden")
+        self.query_one("#chat-input").focus()
+
+        # 动态修改边框颜色
+        zones = ["#top-zone", "#chat-zone", "#space-selector", "#config-selector", "#input-zone"]
+        for zone_id in zones:
+            try:
+                widget = self.query_one(zone_id)
+                widget.styles.border = ("round", color_hex)
+                widget.styles.border_title_color = color_hex
+            except Exception:
+                pass
+
         self.refresh_chat_state()
 
     def handle_chat_submit(self, text: str):
@@ -291,41 +393,62 @@ class MainView(Vertical):
 
         filled = int(percentage / 5)
         bar = "█" * filled + "░" * (20 - filled)
-        progress.update(f"[{bar}] {int(percentage)}%")
+        progress.update(f"Token Window: [{bar}] {int(percentage)}%")
 
         chat_zone = self.query_one("#chat-zone")
 
+        # ================= 结合 Dirty Task 的极致优化 =================
         if self.current_space != "nav-main":
             task_id = self.current_space.replace("task-", "")
-            import os
-            from src.utils.config import DATA_DIR
+            widget_id = f"task-log-widget-{task_id}"
+            
+            needs_update = False
+            log_widget = None
 
-            task_dir = None
-            checkpoints_dir = os.path.join(DATA_DIR, "checkpoints", "task")
-            if os.path.exists(checkpoints_dir):
-                for dir_name in os.listdir(checkpoints_dir):
-                    if dir_name.endswith(f"_{task_id}"):
-                        task_dir = os.path.join(checkpoints_dir, dir_name)
-                        break
+            # 1. 判断是否是刚切进来（DOM里还没这个任务的 Widget）
+            try:
+                log_widget = chat_zone.query_one(f"#{widget_id}", Static)
+            except Exception:
+                needs_update = True  # 没找到说明是首次渲染
+            
+            # 2. 检查内存中的 Dirty 标记 (O(1) 极速操作)
+            with task_module.task_set_lock:
+                if task_id in task_module.dirty_tasks:
+                    needs_update = True
+                    # 消费掉这个 dirty 标记，代表 UI 已经知晓并准备更新
+                    task_module.dirty_tasks.remove(task_id)
 
-            if task_dir:
-                log_path = os.path.join(task_dir, "log.jsonl")
+            # 🎈 核心拦截：如果没变脏，且不是首次渲染，直接退出！无磁盘 IO，无 DOM 操作！
+            if not needs_update:
+                return
+
+            # 3. 只有确认需要更新时，才去读取磁盘日志
+            tasks = get_task_list()
+            task_info = next((t for t in tasks if str(t['id']) == task_id), None)
+            log_content = f"暂无日志内容 (未找到任务 {task_id})"
+            
+            if task_info and "checkpoint_dir" in task_info:
+                log_path = os.path.join(task_info["checkpoint_dir"], "log.jsonl")
+                if os.path.exists(log_path):
+                    try:
+                        with open(log_path, "r", encoding="utf-8") as f:
+                            log_content = f.read()
+                    except Exception:
+                        pass
+
+            # 4. 挂载或更新 UI
+            if log_widget:
+                # 已经是脏的了，直接全量塞进去即可
+                log_widget.update(log_content)
+                log_widget.display = True # 确保它可见
             else:
-                log_path = f"data/checkpoints/task/unknown_task_{task_id}/log.jsonl"
-
-            if os.path.exists(log_path):
-                with open(log_path, "r", encoding="utf-8") as f:
-                    log_content = f.read()
-            else:
-                log_content = f"暂无日志内容 (未找到 {log_path})"
-
-            for child in chat_zone.children:
-                child.remove()
-
-            chat_zone.mount(Static(log_content, id=f"task-log-widget-{task_id}"))
+                # 🟢 修复：首次进入该 Task，直接 mount 挂载（千万不要清空容器了！）
+                new_widget = Static(log_content, id=widget_id)
+                chat_zone.mount(new_widget)
+            
             chat_zone.scroll_end(animate=False)
-
             return
+        # ================================================================
 
         history = get_agent_history()
         rendered_count = self.rendered_msg_counts.get(self.current_space, 0)

@@ -31,7 +31,7 @@ Screen {
 #top-zone {
     height: 1fr;
     width: 100%;
-    border: round #d97706;
+    border: round #ffffff;
     layout: horizontal;
     padding: 1 2;
     margin-bottom: 1;
@@ -83,8 +83,8 @@ ProgressBar {
 #chat-zone {
     height: 3fr;
     width: 100%;
-    border: round #d97706;
-    border-title-color: #d97706;
+    border: round #ffffff;
+    border-title-color: #ffffff;
     border-title-align: left;
     padding: 0 1;
     overflow-y: auto;
@@ -131,8 +131,8 @@ Markdown {
 #input-zone {
     height: 5;
     width: 100%;
-    border: round #a855f7;
-    border-title-color: #a855f7;
+    border: round #ffffff;
+    border-title-color: #ffffff;
     border-title-align: left;
     padding: 0 1;
     layout: vertical;
@@ -170,12 +170,12 @@ Markdown {
     border: none;
 }
 
-/* === 会话选择器区 === */
-#space-selector {
+/* === 选单区 (复用给会话切换与主题配置) === */
+#space-selector, #config-selector {
     height: 3fr;
     width: 100%;
-    border: round #d97706;
-    border-title-color: #d97706;
+    border: round #ffffff;
+    border-title-color: #ffffff;
     border-title-align: left;
     margin-bottom: 1;
     display: none;
@@ -186,37 +186,38 @@ Markdown {
     scrollbar-color: #52525b;
 }
 
-#space-selector.active {
+#space-selector.active, #config-selector.active {
     display: block;
 }
 
 /* 选择器 Item 的样式 */
-#space-selector ListView {
+#space-selector ListView, #config-selector ListView {
     background: transparent;
     border: none;
     padding: 1 2;
 }
 
-#space-selector ListItem {
+#space-selector ListItem, #config-selector ListItem {
     background: transparent;
     padding: 0;
     border: none;
 }
 
-#space-selector .nav-item {
+#space-selector .nav-item, #config-selector .nav-item {
     color: #a1a1aa;
     padding: 1;
 }
 
-#space-selector ListItem:hover .nav-item {
+#space-selector ListItem:hover .nav-item, #config-selector ListItem:hover .nav-item {
     color: #e4e4e7;
 }
 
-#space-selector ListItem.--highlight .nav-item {
+/* 高亮选中条保持白色边框，与主题色的外框形成高级对比 */
+#space-selector ListItem.--highlight .nav-item, #config-selector ListItem.--highlight .nav-item {
     color: #fef3c7;
     text-style: bold;
-    border-top: solid #d97706;
-    border-bottom: solid #d97706;
+    border-top: solid #ffffff;
+    border-bottom: solid #ffffff;
     padding: 1 2;
     margin: 0 -2;
 }

@@ -329,7 +329,7 @@ class BaseTask:
         return message.tool_calls if getattr(message, "tool_calls", None) else []
 
     def log_and_notify(self, card_type: str, content: str, metadata: dict = None):
-        log_dir = os.path.join(DATA_DIR, "checkpoints", "task", f"{self.task_name}_{self.create_time}")
+        log_dir = os.path.join(DATA_DIR, "checkpoints", "task", f"{self.task_name}_{self.task_id}")
         os.makedirs(log_dir, exist_ok=True)
         log_data = {
             "task_id": self.task_id,

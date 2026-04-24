@@ -129,7 +129,7 @@ class Agent:
         msg_type = message.get("type")
         msg_content = message.get("content")
         print(f"\n🔔 [Agent 抓取消息] 类型: {msg_type} | 内容: {msg_content}")
-        self._append_history({"role": "user", "content": f"🔔 收到系统消息 (类型: {msg_type}):\n{msg_content}"})
+        self._append_history({"role": "user", "content": f"<|{msg_type}|>:\n{msg_content}"})
 
         max_steps = 1000
 

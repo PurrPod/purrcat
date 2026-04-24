@@ -11,7 +11,7 @@ def init_local_config_data():
             f.write("")
     
     # 强制重新注册所有必需插件
-    required_plugins = ["web", "database", "filesystem", "shell", "schedule", "multimodal"]
+    required_plugins = ["web", "database", "filesystem", "schedule", "multimodal"]
     for plugin in required_plugins:
         try:
             register_plugin(plugin)
@@ -61,7 +61,6 @@ def register_plugin(plugin_name: str) -> bool:
 
 
 def unregister_plugin(plugin_name: str) -> bool:
-    print(f"正在尝试注销插件: {plugin_name} ...")
     try:
         current = {}
         if os.path.exists(LOCAL_TOOL_YAML):
@@ -88,5 +87,4 @@ if __name__ == "__main__":
     init_local_config_data()
     # 测试注册和注销功能
     register_plugin("web")
-    register_plugin("feishu")
-    unregister_plugin("web")
+

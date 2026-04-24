@@ -11,8 +11,6 @@ from src.sensor.const import start_sensors
 # 引入 agent 模块核心
 from src.agent import agent as agent_module
 from src.sensor.feishu import start_lark_sensor
-
-# 引入你的主视图
 from tui.views.chat import MainView
 
 # 全局暴露给 tui/api.py 调用（如同 backend.py 中的 global agent）
