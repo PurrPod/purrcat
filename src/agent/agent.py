@@ -11,7 +11,7 @@ from src.plugins.plugin_manager import parse_tool
 from src.plugins.route.agent_tool import AGENT_TOOLS
 from src.plugins.route.base_tool import BASE_TOOLS
 from src.utils.config import (
-    get_agent_model, SOUL_MD_PATH, CHECKPOINT_PATH, TOOL_INDEX_FILE
+    get_agent_model, SOUL_MD_PATH, SYSTEM_RULES_DIR, CHECKPOINT_PATH, TOOL_INDEX_FILE
 )
 
 from json_repair import repair_json
@@ -54,6 +54,20 @@ class Agent:
                     soul_md = f.read().strip()
         except Exception as e:
             print(f"⚠️ 读取 SOUL.md 失败: {e}")
+        system_rules = ""
+        try:
+            if os.path.exists(SYSTEM_RULES_DIR):
+                rule_files = sorted([
+                    f for f in os.listdir(SYSTEM_RULES_DIR)
+                    if f.endswith(".md")
+                ])
+                for rf in rule_files:
+                    filepath = os.path.join(SYSTEM_RULES_DIR, rf)
+                    with open(filepath, "r", encoding="utf-8") as f:
+                        system_rules += f.read().strip() + "\n\n"
+                system_rules = system_rules.strip()
+        except Exception as e:
+            print(f"⚠️ 读取 system_rules 目录失败: {e}")
         memory_md = ""
         try:
             if os.path.exists(MEMORY_MD_PATH):
@@ -62,6 +76,8 @@ class Agent:
         except Exception as e:
             print(f"⚠️ 读取 memory.md 失败: {e}")
         combined_prompt = soul_md
+        if system_rules:
+            combined_prompt += f"\n\n---\n\n{system_rules}"
         if memory_md:
             combined_prompt += f"\n\n---\n\n# 【系统长期记忆档案】\n\n{memory_md}"
         return combined_prompt

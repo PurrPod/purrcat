@@ -196,7 +196,13 @@ def send_message(channel: str, content: str, mode: str) -> str:
 
 import threading
 MEMO_FILE_LOCK = threading.Lock()
-def update_memo(short_term: str, long_term: str = None) -> str:
+def update_memo(
+    short_term: str = None,
+    long_term: str = None,
+    decisions: str = None,
+    reminders: str = None,
+    project_state: str = None
+) -> str:
     """更新系统备忘录，并异步触发核心档案更新"""
     def _update_core_information(flush_data: str):
         def background_task():
@@ -240,10 +246,19 @@ def update_memo(short_term: str, long_term: str = None) -> str:
                     }
                 }
             ]
-            system_prompt = """你是一个专门负责知识库维护的后台记忆整理中枢。
-你的任务是将【新产生的关键记忆】智能（注意：不是简单的追加！！！要有判断和分析）地合并到【现存的核心记忆文档】中。
-你必须先调用 get 获取当前文档，然后结合新记忆，最后必须调用 update 工具写入新文档。
-保持文档精简，少废话。"""
+            system_prompt = """你是一个专门负责知识库维护的后台记忆整理中枢，核心职责是**严格筛选，宁缺毋滥**。
+
+铁律：不是每条信息都值得写入核心档案。如果判断后认为没有长期价值，**直接丢弃，保持文档不变**——这种情况下你仍然需要调用 update 写入原封不动的内容。
+
+你的任务：
+1. 先用 get 获取当前文档
+2. 逐条判断新记忆是否真的有长期保留价值：
+   - ✅ **值得写**：稳定的行为习惯（如"commit 用英文"）、性格偏好、关键架构决策、反复出现的避坑经验
+   - ❌ **直接丢**：一次性事件、临时状态、情绪化表达、与现有记录重复的信息、无关紧要的细节
+3. 只有判断为"有价值"的，才智能合并到现有文档中（合并去重，不是简单追加）
+4. 如果新信息已被现有记录覆盖或更具体，优先保留更精确的版本
+5. 最后必须调用 update 写入最终文档
+6. 保持文档极度精简，每条记录一句话以内。"""
             user_prompt = f"【新产生的近期记忆备忘录】:\n{flush_data}"
             bg_model = Model(get_agent_model())
             messages = [
@@ -291,8 +306,17 @@ def update_memo(short_term: str, long_term: str = None) -> str:
         thread = threading.Thread(target=background_task)
         thread.daemon = True
         thread.start()
+    # 分层记忆策略：
+    # - long_term / decisions → 触发后台 LLM 筛选后写入 memory.md
+    # - short_term / reminders / project_state → 仅本地缓存，不写核心档案
+    flush_parts = []
     if long_term:
-        _update_core_information(long_term)
+        flush_parts.append(f"[长期用户画像]\n{long_term}")
+    if decisions:
+        flush_parts.append(f"[关键决策记录]\n{decisions}")
+    if flush_parts:
+        flush_data = "\n\n---\n\n".join(flush_parts)
+        _update_core_information(flush_data)
     return _format_response("text", f"✅ 备忘录更新成功")
 
 AGENT_TOOLS = [
@@ -300,12 +324,15 @@ AGENT_TOOLS = [
         "type": "function",
         "function": {
             "name": "update_memo",
-            "description": "在系统提示记忆压缩时更新备忘录。分离短期状态缓存与长期用户画像。",
+            "description": "在系统提示记忆压缩时更新备忘录，支持多维度记忆类型。",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "short_term": {"type": "string", "description": "当前工作细节、挂起任务、临时全局变量等短期上下文。"},
-                    "long_term": {"type": "string", "description": "提炼出的用户长期偏好、性格画像或核心避坑经验。"}
+                    "short_term": {"type": "string", "description": "短期工作状态：当前处理的任务细节、挂起步骤、临时变量等即时上下文。"},
+                    "long_term": {"type": "string", "description": "长期用户画像：用户性格偏好、行为习惯（如commit用英文）、核心避坑经验等需要长期记住的信息。"},
+                    "decisions": {"type": "string", "description": "关键决策记录：技术选型、架构决策、方案取舍等重要的历史决策及其理由。"},
+                    "reminders": {"type": "string", "description": "待办提醒：需要后续跟进的未完成任务、待处理事项。"},
+                    "project_state": {"type": "string", "description": "项目状态：当前项目的整体进度、关键上下文、已完成和待完成的工作。"}
                 },
                 "required": ["short_term"]
             }
@@ -370,7 +397,7 @@ AGENT_TOOLS = [
             "parameters": {
                 "type": "object",
                 "properties": {},
-                "required": []
+                "required": ["short_term"]
             }
         }
     },
