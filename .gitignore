@@ -1,6 +1,7 @@
 data/config/
 
 agent_vm/
+
 data/checkpoints
 .buffer/
 scripts/start_mini.bat
