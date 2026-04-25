@@ -334,7 +334,7 @@ AGENT_TOOLS = [
                     "reminders": {"type": "string", "description": "待办提醒：需要后续跟进的未完成任务、待处理事项。"},
                     "project_state": {"type": "string", "description": "项目状态：当前项目的整体进度、关键上下文、已完成和待完成的工作。"}
                 },
-                "required": []
+                "required": ["short_term"]
             }
         }
     },
@@ -397,7 +397,7 @@ AGENT_TOOLS = [
             "parameters": {
                 "type": "object",
                 "properties": {},
-                "required": []
+                "required": ["short_term"]
             }
         }
     },
