@@ -246,10 +246,14 @@ def update_memo(
                     }
                 }
             ]
-            system_prompt = """你是一个专门负责知识库维护的后台记忆整理中枢。
-你的任务是将【新产生的关键记忆】智能（注意：不是简单的追加！！！要有判断和分析）地合并到【现存的核心记忆文档】中。
-你必须先调用 get 获取当前文档，然后结合新记忆，最后必须调用 update 工具写入新文档。
-保持文档精简，少废话。"""
+            system_prompt = """你是一个专门负责知识库维护的后台记忆整理中枢，核心职责是**严格筛选**。
+你的任务：
+1. 必须先用 get 获取当前文档
+2. **严格判断**新记忆是否具有长期保留价值（如用户性格偏好、行为习惯、关键决策、避坑经验等）
+3. 如果新记忆只是临时状态、一次性事件、过时信息或无关紧要的内容，**直接丢弃，不要写入文档**
+4. 只有判断为"有价值"的内容，才智能合并到现有文档中（注意：不是简单追加，要合并去重）
+5. 最后必须调用 update 写入全新文档
+6. 保持文档极度精简，只保留最核心的长期价值信息。"""
             user_prompt = f"【新产生的近期记忆备忘录】:\n{flush_data}"
             bg_model = Model(get_agent_model())
             messages = [
@@ -297,18 +301,14 @@ def update_memo(
         thread = threading.Thread(target=background_task)
         thread.daemon = True
         thread.start()
-    # 合并所有非空记忆维度，统一交给后台整理
+    # 分层记忆策略：
+    # - long_term / decisions → 触发后台 LLM 筛选后写入 memory.md
+    # - short_term / reminders / project_state → 仅本地缓存，不写核心档案
     flush_parts = []
-    if short_term:
-        flush_parts.append(f"[短期工作状态]\n{short_term}")
     if long_term:
         flush_parts.append(f"[长期用户画像]\n{long_term}")
     if decisions:
         flush_parts.append(f"[关键决策记录]\n{decisions}")
-    if reminders:
-        flush_parts.append(f"[待办提醒]\n{reminders}")
-    if project_state:
-        flush_parts.append(f"[项目状态]\n{project_state}")
     if flush_parts:
         flush_data = "\n\n---\n\n".join(flush_parts)
         _update_core_information(flush_data)
@@ -328,7 +328,8 @@ AGENT_TOOLS = [
                     "decisions": {"type": "string", "description": "关键决策记录：技术选型、架构决策、方案取舍等重要的历史决策及其理由。"},
                     "reminders": {"type": "string", "description": "待办提醒：需要后续跟进的未完成任务、待处理事项。"},
                     "project_state": {"type": "string", "description": "项目状态：当前项目的整体进度、关键上下文、已完成和待完成的工作。"}
-                }
+                },
+                "required": []
             }
         }
     },
