@@ -196,7 +196,13 @@ def send_message(channel: str, content: str, mode: str) -> str:
 
 import threading
 MEMO_FILE_LOCK = threading.Lock()
-def update_memo(short_term: str, long_term: str = None) -> str:
+def update_memo(
+    short_term: str = None,
+    long_term: str = None,
+    decisions: str = None,
+    reminders: str = None,
+    project_state: str = None
+) -> str:
     """更新系统备忘录，并异步触发核心档案更新"""
     def _update_core_information(flush_data: str):
         def background_task():
@@ -291,8 +297,21 @@ def update_memo(short_term: str, long_term: str = None) -> str:
         thread = threading.Thread(target=background_task)
         thread.daemon = True
         thread.start()
+    # 合并所有非空记忆维度，统一交给后台整理
+    flush_parts = []
+    if short_term:
+        flush_parts.append(f"[短期工作状态]\n{short_term}")
     if long_term:
-        _update_core_information(long_term)
+        flush_parts.append(f"[长期用户画像]\n{long_term}")
+    if decisions:
+        flush_parts.append(f"[关键决策记录]\n{decisions}")
+    if reminders:
+        flush_parts.append(f"[待办提醒]\n{reminders}")
+    if project_state:
+        flush_parts.append(f"[项目状态]\n{project_state}")
+    if flush_parts:
+        flush_data = "\n\n---\n\n".join(flush_parts)
+        _update_core_information(flush_data)
     return _format_response("text", f"✅ 备忘录更新成功")
 
 AGENT_TOOLS = [
@@ -300,14 +319,16 @@ AGENT_TOOLS = [
         "type": "function",
         "function": {
             "name": "update_memo",
-            "description": "在系统提示记忆压缩时更新备忘录。分离短期状态缓存与长期用户画像。",
+            "description": "在系统提示记忆压缩时更新备忘录，支持多维度记忆类型。",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "short_term": {"type": "string", "description": "当前工作细节、挂起任务、临时全局变量等短期上下文。"},
-                    "long_term": {"type": "string", "description": "提炼出的用户长期偏好、性格画像或核心避坑经验。"}
-                },
-                "required": ["short_term"]
+                    "short_term": {"type": "string", "description": "短期工作状态：当前处理的任务细节、挂起步骤、临时变量等即时上下文。"},
+                    "long_term": {"type": "string", "description": "长期用户画像：用户性格偏好、行为习惯（如commit用英文）、核心避坑经验等需要长期记住的信息。"},
+                    "decisions": {"type": "string", "description": "关键决策记录：技术选型、架构决策、方案取舍等重要的历史决策及其理由。"},
+                    "reminders": {"type": "string", "description": "待办提醒：需要后续跟进的未完成任务、待处理事项。"},
+                    "project_state": {"type": "string", "description": "项目状态：当前项目的整体进度、关键上下文、已完成和待完成的工作。"}
+                }
             }
         }
     },
