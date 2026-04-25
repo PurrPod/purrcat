@@ -3,7 +3,7 @@ setlocal enabledelayedexpansion
 :: 设置控制台为 UTF-8 编码，防止中文乱码
 chcp 65001 >nul
 cd /d "%~dp0.."
-echo 🐱 欢迎安装 CatInCup 环境 (Windows 自动构建版)...
+echo 🐱 欢迎安装 PurrCat 环境 (Windows 自动构建版)...
 echo ==========================================
 
 :: 1. 自动检测与安装基础依赖
@@ -71,7 +71,7 @@ if %BUILD_SUCCESS% equ 0 (
 echo ✅ Docker 沙盒镜像构建成功！
 
 :: 3. 配置 Python 后端环境 (Conda)
-echo 🐍 正在配置 CatInCup 专属 Conda 环境...
+echo 🐍 正在配置 PurrCat 专属 Conda 环境...
 :: 为了确保刚安装的 conda 命令能立即生效，直接调用绝对路径的 conda.bat
 call "%USERPROFILE%\Miniconda3\condabin\conda.bat" env create -f environment.yml || call conda env create -f environment.yml
 echo ✅ Conda 环境配置完成！
@@ -79,6 +79,6 @@ echo ✅ Conda 环境配置完成！
 
 
 echo ==========================================
-echo 🎉 部署大功告成！CatInCup 已经完全准备就绪。
+echo 🎉 部署大功告成！PurrCat 已经完全准备就绪。
 echo 👉 请双击运行 start.bat 来启动项目。
 pause

@@ -14,7 +14,7 @@ from src.sensor.feishu import start_lark_sensor
 from tui.views.chat import MainView
 
 
-class CatInCupTUI(App):
+class PurrCatTUI(App):
     CSS_PATH = "styles/main.tcss"
 
     BINDINGS = [

@@ -81,7 +81,7 @@ class ChatMessage(Vertical):
             yield Static("> User", classes="role-user")
             yield Markdown(self.text)
         elif self.role == "assistant":
-            yield Static("● CatInCup", classes="role-ai")
+            yield Static("● PurrCat", classes="role-ai")
             if self.text and str(self.text).strip():
                 self.md_widget = Markdown(self.text)
                 yield self.md_widget
@@ -185,7 +185,7 @@ class MainView(Vertical):
     def compose(self) -> ComposeResult:
         with Vertical(id="left-pane"):
             top_zone = Horizontal(id="top-zone")
-            top_zone.border_title = "CatInCup v1.0.0 /"
+            top_zone.border_title = "PurrCat v1.0.0 /"
             with top_zone:
                 yield Static("  /\\_/\\\n ( O_O )\n  |>  <|⟆", id="cat-ascii")
                 with Vertical(id="status-container"):

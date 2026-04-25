@@ -75,7 +75,7 @@ class TradingTask(
         }
 
     def _get_available_tools(self):
-        """组装工人可见的工具集：CatInCup 基础工具 + 交易领域专用工具"""
+        """组装工人可见的工具集：PurrCat 基础工具 + 交易领域专用工具"""
         tools = []
         try:
             from src.plugins.route.base_tool import BASE_TOOLS

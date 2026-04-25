@@ -2,7 +2,7 @@
 # 遇到错误立即退出
 set -e
 cd "$(dirname "$0")/.."
-echo "🐱 欢迎安装 CatInCup 环境 (macOS / Linux)..."
+echo "🐱 欢迎安装 PurrCat 环境 (macOS / Linux)..."
 echo "=========================================="
 
 # 1. 检查基础依赖
@@ -29,7 +29,7 @@ fi
 # 3. 配置 Python 后端环境
 echo "🐍 正在配置 Conda 环境..."
 eval "$(conda shell.bash hook)"
-if conda info --envs | grep -q 'CatInCup'; then
+if conda info --envs | grep -q 'PurrCat'; then
     echo "⚠️ 环境已存在，尝试更新..."
     conda env update -f environment.yml --prune
 else
@@ -40,5 +40,5 @@ echo "✅ Conda 环境配置完成！"
 
 
 echo "=========================================="
-echo "🎉 部署完成！CatInCup 已经准备就绪。"
+echo "🎉 部署完成！PurrCat 已经准备就绪。"
 echo "👉 请运行 ./start.sh 来启动项目。"

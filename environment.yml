@@ -1,4 +1,4 @@
-name: CatInCup
+name: PurrCat
 channels:
   - conda-forge
   - pytorch
