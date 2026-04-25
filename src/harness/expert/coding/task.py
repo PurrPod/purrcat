@@ -1,21 +1,33 @@
 import json
 import datetime
+import os
 from src.harness.task import BaseTask
 from src.harness.expert.coding.extend_tool.planning import PLAN_TOOL_SCHEMA, execute_update_plan
+from src.harness.expert.coding.extend_tool import (
+    EXTEND_TOOLS_SCHEMA,
+    EXTEND_TOOL_FUNCTIONS,
+)
 
 class CodingTask(
     BaseTask,
     expert_type="coding",
     description="代码专家，负责独立完成复杂的项目级工程代码的编写和测试",
-    parameters={}
+    parameters={
+        "project_root": {
+            "type": "string",
+            "description": "项目根目录绝对路径，所有文件操作将被限制在此目录内",
+            "required": True
+        }
+    }
 ):
     """
     代码编写与架构专家任务。
     继承通用工作流，通过钩子注入计划能力和资深程序员的 System Prompt。
     """
 
-    def __init__(self, task_name, prompt, core):
+    def __init__(self, task_name, prompt, core, project_root=None):
         self.current_plan = ""
+        self.project_root = project_root or os.getcwd()
         super().__init__(task_name, prompt, core)
 
     def _on_save_state(self) -> dict:
@@ -27,13 +39,18 @@ class CodingTask(
         self.current_plan = state.get("extra_state", {}).get("current_plan", "")
 
     def get_available_tools(self) -> list:
-        """【覆盖】为代码专家注入独占的计划工具 Schema"""
+        """【覆盖】为代码专家注入计划工具 + 扩展工具集"""
         tools = super().get_available_tools()
         tools.append(PLAN_TOOL_SCHEMA)
+        tools.extend(EXTEND_TOOLS_SCHEMA)
         return tools
 
     def _handle_expert_tool(self, tool_name: str, arguments: dict) -> tuple[bool, str]:
         """【覆盖】拦截并执行专家的 Extend Tool"""
+        # 先查扩展工具集（file_edit, code_search, file_read, lsp）
+        if tool_name in EXTEND_TOOL_FUNCTIONS:
+            return True, EXTEND_TOOL_FUNCTIONS[tool_name](arguments, self)
+        # 再查计划工具
         if tool_name == "update_plan":
             return True, execute_update_plan(arguments, self)
         return False, ""
@@ -44,11 +61,38 @@ class CodingTask(
 你是一名资深软件设计架构师与工程专家，拥有十年以上大规模系统开发经验。你不仅实现功能，更对代码的长期可维护性、健壮性、性能与安全性负责。
 
 # 你的工作环境简介
-- **沙盒环境**：你有一个自己的沙盒环境，也就是你的私人电脑，映射为老板电脑的物理地址（当前工作目录的）agent_vm文件夹下。可用命令行工具直接访问，你可以在沙盒环境的/agent_vm下进行工作，在沙盒里你有绝对的控制权和读写权，可以运行脚本、任意修改文件、运行命令行。注意：你的文件必须保存在/agent_vm下才不会被销毁！
-- **老板电脑**：你使用filesystem等插件系列工具，访问的都是老板的电脑，也就是说，你只有通过命令行才会进入沙盒环境（或者，直接访问老板电脑当前工作目录的agent_vm文件夹，这个文件夹会映射到你的沙盒环境），其余时间你都会被分配到老板的电脑上，在老板的电脑上，你具有只读权限和修改少部分文件的权限。
-- **环境区分**：你要时刻区分自己在哪个环境下工作，一般来说根目录有/agent_vm就是沙盒环境
+
+本系统存在**两层文件系统**，你必须理解其映射关系才能正确工作：
+
+### 1. 沙盒环境（Docker 容器）
+- **访问方式**：通过 `execute_command` 工具（所有 shell 命令都在沙盒中执行）
+- **根目录**：`/agent_vm/`
+- **特点**：可以运行脚本、编译代码、执行测试、安装依赖
+- **限制**：**只能访问 `/agent_vm/` 目录下的文件**，无法访问宿主机其他位置
+- **注意**：文件必须保存在 `/agent_vm/` 下才不会被销毁
+
+### 2. 宿主机环境（老板的电脑）
+- **访问方式**：通过扩展工具（`file_edit`, `file_read`, `code_search`, `lsp`）
+- **项目根目录**：`{self.project_root}`（你被授权在此目录范围内工作）
+- **特点**：可以读写项目文件、搜索代码、分析代码结构
+- **限制**：所有文件操作**不得越界**到项目根目录之外
+
+### 3. 两层环境的映射关系
+关键要记住：**宿主机上的 `agent_vm/` 目录 等价于 沙盒里的 `/agent_vm/` 目录。**
+
+```
+宿主机:  {self.project_root} （extend_tool 可以读写）
+宿主机:  ./agent_vm/  ─── 映射 ───→  沙盒: /agent_vm/（execute_command 可以读写）
+```
+
+所以你的工作流应该是：
+1. **编辑代码** → 用 `file_edit`/`file_read`/`code_search`（宿主机，项目目录内）
+2. **运行测试/编译** → 用 `execute_command`（沙盒，确保文件在 `/agent_vm/` 下可访问）
+3. **跨环境操作**：如果项目不在 `/agent_vm/` 下，需要用 `execute_command` 的 `cp` 或 `ln` 把代码同步到沙盒才能运行；或者用 `file_read` 读取文件后，再用 `execute_command` 在沙盒中重建
 
 # 工具使用注意事项
+- **`file_edit`/`file_read`/`code_search`/`lsp`**：这些 extend_tool 操作宿主机文件，路径会被校验必须在 `{self.project_root}` 内
+- **`execute_command`**：运行在 Docker 沙盒，只能访问 `/agent_vm/` 目录
 - **命令行工具**：每次使用 cat >> 写入时，严禁超过 50 行代码，写完 50 行必须结束当前工具调用，在下一次回复中继续追加。
 
 # 核心设计原则
