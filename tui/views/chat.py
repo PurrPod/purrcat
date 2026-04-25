@@ -9,6 +9,7 @@ from textual.events import Event, Key
 from src.harness import task as task_module
 from tui.api import (
     get_task_list, get_agent_history, get_task_history, force_push_agent, force_push_task,
+    flush_agent_memory,
     get_window_token, get_task_window_token, get_agent_max_token, get_task_max_token,
     format_task_log
 )
@@ -164,6 +165,33 @@ class ChatInput(TextArea):
             elif text == "/config":
                 await self.app.query_one(MainView).show_config_selector()
                 self.clear()
+            elif text == "/help":
+                help_text = (
+                    "**PurrCat 命令列表**\n\n"
+                    "/help   - 显示此帮助信息\n"
+                    "/flush  - 强制压缩主 Agent 记忆，归档早期对话\n"
+                    "/switch - 切换聊天空间（主 Agent / 子任务）\n"
+                    "/config - 切换配置视图\n"
+                    "\n**快捷键**\n"
+                    "`Ctrl+O` - 换行\n"
+                    "`Ctrl+Q` - 退出程序"
+                )
+                chat_zone = self.app.query_one(MainView).query_one("#chat-zone")
+                chat_zone.mount(Markdown(help_text, classes="help-message"))
+                chat_zone.scroll_end(animate=False)
+                self.clear()
+            elif text == "/flush":
+                chat_zone = self.app.query_one(MainView).query_one("#chat-zone")
+                status = Markdown("⏳ 正在压缩主 Agent 记忆，请稍候...", classes="help-message")
+                chat_zone.mount(status)
+                chat_zone.scroll_end(animate=False)
+                self.clear()
+                # 触发记忆压缩
+                success = flush_agent_memory()
+                if success:
+                    status.update("✅ 主 Agent 记忆压缩完成，早期对话已归档。")
+                else:
+                    status.update("❌ 记忆压缩失败：Agent 未初始化")
             elif text:
                 self.app.query_one(MainView).handle_chat_submit(text)
                 self.clear()

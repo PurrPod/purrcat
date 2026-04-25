@@ -21,6 +21,17 @@ def force_push_agent(text: str):
     agent = get_agent()
     if agent:
         agent.force_push(text, type="user")
+        return True
+    return False
+
+
+def flush_agent_memory():
+    """强制触发主 Agent 记忆压缩与归档"""
+    agent = get_agent()
+    if agent:
+        agent._check_and_summarize_memory(check_mode=False)
+        return True
+    return False
 
 
 def get_window_token():
