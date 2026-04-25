@@ -2,7 +2,7 @@ import os
 import json
 import datetime
 import copy
-from src.models import task as task_module
+from src.harness import task as task_module
 from src.utils.config import DATA_DIR
 from src.agent.manager import get_agent
 
@@ -114,7 +114,7 @@ def get_task_list():
 
 def get_agent_max_token():
     """获取 agent 触发记忆压缩的 token 阈值 (agent.py 源码硬编码)"""
-    return 100000
+    return 1000000
 
 
 def get_task_max_token():
@@ -125,7 +125,7 @@ def get_task_max_token():
 def get_task_window_token(task_id: str):
     """获取指定任务的 window_token"""
     import os, json
-    from src.models.task import TASK_INSTANCES
+    from src.harness.task import TASK_INSTANCES
     from src.utils.config import DATA_DIR
 
     task_instance = TASK_INSTANCES.get(task_id)
@@ -149,7 +149,7 @@ def get_task_window_token(task_id: str):
 
 def format_task_log(task_id: str) -> str:
     """解析并格式化任务的日志输出，按card_type分组展示"""
-    from src.models.task import TASK_INSTANCES
+    from src.harness.task import TASK_INSTANCES
 
     task_instance = TASK_INSTANCES.get(task_id)
     if task_instance and hasattr(task_instance, 'checkpoint_dir'):

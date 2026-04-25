@@ -1,11 +1,11 @@
 import json
 import threading
 import concurrent.futures
-from src.models.task import BaseTask
+from src.harness.task import BaseTask
 
 # 导入解耦后的专家工具集与定义
 try:
-    from src.models.expert.trading.extend_tool.mock import EXTEND_TOOL_FUNCTIONS, EXTEND_TOOLS_SCHEMA
+    from src.harness.expert.trading.extend_tool.mock import EXTEND_TOOL_FUNCTIONS, EXTEND_TOOLS_SCHEMA
 except ImportError as e:
     print(f"⚠️ 交易专家扩展工具加载失败: {e}")
     EXTEND_TOOL_FUNCTIONS = {}
@@ -13,7 +13,7 @@ except ImportError as e:
 
 # 延迟导入底层基础设施
 try:
-    from src.models.model import Model
+    from src.model.model import Model
 except ImportError:
     Model = None
 

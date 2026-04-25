@@ -1,7 +1,7 @@
 import json
 import datetime
-from src.models.task import BaseTask
-from src.models.expert.coding.extend_tool.planning import PLAN_TOOL_SCHEMA, execute_update_plan
+from src.harness.task import BaseTask
+from src.harness.expert.coding.extend_tool.planning import PLAN_TOOL_SCHEMA, execute_update_plan
 
 class CodingTask(
     BaseTask,

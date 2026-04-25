@@ -5,7 +5,7 @@ import json
 import threading
 import uuid
 from src.loader.memory import Memory
-from src.models.model import Model
+from src.model.model import Model
 from src.plugins.plugin_manager import parse_tool
 
 from src.plugins.route.agent_tool import AGENT_TOOLS
@@ -40,14 +40,12 @@ class Agent:
         self.model.bind_task(self.agent_session_id, "AgentMain")
         self.system_prompt = self._build_system_prompt()
         self.current_history = [{"role": "system", "content": self.system_prompt}]
-        self.max_len = 150
         self.memory = Memory()
         self.checkpoint_path = checkpoint_path or CHECKPOINT_PATH
         self.pending_force_push = []
         self._lock = threading.Lock()
         self.window_token = 0
         self._stop_event = threading.Event()
-
     def _build_system_prompt(self):
         soul_md = ""
         try:
@@ -114,8 +112,18 @@ class Agent:
                 msg_resp = response.choices[0].message
                 assist_msg = {"role": "assistant", "content": msg_resp.content or ""}
 
+                # 兼容读取 reasoning_content
+                rc = getattr(msg_resp, "reasoning_content", None)
+                if rc is None and hasattr(msg_resp, "model_dump"):
+                    rc = msg_resp.model_dump().get("reasoning_content")
+                
+                # 只有当 API 真的返回了这个字段（说明是思考模型），我们才加入字典
+                if rc is not None:
+                    assist_msg["reasoning_content"] = rc
+
                 if hasattr(msg_resp, "reasoning_content") and msg_resp.reasoning_content:
-                    assist_msg["reasoning_content"] = msg_resp.reasoning_content
+                    # 仅用于控制台打印
+                    pass
                 if msg_resp.tool_calls:
                     assist_msg["tool_calls"] = [
                         {
@@ -227,10 +235,12 @@ class Agent:
                 if self.current_history and self.current_history[-1].get("role") == "assistant" and self.current_history[-1].get("tool_calls"):
                     self.current_history.pop()
                     print("⚠️ 已自动撤销未完成的 tool_calls 记录")
-                self.current_history.append({
-                    "role": "assistant",
-                    "content": "⚠️ [系统提示] Agent 运行被用户或系统强制中断 (Ctrl+C)。"
-                })
+                
+                fake_msg = {"role": "assistant", "content": "⚠️ [系统提示] Agent 运行被用户或系统强制中断 (Ctrl+C)。"}
+                if any("reasoning_content" in msg for msg in self.current_history if msg.get("role") == "assistant"):
+                    fake_msg["reasoning_content"] = ""
+                self.current_history.append(fake_msg)
+                
                 self.save_checkpoint()
                 raise
             except Exception as e:
@@ -239,10 +249,12 @@ class Agent:
                 if self.current_history and self.current_history[-1].get("role") == "assistant" and self.current_history[-1].get("tool_calls"):
                     self.current_history.pop()
                     print("⚠️ 已自动撤销引发异常的 tool_calls 记录")
-                self.current_history.append({
-                    "role": "assistant",
-                    "content": f"❌ [系统报错] Agent 遭遇意外交互断层，当前处理已终止。错误信息：{e}"
-                })
+                
+                fake_msg = {"role": "assistant", "content": f"❌ [系统报错] Agent 遭遇意外交互断层，当前处理已终止。错误信息：{e}"}
+                if any("reasoning_content" in msg for msg in self.current_history if msg.get("role") == "assistant"):
+                    fake_msg["reasoning_content"] = ""
+                self.current_history.append(fake_msg)
+                
                 self.save_checkpoint()
                 break
         try:
@@ -252,7 +264,7 @@ class Agent:
 
     def _check_and_summarize_memory(self, check_mode=True):
         max_tokens = 100000
-        if check_mode and len(self.current_history) < 150 and self.window_token < max_tokens:
+        if check_mode and self.window_token < max_tokens:
             return
         print(f"🗜️ 记忆容量到达 {len(self.current_history)} 条 (约 {self.window_token} tokens)，触发自我归档...")
         original_len = len(self.current_history)
@@ -273,8 +285,14 @@ class Agent:
                 self._track_token_usage(response)
                 msg_resp = response.choices[0].message
                 assist_msg = {"role": "assistant", "content": msg_resp.content or ""}
+                rc = getattr(msg_resp, "reasoning_content", None)
+                if rc is None and hasattr(msg_resp, "model_dump"):
+                    rc = msg_resp.model_dump().get("reasoning_content")
+                if rc is not None:
+                    assist_msg["reasoning_content"] = rc
                 if hasattr(msg_resp, "reasoning_content") and msg_resp.reasoning_content:
-                    assist_msg["reasoning_content"] = msg_resp.reasoning_content
+                    # 仅用于控制台打印
+                    pass
                 if msg_resp.tool_calls:
                     assist_msg["tool_calls"] = [
                         {
@@ -347,6 +365,11 @@ class Agent:
                 split_idx = start_idx
             system_msg = {"role": "system", "content": self._build_system_prompt()}
             summary_msg = {"role": "assistant", "content": f"【当前工作状态与短期缓存】\n{short_term_content}"}
+            
+            # 【核心补丁】：如果历史记录里的 assistant 消息包含 reasoning_content，说明当前用的是思考模型，必须补全该字段
+            if any("reasoning_content" in msg for msg in self.current_history if msg.get("role") == "assistant"):
+                summary_msg["reasoning_content"] = ""
+
             self.current_history = [system_msg] + self.current_history[split_idx:original_len] + [summary_msg]
             self.system_prompt = self._build_system_prompt()
             self.current_history[0]["content"] = self.system_prompt

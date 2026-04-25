@@ -6,7 +6,7 @@ from textual.containers import Vertical, Horizontal, VerticalScroll
 from textual.widgets import Static, Markdown, ProgressBar, ListView, ListItem, TextArea
 from textual.events import Event, Key
 
-from src.models import task as task_module
+from src.harness import task as task_module
 from tui.api import (
     get_task_list, get_agent_history, get_task_history, force_push_agent, force_push_task,
     get_window_token, get_task_window_token, get_agent_max_token, get_task_max_token,
@@ -26,7 +26,8 @@ class ToolCallWidget(Vertical):
 
     def compose(self) -> ComposeResult:
         args_str = json.dumps(self.arguments, ensure_ascii=False)
-        yield Static(f"{self.tool_name}({args_str})", classes="tool-header")
+        # 禁用标记语言解析，避免代码内容被错误解析
+        yield Static(f"{self.tool_name}({args_str})", classes="tool-header", markup=False)
         yield self.scan_label
 
     def on_mount(self):
@@ -114,7 +115,8 @@ class ChatMessage(Vertical):
         self._typing_index = 0
         if self._typing_timer:
             self._typing_timer.stop()
-        self._typing_timer = self.set_interval(0.005, self._type_next_char)
+        # 加快打字机效果速度，从 0.005 秒调整为 0.001 秒
+        self._typing_timer = self.set_interval(0.001, self._type_next_char)
 
     def _type_next_char(self):
         if self._typing_index < len(self._target_text):
@@ -149,7 +151,6 @@ class ChatInput(TextArea):
         except AttributeError:
             pass
 
-    # 🟢 1. 加上 async
     async def on_key(self, event: Key) -> None:
         if event.key == "ctrl+o":
             event.prevent_default()
@@ -158,10 +159,8 @@ class ChatInput(TextArea):
             event.prevent_default()
             text = self.text.strip()
             if text == "/switch":
-                # 🟢 2. 加上 await
                 await self.app.query_one(MainView).show_space_selector()
                 self.clear()
-            # 🟢 新增：拦截 /config 指令
             elif text == "/config":
                 await self.app.query_one(MainView).show_config_selector()
                 self.clear()
@@ -172,7 +171,6 @@ class ChatInput(TextArea):
 
 # ================= 主视图：去掉侧边栏，改为 List 选择 =================
 class MainView(Vertical):
-    # 🟢 新增：彩虹颜色预设表
     RAINBOW_COLORS = [
         {"id": "theme-white", "name": "默认 (White)", "color": "#ffffff"},
         {"id": "theme-red", "name": "绯红 (Red)", "color": "#ef4444"},
@@ -249,7 +247,6 @@ class MainView(Vertical):
                 self._blink_counter = 0
                 self._blink_state = (self._blink_state + 1) % 3
 
-    # 🟢 1. 加上 async
     async def show_space_selector(self) -> None:
         self.is_selecting = True
 
@@ -258,9 +255,7 @@ class MainView(Vertical):
 
         chat_zone.add_class("hidden")
         space_selector.add_class("active")
-        self.query_one("#config-selector").remove_class("active") # 🟢 新增：打开切换任务时，确保主题菜单关闭
-
-        # 🟢 2. 加上 await！强制等待旧节点销毁完毕，避免 ID 冲突
+        self.query_one("#config-selector").remove_class("active")
         await space_selector.clear()
 
         space_selector.append(ListItem(Static("Main Space", classes="nav-item"), id="nav-main"))
@@ -271,7 +266,6 @@ class MainView(Vertical):
 
         space_selector.focus()
 
-    # 🟢 新增：弹出主题颜色菜单
     async def show_config_selector(self) -> None:
         self.is_selecting = True
         chat_zone = self.query_one("#chat-zone")

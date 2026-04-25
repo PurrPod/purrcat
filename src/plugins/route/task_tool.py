@@ -1,6 +1,6 @@
 import json
 from typing import Any
-from src.models.task import BaseTask
+from src.harness.task import BaseTask
 
 def _format_response(msg_type: str, content: Any) -> str:
     return json.dumps({"type": msg_type, "content": content}, ensure_ascii=False)

@@ -5,7 +5,7 @@ import os
 from typing import Any
 
 # 补充引入了原本就存在的 kill_task，为了防止与本文件的同名工具函数冲突，起个别名 core_kill_task
-from src.models.task import BaseTask, TASK_INSTANCES, DATA_DIR, inject_task_instruction, kill_task as core_kill_task, TaskFactory, auto_discover_experts
+from src.harness.task import BaseTask, TASK_INSTANCES, DATA_DIR, inject_task_instruction, kill_task as core_kill_task, TaskFactory, auto_discover_experts
 from src.utils.config import get_models_config
 
 # 先确保在文件顶部触发了扫描
@@ -110,7 +110,7 @@ def submit_request(task_id: str, new_prompt: str = "继续执行") -> str:
                         with open(ckpt_path, "r", encoding="utf-8") as f:
                             state = json.load(f)
                         if state.get("task_id") == task_id:
-                            from src.models.task import auto_discover_experts
+                            from src.harness.task import auto_discover_experts
                             auto_discover_experts()
                             expert_type = state.get("expert_type", "BaseTask")
                             if expert_type in BaseTask._EXPERT_REGISTRY:
@@ -160,7 +160,7 @@ def kill_task(task_id: str) -> str:
 
 def list_worker() -> str:
     """获取当前所有模型节点及其专属线程的清单（包含实时空闲状态）。"""
-    from src.models.model import LLMDispatcher
+    from src.model.model import LLMDispatcher
     from src.utils.config import get_models_config
     dispatcher = LLMDispatcher()
     models = get_models_config()
@@ -200,7 +200,7 @@ def update_memo(short_term: str, long_term: str = None) -> str:
     """更新系统备忘录，并异步触发核心档案更新"""
     def _update_core_information(flush_data: str):
         def background_task():
-            from src.models.model import Model
+            from src.model.model import Model
             from src.utils.config import get_agent_model
             from src.utils.config import SRC_DIR
             profile_path = os.path.join(SRC_DIR, "agent", "core", "memory.md")

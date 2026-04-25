@@ -10,7 +10,7 @@ import glob
 
 from json_repair import repair_json
 
-from src.models.model import Model
+from src.model.model import Model
 from src.utils.config import TOOL_INDEX_FILE, DATA_DIR
 
 TASK_INSTANCES = {}
@@ -106,7 +106,7 @@ class BaseTask:
 
     def _build_system_prompt(self):
         return """# 角色定义
-你是一个运行任务执行专家。你的核心任务是理解老板下发的需求，并合理调度工具高效解决问题。
+你是一个任务执行专家。你的核心任务是理解老板下发的需求，并合理调度工具高效解决问题。
 
 # 环境指南：沙盒与老板电脑
 1. **沙盒环境**：你的专属安全工作区，仅使用命令行工具可以访问，物理路径包含 `/agent_vm`。在这里你有绝对的控制权，可以自由编写代码、运行脚本、克隆项目。所有危险、未知的操作必须在此进行。
@@ -655,7 +655,7 @@ def auto_discover_experts():
             expert_path = os.path.join(expert_root, expert_name)
             task_file = os.path.join(expert_path, "task.py")
             if os.path.isfile(task_file):
-                module_name = f"src.models.expert.{expert_name}.task"
+                module_name = f"src.harness.expert.{expert_name}.task"
                 try:
                     importlib.import_module(module_name)
                     module_count += 1
