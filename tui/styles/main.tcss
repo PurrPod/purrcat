@@ -186,8 +186,25 @@ Markdown {
     scrollbar-color: #52525b;
 }
 
-#space-selector.active, #config-selector.active {
+#space-selector.active, #config-selector.active, #help-guide.active {
     display: block;
+}
+
+/* 📖 Guide Book */
+#help-guide {
+    height: 3fr;
+    width: 100%;
+    border: round #ffffff;
+    border-title-color: #ffffff;
+    border-title-align: left;
+    margin-bottom: 1;
+    display: none;
+    background: transparent;
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-size: 1 1;
+    scrollbar-color: #52525b;
+    padding: 0 1;
 }
 
 /* 选择器 Item 的样式 */
