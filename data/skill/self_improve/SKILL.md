@@ -1,13 +1,13 @@
 ---
 name: self_improve
-description: "Use this skill whenever the user or another agent wants to extend the system's own capabilities. This includes: creating new skills, writing new Expert tasks (harness), adding new extend_tools, modifying the agent's SOUL.md personality, or understanding how the CatInCup framework can be modified to add new functionality. Do NOT use this for general coding tasks that are not about modifying CatInCup itself."
+description: "Use this skill whenever the user or another agent wants to extend the system's own capabilities. This includes: creating new skills, writing new Expert tasks (harness), adding new extend_tools, modifying the agent's SOUL.md personality, or understanding how the PurrCat framework can be modified to add new functionality. Do NOT use this for general coding tasks that are not about modifying PurrCat itself."
 ---
 
-# CatInCup 自我提升指南
+# PurrCat 自我提升指南
 
 ## 概述
 
-CatInCup 提供了多层扩展机制，按复杂度从低到高排列：
+PurrCat 提供了多层扩展机制，按复杂度从低到高排列：
 
 ```
 改 SOUL.md（调性格）→ 写 Skill（加能力包）→ 加 Expert（定制工作流）→ 写 Plugin（底层工具）
@@ -22,7 +22,7 @@ CatInCup 提供了多层扩展机制，按复杂度从低到高排列：
 ### 关键目录结构
 
 ```
-cat-in-cup/
+purrcat/
 ├── src/
 │   ├── agent/
 │   │   ├── SOUL.md              # Agent 人格定义（改性格改这里）
