@@ -5,6 +5,10 @@ import copy
 from src.harness import task as task_module
 from src.utils.config import DATA_DIR
 from src.agent.manager import get_agent
+import os as _os
+
+# ── format_task_log cache ──
+_task_log_cache = {}  # task_id -> (mtime, size, formatted_text)
 
 # ---------------------------------------------------------
 # Agent 相关接口
