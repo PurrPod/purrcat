@@ -226,23 +226,17 @@ def format_task_log(task_id: str) -> str:
         sections[key].append(f"[{time_str}] {content}")
 
     if not sections:
-        return f"暂无日志内容 (任务 {task_id})"
+        return f"Task {task_id}: no log content."
 
     output_parts = []
-    output_parts.append("=" * 60)
-    output_parts.append(f"📋 Task Log ({len(lines)} entries)")
-    output_parts.append("=" * 60)
+    output_parts.append(f"── Task Log ({len(lines)} entries) ──")
 
     order_priority = ["system", "thought", "tool_call", "tool", "warning", "error", "plan"]
+    compact_labels = {"system": "SYS", "thought": "THT", "tool_call": "TCL", "tool": "TOL", "warning": "WRN", "error": "ERR", "plan": "PLN"}
 
     for (card_type, prefix), entries in sorted(sections.items(), key=lambda x: order_priority.index(x[0][0]) if x[0][0] in order_priority else 99):
-        output_parts.append("")
-        output_parts.append(f"{prefix} [{card_type.upper()}] ({len(entries)} entries)")
-        output_parts.append("-" * 40)
+        label = compact_labels.get(card_type, card_type.upper())
         for entry in entries:
-            output_parts.append(f"  {entry}")
-
-    output_parts.append("")
-    output_parts.append("=" * 60)
+            output_parts.append(f" [{label}] {entry}")
 
     return "\n".join(output_parts)

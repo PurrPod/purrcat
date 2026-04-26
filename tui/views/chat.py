@@ -246,6 +246,7 @@ class MainView(Vertical):
         self.is_selecting = False
         self.rendered_msg_counts = {"nav-main": 0}
         self.tool_widgets = {}
+        self._task_switch_pending = False
 
         self.query_one("#chat-input", ChatInput).focus()
         self.set_interval(0.25, self.blink_cat)
@@ -372,14 +373,14 @@ class MainView(Vertical):
                     child.display = True
             chat_zone.scroll_end(animate=False)
         else:
-            # 切到 Task：只显示当前 Task 的组件，把 Main 的气泡全藏起来
-            current_task_id = self.current_space.replace("task-", "")
-            target_widget_id = f"task-log-widget-{current_task_id}"
+            # 切到 Task：隐藏主空间的聊天气泡
             for child in chat_zone.children:
-                if child.id == target_widget_id:
-                    child.display = True
-                else:
+                if not (child.id and str(child.id).startswith("task-log-widget")):
                     child.display = False
+                else:
+                    child.display = True
+            # 标记需要强制刷新日志
+            self._task_switch_pending = True
 
         # ⚠️ 极其重要：删掉原本清空 rendered_msg_counts 和 tool_widgets 的两行代码！
         # 让 nav-main 记住它已经渲染了多少条消息，切回来时直接复用，绝不从头渲染！
@@ -486,6 +487,11 @@ class MainView(Vertical):
                     # 消费掉这个 dirty 标记，代表 UI 已经知晓并准备更新
                     task_module.dirty_tasks.remove(task_id)
 
+            # 3. 如果是刚切换过来，强制刷新
+            if getattr(self, '_task_switch_pending', False):
+                needs_update = True
+                self._task_switch_pending = False
+
             # 🎈 核心拦截：如果没变脏，且不是首次渲染，直接退出！无磁盘 IO，无 DOM 操作！
             if not needs_update:
                 return
@@ -493,11 +499,10 @@ class MainView(Vertical):
             # 3. 只有确认需要更新时，才去读取并格式化磁盘日志
             log_content = format_task_log(task_id)
 
-            # 4. 挂载或更新 UI
+            # 4. 挂载或更新 UI — 用 Markdown 渲染，比纯文本好看
             if log_widget:
-                # 已经是脏的了，直接全量塞进去即可
                 log_widget.update(log_content)
-                log_widget.display = True # 确保它可见
+                log_widget.display = True
             else:
                 new_widget = Static(log_content, id=widget_id, markup=False)
                 chat_zone.mount(new_widget)
