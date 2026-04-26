@@ -11,7 +11,7 @@ file_read — 智能文件读取工具
 import json
 import os
 import datetime
-from .path_utils import validate_path, resolve_project_root
+from .path_utils import validate_path, resolve_project_root, ensure_parent_dir
 
 FILE_READ_SCHEMA = {
     "type": "function",
@@ -74,7 +74,16 @@ def execute_file_read(arguments: dict, task=None) -> str:
         return json.dumps({"type": "error", "content": str(e)})
 
     if not os.path.isfile(file_path):
-        return json.dumps({"type": "error", "content": f"❌ 文件不存在: {file_path}"})
+        hint = ""
+        if file_path.startswith("/agent_vm/"):
+            hint = "\n💡 检测到沙盒路径 /agent_vm/...，当前操作在宿主机文件系统上。请确认路径是否正确。"
+        return json.dumps({
+            "type": "error",
+            "content": (
+                f"❌ 文件不存在: {file_path}"
+                f"{hint}"
+            )
+        })
 
     try:
         # ── 文件元信息 ──
