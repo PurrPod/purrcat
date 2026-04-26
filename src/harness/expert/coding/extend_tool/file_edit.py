@@ -19,7 +19,7 @@ import os
 import difflib
 import shutil
 import datetime
-from .path_utils import validate_path, resolve_project_root
+from .path_utils import validate_path, resolve_project_root, ensure_parent_dir
 
 FILE_EDIT_SCHEMA = {
     "type": "function",
@@ -119,9 +119,26 @@ def execute_file_edit(arguments: dict, task=None) -> str:
     except ValueError as e:
         return json.dumps({"type": "error", "content": str(e)})
 
-    # ── 检查文件是否存在 ──
+    # ── 检查文件是否存在，不存在则尝试创建父目录 ──
     if not os.path.isfile(file_path):
-        return json.dumps({"type": "error", "content": f"❌ 文件不存在: {file_path}"})
+        # file_edit 是 search/replace 模式，旧文件必须存在
+        # 但如果父目录不存在，先尝试创建（容错）
+        hint = ""
+        if file_path.startswith("/agent_vm/"):
+            hint = " 检测到沙盒路径 /agent_vm/... 如需创建文件，请用项目相对路径。"
+        dir_created = ensure_parent_dir(file_path)
+        if dir_created:
+            hint = "（已自动创建目录: " + os.path.dirname(file_path) + "）" + hint
+        lines = []
+        lines.append("❌ 文件不存在: " + file_path)
+        lines.append("💡 file_edit 是 search/replace 编辑模式，目标文件必须已存在。")
+        lines.append("   如需创建新文件，建议先用 execute_command 创建。")
+        if hint:
+            lines.append("   " + hint)
+        return json.dumps({
+            "type": "error",
+            "content": "\n".join(lines)
+        })
 
     # ── 读取文件内容 ──
     try:
