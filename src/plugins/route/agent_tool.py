@@ -197,11 +197,11 @@ def send_message(channel: str, content: str, mode: str) -> str:
 import threading
 MEMO_FILE_LOCK = threading.Lock()
 def update_memo(
-    short_term: str = None,
-    long_term: str = None,
-    decisions: str = None,
-    reminders: str = None,
-    project_state: str = None
+        short_term: str = None,
+        long_term: str = None,
+        decisions: str = None,
+        reminders: str = None,
+        project_state: str = None
 ) -> str:
     """更新系统备忘录，并异步触发核心档案更新"""
     def _update_core_information(flush_data: str):
@@ -209,6 +209,8 @@ def update_memo(
             from src.model.model import Model
             from src.utils.config import get_agent_model
             from src.utils.config import SRC_DIR
+            import os
+            import json
             profile_path = os.path.join(SRC_DIR, "agent", "core", "memory.md")
             def get_profile():
                 with MEMO_FILE_LOCK:
@@ -239,27 +241,28 @@ def update_memo(
                         "parameters": {
                             "type": "object",
                             "properties": {
-                                "content": {"type": "string", "description": "全新的完整档案内容，纯文本，不要有符号"}
+                                "content": {"type": "string",
+                                            "description": "全新的完整档案内容，纯文本，不要有Markdown代码块的反引号"}
                             },
                             "required": ["content"]
                         }
                     }
                 }
             ]
-            system_prompt = """你是一个专门负责知识库维护的后台记忆整理中枢，核心职责是**严格筛选，宁缺毋滥**。
+            system_prompt = """你是一个专门负责知识库维护的后台记忆整理中枢。核心职责是**严格筛选，宁缺毋滥**。
 
-铁律：不是每条信息都值得写入核心档案。如果判断后认为没有长期价值，**直接丢弃，保持文档不变**——这种情况下你仍然需要调用 update 写入原封不动的内容。
-
+【核心文档结构规范】
+现有的 memory.md 包含三大固定板块，合并新记忆时**必须严格归类到这三个板块下，并保持原有的标题结构不变（可以加上Markdown的 # 标识标题）**：
+# 用户偏好与工作风格
+# 重要技术发现
+# 避坑经验
 你的任务：
-1. 先用 get 获取当前文档
-2. 逐条判断新记忆是否真的有长期保留价值：
-   - ✅ **值得写**：稳定的行为习惯（如"commit 用英文"）、性格偏好、关键架构决策、反复出现的避坑经验
-   - ❌ **直接丢**：一次性事件、临时状态、情绪化表达、与现有记录重复的信息、无关紧要的细节
-3. 只有判断为"有价值"的，才智能合并到现有文档中（合并去重，不是简单追加）
-4. 如果新信息已被现有记录覆盖或更具体，优先保留更精确的版本
-5. 最后必须调用 update 写入最终文档
-6. 保持文档极度精简，每条记录一句话以内。"""
-            user_prompt = f"【新产生的近期记忆备忘录】:\n{flush_data}"
+1. 先用 get 获取当前文档。
+2. 逐条判断新记忆是否真的有长期保留价值（情绪化表达、一次性事件、无关紧要的细节直接丢弃）。
+3. 将有价值的信息，智能归类、合并去重到上述三大板块中。如果现有记录更详细，则保留现有记录。
+4. 保持文档极度精简，每条记录一句话以内，使用无序列表 `- `。
+5. 最后必须调用 update 工具写入最终的合并文档。"""
+            user_prompt = f"【新产生的长期记忆备忘录】:\n{flush_data}"
             bg_model = Model(get_agent_model())
             messages = [
                 {"role": "system", "content": system_prompt},
@@ -306,14 +309,11 @@ def update_memo(
         thread = threading.Thread(target=background_task)
         thread.daemon = True
         thread.start()
-    # 分层记忆策略：
-    # - long_term / decisions → 触发后台 LLM 筛选后写入 memory.md
-    # - short_term / reminders / project_state → 仅本地缓存，不写核心档案
     flush_parts = []
     if long_term:
-        flush_parts.append(f"[长期用户画像]\n{long_term}")
+        flush_parts.append(f"[偏好与避坑经验]\n{long_term}")
     if decisions:
-        flush_parts.append(f"[关键决策记录]\n{decisions}")
+        flush_parts.append(f"[重要技术发现与决策]\n{decisions}")
     if flush_parts:
         flush_data = "\n\n---\n\n".join(flush_parts)
         _update_core_information(flush_data)
@@ -329,8 +329,8 @@ AGENT_TOOLS = [
                 "type": "object",
                 "properties": {
                     "short_term": {"type": "string", "description": "短期工作状态：当前处理的任务细节、挂起步骤、临时变量等即时上下文。"},
-                    "long_term": {"type": "string", "description": "长期用户画像：用户性格偏好、行为习惯（如commit用英文）、核心避坑经验等需要长期记住的信息。"},
-                    "decisions": {"type": "string", "description": "关键决策记录：技术选型、架构决策、方案取舍等重要的历史决策及其理由。"},
+                    "long_term": {"type": "string", "description": "长期用户画像与避坑：用户性格偏好、行为习惯、必须要牢记的避坑经验和血泪教训。"},
+                    "decisions": {"type": "string", "description": "技术发现与决策：对系统环境的重要发现（如沙盒机制、文件限制）、工具特性，以及关键架构决策。"},
                     "reminders": {"type": "string", "description": "待办提醒：需要后续跟进的未完成任务、待处理事项。"},
                     "project_state": {"type": "string", "description": "项目状态：当前项目的整体进度、关键上下文、已完成和待完成的工作。"}
                 },
