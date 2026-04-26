@@ -146,6 +146,7 @@ class ChatMessage(Vertical):
 
 # ================= 拦截 /switch 指令 =================
 class ChatInput(TextArea):
+
     def on_mount(self) -> None:
         try:
             self.soft_wrap = True
@@ -166,19 +167,7 @@ class ChatInput(TextArea):
                 await self.app.query_one(MainView).show_config_selector()
                 self.clear()
             elif text == "/help":
-                help_text = (
-                    "**PurrCat 命令列表**\n\n"
-                    "/help   - 显示此帮助信息\n\n"
-                    "/flush  - 强制压缩主 Agent 记忆，归档早期对话\n\n"
-                    "/switch - 切换聊天空间（主 Agent / 子任务）\n\n"
-                    "/config - 切换配置视图\n"
-                    "\n**快捷键**\n\n"
-                    "`Ctrl+O` - 换行\n\n"
-                    "`Ctrl+Q` - 退出程序"
-                )
-                chat_zone = self.app.query_one(MainView).query_one("#chat-zone")
-                chat_zone.mount(Markdown(help_text, classes="help-message"))
-                chat_zone.scroll_end(animate=False)
+                await self.app.query_one(MainView).show_help_guide()
                 self.clear()
             elif text == "/flush":
                 chat_zone = self.app.query_one(MainView).query_one("#chat-zone")
@@ -231,12 +220,23 @@ class MainView(Vertical):
             config_selector.border_title = "Theme Config (Select a color) /"
             yield config_selector
 
+            # 📖 Guide Book
+            help_guide = VerticalScroll(id="help-guide")
+            help_guide.border_title = "Guide Book /"
+            help_guide.can_focus = True
+            yield help_guide
+
             input_zone = Vertical(id="input-zone")
             input_zone.border_title = "Chat Input (Ctrl+o for new line, /switch to change space) /"
             with input_zone:
                 with Horizontal(id="input-row"):
                     yield Static("❯", id="prompt-char")
                     yield ChatInput(id="chat-input", show_line_numbers=False)
+
+    def key_escape(self) -> None:
+        """Escape 退出 Guide Book"""
+        if self.is_selecting:
+            self.hide_help_guide()
 
     def on_mount(self) -> None:
         self.current_space = "nav-main"
@@ -311,6 +311,43 @@ class MainView(Vertical):
                 ListItem(Static(color_option["name"], classes="nav-item"), id=color_option["id"])
             )
         config_selector.focus()
+
+    async def show_help_guide(self) -> None:
+        self.is_selecting = True
+        chat_zone = self.query_one("#chat-zone")
+        space_selector = self.query_one("#space-selector")
+        config_selector = self.query_one("#config-selector")
+        help_guide = self.query_one("#help-guide")
+
+        chat_zone.add_class("hidden")
+        space_selector.remove_class("active")
+        config_selector.remove_class("active")
+        help_guide.add_class("active")
+
+        await help_guide.clear()
+
+        help_text = (
+            "# 📖 PurrCat 使用指南\n\n"
+            "## 命令\n"
+            "| 命令 | 说明 |\n"
+            "|------|------|\n"
+            "| `/help` | 打开本指南 |\n"
+            "| `/flush` | 强制压缩主 Agent 记忆，归档早期对话 |\n"
+            "| `/switch` | 切换聊天空间（主 Agent / 子任务） |\n"
+            "| `/config` | 切换主题配置 |\n"
+            "\n"
+            "## 快捷键\n"
+            "- `Enter` — 发送消息\n"
+            "- `Ctrl+O` — 换行\n"
+            "- `Ctrl+Q` — 退出程序\n"
+            "- `Escape` — 返回聊天（在 Guide Book 中）\n"
+            "\n"
+            "## 关于\n"
+            "PurrCat — 终端里的 AI 聊天猫 🐱"
+        )
+        help_guide.mount(Markdown(help_text))
+        help_guide.scroll_end(animate=False)
+        help_guide.focus()
 
     @on(ListView.Selected, "#space-selector")
     def switch_space(self, event: ListView.Selected):
@@ -389,6 +426,14 @@ class MainView(Vertical):
 
         chat_zone = self.query_one("#chat-zone")
         chat_zone.scroll_end(animate=False)
+
+    def hide_help_guide(self) -> None:
+        self.is_selecting = False
+        chat_zone = self.query_one("#chat-zone")
+        help_guide = self.query_one("#help-guide")
+        help_guide.remove_class("active")
+        chat_zone.remove_class("hidden")
+        self.query_one("#chat-input").focus()
 
     def refresh_chat_state(self):
         if self.is_selecting:
