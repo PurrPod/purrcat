@@ -168,12 +168,12 @@ class ChatInput(TextArea):
             elif text == "/help":
                 help_text = (
                     "**PurrCat 命令列表**\n\n"
-                    "/help   - 显示此帮助信息\n"
-                    "/flush  - 强制压缩主 Agent 记忆，归档早期对话\n"
-                    "/switch - 切换聊天空间（主 Agent / 子任务）\n"
+                    "/help   - 显示此帮助信息\n\n"
+                    "/flush  - 强制压缩主 Agent 记忆，归档早期对话\n\n"
+                    "/switch - 切换聊天空间（主 Agent / 子任务）\n\n"
                     "/config - 切换配置视图\n"
-                    "\n**快捷键**\n"
-                    "`Ctrl+O` - 换行\n"
+                    "\n**快捷键**\n\n"
+                    "`Ctrl+O` - 换行\n\n"
                     "`Ctrl+Q` - 退出程序"
                 )
                 chat_zone = self.app.query_one(MainView).query_one("#chat-zone")
