@@ -279,26 +279,30 @@ class Agent:
             print(f"压缩记忆失败：{e}")
 
     def _check_and_summarize_memory(self, check_mode=True):
-        max_tokens = 100000
+        max_tokens = 500000
         if check_mode and self.window_token < max_tokens:
             return
         print(f"🗜️ 记忆容量到达 {len(self.current_history)} 条 (约 {self.window_token} tokens)，触发自我归档...")
         original_len = len(self.current_history)
+
         alert_prompt = """【系统警告：记忆容量即将溢出，触发自动记忆归档】
 为了防止对话断层，系统即将清理你最早期的一批记忆。
 你必须调用 `update_memo` 工具将当前记忆进行分类归档：
 - short_term: 当前正在处理、被搁置的任务流，以及确立的全局变量或当前需要加载的工具、Skill等。
 - long_term: 发现的明确用户喜好、做事风格或避坑经验。
 注意：直接调用工具即可，无须输出废话。"""
-        self._append_history({"role": "user", "content": alert_prompt})
+
+        # 归档沙箱
+        temp_history = self.current_history.copy()
+        temp_history.append({"role": "user", "content": alert_prompt})
+
         try:
             current_tools = list(BASE_TOOLS) + list(AGENT_TOOLS)
             max_retries = 3
             archive_success = False
-            short_term_content = ""
+            archived_contents = []
             for _ in range(max_retries):
-                response = self.model.chat(messages=self.current_history, tools=current_tools)
-                self._track_token_usage(response)
+                response = self.model.chat(messages=temp_history, tools=current_tools)
                 msg_resp = response.choices[0].message
                 assist_msg = {"role": "assistant", "content": msg_resp.content or ""}
                 rc = getattr(msg_resp, "reasoning_content", None)
@@ -306,9 +310,6 @@ class Agent:
                     rc = msg_resp.model_dump().get("reasoning_content")
                 if rc is not None:
                     assist_msg["reasoning_content"] = rc
-                if hasattr(msg_resp, "reasoning_content") and msg_resp.reasoning_content:
-                    # 仅用于控制台打印
-                    pass
                 if msg_resp.tool_calls:
                     assist_msg["tool_calls"] = [
                         {
@@ -317,35 +318,56 @@ class Agent:
                             "function": {"name": t.function.name, "arguments": t.function.arguments}
                         } for t in msg_resp.tool_calls
                     ]
-                    self._append_history(assist_msg)
+                    temp_history.append(assist_msg)
                     has_update_memo = False
                     for t in msg_resp.tool_calls:
                         if t.function.name == "update_memo":
                             has_update_memo = True
                             try:
-                                args = json.loads(t.function.arguments)
-                                if "long_term" in args or "short_term" in args:
+                                args_str = t.function.arguments
+                                args = {}
+                                if args_str:
+                                    try:
+                                        args = json.loads(args_str)
+                                    except json.JSONDecodeError as e:
+                                        print(f"⚠️ update_memo JSON 解析失败，尝试修复: {e}")
+                                        if repair_json:
+                                            args = repair_json(args_str, return_objects=True)
+                                if isinstance(args, dict):
                                     parse_tool("update_memo", args)
-                                short_term_content = args.get("short_term", "（无短期细节）")
+                                    param_parts = []
+                                    for key, val in args.items():
+                                        # 将复杂结构转为字符串，保证大模型能读懂
+                                        if isinstance(val, (dict, list)):
+                                            val_str = json.dumps(val, ensure_ascii=False)
+                                        else:
+                                            val_str = str(val)
+                                        param_parts.append(f"  - **{key}**: {val_str}")
+                                    if param_parts:
+                                        archived_contents.append("\n".join(param_parts))
                                 tool_response = '✅ 归档工具调用成功'
                             except Exception as e:
                                 print(f"⚠️ update_memo 执行异常: {e}")
                                 try:
-                                    args = json.loads(t.function.arguments)
-                                    short_term_content = args.get("short_term", "")
-                                    if not short_term_content:
-                                        short_term_content = args
+                                    fallback_args = repair_json(t.function.arguments,
+                                                                return_objects=True) if repair_json else json.loads(
+                                        t.function.arguments)
+                                    if isinstance(fallback_args, dict):
+                                        param_parts = [f"  - **{k}**: {v}" for k, v in fallback_args.items()]
+                                        archived_contents.append("\n".join(param_parts))
+                                    else:
+                                        archived_contents.append(str(t.function.arguments))
                                 except:
-                                    short_term_content = str(t.function.arguments)
-                                tool_response = f'⚠️ update_memo 执行异常但已提取参数: {str(e)[:100]}'
-                            self._append_history({
+                                    archived_contents.append(str(t.function.arguments))
+                                tool_response = f'⚠️ update_memo 执行异常但已记录: {str(e)[:100]}'
+                            temp_history.append({
                                 "role": "tool",
                                 "tool_call_id": t.id,
                                 "name": t.function.name,
                                 "content": tool_response
                             })
                         else:
-                            self._append_history({
+                            temp_history.append({
                                 "role": "tool",
                                 "tool_call_id": t.id,
                                 "name": t.function.name,
@@ -353,16 +375,20 @@ class Agent:
                             })
                     if has_update_memo:
                         archive_success = True
-                        print("🧠 Agent归档完成，成功拦截 update_memo 调用。")
+                        print("🧠 Agent归档完成，成功处理 update_memo 调用。")
                         break
                     else:
-                        self._append_history({"role": "user", "content": "打回：你必须调用 `update_memo` 工具来归档备忘录！"})
+                        temp_history.append(
+                            {"role": "user", "content": "打回：你必须调用 `update_memo` 工具来归档备忘录！"})
                 else:
-                    self._append_history(assist_msg)
-                    self._append_history({"role": "user", "content": "打回：你必须调用 `update_memo` 工具！请不要只回复纯文本。"})
-            if not archive_success:
+                    temp_history.append(assist_msg)
+                    temp_history.append(
+                        {"role": "user", "content": "打回：你必须调用 `update_memo` 工具！请不要只回复纯文本。"})
+            if archive_success:
+                final_summary = "\n\n".join(archived_contents) if archived_contents else "（无归档细节）"
+            else:
                 print("⚠️ 未能成功调用 update_memo 工具，强制截断可能导致上下文丢失。")
-                short_term_content = "未保存成功的早期上下文片段..."
+                final_summary = "未保存成功的早期上下文片段..."
             start_idx = 1
             keep_recent = 20
             split_idx = original_len - keep_recent
@@ -380,16 +406,13 @@ class Agent:
             if split_idx < start_idx:
                 split_idx = start_idx
             system_msg = {"role": "system", "content": self._build_system_prompt()}
-            summary_msg = {"role": "assistant", "content": f"【当前工作状态与短期缓存】\n{short_term_content}"}
-            
-            # 【核心补丁】：如果历史记录里的 assistant 消息包含 reasoning_content，说明当前用的是思考模型，必须补全该字段
+            summary_msg = {"role": "assistant", "content": f"【系统已截断历史，以下是刚刚生成的归档记录与工作缓存】\n{final_summary}"}
             if any("reasoning_content" in msg for msg in self.current_history if msg.get("role") == "assistant"):
                 summary_msg["reasoning_content"] = ""
-
             self.current_history = [system_msg] + self.current_history[split_idx:original_len] + [summary_msg]
             self.system_prompt = self._build_system_prompt()
             self.current_history[0]["content"] = self.system_prompt
-            print("✅ Agent记忆清理完毕！已安全避开 Tool Call 链条完成流水线截断，并隐藏了内部整理过程。")
+            print("✅ Agent记忆清理完毕！归档过程已在沙箱中隐蔽完成，主历史流保持纯净。")
             self.window_token = 0
             self.save_checkpoint()
         except Exception as e:

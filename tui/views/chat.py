@@ -498,8 +498,7 @@ class MainView(Vertical):
                 log_widget.update(log_content)
                 log_widget.display = True # 确保它可见
             else:
-                # 🟢 修复：首次进入该 Task，直接 mount 挂载（千万不要清空容器了！）
-                new_widget = Static(log_content, id=widget_id)
+                new_widget = Static(log_content, id=widget_id, markup=False)
                 chat_zone.mount(new_widget)
             
             chat_zone.scroll_end(animate=False)
@@ -509,14 +508,13 @@ class MainView(Vertical):
         history = get_agent_history()
         rendered_count = self.rendered_msg_counts.get(self.current_space, 0)
         visible_history = [msg for msg in history if msg.get("role") != "system"]
-
-        # 🧠 记忆压缩检测：如果历史变短了（压缩截断），清掉旧 DOM 重建
         if rendered_count > 0 and len(visible_history) < rendered_count:
-            chat_zone.remove_children()
+            for child in chat_zone.children:
+                if isinstance(child, (ChatMessage, ToolCallWidget)) or child.has_class("tool-result"):
+                    child.remove()
             self.tool_widgets.clear()
             self.rendered_msg_counts[self.current_space] = 0
             rendered_count = 0
-
         if visible_history and rendered_count > 0 and len(visible_history) <= rendered_count:
             last_data = visible_history[-1]
             if last_data.get("role") == "assistant":

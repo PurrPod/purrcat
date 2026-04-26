@@ -1,469 +1,209 @@
-import json
-import threading
-import concurrent.futures
-from src.harness.task import BaseTask
-
-# 导入解耦后的专家工具集与定义
-try:
-    from src.harness.expert.trading.extend_tool.mock import EXTEND_TOOL_FUNCTIONS, EXTEND_TOOLS_SCHEMA
-except ImportError as e:
-    print(f"⚠️ 交易专家扩展工具加载失败: {e}")
-    EXTEND_TOOL_FUNCTIONS = {}
-    EXTEND_TOOLS_SCHEMA = []
-
-# 延迟导入底层基础设施
-try:
-    from src.model.model import Model
-except ImportError:
-    Model = None
-
-try:
-    from src.loader.memory import Memory
-except ImportError:
-    Memory = None
-
-try:
-    from src.plugins.plugin_manager import parse_tool
-except ImportError:
-    parse_tool = None
-
-
-class TradingTask(
-    BaseTask,
-    expert_type="trading",
-    description="量化交易专家，负责股票的多空辩论、基本面/技术面分析及风险定调。",
-    parameters={
-        "company_name": {
-            "type": "string",
-            "description": "要分析的公司名称或股票代码（如 '苹果', 'AAPL'）",
-            "required": True
-        },
-        "trade_date": {
-            "type": "string",
-            "description": "交易分析的基准日期，默认为 'Current'",
-            "required": False,
-            "default": "Current"
-        }
-    }
-):
-    def __init__(self, task_name, prompt, core, company_name, trade_date=None):
-        super().__init__(task_name, prompt, core)
-        self.company_name = company_name
-        self.trade_date = trade_date or "Current"
-        self.max_debate_rounds = 2
-        self.max_risk_discuss_rounds = 2
-
-        # 1. 初始化独立的图状态
-        self.agent_state = self._get_default_agent_state()
-        self.financial_memory = Memory() if Memory else None
-        self._token_lock = threading.Lock()
-
-    def _get_default_agent_state(self):
-        """生成默认状态机"""
-        return {
-            "company_of_interest": getattr(self, "company_name", "Unknown"),
-            "trade_date": getattr(self, "trade_date", "Current"),
-            "market_report": "",
-            "sentiment_report": "",
-            "news_report": "",
-            "fundamentals_report": "",
-            "investment_debate_state": {"bull_history": [], "bear_history": [], "history": "", "judge_decision": ""},
-            "trader_investment_plan": "",
-            "risk_debate_state": {"aggressive_history": [], "neutral_history": [], "conservative_history": [],
-                                  "history": "", "judge_decision": ""},
-            "final_trade_decision": ""
-        }
-
-    def _get_available_tools(self):
-        """组装工人可见的工具集：PurrCat 基础工具 + 交易领域专用工具"""
-        tools = []
-        try:
-            from src.plugins.route.base_tool import BASE_TOOLS
-            tools.extend(BASE_TOOLS)
-        except Exception:
-            pass
-
-        # 合并来自 extend_tool/schema.py 的定义
-        tools.extend(EXTEND_TOOLS_SCHEMA)
-        return tools
-
-    # ================= 生命周期钩子 =================
-
-    def _on_save_state(self) -> dict:
-        """任务存档时，自动打包 TradingTask 的特有数据"""
-        return {
-            "company_name": self.company_name,
-            "trade_date": self.trade_date,
-            "agent_state": self.agent_state
-        }
-
-    def _on_restore_state(self, state: dict):
-        """任务读档恢复时，重建 TradingTask 的环境与数据"""
-        self._token_lock = threading.Lock()
-        self.financial_memory = Memory() if Memory else None
-
-        extra = state.get("extra_state", {})
-        old_plan = state.get("current_plan", "")
-        if not extra and old_plan and old_plan.startswith("{"):
-            try:
-                extra = json.loads(old_plan)
-            except Exception as e:
-                self.log_and_notify("warning", f"尝试读取旧版状态兼容失败: {e}")
-
-        self.company_name = extra.get("company_name", "Unknown")
-        self.trade_date = extra.get("trade_date", "Current")
-        self.agent_state = extra.get("agent_state", self._get_default_agent_state())
-        if "company_of_interest" in self.agent_state:
-            self.company_name = self.agent_state["company_of_interest"]
-
-    def _track_token_usage(self, response) -> dict:
-        """保证多线程并发时的 Token 累加绝对安全"""
-        with self._token_lock:
-            return super()._track_token_usage(response)
-
-    # ================= 核心运行逻辑 =================
-
-    def run(self):
-        """覆写运行逻辑：引入了节点状态机，支持断点精准跳过"""
-        self.state = "running"
-        nodes = [
-            ("分析师团队执行", self._node_analysts),
-            ("多空投资辩论", self._node_investment_debate),
-            ("交易员推演", self._node_trader),
-            ("风控团队评估", self._node_risk_debate),
-            ("投资组合经理决断", self._node_portfolio_manager)
-        ]
-
-        try:
-            while self.step < len(nodes):
-                node_name, current_node_func = nodes[self.step]
-                self.log_and_notify("system",
-                                    f"\n" + "=" * 40 + f"\n▶️ 正在执行阶段 [{self.step + 1}/{len(nodes)}]: {node_name}\n" + "=" * 40)
-
-                # 执行图节点逻辑
-                current_node_func()
-
-                # 节点成功完成后：步数+1 -> 落盘保存！
-                self.step += 1
-                self.save_checkpoint()
-                self.history.append({"role": "assistant", "content": f"✅ {node_name} 执行完毕，状态已保存。"})
-
-            # 所有节点执行完毕
-            self.state = "completed"
-            if self.model: self.model.unbind_task()
-            self._cleanup_resources()
-            self.save_checkpoint()
-
-            final_decision = self.agent_state['final_trade_decision']
-            self.history.append({"role": "assistant", "content": f"🎯 最终交易决策：\n{final_decision}"})
-            return f"✅ 任务成功，最终决策：\n{final_decision}"
-
-        except KeyboardInterrupt:
-            self.state = "error"
-            if self.model: self.model.unbind_task()
-            self._cleanup_resources()
-            self.log_and_notify("system", "⚠️ 检测到强制中断 (Ctrl+C)，保存现场...")
-            self.save_checkpoint()
-            raise
-        except Exception as e:
-            self.state = "error"
-            if self.model: self.model.unbind_task()
-            self._cleanup_resources()
-            self.log_and_notify("error", f"❌ 运行发生异常: {e}")
-            self.save_checkpoint()
-            raise InterruptedError(f"交易任务异常中断: {e}")
-
-    def resume(self):
-        """断点恢复"""
-        self.log_and_notify("system", f"🔄 尝试从图谱断点恢复任务... 当前处于第 {self.step + 1} 个节点。")
-        self.log_and_notify("system", "🚀 环境排错完成，跳过已完成节点，重新启动任务流。")
-        self.state = "ready"
-        return self.run()
-
-    def _run_isolated_agent(self, role_name, system_prompt, user_prompt, tools=None):
-        """隔离舱引擎：透明化执行室，内置工具分发路由逻辑"""
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt}
-        ]
-
-        if tools:
-            MAX_LOOPS = 25
-            for loop_idx in range(MAX_LOOPS):
-                if getattr(self, "_killed", False):
-                    self.log_and_notify("system", f"⚠️ [{role_name}] 收到全局终止指令，正在退出隔离舱...")
-                    return "任务已被外部终止"
-                response = self.model.chat(messages=messages, tools=tools)
-                self._track_token_usage(response)
-                msg = response.choices[0].message
-
-                assist_msg = {"role": "assistant", "content": msg.content or ""}
-                if hasattr(msg, "reasoning_content") and msg.reasoning_content:
-                    assist_msg["reasoning_content"] = msg.reasoning_content
-                if msg.content:
-                    self.log_and_notify("thought", f"🧠 [{role_name}] 正在思考分析:\n{msg.content}")
-
-                if msg.tool_calls:
-                    assist_msg["tool_calls"] = [
-                        {"id": t.id, "type": t.type,
-                         "function": {"name": t.function.name, "arguments": t.function.arguments}}
-                        for t in msg.tool_calls
-                    ]
-                    messages.append(assist_msg)
-
-                    for tc in msg.tool_calls:
-                        args_str = tc.function.arguments or "{}"
-                        self.log_and_notify("tool_call", f"🔧 [{role_name}] 决定调用工具: {tc.function.name}\n参数: {args_str}")
-
-                        if loop_idx >= MAX_LOOPS - 5:
-                            result_str = "⚠️ 系统拦截：已达最大对话轮数！工具权限已被收回。请停止尝试调用工具，并立即根据当前已知信息输出你的最终结论！！！"
-                        else:
-                            try:
-                                args = json.loads(args_str)
-                            except json.JSONDecodeError:
-                                args = {}
-
-                            target_tool_name = tc.function.name
-                            if target_tool_name == "call_dynamic_tool" and isinstance(args, dict):
-                                target_tool_name = args.get("target_tool_name", tc.function.name)
-                                inner_args = args.get("arguments", {})
-
-                                if isinstance(inner_args, str):
-                                    try:
-                                        args = json.loads(inner_args)
-                                    except Exception:
-                                        try:
-                                            from json_repair import repair_json
-                                            args = repair_json(inner_args, return_objects=True)
-                                        except ImportError:
-                                            args = inner_args
-                                else:
-                                    args = inner_args
-                            if target_tool_name in EXTEND_TOOL_FUNCTIONS:
-                                try:
-                                    result_str = EXTEND_TOOL_FUNCTIONS[target_tool_name](**args)
-                                except Exception as e:
-                                    result_str = f"❌ extend_tool执行异常: {e}"
-                            else:
-                                if parse_tool:
-                                    result_str = parse_tool(target_tool_name, args)
-                                else:
-                                    result_str = "❌ 底层 parse_tool 未成功加载"
-                        result_preview = str(result_str)
-                        if len(result_preview) > 1500:
-                            result_preview = result_preview[:1500] + "\n...(内容过长已截断)..."
-
-                        self.log_and_notify("tool",
-                                            f"📦 [{role_name}] 工具 {tc.function.name} 返回结果:\n{result_preview}")
-                        messages.append({"role": "tool", "tool_call_id": tc.id, "name": tc.function.name,
-                                         "content": str(result_str)[:2000]})
-                else:
-                    self.log_and_notify("thought", f"✅ [{role_name}] 阶段任务完成，最终输出:\n{msg.content}")
-                    return msg.content
-            error_msg = f"❌ [{role_name}] 工具调用超过 {MAX_LOOPS} 次，任务强制失败处理。"
-            self.log_and_notify("error", error_msg)
-            return error_msg
-        else:
-            response = self.model.chat(messages=messages)
-            self._track_token_usage(response)
-            content = response.choices[0].message.content
-            self.log_and_notify("thought", f"✅ [{role_name}] 完成思考，输出结论:\n{content}")
-            return content
-
-    def _execute_parallel(self, task_dict):
-        """多线程并发执行传入的任务字典"""
-        results = {}
-        with concurrent.futures.ThreadPoolExecutor(max_workers=len(task_dict)) as executor:
-            future_to_name = {
-                executor.submit(self._run_isolated_agent, v["role"], v["sys"], v["user"], v.get("tools")): k
-                for k, v in task_dict.items()
-            }
-            for future in concurrent.futures.as_completed(future_to_name):
-                name = future_to_name[future]
-                try:
-                    results[name] = future.result()
-                except Exception as exc:
-                    self.log_and_notify("error", f"❌ 并发节点 [{name}] 执行崩溃: {exc}")
-                    results[name] = f"分析失败: {exc}"
-        return results
-
-    # ================= 节点具体实现 =================
-
-    def _node_analysts(self):
-        """节点 1：分析师团队并发工作"""
-        self.log_and_notify("system", "🔍 [Node 1: Analysts] 启动分析师团队，并发获取市场、情绪、新闻、基本面数据...")
-
-        available_tools = self._get_available_tools()
-
-        analyst_tasks = {
-            "market_report": {
-                "role": "Market_Analyst",
-                "sys": "你是市场技术分析师。请分析给定股票的技术指标（如 MACD, RSI, 均线等）和价格走势。",
-                "user": f"请给出 {self.company_name} 截至 {self.trade_date} 的市场技术面报告。必须使用工具获取准确数据。",
-                "tools": available_tools
-            },
-            "sentiment_report": {
-                "role": "Social_Analyst",
-                "sys": "你是社交媒体情绪分析师。请总结大众情绪是看涨还是看跌。",
-                "user": f"请给出 {self.company_name} 在社交网络上的情绪倾向报告。必须使用工具搜集全网数据。",
-                "tools": available_tools
-            },
-            "news_report": {
-                "role": "News_Analyst",
-                "sys": "你是宏观新闻分析师。关注全球宏观经济、行业政策与内幕交易事件。",
-                "user": f"请给出关于 {self.company_name} 的最新宏观及行业新闻研报。",
-                "tools": available_tools
-            },
-            "fundamentals_report": {
-                "role": "Fundamentals_Analyst",
-                "sys": "你是基本面分析师。负责剖析财报（资产负债表、现金流、利润表）。",
-                "user": f"请给出 {self.company_name} 的深度财务基本面研报。",
-                "tools": available_tools
-            }
-        }
-        reports = self._execute_parallel(analyst_tasks)
-
-        for key, report in reports.items():
-            self.agent_state[key] = report
-
-        report_summary = (
-            f"📊 **市场技术面**:\n{self.agent_state['market_report'][:200]}...\n\n"
-            f"📰 **宏观与新闻**:\n{self.agent_state['news_report'][:200]}...\n\n"
-            f"👥 **社交媒体情绪**:\n{self.agent_state['sentiment_report'][:200]}...\n\n"
-            f"📑 **财务基本面**:\n{self.agent_state['fundamentals_report'][:200]}..."
-        )
-        self.history.append(
-            {"role": "assistant", "content": f"✅ 分析师团队四维研报已生成！详细内容如下：\n\n{report_summary}"})
-        self.log_and_notify("system", f"✅ 分析师团队集结完毕！产出四维核心研报摘要：\n\n{report_summary}")
-
-    def _node_investment_debate(self):
-        """节点 2：多空辩论与投资法官"""
-        self.log_and_notify("system", "⚔️ [Node 2: Debate] 开启研究员多空辩论室...")
-        state = self.agent_state["investment_debate_state"]
-
-        base_context = f"【基础情况】\n技术面：{self.agent_state['market_report']}\n基本面：{self.agent_state['fundamentals_report']}\n新闻：{self.agent_state['news_report']}"
-
-        for round_idx in range(self.max_debate_rounds):
-            self.log_and_notify("system", f"🥊 投资辩论 第 {round_idx + 1} 轮 发车...")
-
-            history_str = state["history"] if state["history"] else "（暂无历史辩论）"
-
-            debate_tasks = {
-                "bull": {
-                    "role": "Bull_Researcher",
-                    "sys": "你是一个极度乐观的多头研究员。你要在当前数据和空头的反驳中，找到坚定的看涨逻辑。",
-                    "user": f"{base_context}\n\n【历史辩论】：\n{history_str}\n\n请给出你的看涨论点，并反驳空头。"
-                },
-                "bear": {
-                    "role": "Bear_Researcher",
-                    "sys": "你是一个极度悲观的空头研究员。你要在当前数据和多头的盲目乐观中，揪出致命的风险和看跌逻辑。",
-                    "user": f"{base_context}\n\n【历史辩论】：\n{history_str}\n\n请给出你的看跌论点，并反驳多头。"
-                }
-            }
-
-            results = self._execute_parallel(debate_tasks)
-
-            bull_arg = results["bull"]
-            bear_arg = results["bear"]
-            state["bull_history"].append(bull_arg)
-            state["bear_history"].append(bear_arg)
-            state["history"] += f"\n\n--- 轮次 {round_idx + 1} ---\n【多头】：{bull_arg}\n【空头】：{bear_arg}"
-
-        # 法官裁决
-        self.log_and_notify("system", "👨‍⚖️ [Node 2: Invest Judge] 投资法官正在听取辩论记录进行综合裁决...")
-        judge_sys = "你是客观理性的投资法官。请总结多空双方的辩论，并给出一份综合的初步投资倾向报告。"
-        judge_user = f"{base_context}\n\n【多空辩论全记录】：\n{state['history']}\n\n请下达你的综合裁决逻辑。"
-
-        judge_decision = self._run_isolated_agent("Invest_Judge", judge_sys, judge_user)
-        state["judge_decision"] = judge_decision
-        self.history.append({"role": "assistant", "content": f"👨‍⚖️ **多空投资法官初步裁决**：\n\n{judge_decision}"})
-        self.log_and_notify("system", f"👨‍⚖️ **多空投资法官初步裁决下发**：\n\n{judge_decision}")
-
-    def _node_trader(self):
-        """节点 3：交易员提议"""
-        self.log_and_notify("system", "🧑‍💼 [Node 3: Trader] 交易员结合历史相似行情，推演交易提案...")
-
-        curr_situation = self.agent_state["investment_debate_state"]["judge_decision"]
-        try:
-            if self.financial_memory:
-                past_memories = self.financial_memory.search(curr_situation, top_k=2)
-                past_memory_str = "\n".join(
-                    [m.get("content", "") for m in past_memories]) if past_memories else "无相关历史交易记忆。"
-            else:
-                past_memory_str = "无相关历史交易记忆。"
-        except:
-            past_memory_str = "无相关历史交易记忆。"
-
-        sys_prompt = "你是资深量化交易员。你需要根据法官的逻辑和过往交易教训，给出具体操作提案（Buy/Sell/Hold 及仓位建议）。"
-        user_prompt = f"【法官投资倾向】：\n{curr_situation}\n\n【历史交易教训】：\n{past_memory_str}\n\n请输出你的明确交易提案。"
-
-        trader_plan = self._run_isolated_agent("Trader", sys_prompt, user_prompt)
-        self.agent_state["trader_investment_plan"] = trader_plan
-        self.history.append({"role": "assistant", "content": f"🧑‍💼 **交易员推演操作提案**：\n\n{trader_plan}"})
-        self.log_and_notify("system", f"🧑‍💼 **交易员推演操作提案完成**：\n\n{trader_plan}")
-
-    def _node_risk_debate(self):
-        """节点 4：风控团队研讨与法官"""
-        self.log_and_notify("system", "🛡️ [Node 4: Risk Debate] 启动风控三巨头团队评估...")
-        state = self.agent_state["risk_debate_state"]
-
-        trader_plan = self.agent_state["trader_investment_plan"]
-
-        for round_idx in range(self.max_risk_discuss_rounds):
-            self.log_and_notify("system", f"🛑 风控交叉评估 第 {round_idx + 1} 轮 发车...")
-            history_str = state["history"] if state["history"] else "（暂无历史评估）"
-
-            risk_tasks = {
-                "aggressive": {
-                    "role": "Aggressive_Risk",
-                    "sys": "你是激进派风控。倾向于接受更高风险以换取超额收益。请评估交易员提案。",
-                    "user": f"【交易提案】：{trader_plan}\n【历史研讨】：{history_str}\n给出你的激进评估。"
-                },
-                "neutral": {
-                    "role": "Neutral_Risk",
-                    "sys": "你是中立派风控。讲究风险与收益的绝对平衡。",
-                    "user": f"【交易提案】：{trader_plan}\n【历史研讨】：{history_str}\n给出你的中立评估。"
-                },
-                "conservative": {
-                    "role": "Conservative_Risk",
-                    "sys": "你是保守派风控。极端厌恶风险，关注最大回撤和极端黑天鹅事件。",
-                    "user": f"【交易提案】：{trader_plan}\n【历史研讨】：{history_str}\n给出你的保守评估。"
-                }
-            }
-
-            results = self._execute_parallel(risk_tasks)
-
-            state["aggressive_history"].append(results["aggressive"])
-            state["neutral_history"].append(results["neutral"])
-            state["conservative_history"].append(results["conservative"])
-            state[
-                "history"] += f"\n\n--- 轮次 {round_idx + 1} ---\n激进：{results['aggressive']}\n中立：{results['neutral']}\n保守：{results['conservative']}"
-
-        # 风控法官裁决
-        self.log_and_notify("system", "👨‍⚖️ [Node 4: Risk Judge] 风控法官正在对团队意见进行最终风险定调...")
-        judge_sys = "你是风控主管法官。请总结激进、中立、保守三方的意见，对交易提案的风险等级进行定性。"
-        judge_user = f"【交易提案】：{trader_plan}\n\n【风控研讨全记录】：\n{state['history']}\n\n请下达风险裁决。"
-
-        judge_decision = self._run_isolated_agent("Risk_Judge", judge_sys, judge_user)
-        state["judge_decision"] = judge_decision
-        self.history.append({"role": "assistant", "content": f"🛡️ **风控法官一票否决权风险定调**：\n\n{judge_decision}"})
-        self.log_and_notify("system", f"🛡️ **风控法官风险定调下发**：\n\n{judge_decision}")
-
-    def _node_portfolio_manager(self):
-        """节点 5：投资组合经理终裁"""
-        self.log_and_notify("system", "👑 [Node 5: Portfolio Manager] 基金经理正在阅读各部门研报，生成一锤定音的指令...")
-
-        pm_sys = "你是最终决策的投资组合经理 (Portfolio Manager)。你掌握资金生杀大权。你的任务是综合各项研报，输出最终结构化指令。"
-
-        pm_user = f"""
-请基于以下所有维度的报告，给出最终的交易决策。
-要求必须包含：1. 评级(Buy/Hold/Sell) 2. 仓位比例 3. 核心逻辑摘要。
-
-【基本面摘要】：{self.agent_state['fundamentals_report'][:500]}...
-【多空投资法官裁决】：{self.agent_state['investment_debate_state']['judge_decision']}
-【交易员硬性提案】：{self.agent_state['trader_investment_plan']}
-【风控法官一票否决权风险评估】：{self.agent_state['risk_debate_state']['judge_decision']}
 """
-        final_decision = self._run_isolated_agent("Portfolio_Manager", pm_sys, pm_user)
-        self.agent_state["final_trade_decision"] = final_decision
-        self.log_and_notify("system", f"🎯 最终投资组合决策生成完毕，任务闭环！")
+
+Trading Expert 三阶段流水线
+
+Phase 1 — 数据采集 (1轮模型调用)
+Phase 2 — 技术面+基本面分析 (1轮模型调用)
+Phase 3 — 多空辩论 (1轮模型调用, 同时生成多空双方观点)
+
+合计: 3轮大模型调用 (优化后, 原16轮)
+
+架构要点:
+  - 固定长 system prompt → 利用大模型厂商侧 Prefix KV Cache 节省推理费用
+  - 每阶段只用 1 次粗粒度调用, 避免回合对话
+  - 所有数据在 Phase 1 集齐, Phase 2/3 直接使用
+"""
+import json
+import time
+import traceback
+from typing import Any, Optional
+
+from .extend_tool import handle_extend_tool, get_extend_tools_schema
+
+TOOLS = get_extend_tools_schema()
+
+# ---------------------------------------------------------------------------
+# Phase 1 — 数据采集
+# ---------------------------------------------------------------------------
+
+PHASE1_SYSTEM_PROMPT = """你是一个量化交易数据采集代理。你的工作分为两步：
+第一步，调用 get_stock_data 获取全部数据（code参数传公司代号，mode传all），获取基本面行情和技术全量数据。
+第二步，使用 get_market_info 获取市场整体情况。
+请注意，如果在第一步的工具调用中出错或者获取的数据里因为节假日、非交易日导致某些数据缺失
+（比如ADR、技术指标、北向资金等字段为空或0），这些都属于正常现象，直接告知用户缺失即可，不必重试。
+你只需获取数据后如实整理输出即可，不要做分析。"""
+
+# ---------------------------------------------------------------------------
+# Phase 2 — 分析
+# ---------------------------------------------------------------------------
+
+PHASE2_SYSTEM_PROMPT = """你是资深量化分析师，擅长技术分析与基本面分析相结合。请根据提供的完整数据，进行深入且结构化的分析。
+
+你的分析必须涵盖但不限于以下维度：
+
+一、技术面分析
+  - 趋势维度：MA均线排列（多头/空头排列，短期/长期交叉信号）、ADX趋势强度（强趋势/弱震荡，方向判断）
+  - 动量维度：MACD柱状图变化（金叉/死叉信号，动能增强/减弱）、RSI超买超卖区间（是否有背离信号）、WR威廉指标位置（趋势确认）
+  - 波动维度：布林带位置（价格处于上/中/下轨，开口/收口预示趋势或震荡）、ATR波动率变化（是否异常放大预示变盘）
+  - 成交量维度：OBV与价格关系（量价配合/背离）
+
+二、基本面分析
+  - 估值维度：当前市盈率（PE）在行业和历史分位水平，市值规模
+  - 市场定位：该标的基本面特征总结
+
+三、综合分析
+  - 多周期共振/矛盾：分析日线级别的技术信号是否存在矛盾，给出综合判断
+  - 关键支撑压力位：根据布林带和均线给出明确的价位区间
+  - 风险提示：当前最值得关注的潜在风险（技术面/基本面均可）
+
+请保持专业客观，注重具体价位和信号而非模糊描述。
+注意：如果某些技术指标因节假日、非交易日或其他原因缺失（字段为0或空），说明该指标无法计算，不要强行解读。
+"""
+
+# ---------------------------------------------------------------------------
+# Phase 3 — 多空辩论
+# ---------------------------------------------------------------------------
+
+BULL_PROMPT = """你是乐观但有理有据的多头分析师。请基于提供的数据和分析结果，从看多角度出发进行论述。
+
+请按以下结构展开：
+1. 核心看多逻辑（列出2-3个最有力的看多理由，必须有数据支撑）
+2. 技术面看多信号（指出具体的技术指标和价位，给出明确的做多/建仓参考位置）
+3. 基本面支撑（估值合理/成长性好等，如果有数据支撑）
+4. 目标价位（给出合理的目标价区间及依据）
+5. 风险控制提示（承认潜在风险，给出止损位建议）
+
+要求：给出具体价位建议，乐观但不能盲目。"""
+
+BEAR_PROMPT = """你是谨慎但有理有据的空头分析师。请基于提供的数据和分析结果，从看空角度出发进行论述。
+
+请按以下结构展开：
+1. 核心看空逻辑（列出2-3个最有力的看空理由，必须有数据支撑）
+2. 技术面看空信号（指出具体的技术指标和价位，给出明确的做空/离场参考位置）
+3. 基本面隐忧（估值过高/增长乏力等，如果有数据支撑）
+4. 下行目标价位（给出合理的下行目标区间及依据）
+5. 风险控制提示（承认看错的风险，给出止损位建议）
+
+要求：给出具体价位建议，谨慎但不能刻意唱空。"""
+
+# ---------------------------------------------------------------------------
+# 工具调用辅助
+# ---------------------------------------------------------------------------
+
+def _call_tools(llm, msg, tools=None):
+    """调用 LLM 并处理可能的工具调用"""
+    if tools is not None:
+        response = llm.call(messages=msg, tools=tools, tool_choice="auto")
+        tool_calls = response.get("tool_calls", [])
+        if not tool_calls and isinstance(response, dict) and "content" in response:
+            return response.get("content", "")
+        if not tool_calls:
+            tool_calls = response.get("choices", [{}])[0].get("message", {}).get("tool_calls", [])
+        if tool_calls:
+            for tc in tool_calls:
+                func = tc.get("function", {}) if isinstance(tc, dict) else tc.function
+                name = func.get("name", "")
+                args_str = func.get("arguments", "{}")
+                try:
+                    args = json.loads(args_str) if isinstance(args_str, str) else args_str
+                except:
+                    args = {}
+                ok, result = handle_extend_tool(name, args, None)
+                msg.append({"role": "tool", "tool_call_id": tc.get("id",""), "content": result})
+            second_response = llm.call(messages=msg, tools=tools)
+            if isinstance(second_response, dict):
+                return second_response.get("content", str(second_response))
+            return str(second_response)
+        return response
+    else:
+        response = llm.call(messages=msg)
+        if isinstance(response, dict):
+            return response.get("content", str(response))
+        return str(response)
+
+
+def _simple_call(llm, msg, system_prompt):
+    """纯文本调用，无工具"""
+    msgs = [{"role": "system", "content": system_prompt}, {"role": "user", "content": msg}]
+    response = llm.call(messages=msgs)
+    if isinstance(response, dict):
+        return response.get("content", str(response))
+    return str(response)
+
+
+# ---------------------------------------------------------------------------
+# 主入口
+# ---------------------------------------------------------------------------
+
+def run_task(llm, task: Any, params: dict) -> str:
+    company = params.get("company", "")
+    date = params.get("trade_date", "")
+    analyze_type = params.get("analyze_type", "deep")
+    if not company:
+        return "请指定公司"
+
+    start = time.time()
+    result = {"company": company, "date": date, "phases": {}}
+
+    try:
+        # ============ Phase 1: 数据采集 ============
+        phase1_start = time.time()
+        phase1_msgs = [{"role": "system", "content": PHASE1_SYSTEM_PROMPT},
+                       {"role": "user", "content": f"请获取 {company} 的完整股票数据和市场整体情况。日期: {date}"}]
+        phase1_result = _call_tools(llm, phase1_msgs, TOOLS)
+        result["phases"]["data_collection"] = {
+            "output": phase1_result,
+            "time": round(time.time() - phase1_start, 2)
+        }
+
+        # ============ Phase 2: 分析 ============
+        phase2_start = time.time()
+        phase2_result = _simple_call(
+            llm,
+            f"请对 {company} 进行技术面和基本面分析。\n\n完整数据如下：\n{phase1_result}",
+            PHASE2_SYSTEM_PROMPT
+        )
+        result["phases"]["analysis"] = {
+            "output": phase2_result,
+            "time": round(time.time() - phase2_start, 2)
+        }
+
+        # ============ Phase 3: 多空辩论 ============
+        if analyze_type == "deep":
+            phase3_start = time.time()
+            combined_msg = (
+                f"基于以下对 {company} 的分析结果：\n\n"
+                f"[Phase 1 数据]\n{phase1_result}\n\n"
+                f"[Phase 2 分析]\n{phase2_result}\n\n"
+                f"请从多空双方分别进行深入论述。"
+            )
+
+            # 多头论述
+            bull_result = _simple_call(llm, combined_msg, BULL_PROMPT)
+            # 空头论述
+            bear_result = _simple_call(llm, combined_msg, BEAR_PROMPT)
+
+            result["phases"]["bull"] = {"output": bull_result, "time": round(time.time() - phase3_start, 2)}
+            result["phases"]["bear"] = {"output": bear_result, "time": round(time.time() - phase3_start, 2)}
+
+    except Exception as e:
+        return json.dumps({"error": str(e), "traceback": traceback.format_exc()}, ensure_ascii=False)
+
+    total_time = round(time.time() - start, 2)
+    result["total_time"] = total_time
+
+    # ============ 组装最终输出 ============
+    lines = []
+    lines.append(f"## {company} 交易分析报告 ({date})")
+    lines.append(f"*分析耗时: {total_time}s*\n")
+    lines.append(f"### 📊 数据采集")
+    lines.append(result["phases"].get("data_collection", {}).get("output", ""))
+    lines.append(f"\n### 🔬 技术面 & 基本面分析")
+    lines.append(result["phases"].get("analysis", {}).get("output", ""))
+    if analyze_type == "deep":
+        lines.append(f"\n### 🐂 多头观点")
+        lines.append(result["phases"].get("bull", {}).get("output", ""))
+        lines.append(f"\n### 🐻 空头观点")
+        lines.append(result["phases"].get("bear", {}).get("output", ""))
+
+    return "\n".join(lines)
