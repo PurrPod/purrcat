@@ -163,7 +163,7 @@ def get_task_window_token(task_id: str):
 
 
 def format_task_log(task_id: str) -> str:
-    """解析并格式化任务的日志输出，按card_type分组展示"""
+    """Parse and format task log output with file-change caching"""
     from src.harness.task import TASK_INSTANCES
 
     task_instance = TASK_INSTANCES.get(task_id)
@@ -179,30 +179,29 @@ def format_task_log(task_id: str) -> str:
                     break
 
     if not checkpoint_dir:
-        return f"任务 {task_id} 未找到"
+        return f"Task {task_id} not found"
 
     log_path = os.path.join(checkpoint_dir, "log.jsonl")
     if not os.path.exists(log_path):
-        return f"暂无日志内容 (任务 {task_id})"
+        return f"No log yet (Task {task_id})"
+
+    # Cache check: only re-read if file changed
+    try:
+        stat = _os.stat(log_path)
+        cached = _task_log_cache.get(task_id)
+        if cached and cached[0] == stat.st_mtime_ns and cached[1] == stat.st_size:
+            return cached[2]
+    except OSError:
+        pass
 
     try:
         with open(log_path, "r", encoding="utf-8") as f:
             lines = f.readlines()
     except Exception:
-        return f"读取日志失败 (任务 {task_id})"
+        return f"Read log failed (Task {task_id})"
 
     if not lines:
-        return f"暂无日志内容 (任务 {task_id})"
-
-    CARD_PREFIXES = {
-        "system": "🔔",
-        "thought": "💭",
-        "tool_call": "🔧",
-        "tool": "📦",
-        "warning": "⚠️",
-        "error": "❌",
-        "plan": "📋",
-    }
+        return f"No log yet (Task {task_id})"
 
     sections = {}
     for line in lines:
@@ -223,24 +222,39 @@ def format_task_log(task_id: str) -> str:
         else:
             time_str = "??:??:??"
 
-        prefix = CARD_PREFIXES.get(card_type, "📄")
-        key = (card_type, prefix)
+        key = card_type
         if key not in sections:
             sections[key] = []
         sections[key].append(f"[{time_str}] {content}")
 
     if not sections:
-        return f"Task {task_id}: no log content."
+        return f"No log content (Task {task_id})"
 
     output_parts = []
-    output_parts.append(f"── Task Log ({len(lines)} entries) ──")
+    output_parts.append(f"-- Task Log ({len(lines)} entries) --")
 
     order_priority = ["system", "thought", "tool_call", "tool", "warning", "error", "plan"]
     compact_labels = {"system": "SYS", "thought": "THT", "tool_call": "TCL", "tool": "TOL", "warning": "WRN", "error": "ERR", "plan": "PLN"}
 
-    for (card_type, prefix), entries in sorted(sections.items(), key=lambda x: order_priority.index(x[0][0]) if x[0][0] in order_priority else 99):
+    for card_type in order_priority:
+        if card_type not in sections:
+            continue
         label = compact_labels.get(card_type, card_type.upper())
-        for entry in entries:
+        for entry in sections[card_type]:
             output_parts.append(f" [{label}] {entry}")
 
-    return "\n".join(output_parts)
+    for card_type, entries in sections.items():
+        if card_type not in order_priority:
+            for entry in entries:
+                output_parts.append(f" [?] {entry}")
+
+    result = "\n".join(output_parts)
+
+    # Write to cache
+    try:
+        stat = _os.stat(log_path)
+        _task_log_cache[task_id] = (stat.st_mtime_ns, stat.st_size, result)
+    except OSError:
+        pass
+
+    return result
