@@ -510,6 +510,13 @@ class MainView(Vertical):
         rendered_count = self.rendered_msg_counts.get(self.current_space, 0)
         visible_history = [msg for msg in history if msg.get("role") != "system"]
 
+        # 🧠 记忆压缩检测：如果历史变短了（压缩截断），清掉旧 DOM 重建
+        if rendered_count > 0 and len(visible_history) < rendered_count:
+            chat_zone.remove_children()
+            self.tool_widgets.clear()
+            self.rendered_msg_counts[self.current_space] = 0
+            rendered_count = 0
+
         if visible_history and rendered_count > 0 and len(visible_history) <= rendered_count:
             last_data = visible_history[-1]
             if last_data.get("role") == "assistant":
