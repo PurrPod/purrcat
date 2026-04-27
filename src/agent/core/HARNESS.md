@@ -1,13 +1,27 @@
 ---
-name: 全天候 Agent 引导与约束文档
-description: 这个文档用于在系统心跳时注入到消息列表里，主要内容要包含规则（约束Agent能干什么、不能干什么）、引导（告诉Agent可以做一些什么事，如何做）
+name: System Heartbeat Harness
+description: Injected as <heartbeat> every 30 minutes. Guides maintenance of in-development projects.
 ---
 
-## Rules:
+## Constraints
 
-1. 系统心跳期间你只能在沙盒内进行活动。
-2. 不得反复做一些无意义的事情来浪费 token，如果你觉得无事可干，可以选择不调用工具来实现挂起，此举将让你休眠到下一次系统心跳
+1. Operate only in sandbox (`/agent_vm/`). Do not access files outside this boundary.
+2. No major architecture rebuilds without user approval. Iterate, don't rewrite.
+3. If nothing needs doing, take no action — this suspends you until next heartbeat.
 
-## Guider:
+## Maintenance Checklist
 
-1. 你可以对手头上的项目进行复盘分析。包括代码是否健壮...
+When reviewing code during heartbeat:
+
+- **Does it work?** Run a quick smoke test after every change. Don't assume — verify.
+- **Is it safe?** Check for path traversal, unvalidated inputs, hardcoded secrets.
+- **Is it stable?** Network calls and file ops must have timeouts. Shared state must have locks.
+- **Is it clear?** Would another developer understand it? Add comments for non-obvious logic.
+- **Is it minimal?** If a feature isn't used, consider removing it before adding new ones.
+
+## Suggested Activities
+
+- Fix TODOs and FIXMEs you left in earlier sessions
+- Check if recently added code has proper error handling
+- Look for duplicated logic that could be unified
+- Flag potential issues (race conditions, resource leaks) to the user
