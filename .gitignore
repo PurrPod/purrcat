@@ -67,3 +67,6 @@ $RECYCLE.BIN/
 .fleet/
 
 data/memory/**/*.jsonl
+
+# 本地脚本（含敏感信息如 token 操作）
+scripts/push_pr.py
