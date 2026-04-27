@@ -188,7 +188,7 @@ def list_worker() -> str:
 
 def send_message(channel: str, content: str, mode: str) -> str:
     """通过指定渠道发送消息（无异常拦截，直接抛给上层）"""
-    module_path = f"src.sensor.{channel}"
+    module_path = f"src.sensor.message.{channel}"
     plugin_module = importlib.import_module(module_path)
     funct_name = f"send_{channel}_message"
     target_func = getattr(plugin_module, funct_name)
@@ -370,7 +370,7 @@ def update_memo(
         thread.daemon = True
         thread.start()
     # ── Check if PurrMemo is enabled ──
-    from src.plugins.route.purrmemo_client import is_enabled, push_memo
+    from src.memory.purrmemo_client import is_enabled, push_memo
     use_purrmemo = is_enabled()
 
     if use_purrmemo:
