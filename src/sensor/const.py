@@ -7,13 +7,36 @@ from src.agent.manager import get_agent
 from src.utils.config import CRON_FILE, SCHEDULE_FILE
 
 
+HARNESS_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                               "agent", "core", "HARNESS.md")
+
+
 def heartbeat():
+    from src.utils.config import get_heartbeat_config
+    cfg = get_heartbeat_config()
+    interval = cfg.get("interval", 1800)
     while True:
-        time.sleep(1800)
+        time.sleep(interval)
         agent = get_agent()
-        if agent:
-            if not agent.pending_force_push:
-                agent.force_push("系统心跳：可以主动进行工作学习...", type="heartbeat")
+        if not agent:
+            continue
+        if agent.pending_force_push:
+            continue  # skip if agent is already busy
+        # Read HARNESS.md dynamically so edits take effect without restart
+        harness_content = ""
+        try:
+            if os.path.exists(HARNESS_PATH):
+                with open(HARNESS_PATH, "r", encoding="utf-8") as f:
+                    harness_content = f.read().strip()
+                    # Strip YAML front matter if present
+                    if harness_content.startswith("---"):
+                        parts = harness_content.split("---", 2)
+                        if len(parts) >= 3:
+                            harness_content = parts[2].strip()
+        except Exception as e:
+            harness_content = f"[Heartbeat] Failed to read HARNESS.md: {e}"
+        if harness_content:
+            agent.force_push(harness_content, type="heartbeat")
 
 
 def clock_sensor():
@@ -81,9 +104,13 @@ def clock_sensor():
         time.sleep(60)
 
 def start_sensors():
-    # t1 = threading.Thread(target=heartbeat, daemon=True)
+    from src.utils.config import get_heartbeat_config
+    cfg = get_heartbeat_config()
+    if cfg.get("enabled", False):
+        t1 = threading.Thread(target=heartbeat, daemon=True)
+        t1.start()
+        interval_min = cfg.get("interval", 1800) // 60
+        print(f"💓 系统心跳传感器已上线（每{interval_min}分钟）")
     t2 = threading.Thread(target=clock_sensor, daemon=True)
-    # t1.start()
-    # 暂时不要系统心跳了，浪费token
     t2.start()
     print("📡 Clock 传感器已上线。")
