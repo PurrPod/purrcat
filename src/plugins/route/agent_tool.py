@@ -317,6 +317,24 @@ def update_memo(
     if flush_parts:
         flush_data = "\n\n---\n\n".join(flush_parts)
         _update_core_information(flush_data)
+
+    # ── Route to PurrMemo if enabled ──
+    from src.plugins.route.purrmemo_client import is_enabled, push_memo
+    purrmemo_ok = False
+    if is_enabled():
+        try:
+            purrmemo_ok = push_memo(
+                short_term=short_term,
+                long_term=long_term,
+                decisions=decisions,
+                reminders=reminders,
+                project_state=project_state,
+            )
+        except Exception as e:
+            print(f"[PurrMemo] push_memo exception: {e}")
+
+    if purrmemo_ok:
+        return _format_response("text", f"✅ 备忘录已同步到 PurrMemo 记忆系统")
     return _format_response("text", f"✅ 备忘录更新成功")
 
 AGENT_TOOLS = [

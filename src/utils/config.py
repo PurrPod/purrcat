@@ -153,6 +153,12 @@ def get_feishu_config() -> Dict[str, str]:
     return config.get("feishu", {})
 
 
+def get_purrmemo_config() -> Dict[str, any]:
+    """获取 PurrMemo 记忆系统配置"""
+    config = load_config()
+    return config.get("purrmemo", {"enabled": False})
+
+
 def get_mcp_servers() -> Dict[str, Any]:
     """获取 MCP 服务器配置"""
     config = load_config()
