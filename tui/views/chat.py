@@ -117,13 +117,15 @@ class ChatMessage(Vertical):
         self._typing_index = 0
         if self._typing_timer:
             self._typing_timer.stop()
-        # 加快打字机效果速度，从 0.005 秒调整为 0.001 秒
-        self._typing_timer = self.set_interval(0.001, self._type_next_char)
+        # 🟢 修复：将刷新率降至合理的 15ms (约 60fps)，释放事件循环
+        self._typing_timer = self.set_interval(0.015, self._type_next_char)
 
     def _type_next_char(self):
+        # 🟢 修复：每次打印 3 个字符，既能保持飞快的视觉速度，又大幅减少 DOM 渲染次数
+        chunk_size = 3
         if self._typing_index < len(self._target_text):
-            self._current_text += self._target_text[self._typing_index]
-            self._typing_index += 1
+            self._current_text += self._target_text[self._typing_index : self._typing_index + chunk_size]
+            self._typing_index += chunk_size
             if hasattr(self, "md_widget"):
                 self.md_widget.update(self._current_text)
         else:
@@ -326,7 +328,9 @@ class MainView(Vertical):
         config_selector.remove_class("active")
         help_guide.add_class("active")
 
-        await help_guide.clear()
+        # 🟢 修复：将 await help_guide.clear() 替换为安全的子节点移除方法
+        for child in list(help_guide.children):
+            child.remove()
 
         help_text = (
             "# 📖 PurrCat 使用指南\n\n"
@@ -437,7 +441,8 @@ class MainView(Vertical):
         chat_zone.remove_class("hidden")
         self.query_one("#chat-input").focus()
 
-    def refresh_chat_state(self):
+    # 🟢 修复：在 def 前加上 async，Textual 的 set_interval 原生支持异步回调
+    async def refresh_chat_state(self):
         if self.is_selecting:
             return
 
@@ -496,15 +501,18 @@ class MainView(Vertical):
             if not needs_update:
                 return
 
-            # 3. 只有确认需要更新时，才去读取并格式化磁盘日志
-            log_content = format_task_log(task_id)
+            # 🟢 修复：使用 asyncio.to_thread 将同步读盘操作移出 UI 主线程！
+            import asyncio
+            log_content = await asyncio.to_thread(format_task_log, task_id)
 
             # 4. 挂载或更新 UI — 用 Markdown 渲染，比纯文本好看
             if log_widget:
                 log_widget.update(log_content)
                 log_widget.display = True
             else:
-                new_widget = Static(log_content, id=widget_id, markup=False)
+                # 🟢 修复：将 markup=False 改为 True，并加上一点内边距让文字不贴边
+                new_widget = Static(log_content, id=widget_id, markup=True)
+                new_widget.styles.padding = (1, 2)
                 chat_zone.mount(new_widget)
             
             chat_zone.scroll_end(animate=False)
@@ -514,17 +522,21 @@ class MainView(Vertical):
         history = get_agent_history()
         rendered_count = self.rendered_msg_counts.get(self.current_space, 0)
         visible_history = [msg for msg in history if msg.get("role") != "system"]
+        
+        # 🟢 修复 3.1：清理时，绝不遍历所有 children，只精准清理当前空间带有专属标签的节点
         if rendered_count > 0 and len(visible_history) < rendered_count:
-            for child in chat_zone.children:
-                if isinstance(child, (ChatMessage, ToolCallWidget)) or child.has_class("tool-result"):
-                    child.remove()
+            # 说明触发了 /flush，历史记录变短了，只清理当前空间的消息
+            for child in chat_zone.query(f".msg-space-{self.current_space}"):
+                child.remove()
             self.tool_widgets.clear()
             self.rendered_msg_counts[self.current_space] = 0
             rendered_count = 0
+            
         if visible_history and rendered_count > 0 and len(visible_history) <= rendered_count:
             last_data = visible_history[-1]
             if last_data.get("role") == "assistant":
-                chat_msgs = list(chat_zone.query(ChatMessage))
+                # 🟢 修复 3.2：精准查询当前空间的 ChatMessage，大幅提升查询速度，防止串线
+                chat_msgs = list(chat_zone.query(f"ChatMessage.msg-space-{self.current_space}"))
                 if chat_msgs:
                     last_widget = chat_msgs[-1]
                     if last_widget.role == "assistant":
@@ -546,6 +558,7 @@ class MainView(Vertical):
                                     args = {"raw_args": args_str}
 
                                 tw = ToolCallWidget(name, args)
+                                tw.add_class(f"msg-space-{self.current_space}") # 🟢 打上空间标签
                                 self.tool_widgets[tc_id] = tw
                                 chat_zone.mount(tw)
                                 chat_zone.scroll_end(animate=False)
@@ -557,11 +570,15 @@ class MainView(Vertical):
                 content = msg.get("content", "")
 
                 if role == "user":
-                    chat_zone.mount(ChatMessage("user", content, is_new=False))
+                    new_msg = ChatMessage("user", content, is_new=False)
+                    new_msg.add_class(f"msg-space-{self.current_space}") # 🟢 打上空间标签
+                    chat_zone.mount(new_msg)
 
                 elif role == "assistant":
                     is_new_msg = not is_initial_load
-                    chat_zone.mount(ChatMessage("assistant", content, is_new=is_new_msg))
+                    new_msg = ChatMessage("assistant", content, is_new=is_new_msg)
+                    new_msg.add_class(f"msg-space-{self.current_space}") # 🟢 打上空间标签
+                    chat_zone.mount(new_msg)
 
                     tool_calls = msg.get("tool_calls", [])
                     for tc in tool_calls:
@@ -576,6 +593,7 @@ class MainView(Vertical):
                                 args = {"raw_args": args_str}
 
                             tw = ToolCallWidget(name, args)
+                            tw.add_class(f"msg-space-{self.current_space}") # 🟢 打上空间标签
                             self.tool_widgets[tc_id] = tw
                             chat_zone.mount(tw)
 
@@ -598,7 +616,9 @@ class MainView(Vertical):
                         tw.finish(content)
                     else:
                         fallback_msg = f"   └── {content}"
-                        chat_zone.mount(Static(fallback_msg, classes="tool-result"))
+                        fb_widget = Static(fallback_msg, classes="tool-result")
+                        fb_widget.add_class(f"msg-space-{self.current_space}") # 🟢 打上空间标签
+                        chat_zone.mount(fb_widget)
 
             self.rendered_msg_counts[self.current_space] = len(visible_history)
             chat_zone.scroll_end(animate=False)
@@ -621,23 +641,23 @@ class TaskMonitorScreen(ModalScreen):
 
     def refresh_task_list(self):
         task_list = self.query_one("#task-dialog-list")
-        task_list.remove_children()
+        # 安全清空子节点
+        for child in list(task_list.children):
+            child.remove()
+            
         tasks = get_task_list()
         if not tasks:
             task_list.mount(Static("No active tasks.", classes="task-detail"))
             return
+            
         for t in tasks:
             state = t.get("state", "unknown")
             state_emoji = {"running": "🟢", "done": "🔵", "error": "🔴", "waiting": "🟡"}.get(state, "⚪")
-            card = Vertical(classes="task-card")
-            card.id = f"task-card-{t['id']}"
-
+            
+            # 1. 先单独创建好所有的子组件
             name = Static(f"{state_emoji}  {t.get('name', '?')}", classes="task-name")
-            card.mount(name)
-
             state_label = Static(f"State: {state}", classes="task-state " + state)
-            card.mount(state_label)
-
+            
             expert = t.get("expert_type", "?")
             step = t.get("step", 0)
             tokens = t.get("token_usage", 0)
@@ -645,11 +665,22 @@ class TaskMonitorScreen(ModalScreen):
             if isinstance(created, (int, float)):
                 import datetime
                 created = datetime.datetime.fromtimestamp(created).strftime("%H:%M:%S")
+                
             detail = Static(
                 f"  ID: {str(t['id'])[:16]}... | Type: {expert} | Step: {step} | Tokens: {tokens} | {created}",
                 classes="task-detail"
             )
-            card.mount(detail)
+            
+            # 🟢 修复：在实例化 Vertical 容器时，直接把刚才创建的子组件当作参数塞进去！
+            card = Vertical(
+                name,
+                state_label,
+                detail,
+                classes="task-card",
+                id=f"task-card-{t['id']}"
+            )
+            
+            # 2. 将已经包含所有子组件的 card，一次性挂载到列表中
             task_list.mount(card)
 
 
@@ -657,12 +688,23 @@ class TaskMonitorScreen(ModalScreen):
         self.selected_task = task_id
         self.showing_log = True
         task_list = self.query_one("#task-dialog-list")
-        task_list.remove_children()
+        
+        # 安全清空子节点
+        for child in list(task_list.children):
+            child.remove()
 
         log_text = format_task_log(task_id)
-        log_viewer = VerticalScroll(id="task-log-viewer")
-        for line in log_text.split("\n"):
-            log_viewer.mount(Static(line, classes="log-entry"))
+        
+        # 1. 🟢 修复：先用列表推导式，把所有的日志行组件单独创建出来
+        log_entries = [
+            Static(line, classes="log-entry", markup=True)
+            for line in log_text.split("\n")
+        ]
+        
+        # 2. 🟢 修复：在实例化 VerticalScroll 时，使用 *log_entries 解包把子组件直接传进去！
+        log_viewer = VerticalScroll(*log_entries, id="task-log-viewer")
+        
+        # 3. 最后将整个装满日志的容器挂载到大盘上
         task_list.mount(log_viewer)
         log_viewer.focus()
 
