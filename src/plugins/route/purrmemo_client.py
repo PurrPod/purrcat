@@ -54,8 +54,9 @@ def _get_client():
 
             # Quick health check
             resp = session.get(f"{host.rstrip('/')}/api/v1/health", timeout=3)
-            if resp.status_code != 200:
-                raise ConnectionError(f"PurrMemo health check failed: {resp.status_code}")
+            body = resp.json()
+            if body.get("status") != "ok":
+                raise ConnectionError(f"PurrMemo health check failed: {body}")
 
             _client = {
                 "session": session,
@@ -83,7 +84,7 @@ def push_memo(
     """
     Push memory to PurrMemo. Maps update_memo fields to PurrMemo's push API.
 
-    - events: list of event strings (converted to PurrMemo's {time, event} format)
+    - events: list of {time, event} dicts
     - work_exp: list of work experience strings
     - cognition: list of cognition/decision strings
 
@@ -96,12 +97,8 @@ def push_memo(
     import datetime
     now = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
 
-    # Format events as PurrMemo expects: list of {time, event} dicts
-    formatted_events = []
-    if events:
-        for e in events:
-            if e and e.strip():
-                formatted_events.append({"time": now, "event": e.strip()[:500]})
+    # Events already validated as {time, event} dicts
+    formatted_events = list(events) if events else []
     if reminders:
         formatted_events.append({"time": now, "event": f"[reminder] {reminders[:500]}"})
     if project_state:
@@ -121,11 +118,12 @@ def push_memo(
             json=payload,
             timeout=10,
         )
-        if resp.status_code == 200:
-            print("[PurrMemo] Memory pushed successfully")
+        body = resp.json()
+        if body.get("status") == "ok":
+            print(f"[PurrMemo] Memory pushed: {body.get('message', '')}")
             return True
         else:
-            print(f"[PurrMemo] Push failed: {resp.status_code} {resp.text[:200]}")
+            print(f"[PurrMemo] Push returned: {body}")
             return False
     except requests.Timeout:
         print("[PurrMemo] Push timed out")
@@ -165,9 +163,9 @@ def search_memo(query: str, time_range: tuple = None, threshold: float = None) -
             params=params,
             timeout=10,
         )
-        if resp.status_code == 200:
-            data = resp.json()
-            return data.get("context", "")
+        body = resp.json()
+        if body.get("status") == "ok":
+            return body.get("context", "")
         return None
     except Exception:
         return None

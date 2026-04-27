@@ -216,10 +216,16 @@ def update_memo(
         else:
             valid_events = []
             for i, e in enumerate(events):
-                if not isinstance(e, str) or not e.strip():
-                    errors.append(f"events[{i}] 无效：每个事件必须是非空字符串")
+                if not isinstance(e, dict):
+                    errors.append(f"events[{i}] 无效：每条事件必须是对象 {{time, event}}")
+                elif "time" not in e or "event" not in e:
+                    errors.append(f"events[{i}] 缺少字段：需要 time 和 event")
+                elif not isinstance(e["time"], str) or not e["time"].strip():
+                    errors.append(f"events[{i}].time 无效：必须是非空字符串")
+                elif not isinstance(e["event"], str) or not e["event"].strip():
+                    errors.append(f"events[{i}].event 无效：必须是非空字符串")
                 else:
-                    valid_events.append(e.strip())
+                    valid_events.append({"time": e["time"].strip(), "event": e["event"].strip()})
             events = valid_events
 
     if work_exp is not None:
@@ -366,7 +372,7 @@ def update_memo(
     # ── Build flush data for local memory.md ──
     flush_parts = []
     if events:
-        flush_parts.append(f"[事件]\n" + "\n".join(f"- {e}" for e in events if e))
+        flush_parts.append(f"[事件]\n" + "\n".join(f"- {e['time']}: {e['event']}" for e in events if isinstance(e, dict)))
     if work_exp:
         flush_parts.append(f"[工作经验]\n" + "\n".join(f"- {w}" for w in work_exp if w))
     if cognition:
@@ -408,7 +414,7 @@ AGENT_TOOLS = [
                 "type": "object",
                 "properties": {
                     "short_term": {"type": "string", "description": "短期工作状态：当前处理的任务细节、挂起步骤、临时变量等即时上下文。必填。"},
-                    "events": {"type": "array", "items": {"type": "string"}, "description": "事件记录：每条包含时间+事件描述，如 '2026-04-27: 完成PurrMemo集成'。记录发生过的事实、对话、操作。"},
+                    "events": {"type": "array", "items": {"type": "object", "properties": {"time": {"type": "string", "description": "事件发生时间，格式 YYYYMMDDHHMM，如 202604271500"}, "event": {"type": "string", "description": "事件描述"}}, "required": ["time", "event"]}, "description": "事件记录：每条包含 time（格式YYYYMMDDHHMM）和 event 描述。记录发生过的事实、对话、操作。"},
                     "work_exp": {"type": "array", "items": {"type": "string"}, "description": "经验增长：每条一句简短经验。用户偏好、避坑教训、有效工作模式等可复用的沉淀。"},
                     "cognition": {"type": "array", "items": {"type": "string"}, "description": "认知记录：每条一句简短认知，包含事物本身及其联系。如 'Chroma是向量数据库，通过语义相似度检索，适合长期记忆存储'。"},
                     "reminders": {"type": "string", "description": "待办提醒：需要后续跟进的未完成任务、待处理事项。"},
