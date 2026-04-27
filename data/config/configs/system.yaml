@@ -7,3 +7,24 @@ agent_model: "openai:deepseek-chat"
 
 # Embedding 模型
 embedding_model: "BAAI/bge-small-zh-v1.5"
+
+# PurrMemo 记忆系统
+purrmemo:
+  enabled: false          # 启用后将 update_memo 推送到 PurrMemo API
+  host: "http://127.0.0.1:8000"
+  api_key: ""
+  timeout: 5
+
+# 系统心跳传感器
+heartbeat:
+  enabled: false          # 启用后每 interval 秒注入 <heartbeat> 消息
+  interval: 1800          # 间隔秒数，默认30分钟
+
+# RSS 订阅源
+rss_subscriptions:
+  - name: "Lilian Weng's Blog"
+    url: "https://lilianweng.github.io/lil-log/feed.xml"
+  - name: "Ahead of AI (by Sebastian Raschka)"
+    url: "https://magazine.sebastianraschka.com/feed"
+  - name: "Latepost 晚点"
+    url: "https://rsshub.rssforever.com/latepost"
