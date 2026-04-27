@@ -328,12 +328,13 @@ class Agent:
             alert_prompt = """【系统警告：记忆容量即将溢出，触发自动记忆归档】
 为了防止对话断层，系统即将清理你最早期的一批记忆。
 你必须调用 `update_memo` 工具将当前记忆进行分类归档：
-- short_term: 当前正在处理、被搁置的任务流，以及确立的全局变量或当前需要加载的工具、Skill等。
-- long_term: 发现的明确用户喜好、做事风格或避坑经验。
-- decisions: 技术发现与架构决策记录。
+- short_term: （必填）当前正在处理、被搁置的任务流，以及确立的全局变量或当前需要加载的工具、Skill等。
+- events: （列表）事件记录，每条是 {"time": "YYYYMMDDHHMM", "event": "描述"} 格式。如 {"time": "202604271500", "event": "完成PurrMemo集成"}。记录发生过的事实、对话、操作。
+- work_exp: （列表）经验增长，每条一句简短经验。用户偏好、避坑教训、有效工作模式等可复用沉淀。
+- cognition: （列表）认知记录，每条一句简短认知，包含事物本身及其联系。如 "Chroma是向量数据库，通过语义相似度检索，适合长期记忆存储"。
 - reminders: 待办提醒事项。
 - project_state: 当前项目整体进度。
-注意：直接调用工具即可，无须输出废话。"""
+注意：描述尽量精简，每项一句话。直接调用工具即可，无须输出废话。"""
             temp_history = self.current_history.copy()
             temp_history.append({"role": "user", "content": alert_prompt})
 
@@ -394,16 +395,29 @@ class Agent:
                                         args = repair_json(args_str, return_objects=True)
 
                             if isinstance(args, dict):
-                                parse_tool("update_memo", args)
-                                param_parts = []
-                                for key, val in args.items():
-                                    val_str = json.dumps(val, ensure_ascii=False) if isinstance(val, (dict, list)) else str(val)
-                                    param_parts.append(f"  - **{key}**: {val_str}")
+                                # Call update_memo and check result
+                                tool_result = parse_tool("update_memo", args)
+                                import json
+                                # parse_tool returns a JSON string via _format_response
+                                try:
+                                    result_data = json.loads(tool_result)
+                                    is_error = result_data.get("type") == "error"
+                                except Exception:
+                                    is_error = "❌" in str(tool_result) or "error" in str(tool_result).lower()
 
-                                if param_parts:
-                                    archived_contents.append("\n".join(param_parts))
-
-                            tool_response = '✅ 归档工具调用成功'
+                                if is_error:
+                                    # Validation failed - send back to agent for retry
+                                    error_msg = str(tool_result)[:300]
+                                    tool_response = f'❌ 参数格式错误，请修正后重试: {error_msg}'
+                                    has_update_memo = False  # Don't break, let agent retry
+                                else:
+                                    param_parts = []
+                                    for key, val in args.items():
+                                        val_str = json.dumps(val, ensure_ascii=False) if isinstance(val, (dict, list)) else str(val)
+                                        param_parts.append(f"  - **{key}**: {val_str}")
+                                    if param_parts:
+                                        archived_contents.append("\n".join(param_parts))
+                                    tool_response = '✅ 归档工具调用成功'
                         except Exception as e:
                             print(f"⚠️ update_memo 执行异常: {e}")
                             try:
