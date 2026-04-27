@@ -3,7 +3,7 @@
 # ============================================
 
 # Agent 使用的默认模型
-agent_model: "openai:deepseek-chat"
+agent_model: "openai:deepseek-v4-flash"
 
 # Embedding 模型
 embedding_model: "BAAI/bge-small-zh-v1.5"

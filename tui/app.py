@@ -6,11 +6,11 @@ from textual.binding import Binding
 # 引入基础配置和工具初始化
 from src.utils.config import initialize_config
 from src.plugins.route.base_tool import _init_tool_async, init_tool
-from src.sensor.const import start_sensors
+from src.sensor.system.const import start_sensors
 
 # 引入 agent 模块核心
 from src.agent.manager import init_agent, get_agent, shutdown_agent
-from src.sensor.feishu import start_lark_sensor
+from src.sensor.message.feishu import start_lark_sensor
 from tui.views.chat import MainView, TaskMonitorScreen
 
 
