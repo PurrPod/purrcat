@@ -154,13 +154,24 @@ def get_feishu_config() -> Dict[str, str]:
 
 
 def get_purrmemo_config() -> Dict[str, any]:
-    """获取 PurrMemo 记忆系统配置"""
+    """获取 PurrMemo 记忆系统配置
+    配置示例 (放在 data/config/configs/ 下的 yaml 中):
+        purrmemo:
+          enabled: true          # 启用后将 update_memo 推送到 PurrMemo API
+          host: "http://127.0.0.1:8000"  # PurrMemo 服务地址
+          api_key: ""             # API 密钥（如需）
+    """
     config = load_config()
-    return config.get("purrmemo", {"enabled": False})
+    return config.get("purrmemo", {"enabled": False, "host": "http://127.0.0.1:8000", "api_key": ""})
 
 
 def get_heartbeat_config() -> Dict[str, any]:
-    """获取系统心跳传感器配置"""
+    """获取系统心跳传感器配置
+    配置示例 (放在 data/config/configs/ 下的 yaml 中):
+        heartbeat:
+          enabled: true          # 启用后每 interval 秒注入 <heartbeat> 消息
+          interval: 1800          # 间隔秒数，默认30分钟
+    """
     config = load_config()
     return config.get("heartbeat", {"enabled": False, "interval": 1800})
 
