@@ -1,7 +1,7 @@
 data/config/
 
 agent_vm/
-
+src/memory/
 data/checkpoints
 .buffer/
 scripts/start_mini.bat
@@ -29,7 +29,7 @@ htmlcov/
 .mypy_cache/
 .ruff_cache/
 .hypothesis/
-
+ui/
 
 node_modules/
 ui/node_modules/

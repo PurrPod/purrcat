@@ -13,6 +13,7 @@ from tui.api import (
     get_window_token, get_task_window_token, get_agent_max_token, get_task_max_token,
     format_task_log
 )
+from textual.screen import ModalScreen
 
 
 # ================= 工具调用及扫描效果组件 (保持不变) =================
@@ -245,6 +246,7 @@ class MainView(Vertical):
         self.is_selecting = False
         self.rendered_msg_counts = {"nav-main": 0}
         self.tool_widgets = {}
+        self._task_switch_pending = False
 
         self.query_one("#chat-input", ChatInput).focus()
         self.set_interval(0.25, self.blink_cat)
@@ -371,14 +373,14 @@ class MainView(Vertical):
                     child.display = True
             chat_zone.scroll_end(animate=False)
         else:
-            # 切到 Task：只显示当前 Task 的组件，把 Main 的气泡全藏起来
-            current_task_id = self.current_space.replace("task-", "")
-            target_widget_id = f"task-log-widget-{current_task_id}"
+            # 切到 Task：隐藏主空间的聊天气泡
             for child in chat_zone.children:
-                if child.id == target_widget_id:
-                    child.display = True
-                else:
+                if not (child.id and str(child.id).startswith("task-log-widget")):
                     child.display = False
+                else:
+                    child.display = True
+            # 标记需要强制刷新日志
+            self._task_switch_pending = True
 
         # ⚠️ 极其重要：删掉原本清空 rendered_msg_counts 和 tool_widgets 的两行代码！
         # 让 nav-main 记住它已经渲染了多少条消息，切回来时直接复用，绝不从头渲染！
@@ -485,6 +487,11 @@ class MainView(Vertical):
                     # 消费掉这个 dirty 标记，代表 UI 已经知晓并准备更新
                     task_module.dirty_tasks.remove(task_id)
 
+            # 3. 如果是刚切换过来，强制刷新
+            if getattr(self, '_task_switch_pending', False):
+                needs_update = True
+                self._task_switch_pending = False
+
             # 🎈 核心拦截：如果没变脏，且不是首次渲染，直接退出！无磁盘 IO，无 DOM 操作！
             if not needs_update:
                 return
@@ -492,11 +499,10 @@ class MainView(Vertical):
             # 3. 只有确认需要更新时，才去读取并格式化磁盘日志
             log_content = format_task_log(task_id)
 
-            # 4. 挂载或更新 UI
+            # 4. 挂载或更新 UI — 用 Markdown 渲染，比纯文本好看
             if log_widget:
-                # 已经是脏的了，直接全量塞进去即可
                 log_widget.update(log_content)
-                log_widget.display = True # 确保它可见
+                log_widget.display = True
             else:
                 new_widget = Static(log_content, id=widget_id, markup=False)
                 chat_zone.mount(new_widget)
@@ -596,3 +602,85 @@ class MainView(Vertical):
 
             self.rendered_msg_counts[self.current_space] = len(visible_history)
             chat_zone.scroll_end(animate=False)
+# ================= Task Monitor Screen =================
+
+class TaskMonitorScreen(ModalScreen):
+    def __init__(self):
+        super().__init__()
+        self.selected_task = None
+        self.showing_log = False
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="task-dialog"):
+            yield Static("Task Monitor — PurrCat Background Tasks", id="task-dialog-header")
+            yield VerticalScroll(id="task-dialog-list")
+            yield Static("Ctrl+q: Close  |  Enter: View Logs  |  Esc: Back", id="task-dialog-footer")
+
+    def on_mount(self):
+        self.refresh_task_list()
+
+    def refresh_task_list(self):
+        task_list = self.query_one("#task-dialog-list")
+        task_list.remove_children()
+        tasks = get_task_list()
+        if not tasks:
+            task_list.mount(Static("No active tasks.", classes="task-detail"))
+            return
+        for t in tasks:
+            state = t.get("state", "unknown")
+            state_emoji = {"running": "🟢", "done": "🔵", "error": "🔴", "waiting": "🟡"}.get(state, "⚪")
+            card = Vertical(classes="task-card")
+            card.id = f"task-card-{t['id']}"
+
+            name = Static(f"{state_emoji}  {t.get('name', '?')}", classes="task-name")
+            card.mount(name)
+
+            state_label = Static(f"State: {state}", classes="task-state " + state)
+            card.mount(state_label)
+
+            expert = t.get("expert_type", "?")
+            step = t.get("step", 0)
+            tokens = t.get("token_usage", 0)
+            created = t.get("create_time", "")
+            if isinstance(created, (int, float)):
+                import datetime
+                created = datetime.datetime.fromtimestamp(created).strftime("%H:%M:%S")
+            detail = Static(
+                f"  ID: {str(t['id'])[:16]}... | Type: {expert} | Step: {step} | Tokens: {tokens} | {created}",
+                classes="task-detail"
+            )
+            card.mount(detail)
+            task_list.mount(card)
+
+
+    def view_task_log(self, task_id):
+        self.selected_task = task_id
+        self.showing_log = True
+        task_list = self.query_one("#task-dialog-list")
+        task_list.remove_children()
+
+        log_text = format_task_log(task_id)
+        log_viewer = VerticalScroll(id="task-log-viewer")
+        for line in log_text.split("\n"):
+            log_viewer.mount(Static(line, classes="log-entry"))
+        task_list.mount(log_viewer)
+        log_viewer.focus()
+
+    def key_escape(self):
+        if self.showing_log:
+            self.showing_log = False
+            self.refresh_task_list()
+        else:
+            self.app.pop_screen()
+
+    def key_enter(self):
+        if not self.showing_log:
+            # View log of first visible task in list
+            import re
+            cards = list(self.query(".task-card"))
+            if cards:
+                for c in cards:
+                    if c.id and c.id.startswith("task-card-"):
+                        task_id = c.id.replace("task-card-", "")
+                        self.view_task_log(task_id)
+                        break

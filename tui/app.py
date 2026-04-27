@@ -11,7 +11,7 @@ from src.sensor.const import start_sensors
 # 引入 agent 模块核心
 from src.agent.manager import init_agent, get_agent, shutdown_agent
 from src.sensor.feishu import start_lark_sensor
-from tui.views.chat import MainView
+from tui.views.chat import MainView, TaskMonitorScreen
 
 
 class PurrCatTUI(App):
@@ -19,6 +19,7 @@ class PurrCatTUI(App):
 
     BINDINGS = [
         Binding("ctrl+q", "quit", "Quit", show=True),
+        Binding("ctrl+t", "open_task_monitor", "Tasks", show=True),
     ]
 
     def compose(self):
@@ -42,6 +43,10 @@ class PurrCatTUI(App):
 
         # 4. 启动其他传感器（如飞书）
         start_lark_sensor(get_agent())
+
+    def action_open_task_monitor(self) -> None:
+        """Open the task monitor modal"""
+        self.push_screen(TaskMonitorScreen())
 
     async def on_unmount(self) -> None:
         """复刻 backend.py 的 teardown 销毁逻辑，确保优雅退出"""

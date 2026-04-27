@@ -30,7 +30,7 @@ CRON_FILE = os.path.join(SCHEDULE_DIR, "cron.json")
 # Agent 相关路径
 AGENT_DIR = os.path.join(SRC_DIR, "agent")
 AGENT_CORE_DIR = os.path.join(AGENT_DIR, "core")
-SOUL_MD_PATH = os.path.join(AGENT_DIR, "SOUL.md")
+SOUL_MD_PATH = os.path.join(AGENT_CORE_DIR, "SOUL.md")
 SYSTEM_RULES_DIR = os.path.join(AGENT_DIR, "system_rules")
 CHECKPOINT_PATH = os.path.join(AGENT_DIR, "checkpoint.json")
 

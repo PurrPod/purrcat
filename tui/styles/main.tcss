@@ -267,3 +267,111 @@ ToolCallWidget {
     height: auto;
     width: 100%;
 }
+
+/* ============== Task Monitor Screen ============== */
+
+TaskMonitorScreen {
+    align: center middle;
+    background: rgba(0, 0, 0, 0.85);
+}
+
+#task-dialog {
+    width: 85%;
+    height: 85%;
+    border: round #ffffff;
+    background: #18181b;
+    layout: vertical;
+    padding: 1 2;
+}
+
+#task-dialog-header {
+    height: 3;
+    border-bottom: solid #27272a;
+    padding: 0 0 1 0;
+    content-align: center middle;
+    text-style: bold;
+    color: #d97706;
+}
+
+#task-dialog-list {
+    height: 1fr;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 1 0;
+}
+
+.task-card {
+    height: auto;
+    border: solid #27272a;
+    margin: 0 1 1 1;
+    padding: 1 2;
+    background: #1c1c1f;
+}
+
+.task-card:hover {
+    border: solid #d97706;
+}
+
+.task-name {
+    color: #e4e4e7;
+    text-style: bold;
+    margin-bottom: 0;
+}
+
+.task-state {
+    text-style: bold;
+    margin-top: 0;
+    margin-bottom: 0;
+}
+
+.task-state.running {
+    color: #22c55e;
+}
+
+.task-state.done {
+    color: #3b82f6;
+}
+
+.task-state.error {
+    color: #ef4444;
+}
+
+.task-state.waiting {
+    color: #eab308;
+}
+
+.task-state.unknown {
+    color: #71717a;
+}
+
+.task-detail {
+    color: #a1a1aa;
+    margin-top: 0;
+}
+
+#task-dialog-footer {
+    height: 3;
+    border-top: solid #27272a;
+    padding: 1 0 0 0;
+    color: #52525b;
+    text-align: center;
+}
+
+#task-log-viewer {
+    height: 1fr;
+    border: solid #27272a;
+    padding: 1 2;
+    overflow-y: auto;
+    overflow-x: hidden;
+    background: #111113;
+    margin: 0 1;
+}
+
+#task-log-viewer:focus {
+    border: solid #d97706;
+}
+
+.log-entry {
+    color: #a1a1aa;
+    margin-bottom: 0;
+}
