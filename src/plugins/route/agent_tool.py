@@ -205,6 +205,59 @@ def update_memo(
         project_state: str = None
 ) -> str:
     """更新系统备忘录，并异步触发核心档案更新"""
+    # ── 参数校验 ──
+    errors = []
+    if not short_term or not short_term.strip():
+        errors.append("short_term 不能为空，请提供当前工作上下文")
+
+    if events is not None:
+        if not isinstance(events, list):
+            errors.append(f"events 必须是数组，收到 {type(events).__name__}")
+        else:
+            valid_events = []
+            for i, e in enumerate(events):
+                if not isinstance(e, str) or not e.strip():
+                    errors.append(f"events[{i}] 无效：每个事件必须是非空字符串")
+                else:
+                    valid_events.append(e.strip())
+            events = valid_events
+
+    if work_exp is not None:
+        if not isinstance(work_exp, list):
+            errors.append(f"work_exp 必须是数组，收到 {type(work_exp).__name__}")
+        else:
+            valid_exp = []
+            for i, w in enumerate(work_exp):
+                if not isinstance(w, str) or not w.strip():
+                    errors.append(f"work_exp[{i}] 无效：每条经验必须是非空字符串")
+                elif len(w.strip()) > 500:
+                    errors.append(f"work_exp[{i}] 过长（{len(w.strip())}字符），建议每条不超过500字符")
+                else:
+                    valid_exp.append(w.strip())
+            work_exp = valid_exp
+
+    if cognition is not None:
+        if not isinstance(cognition, list):
+            errors.append(f"cognition 必须是数组，收到 {type(cognition).__name__}")
+        else:
+            valid_cog = []
+            for i, c in enumerate(cognition):
+                if not isinstance(c, str) or not c.strip():
+                    errors.append(f"cognition[{i}] 无效：每条认知必须是非空字符串")
+                elif len(c.strip()) > 500:
+                    errors.append(f"cognition[{i}] 过长（{len(c.strip())}字符），建议每条不超过500字符")
+                else:
+                    valid_cog.append(c.strip())
+            cognition = valid_cog
+
+    if reminders is not None and not isinstance(reminders, str):
+        errors.append("reminders 必须是字符串")
+    if project_state is not None and not isinstance(project_state, str):
+        errors.append("project_state 必须是字符串")
+
+    if errors:
+        return _format_response("error", "❌ 参数校验失败:\n" + "\n".join(f"  - {e}" for e in errors))
+
     def _update_core_information(flush_data: str):
         def background_task():
             from src.model.model import Model
@@ -355,9 +408,9 @@ AGENT_TOOLS = [
                 "type": "object",
                 "properties": {
                     "short_term": {"type": "string", "description": "短期工作状态：当前处理的任务细节、挂起步骤、临时变量等即时上下文。必填。"},
-                    "events": {"type": "array", "items": {"type": "string"}, "description": "事件列表：发生过的事情、关键对话、重要发现等。"},
-                    "work_exp": {"type": "array", "items": {"type": "string"}, "description": "工作经验：用户偏好、避坑经验、有效的工作模式等。"},
-                    "cognition": {"type": "array", "items": {"type": "string"}, "description": "认知/决策：技术架构决策、系统环境发现、关键设计思路等。"},
+                    "events": {"type": "array", "items": {"type": "string"}, "description": "事件记录：每条包含时间+事件描述，如 '2026-04-27: 完成PurrMemo集成'。记录发生过的事实、对话、操作。"},
+                    "work_exp": {"type": "array", "items": {"type": "string"}, "description": "经验增长：每条一句简短经验。用户偏好、避坑教训、有效工作模式等可复用的沉淀。"},
+                    "cognition": {"type": "array", "items": {"type": "string"}, "description": "认知记录：每条一句简短认知，包含事物本身及其联系。如 'Chroma是向量数据库，通过语义相似度检索，适合长期记忆存储'。"},
                     "reminders": {"type": "string", "description": "待办提醒：需要后续跟进的未完成任务、待处理事项。"},
                     "project_state": {"type": "string", "description": "项目状态：当前项目的整体进度、关键上下文、已完成和待完成的工作。"}
                 },
