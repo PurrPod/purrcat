@@ -395,16 +395,29 @@ class Agent:
                                         args = repair_json(args_str, return_objects=True)
 
                             if isinstance(args, dict):
-                                parse_tool("update_memo", args)
-                                param_parts = []
-                                for key, val in args.items():
-                                    val_str = json.dumps(val, ensure_ascii=False) if isinstance(val, (dict, list)) else str(val)
-                                    param_parts.append(f"  - **{key}**: {val_str}")
+                                # Call update_memo and check result
+                                tool_result = parse_tool("update_memo", args)
+                                import json
+                                # parse_tool returns a JSON string via _format_response
+                                try:
+                                    result_data = json.loads(tool_result)
+                                    is_error = result_data.get("type") == "error"
+                                except Exception:
+                                    is_error = "❌" in str(tool_result) or "error" in str(tool_result).lower()
 
-                                if param_parts:
-                                    archived_contents.append("\n".join(param_parts))
-
-                            tool_response = '✅ 归档工具调用成功'
+                                if is_error:
+                                    # Validation failed - send back to agent for retry
+                                    error_msg = str(tool_result)[:300]
+                                    tool_response = f'❌ 参数格式错误，请修正后重试: {error_msg}'
+                                    has_update_memo = False  # Don't break, let agent retry
+                                else:
+                                    param_parts = []
+                                    for key, val in args.items():
+                                        val_str = json.dumps(val, ensure_ascii=False) if isinstance(val, (dict, list)) else str(val)
+                                        param_parts.append(f"  - **{key}**: {val_str}")
+                                    if param_parts:
+                                        archived_contents.append("\n".join(param_parts))
+                                    tool_response = '✅ 归档工具调用成功'
                         except Exception as e:
                             print(f"⚠️ update_memo 执行异常: {e}")
                             try:

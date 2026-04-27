@@ -369,7 +369,28 @@ def update_memo(
         thread = threading.Thread(target=background_task)
         thread.daemon = True
         thread.start()
-    # ── Build flush data for local memory.md ──
+    # ── Check if PurrMemo is enabled ──
+    from src.plugins.route.purrmemo_client import is_enabled, push_memo
+    use_purrmemo = is_enabled()
+
+    if use_purrmemo:
+        # PurrMemo mode: push to PurrMemo API only, skip memory.md
+        try:
+            purrmemo_ok = push_memo(
+                events=events or [],
+                work_exp=work_exp or [],
+                cognition=cognition or [],
+                reminders=reminders,
+                project_state=project_state,
+            )
+            if purrmemo_ok:
+                return _format_response("text", f"✅ 备忘录已同步到 PurrMemo 记忆系统")
+            else:
+                return _format_response("error", f"❌ PurrMemo 推送失败，请检查 PurrMemo 服务状态")
+        except Exception as e:
+            return _format_response("error", f"❌ PurrMemo 推送异常: {e}")
+
+    # ── Legacy mode: write to local memory.md ──
     flush_parts = []
     if events:
         flush_parts.append(f"[事件]\n" + "\n".join(f"- {e['time']}: {e['event']}" for e in events if isinstance(e, dict)))
@@ -385,23 +406,6 @@ def update_memo(
         flush_data = "\n\n---\n\n".join(flush_parts)
         _update_core_information(flush_data)
 
-    # ── Route to PurrMemo if enabled ──
-    from src.plugins.route.purrmemo_client import is_enabled, push_memo
-    purrmemo_ok = False
-    if is_enabled():
-        try:
-            purrmemo_ok = push_memo(
-                events=events or [],
-                work_exp=work_exp or [],
-                cognition=cognition or [],
-                reminders=reminders,
-                project_state=project_state,
-            )
-        except Exception as e:
-            print(f"[PurrMemo] push_memo exception: {e}")
-
-    if purrmemo_ok:
-        return _format_response("text", f"✅ 备忘录已同步到 PurrMemo 记忆系统")
     return _format_response("text", f"✅ 备忘录更新成功")
 
 AGENT_TOOLS = [
