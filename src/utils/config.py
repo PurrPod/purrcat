@@ -159,6 +159,12 @@ def get_purrmemo_config() -> Dict[str, any]:
     return config.get("purrmemo", {"enabled": False})
 
 
+def get_heartbeat_config() -> Dict[str, any]:
+    """获取系统心跳传感器配置"""
+    config = load_config()
+    return config.get("heartbeat", {"enabled": False, "interval": 1800})
+
+
 def get_mcp_servers() -> Dict[str, Any]:
     """获取 MCP 服务器配置"""
     config = load_config()
