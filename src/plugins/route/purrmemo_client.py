@@ -74,14 +74,18 @@ def _get_client():
 
 
 def push_memo(
-    short_term: Optional[str] = None,
-    long_term: Optional[str] = None,
-    decisions: Optional[str] = None,
-    reminders: Optional[str] = None,
-    project_state: Optional[str] = None,
+    events: list = None,
+    work_exp: list = None,
+    cognition: list = None,
+    reminders: str = None,
+    project_state: str = None,
 ) -> bool:
     """
     Push memory to PurrMemo. Maps update_memo fields to PurrMemo's push API.
+
+    - events: list of event strings (converted to PurrMemo's {time, event} format)
+    - work_exp: list of work experience strings
+    - cognition: list of cognition/decision strings
 
     Returns True if successfully pushed to PurrMemo, False if fell back.
     """
@@ -89,29 +93,24 @@ def push_memo(
     if client is None:
         return False
 
-    # Build payload mapping update_memo fields to PurrMemo format
     import datetime
     now = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
 
-    events = []
-    work_exp = []
-    cognition = []
-
-    if short_term:
-        events.append({"time": now, "event": f"[short_term] {short_term[:500]}"})
-    if long_term:
-        work_exp.append(long_term[:1000])
-    if decisions:
-        cognition.append(f"[technical decisions] {decisions[:1000]}")
+    # Format events as PurrMemo expects: list of {time, event} dicts
+    formatted_events = []
+    if events:
+        for e in events:
+            if e and e.strip():
+                formatted_events.append({"time": now, "event": e.strip()[:500]})
     if reminders:
-        events.append({"time": now, "event": f"[reminders] {reminders[:500]}"})
+        formatted_events.append({"time": now, "event": f"[reminder] {reminders[:500]}"})
     if project_state:
-        events.append({"time": now, "event": f"[project_state] {project_state[:500]}"})
+        formatted_events.append({"time": now, "event": f"[project] {project_state[:500]}"})
 
     payload = {
-        "events": events,
-        "work_exp": work_exp,
-        "cognition": cognition,
+        "events": formatted_events,
+        "work_exp": [w.strip()[:1000] for w in (work_exp or []) if w and w.strip()],
+        "cognition": [c.strip()[:1000] for c in (cognition or []) if c and c.strip()],
         "timestamp": now,
         "source": "main_agent",
     }
@@ -136,20 +135,34 @@ def push_memo(
         return False
 
 
-def search_memo(query: str, top_k: int = 5) -> Optional[str]:
+def search_memo(query: str, time_range: tuple = None, threshold: float = None) -> Optional[str]:
     """
     Search PurrMemo for relevant memories.
 
-    Returns context string or None if unavailable.
+    Args:
+        query: Search query text
+        time_range: Optional (start, end) tuple like ("2026-04-01", "2026-04-27")
+        threshold: Optional semantic similarity threshold (0.0~1.0)
+
+    Returns context string from PurrMemo, or None if unavailable.
     """
     client = _get_client()
     if client is None:
         return None
 
     try:
+        params = {"query": query}
+        filters = {}
+        if time_range:
+            filters["time_range"] = list(time_range)
+        if threshold is not None:
+            filters["threshold"] = threshold
+        if filters:
+            params["filters"] = json.dumps(filters)
+
         resp = client["session"].get(
             f"{client['host']}/api/v1/search",
-            params={"query": query, "top_k": top_k},
+            params=params,
             timeout=10,
         )
         if resp.status_code == 200:

@@ -328,12 +328,13 @@ class Agent:
             alert_prompt = """【系统警告：记忆容量即将溢出，触发自动记忆归档】
 为了防止对话断层，系统即将清理你最早期的一批记忆。
 你必须调用 `update_memo` 工具将当前记忆进行分类归档：
-- short_term: 当前正在处理、被搁置的任务流，以及确立的全局变量或当前需要加载的工具、Skill等。
-- long_term: 发现的明确用户喜好、做事风格或避坑经验。
-- decisions: 技术发现与架构决策记录。
+- short_term: （必填）当前正在处理、被搁置的任务流，以及确立的全局变量或当前需要加载的工具、Skill等。
+- events: （列表）发生过的事件、关键对话内容、重要发现等具体事实。
+- work_exp: （列表）用户偏好、避坑经验、有效的工作模式等可复用的经验。
+- cognition: （列表）技术架构决策、系统环境发现、关键设计思路等认知类信息。
 - reminders: 待办提醒事项。
 - project_state: 当前项目整体进度。
-注意：直接调用工具即可，无须输出废话。"""
+注意：描述尽量精简，每项一句话。直接调用工具即可，无须输出废话。"""
             temp_history = self.current_history.copy()
             temp_history.append({"role": "user", "content": alert_prompt})
 

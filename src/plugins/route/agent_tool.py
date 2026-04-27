@@ -198,8 +198,9 @@ import threading
 MEMO_FILE_LOCK = threading.Lock()
 def update_memo(
         short_term: str = None,
-        long_term: str = None,
-        decisions: str = None,
+        events: list = None,
+        work_exp: list = None,
+        cognition: list = None,
         reminders: str = None,
         project_state: str = None
 ) -> str:
@@ -309,11 +310,18 @@ def update_memo(
         thread = threading.Thread(target=background_task)
         thread.daemon = True
         thread.start()
+    # ── Build flush data for local memory.md ──
     flush_parts = []
-    if long_term:
-        flush_parts.append(f"[偏好与避坑经验]\n{long_term}")
-    if decisions:
-        flush_parts.append(f"[重要技术发现与决策]\n{decisions}")
+    if events:
+        flush_parts.append(f"[事件]\n" + "\n".join(f"- {e}" for e in events if e))
+    if work_exp:
+        flush_parts.append(f"[工作经验]\n" + "\n".join(f"- {w}" for w in work_exp if w))
+    if cognition:
+        flush_parts.append(f"[认知/决策]\n" + "\n".join(f"- {c}" for c in cognition if c))
+    if reminders:
+        flush_parts.append(f"[待办提醒]\n{reminders}")
+    if project_state:
+        flush_parts.append(f"[项目状态]\n{project_state}")
     if flush_parts:
         flush_data = "\n\n---\n\n".join(flush_parts)
         _update_core_information(flush_data)
@@ -324,9 +332,9 @@ def update_memo(
     if is_enabled():
         try:
             purrmemo_ok = push_memo(
-                short_term=short_term,
-                long_term=long_term,
-                decisions=decisions,
+                events=events or [],
+                work_exp=work_exp or [],
+                cognition=cognition or [],
                 reminders=reminders,
                 project_state=project_state,
             )
@@ -342,13 +350,14 @@ AGENT_TOOLS = [
         "type": "function",
         "function": {
             "name": "update_memo",
-            "description": "在系统提示记忆压缩时更新备忘录，支持多维度记忆类型。",
+            "description": "更新系统备忘录。short_term 必须提供（当前工作上下文），其余字段为结构化长期记忆。",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "short_term": {"type": "string", "description": "短期工作状态：当前处理的任务细节、挂起步骤、临时变量等即时上下文。"},
-                    "long_term": {"type": "string", "description": "长期用户画像与避坑：用户性格偏好、行为习惯、必须要牢记的避坑经验和血泪教训。"},
-                    "decisions": {"type": "string", "description": "技术发现与决策：对系统环境的重要发现（如沙盒机制、文件限制）、工具特性，以及关键架构决策。"},
+                    "short_term": {"type": "string", "description": "短期工作状态：当前处理的任务细节、挂起步骤、临时变量等即时上下文。必填。"},
+                    "events": {"type": "array", "items": {"type": "string"}, "description": "事件列表：发生过的事情、关键对话、重要发现等。"},
+                    "work_exp": {"type": "array", "items": {"type": "string"}, "description": "工作经验：用户偏好、避坑经验、有效的工作模式等。"},
+                    "cognition": {"type": "array", "items": {"type": "string"}, "description": "认知/决策：技术架构决策、系统环境发现、关键设计思路等。"},
                     "reminders": {"type": "string", "description": "待办提醒：需要后续跟进的未完成任务、待处理事项。"},
                     "project_state": {"type": "string", "description": "项目状态：当前项目的整体进度、关键上下文、已完成和待完成的工作。"}
                 },
