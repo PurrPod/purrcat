@@ -103,7 +103,7 @@ interval = 1800
 
 def _generate_mcp_config():
     """生成独立的 MCP 配置文件，避免敏感 Token 混在 TOML 里"""
-    mcp_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "config", "configs")
+    mcp_dir = os.path.dirname(os.path.abspath(__file__))
     os.makedirs(mcp_dir, exist_ok=True)
     mcp_path = os.path.join(mcp_dir, "mcp_config.json")
 
@@ -160,7 +160,7 @@ def cmd_init():
     # 生成 mcp_config.json（单独存放，避免敏感信息混在 TOML 里）
     _generate_mcp_config()
     print(f"   编辑 ~/.purrcat.toml 填入 API Key 等配置")
-    print(f"   编辑 data/config/configs/mcp_config.json 填入 MCP Token")
+    print(f"   编辑 mcp_config.json 填入 MCP Token")
     print(f"   然后运行: purrcat start")
 
 

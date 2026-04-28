@@ -11,7 +11,7 @@ CONFIG_DIR = os.path.join(DATA_DIR, "config")
 CONFIG_YAML_PATH = os.path.join(CONFIG_DIR, "config.yaml")
 SECRETS_DIR = os.path.join(CONFIG_DIR, "secrets")
 CONFIGS_DIR = os.path.join(CONFIG_DIR, "configs")
-MCP_CONFIG_PATH = os.path.join(CONFIGS_DIR, "mcp_config.json")
+MCP_CONFIG_PATH = os.path.join(BASE_DIR, "mcp_config.json")
 
 MEMORY_DIR = os.path.join(DATA_DIR, "memory")
 SCHEDULE_DIR = os.path.join(DATA_DIR, "schedule")
