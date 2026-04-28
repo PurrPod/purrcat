@@ -423,6 +423,8 @@ def init_tool():
 
     added = len(merged) - len(existing)
     print(f"✅ 工具索引已更新: {len(merged)} 条 (新增 {added})")
+    # 后台注册 MCP 工具（daemon 线程，不阻塞启动）
+    _init_tool_async()
     return merged
 
 
