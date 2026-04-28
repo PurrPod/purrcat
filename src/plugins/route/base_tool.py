@@ -828,10 +828,6 @@ class DockerManager:
             os.makedirs(skill_host_dir, exist_ok=True)
             volumes[skill_host_dir] = {"bind": f"{self.container_workspace}/skill", "mode": "rw"}
 
-            buffer_host_dir = os.path.abspath("agent_vm/.buffer")
-            os.makedirs(buffer_host_dir, exist_ok=True)
-            volumes[buffer_host_dir] = {"bind": f"{self.container_workspace}/.buffer", "mode": "rw"}
-
             from src.utils.config import get_filesystem_config
             docker_mount = get_filesystem_config().get("docker_mount", [])
             for dirpath in docker_mount:
