@@ -1,6 +1,7 @@
 data/config/
 
 agent_vm/
+mcp_config.json
 src/memory/
 data/checkpoints
 .buffer/
