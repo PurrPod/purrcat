@@ -20,8 +20,8 @@ embedding_model = "BAAI/bge-small-zh-v1.5"
 
 # ── 模型配置 ──
 # 每行一个模型，节名 = 模型名（点号分隔厂商和模型）
-# 例如: [models.openai.deepseek-v4-flash]
-[models.openai.deepseek-v4-flash]
+# 例如: [models."openai:deepseek-v4-flash"]
+[models."openai:deepseek-v4-flash"]
 # API Key 列表（多个自动负载均衡）
 api_keys = ["sk-your-api-key-here"]
 # API 地址

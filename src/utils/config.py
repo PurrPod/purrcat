@@ -93,27 +93,6 @@ def _apply_env_overrides(config: dict) -> None:
                 target = target[part]
 
 
-def _flatten_models(nested: dict, prefix: str, result: dict) -> None:
-    """展平嵌套的 models dict，将点号转为冒号"""
-    for key, val in nested.items():
-        full_key = f"{prefix}:{key}" if prefix else key
-        if isinstance(val, dict) and not any(k in val for k in ("api_keys", "base_url", "description")):
-            # 还有嵌套层级，继续递归
-            _flatten_models(val, full_key, result)
-        else:
-            result[full_key] = {
-                "api_keys": val.get("api_keys", []),
-                "base_url": val.get("base_url", ""),
-                "description": val.get("description", "LLM worker"),
-                "limits": {
-                    "rpm": val.get("rpm", 60),
-                    "tpm": val.get("tpm", 1000000),
-                    "concurrency": val.get("concurrency", 3),
-                    "max_token": val.get("max_token", 500000),
-                }
-            }
-
-
 def _build_config() -> dict:
     """构建完整配置（TOML + 环境变量 + 默认值）"""
     config = _load_toml_files()
@@ -127,10 +106,20 @@ def _build_config() -> dict:
     flat["embedding_model"] = agent_cfg.get("embedding_model", "BAAI/bge-small-zh-v1.5")
 
     # [models.*] 节 → 转换为旧格式的 models dict
-    # TOML 中 [models.openai.deepseek-v4-flash] 会变成嵌套 dict，
-    # 需要展平为 "openai:deepseek-v4-flash" 格式
+    # TOML 中用引号保留原名: [models."openai:deepseek-v4-flash"]
     models = {}
-    _flatten_models(config.get("models", {}), "", models)
+    for model_key, model_val in config.get("models", {}).items():
+        models[model_key] = {
+            "api_keys": model_val.get("api_keys", []),
+            "base_url": model_val.get("base_url", ""),
+            "description": model_val.get("description", "LLM worker"),
+            "limits": {
+                "rpm": model_val.get("rpm", 60),
+                "tpm": model_val.get("tpm", 1000000),
+                "concurrency": model_val.get("concurrency", 3),
+                "max_token": model_val.get("max_token", 500000),
+            }
+        }
     flat["models"] = models
 
     # [feishu] 节
