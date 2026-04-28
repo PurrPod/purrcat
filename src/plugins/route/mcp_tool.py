@@ -135,7 +135,7 @@ class MCPSessionManager:
             # 阻塞等待，直到后台任务把 session 建立完毕并 set() 信号
             # 加入 10 秒超时保护，防止启动失败导致无限等待
             try:
-                await asyncio.wait_for(ready_event.wait(), timeout=20.0)
+                await asyncio.wait_for(ready_event.wait(), timeout=120.0)
             except asyncio.TimeoutError:
                 raise RuntimeError(f"MCP Server '{server_name}' 启动超时 (20s)")
             
