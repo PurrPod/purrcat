@@ -862,34 +862,91 @@ def close_shell(session_id: str = "default") -> str:
 
 
 def import_file(host_path: str, sandbox_dir: str = "imports") -> str:
-    """将宿主机文件导入沙盒工作区"""
-    import shutil, os
+    """将宿主机文件/目录导入沙盒工作区
+    
+    安全检查：
+    - 禁止导入 dont_read_dirs 内的文件
+    - 目录导入有 30MB 总大小限制
+    """
+    import shutil, os, json
     
     host_path = os.path.abspath(host_path)
     if not os.path.exists(host_path):
-        raise FileNotFoundError(f"宿主机文件不存在: {host_path}")
-    if not os.path.isfile(host_path):
-        raise ValueError(f"路径不是文件: {host_path}")
+        raise FileNotFoundError(f"宿主机路径不存在: {host_path}")
+    
+    # 检查 dont_read_dirs 黑名单
+    from src.utils.config import FILE_CONFIG_PATH
+    with open(FILE_CONFIG_PATH) as f:
+        cfg = json.load(f)
+    dont_read = [os.path.abspath(d) for d in cfg.get("dont_read_dirs", [])]
+    for denied in dont_read:
+        if host_path.startswith(denied):
+            raise PermissionError(
+                f"禁止导入黑名单目录内的文件: {host_path}\n"
+                f"黑名单: {dont_read}\n"
+                f"文件在 {denied} 下，不可读取"
+            )
     
     mount_point = os.path.abspath("./agent_vm")
     sandbox_subdir = sandbox_dir.strip("/")
     dest_dir = os.path.join(mount_point, sandbox_subdir)
     os.makedirs(dest_dir, exist_ok=True)
     
-    fname = os.path.basename(host_path)
-    shutil.copy2(host_path, os.path.join(dest_dir, fname))
+    MAX_SIZE = 30 * 1024 * 1024  # 30MB
     
-    sandbox_path = f"/agent_vm/{sandbox_subdir}/{fname}"
+    if os.path.isfile(host_path):
+        # 单文件导入
+        fname = os.path.basename(host_path)
+        file_size = os.path.getsize(host_path)
+        if file_size > MAX_SIZE:
+            raise ValueError(f"文件过大 ({file_size / 1024 / 1024:.1f}MB)，超过 30MB 限制: {host_path}")
+        shutil.copy2(host_path, os.path.join(dest_dir, fname))
+        sandbox_path = f"/agent_vm/{sandbox_subdir}/{fname}"
+        msg = f"文件已导入沙盒: {sandbox_path} ({file_size / 1024:.1f}KB)"
+    
+    elif os.path.isdir(host_path):
+        # 目录导入：先计算总大小
+        total_size = 0
+        for dirpath, dirnames, filenames in os.walk(host_path):
+            for fn in filenames:
+                fp = os.path.join(dirpath, fn)
+                try:
+                    total_size += os.path.getsize(fp)
+                except OSError:
+                    pass
+                if total_size > MAX_SIZE:
+                    raise ValueError(
+                        f"目录过大 (超过 30MB)，禁止导入: {host_path}\n"
+                        f"请只导入需要的文件"
+                    )
+        
+        dirname = os.path.basename(host_path.rstrip("/\\"))
+        dest_path = os.path.join(dest_dir, dirname)
+        if os.path.exists(dest_path):
+            # 如果目标已存在，加时间戳避免覆盖
+            import time
+            dest_path = os.path.join(dest_dir, f"{dirname}_{int(time.time())}")
+        shutil.copytree(host_path, dest_path, symlinks=False)
+        sandbox_path = f"/agent_vm/{sandbox_subdir}/{os.path.basename(dest_path)}"
+        msg = f"目录已导入沙盒: {sandbox_path} ({total_size / 1024 / 1024:.1f}MB)"
+    
+    else:
+        raise ValueError(f"不支持的路径类型: {host_path}")
+    
     return _format_response("text", {
         "sandbox_path": sandbox_path,
         "host_path": host_path,
-        "message": f"文件已导入沙盒: {sandbox_path}"
+        "message": msg
     })
-
-
 def export_file(sandbox_path: str, host_path: str) -> str:
-    """将沙盒内文件导出到宿主机（带路径安全检查）"""
-    import shutil, os, json
+    """将沙盒内文件/目录导出到宿主机（带安全检查 + Git 快照）
+    
+    安全机制：
+    - 只允许导出到 allowed_export_dirs
+    - 导出前自动创建 Git 快照（init + add + commit）
+    - 本地无 git 工具则拒绝导出
+    """
+    import shutil, os, json, subprocess
     
     sandbox_path = sandbox_path.strip()
     if not sandbox_path.startswith("/agent_vm/"):
@@ -900,7 +957,7 @@ def export_file(sandbox_path: str, host_path: str) -> str:
     host_src = os.path.abspath(os.path.join(mount_point, rel_path))
     
     if not os.path.exists(host_src):
-        raise FileNotFoundError(f"沙盒文件不存在: {sandbox_path}")
+        raise FileNotFoundError(f"沙盒文件/目录不存在: {sandbox_path}")
     
     host_path = os.path.abspath(host_path)
     from src.utils.config import FILE_CONFIG_PATH
@@ -915,13 +972,81 @@ def export_file(sandbox_path: str, host_path: str) -> str:
             f"请在 data/config/file_config.json 的 allowed_export_dirs 中添加"
         )
     
+    # 检查 git 是否可用
+    try:
+        subprocess.run(["git", "--version"], capture_output=True, check=True, timeout=5)
+    except (FileNotFoundError, subprocess.TimeoutExpired, subprocess.CalledProcessError):
+        raise RuntimeError(
+            "本地未安装 git 工具，禁止导出以保护文件安全。\n"
+            "请安装 git 后重试，或手动复制文件。"
+        )
+    
+    # 写入目标文件
     os.makedirs(os.path.dirname(host_path), exist_ok=True)
-    shutil.copy2(host_src, host_path)
+    if os.path.isfile(host_src):
+        shutil.copy2(host_src, host_path)
+    elif os.path.isdir(host_src):
+        dest = host_path
+        if os.path.exists(dest):
+            import time
+            dest = f"{host_path}_{int(time.time())}"
+        shutil.copytree(host_src, dest, symlinks=False)
+        host_path = dest
+    
+    # Git 快照：在目标目录所在的 git 仓库中做 commit
+    target_dir = host_path if os.path.isdir(host_path) else os.path.dirname(host_path)
+    git_dir = _find_git_root(target_dir)
+    
+    if git_dir:
+        repo_name = os.path.basename(git_dir)
+        subprocess.run(["git", "-C", git_dir, "add", "-A"], capture_output=True, timeout=30)
+        result = subprocess.run(
+            ["git", "-C", git_dir, "commit", "-m", f"auto-snapshot: export {os.path.basename(host_path)}"],
+            capture_output=True, timeout=30, text=True
+        )
+        commit_msg = result.stdout.strip() or result.stderr.strip()
+    else:
+        # 没有 git 仓库，初始化一个新仓库
+        subprocess.run(["git", "-C", target_dir, "init"], capture_output=True, timeout=30)
+        subprocess.run(["git", "-C", target_dir, "add", "-A"], capture_output=True, timeout=30)
+        result = subprocess.run(
+            ["git", "-C", target_dir, "commit", "-m", f"auto-snapshot: initial commit after export"],
+            capture_output=True, timeout=30, text=True
+        )
+        commit_msg = result.stdout.strip() or result.stderr.strip()
+        git_dir = target_dir
+    
     return _format_response("text", {
         "host_path": host_path,
         "sandbox_path": sandbox_path,
-        "message": f"文件已导出到宿主机: {host_path}"
+        "git_repo": git_dir,
+        "git_commit": commit_msg[:200] if commit_msg else "",
+        "message": f"文件已导出到宿主机: {host_path}\n"
+                   f"Git 快照已记录 ({git_dir})"
     })
+
+
+def _find_git_root(path: str) -> str:
+    """向上查找最近的 .git 目录"""
+    import subprocess, os
+    try:
+        result = subprocess.run(
+            ["git", "-C", path, "rev-parse", "--show-toplevel"],
+            capture_output=True, timeout=10, text=True
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+    except Exception:
+        pass
+    # 手动向上查找
+    current = os.path.abspath(path)
+    while True:
+        if os.path.isdir(os.path.join(current, ".git")):
+            return current
+        parent = os.path.dirname(current)
+        if parent == current:
+            return None
+        current = parent
 
 def call_base_tool(tool_name: str, arguments: dict) -> str:
     """
