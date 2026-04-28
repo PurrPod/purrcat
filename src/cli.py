@@ -68,7 +68,7 @@ idle_timeout = 600
 [mcp.github]
 command = "npx"
 args = ["-y", "@modelcontextprotocol/server-github"]
-env = { GITHUB_PERSONAL_ACCESS_TOKEN = "" }
+env = {{ GITHUB_PERSONAL_ACCESS_TOKEN = "" }}
 
 # ── 文件系统安全 ──
 [filesystem]
@@ -82,9 +82,9 @@ docker_mount = ["sandbox/", "."]
 # ── RSS 订阅 ──
 [rss]
 subscriptions = [
-    { name = "Lilian Weng's Blog", url = "https://lilianweng.github.io/lil-log/feed.xml" },
-    { name = "Ahead of AI", url = "https://magazine.sebastianraschka.com/feed" },
-    { name = "Latepost 晚点", url = "https://rsshub.rssforever.com/latepost" },
+    {{ name = "Lilian Weng's Blog", url = "https://lilianweng.github.io/lil-log/feed.xml" }},
+    {{ name = "Ahead of AI", url = "https://magazine.sebastianraschka.com/feed" }},
+    {{ name = "Latepost 晚点", url = "https://rsshub.rssforever.com/latepost" }},
 ]
 
 # ── PurrMemo 记忆系统（可选） ──
