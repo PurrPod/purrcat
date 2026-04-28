@@ -1,3 +1,37 @@
+web:
+  name: 网络搜索工具
+  desc: 提供网页搜索和网页内容提取功能，结果将自动保存至 buffer 文件夹。
+  dir_path: plugin_collection/web/
+  functions:
+    web_search:
+      type: function
+      function:
+        name: web_search
+        description: 搜索互联网内容并获取相关链接及摘要。结果将以 Markdown 格式保存至 buffer 文件夹。
+        parameters:
+          type: object
+          properties:
+            query:
+              type: string
+              description: 搜索关键词
+            max_results:
+              type: integer
+              description: 返回的最大结果数量（默认为5）
+          required:
+          - query
+    fetch_web_content:
+      type: function
+      function:
+        name: fetch_web_content
+        description: 抓取指定 URL 的网页内容。结果将以 Markdown 格式保存至 buffer 文件夹。
+        parameters:
+          type: object
+          properties:
+            url:
+              type: string
+              description: 网页的完整 URL
+          required:
+          - url
 database:
   name: Database
   desc: 提供对本地数据库的检索及上下文扩展。
@@ -59,6 +93,159 @@ database:
           - db_name
           - source
           - center_chunk_id
+filesystem:
+  name: 文件系统
+  desc: 提供对老板本地文件系统的操作（也可通过修改映射目录来直接修改沙盒环境），包括读写、删除、搜索等，具备沙箱保护
+  dir_path: plugin_collection/filesystem/
+  functions:
+    write_text_file:
+      type: function
+      function:
+        name: write_text_file
+        description: Write content to a text file. Must be within the sandbox whitelist.
+        parameters:
+          type: object
+          properties:
+            path:
+              type: string
+              description: The absolute path of the file to write.
+            content:
+              type: string
+              description: The content to write to the file.
+          required:
+          - path
+          - content
+    delete_file:
+      type: function
+      function:
+        name: delete_file
+        description: Delete a file or directory. Must be within the sandbox whitelist.
+        parameters:
+          type: object
+          properties:
+            path:
+              type: string
+              description: The absolute path of the file or directory to delete.
+          required:
+          - path
+    parse_document:
+      type: function
+      function:
+        name: parse_document
+        description: Parse and extract text from rich/binary documents (e.g., PDF,
+          DOCX, XLSX, PPTX) using MarkItDown. DO NOT use this for plain text or CSV
+          files (use read_file_lines instead).
+        parameters:
+          type: object
+          properties:
+            path:
+              type: string
+              description: The absolute path of the document file to parse.
+          required:
+          - path
+    read_file_lines:
+      type: function
+      function:
+        name: read_file_lines
+        description: Read specific lines from a file. Supports reading lines from
+          start to end (inclusive). Returns line numbers with content. Limited to
+          5MB files and MAX_READ_WINDOW lines.
+        parameters:
+          type: object
+          properties:
+            path:
+              type: string
+              description: The absolute path of the file.
+            start:
+              type: integer
+              description: The starting line number (1-based).
+            end:
+              type: integer
+              description: The ending line number (inclusive).
+          required:
+          - path
+          - start
+          - end
+    search_in_file:
+      type: function
+      function:
+        name: search_in_file
+        description: Search for a keyword in a file.
+        parameters:
+          type: object
+          properties:
+            path:
+              type: string
+              description: The absolute path of the file.
+            keyword:
+              type: string
+              description: The keyword to search for.
+            limit:
+              type: integer
+              description: Maximum number of matches to return (default 20).
+          required:
+          - path
+          - keyword
+    replace_file_lines:
+      type: function
+      function:
+        name: replace_file_lines
+        description: Replace specific lines in a file with new code.
+        parameters:
+          type: object
+          properties:
+            path:
+              type: string
+              description: The absolute path of the file.
+            start:
+              type: integer
+              description: The starting line number (1-based).
+            end:
+              type: integer
+              description: The ending line number (inclusive).
+            new_code:
+              type: string
+              description: The new content to replace the specified lines.
+          required:
+          - path
+          - start
+          - end
+          - new_code
+    list_file_in_dir:
+      type: function
+      function:
+        name: list_file_in_dir
+        description: List files and directories within a given path.
+        parameters:
+          type: object
+          properties:
+            path:
+              type: string
+              description: The absolute path of the directory to list.
+          required:
+          - path
+    copy_item_to:
+      type: function
+      function:
+        name: copy_item_to
+        description: Copy files from host system to virtual machine directory. Host
+          file paths are copied to the specified VM directory (must start with /agent_vm/).
+          Files are automatically renamed if they would overwrite existing files.
+        parameters:
+          type: object
+          properties:
+            host_file_paths:
+              type: array
+              items:
+                type: string
+              description: List of absolute file paths on the host system to copy.
+            vm_dir_path:
+              type: string
+              description: Virtual machine directory path, must start with /agent_vm/
+                (e.g., /agent_vm/shared).
+          required:
+          - host_file_paths
+          - vm_dir_path
 schedule:
   name: 智能助手工具
   desc: 提供日程安排和闹钟管理功能。
@@ -205,22 +392,113 @@ schedule:
           type: object
           properties: {}
           required: []
-
-filesystem:
-  name: 文件解析
-  desc: 解析 PDF/DOCX/XLSX/PPTX 等富文本文档为纯文本。
-  dir_path: plugin_collection/filesystem/
+multimodal:
+  name: 多模态插件
+  desc: 提供图像/视频/音频生成及识别的多模态工具。
+  dir_path: plugin_collection/multimodal/
   functions:
-    parse_document:
+    generate_image:
       type: function
       function:
-        name: parse_document
-        description: Parse and extract text from rich/binary documents (e.g., PDF, DOCX, XLSX, PPTX) using MarkItDown. DO NOT use this for plain text or CSV files.
+        name: generate_image
+        description: 根据提示生成图片，并保存到 data/buffer（或自定义输出目录）。
         parameters:
           type: object
           properties:
-            path:
+            prompt:
               type: string
-              description: 文件路径
+              description: 用于生成图片的文本提示。
+            output_dir:
+              type: string
+              description: 可选：自定义输出目录（默认 data/buffer）。
           required:
-          - path
+          - prompt
+    image_to_text:
+      type: function
+      function:
+        name: image_to_text
+        description: 对一张或多张图片进行视觉识别并返回文本结果。
+        parameters:
+          type: object
+          properties:
+            prompt:
+              type: string
+              description: 用于指导识别的文本提示。
+            ref_path:
+              type: array
+              items:
+                type: string
+              description: 图片文件路径列表，或者单个路径字符串。
+          required:
+          - prompt
+          - ref_path
+    generate_video:
+      type: function
+      function:
+        name: generate_video
+        description: 根据提示生成视频，并保存到 data/buffer（或自定义输出目录）。
+        parameters:
+          type: object
+          properties:
+            prompt:
+              type: string
+              description: 用于生成视频的文本提示。
+            output_dir:
+              type: string
+              description: 可选：自定义输出目录（默认 data/buffer）。
+          required:
+          - prompt
+    video_to_text:
+      type: function
+      function:
+        name: video_to_text
+        description: 从视频中抽帧并使用视觉模型进行文本描述。
+        parameters:
+          type: object
+          properties:
+            prompt:
+              type: string
+              description: 用于指导识别的文本提示。
+            ref_path:
+              type: array
+              items:
+                type: string
+              description: 视频文件路径列表，或者单个路径字符串。
+          required:
+          - prompt
+          - ref_path
+    generate_audio:
+      type: function
+      function:
+        name: generate_audio
+        description: 根据文本提示生成音频，并保存到本地。
+        parameters:
+          type: object
+          properties:
+            prompt:
+              type: string
+              description: 用于生成音频的文本提示。
+            output_dir:
+              type: string
+              description: 可选：自定义输出目录（默认当前目录）。
+          required:
+          - prompt
+    audio_to_text:
+      type: function
+      function:
+        name: audio_to_text
+        description: 将音频转录为文本。
+        parameters:
+          type: object
+          properties:
+            prompt:
+              type: string
+              description: 用于引导转录的文本提示（可选）。
+            ref_path:
+              type: array
+              items:
+                type: string
+              description: 音频文件路径列表，或者单个路径字符串。
+          required:
+          - prompt
+          - ref_path

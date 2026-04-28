@@ -9,7 +9,7 @@ description: "Extend PurrCat's capabilities. Create new Skills, write Expert tas
 
 扩展机制按复杂度排列：
 ```
-改 SOUL.md → 写 Skill → 加 Expert → 改 Plugin
+改 SOUL.md → 写 Skill → 加 Expert
 ```
 
 ---

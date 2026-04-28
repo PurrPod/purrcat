@@ -26,7 +26,7 @@ PRIORITY_MAP = {
 
 ROOT = False
 
-MEMORY_MD_PATH = "src/agent/core/memory.md"
+MEMORY_MD_PATH = "src/agent/core/MEMORY.md"
 
 
 class Agent:
