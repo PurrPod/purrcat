@@ -59,16 +59,6 @@ chat_id = ""
 # Tavily Search API Key（申请: https://tavily.com）
 tavily_api_key = ""
 
-# ── MCP 服务器 ──
-[mcp.playwright]
-command = "npx"
-args = ["@playwright/mcp@latest", "--user-data-dir=.buffer/playwright", "--output-dir=.buffer/screenshots"]
-idle_timeout = 600
-
-[mcp.github]
-command = "npx"
-args = ["-y", "@modelcontextprotocol/server-github"]
-env = {{ GITHUB_PERSONAL_ACCESS_TOKEN = "" }}
 
 # ── 文件系统安全 ──
 [filesystem]
@@ -77,7 +67,7 @@ dont_read_dirs = ["src/"]
 # 允许 export_file 写入的目录
 allowed_export_dirs = [".", "agent_vm/"]
 # 挂载到 Docker 沙盒的目录
-docker_mount = ["sandbox/", "."]
+docker_mount = ["sandbox/"]
 
 # ── RSS 订阅 ──
 [rss]
@@ -109,6 +99,45 @@ interval = 1800
 """
 
 
+
+
+def _generate_mcp_config():
+    """生成独立的 MCP 配置文件，避免敏感 Token 混在 TOML 里"""
+    mcp_dir = os.path.dirname(os.path.abspath(__file__))
+    os.makedirs(mcp_dir, exist_ok=True)
+    mcp_path = os.path.join(mcp_dir, "mcp_config.json")
+
+    if os.path.exists(mcp_path):
+        print(f"⚠️  文件已存在: {mcp_path}")
+        val = input("  覆盖？(y/N): ").strip().lower()
+        if val != "y":
+            print("  已保留原配置")
+            return
+
+    mcp_config = {
+        "mcpServers": {
+            "playwright": {
+                "command": "npx",
+                "args": ["@playwright/mcp@latest", "--user-data-dir=.buffer/playwright", "--output-dir=.buffer/screenshots"],
+                "idle_timeout": 600
+            },
+            "github": {
+                "command": "npx",
+                "args": ["-y", "@modelcontextprotocol/server-github"],
+                "env": {
+                    "GITHUB_PERSONAL_ACCESS_TOKEN": ""
+                }
+            }
+        }
+    }
+
+    try:
+        with open(mcp_path, "w", encoding="utf-8") as f:
+            json.dump(mcp_config, f, indent=2, ensure_ascii=False)
+        print(f"✅ MCP 配置已生成: {mcp_path}")
+    except Exception as e:
+        print(f"❌ 写入 mcp_config.json 失败: {e}")
+
 def cmd_init():
     """生成配置模板"""
     config_path = os.path.expanduser("~/.purrcat.toml")
@@ -124,11 +153,15 @@ def cmd_init():
         with open(config_path, "w", encoding="utf-8") as f:
             f.write(content)
         print(f"✅ 配置文件已生成: {config_path}")
-        print(f"   编辑此文件填入你的 API Key 等配置")
-        print(f"   然后运行: purrcat start")
     except Exception as e:
         print(f"❌ 写入失败: {e}")
         sys.exit(1)
+
+    # 生成 mcp_config.json（单独存放，避免敏感信息混在 TOML 里）
+    _generate_mcp_config()
+    print(f"   编辑 ~/.purrcat.toml 填入 API Key 等配置")
+    print(f"   编辑 mcp_config.json 填入 MCP Token")
+    print(f"   然后运行: purrcat start")
 
 
 def cmd_start():

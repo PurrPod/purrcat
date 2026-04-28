@@ -349,81 +349,131 @@ def get_menu(route: str, plugin: str) -> str:
     return _format_response("text", result)
 
 
-def init_tool():
-    """初始化工具索引，每次重启都强制重新生成"""
-    print("🔄 开始初始化工具索引...")
-    tools_index = []
+def _load_tool_index() -> list:
+    """读取现有的 tool.jsonl，返回所有条目"""
+    entries = []
+    if os.path.exists(TOOL_INDEX_FILE):
+        try:
+            with open(TOOL_INDEX_FILE, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line:
+                        try:
+                            entries.append(json.loads(line))
+                        except json.JSONDecodeError:
+                            continue
+        except Exception:
+            pass
+    return entries
 
+
+def _save_tool_index(entries: list):
+    """原子写入 tool.jsonl"""
+    tmp = TOOL_INDEX_FILE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        for entry in entries:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    os.replace(tmp, TOOL_INDEX_FILE)
+
+
+def _merge_tools(existing: list, new_tools: list) -> list:
+    """合并工具列表，按 (route, plugin, func) 去重，已有的跳过"""
+    seen = {(e["route"], e["plugin"], e["func"]) for e in existing}
+    merged = list(existing)
+    for tool in new_tools:
+        key = (tool["route"], tool["plugin"], tool["func"])
+        if key not in seen:
+            merged.append(tool)
+            seen.add(key)
+    return merged
+
+
+def init_tool():
+    """增量初始化工具索引：保留已有 MCP 条目，只追加新增的本地工具"""
+    print("🔄 开始初始化工具索引...")
+
+    # 1. 读取现有索引
+    existing = _load_tool_index()
+    print(f"📖 现有工具索引: {len(existing)} 条")
+
+    # 2. 扫描本地工具
+    new_local = []
     try:
         print("📦 处理本地工具...")
         from src.plugins.plugin_collection.local_manager import init_local_config_data
         if os.path.exists(LOCAL_TOOL_YAML):
             os.remove(LOCAL_TOOL_YAML)
-            print("🗑️ 已删除本地工具缓存")
-
         init_local_config_data()
 
         if os.path.exists(LOCAL_TOOL_YAML):
             with open(LOCAL_TOOL_YAML, "r", encoding="utf-8") as f:
                 local_config = yaml.safe_load(f) or {}
-                local_count = 0
                 for plugin_name, plugin_data in local_config.items():
                     functions = plugin_data.get("functions", {})
                     for func_name, func_data in functions.items():
                         desc = func_data.get("function", {}).get("description", "无描述")
-                        tools_index.append({"route": "local", "plugin": plugin_name, "func": func_name, "desc": desc})
-                        local_count += 1
-                print(f"✅ 本地工具: {local_count} 个")
+                        new_local.append({"route": "local", "plugin": plugin_name, "func": func_name, "desc": desc})
+                print(f"✅ 本地工具: {len(new_local)} 个")
     except Exception as e:
         print(f"❌ 初始化本地工具异常: {e}")
 
-    try:
-        with open(TOOL_INDEX_FILE, "w", encoding="utf-8") as f:
-            for tool_info in tools_index:
-                f.write(json.dumps(tool_info, ensure_ascii=False) + "\n")
-        print(f"✅ 本地工具索引已生成: {TOOL_INDEX_FILE}")
-    except Exception as e:
-        print(f"❌ 写入工具索引异常: {e}")
+    # 3. 合并（保留 MCP + 新增 local）
+    merged = _merge_tools(existing, new_local)
+    _save_tool_index(merged)
 
-    return tools_index
+    added = len(merged) - len(existing)
+    print(f"✅ 工具索引已更新: {len(merged)} 条 (新增 {added})")
+    return merged
+
+
+def _run_mcp_init():
+    """惰性注册 MCP 工具：tool.jsonl 里已有则跳过，没有才连 MCP"""
+    try:
+        # 1. 看看配置里有哪些 MCP 服务器
+        from src.utils.config import get_mcp_servers
+        configured = set(get_mcp_servers().keys())
+        if not configured:
+            return
+
+        # 2. 看看 tool.jsonl 里已有哪些 MCP 条目
+        existing = _load_tool_index()
+        indexed_servers = {t["plugin"] for t in existing if t.get("route") == "mcp"}
+
+        # 3. 缺哪个就连哪个
+        missing = configured - indexed_servers
+        if not missing:
+            print(f"✅ [MCP] 工具索引已就绪: {configured}")
+            return
+
+        print(f"🔌 [MCP] 发现新服务器: {missing}，正在注册...")
+        from src.plugins.route.mcp_tool import extract_mcp_fingerprints_sync
+        mcp_tools = extract_mcp_fingerprints_sync()
+
+        if mcp_tools:
+            before = len(existing)
+            merged = _merge_tools(existing, mcp_tools)
+            _save_tool_index(merged)
+            added = len(merged) - before
+            print(f"✅ [MCP] 工具索引已更新: {len(mcp_tools)} 个 (新增 {added})")
+    except Exception as e:
+        print(f"❌ [MCP] 注册异常: {e}")
 
 
 def _init_tool_async():
-    """后台异步初始化 MCP 工具索引"""
+    """后台线程初始化 MCP 工具索引（非阻塞，兼容旧调用方）"""
     import threading
-    import asyncio
-
-    def _run_mcp_init():
-        try:
-            from src.plugins.route.mcp_tool import extract_mcp_fingerprints_sync
-            print("🔌 [后台] 开始处理MCP工具...")
-            mcp_tools = extract_mcp_fingerprints_sync()
-
-            if mcp_tools:
-                existing_tools = []
-                if os.path.exists(TOOL_INDEX_FILE):
-                    with open(TOOL_INDEX_FILE, "r", encoding="utf-8") as f:
-                        for line in f:
-                            if not line.strip():
-                                continue
-                            tool = json.loads(line)
-                            if tool.get("route") == "local":
-                                existing_tools.append(tool)
-
-                with open(TOOL_INDEX_FILE, "w", encoding="utf-8") as f:
-                    for tool_info in existing_tools:
-                        f.write(json.dumps(tool_info, ensure_ascii=False) + "\n")
-                    for tool_info in mcp_tools:
-                        f.write(json.dumps(tool_info, ensure_ascii=False) + "\n")
-                print(f"✅ [后台] MCP工具索引已更新: {len(mcp_tools)} 个")
-            else:
-                print("⚠️ [后台] 未发现可用的MCP工具")
-        except Exception as e:
-            print(f"❌ [后台] 扫描MCP工具异常: {e}")
-
     thread = threading.Thread(target=_run_mcp_init, daemon=True)
     thread.start()
     return thread
+
+
+async def init_mcp_tools():
+    """协程版：检查 tool.jsonl，缺的 MCP 服务器才连接注册"""
+    import asyncio
+    import concurrent.futures
+    loop = asyncio.get_event_loop()
+    with concurrent.futures.ThreadPoolExecutor() as pool:
+        await loop.run_in_executor(pool, _run_mcp_init)
 
 def fetch_tool_schemas(route: str, plugin_name: str, tool_names: list) -> list:
     """批量获取工具 schemas（无异常拦截，直接抛给上层）"""
@@ -777,10 +827,6 @@ class DockerManager:
             skill_host_dir = os.path.abspath("./data/skill")
             os.makedirs(skill_host_dir, exist_ok=True)
             volumes[skill_host_dir] = {"bind": f"{self.container_workspace}/skill", "mode": "rw"}
-
-            buffer_host_dir = os.path.abspath("./.buffer")
-            os.makedirs(buffer_host_dir, exist_ok=True)
-            volumes[buffer_host_dir] = {"bind": f"{self.container_workspace}/.buffer", "mode": "rw"}
 
             from src.utils.config import get_filesystem_config
             docker_mount = get_filesystem_config().get("docker_mount", [])
