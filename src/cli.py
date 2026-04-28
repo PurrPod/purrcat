@@ -103,7 +103,7 @@ interval = 1800
 
 def _generate_mcp_config():
     """生成独立的 MCP 配置文件，避免敏感 Token 混在 TOML 里"""
-    mcp_dir = os.path.dirname(os.path.abspath(__file__))
+    mcp_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     os.makedirs(mcp_dir, exist_ok=True)
     mcp_path = os.path.join(mcp_dir, "mcp_config.json")
 
