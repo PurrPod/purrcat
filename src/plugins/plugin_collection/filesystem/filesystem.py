@@ -7,29 +7,16 @@ import subprocess
 import ast
 import itertools
 from typing import Optional, Any, List
-from src.utils.config import FILE_CONFIG_PATH
+from src.utils.config import get_filesystem_config
 
 MAX_READ_WINDOW = 200
 MAX_EDITABLE_FILE_SIZE = 5 * 1024 * 1024
 MAX_MEDIA_SIZE = 20 * 1024 * 1024
 
-try:
-    with open(FILE_CONFIG_PATH, "r", encoding="utf-8") as f:
-        config = json.load(f)
-except (FileNotFoundError, json.JSONDecodeError):
-    config = {
-        "sandbox_dirs": ["sandbox/", "agent_vm/"],
-        "skill_dir": ["data/skill"],
-        "dont_read_dirs": ["src/"]
-    }
-    # Ensure directory exists and write default config
-    os.makedirs(os.path.dirname(FILE_CONFIG_PATH), exist_ok=True)
-    with open(FILE_CONFIG_PATH, "w", encoding="utf-8") as f:
-        json.dump(config, f, indent=4)
-
-_SANDBOX_DIRS: List[str] = [os.path.abspath(d) for d in config.get("sandbox_dirs", [])]
-_SKILL_DIRS: List[str] = [os.path.abspath(d) for d in config.get("skill_dir", [])]
-_DONT_READ_DIRS: List[str] = [os.path.abspath(d) for d in config.get("dont_read_dirs", [])]
+_fs_cfg = get_filesystem_config()
+_SANDBOX_DIRS: List[str] = [os.path.abspath(d) for d in _fs_cfg.get("sandbox_dirs", ["sandbox/", "agent_vm/"])]
+_SKILL_DIRS: List[str] = [os.path.abspath(d) for d in _fs_cfg.get("skill_dir", ["data/skill"])]
+_DONT_READ_DIRS: List[str] = [os.path.abspath(d) for d in _fs_cfg.get("dont_read_dirs", ["src/"])]
 def _get_allow(action: str, path: str) -> bool:
     abs_path = os.path.abspath(path)
     if action == "read":
@@ -59,9 +46,7 @@ def set_allowed_directories(directories: List[str]) -> str:
         else:
             skipped.append(d)
     _SANDBOX_DIRS = sorted(list(new_dirs))
-    config["sandbox_dirs"] = _SANDBOX_DIRS
-    with open(FILE_CONFIG_PATH, "w", encoding="utf-8") as f:
-        json.dump(config, f, indent=4, ensure_ascii=False)
+    config_dict = {"sandbox_dirs": _SANDBOX_DIRS, "skill_dir": _SKILL_DIRS, "dont_read_dirs": _DONT_READ_DIRS}
     message = f"sandbox directories set to: {_SANDBOX_DIRS}"
     if added:
         message += f"\nAdded: {added}"

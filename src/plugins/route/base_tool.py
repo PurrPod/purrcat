@@ -769,10 +769,8 @@ class DockerManager:
             os.makedirs(buffer_host_dir, exist_ok=True)
             volumes[buffer_host_dir] = {"bind": f"{self.container_workspace}/.buffer", "mode": "rw"}
 
-            from src.utils.config import FILE_CONFIG_PATH
-            with open(FILE_CONFIG_PATH, "r") as f:
-                docker_mount = json.load(f)
-                docker_mount = docker_mount.get("docker_mount", [])
+            from src.utils.config import get_filesystem_config
+            docker_mount = get_filesystem_config().get("docker_mount", [])
             for dirpath in docker_mount:
                 new_host_dir = os.path.abspath(dirpath)
                 os.makedirs(new_host_dir, exist_ok=True)
@@ -925,10 +923,8 @@ def list_filesystem(path: str = ".", depth: int = 1, show_hidden: bool = False) 
         raise FileNotFoundError(f"路径不存在: {root}")
     
     # 加载黑名单
-    from src.utils.config import FILE_CONFIG_PATH
-    with open(FILE_CONFIG_PATH) as f:
-        cfg = json.load(f)
-    dont_read = [os.path.abspath(d) for d in cfg.get("dont_read_dirs", [])]
+    from src.utils.config import get_filesystem_config
+    dont_read = [os.path.abspath(d) for d in get_filesystem_config().get("dont_read_dirs", [])]
     
     def _check_allowed(p: str) -> bool:
         for denied in dont_read:
@@ -1079,10 +1075,8 @@ def import_file(host_path: str, sandbox_dir: str = "imports") -> str:
         raise FileNotFoundError(f"宿主机路径不存在: {host_path}")
     
     # 加载 dont_read_dirs 黑名单
-    from src.utils.config import FILE_CONFIG_PATH
-    with open(FILE_CONFIG_PATH) as f:
-        cfg = json.load(f)
-    dont_read = [os.path.abspath(d) for d in cfg.get("dont_read_dirs", [])]
+    from src.utils.config import get_filesystem_config
+    dont_read = [os.path.abspath(d) for d in get_filesystem_config().get("dont_read_dirs", [])]
     
     def _is_denied(p: str) -> bool:
         p = os.path.abspath(p)
@@ -1197,16 +1191,14 @@ def export_file(sandbox_path: str, host_path: str) -> str:
         raise FileNotFoundError(f"沙盒文件/目录不存在: {sandbox_path}")
     
     host_path = os.path.abspath(host_path)
-    from src.utils.config import FILE_CONFIG_PATH
-    with open(FILE_CONFIG_PATH) as f:
-        cfg = json.load(f)
-    allowed = [os.path.abspath(d) for d in cfg.get("allowed_export_dirs", [])]
+    from src.utils.config import get_filesystem_config
+    allowed = [os.path.abspath(d) for d in get_filesystem_config().get("allowed_export_dirs", [])]
     
     if not any(host_path.startswith(d) for d in allowed):
         raise PermissionError(
             f"导出目标不在允许目录内: {host_path}\n"
             f"允许的目录: {allowed}\n"
-            f"请在 data/config/file_config.json 的 allowed_export_dirs 中添加"
+            f"请在 ~/.purrcat.toml 的 [filesystem] 节中添加"
         )
     
     # 检查 git 是否可用
