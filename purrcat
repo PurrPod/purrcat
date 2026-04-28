@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# PurrCat 启动脚本（Linux/macOS）
+cd "$(dirname "$0")" 2>/dev/null || true
+exec python3 -m src.cli "$@"
