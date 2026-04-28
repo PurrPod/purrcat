@@ -1,5 +1,5 @@
 """PurrCat CLI - 跨平台命令行入口"""
-import sys, os, argparse
+import sys, os, json, argparse
 from datetime import datetime
 
 CONFIG_TEMPLATE = """# ============================================
