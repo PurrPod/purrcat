@@ -1,37 +1,3 @@
-web:
-  name: 网络搜索工具
-  desc: 提供网页搜索和网页内容提取功能，结果将自动保存至 buffer 文件夹。
-  dir_path: plugin_collection/web/
-  functions:
-    web_search:
-      type: function
-      function:
-        name: web_search
-        description: 搜索互联网内容并获取相关链接及摘要。结果将以 Markdown 格式保存至 buffer 文件夹。
-        parameters:
-          type: object
-          properties:
-            query:
-              type: string
-              description: 搜索关键词
-            max_results:
-              type: integer
-              description: 返回的最大结果数量（默认为5）
-          required:
-          - query
-    fetch_web_content:
-      type: function
-      function:
-        name: fetch_web_content
-        description: 抓取指定 URL 的网页内容。结果将以 Markdown 格式保存至 buffer 文件夹。
-        parameters:
-          type: object
-          properties:
-            url:
-              type: string
-              description: 网页的完整 URL
-          required:
-          - url
 database:
   name: Database
   desc: 提供对本地数据库的检索及上下文扩展。
@@ -239,3 +205,22 @@ schedule:
           type: object
           properties: {}
           required: []
+
+filesystem:
+  name: 文件解析
+  desc: 解析 PDF/DOCX/XLSX/PPTX 等富文本文档为纯文本。
+  dir_path: plugin_collection/filesystem/
+  functions:
+    parse_document:
+      type: function
+      function:
+        name: parse_document
+        description: Parse and extract text from rich/binary documents (e.g., PDF, DOCX, XLSX, PPTX) using MarkItDown. DO NOT use this for plain text or CSV files.
+        parameters:
+          type: object
+          properties:
+            path:
+              type: string
+              description: 文件路径
+          required:
+          - path

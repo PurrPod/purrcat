@@ -1,5 +1,3 @@
-{"route": "local", "plugin": "web", "func": "web_search", "desc": "搜索互联网内容并获取相关链接及摘要。结果将以 Markdown 格式保存至 buffer 文件夹。"}
-{"route": "local", "plugin": "web", "func": "fetch_web_content", "desc": "抓取指定 URL 的网页内容。结果将以 Markdown 格式保存至 buffer 文件夹。"}
 {"route": "local", "plugin": "database", "func": "list_databases", "desc": "List all available databases on disk. Use this first if you do not know which database to search."}
 {"route": "local", "plugin": "database", "func": "rag_search", "desc": "Perform RAG search on specific local databases. You MUST provide the target_dbs parameter."}
 {"route": "local", "plugin": "database", "func": "expand_database_context", "desc": "Expand the text context around a specific matched chunk in a database."}
@@ -11,3 +9,4 @@
 {"route": "local", "plugin": "schedule", "func": "delete_cron", "desc": "删除闹钟"}
 {"route": "local", "plugin": "schedule", "func": "update_cron", "desc": "修改闹钟"}
 {"route": "local", "plugin": "schedule", "func": "get_crons", "desc": "获取设定的所有闹钟"}
+{"route": "local", "plugin": "filesystem", "func": "parse_document", "desc": "Parse and extract text from rich/binary documents (e.g., PDF, DOCX, XLSX, PPTX) using MarkItDown. DO NOT use this for plain text or CSV files (use read_file_lines instead)."}
