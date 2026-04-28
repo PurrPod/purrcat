@@ -11,11 +11,12 @@ CONFIG_DIR = os.path.join(DATA_DIR, "config")
 CONFIG_YAML_PATH = os.path.join(CONFIG_DIR, "config.yaml")
 SECRETS_DIR = os.path.join(CONFIG_DIR, "secrets")
 CONFIGS_DIR = os.path.join(CONFIG_DIR, "configs")
+MCP_CONFIG_PATH = os.path.join(BASE_DIR, "mcp_config.json")
 
 MEMORY_DIR = os.path.join(DATA_DIR, "memory")
 SCHEDULE_DIR = os.path.join(DATA_DIR, "schedule")
 DATABASE_DIR = os.path.join(DATA_DIR, "database")
-BUFFER_DIR = os.path.join(BASE_DIR, ".buffer")
+BUFFER_DIR = os.path.join(BASE_DIR, "agent_vm", ".buffer")
 SKILL_DIR = os.path.join(DATA_DIR, "skill")
 
 SCHEDULE_FILE = os.path.join(SCHEDULE_DIR, "schedule.json")
@@ -134,18 +135,25 @@ def _build_config() -> dict:
     web = config.get("web", {})
     flat["web_api"] = {"tavily_api_key": web.get("tavily_api_key", "")}
 
-    # [mcp.*] 节 → 转换为旧格式的 mcp_servers
+    # mcp_config.json → mcp_servers（单独的 JSON 文件，不混在 TOML 里）
     mcp_servers = {}
-    for server_name, server_cfg in config.get("mcp", {}).items():
-        entry = {
-            "command": server_cfg.get("command", ""),
-            "args": server_cfg.get("args", []),
-        }
-        if "idle_timeout" in server_cfg:
-            entry["idle_timeout"] = server_cfg["idle_timeout"]
-        if "env" in server_cfg:
-            entry["env"] = server_cfg["env"]
-        mcp_servers[server_name] = entry
+    try:
+        if os.path.exists(MCP_CONFIG_PATH):
+            with open(MCP_CONFIG_PATH, "r", encoding="utf-8") as f:
+                mcp_data = json.load(f)
+            raw = mcp_data.get("mcpServers", mcp_data)
+            for server_name, server_cfg in raw.items():
+                entry = {
+                    "command": server_cfg.get("command", ""),
+                    "args": server_cfg.get("args", []),
+                }
+                if "idle_timeout" in server_cfg:
+                    entry["idle_timeout"] = server_cfg["idle_timeout"]
+                if "env" in server_cfg:
+                    entry["env"] = server_cfg["env"]
+                mcp_servers[server_name] = entry
+    except Exception as e:
+        print(f"[Config] 加载 mcp_config.json 失败: {e}")
     flat["mcp_servers"] = mcp_servers
 
     # [rss] 节

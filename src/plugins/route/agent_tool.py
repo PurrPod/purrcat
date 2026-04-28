@@ -376,7 +376,7 @@ def update_memo(
         thread.daemon = True
         thread.start()
     # ── Check if PurrMemo is enabled ──
-    from src.memory.purrmemo_client import is_enabled, push_memo
+    from src.loader.purrmemo_client import is_enabled, push_memo
     use_purrmemo = is_enabled()
 
     if use_purrmemo:
