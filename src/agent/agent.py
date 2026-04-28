@@ -317,7 +317,8 @@ class Agent:
 
 
     def _check_and_summarize_memory(self, check_mode=True):
-        max_tokens = 500000
+        from src.utils.config import get_agent_model, get_model_limits
+        max_tokens = get_model_limits(get_agent_model()).get("max_token", 500000)
         if check_mode and self.window_token < max_tokens:
             return
 

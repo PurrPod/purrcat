@@ -130,6 +130,14 @@ def get_agent_model() -> str:
     return config.get("agent_model", "")
 
 
+def get_model_limits(model_name: str) -> Dict[str, int]:
+    """获取指定模型的 limits 配置（rpm/tpm/concurrency/max_token 等）"""
+    config = load_config()
+    models = config.get("models", {})
+    model_cfg = models.get(model_name, {})
+    return model_cfg.get("limits", {})
+
+
 def get_specialized_model(model_type: str) -> Dict[str, str]:
     """
     获取专用模型配置
