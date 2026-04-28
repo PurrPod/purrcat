@@ -995,6 +995,7 @@ def import_file(host_path: str, sandbox_dir: str = "imports") -> str:
     
     安全检查：
     - 禁止导入 dont_read_dirs 内的文件
+    - 导入上级目录时，黑名单内的子文件/子目录自动跳过
     - 目录导入有 30MB 总大小限制
     """
     import shutil, os, json
@@ -1003,18 +1004,29 @@ def import_file(host_path: str, sandbox_dir: str = "imports") -> str:
     if not os.path.exists(host_path):
         raise FileNotFoundError(f"宿主机路径不存在: {host_path}")
     
-    # 检查 dont_read_dirs 黑名单
+    # 加载 dont_read_dirs 黑名单
     from src.utils.config import FILE_CONFIG_PATH
     with open(FILE_CONFIG_PATH) as f:
         cfg = json.load(f)
     dont_read = [os.path.abspath(d) for d in cfg.get("dont_read_dirs", [])]
-    for denied in dont_read:
-        if host_path.startswith(denied):
-            raise PermissionError(
-                f"禁止导入黑名单目录内的文件: {host_path}\n"
-                f"黑名单: {dont_read}\n"
-                f"文件在 {denied} 下，不可读取"
-            )
+    
+    def _is_denied(p: str) -> bool:
+        p = os.path.abspath(p)
+        for denied in dont_read:
+            if p == denied or p.startswith(denied + os.sep):
+                return True
+        return False
+    
+    # 根路径检查
+    if _is_denied(host_path):
+        raise PermissionError(
+            f"禁止导入黑名单内的路径: {host_path}\n"
+            f"黑名单: {dont_read}"
+        )
+    
+    # 检查上级目录内是否包含黑名单路径（导入父目录时警告但不阻止，自动跳过）
+    skipped_dirs = []
+    skipped_files = 0
     
     mount_point = os.path.abspath("./agent_vm")
     sandbox_subdir = sandbox_dir.strip("/")
@@ -1034,11 +1046,20 @@ def import_file(host_path: str, sandbox_dir: str = "imports") -> str:
         msg = f"文件已导入沙盒: {sandbox_path} ({file_size / 1024:.1f}KB)"
     
     elif os.path.isdir(host_path):
-        # 目录导入：先计算总大小
+        # 目录导入：先走一遍计算总大小 + 检查黑名单
         total_size = 0
         for dirpath, dirnames, filenames in os.walk(host_path):
+            # 检查当前目录是否在黑名单内
+            if _is_denied(dirpath):
+                skipped_dirs.append(dirpath)
+                dirnames.clear()  # 不进入子目录
+                filenames.clear()  # 不处理文件
+                continue
             for fn in filenames:
                 fp = os.path.join(dirpath, fn)
+                if _is_denied(fp):
+                    skipped_files += 1
+                    continue
                 try:
                     total_size += os.path.getsize(fp)
                 except OSError:
@@ -1049,15 +1070,28 @@ def import_file(host_path: str, sandbox_dir: str = "imports") -> str:
                         f"请只导入需要的文件"
                     )
         
+        # 正式复制，同样跳过黑名单
+        def _ignore_denied(src, names):
+            ignored = set()
+            for name in names:
+                full = os.path.join(src, name)
+                if _is_denied(full):
+                    ignored.add(name)
+            return ignored
+        
         dirname = os.path.basename(host_path.rstrip("/\\"))
         dest_path = os.path.join(dest_dir, dirname)
         if os.path.exists(dest_path):
-            # 如果目标已存在，加时间戳避免覆盖
             import time
             dest_path = os.path.join(dest_dir, f"{dirname}_{int(time.time())}")
-        shutil.copytree(host_path, dest_path, symlinks=False)
+        shutil.copytree(host_path, dest_path, symlinks=False, ignore=_ignore_denied)
         sandbox_path = f"/agent_vm/{sandbox_subdir}/{os.path.basename(dest_path)}"
+        
         msg = f"目录已导入沙盒: {sandbox_path} ({total_size / 1024 / 1024:.1f}MB)"
+        if skipped_dirs:
+            msg += f"\n⚠️ 已跳过 {len(skipped_dirs)} 个黑名单目录: {skipped_dirs}"
+        if skipped_files:
+            msg += f"\n⚠️ 已跳过 {skipped_files} 个黑名单文件"
     
     else:
         raise ValueError(f"不支持的路径类型: {host_path}")
