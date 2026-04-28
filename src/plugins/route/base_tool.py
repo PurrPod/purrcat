@@ -170,6 +170,27 @@ BASE_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "web_search",
+            "description": "搜索互联网内容并返回结构化结果列表（标题、URL、摘要）。优先 Tavily API，降级 DuckDuckGo。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "搜索关键词"
+                    },
+                    "max_results": {
+                        "type": "integer",
+                        "description": "返回结果数量上限，默认 5"
+                    }
+                },
+                "required": ["query"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "import_file",
             "description": "将宿主机文件导入沙盒工作区。导入后在沙盒内可用 execute_command 操作。",
             "parameters": {
@@ -990,6 +1011,59 @@ def list_filesystem(path: str = ".", depth: int = 1, show_hidden: bool = False) 
         "total_size_mb": round(total_size / 1024 / 1024, 1),
     })
 
+
+def web_search(query: str, max_results: int = 5) -> str:
+    """搜索互联网内容并返回结构化结果
+    
+    优先使用 Tavily API（需配置 web_api.tavily_api_key），
+    无可用 API 时降级到 DuckDuckGo。
+    """
+    import json, os, requests
+    
+    results = []
+    error_logs = []
+    
+    # 优先级 1: Tavily API
+    from src.utils.config import get_web_api_config
+    tavily_key = get_web_api_config().get("tavily_api_key", "")
+    if tavily_key:
+        try:
+            data = {"api_key": tavily_key, "query": query, "search_depth": "basic", "max_results": max_results}
+            resp = requests.post("https://api.tavily.com/search", json=data, timeout=10)
+            if resp.status_code == 200:
+                for res in resp.json().get("results", []):
+                    results.append({"title": res["title"], "url": res["url"], "snippet": res["content"]})
+            else:
+                error_logs.append(f"Tavily API Error: {resp.status_code}")
+        except Exception as e:
+            error_logs.append(f"Tavily Exception: {str(e)}")
+    
+    # 优先级 2: DuckDuckGo (no API key needed)
+    if not results:
+        try:
+            from duckduckgo_search import DDGS
+            with DDGS() as ddgs:
+                for r in ddgs.text(query, max_results=max_results):
+                    results.append({"title": r.get("title", ""), "url": r.get("href", ""), "snippet": r.get("body", "")})
+        except ImportError:
+            error_logs.append("DuckDuckGo not available (install duckduckgo_search)")
+        except Exception as e:
+            error_logs.append(f"DDGS Exception: {str(e)}")
+    
+    if not results:
+        return _format_response("error", f"所有搜索源均失败: {', '.join(error_logs)}")
+    
+    md = f"# Search Results for: {query}\n\n"
+    for i, res in enumerate(results, 1):
+        md += f"### {i}. {res['title']}\n- URL: {res['url']}\n- {res['snippet'][:500]}\n\n"
+    
+    return _format_response("text", {
+        "query": query,
+        "results_count": len(results),
+        "markdown": md,
+        "results": results,
+    })
+
 def import_file(host_path: str, sandbox_dir: str = "imports") -> str:
     """将宿主机文件/目录导入沙盒工作区
     
@@ -1235,6 +1309,8 @@ def call_base_tool(tool_name: str, arguments: dict) -> str:
             arguments.get("depth", 1),
             arguments.get("show_hidden", False)
         )
+    elif tool_name == "web_search":
+        result_content = web_search(arguments.get("query"), arguments.get("max_results", 5))
     elif tool_name == "import_file":
         result_content = import_file(arguments.get("host_path"), arguments.get("sandbox_dir", "imports"))
     elif tool_name == "export_file":
