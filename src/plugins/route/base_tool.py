@@ -99,8 +99,8 @@ BASE_TOOLS = [
                         "description": "要调用的动态工具名称"
                     },
                     "arguments": {
-                        "type": "string",
-                        "description": "符合该动态工具 schema 的完整 JSON 字符串格式参数"
+                        "type": "object",
+                        "description": "符合该动态工具 schema 的参数对象"
                     }
                 },
                 "required": ["target_tool_name", "arguments"]
@@ -836,7 +836,7 @@ def call_base_tool(tool_name: str, arguments: dict) -> str:
     elif tool_name == "close_shell":
         result_content = close_shell(arguments.get("session_id", "default"))
     elif tool_name == "call_dynamic_tool":
-        result_content = _format_response("error", "❌ 系统错误：代理工具拆包失败。请检查你传给 call_dynamic_tool 的 arguments 是否为合法的 JSON 字符串。")
+        result_content = _format_response("error", "❌ 系统错误：call_dynamic_tool 参数异常。请勿直接调用此工具，应该在 fetch_tool 获取 Schema 后由系统自动代理调用。")
     else:
         raise ValueError(f"未知的基础工具: {tool_name}")
 

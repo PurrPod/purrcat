@@ -43,7 +43,7 @@ def add_task(
         name: str,
         prompt: str,
         expert: str,
-        core: str = "openai:deepseek-chat",
+        core: str = "openai:deepseek-v4-flash",
         expert_kwargs: dict = None
 ) -> str:
     """创建后台任务（无异常拦截，直接抛给上层）"""
@@ -440,7 +440,7 @@ AGENT_TOOLS = [
                     "prompt": {"type": "string", "description": "告诉后台子任务要做什么"},
                     "expert": _get_dynamic_expert_schema(),
                     "core": {"type": "string",
-                             "description": "使用的工人代号，如\"openai:deepseek-chat\"，可用list_worker查看"},
+                             "description": "使用的工人代号，如\"openai:deepseek-v4-flash\"，可用list_worker查看"},
                     "expert_kwargs": {
                         "type": "object",
                         "description": "根据 expert 类型传递相应参数，例如 trading 需要 {\"company_name\": \"AAPL\", \"trade_date\": \"2026-04-16\"}"
@@ -486,8 +486,7 @@ AGENT_TOOLS = [
             "description": "获取当前所有可用的工人及其描述的清单。",
             "parameters": {
                 "type": "object",
-                "properties": {},
-                "required": ["short_term"]
+                "properties": {}
             }
         }
     },
