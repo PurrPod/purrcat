@@ -16,7 +16,7 @@ MCP_CONFIG_PATH = os.path.join(BASE_DIR, "mcp_config.json")
 MEMORY_DIR = os.path.join(DATA_DIR, "memory")
 SCHEDULE_DIR = os.path.join(DATA_DIR, "schedule")
 DATABASE_DIR = os.path.join(DATA_DIR, "database")
-BUFFER_DIR = os.path.join(BASE_DIR, ".buffer")
+BUFFER_DIR = os.path.join(BASE_DIR, "agent_vm", ".buffer")
 SKILL_DIR = os.path.join(DATA_DIR, "skill")
 
 SCHEDULE_FILE = os.path.join(SCHEDULE_DIR, "schedule.json")

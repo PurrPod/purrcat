@@ -93,7 +93,7 @@ def parse_tool(tool_name: str, arguments: dict, route: str = None, plugin: str =
             # 检查是否为多媒体类型，需要在此处执行文件保存
             if isinstance(content_data, dict) and content_data.get("type") in ["image", "video", "audio", "pdf", "mcp_media", "media_url", "media_base64"]:
                 media_type = content_data["type"]
-                buffer_dir = os.path.abspath(".buffer")
+                buffer_dir = os.path.abspath("agent_vm/.buffer")
                 os.makedirs(buffer_dir, exist_ok=True)
                 timestamp = time.strftime("%Y%m%d_%H%M%S")
                 marker_id = uuid.uuid4().hex[:8]
@@ -145,7 +145,7 @@ def parse_tool(tool_name: str, arguments: dict, route: str = None, plugin: str =
         # 超标验证
         if len(actual_content_str) > MAX_LEN and tool_name != "load_skill":
             # 按工具名称分类全量存储
-            buffer_dir = os.path.abspath(".buffer")
+            buffer_dir = os.path.abspath("agent_vm/.buffer")
             tool_dir = os.path.join(buffer_dir, tool_name)
             os.makedirs(tool_dir, exist_ok=True)
             timestamp = time.strftime("%Y%m%d_%H%M%S")

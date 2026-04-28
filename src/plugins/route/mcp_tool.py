@@ -245,7 +245,7 @@ async def _call_tool_async(server_name: str, tool_name: str, arguments: dict) ->
                     if ext == 'jpeg': ext = 'jpg'
                     
                     # 2. 确保存储目录存在
-                    save_dir = os.path.join(".buffer", "mcp_media")
+                    save_dir = os.path.join("agent_vm", ".buffer", "mcp_media")
                     os.makedirs(save_dir, exist_ok=True)
                     
                     # 3. 将 Base64 解码并保存为实体文件
