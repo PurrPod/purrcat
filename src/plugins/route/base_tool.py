@@ -388,42 +388,51 @@ def init_tool():
     return tools_index
 
 
+def _run_mcp_init():
+    """执行 MCP 工具扫描（同步，可在线程或协程中调用）"""
+    try:
+        from src.plugins.route.mcp_tool import extract_mcp_fingerprints_sync
+        print("🔌 [后台] 开始处理MCP工具...")
+        mcp_tools = extract_mcp_fingerprints_sync()
+
+        if mcp_tools:
+            existing_tools = []
+            if os.path.exists(TOOL_INDEX_FILE):
+                with open(TOOL_INDEX_FILE, "r", encoding="utf-8") as f:
+                    for line in f:
+                        if not line.strip():
+                            continue
+                        tool = json.loads(line)
+                        if tool.get("route") == "local":
+                            existing_tools.append(tool)
+
+            with open(TOOL_INDEX_FILE, "w", encoding="utf-8") as f:
+                for tool_info in existing_tools:
+                    f.write(json.dumps(tool_info, ensure_ascii=False) + "\n")
+                for tool_info in mcp_tools:
+                    f.write(json.dumps(tool_info, ensure_ascii=False) + "\n")
+            print(f"✅ [后台] MCP工具索引已更新: {len(mcp_tools)} 个")
+        else:
+            print("⚠️ [后台] 未发现可用的MCP工具")
+    except Exception as e:
+        print(f"❌ [后台] 扫描MCP工具异常: {e}")
+
+
 def _init_tool_async():
-    """后台异步初始化 MCP 工具索引"""
+    """后台线程初始化 MCP 工具索引（非阻塞，兼容旧调用方）"""
     import threading
-    import asyncio
-
-    def _run_mcp_init():
-        try:
-            from src.plugins.route.mcp_tool import extract_mcp_fingerprints_sync
-            print("🔌 [后台] 开始处理MCP工具...")
-            mcp_tools = extract_mcp_fingerprints_sync()
-
-            if mcp_tools:
-                existing_tools = []
-                if os.path.exists(TOOL_INDEX_FILE):
-                    with open(TOOL_INDEX_FILE, "r", encoding="utf-8") as f:
-                        for line in f:
-                            if not line.strip():
-                                continue
-                            tool = json.loads(line)
-                            if tool.get("route") == "local":
-                                existing_tools.append(tool)
-
-                with open(TOOL_INDEX_FILE, "w", encoding="utf-8") as f:
-                    for tool_info in existing_tools:
-                        f.write(json.dumps(tool_info, ensure_ascii=False) + "\n")
-                    for tool_info in mcp_tools:
-                        f.write(json.dumps(tool_info, ensure_ascii=False) + "\n")
-                print(f"✅ [后台] MCP工具索引已更新: {len(mcp_tools)} 个")
-            else:
-                print("⚠️ [后台] 未发现可用的MCP工具")
-        except Exception as e:
-            print(f"❌ [后台] 扫描MCP工具异常: {e}")
-
     thread = threading.Thread(target=_run_mcp_init, daemon=True)
     thread.start()
     return thread
+
+
+async def init_mcp_tools():
+    """协程版 MCP 初始化，在 async 上下文中阻塞等待完成"""
+    import asyncio
+    import concurrent.futures
+    loop = asyncio.get_event_loop()
+    with concurrent.futures.ThreadPoolExecutor() as pool:
+        await loop.run_in_executor(pool, _run_mcp_init)
 
 def fetch_tool_schemas(route: str, plugin_name: str, tool_names: list) -> list:
     """批量获取工具 schemas（无异常拦截，直接抛给上层）"""

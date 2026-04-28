@@ -5,7 +5,7 @@ from textual.binding import Binding
 
 # 引入基础配置和工具初始化
 from src.utils.config import initialize_config
-from src.plugins.route.base_tool import _init_tool_async, init_tool
+from src.plugins.route.base_tool import _init_tool_async, init_tool, init_mcp_tools
 from src.sensor.system.const import start_sensors
 
 # 引入 agent 模块核心
@@ -35,7 +35,8 @@ class PurrCatTUI(App):
         # 2. 初始化配置文件与全局工具注册表
         initialize_config()
         init_tool()
-        _init_tool_async()
+        # 阻塞等待 MCP 工具扫描完成，确保 tool.jsonl 含 MCP 条目
+        await init_mcp_tools()
         start_sensors()
 
         # 3. 实例化 Agent 并加载历史记忆

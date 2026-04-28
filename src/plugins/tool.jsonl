@@ -1,12 +1,60 @@
 {"route": "local", "plugin": "database", "func": "list_databases", "desc": "List all available databases on disk. Use this first if you do not know which database to search."}
 {"route": "local", "plugin": "database", "func": "rag_search", "desc": "Perform RAG search on specific local databases. You MUST provide the target_dbs parameter."}
 {"route": "local", "plugin": "database", "func": "expand_database_context", "desc": "Expand the text context around a specific matched chunk in a database."}
-{"route": "local", "plugin": "schedule", "func": "add_schedule", "desc": "添加跨天/跨月的日程。时间格式推荐 YYYY-MM-DD HH:MM"}
-{"route": "local", "plugin": "schedule", "func": "delete_schedule", "desc": "删除日程"}
-{"route": "local", "plugin": "schedule", "func": "update_schedule", "desc": "修改日程"}
-{"route": "local", "plugin": "schedule", "func": "get_schedules", "desc": "获取所有日程，或者根据特定日期 (YYYY-MM-DD) 检索"}
-{"route": "local", "plugin": "schedule", "func": "add_cron", "desc": "添加闹钟"}
-{"route": "local", "plugin": "schedule", "func": "delete_cron", "desc": "删除闹钟"}
-{"route": "local", "plugin": "schedule", "func": "update_cron", "desc": "修改闹钟"}
-{"route": "local", "plugin": "schedule", "func": "get_crons", "desc": "获取设定的所有闹钟"}
+{"route": "local", "plugin": "schedule", "func": "add_schedule", "desc": "\u6dfb\u52a0\u8de8\u5929/\u8de8\u6708\u7684\u65e5\u7a0b\u3002\u65f6\u95f4\u683c\u5f0f\u63a8\u8350 YYYY-MM-DD HH:MM"}
+{"route": "local", "plugin": "schedule", "func": "delete_schedule", "desc": "\u5220\u9664\u65e5\u7a0b"}
+{"route": "local", "plugin": "schedule", "func": "update_schedule", "desc": "\u4fee\u6539\u65e5\u7a0b"}
+{"route": "local", "plugin": "schedule", "func": "get_schedules", "desc": "\u83b7\u53d6\u6240\u6709\u65e5\u7a0b\uff0c\u6216\u8005\u6839\u636e\u7279\u5b9a\u65e5\u671f (YYYY-MM-DD) \u68c0\u7d22"}
+{"route": "local", "plugin": "schedule", "func": "add_cron", "desc": "\u6dfb\u52a0\u95f9\u949f"}
+{"route": "local", "plugin": "schedule", "func": "delete_cron", "desc": "\u5220\u9664\u95f9\u949f"}
+{"route": "local", "plugin": "schedule", "func": "update_cron", "desc": "\u4fee\u6539\u95f9\u949f"}
+{"route": "local", "plugin": "schedule", "func": "get_crons", "desc": "\u83b7\u53d6\u8bbe\u5b9a\u7684\u6240\u6709\u95f9\u949f"}
 {"route": "local", "plugin": "filesystem", "func": "parse_document", "desc": "Parse and extract text from rich/binary documents (e.g., PDF, DOCX, XLSX, PPTX) using MarkItDown. DO NOT use this for plain text or CSV files (use read_file_lines instead)."}
+{"route": "mcp", "plugin": "playwright", "func": "browser_close", "desc": "Close the page"}
+{"route": "mcp", "plugin": "playwright", "func": "browser_resize", "desc": "Resize the browser window"}
+{"route": "mcp", "plugin": "playwright", "func": "browser_console_messages", "desc": "Returns all console messages"}
+{"route": "mcp", "plugin": "playwright", "func": "browser_handle_dialog", "desc": "Handle a dialog"}
+{"route": "mcp", "plugin": "playwright", "func": "browser_evaluate", "desc": "Evaluate JavaScript expression on page or element"}
+{"route": "mcp", "plugin": "playwright", "func": "browser_file_upload", "desc": "Upload one or multiple files"}
+{"route": "mcp", "plugin": "playwright", "func": "browser_drop", "desc": "Drop files or MIME-typed data onto an element, as if dragged from outside the page. At least one of \"paths\" or \"data\" must be provided."}
+{"route": "mcp", "plugin": "playwright", "func": "browser_fill_form", "desc": "Fill multiple form fields"}
+{"route": "mcp", "plugin": "playwright", "func": "browser_press_key", "desc": "Press a key on the keyboard"}
+{"route": "mcp", "plugin": "playwright", "func": "browser_type", "desc": "Type text into editable element"}
+{"route": "mcp", "plugin": "playwright", "func": "browser_navigate", "desc": "Navigate to a URL"}
+{"route": "mcp", "plugin": "playwright", "func": "browser_navigate_back", "desc": "Go back to the previous page in the history"}
+{"route": "mcp", "plugin": "playwright", "func": "browser_network_requests", "desc": "Returns all network requests since loading the page"}
+{"route": "mcp", "plugin": "playwright", "func": "browser_run_code", "desc": "Run Playwright code snippet"}
+{"route": "mcp", "plugin": "playwright", "func": "browser_take_screenshot", "desc": "Take a screenshot of the current page. You can't perform actions based on the screenshot, use browser_snapshot for actions."}
+{"route": "mcp", "plugin": "playwright", "func": "browser_snapshot", "desc": "Capture accessibility snapshot of the current page, this is better than screenshot"}
+{"route": "mcp", "plugin": "playwright", "func": "browser_click", "desc": "Perform click on a web page"}
+{"route": "mcp", "plugin": "playwright", "func": "browser_drag", "desc": "Perform drag and drop between two elements"}
+{"route": "mcp", "plugin": "playwright", "func": "browser_hover", "desc": "Hover over element on page"}
+{"route": "mcp", "plugin": "playwright", "func": "browser_select_option", "desc": "Select an option in a dropdown"}
+{"route": "mcp", "plugin": "playwright", "func": "browser_tabs", "desc": "List, create, close, or select a browser tab."}
+{"route": "mcp", "plugin": "playwright", "func": "browser_wait_for", "desc": "Wait for text to appear or disappear or a specified time to pass"}
+{"route": "mcp", "plugin": "github", "func": "create_or_update_file", "desc": "Create or update a single file in a GitHub repository"}
+{"route": "mcp", "plugin": "github", "func": "search_repositories", "desc": "Search for GitHub repositories"}
+{"route": "mcp", "plugin": "github", "func": "create_repository", "desc": "Create a new GitHub repository in your account"}
+{"route": "mcp", "plugin": "github", "func": "get_file_contents", "desc": "Get the contents of a file or directory from a GitHub repository"}
+{"route": "mcp", "plugin": "github", "func": "push_files", "desc": "Push multiple files to a GitHub repository in a single commit"}
+{"route": "mcp", "plugin": "github", "func": "create_issue", "desc": "Create a new issue in a GitHub repository"}
+{"route": "mcp", "plugin": "github", "func": "create_pull_request", "desc": "Create a new pull request in a GitHub repository"}
+{"route": "mcp", "plugin": "github", "func": "fork_repository", "desc": "Fork a GitHub repository to your account or specified organization"}
+{"route": "mcp", "plugin": "github", "func": "create_branch", "desc": "Create a new branch in a GitHub repository"}
+{"route": "mcp", "plugin": "github", "func": "list_commits", "desc": "Get list of commits of a branch in a GitHub repository"}
+{"route": "mcp", "plugin": "github", "func": "list_issues", "desc": "List issues in a GitHub repository with filtering options"}
+{"route": "mcp", "plugin": "github", "func": "update_issue", "desc": "Update an existing issue in a GitHub repository"}
+{"route": "mcp", "plugin": "github", "func": "add_issue_comment", "desc": "Add a comment to an existing issue"}
+{"route": "mcp", "plugin": "github", "func": "search_code", "desc": "Search for code across GitHub repositories"}
+{"route": "mcp", "plugin": "github", "func": "search_issues", "desc": "Search for issues and pull requests across GitHub repositories"}
+{"route": "mcp", "plugin": "github", "func": "search_users", "desc": "Search for users on GitHub"}
+{"route": "mcp", "plugin": "github", "func": "get_issue", "desc": "Get details of a specific issue in a GitHub repository."}
+{"route": "mcp", "plugin": "github", "func": "get_pull_request", "desc": "Get details of a specific pull request"}
+{"route": "mcp", "plugin": "github", "func": "list_pull_requests", "desc": "List and filter repository pull requests"}
+{"route": "mcp", "plugin": "github", "func": "create_pull_request_review", "desc": "Create a review on a pull request"}
+{"route": "mcp", "plugin": "github", "func": "merge_pull_request", "desc": "Merge a pull request"}
+{"route": "mcp", "plugin": "github", "func": "get_pull_request_files", "desc": "Get the list of files changed in a pull request"}
+{"route": "mcp", "plugin": "github", "func": "get_pull_request_status", "desc": "Get the combined status of all status checks for a pull request"}
+{"route": "mcp", "plugin": "github", "func": "update_pull_request_branch", "desc": "Update a pull request branch with the latest changes from the base branch"}
+{"route": "mcp", "plugin": "github", "func": "get_pull_request_comments", "desc": "Get the review comments on a pull request"}
+{"route": "mcp", "plugin": "github", "func": "get_pull_request_reviews", "desc": "Get the reviews on a pull request"}
