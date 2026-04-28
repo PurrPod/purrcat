@@ -67,7 +67,7 @@ dont_read_dirs = ["src/"]
 # 允许 export_file 写入的目录
 allowed_export_dirs = [".", "agent_vm/"]
 # 挂载到 Docker 沙盒的目录
-docker_mount = ["sandbox/", "."]
+docker_mount = ["sandbox/"]
 
 # ── RSS 订阅 ──
 [rss]
