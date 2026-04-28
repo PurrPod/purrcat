@@ -141,7 +141,95 @@ BASE_TOOLS = [
                 "required": ["query"]
             }
         }
-    }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_filesystem",
+            "description": "列出宿主机文件系统结构（目录树、大小、绝对路径）。遵循 dont_read_dirs 黑名单。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "起始路径，默认当前目录"
+                    },
+                    "depth": {
+                        "type": "integer",
+                        "description": "递归深度，1=仅当前目录，2=含子目录，以此类推，默认1"
+                    },
+                    "show_hidden": {
+                        "type": "boolean",
+                        "description": "是否显示隐藏文件，默认 false"
+                    }
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "web_search",
+            "description": "搜索互联网内容并返回结构化结果列表（标题、URL、摘要）。优先 Tavily API，降级 DuckDuckGo。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "搜索关键词"
+                    },
+                    "max_results": {
+                        "type": "integer",
+                        "description": "返回结果数量上限，默认 5"
+                    }
+                },
+                "required": ["query"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "import_file",
+            "description": "将宿主机文件导入沙盒工作区。导入后在沙盒内可用 execute_command 操作。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "host_path": {
+                        "type": "string",
+                        "description": "宿主机上文件的绝对路径"
+                    },
+                    "sandbox_dir": {
+                        "type": "string",
+                        "description": "沙盒内的目标目录（相对于 /agent_vm/），默认 imports"
+                    }
+                },
+                "required": ["host_path"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "export_file",
+            "description": "将沙盒内的文件导出到宿主机。目标路径必须在 allowed_export_dirs 内（见 file_config.json）。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "sandbox_path": {
+                        "type": "string",
+                        "description": "沙盒内文件路径，如 /agent_vm/imports/result.pdf"
+                    },
+                    "host_path": {
+                        "type": "string",
+                        "description": "宿主机目标路径"
+                    }
+                },
+                "required": ["sandbox_path", "host_path"]
+            }
+        }
+    },
 ]
 
 BASE_TOOL_NAMES = [tool["function"]["name"] for tool in BASE_TOOLS]
@@ -817,6 +905,386 @@ def close_shell(session_id: str = "default") -> str:
 # ==========================================
 # 统一调度出口 (Call Base Tool)
 # ==========================================
+
+
+
+def list_filesystem(path: str = ".", depth: int = 1, show_hidden: bool = False) -> str:
+    """列出宿主机文件系统结构（带大小、绝对路径），遵循 dont_read_dirs 黑名单
+    
+    Args:
+        path: 起始路径，默认当前目录
+        depth: 递归深度，1=仅当前目录，2=子目录，以此类推
+        show_hidden: 是否显示隐藏文件/目录
+    
+    Returns: 格式化的目录树
+    """
+    import os, json, time
+    
+    root = os.path.abspath(path)
+    if not os.path.exists(root):
+        raise FileNotFoundError(f"路径不存在: {root}")
+    
+    # 加载黑名单
+    from src.utils.config import FILE_CONFIG_PATH
+    with open(FILE_CONFIG_PATH) as f:
+        cfg = json.load(f)
+    dont_read = [os.path.abspath(d) for d in cfg.get("dont_read_dirs", [])]
+    
+    def _check_allowed(p: str) -> bool:
+        for denied in dont_read:
+            if p.startswith(denied):
+                return False
+        return True
+    
+    if not _check_allowed(root):
+        raise PermissionError(f"路径在黑名单中，不可读取: {root}")
+    
+    lines = []
+    total_size = 0
+    file_count = 0
+    dir_count = 0
+    
+    def _walk(current: str, prefix: str, remaining_depth: int):
+        nonlocal total_size, file_count, dir_count
+        
+        if not _check_allowed(current):
+            lines.append(f"{prefix}[黑名单，已跳过]")
+            return
+        
+        try:
+            entries = sorted(os.listdir(current))
+        except PermissionError:
+            lines.append(f"{prefix}[权限不足]")
+            return
+        
+        for i, entry in enumerate(entries):
+            if not show_hidden and entry.startswith("."):
+                continue
+            
+            full_path = os.path.join(current, entry)
+            is_last = (i == len(entries) - 1)
+            connector = "└── " if is_last else "├── "
+            
+            try:
+                stat = os.stat(full_path)
+                is_dir = os.path.isdir(full_path)
+                size = stat.st_size
+                mtime = time.strftime("%m-%d %H:%M", time.localtime(stat.st_mtime))
+                
+                if is_dir:
+                    dir_count += 1
+                    size_str = ""
+                    lines.append(f"{prefix}{connector}{entry}/  ({mtime})")
+                    if remaining_depth > 1:
+                        ext = "    " if is_last else "│   "
+                        _walk(full_path, prefix + ext, remaining_depth - 1)
+                else:
+                    file_count += 1
+                    total_size += size
+                    if size < 1024:
+                        size_str = f"{size}B"
+                    elif size < 1024 * 1024:
+                        size_str = f"{size/1024:.1f}KB"
+                    else:
+                        size_str = f"{size/1024/1024:.1f}MB"
+                    lines.append(f"{prefix}{connector}{entry}  ({size_str}, {mtime})")
+            except (OSError, PermissionError):
+                lines.append(f"{prefix}{connector}{entry}  [不可访问]")
+    
+    # 根目录信息
+    root_stat = os.stat(root)
+    root_mtime = time.strftime("%Y-%m-%d %H:%M", time.localtime(root_stat.st_mtime))
+    lines.append(f"{root}  ({root_mtime})")
+    
+    _walk(root, "", depth + 1)
+    
+    summary = (f"\n📁 {dir_count} 个目录, 📄 {file_count} 个文件, "
+               f"总计 {total_size/1024/1024:.1f}MB")
+    lines.append(summary)
+    
+    return _format_response("text", {
+        "path": root,
+        "tree": "\n".join(lines),
+        "dir_count": dir_count,
+        "file_count": file_count,
+        "total_size_bytes": total_size,
+        "total_size_mb": round(total_size / 1024 / 1024, 1),
+    })
+
+
+def web_search(query: str, max_results: int = 5) -> str:
+    """搜索互联网内容并返回结构化结果
+    
+    优先使用 Tavily API（需配置 web_api.tavily_api_key），
+    无可用 API 时降级到 DuckDuckGo。
+    """
+    import json, os, requests
+    
+    results = []
+    error_logs = []
+    
+    # 优先级 1: Tavily API
+    from src.utils.config import get_web_api_config
+    tavily_key = get_web_api_config().get("tavily_api_key", "")
+    if tavily_key:
+        try:
+            data = {"api_key": tavily_key, "query": query, "search_depth": "basic", "max_results": max_results}
+            resp = requests.post("https://api.tavily.com/search", json=data, timeout=10)
+            if resp.status_code == 200:
+                for res in resp.json().get("results", []):
+                    results.append({"title": res["title"], "url": res["url"], "snippet": res["content"]})
+            else:
+                error_logs.append(f"Tavily API Error: {resp.status_code}")
+        except Exception as e:
+            error_logs.append(f"Tavily Exception: {str(e)}")
+    
+    # 优先级 2: DuckDuckGo (no API key needed)
+    if not results:
+        try:
+            from duckduckgo_search import DDGS
+            with DDGS() as ddgs:
+                for r in ddgs.text(query, max_results=max_results):
+                    results.append({"title": r.get("title", ""), "url": r.get("href", ""), "snippet": r.get("body", "")})
+        except ImportError:
+            error_logs.append("DuckDuckGo not available (install duckduckgo_search)")
+        except Exception as e:
+            error_logs.append(f"DDGS Exception: {str(e)}")
+    
+    if not results:
+        return _format_response("error", f"所有搜索源均失败: {', '.join(error_logs)}")
+    
+    md = f"# Search Results for: {query}\n\n"
+    for i, res in enumerate(results, 1):
+        md += f"### {i}. {res['title']}\n- URL: {res['url']}\n- {res['snippet'][:500]}\n\n"
+    
+    return _format_response("text", {
+        "query": query,
+        "results_count": len(results),
+        "markdown": md,
+        "results": results,
+    })
+
+def import_file(host_path: str, sandbox_dir: str = "imports") -> str:
+    """将宿主机文件/目录导入沙盒工作区
+    
+    安全检查：
+    - 禁止导入 dont_read_dirs 内的文件
+    - 导入上级目录时，黑名单内的子文件/子目录自动跳过
+    - 目录导入有 30MB 总大小限制
+    """
+    import shutil, os, json
+    
+    host_path = os.path.abspath(host_path)
+    if not os.path.exists(host_path):
+        raise FileNotFoundError(f"宿主机路径不存在: {host_path}")
+    
+    # 加载 dont_read_dirs 黑名单
+    from src.utils.config import FILE_CONFIG_PATH
+    with open(FILE_CONFIG_PATH) as f:
+        cfg = json.load(f)
+    dont_read = [os.path.abspath(d) for d in cfg.get("dont_read_dirs", [])]
+    
+    def _is_denied(p: str) -> bool:
+        p = os.path.abspath(p)
+        for denied in dont_read:
+            if p == denied or p.startswith(denied + os.sep):
+                return True
+        return False
+    
+    # 根路径检查
+    if _is_denied(host_path):
+        raise PermissionError(
+            f"禁止导入黑名单内的路径: {host_path}\n"
+            f"黑名单: {dont_read}"
+        )
+    
+    # 检查上级目录内是否包含黑名单路径（导入父目录时警告但不阻止，自动跳过）
+    skipped_dirs = []
+    skipped_files = 0
+    
+    mount_point = os.path.abspath("./agent_vm")
+    sandbox_subdir = sandbox_dir.strip("/")
+    dest_dir = os.path.join(mount_point, sandbox_subdir)
+    os.makedirs(dest_dir, exist_ok=True)
+    
+    MAX_SIZE = 30 * 1024 * 1024  # 30MB
+    
+    if os.path.isfile(host_path):
+        # 单文件导入
+        fname = os.path.basename(host_path)
+        file_size = os.path.getsize(host_path)
+        if file_size > MAX_SIZE:
+            raise ValueError(f"文件过大 ({file_size / 1024 / 1024:.1f}MB)，超过 30MB 限制: {host_path}")
+        shutil.copy2(host_path, os.path.join(dest_dir, fname))
+        sandbox_path = f"/agent_vm/{sandbox_subdir}/{fname}"
+        msg = f"文件已导入沙盒: {sandbox_path} ({file_size / 1024:.1f}KB)"
+    
+    elif os.path.isdir(host_path):
+        # 目录导入：先走一遍计算总大小 + 检查黑名单
+        total_size = 0
+        for dirpath, dirnames, filenames in os.walk(host_path):
+            # 检查当前目录是否在黑名单内
+            if _is_denied(dirpath):
+                skipped_dirs.append(dirpath)
+                dirnames.clear()  # 不进入子目录
+                filenames.clear()  # 不处理文件
+                continue
+            for fn in filenames:
+                fp = os.path.join(dirpath, fn)
+                if _is_denied(fp):
+                    skipped_files += 1
+                    continue
+                try:
+                    total_size += os.path.getsize(fp)
+                except OSError:
+                    pass
+                if total_size > MAX_SIZE:
+                    raise ValueError(
+                        f"目录过大 (超过 30MB)，禁止导入: {host_path}\n"
+                        f"请只导入需要的文件"
+                    )
+        
+        # 正式复制，同样跳过黑名单
+        def _ignore_denied(src, names):
+            ignored = set()
+            for name in names:
+                full = os.path.join(src, name)
+                if _is_denied(full):
+                    ignored.add(name)
+            return ignored
+        
+        dirname = os.path.basename(host_path.rstrip("/\\"))
+        dest_path = os.path.join(dest_dir, dirname)
+        if os.path.exists(dest_path):
+            import time
+            dest_path = os.path.join(dest_dir, f"{dirname}_{int(time.time())}")
+        shutil.copytree(host_path, dest_path, symlinks=False, ignore=_ignore_denied)
+        sandbox_path = f"/agent_vm/{sandbox_subdir}/{os.path.basename(dest_path)}"
+        
+        msg = f"目录已导入沙盒: {sandbox_path} ({total_size / 1024 / 1024:.1f}MB)"
+        if skipped_dirs:
+            msg += f"\n⚠️ 已跳过 {len(skipped_dirs)} 个黑名单目录: {skipped_dirs}"
+        if skipped_files:
+            msg += f"\n⚠️ 已跳过 {skipped_files} 个黑名单文件"
+    
+    else:
+        raise ValueError(f"不支持的路径类型: {host_path}")
+    
+    return _format_response("text", {
+        "sandbox_path": sandbox_path,
+        "host_path": host_path,
+        "message": msg
+    })
+def export_file(sandbox_path: str, host_path: str) -> str:
+    """将沙盒内文件/目录导出到宿主机（带安全检查 + Git 快照）
+    
+    安全机制：
+    - 只允许导出到 allowed_export_dirs
+    - 导出前自动创建 Git 快照（init + add + commit）
+    - 本地无 git 工具则拒绝导出
+    """
+    import shutil, os, json, subprocess
+    
+    sandbox_path = sandbox_path.strip()
+    if not sandbox_path.startswith("/agent_vm/"):
+        raise PermissionError(f"禁止导出沙盒外的文件: {sandbox_path}")
+    
+    rel_path = os.path.relpath(sandbox_path, "/agent_vm")
+    mount_point = os.path.abspath("./agent_vm")
+    host_src = os.path.abspath(os.path.join(mount_point, rel_path))
+    
+    if not os.path.exists(host_src):
+        raise FileNotFoundError(f"沙盒文件/目录不存在: {sandbox_path}")
+    
+    host_path = os.path.abspath(host_path)
+    from src.utils.config import FILE_CONFIG_PATH
+    with open(FILE_CONFIG_PATH) as f:
+        cfg = json.load(f)
+    allowed = [os.path.abspath(d) for d in cfg.get("allowed_export_dirs", [])]
+    
+    if not any(host_path.startswith(d) for d in allowed):
+        raise PermissionError(
+            f"导出目标不在允许目录内: {host_path}\n"
+            f"允许的目录: {allowed}\n"
+            f"请在 data/config/file_config.json 的 allowed_export_dirs 中添加"
+        )
+    
+    # 检查 git 是否可用
+    try:
+        subprocess.run(["git", "--version"], capture_output=True, check=True, timeout=5)
+    except (FileNotFoundError, subprocess.TimeoutExpired, subprocess.CalledProcessError):
+        raise RuntimeError(
+            "本地未安装 git 工具，禁止导出以保护文件安全。\n"
+            "请安装 git 后重试，或手动复制文件。"
+        )
+    
+    # 写入目标文件
+    os.makedirs(os.path.dirname(host_path), exist_ok=True)
+    if os.path.isfile(host_src):
+        shutil.copy2(host_src, host_path)
+    elif os.path.isdir(host_src):
+        dest = host_path
+        if os.path.exists(dest):
+            import time
+            dest = f"{host_path}_{int(time.time())}"
+        shutil.copytree(host_src, dest, symlinks=False)
+        host_path = dest
+    
+    # Git 快照：在目标目录所在的 git 仓库中做 commit
+    target_dir = host_path if os.path.isdir(host_path) else os.path.dirname(host_path)
+    git_dir = _find_git_root(target_dir)
+    
+    if git_dir:
+        repo_name = os.path.basename(git_dir)
+        subprocess.run(["git", "-C", git_dir, "add", "-A"], capture_output=True, timeout=30)
+        result = subprocess.run(
+            ["git", "-C", git_dir, "commit", "-m", f"auto-snapshot: export {os.path.basename(host_path)}"],
+            capture_output=True, timeout=30, text=True
+        )
+        commit_msg = result.stdout.strip() or result.stderr.strip()
+    else:
+        # 没有 git 仓库，初始化一个新仓库
+        subprocess.run(["git", "-C", target_dir, "init"], capture_output=True, timeout=30)
+        subprocess.run(["git", "-C", target_dir, "add", "-A"], capture_output=True, timeout=30)
+        result = subprocess.run(
+            ["git", "-C", target_dir, "commit", "-m", f"auto-snapshot: initial commit after export"],
+            capture_output=True, timeout=30, text=True
+        )
+        commit_msg = result.stdout.strip() or result.stderr.strip()
+        git_dir = target_dir
+    
+    return _format_response("text", {
+        "host_path": host_path,
+        "sandbox_path": sandbox_path,
+        "git_repo": git_dir,
+        "git_commit": commit_msg[:200] if commit_msg else "",
+        "message": f"文件已导出到宿主机: {host_path}\n"
+                   f"Git 快照已记录 ({git_dir})"
+    })
+
+
+def _find_git_root(path: str) -> str:
+    """向上查找最近的 .git 目录"""
+    import subprocess, os
+    try:
+        result = subprocess.run(
+            ["git", "-C", path, "rev-parse", "--show-toplevel"],
+            capture_output=True, timeout=10, text=True
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+    except Exception:
+        pass
+    # 手动向上查找
+    current = os.path.abspath(path)
+    while True:
+        if os.path.isdir(os.path.join(current, ".git")):
+            return current
+        parent = os.path.dirname(current)
+        if parent == current:
+            return None
+        current = parent
+
 def call_base_tool(tool_name: str, arguments: dict) -> str:
     """
     统一调度 base_tool 模块下的工具
@@ -835,6 +1303,18 @@ def call_base_tool(tool_name: str, arguments: dict) -> str:
         result_content = load_skill(arguments.get("name"))
     elif tool_name == "close_shell":
         result_content = close_shell(arguments.get("session_id", "default"))
+    elif tool_name == "list_filesystem":
+        result_content = list_filesystem(
+            arguments.get("path", "."),
+            arguments.get("depth", 1),
+            arguments.get("show_hidden", False)
+        )
+    elif tool_name == "web_search":
+        result_content = web_search(arguments.get("query"), arguments.get("max_results", 5))
+    elif tool_name == "import_file":
+        result_content = import_file(arguments.get("host_path"), arguments.get("sandbox_dir", "imports"))
+    elif tool_name == "export_file":
+        result_content = export_file(arguments.get("sandbox_path"), arguments.get("host_path"))
     elif tool_name == "call_dynamic_tool":
         result_content = _format_response("error", "❌ 系统错误：call_dynamic_tool 参数异常。请勿直接调用此工具，应该在 fetch_tool 获取 Schema 后由系统自动代理调用。")
     else:
