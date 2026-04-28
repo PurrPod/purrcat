@@ -9,8 +9,10 @@ import datetime
 import time
 import atexit
 from typing import Any, List, Dict
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
+def _get_mcp():
+    from mcp import ClientSession, StdioServerParameters
+    from mcp.client.stdio import stdio_client
+    return ClientSession, StdioServerParameters, stdio_client
 from src.utils.config import get_mcp_servers
 
 _mcp_loop = asyncio.new_event_loop()
@@ -22,6 +24,15 @@ def _start_mcp_loop():
 
 _mcp_thread = threading.Thread(target=_start_mcp_loop, name="MCP_EventLoop_Thread", daemon=True)
 _mcp_thread.start()
+
+
+# ── 延迟导入 mcp（防止模块级导入失败导致整个模块不可用） ──
+def _get_mcp():
+    from mcp import ClientSession, StdioServerParameters
+    from mcp.client.stdio import stdio_client
+    return ClientSession, StdioServerParameters, stdio_client
+
+
 
 
 class MCPSessionManager:
@@ -41,6 +52,7 @@ class MCPSessionManager:
 
     async def _server_lifecycle_task(self, server_name: str, config: dict, ready_event: asyncio.Event):
         """专门用于维护单个 MCP Server 生命周期的专属后台任务"""
+        ClientSession, StdioServerParameters, stdio_client = _get_mcp()
         server_params = StdioServerParameters(
             command=config["command"],
             args=config.get("args", []),
@@ -115,8 +127,9 @@ class MCPSessionManager:
             await asyncio.sleep(0.5)
         print("✅ [MCP] 所有子进程已安全清理完毕。")
 
-    async def get_session(self, server_name: str, config: dict) -> ClientSession:
+    async def get_session(self, server_name: str, config: dict) -> "ClientSession":
         """获取长连接 Session"""
+        ClientSession, StdioServerParameters, stdio_client = _get_mcp()
         lock = await self._get_lock(server_name)
 
         async with lock:
@@ -170,6 +183,7 @@ def load_configs() -> dict:
 
 
 async def _extract_mcp_fingerprints_async() -> List[Dict]:
+    ClientSession, StdioServerParameters, stdio_client = _get_mcp()
     servers = load_configs()
     tools_index = []
     for server_name, config in servers.items():
@@ -189,6 +203,7 @@ async def _extract_mcp_fingerprints_async() -> List[Dict]:
 
 
 async def _get_mcp_tool_schemas_async(server_name: str, tool_names: list) -> list:
+    ClientSession, StdioServerParameters, stdio_client = _get_mcp()
     servers = load_configs()
     if server_name not in servers:
         return []
@@ -213,6 +228,7 @@ async def _get_mcp_tool_schemas_async(server_name: str, tool_names: list) -> lis
 
 
 async def _call_tool_async(server_name: str, tool_name: str, arguments: dict) -> str:
+    ClientSession, StdioServerParameters, stdio_client = _get_mcp()
     servers = load_configs()
     if server_name not in servers:
         raise KeyError(f"未知的 MCP Server '{server_name}'")
