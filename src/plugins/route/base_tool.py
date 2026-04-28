@@ -727,6 +727,23 @@ else:
 _docker_manager_instance: Optional['DockerManager'] = None
 
 
+def _get_docker_env() -> dict:
+    """从配置读取 Docker 代理环境变量（只返回非空值）"""
+    try:
+        from src.utils.config import get_docker_config
+        cfg = get_docker_config()
+        env = {}
+        if cfg.get("http_proxy"):
+            env["HTTP_PROXY"] = cfg["http_proxy"]
+        if cfg.get("https_proxy"):
+            env["HTTPS_PROXY"] = cfg["https_proxy"]
+        if cfg.get("all_proxy"):
+            env["ALL_PROXY"] = cfg["all_proxy"]
+        return env
+    except Exception:
+        return {}
+
+
 class DockerManager:
     def __init__(self, image: str, container_name: str = "agent_computer", workspace_dir: str | None = None):
         if not image: raise ValueError("A Docker image must be provided.")
@@ -750,11 +767,7 @@ class DockerManager:
                 "command": "sleep infinity",
                 "detach": True,
                 "working_dir": self.container_workspace,
-                "environment": {
-                    "HTTP_PROXY": "http://host.docker.internal:7897",
-                    "HTTPS_PROXY": "http://host.docker.internal:7897",
-                    "ALL_PROXY": "socks5://host.docker.internal:7897"
-                }
+                "environment": _get_docker_env()
             }
             volumes = {}
             if self.workspace_dir is not None:

@@ -79,6 +79,14 @@ host = "http://127.0.0.1:8000"
 api_key = ""
 timeout = 5
 
+# ── Docker 沙盒（可选） ──
+[docker]
+# 容器内的代理设置（用于访问外网）
+# 不设置或留空则不配置代理
+http_proxy = "http://host.docker.internal:7897"
+https_proxy = "http://host.docker.internal:7897"
+all_proxy = "socks5://host.docker.internal:7897"
+
 # ── 心跳传感器 ──
 [heartbeat]
 enabled = false

@@ -181,6 +181,14 @@ def _build_config() -> dict:
 
     # [filesystem] 节（替代旧的 file_config.json）
     fs = config.get("filesystem", {})
+
+    # [docker] 节
+    docker_cfg = config.get("docker", {})
+    flat["docker"] = {
+        "http_proxy": docker_cfg.get("http_proxy", ""),
+        "https_proxy": docker_cfg.get("https_proxy", ""),
+        "all_proxy": docker_cfg.get("all_proxy", ""),
+    }
     flat["filesystem"] = {
         "sandbox_dirs": fs.get("sandbox_dirs", ["sandbox/", "agent_vm/"]),
         "skill_dir": fs.get("skill_dir", ["data/skill"]),
@@ -281,6 +289,16 @@ def get_rss_subscriptions() -> list:
 def get_web_api_config() -> Dict[str, str]:
     config = load_config()
     return config.get("web_api", {})
+
+
+def get_docker_config() -> Dict[str, str]:
+    """获取 Docker 容器代理配置"""
+    config = load_config()
+    return config.get("docker", {
+        "http_proxy": "http://host.docker.internal:7897",
+        "https_proxy": "http://host.docker.internal:7897",
+        "all_proxy": "socks5://host.docker.internal:7897",
+    })
 
 
 def get_filesystem_config() -> Dict[str, Any]:
