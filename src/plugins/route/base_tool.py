@@ -141,7 +141,49 @@ BASE_TOOLS = [
                 "required": ["query"]
             }
         }
-    }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "import_file",
+            "description": "将宿主机文件导入沙盒工作区。导入后在沙盒内可用 execute_command 操作。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "host_path": {
+                        "type": "string",
+                        "description": "宿主机上文件的绝对路径"
+                    },
+                    "sandbox_dir": {
+                        "type": "string",
+                        "description": "沙盒内的目标目录（相对于 /agent_vm/），默认 imports"
+                    }
+                },
+                "required": ["host_path"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "export_file",
+            "description": "将沙盒内的文件导出到宿主机。目标路径必须在 allowed_export_dirs 内（见 file_config.json）。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "sandbox_path": {
+                        "type": "string",
+                        "description": "沙盒内文件路径，如 /agent_vm/imports/result.pdf"
+                    },
+                    "host_path": {
+                        "type": "string",
+                        "description": "宿主机目标路径"
+                    }
+                },
+                "required": ["sandbox_path", "host_path"]
+            }
+        }
+    },
 ]
 
 BASE_TOOL_NAMES = [tool["function"]["name"] for tool in BASE_TOOLS]
@@ -817,6 +859,70 @@ def close_shell(session_id: str = "default") -> str:
 # ==========================================
 # 统一调度出口 (Call Base Tool)
 # ==========================================
+
+
+def import_file(host_path: str, sandbox_dir: str = "imports") -> str:
+    """将宿主机文件导入沙盒工作区"""
+    import shutil, os
+    
+    host_path = os.path.abspath(host_path)
+    if not os.path.exists(host_path):
+        raise FileNotFoundError(f"宿主机文件不存在: {host_path}")
+    if not os.path.isfile(host_path):
+        raise ValueError(f"路径不是文件: {host_path}")
+    
+    mount_point = os.path.abspath("./agent_vm")
+    sandbox_subdir = sandbox_dir.strip("/")
+    dest_dir = os.path.join(mount_point, sandbox_subdir)
+    os.makedirs(dest_dir, exist_ok=True)
+    
+    fname = os.path.basename(host_path)
+    shutil.copy2(host_path, os.path.join(dest_dir, fname))
+    
+    sandbox_path = f"/agent_vm/{sandbox_subdir}/{fname}"
+    return _format_response("text", {
+        "sandbox_path": sandbox_path,
+        "host_path": host_path,
+        "message": f"文件已导入沙盒: {sandbox_path}"
+    })
+
+
+def export_file(sandbox_path: str, host_path: str) -> str:
+    """将沙盒内文件导出到宿主机（带路径安全检查）"""
+    import shutil, os, json
+    
+    sandbox_path = sandbox_path.strip()
+    if not sandbox_path.startswith("/agent_vm/"):
+        raise PermissionError(f"禁止导出沙盒外的文件: {sandbox_path}")
+    
+    rel_path = os.path.relpath(sandbox_path, "/agent_vm")
+    mount_point = os.path.abspath("./agent_vm")
+    host_src = os.path.abspath(os.path.join(mount_point, rel_path))
+    
+    if not os.path.exists(host_src):
+        raise FileNotFoundError(f"沙盒文件不存在: {sandbox_path}")
+    
+    host_path = os.path.abspath(host_path)
+    from src.utils.config import FILE_CONFIG_PATH
+    with open(FILE_CONFIG_PATH) as f:
+        cfg = json.load(f)
+    allowed = [os.path.abspath(d) for d in cfg.get("allowed_export_dirs", [])]
+    
+    if not any(host_path.startswith(d) for d in allowed):
+        raise PermissionError(
+            f"导出目标不在允许目录内: {host_path}\n"
+            f"允许的目录: {allowed}\n"
+            f"请在 data/config/file_config.json 的 allowed_export_dirs 中添加"
+        )
+    
+    os.makedirs(os.path.dirname(host_path), exist_ok=True)
+    shutil.copy2(host_src, host_path)
+    return _format_response("text", {
+        "host_path": host_path,
+        "sandbox_path": sandbox_path,
+        "message": f"文件已导出到宿主机: {host_path}"
+    })
+
 def call_base_tool(tool_name: str, arguments: dict) -> str:
     """
     统一调度 base_tool 模块下的工具
@@ -835,6 +941,10 @@ def call_base_tool(tool_name: str, arguments: dict) -> str:
         result_content = load_skill(arguments.get("name"))
     elif tool_name == "close_shell":
         result_content = close_shell(arguments.get("session_id", "default"))
+    elif tool_name == "import_file":
+        result_content = import_file(arguments.get("host_path"), arguments.get("sandbox_dir", "imports"))
+    elif tool_name == "export_file":
+        result_content = export_file(arguments.get("sandbox_path"), arguments.get("host_path"))
     elif tool_name == "call_dynamic_tool":
         result_content = _format_response("error", "❌ 系统错误：call_dynamic_tool 参数异常。请勿直接调用此工具，应该在 fetch_tool 获取 Schema 后由系统自动代理调用。")
     else:
