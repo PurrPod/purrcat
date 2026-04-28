@@ -5,7 +5,10 @@ from datetime import datetime
 CONFIG_TEMPLATE = """# ============================================
 # PurrCat 配置文件
 # 路径: ~/.purrcat.toml
+# 生成: {timestamp}
 # 完整参考: https://github.com/PurrPod/purrcat
+#
+# 路径说明：所有相对路径均相对于项目根目录
 # ============================================
 
 # ── Agent 基础配置 ──
@@ -16,7 +19,8 @@ model = "openai:deepseek-v4-flash"
 embedding_model = "BAAI/bge-small-zh-v1.5"
 
 # ── 模型配置 ──
-# 每行一个模型，节名 = 完整模型名（点号分隔）
+# 每行一个模型，节名 = 模型名（点号分隔厂商和模型）
+# 例如: [models.openai.deepseek-v4-flash]
 [models.openai.deepseek-v4-flash]
 # API Key 列表（多个自动负载均衡）
 api_keys = ["sk-your-api-key-here"]
@@ -24,10 +28,10 @@ api_keys = ["sk-your-api-key-here"]
 base_url = "https://api.deepseek.com/v1"
 description = "LLM worker"
 # 限流参数
-rpm = 60
-tpm = 1000000
-concurrency = 3
-max_token = 500000
+rpm = 60                # 每分钟请求上限
+tpm = 1000000           # 每分钟 Token 上限
+concurrency = 3         # 最大并发
+max_token = 500000      # 记忆窗口上限
 
 # ── 飞书集成（可选） ──
 [feishu]
@@ -53,11 +57,11 @@ env = { GITHUB_PERSONAL_ACCESS_TOKEN = "" }
 
 # ── 文件系统安全 ──
 [filesystem]
-# 禁止读取的目录
+# 禁止读取/导入的目录
 dont_read_dirs = ["src/"]
-# 允许导出的目录
+# 允许 export_file 写入的目录
 allowed_export_dirs = [".", "agent_vm/"]
-# 挂载到沙盒的目录
+# 挂载到 Docker 沙盒的目录
 docker_mount = ["sandbox/", "."]
 
 # ── RSS 订阅 ──
@@ -73,6 +77,7 @@ subscriptions = [
 enabled = false
 host = "http://127.0.0.1:8000"
 api_key = ""
+timeout = 5
 
 # ── 心跳传感器 ──
 [heartbeat]
@@ -91,7 +96,7 @@ def cmd_init():
             print("  已取消")
             return
 
-    content = f"# 生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M')}\n" + CONFIG_TEMPLATE
+    content = CONFIG_TEMPLATE.format(timestamp=datetime.now().strftime("%Y-%m-%d %H:%M"))
     try:
         with open(config_path, "w", encoding="utf-8") as f:
             f.write(content)
@@ -128,15 +133,20 @@ def cmd_env():
 # 示例:
 #   export PURR_AGENT_MODEL=openai:deepseek-v4-flash
 #   export PURR_WEB_TAVILY_API_KEY=sk-xxx
+#   export PURR_MODELS_OPENAI_DEEPSEEK_V4_FLASH_API_KEYS_0=sk-xxx
 #   purrcat start
 
-PURR_AGENT_MODEL                  # 默认模型名
-PURR_EMBEDDING_MODEL              # Embedding 模型
-PURR_WEB_TAVILY_API_KEY           # Tavily API Key
-PURR_FEISHU_APP_ID                # 飞书 App ID
-PURR_FEISHU_APP_SECRET            # 飞书 App Secret
-PURR_FEISHU_CHAT_ID               # 飞书 Chat ID
+PURR_AGENT_MODEL                          # 默认模型名
+PURR_EMBEDDING_MODEL                      # Embedding 模型
+PURR_WEB_TAVILY_API_KEY                   # Tavily API Key
+PURR_FEISHU_APP_ID                        # 飞书 App ID
+PURR_FEISHU_APP_SECRET                    # 飞书 App Secret
+PURR_FEISHU_CHAT_ID                       # 飞书 Chat ID
 PURR_MCP_GITHUB_ENV_GITHUB_PERSONAL_ACCESS_TOKEN  # GitHub Token
+PURR_MODELS_[NAME]_API_KEYS_0             # 模型 API Key
+PURR_MODELS_[NAME]_BASE_URL               # 模型 Base URL
+PURR_HEARTBEAT_ENABLED                    # 心跳开关
+PURR_PURRMEMO_ENABLED                     # PurrMemo 开关
 """)
 
 
