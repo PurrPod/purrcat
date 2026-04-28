@@ -427,23 +427,36 @@ def init_tool():
 
 
 def _run_mcp_init():
-    """增量注册 MCP 工具：只追加新增的，不覆盖已有"""
+    """惰性注册 MCP 工具：tool.jsonl 里已有则跳过，没有才连 MCP"""
     try:
+        # 1. 看看配置里有哪些 MCP 服务器
+        from src.utils.config import get_mcp_servers
+        configured = set(get_mcp_servers().keys())
+        if not configured:
+            return
+
+        # 2. 看看 tool.jsonl 里已有哪些 MCP 条目
+        existing = _load_tool_index()
+        indexed_servers = {t["plugin"] for t in existing if t.get("route") == "mcp"}
+
+        # 3. 缺哪个就连哪个
+        missing = configured - indexed_servers
+        if not missing:
+            print(f"✅ [MCP] 工具索引已就绪: {configured}")
+            return
+
+        print(f"🔌 [MCP] 发现新服务器: {missing}，正在注册...")
         from src.plugins.route.mcp_tool import extract_mcp_fingerprints_sync
-        print("🔌 [后台] 开始处理MCP工具...")
         mcp_tools = extract_mcp_fingerprints_sync()
 
         if mcp_tools:
-            existing = _load_tool_index()
             before = len(existing)
             merged = _merge_tools(existing, mcp_tools)
             _save_tool_index(merged)
             added = len(merged) - before
-            print(f"✅ [后台] MCP工具索引已更新: {len(mcp_tools)} 个 (新增 {added})")
-        else:
-            print("⚠️ [后台] 未发现可用的MCP工具")
+            print(f"✅ [MCP] 工具索引已更新: {len(mcp_tools)} 个 (新增 {added})")
     except Exception as e:
-        print(f"❌ [后台] 扫描MCP工具异常: {e}")
+        print(f"❌ [MCP] 注册异常: {e}")
 
 
 def _init_tool_async():
@@ -455,7 +468,7 @@ def _init_tool_async():
 
 
 async def init_mcp_tools():
-    """协程版 MCP 初始化，在 async 上下文中阻塞等待完成"""
+    """协程版：检查 tool.jsonl，缺的 MCP 服务器才连接注册"""
     import asyncio
     import concurrent.futures
     loop = asyncio.get_event_loop()
