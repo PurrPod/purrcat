@@ -78,10 +78,8 @@ def parse_tool(tool_name: str, arguments: dict, route: str = None, plugin: str =
                     from src.plugins.route.local_tool import call_local_tool
                     result_content = call_local_tool(plugin, tool_name, arguments)
                 elif route == "mcp":
-                    import importlib
-                    mod = importlib.import_module('src.plugins.route.mcp_tool')
-                    importlib.reload(mod)
-                    result_content = mod.call_mcp_tool(plugin, tool_name, arguments)
+                    from src.plugins.route.mcp_tool import call_mcp_tool
+                    result_content = call_mcp_tool(plugin, tool_name, arguments)
                 else:
                     raise ValueError(f"❌ 未找到 {tool_name} 的底层路由映射。请确认它是否通过 fetch_tool 正常加载。")
         MAX_LEN = 6000  # 默认降级阈值

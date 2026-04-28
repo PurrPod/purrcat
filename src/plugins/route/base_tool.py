@@ -395,11 +395,9 @@ def _init_tool_async():
 
     def _run_mcp_init():
         try:
-            import importlib
-            mod = importlib.import_module('src.plugins.route.mcp_tool')
-            importlib.reload(mod)
+            from src.plugins.route.mcp_tool import extract_mcp_fingerprints_sync
             print("🔌 [后台] 开始处理MCP工具...")
-            mcp_tools = mod.extract_mcp_fingerprints_sync()
+            mcp_tools = extract_mcp_fingerprints_sync()
 
             if mcp_tools:
                 existing_tools = []
@@ -439,10 +437,8 @@ def fetch_tool_schemas(route: str, plugin_name: str, tool_names: list) -> list:
             if func_config and "function" in func_config:
                 schemas.append({"type": "function", "function": func_config["function"]})
     elif route == "mcp":
-        import importlib
-        mod = importlib.import_module('src.plugins.route.mcp_tool')
-        importlib.reload(mod)
-        schemas = mod.get_mcp_tool_schemas_sync(plugin_name, tool_names)
+        from src.plugins.route.mcp_tool import get_mcp_tool_schemas_sync
+        schemas = get_mcp_tool_schemas_sync(plugin_name, tool_names)
     return schemas if schemas else []
 
 
