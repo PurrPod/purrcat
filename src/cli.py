@@ -21,17 +21,32 @@ embedding_model = "BAAI/bge-small-zh-v1.5"
 # ── 模型配置 ──
 # 每行一个模型，节名 = 模型名（点号分隔厂商和模型）
 # 例如: [models."openai:deepseek-v4-flash"]
+# 每个模型一个节，节名 = 完整模型名（引号保留冒号）
+# 可添加多个模型实现多模型并发
 [models."openai:deepseek-v4-flash"]
-# API Key 列表（多个自动负载均衡）
-api_keys = ["sk-your-api-key-here"]
+# API Key 列表（多个 key 自动负载均衡、自动故障转移）
+api_keys = [
+    "sk-your-first-api-key-here",
+    # "sk-your-second-api-key-here",   # 取消注释即可启用第二个 key
+]
 # API 地址
 base_url = "https://api.deepseek.com/v1"
 description = "LLM worker"
-# 限流参数
+# 限流参数（每个 key 独立限流）
 rpm = 60                # 每分钟请求上限
 tpm = 1000000           # 每分钟 Token 上限
-concurrency = 3         # 最大并发
-max_token = 500000      # 记忆窗口上限
+concurrency = 3         # 最大并发数
+max_token = 500000      # 记忆窗口 Token 上限
+
+# 示例：添加第二个模型
+# [models."openai:qwen3-vl-plus"]
+# api_keys = ["sk-your-qwen-key"]
+# base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+# description = "LLM worker 2"
+# rpm = 30
+# tpm = 500000
+# concurrency = 2
+# max_token = 200000
 
 # ── 飞书集成（可选） ──
 [feishu]
