@@ -96,8 +96,21 @@ def add_task(
     ))
 
 
-def submit_request(task_id: str, new_prompt: str = "继续执行") -> str:
-    """统一的任务交互入口：支持追加指令/继续执行，也可从磁盘加载休眠任务"""
+def inform_task(task_id: str, action: str = "continue") -> str:
+    """与任务交互：追加指令或终止任务
+    
+    当 action 以 kill 开头时终止任务，否则将 action 作为指令注入任务。
+    """
+    if action.strip().lower().startswith("kill"):
+        is_killed = core_kill_task(task_id)
+        if is_killed:
+            return _format_response("text", f"✅ 已成功向任务 (ID: {task_id}) 发送终止信号，任务将被安全强杀。")
+        else:
+            raise RuntimeError(f"终止失败：未在内存中找到运行中的任务 (ID: {task_id})。")
+    
+    # 非 kill 指令→走 submit_request 逻辑
+    new_prompt = action
+    task = TASK_INSTANCES.get(task_id)
     task = TASK_INSTANCES.get(task_id)
     if not task:
         checkpoints_dir = os.path.join(DATA_DIR, "checkpoints", "task")
@@ -149,13 +162,6 @@ def submit_request(task_id: str, new_prompt: str = "继续执行") -> str:
     return _format_response("text", f"✅ 已向休眠的任务 (ID: {task_id}) 追加指令并重新唤醒执行。")
 
 
-def kill_task(task_id: str) -> str:
-    """强制终止指定的后台子任务（无异常拦截，直接抛给上层）"""
-    is_killed = core_kill_task(task_id)
-    if is_killed:
-        return _format_response("text", f"✅ 已成功向任务 (ID: {task_id}) 发送终止信号，任务将被安全强杀。")
-    else:
-        raise RuntimeError(f"终止失败：未在内存中找到运行中的任务 (ID: {task_id})。")
 
 
 def list_worker() -> str:
@@ -432,7 +438,7 @@ AGENT_TOOLS = [
         "type": "function",
         "function": {
             "name": "add_task",
-            "description": "启动一个后台子任务以提高工作效率，启动后如有需要补充指令或重新加载，请调用 submit_request",
+            "description": "启动一个后台子任务以提高工作效率，启动后可用 inform_task 追加指令或终止",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -453,27 +459,13 @@ AGENT_TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "submit_request",
-            "description": "两重功能：reload 执行失败的任务和追加 request 到正在执行的任务里",
+            "name": "inform_task",
+            "description": "与任务交互：追加指令或终止任务。action 以 kill 开头则终止任务，否则作为指令注入任务。",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "task_id": {"type": "string", "description": "目标任务的ID"},
-                    "new_prompt": {"type": "string", "description": "追加的指令或需求内容，不填时默认为 reload"}
-                },
-                "required": ["task_id"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "kill_task",
-            "description": "强制终止指定的后台子任务",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "task_id": {"type": "string", "description": "要终止的目标任务的ID"}
+                    "task_id": {"type": "string", "description": "目标任务ID"},
+                    "action": {"type": "string", "description": "操作: kill 终止任务, 否则为注入的指令内容, 默认 continue"}
                 },
                 "required": ["task_id"]
             }
@@ -510,8 +502,7 @@ AGENT_TOOLS = [
 
 AGENT_TOOL_FUNCTIONS = {
     "add_task": add_task,
-    "submit_request": submit_request,
-    "kill_task": kill_task,
+    "inform_task": inform_task,
     "list_worker": list_worker,
     "send_message": send_message,
     "update_memo": update_memo,
