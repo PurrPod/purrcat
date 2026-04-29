@@ -1,9 +1,39 @@
 """FileSystem 工具异常类"""
 
-
 class FileSystemError(Exception):
     """文件系统操作基类异常"""
     pass
+
+
+class HostPathNotFoundError(FileSystemError):
+    """宿主机路径不存在 (用于 import 和 list)"""
+    def __init__(self, path: str):
+        self.path = path
+        super().__init__(f"宿主机路径不存在: {path}")
+
+
+class SandboxPathNotFoundError(FileSystemError):
+    """沙盒文件/目录不存在 (用于 export)"""
+    def __init__(self, path: str):
+        self.path = path
+        super().__init__(f"沙盒文件/目录不存在: {path}")
+
+
+class ExportDirNotAllowedError(FileSystemError):
+    """导出目标目录受限"""
+    def __init__(self, path: str, allowed_dirs: list):
+        self.path = path
+        self.allowed_dirs = allowed_dirs
+        super().__init__(f"导出目标不在允许目录内: {path}")
+
+
+class GitNotAvailableError(FileSystemError):
+    """Git 工具不可用"""
+    def __init__(self):
+        super().__init__(
+            "本地未安装 git 工具，禁止导出以保护文件安全。\n"
+            "请安装 git 后重试，或手动复制文件。"
+        )
 
 
 class InvalidActionError(FileSystemError):
@@ -56,12 +86,3 @@ class UnsupportedPathTypeError(FileSystemError):
     """不支持的路径类型"""
     def __init__(self, path: str):
         super().__init__(f"不支持的路径类型: {path}")
-
-
-class GitNotAvailableError(FileSystemError):
-    """Git 工具不可用"""
-    def __init__(self):
-        super().__init__(
-            "本地未安装 git 工具，禁止导出以保护文件安全。\n"
-            "请安装 git 后重试，或手动复制文件。"
-        )

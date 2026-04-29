@@ -1,36 +1,24 @@
-"""Fetch 工具异常类"""
-
-
-class FetchError(Exception):
-    """获取操作基类异常"""
+class FetchExecutionError(Exception):
+    """基础的 Fetch 异常"""
     pass
 
 
-class InvalidSourceError(FetchError):
-    """无效的来源类型"""
-    def __init__(self, source: str):
-        super().__init__(f"无效的来源类型: {source}。支持的来源: web, skill, mcp")
-
-
-class MissingParameterError(FetchError):
-    """缺少必需参数"""
-    def __init__(self, param_name: str):
-        super().__init__(f"缺少必需参数: {param_name}")
-
-
-class FetchFailedError(FetchError):
-    """获取失败"""
-    def __init__(self, source: str, reason: str):
-        super().__init__(f"{source} 获取失败: {reason}")
-
-
-class SkillNotFoundError(FetchError):
-    """技能未找到"""
+class SkillNotFoundError(FetchExecutionError):
+    """技能未找到异常"""
     def __init__(self, name: str):
-        super().__init__(f"找不到技能: {name}")
+        self.name = name
+        super().__init__(f"未找到技能: {name}")
 
 
-class MCPNotFoundError(FetchError):
-    """MCP 服务器未找到"""
-    def __init__(self, server_name: str):
-        super().__init__(f"找不到 MCP 服务器: {server_name}")
+class MCPNotFoundError(FetchExecutionError):
+    """MCP 工具未找到异常"""
+    def __init__(self, serve_name: str, tool_names: str | list | None = None):
+        self.serve_name = serve_name
+        # 格式化 tool_names 方便话术展示
+        self.tool_names = tool_names if tool_names else "相关"
+        super().__init__(f"未找到 MCP 工具: {serve_name}")
+
+
+class WebNetworkError(FetchExecutionError):
+    """Web 抓取网络异常"""
+    pass

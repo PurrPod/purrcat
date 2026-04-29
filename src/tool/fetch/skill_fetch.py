@@ -2,6 +2,7 @@
 
 from pathlib import Path
 from typing import Dict
+from .exceptions import SkillNotFoundError
 
 DEFAULT_SKILL_PATH = Path("data/skill")
 
@@ -55,7 +56,8 @@ def load_skill(name: str) -> tuple:
                         break
     
     if not md_file.exists():
-        return None, f"找不到技能: {name}"
+        # 抛出技能未找到异常
+        raise SkillNotFoundError(name)
     
     try:
         parsed_data = _parse_skill_md(md_file)

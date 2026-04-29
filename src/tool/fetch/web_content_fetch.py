@@ -2,6 +2,7 @@
 
 import requests
 from typing import Dict
+from .exceptions import WebNetworkError
 
 
 def web_content_fetch(url: str) -> tuple:
@@ -80,6 +81,10 @@ def web_content_fetch(url: str) -> tuple:
             }, None
             
     except requests.exceptions.RequestException as e:
-        return None, f"请求失败: {str(e)}"
+        # 抛出网络异常
+        raise WebNetworkError()
+    except WebNetworkError:
+        # 重新抛出，让上层捕获
+        raise
     except Exception as e:
         return None, f"解析失败: {str(e)}"
