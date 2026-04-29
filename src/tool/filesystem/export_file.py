@@ -6,9 +6,10 @@ import subprocess
 import time
 
 from src.tool.filesystem.exceptions import (
-    PathNotFoundError,
-    PermissionDeniedError,
-    GitNotAvailableError
+    SandboxPathNotFoundError,
+    ExportDirNotAllowedError,
+    GitNotAvailableError,
+    PermissionDeniedError
 )
 
 
@@ -70,17 +71,14 @@ def export_file(sandbox_path: str, host_path: str) -> dict:
     
     # 检查源文件是否存在
     if not os.path.exists(host_src):
-        raise PathNotFoundError(sandbox_path, "沙盒文件/目录")
+        raise SandboxPathNotFoundError(sandbox_path)
     
     # 检查目标路径是否在允许列表内
     host_path = os.path.abspath(host_path)
     allowed_dirs = _load_allowed_dirs()
     
     if not any(host_path.startswith(d) for d in allowed_dirs):
-        raise PermissionDeniedError(
-            host_path,
-            f"导出目标不在允许目录内\n允许的目录: {allowed_dirs}\n请在配置文件的 [filesystem] 节中添加"
-        )
+        raise ExportDirNotAllowedError(host_path, allowed_dirs)
     
     # 检查 git 是否可用
     try:

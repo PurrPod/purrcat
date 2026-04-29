@@ -4,7 +4,7 @@ import os
 import time
 
 from src.tool.filesystem.exceptions import (
-    PathNotFoundError,
+    HostPathNotFoundError,
     PermissionDeniedError
 )
 
@@ -39,7 +39,7 @@ def list_filesystem(path: str = ".", depth: int = 1, show_hidden: bool = False) 
     
     # 路径存在性检查
     if not os.path.exists(root):
-        raise PathNotFoundError(root)
+        raise HostPathNotFoundError(root)
     
     # 加载黑名单
     blacklist = _load_blacklist()

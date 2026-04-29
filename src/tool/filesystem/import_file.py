@@ -5,7 +5,7 @@ import shutil
 import time
 
 from src.tool.filesystem.exceptions import (
-    PathNotFoundError,
+    HostPathNotFoundError,
     PermissionDeniedError,
     FileTooLargeError,
     DirectoryTooLargeError,
@@ -48,7 +48,7 @@ def import_file(host_path: str, sandbox_dir: str = "imports") -> dict:
     
     # 路径存在性检查
     if not os.path.exists(host_path):
-        raise PathNotFoundError(host_path, "宿主机路径")
+        raise HostPathNotFoundError(host_path)
     
     # 加载黑名单
     blacklist = _load_blacklist()
@@ -121,10 +121,8 @@ def import_file(host_path: str, sandbox_dir: str = "imports") -> dict:
         sandbox_path = f"/agent_vm/{sandbox_subdir}/{os.path.basename(dest_path)}"
         
         msg = f"目录已导入沙盒: {sandbox_path} ({total_size / 1024 / 1024:.1f}MB)"
-        if skipped_dirs:
-            msg += f"\n⚠️ 已跳过 {len(skipped_dirs)} 个黑名单目录"
-        if skipped_files:
-            msg += f"\n⚠️ 已跳过 {skipped_files} 个黑名单文件"
+        if skipped_dirs or skipped_files:
+            msg += f"\n⚠️ 导入文件内含不可读名单（{blacklist}）内的文件，已被跳过，如有需要，请联系老板开启权限"
     
     else:
         raise UnsupportedPathTypeError(host_path)
