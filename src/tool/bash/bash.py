@@ -19,6 +19,10 @@ def Bash(command: str, timeout: int = 300) -> str:
         格式化后的 JSON 字符串，包含 timestamp, type, content, snip 字段
     """
     try:
+        # 命令判空校验
+        if not command or not command.strip():
+            return error_response("Bash command 不能为空，请提供要执行的 Shell 指令。", "参数错误")
+        
         # 强制使用默认会话，防止大模型幻觉产生错误的 session_id
         session_id = "default"
         manager = get_docker_manager()

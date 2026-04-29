@@ -27,7 +27,11 @@ def Memo(short_term: str = None, events: list = None, work_exp: list = None,
         格式化后的 JSON 字符串，包含 timestamp, type, content, snip
     """
     try:
-        # 参数校验
+        # 参数校验：先进行类型校验，防止大模型传入错误类型
+        for param_name, param_val in [("events", events), ("work_exp", work_exp), ("cognition", cognition)]:
+            if param_val is not None and not isinstance(param_val, list):
+                return error_response(f"参数类型错误: {param_name} 必须是 JSON 数组 (List) 格式，你传入了 {type(param_val).__name__}。请修改参数格式后重试。", "参数错误")
+        
         valid_events, valid_work_exp, valid_cog, errors = _validate_params(
             short_term, events, work_exp, cognition, reminders, project_state
         )

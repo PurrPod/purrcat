@@ -70,6 +70,9 @@ def FileSystem(action: str, path_from: str = None, path_to: str = None, **kwargs
             if not path_from or not path_from.strip():
                 return error_response("export 操作需要提供 path_from（沙盒路径）", "参数错误")
             
+            if not path_from.startswith("/agent_vm/"):
+                return error_response("路径错误：export 操作的 path_from 必须是沙盒内的绝对路径，且严格以 '/agent_vm/' 开头。", "参数错误")
+            
             if not path_to or not path_to.strip():
                 return error_response("export 操作需要提供 path_to（宿主机路径）", "参数错误")
             

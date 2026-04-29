@@ -75,6 +75,13 @@ def CallMCP(action: str, server_name: str = None, tool_name: str = None,
                 return error_response("call 操作需要提供 tool_name（工具名称）", "参数错误")
             
             args = arguments or {}
+            # 处理大模型可能传入 JSON 字符串的情况
+            if isinstance(args, str):
+                import json
+                try:
+                    args = json.loads(args)
+                except json.JSONDecodeError:
+                    return error_response("arguments 必须是有效的 JSON 字典对象，请勿传入无法解析的字符串格式。", "参数类型错误")
             
             try:
                 result = call_mcp_tool(server_name, tool_name, args)

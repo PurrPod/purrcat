@@ -63,6 +63,11 @@ def Cron(action: str, name: str = None, trigger_time: str = None,
             if not trigger_time or not trigger_time.strip():
                 return error_response("add 操作需要提供 trigger_time（触发时间，HH:MM 格式）", "参数错误")
             
+            # 严格校验时间格式 HH:MM
+            import re
+            if not re.match(r"^([01]\d|2[0-3]):([0-5]\d)$", trigger_time.strip()):
+                return error_response(f"trigger_time 时间格式错误：接收到了 '{trigger_time}'，必须严格使用 24小时制的 HH:MM 格式（如 08:30）。", "参数格式错误")
+            
             try:
                 result = add_cron(title=name, trigger_time=trigger_time, repeat_rule=repeat_rule)
                 snip = f"添加成功: {result['title']} ({result['trigger_time']})"
@@ -86,6 +91,16 @@ def Cron(action: str, name: str = None, trigger_time: str = None,
             # update 操作：需要 name（作为 cron_id），其他参数可选
             if not name or not name.strip():
                 return error_response("update 操作需要提供 name（闹钟 ID）", "参数错误")
+            
+            # 检查是否至少提供了一个要修改的字段
+            if not any([kwargs.get('title'), trigger_time, repeat_rule, active is not None]):
+                return error_response("update 操作至少需要提供一个要修改的字段 (title, trigger_time, repeat_rule, active)。", "参数缺失")
+            
+            # 如果提供了 trigger_time，校验格式
+            if trigger_time and trigger_time.strip():
+                import re
+                if not re.match(r"^([01]\d|2[0-3]):([0-5]\d)$", trigger_time.strip()):
+                    return error_response(f"trigger_time 时间格式错误：接收到了 '{trigger_time}'，必须严格使用 24小时制的 HH:MM 格式（如 08:30）。", "参数格式错误")
             
             try:
                 result = update_cron(

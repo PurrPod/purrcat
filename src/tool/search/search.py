@@ -39,6 +39,14 @@ def Search(route: str, query: str, topk: int = 5, **kwargs) -> str:
         if not query:
             return error_response("查询词不能为空", "参数错误")
         
+        # 检查 topk 范围：设置安全上限，防止 DDoS 自身或 Token 溢出
+        try:
+            topk = int(topk) if topk else 5
+            if topk > 15:
+                topk = 15
+        except ValueError:
+            return error_response("topk 参数必须是整数。", "参数错误")
+        
         # 根据路由执行搜索
         if route == "web":
             return _search_web(query, topk)
