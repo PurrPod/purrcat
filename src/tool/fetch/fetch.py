@@ -1,6 +1,7 @@
 """Fetch 工具主入口 - 统一调度 web/skill/mcp 三种获取方式"""
 
 import json
+import traceback
 from src.tool.utils.format import text_response, error_response, warning_response
 from src.tool.fetch.exceptions import (
     FetchError,
@@ -30,25 +31,31 @@ def Fetch(source: str, **kwargs) -> str:
     Returns:
         格式化后的 JSON 字符串，包含 timestamp, type, content, snip
     """
-    # 参数校验
-    source = source.strip().lower() if source else ""
-    
-    # 检查来源类型
-    if source not in ["web", "skill", "mcp"]:
-        return error_response(
-            f"无效的来源类型: {source}。支持的来源: web, skill, mcp",
-            "参数错误"
-        )
-    
-    # 根据来源类型执行获取
-    if source == "web":
-        return _fetch_web(**kwargs)
-    elif source == "skill":
-        return _fetch_skill(**kwargs)
-    elif source == "mcp":
-        return _fetch_mcp(**kwargs)
-    
-    return error_response("未知错误", "系统错误")
+    try:
+        # 参数校验
+        source = source.strip().lower() if source else ""
+        
+        # 检查来源类型
+        if source not in ["web", "skill", "mcp"]:
+            return error_response(
+                f"无效的来源类型: {source}。支持的来源: web, skill, mcp",
+                "参数错误"
+            )
+        
+        # 根据来源类型执行获取
+        if source == "web":
+            return _fetch_web(**kwargs)
+        elif source == "skill":
+            return _fetch_skill(**kwargs)
+        elif source == "mcp":
+            return _fetch_mcp(**kwargs)
+        
+        return error_response("未知错误", "系统错误")
+        
+    except Exception as e:
+        # 【关键】捕获所有异常，格式化为模型可读的错误，而不是让程序崩溃
+        traceback.print_exc()
+        return error_response(f"获取运行时异常: {str(e)}", "执行失败")
 
 
 def _fetch_web(**kwargs) -> str:

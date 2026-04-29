@@ -1,5 +1,6 @@
 """Search 工具主入口 - 统一调度 web/skill/mcp 三种搜索方式"""
 
+import traceback
 from src.tool.utils.format import text_response, error_response, warning_response
 from src.tool.search.exceptions import (
     SearchError,
@@ -22,30 +23,36 @@ def Search(route: str, query: str, topk: int = 5, **kwargs) -> str:
     Returns:
         格式化后的 JSON 字符串，包含 timestamp, type, content, snip
     """
-    # 参数校验
-    route = route.strip().lower() if route else ""
-    query = query.strip() if query else ""
-    
-    # 检查路由类型
-    if route not in ["web", "skill", "mcp"]:
-        return error_response(
-            f"无效的路由类型: {route}。支持的路由: web, skill, mcp",
-            "参数错误"
-        )
-    
-    # 检查查询词
-    if not query:
-        return error_response("查询词不能为空", "参数错误")
-    
-    # 根据路由执行搜索
-    if route == "web":
-        return _search_web(query, topk)
-    elif route == "skill":
-        return _search_skill(query, topk)
-    elif route == "mcp":
-        return _search_mcp(query, topk)
-    
-    return error_response("未知错误", "系统错误")
+    try:
+        # 参数校验
+        route = route.strip().lower() if route else ""
+        query = query.strip() if query else ""
+        
+        # 检查路由类型
+        if route not in ["web", "skill", "mcp"]:
+            return error_response(
+                f"无效的路由类型: {route}。支持的路由: web, skill, mcp",
+                "参数错误"
+            )
+        
+        # 检查查询词
+        if not query:
+            return error_response("查询词不能为空", "参数错误")
+        
+        # 根据路由执行搜索
+        if route == "web":
+            return _search_web(query, topk)
+        elif route == "skill":
+            return _search_skill(query, topk)
+        elif route == "mcp":
+            return _search_mcp(query, topk)
+        
+        return error_response("未知错误", "系统错误")
+        
+    except Exception as e:
+        # 【关键】捕获所有异常，格式化为模型可读的错误，而不是让程序崩溃
+        traceback.print_exc()
+        return error_response(f"搜索运行时异常: {str(e)}", "执行失败")
 
 
 def _search_web(query: str, topk: int) -> str:

@@ -1,5 +1,6 @@
 """Task 工具主入口 - 统一调度任务创建、通知和终止操作"""
 
+import traceback
 from src.tool.utils.format import text_response, error_response, warning_response
 from src.tool.task.exceptions import (
     TaskError,
@@ -31,27 +32,33 @@ def Task(action: str, **kwargs) -> str:
     Returns:
         格式化后的 JSON 字符串，包含 timestamp, type, content, snip
     """
-    # 参数校验
-    action = action.strip().lower() if action else ""
-    
-    # 检查操作类型
-    if action not in ["add", "inform", "kill", "list"]:
-        return error_response(
-            f"无效的操作类型: {action}。支持的操作: add, inform, kill, list",
-            "参数错误"
-        )
-    
-    # 根据操作类型执行
-    if action == "add":
-        return _handle_add(**kwargs)
-    elif action == "inform":
-        return _handle_inform(**kwargs)
-    elif action == "kill":
-        return _handle_kill(**kwargs)
-    elif action == "list":
-        return _handle_list(**kwargs)
-    
-    return error_response("未知错误", "系统错误")
+    try:
+        # 参数校验
+        action = action.strip().lower() if action else ""
+        
+        # 检查操作类型
+        if action not in ["add", "inform", "kill", "list"]:
+            return error_response(
+                f"无效的操作类型: {action}。支持的操作: add, inform, kill, list",
+                "参数错误"
+            )
+        
+        # 根据操作类型执行
+        if action == "add":
+            return _handle_add(**kwargs)
+        elif action == "inform":
+            return _handle_inform(**kwargs)
+        elif action == "kill":
+            return _handle_kill(**kwargs)
+        elif action == "list":
+            return _handle_list(**kwargs)
+        
+        return error_response("未知错误", "系统错误")
+        
+    except Exception as e:
+        # 【关键】捕获所有异常，格式化为模型可读的错误，而不是让程序崩溃
+        traceback.print_exc()
+        return error_response(f"任务运行时异常: {str(e)}", "执行失败")
 
 
 def _handle_add(**kwargs) -> str:

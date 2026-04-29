@@ -4,7 +4,24 @@ import uuid
 import time
 import importlib
 import traceback
+import inspect
+import asyncio
+import base64
+import mimetypes
 from typing import Any
+
+
+# 工具名到函数名的映射表（处理驼峰命名等特殊情况）
+TOOL_FUNC_MAP = {
+    "filesystem": "FileSystem",
+    "bash": "Bash",
+    "cron": "Cron",
+    "mcp": "CallMCP",
+    "memo": "Memo",
+    "search": "Search",
+    "fetch": "Fetch",
+    "task": "Task"
+}
 
 
 def _safe_truncate(data: Any, max_len: int) -> str:
@@ -36,6 +53,104 @@ def _safe_truncate(data: Any, max_len: int) -> str:
     return f"{preview_front}\n\n... [中间 {omitted} 字符已折叠，防止撑爆上下文] ...\n\n{preview_back}"
 
 
+def _handle_media_content(parsed_res: dict, tool_name: str) -> str:
+    """
+    处理多媒体内容：将图片、视频、音频、PDF 等保存到本地文件
+    """
+    content_data = parsed_res.get("content", {})
+    
+    if not isinstance(content_data, dict):
+        return None
+    
+    media_type = content_data.get("type")
+    if media_type not in ["image", "video", "audio", "pdf", "mcp_media", "media_url", "media_base64"]:
+        return None
+    
+    buffer_dir = os.path.abspath("agent_vm/.buffer")
+    os.makedirs(buffer_dir, exist_ok=True)
+    timestamp = time.strftime("%Y%m%d_%H%M%S")
+    marker_id = uuid.uuid4().hex[:8]
+    
+    try:
+        if media_type == "media_url":
+            import urllib.request
+            url = content_data["url"]
+            ext = content_data.get("ext", ".bin")
+            filename = f"{tool_name}_{timestamp}_{marker_id}{ext}"
+            filepath = os.path.join(buffer_dir, filename)
+            urllib.request.urlretrieve(url, filepath)
+        
+        elif media_type in ["image", "video", "audio", "pdf", "mcp_media"]:
+            data = content_data["data"]
+            ext = content_data.get("ext", ".bin")
+            if media_type == "mcp_media":
+                mime_type = content_data.get("mimeType", ".bin")
+                if mime_type.startswith("image/"):
+                    ext = ".png"
+                else:
+                    ext = mimetypes.guess_extension(mime_type) or ".bin"
+            filename = f"{tool_name}_{timestamp}_{marker_id}{ext}"
+            filepath = os.path.join(buffer_dir, filename)
+            binary_data = base64.b64decode(data)
+            with open(filepath, "wb") as f:
+                f.write(binary_data)
+        
+        elif media_type == "media_base64":
+            data = content_data["data"]
+            ext = content_data.get("ext", ".bin")
+            filename = f"{tool_name}_{timestamp}_{marker_id}{ext}"
+            filepath = os.path.join(buffer_dir, filename)
+            binary_data = base64.b64decode(data)
+            with open(filepath, "wb") as f:
+                f.write(binary_data)
+        
+        # 保存完毕后，改写为纯文本消息
+        sandbox_path = f"/agent_vm/.buffer/{filename}"
+        media_desc = {
+            "image": "🖼️ 图片",
+            "video": "📹 视频",
+            "audio": "🎵 音频",
+            "pdf": "📄 PDF",
+            "mcp_media": "📦 媒体",
+            "media_url": "🔗 下载文件",
+            "media_base64": "📦 Base64 文件"
+        }.get(media_type, "📦 文件")
+        
+        parsed_res["type"] = "text"
+        parsed_res["content"] = f"{media_desc}已成功保存至本地:\n" \
+                               f"📂 宿主机路径: {filepath}\n" \
+                               f"🐳 沙盒内路径: {sandbox_path}"
+        
+        return json.dumps(parsed_res, ensure_ascii=False)
+    
+    except Exception as e:
+        print(f"⚠️ [多媒体处理异常] {e}")
+        return None
+
+
+def _execute_tool(target_func, arguments: dict) -> Any:
+    """
+    执行工具函数，支持同步和异步函数
+    """
+    # 兼容异步工具执行
+    if inspect.iscoroutinefunction(target_func):
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+        
+        if loop and loop.is_running():
+            import nest_asyncio
+            nest_asyncio.apply()
+            result = asyncio.get_event_loop().run_until_complete(target_func(**arguments))
+        else:
+            result = asyncio.run(target_func(**arguments))
+    else:
+        result = target_func(**arguments)
+    
+    return result
+
+
 def dispatch_tool(tool_name: str, arguments: dict, available_tokens: int = None) -> str:
     """
     核心路由枢纽：统一处理工具调用的路由和执行
@@ -51,8 +166,10 @@ def dispatch_tool(tool_name: str, arguments: dict, available_tokens: int = None)
     result_content = ""
     
     try:
+        # 获取函数名（优先使用映射表，否则使用首字母大写）
+        func_name = TOOL_FUNC_MAP.get(tool_name.lower(), tool_name.capitalize())
+        
         # 构建模块路径：tool.{tool_name}.{tool_name}
-        # 例如：tool.bash.bash -> BashTool -> Bash
         module_path = f"src.tool.{tool_name}.{tool_name}"
         try:
             tool_module = importlib.import_module(module_path)
@@ -61,13 +178,28 @@ def dispatch_tool(tool_name: str, arguments: dict, available_tokens: int = None)
             module_path = f"src.tool.{tool_name}"
             tool_module = importlib.import_module(module_path)
         
-        # 获取工具函数（首字母大写的函数名，如 Bash）
-        func_name = tool_name.capitalize()
+        # 获取工具函数
         if not hasattr(tool_module, func_name):
             raise AttributeError(f"工具模块 '{module_path}' 中未找到函数: {func_name}")
         
         target_func = getattr(tool_module, func_name)
-        result_content = target_func(**arguments)
+        
+        # 执行工具（支持同步和异步）
+        result_content = _execute_tool(target_func, arguments)
+        
+        # 先检查是否为多媒体内容
+        try:
+            result_str = str(result_content)
+            parsed_res = json.loads(result_str)
+            
+            # 处理多媒体内容
+            media_result = _handle_media_content(parsed_res, tool_name)
+            if media_result:
+                result_content = media_result
+                result_str = media_result
+                parsed_res = json.loads(result_str)
+        except json.JSONDecodeError:
+            parsed_res = None
         
         # 字数限制拦截逻辑
         MAX_LEN = 6000  # 默认降级阈值
@@ -75,7 +207,11 @@ def dispatch_tool(tool_name: str, arguments: dict, available_tokens: int = None)
             dynamic_max_len = int((available_tokens - 500) * 1.5)
             MAX_LEN = max(500, dynamic_max_len)
         
-        result_str = str(result_content)
+        if result_content and isinstance(result_content, str):
+            result_str = result_content
+        else:
+            result_str = str(result_content)
+        
         try:
             parsed_res = json.loads(result_str)
             content_data = parsed_res.get("content", "")
