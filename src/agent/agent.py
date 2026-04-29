@@ -118,7 +118,7 @@ class Agent:
             formatted_messages = "\n\n".join(local_push)
             self._append_history({
                 "role": "user",
-                "content": f"[SYSTEM {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] You receive {len_messages} message:\n\n{formatted_messages}"
+                "content": f"[SYSTEM {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Received {len_messages} message:\n\n{formatted_messages}"
             })
     def process_message(self):
         """核心 ReAct 交互循环 (主调度器)"""

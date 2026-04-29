@@ -66,9 +66,20 @@ def import_file(host_path: str, sandbox_dir: str = "imports") -> dict:
     skipped_dirs = []
     skipped_files = 0
 
+    sandbox_dir = sandbox_dir.replace("\\", "/").strip()
+    if sandbox_dir.startswith("/agent_vm/"):
+        sandbox_subdir = sandbox_dir[len("/agent_vm/"):]
+    elif sandbox_dir.startswith("agent_vm/"):
+        sandbox_subdir = sandbox_dir[len("agent_vm/"):]
+    elif sandbox_dir in ["/agent_vm", "agent_vm"]:
+        sandbox_subdir = ""
+    else:
+        sandbox_subdir = sandbox_dir
+
+    sandbox_subdir = sandbox_subdir.strip()
+
     mount_point = os.path.abspath("./agent_vm")
-    sandbox_subdir = sandbox_dir.strip("/")
-    dest_dir = os.path.join(mount_point, sandbox_subdir)
+    dest_dir = os.path.join(mount_point, sandbox_subdir) if sandbox_subdir else mount_point
     os.makedirs(dest_dir, exist_ok=True)
 
     MAX_SIZE = 30 * 1024 * 1024  # 30MB
@@ -83,7 +94,8 @@ def import_file(host_path: str, sandbox_dir: str = "imports") -> dict:
             raise FileTooLargeError(host_path, file_size / 1024 / 1024)
 
         shutil.copy2(host_path, os.path.join(dest_dir, fname))
-        sandbox_path = f"/agent_vm/{sandbox_subdir}/{fname}"
+        base_path = f"/agent_vm/{sandbox_subdir}" if sandbox_subdir else "/agent_vm"
+        sandbox_path = f"{base_path}/{fname}"
         msg = f"文件已导入沙盒: {sandbox_path} ({file_size / 1024:.1f}KB)"
 
     elif os.path.isdir(host_path):
@@ -123,7 +135,8 @@ def import_file(host_path: str, sandbox_dir: str = "imports") -> dict:
             dest_path = os.path.join(dest_dir, f"{dirname}_{int(time.time())}")
 
         shutil.copytree(host_path, dest_path, symlinks=False, ignore=_ignore_denied)
-        sandbox_path = f"/agent_vm/{sandbox_subdir}/{os.path.basename(dest_path)}"
+        base_path = f"/agent_vm/{sandbox_subdir}" if sandbox_subdir else "/agent_vm"
+        sandbox_path = f"{base_path}/{os.path.basename(dest_path)}"
 
         msg = f"目录已导入沙盒: {sandbox_path} ({total_size / 1024 / 1024:.1f}MB)"
         if skipped_dirs or skipped_files:
