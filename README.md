@@ -7,7 +7,7 @@
 [![Python Version](https://img.shields.io/badge/python-3.8%2B-blue)]()
 [![License](https://img.shields.io/badge/license-GPLv3-green)]()
 
-> 该项目仍在持续高频更新中
+> 本项目正处于重大重构阶段，仓库代码不能保证稳定性
 
 </div>
 

@@ -82,9 +82,3 @@ def unregister_plugin(plugin_name: str) -> bool:
         return False
 
 
-if __name__ == "__main__":
-    # 初始化本地配置
-    init_local_config_data()
-    # 测试注册和注销功能
-    register_plugin("web")
-

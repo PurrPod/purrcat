@@ -389,17 +389,13 @@ def _merge_tools(existing: list, new_tools: list) -> list:
 
 
 def init_tool():
-    """增量初始化工具索引：保留已有 MCP 条目，只追加新增的本地工具"""
-    print("🔄 开始初始化工具索引...")
+    """1. 主线程同步初始化本地工具索引：快速扫描、去重追加"""
+    print("🔄 开始扫描本地工具...")
 
-    # 1. 读取现有索引
     existing = _load_tool_index()
-    print(f"📖 现有工具索引: {len(existing)} 条")
-
-    # 2. 扫描本地工具
     new_local = []
+
     try:
-        print("📦 处理本地工具...")
         from src.plugins.plugin_collection.local_manager import init_local_config_data
         if os.path.exists(LOCAL_TOOL_YAML):
             os.remove(LOCAL_TOOL_YAML)
@@ -413,69 +409,56 @@ def init_tool():
                     for func_name, func_data in functions.items():
                         desc = func_data.get("function", {}).get("description", "无描述")
                         new_local.append({"route": "local", "plugin": plugin_name, "func": func_name, "desc": desc})
-                print(f"✅ 本地工具: {len(new_local)} 个")
     except Exception as e:
-        print(f"❌ 初始化本地工具异常: {e}")
+        print(f"❌ 扫描本地工具异常: {e}")
 
-    # 3. 合并（保留 MCP + 新增 local）
     merged = _merge_tools(existing, new_local)
     _save_tool_index(merged)
 
     added = len(merged) - len(existing)
-    print(f"✅ 工具索引已更新: {len(merged)} 条 (新增 {added})")
-    # 后台注册 MCP 工具（daemon 线程，不阻塞启动）
-    _init_tool_async()
+    print(f"✅ 本地工具已就绪: 共 {len(merged)} 条 (新增 {added})")
     return merged
 
 
 def _run_mcp_init():
-    """惰性注册 MCP 工具：tool.jsonl 里已有则跳过，没有才连 MCP"""
+    """2. 后台线程运行的 MCP 注册逻辑"""
     try:
-        # 1. 看看配置里有哪些 MCP 服务器
         from src.utils.config import get_mcp_servers
-        configured = set(get_mcp_servers().keys())
-        if not configured:
+        configured_servers = set(get_mcp_servers().keys())
+        if not configured_servers:
             return
 
-        # 2. 看看 tool.jsonl 里已有哪些 MCP 条目
         existing = _load_tool_index()
         indexed_servers = {t["plugin"] for t in existing if t.get("route") == "mcp"}
 
-        # 3. 缺哪个就连哪个
-        missing = configured - indexed_servers
-        if not missing:
-            print(f"✅ [MCP] 工具索引已就绪: {configured}")
+        missing_servers = configured_servers - indexed_servers
+        if not missing_servers:
+            print(f"✅ [MCP] 工具已全部在索引中 {configured_servers}，跳过后台连接。")
             return
 
-        print(f"🔌 [MCP] 发现新服务器: {missing}，正在注册...")
+        print(f"🔌 [MCP] 发现未注册的服务器: {missing_servers}，正在后台连接获取 Schema...")
+
         from src.plugins.route.mcp_tool import extract_mcp_fingerprints_sync
         mcp_tools = extract_mcp_fingerprints_sync()
 
         if mcp_tools:
-            before = len(existing)
-            merged = _merge_tools(existing, mcp_tools)
+            latest_existing = _load_tool_index()
+
+            merged = _merge_tools(latest_existing, mcp_tools)
             _save_tool_index(merged)
-            added = len(merged) - before
-            print(f"✅ [MCP] 工具索引已更新: {len(mcp_tools)} 个 (新增 {added})")
+
+            added = len(merged) - len(latest_existing)
+            print(f"✅ [MCP] 后台注册完成: 获取 {len(mcp_tools)} 个工具 (追加了 {added} 个)")
     except Exception as e:
-        print(f"❌ [MCP] 注册异常: {e}")
+        print(f"❌ [MCP] 后台注册异常: {e}")
 
 
-def _init_tool_async():
-    """后台线程初始化 MCP 工具索引（非阻塞，兼容旧调用方）"""
+def start_mcp_background_init():
+    """暴露给外部的启动口：将 MCP 注册扔进 Daemon 线程"""
     import threading
-    thread = threading.Thread(target=_run_mcp_init, daemon=True)
+    thread = threading.Thread(target=_run_mcp_init, name="MCP_Init_Thread", daemon=True)
     thread.start()
     return thread
-
-
-async def init_mcp_tools():
-    """协程版：检查 tool.jsonl，缺的 MCP 服务器才连接注册"""
-    import asyncio
-    import concurrent.futures
-    loop = asyncio.get_event_loop()
-    with concurrent.futures.ThreadPoolExecutor() as pool:
-        await loop.run_in_executor(pool, _run_mcp_init)
 
 def fetch_tool_schemas(route: str, plugin_name: str, tool_names: list) -> list:
     """批量获取工具 schemas（无异常拦截，直接抛给上层）"""

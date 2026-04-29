@@ -1,0 +1,136 @@
+"""文件导入功能 - 将宿主机文件/目录导入沙盒工作区"""
+
+import os
+import shutil
+import time
+
+from src.tool.filesystem.exceptions import (
+    PathNotFoundError,
+    PermissionDeniedError,
+    FileTooLargeError,
+    DirectoryTooLargeError,
+    UnsupportedPathTypeError
+)
+
+
+def _load_blacklist():
+    """加载 dont_read_dirs 黑名单"""
+    from src.utils.config import get_filesystem_config
+    return [os.path.abspath(d) for d in get_filesystem_config().get("dont_read_dirs", [])]
+
+
+def _is_denied(path: str, blacklist: list) -> bool:
+    """检查路径是否在黑名单内"""
+    path = os.path.abspath(path)
+    for denied in blacklist:
+        if path == denied or path.startswith(denied + os.sep):
+            return True
+    return False
+
+
+def import_file(host_path: str, sandbox_dir: str = "imports") -> dict:
+    """
+    将宿主机文件/目录导入沙盒工作区
+
+    安全检查：
+    - 禁止导入 dont_read_dirs 内的文件
+    - 导入上级目录时，黑名单内的子文件/子目录自动跳过
+    - 目录导入有 30MB 总大小限制
+
+    Args:
+        host_path: 宿主机上文件/目录的绝对路径
+        sandbox_dir: 沙盒内的目标目录（相对于 /agent_vm/），默认 imports
+
+    Returns:
+        包含 sandbox_path, host_path, message 的字典
+    """
+    host_path = os.path.abspath(host_path)
+    
+    # 路径存在性检查
+    if not os.path.exists(host_path):
+        raise PathNotFoundError(host_path, "宿主机路径")
+    
+    # 加载黑名单
+    blacklist = _load_blacklist()
+    
+    # 根路径检查
+    if _is_denied(host_path, blacklist):
+        raise PermissionDeniedError(host_path, f"路径在黑名单内\n黑名单: {blacklist}")
+    
+    # 检查上级目录内是否包含黑名单路径
+    skipped_dirs = []
+    skipped_files = 0
+    
+    mount_point = os.path.abspath("./agent_vm")
+    sandbox_subdir = sandbox_dir.strip("/")
+    dest_dir = os.path.join(mount_point, sandbox_subdir)
+    os.makedirs(dest_dir, exist_ok=True)
+    
+    MAX_SIZE = 30 * 1024 * 1024  # 30MB
+    sandbox_path = ""
+    msg = ""
+    
+    if os.path.isfile(host_path):
+        # 单文件导入
+        fname = os.path.basename(host_path)
+        file_size = os.path.getsize(host_path)
+        if file_size > MAX_SIZE:
+            raise FileTooLargeError(host_path, file_size / 1024 / 1024)
+        
+        shutil.copy2(host_path, os.path.join(dest_dir, fname))
+        sandbox_path = f"/agent_vm/{sandbox_subdir}/{fname}"
+        msg = f"文件已导入沙盒: {sandbox_path} ({file_size / 1024:.1f}KB)"
+    
+    elif os.path.isdir(host_path):
+        # 目录导入：先走一遍计算总大小 + 检查黑名单
+        total_size = 0
+        for dirpath, dirnames, filenames in os.walk(host_path):
+            # 检查当前目录是否在黑名单内
+            if _is_denied(dirpath, blacklist):
+                skipped_dirs.append(dirpath)
+                dirnames.clear()
+                filenames.clear()
+                continue
+            for fn in filenames:
+                fp = os.path.join(dirpath, fn)
+                if _is_denied(fp, blacklist):
+                    skipped_files += 1
+                    continue
+                try:
+                    total_size += os.path.getsize(fp)
+                except OSError:
+                    pass
+                if total_size > MAX_SIZE:
+                    raise DirectoryTooLargeError(host_path)
+        
+        # 正式复制，同样跳过黑名单
+        def _ignore_denied(src, names):
+            ignored = set()
+            for name in names:
+                full = os.path.join(src, name)
+                if _is_denied(full, blacklist):
+                    ignored.add(name)
+            return ignored
+        
+        dirname = os.path.basename(host_path.rstrip("/\\"))
+        dest_path = os.path.join(dest_dir, dirname)
+        if os.path.exists(dest_path):
+            dest_path = os.path.join(dest_dir, f"{dirname}_{int(time.time())}")
+        
+        shutil.copytree(host_path, dest_path, symlinks=False, ignore=_ignore_denied)
+        sandbox_path = f"/agent_vm/{sandbox_subdir}/{os.path.basename(dest_path)}"
+        
+        msg = f"目录已导入沙盒: {sandbox_path} ({total_size / 1024 / 1024:.1f}MB)"
+        if skipped_dirs:
+            msg += f"\n⚠️ 已跳过 {len(skipped_dirs)} 个黑名单目录"
+        if skipped_files:
+            msg += f"\n⚠️ 已跳过 {skipped_files} 个黑名单文件"
+    
+    else:
+        raise UnsupportedPathTypeError(host_path)
+    
+    return {
+        "sandbox_path": sandbox_path,
+        "host_path": host_path,
+        "message": msg
+    }

@@ -3,6 +3,7 @@ import mimetypes
 import os
 import json
 import asyncio
+import shutil
 import threading
 import uuid
 import datetime
@@ -41,8 +42,11 @@ class MCPSessionManager:
 
     async def _server_lifecycle_task(self, server_name: str, config: dict, ready_event: asyncio.Event):
         """专门用于维护单个 MCP Server 生命周期的专属后台任务"""
+        raw_command = config["command"]
+        resolved_command = shutil.which(raw_command) or raw_command
+
         server_params = StdioServerParameters(
-            command=config["command"],
+            command=resolved_command,
             args=config.get("args", []),
             env={**os.environ, **config.get("env", {})}
         )
@@ -63,6 +67,7 @@ class MCPSessionManager:
                         "close_event": close_event
                     }
                     ready_event.set()
+                    print(f"✅ 连接到{server_name} MCP服务器")
                     await close_event.wait()
                     
         except Exception as e:
