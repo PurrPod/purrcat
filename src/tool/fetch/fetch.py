@@ -51,7 +51,7 @@ def Fetch(source: str, name: str = None, serve_name: str = None, url: str = None
                 tool_names = [kwargs.get("tool_name")]
                 
             if not serve_name:
-                return error_response("搜索mcp必须传入参数serve_name", "参数缺失")
+                return error_response("搜索mcp必须传入参数server_name", "参数缺失")
                 
             result, error = fetch_mcp_tools(serve_name, tool_names)
             
@@ -92,7 +92,7 @@ def Fetch(source: str, name: str = None, serve_name: str = None, url: str = None
                 res_messages.append(json.dumps(schema["function"], ensure_ascii=False))
             
             res_messages.append("-----")
-            res_messages.append("⚠️ 注意：这些工具不在你的原生能力列表中，你必须使用 `call_dynamic_tool` 工具调用！")
+            res_messages.append("⚠️ 注意：这些工具不在你的原生能力列表中，你必须使用 `CallMCP` 工具调用！")
             
             return text_response({
                 "server_name": serve_name,

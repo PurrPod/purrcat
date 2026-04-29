@@ -14,17 +14,22 @@ from src.tool.filesystem.exceptions import (
 
 
 def _load_blacklist():
-    """加载 dont_read_dirs 黑名单"""
+    """将配置中的相对路径（如 src/）绑定为当前项目的绝对路径，并消除大小写/斜杠差异"""
     from src.utils.config import get_filesystem_config
-    return [os.path.abspath(d) for d in get_filesystem_config().get("dont_read_dirs", [])]
+    raw_list = get_filesystem_config().get("dont_read_dirs", [])
+    return [os.path.normcase(os.path.abspath(d)) for d in raw_list]
 
 
 def _is_denied(path: str, blacklist: list) -> bool:
-    """检查路径是否在黑名单内"""
-    path = os.path.abspath(path)
-    for denied in blacklist:
-        if path == denied or path.startswith(denied + os.sep):
-            return True
+    """精准路径匹配，不误伤其他目录的同名文件夹"""
+    path_norm = os.path.normcase(os.path.abspath(path))
+
+    for rule_norm in blacklist:
+        try:
+            if os.path.commonpath([path_norm, rule_norm]) == rule_norm:
+                return True
+        except ValueError:
+            pass
     return False
 
 
@@ -45,42 +50,42 @@ def import_file(host_path: str, sandbox_dir: str = "imports") -> dict:
         包含 sandbox_path, host_path, message 的字典
     """
     host_path = os.path.abspath(host_path)
-    
+
     # 路径存在性检查
     if not os.path.exists(host_path):
         raise HostPathNotFoundError(host_path)
-    
+
     # 加载黑名单
     blacklist = _load_blacklist()
-    
+
     # 根路径检查
     if _is_denied(host_path, blacklist):
         raise PermissionDeniedError(host_path, f"路径在黑名单内\n黑名单: {blacklist}")
-    
+
     # 检查上级目录内是否包含黑名单路径
     skipped_dirs = []
     skipped_files = 0
-    
+
     mount_point = os.path.abspath("./agent_vm")
     sandbox_subdir = sandbox_dir.strip("/")
     dest_dir = os.path.join(mount_point, sandbox_subdir)
     os.makedirs(dest_dir, exist_ok=True)
-    
+
     MAX_SIZE = 30 * 1024 * 1024  # 30MB
     sandbox_path = ""
     msg = ""
-    
+
     if os.path.isfile(host_path):
         # 单文件导入
         fname = os.path.basename(host_path)
         file_size = os.path.getsize(host_path)
         if file_size > MAX_SIZE:
             raise FileTooLargeError(host_path, file_size / 1024 / 1024)
-        
+
         shutil.copy2(host_path, os.path.join(dest_dir, fname))
         sandbox_path = f"/agent_vm/{sandbox_subdir}/{fname}"
         msg = f"文件已导入沙盒: {sandbox_path} ({file_size / 1024:.1f}KB)"
-    
+
     elif os.path.isdir(host_path):
         # 目录导入：先走一遍计算总大小 + 检查黑名单
         total_size = 0
@@ -102,7 +107,7 @@ def import_file(host_path: str, sandbox_dir: str = "imports") -> dict:
                     pass
                 if total_size > MAX_SIZE:
                     raise DirectoryTooLargeError(host_path)
-        
+
         # 正式复制，同样跳过黑名单
         def _ignore_denied(src, names):
             ignored = set()
@@ -111,22 +116,22 @@ def import_file(host_path: str, sandbox_dir: str = "imports") -> dict:
                 if _is_denied(full, blacklist):
                     ignored.add(name)
             return ignored
-        
+
         dirname = os.path.basename(host_path.rstrip("/\\"))
         dest_path = os.path.join(dest_dir, dirname)
         if os.path.exists(dest_path):
             dest_path = os.path.join(dest_dir, f"{dirname}_{int(time.time())}")
-        
+
         shutil.copytree(host_path, dest_path, symlinks=False, ignore=_ignore_denied)
         sandbox_path = f"/agent_vm/{sandbox_subdir}/{os.path.basename(dest_path)}"
-        
+
         msg = f"目录已导入沙盒: {sandbox_path} ({total_size / 1024 / 1024:.1f}MB)"
         if skipped_dirs or skipped_files:
             msg += f"\n⚠️ 导入文件内含不可读名单（{blacklist}）内的文件，已被跳过，如有需要，请联系老板开启权限"
-    
+
     else:
         raise UnsupportedPathTypeError(host_path)
-    
+
     return {
         "sandbox_path": sandbox_path,
         "host_path": host_path,
