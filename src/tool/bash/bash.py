@@ -4,7 +4,7 @@ from src.tool.utils.format import text_response, warning_response
 from .docker_env import get_docker_manager
 
 
-def Bash(command: str, timeout: int = 300) -> str:
+def Bash(command: str, timeout: int = 300, session_id: str="default") -> str:
     """
     在安全的沙盒环境 (Docker) 中执行 Shell 命令。
     
@@ -14,16 +14,14 @@ def Bash(command: str, timeout: int = 300) -> str:
     Args:
         command: 要执行的 Shell 命令（支持连串命令和多行文本，请注意正确的引号转义）
         timeout: 命令执行的超时时间（秒），默认 300 秒
-    
+        session_id: shell 会话 id
     Returns:
         格式化后的 JSON 字符串，包含 timestamp, type, content, snip 字段
     """
-    session_id = "default"
     manager = get_docker_manager()
     exit_code, output, cwd = manager.execute(session_id, command, timeout)
     
     result = {
-        "session_id": session_id,
         "exit_code": exit_code,
         "output": output,
         "cwd": cwd
