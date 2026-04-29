@@ -96,9 +96,9 @@ class BaseTask:
 
     def get_available_tools(self) -> list:
         """生命周期钩子：动态获取当前任务可用的所有工具，子类可覆写追加专属工具"""
+        from src.tool import AGENT_TOOL_SCHEMA
         from src.plugins.route.task_tool import TASK_TOOLS
-        from src.plugins.route.base_tool import BASE_TOOLS
-        return list(BASE_TOOLS) + list(TASK_TOOLS)
+        return AGENT_TOOL_SCHEMA + list(TASK_TOOLS)
 
     def _handle_expert_tool(self, tool_name: str, arguments: dict) -> tuple[bool, str]:
         """生命周期钩子：子类可重写此方法以拦截并执行专家的 Extend Tools"""
@@ -125,8 +125,8 @@ class BaseTask:
 
     def _cleanup_resources(self):
         try:
-            from src.plugins.route.base_tool import close_shell
-            close_shell(session_id=self.task_id)
+            from src.tool.bash import close_session
+            close_session(session_id=self.task_id)
             self.log_and_notify("system", "🧹 已自动回收任务专属的 Shell 终端环境")
         except Exception as e:
             print(f"⚠️ 自动回收 Shell 失败: {e}")
@@ -459,7 +459,7 @@ class BaseTask:
                 else:
                     arguments = target_args
 
-            if target_tool_name in ["execute_command", "close_shell"]:
+            if target_tool_name in ["execute_command", "close_shell", "Bash"]:
                 arguments["session_id"] = self.task_id
             if not isinstance(arguments, dict):
                 error_msg = "❌ 系统拦截：工具参数格式严重损坏。请分批运行命令避免指令过长！！"

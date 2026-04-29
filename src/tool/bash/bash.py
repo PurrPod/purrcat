@@ -5,16 +5,14 @@ from src.tool.utils.format import text_response, warning_response, error_respons
 from .docker_env import get_docker_manager
 
 
-def Bash(command: str, timeout: int = 300) -> str:
+def Bash(command: str, timeout: int = 300, session_id: str = "default") -> str:
     """
     在安全的沙盒环境 (Docker) 中执行 Shell 命令。
-    
-    此函数严格遵循原代码 execute_command 的逻辑，参数只保留 command 和 timeout，
-    session_id 内部强制写死为 "default"，防止大模型幻觉产生错误的会话ID。
     
     Args:
         command: 要执行的 Shell 命令（支持连串命令和多行文本，请注意正确的引号转义）
         timeout: 命令执行的超时时间（秒），默认 300 秒
+        session_id: 会话 ID（由系统注入，模型无需关注）
     Returns:
         格式化后的 JSON 字符串，包含 timestamp, type, content, snip 字段
     """
@@ -23,8 +21,7 @@ def Bash(command: str, timeout: int = 300) -> str:
         if not command or not command.strip():
             return error_response("Bash command 不能为空，请提供要执行的 Shell 指令。", "参数错误")
         
-        # 强制使用默认会话，防止大模型幻觉产生错误的 session_id
-        session_id = "default"
+        # 使用系统注入的 session_id（agent/task 层注入），默认 "default"
         manager = get_docker_manager()
         exit_code, output, cwd = manager.execute(session_id, command, timeout)
         

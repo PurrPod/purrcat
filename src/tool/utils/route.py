@@ -166,11 +166,14 @@ def dispatch_tool(tool_name: str, arguments: dict, available_tokens: int = None)
     result_content = ""
     
     try:
-        # 获取函数名（优先使用映射表，否则使用首字母大写）
-        func_name = TOOL_FUNC_MAP.get(tool_name.lower(), tool_name.capitalize())
+        # 统一转为小写进行路由匹配（兼容 AGENT_TOOL_SCHEMA 中的大写工具名）
+        tool_name_lower = tool_name.lower()
         
-        # 构建模块路径：tool.{tool_name}.{tool_name}
-        module_path = f"src.tool.{tool_name}.{tool_name}"
+        # 获取函数名（优先使用映射表，否则使用首字母大写）
+        func_name = TOOL_FUNC_MAP.get(tool_name_lower, tool_name.capitalize())
+        
+        # 构建模块路径：tool.{tool_name}.{tool_name}（使用小写）
+        module_path = f"src.tool.{tool_name_lower}.{tool_name_lower}"
         try:
             tool_module = importlib.import_module(module_path)
         except ImportError:
@@ -192,8 +195,8 @@ def dispatch_tool(tool_name: str, arguments: dict, available_tokens: int = None)
             result_str = str(result_content)
             parsed_res = json.loads(result_str)
             
-            # 处理多媒体内容
-            media_result = _handle_media_content(parsed_res, tool_name)
+            # 处理多媒体内容（使用小写工具名进行文件存储）
+            media_result = _handle_media_content(parsed_res, tool_name_lower)
             if media_result:
                 result_content = media_result
                 result_str = media_result
@@ -223,10 +226,10 @@ def dispatch_tool(tool_name: str, arguments: dict, available_tokens: int = None)
             actual_content_str = result_str
         
         # 超标验证（load_skill 工具除外）
-        if len(actual_content_str) > MAX_LEN and tool_name != "load_skill":
-            # 按工具名称分类全量存储
+        if len(actual_content_str) > MAX_LEN and tool_name_lower != "load_skill":
+            # 按工具名称分类全量存储（使用小写工具名）
             buffer_dir = os.path.abspath("agent_vm/.buffer")
-            tool_dir = os.path.join(buffer_dir, tool_name)
+            tool_dir = os.path.join(buffer_dir, tool_name_lower)
             os.makedirs(tool_dir, exist_ok=True)
             timestamp = time.strftime("%Y%m%d_%H%M%S")
             file_name = f"{timestamp}_{uuid.uuid4().hex[:4]}.txt"
@@ -239,7 +242,7 @@ def dispatch_tool(tool_name: str, arguments: dict, available_tokens: int = None)
             warning_msg = (
                 f"⚠️ [系统拦截] {tool_name} 输出总长 {len(actual_content_str)} 字符，超出当前安全余量阈值 {MAX_LEN}。完整结果已落盘：\n"
                 f"📂 宿主机路径: {cache_path}\n"
-                f"🐳 沙盒内路径: /agent_vm/.buffer/{tool_name}/{file_name}\n"
+                f"🐳 沙盒内路径: /agent_vm/.buffer/{tool_name_lower}/{file_name}\n"
                 f"如果你需要查看剩余的内容，请用 Bash (cat/grep) 或 filesystem 工具去上述缓存文件里阅读全量数据！\n"
                 f"\n--- 结构化内容预览 ---\n"
                 f"{truncated_str}"
@@ -253,10 +256,10 @@ def dispatch_tool(tool_name: str, arguments: dict, available_tokens: int = None)
             else:
                 from src.tool.utils.format import warning_response
                 result_content = warning_response(warning_msg)
-    
+
     except Exception as e:
         traceback.print_exc()
         from src.tool.utils.format import error_response
         result_content = error_response(f"❌ 工具 [{tool_name}] 调度/执行发生异常: {str(e)}")
-    
+
     return str(result_content)

@@ -8,8 +8,8 @@ from src.loader.memory import Memory
 from src.model.model import Model
 from src.plugins.plugin_manager import parse_tool
 
-from src.plugins.route.agent_tool import AGENT_TOOLS
-from src.plugins.route.base_tool import BASE_TOOLS
+from src.tool import AGENT_TOOL_SCHEMA
+from src.tool.utils.route import dispatch_tool
 from src.utils.config import (
     get_agent_model, SOUL_MD_PATH, SYSTEM_RULES_DIR, CHECKPOINT_PATH, TOOL_INDEX_FILE
 )
@@ -27,6 +27,7 @@ PRIORITY_MAP = {
 ROOT = False
 
 MEMORY_MD_PATH = "src/agent/core/MEMORY.md"
+
 
 
 class Agent:
@@ -84,7 +85,9 @@ class Agent:
 
     def stop(self):
         self._stop_event.set()
-
+    def _get_tool_schema(self):
+        from src.tool import AGENT_TOOL_SCHEMA
+        return AGENT_TOOL_SCHEMA
     def _append_history(self, message: dict):
         self.current_history.append(message)
         try:
@@ -158,7 +161,7 @@ class Agent:
 
     def _step_model_interaction(self):
         """封装与大模型的 API 请求，并统计 Token"""
-        current_tools = list(BASE_TOOLS) + list(AGENT_TOOLS)
+        current_tools = AGENT_TOOL_SCHEMA
         response = self.model.chat(messages=self.current_history, tools=current_tools)
         self._track_token_usage(response)
         return response.choices[0].message
@@ -245,7 +248,7 @@ class Agent:
                 continue
 
             # --- 4. 环境参数注入 ---
-            if target_tool_name in ["execute_command", "close_shell"]:
+            if target_tool_name in ["execute_command", "close_shell", "Bash"]:
                 arguments["session_id"] = self.agent_session_id
 
             # --- 5. 执行与挂起逻辑 ---
@@ -254,7 +257,7 @@ class Agent:
                 arguments)
             print(f"🔧 助手调起工具: {target_tool_name}({args_str})")
 
-            result_str = parse_tool(target_tool_name, arguments)
+            result_str = dispatch_tool(target_tool_name, arguments)
             finish_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
             if result_str == "__AGENT_PAUSE__":
@@ -354,7 +357,7 @@ class Agent:
 
     def _run_memory_archive_loop(self, temp_history) -> tuple[bool, str]:
         """在沙箱中运行归档循环，处理工具调用与异常重试"""
-        current_tools = list(BASE_TOOLS) + list(AGENT_TOOLS)
+        current_tools = AGENT_TOOL_SCHEMA
         max_retries = 3
         archive_success = False
         archived_contents = []
