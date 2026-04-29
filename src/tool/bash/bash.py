@@ -3,6 +3,7 @@
 import traceback
 from src.tool.utils.format import text_response, warning_response, error_response
 from .docker_env import get_docker_manager
+from .exceptions import DockerNotRunningError, DockerImageNotFoundError, BashTimeoutError
 
 
 def Bash(command: str, timeout: int = 300, session_id: str = "default") -> str:
@@ -40,8 +41,20 @@ def Bash(command: str, timeout: int = 300, session_id: str = "default") -> str:
             snip = f"失败 (exit_code={exit_code})"
             return warning_response(result, snip)
             
+    except DockerNotRunningError:
+        # 处理 Docker 未启动/连接异常
+        return error_response("Docker未连接，可能是老板没有开启Docker Desktop，请通知老板检查Docker状态", "环境异常")
+        
+    except DockerImageNotFoundError:
+        # 处理镜像缺失/构建启动异常
+        return error_response("Docker启动或构建容器异常，请提醒老板进行相关操作", "环境异常")
+        
+    except BashTimeoutError:
+        # 处理 Bash 执行超时异常
+        return error_response("执行超时，如果是有关下载操作，可能由于网络原因，如是请联系老板进行沙盒的网络配置或检查宿主机网络状态", "执行超时")
+        
     except Exception as e:
-        # 【关键】捕获所有异常，格式化为模型可读的错误，而不是让程序崩溃
+        # 兜底捕获其他未知的运行时异常
         traceback.print_exc()
         return error_response(f"Docker/Shell 运行时异常: {str(e)}", "执行失败")
 

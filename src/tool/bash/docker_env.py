@@ -8,7 +8,10 @@ from typing import Optional
 
 import docker
 import pexpect
-from docker.errors import DockerException, NotFound
+from docker.errors import DockerException, NotFound, ImageNotFound
+
+# 引入自定义异常
+from .exceptions import DockerNotRunningError, DockerImageNotFoundError, BashTimeoutError
 
 # 平台适配逻辑 - 与原代码完全一致
 if sys.platform == 'win32':
@@ -65,12 +68,17 @@ def _get_docker_env() -> dict:
 
 
 class DockerManager:
-    """Docker 沙盒管理器 - 与原代码完全一致"""
+    """Docker 沙盒管理器"""
 
     def __init__(self, image: str, container_name: str = "agent_computer", workspace_dir: str | None = None):
         if not image:
             raise ValueError("A Docker image must be provided.")
-        self.client = docker.from_env()
+        try:
+            self.client = docker.from_env()
+        except Exception as e:
+            # 捕获由 from_env 产生的未启动/无法连接异常
+            raise DockerNotRunningError(f"Docker 客户端初始化失败: {e}")
+        
         self.image = image
         self.container_name = container_name
         self.workspace_dir = workspace_dir
@@ -111,9 +119,17 @@ class DockerManager:
                 volumes[new_host_dir] = {"bind": container_bind_path, "mode": "rw"}
 
             run_kwargs["volumes"] = volumes
-            self.container = self.client.containers.run(self.image, **run_kwargs)
+            try:
+                self.container = self.client.containers.run(self.image, **run_kwargs)
+            except ImageNotFound:
+                # 找不到指定镜像
+                raise DockerImageNotFoundError(f"找不到镜像: {self.image}")
+            except DockerException as e:
+                # run 时的其他 Docker 异常（如挂载失败、端口冲突等）
+                raise DockerImageNotFoundError(f"容器启动异常: {e}")
         except DockerException as e:
-            raise RuntimeError(f"Docker API error: {e}")
+            # get() 失败通常因为 Docker API 没响应（未启动）
+            raise DockerNotRunningError(f"Docker API 连接失败: {e}")
 
     def stop(self):
         with self.pool_lock:
@@ -168,7 +184,6 @@ class DockerManager:
         session["process"] = new_process
 
     def execute(self, session_id: str, command: str, timeout: int = 300) -> tuple[int, str, str]:
-        """执行命令 - 与原代码完全一致"""
         self._ensure_shell(session_id)
         with self.pool_lock:
             session = self.shell_pool[session_id]
@@ -191,7 +206,8 @@ class DockerManager:
                 partial_output = self._clean_ansi(process.before or "")
                 print(f"[red]⚠️ Shell '{session_id}' timed out. Resetting...[/red]")
                 self._restart_shell(session_id)
-                return -1, f"⚠️ Command timed out.\nPartial Output:\n{partial_output.strip()}", "unknown"
+                # 发生超时时不再返回 -1，而是直接抛出特定的超时异常
+                raise BashTimeoutError(f"部分输出:\n{partial_output.strip()}")
 
             exit_code = int(process.match.group(1))
             cwd = process.match.group(2).strip()
@@ -205,7 +221,6 @@ class DockerManager:
 
 
 def get_docker_manager() -> 'DockerManager':
-    """获取 Docker 管理器单例 - 与原代码完全一致"""
     global _docker_manager_instance
     if _docker_manager_instance is None:
         _docker_manager_instance = DockerManager(
@@ -213,8 +228,7 @@ def get_docker_manager() -> 'DockerManager':
             workspace_dir="./agent_vm"
         )
         atexit.register(_docker_manager_instance.stop)
-    try:
-        _docker_manager_instance.start()
-    except Exception as e:
-        raise RuntimeError(f"Docker 容器唤醒失败: {str(e)}")
+    
+    # 移除宽泛的 try-except 拦截，让明确的异常穿透到 bash.py
+    _docker_manager_instance.start()
     return _docker_manager_instance

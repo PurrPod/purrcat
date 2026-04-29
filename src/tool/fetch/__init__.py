@@ -1,3 +1,7 @@
+"""
+获取细节。包括 MCP 工具 schema，爬取网页、加载技能、
+"""
+
 from .fetch import Fetch
 from .schema import FETCH_TOOL_SCHEMA
 from .skill_fetch import load_skill
