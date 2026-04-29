@@ -1,23 +1,14 @@
 """Cron 工具主入口 - 统一调度 list、add、delete、update 操作"""
 
 import traceback
+import re
 from src.tool.utils.format import text_response, error_response, warning_response
-from src.tool.cron.exceptions import (
-    CronError,
-    InvalidActionError,
-    MissingParameterError,
-    InvalidParameterError
-)
-from src.tool.cron.cron_operations import (
-    add_cron,
-    delete_cron,
-    update_cron,
-    list_crons
-)
+from src.tool.cron.exceptions import CronError
+from src.tool.cron.cron_operations import add_cron, delete_cron, update_cron, list_crons
 
 
-def Cron(action: str, name: str = None, trigger_time: str = None, 
-         repeat_rule: str = "none", active: bool = None, **kwargs) -> str:
+def Cron(action: str, name: str = None, trigger_time: str = None,
+         repeat_rule: str = None, active: bool = None, **kwargs) -> str:
     """
     Cron 工具主入口函数，支持四种操作：list、add、delete、update
     
@@ -35,17 +26,16 @@ def Cron(action: str, name: str = None, trigger_time: str = None,
         格式化后的 JSON 字符串，包含 timestamp, type, content, snip
     """
     try:
-        # 参数校验
-        action = action.strip().lower() if action else ""
-        
-        # 检查操作类型
-        if action not in ["list", "add", "delete", "update"]:
+        if not action:
             return error_response(
-                f"无效的操作类型: {action}。支持的操作: list, add, delete, update", 
-                "参数错误"
+                "缺少必需参数 'action'。引导：请提供你想执行的操作类型，可选值为：'list'(查询所有)、'add'(添加)、'delete'(删除)、'update'(修改)。",
+                "缺少 action"
             )
-        
-        # 根据操作类型执行相应逻辑
+
+        action = str(action).strip().lower()
+        if action not in ["list", "add", "delete", "update"]:
+            return error_response(f"无效的 action '{action}'。支持的操作只有: list, add, delete, update。", "参数错误")
+
         if action == "list":
             # list 操作：不需要额外参数
             try:
@@ -56,68 +46,55 @@ def Cron(action: str, name: str = None, trigger_time: str = None,
                 return error_response(str(e), "查询失败")
         
         elif action == "add":
-            # add 操作：需要 name 和 trigger_time
-            if not name or not name.strip():
-                return error_response("add 操作需要提供 name（闹钟名称）", "参数错误")
-            
-            if not trigger_time or not trigger_time.strip():
-                return error_response("add 操作需要提供 trigger_time（触发时间，HH:MM 格式）", "参数错误")
-            
-            # 严格校验时间格式 HH:MM
-            import re
-            if not re.match(r"^([01]\d|2[0-3]):([0-5]\d)$", trigger_time.strip()):
-                return error_response(f"trigger_time 时间格式错误：接收到了 '{trigger_time}'，必须严格使用 24小时制的 HH:MM 格式（如 08:30）。", "参数格式错误")
-            
+            if not name or not str(name).strip():
+                return error_response("add（添加）操作失败。引导：缺少必需参数 'name'，请提供闹钟的名称/标题（如 name='早会'）。", "参数缺失")
+
+            if not trigger_time or not str(trigger_time).strip():
+                return error_response("add（添加）操作失败。引导：缺少必需参数 'trigger_time'，请提供 24 小时制的时间，格式为 HH:MM（如 trigger_time='08:30'）。", "参数缺失")
+
+            if not re.match(r"^([01]\d|2[0-3]):([0-5]\d)$", str(trigger_time).strip()):
+                return error_response(f"时间格式错误：'{trigger_time}'。引导：必须严格使用 HH:MM 格式，例如 09:00 或 14:30。", "参数格式错误")
+
+            actual_rule = repeat_rule if repeat_rule else "none"
             try:
-                result = add_cron(title=name, trigger_time=trigger_time, repeat_rule=repeat_rule)
-                snip = f"添加成功: {result['title']} ({result['trigger_time']})"
-                return text_response(result, snip)
+                result = add_cron(title=name, trigger_time=trigger_time, repeat_rule=actual_rule)
+                return text_response(result, f"添加成功: {result['title']} ({result['trigger_time']})")
             except CronError as e:
                 return warning_response(str(e), "添加失败")
         
         elif action == "delete":
-            # delete 操作：需要 name（作为 cron_id）
-            if not name or not name.strip():
-                return error_response("delete 操作需要提供 name（闹钟 ID）", "参数错误")
-            
+            if not name or not str(name).strip():
+                return error_response("delete（删除）操作失败。引导：缺少必需参数 'name'，请提供要删除的闹钟名称或完整 ID。", "参数缺失")
+
             try:
-                result = delete_cron(cron_id=name)
-                snip = f"删除成功: {name}"
-                return text_response(result, snip)
+                result = delete_cron(identifier=name)
+                return text_response(result, result["message"])
             except CronError as e:
-                return warning_response(str(e), "删除失败")
+                return warning_response(f"删除失败。原因：{str(e)}。引导：请确认填入的 name 或 ID 是否正确（可通过 action='list' 查询当前闹钟）。", "删除失败")
         
         elif action == "update":
-            # update 操作：需要 name（作为 cron_id），其他参数可选
-            if not name or not name.strip():
-                return error_response("update 操作需要提供 name（闹钟 ID）", "参数错误")
-            
-            # 检查是否至少提供了一个要修改的字段
-            if not any([kwargs.get('title'), trigger_time, repeat_rule, active is not None]):
-                return error_response("update 操作至少需要提供一个要修改的字段 (title, trigger_time, repeat_rule, active)。", "参数缺失")
-            
-            # 如果提供了 trigger_time，校验格式
-            if trigger_time and trigger_time.strip():
-                import re
-                if not re.match(r"^([01]\d|2[0-3]):([0-5]\d)$", trigger_time.strip()):
-                    return error_response(f"trigger_time 时间格式错误：接收到了 '{trigger_time}'，必须严格使用 24小时制的 HH:MM 格式（如 08:30）。", "参数格式错误")
-            
+            if not name or not str(name).strip():
+                return error_response("update（修改）操作失败。引导：缺少必需参数 'name' 作为查找凭据，请提供要修改的闹钟名称或完整 ID。", "参数缺失")
+
+            if trigger_time is None and repeat_rule is None and active is None:
+                return error_response("update（修改）操作缺少修改内容。引导：请至少提供 'trigger_time'、'repeat_rule' 或 'active' 中的一个字段以进行更新（注：名称不支持修改）。", "参数缺失")
+
+            if trigger_time and not re.match(r"^([01]\d|2[0-3]):([0-5]\d)$", str(trigger_time).strip()):
+                return error_response(f"时间格式错误：'{trigger_time}'。引导：修改的时间必须严格使用 HH:MM 格式。", "参数格式错误")
+
             try:
                 result = update_cron(
-                    cron_id=name,
-                    title=kwargs.get('title') or name,  # 如果没有单独传 title，使用 name
+                    identifier=name,
                     trigger_time=trigger_time,
                     repeat_rule=repeat_rule,
                     active=active
                 )
-                snip = f"修改成功: {name}"
-                return text_response(result, snip)
+                return text_response(result, result["message"])
             except CronError as e:
-                return warning_response(str(e), "修改失败")
+                return warning_response(f"修改失败。原因：{str(e)}。引导：请确认闹钟名称或 ID 是否正确，或时间/规则格式是否合法。", "修改失败")
         
         return error_response("未知错误", "系统错误")
-        
+
     except Exception as e:
-        # 【关键】捕获所有异常，格式化为模型可读的错误，而不是让程序崩溃
         traceback.print_exc()
-        return error_response(f"Cron 运行时异常: {str(e)}", "执行失败")
+        return error_response(f"Cron 运行时异常: {str(e)}。引导：可能是文件读写错误或内部逻辑异常。", "执行失败")
