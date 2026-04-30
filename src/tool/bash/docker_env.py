@@ -53,8 +53,8 @@ _docker_manager_instance: Optional['DockerManager'] = None
 def _get_docker_env() -> dict:
     """从配置读取 Docker 代理环境变量（只返回非空值）"""
     try:
-        from src.utils.config import get_docker_config
-        cfg = get_docker_config()
+        from src.utils.config import get_file_config
+        cfg = get_file_config().get("docker", {})
         env = {}
         if cfg.get("http_proxy"):
             env["HTTP_PROXY"] = cfg["http_proxy"]
@@ -104,13 +104,13 @@ class DockerManager:
             if self.workspace_dir is not None:
                 os.makedirs(self.workspace_dir, exist_ok=True)
                 volumes[os.path.abspath(self.workspace_dir)] = {"bind": self.container_workspace, "mode": "rw"}
-
-            skill_host_dir = os.path.abspath("./data/skill")
+            from src.utils.config import SKILL_DIR
+            skill_host_dir = SKILL_DIR
             os.makedirs(skill_host_dir, exist_ok=True)
             volumes[skill_host_dir] = {"bind": f"{self.container_workspace}/skill", "mode": "rw"}
 
-            from src.utils.config import get_filesystem_config
-            docker_mount = get_filesystem_config().get("docker_mount", [])
+            from src.utils.config import get_file_config
+            docker_mount = get_file_config().get("docker_mount", [])
             for dirpath in docker_mount:
                 new_host_dir = os.path.abspath(dirpath)
                 os.makedirs(new_host_dir, exist_ok=True)

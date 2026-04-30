@@ -2,14 +2,14 @@ FETCH_TOOL_SCHEMA = {
     "type": "function",
     "function": {
         "name": "Fetch",
-        "description": "统一获取工具，支持获取网页内容、加载技能文件和获取 MCP 工具 Schema",
+        "description": "统一获取工具，支持获取网页内容、加载技能文件、获取 MCP 工具 Schema、读取 HARNESS.md 和 TODO.md",
         "parameters": {
             "type": "object",
             "properties": {
                 "source": {
                     "type": "string",
-                    "description": "获取来源：web（网页内容）、skill（技能文件）、mcp（MCP工具）",
-                    "enum": ["web", "skill", "mcp"]
+                    "description": "获取来源：web（网页内容）、skill（技能文件）、mcp（MCP工具）、harness（HARNESS.md）、todo（TODO.md）",
+                    "enum": ["web", "skill", "mcp", "harness", "todo"]
                 },
                 "url": {
                     "type": "string",

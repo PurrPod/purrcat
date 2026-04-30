@@ -22,8 +22,8 @@ def web_search(query: str, max_results: int = 5) -> tuple:
     error_logs = []
     
     # 优先级 1: Tavily API
-    from src.utils.config import get_web_api_config
-    tavily_key = get_web_api_config().get("tavily_api_key", "")
+    from src.utils.config import get_model_config
+    tavily_key = get_model_config().get("web", {}).get("tavily_api_key", "")
     
     if tavily_key:
         try:

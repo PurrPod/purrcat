@@ -10,6 +10,7 @@ import logging
 from rank_bm25 import BM25Okapi
 from typing import List, Dict, Optional, Any
 from sentence_transformers import SentenceTransformer
+from src.utils.config import DATABASE_DIR
 
 jieba.setLogLevel(logging.INFO)
 
@@ -53,7 +54,7 @@ class VectorDB:
 
 class RAGRetriever:
     """RAG 全局检索器"""
-    def __init__(self, base_dir: str = "data/database", model_name: str = None):
+    def __init__(self, base_dir: str = DATABASE_DIR, model_name: str = None):
         if not model_name:
             from src.utils.config import get_embedding_model
             model_name = get_embedding_model()
@@ -144,7 +145,7 @@ class RAGRetriever:
 if __name__ == "__main__":
     # test
     target_databases = ["demo"]
-    retriever = RAGRetriever(db_names=target_databases, base_dir="../../data/database")
+    retriever = RAGRetriever(db_names=target_databases, base_dir=DATABASE_DIR)
     query_str = "AI在医疗领域有哪些具体的应用？"
     print(f"\n🔍 正在检索: {query_str}")
     results = retriever.search(query=query_str, top_k=3)

@@ -38,8 +38,8 @@ def _find_git_root(path: str) -> str:
 
 def _load_allowed_dirs():
     """加载允许导出的目录列表"""
-    from src.utils.config import get_filesystem_config
-    raw_list = get_filesystem_config().get("allowed_export_dirs", [])
+    from src.utils.config import get_file_config
+    raw_list = get_file_config().get("allowed_export_dirs", [])
     return [os.path.normcase(os.path.abspath(d)) for d in raw_list]
 
 

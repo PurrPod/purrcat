@@ -10,6 +10,7 @@ src/tool/callmcp/mcp_schema.json
 scripts/start_mini.bat
 scripts/start_mini.sh
 widget/
+.purrcat/
 __pycache__/
 *.py[cod]
 *$py.class

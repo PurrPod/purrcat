@@ -10,7 +10,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
 
-DEFAULT_SKILL_PATH = Path("data/skill")
+from src.utils.config import SKILL_DIR
 
 
 def _parse_skill_md(file_path: Path) -> Dict[str, Any]:
@@ -38,7 +38,7 @@ def _parse_skill_md(file_path: Path) -> Dict[str, Any]:
 class SkillSearcher:
     """技能搜索器"""
     
-    def __init__(self, skill_dir: Path = DEFAULT_SKILL_PATH):
+    def __init__(self, skill_dir: Path = SKILL_DIR):
         self.skills = []
         self.corpus = []
         self._load_skills(skill_dir)
@@ -113,7 +113,7 @@ def search_skills(query: str, top_k: int = 3) -> tuple:
         (results, error_message)
     """
     try:
-        skill_searcher = SkillSearcher(DEFAULT_SKILL_PATH)
+        skill_searcher = SkillSearcher(SKILL_DIR)
         results = skill_searcher.search(query, top_k)
         return results, None
     except Exception as e:
@@ -130,7 +130,7 @@ def load_skill(name: str) -> dict:
     Returns:
         技能详情字典
     """
-    base_dir = Path(DEFAULT_SKILL_PATH)
+    base_dir = Path(SKILL_DIR)
     target_dir = base_dir / name
     md_file = target_dir / "SKILL.md"
     

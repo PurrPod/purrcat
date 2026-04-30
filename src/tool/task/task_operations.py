@@ -5,29 +5,29 @@ import json
 import threading
 from typing import Dict
 
-from src.utils.config import get_models_config
+from src.utils.config import get_model_config
 
 
-def add_task_operation(name: str, prompt: str, expert: str, 
-                       core: str = "openai:deepseek-v4-flash", 
+def add_task_operation(name: str, prompt: str, expert: str,
+                       core: str = "openai:deepseek-v4-flash",
                        expert_kwargs: dict = None) -> tuple:
     """
     创建后台任务
-    
+
     Args:
         name: 任务名称
         prompt: 任务提示
         expert: 专家类型
         core: 使用的模型/工人代号
         expert_kwargs: 专家额外参数
-    
+
     Returns:
         (result_dict, error_message)
     """
     try:
         # 验证模型配置
         model_name = core
-        models = get_models_config()
+        models = get_model_config().get("main", {})
         if model_name not in models:
             return None, f"未找到模型 '{model_name}' 的配置"
 

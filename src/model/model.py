@@ -6,7 +6,7 @@ import traceback
 
 import httpx
 from openai import OpenAI, RateLimitError, APIError
-from src.utils.config import get_models_config
+from src.utils.config import get_model_config
 
 # 日志文件路径
 LOG_FILE = "log.txt"
@@ -182,7 +182,7 @@ class LLMDispatcher:
             if model_name in self.initialized_models:
                 return
 
-            models_config = get_models_config()
+            models_config = get_model_config().get("main", {})
             if model_name not in models_config:
                 raise ValueError(f"配置中找不到模型 '{model_name}'！请检查 config.yaml")
 

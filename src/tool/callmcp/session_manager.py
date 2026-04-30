@@ -11,7 +11,7 @@ from typing import Dict, Any
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
-from src.utils.config import get_mcp_servers
+from src.utils.config import get_mcp_config
 
 
 # 全局事件循环
@@ -32,7 +32,7 @@ _mcp_thread.start()
 def load_configs() -> dict:
     """加载 MCP Server 配置"""
     try:
-        return get_mcp_servers()
+        return get_mcp_config().get("mcpServers", {})
     except Exception as e:
         print(f"[MCP 网关] 加载配置文件失败: {e}")
         return {}

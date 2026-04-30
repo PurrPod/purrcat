@@ -20,10 +20,9 @@ _client_available = False
 
 
 def get_purrmemo_config() -> dict:
-    """Get PurrMemo configuration from global config."""
-    from src.utils.config import load_config
-    config = load_config()
-    return config.get("purrmemo", {})
+    """Get PurrMemo configuration from sensor config."""
+    from src.utils.config import get_sensor_config
+    return get_sensor_config().get("purrmemo", {})
 
 
 def is_enabled() -> bool:

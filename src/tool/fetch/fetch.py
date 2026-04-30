@@ -1,6 +1,8 @@
 import json
+import os
 import traceback
 from src.tool.utils.format import text_response, error_response, warning_response
+from src.utils.config import SRC_DIR
 from .exceptions import SkillNotFoundError, MCPServerNotFoundError, MCPToolNotFoundError, WebNetworkError
 from .skill_fetch import load_skill
 from .mcp_fetch import fetch_mcp_tools
@@ -9,7 +11,7 @@ from .web_content_fetch import web_content_fetch
 
 def Fetch(source: str, name: str = None, serve_name: str = None, url: str = None, tool_names: list = None, **kwargs) -> str:
     try:
-        valid_sources = ["skill", "mcp", "web"]
+        valid_sources = ["skill", "mcp", "web", "harness", "todo"]
         source = source.strip().lower() if source else ""
         if source not in valid_sources:
             return error_response(f"source 必须是以下之一: {', '.join(valid_sources)}", "")
@@ -84,6 +86,23 @@ def Fetch(source: str, name: str = None, serve_name: str = None, url: str = None
                 "schemas": result,
                 "message": "\n".join(res_messages)
             }, f"成功获取 MCP Schema，共 {len(result)} 个工具")
+
+        elif source == "harness":
+            harness_path = os.path.join(SRC_DIR, "agent", "core", "HARNESS.md")
+            if os.path.exists(harness_path):
+                with open(harness_path, "r", encoding="utf-8") as f:
+                    content = f.read()
+                return text_response({"content": content}, "成功读取 HARNESS.md 内容")
+            return error_response("未找到 HARNESS.md 文件", "")
+
+        elif source == "todo":
+            todo_path = os.path.join(SRC_DIR, "agent", "core", "TODO.md")
+            if os.path.exists(todo_path):
+                with open(todo_path, "r", encoding="utf-8") as f:
+                    content = f.read().strip()
+                if content:
+                    return text_response({"content": content}, "待办内容：\n" + content)
+            return text_response({"content": ""}, "当前没有待办")
 
         elif source == "web":
             md = f"# {result['title']}\n\n**URL:** {result['url']}\n**类型:** {result['content_type']}\n---\n\n{result.get('content', '')[:2000]}"

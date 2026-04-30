@@ -10,7 +10,7 @@ from src.model.model import Model
 from src.tool import AGENT_TOOL_SCHEMA
 from src.tool.utils.route import dispatch_tool
 from src.utils.config import (
-    get_agent_model, SOUL_MD_PATH, SYSTEM_RULES_DIR, CHECKPOINT_PATH
+    get_agent_model, SOUL_MD_PATH, SYSTEM_RULES_DIR, CHECKPOINT_PATH, AGENT_CORE_DIR
 )
 
 from json_repair import repair_json
@@ -25,7 +25,7 @@ PRIORITY_MAP = {
 
 ROOT = False
 
-MEMORY_MD_PATH = "src/agent/core/MEMORY.md"
+MEMORY_MD_PATH = os.path.join(AGENT_CORE_DIR, "MEMORY.md")
 
 
 
@@ -240,8 +240,9 @@ class Agent:
                 arguments)
             print(f"🔧 助手调起工具: {target_tool_name}({args_str})")
 
-            from src.utils.config import get_model_limits
-            max_tokens = get_model_limits(self.name).get("max_token", 500000)
+            from src.utils.config import get_model_config
+            model_cfg = get_model_config().get("main", {}).get(self.name, {})
+            max_tokens = model_cfg.get("max_token", 500000)
             remaining = max_tokens - self.window_token
 
             result_str = dispatch_tool(target_tool_name, arguments)
@@ -307,8 +308,10 @@ class Agent:
 
 
     def _check_and_summarize_memory(self, check_mode=True):
-        from src.utils.config import get_agent_model, get_model_limits
-        max_tokens = get_model_limits(get_agent_model()).get("max_token", 500000)
+        from src.utils.config import get_model_config, get_agent_model
+        agent_name = get_agent_model()
+        model_cfg = get_model_config().get("main", {}).get(agent_name, {})
+        max_tokens = model_cfg.get("max_token", 500000)
         if check_mode and self.window_token < max_tokens:
             return
 
@@ -387,8 +390,9 @@ class Agent:
 
                             if isinstance(args, dict):
                                 # Call Memo and check result
-                                from src.utils.config import get_model_limits
-                                max_tokens = get_model_limits(self.name).get("max_token", 500000)
+                                from src.utils.config import get_model_config
+                                model_cfg = get_model_config().get("main", {}).get(self.name, {})
+                                max_tokens = model_cfg.get("max_token", 500000)
                                 remaining = max_tokens - self.window_token
                                 tool_result = dispatch_tool("Memo", args, available_tokens=remaining)
                                 import json
@@ -514,7 +518,7 @@ class Agent:
                 print(f"❌ 主核运转异常: {e}")
                 time.sleep(1)
 
-    def save_checkpoint(self, filepath="src/agent/checkpoint.json"):
+    def save_checkpoint(self, filepath=CHECKPOINT_PATH):
         save_path = filepath or self.checkpoint_path
         temp_path = f"{save_path}.tmp"
         try:
@@ -525,7 +529,7 @@ class Agent:
             print(f"⚠️ [Checkpoint] 保存检查点失败: {e}")
 
     @classmethod
-    def load_checkpoint(cls, filepath="src/agent/checkpoint.json", name=None):
+    def load_checkpoint(cls, filepath=CHECKPOINT_PATH, name=None):
         if not name:
             name = get_agent_model()
         agent = cls(name=name, checkpoint_path=filepath)

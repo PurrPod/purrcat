@@ -388,8 +388,9 @@ class BaseTask:
 
     def check_memory_flush(self, check_mode=True, max_tokens=None):
         if max_tokens is None:
-            from src.utils.config import get_model_limits
-            max_tokens = get_model_limits(self.model.name).get("max_token", 90000) if self.model else 90000
+            from src.utils.config import get_model_config
+            model_cfg = get_model_config().get("main", {}).get(self.model.name, {}) if self.model else {}
+            max_tokens = model_cfg.get("max_token", 90000)
         if check_mode and (self.window_token <= max_tokens or len(self.history) <= 150):
             return
         self.log_and_notify("system", f"⚠️ 触发记忆截断: 当前共约 {self.window_token} tokens。正在进行上下文压缩...")
@@ -622,8 +623,9 @@ class BaseTask:
         if new_prompt and new_prompt.strip() not in ["继续", "继续执行", "continue"]:
             self.history.append({"role": "user", "content": f"[User Follow-up Request]: \n{new_prompt}\n"})
 
-        from src.utils.config import get_model_limits
-        _max_tok = get_model_limits(self.model.name).get("max_token", 90000) if self.model else 90000
+        from src.utils.config import get_model_config
+        model_cfg = get_model_config().get("main", {}).get(self.model.name, {}) if self.model else {}
+        _max_tok = model_cfg.get("max_token", 90000)
         if self.window_token > _max_tok or len(self.history) > 140:
             self.log_and_notify("system", "⚠️ 策略：恢复前强制执行记忆压缩。")
             try:

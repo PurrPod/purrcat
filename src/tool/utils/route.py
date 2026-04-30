@@ -9,6 +9,7 @@ import asyncio
 import base64
 import mimetypes
 from typing import Any
+from src.utils.config import BUFFER_DIR
 
 
 # 工具名到函数名的映射表（处理驼峰命名等特殊情况）
@@ -66,7 +67,7 @@ def _handle_media_content(parsed_res: dict, tool_name: str) -> str:
     if media_type not in ["image", "video", "audio", "pdf", "mcp_media", "media_url", "media_base64"]:
         return None
     
-    buffer_dir = os.path.abspath("agent_vm/.buffer")
+    buffer_dir = BUFFER_DIR
     os.makedirs(buffer_dir, exist_ok=True)
     timestamp = time.strftime("%Y%m%d_%H%M%S")
     marker_id = uuid.uuid4().hex[:8]
@@ -228,7 +229,7 @@ def dispatch_tool(tool_name: str, arguments: dict, available_tokens: int = None)
         # 超标验证（load_skill 工具除外）
         if len(actual_content_str) > MAX_LEN and tool_name_lower != "load_skill":
             # 按工具名称分类全量存储（使用小写工具名）
-            buffer_dir = os.path.abspath("agent_vm/.buffer")
+            buffer_dir = BUFFER_DIR
             tool_dir = os.path.join(buffer_dir, tool_name_lower)
             os.makedirs(tool_dir, exist_ok=True)
             timestamp = time.strftime("%Y%m%d_%H%M%S")

@@ -1,0 +1,1 @@
+from src.sensor.message.feishu import FeishuSensor, get_feishu_sensor

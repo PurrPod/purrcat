@@ -4,8 +4,7 @@ from pathlib import Path
 from typing import Dict
 from .exceptions import SkillNotFoundError
 
-DEFAULT_SKILL_PATH = Path("data/skill")
-
+from src.utils.config import SKILL_DIR
 
 def _parse_skill_md(file_path: Path) -> Dict:
     """解析 SKILL.md 文件"""
@@ -39,7 +38,7 @@ def load_skill(name: str) -> tuple:
     Returns:
         (skill_dict, error_message)
     """
-    base_dir = Path(DEFAULT_SKILL_PATH)
+    base_dir = Path(SKILL_DIR)
     target_dir = base_dir / name
     md_file = target_dir / "SKILL.md"
     

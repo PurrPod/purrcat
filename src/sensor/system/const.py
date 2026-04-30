@@ -12,31 +12,23 @@ HARNESS_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__fi
 
 
 def heartbeat():
-    from src.utils.config import get_heartbeat_config
-    cfg = get_heartbeat_config()
-    interval = cfg.get("interval", 1800)
+    from src.utils.config import get_sensor_config
+    heartbeat_cfg = get_sensor_config().get("heartbeat", {})
+    interval = heartbeat_cfg.get("interval", 1800)
+    heartbeat_content = "【系统心跳】如果你现在无事可干，可尝试 Fetch 一下 harness 或 todo 看看闲时要求"
+    total_time = 0
     while True:
-        time.sleep(interval)
         agent = get_agent()
         if not agent:
             continue
-        if agent.pending_force_push:
+        if agent.pending_force_push or agent.state == "handling":
+            total_time = 0
             continue  # skip if agent is already busy
-        # Read HARNESS.md dynamically so edits take effect without restart
-        harness_content = ""
-        try:
-            if os.path.exists(HARNESS_PATH):
-                with open(HARNESS_PATH, "r", encoding="utf-8") as f:
-                    harness_content = f.read().strip()
-                    # Strip YAML front matter if present
-                    if harness_content.startswith("---"):
-                        parts = harness_content.split("---", 2)
-                        if len(parts) >= 3:
-                            harness_content = parts[2].strip()
-        except Exception as e:
-            harness_content = f"[Heartbeat] Failed to read HARNESS.md: {e}"
-        if harness_content:
-            agent.force_push(harness_content, type="heartbeat")
+        time.sleep(10)
+        total_time += 10
+        if total_time >= interval:
+            total_time = 0
+            agent.force_push(heartbeat_content, type="heartbeat")
 
 
 def clock_sensor():
@@ -104,12 +96,12 @@ def clock_sensor():
         time.sleep(60)
 
 def start_sensors():
-    from src.utils.config import get_heartbeat_config
-    cfg = get_heartbeat_config()
-    if cfg.get("enabled", False):
+    from src.utils.config import get_sensor_config
+    heartbeat_cfg = get_sensor_config().get("heartbeat", {})
+    if heartbeat_cfg.get("enabled", False):
         t1 = threading.Thread(target=heartbeat, daemon=True)
         t1.start()
-        interval_min = cfg.get("interval", 1800) // 60
+        interval_min = heartbeat_cfg.get("interval", 1800) // 60
         print(f"💓 系统心跳传感器已上线（每{interval_min}分钟）")
     t2 = threading.Thread(target=clock_sensor, daemon=True)
     t2.start()

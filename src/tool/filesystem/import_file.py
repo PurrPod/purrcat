@@ -15,8 +15,8 @@ from src.tool.filesystem.exceptions import (
 
 def _load_blacklist():
     """将配置中的相对路径（如 src/）绑定为当前项目的绝对路径，并消除大小写/斜杠差异"""
-    from src.utils.config import get_filesystem_config
-    raw_list = get_filesystem_config().get("dont_read_dirs", [])
+    from src.utils.config import get_file_config
+    raw_list = get_file_config().get("dont_read_dirs", [])
     return [os.path.normcase(os.path.abspath(d)) for d in raw_list]
 
 

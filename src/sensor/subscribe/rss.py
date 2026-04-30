@@ -2,15 +2,32 @@ import feedparser
 import json
 import os
 import requests
+from typing import Any, Optional
 
 from src.agent.manager import get_agent
+from src.sensor.base import BaseSensor
 
 
-class RSSSensor:
+class RSSSensor(BaseSensor):
     def __init__(self, name: str, rss_url: str, seen_ids: set):
+        super().__init__(channel_name="rss")
         self.name = name
         self.rss_url = rss_url
         self.seen_ids = seen_ids
+
+    def observe(self, *args, **kwargs) -> Optional[dict]:
+        new_entries, logs = self.fetch_new_entries()
+        if not new_entries:
+            return None
+        return {
+            "name": self.name,
+            "entries": new_entries,
+            "logs": logs
+        }
+
+    def express(self, message: Any, target_id: Optional[str] = None, **kwargs) -> bool:
+        return False
+
     def fetch_new_entries(self) -> tuple[list, list]:
         new_entries = []
         logs = []
@@ -100,10 +117,10 @@ class RSSListener:
 
 
 if __name__ == "__main__":
-    from src.utils.config import get_rss_subscriptions
-    rss_config = get_rss_subscriptions()
-    if rss_config:
-        listener = RSSListener(rss_config)
+    from src.utils.config import get_sensor_config
+    rss_subscriptions = get_sensor_config().get("rss", {}).get("subscriptions", [])
+    if rss_subscriptions:
+        listener = RSSListener(rss_subscriptions)
         result_text = listener.check_all()
         print(result_text)
     else:
