@@ -6,12 +6,11 @@ import threading
 import uuid
 from src.loader.memory import Memory
 from src.model.model import Model
-from src.plugins.plugin_manager import parse_tool
 
 from src.tool import AGENT_TOOL_SCHEMA
 from src.tool.utils.route import dispatch_tool
 from src.utils.config import (
-    get_agent_model, SOUL_MD_PATH, SYSTEM_RULES_DIR, CHECKPOINT_PATH, TOOL_INDEX_FILE
+    get_agent_model, SOUL_MD_PATH, SYSTEM_RULES_DIR, CHECKPOINT_PATH
 )
 
 from json_repair import repair_json
@@ -219,23 +218,7 @@ class Agent:
                         except Exception as repair_e:
                             print(f"❌ json-repair 修复失败: {repair_e}")
 
-            # --- 2. 代理工具无缝拆包拦截 ---
-            if original_tool_name == "call_dynamic_tool" and isinstance(arguments, dict):
-                target_tool_name = arguments.get("target_tool_name", "")
-                target_args = arguments.get("arguments", {})
-                if isinstance(target_args, str):
-                    try:
-                        arguments = json.loads(target_args)
-                    except Exception:
-                        if repair_json:
-                            try:
-                                arguments = repair_json(target_args, return_objects=True)
-                            except:
-                                arguments = target_args
-                else:
-                    arguments = target_args
-
-            # --- 3. 拦截损坏参数 ---
+            # --- 2. 拦截损坏参数 ---
             if not isinstance(arguments, dict):
                 error_msg = "❌ 系统拦截：工具参数格式严重损坏。可能是由于命令过长导致的截断或转义错误，建议分批运行指令！！！"
                 print(error_msg)
@@ -256,6 +239,10 @@ class Agent:
                                                                                                  dict) else str(
                 arguments)
             print(f"🔧 助手调起工具: {target_tool_name}({args_str})")
+
+            from src.utils.config import get_model_limits
+            max_tokens = get_model_limits(self.name).get("max_token", 500000)
+            remaining = max_tokens - self.window_token
 
             result_str = dispatch_tool(target_tool_name, arguments)
             finish_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -331,7 +318,7 @@ class Agent:
             # 1. 准备沙箱环境
             alert_prompt = """【系统警告：记忆容量即将溢出，触发自动记忆归档】
 为了防止对话断层，系统即将清理你最早期的一批记忆。
-你必须调用 `update_memo` 工具将当前记忆进行分类归档：
+你必须调用 `Memo` 工具将当前记忆进行分类归档：
 - short_term: （必填）当前正在处理、被搁置的任务流，以及确立的全局变量或当前需要加载的工具、Skill等。
 - events: （列表）事件记录，每条是 {"time": "YYYYMMDDHHMM", "event": "描述"} 格式。如 {"time": "202604271500", "event": "完成PurrMemo集成"}。记录发生过的事实、对话、操作。
 - work_exp: （列表）经验增长，每条一句简短经验。用户偏好、避坑教训、有效工作模式等可复用沉淀。
@@ -385,7 +372,7 @@ class Agent:
                 has_update_memo = False
 
                 for t in msg_resp.tool_calls:
-                    if t.function.name == "update_memo":
+                    if t.function.name == "Memo":
                         has_update_memo = True
                         try:
                             args_str = t.function.arguments
@@ -394,15 +381,17 @@ class Agent:
                                 try:
                                     args = json.loads(args_str)
                                 except json.JSONDecodeError as e:
-                                    print(f"⚠️ update_memo JSON 解析失败，尝试修复: {e}")
+                                    print(f"⚠️ Memo JSON 解析失败，尝试修复: {e}")
                                     if repair_json:
                                         args = repair_json(args_str, return_objects=True)
 
                             if isinstance(args, dict):
-                                # Call update_memo and check result
-                                tool_result = parse_tool("update_memo", args)
+                                # Call Memo and check result
+                                from src.utils.config import get_model_limits
+                                max_tokens = get_model_limits(self.name).get("max_token", 500000)
+                                remaining = max_tokens - self.window_token
+                                tool_result = dispatch_tool("Memo", args, available_tokens=remaining)
                                 import json
-                                # parse_tool returns a JSON string via _format_response
                                 try:
                                     result_data = json.loads(tool_result)
                                     is_error = result_data.get("type") == "error"
@@ -423,7 +412,7 @@ class Agent:
                                         archived_contents.append("\n".join(param_parts))
                                     tool_response = '✅ 归档工具调用成功'
                         except Exception as e:
-                            print(f"⚠️ update_memo 执行异常: {e}")
+                            print(f"⚠️ Memo 执行异常: {e}")
                             try:
                                 fallback_args = repair_json(t.function.arguments,
                                                             return_objects=True) if repair_json else json.loads(
@@ -435,7 +424,7 @@ class Agent:
                                     archived_contents.append(str(t.function.arguments))
                             except:
                                 archived_contents.append(str(t.function.arguments))
-                            tool_response = f'⚠️ update_memo 执行异常但已记录: {str(e)[:100]}'
+                            tool_response = f'⚠️ Memo 执行异常但已记录: {str(e)[:100]}'
 
                         temp_history.append({
                             "role": "tool",
@@ -448,24 +437,24 @@ class Agent:
                             "role": "tool",
                             "tool_call_id": t.id,
                             "name": t.function.name,
-                            "content": '❌ 系统拦截：当前处于强制归档阶段，请立刻调用 update_memo。'
+                            "content": '❌ 系统拦截：当前处于强制归档阶段，请立刻调用 Memo。'
                         })
 
                 if has_update_memo:
                     archive_success = True
-                    print("🧠 Agent归档完成，成功处理 update_memo 调用。")
+                    print("🧠 Agent归档完成，成功处理 Memo 调用。")
                     break
                 else:
-                    temp_history.append({"role": "user", "content": "打回：你必须调用 `update_memo` 工具来归档备忘录！"})
+                    temp_history.append({"role": "user", "content": "打回：你必须调用 `Memo` 工具来归档备忘录！"})
             else:
                 temp_history.append(assist_msg)
                 temp_history.append(
-                    {"role": "user", "content": "打回：你必须调用 `update_memo` 工具！请不要只回复纯文本。"})
+                    {"role": "user", "content": "打回：你必须调用 `Memo` 工具！请不要只回复纯文本。"})
 
         if archive_success:
             final_summary = "\n\n".join(archived_contents) if archived_contents else "（无归档细节）"
         else:
-            print("⚠️ 未能成功调用 update_memo 工具，强制截断可能导致上下文丢失。")
+            print("⚠️ 未能成功调用 Memo 工具，强制截断可能导致上下文丢失。")
             final_summary = "未保存成功的早期上下文片段..."
 
         return archive_success, final_summary

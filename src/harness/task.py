@@ -11,7 +11,7 @@ import glob
 from json_repair import repair_json
 
 from src.model.model import Model
-from src.utils.config import TOOL_INDEX_FILE, DATA_DIR
+from src.utils.config import DATA_DIR
 
 TASK_INSTANCES = {}
 dirty_tasks = set()

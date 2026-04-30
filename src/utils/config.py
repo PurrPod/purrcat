@@ -28,14 +28,9 @@ CRON_FILE = os.path.join(AGENT_CORE_DIR, "cron.json")
 SYSTEM_RULES_DIR = os.path.join(AGENT_DIR, "system_rules")
 CHECKPOINT_PATH = os.path.join(AGENT_DIR, "checkpoint.json")
 
-PLUGINS_DIR = os.path.join(SRC_DIR, "plugins")
-PLUGIN_COLLECTION_DIR = os.path.join(PLUGINS_DIR, "plugin_collection")
-TOOL_INDEX_FILE = os.path.join(PLUGINS_DIR, "tool.jsonl")
-LOCAL_TOOL_YAML = os.path.join(PLUGIN_COLLECTION_DIR, "local_tool.yaml")
-
 # 保留旧的 FILE_CONFIG_PATH 引用，但内容现在走 TOML
 FILE_CONFIG_PATH = os.path.join(CONFIG_DIR, "file_config.json")
-
+MCP_SCHEMA_CACHE_FILE = os.path.join(SRC_DIR, "tool", "callmcp", "mcp_schema.json")
 _config_cache: Optional[Dict[str, Any]] = None
 
 

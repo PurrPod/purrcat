@@ -16,7 +16,7 @@ TOOL_FUNC_MAP = {
     "filesystem": "FileSystem",
     "bash": "Bash",
     "cron": "Cron",
-    "mcp": "CallMCP",
+    "callmcp": "CallMCP",
     "memo": "Memo",
     "search": "Search",
     "fetch": "Fetch",

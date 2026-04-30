@@ -1,56 +1,64 @@
-"""MCP 搜索模块 - 通过 MCP 服务器进行搜索"""
-
+"""MCP 搜索实现"""
 from typing import List, Dict
+import json
 
 
 def mcp_search(query: str, max_results: int = 5) -> tuple:
     """
-    通过 MCP 服务器进行搜索
-    
-    Args:
-        query: 搜索查询词
-        max_results: 最大返回结果数
-    
-    Returns:
-        (results, error_message)
+    通过遍历缓存的 MCP Schema，寻找名称或描述中匹配查询的工具。
+    不包括参数的匹配，避免被复杂的参数字段干扰。
     """
     results = []
     error_logs = []
-    
+
     try:
-        from src.tool.mcp import CallMCP
-        
-        # 尝试调用 MCP 服务器的搜索工具
-        # 这里需要根据实际的 MCP 服务器配置来调用
-        result = CallMCP(
-            action="list",
-            server_name="search"  # 假设有一个名为 search 的 MCP 服务器
-        )
-        
-        import json
-        result_data = json.loads(result)
-        
-        if result_data.get("type") == "text":
-            tools = result_data.get("content", [])
-            # 查找搜索相关的工具并调用
-            for tool in tools:
-                if "search" in tool.get("name", "").lower():
-                    search_result = CallMCP(
-                        action="call",
-                        server_name="search",
-                        tool_name=tool["name"],
-                        arguments={"query": query, "max_results": max_results}
-                    )
-                    search_data = json.loads(search_result)
-                    if search_data.get("type") == "text":
-                        results.extend(search_data.get("content", []))
-        
-        if results:
-            return results[:max_results], None
-        
-    except ImportError:
-        error_logs.append("MCP 模块未安装")
+        from src.tool.callmcp.schema_manager import load_cached_schemas
+        schemas = load_cached_schemas()
+
+        query_lower = query.lower()
+        scored_results = []
+
+        for schema in schemas:
+            server_name = schema.get("server", "")
+            func = schema.get("function", {})
+            tool_name = func.get("name", "")
+            description = func.get("description", "")
+
+            # 仅根据工具名称和描述进行匹配（不包括 parameters）
+            search_text = f"{tool_name} {description}".lower()
+
+            score = 0
+            if query_lower in tool_name.lower():
+                score += 10
+            if query_lower in description.lower():
+                score += 5
+
+            # 按词匹配
+            query_words = query_lower.split()
+            for word in query_words:
+                if word and word in search_text:
+                    score += 1
+
+            if score > 0:
+                scored_results.append({
+                    "score": score,
+                    "server_name": server_name,
+                    "tool_name": tool_name,
+                    "description": description
+                })
+
+        # 排序并提取 TopK
+        scored_results.sort(key=lambda x: x["score"], reverse=True)
+
+        for item in scored_results[:max_results]:
+            results.append({
+                "server_name": item["server_name"],
+                "tool_name": item["tool_name"],
+                "description": item["description"]
+            })
+
+        return results, None
+
     except Exception as e:
-        error_logs.append(f"MCP 搜索异常: {str(e)}")
-    
-    return [], f"MCP 搜索不可用: {', '.join(error_logs)}"
+        error_logs.append(f"MCP搜索异常: {str(e)}")
+        return [], f"MCP搜索失败: {', '.join(error_logs)}"

@@ -7,7 +7,7 @@ warnings.filterwarnings("ignore", category=RuntimeWarning, message="coroutine 'E
 warnings.filterwarnings("ignore", category=UserWarning, message="pkg_resources is deprecated as an API")
 
 from src.utils.config import initialize_config
-from src.plugins.route.base_tool import init_tool, start_mcp_background_init
+from src.tool.callmcp.callmcp import initialize_mcp
 from src.sensor.system.const import start_sensors
 from src.agent.manager import init_agent, get_agent, shutdown_agent
 from src.sensor.message.feishu import start_lark_sensor
@@ -19,8 +19,7 @@ async def init_core():
     os.environ.pop("HTTPS_PROXY", None)
 
     initialize_config()
-    init_tool()
-    start_mcp_background_init()
+    initialize_mcp()
     start_sensors()
 
     agent = init_agent()

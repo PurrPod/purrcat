@@ -5,6 +5,7 @@ mcp_config.json
 src/memory/
 data/checkpoints
 src/agent/core/cron.json
+src/tool/callmcp/mcp_schema.json
 .buffer/
 scripts/start_mini.bat
 scripts/start_mini.sh
