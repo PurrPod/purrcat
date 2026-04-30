@@ -36,12 +36,9 @@ async def main_async(enable_tui: bool):
 
     try:
         if enable_tui:
-            from tui.app import PurrCatTUI
-            app = PurrCatTUI()
-            await app.run_async()
-        else:
-            print("以无界面(Headless)模式运行中，按 Ctrl+C 退出...")
-            await asyncio.Event().wait()
+            print("⚠️  TUI 界面暂不可用，将以无界面模式启动")
+        print("以无界面(Headless)模式运行中，按 Ctrl+C 退出...")
+        await asyncio.Event().wait()
     except (KeyboardInterrupt, asyncio.CancelledError):
         pass
     finally:

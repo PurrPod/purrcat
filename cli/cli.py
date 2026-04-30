@@ -260,14 +260,25 @@ def cmd_init():
 
 def cmd_start():
     """启动主程序"""
+    import sys
+    import subprocess
+    from pathlib import Path
+
+    # 解析命令行参数
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--headless", action="store_true", help="不启动 TUI，仅在后台运行")
+    args, _ = parser.parse_known_args()
+
+    # 调用 main.py
+    main_py = Path(__file__).parent.parent / "main.py"
+    cmd = [sys.executable, str(main_py)]
+    if args.headless:
+        cmd.append("--headless")
+
     try:
-        from tui.app import PurrCatTUI
-        app = PurrCatTUI()
-        app.run()
-    except ImportError as e:
-        print(f"❌ 启动失败，缺少依赖: {e}")
-        print("   运行: pip install -r requirements.txt")
-        sys.exit(1)
+        subprocess.run(cmd)
+    except KeyboardInterrupt:
+        pass
     except Exception as e:
         print(f"❌ 启动失败: {e}")
         sys.exit(1)
