@@ -10,15 +10,11 @@ MODEL_CONFIG_TEMPLATE = """# ============================================
 # 生成: {timestamp}
 # ============================================
 
-# 默认工作模型
-agent_model: openai:deepseek-v4-flash
-
 # Embedding 模型（用于 RAG 检索）
 embedding_model: BAAI/bge-small-zh-v1.5
 
-# 模型列表
-# 格式: 模型名（厂商:模型名）
-models:
+# 主模型配置（代码会自动取第一个作为 agent_model）
+main:
   openai:deepseek-v4-flash:
     api_keys:
       - sk-your-first-api-key-here
@@ -40,6 +36,18 @@ models:
   #   tpm: 500000
   #   concurrency: 2
   #   max_token: 200000
+
+# 任务模型配置（可选）
+task:
+  # openai:deepseek-v4-flash:
+  #   api_keys:
+  #     - sk-your-task-api-key
+  #   base_url: https://api.deepseek.com/v1
+  #   description: Task Model
+  #   rpm: 60
+  #   tpm: 1000000
+  #   concurrency: 3
+  #   max_token: 500000
 """
 
 SENSOR_CONFIG_TEMPLATE = """# ============================================
@@ -253,8 +261,6 @@ def cmd_init():
 def cmd_start():
     """启动主程序"""
     try:
-        from src.utils.config import initialize_config
-        initialize_config()
         from tui.app import PurrCatTUI
         app = PurrCatTUI()
         app.run()
@@ -270,25 +276,18 @@ def cmd_start():
 def cmd_env():
     """打印环境变量参考"""
     print("""# PurrCat 环境变量参考
-# 优先级: 环境变量 > .purrcat/* > 默认值
+# 提示: 当前版本暂不支持环境变量覆盖配置
+#       请直接编辑 .purrcat/ 目录下的配置文件
 #
 # 示例:
-#   export PURR_AGENT_MODEL=openai:deepseek-v4-flash
-#   export PURR_WEB_TAVILY_API_KEY=sk-xxx
-#   export PURR_MODELS_OPENAI_DEEPSEEK_V4_FLASH_API_KEYS_0=sk-xxx
-#   purrcat start
-
-PURR_AGENT_MODEL                          # 默认模型名
-PURR_EMBEDDING_MODEL                      # Embedding 模型
-PURR_WEB_TAVILY_API_KEY                   # Tavily API Key
-PURR_FEISHU_APP_ID                        # 飞书 App ID
-PURR_FEISHU_APP_SECRET                    # 飞书 App Secret
-PURR_FEISHU_CHAT_ID                       # 飞书 Chat ID
-PURR_MCP_GITHUB_ENV_GITHUB_PERSONAL_ACCESS_TOKEN  # GitHub Token
-PURR_MODELS_[NAME]_API_KEYS_0             # 模型 API Key
-PURR_MODELS_[NAME]_BASE_URL               # 模型 Base URL
-PURR_HEARTBEAT_ENABLED                    # 心跳开关
-PURR_PURRMEMO_ENABLED                     # PurrMemo 开关
+#   # 编辑模型配置
+#   vim .purrcat/.model.yaml
+#
+#   # 编辑传感器配置
+#   vim .purrcat/.sensor.yaml
+#
+#   # 编辑 MCP 配置
+#   vim .purrcat/mcp_config.json
 """)
 
 

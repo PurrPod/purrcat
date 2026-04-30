@@ -6,7 +6,6 @@ import argparse
 warnings.filterwarnings("ignore", category=RuntimeWarning, message="coroutine 'ExpiringCache._start_clear_cron' was never awaited")
 warnings.filterwarnings("ignore", category=UserWarning, message="pkg_resources is deprecated as an API")
 
-from src.utils.config import initialize_config
 from src.tool.callmcp.callmcp import initialize_mcp
 from src.sensor.system.const import start_sensors
 from src.agent.manager import init_agent, get_agent, shutdown_agent
@@ -18,7 +17,6 @@ async def init_core():
     os.environ.pop("HTTP_PROXY", None)
     os.environ.pop("HTTPS_PROXY", None)
 
-    initialize_config()
     initialize_mcp()
     start_sensors()
 
