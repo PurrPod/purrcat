@@ -123,8 +123,8 @@ def _generate_mcp_config(purrcat_dir):
                 "command": "npx",
                 "args": [
                     "@playwright/mcp@latest",
-                    "--user-data-dir=/agent_vm/.buffer/playwright",
-                    "--output-dir=/agent_vm/.buffer/screenshots"
+                    "--user-data-dir=agent_vm/.buffer/playwright",
+                    "--output-dir=agent_vm/.buffer/screenshots"
                 ],
                 "idle_timeout": 600
             },

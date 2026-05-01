@@ -89,60 +89,80 @@ class DockerManager:
 
     def start(self):
         try:
-            self.container = self.client.containers.get(self.container_name)
-            if self.container.status != "running":
-                self.container.start()
+            old_container = self.client.containers.get(self.container_name)
+            print(f"🧹 发现残留的旧沙盒 ({self.container_name})，正在强制清理...")
+            old_container.remove(force=True, v=True)
+            print("✨ 残留沙盒清理完毕。")
         except NotFound:
-            run_kwargs = {
-                "name": self.container_name,
-                "command": "sleep infinity",
-                "detach": True,
-                "working_dir": self.container_workspace,
-                "environment": _get_docker_env()
-            }
-            volumes = {}
-            if self.workspace_dir is not None:
-                os.makedirs(self.workspace_dir, exist_ok=True)
-                volumes[os.path.abspath(self.workspace_dir)] = {"bind": self.container_workspace, "mode": "rw"}
-            from src.utils.config import SKILL_DIR
-            skill_host_dir = SKILL_DIR
-            os.makedirs(skill_host_dir, exist_ok=True)
-            volumes[skill_host_dir] = {"bind": f"{self.container_workspace}/skill", "mode": "rw"}
-
-            from src.utils.config import get_file_config
-            docker_mount = get_file_config().get("docker_mount", [])
-            for dirpath in docker_mount:
-                new_host_dir = os.path.abspath(dirpath)
-                os.makedirs(new_host_dir, exist_ok=True)
-                target_name = os.path.basename(os.path.normpath(dirpath))
-                container_bind_path = f"{self.container_workspace}/{target_name}"
-                volumes[new_host_dir] = {"bind": container_bind_path, "mode": "rw"}
-
-            run_kwargs["volumes"] = volumes
-            try:
-                self.container = self.client.containers.run(self.image, **run_kwargs)
-            except ImageNotFound:
-                # 找不到指定镜像
-                raise DockerImageNotFoundError(f"找不到镜像: {self.image}")
-            except DockerException as e:
-                # run 时的其他 Docker 异常（如挂载失败、端口冲突等）
-                raise DockerImageNotFoundError(f"容器启动异常: {e}")
+            pass
         except DockerException as e:
-            # get() 失败通常因为 Docker API 没响应（未启动）
             raise DockerNotRunningError(f"Docker API 连接失败: {e}")
+
+        run_kwargs = {
+            "name": self.container_name,
+            "command": "sleep infinity",
+            "detach": True,
+            "working_dir": self.container_workspace,
+            "environment": _get_docker_env()
+        }
+
+        volumes = {}
+        if self.workspace_dir is not None:
+            os.makedirs(self.workspace_dir, exist_ok=True)
+            volumes[os.path.abspath(self.workspace_dir)] = {"bind": self.container_workspace, "mode": "rw"}
+
+        from src.utils.config import SKILL_DIR
+        skill_host_dir = SKILL_DIR
+        os.makedirs(skill_host_dir, exist_ok=True)
+        volumes[skill_host_dir] = {"bind": f"{self.container_workspace}/skill", "mode": "rw"}
+
+        from src.utils.config import get_file_config
+        docker_mount = get_file_config().get("docker_mount", [])
+        for dirpath in docker_mount:
+            new_host_dir = os.path.abspath(dirpath)
+            os.makedirs(new_host_dir, exist_ok=True)
+            target_name = os.path.basename(os.path.normpath(dirpath))
+            container_bind_path = f"{self.container_workspace}/{target_name}"
+            volumes[new_host_dir] = {"bind": container_bind_path, "mode": "rw"}
+
+        run_kwargs["volumes"] = volumes
+
+        try:
+            print(f"🚀 正在基于镜像 {self.image} 创建全新沙盒...")
+            self.container = self.client.containers.run(self.image, **run_kwargs)
+            print("✅ 全新沙盒环境启动就绪！")
+        except ImageNotFound:
+            raise DockerImageNotFoundError(f"找不到镜像: {self.image}")
+        except DockerException as e:
+            raise DockerImageNotFoundError(f"容器启动异常: {e}")
 
     def stop(self):
         with self.pool_lock:
             active_session_ids = list(self.shell_pool.keys())
         for sid in active_session_ids:
             self.close_shell(sid)
+            
         if self.container:
+            # === 新增：退出/异常前自动 Commit 逻辑 ===
             try:
-                print(f"🛑 正在关闭并清理 Docker 沙盒 ({self.container_name})...")
-                self.container.stop(timeout=2)
-                print("✅ 沙盒已成功关闭。")
+                # 自动提取镜像名，默认打上 latest 标签覆盖
+                repo_name = self.image.split(':')[0]
+                print(f"� 检测到系统退出/异常，正在自动固化环境到 {repo_name}:latest ...")
+                self.container.commit(repository=repo_name, tag="latest")
+                print("✅ 环境自动保存成功！")
             except Exception as e:
-                print(f"⚠️ 关闭沙盒容器失败: {e}")
+                print(f"⚠️ 自动保存环境失败: {e}")
+            # ==========================================
+
+            try:
+                print(f"�� 正在关闭并清理 Docker 沙盒 ({self.container_name})...")
+                self.container.stop(timeout=2)
+                # 推荐加上 remove() 彻底清理旧容器，保证下次启动时一定是基于最新镜像的干净状态
+                self.container.remove(v=True, force=True)
+                print("✅ 沙盒已成功关闭并清理。")
+            except Exception as e:
+                print(f"⚠️ 关闭/清理沙盒容器失败: {e}")
+                
         self.container = None
 
     def _ensure_shell(self, session_id: str):
