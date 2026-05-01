@@ -40,9 +40,9 @@ def Task(action: str, **kwargs) -> str:
         if action not in ["add", "inform", "kill", "list"]:
             return error_response(
                 f"无效的操作类型: {action}。支持的操作: add, inform, kill, list",
-                "参数错误"
+                f"❌ 无效action | {action}"
             )
-        
+
         # 根据操作类型执行
         if action == "add":
             return _handle_add(**kwargs)
@@ -52,13 +52,13 @@ def Task(action: str, **kwargs) -> str:
             return _handle_kill(**kwargs)
         elif action == "list":
             return _handle_list(**kwargs)
-        
-        return error_response("未知错误", "系统错误")
-        
+
+        return error_response("未知错误", "❌ 系统错误")
+
     except Exception as e:
         # 【关键】捕获所有异常，格式化为模型可读的错误，而不是让程序崩溃
         traceback.print_exc()
-        return error_response(f"任务运行时异常: {str(e)}", "执行失败")
+        return error_response(f"任务运行时异常: {str(e)}", "❌ Task执行异常")
 
 
 def _handle_add(**kwargs) -> str:
@@ -71,26 +71,26 @@ def _handle_add(**kwargs) -> str:
 
     # 必填参数检查
     if not name:
-        return error_response("缺少必需参数: name", "参数错误")
+        return error_response("缺少必需参数: name", "❌ 参数错误：缺少name")
     if not prompt:
-        return error_response("缺少必需参数: prompt", "参数错误")
+        return error_response("缺少必需参数: prompt", "❌ 参数错误：缺少prompt")
     if not expert:
-        return error_response("缺少必需参数: expert", "参数错误")
+        return error_response("缺少必需参数: expert", "❌ 参数错误：缺少expert")
 
     try:
         result, error = add_task_operation(name, prompt, expert, core, expert_kwargs)
-        
+
         if error:
-            return warning_response(error, "任务创建失败")
-        
+            return warning_response(error, f"⚠️ 任务创建失败 | {name}")
+
         return text_response({
             "task_id": result["task_id"],
             "name": result["name"],
             "message": result["message"]
-        }, f"任务 '{name}' 已提交")
-    
+        }, f"🚀 任务已创建")
+
     except Exception as e:
-        return error_response(f"任务创建异常: {e}", "创建异常")
+        return error_response(f"任务创建异常: {e}", "❌ 创建任务异常")
 
 
 def _handle_inform(**kwargs) -> str:
@@ -99,21 +99,21 @@ def _handle_inform(**kwargs) -> str:
     action = kwargs.get("action", "continue")
 
     if not task_id:
-        return error_response("缺少必需参数: task_id", "参数错误")
+        return error_response("缺少必需参数: task_id", "❌ 参数错误：缺少task_id")
 
     try:
         result, error = inform_task_operation(task_id, action)
-        
+
         if error:
-            return warning_response(error, "指令注入失败")
-        
+            return warning_response(error, "⚠️ 注入失败")
+
         return text_response({
             "task_id": task_id,
             "message": result["message"]
-        }, f"指令已注入任务 {task_id}")
-    
+        }, "💉 指令已注入")
+
     except Exception as e:
-        return error_response(f"指令注入异常: {e}", "注入异常")
+        return error_response(f"指令注入异常: {e}", "❌ 注入指令异常")
 
 
 def _handle_kill(**kwargs) -> str:
@@ -121,35 +121,35 @@ def _handle_kill(**kwargs) -> str:
     task_id = kwargs.get("task_id")
 
     if not task_id:
-        return error_response("缺少必需参数: task_id", "参数错误")
+        return error_response("缺少必需参数: task_id", "❌ 参数错误：缺少task_id")
 
     try:
         result, error = kill_task_operation(task_id)
-        
+
         if error:
-            return warning_response(error, "任务终止失败")
-        
+            return warning_response(error, "⚠️ 终止失败")
+
         return text_response({
             "task_id": task_id,
             "message": result["message"]
-        }, f"任务 {task_id} 已终止")
-    
+        }, "⛔ 任务已终止")
+
     except Exception as e:
-        return error_response(f"任务终止异常: {e}", "终止异常")
+        return error_response(f"任务终止异常: {e}", "❌ 终止任务异常")
 
 
 def _handle_list(**kwargs) -> str:
     """处理任务列表查询"""
     try:
         result, error = list_tasks_operation()
-        
+
         if error:
-            return warning_response(error, "获取任务列表失败")
-        
+            return warning_response(error, "⚠️ 获取列表失败")
+
         return text_response({
             "tasks": result["tasks"],
             "count": result["count"]
-        }, f"共 {result['count']} 个任务")
-    
+        }, f"📋 {result['count']}个任务")
+
     except Exception as e:
-        return error_response(f"获取任务列表异常: {e}", "查询异常")
+        return error_response(f"获取任务列表异常: {e}", "❌ 查询异常")

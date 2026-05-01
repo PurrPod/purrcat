@@ -40,10 +40,11 @@ def Cron(action: str, name: str = None, trigger_time: str = None,
             # list 操作：不需要额外参数
             try:
                 crons = list_crons()
-                snip = f"共 {len(crons)} 个闹钟"
+                active_count = sum(1 for c in crons if c.get('active', False))
+                snip = f"⏰ {len(crons)}个 | {active_count}激活"
                 return text_response(crons, snip)
             except CronError as e:
-                return error_response(str(e), "查询失败")
+                return error_response(str(e), "❌ 查询失败")
         
         elif action == "add":
             if not name or not str(name).strip():
@@ -58,9 +59,9 @@ def Cron(action: str, name: str = None, trigger_time: str = None,
             actual_rule = repeat_rule if repeat_rule else "none"
             try:
                 result = add_cron(title=name, trigger_time=trigger_time, repeat_rule=actual_rule)
-                return text_response(result, f"添加成功: {result['title']} ({result['trigger_time']})")
+                return text_response(result, f"✅ 已创建 | {trigger_time}")
             except CronError as e:
-                return warning_response(str(e), "添加失败")
+                return warning_response(str(e), "⚠️ 添加失败")
         
         elif action == "delete":
             if not name or not str(name).strip():
@@ -68,9 +69,9 @@ def Cron(action: str, name: str = None, trigger_time: str = None,
 
             try:
                 result = delete_cron(identifier=name)
-                return text_response(result, result["message"])
+                return text_response(result, "✅ 已删除")
             except CronError as e:
-                return warning_response(f"删除失败。原因：{str(e)}。引导：请确认填入的 name 或 ID 是否正确（可通过 action='list' 查询当前闹钟）。", "删除失败")
+                return warning_response(f"删除失败。原因：{str(e)}。引导：请确认填入的 name 或 ID 是否正确。", "⚠️ 删除失败")
         
         elif action == "update":
             if not name or not str(name).strip():
@@ -89,9 +90,9 @@ def Cron(action: str, name: str = None, trigger_time: str = None,
                     repeat_rule=repeat_rule,
                     active=active
                 )
-                return text_response(result, result["message"])
+                return text_response(result, f"✅ 已更新 | {name}")
             except CronError as e:
-                return warning_response(f"修改失败。原因：{str(e)}。引导：请确认闹钟名称或 ID 是否正确，或时间/规则格式是否合法。", "修改失败")
+                return warning_response(f"修改失败。原因：{str(e)}。引导：请确认闹钟名称或 ID 是否正确，或时间/规则格式是否合法。", "⚠️ 更新失败")
         
         return error_response("未知错误", "系统错误")
 

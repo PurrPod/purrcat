@@ -42,7 +42,15 @@ def Memo(short_term: str = None, events: list = None, work_exp: list = None,
         # 检查是否启用 PurrMemo
         from src.loader.purrmemo_client import is_enabled
         use_purrmemo = is_enabled()
-        
+
+        fields_updated = []
+        if valid_events: fields_updated.append(f"E{len(valid_events)}")
+        if valid_work_exp: fields_updated.append(f"X{len(valid_work_exp)}")
+        if valid_cog: fields_updated.append(f"C{len(valid_cog)}")
+        if reminders: fields_updated.append("R")
+        if project_state: fields_updated.append("P")
+        update_cnt = len([x for x in fields_updated if not x.endswith("0")])
+
         if use_purrmemo:
             # PurrMemo 模式：仅推送到 PurrMemo API
             try:
@@ -56,16 +64,16 @@ def Memo(short_term: str = None, events: list = None, work_exp: list = None,
                 if purrmemo_ok:
                     return text_response(
                         {"message": "备忘录已同步到 PurrMemo 记忆系统"},
-                        "同步到 PurrMemo"
+                        f"🧠 PurrMemo同步 | {update_cnt}项"
                     )
                 else:
                     return error_response(
                         "PurrMemo 推送失败，请检查 PurrMemo 服务状态",
-                        "推送失败"
+                        "❌ PurrMemo同步失败"
                     )
             except Exception as e:
-                return error_response(f"PurrMemo 推送异常: {e}", "推送异常")
-        
+                return error_response(f"PurrMemo 推送异常: {e}", "❌ PurrMemo异常")
+
         # Legacy 模式：写入本地 memory.md
         flush_data = build_flush_data(
             events=valid_events,
@@ -74,16 +82,16 @@ def Memo(short_term: str = None, events: list = None, work_exp: list = None,
             reminders=reminders,
             project_state=project_state
         )
-        
+
         if flush_data:
             _update_core_information(flush_data)
-        
+
         return text_response(
             {"message": "备忘录更新成功", "short_term": short_term[:100] + "..." if len(short_term) > 100 else short_term},
-            "更新成功"
+            f"📝 Memo更新 | {update_cnt}项"
         )
-        
+
     except Exception as e:
         # 【关键】捕获所有异常，格式化为模型可读的错误，而不是让程序崩溃
         traceback.print_exc()
-        return error_response(f"备忘录运行时异常: {str(e)}", "执行失败")
+        return error_response(f"备忘录运行时异常: {str(e)}", "❌ Memo执行异常")

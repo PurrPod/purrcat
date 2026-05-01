@@ -64,7 +64,7 @@ def _search_web(query: str, topk: int) -> str:
         results, error = web_search(query, topk)
 
         if error:
-            return warning_response(error, "搜索失败")
+            return warning_response(error, "⚠️ Web搜索失败")
 
         md = f"# 🔍 搜索结果: {query}\n\n"
         for i, res in enumerate(results, 1):
@@ -77,10 +77,10 @@ def _search_web(query: str, topk: int) -> str:
             "results_count": len(results),
             "markdown": md,
             "results": results
-        }, f"Web 搜索完成，找到 {len(results)} 条结果")
+        }, f"🌐 Web | {len(results)}条结果")
 
     except Exception as e:
-        return error_response(f"Web 搜索异常: {e}", "搜索异常")
+        return error_response(f"Web 搜索异常: {e}", "❌ Web搜索异常")
 
 
 def _search_local(query: str, topk: int) -> str:
@@ -91,8 +91,8 @@ def _search_local(query: str, topk: int) -> str:
 
         if skill_err and mcp_err:
             return warning_response(
-                f"Local搜索完全失败: Skill({skill_err}), MCP({mcp_err})",
-                "搜索失败"
+                f"Skill搜索失败: {skill_err}\nMCP搜索失败: {mcp_err}",
+                "⚠️ Local失败"
             )
 
         merged_results = []
@@ -121,8 +121,10 @@ def _search_local(query: str, topk: int) -> str:
             return text_response({
                 "query": query,
                 "results_count": 0
-            }, "未找到匹配的本地工具或技能")
+            }, "🔍 Local无结果")
 
+        skill_count = len([r for r in top_results if r['source'] == 'Skill'])
+        mcp_count = len(top_results) - skill_count
         md = f"🎯 本地工具库搜索结果 (Top {len(top_results)}):\n\n"
         md += "| 来源类别 | 工具/技能名称 | 语义匹配度 | 描述 |\n"
         md += "|----------|---------------|------------|------|\n"
@@ -137,8 +139,8 @@ def _search_local(query: str, topk: int) -> str:
             "results_count": len(top_results),
             "results": top_results,
             "markdown": md
-        }, f"Local 搜索完成，找到 {len(top_results)} 条结果")
+        }, f"🔧 Local | Skill:{skill_count} MCP:{mcp_count}")
 
     except Exception as e:
         traceback.print_exc()
-        return error_response(f"Local 搜索合并时异常: {e}", "搜索异常")
+        return error_response(f"Local搜索异常: {e}", "❌ Local异常")

@@ -14,16 +14,16 @@ def CallMCP(server_name: str, tool_name: str, arguments: dict = None, **kwargs) 
     """
     try:
         if not server_name or not str(server_name).strip():
-            return error_response("缺少 server_name 参数", "")
+            return error_response("缺少 server_name 参数", "❌ 参数错误")
         if not tool_name or not str(tool_name).strip():
-            return error_response("缺少 tool_name 参数", "")
+            return error_response("缺少 tool_name 参数", "❌ 参数错误")
 
         args = arguments or {}
         if isinstance(args, str):
             try:
                 args = json.loads(args)
             except json.JSONDecodeError:
-                return error_response("arguments 必须是合法的 JSON", "")
+                return error_response("arguments 必须是合法的 JSON", "❌ 参数解析错误")
 
         # 1. 检查 server_name 是否在配置中
         configs = load_configs()
@@ -31,7 +31,7 @@ def CallMCP(server_name: str, tool_name: str, arguments: dict = None, **kwargs) 
             mcp_list = list(configs.keys())
             return error_response(
                 f"{server_name}不在配置里，请确保老板已为你配置该MCP，如果是刚刚配置的MCP，请提醒老板需要重启系统才能生效。当前已配置MCP:{mcp_list}\n或者也可用search工具搜索其它满足需求的mcp",
-                ""
+                "❌ MCP未配置"
             )
 
         # 2. 获取并检查 tool_name 是否存在
@@ -51,24 +51,23 @@ def CallMCP(server_name: str, tool_name: str, arguments: dict = None, **kwargs) 
         # 4. 调用工具，捕获参数异常
         try:
             result = call_mcp_tool(server_name, tool_name, args)
-            snip = f"成功调用 {server_name}.{tool_name}"
-            return text_response(result, snip)
+            return text_response(result, f"✅ {tool_name}成功")
 
         except ToolExecutionError as e:
             # 捕获参数不匹配、缺少参数等错误
             param_schema_str = json.dumps(tool_schema.get('parameters', {}), ensure_ascii=False)
             return error_response(
-                f"{server_name}的{tool_name}参数列表及其描述为：{param_schema_str}\n请确保传入参数正确。",
-                ""
+                f"{server_name}.{tool_name} 参数列表：{param_schema_str}",
+                "❌ 参数错误"
             )
         except ServerNotFoundError as e:
-            return error_response(str(e), "")
+            return error_response(str(e), "❌ 服务器未找到")
         except MCPError as e:
-            return warning_response(str(e), "")
+            return warning_response(str(e), "⚠️ 执行警告")
 
     except Exception as e:
         traceback.print_exc()
-        return error_response(f"MCP调用异常: {str(e)}", "")
+        return error_response(f"MCP调用异常: {str(e)}", "❌ MCP异常")
 
 
 def initialize_mcp():

@@ -126,7 +126,6 @@ def _generate_mcp_config(purrcat_dir):
                     "--user-data-dir=agent_vm/.buffer/playwright",
                     "--output-dir=agent_vm/.buffer/screenshots"
                 ],
-                "idle_timeout": 600
             },
             "github": {
                 "command": "npx",
@@ -137,6 +136,10 @@ def _generate_mcp_config(purrcat_dir):
                 "env": {
                     "GITHUB_PERSONAL_ACCESS_TOKEN": ""
                 }
+            },
+            "chrome-devtools": {
+                "command": "npx",
+                "args": ["-y", "chrome-devtools-mcp@latest"]
             }
         }
     }
