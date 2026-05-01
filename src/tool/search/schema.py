@@ -2,14 +2,14 @@ SEARCH_TOOL_SCHEMA = {
     "type": "function",
     "function": {
         "name": "Search",
-        "description": "统一搜索工具，支持互联网搜索、技能搜索和 MCP 服务器搜索",
+        "description": "统一搜索工具，支持互联网搜索与本地库搜索（技能与MCP工具）",
         "parameters": {
             "type": "object",
             "properties": {
                 "route": {
                     "type": "string",
-                    "description": "搜索路由：web（互联网搜索）、skill（技能搜索）、mcp（MCP服务器搜索）",
-                    "enum": ["web", "skill", "mcp"]
+                    "description": "搜索路由：web（互联网搜索）、local（本地技能库与MCP工具搜索）",
+                    "enum": ["web", "local"]
                 },
                 "query": {
                     "type": "string",

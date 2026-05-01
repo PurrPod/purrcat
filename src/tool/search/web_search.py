@@ -40,23 +40,8 @@ def web_search(query: str, max_results: int = 5) -> tuple:
                 error_logs.append(f"Tavily API Error: {resp.status_code}")
         except Exception as e:
             error_logs.append(f"Tavily Exception: {str(e)}")
-    
-    # 优先级 2: DuckDuckGo (no API key needed)
-    if not results:
-        try:
-            from duckduckgo_search import DDGS
-            with DDGS() as ddgs:
-                for r in ddgs.text(query, max_results=max_results):
-                    results.append({
-                        "title": r.get("title", ""),
-                        "url": r.get("href", ""),
-                        "snippet": r.get("body", "")
-                    })
-        except ImportError:
-            error_logs.append("DuckDuckGo not available (install duckduckgo_search)")
-        except Exception as e:
-            error_logs.append(f"DDGS Exception: {str(e)}")
-    
+    else:
+        error_logs.append(f"搜索失败：No Tavily API, 请联系老板添加Tavily的API")
     if not results:
         return [], f"所有搜索源均失败: {', '.join(error_logs)}"
     

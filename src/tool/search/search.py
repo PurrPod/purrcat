@@ -1,4 +1,4 @@
-"""Search 工具主入口 - 统一调度 web/skill/mcp 三种搜索方式"""
+"""Search 工具主入口 - 统一调度 web/local 两种搜索方式"""
 
 import traceback
 from src.tool.utils.format import text_response, error_response, warning_response
@@ -9,56 +9,51 @@ from src.tool.search.exceptions import (
 )
 from src.tool.search.web_search import web_search
 from src.tool.search.skill_search import search_skills, load_skill
+from src.tool.search.mcp_search import mcp_search
 
 
 def Search(route: str, query: str, topk: int = 5, **kwargs) -> str:
     """
-    统一搜索接口，支持三种搜索方式：web（互联网搜索）、skill（技能搜索）、mcp（MCP服务器搜索）
-    
+    统一搜索接口，支持两种搜索方式：
+    - web: 互联网搜索
+    - local: 本地 Skill 与 MCP 工具搜索（合并返回）
+
     Args:
-        route: 搜索路由，必须为 "web"、"skill" 或 "mcp"
+        route: 搜索路由，必须为 "web" 或 "local"
         query: 搜索查询词（必填）
         topk: 返回结果数量，默认 5
-    
+
     Returns:
-        格式化后的 JSON 字符串，包含 timestamp, type, content, snip
+        格式化后的 JSON 字符串
     """
     try:
-        # 参数校验
         route = route.strip().lower() if route else ""
         query = query.strip() if query else ""
-        
-        # 检查路由类型
-        if route not in ["web", "skill", "mcp"]:
+
+        if route not in ["web", "local"]:
             return error_response(
-                f"无效的路由类型: {route}。支持的路由: web, skill, mcp",
+                f"无效的路由类型: {route}。支持的路由: web, local",
                 "参数错误"
             )
-        
-        # 检查查询词
+
         if not query:
             return error_response("查询词不能为空", "参数错误")
-        
-        # 检查 topk 范围：设置安全上限，防止 DDoS 自身或 Token 溢出
+
         try:
             topk = int(topk) if topk else 5
             if topk > 15:
                 topk = 15
         except ValueError:
             return error_response("topk 参数必须是整数。", "参数错误")
-        
-        # 根据路由执行搜索
+
         if route == "web":
             return _search_web(query, topk)
-        elif route == "skill":
-            return _search_skill(query, topk)
-        elif route == "mcp":
-            return _search_mcp(query, topk)
-        
+        elif route == "local":
+            return _search_local(query, topk)
+
         return error_response("未知错误", "系统错误")
-        
+
     except Exception as e:
-        # 【关键】捕获所有异常，格式化为模型可读的错误，而不是让程序崩溃
         traceback.print_exc()
         return error_response(f"搜索运行时异常: {str(e)}", "执行失败")
 
@@ -67,82 +62,83 @@ def _search_web(query: str, topk: int) -> str:
     """执行互联网搜索"""
     try:
         results, error = web_search(query, topk)
-        
+
         if error:
             return warning_response(error, "搜索失败")
-        
-        # 构建 Markdown 格式结果
+
         md = f"# 🔍 搜索结果: {query}\n\n"
         for i, res in enumerate(results, 1):
             md += f"### {i}. {res['title']}\n"
             md += f"- URL: {res['url']}\n"
             md += f"- {res['snippet'][:500]}\n\n"
-        
+
         return text_response({
             "query": query,
             "results_count": len(results),
             "markdown": md,
             "results": results
         }, f"Web 搜索完成，找到 {len(results)} 条结果")
-    
+
     except Exception as e:
         return error_response(f"Web 搜索异常: {e}", "搜索异常")
 
 
-def _search_skill(query: str, topk: int) -> str:
-    """执行技能搜索"""
+def _search_local(query: str, topk: int) -> str:
+    """合并搜索本地 Skill 与 MCP 工具"""
     try:
-        results, error = search_skills(query, topk)
-        
-        if error:
-            return warning_response(error, "搜索失败")
-        
-        if not results:
+        skill_results, skill_err = search_skills(query, topk)
+        mcp_results, mcp_err = mcp_search(query, topk)
+
+        if skill_err and mcp_err:
+            return warning_response(
+                f"Local搜索完全失败: Skill({skill_err}), MCP({mcp_err})",
+                "搜索失败"
+            )
+
+        merged_results = []
+
+        for res in (skill_results or []):
+            skill = res.get("skill", {})
+            merged_results.append({
+                "source": "Skill",
+                "name": skill.get("name", "unknown"),
+                "description": skill.get("description", "无描述"),
+                "score": res.get("score", 0)
+            })
+
+        for res in (mcp_results or []):
+            merged_results.append({
+                "source": f"MCP ({res.get('server_name', 'unknown')})",
+                "name": res.get("tool_name", "unknown"),
+                "description": res.get("description", "无描述"),
+                "score": res.get("score", 0)
+            })
+
+        merged_results.sort(key=lambda x: x["score"], reverse=True)
+        top_results = merged_results[:topk]
+
+        if not top_results:
             return text_response({
                 "query": query,
-                "results_count": 0,
-                "message": "未找到匹配度较高的可用技能"
-            }, "未找到匹配技能")
-        
-        # 构建表格格式结果
-        result_text = f"🎯 技能搜索结果 (Top {topk}):\n\n"
-        result_text += "| 技能名称 | 匹配得分 | 描述 |\n"
-        result_text += "|----------|----------|------|\n"
-        
-        for res in results:
-            skill = res["skill"]
-            result_text += f"| {skill.get('name', 'unknown')} | {res['score']} | {skill.get('description', '无描述')} |\n"
-        
-        result_text += "\n💡 提示：使用 load_skill(name='技能名称') 获取完整内容与执行指南"
-        
+                "results_count": 0
+            }, "未找到匹配的本地工具或技能")
+
+        md = f"🎯 本地工具库搜索结果 (Top {len(top_results)}):\n\n"
+        md += "| 来源类别 | 工具/技能名称 | 语义匹配度 | 描述 |\n"
+        md += "|----------|---------------|------------|------|\n"
+
+        for item in top_results:
+            md += f"| {item['source']} | `{item['name']}` | {item['score']} | {item['description']} |\n"
+
+        md += "\n💡 **提示：你可以使用 `Fetch` 工具获取上述技能或 MCP 工具的完整细节与执行参数。**"
+
         return text_response({
             "query": query,
-            "results_count": len(results),
-            "results": results,
-            "markdown": result_text
-        }, f"Skill 搜索完成，找到 {len(results)} 条结果")
-    
-    except Exception as e:
-        return error_response(f"Skill 搜索异常: {e}", "搜索异常")
+            "results_count": len(top_results),
+            "results": top_results,
+            "markdown": md
+        }, f"Local 搜索完成，找到 {len(top_results)} 条结果")
 
-
-def _search_mcp(query: str, topk: int) -> str:
-    """执行 MCP 搜索"""
-    try:
-        from src.tool.search.mcp_search import mcp_search
-        
-        results, error = mcp_search(query, topk)
-        
-        if error:
-            return warning_response(error, "MCP 搜索不可用")
-        
-        return text_response({
-            "query": query,
-            "results_count": len(results),
-            "results": results
-        }, f"MCP 搜索完成，找到 {len(results)} 条结果")
-    
-    except ImportError:
-        return warning_response("MCP 模块未安装，无法使用 MCP 搜索", "依赖缺失")
     except Exception as e:
-        return error_response(f"MCP 搜索异常: {e}", "搜索异常")
+        traceback.print_exc()
+        return error_response(f"Local 搜索合并时异常: {e}", "搜索异常")

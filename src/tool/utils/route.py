@@ -242,9 +242,8 @@ def dispatch_tool(tool_name: str, arguments: dict, available_tokens: int = None)
             truncated_str = _safe_truncate(content_data, MAX_LEN)
             warning_msg = (
                 f"⚠️ [系统拦截] {tool_name} 输出总长 {len(actual_content_str)} 字符，超出当前安全余量阈值 {MAX_LEN}。完整结果已落盘：\n"
-                f"📂 宿主机路径: {cache_path}\n"
                 f"🐳 沙盒内路径: /agent_vm/.buffer/{tool_name_lower}/{file_name}\n"
-                f"如果你需要查看剩余的内容，请用 Bash (cat/grep) 或 filesystem 工具去上述缓存文件里阅读全量数据！\n"
+                f"如果你需要查看剩余的内容，请用 Bash (cat/grep) 工具去上述缓存文件里分批阅读！\n"
                 f"\n--- 结构化内容预览 ---\n"
                 f"{truncated_str}"
             )
