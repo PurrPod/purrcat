@@ -152,7 +152,7 @@ def _execute_tool(target_func, arguments: dict) -> Any:
     return result
 
 
-def dispatch_tool(tool_name: str, arguments: dict, available_tokens: int = None) -> str:
+def dispatch_tool(tool_name: str, arguments: dict, available_tokens: int = None):
     """
     核心路由枢纽：统一处理工具调用的路由和执行
     
@@ -262,4 +262,4 @@ def dispatch_tool(tool_name: str, arguments: dict, available_tokens: int = None)
         from src.tool.utils.format import error_response
         result_content = error_response(f"❌ 工具 [{tool_name}] 调度/执行发生异常: {str(e)}")
 
-    return str(result_content)
+    return result_content

@@ -169,7 +169,9 @@ class Agent:
         # 兼容读取 reasoning_content (思考模型支持)
         rc = getattr(msg_resp, "reasoning_content", None)
         if rc is None and hasattr(msg_resp, "model_dump"):
-            rc = msg_resp.model_dump().get("reasoning_content")
+            model_dump_result = msg_resp.model_dump()
+            if isinstance(model_dump_result, dict):
+                rc = model_dump_result.get("reasoning_content")
 
         if rc is not None:
             assist_msg["reasoning_content"] = rc
@@ -190,9 +192,8 @@ class Agent:
         if rc:
             print(f"🧠 模型深度思考:\n{rc}\n")
         if msg_resp.content:
-            print(f"🤖 助手回复: {msg_resp.content}")
             from src.sensor import get_gateway
-            get_gateway().send(f"🤖 助手回复: {msg_resp.content}")
+            get_gateway().send(f"{msg_resp.content}")
 
         return bool(msg_resp.tool_calls)
 
@@ -234,43 +235,25 @@ class Agent:
                 arguments["session_id"] = self.agent_session_id
 
             # --- 5. 执行与挂起逻辑 ---
-            args_str = ", ".join([f'{k}={repr(v)}' for k, v in arguments.items()]) if isinstance(arguments,
-                                                                                                 dict) else str(
-                arguments)
-            print(f"🔧 助手调起工具: {target_tool_name}({args_str})")
-
+            args_str = ", ".join([f'{k}={repr(v)}' for k, v in arguments.items()]) if isinstance(arguments, dict) else str(arguments)
+            from src.sensor import get_gateway
+            get_gateway().send(f"🔧{target_tool_name}({args_str})")
             from src.utils.config import get_model_config
             model_cfg = get_model_config().get("main", {}).get(self.name, {})
             max_tokens = model_cfg.get("max_token", 500000)
             remaining = max_tokens - self.window_token
 
-            result_str = dispatch_tool(target_tool_name, arguments)
+            result_content = dispatch_tool(target_tool_name, arguments)
             finish_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-            if result_str == "__AGENT_PAUSE__":
-                print("⏸️ Agent 已将当前任务放入挂起表，准备处理下一条消息...")
-                time_aware_content = f"[finish at {finish_time}]\n工具调用成功，正在挂起任务，请耐心等待处理"
-                self._append_history({
-                    "role": "tool",
-                    "tool_call_id": tool_call.id,
-                    "name": original_tool_name,
-                    "content": time_aware_content
-                })
+            try:
+                parsed_result = json.loads(result_content)
+                snip = parsed_result.get('snip', '') if isinstance(parsed_result, dict) else ''
+            except json.JSONDecodeError:
+                snip = result_content if isinstance(result_content, str) else str(result_content)
 
-                # 废弃后续所有未执行的工具
-                remaining_tools = tool_calls[idx + 1:]
-                for rem_tool in remaining_tools:
-                    self._append_history({
-                        "role": "tool",
-                        "tool_call_id": rem_tool.id,
-                        "name": rem_tool.function.name,
-                        "content": "任务已被挂起，当前工具执行跳过。"
-                    })
-                return True  # 返回 True 通知主循环中断当前流
-
-            # --- 6. 正常工具回传 ---
-            print(f"📦 工具回传结果: {result_str}")
-            time_aware_content = f"[finish at {finish_time}]\n{result_str}"
+            get_gateway().send(f"📦 {snip}")
+            time_aware_content = f"[finish at {finish_time}]\n{result_content}"
             self.current_history.append({
                 "role": "tool",
                 "tool_call_id": tool_call.id,

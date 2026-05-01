@@ -13,7 +13,7 @@ class LocalEmbeddingSearcher:
         with cls._lock:
             if cls._instance is None:
                 cls._instance = super(LocalEmbeddingSearcher, cls).__new__(cls)
-                cls._instance.model = SentenceTransformer("BAAI/bge-small-zh-v1.5")
+                cls._instance.model = SentenceTransformer("sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
         return cls._instance
 
     def encode(self, texts: list[str]) -> np.ndarray:

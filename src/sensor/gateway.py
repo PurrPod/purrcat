@@ -3,7 +3,6 @@ import json
 from typing import Any, Optional
 
 from src.sensor.base import BaseSensor
-from src.agent.manager import get_agent
 
 
 class SensorGateway:
@@ -46,6 +45,7 @@ class SensorGateway:
                 self.active_channels.add(sensor.sensor_name)
                 sensor.express("已标记当前会话为活跃窗口，输入/unbind解除活跃状态")
 
+        from src.agent.manager import get_agent
         agent = get_agent()
         if agent:
             payload = json.dumps(message_dict, ensure_ascii=False)

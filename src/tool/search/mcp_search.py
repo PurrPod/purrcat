@@ -72,15 +72,6 @@ def mcp_search(query: str, max_results: int = 5) -> tuple:
     try:
         searcher = MCPSearcher()
         results = searcher.search(query, max_results)
-
-        final_results = [
-            {
-                "server_name": item["server_name"],
-                "tool_name": item["tool_name"],
-                "description": item["description"]
-            }
-            for item in results
-        ]
-        return final_results, None
+        return results, None
     except Exception as e:
         return [], f"MCP搜索异常: {e}"
