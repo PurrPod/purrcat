@@ -91,7 +91,7 @@ def _update_core_information(flush_data: str):
         flush_data: 要合并到核心档案的数据
     """
     def background_task():
-        from src.model.model import Model
+        from src.model import Model
         from src.utils.config import get_agent_model
         
         profile_path = os.path.join(SRC_DIR, "agent", "core", "memory.md")

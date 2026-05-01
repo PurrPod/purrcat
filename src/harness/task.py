@@ -10,7 +10,7 @@ import glob
 
 from json_repair import repair_json
 
-from src.model.model import Model
+from src.model import Model
 from src.utils.config import DATA_DIR
 
 TASK_INSTANCES = {}
@@ -134,76 +134,76 @@ class BaseTask:
     def run(self):
         max_steps = 150
         self.state = "running"
-        while self.step < max_steps:
-            self.step += 1
-            try:
-                response = self._run_llm_step()
-                tool_calling = self._extract_tool_calling(response)
-                if not tool_calling:
-                    self.history.append({"role": "user", "content": "检测到你没有使用任何工具，如已完成，必须使用task_done工具结束任务，如未完成，请继续"})
-                else:
-                    if self._is_completed(tool_calling):
-                        self.log_and_notify("system", "⚖️ 正在进行最终交付验收审查...")
-                        eval_result = self._run_eval()
-                        if eval_result.get("has_hallucination", False):
-                            reason = eval_result.get('reason', '未知')
-                            self.log_and_notify("warning", f"⚠️ 任务交付被驳回：{reason}")
+        try:
+            while self.step < max_steps:
+                self.step += 1
+                try:
+                    response = self._run_llm_step()
+                    tool_calling = self._extract_tool_calling(response)
+                    if not tool_calling:
+                        self.history.append({"role": "user", "content": "检测到你没有使用任何工具，如已完成，必须使用task_done工具结束任务，如未完成，请继续"})
+                    else:
+                        if self._is_completed(tool_calling):
+                            self.log_and_notify("system", "⚖️ 正在进行最终交付验收审查...")
+                            eval_result = self._run_eval()
+                            if eval_result.get("has_hallucination", False):
+                                reason = eval_result.get('reason', '未知')
+                                self.log_and_notify("warning", f"⚠️ 任务交付被驳回：{reason}")
+                                for tc in tool_calling:
+                                    if tc.function.name == "task_done":
+                                        self.history.append({
+                                            "role": "tool",
+                                            "tool_call_id": tc.id,
+                                            "name": "task_done",
+                                            "content": f"❌ 交付被系统审查拦截驳回：\n{reason}\n请务必修复上述问题后，再尝试交付！"
+                                        })
+                                    else:
+                                        self._tool_calling([tc])
+                                self.checker()
+                                continue
+
+                            result, summary = self._extract_summary(tool_calling)
+                            self.state = "completed"
                             for tc in tool_calling:
                                 if tc.function.name == "task_done":
+                                    return_content = "任务结果交付成功！"
+                                    self.log_and_notify("tool", f"📦 任务结束交付: {return_content}")
                                     self.history.append({
                                         "role": "tool",
                                         "tool_call_id": tc.id,
                                         "name": "task_done",
-                                        "content": f"❌ 交付被系统审查拦截驳回：\n{reason}\n请务必修复上述问题后，再尝试交付！"
+                                        "content": return_content
                                     })
                                 else:
                                     self._tool_calling([tc])
-                            self.checker()
-                            continue
+                            self._cleanup_resources()
+                            self.save_checkpoint()
+                            return f"✅ 任务成功：{summary}" if result else f"❌ 任务失败：{summary}"
+                        else:
+                            self._tool_calling(tool_calling)
+                    self.checker()
+                except KeyboardInterrupt:
+                    self.state = "error"
+                    self._cleanup_resources()
+                    self.log_and_notify("system", "⚠️ 检测到强制中断 (Ctrl+C)，保存现场...")
+                    self.save_checkpoint()
+                    raise
+                except Exception as e:
+                    self.state = "error"
+                    self._cleanup_resources()
+                    self.log_and_notify("error", f"❌ 运行发生异常: {e}")
+                    self.save_checkpoint()
+                    raise InterruptedError(f"任务异常中断: {e}")
 
-                        result, summary = self._extract_summary(tool_calling)
-                        self.state = "completed"
-                        for tc in tool_calling:
-                            if tc.function.name == "task_done":
-                                return_content = "任务结果交付成功！"
-                                self.log_and_notify("tool", f"📦 任务结束交付: {return_content}")
-                                self.history.append({
-                                    "role": "tool",
-                                    "tool_call_id": tc.id,
-                                    "name": "task_done",
-                                    "content": return_content
-                                })
-                            else:
-                                self._tool_calling([tc])
-                        if self.model: self.model.unbind_task()
-                        self._cleanup_resources()
-                        self.save_checkpoint()
-                        return f"✅ 任务成功：{summary}" if result else f"❌ 任务失败：{summary}"
-                    else:
-                        self._tool_calling(tool_calling)
-                self.checker()
-            except KeyboardInterrupt:
+            if self.state != "completed":
                 self.state = "error"
-                if self.model: self.model.unbind_task()
                 self._cleanup_resources()
-                self.log_and_notify("system", "⚠️ 检测到强制中断 (Ctrl+C)，保存现场...")
                 self.save_checkpoint()
-                raise
-            except Exception as e:
-                self.state = "error"
-                if self.model: self.model.unbind_task()
-                self._cleanup_resources()
-                self.log_and_notify("error", f"❌ 运行发生异常: {e}")
-                self.save_checkpoint()
-                raise InterruptedError(f"任务异常中断: {e}")
-
-        if self.state != "completed":
-            self.state = "error"
-            if self.model: self.model.unbind_task()
-            self._cleanup_resources()
-            self.save_checkpoint()
-            self.log_and_notify("error", f"❌ 任务失败: 超出最大思考步数 ({max_steps})")
-            return f"❌ 任务失败: 超出最大思考步数 ({max_steps})"
+                self.log_and_notify("error", f"❌ 任务失败: 超出最大思考步数 ({max_steps})")
+                return f"❌ 任务失败: 超出最大思考步数 ({max_steps})"
+        finally:
+            if hasattr(self, 'model') and self.model:
+                self.model.unbind()
 
     def save_checkpoint(self):
         os.makedirs(self.checkpoint_dir, exist_ok=True)
@@ -220,6 +220,7 @@ class BaseTask:
             "prompt": self.prompt,
             "system_prompt": self.system_prompt,
             "core": self.core,
+            "key_prefix": self.model.key_prefix if self.model else None,
             "state": self.state,
             "step": self.step,
             "token_usage": self.token_usage,
@@ -270,12 +271,17 @@ class BaseTask:
             task.token_usage = state.get("token_usage", 0)
             task.window_token = state.get("window_token", 0)
             task.pending_force_push = state.get("pending_force_push", [])
-            # 始终使用新的路径格式：{task_name}_{task_id}，防止从旧路径加载后保存到错误位置
             task.checkpoint_dir = os.path.join(DATA_DIR, "checkpoints", "task", f"{task.task_name}_{task.task_id}")
             task.history = history
-            task.model = Model(task.core) if task.core else None
-            if task.model:
-                task.model.bind_task(task.task_id, task.task_name)
+
+            if task.state in ["ready", "running", "interrupted"]:
+                saved_key_prefix = state.get("key_prefix")
+                task.model = Model(task.core, recovered_key_prefix=saved_key_prefix) if task.core else None
+                if task.model:
+                    task.model.bind_task(task.task_id, task.task_name)
+            else:
+                task.model = None
+
             task._lock = threading.Lock()
             task._io_lock = threading.Lock()
             task._killed = False
@@ -362,7 +368,7 @@ class BaseTask:
     def kill(self):
         self._killed = True
         self.state = "killed"
-        if self.model: self.model.unbind_task()
+        if self.model: self.model.unbind()
         self._cleanup_resources()
         self.log_and_notify("system", f"⚠️ 任务 {self.task_id} 被强制终止")
 
@@ -635,6 +641,18 @@ class BaseTask:
 
         self.step = 0
         self.state = "ready"
+
+        if not getattr(self, "model", None) and self.core:
+            checkpoint_path = os.path.join(self.checkpoint_dir, "checkpoint.json")
+            saved_key_prefix = None
+            if os.path.exists(checkpoint_path):
+                with open(checkpoint_path, "r", encoding="utf-8") as f:
+                    saved_key_prefix = json.load(f).get("key_prefix")
+
+            self.model = Model(self.core, recovered_key_prefix=saved_key_prefix)
+            self.model.bind_task(self.task_id, self.task_name)
+            self.log_and_notify("system", f"🔑 任务唤醒，已重新绑定 API-Key: {self.model.key_prefix}...")
+
         self.save_checkpoint()
         self.log_and_notify("system", "🚀 环境排错完成，任务正在后台重新唤醒执行...")
 

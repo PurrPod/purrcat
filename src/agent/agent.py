@@ -5,7 +5,7 @@ import json
 import threading
 import uuid
 from src.loader.memory import Memory
-from src.model.model import Model
+from src.model import AgentModel
 
 from src.tool import AGENT_TOOL_SCHEMA
 from src.tool.utils.route import dispatch_tool
@@ -35,8 +35,8 @@ class Agent:
             name = get_agent_model()
         self.name = name
         self.state = "idle"
-        self.model = Model(self.name)
         self.agent_session_id = f"agent_main_{uuid.uuid4().hex[:8]}"
+        self.model = AgentModel(self.agent_session_id)
         self.model.bind_task(self.agent_session_id, "AgentMain")
         self.system_prompt = self._build_system_prompt()
         self.current_history = [{"role": "system", "content": self.system_prompt}]
@@ -83,7 +83,11 @@ class Agent:
         return combined_prompt
 
     def stop(self):
-        self._stop_event.set()
+        try:
+            self._stop_event.set()
+        finally:
+            if hasattr(self, 'model') and self.model:
+                self.model.unbind()
     def _get_tool_schema(self):
         from src.tool import AGENT_TOOL_SCHEMA
         return AGENT_TOOL_SCHEMA
@@ -122,41 +126,37 @@ class Agent:
     def process_message(self):
         """核心 ReAct 交互循环 (主调度器)"""
         self.state = "handling"
-        while True:
-            try:
-                # 1. 检查并强制推入被挂起的消息
-                self._checker()
+        try:
+            while True:
+                try:
+                    self._checker()
+                    msg_resp = self._step_model_interaction()
+                    has_tools = self._process_assistant_message(msg_resp)
 
-                # 2. 与大模型交互，获取回复
-                msg_resp = self._step_model_interaction()
+                    if not has_tools:
+                        print("✅ 消息处理闭环结束。")
+                        self.state = "idle"
+                        break
 
-                # 3. 解析助手消息并落盘
-                has_tools = self._process_assistant_message(msg_resp)
+                    should_pause = self._execute_tool_calls(msg_resp.tool_calls)
+                    if should_pause:
+                        self.state = "idle"
+                        return
 
-                # 4. 判断闭环：如果没有工具调用，本轮思考结束
-                if not has_tools:
-                    print("✅ 消息处理闭环结束。")
-                    self.state = "idle"
+                except KeyboardInterrupt:
+                    self._handle_interaction_error(is_interrupt=True)
+                    raise
+                except Exception as e:
+                    self._handle_interaction_error(e=e)
                     break
 
-                # 5. 执行工具链
-                should_pause = self._execute_tool_calls(msg_resp.tool_calls)
-                if should_pause:
-                    # 遭遇 __AGENT_PAUSE__，直接中断当前处理流
-                    self.state = "idle"
-                    return
-
-            except KeyboardInterrupt:
-                self._handle_interaction_error(is_interrupt=True)
-                raise
+            try:
+                self._check_and_summarize_memory()
             except Exception as e:
-                self._handle_interaction_error(e=e)
-                break
-
-        try:
-            self._check_and_summarize_memory()
-        except Exception as e:
-            print(f"压缩记忆失败：{e}")
+                print(f"压缩记忆失败：{e}")
+        finally:
+            if hasattr(self, 'model') and self.model:
+                self.model.unbind()
 
     def _step_model_interaction(self):
         """封装与大模型的 API 请求，并统计 Token"""

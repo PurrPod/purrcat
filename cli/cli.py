@@ -26,18 +26,8 @@ main:
     concurrency: 3         # 最大并发数
     max_token: 500000      # 记忆窗口 Token 上限
 
-  # 示例：添加 Qwen 模型
-  # openai:qwen3-vl-plus:
-  #   api_keys:
-  #     - sk-your-qwen-api-key
-  #   base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
-  #   description: Qwen Vision Model
-  #   rpm: 30
-  #   tpm: 500000
-  #   concurrency: 2
-  #   max_token: 200000
 
-# 任务模型配置（可选）
+# 任务模型配置（至少有一个才能开启多agent协作，模型可以和main一样，但不能同一个API-Key）
 task:
   # openai:deepseek-v4-flash:
   #   api_keys:
@@ -100,7 +90,6 @@ dont_read_dirs:
 # 允许 export_file 写入的目录
 allowed_export_dirs:
   - .
-  - agent_vm/
 
 # 挂载到 Docker 沙盒的目录
 docker_mount:
@@ -134,8 +123,8 @@ def _generate_mcp_config(purrcat_dir):
                 "command": "npx",
                 "args": [
                     "@playwright/mcp@latest",
-                    "--user-data-dir=.buffer/playwright",
-                    "--output-dir=.buffer/screenshots"
+                    "--user-data-dir=/agent_vm/.buffer/playwright",
+                    "--output-dir=/agent_vm/.buffer/screenshots"
                 ],
                 "idle_timeout": 600
             },
