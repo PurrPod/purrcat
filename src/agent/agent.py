@@ -191,6 +191,8 @@ class Agent:
             print(f"🧠 模型深度思考:\n{rc}\n")
         if msg_resp.content:
             print(f"🤖 助手回复: {msg_resp.content}")
+            from src.sensor import get_gateway
+            get_gateway().send(f"🤖 助手回复: {msg_resp.content}")
 
         return bool(msg_resp.tool_calls)
 

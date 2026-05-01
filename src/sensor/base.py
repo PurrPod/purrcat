@@ -1,18 +1,18 @@
 from abc import ABC, abstractmethod
 from typing import Any, Optional
 
-from src.utils.config import get_sensor_config
-
 
 class BaseSensor(ABC):
-    def __init__(self, sensor_type: str, sensor_name: str):
+    config_key: str = ""
+
+    def __init__(self, sensor_type: str, sensor_name: str, config_dict: dict):
         self.sensor_type = sensor_type
         self.sensor_name = sensor_name
+        self.config_dict = config_dict
 
     @property
     def is_enabled(self) -> bool:
-        config = get_sensor_config().get(self.sensor_name, {})
-        return config.get("enabled", False)
+        return self.config_dict.get("enabled", False)
 
     def observe(self, *args, **kwargs) -> Optional[Any]:
         if not self.is_enabled:

@@ -1,3 +1,4 @@
+import asyncio
 import json
 import threading
 from typing import Any, Optional
@@ -7,19 +8,15 @@ from lark_oapi.api.im.v1 import *
 
 from src.sensor.base import BaseSensor
 from src.sensor.gateway import get_gateway
-from src.utils.config import get_sensor_config
-
-
-def _get_feishu_config():
-    return get_sensor_config().get("feishu", {})
 
 
 class FeishuSensor(BaseSensor):
-    def __init__(self):
-        super().__init__(sensor_type="message", sensor_name="feishu")
-        self.feishu_config = _get_feishu_config()
-        self.app_id = self.feishu_config.get("app_id", "")
-        self.app_secret = self.feishu_config.get("app_secret", "")
+    config_key = "feishu"
+
+    def __init__(self, config_dict: dict):
+        super().__init__(sensor_type="message", sensor_name="feishu", config_dict=config_dict)
+        self.app_id = self.config_dict.get("app_id", "")
+        self.app_secret = self.config_dict.get("app_secret", "")
         self.client = lark.Client.builder() \
             .app_id(self.app_id) \
             .app_secret(self.app_secret) \
@@ -41,18 +38,26 @@ class FeishuSensor(BaseSensor):
             .register_p2_im_message_receive_v1(self._do_p2_im_message_receive_v1) \
             .build()
 
-        ws_client = lark.ws.Client(
-            self.app_id, self.app_secret,
-            event_handler=event_handler,
-            log_level=lark.LogLevel.INFO
-        )
+        def _run_ws():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
 
-        t = threading.Thread(target=ws_client.start, daemon=True)
-        t.start()
+            import lark_oapi.ws.client as ws_client_module
+            ws_client_module.loop = loop
+
+            ws_client = lark.ws.Client(
+                self.app_id, self.app_secret,
+                event_handler=event_handler,
+                log_level=lark.LogLevel.INFO
+            )
+
+            ws_client.start()
+
+        threading.Thread(target=_run_ws, daemon=True).start()
         print("🟢 [Feishu Sensor] WebSocket 监听已启动")
 
     def _express(self, message: Any, target_id: Optional[str] = None, **kwargs) -> bool:
-        receive_id = target_id if target_id else self.feishu_config.get("chat_id", "")
+        receive_id = target_id if target_id else self.config_dict.get("chat_id", "")
         try:
             req = CreateMessageRequest.builder() \
                 .receive_id_type("chat_id") \
@@ -72,10 +77,3 @@ class FeishuSensor(BaseSensor):
         except Exception as e:
             print(f"❌ [Feishu Sensor] 异常报错: {str(e)}")
             return False
-
-
-_feishu_sensor = FeishuSensor()
-
-
-def get_feishu_sensor() -> FeishuSensor:
-    return _feishu_sensor

@@ -7,9 +7,8 @@ warnings.filterwarnings("ignore", category=RuntimeWarning, message="coroutine 'E
 warnings.filterwarnings("ignore", category=UserWarning, message="pkg_resources is deprecated as an API")
 
 from src.tool.callmcp.callmcp import initialize_mcp
-from src.sensor.system.const import start_sensors
 from src.agent.manager import init_agent, get_agent, shutdown_agent
-from src.sensor.message.feishu import start_lark_sensor
+from src.sensor import auto_discover_and_start
 
 
 async def init_core():
@@ -18,10 +17,10 @@ async def init_core():
     os.environ.pop("HTTPS_PROXY", None)
 
     initialize_mcp()
-    start_sensors()
 
     agent = init_agent()
-    start_lark_sensor(agent)
+    auto_discover_and_start()
+
     print("后台服务与传感器已启动完毕。")
 
 
