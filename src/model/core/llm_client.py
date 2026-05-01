@@ -22,6 +22,8 @@ class LLMClient:
         """执行同步阻塞请求，处理限速和退避"""
         max_retries = 8
         base_delay = 2.0
+        if ':' in model_name:
+            model_name = model_name.split(':')[1]
         request_params = {"model": model_name, "messages": messages}
         if tools:
             request_params["tools"] = tools

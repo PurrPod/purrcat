@@ -38,10 +38,10 @@ def _parse_skill_md(file_path: Path) -> Dict[str, Any]:
 class SkillSearcher:
     """技能搜索器"""
     
-    def __init__(self, skill_dir: Path = SKILL_DIR):
+    def __init__(self, skill_dir: str = SKILL_DIR):
         self.skills = []
         self.corpus = []
-        self._load_skills(skill_dir)
+        self._load_skills(Path(skill_dir))
         self.vectorizer = TfidfVectorizer()
         if self.corpus:
             self.tfidf_matrix = self.vectorizer.fit_transform(self.corpus)

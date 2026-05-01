@@ -1,31 +1,35 @@
 import feedparser
 import json
 import os
+import time
+import threading
 import requests
 from typing import Any, Optional
 
-from src.agent.manager import get_agent
 from src.sensor.base import BaseSensor
+from src.sensor.gateway import get_gateway
 
 
 class RSSSensor(BaseSensor):
     def __init__(self, name: str, rss_url: str, seen_ids: set):
-        super().__init__(channel_name="rss")
-        self.name = name
+        super().__init__(sensor_type="rss_update", sensor_name=name)
         self.rss_url = rss_url
         self.seen_ids = seen_ids
 
-    def observe(self, *args, **kwargs) -> Optional[dict]:
+    def _observe(self, *args, **kwargs) -> None:
         new_entries, logs = self.fetch_new_entries()
-        if not new_entries:
-            return None
-        return {
-            "name": self.name,
-            "entries": new_entries,
-            "logs": logs
-        }
+        if new_entries:
+            output_lines = [f"### {self.sensor_name} 有新更新"]
+            for entry in new_entries:
+                title = getattr(entry, 'title', '').strip()
+                link = getattr(entry, 'link', '').strip()
+                output_lines.append(f"- [{title}]({link})")
+            if len(new_entries) > 3:
+                output_lines.append(f"- *(还有 {len(new_entries) - 3} 条更新未展示)*")
+            result_text = "\n".join(output_lines)
+            get_gateway().push(self, result_text)
 
-    def express(self, message: Any, target_id: Optional[str] = None, **kwargs) -> bool:
+    def _express(self, message: Any, **kwargs) -> bool:
         return False
 
     def fetch_new_entries(self) -> tuple[list, list]:
@@ -43,7 +47,7 @@ class RSSSensor(BaseSensor):
             response.raise_for_status()
             feed_data = feedparser.parse(response.content)
             if getattr(feed_data, 'bozo', 0) == 1:
-                logs.append(f"[{self.name}] 格式有瑕疵或非标准 XML")
+                logs.append(f"[{self.sensor_name}] 格式有瑕疵或非标准 XML")
 
             for entry in getattr(feed_data, 'entries', []):
                 entry_id = getattr(entry, 'id', getattr(entry, 'link', getattr(entry, 'title', '')))
@@ -54,11 +58,12 @@ class RSSSensor(BaseSensor):
                     self.seen_ids.add(entry_id)
             return new_entries, logs
         except requests.exceptions.RequestException as re:
-            logs.append(f"[{self.name}] 网络请求失败: {re}")
+            logs.append(f"[{self.sensor_name}] 网络请求失败: {re}")
             return [], logs
         except Exception as e:
-            logs.append(f"[{self.name}] 解析严重失败: {e}")
-            return [], logs
+            logs.append(f"[{self.sensor_name}] 解析严重失败: {e}")
+            return [], []
+
 
 class RSSListener:
     def __init__(self, config_list: list, cache_file: str = "rss_history.json"):
@@ -70,6 +75,7 @@ class RSSListener:
             seen_ids = set(self.history_dict.get(name, []))
             sensor = RSSSensor(name=name, rss_url=item["rss_url"], seen_ids=seen_ids)
             self.sensors.append(sensor)
+            get_gateway().register(sensor)
 
     def _load_history(self) -> dict:
         if os.path.exists(self.cache_file):
@@ -82,38 +88,28 @@ class RSSListener:
 
     def _save_history(self):
         for sensor in self.sensors:
-            self.history_dict[sensor.name] = list(sensor.seen_ids)
+            self.history_dict[sensor.sensor_name] = list(sensor.seen_ids)
         with open(self.cache_file, 'w', encoding='utf-8') as f:
             json.dump(self.history_dict, f, ensure_ascii=False, indent=2)
 
-    def check_all(self) -> str:
-        """执行扫描，并返回适合发送给 Agent 的精简文本"""
-        output_lines = []
-        total_new_items = 0
-        for sensor in self.sensors:
-            new_entries, _ = sensor.fetch_new_entries()
-            if not new_entries:
-                continue
-            total_new_items += len(new_entries)
-            output_lines.append(f"### {sensor.name}")
-            display_entries = new_entries[:3]
-            for entry in display_entries:
-                title = getattr(entry, 'title', '无标题').strip()
-                link = getattr(entry, 'link', '无链接').strip()
-                output_lines.append(f"- [{title}]({link})")
-            if len(new_entries) > 3:
-                output_lines.append(f"- *(还有 {len(new_entries) - 3} 条更新未展示)*")
-            output_lines.append("")
+    def _poll_loop(self, interval: int = 1800):
+        while True:
+            self._check_and_push()
+            time.sleep(interval)
 
+    def _check_and_push(self):
+        for sensor in self.sensors:
+            sensor.observe()
         self._save_history()
-        if not output_lines:
-            return "暂无新的内容更新。"
-        output_lines = ["【RSS订阅源每日推送】\n"]+output_lines
-        result_text = "\n".join(output_lines).strip()
-        agent = get_agent()
-        if agent:
-            agent.force_push(result_text, type="rss")
-        return result_text
+
+    def start_polling(self, interval: int = 1800):
+        t = threading.Thread(target=self._poll_loop, args=(interval,), daemon=True)
+        t.start()
+        print(f"🟢 [RSS Listener] 轮询已启动（间隔 {interval} 秒）")
+
+    def check_once(self) -> str:
+        self._check_and_push()
+        return "✅ RSS 检查完成"
 
 
 if __name__ == "__main__":
@@ -121,7 +117,6 @@ if __name__ == "__main__":
     rss_subscriptions = get_sensor_config().get("rss", {}).get("subscriptions", [])
     if rss_subscriptions:
         listener = RSSListener(rss_subscriptions)
-        result_text = listener.check_all()
-        print(result_text)
+        listener.check_once()
     else:
         print("未找到 RSS 配置！")

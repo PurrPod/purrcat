@@ -126,37 +126,34 @@ class Agent:
     def process_message(self):
         """核心 ReAct 交互循环 (主调度器)"""
         self.state = "handling"
-        try:
-            while True:
-                try:
-                    self._checker()
-                    msg_resp = self._step_model_interaction()
-                    has_tools = self._process_assistant_message(msg_resp)
+        while True:
+            try:
+                self._checker()
+                msg_resp = self._step_model_interaction()
+                has_tools = self._process_assistant_message(msg_resp)
 
-                    if not has_tools:
-                        print("✅ 消息处理闭环结束。")
-                        self.state = "idle"
-                        break
-
-                    should_pause = self._execute_tool_calls(msg_resp.tool_calls)
-                    if should_pause:
-                        self.state = "idle"
-                        return
-
-                except KeyboardInterrupt:
-                    self._handle_interaction_error(is_interrupt=True)
-                    raise
-                except Exception as e:
-                    self._handle_interaction_error(e=e)
+                if not has_tools:
+                    print("✅ 消息处理闭环结束。")
+                    self.state = "idle"
                     break
 
-            try:
-                self._check_and_summarize_memory()
+                should_pause = self._execute_tool_calls(msg_resp.tool_calls)
+                if should_pause:
+                    self.state = "idle"
+                    return
+
+            except KeyboardInterrupt:
+                self._handle_interaction_error(is_interrupt=True)
+                raise
             except Exception as e:
-                print(f"压缩记忆失败：{e}")
-        finally:
-            if hasattr(self, 'model') and self.model:
-                self.model.unbind()
+                self._handle_interaction_error(e=e)
+                break
+
+        try:
+            self._check_and_summarize_memory()
+        except Exception as e:
+            print(f"压缩记忆失败：{e}")
+
 
     def _step_model_interaction(self):
         """封装与大模型的 API 请求，并统计 Token"""
