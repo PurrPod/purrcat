@@ -193,10 +193,12 @@ def dispatch_tool(tool_name: str, arguments: dict, available_tokens: int = None)
         
         # 先检查是否为多媒体内容
         try:
-            result_str = str(result_content)
+            if isinstance(result_content, (dict, list)):
+                result_str = json.dumps(result_content, ensure_ascii=False)
+            else:
+                result_str = str(result_content)
             parsed_res = json.loads(result_str)
-            
-            # 处理多媒体内容（使用小写工具名进行文件存储）
+
             media_result = _handle_media_content(parsed_res, tool_name_lower)
             if media_result:
                 result_content = media_result
@@ -204,18 +206,17 @@ def dispatch_tool(tool_name: str, arguments: dict, available_tokens: int = None)
                 parsed_res = json.loads(result_str)
         except json.JSONDecodeError:
             parsed_res = None
-        
-        # 字数限制拦截逻辑
-        MAX_LEN = 6000  # 默认降级阈值
+
+        MAX_LEN = 6000
         if available_tokens is not None:
             dynamic_max_len = int((available_tokens - 500) * 1.5)
             MAX_LEN = max(500, dynamic_max_len)
-        
-        if result_content and isinstance(result_content, str):
-            result_str = result_content
+
+        if isinstance(result_content, (dict, list)):
+            result_str = json.dumps(result_content, ensure_ascii=False)
         else:
             result_str = str(result_content)
-        
+
         try:
             parsed_res = json.loads(result_str)
             content_data = parsed_res.get("content", "")
@@ -260,6 +261,10 @@ def dispatch_tool(tool_name: str, arguments: dict, available_tokens: int = None)
     except Exception as e:
         traceback.print_exc()
         from src.tool.utils.format import error_response
-        result_content = error_response(f"❌ 工具 [{tool_name}] 调度/执行发生异常: {str(e)}")
+        err_res = error_response(f"❌ 工具 [{tool_name}] 调度/执行发生异常: {str(e)}")
+        result_content = json.dumps(err_res, ensure_ascii=False) if isinstance(err_res, dict) else str(err_res)
+
+    if not isinstance(result_content, str):
+        result_content = json.dumps(result_content, ensure_ascii=False) if isinstance(result_content, (dict, list)) else str(result_content)
 
     return result_content

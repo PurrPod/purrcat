@@ -73,6 +73,8 @@ class BaseTask:
         self.create_time = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
         self.token_usage = 0
         self.checkpoint_dir = os.path.join(DATA_DIR, "checkpoints", "task", f"{self.task_name}_{self.task_id}")
+
+        # 子类完全可以不维护这个main_history，这个只是方便线性任务而引入的
         self.main_history = []
 
         if self.task_id not in TASK_INSTANCES:
@@ -89,9 +91,10 @@ class BaseTask:
         pass
 
     def _handle_extend_tool(self, tool_name: str, arguments: dict):
-        return  ""
+        return  "模拟工具调用成功"
 
     def _build_system_prompt(self):
+        # 这只是一个示例，方便线性任务重写，快速开发
         return """# 角色定义\n你是一个任务执行专家。你的核心任务是理解老板下发的需求，并合理调度工具高效解决问题。"""
 
     def _cleanup_resources(self):
@@ -235,20 +238,6 @@ class BaseTask:
                             arguments = repair_json(arguments_str, return_objects=True)
                         except Exception:
                             pass
-
-            # 2. 动态工具路由处理
-            if original_tool_name == "call_dynamic_tool" and isinstance(arguments, dict):
-                target_tool_name = arguments.get("target_tool_name", "")
-                target_args = arguments.get("arguments", {})
-                if isinstance(target_args, str):
-                    try:
-                        arguments = json.loads(target_args)
-                    except Exception:
-                        arguments = repair_json(target_args, return_objects=True) if repair_json else target_args
-                else:
-                    arguments = target_args
-
-            # 3. 拦截损坏参数
             if not isinstance(arguments, dict):
                 tool_messages.append({
                     "role": "tool",
@@ -258,29 +247,44 @@ class BaseTask:
                 })
                 continue
 
-            # 4. 会话注入
+            # 2. 会话注入
+            temp_id = "xxx"
             if target_tool_name in ["Bash"]:
-                arguments["session_id"] = self.task_id
+                arguments["session_id"] = temp_id
 
             args_str = ", ".join([f"{k}={repr(v)}" for k, v in arguments.items()])
             self.log_and_notify(LogType.TOOL_CALL, f"🔧 助手调起工具: {target_tool_name}({args_str})",
                                 metadata={"arguments": arguments})
 
-            # 5. 执行工具
+            # 3. 执行工具
             if target_tool_name not in self.get_base_tool_name():
-                result = self._handle_extend_tool(target_tool_name, arguments)
+                result_str = self._handle_extend_tool(target_tool_name, arguments)
             else:
-                result = dispatch_tool(target_tool_name, arguments)
+                result_str = dispatch_tool(target_tool_name, arguments)
 
-            self.log_and_notify(LogType.TOOL, f"📦 工具回传结果: {result}")
+            if not isinstance(result_str, str):
+                result_str = json.dumps(result_str, ensure_ascii=False) if isinstance(result_str, (dict, list)) else str(result_str)
+
+            self.log_and_notify(LogType.TOOL, f"📦 工具回传结果: {result_str}")
 
             # 6. 收集工具结果
             finish_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+            try:
+                parsed_res = json.loads(result_str)
+                if isinstance(parsed_res, dict):
+                    parsed_res["timestamp"] = finish_time
+                    final_content = json.dumps(parsed_res, ensure_ascii=False)
+                else:
+                    final_content = json.dumps({"content": parsed_res, "timestamp": finish_time}, ensure_ascii=False)
+            except json.JSONDecodeError:
+                final_content = json.dumps({"content": result_str, "timestamp": finish_time}, ensure_ascii=False)
+
             tool_messages.append({
                 "role": "tool",
                 "tool_call_id": tc.id,
                 "name": original_tool_name,
-                "content": result
+                "content": final_content
             })
         return tool_messages
 
@@ -291,7 +295,6 @@ class BaseTask:
             if history[i].get("role") == "assistant":
                 last_assistant_idx = i
                 break
-
         if last_assistant_idx != -1:
             assistant_msg = history[last_assistant_idx]
             tool_calls = assistant_msg.get("tool_calls", [])
@@ -362,12 +365,10 @@ class BaseTask:
         try:
             checkpoint_path = os.path.join(checkpoint_dir, "checkpoint.json")
             history_path = os.path.join(checkpoint_dir, "history.json")
-
             with open(checkpoint_path, "r", encoding="utf-8") as f:
                 state = json.load(f)
             with open(history_path, "r", encoding="utf-8") as f:
                 history = json.load(f)
-
             if cls is BaseTask:
                 expert_class_name = state.get("expert_type", "BaseTask")
                 class_name_to_expert = {info["class"].__name__: info["class"] for info in cls._EXPERT_REGISTRY.values()}
@@ -375,17 +376,14 @@ class BaseTask:
                 task = TargetClass.__new__(TargetClass)
             else:
                 task = cls.__new__(cls)
-
             task.task_id = state.get("task_id")
             task.task_name = state.get("name", "Unknown")
             task.create_time = state.get("create_time")
             task.prompt = state.get("prompt", "")
             task.core = state.get("core", "")
             task.state = state.get("state", TaskState.READY)
-
             if task.state in [TaskState.RUNNING]:
                 task.state = TaskState.INTERRUPTED
-
             task.token_usage = state.get("token_usage", 0)
             task.time_step = state.get("time_step", {"start": False, "mock": False})
             task.pending_force_push = state.get("pending_force_push", [])
@@ -459,10 +457,6 @@ class BaseTask:
         if hasattr(response, 'choices') and len(response.choices) > 0:
             return getattr(response.choices[0].message, "tool_calls", []) or []
         return []
-
-
-# === 工厂与恢复方法 ===
-# [保留您提供的 auto_discover_experts, TaskFactory, auto_load_all_tasks, reload_task_by_id，已与 BaseTask 新结构兼容]
 
 
 def auto_discover_experts():
