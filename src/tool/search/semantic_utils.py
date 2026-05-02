@@ -1,7 +1,10 @@
+import os
 import threading
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
+
+from src.utils.config import BASE_DIR
 
 
 class LocalEmbeddingSearcher:
@@ -13,7 +16,8 @@ class LocalEmbeddingSearcher:
         with cls._lock:
             if cls._instance is None:
                 cls._instance = super(LocalEmbeddingSearcher, cls).__new__(cls)
-                cls._instance.model = SentenceTransformer("sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
+                embedding_path = os.path.join(BASE_DIR, "embedding")
+                cls._instance.model = SentenceTransformer(embedding_path)
         return cls._instance
 
     def encode(self, texts: list[str]) -> np.ndarray:

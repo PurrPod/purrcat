@@ -40,5 +40,16 @@ echo "✅ Conda 环境配置完成！"
 
 
 echo "=========================================="
+
+# 4. 下载 Embedding 模型
+echo "📥 正在下载 Embedding 模型到本地..."
+python "$(dirname "$0")/setup_emb.py"
+if [ $? -ne 0 ]; then
+    echo "❌ Embedding 模型下载失败！"
+    exit 1
+fi
+echo "✅ Embedding 模型准备完成！"
+
+echo "=========================================="
 echo "🎉 部署完成！PurrCat 已经准备就绪。"
 echo "👉 请运行 ./start.sh 来启动项目。"

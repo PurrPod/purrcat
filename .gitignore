@@ -9,6 +9,8 @@ src/tool/callmcp/mcp_schema.json
 .buffer/
 scripts/start_mini.bat
 scripts/start_mini.sh
+clean_pycache.bat
+data/memo
 widget/
 .purrcat/
 __pycache__/

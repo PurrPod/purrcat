@@ -9,6 +9,7 @@ warnings.filterwarnings("ignore", category=UserWarning, message="pkg_resources i
 from src.tool.callmcp.callmcp import initialize_mcp
 from src.agent.manager import init_agent, get_agent, shutdown_agent
 from src.sensor import auto_discover_and_start
+from src.memory.purrmemo import get_memory_client
 
 
 async def init_core():
@@ -20,6 +21,7 @@ async def init_core():
 
     agent = init_agent()
     auto_discover_and_start()
+    get_memory_client()
 
     print("后台服务与传感器已启动完毕。")
 

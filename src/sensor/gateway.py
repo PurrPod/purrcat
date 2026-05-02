@@ -43,8 +43,7 @@ class SensorGateway:
         if sensor.sensor_type == "message":
             if sensor.sensor_name not in self.active_channels:
                 self.active_channels.add(sensor.sensor_name)
-                sensor.express("已标记当前会话为活跃窗口，输入/unbind解除活跃状态")
-
+                sensor.express("✅ 已标记当前会话为活跃窗口\n输入`/unbind`解除绑定")
         from src.agent.manager import get_agent
         agent = get_agent()
         if agent:

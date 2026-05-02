@@ -18,8 +18,7 @@ main:
   openai:deepseek-v4-flash:
     api_keys:
       - sk-your-first-api-key-here
-      # - sk-your-second-api-key-here
-    base_url: https://api.deepseek.com/v1
+    base_url: https://api.deepseek.com
     description: LLM worker
     rpm: 60                # 每分钟请求上限
     tpm: 1000000           # 每分钟 Token 上限
@@ -32,7 +31,8 @@ task:
   # openai:deepseek-v4-flash:
   #   api_keys:
   #     - sk-your-task-api-key
-  #   base_url: https://api.deepseek.com/v1
+  #     - sk-your-second-api-key-but-that-is-not-necessary
+  #   base_url: https://api.deepseek.com
   #   description: Task Model
   #   rpm: 60
   #   tpm: 1000000
@@ -104,6 +104,66 @@ sandbox_dirs:
 skill_dir:
   - skill
 """
+
+
+def _generate_memory_config(purrcat_dir):
+    """生成记忆系统配置文件"""
+    memory_path = os.path.join(purrcat_dir, ".memory.json")
+
+    if os.path.exists(memory_path):
+        print(f"⚠️  文件已存在: {memory_path}")
+        val = input("  覆盖？(y/N): ").strip().lower()
+        if val != "y":
+            print("  已保留原配置")
+            return
+
+    memory_config = {
+        "openai": {
+            "api_key": "",
+            "base_url": "https://api.deepseek.com",
+            "model_name": "deepseek-v4-flash"
+        },
+        "chromadb": {
+            "persist_directory": "data/memo/chromadb",
+            "collection_name": "experiences",
+            "embedding_model": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+        },
+        "eventdb": {
+            "db_path": "data/memo/events.db",
+            "table_name": "events"
+        },
+        "graphdb": {
+            "graph_path": "data/memo/graph.pkl",
+            "min_confidence": 0.3
+        },
+        "buffer": {
+            "buffer_dir": "data/memo/buffer",
+            "pending_dir": "data/memo/buffer/pending",
+            "archived_dir": "data/memo/buffer/archived",
+            "error_dir": "data/memo/buffer/error"
+        },
+        "memory_agent": {
+            "checkpoint_path": "data/memo/checkpoint.json",
+            "polling_interval": 5
+        },
+        "rag": {
+            "top_k_events": 5,
+            "top_k_experiences": 5,
+            "top_k_graph_nodes": 3,
+            "max_graph_depth": 2
+        },
+        "server": {
+            "host": "127.0.0.1",
+            "port": 8000
+        }
+    }
+
+    try:
+        with open(memory_path, "w", encoding="utf-8") as f:
+            json.dump(memory_config, f, indent=2, ensure_ascii=False)
+        print(f"✅ 记忆系统配置已生成: {memory_path}")
+    except Exception as e:
+        print(f"❌ 写入 .memory.json 失败: {e}")
 
 
 def _generate_mcp_config(purrcat_dir):
@@ -230,11 +290,12 @@ def cmd_init():
         print(f"❌ 创建目录失败: {e}")
         sys.exit(1)
 
-    # 生成四个配置文件
+    # 生成配置文件
     _generate_model_config(purrcat_dir)
     _generate_sensor_config(purrcat_dir)
     _generate_file_config(purrcat_dir)
     _generate_mcp_config(purrcat_dir)
+    _generate_memory_config(purrcat_dir)
 
     print("")
     print("📋 配置文件结构:")
@@ -242,10 +303,12 @@ def cmd_init():
     print("   ├── .model.yaml      # 模型配置")
     print("   ├── .sensor.yaml     # 传感器配置")
     print("   ├── .file.yaml       # 文件系统配置")
+    print("   ├── .memory.json     # 记忆系统配置")
     print("   └── mcp_config.json  # MCP 服务器配置")
     print("")
     print("💡 下一步:")
     print("   编辑 .purrcat/.model.yaml 填入 API Key")
+    print("   编辑 .purrcat/.memory.json 配置记忆系统")
     print("   编辑 .purrcat/mcp_config.json 填入 MCP Token")
     print("   然后运行: purrcat start")
 

@@ -11,12 +11,14 @@ PURRCAT_DIR = os.path.join(BASE_DIR, ".purrcat")
 MODEL_CONFIG_PATH = os.path.join(PURRCAT_DIR, ".model.yaml")
 SENSOR_CONFIG_PATH = os.path.join(PURRCAT_DIR, ".sensor.yaml")
 FILE_CONFIG_PATH = os.path.join(PURRCAT_DIR, ".file.yaml")
+MEMORY_CONFIG_PATH = os.path.join(PURRCAT_DIR, ".memory.json")
 MCP_CONFIG_PATH = os.path.join(PURRCAT_DIR, "mcp_config.json")
 
 MEMORY_DIR = os.path.join(DATA_DIR, "memory")
 SCHEDULE_DIR = os.path.join(DATA_DIR, "schedule")
 DATABASE_DIR = os.path.join(DATA_DIR, "database")
 BUFFER_DIR = os.path.join(BASE_DIR, "agent_vm", ".buffer")
+MEMORY_PENDING_DIR = os.path.join(DATA_DIR, "memo", "buffer", "pending")
 SKILL_DIR = os.path.join(BASE_DIR, "skill")
 
 SCHEDULE_FILE = os.path.join(SCHEDULE_DIR, "schedule.json")
@@ -78,6 +80,12 @@ def get_file_config() -> Dict[str, Any]:
 def get_mcp_config() -> Dict[str, Any]:
     if os.path.exists(MCP_CONFIG_PATH):
         return _load_json_file(MCP_CONFIG_PATH)
+    return {}
+
+
+def get_memory_config() -> Dict[str, Any]:
+    if os.path.exists(MEMORY_CONFIG_PATH):
+        return _load_json_file(MEMORY_CONFIG_PATH)
     return {}
 
 

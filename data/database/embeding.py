@@ -116,8 +116,7 @@ def main():
     parser.add_argument("--batch_size", type=int, default=500, help="每批次落盘的数据量")
     args = parser.parse_args()
     if not args.model:
-        # 使用默认 embedding 模型
-        args.model = "BAAI/bge-small-zh-v1.5"
+        args.model = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "embedding")
     db_dir = os.path.join(args.base_dir, args.db_name)
     md_path = os.path.join(db_dir, f"{args.db_name}.md")
     json_path = os.path.join(db_dir, f"{args.db_name}.json")

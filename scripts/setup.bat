@@ -79,6 +79,18 @@ echo ✅ Conda 环境配置完成！
 
 
 echo ==========================================
+
+:: 4. 下载 Embedding 模型
+echo 📥 正在下载 Embedding 模型到本地...
+python "%~dp0setup_emb.py"
+if %ERRORLEVEL% neq 0 (
+    echo ❌ Embedding 模型下载失败！
+    pause
+    exit /b 1
+)
+echo ✅ Embedding 模型准备完成！
+
+echo ==========================================
 echo 🎉 部署大功告成！PurrCat 已经完全准备就绪。
 echo 👉 请双击运行 start.bat 来启动项目。
 pause
