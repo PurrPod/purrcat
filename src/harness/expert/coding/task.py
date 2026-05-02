@@ -2,7 +2,6 @@ import json
 import datetime
 import os
 from src.harness.task import BaseTask
-from src.harness.expert.coding.extend_tool.planning import PLAN_TOOL_SCHEMA, execute_update_plan
 from src.harness.expert.coding.extend_tool import (
     EXTEND_TOOLS_SCHEMA,
     EXTEND_TOOL_FUNCTIONS,
@@ -27,7 +26,10 @@ class CodingTask(
 
     def __init__(self, task_name, prompt, core, project_root=None):
         self.current_plan = ""
-        self.project_root = project_root or os.getcwd()
+        if project_root and project_root.startswith("/agent_vm"):
+            self.project_root = os.path.join(os.getcwd(), project_root.lstrip("/"))
+        else:
+            self.project_root = project_root or os.getcwd()
         super().__init__(task_name, prompt, core)
 
     def _on_save_state(self) -> dict:
@@ -38,22 +40,18 @@ class CodingTask(
         """恢复专属状态"""
         self.current_plan = state.get("extra_state", {}).get("current_plan", "")
 
-    def get_available_tools(self) -> list:
-        """【覆盖】为代码专家注入计划工具 + 扩展工具集"""
-        tools = super().get_available_tools()
-        tools.append(PLAN_TOOL_SCHEMA)
+    def get_base_tool_schema(self) -> list:
+        """【覆盖】为代码专家注入扩展工具集"""
+        tools = super().get_base_tool_schema()
         tools.extend(EXTEND_TOOLS_SCHEMA)
         return tools
 
-    def _handle_expert_tool(self, tool_name: str, arguments: dict) -> tuple[bool, str]:
+    def _handle_extend_tool(self, tool_name: str, arguments: dict) -> str:
         """【覆盖】拦截并执行专家的 Extend Tool"""
-        # 先查扩展工具集（file_edit, code_search, file_read, lsp）
         if tool_name in EXTEND_TOOL_FUNCTIONS:
-            return True, EXTEND_TOOL_FUNCTIONS[tool_name](arguments, self)
-        # 再查计划工具
-        if tool_name == "update_plan":
-            return True, execute_update_plan(arguments, self)
-        return False, ""
+            _, result = EXTEND_TOOL_FUNCTIONS[tool_name](arguments, self)
+            return result
+        return ""
 
     def _build_system_prompt(self):
         """【覆盖】注入资深程序员的专业约束与沙盒环境说明"""

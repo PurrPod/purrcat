@@ -3,6 +3,7 @@
 借鉴 Claude Code 工具系统设计，为 CodingTask 提供专业的代码操作能力。
 
 工具列表：
+  - update_plan:   任务计划管理器（增删改查）
   - file_edit:     search/replace 精确文件编辑（带备份与 diff）
   - code_search:   整合文件查找 + 内容搜索（glob + grep）
   - file_read:     智能文件读取（行范围、行号、上下文）
@@ -13,14 +14,16 @@
 import json
 from typing import Any
 
+from .planning import PLAN_TOOL_SCHEMA, execute_update_plan
 from .file_edit import FILE_EDIT_SCHEMA, execute_file_edit
 from .code_search import CODE_SEARCH_SCHEMA, execute_code_search
 from .file_read import FILE_READ_SCHEMA, execute_file_read
 from .lsp_tool import LSP_SCHEMA, execute_lsp
 from .file_create import FILE_CREATE_SCHEMA, execute_file_create
 
-# 所有工具 Schema 列表（CodingTask 通过 get_available_tools 注入）
+# 所有工具 Schema 列表（CodingTask 通过 get_base_tool_schema 注入）
 EXTEND_TOOLS_SCHEMA = [
+    PLAN_TOOL_SCHEMA,
     FILE_EDIT_SCHEMA,
     CODE_SEARCH_SCHEMA,
     FILE_READ_SCHEMA,
@@ -30,6 +33,7 @@ EXTEND_TOOLS_SCHEMA = [
 
 # 工具名 → 实现函数映射
 EXTEND_TOOL_FUNCTIONS: dict[str, callable] = {
+    "update_plan": execute_update_plan,
     "file_edit": execute_file_edit,
     "code_search": execute_code_search,
     "file_read": execute_file_read,
@@ -39,7 +43,7 @@ EXTEND_TOOL_FUNCTIONS: dict[str, callable] = {
 
 
 def handle_extend_tool(tool_name: str, arguments: dict, task: Any) -> tuple[bool, str]:
-    """统一入口：CodingTask._handle_expert_tool 调用此函数"""
+    """统一入口：CodingTask._handle_extend_tool 调用此函数"""
     if tool_name in EXTEND_TOOL_FUNCTIONS:
         return True, EXTEND_TOOL_FUNCTIONS[tool_name](arguments, task)
     return False, ""

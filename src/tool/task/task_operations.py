@@ -113,7 +113,7 @@ def list_tasks_operation() -> tuple:
         (tasks_list, error_message)
     """
     try:
-        from src.harness.task_store import TASK_INSTANCES
+        from src.harness.task import TASK_INSTANCES
         
         tasks = []
         for task_id, task in TASK_INSTANCES.items():
