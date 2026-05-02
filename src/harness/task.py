@@ -245,7 +245,7 @@ class BaseTask:
                 continue
 
             # 2. 会话注入
-            temp_id = "xxx"
+            temp_id = uuid.uuid4().hex
             if target_tool_name in ["Bash"]:
                 arguments["session_id"] = temp_id
 
@@ -258,6 +258,11 @@ class BaseTask:
                 result_str = self._handle_extend_tool(target_tool_name, arguments)
             else:
                 result_str = dispatch_tool(target_tool_name, arguments)
+
+            # 4. 关闭 Bash 会话
+            if target_tool_name in ["Bash"]:
+                from src.tool.bash import close_session
+                close_session(session_id=temp_id)
 
             if not isinstance(result_str, str):
                 result_str = json.dumps(result_str, ensure_ascii=False) if isinstance(result_str, (dict, list)) else str(result_str)
@@ -334,6 +339,7 @@ class BaseTask:
 
     def handle_completed(self):
         """标记完成后的验收审查与资源收尾"""
+        self.state = TaskState.COMPLETED
         return f"✅任务完成：{self.result}"
 
     def get_base_tool_schema(self) -> list:
@@ -449,6 +455,12 @@ class BaseTask:
         if getattr(self, 'model', None):
             self.model.unbind()
         self._cleanup_resources()
+
+    def reload(self):
+        """重新标记任务状态并运行"""
+        self.state = TaskState.RUNNING
+        self._killed = False
+        return self.run()
 
     def _extract_tool_calling(self, response) -> list:
         if hasattr(response, 'choices') and len(response.choices) > 0:

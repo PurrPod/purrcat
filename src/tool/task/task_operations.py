@@ -1,4 +1,4 @@
-"""Task 操作模块 - 任务创建、通知和终止"""
+"""Task 操作模块 - 任务创建和终止"""
 
 import os
 import json
@@ -61,7 +61,6 @@ def add_task_operation(name: str, prompt: str, expert: str,
                 if agent:
                     agent.force_push(notify_msg, type="task_message")
             except Exception as e:
-                single_task.state = "error"
                 error_msg = f"任务 '{name}' (ID: {single_task.task_id}) 执行崩溃，原因：\n {e}"
                 agent = get_agent()
                 if agent:
@@ -80,82 +79,20 @@ def add_task_operation(name: str, prompt: str, expert: str,
         return None, f"创建任务失败: {str(e)}"
 
 
-def inform_task_operation(task_id: str, action: str = "continue") -> tuple:
-    """
-    与任务交互：追加指令
-    
-    Args:
-        task_id: 任务ID
-        action: 要注入的指令
-    
-    Returns:
-        (result_dict, error_message)
-    """
-    from src.harness.task import BaseTask
-
-    try:
-        # 从内存查找任务
-        from src.harness.task_store import TASK_INSTANCES
-        task = TASK_INSTANCES.get(task_id)
-
-        # 如果内存中没有，尝试从检查点加载
-        if not task:
-            from src.utils.config import get_data_dir
-            checkpoints_dir = os.path.join(get_data_dir(), "checkpoints", "task")
-            if os.path.exists(checkpoints_dir):
-                for folder in os.listdir(checkpoints_dir):
-                    folder_path = os.path.join(checkpoints_dir, folder)
-                    ckpt_path = os.path.join(folder_path, "checkpoint.json")
-                    if os.path.exists(ckpt_path):
-                        try:
-                            with open(ckpt_path, "r", encoding="utf-8") as f:
-                                state = json.load(f)
-                            if state.get("task_id") == task_id:
-                                from src.harness.task import auto_discover_experts
-                                auto_discover_experts()
-                                expert_type = state.get("expert_type", "BaseTask")
-                                if expert_type in BaseTask._EXPERT_REGISTRY:
-                                    TargetClass = BaseTask._EXPERT_REGISTRY[expert_type]["class"]
-                                    task = TargetClass.load_checkpoint(folder_path)
-                                else:
-                                    task = BaseTask.load_checkpoint(folder_path)
-                                break
-                        except Exception as e:
-                            print(f"尝试加载检查点时发生异常: {e}")
-                            pass
-
-        if not task:
-            return None, f"未找到ID为 {task_id} 的任务历史。"
-
-        # 注入指令
-        new_prompt = action
-        if hasattr(task, 'submit_request'):
-            task.submit_request(new_prompt)
-            return {
-                "task_id": task_id,
-                "message": f"指令已注入任务 (ID: {task_id})。"
-            }, None
-        else:
-            return None, f"任务不支持指令注入"
-
-    except Exception as e:
-        return None, f"注入指令失败: {str(e)}"
-
-
 def kill_task_operation(task_id: str) -> tuple:
     """
     终止任务
-    
+
     Args:
         task_id: 任务ID
-    
+
     Returns:
         (result_dict, error_message)
     """
-    from src.harness.task_killer import core_kill_task
+    from src.harness.task import kill_task
 
     try:
-        is_killed = core_kill_task(task_id)
+        is_killed = kill_task(task_id)
         if is_killed:
             return {
                 "task_id": task_id,

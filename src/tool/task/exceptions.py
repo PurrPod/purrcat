@@ -9,7 +9,7 @@ class TaskError(Exception):
 class InvalidActionError(TaskError):
     """无效的操作类型"""
     def __init__(self, action: str):
-        super().__init__(f"无效的操作类型: {action}。支持的操作: add, inform, kill, list")
+        super().__init__(f"无效的操作类型: {action}。支持的操作: add, kill, list")
 
 
 class MissingParameterError(TaskError):
