@@ -143,7 +143,6 @@ def _generate_memory_config(purrcat_dir):
             "error_dir": "data/memo/buffer/error"
         },
         "memory_agent": {
-            "checkpoint_path": "data/memo/checkpoint.json",
             "polling_interval": 5
         },
         "rag": {
@@ -152,10 +151,6 @@ def _generate_memory_config(purrcat_dir):
             "top_k_graph_nodes": 3,
             "max_graph_depth": 2
         },
-        "server": {
-            "host": "127.0.0.1",
-            "port": 8000
-        }
     }
 
     try:

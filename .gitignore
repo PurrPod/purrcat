@@ -2,7 +2,6 @@ data/config/
 
 agent_vm/
 mcp_config.json
-src/memory/
 data/checkpoints
 src/agent/core/cron.json
 src/tool/callmcp/mcp_schema.json
