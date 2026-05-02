@@ -16,4 +16,9 @@ AGENT_TOOL_SCHEMA = [BASH_TOOL_SCHEMA,
                      TASK_TOOL_SCHEMA,
                      MCP_TOOL_SCHEMA]
 
-__all__ = [AGENT_TOOL_SCHEMA]
+BASE_TASK_TOOL_SCHEMA = [BASH_TOOL_SCHEMA,
+                         FILESYSTEM_TOOL_SCHEMA,
+                         SEARCH_TOOL_SCHEMA,
+                         MCP_TOOL_SCHEMA,]
+
+__all__ = [AGENT_TOOL_SCHEMA, BASE_TASK_TOOL_SCHEMA]

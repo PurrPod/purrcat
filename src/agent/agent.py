@@ -15,13 +15,6 @@ from src.utils.config import (
 
 from json_repair import repair_json
 
-PRIORITY_MAP = {
-    "owner_message": 100,
-    "project_message": 80,
-    "schedule": 60,
-    "rss_update": 40,
-    "heartbeat": 20
-}
 
 ROOT = False
 
