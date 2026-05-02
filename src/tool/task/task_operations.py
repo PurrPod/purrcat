@@ -41,7 +41,7 @@ def add_task_operation(name: str, prompt: str, expert: str,
         expert_kwargs = expert_kwargs or {}
         
         # 创建任务
-        from src.harness.task_factory import TaskFactory
+        from src.harness.task import TaskFactory
         single_task = TaskFactory.create_task(
             expert_type=expert,
             task_name=name,

@@ -10,7 +10,7 @@ from typing import Dict
 from json_repair import repair_json
 
 from src.model import Model
-from src.utils.config import DATA_DIR, get_model_config
+from src.utils.config import DATA_DIR
 from src.utils.enums import TaskState, LogType
 from src.tool.utils.route import dispatch_tool
 
@@ -126,6 +126,7 @@ class BaseTask:
     # ==========================================
     def run(self):
         """主循环：编排各原子化步骤形成工作流"""
+        self.result = ""
         if not self.time_step["start"]:
             self.state = TaskState.RUNNING
             self.time_step["start"] = True
@@ -136,16 +137,11 @@ class BaseTask:
                 self.main_history = []
                 self.main_history.append({"role":"system", "content":self._build_system_prompt()})
                 self.main_history.append({"role":"user", "content":self.prompt})
-                self.step_mock_loop(self.main_history)
+                self.result = self.step_mock_loop(self.main_history)
                 self.time_step["mock"] = True
             else:
                 pass
-            if self.handle_completed():
-                # 总体任务成功
-                return True
-            else:
-                # 总体任务失败
-                return False
+            return self.handle_completed()
         finally:
             if hasattr(self, 'model') and self.model:
                 self.model.unbind()
@@ -183,7 +179,8 @@ class BaseTask:
                 tool_calling = self._extract_tool_calling(response)
                 # 2. 处理无工具调用
                 if not tool_calling:
-                    return True
+                    result = assistant_msg.content
+                    return result
                 # 3. 执行工具调用
                 tool_messages = self.run_tool_calling(response)
                 if tool_messages:
@@ -337,7 +334,7 @@ class BaseTask:
 
     def handle_completed(self):
         """标记完成后的验收审查与资源收尾"""
-        return True
+        return f"✅任务完成：{self.result}"
 
     def get_base_tool_schema(self) -> list:
         """获取基础工具的 schema"""
@@ -457,6 +454,67 @@ class BaseTask:
         if hasattr(response, 'choices') and len(response.choices) > 0:
             return getattr(response.choices[0].message, "tool_calls", []) or []
         return []
+
+    def fetch_skill_content(self, skill_name: str) -> str:
+        """
+        根据技能名称获取技能正文（不含元数据），返回结构化结果
+        Args:
+            skill_name: 技能名称
+        Returns:
+            结构化的技能信息字符串
+        """
+        from pathlib import Path
+        from src.utils.config import SKILL_DIR
+
+        base_dir = Path(SKILL_DIR)
+        target_dir = base_dir / skill_name
+        md_file = target_dir / "SKILL.md"
+        content = ""
+        found_name = skill_name
+
+        if not md_file.exists():
+            for item in base_dir.iterdir():
+                if item.is_dir():
+                    dir_md = item / "SKILL.md"
+                    if dir_md.exists():
+                        with open(dir_md, 'r', encoding='utf-8') as f:
+                            text = f.read()
+                        if text.startswith('---'):
+                            parts = text.split('---', 2)
+                            if len(parts) >= 3:
+                                frontmatter_str = parts[1]
+                                for line in frontmatter_str.split('\n'):
+                                    line = line.strip()
+                                    if line and ':' in line:
+                                        key, value = line.split(':', 1)
+                                        if key.strip() == "name" and value.strip() == skill_name:
+                                            content = parts[2].strip()
+                                            found_name = skill_name
+                                            target_dir = item
+                                            break
+                        elif f"name: {skill_name}" in text or f"name:{skill_name}" in text:
+                            content = text
+
+        if md_file.exists():
+            with open(md_file, 'r', encoding='utf-8') as f:
+                text = f.read()
+            if text.startswith('---'):
+                parts = text.split('---', 2)
+                if len(parts) >= 3:
+                    content = parts[2].strip()
+            else:
+                content = text
+
+        if not content:
+            return ""
+
+        skill_path = f"/agent_vm/skill/{target_dir.name}"
+        return f"""相关技能：{found_name}
+技能目录：{skill_path}
+请结合技能手册进行任务：
+
+{content}"""
+
 
 
 def auto_discover_experts():
