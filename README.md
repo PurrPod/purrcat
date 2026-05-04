@@ -25,7 +25,7 @@ purrcat start       # Launch with TUI
 purrcat start --headless  # Launch without TUI
 ```
 
-Full docs: [https://purrpod.github.io/](https://purrpod.github.io/)
+[Full docs](https://purrpod.github.io/)
 
 ---
 

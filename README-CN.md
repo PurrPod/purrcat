@@ -25,7 +25,7 @@ purrcat start       # 启动 TUI 界面
 purrcat start --headless  # 无界面启动
 ```
 
-完整文档：[https://purrpod.github.io/](https://purrpod.github.io/)
+[完整文档](https://purrpod.github.io/)
 
 ---
 
