@@ -76,7 +76,6 @@ class DockerManager:
         try:
             self.client = docker.from_env()
         except Exception as e:
-            # 捕获由 from_env 产生的未启动/无法连接异常
             raise DockerNotRunningError(f"Docker 客户端初始化失败: {e}")
         
         self.image = image
@@ -86,8 +85,21 @@ class DockerManager:
         self.container = None
         self.shell_pool = {}
         self.pool_lock = threading.Lock()
+        self._started = False
 
     def start(self):
+        if self._started and self.container is not None:
+            try:
+                self.container.reload()
+                if self.container.status == "running":
+                    print(f"✅ 复用已有沙盒 ({self.container_name})，状态: running")
+                    return
+            except Exception:
+                pass
+        
+        if self._started:
+            print(f"⚠️ 沙盒 ({self.container_name}) 状态异常，尝试重启...")
+        
         try:
             old_container = self.client.containers.get(self.container_name)
             print(f"🧹 发现残留的旧沙盒 ({self.container_name})，正在强制清理...")
@@ -130,6 +142,7 @@ class DockerManager:
         try:
             print(f"🚀 正在基于镜像 {self.image} 创建全新沙盒...")
             self.container = self.client.containers.run(self.image, **run_kwargs)
+            self._started = True
             print("✅ 全新沙盒环境启动就绪！")
         except ImageNotFound:
             raise DockerImageNotFoundError(f"找不到镜像: {self.image}")

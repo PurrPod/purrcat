@@ -4,7 +4,7 @@ import time
 import json
 import threading
 import uuid
-from src.loader.memory import Memory
+from src.utils.tracker import Tracker
 from src.model import AgentModel
 
 from src.tool import AGENT_TOOL_SCHEMA
@@ -33,7 +33,7 @@ class Agent:
         self.model.bind_task(self.agent_session_id, "AgentMain")
         self.system_prompt = self._build_system_prompt()
         self.current_history = [{"role": "system", "content": self.system_prompt}]
-        self.memory = Memory()
+        self.tracker = Tracker()
         self.checkpoint_path = checkpoint_path or CHECKPOINT_PATH
         self.pending_force_push = []
         self._lock = threading.Lock()
@@ -87,7 +87,7 @@ class Agent:
     def _append_history(self, message: dict):
         self.current_history.append(message)
         try:
-            self.memory.add(message)
+            self.tracker.add(message)
             self.save_checkpoint()
         except Exception as e:
             print(f"⚠️ [Memory] 落盘失败: {e}")
@@ -297,13 +297,12 @@ class Agent:
             alert_prompt = """【系统警告：记忆容量即将溢出，触发自动记忆归档】
 为了防止对话断层，系统即将清理你最早期的一批记忆。
 你必须调用 `Memo` 工具将当前记忆进行分类归档：
-- short_term: （必填）当前正在处理、被搁置的任务流，以及确立的全局变量或当前需要加载的工具、Skill等。
-- events: （列表）事件记录，每条是 {"time": "YYYYMMDDHHMM", "event": "描述"} 格式。如 {"time": "202604271500", "event": "完成PurrMemo集成"}。记录发生过的事实、对话、操作。
-- work_exp: （列表）经验增长，每条一句简短经验。用户偏好、避坑教训、有效工作模式等可复用沉淀。
-- cognition: （列表）认知记录，每条一句简短认知，包含事物本身及其联系。如 "Chroma是向量数据库，通过语义相似度检索，适合长期记忆存储"。
-- reminders: 待办提醒事项。
-- project_state: 当前项目整体进度。
-注意：描述尽量精简，每项一句话。直接调用工具即可，无须输出废话。"""
+- short_term: （必填）短期工作记忆。对当前任务的上下文进行压缩，该项将在清理后直接返回到你的新对话中，以便你继续当前工作。
+- work_exp: （列表）工作中积累的经验教训。<有则必须填写>
+- user_profile: （列表）对用户的新认识，包括但不限于喜好、风格等。<有则必须填写>
+- events: （列表）最近发生的事件，大大小小越多越好。格式：[{"time":"20200601","event":"xxx"}]。<有则必须填写>
+- cognition: （列表）对世界的新认知，提取具有普适性的概念或规律。<有则必须填写>
+注意：这些分类的内容可以重叠并鼓励重叠（比如一件事既是 event，也反映了 user_profile）。请直接调用工具即可，无须输出废话。"""
             temp_history = self.current_history.copy()
             temp_history.append({"role": "user", "content": alert_prompt})
 

@@ -88,48 +88,54 @@ def weaken_relation(source_node: str, relation: str, target_node: str, reason: s
     return f"削弱关系失败：未找到 ({source_node}) -[{relation}]-> ({target_node})"
 
 
-def rag_search(entity_keyword: str) -> str:
+def rag_search(entity_keywords: list) -> str:
     """
-    【图谱检索工具】在执行添加(add)、削弱(weaken)或强化(reinforce)操作前，必须且优先调用此工具！
-    用于检索知识库中是否已经存在相关的实体（Node）或它们之间的联系（Edge）。
+    【图谱批量检索工具】在执行添加(add)、削弱(weaken)或强化(reinforce)操作前，必须且优先调用此工具！
+    批量检索多个关键词，返回每个关键词相关的现有知识库状态。
 
     Args:
-        entity_keyword: 认知信息中的核心实体或关键词。例如，如果新信息是"用户喜欢吃红富士"，此处应传入 "红富士" 或 "苹果"。
+        entity_keywords: 关键词列表，如 ["苹果", "用户", "红富士"]
+                         从认知信息中提取的核心实体，一次性传入批量检索。
 
     Returns:
-        包含与该实体相关的现有关系列表文本。如果返回空，说明是全新的知识。
+        包含每个关键词检索结果的汇总文本。
     """
     init_graph_engine()
-    results = []
+    all_results = []
 
-    try:
-        if graph_engine.vector_engine:
-            similar_nodes = graph_engine.vector_engine.search_graph_nodes(entity_keyword, top_k=3)
-        else:
-            # 无向量引擎时，直接返回空结果
+    for keyword in entity_keywords:
+        try:
+            if graph_engine.vector_engine:
+                similar_nodes = graph_engine.vector_engine.search_graph_nodes(keyword, top_k=3)
+            else:
+                similar_nodes = []
+        except Exception as e:
+            print(f"搜索图谱节点失败: {e}")
             similar_nodes = []
-    except Exception as e:
-        print(f"搜索图谱节点失败: {e}")
-        similar_nodes = []
-    
-    for node_info in similar_nodes:
-        node_id = node_info['node_id']
-        relations = graph_engine.get_relations_by_node(node_id, direction='all')
-        for rel in relations:
-            target = graph_engine.get_node(rel['target_node_id'])
-            target_name = target['name'] if target else '未知'
-            source = graph_engine.get_node(rel['source_node_id'])
-            source_name = source['name'] if source else '未知'
-            results.append(
-                f"- 节点ID: {rel['source_node_id']} (实体: {source_name})\n"
-                f"  节点ID: {rel['target_node_id']} (实体: {target_name})\n"
-                f"  现有关系: ({source_name}) -[{rel['relation_meaning']}]-> ({target_name}) | 置信度: {rel['confidence']} | 来源: {rel.get('source_event_id', 'unknown')}"
-            )
 
-    if results:
-        return "【检索到的现有知识库状态】\n" + "\n".join(results)
-    else:
-        return f"【检索结果】未找到与 '{entity_keyword}' 相关的现有节点或联系，这是一个全新的知识。"
+        if not similar_nodes:
+            all_results.append(f"【{keyword}】→ 全新知识，未找到相关节点")
+            continue
+
+        keyword_results = [f"【{keyword}】相关节点："]
+        for node_info in similar_nodes:
+            node_id = node_info['node_id']
+            relations = graph_engine.get_relations_by_node(node_id, direction='all')
+            for rel in relations:
+                target = graph_engine.get_node(rel['target_node_id'])
+                target_name = target['name'] if target else '未知'
+                source = graph_engine.get_node(rel['source_node_id'])
+                source_name = source['name'] if source else '未知'
+                keyword_results.append(
+                    f"  ({source_name}) -[{rel['relation_meaning']}]-> ({target_name}) "
+                    f"[置信度:{rel['confidence']}]"
+                )
+
+        all_results.append("\n".join(keyword_results))
+
+    if all_results:
+        return "【知识库现有状态】\n" + "\n".join(all_results)
+    return "【知识库状态】所有关键词均为全新知识，未找到相关节点。"
 
 
 MEMORY_WORKER_TOOLS = [

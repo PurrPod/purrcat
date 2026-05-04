@@ -29,7 +29,6 @@ dependencies:
       - duckduckgo-search>=6.0.0
       - beautifulsoup4>=4.12.3
       - html2text>=2024.2.26
-      - playwright>=1.41.0
 
       # 系统与沙盒
       - docker>=7.0.0

@@ -2,7 +2,7 @@ MEMO_TOOL_SCHEMA = {
     "type": "function",
     "function": {
         "name": "Memo",
-        "description": "统一记忆工具，支持写入记忆或搜索记忆。action 参数决定操作类型。",
+        "description": "统一记忆工具，处理短期记忆压缩与长期记忆（经验、用户画像、事件、认知）的归档。",
         "parameters": {
             "type": "object",
             "properties": {
@@ -13,19 +13,36 @@ MEMO_TOOL_SCHEMA = {
                 },
                 "memo_data": {
                     "type": "object",
-                    "description": "记忆数据（action=add时必填）。格式：{\"short_term\": \"...\", \"events\": [...], \"work_exp\": [...], \"cognition\": [...], \"reminders\": \"...\", \"project_state\": \"...\"}"
+                    "description": "记忆数据（action=add时必填）。",
+                    "properties": {
+                        "short_term": {"type": "string", "description": "短期工作记忆，将作为新的上下文返回给对话"},
+                        "work_exp": {"type": "array", "items": {"type": "string"}, "description": "工作中积累的经验教训"},
+                        "user_profile": {"type": "array", "items": {"type": "string"}, "description": "对用户的新认识，包括喜好、风格等"},
+                        "events": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "time": {"type": "string", "description": "时间，如 20200601"},
+                                    "event": {"type": "string", "description": "事件描述"}
+                                }
+                            },
+                            "description": "最近发生的事件，大大小小越多越好"
+                        },
+                        "cognition": {"type": "array", "items": {"type": "string"}, "description": "对世界的新认知"}
+                    }
                 },
                 "query": {
                     "type": "string",
-                    "description": "搜索语句（action=search时必填）。描述你想要查找的记忆内容。"
+                    "description": "搜索语句（action=search时必填）。"
                 },
                 "filter": {
                     "type": "string",
-                    "description": "日期过滤（action=search时可选）。格式 YYYY-MM-DD，如 '2026-05-03'。"
+                    "description": "日期过滤（action=search时可选）。格式 YYYY-MM-DD"
                 },
                 "topk": {
                     "type": "integer",
-                    "description": "返回结果数量（action=search时可选），默认 5。",
+                    "description": "返回结果数量，默认 5。",
                     "default": 5
                 }
             },

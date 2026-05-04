@@ -1,8 +1,9 @@
-"""PurrCat CLI - 跨平台命令行入口"""
-import sys, os, json, argparse
+"""PurrCat CLI - 负责复杂的配置初始化 (init/env)"""
+import sys
+import os
+import json
+import argparse
 from datetime import datetime
-
-# ── 配置模板 ──
 
 MODEL_CONFIG_TEMPLATE = """# ============================================
 # PurrCat 模型配置文件
@@ -111,7 +112,7 @@ def _generate_memory_config(purrcat_dir):
     memory_path = os.path.join(purrcat_dir, ".memory.json")
 
     if os.path.exists(memory_path):
-        print(f"⚠️  文件已存在: {memory_path}")
+        print(f"! 文件已存在: {memory_path}")
         val = input("  覆盖？(y/N): ").strip().lower()
         if val != "y":
             print("  已保留原配置")
@@ -124,23 +125,23 @@ def _generate_memory_config(purrcat_dir):
             "model_name": "deepseek-v4-flash"
         },
         "chromadb": {
-            "persist_directory": "data/memo/chromadb",
+            "persist_directory": "data/memory/chromadb",
             "collection_name": "experiences",
             "embedding_model": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
         },
         "eventdb": {
-            "db_path": "data/memo/events.db",
+            "db_path": "data/memory/events.db",
             "table_name": "events"
         },
         "graphdb": {
-            "graph_path": "data/memo/graph.pkl",
+            "graph_path": "data/memory/graph.pkl",
             "min_confidence": 0.3
         },
         "buffer": {
-            "buffer_dir": "data/memo/buffer",
-            "pending_dir": "data/memo/buffer/pending",
-            "archived_dir": "data/memo/buffer/archived",
-            "error_dir": "data/memo/buffer/error"
+            "buffer_dir": "data/memory/buffer",
+            "pending_dir": "data/memory/buffer/pending",
+            "archived_dir": "data/memory/buffer/archived",
+            "error_dir": "data/memory/buffer/error"
         },
         "memory_agent": {
             "polling_interval": 5
@@ -156,9 +157,9 @@ def _generate_memory_config(purrcat_dir):
     try:
         with open(memory_path, "w", encoding="utf-8") as f:
             json.dump(memory_config, f, indent=2, ensure_ascii=False)
-        print(f"✅ 记忆系统配置已生成: {memory_path}")
+        print(f"+ 记忆系统配置已生成: {memory_path}")
     except Exception as e:
-        print(f"❌ 写入 .memory.json 失败: {e}")
+        print(f"X 写入 .memory.json 失败: {e}")
 
 
 def _generate_mcp_config(purrcat_dir):
@@ -166,7 +167,7 @@ def _generate_mcp_config(purrcat_dir):
     mcp_path = os.path.join(purrcat_dir, "mcp_config.json")
 
     if os.path.exists(mcp_path):
-        print(f"⚠️  文件已存在: {mcp_path}")
+        print(f"! 文件已存在: {mcp_path}")
         val = input("  覆盖？(y/N): ").strip().lower()
         if val != "y":
             print("  已保留原配置")
@@ -202,9 +203,9 @@ def _generate_mcp_config(purrcat_dir):
     try:
         with open(mcp_path, "w", encoding="utf-8") as f:
             json.dump(mcp_config, f, indent=2, ensure_ascii=False)
-        print(f"✅ MCP 配置已生成: {mcp_path}")
+        print(f"+ MCP 配置已生成: {mcp_path}")
     except Exception as e:
-        print(f"❌ 写入 mcp_config.json 失败: {e}")
+        print(f"X 写入 mcp_config.json 失败: {e}")
 
 
 def _generate_model_config(purrcat_dir):
@@ -212,7 +213,7 @@ def _generate_model_config(purrcat_dir):
     model_path = os.path.join(purrcat_dir, ".model.yaml")
 
     if os.path.exists(model_path):
-        print(f"⚠️  文件已存在: {model_path}")
+        print(f"! 文件已存在: {model_path}")
         val = input("  覆盖？(y/N): ").strip().lower()
         if val != "y":
             print("  已保留原配置")
@@ -222,9 +223,9 @@ def _generate_model_config(purrcat_dir):
     try:
         with open(model_path, "w", encoding="utf-8") as f:
             f.write(content)
-        print(f"✅ 模型配置已生成: {model_path}")
+        print(f"+ 模型配置已生成: {model_path}")
     except Exception as e:
-        print(f"❌ 写入 .model.yaml 失败: {e}")
+        print(f"X 写入 .model.yaml 失败: {e}")
 
 
 def _generate_sensor_config(purrcat_dir):
@@ -232,7 +233,7 @@ def _generate_sensor_config(purrcat_dir):
     sensor_path = os.path.join(purrcat_dir, ".sensor.yaml")
 
     if os.path.exists(sensor_path):
-        print(f"⚠️  文件已存在: {sensor_path}")
+        print(f"! 文件已存在: {sensor_path}")
         val = input("  覆盖？(y/N): ").strip().lower()
         if val != "y":
             print("  已保留原配置")
@@ -242,9 +243,9 @@ def _generate_sensor_config(purrcat_dir):
     try:
         with open(sensor_path, "w", encoding="utf-8") as f:
             f.write(content)
-        print(f"✅ 传感器配置已生成: {sensor_path}")
+        print(f"+ 传感器配置已生成: {sensor_path}")
     except Exception as e:
-        print(f"❌ 写入 .sensor.yaml 失败: {e}")
+        print(f"X 写入 .sensor.yaml 失败: {e}")
 
 
 def _generate_file_config(purrcat_dir):
@@ -252,7 +253,7 @@ def _generate_file_config(purrcat_dir):
     file_path = os.path.join(purrcat_dir, ".file.yaml")
 
     if os.path.exists(file_path):
-        print(f"⚠️  文件已存在: {file_path}")
+        print(f"! 文件已存在: {file_path}")
         val = input("  覆盖？(y/N): ").strip().lower()
         if val != "y":
             print("  已保留原配置")
@@ -262,17 +263,18 @@ def _generate_file_config(purrcat_dir):
     try:
         with open(file_path, "w", encoding="utf-8") as f:
             f.write(content)
-        print(f"✅ 文件系统配置已生成: {file_path}")
+        print(f"+ 文件系统配置已生成: {file_path}")
     except Exception as e:
-        print(f"❌ 写入 .file.yaml 失败: {e}")
+        print(f"X 写入 .file.yaml 失败: {e}")
 
 
 def cmd_init():
     """生成 .purrcat 配置目录"""
-    purrcat_dir = os.path.join(os.getcwd(), ".purrcat")
-    
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    purrcat_dir = os.path.join(project_root, ".purrcat")
+
     if os.path.exists(purrcat_dir):
-        print(f"⚠️  目录已存在: {purrcat_dir}")
+        print(f"! 目录已存在: {purrcat_dir}")
         val = input("  覆盖所有配置文件？(y/N): ").strip().lower()
         if val != "y":
             print("  已取消")
@@ -280,12 +282,11 @@ def cmd_init():
 
     try:
         os.makedirs(purrcat_dir, exist_ok=True)
-        print(f"📁 创建配置目录: {purrcat_dir}")
+        print(f"[+] 创建配置目录: {purrcat_dir}")
     except Exception as e:
-        print(f"❌ 创建目录失败: {e}")
+        print(f"X 创建目录失败: {e}")
         sys.exit(1)
 
-    # 生成配置文件
     _generate_model_config(purrcat_dir)
     _generate_sensor_config(purrcat_dir)
     _generate_file_config(purrcat_dir)
@@ -293,45 +294,19 @@ def cmd_init():
     _generate_memory_config(purrcat_dir)
 
     print("")
-    print("📋 配置文件结构:")
+    print("[-] 配置文件结构:")
     print("   .purrcat/")
-    print("   ├── .model.yaml      # 模型配置")
-    print("   ├── .sensor.yaml     # 传感器配置")
-    print("   ├── .file.yaml       # 文件系统配置")
-    print("   ├── .memory.json     # 记忆系统配置")
-    print("   └── mcp_config.json  # MCP 服务器配置")
+    print("   |-- .model.yaml      # 模型配置")
+    print("   |-- .sensor.yaml     # 传感器配置")
+    print("   |-- .file.yaml       # 文件系统配置")
+    print("   |-- .memory.json     # 记忆系统配置")
+    print("   +-- mcp_config.json  # MCP 服务器配置")
     print("")
-    print("💡 下一步:")
-    print("   编辑 .purrcat/.model.yaml 填入 API Key")
-    print("   编辑 .purrcat/.memory.json 配置记忆系统")
-    print("   编辑 .purrcat/mcp_config.json 填入 MCP Token")
-    print("   然后运行: purrcat start")
-
-
-def cmd_start():
-    """启动主程序"""
-    import sys
-    import subprocess
-    from pathlib import Path
-
-    # 解析命令行参数
-    parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument("--headless", action="store_true", help="不启动 TUI，仅在后台运行")
-    args, _ = parser.parse_known_args()
-
-    # 调用 main.py
-    main_py = Path(__file__).parent.parent / "main.py"
-    cmd = [sys.executable, str(main_py)]
-    if args.headless:
-        cmd.append("--headless")
-
-    try:
-        subprocess.run(cmd)
-    except KeyboardInterrupt:
-        pass
-    except Exception as e:
-        print(f"❌ 启动失败: {e}")
-        sys.exit(1)
+    print("[*] 下一步:")
+    print("    编辑 .purrcat/.model.yaml 填入 API Key")
+    print("    编辑 .purrcat/.memory.json 配置记忆系统")
+    print("    编辑 .purrcat/mcp_config.json 填入 MCP Token")
+    print("    然后运行: purrcat start")
 
 
 def cmd_env():
@@ -355,22 +330,16 @@ def cmd_env():
 def main():
     parser = argparse.ArgumentParser(
         prog="purrcat",
-        description="PurrCat - AI Agent Framework",
-        usage="purrcat <command>"
+        description="PurrCat - AI Agent Framework Configuration Tool",
     )
-    parser.add_argument("command", nargs="?", default="start",
-                        choices=["start", "init", "env", "help"],
-                        help="start=启动  init=生成配置模板  env=环境变量参考")
+    parser.add_argument("command", choices=["init", "env"])
 
-    args = parser.parse_args()
+    args, _ = parser.parse_known_args()
+
     if args.command == "init":
         cmd_init()
-    elif args.command == "start":
-        cmd_start()
     elif args.command == "env":
         cmd_env()
-    else:
-        parser.print_help()
 
 
 if __name__ == "__main__":

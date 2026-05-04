@@ -1,12 +1,12 @@
 import json
 import time
 from pathlib import Path
-from src.utils.config import MEMORY_DIR
+from src.utils.config import TRACKER_DIR
 
-class Memory:
-    def __init__(self, memory_base_dir=None):
+class Tracker:
+    def __init__(self, tracker_base_dir=None):
         # 使用固定路径
-        self.memory_base_dir = Path(memory_base_dir) if memory_base_dir else Path(MEMORY_DIR)
+        self.tracker_base_dir = Path(tracker_base_dir) if tracker_base_dir else Path(TRACKER_DIR)
         self.date = time.strftime("%Y-%m-%d", time.localtime())
         self.month_str = "-".join(self.date.split("-")[:2]) if self.date else None  # 提取出 "2026-03"
         self._resolve_path()
@@ -20,8 +20,8 @@ class Memory:
         parts = target_date.split('-')
         if len(parts) >= 2:
             year_month = f"{parts[0]}-{parts[1]}"
-            self.daily_path = self.memory_base_dir / year_month / target_date / "daily.jsonl"
-            self.month_path = self.memory_base_dir / year_month / "monthly.jsonl"
+            self.daily_path = self.tracker_base_dir / year_month / target_date / "daily.jsonl"
+            self.month_path = self.tracker_base_dir / year_month / "monthly.jsonl"
         else:
             raise ValueError(f"无法解析的日期格式: {target_date}")
     def add(self, mem):

@@ -2,7 +2,7 @@
 
 import traceback
 from src.tool.utils.format import text_response, error_response, warning_response
-from src.tool.memo.memo_operations import _validate_params, _write_to_pending
+from src.tool.memo.memo_operations import _validate_memo_data, _write_to_pending, _smart_update_memory_md
 from src.memory.purrmemo import get_memory_client
 
 
@@ -61,74 +61,35 @@ def Memo(action: str = None, memo_data: dict = None, query: str = None,
         traceback.print_exc()
         return error_response(f"记忆工具运行时异常: {str(e)}", "❌ Memo执行异常")
 
-
 def _handle_add(memo_data: dict = None) -> str:
     """处理写入记忆"""
-    if memo_data is None:
-        return error_response(
-            "action=add 时缺少必需参数: memo_data\nmemo_data 格式：\n{\n    \"short_term\": \"当前工作上下文（必填）\",\n    \"events\": [{\"time\": \"YYYYMMDDHHMM\", \"event\": \"...\"}],\n    \"work_exp\": [\"经验1\", \"经验2\"],\n    \"cognition\": [\"认知1\", \"认知2\"],\n    \"reminders\": \"待办提醒\",\n    \"project_state\": \"项目状态\"\n}",
-            "❌ 参数错误：缺少memo_data"
-        )
-
     if not isinstance(memo_data, dict):
-        return error_response(
-            f"参数类型错误: memo_data 必须是对象类型，你传入了 {type(memo_data).__name__}",
-            "❌ 参数类型错误"
-        )
+        return error_response("参数类型错误: memo_data 必须是对象", "❌ 参数类型错误")
 
-    short_term = memo_data.get("short_term")
-    events = memo_data.get("events")
-    work_exp = memo_data.get("work_exp")
-    cognition = memo_data.get("cognition")
-    reminders = memo_data.get("reminders")
-    project_state = memo_data.get("project_state")
-
-    if not short_term or not short_term.strip():
-        return error_response(
-            "memo_data.short_term 不能为空",
-            "❌ 参数错误：short_term不能为空"
-        )
-
-    if events is not None and not isinstance(events, list):
-        return error_response(
-            f"参数类型错误: memo_data.events 必须是数组类型，你传入了 {type(events).__name__}",
-            "❌ 参数类型错误"
-        )
-
-    if work_exp is not None and not isinstance(work_exp, list):
-        return error_response(
-            f"参数类型错误: memo_data.work_exp 必须是数组类型，你传入了 {type(work_exp).__name__}",
-            "❌ 参数类型错误"
-        )
-
-    if cognition is not None and not isinstance(cognition, list):
-        return error_response(
-            f"参数类型错误: memo_data.cognition 必须是数组类型，你传入了 {type(cognition).__name__}",
-            "❌ 参数类型错误"
-        )
-
-    valid_events, valid_work_exp, valid_cog, errors = _validate_params(
-        short_term, events, work_exp, cognition, reminders, project_state
-    )
-
+    valid_data, errors = _validate_memo_data(memo_data)
     if errors:
-        return error_response(
-            "参数校验失败:\n" + "\n".join(f"  - {e}" for e in errors),
-            "❌ 参数校验失败"
-        )
+        return error_response("参数校验失败:\n" + "\n".join(errors), "❌ 参数校验失败")
 
-    filepath = _write_to_pending(
-        short_term=short_term,
-        events=valid_events,
-        work_exp=valid_work_exp,
-        cognition=valid_cog,
-        reminders=reminders,
-        project_state=project_state
+    short_term = valid_data["short_term"]
+    events = valid_data["events"]
+    work_exp = valid_data["work_exp"]
+    cognition = valid_data["cognition"]
+    user_profile = valid_data["user_profile"]
+
+    _smart_update_memory_md(work_exp, user_profile)
+
+    _write_to_pending(
+        events=events,
+        cognition=cognition,
+        user_profile=user_profile
     )
 
     return text_response(
-        {"message": "记忆已投递至待处理区，后台正在异步加工", "pending_file": filepath},
-        "🧠 记忆投递成功"
+        {
+            "message": "长期记忆已投递至后台存入 MD/SQL/图谱",
+            "short_term_memory": short_term
+        },
+        "🧠 记忆归档成功，短期记忆已提取"
     )
 
 

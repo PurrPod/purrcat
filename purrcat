@@ -1,4 +1,37 @@
-#!/usr/bin/env bash
-# PurrCat 启动脚本（Linux/macOS）
-cd "$(dirname "$0")" 2>/dev/null || true
-exec python3 cli/cli.py "$@"
+#!/bin/bash
+cd "$(dirname "$0")" || exit 1
+
+COMMAND=$1
+shift
+
+case "$COMMAND" in
+    setup)
+        bash scripts/setup.sh "$@"
+        ;;
+    start)
+        bash scripts/start.sh "$@"
+        ;;
+    init)
+        python3 scripts/cli.py init "$@"
+        ;;
+    env)
+        python3 scripts/cli.py env "$@"
+        ;;
+    *)
+        echo "PurrCat CLI - 跨平台 AI Agent 框架"
+        echo "=========================================="
+        echo "用法: ./purrcat <command> [options]"
+        echo ""
+        echo "可用命令:"
+        echo "  setup   - 一键初始化环境 (Conda, Docker, 模型等)"
+        echo "  init    - 生成 .purrcat 配置文件"
+        echo "  start   - 启动 PurrCat (支持追加 --headless)"
+        echo "  env     - 查看环境变量参考"
+        echo ""
+        echo "示例:"
+        echo "  ./purrcat setup"
+        echo "  ./purrcat init"
+        echo "  ./purrcat start --headless"
+        echo ""
+        ;;
+esac

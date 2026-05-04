@@ -7,8 +7,18 @@ import shutil
 import hashlib
 import threading
 from datetime import datetime
-from ..config import MEMORY_AGENT_CONFIG, OPENAI_API_CONFIG, PENDING_DIR, ARCHIVED_DIR, ERROR_DIR
+from ..config import MEMORY_AGENT_CONFIG
+from src.utils.config import MEMORY_PENDING_DIR, MEMORY_DIR
+PENDING_DIR = MEMORY_PENDING_DIR
+ARCHIVED_DIR = os.path.join(MEMORY_DIR, "buffer", "archived")
+ERROR_DIR = os.path.join(MEMORY_DIR, "buffer", "error")
+
+# 确保目录存在
+os.makedirs(PENDING_DIR, exist_ok=True)
+os.makedirs(ARCHIVED_DIR, exist_ok=True)
+os.makedirs(ERROR_DIR, exist_ok=True)
 from ..storage.event_engine import EventEngine
+from ...visualize_graph import GraphVisualizer
 
 # 尝试导入向量引擎和图谱引擎，处理依赖问题
 try:
@@ -27,20 +37,23 @@ except ImportError as e:
 
 from .prompt import MEMORY_WORKER_PROMPT
 from .tools import rag_search, add_relation, reinforce_relation, weaken_relation, MEMORY_WORKER_TOOLS
+from src.model import AgentModel
+from ..search_tool import start_forgetfulness_scheduler
 
 class MemoryAgent:
     def __init__(self):
         self.history = []
         self.event_engine = EventEngine()
-        
+
         if vector_engine_available:
             self.vector_engine = VectorEngine()
         else:
             self.vector_engine = None
             print("VectorEngine 不可用，将在无向量搜索模式下运行")
-        
+
         if graph_engine_available:
             self.graph_engine = GraphEngine()
+            start_forgetfulness_scheduler(self.graph_engine, interval_hours=24)
         else:
             self.graph_engine = None
             print("GraphEngine 不可用，将无法处理图谱相关操作")
@@ -68,218 +81,195 @@ class MemoryAgent:
                 relation = '讨厌'
         return entities, relation
 
-    def _run_llm_step(self, cognition_data):
-        try:
-            from openai import OpenAI
-            prompt = MEMORY_WORKER_PROMPT + "\n\n请处理以下认知信息：\n"
-            for i, cognition in enumerate(cognition_data):
-                prompt += f"{i+1}. {cognition}\n"
+    def _run_llm_step(self, cognition_data: list):
+        """
+        批量处理认知信息：一次 LLM 调用 + 完整 reAct 会话历史
 
-            tools = [
-                {
-                    "type": "function",
-                    "function": {
-                        "name": "add_relation",
-                        "description": "新增联系，当检索发现知识库中不存在该事实，或者需要建立层级关系时使用",
-                        "parameters": {
-                            "type": "object",
-                            "properties": {
-                                "source_node": {"type": "string"},
-                                "relation": {"type": "string"},
-                                "target_node": {"type": "string"},
-                                "source_event_id": {"type": "string", "default": "unknown"}
-                            },
-                            "required": ["source_node", "relation", "target_node"]
-                        }
-                    }
-                },
-                {
-                    "type": "function",
-                    "function": {
-                        "name": "reinforce_relation",
-                        "description": "强化联系，当新的认知与知识库中已有的关系一致时使用",
-                        "parameters": {
-                            "type": "object",
-                            "properties": {
-                                "source_node": {"type": "string"},
-                                "relation": {"type": "string"},
-                                "target_node": {"type": "string"}
-                            },
-                            "required": ["source_node", "relation", "target_node"]
-                        }
-                    }
-                },
-                {
-                    "type": "function",
-                    "function": {
-                        "name": "weaken_relation",
-                        "description": "削弱联系，当新的认知与已有关系产生冲突时使用",
-                        "parameters": {
-                            "type": "object",
-                            "properties": {
-                                "source_node": {"type": "string"},
-                                "relation": {"type": "string"},
-                                "target_node": {"type": "string"},
-                                "reason": {"type": "string"}
-                            },
-                            "required": ["source_node", "relation", "target_node", "reason"]
-                        }
-                    }
-                },
-                {
-                    "type": "function",
-                    "function": {
-                        "name": "rag_search",
-                        "description": "图谱检索工具，必须优先调用以检查实体是否存在",
-                        "parameters": {
-                            "type": "object",
-                            "properties": {
-                                "entity_keyword": {"type": "string"}
-                            },
-                            "required": ["entity_keyword"]
-                        }
+        Args:
+            cognition_data: 认知条目列表，如 ["用户喜欢吃苹果", "用户讨厌香蕉"]
+        """
+        if not cognition_data:
+            return
+
+        model = AgentModel(task_id="memory_worker")
+
+        tools = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "rag_search",
+                    "description": "批量检索知识库中是否存在相关节点",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "entity_keywords": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "关键词列表，从认知信息中提取的核心实体"
+                            }
+                        },
+                        "required": ["entity_keywords"]
                     }
                 }
-            ]
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "add_relation",
+                    "description": "新增三元组关系",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "source_node": {"type": "string"},
+                            "relation": {"type": "string"},
+                            "target_node": {"type": "string"},
+                            "source_event_id": {"type": "string", "default": "unknown"}
+                        },
+                        "required": ["source_node", "relation", "target_node"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "reinforce_relation",
+                    "description": "强化已有关系",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "source_node": {"type": "string"},
+                            "relation": {"type": "string"},
+                            "target_node": {"type": "string"}
+                        },
+                        "required": ["source_node", "relation", "target_node"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "weaken_relation",
+                    "description": "削弱已有关系（通常需要紧接着 add_relation）",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "source_node": {"type": "string"},
+                            "relation": {"type": "string"},
+                            "target_node": {"type": "string"},
+                            "reason": {"type": "string"}
+                        },
+                        "required": ["source_node", "relation", "target_node", "reason"]
+                    }
+                }
+            }
+        ]
 
-            client = OpenAI(
-                api_key=OPENAI_API_CONFIG['api_key'],
-                base_url=OPENAI_API_CONFIG['base_url']
+        tool_map = {
+            'rag_search': rag_search,
+            'add_relation': add_relation,
+            'reinforce_relation': reinforce_relation,
+            'weaken_relation': weaken_relation
+        }
+
+        system_msg = {
+            "role": "system",
+            "content": "你是一个严谨的知识图谱构建助手。收到一批认知条目，你需要：\n1. 先用 rag_search 批量检索关键词\n2. 根据检索结果调用 add_relation/reinforce_relation/weaken_relation\n3. 所有条目处理完毕后回复'完成'"
+        }
+
+        user_content = "【待处理的认知条目】\n"
+        for i, item in enumerate(cognition_data, 1):
+            user_content += f"{i}. {item}\n"
+        user_content += "\n请开始处理：先用 rag_search 检索，然后逐条写入图谱。"
+
+        messages = [
+            system_msg,
+            {"role": "user", "content": user_content}
+        ]
+
+        max_turns = 50
+        write_count = 0
+        expected_writes = len(cognition_data)
+
+        for turn in range(max_turns):
+            response = model.chat(
+                messages=messages,
+                tools=tools,
             )
 
-            messages = [
-                {"role": "system", "content": "你是一个严谨的知识图谱构建助手。"},
-                {"role": "user", "content": prompt}
-            ]
+            msg_resp = response.choices[0].message
 
-            tool_map = {
-                'add_relation': add_relation,
-                'reinforce_relation': reinforce_relation,
-                'weaken_relation': weaken_relation,
-                'rag_search': rag_search
-            }
+            assist_msg = {"role": "assistant", "content": msg_resp.content or ""}
+            rc = getattr(msg_resp, "reasoning_content", None)
+            if rc is None and hasattr(msg_resp, "model_dump"):
+                rc = msg_resp.model_dump().get("reasoning_content")
+            if rc is not None:
+                assist_msg["reasoning_content"] = rc
 
-            max_tool_calls = 10
-            tool_calls_count = 0
-            tool_calls_record = []
-            
-            # 【核心逻辑新增】检测模型是否真正调用了写入操作
-            has_write_operation = False 
+            if msg_resp.tool_calls:
+                assist_msg["tool_calls"] = [
+                    {
+                        "id": t.id,
+                        "type": t.type,
+                        "function": {"name": t.function.name, "arguments": t.function.arguments}
+                    } for t in msg_resp.tool_calls
+                ]
 
-            while tool_calls_count < max_tool_calls:
-                response = client.chat.completions.create(
-                    model=OPENAI_API_CONFIG['model_name'],
-                    messages=messages,
-                    tools=tools,
-                )
+            messages.append(assist_msg)
 
-                message = response.choices[0].message
-                
-                reasoning_content = None
-                if hasattr(message, 'reasoning_content') and message.reasoning_content:
-                    reasoning_content = message.reasoning_content
-
-                if hasattr(message, 'tool_calls') and message.tool_calls:
-                    # 1. 将包含所有工具调用的 Assistant 消息完整加入（解决并发调用Bug）
-                    assistant_message = {
-                        "role": "assistant",
-                        "content": message.content,
-                        "tool_calls": [
-                            {
-                                "id": tc.id,
-                                "type": "function",
-                                "function": {
-                                    "name": tc.function.name,
-                                    "arguments": tc.function.arguments
-                                }
-                            } for tc in message.tool_calls
-                        ]
-                    }
-                    if reasoning_content:
-                        assistant_message["reasoning_content"] = reasoning_content
-                    messages.append(assistant_message)
-
-                    # 2. 依次执行每个工具并追加 Tool 结果消息
-                    for tc in message.tool_calls:
-                        tool_name = tc.function.name
-                        
-                        # 检查是否有实质性的写入操作
-                        if tool_name in ['add_relation', 'weaken_relation', 'reinforce_relation']:
-                            has_write_operation = True
-                            
-                        # 【核心逻辑新增】工具参数解析容错兜底
-                        try:
-                            tool_args = json.loads(tc.function.arguments)
-                        except json.JSONDecodeError as e:
-                            print(f"[容错] 解析工具参数失败: {e}")
-                            messages.append({
-                                "role": "tool",
-                                "tool_call_id": tc.id,
-                                "content": f"参数格式错误(必须是合法JSON): {tc.function.arguments}"
-                            })
-                            continue
-
-                        # 【核心逻辑新增】工具执行容错兜底
-                        if tool_name in tool_map:
-                            try:
-                                tool_result = tool_map[tool_name](**tool_args)
-                                print(f"[工具调用成功] {tool_name}: {tool_result}")
-                            except Exception as e:
-                                tool_result = f"工具执行内部异常: {str(e)}"
-                                print(f"[工具执行报错] {tool_name} 失败: {e}")
-                        else:
-                            tool_result = f"未知的工具: {tool_name}"
-
-                        # 追加单个 Tool 执行结果
-                        messages.append({
-                            "role": "tool",
-                            "tool_call_id": tc.id,
-                            "content": str(tool_result)
-                        })
-
-                        tool_calls_record.append({'tool': tool_name, 'args': tool_args})
-                        tool_calls_count += 1
-                else:
-                    # 【核心逻辑新增】程序强制写入检测（防偷懒）
-                    if not has_write_operation and cognition_data:
-                        print("[警报] 模型意图结束，但未检测到实质性节点更新，强制打回重造！")
-                        messages.append({
-                            "role": "assistant", 
-                            "content": message.content if message.content else "（思考完成）"
-                        })
-                        messages.append({
-                            "role": "user",
-                            "content": "⚠️ 系统检测警告：你只进行了检索或纯文本回复，**没有**调用任何实质性写入工具（add_relation/weaken_relation/reinforce_relation）。请**必须**基于上面的检索结果，立刻调用相应的工具将认知信息写入图谱！不要解释，直接调用工具！"
-                        })
-                        # 强制让大模型再思考一次并调用工具
-                        continue 
-                    
-                    # 真正完成了写入任务，结束循环
+            if not msg_resp.tool_calls:
+                if write_count >= expected_writes:
+                    print(f"✅ 图谱更新完成，共执行 {write_count} 次写入")
                     break
+                else:
+                    messages.append({
+                        "role": "user",
+                        "content": f"⚠️ 你还没有完成所有认知条目的写入（已完成 {write_count}/{expected_writes}）。请继续调用写入工具。"
+                    })
+                    continue
 
-            return {'tool_calls': tool_calls_record, 'cognition_list': cognition_data, 'raw_response': message.content}
-        except ImportError:
-            return self._process_cognition_fallback(cognition_data)
-        except Exception as e:
-            print(f"调用 LLM 失败: {e}")
-            return self._process_cognition_fallback(cognition_data)
+            tool_results = []
+            for tc in msg_resp.tool_calls:
+                tool_name = tc.function.name
 
-    def _process_cognition_fallback(self, cognition_data):
-        tool_calls = []
+                if tool_name in ['add_relation', 'reinforce_relation', 'weaken_relation']:
+                    write_count += 1
+
+                try:
+                    tool_args = json.loads(tc.function.arguments)
+                    tool_result = tool_map[tool_name](**tool_args)
+                    print(f"[{turn}] {tool_name}: {tool_result}")
+                except Exception as e:
+                    tool_result = f"执行失败: {str(e)}"
+                    print(f"[{turn}] {tool_name} 失败: {e}")
+
+                tool_results.append({
+                    "role": "tool",
+                    "tool_call_id": tc.id,
+                    "content": tool_result
+                })
+                messages.append(tool_results[-1])
+
+            if write_count >= expected_writes:
+                print(f"✅ 图谱更新完成，共执行 {write_count} 次写入")
+                break
+
+        print(f"📊 reAct 循环结束，写入 {write_count} 次 / 预期 {expected_writes} 次")
+
+    def _process_cognition_fallback(self, cognition_data: list):
+        """兜底处理：当 LLM 不可用时用启发式规则"""
         for cognition in cognition_data:
             entities, relation = self._extract_entities_from_cognition(cognition)
             if len(entities) == 2 and relation:
                 source_node = entities[0]
                 target_node = entities[1]
-                search_result = rag_search(source_node)
-                if '未找到' in search_result:
-                    tool_calls.append({'tool': 'add_relation', 'args': {'source_node': source_node, 'relation': relation, 'target_node': target_node}})
+                search_result = rag_search([source_node])
+                if '全新知识' in search_result:
+                    add_relation(source_node, relation, target_node)
                 elif '讨厌' in search_result and relation == '喜欢':
-                    tool_calls.append({'tool': 'weaken_relation', 'args': {'source_node': source_node, 'relation': '讨厌', 'target_node': target_node, 'reason': '冲突'}})
-                    tool_calls.append({'tool': 'add_relation', 'args': {'source_node': source_node, 'relation': relation, 'target_node': target_node}})
+                    weaken_relation(source_node, '讨厌', target_node, '冲突')
+                    add_relation(source_node, relation, target_node)
                 else:
-                    tool_calls.append({'tool': 'reinforce_relation', 'args': {'source_node': source_node, 'relation': relation, 'target_node': target_node}})
-        return {'tool_calls': tool_calls, 'cognition_list': cognition_data}
+                    reinforce_relation(source_node, relation, target_node)
 
     def _process_file_with_lock(self, file_path):
         lock_key = os.path.abspath(file_path)
@@ -317,6 +307,7 @@ class MemoryAgent:
             event_id = hashlib.md5(json.dumps(data, sort_keys=True).encode()).hexdigest()
             timestamp = data.get('timestamp', datetime.now().isoformat())
 
+            # 1. 处理事件：读取字段改为 'events'
             events = data.get('events', [])
             for event in events:
                 if isinstance(event, dict):
@@ -326,11 +317,10 @@ class MemoryAgent:
                     event_content = event
                     event_time = timestamp
 
-                # 计算事件向量
                 event_vector = None
                 if self.vector_engine:
                     event_vector = self.vector_engine._get_embedding(event_content)
-                
+
                 self.event_engine.insert_event(
                     event_id=f"event_{event_id}_{hashlib.md5(event_content.encode()).hexdigest()}",
                     content=event_content,
@@ -339,23 +329,27 @@ class MemoryAgent:
                     source=os.path.basename(file_path)
                 )
 
-            work_exps = data.get('work_exp', [])
-            for exp in work_exps:
-                exp_id = hashlib.md5(exp.encode()).hexdigest()
-                self.vector_engine.insert_experience(
-                    exp_id=f"exp_{exp_id}",
-                    content=exp,
-                    timestamp=timestamp,
-                    source_event_id=event_id
-                )
+            # (已彻底移除 work_exps 的解析和插入逻辑)
 
+            # 2. 处理图谱抽取：将 cognition 和 user_profile 拼合
             cognition = data.get('cognition', [])
-            if cognition and graph_engine_available:
-                self._run_llm_step(cognition)
+            user_profile = data.get('user_profile', [])
 
-            if graph_engine_available:
+            # 这些东西都可以作为认知素材，提取进入知识图谱
+            graph_materials = cognition + user_profile
+
+            if graph_materials and self.graph_engine:
+                self._run_llm_step(graph_materials)
+            if self.graph_engine:
                 self.graph_engine._save_graph()
+                try:
+                    viz = GraphVisualizer()
+                    viz.visualize()
+                    print("✅ 图谱可视化已更新")
+                except Exception as e:
+                    print(f"⚠️ 图谱可视化更新失败: {e}")
 
+            # 3. 归档日志记录
             archive_path = os.path.join(ARCHIVED_DIR, os.path.basename(file_path))
             shutil.move(file_path, archive_path)
 
@@ -364,15 +358,12 @@ class MemoryAgent:
                 'file': os.path.basename(file_path),
                 'processed_at': datetime.now().isoformat(),
                 'events_count': len(events),
-                'work_exps_count': len(work_exps),
-                'has_cognition': bool(cognition)
+                'has_graph_materials': bool(graph_materials)
             })
-
-            self._save_checkpoint()
-            print(f"处理文件成功: {os.path.basename(file_path)}")
+            print(f"✅ 后台 Worker 处理成功: {os.path.basename(file_path)}")
             return True
         except Exception as e:
-            print(f"处理文件失败: {e}")
+            print(f"❌ Worker 处理文件失败: {e}")
             return False
 
     def run(self):
