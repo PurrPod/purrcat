@@ -4,39 +4,23 @@ from datetime import datetime, timedelta
 import threading
 from .config import RAG_CONFIG
 from .storage.event_engine import EventEngine
-
-# 尝试导入向量引擎和图谱引擎，处理依赖问题
-try:
-    from .storage.vector_engine import VectorEngine
-    vector_engine_available = True
-except ImportError as e:
-    print(f"VectorEngine 导入失败: {e}")
-    vector_engine_available = False
-
-try:
-    from .storage.graph_engine import GraphEngine
-    graph_engine_available = True
-except ImportError as e:
-    print(f"GraphEngine 导入失败: {e}")
-    graph_engine_available = False
-
+from .storage.vector_engine import VectorEngine
+from .storage.graph_engine import GraphEngine
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 class RAGSearchTool:
     def __init__(self):
         self.event_engine = EventEngine()
         
-        # 初始化向量引擎（如果可用）
-        if vector_engine_available:
+        try:
             self.vector_engine = VectorEngine()
-        else:
+        except Exception:
             self.vector_engine = None
             print("VectorEngine 不可用，将无法检索经验库")
-        
-        # 初始化图谱引擎（如果可用）
-        if graph_engine_available:
+
+        try:
             self.graph_engine = GraphEngine()
-        else:
+        except Exception:
             self.graph_engine = None
             print("GraphEngine 不可用，将无法检索图谱库")
 
@@ -62,12 +46,17 @@ class RAGSearchTool:
                 executor.submit(self._search_graph, query, filters): 'graph'
             }
 
+            events_warning = ""
             for future in as_completed(future_to_source):
                 source = future_to_source[future]
                 try:
                     result = future.result()
                     if source == 'events':
-                        events_results = result
+                        if isinstance(result, dict):
+                            events_warning = result.get('warning', '')
+                            events_results = result.get('events', [])
+                        else:
+                            events_results = result
                     elif source == 'experiences':
                         experiences_results = result
                     elif source == 'graph':
@@ -75,40 +64,43 @@ class RAGSearchTool:
                 except Exception as e:
                     print(f"检索 {source} 失败: {e}")
 
-        # 拼接结果为 Markdown
-        markdown_context = self._format_results(events_results, experiences_results, graph_results)
+        markdown_context = self._format_results(events_results, experiences_results, graph_results, events_warning)
 
         return markdown_context
 
     def _search_events(self, query: str, filters: dict = None):
-        """检索事件库"""
+        """检索事件库
+        
+        Returns:
+            dict: {"events": [...], "warning": "..."} 
+            warning 为空表示无降级查询，有内容表示使用了降级查询并说明原因
+        """
         try:
-            # 获取时间范围
+            had_time_filter = filters and 'time_range' in filters
+            start_time = None
+            end_time = None
+            
             if filters and 'time_range' in filters:
                 start_time, end_time = filters['time_range']
+                events = self.event_engine.get_events_by_time_range(
+                    start_time=start_time,
+                    end_time=end_time,
+                    limit=RAG_CONFIG['top_k_events'] * 2
+                )
             else:
-                # 默认过去7天
-                start_time = (datetime.now() - timedelta(days=7)).isoformat()
-                end_time = datetime.now().isoformat()
+                events = self.event_engine.get_latest_events(
+                    limit=RAG_CONFIG['top_k_events'] * 2
+                )
             
-            # 获取时间范围内的事件
-            events = self.event_engine.get_events_by_time_range(
-                start_time=start_time,
-                end_time=end_time,
-                limit=RAG_CONFIG['top_k_events'] * 2  # 多获取一些结果用于语义排序
-            )
+            fallback_warning = ""
             
-            # 如果有查询文本且向量引擎可用，进行语义匹配
             if query and self.vector_engine:
-                # 计算查询向量
                 query_vector = self.vector_engine._get_embedding(query)
                 if query_vector:
-                    # 计算每个事件与查询的相似度
                     import numpy as np
                     similar_events = []
                     for event in events:
                         if event.get('vector'):
-                            # 计算余弦相似度
                             event_vector = event['vector']
                             similarity = np.dot(query_vector, event_vector) / (
                                 np.linalg.norm(query_vector) * np.linalg.norm(event_vector)
@@ -116,22 +108,43 @@ class RAGSearchTool:
                             event['similarity'] = similarity
                             similar_events.append(event)
                     
-                    # 按相似度排序
                     similar_events.sort(key=lambda x: x.get('similarity', 0), reverse=True)
                     
-                    # 应用阈值过滤
                     if filters and 'threshold' in filters:
                         threshold = filters['threshold']
                         similar_events = [e for e in similar_events if e.get('similarity', 0) >= threshold]
                     
-                    # 返回指定数量的结果
-                    return similar_events[:RAG_CONFIG['top_k_events']]
+                    results = similar_events[:RAG_CONFIG['top_k_events']]
+                    
+                    if not results and had_time_filter:
+                        fallback_events = self.event_engine.get_latest_events(
+                            limit=RAG_CONFIG['top_k_events']
+                        )
+                        for fe in fallback_events:
+                            if fe.get('vector'):
+                                fe['similarity'] = np.dot(query_vector, fe['vector']) / (
+                                    np.linalg.norm(query_vector) * np.linalg.norm(fe['vector'])
+                                )
+                            else:
+                                fe['similarity'] = 0.0
+                        
+                        fallback_events.sort(key=lambda x: x.get('similarity', 0), reverse=True)
+                        fallback_warning = f"**当前筛选条件没有符合条件的事件，以下是一些相关的结果：**\n\n"
+                        results = fallback_events[:RAG_CONFIG['top_k_events']]
+                    
+                    return {"events": results, "warning": fallback_warning}
             
-            # 无语义匹配时，按时间倒序返回
-            return events
+            if not events and had_time_filter:
+                fallback_events = self.event_engine.get_latest_events(
+                    limit=RAG_CONFIG['top_k_events']
+                )
+                fallback_warning = f"**当前筛选条件没有符合条件的事件，以下是一些相关的结果：**\n\n"
+                return {"events": fallback_events, "warning": fallback_warning}
+            
+            return {"events": events, "warning": ""}
         except Exception as e:
             print(f"检索事件失败: {e}")
-            return []
+            return {"events": [], "warning": ""}
 
     def _search_experiences(self, query: str, filters: dict = None):
         """检索经验库"""
@@ -199,9 +212,12 @@ class RAGSearchTool:
             print(f"检索图谱失败: {e}")
             return []
 
-    def _format_results(self, events, experiences, graph_results):
+    def _format_results(self, events, experiences, graph_results, events_warning=""):
         """将结果格式化为 Markdown"""
         markdown_parts = []
+
+        if events_warning:
+            markdown_parts.append(events_warning)
 
         if events:
             markdown_parts.append("## 历史事件")

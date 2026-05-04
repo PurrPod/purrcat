@@ -133,6 +133,7 @@ def _search_local(query: str, topk: int) -> str:
             md += f"| {item['source']} | `{item['name']}` | {item['score']} | {item['description']} |\n"
 
         md += "\n💡 **提示：你可以使用 `Fetch` 工具获取上述技能或 MCP 工具的完整细节与执行参数。**"
+        md += "\n💡 **如需检索记忆，请使用 `Memo` 工具（action=search）。**"
 
         return text_response({
             "query": query,

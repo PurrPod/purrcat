@@ -299,8 +299,8 @@ def cmd_init(force=False):
         if force:
             print(f"[*] Directory exists: {purrcat_dir} (force mode, overwriting)")
         else:
-            print(f"! Directory already exists: {purrcat_dir}")
-            val = input("  Overwrite all config files? (y/N): ").strip().lower()
+            print(f"[!] .purrcat directory already exists, continue initialization?")
+            val = input("  All config files will be confirmed one by one (Y/N): ").strip().lower()
             if val != "y":
                 print("  Cancelled")
                 return
@@ -313,14 +313,14 @@ def cmd_init(force=False):
             sys.exit(1)
 
     print("")
-    print("[*] Generating config files...")
+    print("[*] 开始生成配置文件，请逐个确认...")
 
     results = []
-    results.append(("model", _generate_model_config(purrcat_dir, force)))
-    results.append(("sensor", _generate_sensor_config(purrcat_dir, force)))
-    results.append(("file", _generate_file_config(purrcat_dir, force)))
-    results.append(("mcp", _generate_mcp_config(purrcat_dir, force)))
-    results.append(("memory", _generate_memory_config(purrcat_dir, force)))
+    results.append(("model", _generate_model_config(purrcat_dir, force=False)))
+    results.append(("sensor", _generate_sensor_config(purrcat_dir, force=False)))
+    results.append(("file", _generate_file_config(purrcat_dir, force=False)))
+    results.append(("mcp", _generate_mcp_config(purrcat_dir, force=False)))
+    results.append(("memory", _generate_memory_config(purrcat_dir, force=False)))
 
     print("")
     print("[*] Summary:")

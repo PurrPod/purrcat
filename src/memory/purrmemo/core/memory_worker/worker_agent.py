@@ -18,22 +18,8 @@ os.makedirs(PENDING_DIR, exist_ok=True)
 os.makedirs(ARCHIVED_DIR, exist_ok=True)
 os.makedirs(ERROR_DIR, exist_ok=True)
 from ..storage.event_engine import EventEngine
-from src.memory.visualize_graph import GraphVisualizer
-
-# 尝试导入向量引擎和图谱引擎，处理依赖问题
-try:
-    from ..storage.vector_engine import VectorEngine
-    vector_engine_available = True
-except ImportError as e:
-    print(f"VectorEngine 导入失败: {e}")
-    vector_engine_available = False
-
-try:
-    from ..storage.graph_engine import GraphEngine
-    graph_engine_available = True
-except ImportError as e:
-    print(f"GraphEngine 导入失败: {e}")
-    graph_engine_available = False
+from ..storage.vector_engine import VectorEngine
+from ..storage.graph_engine import GraphEngine
 
 from .prompt import MEMORY_WORKER_PROMPT
 from .tools import rag_search, add_relation, reinforce_relation, weaken_relation, MEMORY_WORKER_TOOLS
@@ -45,16 +31,16 @@ class MemoryAgent:
         self.history = []
         self.event_engine = EventEngine()
 
-        if vector_engine_available:
+        try:
             self.vector_engine = VectorEngine()
-        else:
+        except Exception:
             self.vector_engine = None
             print("VectorEngine 不可用，将在无向量搜索模式下运行")
 
-        if graph_engine_available:
+        try:
             self.graph_engine = GraphEngine()
             start_forgetfulness_scheduler(self.graph_engine, interval_hours=24)
-        else:
+        except Exception:
             self.graph_engine = None
             print("GraphEngine 不可用，将无法处理图谱相关操作")
         
@@ -342,12 +328,6 @@ class MemoryAgent:
                 self._run_llm_step(graph_materials)
             if self.graph_engine:
                 self.graph_engine._save_graph()
-                try:
-                    viz = GraphVisualizer()
-                    viz.visualize()
-                    print("✅ 图谱可视化已更新")
-                except Exception as e:
-                    print(f"⚠️ 图谱可视化更新失败: {e}")
 
             # 3. 归档日志记录
             archive_path = os.path.join(ARCHIVED_DIR, os.path.basename(file_path))

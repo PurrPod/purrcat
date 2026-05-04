@@ -25,6 +25,7 @@ todo.md
 venv/
 .venv/
 env/
+lib
 .env
 log.txt
 pip-log.txt

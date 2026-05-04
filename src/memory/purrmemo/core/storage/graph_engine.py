@@ -5,8 +5,7 @@ import threading
 from datetime import datetime
 import networkx as nx
 from src.memory.purrmemo.core.config import GRAPH_DATABASE_CONFIG
-
-# VectorEngine import moved inside __init__ to handle missing dependencies
+from src.memory.purrmemo.core.storage.vector_engine import VectorEngine
 
 class GraphEngine:
     _instance = None
@@ -28,9 +27,8 @@ class GraphEngine:
         self.graph = None
         self.vector_engine = None
         try:
-            from src.memory.purrmemo.core.storage.vector_engine import VectorEngine
             self.vector_engine = VectorEngine()
-        except ImportError:
+        except Exception:
             print("向量引擎依赖未安装，将在无向量搜索模式下运行")
         self._init_graph()
         self._initialized = True

@@ -1,7 +1,16 @@
 import os
+import sys
 import pickle
 import networkx as nx
-from src.memory.purrmemo.core.config import GRAPH_DATABASE_CONFIG, PROJECT_ROOT
+
+# 添加项目根目录到 sys.path
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+from src.memory.purrmemo.core.config import GRAPH_DATABASE_CONFIG
+from src.utils.config import MEMORY_DIR
+
 
 class GraphVisualizer:
     def __init__(self):
@@ -30,7 +39,7 @@ class GraphVisualizer:
             output_file: 输出 HTML 文件路径，默认为 data/memo/output/graph_visualization.html
         """
         if output_file is None:
-            output_file = os.path.join(PROJECT_ROOT, "data", "memo", "output", "graph_visualization.html")
+            output_file = os.path.join(MEMORY_DIR, "output", "graph_visualization.html")
         if not self.graph or self.graph.number_of_nodes() == 0:
             print("图谱为空，无法可视化")
             return
@@ -124,22 +133,10 @@ class GraphVisualizer:
             """)
             
             # 生成 HTML 文件
-            net.show(output_file, notebook=False)
+            net.write_html(output_file, notebook=False)
             print(f"图谱可视化已生成到 {output_file}")
-        except ImportError:
-            print("pyvis 未安装，无法生成可视化。仅显示图谱统计信息：")
-            print(f"节点数量: {self.graph.number_of_nodes()}")
-            print(f"边数量: {self.graph.number_of_edges()}")
-            print("\n节点列表:")
-            for node_id in self.graph.nodes:
-                node_data = self.graph.nodes[node_id]
-                node_name = node_data.get('name', node_id)
-                print(f"  - {node_id}: {node_name}")
-            print("\n边列表:")
-            for source, target, edge_data in self.graph.edges(data=True):
-                relation = edge_data.get('relation_meaning', 'unknown')
-                confidence = edge_data.get('confidence', 0.5)
-                print(f"  - {source} -> {target}: {relation} (置信度: {confidence:.2f})")
+        except Exception as e:
+            print(f"可视化错误: {e}")
 
 if __name__ == "__main__":
     visualizer = GraphVisualizer()
