@@ -246,12 +246,11 @@ class Agent:
                 snip = result_content if isinstance(result_content, str) else str(result_content)
 
             get_gateway().send(f"📦 {snip}")
-            time_aware_content = f"[finish at {finish_time}]\n{result_content}"
             self.current_history.append({
                 "role": "tool",
                 "tool_call_id": tool_call.id,
                 "name": original_tool_name,
-                "content": time_aware_content
+                "content": result_content
             })
 
         return False  # 正常执行完毕，继续 ReAct 循环

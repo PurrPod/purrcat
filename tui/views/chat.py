@@ -50,17 +50,25 @@ class ToolCallWidget(Vertical):
         if hasattr(self, "_timer"):
             self._timer.stop()
 
-        if not result:
-            result = "执行完毕"
-
         import re
-        timestamp_match = re.search(r'\[finish at ([^\]]+)\]', str(result))
-        if timestamp_match:
-            formatted_result = f"    └── [Finish at {timestamp_match.group(1)}]"
-        else:
-            formatted_result = "    └── Finish"
+        import json
 
-        self.scan_label.update(formatted_result)
+        snip = ""
+        result_str = str(result)
+
+
+
+        try:
+            parsed = json.loads(result_str.strip())
+            snip = parsed.get('snip', '') if isinstance(parsed, dict) else ''
+        except (json.JSONDecodeError, Exception):
+            snip = result_str.strip() if result_str.strip() else "执行完毕"
+
+        if snip:
+            self.scan_label.update(snip)
+        else:
+            self.scan_label.update("执行完毕")
+
         self.scan_label.remove_class("tool-scanning")
         self.scan_label.add_class("tool-result")
 

@@ -33,7 +33,7 @@ def Bash(command: str, timeout: int = 300, session_id: str = "default") -> str:
         }
         
         # 生成 snip 摘要：简短描述执行结果
-        output_preview = output[:40].replace('\n', ' ') if output else ''
+        output_preview = output[:40].replace('\r', '').replace('\n', ' ') if output else ''
         if exit_code == 0:
             snip = f"✅ 成功 | {output_preview}..."
             return text_response(result, snip)

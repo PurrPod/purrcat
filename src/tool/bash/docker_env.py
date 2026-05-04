@@ -188,7 +188,7 @@ class DockerManager:
             command = DOCKER_EXEC_CMD.format(container_name=self.container.name)
             try:
                 shell_process = SpawnClass(command, encoding="utf-8", timeout=120)
-                shell_process.sendline("stty -echo\nexport PS1=''\nexport TERM=dumb\necho '__SHELL_READY__'\n")
+                shell_process.send("stty -echo\nexport PS1=''\nexport TERM=dumb\necho '__SHELL_READY__'\n")
                 shell_process.expect("__SHELL_READY__", timeout=10)
                 self.shell_pool[session_id] = {"process": shell_process, "lock": threading.Lock()}
             except pexpect.exceptions.TIMEOUT:
@@ -212,7 +212,7 @@ class DockerManager:
             force_close(session["process"])
         command = DOCKER_EXEC_CMD.format(container_name=self.container.name)
         new_process = SpawnClass(command, encoding="utf-8", timeout=120)
-        new_process.sendline("stty -echo\nexport PS1=''\nexport TERM=dumb\necho '__SHELL_READY__'\n")
+        new_process.send("stty -echo\nexport PS1=''\nexport TERM=dumb\necho '__SHELL_READY__'\n")
         new_process.expect("__SHELL_READY__", timeout=10)
         session["process"] = new_process
 
@@ -232,7 +232,7 @@ class DockerManager:
             marker_str = f"__CMD_DONE_{marker_id}__"
             full_payload = f"{command.strip()}\necho -e \"\\n{marker_str}$?|$(pwd)\""
 
-            process.sendline(full_payload)
+            process.send(full_payload.replace('\r', '') + '\n')
             try:
                 process.expect(f"{marker_str}(\\d+)\\|(.*)", timeout=timeout)
             except pexpect.exceptions.TIMEOUT:
@@ -250,7 +250,8 @@ class DockerManager:
             return exit_code, final_output, cwd
 
     def _clean_ansi(self, text: str) -> str:
-        return re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])').sub('', text)
+        text = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])').sub('', text)
+        return text.replace('\r', '')
 
 
 def get_docker_manager() -> 'DockerManager':
