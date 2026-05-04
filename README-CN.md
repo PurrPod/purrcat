@@ -63,7 +63,7 @@ Harness 层 (BaseTask)     原子方法: run_llm_step / run_tool_calling / check
 
 ## 文档导航
 
-- [介绍](https://purrpod.github.io/purrcat/intro.html)
+- [介绍](https://purrpod.github.io/purrcat/intro)
 - [部署指南](https://purrpod.github.io/purrcat/guide/deployment)
 - [架构介绍](https://purrpod.github.io/purrcat/develop/architecture)
 - [二次开发](https://purrpod.github.io/purrcat/develop/extension)

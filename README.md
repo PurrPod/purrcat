@@ -63,7 +63,7 @@ Harness Layer (BaseTask)     Atomic methods: run_llm_step / run_tool_calling / c
 
 ## Documentation
 
-- [Introduction](https://purrpod.github.io/purrcat/intro.html)
+- [Introduction](https://purrpod.github.io/purrcat/intro)
 - [Deployment Guide](https://purrpod.github.io/purrcat/guide/deployment)
 - [Architecture](https://purrpod.github.io/purrcat/develop/architecture)
 - [Extension Guide](https://purrpod.github.io/purrcat/develop/extension)
