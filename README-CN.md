@@ -7,7 +7,7 @@
 [![Python Version](https://img.shields.io/badge/python-3.10%2B-blue)]()
 [![License](https://img.shields.io/badge/license-GPLv3-green)]()
 
-[**English Docs**](./README.md)
+[English](./README.md)
 
 </div>
 
@@ -25,7 +25,7 @@ purrcat start       # 启动 TUI 界面
 purrcat start --headless  # 无界面启动
 ```
 
-完整文档：[https://purrpod.github.io/purrcat/](https://purrpod.github.io/purrcat/)
+[完整文档](https://purrpod.github.io/)
 
 ---
 
@@ -63,12 +63,12 @@ Harness 层 (BaseTask)     原子方法: run_llm_step / run_tool_calling / check
 
 ## 文档导航
 
-- [介绍](https://purrpod.github.io/purrcat/intro.html)
-- [部署指南](https://purrpod.github.io/purrcat/guide/deployment)
-- [架构介绍](https://purrpod.github.io/purrcat/develop/architecture)
-- [二次开发](https://purrpod.github.io/purrcat/develop/extension)
-- [配置说明](https://purrpod.github.io/purrcat/config/)
-- [常见问题](https://purrpod.github.io/purrcat/guide/faq)
+- [介绍](https://purrpod.github.io/intro)
+- [部署指南](https://purrpod.github.io/guide/deployment)
+- [架构介绍](https://purrpod.github.io/develop/architecture)
+- [二次开发](https://purrpod.github.io/develop/extension)
+- [配置说明](https://purrpod.github.io/config/)
+- [常见问题](https://purrpod.github.io/guide/faq)
 
 ---
 
