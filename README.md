@@ -25,7 +25,7 @@ purrcat start       # Launch with TUI
 purrcat start --headless  # Launch without TUI
 ```
 
-Full docs: [https://purrpod.github.io/purrcat/](https://purrpod.github.io/purrcat/)
+Full docs: [https://purrpod.github.io/](https://purrpod.github.io/)
 
 ---
 
@@ -63,12 +63,12 @@ Harness Layer (BaseTask)     Atomic methods: run_llm_step / run_tool_calling / c
 
 ## Documentation
 
-- [Introduction](https://purrpod.github.io/purrcat/intro)
-- [Deployment Guide](https://purrpod.github.io/purrcat/guide/deployment)
-- [Architecture](https://purrpod.github.io/purrcat/develop/architecture)
-- [Extension Guide](https://purrpod.github.io/purrcat/develop/extension)
-- [Configuration](https://purrpod.github.io/purrcat/config/)
-- [FAQ](https://purrpod.github.io/purrcat/guide/faq)
+- [Introduction](https://purrpod.github.io/intro)
+- [Deployment Guide](https://purrpod.github.io/guide/deployment)
+- [Architecture](https://purrpod.github.io/develop/architecture)
+- [Extension Guide](https://purrpod.github.io/develop/extension)
+- [Configuration](https://purrpod.github.io/config/)
+- [FAQ](https://purrpod.github.io/guide/faq)
 
 ---
 
