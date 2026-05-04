@@ -9,6 +9,6 @@ echo ==========================================
 echo Close instructions:
 echo    Press [Ctrl+C] in current window to close TUI
 echo ==========================================
-call conda activate PurrCat && python main.py %*
+conda run -n PurrCat python main.py %*
 
 pause

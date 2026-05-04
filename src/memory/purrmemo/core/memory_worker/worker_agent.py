@@ -18,7 +18,7 @@ os.makedirs(PENDING_DIR, exist_ok=True)
 os.makedirs(ARCHIVED_DIR, exist_ok=True)
 os.makedirs(ERROR_DIR, exist_ok=True)
 from ..storage.event_engine import EventEngine
-from ...visualize_graph import GraphVisualizer
+from src.memory.visualize_graph import GraphVisualizer
 
 # 尝试导入向量引擎和图谱引擎，处理依赖问题
 try:

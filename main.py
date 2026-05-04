@@ -2,6 +2,7 @@ import asyncio
 import os
 import warnings
 import argparse
+import threading
 
 warnings.filterwarnings("ignore", category=RuntimeWarning, message="coroutine 'ExpiringCache._start_clear_cron' was never awaited")
 warnings.filterwarnings("ignore", category=UserWarning, message="pkg_resources is deprecated as an API")
@@ -13,7 +14,6 @@ from src.memory.purrmemo import get_memory_client
 
 
 async def init_core():
-    """初始化核心后台服务"""
     os.environ.pop("HTTP_PROXY", None)
     os.environ.pop("HTTPS_PROXY", None)
 
@@ -23,32 +23,45 @@ async def init_core():
     auto_discover_and_start()
     get_memory_client()
 
-    print("后台服务与传感器已启动完毕。")
+    print("[+] Backend services and sensors started")
 
 
 async def shutdown_core():
-    """清理并关闭核心后台服务"""
-    print("正在安全关闭系统，请稍候...")
+    print("[*] Shutting down system safely...")
     await asyncio.to_thread(shutdown_agent)
+
+
+async def run_tui():
+    from tui.app import PurrCatTUI
+    app = PurrCatTUI()
+    await app.run_async()
 
 
 async def main_async(enable_tui: bool):
     await init_core()
 
-    try:
-        if enable_tui:
-            print("⚠️  TUI 界面暂不可用，将以无界面模式启动")
-        print("以无界面(Headless)模式运行中，按 Ctrl+C 退出...")
-        await asyncio.Event().wait()
-    except (KeyboardInterrupt, asyncio.CancelledError):
-        pass
-    finally:
-        await shutdown_core()
+    if enable_tui:
+        print("[*] Starting TUI...")
+        try:
+            await run_tui()
+        except Exception as e:
+            print(f"[-] TUI error: {e}")
+            print("[*] Falling back to headless mode...")
+            enable_tui = False
+
+    if not enable_tui:
+        print("[*] Running in headless mode, press Ctrl+C to exit...")
+        try:
+            await asyncio.Event().wait()
+        except (KeyboardInterrupt, asyncio.CancelledError):
+            pass
+        finally:
+            await shutdown_core()
 
 
 def main():
-    parser = argparse.ArgumentParser(description="PurrCat Agent 启动脚本")
-    parser.add_argument("--headless", action="store_true", help="不启动 TUI，仅在后台运行")
+    parser = argparse.ArgumentParser(description="PurrCat Agent")
+    parser.add_argument("--headless", action="store_true", help="Run without TUI")
     args = parser.parse_args()
 
     asyncio.run(main_async(enable_tui=not args.headless))
