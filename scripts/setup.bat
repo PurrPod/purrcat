@@ -2,68 +2,77 @@
 setlocal enabledelayedexpansion
 chcp 65001 >nul
 cd /d "%~dp0.."
-echo 欢迎准备 PurrCat 运行环境 (Windows)...
+echo Welcome to PurrCat environment setup (Windows)...
 echo ==========================================
 
-:: 1. 检查 Docker 状态
-echo 正在检查 Docker 服务...
+:: 1. Check Docker status
+echo Checking Docker service...
 docker info >nul 2>&1
-if !ERRORLEVEL! neq 0 (
-    echo 错误：未检测到 Docker 或服务未启动！请打开 Docker Desktop。
+if %ERRORLEVEL% neq 0 (
+    echo Error: Docker not detected or service not running. Please open Docker Desktop.
     pause
     exit /b 1
 )
-echo Docker 引擎运行中。
+echo Docker engine is running.
 echo ==========================================
 
-:: 2. 构建 Agent 本地沙盒 (Docker)
-echo 正在构建 Docker 沙盒镜像 (my_agent_env:latest)...
-echo 首次拉取基础镜像可能需要几分钟，请耐心等待...
+:: 2. Interactive Network Prompt
+echo [Network Config] Choose APT package mirror for Docker container:
+echo 1. Official Source (Global / Default)
+echo 2. Aliyun Mirror (Users in China)
+set MIRROR_CHOICE=1
+set /p MIRROR_CHOICE="Enter 1 or 2 (Default is 1): "
 
-docker build -t my_agent_env:latest .
+set BUILD_ARG_APT=deb.debian.org
+if "%MIRROR_CHOICE%"=="2" set BUILD_ARG_APT=mirrors.aliyun.com
+
+echo ==========================================
+
+:: 3. Build Agent sandbox (Docker)
+echo Building Docker sandbox image using %BUILD_ARG_APT%...
+echo Note: First pull may take a few minutes, please wait...
+
+docker build -t my_agent_env:latest --build-arg APT_MIRROR="%BUILD_ARG_APT%" .
+
 if %ERRORLEVEL% neq 0 (
     echo.
-    echo 错误：Docker 镜像构建失败！
-    echo 常见原因及解决办法：
-    echo   1. 网络问题（国内用户极易遇到拉取超时）。
-    echo      建议配置阿里云个人镜像加速器，或开启全局代理。
-    echo   2. Docker Desktop 磁盘空间不足或未下载并打开 Docker Desktop
-    echo   3. 尚未登录 Docker Hub 或达到匿名拉取限制。
+    echo Error: Docker image build failed!
+    echo Common causes and solutions:
+    echo   1. Network issues - Check your proxy or try the other mirror.
+    echo   2. Docker Desktop disk space insufficient.
+    echo   3. Not logged into Docker Hub, or anonymous pull limit reached.
     echo.
-    echo 请修复网络或环境后，重新运行此脚本。
+    echo Please fix the environment and run the script again.
     pause
     exit /b 1
 )
-echo Docker 镜像构建完成！
+echo Docker image built successfully!
 echo ==========================================
 
-:: 3. 配置 Python 后端环境 (Conda)
-echo 正在配置 PurrCat 的 Conda 专属环境...
-:: 直接运行命令，如果没有 Conda，原生 cmd 会直接在这里抛出红字报错
+:: 4. Configure Python backend environment (Conda)
+echo Configuring PurrCat Conda environment...
 call conda env update -f environment.yml --prune
-if %ERRORLEVEL! neq 0 (
-    echo 环境更新失败或不存在，尝试全新创建...
+if %ERRORLEVEL% neq 0 (
+    echo Environment update failed or not exists, trying to create...
     call conda env create -f environment.yml
-    if !ERRORLEVEL! neq 0 (
-        echo Conda 环境配置失败！请确认已安装 Conda 并加入环境变量，或检查网络。
+    if %ERRORLEVEL% neq 0 (
+        echo Conda environment setup failed! Please ensure Conda is installed and in PATH, or check network.
         pause
         exit /b 1
     )
 )
-echo Conda 环境配置完成！
+echo Conda environment configured successfully!
 echo ==========================================
 
-:: 4. 下载 Embedding 模型
-echo 正在下载 Embedding 模型...
+:: 5. Download Embedding model
+echo Downloading Embedding model...
 call conda run -n PurrCat python "scripts\setup_emb.py"
 if %ERRORLEVEL% neq 0 (
-    echo Embedding 模型预下载失败！
+    echo Embedding model download failed!
     pause
     exit /b 1
 )
-echo 模型资源准备就绪！
-
+echo Model resources ready!
 echo ==========================================
-echo 恭喜！PurrCat 运行环境已搭建完毕。
-echo 下一步：请运行 'purrcat start' 启动项目。
-pause
+echo Congratulations! PurrCat environment is ready.
+echo Next: Run 'purrcat start' to start the project.

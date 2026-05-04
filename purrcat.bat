@@ -23,17 +23,17 @@ if "%COMMAND%"=="setup" (
 ) else if "%COMMAND%"=="env" (
     python "scripts\cli.py" env %ARGS%
 ) else (
-    echo PurrCat CLI - 跨平台 AI Agent 框架
+    echo PurrCat CLI - Cross-platform AI Agent Framework
     echo ==========================================
-    echo 用法: purrcat ^<command^> [options]
+    echo Usage: purrcat ^<command^> [options]
     echo.
-    echo 可用命令:
-    echo   setup   - 一键初始化环境 (Conda, Docker, 模型等)
-    echo   init    - 生成 .purrcat 配置文件
-    echo   start   - 启动 PurrCat (支持追加 --headless)
-    echo   env     - 查看环境变量参考
+    echo Available commands:
+    echo   setup   - Initialize environment (Conda, Docker, models, etc.)
+    echo   init    - Generate .purrcat configuration files
+    echo   start   - Start PurrCat (supports --headless flag)
+    echo   env     - Show environment variable reference
     echo.
-    echo 示例:
+    echo Examples:
     echo   purrcat setup
     echo   purrcat init
     echo   purrcat start --headless

@@ -1,4 +1,4 @@
-"""PurrCat CLI - 负责复杂的配置初始化 (init/env)"""
+"""PurrCat CLI - Handles complex configuration initialization (init/env)"""
 import sys
 import os
 import json
@@ -6,28 +6,29 @@ import argparse
 from datetime import datetime
 
 MODEL_CONFIG_TEMPLATE = """# ============================================
-# PurrCat 模型配置文件
-# 路径: .purrcat/.model.yaml
-# 生成: {timestamp}
+# PurrCat Model Configuration File
+# Path: .purrcat/.model.yaml
+# Generated: {timestamp}
 # ============================================
 
-# Embedding 模型（用于 RAG 检索）
+# Embedding model (used for RAG retrieval)
 embedding_model: BAAI/bge-small-zh-v1.5
 
-# 主模型配置（代码会自动取第一个作为 agent_model）
+# Main model configuration (code will automatically use the first one as agent_model)
 main:
   openai:deepseek-v4-flash:
     api_keys:
       - sk-your-first-api-key-here
     base_url: https://api.deepseek.com
     description: LLM worker
-    rpm: 60                # 每分钟请求上限
-    tpm: 1000000           # 每分钟 Token 上限
-    concurrency: 3         # 最大并发数
-    max_token: 500000      # 记忆窗口 Token 上限
+    rpm: 60                # requests per minute limit
+    tpm: 1000000           # tokens per minute limit
+    concurrency: 3         # max concurrency
+    max_token: 500000      # memory window token limit
 
 
-# 任务模型配置（至少有一个才能开启多agent协作，模型可以和main一样，但不能同一个API-Key）
+# Task model configuration (at least one required for multi-agent collaboration,
+# model can be the same as main, but cannot use the same API-Key)
 task:
   # openai:deepseek-v4-flash:
   #   api_keys:
@@ -42,19 +43,19 @@ task:
 """
 
 SENSOR_CONFIG_TEMPLATE = """# ============================================
-# PurrCat 传感器配置文件
-# 路径: .purrcat/.sensor.yaml
-# 生成: {timestamp}
+# PurrCat Sensor Configuration File
+# Path: .purrcat/.sensor.yaml
+# Generated: {timestamp}
 # ============================================
 
-# 飞书集成（可选）
+# Feishu integration (optional)
 feishu:
   enabled: false
   app_id: ""
   app_secret: ""
   chat_id: ""
 
-# RSS 订阅（可选）
+# RSS subscriptions (optional)
 rss:
   enabled: false
   subscriptions:
@@ -62,15 +63,15 @@ rss:
       url: https://lilianweng.github.io/lil-log/feed.xml
     - name: Ahead of AI
       url: https://magazine.sebastianraschka.com/feed
-    - name: Latepost 晚点
+    - name: Latepost
       url: https://rsshub.rssforever.com/latepost
 
-# 心跳传感器（可选）
+# Heartbeat sensor (optional)
 heartbeat:
   enabled: false
-  interval: 1800          # 心跳间隔（秒）
+  interval: 1800          # heartbeat interval (seconds)
 
-# PurrMemo 记忆系统（可选）
+# PurrMemo memory system (optional)
 purrmemo:
   enabled: false
   host: http://127.0.0.1:8000
@@ -79,44 +80,52 @@ purrmemo:
 """
 
 FILE_CONFIG_TEMPLATE = """# ============================================
-# PurrCat 文件系统配置文件
-# 路径: .purrcat/.file.yaml
-# 生成: {timestamp}
+# PurrCat File System Configuration File
+# Path: .purrcat/.file.yaml
+# Generated: {timestamp}
 # ============================================
 
-# 禁止读取/导入的目录
+# Directories prohibited from reading/importing
 dont_read_dirs:
   - src/
 
-# 允许 export_file 写入的目录
+# Directories allowed for export_file writing
 allowed_export_dirs:
   - .
 
-# 挂载到 Docker 沙盒的目录
+# Directories mounted to Docker sandbox
 docker_mount:
   - sandbox/
 
-# 沙盒目录
+# Sandbox directories
 sandbox_dirs:
   - sandbox/
   - agent_vm/
 
-# 技能目录
+# Skill directories
 skill_dir:
   - skill
 """
 
 
-def _generate_memory_config(purrcat_dir):
-    """生成记忆系统配置文件"""
+def _prompt_overwrite(file_path, force):
+    """Prompt user for overwrite confirmation. Returns True if should overwrite."""
+    if force:
+        return True
+    print(f"! File already exists: {file_path}")
+    val = input("  Overwrite? (y/N): ").strip().lower()
+    if val == "y":
+        return True
+    print("  [-] Skipped")
+    return False
+
+
+def _generate_memory_config(purrcat_dir, force=False):
+    """Generate memory system configuration file"""
     memory_path = os.path.join(purrcat_dir, ".memory.json")
 
-    if os.path.exists(memory_path):
-        print(f"! 文件已存在: {memory_path}")
-        val = input("  覆盖？(y/N): ").strip().lower()
-        if val != "y":
-            print("  已保留原配置")
-            return
+    if os.path.exists(memory_path) and not _prompt_overwrite(memory_path, force):
+        return False
 
     memory_config = {
         "openai": {
@@ -157,21 +166,19 @@ def _generate_memory_config(purrcat_dir):
     try:
         with open(memory_path, "w", encoding="utf-8") as f:
             json.dump(memory_config, f, indent=2, ensure_ascii=False)
-        print(f"+ 记忆系统配置已生成: {memory_path}")
+        print(f"[+] .memory.json generated")
+        return True
     except Exception as e:
-        print(f"X 写入 .memory.json 失败: {e}")
+        print(f"X Failed to write .memory.json: {e}")
+        return False
 
 
-def _generate_mcp_config(purrcat_dir):
-    """生成 MCP 配置文件"""
+def _generate_mcp_config(purrcat_dir, force=False):
+    """Generate MCP configuration file"""
     mcp_path = os.path.join(purrcat_dir, "mcp_config.json")
 
-    if os.path.exists(mcp_path):
-        print(f"! 文件已存在: {mcp_path}")
-        val = input("  覆盖？(y/N): ").strip().lower()
-        if val != "y":
-            print("  已保留原配置")
-            return
+    if os.path.exists(mcp_path) and not _prompt_overwrite(mcp_path, force):
+        return False
 
     mcp_config = {
         "mcpServers": {
@@ -203,126 +210,148 @@ def _generate_mcp_config(purrcat_dir):
     try:
         with open(mcp_path, "w", encoding="utf-8") as f:
             json.dump(mcp_config, f, indent=2, ensure_ascii=False)
-        print(f"+ MCP 配置已生成: {mcp_path}")
+        print(f"[+] mcp_config.json generated")
+        return True
     except Exception as e:
-        print(f"X 写入 mcp_config.json 失败: {e}")
+        print(f"X Failed to write mcp_config.json: {e}")
+        return False
 
 
-def _generate_model_config(purrcat_dir):
-    """生成模型配置文件"""
+def _generate_model_config(purrcat_dir, force=False):
+    """Generate model configuration file"""
     model_path = os.path.join(purrcat_dir, ".model.yaml")
 
-    if os.path.exists(model_path):
-        print(f"! 文件已存在: {model_path}")
-        val = input("  覆盖？(y/N): ").strip().lower()
-        if val != "y":
-            print("  已保留原配置")
-            return
+    if os.path.exists(model_path) and not _prompt_overwrite(model_path, force):
+        return False
 
     content = MODEL_CONFIG_TEMPLATE.format(timestamp=datetime.now().strftime("%Y-%m-%d %H:%M"))
     try:
         with open(model_path, "w", encoding="utf-8") as f:
             f.write(content)
-        print(f"+ 模型配置已生成: {model_path}")
+        print(f"[+] .model.yaml generated")
+        return True
     except Exception as e:
-        print(f"X 写入 .model.yaml 失败: {e}")
+        print(f"X Failed to write .model.yaml: {e}")
+        return False
 
 
-def _generate_sensor_config(purrcat_dir):
-    """生成传感器配置文件"""
+def _generate_sensor_config(purrcat_dir, force=False):
+    """Generate sensor configuration file"""
     sensor_path = os.path.join(purrcat_dir, ".sensor.yaml")
 
-    if os.path.exists(sensor_path):
-        print(f"! 文件已存在: {sensor_path}")
-        val = input("  覆盖？(y/N): ").strip().lower()
-        if val != "y":
-            print("  已保留原配置")
-            return
+    if os.path.exists(sensor_path) and not _prompt_overwrite(sensor_path, force):
+        return False
 
     content = SENSOR_CONFIG_TEMPLATE.format(timestamp=datetime.now().strftime("%Y-%m-%d %H:%M"))
     try:
         with open(sensor_path, "w", encoding="utf-8") as f:
             f.write(content)
-        print(f"+ 传感器配置已生成: {sensor_path}")
+        print(f"[+] .sensor.yaml generated")
+        return True
     except Exception as e:
-        print(f"X 写入 .sensor.yaml 失败: {e}")
+        print(f"X Failed to write .sensor.yaml: {e}")
+        return False
 
 
-def _generate_file_config(purrcat_dir):
-    """生成文件系统配置文件"""
+def _generate_file_config(purrcat_dir, force=False):
+    """Generate file system configuration file"""
     file_path = os.path.join(purrcat_dir, ".file.yaml")
 
-    if os.path.exists(file_path):
-        print(f"! 文件已存在: {file_path}")
-        val = input("  覆盖？(y/N): ").strip().lower()
-        if val != "y":
-            print("  已保留原配置")
-            return
+    if os.path.exists(file_path) and not _prompt_overwrite(file_path, force):
+        return False
 
     content = FILE_CONFIG_TEMPLATE.format(timestamp=datetime.now().strftime("%Y-%m-%d %H:%M"))
     try:
         with open(file_path, "w", encoding="utf-8") as f:
             f.write(content)
-        print(f"+ 文件系统配置已生成: {file_path}")
+        print(f"[+] .file.yaml generated")
+        return True
     except Exception as e:
-        print(f"X 写入 .file.yaml 失败: {e}")
+        print(f"X Failed to write .file.yaml: {e}")
+        return False
 
 
-def cmd_init():
-    """生成 .purrcat 配置目录"""
+def cmd_help():
+    """Print help menu"""
+    print("PurrCat CLI - Cross-platform AI Agent Framework")
+    print("==========================================")
+    print("Usage: purrcat <command> [options]")
+    print("")
+    print("Commands:")
+    print("  setup   - Initialize environment (Conda, Docker, Models)")
+    print("  init    - Generate .purrcat config templates")
+    print("  start   - Start PurrCat (append --headless for background run)")
+    print("  env     - View environment variable reference")
+    print("")
+    print("Examples:")
+    print("  purrcat setup")
+    print("  purrcat init")
+    print("  purrcat init --force    # Skip all prompts (CI/CD)")
+    print("  purrcat start --headless")
+
+
+def cmd_init(force=False):
+    """Generate .purrcat configuration directory"""
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     purrcat_dir = os.path.join(project_root, ".purrcat")
 
     if os.path.exists(purrcat_dir):
-        print(f"! 目录已存在: {purrcat_dir}")
-        val = input("  覆盖所有配置文件？(y/N): ").strip().lower()
-        if val != "y":
-            print("  已取消")
-            return
-
-    try:
-        os.makedirs(purrcat_dir, exist_ok=True)
-        print(f"[+] 创建配置目录: {purrcat_dir}")
-    except Exception as e:
-        print(f"X 创建目录失败: {e}")
-        sys.exit(1)
-
-    _generate_model_config(purrcat_dir)
-    _generate_sensor_config(purrcat_dir)
-    _generate_file_config(purrcat_dir)
-    _generate_mcp_config(purrcat_dir)
-    _generate_memory_config(purrcat_dir)
+        if force:
+            print(f"[*] Directory exists: {purrcat_dir} (force mode, overwriting)")
+        else:
+            print(f"! Directory already exists: {purrcat_dir}")
+            val = input("  Overwrite all config files? (y/N): ").strip().lower()
+            if val != "y":
+                print("  Cancelled")
+                return
+    else:
+        try:
+            os.makedirs(purrcat_dir, exist_ok=True)
+            print(f"[+] Created config directory: {purrcat_dir}")
+        except Exception as e:
+            print(f"X Failed to create directory: {e}")
+            sys.exit(1)
 
     print("")
-    print("[-] 配置文件结构:")
-    print("   .purrcat/")
-    print("   |-- .model.yaml      # 模型配置")
-    print("   |-- .sensor.yaml     # 传感器配置")
-    print("   |-- .file.yaml       # 文件系统配置")
-    print("   |-- .memory.json     # 记忆系统配置")
-    print("   +-- mcp_config.json  # MCP 服务器配置")
+    print("[*] Generating config files...")
+
+    results = []
+    results.append(("model", _generate_model_config(purrcat_dir, force)))
+    results.append(("sensor", _generate_sensor_config(purrcat_dir, force)))
+    results.append(("file", _generate_file_config(purrcat_dir, force)))
+    results.append(("mcp", _generate_mcp_config(purrcat_dir, force)))
+    results.append(("memory", _generate_memory_config(purrcat_dir, force)))
+
     print("")
-    print("[*] 下一步:")
-    print("    编辑 .purrcat/.model.yaml 填入 API Key")
-    print("    编辑 .purrcat/.memory.json 配置记忆系统")
-    print("    编辑 .purrcat/mcp_config.json 填入 MCP Token")
-    print("    然后运行: purrcat start")
+    print("[*] Summary:")
+    generated = sum(1 for _, ok in results if ok)
+    skipped = sum(1 for _, ok in results if not ok)
+    print(f"    Generated: {generated}")
+    print(f"    Skipped: {skipped}")
+
+    if generated > 0:
+        print("")
+        print("[*] Next steps:")
+        print("    Edit .purrcat/.model.yaml to add your API Key")
+        print("    Edit .purrcat/.memory.json to configure memory system")
+        print("    Edit .purrcat/mcp_config.json to add MCP Token")
+        print("    Then run: purrcat start")
 
 
 def cmd_env():
-    """打印环境变量参考"""
-    print("""# PurrCat 环境变量参考
-# 提示: 当前版本暂不支持环境变量覆盖配置
-#       请直接编辑 .purrcat/ 目录下的配置文件
+    """Print environment variable reference"""
+    print("""# PurrCat Environment Variable Reference
+# Note: Current version does not support environment variable override
+#       Please directly edit configuration files in .purrcat/ directory
 #
-# 示例:
-#   # 编辑模型配置
+# Examples:
+#   # Edit model configuration
 #   vim .purrcat/.model.yaml
 #
-#   # 编辑传感器配置
+#   # Edit sensor configuration
 #   vim .purrcat/.sensor.yaml
 #
-#   # 编辑 MCP 配置
+#   # Edit MCP configuration
 #   vim .purrcat/mcp_config.json
 """)
 
@@ -331,13 +360,18 @@ def main():
     parser = argparse.ArgumentParser(
         prog="purrcat",
         description="PurrCat - AI Agent Framework Configuration Tool",
+        add_help=False
     )
-    parser.add_argument("command", choices=["init", "env"])
+    parser.add_argument("command", nargs="?", default="help", choices=["init", "env", "help"])
+    parser.add_argument("--force", "-f", action="store_true", help="Force overwrite existing files")
+    parser.add_argument("--help", "-h", action="store_true", help="Show this help message")
 
     args, _ = parser.parse_known_args()
 
-    if args.command == "init":
-        cmd_init()
+    if args.help or args.command == "help":
+        cmd_help()
+    elif args.command == "init":
+        cmd_init(force=args.force)
     elif args.command == "env":
         cmd_env()
 

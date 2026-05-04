@@ -1,48 +1,71 @@
 #!/bin/bash
 set -e
 cd "$(dirname "$0")/.."
-echo "欢迎准备 PurrCat 运行环境 (macOS / Linux)..."
+echo "Welcome to PurrCat environment setup (macOS / Linux)..."
 echo "=========================================="
 
-echo "正在检查 Docker 服务..."
+# 1. Check Docker status
+echo "Checking Docker service..."
 if ! docker info >/dev/null 2>&1; then
-    echo "错误：Docker 未安装或守护进程未运行。请启动 Docker 服务后重试。"
+    echo "Error: Docker not installed or daemon not running. Please start Docker and try again."
     exit 1
 fi
-echo "Docker 引擎运行中。"
+echo "Docker engine is running."
 echo "=========================================="
 
-echo "正在构建 Docker 沙盒镜像 (my_agent_env:latest)..."
-if docker build -t my_agent_env:latest .; then
-    echo "[官方源] Docker 沙盒镜像构建成功！"
-elif docker build -t my_agent_env:latest --build-arg REGISTRY=docker.1panel.live/library/ .; then
-    echo "[加速源 1] Docker 沙盒镜像构建成功！"
-elif docker build -t my_agent_env:latest --build-arg REGISTRY=dockerpull.com/library/ .; then
-    echo "[加速源 2] Docker 沙盒镜像构建成功！"
-elif docker build -t my_agent_env:latest --build-arg REGISTRY=m.daocloud.io/docker.io/library/ .; then
-    echo "[加速源 3] Docker 沙盒镜像构建成功！"
-else
-    echo "错误：Docker 镜像构建彻底失败！请检查网络连接。"
-    exit 1
+# 2. Interactive Network Prompt
+echo "[Network Config] Choose APT package mirror for Docker container:"
+echo "1. Official Source (Global / Default)"
+echo "2. Aliyun Mirror (Users in China)"
+read -p "Enter 1 or 2 (Default is 1): " MIRROR_CHOICE
+
+BUILD_ARG_APT="deb.debian.org"
+if [ "$MIRROR_CHOICE" == "2" ]; then
+    BUILD_ARG_APT="mirrors.aliyun.com"
 fi
 echo "=========================================="
 
-echo "正在配置 PurrCat 的 Conda 专属环境..."
+# 3. Build Agent sandbox (Docker)
+echo "Building Docker sandbox image using $BUILD_ARG_APT..."
+echo "Note: First pull may take a few minutes, please wait..."
+
+set +e # Temporarily disable set -e to capture error
+# Pass the temporary argument
+docker build -t my_agent_env:latest --build-arg APT_MIRROR="$BUILD_ARG_APT" .
+BUILD_STATUS=$?
+set -e
+
+if [ $BUILD_STATUS -ne 0 ]; then
+    echo ""
+    echo "Error: Docker image build failed completely!"
+    echo "Common causes:"
+    echo "  1. Network issues - Check your proxy or try the other mirror."
+    echo "  2. Docker disk space insufficient."
+    echo "  3. Not logged into Docker Hub, or anonymous pull limit reached."
+    echo "Please fix the environment and try again."
+    exit 1
+fi
+echo "Docker image built successfully!"
+echo "=========================================="
+
+# 4. Configure Python backend environment
+echo "Configuring PurrCat Conda environment..."
 eval "$(conda shell.bash hook)"
 
 if conda info --envs 2>/dev/null | grep -q 'PurrCat'; then
-    echo "环境 'PurrCat' 已存在，正在尝试更新依赖..."
+    echo "Environment 'PurrCat' already exists, trying to update dependencies..."
     conda env update -f environment.yml --prune
 else
     conda env create -f environment.yml
 fi
-echo "Conda 环境配置完成！"
+echo "Conda environment configured successfully!"
 echo "=========================================="
 
-echo "正在下载 Embedding 模型..."
+# 5. Download Embedding model
+echo "Downloading Embedding model..."
 conda run -n PurrCat python "scripts/setup_emb.py"
-echo "模型资源准备就绪！"
-
+echo "Model resources ready!"
 echo "=========================================="
-echo "恭喜！PurrCat 运行环境已搭建完毕。"
-echo "下一步：请运行 './purrcat start' 启动项目。"
+
+echo "Congratulations! PurrCat environment is ready."
+echo "Next: Run './purrcat start' to start the project."
