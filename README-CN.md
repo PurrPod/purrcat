@@ -7,7 +7,7 @@
 [![Python Version](https://img.shields.io/badge/python-3.10%2B-blue)]()
 [![License](https://img.shields.io/badge/license-GPLv3-green)]()
 
-[**English Docs**](./README.md)
+[English](./README.md)
 
 </div>
 
