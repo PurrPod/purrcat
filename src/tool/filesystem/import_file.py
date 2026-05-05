@@ -22,7 +22,7 @@ def _load_blacklist():
 
 def _is_denied(path: str, blacklist: list) -> bool:
     """精准路径匹配，不误伤其他目录的同名文件夹"""
-    path_norm = os.path.normcase(os.path.abspath(path))
+    path_norm = os.path.normcase(os.path.realpath(path))
 
     for rule_norm in blacklist:
         try:
@@ -41,6 +41,8 @@ def import_file(host_path: str, sandbox_dir: str = "imports") -> dict:
     - 禁止导入 dont_read_dirs 内的文件
     - 导入上级目录时，黑名单内的子文件/子目录自动跳过
     - 目录导入有 30MB 总大小限制
+    - 防御软链接绕过 (Symlink Bypass)
+    - 防御目标路径穿越 (Path Traversal)
 
     Args:
         host_path: 宿主机上文件/目录的绝对路径
@@ -49,7 +51,7 @@ def import_file(host_path: str, sandbox_dir: str = "imports") -> dict:
     Returns:
         包含 sandbox_path, host_path, message 的字典
     """
-    host_path = os.path.abspath(host_path)
+    host_path = os.path.realpath(host_path)
 
     # 路径存在性检查
     if not os.path.exists(host_path):
@@ -78,8 +80,12 @@ def import_file(host_path: str, sandbox_dir: str = "imports") -> dict:
 
     sandbox_subdir = sandbox_subdir.strip()
 
+    # 确定挂载点和目标绝对路径
     mount_point = os.path.abspath("./agent_vm")
-    dest_dir = os.path.join(mount_point, sandbox_subdir) if sandbox_subdir else mount_point
+    dest_dir = os.path.abspath(os.path.join(mount_point, sandbox_subdir) if sandbox_subdir else mount_point)
+    if os.path.commonpath([mount_point, dest_dir]) != mount_point:
+        raise PermissionDeniedError(sandbox_dir, "目标路径越权：不允许将文件导入到沙箱外部！")
+
     os.makedirs(dest_dir, exist_ok=True)
 
     MAX_SIZE = 30 * 1024 * 1024  # 30MB
