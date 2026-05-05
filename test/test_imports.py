@@ -6,7 +6,11 @@
 import sys
 import os
 import traceback
+from pathlib import Path
 
+project_root = str(Path(__file__).resolve().parent.parent)
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 def test_import(module_name):
     """测试单个模块导入"""
     try:
