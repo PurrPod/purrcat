@@ -47,8 +47,7 @@ class SensorGateway:
         from src.agent.manager import get_agent
         agent = get_agent()
         if agent:
-            payload = json.dumps(message_dict, ensure_ascii=False)
-            agent.force_push(payload, type=sensor.sensor_type)
+            agent.force_push(content=content, type=sensor.sensor_type)
 
     def send(self, message: Any, **kwargs) -> bool:
         success_count = 0

@@ -242,6 +242,7 @@ class Agent:
             except json.JSONDecodeError:
                 snip = result_content if isinstance(result_content, str) else str(result_content)
 
+
             get_gateway().send(f"🔧{target_tool_name}({args_str})\n\n---\n\n{snip}")
             self.current_history.append({
                 "role": "tool",
