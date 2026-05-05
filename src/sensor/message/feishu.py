@@ -63,7 +63,7 @@ class FeishuSensor(BaseSensor):
                 .receive_id_type("chat_id") \
                 .request_body(CreateMessageRequestBody.builder()
                               .receive_id(receive_id)
-                              .msg_type("text")
+                              .msg_type("post")
                               .content(json.dumps({"text": message}))
                               .build()) \
                 .build()

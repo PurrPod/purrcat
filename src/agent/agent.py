@@ -230,22 +230,19 @@ class Agent:
             # --- 5. 执行与挂起逻辑 ---
             args_str = ", ".join([f'{k}={repr(v)}' for k, v in arguments.items()]) if isinstance(arguments, dict) else str(arguments)
             from src.sensor import get_gateway
-            get_gateway().send(f"🔧{target_tool_name}({args_str})")
             from src.utils.config import get_model_config
             model_cfg = get_model_config().get("main", {}).get(self.name, {})
             max_tokens = model_cfg.get("max_token", 500000)
             remaining = max_tokens - self.window_token
 
             result_content = dispatch_tool(target_tool_name, arguments)
-            finish_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
             try:
                 parsed_result = json.loads(result_content)
                 snip = parsed_result.get('snip', '') if isinstance(parsed_result, dict) else ''
             except json.JSONDecodeError:
                 snip = result_content if isinstance(result_content, str) else str(result_content)
 
-            get_gateway().send(f"📦 {snip}")
+            get_gateway().send(f"🔧{target_tool_name}({args_str})\n\n---\n\n{snip}")
             self.current_history.append({
                 "role": "tool",
                 "tool_call_id": tool_call.id,
