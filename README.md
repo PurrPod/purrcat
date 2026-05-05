@@ -2,88 +2,88 @@
 
 # PurrCat
 
-*A highly customizable local personal agent framework.*
+*高度可定制的本地优先个人 Agent 框架。*
 
 [![Python Version](https://img.shields.io/badge/python-3.10%2B-blue)]()
 [![License](https://img.shields.io/badge/license-GPLv3-green)]()
 
-[中文文档](./README-CN.md)
+[\[English\]](README-EN.md)
 
 </div>
 
 ---
 
-## Quick Start
+## 快速开始
 
 ```bash
 git clone https://github.com/PurrPod/purrcat.git
 cd purrcat
 
-purrcat setup       # One-click setup (Docker sandbox + Conda + model)
-purrcat init        # Generate .purrcat/ config files
-purrcat start       # Launch with TUI
-purrcat start --headless  # Launch without TUI
+purrcat setup       # 一键部署（Docker沙盒 + Conda环境 + 嵌入模型）
+purrcat init        # 生成 .purrcat/ 配置文件
+purrcat start       # 启动 TUI 界面
+purrcat start --headless  # 无界面启动
 ```
 
-[Full docs](https://purrpod.github.io/)
+[完整文档](https://purrpod.github.io/)
 
 ---
 
-## Highlights
+## 核心亮点
 
-**1. Dual-layer sandbox isolation.** All code execution runs inside Docker containers, isolated from the host. A strict whitelist system (`.purrcat/.file.yaml`) controls host file access: `dont_read_dirs` (privacy zone), `sandbox_dirs` (operation domain), `docker_mount` (mounting channel).
+**1. 双重沙盒隔离。** 所有代码执行封锁在 Docker 容器内，与宿主机完全隔离。通过 `.purrcat/.file.yaml` 严格白名单控制文件访问：`dont_read_dirs`（隐私禁区）、`sandbox_dirs`（操作域）、`docker_mount`（挂载通道），从源头杜绝 Agent 暴走风险。
 
-**2. Customizable Harness Engineering.** Dispatch multiple Experts (research assistant, trader, programmer) within the same system. Extend via standard Skill, modular Tool (`src/tool/`, dynamically loaded by `dispatch_tool()`), or full Harness/Expert (inherit `BaseTask`, rewrite state machine).
+**2. 可定制 Harness Engineering。** 在同一系统内调度多个 Expert（科研助手、交易员、程序员）。通过标准 Skill、模块化 Tool（`src/tool/`，由 `dispatch_tool()` 动态加载）、或完整 Harness/Expert（继承 `BaseTask`）扩展。
 
-**3. 99%+ KV Cache hit rate.** `dispatch_tool()` decouples tool schemas from System Prompts, so model KV Cache never invalidates from dynamic schema injection. This delivers extreme token economy and millisecond-level response.
+**3. 99%+ KV Cache 命中率。** `dispatch_tool()` 将工具 Schema 从 System Prompt 中剥离，模型 KV Cache 不会因动态注入而失效。实现极致 Token 经济性与毫秒级响应。
 
-**4. 7x24 reliability.** `APIKeyManager` auto load-balances across API keys (least-busy-first). Each subtask has persistent checkpoints saved every round. Crash? Reload and resume from last checkpoint.
+**4. 7x24 小时稳定运行。** `APIKeyManager` 自动负载均衡（最少活跃优先）。每轮对话状态实时落盘为 Checkpoint。崩溃后重载即可从断点恢复。
 
-**5. True multi-core concurrency.** Background subtasks run with independent API keys and state machines. Main chat session never blocks. Issue new commands while Agent processes heavy tasks.
+**5. 多核并发。** 后台子任务独立绑定 API Key 和状态机，主会话永不阻塞。Agent 处理繁重任务时仍可下达新指令。
 
-**6. Memory and soul.** Memo tool + PurrMemo local engine captures preferences automatically. Heartbeat sensor (`HARNESS.md`) enables unattended self-iteration. Modify `SOUL.md` to inject unique personality.
+**6. 记忆与灵魂。** Memo 工具 + PurrMemo 本地引擎自动捕捉偏好。心跳 Sensor（`HARNESS.md`）实现无人值守自主迭代。修改 `SOUL.md` 注入独特人格。
 
 ---
 
-## Architecture
+## 架构分层
 
 ```
-Sensor Layer (Gateway)     Feishu / RSS / Clock -> Gateway.push()
+Sensor 层 (网关)         Feishu / RSS / Clock -> Gateway.push()
        |
-Agent Layer                Dialog / force_push / Memory
+Agent 层                 对话 / force_push / 记忆
        |
-Model Layer (APIKeyManager)  Least-busy key allocation
+Model 层 (APIKeyManager)  最少活跃 Key 分配
        |
-Tool Layer (dispatch_tool)   Bash / Fetch / FileSystem / Search / Memo / CallMCP / Cron / Task
+Tool 层 (dispatch_tool)   Bash / Fetch / FileSystem / Search / Memo / CallMCP / Cron / Task
        |
-Harness Layer (BaseTask)     Atomic methods: run_llm_step / run_tool_calling / check_memory / save_checkpoints
+Harness 层 (BaseTask)     原子方法: run_llm_step / run_tool_calling / check_memory / save_checkpoints
 ```
 
 ---
 
-## Documentation
+## 文档导航
 
-- [Introduction](https://purrpod.github.io/intro)
-- [Deployment Guide](https://purrpod.github.io/guide/deployment)
-- [Architecture](https://purrpod.github.io/develop/architecture)
-- [Extension Guide](https://purrpod.github.io/develop/extension)
-- [Configuration](https://purrpod.github.io/config/)
-- [FAQ](https://purrpod.github.io/guide/faq)
-
----
-
-## Acknowledgments
-
-- Thanks **Gemini Pro 3.1** for assisting in building the UI interface.
-- Thanks **[zhenghuanle](https://github.com/zhenghuanle)** for testing the installation flow.
-- Thanks **[Gaeulczy](https://github.com/Gaeulczy)** for testing the one-click setup and start scripts.
+- [介绍](https://purrpod.github.io/intro)
+- [部署指南](https://purrpod.github.io/guide/deployment)
+- [架构介绍](https://purrpod.github.io/develop/architecture)
+- [二次开发](https://purrpod.github.io/develop/extension)
+- [配置说明](https://purrpod.github.io/config/)
+- [常见问题](https://purrpod.github.io/guide/faq)
 
 ---
 
-## License & Disclaimer
+## 致谢
 
-This project is licensed under the **GNU GPL-3.0 License**.
+- 感谢 **Gemini Pro 3.1** 协助构建精美的 UI 界面。
+- 感谢 **[zhenghuanle](https://github.com/zhenghuanle)** 测试了从零开始的安装流程。
+- 感谢 **[Gaeulczy](https://github.com/Gaeulczy)** 测试了一键安装和运行脚本。
 
-- **Core copyleft**: Any distribution of modified core framework must be open-sourced under GPL-3.0.
-- **Plugin/Extension exemption**: Plugins, Harness/Expert, and external services developed on standard interfaces are **not subject to GPL contagion** — they can be closed-source and used commercially.
-- **Disclaimer**: This software is provided "as is", without warranty of any kind. The authors are not liable for any damages arising from its use.
+---
+
+## 许可证
+
+本项目核心框架采用 **GNU GPL-3.0** 协议开源。
+
+- **核心传染性**：对外分发修改后的核心框架必须开源。
+- **插件/拓展豁免**：插件、Harness/Expert 及外部服务**不受 GPL 传染约束**，可闭源商用。
+- **免责声明**：代码"按原样"提供，不提供任何担保。
