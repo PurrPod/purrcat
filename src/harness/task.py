@@ -1,3 +1,4 @@
+import asyncio
 import datetime
 import json
 import os
@@ -8,12 +9,12 @@ import traceback
 from typing import Dict
 
 from json_repair import repair_json
-from sympy import false
 
 from src.model import Model
 from src.utils.config import DATA_DIR
 from src.utils.enums import TaskState, LogType
 from src.tool.utils.route import dispatch_tool
+from src.harness.dag.engine import DAGEngine
 
 TASK_INSTANCES = {}
 dirty_tasks = set()
@@ -47,7 +48,7 @@ class BaseTask:
     提供底层大模型通讯、工具解析、记忆管理、幻觉审查与断点恢复等基础设施。
     """
     _EXPERT_REGISTRY = {}
-
+    _HIGH_LEVEL_MODULE = {}
     def __init_subclass__(cls, expert_type=None, description="", parameters=None, **kwargs):
         super().__init_subclass__(**kwargs)
         if expert_type:
@@ -66,7 +67,7 @@ class BaseTask:
         self.model = Model(core)
         self.key_prefix = self.model.key_prefix
         self.state = TaskState.READY
-        self.time_step = {"start": False, "mock": False} # 标记节点完成情况
+        self.dag_state = {}
         self._lock = threading.Lock()
         self._io_lock = threading.Lock()
         self._killed = False
@@ -75,9 +76,8 @@ class BaseTask:
         self.token_usage = 0
         self.checkpoint_dir = os.path.join(DATA_DIR, "checkpoints", "task", f"{self.task_name}_{self.task_id}")
 
-        # 子类完全可以不维护这个main_history，这个只是方便线性任务而引入的
         self.main_history = []
-
+        self.workplace = f"agent_vm/task_workplace/{self.task_name}"
         if self.task_id not in TASK_INSTANCES:
             TASK_INSTANCES[self.task_id] = self
         self.save_checkpoints()
@@ -125,25 +125,59 @@ class BaseTask:
     # ==========================================
     # 原子化核心工作流
     # ==========================================
+    def _build_default_graph(self) -> dict:
+        """
+        生成一个默认的图定义（等同于以前 hardcode 的流程）。
+        未来这里将直接读取前端拖拽生成的 JSON 结构。
+        """
+        system_prompt = self._build_system_prompt()
+        user_prompt = self.prompt
+        
+        return {
+            "nodes": [
+                {"id": "node_init_list", "type": "EmptyList"},
+                {"id": "node_sys_msg", "type": "Appender", "data": {"item": {"role": "system", "content": system_prompt}}},
+                {"id": "node_user_msg", "type": "Appender", "data": {"item": {"role": "user", "content": user_prompt}}},
+                {"id": "node_tools", "type": "ToolKit"},
+                {"id": "node_loop", "type": "FileOutputLoop", "data": {"file_path": f"{self.workplace}/FINISHED.md"}}
+            ],
+            "edges": [
+                {"source": "node_init_list", "target": "node_sys_msg", "targetHandle": "list"},
+                {"source": "node_sys_msg", "target": "node_user_msg", "targetHandle": "list"},
+                {"source": "node_user_msg", "target": "node_loop", "targetHandle": "messages"},
+                {"source": "node_tools", "target": "node_loop", "targetHandle": "tools"}
+            ]
+        }
+
     def run(self):
-        """主循环：编排各原子化步骤形成工作流"""
-        self.result = ""
-        if not self.time_step["start"]:
-            self.state = TaskState.RUNNING
-            self.time_step["start"] = True
-        else:
-            pass
+        """主循环：加载并执行图引擎"""
+        self.state = TaskState.RUNNING
+        
         try:
-            if not self.time_step["mock"]:
-                self.main_history = []
-                self.main_history.append({"role":"system", "content":self._build_system_prompt()})
-                self.main_history.append({"role":"user", "content":self.prompt})
-                self.result = self.file_output_loop(self.main_history, self.get_base_tool_schema())
-                self.time_step["mock"] = True
-            else:
-                pass
+            graph_json = self._build_default_graph()
+            
+            engine = DAGEngine(context=self)
+            engine.load_graph(graph_json, saved_state=self.dag_state)
+            
+            final_dag_state = asyncio.run(engine.execute_all())
+            
+            self.dag_state = final_dag_state
+            
+            has_error = any(v["state"] == "ERROR" for v in self.dag_state.values())
+            if has_error:
+                self.state = TaskState.ERROR
+                self._cleanup_resources()
+                return "❌ 任务在 DAG 节点执行中遭遇失败。"
+            
             return self.handle_completed()
+            
+        except Exception as e:
+            self.state = TaskState.ERROR
+            self.log_and_notify(LogType.ERROR, f"❌ 图引擎执行崩溃: {traceback.format_exc()}")
+            self._cleanup_resources()
+            return f"❌ 内部崩溃: {e}"
         finally:
+            self.save_checkpoints()
             if hasattr(self, 'model') and self.model:
                 self.model.unbind()
 
@@ -159,17 +193,41 @@ class BaseTask:
         """调用大模型，传入上下文与工具"""
         self.check_kill()
         messages = self.check_tool(messages)
-        self.check_memory(messages)
+        if self.check_memory(messages):
+            self.flusher(messages)
         self.save_checkpoints()
         model = Model(self.core)
         response = model.chat(messages=messages, tools=tools)
         self.save_checkpoints()
         self.token_usage += self.track_token(response)
+        model.unbind()
         return response
     def check_file_exist(self, file_path: str):
         if os.path.exists(file_path):
             return True
         return False
+
+    def global_tool_kit(self):
+        from src.tool import BASE_TASK_TOOL_SCHEMA
+        task_done_schema = {
+            "type": "function",
+            "function": {
+                "name": "task_done",
+                "description": "标记当前阶段任务完成，表示当前阶段的工作已完成",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "summary": {
+                            "type": "string",
+                            "description": "对当前阶段的简单总结"
+                        }
+                    },
+                    "required": ["summary"]
+                }
+            }
+        }
+        return BASE_TASK_TOOL_SCHEMA + [task_done_schema]
+
     def file_output_loop(self, messages, tools, file_path):
         step = 0
         max_steps = 500
@@ -177,7 +235,7 @@ class BaseTask:
             step += 1
             try:
                 # 1. 执行 LLM 思考步骤
-                response = self.run_llm_step(messages=messages, tools=tools)
+                response = self.run_llm_step(messages=messages, tools=self.global_tool_kit())
                 assistant_msg = response.choices[0].message
                 messages.append(assistant_msg.model_dump(exclude_none=True))
                 tool_calling = self._extract_tool_calling(response)
@@ -191,7 +249,7 @@ class BaseTask:
                     else:
                         self.check_tool(messages)
                         messages.append({"role":"user" ,"content":f"检测到你还没有生成文件{file_path}，请及时生成。"})
-                        response = None
+                        continue
                 tool_messages = self.run_tool_calling(response)
                 if tool_messages:
                     messages.extend(tool_messages)
@@ -245,6 +303,7 @@ class BaseTask:
         pass
     def message_card(self, role, content):
         return {"role": role, "content": content}
+
     def run_tool_calling(self, response) -> list:
         """
         解析 response，调用普通工具。
@@ -337,10 +396,9 @@ class BaseTask:
 
             if tool_calls:
                 required_ids = {tc["id"] for tc in tool_calls} if isinstance(tool_calls[0], dict) else {tc.id for tc in
-                                                                                                        tool_calls}
+                                                                                         tool_calls}
                 found_ids = set()
                 is_valid = True
-
                 for i in range(last_assistant_idx + 1, len(history)):
                     msg = history[i]
                     if msg.get("role") != "tool":
@@ -361,45 +419,16 @@ class BaseTask:
 
     def check_memory(self, message):
         """溢出否：触发记忆清理机制"""
-        return false
+        return False
 
     def check_completed(self, tool_calling: list) -> bool:
         """完成否"""
         return any(tc.function.name == "task_done" for tc in tool_calling)
 
-    def check_request(self):
-        """有无追加指令（提取 pending_force_push 注入历史）"""
-        pass
-
     def handle_completed(self):
         """标记完成后的验收审查与资源收尾"""
         self.state = TaskState.COMPLETED
-        return f"✅任务完成：{self.result}"
-
-    def get_base_tool_schema(self) -> list:
-        """获取基础工具的 schema"""
-        from src.tool import BASE_TASK_TOOL_SCHEMA
-        
-        task_done_schema = {
-            "type": "function",
-            "function": {
-                "name": "task_done",
-                "description": "标记当前阶段任务完成，表示当前阶段的工作已完成",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "summary": {
-                            "type": "string",
-                            "description": "对当前阶段的简单总结"
-                        }
-                    },
-                    "required": ["summary"]
-                }
-            }
-        }
-        
-        return BASE_TASK_TOOL_SCHEMA + [task_done_schema]
-
+        return f"✅任务完成，工作产物痕迹存放在：{self.workplace}"
 
     def get_base_tool_name(self) -> set:
         """获取 base task 工具名集合，用于快速判断工具归属"""
@@ -409,9 +438,6 @@ class BaseTask:
         except ImportError:
             return set()
 
-    def memory_flush(self, history: list) -> list:
-        """压缩记忆核心逻辑，返回截断/压缩后的历史"""
-        pass
 
     @classmethod
     def load_checkpoint(cls, checkpoint_dir: str):
@@ -439,7 +465,7 @@ class BaseTask:
             if task.state in [TaskState.RUNNING]:
                 task.state = TaskState.INTERRUPTED
             task.token_usage = state.get("token_usage", 0)
-            task.time_step = state.get("time_step", {"start": False, "mock": False})
+            task.dag_state = state.get("dag_state", {})
             task.pending_force_push = state.get("pending_force_push", [])
             task.checkpoint_dir = os.path.join(DATA_DIR, "checkpoints", "task", f"{task.task_name}_{task.task_id}")
             task.main_history = history
@@ -485,7 +511,7 @@ class BaseTask:
             "key_prefix": self.model.key_prefix if self.model else None,
             "state": self.state,
             "token_usage": self.token_usage,
-            "time_step": self.time_step,
+            "dag_state": self.dag_state,
             "checkpoint_dir": self.checkpoint_dir,
             "pending_force_push": self.pending_force_push,
             "extra_state": self._on_save_state(),
