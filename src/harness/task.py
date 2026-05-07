@@ -8,6 +8,7 @@ import traceback
 from typing import Dict
 
 from json_repair import repair_json
+from sympy import false
 
 from src.model import Model
 from src.utils.config import DATA_DIR
@@ -137,7 +138,7 @@ class BaseTask:
                 self.main_history = []
                 self.main_history.append({"role":"system", "content":self._build_system_prompt()})
                 self.main_history.append({"role":"user", "content":self.prompt})
-                self.result = self.step_single_loop(self.main_history, self.get_base_tool_schema())
+                self.result = self.file_output_loop(self.main_history, self.get_base_tool_schema())
                 self.time_step["mock"] = True
             else:
                 pass
@@ -160,18 +161,21 @@ class BaseTask:
         messages = self.check_tool(messages)
         self.check_memory(messages)
         self.save_checkpoints()
-        response = self.model.chat(messages=messages, tools=tools)
+        model = Model(self.core)
+        response = model.chat(messages=messages, tools=tools)
         self.save_checkpoints()
         self.token_usage += self.track_token(response)
         return response
-
-    def step_single_loop(self, messages, tools):
+    def check_file_exist(self, file_path: str):
+        if os.path.exists(file_path):
+            return True
+        return False
+    def file_output_loop(self, messages, tools, file_path):
         step = 0
         max_steps = 500
         while step < max_steps:
             step += 1
             try:
-                self.check_request()
                 # 1. 执行 LLM 思考步骤
                 response = self.run_llm_step(messages=messages, tools=tools)
                 assistant_msg = response.choices[0].message
@@ -181,6 +185,13 @@ class BaseTask:
                 if not tool_calling:
                     messages.append({"role":"user","content":"检测到你没有调用任何工具，如已完成任务，请调用 task_done 总结该阶段任务"})
                 # 3. 执行工具调用
+                if self.check_completed(response):
+                    if self.check_file_exist(file_path):
+                        return messages
+                    else:
+                        self.check_tool(messages)
+                        messages.append({"role":"user" ,"content":f"检测到你还没有生成文件{file_path}，请及时生成。"})
+                        response = None
                 tool_messages = self.run_tool_calling(response)
                 if tool_messages:
                     messages.extend(tool_messages)
@@ -197,6 +208,43 @@ class BaseTask:
             self.log_and_notify(LogType.ERROR, f"❌ 任务失败: 超出最大思考步数 ({max_steps})")
             return f"❌ 任务失败: 超出最大思考步数 ({max_steps})"
 
+    def summary_output_loop(self, messages, tools=None):
+        step = 0
+        max_steps = 500
+        while step < max_steps:
+            step += 1
+            try:
+                # 1. 执行 LLM 思考步骤
+                response = self.run_llm_step(messages=messages, tools=tools)
+                assistant_msg = response.choices[0].message
+                messages.append(assistant_msg.model_dump(exclude_none=True))
+                tool_calling = self._extract_tool_calling(response)
+                # 2. 处理无工具调用
+                if not tool_calling:
+                    messages.append({"role": "user", "content": "检测到你没有调用任何工具，如已完成任务，请调用 task_done 总结该阶段任务"})
+                # 3. 执行工具调用
+                if self.check_completed(response):
+                    summary = response.choices[0].message.content
+                    return messages, summary
+                tool_messages = self.run_tool_calling(response)
+                if tool_messages:
+                    messages.extend(tool_messages)
+            except Exception as e:
+                self.state = TaskState.ERROR
+                self._cleanup_resources()
+                self.log_and_notify(LogType.ERROR, f"❌ 运行发生异常: {traceback.format_exc()}")
+                self.save_checkpoints()
+                break
+        if step >= max_steps and self.state != TaskState.COMPLETED:
+            self.state = TaskState.ERROR
+            self._cleanup_resources()
+            self.save_checkpoints()
+            self.log_and_notify(LogType.ERROR, f"❌ 任务失败: 超出最大思考步数 ({max_steps})")
+            return f"❌ 任务失败: 超出最大思考步数 ({max_steps})"
+    def flusher(self, messages, tools=None):
+        pass
+    def message_card(self, role, content):
+        return {"role": role, "content": content}
     def run_tool_calling(self, response) -> list:
         """
         解析 response，调用普通工具。
@@ -313,7 +361,7 @@ class BaseTask:
 
     def check_memory(self, message):
         """溢出否：触发记忆清理机制"""
-        pass
+        return false
 
     def check_completed(self, tool_calling: list) -> bool:
         """完成否"""
@@ -470,7 +518,7 @@ class BaseTask:
             return getattr(response.choices[0].message, "tool_calls", []) or []
         return []
 
-    def fetch_skill_content(self, skill_name: str) -> str:
+    def skill_fetcher(self, skill_name: str) -> str:
         """
         根据技能名称获取技能正文（不含元数据），返回结构化结果
         Args:
@@ -527,7 +575,6 @@ class BaseTask:
         return f"""相关技能：{found_name}
 技能目录：{skill_path}
 请结合技能手册进行任务：
-
 {content}"""
 
 
