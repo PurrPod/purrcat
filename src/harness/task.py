@@ -77,7 +77,7 @@ class BaseTask:
         self.checkpoint_dir = os.path.join(DATA_DIR, "checkpoints", "task", f"{self.task_name}_{self.task_id}")
 
         self.main_history = []
-        self.workplace = f"agent_vm/task_workplace/{self.task_name}"
+        self.workplace = f"agent_vm/task_workplace/{self.task_id}"
         if self.task_id not in TASK_INSTANCES:
             TASK_INSTANCES[self.task_id] = self
         self.save_checkpoints()
@@ -135,14 +135,12 @@ class BaseTask:
         
         return {
             "nodes": [
-                {"id": "node_init_list", "type": "EmptyList"},
                 {"id": "node_sys_msg", "type": "Appender", "data": {"item": {"role": "system", "content": system_prompt}}},
                 {"id": "node_user_msg", "type": "Appender", "data": {"item": {"role": "user", "content": user_prompt}}},
                 {"id": "node_tools", "type": "ToolKit"},
                 {"id": "node_loop", "type": "FileOutputLoop", "data": {"file_path": f"{self.workplace}/FINISHED.md"}}
             ],
             "edges": [
-                {"source": "node_init_list", "target": "node_sys_msg", "targetHandle": "list"},
                 {"source": "node_sys_msg", "target": "node_user_msg", "targetHandle": "list"},
                 {"source": "node_user_msg", "target": "node_loop", "targetHandle": "messages"},
                 {"source": "node_tools", "target": "node_loop", "targetHandle": "tools"}
@@ -152,25 +150,18 @@ class BaseTask:
     def run(self):
         """主循环：加载并执行图引擎"""
         self.state = TaskState.RUNNING
-        
         try:
             graph_json = self._build_default_graph()
-            
             engine = DAGEngine(context=self)
             engine.load_graph(graph_json, saved_state=self.dag_state)
-            
             final_dag_state = asyncio.run(engine.execute_all())
-            
             self.dag_state = final_dag_state
-            
             has_error = any(v["state"] == "ERROR" for v in self.dag_state.values())
             if has_error:
                 self.state = TaskState.ERROR
                 self._cleanup_resources()
                 return "❌ 任务在 DAG 节点执行中遭遇失败。"
-            
             return self.handle_completed()
-            
         except Exception as e:
             self.state = TaskState.ERROR
             self.log_and_notify(LogType.ERROR, f"❌ 图引擎执行崩溃: {traceback.format_exc()}")
@@ -234,31 +225,33 @@ class BaseTask:
         while step < max_steps:
             step += 1
             try:
-                # 1. 执行 LLM 思考步骤
-                response = self.run_llm_step(messages=messages, tools=self.global_tool_kit())
+                response = self.run_llm_step(messages=messages, tools=tools)
                 assistant_msg = response.choices[0].message
                 messages.append(assistant_msg.model_dump(exclude_none=True))
                 tool_calling = self._extract_tool_calling(response)
-                # 2. 处理无工具调用
+
                 if not tool_calling:
                     messages.append({"role":"user","content":"检测到你没有调用任何工具，如已完成任务，请调用 task_done 总结该阶段任务"})
-                # 3. 执行工具调用
-                if self.check_completed(response):
-                    if self.check_file_exist(file_path):
-                        return messages
-                    else:
-                        self.check_tool(messages)
-                        messages.append({"role":"user" ,"content":f"检测到你还没有生成文件{file_path}，请及时生成。"})
-                        continue
+                    continue
+                
                 tool_messages = self.run_tool_calling(response)
                 if tool_messages:
                     messages.extend(tool_messages)
+                
+                if self.check_completed(tool_calling):
+                    if self.check_file_exist(file_path):
+                        return messages
+                    else:
+                        messages.append({"role":"user","content":f"检测到你调用了 task_done，但目标文件 {file_path} 尚未生成。请检查是否生成在了其他路径，并及时生成目标文件。"})
+                        continue
+                        
             except Exception as e:
                 self.state = TaskState.ERROR
                 self._cleanup_resources()
                 self.log_and_notify(LogType.ERROR, f"❌ 运行发生异常: {traceback.format_exc()}")
                 self.save_checkpoints()
                 break
+                
         if step >= max_steps and self.state != TaskState.COMPLETED:
             self.state = TaskState.ERROR
             self._cleanup_resources()
@@ -272,27 +265,35 @@ class BaseTask:
         while step < max_steps:
             step += 1
             try:
-                # 1. 执行 LLM 思考步骤
                 response = self.run_llm_step(messages=messages, tools=tools)
                 assistant_msg = response.choices[0].message
                 messages.append(assistant_msg.model_dump(exclude_none=True))
                 tool_calling = self._extract_tool_calling(response)
-                # 2. 处理无工具调用
                 if not tool_calling:
                     messages.append({"role": "user", "content": "检测到你没有调用任何工具，如已完成任务，请调用 task_done 总结该阶段任务"})
-                # 3. 执行工具调用
-                if self.check_completed(response):
-                    summary = response.choices[0].message.content
-                    return messages, summary
+                    continue
                 tool_messages = self.run_tool_calling(response)
                 if tool_messages:
                     messages.extend(tool_messages)
+                
+                if self.check_completed(tool_calling):
+                    summary = assistant_msg.content or "任务完成"
+                    for tc in tool_calling:
+                        if tc.function.name == "task_done":
+                            try:
+                                args = json.loads(tc.function.arguments)
+                                summary = args.get("summary", summary)
+                            except:
+                                pass
+                    return messages, summary
+                    
             except Exception as e:
                 self.state = TaskState.ERROR
                 self._cleanup_resources()
                 self.log_and_notify(LogType.ERROR, f"❌ 运行发生异常: {traceback.format_exc()}")
                 self.save_checkpoints()
                 break
+                
         if step >= max_steps and self.state != TaskState.COMPLETED:
             self.state = TaskState.ERROR
             self._cleanup_resources()
@@ -395,16 +396,19 @@ class BaseTask:
             tool_calls = assistant_msg.get("tool_calls", [])
 
             if tool_calls:
-                required_ids = {tc["id"] for tc in tool_calls} if isinstance(tool_calls[0], dict) else {tc.id for tc in
-                                                                                         tool_calls}
+                required_ids = {tc["id"] for tc in tool_calls} if isinstance(tool_calls[0], dict) else {tc.id for tc in tool_calls}
                 found_ids = set()
                 is_valid = True
                 for i in range(last_assistant_idx + 1, len(history)):
                     msg = history[i]
-                    if msg.get("role") != "tool":
-                        is_valid = False
+                    if msg.get("role") == "tool":
+                        found_ids.add(msg.get("tool_call_id"))
+                    else:
+                        if required_ids != found_ids:
+                            is_valid = False
                         break
-                    found_ids.add(msg.get("tool_call_id"))
+                if required_ids != found_ids:
+                    is_valid = False
 
                 if not is_valid or required_ids != found_ids:
                     self.log_and_notify(LogType.SYSTEM, "🛠️ 检测到断点处工具调用未完全闭环，执行状态安全回滚...")

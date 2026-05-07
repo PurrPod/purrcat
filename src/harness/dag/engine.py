@@ -1,6 +1,5 @@
 import asyncio
 import traceback
-import copy
 from typing import Dict, Any, List, Type
 
 
@@ -29,7 +28,7 @@ class DAGNode:
             if source_node.state == "ERROR":
                 raise RuntimeError(f"上游节点 [{source_node.node_id}] 执行失败，级联中断。")
             
-            input_data[target_port] = copy.deepcopy(source_node.outputs.get(source_info["port"]))
+            input_data[target_port] = source_node.outputs.get(source_info["port"])
         return input_data
 
     async def run(self, context: Any):
@@ -61,27 +60,30 @@ class DAGNode:
         raise NotImplementedError
 
 
-class EmptyListNode(DAGNode):
-    async def execute(self, inputs, context):
-        return {"default": []}
-
-
 class StrAdapterNode(DAGNode):
     async def execute(self, inputs, context):
-        str1 = inputs.get("str1", "")
-        str2 = inputs.get("str2", "")
+        str1 = inputs.get("str1") or self.config.get("str1", "")
+        str2 = inputs.get("str2") or self.config.get("str2", "")
         return {"default": str1 + str2}
 
 
 class AppenderNode(DAGNode):
     async def execute(self, inputs, context):
         msg_list = inputs.get("list", [])
-        item = inputs.get("item")
+        msg_list = list(msg_list) if msg_list else []  # 确保是新的空列表
+        
+        item = inputs.get("item") or self.config.get("item")
+        role = inputs.get("role") or self.config.get("role", "user")
+        
         if item:
             if isinstance(item, list):
                 msg_list.extend(item)
             else:
-                msg_list.append(item)
+                if isinstance(item, str):
+                    msg_list.append({"role": role, "content": item})
+                else:
+                    msg_list.append(item)
+                
         return {"default": msg_list}
 
 
@@ -105,6 +107,30 @@ class ToolExecutorNode(DAGNode):
         return {"default": tool_messages}
 
 
+class SkillFetcherNode(DAGNode):
+    async def execute(self, inputs, context):
+        skill_name = inputs.get("skill_name") or self.config.get("skill_name", "")
+        skill_content = await asyncio.to_thread(context.skill_fetcher, skill_name)
+        return {"default": skill_content}
+
+
+class FlusherNode(DAGNode):
+    async def execute(self, inputs, context):
+        messages = inputs.get("messages", [])
+        tools = inputs.get("tools", None)
+        compressed_messages = await asyncio.to_thread(context.flusher, messages, tools)
+        return {"default": compressed_messages or messages}
+
+
+class TrunckerNode(DAGNode):
+    async def execute(self, inputs, context):
+        msg_list = inputs.get("list", [])
+        start = inputs.get("start_int") or self.config.get("start_int", 0)
+        end = inputs.get("end_int") or self.config.get("end_int", len(msg_list))
+        truncated_list = list(msg_list)[start:end]
+        return {"default": truncated_list}
+
+
 class FileOutputLoopNode(DAGNode):
     """高级节点：封装了思考->调用工具->验收的循环逻辑"""
     async def execute(self, inputs, context):
@@ -121,15 +147,42 @@ class FileOutputLoopNode(DAGNode):
         return {"default": final_messages}
 
 
+class SummaryOutputLoopNode(DAGNode):
+    """高级节点：封装了思考->调用工具->总结的循环逻辑"""
+    async def execute(self, inputs, context):
+        messages = inputs.get("messages", [])
+        tools = inputs.get("tools", context.global_tool_kit())
+        
+        result = await asyncio.to_thread(
+            context.summary_output_loop,
+            messages=messages,
+            tools=tools
+        )
+        
+        if isinstance(result, tuple) and len(result) == 2:
+            final_messages, summary = result
+        else:
+            final_messages = result
+            summary = "任务完成"
+            
+        return {
+            "messages": final_messages,
+            "summary": summary
+        }
+
+
 class DAGEngine:
     NODE_REGISTRY: Dict[str, Type[DAGNode]] = {
-        "EmptyList": EmptyListNode,
         "StrAdapter": StrAdapterNode,
         "Appender": AppenderNode,
         "ToolKit": ToolKitNode,
         "LLMChat": LLMChatNode,
         "ToolExecutor": ToolExecutorNode,
-        "FileOutputLoop": FileOutputLoopNode
+        "SkillFetcher": SkillFetcherNode,
+        "Flusher": FlusherNode,
+        "Truncker": TrunckerNode,
+        "FileOutputLoop": FileOutputLoopNode,
+        "SummaryOutputLoop": SummaryOutputLoopNode
     }
 
     def __init__(self, context):
