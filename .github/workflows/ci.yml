@@ -37,16 +37,18 @@ jobs:
     - name: Python Syntax Check
       run: |
         python -m py_compile main.py
-        echo "✅ main.py 语法检查通过"
+        echo "main.py syntax check passed"
         python -m compileall -q -f src/ || true
-        echo "✅ src/ 目录语法检查完成"
+        echo "src/ directory syntax check completed"
 
     - name: Ruff Lint Check
       run: |
-        ruff check src/ --ignore E501 --output-format concise || echo "⚠️ 部分 lint 警告可忽略"
-        echo "✅ 代码风格检查完成"
+        ruff check src/ --ignore E501 --output-format concise || echo "Some lint warnings can be ignored"
+        echo "Code style check completed"
 
     - name: Module Import Test
+      env:
+        PYTHONIOENCODING: utf-8
       run: |
         python test/test_imports.py
 

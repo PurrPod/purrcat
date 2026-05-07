@@ -137,7 +137,7 @@ class BaseTask:
                 self.main_history = []
                 self.main_history.append({"role":"system", "content":self._build_system_prompt()})
                 self.main_history.append({"role":"user", "content":self.prompt})
-                self.result = self.step_mock_loop(self.main_history)
+                self.result = self.step_single_loop(self.main_history, self.get_base_tool_schema())
                 self.time_step["mock"] = True
             else:
                 pass
@@ -165,7 +165,7 @@ class BaseTask:
         self.token_usage += self.track_token(response)
         return response
 
-    def step_mock_loop(self, messages):
+    def step_single_loop(self, messages, tools):
         step = 0
         max_steps = 500
         while step < max_steps:
@@ -173,31 +173,17 @@ class BaseTask:
             try:
                 self.check_request()
                 # 1. 执行 LLM 思考步骤
-                response = self.run_llm_step(messages=messages, tools=self.get_base_tool_schema())
+                response = self.run_llm_step(messages=messages, tools=tools)
                 assistant_msg = response.choices[0].message
                 messages.append(assistant_msg.model_dump(exclude_none=True))
                 tool_calling = self._extract_tool_calling(response)
                 # 2. 处理无工具调用
                 if not tool_calling:
-                    result = assistant_msg.content
-                    return result
+                    messages.append({"role":"user","content":"检测到你没有调用任何工具，如已完成任务，请调用 task_done 总结该阶段任务"})
                 # 3. 执行工具调用
                 tool_messages = self.run_tool_calling(response)
                 if tool_messages:
                     messages.extend(tool_messages)
-
-            except InterruptedError as e:
-                self.state = TaskState.ERROR
-                self._cleanup_resources()
-                self.log_and_notify(LogType.SYSTEM, str(e))
-                self.save_checkpoints()
-                break
-            except KeyboardInterrupt:
-                self.state = TaskState.ERROR
-                self._cleanup_resources()
-                self.log_and_notify(LogType.SYSTEM, "⚠️ 检测到强制中断 (Ctrl+C)，保存现场...")
-                self.save_checkpoints()
-                break
             except Exception as e:
                 self.state = TaskState.ERROR
                 self._cleanup_resources()
@@ -344,11 +330,28 @@ class BaseTask:
 
     def get_base_tool_schema(self) -> list:
         """获取基础工具的 schema"""
-        try:
-            from src.tool import BASE_TASK_TOOL_SCHEMA
-            return BASE_TASK_TOOL_SCHEMA
-        except ImportError:
-            return []
+        from src.tool import BASE_TASK_TOOL_SCHEMA
+        
+        task_done_schema = {
+            "type": "function",
+            "function": {
+                "name": "task_done",
+                "description": "标记当前阶段任务完成，表示当前阶段的工作已完成",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "summary": {
+                            "type": "string",
+                            "description": "对当前阶段的简单总结"
+                        }
+                    },
+                    "required": ["summary"]
+                }
+            }
+        }
+        
+        return BASE_TASK_TOOL_SCHEMA + [task_done_schema]
+
 
     def get_base_tool_name(self) -> set:
         """获取 base task 工具名集合，用于快速判断工具归属"""
