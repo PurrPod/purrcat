@@ -11,7 +11,8 @@ from tui.api import (
     get_task_list, get_agent_history, get_task_history, force_push_agent, force_push_task,
     flush_agent_memory,
     get_window_token, get_task_window_token, get_agent_max_token, get_task_max_token,
-    format_task_log
+    format_task_log,
+    get_session_list, get_current_session_id, branch_session, checkout_session
 )
 from textual.screen import ModalScreen
 
@@ -171,7 +172,19 @@ class ChatInput(TextArea):
         elif event.key == "enter":
             event.prevent_default()
             text = self.text.strip()
-            if text == "/switch":
+            
+            if text == "/sessions":
+                await self.app.query_one(MainView).show_session_selector()
+                self.clear()
+            elif text.startswith("/branch "):
+                branch_name = text[8:].strip()
+                if branch_name:
+                    new_id = branch_session(branch_name)
+                    chat_zone = self.app.query_one(MainView).query_one("#chat-zone")
+                    chat_zone.mount(Static(f"🌿 [系统] 已成功拉取并切换到新分支: {branch_name} ({new_id[-6:]})", classes="help-message"))
+                    chat_zone.scroll_end(animate=False)
+                self.clear()
+            elif text == "/switch":
                 await self.app.query_one(MainView).show_space_selector()
                 self.clear()
             elif text == "/config":
@@ -186,7 +199,6 @@ class ChatInput(TextArea):
                 chat_zone.mount(status)
                 chat_zone.scroll_end(animate=False)
                 self.clear()
-                # 触发记忆压缩
                 success = flush_agent_memory()
                 if success:
                     status.update("✅ 主 Agent 记忆压缩完成，早期对话已归档。")
@@ -226,12 +238,14 @@ class MainView(Vertical):
             space_selector.border_title = "Select Space (Use Up/Down to Navigate, Enter to Select) /"
             yield space_selector
 
-            # 🟢 新增：将配置选择器渲染到 DOM 中
             config_selector = ListView(id="config-selector")
             config_selector.border_title = "Theme Config (Select a color) /"
             yield config_selector
+            
+            session_selector = ListView(id="session-selector")
+            session_selector.border_title = "Session Tree (Git Graph) /"
+            yield session_selector
 
-            # 📖 Guide Book
             help_guide = VerticalScroll(id="help-guide")
             help_guide.border_title = "Guide Book /"
             help_guide.can_focus = True
@@ -324,6 +338,48 @@ class MainView(Vertical):
             )
         config_selector.focus()
 
+    async def show_session_selector(self) -> None:
+        self.is_selecting = True
+        chat_zone = self.query_one("#chat-zone")
+        session_selector = self.query_one("#session-selector")
+        
+        chat_zone.add_class("hidden")
+        self.query_one("#space-selector").remove_class("active")
+        self.query_one("#config-selector").remove_class("active")
+        self.query_one("#help-guide").remove_class("active")
+        session_selector.add_class("active")
+
+        await session_selector.clear()
+
+        sessions = get_session_list()
+        current_id = get_current_session_id()
+        
+        roots = [sid for sid, info in sessions.items() if not info.get("parent_id")]
+        
+        def add_node(sid, depth):
+            info = sessions[sid]
+            is_current = (sid == current_id)
+            alias = info.get("alias", sid)
+            msg_count = info.get("messages_count", 0)
+            
+            prefix = "    " * depth + ("└── " if depth > 0 else "🌱 ")
+            head_tag = " <-- [HEAD]" if is_current else ""
+            
+            color = "green" if is_current else ("cyan" if depth > 0 else "blue")
+            label_text = f"[{color}]{prefix}{alias} [{sid[-6:]}] ({msg_count} msgs)[/{color}][bold yellow]{head_tag}[/bold yellow]"
+            
+            session_selector.append(ListItem(Static(label_text, classes="nav-item", markup=True), id=f"sess-{sid}"))
+            
+            children = [cid for cid, cinfo in sessions.items() if cinfo.get("parent_id") == sid]
+            children.sort(key=lambda x: sessions[x].get("updated_at", ""))
+            for child in children:
+                add_node(child, depth + 1)
+
+        for root in roots:
+            add_node(root, 0)
+
+        session_selector.focus()
+
     async def show_help_guide(self) -> None:
         self.is_selecting = True
         chat_zone = self.query_one("#chat-zone")
@@ -349,6 +405,8 @@ class MainView(Vertical):
             "| `/flush` | 强制压缩主 Agent 记忆，归档早期对话 |\n"
             "| `/switch` | 切换聊天空间（主 Agent / 子任务） |\n"
             "| `/config` | 切换主题配置 |\n"
+            "| `/sessions` | 查看和切换会话分支（Git 风格） |\n"
+            "| `/branch <name>` | 从当前会话创建新分支 |\n"
             "\n"
             "## 快捷键\n"
             "- `Enter` — 发送消息\n"
@@ -420,7 +478,7 @@ class MainView(Vertical):
         self.query_one("#chat-input").focus()
 
         # 动态修改边框颜色
-        zones = ["#top-zone", "#chat-zone", "#space-selector", "#config-selector", "#input-zone"]
+        zones = ["#top-zone", "#chat-zone", "#space-selector", "#config-selector", "#session-selector", "#input-zone"]
         for zone_id in zones:
             try:
                 widget = self.query_one(zone_id)
@@ -430,6 +488,32 @@ class MainView(Vertical):
                 pass
 
         self.refresh_chat_state()
+
+    @on(ListView.Selected, "#session-selector")
+    def switch_session_event(self, event: ListView.Selected):
+        target_sid = event.item.id.replace("sess-", "")
+        self.is_selecting = False
+        
+        chat_zone = self.query_one("#chat-zone")
+        session_selector = self.query_one("#session-selector")
+        session_selector.remove_class("active")
+        chat_zone.remove_class("hidden")
+        self.query_one("#chat-input").focus()
+        
+        success = checkout_session(target_sid)
+        if success:
+            for child in chat_zone.query(".msg-space-nav-main"):
+                child.remove()
+                
+            self.rendered_msg_counts["nav-main"] = 0
+            keys_to_delete = [k for k, v in self.tool_widgets.items() if v.has_class("msg-space-nav-main")]
+            for k in keys_to_delete:
+                del self.tool_widgets[k]
+                
+            self.current_space = "nav-main" 
+            chat_zone.mount(Static(f"🔄 [系统] 已成功检出并恢复会话: {target_sid[-6:]}", classes="help-message"))
+            
+            self.refresh_chat_state()
 
     def handle_chat_submit(self, text: str):
         if self.current_space == "nav-main":
@@ -445,6 +529,9 @@ class MainView(Vertical):
         self.is_selecting = False
         chat_zone = self.query_one("#chat-zone")
         help_guide = self.query_one("#help-guide")
+        self.query_one("#space-selector").remove_class("active")
+        self.query_one("#config-selector").remove_class("active")
+        self.query_one("#session-selector").remove_class("active")
         help_guide.remove_class("active")
         chat_zone.remove_class("hidden")
         self.query_one("#chat-input").focus()

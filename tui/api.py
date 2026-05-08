@@ -75,35 +75,25 @@ _task_log_cache = {}  # task_id -> (mtime, size, formatted_text)
 # ---------------------------------------------------------
 def get_agent_history():
     agent = get_agent()
-    if agent:
-        # 🟢 修复：必须深拷贝，防止后台正在思考写入时 UI 遍历导致崩溃
-        return copy.deepcopy(agent.current_history)
-    return []
+    return copy.deepcopy(agent.current_history)
 
 def force_push_agent(text: str):
-    # 直接推入 agent 的消息队列
     agent = get_agent()
-    if agent:
-        agent.force_push(text, type="user")
-        return True
-    return False
+    agent.force_push(text, type="user")
+    return True
 
 
 def flush_agent_memory():
     """强制触发主 Agent 记忆压缩与归档"""
     agent = get_agent()
-    if agent:
-        agent._check_and_summarize_memory(check_mode=False)
-        return True
-    return False
+    agent._check_and_summarize_memory(check_mode=False)
+    return True
 
 
 def get_window_token():
     """获取 agent 实例当前窗口的 token 用量"""
     agent = get_agent()
-    if agent:
-        return agent.window_token
-    return 0
+    return agent.window_token
 
 
 # ---------------------------------------------------------
@@ -326,3 +316,26 @@ def format_task_log(task_id: str) -> str:
         pass
 
     return result
+
+
+# ---------------------------------------------------------
+# Session & Branch 相关接口 (V2架构)
+# ---------------------------------------------------------
+from src.agent.manager import manager
+
+def get_session_list():
+    """获取所有会话列表"""
+    return manager.list_sessions()
+
+def get_current_session_id():
+    """获取当前挂载的会话 ID"""
+    agent = manager.get_agent()
+    return agent.session_id
+
+def branch_session(alias: str):
+    """拉取新分支"""
+    return manager.branch_current_session(alias)
+
+def checkout_session(session_id: str):
+    """检出/切换会话"""
+    return manager.checkout_session(session_id)

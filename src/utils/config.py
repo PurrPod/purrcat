@@ -31,6 +31,13 @@ CRON_FILE = os.path.join(AGENT_CORE_DIR, "cron.json")
 SYSTEM_RULES_DIR = os.path.join(AGENT_DIR, "system_rules")
 CHECKPOINT_PATH = os.path.join(AGENT_DIR, "checkpoint.json")
 
+# 会话管理路径配置
+SESSIONS_DIR = os.path.join(DATA_DIR, "checkpoints", "agent")
+SESSION_INDEX_PATH = os.path.join(SESSIONS_DIR, "index.json")
+
+# 确保会话目录在启动时存在
+os.makedirs(SESSIONS_DIR, exist_ok=True)
+
 MCP_SCHEMA_CACHE_FILE = os.path.join(SRC_DIR, "tool", "callmcp", "mcp_schema.json")
 
 

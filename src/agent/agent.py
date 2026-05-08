@@ -3,14 +3,13 @@ import os
 import time
 import json
 import threading
-import uuid
 from src.utils.tracker import Tracker
 from src.model import AgentModel
 
 from src.tool import AGENT_TOOL_SCHEMA
 from src.tool.utils.route import dispatch_tool
 from src.utils.config import (
-    get_agent_model, SOUL_MD_PATH, SYSTEM_RULES_DIR, CHECKPOINT_PATH, AGENT_CORE_DIR
+    get_agent_model, SOUL_MD_PATH, SYSTEM_RULES_DIR, AGENT_CORE_DIR
 )
 
 from json_repair import repair_json
@@ -23,22 +22,28 @@ MEMORY_MD_PATH = os.path.join(AGENT_CORE_DIR, "MEMORY.md")
 
 
 class Agent:
-    def __init__(self, name=None, checkpoint_path=None):
+    def __init__(self, session_id, initial_history=None, name=None, save_callback=None):
         if not name:
             name = get_agent_model()
         self.name = name
+        self.session_id = session_id
         self.state = "idle"
-        self.agent_session_id = f"agent_main_{uuid.uuid4().hex[:8]}"
-        self.model = AgentModel(self.agent_session_id)
-        self.model.bind_task(self.agent_session_id, "AgentMain")
+        self.model = AgentModel(self.session_id)
+        self.model.bind_task(self.session_id, "AgentMain")
         self.system_prompt = self._build_system_prompt()
-        self.current_history = [{"role": "system", "content": self.system_prompt}]
         self.tracker = Tracker()
-        self.checkpoint_path = checkpoint_path or CHECKPOINT_PATH
         self.pending_force_push = []
         self._lock = threading.Lock()
         self.window_token = 0
         self._stop_event = threading.Event()
+        self._save_callback = save_callback
+
+        self.current_history = initial_history or []
+        
+        if not self.current_history:
+            self.current_history = [{"role": "system", "content": self.system_prompt}]
+        elif self.current_history[0].get("role") == "system":
+            self.current_history[0]["content"] = self.system_prompt
     def _build_system_prompt(self):
         soul_md = ""
         try:
@@ -225,7 +230,7 @@ class Agent:
 
             # --- 4. 环境参数注入 ---
             if target_tool_name in ["execute_command", "close_shell", "Bash"]:
-                arguments["session_id"] = self.agent_session_id
+                arguments["session_id"] = self.session_id
 
             # --- 5. 执行与挂起逻辑 ---
             args_str = ", ".join([f'{k}={repr(v)}' for k, v in arguments.items()]) if isinstance(arguments, dict) else str(arguments)
@@ -489,42 +494,7 @@ class Agent:
                 print(f"❌ 主核运转异常: {e}")
                 time.sleep(1)
 
-    def save_checkpoint(self, filepath=CHECKPOINT_PATH):
-        save_path = filepath or self.checkpoint_path
-        temp_path = f"{save_path}.tmp"
-        try:
-            with open(temp_path, "w", encoding="utf-8") as f:
-                json.dump(self.current_history, f, ensure_ascii=False, indent=2)
-            os.replace(temp_path, save_path)
-        except Exception as e:
-            print(f"⚠️ [Checkpoint] 保存检查点失败: {e}")
-
-    @classmethod
-    def load_checkpoint(cls, filepath=CHECKPOINT_PATH, name=None):
-        if not name:
-            name = get_agent_model()
-        agent = cls(name=name, checkpoint_path=filepath)
-        try:
-            if not os.path.exists(filepath):
-                print(f"⚠️ [Checkpoint] 找不到文件: {filepath}，将以全新状态启动并创建该文件。")
-                os.makedirs(os.path.dirname(filepath), exist_ok=True)
-                agent.save_checkpoint(filepath)
-                return agent
-            with open(filepath, "r", encoding="utf-8") as f:
-                history = json.load(f)
-            if isinstance(history, list) and len(history) > 0:
-                last_msg = history[-1]
-                if last_msg.get("role") == "assistant" and last_msg.get("tool_calls"):
-                    print("🛠️ [Checkpoint] 检测到断点处缺失工具回传结果，自动撤销最近一次未完成的思考...")
-                    history.pop()
-                agent.current_history = history
-                if agent.current_history and agent.current_history[0].get("role") == "system":
-                    agent.current_history[0]["content"] = agent.system_prompt
-                print(f"✅ 成功从 {filepath} 恢复对话历史，共加载了 {len(history)} 条记录。")
-            else:
-                print(f"⚠️ [Checkpoint] 文件内容为空或格式错误，重置为全新状态。")
-                agent.save_checkpoint(filepath)
-            return agent
-        except Exception as e:
-            print(f"❌ [Checkpoint] 恢复检查点失败: {e}，将以全新状态启动。")
-            return agent
+    def save_checkpoint(self):
+        """不再自己写硬盘，而是通知 Manager 去做"""
+        if self._save_callback:
+            self._save_callback()
