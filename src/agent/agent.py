@@ -26,6 +26,7 @@ class Agent:
         self.pending_force_push = []
         self.window_token = 0
         self._stop_event = threading.Event()
+        self._history_lock = threading.Lock()
         self._save_callback = save_callback
 
         self.model = AgentModel(self.session_id)

@@ -12,7 +12,7 @@ from tui.api import (
     flush_agent_memory,
     get_window_token, get_task_window_token, get_agent_max_token, get_task_max_token,
     format_task_log,
-    get_session_list, get_current_session_id, branch_session, checkout_session
+    get_session_list, get_current_session_id, branch_session, checkout_session, new_clean_session
 )
 from textual.screen import ModalScreen
 
@@ -173,38 +173,83 @@ class ChatInput(TextArea):
             event.prevent_default()
             text = self.text.strip()
             
+            # ==============================
+            # 🔴 斜杠指令集中解析与拦截
+            # ==============================
             if text == "/sessions":
                 await self.app.query_one(MainView).show_session_selector()
                 self.clear()
-            elif text.startswith("/branch "):
-                branch_name = text[8:].strip()
+                
+            elif text.startswith("/branch"):
+                branch_name = text[7:].strip()
+                main_view = self.app.query_one(MainView)
+                chat_zone = main_view.query_one("#chat-zone")
+                
                 if branch_name:
                     new_id = branch_session(branch_name)
-                    chat_zone = self.app.query_one(MainView).query_one("#chat-zone")
+                    # 继承分支：不要清理屏幕，只在底部追加提示实现"无缝分叉"
                     chat_zone.mount(Static(f"🌿 [系统] 已成功拉取并切换到新分支: {branch_name} ({new_id[-6:]})", classes="help-message"))
-                    chat_zone.scroll_end(animate=False)
+                else:
+                    chat_zone.mount(Static("❌ [系统] 用法错误: 请提供分支名称，例如 /branch feature_a", classes="help-message"))
+                
+                chat_zone.scroll_end(animate=False)
                 self.clear()
+                
+            elif text.startswith("/new"):
+                branch_name = text[4:].strip()
+                main_view = self.app.query_one(MainView)
+                chat_zone = main_view.query_one("#chat-zone")
+                
+                if branch_name:
+                    new_id = new_clean_session(branch_name)
+                    
+                    # 纯净分支：因为没有历史，必须抹除当前 UI 上的对应对话气泡
+                    for child in chat_zone.query(f".msg-space-{main_view.current_space}"):
+                        child.remove()
+                        
+                    # 同时必须清理 Tool 组件缓存和渲染计数，防止幽灵气泡和错乱
+                    keys_to_delete = [k for k, v in main_view.tool_widgets.items() if v.has_class(f"msg-space-{main_view.current_space}")]
+                    for k in keys_to_delete:
+                        del main_view.tool_widgets[k]
+                    main_view.rendered_msg_counts[main_view.current_space] = 0
+                    
+                    chat_zone.mount(Static(f"✨ [系统] 已创建并切换到全新纯净分支: {branch_name} ({new_id[-6:]})", classes="help-message"))
+                else:
+                    chat_zone.mount(Static("❌ [系统] 用法错误: 请提供分支名称，例如 /new clean_task", classes="help-message"))
+                    
+                chat_zone.scroll_end(animate=False)
+                self.clear()
+                
             elif text == "/switch":
                 await self.app.query_one(MainView).show_space_selector()
                 self.clear()
+                
             elif text == "/config":
                 await self.app.query_one(MainView).show_config_selector()
                 self.clear()
+                
             elif text == "/help":
                 await self.app.query_one(MainView).show_help_guide()
                 self.clear()
+                
             elif text == "/flush":
-                chat_zone = self.app.query_one(MainView).query_one("#chat-zone")
+                main_view = self.app.query_one(MainView)
+                chat_zone = main_view.query_one("#chat-zone")
+                
                 status = Markdown("⏳ 正在压缩主 Agent 记忆，请稍候...", classes="help-message")
+                status.add_class(f"msg-space-{main_view.current_space}")
                 chat_zone.mount(status)
                 chat_zone.scroll_end(animate=False)
                 self.clear()
+                
                 success = flush_agent_memory()
                 if success:
                     status.update("✅ 主 Agent 记忆压缩完成，早期对话已归档。")
                 else:
                     status.update("❌ 记忆压缩失败：Agent 未初始化")
+                    
             elif text:
+                # 正常聊天处理
                 self.app.query_one(MainView).handle_chat_submit(text)
                 self.clear()
 
@@ -366,7 +411,12 @@ class MainView(Vertical):
             head_tag = " <-- [HEAD]" if is_current else ""
             
             color = "green" if is_current else ("cyan" if depth > 0 else "blue")
-            label_text = f"[{color}]{prefix}{alias} [{sid[-6:]}] ({msg_count} msgs)[/{color}][bold yellow]{head_tag}[/bold yellow]"
+            
+            # 如果 alias 就是 session_id，就不重复显示短 ID
+            if alias == sid:
+                label_text = f"[{color}]{prefix}{alias} ({msg_count} msgs)[/{color}][bold yellow]{head_tag}[/bold yellow]"
+            else:
+                label_text = f"[{color}]{prefix}{alias} [{sid[-6:]}] ({msg_count} msgs)[/{color}][bold yellow]{head_tag}[/bold yellow]"
             
             session_selector.append(ListItem(Static(label_text, classes="nav-item", markup=True), id=f"sess-{sid}"))
             
@@ -406,13 +456,18 @@ class MainView(Vertical):
             "| `/switch` | 切换聊天空间（主 Agent / 子任务） |\n"
             "| `/config` | 切换主题配置 |\n"
             "| `/sessions` | 查看和切换会话分支（Git 风格） |\n"
-            "| `/branch <name>` | 从当前会话创建新分支 |\n"
+            "| `/branch <name>` | 从当前会话创建新分支（继承历史） |\n"
+            "| `/new <name>` | 创建纯净新分支（仅含 System Prompt） |\n"
             "\n"
             "## 快捷键\n"
             "- `Enter` — 发送消息\n"
             "- `Ctrl+O` — 换行\n"
             "- `Ctrl+Q` — 退出程序\n"
             "- `Escape` — 返回聊天（在 Guide Book 中）\n"
+            "\n"
+            "## 分支说明\n"
+            "- `/branch` 创建的分支会继承所有历史对话，适合继续当前任务\n"
+            "- `/new` 创建的分支只保留系统设定，适合开启全新任务\n"
             "\n"
             "## 关于\n"
             "PurrCat — 终端里的 AI 聊天猫 🐱"

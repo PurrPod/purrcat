@@ -26,13 +26,48 @@ class SessionStore:
     @classmethod
     def get_all_sessions(cls):
         with cls._index_lock:
+            # 1. 先读取现有的索引文件
+            index_data = {}
             if os.path.exists(SESSION_INDEX_PATH):
                 try:
                     with open(SESSION_INDEX_PATH, "r", encoding="utf-8") as f:
-                        return json.load(f)
+                        index_data = json.load(f)
                 except Exception:
                     pass
-            return {}
+            
+            # 2. 扫描目录中的所有会话文件
+            if os.path.exists(SESSIONS_DIR):
+                for filename in os.listdir(SESSIONS_DIR):
+                    if filename.endswith(".json") and filename != "index.json":
+                        session_id = filename[:-5]  # 去掉 .json 后缀
+                        
+                        # 如果索引中没有这个会话，自动添加
+                        if session_id not in index_data:
+                            # 读取会话文件获取创建时间
+                            file_path = os.path.join(SESSIONS_DIR, filename)
+                            try:
+                                file_stat = os.stat(file_path)
+                                created_at = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(file_stat.st_ctime))
+                                updated_at = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(file_stat.st_mtime))
+                                
+                                # 读取会话内容获取消息数量
+                                with open(file_path, "r", encoding="utf-8") as f:
+                                    history = json.load(f)
+                                    msg_count = len(history)
+                            except Exception:
+                                created_at = "unknown"
+                                updated_at = "unknown"
+                                msg_count = 0
+                            
+                            index_data[session_id] = {
+                                "created_at": created_at,
+                                "parent_id": None,  # 旧会话默认没有父节点
+                                "alias": session_id,
+                                "updated_at": updated_at,
+                                "messages_count": msg_count
+                            }
+            
+            return index_data
 
     @classmethod
     def load_session_history(cls, session_id):
@@ -65,12 +100,23 @@ class SessionStore:
         with cls._index_lock:
             index_data = cls.get_all_sessions()
             session_info = index_data.get(session_id, {})
-            if not session_info:
-                session_info = {
-                    "created_at": time.strftime('%Y-%m-%d %H:%M:%S'),
-                    "parent_id": parent_id,
-                    "alias": alias or session_id,
-                }
+            
+            # 优先处理新生成或自动发现的空状态
+            if not session_info.get("created_at") or session_info.get("created_at") == "unknown":
+                session_info["created_at"] = time.strftime('%Y-%m-%d %H:%M:%S')
+            
+            # 只要本次调用明确传了参数，就强制覆盖（修复分支保存失败的重点）
+            if parent_id is not None:
+                session_info["parent_id"] = parent_id
+            if alias is not None:
+                session_info["alias"] = alias
+            
+            # 兜底设置
+            if "parent_id" not in session_info:
+                session_info["parent_id"] = None
+            if "alias" not in session_info:
+                session_info["alias"] = session_id
+                
             session_info["updated_at"] = time.strftime('%Y-%m-%d %H:%M:%S')
             session_info["messages_count"] = len(history)
             index_data[session_id] = session_info

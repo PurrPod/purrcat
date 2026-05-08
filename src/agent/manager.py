@@ -34,6 +34,10 @@ class AgentManager:
 
         self._sensor_thread = threading.Thread(target=self._agent.sensor, daemon=True, name="AgentSensorThread")
         self._sensor_thread.start()
+        
+        # 保存初始会话到索引
+        self.notify_save()
+        
         print(f"✅ Agent 已启动，当前挂载会话: {session_id}")
         return self._agent
 
@@ -74,12 +78,54 @@ class AgentManager:
             branch_alias=branch_alias
         )
 
+        # 加载新分支的历史记录（应该和 safe_history 相同，但确保一致性）
+        new_history = SessionStore.load_session_history(new_id)
+        
         with self._agent._history_lock:
             self._agent.session_id = new_id
             self._agent.window_token = 0
+            self._agent.current_history = new_history
 
         self._agent.model.bind_task(new_id, "AgentMain")
         print(f"🌿 成功拉取新分支并检出: {new_id} ({branch_alias})")
+        return new_id
+
+    def create_clean_session(self, branch_alias=None):
+        if not self._agent: return None
+
+        wait_count = 0
+        while self._agent.state != "idle" and wait_count < 6:
+            print("⏳ 正在等待 Agent 完成当前回复...")
+            time.sleep(0.5)
+            wait_count += 1
+
+        if self._agent.state != "idle":
+            print("⚠️ Agent 忙碌超时，强制打断执行纯净分支创建！")
+            self._agent.force_interrupt()
+
+        # 1. 保存当前进度
+        self.notify_save()
+
+        # 2. 生成干净的历史记录（仅含 System Prompt）
+        new_id = SessionStore._generate_id()
+        clean_history = [{"role": "system", "content": self._agent.system_prompt}]
+        
+        # 3. 落盘：切断血缘关系，作为全新的根节点！
+        SessionStore.save_session(
+            session_id=new_id,
+            history=clean_history,
+            parent_id=None,
+            alias=branch_alias
+        )
+
+        # 4. 内存环境检出
+        with self._agent._history_lock:
+            self._agent.session_id = new_id
+            self._agent.window_token = 0
+            self._agent.current_history = clean_history
+
+        self._agent.model.bind_task(new_id, "AgentMain")
+        print(f"✨ 成功创建纯净新分支并检出: {new_id} ({branch_alias})")
         return new_id
 
     def checkout_session(self, target_session_id):

@@ -336,8 +336,12 @@ def get_current_session_id():
     return agent.session_id
 
 def branch_session(alias: str):
-    """拉取新分支"""
+    """拉取新分支（继承历史）"""
     return manager.branch_current_session(alias)
+
+def new_clean_session(alias: str):
+    """创建全新纯净分支（仅含 System）"""
+    return manager.create_clean_session(alias)
 
 def checkout_session(session_id: str):
     """检出/切换会话"""
