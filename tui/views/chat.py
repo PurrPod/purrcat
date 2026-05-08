@@ -356,12 +356,15 @@ class MainView(Vertical):
         space_selector.add_class("active")
         self.query_one("#config-selector").remove_class("active")
         await space_selector.clear()
-
-        space_selector.append(ListItem(Static("Main Space", classes="nav-item"), id="nav-main"))
+        main_static = Static("  Main Space", classes="nav-item", markup=True)
+        main_static._original_text = "Main Space"
+        space_selector.append(ListItem(main_static, id="nav-main"))
         tasks = get_task_list()
         for task in tasks:
-            space_selector.append(
-                ListItem(Static(f"Task: {task['name']}", classes="nav-item"), id=f"task-{task['id']}"))
+            task_name = f"Task: {task['name']}"
+            task_static = Static(f"  {task_name}", classes="nav-item", markup=True)
+            task_static._original_text = task_name
+            space_selector.append(ListItem(task_static, id=f"task-{task['id']}"))
 
         space_selector.focus()
 
@@ -378,9 +381,9 @@ class MainView(Vertical):
         await config_selector.clear()
 
         for color_option in self.RAINBOW_COLORS:
-            config_selector.append(
-                ListItem(Static(color_option["name"], classes="nav-item"), id=color_option["id"])
-            )
+            opt_static = Static(f"  {color_option['name']}", classes="nav-item", markup=True)
+            opt_static._original_text = color_option["name"]
+            config_selector.append(ListItem(opt_static, id=color_option["id"]))
         config_selector.focus()
 
     async def show_session_selector(self) -> None:
@@ -417,9 +420,10 @@ class MainView(Vertical):
                 label_text = f"[{color}]{prefix}{alias} ({msg_count} msgs)[/{color}][bold yellow]{head_tag}[/bold yellow]"
             else:
                 label_text = f"[{color}]{prefix}{alias} [{sid[-6:]}] ({msg_count} msgs)[/{color}][bold yellow]{head_tag}[/bold yellow]"
-            
-            session_selector.append(ListItem(Static(label_text, classes="nav-item", markup=True), id=f"sess-{sid}"))
-            
+
+            static_node = Static(f"  {label_text}", classes="nav-item", markup=True)
+            static_node._original_text = label_text
+            session_selector.append(ListItem(static_node, id=f"sess-{sid}"))
             children = [cid for cid, cinfo in sessions.items() if cinfo.get("parent_id") == sid]
             children.sort(key=lambda x: sessions[x].get("updated_at", ""))
             for child in children:
@@ -475,6 +479,29 @@ class MainView(Vertical):
         help_guide.mount(Markdown(help_text))
         help_guide.scroll_end(animate=False)
         help_guide.focus()
+
+    @on(ListView.Highlighted)
+    def update_cursor_on_highlight(self, event: ListView.Highlighted):
+        """当列表项通过上下方向键高亮时，动态显示 > 光标"""
+        # 1. 遍历当前列表中的所有项，清除它们的 > 光标
+        for item in event.list_view.query(ListItem):
+            try:
+                static = item.query_one(Static)
+                if hasattr(static, "_original_text"):
+                    # 恢复为两个空格，保持对齐
+                    static.update(f"  {static._original_text}")
+            except Exception:
+                pass
+
+        # 2. 为当前高亮的项加上带颜色的 > 光标
+        if event.item:
+            try:
+                static = event.item.query_one(Static)
+                if hasattr(static, "_original_text"):
+                    # 使用青色加粗的 > 让视觉更明显
+                    static.update(f"[bold cyan]>[/bold cyan] {static._original_text}")
+            except Exception:
+                pass
 
     @on(ListView.Selected, "#space-selector")
     def switch_space(self, event: ListView.Selected):

@@ -170,8 +170,8 @@ Markdown {
     border: none;
 }
 
-/* === 选单区 (复用给会话切换与主题配置) === */
-#space-selector, #config-selector, #session-selector {
+/* === 选单区 (复用给会话切换、主题配置与技能选择) === */
+#space-selector, #config-selector, #session-selector, #skill-selector {
     height: 3fr;
     width: 100%;
     border: round #ffffff;
@@ -186,7 +186,7 @@ Markdown {
     scrollbar-color: #52525b;
 }
 
-#space-selector.active, #config-selector.active, #session-selector.active, #help-guide.active {
+#space-selector.active, #config-selector.active, #session-selector.active, #help-guide.active, #skill-selector.active {
     display: block;
 }
 
@@ -208,29 +208,29 @@ Markdown {
 }
 
 /* 选择器 Item 的样式 */
-#space-selector ListView, #config-selector ListView, #session-selector ListView {
+#space-selector ListView, #config-selector ListView, #session-selector ListView, #skill-selector ListView {
     background: transparent;
     border: none;
     padding: 1 2;
 }
 
-#space-selector ListItem, #config-selector ListItem, #session-selector ListItem {
+#space-selector ListItem, #config-selector ListItem, #session-selector ListItem, #skill-selector ListItem {
     background: transparent;
     padding: 0;
     border: none;
 }
 
-#space-selector .nav-item, #config-selector .nav-item, #session-selector .nav-item {
+#space-selector .nav-item, #config-selector .nav-item, #session-selector .nav-item, #skill-selector .nav-item {
     color: #a1a1aa;
     padding: 1;
 }
 
-#space-selector ListItem:hover .nav-item, #config-selector ListItem:hover .nav-item, #session-selector ListItem:hover .nav-item {
+#space-selector ListItem:hover .nav-item, #config-selector ListItem:hover .nav-item, #session-selector ListItem:hover .nav-item, #skill-selector ListItem:hover .nav-item {
     color: #e4e4e7;
 }
 
 /* 高亮选中条保持白色边框，与主题色的外框形成高级对比 */
-#space-selector ListItem.--highlight .nav-item, #config-selector ListItem.--highlight .nav-item, #session-selector ListItem.--highlight .nav-item {
+#space-selector ListItem.--highlight .nav-item, #config-selector ListItem.--highlight .nav-item, #session-selector ListItem.--highlight .nav-item, #skill-selector ListItem.--highlight .nav-item {
     color: #fef3c7;
     text-style: bold;
     border-top: solid #ffffff;

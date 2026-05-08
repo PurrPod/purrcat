@@ -42,7 +42,7 @@ class CodingTask(
 
     def get_base_tool_schema(self) -> list:
         """【覆盖】为代码专家注入扩展工具集"""
-        tools = super().get_base_tool_schema()
+        tools = super().global_tool_kit()
         tools.extend(EXTEND_TOOLS_SCHEMA)
         return tools
 
