@@ -24,10 +24,10 @@ class DAGNode:
         for target_port, source_info in self.inputs_map.items():
             source_node = source_info["node"]
             await source_node._done_event.wait()
-            
+
             if source_node.state == "ERROR":
                 raise RuntimeError(f"上游节点 [{source_node.node_id}] 执行失败，级联中断。")
-            
+
             input_data[target_port] = source_node.outputs.get(source_info["port"])
         return input_data
 
@@ -40,12 +40,12 @@ class DAGNode:
         try:
             input_data = await self._wait_for_inputs()
             self.state = "RUNNING"
-            
+
             if hasattr(context, "log_and_notify"):
                 context.log_and_notify("SYSTEM", f"🟢 节点 [{self.__class__.__name__}:{self.node_id}] 开始执行")
-            
+
             self.outputs = await self.execute(input_data, context)
-            
+
             self.state = "COMPLETED"
         except Exception as e:
             self.state = "ERROR"
@@ -77,7 +77,6 @@ class MessageCardBuilderNode(DAGNode):
         if not content:
             return {"default": []}
 
-        # 直接输出一个只包含当前卡片的 MessageList
         return {"default": [{"role": role, "content": content}]}
 
 
@@ -88,10 +87,8 @@ class AppenderNode(DAGNode):
         base_list = inputs.get("base_list", [])
         append_list = inputs.get("append_list", [])
 
-        # 浅拷贝 base_list，防止修改污染上游节点的数据
         result_list = list(base_list) if base_list else []
 
-        # 将新列表追加进去
         if append_list and isinstance(append_list, list):
             result_list.extend(append_list)
 
@@ -148,11 +145,11 @@ class FileOutputLoopNode(DAGNode):
         messages = inputs.get("messages", [])
         tools = inputs.get("tools", context.global_tool_kit())
         file_path = self.config.get("file_path", f"{context.workplace}/FINISHED.md")
-        
+
         final_messages = await asyncio.to_thread(
-            context.file_output_loop, 
-            messages=messages, 
-            tools=tools, 
+            context.file_output_loop,
+            messages=messages,
+            tools=tools,
             file_path=file_path
         )
         return {"default": final_messages}
@@ -163,19 +160,19 @@ class SummaryOutputLoopNode(DAGNode):
     async def execute(self, inputs, context):
         messages = inputs.get("messages", [])
         tools = inputs.get("tools", context.global_tool_kit())
-        
+
         result = await asyncio.to_thread(
             context.summary_output_loop,
             messages=messages,
             tools=tools
         )
-        
+
         if isinstance(result, tuple) and len(result) == 2:
             final_messages, summary = result
         else:
             final_messages = result
             summary = "任务完成"
-            
+
         return {
             "messages": final_messages,
             "summary": summary
@@ -185,6 +182,7 @@ class SummaryOutputLoopNode(DAGNode):
 class DAGEngine:
     NODE_REGISTRY: Dict[str, Type[DAGNode]] = {
         "StrAdapter": StrAdapterNode,
+        "MessageCardBuilder": MessageCardBuilderNode,
         "Appender": AppenderNode,
         "ToolKit": ToolKitNode,
         "LLMChat": LLMChatNode,
@@ -203,22 +201,22 @@ class DAGEngine:
     def load_graph(self, graph_data: dict, saved_state: dict = None):
         """解析前端传入的 JSON 图并恢复断点"""
         saved_state = saved_state or {}
-        
+
         for node_data in graph_data.get("nodes", []):
             node_id = node_data["id"]
             node_type = node_data["type"]
             config = node_data.get("data", {})
-            
+
             NodeClass = self.NODE_REGISTRY.get(node_type)
             if not NodeClass:
                 raise ValueError(f"Unknown node type: {node_type}")
-                
+
             node = NodeClass(node_id=node_id, **config)
-            
+
             if node_id in saved_state and saved_state[node_id]["state"] == "COMPLETED":
                 node.state = "COMPLETED"
                 node.outputs = saved_state[node_id]["outputs"]
-                
+
             self.nodes[node_id] = node
 
         for edge in graph_data.get("edges", []):
@@ -226,7 +224,7 @@ class DAGEngine:
             src_port = edge.get("sourceHandle", "default")
             tgt_id = edge["target"]
             tgt_port = edge.get("targetHandle", "default")
-            
+
             if tgt_id in self.nodes and src_id in self.nodes:
                 self.nodes[tgt_id].bind_input(tgt_port, self.nodes[src_id], src_port)
 
@@ -234,7 +232,7 @@ class DAGEngine:
         """并发启动图网络"""
         tasks = [node.run(self.context) for node in self.nodes.values()]
         await asyncio.gather(*tasks)
-        
+
         return {
             n_id: {"state": node.state, "outputs": node.outputs}
             for n_id, node in self.nodes.items()

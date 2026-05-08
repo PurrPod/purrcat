@@ -75,7 +75,7 @@ class BaseTask:
         self.create_time = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
         self.token_usage = 0
         self.checkpoint_dir = os.path.join(DATA_DIR, "checkpoints", "task", f"{self.task_name}_{self.task_id}")
-
+        self.result = False
         self.main_history = []
         self.workplace = f"agent_vm/task_workplace/{self.task_id}"
         if self.task_id not in TASK_INSTANCES:
@@ -135,14 +135,16 @@ class BaseTask:
         workplace = self.workplace
         return {
             "nodes": [
-                {"id": "node_sys_msg", "type": "Appender", "data": {"item": {"role": "system", "content": system_prompt}}},
-                {"id": "node_user_msg", "type": "Appender", "data": {"item": {"role": "user", "content": user_prompt}}},
+                {"id": "node_sys_msg", "type": "MessageCardBuilder", "data": {"role": "system", "content": system_prompt}},
+                {"id": "node_user_msg", "type": "MessageCardBuilder", "data": {"role": "user", "content": user_prompt}},
+                {"id": "node_appender", "type": "Appender"},
                 {"id": "node_tools", "type": "ToolKit"},
                 {"id": "node_loop", "type": "FileOutputLoop", "data": {"file_path": f"{workplace}/FINISHED.md"}}
             ],
             "edges": [
-                {"source": "node_sys_msg", "target": "node_user_msg", "targetHandle": "list"},
-                {"source": "node_user_msg", "target": "node_loop", "targetHandle": "messages"},
+                {"source": "node_sys_msg", "target": "node_appender", "targetHandle": "base_list"},
+                {"source": "node_user_msg", "target": "node_appender", "targetHandle": "append_list"},
+                {"source": "node_appender", "target": "node_loop", "targetHandle": "messages"},
                 {"source": "node_tools", "target": "node_loop", "targetHandle": "tools"}
             ]
         }
@@ -161,6 +163,7 @@ class BaseTask:
                 self.state = TaskState.ERROR
                 self._cleanup_resources()
                 return "❌ 任务在 DAG 节点执行中遭遇失败。"
+            self.result = True
             return self.handle_completed()
         except Exception as e:
             self.state = TaskState.ERROR
@@ -231,25 +234,25 @@ class BaseTask:
                 if not tool_calling:
                     messages.append({"role":"user","content":"检测到你没有调用任何工具，如已完成任务，请调用 task_done 总结该阶段任务"})
                     continue
-                
+
                 tool_messages = self.run_tool_calling(response)
                 if tool_messages:
                     messages.extend(tool_messages)
-                
+
                 if self.check_completed(tool_calling):
                     if self.check_file_exist(file_path):
                         return messages
                     else:
                         messages.append({"role":"user","content":f"检测到你调用了 task_done，但目标文件 {file_path} 尚未生成。请检查是否生成在了其他路径，并及时生成目标文件。"})
                         continue
-                        
+
             except Exception as e:
                 self.state = TaskState.ERROR
                 self._cleanup_resources()
                 self.log_and_notify(LogType.ERROR, f"❌ 运行发生异常: {traceback.format_exc()}")
                 self.save_checkpoints()
                 break
-                
+
         if step >= max_steps and self.state != TaskState.COMPLETED:
             self.state = TaskState.ERROR
             self._cleanup_resources()
@@ -273,7 +276,7 @@ class BaseTask:
                 tool_messages = self.run_tool_calling(response)
                 if tool_messages:
                     messages.extend(tool_messages)
-                
+
                 if self.check_completed(tool_calling):
                     summary = assistant_msg.content or "任务完成"
                     for tc in tool_calling:
@@ -284,14 +287,14 @@ class BaseTask:
                             except:
                                 pass
                     return messages, summary
-                    
+
             except Exception as e:
                 self.state = TaskState.ERROR
                 self._cleanup_resources()
                 self.log_and_notify(LogType.ERROR, f"❌ 运行发生异常: {traceback.format_exc()}")
                 self.save_checkpoints()
                 break
-                
+
         if step >= max_steps and self.state != TaskState.COMPLETED:
             self.state = TaskState.ERROR
             self._cleanup_resources()
@@ -430,7 +433,11 @@ class BaseTask:
     def handle_completed(self):
         """标记完成后的验收审查与资源收尾"""
         self.state = TaskState.COMPLETED
-        return f"✅任务完成，工作产物痕迹存放在：{self.workplace}"
+        if self.result:
+            result_str = f"✅ 任务完成，工作产物痕迹存放在：{self.workplace}"
+        else:
+            result_str = f"❌ 任务失败，工作产物痕迹存放在：{self.workplace}"
+        return result_str
 
     def get_base_tool_name(self) -> set:
         """获取 base task 工具名集合，用于快速判断工具归属"""
@@ -676,12 +683,11 @@ def auto_load_all_tasks():
     checkpoints_dir = os.path.join(DATA_DIR, "checkpoints", "task")
     if not os.path.exists(checkpoints_dir):
         return
-        
-    # 【修改这里】：同时兼容 "CodingTask" 和 "coding" 两种 Key 的映射
+
     class_name_to_expert = {}
     for expert_key, info in BaseTask._EXPERT_REGISTRY.items():
-        class_name_to_expert[info["class"].__name__] = info["class"] # 类名映射
-        class_name_to_expert[expert_key] = info["class"]             # 别名映射 (兼容老数据)
+        class_name_to_expert[info["class"].__name__] = info["class"]
+        class_name_to_expert[expert_key] = info["class"]
 
     for task_dir in os.listdir(checkpoints_dir):
         full_path = os.path.join(checkpoints_dir, task_dir)
@@ -703,7 +709,6 @@ def reload_task_by_id(task_id: str):
     """
     根据 task_id 精准查找并恢复指定的任务实例。
     """
-    # 1. 如果任务已经在内存中处于激活状态，直接返回
     if task_id in TASK_INSTANCES:
         return TASK_INSTANCES[task_id]
     auto_discover_experts()
@@ -711,7 +716,6 @@ def reload_task_by_id(task_id: str):
     if not os.path.exists(checkpoints_dir):
         print(f"❌ 找不到存档总目录: {checkpoints_dir}")
         return None
-    # 2. 由于新的命名规则为 {task_name}_{task_id}，可以直接通过后缀匹配文件夹
     target_dir = None
     for dir_name in os.listdir(checkpoints_dir):
         if dir_name.endswith(f"_{task_id}"):
@@ -724,18 +728,15 @@ def reload_task_by_id(task_id: str):
     if not os.path.exists(checkpoint_file):
         print(f"❌ 存档文件夹存在，但缺失 checkpoint.json: {target_dir}")
         return None
-    # 3. 读取存档并动态实例化
     try:
         with open(checkpoint_file, "r", encoding="utf-8") as f:
             state = json.load(f)
         expert_class_name = state.get("expert_type", "BaseTask")
-        # 兼容类名和别名映射
         class_name_to_expert = {}
         for expert_key, info in BaseTask._EXPERT_REGISTRY.items():
             class_name_to_expert[info["class"].__name__] = info["class"]
             class_name_to_expert[expert_key] = info["class"]
         TargetClass = class_name_to_expert.get(expert_class_name, BaseTask)
-        # 调用子类/基类的 load_checkpoint 进行恢复
         task = TargetClass.load_checkpoint(target_dir)
         if task:
             print(f"✅ 成功通过 [{expert_class_name}] 精准恢复任务: {task.task_id}")

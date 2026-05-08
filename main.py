@@ -18,10 +18,19 @@ async def init_core():
     os.environ.pop("HTTPS_PROXY", None)
 
     initialize_mcp()
-
     agent = init_agent()
-    auto_discover_and_start()
-    get_memory_client()
+
+    def bg_init_services():
+        try:
+            auto_discover_and_start()
+        except Exception as e:
+            print(f"⚠️ [Background] Sensor 启动异常: {e}")
+        try:
+            get_memory_client()
+        except Exception as e:
+            print(f"⚠️ [Background] Memory client 启动异常: {e}")
+
+    threading.Thread(target=bg_init_services, daemon=True, name="BgServicesThread").start()
 
     print("[+] Backend services and sensors started")
 
