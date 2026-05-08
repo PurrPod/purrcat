@@ -12,6 +12,7 @@ from docker.errors import DockerException, NotFound, ImageNotFound
 
 # 引入自定义异常
 from .exceptions import DockerNotRunningError, DockerImageNotFoundError, BashTimeoutError
+from src.utils.config import get_file_config
 
 # 平台适配逻辑 - 与原代码完全一致
 if sys.platform == 'win32':
@@ -53,7 +54,6 @@ _docker_manager_instance: Optional['DockerManager'] = None
 def _get_docker_env() -> dict:
     """从配置读取 Docker 代理环境变量（只返回非空值）"""
     try:
-        from src.utils.config import get_file_config
         cfg = get_file_config().get("docker", {})
         env = {}
         if cfg.get("http_proxy"):

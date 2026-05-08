@@ -1,5 +1,5 @@
-# src/agent/manager.py
 import threading
+import time
 from src.agent.agent import Agent
 from src.agent.session_store import SessionStore
 
@@ -21,27 +21,18 @@ class AgentManager:
             return self._agent
 
         print("🚀 正在初始化全局 Agent...")
-        
         if not session_id:
             all_sessions = SessionStore.get_all_sessions()
-            if all_sessions:
-                session_id = max(all_sessions.keys(), key=lambda k: all_sessions[k].get("updated_at", ""))
-            else:
-                session_id = SessionStore._generate_id()
-                
+            session_id = max(all_sessions.keys(), key=lambda k: all_sessions[k].get("updated_at",
+                                                                                    "")) if all_sessions else SessionStore._generate_id()
+
         history = SessionStore.load_session_history(session_id)
-        
         if history and history[-1].get("role") == "assistant" and history[-1].get("tool_calls"):
-            print("🛠️ [Checkpoint] 撤销最近一次未完成的工具调用...")
             history.pop()
 
         self._agent = Agent(session_id=session_id, initial_history=history, name=name, save_callback=self.notify_save)
-        
-        self._sensor_thread = threading.Thread(
-            target=self._agent.sensor,
-            daemon=True,
-            name="AgentSensorThread"
-        )
+
+        self._sensor_thread = threading.Thread(target=self._agent.sensor, daemon=True, name="AgentSensorThread")
         self._sensor_thread.start()
         print(f"✅ Agent 已启动，当前挂载会话: {session_id}")
         return self._agent
@@ -52,58 +43,75 @@ class AgentManager:
         return self._agent
 
     def notify_save(self):
-        """Agent 上下文发生变化时，被 Agent 回调落盘"""
         if self._agent:
-            SessionStore.save_session(self._agent.session_id, self._agent.current_history)
+            # 安全读取再保存
+            safe_history = self._agent.get_history()
+            SessionStore.save_session(self._agent.session_id, safe_history)
 
     def list_sessions(self):
-        """返回索引树给前端渲染"""
         return SessionStore.get_all_sessions()
 
     def branch_current_session(self, branch_alias=None):
-        """拉取新分支并自动切换"""
-        if not self._agent:
-            return None
-            
-        with self._agent._lock:
-            self.notify_save()
-            
-            new_id = SessionStore.create_branch(
-                current_session_id=self._agent.session_id,
-                current_history=self._agent.current_history,
-                branch_alias=branch_alias
-            )
-            
+        if not self._agent: return None
+
+        # 【修复】等待空闲，最多等待 3 秒。如果网络挂起，强制打断以防止 TUI 卡死
+        wait_count = 0
+        while self._agent.state != "idle" and wait_count < 6:
+            print("⏳ 正在等待 Agent 完成当前回复...")
+            time.sleep(0.5)
+            wait_count += 1
+
+        if self._agent.state != "idle":
+            print("⚠️ Agent 忙碌超时，强制打断执行分支拉取！")
+            self._agent.force_interrupt()
+
+        self.notify_save()
+        safe_history = self._agent.get_history()
+
+        new_id = SessionStore.create_branch(
+            current_session_id=self._agent.session_id,
+            current_history=safe_history,
+            branch_alias=branch_alias
+        )
+
+        with self._agent._history_lock:
             self._agent.session_id = new_id
-            self._agent.window_token = 0 
-            self._agent.model.bind_task(new_id, "AgentMain")
-            
-            print(f"🌿 成功拉取新分支并检出: {new_id} ({branch_alias})")
-            return new_id
+            self._agent.window_token = 0
+
+        self._agent.model.bind_task(new_id, "AgentMain")
+        print(f"🌿 成功拉取新分支并检出: {new_id} ({branch_alias})")
+        return new_id
 
     def checkout_session(self, target_session_id):
-        """在历史会话之间无缝切换"""
-        if not self._agent:
-            return False
-            
-        with self._agent._lock:
-            self.notify_save()
-            
-            new_history = SessionStore.load_session_history(target_session_id)
-            
+        if not self._agent: return False
+
+        wait_count = 0
+        while self._agent.state != "idle" and wait_count < 6:
+            print("⏳ 正在等待 Agent 释放资源...")
+            time.sleep(0.5)
+            wait_count += 1
+
+        if self._agent.state != "idle":
+            print("⚠️ 强制打断，执行会话切换！")
+            self._agent.force_interrupt()
+
+        self.notify_save()
+        new_history = SessionStore.load_session_history(target_session_id)
+
+        with self._agent._history_lock:
             self._agent.session_id = target_session_id
             self._agent.current_history = new_history
-            
+
             if not self._agent.current_history:
                 self._agent.current_history = [{"role": "system", "content": self._agent.system_prompt}]
             elif self._agent.current_history[0].get("role") == "system":
                 self._agent.current_history[0]["content"] = self._agent.system_prompt
-                
+
             self._agent.window_token = 0
-            self._agent.model.bind_task(target_session_id, "AgentMain")
-            
-            print(f"🔄 检出成功: {target_session_id}")
-            return True
+
+        self._agent.model.bind_task(target_session_id, "AgentMain")
+        print(f"🔄 检出成功: {target_session_id}")
+        return True
 
     def shutdown(self):
         if self._agent:

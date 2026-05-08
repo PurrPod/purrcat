@@ -3,6 +3,7 @@
 import requests
 from typing import Dict
 from .exceptions import WebNetworkError
+from bs4 import BeautifulSoup
 
 
 def web_content_fetch(url: str) -> tuple:
@@ -27,41 +28,30 @@ def web_content_fetch(url: str) -> tuple:
         
         # 尝试解析 HTML
         if 'text/html' in content_type:
-            try:
-                from bs4 import BeautifulSoup
-                soup = BeautifulSoup(response.content, 'html.parser')
-                
-                # 获取标题
-                title = soup.title.string if soup.title else url
-                
-                # 获取正文（优先选择常见的内容标签）
-                content_tags = soup.find_all(['article', 'main', 'div.content', 'div.main', 'div.post-content'])
-                
-                if content_tags:
-                    text_content = '\n'.join([tag.get_text(strip=True) for tag in content_tags])
-                else:
-                    # 如果找不到特定标签，提取所有段落
-                    paragraphs = soup.find_all('p')
-                    text_content = '\n'.join([p.get_text(strip=True) for p in paragraphs])
-                
-                # 清理文本
-                text_content = '\n'.join([line.strip() for line in text_content.split('\n') if line.strip()])
-                
-                return {
-                    "url": url,
-                    "title": title,
-                    "content": text_content[:5000] if len(text_content) > 5000 else text_content,
-                    "content_type": "html"
-                }, None
-                
-            except ImportError:
-                # 如果没有 BeautifulSoup，直接返回文本内容
-                return {
-                    "url": url,
-                    "title": url,
-                    "content": response.text[:5000],
-                    "content_type": "text"
-                }, None
+            soup = BeautifulSoup(response.content, 'html.parser')
+            
+            # 获取标题
+            title = soup.title.string if soup.title else url
+            
+            # 获取正文（优先选择常见的内容标签）
+            content_tags = soup.find_all(['article', 'main', 'div.content', 'div.main', 'div.post-content'])
+            
+            if content_tags:
+                text_content = '\n'.join([tag.get_text(strip=True) for tag in content_tags])
+            else:
+                # 如果找不到特定标签，提取所有段落
+                paragraphs = soup.find_all('p')
+                text_content = '\n'.join([p.get_text(strip=True) for p in paragraphs])
+            
+            # 清理文本
+            text_content = '\n'.join([line.strip() for line in text_content.split('\n') if line.strip()])
+            
+            return {
+                "url": url,
+                "title": title,
+                "content": text_content[:5000] if len(text_content) > 5000 else text_content,
+                "content_type": "html"
+            }, None
         
         elif 'application/json' in content_type:
             return {

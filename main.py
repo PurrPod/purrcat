@@ -14,6 +14,7 @@ from src.memory.purrmemo import get_memory_client
 
 
 async def init_core(cli_session_id: str = None, cli_branch_name: str = None):
+    # 注意：如果你的大模型 API 需要通过代理访问（如国内访问 OpenAI/Claude），请取消下面两行注释
     os.environ.pop("HTTP_PROXY", None)
     os.environ.pop("HTTPS_PROXY", None)
 
@@ -54,23 +55,25 @@ async def run_tui():
 async def main_async(enable_tui: bool, cli_session: str = None, cli_branch: str = None):
     await init_core(cli_session_id=cli_session, cli_branch_name=cli_branch)
 
-    if enable_tui:
-        print("[*] Starting TUI...")
-        try:
-            await run_tui()
-        except Exception as e:
-            print(f"[-] TUI error: {e}")
-            print("[*] Falling back to headless mode...")
-            enable_tui = False
+    try:
+        if enable_tui:
+            print("[*] Starting TUI...")
+            try:
+                await run_tui()
+            except Exception as e:
+                print(f"[-] TUI error: {e}")
+                print("[*] Falling back to headless mode...")
+                enable_tui = False
 
-    if not enable_tui:
-        print("[*] Running in headless mode, press Ctrl+C to exit...")
-        try:
+        if not enable_tui:
+            print("[*] Running in headless mode, press Ctrl+C to exit...")
             await asyncio.Event().wait()
-        except (KeyboardInterrupt, asyncio.CancelledError):
-            pass
-        finally:
-            await shutdown_core()
+            
+    except (KeyboardInterrupt, asyncio.CancelledError):
+        print("\n[*] 检测到中断信号，准备退出...")
+    finally:
+        # 确保无论什么分支，最后都会安全关停 Agent 和后台线程
+        await shutdown_core()
 
 
 def main():

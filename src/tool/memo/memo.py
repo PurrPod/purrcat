@@ -160,11 +160,11 @@ def _handle_search(query: str = None, filter: str = None, topk: int = 5) -> str:
 def _validate_date_format(date_str: str) -> bool:
     """验证日期格式 YYYY-MM-DD"""
     import re
+    from datetime import datetime
     pattern = r'^\d{4}-\d{2}-\d{2}$'
     if not re.match(pattern, date_str):
         return False
     try:
-        from datetime import datetime
         datetime.strptime(date_str, '%Y-%m-%d')
         return True
     except ValueError:

@@ -18,12 +18,7 @@ def main():
     print(f"[*] Model: {model_name}")
     print(f"[*] Target directory: {embedding_dir}")
 
-    try:
-        from huggingface_hub import snapshot_download
-    except ImportError:
-        print("[-] huggingface_hub not found, installing...")
-        os.system(f"{sys.executable} -m pip install huggingface_hub -q")
-        from huggingface_hub import snapshot_download
+    from huggingface_hub import snapshot_download
 
     os.makedirs(embedding_dir, exist_ok=True)
 

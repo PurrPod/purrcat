@@ -75,7 +75,10 @@ _task_log_cache = {}  # task_id -> (mtime, size, formatted_text)
 # ---------------------------------------------------------
 def get_agent_history():
     agent = get_agent()
-    return copy.deepcopy(agent.current_history)
+    try:
+        return agent.get_history()
+    except Exception:
+        return []
 
 def force_push_agent(text: str):
     agent = get_agent()

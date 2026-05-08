@@ -15,7 +15,7 @@ class LLMClient:
         self.client = OpenAI(
             api_key=api_key,
             base_url=base_url,
-            timeout=120.0
+            timeout=60.0  # 强制设定 30 秒超时，避免无限期挂起
         )
 
     def execute_chat(self, model_name: str, messages: list, task_id: str, semaphore, tools: list = None, **kwargs):

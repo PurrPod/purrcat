@@ -2,14 +2,22 @@ import os
 import json
 import uuid
 import time
-import copy
 import threading
 from src.utils.config import SESSIONS_DIR, SESSION_INDEX_PATH
 
 
 class SessionStore:
-    """会话持久化与分支管理层 (Repository Pattern)"""
-    _index_lock = threading.Lock()
+    _index_lock = threading.RLock()
+    _file_locks = {}  # 用于存储每个session文件的锁: {session_id: threading.Lock()}
+    _file_locks_lock = threading.Lock()  # 保护 _file_locks 字典本身
+
+    @classmethod
+    def _get_file_lock(cls, session_id):
+        """获取指定session_id的文件锁，线程安全"""
+        with cls._file_locks_lock:
+            if session_id not in cls._file_locks:
+                cls._file_locks[session_id] = threading.Lock()
+            return cls._file_locks[session_id]
 
     @staticmethod
     def _generate_id():
@@ -17,7 +25,6 @@ class SessionStore:
 
     @classmethod
     def get_all_sessions(cls):
-        """获取所有会话列表（用于构建 Git 树状图）"""
         with cls._index_lock:
             if os.path.exists(SESSION_INDEX_PATH):
                 try:
@@ -29,10 +36,8 @@ class SessionStore:
 
     @classmethod
     def load_session_history(cls, session_id):
-        """加载指定会话的历史记录"""
         path = os.path.join(SESSIONS_DIR, f"{session_id}.json")
-        if not os.path.exists(path):
-            return []
+        if not os.path.exists(path): return []
         try:
             with open(path, "r", encoding="utf-8") as f:
                 return json.load(f)
@@ -42,32 +47,34 @@ class SessionStore:
 
     @classmethod
     def save_session(cls, session_id, history, parent_id=None, alias=None):
-        """保存历史并安全更新索引 (支持临时文件替换，防断电损坏)"""
         path = os.path.join(SESSIONS_DIR, f"{session_id}.json")
         temp_path = f"{path}.tmp"
-        try:
-            with open(temp_path, "w", encoding="utf-8") as f:
-                json.dump(history, f, ensure_ascii=False, indent=2)
-            os.replace(temp_path, path)
-        except Exception as e:
-            print(f"⚠️ 保存会话内容失败: {e}")
-            return
+        
+        # 获取该session的文件锁，防止并发写入
+        file_lock = cls._get_file_lock(session_id)
+        with file_lock:
+            try:
+                # 临时文件写入保障断电不丢数据
+                with open(temp_path, "w", encoding="utf-8") as f:
+                    json.dump(history, f, ensure_ascii=False, indent=2)
+                os.replace(temp_path, path)
+            except Exception as e:
+                print(f"⚠️ 保存会话内容失败: {e}")
+                return
 
         with cls._index_lock:
             index_data = cls.get_all_sessions()
             session_info = index_data.get(session_id, {})
-            
             if not session_info:
                 session_info = {
                     "created_at": time.strftime('%Y-%m-%d %H:%M:%S'),
                     "parent_id": parent_id,
                     "alias": alias or session_id,
                 }
-            
             session_info["updated_at"] = time.strftime('%Y-%m-%d %H:%M:%S')
             session_info["messages_count"] = len(history)
             index_data[session_id] = session_info
-            
+
             try:
                 with open(SESSION_INDEX_PATH, "w", encoding="utf-8") as f:
                     json.dump(index_data, f, ensure_ascii=False, indent=2)
@@ -76,19 +83,12 @@ class SessionStore:
 
     @classmethod
     def create_branch(cls, current_session_id, current_history, branch_alias=None):
-        """
-        拉取分支核心逻辑：
-        1. 生成新 ID
-        2. 深拷贝当前内存历史
-        3. 将拷贝存入新 ID 文件，建立父子关联
-        """
         new_session_id = cls._generate_id()
-        history_copy = copy.deepcopy(current_history)
-        
+        # 由于传入的 current_history 已经是深拷贝副本，无需在此重复深拷贝
         cls.save_session(
-            session_id=new_session_id, 
-            history=history_copy, 
-            parent_id=current_session_id, 
+            session_id=new_session_id,
+            history=current_history,
+            parent_id=current_session_id,
             alias=branch_alias
         )
         return new_session_id

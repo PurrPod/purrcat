@@ -5,6 +5,7 @@ from typing import List, Dict
 import numpy as np
 
 from src.tool.search.semantic_utils import LocalEmbeddingSearcher
+from src.tool.callmcp.schema_manager import load_cached_schemas
 
 
 class MCPSearcher:
@@ -24,29 +25,24 @@ class MCPSearcher:
         self.corpus = []
         self.embedding_searcher = LocalEmbeddingSearcher()
 
-        try:
-            from src.tool.callmcp.schema_manager import load_cached_schemas
-            schemas = load_cached_schemas()
+        schemas = load_cached_schemas()
 
-            for schema in schemas:
-                server_name = schema.get("server", "")
-                func = schema.get("function", {})
-                tool_name = func.get("name", "")
-                description = func.get("description", "")
+        for schema in schemas:
+            server_name = schema.get("server", "")
+            func = schema.get("function", {})
+            tool_name = func.get("name", "")
+            description = func.get("description", "")
 
-                self.tools.append({
-                    "server_name": server_name,
-                    "tool_name": tool_name,
-                    "description": description
-                })
-                text_representation = f"{server_name} {tool_name} {tool_name.replace('_', ' ')} {description}"
-                self.corpus.append(text_representation)
+            self.tools.append({
+                "server_name": server_name,
+                "tool_name": tool_name,
+                "description": description
+            })
+            text_representation = f"{server_name} {tool_name} {tool_name.replace('_', ' ')} {description}"
+            self.corpus.append(text_representation)
 
-            if self.corpus:
-                self.corpus_matrix = self.embedding_searcher.encode(self.corpus)
-
-        except Exception as e:
-            print(f"[MCP Search] 初始化失败: {e}")
+        if self.corpus:
+            self.corpus_matrix = self.embedding_searcher.encode(self.corpus)
 
     def search(self, query: str, max_results: int = 5) -> List[Dict]:
         if not self.corpus:

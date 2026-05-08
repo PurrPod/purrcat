@@ -15,6 +15,7 @@ from src.utils.config import DATA_DIR
 from src.utils.enums import TaskState, LogType
 from src.tool.utils.route import dispatch_tool
 from src.harness.dag.engine import DAGEngine
+from src.tool.bash import close_session
 
 TASK_INSTANCES = {}
 dirty_tasks = set()
@@ -100,7 +101,6 @@ class BaseTask:
 
     def _cleanup_resources(self):
         try:
-            from src.tool.bash import close_session
             close_session(session_id=self.task_id)
             self.log_and_notify(LogType.SYSTEM, "🧹 已自动回收任务专属的 Shell 终端环境")
         except Exception as e:
@@ -441,11 +441,8 @@ class BaseTask:
 
     def get_base_tool_name(self) -> set:
         """获取 base task 工具名集合，用于快速判断工具归属"""
-        try:
-            from src.tool import BASE_TASK_TOOL_SCHEMA
-            return {schema["function"]["name"] for schema in BASE_TASK_TOOL_SCHEMA}
-        except ImportError:
-            return set()
+        from src.tool import BASE_TASK_TOOL_SCHEMA
+        return {schema["function"]["name"] for schema in BASE_TASK_TOOL_SCHEMA}
 
 
     @classmethod

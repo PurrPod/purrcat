@@ -6,6 +6,7 @@ import threading
 from typing import Dict
 
 from src.utils.config import get_model_config
+from src.harness.task import TASK_INSTANCES
 
 
 def add_task_operation(name: str, prompt: str, expert: str,
@@ -112,22 +113,16 @@ def list_tasks_operation() -> tuple:
     Returns:
         (tasks_list, error_message)
     """
-    try:
-        from src.harness.task import TASK_INSTANCES
-        
-        tasks = []
-        for task_id, task in TASK_INSTANCES.items():
-            tasks.append({
-                "task_id": task_id,
-                "name": getattr(task, 'task_name', '未知'),
-                "state": getattr(task, 'state', '未知'),
-                "expert_type": getattr(task, 'expert_type', '未知')
-            })
+    tasks = []
+    for task_id, task in TASK_INSTANCES.items():
+        tasks.append({
+            "task_id": task_id,
+            "name": getattr(task, 'task_name', '未知'),
+            "state": getattr(task, 'state', '未知'),
+            "expert_type": getattr(task, 'expert_type', '未知')
+        })
 
-        return {
-            "tasks": tasks,
-            "count": len(tasks)
-        }, None
-
-    except Exception as e:
-        return None, f"获取任务列表失败: {str(e)}"
+    return {
+        "tasks": tasks,
+        "count": len(tasks)
+    }, None

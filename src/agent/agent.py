@@ -3,93 +3,100 @@ import os
 import time
 import json
 import threading
+import copy
 from src.utils.tracker import Tracker
 from src.model import AgentModel
-
 from src.tool import AGENT_TOOL_SCHEMA
 from src.tool.utils.route import dispatch_tool
-from src.utils.config import (
-    get_agent_model, SOUL_MD_PATH, SYSTEM_RULES_DIR, AGENT_CORE_DIR
-)
-
+from src.utils.config import get_agent_model, SOUL_MD_PATH, SYSTEM_RULES_DIR, AGENT_CORE_DIR
 from json_repair import repair_json
-
-
-ROOT = False
 
 MEMORY_MD_PATH = os.path.join(AGENT_CORE_DIR, "MEMORY.md")
 
 
-
 class Agent:
     def __init__(self, session_id, initial_history=None, name=None, save_callback=None):
-        if not name:
-            name = get_agent_model()
-        self.name = name
+        self.name = name or get_agent_model()
         self.session_id = session_id
-        self.state = "idle"
-        self.model = AgentModel(self.session_id)
-        self.model.bind_task(self.session_id, "AgentMain")
-        self.system_prompt = self._build_system_prompt()
-        self.tracker = Tracker()
+
+        # === 核心状态 ===
+        self._state = "idle"
+        self._interaction_id = 0  # 当前交互的唯一标识，用于防止旧请求污染新会话
+
         self.pending_force_push = []
-        self._lock = threading.Lock()
         self.window_token = 0
         self._stop_event = threading.Event()
         self._save_callback = save_callback
 
+        self.model = AgentModel(self.session_id)
+        self.model.bind_task(self.session_id, "AgentMain")
+        self.system_prompt = self._build_system_prompt()
+        self.tracker = Tracker()
+
         self.current_history = initial_history or []
-        
         if not self.current_history:
             self.current_history = [{"role": "system", "content": self.system_prompt}]
         elif self.current_history[0].get("role") == "system":
             self.current_history[0]["content"] = self.system_prompt
+
     def _build_system_prompt(self):
-        soul_md = ""
+        soul_md, system_rules, memory_md = "", "", ""
         try:
             if os.path.exists(SOUL_MD_PATH):
-                with open(SOUL_MD_PATH, "r", encoding="utf-8") as f:
-                    soul_md = f.read().strip()
-        except Exception as e:
-            print(f"⚠️ 读取 SOUL.md 失败: {e}")
-        system_rules = ""
-        try:
+                with open(SOUL_MD_PATH, "r", encoding="utf-8") as f: soul_md = f.read().strip()
             if os.path.exists(SYSTEM_RULES_DIR):
-                rule_files = sorted([
-                    f for f in os.listdir(SYSTEM_RULES_DIR)
-                    if f.endswith(".md")
-                ])
+                rule_files = sorted([f for f in os.listdir(SYSTEM_RULES_DIR) if f.endswith(".md")])
                 for rf in rule_files:
-                    filepath = os.path.join(SYSTEM_RULES_DIR, rf)
-                    with open(filepath, "r", encoding="utf-8") as f:
+                    with open(os.path.join(SYSTEM_RULES_DIR, rf), "r", encoding="utf-8") as f:
                         system_rules += f.read().strip() + "\n\n"
                 system_rules = system_rules.strip()
-        except Exception as e:
-            print(f"⚠️ 读取 system_rules 目录失败: {e}")
-        memory_md = ""
-        try:
             if os.path.exists(MEMORY_MD_PATH):
-                with open(MEMORY_MD_PATH, "r", encoding="utf-8") as f:
-                    memory_md = f.read().strip()
+                with open(MEMORY_MD_PATH, "r", encoding="utf-8") as f: memory_md = f.read().strip()
         except Exception as e:
-            print(f"⚠️ 读取 memory.md 失败: {e}")
-        combined_prompt = soul_md
-        if system_rules:
-            combined_prompt += f"\n\n---\n\n{system_rules}"
-        if memory_md:
-            combined_prompt += f"\n\n---\n\n# 【系统长期记忆档案】\n\n{memory_md}"
-        return combined_prompt
+            print(f"⚠️ Prompt 构建发生异常: {e}")
+
+        combined = soul_md
+        if system_rules: combined += f"\n\n---\n\n{system_rules}"
+        if memory_md: combined += f"\n\n---\n\n# 【系统长期记忆档案】\n\n{memory_md}"
+        return combined
 
     def stop(self):
-        try:
-            self._stop_event.set()
-        finally:
-            if hasattr(self, 'model') and self.model:
-                self.model.unbind()
+        self._stop_event.set()
+        if hasattr(self, 'model') and self.model:
+            self.model.unbind()
+
+    @property
+    def state(self):
+        return self._state
+
+    @state.setter
+    def state(self, value):
+        self._state = value
+
     def _get_tool_schema(self):
-        from src.tool import AGENT_TOOL_SCHEMA
         return AGENT_TOOL_SCHEMA
+
+    def _get_current_interaction_id(self):
+        """获取当前交互ID，用于验证响应是否属于当前会话"""
+        return self._interaction_id
+
+    def _increment_interaction_id(self):
+        """递增交互ID，用于标记新的交互开始"""
+        self._interaction_id += 1
+        return self._interaction_id
+
+    def force_interrupt(self):
+        """强制打断当前交互，使旧线程的响应失效"""
+        print("🔒 [强制打断] 递增交互ID以隔离旧响应")
+        self._increment_interaction_id()
+        self.state = "idle"
+
+    def get_history(self):
+        """提供给前端的安全读取接口"""
+        return copy.deepcopy(self.current_history)
+
     def _append_history(self, message: dict):
+        """安全写入历史"""
         self.current_history.append(message)
         try:
             self.tracker.add(message)
@@ -98,51 +105,66 @@ class Agent:
             print(f"⚠️ [Memory] 落盘失败: {e}")
 
     def force_push(self, content, type="unknown_type"):
-        with self._lock:
-            self.pending_force_push.append(f"<{type}>{content}</{type}>")
+        """接收外部消息"""
+        self.pending_force_push.append(f"<{type}>{content}</{type}>")
 
     def _track_token_usage(self, response):
-        """精准统计 API Token，防止重复累加"""
         if hasattr(response, "usage") and response.usage is not None:
             self.window_token = response.usage.total_tokens
 
     def _checker(self):
+        """提取排队消息合并入历史"""
         local_push = []
-        with self._lock:
-            if self.pending_force_push:
-                local_push = self.pending_force_push.copy()
-                self.pending_force_push.clear()
+        if self.pending_force_push:
+            local_push = self.pending_force_push.copy()
+            self.pending_force_push.clear()
+
         if self.window_token > 0:
             self._check_and_summarize_memory()
+
         if local_push:
-            len_messages = len(local_push)
-            formatted_messages = "\n\n".join(local_push)
+            formatted = "\n\n".join(local_push)
             self._append_history({
                 "role": "user",
-                "content": f"[SYSTEM {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Received {len_messages} message:\n\n{formatted_messages}"
+                "content": f"[SYSTEM {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Received {len(local_push)} message:\n\n{formatted}"
             })
+
     def process_message(self):
-        """核心 ReAct 交互循环 (主调度器)"""
-        self.state = "handling"
+        """主 ReAct 循环"""
+        # 获取当前交互ID，用于后续验证响应是否属于当前会话
+        current_interaction_id = self._increment_interaction_id()
         while True:
             try:
-                self._checker()
-                msg_resp = self._step_model_interaction()
-                has_tools = self._process_assistant_message(msg_resp)
+                # 检查交互ID是否已过期（会话已被切换）
+                if self._get_current_interaction_id() != current_interaction_id:
+                    print(f"⚠️ [隔离] 检测到交互ID过期 ({current_interaction_id} != {self._get_current_interaction_id()})，丢弃旧响应")
+                    break
 
+                self._checker()
+                # 传入隔离后的历史记录副本进行请求，防止请求中被并发修改
+                safe_history = self.get_history()
+                response = self.model.chat(messages=safe_history, tools=self._get_tool_schema())
+                
+                # 再次检查交互ID，因为网络请求可能耗时较长，期间会话可能已切换
+                if self._get_current_interaction_id() != current_interaction_id:
+                    print(f"⚠️ [隔离] 网络响应返回后检测到交互ID过期 ({current_interaction_id} != {self._get_current_interaction_id()})，丢弃响应")
+                    break
+
+                self._track_token_usage(response)
+                msg_resp = response.choices[0].message
+
+                has_tools = self._process_assistant_message(msg_resp)
                 if not has_tools:
                     print("✅ 消息处理闭环结束。")
-                    self.state = "idle"
                     break
 
                 should_pause = self._execute_tool_calls(msg_resp.tool_calls)
                 if should_pause:
-                    self.state = "idle"
-                    return
+                    break
 
             except KeyboardInterrupt:
                 self._handle_interaction_error(is_interrupt=True)
-                raise
+                break
             except Exception as e:
                 self._handle_interaction_error(e=e)
                 break
@@ -150,45 +172,24 @@ class Agent:
         try:
             self._check_and_summarize_memory()
         except Exception as e:
-            print(f"压缩记忆失败：{e}")
-
-
-    def _step_model_interaction(self):
-        """封装与大模型的 API 请求，并统计 Token"""
-        current_tools = AGENT_TOOL_SCHEMA
-        response = self.model.chat(messages=self.current_history, tools=current_tools)
-        self._track_token_usage(response)
-        return response.choices[0].message
+            print(f"⚠️ 压缩记忆失败：{e}")
 
     def _process_assistant_message(self, msg_resp) -> bool:
-        """解析助手的回复内容，组装历史并打印。返回是否包含工具调用"""
         assist_msg = {"role": "assistant", "content": msg_resp.content or ""}
-
-        # 兼容读取 reasoning_content (思考模型支持)
         rc = getattr(msg_resp, "reasoning_content", None)
         if rc is None and hasattr(msg_resp, "model_dump"):
-            model_dump_result = msg_resp.model_dump()
-            if isinstance(model_dump_result, dict):
-                rc = model_dump_result.get("reasoning_content")
+            rc = msg_resp.model_dump().get("reasoning_content")
 
-        if rc is not None:
-            assist_msg["reasoning_content"] = rc
+        if rc is not None: assist_msg["reasoning_content"] = rc
 
-        # 组装工具调用记录
         if msg_resp.tool_calls:
             assist_msg["tool_calls"] = [
-                {
-                    "id": t.id,
-                    "type": t.type,
-                    "function": {"name": t.function.name, "arguments": t.function.arguments}
-                } for t in msg_resp.tool_calls
+                {"id": t.id, "type": t.type, "function": {"name": t.function.name, "arguments": t.function.arguments}}
+                for t in msg_resp.tool_calls
             ]
-
         self._append_history(assist_msg)
 
-        # 控制台打印输出
-        if rc:
-            print(f"🧠 模型深度思考:\n{rc}\n")
+        if rc: print(f"🧠 模型深度思考:\n{rc}\n")
         if msg_resp.content:
             from src.sensor import get_gateway
             get_gateway().send(f"{msg_resp.content}")
@@ -196,92 +197,74 @@ class Agent:
         return bool(msg_resp.tool_calls)
 
     def _execute_tool_calls(self, tool_calls) -> bool:
-        """执行工具调用链。如果任务被挂起返回 True，否则返回 False 继续循环"""
-        for idx, tool_call in enumerate(tool_calls):
-            original_tool_name = tool_call.function.name
-            target_tool_name = original_tool_name
+        for tool_call in tool_calls:
+            target_tool_name = tool_call.function.name
             arguments_str = tool_call.function.arguments
             arguments = {}
 
-            # --- 1. 参数解析与 json-repair 容错 ---
             if arguments_str:
                 try:
                     arguments = json.loads(arguments_str)
-                except json.JSONDecodeError as e:
-                    print(f"⚠️ 标准 JSON 解析失败，尝试容错修复: {e}")
-                    if repair_json:
-                        try:
-                            arguments = repair_json(arguments_str, return_objects=True)
-                            print("✅ json-repair 修复成功！")
-                        except Exception as repair_e:
-                            print(f"❌ json-repair 修复失败: {repair_e}")
+                except Exception as e:
+                    if repair_json: arguments = repair_json(arguments_str, return_objects=True)
 
-            # --- 2. 拦截损坏参数 ---
             if not isinstance(arguments, dict):
-                error_msg = "❌ 系统拦截：工具参数格式严重损坏。可能是由于命令过长导致的截断或转义错误，建议分批运行指令！！！"
-                print(error_msg)
-                self._append_history({
-                    "role": "tool",
-                    "tool_call_id": tool_call.id,
-                    "name": original_tool_name,
-                    "content": error_msg
-                })
+                error_msg = "❌ 系统拦截：工具参数格式严重损坏。"
+                self._append_history(
+                    {"role": "tool", "tool_call_id": tool_call.id, "name": target_tool_name, "content": error_msg})
                 continue
 
-            # --- 4. 环境参数注入 ---
             if target_tool_name in ["execute_command", "close_shell", "Bash"]:
                 arguments["session_id"] = self.session_id
 
-            # --- 5. 执行与挂起逻辑 ---
-            args_str = ", ".join([f'{k}={repr(v)}' for k, v in arguments.items()]) if isinstance(arguments, dict) else str(arguments)
+            args_str = str(arguments)
             from src.sensor import get_gateway
-            from src.utils.config import get_model_config
-            model_cfg = get_model_config().get("main", {}).get(self.name, {})
-            max_tokens = model_cfg.get("max_token", 500000)
-            remaining = max_tokens - self.window_token
 
             result_content = dispatch_tool(target_tool_name, arguments)
             try:
-                parsed_result = json.loads(result_content)
-                snip = parsed_result.get('snip', '') if isinstance(parsed_result, dict) else ''
-            except json.JSONDecodeError:
-                snip = result_content if isinstance(result_content, str) else str(result_content)
+                snip = json.loads(result_content).get('snip', '') if isinstance(json.loads(result_content),
+                                                                                dict) else ''
+            except:
+                snip = str(result_content)[:100]
 
+            get_gateway().send(f"🔧{target_tool_name}({args_str[:50]}...)\n\n---\n\n{snip}")
+            self._append_history(
+                {"role": "tool", "tool_call_id": tool_call.id, "name": target_tool_name, "content": result_content})
 
-            get_gateway().send(f"🔧{target_tool_name}({args_str})\n\n---\n\n{snip}")
-            self.current_history.append({
-                "role": "tool",
-                "tool_call_id": tool_call.id,
-                "name": original_tool_name,
-                "content": result_content
-            })
-
-        return False  # 正常执行完毕，继续 ReAct 循环
+        return False
 
     def _handle_interaction_error(self, e=None, is_interrupt=False):
-        """统一处理大模型交互中的异常与撤销现场保护"""
-        self.state = "idle"
+        content_msg = "⚠️ [中断] 运行被强制中断。" if is_interrupt else f"❌ [错误] 交互断层: {e}"
+        print(content_msg)
 
-        if is_interrupt:
-            print("⚠️ [Agent] 检测到强制中断 (Ctrl+C)，保存现场...")
-            content_msg = "⚠️ [系统提示] Agent 运行被用户或系统强制中断 (Ctrl+C)。"
-        else:
-            print(f"❌ [Agent] 大模型交互断层: {e}")
-            content_msg = f"❌ [系统报错] Agent 遭遇意外交互断层，当前处理已终止。错误信息：{e}"
-
-        # 撤销未闭环的 tool_calls
         if self.current_history and self.current_history[-1].get("role") == "assistant" and self.current_history[
             -1].get("tool_calls"):
             self.current_history.pop()
-            print("⚠️ 已自动撤销未完成的 tool_calls 记录")
 
-        # 补齐断层信息，防上下文报错
-        fake_msg = {"role": "assistant", "content": content_msg}
-        if any("reasoning_content" in msg for msg in self.current_history if msg.get("role") == "assistant"):
-            fake_msg["reasoning_content"] = ""
-        self.current_history.append(fake_msg)
+        self._append_history({"role": "assistant", "content": content_msg})
 
-        self.save_checkpoint()
+
+    def sensor(self):
+        print("🚀 Agent 后台主核已启动...")
+        while not self._stop_event.is_set():
+            try:
+                has_pending = False
+                if self.pending_force_push:
+                    has_pending = True
+
+                if has_pending:
+                    self.state = "handling"
+                    self.process_message()
+                    self.state = "idle"
+                time.sleep(0.5)
+            except BaseException as e:
+                print(f"❌ 主核异常已被安全拦截: {e}")
+                self.state = "idle"
+                time.sleep(1)
+
+    def save_checkpoint(self):
+        if self._save_callback:
+            self._save_callback()
 
 
     def _check_and_summarize_memory(self, check_mode=True):
@@ -476,25 +459,3 @@ class Agent:
         print("✅ Agent记忆清理完毕！归档过程已在沙箱中隐蔽完成，主历史流保持纯净。")
         self.window_token = 0
         self.save_checkpoint()
-    # ==========================================
-    # 系统与运行控制
-    # ==========================================
-    def sensor(self):
-        print("Agent 主核运转...")
-        while not self._stop_event.is_set():
-            try:
-                has_pending = False
-                with self._lock:
-                    if self.pending_force_push:
-                        has_pending = True
-                if has_pending:
-                    self.process_message()
-                time.sleep(1)
-            except Exception as e:
-                print(f"❌ 主核运转异常: {e}")
-                time.sleep(1)
-
-    def save_checkpoint(self):
-        """不再自己写硬盘，而是通知 Manager 去做"""
-        if self._save_callback:
-            self._save_callback()

@@ -10,6 +10,7 @@ if project_root not in sys.path:
 
 from src.memory.purrmemo.core.config import GRAPH_DATABASE_CONFIG
 from src.utils.config import MEMORY_DIR
+from pyvis.network import Network
 
 
 class GraphVisualizer:
@@ -49,11 +50,8 @@ class GraphVisualizer:
         if output_dir and not os.path.exists(output_dir):
             os.makedirs(output_dir, exist_ok=True)
         
-        try:
-            from pyvis.network import Network
-            
-            # 创建 pyvis 网络
-            net = Network(
+        # 创建 pyvis 网络
+        net = Network(
                 notebook=False,
                 directed=True,
                 width="100%",
