@@ -227,8 +227,9 @@ def dispatch_tool(tool_name: str, arguments: dict, available_tokens: int = None)
             content_data = result_str
             actual_content_str = result_str
         
-        # 超标验证（load_skill 工具除外）
-        if len(actual_content_str) > MAX_LEN and tool_name_lower != "load_skill":
+        # 超标验证（Fetch工具的source=skill时全量返回）
+        is_fetch_skill = tool_name_lower == "fetch" and arguments.get("source", "").lower() == "skill"
+        if len(actual_content_str) > MAX_LEN and not is_fetch_skill:
             # 按工具名称分类全量存储（使用小写工具名）
             buffer_dir = BUFFER_DIR
             tool_dir = os.path.join(buffer_dir, tool_name_lower)

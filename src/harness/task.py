@@ -12,7 +12,7 @@ from json_repair import repair_json
 
 from src.model import Model
 from src.utils.config import DATA_DIR
-from src.utils.enums import TaskState, LogType
+from .enums import TaskState, LogType
 from src.tool.utils.route import dispatch_tool
 from src.harness.dag.engine import DAGEngine
 from src.tool.bash import close_session
