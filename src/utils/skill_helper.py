@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from config import BASE_DIR
+from src.utils.config import BASE_DIR
 
 def get_available_skills() -> list[str]:
     """
