@@ -132,13 +132,13 @@ class BaseTask:
         """
         system_prompt = self._build_system_prompt()
         user_prompt = self.prompt
-        
+        workplace = self.workplace
         return {
             "nodes": [
                 {"id": "node_sys_msg", "type": "Appender", "data": {"item": {"role": "system", "content": system_prompt}}},
                 {"id": "node_user_msg", "type": "Appender", "data": {"item": {"role": "user", "content": user_prompt}}},
                 {"id": "node_tools", "type": "ToolKit"},
-                {"id": "node_loop", "type": "FileOutputLoop", "data": {"file_path": f"{self.workplace}/FINISHED.md"}}
+                {"id": "node_loop", "type": "FileOutputLoop", "data": {"file_path": f"{workplace}/FINISHED.md"}}
             ],
             "edges": [
                 {"source": "node_sys_msg", "target": "node_user_msg", "targetHandle": "list"},
@@ -187,11 +187,9 @@ class BaseTask:
         if self.check_memory(messages):
             self.flusher(messages)
         self.save_checkpoints()
-        model = Model(self.core)
-        response = model.chat(messages=messages, tools=tools)
+        response = self.model.chat(messages=messages, tools=tools)
         self.save_checkpoints()
         self.token_usage += self.track_token(response)
-        model.unbind()
         return response
     def check_file_exist(self, file_path: str):
         if os.path.exists(file_path):

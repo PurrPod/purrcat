@@ -67,24 +67,35 @@ class StrAdapterNode(DAGNode):
         return {"default": str1 + str2}
 
 
-class AppenderNode(DAGNode):
+class MessageCardBuilderNode(DAGNode):
+    """专门负责将文本和角色包装成标准 MessageList (包含单条消息的列表)"""
+
     async def execute(self, inputs, context):
-        msg_list = inputs.get("list", [])
-        msg_list = list(msg_list) if msg_list else []  # 确保是新的空列表
-        
-        item = inputs.get("item") or self.config.get("item")
+        content = inputs.get("content") or self.config.get("content", "")
         role = inputs.get("role") or self.config.get("role", "user")
-        
-        if item:
-            if isinstance(item, list):
-                msg_list.extend(item)
-            else:
-                if isinstance(item, str):
-                    msg_list.append({"role": role, "content": item})
-                else:
-                    msg_list.append(item)
-                
-        return {"default": msg_list}
+
+        if not content:
+            return {"default": []}
+
+        # 直接输出一个只包含当前卡片的 MessageList
+        return {"default": [{"role": role, "content": content}]}
+
+
+class AppenderNode(DAGNode):
+    """纯粹的列表追加器：将 append_list 追加到 base_list 后面"""
+
+    async def execute(self, inputs, context):
+        base_list = inputs.get("base_list", [])
+        append_list = inputs.get("append_list", [])
+
+        # 浅拷贝 base_list，防止修改污染上游节点的数据
+        result_list = list(base_list) if base_list else []
+
+        # 将新列表追加进去
+        if append_list and isinstance(append_list, list):
+            result_list.extend(append_list)
+
+        return {"default": result_list}
 
 
 class ToolKitNode(DAGNode):
