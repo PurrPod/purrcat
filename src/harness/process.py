@@ -85,14 +85,20 @@ class Task:
 
     def load_graph(self):
         """纯粹地解析 JSON，动态加载节点，并执行顶层参数强校验"""
+        import os, json, importlib
+        from .enums import TaskState, NodeState
+
         graph_path = os.path.join(os.path.dirname(__file__), "graph", f"{self.graph_name}.json")
         with open(graph_path, "r", encoding="utf-8") as f:
             self.graph = json.load(f)
 
-        # 🌟 核心新增：顶层 API 契约校验
-        required_inputs = self.graph.get("required_inputs", [])
-        missing_keys = [k for k in required_inputs if k not in self.inputs or self.inputs[k] is None]
-        
+        # 🌟 核心：兼容字典和列表两种格式的 required_inputs
+        required_inputs = self.graph.get("required_inputs", {})
+        if isinstance(required_inputs, list):
+            # 如果是列表格式，转换为字典以便统一处理
+            required_inputs = {k: "" for k in required_inputs}
+        missing_keys = [k for k in required_inputs.keys() if k not in self.inputs or self.inputs[k] is None]
+
         if missing_keys:
             error_msg = f"工作流 '{self.graph_name}' 拒绝启动：缺少顶层必填参数 {missing_keys}"
             print(f"❌ {error_msg}")
@@ -100,12 +106,10 @@ class Task:
             self.error_message = error_msg
             return
 
-        # 校验通过，继续加载节点...
         for node_data in self.graph.get("nodes", []):
             node_id = node_data["id"]
             node_type = node_data["type"]
             config = node_data.get("data", {})
-
             try:
                 module = importlib.import_module(f"harness.node.{node_type}.node")
                 self.node_list[node_id] = module.Node(node_id=node_id, config=config)
@@ -113,6 +117,7 @@ class Task:
             except Exception as e:
                 print(f"❌ 加载节点模块失败 {node_type}: {e}")
                 self.state = TaskState.ERROR
+                self.error_message = f"节点加载失败: {e}"
 
     def submit_request(self, node_id: str, content: str):
         if node_id not in self.node_list:

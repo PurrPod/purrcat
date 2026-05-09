@@ -6,7 +6,6 @@ import threading
 from typing import Dict
 
 from src.utils.config import get_model_config
-from src.harness.process import TASK_INSTANCES
 
 
 def add_task_operation(name: str, prompt: str, expert: str,
@@ -113,6 +112,7 @@ def list_tasks_operation() -> tuple:
     Returns:
         (tasks_list, error_message)
     """
+    from src.harness.process import TASK_INSTANCES
     tasks = []
     for task_id, task in TASK_INSTANCES.items():
         tasks.append({

@@ -2,6 +2,7 @@
 基础工具调度器：统一管理工作流工具和业务工具的调度入口（插件化版本）
 
 核心工具（task_done、yield_to_human）是引擎级核心，始终强制注入，无需用户配置。
+基础任务工具（bash、filesystem、search、mcp）是保底工具，通过 route.py 调度。
 业务工具由用户自由扩展，通过插件化方式注册。
 """
 import json
@@ -44,7 +45,9 @@ class BaseToolDispatcher:
         for item in os.listdir(dir_path):
             item_path = os.path.join(dir_path, item)
             if os.path.isdir(item_path) and not item.startswith('_'):
-                meta_path = os.path.join(item_path, "meta.json")
+                # 直接查找 {item}.json
+                meta_path = os.path.join(item_path, f"{item}.json")
+                
                 if os.path.exists(meta_path):
                     try:
                         # 读取 Schema
@@ -120,21 +123,30 @@ class BaseToolDispatcher:
         
         tool_name_lower = tool_name.lower()
         
-        # 优先查找核心工具
+        # 1. 优先查找核心工具
         tool_info = cls._CORE_TOOLS_REGISTRY.get(tool_name_lower)
-        if not tool_info:
-            tool_info = cls._BUSINESS_TOOLS_REGISTRY.get(tool_name_lower)
+        if tool_info:
+            ToolClass = tool_info["class"]
+            tool_instance = ToolClass(context=context)
+            result = tool_instance.execute(arguments)
+            return json.dumps(result, ensure_ascii=False) if not isinstance(result, str) else result
         
-        if not tool_info:
-            raise ValueError(f"❌ 找不到工具: {tool_name}")
-            
-        ToolClass = tool_info["class"]
+        # 2. 查找业务工具
+        tool_info = cls._BUSINESS_TOOLS_REGISTRY.get(tool_name_lower)
+        if tool_info:
+            ToolClass = tool_info["class"]
+            tool_instance = ToolClass(context=context)
+            result = tool_instance.execute(arguments)
+            return json.dumps(result, ensure_ascii=False) if not isinstance(result, str) else result
         
-        # ⚠️ 修复：统一传入 context。只需约定业务工具的 __init__ 必须接受 context=None 即可
-        tool_instance = ToolClass(context=context)
-        result = tool_instance.execute(arguments)
-        
-        return json.dumps(result, ensure_ascii=False) if not isinstance(result, str) else result
+        # 3. 尝试使用 route.py 调度基础任务工具（bash、filesystem、search、mcp 等）
+        try:
+            from src.tool.utils.route import dispatch_tool
+            return dispatch_tool(tool_name, arguments)
+        except ImportError as e:
+            raise ValueError(f"❌ 找不到工具: {tool_name}，且无法加载基础任务工具路由: {str(e)}")
+        except Exception as e:
+            raise ValueError(f"❌ 工具 [{tool_name}] 执行失败: {str(e)}")
 
     @classmethod
     def validate_tool(cls, tool_name: str) -> bool:
