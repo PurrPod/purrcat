@@ -51,4 +51,4 @@ dependencies:
       - scikit-learn>=1.4.0
 
       # TUI界面
-      - textual>=0.46.0
+      - textual>=0.50.0

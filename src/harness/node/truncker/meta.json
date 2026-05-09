@@ -1,0 +1,47 @@
+{
+    "type": "truncker",
+    "name": "列表截断器",
+    "description": "截取列表的指定范围",
+    "color": "#F39C12",
+    "inputs": [
+        {
+            "name": "list",
+            "type": "list",
+            "description": "待截断的列表",
+            "required": true
+        },
+        {
+            "name": "start_int",
+            "type": "integer",
+            "description": "起始索引",
+            "required": false
+        },
+        {
+            "name": "end_int",
+            "type": "integer",
+            "description": "结束索引",
+            "required": false
+        }
+    ],
+    "outputs": [
+        {
+            "name": "default",
+            "type": "list",
+            "description": "截断后的列表"
+        }
+    ],
+    "config": [
+        {
+            "name": "start_int",
+            "type": "integer",
+            "label": "起始索引",
+            "default": 0
+        },
+        {
+            "name": "end_int",
+            "type": "integer",
+            "label": "结束索引",
+            "default": 0
+        }
+    ]
+}

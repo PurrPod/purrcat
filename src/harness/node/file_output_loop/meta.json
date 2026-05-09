@@ -1,0 +1,35 @@
+{
+    "type": "file_output_loop",
+    "name": "文件输出循环",
+    "description": "封装思考->调用工具->验收的完整循环逻辑，最终输出到文件",
+    "color": "#16A085",
+    "inputs": [
+        {
+            "name": "messages",
+            "type": "MessageList",
+            "description": "消息上下文",
+            "required": true
+        },
+        {
+            "name": "tools",
+            "type": "ToolList",
+            "description": "可用工具列表",
+            "required": false
+        }
+    ],
+    "outputs": [
+        {
+            "name": "default",
+            "type": "MessageList",
+            "description": "完整的消息历史"
+        }
+    ],
+    "config": [
+        {
+            "name": "file_path",
+            "type": "string",
+            "label": "输出文件路径",
+            "default": ""
+        }
+    ]
+}

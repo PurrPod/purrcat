@@ -1,22 +1,21 @@
 from enum import Enum
 
-
 class TaskState(str, Enum):
-    """任务生命周期状态"""
     READY = "ready"
-    STARTING = "starting"    # 防止并发注入的中间态
+    STARTING = "starting"
     RUNNING = "running"
     INTERRUPTED = "interrupted"
     COMPLETED = "completed"
     ERROR = "error"
     KILLED = "killed"
 
+class NodeState(str, Enum):
+    READY = "ready"         # 初始状态
+    WAITING = "waiting"     # 被人类打回或上游重置，等待/准备重新执行
+    RUNNING = "running"     # 正在执行中
+    ERROR = "error"         # 节点抛出异常，挂起等待干预
+    COMPLETED = "completed" # 执行成功
 
 class LogType(str, Enum):
-    """前端展示/日志卡片类型"""
-    SYSTEM = "system"
-    THOUGHT = "thought"
-    TOOL_CALL = "tool_call"
-    TOOL = "tool"
-    WARNING = "warning"
     ERROR = "error"
+    WARNING = "warning"

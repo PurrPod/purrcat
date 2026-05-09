@@ -1,0 +1,22 @@
+{
+    "type": "tool_kit",
+    "name": "工具包分配器",
+    "description": "按需获取并下发工具列表。如果未配置指定工具，则默认下发全局工具。",
+    "color": "#E67E22",
+    "inputs": [],
+    "outputs": [
+        {
+            "name": "default",
+            "type": "ToolList",
+            "description": "过滤后的专属工具列表"
+        }
+    ],
+    "config": [
+        {
+            "name": "allowed_tools",
+            "type": "list",
+            "label": "允许使用的工具名列表 (为空则下发全部)",
+            "default": []
+        }
+    ]
+}

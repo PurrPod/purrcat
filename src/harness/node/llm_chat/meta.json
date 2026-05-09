@@ -1,0 +1,35 @@
+{
+    "type": "llm_chat",
+    "name": "大模型对话",
+    "description": "调用全局配置的 LLM 进行对话思考，并产出工具调用或文本回复",
+    "color": "#4A90E2",
+    "inputs": [
+        {
+            "name": "messages",
+            "type": "MessageList",
+            "description": "上游传入的历史消息上下文",
+            "required": true
+        },
+        {
+            "name": "tools",
+            "type": "ToolList",
+            "description": "可用工具列表",
+            "required": false
+        }
+    ],
+    "outputs": [
+        {
+            "name": "default",
+            "type": "MessageList",
+            "description": "追加了模型回复后的消息列表"
+        }
+    ],
+    "config": [
+        {
+            "name": "model_override",
+            "type": "string",
+            "label": "覆盖全局模型 (可选)",
+            "default": ""
+        }
+    ]
+}

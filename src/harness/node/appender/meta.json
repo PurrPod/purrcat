@@ -1,0 +1,28 @@
+{
+    "type": "appender",
+    "name": "列表追加器",
+    "description": "将 append_list 追加到 base_list 后面",
+    "color": "#1ABC9C",
+    "inputs": [
+        {
+            "name": "base_list",
+            "type": "list",
+            "description": "基础列表",
+            "required": false
+        },
+        {
+            "name": "append_list",
+            "type": "list",
+            "description": "待追加的列表",
+            "required": false
+        }
+    ],
+    "outputs": [
+        {
+            "name": "default",
+            "type": "list",
+            "description": "合并后的列表"
+        }
+    ],
+    "config": []
+}

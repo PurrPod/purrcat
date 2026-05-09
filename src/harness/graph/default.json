@@ -1,0 +1,20 @@
+{
+    "name": "default",
+    "description": "默认工作流：系统消息+用户消息 → 追加合并 → LLM循环思考 → 文件输出",
+    "author": "system",
+    "version": "1.0.0",
+    "require_nodes": ["message_card_builder", "appender", "tool_kit", "file_output_loop"],
+    "nodes": [
+        {"id": "node_sys_msg", "type": "message_card_builder", "data": {"role": "system", "content": ""}},
+        {"id": "node_user_msg", "type": "message_card_builder", "data": {"role": "user", "content": ""}},
+        {"id": "node_appender", "type": "appender"},
+        {"id": "node_tools", "type": "tool_kit"},
+        {"id": "node_loop", "type": "file_output_loop", "data": {"file_path": ""}}
+    ],
+    "edges": [
+        {"source": "node_sys_msg", "target": "node_appender", "targetHandle": "base_list"},
+        {"source": "node_user_msg", "target": "node_appender", "targetHandle": "append_list"},
+        {"source": "node_appender", "target": "node_loop", "targetHandle": "messages"},
+        {"source": "node_tools", "target": "node_loop", "targetHandle": "tools"}
+    ]
+}

@@ -1,0 +1,17 @@
+{
+    "type": "function",
+    "function": {
+        "name": "yield_to_human",
+        "description": "将控制权交还给人类，请求人工干预或确认",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "reason": {
+                    "type": "string",
+                    "description": "需要人类干预的原因"
+                }
+            },
+            "required": ["reason"]
+        }
+    }
+}

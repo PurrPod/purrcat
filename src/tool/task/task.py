@@ -17,14 +17,14 @@ from src.tool.task.task_operations import (
 
 def _get_all_experts_info() -> str:
     """获取所有已注册专家的信息（动态从 BaseTask._EXPERT_REGISTRY 加载）"""
-    from src.harness.task import BaseTask, auto_discover_experts
+    from src.harness.process import Task, auto_discover_experts
     auto_discover_experts()
 
-    if not BaseTask._EXPERT_REGISTRY:
+    if not Task._EXPERT_REGISTRY:
         return "当前没有任何已注册的专家类型"
 
     lines = ["当前所有可用的专家类型："]
-    for expert_key, info in BaseTask._EXPERT_REGISTRY.items():
+    for expert_key, info in Task._EXPERT_REGISTRY.items():
         desc = info.get("description", "无描述")
         lines.append(f"  - {expert_key}: {desc}")
     return "\n".join(lines)
@@ -32,13 +32,13 @@ def _get_all_experts_info() -> str:
 
 def _get_expert_parameters_info(expert_type: str) -> str:
     """获取指定专家的参数信息（OpenAI SDK schema 格式）"""
-    from src.harness.task import BaseTask, auto_discover_experts
+    from src.harness.process import Task, auto_discover_experts
     auto_discover_experts()
 
-    if expert_type not in BaseTask._EXPERT_REGISTRY:
+    if expert_type not in Task._EXPERT_REGISTRY:
         return None
 
-    registry_info = BaseTask._EXPERT_REGISTRY[expert_type]
+    registry_info = Task._EXPERT_REGISTRY[expert_type]
     parameters = registry_info.get("parameters", {})
 
     if not parameters:
@@ -114,7 +114,7 @@ def Task(action: str, **kwargs) -> str:
 
 def _handle_add(**kwargs) -> str:
     """处理任务创建"""
-    from src.harness.task import BaseTask, auto_discover_experts
+    from src.harness.process import Task, auto_discover_experts
     auto_discover_experts()
 
     name = kwargs.get("name")
@@ -134,14 +134,14 @@ def _handle_add(**kwargs) -> str:
             "❌ 参数错误：缺少expert"
         )
 
-    if expert not in BaseTask._EXPERT_REGISTRY:
+    if expert not in Task._EXPERT_REGISTRY:
         all_experts_info = _get_all_experts_info()
         return error_response(
             f"未找到指定的专家类型: {expert}\n\n{all_experts_info}",
             f"❌ 无效的专家类型 | {expert}"
         )
 
-    registry_info = BaseTask._EXPERT_REGISTRY[expert]
+    registry_info = Task._EXPERT_REGISTRY[expert]
     parameters = registry_info.get("parameters", {})
 
     if parameters:

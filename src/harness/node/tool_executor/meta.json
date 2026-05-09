@@ -1,0 +1,22 @@
+{
+    "type": "tool_executor",
+    "name": "工具执行器",
+    "description": "解析并执行 LLM 返回的工具调用",
+    "color": "#E74C3C",
+    "inputs": [
+        {
+            "name": "response",
+            "type": "LLMResponse",
+            "description": "LLM 的响应对象",
+            "required": true
+        }
+    ],
+    "outputs": [
+        {
+            "name": "default",
+            "type": "MessageList",
+            "description": "工具执行结果列表"
+        }
+    ],
+    "config": []
+}

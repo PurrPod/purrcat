@@ -1,0 +1,17 @@
+{
+    "type": "function",
+    "function": {
+        "name": "task_done",
+        "description": "标记当前阶段任务完成，表示当前阶段的工作已完成",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "summary": {
+                    "type": "string",
+                    "description": "对当前阶段的简单总结"
+                }
+            },
+            "required": ["summary"]
+        }
+    }
+}

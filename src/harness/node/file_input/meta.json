@@ -1,0 +1,29 @@
+{
+    "type": "file_input",
+    "name": "文件输入",
+    "description": "读取文件内容",
+    "color": "#8E44AD",
+    "inputs": [
+        {
+            "name": "file_path",
+            "type": "string",
+            "description": "文件路径",
+            "required": false
+        }
+    ],
+    "outputs": [
+        {
+            "name": "default",
+            "type": "string",
+            "description": "文件内容"
+        }
+    ],
+    "config": [
+        {
+            "name": "file_path",
+            "type": "string",
+            "label": "文件路径",
+            "default": ""
+        }
+    ]
+}

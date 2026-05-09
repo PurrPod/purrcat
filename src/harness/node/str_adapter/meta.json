@@ -1,0 +1,41 @@
+{
+    "type": "str_adapter",
+    "name": "字符串适配器",
+    "description": "将两个字符串拼接成一个新字符串",
+    "color": "#9B59B6",
+    "inputs": [
+        {
+            "name": "str1",
+            "type": "string",
+            "description": "第一个字符串",
+            "required": false
+        },
+        {
+            "name": "str2",
+            "type": "string",
+            "description": "第二个字符串",
+            "required": false
+        }
+    ],
+    "outputs": [
+        {
+            "name": "default",
+            "type": "string",
+            "description": "拼接后的字符串"
+        }
+    ],
+    "config": [
+        {
+            "name": "str1",
+            "type": "string",
+            "label": "默认字符串1",
+            "default": ""
+        },
+        {
+            "name": "str2",
+            "type": "string",
+            "label": "默认字符串2",
+            "default": ""
+        }
+    ]
+}

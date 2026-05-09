@@ -66,7 +66,7 @@ class ToolCallWidget(Vertical):
             snip = result_str.strip() if result_str.strip() else "执行完毕"
 
         if snip:
-            self.scan_label.update(snip)
+            self.scan_label.update(snip.replace("[", "\\[").replace("]", "\\]"))
         else:
             self.scan_label.update("执行完毕")
 
@@ -878,7 +878,7 @@ class MainView(Vertical):
                     if tw:
                         tw.finish(content)
                     else:
-                        fallback_msg = f"   └── {content}"
+                        fallback_msg = f"   └── {content.replace('[', '\\[').replace(']', '\\]')}"
                         fb_widget = Static(fallback_msg, classes="tool-result")
                         fb_widget.add_class(f"msg-space-{self.current_space}")
                         chat_zone.mount(fb_widget)

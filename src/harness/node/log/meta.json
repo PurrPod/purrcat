@@ -1,0 +1,40 @@
+{
+    "type": "log",
+    "name": "日志输出",
+    "description": "输出日志信息",
+    "color": "#7F8C8D",
+    "inputs": [
+        {
+            "name": "previous_info",
+            "type": "any",
+            "description": "上游传入的信息",
+            "required": false
+        },
+        {
+            "name": "log_content",
+            "type": "string",
+            "description": "日志内容",
+            "required": false
+        }
+    ],
+    "outputs": [
+        {
+            "name": "success",
+            "type": "boolean",
+            "description": "是否成功"
+        },
+        {
+            "name": "default",
+            "type": "any",
+            "description": "透传上游信息"
+        }
+    ],
+    "config": [
+        {
+            "name": "log_content",
+            "type": "string",
+            "label": "日志内容",
+            "default": ""
+        }
+    ]
+}

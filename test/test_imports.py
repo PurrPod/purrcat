@@ -31,7 +31,6 @@ def main():
 
     modules = [
         "src.utils.config",
-        "src.utils.enums",
         "src.utils.tracker",
         "src.model",
         "src.model.core",

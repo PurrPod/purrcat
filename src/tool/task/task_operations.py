@@ -6,7 +6,7 @@ import threading
 from typing import Dict
 
 from src.utils.config import get_model_config
-from src.harness.task import TASK_INSTANCES
+from src.harness.process import TASK_INSTANCES
 
 
 def add_task_operation(name: str, prompt: str, expert: str,
@@ -42,7 +42,7 @@ def add_task_operation(name: str, prompt: str, expert: str,
         expert_kwargs = expert_kwargs or {}
         
         # 创建任务
-        from src.harness.task import TaskFactory
+        from src.harness.process import TaskFactory
         single_task = TaskFactory.create_task(
             expert_type=expert,
             task_name=name,
@@ -90,7 +90,7 @@ def kill_task_operation(task_id: str) -> tuple:
     Returns:
         (result_dict, error_message)
     """
-    from src.harness.task import kill_task
+    from src.harness.process import kill_task
 
     try:
         is_killed = kill_task(task_id)

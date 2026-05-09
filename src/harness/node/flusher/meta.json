@@ -1,0 +1,28 @@
+{
+    "type": "flusher",
+    "name": "消息压缩器",
+    "description": "压缩消息列表，减少 Token 消耗",
+    "color": "#34495E",
+    "inputs": [
+        {
+            "name": "messages",
+            "type": "MessageList",
+            "description": "待压缩的消息列表",
+            "required": true
+        },
+        {
+            "name": "tools",
+            "type": "ToolList",
+            "description": "工具列表",
+            "required": false
+        }
+    ],
+    "outputs": [
+        {
+            "name": "default",
+            "type": "MessageList",
+            "description": "压缩后的消息列表"
+        }
+    ],
+    "config": []
+}
