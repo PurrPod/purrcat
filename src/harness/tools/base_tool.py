@@ -130,8 +130,8 @@ class BaseToolDispatcher:
             
         ToolClass = tool_info["class"]
         
-        # 实例化并执行
-        tool_instance = ToolClass(context) if tool_info["is_core"] else ToolClass()
+        # ⚠️ 修复：统一传入 context。只需约定业务工具的 __init__ 必须接受 context=None 即可
+        tool_instance = ToolClass(context=context)
         result = tool_instance.execute(arguments)
         
         return json.dumps(result, ensure_ascii=False) if not isinstance(result, str) else result

@@ -1,0 +1,15 @@
+{
+    "type": "task_input",
+    "name": "全局输入",
+    "description": "接收并分发外部传入的全局 Payload 参数",
+    "color": "#34495E",
+    "inputs": [],
+    "outputs": [
+        {
+            "name": "dynamic",
+            "type": "any",
+            "description": "动态解析的全局变量参数"
+        }
+    ],
+    "config": []
+}

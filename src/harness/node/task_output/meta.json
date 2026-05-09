@@ -1,0 +1,16 @@
+{
+    "type": "task_output",
+    "name": "全局输出",
+    "description": "收集最终结果并返回给外部调用方",
+    "color": "#2C3E50",
+    "inputs": [
+        {
+            "name": "dynamic",
+            "type": "any",
+            "description": "动态接收需要输出的变量",
+            "required": false
+        }
+    ],
+    "outputs": [],
+    "config": []
+}

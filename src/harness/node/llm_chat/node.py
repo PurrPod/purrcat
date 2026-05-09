@@ -1,6 +1,6 @@
-import asyncio
 from typing import Any, Dict
 from harness.node.base import BaseNode
+from harness.utils.llm_helper import call_llm, inject_force_push
 
 
 class Node(BaseNode):
@@ -8,22 +8,19 @@ class Node(BaseNode):
 
     async def execute(self, inputs: dict, force_push_msgs: list, context: Any) -> Dict[str, Any]:
         messages = inputs.get("messages", [])
-        messages = self.inject_force_push_to_messages(messages, force_push_msgs)
+        
+        # 注入强制推送的消息
+        messages = inject_force_push(messages, force_push_msgs)
+        
         tools = inputs.get("tools", [])
 
-        self.log(context, "SYSTEM", f"🚀 节点开始执行大模型请求，当前消息数: {len(messages)}")
+        # 调用 LLM 辅助函数
+        response, messages = await call_llm(
+            model=context.model,
+            messages=messages,
+            tools=tools,
+            node_log_func=self.log,
+            context=context
+        )
 
-        try:
-            await asyncio.sleep(1)
-            assistant_reply = {
-                "role": "assistant",
-                "content": f"已处理，共收到 {len(messages)} 条上下文。"
-            }
-            messages.append(assistant_reply)
-            self.log(context, "THOUGHT", f"模型思考结果：{assistant_reply['content']}")
-
-        except Exception as e:
-            self.log(context, "ERROR", f"❌ 大模型调用崩溃: {e}")
-            raise e
-
-        return {"default": messages}
+        return {"default": messages, "response": response}
