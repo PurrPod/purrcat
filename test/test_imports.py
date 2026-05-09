@@ -60,7 +60,7 @@ def main():
         "src.sensor",
         "src.sensor.base",
         "src.sensor.gateway",
-        "src.harness.task",
+        "src.harness.process",
     ]
 
     for module in modules:
