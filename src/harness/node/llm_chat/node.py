@@ -1,6 +1,6 @@
 from typing import Any, Dict
-from harness.node.base import BaseNode
-from harness.utils.llm_helper import call_llm, inject_force_push
+from src.harness.node.base import BaseNode
+from src.harness.utils.llm_helper import call_llm, inject_force_push
 
 
 class Node(BaseNode):

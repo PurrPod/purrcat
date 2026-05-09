@@ -1,5 +1,5 @@
 from typing import Dict, Any
-from harness.node.base import BaseNode
+from src.harness.node.base import BaseNode
 
 class Node(BaseNode):
     """全局输出节点：收集上游的连线数据，并写入 Task 的全局 outputs 中"""

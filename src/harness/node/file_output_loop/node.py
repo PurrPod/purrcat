@@ -1,8 +1,8 @@
 import os
 from typing import Dict, Any
-from harness.node.base import BaseNode
-from harness.utils.llm_helper import call_llm, inject_force_push
-from harness.utils.tool_helper import extract_tool_calling, execute_tool_call, check_tool_call_completed
+from src.harness.node.base import BaseNode
+from src.harness.utils.llm_helper import call_llm, inject_force_push
+from src.harness.utils.tool_helper import extract_tool_calling, execute_tool_call, check_tool_call_completed
 
 
 class Node(BaseNode):
@@ -11,7 +11,7 @@ class Node(BaseNode):
     async def execute(self, inputs: Dict[str, Any], force_push_msgs: list, context: Any) -> Dict[str, Any]:
         messages = inputs.get("messages", [])
         tools = inputs.get("tools", [])
-        file_path = self.config.get("file_path", f"{context.workplace}/FINISHED.md")
+        file_path = self.config.get("file_path") or f"{context.workplace}/FINISHED.md"
 
         # 将引擎启动时下发的初始 force_push 处理掉
         if force_push_msgs:
@@ -55,6 +55,7 @@ class Node(BaseNode):
                 # 检查任务完成
                 if check_tool_call_completed(tool_calls):
                     if self._check_file_exist(file_path):
+                        messages.append({"role": "user", "content": f"✅ 检测到你调用了 task_done，目标文件 {file_path} 已成功生成，任务完成！"})
                         return {"default": messages}
                     else:
                         messages.append({"role": "user", "content": f"检测到你调用了 task_done，但目标文件 {file_path} 尚未生成。请检查是否生成在了其他路径，并及时生成目标文件。"})

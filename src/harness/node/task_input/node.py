@@ -1,5 +1,5 @@
 from typing import Dict, Any
-from harness.node.base import BaseNode
+from src.harness.node.base import BaseNode
 
 class Node(BaseNode):
     """全局输入节点：读取 Task 初始化时传入的全局 inputs 参数，并作为输出暴露给下游"""

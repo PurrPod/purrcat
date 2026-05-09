@@ -1,5 +1,5 @@
 from typing import Dict, Any
-from harness.node.base import BaseNode
+from src.harness.node.base import BaseNode
 
 
 class Node(BaseNode):

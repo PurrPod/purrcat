@@ -1,6 +1,6 @@
 from typing import Dict, Any
-from harness.node.base import BaseNode
-from harness.tools.base_tool import BaseToolDispatcher
+from src.harness.node.base import BaseNode
+from src.harness.tools.base_tool import BaseToolDispatcher
 from src.tool import BASE_TASK_TOOL_SCHEMA
 
 

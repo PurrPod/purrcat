@@ -3,8 +3,8 @@ import uuid
 import datetime
 from typing import Dict, Any
 from json_repair import repair_json
-from harness.node.base import BaseNode
-from harness.tools.base_tool import BaseToolDispatcher
+from src.harness.node.base import BaseNode
+from src.harness.tools.base_tool import BaseToolDispatcher
 
 
 class Node(BaseNode):

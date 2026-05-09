@@ -10,7 +10,7 @@ import json
 import datetime
 from typing import Any, List, Dict
 from json_repair import repair_json
-from harness.tools.base_tool import BaseToolDispatcher
+from src.harness.tools.base_tool import BaseToolDispatcher
 
 
 def extract_tool_calling(response) -> list:
