@@ -50,7 +50,7 @@ def add_task_operation(name: str, inputs: dict, graph_name: str,
             try:
                 result = asyncio.run(single_task.run())
                 task_id = single_task.task_id
-                notify_msg = f"任务 '{name}' (ID: {task_id}) 已执行完毕，结果交付如下：\n{result}"
+                notify_msg = result or f"任务 '{name}' (ID: {task_id}) 已执行完毕。"
                 agent = get_agent()
                 if agent:
                     agent.force_push(notify_msg, type="task_message")

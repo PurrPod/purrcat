@@ -14,16 +14,20 @@ class Node(BaseNode):
         tools = inputs.get("tools", [])
         # 原始文件路径（用于给模型显示）
         original_file_path = inputs.get("file_path") or self.config.get("file_path") or f"{context.workplace}/FINISHED.md"
-        # 本地检查用的绝对路径
+        
+        # 1. 路径清洗：如果是沙盒绝对路径，去掉开头的 '/' 以便和当前工作目录拼接
         check_file_path = original_file_path
-        # 路径清洗：如果以/agent_vm开头，去掉开头的/
         if check_file_path.startswith("/agent_vm/"):
             check_file_path = check_file_path[1:]
-        check_file_path = os.path.join(os.getcwd(), check_file_path)
+            
+        # 2. 转换为标准的绝对路径 (abspath 会自动解决 / 和 \ 的混合问题，以及自动抵消掉 ../ 带来的越权漏洞)
+        check_file_path = os.path.abspath(os.path.join(os.getcwd(), check_file_path))
         
-        # 判断是否在沙盒内
-        agent_vm_dir = os.path.join(os.getcwd(), "agent_vm")
-        in_sandbox = check_file_path.startswith(agent_vm_dir)
+        # 3. 规范化沙盒根目录的绝对路径
+        agent_vm_dir = os.path.abspath(os.path.join(os.getcwd(), "agent_vm"))
+        
+        # 4. 精准判断是否在沙盒内 (用 commonpath 确保是真正的父子目录关系，杜绝 agent_vm_backup 被误判)
+        in_sandbox = os.path.commonpath([check_file_path, agent_vm_dir]) == agent_vm_dir
 
         # 将引擎启动时下发的初始 force_push 处理掉
         if force_push_msgs:
