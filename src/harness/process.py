@@ -111,7 +111,7 @@ class Task:
             node_type = node_data["type"]
             config = node_data.get("data", {})
             try:
-                module = importlib.import_module(f"harness.node.{node_type}.node")
+                module = importlib.import_module(f"src.harness.node.{node_type}.node")
                 self.node_list[node_id] = module.Node(node_id=node_id, config=config)
                 self.node_state[node_id] = NodeState.READY
             except Exception as e:
@@ -356,7 +356,7 @@ class Task:
                 node_type = node_data["type"]
                 config = node_data.get("data", {})
                 try:
-                    module = importlib.import_module(f"harness.node.{node_type}.node")
+                    module = importlib.import_module(f"src.harness.node.{node_type}.node")
                     task.node_list[node_id] = module.Node(node_id=node_id, config=config)
                     task.node_state[node_id] = NodeState.READY
                 except Exception as e:
@@ -432,10 +432,10 @@ class Task:
             self.model.unbind()
         self._cleanup_resources()
 
-    def reload(self):
+    async def reload(self):
         self.state = TaskState.RUNNING
         self._killed = False
-        return self.run()
+        return await self.run()
 
 
 def auto_load_all_tasks():

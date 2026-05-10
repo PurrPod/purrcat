@@ -19,3 +19,4 @@ class NodeState(str, Enum):
 class LogType(str, Enum):
     ERROR = "error"
     WARNING = "warning"
+    SYSTEM = "system"

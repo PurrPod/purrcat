@@ -60,9 +60,9 @@ class BaseToolDispatcher:
                         # 动态加载类
                         parent_dir = os.path.basename(dir_path)
                         if parent_dir == "core":
-                            module_path = f"harness.tools.core.{item}.tool"
+                            module_path = f"src.harness.tools.core.{item}.tool"
                         else:
-                            module_path = f"harness.tools.{item}.tool"
+                            module_path = f"src.harness.tools.{item}.tool"
                         
                         module = importlib.import_module(module_path)
                         registry[tool_name] = {

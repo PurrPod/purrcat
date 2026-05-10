@@ -15,6 +15,12 @@
             "type": "ToolList",
             "description": "可用工具列表",
             "required": false
+        },
+        {
+            "name": "file_path",
+            "type": "string",
+            "description": "动态传入的文件路径",
+            "required": false
         }
     ],
     "outputs": [
@@ -22,6 +28,11 @@
             "name": "default",
             "type": "MessageList",
             "description": "完整的消息历史"
+        },
+        {
+            "name": "summary",
+            "type": "string",
+            "description": "任务完成的总结信息"
         }
     ],
     "config": [

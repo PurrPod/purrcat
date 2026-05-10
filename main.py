@@ -3,6 +3,8 @@ import os
 import warnings
 import argparse
 import threading
+import sys
+import signal
 
 warnings.filterwarnings("ignore", category=RuntimeWarning, message="coroutine 'ExpiringCache._start_clear_cron' was never awaited")
 warnings.filterwarnings("ignore", category=UserWarning, message="pkg_resources is deprecated as an API")

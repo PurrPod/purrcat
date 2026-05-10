@@ -260,14 +260,14 @@ class ChatInput(TextArea):
 class MainView(Vertical):
     RAINBOW_COLORS = [
         {"id": "theme-white", "name": "默认 (White)", "color": "#ffffff"},
-        {"id": "theme-red", "name": "绯红 (Red)", "color": "#ef4444"},
-        {"id": "theme-orange", "name": "橘黄 (Orange)", "color": "#f97316"},
-        {"id": "theme-yellow", "name": "明黄 (Yellow)", "color": "#eab308"},
-        {"id": "theme-green", "name": "翠绿 (Green)", "color": "#22c55e"},
-        {"id": "theme-cyan", "name": "青色 (Cyan)", "color": "#06b6d4"},
-        {"id": "theme-blue", "name": "蔚蓝 (Blue)", "color": "#3b82f6"},
-        {"id": "theme-purple", "name": "紫罗兰 (Purple)", "color": "#a855f7"},
-        {"id": "theme-pink", "name": "猛男粉 (Pink)", "color": "#ec4899"},
+        {"id": "theme-red", "name": "砖红 (Brick Red)", "color": "#bf616a"},
+        {"id": "theme-orange", "name": "陶土 (Clay Orange)", "color": "#d08770"},
+        {"id": "theme-yellow", "name": "柔麦 (Wheat Yellow)", "color": "#ebcb8b"},
+        {"id": "theme-green", "name": "豆沙 (Sage Green)", "color": "#a3be8c"},
+        {"id": "theme-cyan", "name": "冰霜 (Frost Cyan)", "color": "#88c0d0"},
+        {"id": "theme-blue", "name": "雾霾 (Mist Blue)", "color": "#81a1c1"},
+        {"id": "theme-purple", "name": "丁香 (Lilac Purple)", "color": "#b48ead"},
+        {"id": "theme-pink", "name": "脏粉 (Dusty Pink)", "color": "#d3a5b4"},
     ]
 
     def compose(self) -> ComposeResult:
@@ -466,12 +466,12 @@ class MainView(Vertical):
             msg_count = info.get("messages_count", 0)
             prefix = "    " * depth + ("└── " if depth > 0 else "🌱 ")
             head_tag = " <-- [HEAD]" if is_current else ""
-            color = "green" if is_current else ("cyan" if depth > 0 else "blue")
+            color = "#a3be8c" if is_current else ("#88c0d0" if depth > 0 else "#81a1c1")
 
             if alias == sid:
-                label_text = f"[{color}]{prefix}{alias} ({msg_count} msgs)[/{color}][bold yellow]{head_tag}[/bold yellow]"
+                label_text = f"[{color}]{prefix}{alias} ({msg_count} msgs)[/{color}][#ebcb8b]{head_tag}[/#ebcb8b]"
             else:
-                label_text = f"[{color}]{prefix}{alias} [{sid[-6:]}] ({msg_count} msgs)[/{color}][bold yellow]{head_tag}[/bold yellow]"
+                label_text = f"[{color}]{prefix}{alias} [{sid[-6:]}] ({msg_count} msgs)[/{color}][#ebcb8b]{head_tag}[/#ebcb8b]"
 
             static_node = Static(f"  {label_text}", classes="nav-item", markup=True)
             static_node._original_text = label_text

@@ -1,16 +1,14 @@
 /* 全局透明背景，让终端原生的颜色透过来 */
 Screen {
     background: transparent;
-    color: #e4e4e7;
+    color: #d8dee9; /* 柔和的雪白色，保证文字清晰但不如纯白刺眼 */
     box-sizing: border-box;
 }
 
-/* 确保所有组件都使用border-box */
 * {
     box-sizing: border-box;
 }
 
-/* 主容器：撑满全屏 */
 #main-layout {
     layout: vertical;
     width: 100%;
@@ -18,7 +16,6 @@ Screen {
     box-sizing: border-box;
 }
 
-/* 原本的左侧区，现在占据全部宽度 */
 #left-pane {
     width: 100%;
     height: 100%;
@@ -27,7 +24,7 @@ Screen {
     box-sizing: border-box;
 }
 
-/* === 顶部容器 === */
+/* === 顶部容器 (边框回归纯白) === */
 #top-zone {
     height: 1fr;
     width: 100%;
@@ -40,7 +37,7 @@ Screen {
 
 #cat-ascii {
     width: 15;
-    color: #d97706;
+    color: #d08770; /* 柔和陶土橙 */
     text-style: bold;
     content-align: left middle;
 }
@@ -52,7 +49,7 @@ Screen {
 }
 
 #sub-status {
-    color: #a1a1aa;
+    color: #9399b2;
     margin-bottom: 1;
 }
 
@@ -67,19 +64,12 @@ ProgressBar {
     text-align: right;
 }
 
-#token-progress.token-low {
-    color: #22c55e;
-}
+/* 进度条保留护眼色 */
+#token-progress.token-low { color: #a3be8c; }
+#token-progress.token-medium { color: #ebcb8b; }
+#token-progress.token-high { color: #bf616a; }
 
-#token-progress.token-medium {
-    color: #eab308;
-}
-
-#token-progress.token-high {
-    color: #ef4444;
-}
-
-/* === 对话展示区 === */
+/* === 对话展示区 (边框回归纯白) === */
 #chat-zone {
     height: 3fr;
     width: 100%;
@@ -91,7 +81,7 @@ ProgressBar {
     overflow-x: hidden;
     margin-bottom: 1;
     scrollbar-size: 1 1;
-    scrollbar-color: #52525b;
+    scrollbar-color: #4c566a;
 }
 
 #chat-zone.hidden {
@@ -100,12 +90,12 @@ ProgressBar {
 
 /* === 角色文本样式 === */
 .role-user {
-    color: #71717a;
+    color: #8fbcbb; /* 柔和青霜色 */
     text-style: none;
 }
 
 .role-ai {
-    color: #e4e4e7;
+    color: #eceff4;
     text-style: bold;
 }
 
@@ -120,14 +110,14 @@ ChatMessage {
 
 Markdown {
     background: transparent;
-    color: #e4e4e7;
+    color: #d8dee9;
     padding-left: 2;
     width: 100%;
     overflow-x: hidden;
     box-sizing: border-box;
 }
 
-/* === 输入区 === */
+/* === 输入区 (边框回归纯白) === */
 #input-zone {
     height: 5;
     width: 100%;
@@ -150,7 +140,7 @@ Markdown {
 #prompt-char {
     width: 2;
     height: 1;
-    color: #d97706;
+    color: #d08770;
     text-style: bold;
     content-align: center middle;
 }
@@ -160,7 +150,7 @@ Markdown {
     height: 100%;
     border: none;
     background: transparent;
-    color: #e4e4e7;
+    color: #d8dee9;
     padding: 0;
     overflow-x: hidden;
     box-sizing: border-box;
@@ -170,8 +160,8 @@ Markdown {
     border: none;
 }
 
-/* === 选单区 (复用给会话切换、主题配置与技能选择) === */
-#space-selector, #config-selector, #session-selector, #skill-selector {
+/* === 选单区 (边框回归纯白) === */
+#space-selector, #config-selector, #session-selector, #skill-selector, #help-guide {
     height: 3fr;
     width: 100%;
     border: round #ffffff;
@@ -183,31 +173,17 @@ Markdown {
     overflow-y: auto;
     overflow-x: hidden;
     scrollbar-size: 1 1;
-    scrollbar-color: #52525b;
+    scrollbar-color: #4c566a;
+}
+
+#help-guide {
+    padding: 0 1;
 }
 
 #space-selector.active, #config-selector.active, #session-selector.active, #help-guide.active, #skill-selector.active {
     display: block;
 }
 
-/* 📖 Guide Book */
-#help-guide {
-    height: 3fr;
-    width: 100%;
-    border: round #ffffff;
-    border-title-color: #ffffff;
-    border-title-align: left;
-    margin-bottom: 1;
-    display: none;
-    background: transparent;
-    overflow-y: auto;
-    overflow-x: hidden;
-    scrollbar-size: 1 1;
-    scrollbar-color: #52525b;
-    padding: 0 1;
-}
-
-/* 选择器 Item 的样式 */
 #space-selector ListView, #config-selector ListView, #session-selector ListView, #skill-selector ListView {
     background: transparent;
     border: none;
@@ -221,17 +197,17 @@ Markdown {
 }
 
 #space-selector .nav-item, #config-selector .nav-item, #session-selector .nav-item, #skill-selector .nav-item {
-    color: #a1a1aa;
+    color: #9399b2;
     padding: 1;
 }
 
 #space-selector ListItem:hover .nav-item, #config-selector ListItem:hover .nav-item, #session-selector ListItem:hover .nav-item, #skill-selector ListItem:hover .nav-item {
-    color: #e4e4e7;
+    color: #d8dee9;
 }
 
-/* 高亮选中条保持白色边框，与主题色的外框形成高级对比 */
+/* 高亮选中条：配合纯白边框，这里的上下横线也用纯白，但文字保持柔和冰蓝色 */
 #space-selector ListItem.--highlight .nav-item, #config-selector ListItem.--highlight .nav-item, #session-selector ListItem.--highlight .nav-item, #skill-selector ListItem.--highlight .nav-item {
-    color: #fef3c7;
+    color: #88c0d0;
     text-style: bold;
     border-top: solid #ffffff;
     border-bottom: solid #ffffff;
@@ -241,27 +217,14 @@ Markdown {
 
 #shortcut-hint {
     height: 1;
-    color: #52525b;
+    color: #4c566a;
     text-align: right;
     width: 100%;
 }
 
-.tool-header {
-    color: #d97706;
-    margin-top: 1;
-    margin-left: 2;
-}
-
-.tool-scanning {
-    color: #a1a1aa;
-    margin-left: 2;
-}
-
-.tool-result {
-    color: #f4f4f5;
-    margin-bottom: 1;
-    margin-left: 2;
-}
+.tool-header { color: #d08770; margin-top: 1; margin-left: 2; }
+.tool-scanning { color: #9399b2; margin-left: 2; }
+.tool-result { color: #e5e9f0; margin-bottom: 1; margin-left: 2; }
 
 ToolCallWidget {
     height: auto;
@@ -272,25 +235,25 @@ ToolCallWidget {
 
 TaskMonitorScreen {
     align: center middle;
-    background: rgba(0, 0, 0, 0.85);
+    background: rgba(0, 0, 0, 0.7);
 }
 
 #task-dialog {
     width: 85%;
     height: 85%;
-    border: round #ffffff;
-    background: #18181b;
+    border: round #ffffff; /* 弹窗大边框回归纯白 */
+    background: #2e3440;
     layout: vertical;
     padding: 1 2;
 }
 
 #task-dialog-header {
     height: 3;
-    border-bottom: solid #27272a;
+    border-bottom: solid #434c5e;
     padding: 0 0 1 0;
     content-align: center middle;
     text-style: bold;
-    color: #d97706;
+    color: #d08770;
 }
 
 #task-dialog-list {
@@ -302,76 +265,48 @@ TaskMonitorScreen {
 
 .task-card {
     height: auto;
-    border: solid #27272a;
+    border: solid #434c5e;
     margin: 0 1 1 1;
     padding: 1 2;
-    background: #1c1c1f;
+    background: #3b4252;
 }
 
 .task-card:hover {
-    border: solid #d97706;
+    border: solid #d08770;
 }
 
-.task-name {
-    color: #e4e4e7;
-    text-style: bold;
-    margin-bottom: 0;
-}
-
-.task-state {
-    text-style: bold;
-    margin-top: 0;
-    margin-bottom: 0;
-}
-
-.task-state.running {
-    color: #22c55e;
-}
-
-.task-state.done {
-    color: #3b82f6;
-}
-
-.task-state.error {
-    color: #ef4444;
-}
-
-.task-state.waiting {
-    color: #eab308;
-}
-
-.task-state.unknown {
-    color: #71717a;
-}
-
-.task-detail {
-    color: #a1a1aa;
-    margin-top: 0;
-}
+.task-name { color: #eceff4; text-style: bold; margin-bottom: 0; }
+.task-state { text-style: bold; margin-top: 0; margin-bottom: 0; }
+.task-state.running { color: #a3be8c; }
+.task-state.done { color: #81a1c1; }
+.task-state.error { color: #bf616a; }
+.task-state.waiting { color: #ebcb8b; }
+.task-state.unknown { color: #616e88; }
+.task-detail { color: #9399b2; margin-top: 0; }
 
 #task-dialog-footer {
     height: 3;
-    border-top: solid #27272a;
+    border-top: solid #434c5e;
     padding: 1 0 0 0;
-    color: #52525b;
+    color: #4c566a;
     text-align: center;
 }
 
 #task-log-viewer {
     height: 1fr;
-    border: solid #27272a;
+    border: solid #434c5e;
     padding: 1 2;
     overflow-y: auto;
     overflow-x: hidden;
-    background: #111113;
+    background: #242933;
     margin: 0 1;
 }
 
 #task-log-viewer:focus {
-    border: solid #d97706;
+    border: solid #ffffff; /* 聚焦时边框变白 */
 }
 
 .log-entry {
-    color: #a1a1aa;
+    color: #9399b2;
     margin-bottom: 0;
 }

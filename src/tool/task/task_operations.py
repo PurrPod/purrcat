@@ -8,24 +8,21 @@ from typing import Dict
 from src.utils.config import get_model_config
 
 
-def add_task_operation(name: str, prompt: str, expert: str,
-                       core: str = "openai:deepseek-v4-flash",
-                       expert_kwargs: dict = None) -> tuple:
+def add_task_operation(name: str, inputs: dict, graph_name: str,
+                       core: str = "openai:deepseek-v4-flash") -> tuple:
     """
     创建后台任务
 
     Args:
         name: 任务名称
-        prompt: 任务提示
-        expert: 专家类型
+        inputs: 任务输入参数字典
+        graph_name: 工作流图名称
         core: 使用的模型/工人代号
-        expert_kwargs: 专家额外参数
 
     Returns:
         (result_dict, error_message)
     """
     try:
-        # 验证模型配置
         model_name = core
         models = get_model_config().get("main", {})
         if model_name not in models:
@@ -38,23 +35,20 @@ def add_task_operation(name: str, prompt: str, expert: str,
         if not valid_api_keys:
             return None, f"模型 '{model_name}' 未配置有效的 api-key"
 
-        expert_kwargs = expert_kwargs or {}
-        
-        # 创建任务
-        from src.harness.process import TaskFactory
-        single_task = TaskFactory.create_task(
-            expert_type=expert,
+        from src.harness.process import Task
+        single_task = Task(
             task_name=name,
-            prompt=prompt,
+            inputs=inputs,
             core=core,
-            **expert_kwargs
+            graph_name=graph_name
         )
 
         # 后台执行任务
         def _run_task():
+            import asyncio
             from src.agent.manager import get_agent
             try:
-                result = single_task.run()
+                result = asyncio.run(single_task.run())
                 task_id = single_task.task_id
                 notify_msg = f"任务 '{name}' (ID: {task_id}) 已执行完毕，结果交付如下：\n{result}"
                 agent = get_agent()

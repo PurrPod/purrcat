@@ -2,7 +2,8 @@
     "name": "default",
     "description": "默认工作流：全局输入 → 拼装消息 → LLM循环思考 → 全局输出",
     "required_inputs": {
-        "prompt": "核心任务提示词，告知工作流具体要完成什么任务"
+        "prompt": "核心任务提示词，告知工作流具体要完成什么任务",
+        "target_file": "最终生成文件的路径"
     }, 
     "nodes": [
         {"id": "node_input", "type": "task_input"},
@@ -15,10 +16,11 @@
     ],
     "edges": [
         {"source": "node_input", "target": "node_user_msg", "sourceHandle": "prompt", "targetHandle": "content"},
+        {"source": "node_input", "target": "node_loop", "sourceHandle": "target_file", "targetHandle": "file_path"},
         {"source": "node_sys_msg", "target": "node_appender", "targetHandle": "base_list"},
         {"source": "node_user_msg", "target": "node_appender", "targetHandle": "append_list"},
         {"source": "node_appender", "target": "node_loop", "targetHandle": "messages"},
         {"source": "node_tools", "target": "node_loop", "targetHandle": "tools"},
-        {"source": "node_loop", "target": "node_output", "sourceHandle": "default", "targetHandle": "final_messages"}
+        {"source": "node_loop", "target": "node_output", "sourceHandle": "summary", "targetHandle": "task_result"}
     ]
 }

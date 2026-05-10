@@ -126,7 +126,7 @@ def force_push_task(task_id: str, content: str):
     # 优先使用 task_module 中自带的指令注入函数
     success = task_module.inject_task_instruction(task_id, content)
 
-    # 如果内存中找不到，且需要从磁盘复活死掉的任务，可参考 backend.py 的 /inject 接口逻辑在这里扩展
+    # 如果内存中找不到，且需要从磁盘复活死掉的任务
     return success
 
 
@@ -284,13 +284,13 @@ def format_task_log(task_id: str) -> str:
 
         # 为不同的卡片类型赋予终端色彩和 emoji
         color_map = {
-            "system": "dim white",
-            "thought": "bold cyan",
-            "tool_call": "bold yellow",
-            "tool": "bold green",
-            "warning": "bold orange3",
-            "error": "bold red",
-            "plan": "bold dodger_blue1"
+            "system": "#9399b2",
+            "thought": "#88c0d0",
+            "tool_call": "#ebcb8b",
+            "tool": "#a3be8c",
+            "warning": "#d08770",
+            "error": "#bf616a",
+            "plan": "#81a1c1"
         }
         emoji_map = {
             "system": "⚙️",
