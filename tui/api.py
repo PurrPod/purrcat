@@ -3,7 +3,7 @@ import json
 import datetime
 import copy
 import re
-from src.harness import task as task_module
+from src.harness import process as task_module
 from src.utils.config import DATA_DIR
 from src.agent.manager import get_agent
 import os as _os
@@ -193,7 +193,7 @@ def get_task_max_token():
 def get_task_window_token(task_id: str):
     """获取指定任务的 window_token"""
     import os, json
-    from src.harness.task import TASK_INSTANCES
+    from src.harness.process import TASK_INSTANCES
     from src.utils.config import DATA_DIR
 
     task_instance = TASK_INSTANCES.get(task_id)
@@ -217,7 +217,7 @@ def get_task_window_token(task_id: str):
 
 def format_task_log(task_id: str) -> str:
     """Parse and format task log output with file-change caching"""
-    from src.harness.task import TASK_INSTANCES
+    from src.harness.process import TASK_INSTANCES
 
     task_instance = TASK_INSTANCES.get(task_id)
     if task_instance and hasattr(task_instance, 'checkpoint_dir'):

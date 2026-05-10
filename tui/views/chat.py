@@ -6,7 +6,7 @@ from textual.containers import Vertical, Horizontal, VerticalScroll
 from textual.widgets import Static, Markdown, ProgressBar, ListView, ListItem, TextArea
 from textual.events import Event, Key
 
-from src.harness import task as task_module
+from src.harness.process import Task as task_module
 from tui.api import (
     get_task_list, get_agent_history, get_task_history, force_push_agent, force_push_task,
     flush_agent_memory,
@@ -679,7 +679,7 @@ class MainView(Vertical):
         # 组装打标记的技能列表并插入到对话框
         if getattr(self, "marked_skills", set()):
             skills_str = ",".join(sorted(list(self.marked_skills)))
-            append_text = f"$Please Fetch Skill: {skills_str}$"
+            append_text = f"<Fetch Skill First: {skills_str}>"
             current_text = chat_input.text
             if current_text.strip():
                 chat_input.insert("\n" + append_text)
@@ -878,7 +878,8 @@ class MainView(Vertical):
                     if tw:
                         tw.finish(content)
                     else:
-                        fallback_msg = f"   └── {content.replace('[', '\\[').replace(']', '\\]')}"
+                        print_content = content.replace('[', '\\[').replace(']', '\\]')
+                        fallback_msg = f"   └── {print_content}"
                         fb_widget = Static(fallback_msg, classes="tool-result")
                         fb_widget.add_class(f"msg-space-{self.current_space}")
                         chat_zone.mount(fb_widget)

@@ -4,6 +4,7 @@ import sys
 import re
 import uuid
 import threading
+import urllib.parse
 from typing import Optional
 
 import docker
@@ -52,18 +53,40 @@ _docker_manager_instance: Optional['DockerManager'] = None
 
 
 def _get_docker_env() -> dict:
-    """从配置读取 Docker 代理环境变量（只返回非空值）"""
+    """自动获取宿主机代理，并转换为跨平台 Docker 可用的格式"""
     try:
+        # 1. 尝试从配置文件读取，如果没有，再尝试从宿主机环境变量读取
         cfg = get_file_config().get("docker", {})
-        env = {}
-        if cfg.get("http_proxy"):
-            env["HTTP_PROXY"] = cfg["http_proxy"]
-        if cfg.get("https_proxy"):
-            env["HTTPS_PROXY"] = cfg["https_proxy"]
-        if cfg.get("all_proxy"):
-            env["ALL_PROXY"] = cfg["all_proxy"]
-        return env
-    except Exception:
+        raw_proxy = cfg.get("http_proxy") or cfg.get("all_proxy") or \
+                    os.getenv("http_proxy") or os.getenv("all_proxy") or \
+                    os.getenv("HTTP_PROXY") or os.getenv("ALL_PROXY")
+        
+        if not raw_proxy:
+            return {}  # 宿主机没开梯子，直接返回空，容器自然就是直连
+
+        # 2. 解析 URL，如果是 127.0.0.1 或 localhost，则替换为 host.docker.internal
+        parsed = urllib.parse.urlparse(raw_proxy)
+        if parsed.hostname in ['127.0.0.1', 'localhost']:
+            # 保留原有的端口和协议，只替换 host
+            new_netloc = f"host.docker.internal:{parsed.port}"
+            parsed = parsed._replace(netloc=new_netloc)
+            proxy_url = urllib.parse.urlunparse(parsed)
+        else:
+            # 如果配置的是局域网真实 IP (如 192.168.1.5)，则直接使用
+            proxy_url = raw_proxy
+
+        # 3. 返回全套环境变量（大小写全给，兼容不同软件的脾气）
+        return {
+            "HTTP_PROXY": proxy_url,
+            "HTTPS_PROXY": proxy_url,
+            "ALL_PROXY": proxy_url,
+            "http_proxy": proxy_url,
+            "https_proxy": proxy_url,
+            "all_proxy": proxy_url,
+            "NO_PROXY": "localhost,127.0.0.1,::1"  # 防止容器内部服务互相调用时走代理
+        }
+    except Exception as e:
+        print(f"⚠️ 代理配置解析失败，退回直连模式: {e}")
         return {}
 
 
@@ -110,12 +133,26 @@ class DockerManager:
         except DockerException as e:
             raise DockerNotRunningError(f"Docker API 连接失败: {e}")
 
+        env_vars = _get_docker_env()
+
         run_kwargs = {
             "name": self.container_name,
             "command": "sleep infinity",
             "detach": True,
             "working_dir": self.container_workspace,
-            "environment": _get_docker_env()
+            "environment": env_vars,
+            
+            # === 兼容三大系统与复杂环境的核心魔法 ===
+            
+            # 魔法 1：让 Linux 原生 Docker 强制支持 host.docker.internal！Win/Mac 会自动兼容。
+            "extra_hosts": {"host.docker.internal": "host-gateway"},
+            
+            # 魔法 2：给足共享内存，防止 Chrome/Electron 崩溃
+            "shm_size": "2gb",
+            
+            # 魔法 3：解除系统调用限制，供复杂沙箱软件使用
+            "cap_add": ["SYS_ADMIN"],
+            "security_opt": ["seccomp=unconfined"]
         }
 
         volumes = {}
@@ -142,6 +179,16 @@ class DockerManager:
         try:
             print(f"🚀 正在基于镜像 {self.image} 创建全新沙盒...")
             self.container = self.client.containers.run(self.image, **run_kwargs)
+            
+            # === 新增：为 apt-get 动态注入代理配置 ===
+            if env_vars.get("HTTP_PROXY"):
+                proxy_url = env_vars["HTTP_PROXY"]
+                print(f"🌐 检测到代理环境，正在为容器内部 apt 注入代理配置: {proxy_url}")
+                # 写入 apt 代理配置，解决 apt 忽略环境变量的顽疾
+                apt_cmd = f"sh -c 'echo \"Acquire::http::Proxy \\\"{proxy_url}\\\";\\nAcquire::https::Proxy \\\"{proxy_url}\\\";\" > /etc/apt/apt.conf.d/99proxy'"
+                self.container.exec_run(apt_cmd, user="root")
+            # ======================================
+            
             self._started = True
             print("✅ 全新沙盒环境启动就绪！")
         except ImageNotFound:

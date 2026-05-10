@@ -13,29 +13,6 @@ from src.tool.filesystem.exceptions import (
 )
 
 
-def _find_git_root(path: str) -> str:
-    """向上查找最近的 .git 目录"""
-    try:
-        result = subprocess.run(
-            ["git", "-C", path, "rev-parse", "--show-toplevel"],
-            capture_output=True, timeout=10, text=True
-        )
-        if result.returncode == 0:
-            return result.stdout.strip()
-    except Exception:
-        pass
-
-    # 手动向上查找
-    current = os.path.abspath(path)
-    while True:
-        if os.path.isdir(os.path.join(current, ".git")):
-            return current
-        parent = os.path.dirname(current)
-        if parent == current:
-            return None
-        current = parent
-
-
 def _load_allowed_dirs():
     """加载允许导出的目录列表"""
     from src.utils.config import get_file_config
@@ -107,29 +84,34 @@ def export_file(sandbox_path: str, host_path: str) -> dict:
         shutil.copytree(host_src, dest, symlinks=False)
         host_path = dest
 
-    # Git 快照：在目标目录所在的 git 仓库中做 commit
-    target_dir = host_path if os.path.isdir(host_path) else os.path.dirname(host_path)
-    git_dir = _find_git_root(target_dir)
+    # Git 快照：在允许导出的目录中进行 git init 和 commit
+    git_dir = None
+    for rule_norm in allowed_dirs:
+        try:
+            if os.path.commonpath([host_path_norm, rule_norm]) == rule_norm:
+                git_dir = rule_norm
+                break
+        except ValueError:
+            pass
 
     commit_msg = ""
     if git_dir:
-        repo_name = os.path.basename(git_dir)
+        git_dir_existed = os.path.isdir(os.path.join(git_dir, ".git"))
+        if not git_dir_existed:
+            subprocess.run(["git", "-C", git_dir, "init"], capture_output=True, timeout=30)
         subprocess.run(["git", "-C", git_dir, "add", "-A"], capture_output=True, timeout=30)
-        result = subprocess.run(
-            ["git", "-C", git_dir, "commit", "-m", f"auto-snapshot: export {os.path.basename(host_path)}"],
-            capture_output=True, timeout=30, text=True
-        )
-        commit_msg = result.stdout.strip() or result.stderr.strip()
-    else:
-        # 没有 git 仓库，初始化一个新仓库
-        subprocess.run(["git", "-C", target_dir, "init"], capture_output=True, timeout=30)
-        subprocess.run(["git", "-C", target_dir, "add", "-A"], capture_output=True, timeout=30)
-        result = subprocess.run(
-            ["git", "-C", target_dir, "commit", "-m", f"auto-snapshot: initial commit after export"],
-            capture_output=True, timeout=30, text=True
-        )
-        commit_msg = result.stdout.strip() or result.stderr.strip()
-        git_dir = target_dir
+        if git_dir_existed:
+            result = subprocess.run(
+                ["git", "-C", git_dir, "commit", "-m", f"auto-snapshot: export {os.path.basename(host_path)}"],
+                capture_output=True, timeout=30, text=True
+            )
+            commit_msg = result.stdout.strip() or result.stderr.strip()
+        else:
+            result = subprocess.run(
+                ["git", "-C", git_dir, "commit", "-m", f"auto-snapshot: initial commit after export"],
+                capture_output=True, timeout=30, text=True
+            )
+            commit_msg = result.stdout.strip() or result.stderr.strip()
 
     return {
         "host_path": host_path,

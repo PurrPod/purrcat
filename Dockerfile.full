@@ -1,0 +1,61 @@
+ARG REGISTRY=""
+FROM ${REGISTRY}python:3.10-slim
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    LANG=C.UTF-8 \
+    BUN_INSTALL="/usr/local" \
+    PATH="/usr/local/bin:${PATH}"
+
+ARG APT_MIRROR=""
+RUN if [ -n "${APT_MIRROR}" ]; then \
+        sed -i "s/deb.debian.org/${APT_MIRROR}/g" /etc/apt/sources.list.d/debian.sources 2>/dev/null || \
+        sed -i "s/deb.debian.org/${APT_MIRROR}/g" /etc/apt/sources.list 2>/dev/null; \
+    fi
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    git \
+    ca-certificates \
+    jq \
+    unzip \
+    gnupg \
+    # === Full sandbox dependencies ===
+    # ffmpeg for video/audio processing
+    ffmpeg \
+    # Chromium browser and dependencies
+    chromium \
+    chromium-driver \
+    # Additional browser dependencies
+    libnss3 \
+    libxss1 \
+    libasound2 \
+    libatk-bridge2.0-0 \
+    libatspi2.0-0 \
+    libcups2 \
+    libdrm2 \
+    libgbm1 \
+    libgtk-3-0 \
+    libpango-1.0-0 \
+    libx11-xcb1 \
+    libxcb-dri3-0 \
+    libxshmfence1 \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && npm config set registry https://registry.npmmirror.com \
+    && npm config set loglevel error \
+    && npm config set audit false \
+    && npm config set fund false \
+    && curl -fsSL https://bun.sh/install | bash \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip config set global.index-url https://mirrors.aliyun.com/pypi/simple/ \
+    && pip install --no-cache-dir uv ruff \
+    # Install Playwright for browser automation
+    && pip install --no-cache-dir playwright \
+    && playwright install chromium
+
+WORKDIR /agent_vm
+
+CMD ["sleep", "infinity"]

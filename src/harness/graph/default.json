@@ -1,7 +1,9 @@
 {
     "name": "default",
     "description": "默认工作流：全局输入 → 拼装消息 → LLM循环思考 → 全局输出",
-    "required_inputs": ["prompt"],
+    "required_inputs": {
+        "prompt": "核心任务提示词，告知工作流具体要完成什么任务"
+    }, 
     "nodes": [
         {"id": "node_input", "type": "task_input"},
         {"id": "node_sys_msg", "type": "message_card_builder", "data": {"role": "system", "content": "你是一个优秀的AI任务助手，请利用工具高效完成任务。"}},
