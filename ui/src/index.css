@@ -1,0 +1,32 @@
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-cream text-ink font-sans antialiased;
+  }
+}
+
+.react-flow__node {
+  @apply rounded-2xl shadow-soft transition-all duration-300;
+}
+.react-flow__node.selected {
+  @apply shadow-soft-hover ring-2 ring-terracotta ring-offset-4 ring-offset-cream border-transparent;
+}
+.react-flow__node.dragging {
+  transition: none !important;
+}
+.react-flow__handle {
+  @apply w-4 h-4 bg-ink border-2 border-paper transition-transform hover:scale-125 !important;
+}
+.react-flow__edge-path {
+  stroke: #1A1A1A !important;
+  stroke-width: 2.5 !important;
+}
+.react-flow__edge.selected .react-flow__edge-path {
+  stroke: #D47A5A !important;
+  stroke-width: 3.5 !important;
+}

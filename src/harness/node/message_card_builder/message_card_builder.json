@@ -8,18 +8,18 @@
             "name": "content",
             "type": "string",
             "description": "消息内容",
-            "required": false
+            "required": true
         },
         {
             "name": "role",
             "type": "string",
-            "description": "消息角色 (system/user/assistant/tool)",
+            "description": "消息角色 (system/user/assistant)",
             "required": false
         }
     ],
     "outputs": [
         {
-            "name": "default",
+            "name": "message_list",
             "type": "MessageList",
             "description": "标准消息列表"
         }

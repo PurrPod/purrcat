@@ -18,4 +18,4 @@ class Node(BaseNode):
         with open(file_path, "r", encoding="utf-8") as f:
             content = f.read()
 
-        return {"default": content}
+        return {"file_content": content}

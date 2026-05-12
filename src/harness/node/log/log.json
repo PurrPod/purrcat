@@ -5,15 +5,21 @@
     "color": "#7F8C8D",
     "inputs": [
         {
-            "name": "previous_info",
-            "type": "any",
-            "description": "上游传入的信息",
-            "required": false
+            "name": "log_type",
+            "type": "string",
+            "description": "日志类别",
+            "required": true
         },
         {
             "name": "log_content",
             "type": "string",
             "description": "日志内容",
+            "required": true
+        },
+        {
+            "name": "previous_info",
+            "type": "any",
+            "description": "需要透传给下游的数据",
             "required": false
         }
     ],
@@ -24,9 +30,9 @@
             "description": "是否成功"
         },
         {
-            "name": "default",
+            "name": "passthrough",
             "type": "any",
-            "description": "透传上游信息"
+            "description": "透传的数据"
         }
     ],
     "config": [

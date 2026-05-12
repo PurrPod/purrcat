@@ -19,7 +19,7 @@
     ],
     "outputs": [
         {
-            "name": "default",
+            "name": "compressed_messages",
             "type": "MessageList",
             "description": "压缩后的消息列表"
         }

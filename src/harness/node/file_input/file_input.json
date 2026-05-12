@@ -8,12 +8,12 @@
             "name": "file_path",
             "type": "string",
             "description": "文件路径",
-            "required": false
+            "required": true
         }
     ],
     "outputs": [
         {
-            "name": "default",
+            "name": "file_content",
             "type": "string",
             "description": "文件内容"
         }

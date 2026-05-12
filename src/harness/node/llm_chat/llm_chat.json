@@ -9,19 +9,18 @@
             "type": "MessageList",
             "description": "上游传入的历史消息上下文",
             "required": true
-        },
-        {
-            "name": "tools",
-            "type": "ToolList",
-            "description": "可用工具列表",
-            "required": false
         }
     ],
     "outputs": [
         {
-            "name": "default",
+            "name": "messages",
             "type": "MessageList",
             "description": "追加了模型回复后的消息列表"
+        },
+        {
+            "name": "response",
+            "type": "LLMResponse",
+            "description": "模型原始响应对象"
         }
     ],
     "config": [

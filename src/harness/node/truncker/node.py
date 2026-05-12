@@ -10,4 +10,4 @@ class Node(BaseNode):
         start = inputs.get("start_int") or self.config.get("start_int", 0)
         end = inputs.get("end_int") or self.config.get("end_int", len(msg_list))
         truncated_list = list(msg_list)[start:end]
-        return {"default": truncated_list}
+        return {"truncated_list": truncated_list}

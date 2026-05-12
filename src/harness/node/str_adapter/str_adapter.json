@@ -19,7 +19,7 @@
     ],
     "outputs": [
         {
-            "name": "default",
+            "name": "concatenated_string",
             "type": "string",
             "description": "拼接后的字符串"
         }

@@ -10,17 +10,15 @@
         {"id": "node_sys_msg", "type": "message_card_builder", "data": {"role": "system", "content": "你是一个优秀的AI任务助手，请利用工具高效完成任务。"}},
         {"id": "node_user_msg", "type": "message_card_builder", "data": {"role": "user"}},
         {"id": "node_appender", "type": "appender"},
-        {"id": "node_tools", "type": "tool_kit"},
         {"id": "node_loop", "type": "file_output_loop", "data": {"file_path": ""}},
         {"id": "node_output", "type": "task_output"}
     ],
     "edges": [
         {"source": "node_input", "target": "node_user_msg", "sourceHandle": "prompt", "targetHandle": "content"},
         {"source": "node_input", "target": "node_loop", "sourceHandle": "target_file", "targetHandle": "file_path"},
-        {"source": "node_sys_msg", "target": "node_appender", "targetHandle": "base_list"},
-        {"source": "node_user_msg", "target": "node_appender", "targetHandle": "append_list"},
-        {"source": "node_appender", "target": "node_loop", "targetHandle": "messages"},
-        {"source": "node_tools", "target": "node_loop", "targetHandle": "tools"},
+        {"source": "node_sys_msg", "target": "node_appender", "sourceHandle": "message_list", "targetHandle": "base_list"},
+        {"source": "node_user_msg", "target": "node_appender", "sourceHandle": "message_list", "targetHandle": "append_list"},
+        {"source": "node_appender", "target": "node_loop", "sourceHandle": "merged_list", "targetHandle": "messages"},
         {"source": "node_loop", "target": "node_output", "sourceHandle": "summary", "targetHandle": "task_result"}
     ]
 }

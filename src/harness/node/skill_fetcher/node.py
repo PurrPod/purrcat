@@ -11,7 +11,7 @@ class Node(BaseNode):
         skill_name = inputs.get("skill_name") or self.config.get("skill_name", "")
         
         skill_content = await asyncio.to_thread(self._fetch_skill_local, skill_name)
-        return {"default": skill_content}
+        return {"skill_content": skill_content}
 
     def _fetch_skill_local(self, skill_name: str) -> str:
         from src.utils.config import SKILL_DIR

@@ -8,18 +8,18 @@
             "name": "base_list",
             "type": "list",
             "description": "基础列表",
-            "required": false
+            "required": true
         },
         {
             "name": "append_list",
             "type": "list",
             "description": "待追加的列表",
-            "required": false
+            "required": true
         }
     ],
     "outputs": [
         {
-            "name": "default",
+            "name": "merged_list",
             "type": "list",
             "description": "合并后的列表"
         }

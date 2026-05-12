@@ -1,6 +1,7 @@
 from typing import Any, Dict
 from src.harness.node.base import BaseNode
 from src.harness.utils.llm_helper import call_llm, inject_force_push
+from src.harness.utils.tool_helper import get_system_schema
 
 
 class Node(BaseNode):
@@ -9,12 +10,10 @@ class Node(BaseNode):
     async def execute(self, inputs: dict, force_push_msgs: list, context: Any) -> Dict[str, Any]:
         messages = inputs.get("messages", [])
         
-        # 注入强制推送的消息
         messages = inject_force_push(messages, force_push_msgs)
         
-        tools = inputs.get("tools", [])
+        tools = get_system_schema()
 
-        # 调用 LLM 辅助函数
         response, messages = await call_llm(
             model=context.model,
             messages=messages,
@@ -23,4 +22,4 @@ class Node(BaseNode):
             context=context
         )
 
-        return {"default": messages, "response": response}
+        return {"messages": messages, "response": response}

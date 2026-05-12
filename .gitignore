@@ -40,7 +40,7 @@ htmlcov/
 .mypy_cache/
 .ruff_cache/
 .hypothesis/
-ui/
+
 
 node_modules/
 ui/node_modules/

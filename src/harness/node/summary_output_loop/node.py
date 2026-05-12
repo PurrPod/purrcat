@@ -2,7 +2,7 @@ import json
 from typing import Dict, Any
 from src.harness.node.base import BaseNode
 from src.harness.utils.llm_helper import call_llm, inject_force_push
-from src.harness.utils.tool_helper import extract_tool_calling, execute_tool_call, check_tool_call_completed
+from src.harness.utils.tool_helper import get_system_schema, extract_tool_calling, check_tool_call_completed
 
 
 class Node(BaseNode):
@@ -10,9 +10,8 @@ class Node(BaseNode):
 
     async def execute(self, inputs: Dict[str, Any], force_push_msgs: list, context: Any) -> Dict[str, Any]:
         messages = inputs.get("messages", [])
-        tools = inputs.get("tools", [])
+        tools = get_system_schema()
 
-        # 将引擎启动时下发的初始 force_push 处理掉
         if force_push_msgs:
             messages = inject_force_push(messages, force_push_msgs)
 
@@ -30,7 +29,6 @@ class Node(BaseNode):
                     self.log(context, "SYSTEM", f"🔔 检测到实时人工干预，已注入 {len(dynamic_push)} 条指令")
                     messages = inject_force_push(messages, dynamic_push)
 
-                # 调用 LLM
                 response, messages = await call_llm(
                     model=context.model,
                     messages=messages,
@@ -40,20 +38,17 @@ class Node(BaseNode):
                 )
 
                 assistant_msg = response.choices[0].message
-
-                # 提取工具调用
                 tool_calls = extract_tool_calling(response)
 
                 if not tool_calls:
                     messages.append({"role": "user", "content": "检测到你没有调用任何工具，如已完成任务，请调用 task_done 总结该阶段任务"})
                     continue
 
-                # 执行工具调用
-                tool_messages = execute_tool_call(tool_calls, context, self.log)
+                # 🚨 修正：使用基类的工具路由分发方法
+                tool_messages = self.execute_tool_calling(tool_calls, context)
                 if tool_messages:
                     messages.extend(tool_messages)
 
-                # 检查任务完成
                 if check_tool_call_completed(tool_calls):
                     summary = assistant_msg.content or "任务完成"
                     for tc in tool_calls:

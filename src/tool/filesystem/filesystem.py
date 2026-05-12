@@ -75,10 +75,10 @@ def FileSystem(action: str, path_from: str = None, path_to: str = None, **kwargs
             except SandboxPathNotFoundError:
                 return error_response("沙盒文件不存在", "❌ 文件不存在")
             except ExportDirNotAllowedError as e:
-                msg = f"可导入目录: {e.allowed_dirs}"
+                msg = f"目标路径导出受限。仅可导出到目录白名单内的路径: {e.allowed_dirs}"
                 return error_response(msg, "❌ 目录受限")
             except GitNotAvailableError:
-                return error_response("宿主机未安装git", "❌ Git未安装")
+                return error_response("宿主机未安装git，禁止导出", "❌ Git未安装")
             except FileSystemError as e:
                 return warning_response(str(e), "⚠️ 导出失败")
 

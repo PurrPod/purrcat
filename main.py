@@ -16,7 +16,6 @@ from src.memory.purrmemo import get_memory_client
 
 
 async def init_core(cli_session_id: str = None, cli_branch_name: str = None):
-    # 注意：如果你的大模型 API 需要通过代理访问（如国内访问 OpenAI/Claude），请取消下面两行注释
     os.environ.pop("HTTP_PROXY", None)
     os.environ.pop("HTTPS_PROXY", None)
 
@@ -54,14 +53,53 @@ async def run_tui():
     await app.run_async()
 
 
-async def main_async(enable_tui: bool, cli_session: str = None, cli_branch: str = None):
+async def run_api(host: str = "0.0.0.0", port: int = 8000):
+    from fastapi import FastAPI
+    from fastapi.middleware.cors import CORSMiddleware
+    import uvicorn
+    
+    from server.api.chat import router as chat_router
+    from server.api.graph import router as graph_router
+    from server.api.task import router as task_router
+
+    app = FastAPI(title="PurrCat API System")
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    app.include_router(chat_router)
+    app.include_router(graph_router)
+    app.include_router(task_router)  # 挂载子路由
+
+    @app.get("/")
+    def ping():
+        return {"message": "Meow! PurrCat Backend is running."}
+
+    config = uvicorn.Config(app, host=host, port=port)
+    server = uvicorn.Server(config)
+    await server.serve()
+
+
+async def main_async(enable_tui: bool, enable_api: bool, api_port: int, cli_session: str = None, cli_branch: str = None):
     await init_core(cli_session_id=cli_session, cli_branch_name=cli_branch)
 
+    api_task = None
+    tui_task = None
+
     try:
+        if enable_api:
+            print(f"[*] Starting API server on http://0.0.0.0:{api_port}...")
+            api_task = asyncio.create_task(run_api(port=api_port))
+
         if enable_tui:
             print("[*] Starting TUI...")
             try:
-                await run_tui()
+                tui_task = asyncio.create_task(run_tui())
+                await tui_task
             except Exception as e:
                 print(f"[-] TUI error: {e}")
                 print("[*] Falling back to headless mode...")
@@ -74,7 +112,13 @@ async def main_async(enable_tui: bool, cli_session: str = None, cli_branch: str 
     except (KeyboardInterrupt, asyncio.CancelledError):
         print("\n[*] 检测到中断信号，准备退出...")
     finally:
-        # 确保无论什么分支，最后都会安全关停 Agent 和后台线程
+        if api_task:
+            api_task.cancel()
+            try:
+                await api_task
+            except asyncio.CancelledError:
+                print("[*] API server stopped")
+        
         await shutdown_core()
 
 
@@ -83,9 +127,17 @@ def main():
     parser.add_argument("--headless", action="store_true", help="Run without TUI")
     parser.add_argument("--session", type=str, help="Specify session ID to load")
     parser.add_argument("--branch", type=str, help="Create new branch with given name on startup")
+    parser.add_argument("--api", action="store_true", help="Enable API server")
+    parser.add_argument("--api-port", type=int, default=8000, help="API server port (default: 8000)")
     args = parser.parse_args()
 
-    asyncio.run(main_async(enable_tui=not args.headless, cli_session=args.session, cli_branch=args.branch))
+    asyncio.run(main_async(
+        enable_tui=not args.headless,
+        enable_api=args.api,
+        api_port=args.api_port,
+        cli_session=args.session,
+        cli_branch=args.branch
+    ))
 
 
 if __name__ == "__main__":

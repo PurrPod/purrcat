@@ -8,12 +8,12 @@
             "name": "skill_name",
             "type": "string",
             "description": "技能名称",
-            "required": false
+            "required": true
         }
     ],
     "outputs": [
         {
-            "name": "default",
+            "name": "skill_content",
             "type": "string",
             "description": "技能内容"
         }

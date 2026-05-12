@@ -8,4 +8,4 @@ class Node(BaseNode):
     async def execute(self, inputs: Dict[str, Any], force_push_msgs: list, context: Any) -> Dict[str, Any]:
         str1 = inputs.get("str1") or self.config.get("str1", "")
         str2 = inputs.get("str2") or self.config.get("str2", "")
-        return {"default": str1 + str2}
+        return {"concatenated_string": str1 + str2}

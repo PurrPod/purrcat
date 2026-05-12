@@ -10,6 +10,6 @@ class Node(BaseNode):
         role = inputs.get("role") or self.config.get("role", "user")
 
         if not content:
-            return {"default": []}
+            return {"message_list": []}
 
-        return {"default": [{"role": role, "content": content}]}
+        return {"message_list": [{"role": role, "content": content}]}

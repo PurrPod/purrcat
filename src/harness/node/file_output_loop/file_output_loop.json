@@ -11,12 +11,6 @@
             "required": true
         },
         {
-            "name": "tools",
-            "type": "ToolList",
-            "description": "可用工具列表",
-            "required": false
-        },
-        {
             "name": "file_path",
             "type": "string",
             "description": "动态传入的文件路径",
@@ -25,7 +19,7 @@
     ],
     "outputs": [
         {
-            "name": "default",
+            "name": "messages",
             "type": "MessageList",
             "description": "完整的消息历史"
         },

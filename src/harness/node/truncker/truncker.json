@@ -25,7 +25,7 @@
     ],
     "outputs": [
         {
-            "name": "default",
+            "name": "truncated_list",
             "type": "list",
             "description": "截断后的列表"
         }

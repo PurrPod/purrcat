@@ -14,5 +14,5 @@ class Node(BaseNode):
 
         return {
             "success": True,
-            "default": previous_info
+            "passthrough": previous_info
         }

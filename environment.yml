@@ -50,5 +50,9 @@ dependencies:
       - deep-translator>=1.11.0
       - scikit-learn>=1.4.0
 
+      # Web框架
+      - fastapi>=0.109.0
+      - uvicorn>=0.27.0
+
       # TUI界面
       - textual>=0.50.0

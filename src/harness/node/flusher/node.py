@@ -10,4 +10,4 @@ class Node(BaseNode):
         messages = inputs.get("messages", [])
         tools = inputs.get("tools", None)
         compressed_messages = await asyncio.to_thread(context.flusher, messages, tools)
-        return {"default": compressed_messages or messages}
+        return {"compressed_messages": compressed_messages or messages}

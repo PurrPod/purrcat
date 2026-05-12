@@ -14,4 +14,4 @@ class Node(BaseNode):
         if append_list and isinstance(append_list, list):
             result_list.extend(append_list)
 
-        return {"default": result_list}
+        return {"merged_list": result_list}

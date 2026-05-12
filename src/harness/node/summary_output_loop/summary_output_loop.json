@@ -9,12 +9,6 @@
             "type": "MessageList",
             "description": "消息上下文",
             "required": true
-        },
-        {
-            "name": "tools",
-            "type": "ToolList",
-            "description": "可用工具列表",
-            "required": false
         }
     ],
     "outputs": [
