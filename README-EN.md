@@ -31,7 +31,7 @@ purrcat start --headless  # Launch without TUI
 
 ## Highlights
 
-**1. Dual-layer sandbox isolation.** All code execution runs inside Docker containers, isolated from the host. A strict whitelist system (`.purrcat/.file.yaml`) controls host file access: `dont_read_dirs` (privacy zone), `sandbox_dirs` (operation domain), `docker_mount` (mounting channel).
+**1. Dual-layer sandbox isolation.** All code execution runs inside Docker containers, isolated from the host. A strict whitelist system (`.purrcat/file.yaml`) controls host file access: `dont_read_dirs` (privacy zone), `sandbox_dirs` (operation domain), `docker_mount` (mounting channel).
 
 **2. Customizable Harness Engineering.** Dispatch multiple Experts (research assistant, trader, programmer) within the same system. Extend via standard Skill, modular Tool (`src/tool/`, dynamically loaded by `dispatch_tool()`), or full Harness/Expert (inherit `BaseTask`, rewrite state machine).
 

@@ -1,31 +1,13 @@
 import os
 import json
 
-# 找到项目根目录（从当前文件向上找）
-def find_project_root():
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    while True:
-        # 检查是否有 .purrcat 目录
-        if os.path.exists(os.path.join(current_dir, ".purrcat")):
-            return current_dir
-        # 或者检查是否有 main.py, environment.yml 等标志性文件
-        if (os.path.exists(os.path.join(current_dir, "main.py")) or
-            os.path.exists(os.path.join(current_dir, "environment.yml")) or
-            os.path.exists(os.path.join(current_dir, ".gitignore"))):
-            return current_dir
-        # 向上一级
-        parent_dir = os.path.dirname(current_dir)
-        if parent_dir == current_dir:  # 已经到了根目录
-            return os.getcwd()
-        current_dir = parent_dir
+# 导入统一的配置模块
+from src.utils.config import get_memory_config, get_embedding_model, BASE_DIR
 
-PROJECT_ROOT = find_project_root()
-PURRCAT_DIR = os.path.join(PROJECT_ROOT, ".purrcat")
+# 获取内存配置
+config = get_memory_config()
 
-# 配置文件路径
-CONFIG_FILE = os.path.join(PURRCAT_DIR, ".memory.json")
-
-# 默认配置
+# 默认配置（当配置文件不存在时使用）
 default_config = {
     "openai": {
         "api_key": "",
@@ -33,26 +15,25 @@ default_config = {
         "model_name": "deepseek-v4-flash"
     },
     "chromadb": {
-        "persist_directory": os.path.join(PROJECT_ROOT, "data", "memo", "chromadb"),
+        "persist_directory": os.path.join(BASE_DIR, "data", "memory", "chromadb"),
         "collection_name": "experiences",
-        "embedding_model": "BAAI/bge-small-zh-v1.5"
+        "embedding_model": get_embedding_model()
     },
     "eventdb": {
-        "db_path": os.path.join(PROJECT_ROOT, "data", "memo", "events.db"),
+        "db_path": os.path.join(BASE_DIR, "data", "memory", "events.db"),
         "table_name": "events"
     },
     "graphdb": {
-        "graph_path": os.path.join(PROJECT_ROOT, "data", "memo", "graph.pkl"),
+        "graph_path": os.path.join(BASE_DIR, "data", "memory", "graph.pkl"),
         "min_confidence": 0.3
     },
     "buffer": {
-        "buffer_dir": os.path.join(PROJECT_ROOT, "data", "memo", "buffer"),
-        "pending_dir": os.path.join(PROJECT_ROOT, "data", "memo", "buffer", "pending"),
-        "archived_dir": os.path.join(PROJECT_ROOT, "data", "memo", "buffer", "archived"),
-        "error_dir": os.path.join(PROJECT_ROOT, "data", "memo", "buffer", "error")
+        "buffer_dir": os.path.join(BASE_DIR, "data", "memory", "buffer"),
+        "pending_dir": os.path.join(BASE_DIR, "data", "memory", "buffer", "pending"),
+        "archived_dir": os.path.join(BASE_DIR, "data", "memory", "buffer", "archived"),
+        "error_dir": os.path.join(BASE_DIR, "data", "memory", "buffer", "error")
     },
     "memory_agent": {
-        "checkpoint_path": os.path.join(PROJECT_ROOT, "data", "memo", "checkpoint.json"),
         "polling_interval": 5
     },
     "rag": {
@@ -67,19 +48,17 @@ default_config = {
     }
 }
 
-# 加载配置
-config = default_config.copy()
-if os.path.exists(CONFIG_FILE):
-    with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
-        user_config = json.load(f)
-        # 递归更新配置
-        def update_config(target, source):
-            for key, value in source.items():
-                if key in target and isinstance(target[key], dict) and isinstance(value, dict):
-                    update_config(target[key], value)
-                else:
-                    target[key] = value
-        update_config(config, user_config)
+# 合并用户配置和默认配置
+def merge_config(default, user):
+    result = default.copy()
+    for key, value in user.items():
+        if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+            result[key] = merge_config(result[key], value)
+        else:
+            result[key] = value
+    return result
+
+config = merge_config(default_config, config)
 
 # 工作目录配置
 BUFFER_DIR = config['buffer']['buffer_dir']
@@ -114,4 +93,4 @@ GRAPH_DATABASE_CONFIG = config['graphdb']
 RAG_CONFIG = config['rag']
 
 # 服务器配置
-SERVER_CONFIG = config['server']
+SERVER_CONFIG = config.get('server', {'host': '127.0.0.1', 'port': 8000})

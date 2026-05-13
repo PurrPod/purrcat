@@ -5,6 +5,7 @@ from chromadb import Client, PersistentClient
 from chromadb.config import Settings
 from sentence_transformers import SentenceTransformer
 from src.memory.purrmemo.core.config import VECTOR_DATABASE_CONFIG
+from src.utils.config import get_embedding_model
 
 class VectorEngine:
     _instance = None
@@ -23,7 +24,7 @@ class VectorEngine:
         self.persist_directory = VECTOR_DATABASE_CONFIG['persist_directory']
         self.collection_name = VECTOR_DATABASE_CONFIG['collection_name']
         self.graph_collection_name = "graph_nodes"
-        self.embedding_model_name = VECTOR_DATABASE_CONFIG.get('embedding_model', 'BAAI/bge-small-zh-v1.5')
+        self.embedding_model_name = get_embedding_model()
         self.client = None
         self.collection = None
         self.graph_collection = None

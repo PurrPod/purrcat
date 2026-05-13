@@ -105,9 +105,13 @@ class Agent:
         except Exception as e:
             print(f"⚠️ [Memory] 落盘失败: {e}")
 
-    def force_push(self, content, type="unknown_type"):
-        """接收外部消息"""
-        self.pending_force_push.append(f"<{type}>{content}</{type}>")
+    def force_push(self, content, type="user"):
+        """接收外部消息，结构化压入队列"""
+        self.pending_force_push.append({
+            "type": type,
+            "time": datetime.datetime.now().strftime('%m-%d %H:%M:%S'),
+            "content": content
+        })
 
     def _track_token_usage(self, response):
         if hasattr(response, "usage") and response.usage is not None:
@@ -124,10 +128,12 @@ class Agent:
             self._check_and_summarize_memory()
 
         if local_push:
-            formatted = "\n\n".join(local_push)
+            batch_data = {
+                "events": local_push
+            }
             self._append_history({
                 "role": "user",
-                "content": f"[SYSTEM {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Received {len(local_push)} message:\n\n{formatted}"
+                "content": json.dumps(batch_data, ensure_ascii=False)
             })
 
     def process_message(self):

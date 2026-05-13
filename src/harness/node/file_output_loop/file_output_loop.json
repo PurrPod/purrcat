@@ -34,7 +34,8 @@
             "name": "file_path",
             "type": "string",
             "label": "输出文件路径",
-            "default": ""
+            "default": "",
+            "description": "沙盒内的绝对路径，必须以 /agent_vm 开头"
         }
     ]
 }

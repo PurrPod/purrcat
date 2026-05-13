@@ -4,7 +4,7 @@ from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
 
-from src.utils.config import BASE_DIR
+from src.utils.config import get_embedding_model
 
 
 class LocalEmbeddingSearcher:
@@ -16,7 +16,8 @@ class LocalEmbeddingSearcher:
         with cls._lock:
             if cls._instance is None:
                 cls._instance = super(LocalEmbeddingSearcher, cls).__new__(cls)
-                embedding_path = os.path.join(BASE_DIR, "embedding")
+                # 使用 get_embedding_model() 获取嵌入模型路径（默认使用本地 embedding 文件夹）
+                embedding_path = get_embedding_model()
                 cls._instance.model = SentenceTransformer(embedding_path)
         return cls._instance
 

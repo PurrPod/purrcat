@@ -1,6 +1,29 @@
 import time
 import json
 from textual import work, on
+
+def parse_events_content(content: str):
+    """解析 events JSON 格式的消息内容"""
+    user_messages = []
+    system_count = 0
+    
+    try:
+        data = json.loads(content)
+        if "events" in data:
+            for event in data["events"]:
+                event_type = event.get("type", "")
+                event_content = event.get("content", "")
+                event_time = event.get("time", "")
+                
+                if event_type == "user":
+                    user_messages.append((event_time, event_content))
+                else:
+                    system_count += 1
+    except (json.JSONDecodeError, Exception):
+        # 如果不是 JSON 格式，当作普通用户消息处理
+        user_messages.append(("", content))
+    
+    return user_messages, system_count
 from textual.app import ComposeResult
 from textual.containers import Vertical, Horizontal, VerticalScroll
 from textual.widgets import Static, Markdown, ProgressBar, ListView, ListItem, TextArea
@@ -833,9 +856,22 @@ class MainView(Vertical):
                 content = msg.get("content", "")
 
                 if role == "user":
-                    new_msg = ChatMessage("user", content, is_new=False)
-                    new_msg.add_class(f"msg-space-{self.current_space}")
-                    chat_zone.mount(new_msg)
+                    user_messages, system_count = parse_events_content(content)
+                    # 渲染用户消息
+                    for event_time, event_content in user_messages:
+                        if event_time:
+                            # 包含时间戳的用户消息
+                            new_msg = ChatMessage("user", f"{event_content}", is_new=False)
+                        else:
+                            new_msg = ChatMessage("user", event_content, is_new=False)
+                        new_msg.add_class(f"msg-space-{self.current_space}")
+                        chat_zone.mount(new_msg)
+                    
+                    # 如果有系统消息，显示统计提示
+                    if system_count > 0:
+                        system_note = Static(f"⚙️ 收到 {system_count} 条系统日志", classes="system-note")
+                        system_note.add_class(f"msg-space-{self.current_space}")
+                        chat_zone.mount(system_note)
 
                 elif role == "assistant":
                     is_new_msg = not is_initial_load

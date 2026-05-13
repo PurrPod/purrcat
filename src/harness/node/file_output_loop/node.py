@@ -13,15 +13,15 @@ class Node(BaseNode):
         messages = inputs.get("messages", [])
         tools = get_system_schema()
         
-        original_file_path = inputs.get("file_path") or self.config.get("file_path") or f"{context.workplace}/FINISHED.md"
+        original_file_path = inputs.get("file_path") or self.config.get("file_path")
         
-        check_file_path = original_file_path
-        if check_file_path.startswith("/agent_vm/"):
-            check_file_path = check_file_path[1:]
-            
-        check_file_path = os.path.abspath(os.path.join(os.getcwd(), check_file_path))
-        agent_vm_dir = os.path.abspath(os.path.join(os.getcwd(), "agent_vm"))
-        in_sandbox = os.path.commonpath([check_file_path, agent_vm_dir]) == agent_vm_dir
+        # 必须以 /agent_vm 开头，否则报错
+        if not original_file_path or not original_file_path.startswith("/agent_vm"):
+            raise ValueError(f"文件路径必须以'/agent_vm'开头，当前输入: {original_file_path}")
+        
+        # 移除 /agent_vm/ 前缀以获取相对路径
+        check_file_path = original_file_path[len("/agent_vm/"):] if original_file_path.startswith("/agent_vm/") else original_file_path[len("/agent_vm"):]
+        check_file_path = os.path.abspath(os.path.join(os.getcwd(), "agent_vm", check_file_path))
 
         if force_push_msgs:
             messages = inject_force_push(messages, force_push_msgs)
@@ -61,8 +61,7 @@ class Node(BaseNode):
 
                 if check_tool_call_completed(tool_calls):
                     if self._check_file_exist(check_file_path):
-                        display_path = f"/agent_vm/{original_file_path}" if in_sandbox else original_file_path
-                        messages.append({"role": "user", "content": f"✅ 检测到你调用了 task_done，目标文件 {display_path} 已成功生成，任务完成！"})
+                        messages.append({"role": "user", "content": f"✅ 检测到你调用了 task_done，目标文件 {original_file_path} 已成功生成，任务完成！"})
                         summary = "任务完成"
                         for tc in tool_calls:
                             if tc.function.name == "task_done":
@@ -76,13 +75,7 @@ class Node(BaseNode):
                             "summary": summary
                         }
                     else:
-                        if in_sandbox:
-                            display_path = f"/agent_vm/{original_file_path}" if not original_file_path.startswith("/agent_vm") else original_file_path
-                            error_msg = f"未检测到沙盒文件：{display_path}"
-                        else:
-                            error_msg = f"未检测到本地文件：{original_file_path}"
-                        
-                        full_msg = f"{error_msg}。请检查是否生成在了其他路径，并及时生成目标文件。如果你实在无法完成任务，请使用yield_to_human工具直接挂起任务，这是被允许的！"
+                        full_msg = f"未检测到沙盒文件：{original_file_path}。请检查是否生成在了其他路径，并及时生成目标文件。如果你实在无法完成任务，请使用yield_to_human工具直接挂起任务，这是被允许的！"
                         messages.append({"role": "user", "content": full_msg})
                         continue
 

@@ -13,6 +13,39 @@ interface Message {
   tool_calls?: any[];
 }
 
+interface EventItem {
+  type: string;
+  time: string;
+  content: string;
+}
+
+function parseEventsContent(content: string): { userMessages: EventItem[], systemCount: number } {
+  const userMessages: EventItem[] = [];
+  let systemCount = 0;
+  
+  try {
+    const data = JSON.parse(content);
+    if (data.events && Array.isArray(data.events)) {
+      for (const event of data.events) {
+        const eventType = event.type || '';
+        const eventContent = event.content || '';
+        const eventTime = event.time || '';
+        
+        if (eventType === 'user') {
+          userMessages.push({ type: eventType, time: eventTime, content: eventContent });
+        } else {
+          systemCount++;
+        }
+      }
+    }
+  } catch (e) {
+    // 如果不是 JSON 格式，当作普通用户消息处理
+    userMessages.push({ type: 'user', time: '', content });
+  }
+  
+  return { userMessages, systemCount };
+}
+
 interface Session { id: string; alias: string; messages_count: number; updated_at: string; }
 
 const sketchyShape1 = { borderRadius: '255px 15px 225px 15px/15px 225px 15px 255px' };
@@ -403,46 +436,65 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
             </div>
           ) : (
             messages.map((msg, idx) => (
-              // 强制独占一行
-              <div key={idx} className={`flex w-full ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                
-                {msg.role === 'tool' ? (
-                  <ToolMessageBubble msg={msg} />
+              <div key={idx}>
+                {msg.role === 'user' ? (
+                  // 用户消息：解析 events JSON
+                  parseEventsContent(msg.content).userMessages.map((userMsg, uIdx) => (
+                    <div key={`${idx}-${uIdx}`} className="flex w-full justify-end">
+                      <div className={`flex flex-col gap-3 w-full max-w-[85%] items-end`}>
+                        {userMsg.content && (
+                          <div style={sketchyShape2} className="w-full p-6 border-4 border-ink relative bg-terracotta text-paper shadow-[6px_6px_0px_0px_rgba(26,26,26,1)]">
+                            <div className="absolute w-3 h-3 bg-ink rounded-full -top-2 -right-2"></div>
+                            <div className="text-[17px] font-bold text-paper">
+                              <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>
+                                {userMsg.time ? `[${userMsg.time}] ${userMsg.content}` : userMsg.content}
+                              </ReactMarkdown>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))
+                ) : msg.role === 'tool' ? (
+                  <div className="flex w-full justify-start">
+                    <ToolMessageBubble msg={msg} />
+                  </div>
                 ) : (
-                  <div className={`flex flex-col gap-3 w-full max-w-[85%] ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
-
-                    {/* 对话气泡与 Markdown 渲染 */}
-                    {msg.content && (
-                      <div style={msg.role === 'user' ? sketchyShape2 : sketchyShape1} className={`w-full p-6 border-4 border-ink relative ${
-                          msg.role === 'user' ? 'bg-terracotta text-paper shadow-[6px_6px_0px_0px_rgba(26,26,26,1)]' : 'bg-cream text-ink shadow-[6px_6px_0px_0px_rgba(26,26,26,1)]'
-                        }`}>
-                        <div className={`absolute w-3 h-3 bg-ink rounded-full ${msg.role === 'user' ? '-top-2 -right-2' : '-top-2 -left-2'}`}></div>
-
-                        <div>
-                          {msg.role !== 'user' && (
+                  // assistant 消息
+                  <div className="flex w-full justify-start">
+                    <div className={`flex flex-col gap-3 w-full max-w-[85%] items-start`}>
+                      {msg.content && (
+                        <div style={sketchyShape1} className="w-full p-6 border-4 border-ink relative bg-cream text-ink shadow-[6px_6px_0px_0px_rgba(26,26,26,1)]">
+                          <div className="absolute w-3 h-3 bg-ink rounded-full -top-2 -left-2"></div>
+                          <div>
                             <div className="flex items-center gap-2 mb-4">
                               <Cat size={20} strokeWidth={2.5}/>
                               <span className="font-black text-sm uppercase tracking-widest bg-ink text-paper px-2 py-0.5" style={{ ...sketchyShape3, fontFamily: '"Comic Sans MS", cursive' }}>
                                 ASSISTANT
                               </span>
                             </div>
-                          )}
-
-                          {/* 🔴 使用 ReactMarkdown 渲染内容 */}
-                          <div className={`text-[17px] font-bold ${msg.role === 'user' ? 'text-paper' : 'text-ink'}`}>
-                            <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>
-                              {msg.content}
-                            </ReactMarkdown>
+                            <div className="text-[17px] font-bold text-ink">
+                              <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>
+                                {msg.content}
+                              </ReactMarkdown>
+                            </div>
                           </div>
-
                         </div>
-                      </div>
-                    )}
-
-                    {/* Tool Calls */}
-                    {msg.tool_calls && msg.tool_calls.map((tc, t_idx) => (
-                      <ToolCallBubble key={`tc-${t_idx}`} tc={tc} />
-                    ))}
+                      )}
+                      {msg.tool_calls && msg.tool_calls.map((tc, t_idx) => (
+                        <ToolCallBubble key={`tc-${t_idx}`} tc={tc} />
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
+                {/* 系统消息统计提示 */}
+                {msg.role === 'user' && parseEventsContent(msg.content).systemCount > 0 && (
+                  <div className="flex w-full justify-center mt-2">
+                    <div className="flex items-center gap-2 px-4 py-2 bg-ink/10 border-2 border-ink/30 rounded-full">
+                      <Terminal size={14} strokeWidth={3} className="text-ink/50" />
+                      <span className="text-xs font-bold text-ink/60">收到 {parseEventsContent(msg.content).systemCount} 条系统日志</span>
+                    </div>
                   </div>
                 )}
               </div>

@@ -31,7 +31,7 @@ purrcat start --headless  # 无界面启动
 
 ## 核心亮点
 
-**1. 双重沙盒隔离。** 所有代码执行封锁在 Docker 容器内，与宿主机完全隔离。通过 `.purrcat/.file.yaml` 严格白名单控制文件访问：`dont_read_dirs`（隐私禁区）、`sandbox_dirs`（操作域）、`docker_mount`（挂载通道），从源头杜绝 Agent 暴走风险。
+**1. 双重沙盒隔离。** 所有代码执行封锁在 Docker 容器内，与宿主机完全隔离。通过 `.purrcat/file.yaml` 严格白名单控制文件访问：`dont_read_dirs`（隐私禁区）、`sandbox_dirs`（操作域）、`docker_mount`（挂载通道），从源头杜绝 Agent 暴走风险。
 
 **2. 可定制 Harness Engineering。** 在同一系统内调度多个 Expert（科研助手、交易员、程序员）。通过标准 Skill、模块化 Tool（`src/tool/`，由 `dispatch_tool()` 动态加载）、或完整 Harness/Expert（继承 `BaseTask`）扩展。
 

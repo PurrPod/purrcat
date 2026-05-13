@@ -8,10 +8,10 @@ DATA_DIR = os.path.join(BASE_DIR, "data")
 SRC_DIR = os.path.join(BASE_DIR, "src")
 
 PURRCAT_DIR = os.path.join(BASE_DIR, ".purrcat")
-MODEL_CONFIG_PATH = os.path.join(PURRCAT_DIR, ".model.yaml")
-SENSOR_CONFIG_PATH = os.path.join(PURRCAT_DIR, ".sensor.yaml")
-FILE_CONFIG_PATH = os.path.join(PURRCAT_DIR, ".file.yaml")
-MEMORY_CONFIG_PATH = os.path.join(PURRCAT_DIR, ".memory.json")
+MODEL_CONFIG_PATH = os.path.join(PURRCAT_DIR, "model.yaml")
+SENSOR_CONFIG_PATH = os.path.join(PURRCAT_DIR, "sensor.yaml")
+FILE_CONFIG_PATH = os.path.join(PURRCAT_DIR, "file.yaml")
+MEMORY_CONFIG_PATH = os.path.join(PURRCAT_DIR, "memory.json")
 MCP_CONFIG_PATH = os.path.join(PURRCAT_DIR, "mcp_config.json")
 
 MEMORY_DIR = os.path.join(DATA_DIR, "memory")
@@ -25,11 +25,10 @@ SKILL_DIR = os.path.join(BASE_DIR, "skill")
 SCHEDULE_FILE = os.path.join(SCHEDULE_DIR, "schedule.json")
 
 AGENT_DIR = os.path.join(SRC_DIR, "agent")
-AGENT_CORE_DIR = os.path.join(AGENT_DIR, "core")
+AGENT_CORE_DIR = os.path.join(PURRCAT_DIR, "core")
 SOUL_MD_PATH = os.path.join(AGENT_CORE_DIR, "SOUL.md")
 CRON_FILE = os.path.join(AGENT_CORE_DIR, "cron.json")
 SYSTEM_RULES_DIR = os.path.join(AGENT_DIR, "system_rules")
-CHECKPOINT_PATH = os.path.join(AGENT_DIR, "checkpoint.json")
 
 # 会话管理路径配置
 SESSIONS_DIR = os.path.join(DATA_DIR, "checkpoints", "agent")
@@ -106,8 +105,10 @@ def get_agent_model() -> str:
 
 
 def get_embedding_model() -> str:
+    """Get the embedding model path. Uses local 'embedding' folder by default."""
     model_config = get_model_config()
-    return model_config.get("embedding", "BAAI/bge-small-zh-v1.5")
+    # Return configured embedding model, or default to local 'embedding' folder
+    return model_config.get("embedding", os.path.join(BASE_DIR, "embedding"))
 
 
 def get_data_dir() -> str:

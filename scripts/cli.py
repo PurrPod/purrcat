@@ -7,12 +7,14 @@ from datetime import datetime
 
 MODEL_CONFIG_TEMPLATE = """# ============================================
 # PurrCat Model Configuration File
-# Path: .purrcat/.model.yaml
+# Path: .purrcat/model.yaml
 # Generated: {timestamp}
 # ============================================
 
-# Embedding model (used for RAG retrieval)
-embedding_model: BAAI/bge-small-zh-v1.5
+# Embedding model (used for RAG retrieval, skill search, memory operations)
+# Default: local 'embedding' folder (downloaded model)
+# Can also use HuggingFace model name like 'BAAI/bge-small-zh-v1.5'
+embedding: embedding
 
 # Main model configuration (code will automatically use the first one as agent_model)
 main:
@@ -44,7 +46,7 @@ task:
 
 SENSOR_CONFIG_TEMPLATE = """# ============================================
 # PurrCat Sensor Configuration File
-# Path: .purrcat/.sensor.yaml
+# Path: .purrcat/sensor.yaml
 # Generated: {timestamp}
 # ============================================
 
@@ -81,7 +83,7 @@ purrmemo:
 
 FILE_CONFIG_TEMPLATE = """# ============================================
 # PurrCat File System Configuration File
-# Path: .purrcat/.file.yaml
+# Path: .purrcat/file.yaml
 # Generated: {timestamp}
 # ============================================
 
@@ -122,7 +124,7 @@ def _prompt_overwrite(file_path, force):
 
 def _generate_memory_config(purrcat_dir, force=False):
     """Generate memory system configuration file"""
-    memory_path = os.path.join(purrcat_dir, ".memory.json")
+    memory_path = os.path.join(purrcat_dir, "memory.json")
 
     if os.path.exists(memory_path) and not _prompt_overwrite(memory_path, force):
         return False
@@ -166,10 +168,10 @@ def _generate_memory_config(purrcat_dir, force=False):
     try:
         with open(memory_path, "w", encoding="utf-8") as f:
             json.dump(memory_config, f, indent=2, ensure_ascii=False)
-        print(f"[+] .memory.json generated")
+        print(f"[+] memory.json generated")
         return True
     except Exception as e:
-        print(f"X Failed to write .memory.json: {e}")
+        print(f"X Failed to write memory.json: {e}")
         return False
 
 
@@ -217,9 +219,203 @@ def _generate_mcp_config(purrcat_dir, force=False):
         return False
 
 
+NOTE_CONFIG_TEMPLATE = """skill:
+  - docx
+  - pptx
+  - xlsx
+expectation:
+  - when ask you for analyse the note, please read all the content before starting analysis
+"""
+
+CRON_CONFIG_TEMPLATE = """[
+  {
+    "id": "crn_cdbcc1d4",
+    "title": "test-persist",
+    "trigger_time": "07:30",
+    "repeat_rule": "weekly_1",
+    "active": true
+  },
+  {
+    "id": "crn_7b9042b7",
+    "title": "work-start",
+    "trigger_time": "09:00",
+    "repeat_rule": "weekly_1",
+    "active": true
+  },
+  {
+    "id": "crn_43cfdb8f",
+    "title": "lunch",
+    "trigger_time": "12:00",
+    "repeat_rule": "everyday",
+    "active": true
+  },
+  {
+    "id": "crn_b196534b",
+    "title": "meeting",
+    "trigger_time": "15:00",
+    "repeat_rule": "everyday",
+    "active": true
+  },
+  {
+    "id": "crn_e332b097",
+    "title": "friday-drink",
+    "trigger_time": "18:00",
+    "repeat_rule": "weekly_5",
+    "active": true
+  }
+]
+"""
+
+MEMEORY_MD_TEMPLATE = """# PurrCat Memory Notes
+
+## Memory System
+
+This file is used to record and manage the agent's memory information.
+
+### Memory Types
+- **Short-term Memory**: Session history, recent interactions
+- **Long-term Memory**: Experience summaries, knowledge graphs
+- **Event Memory**: Important event records
+"""
+
+SOLO_MD_TEMPLATE = """# PurrCat Solo Mode
+
+## Solo Mode Configuration
+
+This file is used to configure the agent's behavior in standalone mode.
+
+### Runtime Parameters
+- Working directory settings
+- Task queue management
+- Resource limitation configuration
+"""
+
+SOUL_MD_TEMPLATE = """# PurrCat Soul
+
+## Core Identity
+
+This file represents the agent's core identity and personality settings.
+
+### Identity Characteristics
+- Role positioning
+- Language style
+- Behavioral guidelines
+"""
+
+TODO_MD_TEMPLATE = """# PurrCat TODO
+
+## Task Checklist
+
+- [ ] Complete initialization configuration
+- [ ] Set up API Key
+- [ ] Configure sensors
+- [ ] Start agent service
+"""
+
+
+def _generate_note_config(purrcat_dir, force=False):
+    """Generate agent note configuration file"""
+    agent_dir = os.path.join(purrcat_dir, "agent")
+    os.makedirs(agent_dir, exist_ok=True)
+    
+    note_path = os.path.join(agent_dir, "note.yaml")
+
+    if os.path.exists(note_path) and not _prompt_overwrite(note_path, force):
+        return False
+
+    try:
+        with open(note_path, "w", encoding="utf-8") as f:
+            f.write(NOTE_CONFIG_TEMPLATE)
+        print(f"[+] agent/note.yaml generated")
+        return True
+    except Exception as e:
+        print(f"X Failed to write agent/note.yaml: {e}")
+        return False
+
+
+def _generate_core_files(purrcat_dir, force=False):
+    """Generate core directory files"""
+    core_dir = os.path.join(purrcat_dir, "core")
+    os.makedirs(core_dir, exist_ok=True)
+
+    results = []
+
+    # cron.json
+    cron_path = os.path.join(core_dir, "cron.json")
+    if os.path.exists(cron_path) and not _prompt_overwrite(cron_path, force):
+        results.append(("cron.json", False))
+    else:
+        try:
+            with open(cron_path, "w", encoding="utf-8") as f:
+                f.write(CRON_CONFIG_TEMPLATE)
+            print(f"[+] core/cron.json generated")
+            results.append(("cron.json", True))
+        except Exception as e:
+            print(f"X Failed to write core/cron.json: {e}")
+            results.append(("cron.json", False))
+
+    # MEMORY.md
+    memory_md_path = os.path.join(core_dir, "MEMORY.md")
+    if os.path.exists(memory_md_path) and not _prompt_overwrite(memory_md_path, force):
+        results.append(("MEMORY.md", False))
+    else:
+        try:
+            with open(memory_md_path, "w", encoding="utf-8") as f:
+                f.write(MEMEORY_MD_TEMPLATE)
+            print(f"[+] core/MEMORY.md generated")
+            results.append(("MEMORY.md", True))
+        except Exception as e:
+            print(f"X Failed to write core/MEMORY.md: {e}")
+            results.append(("MEMORY.md", False))
+
+    # SOLO.md
+    solo_md_path = os.path.join(core_dir, "SOLO.md")
+    if os.path.exists(solo_md_path) and not _prompt_overwrite(solo_md_path, force):
+        results.append(("SOLO.md", False))
+    else:
+        try:
+            with open(solo_md_path, "w", encoding="utf-8") as f:
+                f.write(SOLO_MD_TEMPLATE)
+            print(f"[+] core/SOLO.md generated")
+            results.append(("SOLO.md", True))
+        except Exception as e:
+            print(f"X Failed to write core/SOLO.md: {e}")
+            results.append(("SOLO.md", False))
+
+    # SOUL.md
+    soul_md_path = os.path.join(core_dir, "SOUL.md")
+    if os.path.exists(soul_md_path) and not _prompt_overwrite(soul_md_path, force):
+        results.append(("SOUL.md", False))
+    else:
+        try:
+            with open(soul_md_path, "w", encoding="utf-8") as f:
+                f.write(SOUL_MD_TEMPLATE)
+            print(f"[+] core/SOUL.md generated")
+            results.append(("SOUL.md", True))
+        except Exception as e:
+            print(f"X Failed to write core/SOUL.md: {e}")
+            results.append(("SOUL.md", False))
+
+    # TODO.md
+    todo_md_path = os.path.join(core_dir, "TODO.md")
+    if os.path.exists(todo_md_path) and not _prompt_overwrite(todo_md_path, force):
+        results.append(("TODO.md", False))
+    else:
+        try:
+            with open(todo_md_path, "w", encoding="utf-8") as f:
+                f.write(TODO_MD_TEMPLATE)
+            print(f"[+] core/TODO.md generated")
+            results.append(("TODO.md", True))
+        except Exception as e:
+            print(f"X Failed to write core/TODO.md: {e}")
+            results.append(("TODO.md", False))
+
+    return all(ok for _, ok in results)
+
+
 def _generate_model_config(purrcat_dir, force=False):
     """Generate model configuration file"""
-    model_path = os.path.join(purrcat_dir, ".model.yaml")
+    model_path = os.path.join(purrcat_dir, "model.yaml")
 
     if os.path.exists(model_path) and not _prompt_overwrite(model_path, force):
         return False
@@ -228,16 +424,16 @@ def _generate_model_config(purrcat_dir, force=False):
     try:
         with open(model_path, "w", encoding="utf-8") as f:
             f.write(content)
-        print(f"[+] .model.yaml generated")
+        print(f"[+] model.yaml generated")
         return True
     except Exception as e:
-        print(f"X Failed to write .model.yaml: {e}")
+        print(f"X Failed to write model.yaml: {e}")
         return False
 
 
 def _generate_sensor_config(purrcat_dir, force=False):
     """Generate sensor configuration file"""
-    sensor_path = os.path.join(purrcat_dir, ".sensor.yaml")
+    sensor_path = os.path.join(purrcat_dir, "sensor.yaml")
 
     if os.path.exists(sensor_path) and not _prompt_overwrite(sensor_path, force):
         return False
@@ -246,16 +442,16 @@ def _generate_sensor_config(purrcat_dir, force=False):
     try:
         with open(sensor_path, "w", encoding="utf-8") as f:
             f.write(content)
-        print(f"[+] .sensor.yaml generated")
+        print(f"[+] sensor.yaml generated")
         return True
     except Exception as e:
-        print(f"X Failed to write .sensor.yaml: {e}")
+        print(f"X Failed to write sensor.yaml: {e}")
         return False
 
 
 def _generate_file_config(purrcat_dir, force=False):
     """Generate file system configuration file"""
-    file_path = os.path.join(purrcat_dir, ".file.yaml")
+    file_path = os.path.join(purrcat_dir, "file.yaml")
 
     if os.path.exists(file_path) and not _prompt_overwrite(file_path, force):
         return False
@@ -264,10 +460,10 @@ def _generate_file_config(purrcat_dir, force=False):
     try:
         with open(file_path, "w", encoding="utf-8") as f:
             f.write(content)
-        print(f"[+] .file.yaml generated")
+        print(f"[+] file.yaml generated")
         return True
     except Exception as e:
-        print(f"X Failed to write .file.yaml: {e}")
+        print(f"X Failed to write file.yaml: {e}")
         return False
 
 
@@ -313,7 +509,7 @@ def cmd_init(force=False):
             sys.exit(1)
 
     print("")
-    print("[*] 开始生成配置文件，请逐个确认...")
+    print("[*] Starting config file generation, please confirm each...")
 
     results = []
     results.append(("model", _generate_model_config(purrcat_dir, force=False)))
@@ -321,6 +517,8 @@ def cmd_init(force=False):
     results.append(("file", _generate_file_config(purrcat_dir, force=False)))
     results.append(("mcp", _generate_mcp_config(purrcat_dir, force=False)))
     results.append(("memory", _generate_memory_config(purrcat_dir, force=False)))
+    results.append(("note", _generate_note_config(purrcat_dir, force=False)))
+    results.append(("core", _generate_core_files(purrcat_dir, force=False)))
 
     print("")
     print("[*] Summary:")
@@ -332,8 +530,8 @@ def cmd_init(force=False):
     if generated > 0:
         print("")
         print("[*] Next steps:")
-        print("    Edit .purrcat/.model.yaml to add your API Key")
-        print("    Edit .purrcat/.memory.json to configure memory system")
+        print("    Edit .purrcat/model.yaml to add your API Key")
+        print("    Edit .purrcat/memory.json to configure memory system")
         print("    Edit .purrcat/mcp_config.json to add MCP Token")
         print("    Then run: purrcat start")
 
@@ -346,13 +544,16 @@ def cmd_env():
 #
 # Examples:
 #   # Edit model configuration
-#   vim .purrcat/.model.yaml
+#   vim .purrcat/model.yaml
 #
 #   # Edit sensor configuration
-#   vim .purrcat/.sensor.yaml
+#   vim .purrcat/sensor.yaml
 #
 #   # Edit MCP configuration
 #   vim .purrcat/mcp_config.json
+#
+#   # Edit file system configuration
+#   vim .purrcat/file.yaml
 """)
 
 
