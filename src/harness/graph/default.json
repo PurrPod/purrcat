@@ -4,14 +4,14 @@
     "required_inputs": {
         "prompt": "核心任务提示词，告知工作流具体要完成什么任务",
         "target_file": "最终生成文件的路径"
-    }, 
+    },
     "nodes": [
-        {"id": "node_input", "type": "task_input"},
+        {"id": "node_input", "type": "task_input", "data": {"dynamic_inputs": [{"key": "prompt", "desc": "any"}, {"key": "target_file", "desc": "any"}]}},
         {"id": "node_sys_msg", "type": "message_card_builder", "data": {"role": "system", "content": "你是一个优秀的AI任务助手，请利用工具高效完成任务。"}},
         {"id": "node_user_msg", "type": "message_card_builder", "data": {"role": "user"}},
         {"id": "node_appender", "type": "appender"},
         {"id": "node_loop", "type": "file_output_loop", "data": {"file_path": ""}},
-        {"id": "node_output", "type": "task_output"}
+        {"id": "node_output", "type": "task_output", "data": {"dynamic_inputs": [{"key": "task_result", "desc": "any"}]}}
     ],
     "edges": [
         {"source": "node_input", "target": "node_user_msg", "sourceHandle": "prompt", "targetHandle": "content"},

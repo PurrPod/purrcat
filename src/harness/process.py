@@ -35,9 +35,17 @@ def kill_task(task_id):
     return False
 
 
-def inject_task_instruction(task_id: str, content: str):
+def inject_task_instruction(task_id: str, content: str, node_id: str = None):
     if task_id in TASK_INSTANCES:
-        return TASK_INSTANCES[task_id].submit_request(content)
+        task = TASK_INSTANCES[task_id]
+        # 如果没有指定 node_id，注入到所有节点
+        if node_id:
+            return task.submit_request(node_id, content)
+        else:
+            # 注入到所有节点
+            for n_id in task.node_list:
+                task.submit_request(n_id, content)
+            return True
     return False
 
 
@@ -63,7 +71,7 @@ class Task:
         self.node_list: Dict[str, Any] = {}
         self.node_state: Dict[str, NodeState] = {}
         self.graph: Dict[str, Any] = {}
-        self.pending_force_push: Dict[str, List[str]] = {}
+        self.pending_push_message: Dict[str, List[str]] = {}
         self.running_tasks = {}
         self.state = TaskState.READY
 
@@ -120,34 +128,31 @@ class Task:
                 self.error_message = f"节点加载失败: {e}"
 
     def submit_request(self, node_id: str, content: str):
+        """人类/系统外部向某个节点强行注入信息"""
         if node_id not in self.node_list:
-            print(f"❌ 未找到节点 {node_id}")
             return
 
+        # 1. 记录待推送消息
         with self._lock:
-            if node_id not in self.pending_force_push:
-                self.pending_force_push[node_id] = []
-            self.pending_force_push[node_id].append(content)
+            if node_id not in self.pending_push_message:
+                self.pending_push_message[node_id] = []
+            self.pending_push_message[node_id].append(content)
 
-        current_state = self.node_state[node_id]
-        if current_state == NodeState.COMPLETED:
-            self._cascade_reset(node_id, content)
-        elif current_state == NodeState.ERROR:
-            self.node_state[node_id] = NodeState.WAITING
+        # 2. 触发级联重置（通知所有下游）
+        self._cascade_reset(node_id, content)
 
+        # 3. 唤醒引擎
         if self.state != TaskState.RUNNING:
             if self._loop and self._loop.is_running():
                 asyncio.run_coroutine_threadsafe(self.run(), self._loop)
             else:
-                try:
-                    asyncio.create_task(self.run())
-                except RuntimeError:
-                    pass
+                asyncio.create_task(self.run())
 
     def _cascade_reset(self, start_node_id: str, human_instruction: str):
+        """级联效应：重置所有下游节点"""
         queue = deque([start_node_id])
         visited = set([start_node_id])
-        self.node_state[start_node_id] = NodeState.WAITING
+        
         edges = self.graph.get("edges", [])
         while queue:
             curr_id = queue.popleft()
@@ -158,29 +163,33 @@ class Task:
                         visited.add(target_id)
                         queue.append(target_id)
 
-                        self.node_state[target_id] = NodeState.WAITING
+                        # 1. 状态全部退回 READY，等待重新调度
+                        self.node_state[target_id] = NodeState.READY
 
+                        # 2. 如果下游节点正在执行，立刻 kill 掉它的协程
                         task_to_cancel = None
                         for t, n_id in list(self.running_tasks.items()):
                             if n_id == target_id:
                                 task_to_cancel = t
                                 break
+                        
                         if task_to_cancel and not task_to_cancel.done():
                             if self._loop and self._loop.is_running():
                                 self._loop.call_soon_threadsafe(task_to_cancel.cancel)
                             else:
                                 task_to_cancel.cancel()
                             self.running_tasks.pop(task_to_cancel)
-                            print(f"🛑 级联效应：已强行中断并重置正在运行的下游节点 [{target_id}]")
+                            print(f"🛑 级联效应：已强行中断下游节点 [{target_id}]")
 
+                        # 3. 给下游节点注入级联通知
                         with self._lock:
                             cascade_msg = (
-                                f"⚠️ 系统提示：前置节点【{start_node_id}】针对用户需求：“{human_instruction}” "
-                                f"做了相应变更，请检查相应变更是否影响你的结果，并根据最新上下文重新生成。"
+                                f"前置节点 {start_node_id} 被注入新的指令：{human_instruction}，"
+                                f"请检查其改动是否影响了你的工作，并根据最新上下文重新生成。"
                             )
-                            if target_id not in self.pending_force_push:
-                                self.pending_force_push[target_id] = []
-                            self.pending_force_push[target_id].append(cascade_msg)
+                            if target_id not in self.pending_push_message:
+                                self.pending_push_message[target_id] = []
+                            self.pending_push_message[target_id].append(cascade_msg)
 
     async def run(self, max_concurrency: int = 5) -> dict:
         """基于 DAG 的并发执行，🌟 携带标准的结果出口协议"""
@@ -214,7 +223,7 @@ class Task:
                         self.node_state[node_id] = NodeState.RUNNING
                         inputs = self._gather_inputs(node_id)
                         with self._lock:
-                            force_push_msgs = self.pending_force_push.pop(node_id, [])
+                            force_push_msgs = self.pending_push_message.pop(node_id, [])
                         node_instance = self.node_list[node_id]
                         task = asyncio.create_task(node_instance.execute(inputs, force_push_msgs, context=self))
                         self.running_tasks[task] = node_id
@@ -316,21 +325,47 @@ class Task:
         except Exception as e:
             self.log_and_notify(LogType.SYSTEM, f"⚠️ 自动回收 Shell 失败: {e}")
 
-    def log_and_notify(self, log_type: str, content: str, metadata=None):
+    def log_and_notify(self, log_type: str, content: str, node_id: str = None):
         log_dir = self.checkpoint_dir
         os.makedirs(log_dir, exist_ok=True)
         log_data = {
             "timestamp": time.time(),
-            "card_type": log_type,
+            "type": log_type,
             "content": content,
-            "metadata": metadata or {}
         }
+        if node_id:
+            log_data["node_id"] = node_id
         with self._io_lock:
             with open(os.path.join(log_dir, "log.jsonl"), "a", encoding="utf-8") as f:
                 f.write(json.dumps(log_data, ensure_ascii=False) + "\n")
                 f.flush()
         with task_set_lock:
             dirty_tasks.add(self.task_id)
+
+    def get_log(self) -> List[Dict[str, Any]]:
+        """
+        调取自身的 log.jsonl 日志，并作为字典列表返回。
+        """
+        log_path = os.path.join(self.checkpoint_dir, "log.jsonl")
+        logs = []
+
+        if not os.path.exists(log_path):
+            return logs
+
+        try:
+            with self._io_lock:
+                with open(log_path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line:
+                            try:
+                                logs.append(json.loads(line))
+                            except json.JSONDecodeError:
+                                continue
+        except Exception as e:
+            print(f"读取任务 {self.task_id} 的日志失败: {e}")
+
+        return logs
 
     @classmethod
     def load_checkpoint(cls, checkpoint_dir: str):
@@ -370,7 +405,7 @@ class Task:
                 task.state = TaskState.INTERRUPTED
             task.token_usage = state.get("token_usage", 0)
             task.dag_state = state.get("dag_state", {})
-            task.pending_force_push = state.get("pending_force_push", {})
+            task.pending_push_message = state.get("pending_push_message", {})
             task.checkpoint_dir = os.path.join(DATA_DIR, "checkpoints", "task", f"{task.task_name}_{task.task_id}")
             task.main_history = []
 
@@ -419,7 +454,7 @@ class Task:
             "dag_state": {n_id: {"state": self.node_state[n_id], "outputs": self.node_list[n_id].outputs} for n_id in
                           self.node_list},
             "checkpoint_dir": self.checkpoint_dir,
-            "pending_force_push": self.pending_force_push,
+            "pending_push_message": self.pending_push_message,
             "graph": self.graph
         }
         with open(checkpoint_path, "w", encoding="utf-8") as f:
@@ -471,3 +506,25 @@ def reload_task_by_id(task_id: str):
                 print(f"❌ 精准恢复任务 {task_id} 失败: {e}")
                 return None
     return None
+
+
+import shutil
+
+
+def kill_and_cleanup_task(task_id: str):
+    # 1. 从内存中移除并终止
+    if task_id in TASK_INSTANCES:
+        task = TASK_INSTANCES.pop(task_id)
+        if hasattr(task, 'kill'):
+            task.kill()
+    
+    # 2. 物理删除磁盘文件夹
+    base_dir = os.path.join(DATA_DIR, "checkpoints", "task")
+    if os.path.exists(base_dir):
+        for entry in os.listdir(base_dir):
+            # 匹配文件夹名（通常包含 task_id）
+            if task_id in entry:
+                target_path = os.path.join(base_dir, entry)
+                shutil.rmtree(target_path, ignore_errors=True)
+                return True
+    return False

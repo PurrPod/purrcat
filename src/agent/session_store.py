@@ -35,7 +35,16 @@ class SessionStore:
                 except Exception:
                     pass
             
-            # 2. 扫描目录中的所有会话文件
+            # 2. 清理索引中已不存在文件的会话（处理删除后残留的索引条目）
+            sessions_to_remove = []
+            for session_id in index_data:
+                session_file = os.path.join(SESSIONS_DIR, f"{session_id}.json")
+                if not os.path.exists(session_file):
+                    sessions_to_remove.append(session_id)
+            for session_id in sessions_to_remove:
+                del index_data[session_id]
+            
+            # 3. 扫描目录中的所有会话文件
             if os.path.exists(SESSIONS_DIR):
                 for filename in os.listdir(SESSIONS_DIR):
                     if filename.endswith(".json") and filename != "index.json":

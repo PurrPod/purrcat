@@ -403,7 +403,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
       </div>
 
       {/* --- 右侧大聊天纸板 --- */}
-      <div style={sketchyShape1} className="flex-1 bg-paper border-4 border-ink shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] flex flex-col overflow-hidden rotate-[1deg] relative z-10">
+      <div style={sketchyShape1} className="flex-1 bg-paper border-4 border-ink shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] flex flex-col overflow-hidden relative z-10">
         <div className="absolute -top-4 right-12 w-32 h-8 bg-[#EBCB8B]/80 border-2 border-ink -rotate-3 z-50" style={sketchyShape2}></div>
 
         <div className="pt-8 px-10 pb-4 flex items-center justify-between shrink-0">

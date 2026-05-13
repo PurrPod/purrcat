@@ -1,44 +1,71 @@
 import os
-import shutil
+import json
 from fastapi import APIRouter, HTTPException
-from src.utils.config import DATA_DIR
-from tui.api import get_task_list, format_task_log
+from pydantic import BaseModel
+from src.utils.task_api import (
+    get_task_list, get_task_state, kill_task, submit_instruction, delete_task
+)
+from src.utils.log_api import format_task_log
+from src.utils.task_api import get_task_log_jsonl
 
-# 创建 Tasks 专属路由器
 router = APIRouter(prefix="/api/tasks", tags=["Tasks"])
+
+class SubmitInstructionRequest(BaseModel):
+    node_id: str
+    content: str
+
 
 @router.get("")
 def list_tasks():
-    """获取所有任务列表"""
     return get_task_list()
+
 
 @router.get("/{task_id}/log")
 def get_task_log(task_id: str):
-    """获取具体任务格式化后的日志"""
     log_content = format_task_log(task_id)
     return {
         "task_id": task_id,
         "log": log_content
     }
 
-@router.delete("/{task_id}")
-def delete_task(task_id: str):
-    """删除指定的任务记录 (清除对应文件夹并停止进程)"""
-    # 1. 删除磁盘上的任务文件夹
-    task_dir = os.path.join(DATA_DIR, "checkpoints", "task", task_id)
-    if os.path.exists(task_dir):
-        try:
-            shutil.rmtree(task_dir)
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Failed to delete task folder: {e}")
-            
-    # 2. 从内存中踢除该任务实例 (如果还在运行)
-    try:
-        from src.harness.process import TASK_INSTANCES
-        if task_id in TASK_INSTANCES:
-            TASK_INSTANCES[task_id].state = "killed"
-            del TASK_INSTANCES[task_id]
-    except Exception as e:
-        print(f"⚠️ 内存任务清理失败 (可能任务已结束): {e}")
 
-    return {"status": "ok", "message": f"Task {task_id} successfully deleted."}
+@router.get("/{task_id}/log/jsonl")
+def get_task_log_jsonl_api(task_id: str):
+    logs = get_task_log_jsonl(task_id)
+    if logs is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return logs
+
+
+@router.get("/{task_id}/state")
+def get_task_state_api(task_id: str):
+    result = get_task_state(task_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return result
+
+
+@router.post("/{task_id}/kill")
+def kill_task_api(task_id: str):
+    success = kill_task(task_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Task not found or already killed")
+    return {"status": "ok", "message": f"Task {task_id} successfully killed."}
+
+
+@router.post("/{task_id}/submit")
+def submit_instruction_api(task_id: str, req: SubmitInstructionRequest):
+    result, error = submit_instruction(task_id, req.node_id, req.content)
+    if error:
+        if "not found" in error.lower():
+            raise HTTPException(status_code=404, detail=error)
+        raise HTTPException(status_code=400, detail=error)
+    return result
+
+
+@router.delete("/{task_id}")
+def delete_task_api(task_id: str):
+    success = delete_task(task_id)
+    if success:
+        return {"status": "ok", "message": f"Task {task_id} successfully deleted."}
+    raise HTTPException(status_code=404, detail="Task not found")

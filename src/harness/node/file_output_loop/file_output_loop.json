@@ -1,7 +1,7 @@
 {
     "type": "file_output_loop",
     "name": "文件输出循环",
-    "description": "封装思考->调用工具->验收的完整循环逻辑，最终输出到文件",
+    "description": "封装思考->调用工具->验收的完整循环逻辑，最终输出一个文件到沙盒里",
     "color": "#16A085",
     "inputs": [
         {
@@ -35,7 +35,7 @@
             "type": "string",
             "label": "输出文件路径",
             "default": "",
-            "description": "沙盒内的绝对路径，必须以 /agent_vm 开头"
+            "description": "沙盒内的绝对路径，必须以 /agent_vm 开头，否则任务无效"
         }
     ]
 }

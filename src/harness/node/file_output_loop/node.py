@@ -1,5 +1,6 @@
 import os
 import json
+import asyncio
 from typing import Dict, Any
 from src.harness.node.base import BaseNode
 from src.harness.utils.llm_helper import call_llm, inject_force_push
@@ -23,23 +24,27 @@ class Node(BaseNode):
         check_file_path = original_file_path[len("/agent_vm/"):] if original_file_path.startswith("/agent_vm/") else original_file_path[len("/agent_vm"):]
         check_file_path = os.path.abspath(os.path.join(os.getcwd(), "agent_vm", check_file_path))
 
+        # 初始的外部 force_push
         if force_push_msgs:
             messages = inject_force_push(messages, force_push_msgs)
 
         step = 0
         max_steps = 500
 
-        while step < max_steps:
-            step += 1
-            try:
-                dynamic_push = []
-                with context._lock:
-                    if self.node_id in context.pending_force_push:
-                        dynamic_push = context.pending_force_push.pop(self.node_id)
+        try:
+            while step < max_steps:
+                # 🌟 1. 每时每刻检查自身是否还是 RUNNING 状态
+                if not self.check_running_state(context):
+                    self.log(context, "SYSTEM", "⚠️ 节点状态已变更，退出当前执行循环。")
+                    raise asyncio.CancelledError()
+
+                # 🌟 2. 安全的注入时机：循环开头！此时前置工具一定已经执行完毕。
+                dynamic_push = self.consume_pending_messages(context)
                 if dynamic_push:
-                    self.log(context, "SYSTEM", f"🔔 检测到实时人工干预，已注入 {len(dynamic_push)} 条指令")
+                    self.log(context, "SYSTEM", f"🔔 检测到新指令/级联影响，注入 {len(dynamic_push)} 条消息")
                     messages = inject_force_push(messages, dynamic_push)
 
+                # 3. 正常调用大模型
                 response, messages = await call_llm(
                     model=context.model,
                     messages=messages,
@@ -52,6 +57,7 @@ class Node(BaseNode):
 
                 if not tool_calls:
                     messages.append({"role": "user", "content": "检测到你没有调用任何工具，如已完成任务，请调用 task_done 总结该阶段任务"})
+                    step += 1
                     continue
 
                 # 🚨 修正：使用基类的工具路由分发方法
@@ -77,11 +83,18 @@ class Node(BaseNode):
                     else:
                         full_msg = f"未检测到沙盒文件：{original_file_path}。请检查是否生成在了其他路径，并及时生成目标文件。如果你实在无法完成任务，请使用yield_to_human工具直接挂起任务，这是被允许的！"
                         messages.append({"role": "user", "content": full_msg})
+                        step += 1
                         continue
 
-            except Exception as e:
-                self.log(context, "ERROR", f"❌ 运行发生异常: {e}")
-                raise
+                step += 1
+
+        except asyncio.CancelledError:
+            self.log(context, "SYSTEM", "🛑 节点执行被外部强行打断！")
+            raise
+
+        except Exception as e:
+            self.log(context, "ERROR", f"❌ 运行发生异常: {e}")
+            raise
 
         if step >= max_steps:
             raise TimeoutError(f"节点执行超出最大思考步数 ({max_steps})，被强制中断。")

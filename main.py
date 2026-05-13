@@ -39,6 +39,10 @@ async def init_core(cli_session_id: str = None, cli_branch_name: str = None):
         new_id = manager.branch_current_session(cli_branch_name)
         print(f"🌿 [CLI] 已从 {cli_session_id or '最新会话'} 创建并切换到新分支: {cli_branch_name} ({new_id})")
 
+    # 最后一个初始化步骤：自动加载所有历史任务到内存
+    from src.harness.process import auto_load_all_tasks
+    auto_load_all_tasks()
+
     print("[+] Backend services and sensors started")
 
 

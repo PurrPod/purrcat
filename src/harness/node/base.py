@@ -3,6 +3,7 @@ import sys
 import json
 import importlib
 import datetime
+import asyncio
 from typing import Dict, Any, List
 from json_repair import repair_json
 from src.harness.utils.tool_helper import execute_global_tool
@@ -142,7 +143,7 @@ class BaseNode:
                     else:
                         try:
                             args_str = ", ".join([f"{k}={repr(v)}" for k, v in target_arguments.items()])
-                            self.log(context, "TOOL_CALL", f"🔧 [拓展工具] {target_tool_name}({args_str})", {"arguments": target_arguments})
+                            self.log(context, "TOOL_CALL", f"🔧 [拓展工具] {target_tool_name}({args_str})")
                             
                             ToolClass = local_registry[target_tool_name]
                             tool_instance = ToolClass(context=context)
@@ -160,8 +161,7 @@ class BaseNode:
                 # 👉 路由到全局基础工具 (task_done, bash, yield_to_human 等)
                 try:
                     args_str = ", ".join([f"{k}={repr(v)}" for k, v in arguments.items()])
-                    self.log(context, "TOOL_CALL", f"🔧 [全局核心工具] {original_tool_name}({args_str})",
-                             {"arguments": arguments})
+                    self.log(context, "TOOL_CALL", f"🔧 [全局核心工具] {original_tool_name}({args_str})")
                     
                     raw_result = execute_global_tool(original_tool_name, arguments, context=context)
                     final_content = _format_result(raw_result)
@@ -181,8 +181,37 @@ class BaseNode:
 
         return tool_messages
 
-    def log(self, context: Any, log_type: str, content: str, metadata: dict = None):
+    def log(self, context: Any, log_type: str, content: str, node_id: str = None):
+        """
+        统一的节点日志打印接口
+        :param context: Task 引擎实例
+        :param log_type: 日志级别 (如 "SYSTEM", "ERROR", "WARNING", "THOUGHT")
+        :param content: 日志正文
+        :param node_id: 节点 ID (可选，默认使用自身 node_id)
+        """
+        nid = node_id or self.node_id
+
         if hasattr(context, "log_and_notify"):
-            meta = metadata or {}
-            meta["node_id"] = self.node_id
-            context.log_and_notify(log_type, content, meta)
+            context.log_and_notify(log_type, content, nid)
+        else:
+            print(f"[{log_type}] (Node: {nid}) {content}")
+
+    def check_running_state(self, context: Any) -> bool:
+        """
+        时刻检查自身状态。如果 Task 将我的状态改为了 ERROR/READY/WAITING 等，
+        说明我被强行终止或挂起了，应立刻停止流转。
+        """
+        current_state = context.node_state.get(self.node_id)
+        if current_state != "running":
+            return False
+        return True
+
+    def consume_pending_messages(self, context: Any) -> list:
+        """
+        安全地消费属于我的待处理消息。
+        只有节点主动调用该方法时，消息才会被取出，避免并发问题。
+        """
+        with context._lock:
+            if self.node_id in context.pending_push_message:
+                return context.pending_push_message.pop(self.node_id)
+        return []

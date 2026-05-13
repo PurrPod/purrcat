@@ -24,6 +24,9 @@ export default function Toolbar({ onBack }: { onBack?: () => void }) {
   // 退出弹窗状态
   const [isExitModalOpen, setIsExitModalOpen] = useState(false)
 
+  // 清空画布确认弹窗状态
+  const [isClearModalOpen, setIsClearModalOpen] = useState(false)
+
   // 点击外部关闭 Open 菜单
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -78,11 +81,6 @@ export default function Toolbar({ onBack }: { onBack?: () => void }) {
     } else {
       toast.success('校验通过！工作流结构合法。')
     }
-  }
-
-  // 清空画布
-  const handleClear = () => {
-    if (confirm('确定要清空画布吗？未部署的内容将丢失。')) clearGraph()
   }
 
   // 真实执行部署保存逻辑
@@ -178,7 +176,7 @@ export default function Toolbar({ onBack }: { onBack?: () => void }) {
           </button>
 
           {/* 清空按钮 */}
-          <button onClick={handleClear} style={sketchyShape2} className="flex items-center justify-center p-3 bg-cream border-4 border-ink text-ink font-black hover:bg-[#bf616a] hover:text-paper transition-all shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] active:shadow-none active:translate-y-1 -rotate-3" title="Clear Canvas">
+          <button onClick={() => setIsClearModalOpen(true)} style={sketchyShape2} className="flex items-center justify-center p-3 bg-cream border-4 border-ink text-ink font-black hover:bg-[#bf616a] hover:text-paper transition-all shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] active:shadow-none active:translate-y-1 -rotate-3" title="Clear Canvas">
             <Trash2 size={24} strokeWidth={2.5} />
           </button>
 
@@ -227,6 +225,26 @@ export default function Toolbar({ onBack }: { onBack?: () => void }) {
               </button>
               <button onClick={() => { setIsExitModalOpen(false); onBack?.(); }} style={sketchyShape2} className="flex-1 py-3 bg-[#bf616a] text-paper border-4 border-ink font-black shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:bg-red-500">
                 LEAVE
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* === 清空画布确认弹窗 === */}
+      {isClearModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-ink/40 backdrop-blur-sm p-4 pointer-events-auto">
+          <div style={sketchyShape3} className="bg-paper border-4 border-ink shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] w-full max-w-sm p-8 relative -rotate-1">
+            <h3 className="text-2xl font-black mb-4 tracking-widest text-[#bf616a]" style={{ fontFamily: '"Comic Sans MS", cursive' }}>CLEAR CANVAS?</h3>
+            <p className="font-bold mb-6 opacity-80 text-lg">
+              确定要清空画布吗？当前画板上未部署的内容将永远丢失！
+            </p>
+            <div className="flex gap-4">
+              <button onClick={() => setIsClearModalOpen(false)} style={sketchyShape1} className="flex-1 py-3 bg-cream text-ink border-4 border-ink font-black shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:bg-sand transition-all">
+                CANCEL
+              </button>
+              <button onClick={() => { clearGraph(); setIsClearModalOpen(false); }} style={sketchyShape2} className="flex-1 py-3 bg-[#bf616a] text-paper border-4 border-ink font-black shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:bg-red-500 transition-all">
+                CLEAR
               </button>
             </div>
           </div>

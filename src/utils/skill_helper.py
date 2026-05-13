@@ -18,3 +18,10 @@ def get_available_skills() -> list[str]:
         return sorted(skills)
     except Exception as e:
         return []
+
+def get_skill_content(skill_name: str) -> str:
+    pass
+
+def get_skill_info(skill_name: str) -> dict:
+    pass
+
