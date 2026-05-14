@@ -90,6 +90,15 @@ class Node(BaseNode):
                     self.log(context, LogType.SYSTEM, "⏸️ [节点挂起] 正在阻塞等待人类干预...")
                     context.node_state[self.node_id] = NodeState.WAITING  # 修改节点状态
 
+                    # [新增] 主动给 Agent 发送弹窗通知
+                    try:
+                        from src.agent.manager import get_agent
+                        agent = get_agent()
+                        if agent:
+                            agent.force_push(f"⚠️ 子任务 [{context.task_name}] (ID: {context.task_id}) 的节点 [{self.node_id}] 正在等待进一步指令，已挂起。请对症下药，使用 Task 工具的 submit_request 向该节点注入指令！", type="task_message")
+                    except Exception as e:
+                        self.log(context, LogType.ERROR, f"通知 Agent 失败: {e}")
+
                     # 真正的阻塞！只有等来了人类输入才跳出循环
                     while True:
                         await asyncio.sleep(2)  # 释放 CPU

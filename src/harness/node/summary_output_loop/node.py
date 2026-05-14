@@ -4,7 +4,7 @@ from typing import Dict, Any
 from src.harness.node.base import BaseNode
 from src.harness.utils.llm_helper import call_llm, inject_force_push
 from src.harness.utils.tool_helper import get_system_schema, extract_tool_calling, check_tool_call_completed
-from src.harness.enums import LogType
+from src.harness.enums import LogType, NodeState
 
 
 class Node(BaseNode):
@@ -73,7 +73,38 @@ class Node(BaseNode):
                     self.log(context, LogType.SYSTEM, f"📦 [工具返回] 收到 {len(tool_messages)} 个工具执行结果")
                     messages.extend(tool_messages)
 
-                if check_tool_call_completed(tool_calls):
+                # 🌟 处理 yield_to_human 挂起逻辑
+                is_yield = any(tc.function.name == "yield_to_human" for tc in tool_calls)
+                if is_yield:
+                    self.log(context, LogType.SYSTEM, "⏸️ [节点挂起] 正在阻塞等待人类干预...")
+                    context.node_state[self.node_id] = NodeState.WAITING  # 修改节点状态
+                    
+                    # [新增] 主动给 Agent 发送弹窗通知，告知需要人工干预
+                    try:
+                        from src.agent.manager import get_agent
+                        agent = get_agent()
+                        if agent:
+                            agent.force_push(f"⚠️ 子任务 [{context.task_name}] (ID: {context.task_id}) 的节点 [{self.node_id}] 正在等待进一步指令，已挂起。请对症下药，使用 Task 工具的 submit_request 向该节点注入指令！", type="task_message")
+                    except Exception as e:
+                        self.log(context, LogType.ERROR, f"通知 Agent 失败: {e}")
+
+                    # 真正的阻塞！只有等来了人类输入才跳出循环
+                    while True:
+                        await asyncio.sleep(2)  # 释放 CPU
+                        if not self.check_running_state(context):
+                            self.log(context, LogType.SYSTEM, "⚠️ [循环退出] 节点状态已变更为非 running")
+                            raise asyncio.CancelledError()
+                        dynamic_push = self.consume_pending_messages(context)
+                        if dynamic_push:
+                            self.log(context, LogType.SYSTEM, f"▶️ [节点恢复] 收到指令，唤醒执行")
+                            messages = inject_force_push(messages, dynamic_push)
+                            context.node_state[self.node_id] = NodeState.RUNNING
+                            break
+                    continue  # 带着人类的新指令，进入下一轮 LLM 对话
+                
+                # 🌟 限定在 task_done 上才进行任务完成校验
+                is_done = any(tc.function.name == "task_done" for tc in tool_calls)
+                if is_done:
                     summary = assistant_msg.content or "任务完成"
                     for tc in tool_calls:
                         if tc.function.name == "task_done":

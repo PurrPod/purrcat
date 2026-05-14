@@ -149,7 +149,26 @@ class Task:
                 asyncio.create_task(self.run())
 
     def _cascade_reset(self, start_node_id: str, human_instruction: str):
-        """级联效应：重置所有下游节点"""
+        """级联效应：重置目标节点及其所有下游节点"""
+        
+        # [核心修复] 1. 首先重置被注入的起点节点本身
+        self.node_state[start_node_id] = NodeState.READY
+        task_to_cancel = None
+        for t, n_id in list(self.running_tasks.items()):
+            if n_id == start_node_id:
+                task_to_cancel = t
+                break
+        
+        # 如果该节点正在运行，直接打断并重跑
+        if task_to_cancel and not task_to_cancel.done():
+            if self._loop and self._loop.is_running():
+                self._loop.call_soon_threadsafe(task_to_cancel.cancel)
+            else:
+                task_to_cancel.cancel()
+            self.running_tasks.pop(task_to_cancel)
+            self.log_and_notify(LogType.SYSTEM, f"🛑 [重新注入] 强行中断并重置目标节点: {start_node_id}")
+
+        # 2. 开始 BFS 寻找下游节点并级联阻断
         queue = deque([start_node_id])
         visited = set([start_node_id])
         
@@ -461,11 +480,16 @@ class Task:
             json.dump(state, f, ensure_ascii=False, indent=2)
 
     def kill(self):
+        # ⚠️ 新增防御：不要“鞭尸”已经处于终态的任务
+        if self.state in [TaskState.COMPLETED, TaskState.ERROR, TaskState.KILLED]:
+            return
+            
         self._killed = True
         self.state = TaskState.KILLED
         if getattr(self, 'model', None):
             self.model.unbind()
         self._cleanup_resources()
+        self.save_checkpoints() # 确保状态能及时落盘
 
     async def reload(self):
         self.state = TaskState.RUNNING
@@ -528,3 +552,22 @@ def kill_and_cleanup_task(task_id: str):
                 shutil.rmtree(target_path, ignore_errors=True)
                 return True
     return False
+
+
+import atexit
+
+def graceful_shutdown_tasks():
+    """
+    全局安全中断：捕获 Ctrl+C 或程序退出时，安全挂起正在运行的任务。
+    绝对不碰已经完成 (COMPLETED)、报错 (ERROR) 或被杀死 (KILLED) 的任务！
+    """
+    for task_id, task in TASK_INSTANCES.items():
+        # 🌟 核心修复：只对处于活跃状态的任务进行挂起操作
+        if task.state in [TaskState.RUNNING, TaskState.STARTING, TaskState.READY]:
+            task.state = TaskState.INTERRUPTED
+            task._killed = True  # 触发引擎内部安全退出逻辑
+            task.save_checkpoints()
+            print(f"⏸️ [安全挂起] 任务 {task_id} 已在退出前安全中断并落盘。")
+
+# 注册到系统退出生命周期中，无论 Ctrl+C 还是自然退出都会触发
+atexit.register(graceful_shutdown_tasks)
