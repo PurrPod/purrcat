@@ -1,5 +1,6 @@
 import threading
 import time
+import json
 from src.agent.agent import Agent
 from src.agent.session_store import SessionStore
 
@@ -34,10 +35,9 @@ class AgentManager:
 
         self._sensor_thread = threading.Thread(target=self._agent.sensor, daemon=True, name="AgentSensorThread")
         self._sensor_thread.start()
-        
-        # 保存初始会话到索引
+
         self.notify_save()
-        
+
         print(f"✅ Agent 已启动，当前挂载会话: {session_id}")
         return self._agent
 
@@ -48,7 +48,6 @@ class AgentManager:
 
     def notify_save(self):
         if self._agent:
-            # 安全读取再保存
             safe_history = self._agent.get_history()
             SessionStore.save_session(self._agent.session_id, safe_history)
 
@@ -58,7 +57,6 @@ class AgentManager:
     def branch_current_session(self, branch_alias=None):
         if not self._agent: return None
 
-        # 【修复】等待空闲，最多等待 3 秒。如果网络挂起，强制打断以防止 TUI 卡死
         wait_count = 0
         while self._agent.state != "idle" and wait_count < 6:
             print("⏳ 正在等待 Agent 完成当前回复...")
@@ -78,9 +76,8 @@ class AgentManager:
             branch_alias=branch_alias
         )
 
-        # 加载新分支的历史记录（应该和 safe_history 相同，但确保一致性）
         new_history = SessionStore.load_session_history(new_id)
-        
+
         with self._agent._history_lock:
             self._agent.session_id = new_id
             self._agent.window_token = 0
@@ -103,14 +100,21 @@ class AgentManager:
             print("⚠️ Agent 忙碌超时，强制打断执行纯净分支创建！")
             self._agent.force_interrupt()
 
-        # 1. 保存当前进度
         self.notify_save()
 
-        # 2. 生成干净的历史记录（仅含 System Prompt）
+        # 【重点】创建全新分支，现场获取最新全局规则，开辟新的 KV Cache 路线
+        fresh_prompt = self._agent._build_system_prompt()
         new_id = SessionStore._generate_id()
-        clean_history = [{"role": "system", "content": self._agent.system_prompt}]
-        
-        # 3. 落盘：切断血缘关系，作为全新的根节点！
+        clean_history = [{"role": "system", "content": fresh_prompt}]
+
+        # 挂载共享的短时缓存（作为独立的系统消息，不污染首条 KV Cache）
+        if hasattr(self._agent, 'memo') and self._agent.memo:
+            memo_summary = json.dumps(self._agent.memo, ensure_ascii=False, indent=2)
+            clean_history.append({
+                "role": "system",
+                "content": f"【系统通知：这是一个全新的会话。以下是你最近的短时工作缓存，请利用这些缓存无缝接续当前工作：】\n{memo_summary}"
+            })
+
         SessionStore.save_session(
             session_id=new_id,
             history=clean_history,
@@ -118,7 +122,6 @@ class AgentManager:
             alias=branch_alias
         )
 
-        # 4. 内存环境检出
         with self._agent._history_lock:
             self._agent.session_id = new_id
             self._agent.window_token = 0
@@ -147,12 +150,6 @@ class AgentManager:
         with self._agent._history_lock:
             self._agent.session_id = target_session_id
             self._agent.current_history = new_history
-
-            if not self._agent.current_history:
-                self._agent.current_history = [{"role": "system", "content": self._agent.system_prompt}]
-            elif self._agent.current_history[0].get("role") == "system":
-                self._agent.current_history[0]["content"] = self._agent.system_prompt
-
             self._agent.window_token = 0
 
         self._agent.model.bind_task(target_session_id, "AgentMain")

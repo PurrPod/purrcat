@@ -1,45 +1,28 @@
 """Memo 工具主入口 - 统一记忆工具，支持写入和搜索"""
 
 import traceback
+import json
 from src.tool.utils.format import text_response, error_response, warning_response
 from src.tool.memo.memo_operations import _validate_memo_data, _write_to_pending, _smart_update_memory_md
 from src.memory.purrmemo import get_memory_client
+from src.agent.session_store import SessionStore
 
 
-def Memo(action: str = None, memo_data: dict = None, query: str = None,
-         filter: str = None, topk: int = 5, **kwargs) -> str:
+def Memo(action: str = None, memo_data: dict = None, query: dict = None, **kwargs) -> str:
     """
     统一记忆工具，支持写入记忆或搜索记忆
 
     Args:
         action: 操作类型，add=写入记忆，search=搜索记忆（必填）
-        memo_data: 记忆数据（action=add时必填），格式：
-            {
-                "short_term": "...",
-                "events": [{"time": "YYYYMMDDHHMM", "event": "..."}],
-                "work_exp": ["..."],
-                "cognition": ["..."],
-                "reminders": "...",
-                "project_state": "..."
-            }
-        query: 搜索语句（action=search时必填）
-        filter: 日期过滤（action=search时可选），格式 YYYY-MM-DD
-        topk: 返回数量（action=search时可选），默认5
-
-    Returns:
-        格式化后的 JSON 字符串
+        memo_data: 记忆数据（action=add时必填）
+        query: 搜索参数（action=search时使用），支持字典格式包含 prompt, date, top_k。
+               为空时返回最新全局记忆缓存
     """
     try:
         if action is None:
             return error_response(
-                "缺少必需参数: action（操作类型）\naction=add 时：写入记忆，需要 memo_data\naction=search 时：搜索记忆，需要 query",
+                "缺少必需参数: action（操作类型）\naction=add 时：写入记忆，需要 memo_data\naction=search 时：搜索记忆，可选传 query",
                 "❌ 参数错误：缺少action"
-            )
-
-        if not isinstance(action, str):
-            return error_response(
-                f"参数类型错误: action 必须是字符串类型，你传入了 {type(action).__name__}",
-                "❌ 参数类型错误"
             )
 
         action = action.strip().lower()
@@ -53,7 +36,7 @@ def Memo(action: str = None, memo_data: dict = None, query: str = None,
         if action == "add":
             return _handle_add(memo_data)
         elif action == "search":
-            return _handle_search(query, filter, topk)
+            return _handle_search(query)
 
         return error_response("未知错误", "❌ 系统错误")
 
@@ -62,7 +45,7 @@ def Memo(action: str = None, memo_data: dict = None, query: str = None,
         return error_response(f"记忆工具运行时异常: {str(e)}", "❌ Memo执行异常")
 
 def _handle_add(memo_data: dict = None) -> str:
-    """处理写入记忆"""
+    """处理写入记忆：完成后返回统计量而非全量JSON内容"""
     if not isinstance(memo_data, dict):
         return error_response("参数类型错误: memo_data 必须是对象", "❌ 参数类型错误")
 
@@ -85,66 +68,57 @@ def _handle_add(memo_data: dict = None) -> str:
         work_exp=work_exp
     )
 
-    import json
+    # 不再返回全量有效数据，改为只返回统计信息
+    stats = {
+        "short_term_length": len(short_term),
+        "events_count": len(events),
+        "work_exp_count": len(work_exp),
+        "cognition_count": len(cognition),
+        "user_profile_count": len(user_profile)
+    }
     return text_response(
-        {"message": "记忆已归档并投递至后台存入 MD/SQL/图谱", "memo_data": valid_data},
-        f"🧠 记忆归档成功：\n{json.dumps(valid_data, ensure_ascii=False, indent=2)}"
+        {"message": "记忆已归档并投递至后台存入 MD/SQL/图谱", "stats": stats},
+        f"🧠 记忆归档成功，统计信息：\n{json.dumps(stats, ensure_ascii=False, indent=2)}"
     )
 
 
-def _handle_search(query: str = None, filter: str = None, topk: int = 5) -> str:
-    """处理搜索记忆"""
-    if query is None:
-        return error_response(
-            "action=search 时缺少必需参数: query",
-            "❌ 参数错误：缺少query"
-        )
-
-    if not isinstance(query, str):
-        return error_response(
-            f"参数类型错误: query 必须是字符串类型，你传入了 {type(query).__name__}",
-            "❌ 参数类型错误"
-        )
-
-    query = query.strip()
+def _handle_search(query: dict = None) -> str:
+    """处理搜索记忆：支持空参数直接获取全局常驻缓存"""
+    
+    # 1. 如果不传 query 参数，直接返回全局最新的缓存记忆 (self.memo内容)
     if not query:
-        return error_response(
-            "参数错误: query 不能为空",
-            "❌ 参数校验失败"
+        memo_list = SessionStore.load_global_memo()
+        return text_response(
+            {"memo_cache": memo_list},
+            "🔍 未提供 query 参数，已为您直接返回最新缓存记忆。"
         )
 
-    if not isinstance(topk, int):
+    if not isinstance(query, dict):
+        return error_response("参数错误: query 参数必须是 JSON 对象格式", "❌ 参数类型错误")
+
+    prompt = query.get("prompt", "")
+    date_filter = query.get("date")
+    top_k = query.get("top_k", 5)
+
+    # 2. 如果传了但 prompt 和 date 都为空，进行报错引导
+    if not prompt and not date_filter:
         return error_response(
-            f"参数类型错误: topk 必须是整数类型，你传入了 {type(topk).__name__}",
-            "❌ 参数类型错误"
+            "参数缺失: search 操作如果您想全局检索，请在 query 中提供 `prompt` 或 `date`。如果您想获取最近缓存记忆，请不要传递任何 `query` 字段。",
+            "❌ 搜索参数校验失败"
         )
 
-    if topk < 1:
-        return error_response(
-            "参数错误: topk 必须是正整数",
-            "❌ 参数校验失败"
-        )
-
-    if filter is not None:
-        if not isinstance(filter, str):
-            return error_response(
-                f"参数类型错误: filter 必须是字符串类型，你传入了 {type(filter).__name__}",
-                "❌ 参数类型错误"
-            )
-
-        filter = filter.strip()
-        if filter and not _validate_date_format(filter):
-            return error_response(
-                f"参数格式错误: filter 日期格式不正确，应为 YYYY-MM-DD，你传入的是 {filter}",
-                "❌ 参数格式错误"
-            )
+    if date_filter and not _validate_date_format(date_filter):
+        return error_response("参数格式错误: date 日期格式不正确，应为 YYYY-MM-DD", "❌ 参数格式错误")
 
     try:
         client = get_memory_client()
+        filters = {"top_k": top_k}
+        if date_filter:
+            filters["date"] = date_filter
+            
         result = client.search(
-            query=query,
-            filter_date=filter if filter else None,
-            topk=topk
+            query=prompt,
+            filters=filters
         )
 
         return text_response(

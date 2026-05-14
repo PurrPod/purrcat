@@ -2,7 +2,7 @@ MEMO_TOOL_SCHEMA = {
     "type": "function",
     "function": {
         "name": "Memo",
-        "description": "统一记忆工具，处理短期记忆压缩与长期记忆（经验、用户画像、事件、认知）的归档。",
+        "description": "统一记忆工具，处理短期记忆压缩与长期记忆（经验、用户画像、事件、认知）的归档与检索。",
         "parameters": {
             "type": "object",
             "properties": {
@@ -33,17 +33,13 @@ MEMO_TOOL_SCHEMA = {
                     }
                 },
                 "query": {
-                    "type": "string",
-                    "description": "搜索语句（action=search时必填）。"
-                },
-                "filter": {
-                    "type": "string",
-                    "description": "日期过滤（action=search时可选）。格式 YYYY-MM-DD"
-                },
-                "topk": {
-                    "type": "integer",
-                    "description": "返回结果数量，默认 5。",
-                    "default": 5
+                    "type": "object",
+                    "description": "搜索参数（action=search时使用）。如果不传，则直接返回最近五次写入的缓存记忆。如果传，必须包含 prompt 或 date 其中之一。",
+                    "properties": {
+                        "prompt": {"type": "string", "description": "全局搜索关键词，不限日期"},
+                        "date": {"type": "string", "description": "日期过滤，格式 YYYY-MM-DD"},
+                        "top_k": {"type": "integer", "description": "返回结果数量，默认 5"}
+                    }
                 }
             },
             "required": ["action"]

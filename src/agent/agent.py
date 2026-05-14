@@ -10,6 +10,7 @@ from src.tool import AGENT_TOOL_SCHEMA
 from src.tool.utils.route import dispatch_tool
 from src.utils.config import get_agent_model, SOUL_MD_PATH, SYSTEM_RULES_DIR, AGENT_CORE_DIR
 from json_repair import repair_json
+from src.agent.session_store import SessionStore  # 新增导入
 
 MEMORY_MD_PATH = os.path.join(AGENT_CORE_DIR, "MEMORY.md")
 
@@ -18,10 +19,13 @@ class Agent:
     def __init__(self, session_id, initial_history=None, name=None, save_callback=None):
         self.name = name or get_agent_model()
         self.session_id = session_id
+        
+        # === 常驻内存记忆缓存 ===
+        self.memo = SessionStore.load_global_memo()
 
         # === 核心状态 ===
         self._state = "idle"
-        self._interaction_id = 0  # 当前交互的唯一标识，用于防止旧请求污染新会话
+        self._interaction_id = 0
 
         self.pending_force_push = []
         self.window_token = 0
@@ -35,8 +39,18 @@ class Agent:
         self.tracker = Tracker()
 
         self.current_history = initial_history or []
+        
+        # ====== 修复：新会话启动时自动注入 self.memo ======
         if not self.current_history:
             self.current_history = [{"role": "system", "content": self.system_prompt}]
+            
+            # 如果是全新会话且存在跨会话短时缓存，追加一条系统通知
+            if self.memo:
+                memo_summary = json.dumps(self.memo, ensure_ascii=False, indent=2)
+                self.current_history.append({
+                    "role": "system",
+                    "content": f"【系统通知：这是一个全新的会话。以下是你最近的短时工作缓存，请利用这些缓存无缝接续当前工作：】\n{memo_summary}"
+                })
         elif self.current_history[0].get("role") == "system":
             self.current_history[0]["content"] = self.system_prompt
 
@@ -124,8 +138,7 @@ class Agent:
             local_push = self.pending_force_push.copy()
             self.pending_force_push.clear()
 
-        if self.window_token > 0:
-            self._check_and_summarize_memory()
+        # 注意：不再通过 checker 隐式检查并触发记忆压缩
 
         if local_push:
             batch_data = {
@@ -138,22 +151,18 @@ class Agent:
 
     def process_message(self):
         """主 ReAct 循环"""
-        # 获取当前交互ID，用于后续验证响应是否属于当前会话
         current_interaction_id = self._increment_interaction_id()
         self.force_push(content="任务开始前如有需要可以调用 Memo 工具搜索相关记忆。完成任务后请调用 Memo 工具及时更新记忆", type="system")
         while True:
             try:
-                # 检查交互ID是否已过期（会话已被切换）
                 if self._get_current_interaction_id() != current_interaction_id:
                     print(f"⚠️ [隔离] 检测到交互ID过期 ({current_interaction_id} != {self._get_current_interaction_id()})，丢弃旧响应")
                     break
 
                 self._checker()
-                # 传入隔离后的历史记录副本进行请求，防止请求中被并发修改
                 safe_history = self.get_history()
                 response = self.model.chat(messages=safe_history, tools=self._get_tool_schema())
                 
-                # 再次检查交互ID，因为网络请求可能耗时较长，期间会话可能已切换
                 if self._get_current_interaction_id() != current_interaction_id:
                     print(f"⚠️ [隔离] 网络响应返回后检测到交互ID过期 ({current_interaction_id} != {self._get_current_interaction_id()})，丢弃响应")
                     break
@@ -177,10 +186,7 @@ class Agent:
                 self._handle_interaction_error(e=e)
                 break
 
-        try:
-            self._check_and_summarize_memory()
-        except Exception as e:
-            print(f"⚠️ 压缩记忆失败：{e}")
+        # 不再在结束时兜底触发隐蔽记忆存档循环
 
     def _process_assistant_message(self, msg_resp) -> bool:
         assist_msg = {"role": "assistant", "content": msg_resp.content or ""}
@@ -239,6 +245,22 @@ class Agent:
             self._append_history(
                 {"role": "tool", "tool_call_id": tool_call.id, "name": target_tool_name, "content": result_content})
 
+            # ==== 在模型调用 Memo add 操作后，触发显性检查拦截 ====
+            if target_tool_name == "Memo" and arguments.get("action") == "add":
+                memo_data = arguments.get("memo_data")
+                if memo_data:
+                    self.memo.append(memo_data)
+                    if len(self.memo) > 5:
+                        self.memo = self.memo[-5:]
+                    SessionStore.save_global_memo(self.memo)
+                
+                # 模型完成存档操作后，立刻检查是否超出阈值截断
+                from src.utils.config import get_model_config
+                model_cfg = get_model_config().get("main", {}).get(self.name, {})
+                max_tokens = model_cfg.get("max_token", 500000)
+                if self.window_token >= max_tokens:
+                    self._truncate_memory_if_needed(force=True)
+
         return False
 
     def _handle_interaction_error(self, e=None, is_interrupt=False):
@@ -274,161 +296,25 @@ class Agent:
         if self._save_callback:
             self._save_callback()
 
+    def force_compress_memory(self):
+        """提供给外部/用户的显性触发接口"""
+        self._truncate_memory_if_needed(force=True)
 
-    def _check_and_summarize_memory(self, check_mode=True):
-        from src.utils.config import get_model_config, get_agent_model
-        agent_name = get_agent_model()
-        model_cfg = get_model_config().get("main", {}).get(agent_name, {})
+    def _truncate_memory_if_needed(self, force=False):
+        """判断与执行截断的核心操作"""
+        from src.utils.config import get_model_config
+        model_cfg = get_model_config().get("main", {}).get(self.name, {})
         max_tokens = model_cfg.get("max_token", 500000)
-        if check_mode and self.window_token < max_tokens:
+        if not force and self.window_token < max_tokens:
             return
-
-        print(f"🗜️ 记忆容量到达 {len(self.current_history)} 条 (约 {self.window_token} tokens)，触发自我归档...")
-
+        print(f"🗜️ 触发记忆截断 (约 {self.window_token} tokens)...")
         try:
-            # 1. 准备沙箱环境
-            alert_prompt = """【系统警告：记忆容量即将溢出，触发自动记忆归档】
-为了防止对话断层，系统即将清理你最早期的一批记忆。
-你必须调用 `Memo` 工具将当前记忆进行分类归档：
-- short_term: （必填）短期工作记忆。对当前任务的上下文进行压缩，该项将在清理后直接返回到你的新对话中，以便你继续当前工作。
-- work_exp: （列表）工作中积累的经验教训。<有则必须填写>
-- user_profile: （列表）对用户的新认识，包括但不限于喜好、风格等。<有则必须填写>
-- events: （列表）最近发生的事件，大大小小越多越好。格式：[{"time":"20200601","event":"xxx"}]。<有则必须填写>
-- cognition: （列表）对世界的新认知，提取具有普适性的概念或规律。<有则必须填写>
-注意：这些分类的内容可以重叠并鼓励重叠（比如一件事既是 event，也反映了 user_profile）。请直接调用工具即可，无须输出废话。"""
-            temp_history = self.current_history.copy()
-            temp_history.append({"role": "user", "content": alert_prompt})
-
-            # 2. 在沙箱中执行归档提取
-            archive_success, final_summary = self._run_memory_archive_loop(temp_history)
-
-            # 3. 寻找安全的截断点（避开未闭环的 tool_call）
             original_len = len(self.current_history)
             split_idx = self._find_safe_truncation_index(original_len)
-
-            # 4. 重构主历史记录并落盘
+            final_summary = json.dumps(self.memo, ensure_ascii=False, indent=2) if self.memo else "（暂无缓存记忆）"
             self._rebuild_and_save_history(split_idx, original_len, final_summary)
-
         except Exception as e:
-            print(f"❌ 记忆存档发生异常: {e}")
-
-    def _run_memory_archive_loop(self, temp_history) -> tuple[bool, str]:
-        """在沙箱中运行归档循环，处理工具调用与异常重试"""
-        current_tools = AGENT_TOOL_SCHEMA
-        max_retries = 3
-        archive_success = False
-        archived_contents = []
-
-        for _ in range(max_retries):
-            response = self.model.chat(messages=temp_history, tools=current_tools)
-            msg_resp = response.choices[0].message
-            assist_msg = {"role": "assistant", "content": msg_resp.content or ""}
-
-            rc = getattr(msg_resp, "reasoning_content", None)
-            if rc is None and hasattr(msg_resp, "model_dump"):
-                rc = msg_resp.model_dump().get("reasoning_content")
-            if rc is not None:
-                assist_msg["reasoning_content"] = rc
-
-            if msg_resp.tool_calls:
-                assist_msg["tool_calls"] = [
-                    {
-                        "id": t.id,
-                        "type": t.type,
-                        "function": {"name": t.function.name, "arguments": t.function.arguments}
-                    } for t in msg_resp.tool_calls
-                ]
-                temp_history.append(assist_msg)
-                has_update_memo = False
-
-                for t in msg_resp.tool_calls:
-                    if t.function.name == "Memo":
-                        has_update_memo = True
-                        try:
-                            args_str = t.function.arguments
-                            args = {}
-                            if args_str:
-                                try:
-                                    args = json.loads(args_str)
-                                except json.JSONDecodeError as e:
-                                    print(f"⚠️ Memo JSON 解析失败，尝试修复: {e}")
-                                    if repair_json:
-                                        args = repair_json(args_str, return_objects=True)
-
-                            if isinstance(args, dict):
-                                # Call Memo and check result
-                                from src.utils.config import get_model_config
-                                model_cfg = get_model_config().get("main", {}).get(self.name, {})
-                                max_tokens = model_cfg.get("max_token", 500000)
-                                remaining = max_tokens - self.window_token
-                                tool_result = dispatch_tool("Memo", args, available_tokens=remaining)
-                                import json
-                                try:
-                                    result_data = json.loads(tool_result)
-                                    is_error = result_data.get("type") == "error"
-                                except Exception:
-                                    is_error = "❌" in str(tool_result) or "error" in str(tool_result).lower()
-
-                                if is_error:
-                                    # Validation failed - send back to agent for retry
-                                    error_msg = str(tool_result)[:300]
-                                    tool_response = f'❌ 参数格式错误，请修正后重试: {error_msg}'
-                                    has_update_memo = False  # Don't break, let agent retry
-                                else:
-                                    param_parts = []
-                                    for key, val in args.items():
-                                        val_str = json.dumps(val, ensure_ascii=False) if isinstance(val, (dict, list)) else str(val)
-                                        param_parts.append(f"  - **{key}**: {val_str}")
-                                    if param_parts:
-                                        archived_contents.append("\n".join(param_parts))
-                                    tool_response = '✅ 归档工具调用成功'
-                        except Exception as e:
-                            print(f"⚠️ Memo 执行异常: {e}")
-                            try:
-                                fallback_args = repair_json(t.function.arguments,
-                                                            return_objects=True) if repair_json else json.loads(
-                                    t.function.arguments)
-                                if isinstance(fallback_args, dict):
-                                    param_parts = [f"  - **{k}**: {v}" for k, v in fallback_args.items()]
-                                    archived_contents.append("\n".join(param_parts))
-                                else:
-                                    archived_contents.append(str(t.function.arguments))
-                            except:
-                                archived_contents.append(str(t.function.arguments))
-                            tool_response = f'⚠️ Memo 执行异常但已记录: {str(e)[:100]}'
-
-                        temp_history.append({
-                            "role": "tool",
-                            "tool_call_id": t.id,
-                            "name": t.function.name,
-                            "content": tool_response
-                        })
-                    else:
-                        temp_history.append({
-                            "role": "tool",
-                            "tool_call_id": t.id,
-                            "name": t.function.name,
-                            "content": '❌ 系统拦截：当前处于强制归档阶段，请立刻调用 Memo。'
-                        })
-
-                if has_update_memo:
-                    archive_success = True
-                    print("🧠 Agent归档完成，成功处理 Memo 调用。")
-                    break
-                else:
-                    temp_history.append({"role": "user", "content": "打回：你必须调用 `Memo` 工具来归档备忘录！"})
-            else:
-                temp_history.append(assist_msg)
-                temp_history.append(
-                    {"role": "user", "content": "打回：你必须调用 `Memo` 工具！请不要只回复纯文本。"})
-
-        if archive_success:
-            final_summary = "\n\n".join(archived_contents) if archived_contents else "（无归档细节）"
-        else:
-            print("⚠️ 未能成功调用 Memo 工具，强制截断可能导致上下文丢失。")
-            final_summary = "未保存成功的早期上下文片段..."
-
-        return archive_success, final_summary
+            print(f"❌ 记忆截断发生异常: {e}")
 
     def _find_safe_truncation_index(self, original_len: int) -> int:
         """寻找安全的截断点，避开未闭环的 Tool Call"""
@@ -449,21 +335,20 @@ class Agent:
                     split_idx -= 1
                     continue
                 break
-
         if split_idx < start_idx:
             split_idx = start_idx
 
         return split_idx
 
     def _rebuild_and_save_history(self, split_idx: int, original_len: int, final_summary: str):
-        """重构主历史流并完成持久化"""
+        """重构主历史流并完成持久化：直接注入 self.memo 缓存"""
         system_msg = {"role": "system", "content": self._build_system_prompt()}
-        summary_msg = {"role": "assistant", "content": f"【系统已截断历史，以下是刚刚生成的归档记录与工作缓存】\n{final_summary}"}
-        if any("reasoning_content" in msg for msg in self.current_history if msg.get("role") == "assistant"):
-            summary_msg["reasoning_content"] = ""
-        self.current_history = [system_msg] + self.current_history[split_idx:original_len] + [summary_msg]
-        self.system_prompt = self._build_system_prompt()
-        self.current_history[0]["content"] = self.system_prompt
-        print("✅ Agent记忆清理完毕！归档过程已在沙箱中隐蔽完成，主历史流保持纯净。")
+        truncation_msg = {"role": "system", "content": f"【系统通知：因上下文超限，更早的历史对话已被系统截断。以下是最近五次的短时缓存，请你利用这些缓存无缝接续当前工作：】\n{final_summary}"}
+        
+        for msg in self.current_history:
+            if msg.get("role") == "assistant" and "reasoning_content" in msg:
+                msg["reasoning_content"] = ""
+                
+        self.current_history = [system_msg] + self.current_history[split_idx:original_len] + [truncation_msg]
         self.window_token = 0
         self.save_checkpoint()
