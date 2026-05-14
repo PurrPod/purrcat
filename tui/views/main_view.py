@@ -608,10 +608,10 @@ class MainView(Vertical):
                         chat_zone.mount(new_msg)
 
                     # 如果有系统消息，显示统计提示
-                    if system_count > 0:
-                        system_note = Static(f"⚙️ 收到 {system_count} 条系统日志", classes="system-note")
-                        system_note.add_class(f"msg-space-{self.current_space}")
-                        chat_zone.mount(system_note)
+                    # if system_count > 0:
+                    #     system_note = Static(f"⚙️ 收到 {system_count} 条系统日志", classes="system-note")
+                    #     system_note.add_class(f"msg-space-{self.current_space}")
+                    #     chat_zone.mount(system_note)
 
                 elif role == "assistant":
                     is_new_msg = not is_initial_load

@@ -112,7 +112,7 @@ class AgentManager:
             memo_summary = json.dumps(self._agent.memo, ensure_ascii=False, indent=2)
             clean_history.append({
                 "role": "system",
-                "content": f"【系统通知：这是一个全新的会话。以下是你最近的短时工作缓存，请利用这些缓存无缝接续当前工作：】\n{memo_summary}"
+                "content": f"【系统通知：这是一个全新的会话。以下是系统在创建这个会话前的短时共享记忆缓存，或许对你有帮助】\n{memo_summary}"
             })
 
         SessionStore.save_session(

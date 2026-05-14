@@ -498,16 +498,6 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                     </div>
                   </div>
                 )}
-                
-                {/* 系统消息统计提示 */}
-                {msg.role === 'user' && parseEventsContent(msg.content).systemCount > 0 && (
-                  <div className="flex w-full justify-center mt-2">
-                    <div className="flex items-center gap-2 px-4 py-2 bg-ink/10 border-2 border-ink/30 rounded-full">
-                      <Terminal size={14} strokeWidth={3} className="text-ink/50" />
-                      <span className="text-xs font-bold text-ink/60">收到 {parseEventsContent(msg.content).systemCount} 条系统日志</span>
-                    </div>
-                  </div>
-                )}
               </div>
             ))
           )}

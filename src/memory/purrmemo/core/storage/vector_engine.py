@@ -192,34 +192,22 @@ class VectorEngine:
             filters: 过滤条件（可选）
         """
         try:
+            if not query:
+                return []
+            
             query_embedding = self._get_embedding(query)
             if not query_embedding:
                 return []
             
-            # 【修复】转换 filters 为 ChromaDB 支持的 where 语法
-            chroma_where = None
-            if filters and 'time_range' in filters:
-                start_time, end_time = filters['time_range']
-                if start_time and end_time:
-                    chroma_where = {
-                        "$and": [
-                            {"timestamp": {"$gte": start_time}},
-                            {"timestamp": {"$lte": end_time}}
-                        ]
-                    }
-            
-            # 【修复】动态调整 top_k，避免 ChromaDB 少于 K 个时崩溃
             actual_top_k = min(top_k, self.collection.count())
             if actual_top_k == 0:
                 return []
             
             results = self.collection.query(
                 query_embeddings=[query_embedding],
-                n_results=actual_top_k,
-                where=chroma_where
+                n_results=actual_top_k
             )
             
-            # 处理结果
             experiences = []
             for i in range(len(results['ids'][0])):
                 exp_id = results['ids'][0][i]
@@ -227,7 +215,11 @@ class VectorEngine:
                 score = results['distances'][0][i]
                 metadata = results['metadatas'][0][i] if results['metadatas'][0][i] else {}
                 
-                # 更新最后访问时间和访问次数
+                similarity = 1.0 - score
+                
+                if similarity < 0.35:
+                    continue
+                
                 updated_metadata = metadata.copy()
                 updated_metadata['last_accessed'] = datetime.now().isoformat()
                 if 'access_count' in updated_metadata:
@@ -235,7 +227,6 @@ class VectorEngine:
                 else:
                     updated_metadata['access_count'] = 1
                 
-                # 更新经验数据
                 self.collection.update(
                     ids=[exp_id],
                     metadatas=[updated_metadata]
@@ -406,8 +397,7 @@ class VectorEngine:
                     if days_since_access > days_threshold and access_count < min_access_count:
                         self.collection.delete(ids=[exp_id])
                         deleted_count += 1
-            
-            print(f"清理了 {deleted_count} 个过期或不常用的经验")
+
             return deleted_count
         except Exception as e:
             print(f"清理经验失败: {e}")

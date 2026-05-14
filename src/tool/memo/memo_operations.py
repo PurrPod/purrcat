@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import threading
 import uuid
 import datetime
@@ -9,6 +10,20 @@ from src.utils.config import MEMORY_PENDING_DIR, AGENT_CORE_DIR, get_agent_model
 from src.model import AgentModel
 
 MEMORY_MD_PATH = os.path.join(AGENT_CORE_DIR, "MEMORY.md")
+
+# 【新增】全局锁，用于防止并发写入时的幻读和覆写
+MEMORY_MD_LOCK = threading.Lock()
+
+def _normalize_iso_time(time_str: str) -> str:
+    """将各种非标时间字符串统一清洗为 ISO 8601 格式"""
+    time_str = time_str.strip()
+    if re.match(r'^\d{8}$', time_str):
+        return f"{time_str[:4]}-{time_str[4:6]}-{time_str[6:8]}T00:00:00"
+    elif re.match(r'^\d{8} \d{2}:\d{2}$', time_str):
+        return f"{time_str[:4]}-{time_str[4:6]}-{time_str[6:8]}T{time_str[9:14]}:00"
+    elif re.match(r'^\d{4}-\d{2}-\d{2}$', time_str):
+        return f"{time_str}T00:00:00"
+    return time_str
 
 OVERWRITE_MEMORY_MD_TOOL_SCHEMA = {
     "type": "function",
@@ -93,7 +108,10 @@ def _validate_memo_data(memo_data: dict) -> tuple[dict, list]:
             elif not isinstance(e["event"], str) or not e["event"].strip():
                 errors.append(f"events[{i}].event 无效：必须是非空字符串")
             else:
-                valid_data["events"].append({"time": e["time"].strip(), "event": e["event"].strip()})
+                valid_data["events"].append({
+                    "time": _normalize_iso_time(e["time"]),
+                    "event": e["event"].strip()
+                })
 
     cognition = memo_data.get("cognition", [])
     if not isinstance(cognition, list):
@@ -116,10 +134,12 @@ def _smart_update_memory_md(work_exp: list, user_profile: list):
         return
 
     def _async_rewrite_task():
-        current_md = ""
-        if os.path.exists(MEMORY_MD_PATH):
-            with open(MEMORY_MD_PATH, "r", encoding="utf-8") as f:
-                current_md = f.read()
+        # 【修复】使用线程锁序列化后台任务
+        with MEMORY_MD_LOCK:
+            current_md = ""
+            if os.path.exists(MEMORY_MD_PATH):
+                with open(MEMORY_MD_PATH, "r", encoding="utf-8") as f:
+                    current_md = f.read()
 
         model = AgentModel(task_id="memory_writer")
         messages = []

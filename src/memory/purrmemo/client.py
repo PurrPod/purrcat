@@ -1,4 +1,5 @@
 import threading
+import datetime
 from .core.config import MEMORY_AGENT_CONFIG, RAG_CONFIG
 from .core.memory_worker.worker_agent import MemoryAgent
 from .core.search_tool import RAGSearchTool
@@ -38,21 +39,23 @@ class PurrMemoClient:
         :return: Markdown 格式的检索结果
         """
         filters = filters or {}
-        
-        # 获取外部传来的 top_k，默认5
+
         top_k = filters.get('top_k', 5)
         RAG_CONFIG['top_k_events'] = top_k
         RAG_CONFIG['top_k_experiences'] = top_k
         RAG_CONFIG['top_k_graph_nodes'] = top_k
 
-        # 处理日期转换
         if 'date' in filters:
-            filter_date = filters.pop('date')
-            start_time = f"{filter_date}T00:00:00"
-            end_time = f"{filter_date}T23:59:59.999999"
-            filters['time_range'] = (start_time, end_time)
+            raw_date = filters.pop('date')
+            if raw_date and isinstance(raw_date, str):
+                try:
+                    parsed_date = datetime.datetime.strptime(raw_date.strip(), "%Y-%m-%d")
+                    start_time = parsed_date.strftime("%Y-%m-%dT00:00:00")
+                    end_time = parsed_date.strftime("%Y-%m-%dT23:59:59.999999")
+                    filters['time_range'] = (start_time, end_time)
+                except ValueError:
+                    print(f"⚠️ [PurrMemo] 忽略无效的日期过滤参数 '{raw_date}'，期望格式为 YYYY-MM-DD")
 
-        # 此时 filters 里面可能还包含 latest_n，原封不动传给底层
         return self.search_tool.search_memory_api(query=query, filters=filters)
 
 

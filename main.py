@@ -124,10 +124,10 @@ async def main_async(enable_tui: bool, enable_api: bool, api_port: int, cli_sess
         if api_task:
             api_task.cancel()
             try:
-                await api_task
-            except asyncio.CancelledError:
-                print("[*] API server stopped")
-        
+                await asyncio.wait_for(api_task, timeout=3.0)
+            except (asyncio.CancelledError, asyncio.TimeoutError):
+                pass
+
         await shutdown_core()
 
 

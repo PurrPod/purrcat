@@ -70,15 +70,14 @@ def _handle_add(memo_data: dict = None) -> str:
 
     # 不再返回全量有效数据，改为只返回统计信息
     stats = {
-        "short_term_length": len(short_term),
         "events_count": len(events),
         "work_exp_count": len(work_exp),
         "cognition_count": len(cognition),
         "user_profile_count": len(user_profile)
     }
     return text_response(
-        {"message": "记忆已归档并投递至后台存入 MD/SQL/图谱", "stats": stats},
-        f"🧠 记忆归档成功，统计信息：\n{json.dumps(stats, ensure_ascii=False, indent=2)}"
+        {"message": "长期记忆已归档并投递至后台存入 MD/SQL/图谱，而 short_term 字段已正常返回", "stats": stats},
+        f"🧠 记忆归档成功：\n{json.dumps(stats, ensure_ascii=False, indent=2)}"
     )
 
 
@@ -90,7 +89,7 @@ def _handle_search(query: dict = None) -> str:
         memo_list = SessionStore.load_global_memo()
         return text_response(
             {"memo_cache": memo_list},
-            "🔍 未提供 query 参数，已为您直接返回最新缓存记忆。"
+            "🔍 未提供 query 参数，直接返回最新缓存记忆。"
         )
 
     if not isinstance(query, dict):

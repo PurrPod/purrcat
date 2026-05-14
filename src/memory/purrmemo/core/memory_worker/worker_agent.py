@@ -202,8 +202,6 @@ class MemoryAgent:
             messages.append(assist_msg)
 
             if not msg_resp.tool_calls:
-                # 只要模型没有发出新的工具调用，且之前至少有一次成功交互，就认为任务完成
-                print("✅ 模型判断图谱更新完毕。")
                 break
 
             tool_results = []
@@ -216,10 +214,9 @@ class MemoryAgent:
                 try:
                     tool_args = json.loads(tc.function.arguments)
                     tool_result = tool_map[tool_name](**tool_args)
-                    print(f"[{turn}] {tool_name}: {tool_result}")
                 except Exception as e:
                     tool_result = f"执行失败: {str(e)}"
-                    print(f"[{turn}] {tool_name} 失败: {e}")
+                    print(f"{tool_name} 失败: {e}")
 
                 tool_results.append({
                     "role": "tool",
@@ -227,8 +224,6 @@ class MemoryAgent:
                     "content": tool_result
                 })
                 messages.append(tool_results[-1])
-
-        print(f"📊 reAct 循环结束，写入 {write_count} 次")
 
     def _process_cognition_fallback(self, cognition_data: list):
         """兜底处理：当 LLM 不可用时用启发式规则"""
@@ -293,11 +288,16 @@ class MemoryAgent:
                 event_time = event.get('time', timestamp) if isinstance(event, dict) else timestamp
                 event_id = f"evt_{hashlib.md5(event_content.encode()).hexdigest()}"
 
-                # A. 存入 SQLite (做元数据和 BM25 字面量检索)
+                # 【修复】在存入 SQLite 前，先提取出向量数据
+                vector_data = None
+                if self.vector_engine:
+                    vector_data = self.vector_engine._get_embedding(event_content)
+
+                # A. 存入 SQLite (现在带有真实 Vector 数据了，搜寻时的 NumPy 矩阵乘法就能生效)
                 self.event_engine.insert_event(
-                    event_id=event_id, content=event_content, vector=None, timestamp=event_time
+                    event_id=event_id, content=event_content, vector=vector_data, timestamp=event_time
                 )
-                # B. 存入 ChromaDB (需在 VectorEngine 新建 events_collection)
+                # B. 存入 ChromaDB
                 if self.vector_engine:
                     self.vector_engine.insert_event_vector(event_id, event_content, event_time)
 
@@ -327,14 +327,12 @@ class MemoryAgent:
                 'events_count': len(events),
                 'has_graph_materials': bool(cognition or user_profile)
             })
-            print(f"✅ 后台 Worker 处理成功: {os.path.basename(file_path)}")
             return True
         except Exception as e:
             print(f"❌ Worker 处理文件失败: {e}")
             return False
 
     def run(self):
-        print("Worker Agent 启动，开始轮询待处理文件...")
         while True:
             try:
                 files = [f for f in os.listdir(PENDING_DIR) if f.startswith('memory_') and f.endswith('.json')]

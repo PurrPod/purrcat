@@ -15,7 +15,10 @@ MEMO_TOOL_SCHEMA = {
                     "type": "object",
                     "description": "记忆数据（action=add时必填）。",
                     "properties": {
-                        "short_term": {"type": "string", "description": "短期工作记忆，将作为新的上下文返回给对话"},
+                        "short_term": {
+                            "type": "string",
+                            "description": "短期工作记忆，将作为新的上下文返回给接下来的对话。⚠️注意：该字段仅做临时缓存跨越对话断层，【绝对不会】被存入长期记忆库，请勿在此存放需要长久记住的重要信息！"
+                        },
                         "work_exp": {"type": "array", "items": {"type": "string"}, "description": "工作中积累的经验教训"},
                         "user_profile": {"type": "array", "items": {"type": "string"}, "description": "对用户的新认识，包括喜好、风格等"},
                         "events": {
@@ -23,7 +26,7 @@ MEMO_TOOL_SCHEMA = {
                             "items": {
                                 "type": "object",
                                 "properties": {
-                                    "time": {"type": "string", "description": "时间，如 20200601"},
+                                    "time": {"type": "string", "description": "时间，请必须使用 YYYY-MM-DD 或 ISO 8601 格式，如 2026-05-15"},
                                     "event": {"type": "string", "description": "事件描述"}
                                 }
                             },

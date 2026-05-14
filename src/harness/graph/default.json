@@ -1,24 +1,132 @@
 {
-    "name": "default",
-    "description": "默认工作流：全局输入 → 拼装消息 → LLM循环思考 → 全局输出",
-    "required_inputs": {
-        "prompt": "核心任务提示词，告知工作流具体要完成什么任务",
-        "target_file": "最终生成文件的路径"
+  "name": "default",
+  "description": "PurrCat Web Export",
+  "required_inputs": {
+    "prompt": "any",
+    "target_file": "any"
+  },
+  "nodes": [
+    {
+      "id": "node_input",
+      "name": "全局输入",
+      "type": "task_input",
+      "position": {
+        "x": -298,
+        "y": 114
+      },
+      "data": {
+        "dynamic_inputs": [
+          {
+            "key": "prompt",
+            "desc": "any"
+          },
+          {
+            "key": "target_file",
+            "desc": "any"
+          }
+        ]
+      }
     },
-    "nodes": [
-        {"id": "node_input", "type": "task_input", "data": {"dynamic_inputs": [{"key": "prompt", "desc": "any"}, {"key": "target_file", "desc": "any"}]}},
-        {"id": "node_sys_msg", "type": "message_card_builder", "data": {"role": "system", "content": "你是一个优秀的AI任务助手，请利用工具高效完成任务。"}},
-        {"id": "node_user_msg", "type": "message_card_builder", "data": {"role": "user"}},
-        {"id": "node_appender", "type": "appender"},
-        {"id": "node_loop", "type": "file_output_loop", "data": {"file_path": ""}},
-        {"id": "node_output", "type": "task_output", "data": {"dynamic_inputs": [{"key": "task_result", "desc": "any"}]}}
-    ],
-    "edges": [
-        {"source": "node_input", "target": "node_user_msg", "sourceHandle": "prompt", "targetHandle": "content"},
-        {"source": "node_input", "target": "node_loop", "sourceHandle": "target_file", "targetHandle": "file_path"},
-        {"source": "node_sys_msg", "target": "node_appender", "sourceHandle": "message_list", "targetHandle": "base_list"},
-        {"source": "node_user_msg", "target": "node_appender", "sourceHandle": "message_list", "targetHandle": "append_list"},
-        {"source": "node_appender", "target": "node_loop", "sourceHandle": "merged_list", "targetHandle": "messages"},
-        {"source": "node_loop", "target": "node_output", "sourceHandle": "summary", "targetHandle": "task_result"}
-    ]
+    {
+      "id": "node_sys_msg",
+      "name": "消息卡片构建器",
+      "type": "message_card_builder",
+      "position": {
+        "x": 70.92934969531507,
+        "y": -443.8293521331599
+      },
+      "data": {
+        "role": "system",
+        "content": "你是一个优秀的AI任务助手，请利用工具高效完成任务。"
+      }
+    },
+    {
+      "id": "node_user_msg",
+      "name": "消息卡片构建器",
+      "type": "message_card_builder",
+      "position": {
+        "x": 68,
+        "y": -75.83891296386719
+      },
+      "data": {
+        "role": "user"
+      }
+    },
+    {
+      "id": "node_appender",
+      "name": "列表追加器",
+      "type": "appender",
+      "position": {
+        "x": 480,
+        "y": -160
+      }
+    },
+    {
+      "id": "node_loop",
+      "name": "文件输出循环",
+      "type": "file_output_loop",
+      "position": {
+        "x": 811.8565902709961,
+        "y": 144
+      },
+      "data": {
+        "file_path": ""
+      }
+    },
+    {
+      "id": "node_output",
+      "name": "全局输出",
+      "type": "task_output",
+      "position": {
+        "x": 1196,
+        "y": 156.89711380004883
+      },
+      "data": {
+        "dynamic_inputs": [
+          {
+            "key": "task_result",
+            "desc": "any"
+          }
+        ]
+      }
+    }
+  ],
+  "edges": [
+    {
+      "source": "node_input",
+      "target": "node_user_msg",
+      "sourceHandle": "prompt",
+      "targetHandle": "content"
+    },
+    {
+      "source": "node_input",
+      "target": "node_loop",
+      "sourceHandle": "target_file",
+      "targetHandle": "file_path"
+    },
+    {
+      "source": "node_sys_msg",
+      "target": "node_appender",
+      "sourceHandle": "message_list",
+      "targetHandle": "base_list"
+    },
+    {
+      "source": "node_user_msg",
+      "target": "node_appender",
+      "sourceHandle": "message_list",
+      "targetHandle": "append_list"
+    },
+    {
+      "source": "node_appender",
+      "target": "node_loop",
+      "sourceHandle": "merged_list",
+      "targetHandle": "messages"
+    },
+    {
+      "source": "node_loop",
+      "target": "node_output",
+      "sourceHandle": "summary",
+      "targetHandle": "task_result"
+    }
+  ]
 }

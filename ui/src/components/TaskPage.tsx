@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
-  ArrowLeft, Terminal, Trash2, X, Activity, Clock, Box, ChevronDown, Send
+  ArrowLeft, Terminal, Trash2, X, Activity, Clock, Box, ChevronDown, Send, MessageCircle
 } from 'lucide-react';
 import { ReactFlow, Background, useNodesState, useEdgesState, Handle, Position } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
@@ -78,7 +78,7 @@ const TaskMonitorNode = ({ id, data, selected }: any) => {
   );
 };
 
-export default function TaskPage({ onBack }: { onBack: () => void }) {
+export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => void; onSwitchToChat?: () => void }) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   
@@ -366,6 +366,11 @@ export default function TaskPage({ onBack }: { onBack: () => void }) {
           <button onClick={onBack} style={sketchyShape2} className="w-16 h-16 bg-cream border-4 border-ink flex items-center justify-center hover:bg-sand transition-all shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] active:translate-y-[2px] active:translate-x-[2px] active:shadow-none -rotate-3 hover:rotate-0 group">
             <ArrowLeft size={28} strokeWidth={3} className="text-ink group-hover:-translate-x-1 transition-transform" />
           </button>
+          {onSwitchToChat && (
+            <button onClick={onSwitchToChat} style={sketchyShape2} className="w-16 h-16 bg-cream border-4 border-ink flex items-center justify-center hover:bg-sand transition-all shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] active:translate-y-[2px] active:translate-x-[2px] active:shadow-none rotate-3 hover:rotate-0 group" title="Go to Chat">
+              <MessageCircle size={28} strokeWidth={3} className="text-ink group-hover:translate-x-1 transition-transform" />
+            </button>
+          )}
           <div style={sketchyShape1} className="flex-1 h-16 flex items-center justify-center gap-2 bg-[#EBCB8B] text-ink border-4 border-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] rotate-2">
             <Activity size={22} strokeWidth={2.5} />
             <span className="tracking-widest text-lg font-black" style={{ fontFamily: '"Comic Sans MS", cursive' }}>TASKS</span>
