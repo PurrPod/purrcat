@@ -102,7 +102,7 @@ def kill_task_operation(task_id: str) -> tuple:
 def list_tasks_operation() -> tuple:
     """
     列出所有任务
-    
+
     Returns:
         (tasks_list, error_message)
     """
@@ -120,3 +120,35 @@ def list_tasks_operation() -> tuple:
         "tasks": tasks,
         "count": len(tasks)
     }, None
+
+
+def submit_request_operation(task_id: str, content: str, node_id: str = None) -> tuple:
+    """
+    向任务注入指令
+
+    Args:
+        task_id: 任务ID
+        content: 注入的指令内容
+        node_id: (可选) 指定的节点ID
+
+    Returns:
+        (result_dict, error_message)
+    """
+    from src.harness.process import inject_task_instruction, TASK_INSTANCES
+
+    if task_id not in TASK_INSTANCES:
+        return None, f"注入失败：未在内存中找到运行中的任务 (ID: {task_id})。"
+
+    try:
+        success = inject_task_instruction(task_id, content, node_id)
+        if success:
+            target_info = f"节点 [{node_id}]" if node_id else "所有节点"
+            return {
+                "task_id": task_id,
+                "message": f"已成功向任务 (ID: {task_id}) 的 {target_info} 注入指令。"
+            }, None
+        else:
+            return None, f"向任务 (ID: {task_id}) 注入指令失败，请检查任务状态。"
+
+    except Exception as e:
+        return None, f"注入指令发生异常: {str(e)}"

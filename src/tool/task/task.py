@@ -4,7 +4,7 @@ import os
 import json
 import traceback
 from src.tool.utils.format import text_response, error_response, warning_response
-from src.tool.task.task_operations import add_task_operation, kill_task_operation, list_tasks_operation
+from src.tool.task.task_operations import add_task_operation, kill_task_operation, list_tasks_operation, submit_request_operation
 
 def _get_all_graphs_info() -> dict:
     """扫描 harness/graph 目录，获取所有可用的工作流图定义及参数要求"""
@@ -50,12 +50,13 @@ def _get_graphs_help_text(graphs: dict) -> str:
 def Task(action: str, **kwargs) -> str:
     try:
         action = action.strip().lower() if action else ""
-        if action not in ["add", "kill", "list"]:
+        if action not in ["add", "kill", "list", "submit_request"]:
             return error_response(f"无效的操作: {action}", "❌ 无效action")
 
         if action == "add": return _handle_add(**kwargs)
         if action == "kill": return _handle_kill(**kwargs)
         if action == "list": return _handle_list(**kwargs)
+        if action == "submit_request": return _handle_submit_request(**kwargs)
     except Exception as e:
         traceback.print_exc()
         return error_response(f"任务异常: {str(e)}", "❌ Task执行异常")
@@ -103,3 +104,19 @@ def _handle_kill(**kwargs) -> str:
 def _handle_list(**kwargs) -> str:
     result, error = list_tasks_operation()
     return warning_response(error, "⚠️ 获取失败") if error else text_response({"tasks": result["tasks"]}, f"📋 {result['count']}个任务")
+
+def _handle_submit_request(**kwargs) -> str:
+    task_id = kwargs.get("task_id")
+    content = kwargs.get("content")
+    node_id = kwargs.get("node_id")
+
+    if not task_id:
+        return error_response("缺少必需参数: task_id", "❌ 缺少task_id")
+    if not content:
+        return error_response("缺少必需参数: content", "❌ 缺少content")
+
+    result, error = submit_request_operation(task_id, content, node_id)
+
+    if error:
+        return warning_response(error, "⚠️ 注入失败")
+    return text_response({"message": result["message"]}, "💬 指令已注入")

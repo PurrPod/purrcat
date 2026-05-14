@@ -19,7 +19,17 @@ class ChatReq(BaseModel):
 
 @router.get("/sessions")
 def get_sessions():
-    return list_sessions()
+    sessions_dict = list_sessions()
+    sess_list = []
+    for sid, info in sessions_dict.items():
+        sess_list.append({
+            "id": sid,
+            "alias": info.get("alias", sid),
+            "messages_count": info.get("messages_count", 0),
+            "updated_at": info.get("updated_at", "")
+        })
+    sess_list.sort(key=lambda x: x["updated_at"], reverse=True)
+    return sess_list
 
 @router.get("/sessions/{session_id}")
 def get_session_history_api(session_id: str):

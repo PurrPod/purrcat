@@ -6,17 +6,7 @@ from src.utils.config import DATA_DIR, SESSIONS_DIR
 
 
 def list_sessions():
-    sessions_dict = manager.list_sessions()
-    sess_list = []
-    for sid, info in sessions_dict.items():
-        sess_list.append({
-            "id": sid,
-            "alias": info.get("alias", sid),
-            "messages_count": info.get("messages_count", 0),
-            "updated_at": info.get("updated_at", "")
-        })
-    sess_list.sort(key=lambda x: x["updated_at"], reverse=True)
-    return sess_list
+    return manager.list_sessions()
 
 
 def get_session_history(session_id: str):

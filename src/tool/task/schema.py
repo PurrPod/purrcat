@@ -2,14 +2,14 @@ TASK_TOOL_SCHEMA = {
     "type": "function",
     "function": {
         "name": "Task",
-        "description": "统一任务操作工具，支持后台工作流任务的创建、终止和列表查询",
+        "description": "统一任务操作工具，支持后台工作流任务的创建、终止、列表查询，以及向任务注入外部指令",
         "parameters": {
             "type": "object",
             "properties": {
                 "action": {
                     "type": "string",
                     "description": "操作类型",
-                    "enum": ["add", "kill", "list"]
+                    "enum": ["add", "kill", "list", "submit_request"]
                 },
                 "name": {
                     "type": "string",
@@ -29,7 +29,15 @@ TASK_TOOL_SCHEMA = {
                 },
                 "task_id": {
                     "type": "string",
-                    "description": "任务ID（action=kill 时必填）"
+                    "description": "任务ID（action=kill 或 submit_request 时必填）"
+                },
+                "node_id": {
+                    "type": "string",
+                    "description": "节点ID（action=submit_request 时可选，如果不填则默认向所有节点广播指令）"
+                },
+                "content": {
+                    "type": "string",
+                    "description": "追加或提交的具体指令或内容（action=submit_request 时必填）"
                 }
             },
             "required": ["action"],

@@ -69,7 +69,7 @@ def get_skill_content(skill_name: str) -> str:
 
 
 def get_skill_info(skill_name: str) -> dict:
-    md_file = _find_skill_md_file(skill_name)
+    md_file, target_dir = _find_skill_md_file(skill_name)
     if not md_file.exists():
         return {}
 
