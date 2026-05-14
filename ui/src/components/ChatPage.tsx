@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Send, Cat, MessageSquarePlus, MessageSquare, Clock, Wrench, Package, ChevronDown, ChevronUp, Loader2, X, Trash2, Terminal } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
@@ -187,10 +188,13 @@ const ToolCallBubble = ({ tc }: { tc: any }) => {
 };
 
 export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => void, onSwitchToTask?: () => void }) {
+  const navigate = useNavigate();
+  const { sessionId } = useParams<{ sessionId: string }>();
+
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
   const [sessions, setSessions] = useState<Session[]>([]);
-  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(sessionId || null);
 
   const [showModal, setShowModal] = useState(false);
   const [newAlias, setNewAlias] = useState('');
@@ -232,6 +236,12 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   useEffect(() => { loadSessions(); }, []);
 
   useEffect(() => {
+    if (sessionId && sessionId !== currentSessionId) {
+      handleSelectSession(sessionId);
+    }
+  }, [sessionId]);
+
+  useEffect(() => {
     if (!currentSessionId) return;
     const interval = setInterval(async () => {
       try {
@@ -256,11 +266,12 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
     } catch (e) { toast.error('获取会话失败'); }
   };
 
-  const handleSelectSession = async (sessionId: string) => {
-    setCurrentSessionId(sessionId);
+  const handleSelectSession = async (id: string) => {
+    setCurrentSessionId(id);
+    navigate(`/chat/${id}`, { replace: true });
     isAutoScroll.current = true;
     try {
-      const res = await fetch(`http://localhost:8000/api/sessions/${sessionId}`);
+      const res = await fetch(`http://localhost:8000/api/sessions/${id}`);
       if (res.ok) {
         const history = await res.json();
         setMessages(history);

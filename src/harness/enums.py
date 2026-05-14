@@ -20,3 +20,5 @@ class LogType(str, Enum):
     ERROR = "error"
     WARNING = "warning"
     SYSTEM = "system"
+    TOOL_CALL = "tool_call"
+    TOOL = "tool"

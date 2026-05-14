@@ -2,10 +2,125 @@ import os
 import json
 import datetime
 import re
-from typing import Optional
+from typing import Optional, Dict, List, Any
 
 
 _task_log_cache = {}
+
+
+def get_task_log_structured(task_id: str, node_id: str = None, after_line: int = 0) -> Dict[str, Any]:
+    """
+    获取结构化的任务日志，支持按节点过滤和增量拉取
+    
+    Args:
+        task_id: 任务ID
+        node_id: 可选，节点ID过滤
+        after_line: 可选，返回此行数之后的日志（用于增量拉取）
+    
+    Returns:
+        {
+            "task_id": str,
+            "total_lines": int,
+            "logs": List[dict],
+            "grouped_logs": Dict[str, List[dict]]  # 按节点分组
+        }
+    """
+    from src.harness.process import TASK_INSTANCES
+    from src.utils.config import DATA_DIR
+
+    checkpoint_dir = None
+    
+    # 优先从运行中的任务实例获取
+    task_instance = TASK_INSTANCES.get(task_id)
+    if task_instance and hasattr(task_instance, 'checkpoint_dir'):
+        checkpoint_dir = task_instance.checkpoint_dir
+    else:
+        # 尝试从 checkpoint 目录查找
+        base_dir = os.path.join(DATA_DIR, "checkpoints", "task")
+        if os.path.isdir(base_dir):
+            for entry in os.listdir(base_dir):
+                if task_id in entry:
+                    checkpoint_dir = os.path.join(base_dir, entry)
+                    break
+
+    if not checkpoint_dir:
+        return {
+            "task_id": task_id,
+            "total_lines": 0,
+            "logs": [],
+            "grouped_logs": {}
+        }
+
+    log_path = os.path.join(checkpoint_dir, "log.jsonl")
+    if not os.path.exists(log_path):
+        return {
+            "task_id": task_id,
+            "total_lines": 0,
+            "logs": [],
+            "grouped_logs": {}
+        }
+
+    logs = []
+    grouped_logs = {}
+    
+    try:
+        with open(log_path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+        
+        total_lines = len(lines)
+        start_idx = max(0, after_line)
+        
+        for i, line in enumerate(lines[start_idx:], start=start_idx):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                entry = json.loads(line)
+                entry["_line"] = i  # 添加行号标记，用于增量拉取
+                
+                # 添加格式化的时间戳
+                timestamp = entry.get("timestamp", 0)
+                if timestamp:
+                    entry["_time"] = datetime.datetime.fromtimestamp(timestamp).strftime("%H:%M:%S")
+                else:
+                    entry["_time"] = "??:??:??"
+                
+                logs.append(entry)
+                
+                # 按节点分组
+                node_key = entry.get("node_id", "system")
+                if node_key not in grouped_logs:
+                    grouped_logs[node_key] = []
+                grouped_logs[node_key].append(entry)
+                
+            except json.JSONDecodeError:
+                continue
+
+    except Exception as e:
+        return {
+            "task_id": task_id,
+            "total_lines": 0,
+            "logs": [],
+            "grouped_logs": {},
+            "error": str(e)
+        }
+
+    # 如果指定了节点过滤
+    if node_id:
+        filtered_logs = grouped_logs.get(node_id, [])
+        return {
+            "task_id": task_id,
+            "total_lines": len(filtered_logs),
+            "logs": filtered_logs,
+            "grouped_logs": {node_id: filtered_logs}
+        }
+
+    return {
+        "task_id": task_id,
+        "total_lines": total_lines,
+        "logs": logs,
+        "grouped_logs": grouped_logs
+    }
 
 
 def clean_log_entry(entry: dict) -> str:

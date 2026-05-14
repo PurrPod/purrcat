@@ -4,7 +4,8 @@ import asyncio
 from typing import Dict, Any
 from src.harness.node.base import BaseNode
 from src.harness.utils.llm_helper import call_llm, inject_force_push
-from src.harness.utils.tool_helper import get_system_schema, extract_tool_calling, check_tool_call_completed
+from src.harness.utils.tool_helper import get_system_schema, extract_tool_calling
+from src.harness.enums import LogType, NodeState
 
 
 class Node(BaseNode):
@@ -33,42 +34,84 @@ class Node(BaseNode):
 
         try:
             while step < max_steps:
+                step += 1
+                self.log(context, LogType.SYSTEM, f"🔄 [循环步骤] 第 {step}/{max_steps} 步，上下文消息数: {len(messages)}，目标文件: {original_file_path}")
+
                 # 🌟 1. 每时每刻检查自身是否还是 RUNNING 状态
                 if not self.check_running_state(context):
-                    self.log(context, "SYSTEM", "⚠️ 节点状态已变更，退出当前执行循环。")
+                    self.log(context, LogType.SYSTEM, "⚠️ [循环退出] 节点状态已变更为非 running")
                     raise asyncio.CancelledError()
 
                 # 🌟 2. 安全的注入时机：循环开头！此时前置工具一定已经执行完毕。
                 dynamic_push = self.consume_pending_messages(context)
                 if dynamic_push:
-                    self.log(context, "SYSTEM", f"🔔 检测到新指令/级联影响，注入 {len(dynamic_push)} 条消息")
+                    self.log(context, LogType.SYSTEM, f"🔔 [指令注入] 检测到 {len(dynamic_push)} 条人类/级联干预")
+                    for idx, msg in enumerate(dynamic_push, 1):
+                        preview = msg[:50] + "..." if len(msg) > 50 else msg
+                        self.log(context, LogType.SYSTEM, f"   └─ 注入内容 {idx}: {preview}")
                     messages = inject_force_push(messages, dynamic_push)
 
                 # 3. 正常调用大模型
+                self.log(context, LogType.SYSTEM, "🧠 [LLM调用] 正在请求大模型...")
                 response, messages = await call_llm(
                     model=context.model,
                     messages=messages,
-                    tools=tools,
-                    node_log_func=self.log,
-                    context=context
+                    tools=tools
                 )
 
+                assistant_msg = response.choices[0].message
                 tool_calls = extract_tool_calling(response)
 
-                if not tool_calls:
+                # 记录模型思考内容
+                if assistant_msg.content:
+                    thought_preview = assistant_msg.content[:100] + "..." if len(assistant_msg.content) > 100 else assistant_msg.content
+                    self.log(context, LogType.SYSTEM, f"💭 [模型思考] {thought_preview}")
+
+                # 记录工具调用
+                if tool_calls:
+                    self.log(context, LogType.SYSTEM, f"🔧 [工具调用] 检测到 {len(tool_calls)} 个工具调用")
+                    for tc in tool_calls:
+                        args_preview = tc.function.arguments[:80] + "..." if len(tc.function.arguments) > 80 else tc.function.arguments
+                        self.log(context, LogType.SYSTEM, f"   └─ {tc.function.name}({args_preview})")
+                else:
+                    self.log(context, LogType.SYSTEM, "⚠️ [无工具调用] 模型未调用任何工具")
                     messages.append({"role": "user", "content": "检测到你没有调用任何工具，如已完成任务，请调用 task_done 总结该阶段任务"})
-                    step += 1
                     continue
 
                 # 🚨 修正：使用基类的工具路由分发方法
                 tool_messages = self.execute_tool_calling(tool_calls, context)
                 if tool_messages:
+                    self.log(context, LogType.SYSTEM, f"📦 [工具返回] 收到 {len(tool_messages)} 个工具执行结果")
                     messages.extend(tool_messages)
 
-                if check_tool_call_completed(tool_calls):
+                # 🌟 处理 yield_to_human 挂起逻辑
+                is_yield = any(tc.function.name == "yield_to_human" for tc in tool_calls)
+                if is_yield:
+                    self.log(context, LogType.SYSTEM, "⏸️ [节点挂起] 正在阻塞等待人类干预...")
+                    context.node_state[self.node_id] = NodeState.WAITING  # 修改节点状态
+
+                    # 真正的阻塞！只有等来了人类输入才跳出循环
+                    while True:
+                        await asyncio.sleep(2)  # 释放 CPU
+                        # 检查是否被强制终止
+                        if not self.check_running_state(context):
+                            self.log(context, LogType.SYSTEM, "⚠️ [循环退出] 节点状态已变更为非 running")
+                            raise asyncio.CancelledError()
+                        dynamic_push = self.consume_pending_messages(context)
+                        if dynamic_push:
+                            self.log(context, LogType.SYSTEM, f"▶️ [节点恢复] 收到指令，唤醒执行")
+                            messages = inject_force_push(messages, dynamic_push)
+                            context.node_state[self.node_id] = NodeState.RUNNING
+                            break
+                    continue  # 带着人类的新指令，进入下一轮 LLM 对话
+
+                # 🌟 限定在 task_done 上才进行任务完成校验
+                is_done = any(tc.function.name == "task_done" for tc in tool_calls)
+                if is_done:
                     if self._check_file_exist(check_file_path):
+                        self.log(context, LogType.SYSTEM, f"✅ [文件验证] 目标文件已存在: {original_file_path}")
                         messages.append({"role": "user", "content": f"✅ 检测到你调用了 task_done，目标文件 {original_file_path} 已成功生成，任务完成！"})
-                        summary = "任务完成"
+                        summary = assistant_msg.content or "任务完成"
                         for tc in tool_calls:
                             if tc.function.name == "task_done":
                                 try:
@@ -76,24 +119,23 @@ class Node(BaseNode):
                                     summary = args.get("summary", summary)
                                 except:
                                     pass
+                        self.log(context, LogType.SYSTEM, f"✅ [任务完成] 总结: {summary[:100]}..." if len(summary) > 100 else f"✅ [任务完成] 总结: {summary}")
                         return {
                             "messages": messages,
                             "summary": summary
                         }
                     else:
+                        self.log(context, LogType.SYSTEM, f"⚠️ [文件缺失] 目标文件未生成: {original_file_path}，要求重新生成")
                         full_msg = f"未检测到沙盒文件：{original_file_path}。请检查是否生成在了其他路径，并及时生成目标文件。如果你实在无法完成任务，请使用yield_to_human工具直接挂起任务，这是被允许的！"
                         messages.append({"role": "user", "content": full_msg})
-                        step += 1
                         continue
 
-                step += 1
-
         except asyncio.CancelledError:
-            self.log(context, "SYSTEM", "🛑 节点执行被外部强行打断！")
+            self.log(context, LogType.SYSTEM, "🛑 [节点中断] 引擎强行打断当前协程")
             raise
 
         except Exception as e:
-            self.log(context, "ERROR", f"❌ 运行发生异常: {e}")
+            self.log(context, LogType.ERROR, f"❌ [循环异常] {e}")
             raise
 
         if step >= max_steps:

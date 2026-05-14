@@ -14,7 +14,7 @@
   @apply rounded-2xl shadow-soft transition-all duration-300;
 }
 .react-flow__node.selected {
-  @apply shadow-soft-hover ring-2 ring-terracotta ring-offset-4 ring-offset-cream border-transparent;
+  @apply shadow-soft-hover border-transparent;
 }
 .react-flow__node.dragging {
   transition: none !important;

@@ -1,6 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useEffect } from 'react';
+import { BrowserRouter, Routes, Route, useNavigate, useParams } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { ReactFlowProvider } from '@xyflow/react';
+
 import HomePage from './components/HomePage';
 import Toolbar from './components/Toolbar';
 import NodePanel from './components/NodePanel';
@@ -9,6 +11,7 @@ import ChatPage from './components/ChatPage';
 import TaskPage from './components/TaskPage';
 import { useFlowStore } from './store/flowStore';
 
+// 保留你原本的本地 fallback 逻辑
 const nodeModules = import.meta.glob('../node_json/*.json', { eager: true });
 
 function initializeCatalog() {
@@ -16,6 +19,7 @@ function initializeCatalog() {
   Object.values(nodeModules).forEach((mod: any) => {
     const nodeDef = mod.default || mod;
     if (nodeDef && nodeDef.type && nodeDef.name) {
+      // @ts-ignore
       store.addCatalogItem({
         type: nodeDef.type,
         name: nodeDef.name,
@@ -29,8 +33,6 @@ function initializeCatalog() {
     }
   });
 }
-
-type ViewState = 'home' | 'chat' | 'editor' | 'task';
 
 const sketchyShape1 = { borderRadius: '255px 15px 225px 15px/15px 225px 15px 255px' };
 const sketchyShape2 = { borderRadius: '15px 225px 15px 255px/255px 15px 225px 15px' };
@@ -75,57 +77,51 @@ const GlobalSketchyOverrides = () => (
   `}} />
 );
 
-function App() {
-  const [currentView, setCurrentView] = useState<ViewState>('home');
+// 将编辑器独立为一个路由组件
+const EditorView = () => {
+  const navigate = useNavigate();
 
   useEffect(() => {
-    if (currentView === 'editor') {
-      initializeCatalog();
-    }
-  }, [currentView]);
+    initializeCatalog();
+  }, []);
 
   return (
-    <>
-      {currentView === 'home' && <HomePage onEnterChat={() => setCurrentView('chat')} onEnterEditor={() => setCurrentView('editor')} />}
-      {currentView === 'chat' && <ChatPage onBack={() => setCurrentView('home')} onSwitchToTask={() => setCurrentView('task')} />}
-
-      {currentView === 'editor' && (
-        // 桌布：加大 padding，扩大元素呼吸感
-        <div className="absolute inset-0 bg-[#fdfaf5] bg-[radial-gradient(#1a1a1a_1px,transparent_1px)] [background-size:24px_24px] p-8 flex flex-col gap-8 overflow-hidden">
-          <GlobalSketchyOverrides />
-
-          {/* 顶栏彻底变成悬浮的两片纸 */}
-          <Toolbar onBack={() => setCurrentView('home')} />
-          
-          {/* 画布和左侧栏容器，同样拉大间距 */}
-          <div className="flex-1 flex gap-10 min-h-0 relative z-10 w-full max-w-[1920px] mx-auto">
-            <ReactFlowProvider>
-              
-              {/* 左侧节点列表（去掉了它本身的背景边框，变成纯粹装贴纸的容器） */}
-              <div className="w-[340px] flex flex-col relative z-20 h-full overflow-y-auto pr-4">
-                 <NodePanel />
-              </div>
-
-              {/* 右侧大画板 */}
-              <div 
-                style={sketchyShape1}
-                className="flex-1 bg-paper border-4 border-ink shadow-[16px_16px_0px_0px_rgba(26,26,26,1)] relative overflow-hidden z-10 flex flex-col rotate-[0.5deg]"
-              >
-                <div className="absolute -top-6 left-20 w-40 h-10 bg-[#EBCB8B]/80 border-4 border-ink -rotate-2 z-50 pointer-events-none" style={sketchyShape2}></div>
-                
-                <div className="flex-1 w-full h-full">
-                  <FlowCanvas />
-                </div>
-              </div>
-
-            </ReactFlowProvider>
+    <div className="absolute inset-0 bg-[#fdfaf5] bg-[radial-gradient(#1a1a1a_1px,transparent_1px)] [background-size:24px_24px] p-8 flex flex-col gap-8 overflow-hidden">
+      <GlobalSketchyOverrides />
+      <Toolbar onBack={() => navigate('/')} />
+      <div className="flex-1 flex gap-10 min-h-0 relative z-10 w-full max-w-[1920px] mx-auto">
+        <ReactFlowProvider>
+          <div className="w-[340px] flex flex-col relative z-20 h-full overflow-y-auto pr-4">
+            <NodePanel />
           </div>
-        </div>
-      )}
+          <div style={sketchyShape1} className="flex-1 bg-paper border-4 border-ink shadow-[16px_16px_0px_0px_rgba(26,26,26,1)] relative overflow-hidden z-10 flex flex-col rotate-[0.5deg]">
+            <div className="absolute -top-6 left-20 w-40 h-10 bg-[#EBCB8B]/80 border-4 border-ink -rotate-2 z-50 pointer-events-none" style={sketchyShape2}></div>
+            <div className="flex-1 w-full h-full">
+              <FlowCanvas />
+            </div>
+          </div>
+        </ReactFlowProvider>
+      </div>
+    </div>
+  );
+};
 
-      {currentView === 'task' && (
-        <TaskPage onBack={() => setCurrentView('home')} onSwitchToChat={() => setCurrentView('chat')} />
-      )}
+export default function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        {/* 首页 */}
+        <Route path="/" element={<HomeRouteWrapper />} />
+
+        {/* 聊天页：支持可选的 session_id 参数 */}
+        <Route path="/chat/:sessionId?" element={<ChatRouteWrapper />} />
+
+        {/* 任务页 */}
+        <Route path="/task" element={<TaskRouteWrapper />} />
+
+        {/* 编辑器页 */}
+        <Route path="/editor" element={<EditorView />} />
+      </Routes>
 
       <Toaster
         position="top-right"
@@ -143,8 +139,22 @@ function App() {
           },
         }}
       />
-    </>
+    </BrowserRouter>
   );
 }
 
-export default App;
+// 辅助包装组件，用于传递 navigate 函数给原子组件
+function HomeRouteWrapper() {
+  const navigate = useNavigate();
+  return <HomePage onEnterChat={() => navigate('/chat')} onEnterEditor={() => navigate('/editor')} />;
+}
+
+function ChatRouteWrapper() {
+  const navigate = useNavigate();
+  return <ChatPage onBack={() => navigate('/')} onSwitchToTask={() => navigate('/task')} />;
+}
+
+function TaskRouteWrapper() {
+  const navigate = useNavigate();
+  return <TaskPage onBack={() => navigate('/')} onSwitchToChat={() => navigate('/chat')} />;
+}

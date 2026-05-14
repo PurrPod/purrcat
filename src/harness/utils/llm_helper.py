@@ -11,7 +11,7 @@ import copy
 from typing import Any, List, Dict
 
 
-async def call_llm(model, messages: List[dict], tools: List[dict] = None, node_log_func=None, context=None) -> tuple:
+async def call_llm(model, messages: List[dict], tools: List[dict] = None) -> tuple:
     """
     调用大模型并返回响应和更新后的消息列表
     
@@ -19,8 +19,6 @@ async def call_llm(model, messages: List[dict], tools: List[dict] = None, node_l
         model: 模型实例
         messages: 消息列表（会被深拷贝，不会污染原列表）
         tools: 工具列表
-        node_log_func: 日志记录函数
-        context: 上下文对象
         
     Returns:
         (response, updated_messages): 响应对象和更新后的消息列表
@@ -28,24 +26,12 @@ async def call_llm(model, messages: List[dict], tools: List[dict] = None, node_l
     # 深拷贝避免污染上游节点数据
     messages_copy = copy.deepcopy(messages)
     
-    if node_log_func and context:
-        node_log_func(context, "SYSTEM", f"🚀 开始执行大模型请求，当前消息数: {len(messages_copy)}")
+    # 使用 asyncio.to_thread 避免阻塞事件循环
+    response = await asyncio.to_thread(model.chat, messages=messages_copy, tools=tools or [])
+    assistant_msg = response.choices[0].message
+    messages_copy.append(assistant_msg.model_dump(exclude_none=True))
     
-    try:
-        # 使用 asyncio.to_thread 避免阻塞事件循环
-        response = await asyncio.to_thread(model.chat, messages=messages_copy, tools=tools or [])
-        assistant_msg = response.choices[0].message
-        messages_copy.append(assistant_msg.model_dump(exclude_none=True))
-        
-        if node_log_func and context:
-            node_log_func(context, "THOUGHT", f"模型思考结果：{assistant_msg.content}")
-        
-        return response, messages_copy
-    
-    except Exception as e:
-        if node_log_func and context:
-            node_log_func(context, "ERROR", f"❌ 大模型调用崩溃: {e}")
-        raise e
+    return response, messages_copy
 
 
 def inject_force_push(messages: List[dict], force_push_msgs: List[str]) -> List[dict]:

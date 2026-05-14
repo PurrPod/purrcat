@@ -108,8 +108,8 @@ class Task:
         missing_keys = [k for k in required_inputs.keys() if k not in self.inputs or self.inputs[k] is None]
 
         if missing_keys:
-            error_msg = f"工作流 '{self.graph_name}' 拒绝启动：缺少顶层必填参数 {missing_keys}"
-            print(f"❌ {error_msg}")
+            error_msg = f"❌ [拒绝启动] 缺失必填参数: {missing_keys}"
+            self.log_and_notify(LogType.ERROR, error_msg)
             self.state = TaskState.ERROR
             self.error_message = error_msg
             return
@@ -123,7 +123,7 @@ class Task:
                 self.node_list[node_id] = module.Node(node_id=node_id, config=config)
                 self.node_state[node_id] = NodeState.READY
             except Exception as e:
-                print(f"❌ 加载节点模块失败 {node_type}: {e}")
+                self.log_and_notify(LogType.ERROR, f"❌ [节点加载失败] {node_type}: {e}")
                 self.state = TaskState.ERROR
                 self.error_message = f"节点加载失败: {e}"
 
@@ -179,7 +179,7 @@ class Task:
                             else:
                                 task_to_cancel.cancel()
                             self.running_tasks.pop(task_to_cancel)
-                            print(f"🛑 级联效应：已强行中断下游节点 [{target_id}]")
+                            self.log_and_notify(LogType.SYSTEM, f"🛑 [级联中断] 下游节点: {target_id}")
 
                         # 3. 给下游节点注入级联通知
                         with self._lock:
@@ -209,7 +209,7 @@ class Task:
         try:
             while True:
                 if self._killed:
-                    print(f"⏹️ 任务 {self.task_id} 被强制终止，正在取消所有协程...")
+                    self.log_and_notify(LogType.SYSTEM, f"⏹️ [任务强杀] {self.task_id} 正在取消所有协程...")
                     self._cancel_all_tasks(self.running_tasks)
                     self.state = TaskState.KILLED
                     break
@@ -228,14 +228,14 @@ class Task:
                         task = asyncio.create_task(node_instance.execute(inputs, force_push_msgs, context=self))
                         self.running_tasks[task] = node_id
 
-                        print(f"🚀 触发节点执行: {node_id} (当前并发数: {len(self.running_tasks)})")
+                        self.log_and_notify(LogType.SYSTEM, f"🚀 [节点启动] {node_id} (并发: {len(self.running_tasks)})")
 
                 if not self.running_tasks:
                     if all(s == NodeState.COMPLETED for s in self.node_state.values()):
-                        print("✅ 所有节点执行完毕，任务完成。")
+                        self.log_and_notify(LogType.SYSTEM, "✅ [任务完成] 所有节点已就绪。")
                         self.state = TaskState.COMPLETED
                     else:
-                        print("⏸️ 任务挂起：存在 ERROR 节点或需要人类干预，引擎进入休眠。")
+                        self.log_and_notify(LogType.SYSTEM, "⏸️ [任务挂起] 存在异常或等待人工干预。")
                         self.state = TaskState.INTERRUPTED
                     break
 
@@ -249,7 +249,7 @@ class Task:
                     continue
 
                 if self._killed:
-                    print(f"⏹️ 任务 {self.task_id} 被强制终止，正在取消剩余协程...")
+                    self.log_and_notify(LogType.SYSTEM, f"⏹️ [任务强杀] {self.task_id} 正在取消所有协程...")
                     self._cancel_all_tasks(self.running_tasks)
                     self.state = TaskState.KILLED
                     break
@@ -264,12 +264,12 @@ class Task:
                             if self.node_state[node_id] != NodeState.WAITING:
                                 self.node_state[node_id] = NodeState.COMPLETED
                                 self.node_list[node_id].outputs = result
-                                print(f"🟢 节点 {node_id} 结算完成，释放下游。")
+                                self.log_and_notify(LogType.SYSTEM, f"🟢 [节点完成] {node_id}")
                         except asyncio.CancelledError:
-                            print(f"🛑 节点 {node_id} 已被强行中断。")
+                            self.log_and_notify(LogType.SYSTEM, f"🛑 [节点中断] {node_id}")
                         except Exception as e:
                             self.node_state[node_id] = NodeState.ERROR
-                            print(f"❌ 节点 {node_id} 执行崩溃: {e}")
+                            self.log_and_notify(LogType.ERROR, f"❌ [节点异常] {node_id} -> {e}")
 
                 self.save_checkpoints()
         finally:
@@ -288,7 +288,7 @@ class Task:
         for task in running_tasks.keys():
             if not task.done():
                 task.cancel()
-        print(f"✅ 已取消 {len(running_tasks)} 个正在运行的协程")
+        self.log_and_notify(LogType.SYSTEM, f"✅ [协程清理] 已取消 {len(running_tasks)} 个运行中任务")
 
     def _get_runnable_nodes(self) -> List[str]:
         runnable = []
@@ -321,7 +321,7 @@ class Task:
     def _cleanup_resources(self):
         try:
             close_session(session_id=self.task_id)
-            self.log_and_notify(LogType.SYSTEM, "🧹 已自动回收任务专属的 Shell 终端环境")
+            self.log_and_notify(LogType.SYSTEM, "🧹 [资源回收] Task专属Shell终端已释放")
         except Exception as e:
             self.log_and_notify(LogType.SYSTEM, f"⚠️ 自动回收 Shell 失败: {e}")
 
@@ -329,9 +329,9 @@ class Task:
         log_dir = self.checkpoint_dir
         os.makedirs(log_dir, exist_ok=True)
         log_data = {
-            "timestamp": time.time(),
-            "type": log_type,
             "content": content,
+            "timestamp": time.time(),
+            "type": log_type
         }
         if node_id:
             log_data["node_id"] = node_id
@@ -363,7 +363,7 @@ class Task:
                             except json.JSONDecodeError:
                                 continue
         except Exception as e:
-            print(f"读取任务 {self.task_id} 的日志失败: {e}")
+            self.log_and_notify(LogType.ERROR, f"❌ [日志读取失败] 任务 {self.task_id}: {e}")
 
         return logs
 

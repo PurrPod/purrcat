@@ -7,6 +7,7 @@ import asyncio
 from typing import Dict, Any, List
 from json_repair import repair_json
 from src.harness.utils.tool_helper import execute_global_tool
+from src.harness.enums import LogType
 
 
 def _format_result(result_data) -> str:
@@ -121,12 +122,12 @@ class BaseNode:
                 if action == "list":
                     if not local_schemas:
                         msg = "当前节点暂未挂载任何拓展业务工具。"
-                        self.log(context, "SYSTEM", f"📦 大模型查询工具列表，结果为空")
+                        self.log(context, LogType.SYSTEM, "📦 [查询工具] 当前无可用拓展工具")
                     else:
                         # 把所有私有工具的 Schema 平铺成易读的文本返回给它
                         schema_list_str = json.dumps([s["function"] for s in local_schemas], ensure_ascii=False, indent=2)
                         msg = f"当前可用的拓展业务工具有以下几种，请参考其参数格式并在下一步调用：\n{schema_list_str}"
-                        self.log(context, "SYSTEM", f"📦 吐出 {len(local_schemas)} 个拓展工具给大模型")
+                        self.log(context, LogType.SYSTEM, f"📦 [查询工具] 吐出 {len(local_schemas)} 个拓展工具")
                     
                     final_content = _format_result({"available_tools": msg})
 
@@ -137,13 +138,14 @@ class BaseNode:
                     
                     if not target_tool_name or target_tool_name not in local_registry:
                         available_names = list(local_registry.keys())
-                        error_msg = f"❌ 找不到拓展工具 '{target_tool_name}'。请先使用 action='list' 查询可用的工具列表。"
-                        self.log(context, "WARNING", error_msg)
+                        error_msg = f"⚠️ [工具缺失] 未找到 '{target_tool_name}'"
+                        self.log(context, LogType.WARNING, error_msg)
                         final_content = _format_result({"error": error_msg})
                     else:
                         try:
                             args_str = ", ".join([f"{k}={repr(v)}" for k, v in target_arguments.items()])
-                            self.log(context, "TOOL_CALL", f"🔧 [拓展工具] {target_tool_name}({args_str})")
+                            if len(args_str) > 100: args_str = args_str[:97] + "..."
+                            self.log(context, LogType.TOOL_CALL, f"🔧 [拓展工具] {target_tool_name}({args_str})")
                             
                             ToolClass = local_registry[target_tool_name]
                             tool_instance = ToolClass(context=context)
@@ -151,25 +153,25 @@ class BaseNode:
                             final_content = _format_result(raw_result)
                             
                         except Exception as e:
-                            target_schema = next((s for s in local_schemas if s["function"]["name"] == target_tool_name), {})
-                            schema_text = json.dumps(target_schema.get("function", {}).get("parameters", {}), ensure_ascii=False, indent=2)
-                            error_msg = f"❌ 参数错误或执行异常: {str(e)}\n请严格参考规范重新提供 tool_args:\n{schema_text}"
-                            self.log(context, "ERROR", error_msg)
+                            error_msg = f"❌ [工具异常] {target_tool_name} 执行失败: {str(e)}"
+                            self.log(context, LogType.ERROR, error_msg)
                             final_content = _format_result({"error": error_msg})
 
             else:
                 # 👉 路由到全局基础工具 (task_done, bash, yield_to_human 等)
                 try:
                     args_str = ", ".join([f"{k}={repr(v)}" for k, v in arguments.items()])
-                    self.log(context, "TOOL_CALL", f"🔧 [全局核心工具] {original_tool_name}({args_str})")
+                    if len(args_str) > 100: args_str = args_str[:97] + "..."
+                    self.log(context, LogType.TOOL_CALL, f"🔧 [全局工具] {original_tool_name}({args_str})")
                     
                     raw_result = execute_global_tool(original_tool_name, arguments, context=context)
                     final_content = _format_result(raw_result)
                     
-                    self.log(context, "TOOL", f"📦 核心工具回传结果: {final_content}")
+                    result_preview = str(final_content)[:50].replace('\n', ' ')
+                    self.log(context, LogType.TOOL, f"📦 [工具返回] {original_tool_name} -> {result_preview}...")
                 except Exception as e:
-                    error_msg = f"❌ 核心工具执行崩溃: {e}"
-                    self.log(context, "ERROR", error_msg)
+                    error_msg = f"❌ [工具崩溃] {original_tool_name}: {e}"
+                    self.log(context, LogType.ERROR, error_msg)
                     final_content = _format_result({"error": error_msg})
             # 装填并返回结果
             tool_messages.append({

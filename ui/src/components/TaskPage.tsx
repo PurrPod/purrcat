@@ -1,33 +1,43 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
-  ArrowLeft, Terminal, Trash2, X, Activity, Clock, Box
+  ArrowLeft, Terminal, Trash2, X, Activity, Clock, Box, ChevronDown, Send
 } from 'lucide-react';
 import { ReactFlow, Background, useNodesState, useEdgesState, Handle, Position } from '@xyflow/react';
-import '@xyflow/react/dist/style.css'; // 🔴 修复1：必须引入 React Flow 的核心样式
+import '@xyflow/react/dist/style.css';
 import { toast } from 'react-hot-toast';
 
-// --- 风格常量 (完全同步 ChatPage) ---
+// --- 风格常量 ---
 const sketchyShape1 = { borderRadius: '255px 15px 225px 15px/15px 225px 15px 255px' };
 const sketchyShape2 = { borderRadius: '15px 225px 15px 255px/255px 15px 225px 15px' };
-const sketchyShape3 = { borderRadius: '225px 15px 255px 15px/15px 255px 15px 225px' };
+const sketchyShape3 = { borderRadius: '225px 15px 225px 15px/15px 255px 15px 225px' };
 
 interface Task {
   id: string;
   name: string;
-  graph_name?: string; // 🔴 接收真实的图谱文件名
+  graph_name?: string;
   expert_type?: string;
   state: 'running' | 'completed' | 'failed' | 'idle';
   step: number;
   create_time: string;
 }
 
-// 🟢 自定义任务节点 (带查看日志按钮)
-const TaskMonitorNode = ({ id, data }: any) => {
+interface LogEntry {
+  timestamp: number;
+  type: string;
+  content: string;
+  node_id?: string;
+  [key: string]: any;
+}
+
+// 🟢 1. 修复节点高亮：增加 selected 属性支持，对齐 Editor 样式
+const TaskMonitorNode = ({ id, data, selected }: any) => {
   return (
     <div 
       style={data.shape} 
-      className={`bg-paper border-4 border-ink p-4 min-w-[200px] transition-transform duration-200 hover:-translate-y-1 
-        ${data.isRunning ? 'shadow-[8px_8px_0px_0px_rgba(212,122,90,1)] border-terracotta' : 'shadow-[6px_6px_0px_0px_rgba(26,26,26,1)]'}`}
+      className={`bg-paper p-4 min-w-[200px] transition-all duration-200 hover:-translate-y-1 border-4 border-ink
+        ${selected ? 'shadow-[8px_8px_0px_0px_rgba(212,122,90,1)]' : 
+          data.isRunning ? 'shadow-[6px_6px_0px_0px_rgba(212,122,90,1)]' : 
+          'shadow-[6px_6px_0px_0px_rgba(26,26,26,1)]'}`}
     >
       <div className="flex items-center gap-3 mb-3 border-b-2 border-ink/10 pb-2">
         <div className={`w-4 h-4 border-2 border-ink -rotate-3 ${data.isRunning ? 'bg-terracotta animate-pulse' : 'bg-[#EBCB8B]'}`}></div>
@@ -44,9 +54,9 @@ const TaskMonitorNode = ({ id, data }: any) => {
         <Terminal size={16} strokeWidth={3} /> View Logs
       </button>
 
-      {/* 隐形 Handle 用于连线 */}
-      <Handle type="target" position={Position.Left} className="!bg-ink !w-3 !h-3 !-left-[18px] !border-2 !border-paper" />
-      <Handle type="source" position={Position.Right} className="!bg-ink !w-3 !h-3 !-right-[18px] !border-2 !border-paper" />
+      {/* 隐形连接点 */}
+      <Handle type="target" position={Position.Left} className="!bg-ink !w-3 !h-3 !-left-[18px] !border-2 !border-paper opacity-0" />
+      <Handle type="source" position={Position.Right} className="!bg-ink !w-3 !h-3 !-right-[18px] !border-2 !border-paper opacity-0" />
     </div>
   );
 };
@@ -54,20 +64,25 @@ const TaskMonitorNode = ({ id, data }: any) => {
 export default function TaskPage({ onBack }: { onBack: () => void }) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
-  const [logs, setLogs] = useState<string>('');
   
-  // 弹窗状态
+  const [currentNodeLogs, setCurrentNodeLogs] = useState<LogEntry[]>([]);
+  
+  // 🟢 2. 增加智能滚动 Refs
+  const logsContainerRef = useRef<HTMLDivElement>(null);
+  const logEndRef = useRef<HTMLDivElement>(null);
+  const isAutoScroll = useRef(true);
+  
   const [taskToDelete, setTaskToDelete] = useState<string | null>(null);
   const [logModalNodeId, setLogModalNodeId] = useState<string | null>(null);
 
-  // React Flow 状态
+  // 🟢 3. 增加精准制导输入框状态
+  const [pushMessage, setPushMessage] = useState('');
+
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
 
-  // 注册自定义节点
   const nodeTypes = useMemo(() => ({ custom: TaskMonitorNode }), []);
 
-  // 1. 获取任务列表
   const loadTasks = async () => {
     try {
       const res = await fetch('http://localhost:8000/api/tasks');
@@ -81,30 +96,28 @@ export default function TaskPage({ onBack }: { onBack: () => void }) {
     return () => clearInterval(interval);
   }, []);
 
-  // 2. 选择任务：加载图谱定义和日志
   const handleSelectTask = async (task: Task) => {
     setSelectedTaskId(task.id);
-    setNodes([]); // 切换任务时先清空画板
+    setNodes([]);
     setEdges([]);
+    setCurrentNodeLogs([]);
     
     try {
-      // 🔴 修复：使用后端传来的真实图谱文件名去请求 (兜底使用 default)
       const targetGraph = task.graph_name || 'default';
       const gRes = await fetch(`http://localhost:8000/api/graphs/${targetGraph}`);
 
       if (gRes.ok) {
         const graph = await gRes.json();
         
-        // 解析节点并绑定 onShowLog 回调
         const flowNodes = graph.nodes.map((n: any, idx: number) => ({
           id: n.id,
           type: 'custom',
-          position: { x: 100 + (idx % 3) * 280, y: 100 + Math.floor(idx / 3) * 180 },
+          position: n.position || { x: 100 + (idx % 3) * 280, y: 100 + Math.floor(idx / 3) * 180 },
           data: { 
             label: n.data?.name || n.id,
             shape: idx % 2 === 0 ? sketchyShape1 : sketchyShape2,
             isRunning: task.state === 'running',
-            onShowLog: (nodeId: string) => setLogModalNodeId(nodeId) // 点击触发弹窗
+            onShowLog: (nodeId: string) => setLogModalNodeId(nodeId)
           }
         }));
         
@@ -124,20 +137,58 @@ export default function TaskPage({ onBack }: { onBack: () => void }) {
     } catch (e) {
       toast.error(`加载图谱失败`);
     }
-
-    // 获取完整日志缓存到内存
-    loadLogs(task.id);
   };
 
-  const loadLogs = async (tid: string) => {
-    const lRes = await fetch(`http://localhost:8000/api/tasks/${tid}/log`);
-    if (lRes.ok) {
-      const data = await lRes.json();
-      setLogs(data.log);
+  useEffect(() => {
+    if (!selectedTaskId || !logModalNodeId) return;
+
+    const fetchNodeLogs = async () => {
+      try {
+        const res = await fetch(`http://localhost:8000/api/tasks/${selectedTaskId}/log`);
+        if (res.ok) {
+          const data = await res.json();
+          const targetLogs = data.grouped_logs[logModalNodeId] || [];
+          setCurrentNodeLogs(targetLogs);
+        }
+      } catch (e) { /* ignore */ }
+    };
+
+    fetchNodeLogs();
+    const interval = setInterval(fetchNodeLogs, 1500);
+    return () => clearInterval(interval);
+  }, [selectedTaskId, logModalNodeId]);
+
+  // 🟢 4. 智能滚动处理逻辑
+  const handleLogScroll = () => {
+    if (!logsContainerRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = logsContainerRef.current;
+    isAutoScroll.current = scrollHeight - scrollTop - clientHeight < 50;
+  };
+
+  useEffect(() => {
+    if (isAutoScroll.current && logModalNodeId && logEndRef.current) {
+      logEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
+  }, [currentNodeLogs, logModalNodeId]);
+
+  // 🟢 5. 发送指令方法
+  const handleForcePush = async () => {
+    if (!pushMessage.trim() || !selectedTaskId) return;
+    const msg = pushMessage.trim();
+    setPushMessage('');
+    isAutoScroll.current = true; // 发送指令后强制滚到底部以便查看结果
+
+    try {
+      const res = await fetch(`http://localhost:8000/api/tasks/${selectedTaskId}/push`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: msg, node_id: logModalNodeId })
+      });
+      if (res.ok) toast.success(`已向节点 [${logModalNodeId}] 发送指令`);
+      else toast.error('任务可能已结束，注入失败');
+    } catch (e) { toast.error('网络错误'); }
   };
 
-  // 3. 删除任务逻辑 (物理删除后端)
   const confirmDeleteTask = async () => {
     if (!taskToDelete) return;
     try {
@@ -155,18 +206,13 @@ export default function TaskPage({ onBack }: { onBack: () => void }) {
     } catch (e) { toast.error("操作失败，请检查网络"); }
   };
 
-  // 提取选中节点的专属日志
-  const filteredLogs = logModalNodeId 
-    ? logs.split('\n').filter(line => line.includes(logModalNodeId)).join('\n')
-    : '';
-
   return (
     <div className="absolute inset-0 bg-[#fdfaf5] bg-[radial-gradient(#1a1a1a_1px,transparent_1px)] [background-size:24px_24px] p-6 md:p-8 flex gap-6 overflow-hidden font-sans">
       
-      {/* 🔴 悬浮日志弹窗 (手绘风格) */}
+      {/* 悬浮日志弹窗 */}
       {logModalNodeId && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-ink/50 backdrop-blur-sm p-4 pointer-events-auto">
-          <div style={sketchyShape2} className="bg-paper border-4 border-ink shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] w-full max-w-5xl h-[80vh] flex flex-col relative rotate-[0.5deg]">
+          <div style={sketchyShape2} className="bg-paper border-4 border-ink shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] w-full max-w-5xl h-[85vh] flex flex-col relative rotate-[0.5deg]">
             <button onClick={() => setLogModalNodeId(null)} className="absolute top-5 right-6 hover:rotate-90 hover:text-terracotta transition-all z-10">
               <X size={36} strokeWidth={3} />
             </button>
@@ -183,19 +229,69 @@ export default function TaskPage({ onBack }: { onBack: () => void }) {
                </div>
             </div>
             
-            <div className="flex-1 overflow-y-auto p-8 bg-ink/5 font-mono text-[14px] text-ink whitespace-pre-wrap leading-relaxed shadow-[inset_0px_4px_10px_rgba(0,0,0,0.05)]">
-               {filteredLogs || (
-                 <div className="flex flex-col items-center justify-center h-full opacity-40 gap-4">
+            {/* 🔴 日志列表容器增加 ref 和 onScroll 监听 */}
+            <div 
+              ref={logsContainerRef}
+              onScroll={handleLogScroll}
+              className="flex-1 overflow-y-auto p-8 bg-ink/5 font-mono text-[14px] leading-relaxed shadow-[inset_0px_4px_10px_rgba(0,0,0,0.05)]"
+            >
+               {currentNodeLogs.length === 0 ? (
+                 <div className="flex flex-col items-center justify-center h-full opacity-40 gap-4 text-ink">
                    <Box size={64} strokeWidth={1.5} />
                    <p className="text-xl font-bold font-sans">No execution logs found for this node yet.</p>
                  </div>
+               ) : (
+                 <div className="flex flex-col gap-2">
+                   {currentNodeLogs.map((log, idx) => {
+                     const timeStr = new Date(log.timestamp * 1000).toLocaleTimeString('en-US', { hour12: false });
+                     let colorClass = "text-ink/80"; 
+                     if (log.type === "SYSTEM") colorClass = "text-ink/50";
+                     if (log.type === "THOUGHT") colorClass = "text-[#3498DB] font-bold";
+                     if (log.type === "TOOL_CALL") colorClass = "text-[#EBCB8B] font-bold";
+                     if (log.type === "TOOL") colorClass = "text-[#a3be8c]";
+                     if (log.type === "ERROR") colorClass = "text-[#bf616a] font-black";
+                     if (log.type === "WARNING") colorClass = "text-[#d08770] font-bold";
+
+                     return (
+                       <div key={idx} className="flex gap-4 hover:bg-ink/5 p-1 rounded transition-colors break-all">
+                         <span className="opacity-40 shrink-0 select-none">[{timeStr}]</span>
+                         <span className={`shrink-0 w-24 select-none ${colorClass}`}>[{log.type}]</span>
+                         <span className={`whitespace-pre-wrap ${colorClass}`}>
+                           {log.content}
+                         </span>
+                       </div>
+                     );
+                   })}
+                   {/* 自动滚动锚点 */}
+                   <div ref={logEndRef} className="h-4" />
+                 </div>
                )}
+            </div>
+            
+            {/* 🔴 6. 新版日志弹窗底部：输入框替代了“滚动到底部”按钮 */}
+            <div className="p-6 border-t-4 border-ink bg-paper shrink-0 flex gap-4">
+              <input
+                style={sketchyShape3} 
+                value={pushMessage} 
+                onChange={(e) => setPushMessage(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleForcePush(); }}
+                placeholder={`向 ${logModalNodeId} 节点发送精确指令...`} 
+                className="flex-1 bg-[#FDF8F0] border-4 border-ink px-6 py-4 font-bold focus:outline-none focus:bg-white transition-all shadow-[inset_4px_4px_0px_0px_rgba(26,26,26,0.05)] text-lg -rotate-[0.5deg] placeholder:text-ink/30"
+              />
+              <button
+                style={sketchyShape1} 
+                onClick={handleForcePush} 
+                disabled={!pushMessage.trim()}
+                className="bg-ink text-paper px-8 font-black flex items-center gap-3 border-4 border-ink hover:bg-terracotta hover:text-ink transition-all active:scale-95 disabled:opacity-50 shadow-[6px_6px_0px_0px_rgba(212,122,90,1)] hover:shadow-[6px_6px_0px_0px_rgba(26,26,26,1)] rotate-2"
+              >
+                <Send size={26} strokeWidth={2.5} />
+              </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* 🔴 删除确认弹窗 */}
+      {/* 删除确认弹窗 */}
       {taskToDelete && (
         <div className="fixed inset-0 bg-ink/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
           <div style={sketchyShape2} className="bg-paper border-4 border-ink p-8 flex flex-col gap-6 shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] -rotate-1 max-w-sm w-full">
@@ -212,7 +308,7 @@ export default function TaskPage({ onBack }: { onBack: () => void }) {
         </div>
       )}
 
-      {/* --- 左侧导航与任务列表 (与 ChatPage 对齐) --- */}
+      {/* 左侧导航与任务列表 */}
       <div className="w-[320px] flex flex-col gap-6 shrink-0 z-20">
         <div className="flex gap-4 items-center">
           <button onClick={onBack} style={sketchyShape2} className="w-16 h-16 bg-cream border-4 border-ink flex items-center justify-center hover:bg-sand transition-all shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] active:translate-y-[2px] active:translate-x-[2px] active:shadow-none -rotate-3 hover:rotate-0 group">
@@ -252,7 +348,6 @@ export default function TaskPage({ onBack }: { onBack: () => void }) {
                     <span className="ml-auto bg-ink text-paper px-1.5 py-0.5 rounded-sm" style={sketchyShape1}>{task.state}</span>
                   </div>
 
-                  {/* 删除按钮 */}
                   <div 
                     onClick={(e) => { e.stopPropagation(); setTaskToDelete(task.id); }}
                     className="absolute -right-3 -top-3 bg-[#bf616a] text-paper border-2 border-ink p-1.5 opacity-0 group-hover:opacity-100 transition-all hover:scale-110 shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] cursor-pointer"
@@ -268,7 +363,7 @@ export default function TaskPage({ onBack }: { onBack: () => void }) {
         </div>
       </div>
 
-      {/* --- 右侧全屏图谱视图 --- */}
+      {/* 右侧全屏图谱视图 */}
       <div style={sketchyShape1} className="flex-1 bg-paper border-4 border-ink shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] overflow-hidden relative rotate-[0.5deg] z-10 flex flex-col">
         <div className="absolute -top-4 right-12 w-32 h-8 bg-terracotta/40 border-2 border-ink -rotate-3 z-50" style={sketchyShape2}></div>
         
@@ -284,10 +379,11 @@ export default function TaskPage({ onBack }: { onBack: () => void }) {
             <ReactFlow
               nodes={nodes}
               edges={edges}
-              onNodesChange={onNodesChange} // 🔴 修复1：强绑定 Change 方法
-              onEdgesChange={onEdgesChange} // 🔴 修复1：强绑定 Change 方法
+              onNodesChange={onNodesChange}
+              onEdgesChange={onEdgesChange}
               nodeTypes={nodeTypes}
               nodesDraggable={true}
+              elementsSelectable={true}
               zoomOnScroll={true}
               panOnDrag={true}
               fitView

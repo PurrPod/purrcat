@@ -17,9 +17,7 @@ class Node(BaseNode):
         response, messages = await call_llm(
             model=context.model,
             messages=messages,
-            tools=tools,
-            node_log_func=self.log,
-            context=context
+            tools=tools
         )
 
         return {"messages": messages, "response": response}
