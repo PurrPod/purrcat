@@ -174,7 +174,6 @@ class MemoryAgent:
 
         max_turns = 50
         write_count = 0
-        expected_writes = len(cognition_data)
 
         for turn in range(max_turns):
             response = model.chat(
@@ -203,15 +202,9 @@ class MemoryAgent:
             messages.append(assist_msg)
 
             if not msg_resp.tool_calls:
-                if write_count >= expected_writes:
-                    print(f"✅ 图谱更新完成，共执行 {write_count} 次写入")
-                    break
-                else:
-                    messages.append({
-                        "role": "user",
-                        "content": f"⚠️ 你还没有完成所有认知条目的写入（已完成 {write_count}/{expected_writes}）。请继续调用写入工具。"
-                    })
-                    continue
+                # 只要模型没有发出新的工具调用，且之前至少有一次成功交互，就认为任务完成
+                print("✅ 模型判断图谱更新完毕。")
+                break
 
             tool_results = []
             for tc in msg_resp.tool_calls:
@@ -235,11 +228,7 @@ class MemoryAgent:
                 })
                 messages.append(tool_results[-1])
 
-            if write_count >= expected_writes:
-                print(f"✅ 图谱更新完成，共执行 {write_count} 次写入")
-                break
-
-        print(f"📊 reAct 循环结束，写入 {write_count} 次 / 预期 {expected_writes} 次")
+        print(f"📊 reAct 循环结束，写入 {write_count} 次")
 
     def _process_cognition_fallback(self, cognition_data: list):
         """兜底处理：当 LLM 不可用时用启发式规则"""
@@ -290,43 +279,41 @@ class MemoryAgent:
             return False
 
         try:
-            event_id = hashlib.md5(json.dumps(data, sort_keys=True).encode()).hexdigest()
             timestamp = data.get('timestamp', datetime.now().isoformat())
-
-            # 1. 处理事件：读取字段改为 'events'
-            events = data.get('events', [])
-            for event in events:
-                if isinstance(event, dict):
-                    event_content = event.get('event', '')
-                    event_time = event.get('time', timestamp)
-                else:
-                    event_content = event
-                    event_time = timestamp
-
-                event_vector = None
-                if self.vector_engine:
-                    event_vector = self.vector_engine._get_embedding(event_content)
-
-                self.event_engine.insert_event(
-                    event_id=f"event_{event_id}_{hashlib.md5(event_content.encode()).hexdigest()}",
-                    content=event_content,
-                    vector=event_vector,
-                    timestamp=event_time,
-                    source=os.path.basename(file_path)
-                )
-
-            # (已彻底移除 work_exps 的解析和插入逻辑)
-
-            # 2. 处理图谱抽取：将 cognition 和 user_profile 拼合
+            
+            # 预定义变量，防止未定义引用
+            event_id = None
             cognition = data.get('cognition', [])
             user_profile = data.get('user_profile', [])
 
-            # 这些东西都可以作为认知素材，提取进入知识图谱
-            graph_materials = cognition + user_profile
+            # 1. 处理 Events (事件库 + 向量库双写)
+            events = data.get('events', [])
+            for event in events:
+                event_content = event.get('event', '') if isinstance(event, dict) else event
+                event_time = event.get('time', timestamp) if isinstance(event, dict) else timestamp
+                event_id = f"evt_{hashlib.md5(event_content.encode()).hexdigest()}"
 
+                # A. 存入 SQLite (做元数据和 BM25 字面量检索)
+                self.event_engine.insert_event(
+                    event_id=event_id, content=event_content, vector=None, timestamp=event_time
+                )
+                # B. 存入 ChromaDB (需在 VectorEngine 新建 events_collection)
+                if self.vector_engine:
+                    self.vector_engine.insert_event_vector(event_id, event_content, event_time)
+
+            # 2. 处理 work_exp 和 user_profile (存入向量库的经验池)
+            experiences = data.get('work_exp', []) + user_profile
+            if self.vector_engine and experiences:
+                for exp_text in experiences:
+                    exp_id = f"exp_{hashlib.md5(exp_text.encode()).hexdigest()}"
+                    self.vector_engine.insert_experience(
+                        exp_id=exp_id, content=exp_text, timestamp=timestamp
+                    )
+
+            # 3. 处理 user_profile 和 cognition (抛给大模型提取图谱关系)
+            graph_materials = cognition + user_profile
             if graph_materials and self.graph_engine:
                 self._run_llm_step(graph_materials)
-            if self.graph_engine:
                 self.graph_engine._save_graph()
 
             # 3. 归档日志记录
@@ -338,7 +325,7 @@ class MemoryAgent:
                 'file': os.path.basename(file_path),
                 'processed_at': datetime.now().isoformat(),
                 'events_count': len(events),
-                'has_graph_materials': bool(graph_materials)
+                'has_graph_materials': bool(cognition or user_profile)
             })
             print(f"✅ 后台 Worker 处理成功: {os.path.basename(file_path)}")
             return True

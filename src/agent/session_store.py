@@ -147,3 +147,28 @@ class SessionStore:
             alias=branch_alias
         )
         return new_session_id
+
+    @classmethod
+    def load_global_memo(cls):
+        """读取全局共享的缓存记忆列表"""
+        path = os.path.join(SESSIONS_DIR, "memo.json")
+        if not os.path.exists(path): return []
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"❌ 读取全局 memo 失败: {e}")
+            return []
+
+    @classmethod
+    def save_global_memo(cls, memo_list):
+        """持久化存储全局共享的缓存记忆列表"""
+        path = os.path.join(SESSIONS_DIR, "memo.json")
+        temp_path = f"{path}.tmp"
+        with cls._index_lock:
+            try:
+                with open(temp_path, "w", encoding="utf-8") as f:
+                    json.dump(memo_list, f, ensure_ascii=False, indent=2)
+                os.replace(temp_path, path)
+            except Exception as e:
+                print(f"⚠️ 保存全局 memo 失败: {e}")

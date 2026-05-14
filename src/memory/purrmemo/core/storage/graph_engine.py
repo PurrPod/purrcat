@@ -302,6 +302,10 @@ class GraphEngine:
                         edge_data['updated_at'] = datetime.now().isoformat()
                         updated_count += 1
                 
+                # 如果成功更新了边，将图谱持久化到磁盘
+                if updated_count > 0:
+                    self._save_graph()
+                    
                 return updated_count
         except Exception as e:
             print(f"衰减边失败: {e}")

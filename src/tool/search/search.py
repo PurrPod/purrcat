@@ -126,8 +126,8 @@ def _search_local(query: str, topk: int) -> str:
         skill_count = len([r for r in top_results if r['source'] == 'Skill'])
         mcp_count = len(top_results) - skill_count
         md = f"🎯 本地工具库搜索结果 (Top {len(top_results)}):\n\n"
-        md += "| 来源类别 | 工具/技能名称 | 语义匹配度 | 描述 |\n"
-        md += "|----------|---------------|------------|------|\n"
+        md += "| 来源类别 | 工具/技能名称 | 匹配得分 | 描述 |\n"
+        md += "|----------|---------------|----------|------|\n"
 
         for item in top_results:
             md += f"| {item['source']} | `{item['name']}` | {item['score']} | {item['description']} |\n"

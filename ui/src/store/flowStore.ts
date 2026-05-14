@@ -145,11 +145,21 @@ export const useFlowStore = create<FlowState>()(
           nodes: nodes.map(n => {
             const base: any = {
               id: n.id,
+              name: n.data.name,
               type: n.data.nodeType,
               position: n.position,
             }
-            if (n.data.nodeType === 'task_input' || n.data.nodeType === 'task_output') {
-              base.data = { dynamic_inputs: n.data.dynamic_inputs || [] }
+            const nodeData: any = {}
+            if (n.data.dynamic_inputs && n.data.dynamic_inputs.length > 0) {
+              nodeData.dynamic_inputs = n.data.dynamic_inputs
+            }
+            Object.keys(n.data).forEach((key) => {
+              if (!['nodeType', 'name', 'color', 'inputs', 'outputs', 'configSchema', 'dynamic_inputs'].includes(key)) {
+                nodeData[key] = n.data[key]
+              }
+            })
+            if (Object.keys(nodeData).length > 0) {
+              base.data = nodeData
             }
             return base
           }),
@@ -174,7 +184,7 @@ export const useFlowStore = create<FlowState>()(
 
           const defaultData: Record<string, any> = {
             nodeType: node.type,
-            name: definition.name,
+            name: node.name || definition.name,
             color: definition.color,
             inputs: definition.inputs,
             outputs: definition.outputs,

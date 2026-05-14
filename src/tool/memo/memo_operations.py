@@ -155,17 +155,20 @@ def _smart_update_memory_md(work_exp: list, user_profile: list):
                     messages.append(assist_msg)
 
                     for t in msg_resp.tool_calls:
-                        if t.function.name == "overwrite_memory_md":
-                            has_write_operation = True
-                            try:
-                                args = json.loads(t.function.arguments)
-                                new_md_content = args.get("new_markdown_content", "")
-                                with open(MEMORY_MD_PATH, "w", encoding="utf-8") as f:
-                                    f.write(new_md_content)
-                                print("✅ 后台模型已智能更新 MEMORY.md")
-                            except Exception as e:
-                                print(f"❌ 写入 MEMORY.md 失败: {e}")
-                            break
+                                if t.function.name == "overwrite_memory_md":
+                                    has_write_operation = True
+                                    try:
+                                        args = json.loads(t.function.arguments)
+                                        new_md_content = args.get("new_markdown_content", "")
+                                        # 【重要安全修复】使用原子重命名避免并发读写冲突
+                                        temp_path = f"{MEMORY_MD_PATH}.tmp"
+                                        with open(temp_path, "w", encoding="utf-8") as f:
+                                            f.write(new_md_content)
+                                        os.replace(temp_path, MEMORY_MD_PATH)
+                                        print("✅ 后台模型已智能更新 MEMORY.md")
+                                    except Exception as e:
+                                        print(f"❌ 写入 MEMORY.md 失败: {e}")
+                                    break
 
                     if has_write_operation:
                         break
@@ -185,7 +188,7 @@ def _smart_update_memory_md(work_exp: list, user_profile: list):
     threading.Thread(target=_async_rewrite_task, daemon=True).start()
 
 
-def _write_to_pending(events: list, cognition: list, user_profile: list) -> str:
+def _write_to_pending(events: list, cognition: list, user_profile: list, work_exp: list) -> str:
     """
     将待处理记忆写入 pending，供后台 worker 抓取
     """
@@ -197,6 +200,7 @@ def _write_to_pending(events: list, cognition: list, user_profile: list) -> str:
 
     data = {
         "user_profile": user_profile or [],
+        "work_exp": work_exp or [],
         "events": events or [],
         "cognition": cognition or [],
         "timestamp": timestamp,

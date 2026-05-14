@@ -81,15 +81,14 @@ def _handle_add(memo_data: dict = None) -> str:
     _write_to_pending(
         events=events,
         cognition=cognition,
-        user_profile=user_profile
+        user_profile=user_profile,
+        work_exp=work_exp
     )
 
+    import json
     return text_response(
-        {
-            "message": "长期记忆已投递至后台存入 MD/SQL/图谱",
-            "short_term_memory": short_term
-        },
-        "🧠 记忆归档成功，短期记忆已提取"
+        {"message": "记忆已归档并投递至后台存入 MD/SQL/图谱", "memo_data": valid_data},
+        f"🧠 记忆归档成功：\n{json.dumps(valid_data, ensure_ascii=False, indent=2)}"
     )
 
 

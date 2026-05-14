@@ -61,6 +61,7 @@ async def run_api(host: str = "0.0.0.0", port: int = 8000):
     from fastapi import FastAPI
     from fastapi.middleware.cors import CORSMiddleware
     import uvicorn
+    import logging
     
     from server.api.chat import router as chat_router
     from server.api.graph import router as graph_router
@@ -85,7 +86,9 @@ async def run_api(host: str = "0.0.0.0", port: int = 8000):
     def ping():
         return {"message": "Meow! PurrCat Backend is running."}
 
-    config = uvicorn.Config(app, host=host, port=port)
+    logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
+    
+    config = uvicorn.Config(app, host=host, port=port, log_level="warning")
     server = uvicorn.Server(config)
     await server.serve()
 

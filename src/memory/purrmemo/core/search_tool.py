@@ -2,11 +2,42 @@ import os
 import json
 from datetime import datetime, timedelta
 import threading
+import numpy as np
 from .config import RAG_CONFIG
 from .storage.event_engine import EventEngine
 from .storage.vector_engine import VectorEngine
 from .storage.graph_engine import GraphEngine
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
+
+def reciprocal_rank_fusion(vector_results, bm25_results, k=60, top_k=5):
+    """
+    RRF 倒数排名融合算法
+    :param vector_results: 列表，包含 {'id': 'xxx', 'data': {...}, 'score': 0.8}
+    :param bm25_results: 列表，包含 {'id': 'xxx', 'data': {...}, 'score': 15.2}
+    """
+    fused_scores = {}
+    fused_data = {}
+
+    # 处理 Vector 排名
+    for rank, item in enumerate(sorted(vector_results, key=lambda x: x['score'], reverse=True)):
+        item_id = item['id']
+        fused_scores[item_id] = fused_scores.get(item_id, 0) + 1.0 / (k + rank + 1)
+        fused_data[item_id] = item['data']
+
+    # 处理 BM25 排名
+    for rank, item in enumerate(sorted(bm25_results, key=lambda x: x['score'], reverse=True)):
+        item_id = item['id']
+        fused_scores[item_id] = fused_scores.get(item_id, 0) + 1.0 / (k + rank + 1)
+        fused_data[item_id] = item['data']
+
+    # 按融合后的 RRF 得分排序
+    reranked = [
+        {"id": item_id, "data": fused_data[item_id], "rrf_score": score}
+        for item_id, score in sorted(fused_scores.items(), key=lambda x: x[1], reverse=True)
+    ]
+    
+    return reranked[:top_k]
 
 class RAGSearchTool:
     def __init__(self):
@@ -69,79 +100,89 @@ class RAGSearchTool:
         return markdown_context
 
     def _search_events(self, query: str, filters: dict = None):
-        """检索事件库
+        """检索事件库 - 混合检索版（向量 + BM25 + RRF融合）
         
         Returns:
             dict: {"events": [...], "warning": "..."} 
             warning 为空表示无降级查询，有内容表示使用了降级查询并说明原因
         """
+        filters = filters or {}
         try:
-            had_time_filter = filters and 'time_range' in filters
-            start_time = None
-            end_time = None
+            top_k = filters.get('top_k', RAG_CONFIG['top_k_events'])
+            start_time, end_time = filters.get('time_range', (None, None))
+            had_time_filter = start_time is not None and end_time is not None
             
-            if filters and 'time_range' in filters:
-                start_time, end_time = filters['time_range']
-                events = self.event_engine.get_events_by_time_range(
-                    start_time=start_time,
-                    end_time=end_time,
-                    limit=RAG_CONFIG['top_k_events'] * 2
-                )
-            else:
-                events = self.event_engine.get_latest_events(
-                    limit=RAG_CONFIG['top_k_events'] * 2
-                )
-            
-            fallback_warning = ""
-            
-            if query and self.vector_engine:
+            # 无查询词时直接返回最新事件
+            if not query:
+                events = self.event_engine.get_latest_events(limit=top_k)
+                return {"events": events, "warning": ""}
+
+            # 1. 向量检索 (Vector) - 使用 NumPy 矩阵计算优化性能
+            vector_results_raw = []
+            if self.vector_engine:
                 query_vector = self.vector_engine._get_embedding(query)
-                if query_vector:
-                    import numpy as np
-                    similar_events = []
-                    for event in events:
-                        if event.get('vector'):
-                            event_vector = event['vector']
-                            similarity = np.dot(query_vector, event_vector) / (
-                                np.linalg.norm(query_vector) * np.linalg.norm(event_vector)
-                            )
-                            event['similarity'] = similarity
-                            similar_events.append(event)
-                    
-                    similar_events.sort(key=lambda x: x.get('similarity', 0), reverse=True)
-                    
-                    if filters and 'threshold' in filters:
-                        threshold = filters['threshold']
-                        similar_events = [e for e in similar_events if e.get('similarity', 0) >= threshold]
-                    
-                    results = similar_events[:RAG_CONFIG['top_k_events']]
-                    
-                    if not results and had_time_filter:
-                        fallback_events = self.event_engine.get_latest_events(
-                            limit=RAG_CONFIG['top_k_events']
-                        )
-                        for fe in fallback_events:
-                            if fe.get('vector'):
-                                fe['similarity'] = np.dot(query_vector, fe['vector']) / (
-                                    np.linalg.norm(query_vector) * np.linalg.norm(fe['vector'])
-                                )
-                            else:
-                                fe['similarity'] = 0.0
+                pool = self.event_engine.get_events_by_time_range(start_time, end_time, limit=200) if start_time else self.event_engine.get_latest_events(limit=200)
+                
+                # 使用 NumPy 矩阵批量计算，避免 Python for 循环
+                if pool:
+                    # 提取有向量的事件
+                    valid_events = [e for e in pool if e.get('vector')]
+                    if valid_events:
+                        # 将列表转为 numpy 矩阵 (N, D)
+                        vectors_matrix = np.array([e['vector'] for e in valid_events])
                         
-                        fallback_events.sort(key=lambda x: x.get('similarity', 0), reverse=True)
-                        fallback_warning = f"**当前筛选条件没有符合条件的事件，以下是一些相关的结果：**\n\n"
-                        results = fallback_events[:RAG_CONFIG['top_k_events']]
-                    
-                    return {"events": results, "warning": fallback_warning}
+                        # 批量计算相似度：np.dot 矩阵乘法
+                        # query_vector 形状是 (D,)
+                        dot_products = np.dot(vectors_matrix, query_vector)
+                        
+                        # 计算范数
+                        query_norm = np.linalg.norm(query_vector)
+                        matrix_norms = np.linalg.norm(vectors_matrix, axis=1)
+                        
+                        # 【修复】加上 1e-9 防止除零
+                        similarities = dot_products / (matrix_norms * query_norm + 1e-9)
+                        
+                        # 将结果写回
+                        for idx, e in enumerate(valid_events):
+                            vector_results_raw.append({"id": e['event_id'], "data": e, "score": similarities[idx]})
             
-            if not events and had_time_filter:
-                fallback_events = self.event_engine.get_latest_events(
-                    limit=RAG_CONFIG['top_k_events']
-                )
+            # 2. 字面量检索 (BM25 / FTS5)
+            bm25_results_raw = self.event_engine.search_fts_bm25(query, start_time, end_time, limit=200)
+            
+            # 3. RRF 融合
+            fused_results = reciprocal_rank_fusion(vector_results_raw, bm25_results_raw, top_k=top_k)
+            
+            final_events = [item['data'] for item in fused_results]
+            
+            # 如果融合结果为空且有时间过滤，降级到无时间限制的查询
+            fallback_warning = ""
+            if not final_events and had_time_filter:
+                bm25_results_raw = self.event_engine.search_fts_bm25(query, None, None, limit=200)
+                vector_results_raw = []
+                if self.vector_engine:
+                    pool = self.event_engine.get_latest_events(limit=200)
+                    # 使用 NumPy 矩阵批量计算
+                    if pool:
+                        valid_events = [e for e in pool if e.get('vector')]
+                        if valid_events:
+                            vectors_matrix = np.array([e['vector'] for e in valid_events])
+                            dot_products = np.dot(vectors_matrix, query_vector)
+                            matrix_norms = np.linalg.norm(vectors_matrix, axis=1)
+                            # 【修复】加上 1e-9 防止除零
+                            similarities = dot_products / (matrix_norms * query_norm + 1e-9)
+                            for idx, e in enumerate(valid_events):
+                                vector_results_raw.append({"id": e['event_id'], "data": e, "score": similarities[idx]})
+                fused_results = reciprocal_rank_fusion(vector_results_raw, bm25_results_raw, top_k=top_k)
+                final_events = [item['data'] for item in fused_results]
                 fallback_warning = f"**当前筛选条件没有符合条件的事件，以下是一些相关的结果：**\n\n"
-                return {"events": fallback_events, "warning": fallback_warning}
             
-            return {"events": events, "warning": ""}
+            # 如果经过降级后依然为空，且用户传了 latest_n，则强制提取最新事件
+            if not final_events and 'latest_n' in filters:
+                latest_n = filters['latest_n']
+                final_events = self.event_engine.get_latest_events(limit=latest_n)
+                fallback_warning = f"⚠️ 未检索到与查询匹配的事件，以下是最近的 {latest_n} 条记录：\n\n"
+            
+            return {"events": final_events, "warning": fallback_warning}
         except Exception as e:
             print(f"检索事件失败: {e}")
             return {"events": [], "warning": ""}

@@ -3,8 +3,21 @@ import threading
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
+import jieba
 
 from src.utils.config import get_embedding_model
+
+
+def hybrid_tokenize(text: str) -> list[str]:
+    """
+    混合分词器：处理中英文混合语料
+    """
+    if not text:
+        return []
+    
+    text = text.lower()
+    tokens = jieba.cut_for_search(text)
+    return [token for token in tokens if token.strip()]
 
 
 class LocalEmbeddingSearcher:

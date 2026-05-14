@@ -66,7 +66,7 @@ def add_task_operation(name: str, inputs: dict, graph_name: str,
         return {
             "task_id": single_task.task_id,
             "name": name,
-            "message": f"任务 '{name}' 已提交到后台线程执行。ID: {single_task.task_id}"
+            "message": f"任务 '{name}' 已提交到后台线程执行，完成或崩溃会通过消息通知您，无须且请勿频繁检查任务状态。ID: {single_task.task_id}"
         }, None
 
     except Exception as e:

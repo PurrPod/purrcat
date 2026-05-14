@@ -29,25 +29,30 @@ class PurrMemoClient:
         daemon_thread.start()
         print("✅ 后台守护进程已启动，正在监听 pending 目录...")
 
-    def search(self, query: str, filter_date: str = None, topk: int = 5):
+    def search(self, query: str = "", filters: dict = None):
         """
-        通过 RAG 匹配记忆库里的数据
+        通过混合检索匹配记忆库里的数据
 
         :param query: 搜索语句
-        :param filter_date: 日期限制，格式需为 "YYYY-MM-DD"
-        :param topk: 返回个数，按评分优先
+        :param filters: 过滤条件字典，支持 top_k, date, latest_n 等
         :return: Markdown 格式的检索结果
         """
-        RAG_CONFIG['top_k_events'] = topk
-        RAG_CONFIG['top_k_experiences'] = topk
-        RAG_CONFIG['top_k_graph_nodes'] = topk
+        filters = filters or {}
+        
+        # 获取外部传来的 top_k，默认5
+        top_k = filters.get('top_k', 5)
+        RAG_CONFIG['top_k_events'] = top_k
+        RAG_CONFIG['top_k_experiences'] = top_k
+        RAG_CONFIG['top_k_graph_nodes'] = top_k
 
-        filters = {}
-        if filter_date:
+        # 处理日期转换
+        if 'date' in filters:
+            filter_date = filters.pop('date')
             start_time = f"{filter_date}T00:00:00"
             end_time = f"{filter_date}T23:59:59.999999"
             filters['time_range'] = (start_time, end_time)
 
+        # 此时 filters 里面可能还包含 latest_n，原封不动传给底层
         return self.search_tool.search_memory_api(query=query, filters=filters)
 
 

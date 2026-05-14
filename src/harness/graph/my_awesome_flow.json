@@ -6,11 +6,11 @@
     "target_file": "any"
   },
   "nodes": [
-    {"id": "node_input", "type": "task_input", "data": {"dynamic_inputs": [{"key": "prompt", "desc": "any"}, {"key": "target_file", "desc": "any"}]}, "position": {"x": -476, "y": -186}},
-    {"id": "node_user_msg", "type": "message_card_builder", "data": {"role": "user"}, "position": {"x": 12, "y": -470}},
-    {"id": "node_appender", "type": "appender", "position": {"x": 562, "y": -406}},
-    {"id": "node_loop", "type": "file_output_loop", "data": {"file_path": ""}, "position": {"x": 400, "y": 250}},
-    {"id": "node_output", "type": "task_output", "data": {"dynamic_inputs": [{"key": "task_result", "desc": "any"}]}, "position": {"x": 700, "y": 250}}
+    {"id": "node_input", "name": "输入节点", "type": "task_input", "data": {"dynamic_inputs": [{"key": "prompt", "desc": "any"}, {"key": "target_file", "desc": "any"}]}, "position": {"x": -476, "y": -186}},
+    {"id": "node_user_msg", "name": "消息构建", "type": "message_card_builder", "data": {"role": "user"}, "position": {"x": 12, "y": -470}},
+    {"id": "node_appender", "name": "消息合并", "type": "appender", "data": {}, "position": {"x": 562, "y": -406}},
+    {"id": "node_loop", "name": "文件输出循环", "type": "file_output_loop", "data": {"file_path": ""}, "position": {"x": 400, "y": 250}},
+    {"id": "node_output", "name": "输出节点", "type": "task_output", "data": {"dynamic_inputs": [{"key": "task_result", "desc": "any"}]}, "position": {"x": 700, "y": 250}}
   ],
   "edges": [
     {"source": "node_input", "target": "node_user_msg", "sourceHandle": "prompt", "targetHandle": "content"},

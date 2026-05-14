@@ -24,10 +24,12 @@ class VectorEngine:
         self.persist_directory = VECTOR_DATABASE_CONFIG['persist_directory']
         self.collection_name = VECTOR_DATABASE_CONFIG['collection_name']
         self.graph_collection_name = "graph_nodes"
+        self.events_collection_name = "events"
         self.embedding_model_name = get_embedding_model()
         self.client = None
         self.collection = None
         self.graph_collection = None
+        self.events_collection = None
         self.embedding_model = None
         self._init_db()
         self._initialized = True
@@ -53,6 +55,12 @@ class VectorEngine:
         # 获取或创建图谱节点集合
         self.graph_collection = self.client.get_or_create_collection(
             name=self.graph_collection_name,
+            metadata={"hnsw:space": "cosine"}
+        )
+        
+        # 获取或创建事件向量集合
+        self.events_collection = self.client.get_or_create_collection(
+            name=self.events_collection_name,
             metadata={"hnsw:space": "cosine"}
         )
         
@@ -118,6 +126,63 @@ class VectorEngine:
             print(f"插入经验失败: {e}")
             return False
     
+    def insert_event_vector(self, event_id, content, timestamp=None):
+        """插入事件向量到 ChromaDB
+        
+        Args:
+            event_id: 事件唯一标识
+            content: 事件内容
+            timestamp: 时间戳（可选）
+        """
+        try:
+            embedding = self._get_embedding(content)
+            if not embedding:
+                return False
+            
+            metadata = {}
+            if timestamp:
+                metadata['timestamp'] = timestamp
+            else:
+                metadata['timestamp'] = datetime.now().isoformat()
+            
+            # 检查事件是否已存在
+            existing = self.get_event_by_id(event_id)
+            if existing:
+                # 更新现有事件
+                self.events_collection.update(
+                    ids=[event_id],
+                    embeddings=[embedding],
+                    documents=[content],
+                    metadatas=[metadata]
+                )
+            else:
+                # 插入新事件
+                self.events_collection.add(
+                    ids=[event_id],
+                    embeddings=[embedding],
+                    documents=[content],
+                    metadatas=[metadata]
+                )
+            return True
+        except Exception as e:
+            print(f"插入事件向量失败: {e}")
+            return False
+    
+    def get_event_by_id(self, event_id):
+        """根据 ID 获取事件"""
+        try:
+            results = self.events_collection.get(ids=[event_id])
+            if results['ids']:
+                return {
+                    'event_id': results['ids'][0],
+                    'content': results['documents'][0],
+                    'metadata': results['metadatas'][0] if results['metadatas'][0] else {}
+                }
+            return None
+        except Exception as e:
+            print(f"获取事件失败: {e}")
+            return None
+    
     def search_experiences(self, query, top_k=5, filters=None):
         """搜索相关工作经验
         
@@ -131,10 +196,27 @@ class VectorEngine:
             if not query_embedding:
                 return []
             
+            # 【修复】转换 filters 为 ChromaDB 支持的 where 语法
+            chroma_where = None
+            if filters and 'time_range' in filters:
+                start_time, end_time = filters['time_range']
+                if start_time and end_time:
+                    chroma_where = {
+                        "$and": [
+                            {"timestamp": {"$gte": start_time}},
+                            {"timestamp": {"$lte": end_time}}
+                        ]
+                    }
+            
+            # 【修复】动态调整 top_k，避免 ChromaDB 少于 K 个时崩溃
+            actual_top_k = min(top_k, self.collection.count())
+            if actual_top_k == 0:
+                return []
+            
             results = self.collection.query(
                 query_embeddings=[query_embedding],
-                n_results=top_k,
-                where=filters
+                n_results=actual_top_k,
+                where=chroma_where
             )
             
             # 处理结果
@@ -228,33 +310,58 @@ class VectorEngine:
             return False
     
     def search_graph_nodes(self, query, top_k=5):
-        """搜索相关的图谱节点
+        """【混合检索版】图谱节点搜索 (Vector + Keyword Exact Match)
         
         Args:
             query: 查询文本
             top_k: 返回结果数量
         """
         try:
+            # 1. 获取向量结果
             query_embedding = self._get_embedding(query)
             if not query_embedding:
                 return []
             
-            results = self.graph_collection.query(
+            # 【修复】动态调整 top_k，避免 ChromaDB 少于 K 个时崩溃
+            actual_top_k = min(top_k * 2, self.graph_collection.count())
+            if actual_top_k == 0:
+                return []
+            
+            vector_res = self.graph_collection.query(
                 query_embeddings=[query_embedding],
-                n_results=top_k
+                n_results=actual_top_k  # 多取一点用于重排
             )
             
-            # 处理结果
             nodes = []
-            for i in range(len(results['ids'][0])):
-                node = {
-                    'node_id': results['ids'][0][i],
-                    'node_name': results['documents'][0][i],
-                    'score': results['distances'][0][i]
-                }
-                nodes.append(node)
+            query_lower = query.lower()
             
-            return nodes
+            for i in range(len(vector_res['ids'][0])):
+                node_name = vector_res['documents'][0][i]
+                node_name_lower = node_name.lower()
+                
+                # Chroma 的 distances 是 L2 距离或 cosine 距离（越小越好）
+                # 这里将其转换为相似度得分 (假设 hnsw:space=cosine，distance是 1-cosine)
+                base_score = 1.0 - vector_res['distances'][0][i] 
+                
+                # 2. 字面量/BM25 增强惩罚与奖励 (Keyword Boost)
+                boost = 0.0
+                if query_lower == node_name_lower:
+                    boost = 2.0  # 完全相等，给与超高奖励
+                elif query_lower in node_name_lower or node_name_lower in query_lower:
+                    boost = 0.5  # 包含关系，给予中等奖励
+                
+                final_score = base_score + boost
+                
+                nodes.append({
+                    'node_id': vector_res['ids'][0][i],
+                    'node_name': node_name,
+                    'score': final_score
+                })
+            
+            # 按最终得分重新排序
+            nodes.sort(key=lambda x: x['score'], reverse=True)
+            return nodes[:top_k]
+            
         except Exception as e:
             print(f"搜索图谱节点失败: {e}")
             return []

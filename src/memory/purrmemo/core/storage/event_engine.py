@@ -50,6 +50,13 @@ class EventEngine:
         ON {self.table_name} (timestamp)
         """)
         
+        # 创建 FTS5 虚拟表，用于全文字面量/BM25检索
+        cursor.execute(f"""
+        CREATE VIRTUAL TABLE IF NOT EXISTS {self.table_name}_fts USING fts5(
+            event_id UNINDEXED, 
+            content
+        )
+        """)
         self.conn.commit()
     
     def insert_event(self, event_id, content, vector=None, timestamp=None, source=None):
@@ -69,11 +76,20 @@ class EventEngine:
         
         try:
             cursor = self.conn.cursor()
+            # 1. 插入主表 (这个 OR REPLACE 是生效的，因为有 PRIMARY KEY)
             cursor.execute(f"""
             INSERT OR REPLACE INTO {self.table_name} 
             (event_id, content, vector, timestamp, source) 
             VALUES (?, ?, ?, ?, ?)
             """, (event_id, content, vector_str, timestamp, source))
+            
+            # 2. 插入 FTS5 表 (必须先删后插，防止重复)
+            cursor.execute(f"DELETE FROM {self.table_name}_fts WHERE event_id = ?", (event_id,))
+            cursor.execute(f"""
+            INSERT INTO {self.table_name}_fts (event_id, content) 
+            VALUES (?, ?)
+            """, (event_id, content))
+            
             self.conn.commit()
             return True
         except Exception as e:
@@ -147,6 +163,34 @@ class EventEngine:
             })
         return events
     
+    def search_fts_bm25(self, query, start_time=None, end_time=None, limit=50):
+        """利用 SQLite FTS5 执行 BM25 检索，并支持时间过滤"""
+        cursor = self.conn.cursor()
+        
+        # 分词处理（简单的按字/词切分适应 SQLite），如果在真实环境建议引入 jieba
+        clean_query = query.replace('"', '').replace("'", "")
+        
+        # 联合查询：FTS表计算 BM25 分数，原表用于过滤时间
+        sql = f"""
+        SELECT e.event_id, e.content, e.vector, e.timestamp, e.source, fts.rank as bm25_score
+        FROM {self.table_name}_fts fts
+        JOIN {self.table_name} e ON fts.event_id = e.event_id
+        WHERE {self.table_name}_fts MATCH ?
+        """
+        params = [f'"{clean_query}"*']
+        
+        if start_time and end_time:
+            sql += " AND e.timestamp >= ? AND e.timestamp <= ?"
+            params.extend([start_time, end_time])
+            
+        sql += " ORDER BY fts.rank LIMIT ?"
+        params.append(limit)
+        
+        cursor.execute(sql, tuple(params))
+        
+        # 注意：SQLite FTS5 的 rank 分数是负数（越小越相关），我们需要取绝对值
+        return [{"id": r[0], "data": {'event_id': r[0], 'content': r[1], 'vector': json.loads(r[2]) if r[2] else None, 'timestamp': r[3], 'source': r[4]}, "score": abs(r[5])} for r in cursor.fetchall()]
+
     def close(self):
         """关闭数据库连接"""
         if self.conn:

@@ -131,7 +131,7 @@ export default function TaskPage({ onBack }: { onBack: () => void }) {
           type: 'custom',
           position: n.position || { x: 100 + (idx % 3) * 280, y: 100 + Math.floor(idx / 3) * 180 },
           data: { 
-            label: n.data?.name || n.id,
+            label: n.name && n.name.trim() ? n.name : n.id,
             shape: idx % 2 === 0 ? sketchyShape1 : sketchyShape2,
             isTaskRunning: task.state === 'running',
             nodeState: 'ready',
