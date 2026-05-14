@@ -140,6 +140,7 @@ class Agent:
         """主 ReAct 循环"""
         # 获取当前交互ID，用于后续验证响应是否属于当前会话
         current_interaction_id = self._increment_interaction_id()
+        self.force_push(content="任务开始前如有需要可以调用 Memo 工具搜索相关记忆。完成任务后请调用 Memo 工具及时更新记忆", type="system")
         while True:
             try:
                 # 检查交互ID是否已过期（会话已被切换）

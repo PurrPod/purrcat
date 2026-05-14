@@ -65,6 +65,7 @@ async def run_api(host: str = "0.0.0.0", port: int = 8000):
     from server.api.chat import router as chat_router
     from server.api.graph import router as graph_router
     from server.api.task import router as task_router
+    from server.api.config import router as config_router  # 引入配置路由
 
     app = FastAPI(title="PurrCat API System")
 
@@ -78,6 +79,7 @@ async def run_api(host: str = "0.0.0.0", port: int = 8000):
     app.include_router(chat_router)
     app.include_router(graph_router)
     app.include_router(task_router)  # 挂载子路由
+    app.include_router(config_router)  # 挂载配置路由
 
     @app.get("/")
     def ping():

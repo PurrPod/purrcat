@@ -8,9 +8,9 @@ DATA_DIR = os.path.join(BASE_DIR, "data")
 SRC_DIR = os.path.join(BASE_DIR, "src")
 
 PURRCAT_DIR = os.path.join(BASE_DIR, ".purrcat")
-MODEL_CONFIG_PATH = os.path.join(PURRCAT_DIR, "model.yaml")
-SENSOR_CONFIG_PATH = os.path.join(PURRCAT_DIR, "sensor.yaml")
-FILE_CONFIG_PATH = os.path.join(PURRCAT_DIR, "file.yaml")
+MODEL_CONFIG_PATH = os.path.join(PURRCAT_DIR, "model.json")
+SENSOR_CONFIG_PATH = os.path.join(PURRCAT_DIR, "sensor.json")
+FILE_CONFIG_PATH = os.path.join(PURRCAT_DIR, "file.json")
 MEMORY_CONFIG_PATH = os.path.join(PURRCAT_DIR, "memory.json")
 MCP_CONFIG_PATH = os.path.join(PURRCAT_DIR, "mcp_config.json")
 
@@ -40,20 +40,6 @@ os.makedirs(SESSIONS_DIR, exist_ok=True)
 MCP_SCHEMA_CACHE_FILE = os.path.join(SRC_DIR, "tool", "callmcp", "mcp_schema.json")
 
 
-def _load_yaml_file(file_path: str) -> dict:
-    """加载 YAML 文件"""
-    try:
-        import yaml
-        with open(file_path, "r", encoding="utf-8") as f:
-            return yaml.safe_load(f) or {}
-    except ImportError:
-        print(f"[Config] 需要安装 PyYAML 来加载 YAML 配置")
-        return {}
-    except Exception as e:
-        print(f"[Config] 加载 YAML 文件失败 {file_path}: {e}")
-        return {}
-
-
 def _load_json_file(file_path: str) -> dict:
     """加载 JSON 文件"""
     try:
@@ -68,19 +54,19 @@ def _load_json_file(file_path: str) -> dict:
 
 def get_model_config() -> Dict[str, Any]:
     if os.path.exists(MODEL_CONFIG_PATH):
-        return _load_yaml_file(MODEL_CONFIG_PATH)
+        return _load_json_file(MODEL_CONFIG_PATH)
     return {}
 
 
 def get_sensor_config() -> Dict[str, Any]:
     if os.path.exists(SENSOR_CONFIG_PATH):
-        return _load_yaml_file(SENSOR_CONFIG_PATH)
+        return _load_json_file(SENSOR_CONFIG_PATH)
     return {}
 
 
 def get_file_config() -> Dict[str, Any]:
     if os.path.exists(FILE_CONFIG_PATH):
-        return _load_yaml_file(FILE_CONFIG_PATH)
+        return _load_json_file(FILE_CONFIG_PATH)
     return {}
 
 

@@ -207,7 +207,7 @@ def dispatch_tool(tool_name: str, arguments: dict, available_tokens: int = None)
         except json.JSONDecodeError:
             parsed_res = None
 
-        MAX_LEN = 6000
+        MAX_LEN = 10000
         if available_tokens is not None:
             dynamic_max_len = int((available_tokens - 500) * 1.5)
             MAX_LEN = max(500, dynamic_max_len)
@@ -245,7 +245,7 @@ def dispatch_tool(tool_name: str, arguments: dict, available_tokens: int = None)
             warning_msg = (
                 f"⚠️ [系统拦截] {tool_name} 输出总长 {len(actual_content_str)} 字符，超出当前安全余量阈值 {MAX_LEN}。完整结果已落盘：\n"
                 f"🐳 沙盒内路径: /agent_vm/.buffer/{tool_name_lower}/{file_name}\n"
-                f"如果你需要查看剩余的内容，请用 Bash (cat/grep) 工具去上述缓存文件里分批阅读！\n"
+                f"如果你需要查看剩余的内容，请用 Bash (cat/grep/sed/tail) 工具去上述缓存文件里分批阅读！\n"
                 f"\n--- 结构化内容预览 ---\n"
                 f"{truncated_str}"
             )

@@ -5,109 +5,69 @@ import json
 import argparse
 from datetime import datetime
 
-MODEL_CONFIG_TEMPLATE = """# ============================================
-# PurrCat Model Configuration File
-# Path: .purrcat/model.yaml
-# Generated: {timestamp}
-# ============================================
+def _generate_model_config_dict():
+    """Generate model configuration dictionary"""
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$comment": "PurrCat Model Configuration File - Generated at {timestamp}",
+        "description": "Embedding model (used for RAG retrieval, skill search, memory operations). Default: local 'embedding' folder (downloaded model). Can also use HuggingFace model name like 'BAAI/bge-small-zh-v1.5'",
+        "embedding": "embedding",
+        "main": {
+            "openai:deepseek-v4-flash": {
+                "api_keys": ["sk-your-first-api-key-here"],
+                "base_url": "https://api.deepseek.com",
+                "description": "LLM worker",
+                "rpm": 60,
+                "tpm": 1000000,
+                "concurrency": 3,
+                "max_token": 500000
+            }
+        },
+        "task": {}
+    }
 
-# Embedding model (used for RAG retrieval, skill search, memory operations)
-# Default: local 'embedding' folder (downloaded model)
-# Can also use HuggingFace model name like 'BAAI/bge-small-zh-v1.5'
-embedding: embedding
+def _generate_sensor_config_dict():
+    """Generate sensor configuration dictionary"""
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$comment": "PurrCat Sensor Configuration File - Generated at {timestamp}",
+        "feishu": {
+            "enabled": False,
+            "app_id": "",
+            "app_secret": "",
+            "chat_id": ""
+        },
+        "rss": {
+            "enabled": False,
+            "subscriptions": [
+                {"name": "Lilian Weng's Blog", "url": "https://lilianweng.github.io/lil-log/feed.xml"},
+                {"name": "Ahead of AI", "url": "https://magazine.sebastianraschka.com/feed"},
+                {"name": "Latepost", "url": "https://rsshub.rssforever.com/latepost"}
+            ]
+        },
+        "heartbeat": {
+            "enabled": False,
+            "interval": 1800
+        },
+        "purrmemo": {
+            "enabled": False,
+            "host": "http://127.0.0.1:8000",
+            "api_key": "",
+            "timeout": 5
+        }
+    }
 
-# Main model configuration (code will automatically use the first one as agent_model)
-main:
-  openai:deepseek-v4-flash:
-    api_keys:
-      - sk-your-first-api-key-here
-    base_url: https://api.deepseek.com
-    description: LLM worker
-    rpm: 60                # requests per minute limit
-    tpm: 1000000           # tokens per minute limit
-    concurrency: 3         # max concurrency
-    max_token: 500000      # memory window token limit
-
-
-# Task model configuration (at least one required for multi-agent collaboration,
-# model can be the same as main, but cannot use the same API-Key)
-task:
-  # openai:deepseek-v4-flash:
-  #   api_keys:
-  #     - sk-your-task-api-key
-  #     - sk-your-second-api-key-but-that-is-not-necessary
-  #   base_url: https://api.deepseek.com
-  #   description: Task Model
-  #   rpm: 60
-  #   tpm: 1000000
-  #   concurrency: 3
-  #   max_token: 500000
-"""
-
-SENSOR_CONFIG_TEMPLATE = """# ============================================
-# PurrCat Sensor Configuration File
-# Path: .purrcat/sensor.yaml
-# Generated: {timestamp}
-# ============================================
-
-# Feishu integration (optional)
-feishu:
-  enabled: false
-  app_id: ""
-  app_secret: ""
-  chat_id: ""
-
-# RSS subscriptions (optional)
-rss:
-  enabled: false
-  subscriptions:
-    - name: Lilian Weng's Blog
-      url: https://lilianweng.github.io/lil-log/feed.xml
-    - name: Ahead of AI
-      url: https://magazine.sebastianraschka.com/feed
-    - name: Latepost
-      url: https://rsshub.rssforever.com/latepost
-
-# Heartbeat sensor (optional)
-heartbeat:
-  enabled: false
-  interval: 1800          # heartbeat interval (seconds)
-
-# PurrMemo memory system (optional)
-purrmemo:
-  enabled: false
-  host: http://127.0.0.1:8000
-  api_key: ""
-  timeout: 5
-"""
-
-FILE_CONFIG_TEMPLATE = """# ============================================
-# PurrCat File System Configuration File
-# Path: .purrcat/file.yaml
-# Generated: {timestamp}
-# ============================================
-
-# Directories prohibited from reading/importing
-dont_read_dirs:
-  - src/
-
-# Directories allowed for export_file writing
-allowed_export_dirs:
-  - .
-
-# Directories mounted to Docker sandbox
-docker_mount:
-  - sandbox/
-
-# Sandbox directories
-sandbox_dirs:
-  - sandbox/
-  - agent_vm/
-
-# Skill directories
-skill_dir:
-  - skill
-"""
+def _generate_file_config_dict():
+    """Generate file system configuration dictionary"""
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$comment": "PurrCat File System Configuration File - Generated at {timestamp}",
+        "dont_read_dirs": ["src/"],
+        "allowed_export_dirs": ["."],
+        "docker_mount": ["sandbox/"],
+        "sandbox_dirs": ["sandbox/", "agent_vm/"],
+        "skill_dir": ["skill"]
+    }
 
 
 def _prompt_overwrite(file_path, force):
@@ -219,13 +179,14 @@ def _generate_mcp_config(purrcat_dir, force=False):
         return False
 
 
-NOTE_CONFIG_TEMPLATE = """skill:
-  - docx
-  - pptx
-  - xlsx
-expectation:
-  - when ask you for analyse the note, please read all the content before starting analysis
-"""
+def _generate_note_config_dict():
+    """Generate note configuration dictionary"""
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$comment": "PurrCat Agent Note Configuration File",
+        "skill": ["docx", "pptx", "xlsx"],
+        "expectation": ["when ask you for analyse the note, please read all the content before starting analysis"]
+    }
 
 CRON_CONFIG_TEMPLATE = """[
   {
@@ -318,18 +279,19 @@ def _generate_note_config(purrcat_dir, force=False):
     agent_dir = os.path.join(purrcat_dir, "agent")
     os.makedirs(agent_dir, exist_ok=True)
     
-    note_path = os.path.join(agent_dir, "note.yaml")
+    note_path = os.path.join(agent_dir, "note.json")
 
     if os.path.exists(note_path) and not _prompt_overwrite(note_path, force):
         return False
 
+    note_config = _generate_note_config_dict()
     try:
         with open(note_path, "w", encoding="utf-8") as f:
-            f.write(NOTE_CONFIG_TEMPLATE)
-        print(f"[+] agent/note.yaml generated")
+            json.dump(note_config, f, indent=2, ensure_ascii=False)
+        print(f"[+] agent/note.json generated")
         return True
     except Exception as e:
-        print(f"X Failed to write agent/note.yaml: {e}")
+        print(f"X Failed to write agent/note.json: {e}")
         return False
 
 
@@ -415,55 +377,58 @@ def _generate_core_files(purrcat_dir, force=False):
 
 def _generate_model_config(purrcat_dir, force=False):
     """Generate model configuration file"""
-    model_path = os.path.join(purrcat_dir, "model.yaml")
+    model_path = os.path.join(purrcat_dir, "model.json")
 
     if os.path.exists(model_path) and not _prompt_overwrite(model_path, force):
         return False
 
-    content = MODEL_CONFIG_TEMPLATE.format(timestamp=datetime.now().strftime("%Y-%m-%d %H:%M"))
+    model_config = _generate_model_config_dict()
+    model_config["$comment"] = model_config["$comment"].format(timestamp=datetime.now().strftime("%Y-%m-%d %H:%M"))
     try:
         with open(model_path, "w", encoding="utf-8") as f:
-            f.write(content)
-        print(f"[+] model.yaml generated")
+            json.dump(model_config, f, indent=2, ensure_ascii=False)
+        print(f"[+] model.json generated")
         return True
     except Exception as e:
-        print(f"X Failed to write model.yaml: {e}")
+        print(f"X Failed to write model.json: {e}")
         return False
 
 
 def _generate_sensor_config(purrcat_dir, force=False):
     """Generate sensor configuration file"""
-    sensor_path = os.path.join(purrcat_dir, "sensor.yaml")
+    sensor_path = os.path.join(purrcat_dir, "sensor.json")
 
     if os.path.exists(sensor_path) and not _prompt_overwrite(sensor_path, force):
         return False
 
-    content = SENSOR_CONFIG_TEMPLATE.format(timestamp=datetime.now().strftime("%Y-%m-%d %H:%M"))
+    sensor_config = _generate_sensor_config_dict()
+    sensor_config["$comment"] = sensor_config["$comment"].format(timestamp=datetime.now().strftime("%Y-%m-%d %H:%M"))
     try:
         with open(sensor_path, "w", encoding="utf-8") as f:
-            f.write(content)
-        print(f"[+] sensor.yaml generated")
+            json.dump(sensor_config, f, indent=2, ensure_ascii=False)
+        print(f"[+] sensor.json generated")
         return True
     except Exception as e:
-        print(f"X Failed to write sensor.yaml: {e}")
+        print(f"X Failed to write sensor.json: {e}")
         return False
 
 
 def _generate_file_config(purrcat_dir, force=False):
     """Generate file system configuration file"""
-    file_path = os.path.join(purrcat_dir, "file.yaml")
+    file_path = os.path.join(purrcat_dir, "file.json")
 
     if os.path.exists(file_path) and not _prompt_overwrite(file_path, force):
         return False
 
-    content = FILE_CONFIG_TEMPLATE.format(timestamp=datetime.now().strftime("%Y-%m-%d %H:%M"))
+    file_config = _generate_file_config_dict()
+    file_config["$comment"] = file_config["$comment"].format(timestamp=datetime.now().strftime("%Y-%m-%d %H:%M"))
     try:
         with open(file_path, "w", encoding="utf-8") as f:
-            f.write(content)
-        print(f"[+] file.yaml generated")
+            json.dump(file_config, f, indent=2, ensure_ascii=False)
+        print(f"[+] file.json generated")
         return True
     except Exception as e:
-        print(f"X Failed to write file.yaml: {e}")
+        print(f"X Failed to write file.json: {e}")
         return False
 
 
@@ -484,6 +449,30 @@ def cmd_help():
     print("  purrcat init")
     print("  purrcat init --force    # Skip all prompts (CI/CD)")
     print("  purrcat start --headless")
+
+
+def cmd_env():
+    """Print environment variable reference"""
+    print("""# PurrCat Environment Variable Reference
+# Note: Current version does not support environment variable override
+#       Please directly edit configuration files in .purrcat/ directory
+#
+# Examples:
+#   # Edit model configuration
+#   vim .purrcat/model.json
+#
+#   # Edit sensor configuration
+#   vim .purrcat/sensor.json
+#
+#   # Edit MCP configuration
+#   vim .purrcat/mcp_config.json
+#
+#   # Edit file system configuration
+#   vim .purrcat/file.json
+#
+#   # Edit agent note configuration
+#   vim .purrcat/agent/note.json
+#""")
 
 
 def cmd_init(force=False):
@@ -530,31 +519,10 @@ def cmd_init(force=False):
     if generated > 0:
         print("")
         print("[*] Next steps:")
-        print("    Edit .purrcat/model.yaml to add your API Key")
+        print("    Edit .purrcat/model.json to add your API Key")
         print("    Edit .purrcat/memory.json to configure memory system")
         print("    Edit .purrcat/mcp_config.json to add MCP Token")
         print("    Then run: purrcat start")
-
-
-def cmd_env():
-    """Print environment variable reference"""
-    print("""# PurrCat Environment Variable Reference
-# Note: Current version does not support environment variable override
-#       Please directly edit configuration files in .purrcat/ directory
-#
-# Examples:
-#   # Edit model configuration
-#   vim .purrcat/model.yaml
-#
-#   # Edit sensor configuration
-#   vim .purrcat/sensor.yaml
-#
-#   # Edit MCP configuration
-#   vim .purrcat/mcp_config.json
-#
-#   # Edit file system configuration
-#   vim .purrcat/file.yaml
-""")
 
 
 def main():

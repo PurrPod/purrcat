@@ -31,16 +31,34 @@ interface LogEntry {
 
 // 🟢 1. 修复节点高亮：增加 selected 属性支持，对齐 Editor 样式
 const TaskMonitorNode = ({ id, data, selected }: any) => {
+  let statusColor = "bg-[#EBCB8B]";
+  let isPulsing = false;
+
+  if (data.nodeState === "running") {
+    statusColor = "bg-[#3498DB]";
+    isPulsing = true;
+  } else if (data.nodeState === "completed") {
+    statusColor = "bg-[#a3be8c]";
+  } else if (data.nodeState === "error") {
+    statusColor = "bg-[#bf616a]";
+    isPulsing = true;
+  } else if (data.nodeState === "waiting") {
+    statusColor = "bg-[#d08770]";
+    isPulsing = true;
+  }
+
+  const isTaskRunning = data.isTaskRunning;
+
   return (
     <div 
       style={data.shape} 
       className={`bg-paper p-4 min-w-[200px] transition-all duration-200 hover:-translate-y-1 border-4 border-ink
         ${selected ? 'shadow-[8px_8px_0px_0px_rgba(212,122,90,1)]' : 
-          data.isRunning ? 'shadow-[6px_6px_0px_0px_rgba(212,122,90,1)]' : 
+          isTaskRunning ? 'shadow-[6px_6px_0px_0px_rgba(212,122,90,1)]' : 
           'shadow-[6px_6px_0px_0px_rgba(26,26,26,1)]'}`}
     >
       <div className="flex items-center gap-3 mb-3 border-b-2 border-ink/10 pb-2">
-        <div className={`w-4 h-4 border-2 border-ink -rotate-3 ${data.isRunning ? 'bg-terracotta animate-pulse' : 'bg-[#EBCB8B]'}`}></div>
+        <div className={`w-4 h-4 border-2 border-ink -rotate-3 ${statusColor} ${isPulsing ? 'animate-pulse' : ''}`}></div>
         <div className="font-black text-lg truncate" style={{ fontFamily: '"Comic Sans MS", cursive' }}>
           {data.label}
         </div>
@@ -54,9 +72,8 @@ const TaskMonitorNode = ({ id, data, selected }: any) => {
         <Terminal size={16} strokeWidth={3} /> View Logs
       </button>
 
-      {/* 隐形连接点 */}
-      <Handle type="target" position={Position.Left} className="!bg-ink !w-3 !h-3 !-left-[18px] !border-2 !border-paper opacity-0" />
-      <Handle type="source" position={Position.Right} className="!bg-ink !w-3 !h-3 !-right-[18px] !border-2 !border-paper opacity-0" />
+      <Handle type="target" position={Position.Left} className="!bg-ink !w-4 !h-4 !border-2 !border-paper !-left-[28px] z-10 hover:!bg-terracotta hover:!scale-125 transition-transform" />
+      <Handle type="source" position={Position.Right} className="!bg-ink !w-4 !h-4 !border-2 !border-paper !-right-[28px] z-10 hover:!bg-[#a3be8c] hover:!scale-125 transition-transform" />
     </div>
   );
 };
@@ -116,7 +133,8 @@ export default function TaskPage({ onBack }: { onBack: () => void }) {
           data: { 
             label: n.data?.name || n.id,
             shape: idx % 2 === 0 ? sketchyShape1 : sketchyShape2,
-            isRunning: task.state === 'running',
+            isTaskRunning: task.state === 'running',
+            nodeState: 'ready',
             onShowLog: (nodeId: string) => setLogModalNodeId(nodeId)
           }
         }));
@@ -157,6 +175,40 @@ export default function TaskPage({ onBack }: { onBack: () => void }) {
     const interval = setInterval(fetchNodeLogs, 1500);
     return () => clearInterval(interval);
   }, [selectedTaskId, logModalNodeId]);
+
+  useEffect(() => {
+    if (!selectedTaskId) return;
+
+    const fetchTaskState = async () => {
+      try {
+        const res = await fetch(`http://localhost:8000/api/tasks/${selectedTaskId}/state`);
+        if (res.ok) {
+          const data = await res.json();
+          const nodeStates = data.node_states || {};
+
+          setNodes((nds) =>
+            nds.map((n) => {
+              const currentState = nodeStates[n.id] || 'ready';
+              if (n.data.nodeState !== currentState) {
+                return {
+                  ...n,
+                  data: {
+                    ...n.data,
+                    nodeState: currentState
+                  }
+                };
+              }
+              return n;
+            })
+          );
+        }
+      } catch (e) { /* ignore */ }
+    };
+
+    fetchTaskState();
+    const interval = setInterval(fetchTaskState, 1500);
+    return () => clearInterval(interval);
+  }, [selectedTaskId, setNodes]);
 
   // 🟢 4. 智能滚动处理逻辑
   const handleLogScroll = () => {
