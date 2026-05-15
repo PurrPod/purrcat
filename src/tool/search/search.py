@@ -59,7 +59,7 @@ def Search(route: str, query: str, topk: int = 5, **kwargs) -> str:
 
 
 def _search_web(query: str, topk: int) -> str:
-    """执行互联网搜索"""
+    """执行互联网搜索（纯检索）"""
     try:
         results, error = web_search(query, topk)
 
@@ -68,9 +68,13 @@ def _search_web(query: str, topk: int) -> str:
 
         md = f"# 🔍 搜索结果: {query}\n\n"
         for i, res in enumerate(results, 1):
-            md += f"### {i}. {res['title']}\n"
-            md += f"- URL: {res['url']}\n"
-            md += f"- {res['snippet'][:500]}\n\n"
+            md += f"## {i}. {res['title']}\n"
+            md += f"**URL:** {res['url']}\n\n"
+            md += f"**摘要:** {res['snippet']}\n\n"
+            md += "---\n\n"
+            
+        # ✨【关键】：在这里通过 Prompt 引导大模型去调用 Fetch 实现解耦的深度阅读
+        md += "💡 **提示：如果需要阅读上述某篇报道的完整详情，请使用 `Fetch` 工具 (source='web') 并传入对应的 URL。**"
 
         return text_response({
             "query": query,

@@ -7,7 +7,6 @@ dependencies:
   - python=3.10
   - pip
   - numpy>=1.26.0
-  - faiss-cpu>=1.7.4
   - pydantic >=2.5.0
   - networkx>=3.1
   - pip:
@@ -27,17 +26,15 @@ dependencies:
       - feedparser>=6.0.10
 
       # Web 搜索与自动化
+      - curl-cffi>=0.6.0
       - duckduckgo-search>=6.0.0
       - beautifulsoup4>=4.12.3
-      - html2text>=2024.2.26
+      - readability-lxml>=0.8.1
+      - markdownify>=0.11.6
 
       # 系统与沙盒
       - docker>=7.0.0
       - pexpect>=4.9.0
-
-      # 多模态处理
-      - opencv-python>=4.9.0
-      - markitdown>=0.0.1
 
       # RAG 检索
       - jieba>=0.42.1
@@ -47,7 +44,6 @@ dependencies:
       - chromadb>=0.5.0
 
       # 工具搜索
-      - deep-translator>=1.11.0
       - scikit-learn>=1.4.0
 
       # Web框架

@@ -1,80 +1,74 @@
-"""Web 内容获取模块 - 获取网页内容并解析为文本"""
+"""Web 内容获取模块 - 仅负责获取指定 URL 网页内容并解析为高质量 Markdown"""
 
-import requests
-from typing import Dict
-from .exceptions import WebNetworkError
+from typing import Dict, Tuple, Optional
 from bs4 import BeautifulSoup
+from readability import Document
+from markdownify import markdownify as md
+from curl_cffi import requests
+from .exceptions import WebNetworkError
+
+DEFAULT_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Accept-Language": "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7",
+}
 
 
-def web_content_fetch(url: str) -> tuple:
+def web_content_fetch(url: str) -> Tuple[Optional[Dict], Optional[str]]:
     """
-    获取网页内容并解析
-    
-    Args:
-        url: 网页 URL
-    
-    Returns:
-        (content_dict, error_message) - content_dict 包含标题、正文等信息
+    获取单页面 URL 内容并使用 Readability 提取纯净正文
     """
     try:
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-        }
-        
-        response = requests.get(url, headers=headers, timeout=15)
+        response = requests.get(url, headers=DEFAULT_HEADERS, timeout=15, impersonate="chrome")
         response.raise_for_status()
-        
-        content_type = response.headers.get('Content-Type', '')
-        
-        # 尝试解析 HTML
+
+        content_type = response.headers.get('Content-Type', '').lower()
+
         if 'text/html' in content_type:
-            soup = BeautifulSoup(response.content, 'html.parser')
-            
-            # 获取标题
-            title = soup.title.string if soup.title else url
-            
-            # 获取正文（优先选择常见的内容标签）
-            content_tags = soup.find_all(['article', 'main', 'div.content', 'div.main', 'div.post-content'])
-            
-            if content_tags:
-                text_content = '\n'.join([tag.get_text(strip=True) for tag in content_tags])
-            else:
-                # 如果找不到特定标签，提取所有段落
-                paragraphs = soup.find_all('p')
-                text_content = '\n'.join([p.get_text(strip=True) for p in paragraphs])
-            
-            # 清理文本
-            text_content = '\n'.join([line.strip() for line in text_content.split('\n') if line.strip()])
-            
+            html_content = response.text
+
+            doc = Document(html_content)
+            clean_html = doc.summary()
+            title = doc.title() if doc.title() else url
+
+            markdown_text = md(clean_html, heading_style="ATX", strip=['script', 'style', 'iframe', 'nav', 'footer'])
+            markdown_text = '\n'.join([line for line in markdown_text.splitlines() if line.strip() != ""])
+
+            if len(markdown_text) < 50:
+                soup = BeautifulSoup(html_content, 'html.parser')
+                title = soup.title.string if soup.title else url
+                paragraphs = soup.find_all(['article', 'main', 'div.content', 'p'])
+                markdown_text = '\n'.join([p.get_text(strip=True) for p in paragraphs])
+
+            final_content = markdown_text[:10000] if len(markdown_text) > 10000 else markdown_text
+
             return {
                 "url": url,
                 "title": title,
-                "content": text_content[:5000] if len(text_content) > 5000 else text_content,
+                "content": f"# {title}\n\n{final_content}",
                 "content_type": "html"
             }, None
-        
+
         elif 'application/json' in content_type:
             return {
                 "url": url,
-                "title": url,
+                "title": "JSON Data",
                 "content": response.json(),
                 "content_type": "json"
             }, None
-        
+
         else:
-            # 其他类型，返回原始内容的前 5000 字符
+            raw_text = response.text if isinstance(response.text, str) else str(response.content)
             return {
                 "url": url,
-                "title": url,
-                "content": response.text[:5000] if isinstance(response.text, str) else str(response.content[:5000]),
+                "title": "Raw Data",
+                "content": raw_text[:5000],
                 "content_type": content_type
             }, None
-            
-    except requests.exceptions.RequestException as e:
-        # 抛出网络异常
+
+    except requests.exceptions.RequestException:
         raise WebNetworkError()
     except WebNetworkError:
-        # 重新抛出，让上层捕获
         raise
     except Exception as e:
         return None, f"解析失败: {str(e)}"
