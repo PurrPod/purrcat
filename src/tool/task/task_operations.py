@@ -1,9 +1,6 @@
 """Task 操作模块 - 任务创建和终止"""
 
-import os
-import json
 import threading
-from typing import Dict
 
 from src.utils.config import get_model_config
 

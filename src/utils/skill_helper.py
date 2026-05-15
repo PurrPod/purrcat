@@ -15,7 +15,7 @@ def get_available_skills() -> list[str]:
                 skills.append(item)
 
         return sorted(skills)
-    except Exception as e:
+    except Exception:
         return []
 
 

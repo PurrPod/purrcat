@@ -27,7 +27,8 @@ class SessionStore:
     def load_global_memo(cls):
         """读取全局共享的缓存记忆列表"""
         path = os.path.join(SESSIONS_DIR, "memo.json")
-        if not os.path.exists(path): return []
+        if not os.path.exists(path):
+            return []
         try:
             with open(path, "r", encoding="utf-8") as f:
                 return json.load(f)
@@ -99,7 +100,8 @@ class SessionStore:
     @classmethod
     def load_session_history(cls, session_id):
         path = os.path.join(SESSIONS_DIR, f"{session_id}.json")
-        if not os.path.exists(path): return []
+        if not os.path.exists(path):
+            return []
         try:
             with open(path, "r", encoding="utf-8") as f:
                 return json.load(f)

@@ -88,7 +88,6 @@ class TaskMonitorScreen(ModalScreen):
 
     def key_enter(self):
         if not self.showing_log:
-            import re
             cards = list(self.query(".task-card"))
             if cards:
                 for c in cards:

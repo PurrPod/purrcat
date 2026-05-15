@@ -14,7 +14,7 @@ DEFAULT_HEADERS = {
 
 def _duckduckgo_search(query: str, max_results: int = 5) -> list:
     """策略一：外网首选 DuckDuckGo"""
-    print(f"\n[Search Debug] 🦆 正在尝试 DuckDuckGo 搜索...")
+    print("\n[Search Debug] 🦆 正在尝试 DuckDuckGo 搜索...")
     try:
         from ddgs import DDGS
         with DDGS() as ddgs:

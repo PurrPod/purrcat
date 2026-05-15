@@ -5,7 +5,6 @@ Downloads sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2 to local e
 """
 
 import os
-import sys
 
 
 def main():
@@ -14,7 +13,7 @@ def main():
     embedding_dir = os.path.join(base_dir, "embedding")
     model_name = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 
-    print(f"[+] Starting Embedding model download...")
+    print("[+] Starting Embedding model download...")
     print(f"[*] Model: {model_name}")
     print(f"[*] Target directory: {embedding_dir}")
 
@@ -37,7 +36,7 @@ def main():
         ],
     )
 
-    print(f"[+] Embedding model download complete!")
+    print("[+] Embedding model download complete!")
     print(f"[*] Model path: {embedding_dir}")
 
 

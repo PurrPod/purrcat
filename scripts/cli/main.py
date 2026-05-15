@@ -3,15 +3,18 @@ import argparse
 import sys
 import os
 
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-if PROJECT_ROOT not in sys.path:
-    sys.path.insert(0, PROJECT_ROOT)
-
 from scripts.cli.cmd_init import run_init
 from scripts.cli.cmd_install import run_install
 from scripts.cli.cmd_setup import run_setup
 from scripts.cli.cmd_start import run_start
 from scripts.cli.cmd_update import run_update
+
+
+def _setup_path():
+    """Set up Python path for cross-platform compatibility"""
+    PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    if PROJECT_ROOT not in sys.path:
+        sys.path.insert(0, PROJECT_ROOT)
 
 
 def cmd_help():
@@ -58,6 +61,8 @@ PurrCat CLI - Cross-platform AI Agent Framework
 
 
 def main():
+    _setup_path()
+
     parser = argparse.ArgumentParser(
         prog="purrcat",
         description="PurrCat - Cross-platform AI Agent Framework",
@@ -94,4 +99,5 @@ def main():
 
 
 if __name__ == "__main__":
+    _setup_path()
     main()

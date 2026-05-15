@@ -2,7 +2,7 @@ import os
 import json
 from src.agent.session_store import SessionStore
 from src.agent.manager import manager
-from src.utils.config import DATA_DIR, SESSIONS_DIR
+from src.utils.config import DATA_DIR
 
 
 def list_sessions():

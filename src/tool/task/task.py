@@ -53,10 +53,14 @@ def Task(action: str, **kwargs) -> str:
         if action not in ["add", "kill", "list", "submit_request"]:
             return error_response(f"无效的操作: {action}", "❌ 无效action")
 
-        if action == "add": return _handle_add(**kwargs)
-        if action == "kill": return _handle_kill(**kwargs)
-        if action == "list": return _handle_list(**kwargs)
-        if action == "submit_request": return _handle_submit_request(**kwargs)
+        if action == "add":
+            return _handle_add(**kwargs)
+        if action == "kill":
+            return _handle_kill(**kwargs)
+        if action == "list":
+            return _handle_list(**kwargs)
+        if action == "submit_request":
+            return _handle_submit_request(**kwargs)
     except Exception as e:
         traceback.print_exc()
         return error_response(f"任务异常: {str(e)}", "❌ Task执行异常")
@@ -67,7 +71,8 @@ def _handle_add(**kwargs) -> str:
     inputs = kwargs.get("inputs") or {}
     core = kwargs.get("core", "openai:deepseek-v4-flash")
 
-    if not name: return error_response("缺少必需参数: name", "❌ 缺少name")
+    if not name:
+        return error_response("缺少必需参数: name", "❌ 缺少name")
 
     graphs = _get_all_graphs_info()
 
@@ -90,14 +95,16 @@ def _handle_add(**kwargs) -> str:
 
     try:
         result, error = add_task_operation(name, inputs, graph_name, core)
-        if error: return warning_response(error, f"⚠️ 任务创建失败")
-        return text_response({"task_id": result["task_id"], "message": result["message"]}, f"🚀 任务已创建")
+        if error:
+            return warning_response(error, "⚠️ 任务创建失败")
+        return text_response({"task_id": result["task_id"], "message": result["message"]}, "🚀 任务已创建")
     except Exception as e:
         return error_response(f"任务创建异常: {e}", "❌ 创建任务异常")
 
 def _handle_kill(**kwargs) -> str:
     task_id = kwargs.get("task_id")
-    if not task_id: return error_response("缺少必需参数: task_id", "❌ 缺少task_id")
+    if not task_id:
+        return error_response("缺少必需参数: task_id", "❌ 缺少task_id")
     result, error = kill_task_operation(task_id)
     return warning_response(error, "⚠️ 终止失败") if error else text_response({"message": result["message"]}, "⛔ 任务已终止")
 

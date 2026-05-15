@@ -53,15 +53,15 @@ def CallMCP(server_name: str, tool_name: str, arguments: dict = None, **kwargs) 
             result = call_mcp_tool(server_name, tool_name, args)
             return text_response(result, f"✅ {tool_name}成功")
 
-        except ToolExecutionError as e:
+        except ToolExecutionError:
             # 捕获参数不匹配、缺少参数等错误
             param_schema_str = json.dumps(tool_schema.get('parameters', {}), ensure_ascii=False)
             return error_response(
                 f"{server_name}.{tool_name} 参数列表：{param_schema_str}",
                 "❌ 参数错误"
             )
-        except ServerNotFoundError as e:
-            return error_response(str(e), "❌ 服务器未找到")
+        except ServerNotFoundError as err:
+            return error_response(str(err), "❌ 服务器未找到")
         except MCPError as e:
             return warning_response(str(e), "⚠️ 执行警告")
 

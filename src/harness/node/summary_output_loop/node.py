@@ -3,7 +3,7 @@ import asyncio
 from typing import Dict, Any
 from src.harness.node.base import BaseNode
 from src.harness.utils.llm_helper import call_llm, inject_force_push
-from src.harness.utils.tool_helper import get_system_schema, extract_tool_calling, check_tool_call_completed
+from src.harness.utils.tool_helper import get_system_schema, extract_tool_calling
 from src.harness.enums import LogType, NodeState
 
 
@@ -96,7 +96,7 @@ class Node(BaseNode):
                             raise asyncio.CancelledError()
                         dynamic_push = self.consume_pending_messages(context)
                         if dynamic_push:
-                            self.log(context, LogType.SYSTEM, f"▶️ [节点恢复] 收到指令，唤醒执行")
+                            self.log(context, LogType.SYSTEM, "▶️ [节点恢复] 收到指令，唤醒执行")
                             messages = inject_force_push(messages, dynamic_push)
                             context.node_state[self.node_id] = NodeState.RUNNING
                             break
@@ -111,7 +111,7 @@ class Node(BaseNode):
                             try:
                                 args = json.loads(tc.function.arguments)
                                 summary = args.get("summary", summary)
-                            except:
+                            except Exception:
                                 pass
                     self.log(context, LogType.SYSTEM, f"✅ [任务完成] 总结: {summary[:100]}..." if len(summary) > 100 else f"✅ [任务完成] 总结: {summary}")
                     return {

@@ -108,7 +108,7 @@ class Node(BaseNode):
                             raise asyncio.CancelledError()
                         dynamic_push = self.consume_pending_messages(context)
                         if dynamic_push:
-                            self.log(context, LogType.SYSTEM, f"▶️ [节点恢复] 收到指令，唤醒执行")
+                            self.log(context, LogType.SYSTEM, "▶️ [节点恢复] 收到指令，唤醒执行")
                             messages = inject_force_push(messages, dynamic_push)
                             context.node_state[self.node_id] = NodeState.RUNNING
                             break
@@ -126,7 +126,7 @@ class Node(BaseNode):
                                 try:
                                     args = json.loads(tc.function.arguments)
                                     summary = args.get("summary", summary)
-                                except:
+                                except Exception:
                                     pass
                         self.log(context, LogType.SYSTEM, f"✅ [任务完成] 总结: {summary[:100]}..." if len(summary) > 100 else f"✅ [任务完成] 总结: {summary}")
                         return {

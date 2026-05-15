@@ -48,7 +48,7 @@ def _generate_model_config(purrcat_dir, force=False):
     try:
         with open(model_path, "w", encoding="utf-8") as f:
             json.dump(model_config, f, indent=2, ensure_ascii=False)
-        print(f"[+] model.json generated")
+        print("[+] model.json generated")
         return True
     except Exception as e:
         print(f"X Failed to write model.json: {e}")
@@ -66,7 +66,7 @@ def _generate_sensor_config(purrcat_dir, force=False):
     try:
         with open(sensor_path, "w", encoding="utf-8") as f:
             json.dump(sensor_config, f, indent=2, ensure_ascii=False)
-        print(f"[+] sensor.json generated")
+        print("[+] sensor.json generated")
         return True
     except Exception as e:
         print(f"X Failed to write sensor.json: {e}")
@@ -84,7 +84,7 @@ def _generate_file_config(purrcat_dir, force=False):
     try:
         with open(file_path, "w", encoding="utf-8") as f:
             json.dump(file_config, f, indent=2, ensure_ascii=False)
-        print(f"[+] file.json generated")
+        print("[+] file.json generated")
         return True
     except Exception as e:
         print(f"X Failed to write file.json: {e}")
@@ -102,7 +102,7 @@ def _generate_memory_config(purrcat_dir, force=False):
     try:
         with open(memory_path, "w", encoding="utf-8") as f:
             json.dump(memory_config, f, indent=2, ensure_ascii=False)
-        print(f"[+] memory.json generated")
+        print("[+] memory.json generated")
         return True
     except Exception as e:
         print(f"X Failed to write memory.json: {e}")
@@ -120,7 +120,7 @@ def _generate_mcp_config(purrcat_dir, force=False):
     try:
         with open(mcp_path, "w", encoding="utf-8") as f:
             json.dump(mcp_config, f, indent=2, ensure_ascii=False)
-        print(f"[+] mcp_config.json generated")
+        print("[+] mcp_config.json generated")
         return True
     except Exception as e:
         print(f"X Failed to write mcp_config.json: {e}")
@@ -141,7 +141,7 @@ def _generate_note_config(purrcat_dir, force=False):
     try:
         with open(note_path, "w", encoding="utf-8") as f:
             json.dump(note_config, f, indent=2, ensure_ascii=False)
-        print(f"[+] agent/note.json generated")
+        print("[+] agent/note.json generated")
         return True
     except Exception as e:
         print(f"X Failed to write agent/note.json: {e}")
@@ -162,7 +162,7 @@ def _generate_core_files(purrcat_dir, force=False):
         try:
             with open(cron_path, "w", encoding="utf-8") as f:
                 f.write(CRON_CONFIG_TEMPLATE)
-            print(f"[+] core/cron.json generated")
+            print("[+] core/cron.json generated")
             results.append(("cron.json", True))
         except Exception as e:
             print(f"X Failed to write core/cron.json: {e}")
@@ -175,7 +175,7 @@ def _generate_core_files(purrcat_dir, force=False):
         try:
             with open(memory_md_path, "w", encoding="utf-8") as f:
                 f.write(MEMEORY_MD_TEMPLATE)
-            print(f"[+] core/MEMORY.md generated")
+            print("[+] core/MEMORY.md generated")
             results.append(("MEMORY.md", True))
         except Exception as e:
             print(f"X Failed to write core/MEMORY.md: {e}")
@@ -188,7 +188,7 @@ def _generate_core_files(purrcat_dir, force=False):
         try:
             with open(solo_md_path, "w", encoding="utf-8") as f:
                 f.write(SOLO_MD_TEMPLATE)
-            print(f"[+] core/SOLO.md generated")
+            print("[+] core/SOLO.md generated")
             results.append(("SOLO.md", True))
         except Exception as e:
             print(f"X Failed to write core/SOLO.md: {e}")
@@ -201,7 +201,7 @@ def _generate_core_files(purrcat_dir, force=False):
         try:
             with open(soul_md_path, "w", encoding="utf-8") as f:
                 f.write(SOUL_MD_TEMPLATE)
-            print(f"[+] core/SOUL.md generated")
+            print("[+] core/SOUL.md generated")
             results.append(("SOUL.md", True))
         except Exception as e:
             print(f"X Failed to write core/SOUL.md: {e}")
@@ -214,7 +214,7 @@ def _generate_core_files(purrcat_dir, force=False):
         try:
             with open(todo_md_path, "w", encoding="utf-8") as f:
                 f.write(TODO_MD_TEMPLATE)
-            print(f"[+] core/TODO.md generated")
+            print("[+] core/TODO.md generated")
             results.append(("TODO.md", True))
         except Exception as e:
             print(f"X Failed to write core/TODO.md: {e}")
@@ -232,7 +232,7 @@ def run_init(force=False):
         if force:
             print(f"[*] Directory exists: {purrcat_dir} (force mode, overwriting)")
         else:
-            print(f"[!] .purrcat directory already exists, continue initialization?")
+            print("[!] .purrcat directory already exists, continue initialization?")
             val = input("  All config files will be confirmed one by one (Y/N): ").strip().lower()
             if val != "y":
                 print("  Cancelled")

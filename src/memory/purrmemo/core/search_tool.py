@@ -1,6 +1,4 @@
-import os
-import json
-from datetime import datetime, timedelta
+from datetime import datetime
 import threading
 from src.utils.config import get_memory_config
 from .storage.event_engine import EventEngine
@@ -124,7 +122,7 @@ class RAGSearchTool:
 
             fallback_warning = ""
             if not final_events and start_time and end_time:
-                fallback_warning = f"⚠️ 当前筛选日期内未找到与检索相关的事件。\n\n"
+                fallback_warning = "⚠️ 当前筛选日期内未找到与检索相关的事件。\n\n"
 
             return {"events": final_events, "warning": fallback_warning}
         except Exception as e:

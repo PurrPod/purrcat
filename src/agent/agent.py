@@ -49,7 +49,8 @@ class Agent:
         soul_md, system_rules, memory_md = "", "", ""
         try:
             if os.path.exists(SOUL_MD_PATH):
-                with open(SOUL_MD_PATH, "r", encoding="utf-8") as f: soul_md = f.read().strip()
+                with open(SOUL_MD_PATH, "r", encoding="utf-8") as f:
+                    soul_md = f.read().strip()
             if os.path.exists(SYSTEM_RULES_DIR):
                 rule_files = sorted([f for f in os.listdir(SYSTEM_RULES_DIR) if f.endswith(".md")])
                 for rf in rule_files:
@@ -57,13 +58,16 @@ class Agent:
                         system_rules += f.read().strip() + "\n\n"
                 system_rules = system_rules.strip()
             if os.path.exists(MEMORY_MD_PATH):
-                with open(MEMORY_MD_PATH, "r", encoding="utf-8") as f: memory_md = f.read().strip()
+                with open(MEMORY_MD_PATH, "r", encoding="utf-8") as f:
+                    memory_md = f.read().strip()
         except Exception as e:
             print(f"⚠️ Prompt 构建发生异常: {e}")
 
         combined = soul_md
-        if system_rules: combined += f"\n\n---\n\n{system_rules}"
-        if memory_md: combined += f"\n\n---\n\n# 【系统长期记忆档案】\n\n{memory_md}"
+        if system_rules:
+            combined += f"\n\n---\n\n{system_rules}"
+        if memory_md:
+            combined += f"\n\n---\n\n# 【系统长期记忆档案】\n\n{memory_md}"
         return combined
 
     def stop(self):
@@ -175,7 +179,8 @@ class Agent:
         rc = getattr(msg_resp, "reasoning_content", None)
         if rc is None and hasattr(msg_resp, "model_dump"):
             rc = msg_resp.model_dump().get("reasoning_content")
-        if rc is not None: assist_msg["reasoning_content"] = rc
+        if rc is not None:
+            assist_msg["reasoning_content"] = rc
         if msg_resp.tool_calls:
             assist_msg["tool_calls"] = [
                 {"id": t.id, "type": t.type, "function": {"name": t.function.name, "arguments": t.function.arguments}}
@@ -195,8 +200,9 @@ class Agent:
             if arguments_str:
                 try:
                     arguments = json.loads(arguments_str)
-                except Exception as e:
-                    if repair_json: arguments = repair_json(arguments_str, return_objects=True)
+                except Exception:
+                    if repair_json:
+                        arguments = repair_json(arguments_str, return_objects=True)
             if not isinstance(arguments, dict):
                 error_msg = "❌ 系统拦截：工具参数格式严重损坏。"
                 self._append_history(
@@ -216,7 +222,7 @@ class Agent:
 
             try:
                 snip = json.loads(result_content).get('snip', '') if isinstance(json.loads(result_content), dict) else ''
-            except:
+            except Exception:
                 snip = str(result_content)[:100]
             get_gateway().send(f"🔧{target_tool_name}({args_str[:50]}...)\n\n---\n\n{snip}")
             self._append_history(

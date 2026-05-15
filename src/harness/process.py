@@ -3,10 +3,12 @@ import datetime
 import importlib
 import json
 import os
+import shutil
 import threading
 import time
 import traceback
 import uuid
+import atexit
 from collections import deque
 from typing import Dict, Any, List
 
@@ -93,7 +95,9 @@ class Task:
 
     def load_graph(self):
         """纯粹地解析 JSON，动态加载节点，并执行顶层参数强校验"""
-        import os, json, importlib
+        import os
+        import json
+        import importlib
         from .enums import TaskState, NodeState
 
         graph_path = os.path.join(os.path.dirname(__file__), "graph", f"{self.graph_name}.json")
@@ -454,7 +458,7 @@ class Task:
 
             TASK_INSTANCES[task.task_id] = task
             return task
-        except Exception as e:
+        except Exception:
             print(f"❌ [Task Checkpoint] 加载失败 {checkpoint_dir}: {traceback.format_exc()}")
             return None
 
@@ -536,9 +540,6 @@ def reload_task_by_id(task_id: str):
     return None
 
 
-import shutil
-
-
 def kill_and_cleanup_task(task_id: str):
     # 1. 从内存中移除并终止
     if task_id in TASK_INSTANCES:
@@ -557,8 +558,6 @@ def kill_and_cleanup_task(task_id: str):
                 return True
     return False
 
-
-import atexit
 
 def graceful_shutdown_tasks():
     """

@@ -55,7 +55,8 @@ class AgentManager:
         return SessionStore.get_all_sessions()
 
     def branch_current_session(self, branch_alias=None):
-        if not self._agent: return None
+        if not self._agent:
+            return None
 
         # 🟢 彻底移除强制打断，改为阻塞式安全等待，直到 Agent 完成当前全部流转
         if self._agent.state != "idle":
@@ -84,7 +85,8 @@ class AgentManager:
         return new_id
 
     def create_clean_session(self, branch_alias=None):
-        if not self._agent: return None
+        if not self._agent:
+            return None
 
         # 🟢 彻底移除强制打断，改为阻塞式安全等待
         if self._agent.state != "idle":
@@ -124,7 +126,8 @@ class AgentManager:
         return new_id
 
     def checkout_session(self, target_session_id):
-        if not self._agent: return False
+        if not self._agent:
+            return False
 
         # 🟢 彻底移除强制打断，改为阻塞式安全等待
         if self._agent.state != "idle":

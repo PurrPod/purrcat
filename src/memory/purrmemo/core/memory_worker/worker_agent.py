@@ -8,22 +8,21 @@ import hashlib
 from datetime import datetime
 from src.utils.config import get_memory_config, MEMORY_PENDING_DIR, MEMORY_DIR
 
-ARCHIVED_DIR = os.path.join(MEMORY_DIR, "buffer", "archived")
-ERROR_DIR = os.path.join(MEMORY_DIR, "buffer", "error")
-
-# 确保目录存在
-os.makedirs(MEMORY_PENDING_DIR, exist_ok=True)
-os.makedirs(ARCHIVED_DIR, exist_ok=True)
-os.makedirs(ERROR_DIR, exist_ok=True)
-
 from ..storage.event_engine import EventEngine
 from ..storage.vector_engine import VectorEngine
 from ..storage.graph_engine import GraphEngine
 
-from .prompt import MEMORY_WORKER_PROMPT
-from .tools import rag_search, add_relation, reinforce_relation, weaken_relation, MEMORY_WORKER_TOOLS
+from .tools import rag_search, add_relation, reinforce_relation, weaken_relation
 from src.model import AgentModel
 from ..search_tool import start_forgetfulness_scheduler
+
+ARCHIVED_DIR = os.path.join(MEMORY_DIR, "buffer", "archived")
+ERROR_DIR = os.path.join(MEMORY_DIR, "buffer", "error")
+
+os.makedirs(MEMORY_PENDING_DIR, exist_ok=True)
+os.makedirs(ARCHIVED_DIR, exist_ok=True)
+os.makedirs(ERROR_DIR, exist_ok=True)
+
 
 class MemoryAgent:
     def __init__(self):
@@ -274,5 +273,5 @@ class MemoryAgent:
                     if os.path.exists(file_path):
                         self._process_file(file_path)
                 time.sleep(polling_interval)
-            except Exception as e:
+            except Exception:
                 time.sleep(polling_interval)

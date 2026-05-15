@@ -1,13 +1,12 @@
 """MCP 会话管理器 - 处理 MCP Server 长连接维护"""
 
 import asyncio
-import json
 import os
 import shutil
 import threading
 import time
 import atexit
-from typing import Dict, Any
+from typing import Dict
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client

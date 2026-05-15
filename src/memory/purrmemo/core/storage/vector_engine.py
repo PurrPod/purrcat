@@ -1,6 +1,6 @@
 import os
 from datetime import datetime
-from chromadb import Client, PersistentClient
+from chromadb import PersistentClient
 from chromadb.config import Settings
 from sentence_transformers import SentenceTransformer
 from src.utils.config import get_memory_config, get_embedding_model

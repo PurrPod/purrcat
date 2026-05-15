@@ -1,5 +1,4 @@
 import collections
-import json
 from typing import Any, Optional
 
 from src.sensor.base import BaseSensor

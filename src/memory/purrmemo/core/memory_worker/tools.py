@@ -1,5 +1,3 @@
-from pydantic import BaseModel, Field
-import datetime
 import hashlib
 from src.memory.purrmemo.core.storage.graph_engine import GraphEngine
 
@@ -62,7 +60,7 @@ def reinforce_relation(source_node: str, relation: str, target_node: str) -> str
     success = graph_engine.reinforce_relation(source_node_id, target_node_id, relation, increment=0.1)
 
     if success:
-        return f"成功强化已有关系，置信度已提升。"
+        return "成功强化已有关系，置信度已提升。"
     return f"强化关系失败：未找到 ({source_node}) -[{relation}]-> ({target_node})"
 
 

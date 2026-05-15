@@ -3,7 +3,6 @@ import sys
 import json
 import importlib
 import datetime
-import asyncio
 from typing import Dict, Any, List
 from json_repair import repair_json
 from src.harness.utils.tool_helper import execute_global_tool
@@ -137,14 +136,14 @@ class BaseNode:
                     target_arguments = arguments.get("tool_args", {})
                     
                     if not target_tool_name or target_tool_name not in local_registry:
-                        available_names = list(local_registry.keys())
                         error_msg = f"⚠️ [工具缺失] 未找到 '{target_tool_name}'"
                         self.log(context, LogType.WARNING, error_msg)
                         final_content = _format_result({"error": error_msg})
                     else:
                         try:
                             args_str = ", ".join([f"{k}={repr(v)}" for k, v in target_arguments.items()])
-                            if len(args_str) > 100: args_str = args_str[:97] + "..."
+                            if len(args_str) > 100:
+                                args_str = args_str[:97] + "..."
                             self.log(context, LogType.TOOL_CALL, f"🔧 [拓展工具] {target_tool_name}({args_str})")
                             
                             ToolClass = local_registry[target_tool_name]
@@ -161,7 +160,8 @@ class BaseNode:
                 # 👉 路由到全局基础工具 (task_done, bash, yield_to_human 等)
                 try:
                     args_str = ", ".join([f"{k}={repr(v)}" for k, v in arguments.items()])
-                    if len(args_str) > 100: args_str = args_str[:97] + "..."
+                    if len(args_str) > 100:
+                        args_str = args_str[:97] + "..."
                     self.log(context, LogType.TOOL_CALL, f"🔧 [全局工具] {original_tool_name}({args_str})")
                     
                     raw_result = execute_global_tool(original_tool_name, arguments, context=context)

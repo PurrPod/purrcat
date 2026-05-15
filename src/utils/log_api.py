@@ -2,7 +2,7 @@ import os
 import json
 import datetime
 import re
-from typing import Optional, Dict, List, Any
+from typing import Optional, Dict, Any
 
 
 _task_log_cache = {}

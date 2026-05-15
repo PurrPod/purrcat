@@ -6,7 +6,7 @@ from src.utils.task_api import (
     get_task_list, get_task_state, kill_task, submit_instruction, delete_task,
     force_push_task
 )
-from src.utils.log_api import format_task_log, get_task_log_structured
+from src.utils.log_api import get_task_log_structured
 from src.utils.task_api import get_task_log_jsonl
 
 router = APIRouter(prefix="/api/tasks", tags=["Tasks"])

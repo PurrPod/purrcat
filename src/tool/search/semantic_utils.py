@@ -1,4 +1,3 @@
-import os
 import threading
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity

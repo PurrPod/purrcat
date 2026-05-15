@@ -1,11 +1,7 @@
-import os
-import json
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, BackgroundTasks
 from pydantic import BaseModel
 
-from src.agent.session_store import SessionStore
 from src.agent.manager import manager
-from src.utils.config import DATA_DIR
 from src.utils.session_api import list_sessions, get_session_history, create_session, delete_session, run_agent_task
 
 router = APIRouter(prefix="/api", tags=["Chat & Sessions"])

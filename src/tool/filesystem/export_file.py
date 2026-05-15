@@ -108,7 +108,7 @@ def export_file(sandbox_path: str, host_path: str) -> dict:
             commit_msg = result.stdout.strip() or result.stderr.strip()
         else:
             result = subprocess.run(
-                ["git", "-C", git_dir, "commit", "-m", f"auto-snapshot: initial commit after export"],
+                ["git", "-C", git_dir, "commit", "-m", "auto-snapshot: initial commit after export"],
                 capture_output=True, timeout=30, text=True
             )
             commit_msg = result.stdout.strip() or result.stderr.strip()

@@ -1,4 +1,3 @@
-import re
 import json
 from textual.app import ComposeResult
 from textual.containers import Vertical

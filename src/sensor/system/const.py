@@ -3,7 +3,7 @@ import json
 import os
 import threading
 import datetime
-from typing import Any, Optional
+from typing import Any
 
 from src.sensor.base import BaseSensor
 from src.sensor.gateway import get_gateway

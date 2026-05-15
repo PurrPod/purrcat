@@ -4,7 +4,7 @@ import threading
 from typing import Any, Optional
 
 import lark_oapi as lark
-from lark_oapi.api.im.v1 import *
+from lark_oapi.api.im.v1 import P2ImMessageReceiveV1, CreateMessageRequest, CreateMessageRequestBody
 
 from src.sensor.base import BaseSensor
 from src.sensor.gateway import get_gateway
@@ -93,7 +93,7 @@ class FeishuSensor(BaseSensor):
 
             resp = self.client.im.v1.message.create(req)
             if resp.success():
-                print(f"✅ [Feishu Sensor] 成功发送 Markdown 卡片")
+                print("✅ [Feishu Sensor] 成功发送 Markdown 卡片")
                 return True
             else:
                 print(f"❌ [Feishu Sensor] 发送失败: code: {resp.code}, msg: {resp.msg}, log_id: {resp.get_log_id()}")

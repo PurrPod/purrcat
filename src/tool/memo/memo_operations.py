@@ -6,7 +6,7 @@ import re
 import threading
 import uuid
 import datetime
-from src.utils.config import MEMORY_PENDING_DIR, AGENT_CORE_DIR, get_agent_model
+from src.utils.config import MEMORY_PENDING_DIR, AGENT_CORE_DIR
 from src.model import AgentModel
 
 MEMORY_MD_PATH = os.path.join(AGENT_CORE_DIR, "MEMORY.md")

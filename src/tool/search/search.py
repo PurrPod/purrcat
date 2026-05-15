@@ -2,13 +2,8 @@
 
 import traceback
 from src.tool.utils.format import text_response, error_response, warning_response
-from src.tool.search.exceptions import (
-    SearchError,
-    InvalidRouteError,
-    MissingParameterError
-)
 from src.tool.search.web_search import web_search
-from src.tool.search.skill_search import search_skills, load_skill
+from src.tool.search.skill_search import search_skills
 from src.tool.search.mcp_search import mcp_search
 
 

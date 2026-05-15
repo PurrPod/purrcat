@@ -3,13 +3,13 @@ import sys
 import pickle
 import networkx as nx
 
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-if project_root not in sys.path:
-    sys.path.insert(0, project_root)
-
 from src.memory.purrmemo.core.config import GRAPH_DATABASE_CONFIG
 from src.utils.config import MEMORY_DIR
 from pyvis.network import Network
+
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
 
 class GraphVisualizer:

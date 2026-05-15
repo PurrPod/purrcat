@@ -2,7 +2,7 @@
 
 import traceback
 import json
-from src.tool.utils.format import text_response, error_response, warning_response
+from src.tool.utils.format import text_response, error_response
 from src.tool.memo.memo_operations import _validate_memo_data, _write_to_pending, _smart_update_memory_md
 from src.memory.purrmemo import get_memory_client
 from src.agent.session_store import SessionStore
@@ -53,7 +53,6 @@ def _handle_add(memo_data: dict = None) -> str:
     if errors:
         return error_response("参数校验失败:\n" + "\n".join(errors), "❌ 参数校验失败")
 
-    short_term = valid_data["short_term"]
     events = valid_data["events"]
     work_exp = valid_data["work_exp"]
     cognition = valid_data["cognition"]
