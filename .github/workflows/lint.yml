@@ -1,0 +1,67 @@
+name: Lint
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "**.py"
+      - "**.ts"
+      - "**.tsx"
+  pull_request:
+    branches: [main]
+    paths:
+      - "**.py"
+      - "**.ts"
+      - "**.tsx"
+
+jobs:
+  python-lint:
+    name: Python Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v6
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: 'pip'
+
+      - name: Install Linting Tools
+        run: |
+          pip install ruff isort black
+
+      - name: Ruff Check
+        run: ruff check src/ scripts/ server/ tui/ --output-format=github
+
+      - name: Ruff Format
+        run: ruff format src/ scripts/ server/ tui/ --check
+
+      - name: isort Check
+        run: isort --check src/ scripts/ server/ tui/
+
+      - name: Black Check
+        run: black --check src/ scripts/ server/ tui/
+
+  js-lint:
+    name: JavaScript/TypeScript Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20.x
+          cache: 'npm'
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Install Dependencies
+        working-directory: ui
+        run: npm ci
+
+      - name: ESLint
+        working-directory: ui
+        run: npm run lint

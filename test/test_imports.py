@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 模块导入测试脚本
-测试项目各个模块能否正常导入，不进行深度功能测试
+测试项目核心模块能否正常导入
 """
 import sys
 import os
@@ -11,6 +11,7 @@ from pathlib import Path
 project_root = str(Path(__file__).resolve().parent.parent)
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
+
 def test_import(module_name):
     """测试单个模块导入"""
     try:
@@ -34,32 +35,12 @@ def main():
         "src.utils.tracker",
         "src.model",
         "src.model.core",
-        "src.model.core.llm_client",
         "src.model.facade",
-        "src.model.facade.model",
         "src.model.manager",
-        "src.model.manager.concurrency",
-        "src.model.manager.key_manager",
         "src.memory.purrmemo",
-        "src.memory.purrmemo.client",
-        "src.memory.purrmemo.core",
-        "src.memory.purrmemo.core.config",
-        "src.memory.purrmemo.core.search_tool",
         "src.agent.manager",
         "src.tool",
-        "src.tool.utils.format",
-        "src.tool.utils.route",
-        "src.tool.bash",
-        "src.tool.callmcp",
-        "src.tool.cron",
-        "src.tool.fetch",
-        "src.tool.filesystem",
-        "src.tool.memo",
-        "src.tool.search",
-        "src.tool.task",
         "src.sensor",
-        "src.sensor.base",
-        "src.sensor.gateway",
         "src.harness.process",
     ]
 

@@ -1,0 +1,68 @@
+labelPRs:
+  - label: "type: bug"
+    title:
+      - "(bug|fix|error|crash|broken)"
+    body:
+      - "(bug|fix|error|crash)"
+
+  - label: "type: feature"
+    title:
+      - "(feature|add|new)"
+    body:
+      - "(feature|add|new)"
+
+  - label: "type: enhancement"
+    title:
+      - "(enhance|improve|optimize)"
+    body:
+      - "(enhance|improve|optimize)"
+
+  - label: "type: documentation"
+    title:
+      - "(docs|documentation)"
+    body:
+      - "(docs|documentation)"
+    files:
+      - "**/*.md"
+      - "docs/**/*"
+
+  - label: "type: refactor"
+    title:
+      - "(refactor|cleanup)"
+    body:
+      - "(refactor|cleanup)"
+
+  - label: "type: tests"
+    title:
+      - "(test|tests)"
+    body:
+      - "(test|tests)"
+    files:
+      - "test/**/*"
+      - "**/*test*.py"
+
+  - label: "area: backend"
+    files:
+      - "src/**/*"
+      - "server/**/*"
+      - "scripts/**/*"
+
+  - label: "area: ui"
+    files:
+      - "ui/**/*"
+
+  - label: "area: tui"
+    files:
+      - "tui/**/*"
+
+  - label: "area: ci-cd"
+    files:
+      - ".github/**/*"
+
+  - label: "priority: high"
+    title:
+      - "(urgent|critical|high)"
+
+  - label: "priority: low"
+    title:
+      - "(low|minor)"

@@ -2,53 +2,171 @@ name: PurrCat CI
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
   pull_request:
-    branches: [ "main" ]
+    branches: [main]
+    types: [opened, reopened, synchronize, ready_for_review]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  backend-tests:
+  preflight:
+    name: Preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      python_changed: ${{ steps.detect.outputs.python_changed }}
+      ui_changed: ${{ steps.detect.outputs.ui_changed }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
+
+      - name: Detect changed scopes
+        id: detect
+        run: |
+          set -euo pipefail
+          
+          if [ "${{ github.event_name }}" = "push" ]; then
+            BASE="${{ github.event.before }}"
+          else
+            BASE="${{ github.event.pull_request.base.sha }}"
+          fi
+          
+          CHANGED_FILES=$(git diff --name-only "$BASE" HEAD)
+          
+          if echo "$CHANGED_FILES" | grep -qE "^(src/|test/|main\.py|environment\.yml|scripts/|server/|tui/)"; then
+            echo "python_changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "python_changed=false" >> "$GITHUB_OUTPUT"
+          fi
+          
+          if echo "$CHANGED_FILES" | grep -qE "^ui/"; then
+            echo "ui_changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ui_changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  python-tests:
+    name: Python Tests (${{ matrix.os }})
+    needs: [preflight]
+    if: needs.preflight.outputs.python_changed == 'true'
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
-    defaults:
-      run:
-        shell: bash -el {0}
 
     steps:
-    - name: Checkout Code
-      uses: actions/checkout@v4
+      - name: Checkout Code
+        uses: actions/checkout@v6
 
-    - name: Setup Conda Environment
-      uses: conda-incubator/setup-miniconda@v3
-      with:
-        activate-environment: CatInCup
-        environment-file: environment.yml
-        python-version: '3.10'
-        auto-activate-base: false
-        cache-environment: true
+      - name: Setup Conda Environment
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          activate-environment: PurrCat
+          environment-file: environment.yml
+          python-version: '3.10'
+          auto-activate-base: false
+          cache-environment: true
 
-    - name: Install Additional Linting Tools
-      run: |
-        pip install ruff pyflakes
+      - name: Install Additional Linting Tools
+        run: |
+          pip install ruff pyflakes
 
-    - name: Python Syntax Check
-      run: |
-        python -m py_compile main.py
-        echo "main.py syntax check passed"
-        python -m compileall -q -f src/ || true
-        echo "src/ directory syntax check completed"
+      - name: Python Syntax Check
+        shell: bash
+        run: |
+          python -m py_compile main.py
+          echo "main.py syntax check passed"
+          python -m compileall -q -f src/
+          echo "src/ directory syntax check completed"
 
-    - name: Ruff Lint Check
-      run: |
-        ruff check src/ --ignore E501 --output-format concise || echo "Some lint warnings can be ignored"
-        echo "Code style check completed"
+      - name: Ruff Lint Check
+        shell: bash
+        run: |
+          ruff check src/ --ignore E501 --output-format concise
 
-    - name: Module Import Test
-      env:
-        PYTHONIOENCODING: utf-8
-      run: |
-        python test/test_imports.py
+      - name: Module Import Test
+        shell: bash
+        env:
+          PYTHONIOENCODING: utf-8
+        run: |
+          python test/test_imports.py
 
+  ui-build:
+    name: UI Build
+    needs: [preflight]
+    if: needs.preflight.outputs.ui_changed == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20.x
+          cache: 'npm'
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Install UI Dependencies
+        working-directory: ui
+        run: npm ci
+
+      - name: Build UI
+        working-directory: ui
+        run: npm run build
+
+  security-check:
+    name: Security Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v6
+
+      - name: Detect Private Keys
+        run: |
+          find . -type f \( -name "*.py" -o -name "*.json" -o -name "*.yml" -o -name "*.yaml" \) \
+            -not -path "./.git/*" -not -path "./ui/node_modules/*" \
+            -exec grep -l -E "(BEGIN [A-Za-z ]+KEY|private-key|api[_-]key|secret[_-]key)" {} \; || echo "No secrets found in code files"
+
+  ci-summary:
+    name: CI Summary
+    needs: [preflight, python-tests, ui-build, security-check]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check CI Results
+        env:
+          PYTHON_RESULT: ${{ needs.python-tests.result }}
+          UI_RESULT: ${{ needs.ui-build.result }}
+          SECURITY_RESULT: ${{ needs.security-check.result }}
+        run: |
+          set -euo pipefail
+          
+          echo "=== CI Summary ==="
+          echo "Python Tests: $PYTHON_RESULT"
+          echo "UI Build: $UI_RESULT"
+          echo "Security Check: $SECURITY_RESULT"
+          
+          FAILED_JOBS=()
+          
+          if [ "$PYTHON_RESULT" = "failure" ]; then FAILED_JOBS+=("python-tests"); fi
+          if [ "$UI_RESULT" = "failure" ] && [ "${{ needs.preflight.outputs.ui_changed }}" = "true" ]; then FAILED_JOBS+=("ui-build"); fi
+          if [ "$SECURITY_RESULT" = "failure" ]; then FAILED_JOBS+=("security-check"); fi
+          
+          if [ ${#FAILED_JOBS[@]} -gt 0 ]; then
+            echo "::error::The following jobs failed: ${FAILED_JOBS[*]}"
+            exit 1
+          fi
+          
+          echo "All CI checks passed!"

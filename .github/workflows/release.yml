@@ -1,0 +1,139 @@
+name: PurrCat Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version (e.g., 1.0.0, 1.0.0-beta.1)
+        required: true
+        type: string
+      release_type:
+        description: Release type
+        required: true
+        default: beta
+        type: choice
+        options:
+          - alpha
+          - beta
+          - stable
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    name: Validate Release
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Validate Version Format
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta)\.[0-9]+)?$ ]]; then
+            echo "::error::Invalid version format: $VERSION"
+            echo "Expected format: X.Y.Z or X.Y.Z-alpha.N or X.Y.Z-beta.N"
+            exit 1
+          fi
+          
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Check Changelog
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          
+          if [ ! -f CHANGELOG.md ]; then
+            echo "::warning::CHANGELOG.md not found"
+            exit 0
+          fi
+          
+          if ! grep -q "## \[$VERSION\]" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md does not contain entry for version $VERSION"
+            exit 1
+          fi
+
+      - name: Create Tag
+        id: tag
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          
+          TAG="v$VERSION"
+          
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "::error::Tag $TAG already exists"
+            exit 1
+          fi
+          
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git tag -a "$TAG" -m "Release $TAG"
+          git push origin "$TAG"
+          
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+  publish:
+    name: Publish Release
+    needs: [validate]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.validate.outputs.tag }}
+
+      - name: Create GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.validate.outputs.tag }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          
+          RELEASE_NOTES=$(awk -v version="$VERSION" '
+            $0 == "## [" version "]" { in_section = 1; next }
+            /^## / && in_section { exit }
+            in_section { print }
+          ' CHANGELOG.md)
+          
+          if [ -z "$RELEASE_NOTES" ]; then
+            RELEASE_NOTES="Release $VERSION"
+          fi
+          
+          gh release create "$TAG" \
+            --title "PurrCat $VERSION" \
+            --notes "$RELEASE_NOTES" \
+            ${{ inputs.release_type != 'stable' && '--prerelease' || '' }}
+
+      - name: Build UI
+        working-directory: ui
+        run: |
+          npm ci
+          npm run build
+
+      - name: Upload UI Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-dist
+          path: ui/dist/
+          retention-days: 7
+
+      - name: Upload Release Asset
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.validate.outputs.tag }}
+        run: |
+          cd ui/dist
+          zip -r purrcat-ui-${{ inputs.version }}.zip .
+          gh release upload "$TAG" purrcat-ui-${{ inputs.version }}.zip

@@ -1,0 +1,70 @@
+name: Bug Report
+description: Report a bug in PurrCat
+title: "[Bug] "
+labels: ["type: bug"]
+assignees: []
+
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Describe the bug
+      description: A clear and concise description of what the bug is.
+      placeholder: "When I do X, Y happens instead of Z..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Step by step instructions to reproduce the bug
+      placeholder: |
+        1. Go to '...'
+        2. Click on '....'
+        3. Scroll down to '....'
+        4. See error
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What you expected to happen
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or error messages
+      description: If applicable, add logs or error messages to help debug
+      render: shell
+
+  - type: input
+    id: version
+    attributes:
+      label: PurrCat version
+      description: Which version of PurrCat are you using?
+      placeholder: "e.g., 1.0.0"
+
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      description: Which OS are you using?
+      placeholder: "e.g., Ubuntu 22.04, Windows 11"
+
+  - type: input
+    id: python
+    attributes:
+      label: Python version
+      description: Which Python version are you using?
+      placeholder: "e.g., 3.11"
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Add any other context about the problem here.

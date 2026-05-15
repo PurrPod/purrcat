@@ -1,0 +1,30 @@
+# Protect the ownership rules themselves
+/.github/CODEOWNERS @Sukice
+
+# Core backend code
+/src/agent/ @Sukice
+/src/harness/ @Sukice
+/src/memory/ @Sukice
+/src/model/ @Sukice
+/src/tool/ @Sukice
+/src/utils/ @Sukice
+/server/ @Sukice
+/scripts/ @Sukice
+/main.py @Sukice
+
+# UI code
+/ui/ @Sukice
+
+# TUI code
+/tui/ @Sukice
+
+# Test files
+/test/ @Sukice
+
+# Security-sensitive files
+/src/sensor/ @Sukice
+**/*secret*.py @Sukice
+**/*auth*.py @Sukice
+
+# CI/CD configuration
+/.github/workflows/ @Sukice
