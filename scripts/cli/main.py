@@ -1,4 +1,5 @@
 """PurrCat CLI - Cross-platform AI Agent Framework"""
+
 import argparse
 import sys
 import os
@@ -12,7 +13,9 @@ from scripts.cli.cmd_update import run_update
 
 def _setup_path():
     """Set up Python path for cross-platform compatibility"""
-    PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    PROJECT_ROOT = os.path.dirname(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    )
     if PROJECT_ROOT not in sys.path:
         sys.path.insert(0, PROJECT_ROOT)
 
@@ -48,10 +51,12 @@ PurrCat CLI - Cross-platform AI Agent Framework
     print("  purrcat install graph daily_summary")
     print("")
     print("  # Install third-party skill from any GitHub repo")
-    print("  purrcat install skill https://github.com/user/repo/tree/main/path/to/skill")
+    print(
+        "  purrcat install skill https://github.com/user/repo/tree/main/path/to/skill"
+    )
     print("")
     print("  purrcat update")
-    print("  purrcat update --version=\"2026.05.15\"")
+    print('  purrcat update --version="2026.05.15"')
     print("  purrcat start --headless")
     print("")
     print("Docs:     https://purrpod.github.io/")
@@ -66,14 +71,34 @@ def main():
     parser = argparse.ArgumentParser(
         prog="purrcat",
         description="PurrCat - Cross-platform AI Agent Framework",
-        add_help=False
+        add_help=False,
     )
-    parser.add_argument("command", nargs="?", default="help", choices=["init", "help", "install", "setup", "start", "update"])
-    parser.add_argument("--force", "-f", action="store_true", help="Force overwrite existing files")
-    parser.add_argument("--headless", action="store_true", help="Run in background (for start command)")
-    parser.add_argument("--help", "-h", action="store_true", help="Show this help message")
-    parser.add_argument("--version", type=str, help="Specify release version to update to (e.g., 2026.05.15 or v2026.05.15)")
-    parser.add_argument("ext_type", nargs="?", choices=["skill", "node", "graph"], help="Type of extension to install")
+    parser.add_argument(
+        "command",
+        nargs="?",
+        default="help",
+        choices=["init", "help", "install", "setup", "start", "update"],
+    )
+    parser.add_argument(
+        "--force", "-f", action="store_true", help="Force overwrite existing files"
+    )
+    parser.add_argument(
+        "--headless", action="store_true", help="Run in background (for start command)"
+    )
+    parser.add_argument(
+        "--help", "-h", action="store_true", help="Show this help message"
+    )
+    parser.add_argument(
+        "--version",
+        type=str,
+        help="Specify release version to update to (e.g., 2026.05.15 or v2026.05.15)",
+    )
+    parser.add_argument(
+        "ext_type",
+        nargs="?",
+        choices=["skill", "node", "graph"],
+        help="Type of extension to install",
+    )
     parser.add_argument("source", nargs="?", help="Name or GitHub URL")
 
     args, _ = parser.parse_known_args()
@@ -85,7 +110,9 @@ def main():
     elif args.command == "install":
         if not args.ext_type or not args.source:
             print("X Error: install requires both <ext_type> and <source>")
-            print("  Example: purrcat install skill https://github.com/user/repo/tree/main/skills/my_skill")
+            print(
+                "  Example: purrcat install skill https://github.com/user/repo/tree/main/skills/my_skill"
+            )
             sys.exit(1)
         run_install(args.ext_type, args.source)
     elif args.command == "setup":

@@ -9,13 +9,14 @@ from src.tool.filesystem.exceptions import (
     PermissionDeniedError,
     FileTooLargeError,
     DirectoryTooLargeError,
-    UnsupportedPathTypeError
+    UnsupportedPathTypeError,
 )
 
 
 def _load_blacklist():
     """将配置中的相对路径（如 src/）绑定为当前项目的绝对路径，并消除大小写/斜杠差异"""
     from src.utils.config import get_file_config
+
     raw_list = get_file_config().get("dont_read_dirs", [])
     return [os.path.normcase(os.path.abspath(d)) for d in raw_list]
 
@@ -70,9 +71,9 @@ def import_file(host_path: str, sandbox_dir: str = "imports") -> dict:
 
     sandbox_dir = sandbox_dir.replace("\\", "/").strip()
     if sandbox_dir.startswith("/agent_vm/"):
-        sandbox_subdir = sandbox_dir[len("/agent_vm/"):]
+        sandbox_subdir = sandbox_dir[len("/agent_vm/") :]
     elif sandbox_dir.startswith("agent_vm/"):
-        sandbox_subdir = sandbox_dir[len("agent_vm/"):]
+        sandbox_subdir = sandbox_dir[len("agent_vm/") :]
     elif sandbox_dir in ["/agent_vm", "agent_vm"]:
         sandbox_subdir = ""
     else:
@@ -82,9 +83,13 @@ def import_file(host_path: str, sandbox_dir: str = "imports") -> dict:
 
     # 确定挂载点和目标绝对路径
     mount_point = os.path.abspath("./agent_vm")
-    dest_dir = os.path.abspath(os.path.join(mount_point, sandbox_subdir) if sandbox_subdir else mount_point)
+    dest_dir = os.path.abspath(
+        os.path.join(mount_point, sandbox_subdir) if sandbox_subdir else mount_point
+    )
     if os.path.commonpath([mount_point, dest_dir]) != mount_point:
-        raise PermissionDeniedError(sandbox_dir, "目标路径越权：不允许将文件导入到沙箱外部！")
+        raise PermissionDeniedError(
+            sandbox_dir, "目标路径越权：不允许将文件导入到沙箱外部！"
+        )
 
     os.makedirs(dest_dir, exist_ok=True)
 
@@ -151,8 +156,4 @@ def import_file(host_path: str, sandbox_dir: str = "imports") -> dict:
     else:
         raise UnsupportedPathTypeError(host_path)
 
-    return {
-        "sandbox_path": sandbox_path,
-        "host_path": host_path,
-        "message": msg
-    }
+    return {"sandbox_path": sandbox_path, "host_path": host_path, "message": msg}

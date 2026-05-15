@@ -66,12 +66,12 @@ class MemoryAgent:
                             "entity_keywords": {
                                 "type": "array",
                                 "items": {"type": "string"},
-                                "description": "关键词列表，从认知信息中提取的核心实体"
+                                "description": "关键词列表，从认知信息中提取的核心实体",
                             }
                         },
-                        "required": ["entity_keywords"]
-                    }
-                }
+                        "required": ["entity_keywords"],
+                    },
+                },
             },
             {
                 "type": "function",
@@ -84,11 +84,11 @@ class MemoryAgent:
                             "source_node": {"type": "string"},
                             "relation": {"type": "string"},
                             "target_node": {"type": "string"},
-                            "source_event_id": {"type": "string", "default": "unknown"}
+                            "source_event_id": {"type": "string", "default": "unknown"},
                         },
-                        "required": ["source_node", "relation", "target_node"]
-                    }
-                }
+                        "required": ["source_node", "relation", "target_node"],
+                    },
+                },
             },
             {
                 "type": "function",
@@ -100,11 +100,11 @@ class MemoryAgent:
                         "properties": {
                             "source_node": {"type": "string"},
                             "relation": {"type": "string"},
-                            "target_node": {"type": "string"}
+                            "target_node": {"type": "string"},
                         },
-                        "required": ["source_node", "relation", "target_node"]
-                    }
-                }
+                        "required": ["source_node", "relation", "target_node"],
+                    },
+                },
             },
             {
                 "type": "function",
@@ -117,24 +117,29 @@ class MemoryAgent:
                             "source_node": {"type": "string"},
                             "relation": {"type": "string"},
                             "target_node": {"type": "string"},
-                            "reason": {"type": "string"}
+                            "reason": {"type": "string"},
                         },
-                        "required": ["source_node", "relation", "target_node", "reason"]
-                    }
-                }
-            }
+                        "required": [
+                            "source_node",
+                            "relation",
+                            "target_node",
+                            "reason",
+                        ],
+                    },
+                },
+            },
         ]
 
         tool_map = {
-            'rag_search': rag_search,
-            'add_relation': add_relation,
-            'reinforce_relation': reinforce_relation,
-            'weaken_relation': weaken_relation
+            "rag_search": rag_search,
+            "add_relation": add_relation,
+            "reinforce_relation": reinforce_relation,
+            "weaken_relation": weaken_relation,
         }
 
         system_msg = {
             "role": "system",
-            "content": "你是一个严谨的知识图谱构建助手。收到一批认知条目，你需要：\n1. 先用 rag_search 批量检索关键词\n2. 根据检索结果调用 add_relation/reinforce_relation/weaken_relation\n3. 所有条目处理完毕后回复'完成'"
+            "content": "你是一个严谨的知识图谱构建助手。收到一批认知条目，你需要：\n1. 先用 rag_search 批量检索关键词\n2. 根据检索结果调用 add_relation/reinforce_relation/weaken_relation\n3. 所有条目处理完毕后回复'完成'",
         }
 
         user_content = "【待处理的认知条目】\n"
@@ -142,10 +147,7 @@ class MemoryAgent:
             user_content += f"{i}. {item}\n"
         user_content += "\n请开始处理：先用 rag_search 检索，然后逐条写入图谱。"
 
-        messages = [
-            system_msg,
-            {"role": "user", "content": user_content}
-        ]
+        messages = [system_msg, {"role": "user", "content": user_content}]
 
         max_turns = 50
         write_count = 0
@@ -170,8 +172,12 @@ class MemoryAgent:
                     {
                         "id": t.id,
                         "type": t.type,
-                        "function": {"name": t.function.name, "arguments": t.function.arguments}
-                    } for t in msg_resp.tool_calls
+                        "function": {
+                            "name": t.function.name,
+                            "arguments": t.function.arguments,
+                        },
+                    }
+                    for t in msg_resp.tool_calls
                 ]
 
             messages.append(assist_msg)
@@ -183,7 +189,11 @@ class MemoryAgent:
             for tc in msg_resp.tool_calls:
                 tool_name = tc.function.name
 
-                if tool_name in ['add_relation', 'reinforce_relation', 'weaken_relation']:
+                if tool_name in [
+                    "add_relation",
+                    "reinforce_relation",
+                    "weaken_relation",
+                ]:
                     write_count += 1
 
                 try:
@@ -193,16 +203,14 @@ class MemoryAgent:
                     tool_result = f"执行失败: {str(e)}"
                     print(f"{tool_name} 失败: {e}")
 
-                tool_results.append({
-                    "role": "tool",
-                    "tool_call_id": tc.id,
-                    "content": tool_result
-                })
+                tool_results.append(
+                    {"role": "tool", "tool_call_id": tc.id, "content": tool_result}
+                )
                 messages.append(tool_results[-1])
 
     def _process_file(self, file_path):
         try:
-            with open(file_path, 'r', encoding='utf-8') as f:
+            with open(file_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
         except json.JSONDecodeError:
             error_path = os.path.join(ERROR_DIR, os.path.basename(file_path))
@@ -210,18 +218,24 @@ class MemoryAgent:
             return False
 
         try:
-            timestamp = data.get('timestamp', datetime.now().isoformat())
-            
+            timestamp = data.get("timestamp", datetime.now().isoformat())
+
             # 预定义变量，防止未定义引用
             event_id = None
-            cognition = data.get('cognition', [])
-            user_profile = data.get('user_profile', [])
+            cognition = data.get("cognition", [])
+            user_profile = data.get("user_profile", [])
 
             # 1. 处理 Events (事件库 + 向量库双写)
-            events = data.get('events', [])
+            events = data.get("events", [])
             for event in events:
-                event_content = event.get('event', '') if isinstance(event, dict) else event
-                event_time = event.get('time', timestamp) if isinstance(event, dict) else timestamp
+                event_content = (
+                    event.get("event", "") if isinstance(event, dict) else event
+                )
+                event_time = (
+                    event.get("time", timestamp)
+                    if isinstance(event, dict)
+                    else timestamp
+                )
                 event_id = f"evt_{hashlib.md5(event_content.encode()).hexdigest()}"
 
                 # A. 存入 SQLite (纯文本存入即可)
@@ -230,10 +244,12 @@ class MemoryAgent:
                 )
                 # B. 存入 ChromaDB (由它全权负责向量)
                 if self.vector_engine:
-                    self.vector_engine.insert_event_vector(event_id, event_content, event_time)
+                    self.vector_engine.insert_event_vector(
+                        event_id, event_content, event_time
+                    )
 
             # 2. 处理 work_exp 和 user_profile (存入向量库的经验池)
-            experiences = data.get('work_exp', []) + user_profile
+            experiences = data.get("work_exp", []) + user_profile
             if self.vector_engine and experiences:
                 for exp_text in experiences:
                     exp_id = f"exp_{hashlib.md5(exp_text.encode()).hexdigest()}"
@@ -251,23 +267,31 @@ class MemoryAgent:
             archive_path = os.path.join(ARCHIVED_DIR, os.path.basename(file_path))
             shutil.move(file_path, archive_path)
 
-            self.history.append({
-                'event_id': event_id,
-                'file': os.path.basename(file_path),
-                'processed_at': datetime.now().isoformat(),
-                'events_count': len(events),
-                'has_graph_materials': bool(cognition or user_profile)
-            })
+            self.history.append(
+                {
+                    "event_id": event_id,
+                    "file": os.path.basename(file_path),
+                    "processed_at": datetime.now().isoformat(),
+                    "events_count": len(events),
+                    "has_graph_materials": bool(cognition or user_profile),
+                }
+            )
             return True
         except Exception as e:
             print(f"❌ Worker 处理文件失败: {e}")
             return False
 
     def run(self):
-        polling_interval = get_memory_config().get('memory_agent', {}).get('polling_interval', 5)
+        polling_interval = (
+            get_memory_config().get("memory_agent", {}).get("polling_interval", 5)
+        )
         while True:
             try:
-                files = [f for f in os.listdir(MEMORY_PENDING_DIR) if f.startswith('memory_') and f.endswith('.json')]
+                files = [
+                    f
+                    for f in os.listdir(MEMORY_PENDING_DIR)
+                    if f.startswith("memory_") and f.endswith(".json")
+                ]
                 for file_name in files:
                     file_path = os.path.join(MEMORY_PENDING_DIR, file_name)
                     if os.path.exists(file_path):

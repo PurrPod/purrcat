@@ -1,11 +1,16 @@
 from src.utils.log_api import format_task_log
 from src.utils.task_api import (
-    get_task_list, force_push_task,
-    get_task_max_token, get_task_window_token
+    get_task_list,
+    force_push_task,
+    get_task_max_token,
+    get_task_window_token,
 )
 from src.utils.session_api import (
-    list_sessions, get_current_session_id, branch_session,
-    checkout_session, new_clean_session
+    list_sessions,
+    get_current_session_id,
+    branch_session,
+    checkout_session,
+    new_clean_session,
 )
 from src.agent.manager import get_agent
 

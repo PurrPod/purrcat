@@ -16,7 +16,9 @@ class ToolCallWidget(Vertical):
     def compose(self) -> ComposeResult:
         args_str = json.dumps(self.arguments, ensure_ascii=False)
         # 禁用标记语言解析，避免代码内容被错误解析
-        yield Static(f"{self.tool_name}({args_str})", classes="tool-header", markup=False)
+        yield Static(
+            f"{self.tool_name}({args_str})", classes="tool-header", markup=False
+        )
         yield self.scan_label
 
     def on_mount(self):
@@ -42,7 +44,7 @@ class ToolCallWidget(Vertical):
 
         try:
             parsed = json.loads(result_str.strip())
-            snip = parsed.get('snip', '') if isinstance(parsed, dict) else ''
+            snip = parsed.get("snip", "") if isinstance(parsed, dict) else ""
         except (json.JSONDecodeError, Exception):
             snip = result_str.strip() if result_str.strip() else "执行完毕"
 

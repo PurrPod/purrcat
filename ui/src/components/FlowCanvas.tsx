@@ -57,7 +57,7 @@ export default function FlowCanvas() {
         fitView
         className="bg-cream"
       >
-        <Background color="#D47A5A" gap={20} size={1} variant="dots" opacity={0.3} />
+        <Background color="#D47A5A" gap={20} size={1} variant={'dots' as any} />
         <Controls className="!bg-paper !border-2 !border-ink !shadow-soft rounded-xl overflow-hidden" />
       </ReactFlow>
     </div>

@@ -11,6 +11,7 @@ from src.tool.callmcp.schema_manager import load_cached_schemas
 
 class MCPSearcher:
     """MCP 语义搜索器（线程安全单例）"""
+
     _instance = None
     _lock = threading.Lock()
 
@@ -34,17 +35,21 @@ class MCPSearcher:
             tool_name = func.get("name", "")
             description = func.get("description", "")
 
-            self.tools.append({
-                "server_name": server_name,
-                "tool_name": tool_name,
-                "description": description
-            })
-            text_representation = f"{server_name} {tool_name} {tool_name.replace('_', ' ')} {description}"
+            self.tools.append(
+                {
+                    "server_name": server_name,
+                    "tool_name": tool_name,
+                    "description": description,
+                }
+            )
+            text_representation = (
+                f"{server_name} {tool_name} {tool_name.replace('_', ' ')} {description}"
+            )
             self.corpus.append(text_representation)
 
         if self.corpus:
             self.corpus_matrix = self.embedding_searcher.encode(self.corpus)
-            
+
             tokenized_corpus = [hybrid_tokenize(doc) for doc in self.corpus]
             self.bm25 = BM25Okapi(tokenized_corpus)
 
@@ -53,11 +58,13 @@ class MCPSearcher:
             return []
 
         query_vector = self.embedding_searcher.encode([query])
-        dense_scores = self.embedding_searcher.calculate_similarity(query_vector, self.corpus_matrix)
+        dense_scores = self.embedding_searcher.calculate_similarity(
+            query_vector, self.corpus_matrix
+        )
 
         tokenized_query = hybrid_tokenize(query)
         raw_bm25_scores = self.bm25.get_scores(tokenized_query)
-        
+
         max_bm25 = max(raw_bm25_scores) if raw_bm25_scores.size > 0 else 0
         if max_bm25 > 0:
             bm25_scores = [score / max_bm25 for score in raw_bm25_scores]
@@ -69,7 +76,9 @@ class MCPSearcher:
 
         final_scores = []
         for i in range(len(self.corpus)):
-            combined_score = (dense_scores[i] * alpha_dense) + (bm25_scores[i] * alpha_sparse)
+            combined_score = (dense_scores[i] * alpha_dense) + (
+                bm25_scores[i] * alpha_sparse
+            )
             final_scores.append(combined_score)
 
         final_scores = np.array(final_scores)

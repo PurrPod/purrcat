@@ -1,4 +1,5 @@
 """PurrCat update command - Update framework from GitHub Releases"""
+
 import subprocess
 import sys
 import os
@@ -13,7 +14,9 @@ def _get_project_root():
 def _run_cmd(command, cwd=None, capture=False):
     try:
         if capture:
-            result = subprocess.run(command, cwd=cwd, check=True, capture_output=True, text=True)
+            result = subprocess.run(
+                command, cwd=cwd, check=True, capture_output=True, text=True
+            )
             return True, result.stdout.strip()
         else:
             subprocess.run(command, cwd=cwd, check=True)
@@ -45,15 +48,21 @@ def run_update(target_version=None):
     latest_version = "main"
 
     if target_version:
-        if not target_version.startswith('v'):
+        if not target_version.startswith("v"):
             target_version = f"v{target_version}"
 
-        success, stdout = _run_cmd(["git", "tag", "-l", target_version], cwd=project_root, capture=True)
+        success, stdout = _run_cmd(
+            ["git", "tag", "-l", target_version], cwd=project_root, capture=True
+        )
         if not stdout:
-            print(f"X Error: Version tag '{target_version}' not found in the repository.")
+            print(
+                f"X Error: Version tag '{target_version}' not found in the repository."
+            )
             print("  Available recent versions:")
-            _, tags = _run_cmd(["git", "tag", "--sort=-v:refname"], cwd=project_root, capture=True)
-            for t in tags.split('\n')[:5]:
+            _, tags = _run_cmd(
+                ["git", "tag", "--sort=-v:refname"], cwd=project_root, capture=True
+            )
+            for t in tags.split("\n")[:5]:
                 if t.strip():
                     print(f"    - {t}")
             sys.exit(1)
@@ -62,8 +71,10 @@ def run_update(target_version=None):
         print(f"[*] Target version specified: {latest_version}")
 
     else:
-        success, stdout = _run_cmd(["git", "tag", "--sort=-v:refname"], cwd=project_root, capture=True)
-        tags = [t for t in stdout.split('\n') if t.strip()]
+        success, stdout = _run_cmd(
+            ["git", "tag", "--sort=-v:refname"], cwd=project_root, capture=True
+        )
+        tags = [t for t in stdout.split("\n") if t.strip()]
 
         if not tags:
             print("[!] No releases (tags) found. Falling back to main branch...")
@@ -78,14 +89,16 @@ def run_update(target_version=None):
     print(f"[*] Syncing Conda environment for {latest_version}...")
     env_file = os.path.join(project_root, "environment.yml")
     if os.path.exists(env_file):
-        _run_cmd([CONDA_CMD, "env", "update", "-f", env_file, "--prune"], cwd=project_root)
+        _run_cmd(
+            [CONDA_CMD, "env", "update", "-f", env_file, "--prune"], cwd=project_root
+        )
 
     post_update_script = os.path.join(project_root, "scripts", "cli", "post_update.py")
     if os.path.exists(post_update_script):
         print("[*] Running post-update migrations...")
         hook_success, hook_err = _run_cmd(
             [CONDA_CMD, "run", "-n", "PurrCat", "python", post_update_script],
-            cwd=project_root
+            cwd=project_root,
         )
         if not hook_success:
             print(f"X Post-update hook failed: {hook_err}")

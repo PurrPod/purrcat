@@ -2,9 +2,17 @@ import json
 import traceback
 import threading
 from src.tool.utils.format import text_response, error_response, warning_response
-from src.tool.callmcp.exceptions import MCPError, ServerNotFoundError, ToolExecutionError
+from src.tool.callmcp.exceptions import (
+    MCPError,
+    ServerNotFoundError,
+    ToolExecutionError,
+)
 from src.tool.callmcp.tool_caller import call_mcp_tool
-from src.tool.callmcp.schema_manager import load_cached_schemas, refresh_schemas, fetch_and_cache_schemas
+from src.tool.callmcp.schema_manager import (
+    load_cached_schemas,
+    refresh_schemas,
+    fetch_and_cache_schemas,
+)
 from src.tool.callmcp.session_manager import load_configs
 
 
@@ -31,7 +39,7 @@ def CallMCP(server_name: str, tool_name: str, arguments: dict = None, **kwargs) 
             mcp_list = list(configs.keys())
             return error_response(
                 f"{server_name}不在配置里，请确保老板已为你配置该MCP，如果是刚刚配置的MCP，请提醒老板需要重启系统才能生效。当前已配置MCP:{mcp_list}\n或者也可用search工具搜索其它满足需求的mcp",
-                "❌ MCP未配置"
+                "❌ MCP未配置",
             )
 
         # 2. 获取并检查 tool_name 是否存在
@@ -41,12 +49,18 @@ def CallMCP(server_name: str, tool_name: str, arguments: dict = None, **kwargs) 
 
         if tool_name not in tool_list:
             return error_response(
-                f"{server_name}MCP里仅有如下工具：{tool_list}，没有这个工具",
-                ""
+                f"{server_name}MCP里仅有如下工具：{tool_list}，没有这个工具", ""
             )
 
         # 3. 提取具体的 tool_schema 以备报错使用
-        tool_schema = next((s.get("function", {}) for s in server_schemas if s.get("function", {}).get("name") == tool_name), {})
+        tool_schema = next(
+            (
+                s.get("function", {})
+                for s in server_schemas
+                if s.get("function", {}).get("name") == tool_name
+            ),
+            {},
+        )
 
         # 4. 调用工具，捕获参数异常
         try:
@@ -55,10 +69,11 @@ def CallMCP(server_name: str, tool_name: str, arguments: dict = None, **kwargs) 
 
         except ToolExecutionError:
             # 捕获参数不匹配、缺少参数等错误
-            param_schema_str = json.dumps(tool_schema.get('parameters', {}), ensure_ascii=False)
+            param_schema_str = json.dumps(
+                tool_schema.get("parameters", {}), ensure_ascii=False
+            )
             return error_response(
-                f"{server_name}.{tool_name} 参数列表：{param_schema_str}",
-                "❌ 参数错误"
+                f"{server_name}.{tool_name} 参数列表：{param_schema_str}", "❌ 参数错误"
             )
         except ServerNotFoundError as err:
             return error_response(str(err), "❌ 服务器未找到")
@@ -73,6 +88,7 @@ def CallMCP(server_name: str, tool_name: str, arguments: dict = None, **kwargs) 
 def initialize_mcp():
     """后台初始化 MCP 连接与拉取完整 Schema 缓存"""
     print("正在后台初始化 [MCP] 连接与 Schema...")
+
     def _bg_init():
         try:
             schemas = fetch_and_cache_schemas()
@@ -89,7 +105,9 @@ def refresh_mcp_schemas():
     """手动刷新 MCP Schema 缓存"""
     try:
         schemas = refresh_schemas()
-        return text_response({"message": f"Schema 刷新成功，共 {len(schemas)} 个工具。"}, "")
+        return text_response(
+            {"message": f"Schema 刷新成功，共 {len(schemas)} 个工具。"}, ""
+        )
     except Exception as e:
         traceback.print_exc()
         return error_response(str(e), "")

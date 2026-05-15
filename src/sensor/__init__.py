@@ -9,7 +9,9 @@ def auto_discover_and_start():
     import src.sensor
     from src.utils.config import get_sensor_config
 
-    for _, module_name, is_pkg in pkgutil.walk_packages(src.sensor.__path__, src.sensor.__name__ + '.'):
+    for _, module_name, is_pkg in pkgutil.walk_packages(
+        src.sensor.__path__, src.sensor.__name__ + "."
+    ):
         try:
             importlib.import_module(module_name)
         except Exception as e:
@@ -27,7 +29,7 @@ def auto_discover_and_start():
     loaded_count = 0
 
     for cls in get_all_subclasses(BaseSensor):
-        config_key = getattr(cls, 'config_key', None)
+        config_key = getattr(cls, "config_key", None)
         if not config_key:
             continue
 
@@ -38,7 +40,9 @@ def auto_discover_and_start():
                 gateway.register(instance)
                 instance.observe()
                 loaded_count += 1
-                print(f"✅ [Plugin Loader] 成功装载并启动: {cls.__name__} (键: {config_key})")
+                print(
+                    f"✅ [Plugin Loader] 成功装载并启动: {cls.__name__} (键: {config_key})"
+                )
             except Exception as e:
                 print(f"❌ [Plugin Loader] 插件 {cls.__name__} 启动崩溃: {e}")
 

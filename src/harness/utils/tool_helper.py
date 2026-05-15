@@ -19,20 +19,20 @@ CALL_TOOL_SCHEMA = {
                 "action": {
                     "type": "string",
                     "enum": ["execute", "list"],
-                    "description": "'list': 查询当前节点可用的所有业务工具及详情。'execute': 执行具体的业务工具。"
+                    "description": "'list': 查询当前节点可用的所有业务工具及详情。'execute': 执行具体的业务工具。",
                 },
                 "tool_name": {
                     "type": "string",
-                    "description": "目标业务工具的名称 (当 action 为 'execute' 时必填)"
+                    "description": "目标业务工具的名称 (当 action 为 'execute' 时必填)",
                 },
                 "tool_args": {
                     "type": "object",
-                    "description": "传递给该业务工具的具体参数对象 (当 action 为 'execute' 时必填)"
-                }
+                    "description": "传递给该业务工具的具体参数对象 (当 action 为 'execute' 时必填)",
+                },
             },
-            "required": ["action"]
-        }
-    }
+            "required": ["action"],
+        },
+    },
 }
 
 
@@ -57,7 +57,7 @@ def get_system_schema() -> List[dict]:
             meta_path = os.path.join(tools_dir, core_tool, f"{core_tool}.json")
             if os.path.exists(meta_path):
                 try:
-                    with open(meta_path, 'r', encoding='utf-8') as f:
+                    with open(meta_path, "r", encoding="utf-8") as f:
                         schemas.append(json.load(f))
                 except Exception as e:
                     print(f"⚠️ 加载核心工具 Schema 失败 {core_tool}: {e}")
@@ -88,7 +88,7 @@ def execute_global_tool(tool_name: str, arguments: dict, context: Any = None) ->
 
 def extract_tool_calling(response) -> list:
     """辅助方法：提取 LLM 响应中的工具调用"""
-    if hasattr(response, 'choices') and len(response.choices) > 0:
+    if hasattr(response, "choices") and len(response.choices) > 0:
         return getattr(response.choices[0].message, "tool_calls", []) or []
     return []
 

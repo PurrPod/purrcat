@@ -3,13 +3,18 @@ import json
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 from src.utils.task_api import (
-    get_task_list, get_task_state, kill_task, submit_instruction, delete_task,
-    force_push_task
+    get_task_list,
+    get_task_state,
+    kill_task,
+    submit_instruction,
+    delete_task,
+    force_push_task,
 )
 from src.utils.log_api import get_task_log_structured
 from src.utils.task_api import get_task_log_jsonl
 
 router = APIRouter(prefix="/api/tasks", tags=["Tasks"])
+
 
 class SubmitInstructionRequest(BaseModel):
     node_id: str
@@ -25,11 +30,11 @@ def list_tasks():
 def get_task_log(task_id: str):
     from src.harness.process import TASK_INSTANCES
     from src.utils.config import DATA_DIR
-    
+
     # 1. 寻找日志目录
     checkpoint_dir = None
     task_instance = TASK_INSTANCES.get(task_id)
-    if task_instance and hasattr(task_instance, 'checkpoint_dir'):
+    if task_instance and hasattr(task_instance, "checkpoint_dir"):
         checkpoint_dir = task_instance.checkpoint_dir
     else:
         base_dir = os.path.join(DATA_DIR, "checkpoints", "task")
@@ -44,7 +49,7 @@ def get_task_log(task_id: str):
 
     log_path = os.path.join(checkpoint_dir, "log.jsonl")
     grouped_logs = {"system": []}  # 兜底分组
-    
+
     # 2. 读取并直接按 node_id 分组装入 dict
     if os.path.exists(log_path):
         try:
@@ -63,28 +68,25 @@ def get_task_log(task_id: str):
                             continue
         except Exception as e:
             print(f"读取日志失败: {e}")
-            
+
     # 3. 直接返回纯净的结构化数据
-    return {
-        "task_id": task_id,
-        "grouped_logs": grouped_logs
-    }
+    return {"task_id": task_id, "grouped_logs": grouped_logs}
 
 
 @router.get("/{task_id}/log/structured")
 def get_task_log_structured_api(
     task_id: str,
     node_id: str = Query(None, description="节点ID过滤"),
-    after_line: int = Query(0, description="返回此行数之后的日志，用于增量拉取")
+    after_line: int = Query(0, description="返回此行数之后的日志，用于增量拉取"),
 ):
     """
     获取结构化的任务日志，支持按节点过滤和增量拉取
-    
+
     Args:
         task_id: 任务ID
         node_id: 可选，节点ID过滤
         after_line: 可选，返回此行数之后的日志（用于增量拉取）
-    
+
     Returns:
         包含结构化日志数据和分组信息
     """
@@ -141,7 +143,11 @@ class TaskPushReq(BaseModel):
 
 @router.post("/{task_id}/push")
 def push_to_task(task_id: str, req: TaskPushReq):
-    final_message = f"@[{req.node_id}] 用户精确制导指令: {req.message}" if req.node_id else req.message
+    final_message = (
+        f"@[{req.node_id}] 用户精确制导指令: {req.message}"
+        if req.node_id
+        else req.message
+    )
 
     success = force_push_task(task_id, final_message)
     if success:

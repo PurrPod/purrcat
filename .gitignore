@@ -50,6 +50,8 @@ ui/.next/
 out/
 ui/out/
 build/
+ui/build/
+ui/dist/
 
 npm-debug.log*
 yarn-debug.log*

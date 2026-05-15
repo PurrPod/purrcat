@@ -3,15 +3,13 @@
 import os
 import time
 
-from src.tool.filesystem.exceptions import (
-    HostPathNotFoundError,
-    PermissionDeniedError
-)
+from src.tool.filesystem.exceptions import HostPathNotFoundError, PermissionDeniedError
 
 
 def _load_blacklist():
     """将配置中的相对路径（如 src/）绑定为当前项目的绝对路径，并消除大小写/斜杠差异"""
     from src.utils.config import get_file_config
+
     raw_list = get_file_config().get("dont_read_dirs", [])
     return [os.path.normcase(os.path.abspath(d)) for d in raw_list]
 
@@ -77,7 +75,7 @@ def list_filesystem(path: str = ".", depth: int = 1, show_hidden: bool = False) 
                 continue
 
             full_path = os.path.join(current, entry)
-            is_last = (i == len(entries) - 1)
+            is_last = i == len(entries) - 1
             connector = "└── " if is_last else "├── "
 
             try:
@@ -99,9 +97,9 @@ def list_filesystem(path: str = ".", depth: int = 1, show_hidden: bool = False) 
                     if size < 1024:
                         size_str = f"{size}B"
                     elif size < 1024 * 1024:
-                        size_str = f"{size/1024:.1f}KB"
+                        size_str = f"{size / 1024:.1f}KB"
                     else:
-                        size_str = f"{size/1024/1024:.1f}MB"
+                        size_str = f"{size / 1024 / 1024:.1f}MB"
                     lines.append(f"{prefix}{connector}{entry}  ({size_str}, {mtime})")
             except (OSError, PermissionError):
                 lines.append(f"{prefix}{connector}{entry}  [不可访问]")
@@ -113,8 +111,10 @@ def list_filesystem(path: str = ".", depth: int = 1, show_hidden: bool = False) 
 
     _walk(root, "", depth + 1)
 
-    summary = (f"\n📁 {dir_count} 个目录, 📄 {file_count} 个文件, "
-               f"总计 {total_size/1024/1024:.1f}MB")
+    summary = (
+        f"\n📁 {dir_count} 个目录, 📄 {file_count} 个文件, "
+        f"总计 {total_size / 1024 / 1024:.1f}MB"
+    )
     lines.append(summary)
 
     return {

@@ -1,4 +1,5 @@
 """Templates for PurrCat configuration files"""
+
 from datetime import datetime
 
 CRON_CONFIG_TEMPLATE = """[
@@ -102,10 +103,10 @@ def get_model_config_dict():
                 "rpm": 60,
                 "tpm": 1000000,
                 "concurrency": 3,
-                "max_token": 500000
+                "max_token": 500000,
             }
         },
-        "task": {}
+        "task": {},
     }
 
 
@@ -114,30 +115,28 @@ def get_sensor_config_dict():
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$comment": f"PurrCat Sensor Configuration File - Generated at {datetime.now().strftime('%Y-%m-%d %H:%M')}",
-        "feishu": {
-            "enabled": False,
-            "app_id": "",
-            "app_secret": "",
-            "chat_id": ""
-        },
+        "feishu": {"enabled": False, "app_id": "", "app_secret": "", "chat_id": ""},
         "rss": {
             "enabled": False,
             "subscriptions": [
-                {"name": "Lilian Weng's Blog", "url": "https://lilianweng.github.io/lil-log/feed.xml"},
-                {"name": "Ahead of AI", "url": "https://magazine.sebastianraschka.com/feed"},
-                {"name": "Latepost", "url": "https://rsshub.rssforever.com/latepost"}
-            ]
+                {
+                    "name": "Lilian Weng's Blog",
+                    "url": "https://lilianweng.github.io/lil-log/feed.xml",
+                },
+                {
+                    "name": "Ahead of AI",
+                    "url": "https://magazine.sebastianraschka.com/feed",
+                },
+                {"name": "Latepost", "url": "https://rsshub.rssforever.com/latepost"},
+            ],
         },
-        "heartbeat": {
-            "enabled": False,
-            "interval": 1800
-        },
+        "heartbeat": {"enabled": False, "interval": 1800},
         "purrmemo": {
             "enabled": False,
             "host": "http://127.0.0.1:8000",
             "api_key": "",
-            "timeout": 5
-        }
+            "timeout": 5,
+        },
     }
 
 
@@ -150,7 +149,7 @@ def get_file_config_dict():
         "allowed_export_dirs": ["."],
         "docker_mount": ["sandbox/"],
         "sandbox_dirs": ["sandbox/", "agent_vm/"],
-        "skill_dir": ["skills"]
+        "skill_dir": ["skills"],
     }
 
 
@@ -160,7 +159,9 @@ def get_note_config_dict():
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$comment": "PurrCat Agent Note Configuration File",
         "skill": ["docx", "pptx", "xlsx"],
-        "expectation": ["when ask you for analyse the note, please read all the content before starting analysis"]
+        "expectation": [
+            "when ask you for analyse the note, please read all the content before starting analysis"
+        ],
     }
 
 
@@ -170,35 +171,27 @@ def get_memory_config_dict():
         "openai": {
             "api_key": "",
             "base_url": "https://api.deepseek.com",
-            "model_name": "deepseek-v4-flash"
+            "model_name": "deepseek-v4-flash",
         },
         "chromadb": {
             "persist_directory": "data/memory/chromadb",
             "collection_name": "experiences",
-            "embedding_model": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+            "embedding_model": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
         },
-        "eventdb": {
-            "db_path": "data/memory/events.db",
-            "table_name": "events"
-        },
-        "graphdb": {
-            "graph_path": "data/memory/graph.pkl",
-            "min_confidence": 0.3
-        },
+        "eventdb": {"db_path": "data/memory/events.db", "table_name": "events"},
+        "graphdb": {"graph_path": "data/memory/graph.pkl", "min_confidence": 0.3},
         "buffer": {
             "buffer_dir": "data/memory/buffer",
             "pending_dir": "data/memory/buffer/pending",
             "archived_dir": "data/memory/buffer/archived",
-            "error_dir": "data/memory/buffer/error"
+            "error_dir": "data/memory/buffer/error",
         },
-        "memory_agent": {
-            "polling_interval": 5
-        },
+        "memory_agent": {"polling_interval": 5},
         "rag": {
             "top_k_events": 5,
             "top_k_experiences": 5,
             "top_k_graph_nodes": 3,
-            "max_graph_depth": 2
+            "max_graph_depth": 2,
         },
     }
 
@@ -212,22 +205,17 @@ def get_mcp_config_dict():
                 "args": [
                     "@playwright/mcp@latest",
                     "--user-data-dir=agent_vm/.buffer/playwright",
-                    "--output-dir=agent_vm/.buffer/screenshots"
+                    "--output-dir=agent_vm/.buffer/screenshots",
                 ],
             },
             "github": {
                 "command": "npx",
-                "args": [
-                    "-y",
-                    "@modelcontextprotocol/server-github"
-                ],
-                "env": {
-                    "GITHUB_PERSONAL_ACCESS_TOKEN": ""
-                }
+                "args": ["-y", "@modelcontextprotocol/server-github"],
+                "env": {"GITHUB_PERSONAL_ACCESS_TOKEN": ""},
             },
             "chrome-devtools": {
                 "command": "npx",
-                "args": ["-y", "chrome-devtools-mcp@latest"]
-            }
+                "args": ["-y", "chrome-devtools-mcp@latest"],
+            },
         }
     }

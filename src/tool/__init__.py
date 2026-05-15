@@ -7,18 +7,22 @@ from .search import SEARCH_TOOL_SCHEMA
 from .task import TASK_TOOL_SCHEMA
 from .callmcp import MCP_TOOL_SCHEMA
 
-AGENT_TOOL_SCHEMA = [BASH_TOOL_SCHEMA,
-                     CRON_TOOL_SCHEMA,
-                     FETCH_TOOL_SCHEMA,
-                     FILESYSTEM_TOOL_SCHEMA,
-                     MEMO_TOOL_SCHEMA,
-                     SEARCH_TOOL_SCHEMA,
-                     TASK_TOOL_SCHEMA,
-                     MCP_TOOL_SCHEMA]
+AGENT_TOOL_SCHEMA = [
+    BASH_TOOL_SCHEMA,
+    CRON_TOOL_SCHEMA,
+    FETCH_TOOL_SCHEMA,
+    FILESYSTEM_TOOL_SCHEMA,
+    MEMO_TOOL_SCHEMA,
+    SEARCH_TOOL_SCHEMA,
+    TASK_TOOL_SCHEMA,
+    MCP_TOOL_SCHEMA,
+]
 
-BASE_TASK_TOOL_SCHEMA = [BASH_TOOL_SCHEMA,
-                         FILESYSTEM_TOOL_SCHEMA,
-                         SEARCH_TOOL_SCHEMA,
-                         MCP_TOOL_SCHEMA,]
+BASE_TASK_TOOL_SCHEMA = [
+    BASH_TOOL_SCHEMA,
+    FILESYSTEM_TOOL_SCHEMA,
+    SEARCH_TOOL_SCHEMA,
+    MCP_TOOL_SCHEMA,
+]
 
 __all__ = [AGENT_TOOL_SCHEMA, BASE_TASK_TOOL_SCHEMA]

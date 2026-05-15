@@ -9,39 +9,49 @@ from src.utils.config import CRON_FILE
 from src.tool.cron.exceptions import (
     CronNotFoundError,
     InvalidTimeFormatError,
-    InvalidRepeatRuleError
+    InvalidRepeatRuleError,
 )
 
 
-VALID_REPEAT_RULES = ["none", "everyday", "weekly_1", "weekly_2", "weekly_3",
-                      "weekly_4", "weekly_5", "weekly_6", "weekly_7"]
+VALID_REPEAT_RULES = [
+    "none",
+    "everyday",
+    "weekly_1",
+    "weekly_2",
+    "weekly_3",
+    "weekly_4",
+    "weekly_5",
+    "weekly_6",
+    "weekly_7",
+]
 
 
 def _ensure_file(filepath: str):
     """确保文件存在，不存在则创建空列表"""
     os.makedirs(os.path.dirname(filepath), exist_ok=True)
     if not os.path.exists(filepath):
-        with open(filepath, 'w', encoding='utf-8') as f:
+        with open(filepath, "w", encoding="utf-8") as f:
             json.dump([], f)
 
 
 def _read_json(filepath: str) -> List[Dict[str, Any]]:
     """读取 JSON 文件内容"""
     _ensure_file(filepath)
-    with open(filepath, 'r', encoding='utf-8') as f:
+    with open(filepath, "r", encoding="utf-8") as f:
         return json.load(f)
 
 
 def _write_json(filepath: str, data: List[Dict[str, Any]]):
     """写入 JSON 文件"""
-    with open(filepath, 'w', encoding='utf-8') as f:
+    with open(filepath, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 
 def _validate_time_format(time_str: str) -> bool:
     """验证时间格式是否为 HH:MM"""
     import re
-    return bool(re.match(r'^([01]\d|2[0-3]):[0-5]\d$', time_str))
+
+    return bool(re.match(r"^([01]\d|2[0-3]):[0-5]\d$", time_str))
 
 
 def _validate_repeat_rule(rule: str) -> bool:
@@ -86,7 +96,7 @@ def add_cron(title: str, trigger_time: str, repeat_rule: str = "none") -> dict:
         "title": title,
         "trigger_time": trigger_time,
         "repeat_rule": repeat_rule,
-        "active": True
+        "active": True,
     }
 
     crons.append(item)
@@ -108,8 +118,12 @@ def delete_cron(identifier: str) -> dict:
     return {"message": f"闹钟 '{deleted['title']}' ({deleted['id']}) 删除成功"}
 
 
-def update_cron(identifier: str, trigger_time: str = None,
-                repeat_rule: str = None, active: bool = None) -> dict:
+def update_cron(
+    identifier: str,
+    trigger_time: str = None,
+    repeat_rule: str = None,
+    active: bool = None,
+) -> dict:
     """修改闹钟 (支持传入 ID 或 Name，不再支持修改 title)"""
     crons = _read_json(CRON_FILE)
     idx = _find_cron_index(crons, identifier)

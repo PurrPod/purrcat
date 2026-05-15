@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Send, Cat, MessageSquarePlus, MessageSquare, Clock, Wrench, Package, ChevronDown, ChevronUp, Loader2, X, Trash2, Terminal } from 'lucide-react';
+import { ArrowLeft, Send, Cat, MessageSquarePlus, Clock, Wrench, Package, ChevronDown, ChevronUp, Loader2, X, Trash2, Terminal } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
 // 引入 Markdown 渲染库
@@ -88,15 +88,9 @@ const MarkdownComponents: any = {
 const ToolMessageBubble = ({ msg }: { msg: Message }) => {
   const [expanded, setExpanded] = useState(false);
   
-  let snip = '';
   const contentStr = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
 
-  try {
-    const parsed = JSON.parse(contentStr);
-    snip = parsed.snip || '';
-  } catch (e) {}
 
-  const preview = snip || (contentStr.length > 80 ? contentStr.slice(0, 80) + '...' : contentStr);
 
   // 折叠状态：微型标签
   if (!expanded) {

@@ -1,4 +1,5 @@
 """PurrCat CLI - Backward compatibility shim"""
+
 import sys
 import os
 
@@ -8,4 +9,5 @@ if __name__ == "__main__":
         sys.path.insert(0, PROJECT_ROOT)
 
     from scripts.cli.main import main
+
     main()

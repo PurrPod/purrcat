@@ -2,6 +2,7 @@
 PurrCat Post-Update Hooks
 Handles data migration and cleanup after code updates.
 """
+
 import os
 import json
 import shutil

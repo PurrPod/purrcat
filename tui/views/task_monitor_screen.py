@@ -13,9 +13,14 @@ class TaskMonitorScreen(ModalScreen):
 
     def compose(self) -> ComposeResult:
         with Vertical(id="task-dialog"):
-            yield Static("Task Monitor — PurrCat Background Tasks", id="task-dialog-header")
+            yield Static(
+                "Task Monitor — PurrCat Background Tasks", id="task-dialog-header"
+            )
             yield VerticalScroll(id="task-dialog-list")
-            yield Static("Ctrl+q: Close  |  Enter: View Logs  |  Esc: Back", id="task-dialog-footer")
+            yield Static(
+                "Ctrl+q: Close  |  Enter: View Logs  |  Esc: Back",
+                id="task-dialog-footer",
+            )
 
     def on_mount(self):
         self.refresh_task_list()
@@ -32,7 +37,12 @@ class TaskMonitorScreen(ModalScreen):
 
         for t in tasks:
             state = t.get("state", "unknown")
-            state_emoji = {"running": "🟢", "done": "🔵", "error": "🔴", "waiting": "🟡"}.get(state, "⚪")
+            state_emoji = {
+                "running": "🟢",
+                "done": "🔵",
+                "error": "🔴",
+                "waiting": "🟡",
+            }.get(state, "⚪")
 
             name = Static(f"{state_emoji}  {t.get('name', '?')}", classes="task-name")
             state_label = Static(f"State: {state}", classes="task-state " + state)
@@ -43,11 +53,12 @@ class TaskMonitorScreen(ModalScreen):
             created = t.get("create_time", "")
             if isinstance(created, (int, float)):
                 import datetime
+
                 created = datetime.datetime.fromtimestamp(created).strftime("%H:%M:%S")
 
             detail = Static(
                 f"  ID: {str(t['id'])[:16]}... | Type: {expert} | Step: {step} | Tokens: {tokens} | {created}",
-                classes="task-detail"
+                classes="task-detail",
             )
 
             card = Vertical(
@@ -55,7 +66,7 @@ class TaskMonitorScreen(ModalScreen):
                 state_label,
                 detail,
                 classes="task-card",
-                id=f"task-card-{t['id']}"
+                id=f"task-card-{t['id']}",
             )
 
             task_list.mount(card)

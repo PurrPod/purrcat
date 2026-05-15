@@ -27,8 +27,7 @@ def Search(route: str, query: str, topk: int = 5, **kwargs) -> str:
 
         if route not in ["web", "local"]:
             return error_response(
-                f"无效的路由类型: {route}。支持的路由: web, local",
-                "参数错误"
+                f"无效的路由类型: {route}。支持的路由: web, local", "参数错误"
             )
 
         if not query:
@@ -67,16 +66,19 @@ def _search_web(query: str, topk: int) -> str:
             md += f"**URL:** {res['url']}\n\n"
             md += f"**摘要:** {res['snippet']}\n\n"
             md += "---\n\n"
-            
+
         # ✨【关键】：在这里通过 Prompt 引导大模型去调用 Fetch 实现解耦的深度阅读
         md += "💡 **提示：如果需要阅读上述某篇报道的完整详情，请使用 `Fetch` 工具 (source='web') 并传入对应的 URL。**"
 
-        return text_response({
-            "query": query,
-            "results_count": len(results),
-            "markdown": md,
-            "results": results
-        }, f"🌐 Web | {len(results)}条结果")
+        return text_response(
+            {
+                "query": query,
+                "results_count": len(results),
+                "markdown": md,
+                "results": results,
+            },
+            f"🌐 Web | {len(results)}条结果",
+        )
 
     except Exception as e:
         return error_response(f"Web 搜索异常: {e}", "❌ Web搜索异常")
@@ -90,39 +92,39 @@ def _search_local(query: str, topk: int) -> str:
 
         if skill_err and mcp_err:
             return warning_response(
-                f"Skill搜索失败: {skill_err}\nMCP搜索失败: {mcp_err}",
-                "⚠️ Local失败"
+                f"Skill搜索失败: {skill_err}\nMCP搜索失败: {mcp_err}", "⚠️ Local失败"
             )
 
         merged_results = []
 
-        for res in (skill_results or []):
+        for res in skill_results or []:
             skill = res.get("skill", {})
-            merged_results.append({
-                "source": "Skill",
-                "name": skill.get("name", "unknown"),
-                "description": skill.get("description", "无描述"),
-                "score": res.get("score", 0)
-            })
+            merged_results.append(
+                {
+                    "source": "Skill",
+                    "name": skill.get("name", "unknown"),
+                    "description": skill.get("description", "无描述"),
+                    "score": res.get("score", 0),
+                }
+            )
 
-        for res in (mcp_results or []):
-            merged_results.append({
-                "source": f"MCP ({res.get('server_name', 'unknown')})",
-                "name": res.get("tool_name", "unknown"),
-                "description": res.get("description", "无描述"),
-                "score": res.get("score", 0)
-            })
+        for res in mcp_results or []:
+            merged_results.append(
+                {
+                    "source": f"MCP ({res.get('server_name', 'unknown')})",
+                    "name": res.get("tool_name", "unknown"),
+                    "description": res.get("description", "无描述"),
+                    "score": res.get("score", 0),
+                }
+            )
 
         merged_results.sort(key=lambda x: x["score"], reverse=True)
         top_results = merged_results[:topk]
 
         if not top_results:
-            return text_response({
-                "query": query,
-                "results_count": 0
-            }, "🔍 Local无结果")
+            return text_response({"query": query, "results_count": 0}, "🔍 Local无结果")
 
-        skill_count = len([r for r in top_results if r['source'] == 'Skill'])
+        skill_count = len([r for r in top_results if r["source"] == "Skill"])
         mcp_count = len(top_results) - skill_count
         md = f"🎯 本地工具库搜索结果 (Top {len(top_results)}):\n\n"
         md += "| 来源类别 | 工具/技能名称 | 匹配得分 | 描述 |\n"
@@ -134,12 +136,15 @@ def _search_local(query: str, topk: int) -> str:
         md += "\n💡 **提示：你可以使用 `Fetch` 工具获取上述技能或 MCP 工具的完整细节与执行参数。**"
         md += "\n💡 **如需检索记忆，请使用 `Memo` 工具（action=search）。**"
 
-        return text_response({
-            "query": query,
-            "results_count": len(top_results),
-            "results": top_results,
-            "markdown": md
-        }, f"🔧 Local | Skill:{skill_count} MCP:{mcp_count}")
+        return text_response(
+            {
+                "query": query,
+                "results_count": len(top_results),
+                "results": top_results,
+                "markdown": md,
+            },
+            f"🔧 Local | Skill:{skill_count} MCP:{mcp_count}",
+        )
 
     except Exception as e:
         traceback.print_exc()

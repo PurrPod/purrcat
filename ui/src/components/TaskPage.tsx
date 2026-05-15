@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import {
-  ArrowLeft, Terminal, Trash2, X, Activity, Clock, Box, ChevronDown, Send, MessageCircle, Loader2
+  ArrowLeft, Terminal, Trash2, X, Activity, Clock, Box, Send, MessageCircle
 } from 'lucide-react';
+import type { Node, Edge } from '@xyflow/react';
 import { ReactFlow, Background, useNodesState, useEdgesState, Handle, Position } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { toast } from 'react-hot-toast';
@@ -98,8 +99,8 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
   // 🟢 阻塞加载状态
   const [isCheckingOut, setIsCheckingOut] = useState(false);
 
-  const [nodes, setNodes, onNodesChange] = useNodesState([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+  const [nodes, setNodes, onNodesChange] = useNodesState([] as Node[]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState([] as Edge[]);
 
   const nodeTypes = useMemo(() => ({ custom: TaskMonitorNode }), []);
 
@@ -493,7 +494,7 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
               fitView
               className="!h-full"
             >
-              <Background gap={24} size={2} color="#1a1a1a" opacity={0.1} variant="dots" />
+              <Background gap={24} size={2} color="#1a1a1a" variant={'dots' as any} />
             </ReactFlow>
           ) : (
             <div className="h-full flex flex-col items-center justify-center text-ink gap-6">

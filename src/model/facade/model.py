@@ -6,12 +6,16 @@ from src.model.core.llm_client import LLMClient
 
 def log(msg):
     import time
+
     print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {msg}")
 
 
 class Model:
     """提供给业务层的轻量级入口，只维护上下文状态"""
-    def __init__(self, model_name: str, task_id: str = None, recovered_key_prefix: str = None):
+
+    def __init__(
+        self, model_name: str, task_id: str = None, recovered_key_prefix: str = None
+    ):
         if not model_name:
             raise ValueError("model_name 不能为空")
 
@@ -34,7 +38,9 @@ class Model:
 
         self._client = LLMClient(api_key=self.api_key, base_url=self.base_url)
 
-        log(f"🔗 任务 {self.task_id} 锁定模型 {self.model_name}，绑定 API Key: {self.key_prefix}...")
+        log(
+            f"🔗 任务 {self.task_id} 锁定模型 {self.model_name}，绑定 API Key: {self.key_prefix}..."
+        )
 
     def chat(self, messages: list, tools: list = None, **kwargs):
         """仅做透传，不再处理复杂的网络逻辑"""
@@ -44,12 +50,12 @@ class Model:
             task_id=self.task_id,
             semaphore=self.semaphore,
             tools=tools,
-            **kwargs
+            **kwargs,
         )
 
     def unbind(self):
         """释放资源"""
-        if hasattr(self, 'api_key') and self.api_key:
+        if hasattr(self, "api_key") and self.api_key:
             key_manager.release_key(self.api_key)
             log(f"🔓 任务 {self.task_id} 已释放 API Key: {self.key_prefix}")
 
@@ -66,6 +72,7 @@ class AgentModel(Model):
 
     def __init__(self, task_id: str = None):
         from src.utils.config import get_agent_model
+
         model_name = get_agent_model()
         model_cfg = get_model_config().get("main", {}).get(model_name, {})
 
@@ -92,4 +99,6 @@ class AgentModel(Model):
 
         self._client = LLMClient(api_key=self.api_key, base_url=self.base_url)
 
-        log(f"🤖 全局 Agent 锁定模型 {self.model_name}，使用专属 API Key: {self.key_prefix}...")
+        log(
+            f"🤖 全局 Agent 锁定模型 {self.model_name}，使用专属 API Key: {self.key_prefix}..."
+        )

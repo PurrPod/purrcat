@@ -52,6 +52,7 @@ def _load_json_file(file_path: str) -> dict:
 
 # ── Getter 函数 ──
 
+
 def get_model_config() -> Dict[str, Any]:
     if os.path.exists(MODEL_CONFIG_PATH):
         return _load_json_file(MODEL_CONFIG_PATH)

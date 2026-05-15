@@ -1,4 +1,5 @@
 """PurrCat start command - Launch PurrCat application"""
+
 import subprocess
 import sys
 import os
@@ -22,7 +23,15 @@ def run_start(headless=False):
     project_root = _get_project_root()
     main_script = os.path.join(project_root, "main.py")
 
-    cmd = [CONDA_CMD, "run", "--no-capture-output", "-n", "PurrCat", "python", main_script]
+    cmd = [
+        CONDA_CMD,
+        "run",
+        "--no-capture-output",
+        "-n",
+        "PurrCat",
+        "python",
+        main_script,
+    ]
     if headless:
         cmd.append("--headless")
 

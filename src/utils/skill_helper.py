@@ -20,21 +20,21 @@ def get_available_skills() -> list[str]:
 
 
 def _parse_skill_md(file_path: Path) -> dict:
-    with open(file_path, 'r', encoding='utf-8') as f:
+    with open(file_path, "r", encoding="utf-8") as f:
         text = f.read()
 
     metadata = {}
     content = text
 
-    if text.startswith('---'):
-        parts = text.split('---', 2)
+    if text.startswith("---"):
+        parts = text.split("---", 2)
         if len(parts) >= 3:
             frontmatter_str = parts[1]
             content = parts[2].strip()
-            for line in frontmatter_str.split('\n'):
+            for line in frontmatter_str.split("\n"):
                 line = line.strip()
-                if line and ':' in line:
-                    key, value = line.split(':', 1)
+                if line and ":" in line:
+                    key, value = line.split(":", 1)
                     metadata[key.strip()] = value.strip()
 
     return {"metadata": metadata, "content": content}
@@ -80,4 +80,3 @@ def get_skill_info(skill_name: str) -> dict:
         "name": metadata.get("name", skill_name),
         "description": metadata.get("description", metadata.get("desc", "")),
     }
-

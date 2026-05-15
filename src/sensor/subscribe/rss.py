@@ -12,7 +12,9 @@ from src.sensor.gateway import get_gateway
 
 class RSSSensor(BaseSensor):
     def __init__(self, name: str, rss_url: str, seen_ids: set, config_dict: dict):
-        super().__init__(sensor_type="rss_update", sensor_name=name, config_dict=config_dict)
+        super().__init__(
+            sensor_type="rss_update", sensor_name=name, config_dict=config_dict
+        )
         self.rss_url = rss_url
         self.seen_ids = seen_ids
 
@@ -21,8 +23,8 @@ class RSSSensor(BaseSensor):
         if new_entries:
             output_lines = [f"### {self.sensor_name} 有新更新"]
             for entry in new_entries[:3]:
-                title = getattr(entry, 'title', '').strip()
-                link = getattr(entry, 'link', '').strip()
+                title = getattr(entry, "title", "").strip()
+                link = getattr(entry, "link", "").strip()
                 output_lines.append(f"- [{title}]({link})")
             if len(new_entries) > 3:
                 output_lines.append(f"- *(还有 {len(new_entries) - 3} 条更新未展示)*")
@@ -40,15 +42,17 @@ class RSSSensor(BaseSensor):
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0",
                 "Accept": "application/rss+xml, application/xml, text/xml, */*",
                 "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
-                "Connection": "keep-alive"
+                "Connection": "keep-alive",
             }
             response = requests.get(self.rss_url, headers=headers, timeout=15)
             response.raise_for_status()
             feed_data = feedparser.parse(response.content)
-            if getattr(feed_data, 'bozo', 0) == 1:
+            if getattr(feed_data, "bozo", 0) == 1:
                 logs.append(f"[{self.sensor_name}] 格式有瑕疵")
-            for entry in getattr(feed_data, 'entries', []):
-                entry_id = getattr(entry, 'id', getattr(entry, 'link', getattr(entry, 'title', '')))
+            for entry in getattr(feed_data, "entries", []):
+                entry_id = getattr(
+                    entry, "id", getattr(entry, "link", getattr(entry, "title", ""))
+                )
                 if not entry_id:
                     continue
                 if entry_id not in self.seen_ids:
@@ -67,7 +71,9 @@ class RSSListener(BaseSensor):
     config_key = "rss"
 
     def __init__(self, config_dict: dict):
-        super().__init__(sensor_type="subscribe", sensor_name="rss_listener", config_dict=config_dict)
+        super().__init__(
+            sensor_type="subscribe", sensor_name="rss_listener", config_dict=config_dict
+        )
         self.cache_file = "rss_history.json"
         self.history_dict = self._load_history()
         self.sensors = []
@@ -75,14 +81,19 @@ class RSSListener(BaseSensor):
         for item in subscriptions:
             name = item["name"]
             seen_ids = set(self.history_dict.get(name, []))
-            sensor = RSSSensor(name=name, rss_url=item["rss_url"], seen_ids=seen_ids, config_dict=config_dict)
+            sensor = RSSSensor(
+                name=name,
+                rss_url=item["rss_url"],
+                seen_ids=seen_ids,
+                config_dict=config_dict,
+            )
             self.sensors.append(sensor)
             get_gateway().register(sensor)
 
     def _load_history(self) -> dict:
         if os.path.exists(self.cache_file):
             try:
-                with open(self.cache_file, 'r', encoding='utf-8') as f:
+                with open(self.cache_file, "r", encoding="utf-8") as f:
                     return json.load(f)
             except Exception:
                 pass
@@ -91,7 +102,7 @@ class RSSListener(BaseSensor):
     def _save_history(self):
         for sensor in self.sensors:
             self.history_dict[sensor.sensor_name] = list(sensor.seen_ids)
-        with open(self.cache_file, 'w', encoding='utf-8') as f:
+        with open(self.cache_file, "w", encoding="utf-8") as f:
             json.dump(self.history_dict, f, ensure_ascii=False, indent=2)
 
     def _poll_loop(self, interval: int):

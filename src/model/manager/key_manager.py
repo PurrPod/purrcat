@@ -20,7 +20,9 @@ class APIKeyManager:
 
         with self._usage_lock:
             if recovered_key_prefix:
-                matched_key = next((k for k in valid_keys if k.startswith(recovered_key_prefix)), None)
+                matched_key = next(
+                    (k for k in valid_keys if k.startswith(recovered_key_prefix)), None
+                )
                 if matched_key:
                     self._usage[matched_key] = self._usage.get(matched_key, 0) + 1
                     return matched_key

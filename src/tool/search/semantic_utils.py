@@ -13,7 +13,7 @@ def hybrid_tokenize(text: str) -> list[str]:
     """
     if not text:
         return []
-    
+
     text = text.lower()
     tokens = jieba.cut_for_search(text)
     return [token for token in tokens if token.strip()]
@@ -21,6 +21,7 @@ def hybrid_tokenize(text: str) -> list[str]:
 
 class LocalEmbeddingSearcher:
     """单例模式：全局共享加载的本地小模型，保证线程安全"""
+
     _instance = None
     _lock = threading.Lock()
 
@@ -36,7 +37,9 @@ class LocalEmbeddingSearcher:
     def encode(self, texts: list[str]) -> np.ndarray:
         return self.model.encode(texts)
 
-    def calculate_similarity(self, query_vector: np.ndarray, corpus_matrix: np.ndarray) -> np.ndarray:
+    def calculate_similarity(
+        self, query_vector: np.ndarray, corpus_matrix: np.ndarray
+    ) -> np.ndarray:
         query_vector = np.array(query_vector).reshape(1, -1)
 
         return cosine_similarity(query_vector, corpus_matrix).flatten()

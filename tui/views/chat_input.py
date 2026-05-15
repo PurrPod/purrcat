@@ -4,7 +4,6 @@ from tui.api import branch_session, new_clean_session, flush_agent_memory
 
 
 class ChatInput(TextArea):
-
     def on_mount(self) -> None:
         try:
             self.soft_wrap = True
@@ -39,11 +38,19 @@ class ChatInput(TextArea):
 
                 if branch_name:
                     new_id = branch_session(branch_name)
-                    chat_zone.mount(Static(f"🌿 [系统] 已成功拉取并切换到新分支: {branch_name} ({new_id[-6:]})",
-                                           classes="help-message"))
+                    chat_zone.mount(
+                        Static(
+                            f"🌿 [系统] 已成功拉取并切换到新分支: {branch_name} ({new_id[-6:]})",
+                            classes="help-message",
+                        )
+                    )
                 else:
                     chat_zone.mount(
-                        Static("❌ [系统] 用法错误: 请提供分支名称，例如 /branch feature_a", classes="help-message"))
+                        Static(
+                            "❌ [系统] 用法错误: 请提供分支名称，例如 /branch feature_a",
+                            classes="help-message",
+                        )
+                    )
 
                 chat_zone.scroll_end(animate=False)
                 self.clear()
@@ -55,20 +62,33 @@ class ChatInput(TextArea):
 
                 if branch_name:
                     new_id = new_clean_session(branch_name)
-                    for child in chat_zone.query(f".msg-space-{main_view.current_space}"):
+                    for child in chat_zone.query(
+                        f".msg-space-{main_view.current_space}"
+                    ):
                         child.remove()
 
-                    keys_to_delete = [k for k, v in main_view.tool_widgets.items() if
-                                      v.has_class(f"msg-space-{main_view.current_space}")]
+                    keys_to_delete = [
+                        k
+                        for k, v in main_view.tool_widgets.items()
+                        if v.has_class(f"msg-space-{main_view.current_space}")
+                    ]
                     for k in keys_to_delete:
                         del main_view.tool_widgets[k]
                     main_view.rendered_msg_counts[main_view.current_space] = 0
 
-                    chat_zone.mount(Static(f"✨ [系统] 已创建并切换到全新纯净分支: {branch_name} ({new_id[-6:]})",
-                                           classes="help-message"))
+                    chat_zone.mount(
+                        Static(
+                            f"✨ [系统] 已创建并切换到全新纯净分支: {branch_name} ({new_id[-6:]})",
+                            classes="help-message",
+                        )
+                    )
                 else:
                     chat_zone.mount(
-                        Static("❌ [系统] 用法错误: 请提供分支名称，例如 /new clean_task", classes="help-message"))
+                        Static(
+                            "❌ [系统] 用法错误: 请提供分支名称，例如 /new clean_task",
+                            classes="help-message",
+                        )
+                    )
 
                 chat_zone.scroll_end(animate=False)
                 self.clear()
@@ -90,7 +110,10 @@ class ChatInput(TextArea):
                 chat_zone = main_view.query_one("#chat-zone")
 
                 from textual.widgets import Markdown
-                status = Markdown("⏳ 正在压缩主 Agent 记忆，请稍候...", classes="help-message")
+
+                status = Markdown(
+                    "⏳ 正在压缩主 Agent 记忆，请稍候...", classes="help-message"
+                )
                 status.add_class(f"msg-space-{main_view.current_space}")
                 chat_zone.mount(status)
                 chat_zone.scroll_end(animate=False)

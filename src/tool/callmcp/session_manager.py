@@ -24,7 +24,9 @@ def _start_mcp_loop():
 
 
 # 启动后台线程运行事件循环
-_mcp_thread = threading.Thread(target=_start_mcp_loop, name="MCP_EventLoop_Thread", daemon=True)
+_mcp_thread = threading.Thread(
+    target=_start_mcp_loop, name="MCP_EventLoop_Thread", daemon=True
+)
 _mcp_thread.start()
 
 
@@ -43,7 +45,9 @@ class MCPSessionManager:
     def __init__(self):
         self.sessions: Dict[str, dict] = {}
         self.locks: Dict[str, asyncio.Lock] = {}
-        self.lifecycle_tasks: Dict[str, asyncio.Task] = {}  # 存储各 Server 的专属守护任务
+        self.lifecycle_tasks: Dict[
+            str, asyncio.Task
+        ] = {}  # 存储各 Server 的专属守护任务
         self.DEFAULT_IDLE_TIMEOUT = 3000
         asyncio.run_coroutine_threadsafe(self._idle_cleaner_task(), _mcp_loop)
 
@@ -53,7 +57,9 @@ class MCPSessionManager:
             self.locks[server_name] = asyncio.Lock()
         return self.locks[server_name]
 
-    async def _server_lifecycle_task(self, server_name: str, config: dict, ready_event: asyncio.Event):
+    async def _server_lifecycle_task(
+        self, server_name: str, config: dict, ready_event: asyncio.Event
+    ):
         """维护单个 MCP Server 生命周期的后台任务"""
         raw_command = config["command"]
         resolved_command = shutil.which(raw_command) or raw_command
@@ -61,25 +67,25 @@ class MCPSessionManager:
         server_params = StdioServerParameters(
             command=resolved_command,
             args=config.get("args", []),
-            env={**os.environ, **config.get("env", {})}
+            env={**os.environ, **config.get("env", {})},
         )
-        
+
         try:
             async with stdio_client(server_params) as (read, write):
                 async with ClientSession(read, write) as session:
                     await session.initialize()
-                    
+
                     close_event = asyncio.Event()
-                    
+
                     self.sessions[server_name] = {
                         "session": session,
                         "last_active": time.time(),
-                        "close_event": close_event
+                        "close_event": close_event,
                     }
                     ready_event.set()
                     print(f"✅ 连接到 {server_name} MCP服务器")
                     await close_event.wait()
-                    
+
         except Exception as e:
             ready_event.set()
             print(f"⚠️ [MCP 异常] Server '{server_name}' 运行异常或断开连接: {e}")
@@ -96,17 +102,19 @@ class MCPSessionManager:
                 await asyncio.sleep(5)
                 now = time.time()
                 servers = load_configs()
-                
+
                 for server_name in list(self.sessions.keys()):
                     ctx = self.sessions.get(server_name)
                     if not ctx:
                         continue
-                    
+
                     config = servers.get(server_name, {})
                     timeout = config.get("idle_timeout", self.DEFAULT_IDLE_TIMEOUT)
-                    
+
                     if now - ctx["last_active"] > timeout:
-                        print(f"🧹 [MCP 资源回收] '{server_name}' 闲置超过 {timeout}s，自动关闭释放资源。")
+                        print(
+                            f"🧹 [MCP 资源回收] '{server_name}' 闲置超过 {timeout}s，自动关闭释放资源。"
+                        )
                         await self._close_session(server_name)
             except Exception as e:
                 print(f"⚠️ [MCP 清理器异常] {e}，将继续运行...")
@@ -134,21 +142,25 @@ class MCPSessionManager:
             if server_name in self.sessions:
                 self.sessions[server_name]["last_active"] = time.time()
                 return self.sessions[server_name]["session"]
-            
+
             print(f"🚀 [MCP] 正在启动 {server_name} 并建立长连接...")
             ready_event = asyncio.Event()
-            
-            task = asyncio.create_task(self._server_lifecycle_task(server_name, config, ready_event))
+
+            task = asyncio.create_task(
+                self._server_lifecycle_task(server_name, config, ready_event)
+            )
             self.lifecycle_tasks[server_name] = task
-            
+
             try:
                 await asyncio.wait_for(ready_event.wait(), timeout=120.0)
             except asyncio.TimeoutError:
                 raise RuntimeError(f"MCP Server '{server_name}' 启动超时 (120s)")
-            
+
             if server_name not in self.sessions:
-                raise RuntimeError(f"无法连接到 MCP Server '{server_name}'，进程可能启动即崩溃。")
-                
+                raise RuntimeError(
+                    f"无法连接到 MCP Server '{server_name}'，进程可能启动即崩溃。"
+                )
+
             return self.sessions[server_name]["session"]
 
 

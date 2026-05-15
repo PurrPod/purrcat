@@ -1,4 +1,5 @@
 """PurrCat setup command - Cross-platform environment setup"""
+
 import subprocess
 import sys
 import os
@@ -15,7 +16,7 @@ def _get_project_root():
 
 def _run_cmd(command, shell=False, check=True, cwd=None):
     """Helper execute system command and print output in real-time"""
-    cmd_str = ' '.join(command) if isinstance(command, list) else command
+    cmd_str = " ".join(command) if isinstance(command, list) else command
     print(f"$ {cmd_str}")
     process = subprocess.Popen(
         command,
@@ -24,7 +25,7 @@ def _run_cmd(command, shell=False, check=True, cwd=None):
         stderr=subprocess.STDOUT,
         text=True,
         bufsize=1,
-        cwd=cwd
+        cwd=cwd,
     )
     for line in process.stdout:
         print(line, end="")
@@ -38,12 +39,12 @@ def _check_docker():
     """Check if Docker is available and running"""
     print("Checking Docker service...")
     result = subprocess.call(
-        ["docker", "info"],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL
+        ["docker", "info"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
     )
     if result != 0:
-        print("Error: Docker not detected or service not running. Please start Docker and try again.")
+        print(
+            "Error: Docker not detected or service not running. Please start Docker and try again."
+        )
         sys.exit(1)
     print("Docker engine is running.")
 
@@ -77,11 +78,20 @@ def _build_docker(dockerfile, apt_mirror):
 
     project_root = _get_project_root()
     success = _run_cmd(
-        ["docker", "build", "-f", dockerfile, "-t", "my_agent_env:latest",
-         "--build-arg", f"APT_MIRROR={apt_mirror}", "."],
+        [
+            "docker",
+            "build",
+            "-f",
+            dockerfile,
+            "-t",
+            "my_agent_env:latest",
+            "--build-arg",
+            f"APT_MIRROR={apt_mirror}",
+            ".",
+        ],
         shell=False,
         check=False,
-        cwd=project_root
+        cwd=project_root,
     )
 
     if not success:
@@ -105,11 +115,7 @@ def _setup_conda():
     env_file = os.path.join(project_root, "environment.yml")
 
     check_env_cmd = [CONDA_CMD, "env", "list"]
-    result = subprocess.run(
-        check_env_cmd,
-        capture_output=True,
-        text=True
-    )
+    result = subprocess.run(check_env_cmd, capture_output=True, text=True)
 
     if "PurrCat" in result.stdout:
         print("Environment 'PurrCat' already exists, trying to update dependencies...")
@@ -117,14 +123,20 @@ def _setup_conda():
             [CONDA_CMD, "env", "update", "-f", env_file],
             shell=False,
             check=False,
-            cwd=project_root
+            cwd=project_root,
         )
         if not update_success:
             print("Update failed, trying to create environment...")
-            _run_cmd([CONDA_CMD, "env", "create", "-f", env_file], shell=False, cwd=project_root)
+            _run_cmd(
+                [CONDA_CMD, "env", "create", "-f", env_file],
+                shell=False,
+                cwd=project_root,
+            )
     else:
         print("Creating new Conda environment...")
-        _run_cmd([CONDA_CMD, "env", "create", "-f", env_file], shell=False, cwd=project_root)
+        _run_cmd(
+            [CONDA_CMD, "env", "create", "-f", env_file], shell=False, cwd=project_root
+        )
 
     print("Conda environment configured successfully!")
 
@@ -153,12 +165,7 @@ def _install_webui():
         print("WebUI installation skipped.")
         return
 
-    success = _run_cmd(
-        ["npm", "install"],
-        shell=False,
-        check=False,
-        cwd=ui_dir
-    )
+    success = _run_cmd(["npm", "install"], shell=False, check=False, cwd=ui_dir)
 
     if success:
         print("WebUI dependencies installed successfully!")
@@ -177,7 +184,7 @@ def _download_embedding_model():
     success = _run_cmd(
         [CONDA_CMD, "run", "-n", "PurrCat", "python", setup_emb_script],
         shell=False,
-        check=False
+        check=False,
     )
 
     if not success:

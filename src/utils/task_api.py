@@ -1,23 +1,30 @@
 import os
 import json
-from src.harness.process import TASK_INSTANCES, reload_task_by_id, kill_task as process_kill_task, kill_and_cleanup_task
+from src.harness.process import (
+    TASK_INSTANCES,
+    reload_task_by_id,
+    kill_task as process_kill_task,
+    kill_and_cleanup_task,
+)
 from src.utils.config import DATA_DIR
 
 
 def get_task_list():
     tasks = []
     for task_id, task in TASK_INSTANCES.items():
-        tasks.append({
-            "id": task.task_id,
-            "name": task.task_name,
-            "graph_name": getattr(task, 'graph_name', 'default'),
-            "state": task.state,
-            "step": getattr(task, 'step', 0),
-            "expert_type": task.__class__.__name__,
-            "create_time": task.create_time,
-            "token_usage": getattr(task, 'token_usage', 0),
-            "checkpoint_dir": getattr(task, 'checkpoint_dir', "")
-        })
+        tasks.append(
+            {
+                "id": task.task_id,
+                "name": task.task_name,
+                "graph_name": getattr(task, "graph_name", "default"),
+                "state": task.state,
+                "step": getattr(task, "step", 0),
+                "expert_type": task.__class__.__name__,
+                "create_time": task.create_time,
+                "token_usage": getattr(task, "token_usage", 0),
+                "checkpoint_dir": getattr(task, "checkpoint_dir", ""),
+            }
+        )
     return tasks
 
 
@@ -51,7 +58,7 @@ def get_task_state(task_id: str):
         "state": task.state,
         "graph": task.graph,
         "node_states": task.node_state,
-        "outputs": task.outputs
+        "outputs": task.outputs,
     }
 
 
@@ -97,13 +104,14 @@ def get_task_history(task_id: str):
 
 def force_push_task(task_id: str, content: str):
     from src.harness import process as task_module
+
     success = task_module.inject_task_instruction(task_id, content)
     return success
 
 
 def get_task_window_token(task_id: str):
     task_instance = TASK_INSTANCES.get(task_id)
-    if task_instance and hasattr(task_instance, 'window_token'):
+    if task_instance and hasattr(task_instance, "window_token"):
         return task_instance.window_token
 
     base_dir = os.path.join(DATA_DIR, "checkpoints", "task")

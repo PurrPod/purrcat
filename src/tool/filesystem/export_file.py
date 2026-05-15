@@ -9,13 +9,14 @@ from src.tool.filesystem.exceptions import (
     SandboxPathNotFoundError,
     ExportDirNotAllowedError,
     GitNotAvailableError,
-    PermissionDeniedError
+    PermissionDeniedError,
 )
 
 
 def _load_allowed_dirs():
     """加载允许导出的目录列表"""
     from src.utils.config import get_file_config
+
     raw_list = get_file_config().get("allowed_export_dirs", [])
     return [os.path.normcase(os.path.abspath(d)) for d in raw_list]
 
@@ -70,7 +71,11 @@ def export_file(sandbox_path: str, host_path: str) -> dict:
     # 检查 git 是否可用
     try:
         subprocess.run(["git", "--version"], capture_output=True, check=True, timeout=5)
-    except (FileNotFoundError, subprocess.TimeoutExpired, subprocess.CalledProcessError):
+    except (
+        FileNotFoundError,
+        subprocess.TimeoutExpired,
+        subprocess.CalledProcessError,
+    ):
         raise GitNotAvailableError()
 
     # 写入目标文件
@@ -98,18 +103,40 @@ def export_file(sandbox_path: str, host_path: str) -> dict:
     if git_dir:
         git_dir_existed = os.path.isdir(os.path.join(git_dir, ".git"))
         if not git_dir_existed:
-            subprocess.run(["git", "-C", git_dir, "init"], capture_output=True, timeout=30)
-        subprocess.run(["git", "-C", git_dir, "add", "-A"], capture_output=True, timeout=30)
+            subprocess.run(
+                ["git", "-C", git_dir, "init"], capture_output=True, timeout=30
+            )
+        subprocess.run(
+            ["git", "-C", git_dir, "add", "-A"], capture_output=True, timeout=30
+        )
         if git_dir_existed:
             result = subprocess.run(
-                ["git", "-C", git_dir, "commit", "-m", f"auto-snapshot: export {os.path.basename(host_path)}"],
-                capture_output=True, timeout=30, text=True
+                [
+                    "git",
+                    "-C",
+                    git_dir,
+                    "commit",
+                    "-m",
+                    f"auto-snapshot: export {os.path.basename(host_path)}",
+                ],
+                capture_output=True,
+                timeout=30,
+                text=True,
             )
             commit_msg = result.stdout.strip() or result.stderr.strip()
         else:
             result = subprocess.run(
-                ["git", "-C", git_dir, "commit", "-m", "auto-snapshot: initial commit after export"],
-                capture_output=True, timeout=30, text=True
+                [
+                    "git",
+                    "-C",
+                    git_dir,
+                    "commit",
+                    "-m",
+                    "auto-snapshot: initial commit after export",
+                ],
+                capture_output=True,
+                timeout=30,
+                text=True,
             )
             commit_msg = result.stdout.strip() or result.stderr.strip()
 
@@ -118,5 +145,5 @@ def export_file(sandbox_path: str, host_path: str) -> dict:
         "sandbox_path": sandbox_path,
         "git_repo": git_dir,
         "git_commit": commit_msg[:200] if commit_msg else "",
-        "message": f"文件已导出到宿主机: {host_path}\nGit 快照已记录 ({git_dir})"
+        "message": f"文件已导出到宿主机: {host_path}\nGit 快照已记录 ({git_dir})",
     }

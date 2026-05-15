@@ -8,19 +8,13 @@ MCP_TOOL_SCHEMA = {
             "properties": {
                 "server_name": {
                     "type": "string",
-                    "description": "MCP 服务器名称（可通过 Search 或 Fetch 获取）"
+                    "description": "MCP 服务器名称（可通过 Search 或 Fetch 获取）",
                 },
-                "tool_name": {
-                    "type": "string",
-                    "description": "工具名称"
-                },
-                "arguments": {
-                    "type": "object",
-                    "description": "工具的参数字典"
-                }
+                "tool_name": {"type": "string", "description": "工具名称"},
+                "arguments": {"type": "object", "description": "工具的参数字典"},
             },
             "required": ["server_name", "tool_name"],
-            "additionalProperties": False
-        }
-    }
+            "additionalProperties": False,
+        },
+    },
 }

@@ -35,7 +35,7 @@ class SensorGateway:
             "type": "sensor_input",
             "sensor_type": sensor.sensor_type,
             "sensor_name": sensor.sensor_name,
-            "content": content
+            "content": content,
         }
         self.message_queue.append(message_dict)
 
@@ -44,6 +44,7 @@ class SensorGateway:
                 self.active_channels.add(sensor.sensor_name)
                 sensor.express("✅ 已标记当前会话为活跃窗口\n输入`/unbind`解除绑定")
         from src.agent.manager import get_agent
+
         agent = get_agent()
         if agent:
             agent.force_push(content=content, type=sensor.sensor_type)

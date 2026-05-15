@@ -59,7 +59,9 @@ class ChatMessage(Vertical):
     def _type_next_char(self):
         chunk_size = 3
         if self._typing_index < len(self._target_text):
-            self._current_text += self._target_text[self._typing_index: self._typing_index + chunk_size]
+            self._current_text += self._target_text[
+                self._typing_index : self._typing_index + chunk_size
+            ]
             self._typing_index += chunk_size
             if hasattr(self, "md_widget"):
                 self.md_widget.update(self._current_text)
@@ -74,7 +76,11 @@ class ChatMessage(Vertical):
             if self._typing_timer:
                 self._typing_timer.stop()
             if new_text and str(new_text).strip():
-                if not hasattr(self, "md_widget") or self.md_widget is None or isinstance(self.md_widget, Static):
+                if (
+                    not hasattr(self, "md_widget")
+                    or self.md_widget is None
+                    or isinstance(self.md_widget, Static)
+                ):
                     if hasattr(self, "md_widget") and self.md_widget:
                         self.md_widget.remove()
                     self.md_widget = Markdown(new_text)

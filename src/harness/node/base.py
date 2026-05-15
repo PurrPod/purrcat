@@ -21,13 +21,15 @@ def _format_result(result_data) -> str:
                 result_data = parsed
         except json.JSONDecodeError:
             pass  # 是普通纯字符串，继续往下走
-            
+
     finish_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     if isinstance(result_data, dict):
         result_data["timestamp"] = finish_time
         return json.dumps(result_data, ensure_ascii=False)
-        
-    return json.dumps({"content": str(result_data), "timestamp": finish_time}, ensure_ascii=False)
+
+    return json.dumps(
+        {"content": str(result_data), "timestamp": finish_time}, ensure_ascii=False
+    )
 
 
 class BaseNode:
@@ -52,15 +54,15 @@ class BaseNode:
         try:
             for item in os.listdir(self.tools_dir):
                 item_path = os.path.join(self.tools_dir, item)
-                if os.path.isdir(item_path) and not item.startswith('_'):
+                if os.path.isdir(item_path) and not item.startswith("_"):
                     meta_path = os.path.join(item_path, f"{item}.json")
                     if os.path.exists(meta_path):
-                        with open(meta_path, 'r', encoding='utf-8') as f:
+                        with open(meta_path, "r", encoding="utf-8") as f:
                             schema = json.load(f)
                         tool_name = schema["function"]["name"]
                         self._local_tools_schemas.append(schema)
                         # 动态导入工具模块
-                        package_path = self.__module__.rsplit('.', 1)[0]
+                        package_path = self.__module__.rsplit(".", 1)[0]
                         tool_module_path = f"{package_path}.tools.{item}.tool"
                         module = importlib.import_module(tool_module_path)
                         self._local_tools_registry[tool_name] = module.Tool
@@ -68,20 +70,23 @@ class BaseNode:
             print(f"❌ 加载节点本地工具失败: {e}")
         return self._local_tools_registry, self._local_tools_schemas
 
-    async def execute(self, inputs: Dict[str, Any], force_push_msgs: List[str], context: Any) -> Dict[str, Any]:
+    async def execute(
+        self, inputs: Dict[str, Any], force_push_msgs: List[str], context: Any
+    ) -> Dict[str, Any]:
         """由子类实现的具体执行逻辑"""
         raise NotImplementedError
 
-    def inject_force_push_to_messages(self, messages: List[Dict], force_push_msgs: List[str]) -> List[Dict]:
+    def inject_force_push_to_messages(
+        self, messages: List[Dict], force_push_msgs: List[str]
+    ) -> List[Dict]:
         """专供输入为 MessageList 类型的节点调用，拦截并注入人类指令"""
         if not force_push_msgs:
             return messages
         injected_messages = list(messages) if messages else []
         for msg in force_push_msgs:
-            injected_messages.append({
-                "role": "user",
-                "content": f"[人类/系统强制干预] {msg}"
-            })
+            injected_messages.append(
+                {"role": "user", "content": f"[人类/系统强制干预] {msg}"}
+            )
         return injected_messages
 
     def execute_tool_calling(self, tool_calls: list, context: Any) -> List[dict]:
@@ -103,12 +108,14 @@ class BaseNode:
                     arguments = None
 
             if not isinstance(arguments, dict):
-                tool_messages.append({
-                    "role": "tool",
-                    "tool_call_id": tc.id,
-                    "name": original_tool_name,
-                    "content": "❌ 系统拦截：工具参数格式严重损坏，请检查 JSON 格式！"
-                })
+                tool_messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tc.id,
+                        "name": original_tool_name,
+                        "content": "❌ 系统拦截：工具参数格式严重损坏，请检查 JSON 格式！",
+                    }
+                )
                 continue
             # ==========================================
             # 分发逻辑
@@ -116,70 +123,102 @@ class BaseNode:
             if original_tool_name == "call_tool":
                 action = arguments.get("action", "execute")
                 local_registry, local_schemas = self.get_local_tools()
-                
+
                 # 🌟 核心：大模型主动请求工具列表
                 if action == "list":
                     if not local_schemas:
                         msg = "当前节点暂未挂载任何拓展业务工具。"
-                        self.log(context, LogType.SYSTEM, "📦 [查询工具] 当前无可用拓展工具")
+                        self.log(
+                            context, LogType.SYSTEM, "📦 [查询工具] 当前无可用拓展工具"
+                        )
                     else:
                         # 把所有私有工具的 Schema 平铺成易读的文本返回给它
-                        schema_list_str = json.dumps([s["function"] for s in local_schemas], ensure_ascii=False, indent=2)
+                        schema_list_str = json.dumps(
+                            [s["function"] for s in local_schemas],
+                            ensure_ascii=False,
+                            indent=2,
+                        )
                         msg = f"当前可用的拓展业务工具有以下几种，请参考其参数格式并在下一步调用：\n{schema_list_str}"
-                        self.log(context, LogType.SYSTEM, f"📦 [查询工具] 吐出 {len(local_schemas)} 个拓展工具")
-                    
+                        self.log(
+                            context,
+                            LogType.SYSTEM,
+                            f"📦 [查询工具] 吐出 {len(local_schemas)} 个拓展工具",
+                        )
+
                     final_content = _format_result({"available_tools": msg})
 
                 # 🌟 正常执行工具
                 elif action == "execute":
                     target_tool_name = arguments.get("tool_name")
                     target_arguments = arguments.get("tool_args", {})
-                    
+
                     if not target_tool_name or target_tool_name not in local_registry:
                         error_msg = f"⚠️ [工具缺失] 未找到 '{target_tool_name}'"
                         self.log(context, LogType.WARNING, error_msg)
                         final_content = _format_result({"error": error_msg})
                     else:
                         try:
-                            args_str = ", ".join([f"{k}={repr(v)}" for k, v in target_arguments.items()])
+                            args_str = ", ".join(
+                                [f"{k}={repr(v)}" for k, v in target_arguments.items()]
+                            )
                             if len(args_str) > 100:
                                 args_str = args_str[:97] + "..."
-                            self.log(context, LogType.TOOL_CALL, f"🔧 [拓展工具] {target_tool_name}({args_str})")
-                            
+                            self.log(
+                                context,
+                                LogType.TOOL_CALL,
+                                f"🔧 [拓展工具] {target_tool_name}({args_str})",
+                            )
+
                             ToolClass = local_registry[target_tool_name]
                             tool_instance = ToolClass(context=context)
                             raw_result = tool_instance.execute(target_arguments)
                             final_content = _format_result(raw_result)
-                            
+
                         except Exception as e:
-                            error_msg = f"❌ [工具异常] {target_tool_name} 执行失败: {str(e)}"
+                            error_msg = (
+                                f"❌ [工具异常] {target_tool_name} 执行失败: {str(e)}"
+                            )
                             self.log(context, LogType.ERROR, error_msg)
                             final_content = _format_result({"error": error_msg})
 
             else:
                 # 👉 路由到全局基础工具 (task_done, bash, yield_to_human 等)
                 try:
-                    args_str = ", ".join([f"{k}={repr(v)}" for k, v in arguments.items()])
+                    args_str = ", ".join(
+                        [f"{k}={repr(v)}" for k, v in arguments.items()]
+                    )
                     if len(args_str) > 100:
                         args_str = args_str[:97] + "..."
-                    self.log(context, LogType.TOOL_CALL, f"🔧 [全局工具] {original_tool_name}({args_str})")
-                    
-                    raw_result = execute_global_tool(original_tool_name, arguments, context=context)
+                    self.log(
+                        context,
+                        LogType.TOOL_CALL,
+                        f"🔧 [全局工具] {original_tool_name}({args_str})",
+                    )
+
+                    raw_result = execute_global_tool(
+                        original_tool_name, arguments, context=context
+                    )
                     final_content = _format_result(raw_result)
-                    
-                    result_preview = str(final_content)[:50].replace('\n', ' ')
-                    self.log(context, LogType.TOOL, f"📦 [工具返回] {original_tool_name} -> {result_preview}...")
+
+                    result_preview = str(final_content)[:50].replace("\n", " ")
+                    self.log(
+                        context,
+                        LogType.TOOL,
+                        f"📦 [工具返回] {original_tool_name} -> {result_preview}...",
+                    )
                 except Exception as e:
                     error_msg = f"❌ [工具崩溃] {original_tool_name}: {e}"
                     self.log(context, LogType.ERROR, error_msg)
                     final_content = _format_result({"error": error_msg})
             # 装填并返回结果
-            tool_messages.append({
-                "role": "tool",
-                "tool_call_id": tc.id,
-                "name": original_tool_name,
-                "content": final_content
-            })
+            tool_messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": tc.id,
+                    "name": original_tool_name,
+                    "content": final_content,
+                }
+            )
 
         return tool_messages
 

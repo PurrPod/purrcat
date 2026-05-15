@@ -7,14 +7,14 @@ from src.memory.purrmemo.core.config import GRAPH_DATABASE_CONFIG
 from src.utils.config import MEMORY_DIR
 from pyvis.network import Network
 
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 
 class GraphVisualizer:
     def __init__(self):
-        self.graph_path = GRAPH_DATABASE_CONFIG['graph_path']
+        self.graph_path = GRAPH_DATABASE_CONFIG["graph_path"]
         self.graph = None
         self._load_graph()
 
@@ -22,9 +22,11 @@ class GraphVisualizer:
         """加载图谱"""
         try:
             if os.path.exists(self.graph_path):
-                with open(self.graph_path, 'rb') as f:
+                with open(self.graph_path, "rb") as f:
                     self.graph = pickle.load(f)
-                print(f"成功加载图谱，包含 {self.graph.number_of_nodes()} 个节点和 {self.graph.number_of_edges()} 条边")
+                print(
+                    f"成功加载图谱，包含 {self.graph.number_of_nodes()} 个节点和 {self.graph.number_of_edges()} 条边"
+                )
             else:
                 print("图谱文件不存在")
                 self.graph = nx.DiGraph()
@@ -51,24 +53,24 @@ class GraphVisualizer:
                 width="100%",
                 height="800px",
                 bgcolor="#ffffff",
-                font_color="#333333"
+                font_color="#333333",
             )
 
             for node_id in self.graph.nodes:
                 node_data = self.graph.nodes[node_id]
-                node_name = node_data.get('name', node_id)
+                node_name = node_data.get("name", node_id)
                 net.add_node(
                     node_id,
                     label=node_name,
                     title=f"节点: {node_name}",
                     color="#6495ED",
-                    size=20
+                    size=20,
                 )
 
             for source, target, edge_data in self.graph.edges(data=True):
-                relation = edge_data.get('relation_meaning', 'unknown')
-                confidence = edge_data.get('confidence', 0.5)
-                updated_at = edge_data.get('updated_at', 'unknown')
+                relation = edge_data.get("relation_meaning", "unknown")
+                confidence = edge_data.get("confidence", 0.5)
+                updated_at = edge_data.get("updated_at", "unknown")
 
                 width = 1 + confidence * 3
                 opacity = 0.3 + confidence * 0.7
@@ -80,7 +82,7 @@ class GraphVisualizer:
                     title=f"关系: {relation}\n置信度: {confidence:.2f}\n更新时间: {updated_at}",
                     width=width,
                     opacity=opacity,
-                    color="#8B4513"
+                    color="#8B4513",
                 )
 
             net.set_options("""

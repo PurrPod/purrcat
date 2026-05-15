@@ -5,8 +5,9 @@ import threading
 from src.utils.config import get_model_config
 
 
-def add_task_operation(name: str, inputs: dict, graph_name: str,
-                       core: str = "openai:deepseek-v4-flash") -> tuple:
+def add_task_operation(
+    name: str, inputs: dict, graph_name: str, core: str = "openai:deepseek-v4-flash"
+) -> tuple:
     """
     创建后台任务
 
@@ -33,17 +34,16 @@ def add_task_operation(name: str, inputs: dict, graph_name: str,
             return None, f"模型 '{model_name}' 未配置有效的 api-key"
 
         from src.harness.process import Task
+
         single_task = Task(
-            task_name=name,
-            inputs=inputs,
-            core=core,
-            graph_name=graph_name
+            task_name=name, inputs=inputs, core=core, graph_name=graph_name
         )
 
         # 后台执行任务
         def _run_task():
             import asyncio
             from src.agent.manager import get_agent
+
             try:
                 result = asyncio.run(single_task.run())
                 task_id = single_task.task_id
@@ -52,7 +52,9 @@ def add_task_operation(name: str, inputs: dict, graph_name: str,
                 if agent:
                     agent.force_push(notify_msg, type="task_message")
             except Exception as e:
-                error_msg = f"任务 '{name}' (ID: {single_task.task_id}) 执行崩溃，原因：\n {e}"
+                error_msg = (
+                    f"任务 '{name}' (ID: {single_task.task_id}) 执行崩溃，原因：\n {e}"
+                )
                 agent = get_agent()
                 if agent:
                     agent.force_push(error_msg, type="task_message")
@@ -63,7 +65,7 @@ def add_task_operation(name: str, inputs: dict, graph_name: str,
         return {
             "task_id": single_task.task_id,
             "name": name,
-            "message": f"任务 '{name}' 已提交到后台线程执行，完成或崩溃会通过消息通知您，无须且请勿频繁检查任务状态。ID: {single_task.task_id}"
+            "message": f"任务 '{name}' 已提交到后台线程执行，完成或崩溃会通过消息通知您，无须且请勿频繁检查任务状态。ID: {single_task.task_id}",
         }, None
 
     except Exception as e:
@@ -87,7 +89,7 @@ def kill_task_operation(task_id: str) -> tuple:
         if is_killed:
             return {
                 "task_id": task_id,
-                "message": f"已成功向任务 (ID: {task_id}) 发送终止信号，任务将被安全强杀。"
+                "message": f"已成功向任务 (ID: {task_id}) 发送终止信号，任务将被安全强杀。",
             }, None
         else:
             return None, f"终止失败：未在内存中找到运行中的任务 (ID: {task_id})。"
@@ -104,19 +106,19 @@ def list_tasks_operation() -> tuple:
         (tasks_list, error_message)
     """
     from src.harness.process import TASK_INSTANCES
+
     tasks = []
     for task_id, task in TASK_INSTANCES.items():
-        tasks.append({
-            "task_id": task_id,
-            "name": getattr(task, 'task_name', '未知'),
-            "state": getattr(task, 'state', '未知'),
-            "expert_type": getattr(task, 'expert_type', '未知')
-        })
+        tasks.append(
+            {
+                "task_id": task_id,
+                "name": getattr(task, "task_name", "未知"),
+                "state": getattr(task, "state", "未知"),
+                "expert_type": getattr(task, "expert_type", "未知"),
+            }
+        )
 
-    return {
-        "tasks": tasks,
-        "count": len(tasks)
-    }, None
+    return {"tasks": tasks, "count": len(tasks)}, None
 
 
 def submit_request_operation(task_id: str, content: str, node_id: str = None) -> tuple:
@@ -142,7 +144,7 @@ def submit_request_operation(task_id: str, content: str, node_id: str = None) ->
             target_info = f"节点 [{node_id}]" if node_id else "所有节点"
             return {
                 "task_id": task_id,
-                "message": f"已成功向任务 (ID: {task_id}) 的 {target_info} 注入指令。"
+                "message": f"已成功向任务 (ID: {task_id}) 的 {target_info} 注入指令。",
             }, None
         else:
             return None, f"向任务 (ID: {task_id}) 注入指令失败，请检查任务状态。"

@@ -96,8 +96,10 @@ export const useFlowStore = create<FlowState>()(
         if (hasCycle(targetNode, params.source!, nodes, edges)) return false
 
         // 2. 类型校验（核心对齐逻辑）
-        const sourcePort = [...(sourceNode.data.outputs || [])].find(p => p.name === params.sourceHandle || (params.sourceHandle === 'default' && sourceNode.data.outputs?.length === 1))
-        const targetPort = [...(targetNode.data.inputs || [])].find(p => p.name === params.targetHandle || (params.targetHandle === 'default' && targetNode.data.inputs?.length === 1))
+        const sourceOutputs = sourceNode.data.outputs || []
+        const targetInputs = targetNode.data.inputs || []
+        const sourcePort = (sourceOutputs as any[]).find((p: any) => p.name === params.sourceHandle || (params.sourceHandle === 'default' && (sourceOutputs as any[]).length === 1))
+        const targetPort = (targetInputs as any[]).find((p: any) => p.name === params.targetHandle || (params.targetHandle === 'default' && (targetInputs as any[]).length === 1))
 
         // 如果定义了类型且类型不匹配（简单字符串比较），且不是 any 类型
         if (sourcePort && targetPort && sourcePort.type !== 'any' && targetPort.type !== 'any' && sourcePort.type !== targetPort.type) {
@@ -127,13 +129,13 @@ export const useFlowStore = create<FlowState>()(
         return errors
       },
 
-      exportGraph: (name: string) => {
+      exportGraph: (name: string): GraphExport => {
         const { nodes, edges } = get()
 
         const taskInputNode = nodes.find(n => n.data.nodeType === 'task_input')
         const requiredInputs: Record<string, string> = {}
         if (taskInputNode && taskInputNode.data.dynamic_inputs) {
-          taskInputNode.data.dynamic_inputs.forEach((item: any) => {
+          (taskInputNode.data.dynamic_inputs as any[]).forEach((item: any) => {
             requiredInputs[item.key] = item.desc || 'any'
           })
         }
@@ -145,26 +147,16 @@ export const useFlowStore = create<FlowState>()(
           nodes: nodes.map(n => {
             const base: any = {
               id: n.id,
-              name: n.data.name,
               type: n.data.nodeType,
-              position: n.position,
-            }
-            const nodeData: any = {}
-            if (n.data.dynamic_inputs && n.data.dynamic_inputs.length > 0) {
-              nodeData.dynamic_inputs = n.data.dynamic_inputs
-            }
-            Object.keys(n.data).forEach((key) => {
-              if (!['nodeType', 'name', 'color', 'inputs', 'outputs', 'configSchema', 'dynamic_inputs'].includes(key)) {
-                nodeData[key] = n.data[key]
-              }
-            })
-            if (Object.keys(nodeData).length > 0) {
-              base.data = nodeData
+              data: n.data
             }
             return base
           }),
           edges: edges.map(e => ({
-            source: e.source, target: e.target, sourceHandle: e.sourceHandle, targetHandle: e.targetHandle
+            source: e.source, 
+            target: e.target, 
+            sourceHandle: e.sourceHandle || 'default', 
+            targetHandle: e.targetHandle || 'default'
           }))
         }
       },
@@ -178,7 +170,10 @@ export const useFlowStore = create<FlowState>()(
         const catalog = get().catalog
         const loadedNodes: Node[] = []
 
-        graphData.nodes.forEach((node: any, index: number) => {
+        const nodes = graphData.nodes || [] as any[]
+        const edges = graphData.edges || [] as any[]
+        
+        nodes.forEach((node: any, index: number) => {
           const definition = catalog.find((item) => item.type === node.type)
           if (!definition) return
 
@@ -208,7 +203,7 @@ export const useFlowStore = create<FlowState>()(
           })
         })
 
-        const loadedEdges: Edge[] = graphData.edges.map((edge: any) => ({
+        const loadedEdges: Edge[] = edges.map((edge: any) => ({
           id: `edge-${edge.source}-${edge.target}-${edge.sourceHandle}`,
           source: edge.source, target: edge.target,
           sourceHandle: edge.sourceHandle || 'default', targetHandle: edge.targetHandle || 'default',

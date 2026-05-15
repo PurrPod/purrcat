@@ -5,12 +5,12 @@ import time
 def format_tool_response(msg_type: str, content: str | dict, snip: str = "") -> str:
     """
     统一的工具返回格式处理函数
-    
+
     Args:
         msg_type: 消息类型，如 'text', 'warning', 'error'
         content: 工具返回的内容，可以是字符串或字典
         snip: 内容摘要（可选），由工具提供
-    
+
     Returns:
         格式化后的JSON字符串，包含 timestamp, type, content, snip 四个字段
     """
@@ -18,7 +18,7 @@ def format_tool_response(msg_type: str, content: str | dict, snip: str = "") -> 
         "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
         "type": msg_type,
         "content": content,
-        "snip": snip
+        "snip": snip,
     }
     return json.dumps(result, ensure_ascii=False)
 

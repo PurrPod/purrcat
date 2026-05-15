@@ -4,7 +4,7 @@ from tui.views import (
     ChatMessage,
     ChatInput,
     MainView,
-    TaskMonitorScreen
+    TaskMonitorScreen,
 )
 
 __all__ = [
@@ -13,5 +13,5 @@ __all__ = [
     "ChatMessage",
     "ChatInput",
     "MainView",
-    "TaskMonitorScreen"
+    "TaskMonitorScreen",
 ]

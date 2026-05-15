@@ -14,6 +14,7 @@ from src.tool.search.semantic_utils import LocalEmbeddingSearcher, hybrid_tokeni
 
 class SkillSearcher:
     """Skill 语义搜索器（线程安全单例，语料与矩阵驻留内存）"""
+
     _instance = None
     _lock = threading.Lock()
 
@@ -32,7 +33,7 @@ class SkillSearcher:
 
         if self.corpus:
             self.corpus_matrix = self.embedding_searcher.encode(self.corpus)
-            
+
             tokenized_corpus = [hybrid_tokenize(doc) for doc in self.corpus]
             self.bm25 = BM25Okapi(tokenized_corpus)
 
@@ -51,11 +52,9 @@ class SkillSearcher:
                     desc = metadata.get("description", metadata.get("desc", ""))
                     content = parsed_data.get("content", "")
 
-                    self.skills.append({
-                        "name": name,
-                        "description": desc,
-                        "dir_name": item.name
-                    })
+                    self.skills.append(
+                        {"name": name, "description": desc, "dir_name": item.name}
+                    )
                     text_representation = f"{name} {desc} {content}"
                     self.corpus.append(text_representation)
 
@@ -65,11 +64,13 @@ class SkillSearcher:
             return []
 
         query_vector = self.embedding_searcher.encode([query])
-        dense_scores = self.embedding_searcher.calculate_similarity(query_vector, self.corpus_matrix)
+        dense_scores = self.embedding_searcher.calculate_similarity(
+            query_vector, self.corpus_matrix
+        )
 
         tokenized_query = hybrid_tokenize(query)
         raw_bm25_scores = self.bm25.get_scores(tokenized_query)
-        
+
         max_bm25 = max(raw_bm25_scores) if raw_bm25_scores.size > 0 else 0
         if max_bm25 > 0:
             bm25_scores = [score / max_bm25 for score in raw_bm25_scores]
@@ -81,7 +82,9 @@ class SkillSearcher:
 
         final_scores = []
         for i in range(len(self.corpus)):
-            combined_score = (dense_scores[i] * alpha_dense) + (bm25_scores[i] * alpha_sparse)
+            combined_score = (dense_scores[i] * alpha_dense) + (
+                bm25_scores[i] * alpha_sparse
+            )
             final_scores.append(combined_score)
 
         final_scores = np.array(final_scores)
@@ -91,10 +94,7 @@ class SkillSearcher:
         for idx in top_k_indices:
             score = float(final_scores[idx])
             if score > 0:
-                results.append({
-                    "score": round(score, 4),
-                    "skill": self.skills[idx]
-                })
+                results.append({"score": round(score, 4), "skill": self.skills[idx]})
 
         return results
 
@@ -137,5 +137,5 @@ def load_skill(name: str) -> dict:
         "name": parsed_data["metadata"].get("name", name),
         "description": parsed_data["metadata"].get("description", ""),
         "content": parsed_data["content"],
-        "path": str(md_file)
+        "path": str(md_file),
     }

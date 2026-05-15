@@ -19,51 +19,65 @@ def web_content_fetch(url: str) -> Tuple[Optional[Dict], Optional[str]]:
     获取单页面 URL 内容并使用 Readability 提取纯净正文
     """
     try:
-        response = requests.get(url, headers=DEFAULT_HEADERS, timeout=15, impersonate="chrome")
+        response = requests.get(
+            url, headers=DEFAULT_HEADERS, timeout=15, impersonate="chrome"
+        )
         response.raise_for_status()
 
-        content_type = response.headers.get('Content-Type', '').lower()
+        content_type = response.headers.get("Content-Type", "").lower()
 
-        if 'text/html' in content_type:
+        if "text/html" in content_type:
             html_content = response.text
 
             doc = Document(html_content)
             clean_html = doc.summary()
             title = doc.title() if doc.title() else url
 
-            markdown_text = md(clean_html, heading_style="ATX", strip=['script', 'style', 'iframe', 'nav', 'footer'])
-            markdown_text = '\n'.join([line for line in markdown_text.splitlines() if line.strip() != ""])
+            markdown_text = md(
+                clean_html,
+                heading_style="ATX",
+                strip=["script", "style", "iframe", "nav", "footer"],
+            )
+            markdown_text = "\n".join(
+                [line for line in markdown_text.splitlines() if line.strip() != ""]
+            )
 
             if len(markdown_text) < 50:
-                soup = BeautifulSoup(html_content, 'html.parser')
+                soup = BeautifulSoup(html_content, "html.parser")
                 title = soup.title.string if soup.title else url
-                paragraphs = soup.find_all(['article', 'main', 'div.content', 'p'])
-                markdown_text = '\n'.join([p.get_text(strip=True) for p in paragraphs])
+                paragraphs = soup.find_all(["article", "main", "div.content", "p"])
+                markdown_text = "\n".join([p.get_text(strip=True) for p in paragraphs])
 
-            final_content = markdown_text[:10000] if len(markdown_text) > 10000 else markdown_text
+            final_content = (
+                markdown_text[:10000] if len(markdown_text) > 10000 else markdown_text
+            )
 
             return {
                 "url": url,
                 "title": title,
                 "content": f"# {title}\n\n{final_content}",
-                "content_type": "html"
+                "content_type": "html",
             }, None
 
-        elif 'application/json' in content_type:
+        elif "application/json" in content_type:
             return {
                 "url": url,
                 "title": "JSON Data",
                 "content": response.json(),
-                "content_type": "json"
+                "content_type": "json",
             }, None
 
         else:
-            raw_text = response.text if isinstance(response.text, str) else str(response.content)
+            raw_text = (
+                response.text
+                if isinstance(response.text, str)
+                else str(response.content)
+            )
             return {
                 "url": url,
                 "title": "Raw Data",
                 "content": raw_text[:5000],
-                "content_type": content_type
+                "content_type": content_type,
             }, None
 
     except requests.exceptions.RequestException:

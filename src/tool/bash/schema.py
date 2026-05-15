@@ -8,14 +8,14 @@ BASH_TOOL_SCHEMA = {
             "properties": {
                 "command": {
                     "type": "string",
-                    "description": "要执行的 Shell 命令（支持连串命令和多行文本，请注意正确的引号转义）"
+                    "description": "要执行的 Shell 命令（支持连串命令和多行文本，请注意正确的引号转义）",
                 },
                 "timeout": {
                     "type": "integer",
-                    "description": "命令执行的超时时间（秒），如果不确定请不要传，默认 300 秒"
-                }
+                    "description": "命令执行的超时时间（秒），如果不确定请不要传，默认 300 秒",
+                },
             },
-            "required": ["command"]
-        }
-    }
+            "required": ["command"],
+        },
+    },
 }

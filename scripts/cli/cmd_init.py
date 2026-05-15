@@ -1,4 +1,5 @@
 """PurrCat init command - Generate .purrcat configuration files"""
+
 import os
 import sys
 import json
@@ -233,7 +234,11 @@ def run_init(force=False):
             print(f"[*] Directory exists: {purrcat_dir} (force mode, overwriting)")
         else:
             print("[!] .purrcat directory already exists, continue initialization?")
-            val = input("  All config files will be confirmed one by one (Y/N): ").strip().lower()
+            val = (
+                input("  All config files will be confirmed one by one (Y/N): ")
+                .strip()
+                .lower()
+            )
             if val != "y":
                 print("  Cancelled")
                 return

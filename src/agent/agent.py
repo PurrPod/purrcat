@@ -8,7 +8,12 @@ from src.utils.tracker import Tracker
 from src.model import AgentModel
 from src.tool import AGENT_TOOL_SCHEMA
 from src.tool.utils.route import dispatch_tool
-from src.utils.config import get_agent_model, SOUL_MD_PATH, SYSTEM_RULES_DIR, AGENT_CORE_DIR
+from src.utils.config import (
+    get_agent_model,
+    SOUL_MD_PATH,
+    SYSTEM_RULES_DIR,
+    AGENT_CORE_DIR,
+)
 from json_repair import repair_json
 from src.agent.session_store import SessionStore
 
@@ -32,7 +37,7 @@ class Agent:
         self.model.bind_task(self.session_id, "AgentMain")
         self.tracker = Tracker()
         self.current_history = initial_history or []
-        
+
         # 如果是彻头彻尾的全新初始化（没有任何历史），此时才 Build 最新规则
         if not self.current_history:
             fresh_prompt = self._build_system_prompt()
@@ -40,10 +45,12 @@ class Agent:
             # 注入跨会话共享短时缓存（独立消息，不污染 KV 首节点）
             if self.memo:
                 memo_summary = json.dumps(self.memo, ensure_ascii=False, indent=2)
-                self.current_history.append({
-                    "role": "system",
-                    "content": f"【系统通知：这是一个全新的会话。以下是系统在创建这个会话前的短时共享记忆缓存，或许对你有帮助】\n{memo_summary}"
-                })
+                self.current_history.append(
+                    {
+                        "role": "system",
+                        "content": f"【系统通知：这是一个全新的会话。以下是系统在创建这个会话前的短时共享记忆缓存，或许对你有帮助】\n{memo_summary}",
+                    }
+                )
 
     def _build_system_prompt(self):
         soul_md, system_rules, memory_md = "", "", ""
@@ -52,9 +59,13 @@ class Agent:
                 with open(SOUL_MD_PATH, "r", encoding="utf-8") as f:
                     soul_md = f.read().strip()
             if os.path.exists(SYSTEM_RULES_DIR):
-                rule_files = sorted([f for f in os.listdir(SYSTEM_RULES_DIR) if f.endswith(".md")])
+                rule_files = sorted(
+                    [f for f in os.listdir(SYSTEM_RULES_DIR) if f.endswith(".md")]
+                )
                 for rf in rule_files:
-                    with open(os.path.join(SYSTEM_RULES_DIR, rf), "r", encoding="utf-8") as f:
+                    with open(
+                        os.path.join(SYSTEM_RULES_DIR, rf), "r", encoding="utf-8"
+                    ) as f:
                         system_rules += f.read().strip() + "\n\n"
                 system_rules = system_rules.strip()
             if os.path.exists(MEMORY_MD_PATH):
@@ -72,7 +83,7 @@ class Agent:
 
     def stop(self):
         self._stop_event.set()
-        if hasattr(self, 'model') and self.model:
+        if hasattr(self, "model") and self.model:
             self.model.unbind()
 
     @property
@@ -110,11 +121,13 @@ class Agent:
             print(f"⚠️ [Memory] 落盘失败: {e}")
 
     def force_push(self, content, type="user"):
-        self.pending_force_push.append({
-            "type": type,
-            "time": datetime.datetime.now().strftime('%m-%d %H:%M:%S'),
-            "content": content
-        })
+        self.pending_force_push.append(
+            {
+                "type": type,
+                "time": datetime.datetime.now().strftime("%m-%d %H:%M:%S"),
+                "content": content,
+            }
+        )
 
     def _track_token_usage(self, response):
         if hasattr(response, "usage") and response.usage is not None:
@@ -128,29 +141,35 @@ class Agent:
 
         if local_push:
             batch_data = {"events": local_push}
-            self._append_history({
-                "role": "user",
-                "content": json.dumps(batch_data, ensure_ascii=False)
-            })
+            self._append_history(
+                {"role": "user", "content": json.dumps(batch_data, ensure_ascii=False)}
+            )
 
     def process_message(self):
         current_interaction_id = self._increment_interaction_id()
         self.force_push(
             content="任务开始前如有需要可以调用 Memo 工具搜索相关记忆。完成任务后请调用 Memo 工具及时更新记忆",
-            type="system")
+            type="system",
+        )
 
         while True:
             try:
                 if self._get_current_interaction_id() != current_interaction_id:
-                    print(f"⚠️ [隔离] 检测到交互ID过期 ({current_interaction_id} != {self._get_current_interaction_id()})，丢弃旧响应")
+                    print(
+                        f"⚠️ [隔离] 检测到交互ID过期 ({current_interaction_id} != {self._get_current_interaction_id()})，丢弃旧响应"
+                    )
                     break
 
                 self._checker()
                 safe_history = self.get_history()
-                response = self.model.chat(messages=safe_history, tools=self._get_tool_schema())
+                response = self.model.chat(
+                    messages=safe_history, tools=self._get_tool_schema()
+                )
 
                 if self._get_current_interaction_id() != current_interaction_id:
-                    print(f"⚠️ [隔离] 网络响应返回后检测到交互ID过期 ({current_interaction_id} != {self._get_current_interaction_id()})，丢弃响应")
+                    print(
+                        f"⚠️ [隔离] 网络响应返回后检测到交互ID过期 ({current_interaction_id} != {self._get_current_interaction_id()})，丢弃响应"
+                    )
                     break
                 self._track_token_usage(response)
                 msg_resp = response.choices[0].message
@@ -170,6 +189,7 @@ class Agent:
                 break
             try:
                 from src.tool.bash.bash import close_session
+
                 close_session(self.session_id)
             except Exception as e:
                 print(f"⚠️ 自动清理沙盒会话失败: {e}")
@@ -183,12 +203,20 @@ class Agent:
             assist_msg["reasoning_content"] = rc
         if msg_resp.tool_calls:
             assist_msg["tool_calls"] = [
-                {"id": t.id, "type": t.type, "function": {"name": t.function.name, "arguments": t.function.arguments}}
+                {
+                    "id": t.id,
+                    "type": t.type,
+                    "function": {
+                        "name": t.function.name,
+                        "arguments": t.function.arguments,
+                    },
+                }
                 for t in msg_resp.tool_calls
             ]
         self._append_history(assist_msg)
         if msg_resp.content:
             from src.sensor import get_gateway
+
             get_gateway().send(f"{msg_resp.content}")
         return bool(msg_resp.tool_calls)
 
@@ -206,7 +234,13 @@ class Agent:
             if not isinstance(arguments, dict):
                 error_msg = "❌ 系统拦截：工具参数格式严重损坏。"
                 self._append_history(
-                    {"role": "tool", "tool_call_id": tool_call.id, "name": target_tool_name, "content": error_msg})
+                    {
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "name": target_tool_name,
+                        "content": error_msg,
+                    }
+                )
                 continue
             if target_tool_name in ["execute_command", "close_shell", "Bash"]:
                 arguments["session_id"] = self.session_id
@@ -217,17 +251,31 @@ class Agent:
             result_content = dispatch_tool(target_tool_name, arguments)
 
             if self._get_current_interaction_id() != current_iid:
-                print(f"⚠️ [拦截] 工具 {target_tool_name} 执行完毕，但检测到会话已切换或被打断，丢弃幽灵结果。")
+                print(
+                    f"⚠️ [拦截] 工具 {target_tool_name} 执行完毕，但检测到会话已切换或被打断，丢弃幽灵结果。"
+                )
                 continue
 
             try:
-                snip = json.loads(result_content).get('snip', '') if isinstance(json.loads(result_content), dict) else ''
+                snip = (
+                    json.loads(result_content).get("snip", "")
+                    if isinstance(json.loads(result_content), dict)
+                    else ""
+                )
             except Exception:
                 snip = str(result_content)[:100]
-            get_gateway().send(f"🔧{target_tool_name}({args_str[:50]}...)\n\n---\n\n{snip}")
+            get_gateway().send(
+                f"🔧{target_tool_name}({args_str[:50]}...)\n\n---\n\n{snip}"
+            )
             self._append_history(
-                {"role": "tool", "tool_call_id": tool_call.id, "name": target_tool_name, "content": result_content})
-            
+                {
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "name": target_tool_name,
+                    "content": result_content,
+                }
+            )
+
             # ==== 在模型调用 Memo add 操作后，触发显性检查拦截 ====
             if target_tool_name == "Memo" and arguments.get("action") == "add":
                 memo_data = arguments.get("memo_data")
@@ -237,6 +285,7 @@ class Agent:
                         self.memo = self.memo[-10:]
                     SessionStore.save_global_memo(self.memo)
                 from src.utils.config import get_model_config
+
                 model_cfg = get_model_config().get("main", {}).get(self.name, {})
                 max_tokens = model_cfg.get("max_token", 500000)
                 if self.window_token >= max_tokens:
@@ -244,9 +293,15 @@ class Agent:
         return False
 
     def _handle_interaction_error(self, e=None, is_interrupt=False):
-        content_msg = "⚠️ [中断] 运行被强制中断。" if is_interrupt else f"❌ [错误] 交互断层: {e}"
+        content_msg = (
+            "⚠️ [中断] 运行被强制中断。" if is_interrupt else f"❌ [错误] 交互断层: {e}"
+        )
         print(content_msg)
-        if self.current_history and self.current_history[-1].get("role") == "assistant" and self.current_history[-1].get("tool_calls"):
+        if (
+            self.current_history
+            and self.current_history[-1].get("role") == "assistant"
+            and self.current_history[-1].get("tool_calls")
+        ):
             self.current_history.pop()
         self._append_history({"role": "assistant", "content": content_msg})
 
@@ -273,6 +328,7 @@ class Agent:
 
     def _truncate_memory_if_needed(self, force=False):
         from src.utils.config import get_model_config
+
         model_cfg = get_model_config().get("main", {}).get(self.name, {})
         max_tokens = model_cfg.get("max_token", 500000)
         if not force and self.window_token < max_tokens:
@@ -281,7 +337,11 @@ class Agent:
         try:
             original_len = len(self.current_history)
             split_idx = self._find_safe_truncation_index(original_len)
-            final_summary = json.dumps(self.memo, ensure_ascii=False, indent=2) if self.memo else "（暂无缓存记忆）"
+            final_summary = (
+                json.dumps(self.memo, ensure_ascii=False, indent=2)
+                if self.memo
+                else "（暂无缓存记忆）"
+            )
             self._rebuild_and_save_history(split_idx, original_len, final_summary)
         except Exception as e:
             print(f"❌ 记忆截断发生异常: {e}")
@@ -305,13 +365,18 @@ class Agent:
             split_idx = start_idx
         return split_idx
 
-    def _rebuild_and_save_history(self, split_idx: int, original_len: int, final_summary: str):
+    def _rebuild_and_save_history(
+        self, split_idx: int, original_len: int, final_summary: str
+    ):
         original_system_msg = self.current_history[0]
         truncation_msg = {
             "role": "system",
-            "content": f"【系统通知：因上下文超限，更早的历史对话已被系统截断。以下是最近五次的短时缓存，请你利用这些缓存无缝接续当前工作：】\n{final_summary}"
+            "content": f"【系统通知：因上下文超限，更早的历史对话已被系统截断。以下是最近五次的短时缓存，请你利用这些缓存无缝接续当前工作：】\n{final_summary}",
         }
-        self.current_history = [original_system_msg, truncation_msg] + self.current_history[split_idx:original_len]
+        self.current_history = [
+            original_system_msg,
+            truncation_msg,
+        ] + self.current_history[split_idx:original_len]
         for msg in self.current_history:
             if msg.get("role") == "assistant" and "reasoning_content" in msg:
                 msg["reasoning_content"] = ""

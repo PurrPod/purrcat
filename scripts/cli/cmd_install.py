@@ -1,4 +1,5 @@
 """PurrCat install command - Extension manager for skills, nodes, and graphs"""
+
 import os
 import sys
 import urllib.request
@@ -19,13 +20,13 @@ def _download_and_extract_subfolder(zip_url, subfolder_path, dest_dir):
         zip_data = response.read()
 
         with zipfile.ZipFile(io.BytesIO(zip_data)) as z:
-            root_folder = z.namelist()[0].split('/')[0]
-            target_prefix = f"{root_folder}/{subfolder_path}".rstrip('/') + '/'
+            root_folder = z.namelist()[0].split("/")[0]
+            target_prefix = f"{root_folder}/{subfolder_path}".rstrip("/") + "/"
 
             extracted_count = 0
             for file_info in z.infolist():
                 if file_info.filename.startswith(target_prefix):
-                    relative_path = file_info.filename[len(target_prefix):]
+                    relative_path = file_info.filename[len(target_prefix) :]
                     if not relative_path:
                         continue
 
@@ -35,12 +36,14 @@ def _download_and_extract_subfolder(zip_url, subfolder_path, dest_dir):
                         os.makedirs(local_path, exist_ok=True)
                     else:
                         os.makedirs(os.path.dirname(local_path), exist_ok=True)
-                        with open(local_path, 'wb') as f:
+                        with open(local_path, "wb") as f:
                             f.write(z.read(file_info.filename))
                     extracted_count += 1
 
             if extracted_count == 0:
-                print(f"X Error: Could not find folder '{subfolder_path}' in the repository.")
+                print(
+                    f"X Error: Could not find folder '{subfolder_path}' in the repository."
+                )
                 return False
 
         return True
@@ -57,7 +60,7 @@ def _parse_github_url(url):
             "owner": match.group(1),
             "repo": match.group(2),
             "branch": match.group(3),
-            "path": match.group(4)
+            "path": match.group(4),
         }
     return None
 
@@ -70,7 +73,9 @@ def run_install(ext_type, source):
     print("==========================================")
 
     if ext_type in ["node", "graph"]:
-        OFFICIAL_REPO_ZIP = f"https://github.com/PurrPod/{ext_type}/archive/refs/heads/main.zip"
+        OFFICIAL_REPO_ZIP = (
+            f"https://github.com/PurrPod/{ext_type}/archive/refs/heads/main.zip"
+        )
 
         dest_dir = os.path.join(project_root, "src", "harness", ext_type, source)
 
@@ -85,22 +90,30 @@ def run_install(ext_type, source):
             parsed = _parse_github_url(source)
             if not parsed:
                 print("X Error: Invalid GitHub URL format.")
-                print("  Expected: https://github.com/owner/repo/tree/branch/path/to/skill")
+                print(
+                    "  Expected: https://github.com/owner/repo/tree/branch/path/to/skill"
+                )
                 sys.exit(1)
 
-            skill_name = os.path.basename(parsed["path"].rstrip('/'))
+            skill_name = os.path.basename(parsed["path"].rstrip("/"))
             dest_dir = os.path.join(project_root, "skills", skill_name)
 
             zip_url = f"https://github.com/{parsed['owner']}/{parsed['repo']}/archive/refs/heads/{parsed['branch']}.zip"
 
-            print(f"[*] Fetching third-party skill '{skill_name}' from {parsed['owner']}/{parsed['repo']}")
+            print(
+                f"[*] Fetching third-party skill '{skill_name}' from {parsed['owner']}/{parsed['repo']}"
+            )
             print(f"    Target path in repo: {parsed['path']}")
 
             if _download_and_extract_subfolder(zip_url, parsed["path"], dest_dir):
-                print(f"[+] Successfully installed skill '{skill_name}' to skills/{skill_name}")
+                print(
+                    f"[+] Successfully installed skill '{skill_name}' to skills/{skill_name}"
+                )
         else:
             print("X Error: Currently, skill installation requires a full GitHub URL.")
-            print("  Example: purrcat install skill https://github.com/user/repo/tree/main/very/deep/path/weather_skill")
+            print(
+                "  Example: purrcat install skill https://github.com/user/repo/tree/main/very/deep/path/weather_skill"
+            )
 
     else:
         print(f"X Unknown extension type: {ext_type}")

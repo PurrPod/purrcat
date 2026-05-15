@@ -3,17 +3,19 @@ from src.memory.purrmemo.core.storage.graph_engine import GraphEngine
 
 graph_engine = None
 
+
 def init_graph_engine():
     global graph_engine
     if graph_engine is None:
         graph_engine = GraphEngine()
 
+
 def get_node_id(node_name: str) -> str:
     """生成稳定的节点 ID
-    
+
     Args:
         node_name: 节点名称
-    
+
     Returns:
         稳定的节点 ID
     """
@@ -21,7 +23,10 @@ def get_node_id(node_name: str) -> str:
     cleaned_node_name = node_name.strip().lower()
     return f"node_{hashlib.md5(cleaned_node_name.encode()).hexdigest()[:16]}"
 
-def add_relation(source_node: str, relation: str, target_node: str, source_event_id: str = "unknown") -> str:
+
+def add_relation(
+    source_node: str, relation: str, target_node: str, source_event_id: str = "unknown"
+) -> str:
     """
     【新增联系】当检索发现知识库中不存在该事实，或者需要建立层级关系(如红富士-属于-苹果)时使用。
 
@@ -37,7 +42,13 @@ def add_relation(source_node: str, relation: str, target_node: str, source_event
 
     graph_engine.add_node(source_node_id, source_node)
     graph_engine.add_node(target_node_id, target_node)
-    success = graph_engine.add_relation(source_node_id, target_node_id, relation, confidence=0.5, source_event_id=source_event_id)
+    success = graph_engine.add_relation(
+        source_node_id,
+        target_node_id,
+        relation,
+        confidence=0.5,
+        source_event_id=source_event_id,
+    )
 
     if success:
         return f"成功添加新关系：({source_node}) -[{relation}]-> ({target_node})"
@@ -57,14 +68,18 @@ def reinforce_relation(source_node: str, relation: str, target_node: str) -> str
     source_node_id = get_node_id(source_node)
     target_node_id = get_node_id(target_node)
 
-    success = graph_engine.reinforce_relation(source_node_id, target_node_id, relation, increment=0.1)
+    success = graph_engine.reinforce_relation(
+        source_node_id, target_node_id, relation, increment=0.1
+    )
 
     if success:
         return "成功强化已有关系，置信度已提升。"
     return f"强化关系失败：未找到 ({source_node}) -[{relation}]-> ({target_node})"
 
 
-def weaken_relation(source_node: str, relation: str, target_node: str, reason: str) -> str:
+def weaken_relation(
+    source_node: str, relation: str, target_node: str, reason: str
+) -> str:
     """
     【削弱联系】当新的认知与知识库中已有的关系产生冲突时使用，用于降低旧关系的置信度。
     注意：削弱旧关系后，通常需要紧接着调用 add_relation 添加新的正确关系。
@@ -79,7 +94,9 @@ def weaken_relation(source_node: str, relation: str, target_node: str, reason: s
     source_node_id = get_node_id(source_node)
     target_node_id = get_node_id(target_node)
 
-    success = graph_engine.weaken_relation(source_node_id, target_node_id, relation, decrement=0.2)
+    success = graph_engine.weaken_relation(
+        source_node_id, target_node_id, relation, decrement=0.2
+    )
 
     if success:
         return f"成功削弱已有关系，置信度已降低。原因：{reason}"
@@ -104,7 +121,9 @@ def rag_search(entity_keywords: list) -> str:
     for keyword in entity_keywords:
         try:
             if graph_engine.vector_engine:
-                similar_nodes = graph_engine.vector_engine.search_graph_nodes(keyword, top_k=3)
+                similar_nodes = graph_engine.vector_engine.search_graph_nodes(
+                    keyword, top_k=3
+                )
             else:
                 similar_nodes = []
         except Exception as e:
@@ -117,13 +136,13 @@ def rag_search(entity_keywords: list) -> str:
 
         keyword_results = [f"【{keyword}】相关节点："]
         for node_info in similar_nodes:
-            node_id = node_info['node_id']
-            relations = graph_engine.get_relations_by_node(node_id, direction='all')
+            node_id = node_info["node_id"]
+            relations = graph_engine.get_relations_by_node(node_id, direction="all")
             for rel in relations:
-                target = graph_engine.get_node(rel['target_node_id'])
-                target_name = target['name'] if target else '未知'
-                source = graph_engine.get_node(rel['source_node_id'])
-                source_name = source['name'] if source else '未知'
+                target = graph_engine.get_node(rel["target_node_id"])
+                target_name = target["name"] if target else "未知"
+                source = graph_engine.get_node(rel["source_node_id"])
+                source_name = source["name"] if source else "未知"
                 keyword_results.append(
                     f"  ({source_name}) -[{rel['relation_meaning']}]-> ({target_name}) "
                     f"[置信度:{rel['confidence']}]"
@@ -136,9 +155,4 @@ def rag_search(entity_keywords: list) -> str:
     return "【知识库状态】所有关键词均为全新知识，未找到相关节点。"
 
 
-MEMORY_WORKER_TOOLS = [
-    rag_search,
-    add_relation,
-    reinforce_relation,
-    weaken_relation
-]
+MEMORY_WORKER_TOOLS = [rag_search, add_relation, reinforce_relation, weaken_relation]

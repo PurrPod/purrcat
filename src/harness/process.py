@@ -57,14 +57,18 @@ class Task:
     纯粹的调度与状态管理引擎：不耦合任何业务字段 (如 prompt)，数据通过 inputs 进，outputs 出。
     """
 
-    def __init__(self, task_name: str, inputs: dict, core: str, graph_name: str = "default"):
+    def __init__(
+        self, task_name: str, inputs: dict, core: str, graph_name: str = "default"
+    ):
         self.task_name = task_name
         self.inputs = inputs  # 🌟 全局入口载荷
         self.outputs = {}  # 🌟 全局出口载荷
         self.core = core
         self.task_id = uuid.uuid4().hex
         self.workplace = f"agent_vm/task_workplace/{self.task_id}"
-        self.checkpoint_dir = os.path.join(DATA_DIR, "checkpoints", "task", f"{self.task_name}_{self.task_id}")
+        self.checkpoint_dir = os.path.join(
+            DATA_DIR, "checkpoints", "task", f"{self.task_name}_{self.task_id}"
+        )
 
         self.model = Model(core)
         self.key_prefix = self.model.key_prefix
@@ -100,7 +104,9 @@ class Task:
         import importlib
         from .enums import TaskState, NodeState
 
-        graph_path = os.path.join(os.path.dirname(__file__), "graph", f"{self.graph_name}.json")
+        graph_path = os.path.join(
+            os.path.dirname(__file__), "graph", f"{self.graph_name}.json"
+        )
         with open(graph_path, "r", encoding="utf-8") as f:
             self.graph = json.load(f)
 
@@ -109,7 +115,11 @@ class Task:
         if isinstance(required_inputs, list):
             # 如果是列表格式，转换为字典以便统一处理
             required_inputs = {k: "" for k in required_inputs}
-        missing_keys = [k for k in required_inputs.keys() if k not in self.inputs or self.inputs[k] is None]
+        missing_keys = [
+            k
+            for k in required_inputs.keys()
+            if k not in self.inputs or self.inputs[k] is None
+        ]
 
         if missing_keys:
             error_msg = f"❌ [拒绝启动] 缺失必填参数: {missing_keys}"
@@ -127,7 +137,9 @@ class Task:
                 self.node_list[node_id] = module.Node(node_id=node_id, config=config)
                 self.node_state[node_id] = NodeState.READY
             except Exception as e:
-                self.log_and_notify(LogType.ERROR, f"❌ [节点加载失败] {node_type}: {e}")
+                self.log_and_notify(
+                    LogType.ERROR, f"❌ [节点加载失败] {node_type}: {e}"
+                )
                 self.state = TaskState.ERROR
                 self.error_message = f"节点加载失败: {e}"
 
@@ -154,7 +166,7 @@ class Task:
 
     def _cascade_reset(self, start_node_id: str, human_instruction: str):
         """级联效应：重置目标节点及其所有下游节点"""
-        
+
         # [核心修复] 1. 首先重置被注入的起点节点本身
         self.node_state[start_node_id] = NodeState.READY
         task_to_cancel = None
@@ -162,7 +174,7 @@ class Task:
             if n_id == start_node_id:
                 task_to_cancel = t
                 break
-        
+
         # 如果该节点正在运行，直接打断并重跑
         if task_to_cancel and not task_to_cancel.done():
             if self._loop and self._loop.is_running():
@@ -170,12 +182,14 @@ class Task:
             else:
                 task_to_cancel.cancel()
             self.running_tasks.pop(task_to_cancel)
-            self.log_and_notify(LogType.SYSTEM, f"🛑 [重新注入] 强行中断并重置目标节点: {start_node_id}")
+            self.log_and_notify(
+                LogType.SYSTEM, f"🛑 [重新注入] 强行中断并重置目标节点: {start_node_id}"
+            )
 
         # 2. 开始 BFS 寻找下游节点并级联阻断
         queue = deque([start_node_id])
         visited = set([start_node_id])
-        
+
         edges = self.graph.get("edges", [])
         while queue:
             curr_id = queue.popleft()
@@ -195,14 +209,16 @@ class Task:
                             if n_id == target_id:
                                 task_to_cancel = t
                                 break
-                        
+
                         if task_to_cancel and not task_to_cancel.done():
                             if self._loop and self._loop.is_running():
                                 self._loop.call_soon_threadsafe(task_to_cancel.cancel)
                             else:
                                 task_to_cancel.cancel()
                             self.running_tasks.pop(task_to_cancel)
-                            self.log_and_notify(LogType.SYSTEM, f"🛑 [级联中断] 下游节点: {target_id}")
+                            self.log_and_notify(
+                                LogType.SYSTEM, f"🛑 [级联中断] 下游节点: {target_id}"
+                            )
 
                         # 3. 给下游节点注入级联通知
                         with self._lock:
@@ -216,13 +232,13 @@ class Task:
 
     async def run(self, max_concurrency: int = 5) -> dict:
         """基于 DAG 的并发执行，🌟 携带标准的结果出口协议"""
-        
+
         # 🌟 拦截：如果在 load_graph 阶段就因为缺少参数报错了，直接光速返回！
         if self.state == TaskState.ERROR:
             return {
                 "status": "error",
                 "task_id": self.task_id,
-                "message": getattr(self, "error_message", "初始化失败：参数校验未通过")
+                "message": getattr(self, "error_message", "初始化失败：参数校验未通过"),
             }
 
         self._loop = asyncio.get_running_loop()
@@ -232,14 +248,21 @@ class Task:
         try:
             while True:
                 if self._killed:
-                    self.log_and_notify(LogType.SYSTEM, f"⏹️ [任务强杀] {self.task_id} 正在取消所有协程...")
+                    self.log_and_notify(
+                        LogType.SYSTEM,
+                        f"⏹️ [任务强杀] {self.task_id} 正在取消所有协程...",
+                    )
                     self._cancel_all_tasks(self.running_tasks)
                     self.state = TaskState.KILLED
                     break
 
                 while len(self.running_tasks) < max_concurrency:
                     runnable_nodes = self._get_runnable_nodes()
-                    nodes_to_start = [n for n in runnable_nodes if n not in self.running_tasks.values()]
+                    nodes_to_start = [
+                        n
+                        for n in runnable_nodes
+                        if n not in self.running_tasks.values()
+                    ]
                     if not nodes_to_start:
                         break
                     for node_id in nodes_to_start:
@@ -248,17 +271,26 @@ class Task:
                         with self._lock:
                             force_push_msgs = self.pending_push_message.pop(node_id, [])
                         node_instance = self.node_list[node_id]
-                        task = asyncio.create_task(node_instance.execute(inputs, force_push_msgs, context=self))
+                        task = asyncio.create_task(
+                            node_instance.execute(inputs, force_push_msgs, context=self)
+                        )
                         self.running_tasks[task] = node_id
 
-                        self.log_and_notify(LogType.SYSTEM, f"🚀 [节点启动] {node_id} (并发: {len(self.running_tasks)})")
+                        self.log_and_notify(
+                            LogType.SYSTEM,
+                            f"🚀 [节点启动] {node_id} (并发: {len(self.running_tasks)})",
+                        )
 
                 if not self.running_tasks:
                     if all(s == NodeState.COMPLETED for s in self.node_state.values()):
-                        self.log_and_notify(LogType.SYSTEM, "✅ [任务完成] 所有节点已就绪。")
+                        self.log_and_notify(
+                            LogType.SYSTEM, "✅ [任务完成] 所有节点已就绪。"
+                        )
                         self.state = TaskState.COMPLETED
                     else:
-                        self.log_and_notify(LogType.SYSTEM, "⏸️ [任务挂起] 存在异常或等待人工干预。")
+                        self.log_and_notify(
+                            LogType.SYSTEM, "⏸️ [任务挂起] 存在异常或等待人工干预。"
+                        )
                         self.state = TaskState.INTERRUPTED
                     self.save_checkpoints()
                     break
@@ -266,14 +298,17 @@ class Task:
                 done, pending = await asyncio.wait(
                     self.running_tasks.keys(),
                     return_when=asyncio.FIRST_COMPLETED,
-                    timeout=1.0
+                    timeout=1.0,
                 )
 
                 if not done:
                     continue
 
                 if self._killed:
-                    self.log_and_notify(LogType.SYSTEM, f"⏹️ [任务强杀] {self.task_id} 正在取消所有协程...")
+                    self.log_and_notify(
+                        LogType.SYSTEM,
+                        f"⏹️ [任务强杀] {self.task_id} 正在取消所有协程...",
+                    )
                     self._cancel_all_tasks(self.running_tasks)
                     self.state = TaskState.KILLED
                     break
@@ -288,12 +323,18 @@ class Task:
                             if self.node_state[node_id] != NodeState.WAITING:
                                 self.node_state[node_id] = NodeState.COMPLETED
                                 self.node_list[node_id].outputs = result
-                                self.log_and_notify(LogType.SYSTEM, f"🟢 [节点完成] {node_id}")
+                                self.log_and_notify(
+                                    LogType.SYSTEM, f"🟢 [节点完成] {node_id}"
+                                )
                         except asyncio.CancelledError:
-                            self.log_and_notify(LogType.SYSTEM, f"🛑 [节点中断] {node_id}")
+                            self.log_and_notify(
+                                LogType.SYSTEM, f"🛑 [节点中断] {node_id}"
+                            )
                         except Exception as e:
                             self.node_state[node_id] = NodeState.ERROR
-                            self.log_and_notify(LogType.ERROR, f"❌ [节点异常] {node_id} -> {e}")
+                            self.log_and_notify(
+                                LogType.ERROR, f"❌ [节点异常] {node_id} -> {e}"
+                            )
 
                 self.save_checkpoints()
         finally:
@@ -302,17 +343,31 @@ class Task:
 
         # 🌟 标准化返回结果给外部调用方
         if self.state == TaskState.COMPLETED:
-            return {"status": "success", "task_id": self.task_id, "outputs": self.outputs}
+            return {
+                "status": "success",
+                "task_id": self.task_id,
+                "outputs": self.outputs,
+            }
         elif self.state == TaskState.INTERRUPTED:
-            return {"status": "interrupted", "task_id": self.task_id, "message": "任务挂起，等待人工干预"}
+            return {
+                "status": "interrupted",
+                "task_id": self.task_id,
+                "message": "任务挂起，等待人工干预",
+            }
         else:
-            return {"status": "error", "task_id": self.task_id, "message": "DAG 节点执行失败"}
+            return {
+                "status": "error",
+                "task_id": self.task_id,
+                "message": "DAG 节点执行失败",
+            }
 
     def _cancel_all_tasks(self, running_tasks: dict):
         for task in running_tasks.keys():
             if not task.done():
                 task.cancel()
-        self.log_and_notify(LogType.SYSTEM, f"✅ [协程清理] 已取消 {len(running_tasks)} 个运行中任务")
+        self.log_and_notify(
+            LogType.SYSTEM, f"✅ [协程清理] 已取消 {len(running_tasks)} 个运行中任务"
+        )
 
     def _get_runnable_nodes(self) -> List[str]:
         runnable = []
@@ -338,7 +393,7 @@ class Task:
                 src_port = edge.get("sourceHandle", "default")
                 tgt_port = edge.get("targetHandle", "default")
 
-                if hasattr(source_node, 'outputs') and source_node.outputs:
+                if hasattr(source_node, "outputs") and source_node.outputs:
                     inputs[tgt_port] = source_node.outputs.get(src_port)
         return inputs
 
@@ -352,11 +407,7 @@ class Task:
     def log_and_notify(self, log_type: str, content: str, node_id: str = None):
         log_dir = self.checkpoint_dir
         os.makedirs(log_dir, exist_ok=True)
-        log_data = {
-            "content": content,
-            "timestamp": time.time(),
-            "type": log_type
-        }
+        log_data = {"content": content, "timestamp": time.time(), "type": log_type}
         if node_id:
             log_data["node_id"] = node_id
         with self._io_lock:
@@ -387,7 +438,9 @@ class Task:
                             except json.JSONDecodeError:
                                 continue
         except Exception as e:
-            self.log_and_notify(LogType.ERROR, f"❌ [日志读取失败] 任务 {self.task_id}: {e}")
+            self.log_and_notify(
+                LogType.ERROR, f"❌ [日志读取失败] 任务 {self.task_id}: {e}"
+            )
 
         return logs
 
@@ -415,8 +468,12 @@ class Task:
                 node_type = node_data["type"]
                 config = node_data.get("data", {})
                 try:
-                    module = importlib.import_module(f"src.harness.node.{node_type}.node")
-                    task.node_list[node_id] = module.Node(node_id=node_id, config=config)
+                    module = importlib.import_module(
+                        f"src.harness.node.{node_type}.node"
+                    )
+                    task.node_list[node_id] = module.Node(
+                        node_id=node_id, config=config
+                    )
                     task.node_state[node_id] = NodeState.READY
                 except Exception as e:
                     print(f"❌ 恢复节点模块失败 {node_type}: {e}")
@@ -430,18 +487,30 @@ class Task:
             task.token_usage = state.get("token_usage", 0)
             task.dag_state = state.get("dag_state", {})
             task.pending_push_message = state.get("pending_push_message", {})
-            task.checkpoint_dir = os.path.join(DATA_DIR, "checkpoints", "task", f"{task.task_name}_{task.task_id}")
+            task.checkpoint_dir = os.path.join(
+                DATA_DIR, "checkpoints", "task", f"{task.task_name}_{task.task_id}"
+            )
             task.main_history = []
             task.running_tasks = {}
 
             for n_id, n_info in task.dag_state.items():
                 if n_id in task.node_list:
-                    task.node_state[n_id] = NodeState(n_info.get("state", "ready").lower())
+                    task.node_state[n_id] = NodeState(
+                        n_info.get("state", "ready").lower()
+                    )
                     task.node_list[n_id].outputs = n_info.get("outputs", {})
 
-            if task.state in [TaskState.READY, TaskState.RUNNING, TaskState.INTERRUPTED]:
+            if task.state in [
+                TaskState.READY,
+                TaskState.RUNNING,
+                TaskState.INTERRUPTED,
+            ]:
                 saved_key_prefix = state.get("key_prefix")
-                task.model = Model(task.core, recovered_key_prefix=saved_key_prefix) if task.core else None
+                task.model = (
+                    Model(task.core, recovered_key_prefix=saved_key_prefix)
+                    if task.core
+                    else None
+                )
                 if task.model:
                     task.model.bind_task(task.task_id, task.task_name)
             else:
@@ -459,7 +528,9 @@ class Task:
             TASK_INSTANCES[task.task_id] = task
             return task
         except Exception:
-            print(f"❌ [Task Checkpoint] 加载失败 {checkpoint_dir}: {traceback.format_exc()}")
+            print(
+                f"❌ [Task Checkpoint] 加载失败 {checkpoint_dir}: {traceback.format_exc()}"
+            )
             return None
 
     def save_checkpoints(self):
@@ -474,15 +545,20 @@ class Task:
             "create_time": self.create_time,
             "core": self.core,
             "key_prefix": self.model.key_prefix if self.model else None,
-            "state": self.state.value if hasattr(self.state, 'value') else self.state,
+            "state": self.state.value if hasattr(self.state, "value") else self.state,
             "token_usage": self.token_usage,
-            "dag_state": {n_id: {
-                "state": self.node_state[n_id].value if hasattr(self.node_state[n_id], 'value') else self.node_state[n_id],
-                "outputs": self.node_list[n_id].outputs
-            } for n_id in self.node_list},
+            "dag_state": {
+                n_id: {
+                    "state": self.node_state[n_id].value
+                    if hasattr(self.node_state[n_id], "value")
+                    else self.node_state[n_id],
+                    "outputs": self.node_list[n_id].outputs,
+                }
+                for n_id in self.node_list
+            },
             "checkpoint_dir": self.checkpoint_dir,
             "pending_push_message": self.pending_push_message,
-            "graph": self.graph
+            "graph": self.graph,
         }
         with open(checkpoint_path, "w", encoding="utf-8") as f:
             json.dump(state, f, ensure_ascii=False, indent=2)
@@ -491,13 +567,13 @@ class Task:
         # ⚠️ 新增防御：不要“鞭尸”已经处于终态的任务
         if self.state in [TaskState.COMPLETED, TaskState.ERROR, TaskState.KILLED]:
             return
-            
+
         self._killed = True
         self.state = TaskState.KILLED
-        if getattr(self, 'model', None):
+        if getattr(self, "model", None):
             self.model.unbind()
         self._cleanup_resources()
-        self.save_checkpoints() # 确保状态能及时落盘
+        self.save_checkpoints()  # 确保状态能及时落盘
 
     async def reload(self):
         self.state = TaskState.RUNNING
@@ -544,9 +620,9 @@ def kill_and_cleanup_task(task_id: str):
     # 1. 从内存中移除并终止
     if task_id in TASK_INSTANCES:
         task = TASK_INSTANCES.pop(task_id)
-        if hasattr(task, 'kill'):
+        if hasattr(task, "kill"):
             task.kill()
-    
+
     # 2. 物理删除磁盘文件夹
     base_dir = os.path.join(DATA_DIR, "checkpoints", "task")
     if os.path.exists(base_dir):
@@ -571,6 +647,7 @@ def graceful_shutdown_tasks():
             task._killed = True  # 触发引擎内部安全退出逻辑
             task.save_checkpoints()
             print(f"⏸️ [安全挂起] 任务 {task_id} 已在退出前安全中断并落盘。")
+
 
 # 注册到系统退出生命周期中，无论 Ctrl+C 还是自然退出都会触发
 atexit.register(graceful_shutdown_tasks)

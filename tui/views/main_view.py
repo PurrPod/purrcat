@@ -9,10 +9,18 @@ from textual.events import Event, Key
 
 from src.harness.process import Task as task_module
 from tui.api import (
-    get_task_list, get_agent_history, force_push_agent, force_push_task,
-    get_window_token, get_task_window_token, get_agent_max_token, get_task_max_token,
+    get_task_list,
+    get_agent_history,
+    force_push_agent,
+    force_push_task,
+    get_window_token,
+    get_task_window_token,
+    get_agent_max_token,
+    get_task_max_token,
     format_task_log,
-    get_session_list, get_current_session_id, checkout_session
+    get_session_list,
+    get_current_session_id,
+    checkout_session,
 )
 from src.utils.skill_helper import get_available_skills
 from tui.views.chat_input import ChatInput
@@ -41,13 +49,17 @@ class MainView(Vertical):
             with top_zone:
                 yield Static("  /\\_/\\\n ( O_O )\n  |>  <|⟆", id="cat-ascii")
                 with Vertical(id="status-container"):
-                    yield Static("Token Window: [░░░░░░░░░░░░░░░░] 0%", id="token-progress")
+                    yield Static(
+                        "Token Window: [░░░░░░░░░░░░░░░░] 0%", id="token-progress"
+                    )
             chat_zone = VerticalScroll(id="chat-zone")
             chat_zone.border_title = "Chat History /"
             yield chat_zone
 
             space_selector = ListView(id="space-selector")
-            space_selector.border_title = "Select Space (Use Up/Down to Navigate, Enter to Select) /"
+            space_selector.border_title = (
+                "Select Space (Use Up/Down to Navigate, Enter to Select) /"
+            )
             yield space_selector
 
             config_selector = ListView(id="config-selector")
@@ -60,7 +72,9 @@ class MainView(Vertical):
 
             # 🟢 新增技能选择器层
             skill_selector = ListView(id="skill-selector")
-            skill_selector.border_title = "Select Skills (1: Mark, 0: Unmark, Enter: Confirm) /"
+            skill_selector.border_title = (
+                "Select Skills (1: Mark, 0: Unmark, Enter: Confirm) /"
+            )
             yield skill_selector
 
             help_guide = VerticalScroll(id="help-guide")
@@ -69,7 +83,9 @@ class MainView(Vertical):
             yield help_guide
 
             input_zone = Vertical(id="input-zone")
-            input_zone.border_title = "Chat Input (Ctrl+o for new line, /help for help) /"
+            input_zone.border_title = (
+                "Chat Input (Ctrl+o for new line, /help for help) /"
+            )
             with input_zone:
                 with Horizontal(id="input-row"):
                     yield Static("❯", id="prompt-char")
@@ -200,7 +216,9 @@ class MainView(Vertical):
         await config_selector.clear()
 
         for color_option in self.RAINBOW_COLORS:
-            opt_static = Static(f"  {color_option['name']}", classes="nav-item", markup=True)
+            opt_static = Static(
+                f"  {color_option['name']}", classes="nav-item", markup=True
+            )
             opt_static._original_text = color_option["name"]
             config_selector.append(ListItem(opt_static, id=color_option["id"]))
         config_selector.focus()
@@ -225,7 +243,7 @@ class MainView(Vertical):
 
         def add_node(sid, depth):
             info = sessions[sid]
-            is_current = (sid == current_id)
+            is_current = sid == current_id
             alias = info.get("alias", sid)
             msg_count = info.get("messages_count", 0)
             prefix = "    " * depth + ("└── " if depth > 0 else "🌱 ")
@@ -240,7 +258,9 @@ class MainView(Vertical):
             static_node = Static(f"  {label_text}", classes="nav-item", markup=True)
             static_node._original_text = label_text
             session_selector.append(ListItem(static_node, id=f"sess-{sid}"))
-            children = [cid for cid, cinfo in sessions.items() if cinfo.get("parent_id") == sid]
+            children = [
+                cid for cid, cinfo in sessions.items() if cinfo.get("parent_id") == sid
+            ]
             children.sort(key=lambda x: sessions[x].get("updated_at", ""))
             for child in children:
                 add_node(child, depth + 1)
@@ -390,8 +410,15 @@ class MainView(Vertical):
         self.query_one("#chat-input").focus()
 
         # 动态修改边框颜色（记得把 skill-selector 也加进来）
-        zones = ["#top-zone", "#chat-zone", "#space-selector", "#config-selector", "#session-selector",
-                 "#skill-selector", "#input-zone"]
+        zones = [
+            "#top-zone",
+            "#chat-zone",
+            "#space-selector",
+            "#config-selector",
+            "#session-selector",
+            "#skill-selector",
+            "#input-zone",
+        ]
         for zone_id in zones:
             try:
                 widget = self.query_one(zone_id)
@@ -419,12 +446,21 @@ class MainView(Vertical):
                 child.remove()
 
             self.rendered_msg_counts["nav-main"] = 0
-            keys_to_delete = [k for k, v in self.tool_widgets.items() if v.has_class("msg-space-nav-main")]
+            keys_to_delete = [
+                k
+                for k, v in self.tool_widgets.items()
+                if v.has_class("msg-space-nav-main")
+            ]
             for k in keys_to_delete:
                 del self.tool_widgets[k]
 
             self.current_space = "nav-main"
-            chat_zone.mount(Static(f"🔄 [系统] 已成功检出并恢复会话: {target_sid[-6:]}", classes="help-message"))
+            chat_zone.mount(
+                Static(
+                    f"🔄 [系统] 已成功检出并恢复会话: {target_sid[-6:]}",
+                    classes="help-message",
+                )
+            )
             self.refresh_chat_state()
 
     @on(ListView.Selected, "#skill-selector")
@@ -452,7 +488,10 @@ class MainView(Vertical):
 
             try:
                 # 尽力确保光标移动到底部
-                chat_input.cursor_position = (chat_input.document.line_count - 1, len(chat_input.document.lines[-1]))
+                chat_input.cursor_position = (
+                    chat_input.document.line_count - 1,
+                    len(chat_input.document.lines[-1]),
+                )
             except Exception:
                 pass
 
@@ -527,7 +566,7 @@ class MainView(Vertical):
                     needs_update = True
                     task_module.dirty_tasks.remove(task_id)
 
-            if getattr(self, '_task_switch_pending', False):
+            if getattr(self, "_task_switch_pending", False):
                 needs_update = True
                 self._task_switch_pending = False
 
@@ -559,10 +598,16 @@ class MainView(Vertical):
             self.rendered_msg_counts[self.current_space] = 0
             rendered_count = 0
 
-        if visible_history and rendered_count > 0 and len(visible_history) <= rendered_count:
+        if (
+            visible_history
+            and rendered_count > 0
+            and len(visible_history) <= rendered_count
+        ):
             last_data = visible_history[-1]
             if last_data.get("role") == "assistant":
-                chat_msgs = list(chat_zone.query(f"ChatMessage.msg-space-{self.current_space}"))
+                chat_msgs = list(
+                    chat_zone.query(f"ChatMessage.msg-space-{self.current_space}")
+                )
                 if chat_msgs:
                     last_widget = chat_msgs[-1]
                     if last_widget.role == "assistant":
@@ -601,7 +646,9 @@ class MainView(Vertical):
                     for event_time, event_content in user_messages:
                         if event_time:
                             # 包含时间戳的用户消息
-                            new_msg = ChatMessage("user", f"{event_content}", is_new=False)
+                            new_msg = ChatMessage(
+                                "user", f"{event_content}", is_new=False
+                            )
                         else:
                             new_msg = ChatMessage("user", event_content, is_new=False)
                         new_msg.add_class(f"msg-space-{self.current_space}")
@@ -654,7 +701,7 @@ class MainView(Vertical):
                     if tw:
                         tw.finish(content)
                     else:
-                        print_content = content.replace('[', '\\[').replace(']', '\\]')
+                        print_content = content.replace("[", "\\[").replace("]", "\\]")
                         fallback_msg = f"   └── {print_content}"
                         fb_widget = Static(fallback_msg, classes="tool-result")
                         fb_widget.add_class(f"msg-space-{self.current_space}")

@@ -21,9 +21,11 @@ app.include_router(graph_router)
 app.include_router(task_router)  # 挂载子路由
 app.include_router(config_router)  # 挂载配置路由
 
+
 @app.get("/")
 def ping():
     return {"message": "Meow! PurrCat Backend is running."}
+
 
 if __name__ == "__main__":
     uvicorn.run("server.backend:app", host="0.0.0.0", port=8000, reload=True)

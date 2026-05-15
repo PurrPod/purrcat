@@ -1,10 +1,12 @@
 class FetchExecutionError(Exception):
     """基础的 Fetch 异常"""
+
     pass
 
 
 class SkillNotFoundError(FetchExecutionError):
     """技能未找到异常"""
+
     def __init__(self, name: str):
         self.name = name
         super().__init__(f"未找到技能: {name}")
@@ -12,6 +14,7 @@ class SkillNotFoundError(FetchExecutionError):
 
 class MCPServerNotFoundError(FetchExecutionError):
     """MCP 服务器未找到异常"""
+
     def __init__(self, serve_name: str, available_servers: list):
         self.serve_name = serve_name
         self.available_servers = available_servers
@@ -20,6 +23,7 @@ class MCPServerNotFoundError(FetchExecutionError):
 
 class MCPToolNotFoundError(FetchExecutionError):
     """MCP 工具未找到异常"""
+
     def __init__(self, serve_name: str, tool_names: list, available_tools: list):
         self.serve_name = serve_name
         self.tool_names = tool_names
@@ -29,4 +33,5 @@ class MCPToolNotFoundError(FetchExecutionError):
 
 class WebNetworkError(FetchExecutionError):
     """Web 抓取网络异常"""
+
     pass

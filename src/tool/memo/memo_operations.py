@@ -14,25 +14,27 @@ MEMORY_MD_PATH = os.path.join(AGENT_CORE_DIR, "MEMORY.md")
 # 【新增】全局锁，用于防止并发写入时的幻读和覆写
 MEMORY_MD_LOCK = threading.Lock()
 
+
 def _normalize_iso_time(time_str: str) -> str:
     """将各种非标时间字符串统一清洗为 ISO 8601 格式"""
     time_str = time_str.strip()
     # 纯日期格式：20260515 -> 2026-05-15T00:00:00
-    if re.match(r'^\d{8}$', time_str):
+    if re.match(r"^\d{8}$", time_str):
         return f"{time_str[:4]}-{time_str[4:6]}-{time_str[6:8]}T00:00:00"
     # 紧凑格式带时间：20260515 11:32 -> 2026-05-15T11:32:00
-    elif re.match(r'^\d{8} \d{2}:\d{2}$', time_str):
+    elif re.match(r"^\d{8} \d{2}:\d{2}$", time_str):
         return f"{time_str[:4]}-{time_str[4:6]}-{time_str[6:8]}T{time_str[9:14]}:00"
     # 标准日期格式：2026-05-15 -> 2026-05-15T00:00:00
-    elif re.match(r'^\d{4}-\d{2}-\d{2}$', time_str):
+    elif re.match(r"^\d{4}-\d{2}-\d{2}$", time_str):
         return f"{time_str}T00:00:00"
     # 精确到分钟：2026-05-15 11:32 或 2026-05-15T11:32 -> 2026-05-15T11:32:00
-    elif re.match(r'^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}$', time_str):
+    elif re.match(r"^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}$", time_str):
         return time_str.replace(" ", "T") + ":00"
     # 已包含秒数的格式，统一空格为T
-    elif re.match(r'^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}$', time_str):
+    elif re.match(r"^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}$", time_str):
         return time_str.replace(" ", "T")
     return time_str
+
 
 OVERWRITE_MEMORY_MD_TOOL_SCHEMA = {
     "type": "function",
@@ -44,12 +46,12 @@ OVERWRITE_MEMORY_MD_TOOL_SCHEMA = {
             "properties": {
                 "new_markdown_content": {
                     "type": "string",
-                    "description": "整合后的全新 Markdown 纯文本内容"
+                    "description": "整合后的全新 Markdown 纯文本内容",
                 }
             },
-            "required": ["new_markdown_content"]
-        }
-    }
+            "required": ["new_markdown_content"],
+        },
+    },
 }
 
 
@@ -69,7 +71,7 @@ def _validate_memo_data(memo_data: dict) -> tuple[dict, list]:
         "work_exp": [],
         "user_profile": [],
         "events": [],
-        "cognition": []
+        "cognition": [],
     }
 
     if not isinstance(memo_data, dict):
@@ -89,7 +91,9 @@ def _validate_memo_data(memo_data: dict) -> tuple[dict, list]:
             if not isinstance(w, str) or not w.strip():
                 errors.append(f"work_exp[{i}] 无效：每条经验必须是非空字符串")
             elif len(w.strip()) > 500:
-                errors.append(f"work_exp[{i}] 过长（{len(w.strip())}字符），建议每条不超过500字符")
+                errors.append(
+                    f"work_exp[{i}] 过长（{len(w.strip())}字符），建议每条不超过500字符"
+                )
             else:
                 valid_data["work_exp"].append(w.strip())
 
@@ -122,8 +126,8 @@ def _validate_memo_data(memo_data: dict) -> tuple[dict, list]:
                 # 支持的格式：YYYY-MM-DD HH:MM、YYYY-MM-DDTHH:MM、YYYY-MM-DD HH:MM:SS、YYYY-MM-DDTHH:MM:SS
                 # 以及纯日期格式：YYYY-MM-DD、YYYYMMDD
                 time_pattern = (
-                    r'^(\d{4}-\d{2}-\d{2}([ T]\d{2}:\d{2}(:\d{2})?)?|'
-                    r'\d{8}( \d{2}:\d{2})?)$'
+                    r"^(\d{4}-\d{2}-\d{2}([ T]\d{2}:\d{2}(:\d{2})?)?|"
+                    r"\d{8}( \d{2}:\d{2})?)$"
                 )
                 if not re.match(time_pattern, time_str):
                     errors.append(
@@ -133,10 +137,9 @@ def _validate_memo_data(memo_data: dict) -> tuple[dict, list]:
                     continue
 
                 normalized_time = _normalize_iso_time(time_str)
-                valid_data["events"].append({
-                    "time": normalized_time,
-                    "event": e["event"].strip()
-                })
+                valid_data["events"].append(
+                    {"time": normalized_time, "event": e["event"].strip()}
+                )
 
     cognition = memo_data.get("cognition", [])
     if not isinstance(cognition, list):
@@ -146,7 +149,9 @@ def _validate_memo_data(memo_data: dict) -> tuple[dict, list]:
             if not isinstance(c, str) or not c.strip():
                 errors.append(f"cognition[{i}] 无效：每条认知必须是非空字符串")
             elif len(c.strip()) > 500:
-                errors.append(f"cognition[{i}] 过长（{len(c.strip())}字符），建议每条不超过500字符")
+                errors.append(
+                    f"cognition[{i}] 过长（{len(c.strip())}字符），建议每条不超过500字符"
+                )
             else:
                 valid_data["cognition"].append(c.strip())
 
@@ -179,7 +184,9 @@ def _smart_update_memory_md(work_exp: list, user_profile: list):
 
         for iteration in range(max_iterations):
             try:
-                response = model.chat(messages=messages, tools=[OVERWRITE_MEMORY_MD_TOOL_SCHEMA])
+                response = model.chat(
+                    messages=messages, tools=[OVERWRITE_MEMORY_MD_TOOL_SCHEMA]
+                )
                 msg_resp = response.choices[0].message
 
                 assist_msg = {"role": "assistant", "content": msg_resp.content or ""}
@@ -194,32 +201,41 @@ def _smart_update_memory_md(work_exp: list, user_profile: list):
                         {
                             "id": t.id,
                             "type": t.type,
-                            "function": {"name": t.function.name, "arguments": t.function.arguments}
-                        } for t in msg_resp.tool_calls
+                            "function": {
+                                "name": t.function.name,
+                                "arguments": t.function.arguments,
+                            },
+                        }
+                        for t in msg_resp.tool_calls
                     ]
                     messages.append(assist_msg)
 
                     for t in msg_resp.tool_calls:
-                                if t.function.name == "overwrite_memory_md":
-                                    has_write_operation = True
-                                    try:
-                                        args = json.loads(t.function.arguments)
-                                        new_md_content = args.get("new_markdown_content", "")
-                                        # 【重要安全修复】使用原子重命名避免并发读写冲突
-                                        temp_path = f"{MEMORY_MD_PATH}.tmp"
-                                        with open(temp_path, "w", encoding="utf-8") as f:
-                                            f.write(new_md_content)
-                                        os.replace(temp_path, MEMORY_MD_PATH)
-                                        print("✅ 后台模型已智能更新 MEMORY.md")
-                                    except Exception as e:
-                                        print(f"❌ 写入 MEMORY.md 失败: {e}")
-                                    break
+                        if t.function.name == "overwrite_memory_md":
+                            has_write_operation = True
+                            try:
+                                args = json.loads(t.function.arguments)
+                                new_md_content = args.get("new_markdown_content", "")
+                                # 【重要安全修复】使用原子重命名避免并发读写冲突
+                                temp_path = f"{MEMORY_MD_PATH}.tmp"
+                                with open(temp_path, "w", encoding="utf-8") as f:
+                                    f.write(new_md_content)
+                                os.replace(temp_path, MEMORY_MD_PATH)
+                                print("✅ 后台模型已智能更新 MEMORY.md")
+                            except Exception as e:
+                                print(f"❌ 写入 MEMORY.md 失败: {e}")
+                            break
 
                     if has_write_operation:
                         break
                 else:
                     if not has_write_operation:
-                        messages.append({"role": "user", "content": "⚠️ 系统检测警告：你没有调用 overwrite_memory_md 工具。请必须调用该工具将整合后的记忆写入 MEMORY.md！"})
+                        messages.append(
+                            {
+                                "role": "user",
+                                "content": "⚠️ 系统检测警告：你没有调用 overwrite_memory_md 工具。请必须调用该工具将整合后的记忆写入 MEMORY.md！",
+                            }
+                        )
                         continue
                     break
 
@@ -233,7 +249,9 @@ def _smart_update_memory_md(work_exp: list, user_profile: list):
     threading.Thread(target=_async_rewrite_task, daemon=True).start()
 
 
-def _write_to_pending(events: list, cognition: list, user_profile: list, work_exp: list) -> str:
+def _write_to_pending(
+    events: list, cognition: list, user_profile: list, work_exp: list
+) -> str:
     """
     将待处理记忆写入 pending，供后台 worker 抓取
     """
@@ -249,7 +267,7 @@ def _write_to_pending(events: list, cognition: list, user_profile: list, work_ex
         "events": events or [],
         "cognition": cognition or [],
         "timestamp": timestamp,
-        "source": "main agent"
+        "source": "main agent",
     }
 
     with open(filepath, "w", encoding="utf-8") as f:

@@ -24,16 +24,33 @@ class AgentManager:
         print("🚀 正在初始化全局 Agent...")
         if not session_id:
             all_sessions = SessionStore.get_all_sessions()
-            session_id = max(all_sessions.keys(), key=lambda k: all_sessions[k].get("updated_at",
-                                                                                    "")) if all_sessions else SessionStore._generate_id()
+            session_id = (
+                max(
+                    all_sessions.keys(),
+                    key=lambda k: all_sessions[k].get("updated_at", ""),
+                )
+                if all_sessions
+                else SessionStore._generate_id()
+            )
 
         history = SessionStore.load_session_history(session_id)
-        if history and history[-1].get("role") == "assistant" and history[-1].get("tool_calls"):
+        if (
+            history
+            and history[-1].get("role") == "assistant"
+            and history[-1].get("tool_calls")
+        ):
             history.pop()
 
-        self._agent = Agent(session_id=session_id, initial_history=history, name=name, save_callback=self.notify_save)
+        self._agent = Agent(
+            session_id=session_id,
+            initial_history=history,
+            name=name,
+            save_callback=self.notify_save,
+        )
 
-        self._sensor_thread = threading.Thread(target=self._agent.sensor, daemon=True, name="AgentSensorThread")
+        self._sensor_thread = threading.Thread(
+            target=self._agent.sensor, daemon=True, name="AgentSensorThread"
+        )
         self._sensor_thread.start()
 
         self.notify_save()
@@ -70,7 +87,7 @@ class AgentManager:
         new_id = SessionStore.create_branch(
             current_session_id=self._agent.session_id,
             current_history=safe_history,
-            branch_alias=branch_alias
+            branch_alias=branch_alias,
         )
 
         new_history = SessionStore.load_session_history(new_id)
@@ -102,18 +119,17 @@ class AgentManager:
         clean_history = [{"role": "system", "content": fresh_prompt}]
 
         # 挂载共享的短时缓存（作为独立的系统消息，不污染首条 KV Cache）
-        if hasattr(self._agent, 'memo') and self._agent.memo:
+        if hasattr(self._agent, "memo") and self._agent.memo:
             memo_summary = json.dumps(self._agent.memo, ensure_ascii=False, indent=2)
-            clean_history.append({
-                "role": "system",
-                "content": f"【系统通知：这是一个全新的会话。以下是系统在创建这个会话前的短时共享记忆缓存，或许对你有帮助】\n{memo_summary}"
-            })
+            clean_history.append(
+                {
+                    "role": "system",
+                    "content": f"【系统通知：这是一个全新的会话。以下是系统在创建这个会话前的短时共享记忆缓存，或许对你有帮助】\n{memo_summary}",
+                }
+            )
 
         SessionStore.save_session(
-            session_id=new_id,
-            history=clean_history,
-            parent_id=None,
-            alias=branch_alias
+            session_id=new_id, history=clean_history, parent_id=None, alias=branch_alias
         )
 
         with self._agent._history_lock:

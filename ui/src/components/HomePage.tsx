@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { MessageSquare, GitMerge, Settings, X, Save, FileJson, AlertCircle } from 'lucide-react'
 import { useFlowStore } from '../store/flowStore'
 import { toast } from 'react-hot-toast'

@@ -11,5 +11,5 @@ __all__ = [
     "ChatMessage",
     "ChatInput",
     "MainView",
-    "TaskMonitorScreen"
+    "TaskMonitorScreen",
 ]

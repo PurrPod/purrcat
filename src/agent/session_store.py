@@ -70,15 +70,24 @@ class SessionStore:
 
             if os.path.exists(SESSIONS_DIR):
                 for filename in os.listdir(SESSIONS_DIR):
-                    if filename.endswith(".json") and filename not in ["index.json", "memo.json"]:
+                    if filename.endswith(".json") and filename not in [
+                        "index.json",
+                        "memo.json",
+                    ]:
                         session_id = filename[:-5]
 
                         if session_id not in index_data:
                             file_path = os.path.join(SESSIONS_DIR, filename)
                             try:
                                 file_stat = os.stat(file_path)
-                                created_at = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(file_stat.st_ctime))
-                                updated_at = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(file_stat.st_mtime))
+                                created_at = time.strftime(
+                                    "%Y-%m-%d %H:%M:%S",
+                                    time.localtime(file_stat.st_ctime),
+                                )
+                                updated_at = time.strftime(
+                                    "%Y-%m-%d %H:%M:%S",
+                                    time.localtime(file_stat.st_mtime),
+                                )
 
                                 with open(file_path, "r", encoding="utf-8") as f:
                                     history = json.load(f)
@@ -93,7 +102,7 @@ class SessionStore:
                                 "parent_id": None,
                                 "alias": session_id,
                                 "updated_at": updated_at,
-                                "messages_count": msg_count
+                                "messages_count": msg_count,
                             }
             return index_data
 
@@ -128,8 +137,11 @@ class SessionStore:
             index_data = cls.get_all_sessions()
             session_info = index_data.get(session_id, {})
 
-            if not session_info.get("created_at") or session_info.get("created_at") == "unknown":
-                session_info["created_at"] = time.strftime('%Y-%m-%d %H:%M:%S')
+            if (
+                not session_info.get("created_at")
+                or session_info.get("created_at") == "unknown"
+            ):
+                session_info["created_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
 
             if parent_id is not None:
                 session_info["parent_id"] = parent_id
@@ -141,7 +153,7 @@ class SessionStore:
             if "alias" not in session_info:
                 session_info["alias"] = session_id
 
-            session_info["updated_at"] = time.strftime('%Y-%m-%d %H:%M:%S')
+            session_info["updated_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
             session_info["messages_count"] = len(history)
             index_data[session_id] = session_info
 
@@ -158,6 +170,6 @@ class SessionStore:
             session_id=new_session_id,
             history=current_history,
             parent_id=current_session_id,
-            alias=branch_alias
+            alias=branch_alias,
         )
         return new_session_id

@@ -4,13 +4,16 @@ from src.utils.graph_api import get_all_nodes, list_graphs, get_graph, save_grap
 
 router = APIRouter(prefix="/api/graphs", tags=["DAG Graphs"])
 
+
 @router.get("/nodes")
 def get_all_nodes_api():
     return get_all_nodes()
 
+
 @router.get("")
 def list_graphs_api():
     return list_graphs()
+
 
 @router.get("/{filename}")
 def get_graph_api(filename: str):
@@ -18,6 +21,7 @@ def get_graph_api(filename: str):
     if result is None:
         raise HTTPException(status_code=404, detail="Graph not found")
     return result
+
 
 @router.post("/{filename}")
 def save_graph_api(filename: str, graph_data: Dict[str, Any]):

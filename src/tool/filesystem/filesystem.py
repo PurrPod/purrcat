@@ -7,14 +7,16 @@ from src.tool.filesystem.exceptions import (
     HostPathNotFoundError,
     SandboxPathNotFoundError,
     ExportDirNotAllowedError,
-    GitNotAvailableError
+    GitNotAvailableError,
 )
 from src.tool.filesystem.import_file import import_file
 from src.tool.filesystem.export_file import export_file
 from src.tool.filesystem.list_filesystem import list_filesystem
 
 
-def FileSystem(action: str, path_from: str = None, path_to: str = None, **kwargs) -> str:
+def FileSystem(
+    action: str, path_from: str = None, path_to: str = None, **kwargs
+) -> str:
     """
     FileSystem 工具主入口函数，支持三种操作：import、export、list
 
@@ -34,7 +36,10 @@ def FileSystem(action: str, path_from: str = None, path_to: str = None, **kwargs
     try:
         action = action.strip().lower() if action else ""
         if action not in ["import", "export", "list"]:
-            return error_response(f"无效的操作类型: {action}。支持的操作: import, export, list", "参数错误")
+            return error_response(
+                f"无效的操作类型: {action}。支持的操作: import, export, list",
+                "参数错误",
+            )
 
         # --- List 操作处理 ---
         if action == "list":
@@ -46,13 +51,20 @@ def FileSystem(action: str, path_from: str = None, path_to: str = None, **kwargs
                 snip = f"📂 📁{result['dir_count']} 📄{result['file_count']}"
                 return text_response(result, snip)
             except HostPathNotFoundError:
-                return error_response('路径不存在，请检查后重试', "❌ 路径不存在")
+                return error_response("路径不存在，请检查后重试", "❌ 路径不存在")
             except FileSystemError as e:
                 return error_response(str(e), "❌ 列表失败")
 
         # --- Import / Export 操作参数强制拦截 ---
-        if not path_from or not str(path_from).strip() or not path_to or not str(path_to).strip():
-            return error_response("文件导入导出应当包含path_from和path_to", "❌ 参数缺失")
+        if (
+            not path_from
+            or not str(path_from).strip()
+            or not path_to
+            or not str(path_to).strip()
+        ):
+            return error_response(
+                "文件导入导出应当包含path_from和path_to", "❌ 参数缺失"
+            )
 
         # --- Import 操作处理 ---
         if action == "import":
@@ -60,7 +72,7 @@ def FileSystem(action: str, path_from: str = None, path_to: str = None, **kwargs
                 result = import_file(host_path=path_from, sandbox_dir=path_to.strip())
                 return text_response(result, "⬇️ 导入成功")
             except HostPathNotFoundError:
-                return error_response('宿主机路径不存在', "❌ 路径不存在")
+                return error_response("宿主机路径不存在", "❌ 路径不存在")
             except FileSystemError as e:
                 return warning_response(str(e), "⚠️ 导入失败")
 
@@ -75,7 +87,9 @@ def FileSystem(action: str, path_from: str = None, path_to: str = None, **kwargs
             except SandboxPathNotFoundError:
                 return error_response("沙盒文件不存在", "❌ 文件不存在")
             except ExportDirNotAllowedError as e:
-                msg = f"目标路径导出受限。仅可导出到目录白名单内的路径: {e.allowed_dirs}"
+                msg = (
+                    f"目标路径导出受限。仅可导出到目录白名单内的路径: {e.allowed_dirs}"
+                )
                 return error_response(msg, "❌ 目录受限")
             except GitNotAvailableError:
                 return error_response("宿主机未安装git，禁止导出", "❌ Git未安装")

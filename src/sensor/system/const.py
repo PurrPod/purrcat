@@ -14,7 +14,9 @@ class SystemSensor(BaseSensor):
     config_key = "heartbeat"
 
     def __init__(self, config_dict: dict):
-        super().__init__(sensor_type="system", sensor_name="system_clock", config_dict=config_dict)
+        super().__init__(
+            sensor_type="system", sensor_name="system_clock", config_dict=config_dict
+        )
         self.interval = self.config_dict.get("interval", 1800)
 
     def _observe(self, *args, **kwargs) -> None:
@@ -51,10 +53,15 @@ class SystemSensor(BaseSensor):
                         if c.get("trigger_time") == current_time:
                             if rule == "everyday" or rule == "none":
                                 is_match = True
-                            elif rule.startswith("weekly_") and rule.split("_")[1] == current_weekday:
+                            elif (
+                                rule.startswith("weekly_")
+                                and rule.split("_")[1] == current_weekday
+                            ):
                                 is_match = True
                         if is_match:
-                            get_gateway().push(self, f"⏰【闹钟铃声】时间到！事项: {c.get('title')}")
+                            get_gateway().push(
+                                self, f"⏰【闹钟铃声】时间到！事项: {c.get('title')}"
+                            )
                             if rule == "none":
                                 c["active"] = False
                                 updated = True
@@ -72,14 +79,25 @@ class SystemSensor(BaseSensor):
                         start_time_str = s.get("start_time")
                         if start_time_str:
                             try:
-                                if 'T' in start_time_str:
-                                    fmt = "%Y-%m-%dT%H:%M:%S" if len(start_time_str) > 16 else "%Y-%m-%dT%H:%M"
+                                if "T" in start_time_str:
+                                    fmt = (
+                                        "%Y-%m-%dT%H:%M:%S"
+                                        if len(start_time_str) > 16
+                                        else "%Y-%m-%dT%H:%M"
+                                    )
                                 else:
-                                    fmt = "%Y-%m-%d %H:%M:%S" if len(start_time_str) > 16 else "%Y-%m-%d %H:%M"
+                                    fmt = (
+                                        "%Y-%m-%d %H:%M:%S"
+                                        if len(start_time_str) > 16
+                                        else "%Y-%m-%d %H:%M"
+                                    )
                                 st_dt = datetime.datetime.strptime(start_time_str, fmt)
                                 delta = (st_dt - now).total_seconds()
                                 if 14 * 60 <= delta < 15 * 60:
-                                    get_gateway().push(self, f"📅【日程预警】15分钟后即将开始: {s.get('title')}。请做好准备。")
+                                    get_gateway().push(
+                                        self,
+                                        f"📅【日程预警】15分钟后即将开始: {s.get('title')}。请做好准备。",
+                                    )
                             except Exception:
                                 pass
                 except Exception:

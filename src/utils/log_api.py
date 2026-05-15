@@ -8,15 +8,17 @@ from typing import Optional, Dict, Any
 _task_log_cache = {}
 
 
-def get_task_log_structured(task_id: str, node_id: str = None, after_line: int = 0) -> Dict[str, Any]:
+def get_task_log_structured(
+    task_id: str, node_id: str = None, after_line: int = 0
+) -> Dict[str, Any]:
     """
     获取结构化的任务日志，支持按节点过滤和增量拉取
-    
+
     Args:
         task_id: 任务ID
         node_id: 可选，节点ID过滤
         after_line: 可选，返回此行数之后的日志（用于增量拉取）
-    
+
     Returns:
         {
             "task_id": str,
@@ -29,10 +31,10 @@ def get_task_log_structured(task_id: str, node_id: str = None, after_line: int =
     from src.utils.config import DATA_DIR
 
     checkpoint_dir = None
-    
+
     # 优先从运行中的任务实例获取
     task_instance = TASK_INSTANCES.get(task_id)
-    if task_instance and hasattr(task_instance, 'checkpoint_dir'):
+    if task_instance and hasattr(task_instance, "checkpoint_dir"):
         checkpoint_dir = task_instance.checkpoint_dir
     else:
         # 尝试从 checkpoint 目录查找
@@ -44,32 +46,22 @@ def get_task_log_structured(task_id: str, node_id: str = None, after_line: int =
                     break
 
     if not checkpoint_dir:
-        return {
-            "task_id": task_id,
-            "total_lines": 0,
-            "logs": [],
-            "grouped_logs": {}
-        }
+        return {"task_id": task_id, "total_lines": 0, "logs": [], "grouped_logs": {}}
 
     log_path = os.path.join(checkpoint_dir, "log.jsonl")
     if not os.path.exists(log_path):
-        return {
-            "task_id": task_id,
-            "total_lines": 0,
-            "logs": [],
-            "grouped_logs": {}
-        }
+        return {"task_id": task_id, "total_lines": 0, "logs": [], "grouped_logs": {}}
 
     logs = []
     grouped_logs = {}
-    
+
     try:
         with open(log_path, "r", encoding="utf-8") as f:
             lines = f.readlines()
-        
+
         total_lines = len(lines)
         start_idx = max(0, after_line)
-        
+
         for i, line in enumerate(lines[start_idx:], start=start_idx):
             line = line.strip()
             if not line:
@@ -77,22 +69,24 @@ def get_task_log_structured(task_id: str, node_id: str = None, after_line: int =
             try:
                 entry = json.loads(line)
                 entry["_line"] = i  # 添加行号标记，用于增量拉取
-                
+
                 # 添加格式化的时间戳
                 timestamp = entry.get("timestamp", 0)
                 if timestamp:
-                    entry["_time"] = datetime.datetime.fromtimestamp(timestamp).strftime("%H:%M:%S")
+                    entry["_time"] = datetime.datetime.fromtimestamp(
+                        timestamp
+                    ).strftime("%H:%M:%S")
                 else:
                     entry["_time"] = "??:??:??"
-                
+
                 logs.append(entry)
-                
+
                 # 按节点分组
                 node_key = entry.get("node_id", "system")
                 if node_key not in grouped_logs:
                     grouped_logs[node_key] = []
                 grouped_logs[node_key].append(entry)
-                
+
             except json.JSONDecodeError:
                 continue
 
@@ -102,7 +96,7 @@ def get_task_log_structured(task_id: str, node_id: str = None, after_line: int =
             "total_lines": 0,
             "logs": [],
             "grouped_logs": {},
-            "error": str(e)
+            "error": str(e),
         }
 
     # 如果指定了节点过滤
@@ -112,14 +106,14 @@ def get_task_log_structured(task_id: str, node_id: str = None, after_line: int =
             "task_id": task_id,
             "total_lines": len(filtered_logs),
             "logs": filtered_logs,
-            "grouped_logs": {node_id: filtered_logs}
+            "grouped_logs": {node_id: filtered_logs},
         }
 
     return {
         "task_id": task_id,
         "total_lines": total_lines,
         "logs": logs,
-        "grouped_logs": grouped_logs
+        "grouped_logs": grouped_logs,
     }
 
 
@@ -134,10 +128,10 @@ def clean_log_entry(entry: dict) -> str:
             cmd = args["command"]
             m = re.search(r"cat\s+>\s+([^\s]+)\s+<<\s*'PYEOF'", cmd)
             if m:
-                file_name = m.group(1).split('/')[-1]
+                file_name = m.group(1).split("/")[-1]
                 return f"execute_command ➔ 写入文件: {file_name} (长代码已折叠)"
 
-            clean_cmd = cmd.replace('\n', ' ')
+            clean_cmd = cmd.replace("\n", " ")
             if len(clean_cmd) > 80:
                 return f"execute_command ➔ {clean_cmd[:80]}..."
             return f"execute_command ➔ {clean_cmd}"
@@ -158,14 +152,21 @@ def clean_log_entry(entry: dict) -> str:
                     output = inner_content.get("output", "").strip()
 
                     if exit_code == 0:
-                        out_msg = f", 输出: {output[:30]}..." if output else ", 无标准输出"
+                        out_msg = (
+                            f", 输出: {output[:30]}..." if output else ", 无标准输出"
+                        )
                         return f"✅ 执行成功 (exit_code: 0{out_msg})"
                     else:
                         return f"❌ 执行失败 (exit_code: {exit_code}, 报错: {output[:50]}...)"
         except Exception:
             pass
 
-    prefixes_to_strip = ["🔧 助手调起工具: ", "📦 工具回传结果: ", "🤖 助手思考: ", "📋 "]
+    prefixes_to_strip = [
+        "🔧 助手调起工具: ",
+        "📦 工具回传结果: ",
+        "🤖 助手思考: ",
+        "📋 ",
+    ]
     for prefix in prefixes_to_strip:
         content = content.replace(prefix, "")
 
@@ -178,7 +179,7 @@ def format_task_log(task_id: str, checkpoint_dir: Optional[str] = None) -> str:
 
     if checkpoint_dir is None:
         task_instance = TASK_INSTANCES.get(task_id)
-        if task_instance and hasattr(task_instance, 'checkpoint_dir'):
+        if task_instance and hasattr(task_instance, "checkpoint_dir"):
             checkpoint_dir = task_instance.checkpoint_dir
         else:
             base_dir = os.path.join(DATA_DIR, "checkpoints", "task")
@@ -213,7 +214,9 @@ def format_task_log(task_id: str, checkpoint_dir: Optional[str] = None) -> str:
     if not lines:
         return f"No log yet (Task {task_id})"
 
-    output_parts = [f"[bold deep_sky_blue]── Task {task_id} 执行日志 ──[/bold deep_sky_blue]\n"]
+    output_parts = [
+        f"[bold deep_sky_blue]── Task {task_id} 执行日志 ──[/bold deep_sky_blue]\n"
+    ]
 
     for line in lines:
         line = line.strip()
@@ -228,6 +231,7 @@ def format_task_log(task_id: str, checkpoint_dir: Optional[str] = None) -> str:
         timestamp = entry.get("timestamp", 0)
 
         from rich.markup import escape
+
         cleaned_content = clean_log_entry(entry)
         content = escape(cleaned_content)
 
@@ -243,7 +247,7 @@ def format_task_log(task_id: str, checkpoint_dir: Optional[str] = None) -> str:
             "tool": "#a3be8c",
             "warning": "#d08770",
             "error": "#bf616a",
-            "plan": "#81a1c1"
+            "plan": "#81a1c1",
         }
         emoji_map = {
             "system": "⚙️",
@@ -252,14 +256,16 @@ def format_task_log(task_id: str, checkpoint_dir: Optional[str] = None) -> str:
             "tool": "📦",
             "warning": "⚠️",
             "error": "❌",
-            "plan": "📋"
+            "plan": "📋",
         }
         color = color_map.get(card_type, "white")
         emoji = emoji_map.get(card_type, "📄")
 
         label = card_type.upper().ljust(9)
 
-        output_parts.append(f"[dim][{time_str}][/dim] [{color}]{emoji} {label}[/{color}] │ {content}")
+        output_parts.append(
+            f"[dim][{time_str}][/dim] [{color}]{emoji} {label}[/{color}] │ {content}"
+        )
 
     result = "\n".join(output_parts)
 

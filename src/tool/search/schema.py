@@ -9,22 +9,19 @@ SEARCH_TOOL_SCHEMA = {
                 "route": {
                     "type": "string",
                     "description": "搜索路由：web（互联网搜索）、local（本地技能库与MCP工具搜索）",
-                    "enum": ["web", "local"]
+                    "enum": ["web", "local"],
                 },
-                "query": {
-                    "type": "string",
-                    "description": "搜索查询词"
-                },
+                "query": {"type": "string", "description": "搜索查询词"},
                 "topk": {
                     "type": "integer",
                     "description": "返回结果数量，默认 5",
                     "default": 5,
                     "minimum": 1,
-                    "maximum": 20
-                }
+                    "maximum": 20,
+                },
             },
             "required": ["route", "query"],
-            "additionalProperties": False
-        }
-    }
+            "additionalProperties": False,
+        },
+    },
 }

@@ -5,7 +5,9 @@ from .exceptions import MCPServerNotFoundError, MCPToolNotFoundError
 from src.tool.callmcp.schema_manager import load_cached_schemas
 
 
-def fetch_mcp_tools(server_name: str, tool_names: list = None) -> Tuple[List[Dict], None]:
+def fetch_mcp_tools(
+    server_name: str, tool_names: list = None
+) -> Tuple[List[Dict], None]:
     """
     纯本地读取 MCP Schema 缓存 (mcp_schema.jsonl)
 
@@ -18,7 +20,9 @@ def fetch_mcp_tools(server_name: str, tool_names: list = None) -> Tuple[List[Dic
     """
     all_schemas = load_cached_schemas()
 
-    available_servers = list(set([s.get("server") for s in all_schemas if s.get("server")]))
+    available_servers = list(
+        set([s.get("server") for s in all_schemas if s.get("server")])
+    )
 
     if server_name not in available_servers:
         raise MCPServerNotFoundError(server_name, available_servers)
