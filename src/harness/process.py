@@ -1,4 +1,5 @@
 import asyncio
+import atexit
 import datetime
 import importlib
 import json
@@ -8,14 +9,14 @@ import threading
 import time
 import traceback
 import uuid
-import atexit
 from collections import deque
-from typing import Dict, Any, List
+from typing import Any, Dict, List
 
 from src.model.facade import Model
-from src.utils.config import DATA_DIR
-from .enums import TaskState, NodeState, LogType
 from src.tool.bash import close_session
+from src.utils.config import DATA_DIR
+
+from .enums import LogType, NodeState, TaskState
 
 TASK_INSTANCES = {}
 dirty_tasks = set()
@@ -99,10 +100,11 @@ class Task:
 
     def load_graph(self):
         """纯粹地解析 JSON，动态加载节点，并执行顶层参数强校验"""
-        import os
-        import json
         import importlib
-        from .enums import TaskState, NodeState
+        import json
+        import os
+
+        from .enums import NodeState, TaskState
 
         graph_path = os.path.join(
             os.path.dirname(__file__), "graph", f"{self.graph_name}.json"
@@ -549,9 +551,11 @@ class Task:
             "token_usage": self.token_usage,
             "dag_state": {
                 n_id: {
-                    "state": self.node_state[n_id].value
-                    if hasattr(self.node_state[n_id], "value")
-                    else self.node_state[n_id],
+                    "state": (
+                        self.node_state[n_id].value
+                        if hasattr(self.node_state[n_id], "value")
+                        else self.node_state[n_id]
+                    ),
                     "outputs": self.node_list[n_id].outputs,
                 }
                 for n_id in self.node_list

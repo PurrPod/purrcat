@@ -42,6 +42,7 @@ def add_task_operation(
         # 后台执行任务
         def _run_task():
             import asyncio
+
             from src.agent.manager import get_agent
 
             try:
@@ -133,7 +134,7 @@ def submit_request_operation(task_id: str, content: str, node_id: str = None) ->
     Returns:
         (result_dict, error_message)
     """
-    from src.harness.process import inject_task_instruction, TASK_INSTANCES
+    from src.harness.process import TASK_INSTANCES, inject_task_instruction
 
     if task_id not in TASK_INSTANCES:
         return None, f"注入失败：未在内存中找到运行中的任务 (ID: {task_id})。"

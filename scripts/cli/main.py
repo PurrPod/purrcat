@@ -1,8 +1,8 @@
 """PurrCat CLI - Cross-platform AI Agent Framework"""
 
 import argparse
-import sys
 import os
+import sys
 
 from scripts.cli.cmd_init import run_init
 from scripts.cli.cmd_install import run_install

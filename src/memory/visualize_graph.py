@@ -1,11 +1,12 @@
 import os
-import sys
 import pickle
+import sys
+
 import networkx as nx
+from pyvis.network import Network
 
 from src.memory.purrmemo.core.config import GRAPH_DATABASE_CONFIG
 from src.utils.config import MEMORY_DIR
-from pyvis.network import Network
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 if project_root not in sys.path:

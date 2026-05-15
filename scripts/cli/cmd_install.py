@@ -1,11 +1,11 @@
 """PurrCat install command - Extension manager for skills, nodes, and graphs"""
 
+import io
 import os
+import re
 import sys
 import urllib.request
 import zipfile
-import io
-import re
 
 
 def _get_project_root():

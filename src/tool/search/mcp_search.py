@@ -1,12 +1,13 @@
 """MCP 搜索实现 - 基于本地 Embedding + BM25 混合检索（线程安全单例）"""
 
 import threading
-from typing import List, Dict
-import numpy as np
+from typing import Dict, List
 
+import numpy as np
 from rank_bm25 import BM25Okapi
-from src.tool.search.semantic_utils import LocalEmbeddingSearcher, hybrid_tokenize
+
 from src.tool.callmcp.schema_manager import load_cached_schemas
+from src.tool.search.semantic_utils import LocalEmbeddingSearcher, hybrid_tokenize
 
 
 class MCPSearcher:

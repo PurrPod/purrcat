@@ -1,12 +1,14 @@
 """Bash 工具模块 - 严格遵循 plugins/route/base_tool.py 原代码逻辑"""
 
 import traceback
-from src.tool.utils.format import text_response, warning_response, error_response
+
+from src.tool.utils.format import error_response, text_response, warning_response
+
 from .docker_env import get_docker_manager
 from .exceptions import (
-    DockerNotRunningError,
-    DockerImageNotFoundError,
     BashTimeoutError,
+    DockerImageNotFoundError,
+    DockerNotRunningError,
 )
 
 

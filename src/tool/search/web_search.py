@@ -1,6 +1,7 @@
 """Web 搜索模块 - 国内外自适应 + 防拦截终极版 (与 Fetch 完全解耦)"""
 
 import urllib.parse
+
 from bs4 import BeautifulSoup
 from curl_cffi import requests
 

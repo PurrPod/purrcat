@@ -1,8 +1,8 @@
-import time
+import datetime
 import json
 import os
 import threading
-import datetime
+import time
 from typing import Any
 
 from src.sensor.base import BaseSensor

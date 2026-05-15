@@ -3,10 +3,10 @@ from pydantic import BaseModel
 
 from src.agent.manager import manager
 from src.utils.session_api import (
-    list_sessions,
-    get_session_history,
     create_session,
     delete_session,
+    get_session_history,
+    list_sessions,
     run_agent_task,
 )
 

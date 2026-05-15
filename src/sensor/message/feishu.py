@@ -5,9 +5,9 @@ from typing import Any, Optional
 
 import lark_oapi as lark
 from lark_oapi.api.im.v1 import (
-    P2ImMessageReceiveV1,
     CreateMessageRequest,
     CreateMessageRequestBody,
+    P2ImMessageReceiveV1,
 )
 
 from src.sensor.base import BaseSensor

@@ -1,17 +1,19 @@
-import os
 import json
+import os
+
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
+
+from src.utils.log_api import get_task_log_structured
 from src.utils.task_api import (
+    delete_task,
+    force_push_task,
     get_task_list,
+    get_task_log_jsonl,
     get_task_state,
     kill_task,
     submit_instruction,
-    delete_task,
-    force_push_task,
 )
-from src.utils.log_api import get_task_log_structured
-from src.utils.task_api import get_task_log_jsonl
 
 router = APIRouter(prefix="/api/tasks", tags=["Tasks"])
 

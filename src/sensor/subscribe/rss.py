@@ -1,10 +1,11 @@
-import feedparser
 import json
 import os
-import time
 import threading
-import requests
+import time
 from typing import Any
+
+import feedparser
+import requests
 
 from src.sensor.base import BaseSensor
 from src.sensor.gateway import get_gateway

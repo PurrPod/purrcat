@@ -1,15 +1,16 @@
 """Memo 工具主入口 - 统一记忆工具，支持写入和搜索"""
 
-import traceback
 import json
-from src.tool.utils.format import text_response, error_response
+import traceback
+
+from src.agent.session_store import SessionStore
+from src.memory.purrmemo import get_memory_client
 from src.tool.memo.memo_operations import (
+    _smart_update_memory_md,
     _validate_memo_data,
     _write_to_pending,
-    _smart_update_memory_md,
 )
-from src.memory.purrmemo import get_memory_client
-from src.agent.session_store import SessionStore
+from src.tool.utils.format import error_response, text_response
 
 
 def Memo(

@@ -1,28 +1,29 @@
-import time
-import json
 import asyncio
+import json
+import time
+
 from textual import on
 from textual.app import ComposeResult
-from textual.containers import Vertical, Horizontal, VerticalScroll
-from textual.widgets import Static, Markdown, ListView, ListItem
+from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.events import Event, Key
+from textual.widgets import ListItem, ListView, Markdown, Static
 
 from src.harness.process import Task as task_module
+from src.utils.skill_helper import get_available_skills
 from tui.api import (
-    get_task_list,
-    get_agent_history,
+    checkout_session,
     force_push_agent,
     force_push_task,
-    get_window_token,
-    get_task_window_token,
-    get_agent_max_token,
-    get_task_max_token,
     format_task_log,
-    get_session_list,
+    get_agent_history,
+    get_agent_max_token,
     get_current_session_id,
-    checkout_session,
+    get_session_list,
+    get_task_list,
+    get_task_max_token,
+    get_task_window_token,
+    get_window_token,
 )
-from src.utils.skill_helper import get_available_skills
 from tui.views.chat_input import ChatInput
 from tui.views.chat_message import ChatMessage
 from tui.views.tool_call_widget import ToolCallWidget

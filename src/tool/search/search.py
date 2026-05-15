@@ -1,10 +1,11 @@
 """Search 工具主入口 - 统一调度 web/local 两种搜索方式"""
 
 import traceback
-from src.tool.utils.format import text_response, error_response, warning_response
-from src.tool.search.web_search import web_search
-from src.tool.search.skill_search import search_skills
+
 from src.tool.search.mcp_search import mcp_search
+from src.tool.search.skill_search import search_skills
+from src.tool.search.web_search import web_search
+from src.tool.utils.format import error_response, text_response, warning_response
 
 
 def Search(route: str, query: str, topk: int = 5, **kwargs) -> str:

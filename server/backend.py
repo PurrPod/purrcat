@@ -3,9 +3,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from server.api.chat import router as chat_router
+from server.api.config import router as config_router  # 引入刚刚创建的 config_router
 from server.api.graph import router as graph_router
 from server.api.task import router as task_router  # 引入拆分好的 task 模块
-from server.api.config import router as config_router  # 引入刚刚创建的 config_router
 
 app = FastAPI(title="PurrCat API System")
 

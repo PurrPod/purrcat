@@ -2,14 +2,14 @@
 
 import threading
 from pathlib import Path
-from typing import List, Dict
+from typing import Dict, List
 
 import numpy as np
-
 from rank_bm25 import BM25Okapi
-from src.utils.config import SKILL_DIR
-from src.utils.skill_helper import _parse_skill_md, _find_skill_md_file
+
 from src.tool.search.semantic_utils import LocalEmbeddingSearcher, hybrid_tokenize
+from src.utils.config import SKILL_DIR
+from src.utils.skill_helper import _find_skill_md_file, _parse_skill_md
 
 
 class SkillSearcher:

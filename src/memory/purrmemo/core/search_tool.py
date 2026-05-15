@@ -1,10 +1,12 @@
-from datetime import datetime
 import threading
-from src.utils.config import get_memory_config
-from .storage.event_engine import EventEngine
-from .storage.vector_engine import VectorEngine
-from .storage.graph_engine import GraphEngine
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime
+
+from src.utils.config import get_memory_config
+
+from .storage.event_engine import EventEngine
+from .storage.graph_engine import GraphEngine
+from .storage.vector_engine import VectorEngine
 
 
 def reciprocal_rank_fusion(vector_results, bm25_results, k=60, top_k=5):
@@ -217,13 +219,13 @@ class RAGSearchTool:
 
                         results.append(
                             {
-                                "source": source_node["name"]
-                                if source_node
-                                else "未知",
+                                "source": (
+                                    source_node["name"] if source_node else "未知"
+                                ),
                                 "relation": relation["relation_meaning"],
-                                "target": target_node["name"]
-                                if target_node
-                                else "未知",
+                                "target": (
+                                    target_node["name"] if target_node else "未知"
+                                ),
                                 "confidence": relation["confidence"],
                                 "description": f"{source_node['name'] if source_node else '未知'} {relation['relation_meaning']} {target_node['name'] if target_node else '未知'}",
                             }

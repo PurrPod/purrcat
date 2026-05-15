@@ -1,11 +1,12 @@
-import os
-import json
 import asyncio
-from typing import Dict, Any
+import json
+import os
+from typing import Any, Dict
+
+from src.harness.enums import LogType, NodeState
 from src.harness.node.base import BaseNode
 from src.harness.utils.llm_helper import call_llm, inject_force_push
-from src.harness.utils.tool_helper import get_system_schema, extract_tool_calling
-from src.harness.enums import LogType, NodeState
+from src.harness.utils.tool_helper import extract_tool_calling, get_system_schema
 
 
 class Node(BaseNode):
@@ -207,9 +208,11 @@ class Node(BaseNode):
                         self.log(
                             context,
                             LogType.SYSTEM,
-                            f"✅ [任务完成] 总结: {summary[:100]}..."
-                            if len(summary) > 100
-                            else f"✅ [任务完成] 总结: {summary}",
+                            (
+                                f"✅ [任务完成] 总结: {summary[:100]}..."
+                                if len(summary) > 100
+                                else f"✅ [任务完成] 总结: {summary}"
+                            ),
                         )
                         return {"messages": messages, "summary": summary}
                     else:

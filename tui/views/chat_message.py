@@ -1,6 +1,6 @@
 from textual.app import ComposeResult
 from textual.containers import Vertical
-from textual.widgets import Static, Markdown
+from textual.widgets import Markdown, Static
 
 
 class ChatMessage(Vertical):

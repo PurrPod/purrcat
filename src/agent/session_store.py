@@ -1,9 +1,10 @@
-import os
 import json
-import uuid
-import time
+import os
 import threading
-from src.utils.config import SESSIONS_DIR, SESSION_INDEX_PATH
+import time
+import uuid
+
+from src.utils.config import SESSION_INDEX_PATH, SESSIONS_DIR
 
 
 class SessionStore:

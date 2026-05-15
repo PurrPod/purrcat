@@ -1,6 +1,7 @@
+import json
 import threading
 import time
-import json
+
 from src.agent.agent import Agent
 from src.agent.session_store import SessionStore
 

@@ -1,10 +1,10 @@
 from tui.views import (
-    parse_events_content,
-    ToolCallWidget,
-    ChatMessage,
     ChatInput,
+    ChatMessage,
     MainView,
     TaskMonitorScreen,
+    ToolCallWidget,
+    parse_events_content,
 )
 
 __all__ = [

@@ -1,8 +1,9 @@
 from textual.app import ComposeResult
 from textual.containers import Vertical, VerticalScroll
-from textual.widgets import Static
 from textual.screen import ModalScreen
-from tui.api import get_task_list, format_task_log
+from textual.widgets import Static
+
+from tui.api import format_task_log, get_task_list
 
 
 class TaskMonitorScreen(ModalScreen):

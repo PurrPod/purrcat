@@ -1,11 +1,9 @@
-import os
 import json
-from src.harness.process import (
-    TASK_INSTANCES,
-    reload_task_by_id,
-    kill_task as process_kill_task,
-    kill_and_cleanup_task,
-)
+import os
+
+from src.harness.process import TASK_INSTANCES, kill_and_cleanup_task
+from src.harness.process import kill_task as process_kill_task
+from src.harness.process import reload_task_by_id
 from src.utils.config import DATA_DIR
 
 

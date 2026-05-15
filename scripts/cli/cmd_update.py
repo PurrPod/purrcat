@@ -1,8 +1,8 @@
 """PurrCat update command - Update framework from GitHub Releases"""
 
+import os
 import subprocess
 import sys
-import os
 
 CONDA_CMD = "conda.bat" if os.name == "nt" else "conda"
 

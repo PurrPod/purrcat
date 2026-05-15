@@ -1,9 +1,12 @@
 import os
 from datetime import datetime
+
 from chromadb import PersistentClient
 from chromadb.config import Settings
 from sentence_transformers import SentenceTransformer
-from src.utils.config import get_memory_config, get_embedding_model
+
+from src.utils.config import get_embedding_model, get_memory_config
+
 from ..utils import SingletonMeta
 
 
@@ -109,9 +112,9 @@ class VectorEngine(metaclass=SingletonMeta):
                 return {
                     "event_id": results["ids"][0],
                     "content": results["documents"][0],
-                    "metadata": results["metadatas"][0]
-                    if results["metadatas"][0]
-                    else {},
+                    "metadata": (
+                        results["metadatas"][0] if results["metadatas"][0] else {}
+                    ),
                 }
             return None
         except Exception as e:
@@ -204,9 +207,9 @@ class VectorEngine(metaclass=SingletonMeta):
                 return {
                     "exp_id": results["ids"][0],
                     "content": results["documents"][0],
-                    "metadata": results["metadatas"][0]
-                    if results["metadatas"][0]
-                    else {},
+                    "metadata": (
+                        results["metadatas"][0] if results["metadatas"][0] else {}
+                    ),
                 }
             return None
         except Exception as e:

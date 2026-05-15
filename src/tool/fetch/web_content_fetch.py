@@ -1,10 +1,12 @@
 """Web 内容获取模块 - 仅负责获取指定 URL 网页内容并解析为高质量 Markdown"""
 
-from typing import Dict, Tuple, Optional
+from typing import Dict, Optional, Tuple
+
 from bs4 import BeautifulSoup
-from readability import Document
-from markdownify import markdownify as md
 from curl_cffi import requests
+from markdownify import markdownify as md
+from readability import Document
+
 from .exceptions import WebNetworkError
 
 DEFAULT_HEADERS = {

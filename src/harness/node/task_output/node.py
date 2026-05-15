@@ -1,4 +1,5 @@
-from typing import Dict, Any
+from typing import Any, Dict
+
 from src.harness.node.base import BaseNode
 
 

@@ -1,12 +1,15 @@
+import hashlib
 import os
 import pickle
-import hashlib
 import threading
 from datetime import datetime
+
 import networkx as nx
+
 from src.utils.config import get_memory_config
-from .vector_engine import VectorEngine
+
 from ..utils import SingletonMeta
+from .vector_engine import VectorEngine
 
 
 class GraphEngine(metaclass=SingletonMeta):

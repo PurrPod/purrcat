@@ -1,8 +1,8 @@
 """PurrCat setup command - Cross-platform environment setup"""
 
+import os
 import subprocess
 import sys
-import os
 
 CONDA_CMD = "conda.bat" if os.name == "nt" else "conda"
 

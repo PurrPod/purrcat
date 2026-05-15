@@ -1,8 +1,8 @@
 """PurrCat init command - Generate .purrcat configuration files"""
 
+import json
 import os
 import sys
-import json
 
 from scripts.cli.templates import (
     CRON_CONFIG_TEMPLATE,
@@ -10,12 +10,12 @@ from scripts.cli.templates import (
     SOLO_MD_TEMPLATE,
     SOUL_MD_TEMPLATE,
     TODO_MD_TEMPLATE,
-    get_model_config_dict,
-    get_sensor_config_dict,
     get_file_config_dict,
-    get_note_config_dict,
-    get_memory_config_dict,
     get_mcp_config_dict,
+    get_memory_config_dict,
+    get_model_config_dict,
+    get_note_config_dict,
+    get_sensor_config_dict,
 )
 
 

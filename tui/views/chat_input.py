@@ -1,6 +1,7 @@
-from textual.widgets import TextArea, Static
 from textual.events import Key
-from tui.api import branch_session, new_clean_session, flush_agent_memory
+from textual.widgets import Static, TextArea
+
+from tui.api import branch_session, flush_agent_memory, new_clean_session
 
 
 class ChatInput(TextArea):

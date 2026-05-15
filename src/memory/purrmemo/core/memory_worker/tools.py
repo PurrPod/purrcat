@@ -1,4 +1,5 @@
 import hashlib
+
 from src.memory.purrmemo.core.storage.graph_engine import GraphEngine
 
 graph_engine = None

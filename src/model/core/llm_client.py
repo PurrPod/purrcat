@@ -1,7 +1,8 @@
-import time
 import random
+import time
 import traceback
-from openai import OpenAI, RateLimitError, APIError
+
+from openai import APIError, OpenAI, RateLimitError
 
 
 def log(msg):

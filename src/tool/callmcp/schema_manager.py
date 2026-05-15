@@ -2,9 +2,9 @@
 
 import json
 import os
-from typing import List, Dict
+from typing import Dict, List
 
-from src.tool.callmcp.session_manager import mcp_manager, load_configs, _run_sync
+from src.tool.callmcp.session_manager import _run_sync, load_configs, mcp_manager
 from src.utils.config import MCP_SCHEMA_CACHE_FILE
 
 

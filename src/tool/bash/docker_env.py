@@ -1,23 +1,24 @@
 import atexit
 import os
-import sys
 import re
-import uuid
+import sys
 import threading
 import urllib.parse
+import uuid
 from typing import Optional
 
 import docker
 import pexpect
-from docker.errors import DockerException, NotFound, ImageNotFound
+from docker.errors import DockerException, ImageNotFound, NotFound
+
+from src.utils.config import get_file_config
 
 # 引入自定义异常
 from .exceptions import (
-    DockerNotRunningError,
-    DockerImageNotFoundError,
     BashTimeoutError,
+    DockerImageNotFoundError,
+    DockerNotRunningError,
 )
-from src.utils.config import get_file_config
 
 # 平台适配逻辑 - 与原代码完全一致
 if sys.platform == "win32":
@@ -40,6 +41,7 @@ if sys.platform == "win32":
             p.kill(signal.SIGTERM)
         except Exception:
             pass
+
 else:
     SpawnClass = pexpect.spawn
     DOCKER_EXEC_CMD = "docker exec -it {container_name} /bin/bash"

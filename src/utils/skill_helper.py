@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+
 from src.utils.config import SKILL_DIR
 
 
