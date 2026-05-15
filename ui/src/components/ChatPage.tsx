@@ -55,22 +55,22 @@ const sketchyShape3 = { borderRadius: '225px 15px 255px 15px/15px 255px 15px 225
 
 // 🟢 自定义 Markdown 渲染组件库 (保留手绘风格)
 const MarkdownComponents: any = {
-  p: ({ node, ...props }: any) => <p className="mb-3 last:mb-0 leading-relaxed" {...props} />,
-  a: ({ node, ...props }: any) => <a className="text-[#3498DB] underline decoration-2 decoration-ink hover:text-terracotta transition-colors font-black" {...props} />,
-  ul: ({ node, ...props }: any) => <ul className="list-disc pl-6 mb-3 space-y-2 font-bold marker:text-terracotta" {...props} />,
-  ol: ({ node, ...props }: any) => <ol className="list-decimal pl-6 mb-3 space-y-2 font-bold marker:text-terracotta" {...props} />,
-  li: ({ node, ...props }: any) => <li className="pl-1" {...props} />,
-  h1: ({ node, ...props }: any) => <h1 className="text-2xl font-black mb-4 mt-2 border-b-4 border-ink inline-block pb-1" {...props} />,
-  h2: ({ node, ...props }: any) => <h2 className="text-xl font-black mb-3 mt-2" {...props} />,
-  h3: ({ node, ...props }: any) => <h3 className="text-lg font-black mb-2 mt-2" {...props} />,
-  strong: ({ node, ...props }: any) => <strong className="font-black text-terracotta" {...props} />,
-  blockquote: ({ node, ...props }: any) => (
+  p: ({ ...props }: any) => <p className="mb-3 last:mb-0 leading-relaxed" {...props} />,
+  a: ({ ...props }: any) => <a className="text-[#3498DB] underline decoration-2 decoration-ink hover:text-terracotta transition-colors font-black" {...props} />,
+  ul: ({ ...props }: any) => <ul className="list-disc pl-6 mb-3 space-y-2 font-bold marker:text-terracotta" {...props} />,
+  ol: ({ ...props }: any) => <ol className="list-decimal pl-6 mb-3 space-y-2 font-bold marker:text-terracotta" {...props} />,
+  li: ({ ...props }: any) => <li className="pl-1" {...props} />,
+  h1: ({ ...props }: any) => <h1 className="text-2xl font-black mb-4 mt-2 border-b-4 border-ink inline-block pb-1" {...props} />,
+  h2: ({ ...props }: any) => <h2 className="text-xl font-black mb-3 mt-2" {...props} />,
+  h3: ({ ...props }: any) => <h3 className="text-lg font-black mb-2 mt-2" {...props} />,
+  strong: ({ ...props }: any) => <strong className="font-black text-terracotta" {...props} />,
+  blockquote: ({ ...props }: any) => (
     <blockquote className="border-l-4 border-terracotta pl-4 py-1 italic text-ink/70 my-3 bg-terracotta/5 rounded-r-lg" {...props} />
   ),
-  pre: ({ node, ...props }: any) => (
+  pre: ({ ...props }: any) => (
     <pre className="my-4 border-4 border-ink bg-ink/5 text-ink p-4 overflow-x-auto shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] font-mono text-sm leading-relaxed font-bold" style={sketchyShape2} {...props} />
   ),
-  code: ({ node, className, children, ...props }: any) => {
+  code: ({ className, children, ...props }: any) => {
     // 判断是否为 pre 块包裹的代码
     const isInline = !className?.includes('language-');
     return isInline ? (

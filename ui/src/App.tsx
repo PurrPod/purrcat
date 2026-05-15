@@ -19,7 +19,7 @@ function initializeCatalog() {
   Object.values(nodeModules).forEach((mod: any) => {
     const nodeDef = mod.default || mod;
     if (nodeDef && nodeDef.type && nodeDef.name) {
-      // @ts-ignore
+      // @ts-expect-error store.addCatalogItem expects specific type
       store.addCatalogItem({
         type: nodeDef.type,
         name: nodeDef.name,
