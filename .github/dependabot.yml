@@ -1,10 +1,5 @@
 version: 2
 
-registries:
-  npm-npmjs:
-    type: npm-registry
-    url: https://registry.npmjs.org
-
 updates:
   - package-ecosystem: "pip"
     directory: "/"
@@ -28,8 +23,6 @@ updates:
         patterns: ["*"]
         update-types: ["minor", "patch"]
     open-pull-requests-limit: 5
-    registries:
-      - npm-npmjs
 
   - package-ecosystem: "github-actions"
     directory: "/"
