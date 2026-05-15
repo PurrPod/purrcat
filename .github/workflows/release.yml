@@ -123,7 +123,7 @@ jobs:
           npm run build
 
       - name: Upload UI Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ui-dist
           path: ui/dist/
