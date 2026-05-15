@@ -45,10 +45,8 @@ class MCPSessionManager:
     def __init__(self):
         self.sessions: Dict[str, dict] = {}
         self.locks: Dict[str, asyncio.Lock] = {}
-        self.lifecycle_tasks: Dict[str, asyncio.Task] = (
-            {}
-        )  # 存储各 Server 的专属守护任务
-        self.DEFAULT_IDLE_TIMEOUT = 3000
+        self.lifecycle_tasks: Dict[str, asyncio.Task] = {}
+        self.DEFAULT_IDLE_TIMEOUT = 3000  # 存储各 Server 的专属守护任务
         asyncio.run_coroutine_threadsafe(self._idle_cleaner_task(), _mcp_loop)
 
     async def _get_lock(self, server_name: str) -> asyncio.Lock:
