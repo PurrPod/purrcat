@@ -5,18 +5,17 @@ import json
 import time
 import shutil
 import hashlib
-import threading
 from datetime import datetime
-from ..config import MEMORY_AGENT_CONFIG
-from src.utils.config import MEMORY_PENDING_DIR, MEMORY_DIR
-PENDING_DIR = MEMORY_PENDING_DIR
+from src.utils.config import get_memory_config, MEMORY_PENDING_DIR, MEMORY_DIR
+
 ARCHIVED_DIR = os.path.join(MEMORY_DIR, "buffer", "archived")
 ERROR_DIR = os.path.join(MEMORY_DIR, "buffer", "error")
 
 # 确保目录存在
-os.makedirs(PENDING_DIR, exist_ok=True)
+os.makedirs(MEMORY_PENDING_DIR, exist_ok=True)
 os.makedirs(ARCHIVED_DIR, exist_ok=True)
 os.makedirs(ERROR_DIR, exist_ok=True)
+
 from ..storage.event_engine import EventEngine
 from ..storage.vector_engine import VectorEngine
 from ..storage.graph_engine import GraphEngine
@@ -43,29 +42,6 @@ class MemoryAgent:
         except Exception:
             self.graph_engine = None
             print("GraphEngine 不可用，将无法处理图谱相关操作")
-        
-        self._file_locks = {}
-        self._locks_mutex = threading.Lock()
-
-    def _extract_entities_from_cognition(self, cognition_text):
-        entities = []
-        relation = None
-        if '是一种' in cognition_text:
-            parts = cognition_text.split('是一种')
-            if len(parts) == 2:
-                entities = [parts[0].strip(), parts[1].strip()]
-                relation = '是一种'
-        elif '喜欢' in cognition_text:
-            parts = cognition_text.split('喜欢')
-            if len(parts) == 2:
-                entities = [parts[0].strip(), parts[1].strip()]
-                relation = '喜欢'
-        elif '讨厌' in cognition_text:
-            parts = cognition_text.split('讨厌')
-            if len(parts) == 2:
-                entities = [parts[0].strip(), parts[1].strip()]
-                relation = '讨厌'
-        return entities, relation
 
     def _run_llm_step(self, cognition_data: list):
         """
@@ -225,45 +201,6 @@ class MemoryAgent:
                 })
                 messages.append(tool_results[-1])
 
-    def _process_cognition_fallback(self, cognition_data: list):
-        """兜底处理：当 LLM 不可用时用启发式规则"""
-        for cognition in cognition_data:
-            entities, relation = self._extract_entities_from_cognition(cognition)
-            if len(entities) == 2 and relation:
-                source_node = entities[0]
-                target_node = entities[1]
-                search_result = rag_search([source_node])
-                if '全新知识' in search_result:
-                    add_relation(source_node, relation, target_node)
-                elif '讨厌' in search_result and relation == '喜欢':
-                    weaken_relation(source_node, '讨厌', target_node, '冲突')
-                    add_relation(source_node, relation, target_node)
-                else:
-                    reinforce_relation(source_node, relation, target_node)
-
-    def _process_file_with_lock(self, file_path):
-        lock_key = os.path.abspath(file_path)
-        with self._locks_mutex:
-            if lock_key not in self._file_locks:
-                self._file_locks[lock_key] = threading.Lock()
-            lock = self._file_locks[lock_key]
-
-        lock_acquired = lock.acquire(timeout=30)
-        if not lock_acquired:
-            return False
-
-        try:
-            if not os.path.exists(file_path):
-                return False
-            return self._process_file(file_path)
-        except Exception as e:
-            return False
-        finally:
-            lock.release()
-            with self._locks_mutex:
-                if lock_key in self._file_locks:
-                    del self._file_locks[lock_key]
-
     def _process_file(self, file_path):
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
@@ -288,16 +225,11 @@ class MemoryAgent:
                 event_time = event.get('time', timestamp) if isinstance(event, dict) else timestamp
                 event_id = f"evt_{hashlib.md5(event_content.encode()).hexdigest()}"
 
-                # 【修复】在存入 SQLite 前，先提取出向量数据
-                vector_data = None
-                if self.vector_engine:
-                    vector_data = self.vector_engine._get_embedding(event_content)
-
-                # A. 存入 SQLite (现在带有真实 Vector 数据了，搜寻时的 NumPy 矩阵乘法就能生效)
+                # A. 存入 SQLite (纯文本存入即可)
                 self.event_engine.insert_event(
-                    event_id=event_id, content=event_content, vector=vector_data, timestamp=event_time
+                    event_id=event_id, content=event_content, timestamp=event_time
                 )
-                # B. 存入 ChromaDB
+                # B. 存入 ChromaDB (由它全权负责向量)
                 if self.vector_engine:
                     self.vector_engine.insert_event_vector(event_id, event_content, event_time)
 
@@ -314,7 +246,7 @@ class MemoryAgent:
             graph_materials = cognition + user_profile
             if graph_materials and self.graph_engine:
                 self._run_llm_step(graph_materials)
-                self.graph_engine._save_graph()
+                self.graph_engine.save_graph()
 
             # 3. 归档日志记录
             archive_path = os.path.join(ARCHIVED_DIR, os.path.basename(file_path))
@@ -333,12 +265,14 @@ class MemoryAgent:
             return False
 
     def run(self):
+        polling_interval = get_memory_config().get('memory_agent', {}).get('polling_interval', 5)
         while True:
             try:
-                files = [f for f in os.listdir(PENDING_DIR) if f.startswith('memory_') and f.endswith('.json')]
+                files = [f for f in os.listdir(MEMORY_PENDING_DIR) if f.startswith('memory_') and f.endswith('.json')]
                 for file_name in files:
-                    file_path = os.path.join(PENDING_DIR, file_name)
-                    self._process_file_with_lock(file_path)
-                time.sleep(MEMORY_AGENT_CONFIG['polling_interval'])
+                    file_path = os.path.join(MEMORY_PENDING_DIR, file_name)
+                    if os.path.exists(file_path):
+                        self._process_file(file_path)
+                time.sleep(polling_interval)
             except Exception as e:
-                time.sleep(MEMORY_AGENT_CONFIG['polling_interval'])
+                time.sleep(polling_interval)

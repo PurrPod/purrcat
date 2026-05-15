@@ -4,26 +4,16 @@ import hashlib
 import threading
 from datetime import datetime
 import networkx as nx
-from src.memory.purrmemo.core.config import GRAPH_DATABASE_CONFIG
-from src.memory.purrmemo.core.storage.vector_engine import VectorEngine
+from src.utils.config import get_memory_config
+from .vector_engine import VectorEngine
+from ..utils import SingletonMeta
 
-class GraphEngine:
-    _instance = None
-    _lock = threading.Lock()
-    
-    def __new__(cls):
-        with cls._lock:
-            if cls._instance is None:
-                cls._instance = super(GraphEngine, cls).__new__(cls)
-                cls._instance._initialized = False
-            return cls._instance
-    
+class GraphEngine(metaclass=SingletonMeta):
     def __init__(self):
-        if self._initialized:
-            return
         self._rw_lock = threading.RLock()
-        self.graph_path = GRAPH_DATABASE_CONFIG['graph_path']
-        self.min_confidence = GRAPH_DATABASE_CONFIG['min_confidence']
+        config = get_memory_config().get('graphdb', {})
+        self.graph_path = config.get('graph_path', 'data/memory/graph.pkl')
+        self.min_confidence = config.get('min_confidence', 0.3)
         self.graph = None
         self.vector_engine = None
         try:
@@ -31,7 +21,6 @@ class GraphEngine:
         except Exception:
             print("向量引擎依赖未安装，将在无向量搜索模式下运行")
         self._init_graph()
-        self._initialized = True
     
     def _init_graph(self):
         """初始化图谱"""
@@ -219,46 +208,34 @@ class GraphEngine:
             relations = []
             
             with self._rw_lock:
+                # 统一收集边迭代器：(source, target)
+                edges_to_check = []
                 if direction in ['out', 'all']:
-                    # 获取出边
-                    for neighbor in self.graph.neighbors(node_id):
-                        edge_data = self.graph[node_id][neighbor]
-                        # 过滤低置信度的关系
-                        if edge_data.get('confidence', 0) >= self.min_confidence:
-                            relations.append({
-                                'edge_id': edge_data.get('edge_id'),
-                                'source_node_id': node_id,
-                                'target_node_id': neighbor,
-                                'relation_meaning': edge_data.get('relation_meaning'),
-                                'confidence': edge_data.get('confidence'),
-                                'created_at': edge_data.get('created_at'),
-                                'updated_at': edge_data.get('updated_at'),
-                                'source_event_id': edge_data.get('source_event_id')
-                            })
-                
+                    edges_to_check.extend(self.graph.out_edges(node_id))
                 if direction in ['in', 'all']:
-                    # 获取入边
-                    for predecessor in self.graph.predecessors(node_id):
-                        edge_data = self.graph[predecessor][node_id]
-                        # 过滤低置信度的关系
-                        if edge_data.get('confidence', 0) >= self.min_confidence:
-                            relations.append({
-                                'edge_id': edge_data.get('edge_id'),
-                                'source_node_id': predecessor,
-                                'target_node_id': node_id,
-                                'relation_meaning': edge_data.get('relation_meaning'),
-                                'confidence': edge_data.get('confidence'),
-                                'created_at': edge_data.get('created_at'),
-                                'updated_at': edge_data.get('updated_at'),
-                                'source_event_id': edge_data.get('source_event_id')
-                            })
+                    edges_to_check.extend(self.graph.in_edges(node_id))
+                
+                # 统一处理字典组装，消灭重复块
+                for u, v in edges_to_check:
+                    edge_data = self.graph[u][v]
+                    if edge_data.get('confidence', 0) >= self.min_confidence:
+                        relations.append({
+                            'edge_id': edge_data.get('edge_id'),
+                            'source_node_id': u,
+                            'target_node_id': v,
+                            'relation_meaning': edge_data.get('relation_meaning'),
+                            'confidence': edge_data.get('confidence'),
+                            'created_at': edge_data.get('created_at'),
+                            'updated_at': edge_data.get('updated_at'),
+                            'source_event_id': edge_data.get('source_event_id')
+                        })
             
             return relations
         except Exception as e:
             print(f"获取节点关系失败: {e}")
             return []
     
-    def _save_graph(self):
+    def save_graph(self):
         """保存图谱到文件"""
         with self._rw_lock:
             try:
@@ -304,7 +281,7 @@ class GraphEngine:
                 
                 # 如果成功更新了边，将图谱持久化到磁盘
                 if updated_count > 0:
-                    self._save_graph()
+                    self.save_graph()
                     
                 return updated_count
         except Exception as e:

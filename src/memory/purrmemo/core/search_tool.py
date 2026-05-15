@@ -2,8 +2,7 @@ import os
 import json
 from datetime import datetime, timedelta
 import threading
-import numpy as np
-from .config import RAG_CONFIG
+from src.utils.config import get_memory_config
 from .storage.event_engine import EventEngine
 from .storage.vector_engine import VectorEngine
 from .storage.graph_engine import GraphEngine
@@ -19,15 +18,12 @@ def reciprocal_rank_fusion(vector_results, bm25_results, k=60, top_k=5):
     fused_scores = {}
     fused_data = {}
 
-    for rank, item in enumerate(sorted(vector_results, key=lambda x: x['score'], reverse=True)):
-        item_id = item['id']
-        fused_scores[item_id] = fused_scores.get(item_id, 0) + 1.0 / (k + rank + 1)
-        fused_data[item_id] = item['data']
-
-    for rank, item in enumerate(sorted(bm25_results, key=lambda x: x['score'], reverse=True)):
-        item_id = item['id']
-        fused_scores[item_id] = fused_scores.get(item_id, 0) + 1.0 / (k + rank + 1)
-        fused_data[item_id] = item['data']
+    # 将两个列表放在一起遍历，消除重复代码块
+    for result_list in (vector_results, bm25_results):
+        for rank, item in enumerate(sorted(result_list, key=lambda x: x['score'], reverse=True)):
+            item_id = item['id']
+            fused_scores[item_id] = fused_scores.get(item_id, 0) + 1.0 / (k + rank + 1)
+            fused_data[item_id] = item['data']
 
     reranked = [
         {"id": item_id, "data": fused_data[item_id], "rrf_score": score}
@@ -52,180 +48,153 @@ class RAGSearchTool:
             self.graph_engine = None
             print("GraphEngine 不可用，将无法检索图谱库")
 
+        self.executor = ThreadPoolExecutor(max_workers=10)
+
     def search_memory_api(self, query: str, filters: dict = None):
-        """统一检索接口
-
-        Args:
-            query: 查询文本
-            filters: 过滤条件（可选）
-
-        Returns:
-            结构化的 Markdown 上下文
-        """
+        """统一检索接口"""
         events_results = []
         experiences_results = []
         graph_results = []
 
-        with ThreadPoolExecutor(max_workers=3) as executor:
-            future_to_source = {
-                executor.submit(self._search_events, query, filters): 'events',
-                executor.submit(self._search_experiences, query, filters): 'experiences',
-                executor.submit(self._search_graph, query, filters): 'graph'
-            }
+        # 统一向量化，避免并发死锁
+        query_embedding = None
+        if self.vector_engine and query:
+            try:
+                query_embedding = self.vector_engine._get_embedding(query)
+            except Exception as e:
+                print(f"❌ [RAGSearchTool] Embedding 计算失败: {e}")
 
-            events_warning = ""
-            for future in as_completed(future_to_source):
-                source = future_to_source[future]
-                try:
-                    result = future.result()
-                    if source == 'events':
-                        if isinstance(result, dict):
-                            events_warning = result.get('warning', '')
-                            events_results = result.get('events', [])
-                        else:
-                            events_results = result
-                    elif source == 'experiences':
-                        experiences_results = result
-                    elif source == 'graph':
-                        graph_results = result
-                except Exception as e:
-                    print(f"检索 {source} 失败: {e}")
+        # 使用全局线程池提交任务
+        future_to_source = {
+            self.executor.submit(self._search_events, query, filters, query_embedding): 'events',
+            self.executor.submit(self._search_experiences, query, filters, query_embedding): 'experiences',
+            self.executor.submit(self._search_graph, query, filters, query_embedding): 'graph'
+        }
+
+        events_warning = ""
+        for future in as_completed(future_to_source):
+            source = future_to_source[future]
+            try:
+                result = future.result()
+                if source == 'events':
+                    if isinstance(result, dict):
+                        events_warning = result.get('warning', '')
+                        events_results = result.get('events', [])
+                    else:
+                        events_results = result
+                elif source == 'experiences':
+                    experiences_results = result
+                elif source == 'graph':
+                    graph_results = result
+            except Exception as e:
+                print(f"❌ [RAGSearchTool] 检索 {source} 失败: {e}")
 
         markdown_context = self._format_results(events_results, experiences_results, graph_results, events_warning)
-
         return markdown_context
 
-    def _search_events(self, query: str, filters: dict = None):
-        """检索事件库 - 混合检索版（向量 + BM25 + RRF融合）
-
-        Returns:
-            dict: {"events": [...], "warning": "..."}
-            warning 为空表示无降级查询，有内容表示使用了降级查询并说明原因
-        """
+    def _search_events(self, query: str, filters: dict = None, query_embedding=None):
+        """检索事件库 - 混合检索版"""
         filters = filters or {}
+        rag_config = get_memory_config().get('rag', {})
         try:
-            top_k = filters.get('top_k', RAG_CONFIG['top_k_events'])
+            top_k = filters.get('top_k', rag_config.get('top_k_events', 5))
             start_time, end_time = filters.get('time_range', (None, None))
-            had_time_filter = start_time is not None and end_time is not None
 
             if not query:
-                if had_time_filter:
-                    events = self.event_engine.get_events_by_time_range(start_time, end_time, limit=top_k)
-                else:
-                    events = self.event_engine.get_latest_events(limit=top_k)
+                # 使用合并后的 get_events 方法
+                events = self.event_engine.get_events(start_time, end_time, limit=top_k)
                 return {"events": events, "warning": ""}
 
             vector_results_raw = []
-            pool = None
             if self.vector_engine:
-                query_vector = self.vector_engine._get_embedding(query)
-
-                if start_time:
-                    pool = self.event_engine.get_events_by_time_range(start_time, end_time, limit=200)
-                else:
-                    pool = self.event_engine.get_latest_events(limit=200)
-
-                if pool:
-                    valid_events = [e for e in pool if e.get('vector')]
-
-                    if valid_events:
-                        vectors_matrix = np.array([e['vector'] for e in valid_events])
-                        dot_products = np.dot(vectors_matrix, query_vector)
-                        query_norm = np.linalg.norm(query_vector)
-                        matrix_norms = np.linalg.norm(vectors_matrix, axis=1)
-                        similarities = dot_products / (matrix_norms * query_norm + 1e-9)
-
-                        for idx, e in enumerate(valid_events):
-                            vector_results_raw.append({"id": e['event_id'], "data": e, "score": similarities[idx]})
+                vector_results_raw = self.vector_engine.search_events_vector(
+                    query, top_k=200, query_embedding=query_embedding
+                )
+                
+                if start_time and end_time:
+                    vector_results_raw = [
+                        e for e in vector_results_raw 
+                        if start_time <= e['data']['timestamp'] <= end_time
+                    ]
 
             bm25_results_raw = self.event_engine.search_fts_bm25(query, start_time, end_time, limit=200)
 
             fused_results = reciprocal_rank_fusion(vector_results_raw, bm25_results_raw, top_k=top_k)
-
             final_events = [item['data'] for item in fused_results]
 
             fallback_warning = ""
-            if not final_events and had_time_filter:
+            if not final_events and start_time and end_time:
                 fallback_warning = f"⚠️ 当前筛选日期内未找到与检索相关的事件。\n\n"
-                final_events = []
-            elif not final_events:
-                final_events = []
 
             return {"events": final_events, "warning": fallback_warning}
         except Exception as e:
             print(f"检索事件失败: {e}")
             return {"events": [], "warning": ""}
 
-    def _search_experiences(self, query: str, filters: dict = None):
+    def _search_experiences(self, query: str, filters: dict = None, query_embedding=None):
         """检索经验库"""
+        rag_config = get_memory_config().get('rag', {})
         try:
             if not self.vector_engine:
                 return []
 
+            top_k = filters.get('top_k', rag_config.get('top_k_experiences', 5)) if filters else rag_config.get('top_k_experiences', 5)
             raw_experiences = self.vector_engine.search_experiences(
                 query=query,
-                top_k=RAG_CONFIG['top_k_experiences'],
-                filters=filters
+                top_k=top_k,
+                filters=filters,
+                query_embedding=query_embedding
             )
 
-            valid_experiences = []
-            for exp in raw_experiences:
-                similarity = 1.0 - exp['score']
-                if similarity >= 0.35:
-                    valid_experiences.append(exp)
-
-            return valid_experiences
+            return [exp for exp in raw_experiences if 1.0 - exp['score'] >= 0.35]
         except Exception as e:
             print(f"检索经验失败: {e}")
             return []
 
-    def _search_graph(self, query: str, filters: dict = None):
-        """检索图谱库 - 向量寻址 Node -> 一跳游走提取 Edge"""
+    def _search_graph(self, query: str, filters: dict = None, query_embedding=None):
+        """检索图谱库"""
+        rag_config = get_memory_config().get('rag', {})
         try:
             if not self.graph_engine:
                 return []
 
-            graph_stats = self.graph_engine.get_graph_stats()
-            if graph_stats['nodes'] == 0:
+            if self.graph_engine.get_graph_stats()['nodes'] == 0:
                 return []
 
             results = []
             seen_edges = set()
 
             if hasattr(self.graph_engine, 'vector_engine') and self.graph_engine.vector_engine:
-                similar_nodes = self.graph_engine.vector_engine.search_graph_nodes(query, top_k=5)
+                similar_nodes = self.graph_engine.vector_engine.search_graph_nodes(
+                    query, top_k=5, query_embedding=query_embedding
+                )
             else:
                 return []
 
             for node_info in similar_nodes:
-                node_id = node_info['node_id']
-                relations = self.graph_engine.get_relations_by_node(node_id, direction='all')
+                relations = self.graph_engine.get_relations_by_node(node_info['node_id'], direction='all')
                 for relation in relations:
                     edge_id = relation.get('edge_id')
-
-                    if edge_id in seen_edges:
+                    if edge_id and edge_id in seen_edges:
                         continue
                     if edge_id:
                         seen_edges.add(edge_id)
 
                     if relation['confidence'] >= self.graph_engine.min_confidence:
                         target_node = self.graph_engine.get_node(relation['target_node_id'])
-                        target_name = target_node['name'] if target_node else '未知'
-
                         source_node = self.graph_engine.get_node(relation['source_node_id'])
-                        source_name = source_node['name'] if source_node else '未知'
-
-                        relation_desc = f"{source_name} {relation['relation_meaning']} {target_name}"
+                        
                         results.append({
-                            'source': source_name,
+                            'source': source_node['name'] if source_node else '未知',
                             'relation': relation['relation_meaning'],
-                            'target': target_name,
+                            'target': target_node['name'] if target_node else '未知',
                             'confidence': relation['confidence'],
-                            'description': relation_desc
+                            'description': f"{source_node['name'] if source_node else '未知'} {relation['relation_meaning']} {target_node['name'] if target_node else '未知'}"
                         })
 
             results.sort(key=lambda x: x['confidence'], reverse=True)
-            return results[:RAG_CONFIG['top_k_graph_nodes']]
+            top_k = filters.get('top_k', rag_config.get('top_k_graph_nodes', 3)) if filters else rag_config.get('top_k_graph_nodes', 3)
+            return results[:top_k]
         except Exception as e:
             print(f"检索图谱失败: {e}")
             return []
@@ -239,21 +208,17 @@ class RAGSearchTool:
 
         if events:
             markdown_parts.append("## 历史事件")
-            for event in events:
-                markdown_parts.append(f"- [{event['timestamp']}] {event['content']}")
+            markdown_parts.extend([f"- [{event['timestamp']}] {event['content']}" for event in events])
             markdown_parts.append("")
 
         if experiences:
             markdown_parts.append("## 工作经验")
-            for exp in experiences:
-                score = 1.0 - exp['score']
-                markdown_parts.append(f"- [{score:.2f}] {exp['content']}")
+            markdown_parts.extend([f"- [{1.0 - exp['score']:.2f}] {exp['content']}" for exp in experiences])
             markdown_parts.append("")
 
         if graph_results:
             markdown_parts.append("## 知识图谱")
-            for result in graph_results:
-                markdown_parts.append(f"- {result['description']} (置信度: {result['confidence']:.2f})")
+            markdown_parts.extend([f"- {result['description']} (置信度: {result['confidence']:.2f})" for result in graph_results])
             markdown_parts.append("")
 
         if not markdown_parts:
@@ -264,7 +229,7 @@ class RAGSearchTool:
 
 
 class ForgetfulnessManager:
-    """遗忘管理器 - 定时清理长时间未强化的关系"""
+    """遗忘管理器"""
 
     def __init__(self, graph_engine, min_confidence=0.3, decay_rate=0.05):
         self.graph_engine = graph_engine
@@ -272,12 +237,7 @@ class ForgetfulnessManager:
         self.decay_rate = decay_rate
 
     def decay_unreinforced_edges(self, days_threshold=7):
-        """衰减长时间未强化的边
-
-        Args:
-            days_threshold: 未强化天数阈值，超过该天数开始衰减
-        """
-        decay_count = 0
+        """衰减长时间未强化的边"""
         edges_to_update = []
 
         for source_node_id, target_node_id, edge_data in self.graph_engine.graph.edges(data=True):
@@ -288,10 +248,7 @@ class ForgetfulnessManager:
 
                     if days_since_update >= days_threshold:
                         decay_amount = self.decay_rate * (days_since_update - days_threshold)
-                        new_confidence = max(
-                            self.min_confidence,
-                            edge_data['confidence'] - decay_amount
-                        )
+                        new_confidence = max(self.min_confidence, edge_data['confidence'] - decay_amount)
 
                         if new_confidence < edge_data['confidence']:
                             edges_to_update.append({
@@ -299,28 +256,29 @@ class ForgetfulnessManager:
                                 'target_node_id': target_node_id,
                                 'new_confidence': new_confidence
                             })
-                            decay_count += 1
                 except Exception as e:
                     print(f"处理边 {source_node_id} -> {target_node_id} 失败: {e}")
 
         if edges_to_update:
-            updated_count = self.graph_engine.decay_edges(edges_to_update)
-            return updated_count
+            return self.graph_engine.decay_edges(edges_to_update)
 
         return 0
 
     def run_daily_task(self):
         """每日任务入口"""
         self.decay_unreinforced_edges(days_threshold=7)
+        
+        try:
+            event_engine = EventEngine()
+            deleted_count = event_engine.cleanup_old_events(days_threshold=90)
+            if deleted_count > 0:
+                print(f"🧹 [遗忘机制] 已清理 {deleted_count} 条超过90天的陈旧事件")
+        except Exception as e:
+            print(f"执行事件清理任务失败: {e}")
 
 
 def start_forgetfulness_scheduler(graph_engine, interval_hours=24):
-    """启动遗忘调度器
-
-    Args:
-        graph_engine: 图谱引擎实例
-        interval_hours: 执行间隔（小时）
-    """
+    """启动遗忘调度器"""
     manager = ForgetfulnessManager(graph_engine)
 
     def scheduler_loop():

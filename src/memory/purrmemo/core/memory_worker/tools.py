@@ -21,7 +21,7 @@ def get_node_id(node_name: str) -> str:
     """
     # 清洗节点名称：去空格、统一小写
     cleaned_node_name = node_name.strip().lower()
-    return f"node_{hashlib.md5(cleaned_node_name.encode()).hexdigest()[:8]}"
+    return f"node_{hashlib.md5(cleaned_node_name.encode()).hexdigest()[:16]}"
 
 def add_relation(source_node: str, relation: str, target_node: str, source_event_id: str = "unknown") -> str:
     """

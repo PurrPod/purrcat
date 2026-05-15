@@ -110,15 +110,18 @@ def _handle_search(query: dict = None) -> str:
         return error_response("参数格式错误: date 日期格式不正确，应为 YYYY-MM-DD", "❌ 参数格式错误")
 
     try:
+        print(f"🔍 [MemoSearch] 开始检索 | prompt={prompt!r} | date={date_filter} | top_k={top_k}")
         client = get_memory_client()
         filters = {"top_k": top_k}
         if date_filter:
             filters["date"] = date_filter
             
+        print(f"🔍 [MemoSearch] 调用 client.search | query={prompt!r} | filters={filters}")
         result = client.search(
             query=prompt,
             filters=filters
         )
+        print(f"🔍 [MemoSearch] client.search 返回 | result长度={len(result) if result else 0}")
 
         return text_response(
             {"result": result},
@@ -126,6 +129,8 @@ def _handle_search(query: dict = None) -> str:
         )
 
     except Exception as e:
+        print(f"❌ [MemoSearch] 异常: {e}")
+        traceback.print_exc()
         return error_response(f"记忆检索异常: {str(e)}", "❌ MemoSearch执行异常")
 
 
