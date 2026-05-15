@@ -16,7 +16,7 @@ def _duckduckgo_search(query: str, max_results: int = 5) -> list:
     """策略一：外网首选 DuckDuckGo"""
     print(f"\n[Search Debug] 🦆 正在尝试 DuckDuckGo 搜索...")
     try:
-        from duckduckgo_search import DDGS
+        from ddgs import DDGS
         with DDGS() as ddgs:
             results = list(ddgs.text(query, max_results=max_results))
             if results:
@@ -30,7 +30,7 @@ def _duckduckgo_search(query: str, max_results: int = 5) -> list:
                 for r in results
             ]
     except ImportError:
-        print("[Search Debug] ⚠️ 未安装 duckduckgo-search 库，跳过...")
+        print("[Search Debug] ⚠️ 未安装 ddgs 库，跳过...")
         return []
     except Exception as e:
         print(f"[Search Debug] ❌ DuckDuckGo 搜索异常: {e}")
