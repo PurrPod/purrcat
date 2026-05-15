@@ -116,19 +116,25 @@ async def main_async(enable_tui: bool, enable_api: bool, api_port: int, cli_sess
 
         if not enable_tui:
             print("[*] Running in headless mode, press Ctrl+C to exit...")
-            await asyncio.Event().wait()
+            if api_task:
+                await api_task
+            else:
+                await asyncio.Event().wait()
             
     except (KeyboardInterrupt, asyncio.CancelledError):
         print("\n[*] 检测到中断信号，准备退出...")
     finally:
-        if api_task:
+        if api_task and not api_task.done():
             api_task.cancel()
             try:
-                await asyncio.wait_for(api_task, timeout=3.0)
-            except (asyncio.CancelledError, asyncio.TimeoutError):
+                await asyncio.wait_for(api_task, timeout=2.0)
+            except BaseException:
                 pass
 
-        await shutdown_core()
+        try:
+            await shutdown_core()
+        except BaseException:
+            pass
 
 
 def main():
@@ -140,13 +146,16 @@ def main():
     parser.add_argument("--api-port", type=int, default=8000, help="API server port (default: 8000)")
     args = parser.parse_args()
 
-    asyncio.run(main_async(
-        enable_tui=not args.headless,
-        enable_api=args.api,
-        api_port=args.api_port,
-        cli_session=args.session,
-        cli_branch=args.branch
-    ))
+    try:
+        asyncio.run(main_async(
+            enable_tui=not args.headless,
+            enable_api=args.api,
+            api_port=args.api_port,
+            cli_session=args.session,
+            cli_branch=args.branch
+        ))
+    except KeyboardInterrupt:
+        pass
 
 
 if __name__ == "__main__":

@@ -200,6 +200,12 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   const [newAlias, setNewAlias] = useState('');
 
   const [sessionToDelete, setSessionToDelete] = useState<string | null>(null);
+  
+  // 🟢 核心：检出状态锁定器
+  const [isCheckingOut, setIsCheckingOut] = useState(false);
+  
+  // 🟢 Agent 真实状态（由后端 API 驱动）
+  const [isAgentThinking, setIsAgentThinking] = useState(false);
 
   const confirmDeleteSession = async () => {
     if (!sessionToDelete) return;
@@ -244,16 +250,27 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   useEffect(() => {
     if (!currentSessionId) return;
     const interval = setInterval(async () => {
+      if (isCheckingOut) return;
       try {
-        const res = await fetch(`http://localhost:8000/api/sessions/${currentSessionId}`);
-        if (res.ok) {
-          const history = await res.json();
+        // 🟢 并发请求：同时拉取「历史记录」和「Agent 真实状态」
+        const [msgRes, statusRes] = await Promise.all([
+          fetch(`http://localhost:8000/api/sessions/${currentSessionId}`),
+          fetch(`http://localhost:8000/api/sessions/${currentSessionId}/status`)
+        ]);
+
+        if (msgRes.ok) {
+          const history = await msgRes.json();
           setMessages(history);
+        }
+
+        if (statusRes.ok) {
+          const statusData = await statusRes.json();
+          setIsAgentThinking(statusData.is_thinking);
         }
       } catch (e) { /* ignore polling errors */ }
     }, 1500);
     return () => clearInterval(interval);
-  }, [currentSessionId]);
+  }, [currentSessionId, isCheckingOut]);
 
   const loadSessions = async () => {
     try {
@@ -267,16 +284,24 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   };
 
   const handleSelectSession = async (id: string) => {
+    setIsCheckingOut(true); // 开启转手绘风圈圈，阻塞操作
     setCurrentSessionId(id);
     navigate(`/chat/${id}`, { replace: true });
     isAutoScroll.current = true;
     try {
+      // 尝试调用后端检出接口，触发等待模型释放响应 (打断阻塞)
+      await fetch(`http://localhost:8000/api/sessions/${id}/checkout`, { method: 'POST' }).catch(() => {});
+      
       const res = await fetch(`http://localhost:8000/api/sessions/${id}`);
       if (res.ok) {
         const history = await res.json();
         setMessages(history);
       }
-    } catch (e) { toast.error('加载记录失败'); }
+    } catch (e) { 
+      toast.error('加载记录失败'); 
+    } finally {
+      setIsCheckingOut(false); // 解除阻塞
+    }
   };
 
   const confirmNewSession = async () => {
@@ -284,6 +309,8 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
       toast.error('请输入对话名称！');
       return;
     }
+    setShowModal(false);
+    setIsCheckingOut(true); // 开启等待动画
     try {
       const res = await fetch('http://localhost:8000/api/sessions/new', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ alias: newAlias.trim() }),
@@ -291,12 +318,16 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
       if (res.ok) {
         const data = await res.json();
         toast.success(`开启全新对话: ${newAlias}`);
-        setShowModal(false);
         setNewAlias('');
         await loadSessions();
-        handleSelectSession(data.id);
+        await handleSelectSession(data.id); // 会继续维持 isCheckingOut 直到加载完毕
+      } else {
+        setIsCheckingOut(false);
       }
-    } catch (e) { toast.error('创建失败'); }
+    } catch (e) { 
+      toast.error('创建失败'); 
+      setIsCheckingOut(false); 
+    }
   };
 
   const handleSend = async () => {
@@ -314,14 +345,31 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
     } catch (e) { toast.error('网络错误'); }
   };
 
-  const isAgentThinking = messages.length > 0 && (
-    messages[messages.length - 1].role !== 'assistant' || 
-    (messages[messages.length - 1].tool_calls && messages[messages.length - 1].tool_calls!.length > 0)
-  );
-
   return (
     <div className="absolute inset-0 bg-[#fdfaf5] bg-[radial-gradient(#1a1a1a_1px,transparent_1px)] [background-size:24px_24px] p-6 md:p-8 flex gap-6 overflow-hidden font-sans">
       
+      {/* 🟢 修复：将 bg-ink/50 替换为 bg-cream/70 (护眼浅色) */}
+      {isCheckingOut && (
+        <div className="fixed inset-0 bg-cream/70 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
+          <div style={sketchyShape2} className="bg-paper border-4 border-ink p-10 flex flex-col items-center justify-center gap-6 shadow-[16px_16px_0px_0px_rgba(26,26,26,1)] -rotate-1 min-w-[320px]">
+            <div className="relative flex items-center justify-center">
+              <div className="absolute inset-0 bg-[#EBCB8B] rounded-full blur-xl opacity-60 animate-pulse"></div>
+              <div className="bg-ink p-4 border-4 border-paper shadow-[4px_4px_0px_0px_rgba(212,122,90,1)] z-10" style={sketchyShape3}>
+                <Loader2 size={64} strokeWidth={2.5} className="animate-spin text-paper" />
+              </div>
+            </div>
+            <div className="text-center mt-2">
+              <h3 className="text-3xl font-black tracking-widest text-ink mb-2" style={{ fontFamily: '"Comic Sans MS", cursive' }}>
+                CHECKING OUT...
+              </h3>
+              <p className="font-bold opacity-70 text-base text-ink/80 bg-terracotta/10 px-3 py-1 border-2 border-dashed border-ink/20 inline-block" style={sketchyShape1}>
+                Waiting for the agent to complete tasks...
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showModal && (
         <div className="fixed inset-0 bg-ink/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div style={sketchyShape2} className="bg-paper border-4 border-ink p-8 flex flex-col gap-6 shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] rotate-1 max-w-md w-full">
@@ -458,7 +506,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                             <div className="absolute w-3 h-3 bg-ink rounded-full -top-2 -right-2"></div>
                             <div className="text-[17px] font-bold text-paper">
                               <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>
-                                {userMsg.time ? `[${userMsg.time}] ${userMsg.content}` : userMsg.content}
+                                {userMsg.content}
                               </ReactMarkdown>
                             </div>
                           </div>
@@ -502,16 +550,24 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
             ))
           )}
 
-          {isAgentThinking && (
-            <div className="flex justify-start mb-4 w-full">
-              <div style={sketchyShape1} className="p-4 border-4 border-ink bg-cream text-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] w-fit">
-                <div className="flex items-center gap-3 px-2">
+          <div className="flex justify-start mb-4 w-full">
+            <div
+              style={sketchyShape1}
+              className={`p-4 w-fit transition-colors
+                ${isAgentThinking ? 'bg-cream text-ink border-4 border-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)]' : 'bg-paper text-ink/40'}`}
+            >
+              <div className="flex items-center gap-3 px-2">
+                {isAgentThinking ? (
                   <Loader2 size={20} strokeWidth={3} className="animate-spin text-terracotta" />
-                  <span className="font-black text-sm tracking-widest uppercase" style={{ fontFamily: '"Comic Sans MS", cursive' }}>Processing...</span>
-                </div>
+                ) : (
+                  <Clock size={20} strokeWidth={3} className="text-ink/30" />
+                )}
+                <span className="font-black text-sm tracking-widest uppercase" style={{ fontFamily: '"Comic Sans MS", cursive' }}>
+                  {isAgentThinking ? 'Processing...' : 'Dozing...'}
+                </span>
               </div>
             </div>
-          )}
+          </div>
 
           <div ref={messagesEndRef} className="h-2" />
         </div>

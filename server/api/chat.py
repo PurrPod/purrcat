@@ -47,3 +47,25 @@ def delete_session_api(session_id: str):
 def chat(req: ChatReq, background_tasks: BackgroundTasks):
     background_tasks.add_task(run_agent_task, req.session_id, req.message)
     return {"status": "processing", "message": "Message pushed to agent"}
+
+
+@router.get("/sessions/{session_id}/status")
+def get_session_status(session_id: str):
+    """
+    轻量级轮询接口：检查当前会话的后台 Agent 任务是否还在活跃运行
+    """
+    try:
+        from src.harness.process import TASK_INSTANCES
+        from src.harness.enums import TaskState
+        
+        task = TASK_INSTANCES.get(session_id)
+        
+        if task and task.state in [TaskState.RUNNING, TaskState.STARTING, TaskState.READY]:
+            return {
+                "is_thinking": True,
+                "state": task.state.value if hasattr(task.state, 'value') else task.state
+            }
+        
+        return {"is_thinking": False, "state": "idle"}
+    except ImportError:
+        return {"is_thinking": False, "state": "idle"}

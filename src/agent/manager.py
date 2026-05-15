@@ -57,15 +57,11 @@ class AgentManager:
     def branch_current_session(self, branch_alias=None):
         if not self._agent: return None
 
-        wait_count = 0
-        while self._agent.state != "idle" and wait_count < 6:
-            print("⏳ 正在等待 Agent 完成当前回复...")
-            time.sleep(0.5)
-            wait_count += 1
-
+        # 🟢 彻底移除强制打断，改为阻塞式安全等待，直到 Agent 完成当前全部流转
         if self._agent.state != "idle":
-            print("⚠️ Agent 忙碌超时，强制打断执行分支拉取！")
-            self._agent.force_interrupt()
+            print("⏳ 正在阻塞等待 Agent 完成当前回复，以确保安全拉取分支...")
+            while self._agent.state != "idle":
+                time.sleep(0.5)
 
         self.notify_save()
         safe_history = self._agent.get_history()
@@ -90,15 +86,11 @@ class AgentManager:
     def create_clean_session(self, branch_alias=None):
         if not self._agent: return None
 
-        wait_count = 0
-        while self._agent.state != "idle" and wait_count < 6:
-            print("⏳ 正在等待 Agent 完成当前回复...")
-            time.sleep(0.5)
-            wait_count += 1
-
+        # 🟢 彻底移除强制打断，改为阻塞式安全等待
         if self._agent.state != "idle":
-            print("⚠️ Agent 忙碌超时，强制打断执行纯净分支创建！")
-            self._agent.force_interrupt()
+            print("⏳ 正在阻塞等待 Agent 完成当前回复，以确保安全创建新会话...")
+            while self._agent.state != "idle":
+                time.sleep(0.5)
 
         self.notify_save()
 
@@ -134,15 +126,11 @@ class AgentManager:
     def checkout_session(self, target_session_id):
         if not self._agent: return False
 
-        wait_count = 0
-        while self._agent.state != "idle" and wait_count < 6:
-            print("⏳ 正在等待 Agent 释放资源...")
-            time.sleep(0.5)
-            wait_count += 1
-
+        # 🟢 彻底移除强制打断，改为阻塞式安全等待
         if self._agent.state != "idle":
-            print("⚠️ 强制打断，执行会话切换！")
-            self._agent.force_interrupt()
+            print("⏳ 正在阻塞等待 Agent 释放资源，以安全检出目标会话...")
+            while self._agent.state != "idle":
+                time.sleep(0.5)
 
         self.notify_save()
         new_history = SessionStore.load_session_history(target_session_id)

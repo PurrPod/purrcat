@@ -256,6 +256,7 @@ class Task:
                     else:
                         self.log_and_notify(LogType.SYSTEM, "⏸️ [任务挂起] 存在异常或等待人工干预。")
                         self.state = TaskState.INTERRUPTED
+                    self.save_checkpoints()
                     break
 
                 done, pending = await asyncio.wait(
@@ -427,6 +428,7 @@ class Task:
             task.pending_push_message = state.get("pending_push_message", {})
             task.checkpoint_dir = os.path.join(DATA_DIR, "checkpoints", "task", f"{task.task_name}_{task.task_id}")
             task.main_history = []
+            task.running_tasks = {}
 
             for n_id, n_info in task.dag_state.items():
                 if n_id in task.node_list:
@@ -463,15 +465,17 @@ class Task:
             "task_id": self.task_id,
             "name": self.task_name,
             "graph_name": self.graph_name,
-            "inputs": self.inputs,  # 🌟 存档入参
-            "outputs": self.outputs,  # 🌟 存档出参
+            "inputs": self.inputs,
+            "outputs": self.outputs,
             "create_time": self.create_time,
             "core": self.core,
             "key_prefix": self.model.key_prefix if self.model else None,
-            "state": self.state,
+            "state": self.state.value if hasattr(self.state, 'value') else self.state,
             "token_usage": self.token_usage,
-            "dag_state": {n_id: {"state": self.node_state[n_id], "outputs": self.node_list[n_id].outputs} for n_id in
-                          self.node_list},
+            "dag_state": {n_id: {
+                "state": self.node_state[n_id].value if hasattr(self.node_state[n_id], 'value') else self.node_state[n_id],
+                "outputs": self.node_list[n_id].outputs
+            } for n_id in self.node_list},
             "checkpoint_dir": self.checkpoint_dir,
             "pending_push_message": self.pending_push_message,
             "graph": self.graph

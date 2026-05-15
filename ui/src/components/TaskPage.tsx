@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { 
-  ArrowLeft, Terminal, Trash2, X, Activity, Clock, Box, ChevronDown, Send, MessageCircle
+import {
+  ArrowLeft, Terminal, Trash2, X, Activity, Clock, Box, ChevronDown, Send, MessageCircle, Loader2
 } from 'lucide-react';
 import { ReactFlow, Background, useNodesState, useEdgesState, Handle, Position } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
@@ -95,6 +95,9 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
   // 🟢 3. 增加精准制导输入框状态
   const [pushMessage, setPushMessage] = useState('');
 
+  // 🟢 阻塞加载状态
+  const [isCheckingOut, setIsCheckingOut] = useState(false);
+
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
 
@@ -114,39 +117,55 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
   }, []);
 
   const handleSelectTask = async (task: Task) => {
+    setIsCheckingOut(true);
     setSelectedTaskId(task.id);
     setNodes([]);
     setEdges([]);
     setCurrentNodeLogs([]);
-    
+
     try {
       const targetGraph = task.graph_name || 'default';
-      const gRes = await fetch(`http://localhost:8000/api/graphs/${targetGraph}`);
+
+      const [gRes, stateRes] = await Promise.all([
+        fetch(`http://localhost:8000/api/graphs/${targetGraph}`),
+        fetch(`http://localhost:8000/api/tasks/${task.id}/state`).catch(() => null)
+      ]);
 
       if (gRes.ok) {
         const graph = await gRes.json();
-        
+
+        let actualNodeStates: Record<string, string> = {};
+        let isCurrentlyRunning = task.state === 'running';
+
+        if (stateRes && stateRes.ok) {
+          const stateData = await stateRes.json();
+          actualNodeStates = stateData.node_states || {};
+          if (stateData.task_state) {
+            isCurrentlyRunning = stateData.task_state === 'running';
+          }
+        }
+
         const flowNodes = graph.nodes.map((n: any, idx: number) => ({
           id: n.id,
           type: 'custom',
           position: n.position || { x: 100 + (idx % 3) * 280, y: 100 + Math.floor(idx / 3) * 180 },
-          data: { 
+          data: {
             label: n.name && n.name.trim() ? n.name : n.id,
             shape: idx % 2 === 0 ? sketchyShape1 : sketchyShape2,
-            isTaskRunning: task.state === 'running',
-            nodeState: 'ready',
+            isTaskRunning: isCurrentlyRunning,
+            nodeState: actualNodeStates[n.id] || 'ready',
             onShowLog: (nodeId: string) => setLogModalNodeId(nodeId)
           }
         }));
-        
+
         const flowEdges = graph.edges.map((e: any) => ({
           id: `e-${e.source}-${e.target}`,
           source: e.source,
           target: e.target,
-          animated: task.state === 'running',
-          style: { strokeWidth: 3, stroke: task.state === 'running' ? '#D47A5A' : '#1a1a1a' }
+          animated: isCurrentlyRunning,
+          style: { strokeWidth: 3, stroke: isCurrentlyRunning ? '#D47A5A' : '#1a1a1a' }
         }));
-        
+
         setNodes(flowNodes);
         setEdges(flowEdges);
       } else {
@@ -154,6 +173,8 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
       }
     } catch (e) {
       toast.error(`加载图谱失败`);
+    } finally {
+      setIsCheckingOut(false);
     }
   };
 
@@ -185,20 +206,35 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
         if (res.ok) {
           const data = await res.json();
           const nodeStates = data.node_states || {};
+          const isCurrentlyRunning = data.state === 'running';
 
           setNodes((nds) =>
             nds.map((n) => {
               const currentState = nodeStates[n.id] || 'ready';
-              if (n.data.nodeState !== currentState) {
+              if (n.data.nodeState !== currentState || n.data.isTaskRunning !== isCurrentlyRunning) {
                 return {
                   ...n,
                   data: {
                     ...n.data,
-                    nodeState: currentState
+                    nodeState: currentState,
+                    isTaskRunning: isCurrentlyRunning
                   }
                 };
               }
               return n;
+            })
+          );
+
+          setEdges((eds) =>
+            eds.map((e) => {
+              if (e.animated !== isCurrentlyRunning) {
+                return {
+                  ...e,
+                  animated: isCurrentlyRunning,
+                  style: { strokeWidth: 3, stroke: isCurrentlyRunning ? '#D47A5A' : '#1a1a1a' }
+                };
+              }
+              return e;
             })
           );
         }
@@ -231,10 +267,10 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
     isAutoScroll.current = true; // 发送指令后强制滚到底部以便查看结果
 
     try {
-      const res = await fetch(`http://localhost:8000/api/tasks/${selectedTaskId}/push`, {
+      const res = await fetch(`http://localhost:8000/api/tasks/${selectedTaskId}/submit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: msg, node_id: logModalNodeId })
+        body: JSON.stringify({ content: msg, node_id: logModalNodeId })
       });
       if (res.ok) toast.success(`已向节点 [${logModalNodeId}] 发送指令`);
       else toast.error('任务可能已结束，注入失败');
@@ -260,7 +296,18 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
 
   return (
     <div className="absolute inset-0 bg-[#fdfaf5] bg-[radial-gradient(#1a1a1a_1px,transparent_1px)] [background-size:24px_24px] p-6 md:p-8 flex gap-6 overflow-hidden font-sans">
-      
+
+      {isCheckingOut && (
+        <div className="fixed inset-0 bg-cream/70 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
+          <div style={sketchyShape2} className="bg-paper border-4 border-ink p-10 flex flex-col items-center justify-center gap-6 shadow-[16px_16px_0px_0px_rgba(26,26,26,1)] -rotate-1 min-w-[320px]">
+            <Activity size={64} className="animate-pulse text-terracotta" strokeWidth={2} />
+            <h3 className="text-3xl font-black tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>
+              LOADING TASK...
+            </h3>
+          </div>
+        </div>
+      )}
+
       {/* 悬浮日志弹窗 */}
       {logModalNodeId && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-ink/50 backdrop-blur-sm p-4 pointer-events-auto">

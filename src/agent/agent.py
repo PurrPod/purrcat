@@ -32,6 +32,7 @@ class Agent:
         self.model.bind_task(self.session_id, "AgentMain")
         self.tracker = Tracker()
         self.current_history = initial_history or []
+        
         # 如果是彻头彻尾的全新初始化（没有任何历史），此时才 Build 最新规则
         if not self.current_history:
             fresh_prompt = self._build_system_prompt()
@@ -128,105 +129,11 @@ class Agent:
                 "content": json.dumps(batch_data, ensure_ascii=False)
             })
 
-    def _sanitize_history(self, history: list) -> list:
-            """深度清洗历史记录，完美处理多工具并发、断层、幽灵消息问题"""
-            import copy
-            
-            sanitized = []
-            # 记录期望收到结果的工具：{tool_call_id: 对应的 assistant 消息在 sanitized 中的索引}
-            pending_tool_calls = {}  
-
-            # 必须深拷贝，避免清洗过程污染原始的 current_history
-            working_history = copy.deepcopy(history)
-
-            for msg in working_history:
-                role = msg.get("role")
-
-                if role == "assistant":
-                    sanitized.append(msg)
-                    if msg.get("tool_calls"):
-                        # 并发场景：记录下这个 assistant 发出的所有 tool_call_id
-                        for tc in msg.get("tool_calls"):
-                            pending_tool_calls[tc["id"]] = len(sanitized) - 1
-                            
-                elif role == "tool":
-                    tc_id = msg.get("tool_call_id")
-                    if tc_id in pending_tool_calls:
-                        # 这是合法并发工具调用之一，放行
-                        sanitized.append(msg)
-                        # 收到结果，从待处理清单中划掉
-                        del pending_tool_calls[tc_id]
-                    else:
-                        # 不在 pending 列表里的，绝对是跨会话残留的幽灵或重复数据，精准拦截
-                        print(f"🧹 [清洗] 丢弃跨会话遗留的孤儿工具结果: {msg.get('name', 'unknown')} ({tc_id})")
-                else:
-                    sanitized.append(msg)
-
-            # ==== 终极兜底：清理发出去但没收回来的“太监” tool_calls ====
-            # 场景：大模型并发了 3 个工具，跑了 1 个后被用户切走，后 2 个被拦截。
-            # 此时发给 API 会报 400（期待 3 个结果只给了 1 个）。必须把没结果的调用抹掉！
-            if pending_tool_calls:
-                print(f"🧹 [清洗] 移除未收到结果的断层 tool_calls: {list(pending_tool_calls.keys())}")
-                
-                # 按索引回溯，清理对应的 assistant 消息
-                for tc_id, idx in pending_tool_calls.items():
-                    ast_msg = sanitized[idx]
-                    if "tool_calls" in ast_msg:
-                        # 剔除掉那些因为中断而永远等不到结果的 tool_call
-                        ast_msg["tool_calls"] = [tc for tc in ast_msg["tool_calls"] if tc["id"] != tc_id]
-                        
-                        # 如果并发的工具全军覆没被剔除了，把键也删了
-                        if not ast_msg["tool_calls"]:
-                            del ast_msg["tool_calls"]
-                            # 如果这只是一条纯发起工具的消息，现在被掏空了，给个兜底文本防报错
-                            if not ast_msg.get("content"):
-                                ast_msg["content"] = "（任务执行被系统中断）"
-
-            return sanitized
-
-    def _sanitize_tail(self):
-        """极致性能版：只在每次新任务开始时，检查并修复历史记录的'尾部'断层，耗时几乎为 0"""
-        if not self.current_history:
-            return
-
-        last_ast_idx = -1
-        for i in range(len(self.current_history) - 1, -1, -1):
-            if self.current_history[i].get("role") == "assistant":
-                last_ast_idx = i
-                break
-
-        if last_ast_idx == -1:
-            return
-
-        last_ast = self.current_history[last_ast_idx]
-        if not last_ast.get("tool_calls"):
-            return
-
-        collected_tool_ids = {
-            msg.get("tool_call_id")
-            for msg in self.current_history[last_ast_idx + 1:]
-            if msg.get("role") == "tool"
-        }
-
-        original_tc_count = len(last_ast["tool_calls"])
-        valid_tcs = [tc for tc in last_ast["tool_calls"] if tc["id"] in collected_tool_ids]
-
-        if len(valid_tcs) != original_tc_count:
-            print(f"🧹 [尾部清理] 剔除 {original_tc_count - len(valid_tcs)} 个因中断而未完成的 tool_call")
-            if valid_tcs:
-                last_ast["tool_calls"] = valid_tcs
-            else:
-                del last_ast["tool_calls"]
-                if not last_ast.get("content"):
-                    last_ast["content"] = "（任务执行被系统中断）"
-
     def process_message(self):
         current_interaction_id = self._increment_interaction_id()
         self.force_push(
             content="任务开始前如有需要可以调用 Memo 工具搜索相关记忆。完成任务后请调用 Memo 工具及时更新记忆",
             type="system")
-
-        self._sanitize_tail()
 
         while True:
             try:
@@ -273,6 +180,7 @@ class Agent:
             from src.sensor import get_gateway
             get_gateway().send(f"{msg_resp.content}")
         return bool(msg_resp.tool_calls)
+
     def _execute_tool_calls(self, tool_calls) -> bool:
         for tool_call in tool_calls:
             target_tool_name = tool_call.function.name
@@ -294,7 +202,6 @@ class Agent:
             from src.sensor import get_gateway
 
             current_iid = self._get_current_interaction_id()
-
             result_content = dispatch_tool(target_tool_name, arguments)
 
             if self._get_current_interaction_id() != current_iid:
@@ -302,13 +209,13 @@ class Agent:
                 continue
 
             try:
-                snip = json.loads(result_content).get('snip', '') if isinstance(json.loads(result_content),
-                                                                                dict) else ''
+                snip = json.loads(result_content).get('snip', '') if isinstance(json.loads(result_content), dict) else ''
             except:
                 snip = str(result_content)[:100]
             get_gateway().send(f"🔧{target_tool_name}({args_str[:50]}...)\n\n---\n\n{snip}")
             self._append_history(
                 {"role": "tool", "tool_call_id": tool_call.id, "name": target_tool_name, "content": result_content})
+            
             # ==== 在模型调用 Memo add 操作后，触发显性检查拦截 ====
             if target_tool_name == "Memo" and arguments.get("action") == "add":
                 memo_data = arguments.get("memo_data")
@@ -317,7 +224,6 @@ class Agent:
                     if len(self.memo) > 10:
                         self.memo = self.memo[-10:]
                     SessionStore.save_global_memo(self.memo)
-                # 模型完成存档操作后，立刻检查是否超出阈值截断
                 from src.utils.config import get_model_config
                 model_cfg = get_model_config().get("main", {}).get(self.name, {})
                 max_tokens = model_cfg.get("max_token", 500000)
@@ -328,8 +234,7 @@ class Agent:
     def _handle_interaction_error(self, e=None, is_interrupt=False):
         content_msg = "⚠️ [中断] 运行被强制中断。" if is_interrupt else f"❌ [错误] 交互断层: {e}"
         print(content_msg)
-        if self.current_history and self.current_history[-1].get("role") == "assistant" and self.current_history[
-            -1].get("tool_calls"):
+        if self.current_history and self.current_history[-1].get("role") == "assistant" and self.current_history[-1].get("tool_calls"):
             self.current_history.pop()
         self._append_history({"role": "assistant", "content": content_msg})
 
@@ -352,11 +257,9 @@ class Agent:
             self._save_callback()
 
     def force_compress_memory(self):
-        """提供给外部/用户的显性触发接口"""
         self._truncate_memory_if_needed(force=True)
 
     def _truncate_memory_if_needed(self, force=False):
-        """判断与执行截断的核心操作"""
         from src.utils.config import get_model_config
         model_cfg = get_model_config().get("main", {}).get(self.name, {})
         max_tokens = model_cfg.get("max_token", 500000)
@@ -391,20 +294,15 @@ class Agent:
         return split_idx
 
     def _rebuild_and_save_history(self, split_idx: int, original_len: int, final_summary: str):
-        """重构主历史流并完成持久化：绝对保留原版 system 以命中 KV Cache，追加 memo 通知"""
-        # 1. 提取首节点以保护 KV Cache
         original_system_msg = self.current_history[0]
-        # 2. 准备短时缓存通知
         truncation_msg = {
             "role": "system",
             "content": f"【系统通知：因上下文超限，更早的历史对话已被系统截断。以下是最近五次的短时缓存，请你利用这些缓存无缝接续当前工作：】\n{final_summary}"
         }
-        # 3. 先拼接！直接丢弃无需保留的旧消息
         self.current_history = [original_system_msg, truncation_msg] + self.current_history[split_idx:original_len]
-        # 4. 后遍历！只对保留下来的“幸存者”清空庞大的思考过程，释放 Token 空间
         for msg in self.current_history:
             if msg.get("role") == "assistant" and "reasoning_content" in msg:
                 msg["reasoning_content"] = ""
-        print("✅ Agent记忆清理完毕！原系统指令保持不变以命中缓存，已注入 self.memo 提示词，并剥离旧有思考负担。")
+        print("✅ Agent记忆清理完毕！已注入 self.memo 提示词")
         self.window_token = 0
         self.save_checkpoint()
