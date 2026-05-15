@@ -390,7 +390,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                 style={sketchyShape3}
               />
             </div>
-            <button onClick={confirmNewSession} style={sketchyShape1} className="bg-terracotta text-paper font-black tracking-widest text-xl py-4 border-4 border-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:translate-y-[2px] hover:translate-x-[2px] hover:shadow-none transition-all rotate-1" style={{ fontFamily: '"Comic Sans MS", cursive' }}>
+            <button onClick={confirmNewSession} style={{ ...sketchyShape1, fontFamily: '"Comic Sans MS", cursive' }} className="bg-terracotta text-paper font-black tracking-widest text-xl py-4 border-4 border-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:translate-y-[2px] hover:translate-x-[2px] hover:shadow-none transition-all rotate-1">
               CREATE NOW
             </button>
           </div>

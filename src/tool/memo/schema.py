@@ -26,7 +26,7 @@ MEMO_TOOL_SCHEMA = {
                             "items": {
                                 "type": "object",
                                 "properties": {
-                                    "time": {"type": "string", "description": "时间，请必须使用 YYYY-MM-DD 或 ISO 8601 格式，如 2026-05-15"},
+                                    "time": {"type": "string", "description": "时间，请必须使用精确到分钟的格式，如 YYYY-MM-DD HH:MM"},
                                     "event": {"type": "string", "description": "事件描述"}
                                 }
                             },

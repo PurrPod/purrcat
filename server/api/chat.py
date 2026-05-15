@@ -52,20 +52,22 @@ def chat(req: ChatReq, background_tasks: BackgroundTasks):
 @router.get("/sessions/{session_id}/status")
 def get_session_status(session_id: str):
     """
-    轻量级轮询接口：检查当前会话的后台 Agent 任务是否还在活跃运行
+    轻量级轮询接口：检查当前会话的后台 Agent 是否还在活跃运行
     """
     try:
-        from src.harness.process import TASK_INSTANCES
-        from src.harness.enums import TaskState
+        # 获取全局唯一 Agent 实例
+        agent = manager._agent
         
-        task = TASK_INSTANCES.get(session_id)
-        
-        if task and task.state in [TaskState.RUNNING, TaskState.STARTING, TaskState.READY]:
+        # 确保 Agent 存在，并且当前正在处理的就是我们请求的这个 session_id
+        if agent and agent.session_id == session_id:
+            # 在 agent.py 中，空闲时 state 为 "idle"，工作时为 "handling"
+            is_thinking = agent.state != "idle"
             return {
-                "is_thinking": True,
-                "state": task.state.value if hasattr(task.state, 'value') else task.state
+                "is_thinking": is_thinking,
+                "state": agent.state
             }
         
         return {"is_thinking": False, "state": "idle"}
-    except ImportError:
+    except Exception as e:
+        print(f"获取Agent状态失败: {e}")
         return {"is_thinking": False, "state": "idle"}

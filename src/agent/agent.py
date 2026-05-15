@@ -245,7 +245,7 @@ class Agent:
                 if self.pending_force_push:
                     self.state = "handling"
                     self.process_message()
-                    self.state = "idle"
+                self.state = "idle"
                 time.sleep(0.5)
             except BaseException as e:
                 print(f"❌ 主核异常已被安全拦截: {e}")

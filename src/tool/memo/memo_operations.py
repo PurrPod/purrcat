@@ -17,12 +17,21 @@ MEMORY_MD_LOCK = threading.Lock()
 def _normalize_iso_time(time_str: str) -> str:
     """将各种非标时间字符串统一清洗为 ISO 8601 格式"""
     time_str = time_str.strip()
+    # 纯日期格式：20260515 -> 2026-05-15T00:00:00
     if re.match(r'^\d{8}$', time_str):
         return f"{time_str[:4]}-{time_str[4:6]}-{time_str[6:8]}T00:00:00"
+    # 紧凑格式带时间：20260515 11:32 -> 2026-05-15T11:32:00
     elif re.match(r'^\d{8} \d{2}:\d{2}$', time_str):
         return f"{time_str[:4]}-{time_str[4:6]}-{time_str[6:8]}T{time_str[9:14]}:00"
+    # 标准日期格式：2026-05-15 -> 2026-05-15T00:00:00
     elif re.match(r'^\d{4}-\d{2}-\d{2}$', time_str):
         return f"{time_str}T00:00:00"
+    # 精确到分钟：2026-05-15 11:32 或 2026-05-15T11:32 -> 2026-05-15T11:32:00
+    elif re.match(r'^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}$', time_str):
+        return time_str.replace(" ", "T") + ":00"
+    # 已包含秒数的格式，统一空格为T
+    elif re.match(r'^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}$', time_str):
+        return time_str.replace(" ", "T")
     return time_str
 
 OVERWRITE_MEMORY_MD_TOOL_SCHEMA = {
@@ -108,8 +117,24 @@ def _validate_memo_data(memo_data: dict) -> tuple[dict, list]:
             elif not isinstance(e["event"], str) or not e["event"].strip():
                 errors.append(f"events[{i}].event 无效：必须是非空字符串")
             else:
+                time_str = e["time"].strip()
+                # 校验时间格式至少精确到分钟
+                # 支持的格式：YYYY-MM-DD HH:MM、YYYY-MM-DDTHH:MM、YYYY-MM-DD HH:MM:SS、YYYY-MM-DDTHH:MM:SS
+                # 以及纯日期格式：YYYY-MM-DD、YYYYMMDD
+                time_pattern = (
+                    r'^(\d{4}-\d{2}-\d{2}([ T]\d{2}:\d{2}(:\d{2})?)?|'
+                    r'\d{8}( \d{2}:\d{2})?)$'
+                )
+                if not re.match(time_pattern, time_str):
+                    errors.append(
+                        f"events[{i}].time 格式无效：'{time_str}'，"
+                        f"请使用精确到分钟的格式，例如 YYYY-MM-DD HH:MM"
+                    )
+                    continue
+
+                normalized_time = _normalize_iso_time(time_str)
                 valid_data["events"].append({
-                    "time": _normalize_iso_time(e["time"]),
+                    "time": normalized_time,
                     "event": e["event"].strip()
                 })
 
