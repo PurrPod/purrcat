@@ -28,7 +28,7 @@ class ChatInput(TextArea):
                 await self.app.query_one(MainView).show_session_selector()
                 self.clear()
 
-            elif text == "/skill":
+            elif text == "/skills" or text == "/skill":
                 await self.app.query_one(MainView).show_skill_selector()
                 self.clear()
 

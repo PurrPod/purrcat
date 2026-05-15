@@ -157,12 +157,18 @@ class Agent:
                 should_pause = self._execute_tool_calls(msg_resp.tool_calls)
                 if should_pause:
                     break
+
             except KeyboardInterrupt:
                 self._handle_interaction_error(is_interrupt=True)
                 break
             except Exception as e:
                 self._handle_interaction_error(e=e)
                 break
+            try:
+                from src.tool.bash.bash import close_session
+                close_session(self.session_id)
+            except Exception as e:
+                print(f"⚠️ 自动清理沙盒会话失败: {e}")
 
     def _process_assistant_message(self, msg_resp) -> bool:
         assist_msg = {"role": "assistant", "content": msg_resp.content or ""}

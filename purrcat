@@ -1,37 +1,3 @@
 #!/bin/bash
 cd "$(dirname "$0")" || exit 1
-
-COMMAND=$1
-shift
-
-case "$COMMAND" in
-    setup)
-        bash scripts/setup.sh "$@"
-        ;;
-    start)
-        bash scripts/start.sh "$@"
-        ;;
-    init)
-        python3 scripts/cli.py init "$@"
-        ;;
-    env)
-        python3 scripts/cli.py env "$@"
-        ;;
-    *)
-        echo "PurrCat CLI - Cross-platform AI Agent Framework"
-        echo "=========================================="
-        echo "Usage: ./purrcat <command> [options]"
-        echo ""
-        echo "Available commands:"
-        echo "  setup   - Initialize environment (Conda, Docker, models, etc.)"
-        echo "  init    - Generate .purrcat configuration files"
-        echo "  start   - Start PurrCat (supports --headless flag)"
-        echo "  env     - Show environment variable reference"
-        echo ""
-        echo "Examples:"
-        echo "  ./purrcat setup"
-        echo "  ./purrcat init"
-        echo "  ./purrcat start --headless"
-        echo ""
-        ;;
-esac
+python -m scripts.cli.main "$@"

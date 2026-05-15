@@ -303,7 +303,7 @@ class MainView(Vertical):
             "| `/switch` | 切换聊天空间（主 Agent / 子任务） |\n"
             "| `/config` | 切换主题配置 |\n"
             "| `/sessions` | 查看和切换会话分支（Git 风格） |\n"
-            "| `/skill` | 浏览并勾选要加载的技能，追加至输入框 |\n"
+            "| `/skills` | 浏览并勾选要加载的技能，追加至输入框 |\n"
             "| `/branch <name>` | 从当前会话创建新分支（继承历史） |\n"
             "| `/new <name>` | 创建纯净新分支（仅含 System Prompt） |\n"
             "\n"

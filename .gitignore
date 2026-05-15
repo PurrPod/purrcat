@@ -6,7 +6,7 @@ data/checkpoints
 src/agent/core/cron.json
 src/tool/callmcp/mcp_schema.json
 .buffer/
-skill
+skills/
 PLAN.md
 scripts/start_mini.bat
 scripts/start_mini.sh

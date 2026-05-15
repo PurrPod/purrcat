@@ -163,7 +163,7 @@ class DockerManager:
         from src.utils.config import SKILL_DIR
         skill_host_dir = SKILL_DIR
         os.makedirs(skill_host_dir, exist_ok=True)
-        volumes[skill_host_dir] = {"bind": f"{self.container_workspace}/skill", "mode": "rw"}
+        volumes[skill_host_dir] = {"bind": f"{self.container_workspace}/skills", "mode": "rw"}
 
         from src.utils.config import get_file_config
         docker_mount = get_file_config().get("docker_mount", [])
