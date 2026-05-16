@@ -3,12 +3,15 @@ import importlib
 import json
 import os
 import sys
+from pathlib import Path
 from typing import Any, Dict, List
 
+from dotenv import dotenv_values
 from json_repair import repair_json
+import yaml
 
 from src.harness.enums import LogType
-from src.harness.utils.tool_helper import execute_global_tool
+from src.harness.utils.tool_helper import execute_global_tool, extract_tool_calling
 
 
 def _format_result(result_data) -> str:
@@ -35,6 +38,43 @@ def _format_result(result_data) -> str:
 
 
 class BaseNode:
+    WORKFLOW_CORE_TOOLS = [
+        {
+            "type": "function",
+            "function": {
+                "name": "task_done",
+                "description": "标记当前阶段任务完成。必须在此刻对成果进行全面总结。",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "summary": {
+                            "type": "object",
+                            "description": "对当前阶段的结构化总结数据（请严格按照系统要求的 JSON 键值对格式输出）"
+                        }
+                    },
+                    "required": ["summary"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "yield_to_human",
+                "description": "将控制权交还给人类，请求人工干预或确认",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "reason": {
+                            "type": "string",
+                            "description": "需要人类干预的原因"
+                        }
+                    },
+                    "required": ["reason"]
+                }
+            }
+        }
+    ]
+
     def __init__(self, node_id: str, config: dict):
         self.node_id = node_id
         self.config = config
@@ -44,6 +84,81 @@ class BaseNode:
         self.tools_dir = os.path.join(self.node_dir, "tools")
         self._local_tools_registry = None
         self._local_tools_schemas = None
+        self.metadata = self._load_metadata()
+        # 🌟 新增 task_done_info 属性
+        self.task_done_info = self.metadata.get("task_done_info", {})
+
+    def _load_metadata(self) -> dict:
+        """
+        动态扫描节点目录，按优先级解析配置文件到 self.metadata 中
+        优先级：.env > metadata.yaml > metadata.yml > metadata.json
+        """
+        base_path = Path(self.node_dir)
+        metadata = {}
+        try:
+            env_path = base_path / ".env"
+            if env_path.exists():
+                metadata.update(dotenv_values(env_path))
+            yaml_path = base_path / "metadata.yaml"
+            yml_path = base_path / "metadata.yml"
+            valid_yaml = yaml_path if yaml_path.exists() else (yml_path if yml_path.exists() else None)
+            if valid_yaml:
+                with open(valid_yaml, 'r', encoding='utf-8') as f:
+                    yaml_data = yaml.safe_load(f)
+                    if isinstance(yaml_data, dict):
+                        metadata.update(yaml_data)
+            json_path = base_path / "metadata.json"
+            if json_path.exists():
+                with open(json_path, 'r', encoding='utf-8') as f:
+                    json_data = json.load(f)
+                    if isinstance(json_data, dict):
+                        metadata.update(json_data)
+        except Exception as e:
+            print(f"⚠️ [元数据加载警告] 节点 {self.__class__.__module__} 加载配置文件出错: {e}")
+        return metadata
+
+    # ==========================================
+    # 🌟 新增：节点专有 Checkpoints 生命周期管理
+    # ==========================================
+    def save_checkpoints(self, context: Any, data: dict):
+        """将任意格式的字典持久化到本节点的专属文件中"""
+        if not context or not hasattr(context, "checkpoint_dir"):
+            return
+        
+        chk_dir = os.path.join(context.checkpoint_dir, "nodes_checkpoints")
+        os.makedirs(chk_dir, exist_ok=True)
+        file_path = os.path.join(chk_dir, f"{self.node_id}.json")
+        
+        try:
+            with open(file_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            self.log(context, "ERROR", f"节点 Checkpoint 落盘失败: {e}")
+
+    def load_checkpoints(self, context: Any) -> dict:
+        """从本节点的专属文件中读取状态，不存在则返回空字典"""
+        if not context or not hasattr(context, "checkpoint_dir"):
+            return {}
+            
+        file_path = os.path.join(context.checkpoint_dir, "nodes_checkpoints", f"{self.node_id}.json")
+        if os.path.exists(file_path):
+            try:
+                with open(file_path, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception:
+                pass
+        return {}
+
+    def reset(self, context: Any):
+        """重置节点：清空内存的 outputs，并物理删除 Checkpoint"""
+        self.outputs = {}
+        if context and hasattr(context, "checkpoint_dir"):
+            file_path = os.path.join(context.checkpoint_dir, "nodes_checkpoints", f"{self.node_id}.json")
+            if os.path.exists(file_path):
+                try:
+                    os.remove(file_path)
+                except Exception as e:
+                    self.log(context, "ERROR", f"清理 Checkpoint 文件失败: {e}")
 
     def get_local_tools(self):
         """动态扫描并加载当前节点 tools 目录下的工具"""
@@ -72,6 +187,13 @@ class BaseNode:
             print(f"❌ 加载节点本地工具失败: {e}")
         return self._local_tools_registry, self._local_tools_schemas
 
+    def get_all_tools(self) -> List[dict]:
+        """获取当前节点可用的所有大模型工具（系统基础工具 + 工作流原语）"""
+        from src.harness.utils.tool_helper import get_system_schema
+        tools = get_system_schema()
+        tools.extend(self.WORKFLOW_CORE_TOOLS)
+        return tools
+
     async def execute(
         self, inputs: Dict[str, Any], force_push_msgs: List[str], context: Any
     ) -> Dict[str, Any]:
@@ -91,38 +213,83 @@ class BaseNode:
             )
         return injected_messages
 
-    def execute_tool_calling(self, tool_calls: list, context: Any) -> List[dict]:
+    async def execute_tool_calling(self, response: Any, context: Any) -> tuple[list, bool, bool]:
         """
-        🌟 核心路由与分发逻辑
-        先拦截 call_tool 并调用节点专属工具，否则将请求抛给全局工具调度器。
+        统一处理普通工具、拓展工具与工作流原语。
+        直接提取 OpenAI SDK Response 内的 Tool Calls。
+        返回: (tool_messages, is_task_done, is_yield)
         """
+        # 1. 提取 response 中的所有工具调用
+        tool_calls = extract_tool_calling(response)
+        
         tool_messages = []
+        is_task_done = False
+        is_yield = False
+
         for tc in tool_calls:
             original_tool_name = tc.function.name
             arguments_str = tc.function.arguments
-            # 安全解析参数 (防御模型幻觉导致 JSON 破损)
+
+            # 解析参数
             try:
                 arguments = json.loads(arguments_str) if arguments_str else {}
             except json.JSONDecodeError:
-                try:
-                    arguments = repair_json(arguments_str, return_objects=True) or {}
-                except Exception:
-                    arguments = None
+                arguments = {}
 
-            if not isinstance(arguments, dict):
-                tool_messages.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": tc.id,
-                        "name": original_tool_name,
-                        "content": "❌ 系统拦截：工具参数格式严重损坏，请检查 JSON 格式！",
-                    }
-                )
-                continue
+            final_content = ""
+
             # ==========================================
-            # 分发逻辑
+            # 分发逻辑：工作流原语 (Workflow Primitives)
             # ==========================================
-            if original_tool_name == "call_tool":
+            if original_tool_name == "task_done":
+                summary = arguments.get("summary", {})
+                if not isinstance(summary, dict):
+                    summary = {"raw": str(summary)}
+
+                # 🌟 强校验逻辑：对照 self.task_done_info 检查必填项
+                if self.task_done_info:
+                    missing_keys = []
+                    for req_key, req_desc in self.task_done_info.items():
+                        if req_key not in summary:
+                            missing_keys.append(f"'{req_key}' ({req_desc})")
+
+                    if missing_keys:
+                        # ⚠️ 校验失败：打回给大模型
+                        error_msg = f"❌ [格式错误] 你尝试完成任务，但 summary 缺失了系统强制要求的关键信息：{', '.join(missing_keys)}。"
+                        self.log(context, "WARNING", f"⚠️ [任务完结被拒] 大模型缺少必填参数: {missing_keys}")
+
+                        # 把错误信息和期望的 schema 喂给大模型，让它知道错在哪
+                        final_content = _format_result({
+                            "error": error_msg,
+                            "instruction": "请重新调用 task_done 工具，并确保 summary 参数严格包含上述提到的所有键值对！",
+                            "required_schema": self.task_done_info
+                        })
+                    else:
+                        # ✅ 校验完美通过
+                        if context:
+                            context.result = True
+                        self.log(context, "SYSTEM", f"✅ [任务完结校验通过] 输出合规: {json.dumps(summary, ensure_ascii=False)}")
+                        final_content = _format_result({"status": "success", "summary": summary})
+                        is_task_done = True
+                else:
+                    # 节点本身没配置强校验，直接放行
+                    if context:
+                        context.result = True
+                    self.log(context, "SYSTEM", f"✅ [任务完结信号] 大模型总结: {json.dumps(summary, ensure_ascii=False)}")
+                    final_content = _format_result({"status": "success", "summary": summary})
+                    is_task_done = True
+
+            elif original_tool_name == "yield_to_human":
+                reason = arguments.get("reason", "需要人工干预")
+                self.log(context, "SYSTEM", f"⏸️ [请求干预] 理由: {reason}")
+                context.node_state[self.node_id] = "waiting"
+                final_content = _format_result({"status": "suspended", "message": "已挂起，等待人类注入指令"})
+                is_yield = True
+
+            # ==========================================
+            # 分发逻辑：业务层级与全局工具
+            # ==========================================
+            elif original_tool_name == "call_tool":
                 action = arguments.get("action", "execute")
                 local_registry, local_schemas = self.get_local_tools()
 
@@ -134,7 +301,6 @@ class BaseNode:
                             context, LogType.SYSTEM, "📦 [查询工具] 当前无可用拓展工具"
                         )
                     else:
-                        # 把所有私有工具的 Schema 平铺成易读的文本返回给它
                         schema_list_str = json.dumps(
                             [s["function"] for s in local_schemas],
                             ensure_ascii=False,
@@ -184,7 +350,7 @@ class BaseNode:
                             final_content = _format_result({"error": error_msg})
 
             else:
-                # 👉 路由到全局基础工具 (task_done, bash, yield_to_human 等)
+                # 抛给底层的 search / bash 等
                 try:
                     args_str = ", ".join(
                         [f"{k}={repr(v)}" for k, v in arguments.items()]
@@ -212,17 +378,15 @@ class BaseNode:
                     error_msg = f"❌ [工具崩溃] {original_tool_name}: {e}"
                     self.log(context, LogType.ERROR, error_msg)
                     final_content = _format_result({"error": error_msg})
-            # 装填并返回结果
-            tool_messages.append(
-                {
-                    "role": "tool",
-                    "tool_call_id": tc.id,
-                    "name": original_tool_name,
-                    "content": final_content,
-                }
-            )
 
-        return tool_messages
+            tool_messages.append({
+                "role": "tool",
+                "tool_call_id": tc.id,
+                "name": original_tool_name,
+                "content": final_content,
+            })
+
+        return tool_messages, is_task_done, is_yield
 
     def log(self, context: Any, log_type: str, content: str, node_id: str = None):
         """
@@ -233,7 +397,6 @@ class BaseNode:
         :param node_id: 节点 ID (可选，默认使用自身 node_id)
         """
         nid = node_id or self.node_id
-
         if hasattr(context, "log_and_notify"):
             context.log_and_notify(log_type, content, nid)
         else:
@@ -241,11 +404,11 @@ class BaseNode:
 
     def check_running_state(self, context: Any) -> bool:
         """
-        时刻检查自身状态。如果 Task 将我的状态改为了 ERROR/READY/WAITING 等，
+        时刻检查自身状态。如果 Task 将我的状态改为了 ERROR/KILLED/READY 等，
         说明我被强行终止或挂起了，应立刻停止流转。
         """
         current_state = context.node_state.get(self.node_id)
-        if current_state != "running":
+        if current_state not in ["running", "waiting"]:
             return False
         return True
 
@@ -258,3 +421,25 @@ class BaseNode:
             if self.node_id in context.pending_push_message:
                 return context.pending_push_message.pop(self.node_id)
         return []
+
+    async def wait_for_human_intervention(self, context: Any) -> list:
+        """
+        🌟 统一的节点级阻塞等待函数。
+        在这里进行真正的安全阻塞，醒来后直接返回包装好的标准 USER 消息列表。
+        """
+        import asyncio
+
+        while True:
+            await asyncio.sleep(2)
+
+            if not self.check_running_state(context):
+                self.log(context, "SYSTEM", "⚠️ [挂起中断] 节点状态已变更为非 running，强行退出等待。")
+                raise asyncio.CancelledError()
+
+            dynamic_push = self.consume_pending_messages(context)
+            if dynamic_push:
+                self.log(context, "SYSTEM", "▶️ [唤醒成功] 节点收到人类干预指令，准备进入下一轮大模型对话。")
+                
+                context.node_state[self.node_id] = "running"
+                
+                return [{"role": "user", "content": msg} for msg in dynamic_push]

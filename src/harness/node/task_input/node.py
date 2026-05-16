@@ -9,13 +9,9 @@ class Node(BaseNode):
     async def execute(
         self, inputs: Dict[str, Any], force_push_msgs: list, context: Any
     ) -> Dict[str, Any]:
-        # 直接将引擎传入的全局入参作为自己的输出流下发
-        # 例如 context.inputs 为 {"prompt": "写个贪吃蛇", "github_url": "..."}
-        # 那么连线可以通过 sourceHandle="prompt" 拿到对应的值
+        self.log(context, "SYSTEM", f"📥 [引擎入口] 获取到全局启动参数，键值: {list(context.inputs.keys())}")
 
-        self.log(
-            context, "SYSTEM", f"📥 获取到全局输入参数: {list(context.inputs.keys())}"
-        )
+        # 记录落盘
+        self.save_checkpoints(context, {"inputs": {}, "outputs": context.inputs})
 
-        # 将整个 inputs 字典作为输出返回
         return context.inputs

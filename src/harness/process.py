@@ -112,6 +112,20 @@ class Task:
         with open(graph_path, "r", encoding="utf-8") as f:
             self.graph = json.load(f)
 
+        # 🌟 洗牌算法：重置所有的节点 ID 保证绝对唯一，防止图内同名节点数据污染
+        id_mapping = {}
+        for node_data in self.graph.get("nodes", []):
+            original_id = node_data.get("id")
+            # 添加短UUID后缀：原ID + 6位UUID
+            new_id = f"{original_id}_{uuid.uuid4().hex[:6]}"
+            id_mapping[original_id] = new_id
+            node_data["id"] = new_id
+
+        # 同步重塑 Edges 连线的源与目标
+        for edge in self.graph.get("edges", []):
+            edge["source"] = id_mapping.get(edge.get("source"), edge.get("source"))
+            edge["target"] = id_mapping.get(edge.get("target"), edge.get("target"))
+
         # 🌟 核心：兼容字典和列表两种格式的 required_inputs
         required_inputs = self.graph.get("required_inputs", {})
         if isinstance(required_inputs, list):
@@ -146,53 +160,60 @@ class Task:
                 self.error_message = f"节点加载失败: {e}"
 
     def submit_request(self, node_id: str, content: str):
-        """人类/系统外部向某个节点强行注入信息"""
+        """人类/系统外部向某个节点强行注入信息，并带智能连带重置策略"""
         if node_id not in self.node_list:
-            return
+            return False
 
-        # 1. 记录待推送消息
+        if self.state in [TaskState.COMPLETED, TaskState.KILLED]:
+            self.log_and_notify(LogType.WARNING, f"⚠️ [注入拒绝] 任务已处于终态({self.state})，无法再注入指令。")
+            return False
+
         with self._lock:
             if node_id not in self.pending_push_message:
                 self.pending_push_message[node_id] = []
+
+        # 🌟 核心判断矩阵
+        if self.state != TaskState.RUNNING:
+            # 【情形A】任务不在运行中：可能是被挂起(INTERRUPTED)或出错了(ERROR)
+            # 1. 揪出所有处于 ERROR 或 WAITING 的异常节点，连同它们的子树全部 reset
+            abnormal_nodes = [nid for nid, state in self.node_state.items() if state in [NodeState.ERROR, NodeState.WAITING]]
+            for anid in abnormal_nodes:
+                self._cascade_reset(anid, include_self=True)
+            
+            # 2. 对注入的目标节点自身及其子树进行 reset
+            self._cascade_reset(node_id, include_self=True)
             self.pending_push_message[node_id].append(content)
 
-        # 2. 触发级联重置（通知所有下游）
-        self._cascade_reset(node_id, content)
-
-        # 3. 唤醒引擎
-        if self.state != TaskState.RUNNING:
+            # 3. 重启引擎
             if self._loop and self._loop.is_running():
                 asyncio.run_coroutine_threadsafe(self.run(), self._loop)
             else:
                 asyncio.create_task(self.run())
-
-    def _cascade_reset(self, start_node_id: str, human_instruction: str):
-        """级联效应：重置目标节点及其所有下游节点"""
-
-        # [核心修复] 1. 首先重置被注入的起点节点本身
-        self.node_state[start_node_id] = NodeState.READY
-        task_to_cancel = None
-        for t, n_id in list(self.running_tasks.items()):
-            if n_id == start_node_id:
-                task_to_cancel = t
-                break
-
-        # 如果该节点正在运行，直接打断并重跑
-        if task_to_cancel and not task_to_cancel.done():
-            if self._loop and self._loop.is_running():
-                self._loop.call_soon_threadsafe(task_to_cancel.cancel)
+        else:
+            # 【情形B】任务正在热运行中 (RUNNING)
+            target_state = self.node_state.get(node_id)
+            if target_state == NodeState.RUNNING:
+                # B1: 目标正巧也在跑（比如正等模型响应），直接塞进信箱，节点执行里的循环会取走它
+                self.pending_push_message[node_id].append(content)
             else:
-                task_to_cancel.cancel()
-            self.running_tasks.pop(task_to_cancel)
-            self.log_and_notify(
-                LogType.SYSTEM, f"🛑 [重新注入] 强行中断并重置目标节点: {start_node_id}"
-            )
+                # B2: 目标不在运行(可能已完成，或尚未调度到)，强行铲掉它和下游，再注入
+                self._cascade_reset(node_id, include_self=True)
+                self.pending_push_message[node_id].append(content)
 
-        # 2. 开始 BFS 寻找下游节点并级联阻断
+        return True
+
+    def _cascade_reset(self, start_node_id: str, include_self: bool = False):
+        """
+        纯函数式级联截断：支持是否包含自身。直接调用基类的 reset 方法彻查数据。
+        """
         queue = deque([start_node_id])
         visited = set([start_node_id])
-
         edges = self.graph.get("edges", [])
+
+        # 是否包含自身
+        if include_self:
+            self._reset_single_node(start_node_id)
+
         while queue:
             curr_id = queue.popleft()
             for edge in edges:
@@ -201,36 +222,30 @@ class Task:
                     if target_id not in visited:
                         visited.add(target_id)
                         queue.append(target_id)
+                        self._reset_single_node(target_id)
+                        
+    def _reset_single_node(self, node_id: str):
+        """将单一节点打回原形，抹除运行时数据并取消执行"""
+        self.node_state[node_id] = NodeState.READY
+        
+        # 调用新版 BaseNode 的 reset 释放 output 和 checkpoints
+        if node_id in self.node_list:
+            self.node_list[node_id].reset(self)
 
-                        # 1. 状态全部退回 READY，等待重新调度
-                        self.node_state[target_id] = NodeState.READY
+        # 无情强杀协程
+        task_to_cancel = None
+        for t, n_id in list(self.running_tasks.items()):
+            if n_id == node_id:
+                task_to_cancel = t
+                break
 
-                        # 2. 如果下游节点正在执行，立刻 kill 掉它的协程
-                        task_to_cancel = None
-                        for t, n_id in list(self.running_tasks.items()):
-                            if n_id == target_id:
-                                task_to_cancel = t
-                                break
-
-                        if task_to_cancel and not task_to_cancel.done():
-                            if self._loop and self._loop.is_running():
-                                self._loop.call_soon_threadsafe(task_to_cancel.cancel)
-                            else:
-                                task_to_cancel.cancel()
-                            self.running_tasks.pop(task_to_cancel)
-                            self.log_and_notify(
-                                LogType.SYSTEM, f"🛑 [级联中断] 下游节点: {target_id}"
-                            )
-
-                        # 3. 给下游节点注入级联通知
-                        with self._lock:
-                            cascade_msg = (
-                                f"前置节点 {start_node_id} 被注入新的指令：{human_instruction}，"
-                                f"请检查其改动是否影响了你的工作，并根据最新上下文重新生成。"
-                            )
-                            if target_id not in self.pending_push_message:
-                                self.pending_push_message[target_id] = []
-                            self.pending_push_message[target_id].append(cascade_msg)
+        if task_to_cancel and not task_to_cancel.done():
+            if self._loop and self._loop.is_running():
+                self._loop.call_soon_threadsafe(task_to_cancel.cancel)
+            else:
+                task_to_cancel.cancel()
+            self.running_tasks.pop(task_to_cancel)
+            self.log_and_notify(LogType.SYSTEM, f"🛑 [级联重置] 斩断并重置节点状态数据: {node_id}")
 
     async def run(self, max_concurrency: int = 5) -> dict:
         """基于 DAG 的并发执行，🌟 携带标准的结果出口协议"""
@@ -407,11 +422,16 @@ class Task:
             self.log_and_notify(LogType.SYSTEM, f"⚠️ 自动回收 Shell 失败: {e}")
 
     def log_and_notify(self, log_type: str, content: str, node_id: str = None):
+        # 🌟 强硬拦截：不允许没有任何 node_id 归属的野日志产生
+        if not node_id:
+            # 如果你依然想在后台记录引擎启停，可以默默 return 掉，
+            # 也可以强制给它赋一个虚拟 ID，这里我们按照你的要求直接拦截。
+            return
+
         log_dir = self.checkpoint_dir
         os.makedirs(log_dir, exist_ok=True)
-        log_data = {"content": content, "timestamp": time.time(), "type": log_type}
-        if node_id:
-            log_data["node_id"] = node_id
+        log_data = {"content": content, "timestamp": time.time(), "type": log_type, "node_id": node_id}
+
         with self._io_lock:
             with open(os.path.join(log_dir, "log.jsonl"), "a", encoding="utf-8") as f:
                 f.write(json.dumps(log_data, ensure_ascii=False) + "\n")
@@ -501,6 +521,9 @@ class Task:
                         n_info.get("state", "ready").lower()
                     )
                     task.node_list[n_id].outputs = n_info.get("outputs", {})
+                    
+                    # 🌟 让节点自行恢复更深层的 Checkpoint 状态
+                    task.node_list[n_id].load_checkpoints(task)
 
             if task.state in [
                 TaskState.READY,

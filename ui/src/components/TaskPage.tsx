@@ -125,39 +125,37 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
     setCurrentNodeLogs([]);
 
     try {
-      const targetGraph = task.graph_name || 'default';
+      // 🌟 核心修改：不再去拉静态 /api/graphs，直接拉取该任务当前的完整运行时状态
+      const stateRes = await fetch(`http://localhost:8000/api/tasks/${task.id}/state`);
+      
+      if (stateRes.ok) {
+        const stateData = await stateRes.json();
+        
+        // 🌟 直接使用后端落盘的动态裂变后的 graph，保证 ID 100% 匹配
+        const graph = stateData.graph || { nodes: [], edges: [] };
+        
+        // 兼容你的 FastAPI 包装：如果后端是 dag_state 就取 dag_state，否则 node_states
+        const actualNodeStates = stateData.dag_state || stateData.node_states || {};
+        const isCurrentlyRunning = stateData.state === 'running' || stateData.task_state === 'running';
 
-      const [gRes, stateRes] = await Promise.all([
-        fetch(`http://localhost:8000/api/graphs/${targetGraph}`),
-        fetch(`http://localhost:8000/api/tasks/${task.id}/state`).catch(() => null)
-      ]);
-
-      if (gRes.ok) {
-        const graph = await gRes.json();
-
-        let actualNodeStates: Record<string, string> = {};
-        let isCurrentlyRunning = task.state === 'running';
-
-        if (stateRes && stateRes.ok) {
-          const stateData = await stateRes.json();
-          actualNodeStates = stateData.node_states || {};
-          if (stateData.task_state) {
-            isCurrentlyRunning = stateData.task_state === 'running';
-          }
-        }
-
-        const flowNodes = graph.nodes.map((n: any, idx: number) => ({
-          id: n.id,
-          type: 'custom',
-          position: n.position || { x: 100 + (idx % 3) * 280, y: 100 + Math.floor(idx / 3) * 180 },
-          data: {
-            label: n.name && n.name.trim() ? n.name : n.id,
-            shape: idx % 2 === 0 ? sketchyShape1 : sketchyShape2,
-            isTaskRunning: isCurrentlyRunning,
-            nodeState: actualNodeStates[n.id] || 'ready',
-            onShowLog: (nodeId: string) => setLogModalNodeId(nodeId)
-          }
-        }));
+        const flowNodes = graph.nodes.map((n: any, idx: number) => {
+          // 在 dag_state 结构下，状态可能是 { state: "running", outputs: {} }，做一下提取兼容
+          const nodeInfo = actualNodeStates[n.id];
+          const currentState = typeof nodeInfo === 'object' && nodeInfo !== null ? (nodeInfo.state || 'ready') : (nodeInfo || 'ready');
+          
+          return {
+            id: n.id, // 这里已经是裂变后的动态 ID 啦！
+            type: 'custom',
+            position: n.position || { x: 100 + (idx % 3) * 280, y: 100 + Math.floor(idx / 3) * 180 },
+            data: {
+              label: n.name && n.name.trim() ? n.name : n.id,
+              shape: idx % 2 === 0 ? sketchyShape1 : sketchyShape2,
+              isTaskRunning: isCurrentlyRunning,
+              nodeState: currentState.toLowerCase(),
+              onShowLog: (nodeId: string) => setLogModalNodeId(nodeId)
+            }
+          };
+        });
 
         const flowEdges = graph.edges.map((e: any) => ({
           id: `e-${e.source}-${e.target}`,
@@ -170,7 +168,7 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
         setNodes(flowNodes);
         setEdges(flowEdges);
       } else {
-        toast.error(`无法找到架构文件: ${targetGraph}`);
+        toast.error(`无法获取任务状态记录`);
       }
     } catch (e) {
       toast.error(`加载图谱失败`);
@@ -206,18 +204,22 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
         const res = await fetch(`http://localhost:8000/api/tasks/${selectedTaskId}/state`);
         if (res.ok) {
           const data = await res.json();
-          const nodeStates = data.node_states || {};
-          const isCurrentlyRunning = data.state === 'running';
+          // 🌟 兼容后端结构
+          const nodeStates = data.dag_state || data.node_states || {};
+          const isCurrentlyRunning = data.state === 'running' || data.task_state === 'running';
 
           setNodes((nds) =>
             nds.map((n) => {
-              const currentState = nodeStates[n.id] || 'ready';
-              if (n.data.nodeState !== currentState || n.data.isTaskRunning !== isCurrentlyRunning) {
+              // 取出真实状态
+              const nodeInfo = nodeStates[n.id];
+              const currentState = (typeof nodeInfo === 'object' && nodeInfo !== null ? nodeInfo.state : nodeInfo) || 'ready';
+              
+              if (n.data.nodeState !== currentState.toLowerCase() || n.data.isTaskRunning !== isCurrentlyRunning) {
                 return {
                   ...n,
                   data: {
                     ...n.data,
-                    nodeState: currentState,
+                    nodeState: currentState.toLowerCase(),
                     isTaskRunning: isCurrentlyRunning
                   }
                 };

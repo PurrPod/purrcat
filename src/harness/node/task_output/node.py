@@ -9,14 +9,12 @@ class Node(BaseNode):
     async def execute(
         self, inputs: Dict[str, Any], force_push_msgs: list, context: Any
     ) -> Dict[str, Any]:
-        # inputs 里面包含了上游连线传过来的所有数据
-        # 例如: {"final_messages": [...], "task_summary": "..."}
-
         for key, value in inputs.items():
             context.outputs[key] = value
 
-        self.log(
-            context, "SYSTEM", f"📤 全局输出已就绪，最终打包字段: {list(inputs.keys())}"
-        )
+        self.log(context, "SYSTEM", f"📤 [引擎出口] DAG流转结束！最终收集到的全局参数: {list(inputs.keys())}")
+
+        # 记录落盘
+        self.save_checkpoints(context, {"inputs": inputs, "outputs": {"status": "dag_completed"}})
 
         return {"default": True}

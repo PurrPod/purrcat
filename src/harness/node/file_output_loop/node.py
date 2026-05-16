@@ -6,7 +6,7 @@ from typing import Any, Dict
 from src.harness.enums import LogType, NodeState
 from src.harness.node.base import BaseNode
 from src.harness.utils.llm_helper import call_llm, inject_force_push
-from src.harness.utils.tool_helper import extract_tool_calling, get_system_schema
+from src.harness.utils.tool_helper import extract_tool_calling
 
 
 class Node(BaseNode):
@@ -16,7 +16,7 @@ class Node(BaseNode):
         self, inputs: Dict[str, Any], force_push_msgs: list, context: Any
     ) -> Dict[str, Any]:
         messages = inputs.get("messages", [])
-        tools = get_system_schema()
+        tools = self.get_all_tools()
 
         original_file_path = inputs.get("file_path") or self.config.get("file_path")
 
@@ -32,9 +32,14 @@ class Node(BaseNode):
             if original_file_path.startswith("/agent_vm/")
             else original_file_path[len("/agent_vm") :]
         )
-        check_file_path = os.path.abspath(
-            os.path.join(os.getcwd(), "agent_vm", check_file_path)
-        )
+
+        # 计算沙盒根目录
+        sandbox_root = os.path.abspath(os.path.join(os.getcwd(), "agent_vm"))
+        check_file_path = os.path.abspath(os.path.join(sandbox_root, check_file_path.lstrip("/")))
+
+        # 【新增安全校验】防止路径穿越攻击
+        if not check_file_path.startswith(sandbox_root):
+            raise ValueError(f"安全警告: 文件路径存在越权访问风险 {original_file_path}")
 
         # 初始的外部 force_push
         if force_push_msgs:
@@ -42,6 +47,11 @@ class Node(BaseNode):
 
         step = 0
         max_steps = 500
+
+        # 连续错误计数器 - 用于熔断机制
+        consecutive_no_tool_errors = 0
+        consecutive_file_missing_errors = 0
+        MAX_CONSECUTIVE_ERRORS = 3  # 连续错误阈值
 
         try:
             while step < max_steps:
@@ -115,8 +125,49 @@ class Node(BaseNode):
                             f"   └─ {tc.function.name}({args_preview})",
                         )
                 else:
+                    consecutive_no_tool_errors += 1
+                    consecutive_file_missing_errors = 0  # 重置另一类错误计数
+
+                    if consecutive_no_tool_errors >= MAX_CONSECUTIVE_ERRORS:
+                        self.log(
+                            context,
+                            LogType.SYSTEM,
+                            f"🔴 [熔断触发] 连续 {MAX_CONSECUTIVE_ERRORS} 次未调用工具，强制挂起求助人类",
+                        )
+                        # 强制挂起并通知用户
+                        context.node_state[self.node_id] = NodeState.WAITING
+                        try:
+                            from src.agent.manager import get_agent
+
+                            agent = get_agent()
+                            if agent:
+                                agent.force_push(
+                                    f"🔴 子任务 [{context.task_name}] (ID: {context.task_id}) 的节点 [{self.node_id}] 触发熔断：连续 {MAX_CONSECUTIVE_ERRORS} 次未调用工具，任务陷入死循环，请人工介入！",
+                                    type="task_message",
+                                )
+                        except Exception as e:
+                            self.log(context, LogType.ERROR, f"通知 Agent 失败: {e}")
+
+                        # 等待人类干预
+                        while True:
+                            await asyncio.sleep(2)
+                            if not self.check_running_state(context):
+                                raise asyncio.CancelledError()
+                            dynamic_push = self.consume_pending_messages(context)
+                            if dynamic_push:
+                                self.log(
+                                    context,
+                                    LogType.SYSTEM,
+                                    "▶️ [节点恢复] 收到指令，唤醒执行",
+                                )
+                                messages = inject_force_push(messages, dynamic_push)
+                                context.node_state[self.node_id] = NodeState.RUNNING
+                                consecutive_no_tool_errors = 0  # 重置计数器
+                                break
+                        continue
+
                     self.log(
-                        context, LogType.SYSTEM, "⚠️ [无工具调用] 模型未调用任何工具"
+                        context, LogType.SYSTEM, f"⚠️ [无工具调用] 模型未调用任何工具 (连续 {consecutive_no_tool_errors}/{MAX_CONSECUTIVE_ERRORS})"
                     )
                     messages.append(
                         {
@@ -126,8 +177,8 @@ class Node(BaseNode):
                     )
                     continue
 
-                # 🚨 修正：使用基类的工具路由分发方法
-                tool_messages = self.execute_tool_calling(tool_calls, context)
+                # 🚨 享受重构红利：直接把 response 丢给基类分发器
+                tool_messages, is_task_done, is_yield = await self.execute_tool_calling(response, context)
                 if tool_messages:
                     self.log(
                         context,
@@ -136,17 +187,12 @@ class Node(BaseNode):
                     )
                     messages.extend(tool_messages)
 
-                # 🌟 处理 yield_to_human 挂起逻辑
-                is_yield = any(
-                    tc.function.name == "yield_to_human" for tc in tool_calls
-                )
+                # 🌟 处理 yield_to_human 挂起阻塞
                 if is_yield:
                     self.log(
                         context, LogType.SYSTEM, "⏸️ [节点挂起] 正在阻塞等待人类干预..."
                     )
-                    context.node_state[self.node_id] = NodeState.WAITING  # 修改节点状态
 
-                    # [新增] 主动给 Agent 发送弹窗通知
                     try:
                         from src.agent.manager import get_agent
 
@@ -159,67 +205,82 @@ class Node(BaseNode):
                     except Exception as e:
                         self.log(context, LogType.ERROR, f"通知 Agent 失败: {e}")
 
-                    # 真正的阻塞！只有等来了人类输入才跳出循环
-                    while True:
-                        await asyncio.sleep(2)  # 释放 CPU
-                        # 检查是否被强制终止
-                        if not self.check_running_state(context):
-                            self.log(
-                                context,
-                                LogType.SYSTEM,
-                                "⚠️ [循环退出] 节点状态已变更为非 running",
-                            )
-                            raise asyncio.CancelledError()
-                        dynamic_push = self.consume_pending_messages(context)
-                        if dynamic_push:
-                            self.log(
-                                context,
-                                LogType.SYSTEM,
-                                "▶️ [节点恢复] 收到指令，唤醒执行",
-                            )
-                            messages = inject_force_push(messages, dynamic_push)
-                            context.node_state[self.node_id] = NodeState.RUNNING
-                            break
-                    continue  # 带着人类的新指令，进入下一轮 LLM 对话
+                    # 🌟 听你的，直接拿到新消息，不传历史列表进去了
+                    new_human_msgs = await self.wait_for_human_intervention(context)
+                    messages.extend(new_human_msgs)
+                    
+                    continue
 
-                # 🌟 限定在 task_done 上才进行任务完成校验
-                is_done = any(tc.function.name == "task_done" for tc in tool_calls)
-                if is_done:
+                # 🌟 验证任务完成
+                if is_task_done:
                     if self._check_file_exist(check_file_path):
                         self.log(
                             context,
                             LogType.SYSTEM,
                             f"✅ [文件验证] 目标文件已存在: {original_file_path}",
                         )
-                        messages.append(
-                            {
-                                "role": "user",
-                                "content": f"✅ 检测到你调用了 task_done，目标文件 {original_file_path} 已成功生成，任务完成！",
-                            }
-                        )
-                        summary = assistant_msg.content or "任务完成"
+
+                        # 解析 task_done 传来的字典
+                        final_summary = {}
                         for tc in tool_calls:
                             if tc.function.name == "task_done":
                                 try:
                                     args = json.loads(tc.function.arguments)
-                                    summary = args.get("summary", summary)
+                                    final_summary = args.get("summary", {})
                                 except Exception:
                                     pass
-                        self.log(
-                            context,
-                            LogType.SYSTEM,
-                            (
-                                f"✅ [任务完成] 总结: {summary[:100]}..."
-                                if len(summary) > 100
-                                else f"✅ [任务完成] 总结: {summary}"
-                            ),
-                        )
-                        return {"messages": messages, "summary": summary}
+
+                        # 🌟 最爽的一步：节点完美落盘
+                        final_outputs = {"messages": messages, "summary": final_summary}
+                        self.save_checkpoints(context, {"inputs": inputs, "outputs": final_outputs})
+
+                        return final_outputs
                     else:
+                        consecutive_file_missing_errors += 1
+                        consecutive_no_tool_errors = 0  # 重置另一类错误计数
+
+                        if consecutive_file_missing_errors >= MAX_CONSECUTIVE_ERRORS:
+                            self.log(
+                                context,
+                                LogType.SYSTEM,
+                                f"🔴 [熔断触发] 连续 {MAX_CONSECUTIVE_ERRORS} 次文件生成失败，强制挂起求助人类",
+                            )
+                            # 强制挂起并通知用户
+                            context.node_state[self.node_id] = NodeState.WAITING
+                            try:
+                                from src.agent.manager import get_agent
+
+                                agent = get_agent()
+                                if agent:
+                                    agent.force_push(
+                                        f"🔴 子任务 [{context.task_name}] (ID: {context.task_id}) 的节点 [{self.node_id}] 触发熔断：连续 {MAX_CONSECUTIVE_ERRORS} 次文件生成失败，请人工介入！",
+                                        type="task_message",
+                                    )
+                            except Exception as e:
+                                self.log(context, LogType.ERROR, f"通知 Agent 失败: {e}")
+
+                            # 等待人类干预
+                            while True:
+                                await asyncio.sleep(2)
+                                if not self.check_running_state(context):
+                                    raise asyncio.CancelledError()
+                                dynamic_push = self.consume_pending_messages(context)
+                                if dynamic_push:
+                                    self.log(
+                                        context,
+                                        LogType.SYSTEM,
+                                        "▶️ [节点恢复] 收到指令，唤醒执行",
+                                    )
+                                    messages = inject_force_push(messages, dynamic_push)
+                                    context.node_state[self.node_id] = NodeState.RUNNING
+                                    consecutive_file_missing_errors = 0  # 重置计数器
+                                    break
+                            continue
+
                         self.log(
                             context,
                             LogType.SYSTEM,
-                            f"⚠️ [文件缺失] 目标文件未生成: {original_file_path}，要求重新生成",
+                            f"⚠️ [文件缺失] 目标文件未生成: {original_file_path}，要求重新生成 (连续 {consecutive_file_missing_errors}/{MAX_CONSECUTIVE_ERRORS})",
                         )
                         full_msg = f"未检测到沙盒文件：{original_file_path}。请检查是否生成在了其他路径，并及时生成目标文件。如果你实在无法完成任务，请使用yield_to_human工具直接挂起任务，这是被允许的！"
                         messages.append({"role": "user", "content": full_msg})

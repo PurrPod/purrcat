@@ -2,7 +2,7 @@ from typing import Any, Dict
 
 from src.harness.node.base import BaseNode
 from src.harness.utils.llm_helper import call_llm, inject_force_push
-from src.harness.utils.tool_helper import get_system_schema
+
 
 
 class Node(BaseNode):
@@ -15,7 +15,7 @@ class Node(BaseNode):
 
         messages = inject_force_push(messages, force_push_msgs)
 
-        tools = get_system_schema()
+        tools = self.get_all_tools()
 
         response, messages = await call_llm(
             model=context.model, messages=messages, tools=tools

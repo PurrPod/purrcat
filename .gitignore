@@ -11,6 +11,7 @@ PLAN.md
 scripts/start_mini.bat
 scripts/start_mini.sh
 clean_pycache.bat
+run_ci.bat
 data/memo
 data/tracker
 data/memory
