@@ -1,5 +1,4 @@
 from typing import Any, Dict
-
 from src.harness.node.base import BaseNode
 
 
@@ -17,4 +16,8 @@ class Node(BaseNode):
         if append_list and isinstance(append_list, list):
             result_list.extend(append_list)
 
-        return {"merged_list": result_list}
+        self.log(context, "SYSTEM", f"🔗 [列表追加] 基础长度: {len(base_list or [])}，追加长度: {len(append_list or [])}，合并后: {len(result_list)}")
+
+        outputs = {"merged_list": result_list}
+        self.save_checkpoints(context, {"inputs": inputs, "outputs": outputs})
+        return outputs

@@ -1,0 +1,263 @@
+# 文件路径: src/harness/node/agent_node.py
+
+import asyncio
+import json
+from typing import Any, Dict, List
+
+from src.harness.enums import LogType, NodeState
+from src.harness.node.base import BaseNode, _format_result
+from src.harness.utils.llm_helper import call_llm, inject_force_push
+from src.harness.utils.tool_helper import execute_global_tool, extract_tool_calling
+
+
+class AgentNode(BaseNode):
+    """
+    专门处理 LLM 对话、工具调用、大循环控制以及人类干预的节点基类
+    """
+
+    WORKFLOW_CORE_TOOLS = [
+        {
+            "type": "function",
+            "function": {
+                "name": "task_done",
+                "description": "标记当前阶段任务完成。必须在此刻对成果进行全面总结。",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "summary": {
+                            "type": "object",
+                            "description": "对当前阶段的结构化总结数据（请严格按照系统要求的 JSON 键值对格式输出）"
+                        }
+                    },
+                    "required": ["summary"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "yield_to_human",
+                "description": "将控制权交还给人类，请求人工干预或确认",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "reason": {
+                            "type": "string",
+                            "description": "需要人类干预的原因"
+                        }
+                    },
+                    "required": ["reason"]
+                }
+            }
+        }
+    ]
+
+    def get_all_tools(self) -> List[dict]:
+        from src.harness.utils.tool_helper import get_system_schema
+        tools = get_system_schema()
+        tools.extend(self.WORKFLOW_CORE_TOOLS)
+        return tools
+
+    async def execute_tool_calling(self, response: Any, context: Any) -> tuple[list, bool, bool]:
+        """统一处理普通工具、拓展工具与工作流原语"""
+        tool_calls = extract_tool_calling(response)
+        tool_messages = []
+        is_task_done = False
+        is_yield = False
+
+        for tc in tool_calls:
+            original_tool_name = tc.function.name
+            arguments_str = tc.function.arguments
+            try:
+                arguments = json.loads(arguments_str) if arguments_str else {}
+            except json.JSONDecodeError:
+                arguments = {}
+
+            final_content = ""
+
+            if original_tool_name == "task_done":
+                summary = arguments.get("summary", {})
+                if not isinstance(summary, dict):
+                    summary = {"raw": str(summary)}
+
+                if self.task_done_info:
+                    missing_keys = [f"'{k}' ({v})" for k, v in self.task_done_info.items() if k not in summary]
+                    if missing_keys:
+                        error_msg = f"❌ [格式错误] 你尝试完成任务，但 summary 缺失了系统强制要求的关键信息：{', '.join(missing_keys)}。"
+                        self.log(context, "WARNING", f"⚠️ [任务完结被拒] 大模型缺少必填参数: {missing_keys}")
+                        final_content = _format_result({
+                            "error": error_msg,
+                            "instruction": "请重新调用 task_done 工具，并确保 summary 参数严格包含上述提到的所有键值对！",
+                            "required_schema": self.task_done_info
+                        })
+                    else:
+                        if context: context.result = True
+                        self.log(context, "SYSTEM",
+                                 f"✅ [任务完结校验通过] 输出合规: {json.dumps(summary, ensure_ascii=False)}")
+                        final_content = _format_result({"status": "success", "summary": summary})
+                        is_task_done = True
+                else:
+                    if context: context.result = True
+                    self.log(context, "SYSTEM",
+                             f"✅ [任务完结信号] 大模型总结: {json.dumps(summary, ensure_ascii=False)}")
+                    final_content = _format_result({"status": "success", "summary": summary})
+                    is_task_done = True
+
+            elif original_tool_name == "yield_to_human":
+                reason = arguments.get("reason", "需要人工干预")
+                self.log(context, "SYSTEM", f"⏸️ [请求干预] 理由: {reason}")
+                context.node_state[self.node_id] = "waiting"
+                final_content = _format_result({"status": "suspended", "message": "已挂起，等待人类注入指令"})
+                is_yield = True
+
+            elif original_tool_name == "call_tool":
+                action = arguments.get("action", "execute")
+                local_registry, local_schemas = self.get_local_tools()
+                if action == "list":
+                    if not local_schemas:
+                        msg = "当前节点暂未挂载任何拓展业务工具。"
+                    else:
+                        schema_list_str = json.dumps([s["function"] for s in local_schemas], ensure_ascii=False,
+                                                     indent=2)
+                        msg = f"当前可用的拓展业务工具有以下几种，请参考其参数格式并在下一步调用：\n{schema_list_str}"
+                    final_content = _format_result({"available_tools": msg})
+                elif action == "execute":
+                    target_tool_name = arguments.get("tool_name")
+                    target_arguments = arguments.get("tool_args", {})
+                    if not target_tool_name or target_tool_name not in local_registry:
+                        final_content = _format_result({"error": f"⚠️ [工具缺失] 未找到 '{target_tool_name}'"})
+                    else:
+                        try:
+                            self.log(context, LogType.TOOL_CALL, f"🔧 [拓展工具] {target_tool_name}")
+                            ToolClass = local_registry[target_tool_name]
+                            raw_result = ToolClass(context=context).execute(target_arguments)
+                            final_content = _format_result(raw_result)
+                        except Exception as e:
+                            final_content = _format_result(
+                                {"error": f"❌ [工具异常] {target_tool_name} 执行失败: {str(e)}"})
+            else:
+                try:
+                    self.log(context, LogType.TOOL_CALL, f"🔧 [全局工具] {original_tool_name}")
+                    raw_result = execute_global_tool(original_tool_name, arguments, context=context)
+                    final_content = _format_result(raw_result)
+                    self.log(context, LogType.TOOL,
+                             f"📦 [工具返回] {original_tool_name} -> {str(final_content)[:50]}...")
+                except Exception as e:
+                    final_content = _format_result({"error": f"❌ [工具崩溃] {original_tool_name}: {e}"})
+
+            tool_messages.append({
+                "role": "tool",
+                "tool_call_id": tc.id,
+                "name": original_tool_name,
+                "content": final_content,
+            })
+
+        return tool_messages, is_task_done, is_yield
+
+    async def run_agent_loop(self, context: Any, messages: List[Dict], tools: List[Dict], max_steps: int = 500) -> Dict[
+        str, Any]:
+        """
+        核心纯净的 Agent 大循环：只负责思考 -> 调用工具 -> 产出结果。
+        遇到 task_done 立刻返回全量历史和 summary 给外层节点校验。
+        """
+        step = 0
+        consecutive_no_tool_errors = 0
+        MAX_CONSECUTIVE_ERRORS = 3
+
+        try:
+            while step < max_steps:
+                step += 1
+                self.log(context, LogType.SYSTEM,
+                         f"🔄 [Agent思考步] 第 {step}/{max_steps} 步，上下文: {len(messages)} 条")
+
+                if not self.check_running_state(context):
+                    self.log(context, LogType.SYSTEM, "⚠️ [循环退出] 节点状态已变更为非 running")
+                    raise asyncio.CancelledError()
+
+                dynamic_push = self.consume_pending_messages(context)
+                if dynamic_push:
+                    self.log(context, LogType.SYSTEM, f"🔔 [指令注入] 收到 {len(dynamic_push)} 条注入")
+                    messages = inject_force_push(messages, dynamic_push)
+
+                response, messages = await call_llm(context.model, messages, tools)
+                assistant_msg = response.choices[0].message
+                tool_calls = extract_tool_calling(response)
+
+                if assistant_msg.content:
+                    self.log(context, LogType.SYSTEM, f"💭 [模型思考] {assistant_msg.content[:100]}...")
+
+                if not tool_calls:
+                    consecutive_no_tool_errors += 1
+                    if consecutive_no_tool_errors >= MAX_CONSECUTIVE_ERRORS:
+                        await self._trigger_circuit_breaker(context, messages, "连续多次未调用工具，任务陷入死循环")
+                        consecutive_no_tool_errors = 0
+                        continue
+                    self.log(context, LogType.SYSTEM,
+                             f"⚠️ [无工具调用] 模型未调用工具 ({consecutive_no_tool_errors}/{MAX_CONSECUTIVE_ERRORS})")
+                    messages.append(
+                        {"role": "user", "content": "检测到你没有调用任何工具，如已完成任务，请调用 task_done 工具。"})
+                    continue
+
+                tool_messages, is_task_done, is_yield = await self.execute_tool_calling(response, context)
+                if tool_messages:
+                    messages.extend(tool_messages)
+
+                if is_yield:
+                    self.log(context, LogType.SYSTEM, "⏸️ [节点挂起] 正在阻塞等待人类干预...")
+                    self._notify_agent(context, "正在等待进一步指令，已挂起。请注入指令！")
+                    new_human_msgs = await self.wait_for_human_intervention(context)
+                    messages.extend(new_human_msgs)
+                    continue
+
+                if is_task_done:
+                    final_summary = self._extract_summary(tool_calls, assistant_msg.content)
+                    self.log(context, LogType.SYSTEM, f"🟢 [闭环跳出] 大模型主动完结任务，交回外层节点控制权。")
+                    return {"messages": messages, "summary": final_summary}
+
+        except asyncio.CancelledError:
+            self.log(context, LogType.SYSTEM, "🛑 [节点中断] 引擎强行打断当前协程")
+            raise
+        except Exception as e:
+            self.log(context, LogType.ERROR, f"❌ [循环异常] {e}")
+            raise
+
+        if step >= max_steps:
+            raise TimeoutError(f"节点执行超出最大思考步数 ({max_steps})，被强制中断。")
+
+        return {"messages": messages, "summary": "任务完成"}
+
+    async def _trigger_circuit_breaker(self, context, messages, reason: str):
+        self.log(context, LogType.SYSTEM, f"🔴 [熔断触发] {reason}，强制挂起求助人类")
+        context.node_state[self.node_id] = NodeState.WAITING
+        self._notify_agent(context, f"触发熔断：{reason}，请人工介入！")
+        while True:
+            await asyncio.sleep(2)
+            if not self.check_running_state(context):
+                raise asyncio.CancelledError()
+            dynamic_push = self.consume_pending_messages(context)
+            if dynamic_push:
+                self.log(context, LogType.SYSTEM, "▶️ [节点恢复] 收到指令，唤醒执行")
+                messages.extend([{"role": "user", "content": msg} for msg in dynamic_push])
+                context.node_state[self.node_id] = NodeState.RUNNING
+                break
+
+    def _notify_agent(self, context, content: str):
+        try:
+            from src.agent.manager import get_agent
+            agent = get_agent()
+            if agent:
+                agent.force_push(
+                    f"🔴 子任务 [{context.task_name}] (ID: {context.task_id}) 的节点 [{self.node_id}] {content}",
+                    type="task_message")
+        except Exception as e:
+            self.log(context, LogType.ERROR, f"通知 Agent 失败: {e}")
+
+    def _extract_summary(self, tool_calls, fallback_content):
+        summary = fallback_content or "任务完成"
+        for tc in tool_calls:
+            if tc.function.name == "task_done":
+                try:
+                    summary = json.loads(tc.function.arguments).get("summary", summary)
+                except Exception:
+                    pass
+        return summary

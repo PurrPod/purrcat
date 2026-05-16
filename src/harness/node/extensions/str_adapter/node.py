@@ -1,5 +1,4 @@
 from typing import Any, Dict
-
 from src.harness.node.base import BaseNode
 
 
@@ -14,11 +13,8 @@ class Node(BaseNode):
 
         result = str1 + str2
 
-        # 🟢 直接调用 self.log 记录运行状态
-        self.log(
-            context=context,
-            log_type="SYSTEM",
-            content=f"执行了字符串拼接操作，产出长度为 {len(result)} 的字符串。",
-        )
+        self.log(context, "SYSTEM", f"🔤 [字符串拼接] 产出长度为 {len(result)} 的字符串。")
 
-        return {"concatenated_string": result}
+        outputs = {"concatenated_string": result}
+        self.save_checkpoints(context, {"inputs": inputs, "outputs": outputs})
+        return outputs

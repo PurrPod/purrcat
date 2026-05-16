@@ -1,7 +1,6 @@
 import asyncio
 from pathlib import Path
 from typing import Any, Dict
-
 from src.harness.node.base import BaseNode
 
 
@@ -13,8 +12,17 @@ class Node(BaseNode):
     ) -> Dict[str, Any]:
         skill_name = inputs.get("skill_name") or self.config.get("skill_name", "")
 
+        self.log(context, "SYSTEM", f"🔍 [技能获取] 开始检索技能：{skill_name}")
         skill_content = await asyncio.to_thread(self._fetch_skill_local, skill_name)
-        return {"skill_content": skill_content}
+
+        if skill_content:
+            self.log(context, "SYSTEM", f"✅ [技能获取] 成功读取技能 '{skill_name}'，内容长度: {len(skill_content)}")
+        else:
+            self.log(context, "WARNING", f"⚠️ [技能获取] 未找到技能 '{skill_name}' 的内容")
+
+        outputs = {"skill_content": skill_content}
+        self.save_checkpoints(context, {"inputs": inputs, "outputs": outputs})
+        return outputs
 
     def _fetch_skill_local(self, skill_name: str) -> str:
         from src.utils.config import SKILL_DIR

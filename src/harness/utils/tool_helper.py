@@ -59,9 +59,4 @@ def extract_tool_calling(response) -> list:
     return []
 
 
-def check_tool_call_completed(tool_calls: list) -> bool:
-    """辅助方法：检查是否调用了完结任务的核心工具"""
-    for tc in tool_calls:
-        if tc.function.name in ["task_done", "yield_to_human"]:
-            return True
-    return False
+
