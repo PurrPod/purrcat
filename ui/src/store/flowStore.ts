@@ -1,11 +1,12 @@
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware' // 引入持久化插件
+import { persist } from 'zustand/middleware'
 import {
   Node, Edge, Connection, addEdge, applyNodeChanges, applyEdgeChanges,
   NodeChange, EdgeChange, getOutgoers,
 } from '@xyflow/react'
-import { v4 as uuidv4 } from 'uuid'
 import { CatalogItem, GraphExport } from '../types'
+
+const generateShortId = (prefix: string) => `${prefix}_${Math.random().toString(36).substring(2, 8)}`
 
 interface FlowState {
   nodes: Node[];
@@ -53,7 +54,7 @@ export const useFlowStore = create<FlowState>()(
         const definition = get().catalog.find((item) => item.type === type)
         if (!definition) return
         const newNode: Node = {
-          id: uuidv4(),
+          id: generateShortId('nd'),
           type: type === 'task_input' ? 'task_input' : type === 'task_output' ? 'task_output' : 'custom',
           position,
           data: {
@@ -131,26 +132,38 @@ export const useFlowStore = create<FlowState>()(
 
       exportGraph: (name: string): GraphExport => {
         const { nodes, edges } = get()
-
         const taskInputNode = nodes.find(n => n.data.nodeType === 'task_input')
-        const requiredInputs: Record<string, string> = {}
+        
+        const globalSchema: Record<string, any> = {}
         if (taskInputNode && taskInputNode.data.dynamic_inputs) {
           (taskInputNode.data.dynamic_inputs as any[]).forEach((item: any) => {
-            requiredInputs[item.key] = item.desc || 'any'
+            globalSchema[item.key] = {
+              type: item.desc || "any",
+              required: true,
+              description: `动态注入全局参数: ${item.key}`
+            }
           })
         }
 
         return {
+          version: "2.0",
           name,
-          description: "PurrCat Web Export",
-          required_inputs: requiredInputs,
+          description: "PurrCat Web Export - V2",
+          global_schema: globalSchema,
           nodes: nodes.map(n => {
-            const base: any = {
+            const { nodeType, name, color, inputs, outputs, configSchema, dynamic_inputs, ...restConfig } = n.data;
+            const finalConfig = { ...restConfig };
+            if (dynamic_inputs && (dynamic_inputs as any[]).length > 0) {
+              finalConfig.exposed_keys = (dynamic_inputs as any[]).map(d => d.key);
+            }
+
+            return {
               id: n.id,
               type: n.data.nodeType,
-              data: n.data
+              name: n.data.name,
+              position: [Math.round(n.position.x), Math.round(n.position.y)],
+              config: finalConfig
             }
-            return base
           }),
           edges: edges.map(e => ({
             source: e.source, 
@@ -158,24 +171,38 @@ export const useFlowStore = create<FlowState>()(
             sourceHandle: e.sourceHandle || 'default', 
             targetHandle: e.targetHandle || 'default'
           }))
-        }
+        } as any;
       },
 
       clearGraph: () => set({ nodes: [], edges: [], selectedNodeId: null }),
 
       loadGraph: async (graphData: any) => {
-        if (get().catalog.length === 0) {
-          await get().fetchCatalog()
-        }
-        const catalog = get().catalog
-        const loadedNodes: Node[] = []
-
-        const nodes = graphData.nodes || [] as any[]
-        const edges = graphData.edges || [] as any[]
+        if (get().catalog.length === 0) await get().fetchCatalog();
+        const catalog = get().catalog;
         
-        nodes.forEach((node: any, index: number) => {
-          const definition = catalog.find((item) => item.type === node.type)
-          if (!definition) return
+        const nodes = graphData.nodes || [];
+        const edges = graphData.edges || [];
+        
+        const loadedNodes: Node[] = nodes.map((node: any, index: number) => {
+          const definition = catalog.find((item) => item.type === node.type);
+          if (!definition) return null;
+
+          let posX = 100 + (index % 3) * 300, posY = 100 + Math.floor(index / 3) * 150;
+          if (Array.isArray(node.position)) {
+            posX = node.position[0]; posY = node.position[1];
+          } else if (node.position?.x !== undefined) {
+            posX = node.position.x; posY = node.position.y;
+          }
+
+          const sourceData = node.config || node.data || {};
+          let dynamicInputs = [];
+          if (sourceData.exposed_keys) {
+            dynamicInputs = sourceData.exposed_keys.map((k: string) => ({ key: k, desc: 'any' }));
+          } else if (node.data?.dynamic_inputs) {
+            dynamicInputs = node.data.dynamic_inputs;
+          } else if (node.type === 'task_input' && graphData.required_inputs) {
+             Object.keys(graphData.required_inputs).forEach(k => dynamicInputs.push({ key: k, desc: graphData.required_inputs[k] }));
+          }
 
           const defaultData: Record<string, any> = {
             nodeType: node.type,
@@ -184,33 +211,29 @@ export const useFlowStore = create<FlowState>()(
             inputs: definition.inputs,
             outputs: definition.outputs,
             configSchema: definition.config || [],
-            dynamic_inputs: node.data?.dynamic_inputs || [],
-          }
+            dynamic_inputs: dynamicInputs,
+          };
 
-          Object.keys(node.data || {}).forEach((key) => {
-            if (!['nodeType', 'dynamic_inputs', 'name', 'color', 'inputs', 'outputs', 'configSchema'].includes(key)) {
-              defaultData[key] = node.data[key]
-            }
-          })
+          Object.keys(sourceData).forEach((key) => {
+            if (!['exposed_keys'].includes(key)) defaultData[key] = sourceData[key];
+          });
 
-          const nodeType = node.type === 'task_input' ? 'task_input' : node.type === 'task_output' ? 'task_output' : 'custom'
-
-          loadedNodes.push({
+          return {
             id: node.id,
-            type: nodeType,
-            position: node.position || { x: 100 + (index % 3) * 300, y: 100 + Math.floor(index / 3) * 150 },
+            type: node.type === 'task_input' ? 'task_input' : node.type === 'task_output' ? 'task_output' : 'custom',
+            position: { x: posX, y: posY },
             data: defaultData,
-          })
-        })
+          };
+        }).filter(Boolean) as Node[];
 
         const loadedEdges: Edge[] = edges.map((edge: any) => ({
           id: `edge-${edge.source}-${edge.target}-${edge.sourceHandle}`,
           source: edge.source, target: edge.target,
           sourceHandle: edge.sourceHandle || 'default', targetHandle: edge.targetHandle || 'default',
           animated: true,
-        }))
+        }));
 
-        set({ nodes: loadedNodes, edges: loadedEdges, selectedNodeId: null })
+        set({ nodes: loadedNodes, edges: loadedEdges, selectedNodeId: null });
       }
     }),
     { name: 'purrcat-flow-cache' } // localStorage 键名

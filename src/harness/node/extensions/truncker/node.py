@@ -11,6 +11,11 @@ class Node(BaseNode):
         msg_list = inputs.get("list", [])
         start = inputs.get("start_int") or self.config.get("start_int", 0)
         end = inputs.get("end_int") or self.config.get("end_int", len(msg_list))
+        
+        # 🌟 补充边界日志：如果起始点越界，给开发者一个明显警告
+        if start >= len(msg_list) and len(msg_list) > 0:
+             self.log(context, "WARNING", f"⚠️ [列表截断] 异常：起始索引 {start} 大于等于列表总长度 {len(msg_list)}，将输出空列表！")
+
         truncated_list = list(msg_list)[start:end]
 
         self.log(context, "SYSTEM", f"✂️ [列表截断] 索引 {start} 到 {end}，截断前长度: {len(msg_list)}，截断后长度: {len(truncated_list)}")

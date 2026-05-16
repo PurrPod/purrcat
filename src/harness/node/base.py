@@ -3,6 +3,7 @@ import importlib
 import json
 import os
 import sys
+import uuid
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -87,6 +88,8 @@ class BaseNode:
         self.metadata = self._load_metadata()
         # 🌟 新增 task_done_info 属性
         self.task_done_info = self.metadata.get("task_done_info", {})
+        # 🌟 补上内存缓存
+        self._checkpoint_cache = None
 
     def _load_metadata(self) -> dict:
         """
@@ -120,45 +123,80 @@ class BaseNode:
     # ==========================================
     # 🌟 新增：节点专有 Checkpoints 生命周期管理
     # ==========================================
+    def _atomic_save(self, file_path: str, data: dict):
+        """
+        🌟 操作系统级别的原子写入，绝对不会因为断电/强杀导致 JSON 损坏
+        """
+        dir_name = os.path.dirname(file_path)
+        os.makedirs(dir_name, exist_ok=True)
+
+        tmp_path = os.path.join(dir_name, f".{uuid.uuid4().hex}.tmp")
+
+        try:
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+                f.flush()
+                os.fsync(f.fileno())
+
+            os.replace(tmp_path, file_path)
+
+        except Exception as e:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+            self.log(None, "ERROR", f"❌ 节点原子落盘失败: {e}")
+
     def save_checkpoints(self, context: Any, data: dict):
-        """将任意格式的字典持久化到本节点的专属文件中"""
+        """实时更新缓存，并原子落盘"""
+        self._checkpoint_cache = data # 🌟 写入时同步更新内存
         if not context or not hasattr(context, "checkpoint_dir"):
             return
-        
-        chk_dir = os.path.join(context.checkpoint_dir, "nodes_checkpoints")
-        os.makedirs(chk_dir, exist_ok=True)
-        file_path = os.path.join(chk_dir, f"{self.node_id}.json")
-        
-        try:
-            with open(file_path, "w", encoding="utf-8") as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
-        except Exception as e:
-            self.log(context, "ERROR", f"节点 Checkpoint 落盘失败: {e}")
+        file_path = os.path.join(context.checkpoint_dir, "nodes_checkpoints", f"{self.node_id}.json")
+        self._atomic_save(file_path, data)
+
+    def update_checkpoints(self, context: Any, partial_outputs: dict = None, partial_inputs: dict = None):
+        """增量保存（配合原子写，极其安全）"""
+        if not context or not hasattr(context, "checkpoint_dir"):
+            return
+
+        existing = self.load_checkpoints(context) or {"inputs": {}, "outputs": {}}
+
+        if partial_inputs:
+            existing.setdefault("inputs", {}).update(partial_inputs)
+        if partial_outputs:
+            existing.setdefault("outputs", {}).update(partial_outputs)
+
+        self.save_checkpoints(context, existing)
 
     def load_checkpoints(self, context: Any) -> dict:
-        """从本节点的专属文件中读取状态，不存在则返回空字典"""
+        """优先读内存，内存没有再读盘"""
+        if self._checkpoint_cache is not None:
+            return self._checkpoint_cache
+
         if not context or not hasattr(context, "checkpoint_dir"):
             return {}
-            
+
         file_path = os.path.join(context.checkpoint_dir, "nodes_checkpoints", f"{self.node_id}.json")
         if os.path.exists(file_path):
             try:
                 with open(file_path, "r", encoding="utf-8") as f:
-                    return json.load(f)
-            except Exception:
-                pass
-        return {}
+                    self._checkpoint_cache = json.load(f)
+                    return self._checkpoint_cache
+            except Exception as e:
+                self.log(context, "WARNING", f"⚠️ 读取存档损坏，按空数据处理: {e}")
 
-    def reset(self, context: Any):
-        """重置节点：清空内存的 outputs，并物理删除 Checkpoint"""
+        self._checkpoint_cache = {"inputs": {}, "outputs": {}}
+        return self._checkpoint_cache
+
+    def reset(self, context: Any, clear_backup: bool = True):
+        """重置节点：清空内存的 outputs。根据参数决定是否物理删除 Checkpoint"""
         self.outputs = {}
-        if context and hasattr(context, "checkpoint_dir"):
+        if clear_backup and context and hasattr(context, "checkpoint_dir"):
             file_path = os.path.join(context.checkpoint_dir, "nodes_checkpoints", f"{self.node_id}.json")
             if os.path.exists(file_path):
                 try:
                     os.remove(file_path)
                 except Exception as e:
-                    self.log(context, "ERROR", f"清理 Checkpoint 文件失败: {e}")
+                    self.log(context, "ERROR", f"清理 Checkpoint 失败: {e}")
 
     def get_local_tools(self):
         """动态扫描并加载当前节点 tools 目录下的工具"""
@@ -282,7 +320,7 @@ class BaseNode:
             elif original_tool_name == "yield_to_human":
                 reason = arguments.get("reason", "需要人工干预")
                 self.log(context, "SYSTEM", f"⏸️ [请求干预] 理由: {reason}")
-                context.node_state[self.node_id] = "waiting"
+                context.node_state[self.node_id] = NodeState.WAITING
                 final_content = _format_result({"status": "suspended", "message": "已挂起，等待人类注入指令"})
                 is_yield = True
 
@@ -421,25 +459,3 @@ class BaseNode:
             if self.node_id in context.pending_push_message:
                 return context.pending_push_message.pop(self.node_id)
         return []
-
-    async def wait_for_human_intervention(self, context: Any) -> list:
-        """
-        🌟 统一的节点级阻塞等待函数。
-        在这里进行真正的安全阻塞，醒来后直接返回包装好的标准 USER 消息列表。
-        """
-        import asyncio
-
-        while True:
-            await asyncio.sleep(2)
-
-            if not self.check_running_state(context):
-                self.log(context, "SYSTEM", "⚠️ [挂起中断] 节点状态已变更为非 running，强行退出等待。")
-                raise asyncio.CancelledError()
-
-            dynamic_push = self.consume_pending_messages(context)
-            if dynamic_push:
-                self.log(context, "SYSTEM", "▶️ [唤醒成功] 节点收到人类干预指令，准备进入下一轮大模型对话。")
-                
-                context.node_state[self.node_id] = "running"
-                
-                return [{"role": "user", "content": msg} for msg in dynamic_push]

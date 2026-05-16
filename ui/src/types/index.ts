@@ -40,11 +40,12 @@ export interface GraphEdge {
 }
 
 export interface GraphExport {
+  version: string;
   name: string;
   description: string;
-  required_inputs: Record<string, string>;
-  nodes: GraphNode[];
-  edges: GraphEdge[];
+  global_schema: Record<string, any>;
+  nodes: any[];
+  edges: any[];
 }
 
 export interface CatalogItem {

@@ -13,10 +13,15 @@ class Node(BaseNode):
 
         result_list = list(base_list) if base_list else []
 
-        if append_list and isinstance(append_list, list):
-            result_list.extend(append_list)
+        if append_list:
+            # 🌟 补充防呆与警告日志
+            if isinstance(append_list, list):
+                result_list.extend(append_list)
+            else:
+                self.log(context, "WARNING", f"⚠️ [列表追加] append_list 不是一个合法列表 (类型: {type(append_list)})，尝试强制放入列表中追加。")
+                result_list.append(append_list) # 容错处理：把它当成单个元素塞进去
 
-        self.log(context, "SYSTEM", f"🔗 [列表追加] 基础长度: {len(base_list or [])}，追加长度: {len(append_list or [])}，合并后: {len(result_list)}")
+        self.log(context, "SYSTEM", f"🔗 [列表追加] 基础长度: {len(base_list or [])}，追加长度: {len(append_list) if isinstance(append_list, list) else 1}，合并后: {len(result_list)}")
 
         outputs = {"merged_list": result_list}
         self.save_checkpoints(context, {"inputs": inputs, "outputs": outputs})

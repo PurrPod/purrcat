@@ -106,7 +106,7 @@ class AgentNode(BaseNode):
             elif original_tool_name == "yield_to_human":
                 reason = arguments.get("reason", "需要人工干预")
                 self.log(context, "SYSTEM", f"⏸️ [请求干预] 理由: {reason}")
-                context.node_state[self.node_id] = "waiting"
+                context.node_state[self.node_id] = NodeState.WAITING
                 final_content = _format_result({"status": "suspended", "message": "已挂起，等待人类注入指令"})
                 is_yield = True
 
@@ -203,11 +203,15 @@ class AgentNode(BaseNode):
                     messages.extend(tool_messages)
 
                 if is_yield:
-                    self.log(context, LogType.SYSTEM, "⏸️ [节点挂起] 正在阻塞等待人类干预...")
+                    self.log(context, LogType.SYSTEM, "⏸️ [节点挂起] 请求人类干预，协程主动退出等待引擎下次拉起...")
                     self._notify_agent(context, "正在等待进一步指令，已挂起。请注入指令！")
-                    new_human_msgs = await self.wait_for_human_intervention(context)
-                    messages.extend(new_human_msgs)
-                    continue
+
+                    # 🌟 将状态置为 WAITING，并且直接保存当前上下文落盘
+                    context.node_state[self.node_id] = NodeState.WAITING
+                    self.update_checkpoints(context, partial_outputs={"messages": messages})
+
+                    # 🌟 直接抛出特定异常，让引擎安全释放这个协程，不再占用 running_tasks 坑位！
+                    raise asyncio.CancelledError("User Intervention Required")
 
                 if is_task_done:
                     final_summary = self._extract_summary(tool_calls, assistant_msg.content)

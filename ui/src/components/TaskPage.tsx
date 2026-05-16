@@ -139,14 +139,20 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
         const isCurrentlyRunning = stateData.state === 'running' || stateData.task_state === 'running';
 
         const flowNodes = graph.nodes.map((n: any, idx: number) => {
-          // 在 dag_state 结构下，状态可能是 { state: "running", outputs: {} }，做一下提取兼容
           const nodeInfo = actualNodeStates[n.id];
           const currentState = typeof nodeInfo === 'object' && nodeInfo !== null ? (nodeInfo.state || 'ready') : (nodeInfo || 'ready');
           
+          let posX = 100 + (idx % 3) * 280, posY = 100 + Math.floor(idx / 3) * 180;
+          if (Array.isArray(n.position)) {
+              posX = n.position[0]; posY = n.position[1];
+          } else if (n.position?.x !== undefined) {
+              posX = n.position.x; posY = n.position.y;
+          }
+
           return {
-            id: n.id, // 这里已经是裂变后的动态 ID 啦！
+            id: n.id,
             type: 'custom',
-            position: n.position || { x: 100 + (idx % 3) * 280, y: 100 + Math.floor(idx / 3) * 180 },
+            position: { x: posX, y: posY },
             data: {
               label: n.name && n.name.trim() ? n.name : n.id,
               shape: idx % 2 === 0 ? sketchyShape1 : sketchyShape2,

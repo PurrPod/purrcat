@@ -1,130 +1,113 @@
 {
+  "version": "2.0",
   "name": "default",
-  "description": "PurrCat Web Export",
-  "required_inputs": {
-    "prompt": "any",
-    "target_file": "any"
+  "description": "PurrCat Web Export - 优化版",
+  
+  "global_schema": {
+    "prompt": {
+      "type": "string",
+      "required": true,
+      "description": "用户的核心指令或问题，用于驱动整个任务流",
+      "default": null
+    },
+    "target_file": {
+      "type": "string",
+      "required": true,
+      "description": "最终任务成果输出的沙盒绝对路径 (必须以 /agent_vm/ 开头)",
+      "default": "/agent_vm/output.md"
+    }
   },
+
   "nodes": [
     {
-      "id": "node_input",
-      "name": "全局输入",
+      "id": "nd_input_e4a1b2",
       "type": "task_input",
-      "position": {
-        "x": -298,
-        "y": 114
-      },
-      "data": {
-        "dynamic_inputs": [
-          {
-            "key": "prompt",
-            "desc": "any"
-          },
-          {
-            "key": "target_file",
-            "desc": "any"
-          }
-        ]
+      "name": "全局输入",
+      "position": [-300, 114],
+      "config": {
+        "exposed_keys": ["prompt", "target_file"]
       }
     },
     {
-      "id": "node_sys_msg",
-      "name": "消息卡片构建器",
+      "id": "nd_sys_a7b8c9",
       "type": "message_card_builder",
-      "position": {
-        "x": 70.92934969531507,
-        "y": -443.8293521331599
-      },
-      "data": {
+      "name": "系统预设",
+      "position": [71, -444],
+      "config": {
         "role": "system",
         "content": "你是一个优秀的AI任务助手，请利用工具高效完成任务。"
       }
     },
     {
-      "id": "node_user_msg",
-      "name": "消息卡片构建器",
+      "id": "nd_usr_f1d2e3",
       "type": "message_card_builder",
-      "position": {
-        "x": 68,
-        "y": -75.83891296386719
-      },
-      "data": {
+      "name": "用户指令",
+      "position": [68, -76],
+      "config": {
         "role": "user"
       }
     },
     {
-      "id": "node_appender",
-      "name": "列表追加器",
+      "id": "nd_app_b4c5d6",
       "type": "appender",
-      "position": {
-        "x": 480,
-        "y": -160
-      }
+      "name": "上下文合并",
+      "position": [480, -160],
+      "config": {}
     },
     {
-      "id": "node_loop",
-      "name": "文件输出循环",
+      "id": "nd_loop_9e8d7c",
       "type": "file_output_loop",
-      "position": {
-        "x": 811.8565902709961,
-        "y": 144
-      },
-      "data": {
+      "name": "文件输出循环",
+      "position": [812, 144],
+      "config": {
         "file_path": ""
       }
     },
     {
-      "id": "node_output",
-      "name": "全局输出",
+      "id": "nd_out_3a2b1c",
       "type": "task_output",
-      "position": {
-        "x": 1196,
-        "y": 156.89711380004883
-      },
-      "data": {
-        "dynamic_inputs": [
-          {
-            "key": "task_result",
-            "desc": "any"
-          }
-        ]
+      "name": "全局输出",
+      "position": [1196, 157],
+      "config": {
+        "exposed_keys": ["task_result"]
       }
     }
   ],
+
   "edges": [
     {
-      "source": "node_input",
-      "target": "node_user_msg",
+      "source": "nd_input_e4a1b2",
+      "target": "nd_usr_f1d2e3",
       "sourceHandle": "prompt",
       "targetHandle": "content"
     },
     {
-      "source": "node_input",
-      "target": "node_loop",
+      "source": "nd_input_e4a1b2",
+      "target": "nd_loop_9e8d7c",
       "sourceHandle": "target_file",
       "targetHandle": "file_path"
     },
     {
-      "source": "node_sys_msg",
-      "target": "node_appender",
+      "source": "nd_sys_a7b8c9",
+      "target": "nd_app_b4c5d6",
       "sourceHandle": "message_list",
       "targetHandle": "base_list"
     },
     {
-      "source": "node_user_msg",
-      "target": "node_appender",
+      "source": "nd_usr_f1d2e3",
+      "target": "nd_app_b4c5d6",
       "sourceHandle": "message_list",
       "targetHandle": "append_list"
     },
     {
-      "source": "node_appender",
-      "target": "node_loop",
+      "source": "nd_app_b4c5d6",
+      "target": "nd_loop_9e8d7c",
       "sourceHandle": "merged_list",
       "targetHandle": "messages"
     },
     {
-      "source": "node_loop",
-      "target": "node_output",
+      "source": "nd_loop_9e8d7c",
+      "target": "nd_out_3a2b1c",
       "sourceHandle": "summary",
       "targetHandle": "task_result"
     }
