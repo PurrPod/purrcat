@@ -1,0 +1,41 @@
+{
+    "type": "agent_loop",
+    "name": "智能体循环",
+    "description": "封装思考->调用工具->验收的完整大循环。若配置了目标文件，则强制验收文件是否生成；若不配置，则作为普通的任务总结节点使用。",
+    "color": "#16A085",
+    "inputs": [
+        {
+            "name": "messages",
+            "type": "MessageList",
+            "description": "消息上下文",
+            "required": true
+        },
+        {
+            "name": "target_files",
+            "type": "any",
+            "description": "动态传入的目标文件路径 (支持 List 列表 或 逗号分隔的 String)",
+            "required": false
+        }
+    ],
+    "outputs": [
+        {
+            "name": "messages",
+            "type": "MessageList",
+            "description": "完整的消息历史"
+        },
+        {
+            "name": "summary",
+            "type": "string",
+            "description": "任务完成的总结信息"
+        }
+    ],
+    "config": [
+        {
+            "name": "target_files",
+            "type": "string",
+            "label": "强制验收文件列表",
+            "default": "",
+            "description": "需要强制校验生成的沙盒绝对路径。多个文件请用英文逗号 (,) 分隔。必须以 /agent_vm 开头。若留空，则不进行文件校验，直接产出总结。"
+        }
+    ]
+}
