@@ -456,6 +456,7 @@ class BaseNode:
         只有节点主动调用该方法时，消息才会被取出，避免并发问题。
         """
         with context._lock:
-            if self.node_id in context.pending_push_message:
-                return context.pending_push_message.pop(self.node_id)
+            # 🌟 必须将旧的 pending_push_message 改为重构后的 pending_force_push
+            if self.node_id in context.pending_force_push:
+                return context.pending_force_push.pop(self.node_id)
         return []

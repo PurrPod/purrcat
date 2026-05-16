@@ -1,7 +1,9 @@
 import json
 import os
+import shutil
+from datetime import datetime
 
-from src.harness.process import TASK_INSTANCES, kill_and_cleanup_task
+from src.harness.process import TASK_INSTANCES
 from src.harness.process import kill_task as process_kill_task
 from src.utils.config import DATA_DIR
 
@@ -21,6 +23,15 @@ def get_task_list():
                         data = json.load(f)
                         tid = data.get("task_id")
                         if tid:
+                            # 如果 checkpoint 中没有 create_time，尝试用文件修改时间
+                            create_time = data.get("create_time", "")
+                            if not create_time:
+                                try:
+                                    mtime = os.path.getmtime(chk_path)
+                                    create_time = datetime.fromtimestamp(mtime).strftime("%Y%m%d%H%M%S")
+                                except:
+                                    create_time = "20250101000000"
+                            
                             tasks_dict[tid] = {
                                 "id": tid,
                                 "name": data.get("name", "Unknown"),
@@ -28,7 +39,7 @@ def get_task_list():
                                 "state": data.get("state", "idle"),
                                 "step": data.get("step", 0),
                                 "expert_type": "Task",
-                                "create_time": data.get("create_time", ""),
+                                "create_time": create_time,
                                 "token_usage": data.get("token_usage", 0),
                                 "checkpoint_dir": data.get("checkpoint_dir", ""),
                             }
@@ -52,7 +63,7 @@ def get_task_list():
 
     # 3. 按创建时间降序排序返回
     result = list(tasks_dict.values())
-    result.sort(key=lambda x: x.get("create_time", ""), reverse=True)
+    result.sort(key=lambda x: str(x.get("create_time") or ""), reverse=True)
     return result
 
 
@@ -138,11 +149,9 @@ def kill_task(task_id: str):
 
 
 def submit_instruction(task_id: str, node_id: str, content: str):
-    # 这个动作必须唤醒模型引擎，所以必须用 reload
-    from src.harness.process import reload_task_by_id
-    task = TASK_INSTANCES.get(task_id) or reload_task_by_id(task_id)
+    task = TASK_INSTANCES.get(task_id)
     if not task:
-        return None, "Task not found"
+        return None, "Task not found or not active"
 
     if node_id not in task.node_list:
         return None, f"Node '{node_id}' not found in task '{task_id}'"
@@ -152,7 +161,35 @@ def submit_instruction(task_id: str, node_id: str, content: str):
 
 
 def delete_task(task_id: str):
-    return kill_and_cleanup_task(task_id)
+    """真正删除任务：终止、从内存移除、删除磁盘文件夹"""
+    # 1. 先终止任务
+    process_kill_task(task_id)
+    
+    # 2. 从内存中移除
+    if task_id in TASK_INSTANCES:
+        task = TASK_INSTANCES[task_id]
+        checkpoint_dir = task.checkpoint_dir
+        del TASK_INSTANCES[task_id]
+    else:
+        # 从磁盘找 checkpoint_dir
+        checkpoint_dir = None
+        base_dir = os.path.join(DATA_DIR, "checkpoints", "task")
+        if os.path.exists(base_dir):
+            for entry in os.listdir(base_dir):
+                if task_id in entry:
+                    checkpoint_dir = os.path.join(base_dir, entry)
+                    break
+    
+    # 3. 删除磁盘文件夹
+    if checkpoint_dir and os.path.exists(checkpoint_dir):
+        try:
+            shutil.rmtree(checkpoint_dir)
+            print(f"[DEBUG] 已删除任务文件夹: {checkpoint_dir}")
+        except Exception as e:
+            print(f"[ERROR] 删除任务文件夹失败: {e}")
+            return False
+    
+    return True
 
 
 def get_task_history(task_id: str):

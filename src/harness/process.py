@@ -341,6 +341,10 @@ class Task:
             },
             "pending_force_push": self.pending_force_push,
             "graph": self.graph,
+            "create_time": self.create_time,
+            "token_usage": self.token_usage,
+            "core": self.core,
+            "key_prefix": self.key_prefix,
         }
         with open(checkpoint_path, "w", encoding="utf-8") as f:
             json.dump(state, f, ensure_ascii=False, indent=2)
@@ -374,7 +378,15 @@ class Task:
         task._io_lock = threading.Lock()
         task._killed = False
         task._loop = None
-        task.create_time = state.get("create_time")
+        # 如果 checkpoint 中没有 create_time，用文件夹修改时间作为替代
+        if state.get("create_time"):
+            task.create_time = state.get("create_time")
+        else:
+            try:
+                mtime = os.path.getmtime(checkpoint_dir)
+                task.create_time = datetime.fromtimestamp(mtime).strftime("%Y%m%d%H%M%S")
+            except:
+                task.create_time = "20250101000000"
         task.core = state.get("core", "")
         task.token_usage = state.get("token_usage", 0)
         task.result = False
@@ -400,13 +412,11 @@ class Task:
             if node_backup and "outputs" in node_backup:
                 task.node_list[node_id].outputs = node_backup["outputs"]
 
-        if task.state in [TaskState.READY, TaskState.INTERRUPTED]:
-            saved_key_prefix = state.get("key_prefix")
-            task.model = Model(task.core, recovered_key_prefix=saved_key_prefix) if task.core else None
-            if task.model:
-                task.model.bind_task(task.task_id, task.task_name)
-        else:
-            task.model = None
+        # 无论任务状态如何，都尝试恢复 Model（用于强行注入指令）
+        saved_key_prefix = state.get("key_prefix")
+        task.model = Model(task.core, recovered_key_prefix=saved_key_prefix) if task.core else None
+        if task.model:
+            task.model.bind_task(task.task_id, task.task_name)
         task.key_prefix = task.model.key_prefix if task.model else None
 
         existing_task = TASK_INSTANCES.get(task.task_id)
@@ -415,3 +425,26 @@ class Task:
 
         TASK_INSTANCES[task.task_id] = task
         return task
+
+    def log_and_notify(self, log_type: str, content: str, node_id: str):
+        """线程安全地追加写入结构化日志"""
+        if not hasattr(self, "checkpoint_dir") or not self.checkpoint_dir:
+            return
+
+        os.makedirs(self.checkpoint_dir, exist_ok=True)
+        log_path = os.path.join(self.checkpoint_dir, "log.jsonl")
+
+        # 兼容传入 Enum 或字符串的情况
+        card_type = log_type.value if hasattr(log_type, "value") else str(log_type).lower()
+
+        entry = {
+            "timestamp": time.time(),
+            "node_id": node_id,
+            "card_type": card_type,
+            "content": content
+        }
+
+        # 使用 IO 锁防止高并发写入导致 JSONL 格式错乱
+        with self._io_lock:
+            with open(log_path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(entry, ensure_ascii=False) + "\n")

@@ -11,7 +11,8 @@ import ChatPage from './components/ChatPage';
 import TaskPage from './components/TaskPage';
 import { useFlowStore } from './store/flowStore';
 
-// 保留你原本的本地 fallback 逻辑
+// 保留你原本的本地 fallback 逻辑（已注释，改用后端 API）
+/*
 const nodeModules = import.meta.glob('../node_json/*.json', { eager: true });
 
 function initializeCatalog() {
@@ -19,8 +20,7 @@ function initializeCatalog() {
   Object.values(nodeModules).forEach((mod: any) => {
     const nodeDef = mod.default || mod;
     if (nodeDef && nodeDef.type && nodeDef.name) {
-      // @ts-expect-error store.addCatalogItem expects specific type
-      store.addCatalogItem({
+      store.catalog.push({
         type: nodeDef.type,
         name: nodeDef.name,
         description: nodeDef.description || '',
@@ -33,6 +33,7 @@ function initializeCatalog() {
     }
   });
 }
+*/
 
 const sketchyShape1 = { borderRadius: '255px 15px 225px 15px/15px 225px 15px 255px' };
 const sketchyShape2 = { borderRadius: '15px 225px 15px 255px/255px 15px 225px 15px' };
@@ -81,9 +82,12 @@ const GlobalSketchyOverrides = () => (
 const EditorView = () => {
   const navigate = useNavigate();
 
+  // 注释掉本地初始化，改用后端 API
+  /*
   useEffect(() => {
     initializeCatalog();
   }, []);
+  */
 
   return (
     <div className="absolute inset-0 bg-[#fdfaf5] bg-[radial-gradient(#1a1a1a_1px,transparent_1px)] [background-size:24px_24px] p-8 flex flex-col gap-8 overflow-hidden">

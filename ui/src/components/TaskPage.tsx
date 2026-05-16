@@ -106,10 +106,21 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
 
   const loadTasks = async () => {
     try {
+      console.log("[TaskPage] 开始加载任务列表...");
       const res = await fetch('http://localhost:8000/api/tasks');
-      if (res.ok) setTasks(await res.json());
-    } catch (e) { toast.error("获取任务列表失败"); }
+      console.log("[TaskPage] 响应状态:", res.status);
+      if (res.ok) {
+        const data = await res.json();
+        console.log("[TaskPage] 任务数据:", data);
+        setTasks(data);
+      }
+    } catch (e) {
+      console.error("[TaskPage] 加载失败:", e);
+      toast.error("获取任务列表失败"); 
+    }
   };
+
+  console.log("[TaskPage] 组件渲染, tasks 数量:", tasks.length);
 
   useEffect(() => {
     loadTasks();
@@ -133,12 +144,16 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
         
         // 🌟 直接使用后端落盘的动态裂变后的 graph，保证 ID 100% 匹配
         const graph = stateData.graph || { nodes: [], edges: [] };
+        const graphNodes = graph.nodes || [];
+        const graphEdges = graph.edges || [];
         
         // 兼容你的 FastAPI 包装：如果后端是 dag_state 就取 dag_state，否则 node_states
         const actualNodeStates = stateData.dag_state || stateData.node_states || {};
         const isCurrentlyRunning = stateData.state === 'running' || stateData.task_state === 'running';
 
-        const flowNodes = graph.nodes.map((n: any, idx: number) => {
+        const flowNodes = graphNodes.map((n: any, idx: number) => {
+          if (!n) return null;
+          
           const nodeInfo = actualNodeStates[n.id];
           const currentState = typeof nodeInfo === 'object' && nodeInfo !== null ? (nodeInfo.state || 'ready') : (nodeInfo || 'ready');
           
@@ -161,15 +176,19 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
               onShowLog: (nodeId: string) => setLogModalNodeId(nodeId)
             }
           };
-        });
+        }).filter(Boolean) as Node[];
 
-        const flowEdges = graph.edges.map((e: any) => ({
-          id: `e-${e.source}-${e.target}`,
-          source: e.source,
-          target: e.target,
-          animated: isCurrentlyRunning,
-          style: { strokeWidth: 3, stroke: isCurrentlyRunning ? '#D47A5A' : '#1a1a1a' }
-        }));
+        const flowEdges = graphEdges.map((e: any) => {
+          if (!e || !e.source || !e.target) return null;
+          
+          return {
+            id: `e-${e.source}-${e.target}`,
+            source: e.source,
+            target: e.target,
+            animated: isCurrentlyRunning,
+            style: { strokeWidth: 3, stroke: isCurrentlyRunning ? '#D47A5A' : '#1a1a1a' }
+          };
+        }).filter(Boolean) as Edge[];
 
         setNodes(flowNodes);
         setEdges(flowEdges);
@@ -457,7 +476,7 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
                     {task.state === 'running' && <Activity size={18} strokeWidth={3} className="animate-pulse" />}
                   </div>
                   <div className="flex items-center gap-2 text-xs font-bold uppercase opacity-80">
-                    <Clock size={14} strokeWidth={3} /> {task.create_time.split(' ')[1]} 
+                    <Clock size={14} strokeWidth={3} /> {task.create_time ? task.create_time.split(' ')[1] : '--:--'} 
                     <span className="ml-auto bg-ink text-paper px-1.5 py-0.5 rounded-sm" style={sketchyShape1}>{task.state}</span>
                   </div>
 

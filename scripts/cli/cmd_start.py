@@ -14,7 +14,7 @@ def _get_project_root():
     return os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
-def run_start(headless=False):
+def run_start(headless=False, api=False):
     """Start PurrCat application"""
     print("Starting PurrCat...")
     print("Press [Ctrl+C] to safely close.")
@@ -34,6 +34,8 @@ def run_start(headless=False):
     ]
     if headless:
         cmd.append("--headless")
+    if api:
+        cmd.append("--api")
 
     try:
         subprocess.run(cmd, check=True, cwd=project_root)

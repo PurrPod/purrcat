@@ -107,7 +107,7 @@ export const useFlowStore = create<FlowState>()(
             return false
         }
 
-        const newEdge: Edge = { ...params, id: uuidv4(), animated: true }
+        const newEdge: Edge = { ...params, id: generateShortId('edge'), animated: true }
         set({ edges: addEdge(newEdge, edges.filter(e => !(e.target === params.target && e.targetHandle === params.targetHandle))) })
         return true
       },

@@ -5,7 +5,7 @@ from typing import Any, Dict
 from src.utils.config import BASE_DIR
 
 GRAPH_DIR = os.path.join(BASE_DIR, "src", "harness", "graph")
-NODE_DIR = os.path.join(BASE_DIR, "src", "harness", "node")
+NODE_DIR = os.path.join(BASE_DIR, "src", "harness", "node", "extensions")
 
 os.makedirs(GRAPH_DIR, exist_ok=True)
 

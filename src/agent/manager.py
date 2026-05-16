@@ -28,7 +28,7 @@ class AgentManager:
             session_id = (
                 max(
                     all_sessions.keys(),
-                    key=lambda k: all_sessions[k].get("updated_at", ""),
+                    key=lambda k: str(all_sessions[k].get("updated_at") or ""),
                 )
                 if all_sessions
                 else SessionStore._generate_id()
@@ -74,6 +74,10 @@ class AgentManager:
 
     def branch_current_session(self, branch_alias=None):
         if not self._agent:
+            # 如果 agent 未初始化，先初始化
+            self.init_agent()
+        
+        if not self._agent:
             return None
 
         # 🟢 彻底移除强制打断，改为阻塞式安全等待，直到 Agent 完成当前全部流转
@@ -103,6 +107,10 @@ class AgentManager:
         return new_id
 
     def create_clean_session(self, branch_alias=None):
+        if not self._agent:
+            # 如果 agent 未初始化，先初始化
+            self.init_agent()
+        
         if not self._agent:
             return None
 
@@ -144,7 +152,9 @@ class AgentManager:
 
     def checkout_session(self, target_session_id):
         if not self._agent:
-            return False
+            # 如果 agent 未初始化，先初始化并直接加载目标会话
+            self.init_agent(session_id=target_session_id)
+            return True
 
         # 🟢 彻底移除强制打断，改为阻塞式安全等待
         if self._agent.state != "idle":

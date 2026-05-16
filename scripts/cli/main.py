@@ -86,6 +86,9 @@ def main():
         "--headless", action="store_true", help="Run in background (for start command)"
     )
     parser.add_argument(
+        "--api", action="store_true", help="Enable API server (for start command)"
+    )
+    parser.add_argument(
         "--help", "-h", action="store_true", help="Show this help message"
     )
     parser.add_argument(
@@ -120,7 +123,7 @@ def main():
     elif args.command == "update":
         run_update(target_version=args.version)
     elif args.command == "start":
-        run_start(headless=args.headless)
+        run_start(headless=args.headless, api=args.api)
     else:
         cmd_help()
 
