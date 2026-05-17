@@ -19,6 +19,6 @@
     "config": [
         { "name": "input_variables", "type": "list", "label": "输入变量", "default": [] },
         { "name": "branches", "type": "list", "label": "输出分支", "default": [] },
-        { "name": "code", "type": "textarea", "label": "Python 代码" }
+        { "name": "code", "type": "textarea", "label": "Python 代码", "default": "def evaluate(inputs):\n    \"\"\"\n    请在此编写路由逻辑。\n    inputs: 包含上游传入的所有数据字典 (例如 inputs['text'])\n    返回: 必须返回一个字符串，代表要走的分支名称。\n    \"\"\"\n    \n    # 示例逻辑：\n    # if 'hello' in inputs.get('text', ''):\n    #     return 'branch_a'\n    \n    return 'default'  # 默认返回分支" }
     ]
 }

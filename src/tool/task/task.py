@@ -29,11 +29,18 @@ def _get_all_graphs_info() -> dict:
                 with open(os.path.join(graph_dir, file), "r", encoding="utf-8") as f:
                     data = json.load(f)
                     g_name = data.get("name", file.replace(".json", ""))
+                    
+                    global_schema = data.get("global_schema", {})
+                    required_inputs = data.get("required_inputs", {})
+                    
+                    if global_schema:
+                        param_schema = global_schema
+                    else:
+                        param_schema = {k: {"required": True, "description": v} for k, v in required_inputs.items()}
+                    
                     graphs[g_name] = {
                         "description": data.get("description", "无描述"),
-                        "required_inputs": data.get(
-                            "required_inputs", {}
-                        ),  # 这里现在是个字典了！
+                        "param_schema": param_schema,
                     }
             except Exception:
                 pass
@@ -47,12 +54,16 @@ def _get_graphs_help_text(graphs: dict) -> str:
 
     lines = ["💡 当前所有可用的工作流配置 (graph_name) 及其所需 inputs 如下："]
     for g_name, info in graphs.items():
-        req = info["required_inputs"]
+        schema = info["param_schema"]
         lines.append(f"\n▶ 【{g_name}】: {info['description']}")
-        if req:
+        if schema:
             lines.append("   需要的 inputs 参数:")
-            for k, desc in req.items():
-                lines.append(f"     - {k}: {desc}")
+            for k, v in schema.items():
+                is_req = v.get("required", True)
+                req_mark = "✅ 必填" if is_req else "⭕ 可选"
+                param_type = v.get("type", "any")
+                desc = v.get("description", "无描述")
+                lines.append(f"     - {k} ({param_type}, {req_mark}): {desc}")
         else:
             lines.append("   需要的 inputs 参数: 无")
     return "\n".join(lines)
@@ -88,7 +99,6 @@ def _handle_add(**kwargs) -> str:
 
     graphs = _get_all_graphs_info()
 
-    # 【核心防御 1】：图名字填错了或者没填
     if not graph_name or graph_name not in graphs:
         help_text = _get_graphs_help_text(graphs)
         err_prefix = (
@@ -101,18 +111,45 @@ def _handle_add(**kwargs) -> str:
             "❌ 图配置错误",
         )
 
-    # 【核心防御 2】：字典里的必填项没传
-    required_req = graphs[graph_name]["required_inputs"]  # { "prompt": "描述..." }
-    missing_keys = [
-        k for k in required_req.keys() if k not in inputs or inputs[k] is None
-    ]
+    param_schema = graphs[graph_name]["param_schema"]
+    
+    validation_errors = []
+    
+    missing_required = []
+    for k, v in param_schema.items():
+        is_req = v.get("required", True)
+        if is_req and (k not in inputs or inputs[k] is None):
+            param_type = v.get("type", "any")
+            desc = v.get("description", "无描述")
+            missing_required.append({
+                "name": k,
+                "type": param_type,
+                "description": desc
+            })
+    
+    if missing_required:
+        miss_str = "\n".join([f"  - '{p['name']}' (类型: {p['type']}, 描述: {p['description']})" for p in missing_required])
+        validation_errors.append(f"❌ 缺少必填参数:\n{miss_str}")
+    
+    extra_keys = [k for k in inputs.keys() if k not in param_schema]
+    if extra_keys:
+        extra_str = ", ".join([f"'{k}'" for k in extra_keys])
+        validation_errors.append(f"⚠️ 传入了未知参数: {extra_str}")
 
-    if missing_keys:
-        miss_str = "\n".join([f"  - {k}: {required_req[k]}" for k in missing_keys])
-        return error_response(
-            f"❌ '{graph_name}' 任务创建失败，你的 inputs 字典缺少以下必填参数：\n{miss_str}\n\n👉 请重新调用工具，并将这些字段放入 inputs 字典中。",
-            "❌ 缺少 inputs",
-        )
+    if validation_errors:
+        all_params_info = []
+        for k, v in param_schema.items():
+            is_req = v.get("required", True)
+            req_mark = "✅ 必填" if is_req else "⭕ 可选"
+            param_type = v.get("type", "any")
+            desc = v.get("description", "无描述")
+            all_params_info.append(f"    - '{k}' (类型: {param_type}, {req_mark}): {desc}")
+        
+        help_text = "\n".join(validation_errors)
+        help_text += f"\n\n📋 有效的参数列表:\n" + "\n".join(all_params_info)
+        help_text += f"\n\n💡 请检查您的输入参数后重试。"
+        
+        return error_response(help_text, "❌ 参数错误")
 
     try:
         result, error = add_task_operation(name, inputs, graph_name, core)

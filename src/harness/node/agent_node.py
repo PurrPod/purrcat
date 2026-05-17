@@ -58,17 +58,17 @@ class AgentNode(BaseNode):
 
     async def execute(self, inputs: Dict[str, Any], context: Any) -> Dict[str, Any]:
         """全新极简入口：从专属记忆空间恢复上下文"""
-        
-        dynamic_task_done = inputs.get("task_done_info") or self.config.get("task_done_info")
-        if dynamic_task_done:
-            if isinstance(dynamic_task_done, str):
-                try:
-                    self.task_done_info = json.loads(dynamic_task_done)
-                    self.log(context, "SYSTEM", "✅ [动态规则] 成功解析动态传入的 task_done_info")
-                except Exception as e:
-                    self.log(context, "WARNING", f"⚠️ [动态规则] JSON解析失败，回退到默认元数据配置: {e}")
-            elif isinstance(dynamic_task_done, dict):
-                self.task_done_info = dynamic_task_done
+
+        dynamic_info = inputs.get("task_done_info")
+        if dynamic_info:
+            try:
+                if isinstance(dynamic_info, str):
+                    self.task_done_info = json.loads(dynamic_info)
+                elif isinstance(dynamic_info, dict):
+                    self.task_done_info = dynamic_info
+                self.log(context, "SYSTEM", f"✅ [动态规则挂载] 成功加载动态校验指标: {list(self.task_done_info.keys())}")
+            except Exception as e:
+                self.log(context, "WARNING", f"⚠️ [动态规则挂载] 解析失败，将不使用强校验: {e}")
         
         my_memory = context.node_memory.setdefault(self.node_id, {})
         
@@ -102,19 +102,28 @@ class AgentNode(BaseNode):
             self.log(context, LogType.SYSTEM, f"🔄 [Agent思考步] 第 {step}/{max_steps} 步")
 
             if context.node_state.get(self.node_id) not in [NodeState.RUNNING, NodeState.WAITING]:
+                self.log(context, "WARNING", f"⚠️ [状态检查] 节点状态异常，终止循环")
                 raise asyncio.CancelledError()
 
             my_memory = context.node_memory.get(self.node_id, {})
             dynamic_push = my_memory.pop("force_push", [])
             if dynamic_push:
+                self.log(context, "SYSTEM", f"🔔 [动态注入] 收到 {len(dynamic_push)} 条强制推送消息")
                 messages = inject_force_push(messages, dynamic_push)
 
+            self.log(context, "SYSTEM", f"🧠 [LLM调用] 发送 {len(messages)} 条消息给大模型...")
             response, messages = await call_llm(context.model, messages, tools)
             assistant_msg = response.choices[0].message
+            
+            if assistant_msg.content:
+                content_preview = assistant_msg.content[:200] + "..." if len(assistant_msg.content) > 200 else assistant_msg.content
+                self.log(context, "SYSTEM", f"💭 [模型回复] {content_preview}")
+            
             tool_calls = extract_tool_calling(response)
 
             if not tool_calls:
                 consecutive_no_tool_errors += 1
+                self.log(context, "WARNING", f"⚠️ [无工具调用] 连续 {consecutive_no_tool_errors}/{MAX_CONSECUTIVE_ERRORS} 次无工具调用")
                 if consecutive_no_tool_errors >= MAX_CONSECUTIVE_ERRORS:
                     self.log(context, LogType.SYSTEM, "🔴 [熔断] 连续无工具调用，挂起求助")
                     context.node_state[self.node_id] = NodeState.WAITING
@@ -122,6 +131,7 @@ class AgentNode(BaseNode):
                 messages.append({"role": "user", "content": "请调用 task_done 工具。"})
                 continue
 
+            self.log(context, "SYSTEM", f"🔧 [工具调用] 检测到 {len(tool_calls)} 个工具调用")
             tool_messages, is_task_done, is_yield = await self.execute_tool_calling(response, context)
             if tool_messages:
                 messages.extend(tool_messages)
@@ -133,6 +143,7 @@ class AgentNode(BaseNode):
 
             if is_task_done:
                 final_summary = self._extract_summary(tool_calls, assistant_msg.content)
+                self.log(context, "SYSTEM", f"✅ [任务完成] Agent 循环结束，返回总结")
                 return {"messages": messages, "summary": final_summary}
 
         raise TimeoutError(f"超出最大思考步数")
@@ -152,6 +163,10 @@ class AgentNode(BaseNode):
             except json.JSONDecodeError:
                 arguments = {}
 
+            self.log(context, "SYSTEM", f"  🔧 [执行工具] {original_tool_name}")
+            args_preview = json.dumps(arguments, ensure_ascii=False)[:100]
+            self.log(context, "SYSTEM", f"     📥 参数: {args_preview}{'...' if len(json.dumps(arguments, ensure_ascii=False)) > 100 else ''}")
+
             final_content = ""
 
             if original_tool_name == "task_done":
@@ -160,10 +175,12 @@ class AgentNode(BaseNode):
                     summary = {"raw": str(summary)}
 
                 if self.task_done_info:
+                    self.log(context, "SYSTEM", f"     🔍 [校验规则] 需要字段: {list(self.task_done_info.keys())}")
+                    self.log(context, "SYSTEM", f"     📋 [提交内容] 字段: {list(summary.keys())}")
                     missing_keys = [f"'{k}' ({v})" for k, v in self.task_done_info.items() if k not in summary]
                     if missing_keys:
                         error_msg = f"❌ [格式错误] 你尝试完成任务，但 summary 缺失了系统强制要求的关键信息：{', '.join(missing_keys)}。"
-                        self.log(context, "WARNING", f"⚠️ [任务完结被拒] 大模型缺少必填参数: {missing_keys}")
+                        self.log(context, "WARNING", f"     ⚠️ [任务完结被拒] 缺少必填参数: {missing_keys}")
                         final_content = _format_result({
                             "error": error_msg,
                             "instruction": "请重新调用 task_done 工具，并确保 summary 参数严格包含上述提到的所有键值对！",
@@ -171,14 +188,12 @@ class AgentNode(BaseNode):
                         })
                     else:
                         if context: context.result = True
-                        self.log(context, "SYSTEM",
-                                 f"✅ [任务完结校验通过] 输出合规: {json.dumps(summary, ensure_ascii=False)}")
+                        self.log(context, "SYSTEM", f"     ✅ [校验通过] 输出合规: {json.dumps(summary, ensure_ascii=False)[:150]}")
                         final_content = _format_result({"status": "success", "summary": summary})
                         is_task_done = True
                 else:
                     if context: context.result = True
-                    self.log(context, "SYSTEM",
-                             f"✅ [任务完结信号] 大模型总结: {json.dumps(summary, ensure_ascii=False)}")
+                    self.log(context, "SYSTEM", f"     ✅ [无校验规则] 直接通过: {json.dumps(summary, ensure_ascii=False)[:150]}")
                     final_content = _format_result({"status": "success", "summary": summary})
                     is_task_done = True
 

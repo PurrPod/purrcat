@@ -86,6 +86,7 @@ class Task:
         self.running_tasks = {}
 
         self.state = TaskState.READY
+        self.create_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self.checkpoint_dir = os.path.join(DATA_DIR, "checkpoints", "task", f"{self.task_name}_{self.task_id}")
         self.model = Model(core)
 
@@ -115,15 +116,46 @@ class Task:
             old_reqs = self.graph["required_inputs"]
             global_schema = {k: {"required": True, "description": v} for k, v in old_reqs.items()}
 
-        missing_keys = []
+        validation_errors = []
+        
+        missing_required = []
         for req_key, schema_info in global_schema.items():
             is_req = schema_info.get("required", True)
             if is_req and (req_key not in self.inputs or self.inputs[req_key] is None):
                 desc = schema_info.get("description", "无特定说明")
-                missing_keys.append(f"'{req_key}' (描述: {desc})")
+                param_type = schema_info.get("type", "any")
+                missing_required.append({
+                    "name": req_key,
+                    "type": param_type,
+                    "description": desc,
+                    "required": True
+                })
+        
+        if missing_required:
+            param_list = "\n    - ".join([
+                f"'{p['name']}' (类型: {p['type']}, 描述: {p['description']})"
+                for p in missing_required
+            ])
+            validation_errors.append(f"❌ 缺少必填参数:\n    - {param_list}")
 
-        if missing_keys:
-            error_msg = f"初始化失败：缺失全局必填参数 {', '.join(missing_keys)}。请检查您的输入并重试。"
+        extra_keys = [k for k in self.inputs.keys() if k not in global_schema]
+        if extra_keys:
+            extra_list = ", ".join([f"'{k}'" for k in extra_keys])
+            validation_errors.append(f"⚠️ 传入了未知参数: {extra_list}")
+
+        if validation_errors:
+            all_params_info = []
+            for key, schema_info in global_schema.items():
+                is_req = schema_info.get("required", True)
+                param_type = schema_info.get("type", "any")
+                desc = schema_info.get("description", "无特定说明")
+                req_mark = "✅ 必填" if is_req else "⭕ 可选"
+                all_params_info.append(f"    - '{key}' (类型: {param_type}, {req_mark}, 描述: {desc})")
+            
+            error_msg = "\n".join(validation_errors)
+            error_msg += f"\n\n📋 有效的参数列表:\n" + "\n".join(all_params_info)
+            error_msg += f"\n\n💡 请检查您的输入参数后重试。"
+            
             self.state = TaskState.ERROR
             self.init_error = error_msg
             return {"status": "error", "message": error_msg}
@@ -218,25 +250,36 @@ class Task:
 
             incoming_edges = [e for e in edges if e["target"] == node_id]
             
-            all_ready = True
-            has_void = False
+            # 如果这是一个源头节点（没有任何输入连线），直接可以跑
+            if not incoming_edges:
+                runnable.append(node_id)
+                continue
+
+            all_resolved = True   # 是否所有的上游连线都已经有结果了 (HAS_DATA 或 VOID)
+            has_any_data = False  # 是否收到至少一份有效数据
 
             for edge in incoming_edges:
                 src_node = edge["source"]
                 src_port = edge.get("sourceHandle", "default")
                 
+                # 获取这条线对应的上游端口状态
                 port_state = self.output_port_states.get(src_node, {}).get(src_port, PortState.PENDING)
 
-                if port_state == PortState.VOID:
-                    has_void = True
+                if port_state == PortState.PENDING:
+                    # 只要有一个上游还没跑完，当前节点就继续等
+                    all_resolved = False
                     break
-                elif port_state != PortState.HAS_DATA:
-                    all_ready = False
+                elif port_state == PortState.HAS_DATA:
+                    has_any_data = True
 
-            if has_void:
-                self._cascade_skip(node_id)
-            elif all_ready:
-                runnable.append(node_id)
+            # 🌟 核心容错逻辑：
+            if all_resolved:
+                if has_any_data:
+                    # 只要有数据，哪怕另外一根线是 VOID 废弃的，我也能被唤醒！(完美解决分支汇聚)
+                    runnable.append(node_id)
+                else:
+                    # 只有所有的线全传来了 VOID，我才确信自己在这个分支里彻底凉了
+                    self._cascade_skip(node_id)
 
         return runnable
 
@@ -377,7 +420,7 @@ class Task:
             "task_id": self.task_id,
             "name": getattr(self, "task_name", "unnamed_task"),
             "graph_name": getattr(self, "graph_name", "default"),
-            "create_time": getattr(self, "create_time", "20250101000000"),
+            "create_time": getattr(self, "create_time", "2025-01-01 00:00:00"),
             "core": getattr(self, "core", ""),
             "state": self.state.value if hasattr(self.state, "value") else self.state,
             
@@ -421,7 +464,7 @@ class Task:
                 
                 # 恢复旧前端强依赖的 graph 和时间等元数据
                 self.graph = data.get("graph", self.graph)
-                self.create_time = data.get("create_time", self.create_time)
+                self.create_time = data.get("create_time", "2025-01-01 00:00:00")
                 
                 # 恢复新架构的引擎状态
                 self.node_state = {k: NodeState(v) for k, v in data.get("node_state", data.get("dag_state", {})).items()}
@@ -447,99 +490,53 @@ class Task:
             if not task.done():
                 task.cancel()
 
-    def log_and_notify(self, log_type: str, content: str, node_id: str):
-        if not hasattr(self, "checkpoint_dir") or not self.checkpoint_dir:
-            return
-
-        os.makedirs(self.checkpoint_dir, exist_ok=True)
-        log_path = os.path.join(self.checkpoint_dir, "log.jsonl")
-
-        card_type = log_type.value if hasattr(log_type, "value") else str(log_type).lower()
-
-        entry = {
-            "timestamp": time.time(),
-            "node_id": node_id,
-            "card_type": card_type,
-            "content": content
-        }
-
-        with self._io_lock:
-            with open(log_path, "a", encoding="utf-8") as f:
-                f.write(json.dumps(entry, ensure_ascii=False) + "\n")
-
-    @classmethod
-    def load_checkpoint(cls, checkpoint_dir: str):
+    @staticmethod
+    def load_checkpoint(checkpoint_dir: str) -> "Task":
         checkpoint_path = os.path.join(checkpoint_dir, "checkpoint.json")
         if not os.path.exists(checkpoint_path):
             return None
-            
+
         with open(checkpoint_path, "r", encoding="utf-8") as f:
-            state = json.load(f)
+            data = json.load(f)
 
-        task = cls.__new__(cls)
-        task.task_id = state.get("task_id")
-        task.task_name = state.get("name", state.get("task_name", "unknown"))
-        task.graph_name = state.get("graph_name")
-        task.inputs = state.get("inputs", {})
-        task.outputs = state.get("outputs", {})
-        task.state = TaskState(state.get("state", "ready"))
+        task_id = data.get("task_id")
+        task_name = data.get("name", data.get("task_name", "unnamed_task"))
+        core = data.get("core", "")
+        graph_name = data.get("graph_name", "default")
+        inputs = data.get("inputs", {})
 
-        if task.state == TaskState.RUNNING:
-            task.state = TaskState.INTERRUPTED
-
-        task.graph = state.get("graph", {})
+        task = Task(task_name=task_name, inputs=inputs, core=core, graph_name=graph_name, task_id=task_id)
         task.checkpoint_dir = checkpoint_dir
-        task.node_list = {}
-        task.node_state = {}
-        task.running_tasks = {}
-        task.init_error = None
-
-        task._lock = threading.Lock()
-        task._io_lock = threading.Lock()
-        task._killed = False
-        task._loop = None
         
-        task.edge_mailboxes = state.get("edge_mailboxes", {})
-        task.output_port_states = state.get("output_port_states", {})
-        task.node_memory = state.get("node_memory", {})
-
-        if state.get("create_time"):
-            task.create_time = state.get("create_time")
-        else:
-            try:
-                mtime = os.path.getmtime(checkpoint_dir)
-                task.create_time = datetime.datetime.fromtimestamp(mtime).strftime("%Y%m%d%H%M%S")
-            except:
-                task.create_time = "20250101000000"
-        task.core = state.get("core", "")
-        task.token_usage = state.get("token_usage", 0)
-        task.result = False
-        task.main_history = []
-        task.dag_state = state.get("dag_state", {})
-
-        for node_data in task.graph.get("nodes", []):
-            node_id = node_data["id"]
-            node_type = node_data["type"]
-            config = node_data.get("config", node_data.get("data", {}))
-            try:
-                module = importlib.import_module(f"src.harness.node.extensions.{node_type}.node")
-                task.node_list[node_id] = module.Node(node_id=node_id, config=config)
-            except Exception as e:
-                print(f"❌ 恢复节点模块失败 {node_type}: {e}")
-                task.state = TaskState.ERROR
-                return None
-
-            saved_state = task.dag_state.get(node_id, {}).get("state", "ready")
-            task.node_state[node_id] = NodeState(saved_state)
-
-        task.model = Model(task.core) if task.core else None
-        if task.model:
-            task.model.bind_task(task.task_id, task.task_name)
-        task.key_prefix = task.model.key_prefix if task.model else None
-
-        existing_task = TASK_INSTANCES.get(task.task_id)
-        if existing_task and existing_task.state == TaskState.RUNNING:
-            return existing_task
-
-        TASK_INSTANCES[task.task_id] = task
+        task.create_time = data.get("create_time", datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        
         return task
+
+    def get_logs(self):
+        logs = []
+        log_path = os.path.join(self.checkpoint_dir, "log.jsonl")
+        if os.path.exists(log_path):
+            with open(log_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line:
+                        try:
+                            logs.append(json.loads(line))
+                        except:
+                            pass
+        return logs
+
+    def log(self, log_type: str, content: str, node_id: str):
+        """兼容 BaseNode.log 的接口，参数顺序: (log_type, content, node_id)"""
+        log_entry = {
+            "timestamp": int(time.time() * 1000),
+            "node_id": node_id,
+            "type": log_type,
+            "content": content
+        }
+        
+        os.makedirs(self.checkpoint_dir, exist_ok=True)
+        log_path = os.path.join(self.checkpoint_dir, "log.jsonl")
+        
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(log_entry, ensure_ascii=False) + "\n")

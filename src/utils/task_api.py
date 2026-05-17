@@ -28,9 +28,9 @@ def get_task_list():
                             if not create_time:
                                 try:
                                     mtime = os.path.getmtime(chk_path)
-                                    create_time = datetime.fromtimestamp(mtime).strftime("%Y%m%d%H%M%S")
+                                    create_time = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M:%S")
                                 except:
-                                    create_time = "20250101000000"
+                                    create_time = "2025-01-01 00:00:00"
                             
                             tasks_dict[tid] = {
                                 "id": tid,

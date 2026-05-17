@@ -50,10 +50,10 @@
         },
         {
             "name": "task_done_info",
-            "type": "string",
-            "label": "动态完成规则",
-            "default": "",
-            "description": "动态注入的 JSON 结构，用于指定 Agent 输出格式要求。可传入 JSON 字符串或对象，覆盖默认的 task_done_info 校验规则。"
+            "type": "json",
+            "label": "任务完结强校验字段 (JSON)",
+            "default": {},
+            "description": "配置要求大模型完结时必须输出的 JSON 键值对。例如: {\"summary\": \"总结\", \"score\": \"评分\"}"
         }
     ]
 }

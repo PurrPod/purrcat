@@ -82,7 +82,7 @@ class BaseNode:
         self._local_tools_schemas = None
         
         self.metadata = self._load_metadata()
-        self.task_done_info = self.metadata.get("task_done_info", {})
+        self.task_done_info = self.config.get("task_done_info", self.metadata.get("task_done_info", {}))
 
     def _load_metadata(self) -> dict:
         base_path = Path(self.node_dir)
@@ -281,7 +281,7 @@ class BaseNode:
 
     def log(self, context: Any, log_type: str, content: str, node_id: str = None):
         nid = node_id or self.node_id
-        if hasattr(context, "log_and_notify"):
-            context.log_and_notify(log_type, content, nid)
+        if hasattr(context, "log"):
+            context.log(log_type, content, nid)
         else:
             print(f"[{log_type}] (Node: {nid}) {content}")

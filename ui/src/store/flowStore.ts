@@ -182,7 +182,7 @@ export const useFlowStore = create<FlowState>()(
         return errors
       },
 
-      exportGraph: (name: string): GraphExport => {
+      exportGraph: (name: string, description?: string): GraphExport => {
         const { nodes, edges } = get()
         const taskInputNode = nodes.find(n => n.data.nodeType === 'task_input')
         
@@ -193,13 +193,13 @@ export const useFlowStore = create<FlowState>()(
           taskInputNode.data.global_vars.forEach((item: any) => {
             // 取名：如果是对象，拿 name 属性；如果是老数据的字符串，直接拿
             const varName = typeof item === 'object' ? (item.name || item.key) : item;
-            const varType = typeof item === 'object' ? item.type : 'any';
-            
+            const varType = typeof item === 'object' ? (item.type || 'any') : 'any';
+
             if (varName) {
               globalSchema[varName] = {
                 type: varType,
-                required: true,
-                description: `动态注入全局参数: ${varName}`
+                required: typeof item === 'object' && item.required !== undefined ? item.required : true,
+                description: typeof item === 'object' && item.description ? item.description : `动态注入全局参数: ${varName}`
               }
             }
           })
@@ -208,7 +208,7 @@ export const useFlowStore = create<FlowState>()(
         return {
           version: "2.0",
           name,
-          description: "PurrCat Web Export - V2",
+          description: description || "PurrCat Web Export - V2",
           global_schema: globalSchema,
           nodes: nodes.map(n => {
             const { nodeType, name, color, inputs, outputs, configSchema, ...finalConfig } = n.data;

@@ -20,6 +20,7 @@ export default function Toolbar({ onBack }: { onBack?: () => void }) {
   // 部署弹窗状态
   const [isDeployModalOpen, setIsDeployModalOpen] = useState(false)
   const [workflowName, setWorkflowName] = useState('my_awesome_flow')
+  const [workflowDescription, setWorkflowDescription] = useState('')
 
   // 退出弹窗状态
   const [isExitModalOpen, setIsExitModalOpen] = useState(false)
@@ -91,7 +92,7 @@ export default function Toolbar({ onBack }: { onBack?: () => void }) {
       return
     }
 
-    const graph = exportGraph(workflowName)
+    const graph = exportGraph(workflowName, workflowDescription)
     try {
       const res = await fetch(`http://localhost:8000/api/graphs/${workflowName}`, {
         method: 'POST',
@@ -199,8 +200,14 @@ export default function Toolbar({ onBack }: { onBack?: () => void }) {
             <p className="font-bold mb-2 opacity-60">Give your cat-powered graph a name:</p>
             <input 
               value={workflowName} onChange={e => setWorkflowName(e.target.value)}
-              style={sketchyShape2} className="w-full bg-cream border-4 border-ink p-4 text-xl font-bold mb-8 focus:outline-none"
+              style={sketchyShape2} className="w-full bg-cream border-4 border-ink p-4 text-xl font-bold mb-4 focus:outline-none"
               placeholder="e.g. data_pipeline"
+            />
+            <p className="font-bold mb-2 opacity-60">Add a description (optional):</p>
+            <textarea 
+              value={workflowDescription} onChange={e => setWorkflowDescription(e.target.value)}
+              style={sketchyShape1} className="w-full bg-cream border-4 border-ink p-4 text-lg font-bold mb-8 focus:outline-none resize-none h-24"
+              placeholder="Describe what this workflow does..."
             />
             <div className="flex gap-4">
               <button onClick={handleRealDeploy} style={sketchyShape1} className="flex-1 py-4 bg-terracotta text-paper border-4 border-ink font-black text-xl shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:translate-y-1 hover:shadow-none transition-all">
