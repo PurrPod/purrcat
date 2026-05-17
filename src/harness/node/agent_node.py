@@ -59,6 +59,17 @@ class AgentNode(BaseNode):
     async def execute(self, inputs: Dict[str, Any], context: Any) -> Dict[str, Any]:
         """全新极简入口：从专属记忆空间恢复上下文"""
         
+        dynamic_task_done = inputs.get("task_done_info") or self.config.get("task_done_info")
+        if dynamic_task_done:
+            if isinstance(dynamic_task_done, str):
+                try:
+                    self.task_done_info = json.loads(dynamic_task_done)
+                    self.log(context, "SYSTEM", "✅ [动态规则] 成功解析动态传入的 task_done_info")
+                except Exception as e:
+                    self.log(context, "WARNING", f"⚠️ [动态规则] JSON解析失败，回退到默认元数据配置: {e}")
+            elif isinstance(dynamic_task_done, dict):
+                self.task_done_info = dynamic_task_done
+        
         my_memory = context.node_memory.setdefault(self.node_id, {})
         
         messages = my_memory.get("messages", inputs.get("messages", []))

@@ -361,23 +361,48 @@ class Task:
                             queue.append((target_id, False))
 
     def save(self):
+        """全局唯一存档点：同时包含新架构的核心数据与前端渲染所需数据"""
         os.makedirs(self.checkpoint_dir, exist_ok=True)
         checkpoint_path = os.path.join(self.checkpoint_dir, "checkpoint.json")
         
+        # 组装兼容前端的 dag_state (前端靠这个渲染节点颜色/Loading动画)
+        frontend_dag_state = {}
+        for n_id in self.node_list:
+            frontend_dag_state[n_id] = {
+                "state": self.node_state[n_id].value if hasattr(self.node_state[n_id], "value") else self.node_state[n_id]
+            }
+
         data = {
+            # 1. 基础元数据 (前端必须)
             "task_id": self.task_id,
-            "state": self.state.value,
+            "name": getattr(self, "task_name", "unnamed_task"),
+            "graph_name": getattr(self, "graph_name", "default"),
+            "create_time": getattr(self, "create_time", "20250101000000"),
+            "core": getattr(self, "core", ""),
+            "state": self.state.value if hasattr(self.state, "value") else self.state,
+            
+            # 2. 画布渲染数据 (前端必须)
+            "graph": self.graph,            # 前端依赖这个来画节点和连线！
+            "dag_state": frontend_dag_state,# 前端依赖这个判断节点是 Running 还是 Completed
+            
+            # 3. 业务数据
             "inputs": self.inputs,
             "outputs": self.outputs,
-            "node_state": {k: v.value for k, v in self.node_state.items()},
+            
+            # 4. 🌟 新架构核心数据 (后端引擎的灵魂)
             "edge_mailboxes": self.edge_mailboxes,
-            "output_port_states": {k: {p: s.value for p, s in ports.items()} for k, ports in self.output_port_states.items()},
+            "output_port_states": {
+                k: {p: s.value if hasattr(s, "value") else s for p, s in ports.items()}
+                for k, ports in self.output_port_states.items()
+            },
             "node_memory": self.node_memory
         }
+        
         with open(checkpoint_path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
 
     def reload(self):
+        """兼容新旧版本的读档"""
         checkpoint_path = os.path.join(self.checkpoint_dir, "checkpoint.json")
         if not os.path.exists(checkpoint_path):
             return
@@ -385,16 +410,30 @@ class Task:
         try:
             with open(checkpoint_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
+                
+                # 恢复基础状态
                 self.state = TaskState(data.get("state", "ready"))
                 if self.state == TaskState.RUNNING:
                     self.state = TaskState.INTERRUPTED
                     
                 self.inputs = data.get("inputs", {})
                 self.outputs = data.get("outputs", {})
-                self.node_state = {k: NodeState(v) for k, v in data.get("node_state", {}).items()}
+                
+                # 恢复旧前端强依赖的 graph 和时间等元数据
+                self.graph = data.get("graph", self.graph)
+                self.create_time = data.get("create_time", self.create_time)
+                
+                # 恢复新架构的引擎状态
+                self.node_state = {k: NodeState(v) for k, v in data.get("node_state", data.get("dag_state", {})).items()}
                 self.edge_mailboxes = data.get("edge_mailboxes", {})
-                self.output_port_states = {k: {p: PortState(s) for p, s in ports.items()} for k, ports in data.get("output_port_states", {}).items()}
+                
+                # 安全恢复嵌套的端口状态
+                self.output_port_states = {}
+                for k, ports in data.get("output_port_states", {}).items():
+                    self.output_port_states[k] = {p: PortState(s) for p, s in ports.items()}
+                    
                 self.node_memory = data.get("node_memory", {})
+                
         except Exception as e:
             print(f"❌ 读取 Checkpoint 失败: {e}")
 

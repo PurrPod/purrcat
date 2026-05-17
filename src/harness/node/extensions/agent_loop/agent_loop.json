@@ -13,9 +13,16 @@
         },
         {
             "name": "target_files",
-            "type": "any",
+            "type": "string",
             "port_type": "static",
             "description": "动态传入的目标文件路径 (支持 List 列表 或 逗号分隔的 String)",
+            "required": false
+        },
+        {
+            "name": "task_done_info",
+            "type": "string",
+            "port_type": "static",
+            "description": "动态注入的完成规则，可由前置节点动态决定输出格式",
             "required": false
         }
     ],
@@ -40,6 +47,13 @@
             "label": "强制验收文件列表",
             "default": "",
             "description": "需要强制校验生成的沙盒绝对路径。多个文件请用英文逗号 (,) 分隔。必须以 /agent_vm 开头。若留空，则不进行文件校验，直接产出总结。"
+        },
+        {
+            "name": "task_done_info",
+            "type": "string",
+            "label": "动态完成规则",
+            "default": "",
+            "description": "动态注入的 JSON 结构，用于指定 Agent 输出格式要求。可传入 JSON 字符串或对象，覆盖默认的 task_done_info 校验规则。"
         }
     ]
 }
