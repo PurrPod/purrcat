@@ -1,0 +1,36 @@
+{
+    "type": "template_renderer",
+    "name": "模板渲染器",
+    "description": "基于 Jinja2 模板引擎进行文本拼接。除 template 外连入本节点的所有参数，都会自动作为变量注入到模板中。",
+    "color": "#E67E22",
+    "inputs": [
+        {
+            "name": "template",
+            "type": "string",
+            "description": "模板字符串 (也可在配置中写死)",
+            "required": false
+        },
+        {
+            "name": "dynamic_vars",
+            "type": "any",
+            "description": "动态接收需要注入的任意数量变量 (在前端连线时，引脚名称需与模板中 {{ 变量名 }} 一致)",
+            "required": false
+        }
+    ],
+    "outputs": [
+        {
+            "name": "rendered_text",
+            "type": "string",
+            "description": "拼接渲染后的最终文本"
+        }
+    ],
+    "config": [
+        {
+            "name": "template",
+            "type": "string",
+            "label": "Jinja2 模板",
+            "default": "",
+            "description": "请使用 {{ 变量名 }} 占位。例如: '今天是 {{ date }}，天气 {{ weather }}'"
+        }
+    ]
+}
