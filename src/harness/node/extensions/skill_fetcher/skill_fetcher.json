@@ -7,6 +7,7 @@
         {
             "name": "skill_name",
             "type": "string",
+            "port_type": "static",
             "description": "技能名称",
             "required": true
         }
@@ -15,6 +16,7 @@
         {
             "name": "skill_content",
             "type": "string",
+            "port_type": "static",
             "description": "技能内容"
         }
     ],

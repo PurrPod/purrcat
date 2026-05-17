@@ -7,12 +7,14 @@
         {
             "name": "messages",
             "type": "MessageList",
+            "port_type": "static",
             "description": "消息上下文",
             "required": true
         },
         {
             "name": "target_files",
             "type": "any",
+            "port_type": "static",
             "description": "动态传入的目标文件路径 (支持 List 列表 或 逗号分隔的 String)",
             "required": false
         }
@@ -21,11 +23,13 @@
         {
             "name": "messages",
             "type": "MessageList",
+            "port_type": "static",
             "description": "完整的消息历史"
         },
         {
             "name": "summary",
             "type": "string",
+            "port_type": "static",
             "description": "任务完成的总结信息"
         }
     ],

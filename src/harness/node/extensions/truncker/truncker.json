@@ -7,18 +7,21 @@
         {
             "name": "list",
             "type": "list",
+            "port_type": "static",
             "description": "待截断的列表",
             "required": true
         },
         {
             "name": "start_int",
             "type": "integer",
+            "port_type": "static",
             "description": "起始索引",
             "required": false
         },
         {
             "name": "end_int",
             "type": "integer",
+            "port_type": "static",
             "description": "结束索引",
             "required": false
         }
@@ -27,6 +30,7 @@
         {
             "name": "truncated_list",
             "type": "list",
+            "port_type": "static",
             "description": "截断后的列表"
         }
     ],

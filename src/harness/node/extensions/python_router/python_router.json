@@ -1,0 +1,24 @@
+{
+    "type": "python_router",
+    "name": "代码路由",
+    "color": "#E74C3C",
+    "inputs": [
+        { "name": "code", "type": "string", "port_type": "static" },
+        {
+            "name": "dynamic_inputs", "type": "any", "port_type": "dynamic",
+            "dynamic_rules": { "watch_config": "input_variables", "method": "array_map" }
+        }
+    ],
+    "outputs": [
+        { "name": "selected_branch", "type": "string", "port_type": "static" },
+        {
+            "name": "dynamic_branches", "type": "any", "port_type": "dynamic",
+            "dynamic_rules": { "watch_config": "branches", "method": "array_map" }
+        }
+    ],
+    "config": [
+        { "name": "input_variables", "type": "list", "label": "输入变量", "default": [] },
+        { "name": "branches", "type": "list", "label": "输出分支", "default": [] },
+        { "name": "code", "type": "textarea", "label": "Python 代码" }
+    ]
+}

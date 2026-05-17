@@ -7,12 +7,14 @@
         {
             "name": "content",
             "type": "string",
+            "port_type": "static",
             "description": "消息内容",
             "required": true
         },
         {
             "name": "role",
             "type": "string",
+            "port_type": "static",
             "description": "消息角色 (system/user/assistant)",
             "required": false
         }
@@ -21,6 +23,7 @@
         {
             "name": "message_list",
             "type": "MessageList",
+            "port_type": "static",
             "description": "标准消息列表"
         }
     ],

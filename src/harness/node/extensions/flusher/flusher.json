@@ -7,12 +7,14 @@
         {
             "name": "messages",
             "type": "MessageList",
+            "port_type": "static",
             "description": "待压缩的消息列表",
             "required": true
         },
         {
             "name": "tools",
             "type": "ToolList",
+            "port_type": "static",
             "description": "工具列表",
             "required": false
         }
@@ -21,6 +23,7 @@
         {
             "name": "compressed_messages",
             "type": "MessageList",
+            "port_type": "static",
             "description": "压缩后的消息列表"
         }
     ],

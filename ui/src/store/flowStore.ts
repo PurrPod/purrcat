@@ -5,6 +5,7 @@ import {
   NodeChange, EdgeChange, getOutgoers,
 } from '@xyflow/react'
 import { CatalogItem, GraphExport } from '../types'
+import { toast } from 'react-hot-toast'
 
 const generateShortId = (prefix: string) => `${prefix}_${Math.random().toString(36).substring(2, 8)}`
 
@@ -55,17 +56,20 @@ export const useFlowStore = create<FlowState>()(
         if (!definition) return
         const newNode: Node = {
           id: generateShortId('nd'),
-          type: type === 'task_input' ? 'task_input' : type === 'task_output' ? 'task_output' : 'custom',
+          type: 'custom', // 🔴 修复：强制交给 React Flow 的 custom 组件渲染
           position,
           data: {
-            nodeType: type,
+            nodeType: type, // 🌟 真正的业务类型存在这里，供导出时使用
             name: definition.name,
             color: definition.color,
             inputs: definition.inputs,
             outputs: definition.outputs,
             configSchema: definition.config || [],
-            dynamic_inputs: [],
-            ...definition.config?.reduce((acc, f) => ({ ...acc, [f.name]: f.default }), {}),
+            // 🌟 初始化 Config 默认值，遇到 list 给个空数组
+            ...definition.config?.reduce((acc, f) => ({ 
+              ...acc, 
+              [f.name]: f.type === 'list' ? (f.default || []) : f.default 
+            }), {}),
           },
         }
         set((state) => ({ nodes: [...state.nodes, newNode] }))
@@ -94,19 +98,67 @@ export const useFlowStore = create<FlowState>()(
         if (!sourceNode || !targetNode) return false
 
         // 1. 环路校验
-        if (hasCycle(targetNode, params.source!, nodes, edges)) return false
-
-        // 2. 类型校验（核心对齐逻辑）
-        const sourceOutputs = sourceNode.data.outputs || []
-        const targetInputs = targetNode.data.inputs || []
-        const sourcePort = (sourceOutputs as any[]).find((p: any) => p.name === params.sourceHandle || (params.sourceHandle === 'default' && (sourceOutputs as any[]).length === 1))
-        const targetPort = (targetInputs as any[]).find((p: any) => p.name === params.targetHandle || (params.targetHandle === 'default' && (targetInputs as any[]).length === 1))
-
-        // 如果定义了类型且类型不匹配（简单字符串比较），且不是 any 类型
-        if (sourcePort && targetPort && sourcePort.type !== 'any' && targetPort.type !== 'any' && sourcePort.type !== targetPort.type) {
-            return false
+        if (hasCycle(targetNode, params.source!, nodes, edges)) {
+          toast.error('禁止形成循环连线！');
+          return false;
         }
 
+        // 🌟 2. 动态引脚类型推导雷达
+        const getPortType = (node: Node, handleId: string, direction: 'source' | 'target') => {
+            const ports = direction === 'source' ? (node.data.outputs as any[]) : (node.data.inputs as any[]);
+            if (!ports) return 'any';
+
+            // A. 先找有没有固定引脚 (Static Port)
+            const staticPort = ports.find(p => p.name === handleId && p.port_type !== 'dynamic');
+            if (staticPort) return staticPort.type || 'any';
+
+            // B. 找不到的话，去动态规则里挖 (Dynamic Port)
+            const dynamicPortDef = ports.find(p => p.port_type === 'dynamic');
+            if (dynamicPortDef) {
+               const configFieldName = dynamicPortDef.dynamic_rules?.watch_config;
+               if (configFieldName) {
+                   const configValue = node.data[configFieldName];
+                   if (Array.isArray(configValue)) {
+                       // 遍历 list 找到对应的对象，拔出它的 type
+                       const item = configValue.find(v => (typeof v === 'object' ? (v.name || v.key) : v) === handleId);
+                       if (item && typeof item === 'object' && item.type) {
+                           return item.type;
+                       }
+                   }
+               }
+            }
+            return 'any';
+        }
+
+        // 🌟 3. 基础类型归一化字典 (类型向下兼容)
+        const normalizeType = (t: string) => {
+            if (!t) return 'any';
+            // 在这里定义你的类型宽容映射！
+            const typeMap: Record<string, string> = {
+                'MessageList': 'list',
+                'ToolList': 'list',
+                'integer': 'number',
+                'float': 'number',
+                'LLMResponse': 'object'
+            };
+            return typeMap[t] || t.toLowerCase();
+        }
+
+        // 查出原始类型
+        const rawSourceType = getPortType(sourceNode, params.sourceHandle || 'default', 'source');
+        const rawTargetType = getPortType(targetNode, params.targetHandle || 'default', 'target');
+        
+        // 归一化对比
+        const sType = normalizeType(rawSourceType);
+        const tType = normalizeType(rawTargetType);
+
+        // 🌟 4. 智能类型校验
+        if (sType !== 'any' && tType !== 'any' && sType !== tType) {
+            toast.error(`类型不兼容！无法将 [${rawSourceType}] 连到 [${rawTargetType}] 上`);
+            return false;
+        }
+
+        // 校验通过，建立连线！(自动替换目标引脚上旧的线)
         const newEdge: Edge = { ...params, id: generateShortId('edge'), animated: true }
         set({ edges: addEdge(newEdge, edges.filter(e => !(e.target === params.target && e.targetHandle === params.targetHandle))) })
         return true
@@ -135,12 +187,20 @@ export const useFlowStore = create<FlowState>()(
         const taskInputNode = nodes.find(n => n.data.nodeType === 'task_input')
         
         const globalSchema: Record<string, any> = {}
-        if (taskInputNode && taskInputNode.data.dynamic_inputs) {
-          (taskInputNode.data.dynamic_inputs as any[]).forEach((item: any) => {
-            globalSchema[item.key] = {
-              type: item.desc || "any",
-              required: true,
-              description: `动态注入全局参数: ${item.key}`
+        
+        // 🌟 核心：兼容对象数组的读取
+        if (taskInputNode && Array.isArray(taskInputNode.data.global_vars)) {
+          taskInputNode.data.global_vars.forEach((item: any) => {
+            // 取名：如果是对象，拿 name 属性；如果是老数据的字符串，直接拿
+            const varName = typeof item === 'object' ? (item.name || item.key) : item;
+            const varType = typeof item === 'object' ? item.type : 'any';
+            
+            if (varName) {
+              globalSchema[varName] = {
+                type: varType,
+                required: true,
+                description: `动态注入全局参数: ${varName}`
+              }
             }
           })
         }
@@ -151,10 +211,11 @@ export const useFlowStore = create<FlowState>()(
           description: "PurrCat Web Export - V2",
           global_schema: globalSchema,
           nodes: nodes.map(n => {
-            const { nodeType, name, color, inputs, outputs, configSchema, dynamic_inputs, ...restConfig } = n.data;
-            const finalConfig = { ...restConfig };
-            if (dynamic_inputs && (dynamic_inputs as any[]).length > 0) {
-              finalConfig.exposed_keys = (dynamic_inputs as any[]).map(d => d.key);
+            const { nodeType, name, color, inputs, outputs, configSchema, ...finalConfig } = n.data;
+
+            // 🌟 导出 task_output 节点时，把数组对象清洗为纯字符串数组放入 exposed_keys 中
+            if (nodeType === 'task_output' && Array.isArray(finalConfig.target_vars)) {
+              finalConfig.exposed_keys = finalConfig.target_vars.map((v:any) => typeof v === 'object' ? (v.name || v.key) : v);
             }
 
             return {
@@ -162,7 +223,7 @@ export const useFlowStore = create<FlowState>()(
               type: n.data.nodeType,
               name: n.data.name,
               position: [Math.round(n.position.x), Math.round(n.position.y)],
-              config: finalConfig
+              config: finalConfig 
             }
           }),
           edges: edges.map(e => ({
@@ -220,7 +281,7 @@ export const useFlowStore = create<FlowState>()(
 
           return {
             id: node.id,
-            type: node.type === 'task_input' ? 'task_input' : node.type === 'task_output' ? 'task_output' : 'custom',
+            type: 'custom', // 🔴 修复：加载历史图谱时，也统一交给 custom 组件
             position: { x: posX, y: posY },
             data: defaultData,
           };

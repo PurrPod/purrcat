@@ -73,8 +73,29 @@ const TaskMonitorNode = ({ id, data, selected }: any) => {
         <Terminal size={16} strokeWidth={3} /> View Logs
       </button>
 
-      <Handle type="target" position={Position.Left} className="!bg-ink !w-4 !h-4 !border-2 !border-paper !-left-[28px] z-10 hover:!bg-terracotta hover:!scale-125 transition-transform" />
-      <Handle type="source" position={Position.Right} className="!bg-ink !w-4 !h-4 !border-2 !border-paper !-right-[28px] z-10 hover:!bg-[#a3be8c] hover:!scale-125 transition-transform" />
+      {/* 🌟 动态渲染目标引脚 (Target) */}
+      {data.inHandles?.map((handleId: string, idx: number) => (
+        <Handle 
+          key={`in-${handleId}`} 
+          id={handleId} 
+          type="target" 
+          position={Position.Left} 
+          className="!bg-ink !w-3 !h-3 !border-2 !border-paper !-left-[22px] z-10" 
+          style={{ top: `${30 + (idx * 20)}%` }}
+        />
+      ))}
+
+      {/* 🌟 动态渲染源引脚 (Source) */}
+      {data.outHandles?.map((handleId: string, idx: number) => (
+        <Handle 
+          key={`out-${handleId}`} 
+          id={handleId} 
+          type="source" 
+          position={Position.Right} 
+          className="!bg-ink !w-3 !h-3 !border-2 !border-paper !-right-[22px] z-10" 
+          style={{ top: `${30 + (idx * 20)}%` }}
+        />
+      ))}
     </div>
   );
 };
@@ -164,6 +185,10 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
               posX = n.position.x; posY = n.position.y;
           }
 
+          // 🌟 核心：从所有连线中，挑出跟当前节点有关的，提取出端口名，传给组件
+          const inHandles = [...new Set(graphEdges.filter((e: any) => e.target === n.id).map((e: any) => e.targetHandle || 'default'))];
+          const outHandles = [...new Set(graphEdges.filter((e: any) => e.source === n.id).map((e: any) => e.sourceHandle || 'default'))];
+
           return {
             id: n.id,
             type: 'custom',
@@ -173,6 +198,8 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
               shape: idx % 2 === 0 ? sketchyShape1 : sketchyShape2,
               isTaskRunning: isCurrentlyRunning,
               nodeState: currentState.toLowerCase(),
+              inHandles,  // 🌟 把算好的输入引脚传给组件
+              outHandles, // 🌟 把算好的输出引脚传给组件
               onShowLog: (nodeId: string) => setLogModalNodeId(nodeId)
             }
           };

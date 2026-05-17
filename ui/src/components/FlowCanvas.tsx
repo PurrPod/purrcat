@@ -3,21 +3,15 @@ import { ReactFlow, Background, Controls, useReactFlow } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
 import { useFlowStore } from '../store/flowStore';
-import CustomNode from './CustomNode';
-import TaskInputNode from './TaskInputNode';
-import TaskOutputNode from './TaskOutputNode';
-import CustomEdge from './CustomEdge'; // 引入自定义连线
+import CustomNode from './CustomNode';     // 🌟 只需要这一个
+import CustomEdge from './CustomEdge';
 
+// 🌟 极简！现在整个前端真的只需要注册这一个组件了
 const nodeTypes = {
   custom: CustomNode,
-  task_input: TaskInputNode,
-  task_output: TaskOutputNode,
 };
 
-// 注册自定义连线
-const edgeTypes = {
-  custom: CustomEdge,
-};
+const edgeTypes = { custom: CustomEdge };
 
 export default function FlowCanvas() {
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
@@ -52,8 +46,8 @@ export default function FlowCanvas() {
         onDrop={onDrop}
         onDragOver={onDragOver}
         nodeTypes={nodeTypes}
-        edgeTypes={edgeTypes} // 挂载连线类型
-        defaultEdgeOptions={{ type: 'custom' }} // 所有新连线默认走 custom
+        edgeTypes={edgeTypes}
+        defaultEdgeOptions={{ type: 'custom' }}
         fitView
         className="bg-cream"
       >
