@@ -1,115 +1,96 @@
 {
   "version": "2.0",
   "name": "default",
-  "description": "PurrCat Web Export - 优化版",
-  
+  "description": "PurrCat Web Export - V2",
   "global_schema": {
     "prompt": {
       "type": "string",
       "required": true,
-      "description": "用户的核心指令或问题，用于驱动整个任务流",
-      "default": null
-    },
-    "target_file": {
-      "type": "string",
-      "required": true,
-      "description": "最终任务成果输出的沙盒绝对路径 (必须以 /agent_vm/ 开头)",
-      "default": "/agent_vm/output.md"
+      "description": "动态注入全局参数: prompt"
     }
   },
-
   "nodes": [
     {
-      "id": "nd_input_e4a1b2",
-      "type": "task_input",
-      "name": "全局输入",
-      "position": [-300, 114],
+      "id": "nd_7dy81t",
+      "type": "agent_loop",
+      "name": "智能体循环",
+      "position": [
+        1216,
+        380
+      ],
       "config": {
-        "exposed_keys": ["prompt", "target_file"]
+        "target_files": ""
       }
     },
     {
-      "id": "nd_sys_a7b8c9",
+      "id": "nd_89ls3y",
       "type": "message_card_builder",
-      "name": "系统预设",
-      "position": [71, -444],
+      "name": "消息卡片构建器",
+      "position": [
+        808,
+        378
+      ],
       "config": {
-        "role": "system",
-        "content": "你是一个优秀的AI任务助手，请利用工具高效完成任务。"
-      }
-    },
-    {
-      "id": "nd_usr_f1d2e3",
-      "type": "message_card_builder",
-      "name": "用户指令",
-      "position": [68, -76],
-      "config": {
+        "content": "",
         "role": "user"
       }
     },
     {
-      "id": "nd_app_b4c5d6",
-      "type": "appender",
-      "name": "上下文合并",
-      "position": [480, -160],
-      "config": {}
-    },
-    {
-      "id": "nd_loop_9e8d7c",
-      "type": "file_output_loop",
-      "name": "文件输出循环",
-      "position": [812, 144],
+      "id": "nd_zlkwb9",
+      "type": "task_input",
+      "name": "全局输入",
+      "position": [
+        403,
+        396
+      ],
       "config": {
-        "file_path": ""
+        "global_vars": [
+          {
+            "name": "prompt",
+            "type": "string"
+          }
+        ]
       }
     },
     {
-      "id": "nd_out_3a2b1c",
+      "id": "nd_59kj37",
       "type": "task_output",
       "name": "全局输出",
-      "position": [1196, 157],
+      "position": [
+        1601,
+        411
+      ],
       "config": {
-        "exposed_keys": ["task_result"]
+        "target_vars": [
+          {
+            "name": "summary",
+            "type": "string"
+          }
+        ],
+        "exposed_keys": [
+          "summary"
+        ]
       }
     }
   ],
-
   "edges": [
     {
-      "source": "nd_input_e4a1b2",
-      "target": "nd_usr_f1d2e3",
+      "source": "nd_89ls3y",
+      "target": "nd_7dy81t",
+      "sourceHandle": "message_list",
+      "targetHandle": "messages"
+    },
+    {
+      "source": "nd_zlkwb9",
+      "target": "nd_89ls3y",
       "sourceHandle": "prompt",
       "targetHandle": "content"
     },
     {
-      "source": "nd_input_e4a1b2",
-      "target": "nd_loop_9e8d7c",
-      "sourceHandle": "target_file",
-      "targetHandle": "file_path"
-    },
-    {
-      "source": "nd_sys_a7b8c9",
-      "target": "nd_app_b4c5d6",
-      "sourceHandle": "message_list",
-      "targetHandle": "base_list"
-    },
-    {
-      "source": "nd_usr_f1d2e3",
-      "target": "nd_app_b4c5d6",
-      "sourceHandle": "message_list",
-      "targetHandle": "append_list"
-    },
-    {
-      "source": "nd_app_b4c5d6",
-      "target": "nd_loop_9e8d7c",
-      "sourceHandle": "merged_list",
-      "targetHandle": "messages"
-    },
-    {
-      "source": "nd_loop_9e8d7c",
-      "target": "nd_out_3a2b1c",
+      "source": "nd_7dy81t",
+      "target": "nd_59kj37",
       "sourceHandle": "summary",
-      "targetHandle": "task_result"
+      "targetHandle": "summary"
     }
   ]
 }

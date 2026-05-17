@@ -50,16 +50,20 @@ def kill_task(task_id):
 
 
 def inject_task_instruction(task_id: str, content: str, node_id: str = None):
+    """全局指令注入函数：委托给 Task 实例的规范化 API"""
     if task_id in TASK_INSTANCES:
         task = TASK_INSTANCES[task_id]
         if node_id:
-            task.node_memory.setdefault(node_id, {}).setdefault("force_push", []).append(content)
-            task.node_state[node_id] = NodeState.READY
+            # 使用规范化 API
+            result = task.inject_instruction(node_id, content)
+            return result["status"] == "success"
         else:
-            for n_id in task.node_list:
-                task.node_memory.setdefault(n_id, {}).setdefault("force_push", []).append(content)
-                task.node_state[n_id] = NodeState.READY
-        return True
+            # 广播模式：只向所有 Agent 节点注入
+            from src.harness.node.agent_node import AgentNode
+            for n_id, node_instance in task.node_list.items():
+                if isinstance(node_instance, AgentNode):
+                    task.inject_instruction(n_id, content)
+            return True
     return False
 
 
@@ -266,39 +270,95 @@ class Task:
                 out_port = edge.get("sourceHandle", "default")
                 self.output_port_states[node_id][out_port] = PortState.VOID
 
-    def reset(self, node_id: str):
+    # ==========================================
+    # 🌟 规范化的外部交互 API
+    # ==========================================
+
+    def inject_instruction(self, node_id: str, instruction: str) -> dict:
+        """官方推荐的指令注入入口：自带类型校验和正确的级联重置"""
+        if node_id not in self.node_list:
+            return {"status": "error", "message": "节点不存在"}
+        
+        # 1. 严格的类型校验！拦截非 Agent 节点
+        from src.harness.node.agent_node import AgentNode
+        if not isinstance(self.node_list[node_id], AgentNode):
+            return {"status": "error", "message": "拒绝操作：只有 Agent 类型的节点才能注入指令和记忆！"}
+
+        # 2. 安全注入指令到该节点的私有记忆
+        my_memory = self.node_memory.setdefault(node_id, {})
+        my_memory.setdefault("force_push", []).append(instruction)
+
+        # 3. 触发正确的级联重置 (is_injection=True，保护当前节点的记忆)
+        self._cascade_reset(node_id, is_injection=True)
+        
+        # 4. 唤醒整个任务流
+        self.state = TaskState.READY
+        self.save()
+        return {"status": "success", "message": "指令已注入，下游链路状态已重置！"}
+
+    def reset_node(self, node_id: str) -> dict:
+        """用户点击'重新运行'的入口：目标节点连带下游一起彻底清空记忆"""
+        if node_id not in self.node_list:
+            return {"status": "error", "message": "节点不存在"}
+        
+        # 触发彻底的级联重置 (is_injection=False，连目标节点的记忆一起扬了)
+        self._cascade_reset(node_id, is_injection=False)
+        
+        self.state = TaskState.READY
+        self.save()
+        return {"status": "success", "message": "节点及其下游已彻底重置！"}
+
+    # ==========================================
+    # 🌟 史诗级带保护的级联清理算法
+    # ==========================================
+
+    def _cascade_reset(self, start_node_id: str, is_injection: bool):
+        """
+        核心数据流清理逻辑：
+        is_injection=True 代表是指令注入，目标节点的记忆必须保留！
+        is_injection=False 代表彻底重跑，目标节点的记忆也要清空！
+        """
         with self._lock:
-            queue = deque([node_id])
-            visited = set([node_id])
+            # 队列中存储 (node_id, 是否是本次操作的起始目标节点)
+            queue = deque([(start_node_id, True)])
+            visited = set([start_node_id])
             edges = self.graph.get("edges", [])
 
             while queue:
-                curr_id = queue.popleft()
+                curr_id, is_target = queue.popleft()
                 
+                # 1. 所有波及的节点，状态统统恢复待命
                 self.node_state[curr_id] = NodeState.READY
                 
-                if curr_id in self.edge_mailboxes:
-                    self.edge_mailboxes[curr_id].clear()
-                
+                # 2. 清空该节点向外发射的端口状态 (让引擎知道它还没产出新数据)
                 if curr_id in self.output_port_states:
                     self.output_port_states[curr_id].clear()
 
-                if curr_id in self.node_memory:
-                    self.node_memory.pop(curr_id)
+                # 3. 🌟 记忆与邮箱清理逻辑
+                # 如果是注入操作且当前是目标节点，我们只清空它的输出，【绝对不能清空它的历史记忆和输入邮箱】
+                if is_injection and is_target:
+                    pass
+                else:
+                    # 对于非目标节点（下游），或者选择了彻底重跑，必须清空邮箱并删档！
+                    if curr_id in self.edge_mailboxes:
+                        self.edge_mailboxes[curr_id].clear()
+                    if curr_id in self.node_memory:
+                        self.node_memory.pop(curr_id)
 
+                # 4. 打断可能正在苟延残喘的协程
                 task_to_cancel = [t for t, n in self.running_tasks.items() if n == curr_id]
                 for t in task_to_cancel:
                     t.cancel()
                     self.running_tasks.pop(t, None)
 
+                # 5. 顺藤摸瓜找下游
                 for edge in edges:
                     if edge["source"] == curr_id:
-                        if edge["target"] not in visited:
-                            visited.add(edge["target"])
-                            queue.append(edge["target"])
-            
-            self.state = TaskState.READY
-            self.save()
+                        target_id = edge["target"]
+                        if target_id not in visited:
+                            visited.add(target_id)
+                            # 下游节点全部标记为 False（非目标节点），一律接受无情删档！
+                            queue.append((target_id, False))
 
     def save(self):
         os.makedirs(self.checkpoint_dir, exist_ok=True)

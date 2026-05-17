@@ -237,7 +237,8 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
 
   useEffect(() => {
     if (sessionId && sessionId !== currentSessionId) {
-      handleSelectSession(sessionId);
+      setCurrentSessionId(sessionId);
+      loadSessionHistory(sessionId);
     }
   }, [sessionId]);
 
@@ -272,29 +273,35 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
       if (res.ok) {
         const data = await res.json();
         setSessions(data);
-        if (data.length > 0 && !currentSessionId) handleSelectSession(data[0].id);
+        if (data.length > 0 && !currentSessionId) {
+          const firstSessionId = data[0].id;
+          setCurrentSessionId(firstSessionId);
+          await loadSessionHistory(firstSessionId);
+        }
       }
     } catch (e) { toast.error("获取会话失败"); }
   };
 
+  const loadSessionHistory = async (id: string) => {
+    const res = await fetch(`http://localhost:8000/api/sessions/${id}`);
+    if (res.ok) {
+      const history = await res.json();
+      setMessages(history);
+    }
+  };
+
   const handleSelectSession = async (id: string) => {
-    setIsCheckingOut(true); // 开启转手绘风圈圈，阻塞操作
+    setIsCheckingOut(true);
     setCurrentSessionId(id);
     navigate(`/chat/${id}`, { replace: true });
     isAutoScroll.current = true;
     try {
-      // 尝试调用后端检出接口，触发等待模型释放响应（打断阻塞）
       await fetch(`http://localhost:8000/api/sessions/${id}/checkout`, { method: 'POST' }).catch(() => {});
-      
-      const res = await fetch(`http://localhost:8000/api/sessions/${id}`);
-      if (res.ok) {
-        const history = await res.json();
-        setMessages(history);
-      }
+      await loadSessionHistory(id);
     } catch (e) { 
       toast.error('加载记录失败'); 
     } finally {
-      setIsCheckingOut(false); // 解除阻塞
+      setIsCheckingOut(false);
     }
   };
 

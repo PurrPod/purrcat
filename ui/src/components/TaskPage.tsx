@@ -157,26 +157,22 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
     setCurrentNodeLogs([]);
 
     try {
-      // 🌟 核心修改：不再去拉静态 /api/graphs，直接拉取该任务当前的完整运行时状态
       const stateRes = await fetch(`http://localhost:8000/api/tasks/${task.id}/state`);
       
       if (stateRes.ok) {
         const stateData = await stateRes.json();
-        
-        // 🌟 直接使用后端落盘的动态裂变后的 graph，保证 ID 100% 匹配
         const graph = stateData.graph || { nodes: [], edges: [] };
         const graphNodes = graph.nodes || [];
         const graphEdges = graph.edges || [];
         
-        // 兼容你的 FastAPI 包装：如果后端是 dag_state 就取 dag_state，否则 node_states
-        const actualNodeStates = stateData.dag_state || stateData.node_states || {};
-        const isCurrentlyRunning = stateData.state === 'running' || stateData.task_state === 'running';
+        // 🌟 新架构：不再猜字段，直接认准 node_state
+        const actualNodeStates = stateData.node_state || {};
+        const isCurrentlyRunning = stateData.state === 'running';
 
         const flowNodes = graphNodes.map((n: any, idx: number) => {
           if (!n) return null;
           
-          const nodeInfo = actualNodeStates[n.id];
-          const currentState = typeof nodeInfo === 'object' && nodeInfo !== null ? (nodeInfo.state || 'ready') : (nodeInfo || 'ready');
+          const currentState = actualNodeStates[n.id] || 'ready';
           
           let posX = 100 + (idx % 3) * 280, posY = 100 + Math.floor(idx / 3) * 180;
           if (Array.isArray(n.position)) {
@@ -185,7 +181,6 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
               posX = n.position.x; posY = n.position.y;
           }
 
-          // 🌟 核心：从所有连线中，挑出跟当前节点有关的，提取出端口名，传给组件
           const inHandles = [...new Set(graphEdges.filter((e: any) => e.target === n.id).map((e: any) => e.targetHandle || 'default'))];
           const outHandles = [...new Set(graphEdges.filter((e: any) => e.source === n.id).map((e: any) => e.sourceHandle || 'default'))];
 
@@ -198,8 +193,8 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
               shape: idx % 2 === 0 ? sketchyShape1 : sketchyShape2,
               isTaskRunning: isCurrentlyRunning,
               nodeState: currentState.toLowerCase(),
-              inHandles,  // 🌟 把算好的输入引脚传给组件
-              outHandles, // 🌟 把算好的输出引脚传给组件
+              inHandles, 
+              outHandles,
               onShowLog: (nodeId: string) => setLogModalNodeId(nodeId)
             }
           };
@@ -207,7 +202,6 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
 
         const flowEdges = graphEdges.map((e: any) => {
           if (!e || !e.source || !e.target) return null;
-          
           return {
             id: `e-${e.source}-${e.target}`,
             source: e.source,
@@ -219,8 +213,6 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
 
         setNodes(flowNodes);
         setEdges(flowEdges);
-      } else {
-        toast.error(`无法获取任务状态记录`);
       }
     } catch (e) {
       toast.error(`加载图谱失败`);
@@ -256,16 +248,13 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
         const res = await fetch(`http://localhost:8000/api/tasks/${selectedTaskId}/state`);
         if (res.ok) {
           const data = await res.json();
-          // 🌟 兼容后端结构
-          const nodeStates = data.dag_state || data.node_states || {};
-          const isCurrentlyRunning = data.state === 'running' || data.task_state === 'running';
+          // 🌟 新架构直接读取 node_state
+          const nodeStates = data.node_state || {};
+          const isCurrentlyRunning = data.state === 'running';
 
           setNodes((nds) =>
             nds.map((n) => {
-              // 取出真实状态
-              const nodeInfo = nodeStates[n.id];
-              const currentState = (typeof nodeInfo === 'object' && nodeInfo !== null ? nodeInfo.state : nodeInfo) || 'ready';
-              
+              const currentState = nodeStates[n.id] || 'ready';
               if (n.data.nodeState !== currentState.toLowerCase() || n.data.isTaskRunning !== isCurrentlyRunning) {
                 return {
                   ...n,
