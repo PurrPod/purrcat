@@ -12,11 +12,18 @@ class TaskState(str, Enum):
 
 
 class NodeState(str, Enum):
-    READY = "ready"  # 初始状态
-    WAITING = "waiting"  # 被人类打回或上游重置，等待/准备重新执行
+    READY = "ready"      # 初始状态或被重置
+    WAITING = "waiting"  # Agent 被挂起，等待人工注入指令
     RUNNING = "running"  # 正在执行中
-    ERROR = "error"  # 节点抛出异常，挂起等待干预
-    COMPLETED = "completed"  # 执行成功
+    ERROR = "error"      # 执行出错
+    COMPLETED = "completed"# 执行成功
+    SKIPPED = "skipped"  # 因路由未命中，被上游短路跳过
+
+
+class PortState(str, Enum):
+    PENDING = "pending"  # 等待包裹投递
+    HAS_DATA = "has_data" # 已收到包裹
+    VOID = "void"        # 空包裹/跳过信号（路由短路用）
 
 
 class LogType(str, Enum):

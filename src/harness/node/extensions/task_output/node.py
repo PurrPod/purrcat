@@ -6,15 +6,10 @@ from src.harness.node.base import BaseNode
 class Node(BaseNode):
     """全局输出节点：收集上游的连线数据，并写入 Task 的全局 outputs 中"""
 
-    async def execute(
-        self, inputs: Dict[str, Any], force_push_msgs: list, context: Any
-    ) -> Dict[str, Any]:
+    async def execute(self, inputs: Dict[str, Any], context: Any) -> Dict[str, Any]:
         for key, value in inputs.items():
             context.outputs[key] = value
 
         self.log(context, "SYSTEM", f"📤 [引擎出口] DAG流转结束！最终收集到的全局参数: {list(inputs.keys())}")
-
-        # 记录落盘
-        self.save_checkpoints(context, {"inputs": inputs, "outputs": {"status": "dag_completed"}})
 
         return {"default": True}

@@ -6,9 +6,7 @@ from src.harness.node.base import BaseNode
 class Node(BaseNode):
     """文件输入节点：读取文件内容"""
 
-    async def execute(
-        self, inputs: Dict[str, Any], force_push_msgs: list, context: Any
-    ) -> Dict[str, Any]:
+    async def execute(self, inputs: Dict[str, Any], context: Any) -> Dict[str, Any]:
         file_path = inputs.get("file_path") or self.config.get("file_path", "")
 
         if not file_path:
@@ -25,6 +23,4 @@ class Node(BaseNode):
 
         self.log(context, "SYSTEM", f"✅ [文件读取] 成功读取，内容长度: {len(content)}")
 
-        outputs = {"file_content": content}
-        self.save_checkpoints(context, {"inputs": inputs, "outputs": outputs})
-        return outputs
+        return {"file_content": content}

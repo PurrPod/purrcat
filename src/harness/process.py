@@ -11,21 +11,13 @@ from collections import deque
 from typing import Any, Dict, List
 
 from src.model.facade import Model
-from src.tool.bash import close_session
 from src.utils.config import DATA_DIR
-
-from .enums import LogType, NodeState, TaskState
+from .enums import LogType, NodeState, PortState, TaskState
 
 TASK_INSTANCES = {}
-dirty_tasks = set()
-task_set_lock = threading.Lock()
 
 
 def auto_load_all_tasks():
-    """
-    全局初始化：仅将磁盘中的任务读取到内存，不自动触发运行。
-    让任务安安静静地躺在 TASK_INSTANCES 里，等待前端唤醒或追加指令。
-    """
     checkpoints_dir = os.path.join(DATA_DIR, "checkpoints", "task")
     if not os.path.exists(checkpoints_dir):
         return
@@ -61,11 +53,13 @@ def inject_task_instruction(task_id: str, content: str, node_id: str = None):
     if task_id in TASK_INSTANCES:
         task = TASK_INSTANCES[task_id]
         if node_id:
-            return task.submit_request(node_id, content)
+            task.node_memory.setdefault(node_id, {}).setdefault("force_push", []).append(content)
+            task.node_state[node_id] = NodeState.READY
         else:
             for n_id in task.node_list:
-                task.submit_request(n_id, content)
-            return True
+                task.node_memory.setdefault(n_id, {}).setdefault("force_push", []).append(content)
+                task.node_state[n_id] = NodeState.READY
+        return True
     return False
 
 
@@ -77,37 +71,33 @@ class Task:
         self.outputs = {}
         self.core = core
         self.graph_name = graph_name
-
+        
+        self.node_state = {}       # 节点状态 {node_id: NodeState}
+        self.edge_mailboxes = {}   # 邮箱系统 {target_node: {target_port: payload}}
+        self.output_port_states = {} # 端口状态 {source_node: {source_port: PortState}}
+        self.node_memory = {}      # Agent 的私密日记本 {node_id: {"messages": [], "force_push": []}}
+        
         self.node_list = {}
-        self.node_state = {}
         self.graph = {}
-        self.pending_force_push = {}
         self.running_tasks = {}
 
         self.state = TaskState.READY
         self.checkpoint_dir = os.path.join(DATA_DIR, "checkpoints", "task", f"{self.task_name}_{self.task_id}")
-
         self.model = Model(core)
-        self.key_prefix = self.model.key_prefix
 
         self._lock = threading.Lock()
         self._io_lock = threading.Lock()
         self._killed = False
         self._loop = None
-        self.create_time = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
-        self.token_usage = 0
-        self.result = False
-        self.main_history = []
-        self.dag_state = {}
         self.init_error = None
 
         if self.task_id not in TASK_INSTANCES:
             TASK_INSTANCES[self.task_id] = self
-        self.save_checkpoints()
 
         self.load_graph()
+        self.reload()
 
-    def load_graph(self) -> dict:
+    def load_graph(self):
         graph_path = os.path.join(os.path.dirname(__file__), "graph", f"{self.graph_name}.json")
         if not os.path.exists(graph_path):
             return {"status": "error", "message": f"找不到图表定义文件: {self.graph_name}.json"}
@@ -151,63 +141,6 @@ class Task:
 
         return {"status": "success", "message": "图表解析与参数校验通过"}
 
-    def submit_request(self, node_id: str, instruction: str) -> dict:
-        if node_id not in self.node_list:
-            return {"status": "error", "message": f"节点 {node_id} 不存在于当前任务中。"}
-
-        from src.harness.node.agent_node import AgentNode
-        if not isinstance(self.node_list[node_id], AgentNode):
-            return {"status": "error", "message": f"拒绝操作：节点 {node_id} 不是 Agent 类型的节点，不支持指令注入或打回重做。"}
-
-        self._cascade_reset(node_id)
-
-        if node_id not in self.pending_force_push:
-            self.pending_force_push[node_id] = []
-        self.pending_force_push[node_id].append(instruction)
-
-        if self.state in [TaskState.ERROR, TaskState.INTERRUPTED, TaskState.COMPLETED]:
-            self.state = TaskState.READY
-        self.save_checkpoints()
-
-        return {"status": "success", "message": "指令已注入，链路已重置，等待引擎下一次 run()"}
-
-    def _cascade_reset(self, start_node_id: str):
-        queue = deque([(start_node_id, True)]) # 队列存 (node_id, 是否是源目标节点)
-        visited = set([start_node_id])
-        edges = self.graph.get("edges", [])
-
-        while queue:
-            curr_id, is_target = queue.popleft()
-
-            self.node_state[curr_id] = NodeState.READY
-
-            if curr_id in self.node_list:
-                # 🌟 关键修复：目标节点不删档 (False)，下游节点全删档 (True)
-                self.node_list[curr_id].reset(self, clear_backup=not is_target)
-
-            # 🌟 必须加锁保护跨线程操作
-            with self._lock:
-                task_to_cancel = None
-                for t, n_id in list(self.running_tasks.items()):
-                    if n_id == curr_id:
-                        task_to_cancel = t
-                        break
-
-                if task_to_cancel and not task_to_cancel.done():
-                    if self._loop and self._loop.is_running():
-                        self._loop.call_soon_threadsafe(task_to_cancel.cancel)
-                    else:
-                        task_to_cancel.cancel()
-                    # 🌟 安全移除
-                    self.running_tasks.pop(task_to_cancel, None)
-
-            for edge in edges:
-                if edge["source"] == curr_id:
-                    target_id = edge["target"]
-                    if target_id not in visited:
-                        visited.add(target_id)
-                        queue.append((target_id, False)) # 下游节点全部标记为 False
-
     async def run(self, max_concurrency: int = 5):
         if self.state == TaskState.ERROR and self.init_error:
             return {"status": "error", "message": self.init_error}
@@ -219,145 +152,234 @@ class Task:
         try:
             while True:
                 if self._killed:
-                    self._cancel_all_tasks(self.running_tasks)
+                    self._cancel_all_tasks()
                     self.state = TaskState.KILLED
                     break
 
                 runnable_nodes = self._get_runnable_nodes()
-                nodes_to_start = [n for n in runnable_nodes if n not in self.running_tasks.values()]
+                
+                if not runnable_nodes and not self.running_tasks:
+                    if any(s == NodeState.WAITING for s in self.node_state.values()):
+                        self.state = TaskState.INTERRUPTED
+                        self.save()
+                        return {"status": "suspended", "message": "任务已挂起，等待人工干预"}
+                    self.state = TaskState.COMPLETED
+                    self.save()
+                    return {"status": "success", "outputs": self.outputs}
 
+                nodes_to_start = [n for n in runnable_nodes if n not in self.running_tasks.values()]
                 for node_id in nodes_to_start:
-                    if len(self.running_tasks) >= max_concurrency:
-                        break
+                    if len(self.running_tasks) >= max_concurrency: break
 
                     self.node_state[node_id] = NodeState.RUNNING
                     node_instance = self.node_list[node_id]
 
-                    inputs = self._gather_inputs(node_id)
-                    force_push_msgs = self.pending_force_push.pop(node_id, [])
+                    inputs = self.edge_mailboxes.get(node_id, {})
 
-                    task = asyncio.create_task(
-                        node_instance.execute(inputs, force_push_msgs, context=self)
-                    )
+                    task = asyncio.create_task(node_instance.execute(inputs, context=self))
                     self.running_tasks[task] = node_id
 
-                if not self.running_tasks:
-                    if all(s == NodeState.COMPLETED for s in self.node_state.values()):
-                        self.state = TaskState.COMPLETED
-                        self.save_checkpoints()
-                        return {"status": "success", "outputs": self.outputs}
-                    else:
-                        self.state = TaskState.INTERRUPTED
-                        self.save_checkpoints()
-                        return {"status": "interrupted", "message": "任务挂起或依赖图断裂"}
-
-                done, pending = await asyncio.wait(
-                    self.running_tasks.keys(),
-                    return_when=asyncio.FIRST_COMPLETED
-                )
-
-                if self._killed:
-                    self._cancel_all_tasks(self.running_tasks)
-                    self.state = TaskState.KILLED
-                    break
+                done, pending = await asyncio.wait(self.running_tasks.keys(), return_when=asyncio.FIRST_COMPLETED)
 
                 for task in done:
-                    if task not in self.running_tasks:
-                        continue
                     node_id = self.running_tasks.pop(task)
                     try:
                         result = task.result()
                         self.node_state[node_id] = NodeState.COMPLETED
-                        self.node_list[node_id].outputs = result
+                        
+                        self._deliver_payloads(node_id, result)
+                        
                     except asyncio.CancelledError:
-                        # 🌟 啥也不做！保持它自尽前设定的 WAITING 状态，或者原本的状态。
-                        # 只有这样，Task.run 才会因为没有可运行节点而优雅地结束并变成 INTERRUPTED。
                         pass
                     except Exception as e:
                         self.node_state[node_id] = NodeState.ERROR
                         self.state = TaskState.ERROR
-                        self.save_checkpoints()
-                        print(f"❌ 节点 {node_id} 执行崩溃: {traceback.format_exc()}")
-                        return {"status": "error", "message": f"节点 {node_id} 发生异常: {str(e)}"}
+                        self.save()
+                        return {"status": "error", "message": f"节点 {node_id} 异常: {str(e)}"}
 
-                self.save_checkpoints()
+                self.save()
 
         except Exception as e:
             self.state = TaskState.ERROR
-            self.save_checkpoints()
-            return {"status": "error", "message": f"引擎致命错误: {str(e)}"}
+            self.save()
+            return {"status": "error", "message": f"引擎异常: {str(e)}"}
 
     def _get_runnable_nodes(self) -> List[str]:
         runnable = []
         edges = self.graph.get("edges", [])
 
         for node_id, state in self.node_state.items():
-            if state == NodeState.READY:  # 🌟 必须只认 READY！
-                can_run = True
-                for edge in edges:
-                    if edge["target"] == node_id:
-                        if self.node_state.get(edge["source"]) != NodeState.COMPLETED:
-                            can_run = False
-                            break
-                if can_run:
-                    runnable.append(node_id)
+            if state != NodeState.READY:
+                continue
+
+            incoming_edges = [e for e in edges if e["target"] == node_id]
+            
+            all_ready = True
+            has_void = False
+
+            for edge in incoming_edges:
+                src_node = edge["source"]
+                src_port = edge.get("sourceHandle", "default")
+                
+                port_state = self.output_port_states.get(src_node, {}).get(src_port, PortState.PENDING)
+
+                if port_state == PortState.VOID:
+                    has_void = True
+                    break
+                elif port_state != PortState.HAS_DATA:
+                    all_ready = False
+
+            if has_void:
+                self._cascade_skip(node_id)
+            elif all_ready:
+                runnable.append(node_id)
+
         return runnable
 
-    def _gather_inputs(self, node_id: str) -> Dict[str, Any]:
-        inputs = {}
-        for edge in self.graph.get("edges", []):
-            if edge["target"] == node_id:
-                source_node = self.node_list[edge["source"]]
-                src_port = edge.get("sourceHandle", "default")
+    def _deliver_payloads(self, source_node_id: str, outputs: dict):
+        edges = self.graph.get("edges", [])
+        if source_node_id not in self.output_port_states:
+            self.output_port_states[source_node_id] = {}
+
+        for edge in edges:
+            if edge["source"] == source_node_id:
+                out_port = edge.get("sourceHandle", "default")
+                tgt_node = edge["target"]
                 tgt_port = edge.get("targetHandle", "default")
 
-                if hasattr(source_node, "outputs") and source_node.outputs:
-                    inputs[tgt_port] = source_node.outputs.get(src_port)
-        return inputs
+                if out_port in outputs:
+                    if tgt_node not in self.edge_mailboxes:
+                        self.edge_mailboxes[tgt_node] = {}
+                    self.edge_mailboxes[tgt_node][tgt_port] = outputs[out_port]
+                    self.output_port_states[source_node_id][out_port] = PortState.HAS_DATA
+                else:
+                    self.output_port_states[source_node_id][out_port] = PortState.VOID
 
-    def _cancel_all_tasks(self, running_tasks: dict):
-        for task in running_tasks.keys():
-            if not task.done():
-                task.cancel()
+    def _cascade_skip(self, node_id: str):
+        self.node_state[node_id] = NodeState.SKIPPED
+        edges = self.graph.get("edges", [])
+        if node_id not in self.output_port_states:
+            self.output_port_states[node_id] = {}
+
+        for edge in edges:
+            if edge["source"] == node_id:
+                out_port = edge.get("sourceHandle", "default")
+                self.output_port_states[node_id][out_port] = PortState.VOID
+
+    def reset(self, node_id: str):
+        with self._lock:
+            queue = deque([node_id])
+            visited = set([node_id])
+            edges = self.graph.get("edges", [])
+
+            while queue:
+                curr_id = queue.popleft()
+                
+                self.node_state[curr_id] = NodeState.READY
+                
+                if curr_id in self.edge_mailboxes:
+                    self.edge_mailboxes[curr_id].clear()
+                
+                if curr_id in self.output_port_states:
+                    self.output_port_states[curr_id].clear()
+
+                if curr_id in self.node_memory:
+                    self.node_memory.pop(curr_id)
+
+                task_to_cancel = [t for t, n in self.running_tasks.items() if n == curr_id]
+                for t in task_to_cancel:
+                    t.cancel()
+                    self.running_tasks.pop(t, None)
+
+                for edge in edges:
+                    if edge["source"] == curr_id:
+                        if edge["target"] not in visited:
+                            visited.add(edge["target"])
+                            queue.append(edge["target"])
+            
+            self.state = TaskState.READY
+            self.save()
+
+    def save(self):
+        os.makedirs(self.checkpoint_dir, exist_ok=True)
+        checkpoint_path = os.path.join(self.checkpoint_dir, "checkpoint.json")
+        
+        data = {
+            "task_id": self.task_id,
+            "state": self.state.value,
+            "inputs": self.inputs,
+            "outputs": self.outputs,
+            "node_state": {k: v.value for k, v in self.node_state.items()},
+            "edge_mailboxes": self.edge_mailboxes,
+            "output_port_states": {k: {p: s.value for p, s in ports.items()} for k, ports in self.output_port_states.items()},
+            "node_memory": self.node_memory
+        }
+        with open(checkpoint_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+
+    def reload(self):
+        checkpoint_path = os.path.join(self.checkpoint_dir, "checkpoint.json")
+        if not os.path.exists(checkpoint_path):
+            return
+
+        try:
+            with open(checkpoint_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                self.state = TaskState(data.get("state", "ready"))
+                if self.state == TaskState.RUNNING:
+                    self.state = TaskState.INTERRUPTED
+                    
+                self.inputs = data.get("inputs", {})
+                self.outputs = data.get("outputs", {})
+                self.node_state = {k: NodeState(v) for k, v in data.get("node_state", {}).items()}
+                self.edge_mailboxes = data.get("edge_mailboxes", {})
+                self.output_port_states = {k: {p: PortState(s) for p, s in ports.items()} for k, ports in data.get("output_port_states", {}).items()}
+                self.node_memory = data.get("node_memory", {})
+        except Exception as e:
+            print(f"❌ 读取 Checkpoint 失败: {e}")
 
     def kill(self):
         if self.state in [TaskState.COMPLETED, TaskState.ERROR, TaskState.KILLED]:
             return
         self._killed = True
 
-    def save_checkpoints(self):
+    def _cancel_all_tasks(self):
+        for task in self.running_tasks.keys():
+            if not task.done():
+                task.cancel()
+
+    def log_and_notify(self, log_type: str, content: str, node_id: str):
+        if not hasattr(self, "checkpoint_dir") or not self.checkpoint_dir:
+            return
+
         os.makedirs(self.checkpoint_dir, exist_ok=True)
-        checkpoint_path = os.path.join(self.checkpoint_dir, "checkpoint.json")
-        state = {
-            "task_id": self.task_id,
-            "name": self.task_name,
-            "graph_name": self.graph_name,
-            "inputs": self.inputs,
-            "outputs": self.outputs,
-            "state": self.state.value if hasattr(self.state, "value") else self.state,
-            "dag_state": {
-                n_id: {"state": self.node_state[n_id].value}
-                for n_id in self.node_list
-            },
-            "pending_force_push": self.pending_force_push,
-            "graph": self.graph,
-            "create_time": self.create_time,
-            "token_usage": self.token_usage,
-            "core": self.core,
-            "key_prefix": self.key_prefix,
+        log_path = os.path.join(self.checkpoint_dir, "log.jsonl")
+
+        card_type = log_type.value if hasattr(log_type, "value") else str(log_type).lower()
+
+        entry = {
+            "timestamp": time.time(),
+            "node_id": node_id,
+            "card_type": card_type,
+            "content": content
         }
-        with open(checkpoint_path, "w", encoding="utf-8") as f:
-            json.dump(state, f, ensure_ascii=False, indent=2)
+
+        with self._io_lock:
+            with open(log_path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
     @classmethod
     def load_checkpoint(cls, checkpoint_dir: str):
         checkpoint_path = os.path.join(checkpoint_dir, "checkpoint.json")
+        if not os.path.exists(checkpoint_path):
+            return None
+            
         with open(checkpoint_path, "r", encoding="utf-8") as f:
             state = json.load(f)
 
         task = cls.__new__(cls)
         task.task_id = state.get("task_id")
-        task.task_name = state.get("name")
+        task.task_name = state.get("name", state.get("task_name", "unknown"))
         task.graph_name = state.get("graph_name")
         task.inputs = state.get("inputs", {})
         task.outputs = state.get("outputs", {})
@@ -367,7 +389,6 @@ class Task:
             task.state = TaskState.INTERRUPTED
 
         task.graph = state.get("graph", {})
-        task.pending_force_push = state.get("pending_force_push", {})
         task.checkpoint_dir = checkpoint_dir
         task.node_list = {}
         task.node_state = {}
@@ -378,13 +399,17 @@ class Task:
         task._io_lock = threading.Lock()
         task._killed = False
         task._loop = None
-        # 如果 checkpoint 中没有 create_time，用文件夹修改时间作为替代
+        
+        task.edge_mailboxes = state.get("edge_mailboxes", {})
+        task.output_port_states = state.get("output_port_states", {})
+        task.node_memory = state.get("node_memory", {})
+
         if state.get("create_time"):
             task.create_time = state.get("create_time")
         else:
             try:
                 mtime = os.path.getmtime(checkpoint_dir)
-                task.create_time = datetime.fromtimestamp(mtime).strftime("%Y%m%d%H%M%S")
+                task.create_time = datetime.datetime.fromtimestamp(mtime).strftime("%Y%m%d%H%M%S")
             except:
                 task.create_time = "20250101000000"
         task.core = state.get("core", "")
@@ -396,7 +421,7 @@ class Task:
         for node_data in task.graph.get("nodes", []):
             node_id = node_data["id"]
             node_type = node_data["type"]
-            config = node_data.get("data", {})
+            config = node_data.get("config", node_data.get("data", {}))
             try:
                 module = importlib.import_module(f"src.harness.node.extensions.{node_type}.node")
                 task.node_list[node_id] = module.Node(node_id=node_id, config=config)
@@ -408,13 +433,7 @@ class Task:
             saved_state = task.dag_state.get(node_id, {}).get("state", "ready")
             task.node_state[node_id] = NodeState(saved_state)
 
-            node_backup = task.node_list[node_id].load_checkpoints(task)
-            if node_backup and "outputs" in node_backup:
-                task.node_list[node_id].outputs = node_backup["outputs"]
-
-        # 无论任务状态如何，都尝试恢复 Model（用于强行注入指令）
-        saved_key_prefix = state.get("key_prefix")
-        task.model = Model(task.core, recovered_key_prefix=saved_key_prefix) if task.core else None
+        task.model = Model(task.core) if task.core else None
         if task.model:
             task.model.bind_task(task.task_id, task.task_name)
         task.key_prefix = task.model.key_prefix if task.model else None
@@ -425,26 +444,3 @@ class Task:
 
         TASK_INSTANCES[task.task_id] = task
         return task
-
-    def log_and_notify(self, log_type: str, content: str, node_id: str):
-        """线程安全地追加写入结构化日志"""
-        if not hasattr(self, "checkpoint_dir") or not self.checkpoint_dir:
-            return
-
-        os.makedirs(self.checkpoint_dir, exist_ok=True)
-        log_path = os.path.join(self.checkpoint_dir, "log.jsonl")
-
-        # 兼容传入 Enum 或字符串的情况
-        card_type = log_type.value if hasattr(log_type, "value") else str(log_type).lower()
-
-        entry = {
-            "timestamp": time.time(),
-            "node_id": node_id,
-            "card_type": card_type,
-            "content": content
-        }
-
-        # 使用 IO 锁防止高并发写入导致 JSONL 格式错乱
-        with self._io_lock:
-            with open(log_path, "a", encoding="utf-8") as f:
-                f.write(json.dumps(entry, ensure_ascii=False) + "\n")

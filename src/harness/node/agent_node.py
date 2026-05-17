@@ -1,5 +1,3 @@
-# 文件路径: src/harness/node/agent_node.py
-
 import asyncio
 import json
 from typing import Any, Dict, List
@@ -57,6 +55,76 @@ class AgentNode(BaseNode):
         tools = get_system_schema()
         tools.extend(self.WORKFLOW_CORE_TOOLS)
         return tools
+
+    async def execute(self, inputs: Dict[str, Any], context: Any) -> Dict[str, Any]:
+        """全新极简入口：从专属记忆空间恢复上下文"""
+        
+        my_memory = context.node_memory.setdefault(self.node_id, {})
+        
+        messages = my_memory.get("messages", inputs.get("messages", []))
+        
+        pending_push = my_memory.pop("force_push", [])
+        if pending_push:
+            for msg in pending_push:
+                messages.append({"role": "user", "content": f"[人工指令] {msg}"})
+
+        tools = self.get_all_tools()
+        
+        try:
+            loop_result = await self.run_agent_loop(context, messages, tools)
+            
+            my_memory["messages"] = loop_result["messages"]
+            return {"messages": loop_result["messages"], "summary": loop_result["summary"]}
+            
+        except asyncio.CancelledError:
+            my_memory["messages"] = messages
+            raise
+
+    async def run_agent_loop(self, context: Any, messages: List[Dict], tools: List[Dict], max_steps: int = 500) -> Dict[str, Any]:
+        """精简版 Agent 大循环"""
+        step = 0
+        MAX_CONSECUTIVE_ERRORS = 3
+        consecutive_no_tool_errors = 0
+
+        while step < max_steps:
+            step += 1
+            self.log(context, LogType.SYSTEM, f"🔄 [Agent思考步] 第 {step}/{max_steps} 步")
+
+            if context.node_state.get(self.node_id) not in [NodeState.RUNNING, NodeState.WAITING]:
+                raise asyncio.CancelledError()
+
+            my_memory = context.node_memory.get(self.node_id, {})
+            dynamic_push = my_memory.pop("force_push", [])
+            if dynamic_push:
+                messages = inject_force_push(messages, dynamic_push)
+
+            response, messages = await call_llm(context.model, messages, tools)
+            assistant_msg = response.choices[0].message
+            tool_calls = extract_tool_calling(response)
+
+            if not tool_calls:
+                consecutive_no_tool_errors += 1
+                if consecutive_no_tool_errors >= MAX_CONSECUTIVE_ERRORS:
+                    self.log(context, LogType.SYSTEM, "🔴 [熔断] 连续无工具调用，挂起求助")
+                    context.node_state[self.node_id] = NodeState.WAITING
+                    raise asyncio.CancelledError("Circuit Breaker")
+                messages.append({"role": "user", "content": "请调用 task_done 工具。"})
+                continue
+
+            tool_messages, is_task_done, is_yield = await self.execute_tool_calling(response, context)
+            if tool_messages:
+                messages.extend(tool_messages)
+
+            if is_yield:
+                self.log(context, LogType.SYSTEM, "⏸️ [节点挂起] 等待人类指令...")
+                context.node_state[self.node_id] = NodeState.WAITING
+                raise asyncio.CancelledError("User Intervention Required")
+
+            if is_task_done:
+                final_summary = self._extract_summary(tool_calls, assistant_msg.content)
+                return {"messages": messages, "summary": final_summary}
+
+        raise TimeoutError(f"超出最大思考步数")
 
     async def execute_tool_calling(self, response: Any, context: Any) -> tuple[list, bool, bool]:
         """统一处理普通工具、拓展工具与工作流原语"""
@@ -153,108 +221,6 @@ class AgentNode(BaseNode):
             })
 
         return tool_messages, is_task_done, is_yield
-
-    async def run_agent_loop(self, context: Any, messages: List[Dict], tools: List[Dict], max_steps: int = 500) -> Dict[
-        str, Any]:
-        """
-        核心纯净的 Agent 大循环：只负责思考 -> 调用工具 -> 产出结果。
-        遇到 task_done 立刻返回全量历史和 summary 给外层节点校验。
-        """
-        step = 0
-        consecutive_no_tool_errors = 0
-        MAX_CONSECUTIVE_ERRORS = 3
-
-        try:
-            while step < max_steps:
-                step += 1
-                self.log(context, LogType.SYSTEM,
-                         f"🔄 [Agent思考步] 第 {step}/{max_steps} 步，上下文: {len(messages)} 条")
-
-                if not self.check_running_state(context):
-                    self.log(context, LogType.SYSTEM, "⚠️ [循环退出] 节点状态已变更为非 running")
-                    raise asyncio.CancelledError()
-
-                dynamic_push = self.consume_pending_messages(context)
-                if dynamic_push:
-                    self.log(context, LogType.SYSTEM, f"🔔 [指令注入] 收到 {len(dynamic_push)} 条注入")
-                    messages = inject_force_push(messages, dynamic_push)
-
-                response, messages = await call_llm(context.model, messages, tools)
-                assistant_msg = response.choices[0].message
-                tool_calls = extract_tool_calling(response)
-
-                if assistant_msg.content:
-                    self.log(context, LogType.SYSTEM, f"💭 [模型思考] {assistant_msg.content[:100]}...")
-
-                if not tool_calls:
-                    consecutive_no_tool_errors += 1
-                    if consecutive_no_tool_errors >= MAX_CONSECUTIVE_ERRORS:
-                        await self._trigger_circuit_breaker(context, messages, "连续多次未调用工具，任务陷入死循环")
-                        consecutive_no_tool_errors = 0
-                        continue
-                    self.log(context, LogType.SYSTEM,
-                             f"⚠️ [无工具调用] 模型未调用工具 ({consecutive_no_tool_errors}/{MAX_CONSECUTIVE_ERRORS})")
-                    messages.append(
-                        {"role": "user", "content": "检测到你没有调用任何工具，如已完成任务，请调用 task_done 工具。"})
-                    continue
-
-                tool_messages, is_task_done, is_yield = await self.execute_tool_calling(response, context)
-                if tool_messages:
-                    messages.extend(tool_messages)
-
-                if is_yield:
-                    self.log(context, LogType.SYSTEM, "⏸️ [节点挂起] 请求人类干预，协程主动退出等待引擎下次拉起...")
-                    self._notify_agent(context, "正在等待进一步指令，已挂起。请注入指令！")
-
-                    # 🌟 将状态置为 WAITING，并且直接保存当前上下文落盘
-                    context.node_state[self.node_id] = NodeState.WAITING
-                    self.update_checkpoints(context, partial_outputs={"messages": messages})
-
-                    # 🌟 直接抛出特定异常，让引擎安全释放这个协程，不再占用 running_tasks 坑位！
-                    raise asyncio.CancelledError("User Intervention Required")
-
-                if is_task_done:
-                    final_summary = self._extract_summary(tool_calls, assistant_msg.content)
-                    self.log(context, LogType.SYSTEM, f"🟢 [闭环跳出] 大模型主动完结任务，交回外层节点控制权。")
-                    return {"messages": messages, "summary": final_summary}
-
-        except asyncio.CancelledError:
-            self.log(context, LogType.SYSTEM, "🛑 [节点中断] 引擎强行打断当前协程")
-            raise
-        except Exception as e:
-            self.log(context, LogType.ERROR, f"❌ [循环异常] {e}")
-            raise
-
-        if step >= max_steps:
-            raise TimeoutError(f"节点执行超出最大思考步数 ({max_steps})，被强制中断。")
-
-        return {"messages": messages, "summary": "任务完成"}
-
-    async def _trigger_circuit_breaker(self, context, messages, reason: str):
-        self.log(context, LogType.SYSTEM, f"🔴 [熔断触发] {reason}，强制挂起求助人类")
-        context.node_state[self.node_id] = NodeState.WAITING
-        self._notify_agent(context, f"触发熔断：{reason}，请人工介入！")
-        while True:
-            await asyncio.sleep(2)
-            if not self.check_running_state(context):
-                raise asyncio.CancelledError()
-            dynamic_push = self.consume_pending_messages(context)
-            if dynamic_push:
-                self.log(context, LogType.SYSTEM, "▶️ [节点恢复] 收到指令，唤醒执行")
-                messages.extend([{"role": "user", "content": msg} for msg in dynamic_push])
-                context.node_state[self.node_id] = NodeState.RUNNING
-                break
-
-    def _notify_agent(self, context, content: str):
-        try:
-            from src.agent.manager import get_agent
-            agent = get_agent()
-            if agent:
-                agent.force_push(
-                    f"🔴 子任务 [{context.task_name}] (ID: {context.task_id}) 的节点 [{self.node_id}] {content}",
-                    type="task_message")
-        except Exception as e:
-            self.log(context, LogType.ERROR, f"通知 Agent 失败: {e}")
 
     def _extract_summary(self, tool_calls, fallback_content):
         summary = fallback_content or "任务完成"
