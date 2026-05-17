@@ -1,0 +1,34 @@
+{
+    "type": "json_builder",
+    "name": "JSON 构建器",
+    "description": "构建键值对字典并输出为 JSON 字符串。支持手动填值或通过连线输入动态传值。",
+    "color": "#9B59B6",
+    "inputs": [
+        {
+            "name": "dynamic_inputs",
+            "type": "any",
+            "port_type": "dynamic",
+            "dynamic_rules": {
+                "watch_config": "kv_pairs",
+                "method": "array_map"
+            }
+        }
+    ],
+    "outputs": [
+        {
+            "name": "json_string",
+            "type": "string",
+            "port_type": "static",
+            "description": "打包生成的 JSON 字符串"
+        }
+    ],
+    "config": [
+        {
+            "name": "kv_pairs",
+            "type": "list",
+            "label": "自定义键值对",
+            "default": [],
+            "description": "添加你要构建的 JSON 键名。若有引脚连线接入，则优先使用连线的值；若无连线，则使用此处手动填写的默认值。"
+        }
+    ]
+}

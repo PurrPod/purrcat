@@ -1,0 +1,29 @@
+{
+    "type": "appender",
+    "name": "列表追加",
+    "description": "将 append_list 追加到 base_list 后面",
+    "color": "#27AE60",
+    "inputs": [
+        {
+            "name": "base_list",
+            "type": "array",
+            "port_type": "static",
+            "description": "基础列表"
+        },
+        {
+            "name": "append_list",
+            "type": "array",
+            "port_type": "static",
+            "description": "要追加的列表"
+        }
+    ],
+    "outputs": [
+        {
+            "name": "merged_list",
+            "type": "array",
+            "port_type": "static",
+            "description": "合并后的列表"
+        }
+    ],
+    "config": []
+}

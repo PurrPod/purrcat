@@ -1,0 +1,28 @@
+{
+    "type": "task_input",
+    "name": "全局输入",
+    "description": "定义此工作流所需的外部参数",
+    "color": "#a3be8c",
+    "inputs": [],
+    "outputs": [
+        {
+            "name": "dynamic_outputs",
+            "type": "any",
+            "port_type": "dynamic",
+            "dynamic_rules": { "watch_config": "global_vars", "method": "array_map" }
+        }
+    ],
+    "config": [
+        {
+            "name": "global_vars",
+            "type": "list",
+            "label": "全局变量 (Variables)",
+            "default": [],
+            "item_schema": [
+                {"name": "name", "type": "string", "label": "变量名 (如: prompt)"},
+                {"name": "required", "type": "boolean", "label": "是否必填", "default": true},
+                {"name": "description", "type": "string", "label": "变量描述 (给用户的提示)"}
+            ]
+        }
+    ]
+}

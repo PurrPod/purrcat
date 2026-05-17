@@ -1,0 +1,192 @@
+{
+  "version": "2.0",
+  "name": "my_awesome_flow2",
+  "description": "PurrCat Web Export - V2",
+  "global_schema": {
+    "test": {
+      "type": "any",
+      "required": true,
+      "description": "提示词"
+    }
+  },
+  "nodes": [
+    {
+      "id": "nd_wfq48n",
+      "type": "json_builder",
+      "name": "JSON 构建器",
+      "position": [
+        673,
+        896
+      ],
+      "config": {
+        "dynamic_inputs": [],
+        "kv_pairs": [
+          {
+            "name": "hello",
+            "type": "string"
+          },
+          {
+            "name": "summary",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "nd_j9h5s7",
+      "type": "template_renderer",
+      "name": "模板渲染器",
+      "position": [
+        177,
+        495
+      ],
+      "config": {
+        "dynamic_inputs": [],
+        "template": "用于向用户打招呼，介绍自己是什么模型"
+      }
+    },
+    {
+      "id": "nd_qq274d",
+      "type": "template_renderer",
+      "name": "模板渲染器",
+      "position": [
+        167,
+        938
+      ],
+      "config": {
+        "dynamic_inputs": [],
+        "template": "你需要做如下总结：{{content}}"
+      }
+    },
+    {
+      "id": "nd_jpubhr",
+      "type": "template_renderer",
+      "name": "模板渲染器",
+      "position": [
+        -258,
+        921
+      ],
+      "config": {
+        "dynamic_inputs": [],
+        "template": "1.你收到了什么指令？"
+      }
+    },
+    {
+      "id": "nd_v0jtfn",
+      "type": "agent_loop",
+      "name": "智能体循环",
+      "position": [
+        1365,
+        802
+      ],
+      "config": {
+        "dynamic_inputs": [],
+        "target_files": "",
+        "task_done_info": ""
+      }
+    },
+    {
+      "id": "nd_sraz09",
+      "type": "message_card_builder",
+      "name": "消息卡片构建器",
+      "position": [
+        927,
+        292
+      ],
+      "config": {
+        "dynamic_inputs": [],
+        "content": "",
+        "role": "user"
+      }
+    },
+    {
+      "id": "nd_kcc6mj",
+      "type": "task_output",
+      "name": "全局输出",
+      "position": [
+        1822,
+        895
+      ],
+      "config": {
+        "dynamic_inputs": [
+          {
+            "key": "summary",
+            "desc": "any"
+          }
+        ],
+        "target_vars": [
+          {
+            "name": "summary",
+            "type": "any"
+          }
+        ],
+        "exposed_keys": [
+          "summary"
+        ]
+      }
+    },
+    {
+      "id": "nd_llbfc3",
+      "type": "task_input",
+      "name": "全局输入",
+      "position": [
+        528,
+        -4
+      ],
+      "config": {
+        "dynamic_inputs": [],
+        "global_vars": [
+          {
+            "name": "test",
+            "required": true,
+            "description": "提示词"
+          }
+        ]
+      }
+    }
+  ],
+  "edges": [
+    {
+      "source": "nd_j9h5s7",
+      "target": "nd_wfq48n",
+      "sourceHandle": "rendered_text",
+      "targetHandle": "hello"
+    },
+    {
+      "source": "nd_qq274d",
+      "target": "nd_wfq48n",
+      "sourceHandle": "rendered_text",
+      "targetHandle": "summary"
+    },
+    {
+      "source": "nd_jpubhr",
+      "target": "nd_qq274d",
+      "sourceHandle": "rendered_text",
+      "targetHandle": "content"
+    },
+    {
+      "source": "nd_wfq48n",
+      "target": "nd_v0jtfn",
+      "sourceHandle": "json_string",
+      "targetHandle": "task_done_info"
+    },
+    {
+      "source": "nd_sraz09",
+      "target": "nd_v0jtfn",
+      "sourceHandle": "message_list",
+      "targetHandle": "messages"
+    },
+    {
+      "source": "nd_v0jtfn",
+      "target": "nd_kcc6mj",
+      "sourceHandle": "summary",
+      "targetHandle": "summary"
+    },
+    {
+      "source": "nd_llbfc3",
+      "target": "nd_sraz09",
+      "sourceHandle": "test",
+      "targetHandle": "content"
+    }
+  ]
+}
