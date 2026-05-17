@@ -5,14 +5,14 @@ import json
 import os
 import threading
 import time
-import traceback
 import uuid
 from collections import deque
-from typing import Any, Dict, List
+from typing import List
 
 from src.model.facade import Model
 from src.utils.config import DATA_DIR
-from .enums import LogType, NodeState, PortState, TaskState
+
+from .enums import NodeState, PortState, TaskState
 
 TASK_INSTANCES = {}
 
@@ -60,6 +60,7 @@ def inject_task_instruction(task_id: str, content: str, node_id: str = None):
         else:
             # 广播模式：只向所有 Agent 节点注入
             from src.harness.node.agent_node import AgentNode
+
             for n_id, node_instance in task.node_list.items():
                 if isinstance(node_instance, AgentNode):
                     task.inject_instruction(n_id, content)
@@ -68,26 +69,37 @@ def inject_task_instruction(task_id: str, content: str, node_id: str = None):
 
 
 class Task:
-    def __init__(self, task_name: str, inputs: dict, core: str, graph_name: str = "default", task_id: str = None):
+    def __init__(
+        self,
+        task_name: str,
+        inputs: dict,
+        core: str,
+        graph_name: str = "default",
+        task_id: str = None,
+    ):
         self.task_id = task_id or uuid.uuid4().hex
         self.task_name = task_name
         self.inputs = inputs
         self.outputs = {}
         self.core = core
         self.graph_name = graph_name
-        
-        self.node_state = {}       # 节点状态 {node_id: NodeState}
-        self.edge_mailboxes = {}   # 邮箱系统 {target_node: {target_port: payload}}
-        self.output_port_states = {} # 端口状态 {source_node: {source_port: PortState}}
-        self.node_memory = {}      # Agent 的私密日记本 {node_id: {"messages": [], "force_push": []}}
-        
+
+        self.node_state = {}  # 节点状态 {node_id: NodeState}
+        self.edge_mailboxes = {}  # 邮箱系统 {target_node: {target_port: payload}}
+        self.output_port_states = {}  # 端口状态 {source_node: {source_port: PortState}}
+        self.node_memory = (
+            {}
+        )  # Agent 的私密日记本 {node_id: {"messages": [], "force_push": []}}
+
         self.node_list = {}
         self.graph = {}
         self.running_tasks = {}
 
         self.state = TaskState.READY
         self.create_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        self.checkpoint_dir = os.path.join(DATA_DIR, "checkpoints", "task", f"{self.task_name}_{self.task_id}")
+        self.checkpoint_dir = os.path.join(
+            DATA_DIR, "checkpoints", "task", f"{self.task_name}_{self.task_id}"
+        )
         self.model = Model(core)
 
         self._lock = threading.Lock()
@@ -103,39 +115,50 @@ class Task:
         self.reload()
 
     def load_graph(self):
-        graph_path = os.path.join(os.path.dirname(__file__), "graph", f"{self.graph_name}.json")
+        graph_path = os.path.join(
+            os.path.dirname(__file__), "graph", f"{self.graph_name}.json"
+        )
         if not os.path.exists(graph_path):
-            return {"status": "error", "message": f"找不到图表定义文件: {self.graph_name}.json"}
+            return {
+                "status": "error",
+                "message": f"找不到图表定义文件: {self.graph_name}.json",
+            }
 
         with open(graph_path, "r", encoding="utf-8") as f:
             self.graph = json.load(f)
 
         global_schema = self.graph.get("global_schema", {})
-        
+
         if not global_schema and "required_inputs" in self.graph:
             old_reqs = self.graph["required_inputs"]
-            global_schema = {k: {"required": True, "description": v} for k, v in old_reqs.items()}
+            global_schema = {
+                k: {"required": True, "description": v} for k, v in old_reqs.items()
+            }
 
         validation_errors = []
-        
+
         missing_required = []
         for req_key, schema_info in global_schema.items():
             is_req = schema_info.get("required", True)
             if is_req and (req_key not in self.inputs or self.inputs[req_key] is None):
                 desc = schema_info.get("description", "无特定说明")
                 param_type = schema_info.get("type", "any")
-                missing_required.append({
-                    "name": req_key,
-                    "type": param_type,
-                    "description": desc,
-                    "required": True
-                })
-        
+                missing_required.append(
+                    {
+                        "name": req_key,
+                        "type": param_type,
+                        "description": desc,
+                        "required": True,
+                    }
+                )
+
         if missing_required:
-            param_list = "\n    - ".join([
-                f"'{p['name']}' (类型: {p['type']}, 描述: {p['description']})"
-                for p in missing_required
-            ])
+            param_list = "\n    - ".join(
+                [
+                    f"'{p['name']}' (类型: {p['type']}, 描述: {p['description']})"
+                    for p in missing_required
+                ]
+            )
             validation_errors.append(f"❌ 缺少必填参数:\n    - {param_list}")
 
         extra_keys = [k for k in self.inputs.keys() if k not in global_schema]
@@ -150,12 +173,14 @@ class Task:
                 param_type = schema_info.get("type", "any")
                 desc = schema_info.get("description", "无特定说明")
                 req_mark = "✅ 必填" if is_req else "⭕ 可选"
-                all_params_info.append(f"    - '{key}' (类型: {param_type}, {req_mark}, 描述: {desc})")
-            
+                all_params_info.append(
+                    f"    - '{key}' (类型: {param_type}, {req_mark}, 描述: {desc})"
+                )
+
             error_msg = "\n".join(validation_errors)
-            error_msg += f"\n\n📋 有效的参数列表:\n" + "\n".join(all_params_info)
-            error_msg += f"\n\n💡 请检查您的输入参数后重试。"
-            
+            error_msg += "\n\n📋 有效的参数列表:\n" + "\n".join(all_params_info)
+            error_msg += "\n\n💡 请检查您的输入参数后重试。"
+
             self.state = TaskState.ERROR
             self.init_error = error_msg
             return {"status": "error", "message": error_msg}
@@ -164,9 +189,11 @@ class Task:
             node_id = node_data["id"]
             node_type = node_data["type"]
             config = node_data.get("config", node_data.get("data", {}))
-            
+
             try:
-                module = importlib.import_module(f"src.harness.node.extensions.{node_type}.node")
+                module = importlib.import_module(
+                    f"src.harness.node.extensions.{node_type}.node"
+                )
                 self.node_list[node_id] = module.Node(node_id=node_id, config=config)
                 self.node_state[node_id] = NodeState.READY
             except Exception as e:
@@ -193,45 +220,58 @@ class Task:
                     break
 
                 runnable_nodes = self._get_runnable_nodes()
-                
+
                 if not runnable_nodes and not self.running_tasks:
                     if any(s == NodeState.WAITING for s in self.node_state.values()):
                         self.state = TaskState.INTERRUPTED
                         self.save()
-                        return {"status": "suspended", "message": "任务已挂起，等待人工干预"}
+                        return {
+                            "status": "suspended",
+                            "message": "任务已挂起，等待人工干预",
+                        }
                     self.state = TaskState.COMPLETED
                     self.save()
                     return {"status": "success", "outputs": self.outputs}
 
-                nodes_to_start = [n for n in runnable_nodes if n not in self.running_tasks.values()]
+                nodes_to_start = [
+                    n for n in runnable_nodes if n not in self.running_tasks.values()
+                ]
                 for node_id in nodes_to_start:
-                    if len(self.running_tasks) >= max_concurrency: break
+                    if len(self.running_tasks) >= max_concurrency:
+                        break
 
                     self.node_state[node_id] = NodeState.RUNNING
                     node_instance = self.node_list[node_id]
 
                     inputs = self.edge_mailboxes.get(node_id, {})
 
-                    task = asyncio.create_task(node_instance.execute(inputs, context=self))
+                    task = asyncio.create_task(
+                        node_instance.execute(inputs, context=self)
+                    )
                     self.running_tasks[task] = node_id
 
-                done, pending = await asyncio.wait(self.running_tasks.keys(), return_when=asyncio.FIRST_COMPLETED)
+                done, pending = await asyncio.wait(
+                    self.running_tasks.keys(), return_when=asyncio.FIRST_COMPLETED
+                )
 
                 for task in done:
                     node_id = self.running_tasks.pop(task)
                     try:
                         result = task.result()
                         self.node_state[node_id] = NodeState.COMPLETED
-                        
+
                         self._deliver_payloads(node_id, result)
-                        
+
                     except asyncio.CancelledError:
                         pass
                     except Exception as e:
                         self.node_state[node_id] = NodeState.ERROR
                         self.state = TaskState.ERROR
                         self.save()
-                        return {"status": "error", "message": f"节点 {node_id} 异常: {str(e)}"}
+                        return {
+                            "status": "error",
+                            "message": f"节点 {node_id} 异常: {str(e)}",
+                        }
 
                 self.save()
 
@@ -249,21 +289,23 @@ class Task:
                 continue
 
             incoming_edges = [e for e in edges if e["target"] == node_id]
-            
+
             # 如果这是一个源头节点（没有任何输入连线），直接可以跑
             if not incoming_edges:
                 runnable.append(node_id)
                 continue
 
-            all_resolved = True   # 是否所有的上游连线都已经有结果了 (HAS_DATA 或 VOID)
+            all_resolved = True  # 是否所有的上游连线都已经有结果了 (HAS_DATA 或 VOID)
             has_any_data = False  # 是否收到至少一份有效数据
 
             for edge in incoming_edges:
                 src_node = edge["source"]
                 src_port = edge.get("sourceHandle", "default")
-                
+
                 # 获取这条线对应的上游端口状态
-                port_state = self.output_port_states.get(src_node, {}).get(src_port, PortState.PENDING)
+                port_state = self.output_port_states.get(src_node, {}).get(
+                    src_port, PortState.PENDING
+                )
 
                 if port_state == PortState.PENDING:
                     # 只要有一个上游还没跑完，当前节点就继续等
@@ -298,7 +340,9 @@ class Task:
                     if tgt_node not in self.edge_mailboxes:
                         self.edge_mailboxes[tgt_node] = {}
                     self.edge_mailboxes[tgt_node][tgt_port] = outputs[out_port]
-                    self.output_port_states[source_node_id][out_port] = PortState.HAS_DATA
+                    self.output_port_states[source_node_id][
+                        out_port
+                    ] = PortState.HAS_DATA
                 else:
                     self.output_port_states[source_node_id][out_port] = PortState.VOID
 
@@ -321,11 +365,15 @@ class Task:
         """官方推荐的指令注入入口：自带类型校验和正确的级联重置"""
         if node_id not in self.node_list:
             return {"status": "error", "message": "节点不存在"}
-        
+
         # 1. 严格的类型校验！拦截非 Agent 节点
         from src.harness.node.agent_node import AgentNode
+
         if not isinstance(self.node_list[node_id], AgentNode):
-            return {"status": "error", "message": "拒绝操作：只有 Agent 类型的节点才能注入指令和记忆！"}
+            return {
+                "status": "error",
+                "message": "拒绝操作：只有 Agent 类型的节点才能注入指令和记忆！",
+            }
 
         # 2. 安全注入指令到该节点的私有记忆
         my_memory = self.node_memory.setdefault(node_id, {})
@@ -333,7 +381,7 @@ class Task:
 
         # 3. 触发正确的级联重置 (is_injection=True，保护当前节点的记忆)
         self._cascade_reset(node_id, is_injection=True)
-        
+
         # 4. 唤醒整个任务流
         self.state = TaskState.READY
         self.save()
@@ -343,10 +391,10 @@ class Task:
         """用户点击'重新运行'的入口：目标节点连带下游一起彻底清空记忆"""
         if node_id not in self.node_list:
             return {"status": "error", "message": "节点不存在"}
-        
+
         # 触发彻底的级联重置 (is_injection=False，连目标节点的记忆一起扬了)
         self._cascade_reset(node_id, is_injection=False)
-        
+
         self.state = TaskState.READY
         self.save()
         return {"status": "success", "message": "节点及其下游已彻底重置！"}
@@ -369,10 +417,10 @@ class Task:
 
             while queue:
                 curr_id, is_target = queue.popleft()
-                
+
                 # 1. 所有波及的节点，状态统统恢复待命
                 self.node_state[curr_id] = NodeState.READY
-                
+
                 # 2. 清空该节点向外发射的端口状态 (让引擎知道它还没产出新数据)
                 if curr_id in self.output_port_states:
                     self.output_port_states[curr_id].clear()
@@ -389,7 +437,9 @@ class Task:
                         self.node_memory.pop(curr_id)
 
                 # 4. 打断可能正在苟延残喘的协程
-                task_to_cancel = [t for t, n in self.running_tasks.items() if n == curr_id]
+                task_to_cancel = [
+                    t for t, n in self.running_tasks.items() if n == curr_id
+                ]
                 for t in task_to_cancel:
                     t.cancel()
                     self.running_tasks.pop(t, None)
@@ -407,12 +457,16 @@ class Task:
         """全局唯一存档点：同时包含新架构的核心数据与前端渲染所需数据"""
         os.makedirs(self.checkpoint_dir, exist_ok=True)
         checkpoint_path = os.path.join(self.checkpoint_dir, "checkpoint.json")
-        
+
         # 组装兼容前端的 dag_state (前端靠这个渲染节点颜色/Loading动画)
         frontend_dag_state = {}
         for n_id in self.node_list:
             frontend_dag_state[n_id] = {
-                "state": self.node_state[n_id].value if hasattr(self.node_state[n_id], "value") else self.node_state[n_id]
+                "state": (
+                    self.node_state[n_id].value
+                    if hasattr(self.node_state[n_id], "value")
+                    else self.node_state[n_id]
+                )
             }
 
         data = {
@@ -423,24 +477,21 @@ class Task:
             "create_time": getattr(self, "create_time", "2025-01-01 00:00:00"),
             "core": getattr(self, "core", ""),
             "state": self.state.value if hasattr(self.state, "value") else self.state,
-            
             # 2. 画布渲染数据 (前端必须)
-            "graph": self.graph,            # 前端依赖这个来画节点和连线！
-            "dag_state": frontend_dag_state,# 前端依赖这个判断节点是 Running 还是 Completed
-            
+            "graph": self.graph,  # 前端依赖这个来画节点和连线！
+            "dag_state": frontend_dag_state,  # 前端依赖这个判断节点是 Running 还是 Completed
             # 3. 业务数据
             "inputs": self.inputs,
             "outputs": self.outputs,
-            
             # 4. 🌟 新架构核心数据 (后端引擎的灵魂)
             "edge_mailboxes": self.edge_mailboxes,
             "output_port_states": {
                 k: {p: s.value if hasattr(s, "value") else s for p, s in ports.items()}
                 for k, ports in self.output_port_states.items()
             },
-            "node_memory": self.node_memory
+            "node_memory": self.node_memory,
         }
-        
+
         with open(checkpoint_path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
 
@@ -453,30 +504,37 @@ class Task:
         try:
             with open(checkpoint_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
-                
+
                 # 恢复基础状态
                 self.state = TaskState(data.get("state", "ready"))
                 if self.state == TaskState.RUNNING:
                     self.state = TaskState.INTERRUPTED
-                    
+
                 self.inputs = data.get("inputs", {})
                 self.outputs = data.get("outputs", {})
-                
+
                 # 恢复旧前端强依赖的 graph 和时间等元数据
                 self.graph = data.get("graph", self.graph)
                 self.create_time = data.get("create_time", "2025-01-01 00:00:00")
-                
+
                 # 恢复新架构的引擎状态
-                self.node_state = {k: NodeState(v) for k, v in data.get("node_state", data.get("dag_state", {})).items()}
+                self.node_state = {
+                    k: NodeState(v)
+                    for k, v in data.get(
+                        "node_state", data.get("dag_state", {})
+                    ).items()
+                }
                 self.edge_mailboxes = data.get("edge_mailboxes", {})
-                
+
                 # 安全恢复嵌套的端口状态
                 self.output_port_states = {}
                 for k, ports in data.get("output_port_states", {}).items():
-                    self.output_port_states[k] = {p: PortState(s) for p, s in ports.items()}
-                    
+                    self.output_port_states[k] = {
+                        p: PortState(s) for p, s in ports.items()
+                    }
+
                 self.node_memory = data.get("node_memory", {})
-                
+
         except Exception as e:
             print(f"❌ 读取 Checkpoint 失败: {e}")
 
@@ -505,11 +563,19 @@ class Task:
         graph_name = data.get("graph_name", "default")
         inputs = data.get("inputs", {})
 
-        task = Task(task_name=task_name, inputs=inputs, core=core, graph_name=graph_name, task_id=task_id)
+        task = Task(
+            task_name=task_name,
+            inputs=inputs,
+            core=core,
+            graph_name=graph_name,
+            task_id=task_id,
+        )
         task.checkpoint_dir = checkpoint_dir
-        
-        task.create_time = data.get("create_time", datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-        
+
+        task.create_time = data.get(
+            "create_time", datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        )
+
         return task
 
     def get_logs(self):
@@ -522,7 +588,7 @@ class Task:
                     if line:
                         try:
                             logs.append(json.loads(line))
-                        except:
+                        except Exception:
                             pass
         return logs
 
@@ -532,11 +598,11 @@ class Task:
             "timestamp": int(time.time() * 1000),
             "node_id": node_id,
             "type": log_type,
-            "content": content
+            "content": content,
         }
-        
+
         os.makedirs(self.checkpoint_dir, exist_ok=True)
         log_path = os.path.join(self.checkpoint_dir, "log.jsonl")
-        
+
         with open(log_path, "a", encoding="utf-8") as f:
             f.write(json.dumps(log_entry, ensure_ascii=False) + "\n")

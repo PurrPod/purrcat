@@ -6,10 +6,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List
 
-from dotenv import dotenv_values
-import yaml
-
-from src.harness.enums import LogType
+from src.harness.enums import LogType, NodeState
 from src.harness.utils.tool_helper import execute_global_tool, extract_tool_calling
 
 
@@ -46,12 +43,12 @@ class BaseNode:
                     "properties": {
                         "summary": {
                             "type": "object",
-                            "description": "对当前阶段的结构化总结数据（请严格按照系统要求的 JSON 键值对格式输出）"
+                            "description": "对当前阶段的结构化总结数据（请严格按照系统要求的 JSON 键值对格式输出）",
                         }
                     },
-                    "required": ["summary"]
-                }
-            }
+                    "required": ["summary"],
+                },
+            },
         },
         {
             "type": "function",
@@ -63,13 +60,13 @@ class BaseNode:
                     "properties": {
                         "reason": {
                             "type": "string",
-                            "description": "需要人类干预的原因"
+                            "description": "需要人类干预的原因",
                         }
                     },
-                    "required": ["reason"]
-                }
-            }
-        }
+                    "required": ["reason"],
+                },
+            },
+        },
     ]
 
     def __init__(self, node_id: str, config: dict):
@@ -80,9 +77,11 @@ class BaseNode:
         self.tools_dir = os.path.join(self.node_dir, "tools")
         self._local_tools_registry = None
         self._local_tools_schemas = None
-        
+
         self.metadata = self._load_metadata()
-        self.task_done_info = self.config.get("task_done_info", self.metadata.get("task_done_info", {}))
+        self.task_done_info = self.config.get(
+            "task_done_info", self.metadata.get("task_done_info", {})
+        )
 
     def _load_metadata(self) -> dict:
         base_path = Path(self.node_dir)
@@ -90,12 +89,14 @@ class BaseNode:
         try:
             json_path = base_path / "metadata.json"
             if json_path.exists():
-                with open(json_path, 'r', encoding='utf-8') as f:
+                with open(json_path, "r", encoding="utf-8") as f:
                     json_data = json.load(f)
                     if isinstance(json_data, dict):
                         metadata.update(json_data)
         except Exception as e:
-            print(f"⚠️ [元数据加载警告] 节点 {self.__class__.__module__} 加载配置出错: {e}")
+            print(
+                f"⚠️ [元数据加载警告] 节点 {self.__class__.__module__} 加载配置出错: {e}"
+            )
         return metadata
 
     def get_local_tools(self):
@@ -125,6 +126,7 @@ class BaseNode:
 
     def get_all_tools(self) -> List[dict]:
         from src.harness.utils.tool_helper import get_system_schema
+
         tools = get_system_schema()
         tools.extend(self.WORKFLOW_CORE_TOOLS)
         return tools
@@ -133,9 +135,11 @@ class BaseNode:
         """由子类实现的具体执行逻辑，必须返回字典作为向外投递的包裹"""
         raise NotImplementedError
 
-    async def execute_tool_calling(self, response: Any, context: Any) -> tuple[list, bool, bool]:
+    async def execute_tool_calling(
+        self, response: Any, context: Any
+    ) -> tuple[list, bool, bool]:
         tool_calls = extract_tool_calling(response)
-        
+
         tool_messages = []
         is_task_done = False
         is_yield = False
@@ -164,31 +168,51 @@ class BaseNode:
 
                     if missing_keys:
                         error_msg = f"❌ [格式错误] 你尝试完成任务，但 summary 缺失了系统强制要求的关键信息：{', '.join(missing_keys)}。"
-                        self.log(context, "WARNING", f"⚠️ [任务完结被拒] 大模型缺少必填参数: {missing_keys}")
+                        self.log(
+                            context,
+                            "WARNING",
+                            f"⚠️ [任务完结被拒] 大模型缺少必填参数: {missing_keys}",
+                        )
 
-                        final_content = _format_result({
-                            "error": error_msg,
-                            "instruction": "请重新调用 task_done 工具，并确保 summary 参数严格包含上述提到的所有键值对！",
-                            "required_schema": self.task_done_info
-                        })
+                        final_content = _format_result(
+                            {
+                                "error": error_msg,
+                                "instruction": "请重新调用 task_done 工具，并确保 summary 参数严格包含上述提到的所有键值对！",
+                                "required_schema": self.task_done_info,
+                            }
+                        )
                     else:
                         if context:
                             context.result = True
-                        self.log(context, "SYSTEM", f"✅ [任务完结校验通过] 输出合规: {json.dumps(summary, ensure_ascii=False)}")
-                        final_content = _format_result({"status": "success", "summary": summary})
+                        self.log(
+                            context,
+                            "SYSTEM",
+                            f"✅ [任务完结校验通过] 输出合规: {json.dumps(summary, ensure_ascii=False)}",
+                        )
+                        final_content = _format_result(
+                            {"status": "success", "summary": summary}
+                        )
                         is_task_done = True
                 else:
                     if context:
                         context.result = True
-                    self.log(context, "SYSTEM", f"✅ [任务完结信号] 大模型总结: {json.dumps(summary, ensure_ascii=False)}")
-                    final_content = _format_result({"status": "success", "summary": summary})
+                    self.log(
+                        context,
+                        "SYSTEM",
+                        f"✅ [任务完结信号] 大模型总结: {json.dumps(summary, ensure_ascii=False)}",
+                    )
+                    final_content = _format_result(
+                        {"status": "success", "summary": summary}
+                    )
                     is_task_done = True
 
             elif original_tool_name == "yield_to_human":
                 reason = arguments.get("reason", "需要人工干预")
                 self.log(context, "SYSTEM", f"⏸️ [请求干预] 理由: {reason}")
                 context.node_state[self.node_id] = NodeState.WAITING
-                final_content = _format_result({"status": "suspended", "message": "已挂起，等待人类注入指令"})
+                final_content = _format_result(
+                    {"status": "suspended", "message": "已挂起，等待人类注入指令"}
+                )
                 is_yield = True
 
             elif original_tool_name == "call_tool":
@@ -270,12 +294,14 @@ class BaseNode:
                     self.log(context, LogType.ERROR, error_msg)
                     final_content = _format_result({"error": error_msg})
 
-            tool_messages.append({
-                "role": "tool",
-                "tool_call_id": tc.id,
-                "name": original_tool_name,
-                "content": final_content,
-            })
+            tool_messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": tc.id,
+                    "name": original_tool_name,
+                    "content": final_content,
+                }
+            )
 
         return tool_messages, is_task_done, is_yield
 

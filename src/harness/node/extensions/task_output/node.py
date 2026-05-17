@@ -10,6 +10,10 @@ class Node(BaseNode):
         for key, value in inputs.items():
             context.outputs[key] = value
 
-        self.log(context, "SYSTEM", f"📤 [引擎出口] DAG流转结束！最终收集到的全局参数: {list(inputs.keys())}")
+        self.log(
+            context,
+            "SYSTEM",
+            f"📤 [引擎出口] DAG流转结束！最终收集到的全局参数: {list(inputs.keys())}",
+        )
 
         return {"default": True}

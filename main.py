@@ -3,16 +3,16 @@ import os
 import warnings
 import argparse
 import threading
-import sys
-import signal
-
-warnings.filterwarnings("ignore", category=RuntimeWarning, message="coroutine 'ExpiringCache._start_clear_cron' was never awaited")
-warnings.filterwarnings("ignore", category=UserWarning, message="pkg_resources is deprecated as an API")
 
 from src.tool.callmcp.callmcp import initialize_mcp
-from src.agent.manager import init_agent, get_agent, shutdown_agent
+from src.agent.manager import init_agent, shutdown_agent
 from src.sensor import auto_discover_and_start
 from src.memory.purrmemo import get_memory_client
+
+
+def _setup_warnings():
+    warnings.filterwarnings("ignore", category=RuntimeWarning, message="coroutine 'ExpiringCache._start_clear_cron' was never awaited")
+    warnings.filterwarnings("ignore", category=UserWarning, message="pkg_resources is deprecated as an API")
 
 
 async def init_core(cli_session_id: str = None, cli_branch_name: str = None):
@@ -20,7 +20,7 @@ async def init_core(cli_session_id: str = None, cli_branch_name: str = None):
     os.environ.pop("HTTPS_PROXY", None)
 
     initialize_mcp()
-    agent = init_agent(session_id=cli_session_id)
+    init_agent(session_id=cli_session_id)
 
     def bg_init_services():
         try:
@@ -138,6 +138,7 @@ async def main_async(enable_tui: bool, enable_api: bool, api_port: int, cli_sess
 
 
 def main():
+    _setup_warnings()
     parser = argparse.ArgumentParser(description="PurrCat Agent")
     parser.add_argument("--headless", action="store_true", help="Run without TUI")
     parser.add_argument("--session", type=str, help="Specify session ID to load")

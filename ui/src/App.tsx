@@ -1,4 +1,3 @@
-import { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, useNavigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { ReactFlowProvider } from '@xyflow/react';
@@ -9,7 +8,6 @@ import NodePanel from './components/NodePanel';
 import FlowCanvas from './components/FlowCanvas';
 import ChatPage from './components/ChatPage';
 import TaskPage from './components/TaskPage';
-import { useFlowStore } from './store/flowStore';
 
 // 保留你原本的本地 fallback 逻辑（已注释，改用后端 API）
 /*

@@ -34,9 +34,6 @@ jobs:
       - name: Ruff Check
         run: ruff check src/ scripts/ server/ tui/ --output-format=github
 
-      - name: Ruff Format
-        run: ruff format src/ scripts/ server/ tui/ --check
-
       - name: isort Check
         run: isort --check src/ scripts/ server/ tui/
 

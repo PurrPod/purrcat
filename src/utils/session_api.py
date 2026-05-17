@@ -36,7 +36,7 @@ def create_session(alias: str = "New Session"):
 def delete_session(session_id: str):
     """删除会话，使用 SessionStore 的正确实现"""
     ensure_manager_initialized()
-    
+
     session_file = os.path.join(DATA_DIR, "checkpoints", "agent", f"{session_id}.json")
     if os.path.exists(session_file):
         os.remove(session_file)

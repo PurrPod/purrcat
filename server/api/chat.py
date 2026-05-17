@@ -1,12 +1,13 @@
+import traceback
+
 from fastapi import APIRouter, BackgroundTasks
 from pydantic import BaseModel
-import traceback
 
 from src.agent.manager import manager
 from src.utils.session_api import (
-    ensure_manager_initialized,
     create_session,
     delete_session,
+    ensure_manager_initialized,
     get_session_history,
     list_sessions,
     run_agent_task,
@@ -26,7 +27,7 @@ class ChatReq(BaseModel):
 
 @router.get("/sessions")
 def get_sessions():
-    print(f"[DEBUG] /api/sessions - 开始获取会话列表")
+    print("[DEBUG] /api/sessions - 开始获取会话列表")
     try:
         ensure_manager_initialized()
         sessions_dict = list_sessions()
@@ -54,6 +55,7 @@ def checkout_session_api(session_id: str):
     print(f"[DEBUG] /api/sessions/{session_id}/checkout - 开始检出会话")
     try:
         from src.utils.session_api import checkout_session
+
         ensure_manager_initialized()
         success = checkout_session(session_id)
         print(f"[DEBUG] /api/sessions/{session_id}/checkout - 完成，成功: {success}")
@@ -112,7 +114,7 @@ def chat(req: ChatReq, background_tasks: BackgroundTasks):
     try:
         ensure_manager_initialized()
         background_tasks.add_task(run_agent_task, req.session_id, req.message)
-        print(f"[DEBUG] /api/chat - 消息已加入后台任务")
+        print("[DEBUG] /api/chat - 消息已加入后台任务")
         return {"status": "processing", "message": "Message pushed to agent"}
     except Exception as e:
         print(f"[ERROR] /api/chat - 异常: {e}")
@@ -129,7 +131,7 @@ def get_session_status(session_id: str):
         ensure_manager_initialized()
         # 获取全局唯一 Agent 实例
         agent = manager._agent
-        
+
         # 确保 Agent 存在，并且当前正在处理的就是我们请求的这个 session_id
         if agent and agent.session_id == session_id:
             # 在 agent.py 中，空闲时 state 为 "idle"，工作时为 "handling"
@@ -137,7 +139,7 @@ def get_session_status(session_id: str):
             result = {"is_thinking": is_thinking, "state": agent.state}
         else:
             result = {"is_thinking": False, "state": "idle"}
-        
+
         print(f"[DEBUG] /api/sessions/{session_id}/status - 返回: {result}")
         return result
     except Exception as e:

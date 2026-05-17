@@ -4,7 +4,6 @@
 测试项目核心模块能否正常导入
 """
 import sys
-import os
 import traceback
 from pathlib import Path
 

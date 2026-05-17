@@ -26,7 +26,7 @@ interface FlowState {
   setSelectedNodeId: (id: string | null) => void;
 
   validateGraph: () => string[];
-  exportGraph: (name: string) => GraphExport;
+  exportGraph: (name: string, description?: string) => GraphExport;
   clearGraph: () => void;
   loadGraph: (graphData: any) => void;
 }
@@ -68,7 +68,7 @@ export const useFlowStore = create<FlowState>()(
             // 🌟 初始化 Config 默认值，遇到 list 给个空数组
             ...definition.config?.reduce((acc, f) => ({ 
               ...acc, 
-              [f.name]: f.type === 'list' ? (f.default || []) : f.default 
+              [f.name]: (f.type as string) === 'list' ? (f.default || []) : f.default 
             }), {}),
           },
         }
@@ -211,7 +211,7 @@ export const useFlowStore = create<FlowState>()(
           description: description || "PurrCat Web Export - V2",
           global_schema: globalSchema,
           nodes: nodes.map(n => {
-            const { nodeType, name, color, inputs, outputs, configSchema, ...finalConfig } = n.data;
+            const { nodeType, ...finalConfig } = n.data;
 
             // 🌟 导出 task_output 节点时，把数组对象清洗为纯字符串数组放入 exposed_keys 中
             if (nodeType === 'task_output' && Array.isArray(finalConfig.target_vars)) {

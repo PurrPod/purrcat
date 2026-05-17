@@ -57,6 +57,3 @@ def extract_tool_calling(response) -> list:
     if hasattr(response, "choices") and len(response.choices) > 0:
         return getattr(response.choices[0].message, "tool_calls", []) or []
     return []
-
-
-

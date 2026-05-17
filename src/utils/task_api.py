@@ -28,10 +28,12 @@ def get_task_list():
                             if not create_time:
                                 try:
                                     mtime = os.path.getmtime(chk_path)
-                                    create_time = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M:%S")
-                                except:
+                                    create_time = datetime.fromtimestamp(
+                                        mtime
+                                    ).strftime("%Y-%m-%d %H:%M:%S")
+                                except Exception:
                                     create_time = "2025-01-01 00:00:00"
-                            
+
                             tasks_dict[tid] = {
                                 "id": tid,
                                 "name": data.get("name", "Unknown"),
@@ -76,7 +78,9 @@ def get_task_state(task_id: str):
             "task_id": task.task_id,
             "state": getattr(task.state, "value", task.state),
             "graph": task.graph,
-            "node_states": {k: getattr(v, "value", v) for k, v in task.node_state.items()},
+            "node_states": {
+                k: getattr(v, "value", v) for k, v in task.node_state.items()
+            },
             "outputs": task.outputs,
         }
 
@@ -107,7 +111,7 @@ def get_task_log_jsonl(task_id: str):
     """🌟 修复：直接解析路径读取，不盲目唤醒任务引擎"""
     checkpoint_dir = None
     task = TASK_INSTANCES.get(task_id)
-    
+
     if task:
         checkpoint_dir = task.checkpoint_dir
     else:
@@ -136,13 +140,14 @@ def get_task_log_jsonl(task_id: str):
                         continue
     except Exception:
         pass
-        
+
     return logs
 
 
 # ==========================================
 # 下方为原有业务方法，保持不变
 # ==========================================
+
 
 def kill_task(task_id: str):
     return process_kill_task(task_id)
@@ -164,7 +169,7 @@ def delete_task(task_id: str):
     """真正删除任务：终止、从内存移除、删除磁盘文件夹"""
     # 1. 先终止任务
     process_kill_task(task_id)
-    
+
     # 2. 从内存中移除
     if task_id in TASK_INSTANCES:
         task = TASK_INSTANCES[task_id]
@@ -179,7 +184,7 @@ def delete_task(task_id: str):
                 if task_id in entry:
                     checkpoint_dir = os.path.join(base_dir, entry)
                     break
-    
+
     # 3. 删除磁盘文件夹
     if checkpoint_dir and os.path.exists(checkpoint_dir):
         try:
@@ -188,7 +193,7 @@ def delete_task(task_id: str):
         except Exception as e:
             print(f"[ERROR] 删除任务文件夹失败: {e}")
             return False
-    
+
     return True
 
 
@@ -213,6 +218,7 @@ def get_task_history(task_id: str):
 
 def force_push_task(task_id: str, content: str):
     from src.harness import process as task_module
+
     return task_module.inject_task_instruction(task_id, content)
 
 

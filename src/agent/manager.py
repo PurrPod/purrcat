@@ -76,7 +76,7 @@ class AgentManager:
         if not self._agent:
             # 如果 agent 未初始化，先初始化
             self.init_agent()
-        
+
         if not self._agent:
             return None
 
@@ -110,7 +110,7 @@ class AgentManager:
         if not self._agent:
             # 如果 agent 未初始化，先初始化
             self.init_agent()
-        
+
         if not self._agent:
             return None
 
