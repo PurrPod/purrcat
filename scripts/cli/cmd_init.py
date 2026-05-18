@@ -9,7 +9,6 @@ from scripts.cli.templates import (
     MEMEORY_MD_TEMPLATE,
     SOLO_MD_TEMPLATE,
     SOUL_MD_TEMPLATE,
-    TODO_MD_TEMPLATE,
     get_file_config_dict,
     get_mcp_config_dict,
     get_memory_config_dict,
@@ -207,19 +206,6 @@ def _generate_core_files(purrcat_dir, force=False):
         except Exception as e:
             print(f"X Failed to write core/SOUL.md: {e}")
             results.append(("SOUL.md", False))
-
-    todo_md_path = os.path.join(core_dir, "TODO.md")
-    if os.path.exists(todo_md_path) and not _prompt_overwrite(todo_md_path, force):
-        results.append(("TODO.md", False))
-    else:
-        try:
-            with open(todo_md_path, "w", encoding="utf-8") as f:
-                f.write(TODO_MD_TEMPLATE)
-            print("[+] core/TODO.md generated")
-            results.append(("TODO.md", True))
-        except Exception as e:
-            print(f"X Failed to write core/TODO.md: {e}")
-            results.append(("TODO.md", False))
 
     return all(ok for _, ok in results)
 
