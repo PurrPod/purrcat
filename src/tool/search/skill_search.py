@@ -13,7 +13,7 @@ from src.utils.skill_helper import _find_skill_md_file, _parse_skill_md
 
 
 class SkillSearcher:
-    """Skill 语义搜索器（线程安全单例，语料与矩阵驻留内存）"""
+    """Skill 语义搜索器（线程安全单例，支持原子级热更新）"""
 
     _instance = None
     _lock = threading.Lock()
@@ -22,41 +22,53 @@ class SkillSearcher:
         with cls._lock:
             if cls._instance is None:
                 cls._instance = super(SkillSearcher, cls).__new__(cls)
+                cls._instance.skills = []
+                cls._instance.corpus = []
+                cls._instance.corpus_matrix = None
+                cls._instance.bm25 = None
+                cls._instance.embedding_searcher = LocalEmbeddingSearcher()
                 cls._instance._initialize(skill_dir)
         return cls._instance
 
     def _initialize(self, skill_dir: str):
-        self.skills = []
-        self.corpus = []
-        self.embedding_searcher = LocalEmbeddingSearcher()
-        self._load_skills(Path(skill_dir))
+        """局部构建索引，防止并发冲突"""
+        temp_skills = []
+        temp_corpus = []
 
-        if self.corpus:
-            self.corpus_matrix = self.embedding_searcher.encode(self.corpus)
+        skill_path = Path(skill_dir)
+        if skill_path.exists() and skill_path.is_dir():
+            for item in skill_path.iterdir():
+                if item.is_dir():
+                    md_file = item / "SKILL.md"
+                    if md_file.exists():
+                        parsed_data = _parse_skill_md(md_file)
+                        metadata = parsed_data["metadata"]
+                        name = metadata.get("name", item.name)
+                        desc = metadata.get("description", metadata.get("desc", ""))
+                        content = parsed_data.get("content", "")
 
-            tokenized_corpus = [hybrid_tokenize(doc) for doc in self.corpus]
-            self.bm25 = BM25Okapi(tokenized_corpus)
+                        temp_skills.append(
+                            {"name": name, "description": desc, "dir_name": item.name}
+                        )
+                        text_representation = f"{name} {desc} {content}"
+                        temp_corpus.append(text_representation)
 
-    def _load_skills(self, skill_dir: Path):
-        """遍历 Skill 目录，解析 SKILL.md"""
-        if not skill_dir.exists() or not skill_dir.is_dir():
-            return
+        if temp_corpus:
+            temp_corpus_matrix = self.embedding_searcher.encode(temp_corpus)
+            tokenized_corpus = [hybrid_tokenize(doc) for doc in temp_corpus]
+            temp_bm25 = BM25Okapi(tokenized_corpus)
 
-        for item in skill_dir.iterdir():
-            if item.is_dir():
-                md_file = item / "SKILL.md"
-                if md_file.exists():
-                    parsed_data = _parse_skill_md(md_file)
-                    metadata = parsed_data["metadata"]
-                    name = metadata.get("name", item.name)
-                    desc = metadata.get("description", metadata.get("desc", ""))
-                    content = parsed_data.get("content", "")
+            self.skills = temp_skills
+            self.corpus = temp_corpus
+            self.corpus_matrix = temp_corpus_matrix
+            self.bm25 = temp_bm25
+            print(f"✅ SkillSearcher 内存索引已更新 (共 {len(self.skills)} 个技能)")
 
-                    self.skills.append(
-                        {"name": name, "description": desc, "dir_name": item.name}
-                    )
-                    text_representation = f"{name} {desc} {content}"
-                    self.corpus.append(text_representation)
+    def reload_index(self, skill_dir: str = SKILL_DIR):
+        """暴露给外部调用的热更新接口"""
+        with self._lock:
+            print("🔄 正在扫描本地文件，重载 SkillSearcher 内存索引...")
+            self._initialize(skill_dir)
 
     def search(self, query: str, top_k: int = 3) -> List[Dict]:
         """执行搜索并返回匹配度最高的前 K 个技能"""

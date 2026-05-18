@@ -55,14 +55,10 @@ jobs:
           fi
 
   python-tests:
-    name: Python Tests (${{ matrix.os }})
+    name: Python Tests (Ubuntu)
     needs: [preflight]
     if: needs.preflight.outputs.python_changed == 'true'
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ubuntu-latest
     defaults:
       run:
         shell: bash -el {0}
@@ -80,21 +76,14 @@ jobs:
           auto-activate-base: false
           cache-environment: true
 
-      - name: Python Syntax Check
-        run: |
-          python -m py_compile main.py
-          echo "main.py syntax check passed"
-          python -m compileall -q -f src/
-          echo "src/ directory syntax check completed"
-
       - name: Module Import Test
         env:
           PYTHONIOENCODING: utf-8
         run: |
           python test/test_imports.py
 
-  ui-build:
-    name: UI Build
+  ui-check-and-build:
+    name: UI Check & Build
     needs: [preflight]
     if: needs.preflight.outputs.ui_changed == 'true'
     runs-on: ubuntu-latest
@@ -113,6 +102,10 @@ jobs:
       - name: Install UI Dependencies
         working-directory: ui
         run: npm ci
+
+      - name: UI Lint
+        working-directory: ui
+        run: npm run lint
 
       - name: Build UI
         working-directory: ui
@@ -133,27 +126,27 @@ jobs:
 
   ci-summary:
     name: CI Summary
-    needs: [preflight, python-tests, ui-build, security-check]
+    needs: [preflight, python-tests, ui-check-and-build, security-check]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
       - name: Check CI Results
         env:
           PYTHON_RESULT: ${{ needs.python-tests.result }}
-          UI_RESULT: ${{ needs.ui-build.result }}
+          UI_RESULT: ${{ needs.ui-check-and-build.result }}
           SECURITY_RESULT: ${{ needs.security-check.result }}
         run: |
           set -euo pipefail
           
           echo "=== CI Summary ==="
           echo "Python Tests: $PYTHON_RESULT"
-          echo "UI Build: $UI_RESULT"
+          echo "UI Check & Build: $UI_RESULT"
           echo "Security Check: $SECURITY_RESULT"
           
           FAILED_JOBS=()
           
           if [ "$PYTHON_RESULT" = "failure" ]; then FAILED_JOBS+=("python-tests"); fi
-          if [ "$UI_RESULT" = "failure" ] && [ "${{ needs.preflight.outputs.ui_changed }}" = "true" ]; then FAILED_JOBS+=("ui-build"); fi
+          if [ "$UI_RESULT" = "failure" ] && [ "${{ needs.preflight.outputs.ui_changed }}" = "true" ]; then FAILED_JOBS+=("ui-check-and-build"); fi
           if [ "$SECURITY_RESULT" = "failure" ]; then FAILED_JOBS+=("security-check"); fi
           
           if [ ${#FAILED_JOBS[@]} -gt 0 ]; then

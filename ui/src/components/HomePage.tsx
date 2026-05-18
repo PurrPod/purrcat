@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { MessageSquare, GitMerge, Settings, X, Save, FileJson, AlertCircle } from 'lucide-react'
+import { MessageSquare, GitMerge, Settings, X, Save, FileJson, AlertCircle, Brain } from 'lucide-react'
 import { useFlowStore } from '../store/flowStore'
 import { toast } from 'react-hot-toast'
 
@@ -12,10 +12,12 @@ const CONFIG_TABS = ['model', 'sensor', 'file', 'memory', 'mcp'];
 
 export default function HomePage({ 
   onEnterChat, 
-  onEnterEditor 
+  onEnterEditor,
+  onEnterMemory
 }: { 
   onEnterChat: () => void, 
-  onEnterEditor: () => void 
+  onEnterEditor: () => void,
+  onEnterMemory: () => void
 }) {
   const [isConfigOpen, setIsConfigOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('model');
@@ -128,7 +130,7 @@ export default function HomePage({
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-10 max-w-3xl mx-auto relative mt-12">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-5xl mx-auto relative mt-12">
           {/* 开始对话卡片 */}
           <div className="relative group">
             <div className="absolute -top-4 left-1/2 -translate-x-1/2 w-24 h-8 bg-terracotta/40 border-2 border-ink rotate-3 z-20 transition-transform group-hover:rotate-6" style={sketchyShape1}></div>
@@ -169,6 +171,28 @@ export default function HomePage({
               <div className="text-center">
                 <h2 className="text-3xl font-black text-ink mb-2 tracking-widest" style={{ fontFamily: '"Comic Sans MS", cursive' }}>EDITOR</h2>
                 <p className="text-ink/60 font-bold" style={{ fontFamily: '"Comic Sans MS", cursive' }}>DAG Workflow</p>
+              </div>
+            </button>
+          </div>
+
+          {/* MEMORY 卡片 */}
+          <div className="relative group">
+            <div className="absolute -top-4 right-1/2 translate-x-1/2 w-16 h-8 bg-[#a3be8c]/80 border-2 border-ink -rotate-6 z-20 transition-transform group-hover:rotate-12" style={sketchyShape3}></div>
+
+            <button
+              onClick={onEnterMemory}
+              style={sketchyShape3}
+              className="w-full bg-paper border-4 border-ink p-10 flex flex-col items-center justify-center gap-6 hover:-translate-y-2 hover:rotate-2 shadow-[10px_10px_0px_0px_rgba(26,26,26,1)] hover:shadow-[14px_14px_0px_0px_rgba(163,190,140,1)] transition-all rotate-2 relative z-10"
+            >
+              <div 
+                style={sketchyShape1}
+                className="w-24 h-24 bg-ink border-4 border-ink flex items-center justify-center rotate-6 group-hover:bg-[#a3be8c] transition-colors duration-300"
+              >
+                <Brain size={48} className="text-paper" strokeWidth={2.5} />
+              </div>
+              <div className="text-center">
+                <h2 className="text-3xl font-black text-ink mb-2 tracking-widest" style={{ fontFamily: '"Comic Sans MS", cursive' }}>MEMORY</h2>
+                <p className="text-ink/60 font-bold" style={{ fontFamily: '"Comic Sans MS", cursive' }}>View Knowledge</p>
               </div>
             </button>
           </div>

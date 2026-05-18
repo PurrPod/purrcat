@@ -49,22 +49,22 @@ def kill_task(task_id):
     return False
 
 
-def inject_task_instruction(task_id: str, content: str, node_id: str = None):
-    """全局指令注入函数：委托给 Task 实例的规范化 API"""
+def inject_task_instruction(task_id: str, content: str, node_id: str) -> bool:
+    """全局指令注入函数：强制要求指定节点，彻底废弃广播模式"""
+    if not node_id:
+        return False
+
     if task_id in TASK_INSTANCES:
         task = TASK_INSTANCES[task_id]
-        if node_id:
-            # 使用规范化 API
-            result = task.inject_instruction(node_id, content)
-            return result["status"] == "success"
-        else:
-            # 广播模式：只向所有 Agent 节点注入
-            from src.harness.node.agent_node import AgentNode
-
-            for n_id, node_instance in task.node_list.items():
-                if isinstance(node_instance, AgentNode):
-                    task.inject_instruction(n_id, content)
-            return True
+        
+        # 拦截不存在的节点
+        if node_id not in task.node_list:
+            return False
+            
+        # 精确调用规范化 API 进行单节点注入
+        result = task.inject_instruction(node_id, content)
+        return result.get("status") == "success"
+        
     return False
 
 
@@ -73,7 +73,6 @@ class Task:
         self,
         task_name: str,
         inputs: dict,
-        core: str,
         graph_name: str = "default",
         task_id: str = None,
     ):
@@ -81,7 +80,6 @@ class Task:
         self.task_name = task_name
         self.inputs = inputs
         self.outputs = {}
-        self.core = core
         self.graph_name = graph_name
 
         self.node_state = {}  # 节点状态 {node_id: NodeState}
@@ -100,8 +98,7 @@ class Task:
         self.checkpoint_dir = os.path.join(
             DATA_DIR, "checkpoints", "task", f"{self.task_name}_{self.task_id}"
         )
-        self.model = Model(core)
-
+        
         self._lock = threading.Lock()
         self._io_lock = threading.Lock()
         self._killed = False
@@ -112,6 +109,10 @@ class Task:
             TASK_INSTANCES[self.task_id] = self
 
         self.load_graph()
+        self.core = self.graph.get("core", "openai:deepseek-v4-flash")
+        from src.model.facade import Model
+        self.model = Model(self.core)
+        
         self.reload()
 
     def load_graph(self):
@@ -357,10 +358,6 @@ class Task:
                 out_port = edge.get("sourceHandle", "default")
                 self.output_port_states[node_id][out_port] = PortState.VOID
 
-    # ==========================================
-    # 🌟 规范化的外部交互 API
-    # ==========================================
-
     def inject_instruction(self, node_id: str, instruction: str) -> dict:
         """官方推荐的指令注入入口：自带类型校验和正确的级联重置"""
         if node_id not in self.node_list:
@@ -398,10 +395,6 @@ class Task:
         self.state = TaskState.READY
         self.save()
         return {"status": "success", "message": "节点及其下游已彻底重置！"}
-
-    # ==========================================
-    # 🌟 史诗级带保护的级联清理算法
-    # ==========================================
 
     def _cascade_reset(self, start_node_id: str, is_injection: bool):
         """
@@ -485,6 +478,7 @@ class Task:
             "outputs": self.outputs,
             # 4. 🌟 新架构核心数据 (后端引擎的灵魂)
             "edge_mailboxes": self.edge_mailboxes,
+            "node_state": {k: v.value if hasattr(v, "value") else v for k, v in self.node_state.items()},
             "output_port_states": {
                 k: {p: s.value if hasattr(s, "value") else s for p, s in ports.items()}
                 for k, ports in self.output_port_states.items()
@@ -518,12 +512,12 @@ class Task:
                 self.create_time = data.get("create_time", "2025-01-01 00:00:00")
 
                 # 恢复新架构的引擎状态
-                self.node_state = {
-                    k: NodeState(v)
-                    for k, v in data.get(
-                        "node_state", data.get("dag_state", {})
-                    ).items()
-                }
+                saved_states = data.get("node_state", data.get("dag_state", {}))
+                self.node_state = {}
+                for k, v in saved_states.items():
+                    # 如果从 dag_state 读取，v 是一个字典，需要取出 'state' 字符串
+                    state_str = v.get("state", "ready") if isinstance(v, dict) else v
+                    self.node_state[k] = NodeState(state_str)
                 self.edge_mailboxes = data.get("edge_mailboxes", {})
 
                 # 安全恢复嵌套的端口状态
@@ -559,14 +553,13 @@ class Task:
 
         task_id = data.get("task_id")
         task_name = data.get("name", data.get("task_name", "unnamed_task"))
-        core = data.get("core", "")
         graph_name = data.get("graph_name", "default")
         inputs = data.get("inputs", {})
+        saved_core = data.get("core", "")
 
         task = Task(
             task_name=task_name,
             inputs=inputs,
-            core=core,
             graph_name=graph_name,
             task_id=task_id,
         )
@@ -575,6 +568,11 @@ class Task:
         task.create_time = data.get(
             "create_time", datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         )
+        
+        if saved_core:
+            task.core = saved_core
+            from src.model.facade import Model
+            task.model = Model(task.core)
 
         return task
 

@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import {
-  ArrowLeft, Terminal, Trash2, X, Activity, Clock, Box, Send, MessageCircle
+  ArrowLeft, Terminal, Trash2, X, Activity, Clock, Box, Send, MessageCircle, RefreshCw
 } from 'lucide-react';
 import type { Node, Edge } from '@xyflow/react';
 import { ReactFlow, Background, useNodesState, useEdgesState, Handle, Position } from '@xyflow/react';
@@ -30,7 +30,7 @@ interface LogEntry {
   [key: string]: any;
 }
 
-// 🟢 1. 修复节点高亮：增加 selected 属性支持，对齐 Editor 样式
+// 🟢 1. 修复节点：增加 selected 属性支持，并在底部补充 Reset 重置按钮
 const TaskMonitorNode = ({ id, data, selected }: any) => {
   let statusColor = "bg-[#EBCB8B]";
   let isPulsing = false;
@@ -65,13 +65,25 @@ const TaskMonitorNode = ({ id, data, selected }: any) => {
         </div>
       </div>
       
-      <button
-        onClick={(e) => { e.stopPropagation(); data.onShowLog(id); }}
-        className="w-full flex items-center justify-center gap-2 bg-cream border-2 border-ink py-2 text-sm font-black hover:bg-terracotta hover:text-paper transition-all shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] active:shadow-none active:translate-y-0.5"
-        style={sketchyShape3}
-      >
-        <Terminal size={16} strokeWidth={3} /> View Logs
-      </button>
+      {/* 🟢 修复点 2：将独立按钮拆分为日志与重置按钮组 */}
+      <div className="flex gap-2 w-full">
+        <button
+          onClick={(e) => { e.stopPropagation(); data.onShowLog(id); }}
+          className="flex-1 flex items-center justify-center gap-1 bg-cream border-2 border-ink py-2 text-sm font-black hover:bg-terracotta hover:text-paper transition-all shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] active:shadow-none active:translate-y-0.5"
+          style={sketchyShape3}
+          title="查看日志"
+        >
+          <Terminal size={14} strokeWidth={3} /> Logs
+        </button>
+        <button
+          onClick={(e) => { e.stopPropagation(); data.onReset(id); }}
+          className="px-3 flex items-center justify-center bg-[#EBCB8B] border-2 border-ink py-2 text-ink hover:bg-[#d8b877] transition-all shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] active:shadow-none active:translate-y-0.5"
+          style={sketchyShape1}
+          title="重置该节点并重新执行"
+        >
+          <RefreshCw size={14} strokeWidth={3} />
+        </button>
+      </div>
 
       {/* 🌟 动态渲染目标引脚 (Target) */}
       {data.inHandles?.map((handleId: string, idx: number) => (
@@ -106,7 +118,6 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
   
   const [currentNodeLogs, setCurrentNodeLogs] = useState<LogEntry[]>([]);
   
-  // 🟢 2. 增加智能滚动 Refs
   const logsContainerRef = useRef<HTMLDivElement>(null);
   const logEndRef = useRef<HTMLDivElement>(null);
   const isAutoScroll = useRef(true);
@@ -114,10 +125,7 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
   const [taskToDelete, setTaskToDelete] = useState<string | null>(null);
   const [logModalNodeId, setLogModalNodeId] = useState<string | null>(null);
 
-  // 🟢 3. 增加精准制导输入框状态
   const [pushMessage, setPushMessage] = useState('');
-
-  // 🟢 阻塞加载状态
   const [isCheckingOut, setIsCheckingOut] = useState(false);
 
   const [nodes, setNodes, onNodesChange] = useNodesState([] as Node[]);
@@ -127,27 +135,39 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
 
   const loadTasks = async () => {
     try {
-      console.log("[TaskPage] 开始加载任务列表...");
       const res = await fetch('http://localhost:8000/api/tasks');
-      console.log("[TaskPage] 响应状态:", res.status);
       if (res.ok) {
         const data = await res.json();
-        console.log("[TaskPage] 任务数据:", data);
         setTasks(data);
       }
     } catch (e) {
-      console.error("[TaskPage] 加载失败:", e);
       toast.error("获取任务列表失败"); 
     }
   };
-
-  console.log("[TaskPage] 组件渲染, tasks 数量:", tasks.length);
 
   useEffect(() => {
     loadTasks();
     const interval = setInterval(loadTasks, 3000);
     return () => clearInterval(interval);
   }, []);
+
+  // 🟢 新增：调用后端重置节点的 API
+  const handleResetNode = async (nodeId: string) => {
+    if (!selectedTaskId) return;
+    try {
+      const res = await fetch(`http://localhost:8000/api/tasks/${selectedTaskId}/nodes/${nodeId}/reset`, {
+        method: 'POST'
+      });
+      if (res.ok) {
+        toast.success(`已重置节点 [${nodeId}] 并重新执行下游！`);
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        toast.error(errData.detail || '节点重置失败，任务可能已结束');
+      }
+    } catch (e) {
+      toast.error('网络错误，无法重置节点');
+    }
+  };
 
   const handleSelectTask = async (task: Task) => {
     setIsCheckingOut(true);
@@ -165,13 +185,11 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
         const graphNodes = graph.nodes || [];
         const graphEdges = graph.edges || [];
         
-        // 🌟 新架构：不再猜字段，直接认准 node_state
         const actualNodeStates = stateData.node_state || {};
         const isCurrentlyRunning = stateData.state === 'running';
 
         const flowNodes = graphNodes.map((n: any, idx: number) => {
           if (!n) return null;
-          
           const currentState = actualNodeStates[n.id] || 'ready';
           
           let posX = 100 + (idx % 3) * 280, posY = 100 + Math.floor(idx / 3) * 180;
@@ -195,7 +213,8 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
               nodeState: currentState.toLowerCase(),
               inHandles, 
               outHandles,
-              onShowLog: (nodeId: string) => setLogModalNodeId(nodeId)
+              onShowLog: (nodeId: string) => setLogModalNodeId(nodeId),
+              onReset: (nodeId: string) => handleResetNode(nodeId) // 注入重置回调
             }
           };
         }).filter(Boolean) as Node[];
@@ -248,7 +267,6 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
         const res = await fetch(`http://localhost:8000/api/tasks/${selectedTaskId}/state`);
         if (res.ok) {
           const data = await res.json();
-          // 🌟 新架构直接读取 node_state
           const nodeStates = data.node_state || {};
           const isCurrentlyRunning = data.state === 'running';
 
@@ -290,7 +308,6 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
     return () => clearInterval(interval);
   }, [selectedTaskId, setNodes]);
 
-  // 🟢 4. 智能滚动处理逻辑
   const handleLogScroll = () => {
     if (!logsContainerRef.current) return;
     const { scrollTop, scrollHeight, clientHeight } = logsContainerRef.current;
@@ -303,12 +320,11 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
     }
   }, [currentNodeLogs, logModalNodeId]);
 
-  // 🟢 5. 发送指令方法
   const handleForcePush = async () => {
     if (!pushMessage.trim() || !selectedTaskId) return;
     const msg = pushMessage.trim();
     setPushMessage('');
-    isAutoScroll.current = true; // 发送指令后强制滚到底部以便查看结果
+    isAutoScroll.current = true;
 
     try {
       const res = await fetch(`http://localhost:8000/api/tasks/${selectedTaskId}/submit`, {
@@ -316,9 +332,16 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content: msg, node_id: logModalNodeId })
       });
-      if (res.ok) toast.success(`已向节点 [${logModalNodeId}] 发送指令`);
-      else toast.error('任务可能已结束，注入失败');
-    } catch (e) { toast.error('网络错误'); }
+      // 🟢 修复点 3：根据后端返回的具体 detail 做错误提示，拒绝非 AgentNode 的指令注入
+      if (res.ok) {
+        toast.success(`已向节点 [${logModalNodeId}] 发送指令`);
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        toast.error(errData.detail || '任务可能已结束，注入失败');
+      }
+    } catch (e) { 
+      toast.error('网络错误，无法发送指令'); 
+    }
   };
 
   const confirmDeleteTask = async () => {
@@ -355,7 +378,8 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
       {/* 悬浮日志弹窗 */}
       {logModalNodeId && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-ink/50 backdrop-blur-sm p-4 pointer-events-auto">
-          <div style={sketchyShape2} className="bg-paper border-4 border-ink shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] w-full max-w-5xl h-[85vh] flex flex-col relative rotate-[0.5deg]">
+          {/* 🟢 修复点 1：移除 rotate-[0.5deg]，使日志视图框被扶正 */}
+          <div style={sketchyShape2} className="bg-paper border-4 border-ink shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] w-full max-w-5xl h-[85vh] flex flex-col relative">
             <button onClick={() => setLogModalNodeId(null)} className="absolute top-5 right-6 hover:rotate-90 hover:text-terracotta transition-all z-10">
               <X size={36} strokeWidth={3} />
             </button>
@@ -372,7 +396,6 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
                </div>
             </div>
             
-            {/* 🔴 日志列表容器增加 ref 和 onScroll 监听 */}
             <div 
               ref={logsContainerRef}
               onScroll={handleLogScroll}
@@ -386,7 +409,7 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
                ) : (
                  <div className="flex flex-col gap-2">
                    {currentNodeLogs.map((log, idx) => {
-                     const timeStr = new Date(log.timestamp * 1000).toLocaleTimeString('en-US', { hour12: false });
+                     const timeStr = new Date(log.timestamp).toLocaleTimeString('en-US', { hour12: false });
                      let colorClass = "text-ink/80"; 
                      if (log.type === "SYSTEM") colorClass = "text-ink/50";
                      if (log.type === "THOUGHT") colorClass = "text-[#3498DB] font-bold";
@@ -405,13 +428,11 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
                        </div>
                      );
                    })}
-                   {/* 自动滚动锚点 */}
                    <div ref={logEndRef} className="h-4" />
                  </div>
                )}
             </div>
             
-            {/* 🔴 6. 新版日志弹窗底部：输入框替代了“滚动到底部”按钮 */}
             <div className="p-6 border-t-4 border-ink bg-paper shrink-0 flex gap-4">
               <input
                 style={sketchyShape3} 
@@ -419,7 +440,7 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
                 onChange={(e) => setPushMessage(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter') handleForcePush(); }}
                 placeholder={`向 ${logModalNodeId} 节点发送精确指令...`} 
-                className="flex-1 bg-[#FDF8F0] border-4 border-ink px-6 py-4 font-bold focus:outline-none focus:bg-white transition-all shadow-[inset_4px_4px_0px_0px_rgba(26,26,26,0.05)] text-lg -rotate-[0.5deg] placeholder:text-ink/30"
+                className="flex-1 bg-[#FDF8F0] border-4 border-ink px-6 py-4 font-bold focus:outline-none focus:bg-white transition-all shadow-[inset_4px_4px_0px_0px_rgba(26,26,26,0.05)] text-lg placeholder:text-ink/30"
               />
               <button
                 style={sketchyShape1} 

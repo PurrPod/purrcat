@@ -8,6 +8,7 @@ import NodePanel from './components/NodePanel';
 import FlowCanvas from './components/FlowCanvas';
 import ChatPage from './components/ChatPage';
 import TaskPage from './components/TaskPage';
+import MemoryPage from './components/MemoryPage'; // 新增引入
 
 // 保留你原本的本地 fallback 逻辑（已注释，改用后端 API）
 /*
@@ -123,6 +124,9 @@ export default function App() {
 
         {/* 编辑器页 */}
         <Route path="/editor" element={<EditorView />} />
+        
+        {/* 记忆页 */}
+        <Route path="/memory" element={<MemoryRouteWrapper />} />
       </Routes>
 
       <Toaster
@@ -148,7 +152,16 @@ export default function App() {
 // 辅助包装组件，用于传递 navigate 函数给原子组件
 function HomeRouteWrapper() {
   const navigate = useNavigate();
-  return <HomePage onEnterChat={() => navigate('/chat')} onEnterEditor={() => navigate('/editor')} />;
+  return <HomePage 
+    onEnterChat={() => navigate('/chat')} 
+    onEnterEditor={() => navigate('/editor')} 
+    onEnterMemory={() => navigate('/memory')} // 新增
+  />;
+}
+
+function MemoryRouteWrapper() {
+  const navigate = useNavigate();
+  return <MemoryPage onBack={() => navigate('/')} />;
 }
 
 function ChatRouteWrapper() {

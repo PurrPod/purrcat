@@ -11,7 +11,7 @@ from src.tool.search.semantic_utils import LocalEmbeddingSearcher, hybrid_tokeni
 
 
 class MCPSearcher:
-    """MCP 语义搜索器（线程安全单例）"""
+    """MCP 语义搜索器（线程安全单例，支持原子级热更新）"""
 
     _instance = None
     _lock = threading.Lock()
@@ -20,13 +20,18 @@ class MCPSearcher:
         with cls._lock:
             if cls._instance is None:
                 cls._instance = super(MCPSearcher, cls).__new__(cls)
+                cls._instance.tools = []
+                cls._instance.corpus = []
+                cls._instance.corpus_matrix = None
+                cls._instance.bm25 = None
+                cls._instance.embedding_searcher = LocalEmbeddingSearcher()
                 cls._instance._initialize()
         return cls._instance
 
     def _initialize(self):
-        self.tools = []
-        self.corpus = []
-        self.embedding_searcher = LocalEmbeddingSearcher()
+        """局部构建索引，防止并发冲突"""
+        temp_tools = []
+        temp_corpus = []
 
         schemas = load_cached_schemas()
 
@@ -36,7 +41,7 @@ class MCPSearcher:
             tool_name = func.get("name", "")
             description = func.get("description", "")
 
-            self.tools.append(
+            temp_tools.append(
                 {
                     "server_name": server_name,
                     "tool_name": tool_name,
@@ -46,13 +51,24 @@ class MCPSearcher:
             text_representation = (
                 f"{server_name} {tool_name} {tool_name.replace('_', ' ')} {description}"
             )
-            self.corpus.append(text_representation)
+            temp_corpus.append(text_representation)
 
-        if self.corpus:
-            self.corpus_matrix = self.embedding_searcher.encode(self.corpus)
+        if temp_corpus:
+            temp_corpus_matrix = self.embedding_searcher.encode(temp_corpus)
+            tokenized_corpus = [hybrid_tokenize(doc) for doc in temp_corpus]
+            temp_bm25 = BM25Okapi(tokenized_corpus)
 
-            tokenized_corpus = [hybrid_tokenize(doc) for doc in self.corpus]
-            self.bm25 = BM25Okapi(tokenized_corpus)
+            self.tools = temp_tools
+            self.corpus = temp_corpus
+            self.corpus_matrix = temp_corpus_matrix
+            self.bm25 = temp_bm25
+            print(f"✅ MCPSearcher 内存索引已更新 (共 {len(self.tools)} 个工具)")
+
+    def reload_index(self):
+        """暴露给外部调用的热更新接口"""
+        with self._lock:
+            print("🔄 正在从本地缓存重载 MCPSearcher 内存索引...")
+            self._initialize()
 
     def search(self, query: str, max_results: int = 5) -> List[Dict]:
         if not self.corpus:

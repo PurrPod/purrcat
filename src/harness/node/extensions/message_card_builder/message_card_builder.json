@@ -22,7 +22,7 @@
     "outputs": [
         {
             "name": "message_list",
-            "type": "MessageList",
+            "type": "array",
             "port_type": "static",
             "description": "标准消息列表"
         }

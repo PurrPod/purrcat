@@ -1,13 +1,6 @@
-[tool.black]
-line-length = 88
-target-version = ['py310']
-
-[tool.isort]
-profile = "black"
-line_length = 88
-known_first_party = ["src", "scripts", "server", "tui"]
-
 [tool.ruff]
 line-length = 88
+target-version = "py310"
 
-
+[tool.ruff.lint]
+known-first-party = ["src", "scripts", "server", "tui"]

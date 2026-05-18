@@ -1,7 +1,7 @@
 {
   "version": "2.0",
   "name": "my_awesome_flow2",
-  "description": "PurrCat Web Export - V2",
+  "description": "一个简单的工作流示例",
   "global_schema": {
     "test": {
       "type": "any",
@@ -19,6 +19,36 @@
         896
       ],
       "config": {
+        "name": "JSON 构建器",
+        "color": "#9B59B6",
+        "inputs": [
+          {
+            "name": "dynamic_inputs",
+            "type": "any",
+            "port_type": "dynamic",
+            "dynamic_rules": {
+              "watch_config": "kv_pairs",
+              "method": "array_map"
+            }
+          }
+        ],
+        "outputs": [
+          {
+            "name": "json_string",
+            "type": "string",
+            "port_type": "static",
+            "description": "打包生成的 JSON 字符串"
+          }
+        ],
+        "configSchema": [
+          {
+            "name": "kv_pairs",
+            "type": "list",
+            "label": "自定义键值对",
+            "default": [],
+            "description": "添加你要构建的 JSON 键名。若有引脚连线接入，则优先使用连线的值；若无连线，则使用此处手动填写的默认值。"
+          }
+        ],
         "dynamic_inputs": [],
         "kv_pairs": [
           {
@@ -41,6 +71,39 @@
         495
       ],
       "config": {
+        "name": "模板渲染器",
+        "color": "#E67E22",
+        "inputs": [
+          {
+            "name": "template",
+            "type": "string",
+            "port_type": "static"
+          },
+          {
+            "name": "dynamic_vars",
+            "type": "any",
+            "port_type": "dynamic",
+            "dynamic_rules": {
+              "watch_config": "template",
+              "method": "regex",
+              "pattern": "\\{\\{\\s*([a-zA-Z0-9_]+)\\s*\\}\\}"
+            }
+          }
+        ],
+        "outputs": [
+          {
+            "name": "rendered_text",
+            "type": "string",
+            "port_type": "static"
+          }
+        ],
+        "configSchema": [
+          {
+            "name": "template",
+            "type": "textarea",
+            "label": "Jinja2 模板"
+          }
+        ],
         "dynamic_inputs": [],
         "template": "用于向用户打招呼，介绍自己是什么模型"
       }
@@ -54,6 +117,39 @@
         938
       ],
       "config": {
+        "name": "模板渲染器",
+        "color": "#E67E22",
+        "inputs": [
+          {
+            "name": "template",
+            "type": "string",
+            "port_type": "static"
+          },
+          {
+            "name": "dynamic_vars",
+            "type": "any",
+            "port_type": "dynamic",
+            "dynamic_rules": {
+              "watch_config": "template",
+              "method": "regex",
+              "pattern": "\\{\\{\\s*([a-zA-Z0-9_]+)\\s*\\}\\}"
+            }
+          }
+        ],
+        "outputs": [
+          {
+            "name": "rendered_text",
+            "type": "string",
+            "port_type": "static"
+          }
+        ],
+        "configSchema": [
+          {
+            "name": "template",
+            "type": "textarea",
+            "label": "Jinja2 模板"
+          }
+        ],
         "dynamic_inputs": [],
         "template": "你需要做如下总结：{{content}}"
       }
@@ -67,6 +163,39 @@
         921
       ],
       "config": {
+        "name": "模板渲染器",
+        "color": "#E67E22",
+        "inputs": [
+          {
+            "name": "template",
+            "type": "string",
+            "port_type": "static"
+          },
+          {
+            "name": "dynamic_vars",
+            "type": "any",
+            "port_type": "dynamic",
+            "dynamic_rules": {
+              "watch_config": "template",
+              "method": "regex",
+              "pattern": "\\{\\{\\s*([a-zA-Z0-9_]+)\\s*\\}\\}"
+            }
+          }
+        ],
+        "outputs": [
+          {
+            "name": "rendered_text",
+            "type": "string",
+            "port_type": "static"
+          }
+        ],
+        "configSchema": [
+          {
+            "name": "template",
+            "type": "textarea",
+            "label": "Jinja2 模板"
+          }
+        ],
         "dynamic_inputs": [],
         "template": "1.你收到了什么指令？"
       }
@@ -80,6 +209,61 @@
         802
       ],
       "config": {
+        "name": "智能体循环",
+        "color": "#16A085",
+        "inputs": [
+          {
+            "name": "messages",
+            "type": "array",
+            "port_type": "static",
+            "description": "消息上下文",
+            "required": true
+          },
+          {
+            "name": "target_files",
+            "type": "string",
+            "port_type": "static",
+            "description": "动态传入的目标文件路径 (支持 List 列表 或 逗号分隔的 String)",
+            "required": false
+          },
+          {
+            "name": "task_done_info",
+            "type": "string",
+            "port_type": "static",
+            "description": "动态注入的完成规则，可由前置节点动态决定输出格式",
+            "required": false
+          }
+        ],
+        "outputs": [
+          {
+            "name": "messages",
+            "type": "array",
+            "port_type": "static",
+            "description": "完整的消息历史"
+          },
+          {
+            "name": "summary",
+            "type": "string",
+            "port_type": "static",
+            "description": "任务完成的总结信息"
+          }
+        ],
+        "configSchema": [
+          {
+            "name": "target_files",
+            "type": "string",
+            "label": "强制验收文件列表",
+            "default": "",
+            "description": "需要强制校验生成的沙盒绝对路径。多个文件请用英文逗号 (,) 分隔。必须以 /agent_vm 开头。若留空，则不进行文件校验，直接产出总结。"
+          },
+          {
+            "name": "task_done_info",
+            "type": "json",
+            "label": "任务完结强校验字段 (JSON)",
+            "default": {},
+            "description": "配置要求大模型完结时必须输出的 JSON 键值对。例如: {\"summary\": \"总结\", \"score\": \"评分\"}"
+          }
+        ],
         "dynamic_inputs": [],
         "target_files": "",
         "task_done_info": ""
@@ -94,6 +278,46 @@
         292
       ],
       "config": {
+        "name": "消息卡片构建器",
+        "color": "#3498DB",
+        "inputs": [
+          {
+            "name": "content",
+            "type": "string",
+            "port_type": "static",
+            "description": "消息内容",
+            "required": true
+          },
+          {
+            "name": "role",
+            "type": "string",
+            "port_type": "static",
+            "description": "消息角色 (system/user/assistant)",
+            "required": false
+          }
+        ],
+        "outputs": [
+          {
+            "name": "message_list",
+            "type": "array",
+            "port_type": "static",
+            "description": "标准消息列表"
+          }
+        ],
+        "configSchema": [
+          {
+            "name": "content",
+            "type": "string",
+            "label": "消息内容",
+            "default": ""
+          },
+          {
+            "name": "role",
+            "type": "string",
+            "label": "消息角色",
+            "default": "user"
+          }
+        ],
         "dynamic_inputs": [],
         "content": "",
         "role": "user"
@@ -108,6 +332,28 @@
         895
       ],
       "config": {
+        "name": "全局输出",
+        "color": "#EBCB8B",
+        "inputs": [
+          {
+            "name": "dynamic_inputs",
+            "type": "any",
+            "port_type": "dynamic",
+            "dynamic_rules": {
+              "watch_config": "target_vars",
+              "method": "array_map"
+            }
+          }
+        ],
+        "outputs": [],
+        "configSchema": [
+          {
+            "name": "target_vars",
+            "type": "list",
+            "label": "输出目标 (Targets)",
+            "default": []
+          }
+        ],
         "dynamic_inputs": [
           {
             "key": "summary",
@@ -134,6 +380,46 @@
         -4
       ],
       "config": {
+        "name": "全局输入",
+        "color": "#a3be8c",
+        "inputs": [],
+        "outputs": [
+          {
+            "name": "dynamic_outputs",
+            "type": "any",
+            "port_type": "dynamic",
+            "dynamic_rules": {
+              "watch_config": "global_vars",
+              "method": "array_map"
+            }
+          }
+        ],
+        "configSchema": [
+          {
+            "name": "global_vars",
+            "type": "list",
+            "label": "全局变量 (Variables)",
+            "default": [],
+            "item_schema": [
+              {
+                "name": "name",
+                "type": "string",
+                "label": "变量名 (如: prompt)"
+              },
+              {
+                "name": "required",
+                "type": "boolean",
+                "label": "是否必填",
+                "default": true
+              },
+              {
+                "name": "description",
+                "type": "string",
+                "label": "变量描述 (给用户的提示)"
+              }
+            ]
+          }
+        ],
         "dynamic_inputs": [],
         "global_vars": [
           {

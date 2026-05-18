@@ -150,3 +150,21 @@ def delete_task_api(task_id: str):
         shutil.rmtree(task.checkpoint_dir, ignore_errors=True)
 
     return {"status": "ok", "message": "Task destroyed."}
+
+
+@router.post("/{task_id}/nodes/{node_id}/reset")
+async def reset_node_api(task_id: str, node_id: str):
+    """新增接口：供前端点击重置节点后调用，触发级联清理及引擎重启"""
+    task = TASK_INSTANCES.get(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+        
+    # 调用您在 process.py 内完成的 reset 方法
+    result = task.reset_node(node_id)
+    if result["status"] == "error":
+        raise HTTPException(status_code=400, detail=result["message"])
+        
+    # 状态成功重置为 READY 后，重新拉起大循环继续跑
+    asyncio.create_task(task.run())
+    
+    return result

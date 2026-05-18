@@ -6,7 +6,7 @@
     "inputs": [
         {
             "name": "messages",
-            "type": "MessageList",
+            "type": "array",
             "port_type": "static",
             "description": "消息上下文",
             "required": true
@@ -29,7 +29,7 @@
     "outputs": [
         {
             "name": "messages",
-            "type": "MessageList",
+            "type": "array",
             "port_type": "static",
             "description": "完整的消息历史"
         },
