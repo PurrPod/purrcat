@@ -18,7 +18,8 @@ def get_recent_events():
 def get_recent_experiences():
     try:
         engine = VectorEngine()
-        if not engine.collection: return []
+        if not engine.collection:
+            return []
         results = engine.collection.get(include=["documents", "metadatas"])
         experiences = []
         if results and results.get("ids"):
@@ -64,13 +65,14 @@ def get_full_cognition_graph():
             })
             
         return {"nodes": nodes, "edges": edges}
-    except Exception as e:
+    except Exception:
         traceback.print_exc()
         return {"nodes": [], "edges": []}
 
 @router.get("/search")
 def search_memory(q: str = ""):
-    if not q: return {"result": ""}
+    if not q:
+        return {"result": ""}
     try:
         return {"result": get_memory_client().search(query=q)}
     except Exception as e:

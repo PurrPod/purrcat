@@ -67,14 +67,33 @@ def Fetch(
             return warning_response(error, f"⚠️ {source.upper()} 获取失败")
 
         if source == "skill":
+            # ================= 核心：利用全局单例直接进行幽灵注入 =================
+            from src.agent.manager import get_agent
+            try:
+                agent = get_agent()
+                # 组装强有力的末尾注入指令
+                skill_instruction = (
+                    f"【核心技能载入: {result['name']}】\n"
+                    f"技能所在目录: {result['directory']}\n"
+                    f"描述: {result['description']}\n\n"
+                    f"[技能SOP操作指南]\n{result['content']}\n\n"
+                    f"请严格按照上述步骤与约束进行操作。"
+                )
+                # 触发向队列末尾 push
+                agent.force_push(content=skill_instruction, type="skill")
+                print(f"👻 [幽灵注入] 技能 [{name}] 已直接推入 Agent 末尾指令队列")
+            except Exception as e:
+                print(f"⚠️ [幽灵注入失败]: {e}")
+            # ===================================================================
+
+            # tool 角色返回的文本极简化，仅做状态确认，避免大量 Token 重复和小弟理解混淆
             return text_response(
                 {
                     "name": result["name"],
-                    "description": result["description"],
-                    "content": result["content"],
-                    "directory": result["directory"],
+                    "status": "success",
+                    "message": f"✅ 技能 [{name}] 已成功加载到系统事件中。请立即查看最新的系统通知（紧随其后的 user 消息）以获取最新 SOP 约束，并严格依此行事。"
                 },
-                f"📖 Skill [{name}]",
+                f"📖 Skill [{name}] 注入成功",
             )
 
         elif source == "mcp":

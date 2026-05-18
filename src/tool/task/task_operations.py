@@ -1,7 +1,6 @@
 """Task 操作模块 - 任务创建、终止、查询及指令注入"""
 
 import threading
-from src.utils.config import get_model_config
 
 def add_task_operation(name: str, inputs: dict, graph_name: str) -> tuple:
     """创建后台任务"""

@@ -110,7 +110,6 @@ class Task:
 
         self.load_graph()
         self.core = self.graph.get("core", "openai:deepseek-v4-flash")
-        from src.model.facade import Model
         self.model = Model(self.core)
         
         self.reload()

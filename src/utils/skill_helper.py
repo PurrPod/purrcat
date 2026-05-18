@@ -56,8 +56,8 @@ def _find_skill_md_file(skill_name: str) -> tuple:
                         md_file = dir_md
                         target_dir = item
                         break
-
-    return md_file, target_dir
+    sandbox_dir = f"/agent_vm/skills/{skill_name}"
+    return md_file, sandbox_dir
 
 
 def get_skill_content(skill_name: str) -> str:
@@ -70,7 +70,7 @@ def get_skill_content(skill_name: str) -> str:
 
 
 def get_skill_info(skill_name: str) -> dict:
-    md_file, target_dir = _find_skill_md_file(skill_name)
+    md_file, sandbox_dir = _find_skill_md_file(skill_name)
     if not md_file.exists():
         return {}
 

@@ -20,10 +20,10 @@ def load_skill(name: str) -> tuple:
         if not skill_info:
             raise SkillNotFoundError(name)
 
-        md_file, target_dir = _find_skill_md_file(name)
+        md_file, sandbox_dir = _find_skill_md_file(name)
         parsed_data = _parse_skill_md(md_file)
         skill_info["content"] = parsed_data["content"]
-        skill_info["directory"] = str(target_dir)
+        skill_info["directory"] = str(sandbox_dir)
 
         return skill_info, None
     except SkillNotFoundError:

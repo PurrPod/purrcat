@@ -87,21 +87,21 @@ export default function MemoryPage({ onBack }: { onBack: () => void }) {
       const options = {
         nodes: {
           shape: 'box',
-          margin: 16,
+          margin: { top: 16, right: 16, bottom: 16, left: 16 },
           borderWidth: 4,
           color: {
             border: '#1A1A1A',
             background: '#FAF8F5',
             highlight: { border: '#D47A5A', background: '#FDF8F0' }
           },
-          font: { face: '"Comic Sans MS", cursive', size: 18, bold: true, color: '#1A1A1A' },
+          font: { face: '"Comic Sans MS", cursive', size: 18, bold: 'bold', color: '#1A1A1A' },
           shadow: { enabled: true, color: '#1A1A1A', size: 0, x: 6, y: 6 }
         },
         edges: {
           width: 3,
           color: { color: '#1A1A1A', highlight: '#D47A5A' },
           font: { face: '"Comic Sans MS", cursive', size: 14, strokeWidth: 4, strokeColor: '#FAF8F5', color: '#1A1A1A' },
-          smooth: { type: 'cubicBezier', roundness: 0.4 },
+          smooth: { enabled: true, type: 'cubicBezier', roundness: 0.4 },
           arrows: { to: { enabled: true, scaleFactor: 1, type: 'arrow' } }
         },
         physics: {

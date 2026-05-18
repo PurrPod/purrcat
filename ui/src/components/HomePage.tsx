@@ -1,9 +1,9 @@
+// src/components/HomePage.tsx
 import { useState, useEffect } from 'react'
-import { MessageSquare, GitMerge, Settings, X, Save, FileJson, AlertCircle, Brain } from 'lucide-react'
+import { MessageSquare, GitMerge, Settings, X, Save, FileJson, AlertCircle } from 'lucide-react'
 import { useFlowStore } from '../store/flowStore'
 import { toast } from 'react-hot-toast'
 
-// 手绘魔法形状
 const sketchyShape1 = { borderRadius: '255px 15px 225px 15px/15px 225px 15px 255px' };
 const sketchyShape2 = { borderRadius: '15px 225px 15px 255px/255px 15px 225px 15px' };
 const sketchyShape3 = { borderRadius: '225px 15px 255px 15px/15px 255px 15px 225px' };
@@ -12,12 +12,10 @@ const CONFIG_TABS = ['model', 'sensor', 'file', 'memory', 'mcp'];
 
 export default function HomePage({ 
   onEnterChat, 
-  onEnterEditor,
-  onEnterMemory
+  onEnterEditor
 }: { 
   onEnterChat: () => void, 
-  onEnterEditor: () => void,
-  onEnterMemory: () => void
+  onEnterEditor: () => void
 }) {
   const [isConfigOpen, setIsConfigOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('model');
@@ -30,7 +28,6 @@ export default function HomePage({
     onEnterEditor()
   }
 
-  // 获取配置
   const fetchConfig = async (tab: string) => {
     try {
       const res = await fetch(`http://localhost:8000/api/config/${tab}`);
@@ -53,7 +50,6 @@ export default function HomePage({
     }
   }, [isConfigOpen, activeTab]);
 
-  // 展开/收起 Key
   const toggleKey = (key: string) => {
     if (expandedKey === key) {
       setExpandedKey(null);
@@ -63,10 +59,8 @@ export default function HomePage({
     }
   };
 
-  // 保存修改
   const handleSave = async (key: string) => {
     try {
-      // 尝试解析用户修改的 JSON
       const parsedValue = JSON.parse(editJsonStr);
       const newConfig = { ...configData, [key]: parsedValue };
 
@@ -91,7 +85,6 @@ export default function HomePage({
   return (
     <div className="absolute inset-0 bg-[#fdfaf5] bg-[radial-gradient(#1a1a1a_1px,transparent_1px)] [background-size:24px_24px] flex flex-col items-center justify-center overflow-hidden font-sans">
       
-      {/* 🔴 右上角设置按钮 */}
       <button 
         onClick={() => setIsConfigOpen(true)}
         style={sketchyShape3}
@@ -100,7 +93,6 @@ export default function HomePage({
         <Settings size={32} strokeWidth={2.5} className="group-hover:animate-[spin_3s_linear_infinite]" />
       </button>
 
-      {/* 散落在桌上的装饰性小纸条 */}
       <div 
         style={sketchyShape3}
         className="absolute top-20 left-32 bg-[#EBCB8B] border-4 border-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] px-6 py-4 -rotate-6 font-black text-ink text-xl z-0 pointer-events-none"
@@ -130,7 +122,8 @@ export default function HomePage({
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-5xl mx-auto relative mt-12">
+        {/* 🌟 修改点：只保留两列入口 */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-10 max-w-3xl mx-auto relative mt-12">
           {/* 开始对话卡片 */}
           <div className="relative group">
             <div className="absolute -top-4 left-1/2 -translate-x-1/2 w-24 h-8 bg-terracotta/40 border-2 border-ink rotate-3 z-20 transition-transform group-hover:rotate-6" style={sketchyShape1}></div>
@@ -138,7 +131,7 @@ export default function HomePage({
             <button
               onClick={onEnterChat}
               style={sketchyShape2}
-              className="w-full bg-paper border-4 border-ink p-10 flex flex-col items-center justify-center gap-6 hover:-translate-y-2 hover:-rotate-2 shadow-[10px_10px_0px_0px_rgba(26,26,26,1)] hover:shadow-[14px_14px_0px_0px_rgba(26,26,26,1)] transition-all -rotate-1 relative z-10"
+              className="w-full bg-paper border-4 border-ink p-12 flex flex-col items-center justify-center gap-6 hover:-translate-y-2 hover:-rotate-2 shadow-[10px_10px_0px_0px_rgba(26,26,26,1)] hover:shadow-[14px_14px_0px_0px_rgba(26,26,26,1)] transition-all -rotate-1 relative z-10"
             >
               <div 
                 style={sketchyShape3}
@@ -160,7 +153,7 @@ export default function HomePage({
             <button
               onClick={handleNewWorkflow}
               style={sketchyShape1}
-              className="w-full bg-paper border-4 border-ink p-10 flex flex-col items-center justify-center gap-6 hover:-translate-y-2 hover:rotate-2 shadow-[10px_10px_0px_0px_rgba(26,26,26,1)] hover:shadow-[14px_14px_0px_0px_rgba(212,122,90,1)] transition-all rotate-1 relative z-10"
+              className="w-full bg-paper border-4 border-ink p-12 flex flex-col items-center justify-center gap-6 hover:-translate-y-2 hover:rotate-2 shadow-[10px_10px_0px_0px_rgba(26,26,26,1)] hover:shadow-[14px_14px_0px_0px_rgba(212,122,90,1)] transition-all rotate-1 relative z-10"
             >
               <div 
                 style={sketchyShape2}
@@ -174,56 +167,26 @@ export default function HomePage({
               </div>
             </button>
           </div>
-
-          {/* MEMORY 卡片 */}
-          <div className="relative group">
-            <div className="absolute -top-4 right-1/2 translate-x-1/2 w-16 h-8 bg-[#a3be8c]/80 border-2 border-ink -rotate-6 z-20 transition-transform group-hover:rotate-12" style={sketchyShape3}></div>
-
-            <button
-              onClick={onEnterMemory}
-              style={sketchyShape3}
-              className="w-full bg-paper border-4 border-ink p-10 flex flex-col items-center justify-center gap-6 hover:-translate-y-2 hover:rotate-2 shadow-[10px_10px_0px_0px_rgba(26,26,26,1)] hover:shadow-[14px_14px_0px_0px_rgba(163,190,140,1)] transition-all rotate-2 relative z-10"
-            >
-              <div 
-                style={sketchyShape1}
-                className="w-24 h-24 bg-ink border-4 border-ink flex items-center justify-center rotate-6 group-hover:bg-[#a3be8c] transition-colors duration-300"
-              >
-                <Brain size={48} className="text-paper" strokeWidth={2.5} />
-              </div>
-              <div className="text-center">
-                <h2 className="text-3xl font-black text-ink mb-2 tracking-widest" style={{ fontFamily: '"Comic Sans MS", cursive' }}>MEMORY</h2>
-                <p className="text-ink/60 font-bold" style={{ fontFamily: '"Comic Sans MS", cursive' }}>View Knowledge</p>
-              </div>
-            </button>
-          </div>
         </div>
       </div>
 
-      {/* 🔴 潦草的配置面板弹窗 */}
+      {/* 🔴 配置面板弹窗部分保持不变... */}
       {isConfigOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-ink/70 backdrop-blur-sm p-4 md:p-8 pointer-events-auto">
-          {/* 大背板 */}
           <div 
             style={sketchyShape2} 
             className="bg-cream border-4 border-ink shadow-[16px_16px_0px_0px_rgba(26,26,26,1)] w-full max-w-6xl h-[85vh] flex flex-row relative"
           >
-            {/* 顶部的装饰胶带 */}
             <div className="absolute -top-4 left-1/4 w-32 h-10 bg-terracotta/60 border-2 border-ink rotate-2 z-50 pointer-events-none" style={sketchyShape1}></div>
-
-            {/* 关闭按钮 */}
             <button onClick={() => setIsConfigOpen(false)} className="absolute top-4 right-6 hover:rotate-90 hover:text-terracotta transition-all z-10 p-2 bg-paper border-4 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)]" style={sketchyShape3}>
               <X size={28} strokeWidth={4} />
             </button>
 
-            {/* 左侧：Header 和 Tabs */}
             <div className="w-64 shrink-0 border-r-4 border-ink/20 flex flex-col p-6">
-              {/* Header */}
               <div className="pb-6 flex items-center gap-4">
                 <Settings size={40} strokeWidth={2.5} className="text-terracotta" />
                 <h2 className="text-2xl font-black tracking-widest" style={{ fontFamily: '"Comic Sans MS", cursive' }}>CONFIG</h2>
               </div>
-
-              {/* 导航 Tabs 像凌乱的贴纸 */}
               <div className="flex flex-col gap-4">
                 {CONFIG_TABS.map((tab, idx) => {
                   const isActive = activeTab === tab;
@@ -244,7 +207,6 @@ export default function HomePage({
               </div>
             </div>
 
-            {/* 右侧：列表与编辑区 */}
             <div className="flex-1 overflow-y-auto p-8 flex flex-col gap-6">
               {Object.keys(configData).length === 0 ? (
                 <div className="text-center font-bold text-ink/40 mt-10 text-2xl" style={{ fontFamily: '"Comic Sans MS", cursive' }}>No data found or Loading...</div>
@@ -255,7 +217,6 @@ export default function HomePage({
 
                   return (
                     <div key={key} className="flex flex-col gap-2">
-                      {/* Key 按钮 */}
                       <button
                         onClick={() => toggleKey(key)}
                         style={itemShape}
@@ -269,7 +230,6 @@ export default function HomePage({
                         <span className="font-bold opacity-50">{isExpanded ? 'CLOSE' : 'EDIT'}</span>
                       </button>
 
-                      {/* 展开的编辑区 */}
                       {isExpanded && (
                         <div style={sketchyShape3} className="bg-paper border-4 border-ink p-4 flex flex-col gap-4 shadow-[inset_4px_4px_0px_0px_rgba(26,26,26,0.1)]">
                           <div className="flex items-center gap-2 text-ink/60 font-bold text-sm bg-terracotta/10 p-2 border-2 border-ink border-dashed" style={sketchyShape1}>
@@ -298,7 +258,6 @@ export default function HomePage({
                 })
               )}
             </div>
-
           </div>
         </div>
       )}

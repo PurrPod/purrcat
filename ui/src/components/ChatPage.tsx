@@ -148,7 +148,7 @@ const ToolCallBubble = ({ tc }: { tc: any }) => {
   );
 };
 
-export default function ChatPage({ onBack }: { onBack: () => void }) {
+export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => void; onSwitchToTask?: () => void }) {
   const navigate = useNavigate();
   const { sessionId } = useParams<{ sessionId: string }>();
 
@@ -297,7 +297,9 @@ export default function ChatPage({ onBack }: { onBack: () => void }) {
           const statusData = await statusRes.json();
           setIsAgentThinking(statusData.is_thinking);
         }
-      } catch (e) { }
+      } catch (e) {
+        console.error('Error checking agent status:', e);
+      }
     }, 1500);
     return () => clearInterval(interval);
   }, [currentSessionId, isCheckingOut]);
@@ -538,7 +540,7 @@ export default function ChatPage({ onBack }: { onBack: () => void }) {
                      <AlarmClock size={28} strokeWidth={2.5} className="text-ink"/>
                      <span className="font-black text-xl tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>CRON</span>
                  </button>
-                 <button onClick={() => navigate('/task')} style={sketchyShape2} className="flex-1 border-4 border-ink bg-[#D8E2DC] text-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center gap-3 hover:-translate-y-1 hover:scale-[1.02] transition-all -rotate-1 active:shadow-none active:translate-y-1">
+                 <button onClick={onSwitchToTask || (() => navigate('/task'))} style={sketchyShape2} className="flex-1 border-4 border-ink bg-[#D8E2DC] text-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center gap-3 hover:-translate-y-1 hover:scale-[1.02] transition-all -rotate-1 active:shadow-none active:translate-y-1">
                      <Terminal size={28} strokeWidth={2.5} className="text-ink"/>
                      <span className="font-black text-xl tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>TASK</span>
                  </button>
@@ -557,7 +559,7 @@ export default function ChatPage({ onBack }: { onBack: () => void }) {
                  <div className="flex-1 overflow-y-auto flex flex-col gap-4 p-2 mb-2">
                     {Object.keys(mcpData).length === 0 ? <p className="font-bold text-center mt-6 opacity-50 text-sm">No MCP loaded</p> :
                       Object.entries(mcpData).map(([server, tools], idx) => (
-                        <div key={server} style={idx % 2 === 0 ? sketchyShape2 : sketchyShape3} className={`border-4 border-ink bg-cream p-3 transition-all ${expandedMcp === server ? 'shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] translate-y-1' : 'shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:-translate-y-1 cursor-pointer'} ${idx % 2 === 0 ? 'rotate-1' : '-rotate-1'}`}>
+                        <div key={server} style={idx % 2 === 0 ? sketchyShape2 : sketchyShape3} className={`border-4 border-ink bg-cream p-3 transition-all ${expandedMcp === server ? 'shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] translate-y-1 rotate-0' : 'shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:-translate-y-1 cursor-pointer'} ${idx % 2 === 0 ? 'rotate-1' : '-rotate-1'}`}>
                             <div className="flex justify-between items-center" onClick={() => setExpandedMcp(expandedMcp === server ? null : server)}>
                                <span className="font-black text-lg truncate flex-1" style={{ fontFamily: '"Comic Sans MS", cursive' }}>{server}</span>
                                <span className="shrink-0">{expandedMcp === server ? <ChevronUp size={20}/> : <ChevronDown size={20}/>}</span>
@@ -590,7 +592,7 @@ export default function ChatPage({ onBack }: { onBack: () => void }) {
                  <div className="flex-1 overflow-y-auto flex flex-col gap-4 p-2 mb-2">
                     {skillData.length === 0 ? <p className="font-bold text-center mt-6 opacity-50 text-sm">No Skills loaded</p> :
                       skillData.map((skill: any, idx) => (
-                        <div key={skill.name} style={idx % 2 === 0 ? sketchyShape1 : sketchyShape2} className={`border-4 border-ink bg-cream p-3 transition-all ${expandedSkill === skill.name ? 'shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] translate-y-1' : 'shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:-translate-y-1 cursor-pointer'} ${idx % 2 === 0 ? '-rotate-1' : 'rotate-1'}`}>
+                        <div key={skill.name} style={idx % 2 === 0 ? sketchyShape1 : sketchyShape2} className={`border-4 border-ink bg-cream p-3 transition-all ${expandedSkill === skill.name ? 'shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] translate-y-1 rotate-0' : 'shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:-translate-y-1 cursor-pointer'} ${idx % 2 === 0 ? '-rotate-1' : 'rotate-1'}`}>
                             <div className="flex justify-between items-center" onClick={() => setExpandedSkill(expandedSkill === skill.name ? null : skill.name)}>
                                <span className="font-black text-lg truncate flex-1" style={{ fontFamily: '"Comic Sans MS", cursive' }}>{skill.name}</span>
                                <span className="shrink-0">{expandedSkill === skill.name ? <ChevronUp size={20}/> : <ChevronDown size={20}/>}</span>

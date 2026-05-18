@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from src.tool.callmcp.schema_manager import load_cached_schemas, refresh_schemas
 from src.tool.search.mcp_search import MCPSearcher
 from src.tool.search.skill_search import SkillSearcher
-from src.tool.cron.cron_operations import list_crons, add_cron, delete_cron, update_cron
+from src.tool.cron.cron_operations import list_crons, add_cron, delete_cron
 
 router = APIRouter(prefix="/api/tools", tags=["Tools Management"])
 
