@@ -1,15 +1,12 @@
 """Memo 工具主入口 - 统一记忆工具，支持写入和搜索"""
 
 import json
+import re
 import traceback
+from datetime import datetime
 
 from src.agent.session_store import SessionStore
-from src.memory.purrmemo import get_memory_client
-from src.tool.memo.memo_operations import (
-    _smart_update_memory_md,
-    _validate_memo_data,
-    _write_to_pending,
-)
+from src.memory import search_memory, add_memory
 from src.tool.utils.format import error_response, text_response
 
 
@@ -52,40 +49,34 @@ def Memo(
         return error_response(f"记忆工具运行时异常: {str(e)}", "❌ Memo执行异常")
 
 
+def _validate_date_format(date_str: str) -> bool:
+    """验证日期格式 YYYY-MM-DD"""
+    pattern = r"^\d{4}-\d{2}-\d{2}$"
+    if not re.match(pattern, date_str):
+        return False
+    try:
+        datetime.strptime(date_str, "%Y-%m-%d")
+        return True
+    except ValueError:
+        return False
+
+
 def _handle_add(memo_data: dict = None) -> str:
     """处理写入记忆：完成后返回统计量而非全量JSON内容"""
     if not isinstance(memo_data, dict):
         return error_response("参数类型错误: memo_data 必须是对象", "❌ 参数类型错误")
 
-    valid_data, errors = _validate_memo_data(memo_data)
-    if errors:
-        return error_response("参数校验失败:\n" + "\n".join(errors), "❌ 参数校验失败")
-
-    events = valid_data["events"]
-    work_exp = valid_data["work_exp"]
-    cognition = valid_data["cognition"]
-    user_profile = valid_data["user_profile"]
-
-    _smart_update_memory_md(work_exp, user_profile)
-
-    _write_to_pending(
-        events=events, cognition=cognition, user_profile=user_profile, work_exp=work_exp
-    )
-
-    # 不再返回全量有效数据，改为只返回统计信息
-    stats = {
-        "events_count": len(events),
-        "work_exp_count": len(work_exp),
-        "cognition_count": len(cognition),
-        "user_profile_count": len(user_profile),
-    }
-    return text_response(
-        {
-            "message": "长期记忆已归档并投递至后台存入 MD/SQL/图谱，而 short_term 字段已正常返回",
-            "stats": stats,
-        },
-        f"🧠 记忆归档成功：\n{json.dumps(stats, ensure_ascii=False, indent=2)}",
-    )
+    try:
+        filepath = add_memory(memo_data)
+        # 不再返回全量有效数据，改为只返回统计信息
+        return text_response(
+            {"filepath": filepath},
+            f"🧠 记忆归档成功：{filepath}",
+        )
+    except ValueError as e:
+        return error_response(f"参数校验失败: {str(e)}", "❌ 参数校验失败")
+    except Exception as e:
+        return error_response(f"记忆写入异常: {str(e)}", "❌ 记忆写入异常")
 
 
 def _handle_search(query: dict = None) -> str:
@@ -123,17 +114,16 @@ def _handle_search(query: dict = None) -> str:
         print(
             f"🔍 [MemoSearch] 开始检索 | prompt={prompt!r} | date={date_filter} | top_k={top_k}"
         )
-        client = get_memory_client()
         filters = {"top_k": top_k}
         if date_filter:
             filters["date"] = date_filter
 
         print(
-            f"🔍 [MemoSearch] 调用 client.search | query={prompt!r} | filters={filters}"
+            f"🔍 [MemoSearch] 调用 search_memory | query={prompt!r} | filters={filters}"
         )
-        result = client.search(query=prompt, filters=filters)
+        result = search_memory(query=prompt, filters=filters)
         print(
-            f"🔍 [MemoSearch] client.search 返回 | result长度={len(result) if result else 0}"
+            f"🔍 [MemoSearch] search_memory 返回 | result长度={len(result) if result else 0}"
         )
 
         return text_response({"result": result}, "🔍 记忆检索成功")
@@ -141,19 +131,4 @@ def _handle_search(query: dict = None) -> str:
     except Exception as e:
         print(f"❌ [MemoSearch] 异常: {e}")
         traceback.print_exc()
-        return error_response(f"记忆检索异常: {str(e)}", "❌ MemoSearch执行异常")
-
-
-def _validate_date_format(date_str: str) -> bool:
-    """验证日期格式 YYYY-MM-DD"""
-    import re
-    from datetime import datetime
-
-    pattern = r"^\d{4}-\d{2}-\d{2}$"
-    if not re.match(pattern, date_str):
-        return False
-    try:
-        datetime.strptime(date_str, "%Y-%m-%d")
-        return True
-    except ValueError:
-        return False
+        return error_response(f"记忆检索异常: {str(e)}", "❌ MemoSearch执行异常\")

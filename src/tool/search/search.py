@@ -95,9 +95,8 @@ def _search_local(query: str, topk: int) -> str:
         # 2. 新增：搜索 Memo 记忆
         memo_results, memo_err = [], None
         try:
-            from src.memory.purrmemo import get_memory_client
-            client = get_memory_client()
-            memo_results = client.search(query=query, filters={"top_k": topk})
+            from src.memory import search_memory as memory_search
+            memo_results = memory_search(query=query, filters={\"top_k\": topk})
         except Exception as e:
             memo_err = str(e)
 

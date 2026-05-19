@@ -7,7 +7,7 @@ import threading
 from src.tool.callmcp.callmcp import initialize_mcp
 from src.agent.manager import init_agent, shutdown_agent
 from src.sensor import auto_discover_and_start
-from src.memory.purrmemo import get_memory_client
+from src.memory import init_memory
 
 
 def _setup_warnings():
@@ -28,7 +28,7 @@ async def init_core(cli_session_id: str = None, cli_branch_name: str = None):
         except Exception as e:
             print(f"⚠️ [Background] Sensor 启动异常: {e}")
         try:
-            get_memory_client()
+            init_memory()
         except Exception as e:
             print(f"⚠️ [Background] Memory client 启动异常: {e}")
 

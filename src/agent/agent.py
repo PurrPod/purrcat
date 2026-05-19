@@ -217,10 +217,9 @@ class Agent:
             ]
         self._append_history(assist_msg)
         if msg_resp.content:
-            from src.sensor import get_gateway
+            from src.sensor import send_to_sensors
 
-            get_gateway().send(f"{msg_resp.content}")
-        return bool(msg_resp.tool_calls)
+            send_to_sensors(f"{msg_resp.content}")
 
     def _execute_tool_calls(self, tool_calls) -> bool:
         for tool_call in tool_calls:
@@ -247,7 +246,6 @@ class Agent:
             if target_tool_name in ["execute_command", "close_shell", "Bash"]:
                 arguments["session_id"] = self.session_id
             args_str = str(arguments)
-            from src.sensor import get_gateway
 
             current_iid = self._get_current_interaction_id()
             result_content = dispatch_tool(target_tool_name, arguments)
@@ -266,7 +264,9 @@ class Agent:
                 )
             except Exception:
                 snip = str(result_content)[:100]
-            get_gateway().send(
+            from src.sensor import send_to_sensors
+
+            send_to_sensors(
                 f"🔧{target_tool_name}({args_str[:50]}...)\n\n---\n\n{snip}"
             )
             self._append_history(

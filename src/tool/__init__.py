@@ -6,6 +6,7 @@ from .filesystem import FILESYSTEM_TOOL_SCHEMA
 from .memo import MEMO_TOOL_SCHEMA
 from .search import SEARCH_TOOL_SCHEMA
 from .task import TASK_TOOL_SCHEMA
+from .utils.route import dispatch_tool
 
 AGENT_TOOL_SCHEMA = [
     BASH_TOOL_SCHEMA,
@@ -25,4 +26,8 @@ BASE_TASK_TOOL_SCHEMA = [
     MCP_TOOL_SCHEMA,
 ]
 
-__all__ = [AGENT_TOOL_SCHEMA, BASE_TASK_TOOL_SCHEMA]
+__all__ = [
+    "AGENT_TOOL_SCHEMA",
+    "BASE_TASK_TOOL_SCHEMA",
+    "dispatch_tool",
+]

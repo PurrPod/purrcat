@@ -4,9 +4,6 @@
 import importlib
 import pkgutil
 
-from src.sensor.base import BaseSensor
-from src.sensor.gateway import SensorGateway, get_gateway
-
 
 def auto_discover_and_start():
     print("🔍 [Plugin Loader] 开始全盘扫描 Sensor 插件...")
@@ -22,6 +19,9 @@ def auto_discover_and_start():
             print(f"⚠️ [Plugin Loader] 模块 {module_name} 解析异常，已跳过: {e}")
 
     full_config = get_sensor_config()
+
+    from src.sensor.base import BaseSensor
+    from src.sensor.gateway import get_gateway
 
     def get_all_subclasses(cls):
         all_subclasses = set(cls.__subclasses__())
@@ -53,4 +53,20 @@ def auto_discover_and_start():
     print(f"🚀 [Plugin Loader] 扫描结束，共启动 {loaded_count} 个 Sensor 插件。")
 
 
-__all__ = ["BaseSensor", "SensorGateway", "get_gateway", "auto_discover_and_start"]
+def send_to_sensors(message: str, **kwargs) -> bool:
+    """将消息广播给当前活跃的传感器通道。"""
+    from src.sensor.gateway import get_gateway
+
+    gateway = get_gateway()
+    return gateway.send(message, **kwargs)
+
+
+def get_registered_sensor_names() -> list[str]:
+    """返回当前已注册传感器名称列表。"""
+    from src.sensor.gateway import get_gateway
+
+    gateway = get_gateway()
+    return list(gateway.sensors.keys())
+
+
+__all__ = ["auto_discover_and_start", "send_to_sensors", "get_registered_sensor_names"]
