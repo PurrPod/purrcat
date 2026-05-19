@@ -1,9 +1,11 @@
 import json
+import os
 import threading
 import time
 
 from src.agent.agent import Agent
 from src.agent.session_store import SessionStore
+from src.utils.config import DATA_DIR
 
 
 class AgentManager:
@@ -18,9 +20,12 @@ class AgentManager:
                 cls._instance._sensor_thread = None
         return cls._instance
 
+    # ==========================================
+    # 1. 生命周期管理 (Lifecycle)
+    # ==========================================
     def init_agent(self, name=None, session_id=None):
         if self._agent is not None:
-            return self._agent
+            return self._agent.session_id
 
         print("🚀 正在初始化全局 Agent...")
         if not session_id:
@@ -35,18 +40,14 @@ class AgentManager:
             )
 
         history = SessionStore.load_session_history(session_id)
-        if (
-            history
-            and history[-1].get("role") == "assistant"
-            and history[-1].get("tool_calls")
-        ):
+        if history and history[-1].get("role") == "assistant" and history[-1].get("tool_calls"):
             history.pop()
 
         self._agent = Agent(
             session_id=session_id,
             initial_history=history,
             name=name,
-            save_callback=self.notify_save,
+            save_callback=self._notify_save,
         )
 
         self._sensor_thread = threading.Thread(
@@ -54,39 +55,100 @@ class AgentManager:
         )
         self._sensor_thread.start()
 
-        self.notify_save()
-
+        self._notify_save()
         print(f"✅ Agent 已启动，当前挂载会话: {session_id}")
-        return self._agent
+        return session_id
 
-    def get_agent(self) -> Agent:
-        if self._agent is None:
-            raise RuntimeError("Agent 尚未初始化")
-        return self._agent
-
-    def notify_save(self):
+    def shutdown_agent(self):
         if self._agent:
-            safe_history = self._agent.get_history()
-            SessionStore.save_session(self._agent.session_id, safe_history)
+            self._agent.stop()
+            self._notify_save()
+        if self._sensor_thread and self._sensor_thread.is_alive():
+            self._sensor_thread.join(timeout=3.0)
 
-    def list_sessions(self):
-        return SessionStore.get_all_sessions()
-
-    def branch_current_session(self, branch_alias=None):
+    # ==========================================
+    # 2. 交互与通信 (Interaction)
+    # ==========================================
+    def agent_force_push(self, content: str, msg_type: str = "user"):
+        """代替外部直接调用 agent.force_push，实现完美封装"""
         if not self._agent:
-            # 如果 agent 未初始化，先初始化
+            self.init_agent()
+        self._agent.force_push(content, type=msg_type)
+        return True
+
+    # ==========================================
+    # 3. 会话控制 (Session Commands)
+    # ==========================================
+    def switch_session(self, target_session_id: str):
+        """原 checkout_session：切换到指定会话"""
+        if not self._agent:
+            self.init_agent(session_id=target_session_id)
+            return True
+
+        if self._agent.state != "idle":
+            print("⏳ 正在阻塞等待 Agent 释放资源，以安全检出目标会话...")
+            while self._agent.state != "idle":
+                time.sleep(0.5)
+
+        self._notify_save()
+        new_history = SessionStore.load_session_history(target_session_id)
+
+        with self._agent._history_lock:
+            self._agent.session_id = target_session_id
+            self._agent.current_history = new_history
+            self._agent.window_token = 0
+
+        self._agent.model.bind_task(target_session_id, "AgentMain")
+        print(f"🔄 检出成功: {target_session_id}")
+        return True
+
+    def new_session(self, branch_alias=None):
+        """原 create_clean_session：开启一个全新的空白会话"""
+        if not self._agent:
             self.init_agent()
 
-        if not self._agent:
-            return None
+        if self._agent.state != "idle":
+            print("⏳ 正在阻塞等待 Agent 完成当前回复...")
+            while self._agent.state != "idle":
+                time.sleep(0.5)
 
-        # 🟢 彻底移除强制打断，改为阻塞式安全等待，直到 Agent 完成当前全部流转
+        self._notify_save()
+
+        fresh_prompt = self._agent._build_system_prompt()
+        new_id = SessionStore._generate_id()
+        clean_history = [{"role": "system", "content": fresh_prompt}]
+
+        if hasattr(self._agent, "memo") and self._agent.memo:
+            memo_summary = json.dumps(self._agent.memo, ensure_ascii=False, indent=2)
+            clean_history.append({
+                "role": "system",
+                "content": f"【系统通知：这是一个全新的会话。以下是共享记忆缓存：】\n{memo_summary}"
+            })
+
+        SessionStore.save_session(
+            session_id=new_id, history=clean_history, parent_id=None, alias=branch_alias
+        )
+
+        with self._agent._history_lock:
+            self._agent.session_id = new_id
+            self._agent.window_token = 0
+            self._agent.current_history = clean_history
+
+        self._agent.model.bind_task(new_id, "AgentMain")
+        print(f"✨ 成功创建纯净新分支: {new_id}")
+        return new_id
+
+    def branch_session(self, branch_alias=None):
+        """原 branch_current_session：基于当前进度衍生新分支"""
+        if not self._agent:
+            self.init_agent()
+
         if self._agent.state != "idle":
             print("⏳ 正在阻塞等待 Agent 完成当前回复，以确保安全拉取分支...")
             while self._agent.state != "idle":
                 time.sleep(0.5)
 
-        self.notify_save()
+        self._notify_save()
         safe_history = self._agent.get_history()
 
         new_id = SessionStore.create_branch(
@@ -106,83 +168,56 @@ class AgentManager:
         print(f"🌿 成功拉取新分支并检出: {new_id} ({branch_alias})")
         return new_id
 
-    def create_clean_session(self, branch_alias=None):
-        if not self._agent:
-            # 如果 agent 未初始化，先初始化
-            self.init_agent()
+    def delete_session(self, session_id: str):
+        """新增：安全删除会话"""
+        # 1. 拦截正在运行的会话删除
+        if self._agent and self._agent.session_id == session_id:
+            raise ValueError("不能删除当前正在活跃的会话")
 
-        if not self._agent:
-            return None
+        # 2. 执行删除
+        session_file = os.path.join(DATA_DIR, "checkpoints", "agent", f"{session_id}.json")
+        if os.path.exists(session_file):
+            os.remove(session_file)
 
-        # 🟢 彻底移除强制打断，改为阻塞式安全等待
-        if self._agent.state != "idle":
-            print("⏳ 正在阻塞等待 Agent 完成当前回复，以确保安全创建新会话...")
-            while self._agent.state != "idle":
-                time.sleep(0.5)
-
-        self.notify_save()
-
-        # 【重点】创建全新分支，现场获取最新全局规则，开辟新的 KV Cache 路线
-        fresh_prompt = self._agent._build_system_prompt()
-        new_id = SessionStore._generate_id()
-        clean_history = [{"role": "system", "content": fresh_prompt}]
-
-        # 挂载共享的短时缓存（作为独立的系统消息，不污染首条 KV Cache）
-        if hasattr(self._agent, "memo") and self._agent.memo:
-            memo_summary = json.dumps(self._agent.memo, ensure_ascii=False, indent=2)
-            clean_history.append(
-                {
-                    "role": "system",
-                    "content": f"【系统通知：这是一个全新的会话。以下是系统在创建这个会话前的短时共享记忆缓存，或许对你有帮助】\n{memo_summary}",
-                }
-            )
-
-        SessionStore.save_session(
-            session_id=new_id, history=clean_history, parent_id=None, alias=branch_alias
-        )
-
-        with self._agent._history_lock:
-            self._agent.session_id = new_id
-            self._agent.window_token = 0
-            self._agent.current_history = clean_history
-
-        self._agent.model.bind_task(new_id, "AgentMain")
-        print(f"✨ 成功创建纯净新分支并检出: {new_id} ({branch_alias})")
-        return new_id
-
-    def checkout_session(self, target_session_id):
-        if not self._agent:
-            # 如果 agent 未初始化，先初始化并直接加载目标会话
-            self.init_agent(session_id=target_session_id)
-            return True
-
-        # 🟢 彻底移除强制打断，改为阻塞式安全等待
-        if self._agent.state != "idle":
-            print("⏳ 正在阻塞等待 Agent 释放资源，以安全检出目标会话...")
-            while self._agent.state != "idle":
-                time.sleep(0.5)
-
-        self.notify_save()
-        new_history = SessionStore.load_session_history(target_session_id)
-
-        with self._agent._history_lock:
-            self._agent.session_id = target_session_id
-            self._agent.current_history = new_history
-            self._agent.window_token = 0
-
-        self._agent.model.bind_task(target_session_id, "AgentMain")
-        print(f"🔄 检出成功: {target_session_id}")
+        index_file = os.path.join(DATA_DIR, "checkpoints", "agent", "index.json")
+        if os.path.exists(index_file):
+            with SessionStore._index_lock:
+                try:
+                    with open(index_file, "r", encoding="utf-8") as f:
+                        idx = json.load(f)
+                    if session_id in idx:
+                        del idx[session_id]
+                        with open(index_file, "w", encoding="utf-8") as f:
+                            json.dump(idx, f, ensure_ascii=False, indent=2)
+                except Exception as e:
+                    print(f"Error updating index: {e}")
         return True
 
-    def shutdown(self):
+    # ==========================================
+    # 4. 数据读取 (Queries - 给 API 和前端使用)
+    # ==========================================
+    def get_chat_history(self, session_id: str = None):
+        if not self._agent:
+            self.init_agent()
+        # 如果查询的是当前会话，直接从内存拿（最快最准）
+        if not session_id or session_id == self._agent.session_id:
+            return [m for m in self._agent.get_history() if m.get("role") != "system"]
+        # 否则从硬盘读
+        return [m for m in SessionStore.load_session_history(session_id) if m.get("role") != "system"]
+
+    def get_session_list(self):
+        return SessionStore.get_all_sessions()
+
+    def get_active_session_id(self):
+        return self._agent.session_id if self._agent else None
+
+    # ==========================================
+    # 内部私有方法
+    # ==========================================
+    def _notify_save(self):
         if self._agent:
-            self._agent.stop()
-            self.notify_save()
-        if self._sensor_thread and self._sensor_thread.is_alive():
-            self._sensor_thread.join(timeout=3.0)
+            safe_history = self._agent.get_history()
+            SessionStore.save_session(self._agent.session_id, safe_history)
 
 
-manager = AgentManager()
-init_agent = manager.init_agent
-get_agent = manager.get_agent
-shutdown_agent = manager.shutdown
+

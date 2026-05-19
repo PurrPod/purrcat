@@ -2,7 +2,7 @@ SEARCH_TOOL_SCHEMA = {
     "type": "function",
     "function": {
         "name": "Search",
-        "description": "统一搜索工具，支持互联网搜索与本地库搜索（技能与MCP工具）",
+        "description": "统一搜索工具，支持互联网搜索与本地库混合搜索（技能、MCP工具与Memo记忆库）",
         "parameters": {
             "type": "object",
             "properties": {

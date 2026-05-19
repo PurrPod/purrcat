@@ -1,8 +1,11 @@
+"""
+传感器网关与插件自动发现
+"""
 import importlib
 import pkgutil
 
 from src.sensor.base import BaseSensor
-from src.sensor.gateway import get_gateway
+from src.sensor.gateway import SensorGateway, get_gateway
 
 
 def auto_discover_and_start():
@@ -48,3 +51,6 @@ def auto_discover_and_start():
                 print(f"❌ [Plugin Loader] 插件 {cls.__name__} 启动崩溃: {e}")
 
     print(f"🚀 [Plugin Loader] 扫描结束，共启动 {loaded_count} 个 Sensor 插件。")
+
+
+__all__ = ["BaseSensor", "SensorGateway", "get_gateway", "auto_discover_and_start"]

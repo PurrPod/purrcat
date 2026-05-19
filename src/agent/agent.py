@@ -150,7 +150,7 @@ class Agent:
     def process_message(self):
         current_interaction_id = self._increment_interaction_id()
         self.force_push(
-            content="任务开始前如有需要可以调用 Memo 工具搜索相关记忆。完成任务后请调用 Memo 工具及时更新记忆",
+            content="任务开始前如有需要可以调用 Search 工具搜索本地相关的工具。完成任务后请调用 Memo 工具及时更新记忆，记录的记忆越多越详细以后你的能力就会越强",
             type="system",
         )
 
