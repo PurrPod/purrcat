@@ -217,9 +217,30 @@ def get_task_history(task_id: str):
 
 
 def force_push_task(task_id: str, content: str):
-    from src.harness import process as task_module
+    """供 TUI 使用的全局广播注入：向所有 Agent 节点注入指令并唤醒"""
+    from src.harness.process import TASK_INSTANCES
+    from src.harness.node.agent_node import AgentNode
+    import asyncio
 
-    return task_module.inject_task_instruction(task_id, content)
+    task = TASK_INSTANCES.get(task_id)
+    if not task:
+        return False
+
+    injected = False
+    for nid, node_instance in task.node_list.items():
+        if isinstance(node_instance, AgentNode):
+            task.inject_instruction(nid, content)
+            injected = True
+            
+    if injected:
+        # 尝试拉起大循环（非阻塞）
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(task.run())
+        except RuntimeError:
+            pass
+        return True
+    return False
 
 
 def get_task_window_token(task_id: str):

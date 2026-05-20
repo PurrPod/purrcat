@@ -1,7 +1,7 @@
 from textual.events import Key
 from textual.widgets import Static, TextArea
 
-from tui.api import branch_session, flush_agent_memory, new_clean_session
+from tui.api import branch_session, flush_agent_memory, new_session
 
 
 class ChatInput(TextArea):
@@ -62,7 +62,7 @@ class ChatInput(TextArea):
                 chat_zone = main_view.query_one("#chat-zone")
 
                 if branch_name:
-                    new_id = new_clean_session(branch_name)
+                    new_id = new_session(branch_name)
                     for child in chat_zone.query(
                         f".msg-space-{main_view.current_space}"
                     ):

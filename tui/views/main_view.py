@@ -11,13 +11,13 @@ from textual.widgets import ListItem, ListView, Markdown, Static
 from src.harness.process import Task as task_module
 from src.utils.skill_helper import get_available_skills
 from tui.api import (
-    checkout_session,
+    switch_session,
     force_push_agent,
     force_push_task,
     format_task_log,
     get_agent_history,
     get_agent_max_token,
-    get_current_session_id,
+    get_active_session_id,
     get_session_list,
     get_task_list,
     get_task_max_token,
@@ -239,7 +239,7 @@ class MainView(Vertical):
         await session_selector.clear()
 
         sessions = get_session_list()
-        current_id = get_current_session_id()
+        current_id = get_active_session_id()
         roots = [sid for sid, info in sessions.items() if not info.get("parent_id")]
 
         def add_node(sid, depth):
@@ -441,7 +441,7 @@ class MainView(Vertical):
         chat_zone.remove_class("hidden")
         self.query_one("#chat-input").focus()
 
-        success = checkout_session(target_sid)
+        success = switch_session(target_sid)
         if success:
             for child in chat_zone.query(".msg-space-nav-main"):
                 child.remove()

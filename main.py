@@ -6,6 +6,7 @@ import threading
 
 # 仅在头部保留极轻量级且必须立即启动的核心 Agent 模块
 from src.agent import init_agent, shutdown_agent, branch_session
+from src.tool.callmcp.session_manager import mcp_manager
 
 
 def _setup_warnings():
@@ -17,12 +18,12 @@ def _bg_heavy_init():
     """所有重型模块的后台初始化和预热（彻底剥离主线程）"""
     print("[Background] 开始后台预热重型服务...")
     
-    # 1. 初始化并拉取 MCP Schema
+    # 1. 初始化工具系统（包含 MCP Schema拉取、Embedding预热、MCP与Skill的向量化与词库构建）
     try:
-        from src.tool.callmcp.callmcp import initialize_mcp
-        initialize_mcp()
+        from src.tool import init_tools
+        init_tools()
     except Exception as e:
-        print(f"⚠️ [Background] MCP 初始化异常: {e}")
+        print(f"⚠️ [Background] 工具与检索树预热异常: {e}")
 
     # 2. 扫描并启动所有传感器插件
     try:
@@ -31,21 +32,12 @@ def _bg_heavy_init():
     except Exception as e:
         print(f"⚠️ [Background] Sensor 启动异常: {e}")
 
-    # 3. 初始化并预热记忆库与 Embedding 引擎
+    # 3. 初始化并预热记忆库守护进程
     try:
         from src.memory import init_memory
         init_memory()
-
-        # [消除冷启动惩罚] 触发一次单例的 __new__，提前把重型本地模型加载到内存
-        from src.tool.search.semantic_utils import LocalEmbeddingSearcher
-        LocalEmbeddingSearcher()
-
-        from src.tool.search.skill_search import SkillSearcher
-        SkillSearcher()
-        
-        print("✅ [Background] 本地 Embedding 模型与检索库预热就绪")
     except Exception as e:
-        print(f"⚠️ [Background] 记忆库/模型预热异常: {e}")
+        print(f"⚠️ [Background] 记忆库预热异常: {e}")
 
     # 4. 加载历史任务 (磁盘 I/O 操作)
     try:
@@ -75,6 +67,12 @@ async def init_core(cli_session_id: str = None, cli_branch_name: str = None):
 
 async def shutdown_core():
     print("[*] Shutting down system safely...")
+    # 强制清理遗留的 MCP Server 子进程
+    try:
+        await mcp_manager.shutdown_all()
+    except Exception as e:
+        print(f"⚠️ [MCP] 关停异常: {e}")
+        
     await asyncio.to_thread(shutdown_agent)
 
 

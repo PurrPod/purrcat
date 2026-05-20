@@ -5,15 +5,12 @@ from src.agent import (
     get_chat_history,
     get_session_list,
     get_window_token as get_window_token_api,
+    branch_session,
+    switch_session,
+    get_active_session_id,
+    new_session
 )
 from src.utils.log_api import format_task_log
-from src.utils.session_api import (
-    branch_session,
-    checkout_session,
-    get_current_session_id,
-    list_sessions,
-    new_clean_session,
-)
 from src.utils.task_api import (
     force_push_task,
     get_task_list,
@@ -33,11 +30,10 @@ __all__ = [
     "force_push_task",
     "get_task_max_token",
     "get_task_window_token",
-    "list_sessions",
-    "get_current_session_id",
+    "get_active_session_id",
     "branch_session",
-    "checkout_session",
-    "new_clean_session",
+    "switch_session",
+    "new_session",
 ]
 
 
@@ -63,7 +59,3 @@ def get_window_token():
 
 def get_agent_max_token():
     return get_agent_max_token_api()
-
-
-def get_session_list():
-    return list_sessions()
