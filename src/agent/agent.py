@@ -66,7 +66,7 @@ class Agent:
                 )
                 for rf in rule_files:
                     with open(
-                        os.path.join(SYSTEM_RULES_DIR, rf), "r", encoding="utf-8"
+                            os.path.join(SYSTEM_RULES_DIR, rf), "r", encoding="utf-8"
                     ) as f:
                         system_rules += f.read().strip() + "\n\n"
                 system_rules = system_rules.strip()
@@ -135,6 +135,46 @@ class Agent:
         if hasattr(response, "usage") and response.usage is not None:
             self.window_token = response.usage.total_tokens
 
+    def _check_and_fix_toolchain(self):
+        """
+        检查工具链完整性（支持多工具调用）。
+        如果检测到 assistant 发起了 tool_calls，但尚未获得全部 tool 的返回结果（例如被强行打断或报错），
+        则撤回该轮的所有残缺 tool 消息，并修正/删除 assistant 消息。
+        """
+        if not self.current_history:
+            return
+
+        with self._history_lock:
+            idx = len(self.current_history) - 1
+
+            # 1. 往前找，跳过所有尾部的 tool 消息
+            while idx >= 0 and self.current_history[idx].get("role") == "tool":
+                idx -= 1
+
+            # 2. 如果找到的上一条是 assistant 且带有 tool_calls
+            if idx >= 0 and self.current_history[idx].get("role") == "assistant":
+                assistant_msg = self.current_history[idx]
+                if assistant_msg.get("tool_calls"):
+                    requested_ids = set(tc["id"] for tc in assistant_msg["tool_calls"])
+                    # tool messages 在 idx+1 到末尾
+                    answered_ids = set(msg.get("tool_call_id") for msg in self.current_history[idx + 1:])
+
+                    # 发现不匹配！说明中断了！
+                    if requested_ids != answered_ids:
+                        print(
+                            f"⚠️ [恢复] 检测到未完成的多工具调用链 (请求: {len(requested_ids)}, 实际返回: {len(answered_ids)})，正在清理并撤回悬空节点...")
+
+                        # A. 弹出后面的所有残缺 tool 消息
+                        while len(self.current_history) > idx + 1:
+                            self.current_history.pop()
+
+                        # B. 如果 assistant 还有实质性的回复文本，保留文本，只摘除 tool_calls
+                        if assistant_msg.get("content") and str(assistant_msg.get("content")).strip():
+                            del assistant_msg["tool_calls"]
+                        else:
+                            # 否则这整条 assistant 消息都是多余的，直接弹出
+                            self.current_history.pop()
+
     def _checker(self):
         local_push = []
         if self.pending_force_push:
@@ -142,6 +182,7 @@ class Agent:
             self.pending_force_push.clear()
 
         if local_push:
+            self._check_and_fix_toolchain()
             batch_data = {"events": local_push}
             self._append_history(
                 {"role": "user", "content": json.dumps(batch_data, ensure_ascii=False)}
@@ -190,7 +231,6 @@ class Agent:
                 self._handle_interaction_error(e=e)
                 break
 
-
     def _process_assistant_message(self, msg_resp) -> bool:
         assist_msg = {"role": "assistant", "content": msg_resp.content or ""}
         rc = getattr(msg_resp, "reasoning_content", None)
@@ -215,6 +255,8 @@ class Agent:
             from src.sensor import send_to_sensors
 
             send_to_sensors(f"{msg_resp.content}")
+
+        return bool(msg_resp.tool_calls)
 
     def _execute_tool_calls(self, tool_calls) -> bool:
         for tool_call in tool_calls:
@@ -294,12 +336,9 @@ class Agent:
             "⚠️ [中断] 运行被强制中断。" if is_interrupt else f"❌ [错误] 交互断层: {e}"
         )
         print(content_msg)
-        if (
-            self.current_history
-            and self.current_history[-1].get("role") == "assistant"
-            and self.current_history[-1].get("tool_calls")
-        ):
-            self.current_history.pop()
+
+        self._check_and_fix_toolchain()
+
         self._append_history({"role": "assistant", "content": content_msg})
 
     def sensor(self):
@@ -363,7 +402,7 @@ class Agent:
         return split_idx
 
     def _rebuild_and_save_history(
-        self, split_idx: int, original_len: int, final_summary: str
+            self, split_idx: int, original_len: int, final_summary: str
     ):
         original_system_msg = self.current_history[0]
         truncation_msg = {
@@ -371,9 +410,9 @@ class Agent:
             "content": f"【系统通知：因上下文超限，更早的历史对话已被系统截断。以下是最近五次的短时缓存，请你利用这些缓存无缝接续当前工作：】\n{final_summary}",
         }
         self.current_history = [
-            original_system_msg,
-            truncation_msg,
-        ] + self.current_history[split_idx:original_len]
+                                   original_system_msg,
+                                   truncation_msg,
+                               ] + self.current_history[split_idx:original_len]
         for msg in self.current_history:
             if msg.get("role") == "assistant" and "reasoning_content" in msg:
                 msg["reasoning_content"] = ""
