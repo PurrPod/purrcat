@@ -254,23 +254,32 @@ class DockerManager:
     def _ensure_shell(self, session_id: str):
         if not self.container:
             raise RuntimeError("Container not running.")
-        with self.pool_lock:
-            if session_id in self.shell_pool:
-                return
-            print(f"[+] Auto-creating new shell session: '{session_id}'")
-            command = DOCKER_EXEC_CMD.format(container_name=self.container.name)
-            try:
-                shell_process = SpawnClass(command, encoding="utf-8", timeout=120)
-                shell_process.send(
-                    "stty -echo\nexport PS1=''\nexport TERM=dumb\necho '__SHELL_READY__'\n"
-                )
-                shell_process.expect("__SHELL_READY__", timeout=10)
+        
+        # 第一层检查（无锁，快速返回）
+        if session_id in self.shell_pool:
+            return
+        
+        print(f"[+] Auto-creating new shell session: '{session_id}'")
+        command = DOCKER_EXEC_CMD.format(container_name=self.container.name)
+        try:
+            # 【修复】将耗时的进程启动移出锁外部，只在最后更新字典时加锁
+            shell_process = SpawnClass(command, encoding="utf-8", timeout=120)
+            shell_process.send(
+                "stty -echo\nexport PS1=''\nexport TERM=dumb\necho '__SHELL_READY__'\n"
+            )
+            shell_process.expect("__SHELL_READY__", timeout=10)
+            
+            with self.pool_lock:
+                # 第二层检查（防止并发创建了多个同名 session）
+                if session_id in self.shell_pool:
+                    force_close(shell_process)  # 销毁多余的
+                    return
                 self.shell_pool[session_id] = {
                     "process": shell_process,
                     "lock": threading.Lock(),
                 }
-            except pexpect.exceptions.TIMEOUT:
-                raise RuntimeError("Timeout initializing shell environment.")
+        except pexpect.exceptions.TIMEOUT:
+            raise RuntimeError("Timeout initializing shell environment.")
 
     def close_shell(self, session_id: str):
         with self.pool_lock:

@@ -189,12 +189,7 @@ class Agent:
             except Exception as e:
                 self._handle_interaction_error(e=e)
                 break
-            try:
-                from src.tool.bash.bash import close_session
 
-                close_session(self.session_id)
-            except Exception as e:
-                print(f"⚠️ 自动清理沙盒会话失败: {e}")
 
     def _process_assistant_message(self, msg_resp) -> bool:
         assist_msg = {"role": "assistant", "content": msg_resp.content or ""}
@@ -243,7 +238,7 @@ class Agent:
                     }
                 )
                 continue
-            if target_tool_name in ["execute_command", "close_shell", "Bash"]:
+            if target_tool_name == "Bash":
                 arguments["session_id"] = self.session_id
             args_str = str(arguments)
 

@@ -69,11 +69,11 @@ class AgentManager:
     # ==========================================
     # 2. 交互与通信 (Interaction)
     # ==========================================
-    def agent_force_push(self, content: str, msg_type: str = "user"):
+    def agent_force_push(self, content: str, type: str = "user"):
         """代替外部直接调用 agent.force_push，实现完美封装"""
         if not self._agent:
             self.init_agent()
-        self._agent.force_push(content, type=msg_type)
+        self._agent.force_push(content, type=type)
         return True
 
     # ==========================================
@@ -218,6 +218,13 @@ class AgentManager:
         if self._agent:
             safe_history = self._agent.get_history()
             SessionStore.save_session(self._agent.session_id, safe_history)
+
+
+# 全局单例和兼容形式导出
+manager = AgentManager()
+
+def get_agent():
+    return manager.get_agent()
 
 
 

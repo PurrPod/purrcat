@@ -87,30 +87,25 @@ def CallMCP(server_name: str, tool_name: str, arguments: dict = None, **kwargs) 
         return error_response(f"MCP调用异常: {str(e)}", "❌ MCP异常")
 
 
-def initialize_mcp():
-    """后台初始化：改为检查式启动，把全量拉取权交给用户触发"""
-    print("正在后台检查 [MCP] Schema 缓存状态...")
+def initialize_mcp_sync():
+    """同步初始化：检查式启动，全量拉取留给用户或统一后台线程触发"""
+    print("正在检查 [MCP] Schema 缓存状态...")
+    try:
+        import os
+        if os.path.exists(MCP_SCHEMA_CACHE_FILE):
+            print(f"✅ 检测到本地已有 MCP 缓存 ({MCP_SCHEMA_CACHE_FILE})，跳过全量拉取。如需刷新请调用 reload_mcp_schema 工具。")
+            return
 
-    def _bg_init():
-        try:
-            import os
-            if os.path.exists(MCP_SCHEMA_CACHE_FILE):
-                print(f"✅ 检测到本地已有 MCP 缓存 ({MCP_SCHEMA_CACHE_FILE})，跳过全量拉取。如需刷新请调用 refresh_mcp_schemas 工具。")
-                return
-
-            print("⚠️ 未检测到 mcp_schema.json，正在进行首次全量拉取...")
-            schemas = fetch_and_cache_schemas()
-            print(f"✅ 成功完成首次 [MCP] 缓存加载，共 {len(schemas)} 个 Schema")
-        except Exception as e:
-            print(f"❌ 后台初始化 [MCP] 异常: {e}")
-
-    thread = threading.Thread(target=_bg_init, daemon=True)
-    thread.start()
-    return True
+        print("⚠️ 未检测到 mcp_schema.json，正在进行首次全量拉取...")
+        schemas = fetch_and_cache_schemas()
+        print(f"✅ 成功完成首次 [MCP] 缓存加载，共 {len(schemas)} 个 Schema")
+    except Exception as e:
+        print(f"❌ 初始化 [MCP] 异常: {e}")
+        traceback.print_exc()
 
 
-def refresh_mcp_schemas():
-    """手动刷新 MCP Schema 缓存，并同步更新内存检索树"""
+def reload_mcp_schema():
+    """手动刷新 MCP Schema 缓存：重建 json 缓存并重载到内存重新向量化"""
     try:
         schemas = refresh_schemas()
 

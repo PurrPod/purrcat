@@ -44,6 +44,7 @@ def Bash(command: str, timeout: int = 300, session_id: str = "default") -> str:
             snip = f"✅ 成功 | {output_preview}..."
             return text_response(result, snip)
         else:
+            close_session(session_id)
             snip = f"❌ 失败(exit={exit_code}) | {output_preview}..."
             return warning_response(result, snip)
 

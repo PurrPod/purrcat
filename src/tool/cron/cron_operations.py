@@ -2,6 +2,7 @@
 
 import json
 import os
+import threading
 import uuid
 from typing import Any, Dict, List
 
@@ -11,6 +12,9 @@ from src.tool.cron.exceptions import (
     InvalidTimeFormatError,
 )
 from src.utils.config import CRON_FILE
+
+# 【修复】全局锁，保护 JSON 文件的并发读写
+CRON_LOCK = threading.Lock()
 
 VALID_REPEAT_RULES = [
     "none",
@@ -87,33 +91,35 @@ def add_cron(title: str, trigger_time: str, repeat_rule: str = "none") -> dict:
     if not _validate_repeat_rule(repeat_rule):
         raise InvalidRepeatRuleError(repeat_rule)
 
-    crons = _read_json(CRON_FILE)
-    cron_id = "crn_" + str(uuid.uuid4())[:8]
+    with CRON_LOCK:
+        crons = _read_json(CRON_FILE)
+        cron_id = "crn_" + str(uuid.uuid4())[:8]
 
-    item = {
-        "id": cron_id,
-        "title": title,
-        "trigger_time": trigger_time,
-        "repeat_rule": repeat_rule,
-        "active": True,
-    }
+        item = {
+            "id": cron_id,
+            "title": title,
+            "trigger_time": trigger_time,
+            "repeat_rule": repeat_rule,
+            "active": True,
+        }
 
-    crons.append(item)
-    _write_json(CRON_FILE, crons)
+        crons.append(item)
+        _write_json(CRON_FILE, crons)
 
     return item
 
 
 def delete_cron(identifier: str) -> dict:
     """删除闹钟 (支持传入 ID 或 Name)"""
-    crons = _read_json(CRON_FILE)
-    idx = _find_cron_index(crons, identifier)
+    with CRON_LOCK:
+        crons = _read_json(CRON_FILE)
+        idx = _find_cron_index(crons, identifier)
 
-    if idx == -1:
-        raise CronNotFoundError(identifier)
+        if idx == -1:
+            raise CronNotFoundError(identifier)
 
-    deleted = crons.pop(idx)
-    _write_json(CRON_FILE, crons)
+        deleted = crons.pop(idx)
+        _write_json(CRON_FILE, crons)
     return {"message": f"闹钟 '{deleted['title']}' ({deleted['id']}) 删除成功"}
 
 
@@ -124,28 +130,29 @@ def update_cron(
     active: bool = None,
 ) -> dict:
     """修改闹钟 (支持传入 ID 或 Name，不再支持修改 title)"""
-    crons = _read_json(CRON_FILE)
-    idx = _find_cron_index(crons, identifier)
+    with CRON_LOCK:
+        crons = _read_json(CRON_FILE)
+        idx = _find_cron_index(crons, identifier)
 
-    if idx == -1:
-        raise CronNotFoundError(identifier)
+        if idx == -1:
+            raise CronNotFoundError(identifier)
 
-    cron = crons[idx]
+        cron = crons[idx]
 
-    if trigger_time is not None:
-        if not _validate_time_format(trigger_time):
-            raise InvalidTimeFormatError(trigger_time)
-        cron["trigger_time"] = trigger_time
+        if trigger_time is not None:
+            if not _validate_time_format(trigger_time):
+                raise InvalidTimeFormatError(trigger_time)
+            cron["trigger_time"] = trigger_time
 
-    if repeat_rule is not None:
-        if not _validate_repeat_rule(repeat_rule):
-            raise InvalidRepeatRuleError(repeat_rule)
-        cron["repeat_rule"] = repeat_rule
+        if repeat_rule is not None:
+            if not _validate_repeat_rule(repeat_rule):
+                raise InvalidRepeatRuleError(repeat_rule)
+            cron["repeat_rule"] = repeat_rule
 
-    if active is not None:
-        cron["active"] = active
+        if active is not None:
+            cron["active"] = active
 
-    _write_json(CRON_FILE, crons)
+        _write_json(CRON_FILE, crons)
     return {"message": f"闹钟 '{cron['title']}' ({cron['id']}) 修改成功", "cron": cron}
 
 

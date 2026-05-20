@@ -3,7 +3,7 @@ import traceback
 from fastapi import APIRouter, BackgroundTasks
 from pydantic import BaseModel
 
-from src.agent.manager import manager
+from src.agent import get_agent_status
 from src.utils.session_api import (
     create_session,
     delete_session,
@@ -129,14 +129,11 @@ def get_session_status(session_id: str):
     """
     try:
         ensure_manager_initialized()
-        # 获取全局唯一 Agent 实例
-        agent = manager._agent
+        status = get_agent_status()
 
-        # 确保 Agent 存在，并且当前正在处理的就是我们请求的这个 session_id
-        if agent and agent.session_id == session_id:
-            # 在 agent.py 中，空闲时 state 为 "idle"，工作时为 "handling"
-            is_thinking = agent.state != "idle"
-            result = {"is_thinking": is_thinking, "state": agent.state}
+        if status.get("session_id") == session_id:
+            is_thinking = status.get("state") != "idle"
+            result = {"is_thinking": is_thinking, "state": status.get("state", "idle")}
         else:
             result = {"is_thinking": False, "state": "idle"}
 

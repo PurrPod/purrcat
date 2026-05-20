@@ -1,4 +1,11 @@
-from src.agent.manager import get_agent
+from src.agent import (
+    agent_force_push,
+    flush_agent_memory as flush_agent_memory_api,
+    get_agent_max_token as get_agent_max_token_api,
+    get_chat_history,
+    get_session_list,
+    get_window_token as get_window_token_api,
+)
 from src.utils.log_api import format_task_log
 from src.utils.session_api import (
     branch_session,
@@ -35,32 +42,27 @@ __all__ = [
 
 
 def get_agent_history():
-    agent = get_agent()
     try:
-        return agent.get_history()
+        return get_chat_history()
     except Exception:
         return []
 
 
 def force_push_agent(text: str):
-    agent = get_agent()
-    agent.force_push(text, type="user")
+    agent_force_push(text, type="user")
     return True
 
 
 def flush_agent_memory():
-    agent = get_agent()
-    agent._check_and_summarize_memory(check_mode=False)
-    return True
+    return flush_agent_memory_api()
 
 
 def get_window_token():
-    agent = get_agent()
-    return agent.window_token
+    return get_window_token_api()
 
 
 def get_agent_max_token():
-    return 1000000
+    return get_agent_max_token_api()
 
 
 def get_session_list():

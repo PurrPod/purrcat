@@ -131,4 +131,4 @@ def _handle_search(query: dict = None) -> str:
     except Exception as e:
         print(f"❌ [MemoSearch] 异常: {e}")
         traceback.print_exc()
-        return error_response(f"记忆检索异常: {str(e)}", "❌ MemoSearch执行异常\")
+        return error_response(f"记忆检索异常: {str(e)}", "❌ MemoSearch执行异常")

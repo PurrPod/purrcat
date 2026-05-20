@@ -2,10 +2,14 @@
 
 import json
 import os
+import threading
 from typing import Dict, List
 
 from src.tool.callmcp.session_manager import _run_sync, load_configs, mcp_manager
 from src.utils.config import MCP_SCHEMA_CACHE_FILE
+
+# 【修复】全局锁，保护 Schema 文件的并发读写
+SCHEMA_LOCK = threading.Lock()
 
 
 async def _fetch_server_schemas_async(server_name: str, config: dict) -> List[Dict]:
@@ -43,33 +47,34 @@ async def _fetch_all_schemas_async() -> List[Dict]:
 
 def fetch_and_cache_schemas() -> List[Dict]:
     """拉取所有 Schema 并写入 JSON 文件"""
+    with SCHEMA_LOCK:
+        schemas = _run_sync(_fetch_all_schemas_async)
 
-    schemas = _run_sync(_fetch_all_schemas_async)
+        # 将原本的 jsonl 逐行写入，改为直接作为一个完整的 JSON 数组写入
+        with open(MCP_SCHEMA_CACHE_FILE, "w", encoding="utf-8") as f:
+            json.dump(schemas, f, ensure_ascii=False, indent=4)
 
-    # 将原本的 jsonl 逐行写入，改为直接作为一个完整的 JSON 数组写入
-    with open(MCP_SCHEMA_CACHE_FILE, "w", encoding="utf-8") as f:
-        json.dump(schemas, f, ensure_ascii=False, indent=4)
-
-    print(f"信息: [MCP] Schema 已缓存至 {MCP_SCHEMA_CACHE_FILE}")
-    return schemas
+        print(f"信息: [MCP] Schema 已缓存至 {MCP_SCHEMA_CACHE_FILE}")
+        return schemas
 
 
 def load_cached_schemas() -> List[Dict]:
     """加载缓存的 Schema"""
-    if not os.path.exists(MCP_SCHEMA_CACHE_FILE):
-        return fetch_and_cache_schemas()
+    with SCHEMA_LOCK:
+        if not os.path.exists(MCP_SCHEMA_CACHE_FILE):
+            return fetch_and_cache_schemas()
 
-    try:
-        # 从原本的逐行读取 jsonl，改为直接读取整个 JSON 文件
-        with open(MCP_SCHEMA_CACHE_FILE, "r", encoding="utf-8") as f:
-            schemas = json.load(f)
-            if not isinstance(schemas, list):
-                schemas = []
-    except Exception as e:
-        print(f"警告: [MCP] 读取 Schema 缓存失败: {e}")
-        return fetch_and_cache_schemas()
+        try:
+            # 从原本的逐行读取 jsonl，改为直接读取整个 JSON 文件
+            with open(MCP_SCHEMA_CACHE_FILE, "r", encoding="utf-8") as f:
+                schemas = json.load(f)
+                if not isinstance(schemas, list):
+                    schemas = []
+        except Exception as e:
+            print(f"警告: [MCP] 读取 Schema 缓存失败: {e}")
+            return fetch_and_cache_schemas()
 
-    return schemas
+        return schemas
 
 
 def get_server_schemas(server_name: str) -> List[Dict]:

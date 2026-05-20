@@ -71,28 +71,38 @@ class MCPSearcher:
             self._initialize()
 
     def search(self, query: str, max_results: int = 5) -> List[Dict]:
-        if not self.corpus:
-            return []
+        # 【修复】加锁防止查询时遭遇热更新导致数据结构断裂
+        # 使用局部变量快照，将计算密集型操作移到锁外
+        with self._lock:
+            if not self.corpus:
+                return []
 
+            # 获取引用快照以防止后续计算时被修改
+            current_corpus = self.corpus
+            current_matrix = self.corpus_matrix
+            current_bm25 = self.bm25
+            current_tools = self.tools
+
+        # 【优化】相似度计算可以在锁外执行（使用局部变量快照）
         query_vector = self.embedding_searcher.encode([query])
         dense_scores = self.embedding_searcher.calculate_similarity(
-            query_vector, self.corpus_matrix
+            query_vector, current_matrix
         )
 
         tokenized_query = hybrid_tokenize(query)
-        raw_bm25_scores = self.bm25.get_scores(tokenized_query)
+        raw_bm25_scores = current_bm25.get_scores(tokenized_query)
 
         max_bm25 = max(raw_bm25_scores) if raw_bm25_scores.size > 0 else 0
         if max_bm25 > 0:
             bm25_scores = [score / max_bm25 for score in raw_bm25_scores]
         else:
-            bm25_scores = [0] * len(self.corpus)
+            bm25_scores = [0] * len(current_corpus)
 
         alpha_dense = 0.7
         alpha_sparse = 0.3
 
         final_scores = []
-        for i in range(len(self.corpus)):
+        for i in range(len(current_corpus)):
             combined_score = (dense_scores[i] * alpha_dense) + (
                 bm25_scores[i] * alpha_sparse
             )
@@ -106,7 +116,7 @@ class MCPSearcher:
         for idx in top_k_indices:
             score = float(final_scores[idx])
             if score > 0:
-                result_item = self.tools[idx].copy()
+                result_item = current_tools[idx].copy()
                 result_item["score"] = round(score, 4)
                 results.append(result_item)
 
@@ -121,3 +131,9 @@ def mcp_search(query: str, max_results: int = 5) -> tuple:
         return results, None
     except Exception as e:
         return [], f"MCP搜索异常: {e}"
+
+
+def reload_mcp_index():
+    """MCP索引热更新入口"""
+    searcher = MCPSearcher()
+    searcher.reload_index()

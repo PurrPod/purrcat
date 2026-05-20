@@ -72,28 +72,37 @@ class SkillSearcher:
 
     def search(self, query: str, top_k: int = 3) -> List[Dict]:
         """执行搜索并返回匹配度最高的前 K 个技能"""
-        if not self.corpus:
-            return []
+        # 【修复】加锁防止查询时遭遇热更新导致数据结构断裂
+        with self._lock:
+            if not self.corpus:
+                return []
 
+            # 获取引用快照以防止后续计算时被修改
+            current_corpus = self.corpus
+            current_matrix = self.corpus_matrix
+            current_bm25 = self.bm25
+            current_skills = self.skills
+
+        # 【优化】相似度计算可以在锁外执行（使用局部变量快照）
         query_vector = self.embedding_searcher.encode([query])
         dense_scores = self.embedding_searcher.calculate_similarity(
-            query_vector, self.corpus_matrix
+            query_vector, current_matrix
         )
 
         tokenized_query = hybrid_tokenize(query)
-        raw_bm25_scores = self.bm25.get_scores(tokenized_query)
+        raw_bm25_scores = current_bm25.get_scores(tokenized_query)
 
         max_bm25 = max(raw_bm25_scores) if raw_bm25_scores.size > 0 else 0
         if max_bm25 > 0:
             bm25_scores = [score / max_bm25 for score in raw_bm25_scores]
         else:
-            bm25_scores = [0] * len(self.corpus)
+            bm25_scores = [0] * len(current_corpus)
 
         alpha_dense = 0.7
         alpha_sparse = 0.3
 
         final_scores = []
-        for i in range(len(self.corpus)):
+        for i in range(len(current_corpus)):
             combined_score = (dense_scores[i] * alpha_dense) + (
                 bm25_scores[i] * alpha_sparse
             )
@@ -106,9 +115,13 @@ class SkillSearcher:
         for idx in top_k_indices:
             score = float(final_scores[idx])
             if score > 0:
-                results.append({"score": round(score, 4), "skill": self.skills[idx]})
+                results.append({"score": round(score, 4), "skill": current_skills[idx]})
 
         return results
+
+def reload_skill_index():
+    skill_searcher = SkillSearcher(SKILL_DIR)
+    skill_searcher.reload_index()
 
 
 def search_skills(query: str, top_k: int = 3) -> tuple:
@@ -130,24 +143,3 @@ def search_skills(query: str, top_k: int = 3) -> tuple:
         return [], f"Skill搜索异常: {e}"
 
 
-def load_skill(name: str) -> dict:
-    """
-    加载技能文件详情
-
-    Args:
-        name: 技能名称
-
-    Returns:
-        技能详情字典
-    """
-    md_file, _ = _find_skill_md_file(name)
-    if not md_file.exists():
-        raise FileNotFoundError(f"找不到技能: {name}")
-
-    parsed_data = _parse_skill_md(md_file)
-    return {
-        "name": parsed_data["metadata"].get("name", name),
-        "description": parsed_data["metadata"].get("description", ""),
-        "content": parsed_data["content"],
-        "path": str(md_file),
-    }

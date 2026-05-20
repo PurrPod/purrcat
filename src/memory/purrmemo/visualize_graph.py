@@ -5,8 +5,7 @@ import sys
 import networkx as nx
 from pyvis.network import Network
 
-from src.memory.purrmemo.core.config import GRAPH_DATABASE_CONFIG
-from src.utils.config import MEMORY_DIR
+from src.utils.config import MEMORY_DIR, get_memory_config
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 if project_root not in sys.path:
@@ -15,7 +14,8 @@ if project_root not in sys.path:
 
 class GraphVisualizer:
     def __init__(self):
-        self.graph_path = GRAPH_DATABASE_CONFIG["graph_path"]
+        graph_config = get_memory_config().get("graphdb", {})
+        self.graph_path = graph_config.get("graph_path", os.path.join(MEMORY_DIR, "graph.pkl"))
         self.graph = None
         self._load_graph()
 

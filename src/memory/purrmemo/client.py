@@ -9,6 +9,7 @@ from .core.memory_worker.worker_agent import MemoryAgent
 from .core.search_tool import RAGSearchTool
 from .core.storage.graph_engine import GraphEngine
 from .core.utils import SingletonMeta
+from .visualize_graph import GraphVisualizer
 from src.utils.config import MEMORY_PENDING_DIR, get_memory_config
 
 
@@ -226,6 +227,44 @@ class PurrMemoClient(metaclass=SingletonMeta):
             )
 
         return {"nodes": nodes, "edges": edges}
+
+    def get_recent_events(self, limit: int = 30):
+        """获取最近的事件（从事件库）"""
+        try:
+            return self.search_tool.event_engine.get_events(limit=limit)
+        except Exception:
+            return []
+
+    def get_recent_experiences(self, limit: int = 30):
+        """获取最近的经验（从向量库）"""
+        try:
+            vector_engine = self.search_tool.vector_engine
+            if not vector_engine or not getattr(vector_engine, 'collection', None):
+                return []
+            results = vector_engine.collection.get(include=["documents", "metadatas"])
+            experiences = []
+            if results and results.get("ids"):
+                for i in range(len(results["ids"])):
+                    meta = results["metadatas"][i] or {}
+                    experiences.append({
+                        "exp_id": results["ids"][i],
+                        "content": results["documents"][i],
+                        "timestamp": meta.get("timestamp", "")
+                    })
+            experiences.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+            return experiences[:limit]
+        except Exception:
+            return []
+
+    def visualize_graph(self, output_file=None):
+        """生成图谱可视化 HTML 文件"""
+        try:
+            visualizer = GraphVisualizer()
+            visualizer.visualize(output_file=output_file)
+            return True
+        except Exception as e:
+            print(f"可视化失败: {e}")
+            return False
 
 
 def get_memory_client():

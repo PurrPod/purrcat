@@ -32,6 +32,32 @@ get_chat_history = _manager_instance.get_chat_history
 get_session_list = _manager_instance.get_session_list
 get_active_session_id = _manager_instance.get_active_session_id
 
+# 状态与辅助
+get_agent_status = lambda: {
+    "state": _manager_instance._agent.state if getattr(_manager_instance, "_agent", None) else "idle",
+    "session_id": _manager_instance._agent.session_id if getattr(_manager_instance, "_agent", None) else None,
+    "window_token": _manager_instance._agent.window_token if getattr(_manager_instance, "_agent", None) else 0,
+}
+
+
+def flush_agent_memory():
+    if getattr(_manager_instance, "_agent", None) is None:
+        _manager_instance.init_agent()
+    if getattr(_manager_instance, "_agent", None):
+        _manager_instance._agent.force_compress_memory()
+        return True
+    return False
+
+
+def get_window_token():
+    if getattr(_manager_instance, "_agent", None) is None:
+        _manager_instance.init_agent()
+    return _manager_instance._agent.window_token if getattr(_manager_instance, "_agent", None) else 0
+
+
+def get_agent_max_token():
+    return 1000000
+
 
 # ==========================================
 # 3. 严格限制导出接口
@@ -46,5 +72,9 @@ __all__ = [
     "delete_session",
     "get_chat_history",
     "get_session_list",
-    "get_active_session_id"
+    "get_active_session_id",
+    "get_agent_status",
+    "flush_agent_memory",
+    "get_window_token",
+    "get_agent_max_token",
 ]

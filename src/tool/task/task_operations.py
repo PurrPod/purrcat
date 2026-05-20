@@ -27,20 +27,16 @@ def add_task_operation(name: str, inputs: dict, graph_name: str) -> tuple:
 
         def _run_task():
             import asyncio
-            from src.agent.manager import get_agent
+            from src.agent import agent_force_push
 
             try:
                 result = asyncio.run(single_task.run())
                 task_id = single_task.task_id
                 notify_msg = result or f"任务 '{name}' (ID: {task_id}) 已执行完毕。"
-                agent = get_agent()
-                if agent:
-                    agent.force_push(notify_msg, type="task_message")
+                agent_force_push(notify_msg, type="task_message")
             except Exception as e:
                 error_msg = f"任务 '{name}' (ID: {single_task.task_id}) 执行崩溃，原因：\n {e}"
-                agent = get_agent()
-                if agent:
-                    agent.force_push(error_msg, type="task_message")
+                agent_force_push(error_msg, type="task_message")
 
         t = threading.Thread(target=_run_task, daemon=True)
         t.start()

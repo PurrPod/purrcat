@@ -13,21 +13,33 @@ from mcp.client.stdio import stdio_client
 
 from src.utils.config import get_mcp_config
 
-# 全局事件循环
-_mcp_loop = asyncio.new_event_loop()
+# ── 延迟初始化核心原语 ──
+_mcp_loop = None
+_mcp_thread = None
+_init_lock = threading.Lock()
 
 
-def _start_mcp_loop():
+def _start_mcp_loop(loop):
     """启动 MCP 专用事件循环"""
-    asyncio.set_event_loop(_mcp_loop)
-    _mcp_loop.run_forever()
+    asyncio.set_event_loop(loop)
+    loop.run_forever()
 
 
-# 启动后台线程运行事件循环
-_mcp_thread = threading.Thread(
-    target=_start_mcp_loop, name="MCP_EventLoop_Thread", daemon=True
-)
-_mcp_thread.start()
+def ensure_mcp_loop():
+    """确保事件循环和后台物理线程已安全拉起"""
+    global _mcp_loop, _mcp_thread
+    if _mcp_loop is None:
+        with _init_lock:
+            if _mcp_loop is None:
+                _mcp_loop = asyncio.new_event_loop()
+                _mcp_thread = threading.Thread(
+                    target=_start_mcp_loop, 
+                    args=(_mcp_loop,), 
+                    name="MCP_EventLoop_Thread", 
+                    daemon=True
+                )
+                _mcp_thread.start()
+    return _mcp_loop
 
 
 def load_configs() -> dict:
@@ -46,19 +58,25 @@ class MCPSessionManager:
         self.sessions: Dict[str, dict] = {}
         self.locks: Dict[str, asyncio.Lock] = {}
         self.lifecycle_tasks: Dict[str, asyncio.Task] = {}
-        self.DEFAULT_IDLE_TIMEOUT = 3000  # 存储各 Server 的专属守护任务
-        asyncio.run_coroutine_threadsafe(self._idle_cleaner_task(), _mcp_loop)
+        self.DEFAULT_IDLE_TIMEOUT = 3000  
+        self._cleaner_started = False
+        self._cleaner_lock = threading.Lock()
+
+    def ensure_cleaner_started(self):
+        """确保闲置资源回收任务已注册到事件循环"""
+        if not self._cleaner_started:
+            with self._cleaner_lock:
+                if not self._cleaner_started:
+                    loop = ensure_mcp_loop()
+                    asyncio.run_coroutine_threadsafe(self._idle_cleaner_task(), loop)
+                    self._cleaner_started = True
 
     async def _get_lock(self, server_name: str) -> asyncio.Lock:
-        """获取指定服务器的锁"""
         if server_name not in self.locks:
             self.locks[server_name] = asyncio.Lock()
         return self.locks[server_name]
 
-    async def _server_lifecycle_task(
-        self, server_name: str, config: dict, ready_event: asyncio.Event
-    ):
-        """维护单个 MCP Server 生命周期的后台任务"""
+    async def _server_lifecycle_task(self, server_name: str, config: dict, ready_event: asyncio.Event):
         raw_command = config["command"]
         resolved_command = shutil.which(raw_command) or raw_command
 
@@ -72,7 +90,6 @@ class MCPSessionManager:
             async with stdio_client(server_params) as (read, write):
                 async with ClientSession(read, write) as session:
                     await session.initialize()
-
                     close_event = asyncio.Event()
 
                     self.sessions[server_name] = {
@@ -94,7 +111,6 @@ class MCPSessionManager:
                 del self.lifecycle_tasks[server_name]
 
     async def _idle_cleaner_task(self):
-        """后台定时清理闲置 Session"""
         while True:
             try:
                 await asyncio.sleep(5)
@@ -110,21 +126,17 @@ class MCPSessionManager:
                     timeout = config.get("idle_timeout", self.DEFAULT_IDLE_TIMEOUT)
 
                     if now - ctx["last_active"] > timeout:
-                        print(
-                            f"🧹 [MCP 资源回收] '{server_name}' 闲置超过 {timeout}s，自动关闭释放资源。"
-                        )
+                        print(f"🧹 [MCP 资源回收] '{server_name}' 闲置超过 {timeout}s，自动关闭释放资源。")
                         await self._close_session(server_name)
             except Exception as e:
                 print(f"⚠️ [MCP 清理器异常] {e}，将继续运行...")
                 await asyncio.sleep(1)
 
     async def _close_session(self, server_name: str):
-        """安全关闭指定的 Session"""
         if server_name in self.sessions:
             self.sessions[server_name]["close_event"].set()
 
     async def shutdown_all(self):
-        """关闭所有连接 (优雅退出)"""
         print("\n🛑 [MCP] 正在执行优雅退出，发送关闭信号给所有驻留的子进程...")
         tasks = [self._close_session(name) for name in list(self.sessions.keys())]
         if tasks:
@@ -133,9 +145,7 @@ class MCPSessionManager:
         print("✅ [MCP] 所有子进程已安全清理完毕。")
 
     async def get_session(self, server_name: str, config: dict) -> ClientSession:
-        """获取长连接 Session"""
         lock = await self._get_lock(server_name)
-
         async with lock:
             if server_name in self.sessions:
                 self.sessions[server_name]["last_active"] = time.time()
@@ -155,30 +165,30 @@ class MCPSessionManager:
                 raise RuntimeError(f"MCP Server '{server_name}' 启动超时 (120s)")
 
             if server_name not in self.sessions:
-                raise RuntimeError(
-                    f"无法连接到 MCP Server '{server_name}'，进程可能启动即崩溃。"
-                )
+                raise RuntimeError(f"无法连接到 MCP Server '{server_name}'，进程可能启动即崩溃。")
 
             return self.sessions[server_name]["session"]
 
 
-# 创建单例
+# 创建轻量级单例（此时内部不会启动任何线程或异步循环）
 mcp_manager = MCPSessionManager()
 
 
 def _on_system_exit():
     """系统退出时清理资源"""
-    future = asyncio.run_coroutine_threadsafe(mcp_manager.shutdown_all(), _mcp_loop)
-    try:
-        future.result(timeout=5)
-    except Exception:
-        pass
-
+    if _mcp_loop is not None and _mcp_loop.is_running():
+        future = asyncio.run_coroutine_threadsafe(mcp_manager.shutdown_all(), _mcp_loop)
+        try:
+            future.result(timeout=5)
+        except Exception:
+            pass
 
 atexit.register(_on_system_exit)
 
 
 def _run_sync(coro_func, *args, **kwargs):
-    """同步运行异步函数"""
-    future = asyncio.run_coroutine_threadsafe(coro_func(*args, **kwargs), _mcp_loop)
+    """同步运行异步函数（在调用时触发懒加载）"""
+    loop = ensure_mcp_loop()
+    mcp_manager.ensure_cleaner_started()
+    future = asyncio.run_coroutine_threadsafe(coro_func(*args, **kwargs), loop)
     return future.result()

@@ -4,10 +4,8 @@ import warnings
 import argparse
 import threading
 
-from src.tool.callmcp.callmcp import initialize_mcp
-from src.agent.manager import init_agent, shutdown_agent
-from src.sensor import auto_discover_and_start
-from src.memory import init_memory
+# 仅在头部保留极轻量级且必须立即启动的核心 Agent 模块
+from src.agent import init_agent, shutdown_agent, branch_session
 
 
 def _setup_warnings():
@@ -15,35 +13,64 @@ def _setup_warnings():
     warnings.filterwarnings("ignore", category=UserWarning, message="pkg_resources is deprecated as an API")
 
 
+def _bg_heavy_init():
+    """所有重型模块的后台初始化和预热（彻底剥离主线程）"""
+    print("[Background] 开始后台预热重型服务...")
+    
+    # 1. 初始化并拉取 MCP Schema
+    try:
+        from src.tool.callmcp.callmcp import initialize_mcp
+        initialize_mcp()
+    except Exception as e:
+        print(f"⚠️ [Background] MCP 初始化异常: {e}")
+
+    # 2. 扫描并启动所有传感器插件
+    try:
+        from src.sensor import auto_discover_and_start
+        auto_discover_and_start()
+    except Exception as e:
+        print(f"⚠️ [Background] Sensor 启动异常: {e}")
+
+    # 3. 初始化并预热记忆库与 Embedding 引擎
+    try:
+        from src.memory import init_memory
+        init_memory()
+
+        # [消除冷启动惩罚] 触发一次单例的 __new__，提前把重型本地模型加载到内存
+        from src.tool.search.semantic_utils import LocalEmbeddingSearcher
+        LocalEmbeddingSearcher()
+
+        from src.tool.search.skill_search import SkillSearcher
+        SkillSearcher()
+        
+        print("✅ [Background] 本地 Embedding 模型与检索库预热就绪")
+    except Exception as e:
+        print(f"⚠️ [Background] 记忆库/模型预热异常: {e}")
+
+    # 4. 加载历史任务 (磁盘 I/O 操作)
+    try:
+        from src.harness.process import auto_load_all_tasks
+        auto_load_all_tasks()
+        print("✅ [Background] 历史任务工作流加载就绪")
+    except Exception as e:
+        print(f"⚠️ [Background] 历史任务加载异常: {e}")
+
+
 async def init_core(cli_session_id: str = None, cli_branch_name: str = None):
     os.environ.pop("HTTP_PROXY", None)
     os.environ.pop("HTTPS_PROXY", None)
 
-    initialize_mcp()
+    # 1. 核心 Agent 在主线程立即启动，保证 TUI 和 API 秒开
     init_agent(session_id=cli_session_id)
 
-    def bg_init_services():
-        try:
-            auto_discover_and_start()
-        except Exception as e:
-            print(f"⚠️ [Background] Sensor 启动异常: {e}")
-        try:
-            init_memory()
-        except Exception as e:
-            print(f"⚠️ [Background] Memory client 启动异常: {e}")
-
-    threading.Thread(target=bg_init_services, daemon=True, name="BgServicesThread").start()
-
     if cli_branch_name:
-        from src.agent.manager import manager
-        new_id = manager.branch_current_session(cli_branch_name)
+        new_id = branch_session(cli_branch_name)
         print(f"🌿 [CLI] 已从 {cli_session_id or '最新会话'} 创建并切换到新分支: {cli_branch_name} ({new_id})")
 
-    # 最后一个初始化步骤：自动加载所有历史任务到内存
-    from src.harness.process import auto_load_all_tasks
-    auto_load_all_tasks()
+    # 2. 启动后台初始化线程，将耗时操作完全剥离
+    threading.Thread(target=_bg_heavy_init, daemon=True, name="BgHeavyInitThread").start()
 
-    print("[+] Backend services and sensors started")
+    print("[+] Agent core initialized, heavy services warming up in background...")
 
 
 async def shutdown_core():
@@ -63,6 +90,7 @@ async def run_api(host: str = "0.0.0.0", port: int = 8000):
     import uvicorn
     import logging
     
+    # API 路由也尽量懒加载，防止影响入口速度
     from server.api.chat import router as chat_router
     from server.api.graph import router as graph_router
     from server.api.task import router as task_router
@@ -98,6 +126,7 @@ async def run_api(host: str = "0.0.0.0", port: int = 8000):
 
 
 async def main_async(enable_tui: bool, enable_api: bool, api_port: int, cli_session: str = None, cli_branch: str = None):
+    # 核心极速启动
     await init_core(cli_session_id=cli_session, cli_branch_name=cli_branch)
 
     api_task = None

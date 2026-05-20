@@ -96,7 +96,7 @@ def _search_local(query: str, topk: int) -> str:
         memo_results, memo_err = [], None
         try:
             from src.memory import search_memory as memory_search
-            memo_results = memory_search(query=query, filters={\"top_k\": topk})
+            memo_results = memory_search(query=query, filters={"top_k": topk})
         except Exception as e:
             memo_err = str(e)
 

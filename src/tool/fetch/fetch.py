@@ -68,9 +68,8 @@ def Fetch(
 
         if source == "skill":
             # ================= 核心：利用全局单例直接进行幽灵注入 =================
-            from src.agent.manager import get_agent
+            from src.agent import agent_force_push
             try:
-                agent = get_agent()
                 # 组装强有力的末尾注入指令
                 skill_instruction = (
                     f"【核心技能载入: {result['name']}】\n"
@@ -80,7 +79,7 @@ def Fetch(
                     f"请严格按照上述步骤与约束进行操作。"
                 )
                 # 触发向队列末尾 push
-                agent.force_push(content=skill_instruction, type="skill")
+                agent_force_push(skill_instruction, type="skill")
                 print(f"👻 [幽灵注入] 技能 [{name}] 已直接推入 Agent 末尾指令队列")
             except Exception as e:
                 print(f"⚠️ [幽灵注入失败]: {e}")
