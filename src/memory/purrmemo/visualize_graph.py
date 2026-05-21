@@ -15,7 +15,9 @@ if project_root not in sys.path:
 class GraphVisualizer:
     def __init__(self):
         graph_config = get_memory_config().get("graphdb", {})
-        self.graph_path = graph_config.get("graph_path", os.path.join(MEMORY_DIR, "graph.pkl"))
+        self.graph_path = graph_config.get(
+            "graph_path", os.path.join(MEMORY_DIR, "graph.pkl")
+        )
         self.graph = None
         self._load_graph()
 

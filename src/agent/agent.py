@@ -66,7 +66,7 @@ class Agent:
                 )
                 for rf in rule_files:
                     with open(
-                            os.path.join(SYSTEM_RULES_DIR, rf), "r", encoding="utf-8"
+                        os.path.join(SYSTEM_RULES_DIR, rf), "r", encoding="utf-8"
                     ) as f:
                         system_rules += f.read().strip() + "\n\n"
                 system_rules = system_rules.strip()
@@ -157,19 +157,26 @@ class Agent:
                 if assistant_msg.get("tool_calls"):
                     requested_ids = set(tc["id"] for tc in assistant_msg["tool_calls"])
                     # tool messages 在 idx+1 到末尾
-                    answered_ids = set(msg.get("tool_call_id") for msg in self.current_history[idx + 1:])
+                    answered_ids = set(
+                        msg.get("tool_call_id")
+                        for msg in self.current_history[idx + 1 :]
+                    )
 
                     # 发现不匹配！说明中断了！
                     if requested_ids != answered_ids:
                         print(
-                            f"⚠️ [恢复] 检测到未完成的多工具调用链 (请求: {len(requested_ids)}, 实际返回: {len(answered_ids)})，正在清理并撤回悬空节点...")
+                            f"⚠️ [恢复] 检测到未完成的多工具调用链 (请求: {len(requested_ids)}, 实际返回: {len(answered_ids)})，正在清理并撤回悬空节点..."
+                        )
 
                         # A. 弹出后面的所有残缺 tool 消息
                         while len(self.current_history) > idx + 1:
                             self.current_history.pop()
 
                         # B. 如果 assistant 还有实质性的回复文本，保留文本，只摘除 tool_calls
-                        if assistant_msg.get("content") and str(assistant_msg.get("content")).strip():
+                        if (
+                            assistant_msg.get("content")
+                            and str(assistant_msg.get("content")).strip()
+                        ):
                             del assistant_msg["tool_calls"]
                         else:
                             # 否则这整条 assistant 消息都是多余的，直接弹出
@@ -402,7 +409,7 @@ class Agent:
         return split_idx
 
     def _rebuild_and_save_history(
-            self, split_idx: int, original_len: int, final_summary: str
+        self, split_idx: int, original_len: int, final_summary: str
     ):
         original_system_msg = self.current_history[0]
         truncation_msg = {
@@ -410,9 +417,9 @@ class Agent:
             "content": f"【系统通知：因上下文超限，更早的历史对话已被系统截断。以下是最近五次的短时缓存，请你利用这些缓存无缝接续当前工作：】\n{final_summary}",
         }
         self.current_history = [
-                                   original_system_msg,
-                                   truncation_msg,
-                               ] + self.current_history[split_idx:original_len]
+            original_system_msg,
+            truncation_msg,
+        ] + self.current_history[split_idx:original_len]
         for msg in self.current_history:
             if msg.get("role") == "assistant" and "reasoning_content" in msg:
                 msg["reasoning_content"] = ""

@@ -1,6 +1,5 @@
 """Memo 工具主入口 - 统一记忆工具，支持写入和搜索"""
 
-import json
 import re
 import traceback
 from datetime import datetime

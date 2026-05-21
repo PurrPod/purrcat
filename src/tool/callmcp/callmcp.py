@@ -1,5 +1,4 @@
 import json
-import threading
 import traceback
 
 from src.tool.callmcp.exceptions import (
@@ -92,8 +91,11 @@ def initialize_mcp_sync():
     print("正在检查 [MCP] Schema 缓存状态...")
     try:
         import os
+
         if os.path.exists(MCP_SCHEMA_CACHE_FILE):
-            print(f"✅ 检测到本地已有 MCP 缓存 ({MCP_SCHEMA_CACHE_FILE})，跳过全量拉取。如需刷新请调用 reload_mcp_schema 工具。")
+            print(
+                f"✅ 检测到本地已有 MCP 缓存 ({MCP_SCHEMA_CACHE_FILE})，跳过全量拉取。如需刷新请调用 reload_mcp_schema 工具。"
+            )
             return
 
         print("⚠️ 未检测到 mcp_schema.json，正在进行首次全量拉取...")
@@ -110,10 +112,14 @@ def reload_mcp_schema():
         schemas = refresh_schemas()
 
         from src.tool.search.mcp_search import MCPSearcher
+
         MCPSearcher().reload_index()
 
         return text_response(
-            {"message": f"✅ Schema 重新握手并写入缓存成功！内存检索树已热更新。共载入 {len(schemas)} 个工具。"}, ""
+            {
+                "message": f"✅ Schema 重新握手并写入缓存成功！内存检索树已热更新。共载入 {len(schemas)} 个工具。"
+            },
+            "",
         )
     except Exception as e:
         traceback.print_exc()

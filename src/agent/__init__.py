@@ -32,12 +32,20 @@ get_chat_history = _manager_instance.get_chat_history
 get_session_list = _manager_instance.get_session_list
 get_active_session_id = _manager_instance.get_active_session_id
 
+
 # 状态与辅助
-get_agent_status = lambda: {
-    "state": _manager_instance._agent.state if getattr(_manager_instance, "_agent", None) else "idle",
-    "session_id": _manager_instance._agent.session_id if getattr(_manager_instance, "_agent", None) else None,
-    "window_token": _manager_instance._agent.window_token if getattr(_manager_instance, "_agent", None) else 0,
-}
+def get_agent_status():
+    return {
+        "state": _manager_instance._agent.state
+        if getattr(_manager_instance, "_agent", None)
+        else "idle",
+        "session_id": _manager_instance._agent.session_id
+        if getattr(_manager_instance, "_agent", None)
+        else None,
+        "window_token": _manager_instance._agent.window_token
+        if getattr(_manager_instance, "_agent", None)
+        else 0,
+    }
 
 
 def flush_agent_memory():
@@ -52,7 +60,11 @@ def flush_agent_memory():
 def get_window_token():
     if getattr(_manager_instance, "_agent", None) is None:
         _manager_instance.init_agent()
-    return _manager_instance._agent.window_token if getattr(_manager_instance, "_agent", None) else 0
+    return (
+        _manager_instance._agent.window_token
+        if getattr(_manager_instance, "_agent", None)
+        else 0
+    )
 
 
 def get_agent_max_token():

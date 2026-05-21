@@ -43,7 +43,7 @@ def _get_all_graphs_info() -> dict:
                     graphs[g_name] = {
                         "description": data.get("description", "无描述"),
                         # 从 JSON 中提取 core，如果没有则提供一个默认兜底
-                        "core": data.get("core", "openai:deepseek-v4-flash"), 
+                        "core": data.get("core", "openai:deepseek-v4-flash"),
                         "param_schema": param_schema,
                     }
             except Exception:
@@ -60,7 +60,9 @@ def _get_graphs_help_text(graphs: dict) -> str:
     for g_name, info in graphs.items():
         schema = info["param_schema"]
         # 展示信息时附加上它使用的模型，让大模型心中有数
-        lines.append(f"\n▶ 【{g_name}】: {info['description']} (驱动核心: {info['core']})")
+        lines.append(
+            f"\n▶ 【{g_name}】: {info['description']} (驱动核心: {info['core']})"
+        )
         if schema:
             lines.append("   需要的 inputs 参数:")
             for k, v in schema.items():
@@ -81,7 +83,10 @@ def Task(action: str, **kwargs) -> str:
             return error_response(f"无效的操作: {action}", "❌ 无效action")
 
         if action == "list_graphs":
-            return text_response({"message": _get_graphs_help_text(_get_all_graphs_info())}, "📂 可用图列表")
+            return text_response(
+                {"message": _get_graphs_help_text(_get_all_graphs_info())},
+                "📂 可用图列表",
+            )
         if action == "list_tasks":
             return _handle_list_tasks()
         if action == "add":
@@ -101,13 +106,15 @@ def _handle_add(**kwargs) -> str:
     inputs = kwargs.get("inputs") or {}
 
     if not name:
-        return error_response("❌ 缺少必需参数: name。请为任务起一个简短的名称。", "❌ 缺少name")
+        return error_response(
+            "❌ 缺少必需参数: name。请为任务起一个简短的名称。", "❌ 缺少name"
+        )
 
     if not graph_name:
         return error_response(
             "❌ 缺少必需参数: graph_name。\n"
             "💡 引导建议：你不应该自己编造图名称。请先调用 action='list_graphs' 查询当前系统有哪些可用的工作流图，然后再执行 add 创建任务！",
-            "❌ 缺少graph_name"
+            "❌ 缺少graph_name",
         )
 
     graphs = _get_all_graphs_info()
@@ -116,7 +123,7 @@ def _handle_add(**kwargs) -> str:
         return error_response(
             f"❌ 未找到指定的工作流图: '{graph_name}'。\n"
             "💡 引导建议：请先调用 action='list_graphs' 获取正确的图列表和参数要求，请勿随意编造 graph_name！",
-            "❌ 图不存在"
+            "❌ 图不存在",
         )
 
     graph_info = graphs[graph_name]
@@ -124,16 +131,23 @@ def _handle_add(**kwargs) -> str:
 
     validation_errors = []
     missing_required = []
-    
+
     for k, v in param_schema.items():
         is_req = v.get("required", True)
         if is_req and (k not in inputs or inputs[k] is None):
             param_type = v.get("type", "any")
             desc = v.get("description", "无描述")
-            missing_required.append({"name": k, "type": param_type, "description": desc})
+            missing_required.append(
+                {"name": k, "type": param_type, "description": desc}
+            )
 
     if missing_required:
-        miss_str = "\n".join([f"  - '{p['name']}' (类型: {p['type']}, 描述: {p['description']})" for p in missing_required])
+        miss_str = "\n".join(
+            [
+                f"  - '{p['name']}' (类型: {p['type']}, 描述: {p['description']})"
+                for p in missing_required
+            ]
+        )
         validation_errors.append(f"❌ 缺少必填参数:\n{miss_str}")
 
     extra_keys = [k for k in inputs.keys() if k not in param_schema]
@@ -150,7 +164,10 @@ def _handle_add(**kwargs) -> str:
         result, error = add_task_operation(name, inputs, graph_name)
         if error:
             return warning_response(error, "⚠️ 任务创建失败")
-        return text_response({"task_id": result["task_id"], "message": result["message"]}, "🚀 任务已创建")
+        return text_response(
+            {"task_id": result["task_id"], "message": result["message"]},
+            "🚀 任务已创建",
+        )
     except Exception as e:
         return error_response(f"任务创建异常: {e}", "❌ 创建任务异常")
 
@@ -160,7 +177,9 @@ def _handle_list_tasks() -> str:
     return (
         warning_response(error, "⚠️ 获取失败")
         if error
-        else text_response({"tasks": result["tasks"]}, f"📋 发现 {result['count']} 个任务")
+        else text_response(
+            {"tasks": result["tasks"]}, f"📋 发现 {result['count']} 个任务"
+        )
     )
 
 
@@ -186,7 +205,10 @@ def _handle_submit_request(**kwargs) -> str:
     if not content:
         return error_response("缺少必需参数: content", "❌ 缺少content")
     if not node_id:
-        return error_response("缺少必需参数: node_id。必须精确指定要向哪个节点注入指令，不支持广播！", "❌ 缺少node_id")
+        return error_response(
+            "缺少必需参数: node_id。必须精确指定要向哪个节点注入指令，不支持广播！",
+            "❌ 缺少node_id",
+        )
 
     result, error = submit_request_operation(task_id, content, node_id)
 

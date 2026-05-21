@@ -43,30 +43,35 @@ BASE_TASK_TOOL_SCHEMA = [
 
 # --- 系统重型组件初始化逻辑 ---
 
+
 def init_tools():
     """
     重型类的后台初始化入口。
     利用单个守护线程顺序执行，避免阻塞主进程启动，同时保证初始化的依赖顺序。
     """
+
     def _bg_init():
         try:
             # 1. 首先确保 MCP 的 Schema 缓存拉取完毕 (否则检索树无法扫描到内容)
             initialize_mcp_sync()
-            
+
             # 2. 预热本地 Embedding 模型并构建 MCP 检索树
             # 触发单例的 __new__ 初始化，这会在后台加载 SentenceTransformer 模型并执行向量化
             from src.tool.search.mcp_search import MCPSearcher
+
             print("🚀 正在后台初始化 [MCP] 内存检索树...")
             MCPSearcher()
-            
+
             # 3. 扫描 skill_dir 结构并构建 Skill 检索树
             from src.tool.search.skill_search import SkillSearcher
+
             print("🚀 正在后台初始化 [Skill] 内存检索树...")
             SkillSearcher()
-            
+
             print("✅ 所有重型工具组件后台初始化完毕！")
         except Exception as e:
             import traceback
+
             print(f"❌ 工具后台初始化异常: {e}")
             traceback.print_exc()
 
@@ -76,10 +81,10 @@ def init_tools():
 
 # --- 对外严格约束暴露的接口 ---
 __all__ = [
-    "dispatch_tool",          # 核心路由分发
-    "reload_skill_index",     # Skill 重扫描与重新向量化
-    "reload_mcp_schema",      # MCP Schema 重建与重载向量化
-    "AGENT_TOOL_SCHEMA",      # Agent 默认工具列表
+    "dispatch_tool",  # 核心路由分发
+    "reload_skill_index",  # Skill 重扫描与重新向量化
+    "reload_mcp_schema",  # MCP Schema 重建与重载向量化
+    "AGENT_TOOL_SCHEMA",  # Agent 默认工具列表
     "BASE_TASK_TOOL_SCHEMA",  # 基础子任务工具列表
-    "init_tools",             # 统一的非阻塞初始化入口
+    "init_tools",  # 统一的非阻塞初始化入口
 ]

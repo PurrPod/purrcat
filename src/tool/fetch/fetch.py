@@ -69,6 +69,7 @@ def Fetch(
         if source == "skill":
             # ================= 核心：利用全局单例直接进行幽灵注入 =================
             from src.agent import agent_force_push
+
             try:
                 # 组装强有力的末尾注入指令
                 skill_instruction = (
@@ -90,7 +91,7 @@ def Fetch(
                 {
                     "name": result["name"],
                     "status": "success",
-                    "message": f"✅ 技能 [{name}] 已成功加载到系统事件中。请立即查看最新的系统通知（紧随其后的 user 消息）以获取最新 SOP 约束，并严格依此行事。"
+                    "message": f"✅ 技能 [{name}] 已成功加载到系统事件中。请立即查看最新的系统通知（紧随其后的 user 消息）以获取最新 SOP 约束，并严格依此行事。",
                 },
                 f"📖 Skill [{name}] 注入成功",
             )

@@ -31,7 +31,7 @@ def get_all_nodes() -> List[Dict[str, Any]]:
     all_nodes = []
     if not os.path.exists(NODES_DIR):
         return all_nodes
-    
+
     for node_json in glob.glob(os.path.join(NODES_DIR, "*", "*.json")):
         try:
             with open(node_json, "r", encoding="utf-8") as f:

@@ -40,7 +40,11 @@ class AgentManager:
             )
 
         history = SessionStore.load_session_history(session_id)
-        if history and history[-1].get("role") == "assistant" and history[-1].get("tool_calls"):
+        if (
+            history
+            and history[-1].get("role") == "assistant"
+            and history[-1].get("tool_calls")
+        ):
             history.pop()
 
         self._agent = Agent(
@@ -120,10 +124,12 @@ class AgentManager:
 
         if hasattr(self._agent, "memo") and self._agent.memo:
             memo_summary = json.dumps(self._agent.memo, ensure_ascii=False, indent=2)
-            clean_history.append({
-                "role": "system",
-                "content": f"【系统通知：这是一个全新的会话。以下是共享记忆缓存：】\n{memo_summary}"
-            })
+            clean_history.append(
+                {
+                    "role": "system",
+                    "content": f"【系统通知：这是一个全新的会话。以下是共享记忆缓存：】\n{memo_summary}",
+                }
+            )
 
         SessionStore.save_session(
             session_id=new_id, history=clean_history, parent_id=None, alias=branch_alias
@@ -175,7 +181,9 @@ class AgentManager:
             raise ValueError("不能删除当前正在活跃的会话")
 
         # 2. 执行删除
-        session_file = os.path.join(DATA_DIR, "checkpoints", "agent", f"{session_id}.json")
+        session_file = os.path.join(
+            DATA_DIR, "checkpoints", "agent", f"{session_id}.json"
+        )
         if os.path.exists(session_file):
             os.remove(session_file)
 
@@ -203,7 +211,11 @@ class AgentManager:
         if not session_id or session_id == self._agent.session_id:
             return [m for m in self._agent.get_history() if m.get("role") != "system"]
         # 否则从硬盘读
-        return [m for m in SessionStore.load_session_history(session_id) if m.get("role") != "system"]
+        return [
+            m
+            for m in SessionStore.load_session_history(session_id)
+            if m.get("role") != "system"
+        ]
 
     def get_session_list(self):
         return SessionStore.get_all_sessions()
@@ -223,8 +235,6 @@ class AgentManager:
 # 全局单例和兼容形式导出
 manager = AgentManager()
 
+
 def get_agent():
     return manager.get_agent()
-
-
-

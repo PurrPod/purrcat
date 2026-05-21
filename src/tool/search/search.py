@@ -91,18 +91,20 @@ def _search_local(query: str, topk: int) -> str:
         # 1. 分别搜索 Skill 与 MCP
         skill_results, skill_err = search_skills(query, topk)
         mcp_results, mcp_err = mcp_search(query, topk)
-        
+
         # 2. 新增：搜索 Memo 记忆
         memo_results, memo_err = [], None
         try:
             from src.memory import search_memory as memory_search
+
             memo_results = memory_search(query=query, filters={"top_k": topk})
         except Exception as e:
             memo_err = str(e)
 
         if skill_err and mcp_err and memo_err:
             return warning_response(
-                f"Skill搜索失败: {skill_err}\nMCP搜索失败: {mcp_err}\nMemo搜索失败: {memo_err}", "⚠️ Local全部失败"
+                f"Skill搜索失败: {skill_err}\nMCP搜索失败: {mcp_err}\nMemo搜索失败: {memo_err}",
+                "⚠️ Local全部失败",
             )
 
         merged_results = []
@@ -129,7 +131,7 @@ def _search_local(query: str, topk: int) -> str:
                     "score": res.get("score", 0),
                 }
             )
-            
+
         # -- 组装 Memo 结果 --
         for res in memo_results or []:
             if isinstance(res, dict):
@@ -140,7 +142,7 @@ def _search_local(query: str, topk: int) -> str:
                 score = 0
                 desc = str(res)
                 name = "Memory"
-                
+
             desc_str = str(desc).replace("\n", " ").replace("|", "｜")
             if len(desc_str) > 150:
                 desc_str = desc_str[:147] + "..."
@@ -163,7 +165,7 @@ def _search_local(query: str, topk: int) -> str:
         skill_count = len([r for r in top_results if r["source"] == "Skill"])
         mcp_count = len([r for r in top_results if r["source"].startswith("MCP")])
         memo_count = len([r for r in top_results if r["source"] == "Memo"])
-        
+
         md = f"🎯 本地混合搜索结果 (Top {len(top_results)}):\n\n"
         md += "| 来源类别 | 名称/类型 | 匹配得分 | 描述/内容 |\n"
         md += "|----------|-----------|----------|-----------|\n"
@@ -171,8 +173,10 @@ def _search_local(query: str, topk: int) -> str:
         for item in top_results:
             md += f"| {item['source']} | `{item['name']}` | {item['score']} | {item['description']} |\n"
 
-        md += "\n💡 **提示：你可以使用 `Fetch` 工具获取上述技能或 MCP 工具的完整细节。**"
-        
+        md += (
+            "\n💡 **提示：你可以使用 `Fetch` 工具获取上述技能或 MCP 工具的完整细节。**"
+        )
+
         return text_response(
             {
                 "query": query,
@@ -185,5 +189,6 @@ def _search_local(query: str, topk: int) -> str:
 
     except Exception as e:
         import traceback
+
         traceback.print_exc()
         return error_response(f"Local搜索异常: {e}", "❌ Local异常")

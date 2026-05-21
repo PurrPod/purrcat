@@ -254,11 +254,11 @@ class DockerManager:
     def _ensure_shell(self, session_id: str):
         if not self.container:
             raise RuntimeError("Container not running.")
-        
+
         # 第一层检查（无锁，快速返回）
         if session_id in self.shell_pool:
             return
-        
+
         print(f"[+] Auto-creating new shell session: '{session_id}'")
         command = DOCKER_EXEC_CMD.format(container_name=self.container.name)
         try:
@@ -268,7 +268,7 @@ class DockerManager:
                 "stty -echo\nexport PS1=''\nexport TERM=dumb\necho '__SHELL_READY__'\n"
             )
             shell_process.expect("__SHELL_READY__", timeout=10)
-            
+
             with self.pool_lock:
                 # 第二层检查（防止并发创建了多个同名 session）
                 if session_id in self.shell_pool:

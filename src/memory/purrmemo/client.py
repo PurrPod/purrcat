@@ -7,10 +7,9 @@ import uuid
 
 from .core.memory_worker.worker_agent import MemoryAgent
 from .core.search_tool import RAGSearchTool
-from .core.storage.graph_engine import GraphEngine
 from .core.utils import SingletonMeta
 from .visualize_graph import GraphVisualizer
-from src.utils.config import MEMORY_PENDING_DIR, get_memory_config
+from src.utils.config import MEMORY_PENDING_DIR
 
 
 class PurrMemoClient(metaclass=SingletonMeta):
@@ -65,7 +64,9 @@ class PurrMemoClient(metaclass=SingletonMeta):
 
         short_term = memo_data.get("short_term")
         if short_term is not None and not isinstance(short_term, str):
-            errors.append(f"short_term must be a string, got {type(short_term).__name__}")
+            errors.append(
+                f"short_term must be a string, got {type(short_term).__name__}"
+            )
         elif short_term:
             valid_data["short_term"] = short_term.strip()
 
@@ -81,7 +82,9 @@ class PurrMemoClient(metaclass=SingletonMeta):
 
         user_profile = memo_data.get("user_profile", [])
         if not isinstance(user_profile, list):
-            errors.append(f"user_profile must be a list, got {type(user_profile).__name__}")
+            errors.append(
+                f"user_profile must be a list, got {type(user_profile).__name__}"
+            )
         else:
             for i, u in enumerate(user_profile):
                 if not isinstance(u, str) or not u.strip():
@@ -239,18 +242,20 @@ class PurrMemoClient(metaclass=SingletonMeta):
         """获取最近的经验（从向量库）"""
         try:
             vector_engine = self.search_tool.vector_engine
-            if not vector_engine or not getattr(vector_engine, 'collection', None):
+            if not vector_engine or not getattr(vector_engine, "collection", None):
                 return []
             results = vector_engine.collection.get(include=["documents", "metadatas"])
             experiences = []
             if results and results.get("ids"):
                 for i in range(len(results["ids"])):
                     meta = results["metadatas"][i] or {}
-                    experiences.append({
-                        "exp_id": results["ids"][i],
-                        "content": results["documents"][i],
-                        "timestamp": meta.get("timestamp", "")
-                    })
+                    experiences.append(
+                        {
+                            "exp_id": results["ids"][i],
+                            "content": results["documents"][i],
+                            "timestamp": meta.get("timestamp", ""),
+                        }
+                    )
             experiences.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
             return experiences[:limit]
         except Exception:

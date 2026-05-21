@@ -231,7 +231,7 @@ def force_push_task(task_id: str, content: str):
         if isinstance(node_instance, AgentNode):
             task.inject_instruction(nid, content)
             injected = True
-            
+
     if injected:
         # 尝试拉起大循环（非阻塞）
         try:

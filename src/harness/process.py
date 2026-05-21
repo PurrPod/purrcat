@@ -56,15 +56,15 @@ def inject_task_instruction(task_id: str, content: str, node_id: str) -> bool:
 
     if task_id in TASK_INSTANCES:
         task = TASK_INSTANCES[task_id]
-        
+
         # 拦截不存在的节点
         if node_id not in task.node_list:
             return False
-            
+
         # 精确调用规范化 API 进行单节点注入
         result = task.inject_instruction(node_id, content)
         return result.get("status") == "success"
-        
+
     return False
 
 
@@ -85,9 +85,7 @@ class Task:
         self.node_state = {}  # 节点状态 {node_id: NodeState}
         self.edge_mailboxes = {}  # 邮箱系统 {target_node: {target_port: payload}}
         self.output_port_states = {}  # 端口状态 {source_node: {source_port: PortState}}
-        self.node_memory = (
-            {}
-        )  # Agent 的私密日记本 {node_id: {"messages": [], "force_push": []}}
+        self.node_memory = {}  # Agent 的私密日记本 {node_id: {"messages": [], "force_push": []}}
 
         self.node_list = {}
         self.graph = {}
@@ -98,7 +96,7 @@ class Task:
         self.checkpoint_dir = os.path.join(
             DATA_DIR, "checkpoints", "task", f"{self.task_name}_{self.task_id}"
         )
-        
+
         self._lock = threading.Lock()
         self._io_lock = threading.Lock()
         self._killed = False
@@ -111,7 +109,7 @@ class Task:
         self.load_graph()
         self.core = self.graph.get("core", "openai:deepseek-v4-flash")
         self.model = Model(self.core)
-        
+
         self.reload()
 
     def load_graph(self):
@@ -340,9 +338,9 @@ class Task:
                     if tgt_node not in self.edge_mailboxes:
                         self.edge_mailboxes[tgt_node] = {}
                     self.edge_mailboxes[tgt_node][tgt_port] = outputs[out_port]
-                    self.output_port_states[source_node_id][
-                        out_port
-                    ] = PortState.HAS_DATA
+                    self.output_port_states[source_node_id][out_port] = (
+                        PortState.HAS_DATA
+                    )
                 else:
                     self.output_port_states[source_node_id][out_port] = PortState.VOID
 
@@ -477,7 +475,10 @@ class Task:
             "outputs": self.outputs,
             # 4. 🌟 新架构核心数据 (后端引擎的灵魂)
             "edge_mailboxes": self.edge_mailboxes,
-            "node_state": {k: v.value if hasattr(v, "value") else v for k, v in self.node_state.items()},
+            "node_state": {
+                k: v.value if hasattr(v, "value") else v
+                for k, v in self.node_state.items()
+            },
             "output_port_states": {
                 k: {p: s.value if hasattr(s, "value") else s for p, s in ports.items()}
                 for k, ports in self.output_port_states.items()
@@ -567,10 +568,11 @@ class Task:
         task.create_time = data.get(
             "create_time", datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         )
-        
+
         if saved_core:
             task.core = saved_core
             from src.model.facade import Model
+
             task.model = Model(task.core)
 
         return task

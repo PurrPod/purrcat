@@ -33,10 +33,10 @@ def ensure_mcp_loop():
             if _mcp_loop is None:
                 _mcp_loop = asyncio.new_event_loop()
                 _mcp_thread = threading.Thread(
-                    target=_start_mcp_loop, 
-                    args=(_mcp_loop,), 
-                    name="MCP_EventLoop_Thread", 
-                    daemon=True
+                    target=_start_mcp_loop,
+                    args=(_mcp_loop,),
+                    name="MCP_EventLoop_Thread",
+                    daemon=True,
                 )
                 _mcp_thread.start()
     return _mcp_loop
@@ -58,7 +58,7 @@ class MCPSessionManager:
         self.sessions: Dict[str, dict] = {}
         self.locks: Dict[str, asyncio.Lock] = {}
         self.lifecycle_tasks: Dict[str, asyncio.Task] = {}
-        self.DEFAULT_IDLE_TIMEOUT = 3000  
+        self.DEFAULT_IDLE_TIMEOUT = 3000
         self._cleaner_started = False
         self._cleaner_lock = threading.Lock()
 
@@ -76,7 +76,9 @@ class MCPSessionManager:
             self.locks[server_name] = asyncio.Lock()
         return self.locks[server_name]
 
-    async def _server_lifecycle_task(self, server_name: str, config: dict, ready_event: asyncio.Event):
+    async def _server_lifecycle_task(
+        self, server_name: str, config: dict, ready_event: asyncio.Event
+    ):
         raw_command = config["command"]
         resolved_command = shutil.which(raw_command) or raw_command
 
@@ -126,7 +128,9 @@ class MCPSessionManager:
                     timeout = config.get("idle_timeout", self.DEFAULT_IDLE_TIMEOUT)
 
                     if now - ctx["last_active"] > timeout:
-                        print(f"🧹 [MCP 资源回收] '{server_name}' 闲置超过 {timeout}s，自动关闭释放资源。")
+                        print(
+                            f"🧹 [MCP 资源回收] '{server_name}' 闲置超过 {timeout}s，自动关闭释放资源。"
+                        )
                         await self._close_session(server_name)
             except Exception as e:
                 print(f"⚠️ [MCP 清理器异常] {e}，将继续运行...")
@@ -165,7 +169,9 @@ class MCPSessionManager:
                 raise RuntimeError(f"MCP Server '{server_name}' 启动超时 (120s)")
 
             if server_name not in self.sessions:
-                raise RuntimeError(f"无法连接到 MCP Server '{server_name}'，进程可能启动即崩溃。")
+                raise RuntimeError(
+                    f"无法连接到 MCP Server '{server_name}'，进程可能启动即崩溃。"
+                )
 
             return self.sessions[server_name]["session"]
 
@@ -182,6 +188,7 @@ def _on_system_exit():
             future.result(timeout=5)
         except Exception:
             pass
+
 
 atexit.register(_on_system_exit)
 

@@ -9,7 +9,7 @@ from rank_bm25 import BM25Okapi
 
 from src.tool.search.semantic_utils import LocalEmbeddingSearcher, hybrid_tokenize
 from src.utils.config import SKILL_DIR
-from src.utils.skill_helper import _find_skill_md_file, _parse_skill_md
+from src.utils.skill_helper import _parse_skill_md
 
 
 class SkillSearcher:
@@ -119,6 +119,7 @@ class SkillSearcher:
 
         return results
 
+
 def reload_skill_index():
     skill_searcher = SkillSearcher(SKILL_DIR)
     skill_searcher.reload_index()
@@ -141,5 +142,3 @@ def search_skills(query: str, top_k: int = 3) -> tuple:
         return results, None
     except Exception as e:
         return [], f"Skill搜索异常: {e}"
-
-

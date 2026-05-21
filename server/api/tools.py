@@ -19,21 +19,23 @@ def get_mcp_tools_api():
     """获取内存/缓存里的 MCP 服务器及其包含的工具名称和描述"""
     try:
         schemas = load_cached_schemas()
-        
+
         # 按照 server 名称进行分组组织
         result = {}
         for s in schemas:
             srv = s.get("server", "unknown")
             func = s.get("function", {})
-            
+
             if srv not in result:
                 result[srv] = []
-                
-            result[srv].append({
-                "name": func.get("name", ""),
-                "description": func.get("description", "")
-            })
-            
+
+            result[srv].append(
+                {
+                    "name": func.get("name", ""),
+                    "description": func.get("description", ""),
+                }
+            )
+
         return result
     except Exception as e:
         traceback.print_exc()
@@ -79,10 +81,10 @@ def refresh_mcp_api():
         schemas = refresh_schemas()
         # 2. 触发 Searcher 的内存热更新
         MCPSearcher().reload_index()
-        
+
         return {
-            "status": "success", 
-            "message": f"MCP 缓存已刷新，共加载 {len(schemas)} 个工具"
+            "status": "success",
+            "message": f"MCP 缓存已刷新，共加载 {len(schemas)} 个工具",
         }
     except Exception as e:
         traceback.print_exc()
@@ -98,10 +100,10 @@ def refresh_skills_api():
     try:
         searcher = SkillSearcher()
         searcher.reload_index()
-        
+
         return {
-            "status": "success", 
-            "message": f"Skill 已刷新，共加载 {len(searcher.skills)} 个技能"
+            "status": "success",
+            "message": f"Skill 已刷新，共加载 {len(searcher.skills)} 个技能",
         }
     except Exception as e:
         traceback.print_exc()
@@ -116,19 +118,19 @@ class AddCronReq(BaseModel):
     trigger_time: str
     repeat_rule: str = "none"
 
+
 @router.post("/cron")
 def add_cron_api(req: AddCronReq):
     """添加闹钟"""
     try:
         result = add_cron(
-            title=req.title, 
-            trigger_time=req.trigger_time, 
-            repeat_rule=req.repeat_rule
+            title=req.title, trigger_time=req.trigger_time, repeat_rule=req.repeat_rule
         )
         return {"status": "success", "data": result}
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=400, detail=f"添加闹钟失败: {str(e)}")
+
 
 @router.delete("/cron/{identifier}")
 def delete_cron_api(identifier: str):

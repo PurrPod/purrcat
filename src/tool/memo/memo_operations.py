@@ -191,7 +191,10 @@ def _smart_update_memory_md(work_exp: list, user_profile: list):
                     )
                     msg_resp = response.choices[0].message
 
-                    assist_msg = {"role": "assistant", "content": msg_resp.content or ""}
+                    assist_msg = {
+                        "role": "assistant",
+                        "content": msg_resp.content or "",
+                    }
                     rc = getattr(msg_resp, "reasoning_content", None)
                     if rc is None and hasattr(msg_resp, "model_dump"):
                         rc = msg_resp.model_dump().get("reasoning_content")
@@ -217,7 +220,9 @@ def _smart_update_memory_md(work_exp: list, user_profile: list):
                                 has_write_operation = True
                                 try:
                                     args = json.loads(t.function.arguments)
-                                    new_md_content = args.get("new_markdown_content", "")
+                                    new_md_content = args.get(
+                                        "new_markdown_content", ""
+                                    )
                                     # 【重要安全修复】使用原子重命名避免并发读写冲突
                                     temp_path = f"{MEMORY_MD_PATH}.tmp"
                                     with open(temp_path, "w", encoding="utf-8") as f:

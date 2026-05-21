@@ -1,5 +1,4 @@
 import asyncio
-import json
 import traceback
 
 from fastapi import APIRouter, HTTPException
@@ -7,12 +6,13 @@ from pydantic import BaseModel
 
 # 用于激活运行中任务注入指令
 from src.harness.process import TASK_INSTANCES
+
 # 引入统一封装的 API，支持访问休眠与活跃任务
 from src.utils.task_api import (
-    get_task_list, 
-    get_task_state, 
-    get_task_log_jsonl, 
-    delete_task
+    get_task_list,
+    get_task_state,
+    get_task_log_jsonl,
+    delete_task,
 )
 
 router = APIRouter(prefix="/api/tasks", tags=["Tasks"])
@@ -101,7 +101,7 @@ def get_task_log_endpoint(task_id: str):
     logs = get_task_log_jsonl(task_id)
     if logs is None:
         return {"task_id": task_id, "grouped_logs": {}}
-    
+
     grouped_logs = {}
     for entry in logs:
         nid = entry.get("node_id") or "system"
@@ -124,12 +124,12 @@ async def reset_node_api(task_id: str, node_id: str):
     task = TASK_INSTANCES.get(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found or not active")
-        
+
     result = task.reset_node(node_id)
     if result["status"] == "error":
         raise HTTPException(status_code=400, detail=result["message"])
-        
+
     # 状态成功重置为 READY 后，重新拉起大循环继续跑
     asyncio.create_task(task.run())
-    
+
     return result

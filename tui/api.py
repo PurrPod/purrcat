@@ -8,7 +8,7 @@ from src.agent import (
     branch_session,
     switch_session,
     get_active_session_id,
-    new_session
+    new_session,
 )
 from src.utils.log_api import format_task_log
 from src.utils.task_api import (

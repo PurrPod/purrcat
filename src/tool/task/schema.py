@@ -11,7 +11,13 @@ TASK_TOOL_SCHEMA = {
                 "action": {
                     "type": "string",
                     "description": "操作类型",
-                    "enum": ["list_graphs", "list_tasks", "add", "kill", "submit_request"],
+                    "enum": [
+                        "list_graphs",
+                        "list_tasks",
+                        "add",
+                        "kill",
+                        "submit_request",
+                    ],
                 },
                 "name": {
                     "type": "string",
