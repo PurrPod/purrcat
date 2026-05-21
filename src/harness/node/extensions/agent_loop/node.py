@@ -84,7 +84,16 @@ class Node(AgentNode):
                 check_paths.append(
                     fpath.replace(
                         "/agent_vm",
-                        os.path.abspath(os.path.join(os.getcwd(), "agent_vm")),
+                        os.path.join(
+                            os.path.dirname(
+                                os.path.dirname(
+                                    os.path.dirname(
+                                        os.path.dirname(os.path.abspath(__file__))
+                                    )
+                                )
+                            ),
+                            "agent_vm",
+                        ),
                         1,
                     )
                 )

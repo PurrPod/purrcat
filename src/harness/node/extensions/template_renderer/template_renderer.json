@@ -1,22 +1,41 @@
 {
     "type": "template_renderer",
     "name": "模板渲染器",
+    "description": "使用 Jinja2 模板引擎将动态变量注入到模板中生成最终文本。支持从模板字符串自动提取变量名并生成动态输入端口。",
     "color": "#E67E22",
     "inputs": [
-        { "name": "template", "type": "string", "port_type": "static" },
+        { 
+            "name": "template", 
+            "type": "string", 
+            "port_type": "static",
+            "description": "Jinja2 模板字符串，若未提供则使用配置中的模板。使用 {{variable_name}} 语法引用变量"
+        },
         {
-            "name": "dynamic_vars", "type": "any", "port_type": "dynamic",
+            "name": "dynamic_vars", 
+            "type": "any", 
+            "port_type": "dynamic",
             "dynamic_rules": {
                 "watch_config": "template",
                 "method": "regex",
                 "pattern": "\\{\\{\\s*([a-zA-Z0-9_]+)\\s*\\}\\}"
-            }
+            },
+            "description": "动态变量端口，根据模板中的 {{variable_name}} 自动生成，用于接收需要注入的变量值"
         }
     ],
     "outputs": [
-        { "name": "rendered_text", "type": "string", "port_type": "static" }
+        { 
+            "name": "rendered_text", 
+            "type": "string", 
+            "port_type": "static",
+            "description": "渲染后的最终文本结果"
+        }
     ],
     "config": [
-        { "name": "template", "type": "textarea", "label": "Jinja2 模板" }
+        { 
+            "name": "template", 
+            "type": "textarea", 
+            "label": "Jinja2 模板",
+            "description": "Jinja2 模板字符串，使用 {{variable_name}} 语法引用变量。支持条件判断、循环等 Jinja2 特性"
+        }
     ]
 }

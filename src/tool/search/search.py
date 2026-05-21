@@ -8,7 +8,7 @@ from src.tool.search.web_search import web_search
 from src.tool.utils.format import error_response, text_response, warning_response
 
 
-def Search(route: str, query: str, topk: int = 5, **kwargs) -> str:
+def Search(route: str, query: str, topk: int = 6, **kwargs) -> str:
     """
     统一搜索接口，支持两种搜索方式：
     - web: 互联网搜索
@@ -35,7 +35,7 @@ def Search(route: str, query: str, topk: int = 5, **kwargs) -> str:
             return error_response("查询词不能为空", "参数错误")
 
         try:
-            topk = int(topk) if topk else 5
+            topk = int(topk) if topk else 6
             if topk > 15:
                 topk = 15
         except ValueError:
@@ -76,7 +76,6 @@ def _search_web(query: str, topk: int) -> str:
                 "query": query,
                 "results_count": len(results),
                 "markdown": md,
-                "results": results,
             },
             f"🌐 Web | {len(results)}条结果",
         )
@@ -88,12 +87,12 @@ def _search_web(query: str, topk: int) -> str:
 def _search_local(query: str, topk: int) -> str:
     """合并搜索本地 Skill、MCP 工具与 Memo 记忆"""
     try:
-        # 1. 分别搜索 Skill 与 MCP
+        # 1. 分别搜索 Skill 与 MCP（各自返回 topk 条）
         skill_results, skill_err = search_skills(query, topk)
         mcp_results, mcp_err = mcp_search(query, topk)
 
-        # 2. 新增：搜索 Memo 记忆
-        memo_results, memo_err = [], None
+        # 2. 搜索 Memo 记忆（返回 topk 条）
+        memo_results, memo_err = None, None
         try:
             from src.memory import search_memory as memory_search
 
@@ -132,32 +131,22 @@ def _search_local(query: str, topk: int) -> str:
                 }
             )
 
-        # -- 组装 Memo 结果 --
-        for res in memo_results or []:
-            if isinstance(res, dict):
-                score = res.get("score", res.get("similarity", 0))
-                desc = res.get("content", res.get("text", res.get("event", str(res))))
-                name = res.get("type", "Memory")
-            else:
-                score = 0
-                desc = str(res)
-                name = "Memory"
-
-            desc_str = str(desc).replace("\n", " ").replace("|", "｜")
+        # -- 组装 Memo 结果（直接使用返回的 Markdown）--
+        if memo_results and isinstance(memo_results, str):
+            desc_str = memo_results.replace("\n", " ").replace("|", "｜")
             if len(desc_str) > 150:
                 desc_str = desc_str[:147] + "..."
-
             merged_results.append(
                 {
                     "source": "Memo",
-                    "name": str(name).replace("|", "｜"),
+                    "name": "Memory",
                     "description": desc_str,
-                    "score": float(score) if score is not None else 0.0,
+                    "score": 0.5,
                 }
             )
 
-        merged_results.sort(key=lambda x: x.get("score", 0), reverse=True)
-        top_results = merged_results[:topk]
+        # 直接返回所有结果（不做分数排序取舍），共最多 3*topk 条
+        top_results = merged_results
 
         if not top_results:
             return text_response({"query": query, "results_count": 0}, "🔍 Local无结果")
@@ -181,7 +170,6 @@ def _search_local(query: str, topk: int) -> str:
             {
                 "query": query,
                 "results_count": len(top_results),
-                "results": top_results,
                 "markdown": md,
             },
             f"🔧 Local | Skill:{skill_count} MCP:{mcp_count} Memo:{memo_count}",

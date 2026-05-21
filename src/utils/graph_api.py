@@ -17,12 +17,12 @@ def _ensure_graphs_dir():
     os.makedirs(GRAPHS_DIR, exist_ok=True)
 
 
-def list_graphs() -> List[str]:
+def list_graphs() -> List[Dict[str, str]]:
     _ensure_graphs_dir()
     graphs = []
     for filename in os.listdir(GRAPHS_DIR):
         if filename.endswith(".json"):
-            graphs.append(filename)
+            graphs.append({"name": filename, "path": filename})
     return graphs
 
 

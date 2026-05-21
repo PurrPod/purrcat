@@ -51,8 +51,32 @@ def get_task_state_endpoint(task_id: str):
 async def submit_instruction_api(task_id: str, req: SubmitInstructionRequest):
     """注入人工指令（任务必须在内存中处于活跃状态）"""
     task = TASK_INSTANCES.get(task_id)
+
+    # 如果任务不在内存中，尝试从磁盘加载
     if not task:
-        raise HTTPException(status_code=404, detail="Task not found or not active")
+        from src.harness.process import Task
+        import os
+        from src.utils.config import DATA_DIR
+
+        checkpoints_dir = os.path.join(DATA_DIR, "checkpoints", "task")
+        task_dir = None
+
+        # 查找匹配的任务目录
+        for dir_name in os.listdir(checkpoints_dir):
+            if dir_name.endswith(f"_{task_id}") or dir_name == task_id:
+                task_dir = os.path.join(checkpoints_dir, dir_name)
+                break
+
+        if task_dir and os.path.exists(task_dir):
+            task = Task.load_checkpoint(task_dir)
+            if task:
+                print(f"✅ 从磁盘加载任务到内存: {task.task_id}")
+            else:
+                raise HTTPException(
+                    status_code=404, detail="Task not found or not active"
+                )
+        else:
+            raise HTTPException(status_code=404, detail="Task not found or not active")
 
     # 使用新的规范化 API，自带类型校验和级联重置
     result = task.inject_instruction(req.node_id, req.content)

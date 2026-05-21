@@ -3,7 +3,8 @@ import os
 from typing import Any, Dict
 
 # ── 路径常量 ──
-BASE_DIR = os.getcwd()
+# 使用文件绝对路径确定项目根目录，不受启动位置影响
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 SRC_DIR = os.path.join(BASE_DIR, "src")
 
