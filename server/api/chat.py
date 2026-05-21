@@ -3,14 +3,13 @@ import traceback
 from fastapi import APIRouter, BackgroundTasks
 from pydantic import BaseModel
 
-from src.agent import get_agent_status
-from src.utils.session_api import (
-    create_session,
+from src.agent import (
     delete_session,
-    ensure_manager_initialized,
-    get_session_history,
-    list_sessions,
-    run_agent_task,
+    get_agent_status,
+    get_chat_history,
+    get_session_list,
+    init_agent,
+    new_session,
 )
 
 router = APIRouter(prefix="/api", tags=["Chat & Sessions"])
@@ -25,12 +24,33 @@ class ChatReq(BaseModel):
     message: str
 
 
+def _ensure_manager_initialized():
+    init_agent()
+
+
+def _run_agent_task(session_id: str, message: str):
+    from src.agent.manager import AgentManager
+    import time
+
+    manager = AgentManager()
+    if manager._agent is None:
+        manager.init_agent()
+
+    if manager._agent.session_id != session_id:
+        if manager._agent.state != "idle":
+            while manager._agent.state != "idle":
+                time.sleep(0.3)
+        manager.switch_session(session_id)
+
+    manager.agent_force_push(message, type="user")
+
+
 @router.get("/sessions")
 def get_sessions():
     print("[DEBUG] /api/sessions - 开始获取会话列表")
     try:
-        ensure_manager_initialized()
-        sessions_dict = list_sessions()
+        _ensure_manager_initialized()
+        sessions_dict = get_session_list()
         sess_list = []
         for sid, info in sessions_dict.items():
             sess_list.append(
@@ -54,12 +74,12 @@ def get_sessions():
 def checkout_session_api(session_id: str):
     print(f"[DEBUG] /api/sessions/{session_id}/checkout - 开始检出会话")
     try:
-        from src.utils.session_api import checkout_session
+        from src.agent import switch_session
 
-        ensure_manager_initialized()
-        success = checkout_session(session_id)
-        print(f"[DEBUG] /api/sessions/{session_id}/checkout - 完成，成功: {success}")
-        return {"status": "ok" if success else "error"}
+        _ensure_manager_initialized()
+        switch_session(session_id)
+        print(f"[DEBUG] /api/sessions/{session_id}/checkout - 完成")
+        return {"status": "ok"}
     except Exception as e:
         print(f"[ERROR] /api/sessions/{session_id}/checkout - 异常: {e}")
         traceback.print_exc()
@@ -70,8 +90,8 @@ def checkout_session_api(session_id: str):
 def get_session_history_api(session_id: str):
     print(f"[DEBUG] /api/sessions/{session_id} - 开始获取会话历史")
     try:
-        ensure_manager_initialized()
-        history = get_session_history(session_id)
+        _ensure_manager_initialized()
+        history = get_chat_history(session_id)
         print(f"[DEBUG] /api/sessions/{session_id} - 获取到 {len(history)} 条历史消息")
         return history
     except Exception as e:
@@ -84,10 +104,10 @@ def get_session_history_api(session_id: str):
 def create_new_session(req: NewSessionReq):
     print(f"[DEBUG] /api/sessions/new - 开始创建会话，别名: {req.alias}")
     try:
-        ensure_manager_initialized()
-        result = create_session(req.alias)
-        print(f"[DEBUG] /api/sessions/new - 会话创建成功: {result}")
-        return result
+        _ensure_manager_initialized()
+        session_id = new_session(branch_alias=req.alias)
+        print(f"[DEBUG] /api/sessions/new - 会话创建成功: {session_id}")
+        return {"id": session_id, "alias": req.alias or session_id}
     except Exception as e:
         print(f"[ERROR] /api/sessions/new - 异常: {e}")
         traceback.print_exc()
@@ -98,10 +118,10 @@ def create_new_session(req: NewSessionReq):
 def delete_session_api(session_id: str):
     print(f"[DEBUG] /api/sessions/{session_id} - 开始删除会话")
     try:
-        ensure_manager_initialized()
-        result = delete_session(session_id)
-        print(f"[DEBUG] /api/sessions/{session_id} - 删除完成: {result}")
-        return result
+        _ensure_manager_initialized()
+        delete_session(session_id)
+        print(f"[DEBUG] /api/sessions/{session_id} - 删除完成")
+        return {"status": "ok"}
     except Exception as e:
         print(f"[ERROR] /api/sessions/{session_id} - 异常: {e}")
         traceback.print_exc()
@@ -112,8 +132,8 @@ def delete_session_api(session_id: str):
 def chat(req: ChatReq, background_tasks: BackgroundTasks):
     print(f"[DEBUG] /api/chat - 收到消息，session_id: {req.session_id}")
     try:
-        ensure_manager_initialized()
-        background_tasks.add_task(run_agent_task, req.session_id, req.message)
+        _ensure_manager_initialized()
+        background_tasks.add_task(_run_agent_task, req.session_id, req.message)
         print("[DEBUG] /api/chat - 消息已加入后台任务")
         return {"status": "processing", "message": "Message pushed to agent"}
     except Exception as e:
@@ -128,7 +148,7 @@ def get_session_status(session_id: str):
     轻量级轮询接口：检查当前会话的后台 Agent 是否还在活跃运行
     """
     try:
-        ensure_manager_initialized()
+        _ensure_manager_initialized()
         status = get_agent_status()
 
         if status.get("session_id") == session_id:
