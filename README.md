@@ -1,11 +1,9 @@
-<img src="purrcat-logo.svg" width="305" height="411" alt="PurrCat" align="right" />
-
-<div align="center">
-
-# PurrCat
-
-> *经济、高效、可定制化、更懂你的本地优先个人 Agent 框架。*
-
+<div style="display: flex; align-items: center; justify-content: space-between;">
+  <div style="text-align: center; flex: 1;">
+    <h1>PurrCat</h1>
+    <p><blockquote>经济、高效、可定制化、更懂你的本地优先个人 Agent 框架。</blockquote></p>
+  </div>
+  <img src="purrcat-logo.svg" width="214" height="288" alt="PurrCat" />
 </div>
 
 ---
