@@ -19,6 +19,10 @@ class NewSessionReq(BaseModel):
     alias: str = "New Session"
 
 
+class BranchSessionReq(BaseModel):
+    alias: str = "Branch Session"
+
+
 class ChatReq(BaseModel):
     session_id: str
     message: str
@@ -110,6 +114,28 @@ def create_new_session(req: NewSessionReq):
         return {"id": session_id, "alias": req.alias or session_id}
     except Exception as e:
         print(f"[ERROR] /api/sessions/new - 异常: {e}")
+        traceback.print_exc()
+        raise
+
+
+@router.post("/sessions/{session_id}/branch")
+def branch_session_api(session_id: str, req: BranchSessionReq):
+    print(
+        f"[DEBUG] /api/sessions/{session_id}/branch - 开始衍生新分支，别名: {req.alias}"
+    )
+    try:
+        from src.agent import switch_session, branch_session
+
+        _ensure_manager_initialized()
+
+        switch_session(session_id)
+
+        new_id = branch_session(branch_alias=req.alias)
+
+        print(f"[DEBUG] /api/sessions/{session_id}/branch - 分支创建成功: {new_id}")
+        return {"id": new_id, "alias": req.alias}
+    except Exception as e:
+        print(f"[ERROR] /api/sessions/{session_id}/branch - 异常: {e}")
         traceback.print_exc()
         raise
 

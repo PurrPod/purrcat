@@ -50,6 +50,20 @@ function parseEventsContent(content: string): { userMessages: EventItem[], syste
   return { userMessages, systemCount };
 }
 
+function hasMessageInHistory(history: any[], text: string) {
+  for (let i = history.length - 1; i >= 0; i--) {
+    const msg = history[i];
+    if (msg.role === 'user') {
+      if (msg.content === text) return true;
+      const parsed = parseEventsContent(msg.content);
+      if (parsed.userMessages.some((u: EventItem) => u.content === text)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 interface Session { id: string; alias: string; messages_count: number; updated_at: string; }
 
 const sketchyShape1 = { borderRadius: '255px 15px 225px 15px/15px 225px 15px 255px' };
@@ -73,7 +87,7 @@ const MarkdownComponents: any = {
     <pre className="my-4 border-4 border-ink bg-ink/5 text-ink p-4 overflow-x-auto shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] font-mono text-sm leading-relaxed font-bold" style={sketchyShape2} {...props} />
   ),
   code: ({ className, children, ...props }: any) => {
-    const isInline = !className?.includes('language-');
+    const isInline = props.inline !== false && !className?.includes('language-') && !String(children).includes('\n');
     return isInline ? (
       <code className="bg-ink/10 text-terracotta px-1.5 py-0.5 border-2 border-ink mx-1 font-black text-[0.9em]" style={sketchyShape3} {...props}>
         {children}
@@ -162,6 +176,8 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   const [showSessionModal, setShowSessionModal] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [newAlias, setNewAlias] = useState('');
+  const [showBranchModal, setShowBranchModal] = useState(false);
+  const [branchAlias, setBranchAlias] = useState('');
   const [sessionToDelete, setSessionToDelete] = useState<string | null>(null);
   const [isCheckingOut, setIsCheckingOut] = useState(false);
   const [isAgentThinking, setIsAgentThinking] = useState(false);
@@ -257,6 +273,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const isAutoScroll = useRef(true);
+  const pendingMsgsRef = useRef<string[]>([]);
 
   const handleScroll = () => {
     if (!messagesContainerRef.current) return;
@@ -274,6 +291,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
 
   useEffect(() => {
     if (sessionId && sessionId !== currentSessionId) {
+      pendingMsgsRef.current = [];
       setCurrentSessionId(sessionId);
       loadSessionHistory(sessionId);
     }
@@ -291,7 +309,16 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
 
         if (msgRes.ok) {
           const history = await msgRes.json();
-          setMessages(history);
+          pendingMsgsRef.current = pendingMsgsRef.current.filter(pendingText => {
+            return !hasMessageInHistory(history, pendingText);
+          });
+          
+          const newMessages = [...history];
+          pendingMsgsRef.current.forEach(text => {
+            newMessages.push({ role: 'user', content: text });
+          });
+          
+          setMessages(newMessages);
         }
         if (statusRes.ok) {
           const statusData = await statusRes.json();
@@ -368,11 +395,48 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
     }
   };
 
+  const confirmBranchSession = async () => {
+    if (!branchAlias.trim()) {
+      toast.error('请输入分支名称！');
+      return;
+    }
+    if (!currentSessionId) {
+      toast.error('当前没有可用的会话来拉取分支！');
+      return;
+    }
+    
+    setShowBranchModal(false);
+    setIsCheckingOut(true);
+    
+    try {
+      const res = await fetch(`http://localhost:8000/api/sessions/${currentSessionId}/branch`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ alias: branchAlias.trim() }),
+      });
+      
+      if (res.ok) {
+        const data = await res.json();
+        toast.success(`成功从当前进度拉取分支: ${branchAlias}`);
+        setBranchAlias('');
+        await loadSessions();
+        await handleSelectSession(data.id);
+      } else {
+        setIsCheckingOut(false);
+        toast.error('衍生分支失败');
+      }
+    } catch (e) {
+      toast.error('网络错误，无法拉取分支');
+      setIsCheckingOut(false);
+    }
+  };
+
   const handleSend = async () => {
     if (!input.trim() || !currentSessionId) return;
     const userText = input.trim();
     setInput('');
     isAutoScroll.current = true;
+    pendingMsgsRef.current.push(userText);
     setMessages(prev => [...prev, { role: 'user', content: userText }]);
 
     try {
@@ -426,6 +490,27 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
         </div>
       )}
 
+      {/* 衍生分支 (Branch) 弹窗 */}
+      {showBranchModal && (
+        <div className="fixed inset-0 bg-ink/40 backdrop-blur-sm z-[150] flex items-center justify-center p-4">
+          <div style={sketchyShape2} className="bg-paper border-4 border-ink p-8 flex flex-col gap-6 shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] rotate-1 max-w-md w-full">
+            <div className="flex justify-between items-center -rotate-1">
+              <h3 className="text-3xl font-black tracking-widest text-[#d08770]" style={{ fontFamily: '"Comic Sans MS", cursive' }}>BRANCH CHAT</h3>
+              <button onClick={() => setShowBranchModal(false)} className="hover:text-terracotta hover:scale-110 transition-all">
+                <X size={28} strokeWidth={3}/>
+              </button>
+            </div>
+            <div className="-rotate-1">
+              <p className="font-bold opacity-70 mb-2 text-ink">基于当前时间线创造一个平行宇宙：</p>
+              <input autoFocus value={branchAlias} onChange={e => setBranchAlias(e.target.value)} onKeyDown={e => e.key === 'Enter' && confirmBranchSession()} placeholder="Give the new branch a name..." className="w-full border-4 border-ink bg-cream p-4 font-bold text-lg focus:outline-none focus:bg-white shadow-[inset_4px_4px_0px_0px_rgba(26,26,26,0.05)] placeholder:text-ink/30" style={sketchyShape3} />
+            </div>
+            <button onClick={confirmBranchSession} style={{ ...sketchyShape1, fontFamily: '"Comic Sans MS", cursive' }} className="bg-[#d08770] text-paper font-black tracking-widest text-xl py-4 border-4 border-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:translate-y-[2px] hover:translate-x-[2px] hover:shadow-none transition-all rotate-1">
+              FORK TIMELINE
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* 彻底删除会话分支确认弹窗 */}
       {sessionToDelete && (
         <div className="fixed inset-0 bg-ink/40 backdrop-blur-sm z-[150] flex items-center justify-center p-4">
@@ -467,7 +552,16 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
             <div className="flex justify-between items-center border-b-4 border-ink/20 pb-4 shrink-0">
               <h3 className="text-3xl font-black tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>SWITCH CHAT</h3>
               <div className="flex items-center gap-4">
-                 <button className="p-2 bg-cream border-4 border-ink hover:bg-sand transition-all shadow-[2px_2px_0px_0px_rgba(26,26,26,1)]" style={sketchyShape1} title="Branch (Fork) - Coming Soon">
+                 <button onClick={() => {
+                   if (!currentSessionId) {
+                     toast.error('请先进入一个对话再拉取分支！');
+                     return;
+                   }
+                   const currentName = sessions.find(s => s.id === currentSessionId)?.alias || 'Current Chat';
+                   setBranchAlias(`${currentName} (Branch)`);
+                   setShowSessionModal(false);
+                   setShowBranchModal(true);
+                 }} className="p-2 bg-cream border-4 border-ink hover:bg-sand transition-all shadow-[2px_2px_0px_0px_rgba(26,26,26,1)]" style={sketchyShape1} title="Branch (Fork) Current Chat">
                     <GitFork size={24} strokeWidth={3}/>
                  </button>
                  <button onClick={() => { setShowSessionModal(false); setNewAlias('New Chat'); setShowModal(true); }} className="p-2 bg-terracotta text-paper border-4 border-ink hover:bg-[#C46A4A] transition-all shadow-[2px_2px_0px_0px_rgba(26,26,26,1)]" style={sketchyShape3} title="New Chat">
@@ -521,27 +615,27 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
 
         <div style={sketchyShape3} className="flex-1 bg-paper border-4 border-ink shadow-[8px_8px_0px_0px_rgba(26,26,26,1)] p-5 flex flex-col gap-4 overflow-hidden -rotate-1 relative">
           
-          {/* 主菜单模式 🔴 更新了马卡龙暖色系 */}
+          {/* 主菜单模式 */}
           {sidebarMode === 'menu' && (
              <div className="flex-1 flex flex-col gap-5 p-2 mt-2">
-                 <button onClick={() => navigate('/memory')} style={sketchyShape1} className="flex-1 border-4 border-ink bg-[#FFB5A7] shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center gap-3 hover:-translate-y-1 hover:scale-[1.02] transition-all -rotate-1 active:shadow-none active:translate-y-1">
-                     <Brain size={28} strokeWidth={2.5} className="text-ink"/>
+                 <button onClick={() => navigate('/memory')} style={sketchyShape1} className="flex-1 border-4 border-ink bg-[#FFB5A7]/40 hover:bg-[#FFB5A7] shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center gap-3 hover:-translate-y-1 hover:scale-[1.02] transition-all -rotate-1 active:shadow-none active:translate-y-1">
+                     <Brain size={28} strokeWidth={2.5} className="text-[#c76c6c]"/>
                      <span className="font-black text-xl tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>MEMORY</span>
                  </button>
-                 <button onClick={() => {setSidebarMode('mcp'); fetchMcp();}} style={sketchyShape2} className="flex-1 border-4 border-ink bg-[#F9E2AF] shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center gap-3 hover:-translate-y-1 hover:scale-[1.02] transition-all rotate-1 active:shadow-none active:translate-y-1">
-                     <Server size={28} strokeWidth={2.5} className="text-ink"/>
+                 <button onClick={() => {setSidebarMode('mcp'); fetchMcp();}} style={sketchyShape2} className="flex-1 border-4 border-ink bg-[#F9E2AF]/50 hover:bg-[#F9E2AF] shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center gap-3 hover:-translate-y-1 hover:scale-[1.02] transition-all rotate-1 active:shadow-none active:translate-y-1">
+                     <Server size={28} strokeWidth={2.5} className="text-[#b8956e]"/>
                      <span className="font-black text-xl tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>MCP</span>
                  </button>
-                 <button onClick={() => {setSidebarMode('skill'); fetchSkill();}} style={sketchyShape3} className="flex-1 border-4 border-ink bg-[#FCD5CE] shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center gap-3 hover:-translate-y-1 hover:scale-[1.02] transition-all -rotate-2 active:shadow-none active:translate-y-1">
-                     <Zap size={28} strokeWidth={2.5} className="text-ink"/>
+                 <button onClick={() => {setSidebarMode('skill'); fetchSkill();}} style={sketchyShape3} className="flex-1 border-4 border-ink bg-[#FCD5CE]/50 hover:bg-[#FCD5CE] shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center gap-3 hover:-translate-y-1 hover:scale-[1.02] transition-all -rotate-2 active:shadow-none active:translate-y-1">
+                     <Zap size={28} strokeWidth={2.5} className="text-[#d08770]"/>
                      <span className="font-black text-xl tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>SKILL</span>
                  </button>
-                 <button onClick={() => {setSidebarMode('cron'); fetchCron();}} style={sketchyShape1} className="flex-1 border-4 border-ink bg-[#E8D1C5] shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center gap-3 hover:-translate-y-1 hover:scale-[1.02] transition-all rotate-2 active:shadow-none active:translate-y-1">
-                     <AlarmClock size={28} strokeWidth={2.5} className="text-ink"/>
+                 <button onClick={() => {setSidebarMode('cron'); fetchCron();}} style={sketchyShape1} className="flex-1 border-4 border-ink bg-[#E8D1C5]/50 hover:bg-[#E8D1C5] shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center gap-3 hover:-translate-y-1 hover:scale-[1.02] transition-all rotate-2 active:shadow-none active:translate-y-1">
+                     <AlarmClock size={28} strokeWidth={2.5} className="text-[#a07b8a]"/>
                      <span className="font-black text-xl tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>CRON</span>
                  </button>
-                 <button onClick={onSwitchToTask || (() => navigate('/task'))} style={sketchyShape2} className="flex-1 border-4 border-ink bg-[#D8E2DC] text-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center gap-3 hover:-translate-y-1 hover:scale-[1.02] transition-all -rotate-1 active:shadow-none active:translate-y-1">
-                     <Terminal size={28} strokeWidth={2.5} className="text-ink"/>
+                 <button onClick={onSwitchToTask || (() => navigate('/task'))} style={sketchyShape2} className="flex-1 border-4 border-ink bg-[#D8E2DC]/50 hover:bg-[#D8E2DC] text-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center gap-3 hover:-translate-y-1 hover:scale-[1.02] transition-all -rotate-1 active:shadow-none active:translate-y-1">
+                     <Terminal size={28} strokeWidth={2.5} className="text-[#6a917e]"/>
                      <span className="font-black text-xl tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>TASK</span>
                  </button>
              </div>
@@ -673,9 +767,8 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                     <div key={`${idx}-${uIdx}`} className="flex w-full justify-end">
                       <div className={`flex flex-col gap-3 w-full max-w-[85%] items-end`}>
                         {userMsg.content && (
-                          <div style={sketchyShape2} className="w-full p-6 border-4 border-ink relative bg-terracotta text-paper shadow-[6px_6px_0px_0px_rgba(26,26,26,1)]">
-                            <div className="absolute w-3 h-3 bg-ink rounded-full -top-2 -right-2"></div>
-                            <div className="text-[17px] font-bold text-paper">
+                          <div style={sketchyShape2} className="w-full p-6 border-4 border-ink relative bg-cream text-ink shadow-[6px_6px_0px_0px_rgba(26,26,26,1)]">
+                            <div className="text-[17px] font-bold text-ink">
                               <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>{userMsg.content}</ReactMarkdown>
                             </div>
                           </div>
@@ -690,7 +783,6 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                     <div className={`flex flex-col gap-3 w-full max-w-[85%] items-start`}>
                       {msg.content && (
                         <div style={sketchyShape1} className="w-full p-6 border-4 border-ink relative bg-cream text-ink shadow-[6px_6px_0px_0px_rgba(26,26,26,1)]">
-                          <div className="absolute w-3 h-3 bg-ink rounded-full -top-2 -left-2"></div>
                           <div>
                             <div className="flex items-center gap-2 mb-4">
                               <Cat size={20} strokeWidth={2.5}/>

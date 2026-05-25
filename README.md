@@ -1,41 +1,27 @@
 <div style="display: flex; align-items: center; justify-content: space-between;">
   <div style="text-align: center; flex: 1;">
-    <h1>PurrCat</h1>
-    <p><blockquote>经济、高效、可定制化、更懂你的本地优先个人 Agent 框架。</blockquote></p>
+    <h1 style="margin-top: 0;">PurrCat</h1>
+    <p><strong><a href="https://purrpod.github.io/">[📖 官方文档网站]</a></strong></p>
+    <p><blockquote>*经济、高效、可定制化、更懂你的本地优先个人 Agent 框架。*</blockquote></p>
   </div>
   <img src="purrcat-logo.svg" width="214" height="288" alt="PurrCat" />
 </div>
 
 ---
 
-## 快速开始
+## 🐾 文档导航
 
-```bash
-git clone https://github.com/PurrPod/purrcat.git
-cd purrcat
+- [介绍](https://purrpod.github.io/intro)
+- [部署指南](https://purrpod.github.io/guide/deployment)
+- [架构介绍](https://purrpod.github.io/develop/architecture)
+- [二次开发](https://purrpod.github.io/develop/extension)
+- [配置说明](https://purrpod.github.io/config/)
+- [常见问题](https://purrpod.github.io/guide/faq)
 
-purrcat setup       # 一键部署（Docker沙盒 + Conda环境 + 嵌入模型）
-purrcat init        # 生成 .purrcat/ 配置文件，第一次使用至少需要自行配置 API-Key 等
-
-# 启动方式有三种，根据需要任选其一
-# 1. 启动 TUI 界面
-purrcat start
-
-# 2. 无界面启动
-purrcat start --headless 
-
-# 3. 启动 API 服务，用于 WebUI 启动
-purrcat start --headless --api
-cd ui
-npm install # 如果是第一次使用WebUI，需要先安装，后续可跳过
-npm run dev
-```
-
-[完整文档](https://purrpod.github.io/)
 
 ---
 
-## 核心亮点
+## ✨ 核心亮点
 
 **1. 事件驱动的主动感知能力** 打破传统大模型单一"问答"模式的局限。框架内置事件网关与多源传感器（如 RSS 轮询、飞书接入、系统定时器等），使 Agent 能够在后台持续关注外部环境变化，并在满足特定条件时主动向用户汇报摘要或自动推进任务。
 
@@ -53,18 +39,7 @@ npm run dev
 
 ---
 
-## 文档导航
-
-- [介绍](https://purrpod.github.io/intro)
-- [部署指南](https://purrpod.github.io/guide/deployment)
-- [架构介绍](https://purrpod.github.io/develop/architecture)
-- [二次开发](https://purrpod.github.io/develop/extension)
-- [配置说明](https://purrpod.github.io/config/)
-- [常见问题](https://purrpod.github.io/guide/faq)
-
----
-
-## 致谢
+## 🙏 致谢
 
 - 感谢 **Gemini Pro 3.1** 协助构建精美的 UI 界面。
 - 感谢 **[zhenghuanle](https://github.com/zhenghuanle)** 测试了从零开始的安装流程。
@@ -72,7 +47,7 @@ npm run dev
 
 ---
 
-## 许可证
+## 📜 许可证
 
 本项目核心框架采用 **GNU GPL-3.0** 协议开源。
 
