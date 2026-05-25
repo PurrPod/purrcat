@@ -1,13 +1,10 @@
+<img src="purrcat-logo.svg" width="305" height="411" alt="PurrCat" align="right" />
+
 <div align="center">
 
 # PurrCat
 
-*高度可定制的本地优先个人 Agent 框架。*
-
-[![Python Version](https://img.shields.io/badge/python-3.10%2B-blue)]()
-[![License](https://img.shields.io/badge/license-GPLv3-green)]()
-
-[\[English\]](README-EN.md)
+> *经济、高效、可定制化、更懂你的本地优先个人 Agent 框架。*
 
 </div>
 
@@ -20,9 +17,20 @@ git clone https://github.com/PurrPod/purrcat.git
 cd purrcat
 
 purrcat setup       # 一键部署（Docker沙盒 + Conda环境 + 嵌入模型）
-purrcat init        # 生成 .purrcat/ 配置文件
-purrcat start       # 启动 TUI 界面
-purrcat start --headless  # 无界面启动
+purrcat init        # 生成 .purrcat/ 配置文件，第一次使用至少需要自行配置 API-Key 等
+
+# 启动方式有三种，根据需要任选其一
+# 1. 启动 TUI 界面
+purrcat start
+
+# 2. 无界面启动
+purrcat start --headless 
+
+# 3. 启动 API 服务，用于 WebUI 启动
+purrcat start --headless --api
+cd ui
+npm install # 如果是第一次使用WebUI，需要先安装，后续可跳过
+npm run dev
 ```
 
 [完整文档](https://purrpod.github.io/)
@@ -31,33 +39,19 @@ purrcat start --headless  # 无界面启动
 
 ## 核心亮点
 
-**1. 双重沙盒隔离。** 所有代码执行封锁在 Docker 容器内，与宿主机完全隔离。通过 `.purrcat/file.yaml` 严格白名单控制文件访问：`dont_read_dirs`（隐私禁区）、`sandbox_dirs`（操作域）、`docker_mount`（挂载通道），从源头杜绝 Agent 暴走风险。
+**1. 事件驱动的主动感知能力** 打破传统大模型单一"问答"模式的局限。框架内置事件网关与多源传感器（如 RSS 轮询、飞书接入、系统定时器等），使 Agent 能够在后台持续关注外部环境变化，并在满足特定条件时主动向用户汇报摘要或自动推进任务。
 
-**2. 可定制 Harness Engineering。** 在同一系统内调度多个 Expert（科研助手、交易员、程序员）。通过标准 Skill、模块化 Tool（`src/tool/`，由 `dispatch_tool()` 动态加载）、或完整 Harness/Expert（继承 `BaseTask`）扩展。
+**2. 多层混合记忆架构** 为改善大模型在长期交互中的信息遗忘问题，系统设计了包含短时工作记忆、通用画像提示词与长期记忆图谱（PurrMemo）的三层结构。配合基于艾宾浩斯曲线的时间衰减机制，长期未被唤起的边缘信息会被逐渐清理，以保持数据库的健康与检索效率。
 
-**3. 99%+ KV Cache 命中率。** `dispatch_tool()` 将工具 Schema 从 System Prompt 中剥离，模型 KV Cache 不会因动态注入而失效。实现极致 Token 经济性与毫秒级响应。
+**3. 注重上下文缓存优化的调度策略** 在较长的上下文交互中，稳定的 KV Cache 命中率对于降低运行成本和提升响应速度至关重要。通过剥离 System Prompt 中的工具 Schema 并采用动态加载方式，配合底层的 API 密钥与会话生命周期强绑定机制，力求在多任务并发场景下维持较高的缓存命中率。
 
-**4. 7x24 小时稳定运行。** `APIKeyManager` 自动负载均衡（最少活跃优先）。每轮对话状态实时落盘为 Checkpoint。崩溃后重载即可从断点恢复。
+**4. 独立的沙盒执行环境** 框架为 Agent 分配了基于 Docker 构建的隔离运行环境。相比于在宿主机上通过正则拦截命令的方案，物理隔离的设计能够在不引入过多人工干预的前提下，更好地保障本地文件系统的安全，同时也为 Agent 处理长周期任务提供了稳定的驻留空间。
 
-**5. 多核并发。** 后台子任务独立绑定 API Key 和状态机，主会话永不阻塞。Agent 处理繁重任务时仍可下达新指令。
+**5. Git 风格的会话分支管理** 系统引入了类似于 Git 分支的会话管理机制。在探索复杂问题的解决路径时，用户可以拉取新的分支进行试错。若结果不符合预期，能够随时切换回主干。此外，系统内置了状态检查工具，在工具调用中断或返回异常时，可自动回滚至上一个安全状态，减少逻辑错乱的发生。
 
-**6. 记忆与灵魂。** Memo 工具 + PurrMemo 本地引擎自动捕捉偏好。心跳 Sensor（`HARNESS.md`）实现无人值守自主迭代。修改 `SOUL.md` 注入独特人格。
+**6. 模块化有向无环图 (DAG) 调度** 对于复杂的业务流程，PurrCat 支持将其拆解为基于 DAG 结构的工作流（Harness）。该机制允许后台节点异步流转，不阻塞前台主会话。在流程遇到权限受限或缺乏足够信息时，系统会触发人机协同（Human-in-the-loop）机制挂起任务，等待人工注入指令后，精确从断点恢复执行。
 
----
-
-## 架构分层
-
-```
-Sensor 层 (网关)         Feishu / RSS / Clock -> Gateway.push()
-       |
-Agent 层                 对话 / force_push / 记忆
-       |
-Model 层 (APIKeyManager)  最少活跃 Key 分配
-       |
-Tool 层 (dispatch_tool)   Bash / Fetch / FileSystem / Search / Memo / CallMCP / Cron / Task
-       |
-Harness 层 (BaseTask)     原子方法: run_llm_step / run_tool_calling / check_memory / save_checkpoints
-```
+**7. 开放的工具与流程拓展体系** 期望降低二次开发的门槛。框架支持通过配置文件热更新外部 MCP (Model Context Protocol) 工具，也可通过终端指令快速装载社区分享的 Skill。同时，内置的可视化 UI 提供了节点编排与连线功能，能够将可视化的流程图快速导出为可执行的部署配置。
 
 ---
 
@@ -85,5 +79,5 @@ Harness 层 (BaseTask)     原子方法: run_llm_step / run_tool_calling / check
 本项目核心框架采用 **GNU GPL-3.0** 协议开源。
 
 - **核心传染性**：对外分发修改后的核心框架必须开源。
-- **插件/拓展豁免**：插件、Harness/Expert 及外部服务**不受 GPL 传染约束**，可闭源商用。
+- **插件/拓展豁免**：基于本项目开发的 Skill、Harness 及外部服务**不受 GPL 传染约束**，可闭源商用。
 - **免责声明**：代码"按原样"提供，不提供任何担保。
