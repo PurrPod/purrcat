@@ -1,22 +1,21 @@
-<div style="display: flex; align-items: center; justify-content: space-between;">
-  <div style="text-align: center; flex: 1;">
-    <h1 style="margin-top: 0;">PurrCat</h1>
-    <p><strong><a href="https://purrpod.github.io/">📖 官方文档网站</a></strong></p>
-    <p><blockquote>经济、高效、可定制化、更懂你的本地优先个人 Agent 框架。</blockquote></p>
-  </div>
-  <img src="purrcat-logo.png" width="203" height="206" alt="PurrCat" />
-</div>
-
 <div align="center">
+
+# PurrCat
+
+**[📖 官方文档网站](https://purrpod.github.io/)**
+
+> 经济、高效、可定制化、更懂你的本地优先个人 Agent 框架
 
 <br>
 
-**🐾 快速导航** &nbsp;
+**🐾 文档导航** &nbsp;
 [介绍](https://purrpod.github.io/intro) &nbsp; | &nbsp; [部署指南](https://purrpod.github.io/guide/deployment) &nbsp; | &nbsp; [架构介绍](https://purrpod.github.io/develop/architecture) &nbsp; | &nbsp; [二次开发](https://purrpod.github.io/develop/extension) &nbsp; | &nbsp; [配置说明](https://purrpod.github.io/config/) &nbsp; | &nbsp; [常见问题](https://purrpod.github.io/guide/faq)
 
 </div>
 
 ---
+
+<img src="purrcat-logo.png" width="260" height="260" alt="PurrCat" align="right" />
 
 ## ✨ 核心亮点
 
@@ -40,6 +39,8 @@
 
 ### 7. 开放的工具与流程拓展体系
 期望降低二次开发的门槛。框架支持通过配置文件热更新外部 MCP (Model Context Protocol) 工具，也可通过终端指令快速装载社区分享的 Skill。同时，内置的可视化 UI 提供了节点编排与连线功能，能够将可视化的流程图快速导出为可执行的部署配置。
+
+<br clear="right" />
 
 ---
 
