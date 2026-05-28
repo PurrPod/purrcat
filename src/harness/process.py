@@ -248,12 +248,17 @@ class Task:
                     )
                     self.running_tasks[task] = node_id
 
+                if nodes_to_start:
+                    self.save()
+
                 done, pending = await asyncio.wait(
                     self.running_tasks.keys(), return_when=asyncio.FIRST_COMPLETED
                 )
 
                 for task in done:
-                    node_id = self.running_tasks.pop(task)
+                    node_id = self.running_tasks.pop(task, None)
+                    if node_id is None:
+                        continue
                     try:
                         result = task.result()
                         self.node_state[node_id] = NodeState.COMPLETED
@@ -517,6 +522,8 @@ class Task:
                 for k, v in saved_states.items():
                     # 如果从 dag_state 读取，v 是一个字典，需要取出 'state' 字符串
                     state_str = v.get("state", "ready") if isinstance(v, dict) else v
+                    if state_str == NodeState.RUNNING.value:
+                        state_str = NodeState.READY.value
                     self.node_state[k] = NodeState(state_str)
                 self.edge_mailboxes = data.get("edge_mailboxes", {})
 

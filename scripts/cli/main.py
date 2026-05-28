@@ -40,7 +40,7 @@ PurrCat CLI - Cross-platform AI Agent Framework
     print("  init    - Generate .purrcat config templates")
     print("  install - Install extensions (skill, node, graph)")
     print("  update  - Update PurrCat to the latest version from GitHub")
-    print("  start   - Start PurrCat (append --headless for background run)")
+    print("  start   - Start PurrCat (append --webui to launch with Web UI)")
     print("")
     print("Examples:")
     print("  purrcat setup")
@@ -57,7 +57,7 @@ PurrCat CLI - Cross-platform AI Agent Framework
     print("")
     print("  purrcat update")
     print('  purrcat update --version="2026.05.15"')
-    print("  purrcat start --headless")
+    print("  purrcat start --webui")
     print("")
     print("Docs:     https://purrpod.github.io/")
     print("GitHub:   https://github.com/PurrPod/purrcat")
@@ -83,10 +83,9 @@ def main():
         "--force", "-f", action="store_true", help="Force overwrite existing files"
     )
     parser.add_argument(
-        "--headless", action="store_true", help="Run in background (for start command)"
-    )
-    parser.add_argument(
-        "--api", action="store_true", help="Enable API server (for start command)"
+        "--webui",
+        action="store_true",
+        help="Launch backend API and Frontend Web UI simultaneously (for start command)",
     )
     parser.add_argument(
         "--help", "-h", action="store_true", help="Show this help message"
@@ -123,7 +122,7 @@ def main():
     elif args.command == "update":
         run_update(target_version=args.version)
     elif args.command == "start":
-        run_start(headless=args.headless, api=args.api)
+        run_start(webui=args.webui)
     else:
         cmd_help()
 
