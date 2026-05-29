@@ -1,21 +1,20 @@
 """PurrCat setup command - Cross-platform environment setup"""
 
+import json
 import os
+import platform
 import subprocess
 import sys
+from pathlib import Path
 
 CONDA_CMD = "conda.bat" if os.name == "nt" else "conda"
 
 
 def _get_project_root():
-    """Get the project root directory (parent of scripts/)"""
-    # __file__ = scripts/cli/cmd_setup.py
-    # 向上3层: cmd_setup.py -> cli/ -> scripts/ -> 项目根目录
     return os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 def _run_cmd(command, shell=False, check=True, cwd=None):
-    """Helper execute system command and print output in real-time"""
     cmd_str = " ".join(command) if isinstance(command, list) else command
     print(f"$ {cmd_str}")
     process = subprocess.Popen(
@@ -35,18 +34,153 @@ def _run_cmd(command, shell=False, check=True, cwd=None):
     return process.returncode == 0
 
 
-def _check_docker():
-    """Check if Docker is available and running"""
-    print("Checking Docker service...")
-    result = subprocess.call(
-        ["docker", "info"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-    )
-    if result != 0:
-        print(
-            "Error: Docker not detected or service not running. Please start Docker and try again."
-        )
+def _check_engine():
+    """Check which container engines are available"""
+    try:
+        has_docker = subprocess.call(
+            ["docker", "--version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        ) == 0
+    except FileNotFoundError:
+        has_docker = False
+
+    try:
+        has_podman = subprocess.call(
+            ["podman", "--version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        ) == 0
+    except FileNotFoundError:
+        has_podman = False
+
+    return has_docker, has_podman
+
+
+def _get_engine_choice():
+    """Prompt user for container engine selection with intelligent recommendation"""
+    print("")
+    print("[Container Engine Config] Choose your container runtime:")
+    print("")
+
+    os_name = platform.system()
+    has_docker, has_podman = _check_engine()
+
+    recommend_engine = "docker"
+    recommend_reason = "Docker is the most popular container engine."
+
+    if os_name == "Windows" and not has_docker:
+        recommend_engine = "podman"
+        recommend_reason = "Detected Windows without Docker Desktop. Strongly recommend lightweight Podman."
+    elif os_name == "Darwin" and not has_docker:
+        recommend_engine = "podman"
+        recommend_reason = "Recommend lightweight Podman to save Mac memory."
+    elif has_podman and not has_docker:
+        recommend_engine = "podman"
+        recommend_reason = "Detected Podman is already installed."
+    elif has_podman and has_docker:
+        recommend_engine = "docker"
+        recommend_reason = "Both Docker and Podman detected. Defaulting to Docker."
+
+    print(f"  💡 System Recommendation: {recommend_reason}")
+    print("")
+
+    engine_options = []
+    if has_podman:
+        engine_options.append("1. Podman (Recommended, lightweight)")
+    if has_docker:
+        engine_options.append("2. Docker (Standard, requires Docker Desktop)")
+
+    if not engine_options:
+        print("  ⚠️  No container engine detected. Will try to install Podman...")
+        return "podman", True
+
+    print("  Available options:")
+    for opt in engine_options:
+        print(f"    {opt}")
+
+    default = "1" if recommend_engine == "podman" else "2"
+    choice = input(f"Enter choice [default: {default}]: ").strip() or default
+
+    selected_engine = "podman" if choice == "1" else "docker"
+    should_install = False
+
+    if selected_engine == "podman" and not has_podman:
+        should_install = True
+    elif selected_engine == "docker" and not has_docker:
+        should_install = True
+
+    return selected_engine, should_install
+
+
+def _install_podman():
+    """Install Podman by delegating to the robust setup_env script"""
+    print("")
+    print("Installing Podman...")
+
+    try:
+        from scripts.setup_env import setup as full_podman_setup
+
+        success, message = full_podman_setup()
+        if success:
+            print(f"✅ {message}")
+        else:
+            print(f"\n❌ Podman 自动安装/配置失败: {message}")
+            print("请手动参考官方文档安装： https://podman.io/getting-started/installation")
+            sys.exit(1)
+    except Exception as e:
+        print(f"❌ Podman 安装脚本执行失败: {e}")
+        print("请手动参考官方文档安装： https://podman.io/getting-started/installation")
         sys.exit(1)
-    print("Docker engine is running.")
+
+
+def _save_engine_preference(engine: str):
+    """Save engine preference to global config"""
+    global_config_dir = Path.home() / ".purrcat"
+    global_config_file = global_config_dir / "settings.json"
+
+    global_config_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        if global_config_file.exists():
+            with open(global_config_file, "r", encoding="utf-8") as f:
+                settings = json.load(f) if hasattr(__import__('json'), 'load') else {}
+        else:
+            settings = {}
+
+        settings["sandbox_engine"] = engine
+
+        with open(global_config_file, "w", encoding="utf-8") as f:
+            json.dump(settings, f, indent=4, ensure_ascii=False)
+
+        print(f"✅ Engine preference saved to global config: {engine}")
+    except Exception as e:
+        print(f"⚠️ Failed to save engine preference: {e}")
+
+
+def _check_engine_running(engine):
+    """Check if the selected engine is running"""
+    print(f"Checking {engine} service...")
+
+    if engine == "podman":
+        result = subprocess.call(
+            ["podman", "machine", "list"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
+        if result != 0:
+            print("Podman machine not running. Initializing...")
+            subprocess.call(["podman", "machine", "init"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.call(["podman", "machine", "start"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            print("Podman machine initialized and started.")
+        else:
+            print("Podman is ready.")
+    else:
+        result = subprocess.call(
+            ["docker", "info"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
+        if result != 0:
+            print("Error: Docker not detected or service not running.")
+            sys.exit(1)
+        print("Docker engine is running.")
 
 
 def _get_sandbox_choice():
@@ -70,40 +204,37 @@ def _get_mirror_choice():
     return "mirrors.aliyun.com" if choice == "2" else "deb.debian.org"
 
 
-def _build_docker(dockerfile, apt_mirror):
-    """Build Docker sandbox image"""
+def _build_sandbox(dockerfile, apt_mirror, engine):
+    """Build sandbox image using selected engine"""
     print("")
-    print(f"Building Docker sandbox image using {apt_mirror} and {dockerfile}...")
+    print(f"Building sandbox image using {engine} with {apt_mirror} and {dockerfile}...")
     print("Note: First pull may take a few minutes, please wait...")
 
     project_root = _get_project_root()
-    success = _run_cmd(
-        [
-            "docker",
-            "build",
-            "-f",
-            dockerfile,
-            "-t",
-            "my_agent_env:latest",
-            "--build-arg",
-            f"APT_MIRROR={apt_mirror}",
-            ".",
-        ],
-        shell=False,
-        check=False,
-        cwd=project_root,
-    )
+
+    build_cmd = [
+        engine,
+        "build",
+        "-f",
+        dockerfile,
+        "-t",
+        "my_agent_env:latest",
+        "--build-arg",
+        f"APT_MIRROR={apt_mirror}",
+        ".",
+    ]
+
+    success = _run_cmd(build_cmd, shell=False, check=False, cwd=project_root)
 
     if not success:
         print("")
-        print("Error: Docker image build failed completely!")
+        print(f"Error: {engine.capitalize()} image build failed!")
         print("Common causes:")
         print("  1. Network issues - Check your proxy or try the other mirror.")
-        print("  2. Docker disk space insufficient.")
-        print("  3. Not logged into Docker Hub, or anonymous pull limit reached.")
+        print("  2. Docker/Podman disk space insufficient.")
         sys.exit(1)
 
-    print("Docker image built successfully!")
+    print(f"{engine.capitalize()} image built successfully!")
 
 
 def _setup_conda():
@@ -165,7 +296,7 @@ def _install_webui():
         print("WebUI installation skipped.")
         return
 
-    success = _run_cmd(["npm", "install"], shell=False, check=False, cwd=ui_dir)
+    success = _run_cmd("npm install", shell=True, check=False, cwd=ui_dir)
 
     if success:
         print("WebUI dependencies installed successfully!")
@@ -199,15 +330,24 @@ def run_setup():
     print("Welcome to PurrCat environment setup...")
     print("==========================================")
     print("")
+    print(f"Detected OS: {platform.system()}")
+    print("==========================================")
 
-    _check_docker()
+    selected_engine, should_install = _get_engine_choice()
+
+    if should_install:
+        _install_podman()
+
+    _save_engine_preference(selected_engine)
+    _check_engine_running(selected_engine)
+
     print("==========================================")
 
     dockerfile = _get_sandbox_choice()
     apt_mirror = _get_mirror_choice()
     install_webui = _get_webui_choice()
 
-    _build_docker(dockerfile, apt_mirror)
+    _build_sandbox(dockerfile, apt_mirror, selected_engine)
     print("==========================================")
 
     _setup_conda()
@@ -221,4 +361,5 @@ def run_setup():
         print("==========================================")
 
     print("Congratulations! PurrCat environment is ready.")
-    print("Next: Run 'purrcat start' to start the TUI.")
+    print(f"Next: Run 'purrcat start' to start the application.")
+    print(f"Engine in use: {selected_engine} (saved to ~/.purrcat/settings.json)")

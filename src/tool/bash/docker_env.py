@@ -11,21 +11,18 @@ import docker
 import pexpect
 from docker.errors import DockerException, ImageNotFound, NotFound
 
-from src.utils.config import get_file_config
+from src.utils.config import get_engine_preference
 
-# 引入自定义异常
 from .exceptions import (
     BashTimeoutError,
     DockerImageNotFoundError,
     DockerNotRunningError,
 )
 
-# 平台适配逻辑 - 与原代码完全一致
 if sys.platform == "win32":
     from pexpect.popen_spawn import PopenSpawn
 
     SpawnClass = PopenSpawn
-    DOCKER_EXEC_CMD = "docker exec -i {container_name} /bin/bash"
 
     def check_alive(p):
         if p is None:
@@ -42,9 +39,9 @@ if sys.platform == "win32":
         except Exception:
             pass
 
+
 else:
     SpawnClass = pexpect.spawn
-    DOCKER_EXEC_CMD = "docker exec -it {container_name} /bin/bash"
 
     def check_alive(p):
         if p is None:
@@ -57,13 +54,20 @@ else:
         p.close(force=True)
 
 
+def _get_container_exec_cmd(container_name: str) -> str:
+    engine = get_engine_preference()
+    if sys.platform == "win32":
+        return f"{engine} exec -i {container_name} /bin/bash"
+    else:
+        return f"{engine} exec -it {container_name} /bin/bash"
+
+
 _docker_manager_instance: Optional["DockerManager"] = None
 
 
-def _get_docker_env() -> dict:
-    """自动获取宿主机代理，并转换为跨平台 Docker 可用的格式"""
+def _get_container_env() -> dict:
     try:
-        # 1. 尝试从配置文件读取，如果没有，再尝试从宿主机环境变量读取
+        from src.utils.config import get_file_config
         cfg = get_file_config().get("docker", {})
         raw_proxy = (
             cfg.get("http_proxy")
@@ -75,20 +79,16 @@ def _get_docker_env() -> dict:
         )
 
         if not raw_proxy:
-            return {}  # 宿主机没开梯子，直接返回空，容器自然就是直连
+            return {}
 
-        # 2. 解析 URL，如果是 127.0.0.1 或 localhost，则替换为 host.docker.internal
         parsed = urllib.parse.urlparse(raw_proxy)
         if parsed.hostname in ["127.0.0.1", "localhost"]:
-            # 保留原有的端口和协议，只替换 host
             new_netloc = f"host.docker.internal:{parsed.port}"
             parsed = parsed._replace(netloc=new_netloc)
             proxy_url = urllib.parse.urlunparse(parsed)
         else:
-            # 如果配置的是局域网真实 IP (如 192.168.1.5)，则直接使用
             proxy_url = raw_proxy
 
-        # 3. 返回全套环境变量（大小写全给，兼容不同软件的脾气）
         return {
             "HTTP_PROXY": proxy_url,
             "HTTPS_PROXY": proxy_url,
@@ -96,7 +96,7 @@ def _get_docker_env() -> dict:
             "http_proxy": proxy_url,
             "https_proxy": proxy_url,
             "all_proxy": proxy_url,
-            "NO_PROXY": "localhost,127.0.0.1,::1",  # 防止容器内部服务互相调用时走代理
+            "NO_PROXY": "localhost,127.0.0.1,::1",
         }
     except Exception as e:
         print(f"⚠️ 代理配置解析失败，退回直连模式: {e}")
@@ -104,8 +104,6 @@ def _get_docker_env() -> dict:
 
 
 class DockerManager:
-    """Docker 沙盒管理器"""
-
     def __init__(
         self,
         image: str,
@@ -114,10 +112,27 @@ class DockerManager:
     ):
         if not image:
             raise ValueError("A Docker image must be provided.")
+        
+        engine_preference = get_engine_preference()
+        
+        if engine_preference in ["docker", "podman"]:
+            import shutil
+            if shutil.which(engine_preference):
+                self.engine = engine_preference
+            else:
+                raise DockerNotRunningError(f"全局配置中指定了 {engine_preference}，但系统未检测到该命令，请重新执行 purrcat setup")
+        else:
+            import shutil
+            self.engine = shutil.which("podman") or shutil.which("docker")
+            if not self.engine:
+                raise DockerNotRunningError("未检测到任何容器环境，请先执行 purrcat setup")
+        
+        print(f"🔧 使用容器引擎: {self.engine}")
+        
         try:
             self.client = docker.from_env()
         except Exception as e:
-            raise DockerNotRunningError(f"Docker 客户端初始化失败: {e}")
+            raise DockerNotRunningError(f"{self.engine.capitalize()} 客户端初始化失败: {e}")
 
         self.image = image
         self.container_name = container_name
@@ -149,9 +164,9 @@ class DockerManager:
         except NotFound:
             pass
         except DockerException as e:
-            raise DockerNotRunningError(f"Docker API 连接失败: {e}")
+            raise DockerNotRunningError(f"{self.engine.capitalize()} API 连接失败: {e}")
 
-        env_vars = _get_docker_env()
+        env_vars = _get_container_env()
 
         run_kwargs = {
             "name": self.container_name,
@@ -159,12 +174,8 @@ class DockerManager:
             "detach": True,
             "working_dir": self.container_workspace,
             "environment": env_vars,
-            # === 兼容三大系统与复杂环境的核心魔法 ===
-            # 魔法 1：让 Linux 原生 Docker 强制支持 host.docker.internal！Win/Mac 会自动兼容。
             "extra_hosts": {"host.docker.internal": "host-gateway"},
-            # 魔法 2：给足共享内存，防止 Chrome/Electron 崩溃
             "shm_size": "2gb",
-            # 魔法 3：解除系统调用限制，供复杂沙箱软件使用
             "cap_add": ["SYS_ADMIN"],
             "security_opt": ["seccomp=unconfined"],
         }
@@ -202,16 +213,11 @@ class DockerManager:
             print(f"🚀 正在基于镜像 {self.image} 创建全新沙盒...")
             self.container = self.client.containers.run(self.image, **run_kwargs)
 
-            # === 新增：为 apt-get 动态注入代理配置 ===
             if env_vars.get("HTTP_PROXY"):
                 proxy_url = env_vars["HTTP_PROXY"]
-                print(
-                    f"🌐 检测到代理环境，正在为容器内部 apt 注入代理配置: {proxy_url}"
-                )
-                # 写入 apt 代理配置，解决 apt 忽略环境变量的顽疾
+                print(f"🌐 检测到代理环境，正在为容器内部 apt 注入代理配置: {proxy_url}")
                 apt_cmd = f'sh -c \'echo "Acquire::http::Proxy \\"{proxy_url}\\";\\nAcquire::https::Proxy \\"{proxy_url}\\";" > /etc/apt/apt.conf.d/99proxy\''
                 self.container.exec_run(apt_cmd, user="root")
-            # ======================================
 
             self._started = True
             print("✅ 全新沙盒环境启动就绪！")
@@ -227,23 +233,17 @@ class DockerManager:
             self.close_shell(sid)
 
         if self.container:
-            # === 新增：退出/异常前自动 Commit 逻辑 ===
             try:
-                # 自动提取镜像名，默认打上 latest 标签覆盖
                 repo_name = self.image.split(":")[0]
-                print(
-                    f"� 检测到系统退出/异常，正在自动固化环境到 {repo_name}:latest ..."
-                )
+                print(f"🫡 检测到系统退出/异常，正在自动固化环境到 {repo_name}:latest ...")
                 self.container.commit(repository=repo_name, tag="latest")
                 print("✅ 环境自动保存成功！")
             except Exception as e:
                 print(f"⚠️ 自动保存环境失败: {e}")
-            # ==========================================
 
             try:
-                print(f"�� 正在关闭并清理 Docker 沙盒 ({self.container_name})...")
+                print(f"🛑 正在关闭并清理 Docker 沙盒 ({self.container_name})...")
                 self.container.stop(timeout=2)
-                # 推荐加上 remove() 彻底清理旧容器，保证下次启动时一定是基于最新镜像的干净状态
                 self.container.remove(v=True, force=True)
                 print("✅ 沙盒已成功关闭并清理。")
             except Exception as e:
@@ -255,14 +255,12 @@ class DockerManager:
         if not self.container:
             raise RuntimeError("Container not running.")
 
-        # 第一层检查（无锁，快速返回）
         if session_id in self.shell_pool:
             return
 
         print(f"[+] Auto-creating new shell session: '{session_id}'")
-        command = DOCKER_EXEC_CMD.format(container_name=self.container.name)
+        command = _get_container_exec_cmd(self.container.name)
         try:
-            # 【修复】将耗时的进程启动移出锁外部，只在最后更新字典时加锁
             shell_process = SpawnClass(command, encoding="utf-8", timeout=120)
             shell_process.send(
                 "stty -echo\nexport PS1=''\nexport TERM=dumb\necho '__SHELL_READY__'\n"
@@ -270,9 +268,8 @@ class DockerManager:
             shell_process.expect("__SHELL_READY__", timeout=10)
 
             with self.pool_lock:
-                # 第二层检查（防止并发创建了多个同名 session）
                 if session_id in self.shell_pool:
-                    force_close(shell_process)  # 销毁多余的
+                    force_close(shell_process)
                     return
                 self.shell_pool[session_id] = {
                     "process": shell_process,
@@ -297,7 +294,7 @@ class DockerManager:
             return
         if check_alive(session["process"]):
             force_close(session["process"])
-        command = DOCKER_EXEC_CMD.format(container_name=self.container.name)
+        command = _get_container_exec_cmd(self.container.name)
         new_process = SpawnClass(command, encoding="utf-8", timeout=120)
         new_process.send(
             "stty -echo\nexport PS1=''\nexport TERM=dumb\necho '__SHELL_READY__'\n"
@@ -330,7 +327,6 @@ class DockerManager:
                 partial_output = self._clean_ansi(process.before or "")
                 print(f"[red]⚠️ Shell '{session_id}' timed out. Resetting...[/red]")
                 self._restart_shell(session_id)
-                # 发生超时时不再返回 -1，而是直接抛出特定的超时异常
                 raise BashTimeoutError(f"部分输出:\n{partial_output.strip()}")
 
             exit_code = int(process.match.group(1))
@@ -357,6 +353,5 @@ def get_docker_manager() -> "DockerManager":
         )
         atexit.register(_docker_manager_instance.stop)
 
-    # 移除宽泛的 try-except 拦截，让明确的异常穿透到 bash.py
     _docker_manager_instance.start()
     return _docker_manager_instance

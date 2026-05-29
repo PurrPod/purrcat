@@ -1,9 +1,8 @@
 import json
 import os
+from pathlib import Path
 from typing import Any, Dict
 
-# ── 路径常量 ──
-# 使用文件绝对路径确定项目根目录，不受启动位置影响
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 SRC_DIR = os.path.join(BASE_DIR, "src")
@@ -31,18 +30,20 @@ SOUL_MD_PATH = os.path.join(AGENT_CORE_DIR, "SOUL.md")
 CRON_FILE = os.path.join(AGENT_CORE_DIR, "cron.json")
 SYSTEM_RULES_DIR = os.path.join(AGENT_DIR, "system_rules")
 
-# 会话管理路径配置
 SESSIONS_DIR = os.path.join(DATA_DIR, "checkpoints", "agent")
 SESSION_INDEX_PATH = os.path.join(SESSIONS_DIR, "index.json")
 
-# 确保会话目录在启动时存在
 os.makedirs(SESSIONS_DIR, exist_ok=True)
 
 MCP_SCHEMA_CACHE_FILE = os.path.join(SRC_DIR, "tool", "callmcp", "mcp_schema.json")
 
+CONTAINER_ENGINE_CONFIG_KEY = "container_engine"
+
+GLOBAL_CONFIG_DIR = Path.home() / ".purrcat"
+GLOBAL_CONFIG_FILE = GLOBAL_CONFIG_DIR / "settings.json"
+
 
 def _load_json_file(file_path: str) -> dict:
-    """加载 JSON 文件"""
     try:
         with open(file_path, "r", encoding="utf-8") as f:
             return json.load(f)
@@ -51,7 +52,42 @@ def _load_json_file(file_path: str) -> dict:
         return {}
 
 
-# ── Getter 函数 ──
+def _save_json_file(file_path: str, data: dict) -> bool:
+    try:
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        with open(file_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+        return True
+    except Exception as e:
+        print(f"[Config] 保存 JSON 文件失败 {file_path}: {e}")
+        return False
+
+
+def get_global_settings() -> dict:
+    if not GLOBAL_CONFIG_FILE.exists():
+        return {}
+    try:
+        with open(GLOBAL_CONFIG_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def save_global_setting(key: str, value: Any) -> bool:
+    GLOBAL_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    settings = get_global_settings()
+    settings[key] = value
+    try:
+        with open(GLOBAL_CONFIG_FILE, "w", encoding="utf-8") as f:
+            json.dump(settings, f, indent=4, ensure_ascii=False)
+        return True
+    except Exception as e:
+        print(f"[Config] 保存全局配置失败: {e}")
+        return False
+
+
+def get_engine_preference() -> str:
+    return get_global_settings().get("sandbox_engine", "auto")
 
 
 def get_model_config() -> Dict[str, Any]:
@@ -93,11 +129,50 @@ def get_agent_model() -> str:
 
 
 def get_embedding_model() -> str:
-    """Get the embedding model path. Uses local 'embedding' folder by default."""
     model_config = get_model_config()
-    # Return configured embedding model, or default to local 'embedding' folder
     return model_config.get("embedding", os.path.join(BASE_DIR, "embedding"))
 
 
 def get_data_dir() -> str:
     return DATA_DIR
+
+
+def get_container_engine(engine_preference: str = "auto") -> str:
+    import shutil
+
+    if engine_preference in ["docker", "podman"]:
+        if shutil.which(engine_preference):
+            return engine_preference
+        else:
+            raise EnvironmentError(f"您选择了 {engine_preference}，但系统未检测到该环境。")
+
+    global_preference = get_engine_preference()
+    if global_preference in ["docker", "podman"]:
+        if shutil.which(global_preference):
+            return global_preference
+        else:
+            print(f"[Config] 全局配置中指定了 '{global_preference}'，但系统未检测到该命令。")
+
+    file_config = get_file_config()
+    configured_engine = file_config.get(CONTAINER_ENGINE_CONFIG_KEY)
+
+    if configured_engine:
+        if shutil.which(configured_engine):
+            return configured_engine
+        else:
+            print(f"[Config] 配置的容器引擎 '{configured_engine}' 未找到，尝试自动检测...")
+
+    if shutil.which("podman"):
+        return "podman"
+    elif shutil.which("docker"):
+        return "docker"
+    else:
+        raise RuntimeError("未检测到可用的容器引擎 (Podman 或 Docker)。请先安装其中之一。")
+
+
+def set_container_engine(engine: str) -> bool:
+    if engine not in ["docker", "podman"]:
+        print(f"[Config] 无效的容器引擎: {engine}")
+        return False
+
+    return save_global_setting("sandbox_engine", engine)
