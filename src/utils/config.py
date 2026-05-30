@@ -19,6 +19,7 @@ TRACKER_DIR = os.path.join(DATA_DIR, "tracker")
 SCHEDULE_DIR = os.path.join(DATA_DIR, "schedule")
 DATABASE_DIR = os.path.join(DATA_DIR, "database")
 BUFFER_DIR = os.path.join(BASE_DIR, "agent_vm", ".buffer")
+AGENT_VM_DIR = os.path.join(BASE_DIR, "agent_vm")
 MEMORY_PENDING_DIR = os.path.join(MEMORY_DIR, "buffer", "pending")
 SKILL_DIR = os.path.join(BASE_DIR, "skills")
 

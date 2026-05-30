@@ -421,11 +421,10 @@ class Task:
                     self.output_port_states[curr_id].clear()
 
                 # 3. 🌟 记忆与邮箱清理逻辑
-                # 如果是注入操作且当前是目标节点，我们只清空它的输出，【绝对不能清空它的历史记忆和输入邮箱】
-                if is_injection and is_target:
-                    pass
+                if is_target:
+                    if not is_injection and curr_id in self.node_memory:
+                        self.node_memory.pop(curr_id)
                 else:
-                    # 对于非目标节点（下游），或者选择了彻底重跑，必须清空邮箱并删档！
                     if curr_id in self.edge_mailboxes:
                         self.edge_mailboxes[curr_id].clear()
                     if curr_id in self.node_memory:

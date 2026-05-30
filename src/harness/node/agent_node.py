@@ -289,45 +289,6 @@ class AgentNode(BaseNode):
                 )
                 is_yield = True
 
-            elif original_tool_name == "call_tool":
-                action = arguments.get("action", "execute")
-                local_registry, local_schemas = self.get_local_tools()
-                if action == "list":
-                    if not local_schemas:
-                        msg = "当前节点暂未挂载任何拓展业务工具。"
-                    else:
-                        schema_list_str = json.dumps(
-                            [s["function"] for s in local_schemas],
-                            ensure_ascii=False,
-                            indent=2,
-                        )
-                        msg = f"当前可用的拓展业务工具有以下几种，请参考其参数格式并在下一步调用：\n{schema_list_str}"
-                    final_content = _format_result({"available_tools": msg})
-                elif action == "execute":
-                    target_tool_name = arguments.get("tool_name")
-                    target_arguments = arguments.get("tool_args", {})
-                    if not target_tool_name or target_tool_name not in local_registry:
-                        final_content = _format_result(
-                            {"error": f"⚠️ [工具缺失] 未找到 '{target_tool_name}'"}
-                        )
-                    else:
-                        try:
-                            self.log(
-                                context,
-                                LogType.TOOL_CALL,
-                                f"🔧 [拓展工具] {target_tool_name}",
-                            )
-                            ToolClass = local_registry[target_tool_name]
-                            raw_result = ToolClass(context=context).execute(
-                                target_arguments
-                            )
-                            final_content = _format_result(raw_result)
-                        except Exception as e:
-                            final_content = _format_result(
-                                {
-                                    "error": f"❌ [工具异常] {target_tool_name} 执行失败: {str(e)}"
-                                }
-                            )
             else:
                 try:
                     self.log(
