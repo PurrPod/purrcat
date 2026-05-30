@@ -13,6 +13,7 @@ from src.tool.filesystem.export_file import export_file
 from src.tool.filesystem.import_file import import_file
 from src.tool.filesystem.list_filesystem import list_filesystem
 from src.tool.filesystem.read_picture import read_picture
+from src.tool.filesystem.text_ops import read_file, edit_file, write_file, search_file, glob_file
 from src.tool.utils.format import error_response, text_response, warning_response
 
 
@@ -20,15 +21,16 @@ def FileSystem(
     action: str, path_from: str = None, path_to: str = None, **kwargs
 ) -> str:
     """
-    FileSystem 工具主入口函数，支持四种操作：import、export、list、read_picture
+    FileSystem 工具主入口函数，支持九种操作：import、export、list、read_picture、read、edit、write、search、glob
 
     Args:
-        action: 操作类型，必须为 "import"、"export"、"list" 或 "read_picture"
+        action: 操作类型，必须为 "import"、"export"、"list"、"read_picture"、"read"、"edit"、"write"、"search" 或 "glob"
         path_from: 源路径
             - import: 宿主机文件/目录路径
             - export: 沙盒内文件/目录路径（必须以 /agent_vm/ 开头）
             - list: 要列出的目录路径（可选，默认为当前目录）
             - read_picture: 单张图片路径（也可使用 paths 参数代替）
+            - read/edit/write/search/glob: 文件或目录路径
         path_to: 目标路径（list 和 read_picture 操作时不需要）
             - import: 沙盒内目标目录（可选，默认为 "imports"）
             - export: 宿主机目标路径
@@ -38,11 +40,64 @@ def FileSystem(
     """
     try:
         action = action.strip().lower() if action else ""
-        if action not in ["import", "export", "list", "read_picture"]:
+        allowed_actions = ["import", "export", "list", "read_picture",
+                           "read", "edit", "write", "search", "glob"]
+        if action not in allowed_actions:
             return error_response(
-                f"无效的操作类型: {action}。支持的操作: import, export, list, read_picture",
+                f"无效的操作类型: {action}。支持的操作: {allowed_actions}",
                 "参数错误",
             )
+
+        path = path_from if path_from else kwargs.get("path")
+
+        # --- 文本读取 (Read) ---
+        if action == "read":
+            if not path:
+                return error_response("read 操作需提供 path_from", "❌ 参数缺失")
+            offset = kwargs.get("offset", 0)
+            limit = kwargs.get("limit", 2000)
+            result = read_file(path, offset, limit)
+            return text_response(result, f"📄 读取了 {result['showing_lines']} 行")
+
+        # --- 文本编辑 (Edit) ---
+        if action == "edit":
+            if not path:
+                return error_response("edit 操作需提供 path_from", "❌ 参数缺失")
+            old_str = kwargs.get("old_string")
+            new_str = kwargs.get("new_string")
+            replace_all = kwargs.get("replace_all", False)
+            if old_str is None or new_str is None:
+                return error_response("edit 操作需提供 old_string 和 new_string", "❌ 参数缺失")
+            result = edit_file(path, old_str, new_str, replace_all)
+            return text_response(result, "✂️ 修改成功")
+
+        # --- 文本覆盖写入 (Write) ---
+        if action == "write":
+            if not path:
+                return error_response("write 操作需提供 path_from", "❌ 参数缺失")
+            content = kwargs.get("content")
+            if content is None:
+                return error_response("write 操作需提供 content", "❌ 参数缺失")
+            result = write_file(path, content)
+            return text_response(result, "📝 写入成功")
+
+        # --- 全局内容搜索 (Search/Grep) ---
+        if action == "search":
+            path = path if path else "."
+            pattern = kwargs.get("pattern")
+            if not pattern:
+                return error_response("search 操作需提供 pattern 正则表达式", "❌ 参数缺失")
+            result = search_file(path, pattern)
+            return text_response(result, f"🔍 找到 {result['match_count']} 处匹配")
+
+        # --- 全局路径匹配 (Glob) ---
+        if action == "glob":
+            path = path if path else "."
+            pattern = kwargs.get("pattern")
+            if not pattern:
+                return error_response("glob 操作需提供 pattern (例如 **/*.py)", "❌ 参数缺失")
+            result = glob_file(path, pattern)
+            return text_response(result, f"🌐 找到 {result['total_matches']} 个文件")
 
         # --- Read Picture 操作处理 ---
         if action == "read_picture":
@@ -67,6 +122,8 @@ def FileSystem(
             if path_to is not None and str(path_to).strip() != "":
                 return error_response("list 操作不支持 path_to 参数", "❌ 参数错误")
             path = path_from if path_from else "."
+            kwargs.pop("path", None)
+            kwargs.pop("path_from", None)
             try:
                 result = list_filesystem(path=path, **kwargs)
                 snip = f"📂 📁{result['dir_count']} 📄{result['file_count']}"

@@ -40,6 +40,7 @@ dependencies:
       # 系统与沙盒
       - docker>=7.0.0
       - pexpect>=4.9.0
+      - markitdown>=0.0.1
 
       # RAG 检索
       - jieba>=0.42.1

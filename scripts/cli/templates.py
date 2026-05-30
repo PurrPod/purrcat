@@ -148,8 +148,8 @@ def get_file_config_dict():
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$comment": f"PurrCat File System Configuration File - Generated at {datetime.now().strftime('%Y-%m-%d %H:%M')}",
-        "dont_read_dirs": ["src/"],
-        "allowed_export_dirs": ["."],
+        "dont_read_dirs": [".git", "src", "node_modules", "miniconda3", ".baoyu-skills", ".env", ".purrcat"],
+        "allowed_export_dirs": ["D:/test", "./agent_vm", "./exports"],
         "docker_mount": ["sandbox/"],
         "sandbox_dirs": ["sandbox/", "agent_vm/"],
         "skill_dir": ["skills"],
