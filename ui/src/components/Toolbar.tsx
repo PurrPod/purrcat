@@ -66,6 +66,8 @@ export default function Toolbar({ onBack }: { onBack?: () => void }) {
       if (res.ok) {
         const data = await res.json()
         loadGraph(data)
+        setWorkflowName(fileName.replace(/\.json$/, ''))
+        setWorkflowDescription(data.description || '')
         toast.success(`已加载: ${fileName}`)
         setShowFileMenu(false)
       }
