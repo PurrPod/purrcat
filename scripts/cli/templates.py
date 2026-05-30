@@ -100,6 +100,7 @@ def get_model_config_dict():
             }
         },
         "task": {},
+        "vision": {},
     }
 
 

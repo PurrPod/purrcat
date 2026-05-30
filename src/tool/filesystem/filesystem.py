@@ -1,4 +1,4 @@
-"""FileSystem 工具主入口 - 统一调度 import_file、export_file、list_filesystem"""
+"""FileSystem 工具主入口 - 统一调度 import_file、export_file、list_filesystem、read_picture"""
 
 import traceback
 
@@ -12,6 +12,7 @@ from src.tool.filesystem.exceptions import (
 from src.tool.filesystem.export_file import export_file
 from src.tool.filesystem.import_file import import_file
 from src.tool.filesystem.list_filesystem import list_filesystem
+from src.tool.filesystem.read_picture import read_picture
 from src.tool.utils.format import error_response, text_response, warning_response
 
 
@@ -19,15 +20,16 @@ def FileSystem(
     action: str, path_from: str = None, path_to: str = None, **kwargs
 ) -> str:
     """
-    FileSystem 工具主入口函数，支持三种操作：import、export、list
+    FileSystem 工具主入口函数，支持四种操作：import、export、list、read_picture
 
     Args:
-        action: 操作类型，必须为 "import"、"export" 或 "list"
+        action: 操作类型，必须为 "import"、"export"、"list" 或 "read_picture"
         path_from: 源路径
             - import: 宿主机文件/目录路径
             - export: 沙盒内文件/目录路径（必须以 /agent_vm/ 开头）
             - list: 要列出的目录路径（可选，默认为当前目录）
-        path_to: 目标路径（list 操作时不需要）
+            - read_picture: 单张图片路径（也可使用 paths 参数代替）
+        path_to: 目标路径（list 和 read_picture 操作时不需要）
             - import: 沙盒内目标目录（可选，默认为 "imports"）
             - export: 宿主机目标路径
 
@@ -36,11 +38,29 @@ def FileSystem(
     """
     try:
         action = action.strip().lower() if action else ""
-        if action not in ["import", "export", "list"]:
+        if action not in ["import", "export", "list", "read_picture"]:
             return error_response(
-                f"无效的操作类型: {action}。支持的操作: import, export, list",
+                f"无效的操作类型: {action}。支持的操作: import, export, list, read_picture",
                 "参数错误",
             )
+
+        # --- Read Picture 操作处理 ---
+        if action == "read_picture":
+            # Agent 可能将路径传给 path_from，也可能传给专门的 paths
+            paths = kwargs.get("paths") or path_from
+            prompt = kwargs.get("prompt", "请详细描述这张/这些图片。")
+            
+            if not paths:
+                return error_response("缺少图片路径参数 (paths 或 path_from)", "❌ 参数缺失")
+                
+            try:
+                result = read_picture(paths=paths, prompt=prompt)
+                snip = f"👁️ 成功分析 {result['image_count']} 张图片"
+                return text_response(result, snip)
+            except HostPathNotFoundError as e:
+                return error_response(str(e), "❌ 路径不存在")
+            except FileSystemError as e:
+                return error_response(str(e), "❌ 图片读取失败")
 
         # --- List 操作处理 ---
         if action == "list":
