@@ -110,6 +110,15 @@ def get_sensor_config_dict():
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$comment": f"PurrCat Sensor Configuration File - Generated at {datetime.now().strftime('%Y-%m-%d %H:%M')}",
         "feishu": {"enabled": False, "app_id": "", "app_secret": "", "chat_id": ""},
+        "environment": {
+            "enabled": False,
+            "whisper_model": "small",
+            "language": "zh",
+            "tts_rate": 150,
+            "tts_volume": 1.0,
+            "max_record_seconds": 60,
+            "pause_threshold": 2.5
+        },
         "rss": {
             "enabled": False,
             "subscriptions": [
