@@ -1,11 +1,11 @@
 import asyncio
 import traceback
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel
 
 # 用于激活运行中任务注入指令
-from src.harness.process import TASK_INSTANCES
+from src.harness.process import TASK_INSTANCES, Task, kill_task
 
 # 引入统一封装的 API，支持访问休眠与活跃任务
 from src.utils.task_api import (
@@ -28,11 +28,40 @@ class TaskPushReq(BaseModel):
     node_id: str = None
 
 
+class RunTaskRequest(BaseModel):
+    task_name: str
+    graph_name: str
+    inputs: dict = {}
+
+
 @router.get("")
 def list_tasks_api():
     """获取任务列表：正确使用重构后的 API，合并磁盘与内存"""
     try:
         return get_task_list()
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/run")
+async def run_task_api(req: RunTaskRequest, background_tasks: BackgroundTasks):
+    """创建并启动新任务：接收工作流名称和初始输入参数，抛入后台异步执行"""
+    try:
+        task = Task(
+            task_name=req.task_name,
+            graph_name=req.graph_name,
+            inputs=req.inputs,
+        )
+
+        if task.state.value == "error" and task.init_error:
+            raise HTTPException(status_code=400, detail=task.init_error)
+
+        background_tasks.add_task(task.run)
+
+        return {"status": "success", "task_id": task.task_id, "message": "Task started in background."}
+    except HTTPException:
+        raise
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
@@ -84,39 +113,32 @@ async def submit_instruction_api(task_id: str, req: SubmitInstructionRequest):
     if result["status"] == "error":
         raise HTTPException(status_code=400, detail=result["message"])
 
-    # 重新拉起大循环
-    asyncio.create_task(task.run())
+    from src.harness.enums import TaskState
+    if task.state != TaskState.RUNNING:
+        asyncio.create_task(task.run())
 
     return result
 
 
 @router.post("/{task_id}/push")
 async def push_to_task(task_id: str, req: TaskPushReq):
-    """全局广播/后门注入：只向 Agent 节点注入（任务必须在内存中处于活跃状态）"""
+    """精确注入：只向指定 Agent 节点注入（任务必须在内存中处于活跃状态）"""
     task = TASK_INSTANCES.get(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found or not active")
 
-    from src.harness.node.agent_node import AgentNode
+    if not req.node_id:
+        raise HTTPException(status_code=400, detail="拒绝操作：必须指定 node_id，已废弃不安全的全局广播注入。")
 
-    if req.node_id:
-        # 指定单个节点，使用规范化 API
-        result = task.inject_instruction(req.node_id, req.message)
-        if result["status"] == "error":
-            raise HTTPException(status_code=400, detail=result["message"])
-    else:
-        # 广播模式：向所有 Agent 节点注入
-        injected_count = 0
-        for nid, node_instance in task.node_list.items():
-            if isinstance(node_instance, AgentNode):
-                task.inject_instruction(nid, req.message)
-                injected_count += 1
+    result = task.inject_instruction(req.node_id, req.message)
+    if result["status"] == "error":
+        raise HTTPException(status_code=400, detail=result["message"])
 
-        if injected_count == 0:
-            return {"status": "success", "message": "未找到可注入的 Agent 节点"}
+    from src.harness.enums import TaskState
+    if task.state != TaskState.RUNNING:
+        asyncio.create_task(task.run())
 
-    asyncio.create_task(task.run())
-    return {"status": "success", "message": "指令已广播注入"}
+    return {"status": "success", "message": "指令已精确注入"}
 
 
 @router.get("/{task_id}/log")
@@ -153,7 +175,16 @@ async def reset_node_api(task_id: str, node_id: str):
     if result["status"] == "error":
         raise HTTPException(status_code=400, detail=result["message"])
 
-    # 状态成功重置为 READY 后，重新拉起大循环继续跑
-    asyncio.create_task(task.run())
+    from src.harness.enums import TaskState
+    if task.state != TaskState.RUNNING:
+        asyncio.create_task(task.run())
 
     return result
+
+
+@router.post("/{task_id}/stop")
+def stop_task_api(task_id: str):
+    """优雅终止运行中的任务：与 DELETE 不同，这里只杀死进程但保留 checkpoint 供后续查看"""
+    if kill_task(task_id):
+        return {"status": "success", "message": "Task killed gracefully."}
+    raise HTTPException(status_code=404, detail="Task not active or not found.")

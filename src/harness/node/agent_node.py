@@ -114,6 +114,7 @@ class AgentNode(BaseNode):
         step = 0
         MAX_CONSECUTIVE_ERRORS = 3
         consecutive_no_tool_errors = 0
+        consecutive_format_errors = 0
 
         while step < max_steps:
             step += 1
@@ -178,6 +179,25 @@ class AgentNode(BaseNode):
             tool_messages, is_task_done, is_yield = await self.execute_tool_calling(
                 response, context
             )
+
+            if tool_messages and not is_task_done and not is_yield:
+                has_format_error = any(
+                    tm.get("name") == "task_done" and "error" in tm.get("content", "")
+                    for tm in tool_messages
+                )
+
+                if has_format_error:
+                    consecutive_format_errors += 1
+                    if consecutive_format_errors >= MAX_CONSECUTIVE_ERRORS:
+                        self.log(
+                            context, LogType.SYSTEM,
+                            f"🔴 [熔断] 连续 {MAX_CONSECUTIVE_ERRORS} 次未能按照要求格式输出，挂起求助"
+                        )
+                        context.node_state[self.node_id] = NodeState.WAITING
+                        raise asyncio.CancelledError("Format Error Circuit Breaker")
+                else:
+                    consecutive_format_errors = 0
+
             if tool_messages:
                 messages.extend(tool_messages)
 

@@ -215,6 +215,7 @@ class Task:
                 if self._killed:
                     self._cancel_all_tasks()
                     self.state = TaskState.KILLED
+                    self.save()
                     break
 
                 runnable_nodes = self._get_runnable_nodes()
@@ -544,7 +545,7 @@ class Task:
         self._killed = True
 
     def _cancel_all_tasks(self):
-        for task in self.running_tasks.keys():
+        for task in list(self.running_tasks.keys()):
             if not task.done():
                 task.cancel()
 
