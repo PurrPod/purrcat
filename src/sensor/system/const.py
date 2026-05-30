@@ -59,8 +59,10 @@ class SystemSensor(BaseSensor):
                             ):
                                 is_match = True
                         if is_match:
+                            desc = c.get("description", "")
+                            desc_text = f"\n详细说明: {desc}" if desc else ""
                             get_gateway().push(
-                                self, f"⏰【闹钟铃声】时间到！事项: {c.get('title')}"
+                                self, f"⏰【闹钟铃声】时间到！事项: {c.get('title')}{desc_text}"
                             )
                             if rule == "none":
                                 c["active"] = False

@@ -14,6 +14,7 @@ def Cron(
     trigger_time: str = None,
     repeat_rule: str = None,
     active: bool = None,
+    description: str = None,
     **kwargs,
 ) -> str:
     """
@@ -78,7 +79,10 @@ def Cron(
             actual_rule = repeat_rule if repeat_rule else "none"
             try:
                 result = add_cron(
-                    title=name, trigger_time=trigger_time, repeat_rule=actual_rule
+                    title=name,
+                    trigger_time=trigger_time,
+                    repeat_rule=actual_rule,
+                    description=description or ""
                 )
                 return text_response(result, f"✅ 已创建 | {trigger_time}")
             except CronError as e:
@@ -107,9 +111,9 @@ def Cron(
                     "参数缺失",
                 )
 
-            if trigger_time is None and repeat_rule is None and active is None:
+            if trigger_time is None and repeat_rule is None and active is None and description is None:
                 return error_response(
-                    "update（修改）操作缺少修改内容。引导：请至少提供 'trigger_time'、'repeat_rule' 或 'active' 中的一个字段以进行更新（注：名称不支持修改）。",
+                    "update（修改）操作缺少修改内容。引导：请至少提供 'trigger_time'、'repeat_rule'、'active' 或 'description' 中的一个字段以进行更新（注：名称不支持修改）。",
                     "参数缺失",
                 )
 
@@ -127,6 +131,7 @@ def Cron(
                     trigger_time=trigger_time,
                     repeat_rule=repeat_rule,
                     active=active,
+                    description=description,
                 )
                 return text_response(result, f"✅ 已更新 | {name}")
             except CronError as e:

@@ -73,7 +73,7 @@ def _find_cron_index(crons: List[Dict[str, Any]], identifier: str) -> int:
     return -1
 
 
-def add_cron(title: str, trigger_time: str, repeat_rule: str = "none") -> dict:
+def add_cron(title: str, trigger_time: str, repeat_rule: str = "none", description: str = "") -> dict:
     """
     添加闹钟
 
@@ -81,9 +81,10 @@ def add_cron(title: str, trigger_time: str, repeat_rule: str = "none") -> dict:
         title: 闹钟标题
         trigger_time: 触发时间，HH:MM 格式（如 08:30）
         repeat_rule: 重复规则，默认 "none"
+        description: 闹钟详细描述，默认空字符串
 
     Returns:
-        包含 id, title, trigger_time, repeat_rule, active 的字典
+        包含 id, title, description, trigger_time, repeat_rule, active 的字典
     """
     if not _validate_time_format(trigger_time):
         raise InvalidTimeFormatError(trigger_time)
@@ -98,6 +99,7 @@ def add_cron(title: str, trigger_time: str, repeat_rule: str = "none") -> dict:
         item = {
             "id": cron_id,
             "title": title,
+            "description": description,
             "trigger_time": trigger_time,
             "repeat_rule": repeat_rule,
             "active": True,
@@ -128,6 +130,7 @@ def update_cron(
     trigger_time: str = None,
     repeat_rule: str = None,
     active: bool = None,
+    description: str = None,
 ) -> dict:
     """修改闹钟 (支持传入 ID 或 Name，不再支持修改 title)"""
     with CRON_LOCK:
@@ -151,6 +154,9 @@ def update_cron(
 
         if active is not None:
             cron["active"] = active
+
+        if description is not None:
+            cron["description"] = description
 
         _write_json(CRON_FILE, crons)
     return {"message": f"闹钟 '{cron['title']}' ({cron['id']}) 修改成功", "cron": cron}

@@ -15,6 +15,10 @@ CRON_TOOL_SCHEMA = {
                     "type": "string",
                     "description": "闹钟名称/标题（add 时为标题，delete/update 时为闹钟 ID）",
                 },
+                "description": {
+                    "type": "string",
+                    "description": "闹钟的详细描述。用于记录该事项的具体要求或背景，当闹钟触发时会一并提示给Agent提供上下文",
+                },
                 "trigger_time": {
                     "type": "string",
                     "description": "触发时间，HH:MM 格式（如 08:30），add 和 update 操作时使用",
