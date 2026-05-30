@@ -17,12 +17,15 @@ def _get_project_root():
 def _run_cmd(command, shell=False, check=True, cwd=None):
     cmd_str = " ".join(command) if isinstance(command, list) else command
     print(f"$ {cmd_str}")
+    encoding = 'gbk' if sys.platform == 'win32' else 'utf-8'
     process = subprocess.Popen(
         command,
         shell=shell,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
+        encoding=encoding,
+        errors='replace',
         bufsize=1,
         cwd=cwd,
     )
@@ -36,97 +39,50 @@ def _run_cmd(command, shell=False, check=True, cwd=None):
 
 def _check_engine():
     """Check which container engines are available"""
+    encoding = 'gbk' if sys.platform == 'win32' else 'utf-8'
+
     try:
-        has_docker = subprocess.call(
-            ["docker", "--version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-        ) == 0
+        result = subprocess.run(
+            ["docker", "--version"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            encoding=encoding,
+            errors='replace'
+        )
+        has_docker = result.returncode == 0
     except FileNotFoundError:
         has_docker = False
 
     try:
-        has_podman = subprocess.call(
-            ["podman", "--version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-        ) == 0
+        result = subprocess.run(
+            ["podman", "--version"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            encoding=encoding,
+            errors='replace'
+        )
+        has_podman = result.returncode == 0
     except FileNotFoundError:
         has_podman = False
 
     return has_docker, has_podman
 
 
-def _get_engine_choice():
-    """Prompt user for container engine selection with intelligent recommendation"""
+def _determine_engine():
+    """Auto determine container engine based on availability"""
     print("")
-    print("[Container Engine Config] Choose your container runtime:")
-    print("")
-
-    os_name = platform.system()
+    print("[Container Engine Config] Checking local environment...")
+    
     has_docker, has_podman = _check_engine()
-
-    recommend_engine = "docker"
-    recommend_reason = "Docker is the most popular container engine."
-
-    if os_name == "Windows" and not has_docker:
-        recommend_engine = "podman"
-        recommend_reason = "Detected Windows without Docker Desktop. Strongly recommend lightweight Podman."
-    elif os_name == "Darwin" and not has_docker:
-        recommend_engine = "podman"
-        recommend_reason = "Recommend lightweight Podman to save Mac memory."
-    elif has_podman and not has_docker:
-        recommend_engine = "podman"
-        recommend_reason = "Detected Podman is already installed."
-    elif has_podman and has_docker:
-        recommend_engine = "docker"
-        recommend_reason = "Both Docker and Podman detected. Defaulting to Docker."
-
-    print(f"  💡 System Recommendation: {recommend_reason}")
-    print("")
-
-    engine_options = []
-    if has_podman:
-        engine_options.append("1. Podman (Recommended, lightweight)")
+    
     if has_docker:
-        engine_options.append("2. Docker (Standard, requires Docker Desktop)")
-
-    if not engine_options:
-        print("  ⚠️  No container engine detected. Will try to install Podman...")
-        return "podman", True
-
-    print("  Available options:")
-    for opt in engine_options:
-        print(f"    {opt}")
-
-    default = "1" if recommend_engine == "podman" else "2"
-    choice = input(f"Enter choice [default: {default}]: ").strip() or default
-
-    selected_engine = "podman" if choice == "1" else "docker"
-    should_install = False
-
-    if selected_engine == "podman" and not has_podman:
-        should_install = True
-    elif selected_engine == "docker" and not has_docker:
-        should_install = True
-
-    return selected_engine, should_install
-
-
-def _install_podman():
-    """Install Podman by delegating to the robust setup_env script"""
-    print("")
-    print("Installing Podman...")
-
-    try:
-        from scripts.setup_env import setup as full_podman_setup
-
-        success, message = full_podman_setup()
-        if success:
-            print(f"✅ {message}")
-        else:
-            print(f"\n❌ Podman 自动安装/配置失败: {message}")
-            print("请手动参考官方文档安装： https://podman.io/getting-started/installation")
-            sys.exit(1)
-    except Exception as e:
-        print(f"❌ Podman 安装脚本执行失败: {e}")
-        print("请手动参考官方文档安装： https://podman.io/getting-started/installation")
+        print("  ✅ Detected Docker, will use Docker as container engine.")
+        return "docker"
+    elif has_podman:
+        print("  ✅ Detected Podman, will use Podman as container engine.")
+        return "podman"
+    else:
+        print("  ❌ Docker not detected. Please install Docker first according to the tutorial.")
         sys.exit(1)
 
 
@@ -333,10 +289,8 @@ def run_setup():
     print(f"Detected OS: {platform.system()}")
     print("==========================================")
 
-    selected_engine, should_install = _get_engine_choice()
-
-    if should_install:
-        _install_podman()
+    # Auto-detect local container engine
+    selected_engine = _determine_engine()
 
     _save_engine_preference(selected_engine)
     _check_engine_running(selected_engine)

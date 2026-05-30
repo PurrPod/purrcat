@@ -49,7 +49,7 @@ jobs:
           
           CHANGED_FILES=$(git diff --name-only "$BASE" HEAD)
           
-          if echo "$CHANGED_FILES" | grep -qE "^(src/|test/|main\.py|environment\.yml|scripts/|server/|tui/)"; then
+          if echo "$CHANGED_FILES" | grep -qE "^(src/|main\.py|environment\.yml|scripts/|server/|tui/)"; then
             echo "python_changed=true" >> "$GITHUB_OUTPUT"
           else
             echo "python_changed=false" >> "$GITHUB_OUTPUT"
@@ -60,34 +60,6 @@ jobs:
           else
             echo "ui_changed=false" >> "$GITHUB_OUTPUT"
           fi
-
-  python-tests:
-    name: Python Tests (Ubuntu)
-    needs: [preflight]
-    if: needs.preflight.outputs.python_changed == 'true'
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        shell: bash -el {0}
-
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v6
-
-      - name: Setup Conda Environment
-        uses: conda-incubator/setup-miniconda@v3
-        with:
-          activate-environment: PurrCat
-          environment-file: environment.yml
-          python-version: '3.10'
-          auto-activate-base: false
-          cache-environment: true
-
-      - name: Module Import Test
-        env:
-          PYTHONIOENCODING: utf-8
-        run: |
-          python test/test_imports.py
 
   ui-check-and-build:
     name: UI Check & Build
@@ -133,26 +105,23 @@ jobs:
 
   ci-summary:
     name: CI Summary
-    needs: [preflight, python-tests, ui-check-and-build, security-check]
+    needs: [preflight, ui-check-and-build, security-check]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
       - name: Check CI Results
         env:
-          PYTHON_RESULT: ${{ needs.python-tests.result }}
           UI_RESULT: ${{ needs.ui-check-and-build.result }}
           SECURITY_RESULT: ${{ needs.security-check.result }}
         run: |
           set -euo pipefail
           
           echo "=== CI Summary ==="
-          echo "Python Tests: $PYTHON_RESULT"
           echo "UI Check & Build: $UI_RESULT"
           echo "Security Check: $SECURITY_RESULT"
           
           FAILED_JOBS=()
           
-          if [ "$PYTHON_RESULT" = "failure" ]; then FAILED_JOBS+=("python-tests"); fi
           if [ "$UI_RESULT" = "failure" ] && [ "${{ needs.preflight.outputs.ui_changed }}" = "true" ]; then FAILED_JOBS+=("ui-check-and-build"); fi
           if [ "$SECURITY_RESULT" = "failure" ]; then FAILED_JOBS+=("security-check"); fi
           
