@@ -13,7 +13,7 @@ from src.memory.purrmemo.core.storage.vector_engine import VectorEngine
 from src.memory.purrmemo.core.storage.event_engine import EventEngine
 from src.memory.purrmemo.core.storage.graph_engine import GraphEngine
 
-from src.utils.config import MEMORY_DIR
+from src.utils.config import AGENT_CORE_DIR
 
 router = APIRouter(prefix="/api/memory", tags=["Memory System"])
 
@@ -99,14 +99,15 @@ def delete_relation(source_node_id: str, target_node_id: str):
 
 
 # ==========================================
-# MEMORY.md 读取与保存 API
+# 🌟 修改后：基于 AGENT_CORE_DIR 的 MEMORY.md 读写 API
 # ==========================================
 
 @router.get("/markdown")
 def get_memory_markdown_api():
-    """读取 data/memory/MEMORY.md 文件内容"""
+    """读取 .purrcat/core/MEMORY.md 文件内容"""
     try:
-        file_path = os.path.join(MEMORY_DIR, "MEMORY.md")
+        # 🌟 路径切换为 AGENT_CORE_DIR
+        file_path = os.path.join(AGENT_CORE_DIR, "MEMORY.md")
         if not os.path.exists(file_path):
             return {"content": ""}
             
@@ -119,12 +120,13 @@ def get_memory_markdown_api():
 
 @router.put("/markdown")
 def update_memory_markdown_api(payload: dict = Body(...)):
-    """保存并覆盖写入 data/memory/MEMORY.md 文件"""
+    """保存并覆盖写入 .purrcat/core/MEMORY.md 文件"""
     try:
         content = payload.get("content", "")
-        file_path = os.path.join(MEMORY_DIR, "MEMORY.md")
+        # 🌟 路径切换为 AGENT_CORE_DIR
+        file_path = os.path.join(AGENT_CORE_DIR, "MEMORY.md")
         
-        # 确保父级目录存在
+        # 确保父级目录 .purrcat/core 存在
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
         
         with open(file_path, "w", encoding="utf-8") as f:

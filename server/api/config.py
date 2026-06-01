@@ -11,6 +11,7 @@ from src.utils.config import (
     MODEL_CONFIG_PATH,
     SENSOR_CONFIG_PATH,
     PURRCAT_DIR,
+    AGENT_CORE_DIR,
     get_file_config,
     get_mcp_config,
     get_memory_config,
@@ -101,17 +102,14 @@ def api_update_mcp_config(config: Dict[str, Any]):
 # ── Markdown Files (SOUL.md / SOLO.md) ──
 @router.get("/markdown/{filename}")
 def api_get_markdown_file(filename: str):
+    # 限制只允许读取 SOUL 和 SOLO，防止任意路径穿越漏洞
     if filename not in ["SOUL", "SOLO"]:
         raise HTTPException(status_code=400, detail="Invalid filename")
     
-    file_path = os.path.join(PURRCAT_DIR, f"{filename}.md")
-    
-    # 向后兼容：如果你原本的 SOUL.md 放在 core 文件夹下
-    if filename == "SOUL" and not os.path.exists(file_path):
-        alt_path = os.path.join(PURRCAT_DIR, "core", "SOUL.md")
-        if os.path.exists(alt_path):
-            file_path = alt_path
+    # 引入 config 中定义好的 AGENT_CORE_DIR (.purrcat/core/)
+    file_path = os.path.join(AGENT_CORE_DIR, f"{filename}.md")
 
+    # 如果文件不存在，返回空内容防报错
     if not os.path.exists(file_path):
         return {"content": ""}
         
@@ -124,14 +122,11 @@ def api_update_markdown_file(filename: str, payload: dict = Body(...)):
         raise HTTPException(status_code=400, detail="Invalid filename")
         
     content = payload.get("content", "")
-    file_path = os.path.join(PURRCAT_DIR, f"{filename}.md")
     
-    # 向后兼容：如果你原本的 SOUL.md 放在 core 文件夹下
-    if filename == "SOUL" and not os.path.exists(file_path):
-        alt_path = os.path.join(PURRCAT_DIR, "core", "SOUL.md")
-        if os.path.exists(alt_path):
-            file_path = alt_path
+    # 同样定位到 AGENT_CORE_DIR (.purrcat/core/)
+    file_path = os.path.join(AGENT_CORE_DIR, f"{filename}.md")
 
+    # 自动创建 core 目录以防万一
     os.makedirs(os.path.dirname(file_path), exist_ok=True)
     try:
         with open(file_path, "w", encoding="utf-8") as f:
