@@ -60,6 +60,21 @@ def api_update_sensor_config(config: Dict[str, Any]):
     raise HTTPException(status_code=500, detail="Failed to save sensor config")
 
 
+@router.post("/sensor/reload")
+def api_reload_sensor_manager():
+    """停止所有运行中的 Sensor 进程，并重新读取配置拉起启用状态的 Sensor"""
+    try:
+        from src.sensor.manager import get_manager
+        manager = get_manager()
+        manager.stop_all()             # 杀死旧进程
+        manager.load_and_start_all()   # 重新读取 activate_sensor.json 并拉起
+        return {"status": "ok", "message": "Sensors reloaded successfully"}
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"热重启失败: {str(e)}")
+
+
 # ── File Config ──
 @router.get("/file")
 def api_get_file_config():

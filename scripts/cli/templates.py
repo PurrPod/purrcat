@@ -109,37 +109,55 @@ def get_sensor_config_dict():
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$comment": f"PurrCat Sensor Configuration File - Generated at {datetime.now().strftime('%Y-%m-%d %H:%M')}",
-        "feishu": {"enabled": False, "app_id": "", "app_secret": "", "chat_id": ""},
-        "environment": {
-            "enabled": False,
-            "whisper_model": "small",
-            "language": "zh",
-            "tts_rate": 150,
-            "tts_volume": 1.0,
-            "max_record_seconds": 60,
-            "pause_threshold": 2.5
-        },
-        "rss": {
-            "enabled": False,
-            "subscriptions": [
-                {
-                    "name": "Lilian Weng's Blog",
-                    "url": "https://lilianweng.github.io/lil-log/feed.xml",
+        "sensors": {
+            "feishu_bot": {
+                "enabled": False,
+                "env": {
+                    "FEISHU_APP_ID": "",
+                    "FEISHU_APP_SECRET": "",
+                    "FEISHU_CHAT_ID": ""
                 },
-                {
-                    "name": "Ahead of AI",
-                    "url": "https://magazine.sebastianraschka.com/feed",
+                "capabilities": {
+                    "observe": True,
+                    "express": True
+                }
+            },
+            "system_clock": {
+                "enabled": True,
+                "env": {
+                    "INTERVAL": "1800",
+                    "CRON_FILE": ".purrcat/core/cron.json"
                 },
-                {"name": "Latepost", "url": "https://rsshub.rssforever.com/latepost"},
-            ],
-        },
-        "heartbeat": {"enabled": False, "interval": 1800},
-        "purrmemo": {
-            "enabled": False,
-            "host": "http://127.0.0.1:8000",
-            "api_key": "",
-            "timeout": 5,
-        },
+                "capabilities": {
+                    "observe": True,
+                    "express": False
+                }
+            },
+            "rss_watcher": {
+                "enabled": False,
+                "env": {
+                    "INTERVAL": "1800",
+                    "RSS_SUBSCRIPTIONS_JSON": "[{\"name\": \"Lilian Weng's Blog\", \"rss_url\": \"https://lilianweng.github.io/lil-log/feed.xml\"},{\"name\": \"Ahead of AI\", \"rss_url\": \"https://magazine.sebastianraschka.com/feed\"},{\"name\": \"Latepost 晚点\", \"rss_url\": \"https://rsshub.rssforever.com/latepost\"}]"
+                },
+                "capabilities": {
+                    "observe": True,
+                    "express": False
+                }
+            },
+            "audio_assistant": {
+                "enabled": False,
+                "env": {
+                    "WHISPER_MODEL": "small",
+                    "LANGUAGE": "zh",
+                    "TTS_RATE": "150",
+                    "TTS_VOLUME": "1.0"
+                },
+                "capabilities": {
+                    "observe": True,
+                    "express": True
+                }
+            }
+        }
     }
 
 

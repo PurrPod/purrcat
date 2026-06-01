@@ -5,7 +5,7 @@ import {
   ChevronDown, ChevronUp, Loader2, X, Trash2, 
   List, Brain, Server, Zap, AlarmClock, GitFork, Plus,
   RefreshCw, Terminal, User, FileText, Save,
-  Settings, FileJson, AlertCircle, Download
+  Settings, FileJson, AlertCircle, Download, Activity
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
@@ -184,7 +184,8 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   const [isAgentThinking, setIsAgentThinking] = useState(false);
 
   // --- 侧边栏面板状态 ---
-  const [sidebarMode, setSidebarMode] = useState<'menu' | 'mcp' | 'skill' | 'cron'>('menu');
+  const [sidebarMode, setSidebarMode] = useState<'menu' | 'mcp' | 'skill' | 'cron' | 'sensor'>('menu');
+  const [sensorData, setSensorData] = useState<any>({ sensors: {} });
   const [mcpData, setMcpData] = useState<Record<string, any[]>>({});
   const [expandedMcp, setExpandedMcp] = useState<string | null>(null);
   
@@ -313,7 +314,49 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
     }
   };
 
-  // --- API 交互 (MCP, Skill, Cron) ---
+  // --- API 交互 (Sensor, MCP, Skill, Cron) ---
+  const fetchSensorData = async () => {
+    try {
+      const res = await fetch('http://localhost:8000/api/config/sensor');
+      if (res.ok) setSensorData(await res.json());
+    } catch (e) { toast.error("获取 Sensor 列表失败"); }
+  };
+
+  const reloadSensors = async () => {
+    try {
+      const res = await fetch('http://localhost:8000/api/config/sensor/reload', { method: 'POST' });
+      if (res.ok) toast.success("所有启用的 Sensors 已完成热重启！");
+      else toast.error("热重启发生异常");
+    } catch (e) { toast.error("重启指令发送失败"); }
+  };
+
+  const toggleSensorStatus = async (sensorName: string) => {
+    try {
+       const newSensorData = JSON.parse(JSON.stringify(sensorData));
+       if (!newSensorData.sensors) newSensorData.sensors = {};
+       if (!newSensorData.sensors[sensorName]) return;
+       
+       const currentStatus = newSensorData.sensors[sensorName].enabled || false;
+       newSensorData.sensors[sensorName].enabled = !currentStatus;
+       
+       setSensorData(newSensorData);
+
+       const resSave = await fetch('http://localhost:8000/api/config/sensor', {
+         method: 'PUT', headers: {'Content-Type': 'application/json'},
+         body: JSON.stringify(newSensorData)
+       });
+       
+       if (resSave.ok) {
+          toast.success(`[${sensorName}] 已置为 ${!currentStatus ? '启动' : '关闭'}状态，正在应用到内存...`);
+          await reloadSensors();
+       } else {
+          toast.error("配置文件落盘失败");
+       }
+    } catch (e) {
+       toast.error("操作异常");
+    }
+  };
+
   const fetchMcp = async () => {
     try {
       const res = await fetch('http://localhost:8000/api/tools/mcp');
@@ -376,6 +419,51 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   const [showInstallMcpModal, setShowInstallMcpModal] = useState(false);
   const [mcpInstallJson, setMcpInstallJson] = useState('');
   const [isInstallingMcp, setIsInstallingMcp] = useState(false);
+
+  // --- 🌟 新增：Sensor 安装弹窗与状态 ---
+  const [showInstallSensorModal, setShowInstallSensorModal] = useState(false);
+  const [sensorInstallJson, setSensorInstallJson] = useState('');
+  const [isInstallingSensor, setIsInstallingSensor] = useState(false);
+
+  // 🌟 新增：处理 Sensor JSON 注入并热重启
+  const handleInstallSensor = async () => {
+    if (!sensorInstallJson.trim()) {
+      toast.error("JSON 配置不能为空！");
+      return;
+    }
+    setIsInstallingSensor(true);
+    try {
+      const parsed = JSON.parse(sensorInstallJson);
+      const newSensors = parsed.sensors ? parsed.sensors : parsed;
+
+      const currentData = JSON.parse(JSON.stringify(sensorData));
+      if (!currentData.sensors) currentData.sensors = {};
+
+      Object.assign(currentData.sensors, newSensors);
+
+      const resSave = await fetch('http://localhost:8000/api/config/sensor', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(currentData)
+      });
+
+      if (resSave.ok) {
+        toast.success("Sensor 配置合并成功，正在触发热加载...");
+        
+        await reloadSensors(); 
+        
+        setShowInstallSensorModal(false);
+        setSensorInstallJson('');
+        fetchSensorData();
+      } else {
+        toast.error("配置文件落盘失败");
+      }
+    } catch (e: any) {
+      toast.error("JSON 解析失败，请检查格式！");
+    } finally {
+      setIsInstallingSensor(false);
+    }
+  };
 
   // 🌟 新增：调用后端接口安装并刷新 MCP
   const handleInstallMcp = async () => {
@@ -809,6 +897,46 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
         </div>
       )}
 
+      {/* 🌟 新增：Sensor JSON 解析与安装弹窗 */}
+      {showInstallSensorModal && (
+        <div className="fixed inset-0 bg-ink/40 backdrop-blur-sm z-[150] flex items-center justify-center p-4">
+          <div style={sketchyShape2} className="bg-paper border-4 border-ink p-8 flex flex-col gap-6 shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] rotate-1 max-w-lg w-full">
+            <div className="flex justify-between items-center -rotate-1 border-b-4 border-ink/10 pb-2">
+              <h3 className="text-3xl font-black tracking-widest text-[#a3be8c]" style={{ fontFamily: '"Comic Sans MS", cursive' }}>ADD SENSOR</h3>
+              <button onClick={() => setShowInstallSensorModal(false)} className="hover:text-terracotta hover:scale-110 transition-all">
+                <X size={28} strokeWidth={3}/>
+              </button>
+            </div>
+            
+            <div className="-rotate-1 flex flex-col h-full">
+              <p className="font-bold opacity-70 mb-3 text-ink text-sm">
+                在此粘贴 Sensor 的 JSON 配置：<br/>
+                <span className="text-xs opacity-80">(可以直接粘贴某个 sensor 对象，我们会自动将其合并并热重载进程)</span>
+              </p>
+              <textarea 
+                autoFocus 
+                value={sensorInstallJson} 
+                onChange={e => setSensorInstallJson(e.target.value)} 
+                placeholder={'{\n  "my_custom_sensor": {\n    "enabled": true,\n    "env": {\n      "API_KEY": "xxx"\n    },\n    "capabilities": {\n      "observe": true,\n      "express": false\n    }\n  }\n}'}
+                className="w-full h-64 border-4 border-ink bg-[#FDF8F0] p-4 font-bold text-sm font-mono focus:outline-none focus:bg-white shadow-[inset_4px_4px_0px_0px_rgba(26,26,26,0.05)] placeholder:text-ink/30 resize-none" 
+                style={sketchyShape3} 
+                spellCheck={false}
+              />
+            </div>
+            
+            <div className="flex gap-4 -rotate-1 mt-2">
+              <button onClick={() => setShowInstallSensorModal(false)} style={sketchyShape3} className="flex-1 bg-cream text-ink font-black tracking-widest text-lg py-3 border-4 border-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:translate-y-[1px] hover:shadow-none transition-all">
+                CANCEL
+              </button>
+              <button onClick={handleInstallSensor} disabled={isInstallingSensor} style={sketchyShape1} className="flex-1 bg-[#a3be8c] text-ink font-black tracking-widest text-lg py-3 border-4 border-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:bg-[#8eb072] hover:translate-y-[1px] hover:shadow-none transition-all flex items-center justify-center gap-2">
+                {isInstallingSensor ? <Loader2 size={24} className="animate-spin" strokeWidth={3}/> : <Save size={24} strokeWidth={3}/>}
+                SAVE & LOAD
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Markdown 编辑弹窗 (SOUL / SOLO) */}
       {showMdModal && (
         <div className="fixed inset-0 bg-ink/40 backdrop-blur-sm z-[150] flex items-center justify-center p-4">
@@ -1050,9 +1178,9 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                  </button>
 
                  {/* 新增：手绘风 CONFIG 功能按钮 */}
-                 <button onClick={() => setIsConfigOpen(true)} style={sketchyShape3} className="flex-1 border-4 border-ink bg-[#EBCB8B]/40 hover:bg-[#EBCB8B] shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center gap-3 hover:-translate-y-1 hover:scale-[1.02] transition-all rotate-2 active:shadow-none active:translate-y-1">
-                     <Settings size={28} strokeWidth={2.5} className="text-[#b8956e]"/>
-                     <span className="font-black text-xl tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>CONFIG</span>
+                 <button onClick={() => {setSidebarMode('sensor'); fetchSensorData();}} style={sketchyShape3} className="flex-1 border-4 border-ink bg-[#EBCB8B]/40 hover:bg-[#EBCB8B] shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center gap-3 hover:-translate-y-1 hover:scale-[1.02] transition-all rotate-2 active:shadow-none active:translate-y-1 min-h-[60px]">
+                     <Activity size={28} strokeWidth={2.5} className="text-[#b8956e]"/>
+                     <span className="font-black text-xl tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>SENSOR</span>
                  </button>
              </div>
           )}
@@ -1161,6 +1289,66 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                  <button onClick={()=>setShowAddCronModal(true)} style={sketchyShape2} className="shrink-0 p-3 bg-[#E8D1C5] text-ink border-4 border-ink font-black shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:translate-y-1 hover:shadow-none transition-all flex items-center justify-center gap-2 mt-2">
                     <Plus size={20} strokeWidth={3}/> ADD ALARM
                  </button>
+             </div>
+          )}
+
+          {/* Sensor 子面板 */}
+          {sidebarMode === 'sensor' && (
+             <div className="flex-1 flex flex-col h-full overflow-hidden mt-1">
+                 <div className="flex justify-between items-center mb-4 shrink-0 border-b-4 border-ink/20 pb-3">
+                     <button onClick={() => setSidebarMode('menu')} className="p-1 bg-cream border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:-translate-x-1 transition-all"><ArrowLeft size={18} strokeWidth={3}/></button>
+                     <span className="font-black tracking-widest text-lg" style={{ fontFamily: '"Comic Sans MS", cursive' }}>SENSORS</span>
+                     
+                     <div className="flex items-center gap-2">
+                        <button onClick={() => setShowInstallSensorModal(true)} title="Add Sensor via JSON" className="p-1 bg-[#a3be8c] text-ink border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:scale-110 transition-all">
+                           <Plus size={18} strokeWidth={3}/>
+                        </button>
+                        <button onClick={reloadSensors} title="强制热重启" className="p-1 bg-[#EBCB8B] text-ink border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:rotate-180 transition-all">
+                           <RefreshCw size={18} strokeWidth={3}/>
+                        </button>
+                     </div>
+                 </div>
+                 
+                 <div className="flex-1 overflow-y-auto flex flex-col gap-4 p-2 mb-2">
+                    {!sensorData.sensors || Object.keys(sensorData.sensors).length === 0 ? (
+                        <p className="font-bold text-center mt-6 opacity-50 text-sm">No Sensors found</p>
+                    ) : (
+                      Object.entries(sensorData.sensors).map(([name, cfg]: [string, any], idx) => (
+                        <div key={name} style={idx % 2 === 0 ? sketchyShape2 : sketchyShape3} className="border-4 border-ink bg-cream p-3 transition-all shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex flex-col gap-2 relative">
+                            
+                            <div className="flex justify-between items-center pr-2">
+                               <span className="font-black text-[17px] truncate max-w-[150px]" style={{ fontFamily: '"Comic Sans MS", cursive' }}>{name}</span>
+                               
+                               <button 
+                                 onClick={() => toggleSensorStatus(name)} 
+                                 className={`px-3 py-1 border-2 border-ink font-black text-xs shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] active:translate-y-[1px] active:shadow-none transition-all ${cfg.enabled ? 'bg-[#a3be8c] text-ink' : 'bg-[#bf616a] text-paper'}`}
+                                 style={sketchyShape1}
+                               >
+                                 {cfg.enabled ? '🟢 ON' : '🔴 OFF'}
+                               </button>
+                            </div>
+
+                            {cfg.description && (
+                                <div className="text-xs font-bold opacity-70 leading-relaxed mt-1">
+                                    {cfg.description}
+                                </div>
+                            )}
+
+                            <div className="flex gap-2 mt-2 border-t-2 border-ink/10 pt-2 border-dashed">
+                               {cfg.capabilities?.observe && (
+                                   <span className="text-[10px] bg-[#88c0d0] text-paper px-1.5 rounded font-bold border border-ink shadow-[1px_1px_0px_0px_rgba(26,26,26,1)]">
+                                       Observe (听/看)
+                                   </span>
+                               )}
+                               {cfg.capabilities?.express && (
+                                   <span className="text-[10px] bg-[#EBCB8B] text-ink px-1.5 rounded font-bold border border-ink shadow-[1px_1px_0px_0px_rgba(26,26,26,1)]">
+                                       Express (说/回)
+                                   </span>
+                               )}
+                            </div>
+                        </div>
+                    )))}
+                 </div>
              </div>
           )}
 

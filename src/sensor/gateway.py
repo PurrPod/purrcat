@@ -1,7 +1,33 @@
-import collections
+import json
+import sys
 from typing import Any, Optional
 
-from src.sensor.base import BaseSensor
+
+class RemoteSensorProxy:
+    def __init__(self, name: str, capabilities: dict, stdin_pipe):
+        self.name = name
+        self.can_observe = capabilities.get("observe", False)
+        self.can_express = capabilities.get("express", False)
+        self.stdin_pipe = stdin_pipe
+
+    def express(self, message: Any, **kwargs) -> bool:
+        if not self.can_express:
+            return False
+
+        payload = {
+            "method": "express",
+            "params": {
+                "message": str(message),
+                "kwargs": kwargs
+            }
+        }
+        try:
+            self.stdin_pipe.write(json.dumps(payload, ensure_ascii=False) + "\n")
+            self.stdin_pipe.flush()
+            return True
+        except Exception as e:
+            print(f"❌ [Gateway] 向 {self.name} 发送数据失败: {e}")
+            return False
 
 
 class SensorGateway:
@@ -17,47 +43,42 @@ class SensorGateway:
         if getattr(self, "_initialized", False):
             return
         self._initialized = True
-        self.sensors: dict[str, BaseSensor] = {}
-        self.message_queue = collections.deque()
+        self.sensors: dict[str, RemoteSensorProxy] = {}
         self.active_channels = set()
 
-    def register(self, sensor: BaseSensor) -> None:
-        self.sensors[sensor.sensor_name] = sensor
+    def register(self, proxy: RemoteSensorProxy) -> None:
+        self.sensors[proxy.name] = proxy
 
-    def push(self, sensor: BaseSensor, content: Any) -> None:
+    def push(self, sensor_name: str, content: str) -> None:
         if isinstance(content, str) and content.strip() == "/unbind":
-            if sensor.sensor_name in self.active_channels:
-                self.active_channels.remove(sensor.sensor_name)
-                sensor.express("已解除活跃状态，可通过再次发送消息保持活跃")
+            if sensor_name in self.active_channels:
+                self.active_channels.remove(sensor_name)
+                self.sensors[sensor_name].express("✅ 已解除活跃状态，可通过再次发送消息保持活跃")
             return
 
-        message_dict = {
-            "type": "sensor_input",
-            "sensor_type": sensor.sensor_type,
-            "sensor_name": sensor.sensor_name,
-            "content": content,
-        }
-        self.message_queue.append(message_dict)
+        proxy = self.sensors.get(sensor_name)
+        if not proxy:
+            return
 
-        if sensor.sensor_type == "message":
-            if sensor.sensor_name not in self.active_channels:
-                self.active_channels.add(sensor.sensor_name)
-                sensor.express("✅ 已标记当前会话为活跃窗口\n输入`/unbind`解除绑定")
-        from src.agent import agent_force_push
+        if proxy.can_express and sensor_name not in self.active_channels:
+            self.active_channels.add(sensor_name)
+            proxy.express("✅ 已标记当前会话为活跃窗口\n输入`/unbind`解除绑定")
 
-        agent_force_push(content, type=sensor.sensor_type)
+        print(f"\n📥 [Sensor Input | {sensor_name}] -> {content}")
+
+        try:
+            from src.agent import agent_force_push
+            agent_force_push(content=content, type=sensor_name)
+        except Exception as e:
+            print(f"❌ [Gateway] 无法推送消息给 Agent: {e}")
 
     def send(self, message: Any, **kwargs) -> bool:
         success_count = 0
         for channel_name in list(self.active_channels):
-            sensor = self.sensors.get(channel_name)
-            if sensor:
-                if sensor.express(message, **kwargs):
-                    success_count += 1
+            proxy = self.sensors.get(channel_name)
+            if proxy and proxy.express(message, **kwargs):
+                success_count += 1
         return success_count > 0
-
-    def get_sensor(self, sensor_name: str) -> Optional[BaseSensor]:
-        return self.sensors.get(sensor_name)
 
 
 _gateway = SensorGateway()

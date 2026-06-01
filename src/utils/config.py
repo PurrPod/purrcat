@@ -9,7 +9,7 @@ SRC_DIR = os.path.join(BASE_DIR, "src")
 
 PURRCAT_DIR = os.path.join(BASE_DIR, ".purrcat")
 MODEL_CONFIG_PATH = os.path.join(PURRCAT_DIR, "model.json")
-SENSOR_CONFIG_PATH = os.path.join(PURRCAT_DIR, "sensor.json")
+SENSOR_CONFIG_PATH = os.path.join(PURRCAT_DIR, "activate_sensor.json")
 FILE_CONFIG_PATH = os.path.join(PURRCAT_DIR, "file.json")
 MEMORY_CONFIG_PATH = os.path.join(PURRCAT_DIR, "memory.json")
 MCP_CONFIG_PATH = os.path.join(PURRCAT_DIR, "mcp_config.json")

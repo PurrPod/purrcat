@@ -57,7 +57,7 @@ def _generate_model_config(purrcat_dir, force=False):
 
 def _generate_sensor_config(purrcat_dir, force=False):
     """Generate sensor configuration file"""
-    sensor_path = os.path.join(purrcat_dir, "sensor.json")
+    sensor_path = os.path.join(purrcat_dir, "activate_sensor.json")
 
     if os.path.exists(sensor_path) and not _prompt_overwrite(sensor_path, force):
         return False
@@ -66,10 +66,10 @@ def _generate_sensor_config(purrcat_dir, force=False):
     try:
         with open(sensor_path, "w", encoding="utf-8") as f:
             json.dump(sensor_config, f, indent=2, ensure_ascii=False)
-        print("[+] sensor.json generated")
+        print("[+] activate_sensor.json generated")
         return True
     except Exception as e:
-        print(f"X Failed to write sensor.json: {e}")
+        print(f"X Failed to write activate_sensor.json: {e}")
         return False
 
 
