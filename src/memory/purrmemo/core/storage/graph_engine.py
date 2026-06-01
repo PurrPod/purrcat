@@ -143,10 +143,10 @@ class GraphEngine(metaclass=SingletonMeta):
 
                 edge_data = self.graph[source_node_id][target_node_id]
                 if edge_data.get("relation_meaning") == relation_meaning:
-                    # 增加置信度，但不超过 1.0
                     new_confidence = min(1.0, edge_data["confidence"] + increment)
                     edge_data["confidence"] = new_confidence
                     edge_data["updated_at"] = datetime.now().isoformat()
+                    self.save_graph()
                     return True
             return False
         except Exception as e:
@@ -171,16 +171,29 @@ class GraphEngine(metaclass=SingletonMeta):
 
                 edge_data = self.graph[source_node_id][target_node_id]
                 if edge_data.get("relation_meaning") == relation_meaning:
-                    # 降低置信度，但不低于最小阈值
                     new_confidence = max(
                         self.min_confidence, edge_data["confidence"] - decrement
                     )
                     edge_data["confidence"] = new_confidence
                     edge_data["updated_at"] = datetime.now().isoformat()
+                    self.save_graph()
                     return True
             return False
         except Exception as e:
             print(f"削弱关系失败: {e}")
+            return False
+
+    def delete_relation(self, source_node_id, target_node_id):
+        """物理删除单条图谱边"""
+        try:
+            with self._rw_lock:
+                if self.graph.has_edge(source_node_id, target_node_id):
+                    self.graph.remove_edge(source_node_id, target_node_id)
+                    self.save_graph()
+                    return True
+            return False
+        except Exception as e:
+            print(f"删除关系失败: {e}")
             return False
 
     def get_node(self, node_id):

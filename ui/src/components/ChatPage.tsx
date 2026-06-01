@@ -4,7 +4,8 @@ import {
   ArrowLeft, Send, Cat, Clock, Wrench, Package, 
   ChevronDown, ChevronUp, Loader2, X, Trash2, 
   List, Brain, Server, Zap, AlarmClock, GitFork, Plus,
-  RefreshCw, Terminal
+  RefreshCw, Terminal, User, FileText, Save,
+  Settings, FileJson, AlertCircle
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
@@ -193,6 +194,119 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   const [cronData, setCronData] = useState<any[]>([]);
   const [showAddCronModal, setShowAddCronModal] = useState(false);
   const [newCron, setNewCron] = useState({ title: '', trigger_time: '', repeat_rule: 'none' });
+
+  // --- MD 编辑器状态 (SOUL / SOLO) ---
+  const [showMdModal, setShowMdModal] = useState(false);
+  const [mdType, setMdType] = useState<'SOUL' | 'SOLO'>('SOUL');
+  const [mdContent, setMdContent] = useState('');
+  const [isSavingMd, setIsSavingMd] = useState(false);
+
+  // --- 配置中心选项卡常量 ---
+  const CONFIG_TABS = ['model', 'sensor', 'file', 'memory', 'mcp'];
+
+  // --- 配置中心核心状态 ---
+  const [isConfigOpen, setIsConfigOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState('model');
+  const [configData, setConfigData] = useState<Record<string, any>>({});
+  const [expandedKey, setExpandedKey] = useState<string | null>(null);
+  const [editJsonStr, setEditJsonStr] = useState('');
+
+  // --- 配置读取函数 ---
+  const fetchConfig = async (tab: string) => {
+    try {
+      const res = await fetch(`http://localhost:8000/api/config/${tab}`);
+      if (res.ok) {
+        const data = await res.json();
+        setConfigData(data);
+        setExpandedKey(null);
+        setEditJsonStr('');
+      } else {
+        toast.error(`无法加载 ${tab} 配置`);
+      }
+    } catch (e) {
+      toast.error("网络错误，无法连接后端");
+    }
+  };
+
+  // 监听弹窗开启及 Tab 切换
+  useEffect(() => {
+    if (isConfigOpen) {
+      fetchConfig(activeTab);
+    }
+  }, [isConfigOpen, activeTab]);
+
+  const toggleKey = (key: string) => {
+    if (expandedKey === key) {
+      setExpandedKey(null);
+    } else {
+      setExpandedKey(key);
+      setEditJsonStr(JSON.stringify(configData[key], null, 2));
+    }
+  };
+
+  // --- 配置保存落盘函数 ---
+  const handleSaveConfig = async (key: string) => {
+    try {
+      const parsedValue = JSON.parse(editJsonStr);
+      const newConfig = { ...configData, [key]: parsedValue };
+
+      const res = await fetch(`http://localhost:8000/api/config/${activeTab}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newConfig)
+      });
+
+      if (res.ok) {
+        toast.success(`[${key}] 配置已落盘！`);
+        setConfigData(newConfig);
+        setExpandedKey(null);
+      } else {
+        toast.error("保存失败，后端拒绝了请求");
+      }
+    } catch (e) {
+      toast.error("保存失败：JSON 格式不合法！请检查引号和括号。");
+    }
+  };
+
+  const openMdEditor = async (type: 'SOUL' | 'SOLO') => {
+    setMdType(type);
+    setMdContent('Loading...');
+    setShowMdModal(true);
+    try {
+      const res = await fetch(`http://localhost:8000/api/config/markdown/${type}`);
+      if (res.ok) {
+        const data = await res.json();
+        setMdContent(data.content);
+      } else {
+        toast.error(`读取 ${type}.md 失败`);
+        setMdContent('');
+      }
+    } catch (e) {
+      toast.error(`网络错误，无法读取 ${type}.md`);
+      setMdContent('');
+    }
+  };
+
+  const saveMdContent = async () => {
+    setIsSavingMd(true);
+    try {
+      const res = await fetch(`http://localhost:8000/api/config/markdown/${mdType}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: mdContent })
+      });
+      if (res.ok) {
+        toast.success(`[${mdType}.md] 已成功落盘保存！`);
+        setShowMdModal(false);
+      } else {
+        toast.error("保存失败");
+      }
+    } catch (e) {
+      toast.error("网络异常，保存失败");
+    } finally {
+      setIsSavingMd(false);
+    }
+  };
 
   // --- API 交互 (MCP, Skill, Cron) ---
   const fetchMcp = async () => {
@@ -545,6 +659,142 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
         </div>
       )}
 
+      {/* Markdown 编辑弹窗 (SOUL / SOLO) */}
+      {showMdModal && (
+        <div className="fixed inset-0 bg-ink/40 backdrop-blur-sm z-[150] flex items-center justify-center p-4">
+          <div style={sketchyShape2} className="bg-paper border-4 border-ink p-6 flex flex-col gap-4 shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] rotate-1 w-full max-w-4xl h-[85vh]">
+            
+            <div className="flex justify-between items-center -rotate-1 border-b-4 border-ink/20 pb-4 shrink-0">
+              <div className="flex items-center gap-3">
+                <FileText size={32} className="text-terracotta" strokeWidth={2.5} />
+                <h3 className="text-3xl font-black tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>
+                  {mdType}.md
+                </h3>
+              </div>
+              <button onClick={() => setShowMdModal(false)} className="hover:text-terracotta hover:scale-110 transition-all">
+                <X size={32} strokeWidth={3}/>
+              </button>
+            </div>
+            
+            <div className="flex-1 -rotate-1 overflow-hidden flex flex-col w-full">
+              <textarea 
+                value={mdContent} 
+                onChange={e => setMdContent(e.target.value)} 
+                className="w-full h-full border-4 border-ink bg-[#FDF8F0] p-6 font-mono text-base leading-relaxed font-bold focus:outline-none focus:bg-white shadow-[inset_4px_4px_0px_0px_rgba(26,26,26,0.05)] resize-none" 
+                style={sketchyShape3} 
+                spellCheck={false}
+                placeholder={`开始编辑你的 ${mdType}...`}
+              />
+            </div>
+            
+            <div className="shrink-0 flex justify-end gap-4 -rotate-1 pt-2">
+              <button onClick={() => setShowMdModal(false)} style={sketchyShape3} className="px-8 bg-cream text-ink font-black py-3 border-4 border-ink hover:bg-sand transition-all shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] active:shadow-none active:translate-y-1">
+                CANCEL
+              </button>
+              <button onClick={saveMdContent} disabled={isSavingMd} style={sketchyShape1} className="px-10 bg-[#a3be8c] text-ink font-black py-3 border-4 border-ink hover:bg-[#8eb072] transition-all shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] active:shadow-none active:translate-y-1 flex items-center gap-2">
+                {isSavingMd ? <Loader2 className="animate-spin" size={24} strokeWidth={3}/> : <Save size={24} strokeWidth={3}/>} 
+                SAVE FILE
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* 配置面板弹窗部分 */}
+      {isConfigOpen && (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center bg-ink/70 backdrop-blur-sm p-4 md:p-8 pointer-events-auto">
+          <div 
+            style={sketchyShape2} 
+            className="bg-cream border-4 border-ink shadow-[16px_16px_0px_0px_rgba(26,26,26,1)] w-full max-w-5xl h-[80vh] flex flex-row relative"
+          >
+            <div className="absolute -top-4 left-1/4 w-32 h-10 bg-terracotta/60 border-2 border-ink rotate-2 z-50 pointer-events-none" style={sketchyShape1}></div>
+            <button onClick={() => setIsConfigOpen(false)} className="absolute top-4 right-6 hover:rotate-90 hover:text-terracotta transition-all z-10 p-2 bg-paper border-4 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)]" style={sketchyShape3}>
+              <X size={28} strokeWidth={4} />
+            </button>
+
+            {/* 左侧卡片式 Tab 导航 */}
+            <div className="w-56 shrink-0 border-r-4 border-ink/20 flex flex-col p-6">
+              <div className="pb-6 flex items-center gap-4">
+                <Settings size={36} strokeWidth={2.5} className="text-terracotta" />
+                <h2 className="text-xl font-black tracking-widest" style={{ fontFamily: '"Comic Sans MS", cursive' }}>CONFIG</h2>
+              </div>
+              <div className="flex flex-col gap-4">
+                {CONFIG_TABS.map((tab, idx) => {
+                  const isActive = activeTab === tab;
+                  const rotation = idx % 2 === 0 ? 'rotate-1' : '-rotate-1';
+                  const shape = idx % 3 === 0 ? sketchyShape1 : idx % 2 === 0 ? sketchyShape2 : sketchyShape3;
+                  return (
+                    <button
+                      key={tab}
+                      onClick={() => setActiveTab(tab)}
+                      style={shape}
+                      className={`px-4 py-2.5 font-black text-base border-4 border-ink uppercase tracking-wider transition-all shadow-[4px_4px_0px_0px_rgba(26,26,26,1)]
+                        ${isActive ? 'bg-[#EBCB8B] text-ink -translate-x-1' : 'bg-paper text-ink/70 hover:bg-sand'} ${rotation}`}
+                    >
+                      {tab}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* 右侧主配置编辑区 */}
+            <div className="flex-1 overflow-y-auto p-8 flex flex-col gap-6">
+              {Object.keys(configData).length === 0 ? (
+                <div className="text-center font-bold text-ink/40 mt-10 text-xl" style={{ fontFamily: '"Comic Sans MS", cursive' }}>No data found or Loading...</div>
+              ) : (
+                Object.keys(configData).map((key, idx) => {
+                  const isExpanded = expandedKey === key;
+                  const itemShape = idx % 2 === 0 ? sketchyShape2 : sketchyShape1;
+
+                  return (
+                    <div key={key} className="flex flex-col gap-2">
+                      <button
+                        onClick={() => toggleKey(key)}
+                        style={itemShape}
+                        className={`w-full text-left p-4 border-4 border-ink flex justify-between items-center transition-all 
+                          ${isExpanded ? 'bg-ink text-paper shadow-none' : 'bg-paper text-ink shadow-[6px_6px_0px_0px_rgba(26,26,26,1)] hover:-translate-y-1 hover:shadow-[8px_8px_0px_0px_rgba(26,26,26,1)]'}`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <FileJson size={20} strokeWidth={2.5} className={isExpanded ? 'text-terracotta' : 'text-[#EBCB8B]'} />
+                          <span className="text-xl font-black" style={{ fontFamily: '"Comic Sans MS", cursive' }}>{key}</span>
+                        </div>
+                        <span className="font-bold opacity-50 text-sm">{isExpanded ? 'CLOSE' : 'EDIT'}</span>
+                      </button>
+
+                      {isExpanded && (
+                        <div style={sketchyShape3} className="bg-paper border-4 border-ink p-4 flex flex-col gap-4 shadow-[inset_4px_4px_0px_0px_rgba(26,26,26,0.1)]">
+                          <div className="flex items-center gap-2 text-ink/60 font-bold text-xs bg-terracotta/10 p-2 border-2 border-ink border-dashed" style={sketchyShape1}>
+                            <AlertCircle size={14} strokeWidth={3} />
+                            注意：请严格遵守 JSON 格式（必须带双引号），否则会保存失败！
+                          </div>
+                          <textarea
+                            value={editJsonStr}
+                            onChange={(e) => setEditJsonStr(e.target.value)}
+                            className="w-full h-48 bg-[#FDF8F0] border-4 border-ink p-4 font-mono text-sm leading-relaxed font-bold focus:outline-none focus:bg-white resize-y"
+                            spellCheck={false}
+                          />
+                          <div className="flex justify-end">
+                            <button
+                              onClick={() => handleSaveConfig(key)}
+                              style={sketchyShape1}
+                              className="px-6 py-2 bg-[#a3be8c] border-4 border-ink text-ink font-black text-lg flex items-center gap-2 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:bg-[#8eb072] active:translate-y-1 active:shadow-none transition-all rotate-1"
+                            >
+                              <Save size={20} strokeWidth={3} /> SAVE TO DISK
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 会话切换侧滑列表模态框 */}
       {showSessionModal && (
         <div className="fixed inset-0 bg-ink/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
@@ -617,7 +867,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
           
           {/* 主菜单模式 */}
           {sidebarMode === 'menu' && (
-             <div className="flex-1 flex flex-col gap-5 p-2 mt-2">
+             <div className="flex-1 flex flex-col gap-5 p-2 mt-2 overflow-y-auto">
                  <button onClick={() => navigate('/memory')} style={sketchyShape1} className="flex-1 border-4 border-ink bg-[#FFB5A7]/40 hover:bg-[#FFB5A7] shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center gap-3 hover:-translate-y-1 hover:scale-[1.02] transition-all -rotate-1 active:shadow-none active:translate-y-1">
                      <Brain size={28} strokeWidth={2.5} className="text-[#c76c6c]"/>
                      <span className="font-black text-xl tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>MEMORY</span>
@@ -634,9 +884,25 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                      <AlarmClock size={28} strokeWidth={2.5} className="text-[#a07b8a]"/>
                      <span className="font-black text-xl tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>CRON</span>
                  </button>
+                 {/* 新增的 SOUL 按钮 */}
+                 <button onClick={() => openMdEditor('SOUL')} style={sketchyShape2} className="flex-1 border-4 border-ink bg-[#b48ead]/50 hover:bg-[#b48ead] shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center gap-3 hover:-translate-y-1 hover:scale-[1.02] transition-all rotate-1 active:shadow-none active:translate-y-1 min-h-[60px]">
+                     <FileText size={28} strokeWidth={2.5} className="text-[#8f6a88]"/>
+                     <span className="font-black text-xl tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>SOUL</span>
+                 </button>
+                 {/* 新增的 SOLO 按钮 */}
+                 <button onClick={() => openMdEditor('SOLO')} style={sketchyShape3} className="flex-1 border-4 border-ink bg-[#88c0d0]/50 hover:bg-[#88c0d0] shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center gap-3 hover:-translate-y-1 hover:scale-[1.02] transition-all -rotate-1 active:shadow-none active:translate-y-1 min-h-[60px]">
+                     <User size={28} strokeWidth={2.5} className="text-[#5e81ac]"/>
+                     <span className="font-black text-xl tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>SOLO</span>
+                 </button>
                  <button onClick={onSwitchToTask || (() => navigate('/task'))} style={sketchyShape2} className="flex-1 border-4 border-ink bg-[#D8E2DC]/50 hover:bg-[#D8E2DC] text-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center gap-3 hover:-translate-y-1 hover:scale-[1.02] transition-all -rotate-1 active:shadow-none active:translate-y-1">
                      <Terminal size={28} strokeWidth={2.5} className="text-[#6a917e]"/>
                      <span className="font-black text-xl tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>TASK</span>
+                 </button>
+
+                 {/* 新增：手绘风 CONFIG 功能按钮 */}
+                 <button onClick={() => setIsConfigOpen(true)} style={sketchyShape3} className="flex-1 border-4 border-ink bg-[#EBCB8B]/40 hover:bg-[#EBCB8B] shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center gap-3 hover:-translate-y-1 hover:scale-[1.02] transition-all rotate-2 active:shadow-none active:translate-y-1">
+                     <Settings size={28} strokeWidth={2.5} className="text-[#b8956e]"/>
+                     <span className="font-black text-xl tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>CONFIG</span>
                  </button>
              </div>
           )}

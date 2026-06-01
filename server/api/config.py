@@ -2,7 +2,7 @@ import json
 import os
 from typing import Any, Dict
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Body
 
 from src.utils.config import (
     FILE_CONFIG_PATH,
@@ -10,6 +10,7 @@ from src.utils.config import (
     MEMORY_CONFIG_PATH,
     MODEL_CONFIG_PATH,
     SENSOR_CONFIG_PATH,
+    PURRCAT_DIR,
     get_file_config,
     get_mcp_config,
     get_memory_config,
@@ -95,3 +96,47 @@ def api_update_mcp_config(config: Dict[str, Any]):
     if _save_json_file(MCP_CONFIG_PATH, config):
         return {"status": "ok", "message": "MCP config updated successfully"}
     raise HTTPException(status_code=500, detail="Failed to save MCP config")
+
+
+# ── Markdown Files (SOUL.md / SOLO.md) ──
+@router.get("/markdown/{filename}")
+def api_get_markdown_file(filename: str):
+    if filename not in ["SOUL", "SOLO"]:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    
+    file_path = os.path.join(PURRCAT_DIR, f"{filename}.md")
+    
+    # 向后兼容：如果你原本的 SOUL.md 放在 core 文件夹下
+    if filename == "SOUL" and not os.path.exists(file_path):
+        alt_path = os.path.join(PURRCAT_DIR, "core", "SOUL.md")
+        if os.path.exists(alt_path):
+            file_path = alt_path
+
+    if not os.path.exists(file_path):
+        return {"content": ""}
+        
+    with open(file_path, "r", encoding="utf-8") as f:
+        return {"content": f.read()}
+
+@router.put("/markdown/{filename}")
+def api_update_markdown_file(filename: str, payload: dict = Body(...)):
+    if filename not in ["SOUL", "SOLO"]:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+        
+    content = payload.get("content", "")
+    file_path = os.path.join(PURRCAT_DIR, f"{filename}.md")
+    
+    # 向后兼容：如果你原本的 SOUL.md 放在 core 文件夹下
+    if filename == "SOUL" and not os.path.exists(file_path):
+        alt_path = os.path.join(PURRCAT_DIR, "core", "SOUL.md")
+        if os.path.exists(alt_path):
+            file_path = alt_path
+
+    os.makedirs(os.path.dirname(file_path), exist_ok=True)
+    try:
+        with open(file_path, "w", encoding="utf-8") as f:
+            f.write(content)
+        return {"status": "ok", "message": f"{filename}.md saved successfully"}
+    except Exception as e:
+        print(f"Failed to save {filename}.md: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to save {filename}.md")

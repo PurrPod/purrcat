@@ -1,5 +1,6 @@
 """Memo 工具主入口 - 统一记忆工具，支持写入和搜索"""
 
+import json
 import re
 import traceback
 from datetime import datetime
@@ -87,6 +88,12 @@ def _handle_search(query: dict = None) -> str:
         return text_response(
             {"memo_cache": memo_list}, "🔍 未提供 query 参数，直接返回最新缓存记忆。"
         )
+
+    if isinstance(query, str):
+        try:
+            query = json.loads(query)
+        except json.JSONDecodeError:
+            query = {"prompt": query}
 
     if not isinstance(query, dict):
         return error_response(

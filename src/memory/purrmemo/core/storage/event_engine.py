@@ -159,6 +159,24 @@ class EventEngine(metaclass=SingletonMeta):
         if self.conn:
             self.conn.close()
 
+    def delete_event(self, event_id):
+        """彻底删除单条事件（包含全文索引）"""
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute(f"DELETE FROM {self.table_name}_fts WHERE event_id = ?", (event_id,))
+            cursor.execute(f"DELETE FROM {self.table_name} WHERE event_id = ?", (event_id,))
+
+            if cursor.rowcount > 0:
+                self.conn.commit()
+                return True
+            else:
+                self.conn.rollback()
+                return False
+        except Exception as e:
+            print(f"删除事件失败: {e}")
+            self.conn.rollback()
+            return False
+
     def cleanup_old_events(self, days_threshold=90):
         """清理超过 N 天的陈旧事件"""
         from datetime import timedelta
