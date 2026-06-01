@@ -4,6 +4,7 @@ import re
 import urllib.request
 import zipfile
 import traceback
+import json
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
@@ -12,6 +13,9 @@ from src.tool.callmcp.schema_manager import load_cached_schemas, refresh_schemas
 from src.tool.search.mcp_search import MCPSearcher
 from src.tool.search.skill_search import SkillSearcher
 from src.tool.cron.cron_operations import list_crons, add_cron, delete_cron
+
+# 🌟 新增：引入读取与保存 MCP 配置文件需要的依赖
+from src.utils.config import get_mcp_config, MCP_CONFIG_PATH
 
 router = APIRouter(prefix="/api/tools", tags=["Tools Management"])
 
@@ -166,6 +170,53 @@ def refresh_mcp_api():
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"刷新 MCP 失败: {str(e)}")
+
+
+# ==========================================
+# 🌟 新增：MCP 录入安装 API
+# ==========================================
+class InstallMCPReq(BaseModel):
+    config_json: str
+
+
+@router.post("/mcp/install")
+def install_mcp_api(req: InstallMCPReq):
+    """解析并合并用户传入的 MCP Server JSON 配置，落盘并热更新"""
+    try:
+        new_config = json.loads(req.config_json)
+        if "mcpServers" not in new_config:
+            raise HTTPException(status_code=400, detail="JSON 格式必须以 'mcpServers' 为顶层键")
+
+        # 1. 读出现有配置
+        existing_config = get_mcp_config()
+        if "mcpServers" not in existing_config:
+            existing_config["mcpServers"] = {}
+            
+        # 2. 遍历并合并配置
+        for srv_name, srv_conf in new_config["mcpServers"].items():
+            existing_config["mcpServers"][srv_name] = srv_conf
+            
+        # 3. 落盘保存配置文件 mcp_config.json
+        os.makedirs(os.path.dirname(MCP_CONFIG_PATH), exist_ok=True)
+        with open(MCP_CONFIG_PATH, "w", encoding="utf-8") as f:
+            json.dump(existing_config, f, indent=2, ensure_ascii=False)
+            
+        # 4. 刷新 Schema 并重建检索树 (它会自动通信子进程并更新 mcp_schema.json)
+        schemas = refresh_schemas()
+        MCPSearcher().reload_index()
+        
+        return {
+            "status": "success",
+            "message": f"MCP 配置已合并并热加载成功！当前系统共载入 {len(schemas)} 个工具。"
+        }
+        
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="输入的不是合法的 JSON 格式，请检查语法")
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"安装 MCP 失败: {str(e)}")
 
 
 # ==========================================

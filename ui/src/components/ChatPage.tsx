@@ -372,6 +372,41 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
     }
   };
 
+  // --- 🌟 新增：MCP 安装弹窗与状态 ---
+  const [showInstallMcpModal, setShowInstallMcpModal] = useState(false);
+  const [mcpInstallJson, setMcpInstallJson] = useState('');
+  const [isInstallingMcp, setIsInstallingMcp] = useState(false);
+
+  // 🌟 新增：调用后端接口安装并刷新 MCP
+  const handleInstallMcp = async () => {
+    if (!mcpInstallJson.trim()) {
+      toast.error("JSON 配置不能为空！");
+      return;
+    }
+    setIsInstallingMcp(true);
+    try {
+      const res = await fetch('http://localhost:8000/api/tools/mcp/install', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ config_json: mcpInstallJson.trim() })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        toast.success(data.message || "MCP 安装成功！");
+        setShowInstallMcpModal(false);
+        setMcpInstallJson('');
+        fetchMcp(); // 重新拉取最新的 MCP 列表渲染
+      } else {
+        const err = await res.json().catch(() => ({}));
+        toast.error(err.detail || "安装失败，请检查 JSON 格式或网络");
+      }
+    } catch (e) {
+      toast.error("网络异常，无法安装 MCP");
+    } finally {
+      setIsInstallingMcp(false);
+    }
+  };
+
   const fetchCron = async () => {
     try {
       const res = await fetch('http://localhost:8000/api/tools/cron');
@@ -734,6 +769,46 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
         </div>
       )}
 
+      {/* 🌟 新增：MCP 配置解析与安装弹窗 */}
+      {showInstallMcpModal && (
+        <div className="fixed inset-0 bg-ink/40 backdrop-blur-sm z-[150] flex items-center justify-center p-4">
+          <div style={sketchyShape2} className="bg-paper border-4 border-ink p-8 flex flex-col gap-6 shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] rotate-1 max-w-lg w-full">
+            <div className="flex justify-between items-center -rotate-1 border-b-4 border-ink/10 pb-2">
+              <h3 className="text-3xl font-black tracking-widest text-[#88c0d0]" style={{ fontFamily: '"Comic Sans MS", cursive' }}>INSTALL MCP</h3>
+              <button onClick={() => setShowInstallMcpModal(false)} className="hover:text-terracotta hover:scale-110 transition-all">
+                <X size={28} strokeWidth={3}/>
+              </button>
+            </div>
+            
+            <div className="-rotate-1 flex flex-col h-full">
+              <p className="font-bold opacity-70 mb-3 text-ink text-sm">
+                在此粘贴标准格式的 MCP 配置文件内容：<br/>
+                <span className="text-xs opacity-80">(必须是以 `mcpServers` 为根节点的完整 JSON 对象)</span>
+              </p>
+              <textarea 
+                autoFocus 
+                value={mcpInstallJson} 
+                onChange={e => setMcpInstallJson(e.target.value)} 
+                placeholder={'{\n  "mcpServers": {\n    "awslabs-core-mcp-server": {\n      "command": "uvx",\n      "args": ["awslabs.core-mcp-server@latest"]\n    }\n  }\n}'}
+                className="w-full h-64 border-4 border-ink bg-[#FDF8F0] p-4 font-bold text-sm font-mono focus:outline-none focus:bg-white shadow-[inset_4px_4px_0px_0px_rgba(26,26,26,0.05)] placeholder:text-ink/30 resize-none" 
+                style={sketchyShape3} 
+                spellCheck={false}
+              />
+            </div>
+            
+            <div className="flex gap-4 -rotate-1 mt-2">
+              <button onClick={() => setShowInstallMcpModal(false)} style={sketchyShape3} className="flex-1 bg-cream text-ink font-black tracking-widest text-lg py-3 border-4 border-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:translate-y-[1px] hover:shadow-none transition-all">
+                CANCEL
+              </button>
+              <button onClick={handleInstallMcp} disabled={isInstallingMcp} style={sketchyShape1} className="flex-1 bg-[#88c0d0] text-paper font-black tracking-widest text-lg py-3 border-4 border-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:bg-[#72a6b5] hover:translate-y-[1px] hover:shadow-none transition-all flex items-center justify-center gap-2">
+                {isInstallingMcp ? <Loader2 size={24} className="animate-spin" strokeWidth={3}/> : <Save size={24} strokeWidth={3}/>}
+                SAVE & LOAD
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Markdown 编辑弹窗 (SOUL / SOLO) */}
       {showMdModal && (
         <div className="fixed inset-0 bg-ink/40 backdrop-blur-sm z-[150] flex items-center justify-center p-4">
@@ -988,7 +1063,16 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                  <div className="flex justify-between items-center mb-4 shrink-0 border-b-4 border-ink/20 pb-3">
                      <button onClick={() => setSidebarMode('menu')} className="p-1 bg-cream border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:-translate-x-1 transition-all"><ArrowLeft size={18} strokeWidth={3}/></button>
                      <span className="font-black tracking-widest text-lg" style={{ fontFamily: '"Comic Sans MS", cursive' }}>MCP SERVERS</span>
-                     <button onClick={refreshMcp} className="p-1 bg-[#F9E2AF] border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:rotate-180 transition-all"><RefreshCw size={18} strokeWidth={3}/></button>
+                     
+                     {/* 🌟 修改：右侧增加配置/下载按钮和刷新按钮 */}
+                     <div className="flex items-center gap-2">
+                        <button onClick={() => setShowInstallMcpModal(true)} className="p-1 bg-[#88c0d0] text-paper border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:scale-110 transition-all" title="Install new MCP">
+                           <Plus size={18} strokeWidth={3}/>
+                        </button>
+                        <button onClick={refreshMcp} className="p-1 bg-[#F9E2AF] border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:rotate-180 transition-all">
+                           <RefreshCw size={18} strokeWidth={3}/>
+                        </button>
+                     </div>
                  </div>
                  {/* 🔴 修复穿模：增加 p-2 和 gap-4 */}
                  <div className="flex-1 overflow-y-auto flex flex-col gap-4 p-2 mb-2">
