@@ -316,6 +316,7 @@ class AgentNode(BaseNode):
                         LogType.TOOL_CALL,
                         f"🔧 [全局工具] {original_tool_name}",
                     )
+                    arguments["_caller"] = "harness"
                     raw_result = execute_global_tool(
                         original_tool_name, arguments, context=context
                     )

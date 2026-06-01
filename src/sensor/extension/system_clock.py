@@ -27,7 +27,7 @@ def heartbeat_loop():
         total_time += 10
         if total_time >= INTERVAL:
             total_time = 0
-            send_json_to_main("observe", {"content": "⏰ [Heartbeat] Fetch harness todo"})
+            send_json_to_main("observe", {"content": "⏰ [Heartbeat] Fetch solo todo"})
 
 def clock_loop():
     while True:

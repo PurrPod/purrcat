@@ -406,7 +406,6 @@ class Task:
         is_injection=False 代表彻底重跑，目标节点的记忆也要清空！
         """
         with self._lock:
-            # 队列中存储 (node_id, 是否是本次操作的起始目标节点)
             queue = deque([(start_node_id, True)])
             visited = set([start_node_id])
             edges = self.graph.get("edges", [])
@@ -421,13 +420,11 @@ class Task:
                 if curr_id in self.output_port_states:
                     self.output_port_states[curr_id].clear()
 
-                # 3. 🌟 记忆与邮箱清理逻辑
+                # 3. 🌟 记忆清理逻辑
                 if is_target:
                     if not is_injection and curr_id in self.node_memory:
                         self.node_memory.pop(curr_id)
                 else:
-                    if curr_id in self.edge_mailboxes:
-                        self.edge_mailboxes[curr_id].clear()
                     if curr_id in self.node_memory:
                         self.node_memory.pop(curr_id)
 
@@ -439,13 +436,17 @@ class Task:
                     t.cancel()
                     self.running_tasks.pop(t, None)
 
-                # 5. 顺藤摸瓜找下游
+                # 5. 顺藤摸瓜找下游，精准撤回当前节点发出的包裹
                 for edge in edges:
                     if edge["source"] == curr_id:
                         target_id = edge["target"]
+                        target_port = edge.get("targetHandle", "default")
+
+                        if target_id in self.edge_mailboxes and target_port in self.edge_mailboxes[target_id]:
+                            self.edge_mailboxes[target_id].pop(target_port, None)
+
                         if target_id not in visited:
                             visited.add(target_id)
-                            # 下游节点全部标记为 False（非目标节点），一律接受无情删档！
                             queue.append((target_id, False))
 
     def save(self):

@@ -185,7 +185,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
 
   // --- 侧边栏面板状态 ---
   const [sidebarMode, setSidebarMode] = useState<'menu' | 'mcp' | 'skill' | 'cron' | 'sensor'>('menu');
-  const [sensorData, setSensorData] = useState<any>({ sensors: {} });
+  const [sensorData, setSensorData] = useState<any>({});
   const [mcpData, setMcpData] = useState<Record<string, any[]>>({});
   const [expandedMcp, setExpandedMcp] = useState<string | null>(null);
   
@@ -333,11 +333,10 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   const toggleSensorStatus = async (sensorName: string) => {
     try {
        const newSensorData = JSON.parse(JSON.stringify(sensorData));
-       if (!newSensorData.sensors) newSensorData.sensors = {};
-       if (!newSensorData.sensors[sensorName]) return;
+       if (!newSensorData[sensorName]) return;
        
-       const currentStatus = newSensorData.sensors[sensorName].enabled || false;
-       newSensorData.sensors[sensorName].enabled = !currentStatus;
+       const currentStatus = newSensorData[sensorName].enabled || false;
+       newSensorData[sensorName].enabled = !currentStatus;
        
        setSensorData(newSensorData);
 
@@ -437,9 +436,8 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
       const newSensors = parsed.sensors ? parsed.sensors : parsed;
 
       const currentData = JSON.parse(JSON.stringify(sensorData));
-      if (!currentData.sensors) currentData.sensors = {};
 
-      Object.assign(currentData.sensors, newSensors);
+      Object.assign(currentData, newSensors);
 
       const resSave = await fetch('http://localhost:8000/api/config/sensor', {
         method: 'PUT',
@@ -1310,10 +1308,10 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                  </div>
                  
                  <div className="flex-1 overflow-y-auto flex flex-col gap-4 p-2 mb-2">
-                    {!sensorData.sensors || Object.keys(sensorData.sensors).length === 0 ? (
+                    {!sensorData || Object.keys(sensorData).length === 0 ? (
                         <p className="font-bold text-center mt-6 opacity-50 text-sm">No Sensors found</p>
                     ) : (
-                      Object.entries(sensorData.sensors).map(([name, cfg]: [string, any], idx) => (
+                      Object.entries(sensorData).map(([name, cfg]: [string, any], idx) => (
                         <div key={name} style={idx % 2 === 0 ? sketchyShape2 : sketchyShape3} className="border-4 border-ink bg-cream p-3 transition-all shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex flex-col gap-2 relative">
                             
                             <div className="flex justify-between items-center pr-2">
@@ -1321,10 +1319,12 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                                
                                <button 
                                  onClick={() => toggleSensorStatus(name)} 
-                                 className={`px-3 py-1 border-2 border-ink font-black text-xs shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] active:translate-y-[1px] active:shadow-none transition-all ${cfg.enabled ? 'bg-[#a3be8c] text-ink' : 'bg-[#bf616a] text-paper'}`}
-                                 style={sketchyShape1}
-                               >
-                                 {cfg.enabled ? '🟢 ON' : '🔴 OFF'}
+                                 className={`relative w-12 h-6 border-2 border-ink flex items-center px-1 transition-colors shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] cursor-pointer active:translate-y-[1px] active:shadow-none 
+                                   ${cfg.enabled ? 'bg-[#a3be8c] justify-end' : 'bg-ink/10 justify-start'}`} 
+                                 style={sketchyShape1} 
+                                 title={cfg.enabled ? "Click to Disable" : "Click to Enable"} 
+                               > 
+                                 <div className="w-3.5 h-3.5 bg-ink" style={sketchyShape3}></div> 
                                </button>
                             </div>
 
@@ -1336,14 +1336,18 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
 
                             <div className="flex gap-2 mt-2 border-t-2 border-ink/10 pt-2 border-dashed">
                                {cfg.capabilities?.observe && (
-                                   <span className="text-[10px] bg-[#88c0d0] text-paper px-1.5 rounded font-bold border border-ink shadow-[1px_1px_0px_0px_rgba(26,26,26,1)]">
-                                       Observe (听/看)
-                                   </span>
+                                   <div 
+                                      title="Observe (接收输入)" 
+                                      className="w-4 h-4 bg-[#88c0d0] border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:scale-110 transition-transform rotate-3" 
+                                      style={sketchyShape2} 
+                                   ></div> 
                                )}
                                {cfg.capabilities?.express && (
-                                   <span className="text-[10px] bg-[#EBCB8B] text-ink px-1.5 rounded font-bold border border-ink shadow-[1px_1px_0px_0px_rgba(26,26,26,1)]">
-                                       Express (说/回)
-                                   </span>
+                                   <div 
+                                      title="Express (主动输出)" 
+                                      className="w-4 h-4 bg-[#EBCB8B] border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:scale-110 transition-transform -rotate-3" 
+                                      style={sketchyShape1} 
+                                   ></div> 
                                )}
                             </div>
                         </div>

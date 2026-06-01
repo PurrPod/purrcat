@@ -3,7 +3,7 @@ import os
 import traceback
 
 from src.tool.utils.format import error_response, text_response, warning_response
-from src.utils.config import SRC_DIR
+from src.utils.config import AGENT_CORE_DIR
 
 from .exceptions import MCPServerNotFoundError, MCPToolNotFoundError
 from .mcp_fetch import fetch_mcp_tools
@@ -20,7 +20,7 @@ def Fetch(
     **kwargs,
 ) -> str:
     try:
-        valid_sources = ["skill", "mcp", "web", "harness", "todo"]
+        valid_sources = ["skill", "mcp", "web", "solo", "todo"]
         source = source.strip().lower() if source else ""
         if source not in valid_sources:
             return error_response(
@@ -67,34 +67,44 @@ def Fetch(
             return warning_response(error, f"⚠️ {source.upper()} 获取失败")
 
         if source == "skill":
-            # ================= 核心：利用全局单例直接进行幽灵注入 =================
-            from src.agent import agent_force_push
-
-            try:
-                # 组装强有力的末尾注入指令
-                skill_instruction = (
-                    f"【核心技能载入: {result['name']}】\n"
-                    f"技能所在目录: {result['directory']}\n"
-                    f"描述: {result['description']}\n\n"
-                    f"[技能SOP操作指南]\n{result['content']}\n\n"
-                    f"请严格按照上述步骤与约束进行操作。"
-                )
-                # 触发向队列末尾 push
-                agent_force_push(skill_instruction, type="skill")
-                print(f"👻 [幽灵注入] 技能 [{name}] 已直接推入 Agent 末尾指令队列")
-            except Exception as e:
-                print(f"⚠️ [幽灵注入失败]: {e}")
-            # ===================================================================
-
-            # tool 角色返回的文本极简化，仅做状态确认，避免大量 Token 重复和小弟理解混淆
-            return text_response(
-                {
-                    "name": result["name"],
-                    "status": "success",
-                    "message": f"✅ 技能 [{name}] 已成功加载到系统事件中。请立即查看最新的系统通知（紧随其后的 user 消息）以获取最新 SOP 约束，并严格依此行事。",
-                },
-                f"📖 Skill [{name}] 注入成功",
+            skill_instruction = (
+                f"【核心技能载入: {result['name']}】\n"
+                f"技能所在目录: {result['directory']}\n"
+                f"描述: {result['description']}\n\n"
+                f"[技能SOP操作指南]\n{result['content']}\n\n"
+                f"请严格按照上述步骤与约束进行操作。"
             )
+
+            is_harness = kwargs.get("_caller") == "harness"
+
+            if not is_harness:
+                from src.agent import agent_force_push
+
+                try:
+                    agent_force_push(skill_instruction, type="skill")
+                    print(f"👻 [幽灵注入] 技能 [{name}] 已直接推入 Agent 末尾指令队列")
+                except Exception as e:
+                    print(f"⚠️ [幽灵注入失败]: {e}")
+
+                return text_response(
+                    {
+                        "name": result["name"],
+                        "status": "success",
+                        "message": f"✅ 技能 [{name}] 已成功加载到系统事件中。请立即查看最新的系统通知（紧随其后的 user 消息）以获取最新 SOP 约束，并严格依此行事。",
+                    },
+                    f"📖 Skill [{name}] 注入成功",
+                )
+            else:
+                print(f"👻 [Harness独立加载] 技能 [{name}] 完整内容已直接返回给工作流节点上下文")
+                return text_response(
+                    {
+                        "name": result["name"],
+                        "status": "success",
+                        "content": skill_instruction,
+                        "message": f"✅ 技能 [{name}] 获取成功，请紧紧围绕上方的 content 字段中的 [技能SOP操作指南] 行事。"
+                    },
+                    f"📖 Skill [{name}] 独立加载",
+                )
 
         elif source == "mcp":
             if not result:
@@ -129,16 +139,16 @@ def Fetch(
                 f"🔧 {serve_name} | {len(result)}个工具",
             )
 
-        elif source == "harness":
-            harness_path = os.path.join(SRC_DIR, "agent", "core", "HARNESS.md")
+        elif source == "solo":
+            harness_path = os.path.join(AGENT_CORE_DIR, "SOLO.md")
             if os.path.exists(harness_path):
                 with open(harness_path, "r", encoding="utf-8") as f:
                     content = f.read()
-                return text_response({"content": content}, "📜 HARNESS")
-            return error_response("未找到 HARNESS.md", "❌ 文件不存在")
+                return text_response({"content": content}, "📜 SOLO.md")
+            return error_response("未找到 SOLO.md", "❌ 文件不存在")
 
         elif source == "todo":
-            todo_path = os.path.join(SRC_DIR, "agent", "core", "TODO.md")
+            todo_path = os.path.join(AGENT_CORE_DIR, "TODO.md")
             if os.path.exists(todo_path):
                 with open(todo_path, "r", encoding="utf-8") as f:
                     content = f.read().strip()

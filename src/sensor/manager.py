@@ -42,11 +42,11 @@ class SensorManager:
 
         config = get_sensor_config()
 
-        if not config or "sensors" not in config:
+        if not config:
             print("⚠️ [SensorManager] 未检测到有效的 Sensor 配置，已跳过。")
             return
 
-        for name, cfg in config.get("sensors", {}).items():
+        for name, cfg in config.items():
             is_enabled = cfg.get("enabled", False)
 
             if not is_enabled:

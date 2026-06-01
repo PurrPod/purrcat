@@ -107,55 +107,52 @@ def get_model_config_dict():
 def get_sensor_config_dict():
     """Generate sensor configuration dictionary"""
     return {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "$comment": f"PurrCat Sensor Configuration File - Generated at {datetime.now().strftime('%Y-%m-%d %H:%M')}",
-        "sensors": {
-            "feishu_bot": {
-                "enabled": False,
-                "env": {
-                    "FEISHU_APP_ID": "",
-                    "FEISHU_APP_SECRET": "",
-                    "FEISHU_CHAT_ID": ""
-                },
-                "capabilities": {
-                    "observe": True,
-                    "express": True
-                }
+
+        "feishu_bot": {
+            "enabled": False,
+            "env": {
+                "FEISHU_APP_ID": "",
+                "FEISHU_APP_SECRET": "",
+                "FEISHU_CHAT_ID": ""
             },
-            "system_clock": {
-                "enabled": True,
-                "env": {
-                    "INTERVAL": "1800",
-                    "CRON_FILE": ".purrcat/core/cron.json"
-                },
-                "capabilities": {
-                    "observe": True,
-                    "express": False
-                }
+            "capabilities": {
+                "observe": True,
+                "express": True
+            }
+        },
+        "system_clock": {
+            "enabled": True,
+            "env": {
+                "INTERVAL": "1800",
+                "CRON_FILE": ".purrcat/core/cron.json"
             },
-            "rss_watcher": {
-                "enabled": False,
-                "env": {
-                    "INTERVAL": "1800",
-                    "RSS_SUBSCRIPTIONS_JSON": "[{\"name\": \"Lilian Weng's Blog\", \"rss_url\": \"https://lilianweng.github.io/lil-log/feed.xml\"},{\"name\": \"Ahead of AI\", \"rss_url\": \"https://magazine.sebastianraschka.com/feed\"},{\"name\": \"Latepost 晚点\", \"rss_url\": \"https://rsshub.rssforever.com/latepost\"}]"
-                },
-                "capabilities": {
-                    "observe": True,
-                    "express": False
-                }
+            "capabilities": {
+                "observe": True,
+                "express": False
+            }
+        },
+        "rss_watcher": {
+            "enabled": False,
+            "env": {
+                "INTERVAL": "1800",
+                "RSS_SUBSCRIPTIONS_JSON": "[{\"name\": \"Lilian Weng's Blog\", \"rss_url\": \"https://lilianweng.github.io/lil-log/feed.xml\"},{\"name\": \"Ahead of AI\", \"rss_url\": \"https://magazine.sebastianraschka.com/feed\"},{\"name\": \"Latepost 晚点\", \"rss_url\": \"https://rsshub.rssforever.com/latepost\"}]"
             },
-            "audio_assistant": {
-                "enabled": False,
-                "env": {
-                    "WHISPER_MODEL": "small",
-                    "LANGUAGE": "zh",
-                    "TTS_RATE": "150",
-                    "TTS_VOLUME": "1.0"
-                },
-                "capabilities": {
-                    "observe": True,
-                    "express": True
-                }
+            "capabilities": {
+                "observe": True,
+                "express": False
+            }
+        },
+        "audio_assistant": {
+            "enabled": False,
+            "env": {
+                "WHISPER_MODEL": "small",
+                "LANGUAGE": "zh",
+                "TTS_RATE": "150",
+                "TTS_VOLUME": "1.0"
+            },
+            "capabilities": {
+                "observe": True,
+                "express": True
             }
         }
     }
