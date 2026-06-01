@@ -5,7 +5,7 @@ import {
   ChevronDown, ChevronUp, Loader2, X, Trash2, 
   List, Brain, Server, Zap, AlarmClock, GitFork, Plus,
   RefreshCw, Terminal, User, FileText, Save,
-  Settings, FileJson, AlertCircle
+  Settings, FileJson, AlertCircle, Download
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
@@ -191,6 +191,11 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   const [skillData, setSkillData] = useState<any[]>([]);
   const [expandedSkill, setExpandedSkill] = useState<string | null>(null);
   
+  // --- 🌟 新增：Skill 下载弹窗与状态 ---
+  const [showInstallSkillModal, setShowInstallSkillModal] = useState(false);
+  const [skillInstallUrl, setSkillInstallUrl] = useState('');
+  const [isInstallingSkill, setIsInstallingSkill] = useState(false);
+  
   const [cronData, setCronData] = useState<any[]>([]);
   const [showAddCronModal, setShowAddCronModal] = useState(false);
   const [newCron, setNewCron] = useState({ title: '', trigger_time: '', repeat_rule: 'none' });
@@ -335,6 +340,36 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
       const res = await fetch('http://localhost:8000/api/tools/skills/refresh', { method: 'POST' });
       if (res.ok) { toast.success("Skills 已刷新"); fetchSkill(); }
     } catch (e) { toast.error("刷新 Skill 失败"); }
+  };
+
+  // 🌟 新增：调用后端下载并热更新 Skill
+  const handleInstallSkill = async () => {
+    if (!skillInstallUrl.trim()) {
+      toast.error("Github URL 不能为空！");
+      return;
+    }
+    setIsInstallingSkill(true);
+    try {
+      const res = await fetch('http://localhost:8000/api/tools/skills/install', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: skillInstallUrl.trim() })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        toast.success(data.message || "Skill 下载并加载成功！");
+        setShowInstallSkillModal(false);
+        setSkillInstallUrl('');
+        fetchSkill(); // 重新拉取以更新前端列表
+      } else {
+        const err = await res.json().catch(() => ({}));
+        toast.error(err.detail || "安装失败，请检查 URL 格式");
+      }
+    } catch (e) {
+      toast.error("网络异常，无法下载 Skill");
+    } finally {
+      setIsInstallingSkill(false);
+    }
   };
 
   const fetchCron = async () => {
@@ -659,6 +694,46 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
         </div>
       )}
 
+      {/* 🌟 新增：第三方 Skill 安装弹窗 */}
+      {showInstallSkillModal && (
+        <div className="fixed inset-0 bg-ink/40 backdrop-blur-sm z-[150] flex items-center justify-center p-4">
+          <div style={sketchyShape2} className="bg-paper border-4 border-ink p-8 flex flex-col gap-6 shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] rotate-1 max-w-lg w-full">
+            <div className="flex justify-between items-center -rotate-1 border-b-4 border-ink/10 pb-2">
+              <h3 className="text-3xl font-black tracking-widest text-terracotta" style={{ fontFamily: '"Comic Sans MS", cursive' }}>INSTALL SKILL</h3>
+              <button onClick={() => setShowInstallSkillModal(false)} className="hover:text-terracotta hover:scale-110 transition-all">
+                <X size={28} strokeWidth={3}/>
+              </button>
+            </div>
+            
+            <div className="-rotate-1">
+              <p className="font-bold opacity-70 mb-3 text-ink text-sm">
+                输入第三方 Skill 的 Github Tree 链接以自动安装：<br/>
+                <span className="text-xs opacity-80">(e.g. https://github.com/owner/repo/tree/main/path/to/skill)</span>
+              </p>
+              <input 
+                autoFocus 
+                value={skillInstallUrl} 
+                onChange={e => setSkillInstallUrl(e.target.value)} 
+                onKeyDown={e => e.key === 'Enter' && handleInstallSkill()} 
+                placeholder="https://github.com/..." 
+                className="w-full border-4 border-ink bg-[#FDF8F0] p-4 font-bold text-base focus:outline-none focus:bg-white shadow-[inset_4px_4px_0px_0px_rgba(26,26,26,0.05)] placeholder:text-ink/30" 
+                style={sketchyShape3} 
+              />
+            </div>
+            
+            <div className="flex gap-4 -rotate-1 mt-2">
+              <button onClick={() => setShowInstallSkillModal(false)} style={sketchyShape3} className="flex-1 bg-cream text-ink font-black tracking-widest text-lg py-3 border-4 border-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:translate-y-[1px] hover:shadow-none transition-all">
+                CANCEL
+              </button>
+              <button onClick={handleInstallSkill} disabled={isInstallingSkill} style={sketchyShape1} className="flex-1 bg-[#a3be8c] text-ink font-black tracking-widest text-lg py-3 border-4 border-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:bg-[#8eb072] hover:translate-y-[1px] hover:shadow-none transition-all flex items-center justify-center gap-2">
+                {isInstallingSkill ? <Loader2 size={24} className="animate-spin" strokeWidth={3}/> : <Download size={24} strokeWidth={3}/>}
+                DOWNLOAD
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Markdown 编辑弹窗 (SOUL / SOLO) */}
       {showMdModal && (
         <div className="fixed inset-0 bg-ink/40 backdrop-blur-sm z-[150] flex items-center justify-center p-4">
@@ -946,7 +1021,16 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                  <div className="flex justify-between items-center mb-4 shrink-0 border-b-4 border-ink/20 pb-3">
                      <button onClick={() => setSidebarMode('menu')} className="p-1 bg-cream border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:-translate-x-1 transition-all"><ArrowLeft size={18} strokeWidth={3}/></button>
                      <span className="font-black tracking-widest text-lg" style={{ fontFamily: '"Comic Sans MS", cursive' }}>SKILLS</span>
-                     <button onClick={refreshSkill} className="p-1 bg-[#FCD5CE] border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:rotate-180 transition-all"><RefreshCw size={18} strokeWidth={3}/></button>
+                     
+                     {/* 🌟 修改：右侧增加下载按钮和刷新按钮 */}
+                     <div className="flex items-center gap-2">
+                        <button onClick={() => setShowInstallSkillModal(true)} className="p-1 bg-terracotta text-paper border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:scale-110 transition-all" title="Install new Skill">
+                           <Plus size={18} strokeWidth={3}/>
+                        </button>
+                        <button onClick={refreshSkill} className="p-1 bg-[#FCD5CE] border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:rotate-180 transition-all">
+                           <RefreshCw size={18} strokeWidth={3}/>
+                        </button>
+                     </div>
                  </div>
                  {/* 🔴 修复穿模：增加 p-2 和 gap-4 */}
                  <div className="flex-1 overflow-y-auto flex flex-col gap-4 p-2 mb-2">

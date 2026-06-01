@@ -1,3 +1,8 @@
+import io
+import os
+import re
+import urllib.request
+import zipfile
 import traceback
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -55,6 +60,78 @@ def get_skills_api():
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"获取 Skill 列表失败: {str(e)}")
+
+
+# ==========================================
+# Skill 在线安装 API
+# ==========================================
+class InstallSkillReq(BaseModel):
+    url: str
+
+
+@router.post("/skills/install")
+def install_skill_api(req: InstallSkillReq):
+    """根据 GitHub URL 下载第三方 Skill 并热更新内存"""
+    try:
+        url = req.url
+        # 1. 解析 GitHub URL (参考命令行工具的正则)
+        match = re.match(r"https?://github\.com/([^/]+)/([^/]+)/tree/([^/]+)/(.*)", url)
+        if not match:
+            raise HTTPException(
+                status_code=400, 
+                detail="URL格式错误！正确格式示例: https://github.com/owner/repo/tree/branch/path/to/skill"
+            )
+        
+        owner, repo, branch, path = match.groups()
+        skill_name = os.path.basename(path.rstrip("/"))
+        
+        # 2. 定位项目根目录的 skills 文件夹
+        # server/api/tools.py 向上3层为项目根目录
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        dest_dir = os.path.join(project_root, "skills", skill_name)
+        zip_url = f"https://github.com/{owner}/{repo}/archive/refs/heads/{branch}.zip"
+
+        # 3. 内存下载并仅解压目标子文件夹
+        response = urllib.request.urlopen(zip_url)
+        zip_data = response.read()
+
+        with zipfile.ZipFile(io.BytesIO(zip_data)) as z:
+            root_folder = z.namelist()[0].split("/")[0]
+            target_prefix = f"{root_folder}/{path}".rstrip("/") + "/"
+
+            extracted_count = 0
+            for file_info in z.infolist():
+                if file_info.filename.startswith(target_prefix):
+                    relative_path = file_info.filename[len(target_prefix):]
+                    if not relative_path:
+                        continue
+
+                    local_path = os.path.join(dest_dir, relative_path)
+                    if file_info.is_dir():
+                        os.makedirs(local_path, exist_ok=True)
+                    else:
+                        os.makedirs(os.path.dirname(local_path), exist_ok=True)
+                        with open(local_path, "wb") as f:
+                            f.write(z.read(file_info.filename))
+                    extracted_count += 1
+
+            if extracted_count == 0:
+                raise HTTPException(status_code=404, detail=f"仓库中找不到文件夹 '{path}'")
+
+        # 4. 解压成功后，触发 searcher 的内存热更新
+        searcher = SkillSearcher()
+        searcher.reload_index()
+
+        return {
+            "status": "success", 
+            "message": f"Skill '{skill_name}' 下载成功并已热加载入内存！"
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Skill 下载/解压失败: {str(e)}")
 
 
 # ==========================================
