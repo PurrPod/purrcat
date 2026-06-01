@@ -7,6 +7,7 @@ from datetime import datetime
 
 from src.agent.session_store import SessionStore
 from src.memory import search_memory, add_memory
+from src.tool.memo.memo_operations import _smart_update_memory_md
 from src.tool.utils.format import error_response, text_response
 
 
@@ -68,6 +69,13 @@ def _handle_add(memo_data: dict = None) -> str:
 
     try:
         filepath = add_memory(memo_data)
+        
+        # 分离出需要更新到 MEMORY.md 的核心数据并触发后台更新
+        work_exp = memo_data.get("work_exp", [])
+        user_profile = memo_data.get("user_profile", [])
+        if work_exp or user_profile:
+            _smart_update_memory_md(work_exp, user_profile)
+        
         # 不再返回全量有效数据，改为只返回统计信息
         return text_response(
             {"filepath": filepath},

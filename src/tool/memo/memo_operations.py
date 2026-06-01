@@ -217,34 +217,40 @@ def _smart_update_memory_md(work_exp: list, user_profile: list):
 
                         for t in msg_resp.tool_calls:
                             if t.function.name == "overwrite_memory_md":
-                                has_write_operation = True
                                 try:
+                                    # 底层 API 传回来的 arguments 是 JSON 字符串，这里进行反序列化
                                     args = json.loads(t.function.arguments)
                                     new_md_content = args.get(
                                         "new_markdown_content", ""
                                     )
-                                    # 【重要安全修复】使用原子重命名避免并发读写冲突
+                                    # 原子重命名避免并发读写冲突
                                     temp_path = f"{MEMORY_MD_PATH}.tmp"
                                     with open(temp_path, "w", encoding="utf-8") as f:
                                         f.write(new_md_content)
                                     os.replace(temp_path, MEMORY_MD_PATH)
                                     print("✅ 后台模型已智能更新 MEMORY.md")
+                                    has_write_operation = True  # 只有真正落盘成功才标记为 True
+                                except json.JSONDecodeError as e:
+                                    print(f"❌ 工具参数解析失败，转义错误: {e}")
+                                    has_write_operation = False
+                                    error_feedback = "调用工具失败：你传入的 new_markdown_content 包含未正确转义的字符（如引号或换行符），导致 JSON 解析失败。请修正转义后重新调用工具。"
                                 except Exception as e:
                                     print(f"❌ 写入 MEMORY.md 失败: {e}")
+                                    has_write_operation = False
+                                    error_feedback = f"写入失败：{str(e)}。请重试。"
                                 break
 
+                        # 决定是退出还是让 Agent 重试
                         if has_write_operation:
                             break
-                    else:
-                        if not has_write_operation:
-                            messages.append(
-                                {
-                                    "role": "user",
-                                    "content": "⚠️ 系统检测警告：你没有调用 overwrite_memory_md 工具。请必须调用该工具将整合后的记忆写入 MEMORY.md！",
-                                }
-                            )
+                        else:
+                            # 没调用工具，或者调用了但参数解析失败了，把反馈告诉 Agent 逼它重试
+                            feedback_msg = error_feedback if 'error_feedback' in locals() else "⚠️ 警告：你必须调用 overwrite_memory_md 工具完成写入！"
+                            messages.append({
+                                "role": "user",
+                                "content": feedback_msg
+                            })
                             continue
-                        break
 
                 except Exception as e:
                     print(f"❌ reAct 循环异常: {e}")
