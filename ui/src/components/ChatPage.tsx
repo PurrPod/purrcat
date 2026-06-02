@@ -183,6 +183,31 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   const [isCheckingOut, setIsCheckingOut] = useState(false);
   const [isAgentThinking, setIsAgentThinking] = useState(false);
 
+  // --- Token 状态 ---
+  const [tokenData, setTokenData] = useState({ window: 0, max: 1000000 });
+
+  // 轮询 Token 进度
+  useEffect(() => {
+    let tokenInterval: NodeJS.Timeout;
+    const fetchToken = async () => {
+      try {
+        const res = await fetch('http://localhost:8000/api/agent/token');
+        if (res.ok) {
+          const data = await res.json();
+          setTokenData({ window: data.window_token, max: data.max_token });
+        }
+      } catch (e) {
+        console.error("Fetch token error", e);
+      }
+    };
+
+    if (currentSessionId) {
+      fetchToken();
+      tokenInterval = setInterval(fetchToken, 5000);
+    }
+    return () => { if (tokenInterval) clearInterval(tokenInterval); };
+  }, [currentSessionId]);
+
   // --- 侧边栏面板状态 ---
   const [sidebarMode, setSidebarMode] = useState<'menu' | 'mcp' | 'skill' | 'cron' | 'sensor'>('menu');
   const [sensorData, setSensorData] = useState<any>({});
@@ -1430,7 +1455,15 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
 
       {/* --- 右侧大聊天纸板 --- */}
       <div style={sketchyShape1} className="flex-1 bg-paper border-4 border-ink shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] flex flex-col overflow-hidden relative z-10">
-        <div className="absolute -top-4 right-12 w-32 h-8 bg-[#EBCB8B]/80 border-2 border-ink -rotate-3 z-50" style={sketchyShape2}></div>
+        
+        {/* 🌟 改造原本的黄色小胶带：有会话时显示 ID，无会话时作为纯装饰 */}
+        {currentSessionId ? (
+          <div className="absolute -top-2 right-12 px-6 py-1 bg-[#EBCB8B] border-2 border-ink rotate-2 z-50 text-ink font-black text-sm shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center" style={sketchyShape2} title="Session ID">
+            ID: {currentSessionId.split('_')[1] || currentSessionId.slice(-8)}
+          </div>
+        ) : (
+          <div className="absolute -top-4 right-12 w-32 h-8 bg-[#EBCB8B]/80 border-2 border-ink -rotate-3 z-50" style={sketchyShape2}></div>
+        )}
 
         <div className="pt-8 px-10 pb-4 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-4">
@@ -1439,9 +1472,28 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
             </div>
             <h2 className="text-4xl font-black tracking-tighter text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>PurrCat.</h2>
           </div>
+          
+          {/* 🌟 涂鸦风 Token 进度条（手绘排线阴影效果） */}
           {currentSessionId && (
-            <div style={sketchyShape3} className="px-4 py-2 bg-ink/5 border-2 border-ink border-dashed text-sm font-bold text-ink/60 rotate-2">
-              # {currentSessionId.slice(-8)}
+            <div className="flex items-center gap-2 mt-3" title={`Token: ${tokenData.window} / ${tokenData.max}`}>
+              <span className="text-[11px] font-black text-ink/50" style={{ fontFamily: '"Comic Sans MS", cursive' }}>MEM</span>
+              <div className="w-36 h-[14px] border-2 border-ink bg-cream p-[2px]" style={sketchyShape3}>
+                <div 
+                  className="h-full transition-all duration-1000 ease-out border-r-2 border-ink" 
+                  style={{ 
+                    width: `${Math.min(100, (tokenData.window / tokenData.max) * 100)}%`, 
+                    // 核心魔法：CSS 实现马克笔斜线排线（Hatched）效果 
+                    backgroundImage: (tokenData.window / tokenData.max) > 0.8 
+                       ? 'repeating-linear-gradient(45deg, #bf616a, #bf616a 2px, transparent 2px, transparent 6px)' 
+                       : 'repeating-linear-gradient(-45deg, #d08770, #d08770 2px, transparent 2px, transparent 6px)', 
+                    backgroundColor: (tokenData.window / tokenData.max) > 0.8 ? 'rgba(191,97,106,0.1)' : 'rgba(208,135,112,0.1)', 
+                    ...sketchyShape1 
+                  }} 
+                />
+              </div>
+              <span className="text-[11px] font-black text-ink/70 w-8 text-right">
+                {Math.round((tokenData.window / tokenData.max) * 100)}%
+              </span>
             </div>
           )}
         </div>

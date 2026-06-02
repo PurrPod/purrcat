@@ -28,8 +28,9 @@ class AgentManager:
             return self._agent.session_id
 
         print("🚀 正在初始化全局 Agent...")
+        all_sessions = SessionStore.get_all_sessions()
+
         if not session_id:
-            all_sessions = SessionStore.get_all_sessions()
             session_id = (
                 max(
                     all_sessions.keys(),
@@ -53,6 +54,10 @@ class AgentManager:
             name=name,
             save_callback=self._notify_save,
         )
+
+        # 恢复 Token 进度
+        if session_id in all_sessions:
+            self._agent.window_token = all_sessions[session_id].get("window_token", 0)
 
         self._sensor_thread = threading.Thread(
             target=self._agent.sensor, daemon=True, name="AgentSensorThread"
@@ -96,11 +101,12 @@ class AgentManager:
 
         self._notify_save()
         new_history = SessionStore.load_session_history(target_session_id)
+        all_sessions = SessionStore.get_all_sessions()
 
         with self._agent._history_lock:
             self._agent.session_id = target_session_id
             self._agent.current_history = new_history
-            self._agent.window_token = 0
+            self._agent.window_token = all_sessions.get(target_session_id, {}).get("window_token", 0)
 
         self._agent.model.bind_task(target_session_id, "AgentMain")
         print(f"🔄 检出成功: {target_session_id}")
@@ -156,18 +162,20 @@ class AgentManager:
 
         self._notify_save()
         safe_history = self._agent.get_history()
+        current_token = self._agent.window_token
 
         new_id = SessionStore.create_branch(
             current_session_id=self._agent.session_id,
             current_history=safe_history,
             branch_alias=branch_alias,
+            window_token=current_token,
         )
 
         new_history = SessionStore.load_session_history(new_id)
 
         with self._agent._history_lock:
             self._agent.session_id = new_id
-            self._agent.window_token = 0
+            self._agent.window_token = current_token
             self._agent.current_history = new_history
 
         self._agent.model.bind_task(new_id, "AgentMain")
@@ -229,7 +237,11 @@ class AgentManager:
     def _notify_save(self):
         if self._agent:
             safe_history = self._agent.get_history()
-            SessionStore.save_session(self._agent.session_id, safe_history)
+            SessionStore.save_session(
+                self._agent.session_id,
+                safe_history,
+                window_token=self._agent.window_token
+            )
 
 
 # 全局单例和兼容形式导出

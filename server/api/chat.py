@@ -10,6 +10,8 @@ from src.agent import (
     get_session_list,
     init_agent,
     new_session,
+    get_window_token,       # 🌟 新增
+    get_agent_max_token     # 🌟 新增
 )
 
 router = APIRouter(prefix="/api", tags=["Chat & Sessions"])
@@ -171,3 +173,18 @@ def get_session_status(session_id: str):
         print(f"[ERROR] /api/sessions/{session_id}/status - 异常: {e}")
         traceback.print_exc()
         return {"is_thinking": False, "state": "idle"}
+
+
+@router.get("/agent/token")
+def get_token_status_api():
+    """获取当前 Agent 的上下文 Token 使用进度"""
+    try:
+        _ensure_manager_initialized()
+        return {
+            "window_token": get_window_token(),
+            "max_token": get_agent_max_token()
+        }
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {"window_token": 0, "max_token": 1000000}
