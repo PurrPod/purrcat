@@ -2,14 +2,11 @@
   "version": "2.0",
   "name": "test_all_nodes",
   "description": "全节点综合试炼：一次性打通环境、路由、打包、Agent循环、人工干预、落盘读写与HTML大屏渲染！",
-  "env": {
-    "TEST_USER": "PurrCat Master"
-  },
   "global_schema": {
     "test_msg": {
-      "type": "string",
+      "type": "any",
       "required": true,
-      "description": "输入你想要大模型作诗的主题（若输入为空，路由将短路跳过）"
+      "description": "测试主题"
     }
   },
   "nodes": [
@@ -17,62 +14,408 @@
       "id": "nd_input",
       "type": "task_input",
       "name": "全局输入",
-      "position": [0, 200],
+      "position": [
+        -933,
+        32
+      ],
       "config": {
-        "global_vars": [{"name": "test_msg", "required": true, "description": "测试主题"}]
-      }
-    },
-    {
-      "id": "nd_env",
-      "type": "env_loader",
-      "name": "环境加载",
-      "position": [0, 450],
-      "config": {
-        "exposed_keys": [{"name": "TEST_USER"}]
+        "name": "全局输入",
+        "color": "#a3be8c",
+        "inputs": [],
+        "outputs": [
+          {
+            "name": "dynamic_outputs",
+            "type": "any",
+            "port_type": "dynamic",
+            "dynamic_rules": {
+              "watch_config": "global_vars",
+              "method": "array_map"
+            }
+          }
+        ],
+        "configSchema": [
+          {
+            "name": "global_vars",
+            "type": "list",
+            "label": "全局变量 (Variables)",
+            "default": [],
+            "item_schema": [
+              {
+                "name": "name",
+                "type": "string",
+                "label": "变量名 (如: prompt)"
+              },
+              {
+                "name": "required",
+                "type": "boolean",
+                "label": "是否必填",
+                "default": true
+              },
+              {
+                "name": "description",
+                "type": "string",
+                "label": "变量描述 (给用户的提示)"
+              }
+            ]
+          }
+        ],
+        "dynamic_inputs": [],
+        "global_vars": [
+          {
+            "name": "test_msg",
+            "required": true,
+            "description": "测试主题"
+          }
+        ]
       }
     },
     {
       "id": "nd_json_build",
       "type": "json_builder",
-      "name": "JSON 打包",
-      "position": [300, 300],
+      "name": "JSON 构建器",
+      "position": [
+        -492,
+        -114
+      ],
       "config": {
-        "kv_pairs": [{"name": "msg_val", "type": "string"}, {"name": "user_val", "type": "string"}]
+        "name": "JSON 构建器",
+        "color": "#9B59B6",
+        "inputs": [
+          {
+            "name": "dynamic_inputs",
+            "type": "any",
+            "port_type": "dynamic",
+            "dynamic_rules": {
+              "watch_config": "kv_pairs",
+              "method": "array_map"
+            }
+          },
+          {
+            "name": "trigger",
+            "type": "any",
+            "port_type": "static",
+            "description": "触发信号（可选）。如果不连线，节点将在开局自动执行；如果连线，将等待收到上游数据/信号后再执行。",
+            "required": false
+          }
+        ],
+        "outputs": [
+          {
+            "name": "json_string",
+            "type": "string",
+            "port_type": "static",
+            "description": "打包生成的 JSON 字符串"
+          }
+        ],
+        "configSchema": [
+          {
+            "name": "kv_pairs",
+            "type": "list",
+            "label": "自定义键值对",
+            "default": [],
+            "description": "添加你要构建的 JSON 键名。若有引脚连线接入，则优先使用连线的值；若无连线，则使用此处手动填写的默认值。"
+          }
+        ],
+        "dynamic_inputs": [],
+        "kv_pairs": [
+          {
+            "name": "msg_val",
+            "type": "string"
+          },
+          {
+            "name": "user_val",
+            "type": "string"
+          }
+        ]
       }
     },
     {
       "id": "nd_json_ext",
       "type": "json_extractor",
-      "name": "JSON 提取",
-      "position": [600, 300],
+      "name": "JSON 提取器",
+      "position": [
+        -84,
+        -128
+      ],
       "config": {
-        "extract_keys": [{"name": "msg_val"}, {"name": "user_val"}]
+        "name": "JSON 提取器",
+        "color": "#D35400",
+        "inputs": [
+          {
+            "name": "data",
+            "type": "any",
+            "port_type": "static",
+            "description": "输入的 JSON 字符串或 Python 字典对象",
+            "required": true
+          }
+        ],
+        "outputs": [
+          {
+            "name": "dynamic_outputs",
+            "type": "any",
+            "port_type": "dynamic",
+            "dynamic_rules": {
+              "watch_config": "extract_keys",
+              "method": "array_map"
+            },
+            "description": "根据配置动态生成的键值提取端口"
+          }
+        ],
+        "configSchema": [
+          {
+            "name": "extract_keys",
+            "type": "list",
+            "label": "需要提取的键名 (Keys)",
+            "default": [],
+            "description": "点击添加你要从数据中提取的键名。支持提取嵌套字典。",
+            "item_schema": [
+              {
+                "name": "name",
+                "type": "string",
+                "label": "键名 (如: score)"
+              }
+            ]
+          }
+        ],
+        "dynamic_inputs": [],
+        "extract_keys": [
+          {
+            "name": "msg_val"
+          },
+          {
+            "name": "user_val"
+          }
+        ]
       }
     },
     {
       "id": "nd_if",
       "type": "if_else_router",
-      "name": "判空路由",
-      "position": [900, 200],
+      "name": "条件判断 (If/Else)",
+      "position": [
+        394,
+        -346
+      ],
       "config": {
+        "name": "条件判断 (If/Else)",
+        "color": "#F39C12",
+        "inputs": [
+          {
+            "name": "var_a",
+            "type": "any",
+            "port_type": "static",
+            "description": "要判断的主变量 (连线输入)",
+            "required": true
+          },
+          {
+            "name": "var_b",
+            "type": "any",
+            "port_type": "static",
+            "description": "动态目标值(可选)。如果连线，将覆盖面板中填写的固定值。",
+            "required": false
+          }
+        ],
+        "outputs": [
+          {
+            "name": "True",
+            "type": "any",
+            "port_type": "static",
+            "description": "条件成立时走此分支"
+          },
+          {
+            "name": "False",
+            "type": "any",
+            "port_type": "static",
+            "description": "条件不成立时走此分支"
+          }
+        ],
+        "configSchema": [
+          {
+            "name": "operator",
+            "type": "select",
+            "label": "判断条件",
+            "default": "==",
+            "description": "选择比较的方式",
+            "options": [
+              {
+                "label": "等于 (==)",
+                "value": "=="
+              },
+              {
+                "label": "不等于 (!=)",
+                "value": "!="
+              },
+              {
+                "label": "大于 (>)",
+                "value": ">"
+              },
+              {
+                "label": "小于 (<)",
+                "value": "<"
+              },
+              {
+                "label": "大于等于 (>=)",
+                "value": ">="
+              },
+              {
+                "label": "小于等于 (<=)",
+                "value": "<="
+              },
+              {
+                "label": "包含 (contains)",
+                "value": "contains"
+              },
+              {
+                "label": "不包含 (not contains)",
+                "value": "not_contains"
+              },
+              {
+                "label": "开头是 (starts with)",
+                "value": "startswith"
+              },
+              {
+                "label": "结尾是 (ends with)",
+                "value": "endswith"
+              },
+              {
+                "label": "为空 (is empty)",
+                "value": "is_empty"
+              },
+              {
+                "label": "不为空 (not empty)",
+                "value": "not_empty"
+              },
+              {
+                "label": "正则匹配 (Regex)",
+                "value": "regex_match"
+              }
+            ]
+          },
+          {
+            "name": "var_b",
+            "type": "string",
+            "label": "固定目标值 (如果连线了 var_b 此处失效)",
+            "default": "",
+            "description": "跟上面的变量 A 进行比较的目标值 (判空操作符无需填写)"
+          }
+        ],
+        "dynamic_inputs": [],
         "operator": "not_empty"
       }
     },
     {
       "id": "nd_tpl",
       "type": "template_renderer",
-      "name": "组装提示词",
-      "position": [1200, 300],
+      "name": "模板渲染器",
+      "position": [
+        974,
+        -16
+      ],
       "config": {
+        "name": "模板渲染器",
+        "color": "#E67E22",
+        "inputs": [
+          {
+            "name": "template",
+            "type": "string",
+            "port_type": "static",
+            "description": "Jinja2 模板字符串，若未提供则使用配置中的模板。使用 {{variable_name}} 语法引用变量"
+          },
+          {
+            "name": "dynamic_vars",
+            "type": "any",
+            "port_type": "dynamic",
+            "dynamic_rules": {
+              "watch_config": "template",
+              "method": "regex",
+              "pattern": "\\{\\{\\s*([a-zA-Z0-9_]+)\\s*\\}\\}"
+            },
+            "description": "动态变量端口，根据模板中的 {{variable_name}} 自动生成，用于接收需要注入的变量值"
+          },
+          {
+            "name": "trigger",
+            "type": "any",
+            "port_type": "static",
+            "description": "触发信号（可选）。如果不连线，节点将在开局自动执行；如果连线，将等待收到上游数据/信号后再执行。",
+            "required": false
+          }
+        ],
+        "outputs": [
+          {
+            "name": "rendered_text",
+            "type": "string",
+            "port_type": "static",
+            "description": "渲染后的最终文本结果"
+          }
+        ],
+        "configSchema": [
+          {
+            "name": "template",
+            "type": "textarea",
+            "label": "Jinja2 模板",
+            "description": "Jinja2 模板字符串，使用 {{variable_name}} 语法引用变量。支持条件判断、循环等 Jinja2 特性"
+          }
+        ],
+        "dynamic_inputs": [],
         "template": "你好！我是 {{user_val}}。我的主题是：{{msg_val}}。请帮我围绕这个主题写一首简短优美的打油诗。"
       }
     },
     {
       "id": "nd_msg_sys",
       "type": "message_card_builder",
-      "name": "System 设定",
-      "position": [1200, 50],
+      "name": "消息卡片构建器",
+      "position": [
+        1394,
+        -452
+      ],
       "config": {
+        "name": "消息卡片构建器",
+        "color": "#3498DB",
+        "inputs": [
+          {
+            "name": "content",
+            "type": "string",
+            "port_type": "static",
+            "description": "消息内容",
+            "required": true
+          },
+          {
+            "name": "role",
+            "type": "string",
+            "port_type": "static",
+            "description": "消息角色 (system/user/assistant)",
+            "required": false
+          },
+          {
+            "name": "trigger",
+            "type": "any",
+            "port_type": "static",
+            "description": "触发信号（可选）。如果不连线，节点将在开局自动执行；如果连线，将等待收到上游数据/信号后再执行。",
+            "required": false
+          }
+        ],
+        "outputs": [
+          {
+            "name": "message_list",
+            "type": "array",
+            "port_type": "static",
+            "description": "标准消息列表"
+          }
+        ],
+        "configSchema": [
+          {
+            "name": "content",
+            "type": "string",
+            "label": "消息内容",
+            "default": ""
+          },
+          {
+            "name": "role",
+            "type": "string",
+            "label": "消息角色",
+            "default": "user"
+          }
+        ],
+        "dynamic_inputs": [],
         "role": "system",
         "content": "你是一个充满才情的AI文学家。请不要有多余废话，直接输出诗句。"
       }
@@ -80,66 +423,428 @@
     {
       "id": "nd_msg_user",
       "type": "message_card_builder",
-      "name": "User 消息",
-      "position": [1500, 300],
+      "name": "消息卡片构建器",
+      "position": [
+        1392,
+        113
+      ],
       "config": {
+        "name": "消息卡片构建器",
+        "color": "#3498DB",
+        "inputs": [
+          {
+            "name": "content",
+            "type": "string",
+            "port_type": "static",
+            "description": "消息内容",
+            "required": true
+          },
+          {
+            "name": "role",
+            "type": "string",
+            "port_type": "static",
+            "description": "消息角色 (system/user/assistant)",
+            "required": false
+          },
+          {
+            "name": "trigger",
+            "type": "any",
+            "port_type": "static",
+            "description": "触发信号（可选）。如果不连线，节点将在开局自动执行；如果连线，将等待收到上游数据/信号后再执行。",
+            "required": false
+          }
+        ],
+        "outputs": [
+          {
+            "name": "message_list",
+            "type": "array",
+            "port_type": "static",
+            "description": "标准消息列表"
+          }
+        ],
+        "configSchema": [
+          {
+            "name": "content",
+            "type": "string",
+            "label": "消息内容",
+            "default": ""
+          },
+          {
+            "name": "role",
+            "type": "string",
+            "label": "消息角色",
+            "default": "user"
+          }
+        ],
+        "dynamic_inputs": [],
         "role": "user"
       }
     },
     {
       "id": "nd_append",
       "type": "appender",
-      "name": "消息合并",
-      "position": [1800, 200],
-      "config": {}
+      "name": "列表追加",
+      "position": [
+        1848,
+        -26
+      ],
+      "config": {
+        "name": "列表追加",
+        "color": "#27AE60",
+        "inputs": [
+          {
+            "name": "base_list",
+            "type": "array",
+            "port_type": "static",
+            "description": "基础列表"
+          },
+          {
+            "name": "append_list",
+            "type": "array",
+            "port_type": "static",
+            "description": "要追加的列表"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "merged_list",
+            "type": "array",
+            "port_type": "static",
+            "description": "合并后的列表"
+          }
+        ],
+        "configSchema": [],
+        "dynamic_inputs": []
+      }
     },
     {
       "id": "nd_agent",
       "type": "agent_loop",
-      "name": "AI 思考",
-      "position": [2100, 200],
-      "config": {}
+      "name": "智能体循环",
+      "position": [
+        2274,
+        -127
+      ],
+      "config": {
+        "name": "智能体循环",
+        "color": "#16A085",
+        "inputs": [
+          {
+            "name": "messages",
+            "type": "array",
+            "port_type": "static",
+            "description": "消息上下文",
+            "required": true
+          },
+          {
+            "name": "target_files",
+            "type": "string",
+            "port_type": "static",
+            "description": "动态传入的目标文件路径 (支持 List 列表 或 逗号分隔的 String)",
+            "required": false
+          },
+          {
+            "name": "task_done_info",
+            "type": "string",
+            "port_type": "static",
+            "description": "动态注入的完成规则，可由前置节点动态决定输出格式",
+            "required": false
+          }
+        ],
+        "outputs": [
+          {
+            "name": "messages",
+            "type": "array",
+            "port_type": "static",
+            "description": "完整的消息历史"
+          },
+          {
+            "name": "summary",
+            "type": "string",
+            "port_type": "static",
+            "description": "任务完成的总结信息"
+          }
+        ],
+        "configSchema": [
+          {
+            "name": "target_files",
+            "type": "string",
+            "label": "强制验收文件列表",
+            "default": "",
+            "description": "需要强制校验生成的沙盒绝对路径。多个文件请用英文逗号 (,) 分隔。必须以 /agent_vm 开头。若留空，则不进行文件校验，直接产出总结。"
+          },
+          {
+            "name": "task_done_info",
+            "type": "json",
+            "label": "任务完结强校验字段 (JSON)",
+            "default": {},
+            "description": "配置要求大模型完结时必须输出的 JSON 键值对。例如: {\"summary\": \"总结\", \"score\": \"评分\"}"
+          }
+        ],
+        "dynamic_inputs": []
+      }
     },
     {
       "id": "nd_human",
       "type": "human_intervention",
-      "name": "人工审核",
-      "position": [2400, 200],
+      "name": "人工干预",
+      "position": [
+        2636,
+        -158
+      ],
       "config": {
+        "name": "人工干预",
+        "color": "#d08770",
+        "inputs": [
+          {
+            "name": "trigger",
+            "type": "any",
+            "port_type": "static",
+            "description": "执行到此节点即触发挂起"
+          },
+          {
+            "name": "context_data",
+            "type": "any",
+            "port_type": "static",
+            "description": "（可选）需要人类审核的上游数据。连线后可以在提示中展示给人类看。"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "human_reply",
+            "type": "string",
+            "port_type": "static",
+            "description": "人类在前端输入的答复指令"
+          },
+          {
+            "name": "context_data",
+            "type": "any",
+            "port_type": "static",
+            "description": "透传上游传入的审查数据，方便下游一并使用"
+          }
+        ],
+        "configSchema": [
+          {
+            "name": "prompt_message",
+            "type": "string",
+            "label": "向人类提问的文案",
+            "default": "流程已暂停，请审查以上数据并输入您的指示：",
+            "description": "挂起时会在日志中展示给用户的提示语"
+          }
+        ],
+        "dynamic_inputs": [],
         "prompt_message": "AI已作诗完毕！是否允许将其写入本地沙盒并生成大屏看板？(在下方输入框回复 'ok' 同意，回复其他内容打断)"
       }
     },
     {
       "id": "nd_switch",
       "type": "switch_router",
-      "name": "意图拦截",
-      "position": [2700, 200],
+      "name": "精准分流 (Switch)",
+      "position": [
+        3030,
+        -362
+      ],
       "config": {
-        "cases": [{"name": "approve", "value": "ok"}]
+        "name": "精准分流 (Switch)",
+        "color": "#E74C3C",
+        "inputs": [
+          {
+            "name": "match_value",
+            "type": "any",
+            "port_type": "static",
+            "description": "需要被判断的字符串或数值（通常来自上游的连线）",
+            "required": true
+          }
+        ],
+        "outputs": [
+          {
+            "name": "dynamic_branches",
+            "type": "any",
+            "port_type": "dynamic",
+            "dynamic_rules": {
+              "watch_config": "cases",
+              "method": "array_map"
+            }
+          },
+          {
+            "name": "default",
+            "type": "any",
+            "port_type": "static",
+            "description": "当没有任何条件匹配时，数据会走这个兜底分支"
+          }
+        ],
+        "configSchema": [
+          {
+            "name": "cases",
+            "type": "list",
+            "label": "匹配条件 (Cases)",
+            "default": [],
+            "item_schema": [
+              {
+                "name": "name",
+                "type": "string",
+                "label": "命中分支名 (作为引脚名)"
+              },
+              {
+                "name": "value",
+                "type": "string",
+                "label": "匹配值 (等于该值时命中)"
+              }
+            ]
+          }
+        ],
+        "dynamic_inputs": [],
+        "cases": [
+          {
+            "name": "approve",
+            "value": "ok"
+          }
+        ]
       }
     },
     {
       "id": "nd_write",
       "type": "file_writer",
-      "name": "写入沙盒",
-      "position": [3000, 200],
+      "name": "本地文件落盘",
+      "position": [
+        3434,
+        10
+      ],
       "config": {
+        "name": "本地文件落盘",
+        "color": "#8E44AD",
+        "inputs": [
+          {
+            "name": "trigger",
+            "type": "any",
+            "port_type": "static",
+            "description": "触发信号。如果没有收到上游信号，将不会执行落盘。"
+          },
+          {
+            "name": "content",
+            "type": "string",
+            "port_type": "static",
+            "description": "需要写入文件的文本内容",
+            "required": true
+          },
+          {
+            "name": "file_path",
+            "type": "string",
+            "port_type": "static",
+            "description": "文件的本地物理路径，优先读取连线输入。",
+            "required": false
+          }
+        ],
+        "outputs": [
+          {
+            "name": "absolute_path",
+            "type": "string",
+            "port_type": "static",
+            "description": "写入成功后的物理绝对路径"
+          }
+        ],
+        "configSchema": [
+          {
+            "name": "file_path",
+            "type": "string",
+            "label": "文件物理路径",
+            "default": "",
+            "description": "输入本地电脑上的保存路径，支持绝对路径 (如 /Users/xxx/output.txt)、相对路径或 ~ 符号。"
+          }
+        ],
+        "dynamic_inputs": [],
         "file_path": "output/cat_poem.txt"
       }
     },
     {
       "id": "nd_read",
       "type": "text_file_reader",
-      "name": "读出验货",
-      "position": [3300, 200],
-      "config": {}
+      "name": "本地文本读取",
+      "position": [
+        3848,
+        58
+      ],
+      "config": {
+        "name": "本地文本读取",
+        "color": "#8E44AD",
+        "inputs": [
+          {
+            "name": "file_path",
+            "type": "string",
+            "port_type": "static",
+            "description": "文件的本地物理路径，优先读取连线输入。",
+            "required": true
+          },
+          {
+            "name": "trigger",
+            "type": "any",
+            "port_type": "static",
+            "description": "触发信号（可选）。如果不连线，节点将在开局自动执行；如果连线，将等待收到上游数据/信号后再执行。",
+            "required": false
+          }
+        ],
+        "outputs": [
+          {
+            "name": "file_content",
+            "type": "string",
+            "port_type": "static",
+            "description": "文件纯文本内容"
+          }
+        ],
+        "configSchema": [
+          {
+            "name": "file_path",
+            "type": "string",
+            "label": "文件物理路径",
+            "default": "",
+            "description": "输入本地电脑上的文件路径，支持绝对路径 (如 /Users/xxx/a.txt)、相对路径或 ~ 符号。"
+          }
+        ],
+        "dynamic_inputs": []
+      }
     },
     {
       "id": "nd_html",
       "type": "html_viewer",
-      "name": "前端看板渲染",
-      "position": [3600, 50],
+      "name": "HTML 看板",
+      "position": [
+        4292,
+        -232
+      ],
       "config": {
+        "name": "HTML 看板",
+        "color": "#3498DB",
+        "inputs": [
+          {
+            "name": "trigger",
+            "type": "any",
+            "port_type": "static"
+          },
+          {
+            "name": "content",
+            "type": "string",
+            "port_type": "static",
+            "description": "要展示的核心内容",
+            "required": true
+          }
+        ],
+        "outputs": [
+          {
+            "name": "html_source",
+            "type": "string",
+            "port_type": "static",
+            "description": "包装好的完整 HTML 源码"
+          }
+        ],
+        "configSchema": [
+          {
+            "name": "title",
+            "type": "string",
+            "label": "看板标题",
+            "default": "Data Dashboard"
+          }
+        ],
+        "dynamic_inputs": [],
         "title": "PurrCat 文学作品展"
       }
     },
@@ -147,32 +852,162 @@
       "id": "nd_out",
       "type": "task_output",
       "name": "全局输出",
-      "position": [3900, 200],
+      "position": [
+        4760,
+        98
+      ],
       "config": {
-        "target_vars": [{"name": "final_html", "type": "string"}, {"name": "final_poem", "type": "string"}],
-        "exposed_keys": ["final_html", "final_poem"]
+        "name": "全局输出",
+        "color": "#EBCB8B",
+        "inputs": [
+          {
+            "name": "dynamic_inputs",
+            "type": "any",
+            "port_type": "dynamic",
+            "dynamic_rules": {
+              "watch_config": "target_vars",
+              "method": "array_map"
+            }
+          }
+        ],
+        "outputs": [],
+        "configSchema": [
+          {
+            "name": "target_vars",
+            "type": "list",
+            "label": "输出目标 (Targets)",
+            "default": []
+          }
+        ],
+        "dynamic_inputs": [
+          {
+            "key": "final_html",
+            "desc": "any"
+          },
+          {
+            "key": "final_poem",
+            "desc": "any"
+          }
+        ],
+        "target_vars": [
+          {
+            "name": "final_html",
+            "type": "string"
+          },
+          {
+            "name": "final_poem",
+            "type": "string"
+          }
+        ],
+        "exposed_keys": [
+          "final_html",
+          "final_poem"
+        ]
       }
     }
   ],
   "edges": [
-    {"source": "nd_input", "target": "nd_json_build", "sourceHandle": "test_msg", "targetHandle": "msg_val"},
-    {"source": "nd_env", "target": "nd_json_build", "sourceHandle": "TEST_USER", "targetHandle": "user_val"},
-    {"source": "nd_json_build", "target": "nd_json_ext", "sourceHandle": "json_string", "targetHandle": "data"},
-    {"source": "nd_json_ext", "target": "nd_if", "sourceHandle": "msg_val", "targetHandle": "var_a"},
-    {"source": "nd_if", "target": "nd_tpl", "sourceHandle": "True", "targetHandle": "msg_val"},
-    {"source": "nd_json_ext", "target": "nd_tpl", "sourceHandle": "user_val", "targetHandle": "user_val"},
-    {"source": "nd_tpl", "target": "nd_msg_user", "sourceHandle": "rendered_text", "targetHandle": "content"},
-    {"source": "nd_msg_sys", "target": "nd_append", "sourceHandle": "message_list", "targetHandle": "base_list"},
-    {"source": "nd_msg_user", "target": "nd_append", "sourceHandle": "message_list", "targetHandle": "append_list"},
-    {"source": "nd_append", "target": "nd_agent", "sourceHandle": "merged_list", "targetHandle": "messages"},
-    {"source": "nd_agent", "target": "nd_human", "sourceHandle": "summary", "targetHandle": "context_data"},
-    {"source": "nd_agent", "target": "nd_human", "sourceHandle": "summary", "targetHandle": "trigger"},
-    {"source": "nd_human", "target": "nd_switch", "sourceHandle": "human_reply", "targetHandle": "match_value"},
-    {"source": "nd_switch", "target": "nd_write", "sourceHandle": "approve", "targetHandle": "trigger"},
-    {"source": "nd_human", "target": "nd_write", "sourceHandle": "context_data", "targetHandle": "content"},
-    {"source": "nd_write", "target": "nd_read", "sourceHandle": "absolute_path", "targetHandle": "file_path"},
-    {"source": "nd_read", "target": "nd_html", "sourceHandle": "file_content", "targetHandle": "content"},
-    {"source": "nd_html", "target": "nd_out", "sourceHandle": "html_source", "targetHandle": "final_html"},
-    {"source": "nd_read", "target": "nd_out", "sourceHandle": "file_content", "targetHandle": "final_poem"}
+    {
+      "source": "nd_input",
+      "target": "nd_json_build",
+      "sourceHandle": "test_msg",
+      "targetHandle": "msg_val"
+    },
+    {
+      "source": "nd_json_build",
+      "target": "nd_json_ext",
+      "sourceHandle": "json_string",
+      "targetHandle": "data"
+    },
+    {
+      "source": "nd_json_ext",
+      "target": "nd_if",
+      "sourceHandle": "msg_val",
+      "targetHandle": "var_a"
+    },
+    {
+      "source": "nd_if",
+      "target": "nd_tpl",
+      "sourceHandle": "True",
+      "targetHandle": "msg_val"
+    },
+    {
+      "source": "nd_json_ext",
+      "target": "nd_tpl",
+      "sourceHandle": "user_val",
+      "targetHandle": "user_val"
+    },
+    {
+      "source": "nd_tpl",
+      "target": "nd_msg_user",
+      "sourceHandle": "rendered_text",
+      "targetHandle": "content"
+    },
+    {
+      "source": "nd_msg_sys",
+      "target": "nd_append",
+      "sourceHandle": "message_list",
+      "targetHandle": "base_list"
+    },
+    {
+      "source": "nd_msg_user",
+      "target": "nd_append",
+      "sourceHandle": "message_list",
+      "targetHandle": "append_list"
+    },
+    {
+      "source": "nd_append",
+      "target": "nd_agent",
+      "sourceHandle": "merged_list",
+      "targetHandle": "messages"
+    },
+    {
+      "source": "nd_human",
+      "target": "nd_switch",
+      "sourceHandle": "human_reply",
+      "targetHandle": "match_value"
+    },
+    {
+      "source": "nd_switch",
+      "target": "nd_write",
+      "sourceHandle": "approve",
+      "targetHandle": "trigger"
+    },
+    {
+      "source": "nd_human",
+      "target": "nd_write",
+      "sourceHandle": "context_data",
+      "targetHandle": "content"
+    },
+    {
+      "source": "nd_write",
+      "target": "nd_read",
+      "sourceHandle": "absolute_path",
+      "targetHandle": "file_path"
+    },
+    {
+      "source": "nd_read",
+      "target": "nd_html",
+      "sourceHandle": "file_content",
+      "targetHandle": "content"
+    },
+    {
+      "source": "nd_html",
+      "target": "nd_out",
+      "sourceHandle": "html_source",
+      "targetHandle": "final_html"
+    },
+    {
+      "source": "nd_read",
+      "target": "nd_out",
+      "sourceHandle": "file_content",
+      "targetHandle": "final_poem"
+    },
+    {
+      "source": "nd_agent",
+      "target": "nd_human",
+      "sourceHandle": "messages",
+      "targetHandle": "trigger"
+    }
   ]
 }

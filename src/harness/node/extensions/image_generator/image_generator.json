@@ -1,0 +1,95 @@
+{
+    "type": "image_generator",
+    "name": "图片生成 (GPT-Image)",
+    "description": "调用 OpenAI 兼容接口生成或编辑高质量图片。支持透明背景生成及局部编辑，并在前端面板实时预览。",
+    "color": "#9B59B6",
+    "inputs": [
+        {
+            "name": "trigger",
+            "type": "any",
+            "port_type": "static",
+            "description": "触发信号（可选）"
+        },
+        {
+            "name": "prompt",
+            "type": "string",
+            "port_type": "static",
+            "description": "画面描述提示词",
+            "required": true
+        },
+        {
+            "name": "source_image",
+            "type": "string",
+            "port_type": "static",
+            "description": "【可选】用于编辑的原图物理路径。若传入此项，将自动切换为局部编辑模式 (images.edit)"
+        },
+        {
+            "name": "api_key",
+            "type": "string",
+            "port_type": "static",
+            "description": "OpenAI API Key (若不连线，将尝试从 Env Loader 缓存中读取 OPENAI_API_KEY)"
+        }
+    ],
+    "outputs": [
+        {
+            "name": "image_paths",
+            "type": "list",
+            "port_type": "static",
+            "description": "落盘保存后的图片绝对路径列表"
+        }
+    ],
+    "config": [
+        {
+            "name": "size",
+            "type": "select",
+            "label": "图片尺寸",
+            "default": "1024x1024",
+            "options": [
+                {"label": "1024 x 1024 (1:1)", "value": "1024x1024"},
+                {"label": "1536 x 1024 (3:2)", "value": "1536x1024"},
+                {"label": "1024 x 1536 (2:3)", "value": "1024x1536"},
+                {"label": "2048 x 2048 (超清)", "value": "2048x2048"}
+            ]
+        },
+        {
+            "name": "quality",
+            "type": "select",
+            "label": "生成质量",
+            "default": "high",
+            "options": [
+                {"label": "High (高精度)", "value": "high"},
+                {"label": "Medium (标准)", "value": "medium"},
+                {"label": "Low (快速/草图)", "value": "low"}
+            ]
+        },
+        {
+            "name": "output_format",
+            "type": "select",
+            "label": "输出格式",
+            "default": "png",
+            "options": [
+                {"label": "PNG (支持透明)", "value": "png"},
+                {"label": "JPEG", "value": "jpeg"},
+                {"label": "WEBP (体积小)", "value": "webp"}
+            ]
+        },
+        {
+            "name": "background",
+            "type": "select",
+            "label": "背景模式",
+            "default": "auto",
+            "options": [
+                {"label": "自动 (Auto)", "value": "auto"},
+                {"label": "透明去背 (Transparent)", "value": "transparent"}
+            ],
+            "description": "注意：透明背景仅在输出格式为 PNG 时有效"
+        },
+        {
+            "name": "n",
+            "type": "string",
+            "label": "生成数量",
+            "default": "1",
+            "description": "一次生成的图片数量 (1-4)"
+        }
+    ]
+}

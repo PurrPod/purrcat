@@ -14,7 +14,7 @@ dependencies:
       - PyYAML>=6.0.1
       - nest-asyncio>=1.6.0
       - requests>=2.31.0
-      - openai>=1.10.0
+      - openai>=1.75.0
       - json-repair>=0.30.0
       - pyvis>=0.3.2
 
@@ -35,6 +35,7 @@ dependencies:
       - ddgs>=0.1.0
       - beautifulsoup4>=4.12.3
       - readability-lxml>=0.8.1
+      - markdown>=3.5.0
       - markdownify>=0.11.6
 
       # 系统与沙盒
