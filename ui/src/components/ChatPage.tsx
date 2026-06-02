@@ -201,11 +201,16 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   const [showAddCronModal, setShowAddCronModal] = useState(false);
   const [newCron, setNewCron] = useState({ title: '', trigger_time: '', repeat_rule: 'none' });
 
-  // --- MD 编辑器状态 (SOUL / SOLO) ---
+  // --- MD编辑状态 (SOUL / SOLO / TODO) ---
   const [showMdModal, setShowMdModal] = useState(false);
-  const [mdType, setMdType] = useState<'SOUL' | 'SOLO'>('SOUL');
+  const [mdType, setMdType] = useState<'SOUL' | 'SOLO' | 'TODO'>('SOUL');
   const [mdContent, setMdContent] = useState('');
   const [isSavingMd, setIsSavingMd] = useState(false);
+
+  // --- Skill 选择器相关状态 ---
+  const [showSkillSelectModal, setShowSkillSelectModal] = useState(false);
+  const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
+  const [tempSelectedSkills, setTempSelectedSkills] = useState<string[]>([]);
 
   // --- 配置中心选项卡常量 ---
   const CONFIG_TABS = ['model', 'sensor', 'file', 'memory', 'mcp'];
@@ -274,7 +279,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
     }
   };
 
-  const openMdEditor = async (type: 'SOUL' | 'SOLO') => {
+  const openMdEditor = async (type: 'SOUL' | 'SOLO' | 'TODO') => {
     setMdType(type);
     setMdContent('Loading...');
     setShowMdModal(true);
@@ -703,8 +708,15 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
 
   const handleSend = async () => {
     if (!input.trim() || !currentSessionId) return;
-    const userText = input.trim();
+    
+    // 拼接 Skill Prompt
+    let userText = input.trim();
+    if (selectedSkills.length > 0) {
+      userText = `<Please Fetch Skill：${selectedSkills.join('>\n')}>\n${userText}`;
+    }
+    
     setInput('');
+    setSelectedSkills([]); // 发送后清空已选的 skill
     isAutoScroll.current = true;
     pendingMsgsRef.current.push(userText);
     setMessages(prev => [...prev, { role: 'user', content: userText }]);
@@ -977,6 +989,57 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
         </div>
       )}
 
+      {/* Skill 选择弹窗 */}
+      {showSkillSelectModal && (
+        <div className="fixed inset-0 bg-ink/40 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
+          <div style={sketchyShape2} className="bg-paper border-4 border-ink p-6 flex flex-col gap-4 shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] rotate-1 w-full max-w-md h-[70vh]">
+            <div className="flex justify-between items-center -rotate-1 border-b-4 border-ink/10 pb-3 shrink-0">
+              <h3 className="text-2xl font-black tracking-widest text-[#d08770]" style={{ fontFamily: '"Comic Sans MS", cursive' }}>SELECT SKILLS</h3>
+              <button onClick={() => setShowSkillSelectModal(false)} className="hover:text-terracotta hover:scale-110 transition-all">
+                <X size={28} strokeWidth={3}/>
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto flex flex-col gap-3 -rotate-1 p-1">
+              {skillData.length === 0 ? (
+                 <p className="font-bold text-center mt-6 opacity-50 text-sm">No Skills loaded</p>
+              ) : (
+                 skillData.map((skill: any, idx) => {
+                   const isSelected = tempSelectedSkills.includes(skill.name);
+                   return (
+                     <div key={skill.name} style={idx % 2 === 0 ? sketchyShape1 : sketchyShape3} className={`border-4 border-ink bg-cream p-3 transition-all ${isSelected ? 'shadow-[4px_4px_0px_0px_rgba(212,122,90,1)] border-terracotta bg-terracotta/10' : 'shadow-[4px_4px_0px_0px_rgba(26,26,26,1)]'} flex flex-col gap-2 cursor-pointer`} onClick={() => {
+                       if (isSelected) setTempSelectedSkills(prev => prev.filter(s => s !== skill.name));
+                       else setTempSelectedSkills(prev => [...prev, skill.name]);
+                     }}>
+                        <div className="flex items-center gap-3">
+                          <div className={`w-5 h-5 border-2 border-ink flex items-center justify-center ${isSelected ? 'bg-terracotta' : 'bg-paper'}`} style={sketchyShape2}>
+                            {isSelected && <div className="w-2.5 h-2.5 bg-paper rounded-full" />}
+                          </div>
+                          <span className="font-black text-lg flex-1" style={{ fontFamily: '"Comic Sans MS", cursive' }}>{skill.name}</span>
+                          <button onClick={(e) => { e.stopPropagation(); setExpandedSkill(expandedSkill === skill.name ? null : skill.name); }}>
+                             {expandedSkill === skill.name ? <ChevronUp size={20}/> : <ChevronDown size={20}/>}
+                          </button>
+                        </div>
+                        {expandedSkill === skill.name && (
+                          <div className="text-xs font-bold opacity-80 pl-8 pt-1 border-t-2 border-ink/10 border-dashed mt-1">{skill.description}</div>
+                        )}
+                     </div>
+                   );
+                 })
+              )}
+            </div>
+            <div className="shrink-0 flex justify-end gap-3 -rotate-1 pt-2 border-t-4 border-ink/10">
+              <button onClick={() => {
+                  setSelectedSkills(tempSelectedSkills);
+                  setShowSkillSelectModal(false);
+                }}
+                style={sketchyShape1} className="px-8 bg-[#EBCB8B] text-ink font-black py-3 border-4 border-ink hover:bg-[#d8b877] transition-all shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] active:shadow-none active:translate-y-1">
+                COMPLETE
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 配置面板弹窗部分 */}
       {isConfigOpen && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center bg-ink/70 backdrop-blur-sm p-4 md:p-8 pointer-events-auto">
@@ -1169,6 +1232,12 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                  <button onClick={() => openMdEditor('SOLO')} style={sketchyShape3} className="flex-1 border-4 border-ink bg-[#88c0d0]/50 hover:bg-[#88c0d0] shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center gap-3 hover:-translate-y-1 hover:scale-[1.02] transition-all -rotate-1 active:shadow-none active:translate-y-1 min-h-[60px]">
                      <User size={28} strokeWidth={2.5} className="text-[#5e81ac]"/>
                      <span className="font-black text-xl tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>SOLO</span>
+                 </button>
+
+                 {/* 新增的 TODO 按钮 */}
+                 <button onClick={() => openMdEditor('TODO')} style={sketchyShape1} className="flex-1 border-4 border-ink bg-[#EBCB8B]/50 hover:bg-[#EBCB8B] shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center gap-3 hover:-translate-y-1 hover:scale-[1.02] transition-all rotate-2 active:shadow-none active:translate-y-1 min-h-[60px]">
+                     <List size={28} strokeWidth={2.5} className="text-[#b8956e]"/>
+                     <span className="font-black text-xl tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>TODO</span>
                  </button>
                  <button onClick={onSwitchToTask || (() => navigate('/task'))} style={sketchyShape2} className="flex-1 border-4 border-ink bg-[#D8E2DC]/50 hover:bg-[#D8E2DC] text-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center gap-3 hover:-translate-y-1 hover:scale-[1.02] transition-all -rotate-1 active:shadow-none active:translate-y-1">
                      <Terminal size={28} strokeWidth={2.5} className="text-[#6a917e]"/>
@@ -1441,21 +1510,47 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
           <div ref={messagesEndRef} className="h-2" />
         </div>
 
-        <div className="px-10 pb-8 pt-4 shrink-0">
-          <div className="flex gap-4">
-            <textarea
-              style={sketchyShape3} value={input} onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-              placeholder={currentSessionId ? "Write your prompt here..." : "Select a chat first!"} disabled={!currentSessionId} rows={2}
-              className="flex-1 bg-[#FDF8F0] border-4 border-ink p-5 font-bold focus:outline-none focus:bg-white transition-all shadow-[inset_4px_4px_0px_0px_rgba(26,26,26,0.05)] resize-none text-lg -rotate-[0.5deg] placeholder:text-ink/30"
-            />
-            <button
-              style={sketchyShape1} onClick={handleSend} disabled={!currentSessionId || !input.trim()}
-              className="bg-ink text-paper px-10 font-black flex items-center gap-3 border-4 border-ink hover:bg-terracotta hover:text-ink transition-all active:scale-95 disabled:opacity-50 shadow-[6px_6px_0px_0px_rgba(212,122,90,1)] hover:shadow-[6px_6px_0px_0px_rgba(26,26,26,1)] rotate-2 min-h-[80px] self-end"
-            >
-              <Send size={26} strokeWidth={2.5} />
-            </button>
-          </div>
+        <div className="px-10 pb-8 pt-4 shrink-0 flex flex-col gap-3 w-full">
+           
+           {selectedSkills.length > 0 && (
+             <div className="flex flex-wrap gap-2">
+               {selectedSkills.map(skill => (
+                 <div key={skill} style={sketchyShape3} className="flex items-center gap-1 bg-[#F9E2AF] border-2 border-ink px-3 py-1 font-bold text-sm shadow-[2px_2px_0px_0px_rgba(26,26,26,1)]">
+                   <span>{skill}</span>
+                   <button onClick={() => setSelectedSkills(prev => prev.filter(s => s !== skill))} className="hover:text-terracotta ml-1"><X size={14} strokeWidth={3}/></button>
+                 </div>
+               ))}
+             </div>
+           )}
+
+           <div className="flex gap-4">
+             <div className="flex-1 relative flex flex-col">
+               <textarea
+                 style={sketchyShape3} value={input} onChange={(e) => setInput(e.target.value)}
+                 onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+                 placeholder={currentSessionId ? "Write your prompt here..." : "Select a chat first!"} disabled={!currentSessionId} rows={2}
+                 className="w-full bg-[#FDF8F0] border-4 border-ink p-5 pr-14 font-bold focus:outline-none focus:bg-white transition-all shadow-[inset_4px_4px_0px_0px_rgba(26,26,26,0.05)] resize-none text-lg -rotate-[0.5deg] placeholder:text-ink/30"
+               />
+               <button
+                 onClick={() => { 
+                   if (skillData.length === 0) fetchSkill(); 
+                   setTempSelectedSkills([...selectedSkills]); 
+                   setShowSkillSelectModal(true); 
+                 }}
+                 className="absolute right-3 bottom-3 p-2 bg-cream border-2 border-ink hover:bg-[#F9E2AF] transition-all shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] z-10"
+                 style={sketchyShape2}
+                 title="Select Skills"
+               >
+                 <Zap className="text-ink" size={20} strokeWidth={3}/>
+               </button>
+             </div>
+             <button
+               style={sketchyShape1} onClick={handleSend} disabled={!currentSessionId || !input.trim()}
+               className="bg-ink text-paper px-10 font-black flex items-center gap-3 border-4 border-ink hover:bg-terracotta hover:text-ink transition-all active:scale-95 disabled:opacity-50 shadow-[6px_6px_0px_0px_rgba(212,122,90,1)] hover:shadow-[6px_6px_0px_0px_rgba(26,26,26,1)] rotate-2 min-h-[80px] self-end"
+             >
+               <Send size={26} strokeWidth={2.5} />
+             </button>
+           </div>
         </div>
       </div>
     </div>

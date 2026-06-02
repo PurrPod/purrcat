@@ -117,8 +117,8 @@ def api_update_mcp_config(config: Dict[str, Any]):
 # ── Markdown Files (SOUL.md / SOLO.md) ──
 @router.get("/markdown/{filename}")
 def api_get_markdown_file(filename: str):
-    # 限制只允许读取 SOUL 和 SOLO，防止任意路径穿越漏洞
-    if filename not in ["SOUL", "SOLO"]:
+    # 限制只允许读取 SOUL、SOLO 和 TODO，防止任意路径穿越漏洞
+    if filename not in ["SOUL", "SOLO", "TODO"]:
         raise HTTPException(status_code=400, detail="Invalid filename")
     
     # 引入 config 中定义好的 AGENT_CORE_DIR (.purrcat/core/)
@@ -133,7 +133,7 @@ def api_get_markdown_file(filename: str):
 
 @router.put("/markdown/{filename}")
 def api_update_markdown_file(filename: str, payload: dict = Body(...)):
-    if filename not in ["SOUL", "SOLO"]:
+    if filename not in ["SOUL", "SOLO", "TODO"]:
         raise HTTPException(status_code=400, detail="Invalid filename")
         
     content = payload.get("content", "")
