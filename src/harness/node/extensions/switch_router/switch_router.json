@@ -1,0 +1,41 @@
+{
+    "type": "switch_router",
+    "name": "精准分流 (Switch)",
+    "description": "根据输入的值，精确匹配预设的条件，并将数据推入对应的分支。常用于意图识别后的多路分流。",
+    "color": "#E74C3C",
+    "inputs": [
+        { 
+            "name": "match_value", 
+            "type": "any", 
+            "port_type": "static",
+            "description": "需要被判断的字符串或数值（通常来自上游的连线）",
+            "required": true
+        }
+    ],
+    "outputs": [
+        { 
+            "name": "dynamic_branches", 
+            "type": "any", 
+            "port_type": "dynamic",
+            "dynamic_rules": { "watch_config": "cases", "method": "array_map" }
+        },
+        { 
+            "name": "default", 
+            "type": "any", 
+            "port_type": "static",
+            "description": "当没有任何条件匹配时，数据会走这个兜底分支"
+        }
+    ],
+    "config": [
+        { 
+            "name": "cases", 
+            "type": "list", 
+            "label": "匹配条件 (Cases)", 
+            "default": [],
+            "item_schema": [
+                {"name": "name", "type": "string", "label": "命中分支名 (作为引脚名)"},
+                {"name": "value", "type": "string", "label": "匹配值 (等于该值时命中)"}
+            ]
+        }
+    ]
+}

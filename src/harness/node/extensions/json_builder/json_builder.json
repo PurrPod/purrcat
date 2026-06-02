@@ -12,6 +12,13 @@
                 "watch_config": "kv_pairs",
                 "method": "array_map"
             }
+        },
+        {
+            "name": "trigger",
+            "type": "any",
+            "port_type": "static",
+            "description": "触发信号（可选）。如果不连线，节点将在开局自动执行；如果连线，将等待收到上游数据/信号后再执行。",
+            "required": false
         }
     ],
     "outputs": [

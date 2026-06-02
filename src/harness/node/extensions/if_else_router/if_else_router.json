@@ -1,0 +1,67 @@
+{
+    "type": "if_else_router",
+    "name": "条件判断 (If/Else)",
+    "description": "通过下拉菜单选择操作符，安全地比较上游变量与目标值，走 True 或 False 分支。",
+    "color": "#F39C12",
+    "inputs": [
+        {
+            "name": "var_a",
+            "type": "any",
+            "port_type": "static",
+            "description": "要判断的主变量 (连线输入)",
+            "required": true
+        },
+        {
+            "name": "var_b",
+            "type": "any",
+            "port_type": "static",
+            "description": "动态目标值(可选)。如果连线，将覆盖面板中填写的固定值。",
+            "required": false
+        }
+    ],
+    "outputs": [
+        {
+            "name": "True",
+            "type": "any",
+            "port_type": "static",
+            "description": "条件成立时走此分支"
+        },
+        {
+            "name": "False",
+            "type": "any",
+            "port_type": "static",
+            "description": "条件不成立时走此分支"
+        }
+    ],
+    "config": [
+        {
+            "name": "operator",
+            "type": "select",
+            "label": "判断条件",
+            "default": "==",
+            "description": "选择比较的方式",
+            "options": [
+                {"label": "等于 (==)", "value": "=="},
+                {"label": "不等于 (!=)", "value": "!="},
+                {"label": "大于 (>)", "value": ">"},
+                {"label": "小于 (<)", "value": "<"},
+                {"label": "大于等于 (>=)", "value": ">="},
+                {"label": "小于等于 (<=)", "value": "<="},
+                {"label": "包含 (contains)", "value": "contains"},
+                {"label": "不包含 (not contains)", "value": "not_contains"},
+                {"label": "开头是 (starts with)", "value": "startswith"},
+                {"label": "结尾是 (ends with)", "value": "endswith"},
+                {"label": "为空 (is empty)", "value": "is_empty"},
+                {"label": "不为空 (not empty)", "value": "not_empty"},
+                {"label": "正则匹配 (Regex)", "value": "regex_match"}
+            ]
+        },
+        {
+            "name": "var_b",
+            "type": "string",
+            "label": "固定目标值 (如果连线了 var_b 此处失效)",
+            "default": "",
+            "description": "跟上面的变量 A 进行比较的目标值 (判空操作符无需填写)"
+        }
+    ]
+}

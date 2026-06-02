@@ -145,6 +145,23 @@ export default function CustomNode({ id, data, selected }: any) {
       );
     }
 
+    if (field.type === 'select') {
+      return (
+        <select
+          value={value || field.default || ''}
+          onChange={(e) => updateNodeData(id, { [field.name]: e.target.value })}
+          className="mt-1 w-full bg-cream border-2 border-ink px-2 py-1.5 text-sm font-bold focus:outline-none shadow-[2px_2px_0px_0px_rgba(26,26,26,0.3)] focus:bg-white"
+          style={sketchyShape2}
+        >
+          {field.options?.map((opt: any) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+      );
+    }
+
     if (field.type === 'textarea') {
       return <textarea value={value || ''} onChange={(e) => updateNodeData(id, { [field.name]: e.target.value })} className="mt-1 px-3 py-2 border-2 border-ink text-sm shadow-[2px_2px_0px_0px_rgba(26,26,26,0.3)] resize-none h-24 outline-none bg-cream focus:bg-white font-mono" />;
     }
