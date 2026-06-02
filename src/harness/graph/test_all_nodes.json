@@ -1,0 +1,178 @@
+{
+  "version": "2.0",
+  "name": "test_all_nodes",
+  "description": "全节点综合试炼：一次性打通环境、路由、打包、Agent循环、人工干预、落盘读写与HTML大屏渲染！",
+  "env": {
+    "TEST_USER": "PurrCat Master"
+  },
+  "global_schema": {
+    "test_msg": {
+      "type": "string",
+      "required": true,
+      "description": "输入你想要大模型作诗的主题（若输入为空，路由将短路跳过）"
+    }
+  },
+  "nodes": [
+    {
+      "id": "nd_input",
+      "type": "task_input",
+      "name": "全局输入",
+      "position": [0, 200],
+      "config": {
+        "global_vars": [{"name": "test_msg", "required": true, "description": "测试主题"}]
+      }
+    },
+    {
+      "id": "nd_env",
+      "type": "env_loader",
+      "name": "环境加载",
+      "position": [0, 450],
+      "config": {
+        "exposed_keys": [{"name": "TEST_USER"}]
+      }
+    },
+    {
+      "id": "nd_json_build",
+      "type": "json_builder",
+      "name": "JSON 打包",
+      "position": [300, 300],
+      "config": {
+        "kv_pairs": [{"name": "msg_val", "type": "string"}, {"name": "user_val", "type": "string"}]
+      }
+    },
+    {
+      "id": "nd_json_ext",
+      "type": "json_extractor",
+      "name": "JSON 提取",
+      "position": [600, 300],
+      "config": {
+        "extract_keys": [{"name": "msg_val"}, {"name": "user_val"}]
+      }
+    },
+    {
+      "id": "nd_if",
+      "type": "if_else_router",
+      "name": "判空路由",
+      "position": [900, 200],
+      "config": {
+        "operator": "not_empty"
+      }
+    },
+    {
+      "id": "nd_tpl",
+      "type": "template_renderer",
+      "name": "组装提示词",
+      "position": [1200, 300],
+      "config": {
+        "template": "你好！我是 {{user_val}}。我的主题是：{{msg_val}}。请帮我围绕这个主题写一首简短优美的打油诗。"
+      }
+    },
+    {
+      "id": "nd_msg_sys",
+      "type": "message_card_builder",
+      "name": "System 设定",
+      "position": [1200, 50],
+      "config": {
+        "role": "system",
+        "content": "你是一个充满才情的AI文学家。请不要有多余废话，直接输出诗句。"
+      }
+    },
+    {
+      "id": "nd_msg_user",
+      "type": "message_card_builder",
+      "name": "User 消息",
+      "position": [1500, 300],
+      "config": {
+        "role": "user"
+      }
+    },
+    {
+      "id": "nd_append",
+      "type": "appender",
+      "name": "消息合并",
+      "position": [1800, 200],
+      "config": {}
+    },
+    {
+      "id": "nd_agent",
+      "type": "agent_loop",
+      "name": "AI 思考",
+      "position": [2100, 200],
+      "config": {}
+    },
+    {
+      "id": "nd_human",
+      "type": "human_intervention",
+      "name": "人工审核",
+      "position": [2400, 200],
+      "config": {
+        "prompt_message": "AI已作诗完毕！是否允许将其写入本地沙盒并生成大屏看板？(在下方输入框回复 'ok' 同意，回复其他内容打断)"
+      }
+    },
+    {
+      "id": "nd_switch",
+      "type": "switch_router",
+      "name": "意图拦截",
+      "position": [2700, 200],
+      "config": {
+        "cases": [{"name": "approve", "value": "ok"}]
+      }
+    },
+    {
+      "id": "nd_write",
+      "type": "file_writer",
+      "name": "写入沙盒",
+      "position": [3000, 200],
+      "config": {
+        "file_path": "output/cat_poem.txt"
+      }
+    },
+    {
+      "id": "nd_read",
+      "type": "text_file_reader",
+      "name": "读出验货",
+      "position": [3300, 200],
+      "config": {}
+    },
+    {
+      "id": "nd_html",
+      "type": "html_viewer",
+      "name": "前端看板渲染",
+      "position": [3600, 50],
+      "config": {
+        "title": "PurrCat 文学作品展"
+      }
+    },
+    {
+      "id": "nd_out",
+      "type": "task_output",
+      "name": "全局输出",
+      "position": [3900, 200],
+      "config": {
+        "target_vars": [{"name": "final_html", "type": "string"}, {"name": "final_poem", "type": "string"}],
+        "exposed_keys": ["final_html", "final_poem"]
+      }
+    }
+  ],
+  "edges": [
+    {"source": "nd_input", "target": "nd_json_build", "sourceHandle": "test_msg", "targetHandle": "msg_val"},
+    {"source": "nd_env", "target": "nd_json_build", "sourceHandle": "TEST_USER", "targetHandle": "user_val"},
+    {"source": "nd_json_build", "target": "nd_json_ext", "sourceHandle": "json_string", "targetHandle": "data"},
+    {"source": "nd_json_ext", "target": "nd_if", "sourceHandle": "msg_val", "targetHandle": "var_a"},
+    {"source": "nd_if", "target": "nd_tpl", "sourceHandle": "True", "targetHandle": "msg_val"},
+    {"source": "nd_json_ext", "target": "nd_tpl", "sourceHandle": "user_val", "targetHandle": "user_val"},
+    {"source": "nd_tpl", "target": "nd_msg_user", "sourceHandle": "rendered_text", "targetHandle": "content"},
+    {"source": "nd_msg_sys", "target": "nd_append", "sourceHandle": "message_list", "targetHandle": "base_list"},
+    {"source": "nd_msg_user", "target": "nd_append", "sourceHandle": "message_list", "targetHandle": "append_list"},
+    {"source": "nd_append", "target": "nd_agent", "sourceHandle": "merged_list", "targetHandle": "messages"},
+    {"source": "nd_agent", "target": "nd_human", "sourceHandle": "summary", "targetHandle": "context_data"},
+    {"source": "nd_agent", "target": "nd_human", "sourceHandle": "summary", "targetHandle": "trigger"},
+    {"source": "nd_human", "target": "nd_switch", "sourceHandle": "human_reply", "targetHandle": "match_value"},
+    {"source": "nd_switch", "target": "nd_write", "sourceHandle": "approve", "targetHandle": "trigger"},
+    {"source": "nd_human", "target": "nd_write", "sourceHandle": "context_data", "targetHandle": "content"},
+    {"source": "nd_write", "target": "nd_read", "sourceHandle": "absolute_path", "targetHandle": "file_path"},
+    {"source": "nd_read", "target": "nd_html", "sourceHandle": "file_content", "targetHandle": "content"},
+    {"source": "nd_html", "target": "nd_out", "sourceHandle": "html_source", "targetHandle": "final_html"},
+    {"source": "nd_read", "target": "nd_out", "sourceHandle": "file_content", "targetHandle": "final_poem"}
+  ]
+}
