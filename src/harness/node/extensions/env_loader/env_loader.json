@@ -1,0 +1,31 @@
+{
+    "type": "env_loader",
+    "name": "环境变量加载器",
+    "description": "自动读取当前工作流专属文件夹下的 env.json 大配置，并根据前端配置的键名（Key）按需暴露给下游节点。",
+    "color": "#1ABC9C",
+    "inputs": [],
+    "outputs": [
+        {
+            "name": "dynamic_outputs",
+            "type": "any",
+            "port_type": "dynamic",
+            "dynamic_rules": {
+                "watch_config": "exposed_keys",
+                "method": "array_map"
+            },
+            "description": "根据配置动态生成的环境变量输出端口"
+        }
+    ],
+    "config": [
+        {
+            "name": "exposed_keys",
+            "type": "list",
+            "label": "选择读取的变量",
+            "default": [],
+            "description": "添加你需要从此工作流的 env.json 中提取的键名。未添加的键将保持隐藏，避免数据流污染。",
+            "item_schema": [
+                {"name": "name", "type": "string", "label": "键名 (如: OPENAI_API_KEY)"}
+            ]
+        }
+    ]
+}

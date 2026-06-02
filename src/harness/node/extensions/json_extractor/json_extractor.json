@@ -1,0 +1,39 @@
+{
+    "type": "json_extractor",
+    "name": "JSON 提取器",
+    "description": "从输入的字典或 JSON 中，按指定的键名精准提取对应的值，并通过动态生成的引脚分发给下游。",
+    "color": "#D35400",
+    "inputs": [
+        {
+            "name": "data",
+            "type": "any",
+            "port_type": "static",
+            "description": "输入的 JSON 字符串或 Python 字典对象",
+            "required": true
+        }
+    ],
+    "outputs": [
+        {
+            "name": "dynamic_outputs",
+            "type": "any",
+            "port_type": "dynamic",
+            "dynamic_rules": {
+                "watch_config": "extract_keys",
+                "method": "array_map"
+            },
+            "description": "根据配置动态生成的键值提取端口"
+        }
+    ],
+    "config": [
+        {
+            "name": "extract_keys",
+            "type": "list",
+            "label": "需要提取的键名 (Keys)",
+            "default": [],
+            "description": "点击添加你要从数据中提取的键名。支持提取嵌套字典。",
+            "item_schema": [
+                {"name": "name", "type": "string", "label": "键名 (如: score)"}
+            ]
+        }
+    ]
+}
