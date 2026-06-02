@@ -454,18 +454,37 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
                  <div className="flex flex-col gap-2">
                    {currentNodeLogs.map((log, idx) => {
                      const timeStr = new Date(log.timestamp).toLocaleTimeString('en-US', { hour12: false });
-                     let colorClass = "text-ink/80"; 
+                     let colorClass = "text-ink/80";
                      if (log.type === "SYSTEM") colorClass = "text-ink/50";
                      if (log.type === "THOUGHT") colorClass = "text-[#3498DB] font-bold";
                      if (log.type === "TOOL_CALL") colorClass = "text-[#EBCB8B] font-bold";
                      if (log.type === "TOOL") colorClass = "text-[#a3be8c]";
                      if (log.type === "ERROR") colorClass = "text-[#bf616a] font-black";
                      if (log.type === "WARNING") colorClass = "text-[#d08770] font-bold";
+                     const isArtifact = log.type.toUpperCase() === "ARTIFACT";
+                     if (isArtifact) colorClass = "text-[#88c0d0] font-black";
                      return (
-                       <div key={idx} className="flex gap-4 hover:bg-ink/5 p-1 rounded transition-colors break-all">
-                         <span className="opacity-40 shrink-0 select-none">[{timeStr}]</span>
-                         <span className={`shrink-0 w-24 select-none ${colorClass}`}>[{log.type}]</span>
-                         <span className={`whitespace-pre-wrap ${colorClass}`}>{log.content}</span>
+                       <div key={idx} className={`flex ${isArtifact ? 'flex-col gap-2' : 'gap-4'} hover:bg-ink/5 p-1 rounded transition-colors break-all`}>
+                         <div className="flex gap-4 items-start">
+                           <span className="opacity-40 shrink-0 select-none">[{timeStr}]</span>
+                           <span className={`shrink-0 w-24 select-none ${colorClass}`}>[{log.type}]</span>
+                           {!isArtifact && <span className={`whitespace-pre-wrap ${colorClass}`}>{log.content}</span>}
+                         </div>
+                         {isArtifact && (
+                           <div className="mt-2 w-full h-[600px] border-4 border-ink bg-white shadow-[6px_6px_0px_0px_rgba(26,26,26,1)] relative overflow-hidden" style={sketchyShape3}>
+                             <div className="absolute top-0 left-0 right-0 h-8 bg-ink/5 border-b-2 border-ink flex items-center px-4 gap-2">
+                               <div className="w-3 h-3 rounded-full bg-[#bf616a] border-2 border-ink"></div>
+                               <div className="w-3 h-3 rounded-full bg-[#EBCB8B] border-2 border-ink"></div>
+                               <div className="w-3 h-3 rounded-full bg-[#a3be8c] border-2 border-ink"></div>
+                               <span className="text-xs font-bold text-ink/40 ml-2" style={{ fontFamily: '"Comic Sans MS", cursive' }}>Data Dashboard View</span>
+                             </div>
+                             <iframe
+                               srcDoc={log.content}
+                               className="w-full h-[calc(100%-2rem)] mt-8 border-none"
+                               sandbox="allow-scripts allow-popups"
+                             />
+                           </div>
+                         )}
                        </div>
                      );
                    })}

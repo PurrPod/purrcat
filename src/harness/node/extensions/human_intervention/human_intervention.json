@@ -1,0 +1,43 @@
+{
+    "type": "human_intervention",
+    "name": "人工干预",
+    "description": "中断当前工作流，向人类发起询问，直到人类在前端日志面板输入指令后才继续放行。",
+    "color": "#d08770",
+    "inputs": [
+        {
+            "name": "trigger",
+            "type": "any",
+            "port_type": "static",
+            "description": "执行到此节点即触发挂起"
+        },
+        {
+            "name": "context_data",
+            "type": "any",
+            "port_type": "static",
+            "description": "（可选）需要人类审核的上游数据。连线后可以在提示中展示给人类看。"
+        }
+    ],
+    "outputs": [
+        {
+            "name": "human_reply",
+            "type": "string",
+            "port_type": "static",
+            "description": "人类在前端输入的答复指令"
+        },
+        {
+            "name": "context_data",
+            "type": "any",
+            "port_type": "static",
+            "description": "透传上游传入的审查数据，方便下游一并使用"
+        }
+    ],
+    "config": [
+        {
+            "name": "prompt_message",
+            "type": "string",
+            "label": "向人类提问的文案",
+            "default": "流程已暂停，请审查以上数据并输入您的指示：",
+            "description": "挂起时会在日志中展示给用户的提示语"
+        }
+    ]
+}

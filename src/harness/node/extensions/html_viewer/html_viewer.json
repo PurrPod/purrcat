@@ -1,0 +1,36 @@
+{
+    "type": "html_viewer",
+    "name": "HTML 看板",
+    "description": "将输入的内容（Markdown 或纯文本）包装为带有样式的 HTML 页面源码，方便前端直接渲染。",
+    "color": "#3498DB",
+    "inputs": [
+        {
+            "name": "trigger",
+            "type": "any",
+            "port_type": "static"
+        },
+        {
+            "name": "content",
+            "type": "string",
+            "port_type": "static",
+            "description": "要展示的核心内容",
+            "required": true
+        }
+    ],
+    "outputs": [
+        {
+            "name": "html_source",
+            "type": "string",
+            "port_type": "static",
+            "description": "包装好的完整 HTML 源码"
+        }
+    ],
+    "config": [
+        {
+            "name": "title",
+            "type": "string",
+            "label": "看板标题",
+            "default": "Data Dashboard"
+        }
+    ]
+}

@@ -1,0 +1,45 @@
+{
+    "type": "file_writer",
+    "name": "本地文件落盘",
+    "description": "将纯文本内容写入到本地物理机的指定路径。支持绝对路径、相对路径及 ~ 符号。自动创建缺失的父级目录。",
+    "color": "#8E44AD",
+    "inputs": [
+        {
+            "name": "trigger",
+            "type": "any",
+            "port_type": "static",
+            "description": "触发信号。如果没有收到上游信号，将不会执行落盘。"
+        },
+        {
+            "name": "content",
+            "type": "string",
+            "port_type": "static",
+            "description": "需要写入文件的文本内容",
+            "required": true
+        },
+        {
+            "name": "file_path",
+            "type": "string",
+            "port_type": "static",
+            "description": "文件的本地物理路径，优先读取连线输入。",
+            "required": false
+        }
+    ],
+    "outputs": [
+        {
+            "name": "absolute_path",
+            "type": "string",
+            "port_type": "static",
+            "description": "写入成功后的物理绝对路径"
+        }
+    ],
+    "config": [
+        {
+            "name": "file_path",
+            "type": "string",
+            "label": "文件物理路径",
+            "default": "",
+            "description": "输入本地电脑上的保存路径，支持绝对路径 (如 /Users/xxx/output.txt)、相对路径或 ~ 符号。"
+        }
+    ]
+}

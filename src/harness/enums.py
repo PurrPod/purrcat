@@ -32,3 +32,4 @@ class LogType(str, Enum):
     SYSTEM = "system"
     TOOL_CALL = "tool_call"
     TOOL = "tool"
+    ARTIFACT = "artifact"
