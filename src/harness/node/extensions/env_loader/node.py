@@ -11,7 +11,11 @@ class Node(BaseNode):
         env_data = context.graph.get("env", {})
 
         if not env_data:
-            self.log(context, "WARNING", "⚠️ [环境变量] 当前图谱 JSON 中没有配置 'env' 键，或者环境为空。")
+            self.log(
+                context,
+                "WARNING",
+                "⚠️ [环境变量] 当前图谱 JSON 中没有配置 'env' 键，或者环境为空。",
+            )
 
         exposed_keys = self.config.get("exposed_keys", [])
         outputs = {}
@@ -29,14 +33,26 @@ class Node(BaseNode):
             outputs[key_name] = val
 
             val_str = str(val)
-            if "KEY" in key_name.upper() or "TOKEN" in key_name.upper() or "SECRET" in key_name.upper():
-                val_preview = val_str[:4] + "***" + val_str[-4:] if len(val_str) > 8 else "***"
+            if (
+                "KEY" in key_name.upper()
+                or "TOKEN" in key_name.upper()
+                or "SECRET" in key_name.upper()
+            ):
+                val_preview = (
+                    val_str[:4] + "***" + val_str[-4:] if len(val_str) > 8 else "***"
+                )
             else:
                 val_preview = val_str[:40] + "..." if len(val_str) > 40 else val_str
 
-            self.log(context, "SYSTEM", f"  🔹 成功提取并暴露 [{key_name}] = {val_preview}")
+            self.log(
+                context, "SYSTEM", f"  🔹 成功提取并暴露 [{key_name}] = {val_preview}"
+            )
             exposed_count += 1
 
-        self.log(context, "SYSTEM", f"✅ [环境变量] 分发完成，共输出 {exposed_count} 个变量至下游链路")
+        self.log(
+            context,
+            "SYSTEM",
+            f"✅ [环境变量] 分发完成，共输出 {exposed_count} 个变量至下游链路",
+        )
 
         return outputs

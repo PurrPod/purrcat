@@ -82,7 +82,7 @@ def Cron(
                     title=name,
                     trigger_time=trigger_time,
                     repeat_rule=actual_rule,
-                    description=description or ""
+                    description=description or "",
                 )
                 return text_response(result, f"✅ 已创建 | {trigger_time}")
             except CronError as e:
@@ -111,7 +111,12 @@ def Cron(
                     "参数缺失",
                 )
 
-            if trigger_time is None and repeat_rule is None and active is None and description is None:
+            if (
+                trigger_time is None
+                and repeat_rule is None
+                and active is None
+                and description is None
+            ):
                 return error_response(
                     "update（修改）操作缺少修改内容。引导：请至少提供 'trigger_time'、'repeat_rule'、'active' 或 'description' 中的一个字段以进行更新（注：名称不支持修改）。",
                     "参数缺失",

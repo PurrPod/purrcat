@@ -2,11 +2,12 @@ import re
 from typing import Any, Dict
 from src.harness.node.base import BaseNode
 
+
 class Node(BaseNode):
     async def execute(self, inputs: Dict[str, Any], context: Any) -> Dict[str, Any]:
         var_a = inputs.get("var_a")
         operator = self.config.get("operator", "==")
-        
+
         # 核心：优先取连线数据，没有连线再取配置数据
         if "var_b" in inputs and inputs["var_b"] is not None:
             var_b = inputs["var_b"]
@@ -15,14 +16,25 @@ class Node(BaseNode):
             var_b = self.config.get("var_b", "")
             source_b = "面板"
 
-        self.log(context, "SYSTEM", f"⚖️ [条件判断] var_a='{var_a}', op='{operator}', var_b='{var_b}' (来源:{source_b})")
+        self.log(
+            context,
+            "SYSTEM",
+            f"⚖️ [条件判断] var_a='{var_a}', op='{operator}', var_b='{var_b}' (来源:{source_b})",
+        )
 
         is_true = False
 
         if operator == "is_empty":
-            is_true = var_a is None or str(var_a).strip() == "" or var_a == [] or var_a == {}
+            is_true = (
+                var_a is None or str(var_a).strip() == "" or var_a == [] or var_a == {}
+            )
         elif operator == "not_empty":
-            is_true = var_a is not None and str(var_a).strip() != "" and var_a != [] and var_a != {}
+            is_true = (
+                var_a is not None
+                and str(var_a).strip() != ""
+                and var_a != []
+                and var_a != {}
+            )
         else:
             str_a = str(var_a) if var_a is not None else ""
             str_b = str(var_b)

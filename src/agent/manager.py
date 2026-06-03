@@ -106,7 +106,9 @@ class AgentManager:
         with self._agent._history_lock:
             self._agent.session_id = target_session_id
             self._agent.current_history = new_history
-            self._agent.window_token = all_sessions.get(target_session_id, {}).get("window_token", 0)
+            self._agent.window_token = all_sessions.get(target_session_id, {}).get(
+                "window_token", 0
+            )
 
         self._agent.model.bind_task(target_session_id, "AgentMain")
         print(f"🔄 检出成功: {target_session_id}")
@@ -240,7 +242,7 @@ class AgentManager:
             SessionStore.save_session(
                 self._agent.session_id,
                 safe_history,
-                window_token=self._agent.window_token
+                window_token=self._agent.window_token,
             )
 
 

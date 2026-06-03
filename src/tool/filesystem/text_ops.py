@@ -1,6 +1,6 @@
 import os
 import re
-from pathlib import Path, PurePath
+from pathlib import PurePath
 from src.tool.filesystem.exceptions import (
     FileSystemError,
     HostPathNotFoundError,
@@ -17,23 +17,26 @@ def read_file(path_from: str, offset: int = 0, limit: int = MAX_LINES_TO_READ) -
     if not os.path.exists(target_path):
         raise HostPathNotFoundError(target_path)
     if not os.path.isfile(target_path):
-        raise FileSystemError(f"目标不是一个文件: {target_path}。如果是目录请使用 list。")
+        raise FileSystemError(
+            f"目标不是一个文件: {target_path}。如果是目录请使用 list。"
+        )
 
     lines = []
     is_converted = False
 
     try:
-        with open(target_path, 'r', encoding='utf-8') as f:
+        with open(target_path, "r", encoding="utf-8") as f:
             lines = f.readlines()
 
     except UnicodeDecodeError:
         try:
             from markitdown import MarkItDown
+
             md = MarkItDown()
             result = md.convert(target_path)
             if not result.text_content:
                 raise FileSystemError("文件转换成功，但提取出的文本内容为空。")
-            lines = [line + '\n' for line in result.text_content.split('\n')]
+            lines = [line + "\n" for line in result.text_content.split("\n")]
             is_converted = True
 
         except ImportError:
@@ -42,7 +45,9 @@ def read_file(path_from: str, offset: int = 0, limit: int = MAX_LINES_TO_READ) -
                 "提示：宿主机未安装 markitdown。请联系管理员运行 `pip install markitdown` 来支持读取此类文件。"
             )
         except Exception as e:
-            raise FileSystemError(f"文件读取失败。既不是有效的纯文本，MarkItDown也无法解析: {str(e)}")
+            raise FileSystemError(
+                f"文件读取失败。既不是有效的纯文本，MarkItDown也无法解析: {str(e)}"
+            )
 
     total_lines = len(lines)
     start = max(0, offset)
@@ -56,7 +61,7 @@ def read_file(path_from: str, offset: int = 0, limit: int = MAX_LINES_TO_READ) -
 
     msg = f"📄 读取了 {start + 1} to {end} 行"
     if is_converted:
-        msg = f"🔄 [已自动转为Markdown] " + msg
+        msg = "🔄 [已自动转为Markdown] " + msg
 
     return {
         "path": target_path,
@@ -64,11 +69,13 @@ def read_file(path_from: str, offset: int = 0, limit: int = MAX_LINES_TO_READ) -
         "total_lines": total_lines,
         "showing_lines": f"{start + 1} to {end}",
         "content": content if content else "[文件内容为空]",
-        "message": msg
+        "message": msg,
     }
 
 
-def edit_file(path_from: str, old_string: str, new_string: str, replace_all: bool = False) -> dict:
+def edit_file(
+    path_from: str, old_string: str, new_string: str, replace_all: bool = False
+) -> dict:
     """Edit 工具：安全的局部字符串精准替换"""
     if not old_string:
         raise FileSystemError("old_string 不能为空。")
@@ -77,7 +84,7 @@ def edit_file(path_from: str, old_string: str, new_string: str, replace_all: boo
     if not os.path.exists(target_path):
         raise HostPathNotFoundError(target_path)
 
-    with open(target_path, 'r', encoding='utf-8') as f:
+    with open(target_path, "r", encoding="utf-8") as f:
         content = f.read()
 
     occurrences = content.count(old_string)
@@ -98,13 +105,13 @@ def edit_file(path_from: str, old_string: str, new_string: str, replace_all: boo
     else:
         new_content = content.replace(old_string, new_string, 1)
 
-    with open(target_path, 'w', encoding='utf-8') as f:
+    with open(target_path, "w", encoding="utf-8") as f:
         f.write(new_content)
 
     return {
         "path": target_path,
         "message": f"成功更新文件 {os.path.basename(target_path)}",
-        "replaced_occurrences": occurrences if replace_all else 1
+        "replaced_occurrences": occurrences if replace_all else 1,
     }
 
 
@@ -116,12 +123,12 @@ def write_file(path_from: str, content: str) -> dict:
     target_path = resolve_safe_path(path_from)
     os.makedirs(os.path.dirname(target_path), exist_ok=True)
 
-    with open(target_path, 'w', encoding='utf-8') as f:
+    with open(target_path, "w", encoding="utf-8") as f:
         f.write(content)
 
     return {
         "path": target_path,
-        "message": f"成功写入文件 {os.path.basename(target_path)} (长度: {len(content)})"
+        "message": f"成功写入文件 {os.path.basename(target_path)} (长度: {len(content)})",
     }
 
 
@@ -148,11 +155,11 @@ def search_file(path_from: str, pattern: str) -> dict:
                 continue
 
             try:
-                with open(file_path, 'r', encoding='utf-8') as f:
+                with open(file_path, "r", encoding="utf-8") as f:
                     for i, line in enumerate(f):
                         if regex.search(line):
                             rel_path = os.path.relpath(file_path, search_dir)
-                            matches.append(f"{rel_path}:{i+1}:{line.strip()}")
+                            matches.append(f"{rel_path}:{i + 1}:{line.strip()}")
                             if len(matches) > 1000:
                                 matches.append("... [搜索结果过多，已截断]")
                                 break
@@ -163,7 +170,7 @@ def search_file(path_from: str, pattern: str) -> dict:
         "search_dir": search_dir,
         "pattern": pattern,
         "match_count": len(matches),
-        "results": "\n".join(matches) if matches else "未找到匹配项"
+        "results": "\n".join(matches) if matches else "未找到匹配项",
     }
 
 
@@ -184,7 +191,9 @@ def glob_file(path_from: str, pattern: str) -> dict:
             rel_path = os.path.relpath(file_path, search_dir)
             if PurePath(rel_path).match(pattern):
                 try:
-                    if check_allowed(file_path, blacklist) and os.path.isfile(file_path):
+                    if check_allowed(file_path, blacklist) and os.path.isfile(
+                        file_path
+                    ):
                         matched_paths.append(file_path)
                 except OSError:
                     continue
@@ -197,11 +206,13 @@ def glob_file(path_from: str, pattern: str) -> dict:
 
     matched_paths.sort(key=safe_getmtime, reverse=True)
 
-    results = [os.path.relpath(x, search_dir).replace('\\', '/') for x in matched_paths[:100]]
+    results = [
+        os.path.relpath(x, search_dir).replace("\\", "/") for x in matched_paths[:100]
+    ]
 
     return {
         "search_dir": search_dir,
         "pattern": pattern,
         "total_matches": len(matched_paths),
-        "files_sorted_by_mtime": results
+        "files_sorted_by_mtime": results,
     }

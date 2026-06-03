@@ -1,6 +1,5 @@
 import json
-import sys
-from typing import Any, Optional
+from typing import Any
 
 
 class RemoteSensorProxy:
@@ -16,10 +15,7 @@ class RemoteSensorProxy:
 
         payload = {
             "method": "express",
-            "params": {
-                "message": str(message),
-                "kwargs": kwargs
-            }
+            "params": {"message": str(message), "kwargs": kwargs},
         }
         try:
             self.stdin_pipe.write(json.dumps(payload, ensure_ascii=False) + "\n")
@@ -53,7 +49,9 @@ class SensorGateway:
         if isinstance(content, str) and content.strip() == "/unbind":
             if sensor_name in self.active_channels:
                 self.active_channels.remove(sensor_name)
-                self.sensors[sensor_name].express("✅ 已解除活跃状态，可通过再次发送消息保持活跃")
+                self.sensors[sensor_name].express(
+                    "✅ 已解除活跃状态，可通过再次发送消息保持活跃"
+                )
             return
 
         proxy = self.sensors.get(sensor_name)
@@ -68,6 +66,7 @@ class SensorGateway:
 
         try:
             from src.agent import agent_force_push
+
             agent_force_push(content=content, type=sensor_name)
         except Exception as e:
             print(f"❌ [Gateway] 无法推送消息给 Agent: {e}")

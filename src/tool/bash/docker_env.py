@@ -68,6 +68,7 @@ _docker_manager_instance: Optional["DockerManager"] = None
 def _get_container_env() -> dict:
     try:
         from src.utils.config import get_file_config
+
         cfg = get_file_config().get("docker", {})
         raw_proxy = (
             cfg.get("http_proxy")
@@ -112,27 +113,35 @@ class DockerManager:
     ):
         if not image:
             raise ValueError("A Docker image must be provided.")
-        
+
         engine_preference = get_engine_preference()
-        
+
         if engine_preference in ["docker", "podman"]:
             import shutil
+
             if shutil.which(engine_preference):
                 self.engine = engine_preference
             else:
-                raise DockerNotRunningError(f"全局配置中指定了 {engine_preference}，但系统未检测到该命令，请重新执行 purrcat setup")
+                raise DockerNotRunningError(
+                    f"全局配置中指定了 {engine_preference}，但系统未检测到该命令，请重新执行 purrcat setup"
+                )
         else:
             import shutil
+
             self.engine = shutil.which("podman") or shutil.which("docker")
             if not self.engine:
-                raise DockerNotRunningError("未检测到任何容器环境，请先执行 purrcat setup")
-        
+                raise DockerNotRunningError(
+                    "未检测到任何容器环境，请先执行 purrcat setup"
+                )
+
         print(f"🔧 使用容器引擎: {self.engine}")
-        
+
         try:
             self.client = docker.from_env()
         except Exception as e:
-            raise DockerNotRunningError(f"{self.engine.capitalize()} 客户端初始化失败: {e}")
+            raise DockerNotRunningError(
+                f"{self.engine.capitalize()} 客户端初始化失败: {e}"
+            )
 
         self.image = image
         self.container_name = container_name
@@ -215,7 +224,9 @@ class DockerManager:
 
             if env_vars.get("HTTP_PROXY"):
                 proxy_url = env_vars["HTTP_PROXY"]
-                print(f"🌐 检测到代理环境，正在为容器内部 apt 注入代理配置: {proxy_url}")
+                print(
+                    f"🌐 检测到代理环境，正在为容器内部 apt 注入代理配置: {proxy_url}"
+                )
                 apt_cmd = f'sh -c \'echo "Acquire::http::Proxy \\"{proxy_url}\\";\\nAcquire::https::Proxy \\"{proxy_url}\\";" > /etc/apt/apt.conf.d/99proxy\''
                 self.container.exec_run(apt_cmd, user="root")
 
@@ -235,7 +246,9 @@ class DockerManager:
         if self.container:
             try:
                 repo_name = self.image.split(":")[0]
-                print(f"🫡 检测到系统退出/异常，正在自动固化环境到 {repo_name}:latest ...")
+                print(
+                    f"🫡 检测到系统退出/异常，正在自动固化环境到 {repo_name}:latest ..."
+                )
                 self.container.commit(repository=repo_name, tag="latest")
                 print("✅ 环境自动保存成功！")
             except Exception as e:

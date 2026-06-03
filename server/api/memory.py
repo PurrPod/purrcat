@@ -102,6 +102,7 @@ def delete_relation(source_node_id: str, target_node_id: str):
 # 🌟 修改后：基于 AGENT_CORE_DIR 的 MEMORY.md 读写 API
 # ==========================================
 
+
 @router.get("/markdown")
 def get_memory_markdown_api():
     """读取 .purrcat/core/MEMORY.md 文件内容"""
@@ -110,7 +111,7 @@ def get_memory_markdown_api():
         file_path = os.path.join(AGENT_CORE_DIR, "MEMORY.md")
         if not os.path.exists(file_path):
             return {"content": ""}
-            
+
         with open(file_path, "r", encoding="utf-8") as f:
             return {"content": f.read()}
     except Exception as e:
@@ -125,13 +126,13 @@ def update_memory_markdown_api(payload: dict = Body(...)):
         content = payload.get("content", "")
         # 🌟 路径切换为 AGENT_CORE_DIR
         file_path = os.path.join(AGENT_CORE_DIR, "MEMORY.md")
-        
+
         # 确保父级目录 .purrcat/core 存在
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
-        
+
         with open(file_path, "w", encoding="utf-8") as f:
             f.write(content)
-            
+
         return {"status": "success", "message": "MEMORY.md 已成功落盘保存"}
     except Exception as e:
         traceback.print_exc()

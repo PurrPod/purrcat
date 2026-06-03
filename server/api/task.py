@@ -59,7 +59,11 @@ async def run_task_api(req: RunTaskRequest, background_tasks: BackgroundTasks):
 
         background_tasks.add_task(task.run)
 
-        return {"status": "success", "task_id": task.task_id, "message": "Task started in background."}
+        return {
+            "status": "success",
+            "task_id": task.task_id,
+            "message": "Task started in background.",
+        }
     except HTTPException:
         raise
     except Exception as e:
@@ -114,6 +118,7 @@ async def submit_instruction_api(task_id: str, req: SubmitInstructionRequest):
         raise HTTPException(status_code=400, detail=result["message"])
 
     from src.harness.enums import TaskState
+
     if task.state != TaskState.RUNNING:
         asyncio.create_task(task.run())
 
@@ -128,13 +133,17 @@ async def push_to_task(task_id: str, req: TaskPushReq):
         raise HTTPException(status_code=404, detail="Task not found or not active")
 
     if not req.node_id:
-        raise HTTPException(status_code=400, detail="拒绝操作：必须指定 node_id，已废弃不安全的全局广播注入。")
+        raise HTTPException(
+            status_code=400,
+            detail="拒绝操作：必须指定 node_id，已废弃不安全的全局广播注入。",
+        )
 
     result = task.inject_instruction(req.node_id, req.message)
     if result["status"] == "error":
         raise HTTPException(status_code=400, detail=result["message"])
 
     from src.harness.enums import TaskState
+
     if task.state != TaskState.RUNNING:
         asyncio.create_task(task.run())
 
@@ -176,6 +185,7 @@ async def reset_node_api(task_id: str, node_id: str):
         raise HTTPException(status_code=400, detail=result["message"])
 
     from src.harness.enums import TaskState
+
     if task.state != TaskState.RUNNING:
         asyncio.create_task(task.run())
 

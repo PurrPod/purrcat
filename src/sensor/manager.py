@@ -14,7 +14,9 @@ class SensorManager:
     def __init__(self):
         self.extension_dir = os.path.join(os.path.dirname(__file__), "extension")
         self.processes = {}
-        self.github_repo_base = "https://raw.githubusercontent.com/PurrPod/sensor-source/main"
+        self.github_repo_base = (
+            "https://raw.githubusercontent.com/PurrPod/sensor-source/main"
+        )
 
         os.makedirs(self.extension_dir, exist_ok=True)
 
@@ -31,7 +33,9 @@ class SensorManager:
             print(f"✅ [Manager] {sensor_name} 下载完成！")
             return local_path
         except urllib.error.HTTPError as e:
-            print(f"❌ [Manager] 下载失败，云端仓库找不到 {sensor_name}.py (HTTP {e.code})")
+            print(
+                f"❌ [Manager] 下载失败，云端仓库找不到 {sensor_name}.py (HTTP {e.code})"
+            )
             return ""
         except Exception as e:
             print(f"❌ [Manager] 网络异常: {e}")
@@ -50,7 +54,9 @@ class SensorManager:
             is_enabled = cfg.get("enabled", False)
 
             if not is_enabled:
-                print(f"⏸️  [SensorManager] 传感器 '{name}' 已被禁用 (enabled=false)，跳过启动。")
+                print(
+                    f"⏸️  [SensorManager] 传感器 '{name}' 已被禁用 (enabled=false)，跳过启动。"
+                )
                 continue
 
             script_path = self._get_sensor_path(name)
@@ -72,25 +78,31 @@ class SensorManager:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
-                bufsize=1
+                bufsize=1,
             )
             self.processes[name] = process
 
             proxy = RemoteSensorProxy(name, cfg.get("capabilities", {}), process.stdin)
             get_gateway().register(proxy)
 
-            threading.Thread(target=self._listen_to_stdout, args=(name, process), daemon=True).start()
-            threading.Thread(target=self._listen_to_stderr, args=(name, process), daemon=True).start()
+            threading.Thread(
+                target=self._listen_to_stdout, args=(name, process), daemon=True
+            ).start()
+            threading.Thread(
+                target=self._listen_to_stderr, args=(name, process), daemon=True
+            ).start()
             print(f"🚀 [Manager] 成功拉起 Sensor 子进程: {name} (PID: {process.pid})")
 
         except FileNotFoundError:
-            print(f"❌ [Manager] 找不到 'uv' 命令！请先安装: curl -LsSf https://astral.sh/uv/install.sh | sh")
+            print(
+                "❌ [Manager] 找不到 'uv' 命令！请先安装: curl -LsSf https://astral.sh/uv/install.sh | sh"
+            )
         except Exception as e:
             print(f"❌ [Manager] 启动 {name} 失败: {e}")
 
     def _listen_to_stdout(self, name: str, process: subprocess.Popen):
         gateway = get_gateway()
-        for line in iter(process.stdout.readline, ''):
+        for line in iter(process.stdout.readline, ""):
             if not line:
                 break
             try:
@@ -107,7 +119,7 @@ class SensorManager:
                 pass
 
     def _listen_to_stderr(self, name: str, process: subprocess.Popen):
-        for line in iter(process.stderr.readline, ''):
+        for line in iter(process.stderr.readline, ""):
             if line:
                 print(f"⚠️ [{name} 日志/报错]: {line.strip()}", file=sys.stderr)
 

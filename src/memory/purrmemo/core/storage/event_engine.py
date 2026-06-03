@@ -163,8 +163,12 @@ class EventEngine(metaclass=SingletonMeta):
         """彻底删除单条事件（包含全文索引）"""
         try:
             cursor = self.conn.cursor()
-            cursor.execute(f"DELETE FROM {self.table_name}_fts WHERE event_id = ?", (event_id,))
-            cursor.execute(f"DELETE FROM {self.table_name} WHERE event_id = ?", (event_id,))
+            cursor.execute(
+                f"DELETE FROM {self.table_name}_fts WHERE event_id = ?", (event_id,)
+            )
+            cursor.execute(
+                f"DELETE FROM {self.table_name} WHERE event_id = ?", (event_id,)
+            )
 
             if cursor.rowcount > 0:
                 self.conn.commit()

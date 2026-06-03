@@ -13,7 +13,13 @@ from src.tool.filesystem.export_file import export_file
 from src.tool.filesystem.import_file import import_file
 from src.tool.filesystem.list_filesystem import list_filesystem
 from src.tool.filesystem.read_picture import read_picture
-from src.tool.filesystem.text_ops import read_file, edit_file, write_file, search_file, glob_file
+from src.tool.filesystem.text_ops import (
+    read_file,
+    edit_file,
+    write_file,
+    search_file,
+    glob_file,
+)
 from src.tool.utils.format import error_response, text_response, warning_response
 
 
@@ -40,8 +46,17 @@ def FileSystem(
     """
     try:
         action = action.strip().lower() if action else ""
-        allowed_actions = ["import", "export", "list", "read_picture",
-                           "read", "edit", "write", "search", "glob"]
+        allowed_actions = [
+            "import",
+            "export",
+            "list",
+            "read_picture",
+            "read",
+            "edit",
+            "write",
+            "search",
+            "glob",
+        ]
         if action not in allowed_actions:
             return error_response(
                 f"无效的操作类型: {action}。支持的操作: {allowed_actions}",
@@ -67,7 +82,9 @@ def FileSystem(
             new_str = kwargs.get("new_string")
             replace_all = kwargs.get("replace_all", False)
             if old_str is None or new_str is None:
-                return error_response("edit 操作需提供 old_string 和 new_string", "❌ 参数缺失")
+                return error_response(
+                    "edit 操作需提供 old_string 和 new_string", "❌ 参数缺失"
+                )
             result = edit_file(path, old_str, new_str, replace_all)
             return text_response(result, "✂️ 修改成功")
 
@@ -84,20 +101,28 @@ def FileSystem(
         # --- 全局内容搜索 (Search/Grep) ---
         if action == "search":
             if not path or str(path).strip() == "":
-                return error_response("search 操作必须提供 path 参数，指定搜索的起始目录！", "❌ 参数缺失")
+                return error_response(
+                    "search 操作必须提供 path 参数，指定搜索的起始目录！", "❌ 参数缺失"
+                )
             pattern = kwargs.get("pattern")
             if not pattern:
-                return error_response("search 操作需提供 pattern 正则表达式", "❌ 参数缺失")
+                return error_response(
+                    "search 操作需提供 pattern 正则表达式", "❌ 参数缺失"
+                )
             result = search_file(path, pattern)
             return text_response(result, f"🔍 找到 {result['match_count']} 处匹配")
 
         # --- 全局路径匹配 (Glob) ---
         if action == "glob":
             if not path or str(path).strip() == "":
-                return error_response("glob 操作必须提供 path 参数，指定扫描的起始目录！", "❌ 参数缺失")
+                return error_response(
+                    "glob 操作必须提供 path 参数，指定扫描的起始目录！", "❌ 参数缺失"
+                )
             pattern = kwargs.get("pattern")
             if not pattern:
-                return error_response("glob 操作需提供 pattern (例如 **/*.py)", "❌ 参数缺失")
+                return error_response(
+                    "glob 操作需提供 pattern (例如 **/*.py)", "❌ 参数缺失"
+                )
             result = glob_file(path, pattern)
             return text_response(result, f"🌐 找到 {result['total_matches']} 个文件")
 
@@ -106,10 +131,12 @@ def FileSystem(
             # Agent 可能将路径传给 path_from，也可能传给专门的 paths
             paths = kwargs.get("paths") or path_from
             prompt = kwargs.get("prompt", "请详细描述这张/这些图片。")
-            
+
             if not paths:
-                return error_response("缺少图片路径参数 (paths 或 path_from)", "❌ 参数缺失")
-                
+                return error_response(
+                    "缺少图片路径参数 (paths 或 path_from)", "❌ 参数缺失"
+                )
+
             try:
                 result = read_picture(paths=paths, prompt=prompt)
                 snip = f"👁️ 成功分析 {result['image_count']} 张图片"
@@ -123,26 +150,32 @@ def FileSystem(
         if action == "list":
             if path_to is not None and str(path_to).strip() != "":
                 return error_response("list 操作不支持 path_to 参数", "❌ 参数错误")
-            
+
             if not path or str(path).strip() == "":
-                return error_response("list 操作必须提供明确的 path 参数！请指明你要查看的目录。", "❌ 参数缺失")
-            
+                return error_response(
+                    "list 操作必须提供明确的 path 参数！请指明你要查看的目录。",
+                    "❌ 参数缺失",
+                )
+
             list_path = path
-            
+
             # 统一路径斜杠，方便做前缀判断
             normalized_path = list_path.replace("\\", "/")
-            
+
             # 【修复点2】：如果是 /agent_vm/skills 开头，直接抛出定制提示拦截
-            if normalized_path.startswith("/agent_vm/skills/") or normalized_path == "/agent_vm/skills":
+            if (
+                normalized_path.startswith("/agent_vm/skills/")
+                or normalized_path == "/agent_vm/skills"
+            ):
                 return error_response(
                     "虚拟机内的 skills 文件夹无法直接通过 filesystem 工具检测，请直接使用 bash 工具访问。",
-                    "❌ 访问受限"
+                    "❌ 访问受限",
                 )
-            
+
             # 【修复点3】：将剩余以 /agent_vm 开头的路径映射为 ./agent_vm 相对路径
             if normalized_path.startswith("/agent_vm"):
                 list_path = "." + list_path
-            
+
             kwargs.pop("path", None)
             kwargs.pop("path_from", None)
             try:

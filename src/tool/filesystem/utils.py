@@ -5,6 +5,7 @@ from src.tool.filesystem.exceptions import PermissionDeniedError
 def load_blacklist():
     """加载配置中的黑名单路径"""
     from src.utils.config import get_file_config
+
     raw_list = get_file_config().get("dont_read_dirs", [])
     return [os.path.normcase(os.path.abspath(d)) for d in raw_list]
 
@@ -38,6 +39,8 @@ def resolve_safe_path(path: str) -> str:
         resolved_path = os.path.abspath(path)
 
     if not check_allowed(resolved_path, load_blacklist()):
-        raise PermissionDeniedError(resolved_path, "安全策略拦截：此路径在系统黑名单中，禁止访问。")
+        raise PermissionDeniedError(
+            resolved_path, "安全策略拦截：此路径在系统黑名单中，禁止访问。"
+        )
 
     return resolved_path

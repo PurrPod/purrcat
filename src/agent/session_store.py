@@ -120,7 +120,9 @@ class SessionStore:
             return []
 
     @classmethod
-    def save_session(cls, session_id, history, parent_id=None, alias=None, window_token=0):
+    def save_session(
+        cls, session_id, history, parent_id=None, alias=None, window_token=0
+    ):
         path = os.path.join(SESSIONS_DIR, f"{session_id}.json")
         temp_path = f"{path}.tmp"
 
@@ -167,13 +169,15 @@ class SessionStore:
                 print(f"⚠️ 保存会话索引失败: {e}")
 
     @classmethod
-    def create_branch(cls, current_session_id, current_history, branch_alias=None, window_token=0):
+    def create_branch(
+        cls, current_session_id, current_history, branch_alias=None, window_token=0
+    ):
         new_session_id = cls._generate_id()
         cls.save_session(
             session_id=new_session_id,
             history=current_history,
             parent_id=current_session_id,
             alias=branch_alias,
-            window_token=window_token
+            window_token=window_token,
         )
         return new_session_id

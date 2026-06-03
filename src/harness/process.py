@@ -442,7 +442,10 @@ class Task:
                         target_id = edge["target"]
                         target_port = edge.get("targetHandle", "default")
 
-                        if target_id in self.edge_mailboxes and target_port in self.edge_mailboxes[target_id]:
+                        if (
+                            target_id in self.edge_mailboxes
+                            and target_port in self.edge_mailboxes[target_id]
+                        ):
                             self.edge_mailboxes[target_id].pop(target_port, None)
 
                         if target_id not in visited:

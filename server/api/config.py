@@ -10,7 +10,6 @@ from src.utils.config import (
     MEMORY_CONFIG_PATH,
     MODEL_CONFIG_PATH,
     SENSOR_CONFIG_PATH,
-    PURRCAT_DIR,
     AGENT_CORE_DIR,
     get_file_config,
     get_mcp_config,
@@ -65,12 +64,14 @@ def api_reload_sensor_manager():
     """停止所有运行中的 Sensor 进程，并重新读取配置拉起启用状态的 Sensor"""
     try:
         from src.sensor.manager import get_manager
+
         manager = get_manager()
-        manager.stop_all()             # 杀死旧进程
-        manager.load_and_start_all()   # 重新读取 activate_sensor.json 并拉起
+        manager.stop_all()  # 杀死旧进程
+        manager.load_and_start_all()  # 重新读取 activate_sensor.json 并拉起
         return {"status": "ok", "message": "Sensors reloaded successfully"}
     except Exception as e:
         import traceback
+
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"热重启失败: {str(e)}")
 
@@ -120,24 +121,25 @@ def api_get_markdown_file(filename: str):
     # 限制只允许读取 SOUL、SOLO 和 TODO，防止任意路径穿越漏洞
     if filename not in ["SOUL", "SOLO", "TODO"]:
         raise HTTPException(status_code=400, detail="Invalid filename")
-    
+
     # 引入 config 中定义好的 AGENT_CORE_DIR (.purrcat/core/)
     file_path = os.path.join(AGENT_CORE_DIR, f"{filename}.md")
 
     # 如果文件不存在，返回空内容防报错
     if not os.path.exists(file_path):
         return {"content": ""}
-        
+
     with open(file_path, "r", encoding="utf-8") as f:
         return {"content": f.read()}
+
 
 @router.put("/markdown/{filename}")
 def api_update_markdown_file(filename: str, payload: dict = Body(...)):
     if filename not in ["SOUL", "SOLO", "TODO"]:
         raise HTTPException(status_code=400, detail="Invalid filename")
-        
+
     content = payload.get("content", "")
-    
+
     # 同样定位到 AGENT_CORE_DIR (.purrcat/core/)
     file_path = os.path.join(AGENT_CORE_DIR, f"{filename}.md")
 

@@ -145,14 +145,18 @@ def get_container_engine(engine_preference: str = "auto") -> str:
         if shutil.which(engine_preference):
             return engine_preference
         else:
-            raise EnvironmentError(f"您选择了 {engine_preference}，但系统未检测到该环境。")
+            raise EnvironmentError(
+                f"您选择了 {engine_preference}，但系统未检测到该环境。"
+            )
 
     global_preference = get_engine_preference()
     if global_preference in ["docker", "podman"]:
         if shutil.which(global_preference):
             return global_preference
         else:
-            print(f"[Config] 全局配置中指定了 '{global_preference}'，但系统未检测到该命令。")
+            print(
+                f"[Config] 全局配置中指定了 '{global_preference}'，但系统未检测到该命令。"
+            )
 
     file_config = get_file_config()
     configured_engine = file_config.get(CONTAINER_ENGINE_CONFIG_KEY)
@@ -161,14 +165,18 @@ def get_container_engine(engine_preference: str = "auto") -> str:
         if shutil.which(configured_engine):
             return configured_engine
         else:
-            print(f"[Config] 配置的容器引擎 '{configured_engine}' 未找到，尝试自动检测...")
+            print(
+                f"[Config] 配置的容器引擎 '{configured_engine}' 未找到，尝试自动检测..."
+            )
 
     if shutil.which("podman"):
         return "podman"
     elif shutil.which("docker"):
         return "docker"
     else:
-        raise RuntimeError("未检测到可用的容器引擎 (Podman 或 Docker)。请先安装其中之一。")
+        raise RuntimeError(
+            "未检测到可用的容器引擎 (Podman 或 Docker)。请先安装其中之一。"
+        )
 
 
 def set_container_engine(engine: str) -> bool:

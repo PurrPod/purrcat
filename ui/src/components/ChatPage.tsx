@@ -188,7 +188,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
 
   // 轮询 Token 进度
   useEffect(() => {
-    let tokenInterval: NodeJS.Timeout;
+    let tokenInterval: ReturnType<typeof setTimeout>;
     const fetchToken = async () => {
       try {
         const res = await fetch('http://localhost:8000/api/agent/token');

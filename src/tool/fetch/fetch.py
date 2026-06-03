@@ -95,13 +95,15 @@ def Fetch(
                     f"📖 Skill [{name}] 注入成功",
                 )
             else:
-                print(f"👻 [Harness独立加载] 技能 [{name}] 完整内容已直接返回给工作流节点上下文")
+                print(
+                    f"👻 [Harness独立加载] 技能 [{name}] 完整内容已直接返回给工作流节点上下文"
+                )
                 return text_response(
                     {
                         "name": result["name"],
                         "status": "success",
                         "content": skill_instruction,
-                        "message": f"✅ 技能 [{name}] 获取成功，请紧紧围绕上方的 content 字段中的 [技能SOP操作指南] 行事。"
+                        "message": f"✅ 技能 [{name}] 获取成功，请紧紧围绕上方的 content 字段中的 [技能SOP操作指南] 行事。",
                     },
                     f"📖 Skill [{name}] 独立加载",
                 )

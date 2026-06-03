@@ -14,7 +14,9 @@ class Node(BaseNode):
         title = self.config.get("title", "Data Dashboard")
 
         try:
-            html_content = markdown.markdown(str(content), extensions=['tables', 'fenced_code'])
+            html_content = markdown.markdown(
+                str(content), extensions=["tables", "fenced_code"]
+            )
         except Exception:
             html_content = f"<pre>{content}</pre>"
 
@@ -43,5 +45,5 @@ class Node(BaseNode):
 </html>"""
 
         self.log(context, LogType.ARTIFACT, full_html)
-        self.log(context, "SYSTEM", f"✅ [HTML看板] 已成功向前端推送可视化视图！")
+        self.log(context, "SYSTEM", "✅ [HTML看板] 已成功向前端推送可视化视图！")
         return {"html_source": full_html}

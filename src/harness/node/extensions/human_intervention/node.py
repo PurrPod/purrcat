@@ -15,18 +15,26 @@ class Node(AgentNode):
 
         if force_push_msgs:
             human_reply = force_push_msgs[-1]
-            self.log(context, "SYSTEM", f"✅ [人工干预] 成功收到人类答复: {human_reply}")
+            self.log(
+                context, "SYSTEM", f"✅ [人工干预] 成功收到人类答复: {human_reply}"
+            )
 
             return {
                 "human_reply": human_reply,
-                "context_data": inputs.get("context_data")
+                "context_data": inputs.get("context_data"),
             }
 
-        prompt_message = self.config.get("prompt_message", "流程已暂停，请审查并输入您的指示：")
+        prompt_message = self.config.get(
+            "prompt_message", "流程已暂停，请审查并输入您的指示："
+        )
         context_data = inputs.get("context_data")
 
         if context_data:
-            data_preview = str(context_data)[:200] + "..." if len(str(context_data)) > 200 else str(context_data)
+            data_preview = (
+                str(context_data)[:200] + "..."
+                if len(str(context_data)) > 200
+                else str(context_data)
+            )
             self.log(context, "SYSTEM", f"📄 [待审数据]: {data_preview}")
 
         self.log(context, "WARNING", f"✋ {prompt_message}")

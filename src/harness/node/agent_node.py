@@ -190,8 +190,9 @@ class AgentNode(BaseNode):
                     consecutive_format_errors += 1
                     if consecutive_format_errors >= MAX_CONSECUTIVE_ERRORS:
                         self.log(
-                            context, LogType.SYSTEM,
-                            f"🔴 [熔断] 连续 {MAX_CONSECUTIVE_ERRORS} 次未能按照要求格式输出，挂起求助"
+                            context,
+                            LogType.SYSTEM,
+                            f"🔴 [熔断] 连续 {MAX_CONSECUTIVE_ERRORS} 次未能按照要求格式输出，挂起求助",
                         )
                         context.node_state[self.node_id] = NodeState.WAITING
                         raise asyncio.CancelledError("Format Error Circuit Breaker")

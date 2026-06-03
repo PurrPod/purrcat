@@ -229,7 +229,9 @@ def _smart_update_memory_md(work_exp: list, user_profile: list):
                                         f.write(new_md_content)
                                     os.replace(temp_path, MEMORY_MD_PATH)
                                     print("✅ 后台模型已智能更新 MEMORY.md")
-                                    has_write_operation = True  # 只有真正落盘成功才标记为 True
+                                    has_write_operation = (
+                                        True  # 只有真正落盘成功才标记为 True
+                                    )
                                 except json.JSONDecodeError as e:
                                     print(f"❌ 工具参数解析失败，转义错误: {e}")
                                     has_write_operation = False
@@ -245,11 +247,12 @@ def _smart_update_memory_md(work_exp: list, user_profile: list):
                             break
                         else:
                             # 没调用工具，或者调用了但参数解析失败了，把反馈告诉 Agent 逼它重试
-                            feedback_msg = error_feedback if 'error_feedback' in locals() else "⚠️ 警告：你必须调用 overwrite_memory_md 工具完成写入！"
-                            messages.append({
-                                "role": "user",
-                                "content": feedback_msg
-                            })
+                            feedback_msg = (
+                                error_feedback
+                                if "error_feedback" in locals()
+                                else "⚠️ 警告：你必须调用 overwrite_memory_md 工具完成写入！"
+                            )
+                            messages.append({"role": "user", "content": feedback_msg})
                             continue
 
                 except Exception as e:

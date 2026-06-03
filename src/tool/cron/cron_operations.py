@@ -73,7 +73,9 @@ def _find_cron_index(crons: List[Dict[str, Any]], identifier: str) -> int:
     return -1
 
 
-def add_cron(title: str, trigger_time: str, repeat_rule: str = "none", description: str = "") -> dict:
+def add_cron(
+    title: str, trigger_time: str, repeat_rule: str = "none", description: str = ""
+) -> dict:
     """
     添加闹钟
 

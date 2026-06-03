@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
   ArrowLeft, Terminal, Trash2, X, Activity, Clock, Box, Send, MessageCircle, RefreshCw,
-  Plus, Square, Play, AlertTriangle, Rocket
+  Square, Play, AlertTriangle, Rocket
 } from 'lucide-react';
 import type { Node, Edge } from '@xyflow/react';
 import { ReactFlow, Background, useNodesState, useEdgesState, Handle, Position } from '@xyflow/react';
@@ -28,13 +28,43 @@ interface LogEntry {
   type: string;
   content: string;
   node_id?: string;
-  [key: string]: any;
+  [key: string]: string | number | undefined;
+}
+
+interface TaskMonitorNodeData {
+  nodeState: 'running' | 'completed' | 'error' | 'waiting' | 'skipped' | 'ready';
+  isTaskRunning: boolean;
+  label: string;
+  shape: Record<string, string>;
+  inHandles?: string[];
+  outHandles?: string[];
+  onShowLog: (id: string) => void;
+  onReset: (id: string) => void;
+}
+
+interface TaskMonitorNodeProps {
+  id: string;
+  data: TaskMonitorNodeData;
+  selected?: boolean;
+}
+
+interface GraphNode {
+  id: string;
+  name?: string;
+  position?: [number, number] | { x: number; y: number };
+}
+
+interface GraphEdge {
+  source: string;
+  target: string;
+  sourceHandle?: string;
+  targetHandle?: string;
 }
 
 // ==========================================
 // 🌟 1. 监控节点组件 (移除冗余色块，保留右上角标签)
 // ==========================================
-const TaskMonitorNode = ({ id, data, selected }: any) => {
+const TaskMonitorNode = ({ id, data, selected }: TaskMonitorNodeProps) => {
   let statusColor = "bg-[#EBCB8B]";
   let statusText = "READY";
   let isPulsing = false;
@@ -98,10 +128,10 @@ const TaskMonitorNode = ({ id, data, selected }: any) => {
       </div>
 
       {data.inHandles?.map((handleId: string, idx: number) => (
-        <Handle key={`in-${handleId}`} id={handleId} type="target" position={Position.Left} className="!bg-ink !w-3 !h-3 !border-2 !border-paper !-left-[22px] z-10" style={{ top: getHandleTop(idx, data.inHandles.length) }} />
+        <Handle key={`in-${handleId}`} id={handleId} type="target" position={Position.Left} className="!bg-ink !w-3 !h-3 !border-2 !border-paper !-left-[22px] z-10" style={{ top: getHandleTop(idx, data.inHandles!.length) }} />
       ))}
       {data.outHandles?.map((handleId: string, idx: number) => (
-        <Handle key={`out-${handleId}`} id={handleId} type="source" position={Position.Right} className="!bg-ink !w-3 !h-3 !border-2 !border-paper !-right-[22px] z-10" style={{ top: getHandleTop(idx, data.outHandles.length) }} />
+        <Handle key={`out-${handleId}`} id={handleId} type="source" position={Position.Right} className="!bg-ink !w-3 !h-3 !border-2 !border-paper !-right-[22px] z-10" style={{ top: getHandleTop(idx, data.outHandles!.length) }} />
       ))}
     </div>
   );
@@ -181,7 +211,7 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
   }, []);
 
   // 🌟 强壮的极限容错状态解析器 (修复 READY 问题)
-  const extractState = (rawState: any) => {
+  const extractState = (rawState: string | { state?: string; value?: string } | undefined) => {
     if (!rawState) return 'ready';
     // 兼容字符串、对象或包含 value 的枚举属性
     let s = typeof rawState === 'string' ? rawState : (rawState.state || rawState.value || String(rawState));
@@ -311,7 +341,7 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
         const nodeStates = stateData.node_state || stateData.dag_state || stateData.node_states || stateData.nodes || {};
         const isCurrentlyRunning = ['running', 'starting'].includes((stateData.state || '').toLowerCase());
 
-        const flowNodes = (graph.nodes || []).map((n: any, idx: number) => {
+        const flowNodes = (graph.nodes || []).map((n: GraphNode, idx: number) => {
           if (!n) return null;
           const currentState = extractState(nodeStates[n.id]);
           
@@ -319,8 +349,8 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
           if (Array.isArray(n.position)) { posX = n.position[0]; posY = n.position[1]; } 
           else if (n.position?.x !== undefined) { posX = n.position.x; posY = n.position.y; }
 
-          const inHandles = [...new Set((graph.edges || []).filter((e: any) => e.target === n.id).map((e: any) => e.targetHandle || 'default'))];
-          const outHandles = [...new Set((graph.edges || []).filter((e: any) => e.source === n.id).map((e: any) => e.sourceHandle || 'default'))];
+          const inHandles = [...new Set((graph.edges || []).filter((e: GraphEdge) => e.target === n.id).map((e: GraphEdge) => e.targetHandle || 'default'))];
+          const outHandles = [...new Set((graph.edges || []).filter((e: GraphEdge) => e.source === n.id).map((e: GraphEdge) => e.sourceHandle || 'default'))];
 
           return {
             id: n.id, type: 'custom', position: { x: posX, y: posY },
@@ -336,7 +366,7 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
           };
         }).filter(Boolean) as Node[];
 
-        const flowEdges = (graph.edges || []).map((e: any) => {
+        const flowEdges = (graph.edges || []).map((e: GraphEdge) => {
           if (!e || !e.source || !e.target) return null;
           return {
             id: `e-${e.source}-${e.target}`, source: e.source, target: e.target,

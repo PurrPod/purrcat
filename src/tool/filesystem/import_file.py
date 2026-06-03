@@ -105,26 +105,35 @@ def import_file(host_path: str, sandbox_dir: str = "imports") -> dict:
 
         # 【修复点】：智能判断目标路径是目录还是包含重命名的文件路径
         # 如果 path_to (sandbox_dir) 以斜杠结尾，或者是已经存在的目录，就存进该目录下
-        if sandbox_dir.endswith("/") or sandbox_dir.endswith("\\") or os.path.isdir(dest_path):
+        if (
+            sandbox_dir.endswith("/")
+            or sandbox_dir.endswith("\\")
+            or os.path.isdir(dest_path)
+        ):
             os.makedirs(dest_path, exist_ok=True)
             fname = os.path.basename(host_path)
             target_file = os.path.join(dest_path, fname)
-            
+
             base_path = f"/agent_vm/{sandbox_subdir}" if sandbox_subdir else "/agent_vm"
             sandbox_path = f"{base_path}/{fname}".replace("//", "/")
         else:
             # 否则，将 dest_path 视为目标文件全路径，实现导入时重命名
             os.makedirs(os.path.dirname(dest_path), exist_ok=True)
             target_file = dest_path
-            
-            sandbox_path = f"/agent_vm/{sandbox_subdir}".replace("//", "/") if sandbox_subdir else "/agent_vm"
+
+            sandbox_path = (
+                f"/agent_vm/{sandbox_subdir}".replace("//", "/")
+                if sandbox_subdir
+                else "/agent_vm"
+            )
 
         shutil.copy2(host_path, target_file)
         msg = f"文件已导入沙盒: {sandbox_path} ({file_size / 1024:.1f}KB)"
 
     elif os.path.isdir(host_path):
         # 目录导入：在这里补上目录创建逻辑
-        os.makedirs(dest_path, exist_ok=True)
+        dest_dir = dest_path
+        os.makedirs(dest_dir, exist_ok=True)
         # 目录导入：先走一遍计算总大小 + 检查黑名单
         total_size = 0
         for dirpath, dirnames, filenames in os.walk(host_path):

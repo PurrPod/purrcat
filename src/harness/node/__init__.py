@@ -29,7 +29,9 @@ def get_all_node_schemas() -> List[Dict[str, Any]]:
 def load_node_module(node_type: str):
     """动态加载指定类型的节点模块"""
     try:
-        module = importlib.import_module(f"src.harness.node.extensions.{node_type}.node")
+        module = importlib.import_module(
+            f"src.harness.node.extensions.{node_type}.node"
+        )
         return module.Node
     except Exception as e:
         print(f"❌ 加载节点模块失败 {node_type}: {e}")

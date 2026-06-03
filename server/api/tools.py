@@ -82,16 +82,18 @@ def install_skill_api(req: InstallSkillReq):
         match = re.match(r"https?://github\.com/([^/]+)/([^/]+)/tree/([^/]+)/(.*)", url)
         if not match:
             raise HTTPException(
-                status_code=400, 
-                detail="URL格式错误！正确格式示例: https://github.com/owner/repo/tree/branch/path/to/skill"
+                status_code=400,
+                detail="URL格式错误！正确格式示例: https://github.com/owner/repo/tree/branch/path/to/skill",
             )
-        
+
         owner, repo, branch, path = match.groups()
         skill_name = os.path.basename(path.rstrip("/"))
-        
+
         # 2. 定位项目根目录的 skills 文件夹
         # server/api/tools.py 向上3层为项目根目录
-        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        project_root = os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
         dest_dir = os.path.join(project_root, "skills", skill_name)
         zip_url = f"https://github.com/{owner}/{repo}/archive/refs/heads/{branch}.zip"
 
@@ -106,7 +108,7 @@ def install_skill_api(req: InstallSkillReq):
             extracted_count = 0
             for file_info in z.infolist():
                 if file_info.filename.startswith(target_prefix):
-                    relative_path = file_info.filename[len(target_prefix):]
+                    relative_path = file_info.filename[len(target_prefix) :]
                     if not relative_path:
                         continue
 
@@ -120,15 +122,17 @@ def install_skill_api(req: InstallSkillReq):
                     extracted_count += 1
 
             if extracted_count == 0:
-                raise HTTPException(status_code=404, detail=f"仓库中找不到文件夹 '{path}'")
+                raise HTTPException(
+                    status_code=404, detail=f"仓库中找不到文件夹 '{path}'"
+                )
 
         # 4. 解压成功后，触发 searcher 的内存热更新
         searcher = SkillSearcher()
         searcher.reload_index()
 
         return {
-            "status": "success", 
-            "message": f"Skill '{skill_name}' 下载成功并已热加载入内存！"
+            "status": "success",
+            "message": f"Skill '{skill_name}' 下载成功并已热加载入内存！",
         }
 
     except HTTPException:
@@ -185,33 +189,37 @@ def install_mcp_api(req: InstallMCPReq):
     try:
         new_config = json.loads(req.config_json)
         if "mcpServers" not in new_config:
-            raise HTTPException(status_code=400, detail="JSON 格式必须以 'mcpServers' 为顶层键")
+            raise HTTPException(
+                status_code=400, detail="JSON 格式必须以 'mcpServers' 为顶层键"
+            )
 
         # 1. 读出现有配置
         existing_config = get_mcp_config()
         if "mcpServers" not in existing_config:
             existing_config["mcpServers"] = {}
-            
+
         # 2. 遍历并合并配置
         for srv_name, srv_conf in new_config["mcpServers"].items():
             existing_config["mcpServers"][srv_name] = srv_conf
-            
+
         # 3. 落盘保存配置文件 mcp_config.json
         os.makedirs(os.path.dirname(MCP_CONFIG_PATH), exist_ok=True)
         with open(MCP_CONFIG_PATH, "w", encoding="utf-8") as f:
             json.dump(existing_config, f, indent=2, ensure_ascii=False)
-            
+
         # 4. 刷新 Schema 并重建检索树 (它会自动通信子进程并更新 mcp_schema.json)
         schemas = refresh_schemas()
         MCPSearcher().reload_index()
-        
+
         return {
             "status": "success",
-            "message": f"MCP 配置已合并并热加载成功！当前系统共载入 {len(schemas)} 个工具。"
+            "message": f"MCP 配置已合并并热加载成功！当前系统共载入 {len(schemas)} 个工具。",
         }
-        
+
     except json.JSONDecodeError:
-        raise HTTPException(status_code=400, detail="输入的不是合法的 JSON 格式，请检查语法")
+        raise HTTPException(
+            status_code=400, detail="输入的不是合法的 JSON 格式，请检查语法"
+        )
     except HTTPException:
         raise
     except Exception as e:

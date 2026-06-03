@@ -7,9 +7,11 @@ import sys
 CONDA_CMD = "conda.bat" if os.name == "nt" else "conda"
 NPM_CMD = "npm.cmd" if os.name == "nt" else "npm"
 
+
 def _get_project_root():
     """Get the project root directory (parent of scripts/)"""
     return os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 
 def run_start(webui=False):
     """Start PurrCat application"""
@@ -41,10 +43,7 @@ def run_start(webui=False):
         print("[*] Launching Web UI (npm run dev)...")
         try:
             # 采用 Popen 在后台拉起前端，与后端共享当前终端的 stdout
-            ui_process = subprocess.Popen(
-                [NPM_CMD, "run", "dev"],
-                cwd=ui_dir
-            )
+            ui_process = subprocess.Popen([NPM_CMD, "run", "dev"], cwd=ui_dir)
         except FileNotFoundError:
             print("❌ 未找到 npm 命令，请检查 Node.js 是否已安装并配置了环境变量。")
             sys.exit(1)

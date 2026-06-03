@@ -17,7 +17,7 @@ def _get_project_root():
 def _run_cmd(command, shell=False, check=True, cwd=None):
     cmd_str = " ".join(command) if isinstance(command, list) else command
     print(f"$ {cmd_str}")
-    encoding = 'gbk' if sys.platform == 'win32' else 'utf-8'
+    encoding = "gbk" if sys.platform == "win32" else "utf-8"
     process = subprocess.Popen(
         command,
         shell=shell,
@@ -25,7 +25,7 @@ def _run_cmd(command, shell=False, check=True, cwd=None):
         stderr=subprocess.STDOUT,
         text=True,
         encoding=encoding,
-        errors='replace',
+        errors="replace",
         bufsize=1,
         cwd=cwd,
     )
@@ -39,7 +39,7 @@ def _run_cmd(command, shell=False, check=True, cwd=None):
 
 def _check_engine():
     """Check which container engines are available"""
-    encoding = 'gbk' if sys.platform == 'win32' else 'utf-8'
+    encoding = "gbk" if sys.platform == "win32" else "utf-8"
 
     try:
         result = subprocess.run(
@@ -47,7 +47,7 @@ def _check_engine():
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             encoding=encoding,
-            errors='replace'
+            errors="replace",
         )
         has_docker = result.returncode == 0
     except FileNotFoundError:
@@ -59,7 +59,7 @@ def _check_engine():
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             encoding=encoding,
-            errors='replace'
+            errors="replace",
         )
         has_podman = result.returncode == 0
     except FileNotFoundError:
@@ -72,9 +72,9 @@ def _determine_engine():
     """Auto determine container engine based on availability"""
     print("")
     print("[Container Engine Config] Checking local environment...")
-    
+
     has_docker, has_podman = _check_engine()
-    
+
     if has_docker:
         print("  ✅ Detected Docker, will use Docker as container engine.")
         return "docker"
@@ -82,7 +82,9 @@ def _determine_engine():
         print("  ✅ Detected Podman, will use Podman as container engine.")
         return "podman"
     else:
-        print("  ❌ Docker not detected. Please install Docker first according to the tutorial.")
+        print(
+            "  ❌ Docker not detected. Please install Docker first according to the tutorial."
+        )
         sys.exit(1)
 
 
@@ -96,7 +98,7 @@ def _save_engine_preference(engine: str):
     try:
         if global_config_file.exists():
             with open(global_config_file, "r", encoding="utf-8") as f:
-                settings = json.load(f) if hasattr(__import__('json'), 'load') else {}
+                settings = json.load(f) if hasattr(__import__("json"), "load") else {}
         else:
             settings = {}
 
@@ -118,20 +120,26 @@ def _check_engine_running(engine):
         result = subprocess.call(
             ["podman", "machine", "list"],
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL
+            stderr=subprocess.DEVNULL,
         )
         if result != 0:
             print("Podman machine not running. Initializing...")
-            subprocess.call(["podman", "machine", "init"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            subprocess.call(["podman", "machine", "start"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.call(
+                ["podman", "machine", "init"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            subprocess.call(
+                ["podman", "machine", "start"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
             print("Podman machine initialized and started.")
         else:
             print("Podman is ready.")
     else:
         result = subprocess.call(
-            ["docker", "info"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL
+            ["docker", "info"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
         )
         if result != 0:
             print("Error: Docker not detected or service not running.")
@@ -163,7 +171,9 @@ def _get_mirror_choice():
 def _build_sandbox(dockerfile, apt_mirror, engine):
     """Build sandbox image using selected engine"""
     print("")
-    print(f"Building sandbox image using {engine} with {apt_mirror} and {dockerfile}...")
+    print(
+        f"Building sandbox image using {engine} with {apt_mirror} and {dockerfile}..."
+    )
     print("Note: First pull may take a few minutes, please wait...")
 
     project_root = _get_project_root()
@@ -315,5 +325,5 @@ def run_setup():
         print("==========================================")
 
     print("Congratulations! PurrCat environment is ready.")
-    print(f"Next: Run 'purrcat start' to start the application.")
+    print("Next: Run 'purrcat start' to start the application.")
     print(f"Engine in use: {selected_engine} (saved to ~/.purrcat/settings.json)")

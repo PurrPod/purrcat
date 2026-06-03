@@ -107,40 +107,23 @@ def get_model_config_dict():
 def get_sensor_config_dict():
     """Generate sensor configuration dictionary"""
     return {
-
         "feishu_bot": {
             "enabled": False,
-            "env": {
-                "FEISHU_APP_ID": "",
-                "FEISHU_APP_SECRET": "",
-                "FEISHU_CHAT_ID": ""
-            },
-            "capabilities": {
-                "observe": True,
-                "express": True
-            }
+            "env": {"FEISHU_APP_ID": "", "FEISHU_APP_SECRET": "", "FEISHU_CHAT_ID": ""},
+            "capabilities": {"observe": True, "express": True},
         },
         "system_clock": {
             "enabled": True,
-            "env": {
-                "INTERVAL": "1800",
-                "CRON_FILE": ".purrcat/core/cron.json"
-            },
-            "capabilities": {
-                "observe": True,
-                "express": False
-            }
+            "env": {"INTERVAL": "1800", "CRON_FILE": ".purrcat/core/cron.json"},
+            "capabilities": {"observe": True, "express": False},
         },
         "rss_watcher": {
             "enabled": False,
             "env": {
                 "INTERVAL": "1800",
-                "RSS_SUBSCRIPTIONS_JSON": "[{\"name\": \"Lilian Weng's Blog\", \"rss_url\": \"https://lilianweng.github.io/lil-log/feed.xml\"},{\"name\": \"Ahead of AI\", \"rss_url\": \"https://magazine.sebastianraschka.com/feed\"},{\"name\": \"Latepost 晚点\", \"rss_url\": \"https://rsshub.rssforever.com/latepost\"}]"
+                "RSS_SUBSCRIPTIONS_JSON": '[{"name": "Lilian Weng\'s Blog", "rss_url": "https://lilianweng.github.io/lil-log/feed.xml"},{"name": "Ahead of AI", "rss_url": "https://magazine.sebastianraschka.com/feed"},{"name": "Latepost 晚点", "rss_url": "https://rsshub.rssforever.com/latepost"}]',
             },
-            "capabilities": {
-                "observe": True,
-                "express": False
-            }
+            "capabilities": {"observe": True, "express": False},
         },
         "audio_assistant": {
             "enabled": False,
@@ -148,13 +131,10 @@ def get_sensor_config_dict():
                 "WHISPER_MODEL": "small",
                 "LANGUAGE": "zh",
                 "TTS_RATE": "150",
-                "TTS_VOLUME": "1.0"
+                "TTS_VOLUME": "1.0",
             },
-            "capabilities": {
-                "observe": True,
-                "express": True
-            }
-        }
+            "capabilities": {"observe": True, "express": True},
+        },
     }
 
 
@@ -163,7 +143,15 @@ def get_file_config_dict():
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$comment": f"PurrCat File System Configuration File - Generated at {datetime.now().strftime('%Y-%m-%d %H:%M')}",
-        "dont_read_dirs": [".git", "src", "node_modules", "miniconda3", ".baoyu-skills", ".env", ".purrcat"],
+        "dont_read_dirs": [
+            ".git",
+            "src",
+            "node_modules",
+            "miniconda3",
+            ".baoyu-skills",
+            ".env",
+            ".purrcat",
+        ],
         "allowed_export_dirs": ["D:/test", "./agent_vm", "./exports"],
         "docker_mount": ["sandbox/"],
         "sandbox_dirs": ["sandbox/", "agent_vm/"],

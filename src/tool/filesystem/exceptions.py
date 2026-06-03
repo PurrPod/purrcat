@@ -46,7 +46,9 @@ class InvalidActionError(FileSystemError):
     """无效的操作类型"""
 
     def __init__(self, action: str):
-        super().__init__(f"无效的操作类型: {action}。支持的操作: import, export, list, read_picture")
+        super().__init__(
+            f"无效的操作类型: {action}。支持的操作: import, export, list, read_picture"
+        )
 
 
 class MissingParameterError(FileSystemError):
