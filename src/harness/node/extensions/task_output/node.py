@@ -1,4 +1,5 @@
 from typing import Any, Dict
+import json
 
 from src.harness.node.base import BaseNode
 
@@ -13,7 +14,7 @@ class Node(BaseNode):
         self.log(
             context,
             "SYSTEM",
-            f"📤 [引擎出口] DAG流转结束！最终收集到的全局参数: {list(inputs.keys())}",
+            f"📤 [引擎出口] DAG流转结束！收集到的全局参数:\n{json.dumps(inputs, indent=2, ensure_ascii=False)}",
         )
 
         return {"default": True}

@@ -639,8 +639,8 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
         setSessions(data);
         if (data.length > 0 && !currentSessionId) {
           const firstSessionId = data[0].id;
-          setCurrentSessionId(firstSessionId);
-          await loadSessionHistory(firstSessionId);
+          // ✅ 核心修复：必须通过 handleSelectSession 去触发后端的 checkout
+          await handleSelectSession(firstSessionId);
         }
       }
     } catch (e) { toast.error("获取会话失败"); }

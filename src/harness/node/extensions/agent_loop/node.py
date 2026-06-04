@@ -12,13 +12,7 @@ class Node(AgentNode):
     """全能 Agent 循环：支持纯文本总结，也支持多文件强制验收"""
 
     async def execute(self, inputs: Dict[str, Any], context: Any) -> Dict[str, Any]:
-        self.log(context, "SYSTEM", "=" * 60)
-        self.log(context, "SYSTEM", "🤖 [Agent循环] 节点启动")
-        self.log(
-            context,
-            "SYSTEM",
-            f"📥 [Agent循环] 收到输入包裹: {list(inputs.keys()) if inputs else '空'}",
-        )
+        self.log(context, "SYSTEM", "🤖 [Agent循环] 开始执行")
 
         dynamic_info = inputs.get("task_done_info")
         if dynamic_info:
@@ -30,12 +24,7 @@ class Node(AgentNode):
                 self.log(
                     context,
                     "SYSTEM",
-                    f"✅ [动态规则挂载] 成功加载动态校验指标: {list(self.task_done_info.keys())}",
-                )
-                self.log(
-                    context,
-                    "SYSTEM",
-                    f"📋 [校验规则详情] {json.dumps(self.task_done_info, ensure_ascii=False)}",
+                    f"🎯 [强制验收目标]:\n{json.dumps(self.task_done_info, indent=2, ensure_ascii=False)}",
                 )
             except Exception as e:
                 self.log(
@@ -47,18 +36,12 @@ class Node(AgentNode):
             self.log(
                 context,
                 "SYSTEM",
-                f"ℹ️ [动态规则] 未收到动态规则，使用默认配置: {self.task_done_info}",
+                f"ℹ️ [动态规则] 未收到动态规则，使用默认配置",
             )
 
         my_memory = context.node_memory.setdefault(self.node_id, {})
 
         messages = my_memory.get("messages", inputs.get("messages", []))
-        self.log(context, "SYSTEM", f"💬 [消息上下文] 当前消息数量: {len(messages)}")
-        if messages:
-            for i, msg in enumerate(messages[-3:]):
-                role = msg.get("role", "unknown")
-                content_preview = str(msg.get("content", ""))[:80]
-                self.log(context, "SYSTEM", f"  📝 [{i}] {role}: {content_preview}...")
 
         pending_push = my_memory.pop("force_push", [])
         if pending_push:
@@ -87,14 +70,12 @@ class Node(AgentNode):
             self.log(context, "SYSTEM", "📁 [文件验收] 无目标文件，将直接输出总结")
 
         tools = self.get_all_tools()
-        self.log(context, "SYSTEM", f"🔧 [工具集] 可用工具数量: {len(tools)}")
 
         MAX_ERRORS = 3
         error_count = 0
 
         try:
             while True:
-                self.log(context, "SYSTEM", "-" * 40)
                 self.log(context, "SYSTEM", "🔄 [Agent循环] 开始新一轮思考...")
 
                 loop_result = await self.run_agent_loop(context, messages, tools)
@@ -105,9 +86,8 @@ class Node(AgentNode):
                     self.log(
                         context, "SYSTEM", "✅ [任务完结] 无文件校验需求，输出总结。"
                     )
-                    self.log(
-                        context, "SYSTEM", f"📊 [总结内容] {str(summary)[:200]}..."
-                    )
+                    display_summary = str(summary)[:1500] + "..." if len(str(summary)) > 1500 else str(summary)
+                    self.log(context, "SYSTEM", f"📊 [总结内容]:\n{display_summary}")
                     my_memory["messages"] = messages
                     return {"messages": messages, "summary": summary}
 
@@ -118,9 +98,8 @@ class Node(AgentNode):
                 ]
                 if not missing_files:
                     self.log(context, "SYSTEM", "✅ [验收通过] 所有目标文件均已生成！")
-                    self.log(
-                        context, "SYSTEM", f"📊 [总结内容] {str(summary)[:200]}..."
-                    )
+                    display_summary = str(summary)[:1500] + "..." if len(str(summary)) > 1500 else str(summary)
+                    self.log(context, "SYSTEM", f"📊 [总结内容]:\n{display_summary}")
                     my_memory["messages"] = messages
                     return {"messages": messages, "summary": summary}
 

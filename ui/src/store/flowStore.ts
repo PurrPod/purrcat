@@ -188,13 +188,11 @@ export const useFlowStore = create<FlowState>()(
         
         const globalSchema: Record<string, any> = {}
         
-        // 🌟 核心：兼容对象数组的读取
+        // 解析全局变量
         if (taskInputNode && Array.isArray(taskInputNode.data.global_vars)) {
           taskInputNode.data.global_vars.forEach((item: any) => {
-            // 取名：如果是对象，拿 name 属性；如果是老数据的字符串，直接拿
             const varName = typeof item === 'object' ? (item.name || item.key) : item;
             const varType = typeof item === 'object' ? (item.type || 'any') : 'any';
-
             if (varName) {
               globalSchema[varName] = {
                 type: varType,
@@ -205,6 +203,13 @@ export const useFlowStore = create<FlowState>()(
           })
         }
 
+        // 🌟 核心修复：部署时建立全局 ID 映射表，彻底杜绝同名节点污染！
+        const idMap: Record<string, string> = {};
+        nodes.forEach(n => {
+          // 为每个节点生成绝对唯一的 8 位哈希 ID，格式如：agent_loop_a1b2c3
+          idMap[n.id] = `${n.data.nodeType}_${Math.random().toString(36).substring(2, 8)}`;
+        });
+
         return {
           version: "2.0",
           name,
@@ -213,13 +218,12 @@ export const useFlowStore = create<FlowState>()(
           nodes: nodes.map(n => {
             const { nodeType, ...finalConfig } = n.data;
 
-            // 🌟 导出 task_output 节点时，把数组对象清洗为纯字符串数组放入 exposed_keys 中
             if (nodeType === 'task_output' && Array.isArray(finalConfig.target_vars)) {
               finalConfig.exposed_keys = finalConfig.target_vars.map((v:any) => typeof v === 'object' ? (v.name || v.key) : v);
             }
 
             return {
-              id: n.id,
+              id: idMap[n.id], // 🚀 使用安全的 Unique ID 替换旧 ID
               type: n.data.nodeType,
               name: n.data.name,
               position: [Math.round(n.position.x), Math.round(n.position.y)],
@@ -227,8 +231,8 @@ export const useFlowStore = create<FlowState>()(
             }
           }),
           edges: edges.map(e => ({
-            source: e.source, 
-            target: e.target, 
+            source: idMap[e.source] || e.source, // 🚀 同步重定向连线的起点
+            target: idMap[e.target] || e.target, // 🚀 同步重定向连线的终点
             sourceHandle: e.sourceHandle || 'default', 
             targetHandle: e.targetHandle || 'default'
           }))

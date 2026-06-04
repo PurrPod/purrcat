@@ -76,8 +76,8 @@ class Node(BaseNode):
                 is_true = False
 
         if is_true:
-            self.log(context, "SYSTEM", "✅ [条件判断] 结果为真 (True)")
+            self.log(context, "SYSTEM", "✅ [条件判断] 结果为 True，执行 [True] 分支。")
             return {"True": var_a}
         else:
-            self.log(context, "SYSTEM", "❌ [条件判断] 结果为假 (False)")
+            self.log(context, "SYSTEM", "❌ [条件判断] 结果为 False，执行 [False] 分支。")
             return {"False": var_a}

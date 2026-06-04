@@ -433,7 +433,11 @@ class Task:
                     t for t, n in self.running_tasks.items() if n == curr_id
                 ]
                 for t in task_to_cancel:
-                    t.cancel()
+                    # 核心修复：使用线程安全的委托调用
+                    if self._loop and self._loop.is_running():
+                        self._loop.call_soon_threadsafe(t.cancel)
+                    else:
+                        t.cancel()
                     self.running_tasks.pop(t, None)
 
                 # 5. 顺藤摸瓜找下游，精准撤回当前节点发出的包裹
@@ -551,7 +555,11 @@ class Task:
     def _cancel_all_tasks(self):
         for task in list(self.running_tasks.keys()):
             if not task.done():
-                task.cancel()
+                # 核心修复：使用线程安全的委托调用
+                if self._loop and self._loop.is_running():
+                    self._loop.call_soon_threadsafe(task.cancel)
+                else:
+                    task.cancel()
 
     @staticmethod
     def load_checkpoint(checkpoint_dir: str) -> "Task":

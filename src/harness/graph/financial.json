@@ -11,7 +11,7 @@
   },
   "nodes": [
     {
-      "id": "nd_input",
+      "id": "task_input_k95dck",
       "type": "task_input",
       "name": "全局输入",
       "position": [
@@ -70,12 +70,12 @@
       }
     },
     {
-      "id": "nd_coll_tpl",
+      "id": "template_renderer_rjr5zo",
       "type": "template_renderer",
       "name": "User-采集模板",
       "position": [
-        -1444,
-        0
+        -1426,
+        -66
       ],
       "config": {
         "name": "User-采集模板",
@@ -127,7 +127,7 @@
       }
     },
     {
-      "id": "nd_coll_msg",
+      "id": "message_card_builder_1h9ioo",
       "type": "message_card_builder",
       "name": "User卡片-采集",
       "position": [
@@ -187,7 +187,7 @@
       }
     },
     {
-      "id": "nd_coll_sys",
+      "id": "message_card_builder_ufwtt4",
       "type": "message_card_builder",
       "name": "Sys-数据采集员",
       "position": [
@@ -248,7 +248,7 @@
       }
     },
     {
-      "id": "nd_coll_app",
+      "id": "appender_yra4v3",
       "type": "appender",
       "name": "组装-采集",
       "position": [
@@ -285,7 +285,7 @@
       }
     },
     {
-      "id": "nd_coll_agent",
+      "id": "agent_loop_uo6j98",
       "type": "agent_loop",
       "name": "Agent-数据采集",
       "position": [
@@ -357,7 +357,7 @@
       }
     },
     {
-      "id": "nd_fund_msg",
+      "id": "message_card_builder_ey3h23",
       "type": "message_card_builder",
       "name": "User-分配资金面",
       "position": [
@@ -418,7 +418,7 @@
       }
     },
     {
-      "id": "nd_fund_app",
+      "id": "appender_21hs4n",
       "type": "appender",
       "name": "追加上下文-资金面",
       "position": [
@@ -455,7 +455,7 @@
       }
     },
     {
-      "id": "nd_fund_agent",
+      "id": "agent_loop_xz8g6f",
       "type": "agent_loop",
       "name": "Agent-资金面",
       "position": [
@@ -527,7 +527,7 @@
       }
     },
     {
-      "id": "nd_tech_msg",
+      "id": "message_card_builder_xr2ox6",
       "type": "message_card_builder",
       "name": "User-分配技术面",
       "position": [
@@ -588,7 +588,7 @@
       }
     },
     {
-      "id": "nd_tech_app",
+      "id": "appender_s37x72",
       "type": "appender",
       "name": "追加上下文-技术面",
       "position": [
@@ -625,7 +625,7 @@
       }
     },
     {
-      "id": "nd_tech_agent",
+      "id": "agent_loop_xixmmn",
       "type": "agent_loop",
       "name": "Agent-技术面",
       "position": [
@@ -697,7 +697,7 @@
       }
     },
     {
-      "id": "nd_sent_msg",
+      "id": "message_card_builder_fenl80",
       "type": "message_card_builder",
       "name": "User-分配情绪面",
       "position": [
@@ -758,7 +758,7 @@
       }
     },
     {
-      "id": "nd_sent_app",
+      "id": "appender_w7orua",
       "type": "appender",
       "name": "追加上下文-情绪面",
       "position": [
@@ -795,7 +795,7 @@
       }
     },
     {
-      "id": "nd_sent_agent",
+      "id": "agent_loop_llov7e",
       "type": "agent_loop",
       "name": "Agent-情绪面",
       "position": [
@@ -867,7 +867,7 @@
       }
     },
     {
-      "id": "nd_pm_tpl",
+      "id": "template_renderer_1vphco",
       "type": "template_renderer",
       "name": "PM决策板 (Barrier)",
       "position": [
@@ -924,7 +924,7 @@
       }
     },
     {
-      "id": "nd_pm_msg",
+      "id": "message_card_builder_iu98gi",
       "type": "message_card_builder",
       "name": "User-PM提问",
       "position": [
@@ -984,7 +984,7 @@
       }
     },
     {
-      "id": "nd_pm_sys",
+      "id": "message_card_builder_37tqtv",
       "type": "message_card_builder",
       "name": "Sys-投资经理",
       "position": [
@@ -1045,7 +1045,7 @@
       }
     },
     {
-      "id": "nd_pm_app",
+      "id": "appender_at8o7d",
       "type": "appender",
       "name": "组装-PM",
       "position": [
@@ -1082,7 +1082,7 @@
       }
     },
     {
-      "id": "nd_pm_agent",
+      "id": "agent_loop_c1523z",
       "type": "agent_loop",
       "name": "Agent-PM决策",
       "position": [
@@ -1154,7 +1154,7 @@
       }
     },
     {
-      "id": "nd_human",
+      "id": "human_intervention_0jae08",
       "type": "human_intervention",
       "name": "人工风控审核",
       "position": [
@@ -1206,7 +1206,7 @@
       }
     },
     {
-      "id": "nd_output",
+      "id": "task_output_4pthjl",
       "type": "task_output",
       "name": "全局输出",
       "position": [
@@ -1256,146 +1256,146 @@
   ],
   "edges": [
     {
-      "source": "nd_input",
-      "target": "nd_coll_tpl",
+      "source": "task_input_k95dck",
+      "target": "template_renderer_rjr5zo",
       "sourceHandle": "ticker",
       "targetHandle": "ticker"
     },
     {
-      "source": "nd_coll_tpl",
-      "target": "nd_coll_msg",
+      "source": "template_renderer_rjr5zo",
+      "target": "message_card_builder_1h9ioo",
       "sourceHandle": "rendered_text",
       "targetHandle": "content"
     },
     {
-      "source": "nd_coll_sys",
-      "target": "nd_coll_app",
+      "source": "message_card_builder_ufwtt4",
+      "target": "appender_yra4v3",
       "sourceHandle": "message_list",
       "targetHandle": "base_list"
     },
     {
-      "source": "nd_coll_msg",
-      "target": "nd_coll_app",
+      "source": "message_card_builder_1h9ioo",
+      "target": "appender_yra4v3",
       "sourceHandle": "message_list",
       "targetHandle": "append_list"
     },
     {
-      "source": "nd_coll_app",
-      "target": "nd_coll_agent",
+      "source": "appender_yra4v3",
+      "target": "agent_loop_uo6j98",
       "sourceHandle": "merged_list",
       "targetHandle": "messages"
     },
     {
-      "source": "nd_coll_agent",
-      "target": "nd_fund_app",
+      "source": "agent_loop_uo6j98",
+      "target": "appender_21hs4n",
       "sourceHandle": "messages",
       "targetHandle": "base_list"
     },
     {
-      "source": "nd_fund_msg",
-      "target": "nd_fund_app",
+      "source": "message_card_builder_ey3h23",
+      "target": "appender_21hs4n",
       "sourceHandle": "message_list",
       "targetHandle": "append_list"
     },
     {
-      "source": "nd_fund_app",
-      "target": "nd_fund_agent",
+      "source": "appender_21hs4n",
+      "target": "agent_loop_xz8g6f",
       "sourceHandle": "merged_list",
       "targetHandle": "messages"
     },
     {
-      "source": "nd_coll_agent",
-      "target": "nd_tech_app",
+      "source": "agent_loop_uo6j98",
+      "target": "appender_s37x72",
       "sourceHandle": "messages",
       "targetHandle": "base_list"
     },
     {
-      "source": "nd_tech_msg",
-      "target": "nd_tech_app",
+      "source": "message_card_builder_xr2ox6",
+      "target": "appender_s37x72",
       "sourceHandle": "message_list",
       "targetHandle": "append_list"
     },
     {
-      "source": "nd_tech_app",
-      "target": "nd_tech_agent",
+      "source": "appender_s37x72",
+      "target": "agent_loop_xixmmn",
       "sourceHandle": "merged_list",
       "targetHandle": "messages"
     },
     {
-      "source": "nd_coll_agent",
-      "target": "nd_sent_app",
+      "source": "agent_loop_uo6j98",
+      "target": "appender_w7orua",
       "sourceHandle": "messages",
       "targetHandle": "base_list"
     },
     {
-      "source": "nd_sent_msg",
-      "target": "nd_sent_app",
+      "source": "message_card_builder_fenl80",
+      "target": "appender_w7orua",
       "sourceHandle": "message_list",
       "targetHandle": "append_list"
     },
     {
-      "source": "nd_sent_app",
-      "target": "nd_sent_agent",
+      "source": "appender_w7orua",
+      "target": "agent_loop_llov7e",
       "sourceHandle": "merged_list",
       "targetHandle": "messages"
     },
     {
-      "source": "nd_fund_agent",
-      "target": "nd_pm_tpl",
+      "source": "agent_loop_xz8g6f",
+      "target": "template_renderer_1vphco",
       "sourceHandle": "summary",
       "targetHandle": "fund"
     },
     {
-      "source": "nd_tech_agent",
-      "target": "nd_pm_tpl",
+      "source": "agent_loop_xixmmn",
+      "target": "template_renderer_1vphco",
       "sourceHandle": "summary",
       "targetHandle": "tech"
     },
     {
-      "source": "nd_sent_agent",
-      "target": "nd_pm_tpl",
+      "source": "agent_loop_llov7e",
+      "target": "template_renderer_1vphco",
       "sourceHandle": "summary",
       "targetHandle": "sent"
     },
     {
-      "source": "nd_pm_tpl",
-      "target": "nd_pm_msg",
+      "source": "template_renderer_1vphco",
+      "target": "message_card_builder_iu98gi",
       "sourceHandle": "rendered_text",
       "targetHandle": "content"
     },
     {
-      "source": "nd_pm_sys",
-      "target": "nd_pm_app",
+      "source": "message_card_builder_37tqtv",
+      "target": "appender_at8o7d",
       "sourceHandle": "message_list",
       "targetHandle": "base_list"
     },
     {
-      "source": "nd_pm_msg",
-      "target": "nd_pm_app",
+      "source": "message_card_builder_iu98gi",
+      "target": "appender_at8o7d",
       "sourceHandle": "message_list",
       "targetHandle": "append_list"
     },
     {
-      "source": "nd_pm_app",
-      "target": "nd_pm_agent",
+      "source": "appender_at8o7d",
+      "target": "agent_loop_c1523z",
       "sourceHandle": "merged_list",
       "targetHandle": "messages"
     },
     {
-      "source": "nd_pm_agent",
-      "target": "nd_human",
+      "source": "agent_loop_c1523z",
+      "target": "human_intervention_0jae08",
       "sourceHandle": "summary",
       "targetHandle": "context_data"
     },
     {
-      "source": "nd_human",
-      "target": "nd_output",
+      "source": "human_intervention_0jae08",
+      "target": "task_output_4pthjl",
       "sourceHandle": "context_data",
       "targetHandle": "final_decision"
     },
     {
-      "source": "nd_human",
-      "target": "nd_output",
+      "source": "human_intervention_0jae08",
+      "target": "task_output_4pthjl",
       "sourceHandle": "human_reply",
       "targetHandle": "human_instruction"
     }
