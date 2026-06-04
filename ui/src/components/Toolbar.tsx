@@ -47,7 +47,7 @@ export default function Toolbar({ onBack }: { onBack?: () => void }) {
         const data = await res.json()
         setGraphFiles(data)
       }
-    } catch (e) {
+    } catch {
       toast.error("获取图谱列表失败")
     }
   }
@@ -71,7 +71,7 @@ export default function Toolbar({ onBack }: { onBack?: () => void }) {
         toast.success(`已加载: ${fileName}`)
         setShowFileMenu(false)
       }
-    } catch (e) {
+    } catch {
       toast.error("加载图谱失败")
     }
   }
@@ -105,7 +105,7 @@ export default function Toolbar({ onBack }: { onBack?: () => void }) {
         toast.success(`部署成功: ${workflowName}`)
         setIsDeployModalOpen(false)
       }
-    } catch (e) { toast.error("部署失败") }
+    } catch { toast.error("部署失败") }
   }
 
   return (

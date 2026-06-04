@@ -172,7 +172,7 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
     try {
       const res = await fetch('http://localhost:8000/api/tasks');
       if (res.ok) setTasks(await res.json());
-    } catch (e) { /* silent */ }
+    } catch { /* silent */ }
   };
 
   const loadAvailableGraphs = async () => {
@@ -185,7 +185,7 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
           setLaunchGraphName(data[0].name.replace(/\.json$/, ''));
         }
       }
-    } catch (e) { toast.error("获取工作流模板失败"); }
+    } catch { toast.error("获取工作流模板失败"); }
   };
 
   // 🌟 核心改进：当切换工作流时，自动拉取 Schema 并生成带提示的 JSON 模板
@@ -253,7 +253,7 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
           })
         );
       }
-    } catch (e) { /* ignore */ }
+    } catch { /* ignore */ }
   }, [selectedTaskId, setNodes, setEdges]);
 
   // 重置节点 (触发后立即刷新界面，告别等待感！)
@@ -269,7 +269,7 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
         const errData = await res.json().catch(() => ({}));
         toast.error(errData.detail || '重置失败');
       }
-    } catch (e) {
+    } catch {
       toast.error('网络错误');
     }
   };
@@ -285,7 +285,7 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
       } else {
         toast.error('中止任务失败');
       }
-    } catch (e) { toast.error('网络错误'); }
+    } catch { toast.error('网络错误'); }
   };
 
   // 提交创建任务
@@ -298,7 +298,7 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
     let parsedInputs = {};
     try {
       parsedInputs = JSON.parse(launchInputs);
-    } catch (e) {
+    } catch {
       toast.error("JSON 格式错误！请确保属性名和字符串值都使用了规范的双引号。");
       return;
     }
@@ -324,7 +324,7 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
         const errData = await res.json().catch(() => ({}));
         toast.error(errData.detail || "创建失败，请检查输入参数是否合法。");
       }
-    } catch (e) { toast.error("网络错误，启动任务失败"); }
+    } catch { toast.error("网络错误，启动任务失败"); }
   };
 
   const handleSelectTask = async (task: Task) => {
@@ -377,7 +377,7 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
 
         setNodes(flowNodes); setEdges(flowEdges);
       }
-    } catch (e) { toast.error(`加载图谱失败`); } finally { setIsCheckingOut(false); }
+    } catch { toast.error(`加载图谱失败`); } finally { setIsCheckingOut(false); }
   };
 
   useEffect(() => {
@@ -389,7 +389,7 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
           const data = await res.json();
           setCurrentNodeLogs(data.grouped_logs[logModalNode.id] || []);
         }
-      } catch (e) { /* ignore */ }
+      } catch { /* ignore */ }
     };
     fetchNodeLogs();
     const interval = setInterval(fetchNodeLogs, 1500);
@@ -425,7 +425,7 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
       });
       if (res.ok) toast.success(`指令已发送给 [${logModalNode.name}]`);
       else toast.error('指令注入被拒');
-    } catch (e) { toast.error('网络错误'); }
+    } catch { toast.error('网络错误'); }
   };
 
   const confirmDeleteTask = async () => {
@@ -437,7 +437,7 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
         if (selectedTaskId === taskToDelete) { setSelectedTaskId(null); setNodes([]); setEdges([]); }
         loadTasks();
       }
-    } catch (e) { toast.error("删除失败"); }
+    } catch { toast.error("删除失败"); }
   };
 
   return (

@@ -39,7 +39,7 @@ export default function HomePage({
       } else {
         toast.error(`无法加载 ${tab} 配置`);
       }
-    } catch (e) {
+    } catch {
       toast.error("网络错误，无法连接后端");
     }
   };
@@ -77,7 +77,7 @@ export default function HomePage({
       } else {
         toast.error("保存失败，后端拒绝了请求");
       }
-    } catch (e) {
+    } catch {
       toast.error("保存失败：JSON 格式不合法！请检查引号和括号。");
     }
   };

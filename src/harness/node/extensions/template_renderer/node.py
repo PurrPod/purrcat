@@ -20,12 +20,20 @@ class Node(BaseNode):
 
         variables = {k: v for k, v in inputs.items() if k != "template"}
 
-        self.log(context, "SYSTEM", f"🔑 [模板渲染] 注入变量:\n{json.dumps(variables, indent=2, ensure_ascii=False)}")
+        self.log(
+            context,
+            "SYSTEM",
+            f"🔑 [模板渲染] 注入变量:\n{json.dumps(variables, indent=2, ensure_ascii=False)}",
+        )
 
         try:
             rendered_content = Template(template_str).render(**variables)
 
-            output_preview = rendered_content[:1000] + "..." if len(rendered_content) > 1000 else rendered_content
+            output_preview = (
+                rendered_content[:1000] + "..."
+                if len(rendered_content) > 1000
+                else rendered_content
+            )
             self.log(context, "SYSTEM", f"📤 [渲染结果]:\n{output_preview}")
 
             return {"rendered_text": rendered_content}

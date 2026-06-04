@@ -33,7 +33,11 @@ class Node(BaseNode):
 
         try:
             json_string = json.dumps(result_dict, ensure_ascii=False, indent=2)
-            display_json = json_string[:1500] + "\n...[内容过长已截断]" if len(json_string) > 1500 else json_string
+            display_json = (
+                json_string[:1500] + "\n...[内容过长已截断]"
+                if len(json_string) > 1500
+                else json_string
+            )
             self.log(context, "SYSTEM", f"📤 [JSON构建] 输出:\n{display_json}")
         except TypeError as e:
             self.log(

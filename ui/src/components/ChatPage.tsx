@@ -44,7 +44,7 @@ function parseEventsContent(content: string): { userMessages: EventItem[], syste
         }
       }
     }
-  } catch (e) {
+  } catch {
     userMessages.push({ type: 'user', time: '', content });
   }
   
@@ -259,7 +259,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
       } else {
         toast.error(`无法加载 ${tab} 配置`);
       }
-    } catch (e) {
+    } catch {
       toast.error("网络错误，无法连接后端");
     }
   };
@@ -299,7 +299,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
       } else {
         toast.error("保存失败，后端拒绝了请求");
       }
-    } catch (e) {
+    } catch {
       toast.error("保存失败：JSON 格式不合法！请检查引号和括号。");
     }
   };
@@ -317,7 +317,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
         toast.error(`读取 ${type}.md 失败`);
         setMdContent('');
       }
-    } catch (e) {
+    } catch {
       toast.error(`网络错误，无法读取 ${type}.md`);
       setMdContent('');
     }
@@ -337,7 +337,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
       } else {
         toast.error("保存失败");
       }
-    } catch (e) {
+    } catch {
       toast.error("网络异常，保存失败");
     } finally {
       setIsSavingMd(false);
@@ -349,7 +349,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
     try {
       const res = await fetch('http://localhost:8000/api/config/sensor');
       if (res.ok) setSensorData(await res.json());
-    } catch (e) { toast.error("获取 Sensor 列表失败"); }
+    } catch { toast.error("获取 Sensor 列表失败"); }
   };
 
   const reloadSensors = async () => {
@@ -357,7 +357,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
       const res = await fetch('http://localhost:8000/api/config/sensor/reload', { method: 'POST' });
       if (res.ok) toast.success("所有启用的 Sensors 已完成热重启！");
       else toast.error("热重启发生异常");
-    } catch (e) { toast.error("重启指令发送失败"); }
+    } catch { toast.error("重启指令发送失败"); }
   };
 
   const toggleSensorStatus = async (sensorName: string) => {
@@ -381,7 +381,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
        } else {
           toast.error("配置文件落盘失败");
        }
-    } catch (e) {
+    } catch {
        toast.error("操作异常");
     }
   };
@@ -390,28 +390,28 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
     try {
       const res = await fetch('http://localhost:8000/api/tools/mcp');
       if (res.ok) setMcpData(await res.json());
-    } catch (e) { toast.error("获取 MCP 列表失败"); }
+    } catch { toast.error("获取 MCP 列表失败"); }
   };
 
   const refreshMcp = async () => {
     try {
       const res = await fetch('http://localhost:8000/api/tools/mcp/refresh', { method: 'POST' });
       if (res.ok) { toast.success("MCP 工具已刷新"); fetchMcp(); }
-    } catch (e) { toast.error("刷新 MCP 失败"); }
+    } catch { toast.error("刷新 MCP 失败"); }
   };
 
   const fetchSkill = async () => {
     try {
       const res = await fetch('http://localhost:8000/api/tools/skills');
       if (res.ok) setSkillData(await res.json());
-    } catch (e) { toast.error("获取 Skill 列表失败"); }
+    } catch { toast.error("获取 Skill 列表失败"); }
   };
 
   const refreshSkill = async () => {
     try {
       const res = await fetch('http://localhost:8000/api/tools/skills/refresh', { method: 'POST' });
       if (res.ok) { toast.success("Skills 已刷新"); fetchSkill(); }
-    } catch (e) { toast.error("刷新 Skill 失败"); }
+    } catch { toast.error("刷新 Skill 失败"); }
   };
 
   // 🌟 新增：调用后端下载并热更新 Skill
@@ -437,7 +437,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
         const err = await res.json().catch(() => ({}));
         toast.error(err.detail || "安装失败，请检查 URL 格式");
       }
-    } catch (e) {
+    } catch {
       toast.error("网络异常，无法下载 Skill");
     } finally {
       setIsInstallingSkill(false);
@@ -486,7 +486,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
       } else {
         toast.error("配置文件落盘失败");
       }
-    } catch (e: any) {
+    } catch {
       toast.error("JSON 解析失败，请检查格式！");
     } finally {
       setIsInstallingSensor(false);
@@ -516,7 +516,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
         const err = await res.json().catch(() => ({}));
         toast.error(err.detail || "安装失败，请检查 JSON 格式或网络");
       }
-    } catch (e) {
+    } catch {
       toast.error("网络异常，无法安装 MCP");
     } finally {
       setIsInstallingMcp(false);
@@ -527,7 +527,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
     try {
       const res = await fetch('http://localhost:8000/api/tools/cron');
       if (res.ok) setCronData(await res.json());
-    } catch (e) { toast.error("获取闹钟列表失败"); }
+    } catch { toast.error("获取闹钟列表失败"); }
   };
 
   const addCron = async () => {
@@ -544,14 +544,14 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
         setNewCron({ title: '', trigger_time: '', repeat_rule: 'none' });
         fetchCron(); 
       }
-    } catch (e) { toast.error("添加闹钟失败"); }
+    } catch { toast.error("添加闹钟失败"); }
   };
 
   const deleteCron = async (id: string) => {
     try {
       const res = await fetch(`http://localhost:8000/api/tools/cron/${id}`, { method: 'DELETE' });
       if (res.ok) { toast.success("闹钟已删除"); fetchCron(); }
-    } catch (e) { toast.error("删除闹钟失败"); }
+    } catch { toast.error("删除闹钟失败"); }
   };
 
   const confirmDeleteSession = async () => {
@@ -567,7 +567,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
         setSessionToDelete(null);
         loadSessions();
       }
-    } catch (e) { toast.error("删除失败，请检查网络"); }
+    } catch { toast.error("删除失败，请检查网络"); }
   };
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -643,7 +643,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
           await handleSelectSession(firstSessionId);
         }
       }
-    } catch (e) { toast.error("获取会话失败"); }
+    } catch { toast.error("获取会话失败"); }
   };
 
   const loadSessionHistory = async (id: string) => {
@@ -662,7 +662,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
     try {
       await fetch(`http://localhost:8000/api/sessions/${id}/checkout`, { method: 'POST' }).catch(() => {});
       await loadSessionHistory(id);
-    } catch (e) { 
+    } catch { 
       toast.error('加载记录失败'); 
     } finally {
       setIsCheckingOut(false);
@@ -689,7 +689,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
       } else {
         setIsCheckingOut(false);
       }
-    } catch (e) { 
+    } catch { 
       toast.error('创建失败'); 
       setIsCheckingOut(false); 
     }
@@ -725,7 +725,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
         setIsCheckingOut(false);
         toast.error('衍生分支失败');
       }
-    } catch (e) {
+    } catch {
       toast.error('网络错误，无法拉取分支');
       setIsCheckingOut(false);
     }
@@ -751,7 +751,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ session_id: currentSessionId, message: userText }),
       });
-    } catch (e) { toast.error('网络错误'); }
+    } catch { toast.error('网络错误'); }
   };
 
   return (

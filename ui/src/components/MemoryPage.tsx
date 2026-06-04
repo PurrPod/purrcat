@@ -53,7 +53,7 @@ export default function MemoryPage({ onBack }: { onBack: () => void }) {
         toast.error('读取 MEMORY.md 失败');
         setMdContent('');
       }
-    } catch (e) {
+    } catch {
       toast.error('网络错误，无法读取记忆文件');
       setMdContent('');
     }
@@ -74,7 +74,7 @@ export default function MemoryPage({ onBack }: { onBack: () => void }) {
       } else {
         toast.error('保存文件失败');
       }
-    } catch (e) {
+    } catch {
       toast.error('网络异常，保存失败');
     } finally {
       setIsSavingMd(false);
@@ -102,7 +102,7 @@ export default function MemoryPage({ onBack }: { onBack: () => void }) {
         setGraphData(data);
         if (!isQuiet) toast.success(`全量刷新成功！共加载 ${data.nodes.length} 个节点`);
       }
-    } catch (e) {
+    } catch {
       toast.error("全量加载图谱失败");
     } finally {
       setIsGraphLoading(false);
@@ -118,7 +118,7 @@ export default function MemoryPage({ onBack }: { onBack: () => void }) {
         const data = await res.json();
         setSearchResult(data.result);
       }
-    } catch (e) {
+    } catch {
       toast.error("检索失败");
     } finally {
       setIsSearching(false);
@@ -146,7 +146,7 @@ export default function MemoryPage({ onBack }: { onBack: () => void }) {
       } else {
         toast.error("删除失败");
       }
-    } catch (e) {
+    } catch {
       toast.error("网络异常，删除失败");
     } finally {
       setDeleteTarget(null);

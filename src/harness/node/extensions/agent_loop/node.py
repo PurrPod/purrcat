@@ -36,7 +36,7 @@ class Node(AgentNode):
             self.log(
                 context,
                 "SYSTEM",
-                f"ℹ️ [动态规则] 未收到动态规则，使用默认配置",
+                "ℹ️ [动态规则] 未收到动态规则，使用默认配置",
             )
 
         my_memory = context.node_memory.setdefault(self.node_id, {})
@@ -86,7 +86,11 @@ class Node(AgentNode):
                     self.log(
                         context, "SYSTEM", "✅ [任务完结] 无文件校验需求，输出总结。"
                     )
-                    display_summary = str(summary)[:1500] + "..." if len(str(summary)) > 1500 else str(summary)
+                    display_summary = (
+                        str(summary)[:1500] + "..."
+                        if len(str(summary)) > 1500
+                        else str(summary)
+                    )
                     self.log(context, "SYSTEM", f"📊 [总结内容]:\n{display_summary}")
                     my_memory["messages"] = messages
                     return {"messages": messages, "summary": summary}
@@ -98,7 +102,11 @@ class Node(AgentNode):
                 ]
                 if not missing_files:
                     self.log(context, "SYSTEM", "✅ [验收通过] 所有目标文件均已生成！")
-                    display_summary = str(summary)[:1500] + "..." if len(str(summary)) > 1500 else str(summary)
+                    display_summary = (
+                        str(summary)[:1500] + "..."
+                        if len(str(summary)) > 1500
+                        else str(summary)
+                    )
                     self.log(context, "SYSTEM", f"📊 [总结内容]:\n{display_summary}")
                     my_memory["messages"] = messages
                     return {"messages": messages, "summary": summary}

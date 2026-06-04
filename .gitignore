@@ -8,6 +8,7 @@ src/tool/callmcp/mcp_schema.json
 .buffer/
 skills/
 PLAN.md
+exports/
 scripts/start_mini.bat
 scripts/start_mini.sh
 clean_pycache.bat

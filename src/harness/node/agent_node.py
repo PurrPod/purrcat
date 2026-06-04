@@ -321,8 +321,12 @@ class AgentNode(BaseNode):
 
                     # 🟢 使用 to_thread 将工具执行放入独立的线程池，避免异步跨线程子进程死锁
                     import asyncio
+
                     raw_result = await asyncio.to_thread(
-                        execute_global_tool, original_tool_name, arguments, context=context
+                        execute_global_tool,
+                        original_tool_name,
+                        arguments,
+                        context=context,
                     )
 
                     final_content = _format_result(raw_result)

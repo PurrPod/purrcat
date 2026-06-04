@@ -79,5 +79,7 @@ class Node(BaseNode):
             self.log(context, "SYSTEM", "✅ [条件判断] 结果为 True，执行 [True] 分支。")
             return {"True": var_a}
         else:
-            self.log(context, "SYSTEM", "❌ [条件判断] 结果为 False，执行 [False] 分支。")
+            self.log(
+                context, "SYSTEM", "❌ [条件判断] 结果为 False，执行 [False] 分支。"
+            )
             return {"False": var_a}

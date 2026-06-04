@@ -10,11 +10,13 @@ class Node(BaseNode):
     async def execute(self, inputs: Dict[str, Any], context: Any) -> Dict[str, Any]:
         self.log(context, "SYSTEM", "🚪 [全局输入] 接收到任务启动参数：")
 
-        global_vars = self.config.get("global_vars", [])
-
         safe_inputs = {}
         for k, v in context.inputs.items():
             safe_inputs[k] = str(v)[:500] + "..." if len(str(v)) > 500 else v
-        self.log(context, "SYSTEM", f"{json.dumps(safe_inputs, indent=2, ensure_ascii=False)}")
+        self.log(
+            context,
+            "SYSTEM",
+            f"{json.dumps(safe_inputs, indent=2, ensure_ascii=False)}",
+        )
 
         return context.inputs
