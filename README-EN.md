@@ -1,81 +1,108 @@
-<div style="display: flex; align-items: center; justify-content: space-between;">
-  <div style="text-align: center; flex: 1;">
-    <h1>PurrCat</h1>
-    <p><blockquote>An economical, efficient, customizable, and user-centric local-first personal Agent framework.</blockquote></p>
-  </div>
-  <img src="purrcat-logo.svg" width="214" height="288" alt="PurrCat" />
+<div align="center">
+
+# PurrCat
+
+**[📖 Official Documentation](https://purrpod.github.io/)**
+
+> An economical, efficient, highly customizable, local-first personal Agent framework that understands you better.
+
+<br>
+
+**🐾 Documentation Navigation** &nbsp;
+[Introduction](https://purrpod.github.io/intro) &nbsp; | &nbsp; [Deployment](https://purrpod.github.io/guide/deployment) &nbsp; | &nbsp; [Architecture](https://purrpod.github.io/develop/architecture) &nbsp; | &nbsp; [Extension](https://purrpod.github.io/develop/extension) &nbsp; | &nbsp; [Configuration](https://purrpod.github.io/config/) &nbsp; | &nbsp; [FAQ](https://purrpod.github.io/guide/faq)
+
 </div>
 
 ---
 
-## Quick Start
+<img src="purrcat-logo.png" width="260" height="260" alt="PurrCat" align="right" />
 
-```bash
-git clone https://github.com/PurrPod/purrcat.git
-cd purrcat
+## ✨ Core Highlights & Technical Architecture
 
-purrcat setup       # One-click setup (Docker sandbox + Conda environment + embedding model)
-purrcat init        # Generate .purrcat/ config files, requires API-Key configuration for first use
+### 01 Hybrid Memory & Knowledge Graph System
 
-# Three launch options, choose one as needed
-# 1. Launch with TUI
-purrcat start
+Solving the traditional Agent pain point of "amnesia," this system is deeply designed based on the neuroscience theory of memory classification:
 
-# 2. Launch without TUI
-purrcat start --headless
+- **Short-Term Working Memory:** Memory-resident `memo` variables that span across single-session gaps, retaining a condensed summary of the last 10 interactions to perfectly solve context loss during session switching.
+- **Core General Memory:** System-level profiles (`MEMORY.md`) solidify user personas and work experience. They are injected into the System Prompt during initialization to establish the Agent's behavioral baseline.
+- **Long-Term Structured Memory (PurrMemo):** Powered by an episodic memory engine (SQLite + FTS5) and a semantic memory engine (ChromaDB + NetworkX). It supports dynamic entity relationship building, strengthening/weakening mechanisms, and provides HTML visual graph exports.
+- **Underlying Technology:** Utilizes the Reciprocal Rank Fusion (RRF) hybrid retrieval algorithm. Through a global thread pool and multi-way concurrency, it fuses BM25 (keyword matching) and Vector (semantic matching) rankings, massively improving recall accuracy.
+- **Asynchronous Digestion & Ebbinghaus Forgetting:** New cognitive data is temporarily stored in `pending` and then silently transformed into triples by an independent background daemon process, ensuring zero blocking of user interactions. A dynamic decay mechanism automatically cleans up long-unreinforced memories.
 
-# 3. Launch API service for WebUI
-purrcat start --headless --api
-cd ui
-npm install # Required for first-time WebUI use, skip for subsequent runs
-npm run dev
-```
+### 02 Harness DAG Workflow Engine
 
-[Full docs](https://purrpod.github.io/)
+Acting as an orchestratable chain-of-thought and production-grade state machine, Harness eliminates multi-agent communication bottlenecks and tool noise:
+
+- **Multi-Agent Concurrency:** Abandons the huge Token bloat caused by traditional frameworks where Agents "shout" at each other in natural language. Adopts a "single-persona, multi-brain concurrent execution" strategy, vastly reducing communication overhead and inference costs.
+- **Precise Task Constraints:** Binds specific tasks to specific tools and injects stage-specific prompts to prevent the Agent from getting confused in complex scenarios.
+- **Polymorphic Node Matrix:** Built-in powerful nodes including image generation (direct LLM Vision connection), conditional routing for precise multi-branching (`if_else` / `switch`), and human-in-the-loop intervention nodes to hand over control.
+- **State Machine Safe Rollback:** Allows injecting human commands at specific nodes at any time, instantly clearing downstream states for precise breakpoint reconnections, preventing "dirty data reads."
+- **JSON Hot-Plugging:** Importing or deploying complex workflows requires only a single JSON configuration file for dynamic loading and hot updates.
+
+### 03 All-Around Secure Toolchain
+
+Equipping the LLM with "hands and feet" backed by absolute security, providing eight native tools to build core senses:
+
+- **Persistent Sandbox Bash:** Replaces regex command-line interception with independent Docker virtual machines, guaranteeing absolute file security, reducing human-in-the-loop dependencies, and supporting directory mounting for external access.
+- **All-in-One FileSystem Suite:** Offers codebase roaming capabilities (`read` / `edit` / `write` / `search` / `glob`). The underlying layer integrates `MarkItDown` for seamless dimensional reduction of PDF/DOCX/XLSX to Markdown.
+- **Secure Cross-Boundary Conduction:** Employs physical-level black/white lists for interception. `Import` strictly verifies the 30MB limit and path traversal, while `Export` automatically triggers Git snapshots to prevent disastrous overwrites.
+- **Core Extension Matrix:** Features dynamic routing `CallMCP`, hybrid retrieval `Search` (over 90% recall rate), web-to-markdown `Fetch`, asynchronous extraction `Memo`, scheduled `Cron`, and a `Task` dispatcher for background jobs.
+
+### 04 Agent Hub & Session Management
+
+Acting as the interactive gateway between the LLM and the external world, endowing the Agent with a dedicated soul and extreme robustness:
+
+- **Git-Style Session Branching:** Supports `new session`, `branch session`, and `switch session`. Easily trial-and-error and safely switch back to the main trunk at any time.
+- **Perfect Exception Repair:** Automatically inspects `tool calls` matching, intercepts incomplete tool messages, and rolls back to a safe state to prevent logical model collapse.
+- **Intelligent Context Truncation:** Automatically finds safe truncation points (avoiding middle steps of tool calls) when Token limits are exceeded. Keeps the most recent 20 safe interactions and seamlessly replaces older history with Memo summaries.
+- **Vitality & Soul Injection:** Defines persona values via `SOUL.md`. A system clock drives the `Heartbeat + SOLO + TODO` mechanism, allowing the Agent to autonomously patrol, clean garbage, and proactively report during idle times.
+- **Exclusive Vision Consultant:** Equips the model with an independent Vision consultant, stripping image information from the main session to dramatically increase the signal-to-noise ratio and reduce hallucinations.
+
+### 05 Proactive Perception & Event Gateway
+
+Transitioning from a passive "Q&A machine" to a proactive "Smart Assistant" using a physically decoupled, MCP-like event-driven architecture:
+
+- **Independent Processes & Zero Dependency Conflicts:** Integrates `uv` + `PEP 723` inline dependencies. All sensors run as independent subprocesses (creating virtual environments in seconds upon launch). A single sensor crash never affects the main process.
+- **Standard Stream Communication:** Discards complex network ports in favor of `Stdio` pipe JSON-RPC communication. Redirects `stdout` to `stderr`, allowing only valid JSON to enter the parser for extreme lightness and zero network overhead.
+- **Multi-Source Sensor Matrix:** Built-in System Sensor (heartbeat guard/scheduled polling), Feishu Sensor (WebSocket bidirectional Markdown parsing), RSS Sensor (tech blog polling and active push), and Audio Sensor (voice control capture via Whisper + pyttsx3).
+
+### 06 Model Scheduling & High-Concurrency Gateway
+
+An industrial-grade LLM resource scheduling management center built on operating system principles:
+
+- **API Key Load Balancing:** The underlying layer maintains an available key list via a thread lock (`_usage_lock`), automatically allocating the most idle key to prevent single key rate limits.
+- **Concurrency Lock & Exponential Backoff:** For multi-agent collaboration and high-frequency concurrency scenarios, the underlying layer implements Semaphore queuing and jittered exponential backoff retries (up to 8 times), ensuring absolute high availability of API calls.
+
+### 07 Extreme KV Cache Hit Rate & Token Economics
+
+Achieving extreme cost reduction and efficiency gains through deep engineering optimizations in long-context and multi-task concurrent scenarios:
+
+- **Ultra-High Cache Hit Rate:** In complex environments with dynamic multi-session switching, long sessions still maintain an average cache hit rate of 97%+ (for example, with DeepSeek-V4-Flash, consuming 100 million hit Tokens costs only 2 RMB), providing an ultra-fast response experience.
+- **Lifecycle Strong Binding:** The underlying `APIKeyManager` implements strong binding between tasks/sessions and a single key, completely eliminating hit rate collapse caused by load balancing key switching.
+- **Dual-Effect Economic Design:** Relies on Harness DAG to eliminate Token redundancy from traditional Agent-to-Agent conversations; using memory summary mechanisms, task executors are required to refine Summaries and submit them to the background for digestion, avoiding full history reading waste.
+
+### 08 Extreme Decoupling, Code-Free Extension & Engineering Aesthetics
+
+Adhering to the principle of high cohesion and low coupling, all core extension components implement data-driven configuration loading:
+
+- **Code-Free MCP Integration:** Simply paste standard JSON into `mcp_config.json`, and the system will automatically handshake, persist cache, and hot-update the LLM tool tree, enabling minute-level capability generalization.
+- **Terminal One-Click Skill Loading:** By executing `purrcat install skill <url>`, community SOP workflows are downloaded in seconds and hot-loaded into the retrieval tree for precise foreground recall.
+- **Visual DAG Deployment:** Built-in front-end UI engine supports direct drag-and-drop node orchestration, or one-click JSON graph import for second-level deployment of complex workflows.
+- **Configuration-as-Sensor-Installation:** UI interface provides one-click ON/OFF toggle switches. If a missing Sensor is detected during system startup, scripts will be automatically pulled from the cloud and run instantly, giving the Agent the ability to actively change its own senses.
+
+<br clear="right" />
 
 ---
 
-## Key Highlights
+## 🙏 Acknowledgments
 
-**1. Event-driven Active Perception** Breaks the limitations of traditional LLM's single "Q&A" mode. The framework integrates an event gateway with multi-source sensors (e.g., RSS polling, Feishu integration, system timers), enabling the Agent to continuously monitor external environment changes in the background and proactively report summaries or automatically advance tasks when specific conditions are met.
-
-**2. Multi-layer Hybrid Memory Architecture** To address the issue of information forgetting in long-term LLM interactions, the system designs a three-layer structure including short-term working memory, universal persona prompts, and long-term memory graph (PurrMemo). Combined with a time decay mechanism based on the Ebbinghaus curve, edge information that has not been recalled for a long time will be gradually cleaned up to maintain database health and retrieval efficiency.
-
-**3. Context Cache Optimization-focused Scheduling Strategy** In extended context interactions, stable KV Cache hit rate is crucial for reducing operational costs and improving response speed. By decoupling tool schemas from System Prompt and adopting dynamic loading, along with the underlying mechanism of strong binding between API keys and session lifecycle, the system strives to maintain a high cache hit rate in multi-task concurrent scenarios.
-
-**4. Independent Sandbox Execution Environment** The framework allocates an isolated runtime environment based on Docker for the Agent. Compared to intercepting commands via regex on the host, the physically isolated design better protects the local file system security without introducing excessive manual intervention, while also providing a stable resident space for the Agent to handle long-cycle tasks.
-
-**5. Git-style Session Branch Management** The system introduces a session management mechanism similar to Git branches. When exploring complex problem-solving paths, users can pull new branches for trial and error. If the result is unsatisfactory, they can switch back to the main branch at any time. Additionally, the system has a built-in status check tool that automatically rolls back to the last safe state when tool calls are interrupted or return exceptions, reducing logical errors.
-
-**6. Modular Directed Acyclic Graph (DAG) Scheduling** For complex business processes, PurrCat supports decomposing them into DAG-based workflows (Harness). This mechanism allows background nodes to flow asynchronously without blocking the front-end main session. When the process encounters permission restrictions or insufficient information, the system triggers a Human-in-the-loop mechanism to suspend the task, and precisely resumes execution from the breakpoint after receiving manual instructions.
-
-**7. Open Tool and Process Extension System** Aims to lower the threshold for secondary development. The framework supports hot-updating external MCP (Model Context Protocol) tools through configuration files, and can quickly load community-shared Skills via terminal commands. Meanwhile, the built-in visual UI provides node orchestration and connection functions, enabling rapid export of visual flowcharts into executable deployment configurations.
+- Thanks to **[zhenghuanle](https://github.com/zhenghuanle)** for testing the installation flow from scratch.
+- Thanks to **[Gaeulczy](https://github.com/Gaeulczy)** for testing the one-click setup and run scripts.
 
 ---
 
-## Documentation
+## 📄 License
 
-- [Introduction](https://purrpod.github.io/intro)
-- [Deployment Guide](https://purrpod.github.io/guide/deployment)
-- [Architecture](https://purrpod.github.io/develop/architecture)
-- [Extension Guide](https://purrpod.github.io/develop/extension)
-- [Configuration](https://purrpod.github.io/config/)
-- [FAQ](https://purrpod.github.io/guide/faq)
+This project is open-sourced under the [MIT](LICENSE) license. You can freely use, modify, distribute, and even use this project for commercial purposes without any burden.
 
----
-
-## Acknowledgments
-
-- Thanks **Gemini Pro 3.1** for assisting in building the beautiful UI interface.
-- Thanks **[zhenghuanle](https://github.com/zhenghuanle)** for testing the installation flow from scratch.
-- Thanks **[Gaeulczy](https://github.com/Gaeulczy)** for testing the one-click setup and run scripts.
-
----
-
-## License
-
-This project's core framework is open-sourced under the **GNU GPL-3.0** license.
-
-- **Core Copyleft**: Distributing modified core framework must be open-sourced.
-- **Plugin/Extension Exemption**: Skills, Harness, and external services developed based on this project are **not subject to GPL contagion** and can be closed-source for commercial use.
-- **Disclaimer**: Code is provided "as is" without any warranty.
+In this era of explosive Agent technology, there are no permanent moats, no so-called personal heroism—only a wave that pushes everyone forward. The birth of PurrCat is my tiny response to this wave. If you can gain a spark of inspiration or convenience from it, that would be the greatest meaning of PurrCat's existence. Have fun!
