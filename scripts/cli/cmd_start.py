@@ -4,7 +4,7 @@ import os
 import subprocess
 import sys
 
-CONDA_CMD = "conda.bat" if os.name == "nt" else "conda"
+UV_CMD = "uv.exe" if os.name == "nt" else "uv"
 NPM_CMD = "npm.cmd" if os.name == "nt" else "npm"
 
 
@@ -23,11 +23,8 @@ def run_start(webui=False):
 
     # 构建后端启动的基础命令
     backend_cmd = [
-        CONDA_CMD,
+        UV_CMD,
         "run",
-        "--no-capture-output",
-        "-n",
-        "PurrCat",
         "python",
         main_script,
     ]

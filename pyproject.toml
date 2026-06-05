@@ -1,0 +1,46 @@
+[project]
+name = "purrcat"
+version = "0.1.0"
+description = "PurrCat Agent Framework"
+requires-python = ">=3.10"
+
+dependencies = [
+    # 基础包
+    "numpy>=1.26.0", "pydantic>=2.5.0", "networkx>=3.1",
+    
+    # 核心与大模型
+    "PyYAML>=6.0.1", "nest-asyncio>=1.6.0", "requests>=2.31.0",
+    "openai>=1.75.0", "json-repair>=0.30.0", "pyvis>=0.3.2",
+
+    # MCP 与 插件协议
+    "mcp>=0.1.0",
+
+    # 传感器与通信
+    "lark-oapi>=1.2.4", "feedparser>=6.0.10", "soundfile>=0.12.1",
+    "SpeechRecognition>=3.10.0", "pyaudio>=0.2.14", "pyttsx3>=2.90",
+    "openai-whisper>=20231117",
+
+    # Web 搜索与自动化
+    "curl-cffi>=0.6.0", "ddgs>=0.1.0", "beautifulsoup4>=4.12.3",
+    "readability-lxml>=0.8.1", "markdown>=3.5.0", "markdownify>=0.11.6",
+
+    # 系统与沙盒
+    "docker>=7.0.0", "pexpect>=4.9.0", "markitdown>=0.0.1",
+
+    # RAG 检索 (这里会引入 torch，我们将通过下面的配置拦截它)
+    "jieba>=0.42.1", "rank_bm25>=0.2.2", "sentence-transformers>=2.3.1",
+    "huggingface_hub>=0.21.0", "chromadb>=0.5.0", "scikit-learn>=1.4.0",
+
+    # Web框架与 UI
+    "fastapi>=0.109.0", "uvicorn>=0.27.0", "textual>=0.50.0"
+]
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+torchaudio = { index = "pytorch-cpu" }
+torchvision = { index = "pytorch-cpu" }
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true

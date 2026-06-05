@@ -36,7 +36,7 @@ PurrCat CLI - Cross-platform AI Agent Framework
     print("Usage: purrcat <command> [options]")
     print("")
     print("Commands:")
-    print("  setup   - Initialize environment (Conda, Docker, Models)")
+    print("  setup   - Initialize environment (uv, Docker, Models)")
     print("  init    - Generate .purrcat config templates")
     print("  install - Install extensions (skill, node, graph)")
     print("  update  - Update PurrCat to the latest version from GitHub")

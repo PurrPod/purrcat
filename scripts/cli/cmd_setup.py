@@ -7,7 +7,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-CONDA_CMD = "conda.bat" if os.name == "nt" else "conda"
+UV_CMD = "uv.exe" if os.name == "nt" else "uv"
 
 
 def _get_project_root():
@@ -203,39 +203,19 @@ def _build_sandbox(dockerfile, apt_mirror, engine):
     print(f"{engine.capitalize()} image built successfully!")
 
 
-def _setup_conda():
-    """Configure Conda environment"""
+def _setup_uv():
+    """Configure environment using uv"""
     print("")
-    print("Configuring PurrCat Conda environment...")
-
+    print("Configuring PurrCat environment with uv...")
     project_root = _get_project_root()
-    env_file = os.path.join(project_root, "environment.yml")
 
-    check_env_cmd = [CONDA_CMD, "env", "list"]
-    result = subprocess.run(check_env_cmd, capture_output=True, text=True)
+    # 一行命令搞定所有环境依赖解析和安装！
+    success = _run_cmd([UV_CMD, "sync"], shell=False, check=False, cwd=project_root)
 
-    if "PurrCat" in result.stdout:
-        print("Environment 'PurrCat' already exists, trying to update dependencies...")
-        update_success = _run_cmd(
-            [CONDA_CMD, "env", "update", "-f", env_file],
-            shell=False,
-            check=False,
-            cwd=project_root,
-        )
-        if not update_success:
-            print("Update failed, trying to create environment...")
-            _run_cmd(
-                [CONDA_CMD, "env", "create", "-f", env_file],
-                shell=False,
-                cwd=project_root,
-            )
-    else:
-        print("Creating new Conda environment...")
-        _run_cmd(
-            [CONDA_CMD, "env", "create", "-f", env_file], shell=False, cwd=project_root
-        )
-
-    print("Conda environment configured successfully!")
+    if not success:
+        print("Error: uv sync failed! Please check your network or python version.")
+        sys.exit(1)
+    print("uv environment configured successfully!")
 
 
 def _get_webui_choice():
@@ -279,9 +259,10 @@ def _download_embedding_model():
     setup_emb_script = os.path.join(project_root, "scripts", "setup_emb.py")
 
     success = _run_cmd(
-        [CONDA_CMD, "run", "-n", "PurrCat", "python", setup_emb_script],
+        [UV_CMD, "run", "python", setup_emb_script],
         shell=False,
         check=False,
+        cwd=project_root
     )
 
     if not success:
@@ -314,7 +295,7 @@ def run_setup():
     _build_sandbox(dockerfile, apt_mirror, selected_engine)
     print("==========================================")
 
-    _setup_conda()
+    _setup_uv()
     print("==========================================")
 
     _download_embedding_model()

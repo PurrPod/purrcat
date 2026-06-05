@@ -96,7 +96,6 @@
 
 ## 🙏 致谢
 
-- 感谢 **Gemini Pro 3.1** 协助构建精美的 UI 界面。
 - 感谢 **[zhenghuanle](https://github.com/zhenghuanle)** 测试了从零开始的安装流程。
 - 感谢 **[Gaeulczy](https://github.com/Gaeulczy)** 测试了一键安装和运行脚本。
 
