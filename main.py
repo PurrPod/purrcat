@@ -28,29 +28,34 @@ async def _bg_heavy_init(enable_tui: bool):
             from src.tool import init_tools
             init_tools()
         except Exception as e:
-            if not enable_tui: print(f"⚠️ [Background] 工具与检索树预热异常: {e}")
+            if not enable_tui:
+                print(f"⚠️ [Background] 工具与检索树预热异常: {e}")
 
         # 2. 扫描并启动所有传感器插件
         try:
             from src.sensor import auto_discover_and_start
             auto_discover_and_start()
         except Exception as e:
-            if not enable_tui: print(f"⚠️ [Background] Sensor 启动异常: {e}")
+            if not enable_tui:
+                print(f"⚠️ [Background] Sensor 启动异常: {e}")
 
         # 3. 初始化并预热记忆库守护进程
         try:
             from src.memory import init_memory
             init_memory()
         except Exception as e:
-            if not enable_tui: print(f"⚠️ [Background] 记忆库预热异常: {e}")
+            if not enable_tui:
+                print(f"⚠️ [Background] 记忆库预热异常: {e}")
 
         # 4. 加载历史任务 (磁盘 I/O 操作)
         try:
             from src.harness.process import auto_load_all_tasks
             auto_load_all_tasks()
-            if not enable_tui: print("✅ [Background] 历史任务工作流加载就绪")
+            if not enable_tui:
+                print("✅ [Background] 历史任务工作流加载就绪")
         except Exception as e:
-            if not enable_tui: print(f"⚠️ [Background] 历史任务加载异常: {e}")
+            if not enable_tui:
+                print(f"⚠️ [Background] 历史任务加载异常: {e}")
 
     # 将纯阻塞的初始化丢进原生线程池，但由 asyncio 妥善管理生命周期
     await asyncio.to_thread(_sync_init)
@@ -94,13 +99,13 @@ async def run_api(host: str = "0.0.0.0", port: int = 8000):
     import logging
     
     # API 路由也尽量懒加载，防止影响入口速度
-    from server.api.chat import router as chat_router
-    from server.api.graph import router as graph_router
-    from server.api.task import router as task_router
-    from server.api.config import router as config_router
-    from server.api.memory import router as memory_router
-    from server.api.tools import router as tools_router
-    from server.api.system import router as system_router
+    from src.server.api.chat import router as chat_router
+    from src.server.api.graph import router as graph_router
+    from src.server.api.task import router as task_router
+    from src.server.api.config import router as config_router
+    from src.server.api.memory import router as memory_router
+    from src.server.api.tools import router as tools_router
+    from src.server.api.system import router as system_router
 
     app = FastAPI(title="PurrCat API System")
 
