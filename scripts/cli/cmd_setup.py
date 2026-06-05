@@ -168,6 +168,43 @@ def _get_mirror_choice():
     return "mirrors.aliyun.com" if choice == "2" else "deb.debian.org"
 
 
+
+def _get_sandbox_source():
+    """Prompt user for sandbox image source"""
+    print("")
+    print("[Sandbox Image] How to get the sandbox image?")
+    print("  1. Pull from ghcr.io (recommended, faster)")
+    print("  2. Build locally (requires Dockerfile build)")
+    choice = input("Enter 1 or 2 (Default is 1): ").strip() or "1"
+    return choice == "1"
+
+
+def _pull_sandbox(dockerfile, engine):
+    """Pull pre-built sandbox image from ghcr.io"""
+    variant = "light" if "light" in dockerfile else "full"
+    image = f"ghcr.io/purrpod/purrcat-sandbox:{variant}"
+
+    print("")
+    print(f"Pulling sandbox image from {image}...")
+    print("Note: First pull may take a few minutes depending on your network.")
+
+    success = _run_cmd(
+        [engine, "pull", image], shell=False, check=False
+    )
+
+    if not success:
+        print("")
+        print("Error: Failed to pull sandbox image!")
+        print("Common causes:")
+        print("  1. Network issues - Check your connection")
+        print("  2. ghcr.io not accessible in your region")
+        sys.exit(1)
+
+    # Retag as my_agent_env:latest so the rest of the code works unchanged
+    _run_cmd([engine, "tag", image, "my_agent_env:latest"], shell=False, check=False)
+    print(f"Sandbox image pulled and tagged as my_agent_env:latest!")
+
+
 def _build_sandbox(dockerfile, apt_mirror, engine):
     """Build sandbox image using selected engine"""
     print("")
@@ -289,10 +326,15 @@ def run_setup():
     print("==========================================")
 
     dockerfile = _get_sandbox_choice()
-    apt_mirror = _get_mirror_choice()
-    install_webui = _get_webui_choice()
+    pull_from_ghcr = _get_sandbox_source()
 
-    _build_sandbox(dockerfile, apt_mirror, selected_engine)
+    if pull_from_ghcr:
+        _pull_sandbox(dockerfile, selected_engine)
+    else:
+        apt_mirror = _get_mirror_choice()
+        _build_sandbox(dockerfile, apt_mirror, selected_engine)
+
+    install_webui = _get_webui_choice()
     print("==========================================")
 
     _setup_uv()
