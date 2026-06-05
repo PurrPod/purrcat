@@ -262,7 +262,7 @@ def _download_embedding_model():
         [UV_CMD, "run", "python", setup_emb_script],
         shell=False,
         check=False,
-        cwd=project_root
+        cwd=project_root,
     )
 
     if not success:

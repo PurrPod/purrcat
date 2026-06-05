@@ -42,7 +42,9 @@ def run_start(webui=False):
             # 采用 Popen 在后台拉起前端，与后端共享当前终端的 stdout
             ui_process = subprocess.Popen([NPM_CMD, "run", "dev"], cwd=ui_dir)
         except FileNotFoundError:
-            print("❌ npm command not found. Please ensure Node.js is installed and added to your PATH.")
+            print(
+                "❌ npm command not found. Please ensure Node.js is installed and added to your PATH."
+            )
             sys.exit(1)
 
     try:
