@@ -7,7 +7,7 @@ on:
       - "Dockerfile.light"
       - "Dockerfile.full"
       - ".github/workflows/sandbox-image.yml"
-  workflow_dispatch:  # 手动触发
+  workflow_dispatch:
 
 jobs:
   build-and-push:
@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write  # 推送到 ghcr.io 需要
+      packages: write
 
     strategy:
       matrix:
@@ -33,10 +33,13 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and Tag
+        env:
+          REPO_LOWER: ${{ github.repository_owner }}/purrcat-sandbox
         run: |
+          REPO_LOWER="$(echo "$REPO_LOWER" | tr '[:upper:]' '[:lower:]')"
           DOCKERFILE="Dockerfile.${{ matrix.variant }}"
-          IMAGE="ghcr.io/${{ github.repository }}-sandbox:${{ matrix.variant }}"
-          SHA_IMAGE="ghcr.io/${{ github.repository }}-sandbox:${{ matrix.variant }}-${{ github.sha }}"
+          IMAGE="ghcr.io/${REPO_LOWER}:${{ matrix.variant }}"
+          SHA_IMAGE="ghcr.io/${REPO_LOWER}:${{ matrix.variant }}-${{ github.sha }}"
 
           docker build \
             -f "$DOCKERFILE" \
@@ -46,8 +49,11 @@ jobs:
             .
 
       - name: Push to ghcr.io
+        env:
+          REPO_LOWER: ${{ github.repository_owner }}/purrcat-sandbox
         run: |
-          IMAGE="ghcr.io/${{ github.repository }}-sandbox:${{ matrix.variant }}"
-          SHA_IMAGE="ghcr.io/${{ github.repository }}-sandbox:${{ matrix.variant }}-${{ github.sha }}"
+          REPO_LOWER="$(echo "$REPO_LOWER" | tr '[:upper:]' '[:lower:]')"
+          IMAGE="ghcr.io/${REPO_LOWER}:${{ matrix.variant }}"
+          SHA_IMAGE="ghcr.io/${REPO_LOWER}:${{ matrix.variant }}-${{ github.sha }}"
           docker push "$IMAGE"
           docker push "$SHA_IMAGE"
