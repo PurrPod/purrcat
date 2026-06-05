@@ -1,0 +1,53 @@
+name: Build & Push Sandbox Images
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "Dockerfile.light"
+      - "Dockerfile.full"
+      - ".github/workflows/sandbox-image.yml"
+  workflow_dispatch:  # 手动触发
+
+jobs:
+  build-and-push:
+    name: Build & Push
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write  # 推送到 ghcr.io 需要
+
+    strategy:
+      matrix:
+        variant: [light, full]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and Tag
+        run: |
+          DOCKERFILE="Dockerfile.${{ matrix.variant }}"
+          IMAGE="ghcr.io/${{ github.repository }}-sandbox:${{ matrix.variant }}"
+          SHA_IMAGE="ghcr.io/${{ github.repository }}-sandbox:${{ matrix.variant }}-${{ github.sha }}"
+
+          docker build \
+            -f "$DOCKERFILE" \
+            -t "$IMAGE" \
+            -t "$SHA_IMAGE" \
+            --build-arg APT_MIRROR="deb.debian.org" \
+            .
+
+      - name: Push to ghcr.io
+        run: |
+          IMAGE="ghcr.io/${{ github.repository }}-sandbox:${{ matrix.variant }}"
+          SHA_IMAGE="ghcr.io/${{ github.repository }}-sandbox:${{ matrix.variant }}-${{ github.sha }}"
+          docker push "$IMAGE"
+          docker push "$SHA_IMAGE"
