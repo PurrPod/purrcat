@@ -206,14 +206,6 @@ def get_mcp_config_dict():
     """Generate MCP configuration dictionary"""
     return {
         "mcpServers": {
-            "playwright": {
-                "command": "npx",
-                "args": [
-                    "@playwright/mcp@latest",
-                    "--user-data-dir=agent_vm/.buffer/playwright",
-                    "--output-dir=agent_vm/.buffer/screenshots",
-                ],
-            },
             "github": {
                 "command": "npx",
                 "args": ["-y", "@modelcontextprotocol/server-github"],
