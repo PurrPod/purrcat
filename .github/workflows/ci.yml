@@ -50,7 +50,7 @@ jobs:
           CHANGED_FILES=$(git diff --name-only "$BASE" HEAD)
           
           # Refactored: Replaced environment.yml with pyproject.toml and uv.lock for uv-based tracking
-          if echo "$CHANGED_FILES" | grep -qE "^(src/|main\.py|pyproject\.toml|uv\.lock|scripts/|server/|tui/)"; then
+          if echo "$CHANGED_FILES" | grep -qE "^(src/|main\.py|pyproject\.toml|uv\.lock|scripts/|tui/)"; then
             echo "python_changed=true" >> "$GITHUB_OUTPUT"
           else
             echo "python_changed=false" >> "$GITHUB_OUTPUT"
