@@ -209,7 +209,7 @@ def _setup_uv():
     print("Configuring PurrCat environment with uv...")
     project_root = _get_project_root()
 
-    # 一行命令搞定所有环境依赖解析和安装！
+    # Resolve and install all dependencies in one go using uv
     success = _run_cmd([UV_CMD, "sync"], shell=False, check=False, cwd=project_root)
 
     if not success:

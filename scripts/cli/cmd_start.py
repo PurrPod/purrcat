@@ -21,7 +21,7 @@ def run_start(webui=False):
     project_root = _get_project_root()
     main_script = os.path.join(project_root, "main.py")
 
-    # 构建后端启动的基础命令
+    # Base command to start the backend
     backend_cmd = [
         UV_CMD,
         "run",
@@ -42,7 +42,7 @@ def run_start(webui=False):
             # 采用 Popen 在后台拉起前端，与后端共享当前终端的 stdout
             ui_process = subprocess.Popen([NPM_CMD, "run", "dev"], cwd=ui_dir)
         except FileNotFoundError:
-            print("❌ 未找到 npm 命令，请检查 Node.js 是否已安装并配置了环境变量。")
+            print("❌ npm command not found. Please ensure Node.js is installed and added to your PATH.")
             sys.exit(1)
 
     try:
@@ -53,7 +53,7 @@ def run_start(webui=False):
     except KeyboardInterrupt:
         print("\nShutting down PurrCat...")
     finally:
-        # 捕获到退出信号时，连带前端的 Vite 进程一起清理掉
+        # Clean up the frontend Vite process when an exit signal is caught
         if ui_process:
             print("Shutting down Web UI...")
             ui_process.terminate()
