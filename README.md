@@ -98,6 +98,7 @@
 
 - 感谢 **[zhenghuanle](https://github.com/zhenghuanle)** 测试了从零开始的安装流程。
 - 感谢 **[Gaeulczy](https://github.com/Gaeulczy)** 测试了一键安装和运行脚本。
+- 感谢 **中山大学开放鸿蒙技术俱乐部** 举办的智能体架构赛道决赛提供的金奖奖金赞助与所有校内外评委的指导。
 
 ---
 
