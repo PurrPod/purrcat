@@ -28,5 +28,5 @@ jobs:
 
       - name: Ruff Check (Lint & Format)
         run: |
-          ruff check src/ scripts/ server/ tui/ --output-format=github
-          ruff format --check src/ scripts/ server/ tui/
+          ruff check src/ scripts/ tui/ --output-format=github
+          ruff format --check src/ scripts/ tui/

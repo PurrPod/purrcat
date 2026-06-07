@@ -247,7 +247,6 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
 
   // --- 🌟 拖拽/上传相关状态 ---
   const [isDragging, setIsDragging] = useState(false);
-  const [isUploading, setIsUploading] = useState(false);
 
   // --- 常量定义 ---
   const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB 限制
@@ -288,10 +287,8 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
         setRefPaths(prev => [...new Set([...prev, ...newPaths])]);
         toast.success(`成功载入 ${newPaths.length} 个文件`);
       }
-    } catch (e) {
+    } catch {
       toast.error("网络错误，文件上传失败");
-    } finally {
-      setIsUploading(false);
     }
   };
 
@@ -898,7 +895,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   // 🌟 智能判定环境的附件点击事件
   const handleAttachmentClick = async () => {
     // 探测当前是否在 Tauri 桌面客户端环境中 (忽略 TypeScript 报错)
-    // @ts-ignore
+    // @ts-expect-error window.__TAURI__ may not exist in all environments
     const tauri = typeof window !== 'undefined' ? window.__TAURI__ : null;
 
     if (tauri && tauri.dialog) {
