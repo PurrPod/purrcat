@@ -25,7 +25,7 @@ dependencies = [
     "readability-lxml>=0.8.1", "markdown>=3.5.0", "markdownify>=0.11.6",
 
     # 系统与沙盒
-    "docker>=7.0.0", "pexpect>=4.9.0", "markitdown>=0.0.1",
+    "docker>=7.0.0", "pexpect>=4.9.0", "markitdown[all]>=0.0.1", "ruff>=0.3.0",
 
     # RAG 检索 (这里会引入 torch，我们将通过下面的配置拦截它)
     "jieba>=0.42.1", "rank_bm25>=0.2.2", "sentence-transformers>=2.3.1",

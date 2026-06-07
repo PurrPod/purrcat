@@ -6,7 +6,7 @@ import sys
 
 from scripts.cli.templates import (
     CRON_CONFIG_TEMPLATE,
-    MEMEORY_MD_TEMPLATE,
+    MEMORY_MD_TEMPLATE,
     SOLO_MD_TEMPLATE,
     SOUL_MD_TEMPLATE,
     get_file_config_dict,
@@ -174,7 +174,7 @@ def _generate_core_files(purrcat_dir, force=False):
     else:
         try:
             with open(memory_md_path, "w", encoding="utf-8") as f:
-                f.write(MEMEORY_MD_TEMPLATE)
+                f.write(MEMORY_MD_TEMPLATE)
             print("[+] core/MEMORY.md generated")
             results.append(("MEMORY.md", True))
         except Exception as e:

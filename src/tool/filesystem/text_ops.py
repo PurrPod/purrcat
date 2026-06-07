@@ -1,6 +1,7 @@
 import os
 import re
 from pathlib import PurePath
+from src.tool.filesystem.checker import run_code_check
 from src.tool.filesystem.exceptions import (
     FileSystemError,
     HostPathNotFoundError,
@@ -108,9 +109,15 @@ def edit_file(
     with open(target_path, "w", encoding="utf-8") as f:
         f.write(new_content)
 
+    # === 新增：代码检查 ===
+    check_result = run_code_check(target_path)
+    msg = f"成功更新文件 {os.path.basename(target_path)}"
+    if check_result:
+        msg += f"\n\n[系统自动代码检查报告]:\n{check_result}"
+
     return {
         "path": target_path,
-        "message": f"成功更新文件 {os.path.basename(target_path)}",
+        "message": msg,
         "replaced_occurrences": occurrences if replace_all else 1,
     }
 
@@ -126,9 +133,15 @@ def write_file(path_from: str, content: str) -> dict:
     with open(target_path, "w", encoding="utf-8") as f:
         f.write(content)
 
+    # === 新增：代码检查 ===
+    check_result = run_code_check(target_path)
+    msg = f"成功写入文件 {os.path.basename(target_path)} (长度: {len(content)})"
+    if check_result:
+        msg += f"\n\n[系统自动代码检查报告]:\n{check_result}"
+
     return {
         "path": target_path,
-        "message": f"成功写入文件 {os.path.basename(target_path)} (长度: {len(content)})",
+        "message": msg,
     }
 
 
