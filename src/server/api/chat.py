@@ -10,8 +10,9 @@ from src.agent import (
     get_session_list,
     init_agent,
     new_session,
-    get_window_token,  # 🌟 新增
-    get_agent_max_token,  # 🌟 新增
+    get_window_token,
+    get_agent_max_token,
+    agent_force_push_batch,
 )
 
 router = APIRouter(prefix="/api", tags=["Chat & Sessions"])
@@ -28,6 +29,11 @@ class BranchSessionReq(BaseModel):
 class ChatReq(BaseModel):
     session_id: str
     message: str
+
+
+class ChatBatchReq(BaseModel):
+    session_id: str
+    events: list
 
 
 def _ensure_manager_initialized():
@@ -49,6 +55,23 @@ def _run_agent_task(session_id: str, message: str):
         manager.switch_session(session_id)
 
     manager.agent_force_push(message, type="user")
+
+
+def _run_agent_batch_task(session_id: str, events: list):
+    from src.agent.manager import AgentManager
+    import time
+
+    manager = AgentManager()
+    if manager._agent is None:
+        manager.init_agent()
+
+    if manager._agent.session_id != session_id:
+        if manager._agent.state != "idle":
+            while manager._agent.state != "idle":
+                time.sleep(0.3)
+        manager.switch_session(session_id)
+
+    manager.agent_force_push_batch(events)
 
 
 @router.get("/sessions")
@@ -151,6 +174,18 @@ def chat(req: ChatReq, background_tasks: BackgroundTasks):
         return {"status": "processing", "message": "Message pushed to agent"}
     except Exception as e:
         print(f"[ERROR] /api/chat - 异常: {e}")
+        traceback.print_exc()
+        raise
+
+
+@router.post("/chat/batch")
+def chat_batch(req: ChatBatchReq, background_tasks: BackgroundTasks):
+    try:
+        _ensure_manager_initialized()
+        background_tasks.add_task(_run_agent_batch_task, req.session_id, req.events)
+        return {"status": "processing", "message": "Batch events pushed to agent"}
+    except Exception as e:
+        print(f"[ERROR] /api/chat/batch - 异常: {e}")
         traceback.print_exc()
         raise
 

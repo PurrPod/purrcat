@@ -25,8 +25,9 @@ interface EventItem {
   content: string;
 }
 
-function parseEventsContent(content: string): { userMessages: EventItem[], systemCount: number } {
+function parseEventsContent(content: string): { userMessages: EventItem[], systemCount: number, attachments: EventItem[] } {
   const userMessages: EventItem[] = [];
+  const attachments: EventItem[] = [];
   let systemCount = 0;
   
   try {
@@ -39,6 +40,8 @@ function parseEventsContent(content: string): { userMessages: EventItem[], syste
         
         if (eventType === 'user') {
           userMessages.push({ type: eventType, time: eventTime, content: eventContent });
+        } else if (eventType === 'file-quote' || eventType === 'skill-quote') {
+          attachments.push({ type: eventType, time: eventTime, content: eventContent });
         } else {
           systemCount++;
         }
@@ -48,7 +51,7 @@ function parseEventsContent(content: string): { userMessages: EventItem[], syste
     userMessages.push({ type: 'user', time: '', content });
   }
   
-  return { userMessages, systemCount };
+  return { userMessages, systemCount, attachments };
 }
 
 function hasMessageInHistory(history: any[], text: string) {
@@ -836,31 +839,60 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   const handleSend = async () => {
     if (!input.trim() || !currentSessionId) return;
     
-    // 拼接 Skill Prompt
-    let userText = input.trim();
-    if (selectedSkills.length > 0) {
-      userText = `<Please Fetch Skill：${selectedSkills.join('>\n')}>\n${userText}`;
-    }
+    const eventsToPush: any[] = [];
+    const userText = input.trim();
     
-    // 🌟 修改：拼接引用的本地路径为 <📎:xxx> 格式
+    // 1. 遍历并注入文件引用 (覆盖了拖拽、粘贴、点击弹窗等所有方式)
     if (refPaths.length > 0) {
-      const pathsStr = refPaths.map(p => `<quote file: ${p}>`).join('\n');
-      userText = `${pathsStr}\n${userText}`;
+      refPaths.forEach(path => {
+        eventsToPush.push({
+          type: 'file-quote',
+          content: `user quote the file：${path}`
+        });
+      });
     }
+
+    // 2. 遍历并注入 Skill 引用
+    if (selectedSkills.length > 0) {
+      selectedSkills.forEach(skill => {
+        eventsToPush.push({
+          type: 'skill-quote',
+          content: `user want you fetch skill：${skill}`
+        });
+      });
+    }
+
+    // 3. 注入用户的真实文本
+    eventsToPush.push({
+      type: 'user',
+      content: userText
+    });
     
+    // 清理状态
     setInput('');
     setSelectedSkills([]); 
-    setRefPaths([]); // 🌟 发送后清空引用的路径
+    setRefPaths([]); 
     isAutoScroll.current = true;
+    
+    // 把纯文本放入 pending 列阵，用于防重检测
     pendingMsgsRef.current.push(userText);
-    setMessages(prev => [...prev, { role: 'user', content: userText }]);
+    
+    // 构造本地的假消息格式用于立即渲染（包装成后端格式）
+    const fakeMsgContent = JSON.stringify({ events: eventsToPush });
+    setMessages(prev => [...prev, { role: 'user', content: fakeMsgContent }]);
 
     try {
-      await fetch('http://localhost:8000/api/chat', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ session_id: currentSessionId, message: userText }),
+      await fetch('http://localhost:8000/api/chat/batch', {
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          session_id: currentSessionId, 
+          events: eventsToPush
+        }),
       });
-    } catch { toast.error('网络错误'); }
+    } catch { 
+      toast.error('网络错误'); 
+    }
   };
 
   // 🌟 智能判定环境的附件点击事件
@@ -1700,12 +1732,27 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
               <p className="text-2xl font-black rotate-2 text-ink/60" style={{ fontFamily: '"Comic Sans MS", cursive' }}>Waiting for your command...</p>
             </div>
           ) : (
-            messages.map((msg, idx) => (
-              <div key={idx}>
-                {msg.role === 'user' ? (
-                  parseEventsContent(msg.content).userMessages.map((userMsg, uIdx) => (
-                    <div key={`${idx}-${uIdx}`} className="flex w-full justify-end">
-                      <div className={`flex flex-col gap-3 w-full max-w-[85%] items-end`}>
+            messages.map((msg, idx) => {
+              if (msg.role === 'user') {
+                const parsedData = parseEventsContent(msg.content);
+                return (
+                  <div key={idx} className="flex flex-col w-full items-end mb-4">
+                    
+                    {/* 渲染被批注入的 附件 和 Skill 小气泡 */}
+                    {parsedData.attachments.length > 0 && (
+                      <div className="flex flex-col gap-2 w-full items-end mb-2">
+                        {parsedData.attachments.map((att, aIdx) => (
+                          <div key={`att-${aIdx}`} style={sketchyShape3} className="px-4 py-2 bg-ink/5 border-2 border-ink text-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] flex items-center gap-2 max-w-[70%]">
+                            {att.type === 'file-quote' ? <Paperclip size={14} className="shrink-0"/> : <Zap size={14} className="text-terracotta shrink-0"/>}
+                            <span className="font-bold text-xs opacity-80 font-mono truncate">{att.content}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* 渲染用户的真实发言内容 */}
+                    {parsedData.userMessages.map((userMsg, uIdx) => (
+                      <div key={`u-${uIdx}`} className={`flex flex-col gap-3 w-full max-w-[85%] items-end`}>
                         {userMsg.content && (
                           <div style={sketchyShape2} className="w-full p-6 border-4 border-ink relative bg-cream text-ink shadow-[6px_6px_0px_0px_rgba(26,26,26,1)]">
                             <div className="text-[17px] font-bold text-ink">
@@ -1714,12 +1761,14 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                           </div>
                         )}
                       </div>
-                    </div>
-                  ))
-                ) : msg.role === 'tool' ? (
-                  <div className="flex w-full justify-start"><ToolMessageBubble msg={msg} /></div>
-                ) : (
-                  <div className="flex w-full justify-start">
+                    ))}
+                  </div>
+                );
+              } else if (msg.role === 'tool') {
+                return <div key={idx} className="flex w-full justify-start"><ToolMessageBubble msg={msg} /></div>;
+              } else {
+                return (
+                  <div key={idx} className="flex w-full justify-start">
                     <div className={`flex flex-col gap-3 w-full max-w-[85%] items-start`}>
                       {msg.content && (
                         <div style={sketchyShape1} className="w-full p-6 border-4 border-ink relative bg-cream text-ink shadow-[6px_6px_0px_0px_rgba(26,26,26,1)]">
@@ -1739,9 +1788,9 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                       ))}
                     </div>
                   </div>
-                )}
-              </div>
-            ))
+                );
+              }
+            })
           )}
 
           <div className="flex justify-start mb-4 w-full">
