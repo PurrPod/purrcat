@@ -238,6 +238,29 @@ class AgentManager:
         return self._agent.session_id if self._agent else None
 
     # ==========================================
+    # 5. 热重载控制 (Hot Reload)
+    # ==========================================
+    def reload_model(self):
+        """热更新主 Agent 的模型配置"""
+        if self._agent:
+            print("🔄 检测到模型配置更改，正在热重载主 Agent 模型...")
+            from src.model import AgentModel
+            from src.utils.config import get_agent_model
+            
+            # 1. 释放旧的 API Key 和并发锁资源
+            if hasattr(self._agent, "model") and self._agent.model:
+                self._agent.model.unbind()
+            
+            # 2. 重新初始化 AgentModel（其内部会重新调用 get_model_config() 读盘）
+            try:
+                self._agent.name = get_agent_model()
+                self._agent.model = AgentModel(self._agent.session_id)
+                self._agent.model.bind_task(self._agent.session_id, "AgentMain")
+                print("✅ 主 Agent 模型配置热重载完成！")
+            except Exception as e:
+                print(f"❌ 热重载失败，请检查模型配置是否正确: {e}")
+
+    # ==========================================
     # 内部私有方法
     # ==========================================
     def _notify_save(self):

@@ -4,6 +4,9 @@ from typing import Any, Dict
 
 from fastapi import APIRouter, HTTPException, Body
 
+# 👇 引入全局的 agent_manager
+from src.agent.manager import manager as agent_manager
+
 from src.utils.config import (
     FILE_CONFIG_PATH,
     MCP_CONFIG_PATH,
@@ -42,7 +45,9 @@ def api_get_model_config():
 @router.put("/model")
 def api_update_model_config(config: Dict[str, Any]):
     if _save_json_file(MODEL_CONFIG_PATH, config):
-        return {"status": "ok", "message": "Model config updated successfully"}
+        # 👇 保存 JSON 成功后，立刻通知内存中的 Agent 热重载！
+        agent_manager.reload_model()
+        return {"status": "ok", "message": "Model config updated and reloaded successfully"}
     raise HTTPException(status_code=500, detail="Failed to save model config")
 
 
