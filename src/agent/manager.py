@@ -253,11 +253,11 @@ class AgentManager:
             print("🔄 检测到模型配置更改，正在热重载主 Agent 模型...")
             from src.model import AgentModel
             from src.utils.config import get_agent_model
-            
+
             # 1. 释放旧的 API Key 和并发锁资源
             if hasattr(self._agent, "model") and self._agent.model:
                 self._agent.model.unbind()
-            
+
             # 2. 重新初始化 AgentModel（其内部会重新调用 get_model_config() 读盘）
             try:
                 self._agent.name = get_agent_model()

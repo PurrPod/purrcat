@@ -195,7 +195,9 @@ def FileSystem(
         # --- 文件移动/重命名 (Move) ---
         if action == "move":
             if not path_from or not path_to:
-                return error_response("move 操作需同时提供 path_from 和 path_to", "❌ 参数缺失")
+                return error_response(
+                    "move 操作需同时提供 path_from 和 path_to", "❌ 参数缺失"
+                )
             try:
                 result = move_file(path_from, path_to)
                 return text_response(result, "🚚 移动/重命名成功")

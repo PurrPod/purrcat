@@ -47,7 +47,10 @@ def api_update_model_config(config: Dict[str, Any]):
     if _save_json_file(MODEL_CONFIG_PATH, config):
         # 👇 保存 JSON 成功后，立刻通知内存中的 Agent 热重载！
         agent_manager.reload_model()
-        return {"status": "ok", "message": "Model config updated and reloaded successfully"}
+        return {
+            "status": "ok",
+            "message": "Model config updated and reloaded successfully",
+        }
     raise HTTPException(status_code=500, detail="Failed to save model config")
 
 
