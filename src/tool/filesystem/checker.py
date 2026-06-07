@@ -4,10 +4,11 @@ import json
 import subprocess
 import yaml
 
+
 def run_code_check(file_path: str) -> str:
     """根据文件后缀执行对应的语法和静态检查，一切正常时返回空字符串"""
     ext = os.path.splitext(file_path)[1].lower()
-    
+
     if ext == ".py":
         return _check_python(file_path)
     elif ext == ".json":
@@ -18,12 +19,13 @@ def run_code_check(file_path: str) -> str:
         return _check_frontend(file_path)
     elif ext in [".sh", ".bash"]:
         return _check_shell(file_path)
-        
+
     return ""
+
 
 def _check_python(file_path: str) -> str:
     messages = []
-    
+
     # 1. 致命错误拦截：基础语法树检查 (AST)
     try:
         with open(file_path, "r", encoding="utf-8") as f:
@@ -33,12 +35,11 @@ def _check_python(file_path: str) -> str:
         return f"❌ Python 致命语法错误 (SyntaxError): {e.msg} at line {e.lineno}, offset {e.offset}"
     except Exception as e:
         return f"❌ Python 文件解析失败: {str(e)}"
-        
+
     # 2. 静态分析：调用 ruff
     try:
         result = subprocess.run(
-            ["ruff", "check", file_path],
-            capture_output=True, text=True, timeout=5
+            ["ruff", "check", file_path], capture_output=True, text=True, timeout=5
         )
         if result.returncode != 0:
             messages.append(f"⚠️ Ruff 发现问题:\n{result.stdout.strip()}")
@@ -47,9 +48,10 @@ def _check_python(file_path: str) -> str:
         messages.append("⚠️ 宿主机未安装 ruff，已跳过深度静态检查 (仅完成基础语法检查)")
     except subprocess.TimeoutExpired:
         messages.append("⚠️ Ruff 检查超时，已跳过")
-        
+
     # 如果 messages 为空（即一切正常），join 后会返回空字符串
     return "\n".join(messages).strip()
+
 
 def _check_json(file_path: str) -> str:
     try:
@@ -59,6 +61,7 @@ def _check_json(file_path: str) -> str:
     except json.JSONDecodeError as e:
         return f"❌ JSON 格式错误: {str(e)}"
 
+
 def _check_yaml(file_path: str) -> str:
     try:
         with open(file_path, "r", encoding="utf-8") as f:
@@ -67,12 +70,12 @@ def _check_yaml(file_path: str) -> str:
     except yaml.YAMLError as e:
         return f"❌ YAML 格式错误:\n{str(e)}"
 
+
 def _check_frontend(file_path: str) -> str:
     """使用 Biome 检查前端代码 (JS/TS/CSS)"""
     try:
         result = subprocess.run(
-            ["biome", "check", file_path],
-            capture_output=True, text=True, timeout=5
+            ["biome", "check", file_path], capture_output=True, text=True, timeout=5
         )
         if result.returncode != 0:
             error_output = result.stderr.strip() or result.stdout.strip()
@@ -83,12 +86,12 @@ def _check_frontend(file_path: str) -> str:
     except subprocess.TimeoutExpired:
         return "⚠️ Biome 检查超时，已跳过"
 
+
 def _check_shell(file_path: str) -> str:
     """使用 shellcheck 检查 bash 脚本"""
     try:
         result = subprocess.run(
-            ["shellcheck", file_path],
-            capture_output=True, text=True, timeout=5
+            ["shellcheck", file_path], capture_output=True, text=True, timeout=5
         )
         if result.returncode != 0:
             return f"⚠️ ShellCheck 发现问题:\n{result.stdout.strip()}"

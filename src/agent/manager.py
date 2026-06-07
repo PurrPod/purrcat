@@ -94,6 +94,10 @@ class AgentManager:
             self.init_agent(session_id=target_session_id)
             return True
 
+        # ✨ 新增：如果是当前会话，直接秒回，什么都不做
+        if self._agent.session_id == target_session_id:
+            return True
+
         if self._agent.state != "idle":
             print("⏳ 正在阻塞等待 Agent 释放资源，以安全检出目标会话...")
             while self._agent.state != "idle":

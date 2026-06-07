@@ -168,7 +168,6 @@ def _get_mirror_choice():
     return "mirrors.aliyun.com" if choice == "2" else "deb.debian.org"
 
 
-
 def _get_sandbox_source():
     """Prompt user for sandbox image source"""
     print("")
@@ -188,9 +187,7 @@ def _pull_sandbox(dockerfile, engine):
     print(f"Pulling sandbox image from {image}...")
     print("Note: First pull may take a few minutes depending on your network.")
 
-    success = _run_cmd(
-        [engine, "pull", image], shell=False, check=False
-    )
+    success = _run_cmd([engine, "pull", image], shell=False, check=False)
 
     if not success:
         print("")
@@ -202,7 +199,7 @@ def _pull_sandbox(dockerfile, engine):
 
     # Retag as my_agent_env:latest so the rest of the code works unchanged
     _run_cmd([engine, "tag", image, "my_agent_env:latest"], shell=False, check=False)
-    print(f"Sandbox image pulled and tagged as my_agent_env:latest!")
+    print("Sandbox image pulled and tagged as my_agent_env:latest!")
 
 
 def _build_sandbox(dockerfile, apt_mirror, engine):

@@ -16,10 +16,7 @@ def _download_and_extract_subfolder(zip_url, subfolder_path, dest_dir):
     """Download ZIP and extract only the specified subfolder in memory."""
     print(f"[*] Downloading from {zip_url} ...")
     try:
-        req = urllib.request.Request(
-            zip_url,
-            headers={'User-Agent': 'PurrCat-CLI/1.0'}
-        )
+        req = urllib.request.Request(zip_url, headers={"User-Agent": "PurrCat-CLI/1.0"})
         response = urllib.request.urlopen(req)
         zip_data = response.read()
 
