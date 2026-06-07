@@ -1,11 +1,12 @@
 import platform
 import shutil
-import subprocess
+import uuid
+from pathlib import Path
 from typing import Optional
 
 import docker
 from docker.errors import DockerException, ImageNotFound
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException, UploadFile, File
 from pydantic import BaseModel
 
 from src.utils.config import get_container_engine, set_container_engine
@@ -309,3 +310,29 @@ def get_container_engine_info():
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# --- 🌟 文件上传到 buffer 目录 ---
+BUFFER_DIR = Path("agent_vm/.buffer/upload")
+
+@router.post("/upload-buffer")
+async def upload_to_buffer(file: UploadFile = File(...)):
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="未找到文件名")
+
+    BUFFER_DIR.mkdir(parents=True, exist_ok=True)
+    
+    # 🌟 防重名：使用 UUID 确保唯一性
+    original_path = Path(file.filename)
+    stem = original_path.stem   # e.g., "image"
+    suffix = original_path.suffix # e.g., ".png"
+    unique_filename = f"{stem}_{uuid.uuid4().hex[:4]}{suffix}"
+    file_path = BUFFER_DIR / unique_filename
+    
+    try:
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"文件写入失败: {str(e)}")
+        
+    return {"absolute_path": str(file_path.resolve())}

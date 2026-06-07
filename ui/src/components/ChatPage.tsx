@@ -237,10 +237,107 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
   const [tempSelectedSkills, setTempSelectedSkills] = useState<string[]>([]);
 
-  // --- 🌟 新增：引用文件/目录状态 ---
+  // --- 🌟 引用文件/目录状态 ---
   const [refPaths, setRefPaths] = useState<string[]>([]);
-  const [showRefInput, setShowRefInput] = useState(false);
+  const [showRefModal, setShowRefModal] = useState(false); // 改为 Modal
   const [tempRefPath, setTempRefPath] = useState('');
+
+  // --- 🌟 拖拽/上传相关状态 ---
+  const [isDragging, setIsDragging] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+
+  // --- 常量定义 ---
+  const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB 限制
+
+  // --- 🌟 处理文件上传并转为本地路径（带安全拦截） ---
+  const handleFileUpload = async (files: FileList | File[]) => {
+    setIsUploading(true);
+    try {
+      const newPaths: string[] = [];
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+
+        // 🛑 安全拦截：文件大小限制
+        if (file.size > MAX_FILE_SIZE) {
+          toast.error(`文件 [${file.name}] 太大啦！请不要超过 20MB。`);
+          continue;
+        }
+
+        console.log(`准备上传: ${file.name}, 类型: ${file.type}, 大小: ${(file.size / 1024 / 1024).toFixed(2)}MB`);
+
+        const formData = new FormData();
+        formData.append('file', file);
+
+        const res = await fetch('http://localhost:8000/api/system/upload-buffer', { 
+          method: 'POST', 
+          body: formData, 
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          newPaths.push(data.absolute_path);
+        } else {
+          toast.error(`上传 ${file.name} 失败`);
+        }
+      }
+      
+      if (newPaths.length > 0) {
+        setRefPaths(prev => [...new Set([...prev, ...newPaths])]);
+        toast.success(`成功载入 ${newPaths.length} 个文件`);
+      }
+    } catch (e) {
+      toast.error("网络错误，文件上传失败");
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  // --- 🌟 处理粘贴事件 ---
+  const handlePaste = (e: React.ClipboardEvent) => {
+    // 如果剪贴板里有文件（截图、复制的图片等）
+    if (e.clipboardData.files && e.clipboardData.files.length > 0) {
+      e.preventDefault(); // 阻止默认的粘贴文本行为
+      handleFileUpload(e.clipboardData.files);
+    }
+  };
+
+  // --- 🌟 处理拖拽事件 (🌟 增强版：拦截文件夹)
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+
+    // 使用 dataTransfer.items 来进行更深度的探测
+    const items = e.dataTransfer.items;
+    if (items && items.length > 0) {
+      const validFiles: File[] = [];
+      let hasFolder = false;
+
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (item.kind === 'file') {
+          // 核心魔法：获取文件系统条目，判断是不是文件夹
+          const entry = item.webkitGetAsEntry();
+          if (entry && entry.isDirectory) {
+            hasFolder = true;
+          } else {
+            // 是正常文件，提取出来
+            const file = item.getAsFile();
+            if (file) validFiles.push(file);
+          }
+        }
+      }
+
+      // 如果探测到了文件夹，给出友好的专属提示
+      if (hasFolder) {
+        toast.error("暂不支持直接上传文件夹哦！请选择具体的文件。");
+      }
+
+      // 如果拖拽的内容里有合法的文件（比如混着拖的），继续上传合法文件
+      if (validFiles.length > 0) {
+        handleFileUpload(validFiles);
+      }
+    }
+  };
 
   // --- 配置中心选项卡常量 ---
   const CONFIG_TABS = ['model', 'sensor', 'file', 'memory', 'mcp'];
@@ -747,7 +844,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
     
     // 🌟 修改：拼接引用的本地路径为 <📎:xxx> 格式
     if (refPaths.length > 0) {
-      const pathsStr = refPaths.map(p => `<quote file:${p}>`).join('\n');
+      const pathsStr = refPaths.map(p => `<quote file: ${p}>`).join('\n');
       userText = `${pathsStr}\n${userText}`;
     }
     
@@ -766,7 +863,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
     } catch { toast.error('网络错误'); }
   };
 
-  // 🌟 新增：智能判定环境的附件点击事件
+  // 🌟 智能判定环境的附件点击事件
   const handleAttachmentClick = async () => {
     // 探测当前是否在 Tauri 桌面客户端环境中 (忽略 TypeScript 报错)
     // @ts-ignore
@@ -777,22 +874,21 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
       try {
         const selected = await tauri.dialog.open({ 
           multiple: true, // 允许多选
-          // directory: true, // 如果你希望默认选文件夹，可以加上这句
         });
         
         if (selected) {
            const paths = Array.isArray(selected) ? selected : [selected];
            // 去重并添加到标签列表中
            setRefPaths(prev => [...new Set([...prev, ...paths])]);
-           setShowRefInput(false); // 确保手绘输入框是关闭的
+           setShowRefModal(false); // 确保手绘弹窗是关闭的
         }
       } catch (err) {
         console.error("原生弹窗调用失败，降级为 Web 模式", err);
-        setShowRefInput(!showRefInput);
+        setShowRefModal(true); // 降级弹窗
       }
     } else {
-      // 🌐 纯 Web 环境：降级弹出我们的手绘风输入框
-      setShowRefInput(!showRefInput);
+      // 🌐 纯 Web 环境：降级弹出我们的手绘风弹窗
+      setShowRefModal(true);
     }
   };
 
@@ -1101,6 +1197,61 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                 }}
                 style={sketchyShape1} className="px-8 bg-[#EBCB8B] text-ink font-black py-3 border-4 border-ink hover:bg-[#d8b877] transition-all shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] active:shadow-none active:translate-y-1">
                 COMPLETE
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🌟 引用本地路径弹窗 (Web 降级模式) */}
+      {showRefModal && (
+        <div className="fixed inset-0 bg-ink/40 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
+          <div style={sketchyShape2} className="bg-paper border-4 border-ink p-8 flex flex-col gap-6 shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] rotate-1 max-w-lg w-full">
+            <div className="flex justify-between items-center -rotate-1 border-b-4 border-ink/10 pb-2">
+              <h3 className="text-3xl font-black tracking-widest text-[#88c0d0]" style={{ fontFamily: '"Comic Sans MS", cursive' }}>REFERENCE FILE</h3>
+              <button onClick={() => setShowRefModal(false)} className="hover:text-terracotta hover:scale-110 transition-all">
+                <X size={28} strokeWidth={3}/>
+              </button>
+            </div>
+            
+            <div className="-rotate-1">
+              <p className="font-bold opacity-70 mb-3 text-ink text-sm">
+                请输入或粘贴本地文件/文件夹的绝对路径：<br/>
+                <span className="text-xs opacity-80">(在 Tauri 桌面模式下，此弹窗将被系统原生选择器取代)</span>
+              </p>
+              <input 
+                autoFocus 
+                value={tempRefPath} 
+                onChange={e => setTempRefPath(e.target.value)} 
+                onKeyDown={e => { 
+                  if (e.key === 'Enter' && tempRefPath.trim()) { 
+                    setRefPaths(prev => [...new Set([...prev, tempRefPath.trim()])]); 
+                    setTempRefPath(''); 
+                    setShowRefModal(false); 
+                  } 
+                }} 
+                placeholder="/Users/dev/my_project/file.py" 
+                className="w-full border-4 border-ink bg-[#FDF8F0] p-4 font-bold text-base focus:outline-none focus:bg-white shadow-[inset_4px_4px_0px_0px_rgba(26,26,26,0.05)] placeholder:text-ink/30" 
+                style={sketchyShape3} 
+              />
+            </div>
+            
+            <div className="flex gap-4 -rotate-1 mt-2">
+              <button onClick={() => setShowRefModal(false)} style={sketchyShape3} className="flex-1 bg-cream text-ink font-black tracking-widest text-lg py-3 border-4 border-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:translate-y-[1px] hover:shadow-none transition-all">
+                CANCEL
+              </button>
+              <button 
+                onClick={() => { 
+                  if (tempRefPath.trim()) { 
+                    setRefPaths(prev => [...new Set([...prev, tempRefPath.trim()])]); 
+                    setTempRefPath(''); 
+                    setShowRefModal(false); 
+                  } 
+                }} 
+                style={sketchyShape1} 
+                className="flex-1 bg-[#88c0d0] text-paper font-black tracking-widest text-lg py-3 border-4 border-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:bg-[#72a6b5] hover:translate-y-[1px] hover:shadow-none transition-all flex items-center justify-center gap-2"
+              >
+                <Plus size={24} strokeWidth={3}/> ADD PATH
               </button>
             </div>
           </div>
@@ -1625,34 +1776,26 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
              </div>
            )}
 
-           {/* 🌟 引用文件路径的临时输入框 */}
-           {showRefInput && (
-             <div className="flex items-center gap-2 mb-1 animate-in slide-in-from-bottom-2">
-               <input 
-                 autoFocus
-                 value={tempRefPath}
-                 onChange={e => setTempRefPath(e.target.value)}
-                 onKeyDown={e => {
-                   if (e.key === 'Enter' && tempRefPath.trim()) {
-                     setRefPaths(prev => [...prev, tempRefPath.trim()]);
-                     setTempRefPath('');
-                     setShowRefInput(false);
-                   } else if (e.key === 'Escape') {
-                     setShowRefInput(false);
-                   }
-                 }}
-                 placeholder="粘贴本地绝对路径并按回车 (Esc 取消)..." 
-                 className="flex-1 bg-cream border-2 border-ink px-3 py-2 font-bold focus:outline-none text-sm shadow-[inset_2px_2px_0px_0px_rgba(26,26,26,0.05)]"
-                 style={sketchyShape2}
-               />
-             </div>
-           )}
+           {/* 在输入框外层套一个 Drag 区域 */}
+           <div 
+             className={`flex gap-4 relative transition-all ${isDragging ? 'ring-4 ring-terracotta bg-terracotta/5' : ''}`}
+             onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }} 
+             onDragLeave={() => setIsDragging(false)} 
+             onDrop={handleDrop}
+           >
+             
+             {/* 拖拽时的手绘风遮罩 */}
+             {isDragging && (
+               <div className="absolute inset-0 z-50 flex items-center justify-center bg-cream/90 border-4 border-dashed border-terracotta" style={sketchyShape2}>
+                 <span className="text-2xl font-black text-terracotta">Drop files here to attach!</span>
+               </div>
+             )}
 
-           <div className="flex gap-4 relative">
              <div className="flex-1 relative flex flex-col">
                <textarea
                  style={sketchyShape3} value={input} onChange={(e) => setInput(e.target.value)}
                  onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+                 onPaste={handlePaste}
                  placeholder={currentSessionId ? "Write your prompt here..." : "Select a chat first!"} disabled={!currentSessionId} rows={2}
                  className="w-full bg-[#FDF8F0] border-4 border-ink p-5 pr-28 font-bold focus:outline-none focus:bg-white transition-all shadow-[inset_4px 4px 0px 0px_rgba(26,26,26,0.05)] resize-none text-lg -rotate-[0.5deg] placeholder:text-ink/30"
                />
