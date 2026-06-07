@@ -20,6 +20,7 @@ shutdown_agent = _manager_instance.shutdown_agent
 
 # 交互指令
 agent_force_push = _manager_instance.agent_force_push
+agent_force_push_batch = _manager_instance.agent_force_push_batch
 
 # 会话控制
 switch_session = _manager_instance.switch_session
@@ -78,6 +79,7 @@ __all__ = [
     "init_agent",
     "shutdown_agent",
     "agent_force_push",
+    "agent_force_push_batch",
     "switch_session",
     "new_session",
     "branch_session",

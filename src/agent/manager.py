@@ -85,6 +85,13 @@ class AgentManager:
         self._agent.force_push(content, type=type)
         return True
 
+    def agent_force_push_batch(self, events: list):
+        """批量强制推送消息，避免被 sensor 线程在中间截断"""
+        if not self._agent:
+            self.init_agent()
+        self._agent.force_push_batch(events)
+        return True
+
     # ==========================================
     # 3. 会话控制 (Session Commands)
     # ==========================================

@@ -34,6 +34,7 @@ class Agent:
         self.window_token = 0
         self._stop_event = threading.Event()
         self._history_lock = threading.Lock()
+        self._push_lock = threading.RLock()
         self._save_callback = save_callback
         self.model = AgentModel(self.session_id)
         self.model.bind_task(self.session_id, "AgentMain")
@@ -123,13 +124,32 @@ class Agent:
             print(f"⚠️ [Memory] 落盘失败: {e}")
 
     def force_push(self, content, type="user"):
-        self.pending_force_push.append(
-            {
-                "type": type,
-                "time": datetime.datetime.now().strftime("%m-%d %H:%M:%S"),
-                "content": content,
-            }
-        )
+        with self._push_lock:
+            self.pending_force_push.append(
+                {
+                    "type": type,
+                    "time": datetime.datetime.now().strftime("%m-%d %H:%M:%S"),
+                    "content": content,
+                }
+            )
+
+    def force_push_batch(self, events: list):
+        """
+        批量强制推送消息，避免被 sensor 线程在中间截断
+        events 格式示例: [{"content": "消息1", "type": "user"}, {"content": "系统提示", "type": "system"}]
+        """
+        now_str = datetime.datetime.now().strftime("%m-%d %H:%M:%S")
+        batch_push = []
+        for event in events:
+            batch_push.append(
+                {
+                    "type": event.get("type", "user"),
+                    "time": now_str,
+                    "content": event.get("content", ""),
+                }
+            )
+        with self._push_lock:
+            self.pending_force_push.extend(batch_push)
 
     def _track_token_usage(self, response):
         if hasattr(response, "usage") and response.usage is not None:
@@ -184,9 +204,10 @@ class Agent:
 
     def _checker(self):
         local_push = []
-        if self.pending_force_push:
-            local_push = self.pending_force_push.copy()
-            self.pending_force_push.clear()
+        with self._push_lock:
+            if self.pending_force_push:
+                local_push = self.pending_force_push.copy()
+                self.pending_force_push.clear()
 
         if local_push:
             self._check_and_fix_toolchain()
