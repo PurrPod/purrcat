@@ -5,7 +5,7 @@ import {
   ChevronDown, ChevronUp, Loader2, X, Trash2, 
   List, Brain, Server, Zap, AlarmClock, GitFork, Plus,
   RefreshCw, Terminal, User, FileText, Save,
-  Settings, FileJson, AlertCircle, Download, Activity
+  Settings, FileJson, AlertCircle, Download, Activity, Paperclip
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
@@ -236,6 +236,11 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   const [showSkillSelectModal, setShowSkillSelectModal] = useState(false);
   const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
   const [tempSelectedSkills, setTempSelectedSkills] = useState<string[]>([]);
+
+  // --- 🌟 新增：引用文件/目录状态 ---
+  const [refPaths, setRefPaths] = useState<string[]>([]);
+  const [showRefInput, setShowRefInput] = useState(false);
+  const [tempRefPath, setTempRefPath] = useState('');
 
   // --- 配置中心选项卡常量 ---
   const CONFIG_TABS = ['model', 'sensor', 'file', 'memory', 'mcp'];
@@ -740,8 +745,15 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
       userText = `<Please Fetch Skill：${selectedSkills.join('>\n')}>\n${userText}`;
     }
     
+    // 🌟 修改：拼接引用的本地路径为 <📎:xxx> 格式
+    if (refPaths.length > 0) {
+      const pathsStr = refPaths.map(p => `<quote file:${p}>`).join('\n');
+      userText = `${pathsStr}\n${userText}`;
+    }
+    
     setInput('');
-    setSelectedSkills([]); // 发送后清空已选的 skill
+    setSelectedSkills([]); 
+    setRefPaths([]); // 🌟 发送后清空引用的路径
     isAutoScroll.current = true;
     pendingMsgsRef.current.push(userText);
     setMessages(prev => [...prev, { role: 'user', content: userText }]);
@@ -752,6 +764,36 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
         body: JSON.stringify({ session_id: currentSessionId, message: userText }),
       });
     } catch { toast.error('网络错误'); }
+  };
+
+  // 🌟 新增：智能判定环境的附件点击事件
+  const handleAttachmentClick = async () => {
+    // 探测当前是否在 Tauri 桌面客户端环境中 (忽略 TypeScript 报错)
+    // @ts-ignore
+    const tauri = typeof window !== 'undefined' ? window.__TAURI__ : null;
+
+    if (tauri && tauri.dialog) {
+      // 🚀 桌面端环境：直接调用系统原生的文件选择器
+      try {
+        const selected = await tauri.dialog.open({ 
+          multiple: true, // 允许多选
+          // directory: true, // 如果你希望默认选文件夹，可以加上这句
+        });
+        
+        if (selected) {
+           const paths = Array.isArray(selected) ? selected : [selected];
+           // 去重并添加到标签列表中
+           setRefPaths(prev => [...new Set([...prev, ...paths])]);
+           setShowRefInput(false); // 确保手绘输入框是关闭的
+        }
+      } catch (err) {
+        console.error("原生弹窗调用失败，降级为 Web 模式", err);
+        setShowRefInput(!showRefInput);
+      }
+    } else {
+      // 🌐 纯 Web 环境：降级弹出我们的手绘风输入框
+      setShowRefInput(!showRefInput);
+    }
   };
 
   return (
@@ -1564,37 +1606,83 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
 
         <div className="px-10 pb-8 pt-4 shrink-0 flex flex-col gap-3 w-full">
            
-           {selectedSkills.length > 0 && (
+           {/* 渲染已选的 Skill 和 引入的文件路径 */}
+           {(selectedSkills.length > 0 || refPaths.length > 0) && (
              <div className="flex flex-wrap gap-2">
                {selectedSkills.map(skill => (
                  <div key={skill} style={sketchyShape3} className="flex items-center gap-1 bg-[#F9E2AF] border-2 border-ink px-3 py-1 font-bold text-sm shadow-[2px_2px_0px_0px_rgba(26,26,26,1)]">
-                   <span>{skill}</span>
+                   <span>⚡ {skill}</span>
                    <button onClick={() => setSelectedSkills(prev => prev.filter(s => s !== skill))} className="hover:text-terracotta ml-1"><X size={14} strokeWidth={3}/></button>
+                 </div>
+               ))}
+               {/* 🌟 渲染已引入的路径标签 */}
+               {refPaths.map(path => (
+                 <div key={path} style={sketchyShape1} className="flex items-center gap-1 bg-[#88c0d0] border-2 border-ink px-3 py-1 font-bold text-sm shadow-[2px_2px_0px_0px_rgba(26,26,26,1)]">
+                   <span className="truncate max-w-[200px]">📎 {path}</span>
+                   <button onClick={() => setRefPaths(prev => prev.filter(p => p !== path))} className="hover:text-paper ml-1"><X size={14} strokeWidth={3}/></button>
                  </div>
                ))}
              </div>
            )}
 
-           <div className="flex gap-4">
+           {/* 🌟 引用文件路径的临时输入框 */}
+           {showRefInput && (
+             <div className="flex items-center gap-2 mb-1 animate-in slide-in-from-bottom-2">
+               <input 
+                 autoFocus
+                 value={tempRefPath}
+                 onChange={e => setTempRefPath(e.target.value)}
+                 onKeyDown={e => {
+                   if (e.key === 'Enter' && tempRefPath.trim()) {
+                     setRefPaths(prev => [...prev, tempRefPath.trim()]);
+                     setTempRefPath('');
+                     setShowRefInput(false);
+                   } else if (e.key === 'Escape') {
+                     setShowRefInput(false);
+                   }
+                 }}
+                 placeholder="粘贴本地绝对路径并按回车 (Esc 取消)..." 
+                 className="flex-1 bg-cream border-2 border-ink px-3 py-2 font-bold focus:outline-none text-sm shadow-[inset_2px_2px_0px_0px_rgba(26,26,26,0.05)]"
+                 style={sketchyShape2}
+               />
+             </div>
+           )}
+
+           <div className="flex gap-4 relative">
              <div className="flex-1 relative flex flex-col">
                <textarea
                  style={sketchyShape3} value={input} onChange={(e) => setInput(e.target.value)}
                  onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
                  placeholder={currentSessionId ? "Write your prompt here..." : "Select a chat first!"} disabled={!currentSessionId} rows={2}
-                 className="w-full bg-[#FDF8F0] border-4 border-ink p-5 pr-14 font-bold focus:outline-none focus:bg-white transition-all shadow-[inset_4px_4px_0px_0px_rgba(26,26,26,0.05)] resize-none text-lg -rotate-[0.5deg] placeholder:text-ink/30"
+                 className="w-full bg-[#FDF8F0] border-4 border-ink p-5 pr-28 font-bold focus:outline-none focus:bg-white transition-all shadow-[inset_4px 4px 0px 0px_rgba(26,26,26,0.05)] resize-none text-lg -rotate-[0.5deg] placeholder:text-ink/30"
                />
-               <button
-                 onClick={() => { 
-                   if (skillData.length === 0) fetchSkill(); 
-                   setTempSelectedSkills([...selectedSkills]); 
-                   setShowSkillSelectModal(true); 
-                 }}
-                 className="absolute right-3 bottom-3 p-2 bg-cream border-2 border-ink hover:bg-[#F9E2AF] transition-all shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] z-10"
-                 style={sketchyShape2}
-                 title="Select Skills"
-               >
-                 <Zap className="text-ink" size={20} strokeWidth={3}/>
-               </button>
+               
+               {/* 按钮组 */}
+               <div className="absolute right-3 bottom-3 flex items-center gap-2 z-10">
+                 {/* 🌟 修改：引用文件按钮 */}
+                <button
+                  onClick={handleAttachmentClick}
+                  className="p-2 bg-cream border-2 border-ink hover:bg-[#88c0d0] transition-all shadow-[2px_2px_0px_0px_rgba(26,26,26,1)]"
+                  style={sketchyShape1}
+                  title="引用本地文件或文件夹"
+                >
+                   <Paperclip className="text-ink" size={20} strokeWidth={3}/>
+                 </button>
+
+                 {/* 原有的 Skill 按钮 */}
+                 <button
+                   onClick={() => { 
+                     if (skillData.length === 0) fetchSkill(); 
+                     setTempSelectedSkills([...selectedSkills]); 
+                     setShowSkillSelectModal(true); 
+                   }}
+                   className="p-2 bg-cream border-2 border-ink hover:bg-[#F9E2AF] transition-all shadow-[2px_2px_0px_0px_rgba(26,26,26,1)]"
+                   style={sketchyShape2}
+                   title="Select Skills"
+                 >
+                   <Zap className="text-ink" size={20} strokeWidth={3}/>
+                 </button>
+               </div>
              </div>
              <button
                style={sketchyShape1} onClick={handleSend} disabled={!currentSessionId || !input.trim()}
