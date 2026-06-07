@@ -12,6 +12,7 @@ from src.tool.filesystem.exceptions import (
 from src.tool.filesystem.export_file import export_file
 from src.tool.filesystem.import_file import import_file
 from src.tool.filesystem.list_filesystem import list_filesystem
+from src.tool.filesystem.move_file import move_file
 from src.tool.filesystem.read_picture import read_picture
 from src.tool.filesystem.text_ops import (
     read_file,
@@ -27,19 +28,21 @@ def FileSystem(
     action: str, path_from: str = None, path_to: str = None, **kwargs
 ) -> str:
     """
-    FileSystem 工具主入口函数，支持九种操作：import、export、list、read_picture、read、edit、write、search、glob
+    FileSystem 工具主入口函数，支持十种操作：import、export、list、read_picture、read、edit、write、search、glob、move
 
     Args:
-        action: 操作类型，必须为 "import"、"export"、"list"、"read_picture"、"read"、"edit"、"write"、"search" 或 "glob"
+        action: 操作类型，必须为 "import"、"export"、"list"、"read_picture"、"read"、"edit"、"write"、"search"、"glob" 或 "move"
         path_from: 源路径
             - import: 宿主机文件/目录路径
             - export: 沙盒内文件/目录路径（必须以 /agent_vm/ 开头）
             - list: 要列出的目录路径（可选，默认为当前目录）
             - read_picture: 单张图片路径（也可使用 paths 参数代替）
             - read/edit/write/search/glob: 文件或目录路径
+            - move: 要移动/重命名的源文件路径
         path_to: 目标路径（list 和 read_picture 操作时不需要）
             - import: 沙盒内目标目录（可选，默认为 "imports"）
             - export: 宿主机目标路径
+            - move: 移动/重命名的目标路径
 
     Returns:
         格式化后的 JSON 字符串，包含 timestamp, type, content, snip
@@ -56,6 +59,7 @@ def FileSystem(
             "write",
             "search",
             "glob",
+            "move",
         ]
         if action not in allowed_actions:
             return error_response(
@@ -187,6 +191,18 @@ def FileSystem(
                 return error_response("路径不存在，请检查后重试", "❌ 路径不存在")
             except FileSystemError as e:
                 return error_response(str(e), "❌ 列表失败")
+
+        # --- 文件移动/重命名 (Move) ---
+        if action == "move":
+            if not path_from or not path_to:
+                return error_response("move 操作需同时提供 path_from 和 path_to", "❌ 参数缺失")
+            try:
+                result = move_file(path_from, path_to)
+                return text_response(result, "🚚 移动/重命名成功")
+            except HostPathNotFoundError:
+                return error_response("源路径不存在", "❌ 路径不存在")
+            except FileSystemError as e:
+                return error_response(str(e), "❌ 移动失败")
 
         # --- Import / Export 操作参数强制拦截 ---
         if (

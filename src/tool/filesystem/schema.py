@@ -4,7 +4,7 @@ FILESYSTEM_TOOL_SCHEMA = {
         "name": "FileSystem",
         "description": (
             "高级文件系统操作工具。\n"
-            "支持目录浏览(list)、文件传导(import/export)、视觉分析(read_picture)。\n"
+            "支持目录浏览(list)、文件传导(import/export)、视觉分析(read_picture)、文件移动/重命名(move)。\n"
             "强大的代码操作能力：读取(read)、编辑(edit)、复写(write)、文本搜索(search)与文件模式匹配(glob)。\n"
             "【特殊能力】：Read 操作内置了 MarkItDown，你可以直接使用 read 操作读取 .pdf, .docx, .xlsx, .pptx 等富文本和表格文件，它们会被自动解析为 Markdown 文本返回！"
         ),
@@ -13,7 +13,7 @@ FILESYSTEM_TOOL_SCHEMA = {
             "properties": {
                 "action": {
                     "type": "string",
-                    "description": "操作类型。枚举值：import, export, list, read_picture, read, edit, write, search, glob",
+                    "description": "操作类型。枚举值：import, export, list, read_picture, read, edit, write, search, glob, move",
                     "enum": [
                         "import",
                         "export",
@@ -24,6 +24,7 @@ FILESYSTEM_TOOL_SCHEMA = {
                         "write",
                         "search",
                         "glob",
+                        "move",
                     ],
                 },
                 "path_from": {
@@ -32,7 +33,7 @@ FILESYSTEM_TOOL_SCHEMA = {
                 },
                 "path_to": {
                     "type": "string",
-                    "description": "目标路径 (仅限 import/export 操作)。",
+                    "description": "目标路径 (仅限 import/export/move 操作)。",
                 },
                 "path": {
                     "type": "string",
