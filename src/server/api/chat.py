@@ -80,6 +80,12 @@ def get_sessions():
         sessions_dict = get_session_list()
         sess_list = []
         for sid, info in sessions_dict.items():
+            # ==========================================
+            # 💡 修复：过滤掉 requests.json，防止它被当作会话
+            # ==========================================
+            if "requests.json" in sid or sid == "requests":
+                continue
+                
             sess_list.append(
                 {
                     "id": sid,

@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
   ArrowLeft, Terminal, Trash2, X, Activity, Clock, Box, Send, MessageCircle, RefreshCw,
-  Square, Play, AlertTriangle, Rocket
+  Square, Play, AlertTriangle, Rocket, Plus, ChevronDown
 } from 'lucide-react';
 import type { Node, Edge } from '@xyflow/react';
 import { ReactFlow, Background, useNodesState, useEdgesState, Handle, Position } from '@xyflow/react';
@@ -158,6 +158,8 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
   const [launchTaskName, setLaunchTaskName] = useState('my_awesome_task');
   const [launchGraphName, setLaunchGraphName] = useState('');
   const [launchInputs, setLaunchInputs] = useState('');
+  // 👇 新增这个状态，用于控制自定义下拉菜单的展开/收起
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
   const [nodes, setNodes, onNodesChange] = useNodesState([] as Node[]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([] as Edge[]);
@@ -546,21 +548,57 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
       {isCreateModalOpen && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center bg-ink/40 backdrop-blur-sm p-4 pointer-events-auto">
           <div style={sketchyShape1} className="bg-paper border-4 border-ink shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] w-full max-w-lg p-8 relative rotate-1">
-            <button onClick={() => setIsCreateModalOpen(false)} className="absolute top-4 right-4 hover:rotate-90 transition-transform"><X size={32} strokeWidth={3} /></button>
+            <button onClick={() => { setIsCreateModalOpen(false); setIsDropdownOpen(false); }} className="absolute top-4 right-4 hover:rotate-90 transition-transform"><X size={32} strokeWidth={3} /></button>
             <h3 className="text-3xl font-black mb-6 tracking-widest text-terracotta" style={{ fontFamily: '"Comic Sans MS", cursive' }}>LAUNCH MISSION</h3>
             
             <p className="font-bold mb-2 opacity-70 text-sm">1. Select Deployed Graph:</p>
-            <select
-              value={launchGraphName} onChange={e => setLaunchGraphName(e.target.value)}
-              style={sketchyShape2} className="w-full bg-cream border-4 border-ink p-3 text-lg font-bold mb-4 focus:outline-none"
-            >
-              {availableGraphs.length === 0 ? <option value="">No deployed graphs</option> :
-                availableGraphs.map(g => {
-                  const nameClean = g.name.replace(/\.json$/, '');
-                  return <option key={nameClean} value={nameClean}>{nameClean}</option>
-                })
-              }
-            </select>
+            <div className="relative mb-4">
+              {/* 🌟 自定义下拉框触发按钮 */}
+              <div
+                onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                style={sketchyShape3}
+                className="w-full bg-cream border-4 border-ink p-3 text-lg font-bold cursor-pointer shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center justify-between hover:-translate-y-[1px] transition-transform select-none"
+              >
+                <span className="truncate">
+                  {availableGraphs.length === 0 ? "No deployed graphs" : (launchGraphName || "Select a graph...")}
+                </span>
+                <ChevronDown
+                  size={20}
+                  strokeWidth={3}
+                  className={`text-ink transition-transform duration-200 ${isDropdownOpen ? 'rotate-180' : ''}`}
+                />
+              </div>
+
+              {/* 🌟 完全可控的手绘风下拉菜单列表 */}
+              {isDropdownOpen && availableGraphs.length > 0 && (
+                <div
+                  className="absolute left-0 right-0 top-[110%] bg-paper border-4 border-ink shadow-[8px_8px_0px_0px_rgba(26,26,26,1)] z-[200] max-h-56 overflow-y-auto p-2 flex flex-col gap-1"
+                  style={sketchyShape2}
+                >
+                  {availableGraphs.map((g, idx) => {
+                    const nameClean = g.name.replace(/\.json$/, '');
+                    const isSelected = launchGraphName === nameClean;
+                    return (
+                      <div
+                        key={nameClean}
+                        onClick={() => {
+                          setLaunchGraphName(nameClean);
+                          setIsDropdownOpen(false);
+                        }}
+                        style={idx % 2 === 0 ? sketchyShape1 : sketchyShape3}
+                        className={`p-3 font-bold text-lg cursor-pointer transition-all border-4
+                          ${isSelected
+                            ? 'bg-[#EBCB8B] border-ink text-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)]'
+                            : 'border-transparent text-ink/80 hover:bg-cream hover:border-ink hover:text-ink hover:shadow-[2px_2px_0px_0px_rgba(26,26,26,0.5)] hover:-translate-y-[1px]'
+                          }`}
+                      >
+                        {nameClean}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
 
             <p className="font-bold mb-2 opacity-70 text-sm">2. Task Alias:</p>
             <input 
@@ -581,7 +619,7 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
             />
 
             <div className="flex gap-4 mt-2">
-              <button onClick={() => setIsCreateModalOpen(false)} style={sketchyShape2} className="flex-1 py-3 bg-cream border-4 border-ink text-ink font-black shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:bg-sand transition-all">
+              <button onClick={() => { setIsCreateModalOpen(false); setIsDropdownOpen(false); }} style={sketchyShape2} className="flex-1 py-3 bg-cream border-4 border-ink text-ink font-black shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:bg-sand transition-all">
                 CANCEL
               </button>
               <button onClick={handleLaunchTaskSubmit} style={sketchyShape1} className="flex-1 py-3 bg-terracotta border-4 border-ink text-paper font-black text-lg shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:translate-y-0.5 hover:shadow-none transition-all">
@@ -614,7 +652,14 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
         <div className="flex gap-4 items-center">
           <button onClick={onBack} style={sketchyShape2} className="w-16 h-16 bg-cream border-4 border-ink flex items-center justify-center hover:bg-sand transition-all shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] active:translate-y-[2px] active:translate-x-[2px] active:shadow-none -rotate-3 hover:rotate-0 group"><ArrowLeft size={28} strokeWidth={3} className="text-ink group-hover:-translate-x-1 transition-transform" /></button>
           {onSwitchToChat && <button onClick={onSwitchToChat} style={sketchyShape2} className="w-16 h-16 bg-cream border-4 border-ink flex items-center justify-center hover:bg-sand transition-all shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] active:translate-y-[2px] active:translate-x-[2px] active:shadow-none rotate-3 hover:rotate-0 group" title="Go to Chat"><MessageCircle size={28} strokeWidth={3} className="text-ink group-hover:translate-x-1 transition-transform" /></button>}
-          <div style={sketchyShape1} className="flex-1 h-16 flex items-center justify-center gap-2 bg-[#EBCB8B] text-ink border-4 border-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] rotate-2"><Activity size={22} strokeWidth={2.5} /><span className="tracking-widest text-lg font-black" style={{ fontFamily: '"Comic Sans MS", cursive' }}>TASKS</span></div>
+          <button 
+            onClick={() => { loadAvailableGraphs(); setIsCreateModalOpen(true); setIsDropdownOpen(false); }}
+            style={sketchyShape1} 
+            className="flex-1 h-16 flex items-center justify-center gap-2 bg-[#EBCB8B] text-ink border-4 border-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] rotate-2 hover:bg-[#d8b877] transition-all active:translate-y-0.5 active:shadow-none"
+          >
+            <Plus size={22} strokeWidth={2.5} />
+            <span className="tracking-widest text-lg font-black" style={{ fontFamily: '"Comic Sans MS", cursive' }}>New</span>
+          </button>
         </div>
 
         <div style={sketchyShape3} className="flex-1 bg-paper border-4 border-ink shadow-[8px_8px_0px_0px_rgba(26,26,26,1)] p-5 flex flex-col gap-4 overflow-hidden -rotate-1 relative">
@@ -622,14 +667,6 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
           <div className="text-sm font-black text-ink uppercase tracking-widest mt-2 ml-1" style={{ fontFamily: '"Comic Sans MS", cursive' }}>
             <span className="bg-ink text-paper px-2 py-1 rotate-2 inline-block" style={sketchyShape2}>MONITOR</span>
           </div>
-          
-          <button 
-            onClick={() => { loadAvailableGraphs(); setIsCreateModalOpen(true); }}
-            style={sketchyShape2}
-            className="w-full py-3.5 mt-1 border-4 border-ink bg-terracotta text-paper font-black text-lg hover:bg-[#bf616a] transition-all flex items-center justify-center gap-2 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] active:translate-y-0.5 active:shadow-none"
-          >
-            <Rocket size={20} strokeWidth={3} /> LAUNCH MISSION
-          </button>
           
           <div className="flex-1 overflow-y-auto flex flex-col gap-4 pr-1 mt-1">
             {tasks.length === 0 ? (

@@ -5,7 +5,7 @@ import {
   ChevronDown, ChevronUp, Loader2, X, Trash2, 
   List, Brain, Server, Zap, AlarmClock, GitFork, Plus,
   RefreshCw, Terminal, User, FileText, Save,
-  Settings, FileJson, AlertCircle, Download, Activity, Paperclip, Bell
+  Settings, FileJson, AlertCircle, Download, Activity, Paperclip, Bell, ArrowRightLeft
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
@@ -1513,9 +1513,17 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
       {/* --- 左侧多功能聚合面板 --- */}
       <div className="w-[320px] flex flex-col gap-6 shrink-0 z-20">
         <div className="flex gap-4 items-center">
-          <button onClick={onBack} style={sketchyShape2} className="w-16 h-16 bg-cream border-4 border-ink flex items-center justify-center hover:bg-sand transition-all shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] active:translate-y-[2px] active:translate-x-[2px] active:shadow-none -rotate-3 hover:rotate-0 group">
+          {/* 返回按钮 */}
+          <button onClick={onBack} style={sketchyShape2} className="w-16 h-16 bg-cream border-4 border-ink flex items-center justify-center hover:bg-sand transition-all shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] active:translate-y-[2px] active:translate-x-[2px] active:shadow-none -rotate-3 hover:rotate-0 group" title="Back">
             <ArrowLeft size={28} strokeWidth={3} className="text-ink group-hover:-translate-x-1 transition-transform" />
           </button>
+          
+          {/* 🌟 新增：移动到这里的 TASK 纯图标按钮 */}
+          <button onClick={onSwitchToTask || (() => navigate('/task'))} style={sketchyShape3} className="w-16 h-16 bg-cream border-4 border-ink flex items-center justify-center hover:bg-[#D8E2DC] transition-all shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] active:translate-y-[2px] active:translate-x-[2px] active:shadow-none rotate-3 hover:rotate-0 group" title="Go to Task">
+            <Terminal size={28} strokeWidth={3} className="text-ink group-hover:translate-x-1 transition-transform" />
+          </button>
+
+          {/* SWITCH 按钮 */}
           <button onClick={() => setShowSessionModal(true)} style={sketchyShape1} className="flex-1 h-16 flex items-center justify-center gap-2 bg-[#EBCB8B] text-ink border-4 border-ink hover:bg-[#d8b877] transition-all active:scale-95 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] rotate-2 hover:-rotate-1">
             <List size={22} strokeWidth={3} />
             <span className="tracking-widest text-lg font-black" style={{ fontFamily: '"Comic Sans MS", cursive' }}>SWITCH</span>
@@ -1558,10 +1566,6 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                  <button onClick={() => openMdEditor('TODO')} style={sketchyShape1} className="flex-1 border-4 border-ink bg-[#EBCB8B]/50 hover:bg-[#EBCB8B] shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center gap-3 hover:-translate-y-1 hover:scale-[1.02] transition-all rotate-2 active:shadow-none active:translate-y-1 min-h-[60px]">
                      <List size={28} strokeWidth={2.5} className="text-[#b8956e]"/>
                      <span className="font-black text-xl tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>TODO</span>
-                 </button>
-                 <button onClick={onSwitchToTask || (() => navigate('/task'))} style={sketchyShape2} className="flex-1 border-4 border-ink bg-[#D8E2DC]/50 hover:bg-[#D8E2DC] text-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center gap-3 hover:-translate-y-1 hover:scale-[1.02] transition-all -rotate-1 active:shadow-none active:translate-y-1">
-                     <Terminal size={28} strokeWidth={2.5} className="text-[#6a917e]"/>
-                     <span className="font-black text-xl tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>TASK</span>
                  </button>
 
                  {/* 新增：手绘风 CONFIG 功能按钮 */}
@@ -1753,11 +1757,11 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
         
         {/* 🌟 改造原本的黄色小胶带：有会话时显示 ID，无会话时作为纯装饰 */}
         {currentSessionId ? (
-          <div className="absolute -top-2 right-12 px-6 py-1 bg-[#EBCB8B] border-2 border-ink rotate-2 z-50 text-ink font-black text-sm shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center" style={sketchyShape2} title="Session ID">
+          <div className="absolute -top-2 right-12 px-6 py-1 bg-[#a3be8c] border-2 border-ink rotate-2 z-50 text-ink font-black text-sm shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center" style={sketchyShape2} title="Session ID">
             ID: {currentSessionId.split('_')[1] || currentSessionId.slice(-8)}
           </div>
         ) : (
-          <div className="absolute -top-4 right-12 w-32 h-8 bg-[#EBCB8B]/80 border-2 border-ink -rotate-3 z-50" style={sketchyShape2}></div>
+          <div className="absolute -top-4 right-12 w-32 h-8 bg-[#a3be8c]/80 border-2 border-ink -rotate-3 z-50" style={sketchyShape2}></div>
         )}
 
         <div className="pt-8 px-10 pb-4 flex items-center justify-between shrink-0">
@@ -1977,24 +1981,28 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
       {showReqQueue && (
         <div style={sketchyShape3} className="w-[340px] shrink-0 bg-paper border-4 border-ink shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] flex flex-col overflow-hidden relative z-20">
           {/* Header & Tabs */}
-          <div className="flex flex-col shrink-0 border-b-4 border-ink p-4 bg-paper">
-            <div className="flex justify-between items-center mb-4">
+          <div className="flex flex-col shrink-0 p-4 bg-paper">
+            <div className="flex justify-between items-center">
               <div className="flex items-center gap-2">
-                <Bell size={24} strokeWidth={2.5} className="text-ink" />
-                <h3 className="text-2xl font-black tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>QUEUE</h3>
+                <Bell size={24} strokeWidth={2.5} className="text-[#EBCB8B]" />
+                <h3 className="text-2xl font-black tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>
+                  {reqTab === 'pending' ? 'PENDING' : 'RESOLVED'}
+                  {reqTab === 'pending' && pendingReqs.length > 0 && ` (${pendingReqs.length})`}
+                </h3>
               </div>
-              <button onClick={() => setShowReqQueue(false)} className="hover:text-terracotta hover:rotate-90 transition-all p-1 bg-paper border-2 border-ink" style={sketchyShape1}>
-                <X size={20} strokeWidth={3} />
-              </button>
-            </div>
-            {/* 切换 Tab 按钮 */}
-            <div className="flex gap-2">
-              <button onClick={() => setReqTab('pending')} className={`flex-1 font-black py-2 border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] transition-all flex justify-center items-center gap-1 ${reqTab === 'pending' ? 'bg-[#EBCB8B] -translate-y-0.5' : 'bg-paper hover:bg-sand'}`} style={sketchyShape1}>
-                PENDING {pendingReqs.length > 0 && `(${pendingReqs.length})`}
-              </button>
-              <button onClick={() => setReqTab('resolved')} className={`flex-1 font-black py-2 border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] transition-all ${reqTab === 'resolved' ? 'bg-[#a3be8c] -translate-y-0.5' : 'bg-paper hover:bg-sand'}`} style={sketchyShape2}>
-                RESOLVED
-              </button>
+              <div className="flex items-center gap-2">
+                <button 
+                  onClick={() => setReqTab(reqTab === 'pending' ? 'resolved' : 'pending')} 
+                  className="p-1.5 bg-cream border-2 border-ink hover:bg-sand transition-all shadow-[2px_2px_0px_0px_rgba(26,26,26,1)]" 
+                  style={sketchyShape1}
+                  title="Switch Tab"
+                >
+                  <ArrowRightLeft size={16} strokeWidth={3} />
+                </button>
+                <button onClick={() => setShowReqQueue(false)} className="hover:text-terracotta hover:rotate-90 transition-all p-1 bg-paper border-2 border-ink" style={sketchyShape1}>
+                  <X size={20} strokeWidth={3} />
+                </button>
+              </div>
             </div>
           </div>
 
@@ -2021,7 +2029,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
 
                     <div className="flex justify-between items-start">
                       <span className="font-black text-xs uppercase px-2 py-0.5 bg-[#EBCB8B] border-2 border-ink" style={sketchyShape1}>{req.type}</span>
-                      <span className="text-[10px] font-bold opacity-60 bg-cream px-1 border border-dashed border-ink">{req.created_at?.split(' ')[1]}</span>
+                      <span className="text-[10px] font-bold opacity-60 bg-cream px-1">{req.created_at?.split(' ')[1]}</span>
                     </div>
                     
                     <div>
@@ -2036,7 +2044,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                         Reason
                       </button>
                       {expandedReasons[req.id] && (
-                        <div className="text-xs font-bold text-ink/70 bg-ink/5 p-2 border-2 border-ink border-dashed mt-1 leading-relaxed">{req.reason}</div>
+                        <div className="text-xs font-bold text-ink/70 bg-ink/5 p-2 mt-1 leading-relaxed">{req.reason}</div>
                       )}
                     </div>
 
@@ -2049,8 +2057,8 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                     />
 
                     <div className="flex gap-2 mt-1">
-                      <button onClick={() => handleResolveReq(req.id, true, false)} className="flex-1 bg-[#a3be8c] text-ink font-black text-xs py-2 border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:bg-[#8eb072] active:translate-y-1 active:shadow-none transition-all flex justify-center items-center gap-1" style={sketchyShape1}>
-                        <Cat size={14} /> APPROVE
+                      <button onClick={() => handleResolveReq(req.id, true, false)} className="flex-1 bg-[#a3be8c] text-ink font-black text-xs py-2 border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:bg-[#8eb072] active:translate-y-1 active:shadow-none transition-all flex justify-center items-center" style={sketchyShape1}>
+                        APPROVE
                       </button>
                       <button onClick={() => handleResolveReq(req.id, false, false)} className="flex-1 bg-[#bf616a] text-paper font-black text-xs py-2 border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:bg-[#a54e56] active:translate-y-1 active:shadow-none transition-all" style={sketchyShape2}>
                         REJECT
