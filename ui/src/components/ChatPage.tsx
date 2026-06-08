@@ -5,7 +5,7 @@ import {
   ChevronDown, ChevronUp, Loader2, X, Trash2, 
   List, Brain, Server, Zap, AlarmClock, GitFork, Plus,
   RefreshCw, Terminal, User, FileText, Save,
-  Settings, FileJson, AlertCircle, Download, Activity, Paperclip
+  Settings, FileJson, AlertCircle, Download, Activity, Paperclip, Bell
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
@@ -189,6 +189,15 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   // --- Token 状态 ---
   const [tokenData, setTokenData] = useState({ window: 0, max: 1000000 });
 
+  // --- 🌟 新增：请求审批队列状态 ---
+  const [showReqQueue, setShowReqQueue] = useState(false);
+  const [reqTab, setReqTab] = useState<'pending' | 'resolved'>('pending');
+  const [pendingReqs, setPendingReqs] = useState<any[]>([]);
+  const [resolvedReqs, setResolvedReqs] = useState<any[]>([]);
+  const [feedbackInputs, setFeedbackInputs] = useState<Record<string, string>>({});
+  const prevPendingIds = useRef<string[]>([]);
+  const [expandedReasons, setExpandedReasons] = useState<Record<string, boolean>>({});
+
   // 轮询 Token 进度
   useEffect(() => {
     let tokenInterval: ReturnType<typeof setTimeout>;
@@ -210,6 +219,71 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
     }
     return () => { if (tokenInterval) clearInterval(tokenInterval); };
   }, [currentSessionId]);
+
+  // --- 🌟 新增：请求队列拉取与操作逻辑 ---
+  const fetchRequests = async () => {
+    try {
+      const [resPending, resResolved] = await Promise.all([
+        fetch('http://localhost:8000/api/requests').catch(() => null),
+        fetch('http://localhost:8000/api/requests/resolved').catch(() => null)
+      ]);
+
+      if (resPending?.ok) {
+        const dataPending = await resPending.json();
+        setPendingReqs(dataPending);
+        
+        // 自动弹出逻辑：如果有新的 pending 请求，就自动打开右侧抽屉
+        const currentIds = dataPending.map((r: any) => r.id);
+        const hasNew = currentIds.some((id: string) => !prevPendingIds.current.includes(id));
+        if (hasNew && dataPending.length > 0) {
+          setShowReqQueue(true);
+          setReqTab('pending');
+        }
+        prevPendingIds.current = currentIds;
+      }
+      
+      if (resResolved?.ok) {
+        const dataResolved = await resResolved.json();
+        setResolvedReqs(dataResolved);
+      }
+    } catch (e) {
+      console.error("Fetch requests error", e);
+    }
+  };
+
+  useEffect(() => {
+    fetchRequests();
+    const interval = setInterval(fetchRequests, 3000); // 每3秒拉取一次
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleResolveReq = async (reqId: string, approved: boolean, ignore: boolean) => {
+    const feedback = feedbackInputs[reqId] || '';
+    try {
+      const res = await fetch(`http://localhost:8000/api/requests/${reqId}/resolve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ approved, feedback, ignore })
+      });
+      if (res.ok) {
+        toast.success(ignore ? "请求已静默忽略" : "请求处理完成");
+        setFeedbackInputs(prev => { const n = {...prev}; delete n[reqId]; return n; });
+        fetchRequests(); // 刷新
+      } else {
+        toast.error("请求处理失败");
+      }
+    } catch { toast.error("网络异常"); }
+  };
+
+  const handleDeleteReq = async (reqId: string) => {
+    try {
+      const res = await fetch(`http://localhost:8000/api/requests/${reqId}`, { method: 'DELETE' });
+      if (res.ok) {
+        toast.success("已踢出队列！");
+        fetchRequests(); // 刷新
+      }
+    } catch { toast.error("删除异常"); }
+  };
 
   // --- 侧边栏面板状态 ---
   const [sidebarMode, setSidebarMode] = useState<'menu' | 'mcp' | 'skill' | 'cron' | 'sensor'>('menu');
@@ -253,7 +327,6 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
 
   // --- 🌟 处理文件上传并转为本地路径（带安全拦截） ---
   const handleFileUpload = async (files: FileList | File[]) => {
-    setIsUploading(true);
     try {
       const newPaths: string[] = [];
       for (let i = 0; i < files.length; i++) {
@@ -1695,29 +1768,46 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
             <h2 className="text-4xl font-black tracking-tighter text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>PurrCat.</h2>
           </div>
           
-          {/* 🌟 涂鸦风 Token 进度条（手绘排线阴影效果） */}
-          {currentSessionId && (
-            <div className="flex items-center gap-2 mt-3" title={`Token: ${tokenData.window} / ${tokenData.max}`}>
-              <span className="text-[11px] font-black text-ink/50" style={{ fontFamily: '"Comic Sans MS", cursive' }}>MEM</span>
-              <div className="w-36 h-[14px] border-2 border-ink bg-cream p-[2px]" style={sketchyShape3}>
-                <div 
-                  className="h-full transition-all duration-1000 ease-out border-r-2 border-ink" 
-                  style={{ 
-                    width: `${Math.min(100, (tokenData.window / tokenData.max) * 100)}%`, 
-                    // 核心魔法：CSS 实现马克笔斜线排线（Hatched）效果 
-                    backgroundImage: (tokenData.window / tokenData.max) > 0.8 
-                       ? 'repeating-linear-gradient(45deg, #bf616a, #bf616a 2px, transparent 2px, transparent 6px)' 
-                       : 'repeating-linear-gradient(-45deg, #d08770, #d08770 2px, transparent 2px, transparent 6px)', 
-                    backgroundColor: (tokenData.window / tokenData.max) > 0.8 ? 'rgba(191,97,106,0.1)' : 'rgba(208,135,112,0.1)', 
-                    ...sketchyShape1 
-                  }} 
-                />
-              </div>
-              <span className="text-[11px] font-black text-ink/70 w-8 text-right">
-                {Math.round((tokenData.window / tokenData.max) * 100)}%
-              </span>
-            </div>
-          )}
+          <div className="flex items-center gap-3">
+             {/* 原本涂鸦风 Token 进度条 */}
+             {currentSessionId && (
+               <div className="flex items-center gap-2" title={`Token: ${tokenData.window} / ${tokenData.max}`}>
+                 <span className="text-[11px] font-black text-ink/50" style={{ fontFamily: '"Comic Sans MS", cursive' }}>MEM</span>
+                 <div className="w-36 h-[14px] border-2 border-ink bg-cream p-[2px]" style={sketchyShape3}>
+                   <div 
+                     className="h-full transition-all duration-1000 ease-out border-r-2 border-ink" 
+                     style={{ 
+                       width: `${Math.min(100, (tokenData.window / tokenData.max) * 100)}%`, 
+                       // 核心魔法：CSS 实现马克笔斜线排线（Hatched）效果 
+                       backgroundImage: (tokenData.window / tokenData.max) > 0.8 
+                          ? 'repeating-linear-gradient(45deg, #bf616a, #bf616a 2px, transparent 2px, transparent 6px)' 
+                          : 'repeating-linear-gradient(-45deg, #d08770, #d08770 2px, transparent 2px, transparent 6px)', 
+                       backgroundColor: (tokenData.window / tokenData.max) > 0.8 ? 'rgba(191,97,106,0.1)' : 'rgba(208,135,112,0.1)', 
+                       ...sketchyShape1 
+                     }} 
+                   />
+                 </div>
+                 <span className="text-[11px] font-black text-ink/70 w-8 text-right">
+                   {Math.round((tokenData.window / tokenData.max) * 100)}%
+                 </span>
+               </div>
+             )}
+
+             {/* 🌟 新增：审批队列触发按钮 - 只显示图标 */}
+             <button
+                onClick={() => setShowReqQueue(!showReqQueue)}
+                className={`relative w-10 h-10 border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] transition-all flex items-center justify-center hover:-translate-y-0.5 active:translate-y-0.5 active:shadow-none ${pendingReqs.length > 0 ? 'bg-[#EBCB8B] text-ink animate-pulse' : 'bg-cream text-ink'}`}
+                style={sketchyShape2}
+                title="Requests Queue"
+             >
+               <Bell size={20} strokeWidth={3} />
+               {pendingReqs.length > 0 && (
+                 <span className="absolute -top-2 -right-2 bg-[#bf616a] text-paper text-xs px-1.5 py-0.5 rounded-full border-2 border-ink">
+                   {pendingReqs.length}
+                 </span>
+               )}
+             </button>
+          </div>
         </div>
 
         <div ref={messagesContainerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-10 pb-6 flex flex-col gap-6 w-full z-10">
@@ -1882,6 +1972,129 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
            </div>
         </div>
       </div>
+
+      {/* --- 🌟 新增：右侧 Request 请求处理队列纸板 --- */}
+      {showReqQueue && (
+        <div style={sketchyShape3} className="w-[340px] shrink-0 bg-paper border-4 border-ink shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] flex flex-col overflow-hidden relative z-20">
+          {/* Header & Tabs */}
+          <div className="flex flex-col shrink-0 border-b-4 border-ink p-4 bg-paper">
+            <div className="flex justify-between items-center mb-4">
+              <div className="flex items-center gap-2">
+                <Bell size={24} strokeWidth={2.5} className="text-ink" />
+                <h3 className="text-2xl font-black tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>QUEUE</h3>
+              </div>
+              <button onClick={() => setShowReqQueue(false)} className="hover:text-terracotta hover:rotate-90 transition-all p-1 bg-paper border-2 border-ink" style={sketchyShape1}>
+                <X size={20} strokeWidth={3} />
+              </button>
+            </div>
+            {/* 切换 Tab 按钮 */}
+            <div className="flex gap-2">
+              <button onClick={() => setReqTab('pending')} className={`flex-1 font-black py-2 border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] transition-all flex justify-center items-center gap-1 ${reqTab === 'pending' ? 'bg-[#EBCB8B] -translate-y-0.5' : 'bg-paper hover:bg-sand'}`} style={sketchyShape1}>
+                PENDING {pendingReqs.length > 0 && `(${pendingReqs.length})`}
+              </button>
+              <button onClick={() => setReqTab('resolved')} className={`flex-1 font-black py-2 border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] transition-all ${reqTab === 'resolved' ? 'bg-[#a3be8c] -translate-y-0.5' : 'bg-paper hover:bg-sand'}`} style={sketchyShape2}>
+                RESOLVED
+              </button>
+            </div>
+          </div>
+
+          {/* 列表渲染区 */}
+          <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4 bg-paper">
+            {reqTab === 'pending' ? (
+              pendingReqs.length === 0 ? (
+                <div className="flex flex-col items-center opacity-50 mt-10">
+                  <Activity size={48} strokeWidth={1.5} />
+                  <p className="font-bold text-sm mt-2">All caught up! No requests.</p>
+                </div>
+              ) : (
+                pendingReqs.map((req, idx) => (
+                  <div key={req.id} className={`bg-paper border-4 border-ink p-4 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex flex-col gap-3 relative transition-all hover:-translate-y-1 group ${idx % 2 === 0 ? 'rotate-1' : '-rotate-1'}`} style={idx % 2 === 0 ? sketchyShape2 : sketchyShape3}>
+                    {/* 悬浮时右上角显示IGNORE按钮 */}
+                    <button 
+                      onClick={() => handleResolveReq(req.id, false, true)} 
+                      className="opacity-0 group-hover:opacity-100 p-1.5 bg-ink text-paper border-2 border-ink hover:scale-110 transition-all absolute -top-2 -right-2 z-10" 
+                      style={sketchyShape2} 
+                      title="Ignore (Silent)"
+                    >
+                      <X size={12} strokeWidth={3} />
+                    </button>
+
+                    <div className="flex justify-between items-start">
+                      <span className="font-black text-xs uppercase px-2 py-0.5 bg-[#EBCB8B] border-2 border-ink" style={sketchyShape1}>{req.type}</span>
+                      <span className="text-[10px] font-bold opacity-60 bg-cream px-1 border border-dashed border-ink">{req.created_at?.split(' ')[1]}</span>
+                    </div>
+                    
+                    <div>
+                      <div className="text-[15px] font-black text-ink break-all leading-tight">{req.target}</div>
+                      
+                      {/* Reason 折叠显示 */}
+                      <button 
+                        onClick={() => setExpandedReasons({...expandedReasons, [req.id]: !expandedReasons[req.id]})}
+                        className="text-xs font-bold text-ink/50 mt-2 flex items-center gap-1 hover:text-ink transition-colors"
+                      >
+                        {expandedReasons[req.id] ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                        Reason
+                      </button>
+                      {expandedReasons[req.id] && (
+                        <div className="text-xs font-bold text-ink/70 bg-ink/5 p-2 border-2 border-ink border-dashed mt-1 leading-relaxed">{req.reason}</div>
+                      )}
+                    </div>
+
+                    <input
+                      value={feedbackInputs[req.id] || ''}
+                      onChange={e => setFeedbackInputs({...feedbackInputs, [req.id]: e.target.value})}
+                      placeholder="Feedback (Optional)..."
+                      className="w-full text-xs font-bold p-2 border-2 border-ink focus:outline-none bg-[#FDF8F0] shadow-[inset_2px_2px_0px_0px_rgba(26,26,26,0.05)] placeholder:text-ink/30"
+                      style={sketchyShape2}
+                    />
+
+                    <div className="flex gap-2 mt-1">
+                      <button onClick={() => handleResolveReq(req.id, true, false)} className="flex-1 bg-[#a3be8c] text-ink font-black text-xs py-2 border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:bg-[#8eb072] active:translate-y-1 active:shadow-none transition-all flex justify-center items-center gap-1" style={sketchyShape1}>
+                        <Cat size={14} /> APPROVE
+                      </button>
+                      <button onClick={() => handleResolveReq(req.id, false, false)} className="flex-1 bg-[#bf616a] text-paper font-black text-xs py-2 border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:bg-[#a54e56] active:translate-y-1 active:shadow-none transition-all" style={sketchyShape2}>
+                        REJECT
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )
+            ) : (
+              resolvedReqs.length === 0 ? (
+                <div className="flex flex-col items-center opacity-50 mt-10">
+                  <Package size={48} strokeWidth={1.5} />
+                  <p className="font-bold text-sm mt-2">History is empty.</p>
+                </div>
+              ) : (
+                resolvedReqs.map((req, idx) => (
+                  <div key={req.id} className="bg-cream border-4 border-ink p-3 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex flex-col gap-2 opacity-80 hover:opacity-100 transition-opacity relative group" style={idx % 2 === 0 ? sketchyShape1 : sketchyShape3}>
+                    <div className="flex justify-between items-start">
+                      <span className={`font-black text-[10px] uppercase px-1.5 py-0.5 border-2 border-ink ${req.status === 'approved' ? 'bg-[#a3be8c] text-ink' : req.status === 'rejected' ? 'bg-[#bf616a] text-paper' : 'bg-sand text-ink'}`}>
+                        {req.status}
+                      </span>
+                      {/* 踢出文件的删除按钮 */}
+                      <button onClick={() => handleDeleteReq(req.id)} className="opacity-0 group-hover:opacity-100 p-1 bg-[#bf616a] text-paper border-2 border-ink hover:scale-110 transition-all absolute -top-3 -right-3" style={sketchyShape2} title="Remove Request">
+                        <Trash2 size={14} strokeWidth={3} />
+                      </button>
+                    </div>
+                    <div className="text-sm font-black truncate">{req.target}</div>
+                    <div className="text-[10px] font-bold opacity-60 flex justify-between border-b-2 border-ink/10 pb-1">
+                      <span>{req.type}</span>
+                      <span>{req.resolved_at?.split(' ')[1]}</span>
+                    </div>
+                    {req.feedback && (
+                      <div className="text-[11px] font-bold text-terracotta bg-terracotta/10 p-1.5 border-l-2 border-terracotta">
+                        {req.feedback}
+                      </div>
+                    )}
+                  </div>
+                ))
+              )
+            )}
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

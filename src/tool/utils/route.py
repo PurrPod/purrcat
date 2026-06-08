@@ -19,6 +19,7 @@ TOOL_FUNC_MAP = {
     "cron": "Cron",
     "callmcp": "CallMCP",
     "memo": "Memo",
+    "request": "Request",
     "search": "Search",
     "fetch": "Fetch",
     "task": "Task",
