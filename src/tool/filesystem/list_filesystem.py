@@ -4,32 +4,12 @@ import os
 import time
 
 from src.tool.filesystem.exceptions import HostPathNotFoundError, PermissionDeniedError
-
-
-def _load_blacklist():
-    """将配置中的相对路径（如 src/）绑定为当前项目的绝对路径，并消除大小写/斜杠差异"""
-    from src.utils.config import get_file_config
-
-    raw_list = get_file_config().get("dont_read_dirs", [])
-    return [os.path.normcase(os.path.abspath(d)) for d in raw_list]
-
-
-def _check_allowed(path: str, blacklist: list) -> bool:
-    """精准路径匹配，不误伤其他目录的同名文件夹"""
-    path_norm = os.path.normcase(os.path.abspath(path))
-
-    for rule_norm in blacklist:
-        try:
-            if os.path.commonpath([path_norm, rule_norm]) == rule_norm:
-                return False
-        except ValueError:
-            pass
-    return True
+from src.tool.filesystem.utils import is_readable, require_read
 
 
 def list_filesystem(path: str = ".", depth: int = 1, show_hidden: bool = False) -> dict:
     """
-    列出宿主机文件系统结构（带大小、绝对路径），遵循 dont_read_dirs 黑名单
+    列出宿主机文件系统结构（带大小、绝对路径），遵循权限规则
 
     Args:
         path: 起始路径，默认当前目录
@@ -39,18 +19,10 @@ def list_filesystem(path: str = ".", depth: int = 1, show_hidden: bool = False) 
     Returns:
         包含 path, tree, dir_count, file_count, total_size_bytes, total_size_mb 的字典
     """
-    root = os.path.abspath(path)
+    root = require_read(path)
 
-    # 路径存在性检查
     if not os.path.exists(root):
         raise HostPathNotFoundError(root)
-
-    # 加载黑名单
-    blacklist = _load_blacklist()
-
-    # 检查根路径是否在黑名单内
-    if not _check_allowed(root, blacklist):
-        raise PermissionDeniedError(root, "路径在黑名单中，不可读取")
 
     lines = []
     total_size = 0
@@ -60,8 +32,8 @@ def list_filesystem(path: str = ".", depth: int = 1, show_hidden: bool = False) 
     def _walk(current: str, prefix: str, remaining_depth: int):
         nonlocal total_size, file_count, dir_count
 
-        if not _check_allowed(current, blacklist):
-            lines.append(f"{prefix}[黑名单，已跳过]")
+        if not is_readable(current):
+            lines.append(f"{prefix}[权限不足，已跳过]")
             return
 
         try:
@@ -104,7 +76,6 @@ def list_filesystem(path: str = ".", depth: int = 1, show_hidden: bool = False) 
             except (OSError, PermissionError):
                 lines.append(f"{prefix}{connector}{entry}  [不可访问]")
 
-    # 根目录信息
     root_stat = os.stat(root)
     root_mtime = time.strftime("%Y-%m-%d %H:%M", time.localtime(root_stat.st_mtime))
     lines.append(f"{root}  ({root_mtime})")

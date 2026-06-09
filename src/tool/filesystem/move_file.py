@@ -2,7 +2,7 @@ import os
 import shutil
 
 from src.tool.filesystem.exceptions import FileSystemError, HostPathNotFoundError
-from src.tool.filesystem.utils import resolve_safe_path
+from src.tool.filesystem.utils import require_write
 
 
 def move_file(path_from: str, path_to: str) -> dict:
@@ -10,8 +10,8 @@ def move_file(path_from: str, path_to: str) -> dict:
     if not path_from or not path_to:
         raise FileSystemError("move 操作必须同时提供 path_from 和 path_to。")
 
-    src_path = resolve_safe_path(path_from)
-    dst_path = resolve_safe_path(path_to)
+    src_path = require_write(path_from)
+    dst_path = require_write(path_to)
 
     if not os.path.exists(src_path):
         raise HostPathNotFoundError(src_path)

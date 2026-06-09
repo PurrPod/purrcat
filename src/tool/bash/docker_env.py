@@ -206,15 +206,7 @@ class DockerManager:
             "mode": "rw",
         }
 
-        from src.utils.config import get_file_config
 
-        docker_mount = get_file_config().get("docker_mount", [])
-        for dirpath in docker_mount:
-            new_host_dir = os.path.abspath(dirpath)
-            os.makedirs(new_host_dir, exist_ok=True)
-            target_name = os.path.basename(os.path.normpath(dirpath))
-            container_bind_path = f"{self.container_workspace}/{target_name}"
-            volumes[new_host_dir] = {"bind": container_bind_path, "mode": "rw"}
 
         run_kwargs["volumes"] = volumes
 

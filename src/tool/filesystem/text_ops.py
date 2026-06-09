@@ -6,14 +6,14 @@ from src.tool.filesystem.exceptions import (
     FileSystemError,
     HostPathNotFoundError,
 )
-from src.tool.filesystem.utils import resolve_safe_path, check_allowed, load_blacklist
+from src.tool.filesystem.utils import require_read, require_write, is_readable
 
 MAX_LINES_TO_READ = 2000
 
 
 def read_file(path_from: str, offset: int = 0, limit: int = MAX_LINES_TO_READ) -> dict:
     """Read 工具：支持纯文本读取，遇到富文本/二进制自动使用 markitdown 转换为 Markdown"""
-    target_path = resolve_safe_path(path_from)
+    target_path = require_read(path_from)
 
     if not os.path.exists(target_path):
         raise HostPathNotFoundError(target_path)
@@ -81,7 +81,7 @@ def edit_file(
     if not old_string:
         raise FileSystemError("old_string 不能为空。")
 
-    target_path = resolve_safe_path(path_from)
+    target_path = require_write(path_from)
     if not os.path.exists(target_path):
         raise HostPathNotFoundError(target_path)
 
@@ -109,7 +109,6 @@ def edit_file(
     with open(target_path, "w", encoding="utf-8") as f:
         f.write(new_content)
 
-    # === 新增：代码检查 ===
     check_result = run_code_check(target_path)
     msg = f"成功更新文件 {os.path.basename(target_path)}"
     if check_result:
@@ -127,13 +126,12 @@ def write_file(path_from: str, content: str) -> dict:
     if content is None:
         raise FileSystemError("写入内容(content)不能为空。")
 
-    target_path = resolve_safe_path(path_from)
+    target_path = require_write(path_from)
     os.makedirs(os.path.dirname(target_path), exist_ok=True)
 
     with open(target_path, "w", encoding="utf-8") as f:
         f.write(content)
 
-    # === 新增：代码检查 ===
     check_result = run_code_check(target_path)
     msg = f"成功写入文件 {os.path.basename(target_path)} (长度: {len(content)})"
     if check_result:
@@ -147,7 +145,7 @@ def write_file(path_from: str, content: str) -> dict:
 
 def search_file(path_from: str, pattern: str) -> dict:
     """Grep 工具：安全的正则全局搜索"""
-    search_dir = resolve_safe_path(path_from)
+    search_dir = require_read(path_from)
     if not os.path.exists(search_dir) or not os.path.isdir(search_dir):
         raise FileSystemError(f"Grep 搜索目录无效: {search_dir}")
 
@@ -156,15 +154,14 @@ def search_file(path_from: str, pattern: str) -> dict:
     except re.error as e:
         raise FileSystemError(f"正则表达式无效: {e}")
 
-    blacklist = load_blacklist()
     matches = []
 
     for root, dirs, files in os.walk(search_dir):
-        dirs[:] = [d for d in dirs if check_allowed(os.path.join(root, d), blacklist)]
+        dirs[:] = [d for d in dirs if is_readable(os.path.join(root, d))]
 
         for file in files:
             file_path = os.path.join(root, file)
-            if not check_allowed(file_path, blacklist):
+            if not is_readable(file_path):
                 continue
 
             try:
@@ -189,22 +186,21 @@ def search_file(path_from: str, pattern: str) -> dict:
 
 def glob_file(path_from: str, pattern: str) -> dict:
     """Glob 工具：模式匹配并按时间排序 (免疫系统级破坏的增强版)"""
-    search_dir = resolve_safe_path(path_from)
-    blacklist = load_blacklist()
+    search_dir = require_read(path_from)
     matched_paths = []
 
     def walk_onerror(os_error):
         pass
 
     for root, dirs, files in os.walk(search_dir, onerror=walk_onerror):
-        dirs[:] = [d for d in dirs if check_allowed(os.path.join(root, d), blacklist)]
+        dirs[:] = [d for d in dirs if is_readable(os.path.join(root, d))]
 
         for file in files:
             file_path = os.path.join(root, file)
             rel_path = os.path.relpath(file_path, search_dir)
             if PurePath(rel_path).match(pattern):
                 try:
-                    if check_allowed(file_path, blacklist) and os.path.isfile(
+                    if is_readable(file_path) and os.path.isfile(
                         file_path
                     ):
                         matched_paths.append(file_path)
