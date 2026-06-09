@@ -206,8 +206,6 @@ class DockerManager:
             "mode": "rw",
         }
 
-
-
         run_kwargs["volumes"] = volumes
 
         try:

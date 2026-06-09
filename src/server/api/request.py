@@ -4,7 +4,12 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 # 直接从工具层的高内聚 api 里引入逻辑
-from src.tool.request.api import get_pending_requests, resolve_request, get_resolved_requests, delete_request
+from src.tool.request.api import (
+    get_pending_requests,
+    resolve_request,
+    get_resolved_requests,
+    delete_request,
+)
 
 router = APIRouter(prefix="/api/requests", tags=["Agent Requests"])
 

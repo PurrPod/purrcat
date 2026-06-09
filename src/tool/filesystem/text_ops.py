@@ -1,14 +1,21 @@
 import os
 import re
+import difflib
+import tempfile
 from pathlib import PurePath
+from filelock import FileLock, Timeout
 from src.tool.filesystem.checker import run_code_check
 from src.tool.filesystem.exceptions import (
     FileSystemError,
     HostPathNotFoundError,
 )
 from src.tool.filesystem.utils import require_read, require_write, is_readable
+from src.tool.filesystem.history import track_edit
 
 MAX_LINES_TO_READ = 2000
+
+LOCK_DIR = os.path.join(os.getcwd(), ".agent_locks")
+os.makedirs(LOCK_DIR, exist_ok=True)
 
 
 def read_file(path_from: str, offset: int = 0, limit: int = MAX_LINES_TO_READ) -> dict:
@@ -77,7 +84,7 @@ def read_file(path_from: str, offset: int = 0, limit: int = MAX_LINES_TO_READ) -
 def edit_file(
     path_from: str, old_string: str, new_string: str, replace_all: bool = False
 ) -> dict:
-    """Edit 工具：安全的局部字符串精准替换"""
+    """Edit 工具：安全的局部字符串精准替换（支持文件锁和原子写入）"""
     if not old_string:
         raise FileSystemError("old_string 不能为空。")
 
@@ -85,52 +92,122 @@ def edit_file(
     if not os.path.exists(target_path):
         raise HostPathNotFoundError(target_path)
 
-    with open(target_path, "r", encoding="utf-8") as f:
-        content = f.read()
+    safe_lock_name = target_path.replace(os.sep, "%").replace(":", "") + ".lock"
+    lock_path = os.path.join(LOCK_DIR, safe_lock_name)
+    lock = FileLock(lock_path, timeout=15)
 
-    occurrences = content.count(old_string)
-    if occurrences == 0:
-        raise FileSystemError(
-            "⚠️ Edit 失败: old_string 在文件中未找到。\n"
-            "原因：可能包含了行号前缀、缩进空格不匹配，或者文件在你上一次 read 后已被修改。\n"
-            "解决：请检查旧字符串，确保不要包含 '101 | ' 这样的行号前缀，并保留原有的所有空格/换行。"
+    try:
+        with lock:
+            with open(target_path, "r", encoding="utf-8") as f:
+                content = f.read()
+
+            occurrences = content.count(old_string)
+            if occurrences == 0:
+                raise FileSystemError(
+                    "⚠️ Edit 失败: old_string 在文件中未找到。文件已被其他 Agent 抢占修改！\n"
+                    "解决：请重新 read 文件获取最新内容后再进行 edit。"
+                )
+            if occurrences > 1 and not replace_all:
+                raise FileSystemError(
+                    f"⚠️ Edit 失败: old_string 出现了 {occurrences} 次，无法精确定位。"
+                )
+
+            backup_id = track_edit(target_path)
+
+            if replace_all:
+                new_content = content.replace(old_string, new_string)
+            else:
+                new_content = content.replace(old_string, new_string, 1)
+
+            fd, temp_path = tempfile.mkstemp(
+                dir=os.path.dirname(target_path), text=True
+            )
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    f.write(new_content)
+                os.replace(temp_path, target_path)
+            except Exception as e:
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
+                raise e
+
+    except Timeout:
+        raise FileSystemError("文件正被其他 Agent 锁定修改，请稍后重试！")
+
+    # 🌟 修复点：在 Diff 头中注入完整的相对/沙盒路径，不要用 basename
+    format_path = path_from if path_from.startswith("/") else "/" + path_from
+    diff_lines = list(
+        difflib.unified_diff(
+            content.splitlines(keepends=True),
+            new_content.splitlines(keepends=True),
+            fromfile=f"a{format_path}",
+            tofile=f"b{format_path}",
+            n=3,
         )
-    if occurrences > 1 and not replace_all:
-        raise FileSystemError(
-            f"⚠️ Edit 失败: old_string 在文件中出现了 {occurrences} 次，无法精确定位。\n"
-            "解决：请在 old_string 中包含更多的上下文（如相邻的 2-4 行代码）以使其唯一。如果你确实想替换所有匹配项，请设置 replace_all=True。"
-        )
-
-    if replace_all:
-        new_content = content.replace(old_string, new_string)
-    else:
-        new_content = content.replace(old_string, new_string, 1)
-
-    with open(target_path, "w", encoding="utf-8") as f:
-        f.write(new_content)
+    )
 
     check_result = run_code_check(target_path)
     msg = f"成功更新文件 {os.path.basename(target_path)}"
     if check_result:
-        msg += f"\n\n[系统自动代码检查报告]:\n{check_result}"
+        msg += f"\n\n[代码检查报告]:\n{check_result}"
 
     return {
         "path": target_path,
+        "backup_id": backup_id,
         "message": msg,
         "replaced_occurrences": occurrences if replace_all else 1,
+        "diff": "".join(diff_lines),
     }
 
 
 def write_file(path_from: str, content: str) -> dict:
-    """Write 工具：全量覆盖写入或创建新文件"""
+    """Write 工具：全量覆盖写入或创建新文件（支持文件锁和原子写入），带完整 Diff"""
     if content is None:
         raise FileSystemError("写入内容(content)不能为空。")
 
     target_path = require_write(path_from)
     os.makedirs(os.path.dirname(target_path), exist_ok=True)
 
-    with open(target_path, "w", encoding="utf-8") as f:
-        f.write(content)
+    safe_lock_name = target_path.replace(os.sep, "%").replace(":", "") + ".lock"
+    lock_path = os.path.join(LOCK_DIR, safe_lock_name)
+    lock = FileLock(lock_path, timeout=15)
+
+    try:
+        with lock:
+            # 🌟 1. 在覆盖前，先读取旧文件内容（如果存在的话）
+            old_content = ""
+            if os.path.exists(target_path):
+                with open(target_path, "r", encoding="utf-8") as f:
+                    old_content = f.read()
+
+            backup_id = track_edit(target_path)
+
+            fd, temp_path = tempfile.mkstemp(
+                dir=os.path.dirname(target_path), text=True
+            )
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    f.write(content)
+                os.replace(temp_path, target_path)
+            except Exception as e:
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
+                raise e
+
+    except Timeout:
+        raise FileSystemError("文件正被其他 Agent 锁定修改，请稍后重试！")
+
+    # 🌟 2. 使用 difflib 计算全量覆盖的真实 Diff
+    format_path = path_from if path_from.startswith("/") else "/" + path_from
+    diff_lines = list(
+        difflib.unified_diff(
+            old_content.splitlines(keepends=True),
+            content.splitlines(keepends=True),
+            fromfile=f"a{format_path}",
+            tofile=f"b{format_path}",
+            n=3,
+        )
+    )
 
     check_result = run_code_check(target_path)
     msg = f"成功写入文件 {os.path.basename(target_path)} (长度: {len(content)})"
@@ -139,7 +216,9 @@ def write_file(path_from: str, content: str) -> dict:
 
     return {
         "path": target_path,
+        "backup_id": backup_id,
         "message": msg,
+        "diff": "".join(diff_lines),  # 🌟 3. 将真实生成的 Diff 返回给前端
     }
 
 
@@ -200,9 +279,7 @@ def glob_file(path_from: str, pattern: str) -> dict:
             rel_path = os.path.relpath(file_path, search_dir)
             if PurePath(rel_path).match(pattern):
                 try:
-                    if is_readable(file_path) and os.path.isfile(
-                        file_path
-                    ):
+                    if is_readable(file_path) and os.path.isfile(file_path):
                         matched_paths.append(file_path)
                 except OSError:
                     continue

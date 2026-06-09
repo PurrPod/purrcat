@@ -6,6 +6,7 @@ FILESYSTEM_TOOL_SCHEMA = {
             "高级文件系统操作工具。\n"
             "支持目录浏览(list)、视觉分析(read_picture)、文件移动/重命名/导入导出(move)。\n"
             "强大的代码操作能力：读取(read)、编辑(edit)、复写(write)、文本搜索(search)与文件模式匹配(glob)。\n"
+            "支持防冲突校验。任何编辑错误均可通过 action='undo' 将文件安全回滚至上一状态。编辑后会返回标准的 Unified Diff 以供核对。\n"
             "【特殊能力】：Read 操作内置了 MarkItDown，你可以直接使用 read 操作读取 .pdf, .docx, .xlsx, .pptx 等富文本和表格文件，它们会被自动解析为 Markdown 文本返回！"
         ),
         "parameters": {
@@ -13,8 +14,18 @@ FILESYSTEM_TOOL_SCHEMA = {
             "properties": {
                 "action": {
                     "type": "string",
-                    "description": "操作类型。枚举值：list, read_picture, read, edit, write, search, glob, move",
-                    "enum": ["list", "read_picture", "read", "edit", "write", "search", "glob", "move"],
+                    "description": "操作类型。枚举值：list, read_picture, read, edit, write, search, glob, move, undo",
+                    "enum": [
+                        "list",
+                        "read_picture",
+                        "read",
+                        "edit",
+                        "write",
+                        "search",
+                        "glob",
+                        "move",
+                        "undo",
+                    ],
                 },
                 "path": {
                     "type": "string",
@@ -65,7 +76,7 @@ FILESYSTEM_TOOL_SCHEMA = {
                 "prompt": {
                     "type": "string",
                     "description": "仅 read_picture 使用。视觉大模型的提示词指令。",
-                }
+                },
             },
             "required": ["action"],
             "additionalProperties": True,

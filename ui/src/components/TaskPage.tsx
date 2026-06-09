@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
   ArrowLeft, Terminal, Trash2, X, Activity, Clock, Box, Send, MessageCircle, RefreshCw,
-  Square, Play, AlertTriangle, Rocket, Plus, ChevronDown
+  Square, Play, AlertTriangle, Plus, ChevronDown
 } from 'lucide-react';
 import type { Node, Edge } from '@xyflow/react';
 import { ReactFlow, Background, useNodesState, useEdgesState, Handle, Position } from '@xyflow/react';

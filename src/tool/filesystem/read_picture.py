@@ -1,14 +1,10 @@
 """图片读取功能 - 将宿主机图片转码并交由大模型分析"""
 
-import os
 import base64
 import mimetypes
 from openai import OpenAI
 
-from src.tool.filesystem.exceptions import (
-    HostPathNotFoundError,
-    ImageReadError,
-)
+from src.tool.filesystem.exceptions import ImageReadError
 from src.tool.filesystem.utils import require_read
 from src.utils.config import get_model_config
 

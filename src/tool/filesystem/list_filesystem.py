@@ -3,7 +3,7 @@
 import os
 import time
 
-from src.tool.filesystem.exceptions import HostPathNotFoundError, PermissionDeniedError
+from src.tool.filesystem.exceptions import HostPathNotFoundError
 from src.tool.filesystem.utils import is_readable, require_read
 
 

@@ -27,7 +27,9 @@ def Request(request_type: str, target: str, reason: str, **kwargs) -> str:
         ]
 
         if request_type not in valid_types:
-            return error_response(f"不支持的 request_type: {request_type}", "❌ 参数错误")
+            return error_response(
+                f"不支持的 request_type: {request_type}", "❌ 参数错误"
+            )
 
         result = submit_request(
             request_type=request_type,

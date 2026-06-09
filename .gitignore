@@ -1,5 +1,7 @@
 data/config/
-
+.agent_history/
+.agent_locks/
+cicmd.txt
 agent_vm/
 mcp_config.json
 data/checkpoints

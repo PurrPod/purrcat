@@ -85,7 +85,7 @@ def get_sessions():
             # ==========================================
             if "requests.json" in sid or sid == "requests":
                 continue
-                
+
             sess_list.append(
                 {
                     "id": sid,

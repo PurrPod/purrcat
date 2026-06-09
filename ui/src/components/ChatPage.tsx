@@ -5,7 +5,8 @@ import {
   ChevronDown, ChevronUp, Loader2, X, Trash2, 
   List, Brain, Server, Zap, AlarmClock, GitFork, Plus,
   RefreshCw, Terminal, User, FileText, Save,
-  Settings, FileJson, AlertCircle, Download, Activity, Paperclip, Bell, ArrowRightLeft
+  Settings, FileJson, AlertCircle, Download, Activity, Paperclip, Bell,
+  FolderOpen, History, Undo2, CheckCircle
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
@@ -191,12 +192,202 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
 
   // --- 🌟 新增：请求审批队列状态 ---
   const [showReqQueue, setShowReqQueue] = useState(false);
-  const [reqTab, setReqTab] = useState<'pending' | 'resolved'>('pending');
   const [pendingReqs, setPendingReqs] = useState<any[]>([]);
-  const [resolvedReqs, setResolvedReqs] = useState<any[]>([]);
   const [feedbackInputs, setFeedbackInputs] = useState<Record<string, string>>({});
   const prevPendingIds = useRef<string[]>([]);
   const [expandedReasons, setExpandedReasons] = useState<Record<string, boolean>>({});
+
+  // --- 🌟 真实的文件变更视图状态 ---
+  const [handledDiffs, setHandledDiffs] = useState<Set<string>>(() => { 
+    try { 
+      const saved = localStorage.getItem('handledDiffs_memory'); 
+      return saved ? new Set(JSON.parse(saved)) : new Set(); 
+    } catch { 
+      return new Set(); 
+    } 
+  }); 
+  const [showFileView, setShowFileView] = useState(false);
+  const [fileChanges, setFileChanges] = useState<any[]>([]);
+
+  // 🌟 新增：存储真实存活的快照 ID 列表
+  const [validBackupIds, setValidBackupIds] = useState<string[]>([]);
+
+  // 🌟 新增：只要 handledDiffs 发生变化，就持久化到本地，防止刷新后失忆 
+  useEffect(() => { 
+    localStorage.setItem('handledDiffs_memory', JSON.stringify(Array.from(handledDiffs))); 
+  }, [handledDiffs]);
+
+  // 🌟 拉取真实磁盘状态的函数
+  const fetchValidBackups = async () => {
+    try {
+      const res = await fetch('http://localhost:8000/api/filesystem/backups');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.valid_ids) {
+          setValidBackupIds(data.valid_ids);
+        }
+      }
+    } catch (e) {
+      console.error("拉取真实快照失败", e);
+    }
+  };
+
+  // 🌟 每 3 秒同步一次底层真实文件状态
+  useEffect(() => {
+    fetchValidBackups();
+    const interval = setInterval(fetchValidBackups, 3000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // --- 🌟 核心 useEffect：从聊天记录提取 Diff，但只显示硬盘上存活的记录 ---
+  useEffect(() => {
+    const extractedChanges: any[] = [];
+    
+    messages.forEach((msg, idx) => {
+      if (msg.role === 'tool') {
+        const diffId = `diff_${idx}`;
+
+        let diffText = '';
+        let backupId = '';
+        let path = '';
+        
+        // 尝试常规 JSON 解析
+        try {
+          const parsed = typeof msg.content === 'string' ? JSON.parse(msg.content) : msg.content;
+          
+          if (parsed?.diff) diffText = parsed.diff;
+          else if (parsed?.content?.diff) diffText = parsed.content.diff;
+          else if (parsed?.data?.diff) diffText = parsed.data.diff;
+          
+          if (parsed?.backup_id) backupId = parsed.backup_id;
+          else if (parsed?.content?.backup_id) backupId = parsed.content.backup_id;
+          else if (parsed?.data?.backup_id) backupId = parsed.data.backup_id;
+          
+          if (parsed?.path) path = parsed.path;
+          else if (parsed?.content?.path) path = parsed.content.path;
+          else if (parsed?.data?.path) path = parsed.data.path;
+        } catch { /* silent */ }
+
+        // 正则兜底解析
+        if (typeof msg.content === 'string') {
+          if (!diffText) {
+            const unescaped = msg.content.replace(/\\n/g, '\n');
+            const diffMatch = unescaped.match(/```diff\n([\s\S]*?)```/);
+            if (diffMatch) diffText = diffMatch[1];
+          }
+          if (!backupId) {
+            const backupMatch = msg.content.match(/['"]backup_id['"]\s*:\s*['"]([^'"]+)['"]/);
+            if (backupMatch) backupId = backupMatch[1];
+          }
+          if (!path) {
+            const pathMatch = msg.content.match(/['"]path['"]\s*:\s*['"]([^'"]+)['"]/);
+            if (pathMatch) path = pathMatch[1];
+          }
+        }
+
+        // 🌟 核心工程级修复：只有当解析出的 backupId 真的存在于后端硬盘上时，才允许它显示！
+        if (diffText && backupId && validBackupIds.includes(backupId)) {
+          if (!path) {
+            const pathMatch = diffText.match(/--- a\/?(.*?)\n/);
+            path = pathMatch ? `/${pathMatch[1]}` : 'Unknown File';
+            path = path.replace(/\/\//g, '/');
+          }
+          
+          extractedChanges.push({
+            id: diffId,
+            path: path,
+            backup_id: backupId,
+            time: new Date().toLocaleTimeString(),
+            diff: diffText
+          });
+        }
+      }
+    });
+    
+    setFileChanges(extractedChanges.reverse());
+  }, [messages, validBackupIds]);
+
+  // --- 🌟 确认变更函数（向前截断） ---
+  const handleAck = async (changeId: string, path: string, backupId: string) => {
+    try {
+      if (!backupId) { toast.error("缺乏快照标识，无法确认"); return; }
+      const res = await fetch(`http://localhost:8000/api/filesystem/ack`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path, backup_id: backupId })
+      });
+      
+      if (res.ok) {
+        toast.success("已确认更改并清理旧备份！");
+        
+        // 找到所有需要被【向前截断】的变更 (同文件，且 backup_id 更小或相等)
+        const changesToAck = fileChanges.filter(c => 
+          c.path === path && c.backup_id && parseInt(c.backup_id) <= parseInt(backupId)
+        );
+        const idsToAck = changesToAck.map(c => c.id);
+        if (!idsToAck.includes(changeId)) idsToAck.push(changeId);
+        
+        // 加入已处理集合，防止 useEffect 再次将其从聊天记录里抓取出来！
+        setHandledDiffs(prev => {
+          const next = new Set(prev);
+          idsToAck.forEach(id => next.add(id));
+          return next;
+        });
+        
+        // 从当前视图中剔除
+        setFileChanges(prev => prev.filter(c => !idsToAck.includes(c.id)));
+        
+        // 立即刷新硬盘状态
+        fetchValidBackups();
+      } else {
+        const err = await res.json();
+        toast.error(err.detail || "确认失败");
+      }
+    } catch {
+      toast.error("网络异常");
+    }
+  };
+
+  // --- 🌟 一键回滚函数（向后截断） ---
+  const handleRollback = async (changeId: string, path: string, backupId: string) => {
+    try {
+      if (!backupId) { toast.error("缺乏快照标识，无法精准回滚"); return; }
+      const res = await fetch(`http://localhost:8000/api/filesystem/undo`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path, backup_id: backupId })
+      });
+      
+      if (res.ok) {
+        toast.success("时光倒流：文件已恢复，后续修改已废弃！");
+        
+        // 找到所有需要被【向后截断】的变更 (同文件，且 backup_id 更大或相等)
+        const changesToRollback = fileChanges.filter(c => 
+          c.path === path && c.backup_id && parseInt(c.backup_id) >= parseInt(backupId)
+        );
+        const idsToRollback = changesToRollback.map(c => c.id);
+        if (!idsToRollback.includes(changeId)) idsToRollback.push(changeId);
+
+        // 加入已处理集合，防止其从聊天记录里复活
+        setHandledDiffs(prev => {
+          const next = new Set(prev);
+          idsToRollback.forEach(id => next.add(id));
+          return next;
+        });
+        
+        // 从当前视图中剔除
+        setFileChanges(prev => prev.filter(c => !idsToRollback.includes(c.id)));
+        
+        // 立即刷新硬盘状态
+        fetchValidBackups();
+      } else {
+        const err = await res.json();
+        toast.error(err.detail || "回滚失败");
+      }
+    } catch {
+      toast.error("网络异常，回滚失败");
+    }
+  };
 
   // 轮询 Token 进度
   useEffect(() => {
@@ -223,10 +414,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   // --- 🌟 新增：请求队列拉取与操作逻辑 ---
   const fetchRequests = async () => {
     try {
-      const [resPending, resResolved] = await Promise.all([
-        fetch('http://localhost:8000/api/requests').catch(() => null),
-        fetch('http://localhost:8000/api/requests/resolved').catch(() => null)
-      ]);
+      const resPending = await fetch('http://localhost:8000/api/requests').catch(() => null);
 
       if (resPending?.ok) {
         const dataPending = await resPending.json();
@@ -237,14 +425,8 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
         const hasNew = currentIds.some((id: string) => !prevPendingIds.current.includes(id));
         if (hasNew && dataPending.length > 0) {
           setShowReqQueue(true);
-          setReqTab('pending');
         }
         prevPendingIds.current = currentIds;
-      }
-      
-      if (resResolved?.ok) {
-        const dataResolved = await resResolved.json();
-        setResolvedReqs(dataResolved);
       }
     } catch (e) {
       console.error("Fetch requests error", e);
@@ -273,16 +455,6 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
         toast.error("请求处理失败");
       }
     } catch { toast.error("网络异常"); }
-  };
-
-  const handleDeleteReq = async (reqId: string) => {
-    try {
-      const res = await fetch(`http://localhost:8000/api/requests/${reqId}`, { method: 'DELETE' });
-      if (res.ok) {
-        toast.success("已踢出队列！");
-        fetchRequests(); // 刷新
-      }
-    } catch { toast.error("删除异常"); }
   };
 
   // --- 侧边栏面板状态 ---
@@ -1811,6 +1983,21 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                  </span>
                )}
              </button>
+
+             {/* 🌟 新增：文件变更视图按钮 */}
+             <button
+                onClick={() => setShowFileView(!showFileView)}
+                className={`relative w-10 h-10 border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] transition-all flex items-center justify-center hover:-translate-y-0.5 active:translate-y-0.5 active:shadow-none ${showFileView ? 'bg-[#88c0d0] text-paper' : 'bg-cream text-ink'}`}
+                style={sketchyShape3}
+                title="File Changes"
+             >
+               <FolderOpen size={20} strokeWidth={3} />
+               {fileChanges.length > 0 && (
+                 <span className="absolute -top-2 -right-2 bg-[#d08770] text-paper text-xs px-1.5 py-0.5 rounded-full border-2 border-ink">
+                   {fileChanges.length}
+                 </span>
+               )}
+             </button>
           </div>
         </div>
 
@@ -1894,6 +2081,80 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
           </div>
           <div ref={messagesEndRef} className="h-2" />
         </div>
+
+        {/* 🌟 新增：文件变更视图 */}
+        {showFileView && (
+          <div className="px-10 pb-6 pt-2">
+            <div style={sketchyShape1} className="bg-paper border-4 border-ink shadow-[8px_8px_0px_0px_rgba(26,26,26,1)] p-6">
+              <div className="flex items-center gap-3 mb-4">
+                <History size={28} strokeWidth={2.5} className="text-[#d08770]" />
+                <h2 className="text-2xl font-black tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>
+                  FILE CHANGES
+                  <span className="ml-2 text-sm opacity-60">({fileChanges.length})</span>
+                </h2>
+              </div>
+
+              {fileChanges.length === 0 ? (
+                <div className="flex flex-col items-center py-10 opacity-50">
+                  <CheckCircle size={48} strokeWidth={1.5} />
+                  <p className="font-bold text-sm mt-2">No file changes yet!</p>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-4 max-h-[400px] overflow-y-auto">
+                  {fileChanges.map((change, idx) => (
+                    <div 
+                      key={change.id} 
+                      className={`bg-cream border-4 border-ink p-4 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] transition-all hover:-translate-y-0.5 ${idx % 2 === 0 ? 'rotate-0.5' : '-rotate-0.5'}`}
+                      style={idx % 2 === 0 ? sketchyShape2 : sketchyShape3}
+                    >
+                      <div className="flex justify-between items-start mb-3">
+                        <div className="flex items-center gap-2">
+                          <FileText size={16} strokeWidth={3} className="text-[#88c0d0]" />
+                          <span className="font-black text-sm text-ink truncate max-w-[300px]">{change.path}</span>
+                        </div>
+                        <span className="text-[10px] font-bold opacity-60 bg-paper px-2 py-0.5 border-2 border-ink">{change.time}</span>
+                      </div>
+
+                      {/* Diff 渲染 */}
+                      <div className="bg-[#FDF8F0] p-3 border-2 border-ink/20 font-mono text-sm overflow-x-auto">
+                        {change.diff.split('\n').map((line: string, i: number) => {
+                          let colorClass = 'text-ink/70';
+                          if (line.startsWith('+')) colorClass = 'text-[#a3be8c]';
+                          if (line.startsWith('-')) colorClass = 'text-[#bf616a]';
+                          if (line.startsWith('@')) colorClass = 'text-[#88c0d0]';
+                          return (
+                            <div key={i} className={`${colorClass} leading-relaxed ${line.startsWith('+') || line.startsWith('-') ? 'pl-2' : ''}`}>
+                              {line || '\u00A0'}
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* 确认 / 回滚操作栏 */}
+                      <div className="flex gap-4 mt-3">
+                        <button
+                          onClick={() => handleAck(change.id, change.path, change.backup_id)}
+                          className="flex-1 bg-cream text-ink font-black py-2.5 border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:bg-[#a3be8c] active:translate-y-1 active:shadow-none transition-all flex justify-center items-center gap-2"
+                          style={sketchyShape2}
+                        >
+                          <CheckCircle size={18} strokeWidth={3}/> ACKNOWLEDGE
+                        </button>
+                        
+                        <button
+                          onClick={() => handleRollback(change.id, change.path, change.backup_id)}
+                          className="flex-1 bg-[#bf616a] text-paper font-black py-2.5 border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:bg-[#a54e56] active:translate-y-1 active:shadow-none transition-all flex justify-center items-center gap-2"
+                          style={sketchyShape3}
+                        >
+                          <Undo2 size={18} strokeWidth={3}/> ROLLBACK
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         <div className="px-10 pb-8 pt-4 shrink-0 flex flex-col gap-3 w-full">
            
@@ -1980,25 +2241,17 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
       {/* --- 🌟 新增：右侧 Request 请求处理队列纸板 --- */}
       {showReqQueue && (
         <div style={sketchyShape3} className="w-[340px] shrink-0 bg-paper border-4 border-ink shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] flex flex-col overflow-hidden relative z-20">
-          {/* Header & Tabs */}
+          {/* Header */}
           <div className="flex flex-col shrink-0 p-4 bg-paper">
             <div className="flex justify-between items-center">
               <div className="flex items-center gap-2">
                 <Bell size={24} strokeWidth={2.5} className="text-[#EBCB8B]" />
                 <h3 className="text-2xl font-black tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>
-                  {reqTab === 'pending' ? 'PENDING' : 'RESOLVED'}
-                  {reqTab === 'pending' && pendingReqs.length > 0 && ` (${pendingReqs.length})`}
+                  PENDING
+                  {pendingReqs.length > 0 && ` (${pendingReqs.length})`}
                 </h3>
               </div>
               <div className="flex items-center gap-2">
-                <button 
-                  onClick={() => setReqTab(reqTab === 'pending' ? 'resolved' : 'pending')} 
-                  className="p-1.5 bg-cream border-2 border-ink hover:bg-sand transition-all shadow-[2px_2px_0px_0px_rgba(26,26,26,1)]" 
-                  style={sketchyShape1}
-                  title="Switch Tab"
-                >
-                  <ArrowRightLeft size={16} strokeWidth={3} />
-                </button>
                 <button onClick={() => setShowReqQueue(false)} className="hover:text-terracotta hover:rotate-90 transition-all p-1 bg-paper border-2 border-ink" style={sketchyShape1}>
                   <X size={20} strokeWidth={3} />
                 </button>
@@ -2008,96 +2261,63 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
 
           {/* 列表渲染区 */}
           <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4 bg-paper">
-            {reqTab === 'pending' ? (
-              pendingReqs.length === 0 ? (
-                <div className="flex flex-col items-center opacity-50 mt-10">
-                  <Activity size={48} strokeWidth={1.5} />
-                  <p className="font-bold text-sm mt-2">All caught up! No requests.</p>
-                </div>
-              ) : (
-                pendingReqs.map((req, idx) => (
-                  <div key={req.id} className={`bg-paper border-4 border-ink p-4 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex flex-col gap-3 relative transition-all hover:-translate-y-1 group ${idx % 2 === 0 ? 'rotate-1' : '-rotate-1'}`} style={idx % 2 === 0 ? sketchyShape2 : sketchyShape3}>
-                    {/* 悬浮时右上角显示IGNORE按钮 */}
-                    <button 
-                      onClick={() => handleResolveReq(req.id, false, true)} 
-                      className="opacity-0 group-hover:opacity-100 p-1.5 bg-ink text-paper border-2 border-ink hover:scale-110 transition-all absolute -top-2 -right-2 z-10" 
-                      style={sketchyShape2} 
-                      title="Ignore (Silent)"
-                    >
-                      <X size={12} strokeWidth={3} />
-                    </button>
-
-                    <div className="flex justify-between items-start">
-                      <span className="font-black text-xs uppercase px-2 py-0.5 bg-[#EBCB8B] border-2 border-ink" style={sketchyShape1}>{req.type}</span>
-                      <span className="text-[10px] font-bold opacity-60 bg-cream px-1">{req.created_at?.split(' ')[1]}</span>
-                    </div>
-                    
-                    <div>
-                      <div className="text-[15px] font-black text-ink break-all leading-tight">{req.target}</div>
-                      
-                      {/* Reason 折叠显示 */}
-                      <button 
-                        onClick={() => setExpandedReasons({...expandedReasons, [req.id]: !expandedReasons[req.id]})}
-                        className="text-xs font-bold text-ink/50 mt-2 flex items-center gap-1 hover:text-ink transition-colors"
-                      >
-                        {expandedReasons[req.id] ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-                        Reason
-                      </button>
-                      {expandedReasons[req.id] && (
-                        <div className="text-xs font-bold text-ink/70 bg-ink/5 p-2 mt-1 leading-relaxed">{req.reason}</div>
-                      )}
-                    </div>
-
-                    <input
-                      value={feedbackInputs[req.id] || ''}
-                      onChange={e => setFeedbackInputs({...feedbackInputs, [req.id]: e.target.value})}
-                      placeholder="Feedback (Optional)..."
-                      className="w-full text-xs font-bold p-2 border-2 border-ink focus:outline-none bg-[#FDF8F0] shadow-[inset_2px_2px_0px_0px_rgba(26,26,26,0.05)] placeholder:text-ink/30"
-                      style={sketchyShape2}
-                    />
-
-                    <div className="flex gap-2 mt-1">
-                      <button onClick={() => handleResolveReq(req.id, true, false)} className="flex-1 bg-[#a3be8c] text-ink font-black text-xs py-2 border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:bg-[#8eb072] active:translate-y-1 active:shadow-none transition-all flex justify-center items-center" style={sketchyShape1}>
-                        APPROVE
-                      </button>
-                      <button onClick={() => handleResolveReq(req.id, false, false)} className="flex-1 bg-[#bf616a] text-paper font-black text-xs py-2 border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:bg-[#a54e56] active:translate-y-1 active:shadow-none transition-all" style={sketchyShape2}>
-                        REJECT
-                      </button>
-                    </div>
-                  </div>
-                ))
-              )
+            {pendingReqs.length === 0 ? (
+              <div className="flex flex-col items-center opacity-50 mt-10">
+                <Activity size={48} strokeWidth={1.5} />
+                <p className="font-bold text-sm mt-2">All caught up! No requests.</p>
+              </div>
             ) : (
-              resolvedReqs.length === 0 ? (
-                <div className="flex flex-col items-center opacity-50 mt-10">
-                  <Package size={48} strokeWidth={1.5} />
-                  <p className="font-bold text-sm mt-2">History is empty.</p>
-                </div>
-              ) : (
-                resolvedReqs.map((req, idx) => (
-                  <div key={req.id} className="bg-cream border-4 border-ink p-3 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex flex-col gap-2 opacity-80 hover:opacity-100 transition-opacity relative group" style={idx % 2 === 0 ? sketchyShape1 : sketchyShape3}>
-                    <div className="flex justify-between items-start">
-                      <span className={`font-black text-[10px] uppercase px-1.5 py-0.5 border-2 border-ink ${req.status === 'approved' ? 'bg-[#a3be8c] text-ink' : req.status === 'rejected' ? 'bg-[#bf616a] text-paper' : 'bg-sand text-ink'}`}>
-                        {req.status}
-                      </span>
-                      {/* 踢出文件的删除按钮 */}
-                      <button onClick={() => handleDeleteReq(req.id)} className="opacity-0 group-hover:opacity-100 p-1 bg-[#bf616a] text-paper border-2 border-ink hover:scale-110 transition-all absolute -top-3 -right-3" style={sketchyShape2} title="Remove Request">
-                        <Trash2 size={14} strokeWidth={3} />
-                      </button>
-                    </div>
-                    <div className="text-sm font-black truncate">{req.target}</div>
-                    <div className="text-[10px] font-bold opacity-60 flex justify-between border-b-2 border-ink/10 pb-1">
-                      <span>{req.type}</span>
-                      <span>{req.resolved_at?.split(' ')[1]}</span>
-                    </div>
-                    {req.feedback && (
-                      <div className="text-[11px] font-bold text-terracotta bg-terracotta/10 p-1.5 border-l-2 border-terracotta">
-                        {req.feedback}
-                      </div>
+              pendingReqs.map((req, idx) => (
+                <div key={req.id} className={`bg-paper border-4 border-ink p-4 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex flex-col gap-3 relative transition-all hover:-translate-y-1 group ${idx % 2 === 0 ? 'rotate-1' : '-rotate-1'}`} style={idx % 2 === 0 ? sketchyShape2 : sketchyShape3}>
+                  {/* 悬浮时右上角显示IGNORE按钮 */}
+                  <button 
+                    onClick={() => handleResolveReq(req.id, false, true)} 
+                    className="opacity-0 group-hover:opacity-100 p-1.5 bg-ink text-paper border-2 border-ink hover:scale-110 transition-all absolute -top-2 -right-2 z-10" 
+                    style={sketchyShape2} 
+                    title="Ignore (Silent)"
+                  >
+                    <X size={12} strokeWidth={3} />
+                  </button>
+
+                  <div className="flex justify-between items-start">
+                    <span className="font-black text-xs uppercase px-2 py-0.5 bg-[#EBCB8B] border-2 border-ink" style={sketchyShape1}>{req.type}</span>
+                    <span className="text-[10px] font-bold opacity-60 bg-cream px-1">{req.created_at?.split(' ')[1]}</span>
+                  </div>
+                  
+                  <div>
+                    <div className="text-[15px] font-black text-ink break-all leading-tight">{req.target}</div>
+                    
+                    {/* Reason 折叠显示 */}
+                    <button 
+                      onClick={() => setExpandedReasons({...expandedReasons, [req.id]: !expandedReasons[req.id]})}
+                      className="text-xs font-bold text-ink/50 mt-2 flex items-center gap-1 hover:text-ink transition-colors"
+                    >
+                      {expandedReasons[req.id] ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                      Reason
+                    </button>
+                    {expandedReasons[req.id] && (
+                      <div className="text-xs font-bold text-ink/70 bg-ink/5 p-2 mt-1 leading-relaxed">{req.reason}</div>
                     )}
                   </div>
-                ))
-              )
+
+                  <input
+                    value={feedbackInputs[req.id] || ''}
+                    onChange={e => setFeedbackInputs({...feedbackInputs, [req.id]: e.target.value})}
+                    placeholder="Feedback (Optional)..."
+                    className="w-full text-xs font-bold p-2 border-2 border-ink focus:outline-none bg-[#FDF8F0] shadow-[inset_2px_2px_0px_0px_rgba(26,26,26,0.05)] placeholder:text-ink/30"
+                    style={sketchyShape2}
+                  />
+
+                  <div className="flex gap-2 mt-1">
+                    <button onClick={() => handleResolveReq(req.id, true, false)} className="flex-1 bg-[#a3be8c] text-ink font-black text-xs py-2 border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:bg-[#8eb072] active:translate-y-1 active:shadow-none transition-all flex justify-center items-center" style={sketchyShape1}>
+                      APPROVE
+                    </button>
+                    <button onClick={() => handleResolveReq(req.id, false, false)} className="flex-1 bg-[#bf616a] text-paper font-black text-xs py-2 border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:bg-[#a54e56] active:translate-y-1 active:shadow-none transition-all" style={sketchyShape2}>
+                      REJECT
+                    </button>
+                  </div>
+                </div>
+              ))
             )}
           </div>
         </div>

@@ -107,6 +107,7 @@ async def run_api(host: str = "0.0.0.0", port: int = 8000):
     from src.server.api.tools import router as tools_router
     from src.server.api.system import router as system_router
     from src.server.api.request import router as request_router
+    from src.server.api.filesystem import router as filesystem_router
 
     app = FastAPI(title="PurrCat API System")
 
@@ -125,6 +126,7 @@ async def run_api(host: str = "0.0.0.0", port: int = 8000):
     app.include_router(tools_router)
     app.include_router(system_router)
     app.include_router(request_router)
+    app.include_router(filesystem_router)
 
     @app.get("/")
     def ping():
