@@ -610,6 +610,31 @@ class Task:
                             pass
         return logs
 
+    def get_injectable_nodes_info(self) -> list:
+        """返回支持注入的节点信息 (结构化 List)，供前端渲染或 Agent 工具格式化"""
+        nodes_info = []
+        
+        # 1. 建立 node_id 到 node_name 的映射 (从画布原始 graph 中提取)
+        node_names = {}
+        for node_data in self.graph.get("nodes", []):
+            node_names[node_data["id"]] = node_data.get("name", node_data["id"])
+
+        # 2. 遍历内存中的实例列表，筛选具备注入能力的节点
+        for node_id, node_instance in self.node_list.items():
+            if getattr(node_instance, "can_inject", False):
+                node_name = node_names.get(node_id, node_id)
+                state = self.node_state.get(node_id, NodeState.READY)
+                state_str = state.value if hasattr(state, "value") else str(state)
+                
+                # 返回标准的 dict 结构
+                nodes_info.append({
+                    "id": node_id,
+                    "name": node_name,
+                    "state": state_str
+                })
+                
+        return nodes_info
+
     def log(self, log_type: str, content: str, node_id: str):
         """兼容 BaseNode.log 的接口，参数顺序: (log_type, content, node_id)"""
         log_entry = {

@@ -4,7 +4,7 @@ TASK_TOOL_SCHEMA = {
     "type": "function",
     "function": {
         "name": "Task",
-        "description": "统一任务操作工具，支持：1.列出可用图(list_graphs) 2.查询当前任务列表(list_tasks) 3.创建任务(add) 4.终止任务(kill) 5.向任务节点注入人工指令(submit_request)。",
+        "description": "统一任务操作工具，支持：1.列出可用图(list_graphs) 2.查询当前任务列表(list_tasks) 3.创建任务(add) 4.终止任务(kill) 5.向任务节点注入人工指令(submit_request) 6.查询任务的交互节点列表及状态(get_details)。",
         "parameters": {
             "type": "object",
             "properties": {
@@ -17,6 +17,7 @@ TASK_TOOL_SCHEMA = {
                         "add",
                         "kill",
                         "submit_request",
+                        "get_details",
                     ],
                 },
                 "name": {
@@ -33,7 +34,7 @@ TASK_TOOL_SCHEMA = {
                 },
                 "task_id": {
                     "type": "string",
-                    "description": "任务ID（action=kill 或 submit_request 时必填）",
+                    "description": "任务ID（action=kill, submit_request 或 get_details 时必填）",
                 },
                 "node_id": {
                     "type": "string",

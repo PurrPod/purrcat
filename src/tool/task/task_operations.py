@@ -152,3 +152,25 @@ def submit_request_operation(task_id: str, content: str, node_id: str) -> tuple:
 
     except Exception as e:
         return None, f"注入指令发生代码级异常: {str(e)}"
+
+
+def get_task_details_operation(task_id: str) -> tuple:
+    """获取任务支持交互的节点详情"""
+    from src.harness.process import TASK_INSTANCES
+
+    if not task_id:
+        return None, "缺少必需参数: task_id"
+
+    if task_id not in TASK_INSTANCES:
+        return None, f"查询失败：未在内存中找到运行中的任务 (ID: {task_id})。"
+
+    task = TASK_INSTANCES[task_id]
+    
+    try:
+        nodes_info = task.get_injectable_nodes_info()
+        return {
+            "task_id": task_id,
+            "nodes": nodes_info
+        }, None
+    except Exception as e:
+        return None, f"获取任务详情发生异常: {str(e)}"

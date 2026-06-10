@@ -10,6 +10,7 @@ from src.tool.task.task_operations import (
     kill_task_operation,
     list_tasks_operation,
     submit_request_operation,
+    get_task_details_operation,
 )
 from src.tool.utils.format import error_response, text_response, warning_response
 
@@ -80,7 +81,7 @@ def _get_graphs_help_text(graphs: dict) -> str:
 def Task(action: str, **kwargs) -> str:
     try:
         action = action.strip().lower() if action else ""
-        if action not in ["list_graphs", "list_tasks", "add", "kill", "submit_request"]:
+        if action not in ["list_graphs", "list_tasks", "add", "kill", "submit_request", "get_details"]:
             return error_response(f"无效的操作: {action}", "❌ 无效action")
 
         if action == "list_graphs":
@@ -96,6 +97,8 @@ def Task(action: str, **kwargs) -> str:
             return _handle_kill(**kwargs)
         if action == "submit_request":
             return _handle_submit_request(**kwargs)
+        if action == "get_details":
+            return _handle_get_details(**kwargs)
     except Exception as e:
         traceback.print_exc()
         return error_response(f"任务异常: {str(e)}", "❌ Task执行异常")
@@ -225,3 +228,29 @@ def _handle_submit_request(**kwargs) -> str:
     if error:
         return warning_response(error, "⚠️ 注入失败")
     return text_response({"message": result["message"]}, "💬 指令已成功注入")
+
+
+def _handle_get_details(**kwargs) -> str:
+    task_id = kwargs.get("task_id")
+    if not task_id:
+        return error_response("缺少必需参数: task_id", "❌ 缺少task_id")
+        
+    result, error = get_task_details_operation(task_id)
+    if error:
+        return warning_response(error, "⚠️ 获取详情失败")
+        
+    # ===== 在此层进行 LLM 友好的平文本渲染 =====
+    nodes_info = result.get("nodes", [])
+    if not nodes_info:
+        dashboard_text = "当前任务没有支持指令注入的节点。"
+    else:
+        lines = []
+        for node in nodes_info:
+            lines.append(f"@{node['name']}(id: {node['id']}): {node['state']}")
+        dashboard_text = "\n".join(lines)
+        
+    # 你甚至可以把 raw_data 也塞进 response 里，看具体框架是否剔除多余参数
+    return text_response(
+        {"message": dashboard_text},
+        f"📊 任务 [{task_id}] 交互节点看板"
+    )
