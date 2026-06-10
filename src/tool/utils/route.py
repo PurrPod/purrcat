@@ -16,6 +16,7 @@ from src.utils.config import BUFFER_DIR
 TOOL_FUNC_MAP = {
     "filesystem": "FileSystem",
     "bash": "Bash",
+    "brainstorm": "BrainStorm",
     "cron": "Cron",
     "callmcp": "CallMCP",
     "memo": "Memo",

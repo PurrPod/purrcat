@@ -33,7 +33,7 @@ class Agent:
         self.pending_force_push = []
         self.window_token = 0
         self._stop_event = threading.Event()
-        self._history_lock = threading.Lock()
+        self._history_lock = threading.RLock()  # 核心修复：必须升级为可重入锁
         self._push_lock = threading.RLock()
         self._save_callback = save_callback
         self.model = AgentModel(self.session_id)
@@ -113,15 +113,17 @@ class Agent:
         self.state = "idle"
 
     def get_history(self):
-        return copy.deepcopy(self.current_history)
+        with self._history_lock:
+            return copy.deepcopy(self.current_history)
 
     def _append_history(self, message: dict):
-        self.current_history.append(message)
-        try:
-            self.tracker.add(message)
-            self.save_checkpoint()
-        except Exception as e:
-            print(f"⚠️ [Memory] 落盘失败: {e}")
+        with self._history_lock:
+            self.current_history.append(message)
+            try:
+                self.tracker.add(message)
+                self.save_checkpoint()
+            except Exception as e:
+                print(f"⚠️ [Memory] 落盘失败: {e}")
 
     def force_push(self, content, type="user"):
         with self._push_lock:
