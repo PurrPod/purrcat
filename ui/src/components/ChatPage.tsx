@@ -248,48 +248,36 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
     return () => clearInterval(interval);
   }, []);
 
-  // --- 🌟 确认变更函数（向前截断） ---
-  const handleAck = async (changeId: string, path: string, backupId: string) => {
+  // --- 🌟 修改：极简化的 Ack 操作（传入 newest_backup_id）---
+  const handleAck = async (path: string, newestBackupId: string) => {
     try {
-      if (!backupId) { toast.error("缺乏快照标识，无法确认"); return; }
+      if (!newestBackupId) { toast.error("缺乏快照标识"); return; }
       const res = await fetch(`http://localhost:8000/api/filesystem/ack`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path, backup_id: backupId })
+        body: JSON.stringify({ path, backup_id: newestBackupId })
       });
-      
       if (res.ok) {
-        toast.success("已确认更改并清理旧备份！");
-        fetchGlobalDiffs(); // 立刻刷新视图，后端已物理抹除，数据会自动消失！
-      } else {
-        const err = await res.json();
-        toast.error(err.detail || "确认失败");
+        toast.success("已确认该文件的所有合并更改！");
+        fetchGlobalDiffs(); 
       }
-    } catch {
-      toast.error("网络异常");
-    }
+    } catch { toast.error("网络异常"); }
   };
 
-  // --- 🌟 一键回滚函数（向后截断） ---
-  const handleRollback = async (changeId: string, path: string, backupId: string) => {
+  // --- 🌟 修改：极简化的 Rollback 操作（传入 oldest_backup_id）---
+  const handleRollback = async (path: string, oldestBackupId: string) => {
     try {
-      if (!backupId) { toast.error("缺乏快照标识，无法精准回滚"); return; }
+      if (!oldestBackupId) { toast.error("缺乏快照标识"); return; }
       const res = await fetch(`http://localhost:8000/api/filesystem/undo`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path, backup_id: backupId })
+        body: JSON.stringify({ path, backup_id: oldestBackupId })
       });
-      
       if (res.ok) {
-        toast.success("时光倒流：文件已恢复，后续修改已废弃！");
-        fetchGlobalDiffs(); // 立刻刷新视图
-      } else {
-        const err = await res.json();
-        toast.error(err.detail || "回滚失败");
+        toast.success("时光倒流：文件已一键恢复至最初状态！");
+        fetchGlobalDiffs(); 
       }
-    } catch {
-      toast.error("网络异常，回滚失败");
-    }
+    } catch { toast.error("网络异常"); }
   };
 
   // 轮询 Token 进度
@@ -2108,6 +2096,12 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                         <div className="flex items-center gap-2">
                           <FileText size={16} strokeWidth={3} className="text-[#88c0d0]" />
                           <span className="font-black text-sm text-ink truncate max-w-[300px]">{change.path}</span>
+                          {/* 🌟 亮点：如果修改次数大于 1，加上一个极客风的聚合徽章 */}
+                          {change.edit_count > 1 && (
+                            <span className="bg-[#EBCB8B] text-ink px-1.5 py-0.5 text-[10px] font-black border-2 border-ink shadow-[1px_1px_0px_0px_rgba(26,26,26,1)] ml-1" style={sketchyShape1}>
+                              {change.edit_count} EDITS MERGED
+                            </span>
+                          )}
                         </div>
                         <span className="text-[10px] font-bold opacity-60 bg-paper px-2 py-0.5 border-2 border-ink">{change.time}</span>
                       </div>
@@ -2129,20 +2123,22 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
 
                       {/* 确认 / 回滚操作栏 */}
                       <div className="flex gap-4 mt-3">
+                        {/* 传入 newest_backup_id 确认全部 */}
                         <button
-                          onClick={() => handleAck(change.id, change.path, change.backup_id)}
+                          onClick={() => handleAck(change.path, change.newest_backup_id)}
                           className="flex-1 bg-cream text-ink font-black py-2.5 border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:bg-[#a3be8c] active:translate-y-1 active:shadow-none transition-all flex justify-center items-center gap-2"
                           style={sketchyShape2}
                         >
-                          <CheckCircle size={18} strokeWidth={3}/> ACKNOWLEDGE
+                          <CheckCircle size={18} strokeWidth={3}/> ACK ALL
                         </button>
                         
+                        {/* 传入 oldest_backup_id 回滚最初 */}
                         <button
-                          onClick={() => handleRollback(change.id, change.path, change.backup_id)}
+                          onClick={() => handleRollback(change.path, change.oldest_backup_id)}
                           className="flex-1 bg-[#bf616a] text-paper font-black py-2.5 border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:bg-[#a54e56] active:translate-y-1 active:shadow-none transition-all flex justify-center items-center gap-2"
                           style={sketchyShape3}
                         >
-                          <Undo2 size={18} strokeWidth={3}/> ROLLBACK
+                          <Undo2 size={18} strokeWidth={3}/> REVERT
                         </button>
                       </div>
                     </div>

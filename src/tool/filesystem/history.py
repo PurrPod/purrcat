@@ -2,6 +2,7 @@ import os
 import shutil
 import time
 import json
+import difflib  # 🌟 新增：用于动态计算首尾差异
 from src.tool.filesystem.exceptions import FileSystemError
 
 HISTORY_DIR = os.path.join(os.getcwd(), ".agent_history")
@@ -38,11 +39,10 @@ def track_edit(target_path: str) -> str:
 
 
 def save_backup_meta(target_path: str, backup_id: str, diff: str):
-    """🌟 新增：保存包含 Diff 和元数据的 meta 文件"""
+    """保存包含 Diff 和元数据的 meta 文件"""
     history_file = _get_history_path(target_path)
     meta_path = f"{history_file}@{backup_id}.meta"
     
-    # 获取简洁路径用于 UI 显示
     display_path = target_path
     if "agent_vm" in target_path:
         display_path = "/agent_vm" + target_path.split("agent_vm")[-1].replace("\\", "/")
@@ -50,6 +50,7 @@ def save_backup_meta(target_path: str, backup_id: str, diff: str):
     meta_data = {
         "id": f"diff_{backup_id}",
         "path": display_path,
+        "host_path": target_path,  # 🌟 修复：额外保存宿主机绝对路径，方便后面读取真实文件
         "backup_id": backup_id,
         "diff": diff,
         "time": time.strftime("%H:%M:%S", time.localtime(int(backup_id)/1000))
@@ -59,21 +60,86 @@ def save_backup_meta(target_path: str, backup_id: str, diff: str):
 
 
 def get_all_diffs() -> list:
-    """🌟 新增：读取所有 meta 文件，返回全局 Diff 列表给前端"""
+    """🌟 终极改造：将同一文件的多次修改合并为一个全局 Diff 返回"""
     if not os.path.exists(HISTORY_DIR):
         return []
-    diffs = []
+        
+    # 1. 读取所有 meta 文件
+    meta_list = []
     for f in os.listdir(HISTORY_DIR):
         if f.endswith(".meta"):
-            meta_path = os.path.join(HISTORY_DIR, f)
             try:
-                with open(meta_path, "r", encoding="utf-8") as file:
-                    diffs.append(json.load(file))
+                with open(os.path.join(HISTORY_DIR, f), "r", encoding="utf-8") as file:
+                    meta_list.append(json.load(file))
             except Exception:
                 pass
-    # 按时间戳倒序排列
-    diffs.sort(key=lambda x: int(x["backup_id"]), reverse=True)
-    return diffs
+                
+    # 2. 按展示路径 (path) 对快照进行分组
+    grouped = {}
+    for m in meta_list:
+        path = m["path"]
+        if path not in grouped:
+            grouped[path] = []
+        grouped[path].append(m)
+        
+    # 3. 针对每个文件，计算首尾合并的 consolidated_diff
+    consolidated_diffs = []
+    for path, items in grouped.items():
+        # 按时间戳正序排序 (旧 -> 新)
+        items.sort(key=lambda x: int(x["backup_id"]))
+        oldest_meta = items[0]
+        newest_meta = items[-1]
+        
+        oldest_id = oldest_meta["backup_id"]
+        newest_id = newest_meta["backup_id"]
+        host_path = oldest_meta.get("host_path", "")
+        
+        if not host_path:
+            continue
+            
+        # 寻找该文件最原始的备份内容
+        history_file = _get_history_path(host_path)
+        oldest_backup_path = f"{history_file}@{oldest_id}"
+        
+        old_content = ""
+        if os.path.exists(oldest_backup_path):
+            with open(oldest_backup_path, "r", encoding="utf-8") as f:
+                old_content = f.read()
+        elif os.path.exists(oldest_backup_path + ".empty"):
+            old_content = ""  # 说明是新建文件，原始为空
+            
+        # 获取当前硬盘上真实的最新文件内容
+        current_content = ""
+        if os.path.exists(host_path):
+            with open(host_path, "r", encoding="utf-8") as f:
+                current_content = f.read()
+                
+        # 重新计算首尾合并后的最终 Diff
+        format_path = path if path.startswith("/") else "/" + path
+        diff_lines = list(
+            difflib.unified_diff(
+                old_content.splitlines(keepends=True),
+                current_content.splitlines(keepends=True),
+                fromfile=f"a{format_path}",
+                tofile=f"b{format_path}",
+                n=3,
+            )
+        )
+        consolidated_diff = "".join(diff_lines)
+        
+        consolidated_diffs.append({
+            "id": f"consolidated_{newest_id}",
+            "path": path,
+            "oldest_backup_id": oldest_id,
+            "newest_backup_id": newest_id,
+            "edit_count": len(items),  # 这个文件一共被修改了多少次
+            "time": newest_meta.get("time", ""),
+            "diff": consolidated_diff
+        })
+        
+    # 按最新修改时间倒序排列返回给前端
+    consolidated_diffs.sort(key=lambda x: int(x["newest_backup_id"]), reverse=True)
+    return consolidated_diffs
 
 
 def ack_backup(target_path: str, backup_id: str):
