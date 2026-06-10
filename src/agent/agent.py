@@ -220,13 +220,15 @@ class Agent:
 
     def process_message(self):
         current_interaction_id = self._increment_interaction_id()
-        
+
         # 🌟 修复：直接作为 role="system" 写入历史。
         # 既免去了 force_push 队列的异步排队延迟，又利用后端的 role 过滤完美对前端 UI 隐身。
-        self._append_history({
-            "role": "system",
-            "content": "任务开始前如有需要可以调用 Search 工具搜索本地相关的工具。完成任务后请调用 Memo 工具及时更新记忆，记录的记忆越多越详细以后你的能力就会越强",
-        })
+        self._append_history(
+            {
+                "role": "system",
+                "content": "任务开始前如有需要可以调用 Search 工具搜索本地相关的工具。完成任务后请调用 Memo 工具及时更新记忆，记录的记忆越多越详细以后你的能力就会越强",
+            }
+        )
 
         while True:
             try:
@@ -442,7 +444,7 @@ class Agent:
             "role": "system",
             "content": f"【系统通知：因上下文超限...】\n{final_summary}",
         }
-        with self._history_lock:                # 🌟 核心修复：内存截断全量复写时锁定
+        with self._history_lock:  # 🌟 核心修复：内存截断全量复写时锁定
             self.current_history = [
                 original_system_msg,
                 truncation_msg,

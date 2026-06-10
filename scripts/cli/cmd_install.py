@@ -4,7 +4,6 @@ import io
 import json
 import os
 import re
-import sys
 import urllib.request
 import zipfile
 
@@ -117,16 +116,20 @@ def run_install(ext_type, source):
             graph_name = graph_name[:-5]
 
         # 直接从 raw.githubusercontent.com 拉取单文件，速度最快最稳定
-        raw_url = f"https://raw.githubusercontent.com/PurrPod/graphpod/main/{graph_filename}"
+        raw_url = (
+            f"https://raw.githubusercontent.com/PurrPod/graphpod/main/{graph_filename}"
+        )
         dest_dir = os.path.join(project_root, "src", "harness", "graph")
         os.makedirs(dest_dir, exist_ok=True)
         dest_path = os.path.join(dest_dir, graph_filename)
 
         print(f"[*] Fetching graph '{graph_name}' from PurrPod/graphpod...")
         try:
-            req = urllib.request.Request(raw_url, headers={"User-Agent": "PurrCat-CLI/1.0"})
+            req = urllib.request.Request(
+                raw_url, headers={"User-Agent": "PurrCat-CLI/1.0"}
+            )
             response = urllib.request.urlopen(req)
-            graph_data = response.read().decode('utf-8')
+            graph_data = response.read().decode("utf-8")
 
             # 落盘保存图 json
             with open(dest_path, "w", encoding="utf-8") as f:
@@ -141,22 +144,30 @@ def run_install(ext_type, source):
                 mcps = deps.get("mcps", {})
 
                 if skills:
-                    print(f"\n[*] Graph '{graph_name}' requires {len(skills)} skill(s). Installing dependencies...")
+                    print(
+                        f"\n[*] Graph '{graph_name}' requires {len(skills)} skill(s). Installing dependencies..."
+                    )
                     for skill_url in skills:
                         # 递归调用安装 Skill
                         run_install("skill", skill_url)
 
                 if mcps:
-                    print(f"\n[*] Graph '{graph_name}' requires MCP server(s). Installing dependencies...")
+                    print(
+                        f"\n[*] Graph '{graph_name}' requires MCP server(s). Installing dependencies..."
+                    )
                     # 递归调用安装 MCP (转为JSON字符串传入)
                     run_install("mcp", json.dumps(mcps))
 
             except json.JSONDecodeError:
-                print("X Error: Downloaded graph file is not valid JSON. Skipping dependency check.")
-                
+                print(
+                    "X Error: Downloaded graph file is not valid JSON. Skipping dependency check."
+                )
+
         except urllib.error.HTTPError as e:
             if e.code == 404:
-                print(f"X Error: Graph '{graph_filename}' not found in PurrPod/graphpod repository.")
+                print(
+                    f"X Error: Graph '{graph_filename}' not found in PurrPod/graphpod repository."
+                )
             else:
                 print(f"X HTTP Error fetching graph: {e}")
         except Exception as e:
@@ -166,8 +177,12 @@ def run_install(ext_type, source):
     # 3. Node 安装逻辑：沿用官方仓库
     # ---------------------------------------------------------
     elif ext_type == "node":
-        OFFICIAL_REPO_ZIP = f"https://github.com/PurrPod/node/archive/refs/heads/main.zip"
-        dest_dir = os.path.join(project_root, "src", "harness", "node", "extensions", source)
+        OFFICIAL_REPO_ZIP = (
+            "https://github.com/PurrPod/node/archive/refs/heads/main.zip"
+        )
+        dest_dir = os.path.join(
+            project_root, "src", "harness", "node", "extensions", source
+        )
         subfolder_path = f"node/{source}"
 
         print(f"[*] Fetching official node '{source}' from PurrPod/node...")
@@ -182,7 +197,9 @@ def run_install(ext_type, source):
             parsed = _parse_github_url(source)
             if not parsed:
                 print("X Error: Invalid GitHub URL format.")
-                print("  Expected: https://github.com/owner/repo/tree/branch/path/to/skill")
+                print(
+                    "  Expected: https://github.com/owner/repo/tree/branch/path/to/skill"
+                )
                 return
 
             skill_name = os.path.basename(parsed["path"].rstrip("/"))
@@ -190,12 +207,18 @@ def run_install(ext_type, source):
 
             zip_url = f"https://github.com/{parsed['owner']}/{parsed['repo']}/archive/refs/heads/{parsed['branch']}.zip"
 
-            print(f"[*] Fetching skill '{skill_name}' from {parsed['owner']}/{parsed['repo']}")
+            print(
+                f"[*] Fetching skill '{skill_name}' from {parsed['owner']}/{parsed['repo']}"
+            )
             if _download_and_extract_subfolder(zip_url, parsed["path"], dest_dir):
-                print(f"[+] Successfully installed skill '{skill_name}' to skills/{skill_name}")
+                print(
+                    f"[+] Successfully installed skill '{skill_name}' to skills/{skill_name}"
+                )
         else:
             print("X Error: Currently, skill installation requires a full GitHub URL.")
-            print("  Example: purrcat install skill https://github.com/user/repo/tree/main/path/to/skill")
+            print(
+                "  Example: purrcat install skill https://github.com/user/repo/tree/main/path/to/skill"
+            )
 
     else:
         print(f"X Unknown extension type: {ext_type}")

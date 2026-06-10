@@ -147,7 +147,9 @@ def edit_file(
     )
 
     diff_text = "".join(diff_lines)
-    save_backup_meta(target_path, backup_id, diff_text)  # 🌟 核心：保存 metadata 供全局读取
+    save_backup_meta(
+        target_path, backup_id, diff_text
+    )  # 🌟 核心：保存 metadata 供全局读取
 
     check_result = run_code_check(target_path)
     msg = f"成功更新文件 {os.path.basename(target_path)}"
@@ -213,7 +215,9 @@ def write_file(path_from: str, content: str) -> dict:
     )
 
     diff_text = "".join(diff_lines)
-    save_backup_meta(target_path, backup_id, diff_text)  # 🌟 核心：保存 metadata 供全局读取
+    save_backup_meta(
+        target_path, backup_id, diff_text
+    )  # 🌟 核心：保存 metadata 供全局读取
 
     check_result = run_code_check(target_path)
     msg = f"成功写入文件 {os.path.basename(target_path)} (长度: {len(content)})"

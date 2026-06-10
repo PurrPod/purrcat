@@ -12,6 +12,7 @@ class AgentNode(BaseNode):
     """
     专门处理 LLM 对话、工具调用、大循环控制以及人类干预的节点基类
     """
+
     # 标识该节点支持接受外部指令注入，用于 Dashboard 过滤
     can_inject = True
 

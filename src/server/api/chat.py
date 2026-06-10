@@ -127,8 +127,10 @@ def get_session_history_api(session_id: str, branch_id: str = "main"):
 def get_session_branches_api(session_id: str):
     """🌟 新增：获取当前会话下所有活跃或已完成的子分支元数据"""
     try:
-        import os, json
+        import os
+        import json
         from src.utils.config import SESSIONS_DIR
+
         meta_path = os.path.join(SESSIONS_DIR, session_id, "meta.json")
         if not os.path.exists(meta_path):
             return {"main": {"status": "active"}}
@@ -243,10 +245,12 @@ def get_token_status_api():
 def delete_session_branch_api(session_id: str, branch_id: str):
     try:
         from src.agent.sub_runner import cancel_sub_branch
+
         # 🌟 修复：删除分支前，如果该分支在后台跑，直接一刀斩断！
         cancel_sub_branch(branch_id)
 
         from src.agent.session_store import SessionStore
+
         success = SessionStore.delete_branch(session_id, branch_id)
         if success:
             return {"status": "ok"}

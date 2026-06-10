@@ -613,7 +613,7 @@ class Task:
     def get_injectable_nodes_info(self) -> list:
         """返回支持注入的节点信息 (结构化 List)，供前端渲染或 Agent 工具格式化"""
         nodes_info = []
-        
+
         # 1. 建立 node_id 到 node_name 的映射 (从画布原始 graph 中提取)
         node_names = {}
         for node_data in self.graph.get("nodes", []):
@@ -625,14 +625,12 @@ class Task:
                 node_name = node_names.get(node_id, node_id)
                 state = self.node_state.get(node_id, NodeState.READY)
                 state_str = state.value if hasattr(state, "value") else str(state)
-                
+
                 # 返回标准的 dict 结构
-                nodes_info.append({
-                    "id": node_id,
-                    "name": node_name,
-                    "state": state_str
-                })
-                
+                nodes_info.append(
+                    {"id": node_id, "name": node_name, "state": state_str}
+                )
+
         return nodes_info
 
     def log(self, log_type: str, content: str, node_id: str):

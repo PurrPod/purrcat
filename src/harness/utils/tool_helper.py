@@ -11,6 +11,7 @@ def get_system_schema() -> List[dict]:
     """
     # 延迟导入避免循环依赖
     from src.tool import BASE_TASK_TOOL_SCHEMA
+
     return list(BASE_TASK_TOOL_SCHEMA)
 
 

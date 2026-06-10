@@ -58,12 +58,12 @@ def get_path_permission(target_path: str) -> str:
             if is_match:
                 # 默认权重为规则字符串的长度
                 match_weight = len(rule_norm)
-                
+
                 # 🌟 终极防弹逻辑：如果规则和目标路径一模一样（通常是人类通过 Request 批准的绝对路径）
                 # 直接赋予一个碾压级别的高权重，保证绝对优先！
                 if rule_norm == target_norm:
                     match_weight += 10000
-                
+
                 if match_weight > best_match_len:
                     best_match_len = match_weight
                     best_perm = perm_type

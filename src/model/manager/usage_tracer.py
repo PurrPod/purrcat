@@ -126,11 +126,15 @@ class ModelUsageTracer:
                     disk_map[hash_key]["calls"] += delta["calls"]
                     disk_map[hash_key]["prompt_tokens"] += delta["prompt_tokens"]
                     disk_map[hash_key]["cached_tokens"] += delta["cached_tokens"]
-                    disk_map[hash_key]["completion_tokens"] += delta["completion_tokens"]
+                    disk_map[hash_key]["completion_tokens"] += delta[
+                        "completion_tokens"
+                    ]
                     disk_map[hash_key]["reasoning_tokens"] += delta["reasoning_tokens"]
                     disk_map[hash_key]["total_tokens"] += delta["total_tokens"]
                     disk_map[hash_key]["total_duration_s"] = round(
-                        disk_map[hash_key]["total_duration_s"] + delta["total_duration_s"], 3
+                        disk_map[hash_key]["total_duration_s"]
+                        + delta["total_duration_s"],
+                        3,
                     )
                 else:
                     disk_map[hash_key] = delta.copy()

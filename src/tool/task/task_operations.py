@@ -165,12 +165,9 @@ def get_task_details_operation(task_id: str) -> tuple:
         return None, f"查询失败：未在内存中找到运行中的任务 (ID: {task_id})。"
 
     task = TASK_INSTANCES[task_id]
-    
+
     try:
         nodes_info = task.get_injectable_nodes_info()
-        return {
-            "task_id": task_id,
-            "nodes": nodes_info
-        }, None
+        return {"task_id": task_id, "nodes": nodes_info}, None
     except Exception as e:
         return None, f"获取任务详情发生异常: {str(e)}"

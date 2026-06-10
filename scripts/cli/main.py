@@ -49,10 +49,14 @@ PurrCat CLI - Cross-platform AI Agent Framework
     print("  purrcat install graph financial")
     print("")
     print("  # Install MCP server manually")
-    print("  purrcat install mcp '{\"tradingview\": {\"command\": \"uvx\", \"args\": [\"tradingview-mcp-server\"]}}'")
+    print(
+        '  purrcat install mcp \'{"tradingview": {"command": "uvx", "args": ["tradingview-mcp-server"]}}\''
+    )
     print("")
     print("  # Install third-party skill from any GitHub repo")
-    print("  purrcat install skill https://github.com/user/repo/tree/main/path/to/skill")
+    print(
+        "  purrcat install skill https://github.com/user/repo/tree/main/path/to/skill"
+    )
     print("")
     print("  purrcat update")
     print('  purrcat update --version="2026.05.15"')

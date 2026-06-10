@@ -5,7 +5,6 @@ import time
 
 from src.agent.agent import Agent
 from src.agent.session_store import SessionStore
-from src.utils.config import DATA_DIR
 
 
 class AgentManager:
@@ -203,9 +202,11 @@ class AgentManager:
 
         # 2. 执行删除（删除整个会话文件夹）
         from src.utils.config import SESSIONS_DIR
+
         session_dir = os.path.join(SESSIONS_DIR, session_id)
         if os.path.exists(session_dir) and os.path.isdir(session_dir):
             import shutil
+
             shutil.rmtree(session_dir)
             print(f"🗑️ 已删除会话文件夹: {session_dir}")
 
@@ -230,11 +231,13 @@ class AgentManager:
     def get_chat_history(self, session_id: str = None, branch_id: str = "main"):
         if not self._agent:
             self.init_agent()
-        
+
         # 如果是当前的活跃会话且查的是 main，优先从内存拿最新状态
-        if branch_id == "main" and (not session_id or session_id == self._agent.session_id):
+        if branch_id == "main" and (
+            not session_id or session_id == self._agent.session_id
+        ):
             return [m for m in self._agent.get_history() if m.get("role") != "system"]
-        
+
         # 否则一律透传 branch_id 从磁盘加载特定的隔离子分支历史
         return [
             m

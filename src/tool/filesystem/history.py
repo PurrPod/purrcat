@@ -42,10 +42,12 @@ def save_backup_meta(target_path: str, backup_id: str, diff: str):
     """保存包含 Diff 和元数据的 meta 文件"""
     history_file = _get_history_path(target_path)
     meta_path = f"{history_file}@{backup_id}.meta"
-    
+
     display_path = target_path
     if "agent_vm" in target_path:
-        display_path = "/agent_vm" + target_path.split("agent_vm")[-1].replace("\\", "/")
+        display_path = "/agent_vm" + target_path.split("agent_vm")[-1].replace(
+            "\\", "/"
+        )
 
     meta_data = {
         "id": f"diff_{backup_id}",
@@ -53,7 +55,7 @@ def save_backup_meta(target_path: str, backup_id: str, diff: str):
         "host_path": target_path,  # 🌟 修复：额外保存宿主机绝对路径，方便后面读取真实文件
         "backup_id": backup_id,
         "diff": diff,
-        "time": time.strftime("%H:%M:%S", time.localtime(int(backup_id)/1000))
+        "time": time.strftime("%H:%M:%S", time.localtime(int(backup_id) / 1000)),
     }
     with open(meta_path, "w", encoding="utf-8") as f:
         json.dump(meta_data, f, ensure_ascii=False)
@@ -63,7 +65,7 @@ def get_all_diffs() -> list:
     """🌟 终极改造：将同一文件的多次修改合并为一个全局 Diff 返回"""
     if not os.path.exists(HISTORY_DIR):
         return []
-        
+
     # 1. 读取所有 meta 文件
     meta_list = []
     for f in os.listdir(HISTORY_DIR):
@@ -73,7 +75,7 @@ def get_all_diffs() -> list:
                     meta_list.append(json.load(file))
             except Exception:
                 pass
-                
+
     # 2. 按展示路径 (path) 对快照进行分组
     grouped = {}
     for m in meta_list:
@@ -81,7 +83,7 @@ def get_all_diffs() -> list:
         if path not in grouped:
             grouped[path] = []
         grouped[path].append(m)
-        
+
     # 3. 针对每个文件，计算首尾合并的 consolidated_diff
     consolidated_diffs = []
     for path, items in grouped.items():
@@ -89,31 +91,31 @@ def get_all_diffs() -> list:
         items.sort(key=lambda x: int(x["backup_id"]))
         oldest_meta = items[0]
         newest_meta = items[-1]
-        
+
         oldest_id = oldest_meta["backup_id"]
         newest_id = newest_meta["backup_id"]
         host_path = oldest_meta.get("host_path", "")
-        
+
         if not host_path:
             continue
-            
+
         # 寻找该文件最原始的备份内容
         history_file = _get_history_path(host_path)
         oldest_backup_path = f"{history_file}@{oldest_id}"
-        
+
         old_content = ""
         if os.path.exists(oldest_backup_path):
             with open(oldest_backup_path, "r", encoding="utf-8") as f:
                 old_content = f.read()
         elif os.path.exists(oldest_backup_path + ".empty"):
             old_content = ""  # 说明是新建文件，原始为空
-            
+
         # 获取当前硬盘上真实的最新文件内容
         current_content = ""
         if os.path.exists(host_path):
             with open(host_path, "r", encoding="utf-8") as f:
                 current_content = f.read()
-                
+
         # 重新计算首尾合并后的最终 Diff
         format_path = path if path.startswith("/") else "/" + path
         diff_lines = list(
@@ -126,17 +128,19 @@ def get_all_diffs() -> list:
             )
         )
         consolidated_diff = "".join(diff_lines)
-        
-        consolidated_diffs.append({
-            "id": f"consolidated_{newest_id}",
-            "path": path,
-            "oldest_backup_id": oldest_id,
-            "newest_backup_id": newest_id,
-            "edit_count": len(items),  # 这个文件一共被修改了多少次
-            "time": newest_meta.get("time", ""),
-            "diff": consolidated_diff
-        })
-        
+
+        consolidated_diffs.append(
+            {
+                "id": f"consolidated_{newest_id}",
+                "path": path,
+                "oldest_backup_id": oldest_id,
+                "newest_backup_id": newest_id,
+                "edit_count": len(items),  # 这个文件一共被修改了多少次
+                "time": newest_meta.get("time", ""),
+                "diff": consolidated_diff,
+            }
+        )
+
     # 按最新修改时间倒序排列返回给前端
     consolidated_diffs.sort(key=lambda x: int(x["newest_backup_id"]), reverse=True)
     return consolidated_diffs
@@ -154,9 +158,11 @@ def ack_backup(target_path: str, backup_id: str):
         if full_path.startswith(history_prefix):
             try:
                 # 🌟 重大修复：追加 .replace(".meta", "") 清理 meta 文件
-                ts_str = f.replace(os.path.basename(history_prefix), "").replace(
-                    ".empty", ""
-                ).replace(".meta", "")
+                ts_str = (
+                    f.replace(os.path.basename(history_prefix), "")
+                    .replace(".empty", "")
+                    .replace(".meta", "")
+                )
                 # 核心：只要备份的时间戳 <= 当前确认的时间戳，就统统删掉！
                 if ts_str and int(ts_str) <= int(backup_id):
                     os.remove(full_path)
@@ -193,9 +199,11 @@ def rewind_file_by_id(target_path: str, backup_id: str) -> str:
         if full_path.startswith(history_prefix):
             try:
                 # 🌟 重大修复：追加 .replace(".meta", "") 清理 meta 文件
-                ts_str = f.replace(os.path.basename(history_prefix), "").replace(
-                    ".empty", ""
-                ).replace(".meta", "")
+                ts_str = (
+                    f.replace(os.path.basename(history_prefix), "")
+                    .replace(".empty", "")
+                    .replace(".meta", "")
+                )
                 if ts_str and int(ts_str) >= int(backup_id):
                     os.remove(full_path)
             except ValueError:
@@ -225,7 +233,12 @@ def rewind_file(target_path: str) -> str:
     latest_backup = backups[0]
 
     # 提取 backup_id
-    backup_id = os.path.basename(latest_backup).split("@")[-1].replace(".empty", "").replace(".meta", "")
+    backup_id = (
+        os.path.basename(latest_backup)
+        .split("@")[-1]
+        .replace(".empty", "")
+        .replace(".meta", "")
+    )
 
     return rewind_file_by_id(target_path, backup_id)
 

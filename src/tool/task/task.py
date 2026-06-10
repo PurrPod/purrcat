@@ -81,7 +81,14 @@ def _get_graphs_help_text(graphs: dict) -> str:
 def Task(action: str, **kwargs) -> str:
     try:
         action = action.strip().lower() if action else ""
-        if action not in ["list_graphs", "list_tasks", "add", "kill", "submit_request", "get_details"]:
+        if action not in [
+            "list_graphs",
+            "list_tasks",
+            "add",
+            "kill",
+            "submit_request",
+            "get_details",
+        ]:
             return error_response(f"无效的操作: {action}", "❌ 无效action")
 
         if action == "list_graphs":
@@ -234,11 +241,11 @@ def _handle_get_details(**kwargs) -> str:
     task_id = kwargs.get("task_id")
     if not task_id:
         return error_response("缺少必需参数: task_id", "❌ 缺少task_id")
-        
+
     result, error = get_task_details_operation(task_id)
     if error:
         return warning_response(error, "⚠️ 获取详情失败")
-        
+
     # ===== 在此层进行 LLM 友好的平文本渲染 =====
     nodes_info = result.get("nodes", [])
     if not nodes_info:
@@ -248,9 +255,8 @@ def _handle_get_details(**kwargs) -> str:
         for node in nodes_info:
             lines.append(f"@{node['name']}(id: {node['id']}): {node['state']}")
         dashboard_text = "\n".join(lines)
-        
+
     # 你甚至可以把 raw_data 也塞进 response 里，看具体框架是否剔除多余参数
     return text_response(
-        {"message": dashboard_text},
-        f"📊 任务 [{task_id}] 交互节点看板"
+        {"message": dashboard_text}, f"📊 任务 [{task_id}] 交互节点看板"
     )

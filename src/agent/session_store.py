@@ -9,8 +9,8 @@ from src.utils.config import SESSION_INDEX_PATH, SESSIONS_DIR
 
 class SessionStore:
     _index_lock = threading.RLock()
-    _file_locks = {}  
-    _file_locks_lock = threading.Lock()  
+    _file_locks = {}
+    _file_locks_lock = threading.Lock()
 
     @classmethod
     def _get_file_lock(cls, session_id):
@@ -64,13 +64,13 @@ class SessionStore:
                     # 🌟 核心修复 1：严格过滤，只有以 session_ 开头的才是对话记录
                     if not item.startswith("session_"):
                         continue
-                        
+
                     session_dir = os.path.join(SESSIONS_DIR, item)
                     if os.path.isdir(session_dir):
                         session_id = item
                         meta_path = os.path.join(session_dir, "meta.json")
                         main_path = os.path.join(session_dir, "main.json")
-                        
+
                         msg_count = 0
                         if os.path.exists(main_path):
                             try:
@@ -82,14 +82,20 @@ class SessionStore:
                         if session_id not in index_data:
                             created_at = time.strftime("%Y-%m-%d %H:%M:%S")
                             updated_at = created_at
-                            alias = session_id # 初始化别名
+                            alias = session_id  # 初始化别名
                             if os.path.exists(meta_path):
                                 try:
                                     with open(meta_path, "r", encoding="utf-8") as f:
                                         m_data = json.load(f)
-                                        created_at = m_data.get("created_at", created_at)
-                                        updated_at = m_data.get("updated_at", updated_at)
-                                        alias = m_data.get("alias", alias) # 🌟 核心修复 2：正确读取别名
+                                        created_at = m_data.get(
+                                            "created_at", created_at
+                                        )
+                                        updated_at = m_data.get(
+                                            "updated_at", updated_at
+                                        )
+                                        alias = m_data.get(
+                                            "alias", alias
+                                        )  # 🌟 核心修复 2：正确读取别名
                                 except Exception:
                                     pass
 
@@ -97,7 +103,7 @@ class SessionStore:
                                 "id": session_id,
                                 "created_at": created_at,
                                 "parent_id": None,
-                                "alias": alias, # 写入别名
+                                "alias": alias,  # 写入别名
                                 "updated_at": updated_at,
                                 "messages_count": msg_count,
                             }
@@ -109,7 +115,9 @@ class SessionStore:
                                     with open(meta_path, "r", encoding="utf-8") as f:
                                         m_data = json.load(f)
                                         if "alias" in m_data:
-                                            index_data[session_id]["alias"] = m_data["alias"]
+                                            index_data[session_id]["alias"] = m_data[
+                                                "alias"
+                                            ]
                                 except Exception:
                                     pass
 
@@ -130,7 +138,17 @@ class SessionStore:
             return []
 
     @classmethod
-    def save_session(cls, session_id, history, branch_id="main", parent_id=None, alias=None, window_token=0, deliverable=None, action=None):
+    def save_session(
+        cls,
+        session_id,
+        history,
+        branch_id="main",
+        parent_id=None,
+        alias=None,
+        window_token=0,
+        deliverable=None,
+        action=None,
+    ):
         """🌟 重构：线程安全地进行多文件分支隔离归档，并追溯分叉拓扑"""
         session_dir = os.path.join(SESSIONS_DIR, session_id)
         os.makedirs(session_dir, exist_ok=True)
@@ -152,10 +170,14 @@ class SessionStore:
         # 更新文件夹内的拓扑元数据 meta.json
         meta_path = os.path.join(session_dir, "meta.json")
         timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
-        
+
         meta_lock = cls._get_file_lock(f"{session_id}_meta")
         with meta_lock:
-            meta_data = {"session_id": session_id, "created_at": timestamp, "branches": {}}
+            meta_data = {
+                "session_id": session_id,
+                "created_at": timestamp,
+                "branches": {},
+            }
             if os.path.exists(meta_path):
                 try:
                     with open(meta_path, "r", encoding="utf-8") as f:
@@ -173,14 +195,20 @@ class SessionStore:
                 meta_data["branches"] = {}
 
             if branch_id == "main":
-                meta_data["branches"]["main"] = {"status": "active", "updated_at": timestamp, "window_token": window_token}
+                meta_data["branches"]["main"] = {
+                    "status": "active",
+                    "updated_at": timestamp,
+                    "window_token": window_token,
+                }
             else:
                 meta_data["branches"][branch_id] = {
-                    "status": "active" if branch_id in meta_data.get("active_branches", {}) else "completed",
+                    "status": "active"
+                    if branch_id in meta_data.get("active_branches", {})
+                    else "completed",
                     "fork_from": "main",
                     "deliverable": deliverable,
                     "action": action,
-                    "updated_at": timestamp
+                    "updated_at": timestamp,
                 }
 
             try:
@@ -194,7 +222,11 @@ class SessionStore:
             index_data = cls.get_all_sessions()
             session_info = index_data.get(session_id, {})
             session_info["updated_at"] = timestamp
-            session_info["messages_count"] = len(history) if branch_id == "main" else session_info.get("messages_count", 0)
+            session_info["messages_count"] = (
+                len(history)
+                if branch_id == "main"
+                else session_info.get("messages_count", 0)
+            )
             index_data[session_id] = session_info
             try:
                 with open(SESSION_INDEX_PATH, "w", encoding="utf-8") as f:
@@ -203,9 +235,17 @@ class SessionStore:
                 pass
 
     @classmethod
-    def create_branch(cls, current_session_id, current_history, branch_alias=None, window_token=0):
+    def create_branch(
+        cls, current_session_id, current_history, branch_alias=None, window_token=0
+    ):
         new_session_id = cls._generate_id()
-        cls.save_session(session_id=new_session_id, history=current_history, parent_id=current_session_id, alias=branch_alias, window_token=window_token)
+        cls.save_session(
+            session_id=new_session_id,
+            history=current_history,
+            parent_id=current_session_id,
+            alias=branch_alias,
+            window_token=window_token,
+        )
         return new_session_id
 
     @classmethod
@@ -213,16 +253,16 @@ class SessionStore:
         """删除单个分支（保护主干不被删除）"""
         if branch_id == "main":
             return False  # 保护主干不被这样删
-            
+
         session_dir = os.path.join(SESSIONS_DIR, session_id)
         path = os.path.join(session_dir, f"sub_{branch_id}.json")
-        
+
         # 1. 物理删除文件
         file_lock = cls._get_file_lock(f"{session_id}_{branch_id}")
         with file_lock:
             if os.path.exists(path):
                 os.remove(path)
-                
+
         # 2. 从 meta.json 拓扑中抹除
         meta_path = os.path.join(session_dir, "meta.json")
         meta_lock = cls._get_file_lock(f"{session_id}_meta")
