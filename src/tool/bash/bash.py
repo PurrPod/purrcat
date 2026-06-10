@@ -12,7 +12,7 @@ from .exceptions import (
 )
 
 
-def Bash(command: str, timeout: int = 300, session_id: str = "default") -> str:
+def Bash(command: str, timeout: int = 300, session_id: str = "default", **kwarg) -> str:
     """
     在安全的沙盒环境 (Docker) 中执行 Shell 命令。
 

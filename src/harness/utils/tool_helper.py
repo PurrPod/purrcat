@@ -1,6 +1,5 @@
 from typing import Any, List
 
-from src.tool import BASE_TASK_TOOL_SCHEMA
 from src.tool.utils.route import dispatch_tool
 
 
@@ -10,6 +9,8 @@ def get_system_schema() -> List[dict]:
     包含: tool 基础任务工具 (bash, search, mcp 等)
     注意: harness 工作流原语工具已经交由 BaseNode 本身进行挂载。
     """
+    # 延迟导入避免循环依赖
+    from src.tool import BASE_TASK_TOOL_SCHEMA
     return list(BASE_TASK_TOOL_SCHEMA)
 
 

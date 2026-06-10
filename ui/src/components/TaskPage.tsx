@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
   ArrowLeft, Terminal, Trash2, X, Activity, Clock, Box, Send, MessageCircle, RefreshCw,
-  Square, Play, AlertTriangle, Plus, ChevronDown
+  Square, Play, AlertTriangle, Plus, ChevronDown, ChevronUp
 } from 'lucide-react';
 import type { Node, Edge } from '@xyflow/react';
 import { ReactFlow, Background, useNodesState, useEdgesState, Handle, Position } from '@xyflow/react';
@@ -141,6 +141,9 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
   const [tasks, setTasks] = useState<Task[]>([]);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [currentNodeLogs, setCurrentNodeLogs] = useState<LogEntry[]>([]);
+  
+  // 🌟 新增：Dashboard 展开/折叠状态
+  const [isDashboardOpen, setIsDashboardOpen] = useState(true);
   
   const logsContainerRef = useRef<HTMLDivElement>(null);
   const logEndRef = useRef<HTMLDivElement>(null);
@@ -719,7 +722,72 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
           )}
         </div>
         
-        <div className="flex-1 w-full h-full bg-cream/30">
+        <div className="flex-1 w-full h-full bg-cream/30 relative">
+          
+          {/* 🌟 新增：全局节点状态看板 Dashboard */}
+          {selectedTaskId && (
+            <div className="absolute top-6 right-6 z-50 flex flex-col w-80 items-end pointer-events-none">
+              {/* 触发按钮 */}
+              <button
+                onClick={() => setIsDashboardOpen(!isDashboardOpen)}
+                style={sketchyShape2}
+                className="pointer-events-auto flex items-center gap-2 bg-[#EBCB8B] text-ink border-4 border-ink px-4 py-2 font-black shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:-translate-y-0.5 active:translate-y-0.5 active:shadow-none transition-all"
+              >
+                <Activity size={18} strokeWidth={3} />
+                <span className="tracking-widest text-sm" style={{ fontFamily: '"Comic Sans MS", cursive' }}>DASHBOARD</span>
+                {isDashboardOpen ? <ChevronUp size={18} strokeWidth={3} /> : <ChevronDown size={18} strokeWidth={3} />}
+              </button>
+
+              {/* 折叠面板内容 */}
+              {isDashboardOpen && (
+                <div
+                  style={sketchyShape3}
+                  className="pointer-events-auto mt-4 w-full bg-paper border-4 border-ink shadow-[8px_8px_0px_0px_rgba(26,26,26,1)] flex flex-col max-h-[60vh] overflow-hidden"
+                >
+                  <div className="p-3 border-b-4 border-ink bg-cream/80">
+                    <span className="font-black text-sm tracking-widest text-ink/80">NODE STATUS</span>
+                  </div>
+                  
+                  <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-3">
+                    {nodes.length === 0 ? (
+                      <div className="text-center font-bold text-ink/40 py-4 text-sm">No nodes found</div>
+                    ) : (
+                      nodes.map((n, idx) => {
+                        // 根据状态映射风格颜色
+                        const sColor = n.data.nodeState === 'running' ? 'bg-[#3498DB] text-paper' :
+                                       n.data.nodeState === 'completed' ? 'bg-[#a3be8c] text-ink' :
+                                       n.data.nodeState === 'error' ? 'bg-[#bf616a] text-paper' :
+                                       n.data.nodeState === 'waiting' ? 'bg-[#d08770] text-paper animate-pulse' :
+                                       n.data.nodeState === 'skipped' ? 'bg-ink/20 text-ink' : 'bg-[#EBCB8B] text-ink';
+
+                        return (
+                          <div
+                            key={n.id}
+                            onClick={() => setLogModalNode({ id: n.id, name: String(n.data.label), state: String(n.data.nodeState) })}
+                            style={idx % 2 === 0 ? sketchyShape2 : sketchyShape1}
+                            className="flex items-center justify-between p-3 border-2 border-ink bg-cream hover:bg-sand cursor-pointer transition-all hover:-translate-y-[2px] shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] active:translate-y-0 active:shadow-none"
+                            title="Click to view logs"
+                          >
+                            <div className="flex items-center gap-2 overflow-hidden pr-2">
+                              <Terminal size={14} className="shrink-0 text-ink/50" />
+                              <span className="font-bold text-sm truncate" style={{ fontFamily: '"Comic Sans MS", cursive' }}>
+                                {String(n.data.label)}
+                              </span>
+                            </div>
+                            <span className={`shrink-0 text-[10px] font-black tracking-wider border-2 border-ink px-1.5 py-0.5 ${sColor}`}>
+                              {(String(n.data.nodeState) || 'READY').toUpperCase()}
+                            </span>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* 原有 ReactFlow 画布 */}
           {selectedTaskId ? (
             <ReactFlow
               nodes={nodes} edges={edges} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} nodeTypes={nodeTypes}

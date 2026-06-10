@@ -10,6 +10,7 @@ from src.tool.filesystem.history import (
     ack_backup,
     get_valid_backup_ids,
     HISTORY_DIR,
+    get_all_diffs,
 )
 
 router = APIRouter(prefix="/api/filesystem", tags=["UI Direct File Access"])
@@ -91,3 +92,14 @@ def ui_ack_action(req: UIRollbackReq):
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"清理备份失败: {str(e)}")
+
+
+@router.get("/diffs")
+def api_get_global_diffs():
+    """🌟 新增：提供给前端全局读取所有未确认的代码变更 (DiffView)"""
+    try:
+        diffs = get_all_diffs()
+        return {"status": "success", "diffs": diffs}
+    except Exception:
+        traceback.print_exc()
+        return {"status": "error", "diffs": []}

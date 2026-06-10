@@ -1,6 +1,6 @@
 import traceback
 
-from fastapi import APIRouter, BackgroundTasks
+from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel
 
 from src.agent import (
@@ -80,12 +80,6 @@ def get_sessions():
         sessions_dict = get_session_list()
         sess_list = []
         for sid, info in sessions_dict.items():
-            # ==========================================
-            # 💡 修复：过滤掉 requests.json，防止它被当作会话
-            # ==========================================
-            if "requests.json" in sid or sid == "requests":
-                continue
-
             sess_list.append(
                 {
                     "id": sid,
@@ -117,15 +111,32 @@ def checkout_session_api(session_id: str):
 
 
 @router.get("/sessions/{session_id}")
-def get_session_history_api(session_id: str):
+def get_session_history_api(session_id: str, branch_id: str = "main"):
     try:
         _ensure_manager_initialized()
-        history = get_chat_history(session_id)
+        # 🌟 传入 branch_id 支持子分支读取
+        history = get_chat_history(session_id, branch_id=branch_id)
         return history
     except Exception as e:
         print(f"[ERROR] /api/sessions/{session_id} - 异常: {e}")
         traceback.print_exc()
         raise
+
+
+@router.get("/sessions/{session_id}/branches")
+def get_session_branches_api(session_id: str):
+    """🌟 新增：获取当前会话下所有活跃或已完成的子分支元数据"""
+    try:
+        import os, json
+        from src.utils.config import SESSIONS_DIR
+        meta_path = os.path.join(SESSIONS_DIR, session_id, "meta.json")
+        if not os.path.exists(meta_path):
+            return {"main": {"status": "active"}}
+        with open(meta_path, "r", encoding="utf-8") as f:
+            meta_data = json.load(f)
+        return meta_data.get("branches", {"main": {"status": "active"}})
+    except Exception:
+        return {"main": {"status": "active"}}
 
 
 @router.post("/sessions/new")
@@ -226,3 +237,20 @@ def get_token_status_api():
 
         traceback.print_exc()
         return {"window_token": 0, "max_token": 1000000}
+
+
+@router.delete("/sessions/{session_id}/branches/{branch_id}")
+def delete_session_branch_api(session_id: str, branch_id: str):
+    try:
+        from src.agent.sub_runner import cancel_sub_branch
+        # 🌟 修复：删除分支前，如果该分支在后台跑，直接一刀斩断！
+        cancel_sub_branch(branch_id)
+
+        from src.agent.session_store import SessionStore
+        success = SessionStore.delete_branch(session_id, branch_id)
+        if success:
+            return {"status": "ok"}
+        raise HTTPException(status_code=400, detail="分支不存在或禁止删除主干分支")
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))

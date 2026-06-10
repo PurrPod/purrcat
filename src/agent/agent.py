@@ -220,10 +220,13 @@ class Agent:
 
     def process_message(self):
         current_interaction_id = self._increment_interaction_id()
-        self.force_push(
-            content="任务开始前如有需要可以调用 Search 工具搜索本地相关的工具。完成任务后请调用 Memo 工具及时更新记忆，记录的记忆越多越详细以后你的能力就会越强",
-            type="system",
-        )
+        
+        # 🌟 修复：直接作为 role="system" 写入历史。
+        # 既免去了 force_push 队列的异步排队延迟，又利用后端的 role 过滤完美对前端 UI 隐身。
+        self._append_history({
+            "role": "system",
+            "content": "任务开始前如有需要可以调用 Search 工具搜索本地相关的工具。完成任务后请调用 Memo 工具及时更新记忆，记录的记忆越多越详细以后你的能力就会越强",
+        })
 
         while True:
             try:
@@ -437,15 +440,16 @@ class Agent:
         original_system_msg = self.current_history[0]
         truncation_msg = {
             "role": "system",
-            "content": f"【系统通知：因上下文超限，更早的历史对话已被系统截断。以下是最近五次的短时缓存，请你利用这些缓存无缝接续当前工作：】\n{final_summary}",
+            "content": f"【系统通知：因上下文超限...】\n{final_summary}",
         }
-        self.current_history = [
-            original_system_msg,
-            truncation_msg,
-        ] + self.current_history[split_idx:original_len]
-        for msg in self.current_history:
-            if msg.get("role") == "assistant" and "reasoning_content" in msg:
-                msg["reasoning_content"] = ""
-        print("✅ Agent记忆清理完毕！已注入 self.memo 提示词")
+        with self._history_lock:                # 🌟 核心修复：内存截断全量复写时锁定
+            self.current_history = [
+                original_system_msg,
+                truncation_msg,
+            ] + self.current_history[split_idx:original_len]
+            for msg in self.current_history:
+                if msg.get("role") == "assistant" and "reasoning_content" in msg:
+                    msg["reasoning_content"] = ""
+        print("✅ Agent记忆清理完毕！")
         self.window_token = 0
         self.save_checkpoint()

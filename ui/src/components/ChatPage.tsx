@@ -176,6 +176,10 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   const [messages, setMessages] = useState<Message[]>([]);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(sessionId || null);
+  
+  // --- 🌟 新增：隔离分支状态控制 ---
+  const [currentBranchId, setCurrentBranchId] = useState<string>('main');
+  const [branches, setBranches] = useState<Record<string, any>>({ main: {} });
 
   // --- 弹窗与控制状态 ---
   const [showSessionModal, setShowSessionModal] = useState(false);
@@ -186,6 +190,14 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   const [sessionToDelete, setSessionToDelete] = useState<string | null>(null);
   const [isCheckingOut, setIsCheckingOut] = useState(false);
   const [isAgentThinking, setIsAgentThinking] = useState(false);
+
+  // --- 🌟 修复：新增支线删除确认弹窗状态 ---
+  const [branchToDelete, setBranchToDelete] = useState<string | null>(null);
+
+  // --- 🌟 修复：切分支时，强制清空假消息队列，防止 main 的消息在 sub 乱窜 ---
+  useEffect(() => {
+    pendingMsgsRef.current = [];
+  }, [currentBranchId]);
 
   // --- Token 状态 ---
   const [tokenData, setTokenData] = useState({ window: 0, max: 1000000 });
@@ -198,114 +210,43 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   const [expandedReasons, setExpandedReasons] = useState<Record<string, boolean>>({});
 
   // --- 🌟 真实的文件变更视图状态 ---
-  const [handledDiffs, setHandledDiffs] = useState<Set<string>>(() => { 
-    try { 
-      const saved = localStorage.getItem('handledDiffs_memory'); 
-      return saved ? new Set(JSON.parse(saved)) : new Set(); 
-    } catch { 
-      return new Set(); 
-    } 
-  }); 
   const [showFileView, setShowFileView] = useState(false);
   const [fileChanges, setFileChanges] = useState<any[]>([]);
 
-  // 🌟 新增：存储真实存活的快照 ID 列表
-  const [validBackupIds, setValidBackupIds] = useState<string[]>([]);
-
-  // 🌟 新增：只要 handledDiffs 发生变化，就持久化到本地，防止刷新后失忆 
-  useEffect(() => { 
-    localStorage.setItem('handledDiffs_memory', JSON.stringify(Array.from(handledDiffs))); 
-  }, [handledDiffs]);
-
-  // 🌟 拉取真实磁盘状态的函数
-  const fetchValidBackups = async () => {
+  // --- 🌟 新增：拉取当前会话子宇宙分支列表 ---
+  const loadBranches = async (sid: string) => {
     try {
-      const res = await fetch('http://localhost:8000/api/filesystem/backups');
+      const res = await fetch(`http://localhost:8000/api/sessions/${sid}/branches`);
       if (res.ok) {
         const data = await res.json();
-        if (data.valid_ids) {
-          setValidBackupIds(data.valid_ids);
-        }
+        setBranches(data);
       }
-    } catch (e) {
-      console.error("拉取真实快照失败", e);
+    } catch {
+      setBranches({ main: {} });
     }
   };
 
-  // 🌟 每 3 秒同步一次底层真实文件状态
-  useEffect(() => {
-    fetchValidBackups();
-    const interval = setInterval(fetchValidBackups, 3000);
-    return () => clearInterval(interval);
-  }, []);
-
-  // --- 🌟 核心 useEffect：从聊天记录提取 Diff，但只显示硬盘上存活的记录 ---
-  useEffect(() => {
-    const extractedChanges: any[] = [];
-    
-    messages.forEach((msg, idx) => {
-      if (msg.role === 'tool') {
-        const diffId = `diff_${idx}`;
-
-        let diffText = '';
-        let backupId = '';
-        let path = '';
-        
-        // 尝试常规 JSON 解析
-        try {
-          const parsed = typeof msg.content === 'string' ? JSON.parse(msg.content) : msg.content;
-          
-          if (parsed?.diff) diffText = parsed.diff;
-          else if (parsed?.content?.diff) diffText = parsed.content.diff;
-          else if (parsed?.data?.diff) diffText = parsed.data.diff;
-          
-          if (parsed?.backup_id) backupId = parsed.backup_id;
-          else if (parsed?.content?.backup_id) backupId = parsed.content.backup_id;
-          else if (parsed?.data?.backup_id) backupId = parsed.data.backup_id;
-          
-          if (parsed?.path) path = parsed.path;
-          else if (parsed?.content?.path) path = parsed.content.path;
-          else if (parsed?.data?.path) path = parsed.data.path;
-        } catch { /* silent */ }
-
-        // 正则兜底解析
-        if (typeof msg.content === 'string') {
-          if (!diffText) {
-            const unescaped = msg.content.replace(/\\n/g, '\n');
-            const diffMatch = unescaped.match(/```diff\n([\s\S]*?)```/);
-            if (diffMatch) diffText = diffMatch[1];
-          }
-          if (!backupId) {
-            const backupMatch = msg.content.match(/['"]backup_id['"]\s*:\s*['"]([^'"]+)['"]/);
-            if (backupMatch) backupId = backupMatch[1];
-          }
-          if (!path) {
-            const pathMatch = msg.content.match(/['"]path['"]\s*:\s*['"]([^'"]+)['"]/);
-            if (pathMatch) path = pathMatch[1];
-          }
-        }
-
-        // 🌟 核心工程级修复：只有当解析出的 backupId 真的存在于后端硬盘上时，才允许它显示！
-        if (diffText && backupId && validBackupIds.includes(backupId)) {
-          if (!path) {
-            const pathMatch = diffText.match(/--- a\/?(.*?)\n/);
-            path = pathMatch ? `/${pathMatch[1]}` : 'Unknown File';
-            path = path.replace(/\/\//g, '/');
-          }
-          
-          extractedChanges.push({
-            id: diffId,
-            path: path,
-            backup_id: backupId,
-            time: new Date().toLocaleTimeString(),
-            diff: diffText
-          });
+  // 🌟 全局拉取接口
+  const fetchGlobalDiffs = async () => {
+    try {
+      const res = await fetch('http://localhost:8000/api/filesystem/diffs');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.diffs) {
+          setFileChanges(data.diffs);
         }
       }
-    });
-    
-    setFileChanges(extractedChanges.reverse());
-  }, [messages, validBackupIds]);
+    } catch (e) {
+      console.error("Fetch diffs error", e);
+    }
+  };
+
+  // 每 3 秒同步一次底层全局 Diff 状态
+  useEffect(() => {
+    fetchGlobalDiffs();
+    const interval = setInterval(fetchGlobalDiffs, 3000);
+    return () => clearInterval(interval);
+  }, []);
 
   // --- 🌟 确认变更函数（向前截断） ---
   const handleAck = async (changeId: string, path: string, backupId: string) => {
@@ -319,26 +260,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
       
       if (res.ok) {
         toast.success("已确认更改并清理旧备份！");
-        
-        // 找到所有需要被【向前截断】的变更 (同文件，且 backup_id 更小或相等)
-        const changesToAck = fileChanges.filter(c => 
-          c.path === path && c.backup_id && parseInt(c.backup_id) <= parseInt(backupId)
-        );
-        const idsToAck = changesToAck.map(c => c.id);
-        if (!idsToAck.includes(changeId)) idsToAck.push(changeId);
-        
-        // 加入已处理集合，防止 useEffect 再次将其从聊天记录里抓取出来！
-        setHandledDiffs(prev => {
-          const next = new Set(prev);
-          idsToAck.forEach(id => next.add(id));
-          return next;
-        });
-        
-        // 从当前视图中剔除
-        setFileChanges(prev => prev.filter(c => !idsToAck.includes(c.id)));
-        
-        // 立即刷新硬盘状态
-        fetchValidBackups();
+        fetchGlobalDiffs(); // 立刻刷新视图，后端已物理抹除，数据会自动消失！
       } else {
         const err = await res.json();
         toast.error(err.detail || "确认失败");
@@ -360,26 +282,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
       
       if (res.ok) {
         toast.success("时光倒流：文件已恢复，后续修改已废弃！");
-        
-        // 找到所有需要被【向后截断】的变更 (同文件，且 backup_id 更大或相等)
-        const changesToRollback = fileChanges.filter(c => 
-          c.path === path && c.backup_id && parseInt(c.backup_id) >= parseInt(backupId)
-        );
-        const idsToRollback = changesToRollback.map(c => c.id);
-        if (!idsToRollback.includes(changeId)) idsToRollback.push(changeId);
-
-        // 加入已处理集合，防止其从聊天记录里复活
-        setHandledDiffs(prev => {
-          const next = new Set(prev);
-          idsToRollback.forEach(id => next.add(id));
-          return next;
-        });
-        
-        // 从当前视图中剔除
-        setFileChanges(prev => prev.filter(c => !idsToRollback.includes(c.id)));
-        
-        // 立即刷新硬盘状态
-        fetchValidBackups();
+        fetchGlobalDiffs(); // 立刻刷新视图
       } else {
         const err = await res.json();
         toast.error(err.detail || "回滚失败");
@@ -936,21 +839,26 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
 
   useEffect(() => { loadSessions(); }, []);
 
+  // --- 🌟 改造：会话初始检出重置 ---
   useEffect(() => {
     if (sessionId && sessionId !== currentSessionId) {
       pendingMsgsRef.current = [];
       setCurrentSessionId(sessionId);
-      loadSessionHistory(sessionId);
+      setCurrentBranchId('main'); // 切新会话时重置回主干
+      loadSessionHistory(sessionId, 'main');
+      loadBranches(sessionId);
     }
   }, [sessionId]);
 
+  // --- 🌟 改造：轮询拦截器，使其能自动定位至当前聚焦的书签分支 ---
   useEffect(() => {
     if (!currentSessionId) return;
     const interval = setInterval(async () => {
       if (isCheckingOut) return;
       try {
         const [msgRes, statusRes] = await Promise.all([
-          fetch(`http://localhost:8000/api/sessions/${currentSessionId}`),
+          // 加上 branch_id 约束查询
+          fetch(`http://localhost:8000/api/sessions/${currentSessionId}?branch_id=${currentBranchId}`),
           fetch(`http://localhost:8000/api/sessions/${currentSessionId}/status`)
         ]);
 
@@ -970,13 +878,16 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
         if (statusRes.ok) {
           const statusData = await statusRes.json();
           setIsAgentThinking(statusData.is_thinking);
+          
+          // 当后台打工仔分支正在并发开辟时，定时顺手刷新分支列表，让新诞生支线书签"啪"地弹出来
+          loadBranches(currentSessionId);
         }
       } catch (e) {
         console.error('Error checking agent status:', e);
       }
     }, 1500);
     return () => clearInterval(interval);
-  }, [currentSessionId, isCheckingOut]);
+  }, [currentSessionId, currentBranchId, isCheckingOut]); // 🌟 挂载关联依赖
 
   const loadSessions = async () => {
     try {
@@ -993,8 +904,9 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
     } catch { toast.error("获取会话失败"); }
   };
 
-  const loadSessionHistory = async (id: string) => {
-    const res = await fetch(`http://localhost:8000/api/sessions/${id}`);
+  // --- 🌟 改造：支持传入分支标识的历史读取 ---
+  const loadSessionHistory = async (id: string, bId: string = 'main') => {
+    const res = await fetch(`http://localhost:8000/api/sessions/${id}?branch_id=${bId}`);
     if (res.ok) {
       const history = await res.json();
       setMessages(history);
@@ -1004,11 +916,13 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   const handleSelectSession = async (id: string) => {
     setIsCheckingOut(true);
     setCurrentSessionId(id);
+    setCurrentBranchId('main'); // 重置
     navigate(`/chat/${id}`, { replace: true });
     isAutoScroll.current = true;
     try {
       await fetch(`http://localhost:8000/api/sessions/${id}/checkout`, { method: 'POST' }).catch(() => {});
-      await loadSessionHistory(id);
+      await loadSessionHistory(id, 'main');
+      await loadBranches(id); // 加载全量分支书签
     } catch { 
       toast.error('加载记录失败'); 
     } finally {
@@ -1244,6 +1158,42 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
             <div className="flex gap-4 rotate-1 mt-2">
               <button onClick={() => setSessionToDelete(null)} style={sketchyShape3} className="flex-1 bg-cream text-ink font-black py-3 border-4 border-ink hover:bg-sand transition-all shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] active:shadow-none active:translate-y-1">CANCEL</button>
               <button onClick={confirmDeleteSession} style={sketchyShape1} className="flex-1 bg-[#bf616a] text-paper font-black py-3 border-4 border-ink hover:bg-[#a54e56] transition-all shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] active:shadow-none active:translate-y-1">DELETE</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 彻底删除支线分支确认弹窗 */}
+      {branchToDelete && (
+        <div className="fixed inset-0 bg-ink/40 backdrop-blur-sm z-[150] flex items-center justify-center p-4">
+          <div style={sketchyShape2} className="bg-paper border-4 border-ink p-8 flex flex-col gap-6 shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] -rotate-1 max-w-sm w-full">
+            <div className="flex justify-between items-center rotate-1">
+              <h3 className="text-2xl font-black tracking-widest text-[#bf616a]" style={{ fontFamily: '"Comic Sans MS", cursive' }}>DESTROY BRANCH?</h3>
+              <button onClick={() => setBranchToDelete(null)} className="hover:text-terracotta hover:scale-110 transition-all">
+                <X size={28} strokeWidth={3}/>
+              </button>
+            </div>
+            <p className="font-bold text-ink/70 rotate-1">确定要彻底销毁支线 [{branchToDelete}] 的全部历史记忆吗？</p>
+            <div className="flex gap-4 rotate-1 mt-2">
+              <button onClick={() => setBranchToDelete(null)} style={sketchyShape3} className="flex-1 bg-cream text-ink font-black py-3 border-4 border-ink hover:bg-sand transition-all shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] active:shadow-none active:translate-y-1">CANCEL</button>
+              <button onClick={async () => {
+                 if (!currentSessionId) return;
+                 try {
+                     const res = await fetch(`http://localhost:8000/api/sessions/${currentSessionId}/branches/${branchToDelete}`, { method: 'DELETE' });
+                     if (res.ok) {
+                       toast.success('支线已永久销毁');
+                       // 如果删的是当前正在看的支线，立刻退回主干
+                       if (currentBranchId === branchToDelete) {
+                         setCurrentBranchId('main');
+                         loadSessionHistory(currentSessionId, 'main');
+                       }
+                       loadBranches(currentSessionId);
+                       setBranchToDelete(null);
+                     }
+                   } catch {
+                     toast.error('销毁失败');
+                   }
+              }} style={sketchyShape1} className="flex-1 bg-[#bf616a] text-paper font-black py-3 border-4 border-ink hover:bg-[#a54e56] transition-all shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] active:shadow-none active:translate-y-1">DESTROY</button>
             </div>
           </div>
         </div>
@@ -1969,21 +1919,6 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                </div>
              )}
 
-             {/* 🌟 新增：审批队列触发按钮 - 只显示图标 */}
-             <button
-                onClick={() => setShowReqQueue(!showReqQueue)}
-                className={`relative w-10 h-10 border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] transition-all flex items-center justify-center hover:-translate-y-0.5 active:translate-y-0.5 active:shadow-none ${pendingReqs.length > 0 ? 'bg-[#EBCB8B] text-ink animate-pulse' : 'bg-cream text-ink'}`}
-                style={sketchyShape2}
-                title="Requests Queue"
-             >
-               <Bell size={20} strokeWidth={3} />
-               {pendingReqs.length > 0 && (
-                 <span className="absolute -top-2 -right-2 bg-[#bf616a] text-paper text-xs px-1.5 py-0.5 rounded-full border-2 border-ink">
-                   {pendingReqs.length}
-                 </span>
-               )}
-             </button>
-
              {/* 🌟 新增：文件变更视图按钮 */}
              <button
                 onClick={() => setShowFileView(!showFileView)}
@@ -1998,10 +1933,69 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                  </span>
                )}
              </button>
+
+             {/* 🌟 新增：审批队列触发按钮 - 只显示图标 */}
+             <button
+                onClick={() => setShowReqQueue(!showReqQueue)}
+                className={`relative w-10 h-10 border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] transition-all flex items-center justify-center hover:-translate-y-0.5 active:translate-y-0.5 active:shadow-none ${pendingReqs.length > 0 ? 'bg-[#EBCB8B] text-ink animate-pulse' : 'bg-cream text-ink'}`}
+                style={sketchyShape2}
+                title="Requests Queue"
+             >
+               <Bell size={20} strokeWidth={3} />
+               {pendingReqs.length > 0 && (
+                 <span className="absolute -top-2 -right-2 bg-[#bf616a] text-paper text-xs px-1.5 py-0.5 rounded-full border-2 border-ink">
+                   {pendingReqs.length}
+                 </span>
+               )}
+             </button>
           </div>
         </div>
 
-        <div ref={messagesContainerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-10 pb-6 flex flex-col gap-6 w-full z-10">
+        {/* ==================== 🌟 核心新增：书签/抽屉式多分支切换导航栏 ==================== */}
+        {currentSessionId && Object.keys(branches).length > 1 && (
+          <div className="px-10 flex gap-3 overflow-x-auto shrink-0 pb-3 border-b-4 border-ink/10 pt-1 select-none">
+            {Object.keys(branches).map((bId) => {
+              const isActive = currentBranchId === bId;
+              const label = bId === 'main' ? 'MAIN' : `${bId.split('_')[1] || bId}`;
+              
+              return (
+                <div key={bId} className="relative group flex items-center">
+                  <button
+                    onClick={() => {
+                      setCurrentBranchId(bId);
+                      loadSessionHistory(currentSessionId, bId);
+                    }}
+                    style={isActive ? sketchyShape1 : sketchyShape2}
+                    className={`px-4 py-1.5 font-black text-xs tracking-wider border-2 border-ink transition-all active:translate-y-0.5 active:shadow-none 
+                      ${bId !== 'main' ? 'pr-8' : ''} 
+                      ${isActive 
+                        ? 'bg-[#EBCB8B] text-ink border-solid scale-105 z-10 shadow-[2px_2px_0px_0px_rgba(26,26,26,1)]' 
+                        : 'bg-cream text-ink/80 border-solid hover:bg-sand hover:text-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:-translate-y-[1px]'}`}
+                  >
+                    {label}
+                  </button>
+                  
+                  {/* 🌟 修复：点击 X 时，触发手绘风弹窗而不是系统默认 confirm */}
+                  {bId !== 'main' && (
+                    <button
+                       onClick={(e) => {
+                         e.stopPropagation();
+                         setBranchToDelete(bId); // 👈 在这里触发状态
+                       }}
+                       className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 p-0.5 bg-[#bf616a] text-paper border-2 border-ink rounded transition-all hover:scale-110 z-20 cursor-pointer"
+                       title="彻底删除此支线"
+                    >
+                       <X size={12} strokeWidth={3} />
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {/* ================================================================================== */}
+
+        <div ref={messagesContainerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-10 pb-6 flex flex-col gap-6 w-full z-10 pt-4">
           {messages.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-ink gap-6">
               <div style={sketchyShape1} className="p-8 border-4 border-ink bg-cream shadow-[6px_6px_0px_0px_rgba(26,26,26,1)] -rotate-3">
@@ -2071,14 +2065,17 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
             })
           )}
 
-          <div className="flex justify-start mb-4 w-full">
-            <div style={sketchyShape1} className={`p-4 w-fit transition-colors ${isAgentThinking ? 'bg-cream text-ink border-4 border-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)]' : 'bg-paper text-ink/40'}`}>
-              <div className="flex items-center gap-3 px-2">
-                {isAgentThinking ? <Loader2 size={20} strokeWidth={3} className="animate-spin text-terracotta" /> : <Clock size={20} strokeWidth={3} className="text-ink/30" />}
-                <span className="font-black text-sm tracking-widest uppercase" style={{ fontFamily: '"Comic Sans MS", cursive' }}>{isAgentThinking ? 'Processing...' : 'Dozing...'}</span>
+          {/* 🌟 修复：只在主干分支显示大模型的思考/休眠状态 */}
+          {currentBranchId === 'main' && (
+            <div className="flex justify-start mb-4 w-full">
+              <div style={sketchyShape1} className={`p-4 w-fit transition-colors ${isAgentThinking ? 'bg-cream text-ink border-4 border-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)]' : 'bg-paper text-ink/40'}`}>
+                <div className="flex items-center gap-3 px-2">
+                  {isAgentThinking ? <Loader2 size={20} strokeWidth={3} className="animate-spin text-terracotta" /> : <Clock size={20} strokeWidth={3} className="text-ink/30" />}
+                  <span className="font-black text-sm tracking-widest uppercase" style={{ fontFamily: '"Comic Sans MS", cursive' }}>{isAgentThinking ? 'Processing...' : 'Dozing...'}</span>
+                </div>
               </div>
             </div>
-          </div>
+          )}
           <div ref={messagesEndRef} className="h-2" />
         </div>
 
@@ -2156,8 +2153,10 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
           </div>
         )}
 
-        <div className="px-10 pb-8 pt-4 shrink-0 flex flex-col gap-3 w-full">
-           
+        {/* 🌟 修复：完全隔离的底部操作栏 - 子分支下变成全局 Read-Only 提示 */}
+        {currentBranchId === 'main' ? (
+          <div className="px-10 pb-8 pt-4 shrink-0 flex flex-col gap-3 w-full">
+
            {/* 渲染已选的 Skill 和 引入的文件路径 */}
            {(selectedSkills.length > 0 || refPaths.length > 0) && (
              <div className="flex flex-wrap gap-2">
@@ -2236,6 +2235,13 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
              </button>
            </div>
         </div>
+          ) : (
+            <div className="px-10 pb-8 pt-4 shrink-0 flex justify-center w-full">
+               <div style={sketchyShape3} className="bg-cream border-4 border-ink px-10 py-5 font-black text-ink/50 tracking-widest uppercase shadow-[inset_4px_4px_0px_0px_rgba(26,26,26,0.05)] flex items-center gap-3">
+                  🔒 READ-ONLY SUB-BRANCH VIEW
+               </div>
+            </div>
+          )}
       </div>
 
       {/* --- 🌟 新增：右侧 Request 请求处理队列纸板 --- */}

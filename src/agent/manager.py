@@ -196,19 +196,21 @@ class AgentManager:
         return new_id
 
     def delete_session(self, session_id: str):
-        """新增：安全删除会话"""
+        """新增：安全删除会话（支持新的文件夹结构）"""
         # 1. 拦截正在运行的会话删除
         if self._agent and self._agent.session_id == session_id:
             raise ValueError("不能删除当前正在活跃的会话")
 
-        # 2. 执行删除
-        session_file = os.path.join(
-            DATA_DIR, "checkpoints", "agent", f"{session_id}.json"
-        )
-        if os.path.exists(session_file):
-            os.remove(session_file)
+        # 2. 执行删除（删除整个会话文件夹）
+        from src.utils.config import SESSIONS_DIR
+        session_dir = os.path.join(SESSIONS_DIR, session_id)
+        if os.path.exists(session_dir) and os.path.isdir(session_dir):
+            import shutil
+            shutil.rmtree(session_dir)
+            print(f"🗑️ 已删除会话文件夹: {session_dir}")
 
-        index_file = os.path.join(DATA_DIR, "checkpoints", "agent", "index.json")
+        # 3. 更新索引文件
+        index_file = os.path.join(SESSIONS_DIR, "index.json")
         if os.path.exists(index_file):
             with SessionStore._index_lock:
                 try:
@@ -225,16 +227,18 @@ class AgentManager:
     # ==========================================
     # 4. 数据读取 (Queries - 给 API 和前端使用)
     # ==========================================
-    def get_chat_history(self, session_id: str = None):
+    def get_chat_history(self, session_id: str = None, branch_id: str = "main"):
         if not self._agent:
             self.init_agent()
-        # 如果查询的是当前会话，直接从内存拿（最快最准）
-        if not session_id or session_id == self._agent.session_id:
+        
+        # 如果是当前的活跃会话且查的是 main，优先从内存拿最新状态
+        if branch_id == "main" and (not session_id or session_id == self._agent.session_id):
             return [m for m in self._agent.get_history() if m.get("role") != "system"]
-        # 否则从硬盘读
+        
+        # 否则一律透传 branch_id 从磁盘加载特定的隔离子分支历史
         return [
             m
-            for m in SessionStore.load_session_history(session_id)
+            for m in SessionStore.load_session_history(session_id, branch_id=branch_id)
             if m.get("role") != "system"
         ]
 

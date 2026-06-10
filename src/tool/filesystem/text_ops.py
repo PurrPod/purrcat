@@ -10,7 +10,7 @@ from src.tool.filesystem.exceptions import (
     HostPathNotFoundError,
 )
 from src.tool.filesystem.utils import require_read, require_write, is_readable
-from src.tool.filesystem.history import track_edit
+from src.tool.filesystem.history import track_edit, save_backup_meta
 
 MAX_LINES_TO_READ = 2000
 
@@ -146,6 +146,9 @@ def edit_file(
         )
     )
 
+    diff_text = "".join(diff_lines)
+    save_backup_meta(target_path, backup_id, diff_text)  # 🌟 核心：保存 metadata 供全局读取
+
     check_result = run_code_check(target_path)
     msg = f"成功更新文件 {os.path.basename(target_path)}"
     if check_result:
@@ -156,7 +159,7 @@ def edit_file(
         "backup_id": backup_id,
         "message": msg,
         "replaced_occurrences": occurrences if replace_all else 1,
-        "diff": "".join(diff_lines),
+        "diff": diff_text,  # 修改为 diff_text
     }
 
 
@@ -209,6 +212,9 @@ def write_file(path_from: str, content: str) -> dict:
         )
     )
 
+    diff_text = "".join(diff_lines)
+    save_backup_meta(target_path, backup_id, diff_text)  # 🌟 核心：保存 metadata 供全局读取
+
     check_result = run_code_check(target_path)
     msg = f"成功写入文件 {os.path.basename(target_path)} (长度: {len(content)})"
     if check_result:
@@ -218,7 +224,7 @@ def write_file(path_from: str, content: str) -> dict:
         "path": target_path,
         "backup_id": backup_id,
         "message": msg,
-        "diff": "".join(diff_lines),  # 🌟 3. 将真实生成的 Diff 返回给前端
+        "diff": diff_text,  # 修改为 diff_text
     }
 
 

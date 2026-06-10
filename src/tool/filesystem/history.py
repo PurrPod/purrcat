@@ -1,6 +1,7 @@
 import os
 import shutil
 import time
+import json
 from src.tool.filesystem.exceptions import FileSystemError
 
 HISTORY_DIR = os.path.join(os.getcwd(), ".agent_history")
@@ -36,6 +37,45 @@ def track_edit(target_path: str) -> str:
     return backup_id
 
 
+def save_backup_meta(target_path: str, backup_id: str, diff: str):
+    """🌟 新增：保存包含 Diff 和元数据的 meta 文件"""
+    history_file = _get_history_path(target_path)
+    meta_path = f"{history_file}@{backup_id}.meta"
+    
+    # 获取简洁路径用于 UI 显示
+    display_path = target_path
+    if "agent_vm" in target_path:
+        display_path = "/agent_vm" + target_path.split("agent_vm")[-1].replace("\\", "/")
+
+    meta_data = {
+        "id": f"diff_{backup_id}",
+        "path": display_path,
+        "backup_id": backup_id,
+        "diff": diff,
+        "time": time.strftime("%H:%M:%S", time.localtime(int(backup_id)/1000))
+    }
+    with open(meta_path, "w", encoding="utf-8") as f:
+        json.dump(meta_data, f, ensure_ascii=False)
+
+
+def get_all_diffs() -> list:
+    """🌟 新增：读取所有 meta 文件，返回全局 Diff 列表给前端"""
+    if not os.path.exists(HISTORY_DIR):
+        return []
+    diffs = []
+    for f in os.listdir(HISTORY_DIR):
+        if f.endswith(".meta"):
+            meta_path = os.path.join(HISTORY_DIR, f)
+            try:
+                with open(meta_path, "r", encoding="utf-8") as file:
+                    diffs.append(json.load(file))
+            except Exception:
+                pass
+    # 按时间戳倒序排列
+    diffs.sort(key=lambda x: int(x["backup_id"]), reverse=True)
+    return diffs
+
+
 def ack_backup(target_path: str, backup_id: str):
     """用户确认更改，释放磁盘空间。执行【向前截断】：清理当前及更旧的备份"""
     if not backup_id:
@@ -47,10 +87,10 @@ def ack_backup(target_path: str, backup_id: str):
         full_path = os.path.join(HISTORY_DIR, f)
         if full_path.startswith(history_prefix):
             try:
-                # 提取备份的时间戳
+                # 🌟 重大修复：追加 .replace(".meta", "") 清理 meta 文件
                 ts_str = f.replace(os.path.basename(history_prefix), "").replace(
                     ".empty", ""
-                )
+                ).replace(".meta", "")
                 # 核心：只要备份的时间戳 <= 当前确认的时间戳，就统统删掉！
                 if ts_str and int(ts_str) <= int(backup_id):
                     os.remove(full_path)
@@ -86,10 +126,10 @@ def rewind_file_by_id(target_path: str, backup_id: str) -> str:
         full_path = os.path.join(HISTORY_DIR, f)
         if full_path.startswith(history_prefix):
             try:
-                # 提取备份的时间戳
+                # 🌟 重大修复：追加 .replace(".meta", "") 清理 meta 文件
                 ts_str = f.replace(os.path.basename(history_prefix), "").replace(
                     ".empty", ""
-                )
+                ).replace(".meta", "")
                 if ts_str and int(ts_str) >= int(backup_id):
                     os.remove(full_path)
             except ValueError:
@@ -119,7 +159,7 @@ def rewind_file(target_path: str) -> str:
     latest_backup = backups[0]
 
     # 提取 backup_id
-    backup_id = os.path.basename(latest_backup).split("@")[-1].replace(".empty", "")
+    backup_id = os.path.basename(latest_backup).split("@")[-1].replace(".empty", "").replace(".meta", "")
 
     return rewind_file_by_id(target_path, backup_id)
 
@@ -133,7 +173,7 @@ def get_valid_backup_ids() -> list:
     for f in os.listdir(HISTORY_DIR):
         if "@" in f:
             # 提取文件名中 @ 后面的纯数字时间戳
-            backup_id = f.split("@")[-1].replace(".empty", "")
+            backup_id = f.split("@")[-1].replace(".empty", "").replace(".meta", "")
             if backup_id.isdigit():
                 valid_ids.add(backup_id)
 
