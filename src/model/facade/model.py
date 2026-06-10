@@ -1,12 +1,12 @@
 from src.model.core.llm_client import LLMClient
 from src.model.manager.concurrency import get_key_semaphore
 from src.model.manager.key_manager import key_manager
+from src.model.manager.usage_tracer import usage_tracer
 from src.utils.config import get_model_config
+import time
 
 
 def log(msg):
-    import time
-
     print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {msg}")
 
 
@@ -43,8 +43,15 @@ class Model:
         )
 
     def chat(self, messages: list, tools: list = None, **kwargs):
-        """仅做透传，不再处理复杂的网络逻辑"""
-        return self._client.execute_chat(
+        """仅做透传，增加无阻塞的内存记账功能，支持流式调用拦截"""
+        start_time = time.time()
+        
+        # 如果是流式请求，确保开启 usage 包含选项（OpenAI 最新规范）
+        is_stream = kwargs.get("stream", False)
+        if is_stream and "stream_options" not in kwargs:
+            kwargs["stream_options"] = {"include_usage": True}
+        
+        response = self._client.execute_chat(
             model_name=self.model_name,
             messages=messages,
             task_id=self.task_id,
@@ -52,6 +59,35 @@ class Model:
             tools=tools,
             **kwargs,
         )
+        
+        if is_stream:
+            # 包装生成器，拦截最后一个 chunk 的 usage
+            def _stream_generator():
+                final_usage = None
+                for chunk in response:
+                    if hasattr(chunk, "usage") and chunk.usage:
+                        final_usage = chunk.usage
+                    yield chunk
+                
+                duration = time.time() - start_time
+                usage_tracer.record(
+                    model_name=self.model_name,
+                    api_key=self.api_key,
+                    usage=final_usage,
+                    duration=duration
+                )
+            return _stream_generator()
+        else:
+            # 非流式，正常处理
+            duration = time.time() - start_time
+            usage = getattr(response, "usage", None)
+            usage_tracer.record(
+                model_name=self.model_name,
+                api_key=self.api_key,
+                usage=usage,
+                duration=duration
+            )
+            return response
 
     def unbind(self):
         """释放资源"""
