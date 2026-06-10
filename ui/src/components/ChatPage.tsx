@@ -140,7 +140,7 @@ function renderSketchyHeatmap(heatmapData: Record<string, number> = {}) {
   return (
     // 🌟 核心修改：缩小 gap 至 3px，确保 53 列总宽度小于 700px，完美适配容器
     <div className="flex justify-center w-full">
-      <div className="grid grid-rows-7 grid-flow-col gap-[3px] p-3 bg-cream/30 border-2 border-dashed border-ink/20 w-fit">
+      <div className="grid grid-rows-7 grid-flow-col gap-[3px] p-3 bg-cream/30 w-fit">
         {cells}
       </div>
     </div>
@@ -2065,15 +2065,9 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
           {messages.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-ink gap-5 p-2 w-full max-w-3xl mx-auto select-none">
               
-              {/* 顶层：猫咪标语 (去除了烦人的 animate-bounce) */}
-              <div className="flex items-center gap-4 mb-2">
-                <div style={sketchyShape1} className="p-3 border-4 border-ink bg-cream shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] -rotate-3">
-                  <Cat size={36} strokeWidth={2.5} className="text-terracotta" />
-                </div>
-                <div>
-                  <p className="text-2xl font-black rotate-1 text-ink tracking-tight" style={{ fontFamily: '"Comic Sans MS", cursive' }}>PurrCat System</p>
-                  <p className="text-xs font-bold opacity-50 tracking-wider uppercase mt-0.5">Awaiting tactical commands</p>
-                </div>
+              {/* 顶层：猫咪标语 */}
+              <div className="flex items-center mb-2">
+                <p className="text-3xl font-black rotate-1 text-ink tracking-tight" style={{ fontFamily: '"Comic Sans MS", cursive' }}>Hi, what are we building today?</p>
               </div>
 
               {/* 中层：今日消耗速报 (更紧凑的 p-4) */}
@@ -2106,7 +2100,6 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                 
                 {/* 🌟 核心修改：无字纯色胶带，只做点缀 */}
                 <div className="absolute -top-2 left-10 w-16 h-4 bg-[#d08770]/60 border-2 border-ink rotate-2" style={sketchyShape2}></div>
-                <div className="absolute -bottom-2 right-12 w-12 h-3 bg-[#EBCB8B]/60 border-2 border-ink -rotate-3" style={sketchyShape3}></div>
                 
                 <div className="flex justify-between items-end px-1">
                   <span className="font-black text-sm tracking-wider" style={{ fontFamily: '"Comic Sans MS", cursive' }}>ANNUAL CONTRIBUTIONS</span>
@@ -2191,8 +2184,8 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
             })
           )}
 
-          {/* 🌟 修复：只在主干分支显示大模型的思考/休眠状态 */}
-          {currentBranchId === 'main' && (
+          {/* 🌟 修复：只在主干分支且有消息时显示大模型的思考/休眠状态 */}
+          {currentBranchId === 'main' && messages.length > 0 && (
             <div className="flex justify-start mb-4 w-full">
               <div style={sketchyShape1} className={`p-4 w-fit transition-colors ${isAgentThinking ? 'bg-cream text-ink border-4 border-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)]' : 'bg-paper text-ink/40'}`}>
                 <div className="flex items-center gap-3 px-2">

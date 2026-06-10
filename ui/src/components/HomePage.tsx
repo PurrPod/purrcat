@@ -95,33 +95,39 @@ export default function HomePage({
         <Settings size={32} strokeWidth={2.5} className="group-hover:animate-[spin_3s_linear_infinite]" />
       </button>
 
-      {/* 👑 全局大艺术字标题：独立嵌在整个页面偏左上角 */}
-      <div className="absolute top-12 left-12 md:top-16 md:left-24 z-30 pointer-events-none">
-        <h1 className="text-5xl md:text-7xl font-black text-[#EBCB8B] tracking-tight leading-none" style={{ fontFamily: '"Comic Sans MS", cursive' }}>
-          Hello, PurrCat.
+      {/* 👑 全局大艺术字标题 - 字体变大且略微下移 */}
+      <div className="absolute top-16 md:top-20 left-1/2 -translate-x-1/2 z-30 pointer-events-none px-6 py-6">
+        <h1 className="text-7xl md:text-[5.5rem] font-black text-ink tracking-tight leading-none relative whitespace-nowrap" style={{ fontFamily: '"Comic Sans MS", cursive' }}>
+          PurrCat v1.0.0
+          <svg className="absolute left-[-18%] top-1/2 -translate-y-1/2 w-[136%] h-24 -z-10 rotate-[-2deg]" viewBox="0 0 400 80" preserveAspectRatio="none" style={{ mixBlendMode: 'multiply' }}>
+            <defs>
+              <linearGradient id="brushGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                {/* 换成了更明快清新的暖黄色调，告别了之前的"丑"色 */}
+                <stop offset="0%" stopColor="#EBCB8B" stopOpacity="0.5"/> 
+                <stop offset="15%" stopColor="#EBCB8B" stopOpacity="0.8"/>
+                <stop offset="50%" stopColor="#EBCB8B" stopOpacity="1.0"/>
+                <stop offset="85%" stopColor="#EBCB8B" stopOpacity="0.8"/>
+                <stop offset="100%" stopColor="#EBCB8B" stopOpacity="0.5"/>
+              </linearGradient>
+            </defs>
+            {/* 模拟粗糙刷痕路径 */}
+            <path 
+              d="M 0 30 C 40 10, 90 20, 140 15 C 190 10, 240 25, 290 20 C 340 15, 380 30, 390 50 C 390 70, 350 85, 300 80 C 250 75, 200 90, 150 85 C 100 80, 50 90, 0 70 C 0 50, 0 50, 0 30 Z"
+              fill="url(#brushGrad)"
+              opacity="0.9"
+            />
+          </svg>
         </h1>
       </div>
 
-      {/* 🌟 核心漫画分镜主容器 */}
-      <div className="relative w-full max-w-6xl h-[650px] flex flex-col md:flex-row items-center justify-center z-10 px-6 mt-16 md:mt-12">
+      {/* 🌟 核心漫画分镜主容器 - 增加了 mt 使得整体下移给标题腾位置 */}
+      <div className="relative w-full max-w-6xl h-[650px] flex flex-col md:flex-row items-center justify-center z-10 px-6 mt-40 md:mt-36">
         
         {/* ================= 👈 左侧分镜：小猫全身照 + 专属发言气泡 ================= */}
         <div className="flex-1 w-full flex flex-col items-center md:items-end justify-center relative h-full">
           
-          {/* 💬 小猫口中吐出的单独对话气泡：尖角精准指向下方的小猫头部 */}
-          <div 
-            className="absolute top-0 md:top-8 md:left-12 bg-paper border-4 border-ink p-5 shadow-[8px_8px_0px_0px_rgba(26,26,26,1)] z-30 rotate-2 max-w-xs"
-            style={sketchyShape1}
-          >
-            <p className="text-ink text-xl font-black tracking-wide leading-tight" style={{ fontFamily: '"Comic Sans MS", cursive' }}>
-              What are we building today?
-            </p>
-            {/* 漫画对话框专属小尖角尾巴 - 指向大猫咪 */}
-            <div className="absolute -bottom-[12px] left-1/3 w-5 h-5 bg-paper border-b-4 border-r-4 border-ink rotate-45 z-10"></div>
-          </div>
-
-          {/* 🐾 小猫全身照安全容器 - 显著变大且更靠右以接近云朵想法区 */}
-          <div className="absolute bottom-2 md:bottom-6 md:right-4 w-[400px] h-[520px] flex items-end justify-center z-10 hover:scale-[1.03] transition-transform duration-500">
+          {/* 🐾 小猫全身照安全容器 */}
+          <div className="absolute bottom-2 md:bottom-6 md:-right-12 w-[450px] h-[585px] flex items-end justify-center z-10 hover:scale-[1.03] transition-transform duration-500">
             <img 
               src="/src/purrcat-logo.png" 
               alt="PurrCat Logo" 
@@ -135,7 +141,7 @@ export default function HomePage({
         {/* ================= 👉 右侧分镜：小猫头顶冒出的精美云朵选项 ================= */}
         <div className="flex-1 w-full flex flex-col items-center md:items-start justify-center gap-10 relative z-20 md:pl-24 h-full mt-28 md:mt-0">
           
-          {/* ☁️ 选项一：直接对话 (CHAT) - 调换后移至上方 */}
+          {/* ☁️ 选项一：直接对话 (CHAT) */}
           <button
             onClick={onEnterChat}
             className="w-[310px] h-[210px] relative flex flex-col items-center justify-center gap-3 transition-all duration-200 active:translate-y-2 hover:-translate-y-1 group"
@@ -160,7 +166,7 @@ export default function HomePage({
               />
             </svg>
 
-            {/* 核心内容 - 改为原 Editor 经典的暖红配色 (bg-terracotta) */}
+            {/* 核心内容 */}
             <div style={sketchyShape3} className="w-16 h-16 bg-terracotta border-4 border-ink flex items-center justify-center rotate-6 group-hover:bg-ink group-hover:-rotate-6 transition-all duration-300 shadow-[3px_3px_0px_0px_rgba(26,26,26,1)] z-10">
               <MessageSquare size={32} className="text-paper" strokeWidth={2.5} />
             </div>
@@ -170,7 +176,7 @@ export default function HomePage({
             </div>
           </button>
 
-          {/* ☁️ 选项二：工作流编辑器 (EDITOR) - 调换后移至下方且右偏错落 */}
+          {/* ☁️ 选项二：工作流编辑器 (EDITOR) */}
           <button
             onClick={handleNewWorkflow}
             className="w-[310px] h-[210px] relative flex flex-col items-center justify-center gap-3 transition-all duration-200 active:translate-y-2 hover:-translate-y-1 md:ml-16 group"
@@ -195,7 +201,7 @@ export default function HomePage({
               />
             </svg>
 
-            {/* 核心内容 - 改为稳重帅气的极客纯黑色 (bg-ink) */}
+            {/* 核心内容 */}
             <div style={sketchyShape2} className="w-16 h-16 bg-ink border-4 border-ink flex items-center justify-center -rotate-6 group-hover:bg-terracotta group-hover:rotate-6 transition-all duration-300 shadow-[3px_3px_0px_0px_rgba(26,26,26,1)] z-10">
               <GitMerge size={32} className="text-paper" strokeWidth={2.5} />
             </div>
@@ -209,7 +215,7 @@ export default function HomePage({
       </div>
 
       {/* ========================================================== */}
-      {/* 🔴 后续配置面板弹窗中心（原有逻辑落盘安全承接） */}
+      {/* 🔴 后续配置面板弹窗中心 */}
       {/* ========================================================== */}
       {isConfigOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-ink/70 backdrop-blur-sm p-4 md:p-8 pointer-events-auto">
