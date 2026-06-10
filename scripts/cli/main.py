@@ -38,22 +38,21 @@ PurrCat CLI - Cross-platform AI Agent Framework
     print("Commands:")
     print("  setup   - Initialize environment (uv, Docker, Models)")
     print("  init    - Generate .purrcat config templates")
-    print("  install - Install extensions (skill, node, graph)")
+    print("  install - Install extensions (skill, node, graph, mcp)")
     print("  update  - Update PurrCat to the latest version from GitHub")
     print("  start   - Start PurrCat (append --webui to launch with Web UI)")
     print("")
     print("Examples:")
     print("  purrcat setup")
-    print("  purrcat init --force")
     print("")
-    print("  # Install official extensions from PurrPod")
-    print("  purrcat install node web_search")
-    print("  purrcat install graph daily_summary")
+    print("  # Install Graph from graphpod (Auto-installs its MCP/Skill dependencies)")
+    print("  purrcat install graph financial")
+    print("")
+    print("  # Install MCP server manually")
+    print("  purrcat install mcp '{\"tradingview\": {\"command\": \"uvx\", \"args\": [\"tradingview-mcp-server\"]}}'")
     print("")
     print("  # Install third-party skill from any GitHub repo")
-    print(
-        "  purrcat install skill https://github.com/user/repo/tree/main/path/to/skill"
-    )
+    print("  purrcat install skill https://github.com/user/repo/tree/main/path/to/skill")
     print("")
     print("  purrcat update")
     print('  purrcat update --version="2026.05.15"')
@@ -98,7 +97,7 @@ def main():
     parser.add_argument(
         "ext_type",
         nargs="?",
-        choices=["skill", "node", "graph"],
+        choices=["skill", "node", "graph", "mcp"],
         help="Type of extension to install",
     )
     parser.add_argument("source", nargs="?", help="Name or GitHub URL")
