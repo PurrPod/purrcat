@@ -10,7 +10,8 @@ from docker.errors import DockerException, ImageNotFound
 from fastapi import APIRouter, BackgroundTasks, HTTPException, UploadFile, File
 from pydantic import BaseModel
 
-from src.utils.config import get_container_engine, set_container_engine
+from src.utils.config import get_container_engine, set_container_engine, TRACKER_DIR
+from src.model.manager.usage_tracer import usage_tracer
 
 router = APIRouter(prefix="/api/system", tags=["System Environment"])
 
@@ -338,3 +339,56 @@ async def upload_to_buffer(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=f"文件写入失败: {str(e)}")
 
     return {"absolute_path": str(file_path.resolve())}
+
+
+# --- 🌟 Agent 大盘统计接口 ---
+@router.get("/agent/stats")
+async def get_agent_stats():
+    # 1. 强行先将当前内存中未刷盘的增量数据刷入硬盘，保证统计绝对实时
+    usage_tracer.flush()
+    
+    import os
+    import json
+    import glob
+    from datetime import datetime
+    
+    target_dir = os.path.join(TRACKER_DIR, "model_usage")
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    
+    today_calls = 0
+    today_tokens = 0
+    heatmap_data = {} # 格式: {"2026-06-10": 42, "2026-06-09": 105}
+    
+    if os.path.exists(target_dir):
+        # 2. 匹配所有类似 2026-06-10_summary.json 的文件
+        file_paths = glob.glob(os.path.join(target_dir, "*_summary.json"))
+        
+        for path in file_paths:
+            filename = os.path.basename(path)
+            # 提取出日期字符串 YYYY-MM-DD
+            date_str = filename.split("_")[0]
+            
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    day_data = json.load(f)
+                    
+                # 累加这一天的调用总次数
+                day_total_calls = sum(item.get("calls", 0) for item in day_data)
+                day_total_tokens = sum(item.get("total_tokens", 0) for item in day_data)
+                
+                heatmap_data[date_str] = day_total_calls
+                
+                # 如果是今天，单独记录
+                if date_str == today_str:
+                    today_calls = day_total_calls
+                    today_tokens = day_total_tokens
+            except Exception:
+                continue
+
+    return {
+      "today": {
+        "calls": today_calls,
+        "total_tokens": today_tokens
+      },
+      "heatmap": heatmap_data
+    }

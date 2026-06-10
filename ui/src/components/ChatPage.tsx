@@ -103,6 +103,50 @@ const MarkdownComponents: any = {
   }
 };
 
+// 🌟 辅助函数：生成过去一年的日期网格 (高度压缩版，防溢出)
+function renderSketchyHeatmap(heatmapData: Record<string, number> = {}) {
+  const cells = [];
+  const today = new Date();
+  
+  const totalDays = 364; 
+  const startDay = new Date(today);
+  startDay.setDate(today.getDate() - totalDays);
+  const startDayOfWeek = startDay.getDay(); 
+  startDay.setDate(startDay.getDate() - startDayOfWeek); 
+
+  for (let i = 0; i < 371; i++) {
+    const current = new Date(startDay);
+    current.setDate(startDay.getDate() + i);
+    
+    const dateStr = current.toISOString().split('T')[0];
+    const count = heatmapData[dateStr] || 0;
+
+    let colorClass = 'bg-white border-ink/20';
+    if (count > 0 && count <= 10) colorClass = 'bg-[#a3be8c]/40 border-ink/40';
+    if (count > 10 && count <= 50) colorClass = 'bg-[#a3be8c]/70 border-ink/70';
+    if (count > 50) colorClass = 'bg-[#a3be8c] border-ink';
+
+    cells.push(
+      <div 
+        key={dateStr}
+        title={`${dateStr} : ${count} CALLS`}
+        // 🌟 核心修改：尺寸缩小到 w-2.5 h-2.5 (10px)，消除视觉拥挤
+        className={`w-2.5 h-2.5 border transition-all hover:scale-150 hover:border-terracotta hover:z-10 relative cursor-crosshair ${colorClass}`}
+        style={{ borderRadius: i % 3 === 0 ? '1px 3px 1px 2px' : '2px 1px 3px 1px' }} 
+      />
+    );
+  }
+
+  return (
+    // 🌟 核心修改：缩小 gap 至 3px，确保 53 列总宽度小于 700px，完美适配容器
+    <div className="flex justify-center w-full">
+      <div className="grid grid-rows-7 grid-flow-col gap-[3px] p-3 bg-cream/30 border-2 border-dashed border-ink/20 w-fit">
+        {cells}
+      </div>
+    </div>
+  );
+}
+
 const ToolMessageBubble = ({ msg }: { msg: Message }) => {
   const [expanded, setExpanded] = useState(false);
   const contentStr = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
@@ -194,10 +238,35 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   // --- 🌟 修复：新增支线删除确认弹窗状态 ---
   const [branchToDelete, setBranchToDelete] = useState<string | null>(null);
 
+  // --- 🌟 新增：全局大盘统计状态 ---
+  const [globalStats, setGlobalStats] = useState<{
+    today: { calls: number; total_tokens: number };
+    heatmap: Record<string, number>;
+  } | null>(null);
+
+  // 🌟 新增：拉取全局大盘统计
+  const fetchGlobalStats = async () => {
+    try {
+      const res = await fetch('http://localhost:8000/api/system/agent/stats');
+      if (res.ok) {
+        setGlobalStats(await res.json());
+      }
+    } catch (e) {
+      console.error("Fetch global stats error", e);
+    }
+  };
+
   // --- 🌟 修复：切分支时，强制清空假消息队列，防止 main 的消息在 sub 乱窜 ---
   useEffect(() => {
     pendingMsgsRef.current = [];
   }, [currentBranchId]);
+
+  // --- 🌟 当进入会话并且消息为空时，拉取统计 ---
+  useEffect(() => {
+    if (messages.length === 0) {
+      fetchGlobalStats();
+    }
+  }, [messages.length]);
 
   // --- Token 状态 ---
   const [tokenData, setTokenData] = useState({ window: 0, max: 1000000 });
@@ -212,6 +281,15 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   // --- 🌟 真实的文件变更视图状态 ---
   const [showFileView, setShowFileView] = useState(false);
   const [fileChanges, setFileChanges] = useState<any[]>([]);
+  // 🌟 新增：当前在 DiffView 中选中的文件路径
+  const [activeDiffPath, setActiveDiffPath] = useState<string | null>(null);
+
+  // 🌟 联动修复：每当文件列表刷新时，如果当前没选文件，默认激活第一个文件
+  useEffect(() => {
+    if (fileChanges.length > 0 && (!activeDiffPath || !fileChanges.some(c => c.path === activeDiffPath))) {
+      setActiveDiffPath(fileChanges[0].path);
+    }
+  }, [fileChanges]);
 
   // --- 🌟 新增：拉取当前会话子宇宙分支列表 ---
   const loadBranches = async (sid: string) => {
@@ -1985,11 +2063,71 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
 
         <div ref={messagesContainerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-10 pb-6 flex flex-col gap-6 w-full z-10 pt-4">
           {messages.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full text-ink gap-6">
-              <div style={sketchyShape1} className="p-8 border-4 border-ink bg-cream shadow-[6px_6px_0px_0px_rgba(26,26,26,1)] -rotate-3">
-                <Cat size={80} strokeWidth={1.5} className="text-terracotta" />
+            <div className="flex flex-col items-center justify-center h-full text-ink gap-5 p-2 w-full max-w-3xl mx-auto select-none">
+              
+              {/* 顶层：猫咪标语 (去除了烦人的 animate-bounce) */}
+              <div className="flex items-center gap-4 mb-2">
+                <div style={sketchyShape1} className="p-3 border-4 border-ink bg-cream shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] -rotate-3">
+                  <Cat size={36} strokeWidth={2.5} className="text-terracotta" />
+                </div>
+                <div>
+                  <p className="text-2xl font-black rotate-1 text-ink tracking-tight" style={{ fontFamily: '"Comic Sans MS", cursive' }}>PurrCat System</p>
+                  <p className="text-xs font-bold opacity-50 tracking-wider uppercase mt-0.5">Awaiting tactical commands</p>
+                </div>
               </div>
-              <p className="text-2xl font-black rotate-2 text-ink/60" style={{ fontFamily: '"Comic Sans MS", cursive' }}>Waiting for your command...</p>
+
+              {/* 中层：今日消耗速报 (更紧凑的 p-4) */}
+              <div className="grid grid-cols-2 gap-5 w-full">
+                <div style={sketchyShape2} className="bg-paper border-4 border-ink p-4 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center gap-3 rotate-1 hover:rotate-0 transition-transform">
+                  <div className="p-2.5 bg-[#EBCB8B]/30 border-2 border-ink" style={sketchyShape3}>
+                    <Activity size={24} className="text-ink" strokeWidth={3} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[10px] font-black tracking-widest text-ink/40 uppercase" style={{ fontFamily: '"Comic Sans MS", cursive' }}>TODAY CALLS</div>
+                    <div className="text-2xl font-black font-mono text-ink truncate">{globalStats?.today?.calls ?? 0}</div>
+                  </div>
+                </div>
+
+                <div style={sketchyShape3} className="bg-paper border-4 border-ink p-4 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center gap-3 -rotate-1 hover:rotate-0 transition-transform">
+                  <div className="p-2.5 bg-[#88c0d0]/30 border-2 border-ink" style={sketchyShape1}>
+                    <Zap size={24} className="text-[#5e81ac]" strokeWidth={3} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[10px] font-black tracking-widest text-ink/40 uppercase" style={{ fontFamily: '"Comic Sans MS", cursive' }}>TOKENS BURNT</div>
+                    <div className="text-2xl font-black font-mono text-ink truncate">
+                      {globalStats?.today?.total_tokens ? globalStats.today.total_tokens.toLocaleString() : 0}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* 底层：近一年工作看板 */}
+              <div style={sketchyShape1} className="w-full bg-paper border-4 border-ink p-5 shadow-[6px_6px_0px_0px_rgba(26,26,26,1)] flex flex-col gap-3 relative mt-2">
+                
+                {/* 🌟 核心修改：无字纯色胶带，只做点缀 */}
+                <div className="absolute -top-2 left-10 w-16 h-4 bg-[#d08770]/60 border-2 border-ink rotate-2" style={sketchyShape2}></div>
+                <div className="absolute -bottom-2 right-12 w-12 h-3 bg-[#EBCB8B]/60 border-2 border-ink -rotate-3" style={sketchyShape3}></div>
+                
+                <div className="flex justify-between items-end px-1">
+                  <span className="font-black text-sm tracking-wider" style={{ fontFamily: '"Comic Sans MS", cursive' }}>ANNUAL CONTRIBUTIONS</span>
+                  <div className="flex items-center gap-1.5 text-[9px] font-bold opacity-50 uppercase">
+                    <span>Less</span>
+                    <div className="flex gap-0.5">
+                      <div className="w-2.5 h-2.5 bg-white border border-ink/20 rounded-sm" />
+                      <div className="w-2.5 h-2.5 bg-[#a3be8c]/40 border border-ink/40 rounded-sm" />
+                      <div className="w-2.5 h-2.5 bg-[#a3be8c]/70 border border-ink/70 rounded-sm" />
+                      <div className="w-2.5 h-2.5 bg-[#a3be8c] border border-ink rounded-sm" />
+                    </div>
+                    <span>More</span>
+                  </div>
+                </div>
+
+                {/* 渲染热力图网格 */}
+                <div className="w-full">
+                  {renderSketchyHeatmap(globalStats?.heatmap)}
+                </div>
+              </div>
+
             </div>
           ) : (
             messages.map((msg, idx) => {
@@ -2067,84 +2205,115 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
           <div ref={messagesEndRef} className="h-2" />
         </div>
 
-        {/* 🌟 新增：文件变更视图 */}
+        {/* 🌟 终极改造：清爽极客风 Diff 面板 */}
         {showFileView && (
-          <div className="px-10 pb-6 pt-2">
+          <div className="px-10 pb-6 pt-2 shrink-0">
             <div style={sketchyShape1} className="bg-paper border-4 border-ink shadow-[8px_8px_0px_0px_rgba(26,26,26,1)] p-6">
-              <div className="flex items-center gap-3 mb-4">
-                <History size={28} strokeWidth={2.5} className="text-[#d08770]" />
+              
+              {/* 面板头部 */}
+              <div className="flex items-center gap-3 mb-5 border-b-4 border-ink/20 pb-3">
+                <History size={26} strokeWidth={2.5} className="text-[#d08770]" />
                 <h2 className="text-2xl font-black tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>
                   FILE CHANGES
-                  <span className="ml-2 text-sm opacity-60">({fileChanges.length})</span>
+                  <span className="ml-2 text-sm opacity-60">({fileChanges.length} files modified)</span>
                 </h2>
               </div>
 
               {fileChanges.length === 0 ? (
                 <div className="flex flex-col items-center py-10 opacity-50">
                   <CheckCircle size={48} strokeWidth={1.5} />
-                  <p className="font-bold text-sm mt-2">No file changes yet!</p>
+                  <p className="font-bold text-sm mt-2">All files clean! No pending changes.</p>
                 </div>
               ) : (
-                <div className="flex flex-col gap-4 max-h-[400px] overflow-y-auto">
-                  {fileChanges.map((change, idx) => (
-                    <div 
-                      key={change.id} 
-                      className={`bg-cream border-4 border-ink p-4 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] transition-all hover:-translate-y-0.5 ${idx % 2 === 0 ? 'rotate-0.5' : '-rotate-0.5'}`}
-                      style={idx % 2 === 0 ? sketchyShape2 : sketchyShape3}
-                    >
-                      <div className="flex justify-between items-start mb-3">
-                        <div className="flex items-center gap-2">
-                          <FileText size={16} strokeWidth={3} className="text-[#88c0d0]" />
-                          <span className="font-black text-sm text-ink truncate max-w-[300px]">{change.path}</span>
-                          {/* 🌟 亮点：如果修改次数大于 1，加上一个极客风的聚合徽章 */}
+                /* 左右分栏主容器：删除了 border-r 边框，增加呼吸感 */
+                <div className="flex flex-col md:flex-row gap-6 h-[400px] items-stretch">
+                  
+                  {/* 📂 左侧：垂直文件列表导航栏 */}
+                  <div className="w-full md:w-72 shrink-0 overflow-y-auto flex flex-col gap-3 pr-2">
+                    {fileChanges.map((change, idx) => {
+                      const isSelected = activeDiffPath === change.path;
+                      return (
+                        <div
+                          key={change.id}
+                          onClick={() => setActiveDiffPath(change.path)}
+                          style={idx % 2 === 0 ? sketchyShape2 : sketchyShape3}
+                          className={`p-3 border-2 border-ink transition-all cursor-pointer flex flex-col gap-1 relative select-none
+                            ${idx % 2 === 0 ? 'rotate-0.5' : '-rotate-0.5'}
+                            ${isSelected 
+                              ? 'bg-[#88c0d0] text-paper shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] translate-y-0.5' 
+                              : 'bg-cream text-ink hover:bg-sand shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:-translate-y-[1px]'}`}
+                        >
+                          <div className="flex items-center gap-2 w-full">
+                            <FileText size={14} className={isSelected ? 'text-paper' : 'text-[#88c0d0]'} strokeWidth={3} />
+                            <span className="font-black text-xs truncate flex-1">{change.path.split('/').pop()}</span>
+                          </div>
+                          <span className={`text-[9px] font-bold ${isSelected ? 'text-paper/70' : 'text-ink/40'} truncate`} title={change.path}>
+                            {change.path}
+                          </span>
+                          {/* 🌟 优化：把容易引发歧义的 M 换成了直白的 EDITS */}
                           {change.edit_count > 1 && (
-                            <span className="bg-[#EBCB8B] text-ink px-1.5 py-0.5 text-[10px] font-black border-2 border-ink shadow-[1px_1px_0px_0px_rgba(26,26,26,1)] ml-1" style={sketchyShape1}>
-                              {change.edit_count} EDITS MERGED
+                            <span className="absolute -top-2 -right-2 bg-[#EBCB8B] text-ink px-1.5 py-0.5 text-[9px] font-black border-2 border-ink shadow-[1px_1px_0px_0px_rgba(26,26,26,1)]" style={sketchyShape1}>
+                              {change.edit_count} EDITS
                             </span>
                           )}
                         </div>
-                        <span className="text-[10px] font-bold opacity-60 bg-paper px-2 py-0.5 border-2 border-ink">{change.time}</span>
-                      </div>
+                      );
+                    })}
+                  </div>
 
-                      {/* Diff 渲染 */}
-                      <div className="bg-[#FDF8F0] p-3 border-2 border-ink/20 font-mono text-sm overflow-x-auto">
-                        {change.diff.split('\n').map((line: string, i: number) => {
-                          let colorClass = 'text-ink/70';
-                          if (line.startsWith('+')) colorClass = 'text-[#a3be8c]';
-                          if (line.startsWith('-')) colorClass = 'text-[#bf616a]';
-                          if (line.startsWith('@')) colorClass = 'text-[#88c0d0]';
-                          return (
-                            <div key={i} className={`${colorClass} leading-relaxed ${line.startsWith('+') || line.startsWith('-') ? 'pl-2' : ''}`}>
-                              {line || '\u00A0'}
-                            </div>
-                          );
-                        })}
-                      </div>
+                  {/* 🔍 右侧：当前选中文件的 Diff 详情展示区 */}
+                  <div className="flex-1 flex flex-col min-w-0">
+                    {(() => {
+                      const currentChange = fileChanges.find(c => c.path === activeDiffPath);
+                      if (!currentChange) {
+                        return <div className="flex-1 flex items-center justify-center italic opacity-40 text-sm">Select a file from the left panel...</div>;
+                      }
 
-                      {/* 确认 / 回滚操作栏 */}
-                      <div className="flex gap-4 mt-3">
-                        {/* 传入 newest_backup_id 确认全部 */}
-                        <button
-                          onClick={() => handleAck(change.path, change.newest_backup_id)}
-                          className="flex-1 bg-cream text-ink font-black py-2.5 border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:bg-[#a3be8c] active:translate-y-1 active:shadow-none transition-all flex justify-center items-center gap-2"
-                          style={sketchyShape2}
-                        >
-                          <CheckCircle size={18} strokeWidth={3}/> ACK ALL
-                        </button>
-                        
-                        {/* 传入 oldest_backup_id 回滚最初 */}
-                        <button
-                          onClick={() => handleRollback(change.path, change.oldest_backup_id)}
-                          className="flex-1 bg-[#bf616a] text-paper font-black py-2.5 border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:bg-[#a54e56] active:translate-y-1 active:shadow-none transition-all flex justify-center items-center gap-2"
-                          style={sketchyShape3}
-                        >
-                          <Undo2 size={18} strokeWidth={3}/> REVERT
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+                      return (
+                        <div className="flex-1 flex flex-col min-h-0">
+                          {/* 🌟 优化：完全删除了原本的横幅 (路径 + 时间戳)，直接顶满屏幕展示代码 */}
+
+                          {/* 代码差异滚动盒 */}
+                          <div className="flex-1 bg-[#FDF8F0] p-4 border-4 border-ink font-mono text-xs overflow-auto shadow-[inset_3px_3px_6px_rgba(0,0,0,0.05)]" style={sketchyShape2}>
+                            {currentChange.diff ? currentChange.diff.split('\n').map((line: string, i: number) => {
+                              let colorClass = 'text-ink/70';
+                              if (line.startsWith('+')) colorClass = 'text-[#a3be8c] font-bold bg-[#a3be8c]/10';
+                              if (line.startsWith('-')) colorClass = 'text-[#bf616a] font-bold bg-[#bf616a]/10';
+                              if (line.startsWith('@')) colorClass = 'text-[#88c0d0]';
+                              return (
+                                <div key={i} className={`${colorClass} leading-relaxed whitespace-pre rounded px-1`}>
+                                  {line || '\u00A0'}
+                                </div>
+                              );
+                            }) : <span className="opacity-50 italic p-2 block">No visual difference detected.</span>}
+                          </div>
+
+                          {/* 当前文件的专属动作条 */}
+                          <div className="flex gap-4 mt-3 shrink-0">
+                            <button
+                              onClick={() => handleAck(currentChange.path, currentChange.newest_backup_id)}
+                              className="flex-1 bg-[#a3be8c] text-ink font-black py-2.5 border-2 border-ink shadow-[3px_3px_0px_0px_rgba(26,26,26,1)] hover:bg-[#8eb072] active:translate-y-0.5 active:shadow-none transition-all flex justify-center items-center gap-2"
+                              style={sketchyShape2}
+                            >
+                              <CheckCircle size={16} strokeWidth={3}/> ACKNOWLEDGE
+                            </button>
+                            
+                            <button
+                              onClick={() => handleRollback(currentChange.path, currentChange.oldest_backup_id)}
+                              className="flex-1 bg-[#bf616a] text-paper font-black py-2.5 border-2 border-ink shadow-[3px_3px_0px_0px_rgba(26,26,26,1)] hover:bg-[#a54e56] active:translate-y-0.5 active:shadow-none transition-all flex justify-center items-center gap-2"
+                              style={sketchyShape3}
+                            >
+                              <Undo2 size={16} strokeWidth={3}/> REVERT
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+
                 </div>
               )}
+
             </div>
           </div>
         )}

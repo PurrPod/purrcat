@@ -38,7 +38,9 @@ def BrainStorm(action: str, main_plan: list = None, sub_branches: list = None, t
                 main_session_id = manager.get_active_session_id()
                 
                 # 获取当前主分支历史（此时已包含工具调用记录在 [-1]）
-                main_history = manager.get_chat_history()
+                # 🌟 修复：绕过 manager.get_chat_history() 的 system 过滤，直接获取底层全量记录
+                # 这样 sub 分支能复用主分支的 KV Cache，实现 100% 前缀树命中
+                main_history = manager._agent.get_history()
                 
                 # 🌟 从历史最后一条获取真正的 tool_call_id
                 tool_call_id = None
