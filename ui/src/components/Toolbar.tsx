@@ -86,7 +86,7 @@ export default function Toolbar({ onBack }: { onBack?: () => void }) {
     }
   }
 
-  // 真实执行部署保存逻辑
+  // 🌟 真实执行部署保存逻辑 (增加依赖项扫描与去重)
   const handleRealDeploy = async () => {
     const errors = validateGraph()
     if (errors.length > 0) {
@@ -94,7 +94,37 @@ export default function Toolbar({ onBack }: { onBack?: () => void }) {
       return
     }
 
+    // 1. 获取基础导出图谱数据
     const graph = exportGraph(workflowName, workflowDescription)
+    
+    // 2. 扫描图中所有节点，提取技能与MCP依赖并利用 Set 去重
+    const skillSet = new Set<string>();
+    const mcpSet = new Set<string>();
+
+    if (graph.nodes && Array.isArray(graph.nodes)) {
+      graph.nodes.forEach((node: any) => {
+        // 提取 skill_info 节点中的 skills
+        if (node.type === 'skill_info' && Array.isArray(node.config?.skills_list)) {
+          node.config.skills_list.forEach((item: any) => {
+            if (item && item.name) skillSet.add(item.name);
+          });
+        }
+        // 提取 mcp_info 节点中的 mcp servers
+        if (node.type === 'mcp_info' && Array.isArray(node.config?.mcp_servers)) {
+          node.config.mcp_servers.forEach((item: any) => {
+            if (item && item.name) mcpSet.add(item.name);
+          });
+        }
+      });
+    }
+
+    // 3. 将扫描到的依赖注入到 graph 对象中
+    graph.dependencies = {
+      skills: Array.from(skillSet),
+      mcps: Array.from(mcpSet)
+    };
+
+    // 4. 提交带有依赖声明的 JSON 数据到后端
     try {
       const res = await fetch(`http://localhost:8000/api/graphs/${workflowName}`, {
         method: 'POST',

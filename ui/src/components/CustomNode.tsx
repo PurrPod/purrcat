@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Handle, Position, useEdges, useUpdateNodeInternals } from '@xyflow/react';
 import { useFlowStore } from '../store/flowStore';
-import { Trash2, Plus, X } from 'lucide-react';
+import { Trash2, Plus, X, Pencil } from 'lucide-react';
 
 const sketchyShape1 = { borderRadius: '255px 15px 225px 15px/15px 225px 15px 255px' };
 const sketchyShape2 = { borderRadius: '15px 225px 15px 255px/255px 15px 225px 15px' };
@@ -17,9 +17,24 @@ export default function CustomNode({ id, data, selected }: any) {
   const updateNodeInternals = useUpdateNodeInternals();
   const edges = useEdges();
 
-  // 🌟 状态重构：使用一个对象字典来动态存储弹窗表单数据
   const [listModalField, setListModalField] = useState<any>(null);
   const [listModalData, setListModalData] = useState<Record<string, any>>({});
+
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [tempName, setTempName] = useState(data.name || '');
+
+  React.useEffect(() => {
+    setTempName(data.name || '');
+  }, [data.name]);
+
+  const handleNameSave = () => {
+    if (tempName.trim() && tempName.trim() !== data.name) {
+      updateNodeData(id, { name: tempName.trim() });
+    } else {
+      setTempName(data.name || '');
+    }
+    setIsEditingName(false);
+  };
 
   const isConnected = (handleId: string, type: 'target' | 'source') => {
     return edges.some((e) => type === 'target' 
@@ -48,18 +63,16 @@ export default function CustomNode({ id, data, selected }: any) {
     updateNodeInternals(id);
   }, [data, id, updateNodeInternals]);
 
-  // 🌟 动态确认添加逻辑
   const handleAddListVar = () => {
     if (!listModalField) return;
 
     const valName = (listModalData.name || '').trim();
-    if (!valName) return; // 防呆：名字不能为空
+    if (!valName) return; 
     
     const currentList = Array.isArray(data[listModalField.name]) ? data[listModalField.name] : [];
     const exists = currentList.some((i: any) => (typeof i === 'object' ? (i.name || i.key) : i) === valName);
     
     if (!exists) {
-      // 核心：如果有 schema，保存完整的字典；没有则保留兜底的 name/type
       const newItem = listModalField.item_schema 
         ? { ...listModalData } 
         : { name: valName, type: listModalData.type || 'any' };
@@ -86,7 +99,6 @@ export default function CustomNode({ id, data, selected }: any) {
           {listVal.map((item: any, idx: number) => {
             const itemName = typeof item === 'object' ? (item.name || item.key) : item;
             const itemType = typeof item === 'object' ? item.type : 'any';
-            // 提取 schema 中的新属性用于悬浮提示和红星显示
             const itemRequired = typeof item === 'object' ? item.required : false;
             const itemDesc = typeof item === 'object' ? item.description : '';
 
@@ -96,7 +108,6 @@ export default function CustomNode({ id, data, selected }: any) {
                   <Handle type="target" position={Position.Left} id={itemName} className="!bg-terracotta !w-4 !h-4 !border-2 !border-paper !-left-[18px] z-10 hover:!scale-125 transition-transform" />
                 )}
                 
-                {/* 🌟 节点上显示必填红星，悬浮显示 Description */}
                 <span className={`text-sm font-bold text-ink ${dynamicIn ? 'ml-2' : ''} ${dynamicOut ? 'mr-2' : ''}`} title={itemDesc}>
                   {itemName}
                   {itemRequired && <span className="text-[#bf616a] ml-1">*</span>}
@@ -125,7 +136,6 @@ export default function CustomNode({ id, data, selected }: any) {
           <button 
             onClick={() => { 
               setListModalField(field); 
-              // 🌟 初始化弹窗表单数据
               const initialData: Record<string, any> = {};
               if (field.item_schema) {
                 field.item_schema.forEach((sch: any) => {
@@ -178,13 +188,39 @@ export default function CustomNode({ id, data, selected }: any) {
         <Trash2 size={16} className="text-paper" />
       </button>
 
-      <div className="flex items-center gap-3 mb-4 border-b-2 border-ink/15 pb-3">
+      <div className="flex items-center gap-3 mb-4 border-b-2 border-ink/15 pb-3 group/header">
         <div style={{ backgroundColor: data.color || '#D47A5A' }} className="w-5 h-5 border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] -rotate-3 shrink-0"></div>
-        <div className="font-black text-xl tracking-wider truncate" style={{ fontFamily: '"Comic Sans MS", cursive' }}>{data.name}</div>
+        
+        {isEditingName ? (
+          <input
+            autoFocus
+            value={tempName}
+            onChange={(e) => setTempName(e.target.value)}
+            onBlur={handleNameSave}
+            onKeyDown={(e) => e.key === 'Enter' && handleNameSave()}
+            className="flex-1 min-w-0 bg-[#FDF8F0] border-2 border-ink px-2 py-0.5 font-black text-xl tracking-wider focus:outline-none shadow-[inset_2px_2px_0px_0px_rgba(26,26,26,0.1)]"
+            style={{ ...sketchyShape2, fontFamily: '"Comic Sans MS", cursive' }}
+          />
+        ) : (
+          <div className="flex items-center justify-between flex-1 min-w-0 gap-2">
+            <div className="font-black text-xl tracking-wider truncate" style={{ fontFamily: '"Comic Sans MS", cursive' }}>
+              {data.name}
+            </div>
+            <button 
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsEditingName(true);
+              }} 
+              className="opacity-0 group-hover/header:opacity-100 text-ink/40 hover:text-terracotta hover:scale-110 transition-all cursor-pointer p-1"
+              title="Edit Custom Name"
+            >
+              <Pencil size={16} strokeWidth={3} />
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="flex flex-col gap-4">
-        {/* 输入引脚 */}
         {data.inputs && data.inputs.length > 0 && (
           <div className="flex flex-col gap-2">
             {data.inputs.map((input: any) => {
@@ -215,7 +251,6 @@ export default function CustomNode({ id, data, selected }: any) {
           </div>
         )}
 
-        {/* 配置表单 */}
         {data.configSchema?.map((configField: any) => {
            const isHandleConnected = isConnected(configField.name, 'target');
            return (
@@ -229,7 +264,6 @@ export default function CustomNode({ id, data, selected }: any) {
            );
         })}
 
-        {/* 输出引脚 */}
         {data.outputs && data.outputs.length > 0 && (
           <div className="flex flex-col gap-2 items-end mt-2 pt-2 border-t-2 border-ink/10 border-dashed">
             {data.outputs.map((output: any) => {
@@ -261,7 +295,6 @@ export default function CustomNode({ id, data, selected }: any) {
         )}
       </div>
 
-      {/* 🌟 全新动态表单手绘弹窗 */}
       {listModalField && createPortal(
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-ink/40 backdrop-blur-sm p-4 pointer-events-auto" onClick={(e) => e.stopPropagation()}>
           <div style={sketchyShape3} className="bg-paper border-4 border-ink shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] w-full max-w-sm p-8 relative -rotate-1">
@@ -271,7 +304,6 @@ export default function CustomNode({ id, data, selected }: any) {
             
             <div className="flex flex-col gap-4 mb-8 max-h-[60vh] overflow-y-auto pr-2">
               {listModalField.item_schema ? (
-                // 🟢 动态 Schema 渲染 (针对 task_input 这样的高级节点)
                 listModalField.item_schema.map((sch: any) => (
                   <div key={sch.name}>
                     <p className="font-bold mb-2 opacity-80">{sch.label || sch.name}:</p>
@@ -287,7 +319,6 @@ export default function CustomNode({ id, data, selected }: any) {
                         <span className="font-bold">{sch.label}</span>
                       </label>
                     ) : sch.type === 'string' && sch.name === 'type' ? (
-                      // Type 特殊处理下拉框
                       <select
                         value={listModalData[sch.name] || 'any'}
                         onChange={(e) => setListModalData({ ...listModalData, [sch.name]: e.target.value })}
@@ -297,7 +328,6 @@ export default function CustomNode({ id, data, selected }: any) {
                         {DATA_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
                       </select>
                     ) : (
-                      // 普通文本框
                       <input
                         autoFocus={sch.name === 'name'}
                         value={listModalData[sch.name] || ''}
@@ -311,7 +341,6 @@ export default function CustomNode({ id, data, selected }: any) {
                   </div>
                 ))
               ) : (
-                // 🔴 降级渲染 (针对普通的 list，只要求 name 和 type)
                 <>
                   <div>
                     <p className="font-bold mb-2 opacity-80">变量名称 (Name):</p>
