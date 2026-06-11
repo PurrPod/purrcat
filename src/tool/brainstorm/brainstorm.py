@@ -50,6 +50,17 @@ def BrainStorm(
                     msg_lines.append(f"**Step {i}**. {step}")
 
             if sub_branches:
+                msg_lines.append(
+                    f"\n后台支线任务 ({len(sub_branches)}个) 已成功递交底层引擎，在暗中开辟独立线程快马加鞭运转中。"
+                )
+
+            # 提前拼接好最终的返回文本
+            msg_lines.append(
+                "\n💡 指示：工具已闭环，你不需要进行任何循环查询。请立即按照你刚才定下的 Main 主线计划第一步去沙盒开展工作。子任务结果出来后系统会自动通知。"
+            )
+            final_response_text = "\n".join(msg_lines)
+
+            if sub_branches:
                 from src.agent.manager import AgentManager
 
                 manager = AgentManager()
@@ -69,8 +80,7 @@ def BrainStorm(
                     ):
                         tool_call_id = last_msg["tool_calls"][0]["id"]
 
-                # 🌟 核心修复：这个 main_history 是马上要传给 sub 线程当初始历史用的。
-                # 给它塞入一个专属的 Tool 成功响应，而主干的响应是通过底部的 return 自动完成的。
+                # 🌟 核心修复：让子分支塞入的伪造历史和主分支的真实返回完全一致
                 if tool_call_id:
                     sub_tool_result_msg = {
                         "role": "tool",
@@ -78,7 +88,7 @@ def BrainStorm(
                         "name": "BrainStorm",
                         "content": text_response(
                             {"status": "success"},
-                            "✅ 脑暴生成成功，当前已被分配到 sub 分支。",
+                            final_response_text,
                         ),
                     }
                     main_history.append(sub_tool_result_msg)
@@ -90,15 +100,8 @@ def BrainStorm(
                     loop,
                 )
 
-                msg_lines.append(
-                    f"\n后台支线任务 ({len(sub_branches)}个) 已成功递交底层引擎，在暗中开辟独立线程快马加鞭运转中。"
-                )
-
-            msg_lines.append(
-                "\n💡 指示：工具已闭环，你不需要进行任何循环查询。请立即按照你刚才定下的 Main 主线计划第一步去沙盒开展工作。子任务结果出来后系统会自动通知。"
-            )
-
-            return text_response({"status": "success"}, "\n".join(msg_lines))
+            # 🌟 使用前面拼接好的相同文本返回给主分支
+            return text_response({"status": "success"}, final_response_text)
 
         return error_response("无效的 action 指令")
 

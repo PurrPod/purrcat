@@ -126,6 +126,14 @@ class SubAgentRunner:
             msg_resp = response.choices[0].message
 
             assist_msg = {"role": "assistant", "content": msg_resp.content or ""}
+            
+            # 🌟 修复：完整提取并保留深度思考过程，确保发给服务端的历史能完美匹配缓存单元
+            rc = getattr(msg_resp, "reasoning_content", None)
+            if rc is None and hasattr(msg_resp, "model_dump"):
+                rc = msg_resp.model_dump().get("reasoning_content")
+            if rc is not None:
+                assist_msg["reasoning_content"] = rc
+
             if msg_resp.tool_calls:
                 assist_msg["tool_calls"] = [
                     {

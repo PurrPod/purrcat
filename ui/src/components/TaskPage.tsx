@@ -51,6 +51,7 @@ interface TaskMonitorNodeProps {
 interface GraphNode {
   id: string;
   name?: string;
+  type?: string; // 🌟 加上 type
   position?: [number, number] | { x: number; y: number };
 }
 
@@ -361,6 +362,7 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
             id: n.id, type: 'custom', position: { x: posX, y: posY },
             data: {
               label: n.name && n.name.trim() ? n.name : n.id,
+              nodeType: n.type, // 🌟 新增这一行：记录底层节点类型
               shape: idx % 2 === 0 ? sketchyShape1 : sketchyShape2,
               isTaskRunning: isCurrentlyRunning,
               nodeState: currentState,
@@ -707,19 +709,24 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
         <div className="absolute -top-4 right-12 w-32 h-8 bg-terracotta/40 border-2 border-ink -rotate-3 z-50" style={sketchyShape2}></div>
         
         <div className="pt-8 px-10 pb-4 flex items-center justify-between shrink-0 absolute top-0 left-0 right-0 z-50 pointer-events-none">
-          <div className="flex items-center gap-4 bg-paper/80 backdrop-blur-md p-3 border-4 border-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] pointer-events-auto -rotate-1" style={sketchyShape3}>
-            <Terminal size={24} className="text-terracotta" strokeWidth={3} />
-            <h2 className="text-2xl font-black tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>GRAPH VISUALIZER</h2>
-          </div>
+          {/* 🌟 核心修改：用一个 flex 组把标题和 STOP 按钮包在一起，居左显示 */}
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-4 bg-paper/80 backdrop-blur-md p-3 border-4 border-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] pointer-events-auto -rotate-1" style={sketchyShape3}>
+              <Terminal size={24} className="text-terracotta" strokeWidth={3} />
+              <h2 className="text-2xl font-black tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>GRAPH VISUALIZER</h2>
+            </div>
 
-          {selectedTaskId && currentSelectedTask?.state === 'running' && (
-            <button
-              onClick={handleKillTask} style={sketchyShape2}
-              className="pointer-events-auto flex items-center gap-2 bg-[#bf616a] text-paper border-4 border-ink px-5 py-2.5 font-black text-base shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:bg-red-500 hover:-translate-y-0.5 active:translate-y-0.5 active:shadow-none transition-all rotate-1"
-            >
-              <Square size={16} strokeWidth={3} fill="currentColor" /><span style={{ fontFamily: '"Comic Sans MS", cursive' }}>STOP PROCESS</span>
-            </button>
-          )}
+            {/* STOP 按钮挪到这里 */}
+            {selectedTaskId && currentSelectedTask?.state === 'running' && (
+              <button
+                onClick={handleKillTask} style={sketchyShape2}
+                className="pointer-events-auto flex items-center gap-2 bg-[#bf616a] text-paper border-4 border-ink px-5 py-2.5 font-black text-base shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:bg-red-500 hover:-translate-y-0.5 active:translate-y-0.5 active:shadow-none transition-all rotate-1"
+              >
+                <Square size={16} strokeWidth={3} fill="currentColor" /><span style={{ fontFamily: '"Comic Sans MS", cursive' }}>STOP PROCESS</span>
+              </button>
+            )}
+          </div>
+          {/* 右侧自动腾出空间，完美避开 Dashboard */}
         </div>
         
         <div className="flex-1 w-full h-full bg-cream/30 relative">
@@ -749,10 +756,18 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
                   </div>
                   
                   <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-3">
-                    {nodes.length === 0 ? (
-                      <div className="text-center font-bold text-ink/40 py-4 text-sm">No nodes found</div>
-                    ) : (
-                      nodes.map((n, idx) => {
+                    {/* 🌟 核心修改：利用自执行函数进行节点过滤 */}
+                    {(() => {
+                      // 过滤只展示 AgentNode 的子类节点（智能体循环、人工干预）
+                      const agentNodes = nodes.filter((n: any) => 
+                        ['agent_loop', 'human_intervention'].includes(n.data.nodeType)
+                      );
+
+                      if (agentNodes.length === 0) {
+                        return <div className="text-center font-bold text-ink/40 py-4 text-sm">No Core Agent Nodes</div>;
+                      }
+
+                      return agentNodes.map((n, idx) => {
                         // 根据状态映射风格颜色
                         const sColor = n.data.nodeState === 'running' ? 'bg-[#3498DB] text-paper' :
                                        n.data.nodeState === 'completed' ? 'bg-[#a3be8c] text-ink' :
@@ -780,7 +795,7 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
                           </div>
                         );
                       })
-                    )}
+                    })()}
                   </div>
                 </div>
               )}
