@@ -142,40 +142,29 @@ class SubAgentRunner:
             self._save_history()  # 🌟 修复 2：大模型回复后立即落盘
 
             tool_calls = extract_tool_calling(response)
-            file_exists = os.path.exists(self.deliverable_path)
+            
+            # 🌟 修改 1：同时检测文件存在且大小大于 0（非空）
+            file_ready = os.path.exists(self.deliverable_path) and os.path.getsize(self.deliverable_path) > 0
             turn_count += 1
 
             # 3. 契约验收逻辑 (无工具调用时)
             if not tool_calls:
-                if file_exists:
+                if file_ready:
                     self._notify_main(
-                        f"✅ [后台捷报] 子分支 `{self.display_branch_id}` 任务已圆满结束！目标交付物文件已就绪。"
+                        f"✅ [后台捷报] 子分支 `{self.display_branch_id}` 任务已圆满结束！目标交付物文件已就绪且内容不为空。"
                     )
                     break
                 else:
                     self.messages.append(
                         {
                             "role": "user",
-                            "content": f"任务未结束：未在沙盒中检测到要求的交付物文件 {self.deliverable_path}。",
+                            "content": f"任务未结束：未在沙盒中检测到要求的交付物文件 {self.deliverable_path}，或者该文件目前为空，请确保生成并写入具体内容。",
                         }
                     )
-                    self._save_history()  # 🌟 修复 3：验收失败追加 prompt 后落盘
+                    self._save_history()  # 验收失败追加 prompt 后落盘
                     continue
 
-            # 4. 防加戏死循环拦截 (有工具调用时)
-            if file_exists:
-                tool_call_after_generated_turns += 1
-                if tool_call_after_generated_turns > 5:
-                    self.messages.append(
-                        {
-                            "role": "user",
-                            "content": f"本分支任务为：{self.action}。检测到你已成功生成交付物，不允许去完成本分支以外的工作防产生冲突，请迅速收尾。",
-                        }
-                    )
-            else:
-                tool_call_after_generated_turns = 0
-
-            # 5. 安全调用底层工具箱
+            # 4. 安全调用底层工具箱 (🌟 修改 2：必须把执行工具放在注入 User 提示之前，保证 Tool Chain 完整闭环)
             for tc in tool_calls:
                 import json
 
@@ -200,7 +189,21 @@ class SubAgentRunner:
                         "content": result,
                     }
                 )
-                self._save_history()  # 🌟 修复 4：工具执行后落盘
+                self._save_history()  # 工具执行后落盘
+
+            # 5. 防加戏死循环拦截 (🌟 修改 3：在工具结果成功落盘闭环后，再判断是否需要强行塞入 User 警告)
+            if file_ready:
+                tool_call_after_generated_turns += 1
+                if tool_call_after_generated_turns > 5:
+                    self.messages.append(
+                        {
+                            "role": "user",
+                            "content": f"本分支任务为：{self.action}。检测到你已成功生成交付物且内容完整，不允许去完成本分支以外的工作防产生冲突，请迅速停止调用工具并收尾。",
+                        }
+                    )
+                    self._save_history()  # 记得补充落盘
+            else:
+                tool_call_after_generated_turns = 0
 
 
 async def run_dag_graph(sub_branches: list, main_session_id: str, main_history: list):
