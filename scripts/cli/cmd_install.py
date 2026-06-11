@@ -74,12 +74,44 @@ def run_install(ext_type, source):
     print("==========================================")
 
     # ---------------------------------------------------------
-    # 1. MCP 安装逻辑：将传入的 JSON string 写入全局 mcp_config.json
+    # 1. MCP 安装逻辑：支持查表 (Registry) 或直接传入 JSON string
     # ---------------------------------------------------------
     if ext_type == "mcp":
         mcp_config_path = os.path.join(project_root, ".purrcat", "mcp_config.json")
+        new_mcp_configs = {}
+
+        # 场景 A: 传入的是原生 JSON 字符串 (向下兼容)
+        if source.strip().startswith("{"):
+            try:
+                new_mcp_configs = json.loads(source)
+            except json.JSONDecodeError as e:
+                print(f"X Error: Invalid JSON string for MCP configuration. {e}")
+                return
+        # 场景 B: 传入的是短名，需要去 registry 查表
+        else:
+            registry_url = "https://raw.githubusercontent.com/PurrPod/mcps/main/registry.json"
+            print(f"[*] Querying MCP registry for '{source}'...")
+            try:
+                req = urllib.request.Request(registry_url, headers={"User-Agent": "PurrCat-CLI/1.0"})
+                response = urllib.request.urlopen(req)
+                registry_data = json.loads(response.read().decode("utf-8"))
+                
+                mcps_dict = registry_data.get("mcps", {})
+                if source not in mcps_dict:
+                    print(f"X Error: MCP '{source}' not found in official registry.")
+                    print(f"  Available MCPs: {', '.join(mcps_dict.keys())}")
+                    return
+                
+                # 提取注册表中的 config 块作为安装内容
+                new_mcp_configs[source] = mcps_dict[source].get("config", {})
+                print(f"[*] Found MCP '{source}' in registry!")
+                
+            except Exception as e:
+                print(f"X Failed to fetch or parse MCP registry: {e}")
+                return
+
+        # 执行落盘写入逻辑
         try:
-            new_mcp = json.loads(source)
             # 加载已有的 mcp_config.json
             if os.path.exists(mcp_config_path):
                 with open(mcp_config_path, "r", encoding="utf-8") as f:
@@ -90,19 +122,32 @@ def run_install(ext_type, source):
             if "mcpServers" not in current_config:
                 current_config["mcpServers"] = {}
 
+            env_warning_list = []
+
             # 合并新增的 MCP Server 配置
-            for server_name, server_config in new_mcp.items():
+            for server_name, server_config in new_mcp_configs.items():
                 current_config["mcpServers"][server_name] = server_config
                 print(f"  -> Added/Updated MCP server: {server_name}")
+                
+                # 智能提醒：如果包含空的 env，提醒用户去填 Key
+                if "env" in server_config and any(not v for v in server_config["env"].values()):
+                    env_warning_list.append(server_name)
 
             os.makedirs(os.path.dirname(mcp_config_path), exist_ok=True)
             with open(mcp_config_path, "w", encoding="utf-8") as f:
                 json.dump(current_config, f, indent=2, ensure_ascii=False)
+            
             print("[+] Successfully installed MCP configurations.")
-        except json.JSONDecodeError as e:
-            print(f"X Error: Invalid JSON string for MCP configuration. {e}")
+            
+            # 打印环境变量配置警告
+            if env_warning_list:
+                print("\n[!] IMPORTANT: The following MCPs require Environment Variables (API Keys):")
+                for w_mcp in env_warning_list:
+                    print(f"    - {w_mcp}")
+                print("    Please edit '.purrcat/mcp_config.json' to fill in the missing values.")
+                
         except Exception as e:
-            print(f"X Failed to install MCP: {e}")
+            print(f"X Failed to save MCP configuration: {e}")
 
     # ---------------------------------------------------------
     # 2. Graph 安装逻辑：从 PurrPod/graphpod 拉取并解析依赖

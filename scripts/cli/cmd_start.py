@@ -13,7 +13,7 @@ def _get_project_root():
     return os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
-def run_start(webui=False):
+def run_start(tui=False):
     """Start PurrCat application"""
     print("Starting PurrCat...")
     print("Press [Ctrl+C] to safely close.\n")
@@ -31,8 +31,8 @@ def run_start(webui=False):
 
     ui_process = None
 
-    # 如果启用了 WebUI 模式
-    if webui:
+    # 默认启动 WebUI 模式（除非指定了 tui）
+    if not tui:
         # 自动屏蔽 TUI 并开启 API 服务
         backend_cmd.extend(["--api", "--headless"])
 
@@ -46,6 +46,8 @@ def run_start(webui=False):
                 "❌ npm command not found. Please ensure Node.js is installed and added to your PATH."
             )
             sys.exit(1)
+    else:
+        print("[*] Launching Terminal UI (TUI) mode...")
 
     try:
         # 阻塞执行后端主进程

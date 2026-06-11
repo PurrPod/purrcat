@@ -40,7 +40,7 @@ PurrCat CLI - Cross-platform AI Agent Framework
     print("  init    - Generate .purrcat config templates")
     print("  install - Install extensions (skill, node, graph, mcp)")
     print("  update  - Update PurrCat to the latest version from GitHub")
-    print("  start   - Start PurrCat (append --webui to launch with Web UI)")
+    print("  start   - Start PurrCat with Web UI (default)")
     print("")
     print("Examples:")
     print("  purrcat setup")
@@ -60,7 +60,8 @@ PurrCat CLI - Cross-platform AI Agent Framework
     print("")
     print("  purrcat update")
     print('  purrcat update --version="2026.05.15"')
-    print("  purrcat start --webui")
+    print("  purrcat start")
+    print("  purrcat start --tui")
     print("")
     print("Docs:     https://purrpod.github.io/")
     print("GitHub:   https://github.com/PurrPod/purrcat")
@@ -86,9 +87,9 @@ def main():
         "--force", "-f", action="store_true", help="Force overwrite existing files"
     )
     parser.add_argument(
-        "--webui",
+        "--tui",
         action="store_true",
-        help="Launch backend API and Frontend Web UI simultaneously (for start command)",
+        help="Launch Terminal UI instead of the default Web UI (for start command)",
     )
     parser.add_argument(
         "--help", "-h", action="store_true", help="Show this help message"
@@ -125,7 +126,8 @@ def main():
     elif args.command == "update":
         run_update(target_version=args.version)
     elif args.command == "start":
-        run_start(webui=args.webui)
+        # 传递 tui 标志到启动函数
+        run_start(tui=args.tui)
     else:
         cmd_help()
 
