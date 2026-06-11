@@ -126,7 +126,7 @@ class SubAgentRunner:
             msg_resp = response.choices[0].message
 
             assist_msg = {"role": "assistant", "content": msg_resp.content or ""}
-            
+
             # 🌟 修复：完整提取并保留深度思考过程，确保发给服务端的历史能完美匹配缓存单元
             rc = getattr(msg_resp, "reasoning_content", None)
             if rc is None and hasattr(msg_resp, "model_dump"):
@@ -150,9 +150,12 @@ class SubAgentRunner:
             self._save_history()  # 🌟 修复 2：大模型回复后立即落盘
 
             tool_calls = extract_tool_calling(response)
-            
+
             # 🌟 修改 1：同时检测文件存在且大小大于 0（非空）
-            file_ready = os.path.exists(self.deliverable_path) and os.path.getsize(self.deliverable_path) > 0
+            file_ready = (
+                os.path.exists(self.deliverable_path)
+                and os.path.getsize(self.deliverable_path) > 0
+            )
             turn_count += 1
 
             # 3. 契约验收逻辑 (无工具调用时)

@@ -1,0 +1,35 @@
+{
+    "type": "skill_info",
+    "name": "Skill 知识包 (Skill Kit)",
+    "description": "根据填写的 Skill 名称列表，获取并拼接它们的描述，输出结构化的 Skill Kit 提示词，引导 Agent 使用。",
+    "color": "#1ABC9C",
+    "inputs": [
+        {
+            "name": "trigger",
+            "type": "any",
+            "port_type": "static",
+            "description": "触发信号（可选）。如果不连线，节点将在开局自动执行；如果连线，将等待收到上游数据/信号后再执行。",
+            "required": false
+        }
+    ],
+    "outputs": [
+        {
+            "name": "skill_kit_string",
+            "type": "string",
+            "port_type": "static",
+            "description": "格式化后的 Skill 提示词"
+        }
+    ],
+    "config": [
+        {
+            "name": "skills_list",
+            "type": "list",
+            "label": "推荐技能列表 (Skills)",
+            "default": [],
+            "description": "添加推荐给 Agent 的技能名称",
+            "item_schema": [
+                {"name": "name", "type": "string", "label": "技能名 (例如: web_search)"}
+            ]
+        }
+    ]
+}

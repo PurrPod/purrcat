@@ -357,35 +357,40 @@ async def get_agent_stats():
 
     today_calls = 0
     today_tokens = 0
-    heatmap_data = {}  # 格式: {"2026-06-10": 42, "2026-06-09": 105}
+    today_cached_tokens = 0  # 🌟 新增：今日缓存命中数
+    heatmap_data = {}
 
     if os.path.exists(target_dir):
-        # 2. 匹配所有类似 2026-06-10_summary.json 的文件
         file_paths = glob.glob(os.path.join(target_dir, "*_summary.json"))
 
         for path in file_paths:
             filename = os.path.basename(path)
-            # 提取出日期字符串 YYYY-MM-DD
             date_str = filename.split("_")[0]
 
             try:
                 with open(path, "r", encoding="utf-8") as f:
                     day_data = json.load(f)
 
-                # 累加这一天的调用总次数
                 day_total_calls = sum(item.get("calls", 0) for item in day_data)
                 day_total_tokens = sum(item.get("total_tokens", 0) for item in day_data)
+                day_cached_tokens = sum(
+                    item.get("cached_tokens", 0) for item in day_data
+                )  # 🌟 提取缓存数据
 
                 heatmap_data[date_str] = day_total_calls
 
-                # 如果是今天，单独记录
                 if date_str == today_str:
                     today_calls = day_total_calls
                     today_tokens = day_total_tokens
+                    today_cached_tokens = day_cached_tokens  # 🌟 记录今日缓存
             except Exception:
                 continue
 
     return {
-        "today": {"calls": today_calls, "total_tokens": today_tokens},
+        "today": {
+            "calls": today_calls,
+            "total_tokens": today_tokens,
+            "cached_tokens": today_cached_tokens,  # 🌟 返回给前端
+        },
         "heatmap": heatmap_data,
     }

@@ -1,3 +1,4 @@
+// components/ChatPage.tsx
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { 
@@ -6,7 +7,7 @@ import {
   List, Brain, Server, Zap, AlarmClock, GitFork, Plus,
   RefreshCw, Terminal, User, FileText, Save,
   Settings, FileJson, AlertCircle, Download, Activity, Paperclip, Bell,
-  FolderOpen, History, Undo2, CheckCircle
+  FolderOpen, History, Undo2, CheckCircle, Check
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
@@ -41,7 +42,7 @@ function parseEventsContent(content: string): { userMessages: EventItem[], syste
         
         if (eventType === 'user') {
           userMessages.push({ type: eventType, time: eventTime, content: eventContent });
-        } else if (eventType === 'file-quote' || eventType === 'skill-quote') {
+        } else if (eventType === 'file-quote' || eventType === 'skill-quote' || eventType === 'tool-quote' || eventType === 'mcp-quote') {
           attachments.push({ type: eventType, time: eventTime, content: eventContent });
         } else {
           systemCount++;
@@ -103,7 +104,6 @@ const MarkdownComponents: any = {
   }
 };
 
-// 🌟 辅助函数：生成过去一年的日期网格 (高度压缩版，防溢出)
 function renderSketchyHeatmap(heatmapData: Record<string, number> = {}) {
   const cells = [];
   const today = new Date();
@@ -130,7 +130,6 @@ function renderSketchyHeatmap(heatmapData: Record<string, number> = {}) {
       <div 
         key={dateStr}
         title={`${dateStr} : ${count} CALLS`}
-        // 🌟 核心修改：尺寸缩小到 w-2.5 h-2.5 (10px)，消除视觉拥挤
         className={`w-2.5 h-2.5 border transition-all hover:scale-150 hover:border-terracotta hover:z-10 relative cursor-crosshair ${colorClass}`}
         style={{ borderRadius: i % 3 === 0 ? '1px 3px 1px 2px' : '2px 1px 3px 1px' }} 
       />
@@ -138,7 +137,6 @@ function renderSketchyHeatmap(heatmapData: Record<string, number> = {}) {
   }
 
   return (
-    // 🌟 核心修改：缩小 gap 至 3px，确保 53 列总宽度小于 700px，完美适配容器
     <div className="flex justify-center w-full">
       <div className="grid grid-rows-7 grid-flow-col gap-[3px] p-3 bg-cream/30 w-fit">
         {cells}
@@ -215,17 +213,14 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   const navigate = useNavigate();
   const { sessionId } = useParams<{ sessionId: string }>();
 
-  // --- 基础状态 ---
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(sessionId || null);
   
-  // --- 🌟 新增：隔离分支状态控制 ---
   const [currentBranchId, setCurrentBranchId] = useState<string>('main');
   const [branches, setBranches] = useState<Record<string, any>>({ main: {} });
 
-  // --- 弹窗与控制状态 ---
   const [showSessionModal, setShowSessionModal] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [newAlias, setNewAlias] = useState('');
@@ -235,16 +230,13 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   const [isCheckingOut, setIsCheckingOut] = useState(false);
   const [isAgentThinking, setIsAgentThinking] = useState(false);
 
-  // --- 🌟 修复：新增支线删除确认弹窗状态 ---
   const [branchToDelete, setBranchToDelete] = useState<string | null>(null);
 
-  // --- 🌟 新增：全局大盘统计状态 ---
   const [globalStats, setGlobalStats] = useState<{
-    today: { calls: number; total_tokens: number };
+    today: { calls: number; total_tokens: number; cached_tokens: number };
     heatmap: Record<string, number>;
   } | null>(null);
 
-  // 🌟 新增：拉取全局大盘统计
   const fetchGlobalStats = async () => {
     try {
       const res = await fetch('http://localhost:8000/api/system/agent/stats');
@@ -256,42 +248,38 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
     }
   };
 
-  // --- 🌟 修复：切分支时，强制清空假消息队列，防止 main 的消息在 sub 乱窜 ---
   useEffect(() => {
     pendingMsgsRef.current = [];
   }, [currentBranchId]);
 
-  // --- 🌟 当进入会话并且消息为空时，拉取统计 ---
   useEffect(() => {
     if (messages.length === 0) {
       fetchGlobalStats();
     }
   }, [messages.length]);
 
-  // --- Token 状态 ---
-  const [tokenData, setTokenData] = useState({ window: 0, max: 1000000 });
+  // --- Token 看板状态 ---
+  const [tokenData, setTokenData] = useState({ window: 0, max: 1000000, cached: 0 });
 
-  // --- 🌟 新增：请求审批队列状态 ---
+  // --- BrainStorm 启用状态 ---
+  const [useBrainstorm, setUseBrainstorm] = useState(false);
+
   const [showReqQueue, setShowReqQueue] = useState(false);
   const [pendingReqs, setPendingReqs] = useState<any[]>([]);
   const [feedbackInputs, setFeedbackInputs] = useState<Record<string, string>>({});
   const prevPendingIds = useRef<string[]>([]);
   const [expandedReasons, setExpandedReasons] = useState<Record<string, boolean>>({});
 
-  // --- 🌟 真实的文件变更视图状态 ---
   const [showFileView, setShowFileView] = useState(false);
   const [fileChanges, setFileChanges] = useState<any[]>([]);
-  // 🌟 新增：当前在 DiffView 中选中的文件路径
   const [activeDiffPath, setActiveDiffPath] = useState<string | null>(null);
 
-  // 🌟 联动修复：每当文件列表刷新时，如果当前没选文件，默认激活第一个文件
   useEffect(() => {
     if (fileChanges.length > 0 && (!activeDiffPath || !fileChanges.some(c => c.path === activeDiffPath))) {
       setActiveDiffPath(fileChanges[0].path);
     }
   }, [fileChanges]);
 
-  // --- 🌟 新增：拉取当前会话子宇宙分支列表 ---
   const loadBranches = async (sid: string) => {
     try {
       const res = await fetch(`http://localhost:8000/api/sessions/${sid}/branches`);
@@ -304,7 +292,6 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
     }
   };
 
-  // 🌟 全局拉取接口
   const fetchGlobalDiffs = async () => {
     try {
       const res = await fetch('http://localhost:8000/api/filesystem/diffs');
@@ -319,14 +306,12 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
     }
   };
 
-  // 每 3 秒同步一次底层全局 Diff 状态
   useEffect(() => {
     fetchGlobalDiffs();
     const interval = setInterval(fetchGlobalDiffs, 3000);
     return () => clearInterval(interval);
   }, []);
 
-  // --- 🌟 修改：极简化的 Ack 操作（传入 newest_backup_id）---
   const handleAck = async (path: string, newestBackupId: string) => {
     try {
       if (!newestBackupId) { toast.error("缺乏快照标识"); return; }
@@ -342,7 +327,6 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
     } catch { toast.error("网络异常"); }
   };
 
-  // --- 🌟 修改：极简化的 Rollback 操作（传入 oldest_backup_id）---
   const handleRollback = async (path: string, oldestBackupId: string) => {
     try {
       if (!oldestBackupId) { toast.error("缺乏快照标识"); return; }
@@ -358,7 +342,6 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
     } catch { toast.error("网络异常"); }
   };
 
-  // 轮询 Token 进度
   useEffect(() => {
     let tokenInterval: ReturnType<typeof setTimeout>;
     const fetchToken = async () => {
@@ -366,7 +349,8 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
         const res = await fetch('http://localhost:8000/api/agent/token');
         if (res.ok) {
           const data = await res.json();
-          setTokenData({ window: data.window_token, max: data.max_token });
+          // 更新 cached 数据，如果没有默认为 0
+          setTokenData({ window: data.window_token, max: data.max_token, cached: data.cached_token || 0 });
         }
       } catch (e) {
         console.error("Fetch token error", e);
@@ -380,7 +364,6 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
     return () => { if (tokenInterval) clearInterval(tokenInterval); };
   }, [currentSessionId]);
 
-  // --- 🌟 新增：请求队列拉取与操作逻辑 ---
   const fetchRequests = async () => {
     try {
       const resPending = await fetch('http://localhost:8000/api/requests').catch(() => null);
@@ -389,7 +372,6 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
         const dataPending = await resPending.json();
         setPendingReqs(dataPending);
         
-        // 自动弹出逻辑：如果有新的 pending 请求，就自动打开右侧抽屉
         const currentIds = dataPending.map((r: any) => r.id);
         const hasNew = currentIds.some((id: string) => !prevPendingIds.current.includes(id));
         if (hasNew && dataPending.length > 0) {
@@ -404,7 +386,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
 
   useEffect(() => {
     fetchRequests();
-    const interval = setInterval(fetchRequests, 3000); // 每3秒拉取一次
+    const interval = setInterval(fetchRequests, 3000);
     return () => clearInterval(interval);
   }, []);
 
@@ -419,14 +401,13 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
       if (res.ok) {
         toast.success(ignore ? "请求已静默忽略" : "请求处理完成");
         setFeedbackInputs(prev => { const n = {...prev}; delete n[reqId]; return n; });
-        fetchRequests(); // 刷新
+        fetchRequests();
       } else {
         toast.error("请求处理失败");
       }
     } catch { toast.error("网络异常"); }
   };
 
-  // --- 侧边栏面板状态 ---
   const [sidebarMode, setSidebarMode] = useState<'menu' | 'mcp' | 'skill' | 'cron' | 'sensor'>('menu');
   const [sensorData, setSensorData] = useState<any>({});
   const [mcpData, setMcpData] = useState<Record<string, any[]>>({});
@@ -435,7 +416,6 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   const [skillData, setSkillData] = useState<any[]>([]);
   const [expandedSkill, setExpandedSkill] = useState<string | null>(null);
   
-  // --- 🌟 新增：Skill 下载弹窗与状态 ---
   const [showInstallSkillModal, setShowInstallSkillModal] = useState(false);
   const [skillInstallUrl, setSkillInstallUrl] = useState('');
   const [isInstallingSkill, setIsInstallingSkill] = useState(false);
@@ -444,42 +424,37 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   const [showAddCronModal, setShowAddCronModal] = useState(false);
   const [newCron, setNewCron] = useState({ title: '', trigger_time: '', repeat_rule: 'none' });
 
-  // --- MD编辑状态 (SOUL / SOLO / TODO) ---
   const [showMdModal, setShowMdModal] = useState(false);
   const [mdType, setMdType] = useState<'SOUL' | 'SOLO' | 'TODO'>('SOUL');
   const [mdContent, setMdContent] = useState('');
   const [isSavingMd, setIsSavingMd] = useState(false);
 
-  // --- Skill 选择器相关状态 ---
   const [showSkillSelectModal, setShowSkillSelectModal] = useState(false);
   const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
   const [tempSelectedSkills, setTempSelectedSkills] = useState<string[]>([]);
 
-  // --- 🌟 引用文件/目录状态 ---
+  const [showMcpSelectModal, setShowMcpSelectModal] = useState(false);
+  const [selectedMcps, setSelectedMcps] = useState<string[]>([]);
+  const [tempSelectedMcps, setTempSelectedMcps] = useState<string[]>([]);
+
   const [refPaths, setRefPaths] = useState<string[]>([]);
-  const [showRefModal, setShowRefModal] = useState(false); // 改为 Modal
+  const [showRefModal, setShowRefModal] = useState(false); 
   const [tempRefPath, setTempRefPath] = useState('');
 
-  // --- 🌟 拖拽/上传相关状态 ---
   const [isDragging, setIsDragging] = useState(false);
 
-  // --- 常量定义 ---
-  const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB 限制
+  const MAX_FILE_SIZE = 20 * 1024 * 1024; 
 
-  // --- 🌟 处理文件上传并转为本地路径（带安全拦截） ---
   const handleFileUpload = async (files: FileList | File[]) => {
     try {
       const newPaths: string[] = [];
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
 
-        // 🛑 安全拦截：文件大小限制
         if (file.size > MAX_FILE_SIZE) {
           toast.error(`文件 [${file.name}] 太大啦！请不要超过 20MB。`);
           continue;
         }
-
-        console.log(`准备上传: ${file.name}, 类型: ${file.type}, 大小: ${(file.size / 1024 / 1024).toFixed(2)}MB`);
 
         const formData = new FormData();
         formData.append('file', file);
@@ -506,21 +481,17 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
     }
   };
 
-  // --- 🌟 处理粘贴事件 ---
   const handlePaste = (e: React.ClipboardEvent) => {
-    // 如果剪贴板里有文件（截图、复制的图片等）
     if (e.clipboardData.files && e.clipboardData.files.length > 0) {
-      e.preventDefault(); // 阻止默认的粘贴文本行为
+      e.preventDefault(); 
       handleFileUpload(e.clipboardData.files);
     }
   };
 
-  // --- 🌟 处理拖拽事件 (🌟 增强版：拦截文件夹)
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
 
-    // 使用 dataTransfer.items 来进行更深度的探测
     const items = e.dataTransfer.items;
     if (items && items.length > 0) {
       const validFiles: File[] = [];
@@ -529,41 +500,34 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
       for (let i = 0; i < items.length; i++) {
         const item = items[i];
         if (item.kind === 'file') {
-          // 核心魔法：获取文件系统条目，判断是不是文件夹
           const entry = item.webkitGetAsEntry();
           if (entry && entry.isDirectory) {
             hasFolder = true;
           } else {
-            // 是正常文件，提取出来
             const file = item.getAsFile();
             if (file) validFiles.push(file);
           }
         }
       }
 
-      // 如果探测到了文件夹，给出友好的专属提示
       if (hasFolder) {
         toast.error("暂不支持直接上传文件夹哦！请选择具体的文件。");
       }
 
-      // 如果拖拽的内容里有合法的文件（比如混着拖的），继续上传合法文件
       if (validFiles.length > 0) {
         handleFileUpload(validFiles);
       }
     }
   };
 
-  // --- 配置中心选项卡常量 ---
   const CONFIG_TABS = ['model', 'sensor', 'file', 'memory', 'mcp'];
 
-  // --- 配置中心核心状态 ---
   const [isConfigOpen, setIsConfigOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('model');
   const [configData, setConfigData] = useState<Record<string, any>>({});
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const [editJsonStr, setEditJsonStr] = useState('');
 
-  // --- 配置读取函数 ---
   const fetchConfig = async (tab: string) => {
     try {
       const res = await fetch(`http://localhost:8000/api/config/${tab}`);
@@ -580,7 +544,6 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
     }
   };
 
-  // 监听弹窗开启及 Tab 切换
   useEffect(() => {
     if (isConfigOpen) {
       fetchConfig(activeTab);
@@ -596,7 +559,6 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
     }
   };
 
-  // --- 配置保存落盘函数 ---
   const handleSaveConfig = async (key: string) => {
     try {
       const parsedValue = JSON.parse(editJsonStr);
@@ -660,7 +622,6 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
     }
   };
 
-  // --- API 交互 (Sensor, MCP, Skill, Cron) ---
   const fetchSensorData = async () => {
     try {
       const res = await fetch('http://localhost:8000/api/config/sensor');
@@ -730,7 +691,6 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
     } catch { toast.error("刷新 Skill 失败"); }
   };
 
-  // 🌟 新增：调用后端下载并热更新 Skill
   const handleInstallSkill = async () => {
     if (!skillInstallUrl.trim()) {
       toast.error("Github URL 不能为空！");
@@ -748,7 +708,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
         toast.success(data.message || "Skill 下载并加载成功！");
         setShowInstallSkillModal(false);
         setSkillInstallUrl('');
-        fetchSkill(); // 重新拉取以更新前端列表
+        fetchSkill(); 
       } else {
         const err = await res.json().catch(() => ({}));
         toast.error(err.detail || "安装失败，请检查 URL 格式");
@@ -760,17 +720,14 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
     }
   };
 
-  // --- 🌟 新增：MCP 安装弹窗与状态 ---
   const [showInstallMcpModal, setShowInstallMcpModal] = useState(false);
   const [mcpInstallJson, setMcpInstallJson] = useState('');
   const [isInstallingMcp, setIsInstallingMcp] = useState(false);
 
-  // --- 🌟 新增：Sensor 安装弹窗与状态 ---
   const [showInstallSensorModal, setShowInstallSensorModal] = useState(false);
   const [sensorInstallJson, setSensorInstallJson] = useState('');
   const [isInstallingSensor, setIsInstallingSensor] = useState(false);
 
-  // 🌟 新增：处理 Sensor JSON 注入并热重启
   const handleInstallSensor = async () => {
     if (!sensorInstallJson.trim()) {
       toast.error("JSON 配置不能为空！");
@@ -809,7 +766,6 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
     }
   };
 
-  // 🌟 新增：调用后端接口安装并刷新 MCP
   const handleInstallMcp = async () => {
     if (!mcpInstallJson.trim()) {
       toast.error("JSON 配置不能为空！");
@@ -827,7 +783,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
         toast.success(data.message || "MCP 安装成功！");
         setShowInstallMcpModal(false);
         setMcpInstallJson('');
-        fetchMcp(); // 重新拉取最新的 MCP 列表渲染
+        fetchMcp(); 
       } else {
         const err = await res.json().catch(() => ({}));
         toast.error(err.detail || "安装失败，请检查 JSON 格式或网络");
@@ -905,25 +861,22 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
 
   useEffect(() => { loadSessions(); }, []);
 
-  // --- 🌟 改造：会话初始检出重置 ---
   useEffect(() => {
     if (sessionId && sessionId !== currentSessionId) {
       pendingMsgsRef.current = [];
       setCurrentSessionId(sessionId);
-      setCurrentBranchId('main'); // 切新会话时重置回主干
+      setCurrentBranchId('main'); 
       loadSessionHistory(sessionId, 'main');
       loadBranches(sessionId);
     }
   }, [sessionId]);
 
-  // --- 🌟 改造：轮询拦截器，使其能自动定位至当前聚焦的书签分支 ---
   useEffect(() => {
     if (!currentSessionId) return;
     const interval = setInterval(async () => {
       if (isCheckingOut) return;
       try {
         const [msgRes, statusRes] = await Promise.all([
-          // 加上 branch_id 约束查询
           fetch(`http://localhost:8000/api/sessions/${currentSessionId}?branch_id=${currentBranchId}`),
           fetch(`http://localhost:8000/api/sessions/${currentSessionId}/status`)
         ]);
@@ -945,7 +898,6 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
           const statusData = await statusRes.json();
           setIsAgentThinking(statusData.is_thinking);
           
-          // 当后台打工仔分支正在并发开辟时，定时顺手刷新分支列表，让新诞生支线书签"啪"地弹出来
           loadBranches(currentSessionId);
         }
       } catch (e) {
@@ -953,7 +905,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
       }
     }, 1500);
     return () => clearInterval(interval);
-  }, [currentSessionId, currentBranchId, isCheckingOut]); // 🌟 挂载关联依赖
+  }, [currentSessionId, currentBranchId, isCheckingOut]);
 
   const loadSessions = async () => {
     try {
@@ -963,14 +915,12 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
         setSessions(data);
         if (data.length > 0 && !currentSessionId) {
           const firstSessionId = data[0].id;
-          // ✅ 核心修复：必须通过 handleSelectSession 去触发后端的 checkout
           await handleSelectSession(firstSessionId);
         }
       }
     } catch { toast.error("获取会话失败"); }
   };
 
-  // --- 🌟 改造：支持传入分支标识的历史读取 ---
   const loadSessionHistory = async (id: string, bId: string = 'main') => {
     const res = await fetch(`http://localhost:8000/api/sessions/${id}?branch_id=${bId}`);
     if (res.ok) {
@@ -982,13 +932,13 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   const handleSelectSession = async (id: string) => {
     setIsCheckingOut(true);
     setCurrentSessionId(id);
-    setCurrentBranchId('main'); // 重置
+    setCurrentBranchId('main'); 
     navigate(`/chat/${id}`, { replace: true });
     isAutoScroll.current = true;
     try {
       await fetch(`http://localhost:8000/api/sessions/${id}/checkout`, { method: 'POST' }).catch(() => {});
       await loadSessionHistory(id, 'main');
-      await loadBranches(id); // 加载全量分支书签
+      await loadBranches(id); 
     } catch { 
       toast.error('加载记录失败'); 
     } finally {
@@ -1064,7 +1014,6 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
     const eventsToPush: any[] = [];
     const userText = input.trim();
     
-    // 1. 遍历并注入文件引用 (覆盖了拖拽、粘贴、点击弹窗等所有方式)
     if (refPaths.length > 0) {
       refPaths.forEach(path => {
         eventsToPush.push({
@@ -1074,7 +1023,6 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
       });
     }
 
-    // 2. 遍历并注入 Skill 引用
     if (selectedSkills.length > 0) {
       selectedSkills.forEach(skill => {
         eventsToPush.push({
@@ -1084,22 +1032,37 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
       });
     }
 
-    // 3. 注入用户的真实文本
+    if (selectedMcps.length > 0) {
+      selectedMcps.forEach(mcp => {
+        eventsToPush.push({
+          type: 'mcp-quote',
+          content: `user want you fetch mcp：${mcp}`
+        });
+      });
+    }
+
+    // 🌟 注入 BrainStorm Tag 
+    if (useBrainstorm) {
+       eventsToPush.push({
+         type: 'tool-quote',
+         content: `user want you use BrainStorm`
+       });
+    }
+
     eventsToPush.push({
       type: 'user',
       content: userText
     });
     
-    // 清理状态
     setInput('');
     setSelectedSkills([]); 
+    setSelectedMcps([]); // 🌟 新增清空MCP
     setRefPaths([]); 
+    setUseBrainstorm(false); // 清除选项
     isAutoScroll.current = true;
     
-    // 把纯文本放入 pending 列阵，用于防重检测
     pendingMsgsRef.current.push(userText);
     
-    // 构造本地的假消息格式用于立即渲染（包装成后端格式）
     const fakeMsgContent = JSON.stringify({ events: eventsToPush });
     setMessages(prev => [...prev, { role: 'user', content: fakeMsgContent }]);
 
@@ -1117,31 +1080,26 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
     }
   };
 
-  // 🌟 智能判定环境的附件点击事件
   const handleAttachmentClick = async () => {
-    // 探测当前是否在 Tauri 桌面客户端环境中 (忽略 TypeScript 报错)
     // @ts-expect-error window.__TAURI__ may not exist in all environments
     const tauri = typeof window !== 'undefined' ? window.__TAURI__ : null;
 
     if (tauri && tauri.dialog) {
-      // 🚀 桌面端环境：直接调用系统原生的文件选择器
       try {
         const selected = await tauri.dialog.open({ 
-          multiple: true, // 允许多选
+          multiple: true,
         });
         
         if (selected) {
            const paths = Array.isArray(selected) ? selected : [selected];
-           // 去重并添加到标签列表中
            setRefPaths(prev => [...new Set([...prev, ...paths])]);
-           setShowRefModal(false); // 确保手绘弹窗是关闭的
+           setShowRefModal(false); 
         }
       } catch (err) {
         console.error("原生弹窗调用失败，降级为 Web 模式", err);
-        setShowRefModal(true); // 降级弹窗
+        setShowRefModal(true); 
       }
     } else {
-      // 🌐 纯 Web 环境：降级弹出我们的手绘风弹窗
       setShowRefModal(true);
     }
   };
@@ -1149,7 +1107,6 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   return (
     <div className="absolute inset-0 bg-[#fdfaf5] bg-[radial-gradient(#1a1a1a_1px,transparent_1px)] [background-size:24px_24px] p-6 md:p-8 flex gap-6 overflow-hidden font-sans">
       
-      {/* 检出状态遮罩 */}
       {isCheckingOut && (
         <div className="fixed inset-0 bg-cream/70 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
           <div style={sketchyShape2} className="bg-paper border-4 border-ink p-10 flex flex-col items-center justify-center gap-6 shadow-[16px_16px_0px_0px_rgba(26,26,26,1)] -rotate-1 min-w-[320px]">
@@ -1169,7 +1126,6 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
         </div>
       )}
 
-      {/* 新建会话弹窗 */}
       {showModal && (
         <div className="fixed inset-0 bg-ink/40 backdrop-blur-sm z-[150] flex items-center justify-center p-4">
           <div style={sketchyShape2} className="bg-paper border-4 border-ink p-8 flex flex-col gap-6 shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] rotate-1 max-w-md w-full">
@@ -1189,7 +1145,6 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
         </div>
       )}
 
-      {/* 衍生分支 (Branch) 弹窗 */}
       {showBranchModal && (
         <div className="fixed inset-0 bg-ink/40 backdrop-blur-sm z-[150] flex items-center justify-center p-4">
           <div style={sketchyShape2} className="bg-paper border-4 border-ink p-8 flex flex-col gap-6 shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] rotate-1 max-w-md w-full">
@@ -1210,7 +1165,6 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
         </div>
       )}
 
-      {/* 彻底删除会话分支确认弹窗 */}
       {sessionToDelete && (
         <div className="fixed inset-0 bg-ink/40 backdrop-blur-sm z-[150] flex items-center justify-center p-4">
           <div style={sketchyShape2} className="bg-paper border-4 border-ink p-8 flex flex-col gap-6 shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] -rotate-1 max-w-sm w-full">
@@ -1229,7 +1183,6 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
         </div>
       )}
 
-      {/* 彻底删除支线分支确认弹窗 */}
       {branchToDelete && (
         <div className="fixed inset-0 bg-ink/40 backdrop-blur-sm z-[150] flex items-center justify-center p-4">
           <div style={sketchyShape2} className="bg-paper border-4 border-ink p-8 flex flex-col gap-6 shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] -rotate-1 max-w-sm w-full">
@@ -1248,7 +1201,6 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                      const res = await fetch(`http://localhost:8000/api/sessions/${currentSessionId}/branches/${branchToDelete}`, { method: 'DELETE' });
                      if (res.ok) {
                        toast.success('支线已永久销毁');
-                       // 如果删的是当前正在看的支线，立刻退回主干
                        if (currentBranchId === branchToDelete) {
                          setCurrentBranchId('main');
                          loadSessionHistory(currentSessionId, 'main');
@@ -1265,7 +1217,6 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
         </div>
       )}
 
-      {/* 新增 Cron 弹窗 */}
       {showAddCronModal && (
         <div className="fixed inset-0 bg-ink/40 backdrop-blur-sm z-[150] flex items-center justify-center p-4">
           <div style={sketchyShape2} className="bg-paper border-4 border-ink p-8 flex flex-col gap-6 shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] rotate-1 max-w-sm w-full">
@@ -1280,7 +1231,6 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
         </div>
       )}
 
-      {/* 🌟 新增：第三方 Skill 安装弹窗 */}
       {showInstallSkillModal && (
         <div className="fixed inset-0 bg-ink/40 backdrop-blur-sm z-[150] flex items-center justify-center p-4">
           <div style={sketchyShape2} className="bg-paper border-4 border-ink p-8 flex flex-col gap-6 shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] rotate-1 max-w-lg w-full">
@@ -1320,7 +1270,6 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
         </div>
       )}
 
-      {/* 🌟 新增：MCP 配置解析与安装弹窗 */}
       {showInstallMcpModal && (
         <div className="fixed inset-0 bg-ink/40 backdrop-blur-sm z-[150] flex items-center justify-center p-4">
           <div style={sketchyShape2} className="bg-paper border-4 border-ink p-8 flex flex-col gap-6 shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] rotate-1 max-w-lg w-full">
@@ -1360,7 +1309,6 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
         </div>
       )}
 
-      {/* 🌟 新增：Sensor JSON 解析与安装弹窗 */}
       {showInstallSensorModal && (
         <div className="fixed inset-0 bg-ink/40 backdrop-blur-sm z-[150] flex items-center justify-center p-4">
           <div style={sketchyShape2} className="bg-paper border-4 border-ink p-8 flex flex-col gap-6 shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] rotate-1 max-w-lg w-full">
@@ -1400,7 +1348,6 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
         </div>
       )}
 
-      {/* Markdown 编辑弹窗 (SOUL / SOLO) */}
       {showMdModal && (
         <div className="fixed inset-0 bg-ink/40 backdrop-blur-sm z-[150] flex items-center justify-center p-4">
           <div style={sketchyShape2} className="bg-paper border-4 border-ink p-6 flex flex-col gap-4 shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] rotate-1 w-full max-w-4xl h-[85vh]">
@@ -1442,7 +1389,6 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
         </div>
       )}
 
-      {/* Skill 选择弹窗 */}
       {showSkillSelectModal && (
         <div className="fixed inset-0 bg-ink/40 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
           <div style={sketchyShape2} className="bg-paper border-4 border-ink p-6 flex flex-col gap-4 shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] rotate-1 w-full max-w-md h-[70vh]">
@@ -1465,7 +1411,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                      }}>
                         <div className="flex items-center gap-3">
                           <div className={`w-5 h-5 border-2 border-ink flex items-center justify-center ${isSelected ? 'bg-terracotta' : 'bg-paper'}`} style={sketchyShape2}>
-                            {isSelected && <div className="w-2.5 h-2.5 bg-paper rounded-full" />}
+                            {isSelected && <Check size={16} strokeWidth={4} className="text-paper" />}
                           </div>
                           <span className="font-black text-lg flex-1" style={{ fontFamily: '"Comic Sans MS", cursive' }}>{skill.name}</span>
                           <button onClick={(e) => { e.stopPropagation(); setExpandedSkill(expandedSkill === skill.name ? null : skill.name); }}>
@@ -1493,7 +1439,60 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
         </div>
       )}
 
-      {/* 🌟 引用本地路径弹窗 (Web 降级模式) */}
+      {showMcpSelectModal && (
+        <div className="fixed inset-0 bg-ink/40 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
+          <div style={sketchyShape2} className="bg-paper border-4 border-ink p-6 flex flex-col gap-4 shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] rotate-1 w-full max-w-md h-[70vh]">
+            <div className="flex justify-between items-center -rotate-1 border-b-4 border-ink/10 pb-3 shrink-0">
+              <h3 className="text-2xl font-black tracking-widest text-[#b8956e]" style={{ fontFamily: '"Comic Sans MS", cursive' }}>SELECT MCP</h3>
+              <button onClick={() => setShowMcpSelectModal(false)} className="hover:text-terracotta hover:scale-110 transition-all">
+                <X size={28} strokeWidth={3}/>
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto flex flex-col gap-3 -rotate-1 p-1">
+              {Object.keys(mcpData).length === 0 ? (
+                 <p className="font-bold text-center mt-6 opacity-50 text-sm">No MCP loaded</p>
+              ) : (
+                 Object.entries(mcpData).map(([server, tools], idx) => {
+                   const isSelected = tempSelectedMcps.includes(server);
+                   return (
+                     <div key={server} style={idx % 2 === 0 ? sketchyShape1 : sketchyShape3} className={`border-4 border-ink bg-cream p-3 transition-all ${isSelected ? 'shadow-[4px_4px_0px_0px_rgba(212,122,90,1)] border-terracotta bg-terracotta/10' : 'shadow-[4px_4px_0px_0px_rgba(26,26,26,1)]'} flex flex-col gap-2 cursor-pointer`} onClick={() => {
+                       if (isSelected) setTempSelectedMcps(prev => prev.filter(s => s !== server));
+                       else setTempSelectedMcps(prev => [...prev, server]);
+                     }}>
+                        <div className="flex items-center gap-3">
+                          <div className={`w-5 h-5 border-2 border-ink flex items-center justify-center ${isSelected ? 'bg-terracotta' : 'bg-paper'}`} style={sketchyShape2}>
+                            {isSelected && <Check size={16} strokeWidth={4} className="text-paper" />}
+                          </div>
+                          <span className="font-black text-lg flex-1 truncate" style={{ fontFamily: '"Comic Sans MS", cursive' }}>{server}</span>
+                          <button onClick={(e) => { e.stopPropagation(); setExpandedMcp(expandedMcp === server ? null : server); }}>
+                             {expandedMcp === server ? <ChevronUp size={20}/> : <ChevronDown size={20}/>}
+                          </button>
+                        </div>
+                        {expandedMcp === server && (
+                          <div className="text-xs font-bold opacity-80 pl-8 pt-1 border-t-2 border-ink/10 border-dashed mt-1 flex flex-col gap-1">
+                            {tools.map((t: any) => (
+                              <div key={t.name} className="flex gap-1 items-baseline"><span className="text-terracotta font-black">{t.name}:</span> <span className="opacity-70 truncate">{t.description}</span></div>
+                            ))}
+                          </div>
+                        )}
+                     </div>
+                   );
+                 })
+              )}
+            </div>
+            <div className="shrink-0 flex justify-end gap-3 -rotate-1 pt-2 border-t-4 border-ink/10">
+              <button onClick={() => {
+                  setSelectedMcps(tempSelectedMcps);
+                  setShowMcpSelectModal(false);
+                }}
+                style={sketchyShape1} className="px-8 bg-[#EBCB8B] text-ink font-black py-3 border-4 border-ink hover:bg-[#d8b877] transition-all shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] active:shadow-none active:translate-y-1">
+                COMPLETE
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showRefModal && (
         <div className="fixed inset-0 bg-ink/40 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
           <div style={sketchyShape2} className="bg-paper border-4 border-ink p-8 flex flex-col gap-6 shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] rotate-1 max-w-lg w-full">
@@ -1548,7 +1547,6 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
         </div>
       )}
 
-      {/* 配置面板弹窗部分 */}
       {isConfigOpen && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center bg-ink/70 backdrop-blur-sm p-4 md:p-8 pointer-events-auto">
           <div 
@@ -1560,7 +1558,6 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
               <X size={28} strokeWidth={4} />
             </button>
 
-            {/* 左侧卡片式 Tab 导航 */}
             <div className="w-56 shrink-0 border-r-4 border-ink/20 flex flex-col p-6">
               <div className="pb-6 flex items-center gap-4">
                 <Settings size={36} strokeWidth={2.5} className="text-terracotta" />
@@ -1586,7 +1583,6 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
               </div>
             </div>
 
-            {/* 右侧主配置编辑区 */}
             <div className="flex-1 overflow-y-auto p-8 flex flex-col gap-6">
               {Object.keys(configData).length === 0 ? (
                 <div className="text-center font-bold text-ink/40 mt-10 text-xl" style={{ fontFamily: '"Comic Sans MS", cursive' }}>No data found or Loading...</div>
@@ -1642,7 +1638,6 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
         </div>
       )}
 
-      {/* 会话切换侧滑列表模态框 */}
       {showSessionModal && (
         <div className="fixed inset-0 bg-ink/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
           <div style={sketchyShape2} className="bg-paper border-4 border-ink p-8 flex flex-col gap-6 shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] rotate-1 max-w-2xl w-full h-[80vh]">
@@ -1671,7 +1666,6 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
               </div>
             </div>
             
-            {/* 🔴 修复穿模：增加了 p-3 和 gap-5 留足旋转空间 */}
             <div className="flex-1 overflow-y-auto flex flex-col gap-5 p-3">
                 {sessions.map((session, idx) => (
                   <button
@@ -1698,20 +1692,16 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
         </div>
       )}
 
-      {/* --- 左侧多功能聚合面板 --- */}
       <div className="w-[320px] flex flex-col gap-6 shrink-0 z-20">
         <div className="flex gap-4 items-center">
-          {/* 返回按钮 */}
           <button onClick={onBack} style={sketchyShape2} className="w-16 h-16 bg-cream border-4 border-ink flex items-center justify-center hover:bg-sand transition-all shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] active:translate-y-[2px] active:translate-x-[2px] active:shadow-none -rotate-3 hover:rotate-0 group" title="Back">
             <ArrowLeft size={28} strokeWidth={3} className="text-ink group-hover:-translate-x-1 transition-transform" />
           </button>
           
-          {/* 🌟 新增：移动到这里的 TASK 纯图标按钮 */}
           <button onClick={onSwitchToTask || (() => navigate('/task'))} style={sketchyShape3} className="w-16 h-16 bg-cream border-4 border-ink flex items-center justify-center hover:bg-[#D8E2DC] transition-all shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] active:translate-y-[2px] active:translate-x-[2px] active:shadow-none rotate-3 hover:rotate-0 group" title="Go to Task">
             <Terminal size={28} strokeWidth={3} className="text-ink group-hover:translate-x-1 transition-transform" />
           </button>
 
-          {/* SWITCH 按钮 */}
           <button onClick={() => setShowSessionModal(true)} style={sketchyShape1} className="flex-1 h-16 flex items-center justify-center gap-2 bg-[#EBCB8B] text-ink border-4 border-ink hover:bg-[#d8b877] transition-all active:scale-95 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] rotate-2 hover:-rotate-1">
             <List size={22} strokeWidth={3} />
             <span className="tracking-widest text-lg font-black" style={{ fontFamily: '"Comic Sans MS", cursive' }}>SWITCH</span>
@@ -1720,7 +1710,6 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
 
         <div style={sketchyShape3} className="flex-1 bg-paper border-4 border-ink shadow-[8px_8px_0px_0px_rgba(26,26,26,1)] p-5 flex flex-col gap-4 overflow-hidden -rotate-1 relative">
           
-          {/* 主菜单模式 */}
           {sidebarMode === 'menu' && (
              <div className="flex-1 flex flex-col gap-5 p-2 mt-2 overflow-y-auto">
                  <button onClick={() => navigate('/memory')} style={sketchyShape1} className="flex-1 border-4 border-ink bg-[#FFB5A7]/40 hover:bg-[#FFB5A7] shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center gap-3 hover:-translate-y-1 hover:scale-[1.02] transition-all -rotate-1 active:shadow-none active:translate-y-1">
@@ -1739,24 +1728,20 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                      <AlarmClock size={28} strokeWidth={2.5} className="text-[#a07b8a]"/>
                      <span className="font-black text-xl tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>CRON</span>
                  </button>
-                 {/* 新增的 SOUL 按钮 */}
                  <button onClick={() => openMdEditor('SOUL')} style={sketchyShape2} className="flex-1 border-4 border-ink bg-[#b48ead]/50 hover:bg-[#b48ead] shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center gap-3 hover:-translate-y-1 hover:scale-[1.02] transition-all rotate-1 active:shadow-none active:translate-y-1 min-h-[60px]">
                      <FileText size={28} strokeWidth={2.5} className="text-[#8f6a88]"/>
                      <span className="font-black text-xl tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>SOUL</span>
                  </button>
-                 {/* 新增的 SOLO 按钮 */}
                  <button onClick={() => openMdEditor('SOLO')} style={sketchyShape3} className="flex-1 border-4 border-ink bg-[#88c0d0]/50 hover:bg-[#88c0d0] shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center gap-3 hover:-translate-y-1 hover:scale-[1.02] transition-all -rotate-1 active:shadow-none active:translate-y-1 min-h-[60px]">
                      <User size={28} strokeWidth={2.5} className="text-[#5e81ac]"/>
                      <span className="font-black text-xl tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>SOLO</span>
                  </button>
 
-                 {/* 新增的 TODO 按钮 */}
                  <button onClick={() => openMdEditor('TODO')} style={sketchyShape1} className="flex-1 border-4 border-ink bg-[#EBCB8B]/50 hover:bg-[#EBCB8B] shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center gap-3 hover:-translate-y-1 hover:scale-[1.02] transition-all rotate-2 active:shadow-none active:translate-y-1 min-h-[60px]">
                      <List size={28} strokeWidth={2.5} className="text-[#b8956e]"/>
                      <span className="font-black text-xl tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>TODO</span>
                  </button>
 
-                 {/* 新增：手绘风 CONFIG 功能按钮 */}
                  <button onClick={() => {setSidebarMode('sensor'); fetchSensorData();}} style={sketchyShape3} className="flex-1 border-4 border-ink bg-[#EBCB8B]/40 hover:bg-[#EBCB8B] shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center gap-3 hover:-translate-y-1 hover:scale-[1.02] transition-all rotate-2 active:shadow-none active:translate-y-1 min-h-[60px]">
                      <Activity size={28} strokeWidth={2.5} className="text-[#b8956e]"/>
                      <span className="font-black text-xl tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>SENSOR</span>
@@ -1764,14 +1749,12 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
              </div>
           )}
 
-          {/* MCP 子面板 */}
           {sidebarMode === 'mcp' && (
              <div className="flex-1 flex flex-col h-full overflow-hidden mt-1">
                  <div className="flex justify-between items-center mb-4 shrink-0 border-b-4 border-ink/20 pb-3">
                      <button onClick={() => setSidebarMode('menu')} className="p-1 bg-cream border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:-translate-x-1 transition-all"><ArrowLeft size={18} strokeWidth={3}/></button>
                      <span className="font-black tracking-widest text-lg" style={{ fontFamily: '"Comic Sans MS", cursive' }}>MCP SERVERS</span>
                      
-                     {/* 🌟 修改：右侧增加配置/下载按钮和刷新按钮 */}
                      <div className="flex items-center gap-2">
                         <button onClick={() => setShowInstallMcpModal(true)} className="p-1 bg-[#88c0d0] text-paper border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:scale-110 transition-all" title="Install new MCP">
                            <Plus size={18} strokeWidth={3}/>
@@ -1781,7 +1764,6 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                         </button>
                      </div>
                  </div>
-                 {/* 🔴 修复穿模：增加 p-2 和 gap-4 */}
                  <div className="flex-1 overflow-y-auto flex flex-col gap-4 p-2 mb-2">
                     {Object.keys(mcpData).length === 0 ? <p className="font-bold text-center mt-6 opacity-50 text-sm">No MCP loaded</p> :
                       Object.entries(mcpData).map(([server, tools], idx) => (
@@ -1806,14 +1788,12 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
              </div>
           )}
 
-          {/* Skill 子面板 */}
           {sidebarMode === 'skill' && (
              <div className="flex-1 flex flex-col h-full overflow-hidden mt-1">
                  <div className="flex justify-between items-center mb-4 shrink-0 border-b-4 border-ink/20 pb-3">
                      <button onClick={() => setSidebarMode('menu')} className="p-1 bg-cream border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:-translate-x-1 transition-all"><ArrowLeft size={18} strokeWidth={3}/></button>
                      <span className="font-black tracking-widest text-lg" style={{ fontFamily: '"Comic Sans MS", cursive' }}>SKILLS</span>
                      
-                     {/* 🌟 修改：右侧增加下载按钮和刷新按钮 */}
                      <div className="flex items-center gap-2">
                         <button onClick={() => setShowInstallSkillModal(true)} className="p-1 bg-terracotta text-paper border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:scale-110 transition-all" title="Install new Skill">
                            <Plus size={18} strokeWidth={3}/>
@@ -1823,7 +1803,6 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                         </button>
                      </div>
                  </div>
-                 {/* 🔴 修复穿模：增加 p-2 和 gap-4 */}
                  <div className="flex-1 overflow-y-auto flex flex-col gap-4 p-2 mb-2">
                     {skillData.length === 0 ? <p className="font-bold text-center mt-6 opacity-50 text-sm">No Skills loaded</p> :
                       skillData.map((skill: any, idx) => (
@@ -1843,7 +1822,6 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
              </div>
           )}
 
-          {/* Cron 子面板 */}
           {sidebarMode === 'cron' && (
              <div className="flex-1 flex flex-col h-full overflow-hidden mt-1">
                  <div className="flex justify-between items-center mb-4 shrink-0 border-b-4 border-ink/20 pb-3">
@@ -1851,7 +1829,6 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                      <span className="font-black tracking-widest text-lg" style={{ fontFamily: '"Comic Sans MS", cursive' }}>ALARMS</span>
                      <button onClick={fetchCron} className="p-1 bg-[#E8D1C5] border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:rotate-180 transition-all"><RefreshCw size={18} strokeWidth={3}/></button>
                  </div>
-                 {/* 🔴 修复穿模：增加 p-2 和 gap-4 */}
                  <div className="flex-1 overflow-y-auto flex flex-col gap-4 p-2 mb-2">
                     {cronData.length === 0 ? <p className="font-bold text-center mt-6 opacity-50 text-sm">No Alarms configured</p> :
                       cronData.map((cron: any, idx) => (
@@ -1871,7 +1848,6 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
              </div>
           )}
 
-          {/* Sensor 子面板 */}
           {sidebarMode === 'sensor' && (
              <div className="flex-1 flex flex-col h-full overflow-hidden mt-1">
                  <div className="flex justify-between items-center mb-4 shrink-0 border-b-4 border-ink/20 pb-3">
@@ -1940,10 +1916,8 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
         </div>
       </div>
 
-      {/* --- 右侧大聊天纸板 --- */}
       <div style={sketchyShape1} className="flex-1 bg-paper border-4 border-ink shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] flex flex-col overflow-hidden relative z-10">
         
-        {/* 🌟 改造原本的黄色小胶带：有会话时显示 ID，无会话时作为纯装饰 */}
         {currentSessionId ? (
           <div className="absolute -top-2 right-12 px-6 py-1 bg-[#a3be8c] border-2 border-ink rotate-2 z-50 text-ink font-black text-sm shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center" style={sketchyShape2} title="Session ID">
             ID: {currentSessionId.split('_')[1] || currentSessionId.slice(-8)}
@@ -1961,7 +1935,6 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
           </div>
           
           <div className="flex items-center gap-3">
-             {/* 原本涂鸦风 Token 进度条 */}
              {currentSessionId && (
                <div className="flex items-center gap-2" title={`Token: ${tokenData.window} / ${tokenData.max}`}>
                  <span className="text-[11px] font-black text-ink/50" style={{ fontFamily: '"Comic Sans MS", cursive' }}>MEM</span>
@@ -1970,7 +1943,6 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                      className="h-full transition-all duration-1000 ease-out border-r-2 border-ink" 
                      style={{ 
                        width: `${Math.min(100, (tokenData.window / tokenData.max) * 100)}%`, 
-                       // 核心魔法：CSS 实现马克笔斜线排线（Hatched）效果 
                        backgroundImage: (tokenData.window / tokenData.max) > 0.8 
                           ? 'repeating-linear-gradient(45deg, #bf616a, #bf616a 2px, transparent 2px, transparent 6px)' 
                           : 'repeating-linear-gradient(-45deg, #d08770, #d08770 2px, transparent 2px, transparent 6px)', 
@@ -1979,13 +1951,12 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                      }} 
                    />
                  </div>
-                 <span className="text-[11px] font-black text-ink/70 w-8 text-right">
+                 <span className="text-[11px] font-black text-ink/70 w-8 text-right shrink-0">
                    {Math.round((tokenData.window / tokenData.max) * 100)}%
                  </span>
                </div>
              )}
 
-             {/* 🌟 新增：文件变更视图按钮 */}
              <button
                 onClick={() => setShowFileView(!showFileView)}
                 className={`relative w-10 h-10 border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] transition-all flex items-center justify-center hover:-translate-y-0.5 active:translate-y-0.5 active:shadow-none ${showFileView ? 'bg-[#88c0d0] text-paper' : 'bg-cream text-ink'}`}
@@ -2000,7 +1971,6 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                )}
              </button>
 
-             {/* 🌟 新增：审批队列触发按钮 - 只显示图标 */}
              <button
                 onClick={() => setShowReqQueue(!showReqQueue)}
                 className={`relative w-10 h-10 border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] transition-all flex items-center justify-center hover:-translate-y-0.5 active:translate-y-0.5 active:shadow-none ${pendingReqs.length > 0 ? 'bg-[#EBCB8B] text-ink animate-pulse' : 'bg-cream text-ink'}`}
@@ -2017,7 +1987,6 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
           </div>
         </div>
 
-        {/* ==================== 🌟 核心新增：书签/抽屉式多分支切换导航栏 ==================== */}
         {currentSessionId && Object.keys(branches).length > 1 && (
           <div className="px-10 flex gap-3 overflow-x-auto shrink-0 pb-3 border-b-4 border-ink/10 pt-1 select-none">
             {Object.keys(branches).map((bId) => {
@@ -2041,12 +2010,11 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                     {label}
                   </button>
                   
-                  {/* 🌟 修复：点击 X 时，触发手绘风弹窗而不是系统默认 confirm */}
                   {bId !== 'main' && (
                     <button
                        onClick={(e) => {
                          e.stopPropagation();
-                         setBranchToDelete(bId); // 👈 在这里触发状态
+                         setBranchToDelete(bId); 
                        }}
                        className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 p-0.5 bg-[#bf616a] text-paper border-2 border-ink rounded transition-all hover:scale-110 z-20 cursor-pointer"
                        title="彻底删除此支线"
@@ -2059,46 +2027,81 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
             })}
           </div>
         )}
-        {/* ================================================================================== */}
 
         <div ref={messagesContainerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-10 pb-6 flex flex-col gap-6 w-full z-10 pt-4">
           {messages.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-ink gap-5 p-2 w-full max-w-3xl mx-auto select-none">
               
-              {/* 顶层：猫咪标语 */}
               <div className="flex items-center mb-2">
                 <p className="text-3xl font-black rotate-1 text-ink tracking-tight" style={{ fontFamily: '"Comic Sans MS", cursive' }}>Hi, what are we building today?</p>
               </div>
 
-              {/* 中层：今日消耗速报 (更紧凑的 p-4) */}
-              <div className="grid grid-cols-2 gap-5 w-full">
-                <div style={sketchyShape2} className="bg-paper border-4 border-ink p-4 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center gap-3 rotate-1 hover:rotate-0 transition-transform">
-                  <div className="p-2.5 bg-[#EBCB8B]/30 border-2 border-ink" style={sketchyShape3}>
-                    <Activity size={24} className="text-ink" strokeWidth={3} />
+              <div className="grid grid-cols-3 gap-4 w-full">
+                
+                {/* 1. TODAY CALLS */}
+                <div style={sketchyShape2} className="bg-paper border-4 border-ink p-3 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center gap-3 rotate-1 hover:rotate-0 transition-transform">
+                  <div className="p-2 bg-[#EBCB8B]/30 border-2 border-ink" style={sketchyShape3}>
+                    <Activity size={20} className="text-ink" strokeWidth={3} />
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="text-[10px] font-black tracking-widest text-ink/40 uppercase" style={{ fontFamily: '"Comic Sans MS", cursive' }}>TODAY CALLS</div>
-                    <div className="text-2xl font-black font-mono text-ink truncate">{globalStats?.today?.calls ?? 0}</div>
+                    <div className="text-xl font-black font-mono text-ink truncate">{globalStats?.today?.calls ?? 0}</div>
                   </div>
                 </div>
 
-                <div style={sketchyShape3} className="bg-paper border-4 border-ink p-4 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center gap-3 -rotate-1 hover:rotate-0 transition-transform">
-                  <div className="p-2.5 bg-[#88c0d0]/30 border-2 border-ink" style={sketchyShape1}>
-                    <Zap size={24} className="text-[#5e81ac]" strokeWidth={3} />
+                {/* 2. TOKENS BURNT */}
+                <div style={sketchyShape3} className="bg-paper border-4 border-ink p-3 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center gap-3 -rotate-1 hover:rotate-0 transition-transform">
+                  <div className="p-2 bg-[#88c0d0]/30 border-2 border-ink" style={sketchyShape1}>
+                    <Zap size={20} className="text-[#5e81ac]" strokeWidth={3} />
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="text-[10px] font-black tracking-widest text-ink/40 uppercase" style={{ fontFamily: '"Comic Sans MS", cursive' }}>TOKENS BURNT</div>
-                    <div className="text-2xl font-black font-mono text-ink truncate">
+                    <div className="text-xl font-black font-mono text-ink truncate">
                       {globalStats?.today?.total_tokens ? globalStats.today.total_tokens.toLocaleString() : 0}
                     </div>
                   </div>
                 </div>
+
+                {/* 3. CACHE HIT (🌟 优化后的排版：分行+小标签) */}
+                <div style={sketchyShape1} className="bg-paper border-4 border-ink p-3 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center gap-3 rotate-2 hover:rotate-0 transition-transform">
+                  <div className="p-2 bg-[#a3be8c]/30 border-2 border-ink shrink-0" style={sketchyShape2}>
+                    <Server size={20} className="text-[#729654]" strokeWidth={3} />
+                  </div>
+                  <div className="flex-1 min-w-0 flex flex-col justify-center">
+                    <div className="text-[10px] font-black tracking-widest text-ink/40 uppercase leading-tight" style={{ fontFamily: '"Comic Sans MS", cursive' }}>CACHE HIT</div>
+                    {(() => {
+                      const cached = globalStats?.today?.cached_tokens ?? 0;
+                      const total = globalStats?.today?.total_tokens ?? 0;
+                      
+                      if (cached > 0 && total > 0) {
+                        return (
+                          <div className="flex flex-col mt-0.5">
+                            <span className="text-lg font-black font-mono text-ink truncate leading-none" title={cached.toLocaleString()}>
+                              {cached.toLocaleString()}
+                            </span>
+                            <span className="text-[9px] font-black text-[#729654] mt-1 bg-[#a3be8c]/20 w-fit px-1 border border-[#a3be8c]/40 rounded-sm leading-tight">
+                              RATE: {Math.round((cached / total) * 100)}%
+                            </span>
+                          </div>
+                        );
+                      }
+                      
+                      return (
+                        <div className="flex flex-col mt-0.5">
+                          <span className="text-lg font-black font-mono text-ink/40 truncate leading-none">--</span>
+                          <span className="text-[9px] font-black text-ink/30 mt-1 bg-ink/5 w-fit px-1 border border-ink/10 rounded-sm leading-tight">
+                            RATE: --%
+                          </span>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                </div>
+
               </div>
 
-              {/* 底层：近一年工作看板 */}
               <div style={sketchyShape1} className="w-full bg-paper border-4 border-ink p-5 shadow-[6px_6px_0px_0px_rgba(26,26,26,1)] flex flex-col gap-3 relative mt-2">
                 
-                {/* 🌟 核心修改：无字纯色胶带，只做点缀 */}
                 <div className="absolute -top-2 left-10 w-16 h-4 bg-[#d08770]/60 border-2 border-ink rotate-2" style={sketchyShape2}></div>
                 
                 <div className="flex justify-between items-end px-1">
@@ -2115,7 +2118,6 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                   </div>
                 </div>
 
-                {/* 渲染热力图网格 */}
                 <div className="w-full">
                   {renderSketchyHeatmap(globalStats?.heatmap)}
                 </div>
@@ -2129,19 +2131,17 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                 return (
                   <div key={idx} className="flex flex-col w-full items-end mb-4">
                     
-                    {/* 渲染被批注入的 附件 和 Skill 小气泡 */}
                     {parsedData.attachments.length > 0 && (
                       <div className="flex flex-col gap-2 w-full items-end mb-2">
                         {parsedData.attachments.map((att, aIdx) => (
                           <div key={`att-${aIdx}`} style={sketchyShape3} className="px-4 py-2 bg-ink/5 border-2 border-ink text-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] flex items-center gap-2 max-w-[70%]">
-                            {att.type === 'file-quote' ? <Paperclip size={14} className="shrink-0"/> : <Zap size={14} className="text-terracotta shrink-0"/>}
+                            {att.type === 'file-quote' ? <Paperclip size={14} className="shrink-0"/> : att.type === 'tool-quote' ? <Brain size={14} className="text-[#b48ead] shrink-0"/> : att.type === 'mcp-quote' ? <Server size={14} className="text-[#b8956e] shrink-0"/> : <Zap size={14} className="text-terracotta shrink-0"/>}
                             <span className="font-bold text-xs opacity-80 font-mono truncate">{att.content}</span>
                           </div>
                         ))}
                       </div>
                     )}
 
-                    {/* 渲染用户的真实发言内容 */}
                     {parsedData.userMessages.map((userMsg, uIdx) => (
                       <div key={`u-${uIdx}`} className={`flex flex-col gap-3 w-full max-w-[85%] items-end`}>
                         {userMsg.content && (
@@ -2184,7 +2184,6 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
             })
           )}
 
-          {/* 🌟 修复：只在主干分支且有消息时显示大模型的思考/休眠状态 */}
           {currentBranchId === 'main' && messages.length > 0 && (
             <div className="flex justify-start mb-4 w-full">
               <div style={sketchyShape1} className={`p-4 w-fit transition-colors ${isAgentThinking ? 'bg-cream text-ink border-4 border-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)]' : 'bg-paper text-ink/40'}`}>
@@ -2198,13 +2197,11 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
           <div ref={messagesEndRef} className="h-2" />
         </div>
 
-        {/* 🌟 终极改造：清爽极客风 Diff 面板 */}
         {showFileView && (
-          <div className="px-10 pb-6 pt-2 shrink-0">
-            <div style={sketchyShape1} className="bg-paper border-4 border-ink shadow-[8px_8px_0px_0px_rgba(26,26,26,1)] p-6">
+          <div className="px-10 pb-6 pt-2 shrink overflow-hidden flex flex-col min-h-[200px] max-h-[45vh]">
+            <div style={sketchyShape1} className="bg-paper border-4 border-ink shadow-[8px_8px_0px_0px_rgba(26,26,26,1)] p-6 flex flex-col h-full min-h-0">
               
-              {/* 面板头部 */}
-              <div className="flex items-center gap-3 mb-5 border-b-4 border-ink/20 pb-3">
+              <div className="flex items-center gap-3 mb-5 border-b-4 border-ink/20 pb-3 shrink-0">
                 <History size={26} strokeWidth={2.5} className="text-[#d08770]" />
                 <h2 className="text-2xl font-black tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>
                   FILE CHANGES
@@ -2218,10 +2215,8 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                   <p className="font-bold text-sm mt-2">All files clean! No pending changes.</p>
                 </div>
               ) : (
-                /* 左右分栏主容器：删除了 border-r 边框，增加呼吸感 */
-                <div className="flex flex-col md:flex-row gap-6 h-[400px] items-stretch">
+                <div className="flex flex-col md:flex-row gap-6 flex-1 min-h-0 items-stretch">
                   
-                  {/* 📂 左侧：垂直文件列表导航栏 */}
                   <div className="w-full md:w-72 shrink-0 overflow-y-auto flex flex-col gap-3 pr-2">
                     {fileChanges.map((change, idx) => {
                       const isSelected = activeDiffPath === change.path;
@@ -2243,7 +2238,6 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                           <span className={`text-[9px] font-bold ${isSelected ? 'text-paper/70' : 'text-ink/40'} truncate`} title={change.path}>
                             {change.path}
                           </span>
-                          {/* 🌟 优化：把容易引发歧义的 M 换成了直白的 EDITS */}
                           {change.edit_count > 1 && (
                             <span className="absolute -top-2 -right-2 bg-[#EBCB8B] text-ink px-1.5 py-0.5 text-[9px] font-black border-2 border-ink shadow-[1px_1px_0px_0px_rgba(26,26,26,1)]" style={sketchyShape1}>
                               {change.edit_count} EDITS
@@ -2254,7 +2248,6 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                     })}
                   </div>
 
-                  {/* 🔍 右侧：当前选中文件的 Diff 详情展示区 */}
                   <div className="flex-1 flex flex-col min-w-0">
                     {(() => {
                       const currentChange = fileChanges.find(c => c.path === activeDiffPath);
@@ -2264,9 +2257,6 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
 
                       return (
                         <div className="flex-1 flex flex-col min-h-0">
-                          {/* 🌟 优化：完全删除了原本的横幅 (路径 + 时间戳)，直接顶满屏幕展示代码 */}
-
-                          {/* 代码差异滚动盒 */}
                           <div className="flex-1 bg-[#FDF8F0] p-4 border-4 border-ink font-mono text-xs overflow-auto shadow-[inset_3px_3px_6px_rgba(0,0,0,0.05)]" style={sketchyShape2}>
                             {currentChange.diff ? currentChange.diff.split('\n').map((line: string, i: number) => {
                               let colorClass = 'text-ink/70';
@@ -2281,7 +2271,6 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                             }) : <span className="opacity-50 italic p-2 block">No visual difference detected.</span>}
                           </div>
 
-                          {/* 当前文件的专属动作条 */}
                           <div className="flex gap-4 mt-3 shrink-0">
                             <button
                               onClick={() => handleAck(currentChange.path, currentChange.newest_backup_id)}
@@ -2311,12 +2300,10 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
           </div>
         )}
 
-        {/* 🌟 修复：完全隔离的底部操作栏 - 子分支下变成全局 Read-Only 提示 */}
         {currentBranchId === 'main' ? (
           <div className="px-10 pb-8 pt-4 shrink-0 flex flex-col gap-3 w-full">
 
-           {/* 渲染已选的 Skill 和 引入的文件路径 */}
-           {(selectedSkills.length > 0 || refPaths.length > 0) && (
+           {(selectedSkills.length > 0 || selectedMcps.length > 0 || refPaths.length > 0 || useBrainstorm) && (
              <div className="flex flex-wrap gap-2">
                {selectedSkills.map(skill => (
                  <div key={skill} style={sketchyShape3} className="flex items-center gap-1 bg-[#F9E2AF] border-2 border-ink px-3 py-1 font-bold text-sm shadow-[2px_2px_0px_0px_rgba(26,26,26,1)]">
@@ -2324,17 +2311,27 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                    <button onClick={() => setSelectedSkills(prev => prev.filter(s => s !== skill))} className="hover:text-terracotta ml-1"><X size={14} strokeWidth={3}/></button>
                  </div>
                ))}
-               {/* 🌟 渲染已引入的路径标签 */}
                {refPaths.map(path => (
                  <div key={path} style={sketchyShape1} className="flex items-center gap-1 bg-[#88c0d0] border-2 border-ink px-3 py-1 font-bold text-sm shadow-[2px_2px_0px_0px_rgba(26,26,26,1)]">
                    <span className="truncate max-w-[200px]">📎 {path}</span>
                    <button onClick={() => setRefPaths(prev => prev.filter(p => p !== path))} className="hover:text-paper ml-1"><X size={14} strokeWidth={3}/></button>
                  </div>
                ))}
+               {useBrainstorm && (
+                 <div style={sketchyShape2} className="flex items-center gap-1 bg-[#b48ead] border-2 border-ink px-3 py-1 font-bold text-sm shadow-[2px_2px_0px_0px_rgba(26,26,26,1)]">
+                   <span className="text-paper">🧠 BrainStorm</span>
+                   <button onClick={() => setUseBrainstorm(false)} className="hover:text-ink text-paper ml-1"><X size={14} strokeWidth={3}/></button>
+                 </div>
+               )}
+               {selectedMcps.map(mcp => (
+                 <div key={mcp} style={sketchyShape2} className="flex items-center gap-1 bg-[#88c0d0]/20 border-2 border-ink px-3 py-1 font-bold text-sm shadow-[2px_2px_0px_0px_rgba(26,26,26,1)]">
+                   <span className="text-ink">🔌 {mcp}</span>
+                   <button onClick={() => setSelectedMcps(prev => prev.filter(s => s !== mcp))} className="hover:text-terracotta ml-1 text-ink/50 transition-colors"><X size={14} strokeWidth={3}/></button>
+                 </div>
+               ))}
              </div>
            )}
 
-           {/* 在输入框外层套一个 Drag 区域 */}
            <div 
              className={`flex gap-4 relative transition-all ${isDragging ? 'ring-4 ring-terracotta bg-terracotta/5' : ''}`}
              onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }} 
@@ -2342,7 +2339,6 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
              onDrop={handleDrop}
            >
              
-             {/* 拖拽时的手绘风遮罩 */}
              {isDragging && (
                <div className="absolute inset-0 z-50 flex items-center justify-center bg-cream/90 border-4 border-dashed border-terracotta" style={sketchyShape2}>
                  <span className="text-2xl font-black text-terracotta">Drop files here to attach!</span>
@@ -2355,12 +2351,10 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                  onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
                  onPaste={handlePaste}
                  placeholder={currentSessionId ? "Write your prompt here..." : "Select a chat first!"} disabled={!currentSessionId} rows={2}
-                 className="w-full bg-[#FDF8F0] border-4 border-ink p-5 pr-28 font-bold focus:outline-none focus:bg-white transition-all shadow-[inset_4px 4px 0px 0px_rgba(26,26,26,0.05)] resize-none text-lg -rotate-[0.5deg] placeholder:text-ink/30"
+                 className="w-full bg-[#FDF8F0] border-4 border-ink p-5 pr-40 font-bold focus:outline-none focus:bg-white transition-all shadow-[inset_4px 4px 0px 0px_rgba(26,26,26,0.05)] resize-none text-lg -rotate-[0.5deg] placeholder:text-ink/30"
                />
                
-               {/* 按钮组 */}
                <div className="absolute right-3 bottom-3 flex items-center gap-2 z-10">
-                 {/* 🌟 修改：引用文件按钮 */}
                 <button
                   onClick={handleAttachmentClick}
                   className="p-2 bg-cream border-2 border-ink hover:bg-[#88c0d0] transition-all shadow-[2px_2px_0px_0px_rgba(26,26,26,1)]"
@@ -2370,7 +2364,6 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                    <Paperclip className="text-ink" size={20} strokeWidth={3}/>
                  </button>
 
-                 {/* 原有的 Skill 按钮 */}
                  <button
                    onClick={() => { 
                      if (skillData.length === 0) fetchSkill(); 
@@ -2382,6 +2375,29 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                    title="Select Skills"
                  >
                    <Zap className="text-ink" size={20} strokeWidth={3}/>
+                 </button>
+                 
+                 <button
+                   onClick={() => { 
+                     if (Object.keys(mcpData).length === 0) fetchMcp(); 
+                     setTempSelectedMcps([...selectedMcps]); 
+                     setShowMcpSelectModal(true); 
+                   }}
+                   className="p-2 bg-cream border-2 border-ink hover:bg-[#F9E2AF] transition-all shadow-[2px_2px_0px_0px_rgba(26,26,26,1)]"
+                   style={sketchyShape1}
+                   title="Select MCP Servers"
+                 >
+                   <Server className="text-ink" size={20} strokeWidth={3}/>
+                 </button>
+                 
+                 {/* 🌟 新增：BrainStorm 开关按钮 */}
+                 <button
+                   onClick={() => setUseBrainstorm(!useBrainstorm)}
+                   className={`p-2 border-2 border-ink transition-all shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] ${useBrainstorm ? 'bg-[#b48ead] text-paper' : 'bg-cream text-ink hover:bg-[#b48ead]/50'}`}
+                   style={sketchyShape3}
+                   title="BrainStorm"
+                 >
+                   <Brain size={20} strokeWidth={3}/>
                  </button>
                </div>
              </div>
@@ -2402,10 +2418,8 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
           )}
       </div>
 
-      {/* --- 🌟 新增：右侧 Request 请求处理队列纸板 --- */}
       {showReqQueue && (
         <div style={sketchyShape3} className="w-[340px] shrink-0 bg-paper border-4 border-ink shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] flex flex-col overflow-hidden relative z-20">
-          {/* Header */}
           <div className="flex flex-col shrink-0 p-4 bg-paper">
             <div className="flex justify-between items-center">
               <div className="flex items-center gap-2">
@@ -2423,7 +2437,6 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
             </div>
           </div>
 
-          {/* 列表渲染区 */}
           <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4 bg-paper">
             {pendingReqs.length === 0 ? (
               <div className="flex flex-col items-center opacity-50 mt-10">
@@ -2433,7 +2446,6 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
             ) : (
               pendingReqs.map((req, idx) => (
                 <div key={req.id} className={`bg-paper border-4 border-ink p-4 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex flex-col gap-3 relative transition-all hover:-translate-y-1 group ${idx % 2 === 0 ? 'rotate-1' : '-rotate-1'}`} style={idx % 2 === 0 ? sketchyShape2 : sketchyShape3}>
-                  {/* 悬浮时右上角显示IGNORE按钮 */}
                   <button 
                     onClick={() => handleResolveReq(req.id, false, true)} 
                     className="opacity-0 group-hover:opacity-100 p-1.5 bg-ink text-paper border-2 border-ink hover:scale-110 transition-all absolute -top-2 -right-2 z-10" 
@@ -2451,7 +2463,6 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                   <div>
                     <div className="text-[15px] font-black text-ink break-all leading-tight">{req.target}</div>
                     
-                    {/* Reason 折叠显示 */}
                     <button 
                       onClick={() => setExpandedReasons({...expandedReasons, [req.id]: !expandedReasons[req.id]})}
                       className="text-xs font-bold text-ink/50 mt-2 flex items-center gap-1 hover:text-ink transition-colors"

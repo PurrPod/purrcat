@@ -1,14 +1,14 @@
+// components/TaskPage.tsx
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
   ArrowLeft, Terminal, Trash2, X, Activity, Clock, Box, Send, MessageCircle, RefreshCw,
-  Square, Play, AlertTriangle, Plus, ChevronDown, ChevronUp
+  Square, Play, AlertTriangle, Plus, ChevronDown
 } from 'lucide-react';
 import type { Node, Edge } from '@xyflow/react';
 import { ReactFlow, Background, useNodesState, useEdgesState, Handle, Position } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { toast } from 'react-hot-toast';
 
-// --- 风格常量 ---
 const sketchyShape1 = { borderRadius: '255px 15px 225px 15px/15px 225px 15px 255px' };
 const sketchyShape2 = { borderRadius: '15px 225px 15px 255px/255px 15px 225px 15px' };
 const sketchyShape3 = { borderRadius: '225px 15px 225px 15px/15px 255px 15px 225px' };
@@ -51,7 +51,7 @@ interface TaskMonitorNodeProps {
 interface GraphNode {
   id: string;
   name?: string;
-  type?: string; // 🌟 加上 type
+  type?: string; 
   position?: [number, number] | { x: number; y: number };
 }
 
@@ -62,9 +62,6 @@ interface GraphEdge {
   targetHandle?: string;
 }
 
-// ==========================================
-// 🌟 1. 监控节点组件 (移除冗余色块，保留右上角标签)
-// ==========================================
 const TaskMonitorNode = ({ id, data, selected }: TaskMonitorNodeProps) => {
   let statusColor = "bg-[#EBCB8B]";
   let statusText = "READY";
@@ -84,7 +81,6 @@ const TaskMonitorNode = ({ id, data, selected }: TaskMonitorNodeProps) => {
 
   const isTaskRunning = data.isTaskRunning;
 
-  // 动态引脚均分计算
   const getHandleTop = (idx: number, total: number) => {
     return `${(100 / (total + 1)) * (idx + 1)}%`;
   };
@@ -98,7 +94,6 @@ const TaskMonitorNode = ({ id, data, selected }: TaskMonitorNodeProps) => {
           'shadow-[6px_6px_0px_0px_rgba(26,26,26,1)]'}
         ${isPulsing && isTaskRunning ? 'ring-4 ring-offset-2 ring-[#3498DB]/30' : ''}`}
     >
-      {/* 右上角醒目的状态贴纸 */}
       <div className={`absolute -top-3 -right-2 px-2 py-0.5 text-[11px] font-black tracking-widest border-2 border-ink text-paper rotate-3 shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] ${statusColor}`} style={{ fontFamily: '"Comic Sans MS", cursive' }}>
         {statusText}
       </div>
@@ -143,8 +138,8 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [currentNodeLogs, setCurrentNodeLogs] = useState<LogEntry[]>([]);
   
-  // 🌟 新增：Dashboard 展开/折叠状态
-  const [isDashboardOpen, setIsDashboardOpen] = useState(true);
+  // 🌟 修改：默认关闭 Dashboard 面板侧边栏
+  const [isDashboardOpen, setIsDashboardOpen] = useState(false);
   
   const logsContainerRef = useRef<HTMLDivElement>(null);
   const logEndRef = useRef<HTMLDivElement>(null);
@@ -156,13 +151,11 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
   const [pushMessage, setPushMessage] = useState('');
   const [isCheckingOut, setIsCheckingOut] = useState(false);
 
-  // --- 🌟 启动新任务 (JSON 模板模式) ---
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [availableGraphs, setAvailableGraphs] = useState<Array<{ name: string }>>([]);
   const [launchTaskName, setLaunchTaskName] = useState('my_awesome_task');
   const [launchGraphName, setLaunchGraphName] = useState('');
   const [launchInputs, setLaunchInputs] = useState('');
-  // 👇 新增这个状态，用于控制自定义下拉菜单的展开/收起
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
   const [nodes, setNodes, onNodesChange] = useNodesState([] as Node[]);
@@ -194,7 +187,6 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
     } catch { toast.error("获取工作流模板失败"); }
   };
 
-  // 🌟 核心改进：当切换工作流时，自动拉取 Schema 并生成带提示的 JSON 模板
   useEffect(() => {
     if (!launchGraphName) return;
     fetch(`http://localhost:8000/api/graphs/${launchGraphName}/schema`)
@@ -216,10 +208,8 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
     return () => clearInterval(interval);
   }, []);
 
-  // 🌟 强壮的极限容错状态解析器 (修复 READY 问题)
   const extractState = (rawState: string | { state?: string; value?: string } | undefined) => {
     if (!rawState) return 'ready';
-    // 兼容字符串、对象或包含 value 的枚举属性
     let s = typeof rawState === 'string' ? rawState : (rawState.state || rawState.value || String(rawState));
     s = s.toLowerCase();
     if (s.includes('completed')) return 'completed';
@@ -236,7 +226,6 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
       const res = await fetch(`http://localhost:8000/api/tasks/${selectedTaskId}/state`);
       if (res.ok) {
         const data = await res.json();
-        // 增加对多级后端的容错判断
         const nodeStates = data.node_state || data.dag_state || data.node_states || data.nodes || {};
         const isCurrentlyRunning = ['running', 'starting'].includes((data.state || '').toLowerCase());
 
@@ -262,14 +251,13 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
     } catch { /* ignore */ }
   }, [selectedTaskId, setNodes, setEdges]);
 
-  // 重置节点 (触发后立即刷新界面，告别等待感！)
   const handleResetNode = async (nodeId: string) => {
     if (!selectedTaskId) return;
     try {
       const res = await fetch(`http://localhost:8000/api/tasks/${selectedTaskId}/nodes/${nodeId}/reset`, { method: 'POST' });
       if (res.ok) {
         toast.success(`已重置节点 [${nodeId}] 并执行下游`);
-        fetchTaskState(); // 🚀 立马强制刷新状态
+        fetchTaskState(); 
         loadTasks();
       } else {
         const errData = await res.json().catch(() => ({}));
@@ -294,7 +282,6 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
     } catch { toast.error('网络错误'); }
   };
 
-  // 提交创建任务
   const handleLaunchTaskSubmit = async () => {
     if (!launchTaskName.trim() || !launchGraphName) {
       toast.error("任务名和工作流模板不能为空！");
@@ -343,7 +330,6 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
       if (stateRes.ok) {
         const stateData = await stateRes.json();
         const graph = stateData.graph || { nodes: [], edges: [] };
-        // 兼容多级状态结构
         const nodeStates = stateData.node_state || stateData.dag_state || stateData.node_states || stateData.nodes || {};
         const isCurrentlyRunning = ['running', 'starting'].includes((stateData.state || '').toLowerCase());
 
@@ -362,7 +348,7 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
             id: n.id, type: 'custom', position: { x: posX, y: posY },
             data: {
               label: n.name && n.name.trim() ? n.name : n.id,
-              nodeType: n.type, // 🌟 新增这一行：记录底层节点类型
+              nodeType: n.type, 
               shape: idx % 2 === 0 ? sketchyShape1 : sketchyShape2,
               isTaskRunning: isCurrentlyRunning,
               nodeState: currentState,
@@ -459,13 +445,11 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
         </div>
       )}
 
-      {/* 日志弹窗 */}
       {logModalNode && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-ink/50 backdrop-blur-sm p-4 pointer-events-auto">
           <div style={sketchyShape2} className="bg-paper border-4 border-ink shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] w-full max-w-5xl h-[85vh] flex flex-col relative overflow-hidden">
             <button onClick={() => setLogModalNode(null)} className="absolute top-5 right-6 hover:rotate-90 hover:text-terracotta transition-all z-20"><X size={36} strokeWidth={3} /></button>
 
-            {/* 人工干预强黄色横幅 */}
             {logModalNode.state === 'waiting' && (
               <div className="bg-[#d08770] text-paper py-2.5 flex items-center justify-center gap-2 font-black tracking-widest border-b-4 border-ink text-sm shrink-0" style={{ fontFamily: '"Comic Sans MS", cursive' }}>
                 <AlertTriangle size={18} className="animate-bounce text-paper" />
@@ -549,7 +533,6 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
         </div>
       )}
 
-      {/* 🌟 重新设计的创建任务弹窗 (JSON 模板预填充) */}
       {isCreateModalOpen && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center bg-ink/40 backdrop-blur-sm p-4 pointer-events-auto">
           <div style={sketchyShape1} className="bg-paper border-4 border-ink shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] w-full max-w-lg p-8 relative rotate-1">
@@ -558,7 +541,6 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
             
             <p className="font-bold mb-2 opacity-70 text-sm">1. Select Deployed Graph:</p>
             <div className="relative mb-4">
-              {/* 🌟 自定义下拉框触发按钮 */}
               <div
                 onClick={() => setIsDropdownOpen(!isDropdownOpen)}
                 style={sketchyShape3}
@@ -574,7 +556,6 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
                 />
               </div>
 
-              {/* 🌟 完全可控的手绘风下拉菜单列表 */}
               {isDropdownOpen && availableGraphs.length > 0 && (
                 <div
                   className="absolute left-0 right-0 top-[110%] bg-paper border-4 border-ink shadow-[8px_8px_0px_0px_rgba(26,26,26,1)] z-[200] max-h-56 overflow-y-auto p-2 flex flex-col gap-1"
@@ -616,7 +597,6 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
               <span>3. Configuration inputs (JSON):</span>
               <span className="text-[11px] text-[#bf616a] opacity-80 font-normal">须双引号严格键值对</span>
             </p>
-            {/* 自动填充的键值描述模板文本框 */}
             <textarea 
               value={launchInputs} onChange={e => setLaunchInputs(e.target.value)}
               style={sketchyShape1} className="w-full bg-cream border-4 border-ink p-3 font-mono text-sm font-bold mb-6 focus:outline-none h-36 resize-none"
@@ -635,7 +615,6 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
         </div>
       )}
 
-      {/* 删除确认弹窗 */}
       {taskToDelete && (
         <div className="fixed inset-0 bg-ink/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
           <div style={sketchyShape2} className="bg-paper border-4 border-ink p-8 flex flex-col gap-6 shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] -rotate-1 max-w-sm w-full">
@@ -652,7 +631,6 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
         </div>
       )}
 
-      {/* 左侧导航与任务列表 */}
       <div className="w-[320px] flex flex-col gap-6 shrink-0 z-20">
         <div className="flex gap-4 items-center">
           <button onClick={onBack} style={sketchyShape2} className="w-16 h-16 bg-cream border-4 border-ink flex items-center justify-center hover:bg-sand transition-all shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] active:translate-y-[2px] active:translate-x-[2px] active:shadow-none -rotate-3 hover:rotate-0 group"><ArrowLeft size={28} strokeWidth={3} className="text-ink group-hover:-translate-x-1 transition-transform" /></button>
@@ -704,19 +682,16 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
         </div>
       </div>
 
-      {/* 右侧全屏图谱视图 */}
       <div style={sketchyShape1} className="flex-1 bg-paper border-4 border-ink shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] overflow-hidden relative rotate-[0.5deg] z-10 flex flex-col">
         <div className="absolute -top-4 right-12 w-32 h-8 bg-terracotta/40 border-2 border-ink -rotate-3 z-50" style={sketchyShape2}></div>
         
         <div className="pt-8 px-10 pb-4 flex items-center justify-between shrink-0 absolute top-0 left-0 right-0 z-50 pointer-events-none">
-          {/* 🌟 核心修改：用一个 flex 组把标题和 STOP 按钮包在一起，居左显示 */}
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-4 bg-paper/80 backdrop-blur-md p-3 border-4 border-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] pointer-events-auto -rotate-1" style={sketchyShape3}>
               <Terminal size={24} className="text-terracotta" strokeWidth={3} />
               <h2 className="text-2xl font-black tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>GRAPH VISUALIZER</h2>
             </div>
 
-            {/* STOP 按钮挪到这里 */}
             {selectedTaskId && currentSelectedTask?.state === 'running' && (
               <button
                 onClick={handleKillTask} style={sketchyShape2}
@@ -726,83 +701,23 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
               </button>
             )}
           </div>
-          {/* 右侧自动腾出空间，完美避开 Dashboard */}
+          
+          <div className="flex items-center gap-2 pointer-events-auto">
+            {!isDashboardOpen && selectedTaskId && (
+              <button
+                onClick={() => setIsDashboardOpen(true)}
+                style={sketchyShape2}
+                className="flex items-center gap-2 bg-[#EBCB8B] text-ink border-4 border-ink px-4 py-2 font-black shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:-translate-y-0.5 active:translate-y-0.5 active:shadow-none transition-all rotate-1"
+              >
+                <Activity size={18} strokeWidth={3} />
+                <span className="tracking-widest text-sm" style={{ fontFamily: '"Comic Sans MS", cursive' }}>DASHBOARD</span>
+              </button>
+            )}
+          </div>
         </div>
         
         <div className="flex-1 w-full h-full bg-cream/30 relative">
           
-          {/* 🌟 新增：全局节点状态看板 Dashboard */}
-          {selectedTaskId && (
-            <div className="absolute top-6 right-6 z-50 flex flex-col w-80 items-end pointer-events-none">
-              {/* 触发按钮 */}
-              <button
-                onClick={() => setIsDashboardOpen(!isDashboardOpen)}
-                style={sketchyShape2}
-                className="pointer-events-auto flex items-center gap-2 bg-[#EBCB8B] text-ink border-4 border-ink px-4 py-2 font-black shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:-translate-y-0.5 active:translate-y-0.5 active:shadow-none transition-all"
-              >
-                <Activity size={18} strokeWidth={3} />
-                <span className="tracking-widest text-sm" style={{ fontFamily: '"Comic Sans MS", cursive' }}>DASHBOARD</span>
-                {isDashboardOpen ? <ChevronUp size={18} strokeWidth={3} /> : <ChevronDown size={18} strokeWidth={3} />}
-              </button>
-
-              {/* 折叠面板内容 */}
-              {isDashboardOpen && (
-                <div
-                  style={sketchyShape3}
-                  className="pointer-events-auto mt-4 w-full bg-paper border-4 border-ink shadow-[8px_8px_0px_0px_rgba(26,26,26,1)] flex flex-col max-h-[60vh] overflow-hidden"
-                >
-                  <div className="p-3 border-b-4 border-ink bg-cream/80">
-                    <span className="font-black text-sm tracking-widest text-ink/80">NODE STATUS</span>
-                  </div>
-                  
-                  <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-3">
-                    {/* 🌟 核心修改：利用自执行函数进行节点过滤 */}
-                    {(() => {
-                      // 过滤只展示 AgentNode 的子类节点（智能体循环、人工干预）
-                      const agentNodes = nodes.filter((n: any) => 
-                        ['agent_loop', 'human_intervention'].includes(n.data.nodeType)
-                      );
-
-                      if (agentNodes.length === 0) {
-                        return <div className="text-center font-bold text-ink/40 py-4 text-sm">No Core Agent Nodes</div>;
-                      }
-
-                      return agentNodes.map((n, idx) => {
-                        // 根据状态映射风格颜色
-                        const sColor = n.data.nodeState === 'running' ? 'bg-[#3498DB] text-paper' :
-                                       n.data.nodeState === 'completed' ? 'bg-[#a3be8c] text-ink' :
-                                       n.data.nodeState === 'error' ? 'bg-[#bf616a] text-paper' :
-                                       n.data.nodeState === 'waiting' ? 'bg-[#d08770] text-paper animate-pulse' :
-                                       n.data.nodeState === 'skipped' ? 'bg-ink/20 text-ink' : 'bg-[#EBCB8B] text-ink';
-
-                        return (
-                          <div
-                            key={n.id}
-                            onClick={() => setLogModalNode({ id: n.id, name: String(n.data.label), state: String(n.data.nodeState) })}
-                            style={idx % 2 === 0 ? sketchyShape2 : sketchyShape1}
-                            className="flex items-center justify-between p-3 border-2 border-ink bg-cream hover:bg-sand cursor-pointer transition-all hover:-translate-y-[2px] shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] active:translate-y-0 active:shadow-none"
-                            title="Click to view logs"
-                          >
-                            <div className="flex items-center gap-2 overflow-hidden pr-2">
-                              <Terminal size={14} className="shrink-0 text-ink/50" />
-                              <span className="font-bold text-sm truncate" style={{ fontFamily: '"Comic Sans MS", cursive' }}>
-                                {String(n.data.label)}
-                              </span>
-                            </div>
-                            <span className={`shrink-0 text-[10px] font-black tracking-wider border-2 border-ink px-1.5 py-0.5 ${sColor}`}>
-                              {(String(n.data.nodeState) || 'READY').toUpperCase()}
-                            </span>
-                          </div>
-                        );
-                      })
-                    })()}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* 原有 ReactFlow 画布 */}
           {selectedTaskId ? (
             <ReactFlow
               nodes={nodes} edges={edges} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} nodeTypes={nodeTypes}
@@ -818,6 +733,66 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
           )}
         </div>
       </div>
+
+      {/* === 🌟 右侧独立 Dashboard 面板抽屉 === */}
+      {isDashboardOpen && selectedTaskId && (
+        <div style={sketchyShape3} className="w-[340px] shrink-0 bg-paper border-4 border-ink shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] flex flex-col overflow-hidden relative z-20">
+          <div className="flex flex-col shrink-0 p-4 bg-paper">
+            <div className="flex justify-between items-center">
+              <div className="flex items-center gap-2">
+                <Activity size={24} strokeWidth={2.5} className="text-[#EBCB8B]" />
+                <h3 className="text-2xl font-black tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>
+                  DASHBOARD
+                </h3>
+              </div>
+              <button onClick={() => setIsDashboardOpen(false)} className="hover:text-terracotta hover:rotate-90 transition-all p-1 bg-paper border-2 border-ink" style={sketchyShape1}>
+                <X size={20} strokeWidth={3} />
+              </button>
+            </div>
+          </div>
+          
+          <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3 bg-paper">
+            {(() => {
+              const agentNodes = nodes.filter((n: any) => 
+                ['agent_loop', 'human_intervention'].includes(n.data.nodeType)
+              );
+
+              if (agentNodes.length === 0) {
+                return <div className="text-center font-bold text-ink/40 py-4 text-sm">No Core Agent Nodes</div>;
+              }
+
+              return agentNodes.map((n, idx) => {
+                const sColor = n.data.nodeState === 'running' ? 'bg-[#3498DB] text-paper' :
+                                n.data.nodeState === 'completed' ? 'bg-[#a3be8c] text-ink' :
+                                n.data.nodeState === 'error' ? 'bg-[#bf616a] text-paper' :
+                                n.data.nodeState === 'waiting' ? 'bg-[#d08770] text-paper animate-pulse' :
+                                n.data.nodeState === 'skipped' ? 'bg-ink/20 text-ink' : 'bg-[#EBCB8B] text-ink';
+
+                return (
+                  <div
+                    key={n.id}
+                    onClick={() => setLogModalNode({ id: n.id, name: String(n.data.label), state: String(n.data.nodeState) })}
+                    style={idx % 2 === 0 ? sketchyShape2 : sketchyShape1}
+                    className="flex items-center justify-between p-3 border-2 border-ink bg-cream hover:bg-sand cursor-pointer transition-all hover:-translate-y-[2px] shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] active:translate-y-0 active:shadow-none"
+                    title="Click to view logs"
+                  >
+                    <div className="flex items-center gap-2 overflow-hidden pr-2">
+                      <Terminal size={14} className="shrink-0 text-ink/50" />
+                      <span className="font-bold text-sm truncate" style={{ fontFamily: '"Comic Sans MS", cursive' }}>
+                        {String(n.data.label)}
+                      </span>
+                    </div>
+                    <span className={`shrink-0 text-[10px] font-black tracking-wider border-2 border-ink px-1.5 py-0.5 ${sColor}`}>
+                      {(String(n.data.nodeState) || 'READY').toUpperCase()}
+                    </span>
+                  </div>
+                );
+              })
+            })()}
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

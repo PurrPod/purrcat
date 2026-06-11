@@ -1,0 +1,35 @@
+{
+    "type": "mcp_info",
+    "name": "MCP 知识包 (MCP Kit)",
+    "description": "根据填写的 MCP 服务器名称列表，提取它们的所有工具及描述，输出结构化的 MCP Kit 提示词。",
+    "color": "#3498DB",
+    "inputs": [
+        {
+            "name": "trigger",
+            "type": "any",
+            "port_type": "static",
+            "description": "触发信号（可选）。",
+            "required": false
+        }
+    ],
+    "outputs": [
+        {
+            "name": "mcp_kit_string",
+            "type": "string",
+            "port_type": "static",
+            "description": "格式化后的 MCP 提示词"
+        }
+    ],
+    "config": [
+        {
+            "name": "mcp_servers",
+            "type": "list",
+            "label": "推荐 MCP 服务器 (Servers)",
+            "default": [],
+            "description": "添加推荐给 Agent 的 MCP 服务器名称",
+            "item_schema": [
+                {"name": "name", "type": "string", "label": "服务器名 (例如: tradingview)"}
+            ]
+        }
+    ]
+}
