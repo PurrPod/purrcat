@@ -355,8 +355,8 @@ class Agent:
                 memo_data = arguments.get("memo_data")
                 if memo_data:
                     self.memo.append(memo_data)
-                    if len(self.memo) > 10:
-                        self.memo = self.memo[-10:]
+                    if len(self.memo) > 6:
+                        self.memo = self.memo[-6:]
                     SessionStore.save_global_memo(self.memo)
                 from src.utils.config import get_model_config
 
