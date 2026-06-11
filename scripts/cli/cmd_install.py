@@ -117,13 +117,13 @@ def run_install(ext_type, source):
 
         # 直接从 raw.githubusercontent.com 拉取单文件，速度最快最稳定
         raw_url = (
-            f"https://raw.githubusercontent.com/PurrPod/graphpod/main/{graph_filename}"
+            f"https://raw.githubusercontent.com/PurrPod/graphs/main/{graph_filename}"
         )
         dest_dir = os.path.join(project_root, "src", "harness", "graph")
         os.makedirs(dest_dir, exist_ok=True)
         dest_path = os.path.join(dest_dir, graph_filename)
 
-        print(f"[*] Fetching graph '{graph_name}' from PurrPod/graphpod...")
+        print(f"[*] Fetching graph '{graph_name}' from PurrPod/graphs...")
         try:
             req = urllib.request.Request(
                 raw_url, headers={"User-Agent": "PurrCat-CLI/1.0"}
@@ -166,7 +166,7 @@ def run_install(ext_type, source):
         except urllib.error.HTTPError as e:
             if e.code == 404:
                 print(
-                    f"X Error: Graph '{graph_filename}' not found in PurrPod/graphpod repository."
+                    f"X Error: Graph '{graph_filename}' not found in PurrPod/graphs repository."
                 )
             else:
                 print(f"X HTTP Error fetching graph: {e}")
@@ -178,28 +178,50 @@ def run_install(ext_type, source):
     # ---------------------------------------------------------
     elif ext_type == "node":
         OFFICIAL_REPO_ZIP = (
-            "https://github.com/PurrPod/node/archive/refs/heads/main.zip"
+            "https://github.com/PurrPod/nodes/archive/refs/heads/main.zip"
         )
         dest_dir = os.path.join(
             project_root, "src", "harness", "node", "extensions", source
         )
-        subfolder_path = f"node/{source}"
+        subfolder_path = f"nodes/{source}"
 
-        print(f"[*] Fetching official node '{source}' from PurrPod/node...")
+        print(f"[*] Fetching official node '{source}' from PurrPod/nodes...")
         if _download_and_extract_subfolder(OFFICIAL_REPO_ZIP, subfolder_path, dest_dir):
             print(f"[+] Successfully installed node '{source}' to {dest_dir}")
 
     # ---------------------------------------------------------
-    # 4. Skill 安装逻辑：支持第三方 GitHub 链接
+    # 4. Skill 安装逻辑：支持查表 (Registry) 或直接传入 GitHub 链接
     # ---------------------------------------------------------
     elif ext_type == "skill":
-        if source.startswith("http"):
-            parsed = _parse_github_url(source)
+        target_url = source
+        
+        # 如果不是 http 开头，说明是短名，需要去 registry.json 查表
+        if not target_url.startswith("http"):
+            registry_url = "https://raw.githubusercontent.com/PurrPod/skills/main/registry.json"
+            print(f"[*] Querying registry for '{source}'...")
+            try:
+                req = urllib.request.Request(registry_url, headers={"User-Agent": "PurrCat-CLI/1.0"})
+                response = urllib.request.urlopen(req)
+                registry_data = json.loads(response.read().decode("utf-8"))
+                
+                skills_dict = registry_data.get("skills", {})
+                if source not in skills_dict:
+                    print(f"X Error: Skill '{source}' not found in official registry.")
+                    print(f"  Available skills: {', '.join(skills_dict.keys())}")
+                    return
+                    
+                target_url = skills_dict[source].get("source_url")
+                print(f"[*] Found '{source}' in registry! Resolving source URL...")
+            except Exception as e:
+                print(f"X Failed to fetch or parse registry: {e}")
+                return
+
+        # 执行原有逻辑：解析最终的 target_url 并执行无头下载与解压
+        if target_url and target_url.startswith("http"):
+            parsed = _parse_github_url(target_url)
             if not parsed:
                 print("X Error: Invalid GitHub URL format.")
-                print(
-                    "  Expected: https://github.com/owner/repo/tree/branch/path/to/skill"
-                )
+                print("  Expected: https://github.com/owner/repo/tree/branch/path/to/skill")
                 return
 
             skill_name = os.path.basename(parsed["path"].rstrip("/"))
@@ -207,18 +229,11 @@ def run_install(ext_type, source):
 
             zip_url = f"https://github.com/{parsed['owner']}/{parsed['repo']}/archive/refs/heads/{parsed['branch']}.zip"
 
-            print(
-                f"[*] Fetching skill '{skill_name}' from {parsed['owner']}/{parsed['repo']}"
-            )
+            print(f"[*] Fetching skill '{skill_name}' from {parsed['owner']}/{parsed['repo']}")
             if _download_and_extract_subfolder(zip_url, parsed["path"], dest_dir):
-                print(
-                    f"[+] Successfully installed skill '{skill_name}' to skills/{skill_name}"
-                )
+                print(f"[+] Successfully installed skill '{skill_name}' to skills/{skill_name}")
         else:
-            print("X Error: Currently, skill installation requires a full GitHub URL.")
-            print(
-                "  Example: purrcat install skill https://github.com/user/repo/tree/main/path/to/skill"
-            )
+            print("X Error: Invalid source URL resolved.")
 
     else:
         print(f"X Unknown extension type: {ext_type}")
