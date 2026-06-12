@@ -27,8 +27,10 @@ def auto_load_all_tasks():
         # 🌟 修复：新架构下，只要有 meta.json 就认为是一个有效的任务存档
         meta_file = os.path.join(full_path, "meta.json")
         old_checkpoint = os.path.join(full_path, "checkpoint.json")
-        
-        if os.path.isdir(full_path) and (os.path.exists(meta_file) or os.path.exists(old_checkpoint)):
+
+        if os.path.isdir(full_path) and (
+            os.path.exists(meta_file) or os.path.exists(old_checkpoint)
+        ):
             try:
                 task = Task.load_checkpoint(full_path)
                 if task:
@@ -115,7 +117,7 @@ class Task:
         self.model = Model(self.core)
 
         self.reload()
-        
+
         # 🌟 只在创建时保存一次元数据，后续不再修改
         self.save_meta()
 
@@ -276,7 +278,10 @@ class Task:
                         self.node_state[node_id] = NodeState.ERROR
                         self.state = TaskState.ERROR
                         await asyncio.to_thread(self.save_state)
-                        return {"status": "error", "message": f"节点 {node_id} 异常: {str(e)}"}
+                        return {
+                            "status": "error",
+                            "message": f"节点 {node_id} 异常: {str(e)}",
+                        }
 
                 await asyncio.to_thread(self.save_state)
 
@@ -307,8 +312,13 @@ class Task:
             src_port = edge.get("sourceHandle", "default")
             tgt_port = edge.get("targetHandle", "default")
 
-            if self.output_port_states.get(src_id, {}).get(src_port) == PortState.HAS_DATA:
-                outputs_file = os.path.join(self.checkpoint_dir, "nodes", src_id, "outputs.json")
+            if (
+                self.output_port_states.get(src_id, {}).get(src_port)
+                == PortState.HAS_DATA
+            ):
+                outputs_file = os.path.join(
+                    self.checkpoint_dir, "nodes", src_id, "outputs.json"
+                )
                 if os.path.exists(outputs_file):
                     try:
                         with open(outputs_file, "r", encoding="utf-8") as f:
@@ -386,7 +396,9 @@ class Task:
             if edge["source"] == source_node_id:
                 out_port = edge.get("sourceHandle", "default")
                 if outputs and out_port in outputs:
-                    self.output_port_states[source_node_id][out_port] = PortState.HAS_DATA
+                    self.output_port_states[source_node_id][out_port] = (
+                        PortState.HAS_DATA
+                    )
                 else:
                     self.output_port_states[source_node_id][out_port] = PortState.VOID
 
@@ -421,13 +433,13 @@ class Task:
         # 2. 🌟 新架构：将指令放入 node_memory 的 force_push 队列
         if node_id not in self.node_memory:
             self.node_memory[node_id] = {}
-        
+
         # 确保 force_push 是列表类型
         if "force_push" not in self.node_memory[node_id]:
             self.node_memory[node_id]["force_push"] = []
         elif not isinstance(self.node_memory[node_id]["force_push"], list):
             self.node_memory[node_id]["force_push"] = []
-        
+
         self.node_memory[node_id]["force_push"].append(instruction)
 
         # 3. 触发正确的级联重置 (is_injection=True，保护当前节点的记忆)
@@ -435,10 +447,10 @@ class Task:
 
         # 4. 唤醒整个任务流
         self.state = TaskState.READY
-        
+
         # 🌟 状态极小，直接同步写
         self.save_state()
-        
+
         return {"status": "success", "message": "指令已注入，下游链路状态已重置！"}
 
     def reset_node(self, node_id: str) -> dict:
@@ -446,14 +458,19 @@ class Task:
         if node_id not in self.node_list:
             return {"status": "error", "message": "节点不存在"}
 
+        # 🌟 修复：记录重置前的任务状态
+        was_running = self.state == TaskState.RUNNING
+
         # 触发彻底的级联重置 (is_injection=False，连目标节点的记忆一起扬了)
         self._cascade_reset(node_id, is_injection=False)
 
-        self.state = TaskState.READY
-        
+        # 🌟 修复：如果本来就在后台大循环里跑着，就不要把大任务的状态改成 READY，防止外层重复拉起死循环
+        if not was_running:
+            self.state = TaskState.READY
+
         # 🌟 状态极小，直接同步写
         self.save_state()
-        
+
         return {"status": "success", "message": "节点及其下游已彻底重置！"}
 
     def _cascade_reset(self, start_node_id: str, is_injection: bool):
@@ -461,10 +478,9 @@ class Task:
         🌟 核心数据流清理逻辑（新架构）：
         is_injection=True 代表是指令注入，目标节点的记忆必须保留！
         is_injection=False 代表彻底重跑，目标节点的记忆也要清空！
-        
+
         记忆不再由 Task 管理，而是由各 AgentNode 自行管理在 nodes/ 目录下。
         """
-        from src.harness.node.agent_node import AgentNode
 
         with self._lock:
             queue = deque([(start_node_id, True)])
@@ -507,6 +523,7 @@ class Task:
                     else:
                         # 彻底重置：清空整个节点目录
                         import shutil
+
                         shutil.rmtree(node_dir, ignore_errors=True)
 
                 # 5. 顺藤摸瓜找下游
@@ -544,20 +561,25 @@ class Task:
         - 不再管理 node_memory，由各节点自行管理
         """
         os.makedirs(self.checkpoint_dir, exist_ok=True)
-        
+
         dag_state = {
             n_id: {
-                "state": self.node_state[n_id].value if hasattr(self.node_state[n_id], "value") else self.node_state[n_id]
+                "state": self.node_state[n_id].value
+                if hasattr(self.node_state[n_id], "value")
+                else self.node_state[n_id]
             }
             for n_id in self.node_list
         }
-        
+
         state_data = {
             "task_id": self.task_id,
             "state": self.state.value if hasattr(self.state, "value") else self.state,
             "outputs": self.outputs,
             "dag_state": dag_state,
-            "node_state": {k: v.value if hasattr(v, "value") else v for k, v in self.node_state.items()},
+            "node_state": {
+                k: v.value if hasattr(v, "value") else v
+                for k, v in self.node_state.items()
+            },
             "output_port_states": {
                 k: {p: s.value if hasattr(s, "value") else s for p, s in ports.items()}
                 for k, ports in self.output_port_states.items()
@@ -568,7 +590,7 @@ class Task:
                 for node_id, mem in self.node_memory.items()
             },
         }
-        
+
         state_path = os.path.join(self.checkpoint_dir, "state.json")
         with open(state_path, "w", encoding="utf-8") as f:
             json.dump(state_data, f, ensure_ascii=False, indent=2)
@@ -613,7 +635,9 @@ class Task:
                 self.graph = meta_data.get("graph", self.graph)
 
                 # 恢复引擎核心状态
-                saved_states = state_data.get("node_state", state_data.get("dag_state", {}))
+                saved_states = state_data.get(
+                    "node_state", state_data.get("dag_state", {})
+                )
                 self.node_state = {}
                 for k, v in saved_states.items():
                     state_str = v.get("state", "ready") if isinstance(v, dict) else v
@@ -647,7 +671,9 @@ class Task:
 
                 self.create_time = state_data.get("create_time", "2025-01-01 00:00:00")
 
-                saved_states = state_data.get("node_state", state_data.get("dag_state", {}))
+                saved_states = state_data.get(
+                    "node_state", state_data.get("dag_state", {})
+                )
                 self.node_state = {}
                 for k, v in saved_states.items():
                     state_str = v.get("state", "ready") if isinstance(v, dict) else v
@@ -740,7 +766,7 @@ class Task:
         # 🌟 修复：任务复活需要的基础设定（如名字、节点结构）都在 meta.json 里
         meta_path = os.path.join(checkpoint_dir, "meta.json")
         old_checkpoint_path = os.path.join(checkpoint_dir, "checkpoint.json")
-        
+
         data = {}
         if os.path.exists(meta_path):
             with open(meta_path, "r", encoding="utf-8") as f:

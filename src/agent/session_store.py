@@ -114,8 +114,14 @@ class SessionStore:
                             try:
                                 with open(meta_path, "r", encoding="utf-8") as f:
                                     m_data = json.load(f)
-                                    if "alias" in m_data and index_data[session_id].get("alias") != m_data["alias"]:
-                                        index_data[session_id]["alias"] = m_data["alias"]
+                                    if (
+                                        "alias" in m_data
+                                        and index_data[session_id].get("alias")
+                                        != m_data["alias"]
+                                    ):
+                                        index_data[session_id]["alias"] = m_data[
+                                            "alias"
+                                        ]
                                         needs_save = True
                             except Exception:
                                 pass

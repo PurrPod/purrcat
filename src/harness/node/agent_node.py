@@ -5,14 +5,14 @@ from typing import Any, Dict, List
 
 from src.harness.enums import LogType, NodeState
 from src.harness.node.base import BaseNode, _format_result
-from src.harness.utils.llm_helper import call_llm, inject_force_push
+from src.harness.utils.llm_helper import call_llm
 from src.harness.utils.tool_helper import execute_global_tool, extract_tool_calling
 
 
 class AgentNode(BaseNode):
     """
     专门处理 LLM 对话、工具调用、大循环控制以及人类干预的节点基类
-    
+
     🌟 新架构特性：节点自治数据管理
     - 每个节点拥有自己的专属文件夹：nodes/node_id/
     - 对话历史使用 JSONL 格式追加写入（memory.jsonl）
@@ -79,7 +79,9 @@ class AgentNode(BaseNode):
 
     def get_artifacts_dir(self, context) -> str:
         """获取该节点的大文件存放目录：nodes/node_id/artifacts/"""
-        artifacts_dir = os.path.join(context.checkpoint_dir, "nodes", self.node_id, "artifacts")
+        artifacts_dir = os.path.join(
+            context.checkpoint_dir, "nodes", self.node_id, "artifacts"
+        )
         os.makedirs(artifacts_dir, exist_ok=True)
         return artifacts_dir
 
@@ -87,7 +89,7 @@ class AgentNode(BaseNode):
         """从 JSONL 文件加载对话历史（追加写入格式）"""
         memory_path = self.get_memory_file_path(context)
         messages = []
-        
+
         if os.path.exists(memory_path):
             try:
                 with open(memory_path, "r", encoding="utf-8") as f:
@@ -97,13 +99,13 @@ class AgentNode(BaseNode):
                             messages.append(json.loads(line))
             except Exception as e:
                 self.log(context, "WARNING", f"⚠️ [记忆加载失败] {e}")
-        
+
         return messages
 
     def append_memory_to_file(self, context, new_messages: List[Dict]):
         """追加写入新消息到 JSONL 文件（O(1) 复杂度）"""
         memory_path = self.get_memory_file_path(context)
-        
+
         try:
             with open(memory_path, "a", encoding="utf-8") as f:
                 for msg in new_messages:
@@ -159,7 +161,7 @@ class AgentNode(BaseNode):
 
         # 🌟 获取当前节点专属的记忆文件路径
         mem_path = self.get_memory_file_path(context)
-        
+
         # 1. 从自己的专属文件读取历史记忆 (按行读，速度极快)
         messages = []
         if os.path.exists(mem_path):
@@ -174,16 +176,54 @@ class AgentNode(BaseNode):
         if new_upstream_msgs:
             messages.extend(new_upstream_msgs)
             # 立刻存盘上游的新消息
-            await asyncio.to_thread(self.append_memory_to_file, context, new_upstream_msgs)
+            await asyncio.to_thread(
+                self.append_memory_to_file, context, new_upstream_msgs
+            )
 
         # 3. 处理强制推送的指令（通过 node_memory 传递）
         my_memory = context.node_memory.setdefault(self.node_id, {})
         pending_push = my_memory.pop("force_push", [])
         if isinstance(pending_push, list) and pending_push:
-            force_push_msgs = [{"role": "user", "content": f"[人工指令] {msg}"} for msg in pending_push]
+            force_push_msgs = [
+                {"role": "user", "content": f"[人工指令] {msg}"} for msg in pending_push
+            ]
             messages.extend(force_push_msgs)
             # 立刻存盘强制推送的指令
-            await asyncio.to_thread(self.append_memory_to_file, context, force_push_msgs)
+            await asyncio.to_thread(
+                self.append_memory_to_file, context, force_push_msgs
+            )
+
+        # ========================================================
+        # 🌟 新增：注入 task_done 工具使用说明与格式强校验文案 (User角色)
+        # ========================================================
+        task_done_prompt = (
+            "【任务完结要求】\n"
+            "当你认为已经完成了本阶段的核心思考和所有必要操作后，请务必调用 `task_done` 工具来标注任务已完成并移交控制权。\n"
+        )
+
+        if getattr(self, "task_done_info", None):
+            task_done_prompt += "⚠️ 注意：调用 `task_done` 工具时，你的 `summary` 参数必须严格包含以下 JSON 字段及内容：\n"
+            for key, desc in self.task_done_info.items():
+                task_done_prompt += f'  - "{key}": {desc}\n'
+        else:
+            task_done_prompt += "⚠️ 注意：调用 `task_done` 工具时，请在 `summary` 参数中输出详尽的任务执行总结。\n"
+
+        # 检查是否已经注入过该提示（防止任务挂起恢复或重跑时重复写入）
+        has_injected = False
+        for msg in messages[-5:]:
+            if msg.get("role") == "user" and "【任务完结要求】" in msg.get(
+                "content", ""
+            ):
+                has_injected = True
+                break
+
+        if not has_injected:
+            # 修改点：这里将 role 从 system 改为了 user
+            user_msg = {"role": "user", "content": task_done_prompt}
+            messages.append(user_msg)
+            # 立刻追加落盘，保证前端气泡也能看到这条明确的指令
+            await asyncio.to_thread(self.append_memory_to_file, context, [user_msg])
+        # ========================================================
 
         tools = self.get_all_tools()
 
@@ -242,11 +282,16 @@ class AgentNode(BaseNode):
                     "SYSTEM",
                     f"🔔 [动态注入] 收到 {len(dynamic_push)} 条强制推送消息",
                 )
-                force_push_msgs = [{"role": "user", "content": f"[人工指令] {msg}"} for msg in dynamic_push]
+                force_push_msgs = [
+                    {"role": "user", "content": f"[人工指令] {msg}"}
+                    for msg in dynamic_push
+                ]
                 messages.extend(force_push_msgs)
                 # 立刻存盘
                 if mem_path:
-                    await asyncio.to_thread(self.append_memory_to_file, context, force_push_msgs)
+                    await asyncio.to_thread(
+                        self.append_memory_to_file, context, force_push_msgs
+                    )
 
             self.log(
                 context,
@@ -260,7 +305,9 @@ class AgentNode(BaseNode):
             if mem_path:
                 new_messages = messages[initial_message_count:]
                 if new_messages:
-                    await asyncio.to_thread(self.append_memory_to_file, context, new_messages)
+                    await asyncio.to_thread(
+                        self.append_memory_to_file, context, new_messages
+                    )
                     # 🌟 关键修复点 1：大模型刚回复完，马上触发后台写盘，此时前端气泡弹出
                     await asyncio.to_thread(self._sync_dump_memory, context, messages)
                     initial_message_count = len(messages)
@@ -300,7 +347,9 @@ class AgentNode(BaseNode):
 
             # 🌟 工具调用结果也立即写入
             if tool_messages and mem_path:
-                await asyncio.to_thread(self.append_memory_to_file, context, tool_messages)
+                await asyncio.to_thread(
+                    self.append_memory_to_file, context, tool_messages
+                )
                 # 🌟 关键修复点 2：工具执行完并追加到 messages 后，再次写盘，前端显示工具结果
                 await asyncio.to_thread(self._sync_dump_memory, context, messages)
                 initial_message_count = len(messages) + len(tool_messages)

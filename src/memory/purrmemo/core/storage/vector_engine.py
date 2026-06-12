@@ -41,7 +41,8 @@ class VectorEngine(metaclass=SingletonMeta):
 
                     print("⏳ [LazyLoad] 初始化 ChromaDB 引擎...")
                     self._client = PersistentClient(
-                        path=self.persist_directory, settings=Settings(anonymized_telemetry=False)
+                        path=self.persist_directory,
+                        settings=Settings(anonymized_telemetry=False),
                     )
         return self._client
 

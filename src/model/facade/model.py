@@ -64,11 +64,18 @@ class Model:
         def _log_cache_debug(final_usage):
             if final_usage:
                 p_details = getattr(final_usage, "prompt_tokens_details", None)
-                cached_tokens = getattr(p_details, "cached_tokens", 0) if p_details else 0
+                cached_tokens = (
+                    getattr(p_details, "cached_tokens", 0) if p_details else 0
+                )
                 total_prompt = getattr(final_usage, "prompt_tokens", 0)
                 missed_tokens = total_prompt - cached_tokens
-                hit_rate = (cached_tokens / total_prompt * 100) if total_prompt > 0 else 0
-                log(f"📊 [Cache Debug] Task: {self.task_id} | Total Prompt: {total_prompt} | Hit: {cached_tokens} ({hit_rate:.1f}%) | Miss: {missed_tokens}")
+                hit_rate = (
+                    (cached_tokens / total_prompt * 100) if total_prompt > 0 else 0
+                )
+                log(
+                    f"📊 [Cache Debug] Task: {self.task_id} | Total Prompt: {total_prompt} | Hit: {cached_tokens} ({hit_rate:.1f}%) | Miss: {missed_tokens}"
+                )
+
         # --------------------------------------------------------------
 
         if is_stream:
@@ -81,7 +88,7 @@ class Model:
                     yield chunk
 
                 duration = time.time() - start_time
-                _log_cache_debug(final_usage) # 打印流式缓存
+                _log_cache_debug(final_usage)  # 打印流式缓存
                 usage_tracer.record(
                     model_name=self.model_name,
                     api_key=self.api_key,
@@ -94,7 +101,7 @@ class Model:
             # 非流式，正常处理
             duration = time.time() - start_time
             usage = getattr(response, "usage", None)
-            _log_cache_debug(usage) # 打印非流式缓存
+            _log_cache_debug(usage)  # 打印非流式缓存
             usage_tracer.record(
                 model_name=self.model_name,
                 api_key=self.api_key,

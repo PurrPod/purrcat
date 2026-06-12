@@ -62,7 +62,9 @@ class MCPSearcher:
         with self._lock:
             if not self.corpus:
                 return
-            print(f"⏳ [Background] 正在为 {len(self.tools)} 个 MCP 工具构建向量矩阵...")
+            print(
+                f"⏳ [Background] 正在为 {len(self.tools)} 个 MCP 工具构建向量矩阵..."
+            )
             self.corpus_matrix = self.embedding_searcher.encode(self.corpus)
             tokenized_corpus = [hybrid_tokenize(doc) for doc in self.corpus]
             from rank_bm25 import BM25Okapi  # 局部导入

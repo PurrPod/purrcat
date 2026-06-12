@@ -225,7 +225,7 @@ class Agent:
         # 这样指令会被 _checker 打包进 role="user" 的 JSON 中，完美避开底层 System 重排导致的缓存击穿！
         self.force_push(
             "任务开始前如有需要可以调用 Search 工具搜索本地相关的工具。完成任务后请调用 Memo 工具及时更新记忆，记录的记忆越多越详细以后你的能力就会越强",
-            type="system"
+            type="system",
         )
 
         while True:

@@ -46,6 +46,10 @@ export interface GraphExport {
   global_schema: Record<string, any>;
   nodes: any[];
   edges: any[];
+  dependencies?: {
+    skills: string[];
+    mcps: string[];
+  };
 }
 
 export interface CatalogItem {

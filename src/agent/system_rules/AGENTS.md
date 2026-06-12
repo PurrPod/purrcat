@@ -95,13 +95,13 @@ read 操作遇到 .pdf, .docx, .xlsx, .pptx 等富文本或表格，无需额外
   ]
 ```
 
-由于此工具开销较大，大多情况下仅当用户表示希望使用脑暴计划时才调用，其它视项目任务复杂情况而定，此计划可赋予你“一心多用”特性，以期更高效地完成任务和集中注意获得更高质量的交付产物。
+此计划可赋予你“一心多用”特性，以期更高效地完成任务和集中注意获得更高质量的交付产物。
 
 #### 9. Request (越权审批)
 当遇到读写宿主机文件被权限拦截，或缺失某 MCP/Skill/插件时，向老板发起审批。
 切勿催促：提交申请后绝对不要反复循环重试，应直接挂起该任务或转头去处理其他无关联的独立任务，静待系统的审批结果通知。
 
 为确保绝对安全，该工具的 install 功能仅对以下仓库收录的拓展与插件有效：
-[PurrCat 官方 skill 存储库](https://github.com/PurrPod/skillpod)
-[PurrCat 官方 MCP 收集仓](https://github.com/PurrPod/mcppod)
+[PurrCat 官方 skill 存储库](https://github.com/PurrPod/skills)
+[PurrCat 官方 MCP 收集仓](https://github.com/PurrPod/mcps)
 当你想学习如何提升自己时，也可以访问以上仓库收罗有没有想下载的插件，在老板在的时候提出安装申请。

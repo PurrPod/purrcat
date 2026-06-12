@@ -84,7 +84,7 @@ def get_task_state_endpoint(task_id: str):
     from src.utils.config import DATA_DIR
 
     frontend_memory = {}
-    
+
     # 1. 定位物理文件夹 (内存中有就用内存的路径，没有就扫硬盘)
     checkpoint_dir = None
     if task_id in TASK_INSTANCES:
@@ -107,13 +107,13 @@ def get_task_state_endpoint(task_id: str):
                 node_path = os.path.join(nodes_dir, node_id)
                 if not os.path.isdir(node_path):
                     continue
-                    
+
                 mem_file_jsonl = os.path.join(node_path, "memory.jsonl")
                 live_file_json = os.path.join(node_path, "live_memory.json")
                 out_file = os.path.join(node_path, "outputs.json")
-                
+
                 messages = []
-                
+
                 # 🎯 优先级 1: 读取 JSONL 格式的实时记录
                 if os.path.exists(mem_file_jsonl):
                     try:
@@ -122,26 +122,29 @@ def get_task_state_endpoint(task_id: str):
                                 line = line.strip()
                                 if line:
                                     messages.append(json.loads(line))
-                    except Exception: pass
+                    except Exception:
+                        pass
                 # 🎯 优先级 2: 读取 JSON 格式的实时记录
                 elif os.path.exists(live_file_json):
                     try:
                         with open(live_file_json, "r", encoding="utf-8") as f:
                             messages = json.load(f)
-                    except Exception: pass
+                    except Exception:
+                        pass
                 # 🎯 优先级 3: 节点已结束，读取最终产出兜底
                 elif os.path.exists(out_file):
                     try:
                         with open(out_file, "r", encoding="utf-8") as f:
                             out_data = json.load(f)
                             messages = out_data.get("messages", [])
-                    except Exception: pass
-                
+                    except Exception:
+                        pass
+
                 if messages:
                     if node_id not in frontend_memory:
                         frontend_memory[node_id] = {}
                     frontend_memory[node_id]["messages"] = messages
-                    
+
     state_data["node_memory"] = frontend_memory
     return state_data
 

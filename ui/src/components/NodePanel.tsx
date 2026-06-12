@@ -12,7 +12,7 @@ export default function NodePanel() {
   // 组件挂载时自动拉取后端的可用节点列表
   useEffect(() => {
     fetchCatalog();
-  }, []);
+  }, [fetchCatalog]);
 
   const onDragStart = (event: any, nodeData: any) => {
     event.dataTransfer.setData('application/reactflow', JSON.stringify(nodeData));

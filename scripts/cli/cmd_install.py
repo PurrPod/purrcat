@@ -89,23 +89,27 @@ def run_install(ext_type, source):
                 return
         # 场景 B: 传入的是短名，需要去 registry 查表
         else:
-            registry_url = "https://raw.githubusercontent.com/PurrPod/mcps/main/registry.json"
+            registry_url = (
+                "https://raw.githubusercontent.com/PurrPod/mcps/main/registry.json"
+            )
             print(f"[*] Querying MCP registry for '{source}'...")
             try:
-                req = urllib.request.Request(registry_url, headers={"User-Agent": "PurrCat-CLI/1.0"})
+                req = urllib.request.Request(
+                    registry_url, headers={"User-Agent": "PurrCat-CLI/1.0"}
+                )
                 response = urllib.request.urlopen(req)
                 registry_data = json.loads(response.read().decode("utf-8"))
-                
+
                 mcps_dict = registry_data.get("mcps", {})
                 if source not in mcps_dict:
                     print(f"X Error: MCP '{source}' not found in official registry.")
                     print(f"  Available MCPs: {', '.join(mcps_dict.keys())}")
                     return
-                
+
                 # 提取注册表中的 config 块作为安装内容
                 new_mcp_configs[source] = mcps_dict[source].get("config", {})
                 print(f"[*] Found MCP '{source}' in registry!")
-                
+
             except Exception as e:
                 print(f"X Failed to fetch or parse MCP registry: {e}")
                 return
@@ -128,24 +132,30 @@ def run_install(ext_type, source):
             for server_name, server_config in new_mcp_configs.items():
                 current_config["mcpServers"][server_name] = server_config
                 print(f"  -> Added/Updated MCP server: {server_name}")
-                
+
                 # 智能提醒：如果包含空的 env，提醒用户去填 Key
-                if "env" in server_config and any(not v for v in server_config["env"].values()):
+                if "env" in server_config and any(
+                    not v for v in server_config["env"].values()
+                ):
                     env_warning_list.append(server_name)
 
             os.makedirs(os.path.dirname(mcp_config_path), exist_ok=True)
             with open(mcp_config_path, "w", encoding="utf-8") as f:
                 json.dump(current_config, f, indent=2, ensure_ascii=False)
-            
+
             print("[+] Successfully installed MCP configurations.")
-            
+
             # 打印环境变量配置警告
             if env_warning_list:
-                print("\n[!] IMPORTANT: The following MCPs require Environment Variables (API Keys):")
+                print(
+                    "\n[!] IMPORTANT: The following MCPs require Environment Variables (API Keys):"
+                )
                 for w_mcp in env_warning_list:
                     print(f"    - {w_mcp}")
-                print("    Please edit '.purrcat/mcp_config.json' to fill in the missing values.")
-                
+                print(
+                    "    Please edit '.purrcat/mcp_config.json' to fill in the missing values."
+                )
+
         except Exception as e:
             print(f"X Failed to save MCP configuration: {e}")
 
@@ -239,22 +249,26 @@ def run_install(ext_type, source):
     # ---------------------------------------------------------
     elif ext_type == "skill":
         target_url = source
-        
+
         # 如果不是 http 开头，说明是短名，需要去 registry.json 查表
         if not target_url.startswith("http"):
-            registry_url = "https://raw.githubusercontent.com/PurrPod/skills/main/registry.json"
+            registry_url = (
+                "https://raw.githubusercontent.com/PurrPod/skills/main/registry.json"
+            )
             print(f"[*] Querying registry for '{source}'...")
             try:
-                req = urllib.request.Request(registry_url, headers={"User-Agent": "PurrCat-CLI/1.0"})
+                req = urllib.request.Request(
+                    registry_url, headers={"User-Agent": "PurrCat-CLI/1.0"}
+                )
                 response = urllib.request.urlopen(req)
                 registry_data = json.loads(response.read().decode("utf-8"))
-                
+
                 skills_dict = registry_data.get("skills", {})
                 if source not in skills_dict:
                     print(f"X Error: Skill '{source}' not found in official registry.")
                     print(f"  Available skills: {', '.join(skills_dict.keys())}")
                     return
-                    
+
                 target_url = skills_dict[source].get("source_url")
                 print(f"[*] Found '{source}' in registry! Resolving source URL...")
             except Exception as e:
@@ -266,7 +280,9 @@ def run_install(ext_type, source):
             parsed = _parse_github_url(target_url)
             if not parsed:
                 print("X Error: Invalid GitHub URL format.")
-                print("  Expected: https://github.com/owner/repo/tree/branch/path/to/skill")
+                print(
+                    "  Expected: https://github.com/owner/repo/tree/branch/path/to/skill"
+                )
                 return
 
             skill_name = os.path.basename(parsed["path"].rstrip("/"))
@@ -274,9 +290,13 @@ def run_install(ext_type, source):
 
             zip_url = f"https://github.com/{parsed['owner']}/{parsed['repo']}/archive/refs/heads/{parsed['branch']}.zip"
 
-            print(f"[*] Fetching skill '{skill_name}' from {parsed['owner']}/{parsed['repo']}")
+            print(
+                f"[*] Fetching skill '{skill_name}' from {parsed['owner']}/{parsed['repo']}"
+            )
             if _download_and_extract_subfolder(zip_url, parsed["path"], dest_dir):
-                print(f"[+] Successfully installed skill '{skill_name}' to skills/{skill_name}")
+                print(
+                    f"[+] Successfully installed skill '{skill_name}' to skills/{skill_name}"
+                )
         else:
             print("X Error: Invalid source URL resolved.")
 

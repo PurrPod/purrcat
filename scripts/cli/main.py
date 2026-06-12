@@ -45,7 +45,9 @@ PurrCat CLI - Cross-platform AI Agent Framework
     print("Examples:")
     print("  purrcat setup")
     print("")
-    print("  # Install Graph from PurrPod/graphs (Auto-installs its MCP/Skill dependencies)")
+    print(
+        "  # Install Graph from PurrPod/graphs (Auto-installs its MCP/Skill dependencies)"
+    )
     print("  purrcat install graph financial")
     print("")
     print("  # Install MCP server manually")

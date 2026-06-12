@@ -7,7 +7,8 @@ import {
   List, Brain, Server, Zap, AlarmClock, GitFork, Plus,
   RefreshCw, Terminal, User, FileText, Save,
   Settings, FileJson, AlertCircle, Download, Activity, Paperclip, Bell,
-  FolderOpen, History, Undo2, CheckCircle, Check
+  FolderOpen, History, Undo2, CheckCircle, Check,
+  Minus, GitMerge // <--- 新增这2个
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
@@ -42,7 +43,7 @@ function parseEventsContent(content: string): { userMessages: EventItem[], syste
         
         if (eventType === 'user') {
           userMessages.push({ type: eventType, time: eventTime, content: eventContent });
-        } else if (eventType === 'file-quote' || eventType === 'skill-quote' || eventType === 'tool-quote' || eventType === 'mcp-quote') {
+        } else if (eventType === 'file-quote' || eventType === 'skill-quote' || eventType === 'tool-quote' || eventType === 'mcp-quote' || eventType === 'graph-quote') {
           attachments.push({ type: eventType, time: eventTime, content: eventContent });
         } else {
           systemCount++;
@@ -278,7 +279,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
     if (fileChanges.length > 0 && (!activeDiffPath || !fileChanges.some(c => c.path === activeDiffPath))) {
       setActiveDiffPath(fileChanges[0].path);
     }
-  }, [fileChanges]);
+  }, [fileChanges, activeDiffPath]);
 
   const loadBranches = async (sid: string) => {
     try {
@@ -436,6 +437,20 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   const [showMcpSelectModal, setShowMcpSelectModal] = useState(false);
   const [selectedMcps, setSelectedMcps] = useState<string[]>([]);
   const [tempSelectedMcps, setTempSelectedMcps] = useState<string[]>([]);
+
+  // 👇 新增 Graph 相关 State
+  const [showGraphSelectModal, setShowGraphSelectModal] = useState(false);
+  const [selectedGraphs, setSelectedGraphs] = useState<string[]>([]);
+  const [tempSelectedGraphs, setTempSelectedGraphs] = useState<string[]>([]);
+  const [graphData, setGraphData] = useState<any[]>([]);
+
+  // 👇 新增拉取工作流数据的方法
+  const fetchGraphData = async () => {
+    try {
+      const res = await fetch('http://localhost:8000/api/graphs');
+      if (res.ok) setGraphData(await res.json());
+    } catch { toast.error("获取工作流列表失败"); }
+  };
 
   const [refPaths, setRefPaths] = useState<string[]>([]);
   const [showRefModal, setShowRefModal] = useState(false); 
@@ -869,7 +884,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
       loadSessionHistory(sessionId, 'main');
       loadBranches(sessionId);
     }
-  }, [sessionId]);
+  }, [sessionId, currentSessionId]);
 
   useEffect(() => {
     if (!currentSessionId) return;
@@ -1041,6 +1056,16 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
       });
     }
 
+    // 👇 新增：注入 Graph 引用
+    if (selectedGraphs.length > 0) {
+      selectedGraphs.forEach(graph => {
+        eventsToPush.push({
+          type: 'graph-quote',
+          content: `user quote the graph：${graph}`
+        });
+      });
+    }
+
     // 🌟 注入 BrainStorm Tag 
     if (useBrainstorm) {
        eventsToPush.push({
@@ -1057,6 +1082,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
     setInput('');
     setSelectedSkills([]); 
     setSelectedMcps([]); // 🌟 新增清空MCP
+    setSelectedGraphs([]); // 👇 清除选项
     setRefPaths([]); 
     setUseBrainstorm(false); // 清除选项
     isAutoScroll.current = true;
@@ -1541,6 +1567,52 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                 className="flex-1 bg-[#88c0d0] text-paper font-black tracking-widest text-lg py-3 border-4 border-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:bg-[#72a6b5] hover:translate-y-[1px] hover:shadow-none transition-all flex items-center justify-center gap-2"
               >
                 <Plus size={24} strokeWidth={3}/> ADD PATH
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 👇 新增 Graph 选择弹窗 (Modal) */}
+      {showGraphSelectModal && (
+        <div className="fixed inset-0 bg-ink/40 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
+          <div style={sketchyShape2} className="bg-paper border-4 border-ink p-6 flex flex-col gap-4 shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] rotate-1 w-full max-w-md h-[70vh]">
+            <div className="flex justify-between items-center -rotate-1 border-b-4 border-ink/10 pb-3 shrink-0">
+              <h3 className="text-2xl font-black tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>SELECT GRAPH</h3>
+              <button onClick={() => setShowGraphSelectModal(false)} className="hover:text-terracotta hover:scale-110 transition-all">
+                <X size={28} strokeWidth={3}/>
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto flex flex-col gap-3 -rotate-1 p-1">
+              {graphData.length === 0 ? (
+                 <p className="font-bold text-center mt-6 opacity-50 text-sm">No Graphs found</p>
+              ) : (
+                 graphData.map((graph: any, idx) => {
+                   const graphName = graph.name.replace('.json', ''); // 假设后端返回带.json
+                   const isSelected = tempSelectedGraphs.includes(graphName);
+                   return (
+                     <div key={graphName} style={idx % 2 === 0 ? sketchyShape1 : sketchyShape3} className={`border-4 border-ink bg-cream p-3 transition-all ${isSelected ? 'shadow-[4px_4px_0px_0px_rgba(212,122,90,1)] border-terracotta bg-terracotta/10' : 'shadow-[4px_4px_0px_0px_rgba(26,26,26,1)]'} flex flex-col gap-2 cursor-pointer`} onClick={() => {
+                       if (isSelected) setTempSelectedGraphs(prev => prev.filter(s => s !== graphName));
+                       else setTempSelectedGraphs(prev => [...prev, graphName]);
+                     }}>
+                        <div className="flex items-center gap-3">
+                          <div className={`w-5 h-5 border-2 border-ink flex items-center justify-center ${isSelected ? 'bg-terracotta' : 'bg-paper'}`} style={sketchyShape2}>
+                            {isSelected && <Check size={16} strokeWidth={4} className="text-paper" />}
+                          </div>
+                          <span className="font-black text-lg flex-1 truncate" style={{ fontFamily: '"Comic Sans MS", cursive' }}>{graphName}</span>
+                        </div>
+                     </div>
+                   );
+                 })
+              )}
+            </div>
+            <div className="shrink-0 flex justify-end gap-3 -rotate-1 pt-2 border-t-4 border-ink/10">
+              <button onClick={() => {
+                  setSelectedGraphs(tempSelectedGraphs);
+                  setShowGraphSelectModal(false);
+                }}
+                style={sketchyShape1} className="px-8 bg-ink text-paper font-black py-3 border-4 border-ink hover:bg-gray-800 transition-all shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] active:shadow-none active:translate-y-1">
+                COMPLETE
               </button>
             </div>
           </div>
@@ -2135,7 +2207,11 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                       <div className="flex flex-col gap-2 w-full items-end mb-2">
                         {parsedData.attachments.map((att, aIdx) => (
                           <div key={`att-${aIdx}`} style={sketchyShape3} className="px-4 py-2 bg-ink/5 border-2 border-ink text-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] flex items-center gap-2 max-w-[70%]">
-                            {att.type === 'file-quote' ? <Paperclip size={14} className="shrink-0"/> : att.type === 'tool-quote' ? <Brain size={14} className="text-[#b48ead] shrink-0"/> : att.type === 'mcp-quote' ? <Server size={14} className="text-[#b8956e] shrink-0"/> : <Zap size={14} className="text-terracotta shrink-0"/>}
+                            {att.type === 'file-quote' ? <Paperclip size={14} className="shrink-0"/> : 
+                             att.type === 'tool-quote' ? <Brain size={14} className="text-[#b48ead] shrink-0"/> : 
+                             att.type === 'mcp-quote' ? <Server size={14} className="text-[#b8956e] shrink-0"/> : 
+                             att.type === 'graph-quote' ? <GitMerge size={14} className="text-ink shrink-0"/> : 
+                             <Zap size={14} className="text-terracotta shrink-0"/>}
                             <span className="font-bold text-xs opacity-80 font-mono truncate">{att.content}</span>
                           </div>
                         ))}
@@ -2207,6 +2283,15 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                   FILE CHANGES
                   <span className="ml-2 text-sm opacity-60">({fileChanges.length} files modified)</span>
                 </h2>
+                {/* 👇 新增减号收起按钮 */}
+                <button 
+                  onClick={() => setShowFileView(false)} 
+                  className="ml-auto p-1.5 border-2 border-ink bg-cream hover:bg-[#d08770] hover:text-paper shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] transition-all active:translate-y-[1px] active:shadow-none"
+                  style={sketchyShape2}
+                  title="Close File View"
+                >
+                  <Minus size={20} strokeWidth={3} />
+                </button>
               </div>
 
               {fileChanges.length === 0 ? (
@@ -2303,7 +2388,8 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
         {currentBranchId === 'main' ? (
           <div className="px-10 pb-8 pt-4 shrink-0 flex flex-col gap-3 w-full">
 
-           {(selectedSkills.length > 0 || selectedMcps.length > 0 || refPaths.length > 0 || useBrainstorm) && (
+           {/* 👇 别忘了在这一行的判断条件里加上 selectedGraphs.length > 0 */}
+           {(selectedSkills.length > 0 || selectedMcps.length > 0 || selectedGraphs.length > 0 || refPaths.length > 0 || useBrainstorm) && (
              <div className="flex flex-wrap gap-2">
                {selectedSkills.map(skill => (
                  <div key={skill} style={sketchyShape3} className="flex items-center gap-1 bg-[#F9E2AF] border-2 border-ink px-3 py-1 font-bold text-sm shadow-[2px_2px_0px_0px_rgba(26,26,26,1)]">
@@ -2327,6 +2413,13 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                  <div key={mcp} style={sketchyShape2} className="flex items-center gap-1 bg-[#88c0d0]/20 border-2 border-ink px-3 py-1 font-bold text-sm shadow-[2px_2px_0px_0px_rgba(26,26,26,1)]">
                    <span className="text-ink">🔌 {mcp}</span>
                    <button onClick={() => setSelectedMcps(prev => prev.filter(s => s !== mcp))} className="hover:text-terracotta ml-1 text-ink/50 transition-colors"><X size={14} strokeWidth={3}/></button>
+                 </div>
+               ))}
+               {/* 👇 新增 Graph 标签渲染 */}
+               {selectedGraphs.map(graph => (
+                 <div key={graph} style={sketchyShape2} className="flex items-center gap-1 bg-ink text-paper border-2 border-ink px-3 py-1 font-bold text-sm shadow-[2px_2px_0px_0px_rgba(26,26,26,1)]">
+                   <span>🕸️ {graph}</span>
+                   <button onClick={() => setSelectedGraphs(prev => prev.filter(s => s !== graph))} className="hover:text-terracotta ml-1 text-paper/50 transition-colors"><X size={14} strokeWidth={3}/></button>
                  </div>
                ))}
              </div>
@@ -2388,6 +2481,20 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                    title="Select MCP Servers"
                  >
                    <Server className="text-ink" size={20} strokeWidth={3}/>
+                 </button>
+
+                 {/* 👇 新增 Graph 触发按钮 */}
+                 <button
+                   onClick={() => { 
+                     if (graphData.length === 0) fetchGraphData(); 
+                     setTempSelectedGraphs([...selectedGraphs]); 
+                     setShowGraphSelectModal(true); 
+                   }}
+                   className="p-2 bg-cream border-2 border-ink hover:bg-ink hover:text-paper transition-all shadow-[2px_2px_0px_0px_rgba(26,26,26,1)]"
+                   style={sketchyShape3}
+                   title="Select Workflows (Graph)"
+                 >
+                   <GitMerge size={20} strokeWidth={3}/>
                  </button>
                  
                  {/* 🌟 新增：BrainStorm 开关按钮 */}

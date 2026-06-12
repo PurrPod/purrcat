@@ -20,7 +20,9 @@ class SensorManager:
 
         os.makedirs(self.extension_dir, exist_ok=True)
 
-    def _download_and_start_sensor_bg(self, sensor_name: str, url: str, local_path: str, cfg: dict):
+    def _download_and_start_sensor_bg(
+        self, sensor_name: str, url: str, local_path: str, cfg: dict
+    ):
         """🌟 新增：后台下载逻辑"""
         try:
             urllib.request.urlretrieve(url, local_path)
@@ -28,7 +30,9 @@ class SensorManager:
             # 下载完毕后再启动
             self._start_sensor(sensor_name, local_path, cfg)
         except urllib.error.HTTPError as e:
-            print(f"❌ [Manager] 下载失败，云端仓库找不到 {sensor_name}.py (HTTP {e.code})")
+            print(
+                f"❌ [Manager] 下载失败，云端仓库找不到 {sensor_name}.py (HTTP {e.code})"
+            )
         except Exception as e:
             print(f"❌ [Manager] 下载 {sensor_name} 失败: {e}")
 
