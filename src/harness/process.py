@@ -700,6 +700,10 @@ class Task:
                 # 旧格式的 node_memory 需要迁移到新位置
                 self.migrate_old_memory(data.get("node_memory", {}))
 
+            # 🌟 洗洗澡：无论从哪里加载，强行把内存里的 messages 剔除，防止污染新架构
+            for node_id, mem in self.node_memory.items():
+                mem.pop("messages", None)
+
         except Exception as e:
             print(f"❌ 读取 Checkpoint 失败: {e}")
 

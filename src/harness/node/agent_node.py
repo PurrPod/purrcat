@@ -65,6 +65,18 @@ class AgentNode(BaseNode):
         os.makedirs(node_dir, exist_ok=True)
         return os.path.join(node_dir, "memory.jsonl")
 
+    def _sync_dump_memory(self, context, messages: List[Dict]):
+        """实时写盘小助手，保证执行期间前端能实时探班气泡"""
+        node_dir = os.path.join(context.checkpoint_dir, "nodes", self.node_id)
+        os.makedirs(node_dir, exist_ok=True)
+        # 写到 live_memory.json，与 API 接口的优先级 2 完美对齐
+        out_file = os.path.join(node_dir, "live_memory.json")
+        try:
+            with open(out_file, "w", encoding="utf-8") as f:
+                json.dump(messages, f, ensure_ascii=False)
+        except Exception:
+            pass
+
     def get_artifacts_dir(self, context) -> str:
         """获取该节点的大文件存放目录：nodes/node_id/artifacts/"""
         artifacts_dir = os.path.join(context.checkpoint_dir, "nodes", self.node_id, "artifacts")
@@ -249,6 +261,8 @@ class AgentNode(BaseNode):
                 new_messages = messages[initial_message_count:]
                 if new_messages:
                     await asyncio.to_thread(self.append_memory_to_file, context, new_messages)
+                    # 🌟 关键修复点 1：大模型刚回复完，马上触发后台写盘，此时前端气泡弹出
+                    await asyncio.to_thread(self._sync_dump_memory, context, messages)
                     initial_message_count = len(messages)
 
             if assistant_msg.content:
@@ -287,6 +301,8 @@ class AgentNode(BaseNode):
             # 🌟 工具调用结果也立即写入
             if tool_messages and mem_path:
                 await asyncio.to_thread(self.append_memory_to_file, context, tool_messages)
+                # 🌟 关键修复点 2：工具执行完并追加到 messages 后，再次写盘，前端显示工具结果
+                await asyncio.to_thread(self._sync_dump_memory, context, messages)
                 initial_message_count = len(messages) + len(tool_messages)
 
             if tool_messages:

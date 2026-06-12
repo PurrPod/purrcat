@@ -1,4 +1,5 @@
 import os
+import threading
 from datetime import datetime
 
 from src.utils.config import get_embedding_model, get_memory_config
@@ -24,20 +25,24 @@ class VectorEngine(metaclass=SingletonMeta):
         self._events_collection = None
         self._embedding_model = None
 
+        # 线程锁，防止并发初始化
+        self._db_lock = threading.Lock()
+
         # os.makedirs 放这里没事，但不要建立 DB 连接
         os.makedirs(self.persist_directory, exist_ok=True)
 
     @property
     def client(self):
         if self._client is None:
-            # 局部导入
-            from chromadb import PersistentClient
-            from chromadb.config import Settings
+            with self._db_lock:
+                if self._client is None:  # 双重检查
+                    from chromadb import PersistentClient
+                    from chromadb.config import Settings
 
-            print("⏳ [LazyLoad] 初始化 ChromaDB 引擎...")
-            self._client = PersistentClient(
-                path=self.persist_directory, settings=Settings(anonymized_telemetry=False)
-            )
+                    print("⏳ [LazyLoad] 初始化 ChromaDB 引擎...")
+                    self._client = PersistentClient(
+                        path=self.persist_directory, settings=Settings(anonymized_telemetry=False)
+                    )
         return self._client
 
     @property

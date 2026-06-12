@@ -73,38 +73,63 @@ async def run_task_api(req: RunTaskRequest, background_tasks: BackgroundTasks):
 
 @router.get("/{task_id}/state")
 def get_task_state_endpoint(task_id: str):
-    """获取极简的统一状态，并拼装出前端气泡需要的 memory"""
+    """获取极简的统一状态，并拼装出前端气泡需要的 memory (支持活跃与休眠任务)"""
     state_data = get_task_state(task_id)
     if not state_data:
         raise HTTPException(status_code=404, detail="Task not found")
-        
+
+    import os
+    import json
+    import copy
+    from src.utils.config import DATA_DIR
+
+    frontend_memory = {}
+    
+    # 1. 定位物理文件夹 (内存中有就用内存的路径，没有就扫硬盘)
+    checkpoint_dir = None
     if task_id in TASK_INSTANCES:
-        import os
-        import json
-        import copy
-        task = TASK_INSTANCES[task_id]
-        
-        # 深拷贝现有的极简 node_memory (现在只含有 force_push)
-        frontend_memory = copy.deepcopy(task.node_memory)
-        
-        # 遍历节点，把 Agent 留下的真实历史"偷"出来给前端
-        for node_id, n_inst in task.node_list.items():
-            if getattr(n_inst, "can_inject", False):
-                node_dir = os.path.join(task.checkpoint_dir, "nodes", node_id)
-                live_file = os.path.join(node_dir, "memory.jsonl")
-                out_file = os.path.join(node_dir, "outputs.json")
+        checkpoint_dir = TASK_INSTANCES[task_id].checkpoint_dir
+        # 把内存里的强制指令也带上
+        frontend_memory = copy.deepcopy(TASK_INSTANCES[task_id].node_memory)
+    else:
+        base_dir = os.path.join(DATA_DIR, "checkpoints", "task")
+        if os.path.exists(base_dir):
+            for entry in os.listdir(base_dir):
+                if task_id in entry:
+                    checkpoint_dir = os.path.join(base_dir, entry)
+                    break
+
+    # 2. 读取实时聊天记录 (解决运行时前端空白的问题)
+    if checkpoint_dir:
+        nodes_dir = os.path.join(checkpoint_dir, "nodes")
+        if os.path.exists(nodes_dir):
+            for node_id in os.listdir(nodes_dir):
+                node_path = os.path.join(nodes_dir, node_id)
+                if not os.path.isdir(node_path):
+                    continue
+                    
+                mem_file_jsonl = os.path.join(node_path, "memory.jsonl")
+                live_file_json = os.path.join(node_path, "live_memory.json")
+                out_file = os.path.join(node_path, "outputs.json")
                 
                 messages = []
-                # 优先读取正在运行的活体状态 (JSONL 格式)
-                if os.path.exists(live_file):
+                
+                # 🎯 优先级 1: 读取 JSONL 格式的实时记录
+                if os.path.exists(mem_file_jsonl):
                     try:
-                        with open(live_file, "r", encoding="utf-8") as f:
+                        with open(mem_file_jsonl, "r", encoding="utf-8") as f:
                             for line in f:
                                 line = line.strip()
                                 if line:
                                     messages.append(json.loads(line))
                     except Exception: pass
-                # 退而求其次，读最终产出
+                # 🎯 优先级 2: 读取 JSON 格式的实时记录
+                elif os.path.exists(live_file_json):
+                    try:
+                        with open(live_file_json, "r", encoding="utf-8") as f:
+                            messages = json.load(f)
+                    except Exception: pass
+                # 🎯 优先级 3: 节点已结束，读取最终产出兜底
                 elif os.path.exists(out_file):
                     try:
                         with open(out_file, "r", encoding="utf-8") as f:
@@ -113,10 +138,11 @@ def get_task_state_endpoint(task_id: str):
                     except Exception: pass
                 
                 if messages:
-                    frontend_memory.setdefault(node_id, {})["messages"] = messages
+                    if node_id not in frontend_memory:
+                        frontend_memory[node_id] = {}
+                    frontend_memory[node_id]["messages"] = messages
                     
-        state_data["node_memory"] = frontend_memory
-        
+    state_data["node_memory"] = frontend_memory
     return state_data
 
 
