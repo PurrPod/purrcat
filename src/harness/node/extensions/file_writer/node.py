@@ -1,10 +1,16 @@
 import os
+import asyncio
 from typing import Any, Dict
 from src.harness.node.base import BaseNode
 
 
 class Node(BaseNode):
     """通用的本地文件写入器：支持任意本地物理路径，自动创建父目录"""
+
+    def _sync_write(self, target_path: str, content: str):
+        """将同步写操作剥离出来的普通函数，供线程池调用"""
+        with open(target_path, "w", encoding="utf-8") as f:
+            f.write(content)
 
     async def execute(self, inputs: Dict[str, Any], context: Any) -> Dict[str, Any]:
         self.log(context, "SYSTEM", "💾 [文件落盘] 节点启动")
@@ -30,7 +36,8 @@ class Node(BaseNode):
         parent_dir = os.path.dirname(target_path)
         if parent_dir:
             try:
-                os.makedirs(parent_dir, exist_ok=True)
+                # 🌟 创建目录也放入线程池，避免阻塞
+                await asyncio.to_thread(os.makedirs, parent_dir, exist_ok=True)
             except PermissionError:
                 self.log(
                     context,
@@ -42,8 +49,8 @@ class Node(BaseNode):
                 )
 
         try:
-            with open(target_path, "w", encoding="utf-8") as f:
-                f.write(str(content))
+            # 🌟 关键修改：将写文件操作放入线程池执行，坚决不阻塞事件循环
+            await asyncio.to_thread(self._sync_write, target_path, str(content))
             self.log(
                 context,
                 "SYSTEM",

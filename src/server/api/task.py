@@ -73,10 +73,50 @@ async def run_task_api(req: RunTaskRequest, background_tasks: BackgroundTasks):
 
 @router.get("/{task_id}/state")
 def get_task_state_endpoint(task_id: str):
-    """获取极简的统一状态 (支持活跃与休眠任务直接读取)"""
+    """获取极简的统一状态，并拼装出前端气泡需要的 memory"""
     state_data = get_task_state(task_id)
     if not state_data:
         raise HTTPException(status_code=404, detail="Task not found")
+        
+    if task_id in TASK_INSTANCES:
+        import os
+        import json
+        import copy
+        task = TASK_INSTANCES[task_id]
+        
+        # 深拷贝现有的极简 node_memory (现在只含有 force_push)
+        frontend_memory = copy.deepcopy(task.node_memory)
+        
+        # 遍历节点，把 Agent 留下的真实历史"偷"出来给前端
+        for node_id, n_inst in task.node_list.items():
+            if getattr(n_inst, "can_inject", False):
+                node_dir = os.path.join(task.checkpoint_dir, "nodes", node_id)
+                live_file = os.path.join(node_dir, "memory.jsonl")
+                out_file = os.path.join(node_dir, "outputs.json")
+                
+                messages = []
+                # 优先读取正在运行的活体状态 (JSONL 格式)
+                if os.path.exists(live_file):
+                    try:
+                        with open(live_file, "r", encoding="utf-8") as f:
+                            for line in f:
+                                line = line.strip()
+                                if line:
+                                    messages.append(json.loads(line))
+                    except Exception: pass
+                # 退而求其次，读最终产出
+                elif os.path.exists(out_file):
+                    try:
+                        with open(out_file, "r", encoding="utf-8") as f:
+                            out_data = json.load(f)
+                            messages = out_data.get("messages", [])
+                    except Exception: pass
+                
+                if messages:
+                    frontend_memory.setdefault(node_id, {})["messages"] = messages
+                    
+        state_data["node_memory"] = frontend_memory
+        
     return state_data
 
 

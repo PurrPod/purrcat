@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 from typing import Any, Dict, List
 
 from src.harness.enums import LogType, NodeState
@@ -11,6 +12,11 @@ from src.harness.utils.tool_helper import execute_global_tool, extract_tool_call
 class AgentNode(BaseNode):
     """
     专门处理 LLM 对话、工具调用、大循环控制以及人类干预的节点基类
+    
+    🌟 新架构特性：节点自治数据管理
+    - 每个节点拥有自己的专属文件夹：nodes/node_id/
+    - 对话历史使用 JSONL 格式追加写入（memory.jsonl）
+    - 大文件存放在 artifacts/ 子目录
     """
 
     # 标识该节点支持接受外部指令注入，用于 Dashboard 过滤
@@ -53,6 +59,52 @@ class AgentNode(BaseNode):
         },
     ]
 
+    def get_memory_file_path(self, context) -> str:
+        """获取该节点的记忆文件路径：nodes/node_id/memory.jsonl"""
+        node_dir = os.path.join(context.checkpoint_dir, "nodes", self.node_id)
+        os.makedirs(node_dir, exist_ok=True)
+        return os.path.join(node_dir, "memory.jsonl")
+
+    def get_artifacts_dir(self, context) -> str:
+        """获取该节点的大文件存放目录：nodes/node_id/artifacts/"""
+        artifacts_dir = os.path.join(context.checkpoint_dir, "nodes", self.node_id, "artifacts")
+        os.makedirs(artifacts_dir, exist_ok=True)
+        return artifacts_dir
+
+    def load_memory_from_file(self, context) -> List[Dict]:
+        """从 JSONL 文件加载对话历史（追加写入格式）"""
+        memory_path = self.get_memory_file_path(context)
+        messages = []
+        
+        if os.path.exists(memory_path):
+            try:
+                with open(memory_path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line:
+                            messages.append(json.loads(line))
+            except Exception as e:
+                self.log(context, "WARNING", f"⚠️ [记忆加载失败] {e}")
+        
+        return messages
+
+    def append_memory_to_file(self, context, new_messages: List[Dict]):
+        """追加写入新消息到 JSONL 文件（O(1) 复杂度）"""
+        memory_path = self.get_memory_file_path(context)
+        
+        try:
+            with open(memory_path, "a", encoding="utf-8") as f:
+                for msg in new_messages:
+                    f.write(json.dumps(msg, ensure_ascii=False) + "\n")
+        except Exception as e:
+            self.log(context, "WARNING", f"⚠️ [记忆追加失败] {e}")
+
+    def clear_memory_file(self, context):
+        """清空节点的记忆文件（用于重置）"""
+        memory_path = self.get_memory_file_path(context)
+        if os.path.exists(memory_path):
+            os.remove(memory_path)
+
     def get_all_tools(self) -> List[dict]:
         from src.harness.utils.tool_helper import get_system_schema
 
@@ -60,8 +112,19 @@ class AgentNode(BaseNode):
         tools.extend(self.WORKFLOW_CORE_TOOLS)
         return tools
 
+    def migrate_old_memory(self, old_memory: dict, context):
+        """将旧格式的 node_memory 迁移到新的 JSONL 格式"""
+        messages = old_memory.get("messages", [])
+        if messages:
+            self.append_memory_to_file(context, messages)
+
     async def execute(self, inputs: Dict[str, Any], context: Any) -> Dict[str, Any]:
-        """全新极简入口：从专属记忆空间恢复上下文"""
+        """
+        🌟 新架构入口：节点自治管理记忆
+        - 从自己的 memory.jsonl 文件读取历史（按行读，速度极快）
+        - 每次收到新消息立即追加写入（O(1) 复杂度）
+        - 只向引擎返回精简的 summary 和文件指针
+        """
 
         dynamic_info = inputs.get("task_done_info")
         if dynamic_info:
@@ -82,28 +145,49 @@ class AgentNode(BaseNode):
                     f"⚠️ [动态规则挂载] 解析失败，将不使用强校验: {e}",
                 )
 
+        # 🌟 获取当前节点专属的记忆文件路径
+        mem_path = self.get_memory_file_path(context)
+        
+        # 1. 从自己的专属文件读取历史记忆 (按行读，速度极快)
+        messages = []
+        if os.path.exists(mem_path):
+            with open(mem_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line:
+                        messages.append(json.loads(line))
+
+        # 2. 如果上游传来了新的 messages，合并进来并立刻存盘
+        new_upstream_msgs = inputs.get("messages", [])
+        if new_upstream_msgs:
+            messages.extend(new_upstream_msgs)
+            # 立刻存盘上游的新消息
+            await asyncio.to_thread(self.append_memory_to_file, context, new_upstream_msgs)
+
+        # 3. 处理强制推送的指令（通过 node_memory 传递）
         my_memory = context.node_memory.setdefault(self.node_id, {})
-
-        messages = my_memory.get("messages", inputs.get("messages", []))
-
         pending_push = my_memory.pop("force_push", [])
-        if pending_push:
-            for msg in pending_push:
-                messages.append({"role": "user", "content": f"[人工指令] {msg}"})
+        if isinstance(pending_push, list) and pending_push:
+            force_push_msgs = [{"role": "user", "content": f"[人工指令] {msg}"} for msg in pending_push]
+            messages.extend(force_push_msgs)
+            # 立刻存盘强制推送的指令
+            await asyncio.to_thread(self.append_memory_to_file, context, force_push_msgs)
 
         tools = self.get_all_tools()
 
         try:
-            loop_result = await self.run_agent_loop(context, messages, tools)
+            loop_result = await self.run_agent_loop(context, messages, tools, mem_path)
 
-            my_memory["messages"] = loop_result["messages"]
+            # 🌟 彻底解耦：向引擎返回精简数据，不返回那几十兆的 messages
             return {
-                "messages": loop_result["messages"],
                 "summary": loop_result["summary"],
+                # 如果下游真的需要获取上游记录，可以直接传文件指针过去：
+                "memory_pointer": mem_path,
             }
 
         except asyncio.CancelledError:
-            my_memory["messages"] = messages
+            # 取消时也保存当前状态
+            await asyncio.to_thread(self.append_memory_to_file, context, messages)
             raise
 
     async def run_agent_loop(
@@ -111,13 +195,18 @@ class AgentNode(BaseNode):
         context: Any,
         messages: List[Dict],
         tools: List[Dict],
+        mem_path: str = None,
         max_steps: int = 500,
     ) -> Dict[str, Any]:
-        """精简版 Agent 大循环"""
+        """
+        🌟 新架构 Agent 大循环：每次 LLM 回复后立即追加写入
+        - mem_path: 节点专属记忆文件路径
+        """
         step = 0
         MAX_CONSECUTIVE_ERRORS = 3
         consecutive_no_tool_errors = 0
         consecutive_format_errors = 0
+        initial_message_count = len(messages)
 
         while step < max_steps:
             step += 1
@@ -132,15 +221,20 @@ class AgentNode(BaseNode):
                 self.log(context, "WARNING", "⚠️ [状态检查] 节点状态异常，终止循环")
                 raise asyncio.CancelledError()
 
-            my_memory = context.node_memory.get(self.node_id, {})
+            # 🌟 新架构：从 node_memory 接收动态注入的指令
+            my_memory = context.node_memory.setdefault(self.node_id, {})
             dynamic_push = my_memory.pop("force_push", [])
-            if dynamic_push:
+            if isinstance(dynamic_push, list) and dynamic_push:
                 self.log(
                     context,
                     "SYSTEM",
                     f"🔔 [动态注入] 收到 {len(dynamic_push)} 条强制推送消息",
                 )
-                messages = inject_force_push(messages, dynamic_push)
+                force_push_msgs = [{"role": "user", "content": f"[人工指令] {msg}"} for msg in dynamic_push]
+                messages.extend(force_push_msgs)
+                # 立刻存盘
+                if mem_path:
+                    await asyncio.to_thread(self.append_memory_to_file, context, force_push_msgs)
 
             self.log(
                 context,
@@ -149,6 +243,13 @@ class AgentNode(BaseNode):
             )
             response, messages = await call_llm(context.model, messages, tools)
             assistant_msg = response.choices[0].message
+
+            # 🌟 关键改进：每次 LLM 回复后立即追加写入
+            if mem_path:
+                new_messages = messages[initial_message_count:]
+                if new_messages:
+                    await asyncio.to_thread(self.append_memory_to_file, context, new_messages)
+                    initial_message_count = len(messages)
 
             if assistant_msg.content:
                 content_preview = (
@@ -183,6 +284,14 @@ class AgentNode(BaseNode):
                 response, context
             )
 
+            # 🌟 工具调用结果也立即写入
+            if tool_messages and mem_path:
+                await asyncio.to_thread(self.append_memory_to_file, context, tool_messages)
+                initial_message_count = len(messages) + len(tool_messages)
+
+            if tool_messages:
+                messages.extend(tool_messages)
+
             if tool_messages and not is_task_done and not is_yield:
                 has_format_error = any(
                     tm.get("name") == "task_done" and "error" in tm.get("content", "")
@@ -201,9 +310,6 @@ class AgentNode(BaseNode):
                         raise asyncio.CancelledError("Format Error Circuit Breaker")
                 else:
                     consecutive_format_errors = 0
-
-            if tool_messages:
-                messages.extend(tool_messages)
 
             if is_yield:
                 self.log(context, LogType.SYSTEM, "⏸️ [节点挂起] 等待人类指令...")

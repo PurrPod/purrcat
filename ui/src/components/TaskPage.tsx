@@ -2,16 +2,99 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
   ArrowLeft, Terminal, Trash2, X, Activity, Clock, Box, Send, MessageCircle, RefreshCw,
-  Square, Play, AlertTriangle, Plus, ChevronDown
+  Square, Play, AlertTriangle, Plus, ChevronDown, ChevronUp, Package, Wrench, Cat
 } from 'lucide-react';
 import type { Node, Edge } from '@xyflow/react';
 import { ReactFlow, Background, useNodesState, useEdgesState, Handle, Position } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { toast } from 'react-hot-toast';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 const sketchyShape1 = { borderRadius: '255px 15px 225px 15px/15px 225px 15px 255px' };
 const sketchyShape2 = { borderRadius: '15px 225px 15px 255px/255px 15px 225px 15px' };
 const sketchyShape3 = { borderRadius: '225px 15px 225px 15px/15px 255px 15px 225px' };
+
+// --- 🌟 复用 ChatPage 的气泡与 Markdown 组件 ---
+const MarkdownComponents: any = {
+  p: ({ ...props }: any) => <p className="mb-3 last:mb-0 leading-relaxed" {...props} />,
+  a: ({ ...props }: any) => <a className="text-[#3498DB] underline decoration-2 decoration-ink hover:text-terracotta transition-colors font-black" {...props} />,
+  ul: ({ ...props }: any) => <ul className="list-disc pl-6 mb-3 space-y-2 font-bold marker:text-terracotta" {...props} />,
+  ol: ({ ...props }: any) => <ol className="list-decimal pl-6 mb-3 space-y-2 font-bold marker:text-terracotta" {...props} />,
+  li: ({ ...props }: any) => <li className="pl-1" {...props} />,
+  h1: ({ ...props }: any) => <h1 className="text-2xl font-black mb-4 mt-2 border-b-4 border-ink inline-block pb-1" {...props} />,
+  h2: ({ ...props }: any) => <h2 className="text-xl font-black mb-3 mt-2" {...props} />,
+  h3: ({ ...props }: any) => <h3 className="text-lg font-black mb-2 mt-2" {...props} />,
+  strong: ({ ...props }: any) => <strong className="font-black text-terracotta" {...props} />,
+  blockquote: ({ ...props }: any) => <blockquote className="border-l-4 border-terracotta pl-4 py-1 italic text-ink/70 my-3 bg-terracotta/5 rounded-r-lg" {...props} />,
+  pre: ({ ...props }: any) => <pre className="my-4 border-4 border-ink bg-ink/5 text-ink p-4 overflow-x-auto shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] font-mono text-sm leading-relaxed font-bold" style={sketchyShape2} {...props} />,
+  code: ({ className, children, ...props }: any) => {
+    const isInline = props.inline !== false && !className?.includes('language-') && !String(children).includes('\n');
+    return isInline ? (
+      <code className="bg-ink/10 text-terracotta px-1.5 py-0.5 border-2 border-ink mx-1 font-black text-[0.9em]" style={sketchyShape3} {...props}>{children}</code>
+    ) : (<code className={className} {...props}>{children}</code>);
+  }
+};
+
+const ToolMessageBubble = ({ msg }: { msg: any }) => {
+  const [expanded, setExpanded] = useState(false);
+  const contentStr = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
+  if (!expanded) {
+    return (
+      <div onClick={() => setExpanded(true)} style={sketchyShape3} className="w-fit max-w-[250px] p-2 px-4 border-2 border-ink bg-[#a3be8c]/30 text-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] mb-2 flex items-center justify-between gap-3 cursor-pointer hover:bg-[#a3be8c]/60 transition-all hover:-translate-y-0.5 self-start">
+        <div className="flex items-center gap-2 truncate">
+          <Package size={14} strokeWidth={3} className="shrink-0 text-ink/70"/>
+          <span className="font-black text-[11px] uppercase tracking-widest truncate" style={{ fontFamily: '"Comic Sans MS", cursive' }}>RESULT: {msg.name || 'Output'}</span>
+        </div>
+        <ChevronDown size={14} strokeWidth={3} className="shrink-0 opacity-50"/>
+      </div>
+    );
+  }
+  return (
+    <div style={sketchyShape3} className="max-w-[85%] w-full p-4 border-4 border-ink bg-[#a3be8c]/30 text-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] mb-4 transition-all self-start">
+      <div>
+        <div className="flex items-center gap-2 mb-2 border-b-2 border-ink/20 pb-1">
+          <Package size={16} strokeWidth={3}/>
+          <span className="font-black text-xs uppercase tracking-widest" style={{ fontFamily: '"Comic Sans MS", cursive' }}>TOOL RESULT: {msg.name || 'Output'}</span>
+        </div>
+        <div className="font-mono text-[13px] opacity-90 whitespace-pre-wrap break-all">{contentStr}</div>
+        <button onClick={() => setExpanded(false)} className="mt-3 text-xs font-black text-ink/70 hover:text-terracotta flex items-center gap-1 bg-white/50 px-2 py-1 border-2 border-transparent hover:border-ink transition-all" style={sketchyShape2}>
+          <ChevronUp size={14} strokeWidth={3}/> COLLAPSE
+        </button>
+      </div>
+    </div>
+  );
+};
+
+const ToolCallBubble = ({ tc }: { tc: any }) => {
+  const [expanded, setExpanded] = useState(false);
+  const argsStr = tc.function?.arguments || '{}';
+  if (!expanded) {
+    return (
+      <div onClick={() => setExpanded(true)} style={sketchyShape3} className="w-fit max-w-[250px] p-2 px-4 border-2 border-ink bg-[#EBCB8B]/40 text-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] mb-2 flex items-center justify-between gap-3 cursor-pointer hover:bg-[#EBCB8B]/70 transition-all hover:-translate-y-0.5 self-start">
+        <div className="flex items-center gap-2 truncate">
+          <Wrench size={14} strokeWidth={3} className="shrink-0 text-ink/70"/>
+          <span className="font-black text-[11px] uppercase tracking-widest truncate" style={{ fontFamily: '"Comic Sans MS", cursive' }}>CALL: {tc.function?.name}</span>
+        </div>
+        <ChevronDown size={14} strokeWidth={3} className="shrink-0 opacity-50"/>
+      </div>
+    );
+  }
+  return (
+    <div style={sketchyShape3} className="w-full p-4 border-4 border-ink bg-[#EBCB8B]/40 text-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] mb-2 transition-all">
+      <div>
+        <div className="flex items-center gap-2 mb-2 border-b-2 border-ink/20 pb-1">
+          <Wrench size={16} strokeWidth={3}/>
+          <span className="font-black text-xs uppercase tracking-widest" style={{ fontFamily: '"Comic Sans MS", cursive' }}>CALLING TOOL: {tc.function?.name}</span>
+        </div>
+        <div className="font-mono text-[13px] opacity-80 break-all">{argsStr}</div>
+        <button onClick={() => setExpanded(false)} className="mt-3 text-xs font-black text-ink/70 hover:text-terracotta flex items-center gap-1 bg-white/50 px-2 py-1 border-2 border-transparent hover:border-ink transition-all inline-flex" style={sketchyShape2}>
+          <ChevronUp size={14} strokeWidth={3}/> COLLAPSE
+        </button>
+      </div>
+    </div>
+  );
+};
 
 interface Task {
   id: string;
@@ -146,7 +229,8 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
   const isAutoScroll = useRef(true);
   
   const [taskToDelete, setTaskToDelete] = useState<string | null>(null);
-  const [logModalNode, setLogModalNode] = useState<{ id: string; name: string; state: string } | null>(null);
+  const [logModalNode, setLogModalNode] = useState<{ id: string; name: string; state: string; nodeType?: string } | null>(null);
+  const [taskMemory, setTaskMemory] = useState<Record<string, any>>({}); // 🌟 新增：追踪后端实时吐出的对话上下文
 
   const [pushMessage, setPushMessage] = useState('');
   const [isCheckingOut, setIsCheckingOut] = useState(false);
@@ -226,6 +310,7 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
       const res = await fetch(`http://localhost:8000/api/tasks/${selectedTaskId}/state`);
       if (res.ok) {
         const data = await res.json();
+        setTaskMemory(data.node_memory || {}); // 🌟 把后端抛出的新数据存下来，用于渲染气泡
         const nodeStates = data.node_state || data.dag_state || data.node_states || data.nodes || {};
         const isCurrentlyRunning = ['running', 'starting'].includes((data.state || '').toLowerCase());
 
@@ -353,7 +438,7 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
               isTaskRunning: isCurrentlyRunning,
               nodeState: currentState,
               inHandles, outHandles,
-              onShowLog: (nodeId: string) => setLogModalNode({ id: nodeId, name: n.name || nodeId, state: currentState }),
+              onShowLog: (nodeId: string) => setLogModalNode({ id: nodeId, name: n.name || nodeId, state: currentState, nodeType: n.type }), // 🌟 传出 nodeType
               onReset: (nodeId: string) => handleResetNode(nodeId)
             }
           };
@@ -465,53 +550,104 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
                </div>
             </div>
             
-            <div ref={logsContainerRef} onScroll={handleLogScroll} className="flex-1 overflow-y-auto p-8 bg-ink/5 font-mono text-[14px] leading-relaxed shadow-[inset_0px_4px_10px_rgba(0,0,0,0.05)]">
-               {currentNodeLogs.length === 0 ? (
-                 <div className="flex flex-col items-center justify-center h-full opacity-40 gap-4 text-ink">
-                   <Box size={64} strokeWidth={1.5} />
-                   <p className="text-xl font-bold font-sans">No execution logs found.</p>
-                 </div>
-               ) : (
-                 <div className="flex flex-col gap-2">
-                   {currentNodeLogs.map((log, idx) => {
-                     const timeStr = new Date(log.timestamp).toLocaleTimeString('en-US', { hour12: false });
-                     let colorClass = "text-ink/80";
-                     if (log.type === "SYSTEM") colorClass = "text-ink/50";
-                     if (log.type === "THOUGHT") colorClass = "text-[#3498DB] font-bold";
-                     if (log.type === "TOOL_CALL") colorClass = "text-[#EBCB8B] font-bold";
-                     if (log.type === "TOOL") colorClass = "text-[#a3be8c]";
-                     if (log.type === "ERROR") colorClass = "text-[#bf616a] font-black";
-                     if (log.type === "WARNING") colorClass = "text-[#d08770] font-bold";
-                     const isArtifact = log.type.toUpperCase() === "ARTIFACT";
-                     if (isArtifact) colorClass = "text-[#88c0d0] font-black";
-                     return (
-                       <div key={idx} className={`flex ${isArtifact ? 'flex-col gap-2' : 'gap-4'} hover:bg-ink/5 p-1 rounded transition-colors break-all`}>
-                         <div className="flex gap-4 items-start">
-                           <span className="opacity-40 shrink-0 select-none">[{timeStr}]</span>
-                           <span className={`shrink-0 w-24 select-none ${colorClass}`}>[{log.type}]</span>
-                           {!isArtifact && <span className={`whitespace-pre-wrap ${colorClass}`}>{log.content}</span>}
-                         </div>
-                         {isArtifact && (
-                           <div className="mt-2 w-full h-[600px] border-4 border-ink bg-white shadow-[6px_6px_0px_0px_rgba(26,26,26,1)] relative overflow-hidden" style={sketchyShape3}>
-                             <div className="absolute top-0 left-0 right-0 h-8 bg-ink/5 border-b-2 border-ink flex items-center px-4 gap-2">
-                               <div className="w-3 h-3 rounded-full bg-[#bf616a] border-2 border-ink"></div>
-                               <div className="w-3 h-3 rounded-full bg-[#EBCB8B] border-2 border-ink"></div>
-                               <div className="w-3 h-3 rounded-full bg-[#a3be8c] border-2 border-ink"></div>
-                               <span className="text-xs font-bold text-ink/40 ml-2" style={{ fontFamily: '"Comic Sans MS", cursive' }}>Data Dashboard View</span>
+            <div ref={logsContainerRef} onScroll={handleLogScroll} className={`flex-1 overflow-y-auto p-8 ${['agent_loop', 'human_intervention'].includes(logModalNode.nodeType || '') ? 'bg-cream/30 font-sans' : 'bg-ink/5 font-mono'} text-[14px] leading-relaxed shadow-[inset_0px_4px_10px_rgba(0,0,0,0.05)]`}>
+               {(() => {
+                 const isAgentNode = ['agent_loop', 'human_intervention'].includes(logModalNode.nodeType || '');
+                 const messages = isAgentNode ? (taskMemory[logModalNode.id]?.messages || []) : [];
+
+                 if (isAgentNode) {
+                   return messages.length === 0 ? (
+                     <div className="flex flex-col items-center justify-center h-full opacity-40 gap-4 text-ink font-sans">
+                       <MessageCircle size={64} strokeWidth={1.5} />
+                       <p className="text-xl font-bold">No conversation history yet.</p>
+                     </div>
+                   ) : (
+                     <div className="flex flex-col gap-6 w-full max-w-4xl mx-auto font-sans">
+                       {messages.map((msg: any, idx: number) => {
+                         if (msg.role === 'user') {
+                           return (
+                             <div key={idx} className="flex flex-col w-full items-end mb-2">
+                               <div style={sketchyShape2} className="w-full max-w-[85%] p-6 border-4 border-ink relative bg-cream text-ink shadow-[6px_6px_0px_0px_rgba(26,26,26,1)]">
+                                 <div className="text-[17px] font-bold text-ink">
+                                   <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>{msg.content}</ReactMarkdown>
+                                 </div>
+                               </div>
                              </div>
-                             <iframe
-                               srcDoc={log.content}
-                               className="w-full h-[calc(100%-2rem)] mt-8 border-none"
-                               sandbox="allow-scripts allow-popups"
-                             />
+                           );
+                         } else if (msg.role === 'tool') {
+                           return <div key={idx} className="flex w-full justify-start"><ToolMessageBubble msg={msg} /></div>;
+                         } else {
+                           return (
+                             <div key={idx} className="flex w-full justify-start mb-2">
+                               <div className="flex flex-col gap-3 w-full max-w-[85%] items-start">
+                                 {msg.content && (
+                                   <div style={sketchyShape1} className="w-full p-6 border-4 border-ink relative bg-cream text-ink shadow-[6px_6px_0px_0px_rgba(26,26,26,1)]">
+                                     <div className="flex items-center gap-2 mb-4">
+                                       <Cat size={20} strokeWidth={2.5}/>
+                                       <span className="font-black text-sm uppercase tracking-widest bg-ink text-paper px-2 py-0.5" style={{ ...sketchyShape3, fontFamily: '"Comic Sans MS", cursive' }}>ASSISTANT</span>
+                                     </div>
+                                     <div className="text-[17px] font-bold text-ink">
+                                       <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>{msg.content}</ReactMarkdown>
+                                     </div>
+                                   </div>
+                                 )}
+                                 {msg.tool_calls?.map((tc: any, t_idx: number) => (
+                                   <ToolCallBubble key={`tc-${t_idx}`} tc={tc} />
+                                 ))}
+                               </div>
+                             </div>
+                           );
+                         }
+                       })}
+                       <div ref={logEndRef} className="h-4" />
+                     </div>
+                   );
+                 }
+
+                 // 普通节点的日志渲染
+                 return currentNodeLogs.length === 0 ? (
+                   <div className="flex flex-col items-center justify-center h-full opacity-40 gap-4 text-ink font-sans">
+                     <Box size={64} strokeWidth={1.5} />
+                     <p className="text-xl font-bold">No execution logs found.</p>
+                   </div>
+                 ) : (
+                   <div className="flex flex-col gap-2">
+                     {currentNodeLogs.map((log, idx) => {
+                       const timeStr = new Date(log.timestamp).toLocaleTimeString('en-US', { hour12: false });
+                       let colorClass = "text-ink/80";
+                       if (log.type === "SYSTEM") colorClass = "text-ink/50";
+                       if (log.type === "THOUGHT") colorClass = "text-[#3498DB] font-bold";
+                       if (log.type === "TOOL_CALL") colorClass = "text-[#EBCB8B] font-bold";
+                       if (log.type === "TOOL") colorClass = "text-[#a3be8c]";
+                       if (log.type === "ERROR") colorClass = "text-[#bf616a] font-black";
+                       if (log.type === "WARNING") colorClass = "text-[#d08770] font-bold";
+                       const isArtifact = log.type.toUpperCase() === "ARTIFACT";
+                       if (isArtifact) colorClass = "text-[#88c0d0] font-black";
+                       return (
+                         <div key={idx} className={`flex ${isArtifact ? 'flex-col gap-2' : 'gap-4'} hover:bg-ink/5 p-1 rounded transition-colors break-all`}>
+                           <div className="flex gap-4 items-start">
+                             <span className="opacity-40 shrink-0 select-none">[{timeStr}]</span>
+                             <span className={`shrink-0 w-24 select-none ${colorClass}`}>[{log.type}]</span>
+                             {!isArtifact && <span className={`whitespace-pre-wrap ${colorClass}`}>{log.content}</span>}
                            </div>
-                         )}
-                       </div>
-                     );
-                   })}
-                   <div ref={logEndRef} className="h-4" />
-                 </div>
-               )}
+                           {isArtifact && (
+                             <div className="mt-2 w-full h-[600px] border-4 border-ink bg-white shadow-[6px_6px_0px_0px_rgba(26,26,26,1)] relative overflow-hidden" style={sketchyShape3}>
+                               <div className="absolute top-0 left-0 right-0 h-8 bg-ink/5 border-b-2 border-ink flex items-center px-4 gap-2">
+                                 <div className="w-3 h-3 rounded-full bg-[#bf616a] border-2 border-ink"></div>
+                                 <div className="w-3 h-3 rounded-full bg-[#EBCB8B] border-2 border-ink"></div>
+                                 <div className="w-3 h-3 rounded-full bg-[#a3be8c] border-2 border-ink"></div>
+                                 <span className="text-xs font-bold text-ink/40 ml-2" style={{ fontFamily: '"Comic Sans MS", cursive' }}>Data Dashboard View</span>
+                               </div>
+                               <iframe srcDoc={log.content} className="w-full h-[calc(100%-2rem)] mt-8 border-none" sandbox="allow-scripts allow-popups" />
+                             </div>
+                           )}
+                         </div>
+                       );
+                     })}
+                     <div ref={logEndRef} className="h-4" />
+                   </div>
+                 );
+               })()}
             </div>
             
             <div className="p-6 border-t-4 border-ink bg-paper shrink-0 flex gap-4">
@@ -771,7 +907,7 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
                 return (
                   <div
                     key={n.id}
-                    onClick={() => setLogModalNode({ id: n.id, name: String(n.data.label), state: String(n.data.nodeState) })}
+                    onClick={() => setLogModalNode({ id: n.id, name: String(n.data.label), state: String(n.data.nodeState), nodeType: String(n.data.nodeType) })}
                     style={idx % 2 === 0 ? sketchyShape2 : sketchyShape1}
                     className="flex items-center justify-between p-3 border-2 border-ink bg-cream hover:bg-sand cursor-pointer transition-all hover:-translate-y-[2px] shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] active:translate-y-0 active:shadow-none"
                     title="Click to view logs"
