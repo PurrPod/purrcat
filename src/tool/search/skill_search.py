@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import Dict, List
 
 import numpy as np
-from rank_bm25 import BM25Okapi
 
 from src.tool.search.semantic_utils import LocalEmbeddingSearcher, hybrid_tokenize
 from src.utils.config import SKILL_DIR
@@ -31,7 +30,7 @@ class SkillSearcher:
         return cls._instance
 
     def _initialize(self, skill_dir: str):
-        """局部构建索引，防止并发冲突"""
+        """🌟 重构：仅加载元数据，速度极快"""
         temp_skills = []
         temp_corpus = []
 
@@ -53,16 +52,23 @@ class SkillSearcher:
                         text_representation = f"{name} {desc} {content}"
                         temp_corpus.append(text_representation)
 
-        if temp_corpus:
-            temp_corpus_matrix = self.embedding_searcher.encode(temp_corpus)
-            tokenized_corpus = [hybrid_tokenize(doc) for doc in temp_corpus]
-            temp_bm25 = BM25Okapi(tokenized_corpus)
+        self.skills = temp_skills
+        self.corpus = temp_corpus
+        # 不在这里算向量！
+        print(f"✅ SkillSearcher 元数据已加载 (共 {len(self.skills)} 个技能)")
 
-            self.skills = temp_skills
-            self.corpus = temp_corpus
-            self.corpus_matrix = temp_corpus_matrix
-            self.bm25 = temp_bm25
-            print(f"✅ SkillSearcher 内存索引已更新 (共 {len(self.skills)} 个技能)")
+    def build_vectors_in_background(self):
+        """🌟 新增：由后台事件循环触发的缓慢操作"""
+        with self._lock:
+            if not self.corpus:
+                return
+            print(f"⏳ [Background] 正在为 {len(self.skills)} 个 Skill 构建向量矩阵...")
+            self.corpus_matrix = self.embedding_searcher.encode(self.corpus)
+            tokenized_corpus = [hybrid_tokenize(doc) for doc in self.corpus]
+            from rank_bm25 import BM25Okapi  # 局部导入
+
+            self.bm25 = BM25Okapi(tokenized_corpus)
+            print("✅ [Background] Skill 向量矩阵构建完毕。")
 
     def reload_index(self, skill_dir: str = SKILL_DIR):
         """暴露给外部调用的热更新接口"""

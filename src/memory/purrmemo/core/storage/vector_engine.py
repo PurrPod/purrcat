@@ -1,16 +1,14 @@
 import os
 from datetime import datetime
 
-from chromadb import PersistentClient
-from chromadb.config import Settings
-from sentence_transformers import SentenceTransformer
-
 from src.utils.config import get_embedding_model, get_memory_config
 
 from ..utils import SingletonMeta
 
 
 class VectorEngine(metaclass=SingletonMeta):
+    """🌟 重构：懒加载 ChromaDB 和 Embedding"""
+
     def __init__(self):
         config = get_memory_config().get("chromadb", {})
         self.persist_directory = config.get("persist_directory", "data/memory/chromadb")
@@ -18,34 +16,63 @@ class VectorEngine(metaclass=SingletonMeta):
         self.graph_collection_name = "graph_nodes"
         self.events_collection_name = "events"
         self.embedding_model_name = get_embedding_model()
-        self.client = None
-        self.collection = None
-        self.graph_collection = None
-        self.events_collection = None
-        self.embedding_model = None
-        self._init_db()
 
-    def _init_db(self):
-        """初始化向量数据库"""
+        # 将实例置空
+        self._client = None
+        self._collection = None
+        self._graph_collection = None
+        self._events_collection = None
+        self._embedding_model = None
+
+        # os.makedirs 放这里没事，但不要建立 DB 连接
         os.makedirs(self.persist_directory, exist_ok=True)
 
-        self.client = PersistentClient(
-            path=self.persist_directory, settings=Settings(anonymized_telemetry=False)
-        )
+    @property
+    def client(self):
+        if self._client is None:
+            # 局部导入
+            from chromadb import PersistentClient
+            from chromadb.config import Settings
 
-        self.collection = self.client.get_or_create_collection(
-            name=self.collection_name, metadata={"hnsw:space": "cosine"}
-        )
+            print("⏳ [LazyLoad] 初始化 ChromaDB 引擎...")
+            self._client = PersistentClient(
+                path=self.persist_directory, settings=Settings(anonymized_telemetry=False)
+            )
+        return self._client
 
-        self.graph_collection = self.client.get_or_create_collection(
-            name=self.graph_collection_name, metadata={"hnsw:space": "cosine"}
-        )
+    @property
+    def collection(self):
+        if self._collection is None:
+            self._collection = self.client.get_or_create_collection(
+                name=self.collection_name, metadata={"hnsw:space": "cosine"}
+            )
+        return self._collection
 
-        self.events_collection = self.client.get_or_create_collection(
-            name=self.events_collection_name, metadata={"hnsw:space": "cosine"}
-        )
+    @property
+    def graph_collection(self):
+        if self._graph_collection is None:
+            self._graph_collection = self.client.get_or_create_collection(
+                name=self.graph_collection_name, metadata={"hnsw:space": "cosine"}
+            )
+        return self._graph_collection
 
-        self.embedding_model = SentenceTransformer(self.embedding_model_name)
+    @property
+    def events_collection(self):
+        if self._events_collection is None:
+            self._events_collection = self.client.get_or_create_collection(
+                name=self.events_collection_name, metadata={"hnsw:space": "cosine"}
+            )
+        return self._events_collection
+
+    @property
+    def embedding_model(self):
+        if self._embedding_model is None:
+            from sentence_transformers import SentenceTransformer
+
+            print("⏳ [LazyLoad] 加载 SentenceTransformer 模型...")
+            self._embedding_model = SentenceTransformer(self.embedding_model_name)
+            print("✅ [LazyLoad] SentenceTransformer 加载完毕。")
+        return self._embedding_model
 
     def _get_embedding(self, text):
         """获取文本的向量表示"""

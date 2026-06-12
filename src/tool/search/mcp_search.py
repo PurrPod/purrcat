@@ -4,7 +4,6 @@ import threading
 from typing import Dict, List
 
 import numpy as np
-from rank_bm25 import BM25Okapi
 
 from src.tool.callmcp.schema_manager import load_cached_schemas
 from src.tool.search.semantic_utils import LocalEmbeddingSearcher, hybrid_tokenize
@@ -29,7 +28,7 @@ class MCPSearcher:
         return cls._instance
 
     def _initialize(self):
-        """局部构建索引，防止并发冲突"""
+        """🌟 重构：仅加载元数据，速度极快"""
         temp_tools = []
         temp_corpus = []
 
@@ -53,16 +52,23 @@ class MCPSearcher:
             )
             temp_corpus.append(text_representation)
 
-        if temp_corpus:
-            temp_corpus_matrix = self.embedding_searcher.encode(temp_corpus)
-            tokenized_corpus = [hybrid_tokenize(doc) for doc in temp_corpus]
-            temp_bm25 = BM25Okapi(tokenized_corpus)
+        self.tools = temp_tools
+        self.corpus = temp_corpus
+        # 不在这里算向量！
+        print(f"✅ MCPSearcher 元数据已加载 (共 {len(self.tools)} 个工具)")
 
-            self.tools = temp_tools
-            self.corpus = temp_corpus
-            self.corpus_matrix = temp_corpus_matrix
-            self.bm25 = temp_bm25
-            print(f"✅ MCPSearcher 内存索引已更新 (共 {len(self.tools)} 个工具)")
+    def build_vectors_in_background(self):
+        """🌟 新增：由后台事件循环触发的缓慢操作"""
+        with self._lock:
+            if not self.corpus:
+                return
+            print(f"⏳ [Background] 正在为 {len(self.tools)} 个 MCP 工具构建向量矩阵...")
+            self.corpus_matrix = self.embedding_searcher.encode(self.corpus)
+            tokenized_corpus = [hybrid_tokenize(doc) for doc in self.corpus]
+            from rank_bm25 import BM25Okapi  # 局部导入
+
+            self.bm25 = BM25Okapi(tokenized_corpus)
+            print("✅ [Background] MCP 向量矩阵构建完毕。")
 
     def reload_index(self):
         """暴露给外部调用的热更新接口"""

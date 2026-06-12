@@ -17,51 +17,62 @@ def _setup_warnings():
 
 
 async def _bg_heavy_init(enable_tui: bool):
-    """异步后台预热，使用 asyncio.to_thread 防止阻塞主事件循环"""
-    def _sync_init():
-        # 如果是 TUI 模式，屏蔽普通 print 防止污染终端
-        if not enable_tui:
-            print("[Background] 开始后台预热重型服务...")
-        
-        # 1. 初始化工具系统（包含 MCP Schema拉取、Embedding预热、MCP与Skill的向量化与词库构建）
-        try:
-            from src.tool import init_tools
-            init_tools()
-        except Exception as e:
-            if not enable_tui:
-                print(f"⚠️ [Background] 工具与检索树预热异常: {e}")
+    """🌟 终极重构：打散耗时任务，按优先级延迟加载，保证秒级首屏"""
 
-        # 2. 扫描并启动所有传感器插件
-        try:
-            from src.sensor import auto_discover_and_start
-            auto_discover_and_start()
-        except Exception as e:
-            if not enable_tui:
-                print(f"⚠️ [Background] Sensor 启动异常: {e}")
+    # 1. 强制休眠 0.5 秒，让 FastAPI 的 uvicorn 和 Textual 界面先完成绑定和渲染
+    await asyncio.sleep(0.5)
+    if not enable_tui:
+        print("[Background] API/UI已就绪，开始后台预热服务...")
 
-        # 3. 初始化并预热记忆库守护进程
-        try:
-            from src.memory import init_memory
-            init_memory()
-        except Exception as e:
-            if not enable_tui:
-                print(f"⚠️ [Background] 记忆库预热异常: {e}")
+    # 2. 轻量级加载：读取 MCP 和 Skill 的元数据（不计算向量）
+    def _init_light_tools():
+        from src.tool.callmcp.callmcp import initialize_mcp_sync
+        from src.tool.search.mcp_search import MCPSearcher
+        from src.tool.search.skill_search import SkillSearcher
 
-        # 4. 加载历史任务 (磁盘 I/O 操作)
-        try:
-            from src.harness.process import auto_load_all_tasks
-            auto_load_all_tasks()
-            if not enable_tui:
-                print("✅ [Background] 历史任务工作流加载就绪")
-        except Exception as e:
-            if not enable_tui:
-                print(f"⚠️ [Background] 历史任务加载异常: {e}")
+        initialize_mcp_sync()
+        MCPSearcher()  # 触发 __init__ 读取 JSON
+        SkillSearcher()  # 触发 __init__ 读取 MD
 
-    # 将纯阻塞的初始化丢进原生线程池，但由 asyncio 妥善管理生命周期
-    await asyncio.to_thread(_sync_init)
-    
-    # 🌟 标记所有重型服务加载完毕！
+    await asyncio.to_thread(_init_light_tools)
+
+    # 3. 释放一下事件循环，防卡顿
+    await asyncio.sleep(0.1)
+
+    # 4. 启动传感器 (由于已经将下载改为了后台线程，这里不会阻塞)
+    def _start_sensors():
+        from src.sensor import auto_discover_and_start
+
+        auto_discover_and_start()
+
+    await asyncio.to_thread(_start_sensors)
+
+    await asyncio.sleep(0.1)
+
+    # 5. 后台慢速加载：计算向量和加载大模型
+    def _build_heavy_vectors():
+        from src.tool.search.mcp_search import MCPSearcher
+        from src.tool.search.skill_search import SkillSearcher
+
+        MCPSearcher().build_vectors_in_background()
+        SkillSearcher().build_vectors_in_background()
+
+    # 用独立的 Task 去算矩阵，完全不影响主体
+    asyncio.create_task(asyncio.to_thread(_build_heavy_vectors))
+
+    # 6. 后台会话对账 (取代原本开局的耗时操作)
+    def _reconcile_sessions():
+        from src.agent.session_store import SessionStore
+        from src.harness.process import auto_load_all_tasks
+
+        SessionStore.background_sync_sessions()
+        auto_load_all_tasks()
+
+    asyncio.create_task(asyncio.to_thread(_reconcile_sessions))
+
     SYSTEM_READY_EVENT.set()
+    if not enable_tui:
+        print("✅ [Background] 所有后台子系统派发完毕！")
 
 
 async def init_core(cli_session_id: str = None, cli_branch_name: str = None, enable_tui: bool = False):

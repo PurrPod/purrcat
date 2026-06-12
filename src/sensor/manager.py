@@ -20,26 +20,17 @@ class SensorManager:
 
         os.makedirs(self.extension_dir, exist_ok=True)
 
-    def _get_sensor_path(self, sensor_name: str) -> str:
-        local_path = os.path.join(self.extension_dir, f"{sensor_name}.py")
-        if os.path.exists(local_path):
-            return local_path
-
-        print(f"🔄 [Manager] 本地未找到 {sensor_name}.py，正在从云端下载...")
-        url = f"{self.github_repo_base}/{sensor_name}.py"
-
+    def _download_and_start_sensor_bg(self, sensor_name: str, url: str, local_path: str, cfg: dict):
+        """🌟 新增：后台下载逻辑"""
         try:
             urllib.request.urlretrieve(url, local_path)
-            print(f"✅ [Manager] {sensor_name} 下载完成！")
-            return local_path
+            print(f"✅ [Manager] {sensor_name} 云端下载完成！")
+            # 下载完毕后再启动
+            self._start_sensor(sensor_name, local_path, cfg)
         except urllib.error.HTTPError as e:
-            print(
-                f"❌ [Manager] 下载失败，云端仓库找不到 {sensor_name}.py (HTTP {e.code})"
-            )
-            return ""
+            print(f"❌ [Manager] 下载失败，云端仓库找不到 {sensor_name}.py (HTTP {e.code})")
         except Exception as e:
-            print(f"❌ [Manager] 网络异常: {e}")
-            return ""
+            print(f"❌ [Manager] 下载 {sensor_name} 失败: {e}")
 
     def load_and_start_all(self):
         print("🔍 [SensorManager] 正在读取 .purrcat/activate_sensor.json 配置...")
@@ -59,9 +50,18 @@ class SensorManager:
                 )
                 continue
 
-            script_path = self._get_sensor_path(name)
-            if script_path:
-                self._start_sensor(name, script_path, cfg)
+            local_path = os.path.join(self.extension_dir, f"{name}.py")
+            if os.path.exists(local_path):
+                self._start_sensor(name, local_path, cfg)
+            else:
+                # 🌟 重构：开启子线程去下载，绝不阻塞当前循环
+                print(f"🔄 [Manager] 本地无 {name}.py，已派发后台下载任务...")
+                url = f"{self.github_repo_base}/{name}.py"
+                threading.Thread(
+                    target=self._download_and_start_sensor_bg,
+                    args=(name, url, local_path, cfg),
+                    daemon=True,
+                ).start()
 
     def _start_sensor(self, name: str, script_path: str, cfg: dict):
         env = os.environ.copy()

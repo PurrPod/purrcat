@@ -24,8 +24,11 @@ def auto_load_all_tasks():
 
     for task_dir in os.listdir(checkpoints_dir):
         full_path = os.path.join(checkpoints_dir, task_dir)
-        checkpoint_file = os.path.join(full_path, "checkpoint.json")
-        if os.path.isdir(full_path) and os.path.exists(checkpoint_file):
+        # 🌟 修复：新架构下，只要有 meta.json 就认为是一个有效的任务存档
+        meta_file = os.path.join(full_path, "meta.json")
+        old_checkpoint = os.path.join(full_path, "checkpoint.json")
+        
+        if os.path.isdir(full_path) and (os.path.exists(meta_file) or os.path.exists(old_checkpoint)):
             try:
                 task = Task.load_checkpoint(full_path)
                 if task:
@@ -559,7 +562,11 @@ class Task:
                 k: {p: s.value if hasattr(s, "value") else s for p, s in ports.items()}
                 for k, ports in self.output_port_states.items()
             },
-            "node_memory": self.node_memory, # 现在只存了极其轻量的 force_push 队列！
+            # 🌟 强制过滤：安检门！只允许极轻量的 force_push 指令落盘，其余全部丢弃
+            "node_memory": {
+                node_id: {"force_push": mem.get("force_push", [])}
+                for node_id, mem in self.node_memory.items()
+            },
         }
         
         state_path = os.path.join(self.checkpoint_dir, "state.json")
@@ -726,12 +733,19 @@ class Task:
 
     @staticmethod
     def load_checkpoint(checkpoint_dir: str) -> "Task":
-        checkpoint_path = os.path.join(checkpoint_dir, "checkpoint.json")
-        if not os.path.exists(checkpoint_path):
+        # 🌟 修复：任务复活需要的基础设定（如名字、节点结构）都在 meta.json 里
+        meta_path = os.path.join(checkpoint_dir, "meta.json")
+        old_checkpoint_path = os.path.join(checkpoint_dir, "checkpoint.json")
+        
+        data = {}
+        if os.path.exists(meta_path):
+            with open(meta_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        elif os.path.exists(old_checkpoint_path):
+            with open(old_checkpoint_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        else:
             return None
-
-        with open(checkpoint_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
 
         task_id = data.get("task_id")
         task_name = data.get("name", data.get("task_name", "unnamed_task"))

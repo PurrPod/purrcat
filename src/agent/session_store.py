@@ -49,79 +49,83 @@ class SessionStore:
 
     @classmethod
     def get_all_sessions(cls):
-        """🌟 修复：扫描独立的会话文件夹时增加严格过滤，并正确同步 alias 别名"""
+        """🌟 重构：极速版，仅读取 index.json，绝不扫盘遍历文件夹"""
         with cls._index_lock:
-            index_data = {}
             if os.path.exists(SESSION_INDEX_PATH):
                 try:
                     with open(SESSION_INDEX_PATH, "r", encoding="utf-8") as f:
-                        index_data = json.load(f)
-                except Exception:
-                    pass
+                        return json.load(f)
+                except Exception as e:
+                    print(f"⚠️ 读取索引失败: {e}")
+            return {}
 
-            if os.path.exists(SESSIONS_DIR):
-                for item in os.listdir(SESSIONS_DIR):
-                    # 🌟 核心修复 1：严格过滤，只有以 session_ 开头的才是对话记录
-                    if not item.startswith("session_"):
-                        continue
+    @classmethod
+    def background_sync_sessions(cls):
+        """🌟 新增：由后台低优任务调用的对账方法，用于修复索引和文件夹不同步的问题"""
+        with cls._index_lock:
+            index_data = cls.get_all_sessions()
+            if not os.path.exists(SESSIONS_DIR):
+                return
 
-                    session_dir = os.path.join(SESSIONS_DIR, item)
-                    if os.path.isdir(session_dir):
-                        session_id = item
-                        meta_path = os.path.join(session_dir, "meta.json")
-                        main_path = os.path.join(session_dir, "main.json")
+            needs_save = False
+            for item in os.listdir(SESSIONS_DIR):
+                if not item.startswith("session_"):
+                    continue
+                session_dir = os.path.join(SESSIONS_DIR, item)
+                if os.path.isdir(session_dir):
+                    session_id = item
+                    meta_path = os.path.join(session_dir, "meta.json")
+                    main_path = os.path.join(session_dir, "main.json")
 
-                        msg_count = 0
-                        if os.path.exists(main_path):
+                    msg_count = 0
+                    if os.path.exists(main_path):
+                        try:
+                            with open(main_path, "r", encoding="utf-8") as f:
+                                msg_count = len(json.load(f))
+                        except Exception:
+                            pass
+
+                    if session_id not in index_data:
+                        created_at = time.strftime("%Y-%m-%d %H:%M:%S")
+                        updated_at = created_at
+                        alias = session_id
+                        if os.path.exists(meta_path):
                             try:
-                                with open(main_path, "r", encoding="utf-8") as f:
-                                    msg_count = len(json.load(f))
+                                with open(meta_path, "r", encoding="utf-8") as f:
+                                    m_data = json.load(f)
+                                    created_at = m_data.get("created_at", created_at)
+                                    updated_at = m_data.get("updated_at", updated_at)
+                                    alias = m_data.get("alias", alias)
                             except Exception:
                                 pass
 
-                        if session_id not in index_data:
-                            created_at = time.strftime("%Y-%m-%d %H:%M:%S")
-                            updated_at = created_at
-                            alias = session_id  # 初始化别名
-                            if os.path.exists(meta_path):
-                                try:
-                                    with open(meta_path, "r", encoding="utf-8") as f:
-                                        m_data = json.load(f)
-                                        created_at = m_data.get(
-                                            "created_at", created_at
-                                        )
-                                        updated_at = m_data.get(
-                                            "updated_at", updated_at
-                                        )
-                                        alias = m_data.get(
-                                            "alias", alias
-                                        )  # 🌟 核心修复 2：正确读取别名
-                                except Exception:
-                                    pass
+                        index_data[session_id] = {
+                            "id": session_id,
+                            "created_at": created_at,
+                            "parent_id": None,
+                            "alias": alias,
+                            "updated_at": updated_at,
+                            "messages_count": msg_count,
+                        }
+                        needs_save = True
+                    else:
+                        index_data[session_id]["messages_count"] = msg_count
+                        if os.path.exists(meta_path):
+                            try:
+                                with open(meta_path, "r", encoding="utf-8") as f:
+                                    m_data = json.load(f)
+                                    if "alias" in m_data and index_data[session_id].get("alias") != m_data["alias"]:
+                                        index_data[session_id]["alias"] = m_data["alias"]
+                                        needs_save = True
+                            except Exception:
+                                pass
 
-                            index_data[session_id] = {
-                                "id": session_id,
-                                "created_at": created_at,
-                                "parent_id": None,
-                                "alias": alias,  # 写入别名
-                                "updated_at": updated_at,
-                                "messages_count": msg_count,
-                            }
-                        else:
-                            index_data[session_id]["messages_count"] = msg_count
-                            # 🌟 核心修复 3：如果已有索引，也尝试从 meta.json 同步最新的别名以防不同步
-                            if os.path.exists(meta_path):
-                                try:
-                                    with open(meta_path, "r", encoding="utf-8") as f:
-                                        m_data = json.load(f)
-                                        if "alias" in m_data:
-                                            index_data[session_id]["alias"] = m_data[
-                                                "alias"
-                                            ]
-                                except Exception:
-                                    pass
-
-            return index_data
+            if needs_save:
+                try:
+                    with open(SESSION_INDEX_PATH, "w", encoding="utf-8") as f:
+                        json.dump(index_data, f, ensure_ascii=False, indent=2)
+                except Exception:
+                    pass
 
     @classmethod
     def load_session_history(cls, session_id, branch_id="main"):
