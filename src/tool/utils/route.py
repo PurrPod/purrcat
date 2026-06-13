@@ -29,8 +29,9 @@ TOOL_FUNC_MAP = {
 
 def _safe_truncate(data: Any, max_len: int) -> str:
     """结构化安全省略策略：防止粗暴截断破坏 JSON 或格式闭合"""
+    # 🌟 修复：加上 indent=2 保证预览也是格式化展开的
     data_str = (
-        json.dumps(data, ensure_ascii=False)
+        json.dumps(data, ensure_ascii=False, indent=2)
         if isinstance(data, (dict, list))
         else str(data)
     )
@@ -42,7 +43,7 @@ def _safe_truncate(data: Any, max_len: int) -> str:
         valid_slice = []
         while left < right:
             mid = (left + right + 1) // 2
-            test_str = json.dumps(data[:mid], ensure_ascii=False)
+            test_str = json.dumps(data[:mid], ensure_ascii=False, indent=2)
             if len(test_str) <= max_len:
                 valid_slice = data[:mid]
                 left = mid
@@ -52,7 +53,7 @@ def _safe_truncate(data: Any, max_len: int) -> str:
         omitted_count = len(data) - len(valid_slice)
         if omitted_count > 0:
             valid_slice.append(f"...(已省略剩余 {omitted_count} 项，空间不足)")
-        return json.dumps(valid_slice, ensure_ascii=False)
+        return json.dumps(valid_slice, ensure_ascii=False, indent=2)
     # 🌟 修改点 1：退化为仅保留前端 max_len 字符，而不是前一部分 + 后一部分
     preview_front = data_str[:max_len]
     omitted = len(data_str) - max_len
@@ -240,13 +241,15 @@ def dispatch_tool(tool_name: str, arguments: dict, available_tokens: int = None)
 
         try:
             parsed_res = json.loads(result_str)
-            content_data = parsed_res.get("content", "")
-            # 为了准确计算长度，将字典/列表格式的内容转为字符串
-            actual_content_str = (
-                json.dumps(content_data, ensure_ascii=False)
-                if isinstance(content_data, (dict, list))
-                else str(content_data)
-            )
+            # 🌟 修复点 1：只提取真正的 content，如果意外找不到 content，兜底用完整的 result_str
+            content_data = parsed_res.get("content", result_str)
+
+            # 🌟 修复点 2：加上 indent=2，确保字典/列表落盘时带有完美的缩进换行
+            if isinstance(content_data, (dict, list)):
+                actual_content_str = json.dumps(content_data, ensure_ascii=False, indent=2)
+            else:
+                # 若本身就是字符串（如 Bash 的多行输出），直接保留原样，其中 \n 会自然换行
+                actual_content_str = str(content_data)
         except json.JSONDecodeError:
             parsed_res = None
             content_data = result_str
