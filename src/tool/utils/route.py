@@ -53,11 +53,10 @@ def _safe_truncate(data: Any, max_len: int) -> str:
         if omitted_count > 0:
             valid_slice.append(f"...(已省略剩余 {omitted_count} 项，空间不足)")
         return json.dumps(valid_slice, ensure_ascii=False)
-    # 对于长文本或无法切片的字典，退化为首尾保留文本截断
-    preview_front = data_str[: max_len // 2]
-    preview_back = data_str[-max_len // 2 :]
+    # 🌟 修改点 1：退化为仅保留前端 max_len 字符，而不是前一部分 + 后一部分
+    preview_front = data_str[:max_len]
     omitted = len(data_str) - max_len
-    return f"{preview_front}\n\n... [中间 {omitted} 字符已折叠，防止撑爆上下文] ...\n\n{preview_back}"
+    return f"{preview_front}\n\n... [后续 {omitted} 字符已被截断，请使用 Bash 工具读取落盘的缓存文件] ..."
 
 
 def _handle_media_content(parsed_res: dict, tool_name: str) -> str:
@@ -227,10 +226,12 @@ def dispatch_tool(tool_name: str, arguments: dict, available_tokens: int = None)
         except json.JSONDecodeError:
             parsed_res = None
 
+        # 🌟 修改点 2：将最大截断长度固定为 5000（或随 Token 动态计算但不超过 5000）
         MAX_LEN = 10000
         if available_tokens is not None:
             dynamic_max_len = int((available_tokens - 500) * 1.5)
-            MAX_LEN = max(500, dynamic_max_len)
+            # 取动态计算和 5000 之间的较小值，最大不超过 5000
+            MAX_LEN = min(10000, max(500, dynamic_max_len))
 
         if isinstance(result_content, (dict, list)):
             result_str = json.dumps(result_content, ensure_ascii=False)
@@ -272,20 +273,25 @@ def dispatch_tool(tool_name: str, arguments: dict, available_tokens: int = None)
             warning_msg = (
                 f"⚠️ [系统拦截] {tool_name} 输出总长 {len(actual_content_str)} 字符，超出当前安全余量阈值 {MAX_LEN}。完整结果已落盘：\n"
                 f"🐳 沙盒内路径: /agent_vm/.buffer/{tool_name_lower}/{file_name}\n"
-                f"如果你需要查看剩余的内容，请用 Bash (cat/grep/sed/tail) 工具去上述缓存文件里分批阅读！\n"
-                f"\n--- 结构化内容预览 ---\n"
+                f"如果你需要查看剩余的内容，请务必使用 Bash (cat/grep/sed/tail) 工具去上述缓存文件里分批阅读！\n"
+                f"\n--- 内容预览 (前 {MAX_LEN} 字符) ---\n"
                 f"{truncated_str}"
             )
+
+            # 🌟 修改点 3：强制配置指定的 snip 文本
+            snip_msg = "字数超长已被截断并落盘"
 
             # 安全回填内容
             if parsed_res and isinstance(parsed_res, dict):
                 parsed_res["type"] = "warning"
                 parsed_res["content"] = warning_msg
+                parsed_res["snip"] = snip_msg  # 注入修改后的 snip
                 result_content = json.dumps(parsed_res, ensure_ascii=False)
             else:
                 from src.tool.utils.format import warning_response
 
-                result_content = warning_response(warning_msg)
+                # 通过 warning_response 参数透传修改后的 snip
+                result_content = warning_response(warning_msg, snip=snip_msg)
 
     except Exception as e:
         traceback.print_exc()

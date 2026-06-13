@@ -2,7 +2,13 @@ import random
 import time
 import traceback
 
-from openai import APIError, OpenAI, RateLimitError
+from openai import (
+    APIError,
+    APIConnectionError,
+    InternalServerError,
+    OpenAI,
+    RateLimitError,
+)
 
 
 def log(msg):
@@ -45,22 +51,32 @@ class LLMClient:
                     return self.client.chat.completions.create(**request_params)
             except (RateLimitError, APIError) as e:
                 error_msg = str(e).lower()
-                if (
+                # 判断是否属于需要重试的异常类型（限速、连接断开、服务端崩溃/网关错误）
+                is_retryable = (
                     "rate limit" in error_msg
                     or "429" in error_msg
                     or "too many requests" in error_msg
-                ):
+                    or isinstance(e, (APIConnectionError, InternalServerError))
+                    or "502" in error_msg
+                    or "503" in error_msg
+                    or "504" in error_msg
+                )
+
+                if is_retryable:
                     if attempt == max_retries - 1:
-                        log(f"❌ 任务 {task_id} 触发限速，已达最大重试次数")
-                        raise Exception(f"RateLimitExceeded: {e}")
+                        log(
+                            f"❌ 任务 {task_id} 触发限速或网络中断，已达最大重试次数"
+                        )
+                        raise Exception(f"RetryLimitExceeded: {e}")
                     jitter = random.uniform(0.8, 1.2)
                     sleep_time = base_delay * (2**attempt) * jitter
                     log(
-                        f"⏳ 任务 {task_id} 触发 429 限速，强退避休眠 {sleep_time:.1f} 秒..."
+                        f"⏳ 任务 {task_id} 遇到临时网络异常 ({type(e).__name__})，退避休眠 {sleep_time:.1f} 秒后重试..."
                     )
                     time.sleep(sleep_time)
                 else:
-                    log(f"🚨 API 调用异常:\n{traceback.format_exc()}")
+                    # 对于明确的参数错误 (400) 或权限错误 (401/403)，不应重试，直接抛出
+                    log(f"🚨 API 调用发生不可恢复异常:\n{traceback.format_exc()}")
                     raise e
             except Exception as e:
                 log(f"🚨 系统或网络异常:\n{traceback.format_exc()}")
