@@ -78,7 +78,7 @@ def _handle_add(memo_data: dict = None) -> str:
 
         # 不再返回全量有效数据，改为只返回统计信息
         return text_response(
-            {"filepath": filepath},
+            f"归档路径: {filepath}",
             f"🧠 记忆归档成功：{filepath}",
         )
     except ValueError as e:
@@ -93,9 +93,9 @@ def _handle_search(query: dict = None) -> str:
     # 1. 如果不传 query 参数，直接返回全局最新的缓存记忆 (self.memo内容)
     if not query:
         memo_list = SessionStore.load_global_memo()
-        return text_response(
-            {"memo_cache": memo_list}, "🔍 未提供 query 参数，直接返回最新缓存记忆。"
-        )
+        import yaml
+        cache_str = yaml.dump(memo_list, allow_unicode=True) if memo_list else "当前无缓存记忆"
+        return text_response(f"最新缓存记忆：\n{cache_str}", "🔍 缓存记忆")
 
     if isinstance(query, str):
         try:
@@ -140,7 +140,10 @@ def _handle_search(query: dict = None) -> str:
             f"🔍 [MemoSearch] search_memory 返回 | result长度={len(result) if result else 0}"
         )
 
-        return text_response({"result": result}, "🔍 记忆检索成功")
+        res_str = ""
+        for idx, r in enumerate(result):
+            res_str += f"[{idx+1}] {r.get('date', '')} - 相似度: {r.get('score', 0)}\n内容: {r.get('content', '')}\n\n"
+        return text_response(res_str or "未检索到相关记忆。", "🔍 记忆检索成功")
 
     except Exception as e:
         print(f"❌ [MemoSearch] 异常: {e}")

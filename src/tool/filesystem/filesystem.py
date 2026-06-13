@@ -93,7 +93,7 @@ def FileSystem(action: str, path: str = None, destination: str = None, **kwargs)
 
                 # Agent 调用 undo 时，回滚该文件的最新一次操作
                 result_msg = rewind_file(resolved_path)
-                return text_response({"path": resolved_path}, f"↩️ {result_msg}")
+                return text_response(f"文件 {resolved_path} 回滚情况：\n{result_msg}", f"↩️ {result_msg}")
 
             except FileSystemError as e:
                 error_msg = str(e)
@@ -112,25 +112,27 @@ def FileSystem(action: str, path: str = None, destination: str = None, **kwargs)
             if content is None:
                 return error_response("write 操作需提供 content", "❌ 参数缺失")
             result = write_file(path, content)
-            return text_response(result, "📝 写入成功")
+            return text_response(result["message"] + f"\n\n```diff\n{result.get('diff', '')}\n```", "📝 写入成功")
 
         if action == "search":
             if not kwargs.get("pattern"):
                 return error_response("缺少 pattern", "❌ 参数缺失")
             result = search_file(path, kwargs.get("pattern"))
-            return text_response(result, f"🔍 找到 {result['match_count']} 处匹配")
+            search_txt = f"🎯 在目录 {result['search_dir']} 中搜索正则 `{result['pattern']}`\n匹配结果 ({result['match_count']}处):\n{result['results']}"
+            return text_response(search_txt, f"🔍 找到 {result['match_count']} 处匹配")
 
         if action == "glob":
             if not kwargs.get("pattern"):
                 return error_response("缺少 pattern", "❌ 参数缺失")
             result = glob_file(path, kwargs.get("pattern"))
-            return text_response(result, f"🌐 找到 {result['total_matches']} 个文件")
+            glob_txt = f"🎯 在目录 {result['search_dir']} 中匹配模式 `{result['pattern']}`\n找到文件 ({result['total_matches']}个):\n" + "\n".join(result['files_sorted_by_mtime'])
+            return text_response(glob_txt, f"🌐 找到 {result['total_matches']} 个文件")
 
         if action == "list":
             try:
                 result = list_filesystem(path=path, depth=kwargs.get("depth", 1))
                 return text_response(
-                    result, f"📂 📁{result['dir_count']} 📄{result['file_count']}"
+                    result["tree"], f"📂 📁{result['dir_count']} 📄{result['file_count']}"
                 )
             except HostPathNotFoundError:
                 return error_response("路径不存在", "❌ 路径不存在")
@@ -144,7 +146,7 @@ def FileSystem(action: str, path: str = None, destination: str = None, **kwargs)
                 )
             try:
                 result = move_file(path_from=path, path_to=destination)
-                return text_response(result, "🚚 移动/导入导出成功")
+                return text_response(result["message"], "🚚 移动/导入导出成功")
             except HostPathNotFoundError:
                 return error_response("源路径不存在", "❌ 路径不存在")
             except FileSystemError as e:
@@ -157,7 +159,7 @@ def FileSystem(action: str, path: str = None, destination: str = None, **kwargs)
                 )
             try:
                 result = copy_file(path_from=path, path_to=destination)
-                return text_response(result, "📋 复制成功")
+                return text_response(result["message"], "📋 复制成功")
             except HostPathNotFoundError:
                 return error_response("源路径不存在", "❌ 路径不存在")
             except FileSystemError as e:
@@ -166,7 +168,7 @@ def FileSystem(action: str, path: str = None, destination: str = None, **kwargs)
         if action == "delete":
             try:
                 result = delete_file(path=path)
-                return text_response(result, result["message"])
+                return text_response(result["message"], "🗑️ 删除成功")
             except HostPathNotFoundError:
                 return error_response("要删除的路径不存在", "❌ 路径不存在")
             except FileSystemError as e:

@@ -1,18 +1,22 @@
 import json
 import time
 
-def format_tool_response(msg_type: str, content: str | dict | list, snip: str = "") -> dict:
+def format_tool_response(msg_type: str, content: str, snip: str = "") -> dict:
     """
     统一的工具返回格式处理函数（架构升级：返回数据字典，分离内容与元数据）
 
     Args:
         msg_type: 消息类型，如 'text', 'warning', 'error'
-        content: 工具返回的核心纯净内容，可以是字符串、字典或列表
+        content: 工具返回的核心纯净内容，必须是字符串类型
         snip: 内容摘要（可选）
 
     Returns:
         包含 content 和 metadata 的字典
     """
+    # 强制将 content 转为字符串（即使强传了 dict 也会被 str() 强转为 Python 格式字面量，而非标准 JSON）
+    if isinstance(content, dict) or isinstance(content, list):
+        content = str(content)
+        
     return {
         "content": content,
         "metadata": {

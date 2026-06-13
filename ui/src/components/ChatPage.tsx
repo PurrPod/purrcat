@@ -8,7 +8,7 @@ import {
   RefreshCw, Terminal, User, FileText, Save,
   Settings, FileJson, AlertCircle, Download, Activity, Paperclip, Bell,
   FolderOpen, History, Undo2, CheckCircle, Check,
-  Minus, GitMerge // <--- 新增这2个
+  Minus, GitMerge, Pencil // <--- 新增 Pencil
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
@@ -232,6 +232,27 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   const [isAgentThinking, setIsAgentThinking] = useState(false);
 
   const [branchToDelete, setBranchToDelete] = useState<string | null>(null);
+
+  // 👇 新增拦截警告弹窗和重命名相关 state
+  const [showBusyModal, setShowBusyModal] = useState(false);
+  const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
+  const [editingAlias, setEditingAlias] = useState('');
+
+  // 👇 新增重命名触发函数
+  const handleRename = async (id: string) => {
+    if (!editingAlias.trim()) { setEditingSessionId(null); return; }
+    try {
+      const res = await fetch(`http://localhost:8000/api/sessions/${id}/rename`, {
+        method: 'PUT', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ alias: editingAlias.trim() })
+      });
+      if (res.ok) {
+        toast.success("会话已成功重命名！");
+        loadSessions(); // 刷新列表
+      }
+    } catch { toast.error("重命名失败"); }
+    setEditingSessionId(null);
+  };
 
   const [globalStats, setGlobalStats] = useState<{
     today: { calls: number; total_tokens: number; cached_tokens: number };
@@ -1152,6 +1173,28 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
         </div>
       )}
 
+      {/* 🌟 代理人繁忙拦截提示 */}
+      {showBusyModal && (
+        <div className="fixed inset-0 bg-ink/40 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
+          <div style={sketchyShape2} className="bg-paper border-4 border-ink p-8 flex flex-col gap-6 shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] -rotate-1 max-w-sm w-full">
+            <div className="flex justify-between items-center rotate-1 border-b-4 border-ink/10 pb-2">
+              <h3 className="text-2xl font-black tracking-widest text-[#d08770]" style={{ fontFamily: '"Comic Sans MS", cursive' }}>AGENT IS BUSY!</h3>
+              <button onClick={() => setShowBusyModal(false)} className="hover:text-terracotta hover:scale-110 transition-all">
+                <X size={28} strokeWidth={3}/>
+              </button>
+            </div>
+            <div className="rotate-1">
+              <p className="font-bold text-ink/80 text-base leading-relaxed">
+                喵~ Agent 正在埋头苦干中！为了保护数据安全，请等待当前任务完成后，再切换会话或拉取新分支哦！
+              </p>
+            </div>
+            <button onClick={() => setShowBusyModal(false)} style={sketchyShape3} className="mt-2 bg-[#EBCB8B] text-ink font-black py-3 border-4 border-ink hover:bg-[#d8b877] transition-all shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] active:shadow-none active:translate-y-1 rotate-1">
+              GOT IT
+            </button>
+          </div>
+        </div>
+      )}
+
       {showModal && (
         <div className="fixed inset-0 bg-ink/40 backdrop-blur-sm z-[150] flex items-center justify-center p-4">
           <div style={sketchyShape2} className="bg-paper border-4 border-ink p-8 flex flex-col gap-6 shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] rotate-1 max-w-md w-full">
@@ -1717,6 +1760,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
               <h3 className="text-3xl font-black tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>SWITCH CHAT</h3>
               <div className="flex items-center gap-4">
                  <button onClick={() => {
+                   if (isAgentThinking) { setShowBusyModal(true); return; } // 🌟 拦截
                    if (!currentSessionId) {
                      toast.error('请先进入一个对话再拉取分支！');
                      return;
@@ -1728,7 +1772,10 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                  }} className="p-2 bg-cream border-4 border-ink hover:bg-sand transition-all shadow-[2px_2px_0px_0px_rgba(26,26,26,1)]" style={sketchyShape1} title="Branch (Fork) Current Chat">
                     <GitFork size={24} strokeWidth={3}/>
                  </button>
-                 <button onClick={() => { setShowSessionModal(false); setNewAlias('New Chat'); setShowModal(true); }} className="p-2 bg-terracotta text-paper border-4 border-ink hover:bg-[#C46A4A] transition-all shadow-[2px_2px_0px_0px_rgba(26,26,26,1)]" style={sketchyShape3} title="New Chat">
+                 <button onClick={() => { 
+                   if (isAgentThinking) { setShowBusyModal(true); return; } // 🌟 拦截
+                   setShowSessionModal(false); setNewAlias('New Chat'); setShowModal(true); 
+                 }} className="p-2 bg-terracotta text-paper border-4 border-ink hover:bg-[#C46A4A] transition-all shadow-[2px_2px_0px_0px_rgba(26,26,26,1)]" style={sketchyShape3} title="New Chat">
                     <Plus size={24} strokeWidth={3}/>
                  </button>
                  <div className="w-1 h-8 bg-ink/20 mx-1 rounded-full"></div>
@@ -1742,17 +1789,46 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                 {sessions.map((session, idx) => (
                   <button
                     key={session.id} 
-                    onClick={() => { handleSelectSession(session.id); setShowSessionModal(false); }} 
+                    onClick={() => { 
+                      // 🌟 拦截如果正在工作，并且点击的不是自己
+                      if (isAgentThinking && currentSessionId !== session.id) { setShowBusyModal(true); return; }
+                      handleSelectSession(session.id); setShowSessionModal(false); 
+                    }} 
                     style={idx % 2 === 0 ? sketchyShape2 : sketchyShape3}
                     className={`text-left p-4 border-4 transition-all flex flex-col gap-2 relative group 
                       ${idx % 3 === 0 ? 'rotate-1' : idx % 2 === 0 ? '-rotate-1' : 'rotate-2'}
                       ${currentSessionId === session.id ? 'bg-[#EBCB8B] border-ink text-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] scale-[1.02] z-10' : 'bg-cream border-ink text-ink hover:bg-sand hover:shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:-translate-y-1'}`}
                   >
                     <div className="flex items-start justify-between gap-2">
-                      <span className="font-black truncate max-w-[400px] text-xl" style={{ fontFamily: '"Comic Sans MS", cursive' }}>{session.alias}</span>
-                      <div onClick={(e) => { e.stopPropagation(); setSessionToDelete(session.id); setShowSessionModal(false); }} className="p-1.5 hover:text-paper hover:bg-[#bf616a] rounded transition-colors border-2 border-transparent hover:border-ink" title="Delete Chat">
-                        <Trash2 size={20} strokeWidth={2.5} className={currentSessionId === session.id ? 'opacity-100' : 'opacity-40'} />
+                      
+                      {/* 👇 支持重命名的输入框与文本展示 */}
+                      {editingSessionId === session.id ? (
+                        <input 
+                          autoFocus
+                          value={editingAlias}
+                          onChange={e => setEditingAlias(e.target.value)}
+                          onKeyDown={e => { if(e.key === 'Enter') handleRename(session.id); }}
+                          onBlur={() => handleRename(session.id)}
+                          onClick={e => e.stopPropagation()}
+                          className="font-black max-w-[320px] text-xl bg-[#FDF8F0] border-2 border-ink px-1 focus:outline-none"
+                          style={{ fontFamily: '"Comic Sans MS", cursive', ...sketchyShape3 }}
+                        />
+                      ) : (
+                        <span className="font-black truncate max-w-[320px] text-xl" style={{ fontFamily: '"Comic Sans MS", cursive' }}>
+                          {session.alias}
+                        </span>
+                      )}
+
+                      {/* 👇 增加 Pencil 编辑图标和原来的垃圾桶 */}
+                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div onClick={(e) => { e.stopPropagation(); setEditingAlias(session.alias); setEditingSessionId(session.id); }} className="p-1.5 hover:text-ink hover:bg-[#EBCB8B] rounded transition-colors border-2 border-transparent hover:border-ink" title="Rename Chat">
+                          <Pencil size={18} strokeWidth={2.5} className="opacity-70" />
+                        </div>
+                        <div onClick={(e) => { e.stopPropagation(); setSessionToDelete(session.id); setShowSessionModal(false); }} className="p-1.5 hover:text-paper hover:bg-[#bf616a] rounded transition-colors border-2 border-transparent hover:border-ink" title="Delete Chat">
+                          <Trash2 size={20} strokeWidth={2.5} className={currentSessionId === session.id ? 'opacity-100' : 'opacity-40'} />
+                        </div>
                       </div>
+
                     </div>
                     <div className={`flex items-center gap-3 text-sm font-bold opacity-70`}>
                       <Clock size={16} strokeWidth={3} /> {session.updated_at}
@@ -2305,6 +2381,19 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                   <div className="w-full md:w-72 shrink-0 overflow-y-auto flex flex-col gap-3 pr-2">
                     {fileChanges.map((change, idx) => {
                       const isSelected = activeDiffPath === change.path;
+                      const changeType = change.change_type || 'modified'; // 🌟 接收状态
+                      
+                      let badge = null;
+                      let titleStyle = "font-black text-xs truncate flex-1 transition-all";
+                      
+                      // 🌟 动态视觉样式
+                      if (changeType === 'deleted') {
+                          badge = <span className="absolute -top-2 -left-2 bg-[#bf616a] text-paper px-1.5 py-0.5 text-[9px] font-black border-2 border-ink shadow-[1px_1px_0px_0px_rgba(26,26,26,1)] z-10" style={sketchyShape1}>DELETED</span>;
+                          titleStyle += " line-through opacity-60 decoration-2"; // 划掉效果
+                      } else if (changeType === 'created') {
+                          badge = <span className="absolute -top-2 -left-2 bg-[#a3be8c] text-ink px-1.5 py-0.5 text-[9px] font-black border-2 border-ink shadow-[1px_1px_0px_0px_rgba(26,26,26,1)] z-10" style={sketchyShape1}>NEW</span>;
+                      }
+
                       return (
                         <div
                           key={change.id}
@@ -2316,9 +2405,10 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                               ? 'bg-[#88c0d0] text-paper shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] translate-y-0.5' 
                               : 'bg-cream text-ink hover:bg-sand shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:-translate-y-[1px]'}`}
                         >
+                          {badge}
                           <div className="flex items-center gap-2 w-full">
                             <FileText size={14} className={isSelected ? 'text-paper' : 'text-[#88c0d0]'} strokeWidth={3} />
-                            <span className="font-black text-xs truncate flex-1">{change.path.split('/').pop()}</span>
+                            <span className={titleStyle}>{change.path.split('/').pop()}</span>
                           </div>
                           <span className={`text-[9px] font-bold ${isSelected ? 'text-paper/70' : 'text-ink/40'} truncate`} title={change.path}>
                             {change.path}
@@ -2370,7 +2460,10 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                               className="flex-1 bg-[#bf616a] text-paper font-black py-2.5 border-2 border-ink shadow-[3px_3px_0px_0px_rgba(26,26,26,1)] hover:bg-[#a54e56] active:translate-y-0.5 active:shadow-none transition-all flex justify-center items-center gap-2"
                               style={sketchyShape3}
                             >
-                              <Undo2 size={16} strokeWidth={3}/> REVERT
+                              <Undo2 size={16} strokeWidth={3}/> 
+                              {/* 🌟 动态匹配回滚文案：撤销创建就是删除，撤销删除就是恢复 */}
+                              {currentChange.change_type === 'created' ? 'DELETE FILE' : 
+                               currentChange.change_type === 'deleted' ? 'RESTORE FILE' : 'REVERT'}
                             </button>
                           </div>
                         </div>

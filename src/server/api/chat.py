@@ -20,6 +20,10 @@ router = APIRouter(prefix="/api", tags=["Chat & Sessions"])
 class NewSessionReq(BaseModel):
     alias: str = "New Session"
 
+# 👇 新增：重命名模型
+class RenameSessionReq(BaseModel):
+    alias: str
+
 
 class BranchSessionReq(BaseModel):
     alias: str = "Branch Session"
@@ -96,8 +100,41 @@ def get_sessions():
         raise
 
 
+# 👇 新增：重命名 API 接口
+@router.put("/sessions/{session_id}/rename")
+def rename_session_api(session_id: str, req: RenameSessionReq):
+    try:
+        import os, json
+        from src.agent.session_store import SessionStore
+        from src.utils.config import SESSIONS_DIR, SESSION_INDEX_PATH
+        
+        # 1. 更新索引
+        with SessionStore._index_lock:
+            index_data = SessionStore.get_all_sessions()
+            if session_id in index_data:
+                index_data[session_id]["alias"] = req.alias
+                with open(SESSION_INDEX_PATH, "w", encoding="utf-8") as f:
+                    json.dump(index_data, f, ensure_ascii=False, indent=2)
+
+        # 2. 更新元数据
+        meta_path = os.path.join(SESSIONS_DIR, session_id, "meta.json")
+        if os.path.exists(meta_path):
+            with open(meta_path, "r", encoding="utf-8") as f:
+                meta_data = json.load(f)
+            meta_data["alias"] = req.alias
+            with open(meta_path, "w", encoding="utf-8") as f:
+                json.dump(meta_data, f, ensure_ascii=False, indent=2)
+                
+        return {"status": "ok"}
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+# 👇 修改 checkout 接口，物理阻断恶意 session_id (如 requests) 的污染
 @router.post("/sessions/{session_id}/checkout")
 def checkout_session_api(session_id: str):
+    if not session_id.startswith("session_"):
+        raise HTTPException(status_code=400, detail="Invalid session ID")
     try:
         from src.agent import switch_session
 

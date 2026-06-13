@@ -34,19 +34,22 @@ def Bash(command: str, timeout: int = 300, session_id: str = "default", **kwarg)
         manager = get_docker_manager()
         exit_code, output, cwd = manager.execute(session_id, command, timeout)
 
-        result = {"exit_code": exit_code, "output": output, "cwd": cwd}
-
         # 生成 snip 摘要：简短描述执行结果
         output_preview = (
             output[:40].replace("\r", "").replace("\n", " ") if output else ""
         )
+
+        content_str = f"💻 执行目录: {cwd}\n" \
+                      f"⚙️ 退出代码: {exit_code}\n" \
+                      f"📄 控制台输出:\n{output if output else '[无输出]'}"
+
         if exit_code == 0:
             snip = f"✅ 成功 | {output_preview}..."
-            return text_response(result, snip)
+            return text_response(content_str, snip)
         else:
             close_session(session_id)
             snip = f"❌ 失败(exit={exit_code}) | {output_preview}..."
-            return warning_response(result, snip)
+            return warning_response(content_str, snip)
 
     except DockerNotRunningError:
         # 处理 Docker 未启动/连接异常

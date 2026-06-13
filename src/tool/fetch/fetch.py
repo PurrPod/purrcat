@@ -87,25 +87,16 @@ def Fetch(
                     print(f"⚠️ [幽灵注入失败]: {e}")
 
                 return text_response(
-                    {
-                        "name": result["name"],
-                        "status": "success",
-                        "message": f"✅ 技能 [{name}] 已成功加载到系统事件中。请立即查看最新的系统通知（紧随其后的 user 消息）以获取最新 SOP 约束，并严格依此行事。",
-                    },
-                    f"📖 Skill [{name}] 注入成功",
+                    f"✅ 技能 [{name}] 已成功加载到系统事件中。\n状态: Success\n提示: 请立即查看最新的系统通知获取最新 SOP 约束。",
+                    f"📖 Skill [{name}] 注入成功"
                 )
             else:
                 print(
                     f"👻 [Harness独立加载] 技能 [{name}] 完整内容已直接返回给工作流节点上下文"
                 )
                 return text_response(
-                    {
-                        "name": result["name"],
-                        "status": "success",
-                        "content": skill_instruction,
-                        "message": f"✅ 技能 [{name}] 获取成功，请紧紧围绕上方的 content 字段中的 [技能SOP操作指南] 行事。",
-                    },
-                    f"📖 Skill [{name}] 独立加载",
+                    f"✅ 技能 [{name}] 获取成功\n\n【技能SOP操作指南】\n{skill_instruction}",
+                    f"📖 Skill [{name}] 独立加载"
                 )
 
         elif source == "mcp":
@@ -134,7 +125,7 @@ def Fetch(
             if os.path.exists(harness_path):
                 with open(harness_path, "r", encoding="utf-8") as f:
                     content = f.read()
-                return text_response({"content": content}, "📜 SOLO.md")
+                return text_response(content, "📜 SOLO.md")
             return error_response("未找到 SOLO.md", "❌ 文件不存在")
 
         elif source == "todo":
@@ -144,8 +135,8 @@ def Fetch(
                     content = f.read().strip()
                 if content:
                     lines = content.split("\n")
-                    return text_response({"content": content}, f"📝 {len(lines)}项")
-            return text_response({"content": ""}, "📝 无待办")
+                    return text_response(content, f"📝 {len(lines)}项")
+            return text_response("当前无待办事项。", "📝 无待办")
 
         elif source == "web":
             content_len = len(result.get("content", ""))

@@ -33,8 +33,8 @@ def BrainStorm(
             if task_handle:
                 task_handle.cancel()
                 return text_response(
-                    {"status": "success"},
                     f"✅ 斩杀信号已成功下发！后台分支 `{target_branch_id}` 已被强制终止。",
+                    "🛑 分支已终止"
                 )
             else:
                 return error_response(
@@ -87,8 +87,8 @@ def BrainStorm(
                         "tool_call_id": tool_call_id,
                         "name": "BrainStorm",
                         "content": text_response(
-                            {"status": "success"},
                             final_response_text,
+                            "🚀 脑暴计划已生效"
                         ),
                     }
                     main_history.append(sub_tool_result_msg)

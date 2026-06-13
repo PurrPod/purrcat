@@ -212,12 +212,16 @@ def dispatch_tool(tool_name: str, arguments: dict, available_tokens: int = None)
             metadata["type"] = "warning"
             metadata["snip"] = "字数超长已被截断并落盘"
 
-        # 6. 最终封包组装返回给 LLM （这是全链路唯一一次打包为 JSON 字符串）
+        # 6. 强制将遗漏的 dict/list 转换为自然语言纯文本（防 JSON 解析）
+        if isinstance(content_data, (dict, list)):
+            import yaml
+            content_data = yaml.dump(content_data, allow_unicode=True, default_flow_style=False)
+            content_data = f"【系统格式化输出】\n{content_data}"
+
+        # 7. 最终封包组装返回给 LLM （只保留 content 和 metadata）
         final_response = {
-            "timestamp": metadata.get("timestamp", ""),
-            "type": metadata.get("type", "text"),
-            "snip": metadata.get("snip", ""),
-            "content": content_data
+            "content": str(content_data),
+            "metadata": metadata
         }
         return json.dumps(final_response, ensure_ascii=False)
 
@@ -226,9 +230,11 @@ def dispatch_tool(tool_name: str, arguments: dict, available_tokens: int = None)
         # 异常兜底构造
         err_msg = f"❌ 工具 [{tool_name}] 调度/执行发生异常: {str(e)}"
         final_err_res = {
-            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-            "type": "error",
-            "snip": "❌ 执行异常",
-            "content": err_msg
+            "content": err_msg,
+            "metadata": {
+                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+                "type": "error",
+                "snip": "❌ 执行异常"
+            }
         }
         return json.dumps(final_err_res, ensure_ascii=False)

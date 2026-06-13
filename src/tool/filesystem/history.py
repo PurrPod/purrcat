@@ -62,7 +62,7 @@ def save_backup_meta(target_path: str, backup_id: str, diff: str):
 
 
 def get_all_diffs() -> list:
-    """🌟 终极改造：将同一文件的多次修改合并为一个全局 Diff 返回"""
+    """🌟 终极改造：精准识别文件的 [创建 / 修改 / 删除] 状态"""
     if not os.path.exists(HISTORY_DIR):
         return []
 
@@ -76,18 +76,18 @@ def get_all_diffs() -> list:
             except Exception:
                 pass
 
-    # 2. 按展示路径 (path) 对快照进行分组
+    # 2. 按展示路径分组
     grouped = {}
     for m in meta_list:
-        path = m["path"]
+        path = m.get("path")
+        if not path:
+            continue
         if path not in grouped:
             grouped[path] = []
         grouped[path].append(m)
 
-    # 3. 针对每个文件，计算首尾合并的 consolidated_diff
     consolidated_diffs = []
     for path, items in grouped.items():
-        # 按时间戳正序排序 (旧 -> 新)
         items.sort(key=lambda x: int(x["backup_id"]))
         oldest_meta = items[0]
         newest_meta = items[-1]
@@ -99,25 +99,42 @@ def get_all_diffs() -> list:
         if not host_path:
             continue
 
-        # 寻找该文件最原始的备份内容
         history_file = _get_history_path(host_path)
         oldest_backup_path = f"{history_file}@{oldest_id}"
 
+        # 🌟 核心 1：物理状态机判定
+        is_created_here = os.path.exists(oldest_backup_path + ".empty")
+        is_deleted_now = not os.path.exists(host_path)
+
+        change_type = "modified"
+        if is_created_here and is_deleted_now:
+            change_type = "deleted" # 建了又删
+        elif is_created_here:
+            change_type = "created"
+        elif is_deleted_now:
+            change_type = "deleted"
+
         old_content = ""
         if os.path.exists(oldest_backup_path):
-            with open(oldest_backup_path, "r", encoding="utf-8") as f:
-                old_content = f.read()
-        elif os.path.exists(oldest_backup_path + ".empty"):
-            old_content = ""  # 说明是新建文件，原始为空
+            try:
+                with open(oldest_backup_path, "r", encoding="utf-8") as f:
+                    old_content = f.read()
+            except UnicodeDecodeError:
+                old_content = "[二进制文件或富文本，无法提供差异对比]\n"
+        elif is_created_here:
+            old_content = ""
 
-        # 获取当前硬盘上真实的最新文件内容
         current_content = ""
-        if os.path.exists(host_path):
-            with open(host_path, "r", encoding="utf-8") as f:
-                current_content = f.read()
+        if not is_deleted_now:
+            try:
+                with open(host_path, "r", encoding="utf-8") as f:
+                    current_content = f.read()
+            except UnicodeDecodeError:
+                current_content = "[二进制文件或富文本，无法提供差异对比]\n"
 
-        # 重新计算首尾合并后的最终 Diff
+        # 🌟 核心 2：计算 Diff，自带防空兜底
         format_path = path if path.startswith("/") else "/" + path
+        
         diff_lines = list(
             difflib.unified_diff(
                 old_content.splitlines(keepends=True),
@@ -127,7 +144,14 @@ def get_all_diffs() -> list:
                 n=3,
             )
         )
-        consolidated_diff = "".join(diff_lines)
+        diff_text = "".join(diff_lines)
+
+        # 如果是纯空文件的创建/删除，difflib 返回会是空的，强行注入提示！
+        if not diff_text.strip():
+            if change_type == "created":
+                diff_text = f"--- /dev/null\n+++ b{format_path}\n@@ -0,0 +1,1 @@\n+ [新建文件]"
+            elif change_type == "deleted":
+                diff_text = f"--- a{format_path}\n+++ /dev/null\n@@ -1,1 +0,0 @@\n- [文件已删除]"
 
         consolidated_diffs.append(
             {
@@ -135,13 +159,13 @@ def get_all_diffs() -> list:
                 "path": path,
                 "oldest_backup_id": oldest_id,
                 "newest_backup_id": newest_id,
-                "edit_count": len(items),  # 这个文件一共被修改了多少次
+                "edit_count": len(items),  
                 "time": newest_meta.get("time", ""),
-                "diff": consolidated_diff,
+                "diff": diff_text,
+                "change_type": change_type, # 👈 把状态丢给前端
             }
         )
 
-    # 按最新修改时间倒序排列返回给前端
     consolidated_diffs.sort(key=lambda x: int(x["newest_backup_id"]), reverse=True)
     return consolidated_diffs
 

@@ -143,7 +143,7 @@ def _search_local(query: str, topk: int) -> str:
         top_results = merged_results
 
         if not top_results:
-            return text_response({"query": query, "results_count": 0}, "🔍 Local无结果")
+            return text_response(f"关于 '{query}' 的本地搜索未找到任何结果。", "🔍 Local无结果")
 
         skill_count = len([r for r in top_results if r["source"] == "Skill"])
         mcp_count = len([r for r in top_results if r["source"].startswith("MCP")])

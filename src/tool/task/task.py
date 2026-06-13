@@ -183,7 +183,7 @@ def _handle_add(**kwargs) -> str:
         if error:
             return warning_response(error, "⚠️ 任务创建失败")
         return text_response(
-            {"task_id": result["task_id"], "message": result["message"]},
+            f"任务ID: {result['task_id']}\n信息: {result['message']}",
             "🚀 任务已创建",
         )
     except Exception as e:
@@ -192,13 +192,11 @@ def _handle_add(**kwargs) -> str:
 
 def _handle_list_tasks() -> str:
     result, error = list_tasks_operation()
-    return (
-        warning_response(error, "⚠️ 获取失败")
-        if error
-        else text_response(
-            {"tasks": result["tasks"]}, f"📋 发现 {result['count']} 个任务"
-        )
-    )
+    if error:
+        return warning_response(error, "⚠️ 获取失败")
+    # {"tasks": result["tasks"]} 转为平文本
+    tasks_str = "\n".join([f"ID: {t['task_id']} | 名称: {t['name']} | 图: {t['graph_name']} | 状态: {t['state']}" for t in result["tasks"]])
+    return text_response(tasks_str or "当前无任务。", f"📋 发现 {result['count']} 个任务")
 
 
 def _handle_kill(**kwargs) -> str:
@@ -209,7 +207,7 @@ def _handle_kill(**kwargs) -> str:
     return (
         warning_response(error, "⚠️ 终止失败")
         if error
-        else text_response({"message": result["message"]}, "⛔ 任务已终止")
+        else text_response(result["message"], "⛔ 任务已终止")
     )
 
 
@@ -232,7 +230,7 @@ def _handle_submit_request(**kwargs) -> str:
 
     if error:
         return warning_response(error, "⚠️ 注入失败")
-    return text_response({"message": result["message"]}, "💬 指令已成功注入")
+    return text_response(result["message"], "💬 指令已成功注入")
 
 
 def _handle_get_details(**kwargs) -> str:

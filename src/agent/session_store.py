@@ -54,7 +54,9 @@ class SessionStore:
             if os.path.exists(SESSION_INDEX_PATH):
                 try:
                     with open(SESSION_INDEX_PATH, "r", encoding="utf-8") as f:
-                        return json.load(f)
+                        data = json.load(f)
+                        # 👇 修复 1：强行过滤掉非 session_ 开头的异常数据（如 requests 空文件夹）
+                        return {k: v for k, v in data.items() if str(k).startswith("session_")}
                 except Exception as e:
                     print(f"⚠️ 读取索引失败: {e}")
             return {}
@@ -231,7 +233,12 @@ class SessionStore:
         with cls._index_lock:
             index_data = cls.get_all_sessions()
             session_info = index_data.get(session_id, {})
+            
+            session_info["id"] = session_id  # 🌟 修复：确保新生会话有 ID
             session_info["updated_at"] = timestamp
+            if alias:
+                session_info["alias"] = alias  # 🌟 修复：创建时把自定义名字正确存入索引
+                
             session_info["messages_count"] = (
                 len(history)
                 if branch_id == "main"
