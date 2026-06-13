@@ -2350,8 +2350,9 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
         </div>
 
         {showFileView && (
-          <div className="px-10 pb-6 pt-2 shrink overflow-hidden flex flex-col min-h-[200px] max-h-[45vh]">
-            <div style={sketchyShape1} className="bg-paper border-4 border-ink shadow-[8px_8px_0px_0px_rgba(26,26,26,1)] p-6 flex flex-col h-full min-h-0">
+          <div className="px-10 pb-6 pt-2 flex flex-col w-full shrink-0">
+            {/* 增加了 h-[55vh] 初始高度，以及 resize-y 允许垂直拖拽大小 */}
+            <div style={sketchyShape1} className="bg-paper border-4 border-ink shadow-[8px_8px_0px_0px_rgba(26,26,26,1)] p-6 flex flex-col h-[55vh] min-h-[35vh] max-h-[85vh] resize-y overflow-hidden">
               
               <div className="flex items-center gap-3 mb-5 border-b-4 border-ink/20 pb-3 shrink-0">
                 <History size={26} strokeWidth={2.5} className="text-[#d08770]" />
@@ -2518,6 +2519,8 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
              </div>
            )}
 
+           {/* 当 showFileView 为 true 时，隐藏整个输入区域 */}
+           {!showFileView && (
            <div 
              className={`flex gap-4 relative transition-all ${isDragging ? 'ring-4 ring-terracotta bg-terracotta/5' : ''}`}
              onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }} 
@@ -2608,6 +2611,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                <Send size={26} strokeWidth={2.5} />
              </button>
            </div>
+           )} {/* 当 showFileView 为 true 时，隐藏整个输入区域 */}
         </div>
           ) : (
             <div className="px-10 pb-8 pt-4 shrink-0 flex justify-center w-full">

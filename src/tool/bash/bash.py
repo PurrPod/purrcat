@@ -67,8 +67,8 @@ def Bash(command: str, timeout: int = 300, session_id: str = "default", **kwarg)
     except BashTimeoutError:
         # 处理 Bash 执行超时异常
         return error_response(
-            "执行超时，如果是有关下载操作，可能由于网络原因，如是请联系老板进行沙盒的网络配置或检查宿主机网络状态",
-            "❌ 执行超时",
+            "执行超时（超过300秒）。如果该操作涉及网络下载（如 pip install、apt-get 等），由于沙盒网络与宿主机不同步，极易因为网络阻塞导致卡死。请优先考虑在命令中临时换源（例如使用 pip install 包名 -i https://pypi.tuna.tsinghua.edu.cn/simple）并重试。",
+            "❌ 执行超时(建议换源)",
         )
 
     except Exception as e:
