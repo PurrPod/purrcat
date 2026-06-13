@@ -68,7 +68,9 @@ def FileSystem(action: str, path: str = None, destination: str = None, **kwargs)
 
         if action == "read":
             result = read_file(path, kwargs.get("offset", 0), kwargs.get("limit", 2000))
-            return text_response(result, f"📄 读取了 {result['showing_lines']} 行")
+            # 🌟 改造：直接把组装好的带行号的字符串作为 content
+            read_text = f"文件路径: {result['path']}\n总行数: {result['total_lines']}\n\n{result['content']}"
+            return text_response(read_text, f"📄 读取了 {result['showing_lines']} 行")
 
         if action == "edit":
             old_str, new_str = kwargs.get("old_string"), kwargs.get("new_string")
@@ -77,8 +79,9 @@ def FileSystem(action: str, path: str = None, destination: str = None, **kwargs)
                     "edit 操作需提供 old_string 和 new_string", "❌ 参数缺失"
                 )
             result = edit_file(path, old_str, new_str, kwargs.get("replace_all", False))
-            response_text = f"✂️ 修改成功\n\n```diff\n{result.get('diff', '')}\n```"
-            return text_response(result, response_text)
+            # 🌟 改造：把带 Markdown 代码块的 Diff 字符串直接作为 content，不要放进字典
+            response_text = f"✂️ 修改成功！Diff 如下:\n\n```diff\n{result.get('diff', '')}\n```\n\n{result.get('message', '')}"
+            return text_response(response_text, "✂️ 修改成功")
 
         if action == "undo":
             if not path:

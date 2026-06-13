@@ -71,14 +71,8 @@ def _search_web(query: str, topk: int) -> str:
         # ✨【关键】：在这里通过 Prompt 引导大模型去调用 Fetch 实现解耦的深度阅读
         md += "💡 **提示：如果需要阅读上述某篇报道的完整详情，请使用 `Fetch` 工具 (source='web') 并传入对应的 URL。**"
 
-        return text_response(
-            {
-                "query": query,
-                "results_count": len(results),
-                "markdown": md,
-            },
-            f"🌐 Web | {len(results)}条结果",
-        )
+        # 🌟 改造：直接返回纯文本 md，丢弃那些没用的 query 和 counts
+        return text_response(md, f"🌐 Web | {len(results)}条结果")
 
     except Exception as e:
         return error_response(f"Web 搜索异常: {e}", "❌ Web搜索异常")
@@ -166,14 +160,8 @@ def _search_local(query: str, topk: int) -> str:
             "\n💡 **提示：你可以使用 `Fetch` 工具获取上述技能或 MCP 工具的完整细节。**"
         )
 
-        return text_response(
-            {
-                "query": query,
-                "results_count": len(top_results),
-                "markdown": md,
-            },
-            f"🔧 Local | Skill:{skill_count} MCP:{mcp_count} Memo:{memo_count}",
-        )
+        # 🌟 改造：直接返回纯文本 md
+        return text_response(md, f"🔧 Local | Skill:{skill_count} MCP:{mcp_count} Memo:{memo_count}")
 
     except Exception as e:
         import traceback

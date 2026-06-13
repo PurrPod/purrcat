@@ -111,12 +111,7 @@ def Fetch(
         elif source == "mcp":
             if not result:
                 return text_response(
-                    {
-                        "server_name": serve_name,
-                        "tool_names": tool_names,
-                        "schemas": [],
-                        "message": "暂无工具 Schema",
-                    },
+                    "暂无工具 Schema",
                     "📭 暂无Schema",
                 )
 
@@ -131,15 +126,8 @@ def Fetch(
             if tool_names:
                 res_messages.append("如需更多工具，不传 tool_names 即可列出全部。")
 
-            return text_response(
-                {
-                    "server_name": serve_name,
-                    "tool_names": [s["function"]["name"] for s in result],
-                    "schemas": result,
-                    "message": "\n".join(res_messages),
-                },
-                f"🔧 {serve_name} | {len(result)}个工具",
-            )
+            # 🌟 改造：直接返回 "\n".join() 拼接好的字符串
+            return text_response("\n".join(res_messages), f"🔧 {serve_name} | {len(result)}个工具")
 
         elif source == "solo":
             harness_path = os.path.join(AGENT_CORE_DIR, "SOLO.md")
@@ -161,17 +149,9 @@ def Fetch(
 
         elif source == "web":
             content_len = len(result.get("content", ""))
+            # 🌟 改造：直接返回 md 字符串
             md = f"# {result['title']}\n\n**URL:** {result['url']}\n**类型:** {result['content_type']}\n---\n\n{result.get('content', '')[:2000]}"
-            return text_response(
-                {
-                    "url": result["url"],
-                    "title": result["title"],
-                    "content_type": result["content_type"],
-                    "content": result["content"],
-                    "markdown": md,
-                },
-                f"🌐 {content_len}字符",
-            )
+            return text_response(md, f"🌐 {content_len}字符")
 
     except MCPServerNotFoundError as e:
         servers_str = (

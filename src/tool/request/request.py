@@ -47,7 +47,8 @@ def Request(request_type: str, target: str, reason: str, **kwargs) -> str:
             f"3. 若当前有其他与此请求无强关联的独立任务（如查阅其他文档、整理现有数据），你可以继续执行。"
         )
 
-        return text_response({"req_id": result["id"], "status": "pending"}, msg)
+        # 🌟 改造：直接返回 msg 字符串
+        return text_response(msg, f"⏳ 申请已提交: {result['id']}")
 
     except Exception as e:
         traceback.print_exc()

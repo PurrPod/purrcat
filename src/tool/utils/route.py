@@ -12,7 +12,7 @@ from typing import Any
 
 from src.utils.config import BUFFER_DIR
 
-# 工具名到函数名的映射表（处理驼峰命名等特殊情况）
+# 工具名到函数名的映射表
 TOOL_FUNC_MAP = {
     "filesystem": "FileSystem",
     "bash": "Bash",
@@ -28,58 +28,30 @@ TOOL_FUNC_MAP = {
 
 
 def _safe_truncate(data: Any, max_len: int) -> str:
-    """结构化安全省略策略：防止粗暴截断破坏 JSON 或格式闭合"""
-    # 🌟 修复：加上 indent=2 保证预览也是格式化展开的
+    """结构化安全省略策略：基于纯净 content 直接格式化"""
     data_str = (
         json.dumps(data, ensure_ascii=False, indent=2)
         if isinstance(data, (dict, list))
         else str(data)
     )
+
     if len(data_str) <= max_len:
         return data_str
-    if isinstance(data, list):
-        # 对列表进行二分法安全截断，保证结构完整
-        left, right = 0, len(data)
-        valid_slice = []
-        while left < right:
-            mid = (left + right + 1) // 2
-            test_str = json.dumps(data[:mid], ensure_ascii=False, indent=2)
-            if len(test_str) <= max_len:
-                valid_slice = data[:mid]
-                left = mid
-            else:
-                right = mid - 1
 
-        omitted_count = len(data) - len(valid_slice)
-        if omitted_count > 0:
-            valid_slice.append(f"...(已省略剩余 {omitted_count} 项，空间不足)")
-        return json.dumps(valid_slice, ensure_ascii=False, indent=2)
-    # 🌟 修改点 1：退化为仅保留前端 max_len 字符，而不是前一部分 + 后一部分
+    # 仅保留前端
     preview_front = data_str[:max_len]
     omitted = len(data_str) - max_len
     return f"{preview_front}\n\n... [后续 {omitted} 字符已被截断，请使用 Bash 工具读取落盘的缓存文件] ..."
 
 
-def _handle_media_content(parsed_res: dict, tool_name: str) -> str:
-    """
-    处理多媒体内容：将图片、视频、音频、PDF 等保存到本地文件
-    """
-    content_data = parsed_res.get("content", {})
-
+def _handle_media_content(content_data: Any, tool_name: str) -> Any:
+    """处理多媒体内容，直接对原生 content_data 操作"""
     if not isinstance(content_data, dict):
-        return None
+        return content_data
 
     media_type = content_data.get("type")
-    if media_type not in [
-        "image",
-        "video",
-        "audio",
-        "pdf",
-        "mcp_media",
-        "media_url",
-        "media_base64",
-    ]:
-        return None
+    if media_type not in ["image", "video", "audio", "pdf", "mcp_media", "media_url", "media_base64"]:
+        return content_data
 
     buffer_dir = BUFFER_DIR
     os.makedirs(buffer_dir, exist_ok=True)
@@ -89,7 +61,6 @@ def _handle_media_content(parsed_res: dict, tool_name: str) -> str:
     try:
         if media_type == "media_url":
             import urllib.request
-
             url = content_data["url"]
             ext = content_data.get("ext", ".bin")
             filename = f"{tool_name}_{timestamp}_{marker_id}{ext}"
@@ -120,37 +91,27 @@ def _handle_media_content(parsed_res: dict, tool_name: str) -> str:
             with open(filepath, "wb") as f:
                 f.write(binary_data)
 
-        # 保存完毕后，改写为纯文本消息
         sandbox_path = f"/agent_vm/.buffer/{filename}"
         media_desc = {
-            "image": "🖼️ 图片",
-            "video": "📹 视频",
-            "audio": "🎵 音频",
-            "pdf": "📄 PDF",
-            "mcp_media": "📦 媒体",
-            "media_url": "🔗 下载文件",
+            "image": "🖼️ 图片", "video": "📹 视频", "audio": "🎵 音频",
+            "pdf": "📄 PDF", "mcp_media": "📦 媒体", "media_url": "🔗 下载文件",
             "media_base64": "📦 Base64 文件",
         }.get(media_type, "📦 文件")
 
-        parsed_res["type"] = "text"
-        parsed_res["content"] = (
+        # 媒体处理成功后，将原本笨重的二进制字典退化成路径文本提示
+        return (
             f"{media_desc}已成功保存至本地:\n"
             f"📂 宿主机路径: {filepath}\n"
             f"🐳 沙盒内路径: {sandbox_path}"
         )
 
-        return json.dumps(parsed_res, ensure_ascii=False)
-
     except Exception as e:
         print(f"⚠️ [多媒体处理异常] {e}")
-        return None
+        return content_data
 
 
 def _execute_tool(target_func, arguments: dict) -> Any:
-    """
-    执行工具函数，支持同步和异步函数
-    """
-    # 兼容异步工具执行
+    """执行工具函数，支持同步和异步"""
     if inspect.iscoroutinefunction(target_func):
         try:
             loop = asyncio.get_running_loop()
@@ -159,11 +120,8 @@ def _execute_tool(target_func, arguments: dict) -> Any:
 
         if loop and loop.is_running():
             import nest_asyncio
-
             nest_asyncio.apply()
-            result = asyncio.get_event_loop().run_until_complete(
-                target_func(**arguments)
-            )
+            result = asyncio.get_event_loop().run_until_complete(target_func(**arguments))
         else:
             result = asyncio.run(target_func(**arguments))
     else:
@@ -174,144 +132,103 @@ def _execute_tool(target_func, arguments: dict) -> Any:
 
 def dispatch_tool(tool_name: str, arguments: dict, available_tokens: int = None):
     """
-    核心路由枢纽：统一处理工具调用的路由和执行
-
-    Args:
-        tool_name: 工具名称
-        arguments: 工具参数
-        available_tokens: 可用tokens数量（用于动态计算字数限制）
-
-    Returns:
-        格式化后的工具执行结果JSON字符串
+    核心路由枢纽：纯净的数据流处理
     """
-    result_content = ""
-
     try:
-        # 统一转为小写进行路由匹配（兼容 AGENT_TOOL_SCHEMA 中的大写工具名）
         tool_name_lower = tool_name.lower()
-
-        # 获取函数名（优先使用映射表，否则使用首字母大写）
         func_name = TOOL_FUNC_MAP.get(tool_name_lower, tool_name.capitalize())
 
-        # 构建模块路径：tool.{tool_name}.{tool_name}（使用小写）
         module_path = f"src.tool.{tool_name_lower}.{tool_name_lower}"
         try:
             tool_module = importlib.import_module(module_path)
         except ImportError:
-            # 尝试不带后缀的路径
             module_path = f"src.tool.{tool_name}"
             tool_module = importlib.import_module(module_path)
 
-        # 获取工具函数
         if not hasattr(tool_module, func_name):
             raise AttributeError(f"工具模块 '{module_path}' 中未找到函数: {func_name}")
 
         target_func = getattr(tool_module, func_name)
 
-        # 执行工具（支持同步和异步）
-        result_content = _execute_tool(target_func, arguments)
+        # 1. 获得执行结果 (新版统一格式 {"content": ..., "metadata": {...}})
+        result_obj = _execute_tool(target_func, arguments)
 
-        # 先检查是否为多媒体内容
-        try:
-            if isinstance(result_content, (dict, list)):
-                result_str = json.dumps(result_content, ensure_ascii=False)
-            else:
-                result_str = str(result_content)
-            parsed_res = json.loads(result_str)
+        # 2. 优雅解包数据与元数据
+        if isinstance(result_obj, dict) and "metadata" in result_obj:
+            content_data = result_obj.get("content", "")
+            metadata = result_obj.get("metadata", {})
+        else:
+            # 兼容未改造完毕的旧工具
+            content_data = result_obj
+            metadata = {
+                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+                "type": "text",
+                "snip": ""
+            }
 
-            media_result = _handle_media_content(parsed_res, tool_name_lower)
-            if media_result:
-                result_content = media_result
-                result_str = media_result
-                parsed_res = json.loads(result_str)
-        except json.JSONDecodeError:
-            parsed_res = None
+        # 3. 如果是多媒体文件字典，这里将其退化成纯文本的路径提示
+        content_data = _handle_media_content(content_data, tool_name_lower)
 
-        # 🌟 修改点 2：将最大截断长度固定为 5000（或随 Token 动态计算但不超过 5000）
-        MAX_LEN = 10000
+        # 4. 生成用于判断长度与落盘的纯净字符串
+        if isinstance(content_data, (dict, list)):
+            actual_content_str = json.dumps(content_data, ensure_ascii=False, indent=2)
+        else:
+            actual_content_str = str(content_data)
+
+        # 5. 长度拦截判断
+        MAX_LEN = 5000
         if available_tokens is not None:
             dynamic_max_len = int((available_tokens - 500) * 1.5)
-            # 取动态计算和 5000 之间的较小值，最大不超过 5000
-            MAX_LEN = min(10000, max(500, dynamic_max_len))
+            MAX_LEN = min(5000, max(500, dynamic_max_len))
 
-        if isinstance(result_content, (dict, list)):
-            result_str = json.dumps(result_content, ensure_ascii=False)
-        else:
-            result_str = str(result_content)
-
-        try:
-            parsed_res = json.loads(result_str)
-            # 🌟 修复点 1：只提取真正的 content，如果意外找不到 content，兜底用完整的 result_str
-            content_data = parsed_res.get("content", result_str)
-
-            # 🌟 修复点 2：加上 indent=2，确保字典/列表落盘时带有完美的缩进换行
-            if isinstance(content_data, (dict, list)):
-                actual_content_str = json.dumps(content_data, ensure_ascii=False, indent=2)
-            else:
-                # 若本身就是字符串（如 Bash 的多行输出），直接保留原样，其中 \n 会自然换行
-                actual_content_str = str(content_data)
-        except json.JSONDecodeError:
-            parsed_res = None
-            content_data = result_str
-            actual_content_str = result_str
-
-        # 超标验证（Fetch工具的source=skill时全量返回）
         is_fetch_skill = (
             tool_name_lower == "fetch"
             and arguments.get("source", "").lower() == "skill"
         )
+
         if len(actual_content_str) > MAX_LEN and not is_fetch_skill:
-            # 按工具名称分类全量存储（使用小写工具名）
+            # 📂 纯净落盘：100% 只保存数据本体，无协议头污染
             buffer_dir = BUFFER_DIR
             tool_dir = os.path.join(buffer_dir, tool_name_lower)
             os.makedirs(tool_dir, exist_ok=True)
             timestamp = time.strftime("%Y%m%d_%H%M%S")
             file_name = f"{timestamp}_{uuid.uuid4().hex[:4]}.txt"
             cache_path = os.path.join(tool_dir, file_name)
+
             with open(cache_path, "w", encoding="utf-8") as f:
                 f.write(actual_content_str)
 
-            # 执行结构化截断
+            # 🛠️ 覆盖更新 Context 与 Metadata
             truncated_str = _safe_truncate(content_data, MAX_LEN)
             warning_msg = (
-                f"⚠️ [系统拦截] {tool_name} 输出总长 {len(actual_content_str)} 字符，超出当前安全余量阈值 {MAX_LEN}。完整结果已落盘：\n"
+                f"⚠️ [系统拦截] {tool_name} 输出总长 {len(actual_content_str)} 字符，超出当前安全余量阈值。完整结果已落盘：\n"
                 f"🐳 沙盒内路径: /agent_vm/.buffer/{tool_name_lower}/{file_name}\n"
                 f"如果你需要查看剩余的内容，请务必使用 Bash (cat/grep/sed/tail) 工具去上述缓存文件里分批阅读！\n"
                 f"\n--- 内容预览 (前 {MAX_LEN} 字符) ---\n"
                 f"{truncated_str}"
             )
 
-            # 🌟 修改点 3：强制配置指定的 snip 文本
-            snip_msg = "字数超长已被截断并落盘"
+            content_data = warning_msg
+            metadata["type"] = "warning"
+            metadata["snip"] = "字数超长已被截断并落盘"
 
-            # 安全回填内容
-            if parsed_res and isinstance(parsed_res, dict):
-                parsed_res["type"] = "warning"
-                parsed_res["content"] = warning_msg
-                parsed_res["snip"] = snip_msg  # 注入修改后的 snip
-                result_content = json.dumps(parsed_res, ensure_ascii=False)
-            else:
-                from src.tool.utils.format import warning_response
-
-                # 通过 warning_response 参数透传修改后的 snip
-                result_content = warning_response(warning_msg, snip=snip_msg)
+        # 6. 最终封包组装返回给 LLM （这是全链路唯一一次打包为 JSON 字符串）
+        final_response = {
+            "timestamp": metadata.get("timestamp", ""),
+            "type": metadata.get("type", "text"),
+            "snip": metadata.get("snip", ""),
+            "content": content_data
+        }
+        return json.dumps(final_response, ensure_ascii=False)
 
     except Exception as e:
         traceback.print_exc()
-        from src.tool.utils.format import error_response
-
-        err_res = error_response(f"❌ 工具 [{tool_name}] 调度/执行发生异常: {str(e)}")
-        result_content = (
-            json.dumps(err_res, ensure_ascii=False)
-            if isinstance(err_res, dict)
-            else str(err_res)
-        )
-
-    if not isinstance(result_content, str):
-        result_content = (
-            json.dumps(result_content, ensure_ascii=False)
-            if isinstance(result_content, (dict, list))
-            else str(result_content)
-        )
-
-    return result_content
+        # 异常兜底构造
+        err_msg = f"❌ 工具 [{tool_name}] 调度/执行发生异常: {str(e)}"
+        final_err_res = {
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "type": "error",
+            "snip": "❌ 执行异常",
+            "content": err_msg
+        }
+        return json.dumps(final_err_res, ensure_ascii=False)

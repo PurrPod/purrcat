@@ -92,10 +92,8 @@ def Task(action: str, **kwargs) -> str:
             return error_response(f"无效的操作: {action}", "❌ 无效action")
 
         if action == "list_graphs":
-            return text_response(
-                {"message": _get_graphs_help_text(_get_all_graphs_info())},
-                "📂 可用图列表",
-            )
+            # 🌟 改造：把 _get_graphs_help_text 的结果直接作为 content
+            return text_response(_get_graphs_help_text(_get_all_graphs_info()), "📂 可用图列表")
         if action == "list_tasks":
             return _handle_list_tasks()
         if action == "add":
@@ -257,6 +255,5 @@ def _handle_get_details(**kwargs) -> str:
         dashboard_text = "\n".join(lines)
 
     # 你甚至可以把 raw_data 也塞进 response 里，看具体框架是否剔除多余参数
-    return text_response(
-        {"message": dashboard_text}, f"📊 任务 [{task_id}] 交互节点看板"
-    )
+    # 🌟 改造：直接返回 dashboard_text 字符串
+    return text_response(dashboard_text, f"📊 任务 [{task_id}] 看板")

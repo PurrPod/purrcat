@@ -101,7 +101,7 @@ def BrainStorm(
                 )
 
             # 🌟 使用前面拼接好的相同文本返回给主分支
-            return text_response({"status": "success"}, final_response_text)
+            return text_response(final_response_text, "🚀 脑暴计划已生效")
 
         return error_response("无效的 action 指令")
 
