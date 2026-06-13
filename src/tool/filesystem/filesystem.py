@@ -2,6 +2,8 @@
 
 import traceback
 
+from src.tool.filesystem.copy_file import copy_file
+from src.tool.filesystem.delete_file import delete_file
 from src.tool.filesystem.exceptions import FileSystemError, HostPathNotFoundError
 from src.tool.filesystem.history import rewind_file
 from src.tool.filesystem.list_filesystem import list_filesystem
@@ -33,6 +35,8 @@ def FileSystem(action: str, path: str = None, destination: str = None, **kwargs)
             "search",
             "glob",
             "move",
+            "copy",
+            "delete",
             "undo",
         ]
 
@@ -142,6 +146,28 @@ def FileSystem(action: str, path: str = None, destination: str = None, **kwargs)
                 return error_response("源路径不存在", "❌ 路径不存在")
             except FileSystemError as e:
                 return error_response(str(e), "❌ 移动失败")
+
+        if action == "copy":
+            if not destination:
+                return error_response(
+                    "copy 操作需提供 destination 目标路径", "❌ 参数缺失"
+                )
+            try:
+                result = copy_file(path_from=path, path_to=destination)
+                return text_response(result, "📋 复制成功")
+            except HostPathNotFoundError:
+                return error_response("源路径不存在", "❌ 路径不存在")
+            except FileSystemError as e:
+                return error_response(str(e), "❌ 复制失败")
+
+        if action == "delete":
+            try:
+                result = delete_file(path=path)
+                return text_response(result, result["message"])
+            except HostPathNotFoundError:
+                return error_response("要删除的路径不存在", "❌ 路径不存在")
+            except FileSystemError as e:
+                return error_response(str(e), "❌ 删除失败")
 
         return error_response("未知错误", "❌ 系统错误")
 
