@@ -140,9 +140,17 @@ def _handle_search(query: dict = None) -> str:
             f"🔍 [MemoSearch] search_memory 返回 | result长度={len(result) if result else 0}"
         )
 
+        # ====== 修复部分 ======
+        # 如果底层直接返回了组装好的文本，直接使用
+        if isinstance(result, str):
+            return text_response(result or "未检索到相关记忆。", "🔍 记忆检索成功")
+            
+        # 如果返回的是字典列表，再使用 get 方法
         res_str = ""
-        for idx, r in enumerate(result):
-            res_str += f"[{idx+1}] {r.get('date', '')} - 相似度: {r.get('score', 0)}\n内容: {r.get('content', '')}\n\n"
+        for idx, r in enumerate(result or []):
+            if isinstance(r, dict):
+                res_str += f"[{idx+1}] {r.get('date', '')} - 相似度: {r.get('score', 0)}\n内容: {r.get('content', '')}\n\n"
+        
         return text_response(res_str or "未检索到相关记忆。", "🔍 记忆检索成功")
 
     except Exception as e:

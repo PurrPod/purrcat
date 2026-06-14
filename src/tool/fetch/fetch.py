@@ -108,14 +108,29 @@ def Fetch(
 
             res_messages = []
             res_messages.append(f"成功找到 MCP Server '{serve_name}' 的工具信息。")
-            res_messages.append("--- 工具 Schema ---")
+            
+            # 根据是否指定了 tool_names，决定标题和输出的详细程度
+            res_messages.append("--- 工具列表 ---" if not tool_names else "--- 工具 Schema ---")
+            
             for schema in result:
-                res_messages.append(json.dumps(schema["function"], ensure_ascii=False))
+                func = schema.get("function", {})
+                if not tool_names:
+                    # 渐进式披露：只显示名称和描述，省略长篇大论的 parameters
+                    name = func.get("name", "unknown")
+                    desc = func.get("description", "无描述")
+                    res_messages.append(f"- **{name}**: {desc}")
+                else:
+                    # 精确查询时：完整输出包含 parameters 的 Schema
+                    res_messages.append(json.dumps(func, ensure_ascii=False))
+                    
             res_messages.append("-----")
             res_messages.append("请使用 `CallMCP` 调用这些工具。")
 
-            if tool_names:
-                res_messages.append("如需更多工具，不传 tool_names 即可列出全部。")
+            # 动态调整尾部提示语
+            if not tool_names:
+                res_messages.append("💡 提示：如果需要获取更详细的参数说明，请再指定具体工具名 (`tool_names`)。")
+            else:
+                res_messages.append("💡 如需更多工具，不传 tool_names 即可列出该 Server 下的全部工具。")
 
             # 🌟 改造：直接返回 "\n".join() 拼接好的字符串
             return text_response("\n".join(res_messages), f"🔧 {serve_name} | {len(result)}个工具")
