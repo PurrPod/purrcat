@@ -57,14 +57,39 @@ class WindowsAdapter(BasePlatformAdapter):
             return []
 
     def get_focused_element_info(self) -> str:
-        """获取当前活动窗口"""
+        """获取当前拥有焦点的精准控件信息（不再只有窗口标题）"""
         try:
             import win32gui
+            # 1. 先获取当前活动窗口，作为兜底信息
             hwnd = win32gui.GetForegroundWindow()
             if not hwnd:
                 return ""
-            title = win32gui.GetWindowText(hwnd)
-            return f"活动窗口: '{title}'"
+            app_name = win32gui.GetWindowText(hwnd)
+
+            # 2. 尝试使用 UI Automation 获取元素级焦点
+            try:
+                # 引入专业的 uiautomation 库（通常比 pywinauto 查焦点更直接）
+                import uiautomation as auto
+                
+                # 获取系统级当前拥有键盘焦点的控件
+                focused_control = auto.GetFocusedControl()
+                
+                if focused_control:
+                    ctrl_type = focused_control.ControlTypeName
+                    name = focused_control.Name or ""
+                    
+                    # 拼装出和 macOS 一模一样的格式，大模型最喜欢这种
+                    if name:
+                        return f"焦点位于: [{ctrl_type.replace('Control', '')}] '{name}' (所属应用: {app_name})"
+                    else:
+                        return f"焦点位于: [{ctrl_type.replace('Control', '')}] (所属应用: {app_name})"
+            except ImportError:
+                # 如果没装 uiautomation，也可以尝试用自带的 pywinauto 去遍历 (效率稍低)
+                pass
+
+            # 3. 如果 UIA 失败（比如遇到不支持的自绘引擎游戏），兜底返回窗口标题
+            return f"活动窗口: '{app_name}'"
+            
         except Exception:
             return ""
 

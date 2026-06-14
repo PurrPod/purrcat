@@ -15,7 +15,7 @@ def _setup_warnings():
     warnings.filterwarnings("ignore", category=RuntimeWarning, message="coroutine 'ExpiringCache._start_clear_cron' was never awaited")
     warnings.filterwarnings("ignore", category=UserWarning, message="pkg_resources is deprecated as an API")
     # 🌟 在程序启动时就拦截 PyTorch 的 pin_memory 警告（必须在 sentence_transformers 导入前生效）
-    warnings.filterwarnings("ignore", message=".*'pin_memory' argument is set as true but no accelerator is found.*")
+    warnings.filterwarnings("ignore", message=".*'pin_memory' argument is set as true but no accelerator is found.*", category=UserWarning)
 
 
 async def _bg_heavy_init(enable_tui: bool):

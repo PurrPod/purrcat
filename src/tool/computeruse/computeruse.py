@@ -7,6 +7,7 @@ import os
 
 from src.tool.computeruse.executor import execute_action
 from src.tool.computeruse.exceptions import ComputerUseError
+from src.tool.computeruse.cursor_manager import notify_ai_active
 from src.tool.utils.format import error_response, text_response, warning_response
 from src.utils.config import DATA_DIR
 
@@ -39,6 +40,9 @@ def ComputerUse(action: str, coordinate: list = None, element_id: str = None, te
         # 🌟 权限检查：验证是否有有效的 ComputerUse 授权
         if not _check_computer_use_auth():
             return error_response("当前没有操作物理电脑的权限，请先向老板发起申请。\n\n使用方式：\n```python\nRequest(\n    request_type=\"computer_use\",\n    target=\"system\",\n    reason=\"需要操作电脑完成XX任务，预计需要X分钟\"\n)\n```", "⚠️ 权限拦截")
+
+        # 👇 添加这一行：通知 AI 正在控制鼠标 👇
+        notify_ai_active()
 
         # 调度执行
         result = execute_action(action, coordinate=coordinate, element_id=element_id, text=text,

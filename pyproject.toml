@@ -29,6 +29,7 @@ dependencies = [
     "easyocr>=1.7.0",
     "pywin32>=306; platform_system=='Windows'",
     "pywinauto>=0.6.8; platform_system=='Windows'",
+    "uiautomation>=2.0.24; platform_system=='Windows'",
     "pyobjc>=10.0; platform_system=='Darwin'",
 
     # 系统与沙盒
