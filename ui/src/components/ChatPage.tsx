@@ -289,6 +289,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   const [showReqQueue, setShowReqQueue] = useState(false);
   const [pendingReqs, setPendingReqs] = useState<any[]>([]);
   const [feedbackInputs, setFeedbackInputs] = useState<Record<string, string>>({});
+  const [authDurations, setAuthDurations] = useState<Record<string, number>>({}); // 🌟 新增：存储每个请求的授权时长
   const prevPendingIds = useRef<string[]>([]);
   const [expandedReasons, setExpandedReasons] = useState<Record<string, boolean>>({});
 
@@ -412,17 +413,18 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
     return () => clearInterval(interval);
   }, []);
 
-  const handleResolveReq = async (reqId: string, approved: boolean, ignore: boolean) => {
+  const handleResolveReq = async (reqId: string, approved: boolean, ignore: boolean, duration: number = 5) => {
     const feedback = feedbackInputs[reqId] || '';
     try {
       const res = await fetch(`http://localhost:8000/api/requests/${reqId}/resolve`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ approved, feedback, ignore })
+        body: JSON.stringify({ approved, feedback, ignore, duration })
       });
       if (res.ok) {
         toast.success(ignore ? "请求已静默忽略" : "请求处理完成");
         setFeedbackInputs(prev => { const n = {...prev}; delete n[reqId]; return n; });
+        setAuthDurations(prev => { const n = {...prev}; delete n[reqId]; return n; });
         fetchRequests();
       } else {
         toast.error("请求处理失败");
@@ -2679,6 +2681,24 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                     )}
                   </div>
 
+                  {/* 🌟 computer_use 请求显示授权时长选择器 */}
+                  {req.type === 'computer_use' && (
+                    <div className="flex items-center justify-between mt-1 mb-1 p-2 border-2 border-ink bg-[#88c0d0]/20" style={sketchyShape3}>
+                      <span className="text-xs font-black text-ink uppercase">⏳ TIME LIMIT:</span>
+                      <select 
+                        value={authDurations[req.id] || 5} 
+                        onChange={e => setAuthDurations({...authDurations, [req.id]: parseInt(e.target.value)})}
+                        className="bg-cream border-2 border-ink text-xs p-1 font-bold"
+                        style={sketchyShape2}
+                      >
+                        <option value={5}>5 MINS</option>
+                        <option value={10}>10 MINS</option>
+                        <option value={30}>30 MINS</option>
+                        <option value={60}>1 HOUR</option>
+                      </select>
+                    </div>
+                  )}
+
                   <input
                     value={feedbackInputs[req.id] || ''}
                     onChange={e => setFeedbackInputs({...feedbackInputs, [req.id]: e.target.value})}
@@ -2688,10 +2708,10 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                   />
 
                   <div className="flex gap-2 mt-1">
-                    <button onClick={() => handleResolveReq(req.id, true, false)} className="flex-1 bg-[#a3be8c] text-ink font-black text-xs py-2 border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:bg-[#8eb072] active:translate-y-1 active:shadow-none transition-all flex justify-center items-center" style={sketchyShape1}>
+                    <button onClick={() => handleResolveReq(req.id, true, false, authDurations[req.id] || 5)} className="flex-1 bg-[#a3be8c] text-ink font-black text-xs py-2 border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:bg-[#8eb072] active:translate-y-1 active:shadow-none transition-all flex justify-center items-center" style={sketchyShape1}>
                       APPROVE
                     </button>
-                    <button onClick={() => handleResolveReq(req.id, false, false)} className="flex-1 bg-[#bf616a] text-paper font-black text-xs py-2 border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:bg-[#a54e56] active:translate-y-1 active:shadow-none transition-all" style={sketchyShape2}>
+                    <button onClick={() => handleResolveReq(req.id, false, false, authDurations[req.id] || 5)} className="flex-1 bg-[#bf616a] text-paper font-black text-xs py-2 border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:bg-[#a54e56] active:translate-y-1 active:shadow-none transition-all" style={sketchyShape2}>
                       REJECT
                     </button>
                   </div>

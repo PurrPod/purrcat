@@ -11,7 +11,7 @@ def Request(request_type: str, target: str, reason: str, **kwargs) -> str:
     向人类（老板）发起审批请求。
 
     适用场景：
-    - 权限拦截：读写宿主机文件
+    - 权限拦截：读写宿主机文件、操作物理电脑
     - 能力缺失：需下载 mcp/skill/sensor/graph
 
     提交后会等待老板的 Yes/No 审批，期间可挂起或执行其他独立任务。
@@ -24,6 +24,7 @@ def Request(request_type: str, target: str, reason: str, **kwargs) -> str:
             "file_read",
             "sensor_install",
             "graph_install",
+            "computer_use"
         ]
 
         if request_type not in valid_types:
@@ -47,7 +48,6 @@ def Request(request_type: str, target: str, reason: str, **kwargs) -> str:
             f"3. 若当前有其他与此请求无强关联的独立任务（如查阅其他文档、整理现有数据），你可以继续执行。"
         )
 
-        # 🌟 改造：直接返回 msg 字符串
         return text_response(msg, f"⏳ 申请已提交: {result['id']}")
 
     except Exception as e:

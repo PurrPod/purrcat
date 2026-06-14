@@ -2,9 +2,26 @@
 
 import traceback
 import time
+import json
+import os
+
 from src.tool.computeruse.executor import execute_action
 from src.tool.computeruse.exceptions import ComputerUseError
 from src.tool.utils.format import error_response, text_response, warning_response
+from src.utils.config import DATA_DIR
+
+
+def _check_computer_use_auth() -> bool:
+    """检查当前是否有有效的 ComputerUse 权限授权"""
+    try:
+        auth_file = os.path.join(DATA_DIR, "checkpoints", "agent", "computer_use_auth.json")
+        if not os.path.exists(auth_file):
+            return False
+        with open(auth_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return time.time() < data.get("expire_at", 0)
+    except Exception:
+        return False
 
 
 def ComputerUse(action: str, coordinate: list = None, element_id: str = None, text: str = None,
@@ -18,6 +35,10 @@ def ComputerUse(action: str, coordinate: list = None, element_id: str = None, te
 
         if action in ["type", "key", "find_element"] and not text:
             return error_response(f"缺少文本参数 text，操作: {action}", "❌ 缺少文本")
+
+        # 🌟 权限检查：验证是否有有效的 ComputerUse 授权
+        if not _check_computer_use_auth():
+            return error_response("当前没有操作物理电脑的权限，请先向老板发起申请。\n\n使用方式：\n```python\nRequest(\n    request_type=\"computer_use\",\n    target=\"system\",\n    reason=\"需要操作电脑完成XX任务，预计需要X分钟\"\n)\n```", "⚠️ 权限拦截")
 
         # 调度执行
         result = execute_action(action, coordinate=coordinate, element_id=element_id, text=text,

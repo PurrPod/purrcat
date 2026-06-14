@@ -21,6 +21,11 @@ class BasePlatformAdapter(ABC):
         pass
 
     @abstractmethod
+    def get_focused_element_info(self) -> str:
+        """获取当前拥有焦点的控件信息或活动窗口标题"""
+        pass
+
+    @abstractmethod
     def move_mouse(self, x: int, y: int) -> None:
         pass
 

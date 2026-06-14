@@ -58,10 +58,95 @@ class MacOSAdapter(BasePlatformAdapter):
         except:
             return []
 
+    def get_focused_element_info(self) -> str:
+        """获取当前获取焦点的元素，避免盲目猜测"""
+        try:
+            import AppKit
+            from ApplicationServices import AXUIElementCreateSystemWide, AXUIElementCopyAttributeValue
+
+            workspace = AppKit.NSWorkspace.sharedWorkspace()
+            active_app = workspace.frontmostApplication()
+            app_name = active_app.localizedName() if active_app else "未知应用"
+
+            system_wide = AXUIElementCreateSystemWide()
+            err, focused_element = AXUIElementCopyAttributeValue(system_wide, "AXFocusedUIElement", None)
+
+            if err == 0 and focused_element:
+                _, role = AXUIElementCopyAttributeValue(focused_element, "AXRole", None)
+                _, title = AXUIElementCopyAttributeValue(focused_element, "AXTitle", None)
+                _, val = AXUIElementCopyAttributeValue(focused_element, "AXValue", None)
+
+                role_str = role.replace('AX', '') if role else "Element"
+                desc = title or val or ""
+                if desc:
+                    return f"焦点位于: [{role_str}] '{desc}' (所属应用: {app_name})"
+                return f"焦点位于: [{role_str}] (所属应用: {app_name})"
+
+            return f"当前活动应用: {app_name}"
+        except Exception:
+            return ""
+
     def get_ui_tree_elements(self) -> list:
-        # 简化版：macOS 用 AppleScript 批量获取结构较慢，交由 OCR 兜底
-        # 实际生产中可以加入 AXUIElement 过滤，这里为演示轻量化
-        return []
+        """限制深度的原生 UI 树解析，解决空白输入框致盲问题"""
+        elements = []
+        try:
+            import AppKit
+            from ApplicationServices import AXUIElementCreateApplication, AXUIElementCopyAttributeValue
+
+            workspace = AppKit.NSWorkspace.sharedWorkspace()
+            active_app = workspace.frontmostApplication()
+            if not active_app:
+                return []
+
+            app_element = AXUIElementCreateApplication(active_app.processIdentifier())
+
+            err, focused_window = AXUIElementCopyAttributeValue(app_element, "AXFocusedWindow", None)
+            if err != 0 or not focused_window:
+                err, focused_window = AXUIElementCopyAttributeValue(app_element, "AXMainWindow", None)
+                if err != 0 or not focused_window:
+                    return []
+
+            VALID_ROLES = ["AXButton", "AXTextField", "AXTextArea", "AXLink", "AXMenuItem", "AXStaticText", "AXCheckBox"]
+
+            def traverse(element, depth=0):
+                if depth > 5:
+                    return  # 严格限制深度防卡死
+
+                err_role, role = AXUIElementCopyAttributeValue(element, "AXRole", None)
+                if err_role == 0 and role in VALID_ROLES:
+                    _, title = AXUIElementCopyAttributeValue(element, "AXTitle", None)
+                    _, val = AXUIElementCopyAttributeValue(element, "AXValue", None)
+                    _, help_text = AXUIElementCopyAttributeValue(element, "AXHelp", None)
+                    _, desc = AXUIElementCopyAttributeValue(element, "AXDescription", None)
+
+                    # 提取占位符(Placeholder)和气泡提示(ToolTip)
+                    text = title or val or help_text or desc or ""
+
+                    try:
+                        err_pos, pos_val = AXUIElementCopyAttributeValue(element, "AXPosition", None)
+                        err_size, size_val = AXUIElementCopyAttributeValue(element, "AXSize", None)
+
+                        if err_pos == 0 and err_size == 0 and pos_val and size_val:
+                            x, y = pos_val.x, pos_val.y
+                            w, h = size_val.width, size_val.height
+
+                            elements.append({
+                                "type": f"[{role.replace('AX', '')}]",
+                                "text": str(text),
+                                "bbox": [x, y, x + w, y + h]
+                            })
+                    except:
+                        pass
+
+                err_children, children = AXUIElementCopyAttributeValue(element, "AXChildren", None)
+                if err_children == 0 and children:
+                    for child in children:
+                        traverse(child, depth + 1)
+
+            traverse(focused_window)
+        except Exception:
+            pass
+        return elements
 
     def scroll(self, amount: int):
         # macOS 滚动单位较大，需要调优

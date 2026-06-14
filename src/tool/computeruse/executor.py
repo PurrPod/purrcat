@@ -208,10 +208,16 @@ def execute_action(action: str, coordinate: list = None, element_id: str = None,
                     adapter.drag_mouse(phys_x, phys_y)
                 else:
                     raise ExecutionFailedError(action, "未知动作")
-                message = f"鼠标操作 {action} 完成 (逻辑坐标: {logical_x},{logical_y})"
+                message = f"鼠标操作 {action} 完成 (坐标: {logical_x},{logical_y})"
 
             # 执行 Agent 指定的等待期
             time.sleep(defer_sleep)
+
+            # 🌟 新增：操作后自动抓取焦点状态，反馈给大模型，免去二次截图盲猜！
+            focus_status = adapter.get_focused_element_info()
+            if focus_status:
+                message += f"\n💡 [系统自动反馈]: {focus_status}"
+
             return {"message": message}
 
     except Exception as e:

@@ -57,6 +57,21 @@ def _grant_file_permission(req_type: str, target: str):
         json.dump(config, f, indent=2, ensure_ascii=False)
 
 
+def _grant_computer_use(duration: int):
+    """🌟 自动下发 ComputerUse 的有时效性授权"""
+    import time
+    from src.utils.config import DATA_DIR
+    
+    auth_file = os.path.join(DATA_DIR, "checkpoints", "agent", "computer_use_auth.json")
+    os.makedirs(os.path.dirname(auth_file), exist_ok=True)
+    
+    # 记录授权过期时间戳
+    expire_at = time.time() + duration * 60
+    
+    with open(auth_file, "w", encoding="utf-8") as f:
+        json.dump({"expire_at": expire_at}, f)
+
+
 def _install_skill_from_github(skill_name: str):
     """下载并安装特定 Skill"""
     url = "https://github.com/PurrPod/skillpod/archive/refs/heads/main.zip"
@@ -98,7 +113,7 @@ def _install_skill_from_github(skill_name: str):
 
 
 def resolve_request(
-    req_id: str, approved: bool, feedback: str = "", ignore: bool = False
+    req_id: str, approved: bool, feedback: str = "", ignore: bool = False, duration: int = 5
 ) -> dict:
     if not os.path.exists(REQUESTS_FILE):
         return {"status": "error", "message": "文件不存在"}
@@ -118,6 +133,8 @@ def resolve_request(
                     _install_skill_from_github(target)
                 elif req_type in ["file_read", "file_write"]:
                     _grant_file_permission(req_type, target)
+                elif req_type == "computer_use":
+                    _grant_computer_use(duration)  # 🌟 添加授权逻辑
             except Exception as e:
                 approved = False
                 feedback = f"老板已同意，但执行失败: {str(e)}。{feedback}"

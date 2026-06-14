@@ -56,6 +56,18 @@ class WindowsAdapter(BasePlatformAdapter):
         except:
             return []
 
+    def get_focused_element_info(self) -> str:
+        """获取当前活动窗口"""
+        try:
+            import win32gui
+            hwnd = win32gui.GetForegroundWindow()
+            if not hwnd:
+                return ""
+            title = win32gui.GetWindowText(hwnd)
+            return f"活动窗口: '{title}'"
+        except Exception:
+            return ""
+
     def get_ui_tree_elements(self) -> list:
         try:
             import pywinauto
@@ -68,22 +80,25 @@ class WindowsAdapter(BasePlatformAdapter):
             front_window = app.window(handle=hwnd)
 
             elements = []
-            # 实施精准控件过滤
             VALID_CONTROLS = ["ButtonControl", "EditControl", "MenuItemControl", "TabItemControl",
                               "ListItemControl", "HyperlinkControl", "DocumentControl"]
 
             def traverse(ctrl, depth=0):
                 if depth > 5:
-                    return  # 防止卡死
+                    return
                 try:
                     ctrl_type = ctrl.element_info.control_type
                     name = ctrl.element_info.name
+                    # 提取 helper 文本，应对没有 name 的输入框
+                    help_text = ctrl.element_info.help_text
+                    text = name or help_text or ""
+
                     rect = ctrl.element_info.rectangle
 
                     if ctrl_type in VALID_CONTROLS:
                         elements.append({
                             "type": f"[{ctrl_type.replace('Control', '')}]",
-                            "text": name or "",
+                            "text": text,
                             "bbox": [rect.left, rect.top, rect.right, rect.bottom]
                         })
                     for child in ctrl.children():
