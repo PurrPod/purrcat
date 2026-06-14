@@ -1,10 +1,18 @@
 import threading
+import warnings  # 🌟 引入 warnings 模块
 
 import jieba
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 
 from src.utils.config import get_embedding_model
+
+# 🌟 精准拦截 PyTorch 在 CPU 环境下的 pin_memory 警告
+warnings.filterwarnings(
+    "ignore",
+    message=".*'pin_memory' argument is set as true but no accelerator is found.*",
+    category=UserWarning
+)
 
 
 def hybrid_tokenize(text: str) -> list[str]:

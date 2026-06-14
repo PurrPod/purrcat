@@ -59,18 +59,21 @@ class SubAgentRunner:
         internal_branch_id: str,
         display_branch_id: str,
         action: str,
-        deliverable: str,
+        deliverable: list,
         initial_history: list,
     ):
         self.main_session_id = main_session_id
         self.internal_branch_id = internal_branch_id  # 隔离的内部唯一 ID
         self.display_branch_id = display_branch_id  # 模型可见的极简 ID (b1)
         self.action = action
-        self.deliverable_path = (
-            deliverable.replace("/agent_vm", AGENT_VM_DIR, 1)
-            if deliverable.startswith("/agent_vm")
-            else deliverable
-        )
+
+        # 🌟 修复：批量转换物理路径
+        self.deliverable_paths = []
+        for d in deliverable:
+            if d.startswith("/agent_vm"):
+                self.deliverable_paths.append(d.replace("/agent_vm", AGENT_VM_DIR, 1))
+            else:
+                self.deliverable_paths.append(d)
 
         # 隔离历史记录（从主分支历史点深拷贝）
         self.messages = copy.deepcopy(initial_history)
@@ -87,16 +90,17 @@ class SubAgentRunner:
             self.main_session_id,
             self.messages,
             branch_id=self.internal_branch_id,
-            deliverable=self.deliverable_path,
+            deliverable=self.deliverable_paths,
             action=self.action,
         )
 
     async def run(self):
-        # 🌟 修复 1：改为 user 角色，并按要求定制话术
+        # 🌟 修复 1：把数组拼接成可读的列表展示给大模型
+        deliverable_txt = "\n".join([f"- {p}" for p in self.deliverable_paths])
         user_inject = (
             f"当前你已被分配到分支 {self.display_branch_id}。\n"
             f"你需要：{self.action}\n"
-            f"交付物要求（请生成以下文件）：{self.deliverable_path}\n"
+            f"交付物要求（请生成以下文件）：\n{deliverable_txt}\n"
             f"请全力完成交付物生成，完成后请立即停止调用任何工具，请勿染指无关事项。"
         )
         self.messages.append({"role": "user", "content": user_inject})
@@ -151,25 +155,29 @@ class SubAgentRunner:
 
             tool_calls = extract_tool_calling(response)
 
-            # 🌟 修改 1：同时检测文件存在且大小大于 0（非空）
-            file_ready = (
-                os.path.exists(self.deliverable_path)
-                and os.path.getsize(self.deliverable_path) > 0
-            )
+            # 🌟 修复 2：检查所有的文件是否都存在且不为空
+            missing_files = []
+            for p in self.deliverable_paths:
+                if not (os.path.exists(p) and os.path.getsize(p) > 0):
+                    missing_files.append(p)
+
+            file_ready = (len(missing_files) == 0)  # 如果没有缺失文件，就是 ready
             turn_count += 1
 
             # 3. 契约验收逻辑 (无工具调用时)
             if not tool_calls:
                 if file_ready:
                     self._notify_main(
-                        f"✅ [后台捷报] 子分支 `{self.display_branch_id}` 任务已圆满结束！目标交付物文件已就绪且内容不为空。"
+                        f"✅ [后台捷报] 子分支 `{self.display_branch_id}` 任务已圆满结束！所有目标交付物文件均已就绪且内容不为空。"
                     )
                     break
                 else:
+                    # 🌟 修复 3：精确告诉大模型究竟还差哪几个文件
+                    missing_txt = "\n".join([f"- {p}" for p in missing_files])
                     self.messages.append(
                         {
                             "role": "user",
-                            "content": f"任务未结束：未在沙盒中检测到要求的交付物文件 {self.deliverable_path}，或者该文件目前为空，请确保生成并写入具体内容。",
+                            "content": f"任务未结束：未在沙盒中检测到以下要求的交付物文件，或者文件目前为空。请确保生成并写入具体内容：\n{missing_txt}",
                         }
                     )
                     self._save_history()  # 验收失败追加 prompt 后落盘

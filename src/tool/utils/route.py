@@ -17,6 +17,7 @@ TOOL_FUNC_MAP = {
     "filesystem": "FileSystem",
     "bash": "Bash",
     "brainstorm": "BrainStorm",
+    "computeruse": "ComputerUse",
     "cron": "Cron",
     "callmcp": "CallMCP",
     "memo": "Memo",
@@ -142,7 +143,7 @@ def dispatch_tool(tool_name: str, arguments: dict, available_tokens: int = None)
         try:
             tool_module = importlib.import_module(module_path)
         except ImportError:
-            module_path = f"src.tool.{tool_name}"
+            module_path = f"src.tool.{tool_name_lower}"
             tool_module = importlib.import_module(module_path)
 
         if not hasattr(tool_module, func_name):

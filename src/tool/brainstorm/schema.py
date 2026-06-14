@@ -31,8 +31,9 @@ BRAINSTORM_TOOL_SCHEMA = {
                                 "description": "指派给打工仔分支的具体任务动作和上下文指导",
                             },
                             "deliverable": {
-                                "type": "string",
-                                "description": "交付物：要求该分支完结前必须生成的沙盒物理文件路径（如 /agent_vm/api.py）",
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "交付物：要求该分支完结前必须生成的物理文件路径数组（如 ['/agent_vm/api.py', '/agent_vm/config.json']）",
                             },
                             "depends_on": {
                                 "type": "array",

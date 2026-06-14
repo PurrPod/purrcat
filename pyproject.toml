@@ -24,6 +24,13 @@ dependencies = [
     "curl-cffi>=0.6.0", "ddgs>=0.1.0", "beautifulsoup4>=4.12.3",
     "readability-lxml>=0.8.1", "markdown>=3.5.0", "markdownify>=0.11.6",
 
+    # 计算机控制
+    "pyautogui>=0.9.54", "pyperclip>=1.8.2", "mss>=9.0.1", "Pillow>=10.0.0",
+    "easyocr>=1.7.0",
+    "pywin32>=306; platform_system=='Windows'",
+    "pywinauto>=0.6.8; platform_system=='Windows'",
+    "pyobjc>=10.0; platform_system=='Darwin'",
+
     # 系统与沙盒
     "docker>=7.0.0", "pexpect>=4.9.0", "markitdown[all]>=0.0.1", "ruff>=0.3.0",
 
