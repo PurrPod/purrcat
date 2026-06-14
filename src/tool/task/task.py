@@ -245,13 +245,11 @@ def _handle_get_details(**kwargs) -> str:
     # ===== 在此层进行 LLM 友好的平文本渲染 =====
     nodes_info = result.get("nodes", [])
     if not nodes_info:
-        dashboard_text = "当前任务没有支持指令注入的节点。"
+        dashboard_text = "当前任务没有任何可交互的挂起节点。"
     else:
-        lines = []
+        lines = ["💡 以下是当前等待/正在运行的交互节点，你可以使用 submit_request 注入指令）："]
         for node in nodes_info:
-            lines.append(f"@{node['name']}(id: {node['id']}): {node['state']}")
+            lines.append(f"- 节点: [{node['name']}] (ID: {node['id']}) | 状态: {node.get('state', '未知')}")
         dashboard_text = "\n".join(lines)
 
-    # 你甚至可以把 raw_data 也塞进 response 里，看具体框架是否剔除多余参数
-    # 🌟 改造：直接返回 dashboard_text 字符串
-    return text_response(dashboard_text, f"📊 任务 [{task_id}] 看板")
+    return text_response(dashboard_text, f"📊 任务看板")

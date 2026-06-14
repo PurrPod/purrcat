@@ -117,11 +117,11 @@ def _search_local(query: str, topk: int) -> str:
             return text_response(f"关于 '{query}' 未找到任何本地技能或MCP工具。", "🔍 Local无结果")
 
         # 3. 极限压缩 Token 的渲染方式
-        lines = [f"🎯 混合能力检索 Top{len(top_results)}:"]
+        lines = [f"# 混合检索得分 Top{len(top_results)}:"]
         for item in top_results:
-            lines.append(f"{item['type']} {item['name']} (分:{item['score']}) - {item['desc']}")
+            lines.append(f"{item['type']} {item['name']} ({item['score']}) - {item['desc']}")
 
-        lines.append("\n💡 提示: 若需使用上述能力，请使用 `Fetch` 工具获取完整参数与细节。")
+        lines.append("\n提示: 若需使用上述能力，请使用 `Fetch` 工具获取完整参数与细节。")
 
         return text_response("\n".join(lines), f"🔧 Local | 命中{len(top_results)}个能力")
 

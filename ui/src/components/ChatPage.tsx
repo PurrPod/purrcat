@@ -8,7 +8,7 @@ import {
   RefreshCw, Terminal, User, FileText, Save,
   Settings, FileJson, AlertCircle, Download, Activity, Paperclip, Bell,
   FolderOpen, History, Undo2, CheckCircle, Check,
-  Minus, GitMerge, Pencil // <--- 新增 Pencil
+  Minus, GitMerge, Pencil, ThumbsUp, ThumbsDown // <--- 新增 ThumbsUp, ThumbsDown
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
@@ -1126,6 +1126,35 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
       });
     } catch { 
       toast.error('网络错误'); 
+    }
+  };
+
+  const handleFeedback = async (msgContent: string, isLike: boolean) => {
+    if (!currentSessionId) return;
+    
+    // 截取前 50 个字符并去掉换行，防止 prompt 过长
+    const snippet = msgContent.substring(0, 50).replace(/\n/g, ' ');
+    const actionText = isLike ? 'like' : 'dislike';
+    const promptContent = `User ${actionText} your response: "${snippet}...", maybe you could use Memo to remember this 偏好`;
+
+    const eventsToPush = [{
+      type: 'system',
+      content: promptContent
+    }];
+
+    toast.success(`已发送 ${actionText} 偏好反馈，Agent 将默默记下~`);
+
+    try {
+      await fetch('http://localhost:8000/api/chat/batch', {
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          session_id: currentSessionId, 
+          events: eventsToPush
+        }),
+      });
+    } catch { 
+      toast.error('网络错误，反馈发送失败'); 
     }
   };
 
@@ -2316,7 +2345,18 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                   <div key={idx} className="flex w-full justify-start">
                     <div className={`flex flex-col gap-3 w-full max-w-[85%] items-start`}>
                       {msg.content && (
-                        <div style={sketchyShape1} className="w-full p-6 border-4 border-ink relative bg-cream text-ink shadow-[6px_6px_0px_0px_rgba(26,26,26,1)]">
+                        <div style={sketchyShape1} className="w-full p-6 border-4 border-ink relative bg-cream text-ink shadow-[6px_6px_0px_0px_rgba(26,26,26,1)] group">
+                          
+      {/* 👇 新增：点赞/踩 悬浮按钮组 */}
+      <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-2 z-10">
+         <button onClick={() => handleFeedback(msg.content, true)} className="p-1.5 bg-paper border-2 border-ink hover:bg-[#a3be8c] hover:text-ink transition-colors shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] active:translate-y-[1px] active:shadow-none" style={sketchyShape2} title="Like">
+           <ThumbsUp size={16} strokeWidth={3} />
+         </button>
+         <button onClick={() => handleFeedback(msg.content, false)} className="p-1.5 bg-paper border-2 border-ink hover:bg-[#bf616a] hover:text-paper transition-colors shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] active:translate-y-[1px] active:shadow-none" style={sketchyShape3} title="Dislike">
+           <ThumbsDown size={16} strokeWidth={3} />
+         </button>
+      </div>
+
                           <div>
                             <div className="flex items-center gap-2 mb-4">
                               <Cat size={20} strokeWidth={2.5}/>
