@@ -29,6 +29,81 @@ def run_skill_eval_background(workplace_id: str, skill_name: str, main_session_i
     threading.Thread(target=_bg_task, daemon=True, name=f"EvalRunner_{workplace_id}").start()
 
 
+def _format_and_save_trace(memory_path: str, output_trace_path: str):
+    """
+    清洗 Agent 运行轨迹并格式化为结构化 Markdown
+    """
+    trace_lines = ["# Trace(U:user;A:assistant;C:calltool;R:result's snip)"]
+    
+    if os.path.exists(memory_path):
+        try:
+            with open(memory_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    
+                    msg = json.loads(line)
+                    role = msg.get("role")
+                    
+                    if role == "user":
+                        content = msg.get("content", "")
+                        trace_lines.append(f'\n[U]"{content}"')
+                        
+                    elif role == "assistant":
+                        # 提取 content 和 reasoning_content
+                        content = msg.get("content", "")
+                        reasoning = msg.get("reasoning_content", "")
+                        
+                        a_text = ""
+                        if reasoning:
+                            a_text += f"{reasoning}\n"
+                        if content:
+                            a_text += f"{content}"
+                            
+                        if a_text.strip():
+                            trace_lines.append(f"\n[A]{a_text.strip()}")
+                        
+                        # 提取工具调用名
+                        tool_calls = msg.get("tool_calls", [])
+                        for tc in tool_calls:
+                            func_name = tc.get("function", {}).get("name", "unknown_tool")
+                            trace_lines.append(f"\n[C]{func_name}")
+                            
+                    elif role == "tool":
+                        raw_content = msg.get("content", "")
+                        snip = ""
+                        try:
+                            # 解析由 _format_result 和 route.py 包装的 JSON
+                            parsed = json.loads(raw_content)
+                            if isinstance(parsed, dict):
+                                if "metadata" in parsed and "snip" in parsed["metadata"]:
+                                    snip = parsed["metadata"]["snip"]
+                                elif "summary" in parsed:
+                                    # 兼容 task_done 的输出
+                                    snip = str(parsed["summary"])
+                                else:
+                                    snip = raw_content[:100] + "..."
+                            else:
+                                snip = raw_content[:100] + "..."
+                        except json.JSONDecodeError:
+                            # 兜底截断
+                            snip = raw_content[:100] + "..."
+                            
+                        # 如果没有 snip 信息，给个默认提示
+                        snip = snip if snip else "执行成功 (无简述)"
+                        trace_lines.append(f"\n[R]{snip}")
+                        
+        except Exception as e:
+            trace_lines.append(f"\n[Error] 解析轨迹失败: {str(e)}")
+    else:
+        trace_lines.append("\n[Error] 未找到测试工人的记忆文件")
+
+    # 写入目标文件
+    with open(output_trace_path, "w", encoding="utf-8") as out_f:
+        out_f.write("\n".join(trace_lines))
+
+
 async def _async_run_evals(workplace_id: str, skill_name: str) -> str:
     workplace_root = f"./agent_vm/skill_workplace/{workplace_id}"
     dev_skill_dir = os.path.join(workplace_root, skill_name)
@@ -110,6 +185,13 @@ async def _async_run_evals(workplace_id: str, skill_name: str) -> str:
         total_time += elapsed
         total_tokens += tokens
 
+        # ======== 新增：轨迹清洗与落盘 ========
+        # nd_agent_exec 是 skill_eval.json 中负责干活的 Agent 节点 ID
+        agent_memory_path = os.path.join(task.checkpoint_dir, "nodes", "nd_agent_exec", "memory.jsonl")
+        trace_filepath = os.path.join(eval_run_dir, "trace.md")
+        _format_and_save_trace(agent_memory_path, trace_filepath)
+        # ====================================
+
         # 生成 timing.json
         timing_data = {
             "total_tokens": tokens,
@@ -169,7 +251,8 @@ async def _async_run_evals(workplace_id: str, skill_name: str) -> str:
         report_lines.append(f"### 用例: {case_id}")
         report_lines.append(f"- **状态**: {pass_str}")
         report_lines.append(f"- **耗时**: {elapsed:.2f}s | **Tokens**: {tokens}")
-        report_lines.append(f"- **裁判评估**: {reason}\n")
+        report_lines.append(f"- **裁判评估**: {reason}")
+        report_lines.append(f"- **行为轨迹**: 测试工人轨迹已生成在：{trace_filepath}\n")
 
         # 清理Docker资源
         try:

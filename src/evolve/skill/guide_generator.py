@@ -79,38 +79,37 @@ def generate_upgrade_guide(skill_name: str) -> str:
 
 
 def generate_test_guide(skill_name: str) -> str:
-    return f"""# {skill_name} 质量测试指南 (How to Test & Evaluate)
+    return f"""# {skill_name} 质量测试与提交流程指南 (How to Test & Merge)
 
-修改代码后，必须完善 `evals/evals.json` 以驱动自动化盲测。
+修改代码后，必须完善 `evals/evals.json` 以驱动自动化盲测。**严禁在未经过 skill_test 盲测的情况下直接申请 skill_merge！**
 
-## 1. 隔离运行机制 (Spawning Runs)
+## 1. 测试隔离与自动化机制 (Evaluator System)
+* **严禁自己用 BrainStorm 手搓测试**：系统拥有标准的 QA 裁判流水线。你只需要准备好 `evals.json` 和测试素材，然后通过 `Request` 工具发起测试即可，后台会自动开辟干净的沙盒并分配裁判。
+* **单点调试原则**：在早期开发阶段，建议遵循"一个 Request，对应一个测试素材，跑一个核心测试用例"的原则，不要把所有测试全塞在一起，以免排错困难。
 
-反作弊警告：测试将在一个完全干净的沙盒中独立运行！
+## 2. 如何发起测试 (Critical: Target Format)
+当你准备好 `evals.json` 后，必须使用 `Request` 工具发起测试。
+* **request_type**: `skill_test`
+* **target (极易错)**：**绝对不能**只填技能名！必须是你的专属沙盒路径前缀 `UUID/Skill_Name`。
+  * 👉 **获取方法**：查看你当前所处的工作区路径。例如你的文件在 `/agent_vm/skill_workplace/a5d0d/{{skill_name}}/...`，那么你的 target **必须严格填写为** `a5d0d/{{skill_name}}`。
 
-* 运行区会剔除本指南和 `evals/` 目录。
-* 测试 Agent 绝对看不到预期的答案。必须确保 `SKILL.md` 里的信息足够让一个对当前任务一无所知的 Agent 独立完成任务。
-
-## 2. 编写测试用例 (Designing Test Cases)
-
-需要设计 2-3 个真实的用例，覆盖正常情况和边缘情况（例如缺失字段的表格）。
-
+## 3. 编写测试用例 (Designing Test Cases)
 * `prompt`: 真实的、随意的用户语气，包含文件路径、上下文（例："我下载了个表格在 data.csv，里面有些邮箱是空的，帮我清理一下"）。
-* `files`: 声明需要的测试文件路径，系统会自动挂载。
+* `files`: 测试文件需提前放到 `evals/files/` 目录下（若无此目录请自行创建）。
 * `expected_output`: 总体成功标准的自然语言描述。
-* `assertions` (核心！): 可用代码验证或肉眼直观判断的硬性断言。
+* `assertions`: 可用代码验证或肉眼直观判断的硬性断言（如："必须先提问再作答"、"输出包含 3 个公式"）。
 
-## 3. 断言编写原则 (Writing Assertions)
+## 4. 审阅测试行为轨迹 (Reviewing Execution Trace)
+我们为你配备了强大的 Trace 观测能力。当 `skill_test` 在后台执行完毕后，无论成功或失败，系统都会生成一份详尽的行为轨迹文件。
+* **轨迹路径**：系统通知中会提供 `trace.md` 的具体物理路径。
+* **必须阅读**：收到测试完成的通知后，**第一件事必须是使用 Bash 工具读取该 `trace.md`**！
+* **Trace 结构 (U-A-C-R)**：
+  - `[U]` User 用户的模拟输入
+  - `[A]` Assistant 测试工人的回复和内心推理 (reasoning)
+  - `[C]` Calltool 工人调用的工具
+  - `[R]` Result 工具的返回简述
+通过阅读 Trace，你能精准发现你的 `SKILL.md` 指令到底在哪里被工人误解了，并针对性地修改指令。
 
-断言决定了 QA 裁判的打分质量：
-
-* 强断言 (Good): "输出文件必须是合法的 JSON"、"柱状图必须包含 X 轴标签"、"报告必须包含至少 3 条建议"。
-* 弱断言 (Weak): "输出结果很好" (无法验证)、"完全包含某句特定的话" (太脆弱)。
-
-## 4. 描述词触发测试 (Trigger Accuracy)
-
-除了输出质量，还要确保 `SKILL.md` 里的 `description` 能被正确触发。
-
-* 好的描述能包容用户的模糊意图 (Near-misses)。
-* 描述过窄会导致该用时不触发，过宽会导致不需要时误触发。
-* 确保 `description` 足够准确，系统后台会收集 `benchmark.json`，其中包含时间、Token 消耗和通过率 (Pass Rate)。
+## 5. 申请合并 (Merge to Official)
+只有当 `skill_test` 报告显示全部 Pass，且你阅读 Trace 后确认其行为符合预期时，才可以使用 `Request(request_type="skill_merge", target="{skill_name}")` 申请合并入主库。
 """
