@@ -4,7 +4,7 @@ REQUEST_TOOL_SCHEMA = {
     "type": "function",
     "function": {
         "name": "Request",
-        "description": "当遇到权限拦截（读写宿主机文件、操作宿主机电脑）或缺失关键能力（需下载 mcp/skill/sensor/graph）时，向人类（老板）发起审批请求。提交后等待老板的系统通知，期间可挂起当前任务或执行与该请求无强依赖的其他工作。",
+        "description": "遇到权限拦截或缺失关键能力时，向人类（老板）发起审批请求。提交后等待老板审批，期间可挂起当前任务。新增技能工厂支持：可通过 skill_create/skill_upgrade 申请建立进化沙盒，开发完毕后通过 skill_merge 申请合并至主库。技能测试 skill_test 可自动在后台执行 evals 并生成报告。",
         "parameters": {
             "type": "object",
             "properties": {
@@ -19,15 +19,19 @@ REQUEST_TOOL_SCHEMA = {
                         "sensor_install",
                         "graph_install",
                         "computer_use",
+                        "skill_create",  # 新增
+                        "skill_upgrade", # 新增
+                        "skill_merge",   # 新增
+                        "skill_test",    # 新增：测试触发
                     ],
                 },
                 "target": {
                     "type": "string",
-                    "description": "目标对象。文件权限类为绝对/相对路径，安装类为目标插件名，电脑控制(computer_use)则统一填写为 'system'",
+                    "description": "目标对象。文件权限填路径；安装类填插件名；技能开发(skill_create/upgrade/merge)填具体的 skill_name；申请技能测试(skill_test)时必须填写为 'uuid/skill_name' (如 a1b2c/my_skill)。",
                 },
                 "reason": {
                     "type": "string",
-                    "description": "申请理由，明确告诉老板为什么需要这个权限或插件，用来干什么（如果是申请 computer_use，需写明大约需要几分钟）",
+                    "description": "申请理由，明确告诉老板为什么需要这个权限或操作。若是 skill_merge 请简述你的修改点供人类 Code Review。",
                 },
             },
             "required": ["request_type", "target", "reason"],

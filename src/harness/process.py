@@ -103,6 +103,11 @@ class Task:
             DATA_DIR, "checkpoints", "task", f"{self.task_name}_{self.task_id}"
         )
 
+        # 🌟 新增：统计性能监控指标
+        self.total_tokens = 0
+        self.execution_time = 0.0
+        self._start_time = None
+
         self._lock = threading.Lock()
         self._io_lock = threading.Lock()
         self._killed = False
@@ -218,12 +223,16 @@ class Task:
         self._loop = asyncio.get_running_loop()
         self.state = TaskState.RUNNING
         self.running_tasks.clear()
+        
+        # 🌟 记录运行启动时间
+        start_time = time.time()
 
         try:
             while True:
                 if self._killed:
                     self._cancel_all_tasks()
                     self.state = TaskState.KILLED
+                    self.execution_time += (time.time() - start_time)  # 🌟 累加用时
                     self.save_state()  # 🌟 状态极小，直接同步写
                     break
 
@@ -232,12 +241,14 @@ class Task:
                 if not runnable_nodes and not self.running_tasks:
                     if any(s == NodeState.WAITING for s in self.node_state.values()):
                         self.state = TaskState.INTERRUPTED
+                        self.execution_time += (time.time() - start_time)  # 🌟 累加用时
                         self.save_state()  # 🌟 状态极小，直接同步写
                         return {
                             "status": "suspended",
                             "message": "任务已挂起，等待人工干预",
                         }
                     self.state = TaskState.COMPLETED
+                    self.execution_time += (time.time() - start_time)  # 🌟 累加用时
                     self.save_state()  # 🌟 状态极小，直接同步写
                     return {"status": "success", "outputs": self.outputs}
 
@@ -277,6 +288,7 @@ class Task:
                     except Exception as e:
                         self.node_state[node_id] = NodeState.ERROR
                         self.state = TaskState.ERROR
+                        self.execution_time += (time.time() - start_time)  # 🌟 累加用时
                         await asyncio.to_thread(self.save_state)
                         return {
                             "status": "error",
@@ -287,6 +299,7 @@ class Task:
 
         except Exception as e:
             self.state = TaskState.ERROR
+            self.execution_time += (time.time() - start_time)  # 🌟 累加用时
             await asyncio.to_thread(self.save_state)
             return {"status": "error", "message": f"引擎异常: {str(e)}"}
 
@@ -575,6 +588,8 @@ class Task:
             "task_id": self.task_id,
             "state": self.state.value if hasattr(self.state, "value") else self.state,
             "outputs": self.outputs,
+            "total_tokens": self.total_tokens,                 # 🌟 落盘：Token消耗
+            "execution_time": round(self.execution_time, 2),   # 🌟 落盘：执行耗时
             "dag_state": dag_state,
             "node_state": {
                 k: v.value if hasattr(v, "value") else v
@@ -654,6 +669,10 @@ class Task:
 
                 # 从 state.json 恢复通信数据
                 self.outputs = state_data.get("outputs", {})
+                
+                # 🌟 从磁盘恢复统计信息
+                self.total_tokens = state_data.get("total_tokens", 0)
+                self.execution_time = state_data.get("execution_time", 0.0)
 
                 # node_memory 不再从这里加载，由各 AgentNode 自行加载
 

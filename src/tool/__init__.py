@@ -45,7 +45,7 @@ BASE_TASK_TOOL_SCHEMA = [
     FILESYSTEM_TOOL_SCHEMA,
     SEARCH_TOOL_SCHEMA,
     MCP_TOOL_SCHEMA,
-    REQUEST_TOOL_SCHEMA,
+    FETCH_TOOL_SCHEMA,  # 🌟 修复：移除 Request，加入 Fetch
 ]
 
 # --- 系统重型组件初始化逻辑 ---

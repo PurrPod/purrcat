@@ -4,14 +4,23 @@ from src.tool.filesystem.exceptions import PermissionDeniedError
 
 
 def resolve_absolute_path(path: str) -> str:
-    """处理路径映射：将沙盒路径 /agent_vm 映射为宿主机的 ./agent_vm"""
+    """
+    将 Agent 视角的绝对路径映射为宿主机的真实相对路径。
+    
+    优先级：先替换长路径，再替换短路径，确保映射层级正确。
+    """
     path = str(path).strip()
+    
+    # 强制统一路径分隔符
+    path = path.replace("\\", "/")
+    
 
     if path.startswith("/agent_vm/"):
-        path = "./agent_vm/" + path[len("/agent_vm/") :]
+        path = path.replace("/agent_vm/", "./agent_vm/", 1)
     elif path == "/agent_vm":
         path = "./agent_vm"
-
+        
+    # 3. 其他默认处理
     return os.path.abspath(path)
 
 

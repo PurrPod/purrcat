@@ -300,6 +300,13 @@ class AgentNode(BaseNode):
             )
             response, messages = await call_llm(context.model, messages, tools)
             assistant_msg = response.choices[0].message
+            
+            # 🌟 新增：核心 Token 收集，安全累加到 Task 的统计信息中
+            if hasattr(response, "usage") and response.usage:
+                tokens = response.usage.total_tokens
+                if hasattr(context, "total_tokens"):
+                    with context._lock:
+                        context.total_tokens += tokens
 
             # 🌟 关键改进：每次 LLM 回复后立即追加写入
             if mem_path:
@@ -501,6 +508,11 @@ class AgentNode(BaseNode):
                         f"🔧 [全局工具] {original_tool_name}",
                     )
                     arguments["_caller"] = "harness"
+                    
+                    # 🌟 核心重构：把当前 Task 的 task_id 注入进去充当 session_id！
+                    # 这样 Harness 在后台运行时，Bash 工具就会自动隔离在一个全新的沙盒 Session 中，相互之间、与主对话之间绝不干扰！
+                    arguments["session_id"] = context.task_id
+                    arguments["_is_sub_branch"] = True  # 声明继承子分支越权防护特性
 
                     # 🟢 使用 to_thread 将工具执行放入独立的线程池，避免异步跨线程子进程死锁
                     import asyncio

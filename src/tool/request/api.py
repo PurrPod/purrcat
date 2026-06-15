@@ -131,6 +131,7 @@ def resolve_request(
         req = data[req_id]
         req_type, target = req.get("type"), req.get("target")
 
+        # 处理人类的通过决策
         if approved and not ignore:
             try:
                 if req_type == "skill_install":
@@ -138,18 +139,55 @@ def resolve_request(
                 elif req_type in ["file_read", "file_write"]:
                     _grant_file_permission(req_type, target)
                 elif req_type == "computer_use":
-                    _grant_computer_use(duration)  # 🌟 添加授权逻辑
+                    _grant_computer_use(duration)
+                # ---- 新增进化工厂逻辑 ----
+                elif req_type == "skill_create":
+                    from src.evolve import skill_improve_init
+                    sys_note = skill_improve_init(target, is_upgrade=False)
+                    feedback = f"{sys_note}\n(老板批注: {feedback})"
+                elif req_type == "skill_upgrade":
+                    from src.evolve import skill_improve_init
+                    sys_note = skill_improve_init(target, is_upgrade=True)
+                    feedback = f"{sys_note}\n(老板批注: {feedback})"
+                elif req_type == "skill_merge":
+                    import glob
+                    from src.evolve import skill_request_handle
+                    paths = glob.glob(f"./agent_vm/skill_workplace/*/{target}")
+                    if paths:
+                        workplace_root = os.path.dirname(paths[0])
+                        sys_note = skill_request_handle(workplace_root, target, is_approved=True)
+                        feedback = f"{sys_note}\n(老板批注: {feedback})"
+                    else:
+                        feedback = f"合并失败：未找到 {target} 对应的工厂沙盒目录。"
+                
+                # ---- 新增后台评估逻辑 ----
+                elif req_type == "skill_test":
+                    parts = target.split("/")
+                    if len(parts) == 2:
+                        workplace_id, skill_name = parts
+                        from src.evolve import run_skill_eval_background
+                        from src.agent.manager import manager
+                        main_session_id = manager.get_active_session_id()
+                        run_skill_eval_background(workplace_id, skill_name, main_session_id)
+                        feedback = f"老板已批准！技能 '{skill_name}' 的自动化测试已在后台启动，测试完成后将自动通过系统通知向你汇报结果。\n(老板批注: {feedback})"
+                    else:
+                        approved = False
+                        feedback = f"执行失败：target 格式不正确，应为 'uuid/skill_name'。当前为: {target}"
             except Exception as e:
                 approved = False
                 feedback = f"老板已同意，但执行失败: {str(e)}。{feedback}"
 
+        # 处理人类的拒绝决策
+        elif not approved and not ignore:
+            if req_type == "skill_merge":
+                # 让Agent收到拒绝的理由并继续改进
+                feedback = f"老板拒绝了代码合并请求，请在沙盒工厂中根据以下原因继续修复：\n【拒绝理由】: {feedback}"
+
         if not ignore:
             decision_text = "【同意并已生效】" if approved else "【被拒绝】"
-            callback_msg = f"🔔 【系统通知】请求 (ID: {req_id}) | 目标: {target} | 结果: {decision_text}\n批注: {feedback}"
-            if approved:
-                callback_msg += (
-                    "\n系统已为你自动下发权限或安装插件，请直接继续执行被挂起的任务。"
-                )
+            callback_msg = f"🔔 【系统通知】请求 (ID: {req_id}) | 目标: {target} | 结果: {decision_text}\n系统反馈/批注: {feedback}"
+            if approved and req_type not in ["skill_create", "skill_upgrade", "skill_merge"]:
+                callback_msg += "\n系统已为你自动下发权限或安装插件，请直接继续执行被挂起的任务。"
 
             from src.agent import agent_force_push
 

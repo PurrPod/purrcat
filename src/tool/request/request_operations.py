@@ -26,7 +26,7 @@ def submit_request(request_type: str, target: str, reason: str) -> dict:
     提交一个人类审批请求到 requests.json
 
     Args:
-        request_type: 请求类型 (mcp_install/skill_install/file_write/file_read/sensor_install/graph_install)
+        request_type: 请求类型 (mcp_install/skill_install/file_write/file_read/sensor_install/graph_install/skill_create/skill_upgrade/skill_merge)
         target: 目标对象 (文件路径或插件名称)
         reason: 申请理由
 
