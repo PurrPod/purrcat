@@ -18,7 +18,7 @@ class ResolveRequestReq(BaseModel):
     approved: bool = False
     feedback: str = ""
     ignore: bool = False  # 标志是否静默忽略
-    duration: int = 5     # 🌟 新增：授权有效时长（分钟），默认 5 分钟
+    duration: int = 5  # 🌟 新增：授权有效时长（分钟），默认 5 分钟
 
 
 @router.get("")

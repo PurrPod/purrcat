@@ -161,7 +161,7 @@ class SubAgentRunner:
                 if not (os.path.exists(p) and os.path.getsize(p) > 0):
                     missing_files.append(p)
 
-            file_ready = (len(missing_files) == 0)  # 如果没有缺失文件，就是 ready
+            file_ready = len(missing_files) == 0  # 如果没有缺失文件，就是 ready
             turn_count += 1
 
             # 3. 契约验收逻辑 (无工具调用时)

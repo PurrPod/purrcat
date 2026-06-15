@@ -1,5 +1,5 @@
-import json
 import time
+
 
 def format_tool_response(msg_type: str, content: str, snip: str = "") -> dict:
     """
@@ -16,23 +16,26 @@ def format_tool_response(msg_type: str, content: str, snip: str = "") -> dict:
     # 强制将 content 转为字符串（即使强传了 dict 也会被 str() 强转为 Python 格式字面量，而非标准 JSON）
     if isinstance(content, dict) or isinstance(content, list):
         content = str(content)
-        
+
     return {
         "content": content,
         "metadata": {
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
             "type": msg_type,
             "snip": snip,
-        }
+        },
     }
+
 
 def text_response(content: str | dict | list, snip: str = "") -> dict:
     """快捷函数：返回文本类型响应"""
     return format_tool_response("text", content, snip)
 
+
 def warning_response(content: str | dict | list, snip: str = "") -> dict:
     """快捷函数：返回警告类型响应"""
     return format_tool_response("warning", content, snip)
+
 
 def error_response(content: str | dict | list, snip: str = "") -> dict:
     """快捷函数：返回错误类型响应"""

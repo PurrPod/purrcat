@@ -2,7 +2,7 @@
 
 # PurrCat
 
-**[📖 文档](https://purrpod.github.io/)**
+**[📖 文档（仍在更新中）](https://purrpod.github.io/)**
 
 经济、高效、可定制化、更懂你的本地优先个人 Agent 框架
 

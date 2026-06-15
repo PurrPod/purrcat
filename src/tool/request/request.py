@@ -24,7 +24,7 @@ def Request(request_type: str, target: str, reason: str, **kwargs) -> str:
             "file_read",
             "sensor_install",
             "graph_install",
-            "computer_use"
+            "computer_use",
         ]
 
         if request_type not in valid_types:

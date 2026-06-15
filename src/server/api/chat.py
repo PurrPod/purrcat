@@ -20,6 +20,7 @@ router = APIRouter(prefix="/api", tags=["Chat & Sessions"])
 class NewSessionReq(BaseModel):
     alias: str = "New Session"
 
+
 # 👇 新增：重命名模型
 class RenameSessionReq(BaseModel):
     alias: str
@@ -104,10 +105,11 @@ def get_sessions():
 @router.put("/sessions/{session_id}/rename")
 def rename_session_api(session_id: str, req: RenameSessionReq):
     try:
-        import os, json
+        import os
+        import json
         from src.agent.session_store import SessionStore
         from src.utils.config import SESSIONS_DIR, SESSION_INDEX_PATH
-        
+
         # 1. 更新索引
         with SessionStore._index_lock:
             index_data = SessionStore.get_all_sessions()
@@ -124,11 +126,12 @@ def rename_session_api(session_id: str, req: RenameSessionReq):
             meta_data["alias"] = req.alias
             with open(meta_path, "w", encoding="utf-8") as f:
                 json.dump(meta_data, f, ensure_ascii=False, indent=2)
-                
+
         return {"status": "ok"}
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
 
 # 👇 修改 checkout 接口，物理阻断恶意 session_id (如 requests) 的污染
 @router.post("/sessions/{session_id}/checkout")

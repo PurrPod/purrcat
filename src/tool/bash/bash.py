@@ -39,9 +39,11 @@ def Bash(command: str, timeout: int = 300, session_id: str = "default", **kwarg)
             output[:40].replace("\r", "").replace("\n", " ") if output else ""
         )
 
-        content_str = f"💻 执行目录: {cwd}\n" \
-                      f"⚙️ 退出代码: {exit_code}\n" \
-                      f"📄 控制台输出:\n{output if output else '[无输出]'}"
+        content_str = (
+            f"💻 执行目录: {cwd}\n"
+            f"⚙️ 退出代码: {exit_code}\n"
+            f"📄 控制台输出:\n{output if output else '[无输出]'}"
+        )
 
         if exit_code == 0:
             snip = f"✅ 成功 | {output_preview}..."

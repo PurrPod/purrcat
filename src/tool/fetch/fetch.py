@@ -88,7 +88,7 @@ def Fetch(
 
                 return text_response(
                     f"✅ 技能 [{name}] 已成功加载到系统事件中。\n状态: Success\n提示: 请立即查看最新的系统通知获取最新 SOP 约束。",
-                    f"📖 Skill [{name}] 注入成功"
+                    f"📖 Skill [{name}] 注入成功",
                 )
             else:
                 print(
@@ -96,7 +96,7 @@ def Fetch(
                 )
                 return text_response(
                     f"✅ 技能 [{name}] 获取成功\n\n【技能SOP操作指南】\n{skill_instruction}",
-                    f"📖 Skill [{name}] 独立加载"
+                    f"📖 Skill [{name}] 独立加载",
                 )
 
         elif source == "mcp":
@@ -108,10 +108,12 @@ def Fetch(
 
             res_messages = []
             res_messages.append(f"成功找到 MCP Server '{serve_name}' 的工具信息。")
-            
+
             # 根据是否指定了 tool_names，决定标题和输出的详细程度
-            res_messages.append("--- 工具列表 ---" if not tool_names else "--- 工具 Schema ---")
-            
+            res_messages.append(
+                "--- 工具列表 ---" if not tool_names else "--- 工具 Schema ---"
+            )
+
             for schema in result:
                 func = schema.get("function", {})
                 if not tool_names:
@@ -122,18 +124,24 @@ def Fetch(
                 else:
                     # 精确查询时：完整输出包含 parameters 的 Schema
                     res_messages.append(json.dumps(func, ensure_ascii=False))
-                    
+
             res_messages.append("-----")
             res_messages.append("请使用 `CallMCP` 调用这些工具。")
 
             # 动态调整尾部提示语
             if not tool_names:
-                res_messages.append("💡 提示：如果需要获取更详细的参数说明，请再指定具体工具名 (`tool_names`)。")
+                res_messages.append(
+                    "💡 提示：如果需要获取更详细的参数说明，请再指定具体工具名 (`tool_names`)。"
+                )
             else:
-                res_messages.append("💡 如需更多工具，不传 tool_names 即可列出该 Server 下的全部工具。")
+                res_messages.append(
+                    "💡 如需更多工具，不传 tool_names 即可列出该 Server 下的全部工具。"
+                )
 
             # 🌟 改造：直接返回 "\n".join() 拼接好的字符串
-            return text_response("\n".join(res_messages), f"🔧 {serve_name} | {len(result)}个工具")
+            return text_response(
+                "\n".join(res_messages), f"🔧 {serve_name} | {len(result)}个工具"
+            )
 
         elif source == "solo":
             harness_path = os.path.join(AGENT_CORE_DIR, "SOLO.md")

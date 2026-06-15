@@ -102,6 +102,7 @@ def api_get_global_diffs():
         return {"status": "success", "diffs": diffs}
     except Exception as e:
         import traceback
+
         traceback.print_exc()
         # 🌟 修改这里：把报错的详细信息放到返回体里
         return {"status": "error", "diffs": [], "message": str(e)}

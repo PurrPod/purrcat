@@ -86,46 +86,61 @@ def _search_local(query: str, topk: int) -> str:
         mcp_results, mcp_err = mcp_search(query, topk)
 
         if skill_err and mcp_err:
-            return warning_response(f"Skill搜索失败:{skill_err} | MCP搜索失败:{mcp_err}", "⚠️ Local失败")
+            return warning_response(
+                f"Skill搜索失败:{skill_err} | MCP搜索失败:{mcp_err}", "⚠️ Local失败"
+            )
 
         merged_results = []
 
         # -- 组装 Skill 结果 --
         for res in skill_results or []:
             skill = res.get("skill", {})
-            merged_results.append({
-                "type": "[Skill]",
-                "name": skill.get("name", "unknown"),
-                "desc": skill.get("description", "无")[:80].replace('\n', ' '),
-                "score": res.get("score", 0),
-            })
+            merged_results.append(
+                {
+                    "type": "[Skill]",
+                    "name": skill.get("name", "unknown"),
+                    "desc": skill.get("description", "无")[:80].replace("\n", " "),
+                    "score": res.get("score", 0),
+                }
+            )
 
         # -- 组装 MCP 结果 --
         for res in mcp_results or []:
-            merged_results.append({
-                "type": f"[MCP:{res.get('server_name', 'unknown')}]",
-                "name": res.get("tool_name", "unknown"),
-                "desc": res.get("description", "无")[:80].replace('\n', ' '),
-                "score": res.get("score", 0),
-            })
+            merged_results.append(
+                {
+                    "type": f"[MCP:{res.get('server_name', 'unknown')}]",
+                    "name": res.get("tool_name", "unknown"),
+                    "desc": res.get("description", "无")[:80].replace("\n", " "),
+                    "score": res.get("score", 0),
+                }
+            )
 
         # 2. 全局分数重排，并真正截断到 topk
         merged_results.sort(key=lambda x: x["score"], reverse=True)
         top_results = merged_results[:topk]
 
         if not top_results:
-            return text_response(f"关于 '{query}' 未找到任何本地技能或MCP工具。", "🔍 Local无结果")
+            return text_response(
+                f"关于 '{query}' 未找到任何本地技能或MCP工具。", "🔍 Local无结果"
+            )
 
         # 3. 极限压缩 Token 的渲染方式
         lines = [f"# 混合检索得分 Top{len(top_results)}:"]
         for item in top_results:
-            lines.append(f"{item['type']} {item['name']} ({item['score']}) - {item['desc']}")
+            lines.append(
+                f"{item['type']} {item['name']} ({item['score']}) - {item['desc']}"
+            )
 
-        lines.append("\n提示: 若需使用上述能力，请使用 `Fetch` 工具获取完整参数与细节。")
+        lines.append(
+            "\n提示: 若需使用上述能力，请使用 `Fetch` 工具获取完整参数与细节。"
+        )
 
-        return text_response("\n".join(lines), f"🔧 Local | 命中{len(top_results)}个能力")
+        return text_response(
+            "\n".join(lines), f"🔧 Local | 命中{len(top_results)}个能力"
+        )
 
     except Exception as e:
         import traceback
+
         traceback.print_exc()
         return error_response(f"Local搜索异常: {e}", "❌ Local异常")

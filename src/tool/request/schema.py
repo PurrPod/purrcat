@@ -18,7 +18,7 @@ REQUEST_TOOL_SCHEMA = {
                         "file_read",
                         "sensor_install",
                         "graph_install",
-                        "computer_use"
+                        "computer_use",
                     ],
                 },
                 "target": {

@@ -23,7 +23,7 @@ COMPUTERUSE_TOOL_SCHEMA = {
                         "scroll",
                         "type",
                         "key",
-                        "hide_other_apps"
+                        "hide_other_apps",
                     ],
                 },
                 "coordinate": {
@@ -51,7 +51,7 @@ COMPUTERUSE_TOOL_SCHEMA = {
                     "type": "array",
                     "items": {"type": "string"},
                     "description": "hide_other_apps 的白名单",
-                }
+                },
             },
             "required": ["action"],
             "additionalProperties": False,

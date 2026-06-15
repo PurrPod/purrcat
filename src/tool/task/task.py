@@ -93,7 +93,9 @@ def Task(action: str, **kwargs) -> str:
 
         if action == "list_graphs":
             # 🌟 改造：把 _get_graphs_help_text 的结果直接作为 content
-            return text_response(_get_graphs_help_text(_get_all_graphs_info()), "📂 可用图列表")
+            return text_response(
+                _get_graphs_help_text(_get_all_graphs_info()), "📂 可用图列表"
+            )
         if action == "list_tasks":
             return _handle_list_tasks()
         if action == "add":
@@ -195,8 +197,15 @@ def _handle_list_tasks() -> str:
     if error:
         return warning_response(error, "⚠️ 获取失败")
     # {"tasks": result["tasks"]} 转为平文本
-    tasks_str = "\n".join([f"ID: {t['task_id']} | 名称: {t['name']} | 图: {t['graph_name']} | 状态: {t['state']}" for t in result["tasks"]])
-    return text_response(tasks_str or "当前无任务。", f"📋 发现 {result['count']} 个任务")
+    tasks_str = "\n".join(
+        [
+            f"ID: {t['task_id']} | 名称: {t['name']} | 图: {t['graph_name']} | 状态: {t['state']}"
+            for t in result["tasks"]
+        ]
+    )
+    return text_response(
+        tasks_str or "当前无任务。", f"📋 发现 {result['count']} 个任务"
+    )
 
 
 def _handle_kill(**kwargs) -> str:
@@ -247,9 +256,13 @@ def _handle_get_details(**kwargs) -> str:
     if not nodes_info:
         dashboard_text = "当前任务没有任何可交互的挂起节点。"
     else:
-        lines = ["💡 以下是当前等待/正在运行的交互节点，你可以使用 submit_request 注入指令）："]
+        lines = [
+            "💡 以下是当前等待/正在运行的交互节点，你可以使用 submit_request 注入指令）："
+        ]
         for node in nodes_info:
-            lines.append(f"- 节点: [{node['name']}] (ID: {node['id']}) | 状态: {node.get('state', '未知')}")
+            lines.append(
+                f"- 节点: [{node['name']}] (ID: {node['id']}) | 状态: {node.get('state', '未知')}"
+            )
         dashboard_text = "\n".join(lines)
 
-    return text_response(dashboard_text, f"📊 任务看板")
+    return text_response(dashboard_text, "📊 任务看板")

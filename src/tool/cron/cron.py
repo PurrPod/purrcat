@@ -54,7 +54,12 @@ def Cron(
                 active_count = sum(1 for c in crons if c.get("active", False))
                 snip = f"⏰ {len(crons)}个 | {active_count}激活"
                 # 将 crons 列表拼成平文本
-                cron_text = "\n".join([f"- [{c['id']}] {c['title']} | 时间: {c['trigger_time']} | 重复: {c['repeat_rule']} | 激活: {c['active']}\n  描述: {c['description']}" for c in crons])
+                cron_text = "\n".join(
+                    [
+                        f"- [{c['id']}] {c['title']} | 时间: {c['trigger_time']} | 重复: {c['repeat_rule']} | 激活: {c['active']}\n  描述: {c['description']}"
+                        for c in crons
+                    ]
+                )
                 return text_response(cron_text or "当前没有设定的闹钟。", snip)
             except CronError as e:
                 return error_response(str(e), "❌ 查询失败")
@@ -86,7 +91,10 @@ def Cron(
                     repeat_rule=actual_rule,
                     description=description or "",
                 )
-                return text_response(f"添加成功。ID: {result['id']}, 标题: {result['title']}, 触发时间: {result['trigger_time']}", f"✅ 已创建 | {trigger_time}")
+                return text_response(
+                    f"添加成功。ID: {result['id']}, 标题: {result['title']}, 触发时间: {result['trigger_time']}",
+                    f"✅ 已创建 | {trigger_time}",
+                )
             except CronError as e:
                 return warning_response(str(e), "⚠️ 添加失败")
 

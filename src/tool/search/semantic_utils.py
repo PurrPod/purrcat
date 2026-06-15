@@ -11,7 +11,7 @@ from src.utils.config import get_embedding_model
 warnings.filterwarnings(
     "ignore",
     message=".*'pin_memory' argument is set as true but no accelerator is found.*",
-    category=UserWarning
+    category=UserWarning,
 )
 
 

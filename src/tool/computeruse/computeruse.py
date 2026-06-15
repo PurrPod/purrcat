@@ -15,7 +15,9 @@ from src.utils.config import DATA_DIR
 def _check_computer_use_auth() -> bool:
     """检查当前是否有有效的 ComputerUse 权限授权"""
     try:
-        auth_file = os.path.join(DATA_DIR, "checkpoints", "agent", "computer_use_auth.json")
+        auth_file = os.path.join(
+            DATA_DIR, "checkpoints", "agent", "computer_use_auth.json"
+        )
         if not os.path.exists(auth_file):
             return False
         with open(auth_file, "r", encoding="utf-8") as f:
@@ -25,28 +27,54 @@ def _check_computer_use_auth() -> bool:
         return False
 
 
-def ComputerUse(action: str, coordinate: list = None, element_id: str = None, text: str = None,
-                keep_apps: list = None, scroll_amount: int = 0, wait_time: float = 0.1, **kwargs) -> str | dict:
+def ComputerUse(
+    action: str,
+    coordinate: list = None,
+    element_id: str = None,
+    text: str = None,
+    keep_apps: list = None,
+    scroll_amount: int = 0,
+    wait_time: float = 0.1,
+    **kwargs,
+) -> str | dict:
     try:
         action = action.strip().lower() if action else ""
 
-        if action in ["mouse_move", "left_click", "right_click", "double_click", "left_click_drag"]:
+        if action in [
+            "mouse_move",
+            "left_click",
+            "right_click",
+            "double_click",
+            "left_click_drag",
+        ]:
             if not coordinate and not element_id:
-                return error_response(f"缺少 coordinate 或 element_id，操作: {action}", "❌ 缺少目标")
+                return error_response(
+                    f"缺少 coordinate 或 element_id，操作: {action}", "❌ 缺少目标"
+                )
 
         if action in ["type", "key", "find_element"] and not text:
             return error_response(f"缺少文本参数 text，操作: {action}", "❌ 缺少文本")
 
         # 🌟 权限检查：验证是否有有效的 ComputerUse 授权
         if not _check_computer_use_auth():
-            return error_response("当前没有操作物理电脑的权限，请先向老板发起申请。\n\n使用方式：\n```python\nRequest(\n    request_type=\"computer_use\",\n    target=\"system\",\n    reason=\"需要操作电脑完成XX任务，预计需要X分钟\"\n)\n```", "⚠️ 权限拦截")
+            return error_response(
+                '当前没有操作物理电脑的权限，请先向老板发起申请。\n\n使用方式：\n```python\nRequest(\n    request_type="computer_use",\n    target="system",\n    reason="需要操作电脑完成XX任务，预计需要X分钟"\n)\n```',
+                "⚠️ 权限拦截",
+            )
 
         # 👇 添加这一行：通知 AI 正在控制鼠标 👇
         notify_ai_active()
 
         # 调度执行
-        result = execute_action(action, coordinate=coordinate, element_id=element_id, text=text,
-                                keep_apps=keep_apps, scroll_amount=scroll_amount, wait_time=wait_time)
+        result = execute_action(
+            action,
+            coordinate=coordinate,
+            element_id=element_id,
+            text=text,
+            keep_apps=keep_apps,
+            scroll_amount=scroll_amount,
+            wait_time=wait_time,
+        )
 
         # 截图多模态返回
         if action == "screenshot":
@@ -58,7 +86,11 @@ def ComputerUse(action: str, coordinate: list = None, element_id: str = None, te
 
             return {
                 "content": {"type": "image", "data": result["base64"], "ext": ".png"},
-                "metadata": {"timestamp": time.strftime("%Y-%m-%d %H:%M:%S"), "type": "text", "snip": ocr_hint}
+                "metadata": {
+                    "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+                    "type": "text",
+                    "snip": ocr_hint,
+                },
             }
 
         return text_response(result.get("message", "操作已完成"), f"✅ {action} 成功")

@@ -108,7 +108,7 @@ def get_all_diffs() -> list:
 
         change_type = "modified"
         if is_created_here and is_deleted_now:
-            change_type = "deleted" # 建了又删
+            change_type = "deleted"  # 建了又删
         elif is_created_here:
             change_type = "created"
         elif is_deleted_now:
@@ -134,7 +134,7 @@ def get_all_diffs() -> list:
 
         # 🌟 核心 2：计算 Diff，自带防空兜底
         format_path = path if path.startswith("/") else "/" + path
-        
+
         diff_lines = list(
             difflib.unified_diff(
                 old_content.splitlines(keepends=True),
@@ -149,7 +149,9 @@ def get_all_diffs() -> list:
         # 如果是纯空文件的创建/删除，difflib 返回会是空的，强行注入提示！
         if not diff_text.strip():
             if change_type == "created":
-                diff_text = f"--- /dev/null\n+++ b{format_path}\n@@ -0,0 +1,1 @@\n+ [新建文件]"
+                diff_text = (
+                    f"--- /dev/null\n+++ b{format_path}\n@@ -0,0 +1,1 @@\n+ [新建文件]"
+                )
             elif change_type == "deleted":
                 diff_text = f"--- a{format_path}\n+++ /dev/null\n@@ -1,1 +0,0 @@\n- [文件已删除]"
 
@@ -159,10 +161,10 @@ def get_all_diffs() -> list:
                 "path": path,
                 "oldest_backup_id": oldest_id,
                 "newest_backup_id": newest_id,
-                "edit_count": len(items),  
+                "edit_count": len(items),
                 "time": newest_meta.get("time", ""),
                 "diff": diff_text,
-                "change_type": change_type, # 👈 把状态丢给前端
+                "change_type": change_type,  # 👈 把状态丢给前端
             }
         )
 

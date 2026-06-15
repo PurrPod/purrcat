@@ -64,9 +64,7 @@ class LLMClient:
 
                 if is_retryable:
                     if attempt == max_retries - 1:
-                        log(
-                            f"❌ 任务 {task_id} 触发限速或网络中断，已达最大重试次数"
-                        )
+                        log(f"❌ 任务 {task_id} 触发限速或网络中断，已达最大重试次数")
                         raise Exception(f"RetryLimitExceeded: {e}")
                     jitter = random.uniform(0.8, 1.2)
                     sleep_time = base_delay * (2**attempt) * jitter

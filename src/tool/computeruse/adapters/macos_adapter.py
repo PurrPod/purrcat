@@ -1,15 +1,8 @@
-import time
 import pyperclip
 import pyautogui
 import mss
 from PIL import Image
-import numpy as np
 from src.tool.computeruse.adapters.base import BasePlatformAdapter
-
-try:
-    from AppKit import NSWorkspace
-except ImportError:
-    pass
 
 _ocr_reader = None
 
@@ -19,8 +12,9 @@ def _get_ocr_reader():
     if _ocr_reader is None:
         try:
             import easyocr
-            _ocr_reader = easyocr.Reader(['ch_sim', 'en'], gpu=False)
-        except:
+
+            _ocr_reader = easyocr.Reader(["ch_sim", "en"], gpu=False)
+        except Exception:
             pass
     return _ocr_reader
 
@@ -47,36 +41,45 @@ class MacOSAdapter(BasePlatformAdapter):
         try:
             ocr_results = reader.readtext(img_array)
             elements = []
-            for (bbox, text, prob) in ocr_results:
+            for bbox, text, prob in ocr_results:
                 if prob > 0.4:
                     px1 = min([p[0] for p in bbox])
                     py1 = min([p[1] for p in bbox])
                     px2 = max([p[0] for p in bbox])
                     py2 = max([p[1] for p in bbox])
-                    elements.append({"type": "[纯文本]", "text": text, "bbox": [px1, py1, px2, py2]})
+                    elements.append(
+                        {"type": "[纯文本]", "text": text, "bbox": [px1, py1, px2, py2]}
+                    )
             return elements
-        except:
+        except Exception:
             return []
 
     def get_focused_element_info(self) -> str:
         """获取当前获取焦点的元素，避免盲目猜测"""
         try:
             import AppKit
-            from ApplicationServices import AXUIElementCreateSystemWide, AXUIElementCopyAttributeValue
+            from ApplicationServices import (
+                AXUIElementCreateSystemWide,
+                AXUIElementCopyAttributeValue,
+            )
 
             workspace = AppKit.NSWorkspace.sharedWorkspace()
             active_app = workspace.frontmostApplication()
             app_name = active_app.localizedName() if active_app else "未知应用"
 
             system_wide = AXUIElementCreateSystemWide()
-            err, focused_element = AXUIElementCopyAttributeValue(system_wide, "AXFocusedUIElement", None)
+            err, focused_element = AXUIElementCopyAttributeValue(
+                system_wide, "AXFocusedUIElement", None
+            )
 
             if err == 0 and focused_element:
                 _, role = AXUIElementCopyAttributeValue(focused_element, "AXRole", None)
-                _, title = AXUIElementCopyAttributeValue(focused_element, "AXTitle", None)
+                _, title = AXUIElementCopyAttributeValue(
+                    focused_element, "AXTitle", None
+                )
                 _, val = AXUIElementCopyAttributeValue(focused_element, "AXValue", None)
 
-                role_str = role.replace('AX', '') if role else "Element"
+                role_str = role.replace("AX", "") if role else "Element"
                 desc = title or val or ""
                 if desc:
                     return f"焦点位于: [{role_str}] '{desc}' (所属应用: {app_name})"
@@ -91,7 +94,10 @@ class MacOSAdapter(BasePlatformAdapter):
         elements = []
         try:
             import AppKit
-            from ApplicationServices import AXUIElementCreateApplication, AXUIElementCopyAttributeValue
+            from ApplicationServices import (
+                AXUIElementCreateApplication,
+                AXUIElementCopyAttributeValue,
+            )
 
             workspace = AppKit.NSWorkspace.sharedWorkspace()
             active_app = workspace.frontmostApplication()
@@ -100,13 +106,25 @@ class MacOSAdapter(BasePlatformAdapter):
 
             app_element = AXUIElementCreateApplication(active_app.processIdentifier())
 
-            err, focused_window = AXUIElementCopyAttributeValue(app_element, "AXFocusedWindow", None)
+            err, focused_window = AXUIElementCopyAttributeValue(
+                app_element, "AXFocusedWindow", None
+            )
             if err != 0 or not focused_window:
-                err, focused_window = AXUIElementCopyAttributeValue(app_element, "AXMainWindow", None)
+                err, focused_window = AXUIElementCopyAttributeValue(
+                    app_element, "AXMainWindow", None
+                )
                 if err != 0 or not focused_window:
                     return []
 
-            VALID_ROLES = ["AXButton", "AXTextField", "AXTextArea", "AXLink", "AXMenuItem", "AXStaticText", "AXCheckBox"]
+            VALID_ROLES = [
+                "AXButton",
+                "AXTextField",
+                "AXTextArea",
+                "AXLink",
+                "AXMenuItem",
+                "AXStaticText",
+                "AXCheckBox",
+            ]
 
             def traverse(element, depth=0):
                 if depth > 5:
@@ -116,29 +134,41 @@ class MacOSAdapter(BasePlatformAdapter):
                 if err_role == 0 and role in VALID_ROLES:
                     _, title = AXUIElementCopyAttributeValue(element, "AXTitle", None)
                     _, val = AXUIElementCopyAttributeValue(element, "AXValue", None)
-                    _, help_text = AXUIElementCopyAttributeValue(element, "AXHelp", None)
-                    _, desc = AXUIElementCopyAttributeValue(element, "AXDescription", None)
+                    _, help_text = AXUIElementCopyAttributeValue(
+                        element, "AXHelp", None
+                    )
+                    _, desc = AXUIElementCopyAttributeValue(
+                        element, "AXDescription", None
+                    )
 
                     # 提取占位符(Placeholder)和气泡提示(ToolTip)
                     text = title or val or help_text or desc or ""
 
                     try:
-                        err_pos, pos_val = AXUIElementCopyAttributeValue(element, "AXPosition", None)
-                        err_size, size_val = AXUIElementCopyAttributeValue(element, "AXSize", None)
+                        err_pos, pos_val = AXUIElementCopyAttributeValue(
+                            element, "AXPosition", None
+                        )
+                        err_size, size_val = AXUIElementCopyAttributeValue(
+                            element, "AXSize", None
+                        )
 
                         if err_pos == 0 and err_size == 0 and pos_val and size_val:
                             x, y = pos_val.x, pos_val.y
                             w, h = size_val.width, size_val.height
 
-                            elements.append({
-                                "type": f"[{role.replace('AX', '')}]",
-                                "text": str(text),
-                                "bbox": [x, y, x + w, y + h]
-                            })
-                    except:
+                            elements.append(
+                                {
+                                    "type": f"[{role.replace('AX', '')}]",
+                                    "text": str(text),
+                                    "bbox": [x, y, x + w, y + h],
+                                }
+                            )
+                    except Exception:
                         pass
 
-                err_children, children = AXUIElementCopyAttributeValue(element, "AXChildren", None)
+                err_children, children = AXUIElementCopyAttributeValue(
+                    element, "AXChildren", None
+                )
                 if err_children == 0 and children:
                     for child in children:
                         traverse(child, depth + 1)
@@ -160,19 +190,24 @@ class MacOSAdapter(BasePlatformAdapter):
         pyautogui.click(button=button, clicks=clicks)
 
     def drag_mouse(self, dest_x: int, dest_y: int):
-        pyautogui.dragTo(dest_x, dest_y, duration=0.5, button='left')
+        pyautogui.dragTo(dest_x, dest_y, duration=0.5, button="left")
 
     def type_via_clipboard(self, text: str):
         saved = pyperclip.paste()
         try:
             pyperclip.copy(text)
-            pyautogui.hotkey('command', 'v')
+            pyautogui.hotkey("command", "v")
         finally:
             if isinstance(saved, str):
                 pyperclip.copy(saved)
 
     def press_hotkey(self, keys: str):
-        pyautogui.hotkey(*['command' if p in ['ctrl', 'control'] else p for p in keys.lower().split('+')])
+        pyautogui.hotkey(
+            *[
+                "command" if p in ["ctrl", "control"] else p
+                for p in keys.lower().split("+")
+            ]
+        )
 
     def hide_other_apps(self, keep_apps: list) -> list:
         return []

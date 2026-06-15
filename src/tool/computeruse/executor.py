@@ -4,7 +4,7 @@ import time
 import hashlib
 import io
 import base64
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 from src.tool.computeruse.adapters.factory import get_platform_adapter
 from src.tool.computeruse.exceptions import ExecutionFailedError
 
@@ -27,8 +27,15 @@ def _calculate_iou(boxA, boxB):
     return interArea / float(boxAArea + boxBArea - interArea + 1e-5)
 
 
-def execute_action(action: str, coordinate: list = None, element_id: str = None, text: str = None,
-                   keep_apps: list = None, scroll_amount: int = 0, wait_time: float = 0.1) -> dict:
+def execute_action(
+    action: str,
+    coordinate: list = None,
+    element_id: str = None,
+    text: str = None,
+    keep_apps: list = None,
+    scroll_amount: int = 0,
+    wait_time: float = 0.1,
+) -> dict:
     global _fused_elements_cache, _last_screenshot_hash
     adapter = get_platform_adapter()
 
@@ -50,22 +57,28 @@ def execute_action(action: str, coordinate: list = None, element_id: str = None,
                 return {
                     "message": "⚠️ 警告：当前屏幕内容与上次截图【完全一致】（毫无变化）。请检查上一步操作是否生效，或增加 wait_time 等待加载，或尝试使用 scroll 滚动屏幕！",
                     "base64": "",
-                    "ui_elements": "屏幕无变化，已拦截"
+                    "ui_elements": "屏幕无变化，已拦截",
                 }
             _last_screenshot_hash = current_hash
 
             # 2. 获取原始数据 (在高清原图上跑 OCR)
             import numpy as np
+
             ocr_elements = adapter.get_ocr_elements(np.array(raw_img))
             ui_elements = adapter.get_ui_tree_elements()
 
             # 3. 映射到逻辑坐标系
             for el in ocr_elements + ui_elements:
                 px1, py1, px2, py2 = el["bbox"]
-                el["logic_bbox"] = [int(px1 * scale_x), int(py1 * scale_y), int(px2 * scale_x), int(py2 * scale_y)]
+                el["logic_bbox"] = [
+                    int(px1 * scale_x),
+                    int(py1 * scale_y),
+                    int(px2 * scale_x),
+                    int(py2 * scale_y),
+                ]
                 el["logic_center"] = [
                     int((el["logic_bbox"][0] + el["logic_bbox"][2]) / 2),
-                    int((el["logic_bbox"][1] + el["logic_bbox"][3]) / 2)
+                    int((el["logic_bbox"][1] + el["logic_bbox"][3]) / 2),
                 ]
 
             # 4. 数据融合 (去重：如果 OCR 的字在 UI Button 里面，合体)
@@ -84,28 +97,30 @@ def execute_action(action: str, coordinate: list = None, element_id: str = None,
             _fused_elements_cache = fused
 
             # 5. 图像渲染：SoM 蒙版 + 稀疏坐标网格
-            resized_img = raw_img.resize((LOGICAL_WIDTH, logical_height), Image.Resampling.LANCZOS)
+            resized_img = raw_img.resize(
+                (LOGICAL_WIDTH, logical_height), Image.Resampling.LANCZOS
+            )
             # 使用 RGBA 模式以便支持透明度
             draw = ImageDraw.Draw(resized_img, "RGBA")
-            
+
             # === 新增：绘制全局稀疏坐标网格 ===
             grid_spacing = 100  # 网格间距：每 100 逻辑像素一根线
             grid_color = (0, 255, 0, 50)  # 半透明绿色线 (极低透明度，防止花眼)
-            text_color = (0, 255, 0, 150) # 网格坐标数字的颜色
-            
+            text_color = (0, 255, 0, 150)  # 网格坐标数字的颜色
+
             # 画垂直线和 X 坐标标尺
             for x in range(0, LOGICAL_WIDTH, grid_spacing):
                 draw.line([(x, 0), (x, logical_height)], fill=grid_color, width=1)
                 if x > 0:  # 避开左上角 [0,0] 重叠
                     draw.text((x + 2, 2), str(x), fill=text_color)
-                    
+
             # 画水平线和 Y 坐标标尺
             for y in range(0, logical_height, grid_spacing):
                 draw.line([(0, y), (LOGICAL_WIDTH, y)], fill=grid_color, width=1)
                 if y > 0:
                     draw.text((2, y + 2), str(y), fill=text_color)
             # ==============================
-            
+
             # === 继续绘制 SoM 元素蒙版与 ID ===
             legend_lines = []
             for idx, el in enumerate(fused):
@@ -113,17 +128,22 @@ def execute_action(action: str, coordinate: list = None, element_id: str = None,
                 # 画半透明蒙版红框
                 draw.rectangle(box, outline="red", width=2)
                 # 画编号 ID 标签背景与文字 (红底白字)
-                draw.rectangle([box[0], max(0, box[1]-15), box[0]+20, box[1]], fill=(255, 0, 0, 200))
-                draw.text((box[0]+2, max(0, box[1]-15)), str(idx), fill="white")
-                
+                draw.rectangle(
+                    [box[0], max(0, box[1] - 15), box[0] + 20, box[1]],
+                    fill=(255, 0, 0, 200),
+                )
+                draw.text((box[0] + 2, max(0, box[1] - 15)), str(idx), fill="white")
+
                 # ==========================================
                 # 🔥 终极 Token 优化：采用紧凑的正则表达式友好格式
                 # 格式示例：[0][Button]'确认'(500,300)
                 # ==========================================
-                c_type = el.get('type', '[Ele]')
+                c_type = el.get("type", "[Ele]")
                 # 清理文本中的换行和冗余空格，防止破坏单行结构
-                c_text = str(el.get('text', '')).replace('\n', ' ').replace('\r', '').strip()
-                cx, cy = el['logic_center']
+                c_text = (
+                    str(el.get("text", "")).replace("\n", " ").replace("\r", "").strip()
+                )
+                cx, cy = el["logic_center"]
 
                 # 如果没有文字，就不显示单引号部分，进一步省 Token
                 if c_text:
@@ -138,14 +158,16 @@ def execute_action(action: str, coordinate: list = None, element_id: str = None,
             # 将列表用逗号或者短空格连接（比每次换行更省 Token，但为了可读性，这里每 5 个换一行）
             compact_legend = ""
             for i in range(0, len(legend_lines), 5):
-                compact_legend += "  ".join(legend_lines[i:i+5]) + "\n"
+                compact_legend += "  ".join(legend_lines[i : i + 5]) + "\n"
 
             return {
                 "base64": base64.b64encode(buffered.getvalue()).decode("utf-8"),
-                "ui_elements": compact_legend.strip() if compact_legend else "未检测到可交互元素",
+                "ui_elements": compact_legend.strip()
+                if compact_legend
+                else "未检测到可交互元素",
                 "logical_width": LOGICAL_WIDTH,
                 "logical_height": logical_height,
-                "message": f"📸 融合截图就绪，逻辑尺寸 [{LOGICAL_WIDTH}, {logical_height}]"
+                "message": f"📸 融合截图就绪，逻辑尺寸 [{LOGICAL_WIDTH}, {logical_height}]",
             }
 
         # --- 元素搜索功能 (TopK) ---
@@ -157,11 +179,18 @@ def execute_action(action: str, coordinate: list = None, element_id: str = None,
             results = []
             for idx, el in enumerate(_fused_elements_cache):
                 if text.lower() in el.get("text", "").lower():
-                    results.append(f"[{idx}]: '{el.get('text')}' 位于 {el['logic_center']}")
+                    results.append(
+                        f"[{idx}]: '{el.get('text')}' 位于 {el['logic_center']}"
+                    )
 
             if not results:
-                return {"message": f"🔍 未找到包含 '{text}' 的元素，请尝试使用别的关键词或滚动屏幕。"}
-            return {"message": f"🔍 找到了 {len(results)} 个匹配项:\n" + "\n".join(results[:5])}
+                return {
+                    "message": f"🔍 未找到包含 '{text}' 的元素，请尝试使用别的关键词或滚动屏幕。"
+                }
+            return {
+                "message": f"🔍 找到了 {len(results)} 个匹配项:\n"
+                + "\n".join(results[:5])
+            }
 
         # --- 其他底层映射操作 ---
         else:
@@ -171,7 +200,9 @@ def execute_action(action: str, coordinate: list = None, element_id: str = None,
                 if 0 <= idx < len(_fused_elements_cache):
                     coordinate = _fused_elements_cache[idx]["logic_center"]
                 else:
-                    raise ExecutionFailedError(action, f"无效的 element_id: {element_id}")
+                    raise ExecutionFailedError(
+                        action, f"无效的 element_id: {element_id}"
+                    )
 
             # 隐式等待 (Agent自由控制)
             defer_sleep = wait_time

@@ -1,9 +1,7 @@
-import time
 import pyperclip
 import pyautogui
 import mss
 from PIL import Image
-import numpy as np
 from src.tool.computeruse.adapters.base import BasePlatformAdapter
 
 _ocr_reader = None
@@ -14,7 +12,8 @@ def _get_ocr_reader():
     if _ocr_reader is None:
         try:
             import easyocr
-            _ocr_reader = easyocr.Reader(['ch_sim', 'en'], gpu=False)
+
+            _ocr_reader = easyocr.Reader(["ch_sim", "en"], gpu=False)
         except ImportError:
             pass
     return _ocr_reader
@@ -45,21 +44,24 @@ class WindowsAdapter(BasePlatformAdapter):
             # 此时的 img_array 是高清原图，OCR 准确率拉满
             ocr_results = reader.readtext(img_array)
             elements = []
-            for (bbox, text, prob) in ocr_results:
+            for bbox, text, prob in ocr_results:
                 if prob > 0.4:
                     px1 = min([p[0] for p in bbox])
                     py1 = min([p[1] for p in bbox])
                     px2 = max([p[0] for p in bbox])
                     py2 = max([p[1] for p in bbox])
-                    elements.append({"type": "[纯文本]", "text": text, "bbox": [px1, py1, px2, py2]})
+                    elements.append(
+                        {"type": "[纯文本]", "text": text, "bbox": [px1, py1, px2, py2]}
+                    )
             return elements
-        except:
+        except Exception:
             return []
 
     def get_focused_element_info(self) -> str:
         """获取当前拥有焦点的精准控件信息（不再只有窗口标题）"""
         try:
             import win32gui
+
             # 1. 先获取当前活动窗口，作为兜底信息
             hwnd = win32gui.GetForegroundWindow()
             if not hwnd:
@@ -70,14 +72,14 @@ class WindowsAdapter(BasePlatformAdapter):
             try:
                 # 引入专业的 uiautomation 库（通常比 pywinauto 查焦点更直接）
                 import uiautomation as auto
-                
+
                 # 获取系统级当前拥有键盘焦点的控件
                 focused_control = auto.GetFocusedControl()
-                
+
                 if focused_control:
                     ctrl_type = focused_control.ControlTypeName
                     name = focused_control.Name or ""
-                    
+
                     # 拼装出和 macOS 一模一样的格式，大模型最喜欢这种
                     if name:
                         return f"焦点位于: [{ctrl_type.replace('Control', '')}] '{name}' (所属应用: {app_name})"
@@ -89,7 +91,7 @@ class WindowsAdapter(BasePlatformAdapter):
 
             # 3. 如果 UIA 失败（比如遇到不支持的自绘引擎游戏），兜底返回窗口标题
             return f"活动窗口: '{app_name}'"
-            
+
         except Exception:
             return ""
 
@@ -97,6 +99,7 @@ class WindowsAdapter(BasePlatformAdapter):
         try:
             import pywinauto
             import win32gui
+
             hwnd = win32gui.GetForegroundWindow()
             if not hwnd:
                 return []
@@ -105,8 +108,15 @@ class WindowsAdapter(BasePlatformAdapter):
             front_window = app.window(handle=hwnd)
 
             elements = []
-            VALID_CONTROLS = ["ButtonControl", "EditControl", "MenuItemControl", "TabItemControl",
-                              "ListItemControl", "HyperlinkControl", "DocumentControl"]
+            VALID_CONTROLS = [
+                "ButtonControl",
+                "EditControl",
+                "MenuItemControl",
+                "TabItemControl",
+                "ListItemControl",
+                "HyperlinkControl",
+                "DocumentControl",
+            ]
 
             def traverse(ctrl, depth=0):
                 if depth > 5:
@@ -121,19 +131,21 @@ class WindowsAdapter(BasePlatformAdapter):
                     rect = ctrl.element_info.rectangle
 
                     if ctrl_type in VALID_CONTROLS:
-                        elements.append({
-                            "type": f"[{ctrl_type.replace('Control', '')}]",
-                            "text": text,
-                            "bbox": [rect.left, rect.top, rect.right, rect.bottom]
-                        })
+                        elements.append(
+                            {
+                                "type": f"[{ctrl_type.replace('Control', '')}]",
+                                "text": text,
+                                "bbox": [rect.left, rect.top, rect.right, rect.bottom],
+                            }
+                        )
                     for child in ctrl.children():
                         traverse(child, depth + 1)
-                except:
+                except Exception:
                     pass
 
             traverse(front_window)
             return elements
-        except:
+        except Exception:
             return []
 
     def scroll(self, amount: int):
@@ -148,19 +160,21 @@ class WindowsAdapter(BasePlatformAdapter):
         pyautogui.click(button=button, clicks=clicks)
 
     def drag_mouse(self, dest_x: int, dest_y: int):
-        pyautogui.dragTo(dest_x, dest_y, duration=0.5, button='left')
+        pyautogui.dragTo(dest_x, dest_y, duration=0.5, button="left")
 
     def type_via_clipboard(self, text: str):
         saved = pyperclip.paste()
         try:
             pyperclip.copy(text)
-            pyautogui.hotkey('ctrl', 'v')
+            pyautogui.hotkey("ctrl", "v")
         finally:
             if isinstance(saved, str):
                 pyperclip.copy(saved)
 
     def press_hotkey(self, keys: str):
-        pyautogui.hotkey(*[p if p != 'control' else 'ctrl' for p in keys.lower().split('+')])
+        pyautogui.hotkey(
+            *[p if p != "control" else "ctrl" for p in keys.lower().split("+")]
+        )
 
     def hide_other_apps(self, keep_apps: list) -> list:
         return []

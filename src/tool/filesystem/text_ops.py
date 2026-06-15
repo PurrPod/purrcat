@@ -260,7 +260,9 @@ def search_file(path_from: str, pattern: str) -> dict:
                             rel_path = os.path.relpath(file_path, search_dir)
                             matches.append(f"{rel_path}:{i + 1}:{line.strip()}")
                             if len(matches) >= 50:
-                                matches.append("... [搜索结果过多，已截断前50条。请使用更精确的 pattern，或指定更深层的目录进行精准搜索]")
+                                matches.append(
+                                    "... [搜索结果过多，已截断前50条。请使用更精确的 pattern，或指定更深层的目录进行精准搜索]"
+                                )
                                 break
             except (UnicodeDecodeError, PermissionError, OSError):
                 continue

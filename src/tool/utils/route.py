@@ -51,7 +51,15 @@ def _handle_media_content(content_data: Any, tool_name: str) -> Any:
         return content_data
 
     media_type = content_data.get("type")
-    if media_type not in ["image", "video", "audio", "pdf", "mcp_media", "media_url", "media_base64"]:
+    if media_type not in [
+        "image",
+        "video",
+        "audio",
+        "pdf",
+        "mcp_media",
+        "media_url",
+        "media_base64",
+    ]:
         return content_data
 
     buffer_dir = BUFFER_DIR
@@ -62,6 +70,7 @@ def _handle_media_content(content_data: Any, tool_name: str) -> Any:
     try:
         if media_type == "media_url":
             import urllib.request
+
             url = content_data["url"]
             ext = content_data.get("ext", ".bin")
             filename = f"{tool_name}_{timestamp}_{marker_id}{ext}"
@@ -94,8 +103,12 @@ def _handle_media_content(content_data: Any, tool_name: str) -> Any:
 
         sandbox_path = f"/agent_vm/.buffer/{filename}"
         media_desc = {
-            "image": "🖼️ 图片", "video": "📹 视频", "audio": "🎵 音频",
-            "pdf": "📄 PDF", "mcp_media": "📦 媒体", "media_url": "🔗 下载文件",
+            "image": "🖼️ 图片",
+            "video": "📹 视频",
+            "audio": "🎵 音频",
+            "pdf": "📄 PDF",
+            "mcp_media": "📦 媒体",
+            "media_url": "🔗 下载文件",
             "media_base64": "📦 Base64 文件",
         }.get(media_type, "📦 文件")
 
@@ -121,8 +134,11 @@ def _execute_tool(target_func, arguments: dict) -> Any:
 
         if loop and loop.is_running():
             import nest_asyncio
+
             nest_asyncio.apply()
-            result = asyncio.get_event_loop().run_until_complete(target_func(**arguments))
+            result = asyncio.get_event_loop().run_until_complete(
+                target_func(**arguments)
+            )
         else:
             result = asyncio.run(target_func(**arguments))
     else:
@@ -164,7 +180,7 @@ def dispatch_tool(tool_name: str, arguments: dict, available_tokens: int = None)
             metadata = {
                 "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
                 "type": "text",
-                "snip": ""
+                "snip": "",
             }
 
         # 3. 如果是多媒体文件字典，这里将其退化成纯文本的路径提示
@@ -216,14 +232,14 @@ def dispatch_tool(tool_name: str, arguments: dict, available_tokens: int = None)
         # 6. 强制将遗漏的 dict/list 转换为自然语言纯文本（防 JSON 解析）
         if isinstance(content_data, (dict, list)):
             import yaml
-            content_data = yaml.dump(content_data, allow_unicode=True, default_flow_style=False)
+
+            content_data = yaml.dump(
+                content_data, allow_unicode=True, default_flow_style=False
+            )
             content_data = f"【系统格式化输出】\n{content_data}"
 
         # 7. 最终封包组装返回给 LLM （只保留 content 和 metadata）
-        final_response = {
-            "content": str(content_data),
-            "metadata": metadata
-        }
+        final_response = {"content": str(content_data), "metadata": metadata}
         return json.dumps(final_response, ensure_ascii=False)
 
     except Exception as e:
@@ -235,7 +251,7 @@ def dispatch_tool(tool_name: str, arguments: dict, available_tokens: int = None)
             "metadata": {
                 "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
                 "type": "error",
-                "snip": "❌ 执行异常"
-            }
+                "snip": "❌ 执行异常",
+            },
         }
         return json.dumps(final_err_res, ensure_ascii=False)

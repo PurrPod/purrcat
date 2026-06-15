@@ -94,7 +94,10 @@ def _handle_search(query: dict = None) -> str:
     if not query:
         memo_list = SessionStore.load_global_memo()
         import yaml
-        cache_str = yaml.dump(memo_list, allow_unicode=True) if memo_list else "当前无缓存记忆"
+
+        cache_str = (
+            yaml.dump(memo_list, allow_unicode=True) if memo_list else "当前无缓存记忆"
+        )
         return text_response(f"最新缓存记忆：\n{cache_str}", "🔍 缓存记忆")
 
     if isinstance(query, str):
@@ -144,13 +147,13 @@ def _handle_search(query: dict = None) -> str:
         # 如果底层直接返回了组装好的文本，直接使用
         if isinstance(result, str):
             return text_response(result or "未检索到相关记忆。", "🔍 记忆检索成功")
-            
+
         # 如果返回的是字典列表，再使用 get 方法
         res_str = ""
         for idx, r in enumerate(result or []):
             if isinstance(r, dict):
-                res_str += f"[{idx+1}] {r.get('date', '')} - 相似度: {r.get('score', 0)}\n内容: {r.get('content', '')}\n\n"
-        
+                res_str += f"[{idx + 1}] {r.get('date', '')} - 相似度: {r.get('score', 0)}\n内容: {r.get('content', '')}\n\n"
+
         return text_response(res_str or "未检索到相关记忆。", "🔍 记忆检索成功")
 
     except Exception as e:

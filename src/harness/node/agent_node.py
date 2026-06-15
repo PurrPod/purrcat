@@ -417,14 +417,14 @@ class AgentNode(BaseNode):
 
             if original_tool_name == "task_done":
                 summary = arguments.get("summary", {})
-                
+
                 # 🌟 新增容错：如果大模型外层包了引号变成了字符串，先尝试解析它
                 if isinstance(summary, str):
                     try:
                         summary = json.loads(summary)
                     except json.JSONDecodeError:
-                        pass # 如果解析失败，再交给下面的 raw 兜底
-                
+                        pass  # 如果解析失败，再交给下面的 raw 兜底
+
                 # 如果此时依然不是 dict，再做兜底
                 if not isinstance(summary, dict):
                     summary = {"raw": str(summary)}

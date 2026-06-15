@@ -51,7 +51,7 @@ def delete_file(path: str) -> dict:
         )
     )
     diff_text = "".join(diff_lines)
-    
+
     # 写入 .meta，前端立刻就能捕捉到
     save_backup_meta(target_path, backup_id, diff_text)
 
@@ -59,5 +59,5 @@ def delete_file(path: str) -> dict:
         "path": target_path,
         "backup_id": backup_id,
         "message": f"🗑️ 成功删除文件 {os.path.basename(target_path)}。\n💡 已自动备份至时光机，用户可在 File Changes 窗口核对或回滚！",
-        "diff": diff_text
+        "diff": diff_text,
     }

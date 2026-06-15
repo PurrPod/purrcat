@@ -61,13 +61,13 @@ def _grant_computer_use(duration: int):
     """🌟 自动下发 ComputerUse 的有时效性授权"""
     import time
     from src.utils.config import DATA_DIR
-    
+
     auth_file = os.path.join(DATA_DIR, "checkpoints", "agent", "computer_use_auth.json")
     os.makedirs(os.path.dirname(auth_file), exist_ok=True)
-    
+
     # 记录授权过期时间戳
     expire_at = time.time() + duration * 60
-    
+
     with open(auth_file, "w", encoding="utf-8") as f:
         json.dump({"expire_at": expire_at}, f)
 
@@ -113,7 +113,11 @@ def _install_skill_from_github(skill_name: str):
 
 
 def resolve_request(
-    req_id: str, approved: bool, feedback: str = "", ignore: bool = False, duration: int = 5
+    req_id: str,
+    approved: bool,
+    feedback: str = "",
+    ignore: bool = False,
+    duration: int = 5,
 ) -> dict:
     if not os.path.exists(REQUESTS_FILE):
         return {"status": "error", "message": "文件不存在"}

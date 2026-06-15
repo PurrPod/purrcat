@@ -10,6 +10,7 @@ from src.agent.sub_runner import (
 )
 from src.utils.config import get_file_config
 
+
 def _has_write_permission(target_path: str) -> bool:
     """
     BrainStorm 内部专属的轻量级写权限校验器，避免引入 filesystem 导致循环导入。
@@ -28,7 +29,7 @@ def _has_write_permission(target_path: str) -> bool:
     # 2. 读取系统的文件权限配置
     config = get_file_config()
     perms = config.get("permissions", {})
-    
+
     best_match_len = -1
     best_perm = config.get("default_permission", "readonly")
 
@@ -88,7 +89,7 @@ def BrainStorm(
                 task_handle.cancel()
                 return text_response(
                     f"✅ 斩杀信号已成功下发！后台分支 `{target_branch_id}` 已被强制终止。",
-                    "🛑 分支已终止"
+                    "🛑 分支已终止",
                 )
             else:
                 return error_response(
@@ -139,7 +140,9 @@ def BrainStorm(
                 tool_call_id = None
                 if main_history and len(main_history) > 0:
                     last_msg = main_history[-1]
-                    if last_msg.get("role") == "assistant" and last_msg.get("tool_calls"):
+                    if last_msg.get("role") == "assistant" and last_msg.get(
+                        "tool_calls"
+                    ):
                         tool_call_id = last_msg["tool_calls"][0]["id"]
 
                 if tool_call_id:
@@ -147,7 +150,9 @@ def BrainStorm(
                         "role": "tool",
                         "tool_call_id": tool_call_id,
                         "name": "BrainStorm",
-                        "content": text_response(final_response_text, "🚀 脑暴计划已生效"),
+                        "content": text_response(
+                            final_response_text, "🚀 脑暴计划已生效"
+                        ),
                     }
                     main_history.append(sub_tool_result_msg)
 
