@@ -1,15 +1,13 @@
 import datetime
 import json
 import os
-import re
 import threading
-import uuid
 
 from .core.memory_worker.worker_agent import MemoryAgent
 from .core.search_tool import RAGSearchTool
 from .core.utils import SingletonMeta
 from .visualize_graph import GraphVisualizer
-from src.utils.config import MEMORY_PENDING_DIR
+from src.utils.memory_utils import validate_memo_data, write_to_pending
 
 
 class PurrMemoClient(metaclass=SingletonMeta):
@@ -34,131 +32,6 @@ class PurrMemoClient(metaclass=SingletonMeta):
         if not self._daemon_started:
             self._start_daemon()
         return True
-
-    def _normalize_iso_time(self, time_str: str) -> str:
-        time_str = time_str.strip()
-        if re.match(r"^\d{8}$", time_str):
-            return f"{time_str[:4]}-{time_str[4:6]}-{time_str[6:8]}T00:00:00"
-        elif re.match(r"^\d{8} \d{2}:\d{2}$", time_str):
-            return f"{time_str[:4]}-{time_str[4:6]}-{time_str[6:8]}T{time_str[9:14]}:00"
-        elif re.match(r"^\d{4}-\d{2}-\d{2}$", time_str):
-            return f"{time_str}T00:00:00"
-        elif re.match(r"^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}$", time_str):
-            return time_str.replace(" ", "T") + ":00"
-        elif re.match(r"^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}$", time_str):
-            return time_str.replace(" ", "T")
-        return time_str
-
-    def _validate_memo_data(self, memo_data: dict) -> tuple[dict, list]:
-        errors = []
-        valid_data = {
-            "short_term": "",
-            "work_exp": [],
-            "user_profile": [],
-            "events": [],
-            "cognition": [],
-        }
-
-        if not isinstance(memo_data, dict):
-            return {}, ["memo_data must be a dict"]
-
-        short_term = memo_data.get("short_term")
-        if short_term is not None and not isinstance(short_term, str):
-            errors.append(
-                f"short_term must be a string, got {type(short_term).__name__}"
-            )
-        elif short_term:
-            valid_data["short_term"] = short_term.strip()
-
-        work_exp = memo_data.get("work_exp", [])
-        if not isinstance(work_exp, list):
-            errors.append(f"work_exp must be a list, got {type(work_exp).__name__}")
-        else:
-            for i, w in enumerate(work_exp):
-                if not isinstance(w, str) or not w.strip():
-                    errors.append(f"work_exp[{i}] must be a non-empty string")
-                else:
-                    valid_data["work_exp"].append(w.strip())
-
-        user_profile = memo_data.get("user_profile", [])
-        if not isinstance(user_profile, list):
-            errors.append(
-                f"user_profile must be a list, got {type(user_profile).__name__}"
-            )
-        else:
-            for i, u in enumerate(user_profile):
-                if not isinstance(u, str) or not u.strip():
-                    errors.append(f"user_profile[{i}] must be a non-empty string")
-                else:
-                    valid_data["user_profile"].append(u.strip())
-
-        events = memo_data.get("events", [])
-        if not isinstance(events, list):
-            errors.append(f"events must be a list, got {type(events).__name__}")
-        else:
-            for i, e in enumerate(events):
-                if not isinstance(e, dict):
-                    errors.append(f"events[{i}] must be an object with time and event")
-                    continue
-                if "time" not in e or "event" not in e:
-                    errors.append(f"events[{i}] must contain time and event")
-                    continue
-                if not isinstance(e["time"], str) or not e["time"].strip():
-                    errors.append(f"events[{i}].time must be a non-empty string")
-                elif not isinstance(e["event"], str) or not e["event"].strip():
-                    errors.append(f"events[{i}].event must be a non-empty string")
-                else:
-                    time_str = e["time"].strip()
-                    time_pattern = (
-                        r"^(\d{4}-\d{2}-\d{2}([ T]\d{2}:\d{2}(:\d{2})?)?|"
-                        r"\d{8}( \d{2}:\d{2})?)$"
-                    )
-                    if not re.match(time_pattern, time_str):
-                        errors.append(
-                            f"events[{i}].time format invalid: '{time_str}', expected YYYY-MM-DD HH:MM"
-                        )
-                    else:
-                        valid_data["events"].append(
-                            {
-                                "time": self._normalize_iso_time(time_str),
-                                "event": e["event"].strip(),
-                            }
-                        )
-
-        cognition = memo_data.get("cognition", [])
-        if not isinstance(cognition, list):
-            errors.append(f"cognition must be a list, got {type(cognition).__name__}")
-        else:
-            for i, c in enumerate(cognition):
-                if not isinstance(c, str) or not c.strip():
-                    errors.append(f"cognition[{i}] must be a non-empty string")
-                else:
-                    valid_data["cognition"].append(c.strip())
-
-        return valid_data, errors
-
-    def _write_to_pending(
-        self, events: list, cognition: list, user_profile: list, work_exp: list
-    ) -> str:
-        os.makedirs(MEMORY_PENDING_DIR, exist_ok=True)
-        timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
-        unique_id = uuid.uuid4().hex[:8]
-        filename = f"memory_{timestamp}_{unique_id}.json"
-        filepath = os.path.join(MEMORY_PENDING_DIR, filename)
-
-        data = {
-            "user_profile": user_profile or [],
-            "work_exp": work_exp or [],
-            "events": events or [],
-            "cognition": cognition or [],
-            "timestamp": timestamp,
-            "source": "memory_api",
-        }
-
-        with open(filepath, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-
-        return filepath
 
     def search(self, query: str = "", filters: dict = None):
         """通过混合检索匹配记忆库里的数据"""
@@ -193,15 +66,16 @@ class PurrMemoClient(metaclass=SingletonMeta):
 
     def add_memory(self, memo_data: dict) -> str:
         """写入待处理记忆，返回 pending 文件路径。"""
-        valid_data, errors = self._validate_memo_data(memo_data)
+        valid_data, errors = validate_memo_data(memo_data)
         if errors:
             raise ValueError("; ".join(errors))
 
-        filepath = self._write_to_pending(
+        filepath = write_to_pending(
             events=valid_data["events"],
             cognition=valid_data["cognition"],
             user_profile=valid_data["user_profile"],
             work_exp=valid_data["work_exp"],
+            source="memory_api",
         )
         return filepath
 

@@ -7,7 +7,6 @@ import shutil
 import time
 from datetime import datetime
 
-from src.model import AgentModel
 from src.utils.config import MEMORY_DIR, MEMORY_PENDING_DIR, get_memory_config
 
 from ..search_tool import start_forgetfulness_scheduler
@@ -49,6 +48,8 @@ class MemoryAgent:
         Args:
             cognition_data: 认知条目列表，如 ["用户喜欢吃苹果", "用户讨厌香蕉"]
         """
+        from src.model import AgentModel
+
         if not cognition_data:
             return
 
@@ -220,10 +221,10 @@ class MemoryAgent:
         try:
             timestamp = data.get("timestamp", datetime.now().isoformat())
 
-            # 预定义变量，防止未定义引用
             event_id = None
             cognition = data.get("cognition", [])
             user_profile = data.get("user_profile", [])
+            work_exp = data.get("work_exp", [])
 
             # 1. 处理 Events (事件库 + 向量库双写)
             events = data.get("events", [])
@@ -238,18 +239,16 @@ class MemoryAgent:
                 )
                 event_id = f"evt_{hashlib.md5(event_content.encode()).hexdigest()}"
 
-                # A. 存入 SQLite (纯文本存入即可)
                 self.event_engine.insert_event(
                     event_id=event_id, content=event_content, timestamp=event_time
                 )
-                # B. 存入 ChromaDB (由它全权负责向量)
                 if self.vector_engine:
                     self.vector_engine.insert_event_vector(
                         event_id, event_content, event_time
                     )
 
             # 2. 处理 work_exp 和 user_profile (存入向量库的经验池)
-            experiences = data.get("work_exp", []) + user_profile
+            experiences = work_exp + user_profile
             if self.vector_engine and experiences:
                 for exp_text in experiences:
                     exp_id = f"exp_{hashlib.md5(exp_text.encode()).hexdigest()}"
@@ -257,13 +256,27 @@ class MemoryAgent:
                         exp_id=exp_id, content=exp_text, timestamp=timestamp
                     )
 
-            # 3. 处理 user_profile 和 cognition (抛给大模型提取图谱关系)
+            # ================= 新增解耦逻辑 =================
+            # 触发 MEMORY.md 的文本归档更新 (由于是阻塞调用，文件会排队更新，非常安全)
+            if work_exp or user_profile:
+                try:
+                    from src.tool.memo.memo_operations import _smart_update_memory_md
+
+                    print(
+                        f"⏳ [Worker] 检测到经验更新，正在后台重建 MEMORY.md ..."
+                    )
+                    _smart_update_memory_md(work_exp, user_profile)
+                except Exception as e:
+                    print(f"❌ [Worker] 重建 MEMORY.md 异常: {e}")
+            # ===============================================
+
+            # 3. 处理 cognition 和 user_profile (抛给大模型提取图谱关系)
             graph_materials = cognition + user_profile
             if graph_materials and self.graph_engine:
                 self._run_llm_step(graph_materials)
                 self.graph_engine.save_graph()
 
-            # 3. 归档日志记录
+            # 4. 归档日志记录
             archive_path = os.path.join(ARCHIVED_DIR, os.path.basename(file_path))
             shutil.move(file_path, archive_path)
 

@@ -133,10 +133,10 @@ def Search(route: str, query: str, topk: int = 5, **kwargs) -> str:
     # ---- 渲染 Web 结果 ----
     if route_type == "web":
         results = response_data["results"]
-        md = f"# 🔍 搜索结果: {query}\n\n"
+        md = f"# Result: {query}\n\n"
         for i, res in enumerate(results, 1):
-            md += f"## {i}. {res['title']}\n**URL:** {res['url']}\n\n**摘要:** {res['snippet']}\n\n---\n\n"
-        md += "💡 **提示：如果需要阅读完整详情，请使用 `Fetch` 工具 (source='web') 并传入对应的 URL。**"
+            md += f"## {i}. {res['title']}\n**URL:** {res['url']}\n\n**Snip:** {res['snippet']}\n\n---\n\n"
+        md += "Tips：如果需要阅读完整详情，请使用 `Fetch` 工具 (source='web') 并传入对应的 URL。**"
         return text_response(md, f"🌐 Web | {len(results)}条结果")
 
     # ---- 渲染 Local/Skill/MCP 结果 ----
@@ -146,7 +146,7 @@ def Search(route: str, query: str, topk: int = 5, **kwargs) -> str:
     lines = [f"# 本地能力检索结果 [{route_type}] (Top{topk}):"]
     
     if route_type in ["local", "skill"]:
-        lines.append("\n## 🎯 技能库 (Skills):")
+        lines.append("\n## Skills:")
         if not skills:
             lines.append("（未找到匹配的本地技能）")
         for res in skills:
@@ -155,14 +155,14 @@ def Search(route: str, query: str, topk: int = 5, **kwargs) -> str:
             lines.append(f"- [Skill] {skill.get('name', 'unknown')} (得分: {res.get('score', 0)}) - {desc}")
 
     if route_type in ["local", "mcp"]:
-        lines.append("\n## 🔧 MCP 工具库 (Tools):")
+        lines.append("\n## MCP Tools:")
         if not mcp_tools:
             lines.append("（未找到匹配的 MCP 工具）")
         for res in mcp_tools:
             desc = res.get("description", "无")[:80].replace("\n", " ")
             lines.append(f"- [MCP:{res.get('server_name', 'unknown')}] {res.get('tool_name', 'unknown')} (得分: {res.get('score', 0)}) - {desc}")
 
-    lines.append("\n提示: 若需使用上述能力，请使用 `Fetch` 工具获取完整参数与细节。")
+    lines.append("\nTips: 若需使用上述能力，请使用 `Fetch` 工具获取完整参数与细节。")
     
     total_hits = len(skills) + len(mcp_tools)
     return text_response("\n".join(lines), f"🔧 {route_type.capitalize()} | 命中{total_hits}个能力")
