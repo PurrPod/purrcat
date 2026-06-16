@@ -409,6 +409,9 @@ class AgentNode(BaseNode):
             arguments_str = tc.function.arguments
             try:
                 arguments = json.loads(arguments_str) if arguments_str else {}
+                # 💡 类型防御：防止解析为 None 或 List
+                if not isinstance(arguments, dict):
+                    arguments = {}
             except json.JSONDecodeError:
                 arguments = {}
 
