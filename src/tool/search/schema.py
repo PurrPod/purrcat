@@ -8,8 +8,8 @@ SEARCH_TOOL_SCHEMA = {
             "properties": {
                 "route": {
                     "type": "string",
-                    "description": "搜索路由：web（互联网搜索）、local（本地技能库与MCP工具搜索）",
-                    "enum": ["web", "local"],
+                    "description": "搜索路由：web（互联网搜索）、local（本地技能库与MCP工具混合搜索）、skill（仅技能库）、mcp（仅MCP工具）",
+                    "enum": ["web", "local", "skill", "mcp"],
                 },
                 "query": {"type": "string", "description": "搜索查询词"},
                 "topk": {
