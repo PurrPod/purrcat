@@ -1,14 +1,49 @@
 """
 Skill 测试执行器 (evolve/skill/evaluator.py)
 利用底层 Harness 原生双 Agent 工作流完成隔离环境下的盲测与自评。
-完全对齐 agentskills.io 官方评测标准。
+完全对齐 agentskills.io 官方评测标准，支持递增多版本迭代存档与全向指标统计。
 """
 import os
 import json
 import shutil
 import asyncio
 import threading
+import re
+import math
 from src.harness.process import Task
+
+
+def _get_next_iteration_dir(workplace_root: str) -> tuple[str, int]:
+    """
+    扫描工作区，自动计算并获取下一次迭代的目录路径与序号 (iteration-N)
+    """
+    max_idx = 0
+    if os.path.exists(workplace_root):
+        for item in os.listdir(workplace_root):
+            match = re.match(r"iteration-(\d+)", item)
+            if match:
+                idx = int(match.group(1))
+                if idx > max_idx:
+                    max_idx = idx
+    next_idx = max_idx + 1
+    return os.path.join(workplace_root, f"iteration-{next_idx}"), next_idx
+
+
+def _calculate_stats(values: list[float]) -> dict:
+    """
+    计算一组数据的均值 (mean) 与标准差 (stddev)
+    """
+    if not values:
+        return {"mean": 0.0, "stddev": 0.0}
+    
+    mean = sum(values) / len(values)
+    variance = sum((x - mean) ** 2 for x in values) / len(values)
+    stddev = math.sqrt(variance)
+    
+    return {
+        "mean": round(mean, 2),
+        "stddev": round(stddev, 2)
+    }
 
 
 def run_skill_eval_background(workplace_id: str, skill_name: str, main_session_id: str):
@@ -119,15 +154,70 @@ async def _async_run_evals(workplace_id: str, skill_name: str) -> str:
         return "测试失败：evals.json 格式错误，无法解析为有效的 JSON。"
 
     cases = evals_data.get("evals", [])
-    if not cases:
-        return "测试报告：evals.json 中没有任何测试用例。"
 
-    # 官方推荐的工作区记录目录
-    iteration_dir = os.path.join(workplace_root, "iteration-latest")
-    shutil.rmtree(iteration_dir, ignore_errors=True)
+    # 🌟 1. 提取沙盒中的 SKILL.md 信息，用于影子注入
+    from src.utils.skill_helper import _parse_skill_md
+    from src.tool.search.skill_search import SkillSearcher
+    
+    sandbox_skill_md = os.path.join(dev_skill_dir, "SKILL.md")
+    sandbox_skill_data = {"name": skill_name, "description": "", "content": ""}
+    if os.path.exists(sandbox_skill_md):
+        parsed = _parse_skill_md(sandbox_skill_md)
+        sandbox_skill_data["name"] = parsed["metadata"].get("name", skill_name)
+        sandbox_skill_data["description"] = parsed["metadata"].get("description", "")
+        sandbox_skill_data["content"] = parsed.get("content", "")
+
+    # 🌟 2. 运行 Description 激发测试 (Trigger Eval)
+    triggers = evals_data.get("triggers", [])
+    trigger_report_lines = []
+    trigger_benchmark = []
+    trigger_pass_count = 0
+    
+    if triggers:
+        searcher = SkillSearcher()
+        trigger_report_lines.append(f"## 🎯 描述激发测试 (Trigger Evals)")
+        
+        for t in triggers:
+            query = t.get("query", "")
+            should_trigger = t.get("should_trigger", True)
+            
+            # 调用影子注入测试
+            res = searcher.simulate_trigger(query, sandbox_skill_data, top_k=3, threshold=0.3)
+            
+            is_triggered = res["is_triggered"]
+            passed = (is_triggered == should_trigger)
+            if passed:
+                trigger_pass_count += 1
+                
+            status_icon = "✅ Pass" if passed else "❌ Fail"
+            behavior = "触发" if is_triggered else "未触发"
+            expected = "应触发" if should_trigger else "不应触发"
+            
+            trigger_report_lines.append(
+                f"- **{status_icon}** | 得分: {res['score']:.2f} | 实际: **{behavior}** (预期: {expected})\n"
+                f"  - Query: `{query}`\n"
+                f"  - 排名: {res['rank'] if res['rank']>0 else '未上榜 Top3'} | 竞争者: {res['competitors']}"
+            )
+            
+            trigger_benchmark.append({
+                "query": query,
+                "should_trigger": should_trigger,
+                "is_triggered": is_triggered,
+                "score": res["score"],
+                "passed": passed
+            })
+        
+        trigger_report_lines.append(f"\n**激发测试通过率**: {trigger_pass_count}/{len(triggers)}\n---\n")
+
+    # 🌟 核心重构：动态计算递增迭代存档目录，避免历史记录被抹除
+    iteration_dir, iteration_idx = _get_next_iteration_dir(workplace_root)
     os.makedirs(iteration_dir, exist_ok=True)
 
-    report_lines = [f"# {skill_name} 自动化盲测与基准报告\n"]
+    report_lines = [f"# {skill_name} 自动化盲测与基准报告 (Iteration {iteration_idx})\n"]
+    
+    # 将触发测试报告插入到报告开头
+    report_lines.extend(trigger_report_lines)
+    
     benchmark_cases = []
     total_time, total_tokens = 0.0, 0
 
@@ -137,7 +227,8 @@ async def _async_run_evals(workplace_id: str, skill_name: str) -> str:
         # 1. 创建隔离的测试执行区 (防数据泄露)
         # 格式: iteration-latest/eval-<case_id>/with_skill/
         eval_run_dir = os.path.join(iteration_dir, f"eval-{case_id}", "with_skill")
-        sandbox_eval_dir = f"/agent_vm/skill_workplace/{workplace_id}/iteration-latest/eval-{case_id}/with_skill"
+        # 转换物理路径为沙盒容器内标准路径
+        sandbox_eval_dir = f"/agent_vm/skill_workplace/{workplace_id}/iteration-{iteration_idx}/eval-{case_id}/with_skill"
         
         # 过滤掉 evals 目录和 README，防止测试 Agent 偷看断言作弊
         def ignore_eval_files(dir_path, contents):
@@ -212,17 +303,18 @@ async def _async_run_evals(workplace_id: str, skill_name: str) -> str:
                 eval_res = json.loads(eval_res_str) if isinstance(eval_res_str, str) else eval_res_str
                 is_pass = eval_res.get("pass", False)
                 reason = eval_res.get("reason", "裁判员未提供具体理由")
+                
+                # 提取 Python Runner 生成的 grading_data，直接写入 grading.json
+                grading_data = eval_res.get("grading_data", {})
+                # 兼容旧版结构，确保有 summary 字段
+                if "summary" not in grading_data:
+                    grading_data["summary"] = {}
+                grading_data["summary"]["exec_summary"] = exec_sum
             except Exception:
                 reason = str(eval_res_str)
+                grading_data = {"summary": {"exec_summary": exec_sum}}
 
-            # 生成 grading.json (简化版，由 QA 裁判统一输出 reason)
-            grading_data = {
-                "summary": {
-                    "passed": is_pass,
-                    "reason": reason,
-                    "exec_summary": exec_sum
-                }
-            }
+            # 直接使用 grading_data 写入，完美对齐官方规范
             with open(os.path.join(eval_run_dir, "grading.json"), "w", encoding="utf-8") as f:
                 json.dump(grading_data, f, ensure_ascii=False, indent=2)
         else:
@@ -261,14 +353,21 @@ async def _async_run_evals(workplace_id: str, skill_name: str) -> str:
         except Exception:
             pass
 
-    # 汇总生成官方推荐的 benchmark.json
-    pass_count = sum(1 for c in benchmark_cases if c["pass"])
+    # 🌟 核心重构：聚合当前迭代的数据指标（计算 mean 与 stddev），完美承袭官方 benchmark.json 规范
+    pass_values = [1.0 if c["pass"] else 0.0 for c in benchmark_cases]
+    time_values = [c["time_seconds"] for c in benchmark_cases]
+    token_values = [c["tokens"] for c in benchmark_cases]
+
     benchmark_data = {
+        "trigger_summary": {
+            "pass_rate": trigger_pass_count / len(triggers) if triggers else 0,
+            "cases": trigger_benchmark
+        },
         "run_summary": {
             "with_skill": {
-                "pass_rate": pass_count / len(benchmark_cases) if benchmark_cases else 0,
-                "time_seconds_total": round(total_time, 2),
-                "tokens_total": total_tokens
+                "pass_rate": _calculate_stats(pass_values),
+                "time_seconds": _calculate_stats(time_values),
+                "tokens": _calculate_stats(token_values)
             }
         },
         "cases": benchmark_cases
@@ -277,10 +376,12 @@ async def _async_run_evals(workplace_id: str, skill_name: str) -> str:
     with open(os.path.join(iteration_dir, "benchmark.json"), "w", encoding="utf-8") as f:
         json.dump(benchmark_data, f, ensure_ascii=False, indent=2)
 
-    report_lines.append(f"## 📊 全局基准统计 (Benchmark)")
+    pass_count = sum(1 for c in benchmark_cases if c["pass"])
+    report_lines.append(f"## 📊 全局基准统计 (Benchmark - Iteration {iteration_idx})")
     report_lines.append(f"- **总通过率**: {pass_count}/{len(benchmark_cases)}")
-    report_lines.append(f"- **总耗时**: {total_time:.2f}s")
-    report_lines.append(f"- **总 Tokens**: {total_tokens}")
+    report_lines.append(f"- **平均通过率**: {benchmark_data['run_summary']['with_skill']['pass_rate']['mean'] * 100:.1f}%")
+    report_lines.append(f"- **平均耗时**: {benchmark_data['run_summary']['with_skill']['time_seconds']['mean']}s (标准差: {benchmark_data['run_summary']['with_skill']['time_seconds']['stddev']}s)")
+    report_lines.append(f"- **平均 Tokens**: {benchmark_data['run_summary']['with_skill']['tokens']['mean']} (标准差: {benchmark_data['run_summary']['with_skill']['tokens']['stddev']})")
 
     final_report = "\n".join(report_lines)
     with open(os.path.join(iteration_dir, "eval_report.md"), "w", encoding="utf-8") as f:

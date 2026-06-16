@@ -125,6 +125,93 @@ class SkillSearcher:
 
         return results
 
+    def simulate_trigger(self, query: str, sandbox_skill: dict, top_k: int = 3, threshold: float = 0.3) -> dict:
+        """
+        触发测试：临时将沙盒技能以"影子节点"形式注入全局语料快照中，
+        进行真实的混合检索，评估其是否能击败其他真实技能被成功激发。
+        """
+        import copy
+        
+        with self._lock:
+            # 1. 抓取当前真实环境快照 (不修改原数据)
+            temp_corpus = self.corpus.copy() if self.corpus else []
+            temp_skills = copy.deepcopy(self.skills) if self.skills else []
+            # 复制矩阵，避免并发污染
+            temp_matrix = self.corpus_matrix.copy() if self.corpus_matrix is not None else np.empty((0, 0))
+
+        # 2. 组装沙盒技能文本与计算向量
+        sandbox_name = sandbox_skill.get("name", "")
+        sandbox_desc = sandbox_skill.get("description", "")
+        sandbox_content = sandbox_skill.get("content", "")
+        sandbox_text = f"{sandbox_name} {sandbox_desc} {sandbox_content}"
+
+        sandbox_vector = self.embedding_searcher.encode([sandbox_text])
+
+        # 3. 寻找并替换旧版，或追加新版
+        target_idx = -1
+        for i, s in enumerate(temp_skills):
+            if s["name"] == sandbox_name:
+                target_idx = i
+                break
+
+        if target_idx != -1:
+            # 覆盖主库中现存的旧版本
+            temp_corpus[target_idx] = sandbox_text
+            temp_skills[target_idx] = sandbox_skill
+            if temp_matrix.size > 0:
+                temp_matrix[target_idx] = sandbox_vector[0]
+        else:
+            # 这是一个全新的技能，追加到快照末尾
+            temp_corpus.append(sandbox_text)
+            temp_skills.append(sandbox_skill)
+            if temp_matrix.size > 0:
+                temp_matrix = np.vstack([temp_matrix, sandbox_vector])
+            else:
+                temp_matrix = sandbox_vector
+
+        # 4. 执行真实的混合检索打分
+        query_vector = self.embedding_searcher.encode([query])
+        dense_scores = self.embedding_searcher.calculate_similarity(query_vector, temp_matrix)
+
+        # 重新初始化轻量级 BM25 (由于语料少，耗时极短)
+        from rank_bm25 import BM25Okapi
+        tokenized_corpus = [hybrid_tokenize(doc) for doc in temp_corpus]
+        temp_bm25 = BM25Okapi(tokenized_corpus)
+        
+        tokenized_query = hybrid_tokenize(query)
+        raw_bm25_scores = temp_bm25.get_scores(tokenized_query)
+
+        max_bm25 = max(raw_bm25_scores) if raw_bm25_scores.size > 0 else 0
+        bm25_scores = [score / max_bm25 for score in raw_bm25_scores] if max_bm25 > 0 else [0] * len(temp_corpus)
+
+        alpha_dense, alpha_sparse = 0.7, 0.3
+        final_scores = np.array([(dense_scores[i] * alpha_dense) + (bm25_scores[i] * alpha_sparse) for i in range(len(temp_corpus))])
+        
+        top_k_indices = np.argsort(final_scores)[::-1][:top_k]
+
+        # 5. 激发状态判定
+        # 注意 target_idx 在新技能追加时，等于 len(temp_corpus) - 1
+        if target_idx == -1:
+            target_idx = len(temp_corpus) - 1
+            
+        trigger_score = final_scores[target_idx]
+        is_triggered = False
+        rank = -1
+        
+        for rank_pos, idx in enumerate(top_k_indices):
+            if idx == target_idx and trigger_score >= threshold:
+                is_triggered = True
+                rank = rank_pos + 1
+                break
+
+        return {
+            "is_triggered": is_triggered,
+            "score": round(float(trigger_score), 4),
+            "rank": rank,
+            "threshold": threshold,
+            "competitors": [temp_skills[idx]["name"] for idx in top_k_indices if idx != target_idx]
+        }
+
 
 def reload_skill_index():
     skill_searcher = SkillSearcher(SKILL_DIR)

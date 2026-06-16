@@ -1,10 +1,10 @@
 {
   "version": "2.0",
   "name": "skill_eval",
-  "description": "自动化技能沙盒测试流水线：利用节点读取本地工作区正在开发的技能源码，分离系统与用户提示词盲测执行，再交由裁判评判。",
+  "description": "自动化技能沙盒盲测：支持断言级 (Assertion) 的细粒度评判与官方 grading 标准统计。",
   "global_schema": {
-    "host_skill_md_path": { "type": "string", "required": true, "description": "供读取节点使用的宿主机 SKILL.md 物理路径" },
-    "workplace_dir": { "type": "string", "required": true, "description": "沙盒工作目录 /agent_vm/..." },
+    "host_skill_md_path": { "type": "string", "required": true },
+    "workplace_dir": { "type": "string", "required": true },
     "prompt": { "type": "string", "required": true },
     "expected_output": { "type": "string", "required": true }
   },
@@ -36,7 +36,7 @@
       "name": "组装System指令",
       "position": [100, -50],
       "config": {
-        "template": "你是一个沙盒环境中的测试执行专家。\n\n【你的专属隔离工作目录】\n{{workplace_dir}}\n注意：所有的操作必须在这个目录下进行！\n\n【待测试技能 SOP 源码】\n{{skill_content}}\n\n该Skill位于 {{workplace_dir}}/SKILL.md，禁止使用 Fetch 工具再次获取该skill。\n\n💡 严格要求：你所有的测试产出和文件修改，必须真实地保存在你的工作目录内！不要仅仅在聊天中用文字回复结果，因为这只是后台测试，操作员看不到聊天记录。完成最终产出后，再调用 task_done 输出简要总结。"
+        "template": "你是一个沙盒环境中的测试执行专家。\n\n【你的专属隔离工作目录】\n{{workplace_dir}}\n注意：所有的操作必须在这个目录下进行！\n\n【待测试技能 SOP 源码】\n{{skill_content}}\n\n该Skill位于 {{workplace_dir}}/SKILL.md，禁止使用 Fetch 工具再次获取。\n\n💡 严格要求：你所有的测试产出和文件修改，必须真实地保存在你的工作目录内！不要仅仅在聊天中用文字回复结果。完成最终产出后，再调用 task_done 输出简要总结。"
       }
     },
     {
@@ -63,7 +63,7 @@
     {
       "id": "nd_agent_exec",
       "type": "agent_loop",
-      "name": "Agent-执行测试",
+      "name": "Agent-测试工人",
       "position": [1000, 50],
       "config": {}
     },
@@ -73,7 +73,7 @@
       "name": "组装QA裁判指令",
       "position": [1400, 150],
       "config": {
-        "template": "你是一个严格的 QA 评估专家。一个 AI Agent 刚刚在沙盒中执行了某项任务。\n\n【我们期望达成的核心结果】\n{{expected_output}}\n\n【执行 Agent 的自我总结】\n{{summary}}\n\n【任务发生的工作目录】\n{{workplace_dir}}\n\n请评估上述 Agent 的执行是否完全满足了我们的期望。如果有物理文件生成的要求，你可以使用 FileSystem 工具检查该目录下的文件是否合格。评估完毕后，必须调用 task_done 工具输出严格的 JSON。"
+        "template": "你是一个严格的 QA 评估专家。以下是测试工人在沙盒中执行任务后的情况。\n\n【我们期望达成的核心结果与断言清单 (Assertions)】\n{{expected_output}}\n\n【执行工人的自我总结】\n{{summary}}\n\n【任务发生的工作目录】\n{{workplace_dir}}\n\n请使用 Bash 工具检查该目录下的实际产出文件，严格逐条核对上述【硬性断言检查清单】中的每一项！\n\n💡 格式强制要求：\n核对完毕后，请调用 task_done 工具，在 summary 参数中输出一个 JSON 字典，必须包含 `assertion_results` 数组。请严格参考以下示例输出：\n{\n  \"assertion_results\": [\n    {\n      \"text\": \"The bar chart has labeled axes\",\n      \"passed\": false,\n      \"evidence\": \"Y-axis is labeled 'Revenue' but X-axis has no label.\"\n    },\n    {\n      \"text\": \"The output is a valid JSON\",\n      \"passed\": true,\n      \"evidence\": \"Found config.json and verified it parses successfully.\"\n    }\n  ]\n}"
       }
     },
     {
@@ -90,16 +90,26 @@
       "position": [2000, 150],
       "config": {
         "task_done_info": {
-          "pass": "布尔值(True/False)，表示是否完美达到了期望",
-          "reason": "字符串，给出评判的具体理由、或者指出缺陷与缺失的文件"
+          "assertion_results": "一个JSON对象数组。包含字段：text (断言文本), passed (true/false), evidence (给出判定的具体证据，必须具体到事实)。请严格逐一评估清单上的每一条断言。"
         }
+      }
+    },
+    {
+      "id": "nd_calc_grades",
+      "type": "python_runner",
+      "name": "计算指标与组装 Grading",
+      "position": [2400, 150],
+      "config": {
+        "input_vars": [{"name": "raw_summary"}],
+        "output_vars": [{"name": "eval_result"}],
+        "code": "import json\n\ntry:\n    raw_summary = inputs.get('raw_summary', {})\n    \n    # 防御性解析1：如果大模型把 JSON 当成字符串传过来了，尝试反序列化\n    if isinstance(raw_summary, str):\n        try:\n            raw_summary = json.loads(raw_summary)\n        except json.JSONDecodeError:\n            pass # 交给后面的类型检查报错\n            \n    # 防御性解析2：提取数组并做类型校验\n    results = raw_summary.get('assertion_results', []) if isinstance(raw_summary, dict) else []\n    if not isinstance(results, list):\n        raise ValueError(\"大模型未按要求返回 assertion_results 数组格式\")\n\n    # 正常计算逻辑\n    total = len(results)\n    if total == 0:\n        raise ValueError(\"断言数组为空，大模型可能忽略了验证步骤\")\n        \n    passed = sum(1 for r in results if r.get('passed') is True)\n    failed = total - passed\n    pass_rate = round(passed / total, 2)\n\n    grading_data = {\n        'assertion_results': results,\n        'summary': {\n            'passed': passed,\n            'failed': failed,\n            'total': total,\n            'pass_rate': pass_rate\n        }\n    }\n    \n    outputs['eval_result'] = {\n        'pass': failed == 0,\n        'reason': '通过所有断言' if failed == 0 else f'有 {failed} 条断言未通过',\n        'grading_data': grading_data\n    }\n\nexcept Exception as e:\n    # 🚨 终极兜底逻辑：大模型发狂、格式损毁、未执行验证等情况全部走这里\n    fallback_grading = {\n        'assertion_results': [],\n        'summary': {\n            'passed': 0,\n            'failed': 1,\n            'total': 1,\n            'pass_rate': 0.0\n        }\n    }\n    outputs['eval_result'] = {\n        'pass': False,\n        'reason': f'裁判系统解析失败 (大模型幻觉或格式化错误): {str(e)}',\n        'grading_data': fallback_grading\n    }"
       }
     },
     {
       "id": "nd_out",
       "type": "task_output",
       "name": "全局输出",
-      "position": [2400, 100],
+      "position": [2800, 100],
       "config": {
         "target_vars": [
           {"name": "exec_summary"},
@@ -127,7 +137,9 @@
     { "source": "nd_tpl_eval", "target": "nd_msg_eval", "sourceHandle": "rendered_text", "targetHandle": "content" },
     { "source": "nd_msg_eval", "target": "nd_agent_eval", "sourceHandle": "message_list", "targetHandle": "messages" },
     
+    { "source": "nd_agent_eval", "target": "nd_calc_grades", "sourceHandle": "summary", "targetHandle": "raw_summary" },
+
     { "source": "nd_agent_exec", "target": "nd_out", "sourceHandle": "summary", "targetHandle": "exec_summary" },
-    { "source": "nd_agent_eval", "target": "nd_out", "sourceHandle": "summary", "targetHandle": "eval_result" }
+    { "source": "nd_calc_grades", "target": "nd_out", "sourceHandle": "eval_result", "targetHandle": "eval_result" }
   ]
 }

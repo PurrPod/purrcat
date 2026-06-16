@@ -1,6 +1,6 @@
 """KernelUpgrade 工具大模型输入结构 - Agent自主进化沙盒"""
 
-KERNEL_UPGRADE_TOOL_SCHEMA = {
+KERNELUPGRADE_TOOL_SCHEMA = {
     "type": "function",
     "function": {
         "name": "KernelUpgrade",

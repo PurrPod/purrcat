@@ -1,0 +1,51 @@
+{
+    "type": "python_runner",
+    "name": "Python 脚本执行",
+    "description": "执行自定义 Python 代码以处理上游数据。将上游传入的变量存放在 inputs 字典中，执行完毕后将你想要输出的值赋给 outputs 字典。",
+    "color": "#F1C40F",
+    "inputs": [
+        {
+            "name": "dynamic_inputs",
+            "type": "any",
+            "port_type": "dynamic",
+            "dynamic_rules": {
+                "watch_config": "input_vars",
+                "method": "array_map"
+            }
+        }
+    ],
+    "outputs": [
+        {
+            "name": "dynamic_outputs",
+            "type": "any",
+            "port_type": "dynamic",
+            "dynamic_rules": {
+                "watch_config": "output_vars",
+                "method": "array_map"
+            }
+        }
+    ],
+    "config": [
+        {
+            "name": "input_vars",
+            "type": "list",
+            "label": "输入变量",
+            "default": [],
+            "item_schema": [{"name": "name", "type": "string"}]
+        },
+        {
+            "name": "output_vars",
+            "type": "list",
+            "label": "输出变量",
+            "default": [],
+            "item_schema": [{"name": "name", "type": "string"}]
+        },
+        {
+            "name": "code",
+            "type": "textarea",
+            "label": "Python 代码",
+            "default": "# 示例：\n# outputs['result'] = inputs['a'] + inputs['b']",
+            "description": "可用变量: inputs (dict)。请将结果写入 outputs (dict)。"
+        }
+    ]
+}
