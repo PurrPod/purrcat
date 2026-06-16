@@ -25,6 +25,7 @@ TOOL_FUNC_MAP = {
     "search": "Search",
     "fetch": "Fetch",
     "task": "Task",
+    "kernelupgrade": "KernelUpgrade",  # 🌟 新增注册
 }
 
 

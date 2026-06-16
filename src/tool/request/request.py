@@ -25,10 +25,7 @@ def Request(request_type: str, target: str, reason: str, **kwargs) -> str:
             "sensor_install",
             "graph_install",
             "computer_use",
-            "skill_create",  # 核心新增：创建新技能
-            "skill_upgrade", # 核心新增：升级现有技能
-            "skill_merge",   # 核心新增：合并技能到主库
-            "skill_test",    # 新增：技能测试
+            "skill_merge",   # 保留：合并代码仍需审批
         ]
 
         if request_type not in valid_types:

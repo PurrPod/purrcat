@@ -19,15 +19,12 @@ REQUEST_TOOL_SCHEMA = {
                         "sensor_install",
                         "graph_install",
                         "computer_use",
-                        "skill_create",  # 新增
-                        "skill_upgrade", # 新增
-                        "skill_merge",   # 新增
-                        "skill_test",    # 新增：测试触发
+                        "skill_merge",   # 保留：合并代码仍需审批
                     ],
                 },
                 "target": {
                     "type": "string",
-                    "description": "目标对象。文件权限填路径；安装类填插件名；技能开发(skill_create/upgrade/merge)填具体的 skill_name；申请技能测试(skill_test)时必须填写为 'uuid/skill_name' (如 a1b2c/my_skill)。",
+                    "description": "目标对象。文件权限填路径；安装类填插件名；申请代码合并(skill_merge)填具体的 skill_name。",
                 },
                 "reason": {
                     "type": "string",

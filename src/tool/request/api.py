@@ -140,15 +140,7 @@ def resolve_request(
                     _grant_file_permission(req_type, target)
                 elif req_type == "computer_use":
                     _grant_computer_use(duration)
-                # ---- 新增进化工厂逻辑 ----
-                elif req_type == "skill_create":
-                    from src.evolve import skill_improve_init
-                    sys_note = skill_improve_init(target, is_upgrade=False)
-                    feedback = f"{sys_note}\n(老板批注: {feedback})"
-                elif req_type == "skill_upgrade":
-                    from src.evolve import skill_improve_init
-                    sys_note = skill_improve_init(target, is_upgrade=True)
-                    feedback = f"{sys_note}\n(老板批注: {feedback})"
+                # ---- 技能合并逻辑 ----
                 elif req_type == "skill_merge":
                     import glob
                     from src.evolve import skill_request_handle
@@ -159,20 +151,6 @@ def resolve_request(
                         feedback = f"{sys_note}\n(老板批注: {feedback})"
                     else:
                         feedback = f"合并失败：未找到 {target} 对应的工厂沙盒目录。"
-                
-                # ---- 新增后台评估逻辑 ----
-                elif req_type == "skill_test":
-                    parts = target.split("/")
-                    if len(parts) == 2:
-                        workplace_id, skill_name = parts
-                        from src.evolve import run_skill_eval_background
-                        from src.agent.manager import manager
-                        main_session_id = manager.get_active_session_id()
-                        run_skill_eval_background(workplace_id, skill_name, main_session_id)
-                        feedback = f"老板已批准！技能 '{skill_name}' 的自动化测试已在后台启动，测试完成后将自动通过系统通知向你汇报结果。\n(老板批注: {feedback})"
-                    else:
-                        approved = False
-                        feedback = f"执行失败：target 格式不正确，应为 'uuid/skill_name'。当前为: {target}"
             except Exception as e:
                 approved = False
                 feedback = f"老板已同意，但执行失败: {str(e)}。{feedback}"
