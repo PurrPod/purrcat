@@ -7,6 +7,7 @@ import ChatPage from './components/ChatPage';
 import TaskPage from './components/TaskPage';
 import MemoryPage from './components/MemoryPage';
 import EditorPage from './components/EditorPage';
+import MarketPage from './components/MarketPage'; // 🌟 导入新页面
 
 export default function App() {
   return (
@@ -17,6 +18,7 @@ export default function App() {
         <Route path="/task" element={<TaskRouteWrapper />} />
         <Route path="/editor" element={<EditorPage />} />
         <Route path="/memory" element={<MemoryRouteWrapper />} />
+        <Route path="/market" element={<MarketRouteWrapper />} /> {/* 🌟 新增路由 */}
       </Routes>
 
       <Toaster
@@ -44,6 +46,7 @@ function HomeRouteWrapper() {
   return <HomePage 
     onEnterChat={() => navigate('/chat')} 
     onEnterEditor={() => navigate('/editor')} 
+    onEnterMarket={() => navigate('/market')} // 🌟 传递回调函数
   />;
 }
 
@@ -60,4 +63,10 @@ function ChatRouteWrapper() {
 function TaskRouteWrapper() {
   const navigate = useNavigate();
   return <TaskPage onBack={() => navigate('/')} onSwitchToChat={() => navigate('/chat')} />;
+}
+
+// 🌟 Market 的 Wrapper
+function MarketRouteWrapper() {
+  const navigate = useNavigate();
+  return <MarketPage onBack={() => navigate('/')} />;
 }

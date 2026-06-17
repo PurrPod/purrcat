@@ -1,10 +1,9 @@
 // src/components/HomePage.tsx
 import { useState, useEffect } from 'react'
-import { MessageSquare, GitMerge, Settings, X, Save, FileJson, AlertCircle } from 'lucide-react'
+import { MessageSquare, GitMerge, Settings, X, Save, FileJson, AlertCircle, Store } from 'lucide-react'
 import { useFlowStore } from '../store/flowStore'
 import { toast } from 'react-hot-toast'
 
-// 原有配置面板手绘形变
 const sketchyShape1 = { borderRadius: '255px 15px 225px 15px/15px 225px 15px 255px' };
 const sketchyShape2 = { borderRadius: '15px 225px 15px 255px/255px 15px 225px 15px' };
 const sketchyShape3 = { borderRadius: '225px 15px 255px 15px/15px 255px 15px 225px' };
@@ -13,10 +12,12 @@ const CONFIG_TABS = ['model', 'sensor', 'file', 'memory', 'mcp'];
 
 export default function HomePage({ 
   onEnterChat, 
-  onEnterEditor
+  onEnterEditor,
+  onEnterMarket // 🌟 接收新属性
 }: { 
   onEnterChat: () => void, 
-  onEnterEditor: () => void
+  onEnterEditor: () => void,
+  onEnterMarket: () => void
 }) {
   const [isConfigOpen, setIsConfigOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('model');
@@ -86,7 +87,6 @@ export default function HomePage({
   return (
     <div className="absolute inset-0 bg-[#fdfaf5] bg-[radial-gradient(#1a1a1a_1px,transparent_1px)] [background-size:24px_24px] flex flex-col items-center justify-center overflow-hidden font-sans select-none">
       
-      {/* ⚙️ 右上角系统配置齿轮 */}
       <button 
         onClick={() => setIsConfigOpen(true)}
         style={sketchyShape3}
@@ -95,14 +95,12 @@ export default function HomePage({
         <Settings size={32} strokeWidth={2.5} className="group-hover:animate-[spin_3s_linear_infinite]" />
       </button>
 
-      {/* 👑 全局大艺术字标题 - 字体变大且略微下移 */}
       <div className="absolute top-16 md:top-20 left-1/2 -translate-x-1/2 z-30 pointer-events-none px-6 py-6">
         <h1 className="text-7xl md:text-[5.5rem] font-black text-ink tracking-tight leading-none relative whitespace-nowrap" style={{ fontFamily: '"Comic Sans MS", cursive' }}>
           PurrCat v1.0.0
           <svg className="absolute left-[-18%] top-1/2 -translate-y-1/2 w-[136%] h-24 -z-10 rotate-[-2deg]" viewBox="0 0 400 80" preserveAspectRatio="none" style={{ mixBlendMode: 'multiply' }}>
             <defs>
               <linearGradient id="brushGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-                {/* 换成了更明快清新的暖黄色调，告别了之前的"丑"色 */}
                 <stop offset="0%" stopColor="#EBCB8B" stopOpacity="0.5"/> 
                 <stop offset="15%" stopColor="#EBCB8B" stopOpacity="0.8"/>
                 <stop offset="50%" stopColor="#EBCB8B" stopOpacity="1.0"/>
@@ -110,123 +108,68 @@ export default function HomePage({
                 <stop offset="100%" stopColor="#EBCB8B" stopOpacity="0.5"/>
               </linearGradient>
             </defs>
-            {/* 模拟粗糙刷痕路径 */}
-            <path 
-              d="M 0 30 C 40 10, 90 20, 140 15 C 190 10, 240 25, 290 20 C 340 15, 380 30, 390 50 C 390 70, 350 85, 300 80 C 250 75, 200 90, 150 85 C 100 80, 50 90, 0 70 C 0 50, 0 50, 0 30 Z"
-              fill="url(#brushGrad)"
-              opacity="0.9"
-            />
+            <path d="M 0 30 C 40 10, 90 20, 140 15 C 190 10, 240 25, 290 20 C 340 15, 380 30, 390 50 C 390 70, 350 85, 300 80 C 250 75, 200 90, 150 85 C 100 80, 50 90, 0 70 C 0 50, 0 50, 0 30 Z" fill="url(#brushGrad)" opacity="0.9" />
           </svg>
         </h1>
       </div>
 
-      {/* 🌟 核心漫画分镜主容器 - 增加了 mt 使得整体下移给标题腾位置 */}
       <div className="relative w-full max-w-6xl h-[650px] flex flex-col md:flex-row items-center justify-center z-10 px-6 mt-40 md:mt-36">
-        
-        {/* ================= 👈 左侧分镜：小猫全身照 + 专属发言气泡 ================= */}
         <div className="flex-1 w-full flex flex-col items-center md:items-end justify-center relative h-full">
-          
-          {/* 🐾 小猫全身照安全容器 */}
           <div className="absolute bottom-2 md:bottom-6 md:-right-12 w-[450px] h-[585px] flex items-end justify-center z-10 hover:scale-[1.03] transition-transform duration-500">
-            <img 
-              src="/src/purrcat-logo.png" 
-              alt="PurrCat Logo" 
-              className="w-full h-full object-contain filter drop-shadow-[4px_4px_0px_rgba(26,26,26,0.15)]"
-              draggable={false}
-            />
+            <img src="/src/purrcat-logo.png" alt="PurrCat Logo" className="w-full h-full object-contain filter drop-shadow-[4px_4px_0px_rgba(26,26,26,0.15)]" draggable={false} />
           </div>
-
         </div>
 
-        {/* ================= 👉 右侧分镜：小猫头顶冒出的精美云朵选项 ================= */}
-        <div className="flex-1 w-full flex flex-col items-center md:items-start justify-center gap-10 relative z-20 md:pl-24 h-full mt-28 md:mt-0">
+        <div className="flex-1 w-full flex flex-col items-center md:items-start justify-center gap-6 relative z-20 md:pl-24 h-full mt-28 md:mt-0">
           
-          {/* ☁️ 选项一：直接对话 (CHAT) */}
-          <button
-            onClick={onEnterChat}
-            className="w-[310px] h-[210px] relative flex flex-col items-center justify-center gap-3 transition-all duration-200 active:translate-y-2 hover:-translate-y-1 group"
-          >
-            {/* 云朵背景 */}
+          <button onClick={onEnterChat} className="w-[290px] h-[170px] relative flex flex-col items-center justify-center gap-2 transition-all duration-200 active:translate-y-2 hover:-translate-y-1 group">
             <svg viewBox="0 0 310 210" className="absolute inset-0 w-full h-full filter drop-shadow-[8px_8px_0px_rgba(26,26,26,1)] group-hover:drop-shadow-[10px_10px_0px_rgba(212,122,90,1)] transition-all duration-200" fill="#fdfaf5">
-              <path 
-                d="M 50,60 
-                   C 20,40 15,10 60,15 
-                   C 85,-5 135,-2 150,25 
-                   C 185,-10 240,0 255,35 
-                   C 295,25 315,70 285,100 
-                   C 315,135 295,175 250,170 
-                   C 230,200 170,205 135,180 
-                   C 100,205 50,190 55,155 
-                   C 15,145 20,95 50,60 Z" 
-                stroke="rgba(26,26,26,1)" 
-                strokeWidth="4.5" 
-                strokeLinejoin="round"
-                vectorEffect="non-scaling-stroke"
-                className="group-hover:fill-white transition-colors"
-              />
+              <path d="M 50,60 C 20,40 15,10 60,15 C 85,-5 135,-2 150,25 C 185,-10 240,0 255,35 C 295,25 315,70 285,100 C 315,135 295,175 250,170 C 230,200 170,205 135,180 C 100,205 50,190 55,155 C 15,145 20,95 50,60 Z" stroke="rgba(26,26,26,1)" strokeWidth="4.5" strokeLinejoin="round" vectorEffect="non-scaling-stroke" className="group-hover:fill-white transition-colors" />
             </svg>
-
-            {/* 核心内容 */}
-            <div style={sketchyShape3} className="w-16 h-16 bg-terracotta border-4 border-ink flex items-center justify-center rotate-6 group-hover:bg-ink group-hover:-rotate-6 transition-all duration-300 shadow-[3px_3px_0px_0px_rgba(26,26,26,1)] z-10">
-              <MessageSquare size={32} className="text-paper" strokeWidth={2.5} />
+            <div style={sketchyShape3} className="w-14 h-14 bg-terracotta border-4 border-ink flex items-center justify-center rotate-6 group-hover:bg-ink group-hover:-rotate-6 transition-all duration-300 shadow-[3px_3px_0px_0px_rgba(26,26,26,1)] z-10">
+              <MessageSquare size={28} className="text-paper" strokeWidth={2.5} />
             </div>
             <div className="text-center z-10">
-              <h2 className="text-2xl font-black text-ink tracking-widest" style={{ fontFamily: '"Comic Sans MS", cursive' }}>CHAT</h2>
-              <p className="text-ink/50 text-xs font-bold mt-0.5 tracking-wider uppercase" style={{ fontFamily: '"Comic Sans MS", cursive' }}>Talk to Agent</p>
+              <h2 className="text-xl font-black text-ink tracking-widest" style={{ fontFamily: '"Comic Sans MS", cursive' }}>CHAT</h2>
+              <p className="text-ink/50 text-[10px] font-bold mt-0.5 tracking-wider uppercase" style={{ fontFamily: '"Comic Sans MS", cursive' }}>Talk to Agent</p>
             </div>
           </button>
 
-          {/* ☁️ 选项二：工作流编辑器 (EDITOR) */}
-          <button
-            onClick={handleNewWorkflow}
-            className="w-[310px] h-[210px] relative flex flex-col items-center justify-center gap-3 transition-all duration-200 active:translate-y-2 hover:-translate-y-1 md:ml-16 group"
-          >
-            {/* 云朵背景 */}
+          <button onClick={handleNewWorkflow} className="w-[290px] h-[170px] relative flex flex-col items-center justify-center gap-2 transition-all duration-200 active:translate-y-2 hover:-translate-y-1 md:ml-12 group">
             <svg viewBox="0 0 310 210" className="absolute inset-0 w-full h-full filter drop-shadow-[8px_8px_0px_rgba(26,26,26,1)] group-hover:drop-shadow-[10px_10px_0px_rgba(26,26,26,1)] transition-all duration-200" fill="#fdfaf5">
-              <path 
-                d="M 40,70 
-                   C 10,60 10,20 50,20 
-                   C 70,0 120,0 140,20 
-                   C 170,-5 230,-5 250,25 
-                   C 290,10 310,50 290,80 
-                   C 320,110 310,160 270,160 
-                   C 260,195 200,205 160,185 
-                   C 130,210 70,200 60,170 
-                   C 20,170 10,120 40,70 Z" 
-                stroke="rgba(26,26,26,1)" 
-                strokeWidth="4.5" 
-                strokeLinejoin="round"
-                vectorEffect="non-scaling-stroke"
-                className="group-hover:fill-white transition-colors"
-              />
+              <path d="M 40,70 C 10,60 10,20 50,20 C 70,0 120,0 140,20 C 170,-5 230,-5 250,25 C 290,10 310,50 290,80 C 320,110 310,160 270,160 C 260,195 200,205 160,185 C 130,210 70,200 60,170 C 20,170 10,120 40,70 Z" stroke="rgba(26,26,26,1)" strokeWidth="4.5" strokeLinejoin="round" vectorEffect="non-scaling-stroke" className="group-hover:fill-white transition-colors" />
             </svg>
-
-            {/* 核心内容 */}
-            <div style={sketchyShape2} className="w-16 h-16 bg-ink border-4 border-ink flex items-center justify-center -rotate-6 group-hover:bg-terracotta group-hover:rotate-6 transition-all duration-300 shadow-[3px_3px_0px_0px_rgba(26,26,26,1)] z-10">
-              <GitMerge size={32} className="text-paper" strokeWidth={2.5} />
+            <div style={sketchyShape2} className="w-14 h-14 bg-ink border-4 border-ink flex items-center justify-center -rotate-6 group-hover:bg-terracotta group-hover:rotate-6 transition-all duration-300 shadow-[3px_3px_0px_0px_rgba(26,26,26,1)] z-10">
+              <GitMerge size={28} className="text-paper" strokeWidth={2.5} />
             </div>
             <div className="text-center z-10">
-              <h2 className="text-2xl font-black text-ink tracking-widest" style={{ fontFamily: '"Comic Sans MS", cursive' }}>EDITOR</h2>
-              <p className="text-ink/50 text-xs font-bold mt-0.5 tracking-wider uppercase" style={{ fontFamily: '"Comic Sans MS", cursive' }}>DAG Workflow</p>
+              <h2 className="text-xl font-black text-ink tracking-widest" style={{ fontFamily: '"Comic Sans MS", cursive' }}>EDITOR</h2>
+              <p className="text-ink/50 text-[10px] font-bold mt-0.5 tracking-wider uppercase" style={{ fontFamily: '"Comic Sans MS", cursive' }}>DAG Workflow</p>
             </div>
           </button>
 
+          {/* 🌟 修改点：这里改为直接触发 onEnterMarket 跳转新页面 */}
+          <button onClick={onEnterMarket} className="w-[290px] h-[170px] relative flex flex-col items-center justify-center gap-2 transition-all duration-200 active:translate-y-2 hover:-translate-y-1 md:ml-4 group">
+            <svg viewBox="0 0 310 210" className="absolute inset-0 w-full h-full filter drop-shadow-[8px_8px_0px_rgba(26,26,26,1)] group-hover:drop-shadow-[10px_10px_0px_rgba(136,192,208,1)] transition-all duration-200" fill="#fdfaf5">
+              <path d="M 50,60 C 20,40 15,10 60,15 C 85,-5 135,-2 150,25 C 185,-10 240,0 255,35 C 295,25 315,70 285,100 C 315,135 295,175 250,170 C 230,200 170,205 135,180 C 100,205 50,190 55,155 C 15,145 20,95 50,60 Z" stroke="rgba(26,26,26,1)" strokeWidth="4.5" strokeLinejoin="round" vectorEffect="non-scaling-stroke" className="group-hover:fill-white transition-colors" />
+            </svg>
+            <div style={sketchyShape1} className="w-14 h-14 bg-[#88c0d0] border-4 border-ink flex items-center justify-center rotate-3 group-hover:bg-ink group-hover:-rotate-3 transition-all duration-300 shadow-[3px_3px_0px_0px_rgba(26,26,26,1)] z-10">
+              <Store size={28} className="text-paper" strokeWidth={2.5} />
+            </div>
+            <div className="text-center z-10">
+              <h2 className="text-xl font-black text-ink tracking-widest" style={{ fontFamily: '"Comic Sans MS", cursive' }}>MARKET</h2>
+              <p className="text-ink/50 text-[10px] font-bold mt-0.5 tracking-wider uppercase" style={{ fontFamily: '"Comic Sans MS", cursive' }}>Skills Explorer</p>
+            </div>
+          </button>
         </div>
       </div>
 
-      {/* ========================================================== */}
-      {/* 🔴 后续配置面板弹窗中心 */}
-      {/* ========================================================== */}
+      {/* 原有的配置界面 */}
       {isConfigOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-ink/70 backdrop-blur-sm p-4 md:p-8 pointer-events-auto">
-          <div 
-            style={sketchyShape2} 
-            className="bg-cream border-4 border-ink shadow-[16px_16px_0px_0px_rgba(26,26,26,1)] w-full max-w-6xl h-[85vh] flex flex-row relative"
-          >
+          <div style={sketchyShape2} className="bg-cream border-4 border-ink shadow-[16px_16px_0px_0px_rgba(26,26,26,1)] w-full max-w-6xl h-[85vh] flex flex-row relative">
             <div className="absolute -top-4 left-1/4 w-32 h-10 bg-terracotta/60 border-2 border-ink rotate-2 z-50 pointer-events-none" style={sketchyShape1}></div>
-            <button onClick={() => setIsConfigOpen(false)} className="absolute top-4 right-6 hover:rotate-90 hover:text-terracotta transition-all z-10 p-2 bg-paper border-4 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)]" style={sketchyShape3}>
-              <X size={28} strokeWidth={4} />
-            </button>
+            <button onClick={() => setIsConfigOpen(false)} className="absolute top-4 right-6 hover:rotate-90 hover:text-terracotta transition-all z-10 p-2 bg-paper border-4 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)]" style={sketchyShape3}><X size={28} strokeWidth={4} /></button>
 
             <div className="w-64 shrink-0 border-r-4 border-ink/20 flex flex-col p-6">
               <div className="pb-6 flex items-center gap-4">
@@ -239,64 +182,28 @@ export default function HomePage({
                   const rotation = idx % 2 === 0 ? 'rotate-1' : '-rotate-1';
                   const shape = idx % 3 === 0 ? sketchyShape1 : idx % 2 === 0 ? sketchyShape2 : sketchyShape3;
                   return (
-                    <button
-                      key={tab}
-                      onClick={() => setActiveTab(tab)}
-                      style={shape}
-                      className={`px-4 py-3 font-black text-lg border-4 border-ink uppercase tracking-wider transition-all shadow-[4px_4px_0px_0px_rgba(26,26,26,1)]
-                        ${isActive ? 'bg-[#EBCB8B] text-ink -translate-x-1' : 'bg-paper text-ink/70 hover:bg-sand'} ${rotation}`}
-                    >
-                      {tab}
-                    </button>
+                    <button key={tab} onClick={() => setActiveTab(tab)} style={shape} className={`px-4 py-3 font-black text-lg border-4 border-ink uppercase tracking-wider transition-all shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] ${isActive ? 'bg-[#EBCB8B] text-ink -translate-x-1' : 'bg-paper text-ink/70 hover:bg-sand'} ${rotation}`}>{tab}</button>
                   )
                 })}
               </div>
             </div>
 
             <div className="flex-1 overflow-y-auto p-8 flex flex-col gap-6">
-              {Object.keys(configData).length === 0 ? (
-                <div className="text-center font-bold text-ink/40 mt-10 text-2xl" style={{ fontFamily: '"Comic Sans MS", cursive' }}>No data found or Loading...</div>
-              ) : (
+              {Object.keys(configData).length === 0 ? <div className="text-center font-bold text-ink/40 mt-10 text-2xl" style={{ fontFamily: '"Comic Sans MS", cursive' }}>No data found or Loading...</div> : (
                 Object.keys(configData).map((key, idx) => {
                   const isExpanded = expandedKey === key;
                   const itemShape = idx % 2 === 0 ? sketchyShape2 : sketchyShape1;
-
                   return (
                     <div key={key} className="flex flex-col gap-2">
-                      <button
-                        onClick={() => toggleKey(key)}
-                        style={itemShape}
-                        className={`w-full text-left p-4 border-4 border-ink flex justify-between items-center transition-all 
-                          ${isExpanded ? 'bg-ink text-paper shadow-none' : 'bg-paper text-ink shadow-[6px_6px_0px_0px_rgba(26,26,26,1)] hover:-translate-y-1 hover:shadow-[8px_8px_0px_0px_rgba(26,26,26,1)]'}`}
-                      >
-                        <div className="flex items-center gap-3">
-                          <FileJson size={24} strokeWidth={2.5} className={isExpanded ? 'text-terracotta' : 'text-[#EBCB8B]'} />
-                          <span className="text-2xl font-black" style={{ fontFamily: '"Comic Sans MS", cursive' }}>{key}</span>
-                        </div>
+                      <button onClick={() => toggleKey(key)} style={itemShape} className={`w-full text-left p-4 border-4 border-ink flex justify-between items-center transition-all ${isExpanded ? 'bg-ink text-paper shadow-none' : 'bg-paper text-ink shadow-[6px_6px_0px_0px_rgba(26,26,26,1)] hover:-translate-y-1 hover:shadow-[8px_8px_0px_0px_rgba(26,26,26,1)]'}`}>
+                        <div className="flex items-center gap-3"><FileJson size={24} strokeWidth={2.5} className={isExpanded ? 'text-terracotta' : 'text-[#EBCB8B]'} /><span className="text-2xl font-black" style={{ fontFamily: '"Comic Sans MS", cursive' }}>{key}</span></div>
                         <span className="font-bold opacity-50">{isExpanded ? 'CLOSE' : 'EDIT'}</span>
                       </button>
-
                       {isExpanded && (
                         <div style={sketchyShape3} className="bg-paper border-4 border-ink p-4 flex flex-col gap-4 shadow-[inset_4px_4px_0px_0px_rgba(26,26,26,0.1)]">
-                          <div className="flex items-center gap-2 text-ink/60 font-bold text-sm bg-terracotta/10 p-2 border-2 border-ink border-dashed" style={sketchyShape1}>
-                            <AlertCircle size={16} strokeWidth={3} />
-                            注意：请严格遵守 JSON 格式（必须带双引号），否则会保存失败！
-                          </div>
-                          <textarea
-                            value={editJsonStr}
-                            onChange={(e) => setEditJsonStr(e.target.value)}
-                            className="w-full h-64 bg-[#FDF8F0] border-4 border-ink p-4 font-mono text-[15px] leading-relaxed font-bold focus:outline-none focus:bg-white resize-y"
-                            spellCheck={false}
-                          />
-                          <div className="flex justify-end">
-                            <button
-                              onClick={() => handleSave(key)}
-                              style={sketchyShape1}
-                              className="px-8 py-3 bg-[#a3be8c] border-4 border-ink text-ink font-black text-xl flex items-center gap-2 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:bg-[#8eb072] active:translate-y-1 active:shadow-none transition-all rotate-1"
-                            >
-                              <Save size={24} strokeWidth={3} /> SAVE TO DISK
-                            </button>
-                          </div>
+                          <div className="flex items-center gap-2 text-ink/60 font-bold text-sm bg-terracotta/10 p-2 border-2 border-ink border-dashed" style={sketchyShape1}><AlertCircle size={16} strokeWidth={3} />注意：请严格遵守 JSON 格式</div>
+                          <textarea value={editJsonStr} onChange={(e) => setEditJsonStr(e.target.value)} className="w-full h-64 bg-[#FDF8F0] border-4 border-ink p-4 font-mono text-[15px] leading-relaxed font-bold focus:outline-none focus:bg-white resize-y" spellCheck={false} />
+                          <div className="flex justify-end"><button onClick={() => handleSave(key)} style={sketchyShape1} className="px-8 py-3 bg-[#a3be8c] border-4 border-ink text-ink font-black text-xl flex items-center gap-2 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:bg-[#8eb072] active:translate-y-1 active:shadow-none transition-all rotate-1"><Save size={24} strokeWidth={3} /> SAVE TO DISK</button></div>
                         </div>
                       )}
                     </div>
