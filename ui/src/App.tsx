@@ -8,6 +8,7 @@ import TaskPage from './components/TaskPage';
 import MemoryPage from './components/MemoryPage';
 import EditorPage from './components/EditorPage';
 import MarketPage from './components/MarketPage'; // 🌟 导入新页面
+import EvolvePage from './components/EvolvePage'; // 🌟 导入新页面
 
 export default function App() {
   return (
@@ -19,6 +20,7 @@ export default function App() {
         <Route path="/editor" element={<EditorPage />} />
         <Route path="/memory" element={<MemoryRouteWrapper />} />
         <Route path="/market" element={<MarketRouteWrapper />} /> {/* 🌟 新增路由 */}
+        <Route path="/evolve" element={<EvolveRouteWrapper />} /> {/* 🌟 新增路由 */}
       </Routes>
 
       <Toaster
@@ -46,7 +48,8 @@ function HomeRouteWrapper() {
   return <HomePage 
     onEnterChat={() => navigate('/chat')} 
     onEnterEditor={() => navigate('/editor')} 
-    onEnterMarket={() => navigate('/market')} // 🌟 传递回调函数
+    onEnterMarket={() => navigate('/market')}
+    onEnterEvolve={() => navigate('/evolve')} // 🌟 传递回调函数
   />;
 }
 
@@ -69,4 +72,10 @@ function TaskRouteWrapper() {
 function MarketRouteWrapper() {
   const navigate = useNavigate();
   return <MarketPage onBack={() => navigate('/')} />;
+}
+
+// 🌟 Evolve 的 Wrapper
+function EvolveRouteWrapper() {
+  const navigate = useNavigate();
+  return <EvolvePage onBack={() => navigate('/')} />;
 }
