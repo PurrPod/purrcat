@@ -98,9 +98,9 @@ class SubAgentRunner:
         # 🌟 修复 1：把数组拼接成可读的列表展示给大模型
         deliverable_txt = "\n".join([f"- {p}" for p in self.deliverable_paths])
         user_inject = (
-            f"当前你已被分配到分支 {self.display_branch_id}。\n"
-            f"你需要：{self.action}\n"
-            f"交付物要求（请生成以下文件）：\n{deliverable_txt}\n"
+            f"当前你已被分配到分支 {self.display_branch_id}。\n\n"
+            f"你需要：{self.action}\n\n"
+            f"交付物要求（请生成以下文件）：\n{deliverable_txt}\n\n"
             f"请全力完成交付物生成，完成后请立即停止调用任何工具，请勿染指无关事项。"
         )
         self.messages.append({"role": "user", "content": user_inject})
