@@ -66,42 +66,8 @@ _docker_manager_instance: Optional["DockerManager"] = None
 
 
 def _get_container_env() -> dict:
-    try:
-        from src.utils.config import get_file_config
-
-        cfg = get_file_config().get("docker", {})
-        raw_proxy = (
-            cfg.get("http_proxy")
-            or cfg.get("all_proxy")
-            or os.getenv("http_proxy")
-            or os.getenv("all_proxy")
-            or os.getenv("HTTP_PROXY")
-            or os.getenv("ALL_PROXY")
-        )
-
-        if not raw_proxy:
-            return {}
-
-        parsed = urllib.parse.urlparse(raw_proxy)
-        if parsed.hostname in ["127.0.0.1", "localhost"]:
-            new_netloc = f"host.docker.internal:{parsed.port}"
-            parsed = parsed._replace(netloc=new_netloc)
-            proxy_url = urllib.parse.urlunparse(parsed)
-        else:
-            proxy_url = raw_proxy
-
-        return {
-            "HTTP_PROXY": proxy_url,
-            "HTTPS_PROXY": proxy_url,
-            "ALL_PROXY": proxy_url,
-            "http_proxy": proxy_url,
-            "https_proxy": proxy_url,
-            "all_proxy": proxy_url,
-            "NO_PROXY": "localhost,127.0.0.1,::1",
-        }
-    except Exception as e:
-        print(f"⚠️ 代理配置解析失败，退回直连模式: {e}")
-        return {}
+    # 既然主机开了 TUN 模式，容器不需要任何代理环境变量，直接跟主机共享网络上下文
+    return {}
 
 
 class DockerManager:
@@ -165,13 +131,22 @@ class DockerManager:
         if self._started:
             print(f"⚠️ 沙盒 ({self.container_name}) 状态异常，尝试重启...")
 
+        # ---------- 替换旧容器清理逻辑：唤醒休眠容器 ----------
         try:
-            old_container = self.client.containers.get(self.container_name)
-            print(f"🧹 发现残留的旧沙盒 ({self.container_name})，正在强制清理...")
-            old_container.remove(force=True, v=True)
-            print("✨ 残留沙盒清理完毕。")
+            existing_container = self.client.containers.get(self.container_name)
+            if existing_container.status != "running":
+                print(f"🔄 发现休眠的专属沙盒 ({self.container_name})，正在唤醒...")
+                existing_container.start()
+            else:
+                print(f"✅ 专属沙盒 ({self.container_name}) 已在运行。")
+            
+            self.container = existing_container
+            self._started = True
+            return  # 成功复用已有容器，直接返回，不再执行后面的 run 创建逻辑
+            
         except NotFound:
-            pass
+            print(f"🚀 未找到沙盒 ({self.container_name})，将基于镜像 {self.image} 创建全新虚拟机...")
+            pass  # 继续往下走原来的创建代码
         except DockerException as e:
             raise DockerNotRunningError(f"{self.engine.capitalize()} API 连接失败: {e}")
 
@@ -226,22 +201,13 @@ class DockerManager:
 
         if self.container:
             try:
-                repo_name = self.image.split(":")[0]
-                print(
-                    f"🫡 检测到系统退出/异常，正在自动固化环境到 {repo_name}:latest ..."
-                )
-                self.container.commit(repository=repo_name, tag="latest")
-                print("✅ 环境自动保存成功！")
-            except Exception as e:
-                print(f"⚠️ 自动保存环境失败: {e}")
-
-            try:
-                print(f"🛑 正在关闭并清理 Docker 沙盒 ({self.container_name})...")
+                print(f"🛑 正在让沙盒 ({self.container_name}) 休眠...")
                 self.container.stop(timeout=2)
-                self.container.remove(v=True, force=True)
-                print("✅ 沙盒已成功关闭并清理。")
+                # 【关键修改】：不再删除容器和提交镜像
+                # 这样下次 start() 就能拿到原来的环境，而且不会产生无数个冗余镜像
+                print("✅ 沙盒已休眠，所有的依赖安装和系统变更已被保留在这台虚拟机中。")
             except Exception as e:
-                print(f"⚠️ 关闭/清理沙盒容器失败: {e}")
+                print(f"⚠️ 休眠沙盒失败: {e}")
 
         self.container = None
 

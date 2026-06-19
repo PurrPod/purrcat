@@ -56,7 +56,7 @@ return {{
 ```
 
 ## 5. 测试与验证准备
-代码编写完成后，你必须进行自动化测试。系统已为你生成了 `02_GUIDE_TEST.md` 和 `evals/evals.json`。请在申请合并前，先阅读测试指南并完善测试用例！
+代码编写完成后，你必须进行自动化测试。系统已为你生成了 `02_GUIDE_TEST.md`、`evals/evals.json` 和 `scripts/evaluation.py`。请在申请合并前，先阅读测试指南并完善测试用例！
 
 """
 
@@ -77,9 +77,19 @@ MCP 工具的可用性由两部分决定：大模型是否知道什么时候调�
 * **目的**：并发执行这些参数，验证你的 inputSchema 定义是否正确，以及底层业务逻辑是否会崩溃。
 * **要求**：尝试传入正常参数、极值、甚至是故意填错的格式（验证你的 isError 处理机制）。
 
-## 3. 测试流水线与报告
-当你完善了 `evals.json` 后，使用 `KernelUpgrade` 工具执行 `action="test_mcp"`。系统会在后台自动执行：
-1. **Schema 提取**：导出你的 FastMCP 解析出的所有 Tool 清单与 `inputSchema`。你可以借此检查参数类型是否符合预期。
-2. **并发盲测**：后台并发执行所有的 Trigger 和 Execution 测试。
-3. **结果落盘**：测试完成后，系统会通知你。你需要去 `iteration-N` 目录下阅读 `schema_dump.json` 和 `test_report.md` 来评估是否需要进一步优化代码。
+## 3. 测试流水线与报告 (两步执行法)
+为了避免跨系统环境冲突，MCP 的测试严格分为两步，**你必须按照顺序执行**：
+
+**第一步：沙盒内自行执行评测 (极度重要！)**
+编写完代码和 `evals.json` 后，你必须使用你的终端执行工具 (Bash)，在当前 MCP 项目根目录下激活环境并运行评测脚本：
+```bash
+source .venv/bin/activate
+python scripts/evaluation.py
+```
+
+这会在 `evals/outputs/` 目录下生成基础的执行结果和 Schema 产物。如果这一步发生代码报错，请直接通过 Bash 的输出日志进行修复。
+
+**第二步：呼叫宿主机进行语义评测与聚合报告**
+只有在第一步**无报错执行完毕**后，你才可以调用 `KernelUpgrade` 工具，指定 `action="test_mcp"`。
+宿主机会读取你第一步的产物，执行复杂的**语义 Trigger 测试**（模拟大模型是否能准确唤醒你的 Tool），并在后台生成最终的 `test_report.md`。收到通知后去阅读该报告进行调优。
 """

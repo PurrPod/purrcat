@@ -30,7 +30,7 @@ def skill_improve_init(skill_name: str, is_upgrade: bool) -> str:
             os.makedirs(os.path.join(workplace_skill_dir, sub_dir), exist_ok=True)
 
         skill_md_content = f"---\nname: {skill_name}\ndescription: 请在此处填写对 {skill_name} 的描述信息（1-1024个字符）。必须使用祈使句（如：Use this skill when...）。\n---\n\n## 步骤说明\n\n在此处编写具体的任务执行指令...\n"
-        with open(os.path.join(workplace_skill_dir, "SKILL.md"), "w", encoding="utf-8") as f:
+        with open(os.path.join(workplace_skill_dir, "SKILL.md"), "w", encoding="utf-8", newline='\n') as f:
             f.write(skill_md_content)
 
         evals_json_content = f"""{{
@@ -47,7 +47,7 @@ def skill_improve_init(skill_name: str, is_upgrade: bool) -> str:
     }}
   ]
 }}"""
-        with open(os.path.join(workplace_skill_dir, "evals", "evals.json"), "w", encoding="utf-8") as f:
+        with open(os.path.join(workplace_skill_dir, "evals", "evals.json"), "w", encoding="utf-8", newline='\n') as f:
             f.write(evals_json_content)
 
         action_msg = f"已为你搭建了全新的 '{skill_name}' 骨架"
@@ -55,17 +55,17 @@ def skill_improve_init(skill_name: str, is_upgrade: bool) -> str:
     # 生成忽略文件
     gitignore_path = os.path.join(workplace_skill_dir, ".gitignore")
     if not os.path.exists(gitignore_path):
-        with open(gitignore_path, "w", encoding="utf-8") as f:
+        with open(gitignore_path, "w", encoding="utf-8", newline='\n') as f:
             f.write("# 忽略运行缓存和依赖\n__pycache__/\n*.py[cod]\nnode_modules/\n.venv/\nvenv/\n.env\n")
 
     # 🌟 核心修改：生成三大指导手册
-    with open(os.path.join(workplace_root, "01_GUIDE_CREATE.md"), "w", encoding="utf-8") as f:
+    with open(os.path.join(workplace_root, "01_GUIDE_CREATE.md"), "w", encoding="utf-8", newline='\n') as f:
         f.write(generate_create_guide(skill_name))
     
-    with open(os.path.join(workplace_root, "02_GUIDE_UPGRADE.md"), "w", encoding="utf-8") as f:
+    with open(os.path.join(workplace_root, "02_GUIDE_UPGRADE.md"), "w", encoding="utf-8", newline='\n') as f:
         f.write(generate_upgrade_guide(skill_name))
 
-    with open(os.path.join(workplace_root, "03_GUIDE_TEST.md"), "w", encoding="utf-8") as f:
+    with open(os.path.join(workplace_root, "03_GUIDE_TEST.md"), "w", encoding="utf-8", newline='\n') as f:
         f.write(generate_test_guide(skill_name))
 
     # 🌟 核心修改：精准的 API 返回引导
