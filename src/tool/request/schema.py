@@ -20,11 +20,12 @@ REQUEST_TOOL_SCHEMA = {
                         "graph_install",
                         "computer_use",
                         "skill_merge",   # 保留：合并代码仍需审批
+                        "mcp_merge",     # 新增：MCP 代码合并
                     ],
                 },
                 "target": {
                     "type": "string",
-                    "description": "目标对象。文件权限填路径；安装类填插件名；申请代码合并(skill_merge)填具体的 skill_name。",
+                    "description": "目标对象。文件权限填路径；安装类填插件名；申请代码合并(skill_merge/mcp_merge)填具体的插件名。",
                 },
                 "reason": {
                     "type": "string",

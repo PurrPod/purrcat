@@ -2,7 +2,7 @@
 
 import traceback
 from src.tool.utils.format import error_response, text_response
-from src.evolve import skill_improve_init, run_skill_eval_background, mcp_improve_init, run_mcp_eval_background
+from src.evolve import skill_improve_init, run_skill_eval_background, mcp_improve_init, mcp_upgrade_init, run_mcp_eval_background
 
 def KernelUpgrade(action: str, target: str, **kwargs) -> dict:
     """
@@ -11,6 +11,7 @@ def KernelUpgrade(action: str, target: str, **kwargs) -> dict:
     - action="upgrade_skill": 拷贝现存的 Skill 进行修改
     - action="test_skill": 在后台运行 Skill 沙盒盲测
     - action="create_mcp": 生成全新的 MCP Server 骨架
+    - action="upgrade_mcp": 拷贝现存的 MCP Server 进行修改
     - action="test_mcp": 在后台运行 MCP 并发测试
     """
     try:
@@ -55,6 +56,13 @@ def KernelUpgrade(action: str, target: str, **kwargs) -> dict:
             return text_response(
                 f"✅ 全新 MCP Server 沙盒构建完成！\n\n{sys_note}", 
                 f"🔌 {target} MCP已创建"
+            )
+
+        elif action == "upgrade_mcp":
+            sys_note = mcp_upgrade_init(target)
+            return text_response(
+                f"✅ 现存 MCP Server 已拷贝至进化沙盒，准备好进行升级！\n\n{sys_note}", 
+                f"📦 {target} MCP沙盒已就绪"
             )
 
         elif action == "test_mcp":

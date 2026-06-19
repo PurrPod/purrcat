@@ -11,7 +11,7 @@ KERNELUPGRADE_TOOL_SCHEMA = {
                 "action": {
                     "type": "string",
                     "description": "执行的具体操作",
-                    "enum": ["create_skill", "upgrade_skill", "test_skill", "create_mcp", "test_mcp"]
+                    "enum": ["create_skill", "upgrade_skill", "test_skill", "create_mcp", "upgrade_mcp", "test_mcp"]
                 },
                 "target": {
                     "type": "string",

@@ -151,13 +151,24 @@ def resolve_request(
                         feedback = f"{sys_note}\n(老板批注: {feedback})"
                     else:
                         feedback = f"合并失败：未找到 {target} 对应的工厂沙盒目录。"
+                # ---- MCP 合并逻辑 ----
+                elif req_type == "mcp_merge":
+                    import glob
+                    from src.evolve import mcp_request_handle
+                    paths = glob.glob(f"./agent_vm/mcp_workplace/*/{target}")
+                    if paths:
+                        workplace_root = os.path.dirname(paths[0])
+                        sys_note = mcp_request_handle(workplace_root, target, is_approved=True)
+                        feedback = f"{sys_note}\n(老板批注: {feedback})"
+                    else:
+                        feedback = f"合并失败：未找到 {target} 对应的 MCP 工厂沙盒目录。"
             except Exception as e:
                 approved = False
                 feedback = f"老板已同意，但执行失败: {str(e)}。{feedback}"
 
         # 处理人类的拒绝决策
         elif not approved and not ignore:
-            if req_type == "skill_merge":
+            if req_type in ["skill_merge", "mcp_merge"]:
                 # 让Agent收到拒绝的理由并继续改进
                 feedback = f"老板拒绝了代码合并请求，请在沙盒工厂中根据以下原因继续修复：\n【拒绝理由】: {feedback}"
 
