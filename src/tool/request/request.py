@@ -25,8 +25,8 @@ def Request(request_type: str, target: str, reason: str, **kwargs) -> str:
             "sensor_install",
             "graph_install",
             "computer_use",
-            "skill_merge",   # 保留：合并代码仍需审批
-            "mcp_merge",     # 新增：MCP 代码合并
+            "skill_merge",  # 保留：合并代码仍需审批
+            "mcp_merge",  # 新增：MCP 代码合并
         ]
 
         if request_type not in valid_types:

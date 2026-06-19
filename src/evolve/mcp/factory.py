@@ -1,6 +1,7 @@
 """
 MCP 进化工厂核心逻辑 (evolve/mcp/factory.py)
 """
+
 import os
 import shutil
 import uuid
@@ -9,6 +10,7 @@ import json
 from datetime import datetime
 from .guide_generator import generate_mcp_create_guide, generate_mcp_test_guide
 
+
 def mcp_improve_init(mcp_name: str) -> str:
     short_uuid = uuid.uuid4().hex[:5]
     workplace_root = f"./agent_vm/mcp_workplace/{short_uuid}"
@@ -16,7 +18,7 @@ def mcp_improve_init(mcp_name: str) -> str:
 
     if os.path.exists(workplace_root):
         shutil.rmtree(workplace_root, ignore_errors=True)
-    
+
     # 1. 创建结构化目录
     os.makedirs(workplace_mcp_dir, exist_ok=True)
     os.makedirs(os.path.join(workplace_mcp_dir, "core"), exist_ok=True)
@@ -31,13 +33,15 @@ uv venv --allow-existing
 source .venv/bin/activate
 uv add "mcp[cli]" httpx
 """
-    with open(os.path.join(workplace_mcp_dir, "setup.sh"), "w", encoding="utf-8", newline='\n') as f:
+    with open(
+        os.path.join(workplace_mcp_dir, "setup.sh"), "w", encoding="utf-8", newline="\n"
+    ) as f:
         f.write(setup_script)
 
     # 3. 固化 Core 模块
     with open(os.path.join(workplace_mcp_dir, "core", "__init__.py"), "w") as f:
         f.write("")
-    
+
     config_py_content = """import logging
 import sys
 
@@ -45,12 +49,21 @@ def setup_logging():
     \"\"\"配置日志输出到 stderr，这是保护 STDIO 协议不被破坏的底线\"\"\"
     logging.basicConfig(level=logging.INFO, stream=sys.stderr)
 """
-    with open(os.path.join(workplace_mcp_dir, "core", "config.py"), "w", encoding="utf-8", newline='\n') as f:
+    with open(
+        os.path.join(workplace_mcp_dir, "core", "config.py"),
+        "w",
+        encoding="utf-8",
+        newline="\n",
+    ) as f:
         f.write(config_py_content)
 
     # 4. 全局实例层 (app.py)
-    app_py_content = f"""from mcp.server.fastmcp import FastMCP\n\nmcp = FastMCP("{mcp_name}")\n"""
-    with open(os.path.join(workplace_mcp_dir, "app.py"), "w", encoding="utf-8", newline='\n') as f:
+    app_py_content = (
+        f"""from mcp.server.fastmcp import FastMCP\n\nmcp = FastMCP("{mcp_name}")\n"""
+    )
+    with open(
+        os.path.join(workplace_mcp_dir, "app.py"), "w", encoding="utf-8", newline="\n"
+    ) as f:
         f.write(app_py_content)
 
     # 5. 固化主入口 (server.py)
@@ -65,15 +78,25 @@ def main():
 if __name__ == "__main__":
     main()
 """
-    with open(os.path.join(workplace_mcp_dir, "server.py"), "w", encoding="utf-8", newline='\n') as f:
+    with open(
+        os.path.join(workplace_mcp_dir, "server.py"),
+        "w",
+        encoding="utf-8",
+        newline="\n",
+    ) as f:
         f.write(server_py_content)
 
     # 6. 固化 Tools 模块
     with open(os.path.join(workplace_mcp_dir, "tools", "__init__.py"), "w") as f:
         f.write("")
-    
+
     sample_tool_content = """from app import mcp\nimport logging\n\n@mcp.tool()\nasync def sample_tool(param: str) -> str:\n    \"\"\"示例工具描述\"\"\"\n    return f"Processed {param}"\n"""
-    with open(os.path.join(workplace_mcp_dir, "tools", "sample.py"), "w", encoding="utf-8", newline='\n') as f:
+    with open(
+        os.path.join(workplace_mcp_dir, "tools", "sample.py"),
+        "w",
+        encoding="utf-8",
+        newline="\n",
+    ) as f:
         f.write(sample_tool_content)
 
     # 7. 生成 evals 测试模板
@@ -86,11 +109,21 @@ if __name__ == "__main__":
     {"tool": "sample_tool", "arguments": {"param": "test"}, "description": "正常参数测试"}
   ]
 }""".replace("__MCP_NAME__", mcp_name)
-    with open(os.path.join(workplace_mcp_dir, "evals", "evals.json"), "w", encoding="utf-8", newline='\n') as f:
+    with open(
+        os.path.join(workplace_mcp_dir, "evals", "evals.json"),
+        "w",
+        encoding="utf-8",
+        newline="\n",
+    ) as f:
         f.write(evals_template)
 
     # 8. Git 忽略文件
-    with open(os.path.join(workplace_mcp_dir, ".gitignore"), "w", encoding="utf-8", newline='\n') as f:
+    with open(
+        os.path.join(workplace_mcp_dir, ".gitignore"),
+        "w",
+        encoding="utf-8",
+        newline="\n",
+    ) as f:
         f.write(".venv/\n__pycache__/\n*.pyc\n")
 
     # 9. 生成沙盒内部评测脚本
@@ -127,35 +160,66 @@ async def main():
 
 if __name__ == "__main__": asyncio.run(main())
 """
-    with open(os.path.join(workplace_mcp_dir, "scripts", "evaluation.py"), "w", encoding="utf-8", newline='\n') as f:
+    with open(
+        os.path.join(workplace_mcp_dir, "scripts", "evaluation.py"),
+        "w",
+        encoding="utf-8",
+        newline="\n",
+    ) as f:
         f.write(evaluation_script)
-        
+
     # 10. 生成指南
-    with open(os.path.join(workplace_root, "01_GUIDE_CREATE.md"), "w", encoding="utf-8", newline='\n') as f:
+    with open(
+        os.path.join(workplace_root, "01_GUIDE_CREATE.md"),
+        "w",
+        encoding="utf-8",
+        newline="\n",
+    ) as f:
         f.write(generate_mcp_create_guide(mcp_name))
-    with open(os.path.join(workplace_root, "02_GUIDE_TEST.md"), "w", encoding="utf-8", newline='\n') as f:
+    with open(
+        os.path.join(workplace_root, "02_GUIDE_TEST.md"),
+        "w",
+        encoding="utf-8",
+        newline="\n",
+    ) as f:
         f.write(generate_mcp_test_guide(mcp_name))
     return (
         f"【MCP 工厂分配成功】工作区路径：{workplace_root}。\n"
         f"已为你自动搭建了 '{mcp_name}' 环境。💡 请先阅读 01_GUIDE_CREATE！"
     )
 
+
 def mcp_upgrade_init(mcp_name: str) -> str:
     target_dir = f"./mcps/{mcp_name}"
-    if not os.path.exists(target_dir): return f"❌ 无法执行升级：未找到名为 '{mcp_name}' 的正式服务。"
+    if not os.path.exists(target_dir):
+        return f"❌ 无法执行升级：未找到名为 '{mcp_name}' 的正式服务。"
     short_uuid = uuid.uuid4().hex[:5]
     workplace_root = f"./agent_vm/mcp_workplace/{short_uuid}"
     workplace_mcp_dir = os.path.join(workplace_root, mcp_name)
-    if os.path.exists(workplace_root): shutil.rmtree(workplace_root, ignore_errors=True)
+    if os.path.exists(workplace_root):
+        shutil.rmtree(workplace_root, ignore_errors=True)
     os.makedirs(workplace_root, exist_ok=True)
-    
-    def ignore_files(d, c): return ['.venv', 'venv', '__pycache__', '.git', 'node_modules', '.env', '*.pyc']
+
+    def ignore_files(d, c):
+        return [".venv", "venv", "__pycache__", ".git", "node_modules", ".env", "*.pyc"]
+
     shutil.copytree(target_dir, workplace_mcp_dir, ignore=ignore_files)
-    with open(os.path.join(workplace_root, "01_GUIDE_CREATE.md"), "w", encoding="utf-8", newline='\n') as f:
+    with open(
+        os.path.join(workplace_root, "01_GUIDE_CREATE.md"),
+        "w",
+        encoding="utf-8",
+        newline="\n",
+    ) as f:
         f.write(generate_mcp_create_guide(mcp_name))
-    with open(os.path.join(workplace_root, "02_GUIDE_TEST.md"), "w", encoding="utf-8", newline='\n') as f:
+    with open(
+        os.path.join(workplace_root, "02_GUIDE_TEST.md"),
+        "w",
+        encoding="utf-8",
+        newline="\n",
+    ) as f:
         f.write(generate_mcp_test_guide(mcp_name))
     return f"【MCP 升级派发成功】工作区路径：{workplace_root}。\n💡 请在该路径继续迭代开发！"
+
 
 def mcp_request_handle(workplace_root: str, mcp_name: str, is_approved: bool) -> str:
     """处理 MCP 合并请求的核心逻辑"""
@@ -171,7 +235,10 @@ def mcp_request_handle(workplace_root: str, mcp_name: str, is_approved: bool) ->
     if os.path.exists(target_dir):
         shutil.rmtree(target_dir, ignore_errors=True)
     os.makedirs(os.path.dirname(target_dir), exist_ok=True)
-    def ignore_files(d, c): return ['.venv', 'venv', '__pycache__', '.git', 'node_modules', '.env', '*.pyc']
+
+    def ignore_files(d, c):
+        return [".venv", "venv", "__pycache__", ".git", "node_modules", ".env", "*.pyc"]
+
     shutil.copytree(source_dir, target_dir, ignore=ignore_files)
 
     # 2. Git 自动接管
@@ -179,32 +246,36 @@ def mcp_request_handle(workplace_root: str, mcp_name: str, is_approved: bool) ->
     if not os.path.exists(os.path.join(mcps_root, ".git")):
         os.makedirs(mcps_root, exist_ok=True)
         subprocess.run(["git", "init"], cwd=mcps_root)
-        with open(os.path.join(mcps_root, ".gitignore"), "w") as f: f.write("*.pyc\n__pycache__/\n.venv/\nvenv/\n")
+        with open(os.path.join(mcps_root, ".gitignore"), "w") as f:
+            f.write("*.pyc\n__pycache__/\n.venv/\nvenv/\n")
         subprocess.run(["git", "add", ".gitignore"], cwd=mcps_root)
     subprocess.run(["git", "add", mcp_name], cwd=mcps_root)
     commit_msg = f"{'upgrade' if is_upgrade else 'add'} mcp {mcp_name} {datetime.now().strftime('%Y-%m-%d')}"
     subprocess.run(["git", "commit", "-m", commit_msg], cwd=mcps_root)
 
     # 3. 自动注入 JSON 配置到 .purrcat/mcp_config.json
-    config_path = os.path.abspath(os.path.join(os.getcwd(), ".purrcat", "mcp_config.json"))
+    config_path = os.path.abspath(
+        os.path.join(os.getcwd(), ".purrcat", "mcp_config.json")
+    )
     os.makedirs(os.path.dirname(config_path), exist_ok=True)
-    
+
     mcp_config = {"mcpServers": {}}
     if os.path.exists(config_path):
         try:
             with open(config_path, "r", encoding="utf-8") as f:
                 mcp_config = json.load(f)
-        except Exception: pass
-    
+        except Exception:
+            pass
+
     if "mcpServers" not in mcp_config:
         mcp_config["mcpServers"] = {}
-        
+
     mcp_config["mcpServers"][mcp_name] = {
         "command": "uv",
-        "args": ["run", "--directory", abs_target_dir, "server.py"]
+        "args": ["run", "--directory", abs_target_dir, "server.py"],
     }
-    
-    with open(config_path, "w", encoding="utf-8", newline='\n') as f:
+
+    with open(config_path, "w", encoding="utf-8", newline="\n") as f:
         json.dump(mcp_config, f, indent=2, ensure_ascii=False)
 
     # 4. 清理沙盒

@@ -1,5 +1,4 @@
 // src/components/chat/ChatModals.tsx
-import React from 'react';
 import { Loader2, X, Trash2, Check, ChevronUp, ChevronDown, Plus, Download, Save, AlertCircle, FileJson, FileText, GitFork, Pencil, Clock } from 'lucide-react';
 import { sketchyShape1, sketchyShape2, sketchyShape3 } from './ChatShared';
 
@@ -138,7 +137,7 @@ export default function ChatModals(props: any) {
                        loadBranches(currentSessionId);
                        setBranchToDelete(null);
                      }
-                   } catch {}
+                   } catch { /* noop */ }
               }} style={sketchyShape1} className="flex-1 bg-[#bf616a] text-paper font-black py-3 border-4 border-ink hover:bg-[#a54e56] transition-all shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] active:shadow-none active:translate-y-1">DESTROY</button>
             </div>
           </div>

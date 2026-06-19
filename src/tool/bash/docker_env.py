@@ -3,7 +3,6 @@ import os
 import re
 import sys
 import threading
-import urllib.parse
 import uuid
 from typing import Optional
 
@@ -139,13 +138,15 @@ class DockerManager:
                 existing_container.start()
             else:
                 print(f"✅ 专属沙盒 ({self.container_name}) 已在运行。")
-            
+
             self.container = existing_container
             self._started = True
             return  # 成功复用已有容器，直接返回，不再执行后面的 run 创建逻辑
-            
+
         except NotFound:
-            print(f"🚀 未找到沙盒 ({self.container_name})，将基于镜像 {self.image} 创建全新虚拟机...")
+            print(
+                f"🚀 未找到沙盒 ({self.container_name})，将基于镜像 {self.image} 创建全新虚拟机..."
+            )
             pass  # 继续往下走原来的创建代码
         except DockerException as e:
             raise DockerNotRunningError(f"{self.engine.capitalize()} API 连接失败: {e}")

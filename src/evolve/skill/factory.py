@@ -1,13 +1,19 @@
 """
 Skill 进化工厂核心逻辑 (evolve/skill/factory.py)
 """
+
 import os
 import shutil
 import uuid
 import subprocess
 from datetime import datetime
+
 # 引入新的生成器
-from .guide_generator import generate_create_guide, generate_upgrade_guide, generate_test_guide
+from .guide_generator import (
+    generate_create_guide,
+    generate_upgrade_guide,
+    generate_test_guide,
+)
 
 
 def skill_improve_init(skill_name: str, is_upgrade: bool) -> str:
@@ -30,7 +36,12 @@ def skill_improve_init(skill_name: str, is_upgrade: bool) -> str:
             os.makedirs(os.path.join(workplace_skill_dir, sub_dir), exist_ok=True)
 
         skill_md_content = f"---\nname: {skill_name}\ndescription: 请在此处填写对 {skill_name} 的描述信息（1-1024个字符）。必须使用祈使句（如：Use this skill when...）。\n---\n\n## 步骤说明\n\n在此处编写具体的任务执行指令...\n"
-        with open(os.path.join(workplace_skill_dir, "SKILL.md"), "w", encoding="utf-8", newline='\n') as f:
+        with open(
+            os.path.join(workplace_skill_dir, "SKILL.md"),
+            "w",
+            encoding="utf-8",
+            newline="\n",
+        ) as f:
             f.write(skill_md_content)
 
         evals_json_content = f"""{{
@@ -47,7 +58,12 @@ def skill_improve_init(skill_name: str, is_upgrade: bool) -> str:
     }}
   ]
 }}"""
-        with open(os.path.join(workplace_skill_dir, "evals", "evals.json"), "w", encoding="utf-8", newline='\n') as f:
+        with open(
+            os.path.join(workplace_skill_dir, "evals", "evals.json"),
+            "w",
+            encoding="utf-8",
+            newline="\n",
+        ) as f:
             f.write(evals_json_content)
 
         action_msg = f"已为你搭建了全新的 '{skill_name}' 骨架"
@@ -55,17 +71,34 @@ def skill_improve_init(skill_name: str, is_upgrade: bool) -> str:
     # 生成忽略文件
     gitignore_path = os.path.join(workplace_skill_dir, ".gitignore")
     if not os.path.exists(gitignore_path):
-        with open(gitignore_path, "w", encoding="utf-8", newline='\n') as f:
-            f.write("# 忽略运行缓存和依赖\n__pycache__/\n*.py[cod]\nnode_modules/\n.venv/\nvenv/\n.env\n")
+        with open(gitignore_path, "w", encoding="utf-8", newline="\n") as f:
+            f.write(
+                "# 忽略运行缓存和依赖\n__pycache__/\n*.py[cod]\nnode_modules/\n.venv/\nvenv/\n.env\n"
+            )
 
     # 🌟 核心修改：生成三大指导手册
-    with open(os.path.join(workplace_root, "01_GUIDE_CREATE.md"), "w", encoding="utf-8", newline='\n') as f:
+    with open(
+        os.path.join(workplace_root, "01_GUIDE_CREATE.md"),
+        "w",
+        encoding="utf-8",
+        newline="\n",
+    ) as f:
         f.write(generate_create_guide(skill_name))
-    
-    with open(os.path.join(workplace_root, "02_GUIDE_UPGRADE.md"), "w", encoding="utf-8", newline='\n') as f:
+
+    with open(
+        os.path.join(workplace_root, "02_GUIDE_UPGRADE.md"),
+        "w",
+        encoding="utf-8",
+        newline="\n",
+    ) as f:
         f.write(generate_upgrade_guide(skill_name))
 
-    with open(os.path.join(workplace_root, "03_GUIDE_TEST.md"), "w", encoding="utf-8", newline='\n') as f:
+    with open(
+        os.path.join(workplace_root, "03_GUIDE_TEST.md"),
+        "w",
+        encoding="utf-8",
+        newline="\n",
+    ) as f:
         f.write(generate_test_guide(skill_name))
 
     # 🌟 核心修改：精准的 API 返回引导
@@ -88,7 +121,7 @@ def skill_generate_diff(skill_name: str, workplace_root: str) -> str:
         result = subprocess.run(
             ["git", "diff", "--no-index", source_dir, target_dir],
             capture_output=True,
-            text=True
+            text=True,
         )
         diff_output = result.stdout
         if not diff_output.strip():
@@ -98,10 +131,14 @@ def skill_generate_diff(skill_name: str, workplace_root: str) -> str:
         return f"差异对比生成失败: {str(e)}"
 
 
-def skill_request_handle(workplace_root: str, skill_name: str, is_approved: bool) -> str:
+def skill_request_handle(
+    workplace_root: str, skill_name: str, is_approved: bool
+) -> str:
     # 修改点：如果拒绝，不删除工作区，保留给Agent继续修改
     if not is_approved:
-        return f"人类拒绝了 {skill_name} 的进化/合并请求，已保留当前工作区供你继续调整。"
+        return (
+            f"人类拒绝了 {skill_name} 的进化/合并请求，已保留当前工作区供你继续调整。"
+        )
 
     source_dir = os.path.join(workplace_root, skill_name)
     target_dir = f"./skills/{skill_name}"
@@ -129,7 +166,7 @@ def skill_request_handle(workplace_root: str, skill_name: str, is_approved: bool
     subprocess.run(["git", "add", ".gitignore"], cwd=skills_root)
 
     action = "upgrade" if is_upgrade else "add"
-    current_date = datetime.now().strftime('%Y-%m-%d')
+    current_date = datetime.now().strftime("%Y-%m-%d")
     commit_msg = f"{action} skill {skill_name} {current_date}"
 
     subprocess.run(["git", "commit", "-m", commit_msg], cwd=skills_root)
@@ -154,7 +191,9 @@ def skill_rollback(skill_name: str) -> str:
         # 检查这个 skill 是否有提交历史
         log_check = subprocess.run(
             ["git", "log", "--oneline", "--", skill_name],
-            cwd=skills_root, capture_output=True, text=True
+            cwd=skills_root,
+            capture_output=True,
+            text=True,
         )
         if not log_check.stdout.strip():
             return f"回滚失败：未找到 '{skill_name}' 的任何 Git 提交历史。"
@@ -162,17 +201,21 @@ def skill_rollback(skill_name: str) -> str:
         # 从上一个版本 (HEAD~1) 检出该目录的文件覆盖当前目录
         subprocess.run(
             ["git", "checkout", "HEAD~1", "--", skill_name],
-            cwd=skills_root, check=True, capture_output=True
+            cwd=skills_root,
+            check=True,
+            capture_output=True,
         )
 
         # 提交回滚记录
-        current_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        current_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         commit_msg = f"rollback skill {skill_name} to previous state at {current_date}"
 
         subprocess.run(["git", "commit", "-m", commit_msg], cwd=skills_root, check=True)
 
-        return f"回滚成功！'{skill_name}' 已恢复至上一个版本，并生成了 Rollback Commit。"
+        return (
+            f"回滚成功！'{skill_name}' 已恢复至上一个版本，并生成了 Rollback Commit。"
+        )
 
     except subprocess.CalledProcessError as e:
-        stderr = e.stderr.decode('utf-8') if e.stderr else str(e)
+        stderr = e.stderr.decode("utf-8") if e.stderr else str(e)
         return f"回滚执行异常：{stderr}"

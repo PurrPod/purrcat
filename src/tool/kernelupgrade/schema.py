@@ -11,12 +11,19 @@ KERNELUPGRADE_TOOL_SCHEMA = {
                 "action": {
                     "type": "string",
                     "description": "执行的具体操作",
-                    "enum": ["create_skill", "upgrade_skill", "test_skill", "create_mcp", "upgrade_mcp", "test_mcp"]
+                    "enum": [
+                        "create_skill",
+                        "upgrade_skill",
+                        "test_skill",
+                        "create_mcp",
+                        "upgrade_mcp",
+                        "test_mcp",
+                    ],
                 },
                 "target": {
                     "type": "string",
-                    "description": "目标对象。当 action 为 'create_skill', 'upgrade_skill' 或 'create_mcp' 时，填写具体的名称；当 action 为 'test_skill' 或 'test_mcp' 时，必须严格填写为当前沙盒的路径前缀 'uuid/name'。"
-                }
+                    "description": "目标对象。当 action 为 'create_skill', 'upgrade_skill' 或 'create_mcp' 时，填写具体的名称；当 action 为 'test_skill' 或 'test_mcp' 时，必须严格填写为当前沙盒的路径前缀 'uuid/name'。",
+                },
             },
             "required": ["action", "target"],
             "additionalProperties": False,

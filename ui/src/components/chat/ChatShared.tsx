@@ -1,5 +1,5 @@
 // src/components/chat/ChatShared.tsx
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Package, ChevronDown, ChevronUp, Wrench } from 'lucide-react';
 import { EventItem, Message } from './ChatTypes';
 

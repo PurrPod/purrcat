@@ -20,7 +20,7 @@ def load_skill(name: str) -> tuple:
         # ==== 新增逻辑：载入前从主库拉取最新的一份覆盖进沙盒中 ====
         source_dir = f"./skills/{name}"
         target_dir = f"./agent_vm/skills/{name}"
-        
+
         # 只要主库存在该技能，就强制覆盖沙盒里的缓存，保证 Agent 在沙盒里执行时是最新的
         if os.path.exists(source_dir):
             if os.path.exists(target_dir):

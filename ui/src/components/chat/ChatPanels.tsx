@@ -1,5 +1,4 @@
 // src/components/chat/ChatPanels.tsx
-import React from 'react';
 import { History, Minus, CheckCircle, FileText, Undo2, Bell, X, Activity, ChevronDown, ChevronUp } from 'lucide-react';
 import { sketchyShape1, sketchyShape2, sketchyShape3 } from './ChatShared';
 

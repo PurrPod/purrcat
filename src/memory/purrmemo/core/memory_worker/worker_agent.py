@@ -262,9 +262,7 @@ class MemoryAgent:
                 try:
                     from src.tool.memo.memo_operations import _smart_update_memory_md
 
-                    print(
-                        f"⏳ [Worker] 检测到经验更新，正在后台重建 MEMORY.md ..."
-                    )
+                    print("⏳ [Worker] 检测到经验更新，正在后台重建 MEMORY.md ...")
                     _smart_update_memory_md(work_exp, user_profile)
                 except Exception as e:
                     print(f"❌ [Worker] 重建 MEMORY.md 异常: {e}")

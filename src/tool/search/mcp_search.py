@@ -130,39 +130,58 @@ class MCPSearcher:
 
         return results
 
-    def simulate_trigger(self, query: str, sandbox_server_name: str, sandbox_tools: list, expected_tool_name: str, top_k: int = 5, threshold: float = 0.3) -> dict:
+    def simulate_trigger(
+        self,
+        query: str,
+        sandbox_server_name: str,
+        sandbox_tools: list,
+        expected_tool_name: str,
+        top_k: int = 5,
+        threshold: float = 0.3,
+    ) -> dict:
         """
         MCP 触发测试：将沙盒服务器下解析出的多个工具注入全局快照，
         检索指定的 expected_tool_name 是否能成功杀入 Top K 并达到阈值。
         """
         import copy
-        
+
         with self._lock:
             # 1. 抓取当前真实环境快照 (不修改原数据)
             temp_corpus = self.corpus.copy() if self.corpus else []
             temp_tools = copy.deepcopy(self.tools) if self.tools else []
             # 复制矩阵，避免并发污染
-            temp_matrix = self.corpus_matrix.copy() if self.corpus_matrix is not None else np.empty((0, 0))
+            temp_matrix = (
+                self.corpus_matrix.copy()
+                if self.corpus_matrix is not None
+                else np.empty((0, 0))
+            )
 
         # 2. 批量注入沙盒服务器的 tools
         target_idx = -1  # 记录我们期望命中的那个工具在 temp_tools 中的最终索引
-        
+
         for tool in sandbox_tools:
             tool_name = tool.get("name", "")
             desc = tool.get("description", "")
             text_repr = f"{sandbox_server_name} {tool_name} {tool_name.replace('_', ' ')} {desc}"
             vector = self.embedding_searcher.encode([text_repr])
-            
+
             # 寻找快照中是否已有同名工具 (如果是覆盖升级)
             existing_idx = -1
             for i, t in enumerate(temp_tools):
-                if t["server_name"] == sandbox_server_name and t["tool_name"] == tool_name:
+                if (
+                    t["server_name"] == sandbox_server_name
+                    and t["tool_name"] == tool_name
+                ):
                     existing_idx = i
                     break
-            
+
             if existing_idx != -1:
                 temp_corpus[existing_idx] = text_repr
-                temp_tools[existing_idx] = {"server_name": sandbox_server_name, "tool_name": tool_name, "description": desc}
+                temp_tools[existing_idx] = {
+                    "server_name": sandbox_server_name,
+                    "tool_name": tool_name,
+                    "description": desc,
+                }
                 if temp_matrix.size > 0:
                     temp_matrix[existing_idx] = vector[0]
                 if tool_name == expected_tool_name:
@@ -170,12 +189,18 @@ class MCPSearcher:
             else:
                 # 全新工具，追加
                 temp_corpus.append(text_repr)
-                temp_tools.append({"server_name": sandbox_server_name, "tool_name": tool_name, "description": desc})
+                temp_tools.append(
+                    {
+                        "server_name": sandbox_server_name,
+                        "tool_name": tool_name,
+                        "description": desc,
+                    }
+                )
                 if temp_matrix.size > 0:
                     temp_matrix = np.vstack([temp_matrix, vector])
                 else:
                     temp_matrix = vector
-                
+
                 if tool_name == expected_tool_name:
                     target_idx = len(temp_corpus) - 1
 
@@ -185,28 +210,40 @@ class MCPSearcher:
 
         # 3. 执行真实的混合检索打分
         query_vector = self.embedding_searcher.encode([query])
-        dense_scores = self.embedding_searcher.calculate_similarity(query_vector, temp_matrix)
+        dense_scores = self.embedding_searcher.calculate_similarity(
+            query_vector, temp_matrix
+        )
 
         from rank_bm25 import BM25Okapi
+
         tokenized_corpus = [hybrid_tokenize(doc) for doc in temp_corpus]
         temp_bm25 = BM25Okapi(tokenized_corpus)
-        
+
         tokenized_query = hybrid_tokenize(query)
         raw_bm25_scores = temp_bm25.get_scores(tokenized_query)
 
         max_bm25 = max(raw_bm25_scores) if raw_bm25_scores.size > 0 else 0
-        bm25_scores = [score / max_bm25 for score in raw_bm25_scores] if max_bm25 > 0 else [0] * len(temp_corpus)
+        bm25_scores = (
+            [score / max_bm25 for score in raw_bm25_scores]
+            if max_bm25 > 0
+            else [0] * len(temp_corpus)
+        )
 
         alpha_dense, alpha_sparse = 0.7, 0.3
-        final_scores = np.array([(dense_scores[i] * alpha_dense) + (bm25_scores[i] * alpha_sparse) for i in range(len(temp_corpus))])
-        
+        final_scores = np.array(
+            [
+                (dense_scores[i] * alpha_dense) + (bm25_scores[i] * alpha_sparse)
+                for i in range(len(temp_corpus))
+            ]
+        )
+
         top_k_indices = np.argsort(final_scores)[::-1][:top_k]
 
         # 4. 激发状态判定
         is_triggered = False
         rank = -1
         score = 0.0
-        
+
         if target_idx != -1:
             score = final_scores[target_idx]
             for rank_pos, idx in enumerate(top_k_indices):
@@ -215,14 +252,18 @@ class MCPSearcher:
                     rank = rank_pos + 1
                     break
 
-        competitors = [f"[{temp_tools[idx]['server_name']}]{temp_tools[idx]['tool_name']} (得分: {round(float(final_scores[idx]),4)})" for idx in top_k_indices if idx != target_idx]
+        competitors = [
+            f"[{temp_tools[idx]['server_name']}]{temp_tools[idx]['tool_name']} (得分: {round(float(final_scores[idx]), 4)})"
+            for idx in top_k_indices
+            if idx != target_idx
+        ]
 
         return {
             "is_triggered": is_triggered,
             "score": round(float(score), 4) if target_idx != -1 else 0.0,
             "rank": rank,
             "threshold": threshold,
-            "competitors": competitors
+            "competitors": competitors,
         }
 
 

@@ -2,6 +2,7 @@
 MCP 指南生成器模块 (evolve/mcp/guide_generator.py)
 """
 
+
 def generate_mcp_create_guide(mcp_name: str) -> str:
     return f"""# {mcp_name} MCP Server 模块化开发指南
 

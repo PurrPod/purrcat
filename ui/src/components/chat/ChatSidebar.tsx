@@ -1,5 +1,4 @@
 // src/components/chat/ChatSidebar.tsx
-import React from 'react';
 import { ArrowLeft, Terminal, List, Brain, Server, Zap, AlarmClock, Activity, ChevronDown, ChevronUp, Plus, RefreshCw, Trash2, FileText, User } from 'lucide-react';
 import { sketchyShape1, sketchyShape2, sketchyShape3 } from './ChatShared';
 

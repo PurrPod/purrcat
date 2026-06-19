@@ -144,10 +144,13 @@ def resolve_request(
                 elif req_type == "skill_merge":
                     import glob
                     from src.evolve import skill_request_handle
+
                     paths = glob.glob(f"./agent_vm/skill_workplace/*/{target}")
                     if paths:
                         workplace_root = os.path.dirname(paths[0])
-                        sys_note = skill_request_handle(workplace_root, target, is_approved=True)
+                        sys_note = skill_request_handle(
+                            workplace_root, target, is_approved=True
+                        )
                         feedback = f"{sys_note}\n(老板批注: {feedback})"
                     else:
                         feedback = f"合并失败：未找到 {target} 对应的工厂沙盒目录。"
@@ -155,13 +158,18 @@ def resolve_request(
                 elif req_type == "mcp_merge":
                     import glob
                     from src.evolve import mcp_request_handle
+
                     paths = glob.glob(f"./agent_vm/mcp_workplace/*/{target}")
                     if paths:
                         workplace_root = os.path.dirname(paths[0])
-                        sys_note = mcp_request_handle(workplace_root, target, is_approved=True)
+                        sys_note = mcp_request_handle(
+                            workplace_root, target, is_approved=True
+                        )
                         feedback = f"{sys_note}\n(老板批注: {feedback})"
                     else:
-                        feedback = f"合并失败：未找到 {target} 对应的 MCP 工厂沙盒目录。"
+                        feedback = (
+                            f"合并失败：未找到 {target} 对应的 MCP 工厂沙盒目录。"
+                        )
             except Exception as e:
                 approved = False
                 feedback = f"老板已同意，但执行失败: {str(e)}。{feedback}"
@@ -175,8 +183,14 @@ def resolve_request(
         if not ignore:
             decision_text = "【同意并已生效】" if approved else "【被拒绝】"
             callback_msg = f"🔔 【系统通知】请求 (ID: {req_id}) | 目标: {target} | 结果: {decision_text}\n系统反馈/批注: {feedback}"
-            if approved and req_type not in ["skill_create", "skill_upgrade", "skill_merge"]:
-                callback_msg += "\n系统已为你自动下发权限或安装插件，请直接继续执行被挂起的任务。"
+            if approved and req_type not in [
+                "skill_create",
+                "skill_upgrade",
+                "skill_merge",
+            ]:
+                callback_msg += (
+                    "\n系统已为你自动下发权限或安装插件，请直接继续执行被挂起的任务。"
+                )
 
             from src.agent import agent_force_push
 

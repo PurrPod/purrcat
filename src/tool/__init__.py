@@ -17,6 +17,7 @@ from .request import REQUEST_TOOL_SCHEMA
 from .search import SEARCH_TOOL_SCHEMA
 from .task import TASK_TOOL_SCHEMA
 from .kernelupgrade import KERNELUPGRADE_TOOL_SCHEMA
+
 # 导入路由模块
 from .utils.route import dispatch_tool
 
@@ -38,7 +39,7 @@ AGENT_TOOL_SCHEMA = [
     SEARCH_TOOL_SCHEMA,
     TASK_TOOL_SCHEMA,
     MCP_TOOL_SCHEMA,
-    KERNELUPGRADE_TOOL_SCHEMA
+    KERNELUPGRADE_TOOL_SCHEMA,
 ]
 
 BASE_TASK_TOOL_SCHEMA = [

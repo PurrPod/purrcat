@@ -22,7 +22,12 @@ Agent 在完全独立的 UUID 沙盒中工作，折腾坏了直接删，折腾�
 6. 自动化测试：后台执行 evals，生成完整的 eval_report.md / test_report.md 报告
 """
 
-from .skill.factory import skill_improve_init, skill_generate_diff, skill_request_handle, skill_rollback
+from .skill.factory import (
+    skill_improve_init,
+    skill_generate_diff,
+    skill_request_handle,
+    skill_rollback,
+)
 from .skill.evaluator import run_skill_eval_background
 from .mcp.factory import mcp_improve_init, mcp_upgrade_init, mcp_request_handle
 from .mcp.evaluator import run_mcp_eval_background

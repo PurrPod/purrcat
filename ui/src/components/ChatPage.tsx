@@ -1,7 +1,7 @@
 // src/components/ChatPage.tsx
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Send, Cat, Clock, Activity, Server, Zap, Brain, GitMerge, ThumbsUp, ThumbsDown, Loader2, FolderOpen, Bell, Paperclip, Plus, X } from 'lucide-react';
+import { Send, Cat, Clock, Activity, Server, Zap, Brain, GitMerge, ThumbsUp, ThumbsDown, Loader2, FolderOpen, Bell, Paperclip, X } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -113,7 +113,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
 
   // (所有 useEffect, API Fetch 和 handlers 代码完全保留原有逻辑)
   const fetchGlobalStats = async () => {
-    try { const res = await fetch('http://localhost:8000/api/system/agent/stats'); if (res.ok) setGlobalStats(await res.json()); } catch {}
+    try { const res = await fetch('http://localhost:8000/api/system/agent/stats'); if (res.ok) setGlobalStats(await res.json()); } catch { /* noop */ }
   };
   useEffect(() => { if (messages.length === 0) fetchGlobalStats(); }, [messages.length]);
 
@@ -122,79 +122,80 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   };
 
   const fetchGlobalDiffs = async () => {
-    try { const res = await fetch('http://localhost:8000/api/filesystem/diffs'); if (res.ok) { const data = await res.json(); if (data.diffs) setFileChanges(data.diffs); } } catch {}
+    try { const res = await fetch('http://localhost:8000/api/filesystem/diffs'); if (res.ok) { const data = await res.json(); if (data.diffs) setFileChanges(data.diffs); } } catch { /* noop */ }
   };
   useEffect(() => { fetchGlobalDiffs(); const interval = setInterval(fetchGlobalDiffs, 3000); return () => clearInterval(interval); }, []);
   useEffect(() => { if (fileChanges.length > 0 && (!activeDiffPath || !fileChanges.some(c => c.path === activeDiffPath))) setActiveDiffPath(fileChanges[0].path); }, [fileChanges, activeDiffPath]);
 
   const handleAck = async (path: string, newestBackupId: string) => {
-    try { const res = await fetch(`http://localhost:8000/api/filesystem/ack`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path, backup_id: newestBackupId }) }); if (res.ok) { toast.success("已确认更改"); fetchGlobalDiffs(); } } catch {}
+    try { const res = await fetch(`http://localhost:8000/api/filesystem/ack`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path, backup_id: newestBackupId }) }); if (res.ok) { toast.success("已确认更改"); fetchGlobalDiffs(); } } catch { /* noop */ }
   };
   const handleRollback = async (path: string, oldestBackupId: string) => {
-    try { const res = await fetch(`http://localhost:8000/api/filesystem/undo`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path, backup_id: oldestBackupId }) }); if (res.ok) { toast.success("文件已恢复"); fetchGlobalDiffs(); } } catch {}
+    try { const res = await fetch(`http://localhost:8000/api/filesystem/undo`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path, backup_id: oldestBackupId }) }); if (res.ok) { toast.success("文件已恢复"); fetchGlobalDiffs(); } } catch { /* noop */ }
   };
 
   useEffect(() => {
     let tokenInterval: ReturnType<typeof setTimeout>;
-    const fetchToken = async () => { try { const res = await fetch('http://localhost:8000/api/agent/token'); if (res.ok) { const data = await res.json(); setTokenData({ window: data.window_token, max: data.max_token, cached: data.cached_token || 0 }); } } catch {} };
+    const fetchToken = async () => { try { const res = await fetch('http://localhost:8000/api/agent/token'); if (res.ok) { const data = await res.json(); setTokenData({ window: data.window_token, max: data.max_token, cached: data.cached_token || 0 }); } } catch { /* noop */ } };
     if (currentSessionId) { fetchToken(); tokenInterval = setInterval(fetchToken, 5000); }
     return () => { if (tokenInterval) clearInterval(tokenInterval); };
   }, [currentSessionId]);
 
   const fetchRequests = async () => {
-    try { const resPending = await fetch('http://localhost:8000/api/requests').catch(() => null); if (resPending?.ok) { const dataPending = await resPending.json(); setPendingReqs(dataPending); const currentIds = dataPending.map((r: any) => r.id); if (currentIds.some((id: string) => !prevPendingIds.current.includes(id)) && dataPending.length > 0) setShowReqQueue(true); prevPendingIds.current = currentIds; } } catch {}
+    try { const resPending = await fetch('http://localhost:8000/api/requests').catch(() => null); if (resPending?.ok) { const dataPending = await resPending.json(); setPendingReqs(dataPending); const currentIds = dataPending.map((r: any) => r.id); if (currentIds.some((id: string) => !prevPendingIds.current.includes(id)) && dataPending.length > 0) setShowReqQueue(true); prevPendingIds.current = currentIds; } } catch { /* noop */ }
   };
   useEffect(() => { fetchRequests(); const interval = setInterval(fetchRequests, 3000); return () => clearInterval(interval); }, []);
 
   const handleResolveReq = async (reqId: string, approved: boolean, ignore: boolean, duration: number = 5) => {
     const feedback = feedbackInputs[reqId] || '';
-    try { const res = await fetch(`http://localhost:8000/api/requests/${reqId}/resolve`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ approved, feedback, ignore, duration }) }); if (res.ok) { toast.success("请求处理完成"); setFeedbackInputs(p => { const n = {...p}; delete n[reqId]; return n; }); fetchRequests(); } } catch {}
+    try { const res = await fetch(`http://localhost:8000/api/requests/${reqId}/resolve`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ approved, feedback, ignore, duration }) }); if (res.ok) { toast.success("请求处理完成"); setFeedbackInputs(p => { const n = {...p}; delete n[reqId]; return n; }); fetchRequests(); } } catch { /* noop */ }
   };
 
   const handleRename = async (id: string) => {
     if (!editingAlias.trim()) { setEditingSessionId(null); return; }
-    try { const res = await fetch(`http://localhost:8000/api/sessions/${id}/rename`, { method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ alias: editingAlias.trim() }) }); if (res.ok) { toast.success("会话已重命名！"); loadSessions(); } } catch {}
+    try { const res = await fetch(`http://localhost:8000/api/sessions/${id}/rename`, { method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ alias: editingAlias.trim() }) }); if (res.ok) { toast.success("会话已重命名！"); loadSessions(); } } catch { /* noop */ }
     setEditingSessionId(null);
   };
 
-  const handleFileUpload = async (files: FileList | File[]) => { /* 同原逻辑 */ };
+  const handleFileUpload = async (files: FileList | File[]) => { void files; /* 同原逻辑 */ };
   const handlePaste = (e: React.ClipboardEvent) => { if (e.clipboardData.files && e.clipboardData.files.length > 0) { e.preventDefault(); handleFileUpload(e.clipboardData.files); } };
   const handleDrop = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(false); const items = e.dataTransfer.items; if (items && items.length > 0) { const validFiles: File[] = []; for (let i = 0; i < items.length; i++) { const item = items[i]; if (item.kind === 'file') { const file = item.getAsFile(); if (file) validFiles.push(file); } } if (validFiles.length > 0) handleFileUpload(validFiles); } };
 
-  const fetchConfig = async (tab: string) => { try { const res = await fetch(`http://localhost:8000/api/config/${tab}`); if (res.ok) { const data = await res.json(); setConfigData(data); setExpandedKey(null); setEditJsonStr(''); } } catch {} };
+  const fetchConfig = async (tab: string) => { try { const res = await fetch(`http://localhost:8000/api/config/${tab}`); if (res.ok) { const data = await res.json(); setConfigData(data); setExpandedKey(null); setEditJsonStr(''); } } catch { /* noop */ } };
   useEffect(() => { if (isConfigOpen) fetchConfig(activeTab); }, [isConfigOpen, activeTab]);
   const toggleKey = (key: string) => { if (expandedKey === key) setExpandedKey(null); else { setExpandedKey(key); setEditJsonStr(JSON.stringify(configData[key], null, 2)); } };
-  const handleSaveConfig = async (key: string) => { try { const parsedValue = JSON.parse(editJsonStr); const newConfig = { ...configData, [key]: parsedValue }; const res = await fetch(`http://localhost:8000/api/config/${activeTab}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newConfig) }); if (res.ok) { setConfigData(newConfig); setExpandedKey(null); toast.success("保存成功"); } } catch {} };
+  const handleSaveConfig = async (key: string) => { try { const parsedValue = JSON.parse(editJsonStr); const newConfig = { ...configData, [key]: parsedValue }; const res = await fetch(`http://localhost:8000/api/config/${activeTab}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newConfig) }); if (res.ok) { setConfigData(newConfig); setExpandedKey(null); toast.success("保存成功"); } } catch { /* noop */ } };
 
-  const openMdEditor = async (type: 'SOUL' | 'SOLO' | 'TODO') => { setMdType(type); setMdContent('Loading...'); setShowMdModal(true); try { const res = await fetch(`http://localhost:8000/api/config/markdown/${type}`); if (res.ok) { const data = await res.json(); setMdContent(data.content); } } catch {} };
-  const saveMdContent = async () => { setIsSavingMd(true); try { const res = await fetch(`http://localhost:8000/api/config/markdown/${mdType}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: mdContent }) }); if (res.ok) setShowMdModal(false); } catch {} finally { setIsSavingMd(false); } };
+  const openMdEditor = async (type: 'SOUL' | 'SOLO' | 'TODO') => { setMdType(type); setMdContent('Loading...'); setShowMdModal(true); try { const res = await fetch(`http://localhost:8000/api/config/markdown/${type}`); if (res.ok) { const data = await res.json(); setMdContent(data.content); } } catch { /* noop */ } };
+  const saveMdContent = async () => { setIsSavingMd(true); try { const res = await fetch(`http://localhost:8000/api/config/markdown/${mdType}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: mdContent }) }); if (res.ok) setShowMdModal(false); } catch { /* noop */ } finally { setIsSavingMd(false); } };
 
-  const fetchSensorData = async () => { try { const res = await fetch('http://localhost:8000/api/config/sensor'); if (res.ok) setSensorData(await res.json()); } catch {} };
-  const reloadSensors = async () => { try { await fetch('http://localhost:8000/api/config/sensor/reload', { method: 'POST' }); toast.success("Sensors 已热重启"); } catch {} };
-  const toggleSensorStatus = async (sensorName: string) => { try { const newSensorData = JSON.parse(JSON.stringify(sensorData)); newSensorData[sensorName].enabled = !newSensorData[sensorName].enabled; setSensorData(newSensorData); const resSave = await fetch('http://localhost:8000/api/config/sensor', { method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(newSensorData) }); if (resSave.ok) await reloadSensors(); } catch {} };
-  const handleInstallSensor = async () => { setIsInstallingSensor(true); try { const parsed = JSON.parse(sensorInstallJson); const newSensors = parsed.sensors ? parsed.sensors : parsed; const currentData = JSON.parse(JSON.stringify(sensorData)); Object.assign(currentData, newSensors); const resSave = await fetch('http://localhost:8000/api/config/sensor', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(currentData) }); if (resSave.ok) { await reloadSensors(); setShowInstallSensorModal(false); fetchSensorData(); } } catch {} finally { setIsInstallingSensor(false); } };
+  const fetchSensorData = async () => { try { const res = await fetch('http://localhost:8000/api/config/sensor'); if (res.ok) setSensorData(await res.json()); } catch { /* noop */ } };
+  const reloadSensors = async () => { try { await fetch('http://localhost:8000/api/config/sensor/reload', { method: 'POST' }); toast.success("Sensors 已热重启"); } catch { /* noop */ } };
+  const toggleSensorStatus = async (sensorName: string) => { try { const newSensorData = JSON.parse(JSON.stringify(sensorData)); newSensorData[sensorName].enabled = !newSensorData[sensorName].enabled; setSensorData(newSensorData); const resSave = await fetch('http://localhost:8000/api/config/sensor', { method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(newSensorData) }); if (resSave.ok) await reloadSensors(); } catch { /* noop */ } };
+  const handleInstallSensor = async () => { setIsInstallingSensor(true); try { const parsed = JSON.parse(sensorInstallJson); const newSensors = parsed.sensors ? parsed.sensors : parsed; const currentData = JSON.parse(JSON.stringify(sensorData)); Object.assign(currentData, newSensors); const resSave = await fetch('http://localhost:8000/api/config/sensor', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(currentData) }); if (resSave.ok) { await reloadSensors(); setShowInstallSensorModal(false); fetchSensorData(); } } catch { /* noop */ } finally { setIsInstallingSensor(false); } };
 
-  const fetchMcp = async () => { try { const res = await fetch('http://localhost:8000/api/tools/mcp'); if (res.ok) setMcpData(await res.json()); } catch {} };
-  const refreshMcp = async () => { try { await fetch('http://localhost:8000/api/tools/mcp/refresh', { method: 'POST' }); fetchMcp(); } catch {} };
-  const handleInstallMcp = async () => { setIsInstallingMcp(true); try { const res = await fetch('http://localhost:8000/api/tools/mcp/install', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ config_json: mcpInstallJson.trim() }) }); if (res.ok) { setShowInstallMcpModal(false); fetchMcp(); } } catch {} finally { setIsInstallingMcp(false); } };
+  const fetchMcp = async () => { try { const res = await fetch('http://localhost:8000/api/tools/mcp'); if (res.ok) setMcpData(await res.json()); } catch { /* noop */ } };
+  const refreshMcp = async () => { try { await fetch('http://localhost:8000/api/tools/mcp/refresh', { method: 'POST' }); fetchMcp(); } catch { /* noop */ } };
+  const handleInstallMcp = async () => { setIsInstallingMcp(true); try { const res = await fetch('http://localhost:8000/api/tools/mcp/install', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ config_json: mcpInstallJson.trim() }) }); if (res.ok) { setShowInstallMcpModal(false); fetchMcp(); } } catch { /* noop */ } finally { setIsInstallingMcp(false); } };
 
-  const fetchSkill = async () => { try { const res = await fetch('http://localhost:8000/api/tools/skills'); if (res.ok) setSkillData(await res.json()); } catch {} };
-  const refreshSkill = async () => { try { await fetch('http://localhost:8000/api/tools/skills/refresh', { method: 'POST' }); fetchSkill(); } catch {} };
-  const handleInstallSkill = async () => { setIsInstallingSkill(true); try { const res = await fetch('http://localhost:8000/api/tools/skills/install', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: skillInstallUrl.trim() }) }); if (res.ok) { setShowInstallSkillModal(false); fetchSkill(); } } catch {} finally { setIsInstallingSkill(false); } };
+  const fetchSkill = async () => { try { const res = await fetch('http://localhost:8000/api/tools/skills'); if (res.ok) setSkillData(await res.json()); } catch { /* noop */ } };
+  const refreshSkill = async () => { try { await fetch('http://localhost:8000/api/tools/skills/refresh', { method: 'POST' }); fetchSkill(); } catch { /* noop */ } };
+  const handleInstallSkill = async () => { setIsInstallingSkill(true); try { const res = await fetch('http://localhost:8000/api/tools/skills/install', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: skillInstallUrl.trim() }) }); if (res.ok) { setShowInstallSkillModal(false); fetchSkill(); } } catch { /* noop */ } finally { setIsInstallingSkill(false); } };
 
-  const fetchGraphData = async () => { try { const res = await fetch('http://localhost:8000/api/graphs'); if (res.ok) setGraphData(await res.json()); } catch {} };
+  const fetchGraphData = async () => { try { const res = await fetch('http://localhost:8000/api/graphs'); if (res.ok) setGraphData(await res.json()); } catch { /* noop */ } };
 
-  const fetchCron = async () => { try { const res = await fetch('http://localhost:8000/api/tools/cron'); if (res.ok) setCronData(await res.json()); } catch {} };
-  const addCron = async () => { try { const res = await fetch('http://localhost:8000/api/tools/cron', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newCron) }); if (res.ok) { setShowAddCronModal(false); fetchCron(); } } catch {} };
-  const deleteCron = async (id: string) => { try { await fetch(`http://localhost:8000/api/tools/cron/${id}`, { method: 'DELETE' }); fetchCron(); } catch {} };
+  const fetchCron = async () => { try { const res = await fetch('http://localhost:8000/api/tools/cron'); if (res.ok) setCronData(await res.json()); } catch { /* noop */ } };
+  const addCron = async () => { try { const res = await fetch('http://localhost:8000/api/tools/cron', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newCron) }); if (res.ok) { setShowAddCronModal(false); fetchCron(); } } catch { /* noop */ } };
+  const deleteCron = async (id: string) => { try { await fetch(`http://localhost:8000/api/tools/cron/${id}`, { method: 'DELETE' }); fetchCron(); } catch { /* noop */ } };
 
   const handleScroll = () => { if (!messagesContainerRef.current) return; const { scrollTop, scrollHeight, clientHeight } = messagesContainerRef.current; isAutoScroll.current = scrollHeight - scrollTop - clientHeight < 50; };
   useEffect(() => { if (isAutoScroll.current) messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
   useEffect(() => { pendingMsgsRef.current = []; }, [currentBranchId]);
 
-  const loadSessions = async () => { try { const res = await fetch('http://localhost:8000/api/sessions'); if (res.ok) { const data = await res.json(); setSessions(data); if (data.length > 0 && !currentSessionId) handleSelectSession(data[0].id); } } catch {} };
+  const loadSessions = async () => { try { const res = await fetch('http://localhost:8000/api/sessions'); if (res.ok) { const data = await res.json(); setSessions(data); if (data.length > 0 && !currentSessionId) handleSelectSession(data[0].id); } } catch { /* noop */ } };
   const loadSessionHistory = async (id: string, bId: string = 'main') => { const res = await fetch(`http://localhost:8000/api/sessions/${id}?branch_id=${bId}`); if (res.ok) setMessages(await res.json()); };
   
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { loadSessions(); }, []);
   useEffect(() => { if (sessionId && sessionId !== currentSessionId) { pendingMsgsRef.current = []; setCurrentSessionId(sessionId); setCurrentBranchId('main'); loadSessionHistory(sessionId, 'main'); loadBranches(sessionId); } }, [sessionId, currentSessionId]);
 
@@ -212,15 +213,15 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
           setMessages(newMessages);
         }
         if (statusRes.ok) { const statusData = await statusRes.json(); setIsAgentThinking(statusData.is_thinking); loadBranches(currentSessionId); }
-      } catch {}
+      } catch { /* noop */ }
     }, 1500);
     return () => clearInterval(interval);
   }, [currentSessionId, currentBranchId, isCheckingOut]);
 
-  const handleSelectSession = async (id: string) => { setIsCheckingOut(true); setCurrentSessionId(id); setCurrentBranchId('main'); navigate(`/chat/${id}`, { replace: true }); isAutoScroll.current = true; try { await fetch(`http://localhost:8000/api/sessions/${id}/checkout`, { method: 'POST' }).catch(() => {}); await loadSessionHistory(id, 'main'); await loadBranches(id); } catch {} finally { setIsCheckingOut(false); } };
-  const confirmNewSession = async () => { setShowModal(false); setIsCheckingOut(true); try { const res = await fetch('http://localhost:8000/api/sessions/new', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ alias: newAlias.trim() }) }); if (res.ok) { const data = await res.json(); await loadSessions(); await handleSelectSession(data.id); } } catch {} finally { setIsCheckingOut(false); } };
-  const confirmBranchSession = async () => { setShowBranchModal(false); setIsCheckingOut(true); try { const res = await fetch(`http://localhost:8000/api/sessions/${currentSessionId}/branch`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ alias: branchAlias.trim() }) }); if (res.ok) { const data = await res.json(); await loadSessions(); await handleSelectSession(data.id); } } catch {} finally { setIsCheckingOut(false); } };
-  const confirmDeleteSession = async () => { if (!sessionToDelete) return; try { const res = await fetch(`http://localhost:8000/api/sessions/${sessionToDelete}`, { method: 'DELETE' }); if (res.ok) { if (currentSessionId === sessionToDelete) { setCurrentSessionId(null); setMessages([]); } setSessionToDelete(null); loadSessions(); } } catch {} };
+  const handleSelectSession = async (id: string) => { setIsCheckingOut(true); setCurrentSessionId(id); setCurrentBranchId('main'); navigate(`/chat/${id}`, { replace: true }); isAutoScroll.current = true; try { await fetch(`http://localhost:8000/api/sessions/${id}/checkout`, { method: 'POST' }).catch(() => {}); await loadSessionHistory(id, 'main'); await loadBranches(id); } catch { /* noop */ } finally { setIsCheckingOut(false); } };
+  const confirmNewSession = async () => { setShowModal(false); setIsCheckingOut(true); try { const res = await fetch('http://localhost:8000/api/sessions/new', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ alias: newAlias.trim() }) }); if (res.ok) { const data = await res.json(); await loadSessions(); await handleSelectSession(data.id); } } catch { /* noop */ } finally { setIsCheckingOut(false); } };
+  const confirmBranchSession = async () => { setShowBranchModal(false); setIsCheckingOut(true); try { const res = await fetch(`http://localhost:8000/api/sessions/${currentSessionId}/branch`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ alias: branchAlias.trim() }) }); if (res.ok) { const data = await res.json(); await loadSessions(); await handleSelectSession(data.id); } } catch { /* noop */ } finally { setIsCheckingOut(false); } };
+  const confirmDeleteSession = async () => { if (!sessionToDelete) return; try { const res = await fetch(`http://localhost:8000/api/sessions/${sessionToDelete}`, { method: 'DELETE' }); if (res.ok) { if (currentSessionId === sessionToDelete) { setCurrentSessionId(null); setMessages([]); } setSessionToDelete(null); loadSessions(); } } catch { /* noop */ } };
 
   const handleSend = async () => {
     if (!input.trim() || !currentSessionId) return;
@@ -237,7 +238,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
     pendingMsgsRef.current.push(userText);
     setMessages(prev => [...prev, { role: 'user', content: JSON.stringify({ events: eventsToPush }) }]);
 
-    try { await fetch('http://localhost:8000/api/chat/batch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ session_id: currentSessionId, events: eventsToPush }) }); } catch {}
+    try { await fetch('http://localhost:8000/api/chat/batch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ session_id: currentSessionId, events: eventsToPush }) }); } catch { /* noop */ }
   };
 
   const handleFeedback = async (isLike: boolean) => {
@@ -257,7 +258,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ session_id: currentSessionId, events: eventsToPush })
       });
-    } catch {}
+    } catch { /* noop */ }
   };
 
   const handleAttachmentClick = async () => { setShowRefModal(true); }; // 简化 Tauri 调用

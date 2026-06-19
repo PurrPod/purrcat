@@ -56,6 +56,7 @@ export default function MarketPage({ onBack }: { onBack: () => void }) {
   useEffect(() => {
     if (activeTab === 'skill' && Object.keys(skillData).length === 0) fetchSkillData();
     if (activeTab === 'mcp' && Object.keys(mcpData).length === 0) fetchMcpData();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
 
   const handleRefresh = () => {

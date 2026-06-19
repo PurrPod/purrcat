@@ -3,6 +3,7 @@ Skill 测试执行器 (evolve/skill/evaluator.py)
 利用底层 Harness 原生双 Agent 工作流完成隔离环境下的盲测与自评。
 已升级为【错位并发】模式：多测试用例隔离并行，极大缩短评测耗时。
 """
+
 import os
 import json
 import shutil
@@ -15,20 +16,31 @@ from src.harness.process import Task
 
 def run_skill_eval_background(workplace_id: str, skill_name: str, main_session_id: str):
     """启动后台线程跑自动化流水线"""
+
     def _bg_task():
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
             report = loop.run_until_complete(_async_run_evals(workplace_id, skill_name))
             from src.agent.manager import manager
-            manager.agent_force_push(f"🔔 【测试结果】技能 '{skill_name}' 的自动化沙盒盲测已完成！\n\n{report}", type="system")
+
+            manager.agent_force_push(
+                f"🔔 【测试结果】技能 '{skill_name}' 的自动化沙盒盲测已完成！\n\n{report}",
+                type="system",
+            )
         except Exception as e:
             from src.agent.manager import manager
-            manager.agent_force_push(f"❌ 技能 '{skill_name}' (工作区: {workplace_id}) 的后台测试运行崩溃: {e}", type="system")
+
+            manager.agent_force_push(
+                f"❌ 技能 '{skill_name}' (工作区: {workplace_id}) 的后台测试运行崩溃: {e}",
+                type="system",
+            )
         finally:
             loop.close()
-    
-    threading.Thread(target=_bg_task, daemon=True, name=f"EvalRunner_{workplace_id}").start()
+
+    threading.Thread(
+        target=_bg_task, daemon=True, name=f"EvalRunner_{workplace_id}"
+    ).start()
 
 
 def _get_next_iteration_dir(workplace_root: str) -> tuple[str, int]:
@@ -50,10 +62,7 @@ def _calculate_stats(values: list[float]) -> dict:
     mean = sum(values) / len(values)
     variance = sum((x - mean) ** 2 for x in values) / len(values)
     stddev = math.sqrt(variance)
-    return {
-        "mean": round(mean, 2),
-        "stddev": round(stddev, 2)
-    }
+    return {"mean": round(mean, 2), "stddev": round(stddev, 2)}
 
 
 def _format_and_save_trace(memory_path: str, output_trace_path: str):
@@ -82,7 +91,9 @@ def _format_and_save_trace(memory_path: str, output_trace_path: str):
                             trace_lines.append(f"\n[A]{a_text.strip()}")
                         tool_calls = msg.get("tool_calls", [])
                         for tc in tool_calls:
-                            func_name = tc.get("function", {}).get("name", "unknown_tool")
+                            func_name = tc.get("function", {}).get(
+                                "name", "unknown_tool"
+                            )
                             trace_lines.append(f"\n[C]{func_name}")
                     elif role == "tool":
                         raw_content = msg.get("content", "")
@@ -90,7 +101,10 @@ def _format_and_save_trace(memory_path: str, output_trace_path: str):
                         try:
                             parsed = json.loads(raw_content)
                             if isinstance(parsed, dict):
-                                if "metadata" in parsed and "snip" in parsed["metadata"]:
+                                if (
+                                    "metadata" in parsed
+                                    and "snip" in parsed["metadata"]
+                                ):
                                     snip = parsed["metadata"]["snip"]
                                 elif "summary" in parsed:
                                     snip = str(parsed["summary"])
@@ -112,19 +126,21 @@ def _format_and_save_trace(memory_path: str, output_trace_path: str):
 
 
 # 🌟 核心拆分 1：单例测试运行器协程
-async def _run_single_eval_case(case, dev_skill_dir, iteration_dir, workplace_id, skill_name, iteration_idx):
+async def _run_single_eval_case(
+    case, dev_skill_dir, iteration_dir, workplace_id, skill_name, iteration_idx
+):
     try:
         case_id = case.get("id", "unknown")
         eval_run_dir = os.path.join(iteration_dir, f"eval-{case_id}", "with_skill")
         sandbox_eval_dir = f"/agent_vm/skill_workplace/{workplace_id}/iteration-{iteration_idx}/eval-{case_id}/with_skill"
-        
+
         def ignore_eval_files(dir_path, contents):
-            return ['evals', 'README.md', '.git', '.gitignore', '__pycache__']
-            
+            return ["evals", "README.md", ".git", ".gitignore", "__pycache__"]
+
         shutil.copytree(dev_skill_dir, eval_run_dir, ignore=ignore_eval_files)
         outputs_dir = os.path.join(eval_run_dir, "outputs")
         os.makedirs(outputs_dir, exist_ok=True)
-        
+
         if "files" in case:
             for file_path in case["files"]:
                 src_file = os.path.join(dev_skill_dir, file_path)
@@ -135,30 +151,35 @@ async def _run_single_eval_case(case, dev_skill_dir, iteration_dir, workplace_id
         prompt = case.get("prompt", "")
         expected = case.get("expected_output", "")
         assertions = case.get("assertions", [])
-        qa_expected = f"【预期结果】\n{expected}\n\n【硬性断言检查清单(Assertions)】\n" + "\n".join([f"- {a}" for a in assertions])
+        qa_expected = (
+            f"【预期结果】\n{expected}\n\n【硬性断言检查清单(Assertions)】\n"
+            + "\n".join([f"- {a}" for a in assertions])
+        )
 
         host_skill_md_path = os.path.abspath(os.path.join(eval_run_dir, "SKILL.md"))
 
         task = Task(
             task_name=f"Eval_{skill_name}_{case_id}",
             inputs={
-                "host_skill_md_path": host_skill_md_path, 
-                "workplace_dir": sandbox_eval_dir,  
+                "host_skill_md_path": host_skill_md_path,
+                "workplace_dir": sandbox_eval_dir,
                 "prompt": prompt,
-                "expected_output": qa_expected  
+                "expected_output": qa_expected,
             },
             graph_name="skill_eval",
             # 💡 核心修复：注入 iteration_idx 确保每次迭代生成独立的 Task 存档
-            task_id=f"eval_{workplace_id}_iter{iteration_idx}_{case_id}"
+            task_id=f"eval_{workplace_id}_iter{iteration_idx}_{case_id}",
         )
-        
+
         res = await task.run()
-        
+
         elapsed = task.execution_time
         tokens = task.total_tokens
 
         # 清洗并存储隔离区内独立的 trace.md
-        agent_memory_path = os.path.join(task.checkpoint_dir, "nodes", "nd_agent_exec", "memory.jsonl")
+        agent_memory_path = os.path.join(
+            task.checkpoint_dir, "nodes", "nd_agent_exec", "memory.jsonl"
+        )
         trace_filepath = os.path.join(eval_run_dir, "trace.md")
         _format_and_save_trace(agent_memory_path, trace_filepath)
 
@@ -168,30 +189,35 @@ async def _run_single_eval_case(case, dev_skill_dir, iteration_dir, workplace_id
 
         is_pass = False
         reason = "未知错误"
-        
+
         if res.get("status") == "success":
             outputs = res.get("outputs", {})
             eval_res = outputs.get("eval_result", {})
             if isinstance(eval_res, str):
-                try: 
+                try:
                     eval_res = json.loads(eval_res)
-                except: 
+                except Exception:
                     eval_res = {}
-                    
+
             is_pass = eval_res.get("pass", False)
             reason = eval_res.get("reason", "未提供理由")
             grading_data = eval_res.get("grading_data", {})
-            
-            with open(os.path.join(eval_run_dir, "grading.json"), "w", encoding="utf-8") as f:
+
+            with open(
+                os.path.join(eval_run_dir, "grading.json"), "w", encoding="utf-8"
+            ) as f:
                 json.dump(grading_data, f, ensure_ascii=False, indent=2)
         else:
-            reason = res.get('message', '执行异常中断')
-            grading_data = {'summary': {'passed': False, 'reason': reason}}
-            with open(os.path.join(eval_run_dir, "grading.json"), "w", encoding="utf-8") as f:
+            reason = res.get("message", "执行异常中断")
+            grading_data = {"summary": {"passed": False, "reason": reason}}
+            with open(
+                os.path.join(eval_run_dir, "grading.json"), "w", encoding="utf-8"
+            ) as f:
                 json.dump(grading_data, f, ensure_ascii=False, indent=2)
 
         try:
             from src.tool.bash import close_session
+
             await asyncio.to_thread(close_session, task.task_id)
         except Exception:
             pass
@@ -201,9 +227,9 @@ async def _run_single_eval_case(case, dev_skill_dir, iteration_dir, workplace_id
             "pass": is_pass,
             "time_seconds": round(elapsed, 2),
             "tokens": tokens,
-            "reason": reason
+            "reason": reason,
         }
-        
+
         pass_str = "✅ 通过 (PASS)" if is_pass else "❌ 失败 (FAIL)"
         report_str = (
             f"### 用例: {case_id}\n"
@@ -212,11 +238,22 @@ async def _run_single_eval_case(case, dev_skill_dir, iteration_dir, workplace_id
             f"- **裁判评估**: {reason}\n"
             f"- **行为轨迹**: 测试工人轨迹已生成在：{trace_filepath}\n\n"
         )
-        
+
         return benchmark_item, report_str, elapsed, tokens
 
     except Exception as e:
-        return {"case_id": case.get("id", "unknown"), "pass": False, "time_seconds": 0, "tokens": 0, "reason": f"框架崩溃: {str(e)}"}, f"### 用例: {case.get('id', 'unknown')}\n- 崩溃: {str(e)}\n\n", 0.0, 0
+        return (
+            {
+                "case_id": case.get("id", "unknown"),
+                "pass": False,
+                "time_seconds": 0,
+                "tokens": 0,
+                "reason": f"框架崩溃: {str(e)}",
+            },
+            f"### 用例: {case.get('id', 'unknown')}\n- 崩溃: {str(e)}\n\n",
+            0.0,
+            0,
+        )
 
 
 async def _async_run_evals(workplace_id: str, skill_name: str) -> str:
@@ -246,19 +283,28 @@ async def _async_run_evals(workplace_id: str, skill_name: str) -> str:
         for case in cases:
             # 创建独立协程扔进事件循环
             task_coro = asyncio.create_task(
-                _run_single_eval_case(case, dev_skill_dir, iteration_dir, workplace_id, skill_name, iteration_idx)
+                _run_single_eval_case(
+                    case,
+                    dev_skill_dir,
+                    iteration_dir,
+                    workplace_id,
+                    skill_name,
+                    iteration_idx,
+                )
             )
             tasks.append(task_coro)
             # ✨ “看人下菜碟”：发布间隔错位 3 秒
             await asyncio.sleep(3)
-        
+
         # 等待所有错位任务执行完毕并聚合并发结果
         return await asyncio.gather(*tasks)
 
     # 启动全量并发收集！
     results = await spawn_tasks()
 
-    report_lines = [f"# {skill_name} 自动化盲测与基准报告 (Iteration {iteration_idx})\n"]
+    report_lines = [
+        f"# {skill_name} 自动化盲测与基准报告 (Iteration {iteration_idx})\n"
+    ]
     benchmark_cases = []
     total_time, total_tokens = 0.0, 0
 
@@ -278,12 +324,12 @@ async def _async_run_evals(workplace_id: str, skill_name: str) -> str:
             "with_skill": {
                 "pass_rate": _calculate_stats(pass_values),
                 "time_seconds": _calculate_stats(time_values),
-                "tokens": _calculate_stats(token_values)
+                "tokens": _calculate_stats(token_values),
             }
         },
-        "cases": benchmark_cases
+        "cases": benchmark_cases,
     }
-    
+
     benchmark_path = os.path.join(iteration_dir, "benchmark.json")
     with open(benchmark_path, "w", encoding="utf-8") as f:
         json.dump(benchmark_data, f, ensure_ascii=False, indent=2)
@@ -291,12 +337,20 @@ async def _async_run_evals(workplace_id: str, skill_name: str) -> str:
     pass_count = sum(1 for c in benchmark_cases if c["pass"])
     report_lines.append(f"## 📊 全局基准统计 (Benchmark - Iteration {iteration_idx})")
     report_lines.append(f"- **总通过率**: {pass_count}/{len(benchmark_cases)}")
-    report_lines.append(f"- **平均通过率**: {benchmark_data['run_summary']['with_skill']['pass_rate']['mean'] * 100:.1f}%")
-    report_lines.append(f"- **平均耗时**: {benchmark_data['run_summary']['with_skill']['time_seconds']['mean']}s (标准差: {benchmark_data['run_summary']['with_skill']['time_seconds']['stddev']}s)")
-    report_lines.append(f"- **平均 Tokens**: {benchmark_data['run_summary']['with_skill']['tokens']['mean']} (标准差: {benchmark_data['run_summary']['with_skill']['tokens']['stddev']})")
+    report_lines.append(
+        f"- **平均通过率**: {benchmark_data['run_summary']['with_skill']['pass_rate']['mean'] * 100:.1f}%"
+    )
+    report_lines.append(
+        f"- **平均耗时**: {benchmark_data['run_summary']['with_skill']['time_seconds']['mean']}s (标准差: {benchmark_data['run_summary']['with_skill']['time_seconds']['stddev']}s)"
+    )
+    report_lines.append(
+        f"- **平均 Tokens**: {benchmark_data['run_summary']['with_skill']['tokens']['mean']} (标准差: {benchmark_data['run_summary']['with_skill']['tokens']['stddev']})"
+    )
 
     final_report = "\n".join(report_lines)
-    with open(os.path.join(iteration_dir, "eval_report.md"), "w", encoding="utf-8") as f:
+    with open(
+        os.path.join(iteration_dir, "eval_report.md"), "w", encoding="utf-8"
+    ) as f:
         f.write(final_report)
-        
+
     return final_report
