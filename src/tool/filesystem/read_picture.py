@@ -1,4 +1,4 @@
-"""图片读取功能 - 将宿主机图片转码并交由大模型分析"""
+"""图片读取功能 - 将宿主机图片转码并交由大模型分析 (增加 OCR 兜底)"""
 
 import base64
 import mimetypes
@@ -52,9 +52,43 @@ def _get_vision_config():
     }
 
 
+def _fallback_ocr(paths: list, original_error: str) -> dict:
+    """OCR 兜底识别函数"""
+    try:
+        import easyocr
+        # 默认加载简中和英文识别模型，禁用 GPU 以提升兼容性
+        reader = easyocr.Reader(["ch_sim", "en"], gpu=False)
+    except ImportError:
+        # 如果连 easyocr 都没有，则抛出带有详细提示的终极异常
+        raise ImageReadError(
+            f"视觉大模型不可用 ({original_error})，且环境未安装 easyocr 无法进行 OCR 兜底。\n"
+            f"💡 提示：请在终端运行 `pip install easyocr` 以启用兜底功能。"
+        )
+
+    results = []
+    for path in paths:
+        try:
+            # easyocr 直接支持传入本地路径读取
+            ocr_results = reader.readtext(path)
+            # 过滤掉置信度低于 0.4 的结果
+            text = " ".join([item[1] for item in ocr_results if item[2] > 0.4])
+            if not text.strip():
+                text = "[未识别到明显文字]"
+            results.append(f"【文件】{path} 的 OCR 识别结果:\n{text}")
+        except Exception as e:
+            results.append(f"【文件】{path} 的 OCR 识别失败: {str(e)}")
+
+    return {
+        "image_count": len(paths),
+        "paths": paths,
+        "analysis_result": f"⚠️ [系统提示: 视觉大模型不可用，已自动兜底使用 OCR 提取文本]\n失败原因: {original_error}\n\n" + "\n\n".join(results),
+        "message": f"视觉大模型调用失败，使用 OCR 兜底读取了 {len(paths)} 张图片",
+    }
+
+
 def read_picture(paths: list, prompt: str) -> dict:
     """
-    读取单张或多张图片，转码为 Base64 并发送给大模型
+    读取单张或多张图片，转码为 Base64 并发送给大模型，失败时使用 OCR 兜底。
 
     Args:
         paths: 单个图片路径字符串，或图片路径字符串列表
@@ -69,8 +103,11 @@ def read_picture(paths: list, prompt: str) -> dict:
     # 批量校验权限
     resolved_paths = [require_read(p) for p in paths]
 
-    # 获取 vision 配置
-    vision_config = _get_vision_config()
+    # 1. 尝试获取 vision 配置 (如果未配置，直接进入 OCR 兜底)
+    try:
+        vision_config = _get_vision_config()
+    except ImageReadError as e:
+        return _fallback_ocr(resolved_paths, str(e))
 
     # 构建大模型的 payload content
     content_list = [{"type": "text", "text": prompt}]
@@ -81,6 +118,7 @@ def read_picture(paths: list, prompt: str) -> dict:
 
     messages = [{"role": "user", "content": content_list}]
 
+    # 2. 尝试调用 OpenAI Vision API (网络报错/超时也进入 OCR 兜底)
     try:
         client = OpenAI(
             api_key=vision_config["api_key"], base_url=vision_config["base_url"]
@@ -108,4 +146,5 @@ def read_picture(paths: list, prompt: str) -> dict:
         }
 
     except Exception as e:
-        raise ImageReadError(f"调用视觉大模型时发生异常: {str(e)}")
+        # API 异常时触发兜底
+        return _fallback_ocr(resolved_paths, f"API 访问异常: {str(e)}")
