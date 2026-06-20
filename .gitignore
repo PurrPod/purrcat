@@ -9,6 +9,7 @@ src/agent/core/cron.json
 src/tool/callmcp/mcp_schema.json
 .buffer/
 skills/
+mcps/
 PLAN.md
 exports/
 scripts/start_mini.bat
