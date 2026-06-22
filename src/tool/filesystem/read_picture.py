@@ -56,6 +56,7 @@ def _fallback_ocr(paths: list, original_error: str) -> dict:
     """OCR 兜底识别函数"""
     try:
         import easyocr
+
         # 默认加载简中和英文识别模型，禁用 GPU 以提升兼容性
         reader = easyocr.Reader(["ch_sim", "en"], gpu=False)
     except ImportError:
@@ -81,7 +82,8 @@ def _fallback_ocr(paths: list, original_error: str) -> dict:
     return {
         "image_count": len(paths),
         "paths": paths,
-        "analysis_result": f"⚠️ [系统提示: 视觉大模型不可用，已自动兜底使用 OCR 提取文本]\n失败原因: {original_error}\n\n" + "\n\n".join(results),
+        "analysis_result": f"⚠️ [系统提示: 视觉大模型不可用，已自动兜底使用 OCR 提取文本]\n失败原因: {original_error}\n\n"
+        + "\n\n".join(results),
         "message": f"视觉大模型调用失败，使用 OCR 兜底读取了 {len(paths)} 张图片",
     }
 

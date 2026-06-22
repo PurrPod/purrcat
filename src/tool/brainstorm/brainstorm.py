@@ -148,11 +148,15 @@ def BrainStorm(
                 if tool_call_id:
                     # 引入 json 模块以确保安全的字符串化
                     import json
-                    
+
                     # 拿取原始响应
                     raw_resp = text_response(final_response_text, "🚀 脑暴计划已生效")
                     # 模拟 dispatch_tool 的安全策略，如果是字典就转 JSON 字符串
-                    safe_content = json.dumps(raw_resp, ensure_ascii=False) if isinstance(raw_resp, dict) else str(raw_resp)
+                    safe_content = (
+                        json.dumps(raw_resp, ensure_ascii=False)
+                        if isinstance(raw_resp, dict)
+                        else str(raw_resp)
+                    )
 
                     sub_tool_result_msg = {
                         "role": "tool",
