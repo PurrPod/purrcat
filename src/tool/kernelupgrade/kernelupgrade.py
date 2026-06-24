@@ -49,12 +49,16 @@ def KernelUpgrade(action: str, target: str, **kwargs) -> dict:
 
             main_session_id = manager.get_active_session_id()
 
-            run_skill_eval_background(workplace_id, skill_name, main_session_id)
+            # 🌟 捕获返回的 task_id
+            task_id = run_skill_eval_background(
+                workplace_id, skill_name, main_session_id
+            )
+            task_id_info = f" (Task ID: {task_id})" if isinstance(task_id, str) else ""
 
             msg = (
-                f"🚀 技能 '{skill_name}' 的自动化盲测流水线已在后台启动！\n"
-                f"测试通常需要 30 秒至几分钟。完成后将自动通过系统级通知向你汇报测试结果报告和行为轨迹(trace.md)。\n"
-                f"⚠️ 提示：在等待测试期间，你可以挂起本任务，或者继续进行代码思考与其他不冲突的工作。禁止频繁轮询测试结果！"
+                f"🚀 技能 '{skill_name}' 的自动化盲测流水线已在后台启动！{task_id_info}\n"
+                f"💡 提示：你可以使用 `Task` 工具查询测试状态或注入追加指令。\n"
+                f"测试通常需要 30 秒至几分钟，完成后将自动通过系统级通知向你汇报测试结果。⚠️ 禁止频繁轮询测试结果浪费资源，请挂起等待或做其他工作！"
             )
             return text_response(msg, f"⏳ {skill_name} 盲测运行中")
 
@@ -85,12 +89,14 @@ def KernelUpgrade(action: str, target: str, **kwargs) -> dict:
 
             main_session_id = manager.get_active_session_id()
 
-            # 启动 MCP 后台测试流水线
-            run_mcp_eval_background(workplace_id, mcp_name, main_session_id)
+            # 🌟 捕获返回的 task_id
+            task_id = run_mcp_eval_background(workplace_id, mcp_name, main_session_id)
+            task_id_info = f" (Task ID: {task_id})" if isinstance(task_id, str) else ""
 
             msg = (
-                f"🚀 MCP '{mcp_name}' 的并发测试流水线已在后台启动！\n"
-                f"测试极快，完成后将向你汇报 `schema_dump.json` 的位置与执行报告。\n"
+                f"🚀 MCP '{mcp_name}' 的并发测试流水线已在后台启动！{task_id_info}\n"
+                f"💡 提示：你可以使用 `Task` 工具查询状态或注入指令。\n"
+                f"测试极快，完成后将向你汇报 `schema_dump.json` 的位置与执行报告。⚠️ 请勿频繁轮询，等待系统级通知即可。\n"
             )
             return text_response(msg, f"⏳ {mcp_name} 并发测试中")
 

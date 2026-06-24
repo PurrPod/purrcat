@@ -34,11 +34,22 @@ def add_task_operation(name: str, inputs: dict, graph_name: str) -> tuple:
         def _run_task():
             import asyncio
             from src.agent import agent_force_push
+            from src.harness.process import TaskState
 
             try:
                 result = asyncio.run(single_task.run())
                 task_id = single_task.task_id
-                notify_msg = result or f"任务 '{name}' (ID: {task_id}) 已执行完毕。"
+
+                # 🌟 修复：通过判断任务最终的精确状态，分发不同的 push 话术
+                if single_task.state == TaskState.KILLED:
+                    notify_msg = (
+                        f"⛔ 任务 '{name}' (ID: {task_id}) 的后台进程已被人工强行终止。"
+                    )
+                elif isinstance(result, dict) and "message" in result:
+                    notify_msg = result["message"]
+                else:
+                    notify_msg = f"✅ 任务 '{name}' (ID: {task_id}) 已执行完毕。"
+
                 agent_force_push(notify_msg, type="task_message")
             except Exception as e:
                 error_msg = (

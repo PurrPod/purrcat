@@ -234,7 +234,12 @@ class Task:
                     self.state = TaskState.KILLED
                     self.execution_time += time.time() - start_time  # 🌟 累加用时
                     self.save_state()  # 🌟 状态极小，直接同步写
-                    break
+
+                    # 🌟 修复：明确返回中止的 result，替代隐式的 break 导致返回 None
+                    return {
+                        "status": "killed",
+                        "message": "⛔ 进程已被人工/系统强行中止",
+                    }
 
                 runnable_nodes = self._get_runnable_nodes()
 
@@ -770,6 +775,8 @@ class Task:
         if self.state in [TaskState.COMPLETED, TaskState.ERROR, TaskState.KILLED]:
             return
         self._killed = True
+        # 🌟 修复：立即打断所有正在运行的协程，而不是傻等它们跑完当前步骤
+        self._cancel_all_tasks()
 
     def _cancel_all_tasks(self):
         for task in list(self.running_tasks.keys()):
