@@ -39,6 +39,17 @@ class AgentManager:
                 else SessionStore._generate_id()
             )
 
+        # 🌟 职责明确：内核初始化时，focus 完完全全由被恢复的会话元数据决定
+        current_focus = None
+        from src.utils.config import SESSIONS_DIR
+        meta_path = os.path.join(SESSIONS_DIR, session_id, "meta.json")
+        if os.path.exists(meta_path):
+            try:
+                with open(meta_path, "r", encoding="utf-8") as f:
+                    current_focus = json.load(f).get("focus")
+            except Exception:
+                pass
+
         history = SessionStore.load_session_history(session_id)
         if (
             history
@@ -53,6 +64,9 @@ class AgentManager:
             name=name,
             save_callback=self._notify_save,
         )
+        
+        # 🌟 将读取到的会话专注目录动态同步给内存 Agent
+        self._agent.focus = current_focus
 
         # 恢复 Token 进度
         if session_id in all_sessions:
@@ -64,7 +78,7 @@ class AgentManager:
         self._sensor_thread.start()
 
         self._notify_save()
-        print(f"✅ Agent 已启动，当前挂载会话: {session_id}")
+        print(f"✅ Agent 已启动，当前挂载会话: {session_id} (Focus: {current_focus})")
         return session_id
 
     def shutdown_agent(self):
@@ -110,6 +124,18 @@ class AgentManager:
                 time.sleep(0.5)
 
         self._notify_save()
+        
+        # 🌟 职责明确：切换会话时，动态从目标会话的磁盘档案中捞出它的 focus
+        target_focus = None
+        from src.utils.config import SESSIONS_DIR
+        meta_path = os.path.join(SESSIONS_DIR, target_session_id, "meta.json")
+        if os.path.exists(meta_path):
+            try:
+                with open(meta_path, "r", encoding="utf-8") as f:
+                    target_focus = json.load(f).get("focus")
+            except Exception:
+                pass
+
         new_history = SessionStore.load_session_history(target_session_id)
         all_sessions = SessionStore.get_all_sessions()
 
@@ -119,12 +145,14 @@ class AgentManager:
             self._agent.window_token = all_sessions.get(target_session_id, {}).get(
                 "window_token", 0
             )
+            # 🌟 刷新内存中 Agent 的项目聚焦
+            self._agent.focus = target_focus
 
         self._agent.model.bind_task(target_session_id, "AgentMain")
-        print(f"🔄 检出成功: {target_session_id}")
+        print(f"🔄 检出成功: {target_session_id} (Focus 重定向至: {target_focus})")
         return True
 
-    def new_session(self, branch_alias=None):
+    def new_session(self, branch_alias=None, focus=None):  # 🌟 接收 focus
         """原 create_clean_session：开启一个全新的空白会话"""
         if not self._agent:
             self.init_agent()
@@ -136,7 +164,13 @@ class AgentManager:
 
         self._notify_save()
 
-        fresh_prompt = self._agent._build_system_prompt()
+        # 🌟 为了让新会话的第一条 System Prompt 就能感知到 focus 中的 AGENTS.md
+        # 我们用一个干净的临时 Agent 实例去组装带有 focus 上下文的 Prompt
+        from src.agent.agent import Agent as TempAgent
+        temp_agent = TempAgent(session_id=SessionStore._generate_id(), initial_history=[])
+        temp_agent.focus = focus  # 绑定传入的聚焦项目
+        fresh_prompt = temp_agent._build_system_prompt()
+
         new_id = SessionStore._generate_id()
         clean_history = [{"role": "system", "content": fresh_prompt}]
 
@@ -150,16 +184,17 @@ class AgentManager:
             )
 
         SessionStore.save_session(
-            session_id=new_id, history=clean_history, parent_id=None, alias=branch_alias
+            session_id=new_id, history=clean_history, parent_id=None, alias=branch_alias, focus=focus  # 🌟 透传 focus 给存储层
         )
 
         with self._agent._history_lock:
             self._agent.session_id = new_id
             self._agent.window_token = 0
             self._agent.current_history = clean_history
+            self._agent.focus = focus  # 🌟 直接切换当前内存中的 focus
 
         self._agent.model.bind_task(new_id, "AgentMain")
-        print(f"✨ 成功创建纯净新分支: {new_id}")
+        print(f"✨ 成功创建纯净新分支: {new_id} (Focus: {focus})")
         return new_id
 
     def branch_session(self, branch_alias=None):

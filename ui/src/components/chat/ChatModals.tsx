@@ -5,7 +5,7 @@ import { sketchyShape1, sketchyShape2, sketchyShape3 } from './ChatShared';
 export default function ChatModals(props: any) {
   const {
     isCheckingOut, showBusyModal, setShowBusyModal,
-    showModal, setShowModal, newAlias, setNewAlias, confirmNewSession,
+    showModal, setShowModal, newAlias, setNewAlias, newFocus, setNewFocus, confirmNewSession, // 🌟 接收新属性
     showBranchModal, setShowBranchModal, branchAlias, setBranchAlias, confirmBranchSession,
     sessionToDelete, setSessionToDelete, confirmDeleteSession,
     branchToDelete, setBranchToDelete, currentSessionId, loadSessionHistory, loadBranches, setCurrentBranchId,
@@ -73,8 +73,10 @@ export default function ChatModals(props: any) {
               <h3 className="text-3xl font-black tracking-widest" style={{ fontFamily: '"Comic Sans MS", cursive' }}>NEW CHAT</h3>
               <button onClick={() => setShowModal(false)} className="hover:text-terracotta hover:scale-110 transition-all"><X size={28} strokeWidth={3}/></button>
             </div>
-            <div className="-rotate-1">
+            {/* 🌟 修改这里，变成两行输入 */}
+            <div className="-rotate-1 flex flex-col gap-4">
               <input autoFocus value={newAlias} onChange={e => setNewAlias(e.target.value)} onKeyDown={e => e.key === 'Enter' && confirmNewSession()} placeholder="Give it a cool name..." className="w-full border-4 border-ink bg-cream p-4 font-bold text-lg focus:outline-none focus:bg-white shadow-[inset_4px_4px_0px_0px_rgba(26,26,26,0.05)] placeholder:text-ink/30" style={sketchyShape3} />
+              <input value={newFocus || ''} onChange={e => setNewFocus(e.target.value)} onKeyDown={e => e.key === 'Enter' && confirmNewSession()} placeholder="Project Focus Path (Optional)..." className="w-full border-4 border-ink bg-cream p-4 font-bold text-lg focus:outline-none focus:bg-white shadow-[inset_4px_4px_0px_0px_rgba(26,26,26,0.05)] placeholder:text-ink/30" style={sketchyShape2} />
             </div>
             <button onClick={confirmNewSession} style={{ ...sketchyShape1, fontFamily: '"Comic Sans MS", cursive' }} className="bg-terracotta text-paper font-black tracking-widest text-xl py-4 border-4 border-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:translate-y-[2px] hover:translate-x-[2px] hover:shadow-none transition-all rotate-1">
               CREATE NOW
@@ -436,7 +438,7 @@ export default function ChatModals(props: any) {
                  }} className="p-2 bg-cream border-4 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)]" style={sketchyShape1} title="Branch (Fork) Current Chat"><GitFork size={24} strokeWidth={3}/></button>
                  <button onClick={() => { 
                    if (isAgentThinking) { setShowBusyModal(true); return; }
-                   setShowSessionModal(false); setNewAlias('New Chat'); setShowModal(true); 
+                   setShowSessionModal(false); setNewAlias('New Chat'); if (setNewFocus) setNewFocus(''); setShowModal(true); 
                  }} className="p-2 bg-terracotta text-paper border-4 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)]" style={sketchyShape3} title="New Chat"><Plus size={24} strokeWidth={3}/></button>
                  <div className="w-1 h-8 bg-ink/20 mx-1 rounded-full"></div>
                  <button onClick={() => setShowSessionModal(false)} className="p-2 hover:text-terracotta hover:scale-110 transition-all"><X size={32} strokeWidth={3}/></button>

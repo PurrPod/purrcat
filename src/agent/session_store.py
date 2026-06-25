@@ -164,6 +164,7 @@ class SessionStore:
         window_token=0,
         deliverable=None,
         action=None,
+        focus=None, # 🌟 新增 focus 参数
     ):
         """🌟 重构：线程安全地进行多文件分支隔离归档，并追溯分叉拓扑"""
         session_dir = os.path.join(SESSIONS_DIR, session_id)
@@ -206,6 +207,10 @@ class SessionStore:
                 meta_data["alias"] = alias
             if parent_id:
                 meta_data["parent_id"] = parent_id
+            
+            # 🌟 新增：持久化 Focus 属性，如果有传入则覆盖
+            if focus is not None:
+                meta_data["focus"] = focus
 
             if "branches" not in meta_data:
                 meta_data["branches"] = {}

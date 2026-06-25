@@ -26,6 +26,7 @@ class Agent:
     def __init__(self, session_id, initial_history=None, name=None, save_callback=None):
         self.name = name or get_agent_model()
         self.session_id = session_id
+        self.focus = None  # 🌟 内存中仅作为当前活跃会话的 focus 投影，初始默认为 None
         # === 常驻内存记忆缓存 ===
         self.memo = SessionStore.load_global_memo()
         self._state = "idle"
@@ -77,9 +78,30 @@ class Agent:
         except Exception as e:
             print(f"⚠️ Prompt 构建发生异常: {e}")
 
+        # 🌟 新增：处理 focus 目录的动态注入
+        focus_md = ""
+        if self.focus and os.path.isdir(self.focus):
+            agents_md_path = os.path.join(self.focus, ".purrcat", "AGENTS.md")
+            if os.path.exists(agents_md_path):
+                try:
+                    with open(agents_md_path, "r", encoding="utf-8") as f:
+                        focus_md += f.read().strip() + "\n\n"
+                except Exception as e:
+                    print(f"⚠️ 读取 Focus AGENTS.md 失败: {e}")
+            
+            plan_exists = os.path.exists(os.path.join(self.focus, "PLAN.md"))
+            todo_exists = os.path.exists(os.path.join(self.focus, "TODO.md"))
+            
+            status_str = f"当前项目聚焦目录 (Focus): {self.focus}\n"
+            status_str += f"- PLAN.md 存在状态: {'是' if plan_exists else '否'}\n"
+            status_str += f"- TODO.md 存在状态: {'是' if todo_exists else '否'}\n"
+            focus_md += status_str
+
         combined = soul_md
         if system_rules:
             combined += f"\n\n---\n\n{system_rules}"
+        if focus_md:  # 🌟 将 Focus 上下文拼接进去
+            combined += f"\n\n---\n\n# 【项目专属上下文 (Focus)】\n\n{focus_md}"
         if memory_md:
             combined += f"\n\n---\n\n# 【系统长期记忆档案】\n\n{memory_md}"
         return combined
