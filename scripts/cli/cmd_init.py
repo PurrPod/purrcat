@@ -9,6 +9,7 @@ from scripts.cli.templates import (
     MEMORY_MD_TEMPLATE,
     SOLO_MD_TEMPLATE,
     SOUL_MD_TEMPLATE,
+    get_app_config_dict,
     get_file_config_dict,
     get_mcp_config_dict,
     get_memory_config_dict,
@@ -148,6 +149,24 @@ def _generate_note_config(purrcat_dir, force=False):
         return False
 
 
+def _generate_app_config(purrcat_dir, force=False):
+    """Generate app whitelist configuration file"""
+    app_path = os.path.join(purrcat_dir, "app_config.json")
+
+    if os.path.exists(app_path) and not _prompt_overwrite(app_path, force):
+        return False
+
+    app_config = get_app_config_dict()
+    try:
+        with open(app_path, "w", encoding="utf-8") as f:
+            json.dump(app_config, f, indent=2, ensure_ascii=False)
+        print("[+] app_config.json generated")
+        return True
+    except Exception as e:
+        print(f"X Failed to write app_config.json: {e}")
+        return False
+
+
 def _generate_core_files(purrcat_dir, force=False):
     """Generate core directory files"""
     core_dir = os.path.join(purrcat_dir, "core")
@@ -246,6 +265,7 @@ def run_init(force=False):
     results.append(("mcp", _generate_mcp_config(purrcat_dir, force=False)))
     results.append(("memory", _generate_memory_config(purrcat_dir, force=False)))
     results.append(("note", _generate_note_config(purrcat_dir, force=False)))
+    results.append(("app", _generate_app_config(purrcat_dir, force=False)))
     results.append(("core", _generate_core_files(purrcat_dir, force=False)))
 
     print("")

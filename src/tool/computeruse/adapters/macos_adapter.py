@@ -210,4 +210,23 @@ class MacOSAdapter(BasePlatformAdapter):
         )
 
     def hide_other_apps(self, keep_apps: list) -> list:
-        return []
+        hidden_apps = []
+        try:
+            import AppKit
+
+            workspace = AppKit.NSWorkspace.sharedWorkspace()
+            active_app = workspace.frontmostApplication()
+
+            for app in workspace.runningApplications():
+                if app.activationPolicy() == AppKit.NSApplicationActivationPolicyRegular:
+                    name = app.localizedName()
+                    if app != active_app and name not in keep_apps and not app.isHidden():
+                        app.hide()
+                        hidden_apps.append(name)
+        except Exception:
+            pass
+        return hidden_apps
+
+    def launch_app(self, target_path: str) -> None:
+        import subprocess
+        subprocess.run(["open", target_path], check=True)

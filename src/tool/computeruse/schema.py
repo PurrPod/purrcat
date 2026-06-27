@@ -24,12 +24,14 @@ COMPUTERUSE_TOOL_SCHEMA = {
                         "type",
                         "key",
                         "hide_other_apps",
+                        "launch_app",
+                        "list_app",
                     ],
                 },
                 "coordinate": {
                     "type": "array",
                     "items": {"type": "integer"},
-                    "description": "目标 x, y 坐标，例如 [100, 200]。",
+                    "description": "目标 x, y 坐标，例如 [100, 200]。如果是 left_click_drag (拖拽) 操作，建议传入4个值代表[起点x, 起点y, 终点x, 终点y]，例如 [100, 200, 300, 400] 以实现原子化拖拽。",
                 },
                 "element_id": {
                     "type": "string",

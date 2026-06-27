@@ -4,9 +4,11 @@ import time
 import hashlib
 import io
 import base64
+import difflib
 from PIL import Image, ImageDraw
 from src.tool.computeruse.adapters.factory import get_platform_adapter
 from src.tool.computeruse.exceptions import ExecutionFailedError
+from src.utils.config import get_app_config
 
 LOGICAL_WIDTH = 1280
 
@@ -219,6 +221,30 @@ def execute_action(
             elif action == "key":
                 adapter.press_hotkey(text)
                 message = f"已触发快捷键: {text}"
+            elif action == "list_app":
+                apps = get_app_config()
+                if not apps:
+                    message = "📂 应用白名单为空或未配置。请提示用户在项目根目录的 `.purrcat/app_config.json` 文件中配置 JSON 映射（例如：{'微信': 'D:\\WeChat\\WeChat.exe'}）。"
+                else:
+                    app_list = "\n".join([f"- {k}: {v}" for k, v in apps.items()])
+                    message = f"📂 当前可用的应用白名单列表如下:\n{app_list}\n💡 请使用 launch_app 动作并传入上述名称进行唤起。"
+            elif action == "launch_app":
+                apps = get_app_config()
+                if not apps:
+                    raise ExecutionFailedError(action, "应用白名单未配置，请提示用户先创建 .purrcat/app_config.json 文件")
+
+                matches = difflib.get_close_matches(text, list(apps.keys()), n=1, cutoff=0.4)
+
+                if matches:
+                    target_name = matches[0]
+                    target_path = apps[target_name]
+                    try:
+                        adapter.launch_app(target_path)
+                        message = f"🚀 已成功尝试唤起应用: {target_name} ({target_path})"
+                    except Exception as e:
+                        raise ExecutionFailedError(action, f"唤起失败: {str(e)}")
+                else:
+                    raise ExecutionFailedError(action, f"未在白名单中找到与 '{text}' 匹配的应用。请先使用 list_app 动作查看可用列表。")
             else:
                 if not coordinate:
                     raise ExecutionFailedError(action, "缺少有效坐标或 element_id")
@@ -233,9 +259,23 @@ def execute_action(
                     adapter.click(phys_x, phys_y, button="left", clicks=1)
                 elif action == "right_click":
                     adapter.click(phys_x, phys_y, button="right", clicks=1)
+                elif action == "middle_click":
+                    adapter.click(phys_x, phys_y, button="middle", clicks=1)
                 elif action == "double_click":
                     adapter.click(phys_x, phys_y, button="left", clicks=2)
                 elif action == "left_click_drag":
+                    if len(coordinate) == 4:
+                        start_logical_x, start_logical_y = coordinate[0], coordinate[1]
+                        end_logical_x, end_logical_y = coordinate[2], coordinate[3]
+
+                        start_phys_x = int((start_logical_x / LOGICAL_WIDTH) * phys_w)
+                        start_phys_y = int((start_logical_y / logical_height) * phys_h)
+
+                        phys_x = int((end_logical_x / LOGICAL_WIDTH) * phys_w)
+                        phys_y = int((end_logical_y / logical_height) * phys_h)
+
+                        adapter.move_mouse(start_phys_x, start_phys_y)
+
                     adapter.drag_mouse(phys_x, phys_y)
                 else:
                     raise ExecutionFailedError(action, "未知动作")

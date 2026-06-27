@@ -52,3 +52,8 @@ class BasePlatformAdapter(ABC):
     @abstractmethod
     def hide_other_apps(self, keep_apps: List[str]) -> List[str]:
         pass
+
+    @abstractmethod
+    def launch_app(self, target_path: str) -> None:
+        """根据给定的绝对路径或 URL 唤起应用"""
+        pass

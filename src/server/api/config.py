@@ -8,12 +8,14 @@ from fastapi import APIRouter, HTTPException, Body
 from src.agent.manager import manager as agent_manager
 
 from src.utils.config import (
+    APP_CONFIG_PATH,
     FILE_CONFIG_PATH,
     MCP_CONFIG_PATH,
     MEMORY_CONFIG_PATH,
     MODEL_CONFIG_PATH,
     SENSOR_CONFIG_PATH,
     AGENT_CORE_DIR,
+    get_app_config,
     get_file_config,
     get_mcp_config,
     get_memory_config,
@@ -121,6 +123,19 @@ def api_update_mcp_config(config: Dict[str, Any]):
     if _save_json_file(MCP_CONFIG_PATH, config):
         return {"status": "ok", "message": "MCP config updated successfully"}
     raise HTTPException(status_code=500, detail="Failed to save MCP config")
+
+
+# ── App Config ──
+@router.get("/app")
+def api_get_app_config():
+    return get_app_config()
+
+
+@router.put("/app")
+def api_update_app_config(config: Dict[str, Any]):
+    if _save_json_file(APP_CONFIG_PATH, config):
+        return {"status": "ok", "message": "App config updated successfully"}
+    raise HTTPException(status_code=500, detail="Failed to save app config")
 
 
 # ── Markdown Files (SOUL.md / SOLO.md) ──

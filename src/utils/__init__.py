@@ -11,6 +11,7 @@ from .config import (
     get_memory_config,
     get_model_config,
     get_sensor_config,
+    get_app_config,
 )
 from .log_api import clean_log_entry, format_task_log, get_task_log_structured
 from .skill_helper import get_available_skills, get_skill_content, get_skill_info
@@ -38,6 +39,7 @@ __all__ = [
     "get_agent_model",
     "get_embedding_model",
     "get_data_dir",
+    "get_app_config",
     # Task API
     "get_task_list",
     "get_task_state",

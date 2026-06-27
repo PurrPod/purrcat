@@ -177,4 +177,26 @@ class WindowsAdapter(BasePlatformAdapter):
         )
 
     def hide_other_apps(self, keep_apps: list) -> list:
-        return []
+        try:
+            import win32gui
+            import win32con
+
+            hidden_apps = []
+            hwnd_front = win32gui.GetForegroundWindow()
+
+            def enum_handlers(hwnd, lParam):
+                if win32gui.IsWindowVisible(hwnd) and hwnd != hwnd_front:
+                    title = win32gui.GetWindowText(hwnd)
+                    if title and title not in keep_apps:
+                        win32gui.ShowWindow(hwnd, win32con.SW_MINIMIZE)
+                        hidden_apps.append(title)
+                return True
+
+            win32gui.EnumWindows(enum_handlers, None)
+            return hidden_apps
+        except Exception:
+            return []
+
+    def launch_app(self, target_path: str) -> None:
+        import os
+        os.startfile(target_path)

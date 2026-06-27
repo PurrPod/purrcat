@@ -22,7 +22,7 @@ export default function ChatModals(props: any) {
     showSessionModal, setShowSessionModal, isAgentThinking, sessions, handleSelectSession, editingSessionId, editingAlias, setEditingAlias, setEditingSessionId, handleRename
   } = props;
 
-  const CONFIG_TABS = ['model', 'sensor', 'file', 'memory', 'mcp'];
+  const CONFIG_TABS = ['model', 'sensor', 'file', 'memory', 'mcp', 'app'];
 
   return (
     <>

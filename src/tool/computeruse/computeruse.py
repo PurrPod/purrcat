@@ -52,7 +52,7 @@ def ComputerUse(
                     f"缺少 coordinate 或 element_id，操作: {action}", "❌ 缺少目标"
                 )
 
-        if action in ["type", "key", "find_element"] and not text:
+        if action in ["type", "key", "find_element", "launch_app"] and not text:
             return error_response(f"缺少文本参数 text，操作: {action}", "❌ 缺少文本")
 
         # 🌟 权限检查：验证是否有有效的 ComputerUse 授权

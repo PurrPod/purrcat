@@ -222,3 +222,11 @@ def get_mcp_config_dict():
             },
         }
     }
+
+
+def get_app_config_dict():
+    """Generate app whitelist configuration dictionary for ComputerUse launch_app feature"""
+    return {
+        "微信": "D:\\Path\\to\\WeChat.exe",
+        "GitHub": "https://github.com",
+    }
