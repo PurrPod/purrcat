@@ -67,6 +67,10 @@ class SensorManager:
                     daemon=True,
                 ).start()
 
+        # 启动进程守护线程
+        threading.Thread(target=self._watchdog_loop, daemon=True).start()
+        print("🛡️ [Manager] 进程守护线程已启动")
+
     def _start_sensor(self, name: str, script_path: str, cfg: dict):
         env = os.environ.copy()
         env.update(cfg.get("env", {}))
@@ -126,6 +130,20 @@ class SensorManager:
         for line in iter(process.stderr.readline, ""):
             if line:
                 print(f"⚠️ [{name} 日志/报错]: {line.strip()}", file=sys.stderr)
+
+    def _watchdog_loop(self):
+        import time
+        while True:
+            time.sleep(10)  # 每10秒巡检一次
+            for name, process in list(self.processes.items()):
+                # poll() 如果不为 None，说明进程已退出
+                if process.poll() is not None:
+                    print(f"🚨 [Manager] 检测到 Sensor [{name}] 意外崩溃，正在尝试重启...")
+                    # 重新读取配置并启动
+                    config = get_sensor_config().get(name, {})
+                    local_path = os.path.join(self.extension_dir, f"{name}.py")
+                    if os.path.exists(local_path) and config.get("enabled", False):
+                        self._start_sensor(name, local_path, config)
 
     def stop_all(self):
         for name, process in self.processes.items():

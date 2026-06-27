@@ -42,31 +42,58 @@ client = (
 
 
 def _on_message_received(data: P2ImMessageReceiveV1) -> None:
+    msg_type = data.event.message.message_type
+    if msg_type != "text":
+        print(f"⚠️ [Feishu] 收到非文本消息 ({msg_type})，暂未支持解析")
+        return
+
     msg_content = json.loads(data.event.message.content)
     user_text = msg_content.get("text", "")
-    print(f"💬 [Feishu] 收到用户消息: {user_text}")
-    send_json_to_main("observe", {"content": user_text})
+
+    chat_id = data.event.message.chat_id
+    print(f"💬 [Feishu] 收到消息 (Chat: {chat_id}): {user_text}")
+
+    payload = f"[FROM_FEISHU:{chat_id}] {user_text}"
+    send_json_to_main("observe", {"content": payload})
 
 
 def start_ws_listener():
+    import time
+
     if not APP_ID or not APP_SECRET:
         print("⚠️ [Feishu] 缺少飞书凭证，无法启动 WebSocket")
         return
-    event_handler = (
-        lark.EventDispatcherHandler.builder("", "")
-        .register_p2_im_message_receive_v1(_on_message_received)
-        .build()
-    )
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    import lark_oapi.ws.client as ws_client_module
 
-    ws_client_module.loop = loop
-    ws_client = lark.ws.Client(
-        APP_ID, APP_SECRET, event_handler=event_handler, log_level=lark.LogLevel.WARNING
-    )
-    print("🟢 [Feishu] WebSocket 监听已启动")
-    ws_client.start()
+    while True:  # 无限重连循环
+        try:
+            event_handler = (
+                lark.EventDispatcherHandler.builder("", "")
+                .register_p2_im_message_receive_v1(_on_message_received)
+                .build()
+            )
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            import lark_oapi.ws.client as ws_client_module
+
+            ws_client_module.loop = loop
+            ws_client = lark.ws.Client(
+                APP_ID, APP_SECRET, event_handler=event_handler, log_level=lark.LogLevel.WARNING
+            )
+            print("🟢 [Feishu] WebSocket 监听已启动")
+            ws_client.start()  # 如果网络断开，这里会结束或抛异常
+        except Exception as e:
+            print(f"❌ [Feishu] WebSocket 监听崩溃，5秒后重试: {e}")
+
+        time.sleep(5)  # 缓冲时间，防止死循环狂刷日志
+
+
+def _send_message_task(request):
+    try:
+        resp = client.im.v1.message.create(request)
+        if not resp.success():
+            print(f"❌ [Feishu] 发送失败: {resp.msg}")
+    except Exception as e:
+        print(f"❌ [Feishu] 请求飞书接口异常: {e}")
 
 
 threading.Thread(target=start_ws_listener, daemon=True).start()
@@ -106,8 +133,8 @@ for line in sys.stdin:
                 .build()
             )
 
-            resp = client.im.v1.message.create(req_msg)
-            if not resp.success():
-                print(f"❌ [Feishu] 发送失败: {resp.msg}")
+            threading.Thread(target=_send_message_task, args=(req_msg,), daemon=True).start()
     except json.JSONDecodeError:
         pass
+    except Exception as e:
+        print(f"❌ [Feishu] 处理 express 消息时发生未知异常: {e}")
