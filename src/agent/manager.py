@@ -42,6 +42,7 @@ class AgentManager:
         # 🌟 职责明确：内核初始化时，focus 完完全全由被恢复的会话元数据决定
         current_focus = None
         from src.utils.config import SESSIONS_DIR
+
         meta_path = os.path.join(SESSIONS_DIR, session_id, "meta.json")
         if os.path.exists(meta_path):
             try:
@@ -64,7 +65,7 @@ class AgentManager:
             name=name,
             save_callback=self._notify_save,
         )
-        
+
         # 🌟 将读取到的会话专注目录动态同步给内存 Agent
         self._agent.focus = current_focus
 
@@ -124,10 +125,11 @@ class AgentManager:
                 time.sleep(0.5)
 
         self._notify_save()
-        
+
         # 🌟 职责明确：切换会话时，动态从目标会话的磁盘档案中捞出它的 focus
         target_focus = None
         from src.utils.config import SESSIONS_DIR
+
         meta_path = os.path.join(SESSIONS_DIR, target_session_id, "meta.json")
         if os.path.exists(meta_path):
             try:
@@ -167,7 +169,10 @@ class AgentManager:
         # 🌟 为了让新会话的第一条 System Prompt 就能感知到 focus 中的 AGENTS.md
         # 我们用一个干净的临时 Agent 实例去组装带有 focus 上下文的 Prompt
         from src.agent.agent import Agent as TempAgent
-        temp_agent = TempAgent(session_id=SessionStore._generate_id(), initial_history=[])
+
+        temp_agent = TempAgent(
+            session_id=SessionStore._generate_id(), initial_history=[]
+        )
         temp_agent.focus = focus  # 绑定传入的聚焦项目
         fresh_prompt = temp_agent._build_system_prompt()
 
@@ -184,7 +189,11 @@ class AgentManager:
             )
 
         SessionStore.save_session(
-            session_id=new_id, history=clean_history, parent_id=None, alias=branch_alias, focus=focus  # 🌟 透传 focus 给存储层
+            session_id=new_id,
+            history=clean_history,
+            parent_id=None,
+            alias=branch_alias,
+            focus=focus,  # 🌟 透传 focus 给存储层
         )
 
         with self._agent._history_lock:

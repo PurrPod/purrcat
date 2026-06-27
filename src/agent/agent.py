@@ -88,10 +88,10 @@ class Agent:
                         focus_md += f.read().strip() + "\n\n"
                 except Exception as e:
                     print(f"⚠️ 读取 Focus AGENTS.md 失败: {e}")
-            
+
             plan_exists = os.path.exists(os.path.join(self.focus, "PLAN.md"))
             todo_exists = os.path.exists(os.path.join(self.focus, "TODO.md"))
-            
+
             status_str = f"当前项目聚焦目录 (Focus): {self.focus}\n"
             status_str += f"- PLAN.md 存在状态: {'是' if plan_exists else '否'}\n"
             status_str += f"- TODO.md 存在状态: {'是' if todo_exists else '否'}\n"

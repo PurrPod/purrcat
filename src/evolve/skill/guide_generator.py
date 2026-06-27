@@ -12,7 +12,7 @@ def generate_create_guide(skill_name: str) -> str:
 ## 1. 渐进式披露与目录结构 (Progressive Disclosure)
 不要把所有内容塞进一个文件。系统会在启动时加载元数据，触发时加载 SKILL.md，需要时加载附件。
 * `./SKILL.md`：(必须) 核心指令。必须保持在 500 行 / 5000 tokens 以内。
-* `./scripts/`：(可选) 存放可复用的 Python/Bash 脚本。
+* `./scripts/`：(可选) 存放可复用的 Python/Bash 脚本。用于让使用者可以减少一些重复性操作，节省消耗。
 * `./evals/evals.json`：(必须) 测试用例配置（包含激发测试 triggers 与质量盲测 evals）。
 
 ## 2. SKILL.md 编写标准与触发器 (Crucial for Triggering)
@@ -113,6 +113,12 @@ def generate_test_guide(skill_name: str) -> str:
 收到测试完毕的通知后，你必须按顺序阅读以下文件：
 
 1. **`benchmark.json`**: 查看全局平均通过率 (mean) 和 标准差 (stddev)。评估你的技能修改是否值得。
-2. **`eval_report.md`**: 查看 `triggers` 测试中，你是否被其他技能抢占了触发权。
-3. **`trace.md` (必读)**: 去失败的用例目录下读取行为轨迹。看大模型到底是在哪一步偏离了你的指令。
+2. **`eval_report.md`**: 查看 `triggers` 测试中，你是否被其他技能抢占了触发权。如果是，你需要修改 SKILL.md 里的 description 以使其更加贴合通用的使用场景。
+3. **`trace.md` (必读)**: 去失败的用例目录下读取行为轨迹。看大模型在哪一步偏离了你的指令，反思是否可以通过优化 SKILL.md 或相应脚本工具来避免这些多余的消耗。
+
+总之，优化的方向包含但不限于以下：
+1. `triggers` 测试命中率要尽可能高
+2. token/时间等资源消耗量要尽可能低
+3. 指令要足够准确以防止使用者绕远路
+4. 如有重复性操作可以固化为脚本
 """

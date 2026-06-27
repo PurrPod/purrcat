@@ -133,12 +133,15 @@ class SensorManager:
 
     def _watchdog_loop(self):
         import time
+
         while True:
             time.sleep(10)  # 每10秒巡检一次
             for name, process in list(self.processes.items()):
                 # poll() 如果不为 None，说明进程已退出
                 if process.poll() is not None:
-                    print(f"🚨 [Manager] 检测到 Sensor [{name}] 意外崩溃，正在尝试重启...")
+                    print(
+                        f"🚨 [Manager] 检测到 Sensor [{name}] 意外崩溃，正在尝试重启..."
+                    )
                     # 重新读取配置并启动
                     config = get_sensor_config().get(name, {})
                     local_path = os.path.join(self.extension_dir, f"{name}.py")

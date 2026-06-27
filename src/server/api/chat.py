@@ -187,7 +187,9 @@ def get_session_branches_api(session_id: str):
 def create_new_session(req: NewSessionReq):
     try:
         _ensure_manager_initialized()
-        session_id = new_session(branch_alias=req.alias, focus=req.focus)  # 🌟 传递给底层
+        session_id = new_session(
+            branch_alias=req.alias, focus=req.focus
+        )  # 🌟 传递给底层
         return {"id": session_id, "alias": req.alias or session_id, "focus": req.focus}
     except Exception as e:
         print(f"[ERROR] /api/sessions/new - 异常: {e}")

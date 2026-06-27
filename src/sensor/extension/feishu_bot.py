@@ -77,7 +77,10 @@ def start_ws_listener():
 
             ws_client_module.loop = loop
             ws_client = lark.ws.Client(
-                APP_ID, APP_SECRET, event_handler=event_handler, log_level=lark.LogLevel.WARNING
+                APP_ID,
+                APP_SECRET,
+                event_handler=event_handler,
+                log_level=lark.LogLevel.WARNING,
             )
             print("🟢 [Feishu] WebSocket 监听已启动")
             ws_client.start()  # 如果网络断开，这里会结束或抛异常
@@ -133,7 +136,9 @@ for line in sys.stdin:
                 .build()
             )
 
-            threading.Thread(target=_send_message_task, args=(req_msg,), daemon=True).start()
+            threading.Thread(
+                target=_send_message_task, args=(req_msg,), daemon=True
+            ).start()
     except json.JSONDecodeError:
         pass
     except Exception as e:
