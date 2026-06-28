@@ -32,16 +32,20 @@ def _calculate_iou(boxA, boxB):
 
 def _resolve_sandbox_path(path: str) -> str:
     """独立的路径映射工具：将 Agent 视角的 /agent_vm/... 映射为宿主机的真实绝对路径"""
-    path = str(path).strip()
-    path_normalized = path.replace("\\", "/")
-
-    if path_normalized.startswith("/agent_vm/"):
-        path = path.replace("/agent_vm/", "./agent_vm/", 1).replace(
-            "\\agent_vm\\", ".\\agent_vm\\", 1
-        )
-    elif path_normalized == "/agent_vm":
+    import os
+    
+    # 强制统一路径分隔符为 /，方便处理
+    path = str(path).strip().replace("\\", "/")
+    
+    # 容错：有些 URL 解析后可能会变成 //agent_vm/
+    if path.startswith("//agent_vm/"):
+        path = path[1:]
+        
+    if path.startswith("/agent_vm/"):
+        path = path.replace("/agent_vm/", "./agent_vm/", 1)
+    elif path == "/agent_vm":
         path = "./agent_vm"
-
+        
     return os.path.abspath(path)
 
 
@@ -245,78 +249,69 @@ def execute_action(
                     app_list = "\n".join([f"- {k}: {v}" for k, v in apps.items()])
                     message = f"📂 当前可用的应用白名单列表如下:\n{app_list}\n💡 请使用 launch_app 动作并传入上述名称进行唤起。"
             elif action == "launch_app":
-                text_lower = text.lower()
-                is_web_url = text_lower.startswith(("http://", "https://", "file://"))
-
-                mapped_path = _resolve_sandbox_path(text)
-
-                is_local_file = os.path.exists(mapped_path) and text_lower.endswith(
-                    (
-                        ".html",
-                        ".htm",
-                        ".pdf",
-                        ".txt",
-                        ".png",
-                        ".jpg",
-                        ".jpeg",
-                        ".svg",
-                        ".gif",
-                        ".mp4",
-                        ".json",
-                        ".md",
-                        ".css",
-                        ".js",
-                    )
-                )
-
-                if is_web_url:
-                    target_to_launch = text
-                elif is_local_file:
-                    target_to_launch = mapped_path
-                else:
-                    target_to_launch = None
-
-                if not target_to_launch and ("/" in text or "\\" in text):
-                    raise ExecutionFailedError(
-                        action, f"文件 '{text}' 不存在，请确认路径是否正确"
-                    )
-
-                if target_to_launch:
+                from urllib.parse import urlparse, unquote
+                from urllib.request import url2pathname
+                import os
+                
+                text_str = text.strip()
+                text_lower = text_str.lower()
+                
+                # 1. 处理 Web URL (http/https)
+                if text_lower.startswith(("http://", "https://")):
                     try:
-                        adapter.launch_app(target_to_launch)
-                        display_name = text if is_web_url else f"本地文件 {text}"
-                        message = f"🌐 已成功使用系统默认程序打开: {display_name}"
+                        adapter.launch_app(text_str)
+                        message = f"🌐 已成功使用默认浏览器打开网页: {text_str}"
                     except Exception as e:
-                        raise ExecutionFailedError(
-                            action, f"打开网页或文件失败: {str(e)}"
-                        )
+                        raise ExecutionFailedError(action, f"打开网页失败: {str(e)}")
                 else:
-                    apps = get_app_config()
-                    if not apps:
-                        raise ExecutionFailedError(
-                            action,
-                            "应用白名单未配置，请提示用户先创建 .purrcat/app_config.json 文件",
-                        )
+                    # 2. 识别是否为文件路径 (拦截 file:// 协议，以及常见的绝对/相对/沙盒路径)
+                    is_explicit_file = False
+                    potential_path = text_str
+                    
+                    # 拦截 file:// 协议，并进行 URL Decode 处理中文 (%E4...)
+                    if text_lower.startswith("file://"):
+                        is_explicit_file = True
+                        parsed = urlparse(text_str)
+                        # 将 URL 格式转回本地操作系统的正确路径
+                        potential_path = url2pathname(unquote(parsed.path))
+                        
+                    # 拦截明显的路径特征或文件后缀
+                    elif potential_path.startswith("/agent_vm/") or potential_path.startswith("./") or os.path.isabs(potential_path) or text_lower.endswith((".html", ".htm", ".pdf", ".txt", ".png", ".jpg", ".md", ".json", ".svg")):
+                        is_explicit_file = True
 
-                    matches = difflib.get_close_matches(
-                        text, list(apps.keys()), n=1, cutoff=0.4
-                    )
+                    # 如果确定意图是操作文件
+                    if is_explicit_file:
+                        # 转换沙盒路径到宿主机真实路径
+                        mapped_path = _resolve_sandbox_path(potential_path)
+                        
+                        if os.path.exists(mapped_path):
+                            try:
+                                adapter.launch_app(mapped_path)
+                                message = f"🌐 已成功使用系统默认程序打开本地文件: {mapped_path}"
+                            except Exception as e:
+                                raise ExecutionFailedError(action, f"打开本地文件失败: {str(e)}")
+                        else:
+                            # 核心修复点：明确是文件意图但不存在，直接果断报错，禁止走白名单！
+                            raise ExecutionFailedError(action, f"目标文件不存在，无法打开: {potential_path}\n(映射后的本地真实路径为: {mapped_path})")
 
-                    if matches:
-                        target_name = matches[0]
-                        target_path = apps[target_name]
-                        try:
-                            adapter.launch_app(target_path)
-                            message = (
-                                f"🚀 已成功尝试唤起应用: {target_name} ({target_path})"
-                            )
-                        except Exception as e:
-                            raise ExecutionFailedError(action, f"唤起失败: {str(e)}")
+                    # 3. 既不是 web url，也不像是文件路径，才走到应用白名单逻辑
                     else:
-                        raise ExecutionFailedError(
-                            action,
-                            f"未在白名单中找到与 '{text}' 匹配的应用。请先使用 list_app 动作查看可用列表。",
-                        )
+                        apps = get_app_config()
+                        if not apps:
+                            raise ExecutionFailedError(action, "应用白名单未配置，请提示用户先创建 .purrcat/app_config.json 文件")
+
+                        matches = difflib.get_close_matches(text_str, list(apps.keys()), n=1, cutoff=0.4)
+
+                        if matches:
+                            target_name = matches[0]
+                            target_path = apps[target_name]
+                            try:
+                                adapter.launch_app(target_path)
+                                message = f"🚀 已成功尝试唤起应用: {target_name} ({target_path})"
+                            except Exception as e:
+                                raise ExecutionFailedError(action, f"唤起失败: {str(e)}")
+                        else:
+                            raise ExecutionFailedError(action, f"未在白名单中找到与 '{text_str}' 匹配的应用。请先使用 list_app 动作查看可用列表。")
             else:
                 if not coordinate:
                     raise ExecutionFailedError(action, "缺少有效坐标或 element_id")

@@ -10,6 +10,8 @@ from src.tool.computeruse.exceptions import ComputerUseError
 from src.tool.computeruse.cursor_manager import notify_ai_active
 from src.tool.utils.format import error_response, text_response, warning_response
 from src.utils.config import DATA_DIR
+# 新增引入 submit_request 用于自动发起审批
+from src.tool.request.request_operations import submit_request
 
 
 def _check_computer_use_auth() -> bool:
@@ -57,10 +59,23 @@ def ComputerUse(
 
         # 🌟 权限检查：验证是否有有效的 ComputerUse 授权
         if not _check_computer_use_auth():
-            return error_response(
-                '当前没有操作物理电脑的权限，请先向老板发起申请。\n\n使用方式：\n```python\nRequest(\n    request_type="computer_use",\n    target="system",\n    reason="需要操作电脑完成XX任务，预计需要X分钟"\n)\n```',
-                "⚠️ 权限拦截",
+            # 【修改点】：直接自动发起申请，不再要求 Agent 自己调 Request 工具
+            reason_str = f"系统自动拦截：Agent 尝试执行 '{action}' 物理电脑操作，但当前缺少授权。"
+            req_result = submit_request(
+                request_type="computer_use",
+                target="system",
+                reason=reason_str
             )
+            
+            # 话术设计：明确告知 Agent 申请已自动提交，请勿重试并挂起任务
+            msg = (
+                f"⏳ 权限不足，已自动向老板提交了 ComputerUse 控制权限申请 (请求ID: {req_result['id']})。\n\n"
+                f"💡 系统指示：\n"
+                f"1. 该权限需要老板进行 Yes/No 审批，请勿反复调用本工具催促。\n"
+                f"2. 强依赖此项权限的工作流请暂时挂起，等待后续系统发送通知（审批通过/拒绝）后再继续。\n"
+                f"3. 若当前有其他无强关联的独立任务（如查阅文档、整理数据），你可以先执行其他任务。"
+            )
+            return warning_response(msg, f"⏳ 已自动申请权限: {req_result['id']}")
 
         # 👇 添加这一行：通知 AI 正在控制鼠标 👇
         notify_ai_active()

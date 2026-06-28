@@ -1,6 +1,6 @@
 // src/components/EvolvePage.tsx
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Plus, Dna, FileEdit, TestTube, GitMerge, FileText, Play, Check, X, Server, Zap, RefreshCw, Undo2, Save, MessageSquare, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Plus, Dna, FileEdit, TestTube, GitMerge, FileText, Play, Check, X, Server, Zap, RefreshCw, Undo2, Save, MessageSquare } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -58,6 +58,7 @@ export default function EvolvePage({ onBack }: { onBack: () => void }) {
   const [diffContent, setDiffContent] = useState('');
   const [isDiffLoading, setIsDiffLoading] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
+  const [showRejectModal, setShowRejectModal] = useState(false);
 
   const fetchWorkplaces = async () => {
     try {
@@ -213,6 +214,15 @@ export default function EvolvePage({ onBack }: { onBack: () => void }) {
     } catch { toast.error("网络异常", { id: tid }); }
   };
 
+  const handleSendReject = () => {
+    if (!rejectReason.trim()) {
+      toast.error("必须填写指导意见！");
+      return;
+    }
+    handleMerge(false);
+    setShowRejectModal(false);
+  };
+
   const handleRollback = async () => {
     if (!activeWorkplace) return;
     if (!confirm(`🚨 危险操作：确定要把主库的 ${activeWorkplace.name} 强制回滚到上一次 Git 提交版本吗？这无法撤销！`)) return;
@@ -230,9 +240,15 @@ export default function EvolvePage({ onBack }: { onBack: () => void }) {
     <div className="absolute inset-0 bg-[#fdfaf5] bg-[radial-gradient(#1a1a1a_1px,transparent_1px)] [background-size:24px_24px] p-6 flex gap-6 overflow-hidden font-sans">
       <div className="w-[320px] flex flex-col gap-6 shrink-0 z-20">
         <div className="flex gap-4 items-center">
-          <button onClick={onBack} style={sketchyShape2} className="w-16 h-16 bg-cream border-4 border-ink flex items-center justify-center hover:bg-sand transition-all shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] active:translate-y-[2px] active:translate-x-[2px] active:shadow-none -rotate-3 hover:rotate-0">
+          <button onClick={onBack} style={sketchyShape2} title="BACK" className="w-16 h-16 bg-cream border-4 border-ink flex items-center justify-center hover:bg-sand transition-all shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] active:translate-y-[2px] active:translate-x-[2px] active:shadow-none -rotate-3 hover:rotate-0">
             <ArrowLeft size={28} strokeWidth={3} className="text-ink" />
           </button>
+          
+          {/* 修改1: 将 NEW REQUIREMENT 移动到这里，变为正方形 */}
+          <button onClick={() => setShowNewModal(true)} style={sketchyShape3} title="NEW REQUIREMENT" className="w-16 h-16 bg-cream border-4 border-ink flex items-center justify-center hover:bg-sand transition-all shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] active:translate-y-[2px] active:translate-x-[2px] active:shadow-none rotate-3 hover:-rotate-3">
+            <Plus size={28} strokeWidth={3} className="text-ink" />
+          </button>
+
           <div style={sketchyShape1} className="flex-1 h-16 flex items-center justify-center gap-2 bg-[#a3be8c] text-ink border-4 border-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] rotate-1">
             <Dna size={24} strokeWidth={2.5} />
             <span className="tracking-widest text-xl font-black" style={{ fontFamily: '"Comic Sans MS", cursive' }}>FACTORY</span>
@@ -247,10 +263,6 @@ export default function EvolvePage({ onBack }: { onBack: () => void }) {
             <Server size={18} strokeWidth={3}/> MCP
           </button>
         </div>
-
-        <button onClick={() => setShowNewModal(true)} style={sketchyShape1} className="shrink-0 p-4 bg-ink text-paper border-4 border-ink font-black tracking-widest shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center gap-2 hover:bg-terracotta hover:text-ink transition-all active:translate-y-1 active:shadow-none rotate-1">
-          <Plus size={24} strokeWidth={3}/> NEW REQUIREMENT
-        </button>
 
         <div style={sketchyShape3} className="flex-1 bg-paper border-4 border-ink shadow-[8px_8px_0px_0px_rgba(26,26,26,1)] p-4 flex flex-col gap-3 overflow-hidden -rotate-1 relative">
           <div className="flex justify-between items-center px-2 py-1 border-b-2 border-ink/20 pb-2">
@@ -272,6 +284,7 @@ export default function EvolvePage({ onBack }: { onBack: () => void }) {
       <div style={sketchyShape1} className="flex-1 bg-paper border-4 border-ink shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] overflow-hidden relative rotate-[0.5deg] z-10 flex flex-col">
         {activeWorkplace ? (
           <>
+            {/* 修改2: 移除了测试、合并页面的多余分界线 */}
             <div className="flex bg-cream border-b-4 border-ink shrink-0 h-20">
               <button onClick={() => setCurrentStep('edit')} className={`flex-1 flex items-center justify-center gap-3 font-black tracking-widest transition-all ${currentStep === 'edit' ? 'bg-[#88c0d0] text-paper text-xl border-b-4 border-ink' : 'text-ink/40 hover:bg-sand hover:text-ink'}`}>
                 <FileEdit size={24} strokeWidth={3} /> 1. FILES
@@ -310,84 +323,69 @@ export default function EvolvePage({ onBack }: { onBack: () => void }) {
               )}
 
               {currentStep === 'test' && (
-                <div className="flex flex-col h-full gap-6 max-w-6xl mx-auto">
-                  <div className="flex gap-6 shrink-0 h-32">
-                    <div style={sketchyShape2} className="flex-1 bg-paper border-4 border-ink p-6 shadow-[6px_6px_0px_0px_rgba(26,26,26,1)] flex justify-between items-center rotate-1">
-                      <div>
-                        <h3 className="text-xl font-black text-[#d08770] tracking-widest mb-1">EVALS.JSON</h3>
-                        <p className="text-sm font-bold opacity-60">配置测试用例与标准</p>
-                      </div>
-                      <button onClick={() => { loadFileData('evals/evals.json', setEvalJson); setShowEvalModal(true); }} className="p-3 bg-cream border-4 border-ink hover:bg-sand shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] active:translate-y-1 active:shadow-none transition-all" style={sketchyShape1}>
-                        <FileEdit size={24} strokeWidth={2.5}/>
-                      </button>
-                    </div>
-                    <div style={sketchyShape3} className="flex-1 bg-paper border-4 border-ink p-6 shadow-[6px_6px_0px_0px_rgba(26,26,26,1)] flex justify-between items-center -rotate-1">
-                      <div>
-                        <h3 className="text-xl font-black text-[#EBCB8B] tracking-widest mb-1">SPAWN EVALS</h3>
-                        <p className="text-sm font-bold opacity-60">触发沙盒并发盲测流水线</p>
-                      </div>
-                      <button onClick={handleRunTest} className="px-6 py-3 bg-[#EBCB8B] text-ink font-black border-4 border-ink hover:bg-[#d8b877] shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] active:translate-y-1 active:shadow-none transition-all flex items-center gap-2" style={sketchyShape2}>
-                        <Play size={20} strokeWidth={3} fill="currentColor"/> RUN
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="flex-1 flex gap-6 min-h-0">
-                    <div className="w-48 shrink-0 flex flex-col gap-3 overflow-y-auto">
-                      <div className="flex justify-between items-center">
-                        <span className="font-black text-ink/40 tracking-widest text-sm">ARCHIVES</span>
-                        <button onClick={loadIterations} className="text-ink/40 hover:text-ink"><RefreshCw size={16}/></button>
-                      </div>
-                      {iterations.map(iter => (
-                        <button key={iter} onClick={() => handleSelectIteration(iter)} style={sketchyShape1} className={`p-4 border-4 border-ink font-black text-left transition-all ${activeIteration === iter ? 'bg-ink text-paper shadow-[4px_4px_0px_0px_rgba(26,26,26,1)]' : 'bg-cream hover:bg-sand shadow-[2px_2px_0px_0px_rgba(26,26,26,1)]'}`}>
-                          Iteration {iter}
+                <div className="flex h-full gap-6 w-full max-w-7xl mx-auto">
+                  <div className="w-72 shrink-0 flex flex-col gap-3 overflow-y-auto pr-2">
+                    {/* 修改3: 把配置、运行移到迭代列表右上角化身正方形图标 */}
+                    <div className="flex justify-between items-center mb-1">
+                      <span className="font-black text-ink/40 tracking-widest text-sm">ARCHIVES</span>
+                      <div className="flex gap-2">
+                        <button onClick={() => { loadFileData('evals/evals.json', setEvalJson); setShowEvalModal(true); }} className="w-9 h-9 bg-cream border-2 border-ink flex items-center justify-center hover:bg-[#d08770] hover:text-paper shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] active:translate-y-[1px] active:translate-x-[1px] active:shadow-none transition-all" style={sketchyShape2} title="Edit Evals.json">
+                          <FileEdit size={16} strokeWidth={2.5}/>
                         </button>
-                      ))}
-                      {iterations.length === 0 && <div className="text-sm font-bold opacity-50 mt-4">No archives yet.</div>}
+                        <button onClick={handleRunTest} className="w-9 h-9 bg-[#EBCB8B] text-ink border-2 border-ink flex items-center justify-center hover:bg-[#d8b877] shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] active:translate-y-[1px] active:translate-x-[1px] active:shadow-none transition-all" style={sketchyShape1} title="Run Evaluator">
+                          <Play size={16} strokeWidth={3} fill="currentColor"/>
+                        </button>
+                        <button onClick={loadIterations} className="w-9 h-9 bg-cream border-2 border-ink flex items-center justify-center hover:bg-sand text-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] active:translate-y-[1px] active:translate-x-[1px] active:shadow-none transition-all" style={sketchyShape3} title="Refresh Archives">
+                          <RefreshCw size={16}/>
+                        </button>
+                      </div>
                     </div>
-                    <div style={sketchyShape1} className="flex-1 bg-[#FDF8F0] border-4 border-ink p-8 shadow-[inset_4px_4px_0px_0px_rgba(26,26,26,0.05)] overflow-y-auto font-bold text-ink">
-                      {reportMd ? <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>{reportMd}</ReactMarkdown> : <span className="opacity-40 italic">Select an iteration to view report...</span>}
-                    </div>
+                    {iterations.map(iter => (
+                      <button key={iter} onClick={() => handleSelectIteration(iter)} style={sketchyShape1} className={`p-4 border-4 border-ink font-black text-left transition-all ${activeIteration === iter ? 'bg-ink text-paper shadow-[4px_4px_0px_0px_rgba(26,26,26,1)]' : 'bg-cream hover:bg-sand shadow-[2px_2px_0px_0px_rgba(26,26,26,1)]'}`}>
+                        Iteration {iter}
+                      </button>
+                    ))}
+                    {iterations.length === 0 && <div className="text-sm font-bold opacity-50 mt-4">No archives yet.</div>}
+                  </div>
+                  
+                  <div style={sketchyShape1} className="flex-1 bg-[#FDF8F0] border-4 border-ink p-8 shadow-[inset_4px_4px_0px_0px_rgba(26,26,26,0.05)] overflow-y-auto font-bold text-ink">
+                    {reportMd ? <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>{reportMd}</ReactMarkdown> : <span className="opacity-40 italic">Select an iteration to view report...</span>}
                   </div>
                 </div>
               )}
 
               {currentStep === 'merge' && (
-                <div className="flex flex-col h-full gap-6 max-w-5xl mx-auto">
+                <div className="flex flex-col h-full gap-6 w-full max-w-6xl mx-auto">
+                  {/* 修改4 & 5: 全部合并到右上角的正方形图标组 */}
                   <div className="flex justify-between items-center shrink-0">
                     <h2 className="text-3xl font-black text-ink tracking-widest" style={{ fontFamily: '"Comic Sans MS", cursive' }}>DIFF REVIEW</h2>
-                    <button onClick={handleLoadDiff} className="flex items-center gap-2 px-4 py-2 border-4 border-ink font-black bg-cream shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:bg-sand active:translate-y-1 active:shadow-none" style={sketchyShape3}>
-                      <RefreshCw size={16} className={isDiffLoading ? "animate-spin" : ""}/> RELOAD DIFF
-                    </button>
+                    
+                    <div className="flex gap-4">
+                      <button onClick={handleLoadDiff} title="Reload Diff" className="w-12 h-12 bg-cream border-4 border-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:bg-sand flex items-center justify-center active:translate-y-[2px] active:translate-x-[2px] active:shadow-none transition-all" style={sketchyShape3}>
+                        <RefreshCw size={22} strokeWidth={3} className={isDiffLoading ? "animate-spin" : ""}/>
+                      </button>
+                      <button onClick={handleRollback} title="Revert Main to Previous" className="w-12 h-12 bg-cream text-[#bf616a] border-4 border-[#bf616a] shadow-[4px_4px_0px_0px_#bf616a] hover:bg-[#bf616a]/10 flex items-center justify-center active:translate-y-[2px] active:translate-x-[2px] active:shadow-none transition-all" style={sketchyShape2}>
+                        <Undo2 size={22} strokeWidth={3}/>
+                      </button>
+                      
+                      <div className="w-1 bg-ink/20 mx-1 shrink-0 rounded-full"></div>
+
+                      <button onClick={() => setShowRejectModal(true)} title="Reject & Request Rework" className="w-12 h-12 bg-[#bf616a] text-paper border-4 border-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:bg-[#a54e56] flex items-center justify-center active:translate-y-[2px] active:translate-x-[2px] active:shadow-none transition-all" style={sketchyShape1}>
+                        <X size={26} strokeWidth={4}/>
+                      </button>
+                      <button onClick={() => handleMerge(true)} title="Approve & Merge" className="w-12 h-12 bg-[#a3be8c] text-ink border-4 border-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:bg-[#8eb072] flex items-center justify-center active:translate-y-[2px] active:translate-x-[2px] active:shadow-none transition-all" style={sketchyShape3}>
+                        <Check size={26} strokeWidth={4}/>
+                      </button>
+                    </div>
                   </div>
 
-                  <div className="flex-1 bg-[#FDF8F0] border-4 border-ink p-4 font-mono text-sm font-bold overflow-y-auto shadow-[inset_4px_4px_0px_0px_rgba(26,26,26,0.05)]" style={sketchyShape1}>
+                  <div className="flex-1 bg-[#FDF8F0] border-4 border-ink p-6 font-mono text-sm font-bold overflow-y-auto shadow-[inset_4px_4px_0px_0px_rgba(26,26,26,0.05)]" style={sketchyShape1}>
                     {diffContent ? diffContent.split('\n').map((line, i) => {
                       let bg = '';
                       if (line.startsWith('+')) bg = 'bg-[#a3be8c]/20 text-[#a3be8c]';
                       if (line.startsWith('-')) bg = 'bg-[#bf616a]/20 text-[#bf616a]';
                       return <div key={i} className={`px-2 py-0.5 rounded ${bg}`}>{line || '\u00A0'}</div>;
                     }) : <span className="opacity-40">Click Reload Diff to fetch...</span>}
-                  </div>
-
-                  <div className="shrink-0 flex flex-col gap-4 bg-terracotta/10 p-6 border-4 border-ink border-dashed" style={sketchyShape2}>
-                    <p className="font-black text-terracotta flex items-center gap-2"><MessageSquare size={20}/> FINAL DECISION</p>
-                    <textarea value={rejectReason} onChange={e => setRejectReason(e.target.value)} placeholder="如果不满意，请在这里写下指导意见，发回给 Agent 重做..." className="w-full bg-cream border-4 border-ink p-3 font-bold focus:outline-none resize-none h-24 shadow-[inset_2px_2px_0px_0px_rgba(26,26,26,0.05)]" style={sketchyShape3} />
-                    <div className="flex gap-4">
-                      <button onClick={() => handleMerge(false)} className="flex-1 py-4 bg-[#bf616a] text-paper border-4 border-ink font-black text-xl shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:bg-[#a54e56] active:translate-y-1 active:shadow-none flex justify-center items-center gap-2" style={sketchyShape1}>
-                        <X strokeWidth={4}/> REJECT & REWORK
-                      </button>
-                      <button onClick={() => handleMerge(true)} className="flex-1 py-4 bg-[#a3be8c] text-ink border-4 border-ink font-black text-xl shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:bg-[#8eb072] active:translate-y-1 active:shadow-none flex justify-center items-center gap-2" style={sketchyShape2}>
-                        <Check strokeWidth={4}/> APPROVE & MERGE
-                      </button>
-                    </div>
-                  </div>
-                  
-                  <div className="pt-2 border-t-2 border-ink/20 border-dashed flex justify-between items-center">
-                     <span className="text-sm font-bold text-[#bf616a] flex items-center gap-1"><AlertCircle size={16}/> 主库紧急救援：</span>
-                     <button onClick={handleRollback} style={sketchyShape2} className="px-6 py-2 bg-paper text-[#bf616a] border-4 border-[#bf616a] font-black text-sm shadow-[2px_2px_0px_0px_#bf616a] hover:-translate-y-[1px] hover:bg-[#bf616a]/10 active:shadow-none active:translate-y-[1px] transition-all flex items-center gap-2">
-                       <Undo2 size={16} strokeWidth={3}/> GIT REVERT TO PREVIOUS
-                     </button>
                   </div>
                 </div>
               )}
@@ -429,6 +427,36 @@ export default function EvolvePage({ onBack }: { onBack: () => void }) {
             <button onClick={handlePublishRequirement} style={sketchyShape1} className="w-full py-4 bg-terracotta text-paper border-4 border-ink font-black text-xl tracking-widest shadow-[6px_6px_0px_0px_rgba(26,26,26,1)] hover:bg-[#c4684b] active:translate-y-1 active:shadow-none rotate-1 mt-2">
               BUILD SANDBOX
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* 修改6: 打回重做专属涂鸦弹窗 */}
+      {showRejectModal && (
+        <div className="fixed inset-0 bg-ink/40 backdrop-blur-sm z-[150] flex items-center justify-center p-4">
+          <div style={sketchyShape2} className="bg-paper border-4 border-ink p-8 flex flex-col gap-6 shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] rotate-1 w-full max-w-lg">
+            <div className="flex justify-between items-center -rotate-1 border-b-4 border-ink/10 pb-2">
+              <h3 className="text-2xl font-black tracking-widest text-[#bf616a]" style={{ fontFamily: '"Comic Sans MS", cursive' }}>FEEDBACK & REWORK</h3>
+              <button onClick={() => setShowRejectModal(false)} className="hover:text-[#bf616a] hover:scale-110 transition-all"><X size={28} strokeWidth={3}/></button>
+            </div>
+            <div className="flex flex-col gap-2 -rotate-1">
+              <label className="font-bold opacity-70 text-sm">指导意见：</label>
+              <textarea 
+                value={rejectReason} 
+                onChange={e => setRejectReason(e.target.value)} 
+                placeholder="如果不满意，请在这里写下指导意见，发回给 Agent 重做..." 
+                className="w-full h-32 resize-none bg-[#FDF8F0] border-4 border-ink p-4 font-bold focus:outline-none shadow-[inset_2px_2px_0px_0px_rgba(26,26,26,0.05)]" 
+                style={sketchyShape3} 
+              />
+            </div>
+            <div className="flex gap-4 -rotate-1 mt-2">
+              <button onClick={() => setShowRejectModal(false)} style={sketchyShape1} className="flex-1 py-3 bg-cream text-ink border-4 border-ink font-black text-lg tracking-widest shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:bg-sand active:translate-y-1 active:shadow-none">
+                CANCEL
+              </button>
+              <button onClick={handleSendReject} style={sketchyShape3} className="flex-[1.5] py-3 bg-[#bf616a] text-paper border-4 border-ink font-black text-lg tracking-widest shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:bg-[#a54e56] active:translate-y-1 active:shadow-none flex items-center justify-center gap-2">
+                <MessageSquare size={20}/> SEND FEEDBACK
+              </button>
+            </div>
           </div>
         </div>
       )}

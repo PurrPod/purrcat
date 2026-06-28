@@ -60,13 +60,21 @@ def _grant_file_permission(req_type: str, target: str):
 def _grant_computer_use(duration: int):
     """🌟 自动下发 ComputerUse 的有时效性授权"""
     import time
+    from datetime import datetime
     from src.utils.config import DATA_DIR
 
     auth_file = os.path.join(DATA_DIR, "checkpoints", "agent", "computer_use_auth.json")
     os.makedirs(os.path.dirname(auth_file), exist_ok=True)
 
-    # 记录授权过期时间戳
-    expire_at = time.time() + duration * 60
+    # 【修改点】：增加对特殊值（如 -1）的支持，用于代表"今日不再设限"
+    if duration == -1:
+        # 获取今天 23:59:59 的时间戳
+        now = datetime.now()
+        end_of_day = datetime(now.year, now.month, now.day, 23, 59, 59)
+        expire_at = end_of_day.timestamp()
+    else:
+        # 常规情况：当前时间戳 + duration（如 10, 30）分钟
+        expire_at = time.time() + duration * 60
 
     with open(auth_file, "w", encoding="utf-8") as f:
         json.dump({"expire_at": expire_at}, f)
