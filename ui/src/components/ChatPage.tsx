@@ -1,7 +1,7 @@
 // src/components/ChatPage.tsx
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Send, Cat, Clock, Activity, Server, Zap, Brain, GitMerge, ThumbsUp, ThumbsDown, Loader2, FolderOpen, Bell, Paperclip, X, Heart } from 'lucide-react'; // 🌟 增加 Heart
+import { Send, Cat, Clock, Activity, Server, Zap, Brain, GitMerge, ThumbsUp, ThumbsDown, Loader2, FolderOpen, Bell, Paperclip, X, Heart, User, List } from 'lucide-react'; // 🌟 增加 Heart, User, List
 import { toast } from 'react-hot-toast';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -11,6 +11,10 @@ import { parseEventsContent, hasMessageInHistory, renderSketchyHeatmap, Markdown
 import ChatModals from './chat/ChatModals';
 import ChatSidebar from './chat/ChatSidebar';
 import { FileChangesPanel, RequestQueuePanel } from './chat/ChatPanels';
+
+// Tauri 文件系统 API (用于拖拽上传)
+import { copyFile, exists, mkdir } from '@tauri-apps/plugin-fs';
+import { join } from '@tauri-apps/api/path';
 
 export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => void; onSwitchToTask?: () => void }) {
   const navigate = useNavigate();
@@ -198,7 +202,62 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
     setEditingSessionId(null);
   };
 
-  const handleFileUpload = async (files: FileList | File[]) => { void files; /* 同原逻辑 */ };
+  const handleFileUpload = async (files: FileList | File[]) => {
+    const MAX_SIZE = 50 * 1024 * 1024; // 50MB 大小限制
+    const newPaths: string[] = [];
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i] as any;
+      const originalPath = file.path;
+
+      // 1. 如果没有获取到本地路径 (说明可能不是Tauri环境或不支持获取路径)，跳过
+      if (!originalPath) {
+        console.warn('无法获取文件路径，跳过:', file.name);
+        continue;
+      }
+
+      // 2. 文件夹拦截：如果是文件夹，在 Web 中 type 为空且通常不包含有效扩展名
+      if (!file.type && file.size % 4096 === 0) {
+        console.warn('文件夹暂不支持上传:', file.name);
+        continue;
+      }
+
+      // 3. 大小拦截
+      if (file.size > MAX_SIZE) {
+        console.warn('文件过大，已拦截:', file.name);
+        toast.error(`文件过大，已拦截: ${file.name} (最大 50MB)`);
+        continue;
+      }
+
+      try {
+        // 构建目标路径: ./agent_vm/.buffer/upload/
+        const targetDir = await join('agent_vm', '.buffer', 'upload');
+
+        // 检查目录是否存在，不存在则创建
+        const dirExists = await exists(targetDir);
+        if (!dirExists) {
+          await mkdir(targetDir, { recursive: true });
+        }
+
+        const targetPath = await join(targetDir, file.name);
+
+        // 复制文件到指定目录
+        await copyFile(originalPath, targetPath);
+
+        // 将最终的新路径打上标签
+        newPaths.push(targetPath);
+      } catch (error) {
+        console.error("文件处理失败:", error);
+        toast.error(`文件处理失败: ${file.name}`);
+      }
+    }
+
+    // 更新标签
+    if (newPaths.length > 0) {
+      setRefPaths((prev: string[]) => [...new Set([...prev, ...newPaths])]);
+      toast.success(`已上传 ${newPaths.length} 个文件`);
+    }
+  };
   const handlePaste = (e: React.ClipboardEvent) => { if (e.clipboardData.files && e.clipboardData.files.length > 0) { e.preventDefault(); handleFileUpload(e.clipboardData.files); } };
   const handleDrop = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(false); const items = e.dataTransfer.items; if (items && items.length > 0) { const validFiles: File[] = []; for (let i = 0; i < items.length; i++) { const item = items[i]; if (item.kind === 'file') { const file = item.getAsFile(); if (file) validFiles.push(file); } } if (validFiles.length > 0) handleFileUpload(validFiles); } };
 
@@ -607,27 +666,47 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
             </div>
             
             <div className="rotate-1 flex flex-col gap-4">
-              <p className="text-sm font-bold opacity-70">让小猫在后台定频主动思考与行动（单位：秒）</p>
-              
-              <div className="flex items-center gap-4 bg-cream border-4 border-ink p-3 shadow-[inset_2px_2px_0px_0px_rgba(26,26,26,0.05)]" style={sketchyShape3}>
-                <input 
-                  type="number" 
-                  value={heartbeatConfig.interval} 
-                  onChange={e => setHeartbeatConfig({...heartbeatConfig, interval: parseInt(e.target.value) || 60})} 
-                  className="w-24 bg-transparent font-black text-xl text-center focus:outline-none" 
-                />
-                <span className="font-bold opacity-60">SECONDS</span>
+              <p className="text-sm font-bold opacity-70">Agent Subconscious Frequency</p>
+
+              {/* 秒数输入与拨键开关合并在一行 */}
+              <div className="flex items-center justify-between gap-4 bg-cream border-4 border-ink p-3 shadow-[inset_2px_2px_0px_0px_rgba(26,26,26,0.05)]" style={sketchyShape3}>
+                <div className="flex items-center gap-2">
+                  <input 
+                    type="number" 
+                    value={heartbeatConfig.interval} 
+                    onChange={e => setHeartbeatConfig({...heartbeatConfig, interval: parseInt(e.target.value) || 60})} 
+                    className="w-20 bg-transparent font-black text-xl text-center focus:outline-none" 
+                  />
+                  <span className="font-bold opacity-60">SECONDS</span>
+                </div>
+
+                {/* 纯净的粗线条 Sensor 风格拨键开关 */}
+                <div 
+                  onClick={() => setHeartbeatConfig({...heartbeatConfig, active: !heartbeatConfig.active})} 
+                  className={`relative w-16 h-8 border-4 border-ink cursor-pointer transition-colors shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] flex items-center shrink-0 active:translate-y-px active:shadow-none ${heartbeatConfig.active ? 'bg-[#a3be8c]' : 'bg-ink/20'}`} 
+                  style={sketchyShape2} 
+                >
+                  <div className={`absolute w-5 h-5 bg-paper border-4 border-ink transition-transform duration-200 ${heartbeatConfig.active ? 'translate-x-8' : 'translate-x-1'}`} style={sketchyShape1} />
+                </div>
               </div>
 
-              <label className="flex items-center gap-3 cursor-pointer bg-cream border-4 border-ink p-3 shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:bg-sand transition-colors select-none" style={sketchyShape1}>
-                <input
-                  type="checkbox"
-                  checked={heartbeatConfig.active}
-                  onChange={(e) => setHeartbeatConfig({...heartbeatConfig, active: e.target.checked})}
-                  className="w-5 h-5 accent-[#bf616a] cursor-pointer"
-                />
-                <span className="font-black text-lg">ACTIVATE HEARTBEAT</span>
-              </label>
+              {/* 底部收编的 SOLO.md 与 TODO.md 按钮 */}
+              <div className="flex gap-4 mt-2">
+                <button 
+                  onClick={() => { setShowHeartbeatModal(false); openMdEditor('SOLO'); }} 
+                  style={sketchyShape3} 
+                  className="flex-1 border-4 border-ink bg-[#88c0d0] text-paper font-black py-3 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:bg-[#72a6b5] active:translate-y-1 active:shadow-none transition-all flex items-center justify-center gap-2" 
+                >
+                  <User size={20} strokeWidth={3}/> SOLO.md
+                </button>
+                <button 
+                  onClick={() => { setShowHeartbeatModal(false); openMdEditor('TODO'); }} 
+                  style={sketchyShape1} 
+                  className="flex-1 border-4 border-ink bg-[#EBCB8B] text-ink font-black py-3 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:bg-[#d8b877] active:translate-y-1 active:shadow-none transition-all flex items-center justify-center gap-2" 
+                >
+                  <List size={20} strokeWidth={3}/> TODO.md
+                </button>
+              </div>
             </div>
 
             <button onClick={saveHeartbeat} style={sketchyShape2} className="mt-2 w-full bg-[#bf616a] text-paper font-black py-4 border-4 border-ink hover:bg-[#a54e56] transition-all shadow-[6px_6px_0px_0px_rgba(26,26,26,1)] active:shadow-none active:translate-y-1 rotate-1 text-xl tracking-widest">

@@ -1,5 +1,5 @@
 // src/components/chat/ChatSidebar.tsx
-import { ArrowLeft, Terminal, List, Brain, Server, Zap, AlarmClock, Activity, ChevronDown, ChevronUp, Plus, RefreshCw, Trash2, FileText, User } from 'lucide-react';
+import { ArrowLeft, Terminal, List, Brain, Server, Zap, AlarmClock, Activity, ChevronDown, ChevronUp, Plus, RefreshCw, Trash2, FileText, User, GitMerge } from 'lucide-react';
 import { sketchyShape1, sketchyShape2, sketchyShape3 } from './ChatShared';
 
 export default function ChatSidebar(props: any) {
@@ -19,10 +19,7 @@ export default function ChatSidebar(props: any) {
         <button onClick={onBack} style={sketchyShape2} className="w-16 h-16 bg-cream border-4 border-ink flex items-center justify-center hover:bg-sand transition-all shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] active:translate-y-[2px] active:translate-x-[2px] active:shadow-none -rotate-3 hover:rotate-0 group" title="Back">
           <ArrowLeft size={28} strokeWidth={3} className="text-ink group-hover:-translate-x-1 transition-transform" />
         </button>
-        <button onClick={onSwitchToTask || (() => navigate('/task'))} style={sketchyShape3} className="w-16 h-16 bg-cream border-4 border-ink flex items-center justify-center hover:bg-[#D8E2DC] transition-all shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] active:translate-y-[2px] active:translate-x-[2px] active:shadow-none rotate-3 hover:rotate-0 group" title="Go to Task">
-          <Terminal size={28} strokeWidth={3} className="text-ink group-hover:translate-x-1 transition-transform" />
-        </button>
-        <button onClick={() => setShowSessionModal(true)} style={sketchyShape1} className="flex-1 h-16 flex items-center justify-center gap-2 bg-[#EBCB8B] text-ink border-4 border-ink hover:bg-[#d8b877] transition-all active:scale-95 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] rotate-2 hover:-rotate-1">
+        <button onClick={() => setShowSessionModal(true)} style={sketchyShape1} className="flex-1 h-16 flex items-center justify-center gap-2 bg-[#EBCB8B] text-ink border-4 border-ink hover:bg-[#d8b877] transition-all active:scale-95 shadow-[4px 4px 0px 0px rgba(26,26,26,1)] rotate-2 hover:-rotate-1">
           <List size={22} strokeWidth={3} />
           <span className="tracking-widest text-lg font-black" style={{ fontFamily: '"Comic Sans MS", cursive' }}>SWITCH</span>
         </button>
@@ -31,6 +28,24 @@ export default function ChatSidebar(props: any) {
       <div style={sketchyShape3} className="flex-1 bg-paper border-4 border-ink shadow-[8px_8px_0px_0px_rgba(26,26,26,1)] p-5 flex flex-col gap-4 overflow-hidden -rotate-1 relative">
         {sidebarMode === 'menu' && (
            <div className="flex-1 flex flex-col gap-5 p-2 mt-2 overflow-y-auto">
+               {/* EVOLVE 按钮 */}
+               <button onClick={() => navigate('/evolve')} style={sketchyShape2} className="flex-1 border-4 border-ink bg-[#a3be8c]/40 hover:bg-[#a3be8c] shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center gap-3 hover:-translate-y-1 hover:scale-[1.02] transition-all rotate-1 active:shadow-none active:translate-y-1 min-h-[60px]">
+                   <Activity size={28} strokeWidth={2.5} className="text-[#729654]"/>
+                   <span className="font-black text-xl tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>EVOLVE</span>
+               </button>
+
+               {/* TASK 按钮 */}
+               <button onClick={() => navigate('/task')} style={sketchyShape3} className="flex-1 border-4 border-ink bg-[#D8E2DC]/50 hover:bg-[#D8E2DC] shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center gap-3 hover:-translate-y-1 hover:scale-[1.02] transition-all -rotate-1 active:shadow-none active:translate-y-1 min-h-[60px]">
+                   <Terminal size={28} strokeWidth={2.5} className="text-[#5e81ac]"/>
+                   <span className="font-black text-xl tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>TASK</span>
+               </button>
+
+               {/* EDITOR 按钮 */}
+               <button onClick={() => navigate('/editor')} style={sketchyShape1} className="flex-1 border-4 border-ink bg-[#EBCB8B]/50 hover:bg-[#EBCB8B] shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center gap-3 hover:-translate-y-1 hover:scale-[1.02] transition-all rotate-2 active:shadow-none active:translate-y-1 min-h-[60px]">
+                   <GitMerge size={28} strokeWidth={2.5} className="text-[#d08770]"/>
+                   <span className="font-black text-xl tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>EDITOR</span>
+               </button>
+
                <button onClick={() => navigate('/memory')} style={sketchyShape1} className="flex-1 border-4 border-ink bg-[#FFB5A7]/40 hover:bg-[#FFB5A7] shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center gap-3 hover:-translate-y-1 hover:scale-[1.02] transition-all -rotate-1 active:shadow-none active:translate-y-1">
                    <Brain size={28} strokeWidth={2.5} className="text-[#c76c6c]"/>
                    <span className="font-black text-xl tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>MEMORY</span>
@@ -50,14 +65,6 @@ export default function ChatSidebar(props: any) {
                <button onClick={() => openMdEditor('SOUL')} style={sketchyShape2} className="flex-1 border-4 border-ink bg-[#b48ead]/50 hover:bg-[#b48ead] shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center gap-3 hover:-translate-y-1 hover:scale-[1.02] transition-all rotate-1 active:shadow-none active:translate-y-1 min-h-[60px]">
                    <FileText size={28} strokeWidth={2.5} className="text-[#8f6a88]"/>
                    <span className="font-black text-xl tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>SOUL</span>
-               </button>
-               <button onClick={() => openMdEditor('SOLO')} style={sketchyShape3} className="flex-1 border-4 border-ink bg-[#88c0d0]/50 hover:bg-[#88c0d0] shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center gap-3 hover:-translate-y-1 hover:scale-[1.02] transition-all -rotate-1 active:shadow-none active:translate-y-1 min-h-[60px]">
-                   <User size={28} strokeWidth={2.5} className="text-[#5e81ac]"/>
-                   <span className="font-black text-xl tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>SOLO</span>
-               </button>
-               <button onClick={() => openMdEditor('TODO')} style={sketchyShape1} className="flex-1 border-4 border-ink bg-[#EBCB8B]/50 hover:bg-[#EBCB8B] shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center gap-3 hover:-translate-y-1 hover:scale-[1.02] transition-all rotate-2 active:shadow-none active:translate-y-1 min-h-[60px]">
-                   <List size={28} strokeWidth={2.5} className="text-[#b8956e]"/>
-                   <span className="font-black text-xl tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>TODO</span>
                </button>
                <button onClick={() => {setSidebarMode('sensor'); fetchSensorData();}} style={sketchyShape3} className="flex-1 border-4 border-ink bg-[#EBCB8B]/40 hover:bg-[#EBCB8B] shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center gap-3 hover:-translate-y-1 hover:scale-[1.02] transition-all rotate-2 active:shadow-none active:translate-y-1 min-h-[60px]">
                    <Activity size={28} strokeWidth={2.5} className="text-[#b8956e]"/>
