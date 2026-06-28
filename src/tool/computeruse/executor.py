@@ -229,22 +229,31 @@ def execute_action(
                     app_list = "\n".join([f"- {k}: {v}" for k, v in apps.items()])
                     message = f"📂 当前可用的应用白名单列表如下:\n{app_list}\n💡 请使用 launch_app 动作并传入上述名称进行唤起。"
             elif action == "launch_app":
-                apps = get_app_config()
-                if not apps:
-                    raise ExecutionFailedError(action, "应用白名单未配置，请提示用户先创建 .purrcat/app_config.json 文件")
-
-                matches = difflib.get_close_matches(text, list(apps.keys()), n=1, cutoff=0.4)
-
-                if matches:
-                    target_name = matches[0]
-                    target_path = apps[target_name]
+                # 检查是否是 URL (以 http:// 或 https:// 开头)
+                if text.lower().startswith(("http://", "https://")):
                     try:
-                        adapter.launch_app(target_path)
-                        message = f"🚀 已成功尝试唤起应用: {target_name} ({target_path})"
+                        adapter.launch_app(text)
+                        message = f"🌐 已成功使用默认浏览器打开网页: {text}"
                     except Exception as e:
-                        raise ExecutionFailedError(action, f"唤起失败: {str(e)}")
+                        raise ExecutionFailedError(action, f"打开网页失败: {str(e)}")
                 else:
-                    raise ExecutionFailedError(action, f"未在白名单中找到与 '{text}' 匹配的应用。请先使用 list_app 动作查看可用列表。")
+                    # 不是 URL，执行原来的本地应用白名单逻辑
+                    apps = get_app_config()
+                    if not apps:
+                        raise ExecutionFailedError(action, "应用白名单未配置，请提示用户先创建 .purrcat/app_config.json 文件")
+
+                    matches = difflib.get_close_matches(text, list(apps.keys()), n=1, cutoff=0.4)
+
+                    if matches:
+                        target_name = matches[0]
+                        target_path = apps[target_name]
+                        try:
+                            adapter.launch_app(target_path)
+                            message = f"🚀 已成功尝试唤起应用: {target_name} ({target_path})"
+                        except Exception as e:
+                            raise ExecutionFailedError(action, f"唤起失败: {str(e)}")
+                    else:
+                        raise ExecutionFailedError(action, f"未在白名单中找到与 '{text}' 匹配的应用。请先使用 list_app 动作查看可用列表。")
             else:
                 if not coordinate:
                     raise ExecutionFailedError(action, "缺少有效坐标或 element_id")
