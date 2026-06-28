@@ -253,6 +253,8 @@ class AddCronReq(BaseModel):
     title: str
     trigger_time: str
     repeat_rule: str = "none"
+    task_hook: str = "Agent"
+    task_inputs: dict = {}
 
 
 @router.post("/cron")
@@ -260,7 +262,11 @@ def add_cron_api(req: AddCronReq):
     """添加闹钟"""
     try:
         result = add_cron(
-            title=req.title, trigger_time=req.trigger_time, repeat_rule=req.repeat_rule
+            title=req.title, 
+            trigger_time=req.trigger_time, 
+            repeat_rule=req.repeat_rule,
+            task_hook=req.task_hook,       # 🌟 透传参数
+            task_inputs=req.task_inputs    # 🌟 透传参数
         )
         return {"status": "success", "data": result}
     except Exception as e:

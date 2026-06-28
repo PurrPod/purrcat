@@ -68,7 +68,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   
   const [cronData, setCronData] = useState<any[]>([]);
   const [showAddCronModal, setShowAddCronModal] = useState(false);
-  const [newCron, setNewCron] = useState({ title: '', trigger_time: '', repeat_rule: 'none' });
+  const [newCron, setNewCron] = useState({ title: '', trigger_time: '', repeat_rule: 'none', task_hook: 'Agent', task_inputs_str: '{\n}' });
 
   const [showMdModal, setShowMdModal] = useState(false);
   const [mdType, setMdType] = useState<'SOUL' | 'SOLO' | 'TODO'>('SOUL');
@@ -185,8 +185,46 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
 
   const fetchGraphData = async () => { try { const res = await fetch('http://localhost:8000/api/graphs'); if (res.ok) setGraphData(await res.json()); } catch { /* noop */ } };
 
+  useEffect(() => {
+    if (showAddCronModal && newCron.task_hook && newCron.task_hook !== 'Agent') {
+      fetch(`http://localhost:8000/api/graphs/${newCron.task_hook}/schema`)
+        .then(res => res.json())
+        .then(data => {
+          const schema = data.global_schema || {};
+          const template: Record<string, string> = {};
+          Object.keys(schema).forEach(key => {
+            template[key] = schema[key].description || `填写 ${key} 的值`;
+          });
+          setNewCron(prev => ({ ...prev, task_inputs_str: JSON.stringify(template, null, 2) }));
+        }).catch(() => {});
+    }
+  }, [newCron.task_hook, showAddCronModal]);
+
   const fetchCron = async () => { try { const res = await fetch('http://localhost:8000/api/tools/cron'); if (res.ok) setCronData(await res.json()); } catch { /* noop */ } };
-  const addCron = async () => { try { const res = await fetch('http://localhost:8000/api/tools/cron', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newCron) }); if (res.ok) { setShowAddCronModal(false); fetchCron(); } } catch { /* noop */ } };
+  const addCron = async () => { 
+    let task_inputs = {};
+    if (newCron.task_hook !== 'Agent') {
+      try {
+        task_inputs = JSON.parse(newCron.task_inputs_str);
+      } catch {
+        return toast.error("JSON 参数格式错误！");
+      }
+    }
+    try { 
+      const res = await fetch('http://localhost:8000/api/tools/cron', { 
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify({
+           title: newCron.title,
+           trigger_time: newCron.trigger_time,
+           repeat_rule: newCron.repeat_rule,
+           task_hook: newCron.task_hook,
+           task_inputs: task_inputs
+        }) 
+      }); 
+      if (res.ok) { setShowAddCronModal(false); fetchCron(); } 
+    } catch { /* noop */ } 
+  };
   const deleteCron = async (id: string) => { try { await fetch(`http://localhost:8000/api/tools/cron/${id}`, { method: 'DELETE' }); fetchCron(); } catch { /* noop */ } };
 
   const handleScroll = () => { if (!messagesContainerRef.current) return; const { scrollTop, scrollHeight, clientHeight } = messagesContainerRef.current; isAutoScroll.current = scrollHeight - scrollTop - clientHeight < 50; };
@@ -291,7 +329,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
     mcpData, expandedMcp, setExpandedMcp, refreshMcp, setShowInstallMcpModal, fetchMcp,
     skillData, expandedSkill, setExpandedSkill, refreshSkill, setShowInstallSkillModal, fetchSkill,
     cronData, deleteCron, setShowAddCronModal, fetchCron,
-    openMdEditor
+    openMdEditor, graphData, fetchGraphData  // 🌟 追加这两个！
   };
 
   const fileViewProps = { showFileView, setShowFileView, fileChanges, activeDiffPath, setActiveDiffPath, handleAck, handleRollback };

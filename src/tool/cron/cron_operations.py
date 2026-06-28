@@ -74,7 +74,8 @@ def _find_cron_index(crons: List[Dict[str, Any]], identifier: str) -> int:
 
 
 def add_cron(
-    title: str, trigger_time: str, repeat_rule: str = "none", description: str = ""
+    title: str, trigger_time: str, repeat_rule: str = "none", description: str = "",
+    task_hook: str = "Agent", task_inputs: dict = None
 ) -> dict:
     """
     添加闹钟
@@ -84,6 +85,8 @@ def add_cron(
         trigger_time: 触发时间，HH:MM 格式（如 08:30）
         repeat_rule: 重复规则，默认 "none"
         description: 闹钟详细描述，默认空字符串
+        task_hook: 任务钩子，默认 "Agent"
+        task_inputs: 工作流入参，默认空字典
 
     Returns:
         包含 id, title, description, trigger_time, repeat_rule, active 的字典
@@ -105,6 +108,8 @@ def add_cron(
             "trigger_time": trigger_time,
             "repeat_rule": repeat_rule,
             "active": True,
+            "task_hook": task_hook,           # 🌟 默认绑定为唤醒 Agent
+            "task_inputs": task_inputs or {}  # 🌟 若有工作流入参则附带
         }
 
         crons.append(item)

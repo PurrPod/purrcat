@@ -10,7 +10,7 @@ export default function ChatSidebar(props: any) {
     mcpData, expandedMcp, setExpandedMcp, refreshMcp, setShowInstallMcpModal, fetchMcp,
     skillData, expandedSkill, setExpandedSkill, refreshSkill, setShowInstallSkillModal, fetchSkill,
     cronData, deleteCron, setShowAddCronModal, fetchCron,
-    openMdEditor
+    openMdEditor, graphData, fetchGraphData
   } = props;
 
   return (
@@ -144,7 +144,7 @@ export default function ChatSidebar(props: any) {
                       </div>
                   ))}
                </div>
-               <button onClick={()=>setShowAddCronModal(true)} style={sketchyShape2} className="shrink-0 p-3 bg-[#E8D1C5] text-ink border-4 border-ink font-black shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center gap-2 mt-2"><Plus size={20} strokeWidth={3}/> ADD ALARM</button>
+               <button onClick={() => { if (!graphData || graphData.length === 0) fetchGraphData(); setShowAddCronModal(true); }} style={sketchyShape2} className="shrink-0 p-3 bg-[#E8D1C5] text-ink border-4 border-ink font-black shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center gap-2 mt-2"><Plus size={20} strokeWidth={3}/> ADD ALARM</button>
            </div>
         )}
 

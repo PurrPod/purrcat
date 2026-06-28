@@ -97,13 +97,13 @@ class Agent:
             status_str += f"- TODO.md 存在状态: {'是' if todo_exists else '否'}\n"
             focus_md += status_str
 
-        combined = soul_md
-        if system_rules:
-            combined += f"\n\n---\n\n{system_rules}"
-        if focus_md:  # 🌟 将 Focus 上下文拼接进去
-            combined += f"\n\n---\n\n# 【项目专属上下文 (Focus)】\n\n{focus_md}"
+        combined = system_rules
+        if soul_md:
+            combined += f"\n\n---\n\n{soul_md}"
         if memory_md:
             combined += f"\n\n---\n\n# 【系统长期记忆档案】\n\n{memory_md}"
+        if focus_md:  # 🌟 将 Focus 上下文拼接进去
+            combined += f"\n\n---\n\n# 【项目专属上下文 (Focus)】\n\n{focus_md}"
         return combined
 
     def stop(self):

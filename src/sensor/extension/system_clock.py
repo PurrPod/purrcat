@@ -58,17 +58,33 @@ def clock_loop():
                         ):
                             is_match = True
                     if is_match:
-                        desc_text = (
-                            f"\n详细说明: {c.get('description')}"
-                            if c.get("description")
-                            else ""
-                        )
-                        send_json_to_main(
-                            "observe",
-                            {
-                                "content": f"⏰【闹钟铃声】时间到！事项: {c.get('title')}{desc_text}"
-                            },
-                        )
+                        task_hook = c.get("task_hook", "Agent")
+                        task_inputs = c.get("task_inputs", {})
+
+                        if task_hook == "Agent":
+                            # 原有逻辑：仅叫醒 Agent
+                            desc_text = (
+                                f"\n详细说明: {c.get('description')}"
+                                if c.get("description")
+                                else ""
+                            )
+                            send_json_to_main(
+                                "observe",
+                                {
+                                    "content": f"⏰【闹钟铃声】时间到！事项: {c.get('title')}{desc_text}"
+                                },
+                            )
+                        else:
+                            # 新增逻辑：向主进程发送要求起后台任务的指令
+                            send_json_to_main(
+                                "launch_task",
+                                {
+                                    "graph_name": task_hook,
+                                    "inputs": task_inputs,
+                                    "title": c.get("title")
+                                }
+                            )
+
                         if rule == "none":
                             c["active"] = False
                             updated = True

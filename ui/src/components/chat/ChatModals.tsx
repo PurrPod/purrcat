@@ -148,11 +148,37 @@ export default function ChatModals(props: any) {
 
       {showAddCronModal && (
         <div className="fixed inset-0 bg-ink/40 backdrop-blur-sm z-[150] flex items-center justify-center p-4">
-          <div style={sketchyShape2} className="bg-paper border-4 border-ink p-8 flex flex-col gap-6 shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] rotate-1 max-w-sm w-full">
+          <div style={sketchyShape2} className="bg-paper border-4 border-ink p-8 flex flex-col gap-5 shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] rotate-1 max-w-sm w-full">
             <h3 className="text-2xl font-black tracking-widest text-[#d08770]" style={{ fontFamily: '"Comic Sans MS", cursive' }}>NEW ALARM</h3>
+            
             <input placeholder="Alarm Title..." value={newCron.title} onChange={e=>setNewCron({...newCron, title:e.target.value})} className="border-4 border-ink p-3 font-bold bg-cream focus:outline-none" style={sketchyShape3} />
             <input placeholder="Trigger Time (cron expr or HH:MM)" value={newCron.trigger_time} onChange={e=>setNewCron({...newCron, trigger_time:e.target.value})} className="border-4 border-ink p-3 font-bold bg-cream focus:outline-none" style={sketchyShape1} />
-            <div className="flex gap-4 mt-2">
+            
+            {/* 🌟 新增：切换 Agent叫醒 还是 执行流图 */}
+            <select 
+              value={newCron.task_hook || 'Agent'} 
+              onChange={e=>setNewCron({...newCron, task_hook:e.target.value})}
+              className="border-4 border-ink p-3 font-bold bg-cream focus:outline-none cursor-pointer" style={sketchyShape2}
+            >
+              <option value="Agent">🤖 叫醒当前 Agent</option>
+              {graphData && graphData.map((g: any) => (
+                <option key={g.name} value={g.name.replace('.json', '')}>⚙️ 唤起后台任务: {g.name.replace('.json', '')}</option>
+              ))}
+            </select>
+            
+            {/* 🌟 补充：当选择了具体的流图时，弹出它的入参框 */}
+            {newCron.task_hook && newCron.task_hook !== 'Agent' && (
+              <textarea 
+                placeholder="Task Inputs (JSON)..." 
+                value={newCron.task_inputs_str || '{}'} 
+                onChange={e=>setNewCron({...newCron, task_inputs_str:e.target.value})}
+                className="border-4 border-ink p-3 font-mono text-xs font-bold bg-[#FDF8F0] focus:outline-none resize-none h-28 shadow-[inset_2px_2px_0px_0px_rgba(26,26,26,0.05)]"
+                style={sketchyShape3} 
+                spellCheck={false}
+              />
+            )}
+
+            <div className="flex gap-4 mt-1">
               <button onClick={() => setShowAddCronModal(false)} className="flex-1 bg-cream border-4 border-ink font-black py-3 active:translate-y-1 transition-transform shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] active:shadow-none" style={sketchyShape2}>CANCEL</button>
               <button onClick={addCron} className="flex-1 bg-[#d08770] text-paper border-4 border-ink font-black py-3 active:translate-y-1 transition-transform shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] active:shadow-none" style={sketchyShape1}>SAVE</button>
             </div>

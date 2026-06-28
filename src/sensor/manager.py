@@ -123,6 +123,32 @@ class SensorManager:
                         gateway.push(name, content)
                 elif method == "log":
                     print(f"📝 [{name}]: {msg.get('params', {}).get('msg')}")
+                elif method == "launch_task":
+                    # 解析传来的任务信息
+                    params = msg.get("params", {})
+                    graph_name = params.get("graph_name")
+                    inputs = params.get("inputs", {})
+                    title = params.get("title", "cron_task")
+
+                    print(f"🚀 [Manager] 收到时钟触发，准备拉起后台任务图谱: {graph_name}")
+
+                    # 定义后台执行任务
+                    def _run_bg_task():
+                        import asyncio
+                        from src.harness.process import Task
+                        try:
+                            # 因为这是在新线程中，需要给它配一个新的独立事件循环
+                            loop = asyncio.new_event_loop()
+                            asyncio.set_event_loop(loop)
+
+                            # 实例化并运行 Harness 的 Task
+                            task = Task(task_name=title, inputs=inputs, graph_name=graph_name)
+                            loop.run_until_complete(task.run())
+                        except Exception as e:
+                            print(f"❌ [Manager] 定时后台任务执行崩溃: {e}")
+
+                    # 通过独立线程启动，防止阻塞 Manager 监听 stdout
+                    threading.Thread(target=_run_bg_task, daemon=True).start()
             except json.JSONDecodeError:
                 pass
 
