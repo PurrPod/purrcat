@@ -13,27 +13,13 @@ import os
 _REAL_STDOUT = sys.stdout
 sys.stdout = sys.stderr
 
-
 def send_json_to_main(method: str, params: dict):
     _REAL_STDOUT.write(
         json.dumps({"method": method, "params": params}, ensure_ascii=False) + "\n"
     )
     _REAL_STDOUT.flush()
 
-
-INTERVAL = int(os.environ.get("INTERVAL", "1800"))
 CRON_FILE = os.environ.get("CRON_FILE", ".purrcat/core/cron.json")
-
-
-def heartbeat_loop():
-    total_time = 0
-    while True:
-        time.sleep(10)
-        total_time += 10
-        if total_time >= INTERVAL:
-            total_time = 0
-            send_json_to_main("observe", {"content": "⏰ [Heartbeat] Fetch solo todo"})
-
 
 def clock_loop():
     while True:
@@ -62,7 +48,6 @@ def clock_loop():
                         task_inputs = c.get("task_inputs", {})
 
                         if task_hook == "Agent":
-                            # 原有逻辑：仅叫醒 Agent
                             desc_text = (
                                 f"\n详细说明: {c.get('description')}"
                                 if c.get("description")
@@ -75,7 +60,6 @@ def clock_loop():
                                 },
                             )
                         else:
-                            # 新增逻辑：向主进程发送要求起后台任务的指令
                             send_json_to_main(
                                 "launch_task",
                                 {
@@ -96,7 +80,5 @@ def clock_loop():
 
         time.sleep(60)
 
-
-print("🟢 [System Clock] 心跳与时钟守护已启动")
-threading.Thread(target=heartbeat_loop, daemon=True).start()
+print("🟢 [System Clock] 纯净时钟守护已启动（系统心跳已被全面接管至独立 LoopManager 运行）")
 clock_loop()

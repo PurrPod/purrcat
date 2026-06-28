@@ -2,7 +2,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
   ArrowLeft, Terminal, Trash2, X, Activity, Clock, Box, Send, MessageCircle, RefreshCw,
-  Square, Play, AlertTriangle, Plus, ChevronDown, ChevronUp, Package, Wrench, Cat
+  Square, Play, AlertTriangle, Plus, ChevronDown, ChevronUp, Package, Wrench, Cat, AlarmClock
 } from 'lucide-react';
 import type { Node, Edge } from '@xyflow/react';
 import { ReactFlow, Background, useNodesState, useEdgesState, Handle, Position } from '@xyflow/react';
@@ -241,6 +241,55 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
   const [launchGraphName, setLaunchGraphName] = useState('');
   const [launchInputs, setLaunchInputs] = useState('');
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+
+  // 🌟 触发器弹窗状态
+  const [isTriggerModalOpen, setIsTriggerModalOpen] = useState(false);
+  const [triggerType, setTriggerType] = useState<'cron' | 'loop'>('cron');
+  const [triggerForm, setTriggerForm] = useState({
+    title: '', time: '', interval: 3600, graph: '', inputsStr: '{\n}'
+  });
+  const [isTriggerDropdownOpen, setIsTriggerDropdownOpen] = useState(false);
+
+  // 自动拉取工作流 schema 用作触发器的模板
+  useEffect(() => {
+    if (isTriggerModalOpen && triggerForm.graph) {
+      fetch(`http://localhost:8000/api/graphs/${triggerForm.graph}/schema`)
+        .then(res => res.json())
+        .then(data => {
+          const schema = data.global_schema || {};
+          const template: Record<string, string> = {};
+          Object.keys(schema).forEach(key => {
+            template[key] = schema[key].description || `填写 ${key} 的值`;
+          });
+          setTriggerForm(prev => ({ ...prev, inputsStr: JSON.stringify(template, null, 2) }));
+        }).catch(() => {});
+    }
+  }, [triggerForm.graph, isTriggerModalOpen]);
+
+  // 提交触发器
+  const handleSaveTrigger = async () => {
+    if (!triggerForm.title || !triggerForm.graph) return toast.error("标题和工作流名称必填！");
+    let parsedInputs = {};
+    try { parsedInputs = JSON.parse(triggerForm.inputsStr); } catch { return toast.error("JSON 参数格式不合法！"); }
+
+    const url = triggerType === 'cron' ? 'http://localhost:8000/api/tools/cron' : 'http://localhost:8000/api/tools/loop';
+    const payload = triggerType === 'cron' 
+      ? { title: triggerForm.title, trigger_time: triggerForm.time, repeat_rule: 'none', task_hook: triggerForm.graph, task_inputs: parsedInputs }
+      : { title: triggerForm.title, interval: triggerForm.interval, task_hook: triggerForm.graph, task_inputs: parsedInputs, active: true };
+
+    try {
+      const res = await fetch(url, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+      });
+      if (res.ok) {
+        toast.success(triggerType === 'cron' ? "定时任务已创建" : "间隔任务已创建");
+        setIsTriggerModalOpen(false);
+        setTriggerForm({ title: '', time: '', interval: 3600, graph: '', inputsStr: '{\n}' });
+      } else {
+        toast.error("创建失败，请检查参数格式 (如时间是否为 HH:MM)");
+      }
+    } catch { toast.error("网络异常"); }
+  };
 
   const [nodes, setNodes, onNodesChange] = useNodesState([] as Node[]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([] as Edge[]);
@@ -767,17 +816,94 @@ export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => voi
         </div>
       )}
 
+      {/* === 🌟 后台触发器 (Cron & Loop) 弹窗 === */}
+      {isTriggerModalOpen && (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center bg-ink/40 backdrop-blur-sm p-4 pointer-events-auto">
+          <div style={sketchyShape2} className="bg-paper border-4 border-ink shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] w-full max-w-lg p-8 relative -rotate-1">
+            <button onClick={() => { setIsTriggerModalOpen(false); setIsTriggerDropdownOpen(false); }} className="absolute top-4 right-4 hover:rotate-90 transition-transform"><X size={32} strokeWidth={3} /></button>
+            <h3 className="text-3xl font-black mb-6 tracking-widest text-[#d08770]" style={{ fontFamily: '"Comic Sans MS", cursive' }}>NEW TRIGGER</h3>
+            
+            <div className="flex gap-4 mb-4">
+              <button onClick={() => setTriggerType('cron')} style={sketchyShape1} className={`flex-1 py-2 border-4 border-ink font-black shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] transition-colors ${triggerType === 'cron' ? 'bg-[#d08770] text-paper' : 'bg-cream text-ink/50'}`}>CRON (Scheduled)</button>
+              <button onClick={() => setTriggerType('loop')} style={sketchyShape3} className={`flex-1 py-2 border-4 border-ink font-black shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] transition-colors ${triggerType === 'loop' ? 'bg-[#88c0d0] text-paper' : 'bg-cream text-ink/50'}`}>LOOP (Interval)</button>
+            </div>
+
+            <div className="flex flex-col gap-3">
+              <input 
+                placeholder="Trigger Title..." 
+                value={triggerForm.title} onChange={e => setTriggerForm({...triggerForm, title: e.target.value})}
+                className="w-full bg-cream border-4 border-ink p-3 font-bold focus:outline-none" style={sketchyShape2} 
+              />
+              
+              {triggerType === 'cron' ? (
+                <input 
+                  placeholder="Time (HH:MM)" 
+                  value={triggerForm.time} onChange={e => setTriggerForm({...triggerForm, time: e.target.value})}
+                  className="w-full bg-[#FDF8F0] border-4 border-ink p-3 font-bold focus:outline-none shadow-[inset_2px_2px_0px_0px_rgba(26,26,26,0.05)]" style={sketchyShape1} 
+                />
+              ) : (
+                <div className="flex items-center gap-3 bg-[#FDF8F0] border-4 border-ink p-3 shadow-[inset_2px_2px_0px_0px_rgba(26,26,26,0.05)]" style={sketchyShape1}>
+                  <span className="font-bold opacity-60 flex-1">INTERVAL:</span>
+                  <input type="number" value={triggerForm.interval} onChange={e => setTriggerForm({...triggerForm, interval: parseInt(e.target.value) || 60})} className="w-24 bg-transparent font-black text-right focus:outline-none" />
+                  <span className="font-bold">SEC</span>
+                </div>
+              )}
+
+              {/* 🌟 仅暴露后台流图（无 Agent 选项） */}
+              <div className="relative mt-2">
+                <div onClick={() => setIsTriggerDropdownOpen(!isTriggerDropdownOpen)} className="w-full bg-cream border-4 border-ink p-3 text-sm font-bold cursor-pointer flex items-center justify-between shadow-[2px_2px_0px_0px_rgba(26,26,26,1)]" style={sketchyShape3}>
+                  <span className="truncate">{triggerForm.graph || "Select Target Workflow..."}</span>
+                  <ChevronDown size={18} className={isTriggerDropdownOpen ? 'rotate-180 transition-transform' : 'transition-transform'} />
+                </div>
+                {isTriggerDropdownOpen && (
+                  <div className="absolute left-0 right-0 top-[110%] bg-paper border-4 border-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] z-[200] max-h-48 overflow-y-auto p-2" style={sketchyShape2}>
+                    {availableGraphs.map((g) => {
+                      const name = g.name.replace('.json', '');
+                      return (
+                        <div key={name} onClick={() => { setTriggerForm({...triggerForm, graph: name}); setIsTriggerDropdownOpen(false); }} className={`p-2 font-bold cursor-pointer transition-colors ${triggerForm.graph === name ? 'bg-[#d08770] text-paper' : 'hover:bg-cream'}`}>
+                          {name}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <textarea 
+                placeholder="Workflow Inputs (JSON)..." 
+                value={triggerForm.inputsStr} onChange={e => setTriggerForm({...triggerForm, inputsStr: e.target.value})}
+                className="w-full h-28 bg-[#FDF8F0] border-4 border-ink p-3 font-mono text-xs font-bold focus:outline-none resize-none shadow-[inset_2px_2px_0px_0px_rgba(26,26,26,0.05)] mt-2" 
+                style={sketchyShape2} spellCheck={false}
+              />
+            </div>
+
+            <div className="flex gap-4 mt-4">
+              <button onClick={() => { setIsTriggerModalOpen(false); setIsTriggerDropdownOpen(false); }} style={sketchyShape1} className="flex-1 py-3 bg-cream border-4 border-ink text-ink font-black shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:bg-sand transition-all">CANCEL</button>
+              <button onClick={handleSaveTrigger} style={sketchyShape3} className="flex-1 py-3 bg-ink text-paper border-4 border-ink font-black shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:bg-terracotta hover:text-ink hover:-translate-y-0.5 transition-all">CREATE</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="w-[320px] flex flex-col gap-6 shrink-0 z-20">
         <div className="flex gap-4 items-center">
           <button onClick={onBack} style={sketchyShape2} className="w-16 h-16 bg-cream border-4 border-ink flex items-center justify-center hover:bg-sand transition-all shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] active:translate-y-[2px] active:translate-x-[2px] active:shadow-none -rotate-3 hover:rotate-0 group"><ArrowLeft size={28} strokeWidth={3} className="text-ink group-hover:-translate-x-1 transition-transform" /></button>
-          {onSwitchToChat && <button onClick={onSwitchToChat} style={sketchyShape2} className="w-16 h-16 bg-cream border-4 border-ink flex items-center justify-center hover:bg-sand transition-all shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] active:translate-y-[2px] active:translate-x-[2px] active:shadow-none rotate-3 hover:rotate-0 group" title="Go to Chat"><MessageCircle size={28} strokeWidth={3} className="text-ink group-hover:translate-x-1 transition-transform" /></button>}
+          
+          <button 
+            onClick={() => { loadAvailableGraphs(); setIsTriggerModalOpen(true); }}
+            style={sketchyShape3} 
+            className="w-16 h-16 bg-[#d08770] border-4 border-ink flex items-center justify-center hover:bg-[#c27a65] transition-all shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] active:translate-y-[2px] active:translate-x-[2px] active:shadow-none rotate-3 hover:rotate-0 group" title="Create Trigger"
+          >
+            <AlarmClock size={28} strokeWidth={3} className="text-paper group-hover:-rotate-12 transition-transform" />
+          </button>
+
           <button 
             onClick={() => { loadAvailableGraphs(); setIsCreateModalOpen(true); setIsDropdownOpen(false); }}
             style={sketchyShape1} 
             className="flex-1 h-16 flex items-center justify-center gap-2 bg-[#EBCB8B] text-ink border-4 border-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] rotate-2 hover:bg-[#d8b877] transition-all active:translate-y-0.5 active:shadow-none"
           >
             <Plus size={22} strokeWidth={2.5} />
-            <span className="tracking-widest text-lg font-black" style={{ fontFamily: '"Comic Sans MS", cursive' }}>New</span>
+            <span className="tracking-widest text-lg font-black" style={{ fontFamily: '"Comic Sans MS", cursive' }}>Run</span>
           </button>
         </div>
 

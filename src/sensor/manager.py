@@ -17,6 +17,7 @@ class SensorManager:
         self.github_repo_base = (
             "https://raw.githubusercontent.com/PurrPod/sensor-source/main"
         )
+        self._watchdog_started = False
 
         os.makedirs(self.extension_dir, exist_ok=True)
 
@@ -67,9 +68,10 @@ class SensorManager:
                     daemon=True,
                 ).start()
 
-        # 启动进程守护线程
-        threading.Thread(target=self._watchdog_loop, daemon=True).start()
-        print("🛡️ [Manager] 进程守护线程已启动")
+        if not self._watchdog_started:
+            threading.Thread(target=self._watchdog_loop, daemon=True).start()
+            self._watchdog_started = True
+            print("🛡️ [Manager] 进程守护线程已启动")
 
     def _start_sensor(self, name: str, script_path: str, cfg: dict):
         env = os.environ.copy()
@@ -161,14 +163,15 @@ class SensorManager:
         import time
 
         while True:
-            time.sleep(10)  # 每10秒巡检一次
+            time.sleep(10)
             for name, process in list(self.processes.items()):
-                # poll() 如果不为 None，说明进程已退出
                 if process.poll() is not None:
                     print(
-                        f"🚨 [Manager] 检测到 Sensor [{name}] 意外崩溃，正在尝试重启..."
+                        f"🚨 [Manager] 检测到 Sensor [{name}] 已退出，清理进程引用并尝试重启..."
                     )
-                    # 重新读取配置并启动
+
+                    del self.processes[name]
+
                     config = get_sensor_config().get(name, {})
                     local_path = os.path.join(self.extension_dir, f"{name}.py")
                     if os.path.exists(local_path) and config.get("enabled", False):
@@ -176,7 +179,12 @@ class SensorManager:
 
     def stop_all(self):
         for name, process in self.processes.items():
-            process.terminate()
+            try:
+                process.terminate()
+            except Exception:
+                pass
+
+        self.processes.clear()
 
 
 _manager = SensorManager()

@@ -5,6 +5,7 @@ import urllib.request
 import zipfile
 import traceback
 import json
+import uuid
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
@@ -283,3 +284,89 @@ def delete_cron_api(identifier: str):
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=400, detail=f"删除闹钟失败: {str(e)}")
+
+
+# ==========================================
+# 7. 循环流水线任务 API
+# ==========================================
+LOOP_FILE = ".purrcat/core/loop.json"
+
+class AddLoopReq(BaseModel):
+    title: str
+    interval: int
+    task_hook: str = "Agent"
+    task_inputs: dict = {}
+    active: bool = True  # 🌟 新增：支持直接开启/关闭
+
+@router.get("/loop")
+def list_loops_api():
+    """获取全量循环流水线任务清单"""
+    LOOP_FILE = ".purrcat/core/loop.json"
+    if not os.path.exists(LOOP_FILE):
+        return []
+    try:
+        with open(LOOP_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"读取循环任务失败: {str(e)}")
+
+@router.post("/loop")
+def add_loop_api(req: AddLoopReq):
+    """新增或修改循环定时流水线任务（含 Agent 专属心跳去重）"""
+    LOOP_FILE = ".purrcat/core/loop.json"
+    try:
+        os.makedirs(os.path.dirname(LOOP_FILE), exist_ok=True)
+        loops = []
+        if os.path.exists(LOOP_FILE):
+            with open(LOOP_FILE, "r", encoding="utf-8") as f:
+                loops = json.load(f)
+        
+        # 🌟 核心去重：如果提交的是 Agent 心跳，先删掉历史所有的 Agent 记录
+        if req.task_hook == "Agent":
+            loops = [l for l in loops if l.get("task_hook") != "Agent"]
+            
+        loop_id = "lp_" + __import__("uuid").uuid4().hex[:8]
+        new_item = {
+            "id": loop_id,
+            "title": req.title,
+            "interval": req.interval,
+            "task_hook": req.task_hook,
+            "task_inputs": req.task_inputs,
+            "active": req.active
+        }
+        loops.append(new_item)
+        
+        # 🌟 原子写入：先写临时文件，再 rename，防止写入冲突导致文件损坏
+        tmp_file = LOOP_FILE + ".tmp"
+        with open(tmp_file, "w", encoding="utf-8") as f:
+            json.dump(loops, f, indent=2, ensure_ascii=False)
+        os.replace(tmp_file, LOOP_FILE)
+        return {"status": "success", "data": new_item}
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=400, detail=f"保存循环任务失败: {str(e)}")
+
+@router.delete("/loop/{loop_id}")
+def delete_loop_api(loop_id: str):
+    """根据 ID 精准剔除并注销指定的循环工作线程"""
+    if not os.path.exists(LOOP_FILE):
+        raise HTTPException(status_code=404, detail="循环配置文件不存在")
+    try:
+        with open(LOOP_FILE, "r", encoding="utf-8") as f:
+            loops = json.load(f)
+        
+        filtered_loops = [l for l in loops if l.get("id") != loop_id]
+        if len(filtered_loops) == len(loops):
+            raise HTTPException(status_code=404, detail="未找到该循环任务记录")
+        
+        # 🌟 原子写入：先写临时文件，再 rename，防止写入冲突导致文件损坏
+        tmp_file = LOOP_FILE + ".tmp"
+        with open(tmp_file, "w", encoding="utf-8") as f:
+            json.dump(filtered_loops, f, indent=2, ensure_ascii=False)
+        os.replace(tmp_file, LOOP_FILE)
+        return {"status": "success", "message": f"工作线程 {loop_id} 已安全注销释放"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"注销循环任务异常: {str(e)}")

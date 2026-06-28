@@ -1,7 +1,7 @@
 // src/components/ChatPage.tsx
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Send, Cat, Clock, Activity, Server, Zap, Brain, GitMerge, ThumbsUp, ThumbsDown, Loader2, FolderOpen, Bell, Paperclip, X } from 'lucide-react';
+import { Send, Cat, Clock, Activity, Server, Zap, Brain, GitMerge, ThumbsUp, ThumbsDown, Loader2, FolderOpen, Bell, Paperclip, X, Heart } from 'lucide-react'; // 🌟 增加 Heart
 import { toast } from 'react-hot-toast';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -69,6 +69,46 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   const [cronData, setCronData] = useState<any[]>([]);
   const [showAddCronModal, setShowAddCronModal] = useState(false);
   const [newCron, setNewCron] = useState({ title: '', trigger_time: '', repeat_rule: 'none', task_hook: 'Agent', task_inputs_str: '{\n}' });
+
+  // 🌟 心跳控制状态
+  const [showHeartbeatModal, setShowHeartbeatModal] = useState(false);
+  const [heartbeatConfig, setHeartbeatConfig] = useState({ interval: 1800, active: true });
+
+  // 🌟 挂载时拉取现有的心跳配置
+  const fetchAgentHeartbeat = async () => {
+    try {
+      const res = await fetch('http://localhost:8000/api/tools/loop');
+      if (res.ok) {
+        const loops = await res.json();
+        const agentLoop = loops.find((l: any) => l.task_hook === 'Agent');
+        if (agentLoop) {
+          setHeartbeatConfig({ interval: agentLoop.interval, active: agentLoop.active });
+        }
+      }
+    } catch { /* noop */ }
+  };
+  useEffect(() => { fetchAgentHeartbeat(); }, []);
+
+  // 🌟 保存心跳配置
+  const saveHeartbeat = async () => {
+    try {
+      const res = await fetch('http://localhost:8000/api/tools/loop', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: '系统心跳',
+          interval: heartbeatConfig.interval,
+          task_hook: 'Agent',
+          task_inputs: {},
+          active: heartbeatConfig.active
+        })
+      });
+      if (res.ok) {
+        toast.success("Agent 潜意识心跳已更新！");
+        setShowHeartbeatModal(false);
+      }
+    } catch { toast.error("心跳更新失败"); }
+  };
 
   const [showMdModal, setShowMdModal] = useState(false);
   const [mdType, setMdType] = useState<'SOUL' | 'SOLO' | 'TODO'>('SOUL');
@@ -193,21 +233,25 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
           const schema = data.global_schema || {};
           const template: Record<string, string> = {};
           Object.keys(schema).forEach(key => {
-            template[key] = schema[key].description || `填写 ${key} 的值`;
+            template[key] = schema[key].description || `请输入值`;
           });
           setNewCron(prev => ({ ...prev, task_inputs_str: JSON.stringify(template, null, 2) }));
-        }).catch(() => {});
+        })
+        .catch(() => {});
+    } else {
+      setNewCron(prev => ({ ...prev, task_inputs_str: '{\n}' }));
     }
   }, [newCron.task_hook, showAddCronModal]);
 
   const fetchCron = async () => { try { const res = await fetch('http://localhost:8000/api/tools/cron'); if (res.ok) setCronData(await res.json()); } catch { /* noop */ } };
   const addCron = async () => { 
-    let task_inputs = {};
+    let parsedInputs = {};
     if (newCron.task_hook !== 'Agent') {
       try {
-        task_inputs = JSON.parse(newCron.task_inputs_str);
+        parsedInputs = JSON.parse(newCron.task_inputs_str);
       } catch {
-        return toast.error("JSON 参数格式错误！");
+        toast.error("工作流配置参数不符合合法标准的 JSON 格式！");
+        return;
       }
     }
     try { 
@@ -219,10 +263,14 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
            trigger_time: newCron.trigger_time,
            repeat_rule: newCron.repeat_rule,
            task_hook: newCron.task_hook,
-           task_inputs: task_inputs
+           task_inputs: parsedInputs
         }) 
       }); 
-      if (res.ok) { setShowAddCronModal(false); fetchCron(); } 
+      if (res.ok) { 
+        setShowAddCronModal(false); 
+        setNewCron({ title: '', trigger_time: '', repeat_rule: 'none', task_hook: 'Agent', task_inputs_str: '{\n}' });
+        fetchCron(); 
+      } 
     } catch { /* noop */ } 
   };
   const deleteCron = async (id: string) => { try { await fetch(`http://localhost:8000/api/tools/cron/${id}`, { method: 'DELETE' }); fetchCron(); } catch { /* noop */ } };
@@ -354,7 +402,18 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
             <div style={sketchyShape1} className="w-12 h-12 bg-terracotta border-4 border-ink flex items-center justify-center -rotate-6 shadow-[2px_2px_0px_0px_rgba(26,26,26,1)]">
               <Cat size={28} className="text-paper" strokeWidth={2.5} />
             </div>
-            <h2 className="text-4xl font-black tracking-tighter text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>PurrCat.</h2>
+            <div className="flex items-center gap-3">
+              <h2 className="text-4xl font-black tracking-tighter text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>PurrCat.</h2>
+              {/* 🌟 心跳控制按钮 */}
+              <button 
+                onClick={() => setShowHeartbeatModal(true)} 
+                className={`p-2 border-4 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] transition-all hover:scale-110 active:translate-y-1 active:shadow-none ${heartbeatConfig.active ? 'bg-[#bf616a] text-paper' : 'bg-cream text-ink/40'}`} 
+                style={sketchyShape3} 
+                title="Agent Subconscious Heartbeat"
+              >
+                <Heart size={20} strokeWidth={3} className={heartbeatConfig.active ? "animate-pulse" : ""} />
+              </button>
+            </div>
           </div>
           
           <div className="flex items-center gap-3">
@@ -535,6 +594,48 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
       </div>
 
       <RequestQueuePanel {...queueProps} />
+
+      {/* 🌟 专属心跳配置弹窗 */}
+      {showHeartbeatModal && (
+        <div className="fixed inset-0 bg-ink/40 backdrop-blur-sm z-[200] flex items-center justify-center p-4" onClick={(e) => e.stopPropagation()}>
+          <div style={sketchyShape2} className="bg-paper border-4 border-ink p-8 flex flex-col gap-6 shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] -rotate-1 max-w-sm w-full">
+            <div className="flex justify-between items-center rotate-1 border-b-4 border-ink/10 pb-2">
+              <h3 className="text-2xl font-black tracking-widest text-[#bf616a] flex items-center gap-2" style={{ fontFamily: '"Comic Sans MS", cursive' }}>
+                <Heart size={24} className="animate-pulse"/> HEARTBEAT
+              </h3>
+              <button onClick={() => setShowHeartbeatModal(false)} className="hover:text-terracotta hover:scale-110 transition-all"><X size={28} strokeWidth={3}/></button>
+            </div>
+            
+            <div className="rotate-1 flex flex-col gap-4">
+              <p className="text-sm font-bold opacity-70">让小猫在后台定频主动思考与行动（单位：秒）</p>
+              
+              <div className="flex items-center gap-4 bg-cream border-4 border-ink p-3 shadow-[inset_2px_2px_0px_0px_rgba(26,26,26,0.05)]" style={sketchyShape3}>
+                <input 
+                  type="number" 
+                  value={heartbeatConfig.interval} 
+                  onChange={e => setHeartbeatConfig({...heartbeatConfig, interval: parseInt(e.target.value) || 60})} 
+                  className="w-24 bg-transparent font-black text-xl text-center focus:outline-none" 
+                />
+                <span className="font-bold opacity-60">SECONDS</span>
+              </div>
+
+              <label className="flex items-center gap-3 cursor-pointer bg-cream border-4 border-ink p-3 shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:bg-sand transition-colors select-none" style={sketchyShape1}>
+                <input
+                  type="checkbox"
+                  checked={heartbeatConfig.active}
+                  onChange={(e) => setHeartbeatConfig({...heartbeatConfig, active: e.target.checked})}
+                  className="w-5 h-5 accent-[#bf616a] cursor-pointer"
+                />
+                <span className="font-black text-lg">ACTIVATE HEARTBEAT</span>
+              </label>
+            </div>
+
+            <button onClick={saveHeartbeat} style={sketchyShape2} className="mt-2 w-full bg-[#bf616a] text-paper font-black py-4 border-4 border-ink hover:bg-[#a54e56] transition-all shadow-[6px_6px_0px_0px_rgba(26,26,26,1)] active:shadow-none active:translate-y-1 rotate-1 text-xl tracking-widest">
+              SAVE CONFIG
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
