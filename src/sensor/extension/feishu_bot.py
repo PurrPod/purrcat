@@ -51,9 +51,9 @@ def _on_message_received(data: P2ImMessageReceiveV1) -> None:
     user_text = msg_content.get("text", "")
 
     chat_id = data.event.message.chat_id
-    print(f"💬 [Feishu] 收到消息 (Chat: {chat_id}): {user_text}")
+    print(f"💬 [Feishu Sensor] 收到用户消息: {user_text}")
 
-    payload = f"[FROM_FEISHU:{chat_id}] {user_text}"
+    payload = f"[Feishu Sensor 收到用户消息] {user_text}"
     send_json_to_main("observe", {"content": payload})
 
 

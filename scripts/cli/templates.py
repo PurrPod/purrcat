@@ -13,6 +13,18 @@ CRON_CONFIG_TEMPLATE = """[
 ]
 """
 
+LOOP_CONFIG_TEMPLATE = """[
+  {
+    "id": "lp_default_heartbeat",
+    "title": "系统心跳",
+    "interval": 1800,
+    "task_hook": "Agent",
+    "task_inputs": {},
+    "active": false
+  }
+]
+"""
+
 MEMORY_MD_TEMPLATE = """当前阶段：记忆文档为空，待注入第一条记忆。
 
 ### 👤 用户画像与协作偏好
@@ -114,7 +126,7 @@ def get_sensor_config_dict():
         },
         "system_clock": {
             "enabled": True,
-            "env": {"INTERVAL": "1800", "CRON_FILE": ".purrcat/core/cron.json"},
+            "env": {"CRON_FILE": ".purrcat/core/cron.json"},
             "capabilities": {"observe": True, "express": False},
         },
         "rss_watcher": {

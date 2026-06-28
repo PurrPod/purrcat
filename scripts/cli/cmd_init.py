@@ -6,6 +6,7 @@ import sys
 
 from scripts.cli.templates import (
     CRON_CONFIG_TEMPLATE,
+    LOOP_CONFIG_TEMPLATE,
     MEMORY_MD_TEMPLATE,
     SOLO_MD_TEMPLATE,
     SOUL_MD_TEMPLATE,
@@ -186,6 +187,19 @@ def _generate_core_files(purrcat_dir, force=False):
         except Exception as e:
             print(f"X Failed to write core/cron.json: {e}")
             results.append(("cron.json", False))
+
+    loop_path = os.path.join(core_dir, "loop.json")
+    if os.path.exists(loop_path) and not _prompt_overwrite(loop_path, force):
+        results.append(("loop.json", False))
+    else:
+        try:
+            with open(loop_path, "w", encoding="utf-8") as f:
+                f.write(LOOP_CONFIG_TEMPLATE)
+            print("[+] core/loop.json generated")
+            results.append(("loop.json", True))
+        except Exception as e:
+            print(f"X Failed to write core/loop.json: {e}")
+            results.append(("loop.json", False))
 
     memory_md_path = os.path.join(core_dir, "MEMORY.md")
     if os.path.exists(memory_md_path) and not _prompt_overwrite(memory_md_path, force):
