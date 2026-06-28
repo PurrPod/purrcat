@@ -61,7 +61,10 @@ COMPUTERUSE_TOOL_SCHEMA = {
                         "1. type: 要输入的具体文字内容。\n"
                         "2. key: 快捷键组合（如 'ctrl+c', 'enter', 'win+d'）。\n"
                         "3. find_element: 要在屏幕上查找的元素文本内容。\n"
-                        "4. launch_app: 既可以传入白名单中的应用名（如 '微信'），也可以直接传入完整的网址URL（如 'https://github.com'）以调用默认浏览器打开。"
+                        "4. launch_app: 支持三种玩法：\n"
+                        "   - 传入白名单应用名（如 '微信'）。\n"
+                        "   - 传入完整网址URL（如 'https://github.com'）打开网页。\n"
+                        "   - 传入本地文件路径，优先使用 /agent_vm/ 沙盒路径（如 '/agent_vm/index.html'），也支持系统绝对路径（如 'C:\\temp\\test.html'），用于在浏览器中预览你刚才生成的网页或文件！"
                     ),
                 },
                 "scroll_amount": {

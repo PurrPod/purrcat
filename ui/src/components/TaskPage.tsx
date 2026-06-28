@@ -216,7 +216,7 @@ const TaskMonitorNode = ({ id, data, selected }: TaskMonitorNodeProps) => {
   );
 };
 
-export default function TaskPage({ onBack, onSwitchToChat }: { onBack: () => void; onSwitchToChat?: () => void }) {
+export default function TaskPage({ onBack }: { onBack: () => void }) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [currentNodeLogs, setCurrentNodeLogs] = useState<LogEntry[]>([]);

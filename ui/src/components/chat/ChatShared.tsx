@@ -1,4 +1,5 @@
 // src/components/chat/ChatShared.tsx
+/* eslint-disable react-refresh/only-export-components */
 import { useState } from 'react';
 import { Package, ChevronDown, ChevronUp, Wrench } from 'lucide-react';
 import { EventItem, Message } from './ChatTypes';

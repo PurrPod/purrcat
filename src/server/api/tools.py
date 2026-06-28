@@ -5,7 +5,6 @@ import urllib.request
 import zipfile
 import traceback
 import json
-import uuid
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
@@ -263,11 +262,11 @@ def add_cron_api(req: AddCronReq):
     """添加闹钟"""
     try:
         result = add_cron(
-            title=req.title, 
-            trigger_time=req.trigger_time, 
+            title=req.title,
+            trigger_time=req.trigger_time,
             repeat_rule=req.repeat_rule,
-            task_hook=req.task_hook,       # 🌟 透传参数
-            task_inputs=req.task_inputs    # 🌟 透传参数
+            task_hook=req.task_hook,  # 🌟 透传参数
+            task_inputs=req.task_inputs,  # 🌟 透传参数
         )
         return {"status": "success", "data": result}
     except Exception as e:
@@ -291,12 +290,14 @@ def delete_cron_api(identifier: str):
 # ==========================================
 LOOP_FILE = ".purrcat/core/loop.json"
 
+
 class AddLoopReq(BaseModel):
     title: str
     interval: int
     task_hook: str = "Agent"
     task_inputs: dict = {}
     active: bool = True  # 🌟 新增：支持直接开启/关闭
+
 
 @router.get("/loop")
 def list_loops_api():
@@ -310,6 +311,7 @@ def list_loops_api():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"读取循环任务失败: {str(e)}")
 
+
 @router.post("/loop")
 def add_loop_api(req: AddLoopReq):
     """新增或修改循环定时流水线任务（含 Agent 专属心跳去重）"""
@@ -320,11 +322,11 @@ def add_loop_api(req: AddLoopReq):
         if os.path.exists(LOOP_FILE):
             with open(LOOP_FILE, "r", encoding="utf-8") as f:
                 loops = json.load(f)
-        
+
         # 🌟 核心去重：如果提交的是 Agent 心跳，先删掉历史所有的 Agent 记录
         if req.task_hook == "Agent":
-            loops = [l for l in loops if l.get("task_hook") != "Agent"]
-            
+            loops = [loop for loop in loops if loop.get("task_hook") != "Agent"]
+
         loop_id = "lp_" + __import__("uuid").uuid4().hex[:8]
         new_item = {
             "id": loop_id,
@@ -332,10 +334,10 @@ def add_loop_api(req: AddLoopReq):
             "interval": req.interval,
             "task_hook": req.task_hook,
             "task_inputs": req.task_inputs,
-            "active": req.active
+            "active": req.active,
         }
         loops.append(new_item)
-        
+
         # 🌟 原子写入：先写临时文件，再 rename，防止写入冲突导致文件损坏
         tmp_file = LOOP_FILE + ".tmp"
         with open(tmp_file, "w", encoding="utf-8") as f:
@@ -344,8 +346,10 @@ def add_loop_api(req: AddLoopReq):
         return {"status": "success", "data": new_item}
     except Exception as e:
         import traceback
+
         traceback.print_exc()
         raise HTTPException(status_code=400, detail=f"保存循环任务失败: {str(e)}")
+
 
 @router.delete("/loop/{loop_id}")
 def delete_loop_api(loop_id: str):
@@ -355,11 +359,11 @@ def delete_loop_api(loop_id: str):
     try:
         with open(LOOP_FILE, "r", encoding="utf-8") as f:
             loops = json.load(f)
-        
-        filtered_loops = [l for l in loops if l.get("id") != loop_id]
+
+        filtered_loops = [loop for loop in loops if loop.get("id") != loop_id]
         if len(filtered_loops) == len(loops):
             raise HTTPException(status_code=404, detail="未找到该循环任务记录")
-        
+
         # 🌟 原子写入：先写临时文件，再 rename，防止写入冲突导致文件损坏
         tmp_file = LOOP_FILE + ".tmp"
         with open(tmp_file, "w", encoding="utf-8") as f:

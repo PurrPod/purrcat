@@ -2,10 +2,10 @@ import json
 import os
 import threading
 import time
-import uuid
 
 LOOP_FILE = ".purrcat/core/loop.json"
 LOOP_LOCK = threading.Lock()
+
 
 class LoopWorker(threading.Thread):
     def __init__(self, loop_id, item):
@@ -18,15 +18,17 @@ class LoopWorker(threading.Thread):
         self._stop_event.set()
 
     def run(self):
-        print(f"🟢 [LoopWorker] 循环线程已启动: {self.item.get('title')} (ID: {self.loop_id})")
+        print(
+            f"🟢 [LoopWorker] 循环线程已启动: {self.item.get('title')} (ID: {self.loop_id})"
+        )
         while not self._stop_event.is_set():
             interval = int(self.item.get("interval", 1800))
             steps = interval
-            
+
             while steps > 0 and not self._stop_event.is_set():
                 time.sleep(1)
                 steps -= 1
-            
+
             if self._stop_event.is_set():
                 break
 
@@ -38,27 +40,32 @@ class LoopWorker(threading.Thread):
             try:
                 if task_hook == "Agent":
                     from src.agent.manager import manager as agent_manager
+
                     agent_manager.agent_force_push(
-                        content="⏰ [Heartbeat] Fetch solo todo",
-                        type="system_clock"
+                        content="⏰ [Heartbeat] Fetch solo todo", type="system_clock"
                     )
                 else:
                     import asyncio
                     from src.harness.process import Task
-                    
+
                     loop = asyncio.new_event_loop()
                     asyncio.set_event_loop(loop)
-                    task = Task(task_name=title, inputs=task_inputs, graph_name=task_hook)
-                    
+                    task = Task(
+                        task_name=title, inputs=task_inputs, graph_name=task_hook
+                    )
+
                     loop.run_until_complete(task.run())
                     loop.close()
-                    print(f"✅ [LoopManager] 后台流水线任务执行完毕: {title}，开始重新计算下一次间隔。")
+                    print(
+                        f"✅ [LoopManager] 后台流水线任务执行完毕: {title}，开始重新计算下一次间隔。"
+                    )
             except Exception as e:
                 print(f"❌ [LoopManager] 循环任务 {title} 运行期间抛出异常: {e}")
 
+
 class LoopManager:
     _instance = None
-    
+
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
@@ -84,7 +91,7 @@ class LoopManager:
     def _watch_loop_json(self):
         last_mtime = 0
         os.makedirs(os.path.dirname(LOOP_FILE), exist_ok=True)
-        
+
         if not os.path.exists(LOOP_FILE):
             default_loops = [
                 {
@@ -93,7 +100,7 @@ class LoopManager:
                     "interval": 1800,
                     "task_hook": "Agent",
                     "task_inputs": {},
-                    "active": True
+                    "active": True,
                 }
             ]
             with open(LOOP_FILE, "w", encoding="utf-8") as f:
@@ -127,30 +134,40 @@ class LoopManager:
                 loop_id = item.get("id")
                 if not loop_id:
                     continue
-                
+
                 if item.get("active", False):
                     active_ids.add(loop_id)
                     if loop_id in self.workers:
                         old_worker = self.workers[loop_id]
-                        if (old_worker.item.get("interval") != item.get("interval") or 
-                            old_worker.item.get("task_hook") != item.get("task_hook") or 
-                            old_worker.item.get("task_inputs") != item.get("task_inputs")):
-                            print(f"🔄 [LoopManager] 检测到 Loop ID: {loop_id} 配置有变，正在热重建...")
+                        if (
+                            old_worker.item.get("interval") != item.get("interval")
+                            or old_worker.item.get("task_hook") != item.get("task_hook")
+                            or old_worker.item.get("task_inputs")
+                            != item.get("task_inputs")
+                        ):
+                            print(
+                                f"🔄 [LoopManager] 检测到 Loop ID: {loop_id} 配置有变，正在热重建..."
+                            )
                             old_worker.stop()
                             new_worker = LoopWorker(loop_id, item)
                             self.workers[loop_id] = new_worker
                             new_worker.start()
                     else:
-                        print(f"🚀 [LoopManager] 成功捕捉新活跃循环 ID: {loop_id}，拉起独立工作线程...")
+                        print(
+                            f"🚀 [LoopManager] 成功捕捉新活跃循环 ID: {loop_id}，拉起独立工作线程..."
+                        )
                         worker = LoopWorker(loop_id, item)
                         self.workers[loop_id] = worker
                         worker.start()
 
             for loop_id in list(self.workers.keys()):
                 if loop_id not in active_ids:
-                    print(f"🛑 [LoopManager] 循环任务下线或被移除 ID: {loop_id}，优雅终止子线程...")
+                    print(
+                        f"🛑 [LoopManager] 循环任务下线或被移除 ID: {loop_id}，优雅终止子线程..."
+                    )
                     self.workers[loop_id].stop()
                     del self.workers[loop_id]
+
 
 def get_loop_manager() -> LoopManager:
     return LoopManager()

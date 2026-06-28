@@ -5,7 +5,6 @@
 
 import sys
 import json
-import threading
 import time
 import datetime
 import os
@@ -13,13 +12,16 @@ import os
 _REAL_STDOUT = sys.stdout
 sys.stdout = sys.stderr
 
+
 def send_json_to_main(method: str, params: dict):
     _REAL_STDOUT.write(
         json.dumps({"method": method, "params": params}, ensure_ascii=False) + "\n"
     )
     _REAL_STDOUT.flush()
 
+
 CRON_FILE = os.environ.get("CRON_FILE", ".purrcat/core/cron.json")
+
 
 def clock_loop():
     while True:
@@ -65,8 +67,8 @@ def clock_loop():
                                 {
                                     "graph_name": task_hook,
                                     "inputs": task_inputs,
-                                    "title": c.get("title")
-                                }
+                                    "title": c.get("title"),
+                                },
                             )
 
                         if rule == "none":
@@ -80,5 +82,8 @@ def clock_loop():
 
         time.sleep(60)
 
-print("🟢 [System Clock] 纯净时钟守护已启动（系统心跳已被全面接管至独立 LoopManager 运行）")
+
+print(
+    "🟢 [System Clock] 纯净时钟守护已启动（系统心跳已被全面接管至独立 LoopManager 运行）"
+)
 clock_loop()

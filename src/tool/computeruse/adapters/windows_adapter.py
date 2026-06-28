@@ -199,4 +199,5 @@ class WindowsAdapter(BasePlatformAdapter):
 
     def launch_app(self, target_path: str) -> None:
         import os
+
         os.startfile(target_path)

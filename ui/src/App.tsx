@@ -65,7 +65,7 @@ function ChatRouteWrapper() {
 
 function TaskRouteWrapper() {
   const navigate = useNavigate();
-  return <TaskPage onBack={() => navigate('/')} onSwitchToChat={() => navigate('/chat')} />;
+  return <TaskPage onBack={() => navigate('/')} />;
 }
 
 // 🌟 Market 的 Wrapper

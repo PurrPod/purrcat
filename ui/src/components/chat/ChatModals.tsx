@@ -361,11 +361,11 @@ export default function ChatModals(props: any) {
             </div>
             <div className="-rotate-1">
               <p className="font-bold opacity-70 mb-3 text-ink text-sm">请输入或粘贴本地文件/文件夹的绝对路径：</p>
-              <input autoFocus value={tempRefPath} onChange={e => setTempRefPath(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && tempRefPath.trim()) { setRefPaths(prev => [...new Set([...prev, tempRefPath.trim()])]); setTempRefPath(''); setShowRefModal(false); } }} placeholder="/Users/dev/my_project/file.py" className="w-full border-4 border-ink bg-[#FDF8F0] p-4 font-bold text-base focus:outline-none shadow-[inset_4px_4px_0px_0px_rgba(26,26,26,0.05)]" style={sketchyShape3} />
+              <input autoFocus value={tempRefPath} onChange={e => setTempRefPath(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && tempRefPath.trim()) { setRefPaths((prev: string[]) => [...new Set([...prev, tempRefPath.trim()])]); setTempRefPath(''); setShowRefModal(false); } }} placeholder="/Users/dev/my_project/file.py" className="w-full border-4 border-ink bg-[#FDF8F0] p-4 font-bold text-base focus:outline-none shadow-[inset_4px_4px_0px_0px_rgba(26,26,26,0.05)]" style={sketchyShape3} />
             </div>
             <div className="flex gap-4 -rotate-1 mt-2">
               <button onClick={() => setShowRefModal(false)} style={sketchyShape3} className="flex-1 bg-cream text-ink font-black tracking-widest text-lg py-3 border-4 border-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)]">CANCEL</button>
-              <button onClick={() => { if (tempRefPath.trim()) { setRefPaths(prev => [...new Set([...prev, tempRefPath.trim()])]); setTempRefPath(''); setShowRefModal(false); } }} style={sketchyShape1} className="flex-1 bg-[#88c0d0] text-paper font-black tracking-widest text-lg py-3 border-4 border-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:bg-[#72a6b5] flex items-center justify-center gap-2"><Plus size={24} strokeWidth={3}/> ADD PATH</button>
+              <button onClick={() => { if (tempRefPath.trim()) { setRefPaths((prev: string[]) => [...new Set([...prev, tempRefPath.trim()])]); setTempRefPath(''); setShowRefModal(false); } }} style={sketchyShape1} className="flex-1 bg-[#88c0d0] text-paper font-black tracking-widest text-lg py-3 border-4 border-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:bg-[#72a6b5] flex items-center justify-center gap-2"><Plus size={24} strokeWidth={3}/> ADD PATH</button>
             </div>
           </div>
         </div>

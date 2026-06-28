@@ -5,6 +5,7 @@ import hashlib
 import io
 import base64
 import difflib
+import os
 from PIL import Image, ImageDraw
 from src.tool.computeruse.adapters.factory import get_platform_adapter
 from src.tool.computeruse.exceptions import ExecutionFailedError
@@ -27,6 +28,21 @@ def _calculate_iou(boxA, boxB):
     boxAArea = (boxA[2] - boxA[0]) * (boxA[3] - boxA[1])
     boxBArea = (boxB[2] - boxB[0]) * (boxB[3] - boxB[1])
     return interArea / float(boxAArea + boxBArea - interArea + 1e-5)
+
+
+def _resolve_sandbox_path(path: str) -> str:
+    """独立的路径映射工具：将 Agent 视角的 /agent_vm/... 映射为宿主机的真实绝对路径"""
+    path = str(path).strip()
+    path_normalized = path.replace("\\", "/")
+
+    if path_normalized.startswith("/agent_vm/"):
+        path = path.replace("/agent_vm/", "./agent_vm/", 1).replace(
+            "\\agent_vm\\", ".\\agent_vm\\", 1
+        )
+    elif path_normalized == "/agent_vm":
+        path = "./agent_vm"
+
+    return os.path.abspath(path)
 
 
 def execute_action(
@@ -229,31 +245,78 @@ def execute_action(
                     app_list = "\n".join([f"- {k}: {v}" for k, v in apps.items()])
                     message = f"📂 当前可用的应用白名单列表如下:\n{app_list}\n💡 请使用 launch_app 动作并传入上述名称进行唤起。"
             elif action == "launch_app":
-                # 检查是否是 URL (以 http:// 或 https:// 开头)
-                if text.lower().startswith(("http://", "https://")):
-                    try:
-                        adapter.launch_app(text)
-                        message = f"🌐 已成功使用默认浏览器打开网页: {text}"
-                    except Exception as e:
-                        raise ExecutionFailedError(action, f"打开网页失败: {str(e)}")
+                text_lower = text.lower()
+                is_web_url = text_lower.startswith(("http://", "https://", "file://"))
+
+                mapped_path = _resolve_sandbox_path(text)
+
+                is_local_file = os.path.exists(mapped_path) and text_lower.endswith(
+                    (
+                        ".html",
+                        ".htm",
+                        ".pdf",
+                        ".txt",
+                        ".png",
+                        ".jpg",
+                        ".jpeg",
+                        ".svg",
+                        ".gif",
+                        ".mp4",
+                        ".json",
+                        ".md",
+                        ".css",
+                        ".js",
+                    )
+                )
+
+                if is_web_url:
+                    target_to_launch = text
+                elif is_local_file:
+                    target_to_launch = mapped_path
                 else:
-                    # 不是 URL，执行原来的本地应用白名单逻辑
+                    target_to_launch = None
+
+                if not target_to_launch and ("/" in text or "\\" in text):
+                    raise ExecutionFailedError(
+                        action, f"文件 '{text}' 不存在，请确认路径是否正确"
+                    )
+
+                if target_to_launch:
+                    try:
+                        adapter.launch_app(target_to_launch)
+                        display_name = text if is_web_url else f"本地文件 {text}"
+                        message = f"🌐 已成功使用系统默认程序打开: {display_name}"
+                    except Exception as e:
+                        raise ExecutionFailedError(
+                            action, f"打开网页或文件失败: {str(e)}"
+                        )
+                else:
                     apps = get_app_config()
                     if not apps:
-                        raise ExecutionFailedError(action, "应用白名单未配置，请提示用户先创建 .purrcat/app_config.json 文件")
+                        raise ExecutionFailedError(
+                            action,
+                            "应用白名单未配置，请提示用户先创建 .purrcat/app_config.json 文件",
+                        )
 
-                    matches = difflib.get_close_matches(text, list(apps.keys()), n=1, cutoff=0.4)
+                    matches = difflib.get_close_matches(
+                        text, list(apps.keys()), n=1, cutoff=0.4
+                    )
 
                     if matches:
                         target_name = matches[0]
                         target_path = apps[target_name]
                         try:
                             adapter.launch_app(target_path)
-                            message = f"🚀 已成功尝试唤起应用: {target_name} ({target_path})"
+                            message = (
+                                f"🚀 已成功尝试唤起应用: {target_name} ({target_path})"
+                            )
                         except Exception as e:
                             raise ExecutionFailedError(action, f"唤起失败: {str(e)}")
                     else:
-                        raise ExecutionFailedError(action, f"未在白名单中找到与 '{text}' 匹配的应用。请先使用 list_app 动作查看可用列表。")
+                        raise ExecutionFailedError(
+                            action,
+                            f"未在白名单中找到与 '{text}' 匹配的应用。请先使用 list_app 动作查看可用列表。",
+                        )
             else:
                 if not coordinate:
                     raise ExecutionFailedError(action, "缺少有效坐标或 element_id")

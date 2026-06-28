@@ -218,9 +218,16 @@ class MacOSAdapter(BasePlatformAdapter):
             active_app = workspace.frontmostApplication()
 
             for app in workspace.runningApplications():
-                if app.activationPolicy() == AppKit.NSApplicationActivationPolicyRegular:
+                if (
+                    app.activationPolicy()
+                    == AppKit.NSApplicationActivationPolicyRegular
+                ):
                     name = app.localizedName()
-                    if app != active_app and name not in keep_apps and not app.isHidden():
+                    if (
+                        app != active_app
+                        and name not in keep_apps
+                        and not app.isHidden()
+                    ):
                         app.hide()
                         hidden_apps.append(name)
         except Exception:
@@ -229,4 +236,5 @@ class MacOSAdapter(BasePlatformAdapter):
 
     def launch_app(self, target_path: str) -> None:
         import subprocess
+
         subprocess.run(["open", target_path], check=True)
