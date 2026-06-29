@@ -54,7 +54,7 @@ export default function EditorPage() {
   return (
     <div className="absolute inset-0 bg-[#fdfaf5] bg-[radial-gradient(#1a1a1a_1px,transparent_1px)] [background-size:24px_24px] p-8 flex flex-col gap-8 overflow-hidden">
       <GlobalSketchyOverrides />
-      <Toolbar onBack={() => navigate('/')} />
+      <Toolbar onBack={() => navigate(-1)} />
       <div className="flex-1 flex gap-10 min-h-0 relative z-10 w-full max-w-[1920px] mx-auto">
         <ReactFlowProvider>
           <div className="w-[340px] flex flex-col relative z-20 h-full overflow-y-auto pr-4">

@@ -49,33 +49,35 @@ function HomeRouteWrapper() {
     onEnterChat={() => navigate('/chat')} 
     onEnterEditor={() => navigate('/editor')} 
     onEnterMarket={() => navigate('/market')}
-    onEnterEvolve={() => navigate('/evolve')} // 🌟 传递回调函数
+    onEnterEvolve={() => navigate('/evolve')}
+    onEnterTask={() => navigate('/task')}     // 🌟 传入新增的 Task 路由
+    onEnterMemory={() => navigate('/memory')} // 🌟 传入新增的 Memory 路由
   />;
 }
 
 function MemoryRouteWrapper() {
   const navigate = useNavigate();
-  return <MemoryPage onBack={() => navigate('/')} />;
+  return <MemoryPage onBack={() => navigate(-1)} />;
 }
 
 function ChatRouteWrapper() {
   const navigate = useNavigate();
-  return <ChatPage onBack={() => navigate('/')} onSwitchToTask={() => navigate('/task')} />;
+  return <ChatPage onBack={() => navigate(-1)} onSwitchToTask={() => navigate('/task')} />;
 }
 
 function TaskRouteWrapper() {
   const navigate = useNavigate();
-  return <TaskPage onBack={() => navigate('/')} />;
+  return <TaskPage onBack={() => navigate(-1)} />;
 }
 
 // 🌟 Market 的 Wrapper
 function MarketRouteWrapper() {
   const navigate = useNavigate();
-  return <MarketPage onBack={() => navigate('/')} />;
+  return <MarketPage onBack={() => navigate(-1)} />;
 }
 
 // 🌟 Evolve 的 Wrapper
 function EvolveRouteWrapper() {
   const navigate = useNavigate();
-  return <EvolvePage onBack={() => navigate('/')} />;
+  return <EvolvePage onBack={() => navigate(-1)} />;
 }
