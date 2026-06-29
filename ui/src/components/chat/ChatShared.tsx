@@ -1,6 +1,6 @@
 // src/components/chat/ChatShared.tsx
 /* eslint-disable react-refresh/only-export-components */
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { Package, ChevronDown, ChevronUp, Wrench } from 'lucide-react';
 import { EventItem, Message } from './ChatTypes';
 
@@ -118,7 +118,7 @@ export function renderSketchyHeatmap(heatmapData: Record<string, number> = {}) {
   );
 }
 
-export const ToolMessageBubble = ({ msg }: { msg: Message }) => {
+export const ToolMessageBubble = React.memo(({ msg }: { msg: Message }) => {
   const [expanded, setExpanded] = useState(false);
   const contentStr = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
 
@@ -148,9 +148,9 @@ export const ToolMessageBubble = ({ msg }: { msg: Message }) => {
       </div>
     </div>
   );
-};
+});
 
-export const ToolCallBubble = ({ tc }: { tc: any }) => {
+export const ToolCallBubble = React.memo(({ tc }: { tc: any }) => {
   const [expanded, setExpanded] = useState(false);
   const argsStr = tc.function?.arguments || '{}';
 
@@ -180,4 +180,4 @@ export const ToolCallBubble = ({ tc }: { tc: any }) => {
       </div>
     </div>
   );
-};
+});

@@ -1,7 +1,8 @@
 // src/components/ChatPage.tsx
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Send, Cat, Clock, Activity, Server, Zap, Brain, GitMerge, ThumbsUp, ThumbsDown, Loader2, FolderOpen, Bell, Paperclip, X, Heart, User, List } from 'lucide-react'; // 🌟 增加 Heart, User, List
+import { Send, Cat, Clock, Activity, Server, Zap, Brain, GitMerge, ThumbsUp, ThumbsDown, Loader2, FolderOpen, Bell, Paperclip, X, Heart, User, List, ExternalLink } from 'lucide-react'; // 🌟 增加 Heart, User, List, ExternalLink
+import { Virtuoso } from 'react-virtuoso'; // 🌟 引入虚拟列表
 import { toast } from 'react-hot-toast';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -119,6 +120,21 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   const [mdContent, setMdContent] = useState('');
   const [isSavingMd, setIsSavingMd] = useState(false);
 
+  // 🌟 新增：链接预览状态
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+
+  // 🌟 新增：全局拦截气泡内的链接点击事件
+  const handleMessageClick = (e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    const anchor = target.closest('a');
+
+    // 如果点击的是 <a> 标签且带有 href
+    if (anchor && anchor.href) {
+      e.preventDefault(); // 阻止浏览器默认跳转
+      setPreviewUrl(anchor.href); // 唤起内嵌预览弹窗
+    }
+  };
+
   const [showSkillSelectModal, setShowSkillSelectModal] = useState(false);
   const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
   const [tempSelectedSkills, setTempSelectedSkills] = useState<string[]>([]);
@@ -153,6 +169,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const virtuosoRef = useRef<any>(null); // 🌟 控制虚拟列表滚动
   const isAutoScroll = useRef(true);
   const pendingMsgsRef = useRef<string[]>([]);
 
@@ -335,8 +352,85 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   const deleteCron = async (id: string) => { try { await fetch(`http://localhost:8000/api/tools/cron/${id}`, { method: 'DELETE' }); fetchCron(); } catch { /* noop */ } };
 
   const handleScroll = () => { if (!messagesContainerRef.current) return; const { scrollTop, scrollHeight, clientHeight } = messagesContainerRef.current; isAutoScroll.current = scrollHeight - scrollTop - clientHeight < 50; };
-  useEffect(() => { if (isAutoScroll.current) messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
+  useEffect(() => { if (isAutoScroll.current) virtuosoRef.current?.scrollToIndex({ index: messages.length - 1, behavior: 'smooth' }); }, [messages]);
   useEffect(() => { pendingMsgsRef.current = []; }, [currentBranchId]);
+
+  // 🌟 消息渲染函数（用于虚拟列表）
+  const MessageRenderer = ({ msg, idx }: { msg: any; idx: number }) => {
+    if (msg.role === 'user') {
+      const parsedData = parseEventsContent(msg.content);
+      return (
+        <div className="flex flex-col w-full items-end mb-8">
+          {parsedData.attachments.length > 0 && (
+            <div className="flex flex-col gap-2 w-full items-end mb-2">
+              {parsedData.attachments.map((att: any, aIdx: number) => (
+                <div key={`att-${aIdx}`} style={sketchyShape3} className="px-4 py-2 bg-ink/5 border-2 border-ink text-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] flex items-center gap-2 max-w-[70%]"><span className="font-bold text-xs opacity-80 font-mono truncate">{att.content}</span></div>
+              ))}
+            </div>
+          )}
+          {parsedData.userMessages.map((userMsg: any, uIdx: number) => (
+            <div key={`u-${uIdx}`} className="flex flex-col gap-3 w-full max-w-[85%] items-end">
+              {userMsg.content && (
+                <div style={sketchyShape2} className="w-full p-6 border-4 border-ink relative bg-cream text-ink shadow-[6px 6px 0px 0px rgba(26,26,26,1)]">
+                  <div className="text-[17px] font-bold text-ink"><ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>{userMsg.content}</ReactMarkdown></div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      );
+    } else if (msg.role === 'tool') {
+      return <div className="flex w-full justify-start mb-8"><ToolMessageBubble msg={msg} /></div>;
+    } else {
+      return (
+        <div className="flex w-full justify-start mb-8">
+          <div className="flex flex-col gap-3 w-full max-w-[85%] items-start">
+            {msg.content && (
+              <div style={sketchyShape1} className="w-full p-6 border-4 border-ink relative bg-cream text-ink shadow-[6px 6px 0px 0px rgba(26,26,26,1)]">
+                <div>
+                  <div className="flex items-center gap-2 mb-4">
+                    <Cat size={20} strokeWidth={2.5}/>
+                    <span className="font-black text-sm uppercase tracking-widest bg-ink text-paper px-2 py-0.5" style={{ ...sketchyShape3, fontFamily: '"Comic Sans MS", cursive' }}>ASSISTANT</span>
+                  </div>
+                  <div className="text-[17px] font-bold text-ink"><ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>{msg.content}</ReactMarkdown></div>
+                </div>
+              </div>
+            )}
+            {msg.role === 'assistant' && idx === messages.length - 1 && !isAgentThinking && (
+              <div className="flex justify-end gap-2 mt-3 animate-in fade-in duration-300">
+                <button onClick={() => handleFeedback(true)} className="p-1.5 bg-paper border-2 border-ink hover:bg-[#a3be8c] hover:text-ink shadow-[2px 2px 0px 0px rgba(26,26,26,1)] transition-all hover:-translate-y-[1px] active:translate-y-0 active:shadow-none" style={sketchyShape2} title="点赞">
+                  <ThumbsUp size={16} strokeWidth={2.5} />
+                </button>
+                <button onClick={() => handleFeedback(false)} className="p-1.5 bg-paper border-2 border-ink hover:bg-[#bf616a] hover:text-paper shadow-[2px 2px 0px 0px rgba(26,26,26,1)] transition-all hover:-translate-y-[1px] active:translate-y-0 active:shadow-none" style={sketchyShape3} title="点踩">
+                  <ThumbsDown size={16} strokeWidth={2.5} />
+                </button>
+              </div>
+            )}
+            {msg.tool_calls && msg.tool_calls.map((tc: any, tIdx: number) => <ToolCallBubble key={`tc-${tIdx}`} tc={tc} />)}
+
+            {/* 🌟 状态栏：Processing 有框，Dozing 只显示文字 */}
+            {currentBranchId === 'main' && idx === messages.length - 1 && (
+              <div className="flex justify-start w-full mt-3">
+                {isAgentThinking ? (
+                  <div style={sketchyShape3} className="p-2 px-3 w-fit transition-colors border-2 border-ink bg-cream text-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)]">
+                    <div className="flex items-center gap-2">
+                      <Loader2 size={14} strokeWidth={3} className="animate-spin text-terracotta" />
+                      <span className="font-black text-xs tracking-widest uppercase" style={{ fontFamily: '"Comic Sans MS", cursive' }}>Processing...</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 text-ink/30">
+                    <Clock size={14} strokeWidth={3} />
+                    <span className="font-black text-xs tracking-widest uppercase" style={{ fontFamily: '"Comic Sans MS", cursive' }}>Dozing...</span>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+  };
 
   const loadSessions = async () => { try { const res = await fetch('http://localhost:8000/api/sessions'); if (res.ok) { const data = await res.json(); setSessions(data); if (data.length > 0 && !currentSessionId) handleSelectSession(data[0].id); } } catch { /* noop */ } };
   const loadSessionHistory = async (id: string, bId: string = 'main') => { const res = await fetch(`http://localhost:8000/api/sessions/${id}?branch_id=${bId}`); if (res.ok) setMessages(await res.json()); };
@@ -513,7 +607,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
           </div>
         )}
 
-        <div ref={messagesContainerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-10 pb-6 flex flex-col gap-6 w-full z-10 pt-4">
+        <div ref={messagesContainerRef} onScroll={handleScroll} onClick={handleMessageClick} className="flex-1 overflow-y-auto px-10 pb-6 flex flex-col gap-6 w-full z-10 pt-4">
           {messages.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-ink gap-5 p-2 w-full max-w-3xl mx-auto select-none">
               <div className="flex items-center mb-2"><p className="text-3xl font-black rotate-1 text-ink tracking-tight" style={{ fontFamily: '"Comic Sans MS", cursive' }}>Hi, what are we building today?</p></div>
@@ -529,89 +623,17 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
               </div>
             </div>
           ) : (
-            messages.map((msg, idx) => {
-              if (msg.role === 'user') {
-                const parsedData = parseEventsContent(msg.content);
-                return (
-                  <div key={idx} className="flex flex-col w-full items-end mb-4">
-                    {parsedData.attachments.length > 0 && (
-                      <div className="flex flex-col gap-2 w-full items-end mb-2">
-                        {parsedData.attachments.map((att, aIdx) => (
-                          <div key={`att-${aIdx}`} style={sketchyShape3} className="px-4 py-2 bg-ink/5 border-2 border-ink text-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] flex items-center gap-2 max-w-[70%]"><span className="font-bold text-xs opacity-80 font-mono truncate">{att.content}</span></div>
-                        ))}
-                      </div>
-                    )}
-                    {parsedData.userMessages.map((userMsg, uIdx) => (
-                      <div key={`u-${uIdx}`} className={`flex flex-col gap-3 w-full max-w-[85%] items-end`}>
-                        {userMsg.content && (
-                          <div style={sketchyShape2} className="w-full p-6 border-4 border-ink relative bg-cream text-ink shadow-[6px_6px_0px_0px_rgba(26,26,26,1)]">
-                            <div className="text-[17px] font-bold text-ink"><ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>{userMsg.content}</ReactMarkdown></div>
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                );
-              } else if (msg.role === 'tool') {
-                return <div key={idx} className="flex w-full justify-start"><ToolMessageBubble msg={msg} /></div>;
-              } else {
-                return (
-                  <div key={idx} className="flex w-full justify-start">
-                    <div className={`flex flex-col gap-3 w-full max-w-[85%] items-start`}>
-                      {msg.content && (
-                        <div style={sketchyShape1} className="w-full p-6 border-4 border-ink relative bg-cream text-ink shadow-[6px_6px_0px_0px_rgba(26,26,26,1)]">
-                          <div>
-                            <div className="flex items-center gap-2 mb-4">
-                              <Cat size={20} strokeWidth={2.5}/>
-                              <span className="font-black text-sm uppercase tracking-widest bg-ink text-paper px-2 py-0.5" style={{ ...sketchyShape3, fontFamily: '"Comic Sans MS", cursive' }}>ASSISTANT</span>
-                            </div>
-                            <div className="text-[17px] font-bold text-ink"><ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>{msg.content}</ReactMarkdown></div>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* 仅最后一条消息 & 未在思考时显示评价按钮 */}
-                      {msg.role === 'assistant' && idx === messages.length - 1 && !isAgentThinking && (
-                        <div className="flex justify-end gap-2 mt-3 animate-in fade-in duration-300">
-                          <button
-                            onClick={() => handleFeedback(true)}
-                            className="p-1.5 bg-paper border-2 border-ink hover:bg-[#a3be8c] hover:text-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] transition-all hover:-translate-y-[1px] active:translate-y-0 active:shadow-none"
-                            style={sketchyShape2}
-                            title="点赞"
-                          >
-                            <ThumbsUp size={16} strokeWidth={2.5} />
-                          </button>
-                          <button
-                            onClick={() => handleFeedback(false)}
-                            className="p-1.5 bg-paper border-2 border-ink hover:bg-[#bf616a] hover:text-paper shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] transition-all hover:-translate-y-[1px] active:translate-y-0 active:shadow-none"
-                            style={sketchyShape3}
-                            title="点踩"
-                          >
-                            <ThumbsDown size={16} strokeWidth={2.5} />
-                          </button>
-                        </div>
-                      )}
-
-                      {msg.tool_calls && msg.tool_calls.map((tc, t_idx) => <ToolCallBubble key={`tc-${t_idx}`} tc={tc} />)}
-                    </div>
-                  </div>
-                );
-              }
-            })
+            <Virtuoso
+              ref={virtuosoRef}
+              data={messages}
+              followOutput={true} // 🌟 自动到底部
+              itemContent={(idx, msg) => <MessageRenderer msg={msg} idx={idx} />}
+              className="h-full"
+              atBottomStateChange={(atBottom: boolean) => {
+                isAutoScroll.current = atBottom;
+              }}
+            />
           )}
-          {currentBranchId === 'main' && messages.length > 0 && (
-            <div className="flex justify-start mb-4 w-full">
-              <div style={sketchyShape1} className={`p-4 w-fit transition-colors ${isAgentThinking ? 'bg-cream text-ink border-4 border-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)]' : 'bg-paper text-ink/40'}`}>
-                <div className="flex items-center gap-3 px-2">
-                  {isAgentThinking ? <Loader2 size={20} strokeWidth={3} className="animate-spin text-terracotta" /> : <Clock size={20} strokeWidth={3} className="text-ink/30" />}
-                  <span className="font-black text-sm tracking-widest uppercase" style={{ fontFamily: '"Comic Sans MS", cursive' }}>
-                    {isAgentThinking ? 'Processing...' : 'Dozing...'}
-                  </span>
-                </div>
-              </div>
-            </div>
-          )}
-          <div ref={messagesEndRef} className="h-2" />
         </div>
 
         <FileChangesPanel {...fileViewProps} />
@@ -712,6 +734,45 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
             <button onClick={saveHeartbeat} style={sketchyShape2} className="mt-2 w-full bg-[#bf616a] text-paper font-black py-4 border-4 border-ink hover:bg-[#a54e56] transition-all shadow-[6px_6px_0px_0px_rgba(26,26,26,1)] active:shadow-none active:translate-y-1 rotate-1 text-xl tracking-widest">
               SAVE CONFIG
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* 🌟 新增：内嵌链接/文件预览弹窗 */}
+      {previewUrl && (
+        <div className="fixed inset-0 bg-ink/40 backdrop-blur-sm z-[200] flex items-center justify-center p-4" onClick={() => setPreviewUrl(null)}>
+          <div style={sketchyShape2} className="bg-paper border-4 border-ink p-6 flex flex-col gap-4 shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] -rotate-1 w-full max-w-6xl h-[85vh]" onClick={e => e.stopPropagation()}>
+
+            {/* 弹窗头部 */}
+            <div className="flex justify-between items-center border-b-4 border-ink/20 pb-4 shrink-0">
+              <div className="flex items-center gap-3 overflow-hidden flex-1">
+                <ExternalLink size={28} className="text-[#3498DB] shrink-0" strokeWidth={2.5} />
+                <h3 className="text-xl font-black tracking-widest text-ink truncate" style={{ fontFamily: '"Comic Sans MS", cursive' }}>
+                  {previewUrl}
+                </h3>
+              </div>
+
+              <div className="flex items-center gap-4 shrink-0 ml-4">
+                {/* 外部浏览器打开兜底按钮 */}
+                <a href={previewUrl} target="_blank" rel="noreferrer" className="flex items-center gap-2 p-2 px-4 bg-cream border-4 border-ink hover:bg-[#3498DB] hover:text-paper shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] transition-all font-black text-sm active:translate-y-1 active:shadow-none" title="Open in Browser" style={sketchyShape1}>
+                  OPEN EXTERNALLY <ExternalLink size={16} strokeWidth={3} />
+                </a>
+                <button onClick={() => setPreviewUrl(null)} className="hover:text-terracotta hover:scale-110 transition-all">
+                  <X size={32} strokeWidth={3} />
+                </button>
+              </div>
+            </div>
+
+            {/* Iframe 预览区 */}
+            <div className="flex-1 overflow-hidden border-4 border-ink bg-white shadow-[inset_4px_4px_0px_0px_rgba(26,26,26,0.05)] relative" style={sketchyShape3}>
+              <iframe
+                src={previewUrl}
+                className="w-full h-full border-none"
+                title="Link Preview"
+                sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
+              />
+            </div>
+
           </div>
         </div>
       )}

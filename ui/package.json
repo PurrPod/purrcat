@@ -21,6 +21,7 @@
     "react-hot-toast": "^2.4.1",
     "react-markdown": "^9.1.0",
     "react-router-dom": "^7.15.0",
+    "react-virtuoso": "^4.6.0",
     "remark-gfm": "^4.0.1",
     "uuid": "^9.0.1",
     "vis-data": "^8.0.3",
