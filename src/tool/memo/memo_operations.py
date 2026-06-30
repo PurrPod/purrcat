@@ -41,7 +41,16 @@ def _smart_update_memory_md(work_exp: list, user_profile: list):
                 current_md = f.read()
 
         model = AgentModel(task_id="memory_writer")
-        system_prompt = "你是一个后台记忆整理 Agent。当前系统有一个长期记忆档案 MEMORY.md。你需要把最新传入的工作经验和用户画像，智能地融合进现有的 Markdown 内容中。去重、合并相似项，保持条理清晰。你必须调用 overwrite_memory_md 工具来完成最终的写入操作。"
+        system_prompt = (
+            "你是一个极其克制且追求高效的后台记忆整理 Agent。当前系统有一个长期记忆档案 MEMORY.md。\n"
+            "你需要把最新传入的工作经验和用户画像，智能地融合进现有的 Markdown 内容中。\n"
+            "【核心整理原则】\n"
+            "1. 拒绝流水账：剔除所有仅针对特定任务、特定数据（如特定测试的通过率、单次运行日志）的冗余细节，这些不属于长期记忆。\n"
+            "2. 提取与浓缩：对现有的记忆条目进行高度浓缩与萃取，只保留【通用的、未来极大可能会用到、无论做什么事情都有必要记得】的核心经验。\n"
+            "3. 数量限制：如果工作经验或用户画像条目数量过多，请强制将其精简、合并。任何一个类别的核心记忆条目绝对【不能超过30条】。超过时必须进行优胜劣汰，舍弃低价值记忆。\n"
+            "4. 结构清晰：保持 Markdown 条理清晰，去重合并相似项。\n"
+            "你必须调用 overwrite_memory_md 工具来完成最终的全量写入操作。"
+        )
         user_prompt = f"【现有长期记忆档案】\n{current_md if current_md else '（暂无）'}\n\n【本次新增工作经验】\n{work_exp if work_exp else '（无）'}\n\n【本次新增用户画像】\n{user_profile if user_profile else '（无）'}"
 
         messages = [{"role": "system", "content": system_prompt}]
