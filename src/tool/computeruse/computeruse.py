@@ -10,6 +10,7 @@ from src.tool.computeruse.exceptions import ComputerUseError
 from src.tool.computeruse.cursor_manager import notify_ai_active
 from src.tool.utils.format import error_response, text_response, warning_response
 from src.utils.config import DATA_DIR
+
 # 新增引入 submit_request 用于自动发起审批
 from src.tool.request.request_operations import submit_request
 
@@ -62,11 +63,9 @@ def ComputerUse(
             # 【修改点】：直接自动发起申请，不再要求 Agent 自己调 Request 工具
             reason_str = f"系统自动拦截：Agent 尝试执行 '{action}' 物理电脑操作，但当前缺少授权。"
             req_result = submit_request(
-                request_type="computer_use",
-                target="system",
-                reason=reason_str
+                request_type="computer_use", target="system", reason=reason_str
             )
-            
+
             # 话术设计：明确告知 Agent 申请已自动提交，请勿重试并挂起任务
             msg = (
                 f"⏳ 权限不足，已自动向老板提交了 ComputerUse 控制权限申请 (请求ID: {req_result['id']})。\n\n"

@@ -730,7 +730,8 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
       {/* 🌟 新增：内嵌链接/文件预览弹窗 */}
       {previewUrl && (
         <div className="fixed inset-0 bg-ink/40 backdrop-blur-sm z-[200] flex items-center justify-center p-4" onClick={() => setPreviewUrl(null)}>
-          <div style={sketchyShape2} className="bg-paper border-4 border-ink p-6 flex flex-col gap-4 shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] -rotate-1 w-full max-w-6xl h-[85vh]" onClick={e => e.stopPropagation()}>
+          {/* 🌟 1. 扶正弹窗：移除了原有的 -rotate-1，保留 style={sketchyShape2} 让外部四角保持手绘风格 */}
+          <div style={sketchyShape2} className="bg-paper border-4 border-ink p-6 flex flex-col gap-4 shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] w-full max-w-6xl h-[85vh]" onClick={e => e.stopPropagation()}>
 
             {/* 弹窗头部 */}
             <div className="flex justify-between items-center border-b-4 border-ink/20 pb-4 shrink-0">
@@ -753,7 +754,8 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
             </div>
 
             {/* Iframe 预览区 */}
-            <div className="flex-1 overflow-hidden border-4 border-ink bg-white shadow-[inset_4px_4px_0px_0px_rgba(26,26,26,0.05)] relative" style={sketchyShape3}>
+            {/* 🌟 2. 内部框变直：移除了 style={sketchyShape3}，此时边框将变为笔直的矩形标准线 */}
+            <div className="flex-1 overflow-hidden border-4 border-ink bg-white shadow-[inset_4px_4px_0px_0px_rgba(26,26,26,0.05)] relative">
               <iframe
                 src={previewUrl}
                 className="w-full h-full border-none"

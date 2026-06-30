@@ -1,10 +1,12 @@
 // src/components/chat/ChatSidebar.tsx
-import { ArrowLeft, Terminal, List, Brain, Server, Zap, AlarmClock, Activity, ChevronDown, ChevronUp, Plus, RefreshCw, Trash2, FileText, User, GitMerge } from 'lucide-react';
+import { ArrowLeft, Terminal, List, Brain, Server, Zap, AlarmClock, Activity, ChevronDown, ChevronUp, Plus, RefreshCw, Trash2, FileText, GitMerge } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { sketchyShape1, sketchyShape2, sketchyShape3 } from './ChatShared';
 
 export default function ChatSidebar(props: any) {
+  const navigate = useNavigate();
   const {
-    onBack, onSwitchToTask, setShowSessionModal, navigate,
+    onBack, setShowSessionModal,
     sidebarMode, setSidebarMode,
     sensorData, toggleSensorStatus, reloadSensors, setShowInstallSensorModal, fetchSensorData,
     mcpData, expandedMcp, setExpandedMcp, refreshMcp, setShowInstallMcpModal, fetchMcp,

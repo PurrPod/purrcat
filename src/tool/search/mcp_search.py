@@ -89,6 +89,7 @@ class MCPSearcher:
                 print("⏳ [JIT] 检测到索引未就绪，正在强制同步构建...")
                 self.corpus_matrix = self.embedding_searcher.encode(self.corpus)
                 from rank_bm25 import BM25Okapi
+
                 tokenized_corpus = [hybrid_tokenize(doc) for doc in self.corpus]
                 self.bm25 = BM25Okapi(tokenized_corpus)
                 print("✅ [JIT] 同步构建完成！")

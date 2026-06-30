@@ -84,6 +84,7 @@ class SubAgentRunner:
 
     def _notify_main(self, content: str):
         from src.agent.manager import AgentManager
+
         AgentManager().agent_force_push(content, type="system")
 
     def _save_history(self):
@@ -99,15 +100,20 @@ class SubAgentRunner:
         """🌟 新增：为主模型动态重建系统提示词的方法，保持最新规则与 Focus 目录状态同步"""
         soul_md, system_rules, memory_md = "", "", ""
         from src.utils.config import SOUL_MD_PATH, SYSTEM_RULES_DIR, AGENT_CORE_DIR
+
         MEMORY_MD_PATH = os.path.join(AGENT_CORE_DIR, "MEMORY.md")
         try:
             if os.path.exists(SOUL_MD_PATH):
                 with open(SOUL_MD_PATH, "r", encoding="utf-8") as f:
                     soul_md = f.read().strip()
             if os.path.exists(SYSTEM_RULES_DIR):
-                rule_files = sorted([f for f in os.listdir(SYSTEM_RULES_DIR) if f.endswith(".md")])
+                rule_files = sorted(
+                    [f for f in os.listdir(SYSTEM_RULES_DIR) if f.endswith(".md")]
+                )
                 for rf in rule_files:
-                    with open(os.path.join(SYSTEM_RULES_DIR, rf), "r", encoding="utf-8") as f:
+                    with open(
+                        os.path.join(SYSTEM_RULES_DIR, rf), "r", encoding="utf-8"
+                    ) as f:
                         system_rules += f.read().strip() + "\n\n"
                 system_rules = system_rules.strip()
             if os.path.exists(MEMORY_MD_PATH):
@@ -118,9 +124,14 @@ class SubAgentRunner:
 
         focus_md = ""
         from src.agent.manager import AgentManager
+
         manager = AgentManager()
-        focus = manager._agent.focus if (manager._agent and hasattr(manager._agent, 'focus')) else None
-        
+        focus = (
+            manager._agent.focus
+            if (manager._agent and hasattr(manager._agent, "focus"))
+            else None
+        )
+
         if focus and os.path.isdir(focus):
             agents_md_path = os.path.join(focus, ".purrcat", "AGENTS.md")
             if os.path.exists(agents_md_path):
@@ -152,22 +163,33 @@ class SubAgentRunner:
         from src.utils.config import get_model_config
         from src.tool import AGENT_TOOL_SCHEMA
 
-        model_cfg = get_model_config().get("main", {}).get(self.model.model_name or "", {})
+        model_cfg = (
+            get_model_config().get("main", {}).get(self.model.model_name or "", {})
+        )
         max_tokens = model_cfg.get("max_token", 500000)
         if self.window_token < max_tokens:
             return
 
-        print(f"🗜️ [SubAgent b1] 触发后台会话记忆截断 (当前约 {self.window_token} tokens)，请求大总结...")
+        print(
+            f"🗜️ [SubAgent b1] 触发后台会话记忆截断 (当前约 {self.window_token} tokens)，请求大总结..."
+        )
         now_str = datetime.datetime.now().strftime("%m-%d %H:%M:%S")
 
         # 1. 构造用于触发总结的临时指令 (type=system 注入)
         compression_prompt = {
             "role": "user",
-            "content": json.dumps({"events": [{
-                "type": "system",
-                "time": now_str,
-                "content": "记忆窗口已达上限，系统将要删除所有对话历史。为防止上下文断层，请对当前所有会话细节、历史、当前工作记忆与进度进行大总结，然后调用 Memo 工具（必须设置 action='add'）传入总结报告。系统将仅保留这份总结。"
-            }]}, ensure_ascii=False)
+            "content": json.dumps(
+                {
+                    "events": [
+                        {
+                            "type": "system",
+                            "time": now_str,
+                            "content": "记忆窗口已达上限，系统将要删除所有对话历史。为防止上下文断层，请对当前所有会话细节、历史、当前工作记忆与进度进行大总结，然后调用 Memo 工具（必须设置 action='add'）传入总结报告。系统将仅保留这份总结。",
+                        }
+                    ]
+                },
+                ensure_ascii=False,
+            ),
         }
 
         temp_history = self.messages.copy() + [compression_prompt]
@@ -190,9 +212,13 @@ class SubAgentRunner:
                         if tc.function.name == "Memo":
                             try:
                                 args = json.loads(tc.function.arguments)
-                                if args.get("action") == "add" and args.get("memo_data"):
+                                if args.get("action") == "add" and args.get(
+                                    "memo_data"
+                                ):
                                     summary_text = (
-                                        json.dumps(args.get("memo_data"), ensure_ascii=False)
+                                        json.dumps(
+                                            args.get("memo_data"), ensure_ascii=False
+                                        )
                                         if isinstance(args.get("memo_data"), dict)
                                         else str(args.get("memo_data"))
                                     )
@@ -208,11 +234,20 @@ class SubAgentRunner:
                     warning_msg = f"【第{attempt}次警告】未使用Memo工具进行记忆总结(或 action 不为 'add')！请只调用 Memo 工具并将 action 设为 'add'，不要完成无关工作。"
                     warning_prompt = {
                         "role": "user",
-                        "content": json.dumps({"events": [{
-                            "type": "system",
-                            "time": datetime.datetime.now().strftime("%m-%d %H:%M:%S"),
-                            "content": warning_msg
-                        }]}, ensure_ascii=False)
+                        "content": json.dumps(
+                            {
+                                "events": [
+                                    {
+                                        "type": "system",
+                                        "time": datetime.datetime.now().strftime(
+                                            "%m-%d %H:%M:%S"
+                                        ),
+                                        "content": warning_msg,
+                                    }
+                                ]
+                            },
+                            ensure_ascii=False,
+                        ),
                     }
                     temp_history.append(warning_prompt)
                     print(f"⚠️ [SubAgent拦截] {warning_msg}")
@@ -223,7 +258,7 @@ class SubAgentRunner:
 
         # 兜底降级处理
         if not summary_text:
-            if 'msg_resp' in locals() and msg_resp.content:
+            if "msg_resp" in locals() and msg_resp.content:
                 summary_text = msg_resp.content
             else:
                 summary_text = "（后台子分支未能成功生成有效总结，上下文已强行截断）"
@@ -242,7 +277,9 @@ class SubAgentRunner:
                     if curr_msg.get("role") == "tool":
                         split_idx -= 1
                         continue
-                    if prev_msg.get("role") == "assistant" and prev_msg.get("tool_calls"):
+                    if prev_msg.get("role") == "assistant" and prev_msg.get(
+                        "tool_calls"
+                    ):
                         split_idx -= 1
                         continue
                     break
@@ -258,11 +295,20 @@ class SubAgentRunner:
             # 包装记忆总结为 type=system 事件
             summary_msg = {
                 "role": "user",
-                "content": json.dumps({"events": [{
-                    "type": "system",
-                    "time": datetime.datetime.now().strftime("%m-%d %H:%M:%S"),
-                    "content": f"【历史记忆大总结】\n{summary_text}"
-                }]}, ensure_ascii=False)
+                "content": json.dumps(
+                    {
+                        "events": [
+                            {
+                                "type": "system",
+                                "time": datetime.datetime.now().strftime(
+                                    "%m-%d %H:%M:%S"
+                                ),
+                                "content": f"【历史记忆大总结】\n{summary_text}",
+                            }
+                        ]
+                    },
+                    ensure_ascii=False,
+                ),
             }
 
             # 组装最终历史：【重建系统提示词】+ 【最近10条信息】+ 【记忆大总结】
@@ -316,7 +362,7 @@ class SubAgentRunner:
             response = await asyncio.to_thread(
                 self.model.chat, messages=self.messages, tools=AGENT_TOOL_SCHEMA
             )
-            
+
             # 🌟 追踪 Token 进度
             if response and hasattr(response, "usage") and response.usage:
                 self.window_token = response.usage.total_tokens

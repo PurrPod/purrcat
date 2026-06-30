@@ -267,10 +267,14 @@ class Agent:
 
     def process_message(self):
         current_interaction_id = self._increment_interaction_id()
-        
+
         self._bg_search_task_id = current_interaction_id
 
-        user_texts = [msg["content"] for msg in self.pending_force_push if msg.get("type") == "user"]
+        user_texts = [
+            msg["content"]
+            for msg in self.pending_force_push
+            if msg.get("type") == "user"
+        ]
         merged_input = " ".join(user_texts).strip()
         is_real_user_input = bool(merged_input)
 
@@ -292,8 +296,12 @@ class Agent:
                     skill_res, _ = search_skills(merged_input, top_k=5)
                     mcp_res, _ = mcp_search(merged_input, max_results=5)
 
-                    high_score_skills = len([s for s in skill_res if s.get("score", 0) >= 0.5])
-                    high_score_mcps = len([m for m in mcp_res if m.get("score", 0) >= 0.5])
+                    high_score_skills = len(
+                        [s for s in skill_res if s.get("score", 0) >= 0.5]
+                    )
+                    high_score_mcps = len(
+                        [m for m in mcp_res if m.get("score", 0) >= 0.5]
+                    )
                     total_tools = high_score_skills + high_score_mcps
 
                     if getattr(self, "_bg_search_task_id", None) != task_id:
@@ -302,12 +310,20 @@ class Agent:
                     client = get_memory_client()
                     valid_memos = 0
                     if client.search_tool.vector_engine:
-                        exps = client.search_tool.vector_engine.search_experiences(merged_input, top_k=5)
-                        valid_exps = len([e for e in exps if e.get("score", 0.0) >= 0.5])
-                        
-                        events = client.search_tool.vector_engine.search_events_vector(merged_input, top_k=5)
-                        valid_events = len([e for e in events if e.get("score", 0.0) >= 0.5])
-                        
+                        exps = client.search_tool.vector_engine.search_experiences(
+                            merged_input, top_k=5
+                        )
+                        valid_exps = len(
+                            [e for e in exps if e.get("score", 0.0) >= 0.5]
+                        )
+
+                        events = client.search_tool.vector_engine.search_events_vector(
+                            merged_input, top_k=5
+                        )
+                        valid_events = len(
+                            [e for e in events if e.get("score", 0.0) >= 0.5]
+                        )
+
                         valid_memos = valid_exps + valid_events
 
                     if total_tools == 0 and valid_memos == 0:
@@ -315,26 +331,39 @@ class Agent:
 
                     time.sleep(10)
 
-                    if getattr(self, "_bg_search_task_id", None) != task_id or self.state != "handling":
+                    if (
+                        getattr(self, "_bg_search_task_id", None) != task_id
+                        or self.state != "handling"
+                    ):
                         return
 
                     hints = []
                     if not self.has_search and total_tools > 0:
-                        hints.append(f"检查到有 {total_tools} 条 skill/mcp 与本轮对话的总输入语义高度相关 (绝对匹配度 > 0.5)，可以尝试使用 Search 工具(route='local')检索相关数据。")
+                        hints.append(
+                            f"检查到有 {total_tools} 条 skill/mcp 与本轮对话的总输入语义高度相关 (绝对匹配度 > 0.5)，可以尝试使用 Search 工具(route='local')检索相关数据。"
+                        )
                     if not self.has_memo_search and valid_memos > 0:
-                        hints.append(f"检查到记忆库中有 {valid_memos} 条经验/事件与本轮对话的总输入高度相关 (绝对匹配度 > 0.5)，可以尝试使用 Memo 工具(action='search')检索。")
+                        hints.append(
+                            f"检查到记忆库中有 {valid_memos} 条经验/事件与本轮对话的总输入高度相关 (绝对匹配度 > 0.5)，可以尝试使用 Memo 工具(action='search')检索。"
+                        )
 
                     if hints:
                         self.force_push("\n\n".join(hints), type="system")
                 except Exception as e:
                     print(f"⚠️ 后台预搜索线程异常: {e}")
 
-            threading.Thread(target=background_hint_check, args=(current_interaction_id,), daemon=True).start()
+            threading.Thread(
+                target=background_hint_check,
+                args=(current_interaction_id,),
+                daemon=True,
+            ).start()
 
         while True:
             try:
                 if self._get_current_interaction_id() != current_interaction_id:
-                    print(f"⚠️ [隔离] 检测到交互ID过期 ({current_interaction_id} != {self._get_current_interaction_id()})，丢弃旧响应")
+                    print(
+                        f"⚠️ [隔离] 检测到交互ID过期 ({current_interaction_id} != {self._get_current_interaction_id()})，丢弃旧响应"
+                    )
                     break
 
                 self._checker()
@@ -344,17 +373,17 @@ class Agent:
                 )
 
                 if self._get_current_interaction_id() != current_interaction_id:
-                    print(f"⚠️ [隔离] 网络响应返回后检测到交互ID过期，丢弃响应")
+                    print("⚠️ [隔离] 网络响应返回后检测到交互ID过期，丢弃响应")
                     break
-                
+
                 self._track_token_usage(response)
                 msg_resp = response.choices[0].message
                 has_tools = self._process_assistant_message(msg_resp)
-                
+
                 if not has_tools:
                     print("✅ 消息处理闭环结束。")
                     break
-                
+
                 should_pause = self._execute_tool_calls(msg_resp.tool_calls)
                 if should_pause:
                     break
@@ -369,7 +398,7 @@ class Agent:
         if is_real_user_input and getattr(self, "has_memo_add", False) is False:
             self.force_push(
                 "检查到本轮对话你未调用 Memo 工具进行记忆总结，最好总结一下，让你的能力随记忆系统的丰富而增强，如果你觉得本轮对话没什么好记录的，可以忽略，非强制性要求。",
-                type="system"
+                type="system",
             )
 
     def _process_assistant_message(self, msg_resp) -> bool:
@@ -422,7 +451,11 @@ class Agent:
                 )
                 continue
 
-            if target_tool_name == "Search" and arguments.get("route") in ["local", "skill", "mcp"]:
+            if target_tool_name == "Search" and arguments.get("route") in [
+                "local",
+                "skill",
+                "mcp",
+            ]:
                 self.has_search = True
             elif target_tool_name == "Memo":
                 action = arguments.get("action")
@@ -520,18 +553,27 @@ class Agent:
         max_tokens = model_cfg.get("max_token", 500000)
         if not force and self.window_token < max_tokens:
             return
-            
-        print(f"🗜️ 触发记忆截断 (当前约 {self.window_token} tokens)，正在进入内部交互请求模型进行全局大总结...")
+
+        print(
+            f"🗜️ 触发记忆截断 (当前约 {self.window_token} tokens)，正在进入内部交互请求模型进行全局大总结..."
+        )
 
         now_str = datetime.datetime.now().strftime("%m-%d %H:%M:%S")
-        
+
         compression_prompt = {
             "role": "user",
-            "content": json.dumps({"events": [{
-                "type": "system",
-                "time": now_str,
-                "content": "记忆窗口已达上限，系统将要删除所有对话历史。为防止上下文断层，请对当前所有会话细节、历史、当前工作记忆与进度进行大总结，然后调用 Memo 工具（必须设置 action='add'）传入总结。系统将仅保留这份总结。"
-            }]}, ensure_ascii=False)
+            "content": json.dumps(
+                {
+                    "events": [
+                        {
+                            "type": "system",
+                            "time": now_str,
+                            "content": "记忆窗口已达上限，系统将要删除所有对话历史。为防止上下文断层，请对当前所有会话细节、历史、当前工作记忆与进度进行大总结，然后调用 Memo 工具（必须设置 action='add'）传入总结。系统将仅保留这份总结。",
+                        }
+                    ]
+                },
+                ensure_ascii=False,
+            ),
         }
 
         with self._history_lock:
@@ -540,42 +582,57 @@ class Agent:
         summary_text = None
         msg_resp = None
         max_retries = 3
-        
+
         for attempt in range(1, max_retries + 1):
             try:
-                response = self.model.chat(messages=temp_history, tools=self._get_tool_schema())
+                response = self.model.chat(
+                    messages=temp_history, tools=self._get_tool_schema()
+                )
                 msg_resp = response.choices[0].message
-                
+
                 valid_memo_found = False
-                
+
                 if msg_resp.tool_calls:
                     for tc in msg_resp.tool_calls:
                         if tc.function.name == "Memo":
                             try:
                                 args = json.loads(tc.function.arguments)
-                                if args.get("action") == "add" and args.get("memo_data"):
+                                if args.get("action") == "add" and args.get(
+                                    "memo_data"
+                                ):
                                     summary_text = (
-                                        json.dumps(args.get("memo_data"), ensure_ascii=False) 
-                                        if isinstance(args.get("memo_data"), dict) 
+                                        json.dumps(
+                                            args.get("memo_data"), ensure_ascii=False
+                                        )
+                                        if isinstance(args.get("memo_data"), dict)
                                         else str(args.get("memo_data"))
                                     )
                                     valid_memo_found = True
                                     break
                             except Exception as e:
                                 print(f"⚠️ 解析 Memo 参数失败: {e}")
-                
+
                 if valid_memo_found:
                     break
                 else:
                     warning_msg = f"【第{attempt}次警告】未使用Memo工具进行记忆总结(或 action 不为 'add')！请只调用 Memo 工具并将 action 设为 'add'，不要调用其他任何无关工具。"
-                    
+
                     warning_prompt = {
                         "role": "user",
-                        "content": json.dumps({"events": [{
-                            "type": "system",
-                            "time": datetime.datetime.now().strftime("%m-%d %H:%M:%S"),
-                            "content": warning_msg
-                        }]}, ensure_ascii=False)
+                        "content": json.dumps(
+                            {
+                                "events": [
+                                    {
+                                        "type": "system",
+                                        "time": datetime.datetime.now().strftime(
+                                            "%m-%d %H:%M:%S"
+                                        ),
+                                        "content": warning_msg,
+                                    }
+                                ]
+                            },
+                            ensure_ascii=False,
+                        ),
                     }
                     temp_history.append(warning_prompt)
                     print(f"⚠️ [记忆压缩拦截] {warning_msg}")
@@ -595,7 +652,7 @@ class Agent:
                 original_len = len(self.current_history)
                 keep_recent = 10
                 split_idx = original_len - keep_recent
-                
+
                 if split_idx > 1:
                     while split_idx > 1:
                         curr_msg = self.current_history[split_idx]
@@ -603,7 +660,9 @@ class Agent:
                         if curr_msg.get("role") == "tool":
                             split_idx -= 1
                             continue
-                        if prev_msg.get("role") == "assistant" and prev_msg.get("tool_calls"):
+                        if prev_msg.get("role") == "assistant" and prev_msg.get(
+                            "tool_calls"
+                        ):
                             split_idx -= 1
                             continue
                         break
@@ -617,14 +676,25 @@ class Agent:
 
                 summary_msg = {
                     "role": "user",
-                    "content": json.dumps({"events": [{
-                        "type": "system",
-                        "time": datetime.datetime.now().strftime("%m-%d %H:%M:%S"),
-                        "content": f"【历史记忆大总结】\n{summary_text}"
-                    }]}, ensure_ascii=False)
+                    "content": json.dumps(
+                        {
+                            "events": [
+                                {
+                                    "type": "system",
+                                    "time": datetime.datetime.now().strftime(
+                                        "%m-%d %H:%M:%S"
+                                    ),
+                                    "content": f"【历史记忆大总结】\n{summary_text}",
+                                }
+                            ]
+                        },
+                        ensure_ascii=False,
+                    ),
                 }
 
-                self.current_history = [new_system_msg] + recent_messages + [summary_msg]
+                self.current_history = (
+                    [new_system_msg] + recent_messages + [summary_msg]
+                )
 
                 for msg in self.current_history:
                     if msg.get("role") == "assistant" and "reasoning_content" in msg:

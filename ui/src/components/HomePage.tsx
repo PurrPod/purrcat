@@ -1,5 +1,5 @@
 // src/components/HomePage.tsx
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { MessageSquare, GitMerge, Settings, X, Save, FileJson, AlertCircle, Store, Terminal, Brain } from 'lucide-react'
 import { useFlowStore } from '../store/flowStore'
 import { toast } from 'react-hot-toast'
@@ -30,7 +30,7 @@ export default function HomePage({
   const [configData, setConfigData] = useState<Record<string, any>>({});
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const [editJsonStr, setEditJsonStr] = useState('');
-  const menuRef = useRef<HTMLDivElement>(null);
+
 
   const handleNewWorkflow = () => {
     useFlowStore.getState().clearGraph()
