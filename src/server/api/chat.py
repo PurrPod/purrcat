@@ -244,8 +244,21 @@ def chat(req: ChatReq, background_tasks: BackgroundTasks):
 def chat_batch(req: ChatBatchReq, background_tasks: BackgroundTasks):
     try:
         _ensure_manager_initialized()
+
+        # 🌟 预处理：字数检验替换（与 Agent.force_push_batch 保持一致）
+        from src.agent.agent import Agent
+
+        processed_events = []
+        for event in req.events:
+            event_type = event.get("type", "user")
+            event_content = event.get("content", "")
+            event_content = Agent._buffer_long_user_input(event_content, event_type)
+            processed_events.append({**event, "content": event_content})
+
+        # 后台仍走原流程，传入原始 events（force_push_batch 内部也会做字数检验）
         background_tasks.add_task(_run_agent_batch_task, req.session_id, req.events)
-        return {"status": "processing", "message": "Batch events pushed to agent"}
+
+        return {"status": "processing", "processed_events": processed_events}
     except Exception as e:
         print(f"[ERROR] /api/chat/batch - 异常: {e}")
         traceback.print_exc()

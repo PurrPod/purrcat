@@ -165,7 +165,8 @@ class Agent:
         except Exception as e:
             print(f"⚠️ [Buffer] 超长输入落盘失败: {e}")
             return content
-        return f"【输入超出字数3000字限制，已将请求内容落盘到<{filepath}>里】"
+        file_uri = "file:///" + filepath.replace("\\", "/")
+        return f"【输入超出字数3000字限制，已将请求内容落盘到 <{file_uri}> 里】"
 
     def force_push(self, content, type="user"):
         content = self._buffer_long_user_input(content, type)

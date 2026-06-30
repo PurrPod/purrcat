@@ -397,12 +397,15 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
     eventsToPush.push({ type: 'user', content: userText });
     
     setInput(''); setSelectedSkills([]); setSelectedMcps([]); setSelectedGraphs([]); setRefPaths([]); setUseBrainstorm(false);
-    pendingMsgsRef.current.push(userText);
     
-    // 🌟 修复 3：立即进行乐观 UI 更新，消除 Dozing 的闪烁
+    // 立即进入思考状态，给用户视觉反馈
     setIsAgentThinking(true);
     
-    setMessages(prev => [...prev, { role: 'user', content: JSON.stringify({ events: eventsToPush }) }]);
+    // 🌟 治本修复：如果是正常长度，走乐观更新；如果是超长文本(>3000)，直接放弃乐观更新，静待后端轮询返回落盘提示
+    if (userText.length < 3000) {
+      pendingMsgsRef.current.push(userText);
+      setMessages(prev => [...prev, { role: 'user', content: JSON.stringify({ events: eventsToPush }) }]);
+    }
 
     try { await fetch('http://localhost:8000/api/chat/batch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ session_id: currentSessionId, events: eventsToPush }) }); } catch { /* noop */ }
   };
@@ -411,8 +414,8 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
     if (!currentSessionId) return;
     
     const content = isLike
-      ? "user 点👍，可能是因为你的执行流程让其感到高兴，你可以根据这一轮对话的内容使用Memo工具记住本次经验/认知/事件/用户画像，如果你在本轮觉得skill有需要改进的地方/有可复用的SOP，可以使用KernelUpgrade升级一下"
-      : "user点👎，可能是你在本轮对话中的表现不好，如果是skill有问题，可以使用KernelUpgrade更新升级一下skill，可以根据本轮对话内容使用Memo工具更新一下用户画像/工作经验/事件/认知";
+      ? "user 给你点了 👍，你可以反思一下本轮对话是否体现了用户的喜好，可以和用户确认一下然后使用 Memo 工具更新一下记忆"
+      : "user 给你点了 👎，可能是你在本轮对话中的表现不好，可以反思一下然后和用户确认一下不满意的原因。如果是skill有问题，可以使用KernelUpgrade更新升级一下skill，可以根据本轮对话内容使用Memo工具更新一下用户画像/工作经验/事件/认知";
 
     const eventsToPush = [{ type: 'system', content }];
     
