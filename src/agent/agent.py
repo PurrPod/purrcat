@@ -242,6 +242,8 @@ class Agent:
 
     def process_message(self):
         current_interaction_id = self._increment_interaction_id()
+        
+        self._bg_search_task_id = current_interaction_id
 
         user_texts = [msg["content"] for msg in self.pending_force_push if msg.get("type") == "user"]
         merged_input = " ".join(user_texts).strip()
@@ -252,7 +254,10 @@ class Agent:
             self.has_memo_search = False
             self.has_memo_add = False
 
-            def background_hint_check():
+            def background_hint_check(task_id):
+                if getattr(self, "_bg_search_task_id", None) != task_id:
+                    return
+
                 try:
                     from src.tool.search.skill_search import search_skills
                     from src.tool.search.mcp_search import mcp_search
@@ -266,36 +271,45 @@ class Agent:
                     high_score_mcps = len([m for m in mcp_res if m.get("score", 0) >= 0.5])
                     total_tools = high_score_skills + high_score_mcps
 
+                    if getattr(self, "_bg_search_task_id", None) != task_id:
+                        return
+
                     client = get_memory_client()
                     valid_memos = 0
                     if client.search_tool.vector_engine:
                         exps = client.search_tool.vector_engine.search_experiences(merged_input, top_k=5)
-                        valid_memos = len([e for e in exps if (1.0 - e.get("score", 0)) >= 0.5])
+                        valid_exps = len([e for e in exps if e.get("score", 0.0) >= 0.5])
+                        
+                        events = client.search_tool.vector_engine.search_events_vector(merged_input, top_k=5)
+                        valid_events = len([e for e in events if e.get("score", 0.0) >= 0.5])
+                        
+                        valid_memos = valid_exps + valid_events
 
                     if total_tools == 0 and valid_memos == 0:
                         return
 
                     time.sleep(10)
 
+                    if getattr(self, "_bg_search_task_id", None) != task_id or self.state != "handling":
+                        return
+
                     hints = []
                     if not self.has_search and total_tools > 0:
-                        hints.append(f"检查到有 {total_tools} 条 skill/mcp 与本轮对话的总输入高度相关，可以尝试使用 Search 工具(route='local')检索相关数据。")
+                        hints.append(f"检查到有 {total_tools} 条 skill/mcp 与本轮对话的总输入语义高度相关 (绝对匹配度 > 0.5)，可以尝试使用 Search 工具(route='local')检索相关数据。")
                     if not self.has_memo_search and valid_memos > 0:
-                        hints.append(f"检查到记忆库中有 {valid_memos} 条经验与本轮对话的总输入高度相关，可以尝试使用 Memo 工具(action='search')检索。")
+                        hints.append(f"检查到记忆库中有 {valid_memos} 条经验/事件与本轮对话的总输入高度相关 (绝对匹配度 > 0.5)，可以尝试使用 Memo 工具(action='search')检索。")
 
                     if hints:
                         self.force_push("\n\n".join(hints), type="system")
                 except Exception as e:
                     print(f"⚠️ 后台预搜索线程异常: {e}")
 
-            threading.Thread(target=background_hint_check, daemon=True).start()
+            threading.Thread(target=background_hint_check, args=(current_interaction_id,), daemon=True).start()
 
         while True:
             try:
                 if self._get_current_interaction_id() != current_interaction_id:
-                    print(
-                        f"⚠️ [隔离] 检测到交互ID过期 ({current_interaction_id} != {self._get_current_interaction_id()})，丢弃旧响应"
-                    )
+                    print(f"⚠️ [隔离] 检测到交互ID过期 ({current_interaction_id} != {self._get_current_interaction_id()})，丢弃旧响应")
                     break
 
                 self._checker()
@@ -305,16 +319,17 @@ class Agent:
                 )
 
                 if self._get_current_interaction_id() != current_interaction_id:
-                    print(
-                        f"⚠️ [隔离] 网络响应返回后检测到交互ID过期 ({current_interaction_id} != {self._get_current_interaction_id()})，丢弃响应"
-                    )
+                    print(f"⚠️ [隔离] 网络响应返回后检测到交互ID过期，丢弃响应")
                     break
+                
                 self._track_token_usage(response)
                 msg_resp = response.choices[0].message
                 has_tools = self._process_assistant_message(msg_resp)
+                
                 if not has_tools:
                     print("✅ 消息处理闭环结束。")
                     break
+                
                 should_pause = self._execute_tool_calls(msg_resp.tool_calls)
                 if should_pause:
                     break

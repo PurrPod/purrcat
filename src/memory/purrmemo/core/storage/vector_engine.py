@@ -212,17 +212,18 @@ class VectorEngine(metaclass=SingletonMeta):
             for i in range(len(results["ids"][0])):
                 exp_id = results["ids"][0][i]
                 content = results["documents"][0][i]
-                score = results["distances"][0][i]
+                distance = results["distances"][0][i]
                 metadata = (
                     results["metadatas"][0][i] if results["metadatas"][0][i] else {}
                 )
 
-                if 1.0 - score >= 0.35:
+                similarity = 1.0 - distance
+                if similarity >= 0.35:
                     experiences.append(
                         {
                             "exp_id": exp_id,
                             "content": content,
-                            "score": score,
+                            "score": similarity,
                             "metadata": metadata,
                         }
                     )

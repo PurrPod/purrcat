@@ -170,7 +170,7 @@ class RAGSearchTool:
                 query_embedding=query_embedding,
             )
 
-            return [exp for exp in raw_experiences if 1.0 - exp["score"] >= 0.35]
+            return [exp for exp in raw_experiences if exp["score"] >= 0.35]
         except Exception as e:
             print(f"检索经验失败: {e}")
             return []
@@ -259,10 +259,7 @@ class RAGSearchTool:
         if experiences:
             markdown_parts.append("## 工作经验")
             markdown_parts.extend(
-                [
-                    f"- [{1.0 - exp['score']:.2f}] {exp['content']}"
-                    for exp in experiences
-                ]
+                [f"- [{exp['score']:.2f}] {exp['content']}" for exp in experiences]
             )
             markdown_parts.append("")
 

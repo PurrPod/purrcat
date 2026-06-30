@@ -83,6 +83,14 @@ class SkillSearcher:
             if not self.corpus:
                 return []
 
+            if self.corpus_matrix is None or self.bm25 is None:
+                print("⏳ [JIT] 检测到索引未就绪，正在强制同步构建...")
+                self.corpus_matrix = self.embedding_searcher.encode(self.corpus)
+                from rank_bm25 import BM25Okapi
+                tokenized_corpus = [hybrid_tokenize(doc) for doc in self.corpus]
+                self.bm25 = BM25Okapi(tokenized_corpus)
+                print("✅ [JIT] 同步构建完成！")
+
             # 获取引用快照以防止后续计算时被修改
             current_corpus = self.corpus
             current_matrix = self.corpus_matrix
@@ -98,20 +106,11 @@ class SkillSearcher:
         tokenized_query = hybrid_tokenize(query)
         raw_bm25_scores = current_bm25.get_scores(tokenized_query)
 
-        max_bm25 = max(raw_bm25_scores) if raw_bm25_scores.size > 0 else 0
-        if max_bm25 > 0:
-            bm25_scores = [score / max_bm25 for score in raw_bm25_scores]
-        else:
-            bm25_scores = [0] * len(current_corpus)
-
-        alpha_dense = 0.7
-        alpha_sparse = 0.3
-
         final_scores = []
         for i in range(len(current_corpus)):
-            combined_score = (dense_scores[i] * alpha_dense) + (
-                bm25_scores[i] * alpha_sparse
-            )
+            base_score = float(dense_scores[i])
+            bm25_bonus = np.log1p(raw_bm25_scores[i]) * 0.03
+            combined_score = base_score + bm25_bonus
             final_scores.append(combined_score)
 
         final_scores = np.array(final_scores)
@@ -190,17 +189,9 @@ class SkillSearcher:
         tokenized_query = hybrid_tokenize(query)
         raw_bm25_scores = temp_bm25.get_scores(tokenized_query)
 
-        max_bm25 = max(raw_bm25_scores) if raw_bm25_scores.size > 0 else 0
-        bm25_scores = (
-            [score / max_bm25 for score in raw_bm25_scores]
-            if max_bm25 > 0
-            else [0] * len(temp_corpus)
-        )
-
-        alpha_dense, alpha_sparse = 0.7, 0.3
         final_scores = np.array(
             [
-                (dense_scores[i] * alpha_dense) + (bm25_scores[i] * alpha_sparse)
+                float(dense_scores[i]) + np.log1p(raw_bm25_scores[i]) * 0.03
                 for i in range(len(temp_corpus))
             ]
         )
