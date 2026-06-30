@@ -13,6 +13,7 @@ from src.tool import AGENT_TOOL_SCHEMA
 from src.tool.utils.route import dispatch_tool
 from src.utils.config import (
     AGENT_CORE_DIR,
+    BUFFER_DIR,
     SOUL_MD_PATH,
     SYSTEM_RULES_DIR,
     get_agent_model,
@@ -147,7 +148,27 @@ class Agent:
             except Exception as e:
                 print(f"⚠️ [Memory] 落盘失败: {e}")
 
+    @staticmethod
+    def _buffer_long_user_input(content, type="user"):
+        """对 type=user 的超长输入进行字数检验，超限内容落盘到 buffer，返回替换提示文本。"""
+        if type != "user" or len(content) <= 3000:
+            return content
+        import uuid
+
+        user_input_dir = os.path.join(BUFFER_DIR, "user_input")
+        os.makedirs(user_input_dir, exist_ok=True)
+        filename = f"{uuid.uuid4().hex[:8]}.txt"
+        filepath = os.path.join(user_input_dir, filename)
+        try:
+            with open(filepath, "w", encoding="utf-8") as f:
+                f.write(content)
+        except Exception as e:
+            print(f"⚠️ [Buffer] 超长输入落盘失败: {e}")
+            return content
+        return f"【输入超出字数3000字限制，已将请求内容落盘到<{filepath}>里】"
+
     def force_push(self, content, type="user"):
+        content = self._buffer_long_user_input(content, type)
         with self._push_lock:
             self.pending_force_push.append(
                 {
@@ -165,11 +186,14 @@ class Agent:
         now_str = datetime.datetime.now().strftime("%m-%d %H:%M:%S")
         batch_push = []
         for event in events:
+            event_type = event.get("type", "user")
+            event_content = event.get("content", "")
+            event_content = self._buffer_long_user_input(event_content, event_type)
             batch_push.append(
                 {
-                    "type": event.get("type", "user"),
+                    "type": event_type,
                     "time": now_str,
-                    "content": event.get("content", ""),
+                    "content": event_content,
                 }
             )
         with self._push_lock:

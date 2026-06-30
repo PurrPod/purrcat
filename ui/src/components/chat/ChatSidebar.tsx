@@ -19,7 +19,7 @@ export default function ChatSidebar(props: any) {
         <button onClick={onBack} style={sketchyShape2} className="w-16 h-16 bg-cream border-4 border-ink flex items-center justify-center hover:bg-sand transition-all shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] active:translate-y-[2px] active:translate-x-[2px] active:shadow-none -rotate-3 hover:rotate-0 group" title="Back">
           <ArrowLeft size={28} strokeWidth={3} className="text-ink group-hover:-translate-x-1 transition-transform" />
         </button>
-        <button onClick={() => setShowSessionModal(true)} style={sketchyShape1} className="flex-1 h-16 flex items-center justify-center gap-2 bg-[#EBCB8B] text-ink border-4 border-ink hover:bg-[#d8b877] transition-all active:scale-95 shadow-[4px 4px 0px 0px rgba(26,26,26,1)] rotate-2 hover:-rotate-1">
+        <button onClick={() => setShowSessionModal(true)} style={sketchyShape1} className="flex-1 h-16 flex items-center justify-center gap-2 bg-[#EBCB8B] text-ink border-4 border-ink hover:bg-[#d8b877] transition-all active:scale-95 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] rotate-2 hover:-rotate-1">
           <List size={22} strokeWidth={3} />
           <span className="tracking-widest text-lg font-black" style={{ fontFamily: '"Comic Sans MS", cursive' }}>SWITCH</span>
         </button>
