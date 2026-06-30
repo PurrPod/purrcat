@@ -243,12 +243,52 @@ class Agent:
     def process_message(self):
         current_interaction_id = self._increment_interaction_id()
 
-        # 🌟 恢复：使用 force_push 机制。
-        # 这样指令会被 _checker 打包进 role="user" 的 JSON 中，完美避开底层 System 重排导致的缓存击穿！
-        self.force_push(
-            "任务开始前如有需要可以调用 Search 工具搜索本地相关的工具。完成任务后请调用 Memo 工具及时更新记忆，记录的记忆越多越详细以后你的能力就会越强",
-            type="system",
-        )
+        user_texts = [msg["content"] for msg in self.pending_force_push if msg.get("type") == "user"]
+        merged_input = " ".join(user_texts).strip()
+        is_real_user_input = bool(merged_input)
+
+        if is_real_user_input:
+            self.has_search = False
+            self.has_memo_search = False
+            self.has_memo_add = False
+
+            def background_hint_check():
+                try:
+                    from src.tool.search.skill_search import search_skills
+                    from src.tool.search.mcp_search import mcp_search
+                    from src.memory.purrmemo.client import get_memory_client
+                    import time
+
+                    skill_res, _ = search_skills(merged_input, top_k=5)
+                    mcp_res, _ = mcp_search(merged_input, max_results=5)
+
+                    high_score_skills = len([s for s in skill_res if s.get("score", 0) >= 0.5])
+                    high_score_mcps = len([m for m in mcp_res if m.get("score", 0) >= 0.5])
+                    total_tools = high_score_skills + high_score_mcps
+
+                    client = get_memory_client()
+                    valid_memos = 0
+                    if client.search_tool.vector_engine:
+                        exps = client.search_tool.vector_engine.search_experiences(merged_input, top_k=5)
+                        valid_memos = len([e for e in exps if (1.0 - e.get("score", 0)) >= 0.5])
+
+                    if total_tools == 0 and valid_memos == 0:
+                        return
+
+                    time.sleep(10)
+
+                    hints = []
+                    if not self.has_search and total_tools > 0:
+                        hints.append(f"检查到有 {total_tools} 条 skill/mcp 与本轮对话的总输入高度相关，可以尝试使用 Search 工具(route='local')检索相关数据。")
+                    if not self.has_memo_search and valid_memos > 0:
+                        hints.append(f"检查到记忆库中有 {valid_memos} 条经验与本轮对话的总输入高度相关，可以尝试使用 Memo 工具(action='search')检索。")
+
+                    if hints:
+                        self.force_push("\n\n".join(hints), type="system")
+                except Exception as e:
+                    print(f"⚠️ 后台预搜索线程异常: {e}")
+
+            threading.Thread(target=background_hint_check, daemon=True).start()
 
         while True:
             try:
@@ -285,6 +325,12 @@ class Agent:
             except Exception as e:
                 self._handle_interaction_error(e=e)
                 break
+
+        if is_real_user_input and getattr(self, "has_memo_add", False) is False:
+            self.force_push(
+                "检查到本轮对话你未调用 Memo 工具进行记忆总结，最好总结一下，让你的能力随记忆系统的丰富而增强，如果你觉得本轮对话没什么好记录的，可以忽略，非强制性要求。",
+                type="system"
+            )
 
     def _process_assistant_message(self, msg_resp) -> bool:
         assist_msg = {"role": "assistant", "content": msg_resp.content or ""}
@@ -335,6 +381,16 @@ class Agent:
                     }
                 )
                 continue
+
+            if target_tool_name == "Search" and arguments.get("route") in ["local", "skill", "mcp"]:
+                self.has_search = True
+            elif target_tool_name == "Memo":
+                action = arguments.get("action")
+                if action == "search":
+                    self.has_memo_search = True
+                elif action == "add":
+                    self.has_memo_add = True
+
             if target_tool_name == "Bash":
                 arguments["session_id"] = self.session_id
             args_str = str(arguments)
