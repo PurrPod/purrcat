@@ -1,8 +1,7 @@
 // src/components/ChatPage.tsx
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Send, Cat, Clock, Activity, Server, Zap, Brain, GitMerge, ThumbsUp, ThumbsDown, Loader2, FolderOpen, Bell, Paperclip, X, Heart, User, List, ExternalLink } from 'lucide-react'; // 🌟 增加 Heart, User, List, ExternalLink
-import { Virtuoso } from 'react-virtuoso'; // 🌟 引入虚拟列表
+import { Send, Cat, Clock, Activity, Server, Zap, Brain, GitMerge, ThumbsUp, ThumbsDown, Loader2, FolderOpen, Bell, Paperclip, X, Heart, User, List, ExternalLink } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -167,13 +166,15 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const [editJsonStr, setEditJsonStr] = useState('');
 
-  const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
-  const virtuosoRef = useRef<any>(null); // 🌟 控制虚拟列表滚动
-  const isAutoScroll = useRef(true);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
   const pendingMsgsRef = useRef<string[]>([]);
-
-  // (所有 useEffect, API Fetch 和 handlers 代码完全保留原有逻辑)
+  const isAutoScroll = useRef(true);
+  
+  // 🌟 恢复原版滚动监听逻辑
+  const handleScroll = () => { if (!messagesContainerRef.current) return; const { scrollTop, scrollHeight, clientHeight } = messagesContainerRef.current; isAutoScroll.current = scrollHeight - scrollTop - clientHeight < 50; };
+  useEffect(() => { if (isAutoScroll.current) messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
+  useEffect(() => { pendingMsgsRef.current = []; }, [currentBranchId]);
   const fetchGlobalStats = async () => {
     try { const res = await fetch('http://localhost:8000/api/system/agent/stats'); if (res.ok) setGlobalStats(await res.json()); } catch { /* noop */ }
   };
@@ -351,86 +352,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   };
   const deleteCron = async (id: string) => { try { await fetch(`http://localhost:8000/api/tools/cron/${id}`, { method: 'DELETE' }); fetchCron(); } catch { /* noop */ } };
 
-  const handleScroll = () => { if (!messagesContainerRef.current) return; const { scrollTop, scrollHeight, clientHeight } = messagesContainerRef.current; isAutoScroll.current = scrollHeight - scrollTop - clientHeight < 50; };
-  useEffect(() => { if (isAutoScroll.current) virtuosoRef.current?.scrollToIndex({ index: messages.length - 1, behavior: 'smooth' }); }, [messages]);
   useEffect(() => { pendingMsgsRef.current = []; }, [currentBranchId]);
-
-  // 🌟 消息渲染函数（用于虚拟列表）
-  const MessageRenderer = ({ msg, idx }: { msg: any; idx: number }) => {
-    if (msg.role === 'user') {
-      const parsedData = parseEventsContent(msg.content);
-      return (
-        <div className="flex flex-col w-full items-end mb-8">
-          {parsedData.attachments.length > 0 && (
-            <div className="flex flex-col gap-2 w-full items-end mb-2">
-              {parsedData.attachments.map((att: any, aIdx: number) => (
-                <div key={`att-${aIdx}`} style={sketchyShape3} className="px-4 py-2 bg-ink/5 border-2 border-ink text-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] flex items-center gap-2 max-w-[70%]"><span className="font-bold text-xs opacity-80 font-mono truncate">{att.content}</span></div>
-              ))}
-            </div>
-          )}
-          {parsedData.userMessages.map((userMsg: any, uIdx: number) => (
-            <div key={`u-${uIdx}`} className="flex flex-col gap-3 w-full max-w-[85%] items-end">
-              {userMsg.content && (
-                <div style={sketchyShape2} className="w-full p-6 border-4 border-ink relative bg-cream text-ink shadow-[6px 6px 0px 0px rgba(26,26,26,1)]">
-                  <div className="text-[17px] font-bold text-ink"><ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>{userMsg.content}</ReactMarkdown></div>
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      );
-    } else if (msg.role === 'tool') {
-      return <div className="flex w-full justify-start mb-8"><ToolMessageBubble msg={msg} /></div>;
-    } else {
-      return (
-        <div className="flex w-full justify-start mb-8">
-          <div className="flex flex-col gap-3 w-full max-w-[85%] items-start">
-            {msg.content && (
-              <div style={sketchyShape1} className="w-full p-6 border-4 border-ink relative bg-cream text-ink shadow-[6px 6px 0px 0px rgba(26,26,26,1)]">
-                <div>
-                  <div className="flex items-center gap-2 mb-4">
-                    <Cat size={20} strokeWidth={2.5}/>
-                    <span className="font-black text-sm uppercase tracking-widest bg-ink text-paper px-2 py-0.5" style={{ ...sketchyShape3, fontFamily: '"Comic Sans MS", cursive' }}>ASSISTANT</span>
-                  </div>
-                  <div className="text-[17px] font-bold text-ink"><ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>{msg.content}</ReactMarkdown></div>
-                </div>
-              </div>
-            )}
-            {msg.role === 'assistant' && idx === messages.length - 1 && !isAgentThinking && (
-              <div className="flex justify-end gap-2 mt-3 animate-in fade-in duration-300">
-                <button onClick={() => handleFeedback(true)} className="p-1.5 bg-paper border-2 border-ink hover:bg-[#a3be8c] hover:text-ink shadow-[2px 2px 0px 0px rgba(26,26,26,1)] transition-all hover:-translate-y-[1px] active:translate-y-0 active:shadow-none" style={sketchyShape2} title="点赞">
-                  <ThumbsUp size={16} strokeWidth={2.5} />
-                </button>
-                <button onClick={() => handleFeedback(false)} className="p-1.5 bg-paper border-2 border-ink hover:bg-[#bf616a] hover:text-paper shadow-[2px 2px 0px 0px rgba(26,26,26,1)] transition-all hover:-translate-y-[1px] active:translate-y-0 active:shadow-none" style={sketchyShape3} title="点踩">
-                  <ThumbsDown size={16} strokeWidth={2.5} />
-                </button>
-              </div>
-            )}
-            {msg.tool_calls && msg.tool_calls.map((tc: any, tIdx: number) => <ToolCallBubble key={`tc-${tIdx}`} tc={tc} />)}
-
-            {/* 🌟 状态栏：Processing 有框，Dozing 只显示文字 */}
-            {currentBranchId === 'main' && idx === messages.length - 1 && (
-              <div className="flex justify-start w-full mt-3">
-                {isAgentThinking ? (
-                  <div style={sketchyShape3} className="p-2 px-3 w-fit transition-colors border-2 border-ink bg-cream text-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)]">
-                    <div className="flex items-center gap-2">
-                      <Loader2 size={14} strokeWidth={3} className="animate-spin text-terracotta" />
-                      <span className="font-black text-xs tracking-widest uppercase" style={{ fontFamily: '"Comic Sans MS", cursive' }}>Processing...</span>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-2 text-ink/30">
-                    <Clock size={14} strokeWidth={3} />
-                    <span className="font-black text-xs tracking-widest uppercase" style={{ fontFamily: '"Comic Sans MS", cursive' }}>Dozing...</span>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-      );
-    }
-  };
 
   const loadSessions = async () => { try { const res = await fetch('http://localhost:8000/api/sessions'); if (res.ok) { const data = await res.json(); setSessions(data); if (data.length > 0 && !currentSessionId) handleSelectSession(data[0].id); } } catch { /* noop */ } };
   const loadSessionHistory = async (id: string, bId: string = 'main') => { const res = await fetch(`http://localhost:8000/api/sessions/${id}?branch_id=${bId}`); if (res.ok) setMessages(await res.json()); };
@@ -458,7 +380,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
     return () => clearInterval(interval);
   }, [currentSessionId, currentBranchId, isCheckingOut]);
 
-  const handleSelectSession = async (id: string) => { setIsCheckingOut(true); setCurrentSessionId(id); setCurrentBranchId('main'); navigate(`/chat/${id}`, { replace: true }); isAutoScroll.current = true; try { await fetch(`http://localhost:8000/api/sessions/${id}/checkout`, { method: 'POST' }).catch(() => {}); await loadSessionHistory(id, 'main'); await loadBranches(id); } catch { /* noop */ } finally { setIsCheckingOut(false); } };
+  const handleSelectSession = async (id: string) => { setIsCheckingOut(true); setCurrentSessionId(id); setCurrentBranchId('main'); navigate(`/chat/${id}`, { replace: true }); try { await fetch(`http://localhost:8000/api/sessions/${id}/checkout`, { method: 'POST' }).catch(() => {}); await loadSessionHistory(id, 'main'); await loadBranches(id); } catch { /* noop */ } finally { setIsCheckingOut(false); } };
   const confirmNewSession = async () => { setShowModal(false); setIsCheckingOut(true); try { const res = await fetch('http://localhost:8000/api/sessions/new', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ alias: newAlias.trim(), focus: newFocus.trim() || null }) }); if (res.ok) { const data = await res.json(); await loadSessions(); await handleSelectSession(data.id); } } catch { /* noop */ } finally { setIsCheckingOut(false); } };
   const confirmBranchSession = async () => { setShowBranchModal(false); setIsCheckingOut(true); try { const res = await fetch(`http://localhost:8000/api/sessions/${currentSessionId}/branch`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ alias: branchAlias.trim() }) }); if (res.ok) { const data = await res.json(); await loadSessions(); await handleSelectSession(data.id); } } catch { /* noop */ } finally { setIsCheckingOut(false); } };
   const confirmDeleteSession = async () => { if (!sessionToDelete) return; try { const res = await fetch(`http://localhost:8000/api/sessions/${sessionToDelete}`, { method: 'DELETE' }); if (res.ok) { if (currentSessionId === sessionToDelete) { setCurrentSessionId(null); setMessages([]); } setSessionToDelete(null); loadSessions(); } } catch { /* noop */ } };
@@ -474,8 +396,12 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
     if (useBrainstorm) eventsToPush.push({ type: 'tool-quote', content: `user want you use BrainStorm` });
     eventsToPush.push({ type: 'user', content: userText });
     
-    setInput(''); setSelectedSkills([]); setSelectedMcps([]); setSelectedGraphs([]); setRefPaths([]); setUseBrainstorm(false); isAutoScroll.current = true;
+    setInput(''); setSelectedSkills([]); setSelectedMcps([]); setSelectedGraphs([]); setRefPaths([]); setUseBrainstorm(false);
     pendingMsgsRef.current.push(userText);
+    
+    // 🌟 修复 3：立即进行乐观 UI 更新，消除 Dozing 的闪烁
+    setIsAgentThinking(true);
+    
     setMessages(prev => [...prev, { role: 'user', content: JSON.stringify({ events: eventsToPush }) }]);
 
     try { await fetch('http://localhost:8000/api/chat/batch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ session_id: currentSessionId, events: eventsToPush }) }); } catch { /* noop */ }
@@ -607,6 +533,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
           </div>
         )}
 
+        {/* 🌟 恢复原版消息渲染映射 (.map)，加上 onClick 拦截点击 */}
         <div ref={messagesContainerRef} onScroll={handleScroll} onClick={handleMessageClick} className="flex-1 overflow-y-auto px-10 pb-6 flex flex-col gap-6 w-full z-10 pt-4">
           {messages.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-ink gap-5 p-2 w-full max-w-3xl mx-auto select-none">
@@ -623,17 +550,76 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
               </div>
             </div>
           ) : (
-            <Virtuoso
-              ref={virtuosoRef}
-              data={messages}
-              followOutput={true} // 🌟 自动到底部
-              itemContent={(idx, msg) => <MessageRenderer msg={msg} idx={idx} />}
-              className="h-full"
-              atBottomStateChange={(atBottom: boolean) => {
-                isAutoScroll.current = atBottom;
-              }}
-            />
+            messages.map((msg, idx) => {
+              if (msg.role === 'user') {
+                const parsedData = parseEventsContent(msg.content);
+                return (
+                  <div key={idx} className="flex flex-col w-full items-end mb-4">
+                    {parsedData.attachments.length > 0 && (
+                      <div className="flex flex-col gap-2 w-full items-end mb-2">
+                        {parsedData.attachments.map((att: any, aIdx: number) => (
+                          <div key={`att-${aIdx}`} style={sketchyShape3} className="px-4 py-2 bg-ink/5 border-2 border-ink text-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] flex items-center gap-2 max-w-[70%]"><span className="font-bold text-xs opacity-80 font-mono truncate">{att.content}</span></div>
+                        ))}
+                      </div>
+                    )}
+                    {parsedData.userMessages.map((userMsg: any, uIdx: number) => (
+                      <div key={`u-${uIdx}`} className="flex flex-col gap-3 w-full max-w-[85%] items-end">
+                        {userMsg.content && (
+                          <div style={sketchyShape2} className="w-full p-6 border-4 border-ink relative bg-cream text-ink shadow-[6px 6px 0px 0px rgba(26,26,26,1)]">
+                            <div className="text-[17px] font-bold text-ink"><ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>{userMsg.content}</ReactMarkdown></div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                );
+              } else if (msg.role === 'tool') {
+                return <div key={idx} className="flex w-full justify-start"><ToolMessageBubble msg={msg} /></div>;
+              } else {
+                return (
+                  <div key={idx} className="flex w-full justify-start">
+                    <div className="flex flex-col gap-3 w-full max-w-[85%] items-start">
+                      {msg.content && (
+                        <div style={sketchyShape1} className="w-full p-6 border-4 border-ink relative bg-cream text-ink shadow-[6px 6px 0px 0px rgba(26,26,26,1)]">
+                          <div>
+                            <div className="flex items-center gap-2 mb-4">
+                              <Cat size={20} strokeWidth={2.5}/>
+                              <span className="font-black text-sm uppercase tracking-widest bg-ink text-paper px-2 py-0.5" style={{ ...sketchyShape3, fontFamily: '"Comic Sans MS", cursive' }}>ASSISTANT</span>
+                            </div>
+                            <div className="text-[17px] font-bold text-ink"><ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>{msg.content}</ReactMarkdown></div>
+                          </div>
+                        </div>
+                      )}
+                      {msg.role === 'assistant' && idx === messages.length - 1 && !isAgentThinking && (
+                        <div className="flex justify-end gap-2 mt-3 animate-in fade-in duration-300">
+                          <button onClick={() => handleFeedback(true)} className="p-1.5 bg-paper border-2 border-ink hover:bg-[#a3be8c] hover:text-ink shadow-[2px 2px 0px 0px rgba(26,26,26,1)] transition-all hover:-translate-y-[1px] active:translate-y-0 active:shadow-none" style={sketchyShape2} title="点赞">
+                            <ThumbsUp size={16} strokeWidth={2.5} />
+                          </button>
+                          <button onClick={() => handleFeedback(false)} className="p-1.5 bg-paper border-2 border-ink hover:bg-[#bf616a] hover:text-paper shadow-[2px 2px 0px 0px rgba(26,26,26,1)] transition-all hover:-translate-y-[1px] active:translate-y-0 active:shadow-none" style={sketchyShape3} title="点踩">
+                            <ThumbsDown size={16} strokeWidth={2.5} />
+                          </button>
+                        </div>
+                      )}
+                      {msg.tool_calls && msg.tool_calls.map((tc: any, tIdx: number) => <ToolCallBubble key={`tc-${tIdx}`} tc={tc} />)}
+                    </div>
+                  </div>
+                );
+              }
+            })
           )}
+          {currentBranchId === 'main' && messages.length > 0 && (
+            <div className="flex justify-start mb-4 w-full">
+              <div style={sketchyShape1} className={`p-4 w-fit transition-colors ${isAgentThinking ? 'bg-cream text-ink border-4 border-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)]' : 'bg-paper text-ink/40'}`}>
+                <div className="flex items-center gap-3 px-2">
+                  {isAgentThinking ? <Loader2 size={20} strokeWidth={3} className="animate-spin text-terracotta" /> : <Clock size={20} strokeWidth={3} className="text-ink/30" />}
+                  <span className="font-black text-sm tracking-widest uppercase" style={{ fontFamily: '"Comic Sans MS", cursive' }}>
+                    {isAgentThinking ? 'Processing...' : 'Dozing...'}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+          <div ref={messagesEndRef} className="h-2" />
         </div>
 
         <FileChangesPanel {...fileViewProps} />

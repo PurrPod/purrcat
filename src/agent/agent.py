@@ -81,7 +81,7 @@ class Agent:
         # 🌟 新增：处理 focus 目录的动态注入
         focus_md = ""
         if self.focus and os.path.isdir(self.focus):
-            agents_md_path = os.path.join(self.focus, ".purrcat", "AGENTS.md")
+            agents_md_path = os.path.join(self.focus, "AGENTS.md")
             if os.path.exists(agents_md_path):
                 try:
                     with open(agents_md_path, "r", encoding="utf-8") as f:
@@ -424,54 +424,119 @@ class Agent:
         max_tokens = model_cfg.get("max_token", 500000)
         if not force and self.window_token < max_tokens:
             return
-        print(f"🗜️ 触发记忆截断 (约 {self.window_token} tokens)...")
-        try:
-            original_len = len(self.current_history)
-            split_idx = self._find_safe_truncation_index(original_len)
-            final_summary = (
-                json.dumps(self.memo, ensure_ascii=False, indent=2)
-                if self.memo
-                else "（暂无缓存记忆）"
-            )
-            self._rebuild_and_save_history(split_idx, original_len, final_summary)
-        except Exception as e:
-            print(f"❌ 记忆截断发生异常: {e}")
+            
+        print(f"🗜️ 触发记忆截断 (当前约 {self.window_token} tokens)，正在进入内部交互请求模型进行全局大总结...")
 
-    def _find_safe_truncation_index(self, original_len: int) -> int:
-        start_idx = 1
-        keep_recent = 20
-        split_idx = original_len - keep_recent
-        if split_idx > start_idx:
-            while split_idx > start_idx:
-                curr_msg = self.current_history[split_idx]
-                prev_msg = self.current_history[split_idx - 1]
-                if curr_msg.get("role") == "tool":
-                    split_idx -= 1
-                    continue
-                if prev_msg.get("role") == "assistant" and prev_msg.get("tool_calls"):
-                    split_idx -= 1
-                    continue
-                break
-        if split_idx < start_idx:
-            split_idx = start_idx
-        return split_idx
-
-    def _rebuild_and_save_history(
-        self, split_idx: int, original_len: int, final_summary: str
-    ):
-        original_system_msg = self.current_history[0]
-        truncation_msg = {
-            "role": "system",
-            "content": f"【系统通知：因上下文超限...】\n{final_summary}",
+        now_str = datetime.datetime.now().strftime("%m-%d %H:%M:%S")
+        
+        compression_prompt = {
+            "role": "user",
+            "content": json.dumps({"events": [{
+                "type": "system",
+                "time": now_str,
+                "content": "记忆窗口已达上限，系统将要删除所有对话历史。为防止上下文断层，请对当前所有会话细节、历史、当前工作记忆与进度进行大总结，然后调用 Memo 工具（必须设置 action='add'）传入总结。系统将仅保留这份总结。"
+            }]}, ensure_ascii=False)
         }
-        with self._history_lock:  # 🌟 核心修复：内存截断全量复写时锁定
-            self.current_history = [
-                original_system_msg,
-                truncation_msg,
-            ] + self.current_history[split_idx:original_len]
-            for msg in self.current_history:
-                if msg.get("role") == "assistant" and "reasoning_content" in msg:
-                    msg["reasoning_content"] = ""
-        print("✅ Agent记忆清理完毕！")
-        self.window_token = 0
-        self.save_checkpoint()
+
+        with self._history_lock:
+            temp_history = self.current_history.copy() + [compression_prompt]
+
+        summary_text = None
+        msg_resp = None
+        max_retries = 3
+        
+        for attempt in range(1, max_retries + 1):
+            try:
+                response = self.model.chat(messages=temp_history, tools=self._get_tool_schema())
+                msg_resp = response.choices[0].message
+                
+                valid_memo_found = False
+                
+                if msg_resp.tool_calls:
+                    for tc in msg_resp.tool_calls:
+                        if tc.function.name == "Memo":
+                            try:
+                                args = json.loads(tc.function.arguments)
+                                if args.get("action") == "add" and args.get("memo_data"):
+                                    summary_text = (
+                                        json.dumps(args.get("memo_data"), ensure_ascii=False) 
+                                        if isinstance(args.get("memo_data"), dict) 
+                                        else str(args.get("memo_data"))
+                                    )
+                                    valid_memo_found = True
+                                    break
+                            except Exception as e:
+                                print(f"⚠️ 解析 Memo 参数失败: {e}")
+                
+                if valid_memo_found:
+                    break
+                else:
+                    warning_msg = f"【第{attempt}次警告】未使用Memo工具进行记忆总结(或 action 不为 'add')！请只调用 Memo 工具并将 action 设为 'add'，不要调用其他任何无关工具。"
+                    
+                    warning_prompt = {
+                        "role": "user",
+                        "content": json.dumps({"events": [{
+                            "type": "system",
+                            "time": datetime.datetime.now().strftime("%m-%d %H:%M:%S"),
+                            "content": warning_msg
+                        }]}, ensure_ascii=False)
+                    }
+                    temp_history.append(warning_prompt)
+                    print(f"⚠️ [记忆压缩拦截] {warning_msg}")
+
+            except Exception as e:
+                print(f"❌ 记忆总结网络请求失败: {e}")
+                break
+
+        if not summary_text:
+            if msg_resp and msg_resp.content:
+                summary_text = msg_resp.content
+            else:
+                summary_text = "（模型未能成功生成有效总结，上下文已强行截断）"
+
+        try:
+            with self._history_lock:
+                original_len = len(self.current_history)
+                keep_recent = 10
+                split_idx = original_len - keep_recent
+                
+                if split_idx > 1:
+                    while split_idx > 1:
+                        curr_msg = self.current_history[split_idx]
+                        prev_msg = self.current_history[split_idx - 1]
+                        if curr_msg.get("role") == "tool":
+                            split_idx -= 1
+                            continue
+                        if prev_msg.get("role") == "assistant" and prev_msg.get("tool_calls"):
+                            split_idx -= 1
+                            continue
+                        break
+                if split_idx < 1:
+                    split_idx = 1
+
+                recent_messages = self.current_history[split_idx:original_len]
+
+                fresh_system_content = self._build_system_prompt()
+                new_system_msg = {"role": "system", "content": fresh_system_content}
+
+                summary_msg = {
+                    "role": "user",
+                    "content": json.dumps({"events": [{
+                        "type": "system",
+                        "time": datetime.datetime.now().strftime("%m-%d %H:%M:%S"),
+                        "content": f"【历史记忆大总结】\n{summary_text}"
+                    }]}, ensure_ascii=False)
+                }
+
+                self.current_history = [new_system_msg] + recent_messages + [summary_msg]
+
+                for msg in self.current_history:
+                    if msg.get("role") == "assistant" and "reasoning_content" in msg:
+                        msg["reasoning_content"] = ""
+
+            print("✅ Agent 记忆大总结与安全截断完毕！")
+            self.window_token = 0
+            self.save_checkpoint()
+
+        except Exception as e:
+            print(f"❌ 记忆重组发生严重异常: {e}")
