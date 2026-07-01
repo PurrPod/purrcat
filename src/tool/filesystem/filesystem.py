@@ -70,6 +70,14 @@ def FileSystem(action: str, path: str = None, destination: str = None, **kwargs)
             result = read_file(path, kwargs.get("offset", 0), kwargs.get("limit", 2000))
             # 🌟 改造：直接把组装好的带行号的字符串作为 content
             read_text = f"文件路径: {result['path']}\n总行数: {result['total_lines']}\n\n{result['content']}"
+
+            # 🌟 新增：在被 route.py 全局落盘机制拦截前，进行前置字数超限拦截
+            if len(read_text) > 5000:
+                return error_response(
+                    "返回字数超5000字已被拦截，请缩小行数限制参数重新分批读取。",
+                    "❌ 文本超限",
+                )
+
             return text_response(read_text, f"📄 读取了 {result['showing_lines']} 行")
 
         if action == "edit":
