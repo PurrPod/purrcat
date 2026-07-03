@@ -1,7 +1,7 @@
 // src/components/ChatPage.tsx
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Send, Cat, Clock, Activity, Server, Zap, Brain, GitMerge, ThumbsUp, ThumbsDown, Loader2, FolderOpen, Bell, Paperclip, X, Heart, User, List, ExternalLink } from 'lucide-react';
+import { Send, Cat, Clock, Activity, Server, Zap, Brain, GitMerge, ThumbsUp, ThumbsDown, Loader2, FolderOpen, Bell, Paperclip, X, Heart, User, List, ExternalLink, Plus } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -115,6 +115,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   };
 
   const [showMdModal, setShowMdModal] = useState(false);
+  const [showToolMenu, setShowToolMenu] = useState(false);
   const [mdType, setMdType] = useState<'SOUL' | 'SOLO' | 'TODO'>('SOUL');
   const [mdContent, setMdContent] = useState('');
   const [isSavingMd, setIsSavingMd] = useState(false);
@@ -645,11 +646,43 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
              <div className="flex-1 relative flex flex-col">
                <textarea style={sketchyShape3} value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }} onPaste={handlePaste} placeholder={currentSessionId ? "Write your prompt here..." : "Select a chat first!"} disabled={!currentSessionId} rows={2} className="w-full bg-[#FDF8F0] border-4 border-ink p-5 pr-40 font-bold focus:outline-none resize-none text-lg -rotate-[0.5deg] placeholder:text-ink/30" />
                <div className="absolute right-3 bottom-3 flex items-center gap-2 z-10">
-                <button onClick={handleAttachmentClick} className="p-2 bg-cream border-2 border-ink hover:bg-[#88c0d0] transition-all shadow-[2px_2px_0px_0px_rgba(26,26,26,1)]" style={sketchyShape1}><Paperclip className="text-ink" size={20} strokeWidth={3}/></button>
-                 <button onClick={() => { if (skillData.length === 0) fetchSkill(); setTempSelectedSkills([...selectedSkills]); setShowSkillSelectModal(true); }} className="p-2 bg-cream border-2 border-ink hover:bg-[#F9E2AF] transition-all shadow-[2px_2px_0px_0px_rgba(26,26,26,1)]" style={sketchyShape2}><Zap className="text-ink" size={20} strokeWidth={3}/></button>
-                 <button onClick={() => { if (Object.keys(mcpData).length === 0) fetchMcp(); setTempSelectedMcps([...selectedMcps]); setShowMcpSelectModal(true); }} className="p-2 bg-cream border-2 border-ink hover:bg-[#F9E2AF] transition-all shadow-[2px_2px_0px_0px_rgba(26,26,26,1)]" style={sketchyShape1}><Server className="text-ink" size={20} strokeWidth={3}/></button>
-                 <button onClick={() => { if (graphData.length === 0) fetchGraphData(); setTempSelectedGraphs([...selectedGraphs]); setShowGraphSelectModal(true); }} className="p-2 bg-cream border-2 border-ink hover:bg-ink hover:text-paper transition-all shadow-[2px_2px_0px_0px_rgba(26,26,26,1)]" style={sketchyShape3}><GitMerge size={20} strokeWidth={3}/></button>
-                 <button onClick={() => setUseBrainstorm(!useBrainstorm)} className={`p-2 border-2 border-ink transition-all shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] ${useBrainstorm ? 'bg-[#b48ead] text-paper' : 'bg-cream text-ink hover:bg-[#b48ead]/50'}`} style={sketchyShape3}><Brain size={20} strokeWidth={3}/></button>
+                 {/* 展开的工具菜单 */}
+                 {showToolMenu && (
+                   <div className="absolute bottom-full right-0 mb-3 w-56 bg-paper border-4 border-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex flex-col p-1 z-20 animate-in slide-in-from-bottom-2 fade-in duration-200" style={sketchyShape3}>
+
+                     <button onClick={() => { setShowToolMenu(false); if (Object.keys(mcpData).length === 0) fetchMcp(); setTempSelectedMcps([...selectedMcps]); setShowMcpSelectModal(true); }} className="flex items-center gap-3 p-3 hover:bg-[#F9E2AF] font-black text-sm text-left transition-all active:translate-y-1" style={sketchyShape1}>
+                       <Server size={18} strokeWidth={3}/> MCP Tool
+                     </button>
+
+                     <button onClick={() => { setShowToolMenu(false); if (skillData.length === 0) fetchSkill(); setTempSelectedSkills([...selectedSkills]); setShowSkillSelectModal(true); }} className="flex items-center gap-3 p-3 hover:bg-[#F9E2AF] font-black text-sm text-left transition-all active:translate-y-1" style={sketchyShape2}>
+                       <Zap size={18} strokeWidth={3}/> Skill
+                     </button>
+
+                     <button onClick={() => { setShowToolMenu(false); handleAttachmentClick(); }} className="flex items-center gap-3 p-3 hover:bg-[#88c0d0] hover:text-paper font-black text-sm text-left transition-all active:translate-y-1" style={sketchyShape1}>
+                       <Paperclip size={18} strokeWidth={3}/> File Reference
+                     </button>
+
+                     <button onClick={() => { setShowToolMenu(false); setUseBrainstorm(!useBrainstorm); }} className={`flex items-center gap-3 p-3 font-black text-sm text-left transition-all active:translate-y-1 ${useBrainstorm ? 'bg-[#b48ead] text-paper' : 'hover:bg-[#b48ead] hover:text-paper'}`} style={sketchyShape2}>
+                       <Brain size={18} strokeWidth={3}/> BrainStorm Mode {useBrainstorm && ' (ON)'}
+                     </button>
+
+                     <button onClick={() => { setShowToolMenu(false); if (graphData.length === 0) fetchGraphData(); setTempSelectedGraphs([...selectedGraphs]); setShowGraphSelectModal(true); }} className="flex items-center gap-3 p-3 hover:bg-ink hover:text-paper font-black text-sm text-left transition-all active:translate-y-1" style={sketchyShape3}>
+                       <GitMerge size={18} strokeWidth={3}/> Task Graph
+                     </button>
+
+                   </div>
+                 )}
+
+                 {/* 统一的展开/收纳按钮 */}
+                 <button
+                   onClick={() => setShowToolMenu(!showToolMenu)}
+                   className={`p-2 border-2 border-ink transition-all shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] ${showToolMenu ? 'bg-terracotta text-paper' : 'bg-cream text-ink hover:bg-sand'}`}
+                   style={sketchyShape1}
+                   title="More Tools"
+                 >
+                   {/* 点击后十字架旋转45度变成一个 X 按钮，手感会更好 */}
+                   <Plus size={24} strokeWidth={3} className={`transition-transform duration-300 ${showToolMenu ? 'rotate-45' : ''}`}/>
+                 </button>
                </div>
              </div>
              <button style={sketchyShape1} onClick={handleSend} disabled={!currentSessionId || !input.trim()} className="bg-ink text-paper px-10 font-black flex items-center gap-3 border-4 border-ink hover:bg-terracotta hover:text-ink shadow-[6px_6px_0px_0px_rgba(212,122,90,1)] rotate-2 min-h-[80px] self-end">
