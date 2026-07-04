@@ -20,6 +20,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     jq \
     unzip \
     gnupg \
+    fontconfig \
+    fonts-wqy-zenhei \
+    fonts-wqy-microhei \
     && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && npm config set registry https://registry.npmmirror.com \

@@ -20,6 +20,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     jq \
     unzip \
     gnupg \
+    fontconfig \
+    fonts-wqy-zenhei \
+    fonts-wqy-microhei \
     # === Full sandbox dependencies ===
     # ffmpeg for video/audio processing
     ffmpeg \
