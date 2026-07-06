@@ -176,18 +176,6 @@ def get_file_config_dict():
     }
 
 
-def get_note_config_dict():
-    """Generate note configuration dictionary"""
-    return {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "$comment": "PurrCat Agent Note Configuration File",
-        "skill": ["docx", "pptx", "xlsx"],
-        "expectation": [
-            "when ask you for analyse the note, please read all the content before starting analysis"
-        ],
-    }
-
-
 def get_memory_config_dict():
     """Generate memory system configuration dictionary"""
     return {

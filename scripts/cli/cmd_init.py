@@ -15,7 +15,6 @@ from scripts.cli.templates import (
     get_mcp_config_dict,
     get_memory_config_dict,
     get_model_config_dict,
-    get_note_config_dict,
     get_sensor_config_dict,
 )
 
@@ -129,27 +128,6 @@ def _generate_mcp_config(purrcat_dir, force=False):
         return False
 
 
-def _generate_note_config(purrcat_dir, force=False):
-    """Generate agent note configuration file"""
-    agent_dir = os.path.join(purrcat_dir, "agent")
-    os.makedirs(agent_dir, exist_ok=True)
-
-    note_path = os.path.join(agent_dir, "note.json")
-
-    if os.path.exists(note_path) and not _prompt_overwrite(note_path, force):
-        return False
-
-    note_config = get_note_config_dict()
-    try:
-        with open(note_path, "w", encoding="utf-8") as f:
-            json.dump(note_config, f, indent=2, ensure_ascii=False)
-        print("[+] agent/note.json generated")
-        return True
-    except Exception as e:
-        print(f"X Failed to write agent/note.json: {e}")
-        return False
-
-
 def _generate_app_config(purrcat_dir, force=False):
     """Generate app whitelist configuration file"""
     app_path = os.path.join(purrcat_dir, "app_config.json")
@@ -174,6 +152,19 @@ def _generate_core_files(purrcat_dir, force=False):
     os.makedirs(core_dir, exist_ok=True)
 
     results = []
+
+    info_path = os.path.join(core_dir, "info.json")
+    if os.path.exists(info_path) and not _prompt_overwrite(info_path, force):
+        results.append(("info.json", False))
+    else:
+        try:
+            with open(info_path, "w", encoding="utf-8") as f:
+                json.dump({"skills": [], "workshops": []}, f, indent=2, ensure_ascii=False)
+            print("[+] core/info.json generated")
+            results.append(("info.json", True))
+        except Exception as e:
+            print(f"X Failed to write core/info.json: {e}")
+            results.append(("info.json", False))
 
     cron_path = os.path.join(core_dir, "cron.json")
     if os.path.exists(cron_path) and not _prompt_overwrite(cron_path, force):
@@ -278,7 +269,6 @@ def run_init(force=False):
     results.append(("file", _generate_file_config(purrcat_dir, force=False)))
     results.append(("mcp", _generate_mcp_config(purrcat_dir, force=False)))
     results.append(("memory", _generate_memory_config(purrcat_dir, force=False)))
-    results.append(("note", _generate_note_config(purrcat_dir, force=False)))
     results.append(("app", _generate_app_config(purrcat_dir, force=False)))
     results.append(("core", _generate_core_files(purrcat_dir, force=False)))
 
