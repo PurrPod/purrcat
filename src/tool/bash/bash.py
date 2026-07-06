@@ -41,7 +41,7 @@ def Bash(command: str, timeout: int = 300, session_id: str = "default", **kwarg)
         )
 
         if exit_code == 0:
-            snip = f"✅ 成功"
+            snip = "✅ 成功"
             return text_response(content_str, snip)
         else:
             close_session(session_id)
