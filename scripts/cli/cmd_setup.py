@@ -306,6 +306,27 @@ def _download_embedding_model():
     print("Model resources ready!")
 
 
+def _install_playwright_browser():
+    """Install Playwright Chromium browser"""
+    print("")
+    print("Installing Playwright Chromium browser...")
+
+    project_root = _get_project_root()
+
+    success = _run_cmd(
+        [UV_CMD, "run", "playwright", "install", "chromium"],
+        shell=False,
+        check=False,
+        cwd=project_root,
+    )
+
+    if success:
+        print("Playwright Chromium browser installed successfully!")
+    else:
+        print("Warning: Playwright browser installation may have failed!")
+        print("You can try running: uv run playwright install chromium")
+
+
 def run_setup():
     """Main setup workflow"""
     print("Welcome to PurrCat environment setup...")
@@ -338,6 +359,9 @@ def run_setup():
     print("==========================================")
 
     _download_embedding_model()
+    print("==========================================")
+
+    _install_playwright_browser()
     print("==========================================")
 
     if install_webui:

@@ -13,10 +13,52 @@ def _get_project_root():
     return os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
+def _check_and_install_browser():
+    """Check if Playwright Chromium is installed, install if not"""
+    print("Checking Playwright browser...")
+    project_root = _get_project_root()
+
+    try:
+        result = subprocess.run(
+            [UV_CMD, "run", "playwright", "install", "--dry-run", "chromium"],
+            capture_output=True,
+            text=True,
+            cwd=project_root,
+            timeout=60,
+        )
+
+        if result.returncode != 0 or "chromium" in result.stdout.lower():
+            print("Playwright Chromium not found. Installing...")
+            install_result = subprocess.run(
+                [UV_CMD, "run", "playwright", "install", "chromium"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                cwd=project_root,
+            )
+            for line in install_result.stdout.split("\n"):
+                if line.strip():
+                    print(f"  {line}")
+            if install_result.returncode == 0:
+                print("✅ Playwright Chromium installed successfully!")
+            else:
+                print("❌ Failed to install Playwright Chromium.")
+                print("Please run 'purrcat setup' to complete the installation.")
+        else:
+            print("✅ Playwright Chromium is ready.")
+    except subprocess.TimeoutExpired:
+        print("⏱️ Browser check timed out, skipping...")
+    except Exception as e:
+        print(f"⚠️ Error checking browser: {e}")
+
+
 def run_start(tui=False):
     """Start PurrCat application"""
     print("Starting PurrCat...")
     print("Press [Ctrl+C] to safely close.\n")
+
+    _check_and_install_browser()
+    print("")
 
     project_root = _get_project_root()
     main_script = os.path.join(project_root, "main.py")

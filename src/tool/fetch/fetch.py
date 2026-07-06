@@ -163,8 +163,8 @@ def Fetch(
 
         elif source == "web":
             content_len = len(result.get("content", ""))
-            # 🌟 改造：直接返回 md 字符串
-            md = f"# {result['title']}\n\n**URL:** {result['url']}\n**类型:** {result['content_type']}\n---\n\n{result.get('content', '')[:2000]}"
+            # 🌟 改造：直接返回 md 字符串，移除截断限制
+            md = f"# {result['title']}\n\n**URL:** {result['url']}\n**类型:** {result['content_type']}\n---\n\n{result.get('content', '')}"
             return text_response(md, f"🌐 {content_len}字符")
 
     except MCPServerNotFoundError as e:

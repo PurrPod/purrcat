@@ -22,7 +22,8 @@ dependencies = [
 
     # Web 搜索与自动化
     "curl-cffi>=0.6.0", "ddgs>=0.1.0", "beautifulsoup4>=4.12.3",
-    "readability-lxml>=0.8.1", "markdown>=3.5.0", "markdownify>=0.11.6",
+    "markdown>=3.5.0", "markdownify>=0.11.6",
+    "playwright>=1.45.0",
 
     # 计算机控制
     "pyautogui>=0.9.54", "pyperclip>=1.8.2", "mss>=9.0.1", "Pillow>=10.0.0",
