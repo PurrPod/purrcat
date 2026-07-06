@@ -175,3 +175,18 @@ def api_update_markdown_file(filename: str, payload: dict = Body(...)):
     except Exception as e:
         print(f"Failed to save {filename}.md: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to save {filename}.md")
+
+
+# ── Info Config (Skills & Workshops) ──
+@router.get("/info")
+def api_get_info_config():
+    """读取 .purrcat/core/info.json，提供 skills 和 workshops 列表"""
+    try:
+        file_path = os.path.join(AGENT_CORE_DIR, "info.json")
+        if not os.path.exists(file_path):
+            return {"skills": [], "workshops": []}
+        with open(file_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"[Config API] 读取 info.json 失败: {e}")
+        return {"skills": [], "workshops": []}

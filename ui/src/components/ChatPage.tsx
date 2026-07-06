@@ -31,7 +31,8 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   const [showSessionModal, setShowSessionModal] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [newAlias, setNewAlias] = useState('');
-  const [newFocus, setNewFocus] = useState(''); // 🌟 新增 focus 状态
+  const [selectedProject, setSelectedProject] = useState('');
+  const [infoData, setInfoData] = useState<{skills: string[], workshops: string[]}>({skills: [], workshops: []});
   const [showBranchModal, setShowBranchModal] = useState(false);
   const [branchAlias, setBranchAlias] = useState('');
   const [sessionToDelete, setSessionToDelete] = useState<string | null>(null);
@@ -92,6 +93,17 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
     } catch { /* noop */ }
   };
   useEffect(() => { fetchAgentHeartbeat(); }, []);
+
+  // 🌟 挂载时拉取 info.json (skills & workshops)
+  useEffect(() => {
+    const fetchInfoData = async () => {
+      try {
+        const res = await fetch('http://localhost:8000/api/config/info');
+        if (res.ok) setInfoData(await res.json());
+      } catch { /* noop */ }
+    };
+    fetchInfoData();
+  }, []);
 
   // 🌟 保存心跳配置
   const saveHeartbeat = async () => {
@@ -382,7 +394,38 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   }, [currentSessionId, currentBranchId, isCheckingOut]);
 
   const handleSelectSession = async (id: string) => { setIsCheckingOut(true); setCurrentSessionId(id); setCurrentBranchId('main'); navigate(`/chat/${id}`, { replace: true }); try { await fetch(`http://localhost:8000/api/sessions/${id}/checkout`, { method: 'POST' }).catch(() => {}); await loadSessionHistory(id, 'main'); await loadBranches(id); } catch { /* noop */ } finally { setIsCheckingOut(false); } };
-  const confirmNewSession = async () => { setShowModal(false); setIsCheckingOut(true); try { const res = await fetch('http://localhost:8000/api/sessions/new', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ alias: newAlias.trim(), focus: newFocus.trim() || null }) }); if (res.ok) { const data = await res.json(); await loadSessions(); await handleSelectSession(data.id); } } catch { /* noop */ } finally { setIsCheckingOut(false); } };
+  const confirmNewSession = async () => {
+    setShowModal(false);
+    setIsCheckingOut(true);
+    try {
+      const res = await fetch('http://localhost:8000/api/sessions/new', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ alias: newAlias.trim() })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        await loadSessions();
+        await handleSelectSession(data.id);
+
+        // 如果选择了作坊，则自动发送第一条消息注入上下文
+        if (selectedProject) {
+          await fetch('http://localhost:8000/api/chat/batch', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              session_id: data.id,
+              events: [{ type: 'user', content: `我们现在来处理作坊项目：${selectedProject}` }]
+            })
+          });
+        }
+      }
+    } catch { /* noop */ } finally {
+      setIsCheckingOut(false);
+      setNewAlias('');
+      setSelectedProject('');
+    }
+  };
   const confirmBranchSession = async () => { setShowBranchModal(false); setIsCheckingOut(true); try { const res = await fetch(`http://localhost:8000/api/sessions/${currentSessionId}/branch`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ alias: branchAlias.trim() }) }); if (res.ok) { const data = await res.json(); await loadSessions(); await handleSelectSession(data.id); } } catch { /* noop */ } finally { setIsCheckingOut(false); } };
   const confirmDeleteSession = async () => { if (!sessionToDelete) return; try { const res = await fetch(`http://localhost:8000/api/sessions/${sessionToDelete}`, { method: 'DELETE' }); if (res.ok) { if (currentSessionId === sessionToDelete) { setCurrentSessionId(null); setMessages([]); } setSessionToDelete(null); loadSessions(); } } catch { /* noop */ } };
 
@@ -436,7 +479,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   // --- Props 组织区 ---
   const modalProps = {
     isCheckingOut, showBusyModal, setShowBusyModal,
-    showModal, setShowModal, newAlias, setNewAlias, newFocus, setNewFocus, confirmNewSession, // 🌟 抛出 newFocus
+    showModal, setShowModal, newAlias, setNewAlias, selectedProject, setSelectedProject, workshops: infoData.workshops, confirmNewSession,
     showBranchModal, setShowBranchModal, branchAlias, setBranchAlias, confirmBranchSession,
     sessionToDelete, setSessionToDelete, confirmDeleteSession,
     branchToDelete, setBranchToDelete, currentSessionId, loadSessionHistory, loadBranches, setCurrentBranchId,
