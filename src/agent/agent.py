@@ -14,6 +14,7 @@ from src.tool.utils.route import dispatch_tool
 from src.utils.config import (
     AGENT_CORE_DIR,
     BUFFER_DIR,
+    SKILL_DIR,
     SOUL_MD_PATH,
     SYSTEM_RULES_DIR,
     get_agent_model,
@@ -59,7 +60,49 @@ class Agent:
 
     def _build_system_prompt(self):
         soul_md, system_rules, memory_md = "", "", ""
+        skills_info, workshops_info = "", ""
+
+        def _extract_desc(file_path):
+            if not os.path.exists(file_path):
+                return None
+            try:
+                with open(file_path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        if line.strip().lower().startswith("description:"):
+                            return line.split(":", 1)[1].strip()
+            except Exception:
+                pass
+            return None
+
         try:
+            from src.utils.config import AGENT_CORE_DIR, SKILL_DIR
+            info_json_path = os.path.join(AGENT_CORE_DIR, "info.json")
+            if os.path.exists(info_json_path):
+                with open(info_json_path, "r", encoding="utf-8") as f:
+                    info_data = json.load(f)
+
+                skills = info_data.get("skills", [])
+                if skills:
+                    skills_info += "以下是核心skill，所有的skill以本清单为第一优先级，请在工作过程中遇到对应任务就使用Fetch工具进行调用！！！\n"
+                    for skill in skills:
+                        desc = _extract_desc(os.path.join(SKILL_DIR, skill, "SKILL.md"))
+                        if desc:
+                            skills_info += f"- {skill}:{desc}\n"
+                        else:
+                            skills_info += f"- {skill}（技能加载失败，可能未安装）\n"
+                    skills_info += "对于本清单以外的其它普通skill，请使用Search工具进行检索和发现。\n"
+
+                workshops = info_data.get("workshops", [])
+                if workshops:
+                    workshops_info += "以下是系统常驻作坊，请在收到特定任务的时候进入对应的文件夹内读取对应项目的AGENTS.md或WORKSHOP.md进行工作，\n"
+                    for ws in workshops:
+                        desc = _extract_desc(os.path.join(ws, "WORKSHOP.md"))
+                        if desc:
+                            workshops_info += f"- {ws}:{desc}\n"
+                        else:
+                            workshops_info += f"- {ws}（作坊加载失败，可能未找到WORKSHOP.md）\n"
+                    workshops_info += "如无相关作坊，直接在沙盒内工作即可\n"
+
             if os.path.exists(SOUL_MD_PATH):
                 with open(SOUL_MD_PATH, "r", encoding="utf-8") as f:
                     soul_md = f.read().strip()
@@ -79,9 +122,8 @@ class Agent:
         except Exception as e:
             print(f"⚠️ Prompt 构建发生异常: {e}")
 
-        # 🌟 新增：处理 focus 目录的动态注入
         focus_md = ""
-        if self.focus and os.path.isdir(self.focus):
+        if getattr(self, "focus", None) and os.path.isdir(self.focus):
             agents_md_path = os.path.join(self.focus, "AGENTS.md")
             if os.path.exists(agents_md_path):
                 try:
@@ -101,10 +143,17 @@ class Agent:
         combined = system_rules
         if soul_md:
             combined += f"\n\n---\n\n{soul_md}"
+
+        if skills_info:
+            combined += f"\n\n---\n\n# 【核心技能档案】\n\n{skills_info}"
+        if workshops_info:
+            combined += f"\n\n---\n\n# 【常驻作坊 (Workshops)】\n\n{workshops_info}"
+
         if memory_md:
             combined += f"\n\n---\n\n# 【系统长期记忆档案】\n\n{memory_md}"
-        if focus_md:  # 🌟 将 Focus 上下文拼接进去
+        if focus_md:
             combined += f"\n\n---\n\n# 【项目专属上下文 (Focus)】\n\n{focus_md}"
+
         return combined
 
     def stop(self):
