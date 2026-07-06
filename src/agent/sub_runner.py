@@ -97,7 +97,7 @@ class SubAgentRunner:
         )
 
     def _build_system_prompt(self):
-        """🌟 新增：为主模型动态重建系统提示词的方法，保持最新规则与 Focus 目录状态同步"""
+        """🌟 为主模型动态重建系统提示词的方法，保持最新规则与技能/作坊状态同步"""
         soul_md, system_rules, memory_md = "", "", ""
         skills_info, workshops_info = "", ""
 
@@ -106,9 +106,22 @@ class SubAgentRunner:
                 return None
             try:
                 with open(file_path, "r", encoding="utf-8") as f:
+                    in_front_matter = False
                     for line in f:
-                        if line.strip().lower().startswith("description:"):
-                            return line.split(":", 1)[1].strip()
+                        line = line.strip()
+                        if line == "---":
+                            if not in_front_matter:
+                                in_front_matter = True
+                                continue
+                            else:
+                                break
+
+                        if in_front_matter and line.lower().startswith("description:"):
+                            val = line.split(":", 1)[1].strip()
+                            if (val.startswith('"') and val.endswith('"')) or \
+                               (val.startswith("'") and val.endswith("'")):
+                                val = val[1:-1]
+                            return val
             except Exception:
                 pass
             return None
@@ -162,33 +175,6 @@ class SubAgentRunner:
         except Exception as e:
             print(f"⚠️ [SubAgent] Prompt 构建发生异常: {e}")
 
-        focus_md = ""
-        from src.agent.manager import AgentManager
-
-        manager = AgentManager()
-        focus = (
-            manager._agent.focus
-            if (manager._agent and hasattr(manager._agent, "focus"))
-            else None
-        )
-
-        if focus and os.path.isdir(focus):
-            agents_md_path = os.path.join(focus, ".purrcat", "AGENTS.md")
-            if os.path.exists(agents_md_path):
-                try:
-                    with open(agents_md_path, "r", encoding="utf-8") as f:
-                        focus_md += f.read().strip() + "\n\n"
-                except Exception:
-                    pass
-
-            plan_exists = os.path.exists(os.path.join(focus, "PLAN.md"))
-            todo_exists = os.path.exists(os.path.join(focus, "TODO.md"))
-
-            status_str = f"当前项目聚焦目录 (Focus): {focus}\n"
-            status_str += f"- PLAN.md 存在状态: {'是' if plan_exists else '否'}\n"
-            status_str += f"- TODO.md 存在状态: {'是' if todo_exists else '否'}\n"
-            focus_md += status_str
-
         combined = system_rules
         if soul_md:
             combined += f"\n\n---\n\n{soul_md}"
@@ -200,8 +186,7 @@ class SubAgentRunner:
 
         if memory_md:
             combined += f"\n\n---\n\n# 【系统长期记忆档案】\n\n{memory_md}"
-        if focus_md:
-            combined += f"\n\n---\n\n# 【项目专属上下文 (Focus)】\n\n{focus_md}"
+
         return combined
 
     async def _truncate_memory_if_needed(self):

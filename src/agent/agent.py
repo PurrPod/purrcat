@@ -28,7 +28,6 @@ class Agent:
     def __init__(self, session_id, initial_history=None, name=None, save_callback=None):
         self.name = name or get_agent_model()
         self.session_id = session_id
-        self.focus = None  # 🌟 内存中仅作为当前活跃会话的 focus 投影，初始默认为 None
         # === 常驻内存记忆缓存 ===
         self.memo = SessionStore.load_global_memo()
         self._state = "idle"
@@ -67,9 +66,22 @@ class Agent:
                 return None
             try:
                 with open(file_path, "r", encoding="utf-8") as f:
+                    in_front_matter = False
                     for line in f:
-                        if line.strip().lower().startswith("description:"):
-                            return line.split(":", 1)[1].strip()
+                        line = line.strip()
+                        if line == "---":
+                            if not in_front_matter:
+                                in_front_matter = True
+                                continue
+                            else:
+                                break
+
+                        if in_front_matter and line.lower().startswith("description:"):
+                            val = line.split(":", 1)[1].strip()
+                            if (val.startswith('"') and val.endswith('"')) or \
+                               (val.startswith("'") and val.endswith("'")):
+                                val = val[1:-1]
+                            return val
             except Exception:
                 pass
             return None
@@ -122,24 +134,6 @@ class Agent:
         except Exception as e:
             print(f"⚠️ Prompt 构建发生异常: {e}")
 
-        focus_md = ""
-        if getattr(self, "focus", None) and os.path.isdir(self.focus):
-            agents_md_path = os.path.join(self.focus, "AGENTS.md")
-            if os.path.exists(agents_md_path):
-                try:
-                    with open(agents_md_path, "r", encoding="utf-8") as f:
-                        focus_md += f.read().strip() + "\n\n"
-                except Exception as e:
-                    print(f"⚠️ 读取 Focus AGENTS.md 失败: {e}")
-
-            plan_exists = os.path.exists(os.path.join(self.focus, "PLAN.md"))
-            todo_exists = os.path.exists(os.path.join(self.focus, "TODO.md"))
-
-            status_str = f"当前项目聚焦目录 (Focus): {self.focus}\n"
-            status_str += f"- PLAN.md 存在状态: {'是' if plan_exists else '否'}\n"
-            status_str += f"- TODO.md 存在状态: {'是' if todo_exists else '否'}\n"
-            focus_md += status_str
-
         combined = system_rules
         if soul_md:
             combined += f"\n\n---\n\n{soul_md}"
@@ -151,8 +145,6 @@ class Agent:
 
         if memory_md:
             combined += f"\n\n---\n\n# 【系统长期记忆档案】\n\n{memory_md}"
-        if focus_md:
-            combined += f"\n\n---\n\n# 【项目专属上下文 (Focus)】\n\n{focus_md}"
 
         return combined
 
