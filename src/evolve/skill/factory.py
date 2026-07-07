@@ -49,7 +49,10 @@ def skill_improve_init(skill_name: str, is_upgrade: bool) -> str:
   "evals": [
     {{
       "id": "basic_test_1",
-      "prompt": "在此处输入模拟用户的真实提问",
+      "prompt": "在此处输入模拟用户的真实提问，注意只用附件文件名，不要写绝对路径",
+      "files": [
+        "evals/files/示例附件.txt"
+      ],
       "expected_output": "人类可读的预期结果描述",
       "assertions": [
         "输出的 JSON 文件格式必须合法",

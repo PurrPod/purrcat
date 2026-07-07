@@ -7,11 +7,12 @@ Skill 指南生成器模块 (evolve/skill/guide_generator.py)
 def generate_create_guide(skill_name: str) -> str:
     return f"""# {skill_name} 创建指南 (How to Create)
 
-从 0 到 1 构建 `{skill_name}`，请严格遵循 agentskills.io 规范：
+从 0 到 1 构建 `{skill_name}`，请严格遵循规范：
 
-## 1. 渐进式披露与目录结构 (Progressive Disclosure)
+## 1. 渐进式披露与目录结构
 不要把所有内容塞进一个文件。系统会在启动时加载元数据，触发时加载 SKILL.md，需要时加载附件。
-* `./SKILL.md`：(必须) 核心指令。必须保持在 500 行 / 5000 tokens 以内。
+* `./SKILL.md`：(必须) 核心指令。必须保持在 500 行 / 5000 tokens 以内。如果内容太多，应当选择拆分文档，将大篇幅的参考材料拆出来放在 references 文件夹内，并在 SKILL.md 中注明文档的相对路径。
+* `./references/`：(可选) 参考材料。如果 SKILL.md 的字数限制内不够说明所有，可以选择拆分成参考资料放在这个文件夹里。
 * `./scripts/`：(可选) 存放可复用的 Python/Bash 脚本。用于让使用者可以减少一些重复性操作，节省消耗。
 * `./evals/evals.json`：(必须) 测试用例配置（包含激发测试 triggers 与质量盲测 evals）。
 
@@ -20,7 +21,7 @@ def generate_create_guide(skill_name: str) -> str:
 ```yaml
 ---
 name: {skill_name}
-description: 必须在 1-1024 字符内。
+description: 必须在 1-200 字符内。
 ---
 ```
 
@@ -73,19 +74,33 @@ def generate_test_guide(skill_name: str) -> str:
 **严禁在未经过沙盒盲测的情况下直接申请 skill_merge！**
 修改代码后，必须完善 `evals/evals.json` 以驱动自动化盲测，它包含两个核心数组：`triggers` (激发测试) 和 `evals` (质量测试)。
 
-## 1. 编写触发测试用例 (Designing Trigger Evals)
+## 🚨 核心行为准则 (Crucial Rules)
 
+1. **测试前必须询问用户 (Ask for Permission)**：
+   编写/修改完测试用例后，**必须先将用例的具体内容告知用户**，并询问：“是否要跑这几个用例试试看效果？”
+   **只有在用户明确同意后才能执行 `test_skill`。** 如果用户不在或未指示，请挂起等待，切勿擅自运行测试！
+
+2. **无交互测试原则 (Non-interactive)**：
+   Skill 测试是在隔离的后台双 Agent 环境下运行的。**请绝对不要编写需要用户中途提供输入、确认或进行任何交互的测试用例。**
+
+3. **Prompt 路径规范 (Relative Paths)**：
+   如果测试用例的 `prompt` 提到了需要处理的文件，**严禁使用绝对路径**。请直接使用附件的文件名或相对目录名（例如：使用"请帮我分析 sample.csv" 代替 "分析 /root/.../sample.csv"）。
+
+4. **测试附件支持 (Using Files)**：
+   如果测试用例需要用到实际的文件（如 CSV、图片或特定文件夹），请将这些文件放入 `evals/files/` 目录中。并在 `evals.json` 中配置 `files` 字段，系统会在测试时自动挂载这些附件。合并至主分支时，这些附件也会一并被保留。
+
+## 1. 编写触发测试用例 (Designing Trigger Evals)
 你需要在 `evals.json` 中添加 `triggers` 数组。建议设计 5-10 个用例。
 
 * **正例 (Should-trigger)**：包含正式请求、随意的口语、缩写或错别字，以及隐藏在多步长对话中的复杂意图。
-* **反例与擦边球 (Should-not-trigger/Near-misses) (极度重要)**：必须设计那些**包含你的技能关键词，但实际上并不需要你处理**的请求。
+* **反例与擦边球 (Should-not-trigger/Near-misses) (极度重要)**：必须设计那些**包含技能关键词，但实际上并不需要该 skill 处理**的请求。
 * *例如：对于 CSV 处理技能，不要用"今天天气如何"当反例，要用"帮我写一个能读取 CSV 到数据库的 Python 脚本"（这是写代码，不是分析数据）。*
 
 ## 2. 编写质量盲测用例 (Designing Quality Evals)
 
-`evals` 数组用于测试执行结果：
-
-* `prompt`: 真实的、包含文件路径的随利用户语气。
+`evals` 数组用于测试执行结果。
+* `prompt`: 真实的、随利用户语气的请求。**记得只写相对文件名！**
+* `files`: 存放该测试用例需要用到的附件的相对路径数组。
 * `expected_output`: 人类可读的成功标准。
 * `assertions`: 硬性断言。好的断言必须是可验证的（如"输出包含3个公式"），坏的断言是含糊的（如"输出得很好"）。不要在断言里规定必须使用某个一字不差的短语，这太脆弱了。
 
@@ -99,7 +114,8 @@ def generate_test_guide(skill_name: str) -> str:
   "evals": [
     {{
       "id": "eval-sales-chart",
-      "prompt": "I have a CSV in data/sales.csv. Make a bar chart.",
+      "prompt": "I have a CSV named sales.csv. Make a bar chart.",
+      "files": ["evals/files/sales.csv", "evals/files/test_folder"],
       "expected_output": "A bar chart image",
       "assertions": ["输出包含图表文件", "图表展示了完整的月份"]
     }}
@@ -109,8 +125,7 @@ def generate_test_guide(skill_name: str) -> str:
 
 ## 3. 如何发起测试与阅读档案 (Spawning Runs & Reading Archives)
 
-使用 `KernelUpgrade` 工具发起 `test_skill` 后，系统会自动生成并累加 `iteration-N` 归档目录。
-收到测试完毕的通知后，你必须按顺序阅读以下文件：
+用户同意测试后，使用 KernelUpgrade 工具发起 test_skill。收到测试完毕的通知后，你必须按顺序阅读 iteration-N 目录下的：
 
 1. **`benchmark.json`**: 查看全局平均通过率 (mean) 和 标准差 (stddev)。评估你的技能修改是否值得。
 2. **`eval_report.md`**: 查看 `triggers` 测试中，你是否被其他技能抢占了触发权。如果是，你需要修改 SKILL.md 里的 description 以使其更加贴合通用的使用场景。

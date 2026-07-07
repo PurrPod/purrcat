@@ -141,12 +141,15 @@ async def _run_single_eval_case(
         outputs_dir = os.path.join(eval_run_dir, "outputs")
         os.makedirs(outputs_dir, exist_ok=True)
 
-        if "files" in case:
-            for file_path in case["files"]:
-                src_file = os.path.join(dev_skill_dir, file_path)
-                if os.path.exists(src_file):
-                    dst_file = os.path.join(eval_run_dir, os.path.basename(file_path))
-                    shutil.copy2(src_file, dst_file)
+        assets_list = case.get("files", case.get("assets", []))
+        for asset_path in assets_list:
+            src_asset = os.path.join(dev_skill_dir, asset_path)
+            if os.path.exists(src_asset):
+                dst_asset = os.path.join(eval_run_dir, os.path.basename(asset_path))
+                if os.path.isdir(src_asset):
+                    shutil.copytree(src_asset, dst_asset, dirs_exist_ok=True)
+                else:
+                    shutil.copy2(src_asset, dst_asset)
 
         prompt = case.get("prompt", "")
         expected = case.get("expected_output", "")
