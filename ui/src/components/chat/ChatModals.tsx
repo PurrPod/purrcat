@@ -1,5 +1,5 @@
 // src/components/chat/ChatModals.tsx
-import { Loader2, X, Trash2, Check, ChevronUp, ChevronDown, Plus, Download, Save, AlertCircle, FileJson, FileText, GitFork, Pencil, Clock } from 'lucide-react';
+import { Loader2, X, Trash2, Check, ChevronUp, ChevronDown, Plus, Download, Save, AlertCircle, FileJson, FileText, GitFork, Pencil, Clock, BookOpen } from 'lucide-react';
 import { sketchyShape1, sketchyShape2, sketchyShape3 } from './ChatShared';
 
 export default function ChatModals(props: any) {
@@ -19,7 +19,8 @@ export default function ChatModals(props: any) {
     showRefModal, setShowRefModal, tempRefPath, setTempRefPath, setRefPaths,
     showGraphSelectModal, setShowGraphSelectModal, graphData, tempSelectedGraphs, setTempSelectedGraphs, setSelectedGraphs,
     isConfigOpen, setIsConfigOpen, activeTab, setActiveTab, configData, expandedKey, editJsonStr, setEditJsonStr, toggleKey, handleSaveConfig,
-    showSessionModal, setShowSessionModal, isAgentThinking, sessions, handleSelectSession, editingSessionId, editingAlias, setEditingAlias, setEditingSessionId, handleRename
+    showSessionModal, setShowSessionModal, isAgentThinking, sessions, handleSelectSession, editingSessionId, editingAlias, setEditingAlias, setEditingSessionId, handleRename,
+    showTraceModal, setShowTraceModal, traceType, setTraceType, traceSkillName, setTraceSkillName, traceExpectation, setTraceExpectation, confirmTraceToSkill, isTracing
   } = props;
 
   const CONFIG_TABS = ['model', 'sensor', 'file', 'memory', 'mcp', 'app'];
@@ -500,6 +501,72 @@ export default function ChatModals(props: any) {
                     <div className={`flex items-center gap-3 text-sm font-bold opacity-70`}><Clock size={16} strokeWidth={3} /> {session.updated_at}</div>
                   </button>
                 ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showTraceModal && (
+        <div className="fixed inset-0 bg-ink/40 backdrop-blur-sm z-[150] flex items-center justify-center p-4">
+          <div style={sketchyShape2} className="bg-paper border-4 border-ink p-8 flex flex-col gap-6 shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] rotate-1 w-full max-w-lg">
+            <div className="flex justify-between items-center -rotate-1 border-b-4 border-ink/10 pb-2 shrink-0">
+              <div className="flex items-center gap-3">
+                <BookOpen size={28} className="text-[#EBCB8B]" strokeWidth={2.5} />
+                <h3 className="text-3xl font-black tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>Trace 2 Skill</h3>
+              </div>
+              <button onClick={() => setShowTraceModal(false)} className="hover:text-terracotta hover:scale-110 transition-all"><X size={28} strokeWidth={3}/></button>
+            </div>
+            
+            <div className="flex flex-col gap-4 -rotate-1">
+              <div className="flex gap-4">
+                <button onClick={() => setTraceType('upgrade')} style={sketchyShape1} className={`flex-1 py-3 border-4 border-ink font-black ${traceType === 'upgrade' ? 'bg-[#88c0d0] text-paper shadow-[2px_2px_0px_0px_rgba(26,26,26,1)]' : 'bg-cream text-ink/50 hover:bg-sand'}`}>UPGRADE EXIST</button>
+                <button onClick={() => setTraceType('create')} style={sketchyShape3} className={`flex-1 py-3 border-4 border-ink font-black ${traceType === 'create' ? 'bg-[#EBCB8B] text-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)]' : 'bg-cream text-ink/50 hover:bg-sand'}`}>CREATE NEW</button>
+              </div>
+              
+              <div className="flex flex-col gap-2">
+                <label className="font-bold opacity-70 text-sm">Target Skill Name (目标技能):</label>
+                {traceType === 'upgrade' ? (
+                  <select 
+                    value={traceSkillName} 
+                    onChange={e => setTraceSkillName(e.target.value)} 
+                    className="w-full bg-[#FDF8F0] border-4 border-ink p-3 font-bold focus:outline-none shadow-[inset_2px_2px_0px_0px_rgba(26,26,26,0.05)] cursor-pointer text-ink" 
+                    style={sketchyShape2}
+                  >
+                    <option value="" disabled>Select an existing skill...</option>
+                    {skillData && skillData.map((s: any) => (
+                      <option key={s.name} value={s.name}>{s.name}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <input 
+                    value={traceSkillName} 
+                    onChange={e => setTraceSkillName(e.target.value)} 
+                    placeholder="e.g. log_analyzer" 
+                    className="w-full bg-[#FDF8F0] border-4 border-ink p-3 font-bold focus:outline-none shadow-[inset_2px_2px_0px_0px_rgba(26,26,26,0.05)]" 
+                    style={sketchyShape2}
+                  />
+                )}
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <label className="font-bold opacity-70 text-sm">Expectations (期望要求与踩坑经验提取):</label>
+                <textarea 
+                  value={traceExpectation} 
+                  onChange={e => setTraceExpectation(e.target.value)} 
+                  placeholder="请描述希望 Agent 从刚才的曲折过程中提取哪些具体的逻辑？有哪些易错点需要在代码里加固？" 
+                  className="w-full h-32 resize-none bg-[#FDF8F0] border-4 border-ink p-4 font-bold focus:outline-none shadow-[inset_2px_2px_0px_0px_rgba(26,26,26,0.05)] text-sm leading-relaxed placeholder:opacity-50" 
+                  style={sketchyShape3}
+                />
+              </div>
+            </div>
+            
+            <div className="flex gap-4 -rotate-1 mt-2">
+              <button onClick={() => setShowTraceModal(false)} style={sketchyShape3} className="flex-1 bg-cream text-ink font-black tracking-widest text-lg py-3 border-4 border-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:translate-y-[1px] hover:shadow-none transition-all">
+                CANCEL
+              </button>
+              <button onClick={confirmTraceToSkill} disabled={isTracing} style={sketchyShape1} className="flex-[1.5] bg-[#EBCB8B] text-ink font-black tracking-widest text-lg py-3 border-4 border-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:bg-[#d8b877] hover:translate-y-[1px] hover:shadow-none transition-all flex justify-center items-center gap-2">
+                {isTracing ? <Loader2 className="animate-spin" size={24} strokeWidth={3}/> : <BookOpen size={22} strokeWidth={3}/>} EXTRACT SKILL
+              </button>
             </div>
           </div>
         </div>

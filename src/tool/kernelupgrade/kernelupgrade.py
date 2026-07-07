@@ -1,5 +1,6 @@
 """KernelUpgrade 工具主入口 - 实时执行无需审批"""
 
+import os
 import traceback
 from src.tool.utils.format import error_response, text_response
 from src.evolve import (
@@ -14,25 +15,24 @@ from src.evolve import (
 def KernelUpgrade(action: str, target: str, **kwargs) -> dict:
     """
     Agent 的自我进化内核升级工具。
-    - action="create_skill": 生成全新的 Skill 骨架
-    - action="upgrade_skill": 拷贝现存的 Skill 进行修改
+    - action="trace_to_skill": 将轨迹沉淀为技能（自动判断新建或升级）
     - action="test_skill": 在后台运行 Skill 沙盒盲测
     - action="create_mcp": 生成全新的 MCP Server 骨架
     - action="upgrade_mcp": 拷贝现存的 MCP Server 进行修改
     - action="test_mcp": 在后台运行 MCP 并发测试
     """
     try:
-        if action == "create_skill":
-            sys_note = skill_improve_init(target, is_upgrade=False)
-            return text_response(
-                f"✅ 全新技能沙盒构建完成！\n\n{sys_note}", f"🎉 {target} 骨架已创建"
-            )
+        if action == "trace_to_skill":
+            is_upgrade = os.path.exists(f"./skills/{target}")
 
-        elif action == "upgrade_skill":
-            sys_note = skill_improve_init(target, is_upgrade=True)
+            sys_note = skill_improve_init(target, is_upgrade=is_upgrade)
+
+            status_str = "已" if is_upgrade else "未"
+            action_str = "安排升级" if is_upgrade else "创建"
+
             return text_response(
-                f"✅ 现存技能已拷贝至进化沙盒，准备好进行升级！\n\n{sys_note}",
-                f"📦 {target} 沙盒已就绪",
+                f"{status_str}检测到skill:{target}，已为你{action_str}工厂。\n\n{sys_note}",
+                f"🎉 {target} 进化沙盒已就绪",
             )
 
         elif action == "test_skill":

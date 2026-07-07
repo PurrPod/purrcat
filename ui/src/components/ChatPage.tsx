@@ -1,7 +1,7 @@
 // src/components/ChatPage.tsx
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Send, Cat, Clock, Activity, Server, Zap, Brain, GitMerge, ThumbsUp, ThumbsDown, Loader2, FolderOpen, Bell, Paperclip, X, Heart, User, List, ExternalLink, Plus } from 'lucide-react';
+import { Send, Cat, Clock, Activity, Server, Zap, Brain, GitMerge, Loader2, FolderOpen, Bell, Paperclip, X, Heart, User, List, ExternalLink, Plus, BookOpen } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -74,6 +74,12 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   const [cronData, setCronData] = useState<any[]>([]);
   const [showAddCronModal, setShowAddCronModal] = useState(false);
   const [newCron, setNewCron] = useState({ title: '', trigger_time: '', repeat_rule: 'none', task_hook: 'Agent', task_inputs_str: '{\n}' });
+
+  const [showTraceModal, setShowTraceModal] = useState(false);
+  const [traceType, setTraceType] = useState<'create' | 'upgrade'>('upgrade');
+  const [traceSkillName, setTraceSkillName] = useState('');
+  const [traceExpectation, setTraceExpectation] = useState('');
+  const [isTracing, setIsTracing] = useState(false);
 
   // 🌟 心跳控制状态
   const [showHeartbeatModal, setShowHeartbeatModal] = useState(false);
@@ -454,24 +460,48 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
     try { await fetch('http://localhost:8000/api/chat/batch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ session_id: currentSessionId, events: eventsToPush }) }); } catch { /* noop */ }
   };
 
-  const handleFeedback = async (isLike: boolean) => {
+  const confirmTraceToSkill = async () => {
     if (!currentSessionId) return;
-    
-    const content = isLike
-      ? "user 给你点了 👍，你可以反思一下本轮对话是否体现了用户的喜好，可以和用户确认一下然后使用 Memo 工具更新一下记忆"
-      : "user 给你点了 👎，可能是你在本轮对话中的表现不好，可以反思一下然后和用户确认一下不满意的原因。如果是skill有问题，可以使用KernelUpgrade更新升级一下skill，可以根据本轮对话内容使用Memo工具更新一下用户画像/工作经验/事件/认知";
+    if (!traceSkillName.trim()) return toast.error("请指定技能名称！");
+    if (!traceExpectation.trim()) return toast.error("请填写技能期望！");
 
-    const eventsToPush = [{ type: 'system', content }];
-    
-    toast.success(isLike ? "已发送赞👍反馈" : "已发送踩👎反馈");
-    
+    setIsTracing(true);
+    const tid = toast.loading("正在为你分配技能进化工厂...");
     try {
+      const res = await fetch('http://localhost:8000/api/evolve/init', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'skill',
+          name: traceSkillName.trim(),
+          is_upgrade: traceType === 'upgrade'
+        })
+      });
+
+      if (!res.ok) throw new Error("分配沙盒失败");
+      const data = await res.json();
+      const wp_id = data.workplace_id;
+      const factoryPath = `./agent_vm/skill_workplace/${wp_id}/${traceSkillName.trim()}`;
+
+      const content = `用户使用了trace_to_skill功能，已为你分配了技能工厂${factoryPath}/，请根据用户需要和本次会话的交互记录与历史经验升级或创建对应技能。以下是用户期望：\n${traceExpectation.trim()}`;
+
+      const eventsToPush = [{ type: 'evolve_factory', content }];
+
       await fetch('http://localhost:8000/api/chat/batch', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ session_id: currentSessionId, events: eventsToPush })
       });
-    } catch { /* noop */ }
+
+      toast.success("已将经验沉淀任务派发给 Agent！", { id: tid });
+      setShowTraceModal(false);
+      setTraceSkillName('');
+      setTraceExpectation('');
+    } catch (e) {
+      toast.error("工厂分配失败，请检查 Agent 状态", { id: tid });
+    } finally {
+      setIsTracing(false);
+    }
   };
 
   const handleAttachmentClick = async () => { setShowRefModal(true); }; // 简化 Tauri 调用
@@ -493,7 +523,8 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
     showRefModal, setShowRefModal, tempRefPath, setTempRefPath, setRefPaths,
     showGraphSelectModal, setShowGraphSelectModal, graphData, tempSelectedGraphs, setTempSelectedGraphs, setSelectedGraphs,
     isConfigOpen, setIsConfigOpen, activeTab, setActiveTab, configData, expandedKey, editJsonStr, setEditJsonStr, toggleKey, handleSaveConfig,
-    showSessionModal, setShowSessionModal, isAgentThinking, sessions, handleSelectSession, editingSessionId, editingAlias, setEditingAlias, setEditingSessionId, handleRename
+    showSessionModal, setShowSessionModal, isAgentThinking, sessions, handleSelectSession, editingSessionId, editingAlias, setEditingAlias, setEditingSessionId, handleRename,
+    showTraceModal, setShowTraceModal, traceType, setTraceType, traceSkillName, setTraceSkillName, traceExpectation, setTraceExpectation, confirmTraceToSkill, isTracing
   };
 
   const sidebarProps = {
@@ -638,12 +669,17 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                         </div>
                       )}
                       {msg.role === 'assistant' && idx === messages.length - 1 && !isAgentThinking && (
-                        <div className="flex justify-end gap-2 mt-3 animate-in fade-in duration-300">
-                          <button onClick={() => handleFeedback(true)} className="p-1.5 bg-paper border-2 border-ink hover:bg-[#a3be8c] hover:text-ink shadow-[2px 2px 0px 0px rgba(26,26,26,1)] transition-all hover:-translate-y-[1px] active:translate-y-0 active:shadow-none" style={sketchyShape2} title="点赞">
-                            <ThumbsUp size={16} strokeWidth={2.5} />
-                          </button>
-                          <button onClick={() => handleFeedback(false)} className="p-1.5 bg-paper border-2 border-ink hover:bg-[#bf616a] hover:text-paper shadow-[2px 2px 0px 0px rgba(26,26,26,1)] transition-all hover:-translate-y-[1px] active:translate-y-0 active:shadow-none" style={sketchyShape3} title="点踩">
-                            <ThumbsDown size={16} strokeWidth={2.5} />
+                        <div className="flex justify-end mt-3 animate-in fade-in duration-300">
+                          <button 
+                            onClick={() => {
+                              if (skillData.length === 0) fetchSkill();
+                              setShowTraceModal(true);
+                            }} 
+                            className="p-2 bg-paper border-2 border-ink hover:bg-[#EBCB8B] hover:text-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] transition-all hover:-translate-y-[1px] active:translate-y-0 active:shadow-none" 
+                            style={sketchyShape2} 
+                            title="Trace to Skill (经验沉淀为技能)"
+                          >
+                            <BookOpen size={18} strokeWidth={2.5} />
                           </button>
                         </div>
                       )}
