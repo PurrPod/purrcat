@@ -1,6 +1,6 @@
 // src/components/EvolvePage.tsx
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Plus, Dna, FileEdit, TestTube, GitMerge, FileText, Play, Check, X, Server, Zap, RefreshCw, Undo2, Save, MessageSquare } from 'lucide-react';
+import { ArrowLeft, Dna, FileEdit, TestTube, GitMerge, FileText, Play, Check, X, Server, Zap, RefreshCw, Undo2, Save, MessageSquare } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -30,7 +30,7 @@ const MarkdownComponents: any = {
 };
 
 type EvolveType = 'skill' | 'mcp';
-type ProcessStep = 'edit' | 'test' | 'merge';
+type ProcessStep = 'edit' | 'test' | 'merge' | 'tools';
 type WorkPlace = { workplace_id: string; name: string; status?: string };
 
 export default function EvolvePage({ onBack }: { onBack: () => void }) {
@@ -39,14 +39,14 @@ export default function EvolvePage({ onBack }: { onBack: () => void }) {
   const [activeWorkplace, setActiveWorkplace] = useState<WorkPlace | null>(null);
   const [currentStep, setCurrentStep] = useState<ProcessStep>('edit');
 
-  const [showNewModal, setShowNewModal] = useState(false);
-  const [newReq, setNewReq] = useState({ type: 'create', name: '', description: '', scenario: '' });
-
-  // Editor State
+  // Editor State (Skill)
   const [files, setFiles] = useState<string[]>([]);
   const [activeFile, setActiveFile] = useState<string>('');
   const [fileContent, setFileContent] = useState('');
   
+  // Tools State (MCP)
+  const [mcpSchema, setMcpSchema] = useState<any[] | null>(null);
+
   // Test State
   const [showEvalModal, setShowEvalModal] = useState(false);
   const [evalJson, setEvalJson] = useState('');
@@ -72,15 +72,22 @@ export default function EvolvePage({ onBack }: { onBack: () => void }) {
     setActiveWorkplace(null);
     setFiles([]); setActiveFile(''); setFileContent('');
     setIterations([]); setActiveIteration(null); setReportMd(''); setDiffContent('');
+    setMcpSchema(null);
+    // 切换类型时默认行为：Skill 去文件编辑器，MCP 去 Schema 工具页
+    setCurrentStep(activeType === 'skill' ? 'edit' : 'tools');
     fetchWorkplaces();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeType]);
 
   useEffect(() => {
     if (activeWorkplace) {
-      loadFiles();
+      if (activeType === 'skill') {
+        loadFiles();
+      } else {
+        loadMcpSchema();
+      }
       loadIterations();
-      setCurrentStep('edit');
+      setCurrentStep(activeType === 'skill' ? 'edit' : 'tools');
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeWorkplace]);
@@ -92,15 +99,31 @@ export default function EvolvePage({ onBack }: { onBack: () => void }) {
       if (res.ok) {
         const data = await res.json();
         setFiles(data.attachments || []);
-        const defaultFile = activeType === 'skill' ? 'SKILL.md' : 'server.py';
+        const defaultFile = 'SKILL.md';
         if (data.attachments.includes(defaultFile)) setActiveFile(defaultFile);
         else if (data.attachments.length > 0) setActiveFile(data.attachments[0]);
       }
     } catch { /* noop */ }
   };
 
+  const loadMcpSchema = async () => {
+    if (!activeWorkplace || activeType !== 'mcp') return;
+    try {
+      // 尝试读取沙盒运行脚本后生成的 schema_dump.json
+      const res = await fetch(`http://localhost:8000/api/evolve/file?workplace_id=${activeWorkplace.workplace_id}&name=${activeWorkplace.name}&filename=evals/outputs/schema_dump.json&type=mcp`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.content) {
+          setMcpSchema(JSON.parse(data.content));
+        } else setMcpSchema(null);
+      } else {
+        setMcpSchema(null);
+      }
+    } catch { setMcpSchema(null); }
+  };
+
   useEffect(() => {
-    if (activeFile) loadFileData(activeFile, setFileContent);
+    if (activeFile && activeType === 'skill') loadFileData(activeFile, setFileContent);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeFile]);
 
@@ -136,27 +159,6 @@ export default function EvolvePage({ onBack }: { onBack: () => void }) {
     } catch { setReportMd('*网络异常，无法获取报告*'); }
   };
 
-  const handlePublishRequirement = async () => {
-    if (!newReq.name.trim()) return toast.error("需要填写名称");
-    const tid = toast.loading("正在分配并初始化物理沙盒...");
-    try {
-      const res = await fetch('http://localhost:8000/api/evolve/init', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: activeType, name: newReq.name.trim(), is_upgrade: newReq.type === 'upgrade' })
-      });
-      if (res.ok) {
-        const data = await res.json();
-        toast.success(data.message, { id: tid });
-        setShowNewModal(false);
-        setNewReq({ type: 'create', name: '', description: '', scenario: '' });
-        fetchWorkplaces(); 
-        setActiveWorkplace({ workplace_id: data.workplace_id, name: newReq.name.trim() });
-      } else {
-        toast.error((await res.json()).detail || "沙盒初始化失败", { id: tid });
-      }
-    } catch { toast.error("网络异常", { id: tid }); }
-  };
-
   const handleSaveFile = async (filename: string, content: string) => {
     if (!activeWorkplace) return;
     const tid = toast.loading(`正在将修改落盘至沙盒的 ${filename}...`);
@@ -174,13 +176,13 @@ export default function EvolvePage({ onBack }: { onBack: () => void }) {
 
   const handleRunTest = async () => {
     if (!activeWorkplace) return;
-    const tid = toast.loading("正在唤醒 Agent 并发盲测流水线...");
+    const tid = toast.loading(activeType === 'skill' ? "正在唤醒 Agent 并发盲测流水线..." : "正在宿主机触发语义竞争与执行测试...");
     try {
       const res = await fetch('http://localhost:8000/api/evolve/test/run', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ type: activeType, workplace_id: activeWorkplace.workplace_id, name: activeWorkplace.name })
       });
-      if (res.ok) toast.success("后台盲测流水线已成功启动！请随时点击刷新获取最新报告。", { id: tid });
+      if (res.ok) toast.success("后台测试流水线已成功启动！请稍后点击刷新获取最新报告。", { id: tid });
       else toast.error("触发测试失败", { id: tid });
     } catch { toast.error("网络异常", { id: tid }); }
   };
@@ -244,11 +246,6 @@ export default function EvolvePage({ onBack }: { onBack: () => void }) {
             <ArrowLeft size={28} strokeWidth={3} className="text-ink" />
           </button>
           
-          {/* 修改1: 将 NEW REQUIREMENT 移动到这里，变为正方形 */}
-          <button onClick={() => setShowNewModal(true)} style={sketchyShape3} title="NEW REQUIREMENT" className="w-16 h-16 bg-cream border-4 border-ink flex items-center justify-center hover:bg-sand transition-all shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] active:translate-y-[2px] active:translate-x-[2px] active:shadow-none rotate-3 hover:-rotate-3">
-            <Plus size={28} strokeWidth={3} className="text-ink" />
-          </button>
-
           <div style={sketchyShape1} className="flex-1 h-16 flex items-center justify-center gap-2 bg-[#a3be8c] text-ink border-4 border-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] rotate-1">
             <Dna size={24} strokeWidth={2.5} />
             <span className="tracking-widest text-xl font-black" style={{ fontFamily: '"Comic Sans MS", cursive' }}>FACTORY</span>
@@ -284,14 +281,19 @@ export default function EvolvePage({ onBack }: { onBack: () => void }) {
       <div style={sketchyShape1} className="flex-1 bg-paper border-4 border-ink shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] overflow-hidden relative rotate-[0.5deg] z-10 flex flex-col">
         {activeWorkplace ? (
           <>
-            {/* 修改2: 移除了测试、合并页面的多余分界线 */}
             <div className="flex bg-cream border-b-4 border-ink shrink-0 h-20">
-              <button onClick={() => setCurrentStep('edit')} className={`flex-1 flex items-center justify-center gap-3 font-black tracking-widest transition-all ${currentStep === 'edit' ? 'bg-[#88c0d0] text-paper text-xl border-b-4 border-ink' : 'text-ink/40 hover:bg-sand hover:text-ink'}`}>
-                <FileEdit size={24} strokeWidth={3} /> 1. FILES
-              </button>
+              {activeType === 'skill' ? (
+                <button onClick={() => setCurrentStep('edit')} className={`flex-1 flex items-center justify-center gap-3 font-black tracking-widest transition-all ${currentStep === 'edit' ? 'bg-[#88c0d0] text-paper text-xl border-b-4 border-ink' : 'text-ink/40 hover:bg-sand hover:text-ink'}`}>
+                  <FileEdit size={24} strokeWidth={3} /> 1. FILES
+                </button>
+              ) : (
+                <button onClick={() => { setCurrentStep('tools'); loadMcpSchema(); }} className={`flex-1 flex items-center justify-center gap-3 font-black tracking-widest transition-all ${currentStep === 'tools' ? 'bg-[#88c0d0] text-paper text-xl border-b-4 border-ink' : 'text-ink/40 hover:bg-sand hover:text-ink'}`}>
+                  <Server size={24} strokeWidth={3} /> 1. TOOLS
+                </button>
+              )}
               <div className="w-1 bg-ink/20 shrink-0"></div>
               <button onClick={() => setCurrentStep('test')} className={`flex-1 flex items-center justify-center gap-3 font-black tracking-widest transition-all ${currentStep === 'test' ? 'bg-[#EBCB8B] text-ink text-xl border-b-4 border-ink' : 'text-ink/40 hover:bg-sand hover:text-ink'}`}>
-                <TestTube size={24} strokeWidth={3} /> 2. EVALS
+                <TestTube size={24} strokeWidth={3} /> {activeType === 'skill' ? '2. EVALS' : '2. REPORT'}
               </button>
               <div className="w-1 bg-ink/20 shrink-0"></div>
               <button onClick={() => { setCurrentStep('merge'); handleLoadDiff(); }} className={`flex-1 flex items-center justify-center gap-3 font-black tracking-widest transition-all ${currentStep === 'merge' ? 'bg-[#a3be8c] text-ink text-xl border-b-4 border-ink' : 'text-ink/40 hover:bg-sand hover:text-ink'}`}>
@@ -300,7 +302,9 @@ export default function EvolvePage({ onBack }: { onBack: () => void }) {
             </div>
 
             <div className="flex-1 overflow-hidden relative p-6 bg-cream/30">
-              {currentStep === 'edit' && (
+              
+              {/* === SKILL 编辑器视图 === */}
+              {currentStep === 'edit' && activeType === 'skill' && (
                 <div className="flex h-full gap-6 w-full max-w-7xl mx-auto">
                   <div className="w-64 shrink-0 flex flex-col gap-3 border-r-4 border-ink/20 pr-4 overflow-y-auto">
                      <span className="font-black text-ink/40 tracking-widest text-sm mb-1">SANDBOX FILES</span>
@@ -322,16 +326,61 @@ export default function EvolvePage({ onBack }: { onBack: () => void }) {
                 </div>
               )}
 
+              {/* === MCP 工具与参数呈现视图 === */}
+              {currentStep === 'tools' && activeType === 'mcp' && (
+                <div className="h-full w-full max-w-5xl mx-auto overflow-y-auto p-4 space-y-6">
+                  <div className="flex justify-between items-center bg-[#EBCB8B] border-4 border-ink p-4 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)]" style={sketchyShape1}>
+                     <h2 className="text-2xl font-black tracking-widest flex items-center gap-3">
+                        <Server size={28} strokeWidth={3}/>
+                        MCP SERVER TOOLS
+                     </h2>
+                     <button onClick={loadMcpSchema} className="hover:rotate-180 transition-all duration-500 hover:text-terracotta"><RefreshCw size={24} strokeWidth={3}/></button>
+                  </div>
+                  
+                  {mcpSchema ? (
+                    mcpSchema.length > 0 ? (
+                      mcpSchema.map((tool, idx) => (
+                        <div key={idx} style={idx % 2 === 0 ? sketchyShape2 : sketchyShape3} className="bg-paper border-4 border-ink p-6 shadow-[8px_8px_0px_0px_rgba(26,26,26,1)] flex flex-col gap-4 relative overflow-hidden group hover:-translate-y-1 transition-all">
+                          <div className="flex items-center gap-3 border-b-4 border-ink/10 pb-3">
+                            <Zap size={28} className="text-[#d08770]" strokeWidth={3}/>
+                            <h3 className="text-2xl font-black text-ink">{tool.name}</h3>
+                          </div>
+                          <p className="font-bold text-ink/80 text-lg leading-relaxed">{tool.description}</p>
+                          <div className="bg-cream border-4 border-ink p-4 mt-2" style={sketchyShape1}>
+                            <h4 className="font-black mb-3 text-terracotta tracking-widest text-sm">PARAMETERS & SCHEMA</h4>
+                            <pre className="font-mono text-sm whitespace-pre-wrap break-words">{JSON.stringify(tool.inputSchema, null, 2)}</pre>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="text-center p-10 font-black text-xl opacity-50">此服务器目前没有提供任何工具。</div>
+                    )
+                  ) : (
+                    <div className="text-center p-10 font-black text-lg opacity-50 border-4 border-dashed border-ink/40 bg-cream/50 flex flex-col items-center justify-center gap-4" style={sketchyShape1}>
+                       <TestTube size={48} strokeWidth={1.5}/>
+                       <p>沙盒中未找到 schema_dump.json 产物。</p>
+                       <p className="text-sm opacity-80 max-w-lg font-medium leading-relaxed">
+                         提示：这说明你在代码编写完毕后，尚未在沙盒环境中执行过基础测试逻辑。<br/>
+                         请引导 Agent 执行 <code>python scripts/evaluation.py</code> 生成工具导出清单，或直接进入 REPORT 页面点击运行完整测试！
+                       </p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* === 测试报告视图 === */}
               {currentStep === 'test' && (
                 <div className="flex h-full gap-6 w-full max-w-7xl mx-auto">
                   <div className="w-72 shrink-0 flex flex-col gap-3 overflow-y-auto pr-2">
-                    {/* 修改3: 把配置、运行移到迭代列表右上角化身正方形图标 */}
                     <div className="flex justify-between items-center mb-1">
                       <span className="font-black text-ink/40 tracking-widest text-sm">ARCHIVES</span>
                       <div className="flex gap-2">
-                        <button onClick={() => { loadFileData('evals/evals.json', setEvalJson); setShowEvalModal(true); }} className="w-9 h-9 bg-cream border-2 border-ink flex items-center justify-center hover:bg-[#d08770] hover:text-paper shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] active:translate-y-[1px] active:translate-x-[1px] active:shadow-none transition-all" style={sketchyShape2} title="Edit Evals.json">
-                          <FileEdit size={16} strokeWidth={2.5}/>
-                        </button>
+                        {/* 只有 Skill 模式下才展示 evals.json 的直接修改入口 */}
+                        {activeType === 'skill' && (
+                          <button onClick={() => { loadFileData('evals/evals.json', setEvalJson); setShowEvalModal(true); }} className="w-9 h-9 bg-cream border-2 border-ink flex items-center justify-center hover:bg-[#d08770] hover:text-paper shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] active:translate-y-[1px] active:translate-x-[1px] active:shadow-none transition-all" style={sketchyShape2} title="Edit Evals.json">
+                            <FileEdit size={16} strokeWidth={2.5}/>
+                          </button>
+                        )}
                         <button onClick={handleRunTest} className="w-9 h-9 bg-[#EBCB8B] text-ink border-2 border-ink flex items-center justify-center hover:bg-[#d8b877] shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] active:translate-y-[1px] active:translate-x-[1px] active:shadow-none transition-all" style={sketchyShape1} title="Run Evaluator">
                           <Play size={16} strokeWidth={3} fill="currentColor"/>
                         </button>
@@ -354,9 +403,9 @@ export default function EvolvePage({ onBack }: { onBack: () => void }) {
                 </div>
               )}
 
+              {/* === 合并审查视图 === */}
               {currentStep === 'merge' && (
                 <div className="flex flex-col h-full gap-6 w-full max-w-6xl mx-auto">
-                  {/* 修改4 & 5: 全部合并到右上角的正方形图标组 */}
                   <div className="flex justify-between items-center shrink-0">
                     <h2 className="text-3xl font-black text-ink tracking-widest" style={{ fontFamily: '"Comic Sans MS", cursive' }}>DIFF REVIEW</h2>
                     
@@ -399,39 +448,6 @@ export default function EvolvePage({ onBack }: { onBack: () => void }) {
         )}
       </div>
 
-      {showNewModal && (
-        <div className="fixed inset-0 bg-ink/40 backdrop-blur-sm z-[150] flex items-center justify-center p-4">
-          <div style={sketchyShape2} className="bg-paper border-4 border-ink p-8 flex flex-col gap-6 shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] rotate-1 w-full max-w-lg">
-            <div className="flex justify-between items-center -rotate-1 border-b-4 border-ink/10 pb-2">
-              <h3 className="text-3xl font-black tracking-widest text-terracotta" style={{ fontFamily: '"Comic Sans MS", cursive' }}>NEW REQUIREMENT</h3>
-              <button onClick={() => setShowNewModal(false)} className="hover:text-terracotta hover:scale-110 transition-all"><X size={28} strokeWidth={3}/></button>
-            </div>
-            <div className="flex flex-col gap-4 -rotate-1">
-              <div className="flex gap-4">
-                <button onClick={() => setNewReq({...newReq, type: 'create'})} style={sketchyShape1} className={`flex-1 py-3 border-4 border-ink font-black ${newReq.type === 'create' ? 'bg-[#EBCB8B] shadow-[2px_2px_0px_0px_rgba(26,26,26,1)]' : 'bg-cream text-ink/50'}`}>CREATE NEW</button>
-                <button onClick={() => setNewReq({...newReq, type: 'upgrade'})} style={sketchyShape3} className={`flex-1 py-3 border-4 border-ink font-black ${newReq.type === 'upgrade' ? 'bg-[#88c0d0] text-paper shadow-[2px_2px_0px_0px_rgba(26,26,26,1)]' : 'bg-cream text-ink/50'}`}>UPGRADE EXIST</button>
-              </div>
-              <div className="flex flex-col gap-2">
-                <label className="font-bold opacity-70 text-sm">{activeType === 'skill' ? 'Skill Name' : 'MCP Name'} (Directory Level):</label>
-                <input value={newReq.name} onChange={e=>setNewReq({...newReq, name: e.target.value})} placeholder={`e.g. ${activeType === 'skill' ? 'excel_parser' : 'my_mcp_server'}`} className="w-full bg-[#FDF8F0] border-4 border-ink p-3 font-bold focus:outline-none shadow-[inset_2px_2px_0px_0px_rgba(26,26,26,0.05)]" style={sketchyShape2}/>
-              </div>
-              <div className="flex flex-col gap-2">
-                 <label className="font-bold opacity-70 text-sm">Description (What does it do?):</label>
-                 <textarea value={newReq.description} onChange={e=>setNewReq({...newReq, description: e.target.value})} placeholder="I want a module that can..." className="w-full h-20 resize-none bg-[#FDF8F0] border-4 border-ink p-3 font-bold focus:outline-none shadow-[inset_2px_2px_0px_0px_rgba(26,26,26,0.05)]" style={sketchyShape1}/>
-              </div>
-              <div className="flex flex-col gap-2">
-                 <label className="font-bold opacity-70 text-sm">Scenarios (When to trigger?):</label>
-                 <textarea value={newReq.scenario} onChange={e=>setNewReq({...newReq, scenario: e.target.value})} placeholder="Trigger this whenever the user says..." className="w-full h-20 resize-none bg-[#FDF8F0] border-4 border-ink p-3 font-bold focus:outline-none shadow-[inset_2px_2px_0px_0px_rgba(26,26,26,0.05)]" style={sketchyShape3}/>
-              </div>
-            </div>
-            <button onClick={handlePublishRequirement} style={sketchyShape1} className="w-full py-4 bg-terracotta text-paper border-4 border-ink font-black text-xl tracking-widest shadow-[6px_6px_0px_0px_rgba(26,26,26,1)] hover:bg-[#c4684b] active:translate-y-1 active:shadow-none rotate-1 mt-2">
-              BUILD SANDBOX
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* 修改6: 打回重做专属涂鸦弹窗 */}
       {showRejectModal && (
         <div className="fixed inset-0 bg-ink/40 backdrop-blur-sm z-[150] flex items-center justify-center p-4">
           <div style={sketchyShape2} className="bg-paper border-4 border-ink p-8 flex flex-col gap-6 shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] rotate-1 w-full max-w-lg">
@@ -461,7 +477,7 @@ export default function EvolvePage({ onBack }: { onBack: () => void }) {
         </div>
       )}
 
-      {showEvalModal && (
+      {showEvalModal && activeType === 'skill' && (
         <div className="fixed inset-0 bg-ink/40 backdrop-blur-sm z-[150] flex items-center justify-center p-4">
           <div style={sketchyShape1} className="bg-paper border-4 border-ink p-6 flex flex-col gap-4 shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] -rotate-1 w-full max-w-4xl h-[85vh]">
             <div className="flex justify-between items-center rotate-1 border-b-4 border-ink/20 pb-4 shrink-0">
