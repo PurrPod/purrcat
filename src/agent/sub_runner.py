@@ -118,8 +118,9 @@ class SubAgentRunner:
 
                         if in_front_matter and line.lower().startswith("description:"):
                             val = line.split(":", 1)[1].strip()
-                            if (val.startswith('"') and val.endswith('"')) or \
-                               (val.startswith("'") and val.endswith("'")):
+                            if (val.startswith('"') and val.endswith('"')) or (
+                                val.startswith("'") and val.endswith("'")
+                            ):
                                 val = val[1:-1]
                             return val
             except Exception:
@@ -127,7 +128,13 @@ class SubAgentRunner:
             return None
 
         try:
-            from src.utils.config import AGENT_CORE_DIR, SKILL_DIR, SOUL_MD_PATH, SYSTEM_RULES_DIR
+            from src.utils.config import (
+                AGENT_CORE_DIR,
+                SKILL_DIR,
+                SOUL_MD_PATH,
+                SYSTEM_RULES_DIR,
+            )
+
             info_json_path = os.path.join(AGENT_CORE_DIR, "info.json")
             if os.path.exists(info_json_path):
                 with open(info_json_path, "r", encoding="utf-8") as f:
@@ -152,7 +159,9 @@ class SubAgentRunner:
                         if desc:
                             workshops_info += f"- {ws}:{desc}\n"
                         else:
-                            workshops_info += f"- {ws}（作坊加载失败，可能未找到WORKSHOP.md）\n"
+                            workshops_info += (
+                                f"- {ws}（作坊加载失败，可能未找到WORKSHOP.md）\n"
+                            )
                     workshops_info += "如无相关作坊，直接在沙盒内工作即可\n"
 
             MEMORY_MD_PATH = os.path.join(AGENT_CORE_DIR, "MEMORY.md")

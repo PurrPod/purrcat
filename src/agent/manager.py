@@ -138,6 +138,7 @@ class AgentManager:
         self._notify_save()
 
         from src.agent.agent import Agent as TempAgent
+
         temp_agent = TempAgent(
             session_id=SessionStore._generate_id(), initial_history=[]
         )

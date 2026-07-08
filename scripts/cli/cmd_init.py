@@ -159,7 +159,9 @@ def _generate_core_files(purrcat_dir, force=False):
     else:
         try:
             with open(info_path, "w", encoding="utf-8") as f:
-                json.dump({"skills": [], "workshops": []}, f, indent=2, ensure_ascii=False)
+                json.dump(
+                    {"skills": [], "workshops": []}, f, indent=2, ensure_ascii=False
+                )
             print("[+] core/info.json generated")
             results.append(("info.json", True))
         except Exception as e:

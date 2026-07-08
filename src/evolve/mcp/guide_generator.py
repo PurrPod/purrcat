@@ -53,25 +53,26 @@ FastMCP 会自动处理协议封装。声明了 `-> str`，就直接 return 字�
 def generate_mcp_test_guide(mcp_name: str) -> str:
     return f"""# {mcp_name} 测试与优化指南
 
-## 1. 编写 Trigger 测试用例
+## 🚨 核心强制准则：真实可用性测试
+完成 MCP 工具的创建或代码升级后，**必须至少进行一次真实链路测试，确保它能正确执行！**
+* **禁止使用 CallMCP 工具**：由于当前 MCP 处于沙盒进化区，尚未合并到主库，宿主机的 `CallMCP` 工具无法感知到它。
+* **自行设计测试脚本**：你必须在 `scripts/` 目录下自行编写 Python 测试脚本（例如手动实例化并调用函数，或者使用 mcp SDK 模拟客户端调用）来验证逻辑。
+* **禁止使用 Mock 数据**：测试必须使用真实的网络请求、真实的 API 密钥或真实的文件系统数据。工具实现必须在真实世界中可用！
+* **全方位错误反思**：若在沙盒测试过程中发现报错，严禁直接放弃。必须深度分析底层逻辑错误的原因，并修改核心代码使其更加健壮（例如：增加异常捕获、重试机制、参数容错等）。
 
-在 `evals.json` 的 `triggers` 数组中，提供至少 10 个测试用例。测试你的 description 是否精准。
+## 1. 编写 Trigger 测试用例 (语义竞争测试)
+在 `evals.json` 的 `triggers` 数组中，提供至少 10 个测试用例，包含正例与反例。用于测试你的 description 是否能在大模型检索时精准脱颖而出。
 
-## 2. 编写 Execution 测试用例
-
-在 `evals.json` 的 `executions` 数组中，编写覆盖所有边界场景的入参，测试 inputSchema。
+## 2. 编写 Execution 测试用例 (参数与边界测试)
+在 `evals.json` 的 `executions` 数组中，编写覆盖所有边界场景的入参，测试 inputSchema 的健壮性。
 
 ## 3. 测试流水线与报告 (两步执行法)
 
 **第一步：沙盒内自行执行评测 (极度重要！)**
 编写完代码后，必须使用终端 (Bash) 执行评测脚本排错：
-
 ```bash
 source .venv/bin/activate
 python scripts/evaluation.py
 
-```
-
-**第二步：呼叫宿主机进行语义评测**
-第一步无报错后，调用 `KernelUpgrade` 工具指定 `action="test_mcp"`。宿主机会模拟大模型唤醒，并在后台生成最终的 `test_report.md`。
+第二步：呼叫宿主机进行语义评测  第一步无报错后，调用 KernelUpgrade  工具指定 action="test_mcp" 。宿主机会模拟大模型唤醒，并在后台生成最终的 test_report.md 。
 """
