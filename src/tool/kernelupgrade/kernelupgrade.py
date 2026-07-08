@@ -85,6 +85,20 @@ def KernelUpgrade(action: str, target: str, **kwargs) -> dict:
                 )
 
             workplace_id, mcp_name = parts
+
+            # ==========================================
+            # 🌟 新增：前置强拦截（防 Agent 偷懒跳步）
+            # ==========================================
+            schema_path = f"./agent_vm/mcp_workplace/{workplace_id}/{mcp_name}/evals/outputs/schema_dump.json"
+            if not os.path.exists(schema_path):
+                return error_response(
+                    f"❌ 执行被拒绝：未检测到测试前置产物！\n\n"
+                    f"由于当前 MCP 还处于沙盒开发期，你必须先亲自在沙盒里测试scripts/evaluation.py能否跑通！\n"
+                    f"只有当上述脚本成功执行，并生成了 `evals/outputs/schema_dump.json` 之后，你才有资格调用 `test_mcp`！",
+                    "❌ 缺失前置产物"
+                )
+
+            # 只有通过了检查，才允许往下走启动后台任务
             from src.agent.manager import manager
 
             main_session_id = manager.get_active_session_id()
@@ -95,10 +109,9 @@ def KernelUpgrade(action: str, target: str, **kwargs) -> dict:
 
             msg = (
                 f"🚀 MCP '{mcp_name}' 的并发测试流水线已在后台启动！{task_id_info}\n"
-                f"💡 提示：你可以使用 `Task` 工具查询状态或注入指令。\n"
-                f"测试极快，完成后将向你汇报 `schema_dump.json` 的位置与执行报告。⚠️ 请勿频繁轮询，等待系统级通知即可。\n"
+                f"💡 提示：你可以使用 `Task` 工具查询状态或挂起当前任务等待系统级通知。\n"
             )
-            return text_response(msg, f"⏳ {mcp_name} 并发测试中")
+            return text_response(msg, f"⏳ {mcp_name} 宿主机评测中")
 
         else:
             return error_response(
