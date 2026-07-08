@@ -497,7 +497,8 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
       setShowTraceModal(false);
       setTraceSkillName('');
       setTraceExpectation('');
-    } catch (e) {
+    } catch (error) {
+      console.error("工厂分配失败:", error);
       toast.error("工厂分配失败，请检查 Agent 状态", { id: tid });
     } finally {
       setIsTracing(false);

@@ -328,35 +328,118 @@ export default function EvolvePage({ onBack }: { onBack: () => void }) {
 
               {/* === MCP 工具与参数呈现视图 === */}
               {currentStep === 'tools' && activeType === 'mcp' && (
-                <div className="h-full w-full max-w-5xl mx-auto overflow-y-auto p-4 space-y-6">
-                  <div className="flex justify-between items-center bg-[#EBCB8B] border-4 border-ink p-4 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)]" style={sketchyShape1}>
-                     <h2 className="text-2xl font-black tracking-widest flex items-center gap-3">
-                        <Server size={28} strokeWidth={3}/>
-                        MCP SERVER TOOLS
+                <div className="h-full w-full max-w-5xl mx-auto overflow-y-auto p-6 space-y-8">
+
+                  {/* 1. 标题与刷新按钮修改：去掉黄框，改为清爽的标题和独立按钮 */}
+                  <div className="flex justify-between items-end mb-4 px-2 border-b-4 border-ink/20 pb-4 shrink-0">
+                     <h2 className="text-3xl font-black tracking-widest flex items-center gap-3 text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>
+                        <Server size={36} strokeWidth={3} className="text-[#EBCB8B] -rotate-3"/>
+                        MCP TOOLS
                      </h2>
-                     <button onClick={loadMcpSchema} className="hover:rotate-180 transition-all duration-500 hover:text-terracotta"><RefreshCw size={24} strokeWidth={3}/></button>
+                     <button onClick={loadMcpSchema} style={sketchyShape3} className="px-5 py-2.5 bg-cream border-4 border-ink font-black shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:bg-[#EBCB8B] active:translate-y-1 active:shadow-none flex items-center gap-2 transition-all">
+                       <RefreshCw size={20} strokeWidth={3}/> REFRESH
+                     </button>
                   </div>
-                  
+
                   {mcpSchema ? (
                     mcpSchema.length > 0 ? (
-                      mcpSchema.map((tool, idx) => (
-                        <div key={idx} style={idx % 2 === 0 ? sketchyShape2 : sketchyShape3} className="bg-paper border-4 border-ink p-6 shadow-[8px_8px_0px_0px_rgba(26,26,26,1)] flex flex-col gap-4 relative overflow-hidden group hover:-translate-y-1 transition-all">
-                          <div className="flex items-center gap-3 border-b-4 border-ink/10 pb-3">
-                            <Zap size={28} className="text-[#d08770]" strokeWidth={3}/>
-                            <h3 className="text-2xl font-black text-ink">{tool.name}</h3>
+                      mcpSchema.map((tool, idx) => {
+                        const schema = tool.inputSchema || {};
+                        const properties = schema.properties || {};
+                        const requiredList = schema.required || [];
+
+                        let mainDesc = tool.description || "";
+                        const paramDescMap: Record<string, string> = {};
+
+                        if (mainDesc.includes("Args:")) {
+                          const parts = mainDesc.split(/Args:\s*/);
+                          mainDesc = parts[0].trim();
+                          const argsText = parts[1] || "";
+                          
+                          const lines = argsText.split('\n');
+                          let currentKey = "";
+                          for (let line of lines) {
+                            line = line.trim();
+                            if (!line) continue;
+                            const match = line.match(/^([a-zA-Z0-9_]+)\s*:\s*(.*)/);
+                            if (match) {
+                              currentKey = match[1];
+                              paramDescMap[currentKey] = match[2];
+                            } else if (currentKey) {
+                              paramDescMap[currentKey] += " " + line;
+                            }
+                          }
+                        }
+
+                        return (
+                          <div key={idx} style={idx % 2 === 0 ? sketchyShape2 : sketchyShape3} className="bg-paper border-4 border-ink p-6 shadow-[8px_8px_0px_0px_rgba(26,26,26,1)] flex flex-col gap-4 relative hover:-translate-y-1 transition-all">
+                            
+                            <div className="flex items-center gap-3 pb-2">
+                              <Zap size={28} className="text-[#d08770]" strokeWidth={3}/>
+                              <h3 className="text-2xl font-black text-ink">{tool.name}</h3>
+                            </div>
+                            <p className="font-bold text-ink/80 text-lg leading-relaxed px-1 whitespace-pre-wrap">
+                              {mainDesc || <span className="italic opacity-50">暂无工具描述 (缺少 Docstring 第一行)</span>}
+                            </p>
+                            
+                            <div className="bg-cream border-4 border-ink mt-2 overflow-hidden" style={sketchyShape1}>
+                              <div className="bg-ink/5 border-b-4 border-ink p-3 px-4">
+                                <h4 className="font-black text-terracotta tracking-widest text-sm flex items-center gap-2">
+                                  <FileText size={16}/> PARAMETERS SCHEMA
+                                </h4>
+                              </div>
+                              
+                              <div>
+                                {Object.keys(properties).length > 0 ? (
+                                  <table className="w-full text-left border-collapse">
+                                    <thead>
+                                      <tr className="border-b-4 border-ink/20 bg-ink/5">
+                                        <th className="p-3 px-4 font-black text-ink/60 text-sm w-1/4">参数名 (Name)</th>
+                                        <th className="p-3 px-4 font-black text-ink/60 text-sm w-1/6">类型 (Type)</th>
+                                        <th className="p-3 px-4 font-black text-ink/60 text-sm w-1/2">说明 (Description)</th>
+                                        <th className="p-3 px-4 font-black text-ink/60 text-sm text-center">是否必填</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {Object.entries(properties).map(([key, val]: [string, any], i, arr) => {
+                                        const finalDesc = val.description || paramDescMap[key];
+                                        
+                                        return (
+                                          <tr key={key} className={i !== arr.length - 1 ? "border-b-2 border-ink/10" : ""}>
+                                            <td className="p-3 px-4 font-bold font-mono text-ink bg-ink/5">{key}</td>
+                                            <td className="p-3 px-4 font-bold text-[#88c0d0]">{val.type || 'any'}</td>
+                                            <td className="p-3 px-4 font-medium text-ink/80 leading-relaxed">
+                                              {finalDesc ? finalDesc : <span className="opacity-40 italic">未提供描述</span>}
+                                            </td>
+                                            <td className="p-3 px-4 text-center">
+                                              {requiredList.includes(key) ? (
+                                                <span className="bg-[#bf616a] text-paper px-3 py-1 text-xs font-black rounded shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] tracking-wider">YES</span>
+                                              ) : (
+                                                <span className="bg-ink/10 text-ink/60 px-3 py-1 text-xs font-black rounded tracking-wider whitespace-nowrap">
+                                                  NO {val.default !== undefined ? `(def: ${val.default})` : ''}
+                                                </span>
+                                              )}
+                                            </td>
+                                          </tr>
+                                        );
+                                      })}
+                                    </tbody>
+                                  </table>
+                                ) : (
+                                  <div className="p-5 px-4 font-bold text-ink/40 text-sm italic text-center bg-cream">
+                                    此工具不需要任何参数。
+                                  </div>
+                                )}
+                              </div>
+                            </div>
                           </div>
-                          <p className="font-bold text-ink/80 text-lg leading-relaxed">{tool.description}</p>
-                          <div className="bg-cream border-4 border-ink p-4 mt-2" style={sketchyShape1}>
-                            <h4 className="font-black mb-3 text-terracotta tracking-widest text-sm">PARAMETERS & SCHEMA</h4>
-                            <pre className="font-mono text-sm whitespace-pre-wrap break-words">{JSON.stringify(tool.inputSchema, null, 2)}</pre>
-                          </div>
-                        </div>
-                      ))
+                        );
+                      })
                     ) : (
                       <div className="text-center p-10 font-black text-xl opacity-50">此服务器目前没有提供任何工具。</div>
                     )
                   ) : (
-                    <div className="text-center p-10 font-black text-lg opacity-50 border-4 border-dashed border-ink/40 bg-cream/50 flex flex-col items-center justify-center gap-4" style={sketchyShape1}>
+                    <div className="text-center p-10 font-black text-lg opacity-50 border-4 border-dashed border-ink/40 bg-cream/50 flex flex-col items-center justify-center gap-4 mt-8" style={sketchyShape1}>
                        <TestTube size={48} strokeWidth={1.5}/>
                        <p>沙盒中未找到 schema_dump.json 产物。</p>
                        <p className="text-sm opacity-80 max-w-lg font-medium leading-relaxed">

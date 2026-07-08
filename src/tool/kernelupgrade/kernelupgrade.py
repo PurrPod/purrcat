@@ -92,10 +92,10 @@ def KernelUpgrade(action: str, target: str, **kwargs) -> dict:
             schema_path = f"./agent_vm/mcp_workplace/{workplace_id}/{mcp_name}/evals/outputs/schema_dump.json"
             if not os.path.exists(schema_path):
                 return error_response(
-                    f"❌ 执行被拒绝：未检测到测试前置产物！\n\n"
-                    f"由于当前 MCP 还处于沙盒开发期，你必须先亲自在沙盒里测试scripts/evaluation.py能否跑通！\n"
-                    f"只有当上述脚本成功执行，并生成了 `evals/outputs/schema_dump.json` 之后，你才有资格调用 `test_mcp`！",
-                    "❌ 缺失前置产物"
+                    "❌ 执行被拒绝：未检测到测试前置产物！\n\n"
+                    "由于当前 MCP 还处于沙盒开发期，你必须先亲自在沙盒里测试scripts/evaluation.py能否跑通！\n"
+                    "只有当上述脚本成功执行，并生成了 `evals/outputs/schema_dump.json` 之后，你才有资格调用 `test_mcp`！",
+                    "❌ 缺失前置产物",
                 )
 
             # 只有通过了检查，才允许往下走启动后台任务

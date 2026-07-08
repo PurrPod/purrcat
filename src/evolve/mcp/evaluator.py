@@ -101,12 +101,16 @@ async def _async_run_mcp_evals(workplace_id: str, mcp_name: str) -> str:
     # 一、工具矩阵注册大盘
     report_lines.append("## 📊 一、工具矩阵注册大盘 (Schema Registration)")
     if not schema_dump:
-        report_lines.append("❌ **服务异常**：此 MCP Server 未能在 FastMCP 中成功注册任何有效的 Tool 工具！\n")
+        report_lines.append(
+            "❌ **服务异常**：此 MCP Server 未能在 FastMCP 中成功注册任何有效的 Tool 工具！\n"
+        )
     else:
         report_lines.append(
             f"✅ **服务检查通过**：系统检测到当前服务已成功向 STDIO 协议注册 **{len(schema_dump)}** 个工具。\n"
         )
-        report_lines.append("| 工具名称 (Tool Name) | 功能描述 (Description) | 参数量 (Params) |")
+        report_lines.append(
+            "| 工具名称 (Tool Name) | 功能描述 (Description) | 参数量 (Params) |"
+        )
         report_lines.append("| :--- | :--- | :--- |")
         for tool in schema_dump:
             properties = (
@@ -115,9 +119,7 @@ async def _async_run_mcp_evals(workplace_id: str, mcp_name: str) -> str:
                 else {}
             )
             param_count = len(properties)
-            desc = tool.get("description", "⚠️ 未编写任何描述说明").replace(
-                "\n", " "
-            )
+            desc = tool.get("description", "⚠️ 未编写任何描述说明").replace("\n", " ")
             report_lines.append(f"| `{tool['name']}` | {desc} | {param_count} 个 |")
         report_lines.append("")
 
@@ -125,7 +127,9 @@ async def _async_run_mcp_evals(workplace_id: str, mcp_name: str) -> str:
     report_lines.append("## 🎯 二、模型意图激发分析 (Trigger Semantic Routing)")
     triggers = evals_data.get("triggers", [])
     if not triggers:
-        report_lines.append("⚠️ **未检测到 Trigger 测试用例**。请在 `evals.json` 中配置激发路径。\n")
+        report_lines.append(
+            "⚠️ **未检测到 Trigger 测试用例**。请在 `evals.json` 中配置激发路径。\n"
+        )
     elif not schema_dump:
         report_lines.append("⚠️ **无法分析激发路由**：因为工具矩阵注册为空。\n")
     else:
@@ -142,19 +146,30 @@ async def _async_run_mcp_evals(workplace_id: str, mcp_name: str) -> str:
 
             if expected_tool:
                 if res["is_triggered"]:
-                    icon, status_text = "✅", f"唤醒成功 (抢占第 {res['rank']} 名，得分: {res['score']})"
+                    icon, status_text = (
+                        "✅",
+                        f"唤醒成功 (抢占第 {res['rank']} 名，得分: {res['score']})",
+                    )
                     trigger_success += 1
                 else:
-                    icon, status_text = "❌", f"激发失败 (工具权重得分: {res['score']}，未进 Top 5 或低于唤醒阈值)"
+                    icon, status_text = (
+                        "❌",
+                        f"激发失败 (工具权重得分: {res['score']}，未进 Top 5 或低于唤醒阈值)",
+                    )
             else:
                 if not res["is_triggered"]:
                     icon, status_text = "✅", "反例拦截成功 (工具保持绝对静默)"
                     trigger_success += 1
                 else:
-                    icon, status_text = "❌", f"反例拦截失败 (不该触发却抢占了第 {res['rank']} 名)"
+                    icon, status_text = (
+                        "❌",
+                        f"反例拦截失败 (不该触发却抢占了第 {res['rank']} 名)",
+                    )
 
             report_lines.append(f"### 案例 {idx + 1}: 用户请求 `{query}`")
-            report_lines.append(f"- **期望工具**: `{expected_tool if expected_tool else '静默阻断 (无)'}`")
+            report_lines.append(
+                f"- **期望工具**: `{expected_tool if expected_tool else '静默阻断 (无)'}`"
+            )
             report_lines.append(f"- **评测状态**: {icon} **{status_text}**")
             report_lines.append("- **语义竞争排布 (Top K 路由树)**:")
             for comp in res["competitors"]:
@@ -192,13 +207,17 @@ async def _async_run_mcp_evals(workplace_id: str, mcp_name: str) -> str:
                 )
 
             if res["status"] == "success":
-                report_lines.append(f"### 🟢 用例 {idx + 1}: [{res['tool']}] - {case_desc}")
+                report_lines.append(
+                    f"### 🟢 用例 {idx + 1}: [{res['tool']}] - {case_desc}"
+                )
                 report_lines.append(f"- **测试入参**: `{case_args}`")
                 report_lines.append("- **执行状态**: `SUCCESS` ✅")
                 report_lines.append("- **返回值输出截断 (Stdout Snip)**:")
                 report_lines.append(f"  ```text\n  {res.get('result', '')}\n  ```\n")
             else:
-                report_lines.append(f"### 🔴 用例 {idx + 1}: [{res['tool']}] - {case_desc}")
+                report_lines.append(
+                    f"### 🔴 用例 {idx + 1}: [{res['tool']}] - {case_desc}"
+                )
                 report_lines.append(f"- **测试入参**: `{case_args}`")
                 report_lines.append(f"- **执行状态**: `{res['status'].upper()}` ❌")
                 report_lines.append("- **致命报错与堆栈信息 (Exception Stack)**:")

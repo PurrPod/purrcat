@@ -53,6 +53,17 @@ import tools.weather  # 必须导入才能被 FastMCP 扫描注册到
 
 FastMCP 会自动处理协议封装。声明了 `-> str`，就直接 return 字符串。遇到异常直接 `raise Exception(...)`。
 
+**⚠️ 异常信息必须告诉大模型"错在哪 + 正确格式 + 示例"**，否则大模型无法自我修正：
+
+```python
+# ✅ 好：告诉大模型错在哪 + 正确格式 + 示例
+raise Exception(f"获取股票 '{{symbol}}' 失败。正确格式：symbol 应为6位股票代码，"
+                f"如 \\\"600519\\\"（贵州茅台），无需带 sh/sz 前缀")
+
+# ❌ 差：只报错不给指引
+raise Exception(f"获取股票 {{symbol}} 实时行情失败: {{e}}")
+```
+
 ## 5. 客户端配置 (已自动化 🎉)
 
 你不需要手动指导人类或者通过终端修改 `.purrcat/mcp_config.json`。
