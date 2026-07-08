@@ -90,7 +90,7 @@ if __name__ == "__main__":
     with open(os.path.join(workplace_mcp_dir, "tools", "__init__.py"), "w") as f:
         f.write("")
 
-    sample_tool_content = """from app import mcp\nimport logging\n\n@mcp.tool()\nasync def sample_tool(param: str) -> str:\n    \"\"\"示例工具描述\"\"\"\n    return f"Processed {param}"\n"""
+    sample_tool_content = """from app import mcp\nimport logging\n\n# ⚠️ 注意：避免工具函数名与你 import 的底层数据处理函数同名！\n# 否则会导致无限递归死循环。\n@mcp.tool()\nasync def sample_tool(param: str) -> str:\n    \"\"\"这是一个示例工具，用于展示标准的注释写法。\n    \n    Args:\n        param: 需要处理的字符串参数，例如用户输入的名字或查询条件。\n    \"\"\"\n    return f"Processed {param}"\n"""
     with open(
         os.path.join(workplace_mcp_dir, "tools", "sample.py"),
         "w",
@@ -129,6 +129,8 @@ if __name__ == "__main__":
     # 9. 生成沙盒内部评测脚本
     evaluation_script = """import os, sys, json, asyncio
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+import server
 from app import mcp
 
 OUTPUT_DIR = "evals/outputs"
@@ -141,7 +143,9 @@ async def main():
     
     try:
         with open("evals/evals.json", "r", encoding="utf-8") as f: evals = json.load(f)
-    except Exception: return print("❌ 找不到 evals.json")
+    except Exception:
+        print("❌ 找不到 evals.json")
+        return
     
     executions = evals.get("executions", [])
     async def run_tool(exec_case):

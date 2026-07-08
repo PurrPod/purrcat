@@ -13,25 +13,35 @@ def generate_mcp_create_guide(mcp_name: str) -> str:
 * `server.py`: **主入口**。从 `app` 导入 `mcp`，并导入所有 tools。
 * `tools/`: **核心工作区**。所有具体的 Tool 函数写在这里，必须从 `app` 导入 `mcp` 实例。
 
-## 2. 添加新的 Tool (两步法则)
+## 2. 添加新的 Tool (三步法则)
 
-**步骤一：在 `tools/` 创建文件 (如 `weather.py`)**
+**步骤一：在 `tools/` 下创建文件 (如 `weather.py`)**
+
 ```python
 from app import mcp
-import logging
 
 @mcp.tool()
-async def get_weather(city: str) -> str:
-    return f"Weather in {{city}} is Sunny"
+async def get_weather(city: str, days: int = 3) -> str:
+    \"\"\"获取指定城市的天气预报（⚠️ 第一行必须是工具的功能描述，大模型据此判断何时调用！）
 
+    Args:
+        city: 城市名称，如 "北京"、"Shanghai" （⚠️ 参数描述大模型据此提取实体）
+        days: 预报天数，默认 3 天
+    \"\"\"
+    return f"{{city}}未来{{days}}天天气晴"
 ```
+
+**关键规范：**
+* 必须写 Docstring：第一行是工具的 description，直接决定意图路由测试能否通过。
+* 必须写 Args 块：解释每个参数的含义和格式，帮助大模型正确提取。
+* 必须有 Type Hint：如 `str`, `int`, `float`, `bool`, `list[str]`。
+* 默认值决定是否必填：有默认值的参数是可选的，无默认值的参数是必填的。
 
 **步骤二：在 `server.py` 中激活**
 
 ```python
 from app import mcp
-import tools.weather  # 必须导入才能激活注册
-
+import tools.weather  # 必须导入才能被 FastMCP 扫描注册到
 ```
 
 ## 3. 🔴 绝对红线：STDIO 日志污染
@@ -41,12 +51,22 @@ import tools.weather  # 必须导入才能激活注册
 
 ## 4. 返回值与错误处理
 
-FastMCP 会自动处理协议封装。声明了 `-> str`，就直接 return 字符串，**绝对不要**返回 `isError` 字典。遇到异常直接 `raise Exception(...)`。
+FastMCP 会自动处理协议封装。声明了 `-> str`，就直接 return 字符串。遇到异常直接 `raise Exception(...)`。
 
 ## 5. 客户端配置 (已自动化 🎉)
 
 你不需要手动指导人类或者通过终端修改 `.purrcat/mcp_config.json`。
 当你调用工具进行 `merge_mcp` 时，系统底层会自动计算绝对路径并注入到配置文件中！
+
+## 6. 完整开发流程 (Workflow)
+① `create_mcp` → 呼叫宿主机创建项目骨架
+② 编写 `tools/*.py` → 实现工具（⚠️ 注意函数名不要和 import 的业务函数冲突防递归）
+③ 编写 `core/*.py` → 实现底层数据层/业务逻辑
+④ 修改 `server.py` → import 所有 tools 模块（合并后系统以此文件为唯一启动入口）
+⑤ 编写测试脚本 → 在 `scripts/` 下写代码跑真实数据验证
+⑥ 跑 evaluation → 终端执行 `python scripts/evaluation.py`（⚠️ 生成测试产物，严禁修改此脚本内容）
+⑦ `test_mcp` → 呼叫宿主机进行并发与语义路由盲测
+⑧ `mcp_merge` → 测试全绿后，申请合并到正式库
 """
 
 
@@ -69,10 +89,15 @@ def generate_mcp_test_guide(mcp_name: str) -> str:
 ## 3. 测试流水线与报告 (两步执行法)
 
 **第一步：沙盒内自行执行评测 (极度重要！)**
-编写完代码后，必须使用终端 (Bash) 执行评测脚本排错：
+编写完代码后，必须使用终端 (Bash) 执行系统内置的评测脚本：
 ```bash
 source .venv/bin/activate
 python scripts/evaluation.py
+```
 
-第二步：呼叫宿主机进行语义评测  第一步无报错后，调用 KernelUpgrade  工具指定 action="test_mcp" 。宿主机会模拟大模型唤醒，并在后台生成最终的 test_report.md 。
+⚠️ 严禁修改或覆盖 scripts/evaluation.py！
+该文件是 MCP 工厂的标准产物生成器，它负责导出 schema_dump.json 和 execution_results.json 供宿主机评测使用。如果该文件被破坏，test_mcp 将永远无法通过！
+
+**第二步：呼叫宿主机进行语义评测**
+第一步无报错后，调用 `KernelUpgrade` 工具指定 `action="test_mcp"`。宿主机会模拟大模型唤醒，并在后台生成最终的 `test_report.md`。
 """
