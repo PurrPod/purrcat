@@ -100,8 +100,11 @@ export default function EvolvePage({ onBack }: { onBack: () => void }) {
         const data = await res.json();
         setFiles(data.attachments || []);
         const defaultFile = 'SKILL.md';
-        if (data.attachments.includes(defaultFile)) setActiveFile(defaultFile);
-        else if (data.attachments.length > 0) setActiveFile(data.attachments[0]);
+        let selectedFile = '';
+        if (data.attachments.includes(defaultFile)) selectedFile = defaultFile;
+        else if (data.attachments.length > 0) selectedFile = data.attachments[0];
+        setActiveFile(selectedFile);
+        if (selectedFile) await loadFileData(selectedFile, setFileContent);
       }
     } catch { /* noop */ }
   };
