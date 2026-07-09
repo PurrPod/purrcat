@@ -2,6 +2,8 @@ import os
 import re
 import difflib
 import tempfile
+import hashlib
+import json
 from pathlib import PurePath
 from filelock import FileLock, Timeout
 from src.tool.filesystem.checker import run_code_check
@@ -17,9 +19,77 @@ MAX_LINES_TO_READ = 2000
 LOCK_DIR = os.path.join(os.getcwd(), ".agent_locks")
 os.makedirs(LOCK_DIR, exist_ok=True)
 
+CACHE_DIR = os.path.join(os.getcwd(), "agent_vm", ".buffer", "filesystem")
+REGISTRY_FILE = os.path.join(CACHE_DIR, "registry.json")
+
+
+def _get_cache(target_path: str, current_mtime: float):
+    """读取缓存文件并验证修改时间是否一致"""
+    if not os.path.exists(REGISTRY_FILE):
+        return None, False
+
+    try:
+        with open(REGISTRY_FILE, "r", encoding="utf-8") as f:
+            registry = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return None, False
+
+    file_cache = registry.get(target_path)
+    if not file_cache:
+        return None, False
+
+    if file_cache.get("mtime") != current_mtime:
+        return None, False
+
+    cache_path = file_cache.get("cache_path")
+    if cache_path and os.path.exists(cache_path):
+        try:
+            with open(cache_path, "r", encoding="utf-8") as f:
+                return f.readlines(), file_cache.get("is_converted", False)
+        except OSError:
+            pass
+
+    return None, False
+
+
+def _set_cache(target_path: str, lines: list, current_mtime: float, is_converted: bool):
+    """写入解析结果到缓存文件，并更新注册表"""
+    os.makedirs(CACHE_DIR, exist_ok=True)
+
+    path_hash = hashlib.md5(target_path.encode('utf-8')).hexdigest()
+    cache_path = os.path.join(CACHE_DIR, f"{path_hash}.cache.txt")
+
+    try:
+        with open(cache_path, "w", encoding="utf-8") as f:
+            f.writelines(lines)
+    except OSError:
+        return
+
+    registry_lock = FileLock(REGISTRY_FILE + ".lock", timeout=5)
+    try:
+        with registry_lock:
+            registry = {}
+            if os.path.exists(REGISTRY_FILE):
+                try:
+                    with open(REGISTRY_FILE, "r", encoding="utf-8") as f:
+                        registry = json.load(f)
+                except (json.JSONDecodeError, OSError):
+                    pass
+
+            registry[target_path] = {
+                "mtime": current_mtime,
+                "cache_path": cache_path,
+                "is_converted": is_converted
+            }
+
+            with open(REGISTRY_FILE, "w", encoding="utf-8") as f:
+                json.dump(registry, f, ensure_ascii=False, indent=2)
+    except Timeout:
+        pass
+
 
 def read_file(path_from: str, offset: int = 0, limit: int = MAX_LINES_TO_READ) -> dict:
-    """Read 工具：支持纯文本读取，遇到富文本/二进制自动使用 markitdown 转换为 Markdown"""
+    """Read 工具：支持纯文本读取，遇到富文本/二进制自动转换为 Markdown"""
     target_path = require_read(path_from)
 
     if not os.path.exists(target_path):
@@ -29,33 +99,40 @@ def read_file(path_from: str, offset: int = 0, limit: int = MAX_LINES_TO_READ) -
             f"目标不是一个文件: {target_path}。如果是目录请使用 list。"
         )
 
-    lines = []
-    is_converted = False
+    current_mtime = os.path.getmtime(target_path)
 
-    try:
-        with open(target_path, "r", encoding="utf-8") as f:
-            lines = f.readlines()
+    cached_lines, is_converted = _get_cache(target_path, current_mtime)
 
-    except UnicodeDecodeError:
+    if cached_lines is not None:
+        lines = cached_lines
+    else:
+        lines = []
+        is_converted = False
         try:
-            from markitdown import MarkItDown
+            with open(target_path, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+        except UnicodeDecodeError:
+            try:
+                from markitdown import MarkItDown
 
-            md = MarkItDown()
-            result = md.convert(target_path)
-            if not result.text_content:
-                raise FileSystemError("文件转换成功，但提取出的文本内容为空。")
-            lines = [line + "\n" for line in result.text_content.split("\n")]
-            is_converted = True
+                md = MarkItDown()
+                result = md.convert(target_path)
+                if not result.text_content:
+                    raise FileSystemError("文件转换成功，但提取出的文本内容为空。")
+                lines = [line + "\n" for line in result.text_content.split("\n")]
+                is_converted = True
 
-        except ImportError:
-            raise FileSystemError(
-                "文件似乎是二进制或富文本格式，无法直接读取。\n"
-                "提示：宿主机未安装 markitdown。请联系管理员运行 `pip install markitdown` 来支持读取此类文件。"
-            )
-        except Exception as e:
-            raise FileSystemError(
-                f"文件读取失败。既不是有效的纯文本，MarkItDown也无法解析: {str(e)}"
-            )
+            except ImportError:
+                raise FileSystemError(
+                    "文件似乎是二进制或富文本格式，无法直接读取。\n"
+                    "提示：宿主机未安装 markitdown"
+                )
+            except Exception as e:
+                raise FileSystemError(
+                    f"文件读取失败。既不是有效的纯文本，MarkItDown也无法解析: {str(e)}"
+                )
+
+        _set_cache(target_path, lines, current_mtime, is_converted)
 
     total_lines = len(lines)
     start = max(0, offset)
