@@ -174,9 +174,6 @@ def skill_request_handle(
 
     subprocess.run(["git", "commit", "-m", commit_msg], cwd=skills_root)
 
-    # 合并成功后清理工厂
-    shutil.rmtree(workplace_root, ignore_errors=True)
-
     return f"审批通过！已合并至正式区并触发 Git Commit: '{commit_msg}'"
 
 

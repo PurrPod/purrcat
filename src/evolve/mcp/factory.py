@@ -282,9 +282,6 @@ def mcp_request_handle(workplace_root: str, mcp_name: str, is_approved: bool) ->
     with open(config_path, "w", encoding="utf-8", newline="\n") as f:
         json.dump(mcp_config, f, indent=2, ensure_ascii=False)
 
-    # 4. 清理沙盒
-    shutil.rmtree(workplace_root, ignore_errors=True)
-
     # 5. 精简干净的返回
     return (
         f"🎉 审批通过！MCP '{mcp_name}' 成功合并。\n"

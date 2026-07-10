@@ -1,6 +1,6 @@
 // src/components/EvolvePage.tsx
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Dna, FileEdit, TestTube, GitMerge, FileText, Play, Check, X, Server, Zap, RefreshCw, Undo2, Save, MessageSquare } from 'lucide-react';
+import { ArrowLeft, Dna, FileEdit, TestTube, GitMerge, FileText, Play, Check, X, Server, Zap, RefreshCw, Undo2, Save, MessageSquare, Trash2 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -59,6 +59,10 @@ export default function EvolvePage({ onBack }: { onBack: () => void }) {
   const [isDiffLoading, setIsDiffLoading] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
   const [showRejectModal, setShowRejectModal] = useState(false);
+
+  // Merge & Delete Confirm States
+  const [workplaceToDelete, setWorkplaceToDelete] = useState<{id: string, name: string} | null>(null);
+  const [showRollbackConfirm, setShowRollbackConfirm] = useState(false);
 
   const fetchWorkplaces = async () => {
     try {
@@ -228,17 +232,48 @@ export default function EvolvePage({ onBack }: { onBack: () => void }) {
     setShowRejectModal(false);
   };
 
-  const handleRollback = async () => {
+  const handleRollbackClick = () => {
     if (!activeWorkplace) return;
-    if (!confirm(`🚨 危险操作：确定要把主库的 ${activeWorkplace.name} 强制回滚到上一次 Git 提交版本吗？这无法撤销！`)) return;
+    setShowRollbackConfirm(true);
+  };
+
+  const executeRollback = async () => {
+    if (!activeWorkplace) return;
+    setShowRollbackConfirm(false);
+
+    const tid = toast.loading("正在执行回滚...");
     try {
       const res = await fetch('http://localhost:8000/api/evolve/rollback', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ type: activeType, name: activeWorkplace.name })
       });
-      if (res.ok) toast.success((await res.json()).message);
-      else toast.error("回滚执行被拒");
-    } catch { toast.error("网络异常"); }
+      if (res.ok) toast.success((await res.json()).message, { id: tid });
+      else toast.error("回滚执行被拒", { id: tid });
+    } catch { toast.error("网络异常", { id: tid }); }
+  };
+
+  const handleDeleteWorkplace = (e: React.MouseEvent, wpId: string, wpName: string) => {
+    e.stopPropagation();
+    setWorkplaceToDelete({ id: wpId, name: wpName });
+  };
+
+  const executeDeleteWorkplace = async () => {
+    if (!workplaceToDelete) return;
+    const { id: wpId } = workplaceToDelete;
+    setWorkplaceToDelete(null);
+
+    const tid = toast.loading("正在强制清理沙盒...");
+    try {
+      const res = await fetch(`http://localhost:8000/api/evolve/workplace/${wpId}?type=${activeType}`, { method: 'DELETE' });
+      if (res.ok) {
+        toast.success("沙盒已彻底清理！", { id: tid });
+        if (activeWorkplace?.workplace_id === wpId) setActiveWorkplace(null);
+        fetchWorkplaces();
+      } else {
+        const err = await res.json();
+        toast.error(`清理失败: ${err.detail || '未知错误'}`, { id: tid });
+      }
+    } catch { toast.error("网络异常", { id: tid }); }
   };
 
   return (
@@ -272,8 +307,19 @@ export default function EvolvePage({ onBack }: { onBack: () => void }) {
           <div className="flex-1 overflow-y-auto flex flex-col gap-3 pr-1">
             {workplaces.map((wp, idx) => (
               <div key={wp.workplace_id} onClick={() => setActiveWorkplace(wp)} style={idx % 2 === 0 ? sketchyShape1 : sketchyShape2} className={`cursor-pointer p-4 border-4 border-ink transition-all flex flex-col gap-1 ${activeWorkplace?.workplace_id === wp.workplace_id ? 'bg-[#EBCB8B] shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] scale-[1.02] z-10' : 'bg-cream hover:bg-sand hover:-translate-y-1 shadow-[2px_2px_0px_0px_rgba(26,26,26,1)]'}`}>
-                <span className="font-black text-lg truncate text-ink">{wp.name}</span>
-                <span className="text-[10px] font-bold opacity-60 text-ink">ID: {wp.workplace_id}</span>
+                <div className="flex justify-between items-start gap-2">
+                  <div className="flex flex-col min-w-0">
+                    <span className="font-black text-lg truncate text-ink">{wp.name}</span>
+                    <span className="text-[10px] font-bold opacity-60 text-ink">ID: {wp.workplace_id}</span>
+                  </div>
+                  <button
+                    onClick={(e) => handleDeleteWorkplace(e, wp.workplace_id, wp.name)}
+                    className="text-ink/30 hover:text-[#bf616a] hover:bg-[#bf616a]/10 p-1.5 rounded transition-all shrink-0 active:scale-90"
+                    title="清理该沙盒"
+                  >
+                    <Trash2 size={18} strokeWidth={3}/>
+                  </button>
+                </div>
               </div>
             ))}
             {workplaces.length === 0 && <div className="text-center opacity-40 font-bold mt-10">No items processing.</div>}
@@ -499,7 +545,7 @@ export default function EvolvePage({ onBack }: { onBack: () => void }) {
                       <button onClick={handleLoadDiff} title="Reload Diff" className="w-12 h-12 bg-cream border-4 border-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:bg-sand flex items-center justify-center active:translate-y-[2px] active:translate-x-[2px] active:shadow-none transition-all" style={sketchyShape3}>
                         <RefreshCw size={22} strokeWidth={3} className={isDiffLoading ? "animate-spin" : ""}/>
                       </button>
-                      <button onClick={handleRollback} title="Revert Main to Previous" className="w-12 h-12 bg-cream text-[#bf616a] border-4 border-[#bf616a] shadow-[4px_4px_0px_0px_#bf616a] hover:bg-[#bf616a]/10 flex items-center justify-center active:translate-y-[2px] active:translate-x-[2px] active:shadow-none transition-all" style={sketchyShape2}>
+                      <button onClick={handleRollbackClick} title="Revert Main to Previous" className="w-12 h-12 bg-cream text-[#bf616a] border-4 border-[#bf616a] shadow-[4px_4px_0px_0px_#bf616a] hover:bg-[#bf616a]/10 flex items-center justify-center active:translate-y-[2px] active:translate-x-[2px] active:shadow-none transition-all" style={sketchyShape2}>
                         <Undo2 size={22} strokeWidth={3}/>
                       </button>
                       
@@ -575,6 +621,60 @@ export default function EvolvePage({ onBack }: { onBack: () => void }) {
               <button onClick={() => setShowEvalModal(false)} style={sketchyShape3} className="px-8 bg-cream text-ink font-black py-3 border-4 border-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:bg-sand transition-all">CANCEL</button>
               <button onClick={() => handleSaveFile('evals/evals.json', evalJson)} style={sketchyShape1} className="px-10 bg-[#EBCB8B] text-ink font-black py-3 border-4 border-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center gap-2 hover:bg-[#d8b877] transition-all">
                 <Save size={24} strokeWidth={3}/> SAVE
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {workplaceToDelete && (
+        <div className="fixed inset-0 bg-ink/40 backdrop-blur-sm z-[150] flex items-center justify-center p-4">
+          <div style={sketchyShape2} className="bg-paper border-4 border-ink p-8 flex flex-col gap-6 shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] -rotate-1 max-w-md w-full">
+            <div className="flex justify-between items-center rotate-1 border-b-4 border-ink/10 pb-2">
+              <h3 className="text-2xl font-black tracking-widest text-[#bf616a]" style={{ fontFamily: '"Comic Sans MS", cursive' }}>DELETE SANDBOX?</h3>
+              <button onClick={() => setWorkplaceToDelete(null)} className="hover:text-[#bf616a] hover:scale-110 transition-all"><X size={28} strokeWidth={3}/></button>
+            </div>
+            <div className="rotate-1 flex flex-col gap-3">
+              <p className="font-bold text-ink/80 text-lg leading-relaxed">
+                确定要彻底清理 <span className="text-ink font-black bg-[#bf616a]/20 px-1 border-2 border-[#bf616a]/40">{workplaceToDelete.name}</span> 的沙盒工作区吗？
+              </p>
+              <p className="text-sm font-bold text-ink/60 bg-[#EBCB8B]/30 p-3 border-2 border-ink border-dashed" style={sketchyShape3}>
+                💡 提示：此操作不可逆！如果你已经合并成功，清理沙盒是一个好习惯，不会影响正式库的代码。
+              </p>
+            </div>
+            <div className="flex gap-4 rotate-1 mt-2">
+              <button onClick={() => setWorkplaceToDelete(null)} style={sketchyShape3} className="flex-1 bg-cream text-ink font-black py-3 border-4 border-ink hover:bg-sand transition-all shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] active:shadow-none active:translate-y-1">
+                CANCEL
+              </button>
+              <button onClick={executeDeleteWorkplace} style={sketchyShape1} className="flex-[1.5] bg-[#bf616a] text-paper font-black py-3 border-4 border-ink hover:bg-[#a54e56] transition-all shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] active:shadow-none active:translate-y-1 flex items-center justify-center gap-2">
+                <Trash2 size={20} strokeWidth={3}/> DESTROY IT
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showRollbackConfirm && activeWorkplace && (
+        <div className="fixed inset-0 bg-ink/40 backdrop-blur-sm z-[150] flex items-center justify-center p-4">
+          <div style={sketchyShape1} className="bg-paper border-4 border-ink p-8 flex flex-col gap-6 shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] rotate-1 max-w-sm w-full">
+            <div className="flex justify-between items-center -rotate-1 border-b-4 border-ink/10 pb-2">
+              <h3 className="text-2xl font-black tracking-widest text-[#bf616a]" style={{ fontFamily: '"Comic Sans MS", cursive' }}>REVERT MAIN?</h3>
+              <button onClick={() => setShowRollbackConfirm(false)} className="hover:text-[#bf616a] hover:scale-110 transition-all"><X size={28} strokeWidth={3}/></button>
+            </div>
+            <div className="-rotate-1 flex flex-col gap-3">
+              <p className="font-bold text-ink/80 text-lg leading-relaxed">
+                🚨 危险操作：确定要把主库的 <span className="text-ink font-black">{activeWorkplace.name}</span> 强制回滚到上一次 Git 提交版本吗？
+              </p>
+              <p className="text-sm font-black text-[#bf616a] bg-[#bf616a]/10 p-3 border-2 border-ink border-dashed" style={sketchyShape2}>
+                此操作无法撤销！未被记录的灾难性修改将被永久丢弃。
+              </p>
+            </div>
+            <div className="flex gap-4 -rotate-1 mt-2">
+              <button onClick={() => setShowRollbackConfirm(false)} style={sketchyShape3} className="flex-1 bg-cream text-ink font-black py-3 border-4 border-ink hover:bg-sand transition-all shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] active:shadow-none active:translate-y-1">
+                CANCEL
+              </button>
+              <button onClick={executeRollback} style={sketchyShape2} className="flex-[1.5] bg-[#bf616a] text-paper font-black py-3 border-4 border-ink hover:bg-[#a54e56] transition-all shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] active:shadow-none active:translate-y-1 flex items-center justify-center gap-2">
+                <Undo2 size={20} strokeWidth={3}/> DO REVERT
               </button>
             </div>
           </div>

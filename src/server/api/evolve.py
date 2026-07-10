@@ -1,5 +1,7 @@
 import os
 import re
+import stat
+import shutil
 import subprocess
 import traceback
 from typing import Optional
@@ -295,3 +297,26 @@ def rollback_skill_api(req: RollbackReq):
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"强制回滚失败: {str(e)}")
+
+
+@router.delete("/workplace/{workplace_id}")
+def delete_workplace_api(workplace_id: str, type: str = "skill"):
+    """前端手动彻底删除工厂沙盒"""
+    try:
+        w_path = os.path.join(get_root(type), workplace_id)
+        if not os.path.exists(w_path):
+            raise HTTPException(status_code=404, detail="沙盒不存在或已被删除")
+
+        def on_rm_error(func, path, exc_info):
+            try:
+                os.chmod(path, stat.S_IWRITE)
+                func(path)
+            except Exception:
+                pass
+
+        shutil.rmtree(w_path, onerror=on_rm_error)
+        return {"status": "success", "message": "沙盒已彻底清理"}
+
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"沙盒删除失败: {str(e)}")
