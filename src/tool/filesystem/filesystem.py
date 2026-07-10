@@ -3,6 +3,24 @@
 import traceback
 
 from src.tool.filesystem.copy_file import copy_file
+
+
+def _summarize_diff(diff_text: str) -> str:
+    """解析 unified diff 文本，计算新增和删除的代码行数"""
+    if not diff_text:
+        return "新增 0 行，删除 0 行"
+
+    additions = 0
+    deletions = 0
+    for line in diff_text.splitlines():
+        if line.startswith('+') and not line.startswith('+++'):
+            additions += 1
+        elif line.startswith('-') and not line.startswith('---'):
+            deletions += 1
+
+    return f"新增了 {additions} 行代码，删除了 {deletions} 行代码"
+
+
 from src.tool.filesystem.delete_file import delete_file
 from src.tool.filesystem.exceptions import FileSystemError, HostPathNotFoundError
 from src.tool.filesystem.history import rewind_file
@@ -87,8 +105,14 @@ def FileSystem(action: str, path: str = None, destination: str = None, **kwargs)
                     "edit 操作需提供 old_string 和 new_string", "❌ 参数缺失"
                 )
             result = edit_file(path, old_str, new_str, kwargs.get("replace_all", False))
-            # 🌟 改造：把带 Markdown 代码块的 Diff 字符串直接作为 content，不要放进字典
-            response_text = f"✂️ 修改成功！Diff 如下:\n\n```diff\n{result.get('diff', '')}\n```\n\n{result.get('message', '')}"
+
+            diff_text = result.get('diff', '')
+            diff_summary = _summarize_diff(diff_text)
+            response_text = (
+                f"✂️ 修改成功！{diff_summary}。\n"
+                f"💡 提示：如果误删了重要代码，你可以随时使用 `action='undo'` 进行回溯。\n\n"
+                f"{result.get('message', '')}"
+            )
             return text_response(response_text, "✂️ 修改成功")
 
         if action == "undo":
@@ -122,10 +146,15 @@ def FileSystem(action: str, path: str = None, destination: str = None, **kwargs)
             if content is None:
                 return error_response("write 操作需提供 content", "❌ 参数缺失")
             result = write_file(path, content)
-            return text_response(
-                result["message"] + f"\n\n```diff\n{result.get('diff', '')}\n```",
-                "📝 写入成功",
+
+            diff_text = result.get('diff', '')
+            diff_summary = _summarize_diff(diff_text)
+            response_text = (
+                f"{result['message']}\n\n"
+                f"📊 变更统计：{diff_summary}。\n"
+                f"� 提示：如果覆盖导致重要代码丢失，你可以使用 `action='undo'` 恢复到上一版本。"
             )
+            return text_response(response_text, "📝 写入成功")
 
         if action == "search":
             if not kwargs.get("pattern"):
