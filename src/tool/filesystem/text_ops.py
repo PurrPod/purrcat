@@ -56,7 +56,7 @@ def _set_cache(target_path: str, lines: list, current_mtime: float, is_converted
     """写入解析结果到缓存文件，并更新注册表"""
     os.makedirs(CACHE_DIR, exist_ok=True)
 
-    path_hash = hashlib.md5(target_path.encode('utf-8')).hexdigest()
+    path_hash = hashlib.md5(target_path.encode("utf-8")).hexdigest()
     cache_path = os.path.join(CACHE_DIR, f"{path_hash}.cache.txt")
 
     try:
@@ -79,7 +79,7 @@ def _set_cache(target_path: str, lines: list, current_mtime: float, is_converted
             registry[target_path] = {
                 "mtime": current_mtime,
                 "cache_path": cache_path,
-                "is_converted": is_converted
+                "is_converted": is_converted,
             }
 
             with open(REGISTRY_FILE, "w", encoding="utf-8") as f:

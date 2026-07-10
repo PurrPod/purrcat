@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Handle, Position, useEdges, useUpdateNodeInternals } from '@xyflow/react';
 import { useFlowStore } from '../store/flowStore';
-import { Trash2, Plus, X, Pencil } from 'lucide-react';
+import { Trash2, Plus, X, Pencil, Maximize } from 'lucide-react';
 
 const sketchyShape1 = { borderRadius: '255px 15px 225px 15px/15px 225px 15px 255px' };
 const sketchyShape2 = { borderRadius: '15px 225px 15px 255px/255px 15px 225px 15px' };
@@ -17,8 +17,17 @@ export default function CustomNode({ id, data, selected }: any) {
   const updateNodeInternals = useUpdateNodeInternals();
   const edges = useEdges();
 
+  // 添加变量（List 项）的弹窗状态 (z-[200])
   const [listModalField, setListModalField] = useState<any>(null);
   const [listModalData, setListModalData] = useState<Record<string, any>>({});
+
+  // 🌟 新增：高度解耦的“全屏沉浸编辑器”状态 (z-[250])
+  // 无论是在节点表面，还是在添加变量的弹窗里，都可以复用这个编辑器
+  const [expandedText, setExpandedText] = useState<{
+    title: string;
+    value: string;
+    onChange: (val: string) => void;
+  } | null>(null);
 
   const [isEditingName, setIsEditingName] = useState(false);
   const [tempName, setTempName] = useState(data.name || '');
@@ -160,7 +169,7 @@ export default function CustomNode({ id, data, selected }: any) {
         <select
           value={value || field.default || ''}
           onChange={(e) => updateNodeData(id, { [field.name]: e.target.value })}
-          className="mt-1 w-full bg-cream border-2 border-ink px-2 py-1.5 text-sm font-bold focus:outline-none shadow-[2px_2px_0px_0px_rgba(26,26,26,0.3)] focus:bg-white"
+          className="nodrag mt-1 w-full bg-cream border-2 border-ink px-2 py-1.5 text-sm font-bold focus:outline-none shadow-[2px_2px_0px_0px_rgba(26,26,26,0.3)] focus:bg-white"
           style={sketchyShape2}
         >
           {field.options?.map((opt: any) => (
@@ -172,10 +181,30 @@ export default function CustomNode({ id, data, selected }: any) {
       );
     }
 
-    if (field.type === 'textarea') {
-      return <textarea value={value || ''} onChange={(e) => updateNodeData(id, { [field.name]: e.target.value })} className="mt-1 px-3 py-2 border-2 border-ink text-sm shadow-[2px_2px_0px_0px_rgba(26,26,26,0.3)] resize-none h-24 outline-none bg-cream focus:bg-white font-mono" />;
-    }
-    return <input type="text" value={value || ''} onChange={(e) => updateNodeData(id, { [field.name]: e.target.value })} className="mt-1 px-2 py-1 border-2 border-ink text-sm shadow-[2px_2px_0px_0px_rgba(26,26,26,0.3)] outline-none bg-cream focus:bg-white" />;
+    // 🌟 将所有的单行 input 默认升级为 textarea，确保多行可见性！
+    return (
+      <div className="relative group/textarea">
+        <textarea 
+          value={value || ''} 
+          onChange={(e) => updateNodeData(id, { [field.name]: e.target.value })} 
+          className={`nodrag mt-1 w-full px-3 py-2 border-2 border-ink text-sm shadow-[2px_2px_0px_0px_rgba(26,26,26,0.3)] resize-y outline-none bg-cream focus:bg-white font-mono ${field.type === 'textarea' ? 'min-h-[6rem]' : 'min-h-[2.5rem]'}`} 
+        />
+        <button
+          onClick={() => setExpandedText({
+            title: field.label || field.name,
+            value: value || '',
+            onChange: (val) => {
+              updateNodeData(id, { [field.name]: val });
+              setExpandedText(prev => prev ? { ...prev, value: val } : null);
+            }
+          })}
+          className="absolute top-3 right-3 p-1.5 bg-cream border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] opacity-0 group-hover/textarea:opacity-100 hover:bg-[#EBCB8B] transition-all active:translate-y-[1px] active:shadow-none z-10"
+          title="Expand Editor"
+        >
+          <Maximize size={14} strokeWidth={3} />
+        </button>
+      </div>
+    );
   };
 
   return (
@@ -198,7 +227,7 @@ export default function CustomNode({ id, data, selected }: any) {
             onChange={(e) => setTempName(e.target.value)}
             onBlur={handleNameSave}
             onKeyDown={(e) => e.key === 'Enter' && handleNameSave()}
-            className="flex-1 min-w-0 bg-[#FDF8F0] border-2 border-ink px-2 py-0.5 font-black text-xl tracking-wider focus:outline-none shadow-[inset_2px_2px_0px_0px_rgba(26,26,26,0.1)]"
+            className="nodrag flex-1 min-w-0 w-full bg-[#FDF8F0] border-2 border-ink px-2 py-0.5 font-black text-xl tracking-wider focus:outline-none shadow-[inset_2px_2px_0px_0px_rgba(26,26,26,0.1)]"
             style={{ ...sketchyShape2, fontFamily: '"Comic Sans MS", cursive' }}
           />
         ) : (
@@ -295,6 +324,7 @@ export default function CustomNode({ id, data, selected }: any) {
         )}
       </div>
 
+      {/* 🌟 弹窗层级一：添加 List 变量模态框 (z-index 200) */}
       {listModalField && createPortal(
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-ink/40 backdrop-blur-sm p-4 pointer-events-auto" onClick={(e) => e.stopPropagation()}>
           <div style={sketchyShape3} className="bg-paper border-4 border-ink shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] w-full max-w-sm p-8 relative -rotate-1">
@@ -327,9 +357,9 @@ export default function CustomNode({ id, data, selected }: any) {
                       >
                         {DATA_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
                       </select>
-                    ) : (
+                    ) : sch.name === 'name' ? (
                       <input
-                        autoFocus={sch.name === 'name'}
+                        autoFocus
                         value={listModalData[sch.name] || ''}
                         onChange={(e) => setListModalData({ ...listModalData, [sch.name]: e.target.value })}
                         onKeyDown={(e) => e.key === 'Enter' && handleAddListVar()}
@@ -337,6 +367,30 @@ export default function CustomNode({ id, data, selected }: any) {
                         className="w-full bg-cream border-4 border-ink p-3 text-lg font-bold focus:outline-none focus:bg-white shadow-[inset_2px_2px_0px_0px_rgba(26,26,26,0.1)]"
                         style={sketchyShape2}
                       />
+                    ) : (
+                      // 🌟 对于除了 Name 和 Type 之外的属性（如 description / default），均替换为支持扩展的 Textarea
+                      <div className="relative group/modaltext">
+                        <textarea
+                          value={listModalData[sch.name] || ''}
+                          onChange={(e) => setListModalData({ ...listModalData, [sch.name]: e.target.value })}
+                          placeholder={`Enter ${sch.name}...`}
+                          className="nodrag w-full bg-cream border-4 border-ink p-3 text-lg font-bold focus:outline-none focus:bg-white shadow-[inset_2px_2px_0px_0px_rgba(26,26,26,0.1)] min-h-[4rem] resize-y"
+                          style={sketchyShape2}
+                        />
+                        <button
+                          onClick={() => setExpandedText({
+                            title: sch.label || sch.name,
+                            value: listModalData[sch.name] || '',
+                            onChange: (val) => {
+                              setListModalData(prev => ({ ...prev, [sch.name]: val }));
+                              setExpandedText(prev => prev ? { ...prev, value: val } : null);
+                            }
+                          })}
+                          className="absolute top-3 right-3 p-1.5 bg-paper border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] opacity-0 group-hover/modaltext:opacity-100 hover:bg-[#EBCB8B] transition-all"
+                        >
+                          <Maximize size={16} strokeWidth={3} />
+                        </button>
+                      </div>
                     )}
                   </div>
                 ))
@@ -381,6 +435,43 @@ export default function CustomNode({ id, data, selected }: any) {
         </div>,
         document.body
       )}
+
+      {/* 🌟 弹窗层级二：统一的全屏沉浸文本编辑器 (z-index 250 最高) */}
+      {expandedText && createPortal(
+        <div className="fixed inset-0 z-[250] flex items-center justify-center bg-ink/40 backdrop-blur-sm p-4 pointer-events-auto" onClick={(e) => e.stopPropagation()}>
+          <div style={sketchyShape2} className="bg-paper border-4 border-ink shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] w-full max-w-4xl h-[80vh] flex flex-col relative -rotate-1">
+            
+            <div className="flex justify-between items-center rotate-1 p-6 border-b-4 border-ink/20 shrink-0">
+              <h3 className="text-2xl font-black tracking-widest text-[#d08770] uppercase" style={{ fontFamily: '"Comic Sans MS", cursive' }}>
+                EDITING: {expandedText.title}
+              </h3>
+              <button onClick={() => setExpandedText(null)} className="hover:text-terracotta hover:scale-110 transition-all">
+                <X size={32} strokeWidth={3} />
+              </button>
+            </div>
+            
+            <div className="flex-1 rotate-1 overflow-hidden flex flex-col w-full px-6 pt-4">
+              <textarea 
+                autoFocus
+                value={expandedText.value} 
+                onChange={(e) => expandedText.onChange(e.target.value)} 
+                className="nodrag w-full h-full border-4 border-ink bg-[#FDF8F0] p-6 font-mono text-base leading-relaxed font-bold focus:outline-none focus:bg-white shadow-[inset_4px_4px_0px_0px_rgba(26,26,26,0.05)] resize-none" 
+                style={sketchyShape3} 
+                spellCheck={false}
+              />
+            </div>
+            
+            <div className="shrink-0 flex justify-end gap-4 rotate-1 p-6">
+              <button onClick={() => setExpandedText(null)} style={sketchyShape1} className="px-10 py-3 bg-[#a3be8c] text-ink border-4 border-ink font-black shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:bg-[#8eb072] transition-all active:shadow-none active:translate-y-1">
+                DONE
+              </button>
+            </div>
+
+          </div>
+        </div>,
+        document.body
+      )}
+
     </div>
   );
 }

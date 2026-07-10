@@ -3,24 +3,6 @@
 import traceback
 
 from src.tool.filesystem.copy_file import copy_file
-
-
-def _summarize_diff(diff_text: str) -> str:
-    """解析 unified diff 文本，计算新增和删除的代码行数"""
-    if not diff_text:
-        return "新增 0 行，删除 0 行"
-
-    additions = 0
-    deletions = 0
-    for line in diff_text.splitlines():
-        if line.startswith('+') and not line.startswith('+++'):
-            additions += 1
-        elif line.startswith('-') and not line.startswith('---'):
-            deletions += 1
-
-    return f"新增了 {additions} 行代码，删除了 {deletions} 行代码"
-
-
 from src.tool.filesystem.delete_file import delete_file
 from src.tool.filesystem.exceptions import FileSystemError, HostPathNotFoundError
 from src.tool.filesystem.history import rewind_file
@@ -36,6 +18,22 @@ from src.tool.filesystem.text_ops import (
 )
 from src.tool.filesystem.utils import require_write
 from src.tool.utils.format import error_response, text_response
+
+
+def _summarize_diff(diff_text: str) -> str:
+    """解析 unified diff 文本，计算新增和删除的代码行数"""
+    if not diff_text:
+        return "新增 0 行，删除 0 行"
+
+    additions = 0
+    deletions = 0
+    for line in diff_text.splitlines():
+        if line.startswith("+") and not line.startswith("+++"):
+            additions += 1
+        elif line.startswith("-") and not line.startswith("---"):
+            deletions += 1
+
+    return f"新增了 {additions} 行代码，删除了 {deletions} 行代码"
 
 
 def FileSystem(action: str, path: str = None, destination: str = None, **kwargs) -> str:
@@ -106,7 +104,7 @@ def FileSystem(action: str, path: str = None, destination: str = None, **kwargs)
                 )
             result = edit_file(path, old_str, new_str, kwargs.get("replace_all", False))
 
-            diff_text = result.get('diff', '')
+            diff_text = result.get("diff", "")
             diff_summary = _summarize_diff(diff_text)
             response_text = (
                 f"✂️ 修改成功！{diff_summary}。\n"
@@ -147,7 +145,7 @@ def FileSystem(action: str, path: str = None, destination: str = None, **kwargs)
                 return error_response("write 操作需提供 content", "❌ 参数缺失")
             result = write_file(path, content)
 
-            diff_text = result.get('diff', '')
+            diff_text = result.get("diff", "")
             diff_summary = _summarize_diff(diff_text)
             response_text = (
                 f"{result['message']}\n\n"
