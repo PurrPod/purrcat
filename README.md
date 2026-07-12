@@ -5,12 +5,6 @@
 **[📖 文档（仍在更新中）](https://purrpod.github.io/)**
 
 经济、高效、可定制化、更懂你的本地优先个人 AI Agent
-
-<br>
-
-**🐾 文档导航** &nbsp;
-[介绍](https://purrpod.github.io/intro) &nbsp; | &nbsp; [部署指南](https://purrpod.github.io/guide/deployment) &nbsp; | &nbsp; [架构介绍](https://purrpod.github.io/develop/architecture) &nbsp; | &nbsp; [二次开发](https://purrpod.github.io/develop/extension) &nbsp; | &nbsp; [配置说明](https://purrpod.github.io/config/) &nbsp; | &nbsp; [常见问题](https://purrpod.github.io/guide/faq)
-
 </div>
 
 ---
@@ -29,9 +23,9 @@
 - **底层技术支撑**：采用 RRF 混合检索算法，通过全局线程池多路并发，将 BM25（关键词匹配）与语义匹配进行倒数排名融合，大幅提升召回准确率。
 - **异步消化与艾宾浩斯遗忘**：前台新认知存入 pending 后，由后台独立守护进程静默转化为三元组写入图谱，绝不阻塞用户交互，并配合动态衰减机制自动清理长时间未强化的记忆。
 
-### 02 Harness DAG 工作流引擎
+### 02 DAG 工作流引擎
 
-作为可编排思维链与生产级状态机，Harness 彻底解决了多 Agent 通信瓶颈与工具噪音问题：
+作为可编排思维链与生产级状态机，Harness 解决了多 Agent 通信瓶颈与工具噪音问题：
 
 - **Multi-Agent 并发**：抛弃传统框架通过自然语言喊话导致的巨大 Token 冗余，采用同一人多脑并发执行策略，大幅降低通信开销与推理成本。
 - **精准任务约束**：特定任务绑定特定工具，支持在特定阶段注入特定提示，防止 Agent 在复杂情景下发生混乱。
@@ -46,15 +40,15 @@
 - **持久化沙盒 Bash 工具**：放弃正则拦截命令行，直接使用 Docker 构建独立虚拟机，保障绝对的文件安全并减少 human-in-loop，支持挂载目录访问外部。
 - **全能 FileSystem 套件**：提供基本文件系统交互（read / edit / write / search / glob）能力，底层实现 PDF/DOCX/XLSX 等格式的无感降维阅读转 Markdown。
 - **安全跨界传导**：底层设置黑白名单物理级拦截，Import 严格校验 30MB 上限与路径穿越，Export 自动触发 Git 快照防止灾难覆盖。
-- **核心扩展工具矩阵**：包含动态路由 CallMCP、混合检索 Search（召回率超 90%）、网页转 Markdown 的 Fetch、异步提炼的 Memo、定时任务 Cron，电脑操作 ComputerUse、复杂计划编排工具 BrainStorm、自我进化工具 KernelUpgrade 以及派发后台任务的 Task 调度器。
+- **核心扩展工具矩阵**：包含动态路由 CallMCP、混合检索 Search（召回率超 90%）、网页转 Markdown 的 Fetch、异步提炼的 Memo、定时任务 Cron，电脑操作 ComputerUse、复杂计划编排工具 BrainStorm、自我进化工具 KernelUpgrade 以及派发后台任务的 Task 调度器等工具，支持外部 MCP 工具拓展。
 
 ### 04 智能体中枢与会话管理
 
 作为协调大模型与外部世界的交互网关，赋予 Agent 专属灵魂与极强鲁棒性：
 
 - **Git 式会话分支**：支持 new session、branch session 与 switch session 自由切换，方便试错并随时安全切回主干。
-- **完善异常修复**：自动检查 tool calls 匹配情况，拦截残缺工具消息并回滚到安全状态，防止模型逻辑混乱。
-- **智能上下文截断**：Token 超限时自动寻找安全截断点（避开工具调用中间过程），保留最近 20 条安全会话，被挤出的历史自动替换为 Memo 摘要实现无感续接。
+- **完善异常修复**：包括但不限于自动检查 tool calls 匹配情况，拦截残缺工具消息并回滚到安全状态，防止模型逻辑混乱。
+- **智能上下文截断**：Token 超限时自动进行记忆压缩。
 - **生命力与灵魂注入**：通过 SOUL.md 定义人格价值观，系统时钟驱动 Heartbeat + SOLO + TODO 机制，在空闲时自主巡查、清理垃圾并主动汇报。
 - **专属视觉顾问**：为模型配备独立 vision 顾问，将图片信息从主会话剥离单独处理，极大提高信噪比并减少幻觉。
 
@@ -77,9 +71,9 @@
 
 在长上下文与多任务并发场景下，通过一系列深度工程优化实现了极致的降本增效：
 
-- **超高缓存命中率**：在动态切换多会话的复杂环境下，长会话仍能保持平均 97%+ 的缓存命中率（以 DeepSeek-V4-Flash 为例，消耗 1 亿命中 Token 仅需 2 元人民币），提供极速响应体验。
+- **超高缓存命中率**：在动态切换多会话的复杂环境下，长会话仍能保持稳定的缓存命中率，提供极速响应体验，并对钱包友好（以 DeepSeek-V4-Flash 为例，消耗 1 亿命中 Token 仅需 2 元人民币）。
 - **生命周期强绑定**：底层 APIKeyManager 实现任务/会话与单一密钥强绑定，彻底杜绝负载均衡切 Key 导致的命中率雪崩。
-- **双效经济学设计**：依托 Harness DAG 消除传统 Agent 互相对话的 Token 冗余；借助记忆摘要机制，要求任务执行者自行提炼 Summary 抛给后台消化，避免全量历史读取浪费。
+- **双效经济学设计**：依托 DAG 消除传统 Agent 互相对话的 Token 冗余；借助记忆摘要机制，要求任务执行者自行提炼 Summary 抛给后台消化，避免全量历史读取浪费。
 
 ### 08 极致解耦、无代码拓展与工程美学
 
