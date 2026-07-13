@@ -96,10 +96,7 @@ SOUL_MD_TEMPLATE = """## 性格
 def get_model_config_dict():
     """Generate model configuration dictionary"""
     return {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "$comment": f"PurrCat Model Configuration File - Generated at {datetime.now().strftime('%Y-%m-%d %H:%M')}",
-        "description": "Embedding model (used for RAG retrieval, skill search, memory operations). Default: local 'embedding' folder (downloaded model). Can also use HuggingFace model name like 'BAAI/bge-small-zh-v1.5'",
-        "embedding": "embedding",
+       "embedding": "embedding",
         "main": {
             "openai:deepseek-v4-flash": {
                 "api_keys": ["sk-your-first-api-key-here"],
