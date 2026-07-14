@@ -2,7 +2,13 @@ import os
 import threading
 from datetime import datetime
 
-from src.utils.config import get_embedding_model, get_memory_config
+from src.utils.config import get_embedding_model
+from src.memory.config import (
+    CHROMADB_PERSIST_DIRECTORY,
+    CHROMADB_COLLECTION_NAME,
+    CHROMADB_GRAPH_COLLECTION_NAME,
+    CHROMADB_EVENTS_COLLECTION_NAME,
+)
 
 from ..utils import SingletonMeta
 
@@ -11,11 +17,10 @@ class VectorEngine(metaclass=SingletonMeta):
     """🌟 重构：懒加载 ChromaDB 和 Embedding"""
 
     def __init__(self):
-        config = get_memory_config().get("chromadb", {})
-        self.persist_directory = config.get("persist_directory", "data/memory/chromadb")
-        self.collection_name = config.get("collection_name", "experiences")
-        self.graph_collection_name = "graph_nodes"
-        self.events_collection_name = "events"
+        self.persist_directory = CHROMADB_PERSIST_DIRECTORY
+        self.collection_name = CHROMADB_COLLECTION_NAME
+        self.graph_collection_name = CHROMADB_GRAPH_COLLECTION_NAME
+        self.events_collection_name = CHROMADB_EVENTS_COLLECTION_NAME
         self.embedding_model_name = get_embedding_model()
 
         # 将实例置空

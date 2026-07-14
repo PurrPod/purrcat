@@ -11,7 +11,6 @@ PURRCAT_DIR = os.path.join(BASE_DIR, ".purrcat")
 MODEL_CONFIG_PATH = os.path.join(PURRCAT_DIR, "model.json")
 SENSOR_CONFIG_PATH = os.path.join(PURRCAT_DIR, "activate_sensor.json")
 FILE_CONFIG_PATH = os.path.join(PURRCAT_DIR, "file.json")
-MEMORY_CONFIG_PATH = os.path.join(PURRCAT_DIR, "memory.json")
 MCP_CONFIG_PATH = os.path.join(PURRCAT_DIR, "mcp_config.json")
 APP_CONFIG_PATH = os.path.join(PURRCAT_DIR, "app_config.json")
 
@@ -113,12 +112,6 @@ def get_file_config() -> Dict[str, Any]:
 def get_mcp_config() -> Dict[str, Any]:
     if os.path.exists(MCP_CONFIG_PATH):
         return _load_json_file(MCP_CONFIG_PATH)
-    return {}
-
-
-def get_memory_config() -> Dict[str, Any]:
-    if os.path.exists(MEMORY_CONFIG_PATH):
-        return _load_json_file(MEMORY_CONFIG_PATH)
     return {}
 
 

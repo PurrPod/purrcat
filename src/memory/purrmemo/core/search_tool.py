@@ -2,7 +2,12 @@ import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 
-from src.utils.config import get_memory_config
+from src.memory.config import (
+    RAG_TOP_K_EVENTS,
+    RAG_TOP_K_EXPERIENCES,
+    RAG_TOP_K_GRAPH_NODES,
+    RAG_MAX_GRAPH_DEPTH,
+)
 
 from .storage.event_engine import EventEngine
 from .storage.graph_engine import GraphEngine
@@ -108,9 +113,8 @@ class RAGSearchTool:
     def _search_events(self, query: str, filters: dict = None, query_embedding=None):
         """检索事件库 - 混合检索版"""
         filters = filters or {}
-        rag_config = get_memory_config().get("rag", {})
         try:
-            top_k = filters.get("top_k", rag_config.get("top_k_events", 5))
+            top_k = filters.get("top_k", RAG_TOP_K_EVENTS)
             start_time, end_time = filters.get("time_range", (None, None))
 
             if not query:
@@ -153,15 +157,14 @@ class RAGSearchTool:
         self, query: str, filters: dict = None, query_embedding=None
     ):
         """检索经验库"""
-        rag_config = get_memory_config().get("rag", {})
         try:
             if not self.vector_engine:
                 return []
 
             top_k = (
-                filters.get("top_k", rag_config.get("top_k_experiences", 5))
+                filters.get("top_k", RAG_TOP_K_EXPERIENCES)
                 if filters
-                else rag_config.get("top_k_experiences", 5)
+                else RAG_TOP_K_EXPERIENCES
             )
             raw_experiences = self.vector_engine.search_experiences(
                 query=query,
@@ -177,7 +180,6 @@ class RAGSearchTool:
 
     def _search_graph(self, query: str, filters: dict = None, query_embedding=None):
         """检索图谱库"""
-        rag_config = get_memory_config().get("rag", {})
         try:
             if not self.graph_engine:
                 return []
@@ -233,9 +235,9 @@ class RAGSearchTool:
 
             results.sort(key=lambda x: x["confidence"], reverse=True)
             top_k = (
-                filters.get("top_k", rag_config.get("top_k_graph_nodes", 3))
+                filters.get("top_k", RAG_TOP_K_GRAPH_NODES)
                 if filters
-                else rag_config.get("top_k_graph_nodes", 3)
+                else RAG_TOP_K_GRAPH_NODES
             )
             return results[:top_k]
         except Exception as e:

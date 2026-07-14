@@ -13,7 +13,6 @@ from scripts.cli.templates import (
     get_app_config_dict,
     get_file_config_dict,
     get_mcp_config_dict,
-    get_memory_config_dict,
     get_model_config_dict,
     get_sensor_config_dict,
 )
@@ -89,24 +88,6 @@ def _generate_file_config(purrcat_dir, force=False):
         return True
     except Exception as e:
         print(f"X Failed to write file.json: {e}")
-        return False
-
-
-def _generate_memory_config(purrcat_dir, force=False):
-    """Generate memory system configuration file"""
-    memory_path = os.path.join(purrcat_dir, "memory.json")
-
-    if os.path.exists(memory_path) and not _prompt_overwrite(memory_path, force):
-        return False
-
-    memory_config = get_memory_config_dict()
-    try:
-        with open(memory_path, "w", encoding="utf-8") as f:
-            json.dump(memory_config, f, indent=2, ensure_ascii=False)
-        print("[+] memory.json generated")
-        return True
-    except Exception as e:
-        print(f"X Failed to write memory.json: {e}")
         return False
 
 
@@ -270,7 +251,6 @@ def run_init(force=False):
     results.append(("sensor", _generate_sensor_config(purrcat_dir, force=False)))
     results.append(("file", _generate_file_config(purrcat_dir, force=False)))
     results.append(("mcp", _generate_mcp_config(purrcat_dir, force=False)))
-    results.append(("memory", _generate_memory_config(purrcat_dir, force=False)))
     results.append(("app", _generate_app_config(purrcat_dir, force=False)))
     results.append(("core", _generate_core_files(purrcat_dir, force=False)))
 

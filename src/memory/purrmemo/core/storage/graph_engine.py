@@ -6,7 +6,7 @@ from datetime import datetime
 
 import networkx as nx
 
-from src.utils.config import get_memory_config
+from src.memory.config import GRAPHDB_PATH, GRAPHDB_MIN_CONFIDENCE
 
 from ..utils import SingletonMeta
 from .vector_engine import VectorEngine
@@ -15,9 +15,8 @@ from .vector_engine import VectorEngine
 class GraphEngine(metaclass=SingletonMeta):
     def __init__(self):
         self._rw_lock = threading.RLock()
-        config = get_memory_config().get("graphdb", {})
-        self.graph_path = config.get("graph_path", "data/memory/graph.pkl")
-        self.min_confidence = config.get("min_confidence", 0.3)
+        self.graph_path = GRAPHDB_PATH
+        self.min_confidence = GRAPHDB_MIN_CONFIDENCE
         self.graph = None
         self.vector_engine = None
         try:

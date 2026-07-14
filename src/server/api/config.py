@@ -11,14 +11,12 @@ from src.utils.config import (
     APP_CONFIG_PATH,
     FILE_CONFIG_PATH,
     MCP_CONFIG_PATH,
-    MEMORY_CONFIG_PATH,
     MODEL_CONFIG_PATH,
     SENSOR_CONFIG_PATH,
     AGENT_CORE_DIR,
     get_app_config,
     get_file_config,
     get_mcp_config,
-    get_memory_config,
     get_model_config,
     get_sensor_config,
 )
@@ -97,19 +95,6 @@ def api_update_file_config(config: Dict[str, Any]):
     if _save_json_file(FILE_CONFIG_PATH, config):
         return {"status": "ok", "message": "File config updated successfully"}
     raise HTTPException(status_code=500, detail="Failed to save file config")
-
-
-# ── Memory Config ──
-@router.get("/memory")
-def api_get_memory_config():
-    return get_memory_config()
-
-
-@router.put("/memory")
-def api_update_memory_config(config: Dict[str, Any]):
-    if _save_json_file(MEMORY_CONFIG_PATH, config):
-        return {"status": "ok", "message": "Memory config updated successfully"}
-    raise HTTPException(status_code=500, detail="Failed to save memory config")
 
 
 # ── MCP Config ──

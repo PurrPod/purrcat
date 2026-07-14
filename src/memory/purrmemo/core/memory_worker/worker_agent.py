@@ -7,7 +7,8 @@ import shutil
 import time
 from datetime import datetime
 
-from src.utils.config import MEMORY_DIR, MEMORY_PENDING_DIR, get_memory_config
+from src.utils.config import MEMORY_DIR, MEMORY_PENDING_DIR
+from src.memory.config import MEMORY_AGENT_POLLING_INTERVAL
 
 from ..search_tool import start_forgetfulness_scheduler
 from ..storage.event_engine import EventEngine
@@ -293,9 +294,7 @@ class MemoryAgent:
             return False
 
     def run(self):
-        polling_interval = (
-            get_memory_config().get("memory_agent", {}).get("polling_interval", 5)
-        )
+        polling_interval = MEMORY_AGENT_POLLING_INTERVAL
         while True:
             try:
                 files = [

@@ -2,16 +2,15 @@ import os
 import sqlite3
 from datetime import datetime
 
-from src.utils.config import get_memory_config
+from src.memory.config import EVENTDB_PATH, EVENTDB_TABLE_NAME
 
 from ..utils import SingletonMeta
 
 
 class EventEngine(metaclass=SingletonMeta):
     def __init__(self):
-        config = get_memory_config().get("eventdb", {})
-        self.db_path = config.get("db_path", "data/memory/events.db")
-        self.table_name = config.get("table_name", "events")
+        self.db_path = EVENTDB_PATH
+        self.table_name = EVENTDB_TABLE_NAME
         self.conn = None
         self._init_db()
 
