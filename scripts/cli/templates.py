@@ -96,7 +96,7 @@ SOUL_MD_TEMPLATE = """## 性格
 def get_model_config_dict():
     """Generate model configuration dictionary"""
     return {
-       "embedding": "embedding",
+        "embedding": "embedding",
         "main": {
             "openai:deepseek-v4-flash": {
                 "api_keys": ["sk-your-first-api-key-here"],
@@ -176,11 +176,6 @@ def get_file_config_dict():
 def get_memory_config_dict():
     """Generate memory system configuration dictionary"""
     return {
-        "openai": {
-            "api_key": "",
-            "base_url": "https://api.deepseek.com",
-            "model_name": "deepseek-v4-flash",
-        },
         "chromadb": {
             "persist_directory": "data/memory/chromadb",
             "collection_name": "experiences",
