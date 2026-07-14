@@ -108,8 +108,23 @@ def get_model_config_dict():
                 "max_token": 500000,
             }
         },
-        "task": {},
-        "vision": {},
+        "task": {
+            "openai:deepseek-v4-flash": {
+                "api_keys": ["sk-your-task-api-key-here"],
+                "base_url": "https://api.deepseek.com",
+                "description": "Task Model",
+                "rpm": 60,
+                "tpm": 1000000,
+                "concurrency": 3,
+                "max_token": 500000,
+            }
+        },
+        "vision": {
+            "qwen3.6-plus": {
+                "api_keys": ["sk-your-vision-api-key-here"],
+                "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+            }
+        },
     }
 
 
@@ -169,32 +184,6 @@ def get_file_config_dict():
                 "D:/test",
                 "skills",
             ],
-        },
-    }
-
-
-def get_memory_config_dict():
-    """Generate memory system configuration dictionary"""
-    return {
-        "chromadb": {
-            "persist_directory": "data/memory/chromadb",
-            "collection_name": "experiences",
-            "embedding_model": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
-        },
-        "eventdb": {"db_path": "data/memory/events.db", "table_name": "events"},
-        "graphdb": {"graph_path": "data/memory/graph.pkl", "min_confidence": 0.3},
-        "buffer": {
-            "buffer_dir": "data/memory/buffer",
-            "pending_dir": "data/memory/buffer/pending",
-            "archived_dir": "data/memory/buffer/archived",
-            "error_dir": "data/memory/buffer/error",
-        },
-        "memory_agent": {"polling_interval": 5},
-        "rag": {
-            "top_k_events": 5,
-            "top_k_experiences": 5,
-            "top_k_graph_nodes": 3,
-            "max_graph_depth": 2,
         },
     }
 
