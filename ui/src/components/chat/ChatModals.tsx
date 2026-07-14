@@ -23,7 +23,7 @@ export default function ChatModals(props: any) {
     showTraceModal, setShowTraceModal, traceType, setTraceType, traceSkillName, setTraceSkillName, traceExpectation, setTraceExpectation, confirmTraceToSkill, isTracing
   } = props;
 
-  const CONFIG_TABS = ['model', 'sensor', 'file', 'memory', 'mcp', 'app'];
+  const CONFIG_TABS = ['model', 'sensor', 'file', 'mcp', 'app'];
 
   return (
     <>

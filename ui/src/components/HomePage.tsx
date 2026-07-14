@@ -8,7 +8,7 @@ const sketchyShape1 = { borderRadius: '255px 15px 225px 15px/15px 225px 15px 255
 const sketchyShape2 = { borderRadius: '15px 225px 15px 255px/255px 15px 225px 15px' };
 const sketchyShape3 = { borderRadius: '225px 15px 255px 15px/15px 255px 15px 225px' };
 
-const CONFIG_TABS = ['model', 'sensor', 'file', 'memory', 'mcp', 'app'];
+const CONFIG_TABS = ['model', 'sensor', 'file', 'mcp', 'app'];
 
 export default function HomePage({ 
   onEnterChat, 
