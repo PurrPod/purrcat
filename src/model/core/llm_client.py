@@ -47,7 +47,7 @@ class LLMClient:
         for attempt in range(max_retries):
             try:
                 with semaphore:
-                    time.sleep(1.0)
+                    time.sleep(0.2)
                     return self.client.chat.completions.create(**request_params)
             except (RateLimitError, APIError) as e:
                 error_msg = str(e).lower()
