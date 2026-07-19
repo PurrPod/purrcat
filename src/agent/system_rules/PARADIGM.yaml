@@ -1,0 +1,63 @@
+name: "default"
+description: "default system loop"
+path: "${os.getcwd}"
+trigger:
+  - cron:
+      time: "08:08"
+      injection: "闹钟响了"
+  - cron:
+      time: "12:00"
+      injection: "该吃饭了"
+hooks:
+  on_build_system_prompt:
+    - file_operation: 
+        path: "src/agent/system_rules/AGENTS.md"
+        action: "read"
+    - file_operation:
+        path: ".purrcat/core/info.json"
+        action: "read"
+    - file_operation:
+        path: ".purrcat/core/SOUL.md"
+        action: "read"
+    - file_operation:
+        path: ".purrcat/core/MEMORY.md"
+        action: "read"
+    - memo_injection: 
+        type: "full"
+  on_loop_start:
+    - injection: 
+        type: "user"
+        content: "请调用对应的skill完成任务"
+    - file_operation:
+        action: "exist_check"
+        path: "xxx"
+        failed_prompt: "检测到xxx文件不存在"
+    - file_operation: 
+        path: "agent_vm/hello.txt"
+        action: "diff_check"
+        failed_prompt: "检测到xxx未更改"
+  on_loop_epoch:
+    - injection:
+        type: "user"
+        interval: 5
+        content: "hi"
+  on_loop_end:
+    # only ALL check passed can exit the loop
+    - file_operation:
+        path: "xxx"
+        action: "write_in"
+        content: "xxx"
+    - command_run:
+        command: "xxx"
+    - tool_use_check:
+        name: "memo"
+        parameter_check:
+          - action: "add"
+        interval:
+        failed_prompt: "如无经验更新，可添加短期记忆以免会话切换时失忆"
+  on_tool_calling:
+    - tool_use_check:
+        name: "ComputerUse"
+        successed_prompt: "组件找不到时使用 Vision 顾问进行询问"
+
+        
