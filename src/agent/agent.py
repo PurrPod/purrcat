@@ -69,9 +69,10 @@ class Agent:
             if not res.get("success"):
                 all_success = False
             if res.get("inject_prompt"):
+                hint_data = {"type": "workflow_hint", "content": res["inject_prompt"]}
                 self._append_history({
                     "role": "user",
-                    "content": {"type": "workflow_hint", "content": res["inject_prompt"]}
+                    "content": json.dumps(hint_data, ensure_ascii=False)
                 })
         return all_success
 
