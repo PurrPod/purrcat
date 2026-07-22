@@ -99,7 +99,7 @@ class Agent:
         return self._interaction_id
 
     def force_interrupt(self):
-        print("🔒 [强制打断] 递增交互ID以隔离旧响应")
+        print("[Lock] 递增交互ID以隔离旧响应")
         self._increment_interaction_id()
         self.state = "idle"
 
@@ -114,7 +114,7 @@ class Agent:
                 self.tracker.add(message)
                 self.save_checkpoint()
             except Exception as e:
-                print(f"⚠️ [Memory] 落盘失败: {e}")
+                print(f"[Warn.Memory] 落盘失败: {e}")
 
     @staticmethod
     def _buffer_long_user_input(content, type="user"):
@@ -131,7 +131,7 @@ class Agent:
             with open(filepath, "w", encoding="utf-8") as f:
                 f.write(content)
         except Exception as e:
-            print(f"⚠️ [Buffer] 超长输入落盘失败: {e}")
+            print(f"[Warn.Buffer] 超长输入落盘失败: {e}")
             return content
         file_uri = "file:///" + filepath.replace("\\", "/")
         return f"【输入超出字数3000字限制，已将请求内容落盘到 <{file_uri}> 里】"
@@ -202,7 +202,7 @@ class Agent:
                     # 发现不匹配！说明中断了！
                     if requested_ids != answered_ids:
                         print(
-                            f"⚠️ [恢复] 检测到未完成的多工具调用链 (请求: {len(requested_ids)}, 实际返回: {len(answered_ids)})，正在清理并撤回悬空节点..."
+                            f"[Warn.ToolChain] 检测到未完成的多工具调用链 (请求: {len(requested_ids)}, 实际返回: {len(answered_ids)})，正在清理并撤回悬空节点..."
                         )
 
                         # A. 弹出后面的所有残缺 tool 消息
@@ -329,7 +329,7 @@ class Agent:
                     if hints:
                         self.force_push("\n\n".join(hints), type="system")
                 except Exception as e:
-                    print(f"⚠️ 后台预搜索线程异常: {e}")
+                    print(f"[Warn] 后台预搜索线程异常: {e}")
 
             threading.Thread(
                 target=background_hint_check,
@@ -345,7 +345,7 @@ class Agent:
                 self._inject_hook_results("on_loop_epoch", epoch=loop_epoch)
                 if self._get_current_interaction_id() != current_interaction_id:
                     print(
-                        f"⚠️ [隔离] 检测到交互ID过期 ({current_interaction_id} != {self._get_current_interaction_id()})，丢弃旧响应"
+                        f"[Warn.Session] 检测到交互ID过期 ({current_interaction_id} != {self._get_current_interaction_id()})，丢弃旧响应"
                     )
                     break
 
@@ -357,7 +357,7 @@ class Agent:
                 response = self.model.chat(messages=safe_history, tools=self._get_tool_schema())
 
                 if self._get_current_interaction_id() != current_interaction_id:
-                    print("⚠️ [隔离] 网络响应返回后检测到交互ID过期，丢弃响应")
+                    print("[Warn.Session] 网络响应返回后检测到交互ID过期，丢弃响应")
                     break
 
                 self._track_token_usage(response)
@@ -446,7 +446,7 @@ class Agent:
                     if repair_json:
                         arguments = repair_json(arguments_str, return_objects=True)
             if not isinstance(arguments, dict):
-                error_msg = "❌ 系统拦截：工具参数格式严重损坏。"
+                error_msg = "[Error] 系统拦截：工具参数格式严重损坏。"
                 self._append_history(
                     {
                         "role": "tool",
@@ -466,7 +466,7 @@ class Agent:
 
             if self._get_current_interaction_id() != current_iid:
                 print(
-                    f"⚠️ [拦截] 工具 {target_tool_name} 执行完毕，但检测到会话已切换或被打断，丢弃幽灵结果。"
+                    f"[Warn.Interrupt] 工具 {target_tool_name} 执行完毕，但检测到会话已切换或被打断，丢弃幽灵结果。"
                 )
                 continue
 
@@ -510,7 +510,7 @@ class Agent:
 
     def _handle_interaction_error(self, e=None, is_interrupt=False):
         content_msg = (
-            "⚠️ [中断] 运行被强制中断。" if is_interrupt else f"❌ [错误] 交互断层: {e}"
+            "[Warn.Interrupt] 运行被强制中断。" if is_interrupt else f"[Error.Fault] 交互断层: {e}"
         )
         print(content_msg)
 
@@ -519,7 +519,7 @@ class Agent:
         self._append_history({"role": "assistant", "content": content_msg})
 
     def sensor(self):
-        print("🚀 Agent 后台主核已启动...")
+        print("[Init] Agent 后台主核已启动...")
         while not self._stop_event.is_set():
             try:
                 if self.pending_force_push:
@@ -528,7 +528,7 @@ class Agent:
                 self.state = "idle"
                 time.sleep(0.5)
             except BaseException as e:
-                print(f"❌ 主核异常已被安全拦截: {e}")
+                print(f"[Error] 主核异常已被安全拦截: {e}")
                 self.state = "idle"
                 time.sleep(1)
 
@@ -548,7 +548,7 @@ class Agent:
             return
 
         print(
-            f"🗜️ 触发记忆截断 (当前约 {self.window_token} tokens)，正在进入内部交互请求模型进行全局大总结..."
+            f"[Truncate] 触发记忆截断 (当前约 {self.window_token} tokens)，正在进入内部交互请求模型进行全局大总结..."
         )
 
         now_str = datetime.datetime.now().strftime("%m-%d %H:%M:%S")
@@ -603,7 +603,7 @@ class Agent:
                                     valid_memo_found = True
                                     break
                             except Exception as e:
-                                print(f"⚠️ 解析 Memo 参数失败: {e}")
+                                print(f"[Warn] 解析 Memo 参数失败: {e}")
 
                 if valid_memo_found:
                     break
@@ -628,10 +628,10 @@ class Agent:
                         ),
                     }
                     temp_history.append(warning_prompt)
-                    print(f"⚠️ [记忆压缩拦截] {warning_msg}")
+                    print(f"[Warn.MemCompress] {warning_msg}")
 
             except Exception as e:
-                print(f"❌ 记忆总结网络请求失败: {e}")
+                print(f"[Error] 记忆总结网络请求失败: {e}")
                 break
 
         if not summary_text:
@@ -693,9 +693,9 @@ class Agent:
                     if msg.get("role") == "assistant" and "reasoning_content" in msg:
                         msg["reasoning_content"] = ""
 
-            print("✅ Agent 记忆大总结与安全截断完毕！")
+            print("[Success] Agent 记忆大总结与安全截断完毕！")
             self.window_token = 0
             self.save_checkpoint()
 
         except Exception as e:
-            print(f"❌ 记忆重组发生严重异常: {e}")
+            print(f"[Error] 记忆重组发生严重异常: {e}")

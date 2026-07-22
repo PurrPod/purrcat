@@ -182,7 +182,7 @@ class SubAgentRunner:
                 with open(MEMORY_MD_PATH, "r", encoding="utf-8") as f:
                     memory_md = f.read().strip()
         except Exception as e:
-            print(f"⚠️ [SubAgent] Prompt 构建发生异常: {e}")
+            print(f"[Warn.SubAgent] Prompt 构建发生异常: {e}")
 
         combined = system_rules
         if soul_md:
@@ -211,7 +211,7 @@ class SubAgentRunner:
             return
 
         print(
-            f"🗜️ [SubAgent b1] 触发后台会话记忆截断 (当前约 {self.window_token} tokens)，请求大总结..."
+            f"[Truncate.SubAgent] 触发后台会话记忆截断 (当前约 {self.window_token} tokens)，请求大总结..."
         )
         now_str = datetime.datetime.now().strftime("%m-%d %H:%M:%S")
 
@@ -290,10 +290,10 @@ class SubAgentRunner:
                         ),
                     }
                     temp_history.append(warning_prompt)
-                    print(f"⚠️ [SubAgent拦截] {warning_msg}")
+                    print(f"[Warn.SubAgentBlock] {warning_msg}")
 
             except Exception as e:
-                print(f"❌ 后台记忆总结请求网络异常: {e}")
+                print(f"[Error] 后台记忆总结请求网络异常: {e}")
                 break
 
         # 兜底降级处理
@@ -359,12 +359,12 @@ class SubAgentRunner:
                 if msg.get("role") == "assistant" and "reasoning_content" in msg:
                     msg["reasoning_content"] = ""
 
-            print("✅ 后台子分支记忆大总结与安全截断完毕！")
+            print("[Success] 后台子分支记忆大总结与安全截断完毕！")
             self.window_token = 0
             self._save_history()
 
         except Exception as e:
-            print(f"❌ 后台历史重组发生严重异常: {e}")
+            print(f"[Error] 后台历史重组发生严重异常: {e}")
 
     async def run(self):
         # 🌟 修复 1：把数组拼接成可读的列表展示给大模型
@@ -391,7 +391,7 @@ class SubAgentRunner:
             elapsed_time = time.time() - start_time
             if not warning_sent and (turn_count >= 15 or elapsed_time > 600):
                 self._notify_main(
-                    f"⚠️ [后台监控] 后台分支 `{self.display_branch_id}` 已自主运行了 {turn_count} 轮 / {int(elapsed_time)} 秒。\n"
+                    f"[Warn.Monitor] 后台分支 `{self.display_branch_id}` 已自主运行了 {turn_count} 轮 / {int(elapsed_time)} 秒。\n"
                     f"如确信其陷入困境，主干可执行 BrainStorm(action='cancel', target_branch_id='{self.display_branch_id}') 将其强杀。"
                 )
                 warning_sent = True
@@ -447,7 +447,7 @@ class SubAgentRunner:
             if not tool_calls:
                 if file_ready:
                     self._notify_main(
-                        f"✅ [后台捷报] 子分支 `{self.display_branch_id}` 任务已圆满结束！所有目标交付物文件均已就绪且内容不为空。"
+                        f"[Success.Report] 子分支 `{self.display_branch_id}` 任务已圆满结束！所有目标交付物文件均已就绪且内容不为空。"
                     )
                     break
                 else:

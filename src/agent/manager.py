@@ -26,7 +26,7 @@ class AgentManager:
         if self._agent is not None:
             return self._agent.session_id
 
-        print("🚀 正在初始化全局 Agent...")
+        print("[Init] 正在初始化全局 Agent...")
         all_sessions = SessionStore.get_all_sessions()
 
         if not session_id:
@@ -64,7 +64,7 @@ class AgentManager:
         self._sensor_thread.start()
 
         self._notify_save()
-        print(f"✅ Agent 已启动，当前挂载会话: {session_id}")
+        print(f"[Success] Agent 已启动，当前挂载会话: {session_id}")
         return session_id
 
     def shutdown_agent(self):
@@ -100,12 +100,12 @@ class AgentManager:
             self.init_agent(session_id=target_session_id)
             return True
 
-        # ✨ 新增：如果是当前会话，直接秒回，什么都不做
+        # [Create] 新增：如果是当前会话，直接秒回，什么都不做
         if self._agent.session_id == target_session_id:
             return True
 
         if self._agent.state != "idle":
-            print("⏳ 正在阻塞等待 Agent 释放资源，以安全检出目标会话...")
+            print("[Wait] 正在阻塞等待 Agent 释放资源，以安全检出目标会话...")
             while self._agent.state != "idle":
                 time.sleep(0.5)
 
@@ -122,7 +122,7 @@ class AgentManager:
             )
 
         self._agent.model.bind_task(target_session_id, "AgentMain")
-        print(f"🔄 检出成功: {target_session_id}")
+        print(f"[Switch] 检出成功: {target_session_id}")
         return True
 
     def new_session(self, branch_alias=None):
@@ -131,7 +131,7 @@ class AgentManager:
             self.init_agent()
 
         if self._agent.state != "idle":
-            print("⏳ 正在阻塞等待 Agent 完成当前回复...")
+            print("[Wait] 正在阻塞等待 Agent 完成当前回复...")
             while self._agent.state != "idle":
                 time.sleep(0.5)
 
@@ -160,7 +160,7 @@ class AgentManager:
             self._agent.current_history = clean_history
 
         self._agent.model.bind_task(new_id, "AgentMain")
-        print(f"✨ 成功创建纯净新分支: {new_id}")
+        print(f"[Create] 成功创建纯净新分支: {new_id}")
         return new_id
 
     def branch_session(self, branch_alias=None):
@@ -169,7 +169,7 @@ class AgentManager:
             self.init_agent()
 
         if self._agent.state != "idle":
-            print("⏳ 正在阻塞等待 Agent 完成当前回复，以确保安全拉取分支...")
+            print("[Wait] 正在阻塞等待 Agent 完成当前回复，以确保安全拉取分支...")
             while self._agent.state != "idle":
                 time.sleep(0.5)
 
@@ -192,7 +192,7 @@ class AgentManager:
             self._agent.current_history = new_history
 
         self._agent.model.bind_task(new_id, "AgentMain")
-        print(f"🌿 成功拉取新分支并检出: {new_id} ({branch_alias})")
+        print(f"[Branch] 成功拉取新分支并检出: {new_id} ({branch_alias})")
         return new_id
 
     def delete_session(self, session_id: str):
@@ -209,7 +209,7 @@ class AgentManager:
             import shutil
 
             shutil.rmtree(session_dir)
-            print(f"🗑️ 已删除会话文件夹: {session_dir}")
+            print(f"[Delete] 已删除会话文件夹: {session_dir}")
 
         # 3. 更新索引文件
         index_file = os.path.join(SESSIONS_DIR, "index.json")
@@ -258,7 +258,7 @@ class AgentManager:
     def reload_model(self):
         """热更新主 Agent 的模型配置"""
         if self._agent:
-            print("🔄 检测到模型配置更改，正在热重载主 Agent 模型...")
+            print("[Switch] 检测到模型配置更改，正在热重载主 Agent 模型...")
             from src.model import AgentModel
             from src.utils.config import get_agent_model
 
@@ -271,9 +271,9 @@ class AgentManager:
                 self._agent.name = get_agent_model()
                 self._agent.model = AgentModel(self._agent.session_id)
                 self._agent.model.bind_task(self._agent.session_id, "AgentMain")
-                print("✅ 主 Agent 模型配置热重载完成！")
+                print("[Success] 主 Agent 模型配置热重载完成！")
             except Exception as e:
-                print(f"❌ 热重载失败，请检查模型配置是否正确: {e}")
+                print(f"[Error] 热重载失败，请检查模型配置是否正确: {e}")
 
     # ==========================================
     # 内部私有方法

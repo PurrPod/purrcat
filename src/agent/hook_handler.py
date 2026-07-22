@@ -20,7 +20,7 @@ class HookHandler:
                     self.config = yaml.safe_load(f) or {}
                 self.hooks = self.config.get("hooks", {})
             except Exception as e:
-                print(f"⚠️ 解析 PARADIGM.yaml 发生异常: {e}")
+                print(f"[Warn] 解析 PARADIGM.yaml 发生异常: {e}")
         else:
             self.config, self.hooks = {}, {}
 

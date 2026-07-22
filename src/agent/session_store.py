@@ -32,7 +32,7 @@ class SessionStore:
             with open(path, "r", encoding="utf-8") as f:
                 return json.load(f)
         except Exception as e:
-            print(f"❌ 读取全局 memo 失败: {e}")
+            print(f"[Error] 读取全局 memo 失败: {e}")
             return []
 
     @classmethod
@@ -45,7 +45,7 @@ class SessionStore:
                     json.dump(memo_list, f, ensure_ascii=False, indent=2)
                 os.replace(temp_path, path)
             except Exception as e:
-                print(f"⚠️ 保存全局 memo 失败: {e}")
+                print(f"[Warn] 保存全局 memo 失败: {e}")
 
     @classmethod
     def get_all_sessions(cls):
@@ -62,7 +62,7 @@ class SessionStore:
                             if str(k).startswith("session_")
                         }
                 except Exception as e:
-                    print(f"⚠️ 读取索引失败: {e}")
+                    print(f"[Warn] 读取索引失败: {e}")
             return {}
 
     @classmethod
@@ -150,7 +150,7 @@ class SessionStore:
             with open(path, "r", encoding="utf-8") as f:
                 return json.load(f)
         except Exception as e:
-            print(f"❌ 读取会话 {session_id} 分支 {branch_id} 失败: {e}")
+            print(f"[Error] 读取会话 {session_id} 分支 {branch_id} 失败: {e}")
             return []
 
     @classmethod
@@ -180,7 +180,7 @@ class SessionStore:
                     json.dump(history, f, ensure_ascii=False, indent=2)
                 os.replace(temp_path, path)
             except Exception as e:
-                print(f"⚠️ 保存分支 {branch_id} 失败: {e}")
+                print(f"[Warn] 保存分支 {branch_id} 失败: {e}")
                 return
 
         # 更新文件夹内的拓扑元数据 meta.json
