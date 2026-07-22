@@ -7,24 +7,20 @@ import time
 
 from json_repair import repair_json
 
+from src.agent.hook_handler import HookHandler
 from src.agent.session_store import SessionStore
 from src.model import AgentModel
 from src.tool import AGENT_TOOL_SCHEMA
 from src.tool.utils.route import dispatch_tool
 from src.utils.config import (
-    AGENT_CORE_DIR,
     BUFFER_DIR,
-    SOUL_MD_PATH,
-    SYSTEM_RULES_DIR,
     get_agent_model,
 )
 from src.utils.tracker import Tracker
 
-MEMORY_MD_PATH = os.path.join(AGENT_CORE_DIR, "MEMORY.md")
-
 
 class Agent:
-    def __init__(self, session_id, initial_history=None, name=None, save_callback=None):
+    def __init__(self, session_id, initial_history=None, name=None, save_callback=None, paradigm_path="src/agent/system_rules/PARADIGM.yaml"):
         self.name = name or get_agent_model()
         self.session_id = session_id
         # === 常驻内存记忆缓存 ===
@@ -34,122 +30,50 @@ class Agent:
         self.pending_force_push = []
         self.window_token = 0
         self._stop_event = threading.Event()
-        self._history_lock = threading.RLock()  # 核心修复：必须升级为可重入锁
+        self._history_lock = threading.RLock()
         self._push_lock = threading.RLock()
         self._save_callback = save_callback
         self.model = AgentModel(self.session_id)
         self.model.bind_task(self.session_id, "AgentMain")
         self.tracker = Tracker()
         self.current_history = initial_history or []
-
-        # 如果是彻头彻尾的全新初始化（没有任何历史），此时才 Build 最新规则
+        self.hook_handler = HookHandler(paradigm_path)
         if not self.current_history:
             fresh_prompt = self._build_system_prompt()
             self.current_history = [{"role": "system", "content": fresh_prompt}]
-            # 注入跨会话共享短时缓存（独立消息，不污染 KV 首节点）
-            if self.memo:
-                memo_summary = json.dumps(self.memo, ensure_ascii=False, indent=2)
-                self.current_history.append(
-                    {
-                        "role": "system",
-                        "content": f"【系统通知：这是一个全新的会话。以下是系统在创建这个会话前的短时共享记忆缓存，或许对你有帮助】\n{memo_summary}",
-                    }
-                )
+
+    def dump_agent_state(self):
+        with self._history_lock:
+            return {
+                "session_id": self.session_id,
+                "current_history": self.current_history,
+                "hook_handler_state": self.hook_handler.get_state()
+            }
+
+    def load_agent_state(self, state_dict):
+        with self._history_lock:
+            self.session_id = state_dict["session_id"]
+            self.current_history = state_dict["current_history"]
+            self.hook_handler.load_state(state_dict.get("hook_handler_state"))
 
     def _build_system_prompt(self):
-        soul_md, system_rules, memory_md = "", "", ""
-        skills_info, workshops_info = "", ""
+        results = self.hook_handler.execute("on_build_system_prompt", agent=self, epoch=0)
+        prompt_parts = [res["inject_prompt"] for res in results if res.get("inject_prompt")]
+        return "\n\n---\n\n".join(prompt_parts)
 
-        def _extract_desc(file_path):
-            if not os.path.exists(file_path):
-                return None
-            try:
-                with open(file_path, "r", encoding="utf-8") as f:
-                    in_front_matter = False
-                    for line in f:
-                        line = line.strip()
-                        if line == "---":
-                            if not in_front_matter:
-                                in_front_matter = True
-                                continue
-                            else:
-                                break
-
-                        if in_front_matter and line.lower().startswith("description:"):
-                            val = line.split(":", 1)[1].strip()
-                            if (val.startswith('"') and val.endswith('"')) or (
-                                val.startswith("'") and val.endswith("'")
-                            ):
-                                val = val[1:-1]
-                            return val
-            except Exception:
-                pass
-            return None
-
-        try:
-            from src.utils.config import AGENT_CORE_DIR, SKILL_DIR
-
-            info_json_path = os.path.join(AGENT_CORE_DIR, "info.json")
-            if os.path.exists(info_json_path):
-                with open(info_json_path, "r", encoding="utf-8") as f:
-                    info_data = json.load(f)
-
-                skills = info_data.get("skills", [])
-                if skills:
-                    skills_info += "以下是核心skill，所有的skill以本清单为第一优先级，请在工作过程中遇到对应任务就使用Fetch工具进行调用！！！\n"
-                    for skill in skills:
-                        desc = _extract_desc(os.path.join(SKILL_DIR, skill, "SKILL.md"))
-                        if desc:
-                            skills_info += f"- {skill}:{desc}\n"
-                        else:
-                            skills_info += f"- {skill}（技能加载失败，可能未安装）\n"
-                    skills_info += "对于本清单以外的其它普通skill，请使用Search工具进行检索和发现。\n"
-
-                workshops = info_data.get("workshops", [])
-                if workshops:
-                    workshops_info += "以下是系统常驻作坊，请在收到特定任务的时候进入对应的文件夹内读取对应项目的AGENTS.md或WORKSHOP.md进行工作，\n"
-                    for ws in workshops:
-                        desc = _extract_desc(os.path.join(ws, "WORKSHOP.md"))
-                        if desc:
-                            workshops_info += f"- {ws}:{desc}\n"
-                        else:
-                            workshops_info += (
-                                f"- {ws}（作坊加载失败，可能未找到WORKSHOP.md）\n"
-                            )
-                    workshops_info += "如无相关作坊，直接在沙盒内工作即可\n"
-
-            if os.path.exists(SOUL_MD_PATH):
-                with open(SOUL_MD_PATH, "r", encoding="utf-8") as f:
-                    soul_md = f.read().strip()
-            if os.path.exists(SYSTEM_RULES_DIR):
-                rule_files = sorted(
-                    [f for f in os.listdir(SYSTEM_RULES_DIR) if f.endswith(".md")]
-                )
-                for rf in rule_files:
-                    with open(
-                        os.path.join(SYSTEM_RULES_DIR, rf), "r", encoding="utf-8"
-                    ) as f:
-                        system_rules += f.read().strip() + "\n\n"
-                system_rules = system_rules.strip()
-            if os.path.exists(MEMORY_MD_PATH):
-                with open(MEMORY_MD_PATH, "r", encoding="utf-8") as f:
-                    memory_md = f.read().strip()
-        except Exception as e:
-            print(f"⚠️ Prompt 构建发生异常: {e}")
-
-        combined = system_rules
-        if soul_md:
-            combined += f"\n\n---\n\n{soul_md}"
-
-        if skills_info:
-            combined += f"\n\n---\n\n# 【核心技能档案】\n\n{skills_info}"
-        if workshops_info:
-            combined += f"\n\n---\n\n# 【常驻作坊 (Workshops)】\n\n{workshops_info}"
-
-        if memory_md:
-            combined += f"\n\n---\n\n# 【系统长期记忆档案】\n\n{memory_md}"
-
-        return combined
+    def _inject_hook_results(self, stage_name, epoch=0, **kwargs):
+        """统一的钩子执行与历史记录注入封装，返回 True 表示全部成功"""
+        results = self.hook_handler.execute(stage_name, agent=self, epoch=epoch, **kwargs)
+        all_success = True
+        for res in results:
+            if not res.get("success"):
+                all_success = False
+            if res.get("inject_prompt"):
+                self._append_history({
+                    "role": "user",
+                    "content": {"type": "workflow_hint", "content": res["inject_prompt"]}
+                })
+        return all_success
 
     def stop(self):
         self._stop_event.set()
@@ -311,7 +235,6 @@ class Agent:
 
     def process_message(self):
         current_interaction_id = self._increment_interaction_id()
-
         self._bg_search_task_id = current_interaction_id
 
         user_texts = [
@@ -323,10 +246,7 @@ class Agent:
         is_real_user_input = bool(merged_input)
 
         if is_real_user_input:
-            self.has_search = False
-            self.has_memo_search = False
-            self.has_memo_add = False
-
+            self._inject_hook_results("on_loop_start", epoch=0)
             def background_hint_check(task_id):
                 if getattr(self, "_bg_search_task_id", None) != task_id:
                     return
@@ -381,14 +301,29 @@ class Agent:
                     ):
                         return
 
+                    already_searched = False
+                    already_memo_searched = False
+                    with self._history_lock:
+                        for msg in reversed(self.current_history):
+                            if msg.get("role") == "user":
+                                break
+                            if msg.get("role") == "assistant" and msg.get("tool_calls"):
+                                for tc in msg.get("tool_calls"):
+                                    func_name = tc.get("function", {}).get("name", "")
+                                    args_str = tc.get("function", {}).get("arguments", "")
+                                    if func_name == "Search" and any(r in args_str for r in ["local", "skill", "mcp"]):
+                                        already_searched = True
+                                    elif func_name == "Memo" and '"action":"search"' in args_str.replace(" ", ""):
+                                        already_memo_searched = True
+
                     hints = []
-                    if not self.has_search and total_tools > 0:
+                    if not already_searched and total_tools > 0:
                         hints.append(
-                            f"检查到有 {total_tools} 条 skill/mcp 与本轮对话的总输入语义高度相关 (绝对匹配度 > 0.5)，可以尝试使用 Search 工具(route='local')检索相关数据。"
+                            f"检查到有 {total_tools} 条 skill/mcp 与本轮对话的总输入语义高度相关，可以尝试使用 Search 工具(route='local')检索相关数据。"
                         )
-                    if not self.has_memo_search and valid_memos > 0:
+                    if not already_memo_searched and valid_memos > 0:
                         hints.append(
-                            f"检查到记忆库中有 {valid_memos} 条经验/事件与本轮对话的总输入高度相关 (绝对匹配度 > 0.5)，可以尝试使用 Memo 工具(action='search')检索。"
+                            f"检查到记忆库中有 {valid_memos} 条经验/事件与本轮对话的总输入高度相关，可以尝试使用 Memo 工具(action='search')检索。"
                         )
 
                     if hints:
@@ -402,8 +337,12 @@ class Agent:
                 daemon=True,
             ).start()
 
+        used_tools = {}
+        loop_epoch = 0
         while True:
             try:
+                loop_epoch += 1
+                self._inject_hook_results("on_loop_epoch", epoch=loop_epoch)
                 if self._get_current_interaction_id() != current_interaction_id:
                     print(
                         f"⚠️ [隔离] 检测到交互ID过期 ({current_interaction_id} != {self._get_current_interaction_id()})，丢弃旧响应"
@@ -411,10 +350,11 @@ class Agent:
                     break
 
                 self._checker()
-                safe_history = self.get_history()
-                response = self.model.chat(
-                    messages=safe_history, tools=self._get_tool_schema()
-                )
+
+                with self._history_lock:
+                    safe_history = list(self.current_history)
+
+                response = self.model.chat(messages=safe_history, tools=self._get_tool_schema())
 
                 if self._get_current_interaction_id() != current_interaction_id:
                     print("⚠️ [隔离] 网络响应返回后检测到交互ID过期，丢弃响应")
@@ -424,13 +364,39 @@ class Agent:
                 msg_resp = response.choices[0].message
                 has_tools = self._process_assistant_message(msg_resp)
 
-                if not has_tools:
-                    print("✅ 消息处理闭环结束。")
-                    break
+                if msg_resp.tool_calls:
+                    for t in msg_resp.tool_calls:
+                        args_dict = {}
+                        if t.function.arguments:
+                            try:
+                                args_dict = json.loads(t.function.arguments)
+                            except Exception:
+                                pass
+                        used_tools.setdefault(t.function.name, []).append(args_dict)
 
-                should_pause = self._execute_tool_calls(msg_resp.tool_calls)
-                if should_pause:
-                    break
+                if has_tools:
+                    should_pause = self._execute_tool_calls(msg_resp.tool_calls)
+                    all_tool_success = self._inject_hook_results(
+                        "on_tool_calling",
+                        epoch=loop_epoch,
+                        used_tools=used_tools
+                    )
+                    if not all_tool_success:
+                        continue
+                    if should_pause:
+                        break
+                else:
+                    all_success = self._inject_hook_results(
+                        "on_loop_end",
+                        epoch=loop_epoch,
+                        used_tools=used_tools
+                    )
+                    if all_success:
+                        print("[Debug] 所有条件及拦截器检验通过，正常关闭循环。")
+                        break
+                    else:
+                        print(f"[Debug] 当前第 {loop_epoch} 轮条件不足，被打回重新触发模型迭代。")
+                        continue
 
             except KeyboardInterrupt:
                 self._handle_interaction_error(is_interrupt=True)
@@ -439,11 +405,7 @@ class Agent:
                 self._handle_interaction_error(e=e)
                 break
 
-        if is_real_user_input and getattr(self, "has_memo_add", False) is False:
-            self.force_push(
-                "检查到本轮对话你未调用 Memo 工具进行记忆总结，最好总结一下，让你的能力随记忆系统的丰富而增强，如果你觉得本轮对话没什么好记录的，可以忽略，非强制性要求。",
-                type="system",
-            )
+        self.save_checkpoint()
 
     def _process_assistant_message(self, msg_resp) -> bool:
         assist_msg = {"role": "assistant", "content": msg_resp.content or ""}
@@ -494,19 +456,6 @@ class Agent:
                     }
                 )
                 continue
-
-            if target_tool_name == "Search" and arguments.get("route") in [
-                "local",
-                "skill",
-                "mcp",
-            ]:
-                self.has_search = True
-            elif target_tool_name == "Memo":
-                action = arguments.get("action")
-                if action == "search":
-                    self.has_memo_search = True
-                elif action == "add":
-                    self.has_memo_add = True
 
             if target_tool_name == "Bash":
                 arguments["session_id"] = self.session_id
