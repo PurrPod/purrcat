@@ -6,7 +6,6 @@ from src.memory.config import (
     RAG_TOP_K_EVENTS,
     RAG_TOP_K_EXPERIENCES,
     RAG_TOP_K_GRAPH_NODES,
-    RAG_MAX_GRAPH_DEPTH,
 )
 
 from .storage.event_engine import EventEngine
