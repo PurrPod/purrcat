@@ -147,15 +147,6 @@ class AgentManager:
         new_id = SessionStore._generate_id()
         clean_history = [{"role": "system", "content": fresh_prompt}]
 
-        if hasattr(self._agent, "memo") and self._agent.memo:
-            memo_summary = json.dumps(self._agent.memo, ensure_ascii=False, indent=2)
-            clean_history.append(
-                {
-                    "role": "system",
-                    "content": f"【系统通知：这是一个全新的会话。以下是共享记忆缓存：】\n{memo_summary}",
-                }
-            )
-
         SessionStore.save_session(
             session_id=new_id,
             history=clean_history,
