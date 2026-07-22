@@ -1,6 +1,7 @@
 name: "default"
 description: "default system loop"
 path: "${os.getcwd}"
+loop_end_max_retry: 3
 trigger:
   - cron:
       time: "08:08"

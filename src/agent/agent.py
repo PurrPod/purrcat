@@ -340,6 +340,7 @@ class Agent:
 
         used_tools = {}
         loop_epoch = 0
+        loop_end_retry = 0
         while True:
             try:
                 loop_epoch += 1
@@ -390,12 +391,14 @@ class Agent:
                     all_success = self._inject_hook_results(
                         "on_loop_end",
                         epoch=loop_epoch,
-                        used_tools=used_tools
+                        used_tools=used_tools,
+                        loop_end_retry=loop_end_retry
                     )
                     if all_success:
                         print("[Debug] 所有条件及拦截器检验通过，正常关闭循环。")
                         break
                     else:
+                        loop_end_retry += 1
                         hint_data = {"type": "workflow_hint", "content": "未满足结束循环条件，已自动打回"}
                         self._append_history({
                             "role": "user",

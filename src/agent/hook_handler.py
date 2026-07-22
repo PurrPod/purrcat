@@ -80,6 +80,16 @@ class HookHandler:
                 if res:
                     results.append(res)
 
+        # on_loop_end 重试次数限制：超过上限则强制放行
+        if stage_name == "on_loop_end" and results:
+            all_success = all(r.get("success") for r in results)
+            if not all_success:
+                retry_count = kwargs.get("loop_end_retry", 0)
+                max_retry = self.config.get("loop_end_max_retry", 3)
+                if retry_count >= max_retry:
+                    print(f"[Warn] on_loop_end 已重试 {retry_count} 次，超过最大重试次数 {max_retry}，强制放行。")
+                    return [{"success": True, "inject_prompt": ""}]
+
         return results
 
     # ==========================================
