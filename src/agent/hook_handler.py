@@ -162,7 +162,7 @@ class HookHandler:
         used_tools = kwargs.get("used_tools", {})
 
         successed_prompt = params.get("successed_prompt", "")
-        failed_prompt = params.get("failed_prompt", f"未检测到工具 {tool_name} 的合法调用记录")
+        failed_prompt = params.get("failed_prompt", "")
 
         if tool_name not in used_tools:
             return {"success": False, "inject_prompt": failed_prompt}

@@ -396,6 +396,11 @@ class Agent:
                         print("[Debug] 所有条件及拦截器检验通过，正常关闭循环。")
                         break
                     else:
+                        hint_data = {"type": "workflow_hint", "content": "未满足结束循环条件，已自动打回"}
+                        self._append_history({
+                            "role": "user",
+                            "content": json.dumps(hint_data, ensure_ascii=False)
+                        })
                         print(f"[Debug] 当前第 {loop_epoch} 轮条件不足，被打回重新触发模型迭代。")
                         continue
 
