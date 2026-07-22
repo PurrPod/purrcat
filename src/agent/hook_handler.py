@@ -87,7 +87,9 @@ class HookHandler:
                 retry_count = kwargs.get("loop_end_retry", 0)
                 max_retry = self.config.get("loop_end_max_retry", 3)
                 if retry_count >= max_retry:
-                    print(f"[Warn] on_loop_end 已重试 {retry_count} 次，超过最大重试次数 {max_retry}，强制放行。")
+                    print(
+                        f"[Warn] on_loop_end 已重试 {retry_count} 次，超过最大重试次数 {max_retry}，强制放行。"
+                    )
                     return [{"success": True, "inject_prompt": ""}]
 
         return results
@@ -152,13 +154,23 @@ class HookHandler:
 
         try:
             if return_log:
-                process = subprocess.run(command, shell=True, capture_output=True, text=True)
+                process = subprocess.run(
+                    command, shell=True, capture_output=True, text=True
+                )
                 if process.returncode == 0:
                     return {"success": True, "inject_prompt": process.stdout.strip()}
                 else:
-                    return {"success": False, "inject_prompt": process.stderr.strip() or failed_prompt}
+                    return {
+                        "success": False,
+                        "inject_prompt": process.stderr.strip() or failed_prompt,
+                    }
             else:
-                process = subprocess.Popen(command, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                process = subprocess.Popen(
+                    command,
+                    shell=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
                 process.wait()
                 if process.returncode == 0:
                     return {"success": True, "inject_prompt": ""}
@@ -200,7 +212,29 @@ class HookHandler:
 
     def _memo_injection(self, params, **kwargs):
         agent = kwargs.get("agent")
-        if agent and hasattr(agent, 'memo') and agent.memo:
-            content = f"【系统共享记忆缓存】\n{json.dumps(agent.memo, ensure_ascii=False, indent=2)}"
-            return {"success": True, "inject_prompt": content}
-        return {"success": True, "inject_prompt": ""}
+        if not agent or not hasattr(agent, "memo") or not agent.memo:
+            return {"success": True, "inject_prompt": ""}
+
+        memo_type = params.get("type", "full")
+        count = min(int(params.get("count", 10)), 30)
+        recent = agent.memo[-count:] if count > 0 else []
+
+        if memo_type == "full":
+            filtered = recent
+        elif memo_type == "light":
+            filtered = []
+            for m in recent:
+                entry = {}
+                for key in ["events", "work_exp", "user_profile"]:
+                    if key in m:
+                        entry[key] = m[key]
+                if entry:
+                    filtered.append(entry)
+        else:
+            filtered = []
+            for m in recent:
+                if memo_type in m:
+                    filtered.append({memo_type: m[memo_type]})
+
+        content = f"【系统共享记忆缓存】\n{json.dumps(filtered, ensure_ascii=False, indent=2)}"
+        return {"success": True, "inject_prompt": content}

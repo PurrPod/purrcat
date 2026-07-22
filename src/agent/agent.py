@@ -20,7 +20,14 @@ from src.utils.tracker import Tracker
 
 
 class Agent:
-    def __init__(self, session_id, initial_history=None, name=None, save_callback=None, paradigm_path="src/agent/system_rules/PARADIGM.yaml"):
+    def __init__(
+        self,
+        session_id,
+        initial_history=None,
+        name=None,
+        save_callback=None,
+        paradigm_path="src/agent/system_rules/PARADIGM.yaml",
+    ):
         self.name = name or get_agent_model()
         self.session_id = session_id
         # === 常驻内存记忆缓存 ===
@@ -47,7 +54,7 @@ class Agent:
             return {
                 "session_id": self.session_id,
                 "current_history": self.current_history,
-                "hook_handler_state": self.hook_handler.get_state()
+                "hook_handler_state": self.hook_handler.get_state(),
             }
 
     def load_agent_state(self, state_dict):
@@ -57,23 +64,31 @@ class Agent:
             self.hook_handler.load_state(state_dict.get("hook_handler_state"))
 
     def _build_system_prompt(self):
-        results = self.hook_handler.execute("on_build_system_prompt", agent=self, epoch=0)
-        prompt_parts = [res["inject_prompt"] for res in results if res.get("inject_prompt")]
+        results = self.hook_handler.execute(
+            "on_build_system_prompt", agent=self, epoch=0
+        )
+        prompt_parts = [
+            res["inject_prompt"] for res in results if res.get("inject_prompt")
+        ]
         return "\n\n---\n\n".join(prompt_parts)
 
     def _inject_hook_results(self, stage_name, epoch=0, **kwargs):
         """统一的钩子执行与历史记录注入封装，返回 True 表示全部成功"""
-        results = self.hook_handler.execute(stage_name, agent=self, epoch=epoch, **kwargs)
+        results = self.hook_handler.execute(
+            stage_name, agent=self, epoch=epoch, **kwargs
+        )
         all_success = True
         for res in results:
             if not res.get("success"):
                 all_success = False
             if res.get("inject_prompt"):
                 hint_data = {"type": "workflow_hint", "content": res["inject_prompt"]}
-                self._append_history({
-                    "role": "user",
-                    "content": json.dumps(hint_data, ensure_ascii=False)
-                })
+                self._append_history(
+                    {
+                        "role": "user",
+                        "content": json.dumps(hint_data, ensure_ascii=False),
+                    }
+                )
         return all_success
 
     def stop(self):
@@ -248,6 +263,7 @@ class Agent:
 
         if is_real_user_input:
             self._inject_hook_results("on_loop_start", epoch=0)
+
             def background_hint_check(task_id):
                 if getattr(self, "_bg_search_task_id", None) != task_id:
                     return
@@ -311,10 +327,18 @@ class Agent:
                             if msg.get("role") == "assistant" and msg.get("tool_calls"):
                                 for tc in msg.get("tool_calls"):
                                     func_name = tc.get("function", {}).get("name", "")
-                                    args_str = tc.get("function", {}).get("arguments", "")
-                                    if func_name == "Search" and any(r in args_str for r in ["local", "skill", "mcp"]):
+                                    args_str = tc.get("function", {}).get(
+                                        "arguments", ""
+                                    )
+                                    if func_name == "Search" and any(
+                                        r in args_str for r in ["local", "skill", "mcp"]
+                                    ):
                                         already_searched = True
-                                    elif func_name == "Memo" and '"action":"search"' in args_str.replace(" ", ""):
+                                    elif (
+                                        func_name == "Memo"
+                                        and '"action":"search"'
+                                        in args_str.replace(" ", "")
+                                    ):
                                         already_memo_searched = True
 
                     hints = []
@@ -356,7 +380,9 @@ class Agent:
                 with self._history_lock:
                     safe_history = list(self.current_history)
 
-                response = self.model.chat(messages=safe_history, tools=self._get_tool_schema())
+                response = self.model.chat(
+                    messages=safe_history, tools=self._get_tool_schema()
+                )
 
                 if self._get_current_interaction_id() != current_interaction_id:
                     print("[Warn.Session] 网络响应返回后检测到交互ID过期，丢弃响应")
@@ -379,9 +405,7 @@ class Agent:
                 if has_tools:
                     should_pause = self._execute_tool_calls(msg_resp.tool_calls)
                     all_tool_success = self._inject_hook_results(
-                        "on_tool_calling",
-                        epoch=loop_epoch,
-                        used_tools=used_tools
+                        "on_tool_calling", epoch=loop_epoch, used_tools=used_tools
                     )
                     if not all_tool_success:
                         continue
@@ -392,19 +416,26 @@ class Agent:
                         "on_loop_end",
                         epoch=loop_epoch,
                         used_tools=used_tools,
-                        loop_end_retry=loop_end_retry
+                        loop_end_retry=loop_end_retry,
                     )
                     if all_success:
                         print("[Debug] 所有条件及拦截器检验通过，正常关闭循环。")
                         break
                     else:
                         loop_end_retry += 1
-                        hint_data = {"type": "workflow_hint", "content": "未满足结束循环条件，已自动打回"}
-                        self._append_history({
-                            "role": "user",
-                            "content": json.dumps(hint_data, ensure_ascii=False)
-                        })
-                        print(f"[Debug] 当前第 {loop_epoch} 轮条件不足，被打回重新触发模型迭代。")
+                        hint_data = {
+                            "type": "workflow_hint",
+                            "content": "未满足结束循环条件，已自动打回",
+                        }
+                        self._append_history(
+                            {
+                                "role": "user",
+                                "content": json.dumps(hint_data, ensure_ascii=False),
+                            }
+                        )
+                        print(
+                            f"[Debug] 当前第 {loop_epoch} 轮条件不足，被打回重新触发模型迭代。"
+                        )
                         continue
 
             except KeyboardInterrupt:
@@ -506,8 +537,8 @@ class Agent:
                 memo_data = arguments.get("memo_data")
                 if memo_data:
                     self.memo.append(memo_data)
-                    if len(self.memo) > 6:
-                        self.memo = self.memo[-6:]
+                    if len(self.memo) > 30:
+                        self.memo = self.memo[-30:]
                     SessionStore.save_global_memo(self.memo)
                 from src.utils.config import get_model_config
 
@@ -519,7 +550,9 @@ class Agent:
 
     def _handle_interaction_error(self, e=None, is_interrupt=False):
         content_msg = (
-            "[Warn.Interrupt] 运行被强制中断。" if is_interrupt else f"[Error.Fault] 交互断层: {e}"
+            "[Warn.Interrupt] 运行被强制中断。"
+            if is_interrupt
+            else f"[Error.Fault] 交互断层: {e}"
         )
         print(content_msg)
 

@@ -17,6 +17,7 @@ def _force_rmtree(path: str, max_retries: int = 3, retry_delay: float = 0.1):
         max_retries: 最大重试次数
         retry_delay: 重试间隔（秒）
     """
+
     def _on_exc(exc):
         os.chmod(exc.filename, stat.S_IWRITE)
         return True
