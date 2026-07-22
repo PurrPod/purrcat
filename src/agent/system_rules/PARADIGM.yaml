@@ -4,10 +4,10 @@ path: "${os.getcwd}"
 trigger:
   - cron:
       time: "08:08"
-      injection: "闹钟响了"
+      injection: "【Demo】闹钟响了"
   - cron:
       time: "12:00"
-      injection: "该吃饭了"
+      injection: "【Demo】该吃饭了"
 hooks:
   on_build_system_prompt:
     - file_operation: 
@@ -26,29 +26,25 @@ hooks:
         type: "full"
   on_loop_start:
     - injection: 
-        content: "请调用对应的skill完成任务"
+        content: "如遇复杂任务，请先编排好主线路的执行计划，先规划TODO后执行"
     - file_operation:
         action: "exist_check"
-        path: "xxx"
-        failed_prompt: "检测到xxx文件不存在"
+        path: "src/agent/system_rules/AGENTS.md"
+        failed_prompt: "检测到系统指导文件不存在"
   on_loop_epoch:
     - injection:
-        interval: 5
-        content: "hi"
+        delay: 5
+        content: "[system regular hint]在执行任务前可使用 Search 工具和 Memo 工具搜索有无对应的能力与历史经验"
+    - injection:
+        interval: 10
+        content: "[system regular hint]请随时按进度更新主路规划或与用户对齐需求，防止跑偏"
   on_loop_end:
     # only ALL check passed can exit the loop
-    - file_operation:
-        path: "xxx"
-        action: "write_in"
-        content: "xxx"
-    - command_run:
-        command: "xxx"
     - tool_use_check:
-        name: "memo"
+        name: "Memo"
         parameter_check:
           - action: "add"
-        interval:
-        failed_prompt: "如无经验更新，可添加短期记忆以免会话切换时失忆"
+        failed_prompt: "检查到本轮对话你未调用 Memo 工具进行记忆总结，最好总结一下，让你的能力随记忆系统的丰富而增强，如无经验更新，可添加短期记忆以免会话切换时失忆"
   on_tool_calling:
     - tool_use_check:
         name: "ComputerUse"
