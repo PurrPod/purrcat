@@ -191,49 +191,55 @@ class Agent:
     def _check_and_fix_toolchain(self):
         """
         检查工具链完整性（支持多工具调用）。
-        如果检测到 assistant 发起了 tool_calls，但尚未获得全部 tool 的返回结果（例如被强行打断或报错），
-        则撤回该轮的所有残缺 tool 消息，并修正/删除 assistant 消息。
+        从尾部往回遍历，找到最近一条带 tool_calls 但 tool 消息不完整的 assistant 消息，
+        清理其后所有消息（包括不完整的 tool 消息、中间插入的 workflow_hint、错误消息等），
+        并修正/删除该 assistant 消息。
         """
         if not self.current_history:
             return
 
         with self._history_lock:
-            idx = len(self.current_history) - 1
+            assistant_idx = -1
+            # 1. 从尾部往回找第一条带 tool_calls 的 assistant 消息
+            for i in range(len(self.current_history) - 1, -1, -1):
+                msg = self.current_history[i]
+                if msg.get("role") == "assistant" and msg.get("tool_calls"):
+                    assistant_idx = i
+                    break
 
-            # 1. 往前找，跳过所有尾部的 tool 消息
-            while idx >= 0 and self.current_history[idx].get("role") == "tool":
-                idx -= 1
+            if assistant_idx < 0:
+                return
 
-            # 2. 如果找到的上一条是 assistant 且带有 tool_calls
-            if idx >= 0 and self.current_history[idx].get("role") == "assistant":
-                assistant_msg = self.current_history[idx]
-                if assistant_msg.get("tool_calls"):
-                    requested_ids = set(tc["id"] for tc in assistant_msg["tool_calls"])
-                    # tool messages 在 idx+1 到末尾
-                    answered_ids = set(
-                        msg.get("tool_call_id")
-                        for msg in self.current_history[idx + 1 :]
-                    )
+            assistant_msg = self.current_history[assistant_idx]
+            requested_ids = set(tc["id"] for tc in assistant_msg["tool_calls"])
 
-                    # 发现不匹配！说明中断了！
-                    if requested_ids != answered_ids:
-                        print(
-                            f"[Warn.ToolChain] 检测到未完成的多工具调用链 (请求: {len(requested_ids)}, 实际返回: {len(answered_ids)})，正在清理并撤回悬空节点..."
-                        )
+            # 2. 收集这条 assistant 之后所有 tool 消息的 id
+            answered_ids = set()
+            for msg in self.current_history[assistant_idx + 1 :]:
+                if msg.get("role") == "tool" and msg.get("tool_call_id"):
+                    answered_ids.add(msg["tool_call_id"])
 
-                        # A. 弹出后面的所有残缺 tool 消息
-                        while len(self.current_history) > idx + 1:
-                            self.current_history.pop()
+            # 3. 发现不匹配，说明工具链断裂
+            if requested_ids != answered_ids:
+                missing = requested_ids - answered_ids
+                extra = answered_ids - requested_ids
+                print(
+                    f"[Warn.ToolChain] 检测到未完成的多工具调用链 (请求: {len(requested_ids)}, 实际返回: {len(answered_ids)}, 缺失: {len(missing)}, 多余: {len(extra)})，正在清理并撤回悬空节点..."
+                )
 
-                        # B. 如果 assistant 还有实质性的回复文本，保留文本，只摘除 tool_calls
-                        if (
-                            assistant_msg.get("content")
-                            and str(assistant_msg.get("content")).strip()
-                        ):
-                            del assistant_msg["tool_calls"]
-                        else:
-                            # 否则这整条 assistant 消息都是多余的，直接弹出
-                            self.current_history.pop()
+                # A. 弹出这条 assistant 之后的所有消息
+                while len(self.current_history) > assistant_idx + 1:
+                    self.current_history.pop()
+
+                # B. 如果 assistant 还有实质性的回复文本，保留文本，只摘除 tool_calls
+                if (
+                    assistant_msg.get("content")
+                    and str(assistant_msg.get("content")).strip()
+                ):
+                    del assistant_msg["tool_calls"]
+                else:
+                    # 否则这整条 assistant 消息都是多余的，直接弹出
+                    self.current_history.pop()
 
     def _checker(self):
         local_push = []
@@ -241,7 +247,6 @@ class Agent:
             if self.pending_force_push:
                 local_push = self.pending_force_push.copy()
                 self.pending_force_push.clear()
-
         if local_push:
             self._check_and_fix_toolchain()
             batch_data = {"events": local_push}
@@ -365,6 +370,7 @@ class Agent:
         used_tools = {}
         loop_epoch = 0
         loop_end_retry = 0
+        self._check_and_fix_toolchain()
         while True:
             try:
                 loop_epoch += 1
@@ -502,7 +508,14 @@ class Agent:
             args_str = str(arguments)
 
             current_iid = self._get_current_interaction_id()
-            result_content = dispatch_tool(target_tool_name, arguments)
+            try:
+                result_content = dispatch_tool(target_tool_name, arguments)
+            except Exception as e:
+                result_content = json.dumps(
+                    {"error": f"工具执行异常: {str(e)}", "type": "error"},
+                    ensure_ascii=False,
+                )
+                print(f"[Warn.Tool] 工具 {target_tool_name} 执行抛出异常: {e}")
 
             if self._get_current_interaction_id() != current_iid:
                 print(
