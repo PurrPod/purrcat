@@ -70,7 +70,7 @@ class MCPSearcher:
             from rank_bm25 import BM25Okapi  # 局部导入
 
             self.bm25 = BM25Okapi(tokenized_corpus)
-            print("✅ [Background] MCP 向量矩阵构建完毕。")
+            print("[*] MCP 向量矩阵构建完毕。")
 
     def reload_index(self):
         """暴露给外部调用的热更新接口"""

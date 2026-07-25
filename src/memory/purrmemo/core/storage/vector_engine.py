@@ -80,9 +80,9 @@ class VectorEngine(metaclass=SingletonMeta):
         if self._embedding_model is None:
             from sentence_transformers import SentenceTransformer
 
-            print("⏳ [LazyLoad] 加载 SentenceTransformer 模型...")
+            print("[+] 加载 SentenceTransformer 模型...")
             self._embedding_model = SentenceTransformer(self.embedding_model_name)
-            print("✅ [LazyLoad] SentenceTransformer 加载完毕。")
+            print("[*] SentenceTransformer 加载完毕。")
         return self._embedding_model
 
     def _get_embedding(self, text):

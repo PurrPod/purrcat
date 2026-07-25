@@ -122,22 +122,22 @@ class DockerManager:
             try:
                 self.container.reload()
                 if self.container.status == "running":
-                    print(f"✅ 复用已有沙盒 ({self.container_name})，状态: running")
+                    print(f"[*] 复用已有沙盒 ({self.container_name})，状态: running")
                     return
             except Exception:
                 pass
 
         if self._started:
-            print(f"⚠️ 沙盒 ({self.container_name}) 状态异常，尝试重启...")
+            print(f"[-] 沙盒 ({self.container_name}) 状态异常，尝试重启...")
 
         # ---------- 替换旧容器清理逻辑：唤醒休眠容器 ----------
         try:
             existing_container = self.client.containers.get(self.container_name)
             if existing_container.status != "running":
-                print(f"🔄 发现休眠的专属沙盒 ({self.container_name})，正在唤醒...")
+                print(f"[-] 发现休眠沙盒 ({self.container_name})，正在唤醒...")
                 existing_container.start()
             else:
-                print(f"✅ 专属沙盒 ({self.container_name}) 已在运行。")
+                print(f"[*] 专属沙盒 ({self.container_name}) 已在运行。")
 
             self.container = existing_container
             self._started = True
@@ -202,13 +202,11 @@ class DockerManager:
 
         if self.container:
             try:
-                print(f"🛑 正在让沙盒 ({self.container_name}) 休眠...")
+                print(f"[-] 正在让沙盒 ({self.container_name}) 休眠...")
                 self.container.stop(timeout=2)
-                # 【关键修改】：不再删除容器和提交镜像
-                # 这样下次 start() 就能拿到原来的环境，而且不会产生无数个冗余镜像
-                print("✅ 沙盒已休眠，所有的依赖安装和系统变更已被保留在这台虚拟机中。")
+                print("[*] 沙盒已休眠，所有的依赖安装和系统变更已被保留")
             except Exception as e:
-                print(f"⚠️ 休眠沙盒失败: {e}")
+                print(f"[*] 休眠沙盒失败: {e}")
 
         self.container = None
 

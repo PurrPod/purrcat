@@ -62,18 +62,18 @@ class SkillSearcher:
         with self._lock:
             if not self.corpus:
                 return
-            print(f"⏳ [Background] 正在为 {len(self.skills)} 个 Skill 构建向量矩阵...")
+            print(f"[+] 正在为 {len(self.skills)} 个 Skill 构建向量矩阵...")
             self.corpus_matrix = self.embedding_searcher.encode(self.corpus)
             tokenized_corpus = [hybrid_tokenize(doc) for doc in self.corpus]
             from rank_bm25 import BM25Okapi  # 局部导入
 
             self.bm25 = BM25Okapi(tokenized_corpus)
-            print("✅ [Background] Skill 向量矩阵构建完毕。")
+            print("[*] Skill 向量矩阵构建完毕。")
 
     def reload_index(self, skill_dir: str = SKILL_DIR):
         """暴露给外部调用的热更新接口"""
         with self._lock:
-            print("🔄 正在扫描本地文件，重载 SkillSearcher 内存索引...")
+            print("[+] 正在扫描本地文件，重载 SkillSearcher 内存索引...")
             self._initialize(skill_dir)
 
     def search(self, query: str, top_k: int = 3) -> List[Dict]:
@@ -84,13 +84,13 @@ class SkillSearcher:
                 return []
 
             if self.corpus_matrix is None or self.bm25 is None:
-                print("⏳ [JIT] 检测到索引未就绪，正在强制同步构建...")
+                print("[+] 检测到索引未就绪，正在强制同步构建...")
                 self.corpus_matrix = self.embedding_searcher.encode(self.corpus)
                 from rank_bm25 import BM25Okapi
 
                 tokenized_corpus = [hybrid_tokenize(doc) for doc in self.corpus]
                 self.bm25 = BM25Okapi(tokenized_corpus)
-                print("✅ [JIT] 同步构建完成！")
+                print("[*] 同步构建完成！")
 
             # 获取引用快照以防止后续计算时被修改
             current_corpus = self.corpus

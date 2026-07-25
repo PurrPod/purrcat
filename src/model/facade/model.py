@@ -114,7 +114,7 @@ class Model:
         """释放资源"""
         if hasattr(self, "api_key") and self.api_key:
             key_manager.release_key(self.api_key)
-            log(f"🔓 任务 {self.task_id} 已释放 API Key: {self.key_prefix}")
+            log(f"[-] 任务 {self.task_id} 已释放 API Key: {self.key_prefix}")
 
     def bind_task(self, task_id: str, task_name: str = None):
         """绑定任务 ID，用于日志追踪"""

@@ -29,7 +29,7 @@ def _prompt_overwrite(file_path, force):
     """Prompt user for overwrite confirmation. Returns True if should overwrite."""
     if force:
         return True
-    print(f"! File already exists: {file_path}")
+    print(f"[!] File already exists: {file_path}")
     val = input("  Overwrite? (y/N): ").strip().lower()
     if val == "y":
         return True
@@ -51,7 +51,7 @@ def _generate_model_config(purrcat_dir, force=False):
         print("[+] model.json generated")
         return True
     except Exception as e:
-        print(f"X Failed to write model.json: {e}")
+        print(f"[x] Failed to write model.json: {e}")
         return False
 
 
@@ -69,7 +69,7 @@ def _generate_sensor_config(purrcat_dir, force=False):
         print("[+] activate_sensor.json generated")
         return True
     except Exception as e:
-        print(f"X Failed to write activate_sensor.json: {e}")
+        print(f"[x] Failed to write activate_sensor.json: {e}")
         return False
 
 
@@ -87,7 +87,7 @@ def _generate_file_config(purrcat_dir, force=False):
         print("[+] file.json generated")
         return True
     except Exception as e:
-        print(f"X Failed to write file.json: {e}")
+        print(f"[x] Failed to write file.json: {e}")
         return False
 
 
@@ -105,7 +105,7 @@ def _generate_mcp_config(purrcat_dir, force=False):
         print("[+] mcp_config.json generated")
         return True
     except Exception as e:
-        print(f"X Failed to write mcp_config.json: {e}")
+        print(f"[x] Failed to write mcp_config.json: {e}")
         return False
 
 
@@ -123,7 +123,7 @@ def _generate_app_config(purrcat_dir, force=False):
         print("[+] app_config.json generated")
         return True
     except Exception as e:
-        print(f"X Failed to write app_config.json: {e}")
+        print(f"[x] Failed to write app_config.json: {e}")
         return False
 
 
@@ -146,7 +146,7 @@ def _generate_core_files(purrcat_dir, force=False):
             print("[+] core/info.json generated")
             results.append(("info.json", True))
         except Exception as e:
-            print(f"X Failed to write core/info.json: {e}")
+            print(f"[x] Failed to write core/info.json: {e}")
             results.append(("info.json", False))
 
     cron_path = os.path.join(core_dir, "cron.json")
@@ -159,7 +159,7 @@ def _generate_core_files(purrcat_dir, force=False):
             print("[+] core/cron.json generated")
             results.append(("cron.json", True))
         except Exception as e:
-            print(f"X Failed to write core/cron.json: {e}")
+            print(f"[x] Failed to write core/cron.json: {e}")
             results.append(("cron.json", False))
 
     loop_path = os.path.join(core_dir, "loop.json")
@@ -172,7 +172,7 @@ def _generate_core_files(purrcat_dir, force=False):
             print("[+] core/loop.json generated")
             results.append(("loop.json", True))
         except Exception as e:
-            print(f"X Failed to write core/loop.json: {e}")
+            print(f"[x] Failed to write core/loop.json: {e}")
             results.append(("loop.json", False))
 
     memory_md_path = os.path.join(core_dir, "MEMORY.md")
@@ -185,7 +185,7 @@ def _generate_core_files(purrcat_dir, force=False):
             print("[+] core/MEMORY.md generated")
             results.append(("MEMORY.md", True))
         except Exception as e:
-            print(f"X Failed to write core/MEMORY.md: {e}")
+            print(f"[x] Failed to write core/MEMORY.md: {e}")
             results.append(("MEMORY.md", False))
 
     solo_md_path = os.path.join(core_dir, "SOLO.md")
@@ -198,7 +198,7 @@ def _generate_core_files(purrcat_dir, force=False):
             print("[+] core/SOLO.md generated")
             results.append(("SOLO.md", True))
         except Exception as e:
-            print(f"X Failed to write core/SOLO.md: {e}")
+            print(f"[x] Failed to write core/SOLO.md: {e}")
             results.append(("SOLO.md", False))
 
     soul_md_path = os.path.join(core_dir, "SOUL.md")
@@ -211,7 +211,7 @@ def _generate_core_files(purrcat_dir, force=False):
             print("[+] core/SOUL.md generated")
             results.append(("SOUL.md", True))
         except Exception as e:
-            print(f"X Failed to write core/SOUL.md: {e}")
+            print(f"[x] Failed to write core/SOUL.md: {e}")
             results.append(("SOUL.md", False))
 
     return all(ok for _, ok in results)
@@ -233,14 +233,14 @@ def run_init(force=False):
                 .lower()
             )
             if val != "y":
-                print("  Cancelled")
+                print("  [-] Cancelled")
                 return
     else:
         try:
             os.makedirs(purrcat_dir, exist_ok=True)
             print(f"[+] Created config directory: {purrcat_dir}")
         except Exception as e:
-            print(f"X Failed to create directory: {e}")
+            print(f"[x] Failed to create directory: {e}")
             sys.exit(1)
 
     print("")

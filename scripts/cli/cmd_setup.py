@@ -76,14 +76,14 @@ def _determine_engine():
     has_docker, has_podman = _check_engine()
 
     if has_docker:
-        print("  ✅ Detected Docker, will use Docker as container engine.")
+        print("  [*] Detected Docker, will use Docker as container engine.")
         return "docker"
     elif has_podman:
-        print("  ✅ Detected Podman, will use Podman as container engine.")
+        print("  [*] Detected Podman, will use Podman as container engine.")
         return "podman"
     else:
         print(
-            "  ❌ Docker not detected. Please install Docker first according to the tutorial."
+            "  [x] Docker not detected. Please install Docker first according to the tutorial."
         )
         sys.exit(1)
 
@@ -107,9 +107,9 @@ def _save_engine_preference(engine: str):
         with open(global_config_file, "w", encoding="utf-8") as f:
             json.dump(settings, f, indent=4, ensure_ascii=False)
 
-        print(f"✅ Engine preference saved to global config: {engine}")
+        print(f"[*] Engine preference saved to global config: {engine}")
     except Exception as e:
-        print(f"⚠️ Failed to save engine preference: {e}")
+        print(f"[!] Failed to save engine preference: {e}")
 
 
 def _check_engine_running(engine):

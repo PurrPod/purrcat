@@ -43,13 +43,13 @@ def _download_and_extract_subfolder(zip_url, subfolder_path, dest_dir):
 
             if extracted_count == 0:
                 print(
-                    f"X Error: Could not find folder '{subfolder_path}' in the repository."
+                    f"[x] Error: Could not find folder '{subfolder_path}' in the repository."
                 )
                 return False
 
         return True
     except Exception as e:
-        print(f"X Download/Extract failed: {e}")
+        print(f"[x] Download/Extract failed: {e}")
         return False
 
 
@@ -85,7 +85,7 @@ def run_install(ext_type, source):
             try:
                 new_mcp_configs = json.loads(source)
             except json.JSONDecodeError as e:
-                print(f"X Error: Invalid JSON string for MCP configuration. {e}")
+                print(f"[x] Error: Invalid JSON string for MCP configuration. {e}")
                 return
         # 场景 B: 传入的是短名，需要去 registry 查表
         else:
@@ -102,7 +102,7 @@ def run_install(ext_type, source):
 
                 mcps_dict = registry_data.get("mcps", {})
                 if source not in mcps_dict:
-                    print(f"X Error: MCP '{source}' not found in official registry.")
+                    print(f"[x] Error: MCP '{source}' not found in official registry.")
                     print(f"  Available MCPs: {', '.join(mcps_dict.keys())}")
                     return
 
@@ -111,7 +111,7 @@ def run_install(ext_type, source):
                 print(f"[*] Found MCP '{source}' in registry!")
 
             except Exception as e:
-                print(f"X Failed to fetch or parse MCP registry: {e}")
+                print(f"[x] Failed to fetch or parse MCP registry: {e}")
                 return
 
         # 执行落盘写入逻辑
@@ -157,7 +157,7 @@ def run_install(ext_type, source):
                 )
 
         except Exception as e:
-            print(f"X Failed to save MCP configuration: {e}")
+            print(f"[x] Failed to save MCP configuration: {e}")
 
     # ---------------------------------------------------------
     # 2. Graph 安装逻辑：从 PurrPod/graphpod 拉取并解析依赖
@@ -221,12 +221,12 @@ def run_install(ext_type, source):
         except urllib.error.HTTPError as e:
             if e.code == 404:
                 print(
-                    f"X Error: Graph '{graph_filename}' not found in PurrPod/graphs repository."
+                    f"[x] Error: Graph '{graph_filename}' not found in PurrPod/graphs repository."
                 )
             else:
-                print(f"X HTTP Error fetching graph: {e}")
+                print(f"[x] HTTP Error fetching graph: {e}")
         except Exception as e:
-            print(f"X Failed to download graph: {e}")
+            print(f"[x] Failed to download graph: {e}")
 
     # ---------------------------------------------------------
     # 3. Node 安装逻辑：沿用官方仓库
@@ -265,21 +265,21 @@ def run_install(ext_type, source):
 
                 skills_dict = registry_data.get("skills", {})
                 if source not in skills_dict:
-                    print(f"X Error: Skill '{source}' not found in official registry.")
+                    print(f"[x] Error: Skill '{source}' not found in official registry.")
                     print(f"  Available skills: {', '.join(skills_dict.keys())}")
                     return
 
                 target_url = skills_dict[source].get("source_url")
                 print(f"[*] Found '{source}' in registry! Resolving source URL...")
             except Exception as e:
-                print(f"X Failed to fetch or parse registry: {e}")
+                print(f"[x] Failed to fetch or parse registry: {e}")
                 return
 
         # 执行原有逻辑：解析最终的 target_url 并执行无头下载与解压
         if target_url and target_url.startswith("http"):
             parsed = _parse_github_url(target_url)
             if not parsed:
-                print("X Error: Invalid GitHub URL format.")
+                print("[x] Error: Invalid GitHub URL format.")
                 print(
                     "  Expected: https://github.com/owner/repo/tree/branch/path/to/skill"
                 )
@@ -298,8 +298,8 @@ def run_install(ext_type, source):
                     f"[+] Successfully installed skill '{skill_name}' to skills/{skill_name}"
                 )
         else:
-            print("X Error: Invalid source URL resolved.")
+            print("[x] Error: Invalid source URL resolved.")
 
     else:
-        print(f"X Unknown extension type: {ext_type}")
+        print(f"[x] Unknown extension type: {ext_type}")
         print("  Supported types: skill, node, graph, mcp")

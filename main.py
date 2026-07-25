@@ -24,7 +24,7 @@ async def _bg_heavy_init(enable_tui: bool):
     # 1. 强制休眠 0.5 秒，让 FastAPI 的 uvicorn 和 Textual 界面先完成绑定和渲染
     await asyncio.sleep(0.5)
     if not enable_tui:
-        print("[Background] API/UI已就绪，开始后台预热服务...")
+        print("[*] API/UI已就绪，开始后台预热服务...")
 
     # 2. 轻量级加载：读取 MCP 和 Skill 的元数据（不计算向量）
     def _init_light_tools():
@@ -74,7 +74,7 @@ async def _bg_heavy_init(enable_tui: bool):
 
     SYSTEM_READY_EVENT.set()
     if not enable_tui:
-        print("✅ [Background] 所有后台子系统派发完毕！")
+        print("[*] 所有后台子系统派发完毕！")
 
 
 async def init_core(cli_session_id: str = None, cli_branch_name: str = None, enable_tui: bool = False):
@@ -87,7 +87,7 @@ async def init_core(cli_session_id: str = None, cli_branch_name: str = None, ena
     if cli_branch_name:
         new_id = branch_session(cli_branch_name)
         if not enable_tui:
-            print(f"🌿 [CLI] 已从 {cli_session_id or '最新会话'} 创建并切换到新分支: {cli_branch_name} ({new_id})")
+            print(f"[*] 已从 {cli_session_id or '最新会话'} 创建并切换到新分支: {cli_branch_name} ({new_id})")
 
     # 2. 启动后台异步预热，使用 asyncio.create_task 替代 threading.Thread
     asyncio.create_task(_bg_heavy_init(enable_tui))
