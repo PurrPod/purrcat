@@ -145,7 +145,7 @@ async def run_api(host: str = "0.0.0.0", port: int = 8000):
 
     @app.get("/")
     def ping():
-        return {"message": "Meow! PurrCat Backend is running."}
+        return {"message": "PurrCat Backend is running."}
 
     logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
     

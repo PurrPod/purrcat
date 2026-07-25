@@ -129,11 +129,11 @@ class MCPSessionManager:
 
                     if now - ctx["last_active"] > timeout:
                         print(
-                            f"🧹 [MCP 资源回收] '{server_name}' 闲置超过 {timeout}s，自动关闭释放资源。"
+                            f"[-] '{server_name}' 闲置超过 {timeout}s，自动关闭释放资源。"
                         )
                         await self._close_session(server_name)
             except Exception as e:
-                print(f"⚠️ [MCP 清理器异常] {e}，将继续运行...")
+                print(f"[-] MCP 清理器异常 {e}，将继续运行...")
                 await asyncio.sleep(1)
 
     async def _close_session(self, server_name: str):
@@ -141,12 +141,12 @@ class MCPSessionManager:
             self.sessions[server_name]["close_event"].set()
 
     async def shutdown_all(self):
-        print("\n🛑 [MCP] 正在执行优雅退出，发送关闭信号给所有驻留的子进程...")
+        print("\n[-] 发送关闭信号给 MCP 子进程")
         tasks = [self._close_session(name) for name in list(self.sessions.keys())]
         if tasks:
             await asyncio.gather(*tasks)
             await asyncio.sleep(0.5)
-        print("✅ [MCP] 所有子进程已安全清理完毕。")
+        print("[-] 所有 MCP 子进程已清理完毕")
 
     async def get_session(self, server_name: str, config: dict) -> ClientSession:
         lock = await self._get_lock(server_name)
@@ -155,7 +155,7 @@ class MCPSessionManager:
                 self.sessions[server_name]["last_active"] = time.time()
                 return self.sessions[server_name]["session"]
 
-            print(f"🚀 [MCP] 正在启动 {server_name} 并建立长连接...")
+            print(f"[+] 正在启动 {server_name} 并建立长连接...")
             ready_event = asyncio.Event()
 
             task = asyncio.create_task(

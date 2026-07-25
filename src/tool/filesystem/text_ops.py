@@ -321,11 +321,24 @@ def search_file(path_from: str, pattern: str) -> dict:
         raise FileSystemError(f"正则表达式无效: {e}")
 
     matches = []
+    MAX_MATCHES = 50
+
+    IGNORE_DIRS = {"node_modules", "__pycache__", "venv", "env", "dist", "build", "target"}
+
+    IGNORE_EXTS = {".jpg", ".png", ".pdf", ".zip", ".tar", ".gz", ".mp4", ".pyc", ".exe", ".dll"}
 
     for root, dirs, files in os.walk(search_dir):
-        dirs[:] = [d for d in dirs if is_readable(os.path.join(root, d))]
+        dirs[:] = [
+            d for d in dirs
+            if not d.startswith('.')
+            and d not in IGNORE_DIRS
+            and is_readable(os.path.join(root, d))
+        ]
 
         for file in files:
+            if file.startswith('.') or any(file.endswith(ext) for ext in IGNORE_EXTS):
+                continue
+
             file_path = os.path.join(root, file)
             if not is_readable(file_path):
                 continue
@@ -336,13 +349,17 @@ def search_file(path_from: str, pattern: str) -> dict:
                         if regex.search(line):
                             rel_path = os.path.relpath(file_path, search_dir)
                             matches.append(f"{rel_path}:{i + 1}:{line.strip()}")
-                            if len(matches) >= 50:
-                                matches.append(
-                                    "... [搜索结果过多，已截断前50条。请使用更精确的 pattern，或指定更深层的目录进行精准搜索]"
-                                )
+                            if len(matches) >= MAX_MATCHES:
                                 break
             except (UnicodeDecodeError, PermissionError, OSError):
                 continue
+
+            if len(matches) >= MAX_MATCHES:
+                break
+
+        if len(matches) >= MAX_MATCHES:
+            matches.append("... [搜索结果过多，已截断前50条。请使用更精确的 pattern，或指定更深层的目录进行精准搜索]")
+            break
 
     return {
         "search_dir": search_dir,
