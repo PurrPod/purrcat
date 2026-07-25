@@ -434,10 +434,12 @@ class SubAgentRunner:
 
             tool_calls = extract_tool_calling(response)
 
-            # 🌟 检查所有的文件是否都存在且不为空
+            # 🌟 检查所有的文件或目录是否都存在（如果是文件则额外检查不为空）
             missing_files = []
             for p in self.deliverable_paths:
-                if not (os.path.exists(p) and os.path.getsize(p) > 0):
+                if not os.path.exists(p):
+                    missing_files.append(p)
+                elif os.path.isfile(p) and os.path.getsize(p) == 0:
                     missing_files.append(p)
 
             file_ready = len(missing_files) == 0  # 如果没有缺失文件，就是 ready
