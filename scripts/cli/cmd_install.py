@@ -265,7 +265,9 @@ def run_install(ext_type, source):
 
                 skills_dict = registry_data.get("skills", {})
                 if source not in skills_dict:
-                    print(f"[x] Error: Skill '{source}' not found in official registry.")
+                    print(
+                        f"[x] Error: Skill '{source}' not found in official registry."
+                    )
                     print(f"  Available skills: {', '.join(skills_dict.keys())}")
                     return
 
