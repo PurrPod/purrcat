@@ -67,27 +67,29 @@ else:
 _PS_PATH = r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"
 
 
-def _build_spawn(cmd: str | None) -> tuple[str, str]:
-    """构造 (appname, cmdline)。cmd=None → 交互 shell；cmd=字符串 → 执行该命令。
+def _build_spawn_win(cmd: str | None) -> tuple[str, str]:
+    """Windows: 返回 (appname, cmdline_string)。
 
-    pywinpty 的 spawn(appname, cmdline=...) 要求 cmdline 是完整命令行字符串，
-    不是参数列表。Windows 命令行用双引号包裹含空格的路径。
+    pywinpty 的 spawn(appname, cmdline=...) 要求 cmdline 是完整命令行字符串。
     """
-    if sys.platform.startswith("win"):
-        prog = _PS_PATH
-        if cmd:
-            # 用 -NoExit 保持 shell 可继续交互；把命令内容用单引号包起来防止注入
-            # PowerShell 的 -Command 参数如果含特殊字符，用 --% 或转义
-            escaped_cmd = cmd.replace('"', '`"')
-            cmdline = f'"{prog}" -NoLogo -NoExit -Command "{escaped_cmd}"'
-        else:
-            cmdline = f'"{prog}" -NoLogo'
-        return (prog, cmdline)
-
-    # *nix
+    prog = _PS_PATH
     if cmd:
-        return ("/bin/bash", f'/bin/bash -c {json.dumps(cmd)}')
-    return ("/bin/bash", "/bin/bash")
+        escaped_cmd = cmd.replace('"', '`"')
+        cmdline = f'"{prog}" -NoLogo -NoExit -Command "{escaped_cmd}"'
+    else:
+        cmdline = f'"{prog}" -NoLogo'
+    return (prog, cmdline)
+
+
+def _build_spawn_unix(cmd: str | None) -> tuple[str, list[str]]:
+    """*nix: 返回 (program, argv_list)。
+
+    默认用 $SHELL 环境变量（macOS Catalina+ 是 zsh，Linux 通常 bash）。
+    """
+    shell = os.environ.get("SHELL", "/bin/bash")
+    if cmd:
+        return (shell, [shell, "-c", cmd])
+    return (shell, [shell])
 
 
 # ─────────────────────────────────────────────
@@ -97,7 +99,7 @@ async def _serve_winpty(websocket: WebSocket, cmd: str | None):
     cols, rows = 80, 24
     pty = winpty.PTY(cols=cols, rows=rows)
 
-    appname, cmdline = _build_spawn(cmd)
+    appname, cmdline = _build_spawn_win(cmd)
     try:
         pty.spawn(appname, cmdline=cmdline, cwd=os.getcwd())
     except Exception as e:
@@ -114,10 +116,14 @@ async def _serve_winpty(websocket: WebSocket, cmd: str | None):
         child_pid = None
 
     loop = asyncio.get_event_loop()
+    # WebSocket 断开标志 — write_input 退出时设置，read_output 检测后退出
+    disconnected = asyncio.Event()
 
     async def read_output():
         """从 PTY 读输出 → 发给前端。"""
         while True:
+            if disconnected.is_set():
+                break
             try:
                 data = await loop.run_in_executor(None, pty.read)
             except Exception:
@@ -158,14 +164,17 @@ async def _serve_winpty(websocket: WebSocket, cmd: str | None):
             pass
         except Exception:
             pass
+        finally:
+            # 🌟 WebSocket 断开 → 立即杀进程 + 通知 read_output 退出
+            # 不放外层 finally，否则 gather 会死锁（read_output 等 iseof，杀进程在 finally）
+            disconnected.set()
+            if child_pid:
+                _active_pids.discard(child_pid)
+                _kill_pid_tree(child_pid)
 
     try:
         await asyncio.gather(read_output(), write_input())
     finally:
-        # 清理：杀掉子进程 + 从全局集合移除
-        if child_pid:
-            _active_pids.discard(child_pid)
-            _kill_pid_tree(child_pid)
         try:
             pty.cancel_io()
         except Exception:
@@ -176,7 +185,7 @@ async def _serve_winpty(websocket: WebSocket, cmd: str | None):
 # *nix: pty + os.fork 实现
 # ─────────────────────────────────────────────
 async def _serve_unix_pty(websocket: WebSocket, cmd: str | None):
-    program, args = _build_spawn(cmd)
+    program, args = _build_spawn_unix(cmd)
     argv = [program] + args
 
     master_fd, slave_fd = _pty_module.openpty()
@@ -202,9 +211,12 @@ async def _serve_unix_pty(websocket: WebSocket, cmd: str | None):
     _active_pids.add(pid)
 
     loop = asyncio.get_event_loop()
+    disconnected = asyncio.Event()
 
     async def read_output():
         while True:
+            if disconnected.is_set():
+                break
             try:
                 r, _, _ = await loop.run_in_executor(
                     None, lambda: select.select([master_fd], [], [], 0.05)
@@ -243,11 +255,15 @@ async def _serve_unix_pty(websocket: WebSocket, cmd: str | None):
             pass
         except Exception:
             pass
+        finally:
+            # WebSocket 断开 → 立即杀进程 + 通知 read_output 退出
+            disconnected.set()
+            _active_pids.discard(pid)
+            _kill_pid_tree(pid)
 
     try:
         await asyncio.gather(read_output(), write_input())
     finally:
-        _active_pids.discard(pid)
         try:
             os.close(master_fd)
         except Exception:

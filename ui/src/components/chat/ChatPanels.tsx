@@ -180,11 +180,6 @@ export function TerminalPanel(props: any) {
     const ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {
-      if (cmd) {
-        term.writeln(`\x1b[32m[Connected] Executing: ${cmd}\x1b[0m`);
-      } else {
-        term.writeln(`\x1b[32m[Connected] Interactive shell\x1b[0m`);
-      }
       // 连接建立后立即发送一次当前尺寸
       try {
         const sendResize = (t: Terminal, w: WebSocket) => {
