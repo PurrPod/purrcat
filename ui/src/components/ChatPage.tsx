@@ -730,7 +730,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                             >
                               <ClipboardCopy size={14} strokeWidth={2.5} />
                             </button>
-                            <div className="text-[17px] font-bold text-ink"><ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents} urlTransform={allowFileUrlTransform}>{userMsg.content}</ReactMarkdown></div>
+                            <div className="text-[17px] font-bold text-ink whitespace-pre-wrap break-words">{userMsg.content}</div>
                           </div>
                         )}
                       </div>
