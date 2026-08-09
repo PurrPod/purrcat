@@ -1,6 +1,8 @@
 import os
+import mimetypes
 import traceback
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 # 直接引入纯粹的路径映射函数，避开 require_write 的大模型权限沙盒
@@ -106,3 +108,37 @@ def api_get_global_diffs():
         traceback.print_exc()
         # 🌟 修改这里：把报错的详细信息放到返回体里
         return {"status": "error", "diffs": [], "message": str(e)}
+
+
+@router.get("/preview")
+def preview_file(path: str):
+    """
+    接收绝对路径，返回文件流给前端预览。
+    用于绕过浏览器对 file:// 协议的同源与安全限制。
+    """
+    # 将前端传来的（可能是沙盒或相对）路径映射为真实物理绝对路径
+    resolved_path = resolve_absolute_path(path)
+
+    # 路径回退：Agent 有时输出的路径漏掉了 agent_vm 沙盒层
+    # 如果原始路径找不到，且路径不含 agent_vm，尝试在 agent_vm 下查找
+    if not os.path.exists(resolved_path) or not os.path.isfile(resolved_path):
+        norm = path.replace("\\", "/")
+        if "agent_vm" not in norm:
+            # 尝试拼上 agent_vm 前缀再找一次
+            # 去掉可能的盘符前缀 (D:/xxx -> xxx) 再拼 agent_vm
+            stripped = norm
+            if len(stripped) >= 2 and stripped[1] == ":":
+                stripped = stripped[2:]
+            stripped = stripped.lstrip("/")
+            fallback = resolve_absolute_path(f"/agent_vm/{stripped}")
+            if os.path.exists(fallback) and os.path.isfile(fallback):
+                resolved_path = fallback
+
+    if not os.path.exists(resolved_path) or not os.path.isfile(resolved_path):
+        raise HTTPException(status_code=404, detail=f"File not found: {path}")
+
+    mime_type, _ = mimetypes.guess_type(resolved_path)
+    if not mime_type:
+        mime_type = "application/octet-stream"
+
+    return FileResponse(resolved_path, media_type=mime_type)

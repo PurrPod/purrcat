@@ -1,10 +1,29 @@
 // src/components/ChatPage.tsx
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Send, Cat, Clock, Activity, Server, Zap, Brain, GitMerge, Loader2, FolderOpen, Bell, Paperclip, X, Heart, User, List, ExternalLink, Plus, BookOpen } from 'lucide-react';
+import { Send, Cat, Clock, Activity, Server, Zap, Brain, GitMerge, Loader2, FolderOpen, Bell, Paperclip, X, Heart, User, List, ExternalLink, Plus, BookOpen, ClipboardCopy } from 'lucide-react';
 import { toast } from 'react-hot-toast';
-import ReactMarkdown from 'react-markdown';
+import ReactMarkdown, { defaultUrlTransform } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+
+// 🌟 允许本地文件路径和 file:// 协议通过（用于预览），其余走默认安全过滤
+// react-markdown v9 默认会把自定义协议（含 file:// 和 D:/ 盘符）过滤成空字符串
+const allowFileUrlTransform = (url: string) => {
+  // 1. file:// 协议
+  if (url.startsWith('file://')) return url;
+  // 2. Agent 沙盒路径
+  if (url.startsWith('/agent_vm/') || url === '/agent_vm' ||
+      url.startsWith('./agent_vm/') || url === './agent_vm') return url;
+  // 3. Windows 绝对路径 (盘符+冒号+斜杠)
+  if (/^[A-Za-z]:[/\\]/.test(url)) return url;
+  // 4. 带文件扩展名的相对路径 (./xxx or ../xxx)
+  if (url.startsWith('./') || url.startsWith('../')) {
+    const ext = url.split('.').pop()?.toLowerCase() || '';
+    if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'mp4', 'webm', 'mov', 'ogg',
+         'pdf', 'txt', 'md', 'csv', 'json', 'log', 'html'].includes(ext)) return url;
+  }
+  return defaultUrlTransform(url);
+};
 
 import { Message, Session } from './chat/ChatTypes';
 import { parseEventsContent, hasMessageInHistory, renderSketchyHeatmap, MarkdownComponents, ToolCallBubble, ToolMessageBubble, sketchyShape1, sketchyShape2, sketchyShape3 } from './chat/ChatShared';
@@ -138,19 +157,75 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   const [mdContent, setMdContent] = useState('');
   const [isSavingMd, setIsSavingMd] = useState(false);
 
-  // 🌟 新增：链接预览状态
+  // 🌟 链接预览状态：type 决定弹窗用 img/video/iframe 渲染
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewType, setPreviewType] = useState<'image' | 'video' | 'browser'>('browser');
+  const [previewRawUrl, setPreviewRawUrl] = useState<string>('');
 
-  // 🌟 新增：全局拦截气泡内的链接点击事件
+  // 🌟 全局拦截气泡内的链接点击事件：本地路径走 FastAPI 代理，http/https 走 iframe
   const handleMessageClick = (e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
     const anchor = target.closest('a');
+    if (!anchor) return;
 
-    // 如果点击的是 <a> 标签且带有 href
-    if (anchor && anchor.href) {
-      e.preventDefault(); // 阻止浏览器默认跳转
-      setPreviewUrl(anchor.href); // 唤起内嵌预览弹窗
+    // ⚠️ 必须用 getAttribute('href') 拿到 Agent 原始输出的字符串
+    // anchor.href 是浏览器规范化后的 URL，会把 D:/xxx.png 变成 http://localhost:3000/chat/D:/xxx.png
+    const rawHref = anchor.getAttribute('href') || '';
+    if (!rawHref) return;
+
+    e.preventDefault();
+    let type: 'image' | 'video' | 'browser' = 'browser';
+    let finalUrl = rawHref;
+
+    // ——————————————————————————————————————————————————
+    // 检测是否为「本地文件路径」，匹配后统一走 /preview 接口
+    // ——————————————————————————————————————————————————
+    let localPath: string | null = null;
+
+    // 1. file:// 协议 (file:///D:/xxx or file:///Users/xxx)
+    if (rawHref.startsWith('file://')) {
+      let p = rawHref.replace(/^file:\/\//, '');
+      // Windows 路径: /C:/xxx → C:/xxx
+      if (p.startsWith('/') && p.charAt(2) === ':') {
+        p = p.substring(1);
+      }
+      localPath = p;
     }
+    // 2. Agent 沙盒路径: /agent_vm/xxx or ./agent_vm/xxx
+    else if (rawHref.startsWith('/agent_vm/') || rawHref === '/agent_vm' ||
+             rawHref.startsWith('./agent_vm/') || rawHref === './agent_vm' ||
+             rawHref.startsWith('../agent_vm/')) {
+      localPath = rawHref; // 后端 resolve_absolute_path 会处理
+    }
+    // 3. Windows 绝对路径: C:/xxx 或 D:\xxx (盘符+冒号开头)
+    else if (/^[A-Za-z]:[/\\]/.test(rawHref)) {
+      localPath = rawHref;
+    }
+    // 4. 其他 ./ 或 ../ 开头的相对路径 + 已知扩展名
+    else if ((rawHref.startsWith('./') || rawHref.startsWith('../'))) {
+      const ext = rawHref.split('.').pop()?.toLowerCase() || '';
+      if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'mp4', 'webm', 'mov', 'ogg',
+           'pdf', 'txt', 'md', 'csv', 'json', 'log', 'html'].includes(ext)) {
+        localPath = rawHref;
+      }
+    }
+
+    if (localPath !== null) {
+      const ext = localPath.split('.').pop()?.toLowerCase() || '';
+      if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes(ext)) {
+        type = 'image';
+      } else if (['mp4', 'webm', 'mov', 'ogg'].includes(ext)) {
+        type = 'video';
+      } else {
+        // 其他本地文件：兜底用 browser 渲染（/preview 返回 FileResponse，iframe 会显示或触发下载）
+        type = 'browser';
+      }
+      finalUrl = `http://localhost:8000/api/filesystem/preview?path=${encodeURIComponent(localPath)}`;
+    }
+
+    setPreviewType(type);
+    setPreviewRawUrl(rawHref);
+    setPreviewUrl(finalUrl);
   };
 
   const [showSkillSelectModal, setShowSkillSelectModal] = useState(false);
@@ -644,8 +719,18 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                     {parsedData.userMessages.map((userMsg: any, uIdx: number) => (
                       <div key={`u-${uIdx}`} className="flex flex-col gap-3 w-full max-w-[85%] items-end">
                         {userMsg.content && (
-                          <div style={sketchyShape2} className="w-full p-6 border-4 border-ink relative bg-cream text-ink shadow-[6px 6px 0px 0px rgba(26,26,26,1)]">
-                            <div className="text-[17px] font-bold text-ink"><ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>{userMsg.content}</ReactMarkdown></div>
+                          <div style={sketchyShape2} className="group/bubble w-full p-6 border-4 border-ink relative bg-cream text-ink shadow-[6px 6px 0px 0px rgba(26,26,26,1)]">
+                            <button
+                              onClick={() => {
+                                navigator.clipboard.writeText(userMsg.content).then(() => toast.success('Copied!'));
+                              }}
+                              className="absolute top-2 right-2 p-1.5 bg-paper border-2 border-ink text-ink/60 hover:text-ink hover:bg-[#F9E2AF] shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] transition-all opacity-0 group-hover/bubble:opacity-100 z-10"
+                              style={sketchyShape3}
+                              title="复制内容"
+                            >
+                              <ClipboardCopy size={14} strokeWidth={2.5} />
+                            </button>
+                            <div className="text-[17px] font-bold text-ink"><ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents} urlTransform={allowFileUrlTransform}>{userMsg.content}</ReactMarkdown></div>
                           </div>
                         )}
                       </div>
@@ -659,13 +744,23 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                   <div key={idx} className="flex w-full justify-start">
                     <div className="flex flex-col gap-3 w-full max-w-[85%] items-start">
                       {msg.content && (
-                        <div style={sketchyShape1} className="w-full p-6 border-4 border-ink relative bg-cream text-ink shadow-[6px 6px 0px 0px rgba(26,26,26,1)]">
+                        <div style={sketchyShape1} className="group/bubble w-full p-6 border-4 border-ink relative bg-cream text-ink shadow-[6px 6px 0px 0px rgba(26,26,26,1)]">
+                          <button
+                            onClick={() => {
+                              navigator.clipboard.writeText(msg.content).then(() => toast.success('Copied!'));
+                            }}
+                            className="absolute top-2 right-2 p-1.5 bg-paper border-2 border-ink text-ink/60 hover:text-ink hover:bg-[#F9E2AF] shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] transition-all opacity-0 group-hover/bubble:opacity-100 z-10"
+                            style={sketchyShape3}
+                            title="复制内容"
+                          >
+                            <ClipboardCopy size={14} strokeWidth={2.5} />
+                          </button>
                           <div>
                             <div className="flex items-center gap-2 mb-4">
                               <Cat size={20} strokeWidth={2.5}/>
                               <span className="font-black text-sm uppercase tracking-widest bg-ink text-paper px-2 py-0.5" style={{ ...sketchyShape3, fontFamily: '"Comic Sans MS", cursive' }}>ASSISTANT</span>
                             </div>
-                            <div className="text-[17px] font-bold text-ink"><ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>{msg.content}</ReactMarkdown></div>
+                            <div className="text-[17px] font-bold text-ink"><ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents} urlTransform={allowFileUrlTransform}>{msg.content}</ReactMarkdown></div>
                           </div>
                         </div>
                       )}
@@ -840,10 +935,9 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
         </div>
       )}
 
-      {/* 🌟 新增：内嵌链接/文件预览弹窗 */}
+      {/* 🌟 内嵌链接/文件预览弹窗（保留原手绘风格，按类型渲染 img/video/iframe） */}
       {previewUrl && (
         <div className="fixed inset-0 bg-ink/40 backdrop-blur-sm z-[200] flex items-center justify-center p-4" onClick={() => setPreviewUrl(null)}>
-          {/* 🌟 1. 扶正弹窗：移除了原有的 -rotate-1，保留 style={sketchyShape2} 让外部四角保持手绘风格 */}
           <div style={sketchyShape2} className="bg-paper border-4 border-ink p-6 flex flex-col gap-4 shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] w-full max-w-6xl h-[85vh]" onClick={e => e.stopPropagation()}>
 
             {/* 弹窗头部 */}
@@ -851,7 +945,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
               <div className="flex items-center gap-3 overflow-hidden flex-1">
                 <ExternalLink size={28} className="text-[#3498DB] shrink-0" strokeWidth={2.5} />
                 <h3 className="text-xl font-black tracking-widest text-ink truncate" style={{ fontFamily: '"Comic Sans MS", cursive' }}>
-                  {previewUrl}
+                  {previewRawUrl}
                 </h3>
               </div>
 
@@ -866,15 +960,22 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
               </div>
             </div>
 
-            {/* Iframe 预览区 */}
-            {/* 🌟 2. 内部框变直：移除了 style={sketchyShape3}，此时边框将变为笔直的矩形标准线 */}
-            <div className="flex-1 overflow-hidden border-4 border-ink bg-white shadow-[inset_4px_4px_0px_0px_rgba(26,26,26,0.05)] relative">
-              <iframe
-                src={previewUrl}
-                className="w-full h-full border-none"
-                title="Link Preview"
-                sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
-              />
+            {/* 预览区：按类型渲染 */}
+            <div className="flex-1 overflow-auto border-4 border-ink bg-white shadow-[inset_4px_4px_0px_0px_rgba(26,26,26,0.05)] relative flex items-center justify-center">
+              {previewType === 'image' && (
+                <img src={previewUrl} alt="Preview" className="max-w-full max-h-full object-contain" />
+              )}
+              {previewType === 'video' && (
+                <video src={previewUrl} controls autoPlay className="max-w-full max-h-full" />
+              )}
+              {previewType === 'browser' && (
+                <iframe
+                  src={previewUrl}
+                  className="w-full h-full border-none"
+                  title="Link Preview"
+                  sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
+                />
+              )}
             </div>
 
           </div>
