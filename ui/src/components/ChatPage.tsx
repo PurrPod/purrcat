@@ -1,7 +1,7 @@
 // src/components/ChatPage.tsx
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Send, Cat, Clock, Activity, Server, Zap, Brain, GitMerge, Loader2, FolderOpen, Bell, Paperclip, X, Heart, User, List, ExternalLink, Plus, BookOpen, ClipboardCopy } from 'lucide-react';
+import { Send, Cat, Clock, Activity, Server, Zap, Brain, GitMerge, Loader2, FolderOpen, Bell, Paperclip, X, Heart, User, List, ExternalLink, Plus, BookOpen, ClipboardCopy, TerminalSquare, AlertTriangle } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import ReactMarkdown, { defaultUrlTransform } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -11,6 +11,8 @@ import remarkGfm from 'remark-gfm';
 const allowFileUrlTransform = (url: string) => {
   // 1. file:// 协议
   if (url.startsWith('file://')) return url;
+  // 1.5 term:// 协议 (Agent 建议执行的终端命令)
+  if (url.startsWith('term://')) return url;
   // 2. Agent 沙盒路径
   if (url.startsWith('/agent_vm/') || url === '/agent_vm' ||
       url.startsWith('./agent_vm/') || url === './agent_vm') return url;
@@ -29,7 +31,7 @@ import { Message, Session } from './chat/ChatTypes';
 import { parseEventsContent, hasMessageInHistory, renderSketchyHeatmap, MarkdownComponents, ToolCallBubble, ToolMessageBubble, sketchyShape1, sketchyShape2, sketchyShape3 } from './chat/ChatShared';
 import ChatModals from './chat/ChatModals';
 import ChatSidebar from './chat/ChatSidebar';
-import { FileChangesPanel, RequestQueuePanel } from './chat/ChatPanels';
+import { FileChangesPanel, RequestQueuePanel, TerminalPanel } from './chat/ChatPanels';
 
 // Tauri 文件系统 API (用于拖拽上传)
 import { copyFile, exists, mkdir } from '@tauri-apps/plugin-fs';
@@ -77,6 +79,11 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   const [showFileView, setShowFileView] = useState(false);
   const [fileChanges, setFileChanges] = useState<any[]>([]);
   const [activeDiffPath, setActiveDiffPath] = useState<string | null>(null);
+
+  // 终端面板状态
+  const [showTerminal, setShowTerminal] = useState(false);
+  const [terminalCmd, setTerminalCmd] = useState<string | null>(null); // null = 默认交互 shell
+  const [pendingTermCmd, setPendingTermCmd] = useState<string | null>(null); // 确认弹窗中的待执行命令
 
   const [sidebarMode, setSidebarMode] = useState<'menu' | 'mcp' | 'skill' | 'cron' | 'sensor'>('menu');
   const [sensorData, setSensorData] = useState<any>({});
@@ -174,6 +181,17 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
     if (!rawHref) return;
 
     e.preventDefault();
+
+    // 🌟 term:// 协议：Agent 建议执行的终端命令，先弹确认框
+    if (rawHref.startsWith('term://')) {
+      // Markdown URL 不允许空格，Agent 会用 %20 编码；这里解码还原
+      const cmd = decodeURIComponent(rawHref.replace(/^term:\/\//, ''));
+      if (cmd) {
+        setPendingTermCmd(cmd);
+      }
+      return; // 不走预览弹窗
+    }
+
     let type: 'image' | 'video' | 'browser' = 'browser';
     let finalUrl = rawHref;
 
@@ -660,6 +678,10 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                </div>
              )}
 
+             <button onClick={() => { setTerminalCmd(null); setShowTerminal(!showTerminal); setShowFileView(false); }} className={`relative w-10 h-10 border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] transition-all flex items-center justify-center ${showTerminal ? 'bg-[#88c0d0] text-paper' : 'bg-cream text-ink'}`} style={sketchyShape2} title="打开终端">
+               <TerminalSquare size={20} strokeWidth={3} />
+             </button>
+
              <button onClick={() => setShowFileView(!showFileView)} className={`relative w-10 h-10 border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] transition-all flex items-center justify-center ${showFileView ? 'bg-[#88c0d0] text-paper' : 'bg-cream text-ink'}`} style={sketchyShape3}>
                <FolderOpen size={20} strokeWidth={3} />
                {fileChanges.length > 0 && <span className="absolute -top-2 -right-2 bg-[#d08770] text-paper text-xs px-1.5 py-0.5 rounded-full border-2 border-ink">{fileChanges.length}</span>}
@@ -803,6 +825,8 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
 
         <FileChangesPanel {...fileViewProps} />
 
+        <TerminalPanel showTerminal={showTerminal} setShowTerminal={setShowTerminal} command={terminalCmd} />
+
         {currentBranchId === 'main' ? (
           <div className="px-10 pb-8 pt-4 shrink-0 flex flex-col gap-3 w-full">
            {(selectedSkills.length > 0 || selectedMcps.length > 0 || selectedGraphs.length > 0 || refPaths.length > 0 || useBrainstorm) && (
@@ -815,7 +839,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
              </div>
            )}
 
-           {!showFileView && (
+           {!showFileView && !showTerminal && (
            <div className={`flex gap-4 relative transition-all ${isDragging ? 'ring-4 ring-terracotta bg-terracotta/5' : ''}`} onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }} onDragLeave={() => setIsDragging(false)} onDrop={handleDrop}>
              {isDragging && <div className="absolute inset-0 z-50 flex items-center justify-center bg-cream/90 border-4 border-dashed border-terracotta" style={sketchyShape2}><span className="text-2xl font-black text-terracotta">Drop files here to attach!</span></div>}
              <div className="flex-1 relative flex flex-col">
@@ -978,6 +1002,61 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
               )}
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* 🌟 term:// 命令确认弹窗 */}
+      {pendingTermCmd && (
+        <div className="fixed inset-0 bg-ink/40 backdrop-blur-sm z-[200] flex items-center justify-center p-4" onClick={() => setPendingTermCmd(null)}>
+          <div style={sketchyShape2} className="bg-paper border-4 border-ink p-6 flex flex-col gap-4 shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] w-full max-w-2xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center gap-3 border-b-4 border-ink/20 pb-4">
+              <AlertTriangle size={32} className="text-[#d08770] shrink-0" strokeWidth={2.5} />
+              <h3 className="text-xl font-black tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>
+                CONFIRM EXECUTION
+              </h3>
+            </div>
+
+            <div className="flex flex-col gap-3">
+              <p className="text-ink font-bold text-sm">
+                确认在主机运行以下命令吗？
+              </p>
+              <div className="flex items-start gap-2 p-4 bg-[#bf616a]/10 border-2 border-[#bf616a] text-ink text-xs font-bold" style={sketchyShape3}>
+                <AlertTriangle size={16} className="text-[#bf616a] shrink-0 mt-0.5" strokeWidth={3} />
+                <span>
+                  <span className="text-[#bf616a] font-black">⚠ 风险提示：</span>
+                  此命令将在你的主机上以子进程方式执行，拥有完整的系统访问权限。
+                  请确认你信任 Agent 的输出，且理解该命令的作用。
+                  执行后可在终端中继续交互输入。
+                </span>
+              </div>
+              <div className="p-4 bg-[#1e1e2e] border-4 border-ink font-mono text-sm text-[#cdd6f4] break-all" style={sketchyShape1}>
+                <span className="text-[#a3be8c]">$</span> {pendingTermCmd}
+              </div>
+            </div>
+
+            <div className="flex gap-4 justify-end">
+              <button
+                onClick={() => setPendingTermCmd(null)}
+                className="px-6 py-3 bg-cream text-ink font-black border-4 border-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:bg-sand active:translate-y-1 active:shadow-none transition-all"
+                style={sketchyShape2}
+              >
+                CANCEL
+              </button>
+              <button
+                onClick={() => {
+                  setTerminalCmd(pendingTermCmd);
+                  setShowFileView(false);
+                  setShowTerminal(true);
+                  setPendingTermCmd(null);
+                }}
+                className="px-6 py-3 bg-[#a3be8c] text-ink font-black border-4 border-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:bg-[#8eb072] active:translate-y-1 active:shadow-none transition-all flex items-center gap-2"
+                style={sketchyShape1}
+              >
+                <TerminalSquare size={18} strokeWidth={3} />
+                RUN IN TERMINAL
+              </button>
+            </div>
           </div>
         </div>
       )}
