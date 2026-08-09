@@ -24,7 +24,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install Ruff
-        run: pip install ruff
+        run: pip install ruff==0.15.13
 
       - name: Ruff Check (Lint & Format)
         run: |
