@@ -33,7 +33,8 @@ def _kill_pid_tree(pid: int):
         if sys.platform.startswith("win"):
             subprocess.run(
                 ["taskkill", "/F", "/T", "/PID", str(pid)],
-                capture_output=True, timeout=5,
+                capture_output=True,
+                timeout=5,
             )
         else:
             os.kill(pid, signal.SIGKILL)
@@ -242,10 +243,13 @@ async def _serve_unix_pty(websocket: WebSocket, cmd: str | None):
                     try:
                         ctrl = json.loads(msg[1:])
                         if ctrl.get("type") == "resize":
-                            winsize = struct.pack("HHHH",
-                                                  int(ctrl.get("rows", 24)),
-                                                  int(ctrl.get("cols", 80)),
-                                                  0, 0)
+                            winsize = struct.pack(
+                                "HHHH",
+                                int(ctrl.get("rows", 24)),
+                                int(ctrl.get("cols", 80)),
+                                0,
+                                0,
+                            )
                             fcntl.ioctl(master_fd, termios.TIOCSWINSZ, winsize)
                         continue
                     except Exception:
