@@ -16,6 +16,39 @@ LOGICAL_WIDTH = 1280
 _fused_elements_cache = []
 _last_screenshot_hash = None
 
+# 应用扫描结果缓存（避免 list_app 每次都重扫）
+_apps_cache = {"apps": [], "timestamp": 0}
+_APPS_CACHE_TTL = 300  # 5 分钟缓存有效期
+
+
+def _get_merged_apps() -> dict:
+    """获取合并后的应用白名单：自动扫描 + 用户配置，配置优先覆盖扫描结果"""
+    import time
+    from src.tool.computeruse.app_scanner import scan_desktop_apps, generate_app_config
+
+    now = time.time()
+    # 1. 刷新扫描缓存（过期或空缓存时重扫）
+    if not _apps_cache["apps"] or (now - _apps_cache["timestamp"]) > _APPS_CACHE_TTL:
+        try:
+            scanned = scan_desktop_apps()
+            _apps_cache["apps"] = scanned
+            _apps_cache["timestamp"] = now
+        except Exception:
+            _apps_cache["apps"] = []
+            _apps_cache["timestamp"] = now
+
+    # 2. 扫描结果转 name->path 字典
+    scanned_map = generate_app_config(_apps_cache["apps"])
+
+    # 3. 用户配置（优先级最高）
+    user_config = get_app_config() or {}
+
+    # 4. 合并：扫描结果打底，用户配置覆盖
+    merged = dict(scanned_map)
+    merged.update(user_config)
+
+    return merged
+
 
 def _calculate_iou(boxA, boxB):
     """计算两个矩形框 [x1,y1,x2,y2] 的重叠比例"""
@@ -241,12 +274,12 @@ def execute_action(
                 adapter.press_hotkey(text)
                 message = f"已触发快捷键: {text}"
             elif action == "list_app":
-                apps = get_app_config()
+                apps = _get_merged_apps()
                 if not apps:
-                    message = "📂 应用白名单为空或未配置。请提示用户在项目根目录的 `.purrcat/app_config.json` 文件中配置 JSON 映射（例如：{'微信': 'D:\\WeChat\\WeChat.exe'}）。"
+                    message = "📂 未发现任何可用应用。请提示用户手动在 `.purrcat/app_config.json` 中配置 JSON 映射（例如：{'微信': 'D:\\WeChat\\WeChat.exe'}）。"
                 else:
-                    app_list = "\n".join([f"- {k}: {v}" for k, v in apps.items()])
-                    message = f"📂 当前可用的应用白名单列表如下:\n{app_list}\n💡 请使用 launch_app 动作并传入上述名称进行唤起。"
+                    app_list = "\n".join([f"- {k}: {v}" for k, v in sorted(apps.items())])
+                    message = f"📂 当前可用的应用列表如下（自动扫描 + 用户配置，配置优先）:\n{app_list}\n💡 请使用 launch_app 动作并传入上述名称进行唤起。"
             elif action == "launch_app":
                 from urllib.parse import urlparse, unquote
                 from urllib.request import url2pathname
@@ -317,11 +350,11 @@ def execute_action(
 
                     # 3. 既不是 web url，也不像是文件路径，才走到应用白名单逻辑
                     else:
-                        apps = get_app_config()
+                        apps = _get_merged_apps()
                         if not apps:
                             raise ExecutionFailedError(
                                 action,
-                                "应用白名单未配置，请提示用户先创建 .purrcat/app_config.json 文件",
+                                "未发现任何可用应用，请提示用户先在 .purrcat/app_config.json 中手动配置",
                             )
 
                         matches = difflib.get_close_matches(
@@ -341,7 +374,7 @@ def execute_action(
                         else:
                             raise ExecutionFailedError(
                                 action,
-                                f"未在白名单中找到与 '{text_str}' 匹配的应用。请先使用 list_app 动作查看可用列表。",
+                                f"未在应用列表中找到与 '{text_str}' 匹配的应用。请先使用 list_app 动作查看可用列表。",
                             )
             else:
                 if not coordinate:
