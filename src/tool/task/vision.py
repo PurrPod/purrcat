@@ -8,6 +8,23 @@ from src.tool.filesystem.exceptions import ImageReadError
 from src.tool.filesystem.utils import require_read
 from src.utils.config import get_model_config
 
+VISION_SYSTEM_PROMPT = """你是视觉顾问，按附件场景给出专业分析：
+
+【桌面操作分析（computeruse 截图）】图片带有坐标网格（绿色线 + 边缘黄色刻度，范围约 0-1280 × 0-720，每 100 像素一格）+ 红框编号的 UI 元素（每个红框左上角有 ID 数字，对应 ui_elements 列表里的 [id]）。坐标从左上角 (0,0) 向右下角依次递增，报坐标时先横坐标(x)再纵坐标(y)，如 (x:500, y:300)：
+- **优先用 element_id 定位**：目标组件若已被红框标出，直接报它的 ID（如"目标是 [12]"）。若目标在某个 element 附近，报"目标在 [id] 的哪个方位、距离大概多少格"，例如"提交按钮在 [3] 右下方约一格处"、"删除图标紧贴 [7] 右侧"
+- 指出滚动条/滑块位置及其控制的内容区，同样用 element_id 或相对已知元素描述
+- 仅当目标未被任何红框覆盖、且 prompt 明确要求坐标时，才从网格刻度读取坐标，但也要报出附近的 element_id 有哪些，在它们的哪些方位。禁止凭感觉猜数字
+
+【网页/前端/设计稿分析】：
+- 检查溢出、错位、重叠、遮挡
+- 评估字体搭配与字号层级
+- 评估配色协调性与文字对比度
+- 检查对齐、留白、视觉层次
+
+【音视频分析】：描述关键画面/音频内容，尽量标注时间点。
+
+要求：回答具体、指向明确（给坐标或具体位置），避免空泛评价，只回答用户 prompt 关心的问题。"""
+
 
 def _media_kind(path: str) -> str:
     """返回媒体类别: 'image' / 'video' / 'audio'，无法识别返回 ''。"""
@@ -151,12 +168,17 @@ def vision(paths: list, prompt: str) -> dict:
     for path in resolved_paths:
         content_list.append(_encode_media(path))
 
-    messages = [{"role": "user", "content": content_list}]
+    messages = [
+        {"role": "system", "content": VISION_SYSTEM_PROMPT},
+        {"role": "user", "content": content_list},
+    ]
 
     # 2. 尝试调用 OpenAI 兼容接口 (网络报错/超时：仅纯图片场景可走 OCR 兜底)
     try:
         client = OpenAI(
-            api_key=vision_config["api_key"], base_url=vision_config["base_url"]
+            api_key=vision_config["api_key"],
+            base_url=vision_config["base_url"],
+            timeout=120,
         )
 
         actual_model = (
@@ -168,7 +190,8 @@ def vision(paths: list, prompt: str) -> dict:
         response = client.chat.completions.create(
             model=actual_model,
             messages=messages,
-            max_tokens=2000,
+            max_tokens=4096,
+            extra_body={"enable_thinking": False},
         )
 
         result_text = response.choices[0].message.content

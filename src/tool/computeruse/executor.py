@@ -11,6 +11,7 @@ from src.tool.computeruse.exceptions import ExecutionFailedError
 from src.utils.config import get_app_config
 
 LOGICAL_WIDTH = 1280
+GRID_SPACING = 100  # 坐标网格间距，每 100 逻辑像素一根线
 
 # 状态缓存（用于 find_element, element_id 定位 和 拦截无脑重复截图）
 _fused_elements_cache = []
@@ -157,25 +158,38 @@ def execute_action(
             # 使用 RGBA 模式以便支持透明度
             draw = ImageDraw.Draw(resized_img, "RGBA")
 
-            # === 新增：绘制全局稀疏坐标网格 ===
-            grid_spacing = 100  # 网格间距：每 100 逻辑像素一根线
-            grid_color = (0, 255, 0, 50)  # 半透明绿色线 (极低透明度，防止花眼)
-            text_color = (0, 255, 0, 150)  # 网格坐标数字的颜色
+            # === 全局坐标网格（高对比度标签，便于视觉模型读取） ===
+            grid_color = (0, 255, 0, 100)  # 网格线（加粗提高可见度）
+            grid_width = 2  # 线宽 2px
+            label_bg = (0, 0, 0, 190)  # 标签背景：深色半透明，保证任意底色上都清晰
+            label_fg = (255, 230, 0, 255)  # 标签文字：亮黄色
 
             # 画垂直线和 X 坐标标尺
-            for x in range(0, LOGICAL_WIDTH, grid_spacing):
-                draw.line([(x, 0), (x, logical_height)], fill=grid_color, width=1)
+            for x in range(0, LOGICAL_WIDTH, GRID_SPACING):
+                draw.line([(x, 0), (x, logical_height)], fill=grid_color, width=grid_width)
                 if x > 0:  # 避开左上角 [0,0] 重叠
-                    draw.text((x + 2, 2), str(x), fill=text_color)
+                    label = str(x)
+                    bbox = draw.textbbox((x + 2, 2), label)
+                    draw.rectangle(
+                        [bbox[0] - 1, bbox[1] - 1, bbox[2] + 1, bbox[3] + 1],
+                        fill=label_bg,
+                    )
+                    draw.text((x + 2, 2), label, fill=label_fg)
 
             # 画水平线和 Y 坐标标尺
-            for y in range(0, logical_height, grid_spacing):
-                draw.line([(0, y), (LOGICAL_WIDTH, y)], fill=grid_color, width=1)
+            for y in range(0, logical_height, GRID_SPACING):
+                draw.line([(0, y), (LOGICAL_WIDTH, y)], fill=grid_color, width=grid_width)
                 if y > 0:
-                    draw.text((2, y + 2), str(y), fill=text_color)
+                    label = str(y)
+                    bbox = draw.textbbox((2, y + 2), label)
+                    draw.rectangle(
+                        [bbox[0] - 1, bbox[1] - 1, bbox[2] + 1, bbox[3] + 1],
+                        fill=label_bg,
+                    )
+                    draw.text((2, y + 2), label, fill=label_fg)
             # ==============================
 
-            # === 继续绘制 SoM 元素蒙版与 ID ===
+            # === 绘制 SoM 元素红框 + ID，并生成 ui_elements 文本图例 ===
             legend_lines = []
             for idx, el in enumerate(fused):
                 box = el["logic_bbox"]
@@ -188,10 +202,7 @@ def execute_action(
                 )
                 draw.text((box[0] + 2, max(0, box[1] - 15)), str(idx), fill="white")
 
-                # ==========================================
-                # 🔥 终极 Token 优化：采用紧凑的正则表达式友好格式
-                # 格式示例：[0][Button]'确认'(500,300)
-                # ==========================================
+                # 紧凑格式：[0][Button]'确认'(500,300)
                 c_type = el.get("type", "[Ele]")
                 # 清理文本中的换行和冗余空格，防止破坏单行结构
                 c_text = (
