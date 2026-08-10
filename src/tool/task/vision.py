@@ -1,4 +1,4 @@
-"""图片读取功能 - 将宿主机图片转码并交由大模型分析 (增加 OCR 兜底)"""
+"""视觉顾问功能 - 将宿主机图片/视频/音频附件转码并交由大模型分析 (图片失败时 OCR 兜底)"""
 
 import base64
 import mimetypes
@@ -9,19 +9,39 @@ from src.tool.filesystem.utils import require_read
 from src.utils.config import get_model_config
 
 
-def _encode_image(image_path: str) -> dict:
-    """读取单张图片并转换为带 MIME 类型的 base64 字典"""
-    mime_type, _ = mimetypes.guess_type(image_path)
+def _media_kind(path: str) -> str:
+    """返回媒体类别: 'image' / 'video' / 'audio'，无法识别返回 ''。"""
+    mime_type, _ = mimetypes.guess_type(path)
     if not mime_type:
-        mime_type = "image/jpeg"
+        return ""
+    if mime_type.startswith("image/"):
+        return "image"
+    if mime_type.startswith("video/"):
+        return "video"
+    if mime_type.startswith("audio/"):
+        return "audio"
+    return ""
 
-    with open(image_path, "rb") as image_file:
-        base64_str = base64.b64encode(image_file.read()).decode("utf-8")
 
-    return {
-        "type": "image_url",
-        "image_url": {"url": f"data:{mime_type};base64,{base64_str}"},
-    }
+def _encode_media(file_path: str) -> dict:
+    """读取单个媒体文件（图片/视频/音频）并转为 OpenAI/Qwen 多模态格式的 base64 字典。
+
+    按 MIME 主类型分发到对应字段：
+      - image/* -> image_url
+      - video/* -> video_url
+      - audio/* -> audio_url
+    """
+    kind = _media_kind(file_path)
+    if not kind:
+        raise ImageReadError(f"无法识别或不支持的文件类型: {file_path}")
+
+    mime_type, _ = mimetypes.guess_type(file_path)
+    with open(file_path, "rb") as f:
+        base64_str = base64.b64encode(f.read()).decode("utf-8")
+
+    data_url = f"data:{mime_type};base64,{base64_str}"
+    key = f"{kind}_url"  # image_url / video_url / audio_url
+    return {"type": key, key: {"url": data_url}}
 
 
 def _get_vision_config():
@@ -53,7 +73,7 @@ def _get_vision_config():
 
 
 def _fallback_ocr(paths: list, original_error: str) -> dict:
-    """OCR 兜底识别函数"""
+    """OCR 兜底识别函数（仅适用于图片附件）"""
     try:
         import easyocr
 
@@ -88,39 +108,52 @@ def _fallback_ocr(paths: list, original_error: str) -> dict:
     }
 
 
-def read_picture(paths: list, prompt: str) -> dict:
+def vision(paths: list, prompt: str) -> dict:
     """
-    读取单张或多张图片，转码为 Base64 并发送给大模型，失败时使用 OCR 兜底。
+    读取一个或多个图片/视频/音频附件，转码为 base64 并按 OpenAI 多模态格式发送给视觉大模型。
+    仅当附件全部为图片且大模型不可用时，才使用 OCR 兜底。
 
     Args:
-        paths: 单个图片路径字符串，或图片路径字符串列表
+        paths: 单个附件路径字符串，或附件路径字符串列表（支持图片/视频/音频）
         prompt: 提示词
     """
     if isinstance(paths, str):
         paths = [paths]
 
     if not paths:
-        raise ImageReadError("未提供任何有效的图片路径")
+        raise ImageReadError("未提供任何有效的附件路径")
 
     # 批量校验权限
     resolved_paths = [require_read(p) for p in paths]
 
-    # 1. 尝试获取 vision 配置 (如果未配置，直接进入 OCR 兜底)
+    # 校验媒体类型并分类：只有图片能走 OCR 兜底，音视频不行
+    kinds = {p: _media_kind(p) for p in resolved_paths}
+    unsupported = [p for p, k in kinds.items() if not k]
+    if unsupported:
+        raise ImageReadError(
+            f"无法识别或不支持的附件类型: {unsupported}，仅支持图片/视频/音频"
+        )
+    image_paths = [p for p in resolved_paths if kinds[p] == "image"]
+    non_image_paths = [p for p in resolved_paths if kinds[p] != "image"]
+
+    # 1. 尝试获取 vision 配置 (若未配置：仅纯图片场景可走 OCR 兜底)
     try:
         vision_config = _get_vision_config()
     except ImageReadError as e:
-        return _fallback_ocr(resolved_paths, str(e))
+        if non_image_paths:
+            raise ImageReadError(
+                f"视觉大模型不可用 ({e})，且附件中含音视频无法用 OCR 兜底，请配置可用的 vision 模型"
+            )
+        return _fallback_ocr(image_paths, str(e))
 
-    # 构建大模型的 payload content
+    # 构建大模型的多模态 payload content
     content_list = [{"type": "text", "text": prompt}]
-
     for path in resolved_paths:
-        image_obj = _encode_image(path)
-        content_list.append(image_obj)
+        content_list.append(_encode_media(path))
 
     messages = [{"role": "user", "content": content_list}]
 
-    # 2. 尝试调用 OpenAI Vision API (网络报错/超时也进入 OCR 兜底)
+    # 2. 尝试调用 OpenAI 兼容接口 (网络报错/超时：仅纯图片场景可走 OCR 兜底)
     try:
         client = OpenAI(
             api_key=vision_config["api_key"], base_url=vision_config["base_url"]
@@ -141,12 +174,16 @@ def read_picture(paths: list, prompt: str) -> dict:
         result_text = response.choices[0].message.content
 
         return {
-            "image_count": len(resolved_paths),
+            "attachment_count": len(resolved_paths),
             "paths": resolved_paths,
             "analysis_result": result_text,
-            "message": f"成功分析了 {len(resolved_paths)} 张图片",
+            "message": f"成功分析了 {len(resolved_paths)} 个附件",
         }
 
     except Exception as e:
-        # API 异常时触发兜底
-        return _fallback_ocr(resolved_paths, f"API 访问异常: {str(e)}")
+        # API 异常时：含音视频则直接报错，纯图片则触发 OCR 兜底
+        if non_image_paths:
+            raise ImageReadError(
+                f"API 访问异常: {str(e)}，且附件中含音视频无法用 OCR 兜底"
+            )
+        return _fallback_ocr(image_paths, f"API 访问异常: {str(e)}")

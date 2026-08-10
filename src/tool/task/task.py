@@ -12,6 +12,8 @@ from src.tool.task.task_operations import (
     submit_request_operation,
     get_task_details_operation,
 )
+from src.tool.task.vision import vision
+from src.tool.filesystem.exceptions import FileSystemError, HostPathNotFoundError
 from src.tool.utils.format import error_response, text_response, warning_response
 
 
@@ -88,6 +90,7 @@ def Task(action: str, **kwargs) -> str:
             "kill",
             "submit_request",
             "get_details",
+            "vision",
         ]:
             return error_response(f"无效的操作: {action}", "❌ 无效action")
 
@@ -106,6 +109,8 @@ def Task(action: str, **kwargs) -> str:
             return _handle_submit_request(**kwargs)
         if action == "get_details":
             return _handle_get_details(**kwargs)
+        if action == "vision":
+            return _handle_vision(**kwargs)
     except Exception as e:
         traceback.print_exc()
         return error_response(f"任务异常: {str(e)}", "❌ Task执行异常")
@@ -266,3 +271,27 @@ def _handle_get_details(**kwargs) -> str:
         dashboard_text = "\n".join(lines)
 
     return text_response(dashboard_text, "📊 任务看板")
+
+
+def _handle_vision(**kwargs) -> str:
+    """视觉顾问：调用大模型分析图片/视频/音频附件，纯图片失败时 OCR 兜底"""
+    attachment_paths = kwargs.get("attachment_paths") or []
+    if not attachment_paths:
+        return error_response(
+            "vision 操作必须提供 attachment_paths 参数（附件路径数组，支持图片/视频/音频）",
+            "❌ 参数缺失",
+        )
+    try:
+        result = vision(
+            paths=attachment_paths,
+            prompt=kwargs.get("prompt", "请详细描述这些附件。"),
+        )
+        # 直接把顾问的分析结论作为正文返回，让 agent 拿到纯净的顾问回答
+        content = result.get("analysis_result") or str(result)
+        return text_response(
+            content, f"👁️ 视觉顾问已分析 {len(attachment_paths)} 个附件"
+        )
+    except HostPathNotFoundError as e:
+        return error_response(str(e), "❌ 路径不存在")
+    except FileSystemError as e:
+        return error_response(str(e), "❌ 附件读取失败")

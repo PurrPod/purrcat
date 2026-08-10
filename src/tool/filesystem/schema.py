@@ -4,7 +4,7 @@ FILESYSTEM_TOOL_SCHEMA = {
         "name": "FileSystem",
         "description": (
             "高级文件系统操作工具。\n"
-            "支持目录浏览(list)、视觉分析(read_picture)。\n"
+            "支持目录浏览(list)。\n"
             "文件级管理：移动/重命名(move)、复制(copy)与安全删除(delete)。\n"
             "强大的代码操作能力：读取(read)、编辑(edit)、复写(write)、文本搜索(search)与文件模式匹配(glob)。\n"
             "支持防冲突校验。任何编辑或删除错误均可通过 action='undo' 将文件安全回滚至上一状态。\n"
@@ -15,10 +15,9 @@ FILESYSTEM_TOOL_SCHEMA = {
             "properties": {
                 "action": {
                     "type": "string",
-                    "description": "操作类型。枚举值：list, read_picture, read, edit, write, search, glob, move, copy, delete, undo",
+                    "description": "操作类型。枚举值：list, read, edit, write, search, glob, move, copy, delete, undo",
                     "enum": [
                         "list",
-                        "read_picture",
                         "read",
                         "edit",
                         "write",
@@ -33,11 +32,6 @@ FILESYSTEM_TOOL_SCHEMA = {
                 "path": {
                     "type": "string",
                     "description": "通用目标文件或目录路径。支持两种格式：\n1. 沙盒路径（以 /agent_vm/ 开头）\n2. 宿主机本地绝对/相对路径。\n适用于 list, read, edit, write, search, glob, move 等绝大多数操作。",
-                },
-                "picture_paths": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "仅 read_picture 使用。多张图片路径数组，用于多图联合视觉分析。同样支持沙盒与本地路径映射。",
                 },
                 "destination": {
                     "type": "string",
@@ -75,10 +69,6 @@ FILESYSTEM_TOOL_SCHEMA = {
                 "depth": {
                     "type": "integer",
                     "description": "仅 list 使用。目录递归深度，默认 1。",
-                },
-                "prompt": {
-                    "type": "string",
-                    "description": "仅 read_picture 使用。视觉大模型的提示词指令。",
                 },
             },
             "required": ["action"],

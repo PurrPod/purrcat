@@ -39,6 +39,11 @@
 
 - 创建任务前必须先调用 `action="list_graphs"` 查阅实际可用的图名称与参数规范，严禁编造
 - 使用 `submit_request` 可向处于悬停状态的特定 `node_id` 注入决策指令
+- **视觉顾问 `action="vision"`**：vision 不是普通的图片描述，而是你的"视觉顾问"，承担两类关键职责：
+  - **ComputerUse 兜底**：当 screenshot 未能识别出按钮/UI 元素（ui_elements 为空或对不上）时，把截图交给 vision 顾问来辨认元素位置与可交互区域，再回到 ComputerUse 操作
+  - **成果质检**：写完前端代码、画完矢量图、做完 PPT/文档后，截图让 vision 顾问检查是否有错位、乱码、样式错乱等问题，并请它给出具体修改建议
+  - 配合 `attachment_paths`（附件路径数组，支持图片/视频/音频，支持沙盒 `/agent_vm/` 与本地路径）与 `prompt`（明确告诉顾问要看/听什么、关心哪种问题、要建议还是只要描述）使用，prompt 越具体诊断越准
+  - **无记忆无状态**：vision 顾问每次调用相互独立、不保留上下文。若回答不满意，禁止简单追问（它看不到上一轮），必须重新组织 prompt（补充更具体的上下文、约束、关注点或换个角度提问）再次完整调用，把所需信息一次性喂给它
 
 #### 5. CallMCP (外部扩展)
 
@@ -48,7 +53,6 @@
 
 - read 操作遇到 .pdf, .docx, .xlsx, .pptx 等富文本/表格，系统自动转为纯净 Markdown
 - edit 导致致命语法错误时，调用 `action="undo"` 安全回滚上一状态
-- 分析图片用 `action="read_picture"` 配合 prompt
 
 #### 7. Memo (记忆库)
 

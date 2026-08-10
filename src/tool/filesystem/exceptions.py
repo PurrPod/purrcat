@@ -47,7 +47,7 @@ class InvalidActionError(FileSystemError):
 
     def __init__(self, action: str):
         super().__init__(
-            f"无效的操作类型: {action}。支持的操作: import, export, list, read_picture"
+            f"无效的操作类型: {action}。支持的操作: import, export, list, read, edit, write, search, glob, move, copy, delete, undo"
         )
 
 
@@ -105,7 +105,7 @@ class UnsupportedPathTypeError(FileSystemError):
 
 
 class ImageReadError(FileSystemError):
-    """图片读取或大模型处理失败"""
+    """附件读取或大模型处理失败"""
 
     def __init__(self, msg: str):
-        super().__init__(f"图片处理失败: {msg}")
+        super().__init__(f"附件处理失败: {msg}")

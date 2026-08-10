@@ -8,7 +8,6 @@ from src.tool.filesystem.exceptions import FileSystemError, HostPathNotFoundErro
 from src.tool.filesystem.history import rewind_file
 from src.tool.filesystem.list_filesystem import list_filesystem
 from src.tool.filesystem.move_file import move_file
-from src.tool.filesystem.read_picture import read_picture
 from src.tool.filesystem.text_ops import (
     read_file,
     edit_file,
@@ -44,7 +43,6 @@ def FileSystem(action: str, path: str = None, destination: str = None, **kwargs)
         action = action.strip().lower() if action else ""
         allowed_actions = [
             "list",
-            "read_picture",
             "read",
             "edit",
             "write",
@@ -60,24 +58,6 @@ def FileSystem(action: str, path: str = None, destination: str = None, **kwargs)
             return error_response(
                 f"无效的操作: {action}。支持: {allowed_actions}", "❌ 参数错误"
             )
-
-        if action == "read_picture":
-            image_paths = kwargs.get("picture_paths") or ([path] if path else [])
-            if not image_paths:
-                return error_response(
-                    "read_picture 至少需要提供 path 或 picture_paths 参数",
-                    "❌ 参数缺失",
-                )
-            try:
-                result = read_picture(
-                    paths=image_paths,
-                    prompt=kwargs.get("prompt", "请详细描述这些图片。"),
-                )
-                return text_response(result, f"👁️ 成功分析了 {len(image_paths)} 张图片")
-            except HostPathNotFoundError as e:
-                return error_response(str(e), "❌ 路径不存在")
-            except FileSystemError as e:
-                return error_response(str(e), "❌ 图片读取失败")
 
         if not path:
             return error_response(f"{action} 操作必须提供 path 参数", "❌ 参数缺失")
