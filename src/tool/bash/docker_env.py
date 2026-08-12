@@ -280,7 +280,8 @@ class DockerManager:
             # 新代码：将大模型的命令包在一个代码块中，并强制将其输入重定向到 /dev/null
             # 这样无论里面跑什么命令，都无法窃取终端后续的输入字符
             safe_command = command.strip()
-            full_payload = f'{{ {safe_command} ; }} < /dev/null\necho -e "\\n{marker_str}$?|$(pwd)"'
+            # 通过换行分隔，避免 `{ ` 和 ` ; } < /dev/null` 污染命令末尾的 Heredoc 终结符
+            full_payload = f"{{\n{safe_command}\n}} < /dev/null\necho -e \"\\n{marker_str}$?|$(pwd)\""
 
             process.send(full_payload.replace("\r", "") + "\n")
             try:
