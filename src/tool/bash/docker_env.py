@@ -166,9 +166,9 @@ class DockerManager:
             # 暴露常见前端开发服务器端口到宿主机高位端口，避免与宿主机本地服务冲突
             # 容器端口 -> 宿主机端口（监听 0.0.0.0）
             "ports": {
-                "3000/tcp": ("0.0.0.0", 13000),   # Next.js / React 默认端口
-                "5173/tcp": ("0.0.0.0", 15173),   # Vite 默认端口
-                "8080/tcp": ("0.0.0.0", 18080),   # Vue CLI / Webpack 默认端口
+                "3000/tcp": ("0.0.0.0", 13000),  # Next.js / React 默认端口
+                "5173/tcp": ("0.0.0.0", 15173),  # Vite 默认端口
+                "8080/tcp": ("0.0.0.0", 18080),  # Vue CLI / Webpack 默认端口
             },
         }
 
@@ -288,7 +288,7 @@ class DockerManager:
             # 这样无论里面跑什么命令，都无法窃取终端后续的输入字符
             safe_command = command.strip()
             # 通过换行分隔，避免 `{ ` 和 ` ; } < /dev/null` 污染命令末尾的 Heredoc 终结符
-            full_payload = f"{{\n{safe_command}\n}} < /dev/null\necho -e \"\\n{marker_str}$?|$(pwd)\""
+            full_payload = f'{{\n{safe_command}\n}} < /dev/null\necho -e "\\n{marker_str}$?|$(pwd)"'
 
             process.send(full_payload.replace("\r", "") + "\n")
             try:

@@ -50,6 +50,6 @@ hooks:
   on_tool_calling:
     - tool_use_check:
         name: "ComputerUse"
-        successed_prompt: "组件找不到时使用 Vision 顾问进行询问"
+        successed_prompt: "组件找不到时使用 Vision 顾问进行询问。浏览器相关操作可以用浏览器相关 MCP 工具，更加高效。"
         
 

@@ -23,7 +23,6 @@ import json
 import platform
 import subprocess
 import plistlib
-from pathlib import Path
 from typing import List, Dict, Optional
 
 from src.utils.config import PURRCAT_DIR, APP_CONFIG_PATH
@@ -36,9 +35,18 @@ def _scan_registry_uninstall() -> List[Dict]:
         import winreg
 
         roots = [
-            (winreg.HKEY_LOCAL_MACHINE, r"Software\Microsoft\Windows\CurrentVersion\Uninstall"),
-            (winreg.HKEY_LOCAL_MACHINE, r"Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall"),
-            (winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Uninstall"),
+            (
+                winreg.HKEY_LOCAL_MACHINE,
+                r"Software\Microsoft\Windows\CurrentVersion\Uninstall",
+            ),
+            (
+                winreg.HKEY_LOCAL_MACHINE,
+                r"Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall",
+            ),
+            (
+                winreg.HKEY_CURRENT_USER,
+                r"Software\Microsoft\Windows\CurrentVersion\Uninstall",
+            ),
         ]
 
         for hive, subpath in roots:
@@ -50,7 +58,9 @@ def _scan_registry_uninstall() -> List[Dict]:
                             subkey_name = winreg.EnumKey(key, i)
                             with winreg.OpenKey(key, subkey_name) as subkey:
                                 try:
-                                    display_name, _ = winreg.QueryValueEx(subkey, "DisplayName")
+                                    display_name, _ = winreg.QueryValueEx(
+                                        subkey, "DisplayName"
+                                    )
                                 except FileNotFoundError:
                                     i += 1
                                     continue
@@ -62,17 +72,23 @@ def _scan_registry_uninstall() -> List[Dict]:
                                 display_icon = None
                                 install_location = None
                                 try:
-                                    display_icon, _ = winreg.QueryValueEx(subkey, "DisplayIcon")
+                                    display_icon, _ = winreg.QueryValueEx(
+                                        subkey, "DisplayIcon"
+                                    )
                                 except FileNotFoundError:
                                     pass
                                 try:
-                                    install_location, _ = winreg.QueryValueEx(subkey, "InstallLocation")
+                                    install_location, _ = winreg.QueryValueEx(
+                                        subkey, "InstallLocation"
+                                    )
                                 except FileNotFoundError:
                                     pass
 
                                 path = None
                                 if display_icon:
-                                    match = re.match(r'^"?(.+?\.exe)"?,?\d*$', display_icon)
+                                    match = re.match(
+                                        r'^"?(.+?\.exe)"?,?\d*$', display_icon
+                                    )
                                     if match:
                                         path = match.group(1)
                                     elif os.path.exists(display_icon):
@@ -81,11 +97,13 @@ def _scan_registry_uninstall() -> List[Dict]:
                                     path = install_location
 
                                 if path and os.path.exists(path):
-                                    apps.append({
-                                        "name": display_name,
-                                        "path": path,
-                                        "type": "win32",
-                                    })
+                                    apps.append(
+                                        {
+                                            "name": display_name,
+                                            "path": path,
+                                            "type": "win32",
+                                        }
+                                    )
                         except OSError:
                             break
                         i += 1
@@ -101,7 +119,6 @@ def _parse_lnk_target(lnk_path: str) -> Optional[str]:
     """解析 .lnk 快捷方式的目标路径"""
     try:
         # 方法1: 使用 win32com (需要 pywin32)
-        import pythoncom
         from win32com.client import Dispatch
 
         shell = Dispatch("WScript.Shell")
@@ -117,7 +134,7 @@ def _parse_lnk_target(lnk_path: str) -> Optional[str]:
         with open(lnk_path, "rb") as f:
             data = f.read()
         # 搜索 .exe 字符串 (UTF-16LE 编码)
-        matches = re.findall(b'([\x20-\x7e]\x00){4,}', data)
+        matches = re.findall(b"([\x20-\x7e]\x00){4,}", data)
         for match in matches:
             try:
                 decoded = match.decode("utf-16-le", errors="ignore").rstrip("\x00")
@@ -136,8 +153,20 @@ def _scan_shortcuts() -> List[Dict]:
     apps = []
 
     lnk_dirs = [
-        os.path.join(os.environ.get("ProgramData", ""), "Microsoft", "Windows", "Start Menu", "Programs"),
-        os.path.join(os.environ.get("AppData", ""), "Microsoft", "Windows", "Start Menu", "Programs"),
+        os.path.join(
+            os.environ.get("ProgramData", ""),
+            "Microsoft",
+            "Windows",
+            "Start Menu",
+            "Programs",
+        ),
+        os.path.join(
+            os.environ.get("AppData", ""),
+            "Microsoft",
+            "Windows",
+            "Start Menu",
+            "Programs",
+        ),
         os.path.join(os.environ.get("USERPROFILE", ""), "Desktop"),
         os.path.join(os.environ.get("PUBLIC", ""), "Desktop"),
     ]
@@ -154,11 +183,13 @@ def _scan_shortcuts() -> List[Dict]:
                     target = _parse_lnk_target(lnk_path)
                     if target:
                         app_name = os.path.splitext(fname)[0]
-                        apps.append({
-                            "name": app_name,
-                            "path": target,
-                            "type": "shortcut",
-                        })
+                        apps.append(
+                            {
+                                "name": app_name,
+                                "path": target,
+                                "type": "shortcut",
+                            }
+                        )
         except Exception:
             continue
 
@@ -170,7 +201,11 @@ def _scan_uwp_apps() -> List[Dict]:
     apps = []
     try:
         result = subprocess.run(
-            ["powershell", "-Command", "Get-AppxPackage | Where-Object { $_.IsFramework -eq $false -and $_.SignatureKind -ne 'System' } | Select-Object Name, InstallLocation | ConvertTo-Json -Compress"],
+            [
+                "powershell",
+                "-Command",
+                "Get-AppxPackage | Where-Object { $_.IsFramework -eq $false -and $_.SignatureKind -ne 'System' } | Select-Object Name, InstallLocation | ConvertTo-Json -Compress",
+            ],
             capture_output=True,
             text=True,
             timeout=30,
@@ -184,11 +219,13 @@ def _scan_uwp_apps() -> List[Dict]:
                 name = item.get("Name", "")
                 location = item.get("InstallLocation", "")
                 if name and location and os.path.isdir(location):
-                    apps.append({
-                        "name": name,
-                        "path": location,
-                        "type": "uwp",
-                    })
+                    apps.append(
+                        {
+                            "name": name,
+                            "path": location,
+                            "type": "uwp",
+                        }
+                    )
     except Exception:
         pass
 
@@ -222,19 +259,25 @@ def _scan_macos_apps() -> List[Dict]:
                             plist = plistlib.load(f)
                         exe_name = plist.get("CFBundleExecutable")
                         if exe_name:
-                            possible_exe = os.path.join(app_path, "Contents", "MacOS", exe_name)
+                            possible_exe = os.path.join(
+                                app_path, "Contents", "MacOS", exe_name
+                            )
                             if os.path.exists(possible_exe):
                                 exec_path = possible_exe
-                        display_name = plist.get("CFBundleDisplayName") or plist.get("CFBundleName")
+                        display_name = plist.get("CFBundleDisplayName") or plist.get(
+                            "CFBundleName"
+                        )
                         if display_name:
                             app_name = display_name
                     except Exception:
                         pass
-                apps.append({
-                    "name": app_name,
-                    "path": exec_path,
-                    "type": "app",
-                })
+                apps.append(
+                    {
+                        "name": app_name,
+                        "path": exec_path,
+                        "type": "app",
+                    }
+                )
         except Exception:
             pass
 
@@ -258,11 +301,13 @@ def _scan_macos_apps() -> List[Dict]:
                 if line in seen_paths:
                     continue
                 app_name = os.path.basename(line)[:-4]
-                apps.append({
-                    "name": app_name,
-                    "path": line,
-                    "type": "app",
-                })
+                apps.append(
+                    {
+                        "name": app_name,
+                        "path": line,
+                        "type": "app",
+                    }
+                )
     except Exception:
         pass
 
@@ -302,7 +347,7 @@ def _scan_linux_desktop_files() -> List[Dict]:
                         name = value
                     elif key == "Exec" and exec_cmd is None:
                         # 去掉 %f %F %u %U 等参数占位符
-                        exec_cmd = re.sub(r'\s%[a-zA-Z]', '', value).strip('"')
+                        exec_cmd = re.sub(r"\s%[a-zA-Z]", "", value).strip('"')
                     elif key == "NoDisplay" and value.lower() == "true":
                         no_display = True
             if no_display:
@@ -420,12 +465,15 @@ def scan_and_save(generate_config: bool = False) -> Dict:
         if not os.path.exists(APP_CONFIG_PATH):
             config = generate_app_config(apps)
             from src.utils.config import _save_json_file
+
             _save_json_file(APP_CONFIG_PATH, config)
             result["app_config_path"] = APP_CONFIG_PATH
             result["config_generated"] = True
         else:
             result["config_skipped"] = True
-            result["config_skip_reason"] = "app_config.json 已存在，跳过自动生成以保护用户手动配置"
+            result["config_skip_reason"] = (
+                "app_config.json 已存在，跳过自动生成以保护用户手动配置"
+            )
 
     return result
 
@@ -434,9 +482,11 @@ if __name__ == "__main__":
     print("🔍 正在扫描本地桌面应用...")
     result = scan_and_save(generate_config=True)
 
-    print(f"\n📊 扫描完成!")
+    print("\n📊 扫描完成!")
     print(f"   总计: {result['total']} 个应用")
-    print(f"   Win32: {result['win32']} | 快捷方式: {result['shortcut']} | UWP: {result['uwp']}")
+    print(
+        f"   Win32: {result['win32']} | 快捷方式: {result['shortcut']} | UWP: {result['uwp']}"
+    )
     print(f"   清单: {result['inventory_path']}")
     if result.get("config_generated"):
         print(f"   ✅ 白名单已生成: {result['app_config_path']}")

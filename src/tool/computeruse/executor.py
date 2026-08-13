@@ -166,7 +166,9 @@ def execute_action(
 
             # 画垂直线和 X 坐标标尺
             for x in range(0, LOGICAL_WIDTH, GRID_SPACING):
-                draw.line([(x, 0), (x, logical_height)], fill=grid_color, width=grid_width)
+                draw.line(
+                    [(x, 0), (x, logical_height)], fill=grid_color, width=grid_width
+                )
                 if x > 0:  # 避开左上角 [0,0] 重叠
                     label = str(x)
                     bbox = draw.textbbox((x + 2, 2), label)
@@ -178,7 +180,9 @@ def execute_action(
 
             # 画水平线和 Y 坐标标尺
             for y in range(0, logical_height, GRID_SPACING):
-                draw.line([(0, y), (LOGICAL_WIDTH, y)], fill=grid_color, width=grid_width)
+                draw.line(
+                    [(0, y), (LOGICAL_WIDTH, y)], fill=grid_color, width=grid_width
+                )
                 if y > 0:
                     label = str(y)
                     bbox = draw.textbbox((2, y + 2), label)
@@ -289,7 +293,9 @@ def execute_action(
                 if not apps:
                     message = "📂 未发现任何可用应用。请提示用户手动在 `.purrcat/app_config.json` 中配置 JSON 映射（例如：{'微信': 'D:\\WeChat\\WeChat.exe'}）。"
                 else:
-                    app_list = "\n".join([f"- {k}: {v}" for k, v in sorted(apps.items())])
+                    app_list = "\n".join(
+                        [f"- {k}: {v}" for k, v in sorted(apps.items())]
+                    )
                     message = f"📂 当前可用的应用列表如下（自动扫描 + 用户配置，配置优先）:\n{app_list}\n💡 请使用 launch_app 动作并传入上述名称进行唤起。"
             elif action == "launch_app":
                 from urllib.parse import urlparse, unquote

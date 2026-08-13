@@ -1,7 +1,7 @@
 // src/components/ChatPage.tsx
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Send, Cat, Clock, Activity, Server, Zap, Brain, GitMerge, Loader2, FolderOpen, Bell, Paperclip, X, Heart, User, List, ExternalLink, Plus, BookOpen, ClipboardCopy, TerminalSquare, AlertTriangle } from 'lucide-react';
+import { Send, Cat, Clock, Activity, Server, Zap, Brain, GitMerge, Loader2, FolderOpen, Bell, Paperclip, X, Heart, User, List, ExternalLink, Plus, BookOpen, ClipboardCopy, TerminalSquare, AlertTriangle, Globe } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import ReactMarkdown, { defaultUrlTransform } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -32,10 +32,14 @@ import { parseEventsContent, hasMessageInHistory, renderSketchyHeatmap, Markdown
 import ChatModals from './chat/ChatModals';
 import ChatSidebar from './chat/ChatSidebar';
 import { FileChangesPanel, RequestQueuePanel, TerminalPanel } from './chat/ChatPanels';
+import AgentBrowserPanel from './chat/AgentBrowserPanel';
 
 // Tauri 文件系统 API (用于拖拽上传)
 import { copyFile, exists, mkdir } from '@tauri-apps/plugin-fs';
 import { join } from '@tauri-apps/api/path';
+
+// 🌟 多标签页类型定义
+export type BrowserTab = { id: string; url: string; title: string };
 
 export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => void; onSwitchToTask?: () => void }) {
   const navigate = useNavigate();
@@ -110,6 +114,12 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   // 🌟 心跳控制状态
   const [showHeartbeatModal, setShowHeartbeatModal] = useState(false);
   const [heartbeatConfig, setHeartbeatConfig] = useState({ interval: 1800, active: true });
+
+  // --- 新增：内置浏览器状态（多标签页） ---
+  const [showBrowser, setShowBrowser] = useState(false);
+  const [browserMode, setBrowserMode] = useState<'browse' | 'pick' | 'draw'>('browse');
+  const [browserTabs, setBrowserTabs] = useState<BrowserTab[]>([]);
+  const [activeTabId, setActiveTabId] = useState<string | null>(null);
 
   // 🌟 挂载时拉取现有的心跳配置
   const fetchAgentHeartbeat = async () => {
@@ -230,7 +240,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
 
     if (localPath !== null) {
       const ext = localPath.split('.').pop()?.toLowerCase() || '';
-      if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes(ext)) {
+      if (['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(ext)) {
         type = 'image';
       } else if (['mp4', 'webm', 'mov', 'ogg'].includes(ext)) {
         type = 'video';
@@ -239,6 +249,12 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
         type = 'browser';
       }
       finalUrl = `http://localhost:8000/api/filesystem/preview?path=${encodeURIComponent(localPath)}`;
+    }
+
+    // 🌟 browser 类型直接在内置浏览器中打开（图片/视频仍走弹窗）
+    if (type === 'browser') {
+      openInBrowser(finalUrl, rawHref.split('/').pop() || rawHref);
+      return;
     }
 
     setPreviewType(type);
@@ -553,6 +569,43 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
     try { await fetch('http://localhost:8000/api/chat/batch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ session_id: currentSessionId, events: eventsToPush }) }); } catch { /* noop */ }
   };
 
+  // 🌟 在内置浏览器中打开链接（供 handleMessageClick 调用）
+  const openInBrowser = (url: string, title: string = 'Preview') => {
+    const existingTab = browserTabs.find(t => t.url === url);
+    if (existingTab) {
+      setActiveTabId(existingTab.id);
+    } else {
+      const newTab: BrowserTab = { id: Date.now().toString(), url, title };
+      setBrowserTabs(prev => [...prev, newTab]);
+      setActiveTabId(newTab.id);
+    }
+    setShowBrowser(true);
+  };
+
+  // 处理浏览器发来的评论，直接发送给 Agent（附带 currentUrl）
+  const handleBrowserComment = async (pixelData: any, comment: string, currentUrl: string) => {
+    if (!currentSessionId) return;
+    
+    const eventsToPush = [
+      { 
+        type: 'browser-comment', 
+        content: `User marked an area in browser.\nURL: ${currentUrl}\nMode: ${pixelData.mode}\nElement/Pixels: ${JSON.stringify(pixelData.rect)}\nContext: ${pixelData.domContext}\nViewport: ${JSON.stringify(pixelData.viewport)}\nComment: ${comment}` 
+      },
+      { type: 'user', content: comment }
+    ];
+
+    setIsAgentThinking(true);
+    setMessages(prev => [...prev, { role: 'user', content: JSON.stringify({ events: eventsToPush }) }]);
+
+    try { 
+      await fetch('http://localhost:8000/api/chat/batch', { 
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify({ session_id: currentSessionId, events: eventsToPush }) 
+      }); 
+    } catch { toast.error("发送浏览器指令失败"); }
+  };
+
   const confirmTraceToSkill = async () => {
     if (!currentSessionId) return;
     if (!traceSkillName.trim()) return toast.error("请指定技能名称！");
@@ -638,9 +691,11 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
     <div className="absolute inset-0 bg-[#fdfaf5] bg-[radial-gradient(#1a1a1a_1px,transparent_1px)] [background-size:24px_24px] p-6 md:p-8 flex gap-6 overflow-hidden font-sans">
       
       <ChatModals {...modalProps} />
-      <ChatSidebar {...sidebarProps} />
+      
+      {!showBrowser && <ChatSidebar {...sidebarProps} />}
 
-      <div style={sketchyShape1} className="flex-1 bg-paper border-4 border-ink shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] flex flex-col overflow-hidden relative z-10">
+      {/* 🌟 聊天框动态压缩：改为 w-[420px] 增加宽度 */}
+      <div style={sketchyShape1} className={`${showBrowser ? 'w-[420px] shrink-0' : 'flex-1'} transition-all duration-300 bg-paper border-4 border-ink shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] flex flex-col overflow-hidden relative z-10`}>
         
         {currentSessionId ? (
           <div className="absolute -top-2 right-12 px-6 py-1 bg-[#a3be8c] border-2 border-ink rotate-2 z-50 text-ink font-black text-sm shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center" style={sketchyShape2} title="Session ID">
@@ -648,51 +703,64 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
           </div>
         ) : <div className="absolute -top-4 right-12 w-32 h-8 bg-[#a3be8c]/80 border-2 border-ink -rotate-3 z-50" style={sketchyShape2}></div>}
 
-        <div className="pt-8 px-10 pb-4 flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-4">
-            <div style={sketchyShape1} className="w-12 h-12 bg-terracotta border-4 border-ink flex items-center justify-center -rotate-6 shadow-[2px_2px_0px_0px_rgba(26,26,26,1)]">
-              <Cat size={28} className="text-paper" strokeWidth={2.5} />
+        {!showBrowser ? (
+          <div className="pt-8 px-10 pb-4 flex items-center justify-between shrink-0">
+            <div className="flex items-center gap-4">
+              <div style={sketchyShape1} className="w-12 h-12 bg-terracotta border-4 border-ink flex items-center justify-center -rotate-6 shadow-[2px_2px_0px_0px_rgba(26,26,26,1)]">
+                <Cat size={28} className="text-paper" strokeWidth={2.5} />
+              </div>
+              <div className="flex items-center gap-3">
+                <h2 className="text-4xl font-black tracking-tighter text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>PurrCat.</h2>
+                {/* 🌟 心跳控制按钮 */}
+                <button 
+                  onClick={() => setShowHeartbeatModal(true)} 
+                  className={`p-2 border-4 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] transition-all hover:scale-110 active:translate-y-1 active:shadow-none ${heartbeatConfig.active ? 'bg-[#bf616a] text-paper' : 'bg-cream text-ink/40'}`} 
+                  style={sketchyShape3} 
+                  title="Agent Subconscious Heartbeat"
+                >
+                  <Heart size={20} strokeWidth={3} className={heartbeatConfig.active ? "animate-pulse" : ""} />
+                </button>
+              </div>
             </div>
+            
             <div className="flex items-center gap-3">
-              <h2 className="text-4xl font-black tracking-tighter text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>PurrCat.</h2>
-              {/* 🌟 心跳控制按钮 */}
-              <button 
-                onClick={() => setShowHeartbeatModal(true)} 
-                className={`p-2 border-4 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] transition-all hover:scale-110 active:translate-y-1 active:shadow-none ${heartbeatConfig.active ? 'bg-[#bf616a] text-paper' : 'bg-cream text-ink/40'}`} 
-                style={sketchyShape3} 
-                title="Agent Subconscious Heartbeat"
-              >
-                <Heart size={20} strokeWidth={3} className={heartbeatConfig.active ? "animate-pulse" : ""} />
-              </button>
+               {currentSessionId && (
+                 <div className="flex items-center gap-2" title={`Token: ${tokenData.window} / ${tokenData.max}`}>
+                   <span className="text-[11px] font-black text-ink/50" style={{ fontFamily: '"Comic Sans MS", cursive' }}>MEM</span>
+                   <div className="w-36 h-[14px] border-2 border-ink bg-cream p-[2px]" style={sketchyShape3}>
+                     <div className="h-full transition-all duration-1000 ease-out border-r-2 border-ink" style={{ width: `${Math.min(100, (tokenData.window / tokenData.max) * 100)}%`, backgroundImage: (tokenData.window / tokenData.max) > 0.8 ? 'repeating-linear-gradient(45deg, #bf616a, #bf616a 2px, transparent 2px, transparent 6px)' : 'repeating-linear-gradient(-45deg, #d08770, #d08770 2px, transparent 2px, transparent 6px)', backgroundColor: (tokenData.window / tokenData.max) > 0.8 ? 'rgba(191,97,106,0.1)' : 'rgba(208,135,112,0.1)', ...sketchyShape1 }} />
+                   </div>
+                   <span className="text-[11px] font-black text-ink/70 w-8 text-right shrink-0">{Math.round((tokenData.window / tokenData.max) * 100)}%</span>
+                 </div>
+               )}
+
+               <button onClick={() => { setTerminalCmd(null); setShowTerminal(!showTerminal); setShowFileView(false); }} className={`relative w-10 h-10 border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] transition-all flex items-center justify-center ${showTerminal ? 'bg-[#88c0d0] text-paper' : 'bg-cream text-ink'}`} style={sketchyShape2} title="打开终端">
+                 <TerminalSquare size={20} strokeWidth={3} />
+               </button>
+
+               <button onClick={() => setShowFileView(!showFileView)} className={`relative w-10 h-10 border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] transition-all flex items-center justify-center ${showFileView ? 'bg-[#88c0d0] text-paper' : 'bg-cream text-ink'}`} style={sketchyShape3}>
+                 <FolderOpen size={20} strokeWidth={3} />
+                 {fileChanges.length > 0 && <span className="absolute -top-2 -right-2 bg-[#d08770] text-paper text-xs px-1.5 py-0.5 rounded-full border-2 border-ink">{fileChanges.length}</span>}
+               </button>
+
+               <button onClick={() => setShowReqQueue(!showReqQueue)} className={`relative w-10 h-10 border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] transition-all flex items-center justify-center ${pendingReqs.length > 0 ? 'bg-[#EBCB8B] text-ink animate-pulse' : 'bg-cream text-ink'}`} style={sketchyShape2}>
+                 <Bell size={20} strokeWidth={3} />
+                 {pendingReqs.length > 0 && <span className="absolute -top-2 -right-2 bg-[#bf616a] text-paper text-xs px-1.5 py-0.5 rounded-full border-2 border-ink">{pendingReqs.length}</span>}
+               </button>
+
+               <button onClick={() => setShowBrowser(!showBrowser)} className={`relative w-10 h-10 border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] transition-all flex items-center justify-center ${showBrowser ? 'bg-[#88c0d0] text-paper' : 'bg-cream text-ink'}`} style={sketchyShape3} title="内置浏览器">
+                 <Globe size={20} strokeWidth={3} />
+               </button>
             </div>
           </div>
-          
-          <div className="flex items-center gap-3">
-             {currentSessionId && (
-               <div className="flex items-center gap-2" title={`Token: ${tokenData.window} / ${tokenData.max}`}>
-                 <span className="text-[11px] font-black text-ink/50" style={{ fontFamily: '"Comic Sans MS", cursive' }}>MEM</span>
-                 <div className="w-36 h-[14px] border-2 border-ink bg-cream p-[2px]" style={sketchyShape3}>
-                   <div className="h-full transition-all duration-1000 ease-out border-r-2 border-ink" style={{ width: `${Math.min(100, (tokenData.window / tokenData.max) * 100)}%`, backgroundImage: (tokenData.window / tokenData.max) > 0.8 ? 'repeating-linear-gradient(45deg, #bf616a, #bf616a 2px, transparent 2px, transparent 6px)' : 'repeating-linear-gradient(-45deg, #d08770, #d08770 2px, transparent 2px, transparent 6px)', backgroundColor: (tokenData.window / tokenData.max) > 0.8 ? 'rgba(191,97,106,0.1)' : 'rgba(208,135,112,0.1)', ...sketchyShape1 }} />
-                 </div>
-                 <span className="text-[11px] font-black text-ink/70 w-8 text-right shrink-0">{Math.round((tokenData.window / tokenData.max) * 100)}%</span>
-               </div>
-             )}
-
-             <button onClick={() => { setTerminalCmd(null); setShowTerminal(!showTerminal); setShowFileView(false); }} className={`relative w-10 h-10 border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] transition-all flex items-center justify-center ${showTerminal ? 'bg-[#88c0d0] text-paper' : 'bg-cream text-ink'}`} style={sketchyShape2} title="打开终端">
-               <TerminalSquare size={20} strokeWidth={3} />
-             </button>
-
-             <button onClick={() => setShowFileView(!showFileView)} className={`relative w-10 h-10 border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] transition-all flex items-center justify-center ${showFileView ? 'bg-[#88c0d0] text-paper' : 'bg-cream text-ink'}`} style={sketchyShape3}>
-               <FolderOpen size={20} strokeWidth={3} />
-               {fileChanges.length > 0 && <span className="absolute -top-2 -right-2 bg-[#d08770] text-paper text-xs px-1.5 py-0.5 rounded-full border-2 border-ink">{fileChanges.length}</span>}
-             </button>
-
-             <button onClick={() => setShowReqQueue(!showReqQueue)} className={`relative w-10 h-10 border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] transition-all flex items-center justify-center ${pendingReqs.length > 0 ? 'bg-[#EBCB8B] text-ink animate-pulse' : 'bg-cream text-ink'}`} style={sketchyShape2}>
-               <Bell size={20} strokeWidth={3} />
-               {pendingReqs.length > 0 && <span className="absolute -top-2 -right-2 bg-[#bf616a] text-paper text-xs px-1.5 py-0.5 rounded-full border-2 border-ink">{pendingReqs.length}</span>}
-             </button>
+        ) : (
+          <div className="pt-6 px-6 pb-2 flex justify-between items-center shrink-0 border-b-4 border-ink/10">
+            <h2 className="text-2xl font-black tracking-tighter text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>PurrCat.</h2>
+            <button onClick={() => setShowBrowser(false)} className="p-1.5 border-2 border-ink hover:bg-[#bf616a] hover:text-paper shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] transition-all" style={sketchyShape2}>
+              <X size={18} strokeWidth={3} />
+            </button>
           </div>
-        </div>
+        )}
 
         {currentSessionId && Object.keys(branches).length > 1 && (
           <div className="px-10 flex gap-3 overflow-x-auto shrink-0 pb-3 border-b-4 border-ink/10 pt-1 select-none">
@@ -710,9 +778,9 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
         )}
 
         {/* 🌟 恢复原版消息渲染映射 (.map)，加上 onClick 拦截点击 */}
-        <div ref={messagesContainerRef} onScroll={handleScroll} onClick={handleMessageClick} className="flex-1 overflow-y-auto px-10 pb-6 flex flex-col gap-6 w-full z-10 pt-4">
+        <div ref={messagesContainerRef} onScroll={handleScroll} onClick={handleMessageClick} className={`flex-1 overflow-y-auto ${showBrowser ? 'px-4' : 'px-10'} pb-6 flex flex-col gap-6 w-full z-10 pt-4`}>
           {messages.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full text-ink gap-5 p-2 w-full max-w-3xl mx-auto select-none">
+            <div className={`flex flex-col items-center justify-center h-full text-ink gap-5 p-2 w-full ${showBrowser ? 'max-w-none' : 'max-w-3xl'} mx-auto select-none`}>
               <div className="flex items-center mb-2"><p className="text-3xl font-black rotate-1 text-ink tracking-tight" style={{ fontFamily: '"Comic Sans MS", cursive' }}>Hi, what are we building today?</p></div>
               <div className="grid grid-cols-3 gap-4 w-full">
                 <div style={sketchyShape2} className="bg-paper border-4 border-ink p-3 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center gap-3 rotate-1"><div className="p-2 bg-[#EBCB8B]/30 border-2 border-ink" style={sketchyShape3}><Activity size={20} className="text-ink" strokeWidth={3} /></div><div className="flex-1 min-w-0"><div className="text-[10px] font-black text-ink/40">TODAY CALLS</div><div className="text-xl font-black font-mono text-ink truncate">{globalStats?.today?.calls ?? 0}</div></div></div>
@@ -828,7 +896,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
         <TerminalPanel showTerminal={showTerminal} setShowTerminal={setShowTerminal} command={terminalCmd} />
 
         {currentBranchId === 'main' ? (
-          <div className="px-10 pb-8 pt-4 shrink-0 flex flex-col gap-3 w-full">
+          <div className={`${showBrowser ? 'px-4 pb-4' : 'px-10 pb-8'} pt-4 shrink-0 flex flex-col gap-3 w-full`}>
            {(selectedSkills.length > 0 || selectedMcps.length > 0 || selectedGraphs.length > 0 || refPaths.length > 0 || useBrainstorm) && (
              <div className="flex flex-wrap gap-2">
                {selectedSkills.map(skill => <div key={skill} style={sketchyShape3} className="flex items-center gap-1 bg-[#F9E2AF] border-2 border-ink px-3 py-1 font-bold text-sm shadow-[2px_2px_0px_0px_rgba(26,26,26,1)]"><span>⚡ {skill}</span><button onClick={() => setSelectedSkills(prev => prev.filter(s => s !== skill))} className="hover:text-terracotta ml-1"><X size={14} strokeWidth={3}/></button></div>)}
@@ -884,16 +952,33 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                  </button>
                </div>
              </div>
-             <button style={sketchyShape1} onClick={handleSend} disabled={!currentSessionId || !input.trim()} className="bg-ink text-paper px-10 font-black flex items-center gap-3 border-4 border-ink hover:bg-terracotta hover:text-ink shadow-[6px_6px_0px_0px_rgba(212,122,90,1)] rotate-2 min-h-[80px] self-end">
-               <Send size={26} strokeWidth={2.5} />
-             </button>
-           </div>
+            {/* 🌟 只有在非浏览器模式下才渲染发送按钮（浏览器模式用回车发送） */}
+            {!showBrowser && (
+              <button style={sketchyShape1} onClick={handleSend} disabled={!currentSessionId || !input.trim()} className="bg-ink text-paper px-10 font-black flex items-center gap-3 border-4 border-ink hover:bg-terracotta hover:text-ink shadow-[6px_6px_0px_0px_rgba(212,122,90,1)] rotate-2 min-h-[80px] self-end">
+                <Send size={26} strokeWidth={2.5} />
+              </button>
+            )}
+          </div>
            )}
         </div>
           ) : (
             <div className="px-10 pb-8 pt-4 shrink-0 flex justify-center w-full"><div style={sketchyShape3} className="bg-cream border-4 border-ink px-10 py-5 font-black text-ink/50 tracking-widest uppercase flex items-center gap-3">🔒 READ-ONLY SUB-BRANCH VIEW</div></div>
           )}
       </div>
+
+      {showBrowser && (
+        <div className="flex-1 overflow-hidden animate-in slide-in-from-right-4 duration-300">
+          <AgentBrowserPanel 
+            tabs={browserTabs}
+            setTabs={setBrowserTabs}
+            activeTabId={activeTabId}
+            setActiveTabId={setActiveTabId}
+            mode={browserMode}
+            setMode={setBrowserMode}
+            onComment={handleBrowserComment}
+          />
+        </div>
+      )}
 
       <RequestQueuePanel {...queueProps} />
 
