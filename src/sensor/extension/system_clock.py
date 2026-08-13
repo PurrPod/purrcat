@@ -8,6 +8,7 @@ import json
 import time
 import datetime
 import os
+from pathlib import Path
 
 _REAL_STDOUT = sys.stdout
 sys.stdout = sys.stderr
@@ -20,7 +21,7 @@ def send_json_to_main(method: str, params: dict):
     _REAL_STDOUT.flush()
 
 
-CRON_FILE = os.environ.get("CRON_FILE", ".purrcat/core/cron.json")
+CRON_FILE = os.environ.get("CRON_FILE", str(Path.home() / ".purrcat" / "core" / "cron.json"))
 
 
 def clock_loop():

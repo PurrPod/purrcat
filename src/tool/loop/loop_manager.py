@@ -3,7 +3,8 @@ import os
 import threading
 import time
 
-LOOP_FILE = ".purrcat/core/loop.json"
+from src.utils.config import LOOP_FILE
+
 LOOP_LOCK = threading.Lock()
 
 

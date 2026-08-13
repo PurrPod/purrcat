@@ -37,60 +37,30 @@ def _run_cmd(command, shell=False, check=True, cwd=None):
     return process.returncode == 0
 
 
-def _check_engine():
-    """Check which container engines are available"""
-    encoding = "gbk" if sys.platform == "win32" else "utf-8"
+def _check_docker():
+    """检查 Docker CLI 存在且 daemon 在运行"""
+    from src.utils.sandbox_setup import docker_cmd, check_docker_running
 
-    try:
-        result = subprocess.run(
-            ["docker", "--version"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            encoding=encoding,
-            errors="replace",
-        )
-        has_docker = result.returncode == 0
-    except FileNotFoundError:
-        has_docker = False
-
-    try:
-        result = subprocess.run(
-            ["podman", "--version"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            encoding=encoding,
-            errors="replace",
-        )
-        has_podman = result.returncode == 0
-    except FileNotFoundError:
-        has_podman = False
-
-    return has_docker, has_podman
-
-
-def _determine_engine():
-    """Auto determine container engine based on availability"""
-    print("")
-    print("[Container Engine Config] Checking local environment...")
-
-    has_docker, has_podman = _check_engine()
-
-    if has_docker:
-        print("  [*] Detected Docker, will use Docker as container engine.")
-        return "docker"
-    elif has_podman:
-        print("  [*] Detected Podman, will use Podman as container engine.")
-        return "podman"
-    else:
-        print(
-            "  [x] Docker not detected. Please install Docker first according to the tutorial."
-        )
+    docker = docker_cmd()
+    if not docker:
+        print("  [x] Docker not detected. Please install Docker Desktop first.")
+        print("      Guide: https://docs.docker.com/get-docker/")
         sys.exit(1)
+
+    print(f"  [*] Detected Docker CLI: {docker}")
+
+    if not check_docker_running(docker):
+        print("  [x] Docker service not running. Please start Docker Desktop.")
+        sys.exit(1)
+
+    print("  [*] Docker engine is running.")
 
 
 def _save_engine_preference(engine: str):
-    """Save engine preference to global config"""
-    global_config_dir = Path.home() / ".purrcat"
+    """Save engine preference to global config (统一写 docker，兼容旧字段)"""
+    from src.utils.config import PURRCAT_DIR
+
+    global_config_dir = Path(PURRCAT_DIR)
     global_config_file = global_config_dir / "settings.json"
 
     global_config_dir.mkdir(parents=True, exist_ok=True)
@@ -98,7 +68,7 @@ def _save_engine_preference(engine: str):
     try:
         if global_config_file.exists():
             with open(global_config_file, "r", encoding="utf-8") as f:
-                settings = json.load(f) if hasattr(__import__("json"), "load") else {}
+                settings = json.load(f)
         else:
             settings = {}
 
@@ -107,145 +77,43 @@ def _save_engine_preference(engine: str):
         with open(global_config_file, "w", encoding="utf-8") as f:
             json.dump(settings, f, indent=4, ensure_ascii=False)
 
-        print(f"[*] Engine preference saved to global config: {engine}")
+        print(f"[*] Engine preference saved: {engine}")
     except Exception as e:
         print(f"[!] Failed to save engine preference: {e}")
 
 
-def _check_engine_running(engine):
-    """Check if the selected engine is running"""
-    print(f"Checking {engine} service...")
-
-    if engine == "podman":
-        result = subprocess.call(
-            ["podman", "machine", "list"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        if result != 0:
-            print("Podman machine not running. Initializing...")
-            subprocess.call(
-                ["podman", "machine", "init"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-            subprocess.call(
-                ["podman", "machine", "start"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-            print("Podman machine initialized and started.")
-        else:
-            print("Podman is ready.")
-    else:
-        result = subprocess.call(
-            ["docker", "info"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-        )
-        if result != 0:
-            print("Error: Docker not detected or service not running.")
-            sys.exit(1)
-        print("Docker engine is running.")
-
-
 def _get_sandbox_choice():
-    """Prompt user for sandbox type selection"""
     print("")
-    print("[Sandbox Config] Do you want a lightweight sandbox or a full sandbox?")
-    print("  The full docker includes a browser, ffmpeg.")
-    print("  1. Lightweight Sandbox (No browser/ffmpeg, faster to build)")
-    print("  2. Full Sandbox (Includes Chromium, ffmpeg, etc.)")
+    print("[Sandbox Config] Sandbox variant:")
+    print("  1. Lightweight (No browser/ffmpeg, faster download)")
+    print("  2. Full (Includes Chromium, ffmpeg, etc.)")
     choice = input("Enter 1 or 2 (Default is 1): ").strip() or "1"
-    return "Dockerfile.full" if choice == "2" else "Dockerfile.light"
+    return "full" if choice == "2" else "light"
 
 
 def _get_mirror_choice():
-    """Prompt user for network mirror selection"""
     print("")
-    print("[Network Config] Are you available to the external network?")
-    print("  1. Yes (Global / Official Source)")
-    print("  2. No (China Region / Aliyun Mirror)")
+    print("[Network Config] APT mirror:")
+    print("  1. Global (deb.debian.org)")
+    print("  2. China (mirrors.aliyun.com)")
     choice = input("Enter 1 or 2 (Default is 1): ").strip() or "1"
     return "mirrors.aliyun.com" if choice == "2" else "deb.debian.org"
 
 
 def _get_sandbox_source():
-    """Prompt user for sandbox image source"""
     print("")
-    print("[Sandbox Image] How to get the sandbox image?")
-    print("  1. Pull from ghcr.io (recommended, faster)")
-    print("  2. Build locally (requires Dockerfile build)")
+    print("[Sandbox Image] Get image from:")
+    print("  1. Pull from ghcr.io (Recommended, faster)")
+    print("  2. Build locally from Dockerfile")
     choice = input("Enter 1 or 2 (Default is 1): ").strip() or "1"
-    return choice == "1"
-
-
-def _pull_sandbox(dockerfile, engine):
-    """Pull pre-built sandbox image from ghcr.io"""
-    variant = "light" if "light" in dockerfile else "full"
-    image = f"ghcr.io/purrpod/purrcat-sandbox:{variant}"
-
-    print("")
-    print(f"Pulling sandbox image from {image}...")
-    print("Note: First pull may take a few minutes depending on your network.")
-
-    success = _run_cmd([engine, "pull", image], shell=False, check=False)
-
-    if not success:
-        print("")
-        print("Error: Failed to pull sandbox image!")
-        print("Common causes:")
-        print("  1. Network issues - Check your connection")
-        print("  2. ghcr.io not accessible in your region")
-        sys.exit(1)
-
-    # Retag as my_agent_env:latest so the rest of the code works unchanged
-    _run_cmd([engine, "tag", image, "my_agent_env:latest"], shell=False, check=False)
-    print("Sandbox image pulled and tagged as my_agent_env:latest!")
-
-
-def _build_sandbox(dockerfile, apt_mirror, engine):
-    """Build sandbox image using selected engine"""
-    print("")
-    print(
-        f"Building sandbox image using {engine} with {apt_mirror} and {dockerfile}..."
-    )
-    print("Note: First pull may take a few minutes, please wait...")
-
-    project_root = _get_project_root()
-
-    build_cmd = [
-        engine,
-        "build",
-        "-f",
-        dockerfile,
-        "-t",
-        "my_agent_env:latest",
-        "--build-arg",
-        f"APT_MIRROR={apt_mirror}",
-        ".",
-    ]
-
-    success = _run_cmd(build_cmd, shell=False, check=False, cwd=project_root)
-
-    if not success:
-        print("")
-        print(f"Error: {engine.capitalize()} image build failed!")
-        print("Common causes:")
-        print("  1. Network issues - Check your proxy or try the other mirror.")
-        print("  2. Docker/Podman disk space insufficient.")
-        sys.exit(1)
-
-    print(f"{engine.capitalize()} image built successfully!")
+    return "pull" if choice == "1" else "build"
 
 
 def _setup_uv():
-    """Configure environment using uv"""
     print("")
     print("Configuring PurrCat environment with uv...")
     project_root = _get_project_root()
-
-    # Resolve and install all dependencies in one go using uv
     success = _run_cmd([UV_CMD, "sync"], shell=False, check=False, cwd=project_root)
-
     if not success:
         print("Error: uv sync failed! Please check your network or python version.")
         sys.exit(1)
@@ -253,73 +121,102 @@ def _setup_uv():
 
 
 def _get_webui_choice():
-    """Prompt user for web UI installation"""
     print("")
-    print("[WebUI Config] Do you want to install WebUI?")
-    print("  This will install npm dependencies for the web interface.")
-    print("  1. Yes (Install WebUI dependencies)")
-    print("  2. No (Skip WebUI installation)")
+    print("[WebUI Config] Install WebUI dependencies (npm)?")
+    print("  1. Yes")
+    print("  2. No")
     choice = input("Enter 1 or 2 (Default is 1): ").strip() or "1"
     return choice == "1"
 
 
 def _install_webui():
-    """Install WebUI npm dependencies"""
     print("")
     print("Installing WebUI dependencies...")
-
     project_root = _get_project_root()
     ui_dir = os.path.join(project_root, "ui")
-
     if not os.path.exists(ui_dir):
         print(f"Warning: UI directory not found at {ui_dir}")
-        print("WebUI installation skipped.")
         return
-
     success = _run_cmd("npm install", shell=True, check=False, cwd=ui_dir)
-
     if success:
         print("WebUI dependencies installed successfully!")
     else:
         print("Warning: WebUI installation may have failed!")
 
 
-def _download_embedding_model():
-    """Download embedding model using setup_emb.py"""
-    print("")
-    print("Downloading Embedding model...")
+def _ensure_embedding_model_blocking():
+    """setup 命令同步等待嵌入模型下载完成"""
+    import time
 
-    project_root = _get_project_root()
-    setup_emb_script = os.path.join(project_root, "scripts", "setup_emb.py")
-
-    success = _run_cmd(
-        [UV_CMD, "run", "python", setup_emb_script],
-        shell=False,
-        check=False,
-        cwd=project_root,
+    from src.utils.embedding_setup import (
+        ensure_embedding_model,
+        _downloading_flag,
+        EMBEDDING_DIR,
+        _model_exists,
     )
 
-    if not success:
-        print("Warning: Embedding model download may have failed!")
-        sys.exit(1)
+    print("")
+    print("=== Embedding Model ===")
+    if _model_exists(EMBEDDING_DIR):
+        print(f"[*] Embedding model already exists at {EMBEDDING_DIR}")
+        return
 
-    print("Model resources ready!")
+    ensure_embedding_model()
+    # 同步等待下载线程完成
+    while _downloading_flag.is_set():
+        time.sleep(1)
+    if _model_exists(EMBEDDING_DIR):
+        print("[+] Embedding model ready!")
+    else:
+        print("[!] Embedding model not ready. You can retry: purrcat setup")
+
+
+def _setup_sandbox_interactive():
+    """setup 命令的交互式沙盒配置"""
+    from src.utils.sandbox_setup import interactive_build_sandbox, check_image_exists
+    from src.utils.sandbox_setup import SANDBOX_IMAGE_TAG, docker_cmd
+
+    print("")
+    print("=== Docker Sandbox ===")
+    _check_docker()
+    _save_engine_preference("docker")
+
+    if check_image_exists(docker_cmd(), SANDBOX_IMAGE_TAG):
+        print(f"[*] Sandbox image already exists: {SANDBOX_IMAGE_TAG}")
+        print("[*] Skip sandbox build.")
+        return
+
+    variant = _get_sandbox_choice()
+    source = _get_sandbox_source()
+
+    if source == "pull":
+        apt_mirror = None
+    else:
+        apt_mirror = _get_mirror_choice()
+
+    ok = interactive_build_sandbox(
+        variant=variant, apt_mirror=apt_mirror or "deb.debian.org", source=source
+    )
+    if not ok:
+        print("")
+        print("Error: Failed to get sandbox image.")
+        print("Common causes:")
+        print("  1. Network issues - Try build locally or use another mirror.")
+        print("  2. Disk space insufficient.")
+        sys.exit(1)
+    print(f"Sandbox image ({variant}) ready!")
 
 
 def _install_playwright_browser():
-    """Install Playwright Chromium browser"""
     print("")
     print("Installing Playwright Chromium browser...")
-
     project_root = _get_project_root()
-
     success = _run_cmd(
         [UV_CMD, "run", "playwright", "install", "chromium"],
         shell=False,
         check=False,
         cwd=project_root,
     )
-
     if success:
         print("Playwright Chromium browser installed successfully!")
     else:
@@ -328,29 +225,15 @@ def _install_playwright_browser():
 
 
 def run_setup():
-    """Main setup workflow"""
+    """Main setup workflow (用户手动执行时的完整交互流程)"""
     print("Welcome to PurrCat environment setup...")
     print("==========================================")
     print("")
     print(f"Detected OS: {platform.system()}")
     print("==========================================")
 
-    # Auto-detect local container engine
-    selected_engine = _determine_engine()
-
-    _save_engine_preference(selected_engine)
-    _check_engine_running(selected_engine)
-
+    _setup_sandbox_interactive()
     print("==========================================")
-
-    dockerfile = _get_sandbox_choice()
-    pull_from_ghcr = _get_sandbox_source()
-
-    if pull_from_ghcr:
-        _pull_sandbox(dockerfile, selected_engine)
-    else:
-        apt_mirror = _get_mirror_choice()
-        _build_sandbox(dockerfile, apt_mirror, selected_engine)
 
     install_webui = _get_webui_choice()
     print("==========================================")
@@ -358,7 +241,7 @@ def run_setup():
     _setup_uv()
     print("==========================================")
 
-    _download_embedding_model()
+    _ensure_embedding_model_blocking()
     print("==========================================")
 
     _install_playwright_browser()
@@ -370,4 +253,4 @@ def run_setup():
 
     print("Congratulations! PurrCat environment is ready.")
     print("Next: Run 'purrcat start' to start the application.")
-    print(f"Engine in use: {selected_engine} (saved to ~/.purrcat/settings.json)")
+    print("Engine: Docker (sandbox)")

@@ -21,6 +21,8 @@ import subprocess
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
+from src.utils.config import AGENT_VM_DIR
+
 router = APIRouter(prefix="/api/terminal", tags=["Terminal WebSocket Bridge"])
 
 # 全局跟踪所有活跃的 PTY 子进程 PID，用于主程序退出时统一清理
@@ -102,7 +104,7 @@ async def _serve_winpty(websocket: WebSocket, cmd: str | None):
 
     appname, cmdline = _build_spawn_win(cmd)
     try:
-        pty.spawn(appname, cmdline=cmdline, cwd=os.getcwd())
+        pty.spawn(appname, cmdline=cmdline, cwd=AGENT_VM_DIR)
     except Exception as e:
         await websocket.send_text(f"\r\n\x1b[31m[Failed to spawn] {e}\x1b[0m\r\n")
         await websocket.close()
@@ -203,6 +205,7 @@ async def _serve_unix_pty(websocket: WebSocket, cmd: str | None):
         os.dup2(slave_fd, 2)
         os.close(slave_fd)
         try:
+            os.chdir(AGENT_VM_DIR)
             os.execvp(program, argv)
         except Exception:
             os._exit(127)

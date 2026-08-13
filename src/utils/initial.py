@@ -1,6 +1,28 @@
-"""Templates for PurrCat configuration files"""
+"""
+PurrCat 首次启动自动初始化模块
+检查 ~/.purrcat 是否存在，不存在则生成默认配置文件。
+"""
 
-from datetime import datetime
+import json
+import os
+
+from src.utils.config import (
+    PURRCAT_DIR,
+    AGENT_CORE_DIR,
+    MODEL_CONFIG_PATH,
+    SENSOR_CONFIG_PATH,
+    FILE_CONFIG_PATH,
+    MCP_CONFIG_PATH,
+    APP_CONFIG_PATH,
+    CRON_FILE,
+    LOOP_FILE,
+    SOUL_MD_PATH,
+)
+
+
+# ==========================================
+# 默认配置模板
+# ==========================================
 
 CRON_CONFIG_TEMPLATE = """[
   {
@@ -93,8 +115,7 @@ SOUL_MD_TEMPLATE = """## 性格
 """
 
 
-def get_model_config_dict():
-    """Generate model configuration dictionary"""
+def _get_model_config_dict():
     return {
         "embedding": "embedding",
         "main": {
@@ -128,8 +149,9 @@ def get_model_config_dict():
     }
 
 
-def get_sensor_config_dict():
-    """Generate sensor configuration dictionary"""
+def _get_sensor_config_dict():
+    from pathlib import Path
+
     return {
         "feishu_bot": {
             "enabled": False,
@@ -138,7 +160,7 @@ def get_sensor_config_dict():
         },
         "system_clock": {
             "enabled": True,
-            "env": {"CRON_FILE": ".purrcat/core/cron.json"},
+            "env": {"CRON_FILE": str(Path.home() / ".purrcat" / "core" / "cron.json")},
             "capabilities": {"observe": True, "express": False},
         },
         "rss_watcher": {
@@ -162,8 +184,9 @@ def get_sensor_config_dict():
     }
 
 
-def get_file_config_dict():
-    """Generate file system configuration dictionary"""
+def _get_file_config_dict():
+    from datetime import datetime
+
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$comment": f"PurrCat File System Configuration File - Generated at {datetime.now().strftime('%Y-%m-%d %H:%M')}",
@@ -175,21 +198,18 @@ def get_file_config_dict():
                 "node_modules",
                 "miniconda3",
                 ".env",
-                ".purrcat",
             ],
             "readonly": [],
             "writable": [
                 "./agent_vm",
                 "./exports",
                 "D:/test",
-                "skills",
             ],
         },
     }
 
 
-def get_mcp_config_dict():
-    """Generate MCP configuration dictionary"""
+def _get_mcp_config_dict():
     return {
         "mcpServers": {
             "github": {
@@ -205,9 +225,60 @@ def get_mcp_config_dict():
     }
 
 
-def get_app_config_dict():
-    """Generate app whitelist configuration dictionary for ComputerUse launch_app feature"""
+def _get_app_config_dict():
     return {
         "微信": "D:\\Path\\to\\WeChat.exe",
         "GitHub": "https://github.com",
     }
+
+
+# ==========================================
+# 文件生成函数
+# ==========================================
+
+def _write_json(path: str, data: dict):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+
+
+def _write_text(path: str, content: str):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(content)
+
+
+def _generate_all_configs():
+    """在 ~/.purrcat 下生成全部默认配置文件（仅首次启动调用）"""
+    os.makedirs(PURRCAT_DIR, exist_ok=True)
+    os.makedirs(AGENT_CORE_DIR, exist_ok=True)
+
+    # JSON 配置文件
+    _write_json(MODEL_CONFIG_PATH, _get_model_config_dict())
+    _write_json(SENSOR_CONFIG_PATH, _get_sensor_config_dict())
+    _write_json(FILE_CONFIG_PATH, _get_file_config_dict())
+    _write_json(MCP_CONFIG_PATH, _get_mcp_config_dict())
+    _write_json(APP_CONFIG_PATH, _get_app_config_dict())
+
+    # core/ 目录文件
+    _write_json(os.path.join(AGENT_CORE_DIR, "info.json"), {"skills": [], "workshops": []})
+    _write_text(CRON_FILE, CRON_CONFIG_TEMPLATE)
+    _write_text(LOOP_FILE, LOOP_CONFIG_TEMPLATE)
+    _write_text(os.path.join(AGENT_CORE_DIR, "MEMORY.md"), MEMORY_MD_TEMPLATE)
+    _write_text(os.path.join(AGENT_CORE_DIR, "SOLO.md"), SOLO_MD_TEMPLATE)
+    _write_text(SOUL_MD_PATH, SOUL_MD_TEMPLATE)
+
+    print(f"[+] 配置目录已初始化: {PURRCAT_DIR}")
+
+
+# ==========================================
+# 对外入口
+# ==========================================
+
+def ensure_initialized():
+    """检查 ~/.purrcat 是否存在，不存在则自动生成默认配置"""
+    if not os.path.exists(PURRCAT_DIR):
+        print("[*] 首次运行，正在自动初始化 ~/.purrcat 配置目录...")
+        _generate_all_configs()
+        print(f"[*] 请编辑 {MODEL_CONFIG_PATH} 填入你的 Agent 模型和 API Key")
+        print("")

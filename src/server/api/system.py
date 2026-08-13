@@ -10,7 +10,7 @@ from docker.errors import DockerException, ImageNotFound
 from fastapi import APIRouter, BackgroundTasks, HTTPException, UploadFile, File
 from pydantic import BaseModel
 
-from src.utils.config import get_container_engine, set_container_engine, TRACKER_DIR
+from src.utils.config import get_container_engine, set_container_engine, TRACKER_DIR, BUFFER_DIR
 from src.model.manager.usage_tracer import usage_tracer
 
 router = APIRouter(prefix="/api/system", tags=["System Environment"])
@@ -45,7 +45,7 @@ class InstallStatusResponse(BaseModel):
 
 
 class InstallRequest(BaseModel):
-    engine: str = "podman"
+    engine: str = "docker"
 
 
 class DetectResponse(BaseModel):
@@ -75,19 +75,10 @@ def _get_engine_version(engine: str) -> Optional[str]:
 
 def _check_engine_running(engine: str) -> bool:
     try:
-        if engine == "podman":
-            result = subprocess.run(
-                ["podman", "machine", "list"],
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
-            return result.returncode == 0
-        else:
-            result = subprocess.run(
-                ["docker", "info"], capture_output=True, text=True, timeout=10
-            )
-            return result.returncode == 0
+        result = subprocess.run(
+            ["docker", "info"], capture_output=True, text=True, timeout=10
+        )
+        return result.returncode == 0
     except Exception:
         return False
 
@@ -97,27 +88,21 @@ def detect_environment():
     os_name = platform.system()
 
     has_docker = shutil.which("docker") is not None
-    has_podman = shutil.which("podman") is not None
 
-    recommend_engine = "docker"
-    recommend_reason = "Docker 是最普及的容器引擎。"
-
-    if os_name == "Windows" and not has_docker:
-        recommend_engine = "podman"
-        recommend_reason = "检测到您是 Windows 用户且未安装 Docker Desktop。强烈推荐使用轻量级、无广告、免安装臃肿桌面的 Podman。"
-    elif os_name == "Darwin" and not has_docker:
-        recommend_engine = "podman"
-        recommend_reason = "推荐使用轻量级的 Podman 来节省 Mac 的内存资源。"
-    elif has_podman and not has_docker:
-        recommend_engine = "podman"
-        recommend_reason = "检测到您已安装 Podman。"
-    elif has_podman and has_docker:
+    if has_docker:
         recommend_engine = "docker"
-        recommend_reason = "检测到您同时安装了 Docker 和 Podman，默认推荐使用 Docker。"
+        recommend_reason = "检测到已安装 Docker。"
+    else:
+        recommend_engine = "docker"
+        recommend_reason = (
+            "未检测到 Docker。请先安装 Docker Desktop：\n"
+            "https://docs.docker.com/get-docker/\n"
+            "Windows 需启用 WSL2，安装后重启系统。"
+        )
 
     return DetectResponse(
         os=os_name,
-        installed={"docker": has_docker, "podman": has_podman},
+        installed={"docker": has_docker},
         recommend=recommend_engine,
         recommend_reason=recommend_reason,
     )
@@ -128,40 +113,26 @@ def get_environment_status():
     try:
         engine = get_container_engine()
         version = _get_engine_version(engine)
-        is_running = _check_engine_running(engine)
-
-        if not is_running:
+        if not _check_engine_running(engine):
             return EnvStatusResponse(
                 is_ready=False,
                 engine=engine,
                 engine_version=version,
-                error=f"{engine.capitalize()} 引擎未运行，请先启动 {engine.capitalize()}",
+                error="Docker daemon 未启动，请启动 Docker Desktop。",
             )
-
         return EnvStatusResponse(
-            is_ready=True, engine=engine, engine_version=version, error=None
+            is_ready=True, engine=engine, engine_version=version
         )
     except RuntimeError as e:
-        return EnvStatusResponse(
-            is_ready=False, engine=None, engine_version=None, error=str(e)
-        )
-    except Exception as e:
-        return EnvStatusResponse(
-            is_ready=False,
-            engine=None,
-            engine_version=None,
-            error=f"环境检测失败: {str(e)}",
-        )
+        return EnvStatusResponse(is_ready=False, error=str(e))
 
 
 @router.get("/env/status")
 def get_env_status_simple():
-    has_podman = shutil.which("podman") is not None
     has_docker = shutil.which("docker") is not None
     return {
-        "ready": has_podman or has_docker,
-        "engine": "podman" if has_podman else ("docker" if has_docker else None),
-        "has_podman": has_podman,
+        "ready": has_docker,
+        "engine": "docker" if has_docker else None,
         "has_docker": has_docker,
     }
 
@@ -171,52 +142,41 @@ def get_image_status(image_name: str = "my_agent_env:latest"):
     try:
         engine = get_container_engine()
         client = docker.from_env()
-
         try:
             client.images.get(image_name)
-            return ImageStatusResponse(exists=True, image_name=image_name, error=None)
+            return ImageStatusResponse(exists=True, image_name=image_name)
         except ImageNotFound:
-            return ImageStatusResponse(
-                exists=False, image_name=image_name, error=f"镜像 {image_name} 不存在"
-            )
+            return ImageStatusResponse(exists=False, image_name=image_name)
     except RuntimeError as e:
-        return ImageStatusResponse(exists=False, image_name=image_name, error=str(e))
+        return ImageStatusResponse(
+            exists=False, image_name=image_name, error=str(e)
+        )
     except DockerException as e:
         return ImageStatusResponse(
-            exists=False,
-            image_name=image_name,
-            error=f"{engine.capitalize()} 连接失败: {str(e)}",
-        )
-    except Exception as e:
-        return ImageStatusResponse(
-            exists=False, image_name=image_name, error=f"镜像检测失败: {str(e)}"
+            exists=False, image_name=image_name, error=f"Docker 连接失败: {str(e)}"
         )
 
 
 def _pull_image_task(image_name: str):
+    import time as _t
+    global _install_progress, _install_status, _install_error
+    _install_status = "installing"
+    _install_progress = 5
     try:
         client = docker.from_env()
-        print(f"🚀 开始拉取镜像: {image_name}")
         client.images.pull(image_name)
-        print(f"✅ 镜像拉取成功: {image_name}")
+        _install_progress = 100
+        _install_status = "completed"
+        _install_error = None
     except Exception as e:
-        print(f"❌ 镜像拉取失败: {e}")
+        _install_status = "failed"
+        _install_error = str(e)
 
 
-@router.post("/pull-image", response_model=PullImageResponse)
+@router.post("/image/pull", response_model=PullImageResponse)
 def pull_image(request: PullImageRequest, background_tasks: BackgroundTasks):
     try:
         engine = get_container_engine()
-
-        try:
-            client = docker.from_env()
-            client.images.get(request.image_name)
-            return PullImageResponse(
-                status="exists", message=f"镜像 {request.image_name} 已存在，无需拉取"
-            )
-        except ImageNotFound:
-            pass
-
         background_tasks.add_task(_pull_image_task, request.image_name)
 
         return PullImageResponse(
@@ -227,7 +187,7 @@ def pull_image(request: PullImageRequest, background_tasks: BackgroundTasks):
         raise HTTPException(status_code=500, detail=str(e))
     except DockerException as e:
         raise HTTPException(
-            status_code=500, detail=f"{engine.capitalize()} 连接失败: {str(e)}"
+            status_code=500, detail=f"Docker 连接失败: {str(e)}"
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"镜像拉取启动失败: {str(e)}")
@@ -244,17 +204,15 @@ def _install_task(engine: str):
 
         set_container_engine(engine)
 
-        if engine == "podman":
-            from scripts.setup_env import setup
-
-            success, message = setup()
-        elif engine == "docker":
-            if shutil.which("docker"):
-                success = True
-                message = "Docker 已安装"
-            else:
-                success = False
-                message = "Docker 未安装，请手动安装 Docker Desktop"
+        if shutil.which("docker"):
+            success = True
+            message = "Docker 已安装"
+        else:
+            success = False
+            message = (
+                "Docker 未安装，请手动安装 Docker Desktop。\n"
+                "安装指引: https://docs.docker.com/get-docker/"
+            )
 
         if success:
             _install_status = "completed"
@@ -305,7 +263,6 @@ def get_container_engine_info():
             "engine": engine,
             "version": version,
             "available_engines": {
-                "podman": shutil.which("podman") is not None,
                 "docker": shutil.which("docker") is not None,
             },
             "selected_engine": _selected_engine,
@@ -315,82 +272,59 @@ def get_container_engine_info():
 
 
 # --- 🌟 文件上传到 buffer 目录 ---
-BUFFER_DIR = Path("agent_vm/.buffer/upload")
+UPLOAD_BUFFER_DIR = Path(BUFFER_DIR) / "upload"
 
 
-@router.post("/upload-buffer")
-async def upload_to_buffer(file: UploadFile = File(...)):
-    if not file.filename:
-        raise HTTPException(status_code=400, detail="未找到文件名")
+@router.post("/agent/upload")
+async def upload_buffer_file(
+    file: UploadFile = File(...),
+    filename: Optional[str] = None,
+):
+    """上传单个文件到 agent_vm/.buffer/upload 目录，供 Agent 读取。"""
+    import aiofiles
 
-    BUFFER_DIR.mkdir(parents=True, exist_ok=True)
+    UPLOAD_BUFFER_DIR.mkdir(parents=True, exist_ok=True)
+    save_name = filename or file.filename or f"upload_{uuid.uuid4().hex[:8]}"
+    dest = UPLOAD_BUFFER_DIR / save_name
 
-    # 🌟 防重名：使用 UUID 确保唯一性
-    original_path = Path(file.filename)
-    stem = original_path.stem  # e.g., "image"
-    suffix = original_path.suffix  # e.g., ".png"
-    unique_filename = f"{stem}_{uuid.uuid4().hex[:4]}{suffix}"
-    file_path = BUFFER_DIR / unique_filename
-
-    try:
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"文件写入失败: {str(e)}")
-
-    return {"absolute_path": str(file_path.resolve())}
-
-
-# --- 🌟 Agent 大盘统计接口 ---
-@router.get("/agent/stats")
-async def get_agent_stats():
-    # 1. 强行先将当前内存中未刷盘的增量数据刷入硬盘，保证统计绝对实时
-    usage_tracer.flush()
-
-    import os
-    import json
-    import glob
-    from datetime import datetime
-
-    target_dir = os.path.join(TRACKER_DIR, "model_usage")
-    today_str = datetime.now().strftime("%Y-%m-%d")
-
-    today_calls = 0
-    today_tokens = 0
-    today_cached_tokens = 0  # 🌟 新增：今日缓存命中数
-    heatmap_data = {}
-
-    if os.path.exists(target_dir):
-        file_paths = glob.glob(os.path.join(target_dir, "*_summary.json"))
-
-        for path in file_paths:
-            filename = os.path.basename(path)
-            date_str = filename.split("_")[0]
-
-            try:
-                with open(path, "r", encoding="utf-8") as f:
-                    day_data = json.load(f)
-
-                day_total_calls = sum(item.get("calls", 0) for item in day_data)
-                day_total_tokens = sum(item.get("total_tokens", 0) for item in day_data)
-                day_cached_tokens = sum(
-                    item.get("cached_tokens", 0) for item in day_data
-                )  # 🌟 提取缓存数据
-
-                heatmap_data[date_str] = day_total_calls
-
-                if date_str == today_str:
-                    today_calls = day_total_calls
-                    today_tokens = day_total_tokens
-                    today_cached_tokens = day_cached_tokens  # 🌟 记录今日缓存
-            except Exception:
-                continue
+    async with aiofiles.open(dest, "wb") as f:
+        while chunk := await file.read(1024 * 1024):
+            await f.write(chunk)
 
     return {
-        "today": {
-            "calls": today_calls,
-            "total_tokens": today_tokens,
-            "cached_tokens": today_cached_tokens,  # 🌟 返回给前端
-        },
-        "heatmap": heatmap_data,
+        "success": True,
+        "saved_path": str(dest),
+        "size_bytes": dest.stat().st_size,
+        "agent_path": str(dest.resolve()),
     }
+
+
+# --- 🌟 使用量跟踪器 API ---
+
+
+@router.get("/usage")
+def get_usage_stats():
+    """返回使用量跟踪的聚合统计（总 tokens / 调用次数 / 最近记录）"""
+    try:
+        return usage_tracer.summarize()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/usage/recent")
+def get_recent_usage(limit: int = 30):
+    """最近 N 条使用量记录"""
+    try:
+        return usage_tracer.recent(limit=limit)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/usage/clear")
+def clear_usage_records():
+    """清空使用量记录（保留目录结构）"""
+    try:
+        removed = usage_tracer.clear()
+        return {"removed": removed}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

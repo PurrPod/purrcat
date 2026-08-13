@@ -8,6 +8,8 @@ import uuid
 import subprocess
 from datetime import datetime
 
+from src.utils.config import SKILL_DIR
+
 # 引入新的生成器
 from .guide_generator import (
     generate_create_guide,
@@ -25,7 +27,7 @@ def skill_improve_init(skill_name: str, is_upgrade: bool) -> str:
         shutil.rmtree(workplace_root, ignore_errors=True)
     os.makedirs(workplace_root, exist_ok=True)
 
-    source_skill_dir = f"./skills/{skill_name}"
+    source_skill_dir = os.path.join(SKILL_DIR, skill_name)
 
     if is_upgrade:
         shutil.copytree(source_skill_dir, workplace_skill_dir)
@@ -114,7 +116,7 @@ def skill_improve_init(skill_name: str, is_upgrade: bool) -> str:
 
 
 def skill_generate_diff(skill_name: str, workplace_root: str) -> str:
-    source_dir = f"./skills/{skill_name}"
+    source_dir = os.path.join(SKILL_DIR, skill_name)
     target_dir = os.path.join(workplace_root, skill_name)
 
     if not os.path.exists(source_dir):
@@ -144,7 +146,7 @@ def skill_request_handle(
         )
 
     source_dir = os.path.join(workplace_root, skill_name)
-    target_dir = f"./skills/{skill_name}"
+    target_dir = os.path.join(SKILL_DIR, skill_name)
 
     is_upgrade = os.path.exists(target_dir)
 
@@ -154,7 +156,7 @@ def skill_request_handle(
     os.makedirs(os.path.dirname(target_dir), exist_ok=True)
     shutil.copytree(source_dir, target_dir)
 
-    skills_root = "./skills"
+    skills_root = SKILL_DIR
     git_dir = os.path.join(skills_root, ".git")
 
     if not os.path.exists(git_dir):
@@ -181,7 +183,7 @@ def skill_rollback(skill_name: str) -> str:
     """
     将指定的 Skill 强制回滚到上一次修改的 Git 提交版本。
     """
-    skills_root = "./skills"
+    skills_root = SKILL_DIR
     git_dir = os.path.join(skills_root, ".git")
 
     if not os.path.exists(git_dir):

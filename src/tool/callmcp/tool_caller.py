@@ -12,6 +12,7 @@ from src.tool.callmcp.exceptions import (
     ToolExecutionError,
 )
 from src.tool.callmcp.session_manager import _run_sync, load_configs, mcp_manager
+from src.utils.config import BUFFER_DIR
 
 
 async def _call_tool_async(
@@ -52,7 +53,7 @@ async def _call_tool_async(
                     if ext == "jpeg":
                         ext = "jpg"
 
-                    save_dir = os.path.join("agent_vm", ".buffer", "mcp_media")
+                    save_dir = os.path.join(BUFFER_DIR, "mcp_media")
                     os.makedirs(save_dir, exist_ok=True)
 
                     file_path = os.path.join(

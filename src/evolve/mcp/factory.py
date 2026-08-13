@@ -8,12 +8,13 @@ import uuid
 import subprocess
 import json
 from datetime import datetime
+from src.utils.config import MCP_CONFIG_PATH, DATA_ROOT, AGENT_VM_DIR
 from .guide_generator import generate_mcp_create_guide, generate_mcp_test_guide
 
 
 def mcp_improve_init(mcp_name: str) -> str:
     short_uuid = uuid.uuid4().hex[:5]
-    workplace_root = f"./agent_vm/mcp_workplace/{short_uuid}"
+    workplace_root = os.path.join(AGENT_VM_DIR, "mcp_workplace", short_uuid)
     workplace_mcp_dir = os.path.join(workplace_root, mcp_name)
 
     if os.path.exists(workplace_root):
@@ -194,11 +195,11 @@ if __name__ == "__main__": asyncio.run(main())
 
 
 def mcp_upgrade_init(mcp_name: str) -> str:
-    target_dir = f"./mcps/{mcp_name}"
+    target_dir = os.path.join(DATA_ROOT, "mcps", mcp_name)
     if not os.path.exists(target_dir):
         return f"❌ 无法执行升级：未找到名为 '{mcp_name}' 的正式服务。"
     short_uuid = uuid.uuid4().hex[:5]
-    workplace_root = f"./agent_vm/mcp_workplace/{short_uuid}"
+    workplace_root = os.path.join(AGENT_VM_DIR, "mcp_workplace", short_uuid)
     workplace_mcp_dir = os.path.join(workplace_root, mcp_name)
     if os.path.exists(workplace_root):
         shutil.rmtree(workplace_root, ignore_errors=True)
@@ -231,8 +232,8 @@ def mcp_request_handle(workplace_root: str, mcp_name: str, is_approved: bool) ->
         return f"人类拒绝了 {mcp_name} 的合并请求，已保留当前工作区供调整。"
 
     source_dir = os.path.join(workplace_root, mcp_name)
-    target_dir = f"./mcps/{mcp_name}"
-    abs_target_dir = os.path.abspath(os.path.join(os.getcwd(), "mcps", mcp_name))
+    abs_target_dir = os.path.join(DATA_ROOT, "mcps", mcp_name)
+    target_dir = abs_target_dir
     is_upgrade = os.path.exists(target_dir)
 
     # 1. 代码覆盖与拷贝
@@ -246,7 +247,7 @@ def mcp_request_handle(workplace_root: str, mcp_name: str, is_approved: bool) ->
     shutil.copytree(source_dir, target_dir, ignore=ignore_files)
 
     # 2. Git 自动接管
-    mcps_root = "./mcps"
+    mcps_root = os.path.join(DATA_ROOT, "mcps")
     if not os.path.exists(os.path.join(mcps_root, ".git")):
         os.makedirs(mcps_root, exist_ok=True)
         subprocess.run(["git", "init"], cwd=mcps_root)
@@ -258,9 +259,7 @@ def mcp_request_handle(workplace_root: str, mcp_name: str, is_approved: bool) ->
     subprocess.run(["git", "commit", "-m", commit_msg], cwd=mcps_root)
 
     # 3. 自动注入 JSON 配置到 .purrcat/mcp_config.json
-    config_path = os.path.abspath(
-        os.path.join(os.getcwd(), ".purrcat", "mcp_config.json")
-    )
+    config_path = MCP_CONFIG_PATH
     os.makedirs(os.path.dirname(config_path), exist_ok=True)
 
     mcp_config = {"mcpServers": {}}

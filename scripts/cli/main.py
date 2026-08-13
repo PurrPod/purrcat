@@ -4,7 +4,6 @@ import argparse
 import os
 import sys
 
-from scripts.cli.cmd_init import run_init
 from scripts.cli.cmd_install import run_install
 from scripts.cli.cmd_setup import run_setup
 from scripts.cli.cmd_start import run_start
@@ -37,7 +36,6 @@ PurrCat CLI - Cross-platform AI Agent Framework
     print("")
     print("Commands:")
     print("  setup   - Initialize environment (uv, Docker, Models)")
-    print("  init    - Generate .purrcat config templates")
     print("  install - Install extensions (skill, node, graph, mcp)")
     print("  update  - Update PurrCat to the latest version from GitHub")
     print("  start   - Start PurrCat with Web UI (default)")
@@ -83,10 +81,7 @@ def main():
         "command",
         nargs="?",
         default="help",
-        choices=["init", "help", "install", "setup", "start", "update"],
-    )
-    parser.add_argument(
-        "--force", "-f", action="store_true", help="Force overwrite existing files"
+        choices=["help", "install", "setup", "start", "update"],
     )
     parser.add_argument(
         "--tui",
@@ -113,8 +108,6 @@ def main():
 
     if args.help or args.command == "help":
         cmd_help()
-    elif args.command == "init":
-        run_init(force=args.force)
     elif args.command == "install":
         if not args.ext_type or not args.source:
             print("X Error: install requires both <ext_type> and <source>")

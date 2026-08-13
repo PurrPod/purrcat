@@ -14,11 +14,18 @@ from src.utils.config import (
     MODEL_CONFIG_PATH,
     SENSOR_CONFIG_PATH,
     AGENT_CORE_DIR,
+    GLOBAL_CONFIG_FILE,
+    CRON_FILE,
+    LOOP_FILE,
     get_app_config,
     get_file_config,
     get_mcp_config,
     get_model_config,
     get_sensor_config,
+    get_global_settings,
+    PURRCAT_DIR,
+    DATA_ROOT,
+    BASE_DIR,
 )
 
 router = APIRouter(prefix="/api/config", tags=["Configuration"])
@@ -175,3 +182,82 @@ def api_get_info_config():
     except Exception as e:
         print(f"[Config API] 读取 info.json 失败: {e}")
         return {"skills": [], "workshops": []}
+
+
+# ── Global Settings (settings.json) ──
+@router.get("/settings")
+def api_get_settings():
+    """读取全局 settings.json，含 data_root、sandbox_engine 等。
+    文件不存在或为空时，返回带默认字段的结构，方便前端直接编辑。"""
+    settings = get_global_settings()
+    # 兜底：给前端一些默认占位字段，用户可以直接填
+    defaults = {
+        "data_root": "",      # 空字符串 = 使用 PURRCAT_DIR
+        "sandbox_engine": "docker",
+    }
+    for k, v in defaults.items():
+        if k not in settings:
+            settings[k] = v
+    return settings
+
+
+@router.put("/settings")
+def api_update_settings(config: Dict[str, Any]):
+    """整体覆盖保存 settings.json。保存成功后 data_root 要重启才会生效（_get_data_root 仅模块加载时读一次）。"""
+    # data_root 为空字符串时，视为「使用默认 PURRCAT_DIR」，保存时去掉该键，下次加载即 fallback
+    save_data = {k: v for k, v in config.items() if not (k == "data_root" and (v == "" or v is None))}
+    if _save_json_file(str(GLOBAL_CONFIG_FILE), save_data):
+        return {"status": "ok", "message": "Settings saved. data_root will take effect after restart."}
+    raise HTTPException(status_code=500, detail="Failed to save settings")
+
+
+# ── Cron Config (cron.json) ──
+@router.get("/cron")
+def api_get_cron_config():
+    if not os.path.exists(CRON_FILE):
+        return {"jobs": []}
+    try:
+        with open(CRON_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {"jobs": []}
+
+
+@router.put("/cron")
+def api_update_cron_config(config: Dict[str, Any]):
+    if _save_json_file(CRON_FILE, config):
+        return {"status": "ok", "message": "Cron config updated successfully"}
+    raise HTTPException(status_code=500, detail="Failed to save cron config")
+
+
+# ── Loop Config (loop.json) ──
+@router.get("/loop")
+def api_get_loop_config():
+    if not os.path.exists(LOOP_FILE):
+        return {}
+    try:
+        with open(LOOP_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+@router.put("/loop")
+def api_update_loop_config(config: Dict[str, Any]):
+    if _save_json_file(LOOP_FILE, config):
+        return {"status": "ok", "message": "Loop config updated successfully"}
+    raise HTTPException(status_code=500, detail="Failed to save loop config")
+
+
+# ── Paths Meta (前端展示用：当前实际生效的各数据目录) ──
+@router.get("/meta")
+def api_get_config_meta():
+    """返回当前正在生效的路径常量，便于前端显示给用户做参考。"""
+    return {
+        "PURRCAT_DIR": PURRCAT_DIR,     # ~/.purrcat（配置类目录，固定）
+        "DATA_ROOT": DATA_ROOT,         # 大型数据根目录（读 settings.json data_root，重启生效）
+        "BASE_DIR": BASE_DIR,           # 程序只读目录（打包后是 _MEIPASS）
+        "settings_path": str(GLOBAL_CONFIG_FILE),
+        "cron_path": CRON_FILE,
+        "loop_path": LOOP_FILE,
+    }

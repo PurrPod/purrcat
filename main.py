@@ -26,15 +26,19 @@ async def _bg_heavy_init(enable_tui: bool):
     if not enable_tui:
         print("[*] API/UI已就绪，开始后台预热服务...")
 
-    # 2. 轻量级加载：读取 MCP 和 Skill 的元数据（不计算向量）
+    # 2. 嵌入模型 & 沙盒镜像 & MCP/Skill 元数据（不阻塞前台）
     def _init_light_tools():
         from src.tool.callmcp.callmcp import initialize_mcp_sync
         from src.tool.search.mcp_search import MCPSearcher
         from src.tool.search.skill_search import SkillSearcher
+        from src.utils.embedding_setup import ensure_embedding_model
+        from src.utils.sandbox_setup import ensure_sandbox_image
 
         initialize_mcp_sync()
         MCPSearcher()  # 触发 __init__ 读取 JSON
         SkillSearcher()  # 触发 __init__ 读取 MD
+        ensure_embedding_model()   # 缺则后台线程下载（~120MB）
+        ensure_sandbox_image()     # 缺则后台线程拉取 light 镜像
 
     await asyncio.to_thread(_init_light_tools)
 
@@ -199,6 +203,11 @@ async def main_async(enable_tui: bool, enable_api: bool, api_port: int, cli_sess
 
 def main():
     _setup_warnings()
+
+    # 首次启动自动初始化 ~/.purrcat
+    from src.utils.initial import ensure_initialized
+    ensure_initialized()
+
     parser = argparse.ArgumentParser(description="PurrCat Agent")
     parser.add_argument("--headless", action="store_true", help="Run without TUI")
     parser.add_argument("--session", type=str, help="Specify session ID to load")

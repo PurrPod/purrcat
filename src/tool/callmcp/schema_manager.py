@@ -50,6 +50,9 @@ def fetch_and_cache_schemas() -> List[Dict]:
     with SCHEMA_LOCK:
         schemas = _run_sync(_fetch_all_schemas_async)
 
+        # 确保缓存目录存在（PURRCAT_DIR 通常已存在，这里兜底）
+        os.makedirs(os.path.dirname(MCP_SCHEMA_CACHE_FILE), exist_ok=True)
+
         # 将原本的 jsonl 逐行写入，改为直接作为一个完整的 JSON 数组写入
         with open(MCP_SCHEMA_CACHE_FILE, "w", encoding="utf-8") as f:
             json.dump(schemas, f, ensure_ascii=False, indent=4)

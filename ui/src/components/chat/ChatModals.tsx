@@ -1,5 +1,5 @@
 // src/components/chat/ChatModals.tsx
-import { Loader2, X, Trash2, Check, ChevronUp, ChevronDown, Plus, Download, Save, AlertCircle, FileJson, FileText, GitFork, Pencil, Clock, BookOpen } from 'lucide-react';
+import { Loader2, X, Trash2, Check, ChevronUp, ChevronDown, Plus, Download, Save, FileText, GitFork, Pencil, Clock, BookOpen } from 'lucide-react';
 import { sketchyShape1, sketchyShape2, sketchyShape3 } from './ChatShared';
 
 export default function ChatModals(props: any) {
@@ -18,12 +18,9 @@ export default function ChatModals(props: any) {
     showMcpSelectModal, setShowMcpSelectModal, mcpData, tempSelectedMcps, setTempSelectedMcps, expandedMcp, setExpandedMcp, setSelectedMcps,
     showRefModal, setShowRefModal, tempRefPath, setTempRefPath, setRefPaths,
     showGraphSelectModal, setShowGraphSelectModal, graphData, tempSelectedGraphs, setTempSelectedGraphs, setSelectedGraphs,
-    isConfigOpen, setIsConfigOpen, activeTab, setActiveTab, configData, expandedKey, editJsonStr, setEditJsonStr, toggleKey, handleSaveConfig,
     showSessionModal, setShowSessionModal, isAgentThinking, sessions, handleSelectSession, editingSessionId, editingAlias, setEditingAlias, setEditingSessionId, handleRename,
     showTraceModal, setShowTraceModal, traceType, setTraceType, traceSkillName, setTraceSkillName, traceExpectation, setTraceExpectation, confirmTraceToSkill, isTracing
   } = props;
-
-  const CONFIG_TABS = ['model', 'sensor', 'file', 'mcp', 'app'];
 
   return (
     <>
@@ -413,52 +410,6 @@ export default function ChatModals(props: any) {
             </div>
             <div className="shrink-0 flex justify-end gap-3 -rotate-1 pt-2 border-t-4 border-ink/10">
               <button onClick={() => { setSelectedGraphs(tempSelectedGraphs); setShowGraphSelectModal(false); }} style={sketchyShape1} className="px-8 bg-ink text-paper font-black py-3 border-4 border-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)]">COMPLETE</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {isConfigOpen && (
-        <div className="fixed inset-0 z-[150] flex items-center justify-center bg-ink/70 backdrop-blur-sm p-4 md:p-8 pointer-events-auto">
-          <div style={sketchyShape2} className="bg-cream border-4 border-ink shadow-[16px_16px_0px_0px_rgba(26,26,26,1)] w-full max-w-5xl h-[80vh] flex flex-row relative">
-            <div className="absolute -top-4 left-1/4 w-32 h-10 bg-terracotta/60 border-2 border-ink rotate-2 z-50 pointer-events-none" style={sketchyShape1}></div>
-            <button onClick={() => setIsConfigOpen(false)} className="absolute top-4 right-6 hover:rotate-90 hover:text-terracotta transition-all z-10 p-2 bg-paper border-4 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)]" style={sketchyShape3}><X size={28} strokeWidth={4} /></button>
-            <div className="w-56 shrink-0 border-r-4 border-ink/20 flex flex-col p-6">
-              <div className="pb-6 flex items-center gap-4">
-                <FileJson size={36} strokeWidth={2.5} className="text-terracotta" />
-                <h2 className="text-xl font-black tracking-widest" style={{ fontFamily: '"Comic Sans MS", cursive' }}>CONFIG</h2>
-              </div>
-              <div className="flex flex-col gap-4">
-                {CONFIG_TABS.map((tab, idx) => (
-                  <button key={tab} onClick={() => setActiveTab(tab)} style={idx % 3 === 0 ? sketchyShape1 : idx % 2 === 0 ? sketchyShape2 : sketchyShape3} className={`px-4 py-2.5 font-black text-base border-4 border-ink uppercase tracking-wider transition-all shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] ${activeTab === tab ? 'bg-[#EBCB8B] text-ink -translate-x-1' : 'bg-paper text-ink/70 hover:bg-sand'} ${idx % 2 === 0 ? 'rotate-1' : '-rotate-1'}`}>
-                    {tab}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="flex-1 overflow-y-auto p-8 flex flex-col gap-6">
-              {Object.keys(configData).length === 0 ? <div className="text-center font-bold text-ink/40 mt-10 text-xl">No data found or Loading...</div> : (
-                Object.keys(configData).map((key, idx) => {
-                  const isExpanded = expandedKey === key;
-                  return (
-                    <div key={key} className="flex flex-col gap-2">
-                      <button onClick={() => toggleKey(key)} style={idx % 2 === 0 ? sketchyShape2 : sketchyShape1} className={`w-full text-left p-4 border-4 border-ink flex justify-between items-center transition-all ${isExpanded ? 'bg-ink text-paper shadow-none' : 'bg-paper text-ink shadow-[6px_6px_0px_0px_rgba(26,26,26,1)] hover:-translate-y-1'}`}>
-                        <div className="flex items-center gap-3"><FileJson size={20} strokeWidth={2.5} className={isExpanded ? 'text-terracotta' : 'text-[#EBCB8B]'} /><span className="text-xl font-black">{key}</span></div>
-                        <span className="font-bold opacity-50 text-sm">{isExpanded ? 'CLOSE' : 'EDIT'}</span>
-                      </button>
-                      {isExpanded && (
-                        <div style={sketchyShape3} className="bg-paper border-4 border-ink p-4 flex flex-col gap-4 shadow-[inset_4px_4px_0px_0px_rgba(26,26,26,0.1)]">
-                          <div className="flex items-center gap-2 text-ink/60 font-bold text-xs bg-terracotta/10 p-2 border-2 border-ink border-dashed" style={sketchyShape1}><AlertCircle size={14} strokeWidth={3} />注意：请严格遵守 JSON 格式</div>
-                          <textarea value={editJsonStr} onChange={(e) => setEditJsonStr(e.target.value)} className="w-full h-48 bg-[#FDF8F0] border-4 border-ink p-4 font-mono text-sm font-bold focus:outline-none resize-y" spellCheck={false} />
-                          <div className="flex justify-end">
-                            <button onClick={() => handleSaveConfig(key)} style={sketchyShape1} className="px-6 py-2 bg-[#a3be8c] border-4 border-ink text-ink font-black text-lg flex items-center gap-2 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] rotate-1"><Save size={20} strokeWidth={3} /> SAVE TO DISK</button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })
-              )}
             </div>
           </div>
         </div>

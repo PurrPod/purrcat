@@ -15,7 +15,7 @@ from src.tool.search.skill_search import SkillSearcher
 from src.tool.cron.cron_operations import list_crons, add_cron, delete_cron
 
 # 🌟 新增：引入读取与保存 MCP 配置文件需要的依赖
-from src.utils.config import get_mcp_config, MCP_CONFIG_PATH
+from src.utils.config import get_mcp_config, MCP_CONFIG_PATH, SKILL_DIR, LOOP_FILE
 
 router = APIRouter(prefix="/api/tools", tags=["Tools Management"])
 
@@ -89,12 +89,8 @@ def install_skill_api(req: InstallSkillReq):
         owner, repo, branch, path = match.groups()
         skill_name = os.path.basename(path.rstrip("/"))
 
-        # 2. 定位项目根目录的 skills 文件夹
-        # server/api/tools.py 向上3层为项目根目录
-        project_root = os.path.dirname(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        )
-        dest_dir = os.path.join(project_root, "skills", skill_name)
+        # 2. 定位 skills 文件夹
+        dest_dir = os.path.join(SKILL_DIR, skill_name)
         zip_url = f"https://github.com/{owner}/{repo}/archive/refs/heads/{branch}.zip"
 
         # 3. 内存下载并仅解压目标子文件夹
@@ -288,7 +284,6 @@ def delete_cron_api(identifier: str):
 # ==========================================
 # 7. 循环流水线任务 API
 # ==========================================
-LOOP_FILE = ".purrcat/core/loop.json"
 
 
 class AddLoopReq(BaseModel):
@@ -302,7 +297,6 @@ class AddLoopReq(BaseModel):
 @router.get("/loop")
 def list_loops_api():
     """获取全量循环流水线任务清单"""
-    LOOP_FILE = ".purrcat/core/loop.json"
     if not os.path.exists(LOOP_FILE):
         return []
     try:
@@ -315,7 +309,6 @@ def list_loops_api():
 @router.post("/loop")
 def add_loop_api(req: AddLoopReq):
     """新增或修改循环定时流水线任务（含 Agent 专属心跳去重）"""
-    LOOP_FILE = ".purrcat/core/loop.json"
     try:
         os.makedirs(os.path.dirname(LOOP_FILE), exist_ok=True)
         loops = []

@@ -13,13 +13,14 @@ from src.tool.filesystem.exceptions import (
 )
 from src.tool.filesystem.utils import require_read, require_write, is_readable
 from src.tool.filesystem.history import track_edit, save_backup_meta
+from src.utils.config import PURRCAT_DIR, BUFFER_DIR
 
 MAX_LINES_TO_READ = 2000
 
-LOCK_DIR = os.path.join(os.getcwd(), ".agent_locks")
+LOCK_DIR = os.path.join(PURRCAT_DIR, ".agent_locks")
 os.makedirs(LOCK_DIR, exist_ok=True)
 
-CACHE_DIR = os.path.join(os.getcwd(), "agent_vm", ".buffer", "filesystem")
+CACHE_DIR = os.path.join(BUFFER_DIR, "filesystem")
 REGISTRY_FILE = os.path.join(CACHE_DIR, "registry.json")
 
 

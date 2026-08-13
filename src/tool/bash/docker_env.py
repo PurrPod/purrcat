@@ -1,6 +1,7 @@
 import atexit
 import os
 import re
+import shutil
 import sys
 import threading
 import uuid
@@ -9,8 +10,6 @@ from typing import Optional
 import docker
 import pexpect
 from docker.errors import DockerException, ImageNotFound, NotFound
-
-from src.utils.config import get_engine_preference
 
 from .exceptions import (
     BashTimeoutError,
@@ -53,12 +52,29 @@ else:
         p.close(force=True)
 
 
+_DOCKER_CMD = None
+
+
+def _resolve_docker_cmd() -> str:
+    """返回 docker 可执行文件的绝对路径（仅解析一次），找不到抛出异常"""
+    global _DOCKER_CMD
+    if _DOCKER_CMD is None:
+        path = shutil.which("docker")
+        if not path:
+            raise RuntimeError(
+                "未检测到 docker 命令，请先安装 Docker Desktop。\n"
+                "安装指引: https://docs.docker.com/get-docker/"
+            )
+        _DOCKER_CMD = path
+    return _DOCKER_CMD
+
+
 def _get_container_exec_cmd(container_name: str) -> str:
-    engine = get_engine_preference()
+    docker = _resolve_docker_cmd()
     if sys.platform == "win32":
-        return f"{engine} exec -i {container_name} /bin/bash"
+        return f"{docker} exec -i {container_name} /bin/bash"
     else:
-        return f"{engine} exec -it {container_name} /bin/bash"
+        return f"{docker} exec -it {container_name} /bin/bash"
 
 
 _docker_manager_instance: Optional["DockerManager"] = None
@@ -79,26 +95,7 @@ class DockerManager:
         if not image:
             raise ValueError("A Docker image must be provided.")
 
-        engine_preference = get_engine_preference()
-
-        if engine_preference in ["docker", "podman"]:
-            import shutil
-
-            if shutil.which(engine_preference):
-                self.engine = engine_preference
-            else:
-                raise DockerNotRunningError(
-                    f"全局配置中指定了 {engine_preference}，但系统未检测到该命令，请重新执行 purrcat setup"
-                )
-        else:
-            import shutil
-
-            self.engine = shutil.which("podman") or shutil.which("docker")
-            if not self.engine:
-                raise DockerNotRunningError(
-                    "未检测到任何容器环境，请先执行 purrcat setup"
-                )
-
+        self.engine = _resolve_docker_cmd()
         print(f"🔧 使用容器引擎: {self.engine}")
 
         try:

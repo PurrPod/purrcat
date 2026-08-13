@@ -33,6 +33,7 @@ import ChatModals from './chat/ChatModals';
 import ChatSidebar from './chat/ChatSidebar';
 import { FileChangesPanel, RequestQueuePanel, TerminalPanel } from './chat/ChatPanels';
 import AgentBrowserPanel from './chat/AgentBrowserPanel';
+import ConfigModal from './ConfigModal';
 
 // Tauri 文件系统 API (用于拖拽上传)
 import { copyFile, exists, mkdir } from '@tauri-apps/plugin-fs';
@@ -289,10 +290,6 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   const [isInstallingSensor, setIsInstallingSensor] = useState(false);
 
   const [isConfigOpen, setIsConfigOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState('model');
-  const [configData, setConfigData] = useState<Record<string, any>>({});
-  const [expandedKey, setExpandedKey] = useState<string | null>(null);
-  const [editJsonStr, setEditJsonStr] = useState('');
 
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -406,11 +403,6 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   };
   const handlePaste = (e: React.ClipboardEvent) => { if (e.clipboardData.files && e.clipboardData.files.length > 0) { e.preventDefault(); handleFileUpload(e.clipboardData.files); } };
   const handleDrop = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(false); const items = e.dataTransfer.items; if (items && items.length > 0) { const validFiles: File[] = []; for (let i = 0; i < items.length; i++) { const item = items[i]; if (item.kind === 'file') { const file = item.getAsFile(); if (file) validFiles.push(file); } } if (validFiles.length > 0) handleFileUpload(validFiles); } };
-
-  const fetchConfig = async (tab: string) => { try { const res = await fetch(`http://localhost:8000/api/config/${tab}`); if (res.ok) { const data = await res.json(); setConfigData(data); setExpandedKey(null); setEditJsonStr(''); } } catch { /* noop */ } };
-  useEffect(() => { if (isConfigOpen) fetchConfig(activeTab); }, [isConfigOpen, activeTab]);
-  const toggleKey = (key: string) => { if (expandedKey === key) setExpandedKey(null); else { setExpandedKey(key); setEditJsonStr(JSON.stringify(configData[key], null, 2)); } };
-  const handleSaveConfig = async (key: string) => { try { const parsedValue = JSON.parse(editJsonStr); const newConfig = { ...configData, [key]: parsedValue }; const res = await fetch(`http://localhost:8000/api/config/${activeTab}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newConfig) }); if (res.ok) { setConfigData(newConfig); setExpandedKey(null); toast.success("保存成功"); } } catch { /* noop */ } };
 
   const openMdEditor = async (type: 'SOUL' | 'SOLO' | 'TODO') => { setMdType(type); setMdContent('Loading...'); setShowMdModal(true); try { const res = await fetch(`http://localhost:8000/api/config/markdown/${type}`); if (res.ok) { const data = await res.json(); setMdContent(data.content); } } catch { /* noop */ } };
   const saveMdContent = async () => { setIsSavingMd(true); try { const res = await fetch(`http://localhost:8000/api/config/markdown/${mdType}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: mdContent }) }); if (res.ok) setShowMdModal(false); } catch { /* noop */ } finally { setIsSavingMd(false); } };
@@ -669,7 +661,6 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
     showMcpSelectModal, setShowMcpSelectModal, mcpData, tempSelectedMcps, setTempSelectedMcps, expandedMcp, setExpandedMcp, setSelectedMcps,
     showRefModal, setShowRefModal, tempRefPath, setTempRefPath, setRefPaths,
     showGraphSelectModal, setShowGraphSelectModal, graphData, tempSelectedGraphs, setTempSelectedGraphs, setSelectedGraphs,
-    isConfigOpen, setIsConfigOpen, activeTab, setActiveTab, configData, expandedKey, editJsonStr, setEditJsonStr, toggleKey, handleSaveConfig,
     showSessionModal, setShowSessionModal, isAgentThinking, sessions, handleSelectSession, editingSessionId, editingAlias, setEditingAlias, setEditingSessionId, handleRename,
     showTraceModal, setShowTraceModal, traceType, setTraceType, traceSkillName, setTraceSkillName, traceExpectation, setTraceExpectation, confirmTraceToSkill, isTracing
   };
@@ -691,6 +682,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
     <div className="absolute inset-0 bg-[#fdfaf5] bg-[radial-gradient(#1a1a1a_1px,transparent_1px)] [background-size:24px_24px] p-6 md:p-8 flex gap-6 overflow-hidden font-sans">
       
       <ChatModals {...modalProps} />
+      <ConfigModal isOpen={isConfigOpen} onClose={() => setIsConfigOpen(false)} />
       
       {!showBrowser && <ChatSidebar {...sidebarProps} />}
 

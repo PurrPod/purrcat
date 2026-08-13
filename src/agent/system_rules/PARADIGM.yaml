@@ -1,6 +1,6 @@
 name: "default"
 description: "default system loop"
-path: "${os.getcwd}"
+path: "agent_vm"
 loop_end_max_retry: 3
 trigger:
   - cron:

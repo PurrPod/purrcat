@@ -3,6 +3,7 @@
 import os
 import traceback
 from src.tool.utils.format import error_response, text_response
+from src.utils.config import SKILL_DIR
 from src.evolve import (
     skill_improve_init,
     run_skill_eval_background,
@@ -23,7 +24,7 @@ def KernelUpgrade(action: str, target: str, **kwargs) -> dict:
     """
     try:
         if action == "trace_to_skill":
-            is_upgrade = os.path.exists(f"./skills/{target}")
+            is_upgrade = os.path.exists(os.path.join(SKILL_DIR, target))
 
             sys_note = skill_improve_init(target, is_upgrade=is_upgrade)
 

@@ -4,24 +4,44 @@ from pathlib import Path
 from typing import Any, Dict
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-DATA_DIR = os.path.join(BASE_DIR, "data")
 SRC_DIR = os.path.join(BASE_DIR, "src")
 
-PURRCAT_DIR = os.path.join(BASE_DIR, ".purrcat")
+PURRCAT_DIR = str(Path.home() / ".purrcat")
 MODEL_CONFIG_PATH = os.path.join(PURRCAT_DIR, "model.json")
 SENSOR_CONFIG_PATH = os.path.join(PURRCAT_DIR, "activate_sensor.json")
 FILE_CONFIG_PATH = os.path.join(PURRCAT_DIR, "file.json")
 MCP_CONFIG_PATH = os.path.join(PURRCAT_DIR, "mcp_config.json")
 APP_CONFIG_PATH = os.path.join(PURRCAT_DIR, "app_config.json")
 
+
+# 大型数据目录：用户可选，默认 = ~/.purrcat
+def _get_data_root() -> str:
+    """从 settings.json 读用户配置的 data_root，默认返回 PURRCAT_DIR"""
+    try:
+        settings_path = os.path.join(PURRCAT_DIR, "settings.json")
+        if os.path.exists(settings_path):
+            with open(settings_path, "r", encoding="utf-8") as f:
+                settings = json.load(f)
+            return settings.get("data_root") or PURRCAT_DIR
+    except Exception:
+        pass
+    return PURRCAT_DIR
+
+
+DATA_ROOT = _get_data_root()
+
+# 配置类数据（记忆/数据库等）绑定 ~/.purrcat
+DATA_DIR = os.path.join(PURRCAT_DIR, "data")
 MEMORY_DIR = os.path.join(DATA_DIR, "memory")
 TRACKER_DIR = os.path.join(DATA_DIR, "tracker")
 SCHEDULE_DIR = os.path.join(DATA_DIR, "schedule")
 DATABASE_DIR = os.path.join(DATA_DIR, "database")
-BUFFER_DIR = os.path.join(BASE_DIR, "agent_vm", ".buffer")
-AGENT_VM_DIR = os.path.join(BASE_DIR, "agent_vm")
+
+# 大型数据目录（agent_vm/embedding）走 DATA_ROOT，用户可选盘
+AGENT_VM_DIR = os.path.join(DATA_ROOT, "agent_vm")
+BUFFER_DIR = os.path.join(DATA_ROOT, "agent_vm", ".buffer")
 MEMORY_PENDING_DIR = os.path.join(MEMORY_DIR, "buffer", "pending")
-SKILL_DIR = os.path.join(BASE_DIR, "skills")
+SKILL_DIR = os.path.join(PURRCAT_DIR, "skills")
 
 SCHEDULE_FILE = os.path.join(SCHEDULE_DIR, "schedule.json")
 
@@ -29,6 +49,7 @@ AGENT_DIR = os.path.join(SRC_DIR, "agent")
 AGENT_CORE_DIR = os.path.join(PURRCAT_DIR, "core")
 SOUL_MD_PATH = os.path.join(AGENT_CORE_DIR, "SOUL.md")
 CRON_FILE = os.path.join(AGENT_CORE_DIR, "cron.json")
+LOOP_FILE = os.path.join(AGENT_CORE_DIR, "loop.json")
 SYSTEM_RULES_DIR = os.path.join(AGENT_DIR, "system_rules")
 
 SESSIONS_DIR = os.path.join(DATA_DIR, "checkpoints", "agent")
@@ -36,11 +57,11 @@ SESSION_INDEX_PATH = os.path.join(SESSIONS_DIR, "index.json")
 
 os.makedirs(SESSIONS_DIR, exist_ok=True)
 
-MCP_SCHEMA_CACHE_FILE = os.path.join(SRC_DIR, "tool", "callmcp", "mcp_schema.json")
+MCP_SCHEMA_CACHE_FILE = os.path.join(PURRCAT_DIR, "mcp_schema.json")
 
 CONTAINER_ENGINE_CONFIG_KEY = "container_engine"
 
-GLOBAL_CONFIG_DIR = Path.home() / ".purrcat"
+GLOBAL_CONFIG_DIR = Path(PURRCAT_DIR)
 GLOBAL_CONFIG_FILE = GLOBAL_CONFIG_DIR / "settings.json"
 
 
@@ -132,57 +153,31 @@ def get_agent_model() -> str:
 
 def get_embedding_model() -> str:
     model_config = get_model_config()
-    return model_config.get("embedding", os.path.join(BASE_DIR, "embedding"))
+    return model_config.get("embedding", os.path.join(DATA_ROOT, "embedding"))
 
 
 def get_data_dir() -> str:
     return DATA_DIR
 
 
-def get_container_engine(engine_preference: str = "auto") -> str:
+def get_container_engine(engine_preference: str = "docker") -> str:
+    """统一只返回 docker 命令的绝对路径（不再支持 podman）"""
     import shutil
 
-    if engine_preference in ["docker", "podman"]:
-        if shutil.which(engine_preference):
-            return engine_preference
-        else:
-            raise EnvironmentError(
-                f"您选择了 {engine_preference}，但系统未检测到该环境。"
-            )
+    path = shutil.which("docker")
+    if path:
+        return path
 
-    global_preference = get_engine_preference()
-    if global_preference in ["docker", "podman"]:
-        if shutil.which(global_preference):
-            return global_preference
-        else:
-            print(
-                f"[Config] 全局配置中指定了 '{global_preference}'，但系统未检测到该命令。"
-            )
-
-    file_config = get_file_config()
-    configured_engine = file_config.get(CONTAINER_ENGINE_CONFIG_KEY)
-
-    if configured_engine:
-        if shutil.which(configured_engine):
-            return configured_engine
-        else:
-            print(
-                f"[Config] 配置的容器引擎 '{configured_engine}' 未找到，尝试自动检测..."
-            )
-
-    if shutil.which("podman"):
-        return "podman"
-    elif shutil.which("docker"):
-        return "docker"
-    else:
-        raise RuntimeError(
-            "未检测到可用的容器引擎 (Podman 或 Docker)。请先安装其中之一。"
-        )
+    raise RuntimeError(
+        "未检测到 docker 命令。请先安装 Docker Desktop：\n"
+        "https://docs.docker.com/get-docker/"
+    )
 
 
 def set_container_engine(engine: str) -> bool:
-    if engine not in ["docker", "podman"]:
-        print(f"[Config] 无效的容器引擎: {engine}")
+    """仅接受 docker（向下兼容旧接口）"""
+    if engine != "docker":
+        print(f"[Config] 不支持的容器引擎: {engine}，当前版本仅支持 docker")
         return False
 
-    return save_global_setting("sandbox_engine", engine)
+    return save_global_setting("sandbox_engine", "docker")

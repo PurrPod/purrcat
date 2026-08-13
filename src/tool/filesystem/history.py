@@ -4,8 +4,9 @@ import time
 import json
 import difflib  # 🌟 新增：用于动态计算首尾差异
 from src.tool.filesystem.exceptions import FileSystemError
+from src.utils.config import PURRCAT_DIR
 
-HISTORY_DIR = os.path.join(os.getcwd(), ".agent_history")
+HISTORY_DIR = os.path.join(PURRCAT_DIR, ".agent_history")
 
 
 def _get_history_path(target_path: str) -> str:

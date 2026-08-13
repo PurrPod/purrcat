@@ -7,7 +7,7 @@ import zipfile
 import io
 
 from src.tool.request.request_operations import REQUESTS_FILE, REQUEST_LOCK
-from src.utils.config import FILE_CONFIG_PATH
+from src.utils.config import FILE_CONFIG_PATH, SKILL_DIR
 
 
 def get_pending_requests() -> list:
@@ -87,10 +87,7 @@ def _install_skill_from_github(skill_name: str):
     response = urllib.request.urlopen(req)
     zip_data = response.read()
 
-    project_root = os.path.dirname(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    )
-    dest_base = os.path.join(project_root, "skills")
+    dest_base = SKILL_DIR
 
     extracted = False
     with zipfile.ZipFile(io.BytesIO(zip_data)) as z:

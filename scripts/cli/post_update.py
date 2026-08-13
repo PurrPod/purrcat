@@ -6,16 +6,26 @@ Handles data migration and cleanup after code updates.
 import json
 import os
 import shutil
+import sys
 
 
 def _get_project_root():
     return os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
+def _setup_path():
+    """Add project root to sys.path so src.utils.config is importable."""
+    project_root = _get_project_root()
+    if project_root not in sys.path:
+        sys.path.insert(0, project_root)
+
+
 def migrate_v1_to_v2():
     """Migrate sensor.json if old keys exist"""
-    project_root = _get_project_root()
-    sensor_path = os.path.join(project_root, ".purrcat", "sensor.json")
+    _setup_path()
+    from src.utils.config import SENSOR_CONFIG_PATH
+
+    sensor_path = SENSOR_CONFIG_PATH
 
     if os.path.exists(sensor_path):
         with open(sensor_path, "r", encoding="utf-8") as f:

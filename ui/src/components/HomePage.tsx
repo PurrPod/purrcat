@@ -1,24 +1,24 @@
 // src/components/HomePage.tsx
-import { useState, useEffect } from 'react'
-import { MessageSquare, GitMerge, Settings, X, Save, FileJson, AlertCircle, Store, Terminal, Brain } from 'lucide-react'
+import { useState } from 'react'
+import {
+  MessageSquare, GitMerge, Settings, Terminal, Brain, Store
+} from 'lucide-react'
 import { useFlowStore } from '../store/flowStore'
-import { toast } from 'react-hot-toast'
+import ConfigModal from './ConfigModal'
 
 const sketchyShape1 = { borderRadius: '255px 15px 225px 15px/15px 225px 15px 255px' };
 const sketchyShape2 = { borderRadius: '15px 225px 15px 255px/255px 15px 225px 15px' };
 const sketchyShape3 = { borderRadius: '225px 15px 255px 15px/15px 255px 15px 225px' };
 
-const CONFIG_TABS = ['model', 'sensor', 'file', 'mcp', 'app'];
-
-export default function HomePage({ 
-  onEnterChat, 
+export default function HomePage({
+  onEnterChat,
   onEnterEditor,
   onEnterMarket,
   onEnterEvolve,
-  onEnterTask, // 🌟 新增
-  onEnterMemory // 🌟 新增
-}: { 
-  onEnterChat: () => void, 
+  onEnterTask,
+  onEnterMemory
+}: {
+  onEnterChat: () => void,
   onEnterEditor: () => void,
   onEnterMarket: () => void,
   onEnterEvolve: () => void,
@@ -26,75 +26,16 @@ export default function HomePage({
   onEnterMemory: () => void
 }) {
   const [isConfigOpen, setIsConfigOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState('model');
-  const [configData, setConfigData] = useState<Record<string, any>>({});
-  const [expandedKey, setExpandedKey] = useState<string | null>(null);
-  const [editJsonStr, setEditJsonStr] = useState('');
-
 
   const handleNewWorkflow = () => {
     useFlowStore.getState().clearGraph()
     onEnterEditor()
   }
 
-  const fetchConfig = async (tab: string) => {
-    try {
-      const res = await fetch(`http://localhost:8000/api/config/${tab}`);
-      if (res.ok) {
-        const data = await res.json();
-        setConfigData(data);
-        setExpandedKey(null);
-        setEditJsonStr('');
-      } else {
-        toast.error(`无法加载 ${tab} 配置`);
-      }
-    } catch {
-      toast.error("网络错误，无法连接后端");
-    }
-  };
-
-  useEffect(() => {
-    if (isConfigOpen) {
-      fetchConfig(activeTab);
-    }
-  }, [isConfigOpen, activeTab]);
-
-  const toggleKey = (key: string) => {
-    if (expandedKey === key) {
-      setExpandedKey(null);
-    } else {
-      setExpandedKey(key);
-      setEditJsonStr(JSON.stringify(configData[key], null, 2));
-    }
-  };
-
-  const handleSave = async (key: string) => {
-    try {
-      const parsedValue = JSON.parse(editJsonStr);
-      const newConfig = { ...configData, [key]: parsedValue };
-
-      const res = await fetch(`http://localhost:8000/api/config/${activeTab}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newConfig)
-      });
-
-      if (res.ok) {
-        toast.success(`[${key}] 配置已落盘！`);
-        setConfigData(newConfig);
-        setExpandedKey(null);
-      } else {
-        toast.error("保存失败，后端拒绝了请求");
-      }
-    } catch {
-      toast.error("保存失败：JSON 格式不合法！请检查引号和括号。");
-    }
-  };
-
   return (
     <div className="absolute inset-0 bg-[#fdfaf5] bg-[radial-gradient(#1a1a1a_1px,transparent_1px)] [background-size:24px_24px] flex flex-col items-center justify-center overflow-hidden font-sans select-none">
-      
-      <button 
+
+      <button
         onClick={() => setIsConfigOpen(true)}
         style={sketchyShape3}
         className="absolute top-8 right-8 z-50 w-16 h-16 bg-[#EBCB8B] border-4 border-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:shadow-[6px_6px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center transition-all hover:bg-terracotta hover:text-paper group rotate-6 hover:-rotate-3"
@@ -108,7 +49,7 @@ export default function HomePage({
           <svg className="absolute left-[-18%] top-1/2 -translate-y-1/2 w-[136%] h-24 -z-10 rotate-[-2deg]" viewBox="0 0 400 80" preserveAspectRatio="none" style={{ mixBlendMode: 'multiply' }}>
             <defs>
               <linearGradient id="brushGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-                <stop offset="0%" stopColor="#EBCB8B" stopOpacity="0.5"/> 
+                <stop offset="0%" stopColor="#EBCB8B" stopOpacity="0.5"/>
                 <stop offset="15%" stopColor="#EBCB8B" stopOpacity="0.8"/>
                 <stop offset="50%" stopColor="#EBCB8B" stopOpacity="1.0"/>
                 <stop offset="85%" stopColor="#EBCB8B" stopOpacity="0.8"/>
@@ -122,10 +63,10 @@ export default function HomePage({
 
       {/* 🌟 三栏布局，左右各3个，形成弧形 */}
       <div className="relative w-full max-w-[1400px] min-h-[650px] flex flex-col md:flex-row items-center justify-center z-10 px-4 md:px-8 mt-40 md:mt-16 gap-6 md:gap-4 lg:gap-8">
-        
+
         {/* 👈 左侧按钮组 (CHAT, TASK, EDITOR) */}
         <div className="flex-1 flex flex-col items-center md:items-end justify-center gap-6 z-20 w-full mt-8 md:mt-0 order-2 md:order-1">
-          
+
           {/* 1. CHAT Button */}
           <button onClick={onEnterChat} className="w-[290px] h-[160px] relative flex flex-col items-center justify-center gap-2 transition-all duration-200 active:translate-y-2 hover:-translate-y-1 group md:mr-4 lg:mr-8">
             <svg viewBox="0 0 310 210" className="absolute inset-0 w-full h-full filter drop-shadow-[8px_8px_0px_rgba(26,26,26,1)] group-hover:drop-shadow-[10px_10px_0px_rgba(212,122,90,1)] transition-all duration-200" fill="#fdfaf5">
@@ -140,7 +81,7 @@ export default function HomePage({
             </div>
           </button>
 
-          {/* 2. TASK Button (向中心凹进去) */}
+          {/* 2. TASK Button */}
           <button onClick={onEnterTask} className="w-[290px] h-[160px] relative flex flex-col items-center justify-center gap-2 transition-all duration-200 active:translate-y-2 hover:-translate-y-1 group md:-mr-6 lg:-mr-12">
             <svg viewBox="0 0 310 210" className="absolute inset-0 w-full h-full filter drop-shadow-[8px_8px_0px_rgba(26,26,26,1)] group-hover:drop-shadow-[10px_10px_0px_rgba(235,203,139,1)] transition-all duration-200" fill="#fdfaf5">
               <path d="M 40,70 C 10,60 10,20 50,20 C 70,0 120,0 140,20 C 170,-5 230,-5 250,25 C 290,10 310,50 290,80 C 320,110 310,160 270,160 C 260,195 200,205 160,185 C 130,210 70,200 60,170 C 20,170 10,120 40,70 Z" stroke="rgba(26,26,26,1)" strokeWidth="4.5" strokeLinejoin="round" vectorEffect="non-scaling-stroke" className="group-hover:fill-white transition-colors" />
@@ -177,7 +118,7 @@ export default function HomePage({
 
         {/* 👉 右侧按钮组 (MARKET, MEMORY, EVOLVE) */}
         <div className="flex-1 flex flex-col items-center md:items-start justify-center gap-6 z-20 w-full mt-8 md:mt-0 order-3">
-          
+
           {/* 1. MARKET Button */}
           <button onClick={onEnterMarket} className="w-[290px] h-[160px] relative flex flex-col items-center justify-center gap-2 transition-all duration-200 active:translate-y-2 hover:-translate-y-1 group md:ml-4 lg:ml-8">
             <svg viewBox="0 0 310 210" className="absolute inset-0 w-full h-full filter drop-shadow-[8px_8px_0px_rgba(26,26,26,1)] group-hover:drop-shadow-[10px_10px_0px_rgba(136,192,208,1)] transition-all duration-200" fill="#fdfaf5">
@@ -192,7 +133,7 @@ export default function HomePage({
             </div>
           </button>
 
-          {/* 2. MEMORY Button (向中心凹进去) */}
+          {/* 2. MEMORY Button */}
           <button onClick={onEnterMemory} className="w-[290px] h-[160px] relative flex flex-col items-center justify-center gap-2 transition-all duration-200 active:translate-y-2 hover:-translate-y-1 group md:-ml-6 lg:-ml-12">
             <svg viewBox="0 0 310 210" className="absolute inset-0 w-full h-full filter drop-shadow-[8px_8px_0px_rgba(26,26,26,1)] group-hover:drop-shadow-[10px_10px_0px_rgba(180,142,173,1)] transition-all duration-200" fill="#fdfaf5">
               <path d="M 40,70 C 10,60 10,20 50,20 C 70,0 120,0 140,20 C 170,-5 230,-5 250,25 C 290,10 310,50 290,80 C 320,110 310,160 270,160 C 260,195 200,205 160,185 C 130,210 70,200 60,170 C 20,170 10,120 40,70 Z" stroke="rgba(26,26,26,1)" strokeWidth="4.5" strokeLinejoin="round" vectorEffect="non-scaling-stroke" className="group-hover:fill-white transition-colors" />
@@ -223,56 +164,8 @@ export default function HomePage({
         </div>
       </div>
 
-      {/* 原有的配置界面 */}
-      {isConfigOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-ink/70 backdrop-blur-sm p-4 md:p-8 pointer-events-auto">
-          <div style={sketchyShape2} className="bg-cream border-4 border-ink shadow-[16px_16px_0px_0px_rgba(26,26,26,1)] w-full max-w-6xl h-[85vh] flex flex-row relative">
-            <div className="absolute -top-4 left-1/4 w-32 h-10 bg-terracotta/60 border-2 border-ink rotate-2 z-50 pointer-events-none" style={sketchyShape1}></div>
-            <button onClick={() => setIsConfigOpen(false)} className="absolute top-4 right-6 hover:rotate-90 hover:text-terracotta transition-all z-10 p-2 bg-paper border-4 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)]" style={sketchyShape3}><X size={28} strokeWidth={4} /></button>
-
-            <div className="w-64 shrink-0 border-r-4 border-ink/20 flex flex-col p-6">
-              <div className="pb-6 flex items-center gap-4">
-                <Settings size={40} strokeWidth={2.5} className="text-terracotta" />
-                <h2 className="text-2xl font-black tracking-widest" style={{ fontFamily: '"Comic Sans MS", cursive' }}>CONFIG</h2>
-              </div>
-              <div className="flex flex-col gap-4">
-                {CONFIG_TABS.map((tab, idx) => {
-                  const isActive = activeTab === tab;
-                  const rotation = idx % 2 === 0 ? 'rotate-1' : '-rotate-1';
-                  const shape = idx % 3 === 0 ? sketchyShape1 : idx % 2 === 0 ? sketchyShape2 : sketchyShape3;
-                  return (
-                    <button key={tab} onClick={() => setActiveTab(tab)} style={shape} className={`px-4 py-3 font-black text-lg border-4 border-ink uppercase tracking-wider transition-all shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] ${isActive ? 'bg-[#EBCB8B] text-ink -translate-x-1' : 'bg-paper text-ink/70 hover:bg-sand'} ${rotation}`}>{tab}</button>
-                  )
-                })}
-              </div>
-            </div>
-
-            <div className="flex-1 overflow-y-auto p-8 flex flex-col gap-6">
-              {Object.keys(configData).length === 0 ? <div className="text-center font-bold text-ink/40 mt-10 text-2xl" style={{ fontFamily: '"Comic Sans MS", cursive' }}>No data found or Loading...</div> : (
-                Object.keys(configData).map((key, idx) => {
-                  const isExpanded = expandedKey === key;
-                  const itemShape = idx % 2 === 0 ? sketchyShape2 : sketchyShape1;
-                  return (
-                    <div key={key} className="flex flex-col gap-2">
-                      <button onClick={() => toggleKey(key)} style={itemShape} className={`w-full text-left p-4 border-4 border-ink flex justify-between items-center transition-all ${isExpanded ? 'bg-ink text-paper shadow-none' : 'bg-paper text-ink shadow-[6px_6px_0px_0px_rgba(26,26,26,1)] hover:-translate-y-1 hover:shadow-[8px_8px_0px_0px_rgba(26,26,26,1)]'}`}>
-                        <div className="flex items-center gap-3"><FileJson size={24} strokeWidth={2.5} className={isExpanded ? 'text-terracotta' : 'text-[#EBCB8B]'} /><span className="text-2xl font-black" style={{ fontFamily: '"Comic Sans MS", cursive' }}>{key}</span></div>
-                        <span className="font-bold opacity-50">{isExpanded ? 'CLOSE' : 'EDIT'}</span>
-                      </button>
-                      {isExpanded && (
-                        <div style={sketchyShape3} className="bg-paper border-4 border-ink p-4 flex flex-col gap-4 shadow-[inset_4px_4px_0px_0px_rgba(26,26,26,0.1)]">
-                          <div className="flex items-center gap-2 text-ink/60 font-bold text-sm bg-terracotta/10 p-2 border-2 border-ink border-dashed" style={sketchyShape1}><AlertCircle size={16} strokeWidth={3} />注意：请严格遵守 JSON 格式</div>
-                          <textarea value={editJsonStr} onChange={(e) => setEditJsonStr(e.target.value)} className="w-full h-64 bg-[#FDF8F0] border-4 border-ink p-4 font-mono text-[15px] leading-relaxed font-bold focus:outline-none focus:bg-white resize-y" spellCheck={false} />
-                          <div className="flex justify-end"><button onClick={() => handleSave(key)} style={sketchyShape1} className="px-8 py-3 bg-[#a3be8c] border-4 border-ink text-ink font-black text-xl flex items-center gap-2 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:bg-[#8eb072] active:translate-y-1 active:shadow-none transition-all rotate-1"><Save size={24} strokeWidth={3} /> SAVE TO DISK</button></div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      {/* ============ 配置中心 Modal ============ */}
+      <ConfigModal isOpen={isConfigOpen} onClose={() => setIsConfigOpen(false)} />
     </div>
   )
 }

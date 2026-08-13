@@ -68,6 +68,8 @@ def _parse_github_url(url):
 
 def run_install(ext_type, source):
     """Execute install logic (支持 MCP, Graph自动依赖解析, Skill, Node)"""
+    from src.utils.config import MCP_CONFIG_PATH, SKILL_DIR
+
     project_root = _get_project_root()
 
     print(f"\nInstalling {ext_type}...")
@@ -77,7 +79,7 @@ def run_install(ext_type, source):
     # 1. MCP 安装逻辑：支持查表 (Registry) 或直接传入 JSON string
     # ---------------------------------------------------------
     if ext_type == "mcp":
-        mcp_config_path = os.path.join(project_root, ".purrcat", "mcp_config.json")
+        mcp_config_path = MCP_CONFIG_PATH
         new_mcp_configs = {}
 
         # 场景 A: 传入的是原生 JSON 字符串 (向下兼容)
@@ -153,7 +155,7 @@ def run_install(ext_type, source):
                 for w_mcp in env_warning_list:
                     print(f"    - {w_mcp}")
                 print(
-                    "    Please edit '.purrcat/mcp_config.json' to fill in the missing values."
+                    f"    Please edit '{mcp_config_path}' to fill in the missing values."
                 )
 
         except Exception as e:
@@ -288,7 +290,7 @@ def run_install(ext_type, source):
                 return
 
             skill_name = os.path.basename(parsed["path"].rstrip("/"))
-            dest_dir = os.path.join(project_root, "skills", skill_name)
+            dest_dir = os.path.join(SKILL_DIR, skill_name)
 
             zip_url = f"https://github.com/{parsed['owner']}/{parsed['repo']}/archive/refs/heads/{parsed['branch']}.zip"
 
@@ -297,7 +299,7 @@ def run_install(ext_type, source):
             )
             if _download_and_extract_subfolder(zip_url, parsed["path"], dest_dir):
                 print(
-                    f"[+] Successfully installed skill '{skill_name}' to skills/{skill_name}"
+                    f"[+] Successfully installed skill '{skill_name}' to {dest_dir}"
                 )
         else:
             print("[x] Error: Invalid source URL resolved.")

@@ -19,6 +19,7 @@ from src.evolve import (
     mcp_request_handle,
     run_mcp_eval_background,
 )
+from src.utils.config import SKILL_DIR
 
 router = APIRouter(prefix="/api/evolve", tags=["Evolution Factory"])
 
@@ -64,7 +65,7 @@ class RollbackReq(BaseModel):
 # 🔧 通用 Git 操作辅助函数
 # ==========================================
 def unified_generate_diff(name: str, workplace_root: str, module_type: str) -> str:
-    source_dir = f"./mcps/{name}" if module_type == "mcp" else f"./skills/{name}"
+    source_dir = f"./mcps/{name}" if module_type == "mcp" else os.path.join(SKILL_DIR, name)
     target_dir = os.path.join(workplace_root, name)
 
     if not os.path.exists(source_dir):
@@ -85,7 +86,7 @@ def unified_generate_diff(name: str, workplace_root: str, module_type: str) -> s
 
 
 def unified_rollback(name: str, module_type: str) -> str:
-    repo_root = "./mcps" if module_type == "mcp" else "./skills"
+    repo_root = "./mcps" if module_type == "mcp" else SKILL_DIR
     git_dir = os.path.join(repo_root, ".git")
 
     if not os.path.exists(git_dir):
