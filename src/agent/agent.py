@@ -26,7 +26,7 @@ class Agent:
         initial_history=None,
         name=None,
         save_callback=None,
-        paradigm_path="src/agent/system_rules/PARADIGM.yaml",
+        paradigm_path=None,
     ):
         self.name = name or get_agent_model()
         self.session_id = session_id

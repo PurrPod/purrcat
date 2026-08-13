@@ -1,12 +1,48 @@
 import os
+import shutil
 import yaml
 import json
 import subprocess
 
+from src.utils.config import (
+    BASE_DIR,
+    PURRCAT_DIR,
+    AGENT_VM_DIR,
+    SYSTEM_RULES_DIR,
+    SOUL_MD_PATH,
+    AGENT_CORE_DIR,
+)
+
+# PARADIGM.yaml 的默认模板（程序内置）与用户配置（~/.purrcat/core/）
+DEFAULT_PARADIGM_PATH = os.path.join(SYSTEM_RULES_DIR, "PARADIGM.yaml")
+USER_PARADIGM_PATH = os.path.join(AGENT_CORE_DIR, "PARADIGM.yaml")
+
+# 符号 → 绝对路径 映射（PARADIGM.yaml 里用 @符号 引用文件）
+PATH_ALIASES = {
+    "@RULES": os.path.join(SYSTEM_RULES_DIR, "RULES.md"),
+    "@SOUL": SOUL_MD_PATH,
+    "@MEMORY": os.path.join(AGENT_CORE_DIR, "MEMORY.md"),
+    "@INFO": os.path.join(AGENT_CORE_DIR, "info.json"),
+}
+
+
+def _default_paradigm_path() -> str:
+    """优先用户配置，不存在则从内置模板复制一份到用户目录"""
+    if os.path.exists(USER_PARADIGM_PATH):
+        return USER_PARADIGM_PATH
+    if os.path.exists(DEFAULT_PARADIGM_PATH):
+        try:
+            os.makedirs(AGENT_CORE_DIR, exist_ok=True)
+            shutil.copy(DEFAULT_PARADIGM_PATH, USER_PARADIGM_PATH)
+            return USER_PARADIGM_PATH
+        except Exception:
+            return DEFAULT_PARADIGM_PATH
+    return DEFAULT_PARADIGM_PATH
+
 
 class HookHandler:
     def __init__(self, paradigm_path=None):
-        self.paradigm_path = paradigm_path or "src/agent/system_rules/PARADIGM.yaml"
+        self.paradigm_path = paradigm_path or _default_paradigm_path()
         self.config = {}
         self.hooks = {}
         self.load_config()
@@ -98,8 +134,21 @@ class HookHandler:
     # 工具函数区
     # ==========================================
 
+    @staticmethod
+    def _resolve_path(path: str) -> str:
+        """把 PARADIGM 里的路径符号/前缀解析成绝对路径"""
+        if path.startswith("@"):
+            return PATH_ALIASES.get(path, path)
+        if path.startswith(".purrcat/"):
+            return os.path.join(PURRCAT_DIR, path[len(".purrcat/"):])
+        if path.startswith("src/"):
+            return os.path.join(BASE_DIR, path)
+        if path.startswith("agent_vm"):
+            return os.path.join(AGENT_VM_DIR, path.lstrip("agent_vm"))
+        return path
+
     def _file_operation(self, params, **kwargs):
-        path = params.get("path", "")
+        path = self._resolve_path(params.get("path", ""))
         action = params.get("action")
         content = params.get("content", "")
         failed_prompt = params.get("failed_prompt", f"文件操作 {action} 失败: {path}")

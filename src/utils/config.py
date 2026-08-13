@@ -42,6 +42,7 @@ AGENT_VM_DIR = os.path.join(DATA_ROOT, "agent_vm")
 BUFFER_DIR = os.path.join(DATA_ROOT, "agent_vm", ".buffer")
 MEMORY_PENDING_DIR = os.path.join(MEMORY_DIR, "buffer", "pending")
 SKILL_DIR = os.path.join(PURRCAT_DIR, "skills")
+GRAPHS_DIR = os.path.join(PURRCAT_DIR, "graph")
 
 SCHEDULE_FILE = os.path.join(SCHEDULE_DIR, "schedule.json")
 

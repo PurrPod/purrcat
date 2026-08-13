@@ -127,9 +127,8 @@ class Task:
         self.save_meta()
 
     def load_graph(self):
-        graph_path = os.path.join(
-            os.path.dirname(__file__), "graph", f"{self.graph_name}.json"
-        )
+        from src.utils.config import GRAPHS_DIR
+        graph_path = os.path.join(GRAPHS_DIR, f"{self.graph_name}.json")
         if not os.path.exists(graph_path):
             return {
                 "status": "error",

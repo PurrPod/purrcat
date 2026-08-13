@@ -7,9 +7,8 @@ import json
 import os
 from typing import Any, Dict, List, Optional
 
-from src.utils.config import SRC_DIR
+from src.utils.config import SRC_DIR, GRAPHS_DIR
 
-GRAPHS_DIR = os.path.join(SRC_DIR, "harness", "graph")
 NODES_DIR = os.path.join(SRC_DIR, "harness", "node", "extensions")
 
 

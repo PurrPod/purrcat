@@ -18,10 +18,10 @@ from src.tool.utils.format import error_response, text_response, warning_respons
 
 
 def _get_all_graphs_info() -> dict:
-    """扫描 harness/graph 目录，获取所有可用的工作流图定义、模型(core)及参数要求"""
-    import src.harness.process as process_module
+    """扫描 ~/.purrcat/graph 目录，获取所有可用的工作流图定义、模型(core)及参数要求"""
+    from src.utils.config import GRAPHS_DIR
 
-    graph_dir = os.path.join(os.path.dirname(process_module.__file__), "graph")
+    graph_dir = GRAPHS_DIR
     if not os.path.exists(graph_dir):
         return {}
 
