@@ -230,7 +230,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
     else if (rawHref.startsWith('/agent_vm/') || rawHref === '/agent_vm' ||
              rawHref.startsWith('./agent_vm/') || rawHref === './agent_vm' ||
              rawHref.startsWith('../agent_vm/')) {
-      localPath = rawHref; // 后端 resolve_absolute_path 会处理
+      localPath = rawHref; // 后端 convert_sandbox_path 会处理
     }
     // 3. Windows 绝对路径: C:/xxx 或 D:\xxx (盘符+冒号开头)
     else if (/^[A-Za-z]:[/\\]/.test(rawHref)) {
@@ -247,26 +247,32 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
 
     if (localPath !== null) {
       const ext = localPath.split('.').pop()?.toLowerCase() || '';
-      if (['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(ext)) {
+      if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico'].includes(ext)) {
         type = 'image';
-      } else if (['mp4', 'webm', 'mov', 'ogg'].includes(ext)) {
+      } else if (['mp4', 'webm', 'mov', 'ogg', 'avi', 'mkv'].includes(ext)) {
         type = 'video';
       } else {
-        // 其他本地文件：兜底用 browser 渲染（/preview 返回 FileResponse，iframe 会显示或触发下载）
         type = 'browser';
       }
-      finalUrl = `/api/filesystem/preview?path=${encodeURIComponent(localPath)}`;
-    }
 
-    // 🌟 browser 类型直接在内置浏览器中打开（图片/视频仍走弹窗）
-    if (type === 'browser') {
-      openInBrowser(finalUrl, rawHref.split('/').pop() || rawHref);
+      // 🌟 Electron 环境：在独立窗口中打开（加载后端 /preview URL，渲染效果与 iframe 一致）
+      finalUrl = `/api/filesystem/preview?path=${encodeURIComponent(localPath)}`;
+      if ((window as any).purrcat?.openPreviewWindow) {
+        const fullUrl = window.location.origin + finalUrl;
+        const fileName = rawHref.replace(/\\/g, '/').split('/').pop() || 'Preview';
+        (window as any).purrcat.openPreviewWindow(fullUrl, fileName, type);
+        return;
+      }
+
+      // 非 Electron fallback：内嵌弹窗
+      setPreviewType(type);
+      setPreviewRawUrl(rawHref);
+      setPreviewUrl(finalUrl);
       return;
     }
 
-    setPreviewType(type);
-    setPreviewRawUrl(rawHref);
-    setPreviewUrl(finalUrl);
+    // http/https 等非本地链接：在内置浏览器中打开
+    openInBrowser(finalUrl, rawHref.split('/').pop() || rawHref);
   };
 
   const [showSkillSelectModal, setShowSkillSelectModal] = useState(false);
@@ -716,9 +722,6 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
 
   return (
     <div className="absolute inset-0 bg-[#fdfaf5] bg-[radial-gradient(#1a1a1a_1px,transparent_1px)] [background-size:24px_24px] p-6 md:p-8 flex gap-6 overflow-hidden font-sans">
-
-      {/* 无标题栏窗口的顶部拖拽区：拖动此处移动窗口。右上角的最小/最大/关闭按钮由 titleBarOverlay 提供 */}
-      <div style={{ position: 'fixed', top: 0, left: 0, right: 0, height: 28, WebkitAppRegion: 'drag', zIndex: 40 } as React.CSSProperties} />
 
       <ChatModals {...modalProps} />
       <ConfigModal isOpen={isConfigOpen} onClose={() => setIsConfigOpen(false)} />

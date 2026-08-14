@@ -13,6 +13,14 @@ contextBridge.exposeInMainWorld('purrcat', {
   // 拖拽文件拿真实绝对路径（替代 Tauri 的 file.path）。File 对象由渲染进程拖拽事件提供
   getPathForFile: (file) => webUtils.getPathForFile(file),
 
+  // ===== 独立预览窗口 =====
+  openPreviewWindow: (url, title, type) => ipcRenderer.invoke('preview:open-file', { url, title, type }),
+
+  // ===== 窗口控制（主窗口/预览窗口共用，手绘风格按钮调用）=====
+  winMinimize: () => ipcRenderer.invoke('win:minimize'),
+  winToggleMaximize: () => ipcRenderer.invoke('win:toggle-maximize'),
+  winClose: () => ipcRenderer.invoke('win:close'),
+
   // ===== 内置浏览器（多 Tab WebContentsView）=====
   // 新建一个浏览器 Tab，加载 url，返回 tabId
   browserNewTab: (url) => ipcRenderer.invoke('browser:new-tab', url),

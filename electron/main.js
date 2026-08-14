@@ -68,7 +68,6 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     title: 'PurrCat',
     titleBarStyle: 'hidden',
-    titleBarOverlay: { color: '#fdfaf5', symbolColor: '#1a1a1a', height: 32 },
     width: 1280,
     height: 800,
     webPreferences: {
@@ -275,6 +274,88 @@ ipcMain.handle('browser:locate', async (_e, { tabId, x, y }) => {
     console.error('[browser:locate] failed', err);
     return null;
   }
+});
+
+// ===== IPC: 独立预览窗口 =====
+// 创建独立 BrowserWindow，内嵌涂鸦风格 HTML 页面，用 img/video/iframe 引用后端 /preview URL
+function escapeHtmlAttr(str) {
+  return String(str).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// 窗口控制 IPC（通用，通过 e.sender 找到调用方窗口，主窗口/预览窗口共用）
+ipcMain.handle('win:minimize', (e) => { BrowserWindow.fromWebContents(e.sender)?.minimize(); });
+ipcMain.handle('win:toggle-maximize', (e) => {
+  const w = BrowserWindow.fromWebContents(e.sender);
+  if (!w) return;
+  if (w.isMaximized()) w.unmaximize(); else w.maximize();
+});
+ipcMain.handle('win:close', (e) => { BrowserWindow.fromWebContents(e.sender)?.close(); });
+
+ipcMain.handle('preview:open-file', (_e, { url, title, type }) => {
+  const safeUrl = escapeHtmlAttr(url);
+  const safeTitle = escapeHtmlAttr(title || 'Preview');
+
+  let mediaTag = '';
+  if (type === 'image') {
+    mediaTag = `<img src="${safeUrl}" alt="Preview">`;
+  } else if (type === 'video') {
+    mediaTag = `<video src="${safeUrl}" controls autoPlay></video>`;
+  } else {
+    mediaTag = `<iframe src="${safeUrl}" sandbox="allow-scripts allow-same-origin allow-popups allow-forms"></iframe>`;
+  }
+
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${safeTitle}</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:#FAF8F5; font-family:'Comic Sans MS',cursive,sans-serif; width:100vw; height:100vh; overflow:hidden; }
+  .container { width:100%; height:100%; border:4px solid #1A1A1A; background:#FFFFFF; display:flex; flex-direction:column; overflow:hidden; }
+  .header { display:flex; align-items:center; gap:12px; padding:10px 16px; border-bottom:3px solid rgba(26,26,26,0.15); flex-shrink:0; -webkit-app-region:drag; }
+  .header .title-icon { flex-shrink:0; color:#3498DB; -webkit-app-region:no-drag; }
+  .header h3 { font-size:16px; font-weight:900; letter-spacing:0.08em; color:#1A1A1A; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:1; }
+  .win-controls { display:flex; gap:8px; -webkit-app-region:no-drag; }
+  .win-btn { width:28px; height:28px; border:2px solid #1A1A1A; background:transparent; cursor:pointer; display:flex; align-items:center; justify-content:center; color:#1A1A1A; transition:all 0.15s; border-radius:6px 10px 5px 8px/8px 5px 10px 6px; }
+  .win-btn:hover { background:rgba(26,26,26,0.1); transform:translateY(-1px); }
+  .win-btn:active { transform:translateY(0); }
+  .win-close:hover { background:#D47A5A; color:#FFF; border-color:#D47A5A; }
+  .content { flex:1; overflow:auto; display:flex; align-items:center; justify-content:center; position:relative; }
+  .content img { max-width:100%; max-height:100%; object-fit:contain; }
+  .content video { max-width:100%; max-height:100%; }
+  .content iframe { width:100%; height:100%; border:none; }
+</style></head><body>
+<div class="container">
+  <div class="header">
+    <svg class="title-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+    <h3>${safeTitle}</h3>
+    <div class="win-controls">
+      <button class="win-btn" onclick="window.purrcat.winMinimize()" title="最小化">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      </button>
+      <button class="win-btn" onclick="window.purrcat.winToggleMaximize()" title="最大化">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"><rect x="5" y="5" width="14" height="14" rx="1"/></svg>
+      </button>
+      <button class="win-btn win-close" onclick="window.purrcat.winClose()" title="关闭">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>
+      </button>
+    </div>
+  </div>
+  <div class="content">${mediaTag}</div>
+</div>
+</body></html>`;
+
+  const win = new BrowserWindow({
+    width: type === 'video' ? 960 : 900,
+    height: type === 'video' ? 540 : 700,
+    title: title || 'Preview',
+    titleBarStyle: 'hidden',
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+  Menu.setApplicationMenu(null);
+  win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
 });
 
 // ===== 生命周期 =====

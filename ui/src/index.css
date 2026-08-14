@@ -27,6 +27,7 @@
     -webkit-app-region: drag;
     z-index: 2147483647;
   }
+  .no-drag { -webkit-app-region: no-drag; }
 }
 
 .react-flow__node {

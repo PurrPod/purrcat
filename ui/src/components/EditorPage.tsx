@@ -11,7 +11,7 @@ const sketchyShape2 = { borderRadius: '15px 225px 15px 255px/255px 15px 225px 15
 const GlobalSketchyOverrides = () => (
   <style dangerouslySetInnerHTML={{__html: `
     * { font-family: "Comic Sans MS", "Chalkboard SE", "Comic Neue", cursive !important; }
-    input, textarea, select, button { border-radius: 15px 225px 15px 255px/255px 15px 225px 15px !important; }
+    input, textarea, select, button:not(.win-ctrl) { border-radius: 15px 225px 15px 255px/255px 15px 225px 15px !important; }
 
     .react-flow__node {
       border: 4px solid #1A1A1A !important;

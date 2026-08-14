@@ -1,6 +1,7 @@
 // src/App.tsx
 import { BrowserRouter, Routes, Route, useNavigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
+import { Minus, Square, X } from 'lucide-react';
 
 import HomePage from './components/HomePage';
 import ChatPage from './components/ChatPage';
@@ -10,9 +11,36 @@ import EditorPage from './components/EditorPage';
 import MarketPage from './components/MarketPage'; // 🌟 导入新页面
 import EvolvePage from './components/EvolvePage'; // 🌟 导入新页面
 
+const sketchyBtn = { borderRadius: '6px 10px 5px 8px/8px 5px 10px 6px' };
+
+function WindowControls() {
+  const purrcat = (window as any).purrcat;
+  if (!purrcat?.winMinimize) return null;
+  return (
+    <div className="no-drag fixed top-0 right-0 z-[2147483647] flex gap-2 items-center px-2 h-8">
+      <button onClick={() => purrcat.winMinimize()} title="最小化"
+        className="win-ctrl w-7 h-7 border-2 border-ink bg-transparent flex items-center justify-center text-ink hover:bg-ink/10 hover:-translate-y-0.5 transition-all"
+        style={sketchyBtn}>
+        <Minus size={14} strokeWidth={3.5} />
+      </button>
+      <button onClick={() => purrcat.winToggleMaximize()} title="最大化"
+        className="win-ctrl w-7 h-7 border-2 border-ink bg-transparent flex items-center justify-center text-ink hover:bg-ink/10 hover:-translate-y-0.5 transition-all"
+        style={sketchyBtn}>
+        <Square size={11} strokeWidth={3.5} />
+      </button>
+      <button onClick={() => purrcat.winClose()} title="关闭"
+        className="win-ctrl w-7 h-7 border-2 border-ink bg-transparent flex items-center justify-center text-ink hover:bg-terracotta hover:text-white hover:border-terracotta hover:-translate-y-0.5 transition-all"
+        style={sketchyBtn}>
+        <X size={14} strokeWidth={3.5} />
+      </button>
+    </div>
+  );
+}
+
 export default function App() {
   return (
     <BrowserRouter>
+      <WindowControls />
       <Routes>
         <Route path="/" element={<HomeRouteWrapper />} />
         <Route path="/chat/:sessionId?" element={<ChatRouteWrapper />} />
