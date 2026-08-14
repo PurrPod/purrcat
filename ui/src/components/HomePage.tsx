@@ -43,21 +43,9 @@ export default function HomePage({
         <Settings size={32} strokeWidth={2.5} className="group-hover:animate-[spin_3s_linear_infinite]" />
       </button>
 
-      <div className="absolute top-16 md:top-20 left-1/2 -translate-x-1/2 z-30 pointer-events-none px-6 py-6">
+      <div className="absolute top-16 md:top-20 left-1/2 -translate-x-1/2 z-0 pointer-events-none px-6 py-6">
         <h1 className="text-7xl md:text-[5.5rem] font-black text-ink tracking-tight leading-none relative whitespace-nowrap" style={{ fontFamily: '"Comic Sans MS", cursive' }}>
           PurrCat v1.0.0
-          <svg className="absolute left-[-18%] top-1/2 -translate-y-1/2 w-[136%] h-24 -z-10 rotate-[-2deg]" viewBox="0 0 400 80" preserveAspectRatio="none" style={{ mixBlendMode: 'multiply' }}>
-            <defs>
-              <linearGradient id="brushGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-                <stop offset="0%" stopColor="#EBCB8B" stopOpacity="0.5"/>
-                <stop offset="15%" stopColor="#EBCB8B" stopOpacity="0.8"/>
-                <stop offset="50%" stopColor="#EBCB8B" stopOpacity="1.0"/>
-                <stop offset="85%" stopColor="#EBCB8B" stopOpacity="0.8"/>
-                <stop offset="100%" stopColor="#EBCB8B" stopOpacity="0.5"/>
-              </linearGradient>
-            </defs>
-            <path d="M 0 30 C 40 10, 90 20, 140 15 C 190 10, 240 25, 290 20 C 340 15, 380 30, 390 50 C 390 70, 350 85, 300 80 C 250 75, 200 90, 150 85 C 100 80, 50 90, 0 70 C 0 50, 0 50, 0 30 Z" fill="url(#brushGrad)" opacity="0.9" />
-          </svg>
         </h1>
       </div>
 

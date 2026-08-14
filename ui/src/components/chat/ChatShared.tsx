@@ -110,8 +110,8 @@ export function renderSketchyHeatmap(heatmapData: Record<string, number> = {}) {
   }
 
   return (
-    <div className="flex justify-center w-full">
-      <div className="grid grid-rows-7 grid-flow-col gap-[3px] p-3 bg-cream/30 w-fit">
+    <div className="w-full overflow-x-auto">
+      <div className="grid grid-rows-7 grid-flow-col gap-[3px] p-3 bg-cream/30 w-fit mx-auto">
         {cells}
       </div>
     </div>

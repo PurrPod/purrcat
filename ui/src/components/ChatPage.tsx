@@ -35,10 +35,6 @@ import { FileChangesPanel, RequestQueuePanel, TerminalPanel } from './chat/ChatP
 import AgentBrowserPanel from './chat/AgentBrowserPanel';
 import ConfigModal from './ConfigModal';
 
-// Tauri 文件系统 API (用于拖拽上传)
-import { copyFile, exists, mkdir } from '@tauri-apps/plugin-fs';
-import { join } from '@tauri-apps/api/path';
-
 // 🌟 多标签页类型定义
 export type BrowserTab = { id: string; url: string; title: string };
 
@@ -356,20 +352,28 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   };
 
   const handleFileUpload = async (files: FileList | File[]) => {
+    // 桌面端通过 Electron webUtils.getPathForFile 拿拖拽/粘贴文件的真实绝对路径
+    const purrcat = (window as any).purrcat;
+    if (!purrcat?.getPathForFile) {
+      toast.error('当前环境不支持拖拽上传（需在 PurrCat 桌面端运行）');
+      return;
+    }
+
     const MAX_SIZE = 50 * 1024 * 1024; // 50MB 大小限制
     const newPaths: string[] = [];
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i] as any;
-      const originalPath = file.path;
 
-      // 1. 如果没有获取到本地路径 (说明可能不是Tauri环境或不支持获取路径)，跳过
-      if (!originalPath) {
+      // 1. 通过 Electron 拿真实绝对路径（替代 Tauri 的 file.path）
+      let realPath: string | null = null;
+      try { realPath = purrcat.getPathForFile(file); } catch (_) { realPath = null; }
+      if (!realPath) {
         console.warn('无法获取文件路径，跳过:', file.name);
         continue;
       }
 
-      // 2. 文件夹拦截：如果是文件夹，在 Web 中 type 为空且通常不包含有效扩展名
+      // 2. 文件夹拦截：Web 中 type 为空且 size 为 4096 整数倍通常是目录
       if (!file.type && file.size % 4096 === 0) {
         console.warn('文件夹暂不支持上传:', file.name);
         continue;
@@ -382,33 +386,14 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
         continue;
       }
 
-      try {
-        // 构建目标路径: ./agent_vm/.buffer/upload/
-        const targetDir = await join('agent_vm', '.buffer', 'upload');
-
-        // 检查目录是否存在，不存在则创建
-        const dirExists = await exists(targetDir);
-        if (!dirExists) {
-          await mkdir(targetDir, { recursive: true });
-        }
-
-        const targetPath = await join(targetDir, file.name);
-
-        // 复制文件到指定目录
-        await copyFile(originalPath, targetPath);
-
-        // 将最终的新路径打上标签
-        newPaths.push(targetPath);
-      } catch (error) {
-        console.error("文件处理失败:", error);
-        toast.error(`文件处理失败: ${file.name}`);
-      }
+      // 直接用真实绝对路径作为引用，后端 Agent 自行读取（无需复制到 buffer）
+      newPaths.push(realPath);
     }
 
     // 更新标签
     if (newPaths.length > 0) {
       setRefPaths((prev: string[]) => [...new Set([...prev, ...newPaths])]);
-      toast.success(`已上传 ${newPaths.length} 个文件`);
+      toast.success(`已添加 ${newPaths.length} 个文件`);
     }
   };
   const handlePaste = (e: React.ClipboardEvent) => { if (e.clipboardData.files && e.clipboardData.files.length > 0) { e.preventDefault(); handleFileUpload(e.clipboardData.files); } };
@@ -572,12 +557,19 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   };
 
   // 🌟 在内置浏览器中打开链接（供 handleMessageClick 调用）
-  const openInBrowser = (url: string, title: string = 'Preview') => {
+  const openInBrowser = async (url: string, title: string = 'Preview') => {
     const existingTab = browserTabs.find(t => t.url === url);
     if (existingTab) {
       setActiveTabId(existingTab.id);
+      (window as any).purrcat?.browserSwitchTab?.(existingTab.id);
     } else {
-      const newTab: BrowserTab = { id: Date.now().toString(), url, title };
+      // 桌面端：先让主进程创建 WebContentsView，用返回的 tabId 作为前端 tab.id（两者对齐）
+      let tabId = Date.now().toString();
+      try {
+        const pid = await (window as any).purrcat?.browserNewTab?.(url);
+        if (pid) tabId = pid;
+      } catch (_) { /* 非 Electron 环境，用临时 id */ }
+      const newTab: BrowserTab = { id: tabId, url, title };
       setBrowserTabs(prev => [...prev, newTab]);
       setActiveTabId(newTab.id);
     }
@@ -653,7 +645,41 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
     }
   };
 
-  const handleAttachmentClick = async () => { setShowRefModal(true); }; // 简化 Tauri 调用
+  // mode='file' 选文件(多选)；mode='directory' 选文件夹
+  // 注：Windows/Linux 原生对话框不能同时选文件和文件夹，故按 mode 拆成两次单模式调用
+  const handleAttachmentClick = async (mode: 'file' | 'directory' = 'file') => {
+    setShowToolMenu(false);
+    const purrcat = (window as any).purrcat;
+
+    if (purrcat?.openDialog) {
+      try {
+        const paths = await purrcat.openDialog({ directory: mode === 'directory' });
+        if (paths && Array.isArray(paths) && paths.length > 0) {
+          setRefPaths((prev: string[]) => [...new Set([...prev, ...paths])]);
+          toast.success(`已添加 ${paths.length} 个本地绝对路径`);
+        }
+      } catch (e) {
+        console.error('File selection canceled or failed', e);
+      }
+      return;
+    }
+
+    // 降级：HTML file input 仅支持文件多选，文件夹模式无降级
+    if (mode === 'directory') {
+      toast.error("提示：请在 preload.js/main.js 暴露 purrcat.openDialog() 以启用原生文件夹选择。");
+      return;
+    }
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.multiple = true;
+    input.onchange = (e: any) => {
+      if (e.target.files && e.target.files.length > 0) {
+        handleFileUpload(e.target.files);
+      }
+    };
+    input.click();
+    toast.error("提示：请在 preload.js/main.js 暴露 purrcat.openDialog() 以启用原生文件选择。");
+  };
 
   // --- Props 组织区 ---
   const modalProps = {
@@ -690,7 +716,10 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
 
   return (
     <div className="absolute inset-0 bg-[#fdfaf5] bg-[radial-gradient(#1a1a1a_1px,transparent_1px)] [background-size:24px_24px] p-6 md:p-8 flex gap-6 overflow-hidden font-sans">
-      
+
+      {/* 无标题栏窗口的顶部拖拽区：拖动此处移动窗口。右上角的最小/最大/关闭按钮由 titleBarOverlay 提供 */}
+      <div style={{ position: 'fixed', top: 0, left: 0, right: 0, height: 28, WebkitAppRegion: 'drag', zIndex: 40 } as React.CSSProperties} />
+
       <ChatModals {...modalProps} />
       <ConfigModal isOpen={isConfigOpen} onClose={() => setIsConfigOpen(false)} />
       
@@ -781,7 +810,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
 
         {/* 🌟 恢复原版消息渲染映射 (.map)，加上 onClick 拦截点击 */}
         <div ref={messagesContainerRef} onScroll={handleScroll} onClick={handleMessageClick} className={`flex-1 overflow-y-auto ${showBrowser ? 'px-4' : 'px-10'} pb-6 flex flex-col gap-6 w-full z-10 pt-4`}>
-          {messages.length === 0 ? (
+          {messages.length === 0 && !showBrowser ? (
             <div className={`flex flex-col items-center justify-center h-full text-ink gap-5 p-2 w-full ${showBrowser ? 'max-w-none' : 'max-w-3xl'} mx-auto select-none`}>
               <div className="flex items-center mb-2"><p className="text-3xl font-black rotate-1 text-ink tracking-tight" style={{ fontFamily: '"Comic Sans MS", cursive' }}>Hi, what are we building today?</p></div>
               <div className="grid grid-cols-3 gap-4 w-full">
@@ -927,8 +956,12 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                        <Zap size={18} strokeWidth={3}/> Skill
                      </button>
 
-                     <button onClick={() => { setShowToolMenu(false); handleAttachmentClick(); }} className="flex items-center gap-3 p-3 hover:bg-[#88c0d0] hover:text-paper font-black text-sm text-left transition-all active:translate-y-1" style={sketchyShape1}>
-                       <Paperclip size={18} strokeWidth={3}/> File Reference
+                     <button onClick={() => { setShowToolMenu(false); handleAttachmentClick('file'); }} className="flex items-center gap-3 p-3 hover:bg-[#88c0d0] hover:text-paper font-black text-sm text-left transition-all active:translate-y-1" style={sketchyShape1}>
+                       <Paperclip size={18} strokeWidth={3}/> 选择文件
+                     </button>
+
+                     <button onClick={() => { setShowToolMenu(false); handleAttachmentClick('directory'); }} className="flex items-center gap-3 p-3 hover:bg-[#88c0d0] hover:text-paper font-black text-sm text-left transition-all active:translate-y-1" style={sketchyShape1}>
+                       <FolderOpen size={18} strokeWidth={3}/> 选择文件夹
                      </button>
 
                      <button onClick={() => { setShowToolMenu(false); setUseBrainstorm(!useBrainstorm); }} className={`flex items-center gap-3 p-3 font-black text-sm text-left transition-all active:translate-y-1 ${useBrainstorm ? 'bg-[#b48ead] text-paper' : 'hover:bg-[#b48ead] hover:text-paper'}`} style={sketchyShape2}>
