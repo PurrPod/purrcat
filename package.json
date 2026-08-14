@@ -1,0 +1,52 @@
+{
+  "name": "purrcat-desktop",
+  "private": true,
+  "version": "0.1.0",
+  "description": "PurrCat desktop shell (Electron) — local-first AI Agent",
+  "main": "electron/main.js",
+  "scripts": {
+    "dev": "concurrently -k -n backend,vite,electron -c blue,green,magenta \"uv run python main.py --api --headless\" \"npm run dev --prefix ui\" \"wait-on tcp:3000 && wait-on tcp:8000 && cross-env ELECTRON_DEV=1 electron .\"",
+    "dev:split": "start /B \"PurrCat-Backend\" cmd /c \"uv run python main.py --api --headless\" & start /B \"PurrCat-UI\" cmd /c \"npm run dev --prefix ui\" & echo 请等 vite 与后端就绪后手动运行: npm run electron:dev",
+    "electron:dev": "cross-env ELECTRON_DEV=1 electron .",
+    "build:ui": "npm run build --prefix ui",
+    "dist": "npm run build:ui && electron-builder --win",
+    "lint": "echo no-root-lint"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0",
+    "cross-env": "^7.0.3",
+    "electron": "^31.7.0",
+    "electron-builder": "^24.13.3",
+    "wait-on": "^8.0.1"
+  },
+  "engines": {
+    "node": ">=18 <24"
+  },
+  "build": {
+    "appId": "com.purrpod.purrcat",
+    "productName": "PurrCat",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "electron/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "dist/main",
+        "to": "backend",
+        "filter": ["**/*"]
+      }
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}

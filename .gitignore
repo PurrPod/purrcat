@@ -58,6 +58,10 @@ build/
 ui/build/
 ui/dist/
 
+# PyInstaller & Electron 构建产物
+dist/
+release/
+
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
