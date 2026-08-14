@@ -17,7 +17,7 @@ function WindowControls() {
   const purrcat = (window as any).purrcat;
   if (!purrcat?.winMinimize) return null;
   return (
-    <div className="no-drag fixed top-0 right-0 z-[2147483647] flex gap-2 items-center px-2 h-8">
+    <div className="no-drag fixed top-2.5 right-2 z-[2147483647] flex gap-2 items-center">
       <button onClick={() => purrcat.winMinimize()} title="最小化"
         className="win-ctrl w-7 h-7 border-2 border-ink bg-transparent flex items-center justify-center text-ink hover:bg-ink/10 hover:-translate-y-0.5 transition-all"
         style={sketchyBtn}>

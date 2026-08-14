@@ -14,7 +14,7 @@
     margin-top: 32px;
     overflow: hidden;
   }
-  /* 顶部拖拽条：浅白色，鼠标在此区域可拖动窗口 */
+  /* 顶部透明拖拽区：与主窗口背景融为一体（含网点），鼠标在此区域可拖动窗口 */
   body::before {
     content: '';
     position: fixed;
@@ -22,8 +22,8 @@
     left: 0;
     right: 0;
     height: 32px;
-    background: #fdfaf5;
-    border-bottom: 1px solid rgba(26, 26, 26, 0.08);
+    background-image: radial-gradient(#1a1a1a 1px, transparent 1px);
+    background-size: 24px 24px;
     -webkit-app-region: drag;
     z-index: 2147483647;
   }

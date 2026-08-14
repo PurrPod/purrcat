@@ -36,10 +36,46 @@ contextBridge.exposeInMainWorld('purrcat', {
   browserSetBounds: (x, y, w, h, scale) => ipcRenderer.invoke('browser:set-bounds', { x, y, w, h, scale }),
   // 隐藏内置浏览器（面板卸载时调用，把原生 view 移到屏外，避免盖住 React 工作区）
   browserHide: () => ipcRenderer.invoke('browser:hide'),
+  // 独立窗口模式：把浏览器 view 移到独立 BrowserWindow
+  browserDetach: () => ipcRenderer.invoke('browser:detach'),
+  // 回归主窗口：把浏览器 view 移回主窗口
+  browserReattach: () => ipcRenderer.invoke('browser:reattach'),
+  // 监听主进程推送的"已回归"事件（独立窗口被关闭时触发）
+  onBrowserReattached: (callback) => {
+    const handler = () => callback();
+    ipcRenderer.on('browser:reattached', handler);
+    return () => ipcRenderer.removeListener('browser:reattached', handler);
+  },
   // 进入选取模式：主进程截取当前 view 实时图返回 dataURL，并把 view 移到屏外（避免原生层盖住前端 overlay）
   browserPickStart: (tabId) => ipcRenderer.invoke('browser:pick-start', tabId),
   // 退出选取模式：把 view 移回容器 bounds 恢复显示
   browserPickEnd: (tabId) => ipcRenderer.invoke('browser:pick-end', tabId),
+  // CDP 元素拾取：返回完整语义信息（outerHTML/innerText/attributes/cssSelector/rect）
+  browserCdpPickElement: (tabId, x, y) => ipcRenderer.invoke('browser:cdp-pick-element', { tabId, x, y }),
+  // CDP Overlay 原生高亮（类似 F12 蓝色框，零坐标偏差）
+  browserCdpHighlight: (tabId, x, y) => ipcRenderer.invoke('browser:cdp-highlight', { tabId, x, y }),
+  // 清除 CDP Overlay 高亮
+  browserCdpUnhighlight: (tabId) => ipcRenderer.invoke('browser:cdp-unhighlight', { tabId }),
+  // 独立窗口拾取的 comment 发回主窗口
+  browserDetachedComment: (pixelData, comment, url) => ipcRenderer.invoke('browser:detached-comment', { pixelData, comment, url }),
+  // 监听主进程转发的独立窗口拾取 comment
+  onBrowserComment: (callback) => {
+    const handler = (_e, payload) => callback(payload);
+    ipcRenderer.on('browser:comment', handler);
+    return () => ipcRenderer.removeListener('browser:comment', handler);
+  },
+  // CDP Inspect 模式（F12 式元素拾取器）：Chromium 自动 hover 高亮 + click 选中
+  browserCdpInspectStart: (tabId) => ipcRenderer.invoke('browser:cdp-inspect-start', { tabId }),
+  browserCdpInspectResume: (tabId) => ipcRenderer.invoke('browser:cdp-inspect-resume', { tabId }),
+  browserCdpInspectStop: (tabId) => ipcRenderer.invoke('browser:cdp-inspect-stop', { tabId }),
+  // 监听 CDP inspect 选中的元素（主进程提取完语义后推送）
+  onPickElementSelected: (callback) => {
+    const handler = (_e, payload) => callback(payload);
+    ipcRenderer.on('pick:element-selected', handler);
+    return () => ipcRenderer.removeListener('pick:element-selected', handler);
+  },
+  // 独立窗口：调整 view 底部留白（为评论框腾出空间）
+  browserDetachResizeView: (bottomPx) => ipcRenderer.invoke('browser:detach-resize-view', bottomPx),
   // 监听主进程推送的 Tab 事件（导航完成/标题更新等）
   onTabEvent: (callback) => {
     const handler = (_e, payload) => callback(payload);

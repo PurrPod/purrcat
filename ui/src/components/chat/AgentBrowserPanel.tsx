@@ -1,5 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { MousePointer2, Frame, Globe, Send, X, Code2, ExternalLink } from 'lucide-react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { MousePointer2, Frame, Globe, Send, X, Code2, ExternalLink, PictureInPicture2 } from 'lucide-react';
 import { sketchyShape1, sketchyShape2, sketchyShape3 } from './ChatShared';
 import type { BrowserTab } from '../ChatPage';
 
@@ -11,11 +11,12 @@ interface AgentBrowserPanelProps {
   mode: 'browse' | 'pick' | 'draw';
   setMode: (mode: 'browse' | 'pick' | 'draw') => void;
   onComment: (pixelData: any, comment: string, currentUrl: string) => void;
+  onDetach: () => void;
 }
 
 export default function AgentBrowserPanel({
   tabs, setTabs, activeTabId, setActiveTabId,
-  mode, setMode, onComment
+  mode, setMode, onComment, onDetach
 }: AgentBrowserPanelProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const logicalOverlayRef = useRef<HTMLDivElement>(null); // 新增：逻辑坐标系容器
@@ -39,9 +40,20 @@ export default function AgentBrowserPanel({
   // 缩放和留白位置
   const [viewScale, setViewScale] = useState(1);
   const [viewOffset, setViewOffset] = useState({ x: 0, y: 0 });
+  // pick 模式下后端返回的 CSS viewport 尺寸（和当前浏览器浏览时的实际视口一致，不再固定 1280×800）
+  // browse 模式时忽略，使用 VIEWPORT_W/H（browse 模式用 CDP Overlay 原生高亮不需要截图坐标系）
+  const [pickViewport, setPickViewport] = useState<{ w: number; h: number } | null>(null);
 
   const purrcat = (window as any).purrcat;
   const hasElectron = !!purrcat?.browserNewTab;
+
+  // 🌟 动态逻辑视口：browse 模式固定基准 1280×800（CDP Overlay 原生高亮不依赖坐标系）
+  // pick/draw 模式使用后端返回的 viewportCss(W,H)，和浏览时 live viewport 1:1 对齐
+  const VP_W = mode === 'browse' ? VIEWPORT_W : (pickViewport?.w || VIEWPORT_W);
+  const VP_H = mode === 'browse' ? VIEWPORT_H : (pickViewport?.h || VIEWPORT_H);
+  // sync() 注册在初始化时，需要随时取最新 VP_W/VP_H，用 ref 穿透闭包
+  const viewportRef = useRef({ w: VP_W, h: VP_H });
+  viewportRef.current = { w: VP_W, h: VP_H };
 
   const activeTab = tabs.find(t => t.id === activeTabId);
 
@@ -52,50 +64,84 @@ export default function AgentBrowserPanel({
   // bounds 同步：保证前端等比例缩放 (Letterbox)，并带缩放比例给主进程
   useEffect(() => {
     if (!hasElectron) return;
+    let disposed = false;
+    let debounceTimer: number | null = null;
+
     const sync = () => {
+      if (disposed) return;
       const el = containerRef.current;
       if (!el) return;
       const r = el.getBoundingClientRect();
-      if (r.width > 0 && r.height > 0) {
-        const targetRatio = VIEWPORT_W / VIEWPORT_H;
-        const currentRatio = r.width / r.height;
-        let s = 1;
-        let scaledW = r.width;
-        let scaledH = r.height;
-        let offsetX = 0;
-        let offsetY = 0;
 
-        // 计算居中留白 (Letterbox 策略)
-        if (currentRatio > targetRatio) {
-          s = r.height / VIEWPORT_H;
-          scaledW = VIEWPORT_W * s;
-          offsetX = (r.width - scaledW) / 2;
-        } else {
-          s = r.width / VIEWPORT_W;
-          scaledH = VIEWPORT_H * s;
-          offsetY = (r.height - scaledH) / 2;
-        }
+      // 过滤无效或异常的极端尺寸（如窗口最小化/恢复瞬间测出的 0 或超大值）
+      if (r.width <= 50 || r.height <= 50 || r.width > 4000 || r.height > 4000) return;
 
-        setViewScale(s);
-        setViewOffset({ x: offsetX, y: offsetY });
+      // 附加合理性检查：容器必须占主窗口可视区域的合理比例
+      const vw = typeof window !== 'undefined' ? window.innerWidth : 1280;
+      const vh = typeof window !== 'undefined' ? window.innerHeight : 800;
+      if (r.width < vw * 0.15 || r.height < vh * 0.15) return;
 
-        // 将 letterboxed 的确切物理坐标 + scale参数 发给原生
-        // (主进程用 enableDeviceEmulation 锁定 1280x800 桌面视口并按 s 硬缩放，避免响应式变形)
-        // Math.round 防护：Electron setBounds 严格要求整数，传小数会导致定位错位或白边
+      const { w: VP_W, h: VP_H } = viewportRef.current;
+      const targetRatio = VP_W / VP_H;
+      const currentRatio = r.width / r.height;
+      let s = 1;
+      let scaledW = r.width;
+      let scaledH = r.height;
+      let offsetX = 0;
+      let offsetY = 0;
+
+      if (currentRatio > targetRatio) {
+        s = r.height / VP_H;
+        scaledW = VP_W * s;
+        offsetX = (r.width - scaledW) / 2;
+      } else {
+        s = r.width / VP_W;
+        scaledH = VP_H * s;
+        offsetY = (r.height - scaledH) / 2;
+      }
+
+      // 安全 Clamp：限制缩放倍数在 0.2 ~ 2.0 之间，防止 GPU 崩溃 + 内容缩到看不清
+      s = Math.min(Math.max(s, 0.2), 2.0);
+
+      setViewScale(s);
+      setViewOffset({ x: offsetX, y: offsetY });
+
+      const screenW = typeof window !== 'undefined' && window.screen ? window.screen.width : 2560;
+      const screenH = typeof window !== 'undefined' && window.screen ? window.screen.height : 1440;
+      const safeW = Math.min(Math.round(scaledW), screenW);
+      const safeH = Math.min(Math.round(scaledH), screenH);
+
+      // 前端 debounce：合并 ResizeObserver + window.resize 的抖动
+      if (debounceTimer) window.clearTimeout(debounceTimer);
+      debounceTimer = window.setTimeout(() => {
+        if (disposed) return;
         purrcat.browserSetBounds(
           Math.round(r.left + offsetX),
           Math.round(r.top + offsetY),
-          Math.round(scaledW),
-          Math.round(scaledH),
+          safeW,
+          safeH,
           s
         );
-      }
+      }, 10);
     };
-    sync();
+
+    // 首次挂载延迟 50ms 执行，保证 React DOM 布局已稳定，
+    // 避免首次测量值极小 → scale clamp 到 0.1 导致内容暴缩
+    const firstTimer = window.setTimeout(sync, 50);
+
     const ro = new ResizeObserver(sync);
     if (containerRef.current) ro.observe(containerRef.current);
     window.addEventListener('resize', sync);
-    return () => { ro.disconnect(); window.removeEventListener('resize', sync); };
+    // 独立窗口合并回主窗口时，ChatPage 会派发 force-sync 事件要求立刻同步 bounds
+    window.addEventListener('purrcat-browser-force-sync', sync);
+    return () => {
+      disposed = true;
+      window.clearTimeout(firstTimer);
+      if (debounceTimer) window.clearTimeout(debounceTimer);
+      ro.disconnect();
+      window.removeEventListener('resize', sync);
+      window.removeEventListener('purrcat-browser-force-sync', sync);
+    };
   }, [hasElectron]);
 
   // 卸载时通知主进程把原生 view 移到屏外，避免它继续盖住 React 工作区
@@ -114,9 +160,22 @@ export default function AgentBrowserPanel({
       purrcat.browserPickEnd(activeTabId).catch(() => {});
       setSnapshot(null);
       setHoverRect(null);
+      setPickViewport(null);
+      // 回到 browse 模式时确保 CDP Overlay 已开启（后续 hover 会 highlight）
     } else {
+      // 进入 pick/draw 模式，清除 CDP Overlay（view 已被 hide，overlay 无意义）
+      if (purrcat?.browserCdpUnhighlight) purrcat.browserCdpUnhighlight(activeTabId).catch(() => {});
       purrcat.browserPickStart(activeTabId).then((res: any) => {
-        if (!cancelled) setSnapshot(res?.imageDataUrl || null);
+        if (cancelled) return;
+        setSnapshot(res?.imageDataUrl || null);
+        // 🌟 读取后端返回的 viewportCss(W,H) 作为当前 pick 模式的逻辑坐标系
+        // 这和 browse 时 Chromium 的 CSS viewport 1:1 对齐，所以画面和 locate/rect 完全匹配
+        if (res && res.viewportCssWidth && res.viewportCssHeight) {
+          setPickViewport({ w: res.viewportCssWidth, h: res.viewportCssHeight });
+        } else if (res && res.width && res.height) {
+          // 老版本回退
+          setPickViewport({ w: res.width, h: res.height });
+        }
       }).catch(() => {});
     }
     return () => { cancelled = true; };
@@ -177,28 +236,58 @@ export default function AgentBrowserPanel({
     setHoverRect(null);
   };
 
-  // 核心：无论外层怎么变，换算回1280x800的绝对逻辑坐标
-  const getCoords = (e: React.MouseEvent) => {
+  // 🌟 核心换算：统一"屏幕物理像素 → 1280x800 逻辑坐标（CSS 视口坐标）"
+  // 坐标系真相（任何缩放都不会变）：
+  //   - WebContentsView 内部 CSS 视口恒 = 1280x800
+  //       · browse 模式：bounds=1280s×800s, zoomFactor=s → CSS 视口=(1280s)/s=1280
+  //       · pick   模式：bounds=1280×800,   zoomFactor=1 → CSS 视口=1280
+  //   - 前端 logicalOverlayRef 内部坐标：1280x800（再经 transform:scale(s) 渲染到屏幕）
+  //   - CDP DOM.getNodeForLocation / elementFromPoint / getBoundingClientRect
+  //     全部使用"CSS 视口坐标"，也就是我们的 1280x800 逻辑坐标
+  // 所以：所有进出 IPC 的 x/y 必须统一换算到 1280x800 空间，绝对不能再乘/除一次 scale！
+  const toLogicalCoords = useCallback((clientX: number, clientY: number) => {
     const el = logicalOverlayRef.current;
     if (!el) return { x: 0, y: 0 };
-    const rect = el.getBoundingClientRect(); // 获取的是被 scale 缩放后的 DOM Rect
-    return { 
-      x: (e.clientX - rect.left) / viewScale, 
-      y: (e.clientY - rect.top) / viewScale 
+    const rect = el.getBoundingClientRect(); // 已被 scale 后的屏幕像素矩形
+    return {
+      x: (clientX - rect.left) / viewScale,
+      y: (clientY - rect.top) / viewScale,
     };
-  };
+  }, [viewScale]);
+
+  // React 事件版：pick/draw 模式下 pointer-events=auto 时调用
+  const getCoords = (e: React.MouseEvent) => toLogicalCoords(e.clientX, e.clientY);
 
   const handleHover = (e: React.MouseEvent) => {
-    if (mode !== 'pick' || showCommentBox) return;
+    if (showCommentBox) return;
     const now = Date.now();
     if (now - lastHoverRef.current < 120) return;
     lastHoverRef.current = now;
     const { x, y } = getCoords(e);
     if (!hasElectron || !activeTabId) return;
-    purrcat.browserLocate(activeTabId, x, y).then((el: any) => {
-      if (el && el.rect) setHoverRect({ x: el.rect.x, y: el.rect.y, w: el.rect.w, h: el.rect.h });
-      else setHoverRect(null);
-    }).catch(() => {});
+
+    // pick 模式：view 被隐藏 + 使用截图背景，用 React 自己画 hover 框
+    if (mode === 'pick') {
+      purrcat.browserLocate(activeTabId, x, y).then((el: any) => {
+        if (el && el.rect) setHoverRect({ x: el.rect.x, y: el.rect.y, w: el.rect.w, h: el.rect.h });
+        else setHoverRect(null);
+      }).catch(() => {});
+      return;
+    }
+
+    // browse 模式：view 可见，使用 CDP Overlay 原生高亮（零偏差）
+    if (mode === 'browse' && purrcat?.browserCdpHighlight) {
+      purrcat.browserCdpHighlight(activeTabId, x, y).catch(() => {});
+    }
+  };
+
+  // browse 模式鼠标离开 overlay 时清除 CDP Overlay
+  const handleHoverLeave = () => {
+    if (mode !== 'browse') return;
+    if (!hasElectron || !activeTabId) return;
+    if (purrcat?.browserCdpUnhighlight) {
+      purrcat.browserCdpUnhighlight(activeTabId).catch(() => {});
+    }
   };
 
   const handleDown = (e: React.MouseEvent) => {
@@ -207,12 +296,25 @@ export default function AgentBrowserPanel({
 
     if (mode === 'pick') {
       if (!hasElectron || !activeTabId) return;
-      purrcat.browserLocate(activeTabId, x, y).then((el: any) => {
-        setPickedElement(el);
-        setCurrentRect(el && el.rect ? { x: el.rect.x, y: el.rect.y, w: el.rect.w, h: el.rect.h } : { x: x - 5, y: y - 5, w: 10, h: 10 });
-        setShowCommentBox(true);
-        setHoverRect(null);
-      }).catch(() => {});
+      // 点击拾取：优先用 CDP 方案提取完整语义信息，fallback 到 browserLocate
+      const cdpFn = purrcat?.browserCdpPickElement;
+      if (cdpFn) {
+        cdpFn(activeTabId, x, y).then((el: any) => {
+          if (el) {
+            setPickedElement(el);
+            setCurrentRect(el.rect ? { x: el.rect.x, y: el.rect.y, w: el.rect.w, h: el.rect.h } : { x: x - 5, y: y - 5, w: 10, h: 10 });
+            setShowCommentBox(true);
+            setHoverRect(null);
+          }
+        }).catch(() => {});
+      } else {
+        purrcat.browserLocate(activeTabId, x, y).then((el: any) => {
+          setPickedElement(el);
+          setCurrentRect(el && el.rect ? { x: el.rect.x, y: el.rect.y, w: el.rect.w, h: el.rect.h } : { x: x - 5, y: y - 5, w: 10, h: 10 });
+          setShowCommentBox(true);
+          setHoverRect(null);
+        }).catch(() => {});
+      }
       return;
     }
 
@@ -246,13 +348,59 @@ export default function AgentBrowserPanel({
     }
   };
 
+  // browse 模式 hover：用 window 级 mousemove 监听（capture 阶段），不拦截网页交互
+  // 因为 browse 模式下 overlay 的 pointer-events=none，React onMouseMove 永远不会触发
+  useEffect(() => {
+    if (!hasElectron || !purrcat?.browserCdpHighlight || mode !== 'browse' || !activeTabId) return;
+    const onMove = (e: MouseEvent) => {
+      const el = logicalOverlayRef.current;
+      if (!el) return;
+      const now = Date.now();
+      if (now - lastHoverRef.current < 120) return;
+      // 只在鼠标位于容器范围内时才 highlight
+      const r = el.getBoundingClientRect();
+      if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) {
+        lastHoverRef.current = now;
+        purrcat.browserCdpUnhighlight!(activeTabId).catch(() => {});
+        return;
+      }
+      lastHoverRef.current = now;
+      // 🌟 复用统一换算函数：屏幕像素 → 1280x800 CSS 视口坐标
+      // CDP Overlay.highlightNode 需要的正是 CSS 视口坐标，因此直接传
+      const { x, y } = toLogicalCoords(e.clientX, e.clientY);
+      purrcat.browserCdpHighlight!(activeTabId, x, y).catch(() => {});
+    };
+    window.addEventListener('mousemove', onMove, true);
+    return () => {
+      window.removeEventListener('mousemove', onMove, true);
+      if (purrcat?.browserCdpUnhighlight) purrcat.browserCdpUnhighlight(activeTabId).catch(() => {});
+    };
+  }, [mode, activeTabId, hasElectron, viewScale, toLogicalCoords]);
+
   const submitComment = () => {
     if (!commentText.trim() || !currentRect || !activeTab) return;
-    const vw = VIEWPORT_W;
-    const vh = VIEWPORT_H;
-    const elementContext = pickedElement
-      ? `DOM Tag: <${pickedElement.tag}${pickedElement.id ? ` id="${pickedElement.id}"` : ''}${pickedElement.cls ? ` class="${pickedElement.cls}"` : ''}>`
-      : (mode === 'pick' ? 'User clicked specific coordinate' : 'User drawn area');
+    const vw = VP_W;
+    const vh = VP_H;
+    // 组装 Agent 可读的元素语义上下文
+    // CDP 方案返回 tagName/attributes/outerHTML/innerText/cssSelector
+    // 旧方案返回 tag/id/cls
+    let elementContext: string;
+    if (pickedElement) {
+      if (pickedElement.outerHTML) {
+        // CDP 方案：完整语义
+        const parts: string[] = [];
+        parts.push(`Element: <${pickedElement.tagName}>`);
+        if (pickedElement.innerText) parts.push(`Text: "${pickedElement.innerText.trim().substring(0, 200)}"`);
+        if (pickedElement.cssSelector) parts.push(`CSS Selector: ${pickedElement.cssSelector}`);
+        parts.push(`HTML: ${pickedElement.outerHTML.substring(0, 500)}`);
+        elementContext = parts.join('\n');
+      } else {
+        // 旧方案 fallback
+        elementContext = `DOM Tag: <${pickedElement.tag || pickedElement.tagName}${pickedElement.id ? ` id="${pickedElement.id}"` : ''}${pickedElement.cls ? ` class="${pickedElement.cls}"` : ''}>`;
+      }
+    } else {
+      elementContext = mode === 'pick' ? 'User clicked specific coordinate' : 'User drawn area';
+    }
     onComment(
       { mode, rect: currentRect, domContext: elementContext, viewport: { width: vw, height: vh } },
       commentText,
@@ -288,6 +436,7 @@ export default function AgentBrowserPanel({
         </div>
         <input value={addressInput} onChange={e => setAddressInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAddressSubmit()} className="flex-1 border-4 border-ink bg-white px-3 py-1.5 font-bold focus:outline-none text-sm" style={sketchyShape3} placeholder="输入网址，回车访问..." />
         <button onClick={() => { const url = activeTab?.url || addressInput; if (url) window.open(url.startsWith('http') || url.startsWith('blob') || url.startsWith('data') ? url : 'http://' + url, '_blank'); }} disabled={!activeTabId} className="p-2 border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] transition-colors bg-white hover:bg-sand disabled:opacity-40 disabled:cursor-not-allowed" style={sketchyShape3} title="在外部浏览器中打开"><ExternalLink size={16} strokeWidth={3} /></button>
+        {hasElectron && <button onClick={onDetach} disabled={!activeTabId} className="p-2 border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] transition-colors bg-[#88c0d0] text-paper hover:bg-[#5e81ac] disabled:opacity-40 disabled:cursor-not-allowed" style={sketchyShape3} title="独立窗口"><PictureInPicture2 size={16} strokeWidth={3} /></button>}
       </div>
 
       <div ref={containerRef} className="flex-1 relative overflow-hidden bg-[#e5e9f0]">
@@ -310,20 +459,23 @@ export default function AgentBrowserPanel({
               style={{
                 left: viewOffset.x,
                 top: viewOffset.y,
-                width: VIEWPORT_W * viewScale,
-                height: VIEWPORT_H * viewScale,
+                width: VP_W * viewScale,
+                height: VP_H * viewScale,
                 overflow: 'hidden'
               }}
             >
-              {/* 真正的 1280x800 逻辑映射区域，利用 CSS transform 同步原生缩放 */}
+              {/* 动态逻辑尺寸映射区域：browse=1280×800 / pick=live viewportCss(W,H) */}
               <div
                 ref={logicalOverlayRef}
-                className="absolute origin-top-left pointer-events-auto"
+                className={`absolute origin-top-left ${needsOverlay ? 'pointer-events-auto' : ''}`}
                 style={{
-                  width: VIEWPORT_W,
-                  height: VIEWPORT_H,
-                  transform: `scale(${viewScale})`
+                  width: VP_W,
+                  height: VP_H,
+                  transform: `scale(${viewScale})`,
+                  pointerEvents: needsOverlay ? 'auto' : 'none',
                 }}
+                onMouseMove={needsOverlay ? undefined : handleHover}
+                onMouseLeave={needsOverlay ? undefined : handleHoverLeave}
               >
                 {/* 必须使用 object-fill 因为我们已经确切规划好了比例 */}
                 {needsOverlay && snapshot && (
@@ -350,7 +502,7 @@ export default function AgentBrowserPanel({
                   >
                     {pickedElement && (
                       <div className="absolute -top-7 left-[-4px] bg-ink text-paper text-[10px] font-bold px-2 py-1 rounded-t flex items-center gap-1 whitespace-nowrap">
-                        <Code2 size={10} />{pickedElement.tag}{pickedElement.cls && <span className="opacity-70">.{pickedElement.cls.split(' ')[0]}</span>}
+                        <Code2 size={10} />{pickedElement.tagName || pickedElement.tag}{pickedElement.innerText ? <span className="opacity-70 max-w-[120px] truncate">"{pickedElement.innerText.substring(0, 30)}"</span> : <span className="opacity-70">{pickedElement.cls ? `.${pickedElement.cls.split(' ')[0]}` : ''}</span>}
                       </div>
                     )}
                   </div>
@@ -361,7 +513,7 @@ export default function AgentBrowserPanel({
                     className="absolute z-30 bg-paper border-4 border-ink shadow-[6px_6px_0px_0px_rgba(26,26,26,1)] p-3 pointer-events-auto"
                     style={{
                       width: 280,
-                      left: Math.min(currentRect.x + currentRect.w + 10, VIEWPORT_W - 300),
+                      left: Math.min(currentRect.x + currentRect.w + 10, VP_W - 300),
                       top: Math.max(10, currentRect.y - 20),
                       ...sketchyShape2
                     }}

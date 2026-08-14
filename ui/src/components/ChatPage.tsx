@@ -116,6 +116,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
 
   // --- 新增：内置浏览器状态（多标签页） ---
   const [showBrowser, setShowBrowser] = useState(false);
+  const [browserDetached, setBrowserDetached] = useState(false);
   const [browserMode, setBrowserMode] = useState<'browse' | 'pick' | 'draw'>('browse');
   const [browserTabs, setBrowserTabs] = useState<BrowserTab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
@@ -345,6 +346,36 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
     try { const resPending = await fetch('/api/requests').catch(() => null); if (resPending?.ok) { const dataPending = await resPending.json(); setPendingReqs(dataPending); const currentIds = dataPending.map((r: any) => r.id); if (currentIds.some((id: string) => !prevPendingIds.current.includes(id)) && dataPending.length > 0) setShowReqQueue(true); prevPendingIds.current = currentIds; } } catch { /* noop */ }
   };
   useEffect(() => { fetchRequests(); const interval = setInterval(fetchRequests, 3000); return () => clearInterval(interval); }, []);
+
+  // 监听独立窗口回归事件（用户关闭独立窗口时主进程推送）
+  useEffect(() => {
+    const purrcat = (window as any).purrcat;
+    if (!purrcat?.onBrowserReattached) return;
+    return purrcat.onBrowserReattached(() => {
+      // 先更新可见性，让 React 开始渲染 AgentBrowserPanel 及其 DOM 树
+      setBrowserDetached(false);
+      setShowBrowser(true);
+      // 🌟 延迟 100ms + requestAnimationFrame 双保险：
+      // 等 React 挂载完成、Flex 布局稳定（侧边栏、Tab 栏尺寸完全落地），
+      // 再触发 browser:set-bounds 同步，保证 getBoundingClientRect 测到准确值
+      setTimeout(() => {
+        window.requestAnimationFrame(() => {
+          const ev = new CustomEvent('purrcat-browser-force-sync');
+          window.dispatchEvent(ev);
+        });
+      }, 100);
+    });
+  }, []);
+
+  // 监听独立窗口拾取的 comment（用户在独立浏览器窗口选取元素后转发到聊天）
+  // 依赖 currentSessionId 以保证 comment 发到正确的会话
+  useEffect(() => {
+    const purrcat = (window as any).purrcat;
+    if (!purrcat?.onBrowserComment) return;
+    return purrcat.onBrowserComment((data: any) => {
+      handleBrowserComment(data.pixelData, data.comment, data.url);
+    });
+  }, [currentSessionId]);
 
   const handleResolveReq = async (reqId: string, approved: boolean, ignore: boolean, duration: number = 5) => {
     const feedback = feedbackInputs[reqId] || '';
@@ -782,7 +813,15 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                  {pendingReqs.length > 0 && <span className="absolute -top-2 -right-2 bg-[#bf616a] text-paper text-xs px-1.5 py-0.5 rounded-full border-2 border-ink">{pendingReqs.length}</span>}
                </button>
 
-               <button onClick={() => setShowBrowser(!showBrowser)} className={`relative w-10 h-10 border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] transition-all flex items-center justify-center ${showBrowser ? 'bg-[#88c0d0] text-paper' : 'bg-cream text-ink'}`} style={sketchyShape3} title="内置浏览器">
+               <button onClick={() => {
+                 if (browserDetached) {
+                   (window as any).purrcat?.browserReattach();
+                   setBrowserDetached(false);
+                   setShowBrowser(true);
+                 } else {
+                   setShowBrowser(!showBrowser);
+                 }
+               }} className={`relative w-10 h-10 border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] transition-all flex items-center justify-center ${showBrowser || browserDetached ? 'bg-[#88c0d0] text-paper' : 'bg-cream text-ink'}`} style={sketchyShape3} title="内置浏览器">
                  <Globe size={20} strokeWidth={3} />
                </button>
             </div>
@@ -1004,9 +1043,9 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
           )}
       </div>
 
-      {showBrowser && (
+      {showBrowser && !browserDetached && (
         <div className="flex-1 overflow-hidden animate-in slide-in-from-right-4 duration-300">
-          <AgentBrowserPanel 
+          <AgentBrowserPanel
             tabs={browserTabs}
             setTabs={setBrowserTabs}
             activeTabId={activeTabId}
@@ -1014,6 +1053,11 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
             mode={browserMode}
             setMode={setBrowserMode}
             onComment={handleBrowserComment}
+            onDetach={() => {
+              (window as any).purrcat?.browserDetach();
+              setBrowserDetached(true);
+              setShowBrowser(false);
+            }}
           />
         </div>
       )}
