@@ -1,3 +1,5 @@
+import json
+import os
 import platform
 import shutil
 import subprocess
@@ -299,32 +301,56 @@ async def upload_buffer_file(
     }
 
 
-# --- 🌟 使用量跟踪器 API ---
+# --- 🌟 Agent 大盘统计接口 ---
 
 
-@router.get("/usage")
-def get_usage_stats():
-    """返回使用量跟踪的聚合统计（总 tokens / 调用次数 / 最近记录）"""
-    try:
-        return usage_tracer.summarize()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+@router.get("/agent/stats")
+def get_agent_stats():
+    """前端首页调用：返回今日调用统计 + 热力图"""
+    usage_tracer.flush()
 
+    import glob
+    from datetime import datetime
 
-@router.get("/usage/recent")
-def get_recent_usage(limit: int = 30):
-    """最近 N 条使用量记录"""
-    try:
-        return usage_tracer.recent(limit=limit)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    target_dir = os.path.join(TRACKER_DIR, "model_usage")
+    today_str = datetime.now().strftime("%Y-%m-%d")
 
+    today_calls = 0
+    today_tokens = 0
+    today_cached_tokens = 0
+    heatmap_data = {}
 
-@router.post("/usage/clear")
-def clear_usage_records():
-    """清空使用量记录（保留目录结构）"""
-    try:
-        removed = usage_tracer.clear()
-        return {"removed": removed}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    if os.path.exists(target_dir):
+        file_paths = glob.glob(os.path.join(target_dir, "*_summary.json"))
+
+        for path in file_paths:
+            filename = os.path.basename(path)
+            date_str = filename.split("_")[0]
+
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    day_data = json.load(f)
+
+                day_total_calls = sum(item.get("calls", 0) for item in day_data)
+                day_total_tokens = sum(item.get("total_tokens", 0) for item in day_data)
+                day_cached_tokens = sum(
+                    item.get("cached_tokens", 0) for item in day_data
+                )
+
+                heatmap_data[date_str] = day_total_calls
+
+                if date_str == today_str:
+                    today_calls = day_total_calls
+                    today_tokens = day_total_tokens
+                    today_cached_tokens = day_cached_tokens
+            except Exception:
+                continue
+
+    return {
+        "today": {
+            "calls": today_calls,
+            "total_tokens": today_tokens,
+            "cached_tokens": today_cached_tokens,
+        },
+        "heatmap": heatmap_data,
+    }

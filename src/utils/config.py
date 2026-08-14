@@ -56,6 +56,11 @@ SYSTEM_RULES_DIR = os.path.join(AGENT_DIR, "system_rules")
 SESSIONS_DIR = os.path.join(DATA_DIR, "checkpoints", "agent")
 SESSION_INDEX_PATH = os.path.join(SESSIONS_DIR, "index.json")
 
+os.makedirs(DATA_DIR, exist_ok=True)
+os.makedirs(MEMORY_DIR, exist_ok=True)
+os.makedirs(TRACKER_DIR, exist_ok=True)
+os.makedirs(SCHEDULE_DIR, exist_ok=True)
+os.makedirs(DATABASE_DIR, exist_ok=True)
 os.makedirs(SESSIONS_DIR, exist_ok=True)
 
 MCP_SCHEMA_CACHE_FILE = os.path.join(PURRCAT_DIR, "mcp_schema.json")

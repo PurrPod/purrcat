@@ -1,17 +1,19 @@
 """记忆系统内部配置（不对外暴露，用户无需修改）"""
+import os
+from src.utils.config import MEMORY_DIR
 
 # ── ChromaDB 向量数据库 ──
-CHROMADB_PERSIST_DIRECTORY = "data/memory/chromadb"
+CHROMADB_PERSIST_DIRECTORY = os.path.join(MEMORY_DIR, "chromadb")
 CHROMADB_COLLECTION_NAME = "experiences"
 CHROMADB_GRAPH_COLLECTION_NAME = "graph_nodes"
 CHROMADB_EVENTS_COLLECTION_NAME = "events"
 
 # ── 事件数据库 (SQLite) ──
-EVENTDB_PATH = "data/memory/events.db"
+EVENTDB_PATH = os.path.join(MEMORY_DIR, "events.db")
 EVENTDB_TABLE_NAME = "events"
 
 # ── 图谱数据库 ──
-GRAPHDB_PATH = "data/memory/graph.pkl"
+GRAPHDB_PATH = os.path.join(MEMORY_DIR, "graph.pkl")
 GRAPHDB_MIN_CONFIDENCE = 0.3
 
 # ── 记忆工人 ──
