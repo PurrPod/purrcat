@@ -45,7 +45,7 @@ export default function MemoryPage({ onBack }: { onBack: () => void }) {
     setMdContent('Loading...');
     setShowMdModal(true);
     try {
-      const res = await fetch('http://localhost:8000/api/memory/markdown');
+      const res = await fetch('/api/memory/markdown');
       if (res.ok) {
         const data = await res.json();
         setMdContent(data.content);
@@ -63,7 +63,7 @@ export default function MemoryPage({ onBack }: { onBack: () => void }) {
   const saveMdContent = async () => {
     setIsSavingMd(true);
     try {
-      const res = await fetch('http://localhost:8000/api/memory/markdown', {
+      const res = await fetch('/api/memory/markdown', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content: mdContent })
@@ -84,8 +84,8 @@ export default function MemoryPage({ onBack }: { onBack: () => void }) {
   const graphRef = useRef<HTMLDivElement>(null);
   const networkInstance = useRef<VisNetwork | null>(null);
 
-  const fetchEvents = () => fetch('http://localhost:8000/api/memory/events').then(res => res.json()).then(setEvents);
-  const fetchExperiences = () => fetch('http://localhost:8000/api/memory/experiences').then(res => res.json()).then(setExperiences);
+  const fetchEvents = () => fetch('/api/memory/events').then(res => res.json()).then(setEvents);
+  const fetchExperiences = () => fetch('/api/memory/experiences').then(res => res.json()).then(setExperiences);
 
   useEffect(() => {
     fetchEvents();
@@ -96,7 +96,7 @@ export default function MemoryPage({ onBack }: { onBack: () => void }) {
   const fetchGraphData = async (isQuiet = false) => {
     setIsGraphLoading(true);
     try {
-      const res = await fetch('http://localhost:8000/api/memory/graph');
+      const res = await fetch('/api/memory/graph');
       if (res.ok) {
         const data = await res.json();
         setGraphData(data);
@@ -113,7 +113,7 @@ export default function MemoryPage({ onBack }: { onBack: () => void }) {
     if (!searchQuery.trim()) return;
     setIsSearching(true);
     try {
-      const res = await fetch(`http://localhost:8000/api/memory/search?q=${encodeURIComponent(searchQuery)}`);
+      const res = await fetch(`/api/memory/search?q=${encodeURIComponent(searchQuery)}`);
       if (res.ok) {
         const data = await res.json();
         setSearchResult(data.result);
@@ -131,11 +131,11 @@ export default function MemoryPage({ onBack }: { onBack: () => void }) {
     try {
       let res;
       if (deleteTarget.type === 'event') {
-        res = await fetch(`http://localhost:8000/api/memory/events/${deleteTarget.id}`, { method: 'DELETE' });
+        res = await fetch(`/api/memory/events/${deleteTarget.id}`, { method: 'DELETE' });
       } else if (deleteTarget.type === 'experience') {
-        res = await fetch(`http://localhost:8000/api/memory/experiences/${deleteTarget.id}`, { method: 'DELETE' });
+        res = await fetch(`/api/memory/experiences/${deleteTarget.id}`, { method: 'DELETE' });
       } else if (deleteTarget.type === 'relation') {
-        res = await fetch(`http://localhost:8000/api/memory/graph/relation?source_node_id=${deleteTarget.source}&target_node_id=${deleteTarget.target}`, { method: 'DELETE' });
+        res = await fetch(`/api/memory/graph/relation?source_node_id=${deleteTarget.source}&target_node_id=${deleteTarget.target}`, { method: 'DELETE' });
       }
 
       if (res?.ok) {

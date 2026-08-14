@@ -141,7 +141,7 @@ export default function ChatModals(props: any) {
               <button onClick={async () => {
                  if (!currentSessionId) return;
                  try {
-                     const res = await fetch(`http://localhost:8000/api/sessions/${currentSessionId}/branches/${branchToDelete}`, { method: 'DELETE' });
+                     const res = await fetch(`/api/sessions/${currentSessionId}/branches/${branchToDelete}`, { method: 'DELETE' });
                      if (res.ok) {
                        setCurrentBranchId('main');
                        loadSessionHistory(currentSessionId, 'main');

@@ -253,7 +253,7 @@ export default function TaskPage({ onBack }: { onBack: () => void }) {
   // 自动拉取工作流 schema 用作触发器的模板
   useEffect(() => {
     if (isTriggerModalOpen && triggerForm.graph) {
-      fetch(`http://localhost:8000/api/graphs/${triggerForm.graph}/schema`)
+      fetch(`/api/graphs/${triggerForm.graph}/schema`)
         .then(res => res.json())
         .then(data => {
           const schema = data.global_schema || {};
@@ -272,7 +272,7 @@ export default function TaskPage({ onBack }: { onBack: () => void }) {
     let parsedInputs = {};
     try { parsedInputs = JSON.parse(triggerForm.inputsStr); } catch { return toast.error("JSON 参数格式不合法！"); }
 
-    const url = triggerType === 'cron' ? 'http://localhost:8000/api/tools/cron' : 'http://localhost:8000/api/tools/loop';
+    const url = triggerType === 'cron' ? '/api/tools/cron' : '/api/tools/loop';
     const payload = triggerType === 'cron' 
       ? { title: triggerForm.title, trigger_time: triggerForm.time, repeat_rule: 'none', task_hook: triggerForm.graph, task_inputs: parsedInputs }
       : { title: triggerForm.title, interval: triggerForm.interval, task_hook: triggerForm.graph, task_inputs: parsedInputs, active: true };
@@ -302,14 +302,14 @@ export default function TaskPage({ onBack }: { onBack: () => void }) {
 
   const loadTasks = async () => {
     try {
-      const res = await fetch('http://localhost:8000/api/tasks');
+      const res = await fetch('/api/tasks');
       if (res.ok) setTasks(await res.json());
     } catch { /* silent */ }
   };
 
   const loadAvailableGraphs = async () => {
     try {
-      const res = await fetch('http://localhost:8000/api/graphs');
+      const res = await fetch('/api/graphs');
       if (res.ok) {
         const data = await res.json();
         setAvailableGraphs(data);
@@ -322,7 +322,7 @@ export default function TaskPage({ onBack }: { onBack: () => void }) {
 
   useEffect(() => {
     if (!launchGraphName) return;
-    fetch(`http://localhost:8000/api/graphs/${launchGraphName}/schema`)
+    fetch(`/api/graphs/${launchGraphName}/schema`)
       .then(res => res.json())
       .then(data => {
         const schema = data.global_schema || {};
@@ -356,7 +356,7 @@ export default function TaskPage({ onBack }: { onBack: () => void }) {
   const fetchTaskState = useCallback(async () => {
     if (!selectedTaskId) return;
     try {
-      const res = await fetch(`http://localhost:8000/api/tasks/${selectedTaskId}/state`);
+      const res = await fetch(`/api/tasks/${selectedTaskId}/state`);
       if (res.ok) {
         const data = await res.json();
         setTaskMemory(data.node_memory || {}); // 🌟 把后端抛出的新数据存下来，用于渲染气泡
@@ -388,7 +388,7 @@ export default function TaskPage({ onBack }: { onBack: () => void }) {
   const handleResetNode = async (nodeId: string) => {
     if (!selectedTaskId) return;
     try {
-      const res = await fetch(`http://localhost:8000/api/tasks/${selectedTaskId}/nodes/${nodeId}/reset`, { method: 'POST' });
+      const res = await fetch(`/api/tasks/${selectedTaskId}/nodes/${nodeId}/reset`, { method: 'POST' });
       if (res.ok) {
         toast.success(`已重置节点 [${nodeId}] 并执行下游`);
         fetchTaskState(); 
@@ -405,7 +405,7 @@ export default function TaskPage({ onBack }: { onBack: () => void }) {
   const handleKillTask = async () => {
     if (!selectedTaskId) return;
     try {
-      const res = await fetch(`http://localhost:8000/api/tasks/${selectedTaskId}/stop`, { method: 'POST' });
+      const res = await fetch(`/api/tasks/${selectedTaskId}/stop`, { method: 'POST' });
       if (res.ok) {
         toast.success("进程已优雅中止，Checkpoint 存档已留存。");
         fetchTaskState();
@@ -431,7 +431,7 @@ export default function TaskPage({ onBack }: { onBack: () => void }) {
     }
 
     try {
-      const res = await fetch('http://localhost:8000/api/tasks/run', {
+      const res = await fetch('/api/tasks/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -460,7 +460,7 @@ export default function TaskPage({ onBack }: { onBack: () => void }) {
     setNodes([]); setEdges([]); setCurrentNodeLogs([]);
 
     try {
-      const stateRes = await fetch(`http://localhost:8000/api/tasks/${task.id}/state`);
+      const stateRes = await fetch(`/api/tasks/${task.id}/state`);
       if (stateRes.ok) {
         const stateData = await stateRes.json();
         const graph = stateData.graph || { nodes: [], edges: [] };
@@ -511,7 +511,7 @@ export default function TaskPage({ onBack }: { onBack: () => void }) {
     if (!selectedTaskId || !logModalNode?.id) return;
     const fetchNodeLogs = async () => {
       try {
-        const res = await fetch(`http://localhost:8000/api/tasks/${selectedTaskId}/log`);
+        const res = await fetch(`/api/tasks/${selectedTaskId}/log`);
         if (res.ok) {
           const data = await res.json();
           setCurrentNodeLogs(data.grouped_logs[logModalNode.id] || []);
@@ -546,7 +546,7 @@ export default function TaskPage({ onBack }: { onBack: () => void }) {
     if (!pushMessage.trim() || !selectedTaskId || !logModalNode?.id) return;
     const msg = pushMessage.trim(); setPushMessage(''); isAutoScroll.current = true;
     try {
-      const res = await fetch(`http://localhost:8000/api/tasks/${selectedTaskId}/submit`, {
+      const res = await fetch(`/api/tasks/${selectedTaskId}/submit`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content: msg, node_id: logModalNode.id })
       });
@@ -558,7 +558,7 @@ export default function TaskPage({ onBack }: { onBack: () => void }) {
   const confirmDeleteTask = async () => {
     if (!taskToDelete) return;
     try {
-      const res = await fetch(`http://localhost:8000/api/tasks/${taskToDelete}`, { method: 'DELETE' });
+      const res = await fetch(`/api/tasks/${taskToDelete}`, { method: 'DELETE' });
       if (res.ok) {
         toast.success("任务及存档已彻底抹除"); setTaskToDelete(null);
         if (selectedTaskId === taskToDelete) { setSelectedTaskId(null); setNodes([]); setEdges([]); }

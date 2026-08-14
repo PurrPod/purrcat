@@ -66,7 +66,7 @@ export default function EvolvePage({ onBack }: { onBack: () => void }) {
 
   const fetchWorkplaces = async () => {
     try {
-      const res = await fetch(`http://localhost:8000/api/evolve/list?type=${activeType}`);
+      const res = await fetch(`/api/evolve/list?type=${activeType}`);
       if (res.ok) setWorkplaces(await res.json());
       else setWorkplaces([]);
     } catch { setWorkplaces([]); }
@@ -99,7 +99,7 @@ export default function EvolvePage({ onBack }: { onBack: () => void }) {
   const loadFiles = async () => {
     if (!activeWorkplace) return;
     try {
-      const res = await fetch(`http://localhost:8000/api/evolve/file?workplace_id=${activeWorkplace.workplace_id}&name=${activeWorkplace.name}&type=${activeType}`);
+      const res = await fetch(`/api/evolve/file?workplace_id=${activeWorkplace.workplace_id}&name=${activeWorkplace.name}&type=${activeType}`);
       if (res.ok) {
         const data = await res.json();
         setFiles(data.attachments || []);
@@ -117,7 +117,7 @@ export default function EvolvePage({ onBack }: { onBack: () => void }) {
     if (!activeWorkplace || activeType !== 'mcp') return;
     try {
       // 尝试读取沙盒运行脚本后生成的 schema_dump.json
-      const res = await fetch(`http://localhost:8000/api/evolve/file?workplace_id=${activeWorkplace.workplace_id}&name=${activeWorkplace.name}&filename=evals/outputs/schema_dump.json&type=mcp`);
+      const res = await fetch(`/api/evolve/file?workplace_id=${activeWorkplace.workplace_id}&name=${activeWorkplace.name}&filename=evals/outputs/schema_dump.json&type=mcp`);
       if (res.ok) {
         const data = await res.json();
         if (data.content) {
@@ -137,7 +137,7 @@ export default function EvolvePage({ onBack }: { onBack: () => void }) {
   const loadFileData = async (filename: string, setter: (val: string) => void) => {
     if (!activeWorkplace) return;
     try {
-      const res = await fetch(`http://localhost:8000/api/evolve/file?workplace_id=${activeWorkplace.workplace_id}&name=${activeWorkplace.name}&filename=${filename}&type=${activeType}`);
+      const res = await fetch(`/api/evolve/file?workplace_id=${activeWorkplace.workplace_id}&name=${activeWorkplace.name}&filename=${filename}&type=${activeType}`);
       if (res.ok) setter((await res.json()).content || "");
       else setter("");
     } catch { setter("Network Error"); }
@@ -146,7 +146,7 @@ export default function EvolvePage({ onBack }: { onBack: () => void }) {
   const loadIterations = async () => {
     if (!activeWorkplace) return;
     try {
-      const res = await fetch(`http://localhost:8000/api/evolve/test/iterations?workplace_id=${activeWorkplace.workplace_id}&type=${activeType}`);
+      const res = await fetch(`/api/evolve/test/iterations?workplace_id=${activeWorkplace.workplace_id}&type=${activeType}`);
       if (res.ok) {
         const iters = await res.json();
         setIterations(iters);
@@ -160,7 +160,7 @@ export default function EvolvePage({ onBack }: { onBack: () => void }) {
     if (!activeWorkplace) return;
     setActiveIteration(iter);
     try {
-      const res = await fetch(`http://localhost:8000/api/evolve/test/report?workplace_id=${activeWorkplace.workplace_id}&name=${activeWorkplace.name}&iteration=${iter}&type=${activeType}`);
+      const res = await fetch(`/api/evolve/test/report?workplace_id=${activeWorkplace.workplace_id}&name=${activeWorkplace.name}&iteration=${iter}&type=${activeType}`);
       if (res.ok) setReportMd((await res.json()).report_md || '*此轮次尚未生成评测报告。*');
       else setReportMd('*获取报告失败*');
     } catch { setReportMd('*网络异常，无法获取报告*'); }
@@ -170,7 +170,7 @@ export default function EvolvePage({ onBack }: { onBack: () => void }) {
     if (!activeWorkplace) return;
     const tid = toast.loading(`正在将修改落盘至沙盒的 ${filename}...`);
     try {
-      const res = await fetch(`http://localhost:8000/api/evolve/file?workplace_id=${activeWorkplace.workplace_id}&name=${activeWorkplace.name}&filename=${filename}&type=${activeType}`, {
+      const res = await fetch(`/api/evolve/file?workplace_id=${activeWorkplace.workplace_id}&name=${activeWorkplace.name}&filename=${filename}&type=${activeType}`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content })
       });
@@ -185,7 +185,7 @@ export default function EvolvePage({ onBack }: { onBack: () => void }) {
     if (!activeWorkplace) return;
     const tid = toast.loading(activeType === 'skill' ? "正在唤醒 Agent 并发盲测流水线..." : "正在宿主机触发语义竞争与执行测试...");
     try {
-      const res = await fetch('http://localhost:8000/api/evolve/test/run', {
+      const res = await fetch('/api/evolve/test/run', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ type: activeType, workplace_id: activeWorkplace.workplace_id, name: activeWorkplace.name })
       });
@@ -199,7 +199,7 @@ export default function EvolvePage({ onBack }: { onBack: () => void }) {
     setCurrentStep('merge');
     setIsDiffLoading(true);
     try {
-      const res = await fetch(`http://localhost:8000/api/evolve/diff?workplace_id=${activeWorkplace.workplace_id}&name=${activeWorkplace.name}&type=${activeType}`);
+      const res = await fetch(`/api/evolve/diff?workplace_id=${activeWorkplace.workplace_id}&name=${activeWorkplace.name}&type=${activeType}`);
       if (res.ok) setDiffContent((await res.json()).diff_content || "文件内容没有任何改变。");
       else setDiffContent("获取差异信息失败。");
     } catch { setDiffContent("网络异常，无法获取差异。"); }
@@ -211,7 +211,7 @@ export default function EvolvePage({ onBack }: { onBack: () => void }) {
     if (!approved && !rejectReason.trim()) return toast.error("打回加工必须填写拒绝理由！");
     const tid = toast.loading(approved ? "执行强合并到主库..." : "将意见反馈至沙盒...");
     try {
-      const res = await fetch('http://localhost:8000/api/evolve/handle', {
+      const res = await fetch('/api/evolve/handle', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ type: activeType, workplace_id: activeWorkplace.workplace_id, name: activeWorkplace.name, is_approved: approved, reject_reason: rejectReason.trim() })
       });
@@ -243,7 +243,7 @@ export default function EvolvePage({ onBack }: { onBack: () => void }) {
 
     const tid = toast.loading("正在执行回滚...");
     try {
-      const res = await fetch('http://localhost:8000/api/evolve/rollback', {
+      const res = await fetch('/api/evolve/rollback', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ type: activeType, name: activeWorkplace.name })
       });
@@ -264,7 +264,7 @@ export default function EvolvePage({ onBack }: { onBack: () => void }) {
 
     const tid = toast.loading("正在强制清理沙盒...");
     try {
-      const res = await fetch(`http://localhost:8000/api/evolve/workplace/${wpId}?type=${activeType}`, { method: 'DELETE' });
+      const res = await fetch(`/api/evolve/workplace/${wpId}?type=${activeType}`, { method: 'DELETE' });
       if (res.ok) {
         toast.success("沙盒已彻底清理！", { id: tid });
         if (activeWorkplace?.workplace_id === wpId) setActiveWorkplace(null);

@@ -91,6 +91,8 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   const [pendingTermCmd, setPendingTermCmd] = useState<string | null>(null); // 确认弹窗中的待执行命令
 
   const [sidebarMode, setSidebarMode] = useState<'menu' | 'mcp' | 'skill' | 'cron' | 'sensor'>('menu');
+  // 🌟 响应式：窗口宽度小于屏幕宽度一半时收起左侧菜单
+  const [isCompact, setIsCompact] = useState(false);
   const [sensorData, setSensorData] = useState<any>({});
   const [mcpData, setMcpData] = useState<Record<string, any[]>>({});
   const [expandedMcp, setExpandedMcp] = useState<string | null>(null);
@@ -125,7 +127,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   // 🌟 挂载时拉取现有的心跳配置
   const fetchAgentHeartbeat = async () => {
     try {
-      const res = await fetch('http://localhost:8000/api/tools/loop');
+      const res = await fetch('/api/tools/loop');
       if (res.ok) {
         const loops = await res.json();
         const agentLoop = loops.find((l: any) => l.task_hook === 'Agent');
@@ -137,11 +139,19 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   };
   useEffect(() => { fetchAgentHeartbeat(); }, []);
 
+  // 🌟 响应式：监听窗口宽度，小于屏幕一半时收起左侧菜单
+  useEffect(() => {
+    const check = () => setIsCompact(window.innerWidth < window.screen.width / 2);
+    check();
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, []);
+
   // 🌟 挂载时拉取 info.json (skills & workshops)
   useEffect(() => {
     const fetchInfoData = async () => {
       try {
-        const res = await fetch('http://localhost:8000/api/config/info');
+        const res = await fetch('/api/config/info');
         if (res.ok) setInfoData(await res.json());
       } catch { /* noop */ }
     };
@@ -151,7 +161,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   // 🌟 保存心跳配置
   const saveHeartbeat = async () => {
     try {
-      const res = await fetch('http://localhost:8000/api/tools/loop', {
+      const res = await fetch('/api/tools/loop', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -249,7 +259,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
         // 其他本地文件：兜底用 browser 渲染（/preview 返回 FileResponse，iframe 会显示或触发下载）
         type = 'browser';
       }
-      finalUrl = `http://localhost:8000/api/filesystem/preview?path=${encodeURIComponent(localPath)}`;
+      finalUrl = `/api/filesystem/preview?path=${encodeURIComponent(localPath)}`;
     }
 
     // 🌟 browser 类型直接在内置浏览器中打开（图片/视频仍走弹窗）
@@ -301,47 +311,47 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   useEffect(() => { if (isAutoScroll.current) messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
   useEffect(() => { pendingMsgsRef.current = []; }, [currentBranchId]);
   const fetchGlobalStats = async () => {
-    try { const res = await fetch('http://localhost:8000/api/system/agent/stats'); if (res.ok) setGlobalStats(await res.json()); } catch { /* noop */ }
+    try { const res = await fetch('/api/system/agent/stats'); if (res.ok) setGlobalStats(await res.json()); } catch { /* noop */ }
   };
   useEffect(() => { if (messages.length === 0) fetchGlobalStats(); }, [messages.length]);
 
   const loadBranches = async (sid: string) => {
-    try { const res = await fetch(`http://localhost:8000/api/sessions/${sid}/branches`); if (res.ok) setBranches(await res.json()); } catch { setBranches({ main: {} }); }
+    try { const res = await fetch(`/api/sessions/${sid}/branches`); if (res.ok) setBranches(await res.json()); } catch { setBranches({ main: {} }); }
   };
 
   const fetchGlobalDiffs = async () => {
-    try { const res = await fetch('http://localhost:8000/api/filesystem/diffs'); if (res.ok) { const data = await res.json(); if (data.diffs) setFileChanges(data.diffs); } } catch { /* noop */ }
+    try { const res = await fetch('/api/filesystem/diffs'); if (res.ok) { const data = await res.json(); if (data.diffs) setFileChanges(data.diffs); } } catch { /* noop */ }
   };
   useEffect(() => { fetchGlobalDiffs(); const interval = setInterval(fetchGlobalDiffs, 3000); return () => clearInterval(interval); }, []);
   useEffect(() => { if (fileChanges.length > 0 && (!activeDiffPath || !fileChanges.some(c => c.path === activeDiffPath))) setActiveDiffPath(fileChanges[0].path); }, [fileChanges, activeDiffPath]);
 
   const handleAck = async (path: string, newestBackupId: string) => {
-    try { const res = await fetch(`http://localhost:8000/api/filesystem/ack`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path, backup_id: newestBackupId }) }); if (res.ok) { toast.success("已确认更改"); fetchGlobalDiffs(); } } catch { /* noop */ }
+    try { const res = await fetch(`/api/filesystem/ack`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path, backup_id: newestBackupId }) }); if (res.ok) { toast.success("已确认更改"); fetchGlobalDiffs(); } } catch { /* noop */ }
   };
   const handleRollback = async (path: string, oldestBackupId: string) => {
-    try { const res = await fetch(`http://localhost:8000/api/filesystem/undo`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path, backup_id: oldestBackupId }) }); if (res.ok) { toast.success("文件已恢复"); fetchGlobalDiffs(); } } catch { /* noop */ }
+    try { const res = await fetch(`/api/filesystem/undo`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path, backup_id: oldestBackupId }) }); if (res.ok) { toast.success("文件已恢复"); fetchGlobalDiffs(); } } catch { /* noop */ }
   };
 
   useEffect(() => {
     let tokenInterval: ReturnType<typeof setTimeout>;
-    const fetchToken = async () => { try { const res = await fetch('http://localhost:8000/api/agent/token'); if (res.ok) { const data = await res.json(); setTokenData({ window: data.window_token, max: data.max_token, cached: data.cached_token || 0 }); } } catch { /* noop */ } };
+    const fetchToken = async () => { try { const res = await fetch('/api/agent/token'); if (res.ok) { const data = await res.json(); setTokenData({ window: data.window_token, max: data.max_token, cached: data.cached_token || 0 }); } } catch { /* noop */ } };
     if (currentSessionId) { fetchToken(); tokenInterval = setInterval(fetchToken, 5000); }
     return () => { if (tokenInterval) clearInterval(tokenInterval); };
   }, [currentSessionId]);
 
   const fetchRequests = async () => {
-    try { const resPending = await fetch('http://localhost:8000/api/requests').catch(() => null); if (resPending?.ok) { const dataPending = await resPending.json(); setPendingReqs(dataPending); const currentIds = dataPending.map((r: any) => r.id); if (currentIds.some((id: string) => !prevPendingIds.current.includes(id)) && dataPending.length > 0) setShowReqQueue(true); prevPendingIds.current = currentIds; } } catch { /* noop */ }
+    try { const resPending = await fetch('/api/requests').catch(() => null); if (resPending?.ok) { const dataPending = await resPending.json(); setPendingReqs(dataPending); const currentIds = dataPending.map((r: any) => r.id); if (currentIds.some((id: string) => !prevPendingIds.current.includes(id)) && dataPending.length > 0) setShowReqQueue(true); prevPendingIds.current = currentIds; } } catch { /* noop */ }
   };
   useEffect(() => { fetchRequests(); const interval = setInterval(fetchRequests, 3000); return () => clearInterval(interval); }, []);
 
   const handleResolveReq = async (reqId: string, approved: boolean, ignore: boolean, duration: number = 5) => {
     const feedback = feedbackInputs[reqId] || '';
-    try { const res = await fetch(`http://localhost:8000/api/requests/${reqId}/resolve`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ approved, feedback, ignore, duration }) }); if (res.ok) { toast.success("请求处理完成"); setFeedbackInputs(p => { const n = {...p}; delete n[reqId]; return n; }); fetchRequests(); } } catch { /* noop */ }
+    try { const res = await fetch(`/api/requests/${reqId}/resolve`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ approved, feedback, ignore, duration }) }); if (res.ok) { toast.success("请求处理完成"); setFeedbackInputs(p => { const n = {...p}; delete n[reqId]; return n; }); fetchRequests(); } } catch { /* noop */ }
   };
 
   const handleRename = async (id: string) => {
     if (!editingAlias.trim()) { setEditingSessionId(null); return; }
-    try { const res = await fetch(`http://localhost:8000/api/sessions/${id}/rename`, { method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ alias: editingAlias.trim() }) }); if (res.ok) { toast.success("会话已重命名！"); loadSessions(); } } catch { /* noop */ }
+    try { const res = await fetch(`/api/sessions/${id}/rename`, { method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ alias: editingAlias.trim() }) }); if (res.ok) { toast.success("会话已重命名！"); loadSessions(); } } catch { /* noop */ }
     setEditingSessionId(null);
   };
 
@@ -404,27 +414,27 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   const handlePaste = (e: React.ClipboardEvent) => { if (e.clipboardData.files && e.clipboardData.files.length > 0) { e.preventDefault(); handleFileUpload(e.clipboardData.files); } };
   const handleDrop = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(false); const items = e.dataTransfer.items; if (items && items.length > 0) { const validFiles: File[] = []; for (let i = 0; i < items.length; i++) { const item = items[i]; if (item.kind === 'file') { const file = item.getAsFile(); if (file) validFiles.push(file); } } if (validFiles.length > 0) handleFileUpload(validFiles); } };
 
-  const openMdEditor = async (type: 'SOUL' | 'SOLO' | 'TODO') => { setMdType(type); setMdContent('Loading...'); setShowMdModal(true); try { const res = await fetch(`http://localhost:8000/api/config/markdown/${type}`); if (res.ok) { const data = await res.json(); setMdContent(data.content); } } catch { /* noop */ } };
-  const saveMdContent = async () => { setIsSavingMd(true); try { const res = await fetch(`http://localhost:8000/api/config/markdown/${mdType}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: mdContent }) }); if (res.ok) setShowMdModal(false); } catch { /* noop */ } finally { setIsSavingMd(false); } };
+  const openMdEditor = async (type: 'SOUL' | 'SOLO' | 'TODO') => { setMdType(type); setMdContent('Loading...'); setShowMdModal(true); try { const res = await fetch(`/api/config/markdown/${type}`); if (res.ok) { const data = await res.json(); setMdContent(data.content); } } catch { /* noop */ } };
+  const saveMdContent = async () => { setIsSavingMd(true); try { const res = await fetch(`/api/config/markdown/${mdType}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: mdContent }) }); if (res.ok) setShowMdModal(false); } catch { /* noop */ } finally { setIsSavingMd(false); } };
 
-  const fetchSensorData = async () => { try { const res = await fetch('http://localhost:8000/api/config/sensor'); if (res.ok) setSensorData(await res.json()); } catch { /* noop */ } };
-  const reloadSensors = async () => { try { await fetch('http://localhost:8000/api/config/sensor/reload', { method: 'POST' }); toast.success("Sensors 已热重启"); } catch { /* noop */ } };
-  const toggleSensorStatus = async (sensorName: string) => { try { const newSensorData = JSON.parse(JSON.stringify(sensorData)); newSensorData[sensorName].enabled = !newSensorData[sensorName].enabled; setSensorData(newSensorData); const resSave = await fetch('http://localhost:8000/api/config/sensor', { method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(newSensorData) }); if (resSave.ok) await reloadSensors(); } catch { /* noop */ } };
-  const handleInstallSensor = async () => { setIsInstallingSensor(true); try { const parsed = JSON.parse(sensorInstallJson); const newSensors = parsed.sensors ? parsed.sensors : parsed; const currentData = JSON.parse(JSON.stringify(sensorData)); Object.assign(currentData, newSensors); const resSave = await fetch('http://localhost:8000/api/config/sensor', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(currentData) }); if (resSave.ok) { await reloadSensors(); setShowInstallSensorModal(false); fetchSensorData(); } } catch { /* noop */ } finally { setIsInstallingSensor(false); } };
+  const fetchSensorData = async () => { try { const res = await fetch('/api/config/sensor'); if (res.ok) setSensorData(await res.json()); } catch { /* noop */ } };
+  const reloadSensors = async () => { try { await fetch('/api/config/sensor/reload', { method: 'POST' }); toast.success("Sensors 已热重启"); } catch { /* noop */ } };
+  const toggleSensorStatus = async (sensorName: string) => { try { const newSensorData = JSON.parse(JSON.stringify(sensorData)); newSensorData[sensorName].enabled = !newSensorData[sensorName].enabled; setSensorData(newSensorData); const resSave = await fetch('/api/config/sensor', { method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(newSensorData) }); if (resSave.ok) await reloadSensors(); } catch { /* noop */ } };
+  const handleInstallSensor = async () => { setIsInstallingSensor(true); try { const parsed = JSON.parse(sensorInstallJson); const newSensors = parsed.sensors ? parsed.sensors : parsed; const currentData = JSON.parse(JSON.stringify(sensorData)); Object.assign(currentData, newSensors); const resSave = await fetch('/api/config/sensor', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(currentData) }); if (resSave.ok) { await reloadSensors(); setShowInstallSensorModal(false); fetchSensorData(); } } catch { /* noop */ } finally { setIsInstallingSensor(false); } };
 
-  const fetchMcp = async () => { try { const res = await fetch('http://localhost:8000/api/tools/mcp'); if (res.ok) setMcpData(await res.json()); } catch { /* noop */ } };
-  const refreshMcp = async () => { try { await fetch('http://localhost:8000/api/tools/mcp/refresh', { method: 'POST' }); fetchMcp(); } catch { /* noop */ } };
-  const handleInstallMcp = async () => { setIsInstallingMcp(true); try { const res = await fetch('http://localhost:8000/api/tools/mcp/install', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ config_json: mcpInstallJson.trim() }) }); if (res.ok) { setShowInstallMcpModal(false); fetchMcp(); } } catch { /* noop */ } finally { setIsInstallingMcp(false); } };
+  const fetchMcp = async () => { try { const res = await fetch('/api/tools/mcp'); if (res.ok) setMcpData(await res.json()); } catch { /* noop */ } };
+  const refreshMcp = async () => { try { await fetch('/api/tools/mcp/refresh', { method: 'POST' }); fetchMcp(); } catch { /* noop */ } };
+  const handleInstallMcp = async () => { setIsInstallingMcp(true); try { const res = await fetch('/api/tools/mcp/install', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ config_json: mcpInstallJson.trim() }) }); if (res.ok) { setShowInstallMcpModal(false); fetchMcp(); } } catch { /* noop */ } finally { setIsInstallingMcp(false); } };
 
-  const fetchSkill = async () => { try { const res = await fetch('http://localhost:8000/api/tools/skills'); if (res.ok) setSkillData(await res.json()); } catch { /* noop */ } };
-  const refreshSkill = async () => { try { await fetch('http://localhost:8000/api/tools/skills/refresh', { method: 'POST' }); fetchSkill(); } catch { /* noop */ } };
-  const handleInstallSkill = async () => { setIsInstallingSkill(true); try { const res = await fetch('http://localhost:8000/api/tools/skills/install', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: skillInstallUrl.trim() }) }); if (res.ok) { setShowInstallSkillModal(false); fetchSkill(); } } catch { /* noop */ } finally { setIsInstallingSkill(false); } };
+  const fetchSkill = async () => { try { const res = await fetch('/api/tools/skills'); if (res.ok) setSkillData(await res.json()); } catch { /* noop */ } };
+  const refreshSkill = async () => { try { await fetch('/api/tools/skills/refresh', { method: 'POST' }); fetchSkill(); } catch { /* noop */ } };
+  const handleInstallSkill = async () => { setIsInstallingSkill(true); try { const res = await fetch('/api/tools/skills/install', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: skillInstallUrl.trim() }) }); if (res.ok) { setShowInstallSkillModal(false); fetchSkill(); } } catch { /* noop */ } finally { setIsInstallingSkill(false); } };
 
-  const fetchGraphData = async () => { try { const res = await fetch('http://localhost:8000/api/graphs'); if (res.ok) setGraphData(await res.json()); } catch { /* noop */ } };
+  const fetchGraphData = async () => { try { const res = await fetch('/api/graphs'); if (res.ok) setGraphData(await res.json()); } catch { /* noop */ } };
 
   useEffect(() => {
     if (showAddCronModal && newCron.task_hook && newCron.task_hook !== 'Agent') {
-      fetch(`http://localhost:8000/api/graphs/${newCron.task_hook}/schema`)
+      fetch(`/api/graphs/${newCron.task_hook}/schema`)
         .then(res => res.json())
         .then(data => {
           const schema = data.global_schema || {};
@@ -440,7 +450,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
     }
   }, [newCron.task_hook, showAddCronModal]);
 
-  const fetchCron = async () => { try { const res = await fetch('http://localhost:8000/api/tools/cron'); if (res.ok) setCronData(await res.json()); } catch { /* noop */ } };
+  const fetchCron = async () => { try { const res = await fetch('/api/tools/cron'); if (res.ok) setCronData(await res.json()); } catch { /* noop */ } };
   const addCron = async () => { 
     let parsedInputs = {};
     if (newCron.task_hook !== 'Agent') {
@@ -452,7 +462,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
       }
     }
     try { 
-      const res = await fetch('http://localhost:8000/api/tools/cron', { 
+      const res = await fetch('/api/tools/cron', { 
         method: 'POST', 
         headers: { 'Content-Type': 'application/json' }, 
         body: JSON.stringify({
@@ -470,12 +480,12 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
       } 
     } catch { /* noop */ } 
   };
-  const deleteCron = async (id: string) => { try { await fetch(`http://localhost:8000/api/tools/cron/${id}`, { method: 'DELETE' }); fetchCron(); } catch { /* noop */ } };
+  const deleteCron = async (id: string) => { try { await fetch(`/api/tools/cron/${id}`, { method: 'DELETE' }); fetchCron(); } catch { /* noop */ } };
 
   useEffect(() => { pendingMsgsRef.current = []; }, [currentBranchId]);
 
-  const loadSessions = async () => { try { const res = await fetch('http://localhost:8000/api/sessions'); if (res.ok) { const data = await res.json(); setSessions(data); if (data.length > 0 && !currentSessionId) handleSelectSession(data[0].id); } } catch { /* noop */ } };
-  const loadSessionHistory = async (id: string, bId: string = 'main') => { const res = await fetch(`http://localhost:8000/api/sessions/${id}?branch_id=${bId}`); if (res.ok) setMessages(await res.json()); };
+  const loadSessions = async () => { try { const res = await fetch('/api/sessions'); if (res.ok) { const data = await res.json(); setSessions(data); if (data.length > 0 && !currentSessionId) handleSelectSession(data[0].id); } } catch { /* noop */ } };
+  const loadSessionHistory = async (id: string, bId: string = 'main') => { const res = await fetch(`/api/sessions/${id}?branch_id=${bId}`); if (res.ok) setMessages(await res.json()); };
   
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { loadSessions(); }, []);
@@ -486,7 +496,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
     const interval = setInterval(async () => {
       if (isCheckingOut) return;
       try {
-        const [msgRes, statusRes] = await Promise.all([ fetch(`http://localhost:8000/api/sessions/${currentSessionId}?branch_id=${currentBranchId}`), fetch(`http://localhost:8000/api/sessions/${currentSessionId}/status`) ]);
+        const [msgRes, statusRes] = await Promise.all([ fetch(`/api/sessions/${currentSessionId}?branch_id=${currentBranchId}`), fetch(`/api/sessions/${currentSessionId}/status`) ]);
         if (msgRes.ok) {
           const history = await msgRes.json();
           pendingMsgsRef.current = pendingMsgsRef.current.filter(pendingText => !hasMessageInHistory(history, pendingText));
@@ -500,12 +510,12 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
     return () => clearInterval(interval);
   }, [currentSessionId, currentBranchId, isCheckingOut]);
 
-  const handleSelectSession = async (id: string) => { setIsCheckingOut(true); setCurrentSessionId(id); setCurrentBranchId('main'); navigate(`/chat/${id}`, { replace: true }); try { await fetch(`http://localhost:8000/api/sessions/${id}/checkout`, { method: 'POST' }).catch(() => {}); await loadSessionHistory(id, 'main'); await loadBranches(id); } catch { /* noop */ } finally { setIsCheckingOut(false); } };
+  const handleSelectSession = async (id: string) => { setIsCheckingOut(true); setCurrentSessionId(id); setCurrentBranchId('main'); navigate(`/chat/${id}`, { replace: true }); try { await fetch(`/api/sessions/${id}/checkout`, { method: 'POST' }).catch(() => {}); await loadSessionHistory(id, 'main'); await loadBranches(id); } catch { /* noop */ } finally { setIsCheckingOut(false); } };
   const confirmNewSession = async () => {
     setShowModal(false);
     setIsCheckingOut(true);
     try {
-      const res = await fetch('http://localhost:8000/api/sessions/new', {
+      const res = await fetch('/api/sessions/new', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ alias: newAlias.trim() })
@@ -517,7 +527,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
 
         // 如果选择了作坊，则自动发送第一条消息注入上下文
         if (selectedProject) {
-          await fetch('http://localhost:8000/api/chat/batch', {
+          await fetch('/api/chat/batch', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -533,8 +543,8 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
       setSelectedProject('');
     }
   };
-  const confirmBranchSession = async () => { setShowBranchModal(false); setIsCheckingOut(true); try { const res = await fetch(`http://localhost:8000/api/sessions/${currentSessionId}/branch`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ alias: branchAlias.trim() }) }); if (res.ok) { const data = await res.json(); await loadSessions(); await handleSelectSession(data.id); } } catch { /* noop */ } finally { setIsCheckingOut(false); } };
-  const confirmDeleteSession = async () => { if (!sessionToDelete) return; try { const res = await fetch(`http://localhost:8000/api/sessions/${sessionToDelete}`, { method: 'DELETE' }); if (res.ok) { if (currentSessionId === sessionToDelete) { setCurrentSessionId(null); setMessages([]); } setSessionToDelete(null); loadSessions(); } } catch { /* noop */ } };
+  const confirmBranchSession = async () => { setShowBranchModal(false); setIsCheckingOut(true); try { const res = await fetch(`/api/sessions/${currentSessionId}/branch`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ alias: branchAlias.trim() }) }); if (res.ok) { const data = await res.json(); await loadSessions(); await handleSelectSession(data.id); } } catch { /* noop */ } finally { setIsCheckingOut(false); } };
+  const confirmDeleteSession = async () => { if (!sessionToDelete) return; try { const res = await fetch(`/api/sessions/${sessionToDelete}`, { method: 'DELETE' }); if (res.ok) { if (currentSessionId === sessionToDelete) { setCurrentSessionId(null); setMessages([]); } setSessionToDelete(null); loadSessions(); } } catch { /* noop */ } };
 
   const handleSend = async () => {
     if (!input.trim() || !currentSessionId) return;
@@ -558,7 +568,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
       setMessages(prev => [...prev, { role: 'user', content: JSON.stringify({ events: eventsToPush }) }]);
     }
 
-    try { await fetch('http://localhost:8000/api/chat/batch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ session_id: currentSessionId, events: eventsToPush }) }); } catch { /* noop */ }
+    try { await fetch('/api/chat/batch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ session_id: currentSessionId, events: eventsToPush }) }); } catch { /* noop */ }
   };
 
   // 🌟 在内置浏览器中打开链接（供 handleMessageClick 调用）
@@ -590,7 +600,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
     setMessages(prev => [...prev, { role: 'user', content: JSON.stringify({ events: eventsToPush }) }]);
 
     try { 
-      await fetch('http://localhost:8000/api/chat/batch', { 
+      await fetch('/api/chat/batch', { 
         method: 'POST', 
         headers: { 'Content-Type': 'application/json' }, 
         body: JSON.stringify({ session_id: currentSessionId, events: eventsToPush }) 
@@ -606,7 +616,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
     setIsTracing(true);
     const tid = toast.loading("正在为你分配技能进化工厂...");
     try {
-      const res = await fetch('http://localhost:8000/api/evolve/init', {
+      const res = await fetch('/api/evolve/init', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -625,7 +635,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
 
       const eventsToPush = [{ type: 'evolve_factory', content }];
 
-      await fetch('http://localhost:8000/api/chat/batch', {
+      await fetch('/api/chat/batch', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ session_id: currentSessionId, events: eventsToPush })
@@ -684,7 +694,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
       <ChatModals {...modalProps} />
       <ConfigModal isOpen={isConfigOpen} onClose={() => setIsConfigOpen(false)} />
       
-      {!showBrowser && <ChatSidebar {...sidebarProps} />}
+      {!showBrowser && !isCompact && <ChatSidebar {...sidebarProps} />}
 
       {/* 🌟 聊天框动态压缩：改为 w-[420px] 增加宽度 */}
       <div style={sketchyShape1} className={`${showBrowser ? 'w-[420px] shrink-0' : 'flex-1'} transition-all duration-300 bg-paper border-4 border-ink shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] flex flex-col overflow-hidden relative z-10`}>

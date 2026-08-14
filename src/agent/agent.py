@@ -10,7 +10,6 @@ from json_repair import repair_json
 from src.agent.hook_handler import HookHandler
 from src.agent.session_store import SessionStore
 from src.model import AgentModel
-from src.tool import AGENT_TOOL_SCHEMA
 from src.tool.utils.route import dispatch_tool
 from src.utils.config import (
     BUFFER_DIR,
@@ -105,6 +104,7 @@ class Agent:
         self._state = value
 
     def _get_tool_schema(self):
+        from src.tool import AGENT_TOOL_SCHEMA  # 延迟 import，打破与 src.tool 的循环依赖
         return AGENT_TOOL_SCHEMA
 
     def _get_current_interaction_id(self):

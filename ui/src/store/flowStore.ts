@@ -47,7 +47,7 @@ export const useFlowStore = create<FlowState>()(
       selectedNodeId: null,
 
       fetchCatalog: async () => {
-        const res = await fetch('http://localhost:8000/api/graphs/nodes')
+        const res = await fetch('/api/graphs/nodes')
         if (res.ok) set({ catalog: await res.json() })
       },
 

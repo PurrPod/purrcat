@@ -42,7 +42,7 @@ export default function Toolbar({ onBack }: { onBack?: () => void }) {
   // 加载已有图谱列表
   const loadGraphList = async () => {
     try {
-      const res = await fetch('http://localhost:8000/api/graphs')
+      const res = await fetch('/api/graphs')
       if (res.ok) {
         const data = await res.json()
         setGraphFiles(data)
@@ -62,7 +62,7 @@ export default function Toolbar({ onBack }: { onBack?: () => void }) {
   // 加载选中的图谱
   const handleEditExisting = async (fileName: string) => {
     try {
-      const res = await fetch(`http://localhost:8000/api/graphs/${fileName}`)
+      const res = await fetch(`/api/graphs/${fileName}`)
       if (res.ok) {
         const data = await res.json()
         loadGraph(data)
@@ -126,7 +126,7 @@ export default function Toolbar({ onBack }: { onBack?: () => void }) {
 
     // 4. 提交带有依赖声明的 JSON 数据到后端
     try {
-      const res = await fetch(`http://localhost:8000/api/graphs/${workflowName}`, {
+      const res = await fetch(`/api/graphs/${workflowName}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(graph),

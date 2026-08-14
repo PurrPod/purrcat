@@ -31,44 +31,44 @@ export default function ChatSidebar(props: any) {
         {sidebarMode === 'menu' && (
            <div className="flex-1 flex flex-col gap-5 p-2 mt-2 overflow-y-auto">
                {/* EVOLVE 按钮 */}
-               <button onClick={() => navigate('/evolve')} style={sketchyShape2} className="flex-1 border-4 border-ink bg-[#a3be8c]/40 hover:bg-[#a3be8c] shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center gap-3 hover:-translate-y-1 hover:scale-[1.02] transition-all rotate-1 active:shadow-none active:translate-y-1 min-h-[60px]">
+               <button onClick={() => navigate('/evolve')} style={sketchyShape2} className="shrink-0 border-4 border-ink bg-[#a3be8c]/40 hover:bg-[#a3be8c] shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center gap-3 hover:-translate-y-1 hover:scale-[1.02] transition-all rotate-1 active:shadow-none active:translate-y-1 min-h-[60px]">
                    <Activity size={28} strokeWidth={2.5} className="text-[#729654]"/>
                    <span className="font-black text-xl tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>EVOLVE</span>
                </button>
 
                {/* TASK 按钮 */}
-               <button onClick={() => navigate('/task')} style={sketchyShape3} className="flex-1 border-4 border-ink bg-[#D8E2DC]/50 hover:bg-[#D8E2DC] shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center gap-3 hover:-translate-y-1 hover:scale-[1.02] transition-all -rotate-1 active:shadow-none active:translate-y-1 min-h-[60px]">
+               <button onClick={() => navigate('/task')} style={sketchyShape3} className="shrink-0 border-4 border-ink bg-[#D8E2DC]/50 hover:bg-[#D8E2DC] shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center gap-3 hover:-translate-y-1 hover:scale-[1.02] transition-all -rotate-1 active:shadow-none active:translate-y-1 min-h-[60px]">
                    <Terminal size={28} strokeWidth={2.5} className="text-[#5e81ac]"/>
                    <span className="font-black text-xl tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>TASK</span>
                </button>
 
                {/* EDITOR 按钮 */}
-               <button onClick={() => navigate('/editor')} style={sketchyShape1} className="flex-1 border-4 border-ink bg-[#EBCB8B]/50 hover:bg-[#EBCB8B] shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center gap-3 hover:-translate-y-1 hover:scale-[1.02] transition-all rotate-2 active:shadow-none active:translate-y-1 min-h-[60px]">
+               <button onClick={() => navigate('/editor')} style={sketchyShape1} className="shrink-0 border-4 border-ink bg-[#EBCB8B]/50 hover:bg-[#EBCB8B] shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center gap-3 hover:-translate-y-1 hover:scale-[1.02] transition-all rotate-2 active:shadow-none active:translate-y-1 min-h-[60px]">
                    <GitMerge size={28} strokeWidth={2.5} className="text-[#d08770]"/>
                    <span className="font-black text-xl tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>EDITOR</span>
                </button>
 
-               <button onClick={() => navigate('/memory')} style={sketchyShape1} className="flex-1 border-4 border-ink bg-[#FFB5A7]/40 hover:bg-[#FFB5A7] shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center gap-3 hover:-translate-y-1 hover:scale-[1.02] transition-all -rotate-1 active:shadow-none active:translate-y-1">
+               <button onClick={() => navigate('/memory')} style={sketchyShape1} className="shrink-0 border-4 border-ink bg-[#FFB5A7]/40 hover:bg-[#FFB5A7] shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center gap-3 hover:-translate-y-1 hover:scale-[1.02] transition-all -rotate-1 active:shadow-none active:translate-y-1 min-h-[60px]">
                    <Brain size={28} strokeWidth={2.5} className="text-[#c76c6c]"/>
                    <span className="font-black text-xl tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>MEMORY</span>
                </button>
-               <button onClick={() => {setSidebarMode('mcp'); fetchMcp();}} style={sketchyShape2} className="flex-1 border-4 border-ink bg-[#F9E2AF]/50 hover:bg-[#F9E2AF] shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center gap-3 hover:-translate-y-1 hover:scale-[1.02] transition-all rotate-1 active:shadow-none active:translate-y-1">
+               <button onClick={() => {setSidebarMode('mcp'); fetchMcp();}} style={sketchyShape2} className="shrink-0 border-4 border-ink bg-[#F9E2AF]/50 hover:bg-[#F9E2AF] shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center gap-3 hover:-translate-y-1 hover:scale-[1.02] transition-all rotate-1 active:shadow-none active:translate-y-1 min-h-[60px]">
                    <Server size={28} strokeWidth={2.5} className="text-[#b8956e]"/>
                    <span className="font-black text-xl tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>MCP</span>
                </button>
-               <button onClick={() => {setSidebarMode('skill'); fetchSkill();}} style={sketchyShape3} className="flex-1 border-4 border-ink bg-[#FCD5CE]/50 hover:bg-[#FCD5CE] shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center gap-3 hover:-translate-y-1 hover:scale-[1.02] transition-all -rotate-2 active:shadow-none active:translate-y-1">
+               <button onClick={() => {setSidebarMode('skill'); fetchSkill();}} style={sketchyShape3} className="shrink-0 border-4 border-ink bg-[#FCD5CE]/50 hover:bg-[#FCD5CE] shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center gap-3 hover:-translate-y-1 hover:scale-[1.02] transition-all -rotate-2 active:shadow-none active:translate-y-1 min-h-[60px]">
                    <Zap size={28} strokeWidth={2.5} className="text-[#d08770]"/>
                    <span className="font-black text-xl tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>SKILL</span>
                </button>
-               <button onClick={() => {setSidebarMode('cron'); fetchCron();}} style={sketchyShape1} className="flex-1 border-4 border-ink bg-[#E8D1C5]/50 hover:bg-[#E8D1C5] shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center gap-3 hover:-translate-y-1 hover:scale-[1.02] transition-all rotate-2 active:shadow-none active:translate-y-1">
+               <button onClick={() => {setSidebarMode('cron'); fetchCron();}} style={sketchyShape1} className="shrink-0 border-4 border-ink bg-[#E8D1C5]/50 hover:bg-[#E8D1C5] shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center gap-3 hover:-translate-y-1 hover:scale-[1.02] transition-all rotate-2 active:shadow-none active:translate-y-1 min-h-[60px]">
                    <AlarmClock size={28} strokeWidth={2.5} className="text-[#a07b8a]"/>
                    <span className="font-black text-xl tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>CRON</span>
                </button>
-               <button onClick={() => openMdEditor('SOUL')} style={sketchyShape2} className="flex-1 border-4 border-ink bg-[#b48ead]/50 hover:bg-[#b48ead] shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center gap-3 hover:-translate-y-1 hover:scale-[1.02] transition-all rotate-1 active:shadow-none active:translate-y-1 min-h-[60px]">
+               <button onClick={() => openMdEditor('SOUL')} style={sketchyShape2} className="shrink-0 border-4 border-ink bg-[#b48ead]/50 hover:bg-[#b48ead] shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center gap-3 hover:-translate-y-1 hover:scale-[1.02] transition-all rotate-1 active:shadow-none active:translate-y-1 min-h-[60px]">
                    <FileText size={28} strokeWidth={2.5} className="text-[#8f6a88]"/>
                    <span className="font-black text-xl tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>SOUL</span>
                </button>
-               <button onClick={() => {setSidebarMode('sensor'); fetchSensorData();}} style={sketchyShape3} className="flex-1 border-4 border-ink bg-[#EBCB8B]/40 hover:bg-[#EBCB8B] shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center gap-3 hover:-translate-y-1 hover:scale-[1.02] transition-all rotate-2 active:shadow-none active:translate-y-1 min-h-[60px]">
+               <button onClick={() => {setSidebarMode('sensor'); fetchSensorData();}} style={sketchyShape3} className="shrink-0 border-4 border-ink bg-[#EBCB8B]/40 hover:bg-[#EBCB8B] shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center gap-3 hover:-translate-y-1 hover:scale-[1.02] transition-all rotate-2 active:shadow-none active:translate-y-1 min-h-[60px]">
                    <Activity size={28} strokeWidth={2.5} className="text-[#b8956e]"/>
                    <span className="font-black text-xl tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>SENSOR</span>
                </button>

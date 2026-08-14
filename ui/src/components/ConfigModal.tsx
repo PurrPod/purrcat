@@ -52,7 +52,7 @@ export default function ConfigModal({ isOpen, onClose }: { isOpen: boolean; onCl
   // ── 加载 meta（路径信息） ──
   const fetchMeta = async () => {
     try {
-      const res = await fetch('http://localhost:8000/api/config/meta');
+      const res = await fetch('/api/config/meta');
       if (res.ok) setConfigMeta(await res.json());
     } catch { /* noop */ }
   };
@@ -60,7 +60,7 @@ export default function ConfigModal({ isOpen, onClose }: { isOpen: boolean; onCl
   // ── 加载配置 ──
   const fetchConfig = async (tab: string) => {
     try {
-      const res = await fetch(`http://localhost:8000/api/config/${tab}`);
+      const res = await fetch(`/api/config/${tab}`);
       if (res.ok) {
         let data = await res.json();
         if (data === null || typeof data !== 'object') data = {};
@@ -156,7 +156,7 @@ export default function ConfigModal({ isOpen, onClose }: { isOpen: boolean; onCl
       } else {
         payload = JSON.parse(rawJsonStr);
       }
-      const res = await fetch(`http://localhost:8000/api/config/${activeTab}`, {
+      const res = await fetch(`/api/config/${activeTab}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),

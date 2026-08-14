@@ -149,7 +149,14 @@ async def run_api(host: str = "0.0.0.0", port: int = 8000):
     app.include_router(evolve_router)
     app.include_router(terminal_router)
 
-    @app.get("/")
+    # 🌟 托管前端构建产物（打包成桌面应用后，前后端同源单端口运行）
+    from fastapi.staticfiles import StaticFiles
+    from pathlib import Path as _Path
+    _ui_dist = _Path(__file__).resolve().parent / "ui" / "dist"
+    if _ui_dist.exists():
+        app.mount("/", StaticFiles(directory=str(_ui_dist), html=True), name="ui")
+
+    @app.get("/api/health")
     def ping():
         return {"message": "PurrCat Backend is running."}
 
