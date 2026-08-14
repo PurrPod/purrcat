@@ -5,8 +5,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-# 直接引入纯粹的路径映射函数，避开 require_write 的大模型权限沙盒
-from src.tool.filesystem.utils import resolve_absolute_path
+from src.utils.path import convert_sandbox_path
 from src.tool.filesystem.history import (
     rewind_file_by_id,
     ack_backup,
@@ -76,7 +75,7 @@ def api_get_valid_backups():
 def ui_undo_action(req: UIRollbackReq):
     """提供给前端 UI 的一键回滚（最高权限）"""
     try:
-        resolved_path = resolve_absolute_path(req.path)
+        resolved_path = convert_sandbox_path(req.path)
         result_msg = rewind_file_by_id(resolved_path, req.backup_id)
         return {"status": "success", "message": result_msg}
     except Exception as e:
@@ -88,7 +87,7 @@ def ui_undo_action(req: UIRollbackReq):
 def ui_ack_action(req: UIRollbackReq):
     """用户确认更改，删除磁盘备份，解决空间膨胀"""
     try:
-        resolved_path = resolve_absolute_path(req.path)
+        resolved_path = convert_sandbox_path(req.path)
         ack_backup(resolved_path, req.backup_id)
         return {"status": "success"}
     except Exception as e:
@@ -117,7 +116,7 @@ def preview_file(path: str):
     用于绕过浏览器对 file:// 协议的同源与安全限制。
     """
     # 将前端传来的（可能是沙盒或相对）路径映射为真实物理绝对路径
-    resolved_path = resolve_absolute_path(path)
+    resolved_path = convert_sandbox_path(path)
 
     # 路径回退：Agent 有时输出的路径漏掉了 agent_vm 沙盒层
     # 如果原始路径找不到，且路径不含 agent_vm，尝试在 agent_vm 下查找
@@ -130,7 +129,7 @@ def preview_file(path: str):
             if len(stripped) >= 2 and stripped[1] == ":":
                 stripped = stripped[2:]
             stripped = stripped.lstrip("/")
-            fallback = resolve_absolute_path(f"/agent_vm/{stripped}")
+            fallback = convert_sandbox_path(f"/agent_vm/{stripped}")
             if os.path.exists(fallback) and os.path.isfile(fallback):
                 resolved_path = fallback
 

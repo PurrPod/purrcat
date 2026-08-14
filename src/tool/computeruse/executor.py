@@ -9,6 +9,7 @@ from PIL import Image, ImageDraw
 from src.tool.computeruse.adapters.factory import get_platform_adapter
 from src.tool.computeruse.exceptions import ExecutionFailedError
 from src.utils.config import get_app_config
+from src.utils.path import convert_sandbox_path
 
 LOGICAL_WIDTH = 1280
 GRID_SPACING = 100  # 坐标网格间距，每 100 逻辑像素一根线
@@ -61,25 +62,6 @@ def _calculate_iou(boxA, boxB):
     boxAArea = (boxA[2] - boxA[0]) * (boxA[3] - boxA[1])
     boxBArea = (boxB[2] - boxB[0]) * (boxB[3] - boxB[1])
     return interArea / float(boxAArea + boxBArea - interArea + 1e-5)
-
-
-def _resolve_sandbox_path(path: str) -> str:
-    """独立的路径映射工具：将 Agent 视角的 /agent_vm/... 映射为宿主机的真实绝对路径"""
-    import os
-
-    # 强制统一路径分隔符为 /，方便处理
-    path = str(path).strip().replace("\\", "/")
-
-    # 容错：有些 URL 解析后可能会变成 //agent_vm/
-    if path.startswith("//agent_vm/"):
-        path = path[1:]
-
-    if path.startswith("/agent_vm/"):
-        path = path.replace("/agent_vm/", "./agent_vm/", 1)
-    elif path == "/agent_vm":
-        path = "./agent_vm"
-
-    return os.path.abspath(path)
 
 
 def execute_action(
@@ -348,7 +330,7 @@ def execute_action(
                     # 如果确定意图是操作文件
                     if is_explicit_file:
                         # 转换沙盒路径到宿主机真实路径
-                        mapped_path = _resolve_sandbox_path(potential_path)
+                        mapped_path = convert_sandbox_path(potential_path)
 
                         if os.path.exists(mapped_path):
                             try:

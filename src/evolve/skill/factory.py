@@ -8,7 +8,7 @@ import uuid
 import subprocess
 from datetime import datetime
 
-from src.utils.config import SKILL_DIR
+from src.utils.config import SKILL_DIR, AGENT_VM_DIR
 
 # 引入新的生成器
 from .guide_generator import (
@@ -20,7 +20,7 @@ from .guide_generator import (
 
 def skill_improve_init(skill_name: str, is_upgrade: bool) -> str:
     short_uuid = uuid.uuid4().hex[:5]
-    workplace_root = f"./agent_vm/skill_workplace/{short_uuid}"
+    workplace_root = os.path.join(AGENT_VM_DIR, "skill_workplace", short_uuid)
     workplace_skill_dir = os.path.join(workplace_root, skill_name)
 
     if os.path.exists(workplace_root):

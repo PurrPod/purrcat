@@ -10,7 +10,7 @@ import datetime
 from src.model import AgentModel
 from src.tool.utils.route import dispatch_tool
 from src.harness.utils.tool_helper import extract_tool_calling
-from src.utils.config import AGENT_VM_DIR
+from src.utils.path import convert_sandbox_path
 from src.agent.session_store import SessionStore
 
 # 全局后台活跃任务字典与专用的线程安全互斥锁
@@ -71,12 +71,7 @@ class SubAgentRunner:
         self.window_token = 0  # 🌟 新增：用于追踪当前子分支的窗口 Token 消耗
 
         # 🌟 批量转换物理路径
-        self.deliverable_paths = []
-        for d in deliverable:
-            if d.startswith("/agent_vm"):
-                self.deliverable_paths.append(d.replace("/agent_vm", AGENT_VM_DIR, 1))
-            else:
-                self.deliverable_paths.append(d)
+        self.deliverable_paths = [convert_sandbox_path(d) for d in deliverable]
 
         # 隔离历史记录（从主分支历史点深拷贝）
         self.messages = copy.deepcopy(initial_history)

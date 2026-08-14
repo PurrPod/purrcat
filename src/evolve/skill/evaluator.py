@@ -12,6 +12,7 @@ import threading
 import re
 import math
 from src.harness.process import Task
+from src.utils.config import AGENT_VM_DIR
 
 
 def run_skill_eval_background(workplace_id: str, skill_name: str, main_session_id: str):
@@ -260,7 +261,7 @@ async def _run_single_eval_case(
 
 
 async def _async_run_evals(workplace_id: str, skill_name: str) -> str:
-    workplace_root = f"./agent_vm/skill_workplace/{workplace_id}"
+    workplace_root = os.path.join(AGENT_VM_DIR, "skill_workplace", workplace_id)
     dev_skill_dir = os.path.join(workplace_root, skill_name)
     evals_file = os.path.join(dev_skill_dir, "evals", "evals.json")
 

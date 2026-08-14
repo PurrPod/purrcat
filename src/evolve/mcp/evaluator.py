@@ -10,6 +10,8 @@ import threading
 import re
 import shutil
 
+from src.utils.config import AGENT_VM_DIR
+
 
 def run_mcp_eval_background(workplace_id: str, mcp_name: str, main_session_id: str):
     """启动后台线程跑 MCP 测试流水线"""
@@ -55,7 +57,7 @@ def _get_next_iteration_dir(workplace_root: str) -> tuple[str, int]:
 
 
 async def _async_run_mcp_evals(workplace_id: str, mcp_name: str) -> str:
-    workplace_root = f"./agent_vm/mcp_workplace/{workplace_id}"
+    workplace_root = os.path.join(AGENT_VM_DIR, "mcp_workplace", workplace_id)
     dev_mcp_dir = os.path.join(workplace_root, mcp_name)
     evals_file = os.path.join(dev_mcp_dir, "evals", "evals.json")
     outputs_dir = os.path.join(dev_mcp_dir, "evals", "outputs")

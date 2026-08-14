@@ -19,13 +19,13 @@ from src.evolve import (
     mcp_request_handle,
     run_mcp_eval_background,
 )
-from src.utils.config import SKILL_DIR
+from src.utils.config import SKILL_DIR, AGENT_VM_DIR
 
 router = APIRouter(prefix="/api/evolve", tags=["Evolution Factory"])
 
 
 def get_root(module_type: str) -> str:
-    return f"./agent_vm/{module_type}_workplace"
+    return os.path.join(AGENT_VM_DIR, f"{module_type}_workplace")
 
 
 # ==========================================

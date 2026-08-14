@@ -5,7 +5,7 @@ from typing import Any, Dict
 
 from src.harness.enums import NodeState
 from src.harness.node.agent_node import AgentNode
-from src.utils.config import AGENT_VM_DIR
+from src.utils.path import convert_sandbox_path
 
 
 class Node(AgentNode):
@@ -91,7 +91,7 @@ class Node(AgentNode):
             for fpath in target_files:
                 if not fpath.startswith("/agent_vm"):
                     raise ValueError(f"文件路径必须以 '/agent_vm' 开头: {fpath}")
-                check_paths.append(fpath.replace("/agent_vm", AGENT_VM_DIR, 1))
+                check_paths.append(convert_sandbox_path(fpath))
         else:
             self.log(context, "SYSTEM", "📁 [文件验收] 无目标文件，将直接输出总结")
 

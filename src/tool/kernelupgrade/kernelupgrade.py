@@ -3,7 +3,7 @@
 import os
 import traceback
 from src.tool.utils.format import error_response, text_response
-from src.utils.config import SKILL_DIR
+from src.utils.config import SKILL_DIR, AGENT_VM_DIR
 from src.evolve import (
     skill_improve_init,
     run_skill_eval_background,
@@ -90,7 +90,7 @@ def KernelUpgrade(action: str, target: str, **kwargs) -> dict:
             # ==========================================
             # 🌟 新增：前置强拦截（防 Agent 偷懒跳步）
             # ==========================================
-            schema_path = f"./agent_vm/mcp_workplace/{workplace_id}/{mcp_name}/evals/outputs/schema_dump.json"
+            schema_path = os.path.join(AGENT_VM_DIR, "mcp_workplace", workplace_id, mcp_name, "evals", "outputs", "schema_dump.json")
             if not os.path.exists(schema_path):
                 return error_response(
                     "❌ 执行被拒绝：未检测到测试前置产物！\n\n"

@@ -9,6 +9,7 @@ import os
 from src.utils.config import (
     PURRCAT_DIR,
     AGENT_CORE_DIR,
+    AGENT_VM_DIR,
     MODEL_CONFIG_PATH,
     SENSOR_CONFIG_PATH,
     FILE_CONFIG_PATH,
@@ -201,7 +202,7 @@ def _get_file_config_dict():
             ],
             "readonly": [],
             "writable": [
-                "./agent_vm",
+                AGENT_VM_DIR,
                 "./exports",
                 "D:/test",
             ],

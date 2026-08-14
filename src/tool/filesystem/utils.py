@@ -1,26 +1,7 @@
 import os
 from pathlib import Path
 from src.tool.filesystem.exceptions import PermissionDeniedError
-
-
-def resolve_absolute_path(path: str) -> str:
-    """
-    将 Agent 视角的绝对路径映射为宿主机的真实相对路径。
-
-    优先级：先替换长路径，再替换短路径，确保映射层级正确。
-    """
-    path = str(path).strip()
-
-    # 强制统一路径分隔符
-    path = path.replace("\\", "/")
-
-    if path.startswith("/agent_vm/"):
-        path = path.replace("/agent_vm/", "./agent_vm/", 1)
-    elif path == "/agent_vm":
-        path = "./agent_vm"
-
-    # 3. 其他默认处理
-    return os.path.abspath(path)
+from src.utils.path import convert_sandbox_path
 
 
 def get_path_permission(target_path: str) -> str:
@@ -81,7 +62,7 @@ def get_path_permission(target_path: str) -> str:
 
 def require_read(path: str) -> str:
     """要求读权限 (readonly 或 writable 均可)"""
-    resolved = resolve_absolute_path(path)
+    resolved = convert_sandbox_path(path)
     perm = get_path_permission(resolved)
     if perm == "blocked":
         raise PermissionDeniedError(
@@ -93,7 +74,7 @@ def require_read(path: str) -> str:
 
 def require_write(path: str) -> str:
     """要求写权限 (必须是 writable)"""
-    resolved = resolve_absolute_path(path)
+    resolved = convert_sandbox_path(path)
     perm = get_path_permission(resolved)
     if perm == "blocked":
         raise PermissionDeniedError(

@@ -9,6 +9,7 @@ from src.agent.sub_runner import (
     ensure_sub_loop,
 )
 from src.utils.config import get_file_config
+from src.utils.path import convert_sandbox_path
 
 
 def _has_write_permission(target_path: str) -> bool:
@@ -17,13 +18,9 @@ def _has_write_permission(target_path: str) -> bool:
     核心逻辑与底层文件系统保持一致。
     """
     # 1. 路径映射：将沙盒路径转换为宿主机实际路径
-    path = str(target_path).strip()
-    if path.startswith("/agent_vm/"):
-        path = "./agent_vm/" + path[len("/agent_vm/") :]
-    elif path == "/agent_vm":
-        path = "./agent_vm"
+    path = convert_sandbox_path(target_path)
 
-    target_norm = os.path.normcase(os.path.abspath(path))
+    target_norm = os.path.normcase(path)
     target_path_obj = Path(target_norm)
 
     # 2. 读取系统的文件权限配置

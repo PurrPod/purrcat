@@ -11,6 +11,7 @@ import docker
 import pexpect
 from docker.errors import DockerException, ImageNotFound, NotFound
 
+from src.utils.config import AGENT_VM_DIR
 from .exceptions import (
     BashTimeoutError,
     DockerImageNotFoundError,
@@ -316,7 +317,7 @@ def get_docker_manager() -> "DockerManager":
     global _docker_manager_instance
     if _docker_manager_instance is None:
         _docker_manager_instance = DockerManager(
-            image="my_agent_env:latest", workspace_dir="./agent_vm"
+            image="my_agent_env:latest", workspace_dir=AGENT_VM_DIR
         )
         atexit.register(_docker_manager_instance.stop)
 
