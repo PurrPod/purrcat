@@ -8,6 +8,25 @@
   body {
     @apply bg-cream text-ink font-sans antialiased;
   }
+  #root {
+    position: relative;
+    height: calc(100vh - 32px);
+    margin-top: 32px;
+    overflow: hidden;
+  }
+  /* 顶部拖拽条：浅白色，鼠标在此区域可拖动窗口 */
+  body::before {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 32px;
+    background: #fdfaf5;
+    border-bottom: 1px solid rgba(26, 26, 26, 0.08);
+    -webkit-app-region: drag;
+    z-index: 2147483647;
+  }
 }
 
 .react-flow__node {

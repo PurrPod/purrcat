@@ -13,6 +13,9 @@ _is_ai_cursor = False
 _watcher_thread = None
 _lock = threading.Lock()
 
+# AI 操作结束后多少秒无新动作则恢复默认光标
+IDLE_TIMEOUT = 10
+
 # --- Windows API 常量 ---
 SPI_SETCURSORS = 0x0057
 IMAGE_CURSOR = 2
@@ -54,10 +57,14 @@ def restore_normal_cursor():
 
 
 def _cursor_watcher_loop():
-    """后台监控线程 - 已取消 15 秒超时恢复，保持恒定 AI 光标"""
+    """后台监控线程 - 超过 IDLE_TIMEOUT 秒无 AI 动作则恢复默认光标"""
+    global _is_ai_cursor
     while True:
         time.sleep(1)
-        # 已移除 _restore_normal_cursor() 自动还原逻辑
+        with _lock:
+            if _is_ai_cursor and (time.time() - _last_ai_action_time) > IDLE_TIMEOUT:
+                restore_normal_cursor()
+                _is_ai_cursor = False
 
 
 def notify_ai_active():
