@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { MousePointer2, Frame, Globe, Send, X, Code2, ExternalLink, PictureInPicture2 } from 'lucide-react';
+import { MousePointer2, Frame, Globe, Send, X, Code2, ExternalLink, PictureInPicture2, Palette } from 'lucide-react';
 import { sketchyShape1, sketchyShape2, sketchyShape3 } from './ChatShared';
 import type { BrowserTab } from '../ChatPage';
 
@@ -21,6 +21,17 @@ export default function AgentBrowserPanel({
   const containerRef = useRef<HTMLDivElement>(null);
   const logicalOverlayRef = useRef<HTMLDivElement>(null); // 新增：逻辑坐标系容器
   const lastHoverRef = useRef(0);
+  const commentTextareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // 原生取色器：把选中色号注入到评论输入框光标位置
+  const insertColor = (color: string) => {
+    const ta = commentTextareaRef.current;
+    if (!ta) { setCommentText(prev => prev + color); return; }
+    const start = ta.selectionStart, end = ta.selectionEnd;
+    const val = commentText;
+    setCommentText(val.slice(0, start) + color + val.slice(end));
+    requestAnimationFrame(() => { ta.selectionStart = ta.selectionEnd = start + color.length; ta.focus(); });
+  };
 
   // 新增：固定逻辑分辨率（保持桌面端浏览体验）
   const VIEWPORT_W = 1280;
@@ -35,6 +46,7 @@ export default function AgentBrowserPanel({
   const [currentRect, setCurrentRect] = useState<{ x: number, y: number, w: number, h: number } | null>(null);
   const [showCommentBox, setShowCommentBox] = useState(false);
   const [commentText, setCommentText] = useState('');
+  const [selectedColor, setSelectedColor] = useState('#000000');
   const [pickedElement, setPickedElement] = useState<any>(null);
 
   // 缩放和留白位置
@@ -178,7 +190,15 @@ export default function AgentBrowserPanel({
         }
       }).catch(() => {});
     }
-    return () => { cancelled = true; };
+    // 👇 重点修复：必须在此处添加 Cleanup 逻辑
+    return () => {
+      cancelled = true;
+      // 如果组件卸载，或者依赖项发生变化时，如果当前不是 browse 模式，
+      // 必须强制通知主进程关闭当前 Tab 的 CDP Pick 模式，防止后端卡死在 F12
+      if (mode !== 'browse' && hasElectron) {
+        try { purrcat.browserPickEnd(activeTabId).catch(() => {}); } catch (_) {}
+      }
+    };
   }, [mode, activeTabId, hasElectron]);
 
   useEffect(() => {
@@ -522,7 +542,33 @@ export default function AgentBrowserPanel({
                       <span className="font-black text-sm text-terracotta tracking-wider">COMMAND</span>
                       <button onClick={() => { setShowCommentBox(false); setCurrentRect(null); setPickedElement(null); setHoverRect(null); setMode('browse'); }} className="hover:text-terracotta"><X size={16} strokeWidth={3} /></button>
                     </div>
-                    <textarea autoFocus value={commentText} onChange={e => setCommentText(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitComment(); } }} placeholder={pickedElement ? `修改 <${pickedElement.tag}> 元素...` : "要求 Agent 修改此处的..."} className="w-full bg-[#FDF8F0] border-2 border-ink p-2 text-sm font-bold resize-none h-20 focus:outline-none mb-2" style={sketchyShape3} />
+                    <textarea ref={commentTextareaRef} autoFocus value={commentText} onChange={e => setCommentText(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitComment(); } }} placeholder={pickedElement ? `修改 <${pickedElement.tag}> 元素...` : "要求 Agent 修改此处的..."} className="w-full bg-[#FDF8F0] border-2 border-ink p-2 text-sm font-bold resize-none h-20 focus:outline-none mb-2" style={sketchyShape3} />
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-[10px] font-black text-ink/50 tracking-wider">COLOR:</span>
+                      {/* 颜色选择框：仅更新 selectedColor，不插入 */}
+                      <label
+                        className="w-[26px] h-[26px] border-2 border-ink cursor-pointer relative overflow-hidden"
+                        style={{ borderRadius: '4px 6px 3px 5px/5px 3px 6px 4px', background: selectedColor }}
+                        title="选择颜色"
+                      >
+                        <input
+                          type="color"
+                          value={selectedColor}
+                          onChange={(e) => setSelectedColor(e.target.value.toUpperCase())}
+                          className="absolute opacity-0 w-full h-full cursor-pointer"
+                        />
+                      </label>
+                      {/* 确认插入按钮：点击才执行 insertColor */}
+                      <button
+                        type="button"
+                        onClick={() => insertColor(selectedColor)}
+                        className="flex items-center justify-center w-[26px] h-[26px] border-2 border-ink hover:bg-sand transition-transform hover:scale-110"
+                        style={{ borderRadius: '4px 6px 3px 5px/5px 3px 6px 4px' }}
+                        title="插入颜色"
+                      >
+                        <Palette size={14} strokeWidth={3} className="text-ink" />
+                      </button>
+                    </div>
                     <button onClick={submitComment} className="w-full bg-ink text-paper font-black py-2 flex justify-center items-center gap-2 hover:bg-terracotta hover:text-ink transition-colors border-2 border-ink" style={sketchyShape1}>
                       <Send size={14} strokeWidth={3} /> EXECUTE
                     </button>

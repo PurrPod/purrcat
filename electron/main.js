@@ -808,37 +808,50 @@ ipcMain.handle('browser:detach', () => {
   const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>PurrCat Browser</title>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
-  body { background:#FAF8F5; font-family:'Comic Sans MS',cursive,sans-serif; width:100vw; height:100vh; overflow:hidden; }
+  body { background:#FAF8F5; font-family:'Comic Sans MS',cursive,sans-serif; width:100vw; height:100vh; overflow:hidden; color:#1A1A1A; }
   .container { width:100%; height:100%; display:flex; flex-direction:column; overflow:hidden; }
-  .header { display:flex; align-items:center; gap:8px; padding:6px 10px; border-bottom:3px solid rgba(26,26,26,0.15); flex-shrink:0; -webkit-app-region:drag; height:48px; background:#FAF8F5; }
-  .mode-group { display:flex; gap:4px; -webkit-app-region:no-drag; }
-  .mode-btn { width:34px; height:34px; border:2px solid #1A1A1A; background:#fff; cursor:pointer; display:flex; align-items:center; justify-content:center; color:#1A1A1A; transition:all 0.15s; border-radius:6px 10px 5px 8px/8px 5px 10px 6px; }
-  .mode-btn:hover { background:#ECEFF4; }
-  .mode-btn.active { background:#88c0d0; color:#fff; }
+  /* 顶部栏：与主窗口一致的 cream 底 + 4px ink 描边 */
+  .header { display:flex; align-items:center; gap:10px; padding:7px 10px; border-bottom:4px solid #1A1A1A; flex-shrink:0; -webkit-app-region:drag; height:48px; background:#FAF8F5; }
+  .mode-group { display:flex; gap:6px; -webkit-app-region:no-drag; }
+  /* 涂鸦手绘按钮：2px ink 描边 + 硬阴影，圆角与主窗口 sketchyShape1/2/3 一致 */
+  .mode-btn { width:34px; height:34px; border:2px solid #1A1A1A; box-shadow:2px 2px 0 0 #1A1A1A; background:#FFFFFF; cursor:pointer; display:flex; align-items:center; justify-content:center; color:#1A1A1A; transition:all 0.15s; }
+  .mode-btn:hover { background:#E8E5DF; transform:translateY(-1px); }
+  .mode-btn.active { background:#88c0d0; color:#FFFFFF; }
   .mode-btn.active.pick { background:#EBCB8B; color:#1A1A1A; }
-  .mode-btn.active.draw { background:#bf616a; color:#fff; }
-  .addr { flex:1; -webkit-app-region:no-drag; border:2px solid #1A1A1A; background:#fff; padding:4px 10px; font-size:13px; font-weight:900; border-radius:6px 10px 5px 8px/8px 5px 10px 6px; outline:none; min-width:0; }
-  .dock-btn { -webkit-app-region:no-drag; padding:0 12px; height:30px; border:2px solid #1A1A1A; background:#88c0d0; color:#fff; font-size:11px; font-weight:900; letter-spacing:0.08em; cursor:pointer; border-radius:6px 10px 5px 8px/8px 5px 10px 6px; transition:all 0.15s; white-space:nowrap; }
+  .mode-btn.active.draw { background:#bf616a; color:#FFFFFF; }
+  #btnBrowse { border-radius:255px 15px 225px 15px/15px 225px 15px 255px; }
+  #btnPick { border-radius:225px 15px 255px 15px/15px 255px 15px 225px; }
+  #btnDraw { border-radius:15px 225px 15px 255px/255px 15px 225px 15px; }
+  /* 地址栏：4px 描边 + sketchyShape3 圆角 */
+  .addr { flex:1; -webkit-app-region:no-drag; border:4px solid #1A1A1A; background:#FFFFFF; padding:6px 12px; font-size:13px; font-weight:900; color:#1A1A1A; outline:none; min-width:0; border-radius:225px 15px 255px 15px/15px 255px 15px 225px; }
+  /* DOCK 按钮 */
+  .dock-btn { -webkit-app-region:no-drag; padding:0 14px; height:34px; border:2px solid #1A1A1A; box-shadow:2px 2px 0 0 #1A1A1A; background:#88c0d0; color:#FFFFFF; font-size:11px; font-weight:900; letter-spacing:0.08em; cursor:pointer; border-radius:225px 15px 255px 15px/15px 255px 15px 225px; transition:all 0.15s; white-space:nowrap; }
   .dock-btn:hover { background:#5e81ac; transform:translateY(-1px); }
+  /* 窗口控制按钮 */
   .win-controls { display:flex; gap:6px; -webkit-app-region:no-drag; }
-  .win-btn { width:26px; height:26px; border:2px solid #1A1A1A; background:transparent; cursor:pointer; display:flex; align-items:center; justify-content:center; color:#1A1A1A; transition:all 0.15s; border-radius:6px 10px 5px 8px/8px 5px 10px 6px; }
+  .win-btn { width:30px; height:30px; border:2px solid #1A1A1A; box-shadow:2px 2px 0 0 #1A1A1A; background:transparent; cursor:pointer; display:flex; align-items:center; justify-content:center; color:#1A1A1A; transition:all 0.15s; border-radius:255px 15px 225px 15px/15px 225px 15px 255px; }
   .win-btn:hover { background:rgba(26,26,26,0.1); }
-  .win-close:hover { background:#D47A5A; color:#FFF; border-color:#D47A5A; }
+  .win-close:hover { background:#D47A5A; color:#FFFFFF; border-color:#D47A5A; }
+  /* 视图区 */
   .view-area { flex:1; position:relative; overflow:hidden; background:#e5e9f0; }
   .overlay { position:absolute; inset:0; z-index:10; }
   .overlay img { width:100%; height:100%; object-fit:fill; pointer-events:none; }
   .interact { position:absolute; inset:0; cursor:crosshair; }
   .hover-rect { position:absolute; border:2px solid #EBCB8B; background:rgba(235,203,139,0.15); pointer-events:none; z-index:20; display:none; }
-  .current-rect { position:absolute; border:3px solid #bf616a; background:rgba(191,97,106,0.2); pointer-events:none; z-index:20; display:none; }
-  .pick-rect { position:absolute; border:3px solid #EBCB8B; background:rgba(235,203,139,0.2); pointer-events:none; z-index:20; display:none; }
-  .pick-label { position:absolute; top:-22px; left:-3px; background:#1A1A1A; color:#FAF8F5; font-size:10px; font-weight:900; padding:2px 8px; border-radius:4px 4px 0 0; white-space:nowrap; pointer-events:none; }
-  .comment-box { position:absolute; z-index:30; background:#FAF8F5; border:3px solid #1A1A1A; box-shadow:6px 6px 0 rgba(26,26,26,1); padding:12px; width:280px; border-radius:6px 10px 5px 8px/8px 5px 10px 6px; display:none; }
-  .comment-box h4 { font-size:13px; font-weight:900; color:#bf616a; letter-spacing:0.08em; margin-bottom:8px; }
-  .comment-box textarea { width:100%; background:#FDF8F0; border:2px solid #1A1A1A; padding:8px; font-size:13px; font-weight:700; resize:none; height:64px; outline:none; border-radius:4px; font-family:inherit; }
-  .comment-box button { width:100%; background:#1A1A1A; color:#FAF8F5; font-weight:900; padding:8px; border:2px solid #1A1A1A; cursor:pointer; margin-top:8px; display:flex; align-items:center; justify-content:center; gap:6px; border-radius:4px; }
-  .comment-box button:hover { background:#bf616a; color:#1A1A1A; }
-  .comment-box .close-btn { width:auto; position:absolute; top:8px; right:8px; background:transparent; border:none; color:#1A1A1A; font-size:16px; padding:4px; }
+  .current-rect { position:absolute; border:4px solid #bf616a; background:rgba(191,97,106,0.2); pointer-events:none; z-index:20; display:none; }
+  /* 评论框：paper 底 + 4px ink 描边 + 6px 硬阴影 + sketchyShape2 圆角 */
+  .comment-box { position:absolute; z-index:30; background:#FFFFFF; border:4px solid #1A1A1A; box-shadow:6px 6px 0 0 #1A1A1A; padding:12px; width:300px; border-radius:15px 225px 15px 255px/255px 15px 225px 15px; display:none; }
+  .comment-box h4 { font-size:13px; font-weight:900; color:#D47A5A; letter-spacing:0.08em; margin-bottom:8px; }
+  .comment-box textarea { width:100%; background:#FDF8F0; border:2px solid #1A1A1A; padding:8px; font-size:13px; font-weight:700; resize:none; height:64px; outline:none; font-family:inherit; color:#1A1A1A; border-radius:225px 15px 255px 15px/15px 255px 15px 225px; }
+  .comment-box .exec-btn { width:100%; background:#1A1A1A; color:#FAF8F5; font-weight:900; padding:8px; border:2px solid #1A1A1A; cursor:pointer; margin-top:8px; display:flex; align-items:center; justify-content:center; gap:6px; border-radius:255px 15px 225px 15px/15px 225px 15px 255px; transition:all 0.15s; }
+  .comment-box .exec-btn:hover { background:#D47A5A; color:#1A1A1A; }
+  .comment-box .close-btn { width:auto; position:absolute; top:8px; right:8px; background:transparent; border:none; color:#1A1A1A; font-size:16px; padding:4px; cursor:pointer; }
   .comment-box .close-btn:hover { background:rgba(26,26,26,0.1); }
+  /* 标准色板 */
+  .palette { display:flex; flex-wrap:wrap; gap:5px; margin:8px 0; }
+  .palette-label { width:100%; font-size:10px; font-weight:900; color:#1A1A1A; opacity:0.5; letter-spacing:0.08em; margin-bottom:2px; }
+  .swatch { width:22px; height:22px; border:2px solid #1A1A1A; cursor:pointer; transition:transform 0.1s; border-radius:4px 6px 3px 5px/5px 3px 6px 4px; }
+  .swatch:hover { transform:scale(1.25) rotate(-4deg); }
 </style></head><body>
 <div class="container">
   <div class="header">
@@ -861,13 +874,21 @@ ipcMain.handle('browser:detach', () => {
       <img id="snapshot" />
       <div class="interact" id="interact"></div>
       <div class="hover-rect" id="hoverRect"></div>
-      <div class="pick-rect" id="pickRect"><div class="pick-label" id="pickLabel"></div></div>
       <div class="current-rect" id="currentRect"></div>
       <div class="comment-box" id="commentBox">
         <button class="close-btn" onclick="cancelComment()">&times;</button>
         <h4>COMMAND</h4>
         <textarea id="commentText" placeholder="要求 Agent 修改此处的..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();submitComment()}"></textarea>
-        <button onclick="submitComment()">EXECUTE</button>
+        <div class="palette" style="display:flex; align-items:center; gap:8px;">
+          <div class="palette-label" style="margin:0;">INSERT:</div>
+          <label style="width:26px; height:26px; border:2px solid #1A1A1A; border-radius:4px 6px 3px 5px/5px 3px 6px 4px; overflow:hidden; cursor:pointer; position:relative;">
+            <input type="color" id="nativeColorPicker" value="#000000" style="position:absolute; width:200%; height:200%; left:-50%; top:-50%; cursor:pointer;" />
+          </label>
+          <button id="insertColorBtn" style="width:26px; height:26px; border:2px solid #1A1A1A; border-radius:4px 6px 3px 5px/5px 3px 6px 4px; cursor:pointer; display:flex; align-items:center; justify-content:center; background:white;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#1A1A1A" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+          </button>
+        </div>
+        <button class="exec-btn" onclick="submitComment()">EXECUTE</button>
       </div>
     </div>
   </div>
@@ -881,13 +902,8 @@ ipcMain.handle('browser:detach', () => {
 
   function setMode(m) {
     if (mode === m) return;
-    // 退出旧模式
-    if (mode === 'pick') {
-      // pick 模式用 CDP inspect，退出时停止
-      window.purrcat.browserCdpInspectStop(TAB_ID);
-      window.purrcat.browserDetachResizeView(0); // 恢复 view 全高
-    } else if (mode === 'draw') {
-      // draw 模式用截图，退出时恢复 view
+    // 退出旧模式：pick/draw 都用截图+overlay，退出时恢复 view（和主窗口逻辑一致）
+    if (mode === 'pick' || mode === 'draw') {
       window.purrcat.browserPickEnd(TAB_ID);
     }
     mode = m;
@@ -898,14 +914,12 @@ ipcMain.handle('browser:detach', () => {
     // 清理 UI
     document.getElementById('overlay').style.display = 'none';
     document.getElementById('commentBox').style.display = 'none';
+    document.getElementById('hoverRect').style.display = 'none';
+    document.getElementById('currentRect').style.display = 'none';
     pickedEl = null; currentRectData = null;
 
-    if (m === 'pick') {
-      // 🌟 CDP Inspect 模式：view 保持可见，Chromium 自动 hover 高亮 + click 选中
-      // 不需要截图、不需要坐标换算、不受缩放/DPI 影响 —— 和 F12 元素拾取器一模一样
-      window.purrcat.browserCdpInspectStart(TAB_ID);
-    } else if (m === 'draw') {
-      // draw 模式仍用截图（自由画框需要 overlay 交互层）
+    // pick/draw 模式都用截图 + overlay，和主窗口逻辑完全一致
+    if (m === 'pick' || m === 'draw') {
       window.purrcat.browserPickStart(TAB_ID).then(function(res) {
         if (!res || !res.imageDataUrl) { setMode('browse'); return; }
         snapW = res.viewportCssWidth || res.width || 1280;
@@ -916,39 +930,63 @@ ipcMain.handle('browser:detach', () => {
     }
   }
 
-  // 🌟 CDP inspect 选中元素后的回调（主进程提取完语义后推送）
-  if (window.purrcat && window.purrcat.onPickElementSelected) {
-    window.purrcat.onPickElementSelected(function(el) {
-      if (mode !== 'pick' || !el) return;
-      pickedEl = el;
-      currentRectData = el.rect || { x: 0, y: 0, w: 100, h: 30 };
-      // 缩小 view 腾出底部空间给评论框（180px）
-      window.purrcat.browserDetachResizeView(180);
-      // 显示评论框
-      var cb = document.getElementById('commentBox');
-      cb.style.left = '50%';
-      cb.style.top = 'auto';
-      cb.style.bottom = '12px';
-      cb.style.transform = 'translateX(-50%)';
-      cb.style.width = '420px';
-      cb.style.display = 'block';
-      // 更新提示文字
-      var ph = '修改 <' + (el.tagName || '?') + '>';
-      if (el.innerText) ph = '修改 <' + el.tagName + '> "' + el.innerText.substring(0,40) + '"';
-      document.getElementById('commentText').placeholder = ph;
-      document.getElementById('commentText').focus();
-    });
-  }
-
-  // 坐标换算：屏幕像素 → 截图的 CSS 视口坐标（draw 模式用）
+  // 坐标换算：屏幕像素 → 截图的 CSS 视口坐标（pick/draw 模式共用）
+  // 独立窗口 zoomFactor=1 且 overlay 与 viewport 1:1，无需额外 scale 换算
   function getCoords(clientX, clientY) {
     var r = document.getElementById('interact').getBoundingClientRect();
     return { x: clientX - r.left, y: clientY - r.top };
   }
 
-  // 交互层鼠标事件（draw 模式专用）
+  // 显示评论框（pick/draw 选中后共用）
+  function showCommentBox() {
+    var cb = document.getElementById('commentBox');
+    cb.style.left = '50%';
+    cb.style.top = 'auto';
+    cb.style.bottom = '12px';
+    cb.style.transform = 'translateX(-50%)';
+    cb.style.width = '420px';
+    cb.style.display = 'block';
+    var ph = pickedEl
+      ? ('修改 <' + (pickedEl.tagName || '?') + '>' + (pickedEl.innerText ? ' "' + pickedEl.innerText.substring(0,40) + '"' : ''))
+      : 'User drawn area';
+    document.getElementById('commentText').placeholder = ph;
+    document.getElementById('commentText').focus();
+  }
+
+  // 交互层鼠标事件（pick + draw 模式共用，和主窗口逻辑一致）
   var interact = document.getElementById('interact');
+  var lastHover = 0;
+
+  // 原生取色器：点击确认按钮才把色号注入到评论输入框光标位置（避免拖动时频繁插入）
+  document.getElementById('insertColorBtn').addEventListener('click', function() {
+    var color = document.getElementById('nativeColorPicker').value.toUpperCase();
+    var ta = document.getElementById('commentText');
+    var start = ta.selectionStart, end = ta.selectionEnd;
+    var val = ta.value;
+    ta.value = val.slice(0, start) + color + val.slice(end);
+    ta.selectionStart = ta.selectionEnd = start + color.length;
+    ta.focus();
+  });
+
   interact.addEventListener('mousemove', function(e) {
+    // pick 模式 hover：browserLocate 画 hoverRect（和主窗口一致）
+    if (mode === 'pick') {
+      if (document.getElementById('commentBox').style.display === 'block') return;
+      var now = Date.now();
+      if (now - lastHover < 120) return;
+      lastHover = now;
+      var c = getCoords(e.clientX, e.clientY);
+      window.purrcat.browserLocate(TAB_ID, c.x, c.y).then(function(el) {
+        if (mode !== 'pick') return;
+        if (el && el.rect) {
+          updateRect('hoverRect', { x: el.rect.x, y: el.rect.y, w: el.rect.w, h: el.rect.h });
+          document.getElementById('hoverRect').style.display = 'block';
+        } else {
+          document.getElementById('hoverRect').style.display = 'none';
+        }
+      }).catch(function(){});
+      return;
+    }
     if (mode !== 'draw' || !isDrawing) return;
     var c = getCoords(e.clientX, e.clientY);
     currentRectData = {
@@ -959,6 +997,33 @@ ipcMain.handle('browser:detach', () => {
   });
 
   interact.addEventListener('mousedown', function(e) {
+    // pick 模式点击拾取：browserCdpPickElement 拿语义（和主窗口一致）
+    if (mode === 'pick') {
+      if (document.getElementById('commentBox').style.display === 'block') { cancelComment(); return; }
+      var c = getCoords(e.clientX, e.clientY);
+      var fn = window.purrcat.browserCdpPickElement;
+      if (fn) {
+        fn(TAB_ID, c.x, c.y).then(function(el) {
+          if (mode !== 'pick' || !el) return;
+          pickedEl = el;
+          currentRectData = el.rect ? { x: el.rect.x, y: el.rect.y, w: el.rect.w, h: el.rect.h } : { x: c.x-5, y: c.y-5, w: 10, h: 10 };
+          updateRect('currentRect', currentRectData);
+          document.getElementById('currentRect').style.display = 'block';
+          document.getElementById('hoverRect').style.display = 'none';
+          showCommentBox();
+        }).catch(function(){});
+      } else {
+        window.purrcat.browserLocate(TAB_ID, c.x, c.y).then(function(el) {
+          if (mode !== 'pick') return;
+          pickedEl = el;
+          currentRectData = el && el.rect ? { x: el.rect.x, y: el.rect.y, w: el.rect.w, h: el.rect.h } : { x: c.x-5, y: c.y-5, w: 10, h: 10 };
+          updateRect('currentRect', currentRectData);
+          document.getElementById('currentRect').style.display = 'block';
+          showCommentBox();
+        }).catch(function(){});
+      }
+      return;
+    }
     if (mode !== 'draw') return;
     var c = getCoords(e.clientX, e.clientY);
     isDrawing = true;
@@ -972,16 +1037,7 @@ ipcMain.handle('browser:detach', () => {
     if (mode === 'draw' && isDrawing) {
       isDrawing = false;
       if (currentRectData && currentRectData.w > 10 && currentRectData.h > 10) {
-        // draw 模式画完框后，缩小 view 显示评论框
-        window.purrcat.browserDetachResizeView(180);
-        var cb = document.getElementById('commentBox');
-        cb.style.left = '50%';
-        cb.style.top = 'auto';
-        cb.style.bottom = '12px';
-        cb.style.transform = 'translateX(-50%)';
-        cb.style.width = '420px';
-        cb.style.display = 'block';
-        document.getElementById('commentText').focus();
+        showCommentBox();
       } else {
         document.getElementById('currentRect').style.display = 'none';
       }
@@ -999,13 +1055,8 @@ ipcMain.handle('browser:detach', () => {
   function cancelComment() {
     document.getElementById('commentBox').style.display = 'none';
     document.getElementById('currentRect').style.display = 'none';
+    document.getElementById('hoverRect').style.display = 'none';
     pickedEl = null; currentRectData = null;
-    // 恢复 view 全高
-    window.purrcat.browserDetachResizeView(0);
-    // pick 模式：恢复 inspect（继续拾取下一个元素）
-    if (mode === 'pick') {
-      window.purrcat.browserCdpInspectResume(TAB_ID);
-    }
   }
 
   function submitComment() {
@@ -1035,13 +1086,8 @@ ipcMain.handle('browser:detach', () => {
     document.getElementById('commentText').value = '';
     document.getElementById('commentBox').style.display = 'none';
     document.getElementById('currentRect').style.display = 'none';
+    document.getElementById('hoverRect').style.display = 'none';
     pickedEl = null; currentRectData = null;
-    // 恢复 view 全高
-    window.purrcat.browserDetachResizeView(0);
-    // pick 模式：恢复 inspect
-    if (mode === 'pick') {
-      window.purrcat.browserCdpInspectResume(TAB_ID);
-    }
   }
 
   // Tab 事件监听

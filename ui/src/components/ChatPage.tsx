@@ -352,6 +352,9 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
     const purrcat = (window as any).purrcat;
     if (!purrcat?.onBrowserReattached) return;
     return purrcat.onBrowserReattached(() => {
+      // 👇 重点修复：在重新附着时，强制重置为正常浏览模式，防止带入旧状态
+      setBrowserMode('browse');
+
       // 先更新可见性，让 React 开始渲染 AgentBrowserPanel 及其 DOM 树
       setBrowserDetached(false);
       setShowBrowser(true);
@@ -1054,6 +1057,10 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
             setMode={setBrowserMode}
             onComment={handleBrowserComment}
             onDetach={() => {
+              // 👇 重点修复：在分离窗口前，先将主窗口状态重置为 browse，
+              // 这会触发 AgentBrowserPanel 的 useEffect 清理工作
+              setBrowserMode('browse');
+
               (window as any).purrcat?.browserDetach();
               setBrowserDetached(true);
               setShowBrowser(false);
