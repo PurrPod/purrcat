@@ -191,6 +191,103 @@ ipcMain.handle('dialog:open', async (_e, opts) => {
   return r.canceled ? [] : r.filePaths;
 });
 
+// ===== IPC: IDEPanel File Operations =====
+// 目录列表：返回 { name, isDir, path }[]
+ipcMain.handle('fs:readDir', async (_e, dirPath) => {
+  try {
+    const entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
+    return entries
+      .filter((e) => !e.name.startsWith('.')) // 隐藏文件不显示
+      .map((e) => ({
+        name: e.name,
+        isDir: e.isDirectory(),
+        path: path.join(dirPath, e.name),
+      }))
+      .sort((a, b) => {
+        // 文件夹排前面，然后按名称
+        if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
+        return a.name.localeCompare(b.name);
+      });
+  } catch (err) {
+    console.error('[fs:readDir] failed:', err);
+    return [];
+  }
+});
+
+// 读取文件内容（文本）
+ipcMain.handle('fs:readFile', async (_e, filePath) => {
+  try {
+    const content = await fs.promises.readFile(filePath, 'utf-8');
+    return content;
+  } catch (err) {
+    console.error('[fs:readFile] failed:', err);
+    throw err;
+  }
+});
+
+// 文件元信息（大小），IDE 大文件拦截用
+ipcMain.handle('fs:stat', (_e, filePath) => {
+  try {
+    const st = fs.statSync(filePath);
+    return { size: st.size, isFile: st.isFile() };
+  } catch {
+    return null;
+  }
+});
+
+// 写入文件内容（文本，自动创建父目录）
+ipcMain.handle('fs:writeFile', async (_e, filePath, content) => {
+  try {
+    await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
+    await fs.promises.writeFile(filePath, content, 'utf-8');
+    return true;
+  } catch (err) {
+    console.error('[fs:writeFile] failed:', err);
+    throw err;
+  }
+});
+
+// ===== IPC: IDE 独立窗口 =====
+let ideDetachedWin = null;
+
+ipcMain.handle('ide:detach', (_e, workspacePath) => {
+  if (ideDetachedWin) return;
+  const base = IS_DEV ? DEV_URL : PROD_URL;
+  const wsHash = workspacePath ? encodeURIComponent(workspacePath) : '';
+  // IDE 独立窗口走专用 /ide 路由，只渲染 IDE，不带聊天框
+  ideDetachedWin = new BrowserWindow({
+    width: 1200, height: 800,
+    title: 'PurrCat IDE',
+    titleBarStyle: 'hidden',
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+  Menu.setApplicationMenu(null);
+  ideDetachedWin.loadURL(base + '/ide#workspace=' + wsHash);
+  ideDetachedWin.on('close', () => {
+    // 通知主窗口 IDE 已回归
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('ide:reattached');
+    }
+    ideDetachedWin = null;
+  });
+});
+
+ipcMain.handle('ide:reattach', () => {
+  if (!ideDetachedWin) return;
+  const w = ideDetachedWin;
+  ideDetachedWin = null;
+  w.removeAllListeners('close');
+  w.destroy();
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('ide:reattached');
+  }
+});
+
 // ===== IPC: 内置浏览器 Tab 管理 =====
 
 // 阻止在内置浏览器中加载主窗口自身的 URL（localhost:3000 / localhost:8000），

@@ -22,6 +22,64 @@ class UIRollbackReq(BaseModel):
     backup_id: str
 
 
+class UIWriteReq(BaseModel):
+    path: str
+    content: str
+
+
+# ===== IDEPanel 文件操作（浏览器端降级用）=====
+@router.get("/list")
+def list_directory(path: str):
+    """列出目录内容，返回 { name, isDir, path }[]"""
+    try:
+        entries = []
+        for entry in sorted(os.scandir(path), key=lambda e: (not e.is_dir(), e.name.lower())):
+            if entry.name.startswith('.'):
+                continue
+            entries.append({
+                'name': entry.name,
+                'isDir': entry.is_dir(),
+                'path': entry.path,
+            })
+        return entries
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/read")
+def read_file(path: str):
+    """读取文件文本内容"""
+    try:
+        with open(path, 'r', encoding='utf-8', errors='replace') as f:
+            content = f.read()
+        return {'content': content}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/stat")
+def stat_file(path: str):
+    """文件元信息（大小），IDE 大文件拦截用"""
+    try:
+        resolved = convert_sandbox_path(path)
+        st = os.stat(resolved)
+        return {'size': st.st_size}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/write")
+def write_file(req: UIWriteReq):
+    """写入文件文本内容（自动创建父目录）"""
+    try:
+        os.makedirs(os.path.dirname(req.path), exist_ok=True)
+        with open(req.path, 'w', encoding='utf-8') as f:
+            f.write(req.content)
+        return {'status': 'success'}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @router.get("/history_list")
 def get_history_list():
     """直接读取 .agent_history 目录，返回真实存在的备份文件列表"""

@@ -13,6 +13,25 @@ contextBridge.exposeInMainWorld('purrcat', {
   // 拖拽文件拿真实绝对路径（替代 Tauri 的 file.path）。File 对象由渲染进程拖拽事件提供
   getPathForFile: (file) => webUtils.getPathForFile(file),
 
+  // ===== IDEPanel File Operations =====
+  // 读目录：返回 { name, isDir, path }[]
+  readDir: (dirPath) => ipcRenderer.invoke('fs:readDir', dirPath),
+  // 读文件：返回文本内容
+  readFile: (filePath) => ipcRenderer.invoke('fs:readFile', filePath),
+  // 文件元信息（大小），IDE 大文件拦截用
+  statFile: (filePath) => ipcRenderer.invoke('fs:stat', filePath),
+  // 写文件：content 为文本，自动创建父目录
+  writeFile: (filePath, content) => ipcRenderer.invoke('fs:writeFile', filePath, content),
+
+  // ===== IDE 独立窗口 =====
+  ideDetach: (workspacePath) => ipcRenderer.invoke('ide:detach', workspacePath),
+  ideReattach: () => ipcRenderer.invoke('ide:reattach'),
+  onIdeReattached: (callback) => {
+    const handler = () => callback();
+    ipcRenderer.on('ide:reattached', handler);
+    return () => ipcRenderer.removeListener('ide:reattached', handler);
+  },
+
   // ===== 独立预览窗口 =====
   openPreviewWindow: (url, title, type) => ipcRenderer.invoke('preview:open-file', { url, title, type }),
 

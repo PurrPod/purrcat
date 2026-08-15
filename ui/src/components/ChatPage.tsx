@@ -33,6 +33,7 @@ import ChatModals from './chat/ChatModals';
 import ChatSidebar from './chat/ChatSidebar';
 import { FileChangesPanel, RequestQueuePanel, TerminalPanel } from './chat/ChatPanels';
 import AgentBrowserPanel from './chat/AgentBrowserPanel';
+import IDEPanel from './chat/IDEPanel';
 import ConfigModal from './ConfigModal';
 
 // 🌟 多标签页类型定义
@@ -120,6 +121,10 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   const [browserMode, setBrowserMode] = useState<'browse' | 'pick' | 'draw'>('browse');
   const [browserTabs, setBrowserTabs] = useState<BrowserTab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
+
+  // 🌟 新增：IDE 状态
+  const [showIDE, setShowIDE] = useState(false);
+  const [ideWorkspace, setIdeWorkspace] = useState<string | null>(null);
 
   // 🌟 挂载时拉取现有的心跳配置
   const fetchAgentHeartbeat = async () => {
@@ -367,6 +372,15 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
           window.dispatchEvent(ev);
         });
       }, 100);
+    });
+  }, []);
+
+  // 监听 IDE 独立窗口回归事件
+  useEffect(() => {
+    const purrcat = (window as any).purrcat;
+    if (!purrcat?.onIdeReattached) return;
+    return purrcat.onIdeReattached(() => {
+      setShowIDE(true);
     });
   }, []);
 
@@ -695,8 +709,19 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
       try {
         const paths = await purrcat.openDialog({ directory: mode === 'directory' });
         if (paths && Array.isArray(paths) && paths.length > 0) {
+
+          if (mode === 'directory') {
+            // 🌟 核心拦截逻辑：如果是选择文件夹，则弹出 IDE
+            setIdeWorkspace(paths[0]);
+            setShowBrowser(false); // 关闭浏览器，给 IDE 腾出空间
+            setShowIDE(true);
+            toast.success(`已在 IDE 中打开工作区: ${paths[0]}`);
+          }
+
           setRefPaths((prev: string[]) => [...new Set([...prev, ...paths])]);
-          toast.success(`已添加 ${paths.length} 个本地绝对路径`);
+          if (mode === 'file') {
+            toast.success(`已添加 ${paths.length} 个本地绝对路径`);
+          }
         }
       } catch (e) {
         console.error('File selection canceled or failed', e);
@@ -760,10 +785,11 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
       <ChatModals {...modalProps} />
       <ConfigModal isOpen={isConfigOpen} onClose={() => setIsConfigOpen(false)} />
       
-      {!showBrowser && !isCompact && <ChatSidebar {...sidebarProps} />}
+      {/* 🌟 如果浏览器和 IDE 都没有打开，才显示左侧边栏 */}
+      {!showBrowser && !showIDE && !isCompact && <ChatSidebar {...sidebarProps} />}
 
-      {/* 🌟 聊天框动态压缩：改为 w-[420px] 增加宽度 */}
-      <div style={sketchyShape1} className={`${showBrowser ? 'w-[420px] shrink-0' : 'flex-1'} transition-all duration-300 bg-paper border-4 border-ink shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] flex flex-col overflow-hidden relative z-10`}>
+      {/* 🌟 聊天框动态压缩：浏览器或 IDE 打开时都压缩至 420px */}
+      <div style={sketchyShape1} className={`${(showBrowser || showIDE) ? 'w-[420px] shrink-0' : 'flex-1'} transition-all duration-300 bg-paper border-4 border-ink shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] flex flex-col overflow-hidden relative z-10`}>
         
         {currentSessionId ? (
           <div className="absolute -top-2 right-12 px-6 py-1 bg-[#a3be8c] border-2 border-ink rotate-2 z-50 text-ink font-black text-sm shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center" style={sketchyShape2} title="Session ID">
@@ -771,7 +797,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
           </div>
         ) : <div className="absolute -top-4 right-12 w-32 h-8 bg-[#a3be8c]/80 border-2 border-ink -rotate-3 z-50" style={sketchyShape2}></div>}
 
-        {!showBrowser ? (
+        {!showBrowser && !showIDE ? (
           <div className="pt-8 px-10 pb-4 flex items-center justify-between shrink-0">
             <div className="flex items-center gap-4">
               <div style={sketchyShape1} className="w-12 h-12 bg-terracotta border-4 border-ink flex items-center justify-center -rotate-6 shadow-[2px_2px_0px_0px_rgba(26,26,26,1)]">
@@ -832,7 +858,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
         ) : (
           <div className="pt-6 px-6 pb-2 flex justify-between items-center shrink-0 border-b-4 border-ink/10">
             <h2 className="text-2xl font-black tracking-tighter text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>PurrCat.</h2>
-            <button onClick={() => setShowBrowser(false)} className="p-1.5 border-2 border-ink hover:bg-[#bf616a] hover:text-paper shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] transition-all" style={sketchyShape2}>
+            <button onClick={() => { if (showIDE) setShowIDE(false); else setShowBrowser(false); }} className="p-1.5 border-2 border-ink hover:bg-[#bf616a] hover:text-paper shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] transition-all" style={sketchyShape2}>
               <X size={18} strokeWidth={3} />
             </button>
           </div>
@@ -854,8 +880,8 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
         )}
 
         {/* 🌟 恢复原版消息渲染映射 (.map)，加上 onClick 拦截点击 */}
-        <div ref={messagesContainerRef} onScroll={handleScroll} onClick={handleMessageClick} className={`flex-1 overflow-y-auto ${showBrowser ? 'px-4' : 'px-10'} pb-6 flex flex-col gap-6 w-full z-10 pt-4`}>
-          {messages.length === 0 && !showBrowser ? (
+        <div ref={messagesContainerRef} onScroll={handleScroll} onClick={handleMessageClick} className={`flex-1 overflow-y-auto ${(showBrowser || showIDE) ? 'px-4' : 'px-10'} pb-6 flex flex-col gap-6 w-full z-10 pt-4`}>
+          {messages.length === 0 && !showBrowser && !showIDE ? (
             <div className={`flex flex-col items-center justify-center h-full text-ink gap-5 p-2 w-full ${showBrowser ? 'max-w-none' : 'max-w-3xl'} mx-auto select-none`}>
               <div className="flex items-center mb-2"><p className="text-3xl font-black rotate-1 text-ink tracking-tight" style={{ fontFamily: '"Comic Sans MS", cursive' }}>Hi, what are we building today?</p></div>
               <div className="grid grid-cols-3 gap-4 w-full">
@@ -972,7 +998,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
         <TerminalPanel showTerminal={showTerminal} setShowTerminal={setShowTerminal} command={terminalCmd} />
 
         {currentBranchId === 'main' ? (
-          <div className={`${showBrowser ? 'px-4 pb-4' : 'px-10 pb-8'} pt-4 shrink-0 flex flex-col gap-3 w-full`}>
+          <div className={`${(showBrowser || showIDE) ? 'px-4 pb-4' : 'px-10 pb-8'} pt-4 shrink-0 flex flex-col gap-3 w-full`}>
            {(selectedSkills.length > 0 || selectedMcps.length > 0 || selectedGraphs.length > 0 || refPaths.length > 0 || useBrainstorm) && (
              <div className="flex flex-wrap gap-2">
                {selectedSkills.map(skill => <div key={skill} style={sketchyShape3} className="flex items-center gap-1 bg-[#F9E2AF] border-2 border-ink px-3 py-1 font-bold text-sm shadow-[2px_2px_0px_0px_rgba(26,26,26,1)]"><span>⚡ {skill}</span><button onClick={() => setSelectedSkills(prev => prev.filter(s => s !== skill))} className="hover:text-terracotta ml-1"><X size={14} strokeWidth={3}/></button></div>)}
@@ -1032,8 +1058,8 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                  </button>
                </div>
              </div>
-            {/* 🌟 只有在非浏览器模式下才渲染发送按钮（浏览器模式用回车发送） */}
-            {!showBrowser && (
+            {/* 🌟 只有在非浏览器/IDE模式下才渲染发送按钮 */}
+            {!showBrowser && !showIDE && (
               <button style={sketchyShape1} onClick={handleSend} disabled={!currentSessionId || !input.trim()} className="bg-ink text-paper px-10 font-black flex items-center gap-3 border-4 border-ink hover:bg-terracotta hover:text-ink shadow-[6px_6px_0px_0px_rgba(212,122,90,1)] rotate-2 min-h-[80px] self-end">
                 <Send size={26} strokeWidth={2.5} />
               </button>
@@ -1065,6 +1091,16 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
               setBrowserDetached(true);
               setShowBrowser(false);
             }}
+          />
+        </div>
+      )}
+
+      {/* 右侧渲染 IDE 面板 */}
+      {showIDE && ideWorkspace && (
+        <div className="flex-1 overflow-hidden animate-in slide-in-from-right-8 duration-300">
+          <IDEPanel
+            workspacePath={ideWorkspace}
+            onClose={() => setShowIDE(false)}
           />
         </div>
       )}

@@ -10,6 +10,7 @@ import MemoryPage from './components/MemoryPage';
 import EditorPage from './components/EditorPage';
 import MarketPage from './components/MarketPage'; // 🌟 导入新页面
 import EvolvePage from './components/EvolvePage'; // 🌟 导入新页面
+import IDEPanel from './components/chat/IDEPanel'; // IDE 独立窗口
 
 const sketchyBtn = { borderRadius: '6px 10px 5px 8px/8px 5px 10px 6px' };
 
@@ -49,6 +50,7 @@ export default function App() {
         <Route path="/memory" element={<MemoryRouteWrapper />} />
         <Route path="/market" element={<MarketRouteWrapper />} /> {/* 🌟 新增路由 */}
         <Route path="/evolve" element={<EvolveRouteWrapper />} /> {/* 🌟 新增路由 */}
+        <Route path="/ide" element={<IdeRouteWrapper />} /> {/* IDE 独立窗口 */}
       </Routes>
 
       <Toaster
@@ -108,4 +110,25 @@ function MarketRouteWrapper() {
 function EvolveRouteWrapper() {
   const navigate = useNavigate();
   return <EvolvePage onBack={() => navigate(-1)} />;
+}
+
+// IDE 独立窗口：只渲染 IDE，无聊天框；workspace 从 URL hash 读取
+function IdeRouteWrapper() {
+  // 从 hash 中解析 workspace 路径（#workspace=<encoded>）
+  const wsMatch = window.location.hash.match(/workspace=([^&]*)/);
+  const workspacePath = wsMatch && wsMatch[1] ? decodeURIComponent(wsMatch[1]) : '';
+  // 与主窗口 ChatPage 一致的点阵手绘背景
+  return (
+    <div className="absolute inset-0 bg-[#fdfaf5] bg-[radial-gradient(#1a1a1a_1px,transparent_1px)] [background-size:24px_24px] p-6 md:p-8 overflow-hidden">
+      {workspacePath ? (
+        <IDEPanel workspacePath={workspacePath} onClose={() => {
+          // 独立窗口中 onClose 由 IDEPanel 内部转为 reattach，这里兜底关闭窗口
+          const purrcat = (window as any).purrcat;
+          if (purrcat?.ideReattach) purrcat.ideReattach();
+        }} />
+      ) : (
+        <div className="w-full h-full flex items-center justify-center text-ink/40 font-black">No workspace specified.</div>
+      )}
+    </div>
+  );
 }
