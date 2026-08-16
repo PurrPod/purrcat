@@ -3,7 +3,6 @@ import os
 import traceback
 
 from src.tool.utils.format import error_response, text_response, warning_response
-from src.utils.config import AGENT_CORE_DIR
 
 from .exceptions import MCPServerNotFoundError, MCPToolNotFoundError
 from .mcp_fetch import fetch_mcp_tools
@@ -20,7 +19,7 @@ def Fetch(
     **kwargs,
 ) -> str:
     try:
-        valid_sources = ["skill", "mcp", "web", "solo", "todo"]
+        valid_sources = ["skill", "mcp", "web"]
         source = source.strip().lower() if source else ""
         if source not in valid_sources:
             return error_response(
@@ -142,24 +141,6 @@ def Fetch(
             return text_response(
                 "\n".join(res_messages), f"🔧 {serve_name} | {len(result)}个工具"
             )
-
-        elif source == "solo":
-            harness_path = os.path.join(AGENT_CORE_DIR, "SOLO.md")
-            if os.path.exists(harness_path):
-                with open(harness_path, "r", encoding="utf-8") as f:
-                    content = f.read()
-                return text_response(content, "📜 SOLO.md")
-            return error_response("未找到 SOLO.md", "❌ 文件不存在")
-
-        elif source == "todo":
-            todo_path = os.path.join(AGENT_CORE_DIR, "TODO.md")
-            if os.path.exists(todo_path):
-                with open(todo_path, "r", encoding="utf-8") as f:
-                    content = f.read().strip()
-                if content:
-                    lines = content.split("\n")
-                    return text_response(content, f"📝 {len(lines)}项")
-            return text_response("当前无待办事项。", "📝 无待办")
 
         elif source == "web":
             content_len = len(result.get("content", ""))
