@@ -728,28 +728,6 @@ class Agent:
 
         try:
             with self._history_lock:
-                original_len = len(self.current_history)
-                keep_recent = 10
-                split_idx = original_len - keep_recent
-
-                if split_idx > 1:
-                    while split_idx > 1:
-                        curr_msg = self.current_history[split_idx]
-                        prev_msg = self.current_history[split_idx - 1]
-                        if curr_msg.get("role") == "tool":
-                            split_idx -= 1
-                            continue
-                        if prev_msg.get("role") == "assistant" and prev_msg.get(
-                            "tool_calls"
-                        ):
-                            split_idx -= 1
-                            continue
-                        break
-                if split_idx < 1:
-                    split_idx = 1
-
-                recent_messages = self.current_history[split_idx:original_len]
-
                 fresh_system_content = self._build_system_prompt()
                 new_system_msg = {"role": "system", "content": fresh_system_content}
 
@@ -771,9 +749,7 @@ class Agent:
                     ),
                 }
 
-                self.current_history = (
-                    [new_system_msg] + recent_messages + [summary_msg]
-                )
+                self.current_history = [new_system_msg, summary_msg]
 
                 for msg in self.current_history:
                     if msg.get("role") == "assistant" and "reasoning_content" in msg:
