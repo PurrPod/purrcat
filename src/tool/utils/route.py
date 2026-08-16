@@ -4,7 +4,9 @@ import importlib
 import inspect
 import json
 import mimetypes
+import multiprocessing
 import os
+import queue
 import time
 import traceback
 import uuid
@@ -26,6 +28,18 @@ TOOL_FUNC_MAP = {
     "fetch": "Fetch",
     "task": "Task",
     "kernelupgrade": "KernelUpgrade",  # 🌟 新增注册
+}
+
+# 🌟 进程隔离名单：只有这些「易卡死」的工具才丢进子进程执行（可被物理级 terminate）
+# 其余工具（memo/filesystem/cron/task/brainstorm/kernelupgrade）持有进程内状态
+# （如 brainstorm/task 会 lazy import AgentManager），子进程化会出灾难性后果，保持进程内执行
+PROCESS_ISOLATED_TOOLS = {
+    "bash",        # 长时命令 / 死循环
+    "request",     # 网络请求
+    "fetch",       # 网络抓取
+    "search",      # 向量检索（含嵌入计算）
+    "callmcp",     # 外部 MCP Server 调用
+    "computeruse", # UI 自动化
 }
 
 
@@ -70,13 +84,16 @@ def _handle_media_content(content_data: Any, tool_name: str) -> Any:
 
     try:
         if media_type == "media_url":
+            import shutil
             import urllib.request
 
             url = content_data["url"]
             ext = content_data.get("ext", ".bin")
             filename = f"{tool_name}_{timestamp}_{marker_id}{ext}"
             filepath = os.path.join(buffer_dir, filename)
-            urllib.request.urlretrieve(url, filepath)
+            # 🌟 带超时的流式下载（urlretrieve 无超时，卡死时同样无法打断）
+            with urllib.request.urlopen(url, timeout=60) as r, open(filepath, "wb") as f:
+                shutil.copyfileobj(r, f)
 
         elif media_type in ["image", "video", "audio", "pdf", "mcp_media"]:
             data = content_data["data"]
@@ -125,8 +142,8 @@ def _handle_media_content(content_data: Any, tool_name: str) -> Any:
         return content_data
 
 
-def _execute_tool(target_func, arguments: dict) -> Any:
-    """执行工具函数，支持同步和异步"""
+def _run_func_sync(target_func, arguments: dict) -> Any:
+    """执行工具函数，支持同步和异步（工作线程/子进程内运行，无事件循环）"""
     if inspect.iscoroutinefunction(target_func):
         try:
             loop = asyncio.get_running_loop()
@@ -148,9 +165,108 @@ def _execute_tool(target_func, arguments: dict) -> Any:
     return result
 
 
-def dispatch_tool(tool_name: str, arguments: dict, available_tokens: int = None):
+def _process_worker(target_func, kwargs, result_queue):
+    """子进程入口：执行工具并把结果/异常放回队列（模块级函数，可被 pickle）"""
+    try:
+        res = _run_func_sync(target_func, kwargs)
+        result_queue.put({"status": "success", "data": res})
+    except BaseException as e:
+        result_queue.put({"status": "error", "error": f"{type(e).__name__}: {e}"})
+
+
+def _interrupted_result() -> dict:
+    """伪造的打断结果：返回给 LLM，告知执行已被人类打断"""
+    return {
+        "content": "【系统强制打断】工具执行已被人类打断，请停下你的工作接收新指令。",
+        "metadata": {
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "type": "warning",
+            "snip": "⚡ 执行被人类打断",
+        },
+    }
+
+
+def _execute_tool_inline(target_func, arguments: dict, cancel_event) -> Any:
+    """进程内执行（守护线程 + 轮询）：轻量工具用，打断时放弃线程直接返回伪造结果"""
+    import threading
+
+    holder = {}
+
+    def _worker():
+        try:
+            holder["result"] = _run_func_sync(target_func, arguments)
+        except BaseException as e:
+            holder["error"] = e
+
+    t = threading.Thread(target=_worker, daemon=True, name="ToolInlineWorker")
+    t.start()
+    while True:
+        if "result" in holder or "error" in holder:
+            break
+        if cancel_event is not None and cancel_event.is_set():
+            # 放弃该守护线程（轻量工具毫秒级完成，极小概率泄漏），立刻让路
+            return _interrupted_result()
+        t.join(timeout=0.2)
+    if "error" in holder:
+        raise holder["error"]
+    return holder["result"]
+
+
+def _execute_tool_isolated(target_func, arguments: dict, cancel_event) -> Any:
+    """子进程隔离执行：易卡死工具专用，打断时操作系统级 terminate 物理掐断"""
+    ctx = multiprocessing.get_context("spawn")
+    result_queue = ctx.Queue()
+    p = ctx.Process(target=_process_worker, args=(target_func, arguments, result_queue))
+    p.start()
+
+    res = None
+    while True:
+        # 1. 优先响应打断信号（物理级掐断！）
+        if cancel_event is not None and cancel_event.is_set():
+            p.terminate()
+            p.join(timeout=3)
+            if p.is_alive():
+                p.kill()
+                p.join()
+            return _interrupted_result()
+
+        # 2. 先取结果再查进程存活（避免：进程 put 完退出后 is_alive 变 False 导致结果丢失）
+        try:
+            res = result_queue.get(timeout=0.2)
+            break
+        except queue.Empty:
+            if not p.is_alive():
+                # 进程已退出：做最后一次排水（feeder 线程的数据可能滞后到达）
+                try:
+                    res = result_queue.get(timeout=2.0)
+                    break
+                except queue.Empty:
+                    return {
+                        "content": "⚠️ 工具子进程意外终止，未能返回结果。",
+                        "metadata": {
+                            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+                            "type": "error",
+                            "snip": "💥 进程崩溃",
+                        },
+                    }
+
+    p.join(timeout=3)
+    if res["status"] == "success":
+        return res["data"]
+    raise Exception(res["error"])
+
+
+def _execute_tool(target_func, arguments: dict, cancel_event=None, tool_name: str = "") -> Any:
+    """执行工具函数：按隔离名单分流（子进程=可物理打断 / 进程内=轻量快速）"""
+    if tool_name.lower() in PROCESS_ISOLATED_TOOLS:
+        return _execute_tool_isolated(target_func, arguments, cancel_event)
+    return _execute_tool_inline(target_func, arguments, cancel_event)
+
+
+def dispatch_tool(tool_name: str, arguments: dict, available_tokens: int = None, cancel_event=None):
     """
     核心路由枢纽：纯净的数据流处理
+    cancel_event: threading.Event，被 set 时物理掐断正在执行的工具并返回伪造打断结果
     """
     try:
         tool_name_lower = tool_name.lower()
@@ -169,7 +285,7 @@ def dispatch_tool(tool_name: str, arguments: dict, available_tokens: int = None)
         target_func = getattr(tool_module, func_name)
 
         # 1. 获得执行结果 (新版统一格式 {"content": ..., "metadata": {...}})
-        result_obj = _execute_tool(target_func, arguments)
+        result_obj = _execute_tool(target_func, arguments, cancel_event=cancel_event, tool_name=tool_name_lower)
 
         # 2. 优雅解包数据与元数据
         if isinstance(result_obj, dict) and "metadata" in result_obj:

@@ -8,6 +8,11 @@ export const sketchyShape1 = { borderRadius: '255px 15px 225px 15px/15px 225px 1
 export const sketchyShape2 = { borderRadius: '15px 225px 15px 255px/255px 15px 225px 15px' };
 export const sketchyShape3 = { borderRadius: '225px 15px 255px 15px/15px 255px 15px 225px' };
 
+// 安全的 URI 解码：文件名含裸 % 等非法编码序列时原样返回，避免 decodeURIComponent 抛错打断点击处理
+export function safeDecodeUri(s: string): string {
+  try { return decodeURIComponent(s); } catch { return s; }
+}
+
 export function parseEventsContent(content: string): { userMessages: EventItem[], systemCount: number, attachments: EventItem[] } {
   const userMessages: EventItem[] = [];
   const attachments: EventItem[] = [];
@@ -64,6 +69,17 @@ export const MarkdownComponents: any = {
   blockquote: ({ ...props }: any) => (
     <blockquote className="border-l-4 border-terracotta pl-4 py-1 italic text-ink/70 my-3 bg-terracotta/5 rounded-r-lg" {...props} />
   ),
+  // 🌟 GFM 表格/图片/分隔线（IDE md 预览与聊天气泡共用）
+  table: ({ ...props }: any) => (
+    <div className="my-4 overflow-x-auto">
+      <table className="border-collapse border-2 border-ink text-sm font-bold w-full" {...props} />
+    </div>
+  ),
+  thead: ({ ...props }: any) => <thead className="bg-ink/10" {...props} />,
+  th: ({ ...props }: any) => <th className="border-2 border-ink px-3 py-1.5 text-left" {...props} />,
+  td: ({ ...props }: any) => <td className="border-2 border-ink/60 px-3 py-1.5 align-top" {...props} />,
+  img: ({ ...props }: any) => <img className="max-w-full my-2 border-2 border-ink/20" {...props} />,
+  hr: ({ ...props }: any) => <hr className="my-4 border-t-4 border-ink/20" {...props} />,
   pre: ({ ...props }: any) => (
     <pre className="my-4 border-4 border-ink bg-ink/5 text-ink p-4 overflow-x-auto shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] font-mono text-sm leading-relaxed font-bold" style={sketchyShape2} {...props} />
   ),

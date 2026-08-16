@@ -36,6 +36,10 @@ class Agent:
         self.pending_force_push = []
         self.window_token = 0
         self._stop_event = threading.Event()
+        # 🌟 工具打断信号：专用于掐断正在执行的工具（与 _stop_event 的永久停机语义分离）
+        self._tool_interrupt_event = threading.Event()
+        # 🌟 记忆压缩进行中标记（压缩不改 state，供 /status API 区分 idle 但在压缩的情况）
+        self._compressing = False
         self._history_lock = threading.RLock()
         self._push_lock = threading.RLock()
         self._save_callback = save_callback
@@ -115,8 +119,9 @@ class Agent:
         return self._interaction_id
 
     def force_interrupt(self):
-        print("[Lock] 递增交互ID以隔离旧响应")
+        print("[Lock] 触发强行打断！递增交互ID + 激活工具打断信号")
         self._increment_interaction_id()
+        self._tool_interrupt_event.set()  # 掐断正在执行的工具（子进程会被物理 terminate）
         self.state = "idle"
 
     def get_history(self):
@@ -257,6 +262,8 @@ class Agent:
     def process_message(self):
         current_interaction_id = self._increment_interaction_id()
         self._bg_search_task_id = current_interaction_id
+        # 清理上一轮遗留的打断信号，避免新交互的工具被误杀
+        self._tool_interrupt_event.clear()
 
         user_texts = [
             msg["content"]
@@ -509,7 +516,9 @@ class Agent:
 
             current_iid = self._get_current_interaction_id()
             try:
-                result_content = dispatch_tool(target_tool_name, arguments)
+                result_content = dispatch_tool(
+                    target_tool_name, arguments, cancel_event=self._tool_interrupt_event
+                )
             except Exception as e:
                 result_content = json.dumps(
                     {"error": f"工具执行异常: {str(e)}", "type": "error"},
@@ -518,6 +527,24 @@ class Agent:
                 print(f"[Warn.Tool] 工具 {target_tool_name} 执行抛出异常: {e}")
 
             if self._get_current_interaction_id() != current_iid:
+                # 🌟 区分两种场景：
+                # a) 人类强制打断：伪造结果必须写进 history，保证 assistant.tool_calls 有配对的
+                #    tool 响应（否则下轮 LLM 调用会被 API 以 toolchain 不完整拒绝），并停止执行后续工具
+                # b) 会话切换：保持原有的丢弃幽灵结果行为（避免污染新会话的 history）
+                if self._tool_interrupt_event.is_set():
+                    print(
+                        f"[Lock.Interrupt] 工具 {target_tool_name} 被人类强行打断，注入打断提示并终止本轮工具链。"
+                    )
+                    self._append_history(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tool_call.id,
+                            "name": target_tool_name,
+                            "content": result_content,
+                        }
+                    )
+                    self._tool_interrupt_event.clear()
+                    break
                 print(
                     f"[Warn.Interrupt] 工具 {target_tool_name} 执行完毕，但检测到会话已切换或被打断，丢弃幽灵结果。"
                 )
@@ -592,7 +619,11 @@ class Agent:
             self._save_callback()
 
     def force_compress_memory(self):
-        self._truncate_memory_if_needed(force=True)
+        self._compressing = True
+        try:
+            self._truncate_memory_if_needed(force=True)
+        finally:
+            self._compressing = False
 
     def _truncate_memory_if_needed(self, force=False):
         from src.utils.config import get_model_config

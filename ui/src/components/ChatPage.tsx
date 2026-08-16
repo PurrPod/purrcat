@@ -1,7 +1,7 @@
 // src/components/ChatPage.tsx
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Send, Cat, Clock, Activity, Server, Zap, Brain, GitMerge, Loader2, FolderOpen, Bell, Paperclip, X, Heart, User, List, ExternalLink, Plus, BookOpen, ClipboardCopy, TerminalSquare, AlertTriangle, Globe } from 'lucide-react';
+import { Send, Cat, Clock, Activity, Server, Zap, Brain, GitMerge, Loader2, FolderOpen, Bell, Paperclip, X, Heart, User, List, ExternalLink, Plus, BookOpen, ClipboardCopy, TerminalSquare, AlertTriangle, Globe, Octagon } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import ReactMarkdown, { defaultUrlTransform } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -28,7 +28,7 @@ const allowFileUrlTransform = (url: string) => {
 };
 
 import { Message, Session } from './chat/ChatTypes';
-import { parseEventsContent, hasMessageInHistory, renderSketchyHeatmap, MarkdownComponents, ToolCallBubble, ToolMessageBubble, sketchyShape1, sketchyShape2, sketchyShape3 } from './chat/ChatShared';
+import { parseEventsContent, hasMessageInHistory, renderSketchyHeatmap, MarkdownComponents, safeDecodeUri, ToolCallBubble, ToolMessageBubble, sketchyShape1, sketchyShape2, sketchyShape3 } from './chat/ChatShared';
 import ChatModals from './chat/ChatModals';
 import ChatSidebar from './chat/ChatSidebar';
 import { FileChangesPanel, RequestQueuePanel, TerminalPanel } from './chat/ChatPanels';
@@ -187,24 +187,17 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   const [mdContent, setMdContent] = useState('');
   const [isSavingMd, setIsSavingMd] = useState(false);
 
-  // 🌟 链接预览状态：type 决定弹窗用 img/video/iframe 渲染
+  // 🌟 链接预览状态：type 决定弹窗用 img/video/iframe/markdown 渲染
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [previewType, setPreviewType] = useState<'image' | 'video' | 'browser'>('browser');
+  const [previewType, setPreviewType] = useState<'image' | 'video' | 'browser' | 'markdown'>('browser');
   const [previewRawUrl, setPreviewRawUrl] = useState<string>('');
+  // Markdown 富文本预览：拉取原文后用 ReactMarkdown 渲染（null = 加载中）
+  const [previewMdContent, setPreviewMdContent] = useState<string | null>(null);
+  // md 文件所在目录（正斜杠形式），用于解析 md 内相对路径的图片/资源
+  const [previewMdBaseDir, setPreviewMdBaseDir] = useState('');
 
-  // 🌟 全局拦截气泡内的链接点击事件：本地路径走 FastAPI 代理，http/https 走 iframe
-  const handleMessageClick = (e: React.MouseEvent) => {
-    const target = e.target as HTMLElement;
-    const anchor = target.closest('a');
-    if (!anchor) return;
-
-    // ⚠️ 必须用 getAttribute('href') 拿到 Agent 原始输出的字符串
-    // anchor.href 是浏览器规范化后的 URL，会把 D:/xxx.png 变成 http://localhost:3000/chat/D:/xxx.png
-    const rawHref = anchor.getAttribute('href') || '';
-    if (!rawHref) return;
-
-    e.preventDefault();
-
+  // 🌟 统一的链接路由核心：气泡内链接、md 预览弹窗内链接共用
+  const handleRawLinkClick = (rawHref: string) => {
     // 🌟 term:// 协议：Agent 建议执行的终端命令，先弹确认框
     if (rawHref.startsWith('term://')) {
       // Markdown URL 不允许空格，Agent 会用 %20 编码；这里解码还原
@@ -216,7 +209,6 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
     }
 
     let type: 'image' | 'video' | 'browser' = 'browser';
-    let finalUrl = rawHref;
 
     // ——————————————————————————————————————————————————
     // 检测是否为「本地文件路径」，匹配后统一走 /preview 接口
@@ -230,7 +222,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
       if (p.startsWith('/') && p.charAt(2) === ':') {
         p = p.substring(1);
       }
-      localPath = p;
+      localPath = safeDecodeUri(p);
     }
     // 2. Agent 沙盒路径: /agent_vm/xxx or ./agent_vm/xxx
     else if (rawHref.startsWith('/agent_vm/') || rawHref === '/agent_vm' ||
@@ -253,6 +245,27 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
 
     if (localPath !== null) {
       const ext = localPath.split('.').pop()?.toLowerCase() || '';
+
+      // 🌟 Markdown → 应用内富文本预览（ReactMarkdown + GFM，与聊天气泡同引擎）
+      if (ext === 'md' || ext === 'markdown') {
+        openMdPreview(localPath, rawHref);
+        return;
+      }
+
+      // 🌟 HTML/SVG → Electron 下解析真实路径后以 file:// 启动内置浏览器，
+      //    复用内置浏览器的元素 pick 模式 + 评论能力（SVG 由 Chromium 原生渲染，
+      //    CDP 拾取完全兼容 SVG 文档）；Web 端回退到 /preview 代理预览
+      if (['html', 'htm', 'svg'].includes(ext)) {
+        if ((window as any).purrcat?.browserNewTab) {
+          openLocalFileInBrowser(localPath, rawHref);
+          return;
+        }
+        setPreviewType(ext === 'svg' ? 'image' : 'browser');
+        setPreviewRawUrl(rawHref);
+        setPreviewUrl(`/api/filesystem/preview?path=${encodeURIComponent(localPath)}`);
+        return;
+      }
+
       if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico'].includes(ext)) {
         type = 'image';
       } else if (['mp4', 'webm', 'mov', 'ogg', 'avi', 'mkv'].includes(ext)) {
@@ -262,7 +275,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
       }
 
       // 🌟 Electron 环境：在独立窗口中打开（加载后端 /preview URL，渲染效果与 iframe 一致）
-      finalUrl = `/api/filesystem/preview?path=${encodeURIComponent(localPath)}`;
+      const finalUrl = `/api/filesystem/preview?path=${encodeURIComponent(localPath)}`;
       if ((window as any).purrcat?.openPreviewWindow) {
         const fullUrl = window.location.origin + finalUrl;
         const fileName = rawHref.replace(/\\/g, '/').split('/').pop() || 'Preview';
@@ -278,7 +291,22 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
     }
 
     // http/https 等非本地链接：在内置浏览器中打开
-    openInBrowser(finalUrl, rawHref.split('/').pop() || rawHref);
+    openInBrowser(rawHref, rawHref.split('/').pop() || rawHref);
+  };
+
+  // 🌟 全局拦截气泡内的链接点击事件：本地路径走 FastAPI 代理，http/https 走内置浏览器
+  const handleMessageClick = (e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    const anchor = target.closest('a');
+    if (!anchor) return;
+
+    // ⚠️ 必须用 getAttribute('href') 拿到 Agent 原始输出的字符串
+    // anchor.href 是浏览器规范化后的 URL，会把 D:/xxx.png 变成 http://localhost:3000/chat/D:/xxx.png
+    const rawHref = anchor.getAttribute('href') || '';
+    if (!rawHref) return;
+
+    e.preventDefault();
+    handleRawLinkClick(rawHref);
   };
 
   const [showSkillSelectModal, setShowSkillSelectModal] = useState(false);
@@ -313,11 +341,63 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const pendingMsgsRef = useRef<string[]>([]);
   const isAutoScroll = useRef(true);
-  
-  // 🌟 恢复原版滚动监听逻辑
-  const handleScroll = () => { if (!messagesContainerRef.current) return; const { scrollTop, scrollHeight, clientHeight } = messagesContainerRef.current; isAutoScroll.current = scrollHeight - scrollTop - clientHeight < 50; };
-  useEffect(() => { if (isAutoScroll.current) messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
-  useEffect(() => { pendingMsgsRef.current = []; }, [currentBranchId]);
+
+  // 🌟 气泡分组渲染（QQ 式）：一次只渲染一组 20 条，向上滚动/点击加载上一组
+  const MSG_GROUP_SIZE = 20;
+  const [msgGroupCount, setMsgGroupCount] = useState(1);
+  const visibleMsgCount = msgGroupCount * MSG_GROUP_SIZE;
+  const msgStartIdx = Math.max(0, messages.length - visibleMsgCount);
+  const hasOlderMsgs = msgStartIdx > 0;
+
+  // 加载上一组：高度补偿在 useLayoutEffect（DOM 提交后、绘制前）执行，
+  // 旧方案用 rAF 在 React 未提交时补偿为 0，视口滞留顶部导致惯性滚动连锁触发多次加载
+  const pendingCompensation = useRef<number | null>(null);
+  const loadOlderMessages = () => {
+    if (pendingCompensation.current !== null) return;
+    const el = messagesContainerRef.current;
+    if (!el) { setMsgGroupCount(g => g + 1); return; }
+    pendingCompensation.current = el.scrollHeight;
+    setMsgGroupCount(g => g + 1);
+  };
+  useLayoutEffect(() => {
+    if (pendingCompensation.current === null || !messagesContainerRef.current) return;
+    const el = messagesContainerRef.current;
+    const prev = pendingCompensation.current;
+    pendingCompensation.current = null;
+    el.scrollTop += el.scrollHeight - prev; // 视口钉在原位，不跳动
+  }, [msgGroupCount]);
+
+  // 🌟 滚动监听 +「一次碰顶只加载一组」：碰顶触发后收起扳机，
+  // 必须先离开顶部区域（scrollTop > 150）并度过 400ms 冷却期才能再次触发
+  const nearTopArmed = useRef(true);
+  const lastTopLoadAt = useRef(0);
+  const handleScroll = () => {
+    if (!messagesContainerRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = messagesContainerRef.current;
+    isAutoScroll.current = scrollHeight - scrollTop - clientHeight < 50;
+    if (scrollTop > 150 && Date.now() - lastTopLoadAt.current > 400) {
+      nearTopArmed.current = true;
+    } else if (scrollTop < 60 && nearTopArmed.current && hasOlderMsgs) {
+      nearTopArmed.current = false;
+      lastTopLoadAt.current = Date.now();
+      loadOlderMessages();
+    }
+  };
+
+  // 🌟 会话/分支切换：下一次消息到达时直接瞬时贴底，不留在顶部
+  const snapToBottomRef = useRef(true);
+  useEffect(() => { snapToBottomRef.current = true; isAutoScroll.current = true; pendingCompensation.current = null; }, [currentSessionId, currentBranchId]);
+  useEffect(() => {
+    if (messages.length === 0) return;
+    if (snapToBottomRef.current) {
+      snapToBottomRef.current = false;
+      messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
+      return;
+    }
+    if (isAutoScroll.current) messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+  useEffect(() => { pendingMsgsRef.current = []; setMsgGroupCount(1); }, [currentBranchId]);
+  useEffect(() => { setMsgGroupCount(1); }, [currentSessionId]);
   const fetchGlobalStats = async () => {
     try { const res = await fetch('/api/system/agent/stats'); if (res.ok) setGlobalStats(await res.json()); } catch { /* noop */ }
   };
@@ -525,6 +605,54 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
 
   const loadSessions = async () => { try { const res = await fetch('/api/sessions'); if (res.ok) { const data = await res.json(); setSessions(data); if (data.length > 0 && !currentSessionId) handleSelectSession(data[0].id); } } catch { /* noop */ } };
   const loadSessionHistory = async (id: string, bId: string = 'main') => { const res = await fetch(`/api/sessions/${id}?branch_id=${bId}`); if (res.ok) setMessages(await res.json()); };
+
+  // 🌟 强制打断：物理掐断 Agent 正在执行的工具（长时网络请求/死循环命令）
+  const handleForceInterrupt = async () => {
+    try {
+      const res = await fetch('/api/chat/interrupt', { method: 'POST' });
+      if (res.ok) {
+        toast.success('已强制打断 Agent');
+        setIsAgentThinking(false);
+      } else {
+        toast.error('打断请求失败');
+      }
+    } catch { toast.error('打断请求失败'); }
+  };
+
+  // 🌟 记忆压缩：触发 Agent 的全局大总结并截断历史上下文（后台异步执行）
+  const [isCompressingMemory, setIsCompressingMemory] = useState(false);
+  const handleCompressMemory = async () => {
+    if (isCompressingMemory) return;
+    setIsCompressingMemory(true);
+    toast('记忆压缩已开始，Agent 正在总结...', { icon: '🧠' });
+    try {
+      const res = await fetch('/api/chat/compress-memory', { method: 'POST' });
+      if (res.ok) {
+        // 后台执行中：轮询 compressing 标记（压缩不改 agent.state，不能靠 idle 判定）
+        const checkDone = setInterval(async () => {
+          try {
+            const s = await fetch(`/api/sessions/${currentSessionId || ''}/status`);
+            if (s.ok) {
+              const sd = await s.json();
+              if (sd.compressing === false) {
+                clearInterval(checkDone);
+                setIsCompressingMemory(false);
+                toast.success('记忆压缩完成');
+              }
+            }
+          } catch { /* noop */ }
+        }, 2000);
+        // 兜底：最长 10 分钟自动解除按钮锁定
+        setTimeout(() => { clearInterval(checkDone); setIsCompressingMemory(false); }, 600000);
+      } else {
+        setIsCompressingMemory(false);
+        toast.error('记忆压缩请求失败');
+      }
+    } catch {
+      setIsCompressingMemory(false);
+      toast.error('记忆压缩请求失败');
+    }
+  };
   
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { loadSessions(); }, []);
@@ -541,7 +669,13 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
           pendingMsgsRef.current = pendingMsgsRef.current.filter(pendingText => !hasMessageInHistory(history, pendingText));
           const newMessages = [...history];
           pendingMsgsRef.current.forEach(text => newMessages.push({ role: 'user', content: text }));
-          setMessages(newMessages);
+          // 🌟 轮询去重：内容无变化时返回旧引用，跳过整个消息列表的重渲染（卡顿主因）
+          setMessages(prev => {
+            if (prev.length === newMessages.length
+              && prev[prev.length - 1]?.content === newMessages[newMessages.length - 1]?.content
+              && prev[0]?.content === newMessages[0]?.content) return prev;
+            return newMessages;
+          });
         }
         if (statusRes.ok) { const statusData = await statusRes.json(); setIsAgentThinking(statusData.is_thinking); loadBranches(currentSessionId); }
       } catch { /* noop */ }
@@ -628,6 +762,82 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
       setActiveTabId(newTab.id);
     }
     setShowBrowser(true);
+  };
+
+  // 🌟 将宿主机真实路径转换为 file:// URL（盘符保留原样，其余段做百分号编码以支持空格/中文）
+  const toFileUrl = (realPath: string) => {
+    const norm = realPath.replace(/\\/g, '/');
+    const m = norm.match(/^([A-Za-z]):\/(.*)$/);
+    if (m) return `file:///${m[1]}:/${m[2].split('/').map(encodeURIComponent).join('/')}`;
+    return 'file:///' + norm.replace(/^\/+/, '').split('/').map(encodeURIComponent).join('/');
+  };
+
+  // 🌟 本地 HTML/SVG → 解析真实路径 → file:// 启动内置浏览器（可用元素 pick + 评论）
+  const openLocalFileInBrowser = async (localPath: string, rawHref: string) => {
+    const fileName = rawHref.replace(/\\/g, '/').split('/').pop() || 'Preview';
+    // 解析失败回退：走 /preview 代理的普通预览（svg→img，html→iframe）
+    const fallback = () => {
+      const ext = localPath.split('.').pop()?.toLowerCase() || '';
+      setPreviewType(ext === 'svg' ? 'image' : 'browser');
+      setPreviewRawUrl(rawHref);
+      setPreviewUrl(`/api/filesystem/preview?path=${encodeURIComponent(localPath)}`);
+    };
+    try {
+      const res = await fetch(`/api/filesystem/resolve?path=${encodeURIComponent(localPath)}`);
+      if (!res.ok) { fallback(); return; }
+      const data = await res.json();
+      if (!data.real_path) { fallback(); return; }
+      openInBrowser(toFileUrl(data.real_path), fileName);
+      toast.success('已在内置浏览器打开，可切换 pick 模式选取元素并评论', { icon: '🌐' });
+    } catch {
+      fallback();
+    }
+  };
+
+  // 🌟 Markdown 链接 → 应用内富文本预览（拉取原文，ReactMarkdown + GFM 渲染）
+  const openMdPreview = async (localPath: string, rawHref: string) => {
+    setPreviewType('markdown');
+    setPreviewRawUrl(rawHref);
+    setPreviewUrl(`/api/filesystem/preview?path=${encodeURIComponent(localPath)}`); // 供"OPEN EXTERNALLY"兜底
+    setPreviewMdBaseDir(localPath.replace(/\\/g, '/').split('/').slice(0, -1).join('/'));
+    setPreviewMdContent(null);
+    try {
+      const res = await fetch(`/api/filesystem/read?path=${encodeURIComponent(localPath)}`);
+      if (!res.ok) throw new Error('read failed');
+      const data = await res.json();
+      setPreviewMdContent(data.content ?? '');
+    } catch {
+      setPreviewMdContent(`# 读取失败\n\n无法加载文件内容：\n\n\`${localPath}\``);
+    }
+  };
+
+  // 🌟 解析 md 预览中的图片/资源地址：本地与相对路径统一改走后端 /preview 代理
+  const resolveMdAsset = (src: string) => {
+    if (!src) return src;
+    if (/^(https?:|data:|blob:)/i.test(src)) return src;
+    const proxy = (p: string) => `/api/filesystem/preview?path=${encodeURIComponent(p)}`;
+    if (src.startsWith('file://')) {
+      let p = src.replace(/^file:\/\//, '');
+      if (p.startsWith('/') && p.charAt(2) === ':') p = p.substring(1);
+      return proxy(safeDecodeUri(p));
+    }
+    if (/^[A-Za-z]:[/\\]/.test(src) || src.startsWith('/agent_vm/') || src.startsWith('./agent_vm/')) return proxy(src);
+    if (src.startsWith('/')) return proxy(src); // 绝对路径交给后端 convert_sandbox_path 解析
+    // 相对路径：基于 md 文件所在目录拼接并归一化 ./ ..
+    const segs = (previewMdBaseDir + '/' + src).split('/');
+    const out: string[] = [];
+    for (const s of segs) {
+      if (s === '' || s === '.') continue;
+      if (s === '..') out.pop();
+      else out.push(s);
+    }
+    return proxy(out.join('/'));
+  };
+
+  // md 预览专用组件：在聊天样式基础上接管 <img>（本地资源代理）
+  const MdPreviewComponents: any = {
+    ...MarkdownComponents,
+    img: ({ src, ...props }: any) => <img src={resolveMdAsset(String(src || ''))} {...props} />,
   };
 
   // 处理浏览器发来的评论，直接发送给 Agent（附带 currentUrl）
@@ -879,7 +1089,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
           </div>
         )}
 
-        {/* 🌟 恢复原版消息渲染映射 (.map)，加上 onClick 拦截点击 */}
+        {/* 🌟 消息渲染：分组加载（一次一组 20 条，向上滚动加载更早），加 onClick 拦截点击 */}
         <div ref={messagesContainerRef} onScroll={handleScroll} onClick={handleMessageClick} className={`flex-1 overflow-y-auto ${(showBrowser || showIDE) ? 'px-4' : 'px-10'} pb-6 flex flex-col gap-6 w-full z-10 pt-4`}>
           {messages.length === 0 && !showBrowser && !showIDE ? (
             <div className={`flex flex-col items-center justify-center h-full text-ink gap-5 p-2 w-full ${showBrowser ? 'max-w-none' : 'max-w-3xl'} mx-auto select-none`}>
@@ -896,11 +1106,25 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
               </div>
             </div>
           ) : (
-            messages.map((msg, idx) => {
+            <>
+          {hasOlderMsgs && (
+            <div className="flex justify-center py-1">
+              <button
+                onClick={loadOlderMessages}
+                style={sketchyShape3}
+                className="px-4 py-1.5 text-xs font-black uppercase tracking-wider border-2 border-ink/40 text-ink/50 bg-paper hover:bg-[#88c0d0]/20 hover:border-ink hover:text-ink transition-all shadow-[2px_2px_0px_0px_rgba(26,26,26,0.15)]"
+                title="加载更早的消息（也可直接滚动到顶部）"
+              >
+                ↑ 加载更早的消息（还有 {msgStartIdx} 条）
+              </button>
+            </div>
+          )}
+            {messages.slice(msgStartIdx).map((msg, idx) => {
+              const gIdx = msgStartIdx + idx; // 全局索引（trace2skill 等按全局位置判断）
               if (msg.role === 'user') {
                 const parsedData = parseEventsContent(msg.content);
                 return (
-                  <div key={idx} className="flex flex-col w-full items-end mb-4">
+                  <div key={gIdx} className="flex flex-col w-full items-end mb-4">
                     {parsedData.attachments.length > 0 && (
                       <div className="flex flex-col gap-2 w-full items-end mb-2">
                         {parsedData.attachments.map((att: any, aIdx: number) => (
@@ -930,10 +1154,10 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                   </div>
                 );
               } else if (msg.role === 'tool') {
-                return <div key={idx} className="flex w-full justify-start"><ToolMessageBubble msg={msg} /></div>;
+                return <div key={gIdx} className="flex w-full justify-start"><ToolMessageBubble msg={msg} /></div>;
               } else {
                 return (
-                  <div key={idx} className="flex w-full justify-start">
+                  <div key={gIdx} className="flex w-full justify-start">
                     <div className="flex flex-col gap-3 w-full max-w-[85%] items-start">
                       {msg.content && (
                         <div style={sketchyShape1} className="group/bubble w-full p-6 border-4 border-ink relative bg-cream text-ink shadow-[6px 6px 0px 0px rgba(26,26,26,1)]">
@@ -956,18 +1180,27 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                           </div>
                         </div>
                       )}
-                      {msg.role === 'assistant' && idx === messages.length - 1 && !isAgentThinking && (
-                        <div className="flex justify-end mt-3 animate-in fade-in duration-300">
-                          <button 
+                      {msg.role === 'assistant' && gIdx === messages.length - 1 && !isAgentThinking && (
+                        <div className="flex justify-end gap-2 mt-3 animate-in fade-in duration-300">
+                          <button
                             onClick={() => {
                               if (skillData.length === 0) fetchSkill();
                               setShowTraceModal(true);
-                            }} 
-                            className="p-2 bg-paper border-2 border-ink hover:bg-[#EBCB8B] hover:text-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] transition-all hover:-translate-y-[1px] active:translate-y-0 active:shadow-none" 
-                            style={sketchyShape2} 
+                            }}
+                            className="p-2 bg-paper border-2 border-ink hover:bg-[#EBCB8B] hover:text-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] transition-all hover:-translate-y-[1px] active:translate-y-0 active:shadow-none"
+                            style={sketchyShape2}
                             title="Trace to Skill (经验沉淀为技能)"
                           >
                             <BookOpen size={18} strokeWidth={2.5} />
+                          </button>
+                          <button
+                            onClick={handleCompressMemory}
+                            disabled={isCompressingMemory}
+                            className="p-2 bg-paper border-2 border-ink hover:bg-[#b48ead] hover:text-paper shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] transition-all hover:-translate-y-[1px] active:translate-y-0 active:shadow-none disabled:opacity-50 disabled:hover:bg-paper disabled:hover:text-ink disabled:hover:translate-y-0"
+                            style={sketchyShape3}
+                            title="Memory Compress (手动触发记忆压缩：全局大总结并截断历史上下文)"
+                          >
+                            {isCompressingMemory ? <Loader2 size={18} strokeWidth={2.5} className="animate-spin" /> : <Brain size={18} strokeWidth={2.5} />}
                           </button>
                         </div>
                       )}
@@ -976,7 +1209,8 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                   </div>
                 );
               }
-            })
+            })}
+            </>
           )}
           {currentBranchId === 'main' && messages.length > 0 && (
             <div className="flex justify-start mb-4 w-full">
@@ -986,6 +1220,16 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                   <span className="font-black text-sm tracking-widest uppercase" style={{ fontFamily: '"Comic Sans MS", cursive' }}>
                     {isAgentThinking ? 'Processing...' : 'Dozing...'}
                   </span>
+                  {isAgentThinking && (
+                    <button
+                      onClick={handleForceInterrupt}
+                      style={sketchyShape3}
+                      className="flex items-center gap-1.5 px-2.5 py-1 ml-1 text-xs font-black uppercase tracking-wider border-2 border-ink bg-paper text-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:bg-terracotta hover:text-paper transition-all active:translate-y-[1px] active:shadow-none"
+                      title="强制打断：物理掐断正在执行的工具（长时请求/死循环命令）"
+                    >
+                      <Octagon size={14} strokeWidth={3} /> 打断
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
@@ -1101,6 +1345,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
           <IDEPanel
             workspacePath={ideWorkspace}
             onClose={() => setShowIDE(false)}
+            onOpenLink={handleRawLinkClick}
           />
         </div>
       )}
@@ -1209,6 +1454,32 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                   title="Link Preview"
                   sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
                 />
+              )}
+              {previewType === 'markdown' && (
+                <div
+                  className="w-full h-full overflow-auto p-6 text-left"
+                  onClick={(e) => {
+                    // 拦截 md 预览内的链接：复用统一链接路由（http→内置浏览器 / 本地→预览）
+                    const a = (e.target as HTMLElement).closest('a');
+                    if (a) {
+                      e.preventDefault();
+                      const h = a.getAttribute('href') || '';
+                      if (h) handleRawLinkClick(h);
+                    }
+                  }}
+                >
+                  {previewMdContent === null ? (
+                    <div className="font-black text-ink/40 animate-pulse tracking-widest">LOADING MARKDOWN...</div>
+                  ) : (
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm]}
+                      components={MdPreviewComponents}
+                      urlTransform={allowFileUrlTransform}
+                    >
+                      {previewMdContent}
+                    </ReactMarkdown>
+                  )}
+                </div>
               )}
             </div>
 

@@ -48,9 +48,10 @@ def list_directory(path: str):
 
 @router.get("/read")
 def read_file(path: str):
-    """读取文件文本内容"""
+    """读取文件文本内容（/agent_vm 沙盒路径自动转换，含 agent_vm 层缺失回退）"""
     try:
-        with open(path, 'r', encoding='utf-8', errors='replace') as f:
+        resolved = _resolve_preview_path(path)
+        with open(resolved, 'r', encoding='utf-8', errors='replace') as f:
             content = f.read()
         return {'content': content}
     except Exception as e:
@@ -70,10 +71,11 @@ def stat_file(path: str):
 
 @router.post("/write")
 def write_file(req: UIWriteReq):
-    """写入文件文本内容（自动创建父目录）"""
+    """写入文件文本内容（自动创建父目录，/agent_vm 沙盒路径自动转换）"""
     try:
-        os.makedirs(os.path.dirname(req.path), exist_ok=True)
-        with open(req.path, 'w', encoding='utf-8') as f:
+        resolved = convert_sandbox_path(req.path)
+        os.makedirs(os.path.dirname(resolved), exist_ok=True)
+        with open(resolved, 'w', encoding='utf-8') as f:
             f.write(req.content)
         return {'status': 'success'}
     except Exception as e:
@@ -167,13 +169,11 @@ def api_get_global_diffs():
         return {"status": "error", "diffs": [], "message": str(e)}
 
 
-@router.get("/preview")
-def preview_file(path: str):
+def _resolve_preview_path(path: str) -> str:
     """
-    接收绝对路径，返回文件流给前端预览。
-    用于绕过浏览器对 file:// 协议的同源与安全限制。
+    将前端传来的（可能是沙盒或相对）路径映射为真实物理绝对路径。
+    含 agent_vm 沙盒层缺失时的回退查找逻辑。
     """
-    # 将前端传来的（可能是沙盒或相对）路径映射为真实物理绝对路径
     resolved_path = convert_sandbox_path(path)
 
     # 路径回退：Agent 有时输出的路径漏掉了 agent_vm 沙盒层
@@ -190,6 +190,35 @@ def preview_file(path: str):
             fallback = convert_sandbox_path(f"/agent_vm/{stripped}")
             if os.path.exists(fallback) and os.path.isfile(fallback):
                 resolved_path = fallback
+
+    return resolved_path
+
+
+@router.get("/resolve")
+def resolve_path(path: str):
+    """
+    返回沙盒/相对路径对应的宿主机真实绝对路径。
+    供前端构造 file:// URL，在内置浏览器中打开本地 HTML/SVG
+    （复用内置浏览器的元素 pick + 评论能力）。
+    """
+    try:
+        resolved = _resolve_preview_path(path)
+        if not os.path.isfile(resolved):
+            raise HTTPException(status_code=404, detail=f"File not found: {path}")
+        return {"real_path": resolved}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/preview")
+def preview_file(path: str):
+    """
+    接收绝对路径，返回文件流给前端预览。
+    用于绕过浏览器对 file:// 协议的同源与安全限制。
+    """
+    resolved_path = _resolve_preview_path(path)
 
     if not os.path.exists(resolved_path) or not os.path.isfile(resolved_path):
         raise HTTPException(status_code=404, detail=f"File not found: {path}")

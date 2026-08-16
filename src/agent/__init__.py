@@ -21,6 +21,7 @@ shutdown_agent = _manager_instance.shutdown_agent
 # 交互指令
 agent_force_push = _manager_instance.agent_force_push
 agent_force_push_batch = _manager_instance.agent_force_push_batch
+agent_force_interrupt = _manager_instance.agent_force_interrupt
 
 # 会话控制
 switch_session = _manager_instance.switch_session
@@ -46,6 +47,9 @@ def get_agent_status():
         "window_token": _manager_instance._agent.window_token
         if getattr(_manager_instance, "_agent", None)
         else 0,
+        "compressing": getattr(_manager_instance._agent, "_compressing", False)
+        if getattr(_manager_instance, "_agent", None)
+        else False,
     }
 
 
@@ -80,6 +84,7 @@ __all__ = [
     "shutdown_agent",
     "agent_force_push",
     "agent_force_push_batch",
+    "agent_force_interrupt",
     "switch_session",
     "new_session",
     "branch_session",

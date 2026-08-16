@@ -12,6 +12,8 @@ from src.agent import (
     new_session,
     get_window_token,
     get_agent_max_token,
+    agent_force_interrupt,
+    flush_agent_memory,
 )
 
 router = APIRouter(prefix="/api", tags=["Chat & Sessions"])
@@ -271,14 +273,55 @@ def get_session_status(session_id: str):
         status = get_agent_status()
         if status.get("session_id") == session_id:
             is_thinking = status.get("state") != "idle"
-            result = {"is_thinking": is_thinking, "state": status.get("state", "idle")}
+            result = {"is_thinking": is_thinking, "state": status.get("state", "idle"), "compressing": status.get("compressing", False)}
         else:
-            result = {"is_thinking": False, "state": "idle"}
+            result = {"is_thinking": False, "state": "idle", "compressing": status.get("compressing", False)}
         return result
     except Exception as e:
         print(f"[ERROR] /api/sessions/{session_id}/status - 异常: {e}")
         traceback.print_exc()
         return {"is_thinking": False, "state": "idle"}
+
+
+@router.post("/chat/interrupt")
+def force_interrupt_api():
+    """
+    🌟 人类强制打断：物理掐断 Agent 正在执行的工具（子进程 terminate），
+    隔离旧响应并注入打断提示，Agent 立即回到 idle 状态
+    """
+    try:
+        _ensure_manager_initialized()
+        ok = agent_force_interrupt()
+        return {"status": "ok" if ok else "no_agent", "interrupted": ok}
+    except Exception as e:
+        print(f"[ERROR] /api/chat/interrupt - 异常: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/chat/compress-memory")
+def compress_memory_api(background_tasks: BackgroundTasks):
+    """
+    🌟 手动触发 Agent 记忆压缩：全局大总结并截断历史上下文
+    （内部需调用 LLM 生成摘要，耗时较长，放后台任务避免 HTTP 超时）
+    """
+    try:
+        _ensure_manager_initialized()
+        background_tasks.add_task(_run_memory_compression)
+        return {"status": "processing"}
+    except Exception as e:
+        print(f"[ERROR] /api/chat/compress-memory - 异常: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+def _run_memory_compression():
+    try:
+        ok = flush_agent_memory()
+        print(f"[Memory] 手动记忆压缩完成: {'成功' if ok else '失败(无Agent实例)'}")
+    except Exception as e:
+        print(f"[ERROR] 记忆压缩后台任务异常: {e}")
+        traceback.print_exc()
 
 
 @router.get("/agent/token")

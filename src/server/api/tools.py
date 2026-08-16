@@ -78,8 +78,8 @@ def install_skill_api(req: InstallSkillReq):
     """根据 GitHub URL 下载第三方 Skill 并热更新内存"""
     try:
         url = req.url
-        # 1. 解析 GitHub URL (参考命令行工具的正则)
-        match = re.match(r"https?://github\.com/([^/]+)/([^/]+)/tree/([^/]+)/(.*)", url)
+        # 1. 解析 GitHub URL (支持子目录或仓库根目录两种形式)
+        match = re.match(r"https?://github\.com/([^/]+)/([^/]+)/tree/([^/]+)(?:/(.*))?", url)
         if not match:
             raise HTTPException(
                 status_code=400,
@@ -87,7 +87,9 @@ def install_skill_api(req: InstallSkillReq):
             )
 
         owner, repo, branch, path = match.groups()
-        skill_name = os.path.basename(path.rstrip("/"))
+        path = (path or "").strip("/")
+        # 仓库根目录即 skill 时，用仓库名作为 skill 名
+        skill_name = os.path.basename(path) if path else repo
 
         # 2. 定位 skills 文件夹
         dest_dir = os.path.join(SKILL_DIR, skill_name)

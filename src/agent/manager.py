@@ -91,6 +91,13 @@ class AgentManager:
         self._agent.force_push_batch(events)
         return True
 
+    def agent_force_interrupt(self):
+        """🌟 人类强制打断：掐断正在执行的工具（子进程物理 terminate）并隔离旧响应"""
+        if not self._agent:
+            return False
+        self._agent.force_interrupt()
+        return True
+
     # ==========================================
     # 3. 会话控制 (Session Commands)
     # ==========================================

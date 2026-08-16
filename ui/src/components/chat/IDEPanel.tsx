@@ -3,11 +3,15 @@ import { TerminalSquare, X, FolderOpen, BookOpen, Save, Plus, PictureInPicture2,
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
-import { sketchyShape1, sketchyShape2, sketchyShape3 } from './ChatShared';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import { sketchyShape1, sketchyShape2, sketchyShape3, MarkdownComponents, safeDecodeUri } from './ChatShared';
 
 interface IDEPanelProps {
   workspacePath: string;
   onClose: () => void;
+  // md 预览中链接点击的统一路由（ChatPage 注入：http→内置浏览器 / 本地文件→对应预览）
+  onOpenLink?: (href: string) => void;
 }
 
 type FileNode = {
@@ -310,7 +314,7 @@ function IDETerminal({ visible }: { visible: boolean }) {
 }
 
 // ====== 主 IDE Panel ======
-export default function IDEPanel({ workspacePath, onClose }: IDEPanelProps) {
+export default function IDEPanel({ workspacePath, onClose, onOpenLink }: IDEPanelProps) {
   const [fileTree, setFileTree] = useState<FileNode[]>([]);
   const [loading, setLoading] = useState(false);
   const [openTabs, setOpenTabs] = useState<string[]>([]);
@@ -680,21 +684,37 @@ export default function IDEPanel({ workspacePath, onClose }: IDEPanelProps) {
     return <BookOpen size={16} className="text-[#88c0d0]" strokeWidth={2} />;
   };
 
-  // ---- Markdown 简易渲染 ----
-  const renderMarkdown = (text: string) => {
-    // 极简 Markdown → HTML（仅处理标题/粗体/代码/列表/链接/段落）
-    let html = text
-      .replace(/^### (.+)$/gm, '<h3 class="text-base font-bold mt-3 mb-1">$1</h3>')
-      .replace(/^## (.+)$/gm, '<h2 class="text-lg font-bold mt-4 mb-1">$1</h2>')
-      .replace(/^# (.+)$/gm, '<h1 class="text-xl font-bold mt-4 mb-2">$1</h1>')
-      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-      .replace(/`(.+?)`/g, '<code class="bg-[#e5e9f0] px-1 py-0.5 rounded text-[#5e81ac] text-xs">$1</code>')
-      .replace(/^\- (.+)$/gm, '<li class="ml-4 list-disc">$1</li>')
-      .replace(/^\* (.+)$/gm, '<li class="ml-4 list-disc">$1</li>')
-      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" class="text-[#88c0d0] underline" target="_blank">$1</a>')
-      .replace(/\n/g, '<br/>');
-    return html;
+  // ---- Markdown 渲染 ----
+  // 🌟 弃用自研正则渲染（表格/代码块/任务列表等大量语法解析不出来），
+  //    改用 ReactMarkdown + remark-gfm，与聊天气泡同一渲染引擎；表格/引用/图片样式见 ChatShared.MarkdownComponents
+  // md 预览中本地图片改走后端 /preview 代理（相对路径基于 md 文件所在目录解析）
+  const mdAssetProxy = (src: string) => {
+    if (!src) return src;
+    if (/^(https?:|data:|blob:)/i.test(src)) return src;
+    const proxy = (p: string) => `/api/filesystem/preview?path=${encodeURIComponent(p)}`;
+    if (src.startsWith('file://')) {
+      let p = src.replace(/^file:\/\//, '');
+      if (p.startsWith('/') && p.charAt(2) === ':') p = p.substring(1);
+      return proxy(safeDecodeUri(p));
+    }
+    if (/^[A-Za-z]:[/\\]/.test(src) || src.startsWith('/agent_vm/') || src.startsWith('./agent_vm/')) return proxy(src);
+    if (src.startsWith('/')) return proxy(src);
+    const baseDir = (activeFile || '').replace(/\\/g, '/').split('/').slice(0, -1).join('/');
+    const segs = (baseDir + '/' + src).split('/');
+    const out: string[] = [];
+    for (const s of segs) {
+      if (s === '' || s === '.') continue;
+      if (s === '..') out.pop();
+      else out.push(s);
+    }
+    return proxy(out.join('/'));
   };
+
+  const IDE_MARKDOWN_COMPONENTS: any = useMemo(() => ({
+    ...MarkdownComponents,
+    img: ({ src, ...props }: any) => <img src={mdAssetProxy(String(src || ''))} {...props} />,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [activeFile]);
 
   // ---- 渲染文件树节点 ----
   const renderFileNode = (node: FileNode, parents: FileNode[] = [], depth: number = 0) => {
@@ -732,7 +752,8 @@ export default function IDEPanel({ workspacePath, onClose }: IDEPanelProps) {
 
   // 当前活跃文件类型
   const activeFileType = activeFile ? getFileType(activeFile) : null;
-  const isMdPreview = activeFile && mdPreviewMode[activeFile];
+  // 🌟 md 文件默认进入预览模式（用户手动切换过则记住其选择）
+  const isMdPreview = activeFile && (mdPreviewMode[activeFile] ?? true);
 
   return (
     <div
@@ -740,8 +761,8 @@ export default function IDEPanel({ workspacePath, onClose }: IDEPanelProps) {
       style={sketchyShape2}
       className="h-full bg-paper border-4 border-ink shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] flex flex-col relative overflow-hidden"
     >
-      {/* 顶部工具栏 — 手绘风框架：cream 底 + 4px ink 描边 + 手绘按钮 */}
-      <div className="px-4 py-2 flex items-center justify-between border-b-4 border-ink bg-cream shrink-0">
+      {/* 顶部工具栏 — 手绘风框架：白色底 + 4px ink 描边 + 手绘按钮 */}
+      <div className="px-4 py-2 flex items-center justify-between border-b-4 border-ink bg-paper shrink-0">
         <div className="flex items-center gap-2.5 min-w-0">
           <div className="w-8 h-8 bg-[#88c0d0] border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center -rotate-3 shrink-0" style={sketchyShape1}>
             <TerminalSquare size={16} className="text-ink" strokeWidth={3} />
@@ -753,12 +774,12 @@ export default function IDEPanel({ workspacePath, onClose }: IDEPanelProps) {
           {/* Markdown 预览/编辑切换（变更视图时隐藏） */}
           {!activeChange && activeFileType === 'markdown' && (
             <button
-              onClick={() => activeFile && setMdPreviewMode(prev => ({ ...prev, [activeFile]: !prev[activeFile] }))}
+              onClick={() => activeFile && setMdPreviewMode(prev => ({ ...prev, [activeFile]: !(prev[activeFile] ?? true) }))}
               style={sketchyShape3}
               className={`flex items-center gap-1 px-3 py-1 text-[13px] font-black border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] transition-all active:translate-y-[1px] active:shadow-none ${
                 isMdPreview
                   ? 'bg-[#88c0d0] text-paper hover:bg-[#5e81ac]'
-                  : 'bg-sand text-ink hover:bg-[#88c0d0] hover:text-paper'
+                  : 'bg-paper text-ink hover:bg-[#88c0d0] hover:text-paper'
               }`}
               title={isMdPreview ? '切换到编辑' : '切换到预览'}
             >
@@ -773,7 +794,7 @@ export default function IDEPanel({ workspacePath, onClose }: IDEPanelProps) {
             className={`flex items-center gap-1 px-3 py-1 text-[13px] font-black border-2 border-ink transition-all ${
               activeFile && dirtyFiles.has(activeFile) && activeFileType !== 'image' && activeFileType !== 'video'
                 ? 'bg-[#a3be8c] text-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:bg-[#8eb072] active:translate-y-[1px] active:shadow-none'
-                : 'bg-sand/60 text-ink/30 cursor-not-allowed'
+                : 'bg-paper/60 text-ink/30 cursor-not-allowed'
             }`}
             title="保存 (Ctrl+S)"
           >
@@ -781,7 +802,7 @@ export default function IDEPanel({ workspacePath, onClose }: IDEPanelProps) {
           </button>
           {/* 独立窗口 */}
           {hasElectron && !detached && (
-            <button onClick={handleDetach} style={sketchyShape2} className="p-1.5 text-ink bg-sand border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:bg-[#88c0d0] hover:text-paper transition-all active:translate-y-[1px] active:shadow-none" title="独立窗口">
+            <button onClick={handleDetach} style={sketchyShape2} className="p-1.5 text-ink bg-paper border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:bg-[#88c0d0] hover:text-paper transition-all active:translate-y-[1px] active:shadow-none" title="独立窗口">
               <PictureInPicture2 size={13} strokeWidth={3} />
             </button>
           )}
@@ -790,7 +811,7 @@ export default function IDEPanel({ workspacePath, onClose }: IDEPanelProps) {
               <PictureInPicture2 size={13} strokeWidth={3} />
             </button>
           )}
-          <button onClick={handleClose} style={sketchyShape2} className="p-1.5 text-ink bg-sand border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:bg-terracotta hover:text-paper transition-all active:translate-y-[1px] active:shadow-none" title={detached ? '回归主窗口' : '关闭'}>
+          <button onClick={handleClose} style={sketchyShape2} className="p-1.5 text-ink bg-paper border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:bg-terracotta hover:text-paper transition-all active:translate-y-[1px] active:shadow-none" title={detached ? '回归主窗口' : '关闭'}>
             <X size={13} strokeWidth={3} />
           </button>
         </div>
@@ -800,7 +821,7 @@ export default function IDEPanel({ workspacePath, onClose }: IDEPanelProps) {
       <div className="flex flex-1 overflow-hidden">
         {/* 左侧 File Tree / File Changes — 头部手绘，列表内容保持板正；宽度可拖拽 */}
         <div style={{ width: sidebarWidth }} className="border-r-2 border-ink bg-white flex flex-col shrink-0">
-          <div className="px-2 py-1.5 border-b-2 border-ink/15 bg-cream flex items-center justify-between shrink-0">
+          <div className="px-2 py-1.5 border-b-2 border-ink/15 bg-paper flex items-center justify-between shrink-0">
             <span className="text-[11px] font-black tracking-widest text-ink/60 uppercase pl-1 truncate" style={{ fontFamily: '"Comic Sans MS", cursive' }}>
               {sidebarMode === 'explorer' ? 'Explorer' : `Changes (${displayChanges.length})`}
             </span>
@@ -808,7 +829,7 @@ export default function IDEPanel({ workspacePath, onClose }: IDEPanelProps) {
               <button
                 onClick={() => setSidebarMode('explorer')}
                 style={sketchyShape1}
-                className={`p-1 border-2 border-ink shadow-[1px_1px_0px_0px_rgba(26,26,26,1)] transition-all active:translate-y-[1px] active:shadow-none ${sidebarMode === 'explorer' ? 'bg-[#88c0d0] text-paper' : 'bg-white text-ink/60 hover:bg-sand'}`}
+                className={`p-1 border-2 border-ink shadow-[1px_1px_0px_0px_rgba(26,26,26,1)] transition-all active:translate-y-[1px] active:shadow-none ${sidebarMode === 'explorer' ? 'bg-[#88c0d0] text-paper' : 'bg-white text-ink/60 hover:bg-[#e5e9f0]'}`}
                 title="文件树"
               >
                 <FolderTree size={12} strokeWidth={3} />
@@ -816,7 +837,7 @@ export default function IDEPanel({ workspacePath, onClose }: IDEPanelProps) {
               <button
                 onClick={() => setSidebarMode('changes')}
                 style={sketchyShape3}
-                className={`relative p-1 border-2 border-ink shadow-[1px_1px_0px_0px_rgba(26,26,26,1)] transition-all active:translate-y-[1px] active:shadow-none ${sidebarMode === 'changes' ? 'bg-[#88c0d0] text-paper' : 'bg-white text-ink/60 hover:bg-sand'}`}
+                className={`relative p-1 border-2 border-ink shadow-[1px_1px_0px_0px_rgba(26,26,26,1)] transition-all active:translate-y-[1px] active:shadow-none ${sidebarMode === 'changes' ? 'bg-[#88c0d0] text-paper' : 'bg-white text-ink/60 hover:bg-[#e5e9f0]'}`}
                 title="文件变更"
               >
                 <FileDiff size={12} strokeWidth={3} />
@@ -833,7 +854,7 @@ export default function IDEPanel({ workspacePath, onClose }: IDEPanelProps) {
                 <div className="text-xs font-black text-ink/40 p-3 animate-pulse tracking-wide" style={{ fontFamily: '"Comic Sans MS", cursive' }}>Loading...</div>
               ) : fileTree.length === 0 ? (
                 <div className="flex flex-col items-center py-10 text-ink/30 select-none gap-2">
-                  <div style={sketchyShape1} className="w-10 h-10 bg-cream border-2 border-ink/30 flex items-center justify-center -rotate-3">
+                  <div style={sketchyShape1} className="w-10 h-10 bg-paper border-2 border-ink/30 flex items-center justify-center -rotate-3">
                     <FolderOpen size={18} strokeWidth={2.5} />
                   </div>
                   <span className="text-[11px] font-black" style={{ fontFamily: '"Comic Sans MS", cursive' }}>Empty workspace</span>
@@ -891,8 +912,8 @@ export default function IDEPanel({ workspacePath, onClose }: IDEPanelProps) {
 
         {/* 右侧 Editor + Terminal */}
         <div className="flex-1 flex flex-col min-w-0 bg-white relative">
-          {/* Editor Tabs — cream 底手绘栏，Tab 为手绘小卡 */}
-          <div className="flex items-end gap-1.5 px-2 pt-1.5 border-b-2 border-ink bg-cream shrink-0 overflow-x-auto">
+          {/* Editor Tabs — 白底手绘栏，Tab 为手绘小卡 */}
+          <div className="flex items-end gap-1.5 px-2 pt-1.5 border-b-2 border-ink bg-paper shrink-0 overflow-x-auto">
             {openTabs.length === 0 && !activeChange && (
               <div className="px-3 pb-2 text-xs font-black text-ink/30 tracking-wide" style={{ fontFamily: '"Comic Sans MS", cursive' }}>Select a file to open...</div>
             )}
@@ -955,7 +976,7 @@ export default function IDEPanel({ workspacePath, onClose }: IDEPanelProps) {
                 <button
                   onClick={() => setLargeFileNotice(null)}
                   style={sketchyShape3}
-                  className="mt-1 px-4 py-1.5 text-[13px] font-black border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] bg-sand hover:bg-terracotta hover:text-paper transition-all active:translate-y-[1px] active:shadow-none"
+                  className="mt-1 px-4 py-1.5 text-[13px] font-black border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] bg-paper hover:bg-terracotta hover:text-paper transition-all active:translate-y-[1px] active:shadow-none"
                 >
                   Dismiss
                 </button>
@@ -963,7 +984,7 @@ export default function IDEPanel({ workspacePath, onClose }: IDEPanelProps) {
             ) : activeChange ? (
               // File Changes 详情视图：Trae/Codex 风格（无 @@/+/- 符号，删红增绿）+ 接收/撤销
               <div className="absolute inset-0 flex flex-col">
-                <div className="px-3 py-1.5 flex items-center justify-between border-b-2 border-ink/15 bg-cream shrink-0">
+                <div className="px-3 py-1.5 flex items-center justify-between border-b-2 border-ink/15 bg-paper shrink-0">
                   <div className="flex items-center gap-2 min-w-0">
                     <FileDiff size={14} className="text-[#5e81ac] shrink-0" strokeWidth={3} />
                     <span className="text-[13px] font-mono font-bold text-ink/60 truncate" title={activeChange.rel || activeChange.path}>{activeChange.rel || activeChange.path}</span>
@@ -1052,11 +1073,28 @@ export default function IDEPanel({ workspacePath, onClose }: IDEPanelProps) {
                   <p className="font-semibold text-sm">Binary file — cannot display</p>
                 </div>
               ) : activeFileType === 'markdown' && isMdPreview ? (
-                // Markdown 预览模式
+                // Markdown 预览模式（ReactMarkdown + GFM：支持表格/代码块/任务列表/删除线/嵌套列表等完整语法）
                 <div
-                  className="absolute inset-0 overflow-auto p-6 text-[#2e3440] text-sm leading-relaxed"
-                  dangerouslySetInnerHTML={{ __html: renderMarkdown(fileContents[activeFile] || '') }}
-                />
+                  className="absolute inset-0 overflow-auto p-6 text-[#2e3440] text-sm leading-relaxed bg-white"
+                  onClick={(e) => {
+                    // 拦截链接点击：交给统一路由（http→内置浏览器 / 本地文件→对应预览），防止导航离开 IDE
+                    const a = (e.target as HTMLElement).closest('a');
+                    if (a) {
+                      e.preventDefault();
+                      const h = a.getAttribute('href') || '';
+                      if (!h) return;
+                      if (onOpenLink) onOpenLink(h);
+                      else window.open(h, '_blank');
+                    }
+                  }}
+                >
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    components={IDE_MARKDOWN_COMPONENTS}
+                  >
+                    {fileContents[activeFile] || ''}
+                  </ReactMarkdown>
+                </div>
               ) : (
                 // 文本/Markdown 编辑模式
                 <textarea
@@ -1081,7 +1119,7 @@ export default function IDEPanel({ workspacePath, onClose }: IDEPanelProps) {
               )
             ) : (
               <div className="absolute inset-0 flex flex-col items-center justify-center text-ink/30 select-none gap-3">
-                <div style={sketchyShape2} className="w-16 h-16 bg-cream border-4 border-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center rotate-2">
+                <div style={sketchyShape2} className="w-16 h-16 bg-paper border-4 border-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center rotate-2">
                   <BookOpen size={28} strokeWidth={2.5} className="text-ink/40" />
                 </div>
                 <p className="font-black text-lg tracking-wide" style={{ fontFamily: '"Comic Sans MS", cursive' }}>No file open</p>
@@ -1094,7 +1132,7 @@ export default function IDEPanel({ workspacePath, onClose }: IDEPanelProps) {
           {showTerminal && (
             <div
               onMouseDown={startTerminalResize}
-              className="h-1.5 shrink-0 cursor-row-resize bg-cream hover:bg-[#88c0d0]/60 active:bg-[#88c0d0] transition-colors"
+              className="h-1.5 shrink-0 cursor-row-resize bg-paper hover:bg-[#88c0d0]/60 active:bg-[#88c0d0] transition-colors"
               title="拖拽调节高度"
             />
           )}
@@ -1117,7 +1155,7 @@ export default function IDEPanel({ workspacePath, onClose }: IDEPanelProps) {
           {!showTerminal && (
             <button
               onClick={() => setShowTerminal(true)}
-              className="h-7 border-t-4 border-ink bg-cream flex items-center justify-center text-[11px] font-black tracking-widest uppercase text-ink/50 hover:text-ink transition-colors shrink-0 gap-1.5"
+              className="h-7 border-t-4 border-ink bg-paper flex items-center justify-center text-[11px] font-black tracking-widest uppercase text-ink/50 hover:text-ink transition-colors shrink-0 gap-1.5"
               style={{ fontFamily: '"Comic Sans MS", cursive' }}
             >
               <TerminalSquare size={12} strokeWidth={3} /> Terminal

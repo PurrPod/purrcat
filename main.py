@@ -1,4 +1,5 @@
 import asyncio
+import multiprocessing
 import os
 import warnings
 import argparse
@@ -209,6 +210,10 @@ async def main_async(enable_tui: bool, enable_api: bool, api_port: int, cli_sess
 
 
 def main():
+    # 🌟 PyInstaller 打包后 Windows spawn 子进程必需：检测到自己是 spawn 的子进程时
+    # 直接执行 multiprocessing 引导协议，而不是重新跑一遍主程序入口（否则会再起一个服务端）
+    multiprocessing.freeze_support()
+
     _setup_warnings()
 
     # 首次启动自动初始化 ~/.purrcat
