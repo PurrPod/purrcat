@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { toast } from 'react-hot-toast';
 import { TerminalSquare, X, FolderOpen, BookOpen, Save, Plus, PictureInPicture2, Eye, Code2, FileImage, FileVideo, AlertCircle, FileDiff, FolderTree, Check, Undo2 } from 'lucide-react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
@@ -78,11 +79,11 @@ type FileChangeItem = {
   newest_backup_id: string;
 };
 
-// unified diff 行类型
-type FullDiffLine = { type: 'add' | 'del' | 'ctx'; text: string };
+// unified diff 行类型（oldNo/newNo：变更前/当前文件的行号，1-based；del 行无 newNo，add 行无 oldNo）
+type FullDiffLine = { type: 'add' | 'del' | 'ctx'; text: string; oldNo?: number; newNo?: number };
 
 // 整文件 diff 视图：以「当前文件内容」为骨架，把删除行插回原位（红）、新增行绿色、其余正常
-// 结果是完整文件而非 diff 片段（Trae/Codex 风格，无 @@/+/- 符号）
+// 结果是完整文件而非 diff 片段（Trae/Codex 风格，无 @@/+/- 符号），并携带连续的 old/new 侧行号
 function buildFullDiffView(diffText: string, currentContent: string): FullDiffLine[] {
   const out: FullDiffLine[] = [];
   if (!diffText) return out;
@@ -91,6 +92,7 @@ function buildFullDiffView(diffText: string, currentContent: string): FullDiffLi
   if (newLines.length > 0 && newLines[newLines.length - 1] === '' && !diffText.includes('\\ No newline')) newLines.pop();
   const lines = diffText.split('\n');
   let pointer = 0; // 指向 newLines 中尚未消费的位置
+  let oldNo = 1, newNo = 1; // old/new 侧行号计数器（整文件连续推进，行号即真实行号）
   for (let i = 0; i < lines.length; i++) {
     const m = lines[i].match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
     if (!m) continue; // 跳过 ---/+++ 头等
@@ -101,16 +103,16 @@ function buildFullDiffView(diffText: string, currentContent: string): FullDiffLi
     let j = i + 1;
     while (j < lines.length && !lines[j].startsWith('@@')) {
       const l = lines[j];
-      if (l.startsWith('+')) { hunk.push({ type: 'add', text: l.slice(1) }); newCount++; }
-      else if (l.startsWith('-')) hunk.push({ type: 'del', text: l.slice(1) });
+      if (l.startsWith('+')) { hunk.push({ type: 'add', text: l.slice(1), newNo: newNo++ }); newCount++; }
+      else if (l.startsWith('-')) hunk.push({ type: 'del', text: l.slice(1), oldNo: oldNo++ });
       else if (l.startsWith('\\')) { /* "\ No newline at end of file" 忽略 */ }
-      else { hunk.push({ type: 'ctx', text: l.replace(/^ /, '') }); newCount++; }
+      else { hunk.push({ type: 'ctx', text: l.replace(/^ /, ''), oldNo: oldNo++, newNo: newNo++ }); newCount++; }
       j++;
     }
     // hunk 之前的未变更区域从当前文件内容补齐
     const s = Math.max(0, newStart - 1);
     while (pointer < s && pointer < newLines.length) {
-      out.push({ type: 'ctx', text: newLines[pointer] });
+      out.push({ type: 'ctx', text: newLines[pointer], oldNo: oldNo++, newNo: newNo++ });
       pointer++;
     }
     out.push(...hunk);
@@ -119,7 +121,7 @@ function buildFullDiffView(diffText: string, currentContent: string): FullDiffLi
   }
   // hunk 之后的剩余未变更区域
   while (pointer < newLines.length) {
-    out.push({ type: 'ctx', text: newLines[pointer] });
+    out.push({ type: 'ctx', text: newLines[pointer], oldNo: oldNo++, newNo: newNo++ });
     pointer++;
   }
   return out;
@@ -342,6 +344,20 @@ export default function IDEPanel({ workspacePath, onClose, onOpenLink }: IDEPane
     return typeof window !== 'undefined' && window.location.pathname.startsWith('/ide');
   });
 
+  // 🌟 行选择（1-based 区间）：编辑器为文件行号；变更视图为当前文件（new 侧）行号
+  const [selectedLines, setSelectedLines] = useState<{ start: number; end: number } | null>(null);
+  const editorRef = useRef<HTMLTextAreaElement>(null);
+  const gutterRef = useRef<HTMLDivElement>(null);
+  // 切换文件/变更视图时清除行选择
+  useEffect(() => { setSelectedLines(null); }, [activeFile, activeChangePath]);
+
+  // 🌟 跨窗口广播通道：Ctrl+U 提取的「路径+行号」引用发给主窗口聊天输入框（独立窗口模式同样可达）
+  const ideChannelRef = useRef<BroadcastChannel | null>(null);
+  useEffect(() => {
+    try { ideChannelRef.current = new BroadcastChannel('purrcat-ide'); } catch { ideChannelRef.current = null; }
+    return () => { try { ideChannelRef.current?.close(); } catch { /* noop */ } ideChannelRef.current = null; };
+  }, []);
+
   const wrapperRef = useRef<HTMLDivElement>(null);
   const purrcat = (window as any).purrcat;
   const hasElectron = !!purrcat?.readDir;
@@ -437,6 +453,27 @@ export default function IDEPanel({ workspacePath, onClose, onOpenLink }: IDEPane
   }, [fileChanges, workspacePath]);
 
   const activeChange = activeChangePath ? displayChanges.find(c => c.path === activeChangePath) || null : null;
+
+  // 🌟 Ctrl+U：把选中文件路径 + 选中行区间提取为输入框元数据（如 /xxx/xxx.md L20-L21），广播给聊天输入框
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 'u') return;
+      if (!activeFile && !activeChange) return;
+      e.preventDefault(); // 拦截浏览器「查看源代码」默认行为
+      if (!selectedLines) { toast('先选中行：点击行号或拖选文本', { icon: '📌' }); return; }
+      const target = activeChange
+        ? (openTabs.find(t => isSameFilePath(t, activeChange.path, workspacePath)) || activeChange.path)
+        : (activeFile as string);
+      const rangeTxt = selectedLines.start === selectedLines.end
+        ? `L${selectedLines.start}`
+        : `L${selectedLines.start}-L${selectedLines.end}`;
+      const text = `${target.replace(/\\/g, '/')} ${rangeTxt}`;
+      ideChannelRef.current?.postMessage({ type: 'insert-input', text });
+      toast.success(`已插入引用 ${rangeTxt} 到输入框`);
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [activeFile, activeChange, selectedLines, openTabs, workspacePath]);
 
   // 🌟 实时性：为 effects 提供最新值的 ref（避免闭包过期）
   const liveRef = useRef({ activeFile: null as string | null, dirty: new Set<string>(), changes: [] as FileChangeItem[], ws: '' });
@@ -622,6 +659,52 @@ export default function IDEPanel({ workspacePath, onClose, onOpenLink }: IDEPane
     const value = e.target.value;
     setFileContents((prev) => ({ ...prev, [activeFile]: value }));
     setDirtyFiles((prev) => { const n = new Set(prev); n.add(activeFile); return n; });
+  };
+
+  // ---- 行号槽 + 行选择 ----
+  // 当前编辑文件的行数组（行号槽渲染 + 点击行号计算偏移共用）
+  const editorLines = useMemo(
+    () => (activeFile ? (fileContents[activeFile] || '').split('\n') : []),
+    [activeFile, fileContents]
+  );
+
+  // 行号槽与编辑区滚动同步
+  const syncGutterScroll = () => {
+    if (gutterRef.current && editorRef.current) gutterRef.current.scrollTop = editorRef.current.scrollTop;
+  };
+
+  // 点击行号：选中整行（Shift+点击扩展为区间）
+  const handleGutterClick = (n: number, shift: boolean) => {
+    if (!activeFile) return;
+    const lines = (fileContents[activeFile] || '').split('\n');
+    let s = n, e = n;
+    if (shift && selectedLines) { s = Math.min(selectedLines.start, n); e = Math.max(selectedLines.end, n); }
+    const off = (line: number) => lines.slice(0, line - 1).reduce((a, l) => a + l.length + 1, 0);
+    const startOff = off(s);
+    const endOff = off(e) + (lines[e - 1]?.length ?? 0);
+    const ta = editorRef.current;
+    if (ta) { ta.focus(); ta.setSelectionRange(startOff, endOff); }
+    setSelectedLines({ start: s, end: e });
+  };
+
+  // 编辑区拖选/键盘选中文本 → 同步为选中行区间
+  const syncSelectionFromTextarea = () => {
+    const ta = editorRef.current;
+    if (!ta || !activeFile) return;
+    if (ta.selectionStart === ta.selectionEnd) return; // 无选区：保留行号点击的选择
+    const v = ta.value;
+    const s = v.slice(0, ta.selectionStart).split('\n').length;
+    const e = v.slice(0, ta.selectionEnd).split('\n').length;
+    setSelectedLines(prev => (prev && prev.start === Math.min(s, e) && prev.end === Math.max(s, e)) ? prev : { start: Math.min(s, e), end: Math.max(s, e) });
+  };
+
+  // 变更视图：点击行选中（Shift+点击扩展），行号取当前文件（new 侧）；纯删除行无当前行号
+  const handleDiffRowClick = (ln: FullDiffLine, shift: boolean) => {
+    if (ln.newNo == null) { toast('删除行在当前文件中不存在，无法引用', { icon: '⚠️' }); return; }
+    const n = ln.newNo;
+    setSelectedLines(shift && selectedLines
+      ? { start: Math.min(selectedLines.start, n), end: Math.max(selectedLines.end, n) }
+      : { start: n, end: n });
   };
 
   // ---- 独立窗口 ----
@@ -1038,7 +1121,7 @@ export default function IDEPanel({ workspacePath, onClose, onOpenLink }: IDEPane
                     </button>
                   </div>
                 </div>
-                <div className="flex-1 overflow-auto bg-white font-mono text-[15px] leading-[1.6] py-1">
+                <div className="flex-1 overflow-auto bg-white font-mono text-[15px] leading-[24px] py-1">
                   {(() => {
                     // 整文件视图：当前磁盘内容为骨架 + 删除行插回原位（红）/新增行（绿）
                     const lines = buildFullDiffView(activeChange.diff, changeContents[activeChange.path] ?? '');
@@ -1053,21 +1136,24 @@ export default function IDEPanel({ workspacePath, onClose, onOpenLink }: IDEPane
                           文件过大（超过 {formatSize(MAX_TEXT_FILE_SIZE)}），仅显示变更片段，完整内容请用终端查看
                         </div>
                       )}
-                      {shown.map((ln, i) => (
-                      ln.type === 'add' ? (
-                        <div key={i} className="flex bg-[#a3be8c]/15">
-                          <span className="w-[3px] shrink-0 bg-[#a3be8c]" />
-                          <span className="flex-1 px-3 whitespace-pre text-[#2e3440]">{ln.text || '\u00A0'}</span>
+                      {shown.map((ln, i) => {
+                      // 选中高亮：new 侧行号落在选中区间内（点击行/Shift+点击选中，Ctrl+U 提取引用）
+                      const inSel = !!selectedLines && ln.newNo != null && ln.newNo >= selectedLines.start && ln.newNo <= selectedLines.end;
+                      const rowBg = ln.type === 'add' ? 'bg-[#a3be8c]/15' : ln.type === 'del' ? 'bg-[#bf616a]/15' : (inSel ? 'bg-[#88c0d0]/20' : '');
+                      return (
+                        <div
+                          key={i}
+                          onClick={(e) => handleDiffRowClick(ln, e.shiftKey)}
+                          title="点击选中行（Shift+点击扩展），Ctrl+U 提取为输入框引用"
+                          className={`flex cursor-pointer transition-colors ${rowBg} ${inSel ? 'outline outline-1 -outline-offset-1 outline-[#5e81ac]' : ''}`}
+                        >
+                          <span className="w-9 shrink-0 text-right pr-1.5 select-none text-[12px] text-[#bf616a]/70">{ln.oldNo ?? ''}</span>
+                          <span className="w-9 shrink-0 text-right pr-2 select-none text-[12px] text-[#4c566a]/70 border-r-2 border-ink/10 mr-2">{ln.newNo ?? ''}</span>
+                          <span className={`w-[3px] shrink-0 ${ln.type === 'add' ? 'bg-[#a3be8c]' : ln.type === 'del' ? 'bg-[#bf616a]' : 'bg-transparent'}`} />
+                          <span className={`flex-1 pr-3 whitespace-pre ${ln.type === 'ctx' ? 'text-[#4c566a]' : 'pl-2 text-[#2e3440]'}`}>{ln.text || '\u00A0'}</span>
                         </div>
-                      ) : ln.type === 'del' ? (
-                        <div key={i} className="flex bg-[#bf616a]/15">
-                          <span className="w-[3px] shrink-0 bg-[#bf616a]" />
-                          <span className="flex-1 px-3 whitespace-pre text-[#2e3440]">{ln.text || '\u00A0'}</span>
-                        </div>
-                      ) : (
-                        <div key={i} className="px-[15px] whitespace-pre text-[#4c566a]">{ln.text || '\u00A0'}</div>
-                      )
-                    ))}
+                      );
+                    })}
                       {truncated && (
                         <div className="sticky bottom-0 px-3 py-1 bg-[#EBCB8B]/30 border-t-2 border-[#EBCB8B] text-xs font-bold text-ink/70">
                           内容过长，已截断前 {MAX_RENDER_LINES} 行（共 {lines.length} 行）
@@ -1118,26 +1204,56 @@ export default function IDEPanel({ workspacePath, onClose, onOpenLink }: IDEPane
                   </ReactMarkdown>
                 </div>
               ) : (
-                // 文本/Markdown 编辑模式
-                <textarea
-                  className="absolute inset-0 w-full h-full p-4 font-mono text-[15px] bg-white outline-none resize-none text-[#2e3440] leading-relaxed"
-                  value={fileContents[activeFile] || ''}
-                  onChange={handleEditorChange}
-                  spellCheck={false}
-                  onKeyDown={(e) => {
-                    if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); handleSave(); }
-                    // Tab 键插入空格
-                    if (e.key === 'Tab') {
-                      e.preventDefault();
-                      const ta = e.target as HTMLTextAreaElement;
-                      const start = ta.selectionStart, end = ta.selectionEnd;
-                      const val = ta.value;
-                      const newValue = val.substring(0, start) + '  ' + val.substring(end);
-                      setFileContents(prev => ({ ...prev, [activeFile!]: newValue }));
-                      requestAnimationFrame(() => { ta.selectionStart = ta.selectionEnd = start + 2; });
-                    }
-                  }}
-                />
+                // 文本/Markdown 编辑模式：行号槽（点击选中整行，Shift+点击扩展）+ 编辑区
+                <div className="absolute inset-0 flex bg-white">
+                  {/* 行号槽：与编辑区同 line-height 对齐，滚动同步；超 5000 行不渲染（防 DOM 爆炸） */}
+                  <div
+                    ref={gutterRef}
+                    className="w-14 shrink-0 overflow-hidden bg-[#eceff4] border-r-2 border-ink/10 py-4 select-none"
+                    title="点击行号选中整行（Shift+点击扩展范围），Ctrl+U 提取为输入框引用"
+                  >
+                    {editorLines.length <= 5000 && editorLines.map((_, i) => {
+                      const n = i + 1;
+                      const inSel = !!selectedLines && n >= selectedLines.start && n <= selectedLines.end;
+                      return (
+                        <div
+                          key={n}
+                          onMouseDown={(e) => { e.preventDefault(); handleGutterClick(n, e.shiftKey); }}
+                          className={`px-2 text-right font-mono text-[13px] leading-[24px] cursor-pointer transition-colors ${
+                            inSel ? 'bg-[#88c0d0] text-ink font-bold' : 'text-[#4c566a]/60 hover:bg-[#d8dee9]'
+                          }`}
+                        >{n}</div>
+                      );
+                    })}
+                  </div>
+                  {/* 🌟 关闭软换行：行号槽按「每逻辑行一行」渲染（line-height 24px 逐行对齐），
+                      若允许自动换行，长行会占多行导致后续行号与文本错位；关闭后长行横向滚动、行号永远与文件行一致 */}
+                  <textarea
+                    ref={editorRef}
+                    wrap="off"
+                    className="flex-1 min-w-0 p-4 font-mono text-[15px] bg-white outline-none resize-none text-[#2e3440] leading-[24px]"
+                    style={{ whiteSpace: 'pre', overflowX: 'auto' }}
+                    value={fileContents[activeFile] || ''}
+                    onChange={handleEditorChange}
+                    spellCheck={false}
+                    onScroll={syncGutterScroll}
+                    onMouseUp={syncSelectionFromTextarea}
+                    onKeyUp={syncSelectionFromTextarea}
+                    onKeyDown={(e) => {
+                      if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); handleSave(); }
+                      // Tab 键插入空格
+                      if (e.key === 'Tab') {
+                        e.preventDefault();
+                        const ta = e.target as HTMLTextAreaElement;
+                        const start = ta.selectionStart, end = ta.selectionEnd;
+                        const val = ta.value;
+                        const newValue = val.substring(0, start) + '  ' + val.substring(end);
+                        setFileContents(prev => ({ ...prev, [activeFile!]: newValue }));
+                        requestAnimationFrame(() => { ta.selectionStart = ta.selectionEnd = start + 2; });
+                      }
+                    }}
+                  />
+                </div>
               )
             ) : (
               <div className="absolute inset-0 flex flex-col items-center justify-center text-ink/30 select-none gap-3">

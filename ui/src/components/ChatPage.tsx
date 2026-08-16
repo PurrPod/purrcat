@@ -1,7 +1,7 @@
 // src/components/ChatPage.tsx
 import { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Send, Cat, Clock, Activity, Server, Zap, Brain, GitMerge, Loader2, FolderOpen, Bell, Paperclip, X, Heart, User, List, ExternalLink, Plus, BookOpen, ClipboardCopy, TerminalSquare, AlertTriangle, Globe, Octagon } from 'lucide-react';
+import { Send, Cat, Clock, Activity, Server, Zap, Brain, GitMerge, Loader2, FolderOpen, Bell, Paperclip, X, Heart, User, List, ExternalLink, Plus, BookOpen, ClipboardCopy, TerminalSquare, AlertTriangle, Globe, Pause } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import ReactMarkdown, { defaultUrlTransform } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -44,6 +44,33 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   const { sessionId } = useParams<{ sessionId: string }>();
 
   const [input, setInput] = useState('');
+  // 🌟 IDE 引用插入：IDEPanel（含独立窗口）通过 BroadcastChannel 广播 Ctrl+U 提取的「路径+行号」引用
+  const chatInputRef = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    let bc: BroadcastChannel | null = null;
+    try { bc = new BroadcastChannel('purrcat-ide'); } catch { return; }
+    bc.onmessage = (e) => {
+      const text = e.data?.type === 'insert-input' ? String(e.data.text || '') : '';
+      if (!text) return;
+      const ta = chatInputRef.current;
+      if (ta) {
+        const start = ta.selectionStart ?? ta.value.length;
+        const end = ta.selectionEnd ?? ta.value.length;
+        const before = ta.value.slice(0, start);
+        const after = ta.value.slice(end);
+        const pad = before && !/\s$/.test(before) ? ' ' : '';
+        setInput(before + pad + text + after);
+        requestAnimationFrame(() => {
+          const pos = (before + pad + text).length;
+          ta.focus();
+          ta.selectionStart = ta.selectionEnd = pos;
+        });
+      } else {
+        setInput(prev => (prev && !/\s$/.test(prev) ? prev + ' ' : prev) + text);
+      }
+    };
+    return () => { try { bc?.close(); } catch { /* noop */ } };
+  }, []);
   const [messages, setMessages] = useState<Message[]>([]);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(sessionId || null);
@@ -1254,11 +1281,10 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                   {isAgentThinking && (
                     <button
                       onClick={handleForceInterrupt}
-                      style={sketchyShape3}
-                      className="flex items-center gap-1.5 px-2.5 py-1 ml-1 text-xs font-black uppercase tracking-wider border-2 border-ink bg-paper text-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:bg-terracotta hover:text-paper transition-all active:translate-y-[1px] active:shadow-none"
-                      title="强制打断：物理掐断正在执行的工具（长时请求/死循环命令）"
+                      className="ml-1 p-0.5 text-terracotta hover:text-ink transition-colors"
+                      title="暂停：物理掐断正在执行的工具（长时请求/死循环命令）"
                     >
-                      <Octagon size={14} strokeWidth={3} /> 打断
+                      <Pause size={18} strokeWidth={3} />
                     </button>
                   )}
                 </div>
@@ -1288,7 +1314,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
            <div className={`flex gap-4 relative transition-all ${isDragging ? 'ring-4 ring-terracotta bg-terracotta/5' : ''}`} onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }} onDragLeave={() => setIsDragging(false)} onDrop={handleDrop}>
              {isDragging && <div className="absolute inset-0 z-50 flex items-center justify-center bg-cream/90 border-4 border-dashed border-terracotta" style={sketchyShape2}><span className="text-2xl font-black text-terracotta">Drop files here to attach!</span></div>}
              <div className="flex-1 relative flex flex-col">
-               <textarea style={sketchyShape3} value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }} onPaste={handlePaste} placeholder={currentSessionId ? "Write your prompt here..." : "Select a chat first!"} disabled={!currentSessionId} rows={2} className="w-full bg-[#FDF8F0] border-4 border-ink p-5 pr-40 font-bold focus:outline-none resize-none text-lg -rotate-[0.5deg] placeholder:text-ink/30" />
+               <textarea ref={chatInputRef} style={sketchyShape3} value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }} onPaste={handlePaste} placeholder={currentSessionId ? "Write your prompt here..." : "Select a chat first!"} disabled={!currentSessionId} rows={2} className="w-full bg-[#FDF8F0] border-4 border-ink p-5 pr-40 font-bold focus:outline-none resize-none text-lg -rotate-[0.5deg] placeholder:text-ink/30" />
                <div className="absolute right-3 bottom-3 flex items-center gap-2 z-10">
                  {/* 展开的工具菜单 */}
                  {showToolMenu && (
