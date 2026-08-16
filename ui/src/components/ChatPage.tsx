@@ -1,7 +1,7 @@
 // src/components/ChatPage.tsx
 import { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Send, Cat, Clock, Activity, Server, Zap, Brain, GitMerge, Loader2, FolderOpen, Bell, Paperclip, X, Heart, User, List, ExternalLink, Plus, BookOpen, ClipboardCopy, TerminalSquare, AlertTriangle, Globe, Pause } from 'lucide-react';
+import { Send, Cat, Clock, Activity, Server, Zap, Brain, GitMerge, Loader2, FolderOpen, Bell, Paperclip, X, Heart, List, ExternalLink, Plus, BookOpen, ClipboardCopy, TerminalSquare, AlertTriangle, Globe, Pause } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import ReactMarkdown, { defaultUrlTransform } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -142,7 +142,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
 
   // 🌟 心跳控制状态
   const [showHeartbeatModal, setShowHeartbeatModal] = useState(false);
-  const [heartbeatConfig, setHeartbeatConfig] = useState({ interval: 1800, active: true });
+  const [heartbeatConfig, setHeartbeatConfig] = useState({ interval: 1800, active: false, goal: '' });
 
   // --- 新增：内置浏览器状态（多标签页） ---
   const [showBrowser, setShowBrowser] = useState(false);
@@ -158,13 +158,10 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   // 🌟 挂载时拉取现有的心跳配置
   const fetchAgentHeartbeat = async () => {
     try {
-      const res = await fetch('/api/tools/loop');
+      const res = await fetch('/api/tools/heartbeat');
       if (res.ok) {
-        const loops = await res.json();
-        const agentLoop = loops.find((l: any) => l.task_hook === 'Agent');
-        if (agentLoop) {
-          setHeartbeatConfig({ interval: agentLoop.interval, active: agentLoop.active });
-        }
+        const data = await res.json();
+        setHeartbeatConfig({ interval: data.interval || 1800, active: !!data.active, goal: data.goal || '' });
       }
     } catch { /* noop */ }
   };
@@ -189,30 +186,39 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
     fetchInfoData();
   }, []);
 
-  // 🌟 保存心跳配置
+  // 🌟 保存心跳配置（开启时必须提交非空 GOAL.md 内容）
   const saveHeartbeat = async () => {
+    if (heartbeatConfig.active && !heartbeatConfig.goal.trim()) {
+      toast.error("GOAL.md 内容为空，无法开启心跳！");
+      return;
+    }
+    if (heartbeatConfig.interval < 60) {
+      toast.error("心跳间隔最短为 60 秒！");
+      return;
+    }
     try {
-      const res = await fetch('/api/tools/loop', {
+      const res = await fetch('/api/tools/heartbeat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          title: '系统心跳',
           interval: heartbeatConfig.interval,
-          task_hook: 'Agent',
-          task_inputs: {},
-          active: heartbeatConfig.active
+          active: heartbeatConfig.active,
+          goal: heartbeatConfig.goal
         })
       });
       if (res.ok) {
         toast.success("Agent 潜意识心跳已更新！");
         setShowHeartbeatModal(false);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        toast.error(data.detail || "心跳更新失败");
       }
     } catch { toast.error("心跳更新失败"); }
   };
 
   const [showMdModal, setShowMdModal] = useState(false);
   const [showToolMenu, setShowToolMenu] = useState(false);
-  const [mdType, setMdType] = useState<'SOUL' | 'SOLO' | 'TODO'>('SOUL');
+  const [mdType, setMdType] = useState<'SOUL' | 'GOAL'>('SOUL');
   const [mdContent, setMdContent] = useState('');
   const [isSavingMd, setIsSavingMd] = useState(false);
 
@@ -576,7 +582,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   const handlePaste = (e: React.ClipboardEvent) => { if (e.clipboardData.files && e.clipboardData.files.length > 0) { e.preventDefault(); handleFileUpload(e.clipboardData.files); } };
   const handleDrop = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(false); const items = e.dataTransfer.items; if (items && items.length > 0) { const validFiles: File[] = []; for (let i = 0; i < items.length; i++) { const item = items[i]; if (item.kind === 'file') { const file = item.getAsFile(); if (file) validFiles.push(file); } } if (validFiles.length > 0) handleFileUpload(validFiles); } };
 
-  const openMdEditor = async (type: 'SOUL' | 'SOLO' | 'TODO') => { setMdType(type); setMdContent('Loading...'); setShowMdModal(true); try { const res = await fetch(`/api/config/markdown/${type}`); if (res.ok) { const data = await res.json(); setMdContent(data.content); } } catch { /* noop */ } };
+  const openMdEditor = async (type: 'SOUL' | 'GOAL') => { setMdType(type); setMdContent('Loading...'); setShowMdModal(true); try { const res = await fetch(`/api/config/markdown/${type}`); if (res.ok) { const data = await res.json(); setMdContent(data.content); } } catch { /* noop */ } };
   const saveMdContent = async () => { setIsSavingMd(true); try { const res = await fetch(`/api/config/markdown/${mdType}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: mdContent }) }); if (res.ok) setShowMdModal(false); } catch { /* noop */ } finally { setIsSavingMd(false); } };
 
   const fetchSensorData = async () => { try { const res = await fetch('/api/config/sensor'); if (res.ok) setSensorData(await res.json()); } catch { /* noop */ } };
@@ -1421,46 +1427,49 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
             </div>
             
             <div className="rotate-1 flex flex-col gap-4">
-              <p className="text-sm font-bold opacity-70">Agent Subconscious Frequency</p>
+              <p className="text-sm font-bold opacity-70">Agent Subconscious Frequency（最短 60 秒）</p>
 
               {/* 秒数输入与拨键开关合并在一行 */}
               <div className="flex items-center justify-between gap-4 bg-cream border-4 border-ink p-3 shadow-[inset_2px_2px_0px_0px_rgba(26,26,26,0.05)]" style={sketchyShape3}>
                 <div className="flex items-center gap-2">
-                  <input 
-                    type="number" 
-                    value={heartbeatConfig.interval} 
-                    onChange={e => setHeartbeatConfig({...heartbeatConfig, interval: parseInt(e.target.value) || 60})} 
-                    className="w-20 bg-transparent font-black text-xl text-center focus:outline-none" 
+                  <input
+                    type="number"
+                    min={60}
+                    value={heartbeatConfig.interval}
+                    onChange={e => setHeartbeatConfig({...heartbeatConfig, interval: Math.max(60, parseInt(e.target.value) || 60)})}
+                    className="w-20 bg-transparent font-black text-xl text-center focus:outline-none"
                   />
                   <span className="font-bold opacity-60">SECONDS</span>
                 </div>
 
                 {/* 纯净的粗线条 Sensor 风格拨键开关 */}
-                <div 
-                  onClick={() => setHeartbeatConfig({...heartbeatConfig, active: !heartbeatConfig.active})} 
-                  className={`relative w-16 h-8 border-4 border-ink cursor-pointer transition-colors shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] flex items-center shrink-0 active:translate-y-px active:shadow-none ${heartbeatConfig.active ? 'bg-[#a3be8c]' : 'bg-ink/20'}`} 
-                  style={sketchyShape2} 
+                <div
+                  onClick={() => setHeartbeatConfig({...heartbeatConfig, active: !heartbeatConfig.active})}
+                  className={`relative w-16 h-8 border-4 border-ink cursor-pointer transition-colors shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] flex items-center shrink-0 active:translate-y-px active:shadow-none ${heartbeatConfig.active ? 'bg-[#a3be8c]' : 'bg-ink/20'}`}
+                  style={sketchyShape2}
                 >
                   <div className={`absolute w-5 h-5 bg-paper border-4 border-ink transition-transform duration-200 ${heartbeatConfig.active ? 'translate-x-8' : 'translate-x-1'}`} style={sketchyShape1} />
                 </div>
               </div>
 
-              {/* 底部收编的 SOLO.md 与 TODO.md 按钮 */}
-              <div className="flex gap-4 mt-2">
-                <button 
-                  onClick={() => { setShowHeartbeatModal(false); openMdEditor('SOLO'); }} 
-                  style={sketchyShape3} 
-                  className="flex-1 border-4 border-ink bg-[#88c0d0] text-paper font-black py-3 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:bg-[#72a6b5] active:translate-y-1 active:shadow-none transition-all flex items-center justify-center gap-2" 
-                >
-                  <User size={20} strokeWidth={3}/> SOLO.md
-                </button>
-                <button 
-                  onClick={() => { setShowHeartbeatModal(false); openMdEditor('TODO'); }} 
-                  style={sketchyShape1} 
-                  className="flex-1 border-4 border-ink bg-[#EBCB8B] text-ink font-black py-3 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:bg-[#d8b877] active:translate-y-1 active:shadow-none transition-all flex items-center justify-center gap-2" 
-                >
-                  <List size={20} strokeWidth={3}/> TODO.md
-                </button>
+              {/* GOAL.md 内容编辑区：开启心跳时必填，随心跳一并提交 */}
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-black flex items-center gap-1"><List size={16} strokeWidth={3}/> GOAL.md（开启心跳必填）</p>
+                  <button
+                    onClick={() => { setShowHeartbeatModal(false); openMdEditor('GOAL'); }}
+                    className="text-xs font-black underline underline-offset-4 hover:text-terracotta"
+                  >
+                    大窗口编辑
+                  </button>
+                </div>
+                <textarea
+                  value={heartbeatConfig.goal}
+                  onChange={e => setHeartbeatConfig({...heartbeatConfig, goal: e.target.value})}
+                  placeholder="写入当前目标，心跳将按间隔注入给 Agent..."
+                  className="w-full h-28 bg-[#FDF8F0] border-4 border-ink p-2 text-sm font-bold resize-none focus:outline-none shadow-[inset_2px_2px_0px_0px_rgba(26,26,26,0.05)]"
+                  style={sketchyShape2}
+                />
               </div>
             </div>
 

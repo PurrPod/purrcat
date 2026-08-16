@@ -16,7 +16,6 @@ from src.utils.config import (
     AGENT_CORE_DIR,
     GLOBAL_CONFIG_FILE,
     CRON_FILE,
-    LOOP_FILE,
     get_app_config,
     get_file_config,
     get_mcp_config,
@@ -130,11 +129,11 @@ def api_update_app_config(config: Dict[str, Any]):
     raise HTTPException(status_code=500, detail="Failed to save app config")
 
 
-# ── Markdown Files (SOUL.md / SOLO.md) ──
+# ── Markdown Files (SOUL.md / GOAL.md) ──
 @router.get("/markdown/{filename}")
 def api_get_markdown_file(filename: str):
-    # 限制只允许读取 SOUL、SOLO 和 TODO，防止任意路径穿越漏洞
-    if filename not in ["SOUL", "SOLO", "TODO"]:
+    # 限制只允许读取 SOUL 和 GOAL，防止任意路径穿越漏洞
+    if filename not in ["SOUL", "GOAL"]:
         raise HTTPException(status_code=400, detail="Invalid filename")
 
     # 引入 config 中定义好的 AGENT_CORE_DIR (.purrcat/core/)
@@ -150,7 +149,7 @@ def api_get_markdown_file(filename: str):
 
 @router.put("/markdown/{filename}")
 def api_update_markdown_file(filename: str, payload: dict = Body(...)):
-    if filename not in ["SOUL", "SOLO", "TODO"]:
+    if filename not in ["SOUL", "GOAL"]:
         raise HTTPException(status_code=400, detail="Invalid filename")
 
     content = payload.get("content", "")
@@ -230,25 +229,6 @@ def api_update_cron_config(config: Dict[str, Any]):
     raise HTTPException(status_code=500, detail="Failed to save cron config")
 
 
-# ── Loop Config (loop.json) ──
-@router.get("/loop")
-def api_get_loop_config():
-    if not os.path.exists(LOOP_FILE):
-        return {}
-    try:
-        with open(LOOP_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return {}
-
-
-@router.put("/loop")
-def api_update_loop_config(config: Dict[str, Any]):
-    if _save_json_file(LOOP_FILE, config):
-        return {"status": "ok", "message": "Loop config updated successfully"}
-    raise HTTPException(status_code=500, detail="Failed to save loop config")
-
-
 # ── Paths Meta (前端展示用：当前实际生效的各数据目录) ──
 @router.get("/meta")
 def api_get_config_meta():
@@ -259,5 +239,4 @@ def api_get_config_meta():
         "BASE_DIR": BASE_DIR,           # 程序只读目录（打包后是 _MEIPASS）
         "settings_path": str(GLOBAL_CONFIG_FILE),
         "cron_path": CRON_FILE,
-        "loop_path": LOOP_FILE,
     }

@@ -244,9 +244,8 @@ export default function TaskPage({ onBack }: { onBack: () => void }) {
 
   // 🌟 触发器弹窗状态
   const [isTriggerModalOpen, setIsTriggerModalOpen] = useState(false);
-  const [triggerType, setTriggerType] = useState<'cron' | 'loop'>('cron');
   const [triggerForm, setTriggerForm] = useState({
-    title: '', time: '', interval: 3600, graph: '', inputsStr: '{\n}'
+    title: '', time: '', graph: '', inputsStr: '{\n}'
   });
   const [isTriggerDropdownOpen, setIsTriggerDropdownOpen] = useState(false);
 
@@ -272,19 +271,16 @@ export default function TaskPage({ onBack }: { onBack: () => void }) {
     let parsedInputs = {};
     try { parsedInputs = JSON.parse(triggerForm.inputsStr); } catch { return toast.error("JSON 参数格式不合法！"); }
 
-    const url = triggerType === 'cron' ? '/api/tools/cron' : '/api/tools/loop';
-    const payload = triggerType === 'cron' 
-      ? { title: triggerForm.title, trigger_time: triggerForm.time, repeat_rule: 'none', task_hook: triggerForm.graph, task_inputs: parsedInputs }
-      : { title: triggerForm.title, interval: triggerForm.interval, task_hook: triggerForm.graph, task_inputs: parsedInputs, active: true };
+    const payload = { title: triggerForm.title, trigger_time: triggerForm.time, repeat_rule: 'none', task_hook: triggerForm.graph, task_inputs: parsedInputs };
 
     try {
-      const res = await fetch(url, {
+      const res = await fetch('/api/tools/cron', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
       });
       if (res.ok) {
-        toast.success(triggerType === 'cron' ? "定时任务已创建" : "间隔任务已创建");
+        toast.success("定时任务已创建");
         setIsTriggerModalOpen(false);
-        setTriggerForm({ title: '', time: '', interval: 3600, graph: '', inputsStr: '{\n}' });
+        setTriggerForm({ title: '', time: '', graph: '', inputsStr: '{\n}' });
       } else {
         toast.error("创建失败，请检查参数格式 (如时间是否为 HH:MM)");
       }
@@ -816,38 +812,25 @@ export default function TaskPage({ onBack }: { onBack: () => void }) {
         </div>
       )}
 
-      {/* === 🌟 后台触发器 (Cron & Loop) 弹窗 === */}
+      {/* === 🌟 后台触发器 (Cron) 弹窗 === */}
       {isTriggerModalOpen && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center bg-ink/40 backdrop-blur-sm p-4 pointer-events-auto">
           <div style={sketchyShape2} className="bg-paper border-4 border-ink shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] w-full max-w-lg p-8 relative -rotate-1">
             <button onClick={() => { setIsTriggerModalOpen(false); setIsTriggerDropdownOpen(false); }} className="absolute top-4 right-4 hover:rotate-90 transition-transform"><X size={32} strokeWidth={3} /></button>
             <h3 className="text-3xl font-black mb-6 tracking-widest text-[#d08770]" style={{ fontFamily: '"Comic Sans MS", cursive' }}>NEW TRIGGER</h3>
-            
-            <div className="flex gap-4 mb-4">
-              <button onClick={() => setTriggerType('cron')} style={sketchyShape1} className={`flex-1 py-2 border-4 border-ink font-black shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] transition-colors ${triggerType === 'cron' ? 'bg-[#d08770] text-paper' : 'bg-cream text-ink/50'}`}>CRON (Scheduled)</button>
-              <button onClick={() => setTriggerType('loop')} style={sketchyShape3} className={`flex-1 py-2 border-4 border-ink font-black shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] transition-colors ${triggerType === 'loop' ? 'bg-[#88c0d0] text-paper' : 'bg-cream text-ink/50'}`}>LOOP (Interval)</button>
-            </div>
 
             <div className="flex flex-col gap-3">
-              <input 
-                placeholder="Trigger Title..." 
+              <input
+                placeholder="Trigger Title..."
                 value={triggerForm.title} onChange={e => setTriggerForm({...triggerForm, title: e.target.value})}
-                className="w-full bg-cream border-4 border-ink p-3 font-bold focus:outline-none" style={sketchyShape2} 
+                className="w-full bg-cream border-4 border-ink p-3 font-bold focus:outline-none" style={sketchyShape2}
               />
-              
-              {triggerType === 'cron' ? (
-                <input 
-                  placeholder="Time (HH:MM)" 
-                  value={triggerForm.time} onChange={e => setTriggerForm({...triggerForm, time: e.target.value})}
-                  className="w-full bg-[#FDF8F0] border-4 border-ink p-3 font-bold focus:outline-none shadow-[inset_2px_2px_0px_0px_rgba(26,26,26,0.05)]" style={sketchyShape1} 
-                />
-              ) : (
-                <div className="flex items-center gap-3 bg-[#FDF8F0] border-4 border-ink p-3 shadow-[inset_2px_2px_0px_0px_rgba(26,26,26,0.05)]" style={sketchyShape1}>
-                  <span className="font-bold opacity-60 flex-1">INTERVAL:</span>
-                  <input type="number" value={triggerForm.interval} onChange={e => setTriggerForm({...triggerForm, interval: parseInt(e.target.value) || 60})} className="w-24 bg-transparent font-black text-right focus:outline-none" />
-                  <span className="font-bold">SEC</span>
-                </div>
-              )}
+
+              <input
+                placeholder="Time (HH:MM)"
+                value={triggerForm.time} onChange={e => setTriggerForm({...triggerForm, time: e.target.value})}
+                className="w-full bg-[#FDF8F0] border-4 border-ink p-3 font-bold focus:outline-none shadow-[inset_2px_2px_0px_0px_rgba(26,26,26,0.05)]" style={sketchyShape1}
+              />
 
               {/* 🌟 仅暴露后台流图（无 Agent 选项） */}
               <div className="relative mt-2">

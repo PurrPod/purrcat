@@ -15,7 +15,7 @@ from src.tool.search.skill_search import SkillSearcher
 from src.tool.cron.cron_operations import list_crons, add_cron, delete_cron
 
 # 🌟 新增：引入读取与保存 MCP 配置文件需要的依赖
-from src.utils.config import get_mcp_config, MCP_CONFIG_PATH, SKILL_DIR, MCP_SOURCE_DIR, LOOP_FILE
+from src.utils.config import get_mcp_config, MCP_CONFIG_PATH, SKILL_DIR, MCP_SOURCE_DIR, AGENT_CORE_DIR, GOAL_MD_PATH, HEARTBEAT_FILE
 
 router = APIRouter(prefix="/api/tools", tags=["Tools Management"])
 
@@ -353,88 +353,52 @@ def delete_cron_api(identifier: str):
 
 
 # ==========================================
-# 7. 循环流水线任务 API
+# 7. Agent 心跳 API（GOAL.md 定时注入）
 # ==========================================
 
 
-class AddLoopReq(BaseModel):
-    title: str
-    interval: int
-    task_hook: str = "Agent"
-    task_inputs: dict = {}
-    active: bool = True  # 🌟 新增：支持直接开启/关闭
+class HeartbeatReq(BaseModel):
+    interval: int  # 秒，最短 60
+    active: bool
+    goal: str = ""  # GOAL.md 内容；开启心跳时必填非空
 
 
-@router.get("/loop")
-def list_loops_api():
-    """获取全量循环流水线任务清单"""
-    if not os.path.exists(LOOP_FILE):
-        return []
+@router.get("/heartbeat")
+def get_heartbeat_api():
+    """获取心跳配置 + GOAL.md 当前内容"""
+    from src.agent.heartbeat import get_heartbeat_manager
+
+    cfg = get_heartbeat_manager().get_config()
+    return {"interval": cfg["interval"], "active": cfg["active"], "goal": get_heartbeat_manager().read_goal()}
+
+
+@router.post("/heartbeat")
+def save_heartbeat_api(req: HeartbeatReq):
+    """保存心跳配置；开启心跳时必须提交非空 GOAL.md 内容"""
+    from src.agent.heartbeat import get_heartbeat_manager, MIN_INTERVAL
+
+    goal = (req.goal or "").strip()
+    if req.active and not goal:
+        raise HTTPException(status_code=400, detail="GOAL.md 内容为空，无法开启心跳")
+
     try:
-        with open(LOOP_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"读取循环任务失败: {str(e)}")
+        os.makedirs(AGENT_CORE_DIR, exist_ok=True)
 
+        # 先落盘 GOAL.md
+        with open(GOAL_MD_PATH, "w", encoding="utf-8") as f:
+            f.write(req.goal or "")
 
-@router.post("/loop")
-def add_loop_api(req: AddLoopReq):
-    """新增或修改循环定时流水线任务（含 Agent 专属心跳去重）"""
-    try:
-        os.makedirs(os.path.dirname(LOOP_FILE), exist_ok=True)
-        loops = []
-        if os.path.exists(LOOP_FILE):
-            with open(LOOP_FILE, "r", encoding="utf-8") as f:
-                loops = json.load(f)
-
-        # 🌟 核心去重：如果提交的是 Agent 心跳，先删掉历史所有的 Agent 记录
-        if req.task_hook == "Agent":
-            loops = [loop for loop in loops if loop.get("task_hook") != "Agent"]
-
-        loop_id = "lp_" + __import__("uuid").uuid4().hex[:8]
-        new_item = {
-            "id": loop_id,
-            "title": req.title,
-            "interval": req.interval,
-            "task_hook": req.task_hook,
-            "task_inputs": req.task_inputs,
-            "active": req.active,
-        }
-        loops.append(new_item)
-
-        # 🌟 原子写入：先写临时文件，再 rename，防止写入冲突导致文件损坏
-        tmp_file = LOOP_FILE + ".tmp"
+        # 再落盘心跳配置（原子写入）
+        cfg = {"interval": max(MIN_INTERVAL, req.interval), "active": req.active}
+        tmp_file = HEARTBEAT_FILE + ".tmp"
         with open(tmp_file, "w", encoding="utf-8") as f:
-            json.dump(loops, f, indent=2, ensure_ascii=False)
-        os.replace(tmp_file, LOOP_FILE)
-        return {"status": "success", "data": new_item}
+            json.dump(cfg, f, indent=2, ensure_ascii=False)
+        os.replace(tmp_file, HEARTBEAT_FILE)
+        return {"status": "success", "data": cfg}
+    except HTTPException:
+        raise
     except Exception as e:
         import traceback
 
         traceback.print_exc()
-        raise HTTPException(status_code=400, detail=f"保存循环任务失败: {str(e)}")
-
-
-@router.delete("/loop/{loop_id}")
-def delete_loop_api(loop_id: str):
-    """根据 ID 精准剔除并注销指定的循环工作线程"""
-    if not os.path.exists(LOOP_FILE):
-        raise HTTPException(status_code=404, detail="循环配置文件不存在")
-    try:
-        with open(LOOP_FILE, "r", encoding="utf-8") as f:
-            loops = json.load(f)
-
-        filtered_loops = [loop for loop in loops if loop.get("id") != loop_id]
-        if len(filtered_loops) == len(loops):
-            raise HTTPException(status_code=404, detail="未找到该循环任务记录")
-
-        # 🌟 原子写入：先写临时文件，再 rename，防止写入冲突导致文件损坏
-        tmp_file = LOOP_FILE + ".tmp"
-        with open(tmp_file, "w", encoding="utf-8") as f:
-            json.dump(filtered_loops, f, indent=2, ensure_ascii=False)
-        os.replace(tmp_file, LOOP_FILE)
-        return {"status": "success", "message": f"工作线程 {loop_id} 已安全注销释放"}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"注销循环任务异常: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"保存心跳配置失败: {str(e)}")

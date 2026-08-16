@@ -63,6 +63,11 @@ class AgentManager:
         )
         self._sensor_thread.start()
 
+        # 心跳机制与 Agent 本体同生命周期（GOAL.md 定时注入，不依赖传感器）
+        from src.agent.heartbeat import get_heartbeat_manager
+
+        get_heartbeat_manager().start()
+
         self._notify_save()
         print(f"[Success] Agent 已启动，当前挂载会话: {session_id}")
         return session_id

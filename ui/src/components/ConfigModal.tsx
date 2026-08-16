@@ -15,8 +15,7 @@ const CONFIG_TABS: Array<{ key: string; label: string; tip: string }> = [
   { key: 'file',     label: '文件白名单', tip: 'file.json · 文件系统可见范围' },
   { key: 'mcp',      label: 'MCP 服务', tip: 'mcp_config.json · MCP 服务端注册' },
   { key: 'app',      label: '应用白名单', tip: 'app_config.json · 系统可见应用' },
-  { key: 'cron',     label: '定时任务', tip: 'cron.json · Cron 表达式任务' },
-  { key: 'loop',     label: '循环配置', tip: 'loop.json · Agent Loop 配置' },
+  { key: 'cron',    label: '定时任务', tip: 'cron.json · Cron 表达式任务' },
 ];
 
 export default function ConfigModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
