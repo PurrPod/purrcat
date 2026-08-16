@@ -155,6 +155,27 @@ def ui_ack_action(req: UIRollbackReq):
         raise HTTPException(status_code=500, detail=f"清理备份失败: {str(e)}")
 
 
+@router.post("/ack_all")
+def ui_ack_all_action():
+    """一键接受全部更改：对所有未确认变更执行 ack，清理全部备份"""
+    try:
+        diffs = get_all_diffs()
+        failed = 0
+        for d in diffs:
+            try:
+                resolved_path = convert_sandbox_path(d["path"])
+                ack_backup(resolved_path, d["newest_backup_id"])
+            except Exception:
+                traceback.print_exc()
+                failed += 1
+        if failed > 0:
+            return {"status": "partial", "failed": failed, "total": len(diffs)}
+        return {"status": "success", "total": len(diffs)}
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"批量清理备份失败: {str(e)}")
+
+
 @router.get("/diffs")
 def api_get_global_diffs():
     """🌟 新增：提供给前端全局读取所有未确认的代码变更 (DiffView)"""

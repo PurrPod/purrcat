@@ -66,6 +66,8 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   const [showBusyModal, setShowBusyModal] = useState(false);
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [editingAlias, setEditingAlias] = useState('');
+  // 🌟 切换会话拦截：存在未接受文件更改时暂存目标会话，弹确认框
+  const [pendingSwitchId, setPendingSwitchId] = useState<string | null>(null);
 
   const [globalStats, setGlobalStats] = useState<any>(null);
   const [tokenData, setTokenData] = useState({ window: 0, max: 1000000, cached: 0 });
@@ -416,6 +418,20 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   const handleAck = async (path: string, newestBackupId: string) => {
     try { const res = await fetch(`/api/filesystem/ack`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path, backup_id: newestBackupId }) }); if (res.ok) { toast.success("已确认更改"); fetchGlobalDiffs(); } } catch { /* noop */ }
   };
+  // 🌟 一键接受全部更改（FileChangesPanel / 切换会话拦截弹窗共用）
+  const handleAckAll = async (): Promise<boolean> => {
+    try {
+      const res = await fetch('/api/filesystem/ack_all', { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json().catch(() => ({}));
+        toast.success(`已接受全部更改（${data.total ?? 0} 个文件）`);
+        fetchGlobalDiffs();
+        return true;
+      }
+      toast.error('接受全部更改失败');
+      return false;
+    } catch { toast.error('接受全部更改失败'); return false; }
+  };
   const handleRollback = async (path: string, oldestBackupId: string) => {
     try { const res = await fetch(`/api/filesystem/undo`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path, backup_id: oldestBackupId }) }); if (res.ok) { toast.success("文件已恢复"); fetchGlobalDiffs(); } } catch { /* noop */ }
   };
@@ -684,6 +700,20 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   }, [currentSessionId, currentBranchId, isCheckingOut]);
 
   const handleSelectSession = async (id: string) => { setIsCheckingOut(true); setCurrentSessionId(id); setCurrentBranchId('main'); navigate(`/chat/${id}`, { replace: true }); try { await fetch(`/api/sessions/${id}/checkout`, { method: 'POST' }).catch(() => {}); await loadSessionHistory(id, 'main'); await loadBranches(id); } catch { /* noop */ } finally { setIsCheckingOut(false); } };
+
+  // 🌟 切换会话拦截：存在未接受的文件更改时，先弹窗询问是否接受全部更改
+  const requestSelectSession = (id: string) => {
+    if (fileChanges.length > 0 && id !== currentSessionId) { setPendingSwitchId(id); return; }
+    handleSelectSession(id);
+  };
+  // 确认接受全部更改并切换；取消则留在当前会话
+  const confirmAckAllAndSwitch = async () => {
+    if (!pendingSwitchId) return;
+    const targetId = pendingSwitchId;
+    setPendingSwitchId(null);
+    const ok = await handleAckAll();
+    if (ok) handleSelectSession(targetId);
+  };
   const confirmNewSession = async () => {
     setShowModal(false);
     setIsCheckingOut(true);
@@ -972,7 +1002,8 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
     showMcpSelectModal, setShowMcpSelectModal, mcpData, tempSelectedMcps, setTempSelectedMcps, expandedMcp, setExpandedMcp, setSelectedMcps,
     showRefModal, setShowRefModal, tempRefPath, setTempRefPath, setRefPaths,
     showGraphSelectModal, setShowGraphSelectModal, graphData, tempSelectedGraphs, setTempSelectedGraphs, setSelectedGraphs,
-    showSessionModal, setShowSessionModal, isAgentThinking, sessions, handleSelectSession, editingSessionId, editingAlias, setEditingAlias, setEditingSessionId, handleRename,
+    showSessionModal, setShowSessionModal, isAgentThinking, sessions, handleSelectSession: requestSelectSession, editingSessionId, editingAlias, setEditingAlias, setEditingSessionId, handleRename,
+    pendingSwitchId, setPendingSwitchId, unacceptedChangeCount: fileChanges.length, confirmAckAllAndSwitch,
     showTraceModal, setShowTraceModal, traceType, setTraceType, traceSkillName, setTraceSkillName, traceExpectation, setTraceExpectation, confirmTraceToSkill, isTracing
   };
 
@@ -986,7 +1017,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
     openMdEditor, graphData, fetchGraphData  // 🌟 追加这两个！
   };
 
-  const fileViewProps = { showFileView, setShowFileView, fileChanges, activeDiffPath, setActiveDiffPath, handleAck, handleRollback };
+  const fileViewProps = { showFileView, setShowFileView, fileChanges, activeDiffPath, setActiveDiffPath, handleAck, handleRollback, handleAckAll };
   const queueProps = { showReqQueue, setShowReqQueue, pendingReqs, handleResolveReq, feedbackInputs, setFeedbackInputs, authDurations, setAuthDurations, expandedReasons, setExpandedReasons };
 
   return (

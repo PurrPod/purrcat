@@ -7,7 +7,7 @@ import '@xterm/xterm/css/xterm.css';
 import { sketchyShape1, sketchyShape2, sketchyShape3 } from './ChatShared';
 
 export function FileChangesPanel(props: any) {
-  const { showFileView, setShowFileView, fileChanges, activeDiffPath, setActiveDiffPath, handleAck, handleRollback } = props;
+  const { showFileView, setShowFileView, fileChanges, activeDiffPath, setActiveDiffPath, handleAck, handleRollback, handleAckAll } = props;
   if (!showFileView) return null;
 
   return (
@@ -18,7 +18,12 @@ export function FileChangesPanel(props: any) {
           <h2 className="text-2xl font-black tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>
             FILE CHANGES <span className="ml-2 text-sm opacity-60">({fileChanges.length} files modified)</span>
           </h2>
-          <button onClick={() => setShowFileView(false)} className="ml-auto p-1.5 border-2 border-ink bg-cream hover:bg-[#d08770] hover:text-paper shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] transition-all active:translate-y-[1px]" style={sketchyShape2}><Minus size={20} strokeWidth={3} /></button>
+          {fileChanges.length > 0 && (
+            <button onClick={handleAckAll} title="接受全部更改（清理所有备份）" style={sketchyShape3} className="ml-auto px-3 py-1 bg-[#a3be8c] text-ink text-xs font-black border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:bg-[#8eb072] active:translate-y-[1px] active:shadow-none transition-all flex items-center gap-1.5 -rotate-1">
+              <CheckCircle size={14} strokeWidth={3} /> ACK ALL
+            </button>
+          )}
+          <button onClick={() => setShowFileView(false)} className={`${fileChanges.length > 0 ? '' : 'ml-auto '}p-1.5 border-2 border-ink bg-cream hover:bg-[#d08770] hover:text-paper shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] transition-all active:translate-y-[1px]`} style={sketchyShape2}><Minus size={20} strokeWidth={3} /></button>
         </div>
 
         {fileChanges.length === 0 ? (

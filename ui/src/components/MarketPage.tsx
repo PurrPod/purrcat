@@ -1,6 +1,6 @@
 // src/components/MarketPage.tsx
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { ArrowLeft, Store, RefreshCw, User, ExternalLink, AlertCircle, Zap, Server, Activity, GitMerge, Info, X, Copy, Search, LayoutGrid, FolderGit2, Download, Check, ChevronLeft, Loader2, Link2 } from 'lucide-react';
+import { ArrowLeft, Store, RefreshCw, User, AlertCircle, Zap, Server, Activity, GitMerge, X, Copy, Search, LayoutGrid, FolderGit2, Download, Check, ChevronLeft, Loader2, Link2 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
 const sketchyShape1 = { borderRadius: '255px 15px 225px 15px/15px 225px 15px 255px' };
@@ -18,6 +18,15 @@ interface SkillEntry {
   'icon-link'?: string;
   'skill-single-link': string;
   repo: string;
+}
+
+// Registry v2.0 的 mcp 条目结构
+interface McpEntry {
+  name: string;
+  desc: string;
+  'icon-link'?: string;
+  repo: string;
+  mcpServers: Record<string, any>;
 }
 
 // skill 图标（无 icon-link 时回退为 Zap 圆标）
@@ -40,6 +49,30 @@ function SkillIcon({ skill, size = 40 }: { skill: SkillEntry; size?: number }) {
   return (
     <div className="rounded-full border-2 border-ink bg-[#EBCB8B] flex items-center justify-center shrink-0" style={{ width: size, height: size }}>
       <Zap size={Math.round(size * 0.55)} strokeWidth={2.5} className="text-ink" />
+    </div>
+  );
+}
+
+// mcp 图标（无 icon-link 时回退为 Server 圆标）
+function McpIcon({ mcp, size = 40 }: { mcp: McpEntry; size?: number }) {
+  const [errored, setErrored] = useState(false);
+  const icon = mcp['icon-link'];
+  if (icon && !errored) {
+    return (
+      <img
+        src={icon}
+        alt={mcp.name}
+        width={size}
+        height={size}
+        onError={() => setErrored(true)}
+        className="rounded-full border-2 border-ink object-cover bg-paper shrink-0"
+        style={{ width: size, height: size }}
+      />
+    );
+  }
+  return (
+    <div className="rounded-full border-2 border-ink bg-[#88c0d0] flex items-center justify-center shrink-0" style={{ width: size, height: size }}>
+      <Server size={Math.round(size * 0.55)} strokeWidth={2.5} className="text-ink" />
     </div>
   );
 }
@@ -71,11 +104,14 @@ export default function MarketPage({ onBack }: { onBack: () => void }) {
   const [skillData, setSkillData] = useState<Record<string, SkillEntry>>({});
   const [isFetchingSkill, setIsFetchingSkill] = useState(false);
 
-  const [mcpData, setMcpData] = useState<Record<string, any>>({});
+  const [mcpData, setMcpData] = useState<McpEntry[]>([]);
   const [isFetchingMcp, setIsFetchingMcp] = useState(false);
 
-  // 选中的 MCP 详情信息弹窗
-  const [selectedMcpInfo, setSelectedMcpInfo] = useState<any>(null);
+  // 选中的 MCP 详情信息弹窗 / 安装确认弹窗 / 已配置列表
+  const [selectedMcpInfo, setSelectedMcpInfo] = useState<McpEntry | null>(null);
+  const [mcpInstallConfirm, setMcpInstallConfirm] = useState<McpEntry | null>(null);
+  const [installedMcpNames, setInstalledMcpNames] = useState<Set<string>>(new Set());
+  const [installingMcpName, setInstallingMcpName] = useState<string | null>(null);
 
   // 🌟 Skill 市场新状态：搜索 / 排版切换 / repo 下钻 / 详情弹窗 / 安装状态
   const [searchQuery, setSearchQuery] = useState('');
@@ -143,7 +179,7 @@ export default function MarketPage({ onBack }: { onBack: () => void }) {
       const res = await fetch(`https://raw.githubusercontent.com/PurrPod/mcps/main/registry.json?t=${Date.now()}`);
       if (res.ok) {
         const data = await res.json();
-        setMcpData(data.mcps || {});
+        setMcpData(Array.isArray(data.mcps) ? data.mcps : Object.values(data.mcps || {}));
         if (isManual) toast.success("MCP Servers 列表已刷新！");
       }
     } catch {
@@ -153,18 +189,62 @@ export default function MarketPage({ onBack }: { onBack: () => void }) {
     }
   };
 
+  // 拉取本地 mcp_config.json 中已配置的 server 名列表（"已安装"检测）
+  const fetchLocalMcps = async () => {
+    try {
+      const res = await fetch('/api/tools/mcp/list');
+      if (res.ok) {
+        const list: string[] = await res.json();
+        setInstalledMcpNames(new Set(list.map(n => n.toLowerCase())));
+      }
+    } catch { /* noop */ }
+  };
+
+  const isMcpInstalled = (mcp: McpEntry) =>
+    Object.keys(mcp.mcpServers || {}).some(k => installedMcpNames.has(k.toLowerCase()));
+
+  const confirmInstallMcp = async (mcp: McpEntry) => {
+    setInstallingMcpName(mcp.name);
+    try {
+      const res = await fetch('/api/tools/mcp/install', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          config_json: JSON.stringify({ mcpServers: mcp.mcpServers }),
+          repo: mcp.repo || '',
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json().catch(() => null);
+        toast.success(data?.message || `MCP '${mcp.name}' 安装成功！`);
+        setMcpInstallConfirm(null);
+        await fetchLocalMcps();
+      } else {
+        const err = await res.json().catch(() => null);
+        toast.error(err?.detail || 'MCP 安装失败');
+      }
+    } catch {
+      toast.error('MCP 安装失败，请检查网络');
+    } finally {
+      setInstallingMcpName(null);
+    }
+  };
+
   useEffect(() => {
     if (activeTab === 'skill') {
       if (Object.keys(skillData).length === 0) fetchSkillData();
       fetchLocalSkills();
     }
-    if (activeTab === 'mcp' && Object.keys(mcpData).length === 0) fetchMcpData();
+    if (activeTab === 'mcp') {
+      if (mcpData.length === 0) fetchMcpData();
+      fetchLocalMcps();
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
 
   const handleRefresh = () => {
     if (activeTab === 'skill') { fetchSkillData(true); fetchLocalSkills(); }
-    if (activeTab === 'mcp') fetchMcpData(true);
+    if (activeTab === 'mcp') { fetchMcpData(true); fetchLocalMcps(); }
   };
 
   const copyToClipboard = (text: string) => {
@@ -289,47 +369,128 @@ export default function MarketPage({ onBack }: { onBack: () => void }) {
         );
       })()}
 
-      {/* 🌟 MCP 详情弹窗 */}
-      {selectedMcpInfo && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-ink/70 backdrop-blur-sm p-4 pointer-events-auto">
-          <div style={sketchyShape2} className="bg-paper border-4 border-ink shadow-[16px_16px_0px_0px_rgba(26,26,26,1)] w-full max-w-3xl flex flex-col relative rotate-[0.5deg]">
-            <div className="absolute -top-4 left-1/4 w-32 h-10 bg-[#EBCB8B]/60 border-2 border-ink rotate-2 z-50 pointer-events-none" style={sketchyShape1}></div>
+      {/* 🌟 MCP 详情弹窗（Registry v2.0） */}
+      {selectedMcpInfo && (() => {
+        const installed = isMcpInstalled(selectedMcpInfo);
+        const installing = installingMcpName === selectedMcpInfo.name;
+        return (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center bg-ink/70 backdrop-blur-sm p-4 pointer-events-auto" onClick={() => setSelectedMcpInfo(null)}>
+            <div style={sketchyShape2} className="bg-paper border-4 border-ink shadow-[16px_16px_0px_0px_rgba(26,26,26,1)] w-full max-w-3xl flex flex-col relative rotate-[0.5deg]" onClick={e => e.stopPropagation()}>
+              <div className="absolute -top-4 left-1/4 w-32 h-10 bg-[#EBCB8B]/60 border-2 border-ink rotate-2 z-50 pointer-events-none" style={sketchyShape1}></div>
 
-            {/* 弹窗 Header */}
-            <div className="flex justify-between items-center p-6 border-b-4 border-ink/20 shrink-0">
-              <div className="flex items-center gap-3">
-                <Server size={32} strokeWidth={2.5} className="text-[#EBCB8B]" />
-                <div>
-                  <h2 className="text-2xl font-black tracking-widest text-ink mt-1 uppercase" style={{ fontFamily: '"Comic Sans MS", cursive' }}>{selectedMcpInfo.name}</h2>
-                  <p className="text-sm font-bold text-ink/60">by {selectedMcpInfo.author}</p>
+              {/* 弹窗 Header */}
+              <div className="flex justify-between items-start p-6 border-b-4 border-ink/20 shrink-0 gap-4">
+                <div className="flex items-center gap-4 min-w-0">
+                  <McpIcon mcp={selectedMcpInfo} size={56} />
+                  <div className="min-w-0">
+                    <h2 className="text-2xl font-black tracking-wide text-ink break-all" style={{ fontFamily: '"Comic Sans MS", cursive' }}>{selectedMcpInfo.name}</h2>
+                    <p className="text-xs font-bold text-ink/40 mt-1 break-all">{selectedMcpInfo.repo}</p>
+                  </div>
+                </div>
+                <button onClick={() => setSelectedMcpInfo(null)} className="p-2 border-2 border-ink bg-cream text-ink hover:bg-[#bf616a] hover:text-paper transition-all shrink-0" style={sketchyShape3}>
+                  <X size={24} strokeWidth={3} />
+                </button>
+              </div>
+
+              {/* 弹窗 Body：描述 + mcpServers schema */}
+              <div className="p-6 flex-1 overflow-y-auto max-h-[45vh] flex flex-col gap-5">
+                <div className="flex flex-col gap-2">
+                  <span className="font-black text-ink tracking-widest text-sm">DESCRIPTION:</span>
+                  <p className="text-[15px] font-bold leading-relaxed text-ink/80 whitespace-pre-wrap break-words">{selectedMcpInfo.desc || '（暂无描述）'}</p>
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  <div className="flex justify-between items-end">
+                    <span className="font-black text-ink tracking-widest text-sm">MCP SERVERS (SCHEMA):</span>
+                    <button onClick={() => copyToClipboard(JSON.stringify({ mcpServers: selectedMcpInfo.mcpServers }, null, 2))} className="flex items-center gap-1 text-xs font-black bg-cream border-2 border-ink px-2 py-1 shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:bg-[#a3be8c] transition-all active:translate-y-[1px] active:shadow-none" style={sketchyShape2}>
+                      <Copy size={12} strokeWidth={3}/> COPY
+                    </button>
+                  </div>
+                  {/* 格式化并渲染 JSON */}
+                  <pre style={sketchyShape3} className="bg-[#FDF8F0] border-4 border-ink p-4 overflow-x-auto text-sm font-mono font-bold shadow-[inset_4px_4px_0px_0px_rgba(26,26,26,0.05)] text-ink">
+                    {JSON.stringify({ mcpServers: selectedMcpInfo.mcpServers }, null, 2)}
+                  </pre>
                 </div>
               </div>
-              <button onClick={() => setSelectedMcpInfo(null)} className="p-2 border-2 border-ink bg-cream text-ink hover:bg-[#bf6146] hover:text-paper transition-all" style={sketchyShape3}>
-                <X size={24} strokeWidth={3} />
+
+              {/* 弹窗 Footer：link 跳转 + 安装 */}
+              <div className="p-6 pt-4 border-t-4 border-ink/10 flex items-center justify-end gap-4 shrink-0 flex-wrap">
+                <a
+                  href={selectedMcpInfo.repo}
+                  target="_blank"
+                  rel="noreferrer"
+                  title="跳转仓库"
+                  style={sketchyShape1}
+                  className="w-14 h-14 flex items-center justify-center bg-cream text-ink border-4 border-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:bg-[#88c0d0] hover:text-paper transition-all active:translate-y-1 active:shadow-none"
+                >
+                  <Link2 size={22} strokeWidth={3} />
+                </a>
+                <button
+                  onClick={() => setMcpInstallConfirm(selectedMcpInfo)}
+                  disabled={installed || installing}
+                  title={installed ? '已安装' : '安装'}
+                  style={sketchyShape2}
+                  className={`h-14 px-6 flex items-center gap-2 border-4 border-ink font-black text-lg shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] transition-all active:translate-y-1 active:shadow-none ${
+                    installed
+                      ? 'bg-[#d8d8d0] text-ink/40 cursor-not-allowed'
+                      : installing
+                        ? 'bg-[#EBCB8B] text-ink cursor-wait'
+                        : 'bg-[#EBCB8B] text-ink hover:-translate-y-0.5'
+                  }`}
+                >
+                  {installing ? <Loader2 size={22} strokeWidth={3} className="animate-spin" /> : installed ? <Check size={22} strokeWidth={3} /> : <Download size={22} strokeWidth={3} />}
+                  <span style={{ fontFamily: '"Comic Sans MS", cursive' }}>{installing ? '安装中...' : installed ? '已安装' : '安装'}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* 🌟 MCP 安装确认弹窗：提示可能需要手动填写 API Key 等字段 */}
+      {mcpInstallConfirm && (
+        <div className="fixed inset-0 z-[210] flex items-center justify-center bg-ink/70 backdrop-blur-sm p-4 pointer-events-auto">
+          <div style={sketchyShape2} className="bg-paper border-4 border-ink shadow-[16px_16px_0px_0px_rgba(26,26,26,1)] w-full max-w-lg flex flex-col relative rotate-[0.5deg]">
+            <div className="absolute -top-4 left-1/4 w-32 h-10 bg-[#bf616a]/50 border-2 border-ink rotate-2 z-50 pointer-events-none" style={sketchyShape1}></div>
+
+            <div className="flex justify-between items-center p-5 border-b-4 border-ink/20 shrink-0">
+              <h3 className="text-xl font-black text-ink tracking-wide" style={{ fontFamily: '"Comic Sans MS", cursive' }}>安装确认</h3>
+              <button onClick={() => setMcpInstallConfirm(null)} className="p-1.5 border-2 border-ink bg-cream text-ink hover:bg-[#bf616a] hover:text-paper transition-all" style={sketchyShape3}>
+                <X size={20} strokeWidth={3} />
               </button>
             </div>
 
-            {/* 弹窗 Body */}
-            <div className="p-6 flex flex-col gap-5">
-              <div className="flex flex-col gap-2">
-                <span className="font-black text-ink tracking-widest">SOURCE URL:</span>
-                <a href={selectedMcpInfo.source_url} target="_blank" rel="noreferrer" className="flex items-center gap-2 px-4 py-2 border-2 border-ink bg-[#FDF8F0] text-[#3498DB] font-bold text-sm w-fit shadow-[2px_2px_0px_0px_rgba(26,26,26,0.1)] hover:underline" style={sketchyShape1}>
-                  {selectedMcpInfo.source_url} <ExternalLink size={14} />
-                </a>
+            <div className="p-6 flex flex-col gap-4">
+              <p className="font-bold text-ink">
+                即将安装 <span className="font-black" style={{ fontFamily: '"Comic Sans MS", cursive' }}>{mcpInstallConfirm.name}</span>，其配置将合并到 MCP 配置文件中。
+              </p>
+              <div className="flex items-start gap-3 bg-[#FDF8F0] border-4 border-ink p-4 shadow-[inset_4px_4px_0px_0px_rgba(26,26,26,0.05)]" style={sketchyShape3}>
+                <AlertCircle size={22} strokeWidth={2.5} className="text-[#bf616a] shrink-0 mt-0.5" />
+                <p className="text-sm font-bold text-ink/80 leading-relaxed">
+                  注意：部分 MCP Server 需要手动填写认证字段（如将配置中的
+                  <span className="font-mono text-[#bf616a] px-1">{'<your-api-key>'}</span>
+                  替换为你的真实 API Key），否则该 MCP 将无法生效。安装完成后，可在设置中编辑 MCP 配置进行填写。
+                </p>
               </div>
+            </div>
 
-              <div className="flex flex-col gap-2">
-                <div className="flex justify-between items-end">
-                  <span className="font-black text-ink tracking-widest">CONFIGURATION (JSON):</span>
-                  <button onClick={() => copyToClipboard(JSON.stringify({ mcpServers: selectedMcpInfo.mcpServers }, null, 2))} className="flex items-center gap-1 text-xs font-black bg-cream border-2 border-ink px-2 py-1 shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:bg-[#a3be8c] transition-all active:translate-y-[1px] active:shadow-none" style={sketchyShape2}>
-                    <Copy size={12} strokeWidth={3}/> COPY
-                  </button>
-                </div>
-                {/* 格式化并渲染 JSON */}
-                <pre style={sketchyShape3} className="bg-[#FDF8F0] border-4 border-ink p-4 overflow-x-auto text-sm font-mono font-bold shadow-[inset_4px_4px_0px_0px_rgba(26,26,26,0.05)] text-ink">
-                  {JSON.stringify({ mcpServers: selectedMcpInfo.mcpServers }, null, 2)}
-                </pre>
-              </div>
+            <div className="p-5 pt-2 border-t-4 border-ink/10 flex justify-end gap-4 shrink-0">
+              <button
+                onClick={() => setMcpInstallConfirm(null)}
+                style={sketchyShape1}
+                className="px-5 h-12 flex items-center bg-cream text-ink border-4 border-ink font-black shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:bg-sand transition-all active:translate-y-1 active:shadow-none"
+              >
+                取消
+              </button>
+              <button
+                onClick={() => confirmInstallMcp(mcpInstallConfirm)}
+                disabled={installingMcpName === mcpInstallConfirm.name}
+                style={sketchyShape2}
+                className={`px-5 h-12 flex items-center gap-2 border-4 border-ink font-black shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] transition-all active:translate-y-1 active:shadow-none ${installingMcpName === mcpInstallConfirm.name ? 'bg-[#EBCB8B] text-ink cursor-wait' : 'bg-terracotta text-paper hover:-translate-y-0.5'}`}
+              >
+                {installingMcpName === mcpInstallConfirm.name && <Loader2 size={18} strokeWidth={3} className="animate-spin" />}
+                <span style={{ fontFamily: '"Comic Sans MS", cursive' }}>{installingMcpName === mcpInstallConfirm.name ? '安装中...' : '确认安装'}</span>
+              </button>
             </div>
           </div>
         </div>
@@ -542,38 +703,43 @@ export default function MarketPage({ onBack }: { onBack: () => void }) {
             </div>
           )}
 
-          {/* MCP SERVERS 列表渲染 */}
+          {/* MCP SERVERS 列表渲染（Registry v2.0：一个 mcp 一卡片） */}
           {activeTab === 'mcp' && (
             <div className={isNarrow ? 'p-4' : 'p-10'}>
-              {isFetchingMcp && Object.keys(mcpData).length === 0 ? (
+              {isFetchingMcp && mcpData.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-[50vh] gap-4 opacity-50"><RefreshCw className="animate-spin text-[#EBCB8B]" size={64} strokeWidth={2} /><p className="text-2xl font-black tracking-widest" style={{ fontFamily: '"Comic Sans MS", cursive' }}>Fetching Repositories...</p></div>
-              ) : Object.keys(mcpData).length === 0 ? (
+              ) : mcpData.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-[50vh] gap-4 opacity-50 text-ink"><AlertCircle size={64} strokeWidth={2} /><p className="text-2xl font-black tracking-widest" style={{ fontFamily: '"Comic Sans MS", cursive' }}>Registry is empty.</p></div>
               ) : (
                 <div className={`grid ${cardCols} ${isNarrow ? 'gap-4' : 'gap-8'}`}>
-                  {Object.values(mcpData).map((mcp: any, idx) => (
-                    <div key={mcp.name} style={idx % 2 === 0 ? sketchyShape1 : sketchyShape2} className={`bg-paper border-4 border-ink ${isNarrow ? 'p-4' : 'p-6'} flex flex-col gap-3 shadow-[6px_6px_0px_0px_rgba(26,26,26,1)] hover:-translate-y-2 hover:shadow-[10px_10px_0px_0px_rgba(26,26,26,1)] transition-all ${idx % 3 === 0 ? 'rotate-1' : '-rotate-1'}`}>
-                      <div className="flex justify-between items-start border-b-2 border-ink/10 pb-3 mb-1 gap-2">
-                        <h3 className="text-xl font-black truncate text-ink min-w-0" style={{ fontFamily: '"Comic Sans MS", cursive' }} title={mcp.name}>{mcp.name}</h3>
-                        <span className={`text-[10px] font-black px-2 py-1 uppercase border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] shrink-0 ${mcp.type === 'official' ? 'bg-terracotta text-paper' : 'bg-ink text-paper'}`} style={sketchyShape3}>{mcp.type || 'community'}</span>
-                      </div>
+                  {mcpData.map((mcp, idx) => {
+                    const installed = isMcpInstalled(mcp);
+                    return (
+                      <button
+                        key={mcp.name}
+                        onClick={() => setSelectedMcpInfo(mcp)}
+                        style={idx % 2 === 0 ? sketchyShape1 : sketchyShape2}
+                        className={`bg-paper border-4 border-ink ${isNarrow ? 'p-4' : 'p-6'} flex flex-col gap-3 shadow-[6px_6px_0px_0px_rgba(26,26,26,1)] hover:-translate-y-2 hover:shadow-[10px_10px_0px_0px_rgba(26,26,26,1)] transition-all text-left ${idx % 3 === 0 ? 'rotate-1' : '-rotate-1'}`}
+                      >
+                        <div className="flex items-center gap-3 border-b-2 border-ink/10 pb-3 min-w-0">
+                          <McpIcon mcp={mcp} size={44} />
+                          <h3 className="text-xl font-black truncate text-ink flex-1 min-w-0" style={{ fontFamily: '"Comic Sans MS", cursive' }} title={mcp.name}>{mcp.name}</h3>
+                          {installed && (
+                            <span className="flex items-center gap-1 text-[10px] font-black px-2 py-1 bg-[#a3be8c] text-ink border-2 border-ink shrink-0" style={sketchyShape3}>
+                              <Check size={10} strokeWidth={4} /> 已安装
+                            </span>
+                          )}
+                        </div>
 
-                      <p className="text-sm font-bold opacity-60 flex items-center gap-1.5"><User size={14} strokeWidth={3} className="shrink-0" /> <span className="truncate">{mcp.author || 'Unknown'}</span></p>
+                        <p className="text-sm font-bold text-ink/70 leading-relaxed line-clamp-3 flex-1">{mcp.desc || '（暂无描述）'}</p>
 
-                      <p className="text-[15px] font-bold mt-2 flex-1 leading-relaxed text-ink/80 break-words">{mcp.description}</p>
-
-                      <div className="flex justify-between items-center mt-4 pt-4 border-t-2 border-ink/10 border-dashed gap-2 flex-wrap">
-                        {/* INFO 配置详情查看按钮 */}
-                        <button onClick={() => setSelectedMcpInfo(mcp)} className="flex items-center gap-1 px-4 py-2 bg-[#EBCB8B] hover:bg-[#d8b877] text-ink border-4 border-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] font-black text-sm transition-all active:translate-y-1 active:shadow-none" style={sketchyShape2}>
-                          <Info size={16} strokeWidth={3} /> CONFIG
-                        </button>
-
-                        <a href={mcp.source_url} target="_blank" rel="noreferrer" className="flex items-center gap-2 px-4 py-2 bg-cream hover:bg-sand text-ink border-4 border-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] font-black text-sm transition-all active:translate-y-1 active:shadow-none" style={sketchyShape1}>
-                          <ExternalLink size={16} strokeWidth={3} /> REPO
-                        </a>
-                      </div>
-                    </div>
-                  ))}
+                        <div className="flex items-center justify-between mt-1 pt-3 border-t-2 border-ink/10 border-dashed gap-2">
+                          <p className="text-xs font-bold text-ink/40 truncate">{Object.keys(mcp.mcpServers || {}).join(', ')}</p>
+                          <span className="text-[10px] font-black px-2 py-1 uppercase bg-ink text-paper border-2 border-ink shrink-0" style={sketchyShape3}>MCP</span>
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
               )}
             </div>

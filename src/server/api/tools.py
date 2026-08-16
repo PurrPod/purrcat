@@ -15,7 +15,7 @@ from src.tool.search.skill_search import SkillSearcher
 from src.tool.cron.cron_operations import list_crons, add_cron, delete_cron
 
 # 🌟 新增：引入读取与保存 MCP 配置文件需要的依赖
-from src.utils.config import get_mcp_config, MCP_CONFIG_PATH, SKILL_DIR, LOOP_FILE
+from src.utils.config import get_mcp_config, MCP_CONFIG_PATH, SKILL_DIR, MCP_SOURCE_DIR, LOOP_FILE
 
 router = APIRouter(prefix="/api/tools", tags=["Tools Management"])
 
@@ -179,11 +179,54 @@ def refresh_mcp_api():
 # ==========================================
 class InstallMCPReq(BaseModel):
     config_json: str
+    repo: str = ""  # 源码仓库地址；官方仓库（PurrPod/mcps）时额外下载源码
+
+
+def _download_official_mcp_source(repo: str, server_names: list) -> str:
+    """官方 MCP：从 PurrPod/mcps 仓库下载对应子文件夹源码到 ~/.purrcat/mcps/"""
+    match = re.match(r"https?://github\.com/PurrPod/mcps", repo)
+    if not match:
+        return ""
+
+    zip_url = "https://github.com/PurrPod/mcps/archive/refs/heads/main.zip"
+    response = urllib.request.urlopen(zip_url)
+    zip_data = response.read()
+
+    downloaded = []
+    with zipfile.ZipFile(io.BytesIO(zip_data)) as z:
+        root_folder = z.namelist()[0].split("/")[0]
+
+        for name in server_names:
+            # 兼容仓库内不同目录层级：<root>/<name>/ 或 <root>/mcps/<name>/
+            target_prefix = None
+            for candidate in (f"{root_folder}/{name}/", f"{root_folder}/mcps/{name}/"):
+                if any(f.filename.startswith(candidate) for f in z.infolist()):
+                    target_prefix = candidate
+                    break
+            if not target_prefix:
+                continue
+
+            dest_dir = os.path.join(MCP_SOURCE_DIR, name)
+            for file_info in z.infolist():
+                if file_info.filename.startswith(target_prefix):
+                    relative_path = file_info.filename[len(target_prefix):]
+                    if not relative_path:
+                        continue
+                    local_path = os.path.join(dest_dir, relative_path)
+                    if file_info.is_dir():
+                        os.makedirs(local_path, exist_ok=True)
+                    else:
+                        os.makedirs(os.path.dirname(local_path), exist_ok=True)
+                        with open(local_path, "wb") as f:
+                            f.write(z.read(file_info.filename))
+            downloaded.append(name)
+
+    return ",".join(downloaded)
 
 
 @router.post("/mcp/install")
 def install_mcp_api(req: InstallMCPReq):
-    """解析并合并用户传入的 MCP Server JSON 配置，落盘并热更新"""
+    """解析并合并用户传入的 MCP Server JSON 配置，落盘并热更新；官方 MCP 额外下载源码"""
     try:
         new_config = json.loads(req.config_json)
         if "mcpServers" not in new_config:
@@ -205,13 +248,25 @@ def install_mcp_api(req: InstallMCPReq):
         with open(MCP_CONFIG_PATH, "w", encoding="utf-8") as f:
             json.dump(existing_config, f, indent=2, ensure_ascii=False)
 
-        # 4. 刷新 Schema 并重建检索树 (它会自动通信子进程并更新 mcp_schema.json)
+        # 4. 官方 MCP：下载源码到 ~/.purrcat/mcps/（失败不阻断配置安装）
+        source_note = ""
+        try:
+            downloaded = _download_official_mcp_source(
+                req.repo, list(new_config["mcpServers"].keys())
+            )
+            if downloaded:
+                source_note = f"；已下载官方源码: {downloaded}"
+        except Exception as e:
+            traceback.print_exc()
+            source_note = f"；官方源码下载失败: {e}"
+
+        # 5. 刷新 Schema 并重建检索树 (它会自动通信子进程并更新 mcp_schema.json)
         schemas = refresh_schemas()
         MCPSearcher().reload_index()
 
         return {
             "status": "success",
-            "message": f"MCP 配置已合并并热加载成功！当前系统共载入 {len(schemas)} 个工具。",
+            "message": f"MCP 配置已合并并热加载成功！当前系统共载入 {len(schemas)} 个工具。{source_note}",
         }
 
     except json.JSONDecodeError:
@@ -223,6 +278,20 @@ def install_mcp_api(req: InstallMCPReq):
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"安装 MCP 失败: {str(e)}")
+
+
+# ==========================================
+# 🌟 MCP 已配置列表 API（市场"已安装"检测用）
+# ==========================================
+@router.get("/mcp/list")
+def list_configured_mcps_api():
+    """返回 mcp_config.json 中已配置的 MCP Server 名称列表"""
+    try:
+        config = get_mcp_config()
+        return list(config.get("mcpServers", {}).keys())
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"获取 MCP 配置列表失败: {str(e)}")
 
 
 # ==========================================

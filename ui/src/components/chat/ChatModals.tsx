@@ -19,6 +19,7 @@ export default function ChatModals(props: any) {
     showRefModal, setShowRefModal, tempRefPath, setTempRefPath, setRefPaths,
     showGraphSelectModal, setShowGraphSelectModal, graphData, tempSelectedGraphs, setTempSelectedGraphs, setSelectedGraphs,
     showSessionModal, setShowSessionModal, isAgentThinking, sessions, handleSelectSession, editingSessionId, editingAlias, setEditingAlias, setEditingSessionId, handleRename,
+    pendingSwitchId, setPendingSwitchId, unacceptedChangeCount, confirmAckAllAndSwitch,
     showTraceModal, setShowTraceModal, traceType, setTraceType, traceSkillName, setTraceSkillName, traceExpectation, setTraceExpectation, confirmTraceToSkill, isTracing
   } = props;
 
@@ -60,6 +61,28 @@ export default function ChatModals(props: any) {
             <button onClick={() => setShowBusyModal(false)} style={sketchyShape3} className="mt-2 bg-[#EBCB8B] text-ink font-black py-3 border-4 border-ink hover:bg-[#d8b877] transition-all shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] active:shadow-none active:translate-y-1 rotate-1">
               GOT IT
             </button>
+          </div>
+        </div>
+      )}
+
+      {pendingSwitchId && (
+        <div className="fixed inset-0 bg-ink/40 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
+          <div style={sketchyShape2} className="bg-paper border-4 border-ink p-8 flex flex-col gap-6 shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] -rotate-1 max-w-sm w-full">
+            <div className="flex justify-between items-center rotate-1 border-b-4 border-ink/10 pb-2">
+              <h3 className="text-2xl font-black tracking-widest text-[#d08770]" style={{ fontFamily: '"Comic Sans MS", cursive' }}>FILE CHANGES!</h3>
+              <button onClick={() => setPendingSwitchId(null)} className="hover:text-terracotta hover:scale-110 transition-all">
+                <X size={28} strokeWidth={3}/>
+              </button>
+            </div>
+            <div className="rotate-1">
+              <p className="font-bold text-ink/80 text-base leading-relaxed">
+                当前还有 <span className="text-terracotta font-black">{unacceptedChangeCount}</span> 个文件的更改未接受。需要接受全部更改后才可以切换会话，是否接受全部更改？
+              </p>
+            </div>
+            <div className="flex gap-4 rotate-1 mt-2">
+              <button onClick={() => setPendingSwitchId(null)} style={sketchyShape3} className="flex-1 bg-cream text-ink font-black py-3 border-4 border-ink hover:bg-sand transition-all shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] active:shadow-none active:translate-y-1">取消</button>
+              <button onClick={confirmAckAllAndSwitch} style={sketchyShape1} className="flex-1 bg-[#a3be8c] text-ink font-black py-3 border-4 border-ink hover:bg-[#8eb072] transition-all shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] active:shadow-none active:translate-y-1 flex items-center justify-center gap-2"><Check size={18} strokeWidth={3}/> 接受全部并切换</button>
+            </div>
           </div>
         </div>
       )}

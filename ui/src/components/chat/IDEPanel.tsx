@@ -514,6 +514,18 @@ export default function IDEPanel({ workspacePath, onClose, onOpenLink }: IDEPane
     } catch { /* noop */ }
   };
 
+  // 接收全部更改：一键清理所有未确认变更的备份
+  const handleAckAllChanges = async () => {
+    try {
+      const res = await fetch('/api/filesystem/ack_all', { method: 'POST' });
+      if (res.ok) {
+        setActiveChangePath(null);
+        setChangeContents({});
+        fetchDiffs();
+      }
+    } catch { /* noop */ }
+  };
+
   // 撤销更改：回滚到最旧备份，同时刷新文件树与内容缓存（自动跳到下一个变更）
   const handleRollbackChange = async (change: FileChangeItem) => {
     try {
@@ -826,6 +838,16 @@ export default function IDEPanel({ workspacePath, onClose, onOpenLink }: IDEPane
               {sidebarMode === 'explorer' ? 'Explorer' : `Changes (${displayChanges.length})`}
             </span>
             <div className="flex items-center gap-1">
+              {sidebarMode === 'changes' && displayChanges.length > 0 && (
+                <button
+                  onClick={handleAckAllChanges}
+                  style={sketchyShape2}
+                  className="px-2 py-0.5 text-[10px] font-black border-2 border-ink shadow-[1px_1px_0px_0px_rgba(26,26,26,1)] bg-[#a3be8c] text-ink hover:bg-[#8eb072] transition-all active:translate-y-[1px] active:shadow-none"
+                  title="接收全部更改（清理所有备份）"
+                >
+                  接收全部
+                </button>
+              )}
               <button
                 onClick={() => setSidebarMode('explorer')}
                 style={sketchyShape1}
