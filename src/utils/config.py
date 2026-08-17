@@ -44,6 +44,7 @@ MEMORY_PENDING_DIR = os.path.join(MEMORY_DIR, "buffer", "pending")
 SKILL_DIR = os.path.join(PURRCAT_DIR, "skills")
 GRAPHS_DIR = os.path.join(PURRCAT_DIR, "graph")
 MCP_SOURCE_DIR = os.path.join(PURRCAT_DIR, "mcps")
+SENSOR_EXTENSION_DIR = os.path.join(PURRCAT_DIR, "sensor")
 
 SCHEDULE_FILE = os.path.join(SCHEDULE_DIR, "schedule.json")
 

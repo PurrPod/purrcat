@@ -7,12 +7,13 @@ import urllib.error
 import atexit
 import sys
 from .gateway import get_gateway, RemoteSensorProxy
-from src.utils.config import get_sensor_config
+from src.utils.config import get_sensor_config, SENSOR_EXTENSION_DIR
 
 
 class SensorManager:
     def __init__(self):
-        self.extension_dir = os.path.join(os.path.dirname(__file__), "extension")
+        # 用户扩展传感器目录：~/.purrcat/sensor（内置传感器已移除，仅支持外部扩展）
+        self.extension_dir = SENSOR_EXTENSION_DIR
         self.processes = {}
         self.github_repo_base = (
             "https://raw.githubusercontent.com/PurrPod/sensor-source/main"
