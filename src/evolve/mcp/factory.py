@@ -12,7 +12,8 @@ from src.utils.config import MCP_CONFIG_PATH, DATA_ROOT, AGENT_VM_DIR
 from .guide_generator import generate_mcp_create_guide, generate_mcp_test_guide
 
 
-def mcp_improve_init(mcp_name: str) -> str:
+def mcp_improve_init(mcp_name: str) -> tuple[str, str]:
+    """初始化 MCP 进化沙盒，返回 (系统提示, workplace_id)"""
     short_uuid = uuid.uuid4().hex[:5]
     workplace_root = os.path.join(AGENT_VM_DIR, "mcp_workplace", short_uuid)
     workplace_mcp_dir = os.path.join(workplace_root, mcp_name)
@@ -189,15 +190,16 @@ if __name__ == "__main__": asyncio.run(main())
     ) as f:
         f.write(generate_mcp_test_guide(mcp_name))
     return (
-        f"【MCP 工厂分配成功】工作区路径：{workplace_root}。\n"
+        f"【MCP 工厂分配成功】工作区路径：/agent_vm/mcp_workplace/{short_uuid}（workplace_id: {short_uuid}）。\n"
         f"已为你自动搭建了 '{mcp_name}' 环境。💡 请先阅读 01_GUIDE_CREATE！"
-    )
+    ), short_uuid
 
 
-def mcp_upgrade_init(mcp_name: str) -> str:
+def mcp_upgrade_init(mcp_name: str) -> tuple[str, str]:
+    """拷贝现存 MCP 至进化沙盒，返回 (系统提示, workplace_id)"""
     target_dir = os.path.join(DATA_ROOT, "mcps", mcp_name)
     if not os.path.exists(target_dir):
-        return f"❌ 无法执行升级：未找到名为 '{mcp_name}' 的正式服务。"
+        return f"❌ 无法执行升级：未找到名为 '{mcp_name}' 的正式服务。", ""
     short_uuid = uuid.uuid4().hex[:5]
     workplace_root = os.path.join(AGENT_VM_DIR, "mcp_workplace", short_uuid)
     workplace_mcp_dir = os.path.join(workplace_root, mcp_name)
@@ -223,7 +225,10 @@ def mcp_upgrade_init(mcp_name: str) -> str:
         newline="\n",
     ) as f:
         f.write(generate_mcp_test_guide(mcp_name))
-    return f"【MCP 升级派发成功】工作区路径：{workplace_root}。\n💡 请在该路径继续迭代开发！"
+    return (
+        f"【MCP 升级派发成功】工作区路径：/agent_vm/mcp_workplace/{short_uuid}（workplace_id: {short_uuid}）。\n"
+        f"💡 请在该路径继续迭代开发！"
+    ), short_uuid
 
 
 def mcp_request_handle(workplace_root: str, mcp_name: str, is_approved: bool) -> str:

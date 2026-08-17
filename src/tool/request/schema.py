@@ -4,7 +4,7 @@ REQUEST_TOOL_SCHEMA = {
     "type": "function",
     "function": {
         "name": "Request",
-        "description": "遇到权限拦截或缺失关键能力时，向人类（老板）发起审批请求。提交后等待老板审批，期间可挂起当前任务。新增技能工厂支持：可通过 skill_create/skill_upgrade 申请建立进化沙盒，开发完毕后通过 skill_merge 申请合并至主库。技能测试 skill_test 可自动在后台执行 evals 并生成报告。",
+        "description": "遇到权限拦截或缺失关键能力时，向人类（老板）发起审批请求。提交后等待老板审批，期间可挂起当前任务。技能工厂流程：skill_test 提交后 Trigger 激发测试立即免审运行，后台盲测部分需老板批准后由系统自动运行（本地无 skill_eval 图时自动跳过盲测），测试通过再申请 skill_merge 合并至主库。",
         "parameters": {
             "type": "object",
             "properties": {
@@ -19,13 +19,14 @@ REQUEST_TOOL_SCHEMA = {
                         "sensor_install",
                         "graph_install",
                         "computer_use",
+                        "skill_test",  # Skill 盲测：批准后由系统自动运行
                         "skill_merge",  # 保留：合并代码仍需审批
                         "mcp_merge",  # 新增：MCP 代码合并
                     ],
                 },
                 "target": {
                     "type": "string",
-                    "description": "目标对象。文件权限填路径；安装类填插件名；申请代码合并(skill_merge/mcp_merge)填具体的插件名。",
+                    "description": "目标对象。文件权限填路径；安装类填插件名；申请技能盲测(skill_test)填沙盒工作区前缀 'uuid/技能名'；申请代码合并(skill_merge/mcp_merge)填具体的插件名。",
                 },
                 "reason": {
                     "type": "string",

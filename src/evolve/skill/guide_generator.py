@@ -1,108 +1,55 @@
 """
 Skill 指南生成器模块 (evolve/skill/guide_generator.py)
-深度融合 agentskills.io 官方规范，为 Agent 提供详尽的创建、升级、测试专家级指导文档。
+单文件指南：覆盖创建、升级、盲测与提交全流程。
 """
 
 
-def generate_create_guide(skill_name: str) -> str:
-    return f"""# {skill_name} 创建指南 (How to Create)
+def generate_skill_guide(skill_name: str) -> str:
+    return f"""# {skill_name} 技能工厂指南 (GUIDE)
 
-从 0 到 1 构建 `{skill_name}`，请严格遵循规范：
+本指南覆盖创建、升级、盲测与提交全流程，动手前请先通读。
 
-## 1. 渐进式披露与目录结构
-不要把所有内容塞进一个文件。系统会在启动时加载元数据，触发时加载 SKILL.md，需要时加载附件。
-* `./SKILL.md`：(必须) 核心指令。必须保持在 500 行 / 5000 tokens 以内。如果内容太多，应当选择拆分文档，将大篇幅的参考材料拆出来放在 references 文件夹内，并在 SKILL.md 中注明文档的相对路径。
-* `./references/`：(可选) 参考材料。如果 SKILL.md 的字数限制内不够说明所有，可以选择拆分成参考资料放在这个文件夹里。
-* `./scripts/`：(可选) 存放可复用的 Python/Bash 脚本。用于让使用者可以减少一些重复性操作，节省消耗。
-* `./evals/evals.json`：(必须) 测试用例配置（包含激发测试 triggers 与质量盲测 evals）。
+## 1. 目录结构（渐进式披露）
 
-## 2. SKILL.md 编写标准与触发器 (Crucial for Triggering)
-顶部必须包含 YAML Frontmatter。**其中 `description` 承担了技能是否能被调用的全部责任！**
+不要把所有内容塞进一个文件：系统启动时只加载元数据，触发时加载 SKILL.md，需要时才加载附件。
+
+* `./SKILL.md`：(必须) 核心指令，≤500 行 / 5000 tokens。超长内容拆到 references/ 并在文中注明相对路径。
+* `./references/`：(可选) 大篇幅参考材料。
+* `./scripts/`：(可选) 可复用的 Python/Bash 脚本，把重复操作固化下来省消耗。
+* `./evals/evals.json`：(必须) 盲测用例配置。
+* `./evals/files/`：(可选) 测试附件。
+
+## 2. SKILL.md 编写标准
+
+顶部 YAML Frontmatter，`description` 承担技能能否被触发的全部责任：
+
 ```yaml
 ---
 name: {skill_name}
-description: 必须在 1-200 字符内。
+description: 1-200 字符，祈使句，描述用户意图而非底层实现，明确列出边缘场景。
 ---
 ```
 
-**编写 Description 的铁律 (Optimizing description):**
+指令最佳实践：
+* **面向过程**：写具体 Checklist（1.读取 schema 2.Join 客户表 3.聚合输出），不要只写目标。
+* **提供默认解**：明确默认用什么工具/路径。
+* **模板化输出**：要求特定格式时直接给出 Markdown/JSON 模板。
+* **解释 Why**："Do X because Y tends to cause Z" 比死板的 ALWAYS/NEVER 更可靠。
+* **Gotchas**：把踩过的坑全部沉淀到 `## Gotchas` 章节，这是技能最有价值的部分。
 
-* **必须使用祈使句**：例如 "Use this skill when..." 或 "Analyze CSV files..."，告诉大模型什么时候采取行动。
-* **关注用户意图，而非底层实现**：描述用户想要达成什么目标，而不是你的 Python 脚本用了什么库。
-* **尽可能具有"侵略性" (Pushy)**：明确列出适用的边缘场景。例如："即使他们没显式提及 CSV 这个词，只要提到了表格数据处理也可使用"。
+## 3. evals.json 测试用例铁律
 
-## 3. 指令编写最佳实践 (Best Practices)
+⚠️ `evals` 数组**只能写 1 个盲测用例**（后台盲测仅运行单用例，多用例只会浪费资源）。
 
-* **面向过程 (Favor procedures over declarations)**：不要说 "计算利润"，要写具体的 Checklist："1. 读取 schema, 2. Join 客户表, 3. 聚合输出"。
-* **提供默认解 (Provide defaults, not menus)**：明确指出默认使用什么工具。
-* **模板化输出 (Templates for output format)**：如果要求特定输出，直接在文档里提供一段 Markdown/JSON 模板。
-"""
+`triggers` 数组为激发测试用例（建议 5-10 个）：
+* **正例 (should_trigger=true)**：正式请求、口语、缩写、隐藏在多步长对话中的复杂意图。
+* **反例 (should_trigger=false)**：包含技能关键词但实际不需要该技能处理的请求（如对 CSV 分析技能，"帮我写一个读取 CSV 的 Python 脚本"是写代码不是分析数据）。
 
-
-def generate_upgrade_guide(skill_name: str) -> str:
-    return f"""# {skill_name} 升级与迭代指南 (How to Upgrade)
-
-对 `{skill_name}` 进行迭代时，必须基于 `benchmark.json` 的客观指标和 `trace.md` 的行为轨迹来进行调优 (Eval-driven iteration)。
-
-## 1. 核心指标诊断法则 (Analyzing Patterns)
-
-每次运行测试后，请查阅 `iteration-N/benchmark.json`，关注以下指标：
-
-* **激发失败 (Trigger Fails) 与 竞争者 (Competitors)**：
-如果一个本该触发的 Query 失败了，去测试报告里看 `competitors` 字段。是被哪个现存技能抢占了风头？此时必须修改你的 `description`，用更精确的语言与那个"竞争者"划清界限。
-* **高标准差 (High stddev)**：
-如果在质量测试中，某项耗时或 Token 消耗的标准差 (`stddev`) 极高，这说明你的指令 (SKILL.md) 存在**严重歧义**。盲测工人每次的理解都不一样，导致有时快有时慢。你必须收紧指令，增加具体示例或规则。
-* **全军覆没 (Always fails)**：
-如果断言在所有测试里都失败，要么是你的要求超出了大模型的能力，要么是测试用例本身写错了。
-
-## 2. 优化法则 (Applying Improvement Principles)
-
-* **从反馈中泛化 (Generalize from feedback) & 防过拟合 (Avoid Overfitting)**：
-修复应面向根本问题，绝对不要为了让某一个特定的测试用例 Pass 而在 SKILL.md 里硬编码特定关键词。寻找那些失败用例背后的通用概念并解决它。
-* **保持精简 (Keep it lean)**：
-规则不是越多越好。如果通过率停滞，尝试删除冗余的指令。当你发现测试工人在反复写相似的辅助代码时，立即将其提取到 `scripts/` 目录下打包。
-* **解释"Why" (Explain the why)**：
-与其死板地规定 "ALWAYS do X, NEVER do Y"，不如告诉模型 "Do X because Y tends to cause Z"，模型在理解意图后执行得更可靠。
-* **避坑指南 (Gotchas)**：
-把你在执行 Trace 中发现的特定报错、软删除逻辑等坑，全部补充到 `## Gotchas` 章节，这是技能中最有价值的部分。
-"""
-
-
-def generate_test_guide(skill_name: str) -> str:
-    return f"""# {skill_name} 质量测试与提交流程指南 (How to Test & Merge)
-
-**严禁在未经过沙盒盲测的情况下直接申请 skill_merge！**
-修改代码后，必须完善 `evals/evals.json` 以驱动自动化盲测，它包含两个核心数组：`triggers` (激发测试) 和 `evals` (质量测试)。
-
-## 🚨 核心行为准则 (Crucial Rules)
-
-1. **测试前必须询问用户 (Ask for Permission)**：
-   编写/修改完测试用例后，**必须先将用例的具体内容告知用户**，并询问：“是否要跑这几个用例试试看效果？”
-   **只有在用户明确同意后才能执行 `test_skill`。** 如果用户不在或未指示，请挂起等待，切勿擅自运行测试！
-
-2. **无交互测试原则 (Non-interactive)**：
-   Skill 测试是在隔离的后台双 Agent 环境下运行的。**请绝对不要编写需要用户中途提供输入、确认或进行任何交互的测试用例。**
-
-3. **Prompt 路径规范 (Relative Paths)**：
-   如果测试用例的 `prompt` 提到了需要处理的文件，**严禁使用绝对路径**。请直接使用附件的文件名或相对目录名（例如：使用"请帮我分析 sample.csv" 代替 "分析 /root/.../sample.csv"）。
-
-4. **测试附件支持 (Using Files)**：
-   如果测试用例需要用到实际的文件（如 CSV、图片或特定文件夹），请将这些文件放入 `evals/files/` 目录中。并在 `evals.json` 中配置 `files` 字段，系统会在测试时自动挂载这些附件。合并至主分支时，这些附件也会一并被保留。
-
-## 1. 编写触发测试用例 (Designing Trigger Evals)
-你需要在 `evals.json` 中添加 `triggers` 数组。建议设计 5-10 个用例。
-
-* **正例 (Should-trigger)**：包含正式请求、随意的口语、缩写或错别字，以及隐藏在多步长对话中的复杂意图。
-* **反例与擦边球 (Should-not-trigger/Near-misses) (极度重要)**：必须设计那些**包含技能关键词，但实际上并不需要该 skill 处理**的请求。
-* *例如：对于 CSV 处理技能，不要用"今天天气如何"当反例，要用"帮我写一个能读取 CSV 到数据库的 Python 脚本"（这是写代码，不是分析数据）。*
-
-## 2. 编写质量盲测用例 (Designing Quality Evals)
-
-`evals` 数组用于测试执行结果。
-* `prompt`: 真实的、随利用户语气的请求。**记得只写相对文件名！**
-* `files`: 存放该测试用例需要用到的附件的相对路径数组。
+`evals` 盲测用例的字段：
+* `prompt`: 模拟用户的真实请求。**必须自包含**——从第一条消息开始就写明本次任务所需的全部信息（目标、输入、期望格式）。**严禁**设计任何需要用户中途提供输入、确认或交互的流程。
+* `files`: 附件相对路径数组（先放入 `evals/files/`）；prompt 中只用文件名，**严禁绝对路径**。
 * `expected_output`: 人类可读的成功标准。
-* `assertions`: 硬性断言。好的断言必须是可验证的（如"输出包含3个公式"），坏的断言是含糊的（如"输出得很好"）。不要在断言里规定必须使用某个一字不差的短语，这太脆弱了。
+* `assertions`: 可验证的硬性断言（如"输出包含3个公式"），禁止模糊断言（如"输出得很好"），也不要规定一字不差的短语。
 
 ```json
 {{
@@ -113,27 +60,36 @@ def generate_test_guide(skill_name: str) -> str:
   ],
   "evals": [
     {{
-      "id": "eval-sales-chart",
-      "prompt": "I have a CSV named sales.csv. Make a bar chart.",
-      "files": ["evals/files/sales.csv", "evals/files/test_folder"],
-      "expected_output": "A bar chart image",
-      "assertions": ["输出包含图表文件", "图表展示了完整的月份"]
+      "id": "basic_test_1",
+      "prompt": "（自包含的模拟用户请求，只用附件文件名）",
+      "files": ["evals/files/示例附件.txt"],
+      "expected_output": "人类可读的预期结果描述",
+      "assertions": ["输出的 JSON 文件格式必须合法"]
     }}
   ]
 }}
 ```
 
-## 3. 如何发起测试与阅读档案 (Spawning Runs & Reading Archives)
+## 4. 如何测试（Trigger 免审直接跑，盲测需老板批准）
 
-用户同意测试后，使用 KernelUpgrade 工具发起 test_skill。收到测试完毕的通知后，你必须按顺序阅读 iteration-N 目录下的：
+你**无权**直接运行测试！须调用 `Request(request_type="skill_test", target="工作区uuid/{skill_name}")` 发起，两级流程如下：
 
-1. **`benchmark.json`**: 查看全局平均通过率 (mean) 和 标准差 (stddev)。评估你的技能修改是否值得。
-2. **`eval_report.md`**: 查看 `triggers` 测试中，你是否被其他技能抢占了触发权。如果是，你需要修改 SKILL.md 里的 description 以使其更加贴合通用的使用场景。
-3. **`trace.md` (必读)**: 去失败的用例目录下读取行为轨迹。看大模型在哪一步偏离了你的指令，反思是否可以通过优化 SKILL.md 或相应脚本工具来避免这些多余的消耗。
+1. **Trigger 激发测试（免审）**：提交后立即在后台运行（影子节点注入真实检索环境，检验 description 能否击败现存技能被唤醒），完成后收到系统级通知，报告归档在 `iteration-N/trigger_report.md`。
+2. **后台盲测（需审批）**：老板批准后系统自动在后台双 Agent 隔离环境运行盲测。若本地无 skill_eval 图，盲测会被自动跳过（工具会明确提示），需老板安装测试图后重新申请。
+3. 阅读本次 `iteration-N/` 目录产物（按顺序）：
+   * `trigger_report.md`：激发唤醒率与语义竞争者，若被其他技能抢占需修改 description 划清界限。
+   * `benchmark.json`：全局通过率 (mean)、耗时/Tokens 及标准差 (stddev)。
+   * `eval_report.md`：本次用例的裁判评估结论。
+   * `trace.md` (必读)：测试工人的行为轨迹，看它在哪一步偏离了你的指令。
+4. 若盲测申请被拒绝，根据老板批注继续修复后再次申请。
 
-总之，优化的方向包含但不限于以下：
-1. `triggers` 测试命中率要尽可能高
-2. token/时间等资源消耗量要尽可能低
-3. 指令要足够准确以防止使用者绕远路
-4. 如有重复性操作可以固化为脚本
+## 5. 升级迭代诊断 (Eval-driven)
+
+* **通过率低**：读 trace 找通用性根因。严禁为了让单个用例 Pass 而硬编码特定关键词（防过拟合），要解决失败背后的通用概念。
+* **stddev 高**：指令存在歧义，盲测工人每次理解不同。收紧措辞、增加具体示例。
+* **保持精简**：规则不是越多越好，通过率停滞时尝试删除冗余指令；重复出现的辅助代码提取到 `scripts/`。
+
+## 6. 提交合并
+
+**严禁在未经过沙盒盲测的情况下直接申请合并！** 测试通过后调用 `Request(request_type="skill_merge", target="{skill_name}")`，并在 reason 中简述修改点供老板 Code Review。
 """

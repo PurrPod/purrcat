@@ -11,14 +11,11 @@ from datetime import datetime
 from src.utils.config import SKILL_DIR, AGENT_VM_DIR
 
 # 引入新的生成器
-from .guide_generator import (
-    generate_create_guide,
-    generate_upgrade_guide,
-    generate_test_guide,
-)
+from .guide_generator import generate_skill_guide
 
 
-def skill_improve_init(skill_name: str, is_upgrade: bool) -> str:
+def skill_improve_init(skill_name: str, is_upgrade: bool) -> tuple[str, str]:
+    """初始化 Skill 进化沙盒，返回 (系统提示, workplace_id)"""
     short_uuid = uuid.uuid4().hex[:5]
     workplace_root = os.path.join(AGENT_VM_DIR, "skill_workplace", short_uuid)
     workplace_skill_dir = os.path.join(workplace_root, skill_name)
@@ -48,10 +45,20 @@ def skill_improve_init(skill_name: str, is_upgrade: bool) -> str:
 
         evals_json_content = f"""{{
   "skill_name": "{skill_name}",
+  "triggers": [
+    {{
+      "query": "在此输入正例：应唤醒本技能的真实用户请求（口语/缩写/复杂意图）",
+      "should_trigger": true
+    }},
+    {{
+      "query": "在此输入反例：包含技能关键词但实际不需要本技能处理的请求",
+      "should_trigger": false
+    }}
+  ],
   "evals": [
     {{
       "id": "basic_test_1",
-      "prompt": "在此处输入模拟用户的真实提问，注意只用附件文件名，不要写绝对路径",
+      "prompt": "在此处输入模拟用户的真实提问。必须自包含：从一开始就写明本次任务所需的全部信息，禁止任何需要用户中途输入或确认的交互；只用附件文件名，不要写绝对路径",
       "files": [
         "evals/files/示例附件.txt"
       ],
@@ -81,38 +88,23 @@ def skill_improve_init(skill_name: str, is_upgrade: bool) -> str:
                 "# 忽略运行缓存和依赖\n__pycache__/\n*.py[cod]\nnode_modules/\n.venv/\nvenv/\n.env\n"
             )
 
-    # 🌟 核心修改：生成三大指导手册
+    # 🌟 生成单文件官方指导手册
     with open(
-        os.path.join(workplace_root, "01_GUIDE_CREATE.md"),
+        os.path.join(workplace_root, "GUIDE.md"),
         "w",
         encoding="utf-8",
         newline="\n",
     ) as f:
-        f.write(generate_create_guide(skill_name))
+        f.write(generate_skill_guide(skill_name))
 
-    with open(
-        os.path.join(workplace_root, "02_GUIDE_UPGRADE.md"),
-        "w",
-        encoding="utf-8",
-        newline="\n",
-    ) as f:
-        f.write(generate_upgrade_guide(skill_name))
-
-    with open(
-        os.path.join(workplace_root, "03_GUIDE_TEST.md"),
-        "w",
-        encoding="utf-8",
-        newline="\n",
-    ) as f:
-        f.write(generate_test_guide(skill_name))
-
-    # 🌟 核心修改：精准的 API 返回引导
+    # 🌟 精准的 API 返回引导：显式携带 workplace_id，路径使用沙盒视角的 /agent_vm 前缀
+    sandbox_root = f"/agent_vm/skill_workplace/{short_uuid}"
     return (
-        f"【技能工厂分配成功】工作区路径：{workplace_root}。\n"
+        f"【技能工厂分配成功】工作区路径：{sandbox_root}（workplace_id: {short_uuid}）。\n"
         f"{action_msg}。\n"
-        f"💡 提示：系统已在沙盒根目录为你生成了三份官方说明文档（01_GUIDE_CREATE.md, 02_GUIDE_UPGRADE.md, 03_GUIDE_TEST.md）。"
-        f"你可以根据当前任务（新建/升级/编写测试）按需读取以获取最佳实践规范！"
-    )
+        f"💡 提示：系统已在沙盒根目录为你生成了官方说明文档 GUIDE.md（覆盖创建/升级/盲测/提交全流程），动手前请先通读！"
+        f"注意：盲测必须通过 Request(skill_test) 获得老板批准后由系统自动运行。"
+    ), short_uuid
 
 
 def skill_generate_diff(skill_name: str, workplace_root: str) -> str:

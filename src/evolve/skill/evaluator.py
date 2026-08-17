@@ -44,6 +44,121 @@ def run_skill_eval_background(workplace_id: str, skill_name: str, main_session_i
     ).start()
 
 
+def run_skill_trigger_eval_background(workplace_id: str, skill_name: str):
+    """启动后台线程跑 Trigger 激发测试（无需审批，提交即运行）"""
+
+    def _bg_task():
+        try:
+            report = _run_trigger_evals(workplace_id, skill_name)
+            from src.agent.manager import manager
+
+            manager.agent_force_push(
+                f"🎯 【Trigger 测试结果】技能 '{skill_name}' 的激发路由测试已完成！\n\n{report}",
+                type="system",
+            )
+        except Exception as e:
+            from src.agent.manager import manager
+
+            manager.agent_force_push(
+                f"❌ 技能 '{skill_name}' (工作区: {workplace_id}) 的 trigger 测试运行崩溃: {e}",
+                type="system",
+            )
+
+    threading.Thread(
+        target=_bg_task, daemon=True, name=f"TriggerEval_{workplace_id}"
+    ).start()
+
+
+def _run_trigger_evals(workplace_id: str, skill_name: str) -> str:
+    """以影子节点方式将沙盒技能注入检索快照，跑 triggers 激发测试"""
+    workplace_root = os.path.join(AGENT_VM_DIR, "skill_workplace", workplace_id)
+    dev_skill_dir = os.path.join(workplace_root, skill_name)
+    evals_file = os.path.join(dev_skill_dir, "evals", "evals.json")
+
+    if not os.path.exists(evals_file):
+        return f"测试失败：未找到 {evals_file}"
+
+    try:
+        with open(evals_file, "r", encoding="utf-8") as f:
+            evals_data = json.load(f)
+    except json.JSONDecodeError:
+        return "测试失败：evals.json 格式错误，无法解析为有效的 JSON。"
+
+    triggers = evals_data.get("triggers", [])
+    if not triggers:
+        return "Trigger 报告：evals.json 中没有任何 trigger 测试用例。"
+
+    # 解析沙盒 SKILL.md，组装影子技能节点
+    skill_md_path = os.path.join(dev_skill_dir, "SKILL.md")
+    if not os.path.exists(skill_md_path):
+        return "测试失败：沙盒内未找到 SKILL.md。"
+
+    from pathlib import Path
+    from src.utils.skill_helper import _parse_skill_md
+    from src.tool.search.skill_search import SkillSearcher
+
+    parsed = _parse_skill_md(Path(skill_md_path))
+    metadata = parsed.get("metadata", {})
+    sandbox_skill = {
+        "name": metadata.get("name", skill_name),
+        "description": metadata.get("description", metadata.get("desc", "")),
+        "content": parsed.get("content", ""),
+        "dir_name": skill_name,
+    }
+    if not sandbox_skill["description"]:
+        return "测试失败：SKILL.md 的 frontmatter 缺少 description，无法参与激发检索。"
+
+    searcher = SkillSearcher()
+
+    iteration_dir, iteration_idx = _get_next_iteration_dir(workplace_root)
+    os.makedirs(iteration_dir, exist_ok=True)
+
+    report_lines = [f"# {skill_name} Trigger 激发测试报告 (Iteration {iteration_idx})\n"]
+    success = 0
+
+    for idx, t_case in enumerate(triggers):
+        query = t_case.get("query", "")
+        should_trigger = t_case.get("should_trigger", True)
+
+        try:
+            res = searcher.simulate_trigger(query, sandbox_skill)
+        except Exception as e:
+            report_lines.append(
+                f"### 案例 {idx + 1}: 用户请求 `{query}`\n- **评测状态**: ❌ 框架崩溃: {e}\n"
+            )
+            continue
+
+        hit = res["is_triggered"]
+        if should_trigger and hit:
+            icon, status_text = "✅", f"唤醒成功 (排名第 {res['rank']}，得分: {res['score']})"
+            success += 1
+        elif should_trigger and not hit:
+            icon, status_text = "❌", f"激发失败 (得分: {res['score']}，未进 Top 3 或低于唤醒阈值)"
+        elif not should_trigger and not hit:
+            icon, status_text = "✅", "反例拦截成功 (技能保持静默)"
+            success += 1
+        else:
+            icon, status_text = "❌", f"反例拦截失败 (不该触发却排名第 {res['rank']})"
+
+        expect_str = "应触发" if should_trigger else "静默阻断 (反例)"
+        comp_str = "、".join(res["competitors"]) if res["competitors"] else "无"
+
+        report_lines.append(f"### 案例 {idx + 1}: 用户请求 `{query}`")
+        report_lines.append(f"- **期望行为**: {expect_str}")
+        report_lines.append(f"- **评测状态**: {icon} **{status_text}**")
+        report_lines.append(f"- **语义竞争者 (Top 3)**: {comp_str}\n")
+
+    report_lines.append(f"📈 **意图路由总唤醒率 (Trigger Pass Rate)**: **{success}/{len(triggers)}**")
+
+    final_report = "\n".join(report_lines)
+    with open(
+        os.path.join(iteration_dir, "trigger_report.md"), "w", encoding="utf-8"
+    ) as f:
+        f.write(final_report)
+
+    return final_report
+
+
 def _get_next_iteration_dir(workplace_root: str) -> tuple[str, int]:
     max_idx = 0
     if os.path.exists(workplace_root):

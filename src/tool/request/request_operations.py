@@ -21,7 +21,7 @@ def _ensure_requests_file():
             json.dump({}, f)
 
 
-def submit_request(request_type: str, target: str, reason: str) -> dict:
+def submit_request(request_type: str, target: str, reason: str, extra: dict = None) -> dict:
     """
     提交一个人类审批请求到 requests.json
 
@@ -29,6 +29,7 @@ def submit_request(request_type: str, target: str, reason: str) -> dict:
         request_type: 请求类型 (mcp_install/skill_install/file_write/file_read/sensor_install/graph_install/skill_create/skill_upgrade/skill_merge)
         target: 目标对象 (文件路径或插件名称)
         reason: 申请理由
+        extra: 附加字段（如 skill_test 的 trigger_started 标记）
 
     Returns:
         包含请求详情的字典，包含 id, type, target, reason, status, created_at
@@ -46,6 +47,8 @@ def submit_request(request_type: str, target: str, reason: str) -> dict:
         "status": "pending",  # 固定初始状态，等待人类给出 yes/no
         "created_at": timestamp,
     }
+    if extra:
+        req_data.update(extra)
 
     with REQUEST_LOCK:
         try:

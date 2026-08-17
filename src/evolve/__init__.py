@@ -28,7 +28,7 @@ from .skill.factory import (
     skill_request_handle,
     skill_rollback,
 )
-from .skill.evaluator import run_skill_eval_background
+from .skill.evaluator import run_skill_eval_background, run_skill_trigger_eval_background
 from .mcp.factory import mcp_improve_init, mcp_upgrade_init, mcp_request_handle
 from .mcp.evaluator import run_mcp_eval_background
 
@@ -38,6 +38,7 @@ __all__ = [
     "skill_request_handle",
     "skill_rollback",
     "run_skill_eval_background",
+    "run_skill_trigger_eval_background",
     "mcp_improve_init",
     "mcp_upgrade_init",
     "run_mcp_eval_background",

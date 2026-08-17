@@ -948,7 +948,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
       if (!res.ok) throw new Error("分配沙盒失败");
       const data = await res.json();
       const wp_id = data.workplace_id;
-      const factoryPath = `./agent_vm/skill_workplace/${wp_id}/${traceSkillName.trim()}`;
+      const factoryPath = `/agent_vm/skill_workplace/${wp_id}/${traceSkillName.trim()}`;
 
       const content = `用户使用了trace_to_skill功能，已为你分配了技能工厂${factoryPath}/，请根据用户需要和本次会话的交互记录与历史经验升级或创建对应技能。以下是用户期望：\n${traceExpectation.trim()}`;
 

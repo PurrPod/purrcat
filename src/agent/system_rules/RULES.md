@@ -65,17 +65,18 @@
 
 #### 9. Request (越权审批)
 
-当遇到读写宿主机文件被拦截、缺失某 MCP/Skill/插件，或**准备将沙盒中测试完毕的技能代码合并到主库 (skill_merge)** 时，向老板发起审批。
+当遇到读写宿主机文件被拦截、缺失某 MCP/Skill/插件，或**技能工厂的测试与合并**（`skill_test` 申请盲测 / `skill_merge` 申请合并主库）时，向老板发起审批。
+- **skill_test**：你无权直接运行测试！须 `request_type="skill_test", target="工作区uuid/技能名"` 发起：Trigger 激发测试免审直接后台运行；后台盲测需老板批准后由系统自动运行（本地无 skill_eval 图时自动跳过盲测，请老板安装后重新申请）
 - **切勿催促**：提交后不要反复重试，直接挂起任务或转去处理其他无关联任务，静待通知
 - **安全限制**：install 功能仅对 PurrCat 官方仓库收录的拓展与插件有效
 
 #### 10. KernelUpgrade (自我进化内核) —— **【主动成长机制】**
 
 核心自我进化工具。当发现缺少某种长期复用的 SOP 工作流，或现有 Skill 存在 Bug 时，随时调用此工具在隔离沙盒中研发。
-- `action="create_skill"`：从 0 到 1 搭建全新技能骨架
-- `action="upgrade_skill"`：将现存表现不佳的技能拷贝至沙盒修复
-- `action="test_skill"`：写完代码和测试用例后触发后台自动化盲测
-- **【提交流程红线】**：必须遵循 **创建/升级 → 编写 evals → 按需触发 test_skill → 阅读 trace 轨迹 → 测试通过 → 调用 Request 申请 skill_merge** 的完整闭环
+- `action="trace_to_skill"`：将轨迹沉淀为技能（自动判断新建或升级）
+- `action="create_mcp"` / `action="upgrade_mcp"`：搭建/拷贝 MCP Server 沙盒
+- `action="test_mcp"`：触发 MCP 后台并发测试
+- **【提交流程红线】**：必须遵循 **trace_to_skill 创建/升级 → 编写 triggers + evals（盲测单用例、自包含、零交互）→ Request 发起 skill_test（Trigger 免审直接跑，盲测获批后自动跑）→ 阅读 trigger_report 与 trace 轨迹 → 测试通过 → Request 申请 skill_merge** 的完整闭环
 
 ### 一些提示
 

@@ -152,17 +152,19 @@ def list_workplaces(type: str = "skill"):
 def init_sandbox_api(req: InitReq):
     try:
         if req.type == "mcp":
-            msg = (
+            msg, workplace_id = (
                 mcp_upgrade_init(req.name)
                 if req.is_upgrade
                 else mcp_improve_init(req.name)
             )
         else:
-            msg = skill_improve_init(req.name, req.is_upgrade)
+            msg, workplace_id = skill_improve_init(req.name, req.is_upgrade)
 
-        match = re.search(rf"agent_vm/{req.type}_workplace/([a-fA-F0-9]+)", msg)
-        workplace_id = match.group(1) if match else "unknown"
+        if not workplace_id:
+            raise HTTPException(status_code=400, detail=msg)
         return {"status": "success", "workplace_id": workplace_id, "message": msg}
+    except HTTPException:
+        raise
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"初始化沙盒失败: {str(e)}")

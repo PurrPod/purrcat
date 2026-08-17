@@ -6,6 +6,7 @@ from pydantic import BaseModel
 # 直接从工具层的高内聚 api 里引入逻辑
 from src.tool.request.api import (
     get_pending_requests,
+    kick_pending_skill_tests,
     resolve_request,
     get_resolved_requests,
     delete_request,
@@ -25,6 +26,11 @@ class ResolveRequestReq(BaseModel):
 def list_pending_requests_api():
     """获取前端需要弹窗提示的所有待处理请求"""
     try:
+        # 🌟 主进程钩子：为新的 skill_test 请求自动启动 Trigger 免审测试
+        try:
+            kick_pending_skill_tests()
+        except Exception:
+            pass
         return get_pending_requests()
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
