@@ -941,7 +941,8 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
         body: JSON.stringify({
           type: 'skill',
           name: traceSkillName.trim(),
-          is_upgrade: traceType === 'upgrade'
+          is_upgrade: traceType === 'upgrade',
+          goal: traceExpectation.trim()
         })
       });
 

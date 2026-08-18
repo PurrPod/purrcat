@@ -25,7 +25,9 @@ def KernelUpgrade(action: str, target: str, **kwargs) -> dict:
         if action == "trace_to_skill":
             is_upgrade = os.path.exists(os.path.join(SKILL_DIR, target))
 
-            sys_note, _ = skill_improve_init(target, is_upgrade=is_upgrade)
+            sys_note, _ = skill_improve_init(
+                target, is_upgrade=is_upgrade, goal=kwargs.get("goal", "")
+            )
 
             status_str = "已" if is_upgrade else "未"
             action_str = "安排升级" if is_upgrade else "创建"
@@ -46,14 +48,14 @@ def KernelUpgrade(action: str, target: str, **kwargs) -> dict:
             )
 
         elif action == "create_mcp":
-            sys_note, _ = mcp_improve_init(target)
+            sys_note, _ = mcp_improve_init(target, goal=kwargs.get("goal", ""))
             return text_response(
                 f"✅ 全新 MCP Server 沙盒构建完成！\n\n{sys_note}",
                 f"🔌 {target} MCP已创建",
             )
 
         elif action == "upgrade_mcp":
-            sys_note, _ = mcp_upgrade_init(target)
+            sys_note, _ = mcp_upgrade_init(target, goal=kwargs.get("goal", ""))
             return text_response(
                 f"✅ 现存 MCP Server 已拷贝至进化沙盒，准备好进行升级！\n\n{sys_note}",
                 f"📦 {target} MCP沙盒已就绪",

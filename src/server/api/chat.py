@@ -38,7 +38,7 @@ class ChatReq(BaseModel):
 
 
 class ChatBatchReq(BaseModel):
-    session_id: str
+    session_id: str = ""  # 为空时自动路由到当前活跃会话（供 ChatPage 之外的页面触发）
     events: list
 
 
@@ -70,6 +70,10 @@ def _run_agent_batch_task(session_id: str, events: list):
     manager = AgentManager()
     if manager._agent is None:
         manager.init_agent()
+
+    # 未指定会话时，路由到当前活跃会话
+    if not session_id:
+        session_id = manager.get_active_session_id()
 
     if manager._agent.session_id != session_id:
         if manager._agent.state != "idle":

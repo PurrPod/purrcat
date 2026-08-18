@@ -35,6 +35,7 @@ class InitReq(BaseModel):
     type: str = "skill"
     name: str
     is_upgrade: bool
+    goal: str = ""  # 本次构建目标（写入 GOAL.md 并嵌入 GUIDE.md）
 
 
 class FileUpdateReq(BaseModel):
@@ -138,7 +139,9 @@ def list_workplaces(type: str = "skill"):
                 for item in os.listdir(w_path):
                     if os.path.isdir(
                         os.path.join(w_path, item)
-                    ) and not item.startswith("iteration-"):
+                    ) and not item.startswith(
+                        ("iteration-", "trigger-")
+                    ):
                         item_name = item
                         break
                 if item_name != "unknown":
@@ -153,12 +156,12 @@ def init_sandbox_api(req: InitReq):
     try:
         if req.type == "mcp":
             msg, workplace_id = (
-                mcp_upgrade_init(req.name)
+                mcp_upgrade_init(req.name, req.goal)
                 if req.is_upgrade
-                else mcp_improve_init(req.name)
+                else mcp_improve_init(req.name, req.goal)
             )
         else:
-            msg, workplace_id = skill_improve_init(req.name, req.is_upgrade)
+            msg, workplace_id = skill_improve_init(req.name, req.is_upgrade, req.goal)
 
         if not workplace_id:
             raise HTTPException(status_code=400, detail=msg)
@@ -247,9 +250,25 @@ def get_eval_report_api(
     if iteration is not None:
         report_name = "test_report.md" if type == "mcp" else "eval_report.md"
         report_path = os.path.join(w_path, f"iteration-{iteration}", report_name)
+        report_md = ""
         if os.path.exists(report_path):
             with open(report_path, "r", encoding="utf-8") as f:
-                return {"report_md": f.read()}
+                report_md = f.read()
+        # Skill 类型：把 Trigger 激发测试报告一并合并展示
+        # 按 iteration 索引配对 trigger-K/trigger_report.md；缺失则不附加（避免每轮都显示同一份）
+        if type != "mcp" and report_md:
+            trigger_path = ""
+            candidate = os.path.join(w_path, f"trigger-{iteration}", "trigger_report.md")
+            if os.path.exists(candidate):
+                trigger_path = candidate
+            if trigger_path:
+                try:
+                    with open(trigger_path, "r", encoding="utf-8") as f:
+                        report_md = f"{f.read()}\n\n---\n\n{report_md}"
+                except Exception:
+                    pass
+        if report_md:
+            return {"report_md": report_md}
     return {"report_md": ""}
 
 

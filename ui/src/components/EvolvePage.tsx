@@ -31,7 +31,7 @@ const MarkdownComponents: any = {
 
 type EvolveType = 'skill' | 'mcp';
 type ProcessStep = 'edit' | 'test' | 'merge' | 'tools';
-type WorkPlace = { workplace_id: string; name: string; status?: string };
+type WorkPlace = { workplace_id: string; name: string; status?: string; goal?: string };
 
 export default function EvolvePage({ onBack }: { onBack: () => void }) {
   const [activeType, setActiveType] = useState<EvolveType>('skill');
@@ -311,6 +311,9 @@ export default function EvolvePage({ onBack }: { onBack: () => void }) {
                   <div className="flex flex-col min-w-0">
                     <span className="font-black text-lg truncate text-ink">{wp.name}</span>
                     <span className="text-[10px] font-bold opacity-60 text-ink">ID: {wp.workplace_id}</span>
+                    {wp.goal && (
+                      <span className="text-[11px] font-bold text-terracotta/80 truncate mt-0.5" title={wp.goal}>🎯 {wp.goal}</span>
+                    )}
                   </div>
                   <button
                     onClick={(e) => handleDeleteWorkplace(e, wp.workplace_id, wp.name)}
@@ -350,11 +353,22 @@ export default function EvolvePage({ onBack }: { onBack: () => void }) {
               </button>
             </div>
 
-            <div className="flex-1 overflow-hidden relative p-6 bg-cream/30">
-              
+            <div className="flex-1 overflow-hidden relative p-6 bg-cream/30 flex flex-col">
+
+              {/* 🎯 构建目标横幅 */}
+              {activeWorkplace.goal && (
+                <div className="mb-4 shrink-0 flex items-start gap-3 bg-[#EBCB8B]/30 border-2 border-ink/30 px-4 py-3" style={sketchyShape2}>
+                  <span className="text-lg shrink-0">🎯</span>
+                  <div className="min-w-0">
+                    <span className="text-[10px] font-black text-ink/50 tracking-widest uppercase block">Build Goal</span>
+                    <p className="text-sm font-bold text-ink/80 leading-relaxed whitespace-pre-wrap break-words">{activeWorkplace.goal}</p>
+                  </div>
+                </div>
+              )}
+
               {/* === SKILL 编辑器视图 === */}
               {currentStep === 'edit' && activeType === 'skill' && (
-                <div className="flex h-full gap-6 w-full max-w-7xl mx-auto">
+                <div className="flex flex-1 min-h-0 gap-6 w-full max-w-7xl mx-auto">
                   <div className="w-64 shrink-0 flex flex-col gap-3 border-r-4 border-ink/20 pr-4 overflow-y-auto">
                      <span className="font-black text-ink/40 tracking-widest text-sm mb-1">SANDBOX FILES</span>
                      {files.filter(f => !f.startsWith('evals')).map((f, idx) => (
@@ -377,7 +391,7 @@ export default function EvolvePage({ onBack }: { onBack: () => void }) {
 
               {/* === MCP 工具与参数呈现视图 === */}
               {currentStep === 'tools' && activeType === 'mcp' && (
-                <div className="h-full w-full max-w-5xl mx-auto overflow-y-auto p-6 space-y-8">
+                <div className="flex-1 min-h-0 w-full max-w-5xl mx-auto overflow-y-auto p-6 space-y-8">
 
                   {/* 1. 标题与刷新按钮修改：去掉黄框，改为清爽的标题和独立按钮 */}
                   <div className="flex justify-between items-end mb-4 px-2 border-b-4 border-ink/20 pb-4 shrink-0">
@@ -502,7 +516,7 @@ export default function EvolvePage({ onBack }: { onBack: () => void }) {
 
               {/* === 测试报告视图 === */}
               {currentStep === 'test' && (
-                <div className="flex h-full gap-6 w-full max-w-7xl mx-auto">
+                <div className="flex flex-1 min-h-0 gap-6 w-full max-w-7xl mx-auto">
                   <div className="w-72 shrink-0 flex flex-col gap-3 overflow-y-auto pr-2">
                     <div className="flex justify-between items-center mb-1">
                       <span className="font-black text-ink/40 tracking-widest text-sm">ARCHIVES</span>
@@ -537,7 +551,7 @@ export default function EvolvePage({ onBack }: { onBack: () => void }) {
 
               {/* === 合并审查视图 === */}
               {currentStep === 'merge' && (
-                <div className="flex flex-col h-full gap-6 w-full max-w-6xl mx-auto">
+                <div className="flex flex-col flex-1 min-h-0 gap-6 w-full max-w-6xl mx-auto">
                   <div className="flex justify-between items-center shrink-0">
                     <h2 className="text-3xl font-black text-ink tracking-widest" style={{ fontFamily: '"Comic Sans MS", cursive' }}>DIFF REVIEW</h2>
                     

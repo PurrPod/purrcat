@@ -14,7 +14,7 @@ from src.utils.config import SKILL_DIR, AGENT_VM_DIR
 from .guide_generator import generate_skill_guide
 
 
-def skill_improve_init(skill_name: str, is_upgrade: bool) -> tuple[str, str]:
+def skill_improve_init(skill_name: str, is_upgrade: bool, goal: str = "") -> tuple[str, str]:
     """初始化 Skill 进化沙盒，返回 (系统提示, workplace_id)"""
     short_uuid = uuid.uuid4().hex[:5]
     workplace_root = os.path.join(AGENT_VM_DIR, "skill_workplace", short_uuid)
@@ -88,14 +88,19 @@ def skill_improve_init(skill_name: str, is_upgrade: bool) -> tuple[str, str]:
                 "# 忽略运行缓存和依赖\n__pycache__/\n*.py[cod]\nnode_modules/\n.venv/\nvenv/\n.env\n"
             )
 
-    # 🌟 生成单文件官方指导手册
+    # 🌟 落盘构建目标 + 生成单文件官方指导手册
+    if goal:
+        with open(
+            os.path.join(workplace_root, "GOAL.md"), "w", encoding="utf-8", newline="\n"
+        ) as f:
+            f.write(f"# 🎯 Build Goal\n\n{goal}\n")
     with open(
         os.path.join(workplace_root, "GUIDE.md"),
         "w",
         encoding="utf-8",
         newline="\n",
     ) as f:
-        f.write(generate_skill_guide(skill_name))
+        f.write(generate_skill_guide(skill_name, goal))
 
     # 🌟 精准的 API 返回引导：显式携带 workplace_id，路径使用沙盒视角的 /agent_vm 前缀
     sandbox_root = f"/agent_vm/skill_workplace/{short_uuid}"

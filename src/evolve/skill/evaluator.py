@@ -110,7 +110,7 @@ def _run_trigger_evals(workplace_id: str, skill_name: str) -> str:
 
     searcher = SkillSearcher()
 
-    iteration_dir, iteration_idx = _get_next_iteration_dir(workplace_root)
+    iteration_dir, iteration_idx = _get_next_iteration_dir(workplace_root, "trigger")
     os.makedirs(iteration_dir, exist_ok=True)
 
     report_lines = [f"# {skill_name} Trigger 激发测试报告 (Iteration {iteration_idx})\n"]
@@ -159,17 +159,24 @@ def _run_trigger_evals(workplace_id: str, skill_name: str) -> str:
     return final_report
 
 
-def _get_next_iteration_dir(workplace_root: str) -> tuple[str, int]:
+def _get_next_iteration_dir(
+    workplace_root: str, test_type: str = "iteration"
+) -> tuple[str, int]:
+    """按 test_type 前缀分配独立迭代目录，避免 trigger 与盲测互相挤占计数器。
+
+    test_type="iteration" -> iteration-N（盲测，前端 Iteration 列表只认这个）
+    test_type="trigger"   -> trigger-N（激发测试，独立计数，不污染盲测列表）
+    """
     max_idx = 0
     if os.path.exists(workplace_root):
         for item in os.listdir(workplace_root):
-            match = re.match(r"iteration-(\d+)", item)
+            match = re.match(rf"{test_type}-(\d+)", item)
             if match:
                 idx = int(match.group(1))
                 if idx > max_idx:
                     max_idx = idx
     next_idx = max_idx + 1
-    return os.path.join(workplace_root, f"iteration-{next_idx}"), next_idx
+    return os.path.join(workplace_root, f"{test_type}-{next_idx}"), next_idx
 
 
 def _calculate_stats(values: list[float]) -> dict:

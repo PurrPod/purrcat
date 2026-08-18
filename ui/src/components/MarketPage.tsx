@@ -113,6 +113,13 @@ export default function MarketPage({ onBack }: { onBack: () => void }) {
   const [installedMcpNames, setInstalledMcpNames] = useState<Set<string>>(new Set());
   const [installingMcpName, setInstallingMcpName] = useState<string | null>(null);
 
+  // MCP 市场搜索 / build from scratch 弹窗
+  const [mcpSearchQuery, setMcpSearchQuery] = useState('');
+  const [showMcpFactoryModal, setShowMcpFactoryModal] = useState(false);
+  const [factoryMcpName, setFactoryMcpName] = useState('');
+  const [factoryGoal, setFactoryGoal] = useState('');
+  const [isBuildingMcp, setIsBuildingMcp] = useState(false);
+
   // 🌟 Skill 市场新状态：搜索 / 排版切换 / repo 下钻 / 详情弹窗 / 安装状态
   const [searchQuery, setSearchQuery] = useState('');
   const [layoutMode, setLayoutMode] = useState<LayoutMode>('repo');
@@ -227,6 +234,54 @@ export default function MarketPage({ onBack }: { onBack: () => void }) {
       toast.error('MCP 安装失败，请检查网络');
     } finally {
       setInstallingMcpName(null);
+    }
+  };
+
+  // MCP 关键词过滤：匹配 name / desc / repo / server 名
+  const filteredMcps = useMemo(() => {
+    const q = mcpSearchQuery.trim().toLowerCase();
+    if (!q) return mcpData;
+    return mcpData.filter(m =>
+      [m.name, m.desc, m.repo, ...Object.keys(m.mcpServers || {})].some(
+        f => (f || '').toLowerCase().includes(q)
+      )
+    );
+  }, [mcpData, mcpSearchQuery]);
+
+  // 触发 MCP 工厂构建（类似 trace2skill：分配沙盒 + 告知 Agent）
+  const handleBuildMcpFromScratch = async () => {
+    const name = factoryMcpName.trim();
+    const goal = factoryGoal.trim();
+    if (!name) return toast.error('请为你的 MCP 起个名字！');
+    if (!goal) return toast.error('请描述目标功能！');
+
+    setIsBuildingMcp(true);
+    const tid = toast.loading('正在为你分配 MCP 进化工厂...');
+    try {
+      const res = await fetch('/api/evolve/init', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'mcp', name, is_upgrade: false, goal })
+      });
+      if (!res.ok) throw new Error('分配沙盒失败');
+      const data = await res.json();
+      const factoryPath = `/agent_vm/mcp_workplace/${data.workplace_id}/${name}`;
+
+      const content = `用户在MCP市场使用了build_mcp_from_scratch功能，已为你分配了MCP工厂${factoryPath}/，请从零构建一个全新的 MCP Server。以下是用户期望的目标功能：\n${goal}`;
+      await fetch('/api/chat/batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_id: '', events: [{ type: 'evolve_factory', content }] })
+      });
+
+      toast.success('已将 MCP 构建任务派发给 Agent！', { id: tid });
+      setShowMcpFactoryModal(false);
+      setFactoryMcpName('');
+      setFactoryGoal('');
+    } catch {
+      toast.error('工厂分配失败，请检查 Agent 状态', { id: tid });
+    } finally {
+      setIsBuildingMcp(false);
     }
   };
 
@@ -496,6 +551,66 @@ export default function MarketPage({ onBack }: { onBack: () => void }) {
         </div>
       )}
 
+      {/* 🌟 MCP 工厂构建弹窗：build a mcp from scratch */}
+      {showMcpFactoryModal && (
+        <div className="fixed inset-0 z-[210] flex items-center justify-center bg-ink/70 backdrop-blur-sm p-4 pointer-events-auto">
+          <div style={sketchyShape2} className="bg-paper border-4 border-ink shadow-[16px_16px_0px_0px_rgba(26,26,26,1)] w-full max-w-lg flex flex-col relative rotate-[0.5deg]">
+            <div className="absolute -top-4 left-1/4 w-32 h-10 bg-[#88c0d0]/60 border-2 border-ink rotate-2 z-50 pointer-events-none" style={sketchyShape1}></div>
+
+            <div className="flex justify-between items-center p-5 border-b-4 border-ink/20 shrink-0">
+              <h3 className="text-xl font-black text-ink tracking-wide" style={{ fontFamily: '"Comic Sans MS", cursive' }}>Build a MCP from Scratch</h3>
+              <button onClick={() => setShowMcpFactoryModal(false)} className="p-1.5 border-2 border-ink bg-cream text-ink hover:bg-[#bf616a] hover:text-paper transition-all" style={sketchyShape3}>
+                <X size={20} strokeWidth={3} />
+              </button>
+            </div>
+
+            <div className="p-6 flex flex-col gap-4">
+              <div className="flex flex-col gap-2">
+                <span className="font-black text-ink text-sm tracking-widest">MCP NAME:</span>
+                <input
+                  value={factoryMcpName}
+                  onChange={e => setFactoryMcpName(e.target.value)}
+                  placeholder="例如: paper-search-mcp（英文短横线命名）"
+                  className="bg-[#FDF8F0] border-4 border-ink px-4 py-2.5 font-bold text-ink placeholder:text-ink/40 outline-none focus:bg-paper transition-colors"
+                  style={sketchyShape3}
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <span className="font-black text-ink text-sm tracking-widest">TARGET FUNCTION (目标功能):</span>
+                <textarea
+                  value={factoryGoal}
+                  onChange={e => setFactoryGoal(e.target.value)}
+                  placeholder="描述你想要的 MCP 功能：它应该提供哪些工具？解决什么问题？例如：提供一个论文检索 MCP，支持按关键词搜索 arXiv 论文并返回摘要..."
+                  rows={5}
+                  className="bg-[#FDF8F0] border-4 border-ink px-4 py-2.5 font-bold text-ink placeholder:text-ink/40 outline-none focus:bg-paper transition-colors resize-none"
+                  style={sketchyShape3}
+                />
+              </div>
+              <p className="text-xs font-bold text-ink/40">确认后将为 Agent 分配一个 MCP 进化工厂沙盒，并带着该目标从零构建。</p>
+            </div>
+
+            <div className="p-5 pt-2 border-t-4 border-ink/10 flex justify-end gap-4 shrink-0">
+              <button
+                onClick={() => setShowMcpFactoryModal(false)}
+                style={sketchyShape1}
+                className="px-5 h-12 flex items-center bg-cream text-ink border-4 border-ink font-black shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:bg-sand transition-all active:translate-y-1 active:shadow-none"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleBuildMcpFromScratch}
+                disabled={isBuildingMcp}
+                style={sketchyShape2}
+                className={`px-5 h-12 flex items-center gap-2 border-4 border-ink font-black shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] transition-all active:translate-y-1 active:shadow-none ${isBuildingMcp ? 'bg-[#EBCB8B] text-ink cursor-wait' : 'bg-terracotta text-paper hover:-translate-y-0.5'}`}
+              >
+                {isBuildingMcp && <Loader2 size={18} strokeWidth={3} className="animate-spin" />}
+                <span style={{ fontFamily: '"Comic Sans MS", cursive' }}>{isBuildingMcp ? '分配中...' : '开工！'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ================= 👈 左侧导航菜单（容器过窄时自动隐藏） ================= */}
       {showSidebar && (
       <div className="w-[320px] flex flex-col gap-6 shrink-0 z-20">
@@ -703,16 +818,32 @@ export default function MarketPage({ onBack }: { onBack: () => void }) {
             </div>
           )}
 
-          {/* MCP SERVERS 列表渲染（Registry v2.0：一个 mcp 一卡片） */}
+          {/* MCP SERVERS 列表渲染（Registry v2.0：一个 mcp 一卡片 + 搜索 + 工厂入口） */}
           {activeTab === 'mcp' && (
-            <div className={isNarrow ? 'p-4' : 'p-10'}>
+            <div className={`${isNarrow ? 'p-4 gap-4' : 'p-10 gap-6'} flex flex-col`}>
+              {/* 搜索框 */}
+              <div className="flex items-center gap-3 bg-paper border-4 border-ink px-4 py-2.5 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)]" style={sketchyShape2}>
+                <Search size={18} strokeWidth={3} className="text-ink/40 shrink-0" />
+                <input
+                  value={mcpSearchQuery}
+                  onChange={e => setMcpSearchQuery(e.target.value)}
+                  placeholder="搜索 MCP 名称 / 描述 / 仓库 / server..."
+                  className="flex-1 min-w-0 bg-transparent outline-none font-bold text-ink placeholder:text-ink/40 text-[15px]"
+                />
+                {mcpSearchQuery && (
+                  <button onClick={() => setMcpSearchQuery('')} className="p-1 text-ink/40 hover:text-ink transition-colors shrink-0">
+                    <X size={16} strokeWidth={3} />
+                  </button>
+                )}
+              </div>
+
               {isFetchingMcp && mcpData.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-[50vh] gap-4 opacity-50"><RefreshCw className="animate-spin text-[#EBCB8B]" size={64} strokeWidth={2} /><p className="text-2xl font-black tracking-widest" style={{ fontFamily: '"Comic Sans MS", cursive' }}>Fetching Repositories...</p></div>
-              ) : mcpData.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-[50vh] gap-4 opacity-50 text-ink"><AlertCircle size={64} strokeWidth={2} /><p className="text-2xl font-black tracking-widest" style={{ fontFamily: '"Comic Sans MS", cursive' }}>Registry is empty.</p></div>
+                <div className="flex flex-col items-center justify-center h-[40vh] gap-4 opacity-50"><RefreshCw className="animate-spin text-[#EBCB8B]" size={64} strokeWidth={2} /><p className="text-2xl font-black tracking-widest" style={{ fontFamily: '"Comic Sans MS", cursive' }}>Fetching Repositories...</p></div>
+              ) : filteredMcps.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-[40vh] gap-4 opacity-50 text-ink"><AlertCircle size={64} strokeWidth={2} /><p className="text-2xl font-black tracking-widest" style={{ fontFamily: '"Comic Sans MS", cursive' }}>{mcpSearchQuery ? 'No Match.' : 'Registry is empty.'}</p></div>
               ) : (
                 <div className={`grid ${cardCols} ${isNarrow ? 'gap-4' : 'gap-8'}`}>
-                  {mcpData.map((mcp, idx) => {
+                  {filteredMcps.map((mcp, idx) => {
                     const installed = isMcpInstalled(mcp);
                     return (
                       <button
@@ -742,6 +873,17 @@ export default function MarketPage({ onBack }: { onBack: () => void }) {
                   })}
                 </div>
               )}
+
+              {/* 底部提示：没有想要的？从零构建一个！ */}
+              <button
+                onClick={() => setShowMcpFactoryModal(true)}
+                className="w-full flex items-center justify-center gap-2 py-3 opacity-60 hover:opacity-100 transition-opacity"
+              >
+                <span className="text-sm font-bold text-ink/50">No want? Try：</span>
+                <span className="text-sm font-black text-terracotta underline decoration-wavy decoration-2 underline-offset-4" style={{ fontFamily: '"Comic Sans MS", cursive' }}>
+                  build a mcp from scratch!
+                </span>
+              </button>
             </div>
           )}
 

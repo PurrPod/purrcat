@@ -9,10 +9,23 @@ import subprocess
 import json
 from datetime import datetime
 from src.utils.config import MCP_CONFIG_PATH, DATA_ROOT, AGENT_VM_DIR
-from .guide_generator import generate_mcp_create_guide, generate_mcp_test_guide
+from .guide_generator import generate_mcp_guide
 
 
-def mcp_improve_init(mcp_name: str) -> tuple[str, str]:
+def _write_goal_and_guide(workplace_root: str, mcp_name: str, goal: str):
+    """落盘构建目标 GOAL.md + 生成单文件 GUIDE.md"""
+    if goal:
+        with open(
+            os.path.join(workplace_root, "GOAL.md"), "w", encoding="utf-8", newline="\n"
+        ) as f:
+            f.write(f"# 🎯 Build Goal\n\n{goal}\n")
+    with open(
+        os.path.join(workplace_root, "GUIDE.md"), "w", encoding="utf-8", newline="\n"
+    ) as f:
+        f.write(generate_mcp_guide(mcp_name, goal))
+
+
+def mcp_improve_init(mcp_name: str, goal: str = "") -> tuple[str, str]:
     """初始化 MCP 进化沙盒，返回 (系统提示, workplace_id)"""
     short_uuid = uuid.uuid4().hex[:5]
     workplace_root = os.path.join(AGENT_VM_DIR, "mcp_workplace", short_uuid)
@@ -29,11 +42,13 @@ def mcp_improve_init(mcp_name: str) -> tuple[str, str]:
     os.makedirs(os.path.join(workplace_mcp_dir, "scripts"), exist_ok=True)
 
     # 2. 固化环境搭建脚本
+    # ⚠️ mcp 2.0.0 移除了 mcp.server.fastmcp.FastMCP，模板 app.py 依赖 FastMCP，
+    #    故约束 mcp<2（实测 1.29.0 全链路通过）
     setup_script = """#!/bin/bash
 uv init 2>/dev/null || true
 uv venv --allow-existing
 source .venv/bin/activate
-uv add "mcp[cli]" httpx
+uv add "mcp[cli]<2" httpx
 """
     with open(
         os.path.join(workplace_mcp_dir, "setup.sh"), "w", encoding="utf-8", newline="\n"
@@ -174,28 +189,15 @@ if __name__ == "__main__": asyncio.run(main())
     ) as f:
         f.write(evaluation_script)
 
-    # 10. 生成指南
-    with open(
-        os.path.join(workplace_root, "01_GUIDE_CREATE.md"),
-        "w",
-        encoding="utf-8",
-        newline="\n",
-    ) as f:
-        f.write(generate_mcp_create_guide(mcp_name))
-    with open(
-        os.path.join(workplace_root, "02_GUIDE_TEST.md"),
-        "w",
-        encoding="utf-8",
-        newline="\n",
-    ) as f:
-        f.write(generate_mcp_test_guide(mcp_name))
+    # 10. 生成构建目标与单文件指南
+    _write_goal_and_guide(workplace_root, mcp_name, goal)
     return (
         f"【MCP 工厂分配成功】工作区路径：/agent_vm/mcp_workplace/{short_uuid}（workplace_id: {short_uuid}）。\n"
-        f"已为你自动搭建了 '{mcp_name}' 环境。💡 请先阅读 01_GUIDE_CREATE！"
+        f"已为你自动搭建了 '{mcp_name}' 环境。💡 请先阅读 GUIDE.md！"
     ), short_uuid
 
 
-def mcp_upgrade_init(mcp_name: str) -> tuple[str, str]:
+def mcp_upgrade_init(mcp_name: str, goal: str = "") -> tuple[str, str]:
     """拷贝现存 MCP 至进化沙盒，返回 (系统提示, workplace_id)"""
     target_dir = os.path.join(DATA_ROOT, "mcps", mcp_name)
     if not os.path.exists(target_dir):
@@ -211,23 +213,10 @@ def mcp_upgrade_init(mcp_name: str) -> tuple[str, str]:
         return [".venv", "venv", "__pycache__", ".git", "node_modules", ".env", "*.pyc"]
 
     shutil.copytree(target_dir, workplace_mcp_dir, ignore=ignore_files)
-    with open(
-        os.path.join(workplace_root, "01_GUIDE_CREATE.md"),
-        "w",
-        encoding="utf-8",
-        newline="\n",
-    ) as f:
-        f.write(generate_mcp_create_guide(mcp_name))
-    with open(
-        os.path.join(workplace_root, "02_GUIDE_TEST.md"),
-        "w",
-        encoding="utf-8",
-        newline="\n",
-    ) as f:
-        f.write(generate_mcp_test_guide(mcp_name))
+    _write_goal_and_guide(workplace_root, mcp_name, goal)
     return (
         f"【MCP 升级派发成功】工作区路径：/agent_vm/mcp_workplace/{short_uuid}（workplace_id: {short_uuid}）。\n"
-        f"💡 请在该路径继续迭代开发！"
+        f"💡 请在该路径继续迭代开发，可参考 GUIDE.md！"
     ), short_uuid
 
 
