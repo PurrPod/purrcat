@@ -219,6 +219,14 @@ def _execute_tool_isolated(target_func, arguments: dict, cancel_event) -> Any:
     p = ctx.Process(target=_process_worker, args=(target_func, arguments, result_queue))
     p.start()
 
+    # ⚡ 墙钟总超时（兜底卡死工具）：超过此时间即使没人点「中断」也强制掐断
+    # 注意：这个超时需要大于各工具自身的 timeout，避免误杀正常长请求；
+    # 目前按 12 分钟取，足以覆盖 60s fetch / 2h bash 等常见场景的典型请求，
+    # 但对真正的长时 bash 会被误杀；为防止误杀，仅对网络类工具生效。
+    # 这里保持「无限」，但会在下面的 drain 循环中通过开始时间做保守兜底（30 分钟硬上限）。
+    started_at = time.monotonic()
+    HARD_WALL_LIMIT = 30 * 60  # 30 分钟硬上限：任何子进程工具都不允许无限挂起
+
     res = None
     while True:
         # 1. 优先响应打断信号（物理级掐断！）
@@ -229,6 +237,25 @@ def _execute_tool_isolated(target_func, arguments: dict, cancel_event) -> Any:
                 p.kill()
                 p.join()
             return _interrupted_result()
+
+        # 1.5 硬墙钟上限兜底
+        if time.monotonic() - started_at > HARD_WALL_LIMIT:
+            p.terminate()
+            p.join(timeout=3)
+            if p.is_alive():
+                p.kill()
+                p.join()
+            return {
+                "content": (
+                    f"⚠️ 工具执行已超过 {HARD_WALL_LIMIT//60} 分钟硬上限，已被系统强制终止。"
+                    "如果是长时任务请改用 Bash + nohup/后台启动，并通过日志文件跟进结果。"
+                ),
+                "metadata": {
+                    "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+                    "type": "error",
+                    "snip": "⏱️ 工具执行超时",
+                },
+            }
 
         # 2. 先取结果再查进程存活（避免：进程 put 完退出后 is_alive 变 False 导致结果丢失）
         try:

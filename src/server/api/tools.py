@@ -15,7 +15,21 @@ from src.tool.search.skill_search import SkillSearcher
 from src.tool.cron.cron_operations import list_crons, add_cron, delete_cron
 
 # 🌟 新增：引入读取与保存 MCP 配置文件需要的依赖
-from src.utils.config import get_mcp_config, MCP_CONFIG_PATH, SKILL_DIR, MCP_SOURCE_DIR, AGENT_CORE_DIR, GOAL_MD_PATH, HEARTBEAT_FILE
+from src.utils.config import (
+    get_mcp_config,
+    MCP_CONFIG_PATH,
+    SKILL_DIR,
+    MCP_SOURCE_DIR,
+    AGENT_CORE_DIR,
+    GOAL_MD_PATH,
+    HEARTBEAT_FILE,
+    SENSOR_CONFIG_PATH,
+    SENSOR_EXTENSION_DIR,
+    GRAPHS_DIR,
+    get_sensor_config,
+    _save_json_file,
+)
+from src.utils.graph_api import save_graph, list_graphs
 
 router = APIRouter(prefix="/api/tools", tags=["Tools Management"])
 
@@ -402,3 +416,288 @@ def save_heartbeat_api(req: HeartbeatReq):
 
         traceback.print_exc()
         raise HTTPException(status_code=400, detail=f"保存心跳配置失败: {str(e)}")
+
+
+# ==========================================
+# 8. 市场通用：远程 JSON 下载助手（带超时）
+# ==========================================
+REMOTE_REQUEST_TIMEOUT = 15
+
+SENSORS_REGISTRY_URL = (
+    "https://raw.githubusercontent.com/PurrPod/sensors/main/registry.json"
+)
+GRAPHS_REGISTRY_URL = (
+    "https://raw.githubusercontent.com/PurrPod/graphs/main/registry.json"
+)
+SENSORS_CODE_BASE = "https://raw.githubusercontent.com/PurrPod/sensors/main"
+GRAPHS_CODE_BASE = "https://raw.githubusercontent.com/PurrPod/graphs/main/graphs"
+
+
+def _http_get_json(url: str, timeout: int = REMOTE_REQUEST_TIMEOUT):
+    """同步 GET 一个远程 URL 并解析 JSON，带超时防卡死"""
+    req = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": "purrcat-market/1.0",
+            "Accept": "application/json,text/plain,*/*",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        raw = resp.read()
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        text = raw.decode("utf-8", errors="replace")
+    return json.loads(text)
+
+
+def _http_download(url: str, timeout: int = REMOTE_REQUEST_TIMEOUT) -> bytes:
+    req = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": "purrcat-market/1.0",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return resp.read()
+
+
+# ==========================================
+# 9. Sensor 市场：Registry + 已安装列表 + 安装
+# ==========================================
+@router.get("/market/sensors")
+def get_sensor_registry_api():
+    """从官方 PurrPod/sensors 仓库拉取 registry.json 返回给前端市场"""
+    try:
+        data = _http_get_json(SENSORS_REGISTRY_URL)
+        sensors = data.get("sensors", []) if isinstance(data, dict) else []
+        return {
+            "version": data.get("version") if isinstance(data, dict) else None,
+            "repository": data.get("repository") if isinstance(data, dict) else None,
+            "sensors": sensors,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=502, detail=f"拉取 Sensor 注册表失败: {str(e)}")
+
+
+@router.get("/market/sensors/installed")
+def list_installed_sensors_api():
+    """返回 activate_sensor.json 中已配置（不管 enabled）的传感器名列表"""
+    try:
+        cfg = get_sensor_config() or {}
+        installed = []
+        for name, entry in cfg.items():
+            installed.append(
+                {
+                    "name": name,
+                    "enabled": bool(entry.get("enabled", False)) if isinstance(entry, dict) else False,
+                    "has_code": os.path.exists(
+                        os.path.join(SENSOR_EXTENSION_DIR, f"{name}.py")
+                    ),
+                }
+            )
+        return installed
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"读取本地 Sensor 列表失败: {str(e)}")
+
+
+class InstallSensorReq(BaseModel):
+    sensor: dict  # registry 中的单条 sensor 对象（含 name / description / enabled / env / capabilities 等）
+
+
+@router.post("/market/sensors/install")
+def install_sensor_api(req: InstallSensorReq):
+    """
+    安装 Sensor：
+      1) 把配置合并写入 activate_sensor.json（按 name 覆盖，保留用户已填 env）
+      2) 下载对应的代码文件 <name>.py 到 ~/.purrcat/sensor/
+    """
+    try:
+        sensor = req.sensor or {}
+        name = str(sensor.get("name", "")).strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="sensor 缺少 name 字段")
+
+        # 1. 合并配置：已有配置的 env 非空值不被 registry 占位覆盖
+        existing_cfg = get_sensor_config() or {}
+        existing_entry = existing_cfg.get(name, {}) if isinstance(existing_cfg, dict) else {}
+        if not isinstance(existing_entry, dict):
+            existing_entry = {}
+
+        merged_env = {}
+        new_env = sensor.get("env") or {}
+        old_env = existing_entry.get("env") or {}
+        if isinstance(new_env, dict) and isinstance(old_env, dict):
+            for k, v in new_env.items():
+                old_v = old_env.get(k)
+                # 老值非空（非空字符串/非 None）则保留，否则用新的默认占位
+                if old_v not in (None, ""):
+                    merged_env[k] = old_v
+                else:
+                    merged_env[k] = v
+            # 保留老配置中存在但 registry 已不再声明的自定义 env
+            for k, v in old_env.items():
+                if k not in merged_env:
+                    merged_env[k] = v
+
+        merged = {
+            "enabled": existing_entry.get(
+                "enabled",
+                bool(sensor.get("enabled", False)) if "enabled" in sensor else False,
+            ),
+            "env": merged_env,
+            "capabilities": sensor.get("capabilities")
+            or existing_entry.get("capabilities")
+            or {},
+        }
+        # 其余 registry 字段原封不动保留一份（方便调试/回查）
+        for k, v in sensor.items():
+            if k not in ("enabled", "env", "capabilities", "name"):
+                merged[k] = v
+
+        existing_cfg[name] = merged
+        os.makedirs(os.path.dirname(SENSOR_CONFIG_PATH), exist_ok=True)
+        _save_json_file(SENSOR_CONFIG_PATH, existing_cfg)
+
+        # 2. 下载代码：优先 <repo>/<name>/<name>.py，其次 <repo>/<name>.py
+        code_bytes = None
+        last_err = None
+        for candidate in (
+            f"{SENSORS_CODE_BASE}/{name}/{name}.py",
+            f"{SENSORS_CODE_BASE}/{name}.py",
+        ):
+            try:
+                code_bytes = _http_download(candidate)
+                break
+            except Exception as e:  # noqa: PERF203
+                last_err = e
+                code_bytes = None
+        if code_bytes is None:
+            # 代码下载失败不阻断配置落盘（SensorManager 启动时会再次尝试从 sensor-source 下载）
+            msg = (
+                f"Sensor '{name}' 配置已写入激活配置，但代码文件下载失败"
+                + (f": {last_err}" if last_err else "")
+                + "；启动阶段会再次尝试从官方 sensor-source 仓库下载。"
+            )
+            return {"status": "partial", "message": msg, "code_downloaded": False}
+
+        os.makedirs(SENSOR_EXTENSION_DIR, exist_ok=True)
+        dest = os.path.join(SENSOR_EXTENSION_DIR, f"{name}.py")
+        with open(dest, "wb") as f:
+            f.write(code_bytes)
+        return {
+            "status": "success",
+            "message": f"Sensor '{name}' 配置已合并，代码已下载到 {dest}。",
+            "code_downloaded": True,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"安装 Sensor 失败: {str(e)}")
+
+
+# ==========================================
+# 10. Graph 市场：Registry + 已安装列表 + 安装
+# ==========================================
+@router.get("/market/graphs")
+def get_graph_registry_api():
+    """从官方 PurrPod/graphs 仓库拉取 registry.json 返回前端市场"""
+    try:
+        data = _http_get_json(GRAPHS_REGISTRY_URL)
+        # 兼容 graphs list 或 { graphs: [...] }
+        graphs = []
+        if isinstance(data, list):
+            graphs = data
+        elif isinstance(data, dict):
+            for key in ("graphs", "items", "data"):
+                if isinstance(data.get(key), list):
+                    graphs = data[key]
+                    break
+        return {
+            "version": data.get("version") if isinstance(data, dict) else None,
+            "repository": data.get("repository") if isinstance(data, dict) else None,
+            "graphs": graphs,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=502, detail=f"拉取 Graph 注册表失败: {str(e)}")
+
+
+@router.get("/market/graphs/installed")
+def list_installed_graphs_api():
+    """返回 ~/.purrcat/graph 目录下已存在的 graph 文件名列表"""
+    try:
+        names = set()
+        for entry in list_graphs():
+            fn = entry.get("filename") or entry.get("name") if isinstance(entry, dict) else None
+            if fn:
+                n = fn[:-5] if fn.endswith(".json") else fn
+                if n:
+                    names.add(n)
+        return sorted(names)
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"读取本地 Graph 列表失败: {str(e)}")
+
+
+class InstallGraphReq(BaseModel):
+    name: str
+
+
+@router.post("/market/graphs/install")
+def install_graph_api(req: InstallGraphReq):
+    """
+    安装 Graph：
+      从 PurrPod/graphs 仓库拉取 <name>.json 并保存到 ~/.purrcat/graph/<name>.json
+    """
+    try:
+        name = req.name.strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="缺少 graph name")
+        safe_name = os.path.basename(name).replace("\\", "/")
+        if not safe_name or safe_name in (".", ".."):
+            raise HTTPException(status_code=400, detail="非法 graph name")
+
+        url = f"{GRAPHS_CODE_BASE}/{safe_name}.json"
+        try:
+            raw = _http_download(url)
+        except Exception as e:
+            raise HTTPException(
+                status_code=502, detail=f"下载 Graph JSON 失败 ({url}): {e}"
+            )
+
+        try:
+            text = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            text = raw.decode("utf-8", errors="replace")
+        try:
+            graph_data = json.loads(text)
+        except json.JSONDecodeError as e:
+            raise HTTPException(status_code=502, detail=f"Graph JSON 解析失败: {e}")
+
+        if not isinstance(graph_data, dict):
+            raise HTTPException(status_code=502, detail="Graph JSON 顶层必须是对象")
+
+        # 用 save_graph 写入保证与现有加载逻辑一致
+        filename = safe_name
+        if not filename.endswith(".json"):
+            filename = filename + ".json"
+        os.makedirs(GRAPHS_DIR, exist_ok=True)
+        save_graph(filename, graph_data)
+        return {
+            "status": "success",
+            "message": f"Graph '{safe_name}' 已安装到 {os.path.join(GRAPHS_DIR, filename)}",
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"安装 Graph 失败: {str(e)}")
