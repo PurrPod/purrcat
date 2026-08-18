@@ -2,7 +2,7 @@
 // PurrCat 主进程：主窗口 + Python 后端 sidecar + 多 Tab WebContentsView 内置浏览器
 // 安全：contextIsolation=true，nodeIntegration=false，前端只能用 preload 暴露的 window.purrcat
 
-const { app, BrowserWindow, Menu, dialog, ipcMain, WebContentsView, session } = require('electron');
+const { app, BrowserWindow, Menu, dialog, ipcMain, WebContentsView, session, shell } = require('electron');
 const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
@@ -870,6 +870,13 @@ function ny_safe(v) { return nx_safe(v); }
 function escapeHtmlAttr(str) {
   return String(str).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
+
+// 在系统默认浏览器中打开外部 URL（依赖检查警告跳转部署指南等场景）
+ipcMain.handle('shell:openExternal', (_e, url) => {
+  if (typeof url === 'string' && /^https?:\/\//i.test(url)) {
+    shell.openExternal(url);
+  }
+});
 
 // 窗口控制 IPC（通用，通过 e.sender 找到调用方窗口，主窗口/预览窗口共用）
 ipcMain.handle('win:minimize', (e) => { BrowserWindow.fromWebContents(e.sender)?.minimize(); });

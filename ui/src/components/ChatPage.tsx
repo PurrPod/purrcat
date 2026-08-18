@@ -780,6 +780,19 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
     }
   };
   const confirmBranchSession = async () => { setShowBranchModal(false); setIsCheckingOut(true); try { const res = await fetch(`/api/sessions/${currentSessionId}/branch`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ alias: branchAlias.trim() }) }); if (res.ok) { const data = await res.json(); await loadSessions(); await handleSelectSession(data.id); } } catch { /* noop */ } finally { setIsCheckingOut(false); } };
+  // 🌟 一键分支：不弹窗，直接基于当前会话新建分支并切换过去（模仿 confirmBranchSession）
+  const handleQuickBranch = async () => {
+    if (!currentSessionId || isCheckingOut) return;
+    setIsCheckingOut(true);
+    try {
+      const res = await fetch(`/api/sessions/${currentSessionId}/branch`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ alias: '' }) });
+      if (res.ok) {
+        const data = await res.json();
+        await loadSessions();
+        await handleSelectSession(data.id);
+      }
+    } catch { /* noop */ } finally { setIsCheckingOut(false); }
+  };
   const confirmDeleteSession = async () => { if (!sessionToDelete) return; try { const res = await fetch(`/api/sessions/${sessionToDelete}`, { method: 'DELETE' }); if (res.ok) { if (currentSessionId === sessionToDelete) { setCurrentSessionId(null); setMessages([]); } setSessionToDelete(null); loadSessions(); } } catch { /* noop */ } };
 
   const handleSend = async () => {
@@ -1266,6 +1279,15 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                             title="Memory Compress (手动触发记忆压缩：全局大总结并截断历史上下文)"
                           >
                             {isCompressingMemory ? <Loader2 size={18} strokeWidth={2.5} className="animate-spin" /> : <Brain size={18} strokeWidth={2.5} />}
+                          </button>
+                          <button
+                            onClick={handleQuickBranch}
+                            disabled={isCheckingOut}
+                            className="p-2 bg-paper border-2 border-ink hover:bg-[#a3be8c] hover:text-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] transition-all hover:-translate-y-[1px] active:translate-y-0 active:shadow-none disabled:opacity-50 disabled:hover:bg-paper disabled:hover:text-ink disabled:hover:translate-y-0"
+                            style={sketchyShape1}
+                            title="Branch (基于当前会话新建分支并切换过去)"
+                          >
+                            {isCheckingOut ? <Loader2 size={18} strokeWidth={2.5} className="animate-spin" /> : <GitMerge size={18} strokeWidth={2.5} />}
                           </button>
                         </div>
                       )}

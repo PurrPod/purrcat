@@ -43,6 +43,14 @@ async def _bg_heavy_init(enable_tui: bool):
 
     await asyncio.to_thread(_init_light_tools)
 
+    # 🌟 依赖就绪检查：git/uv/node/嵌入模型/沙盒，缺则向 requests.json 推送 pending 警告
+    # 放在 _init_light_tools 之后：此时自动下载/拉取线程已派发，检查结果反映最新状态
+    try:
+        from src.utils.dependency_check import check_and_warn_dependencies
+        check_and_warn_dependencies()
+    except Exception as e:
+        print(f"[!] 启动依赖检查失败: {e}")
+
     # 3. 释放一下事件循环，防卡顿
     await asyncio.sleep(0.1)
 

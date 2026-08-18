@@ -258,7 +258,8 @@ def resolve_request(
                 # 让Agent收到拒绝的理由并继续改进
                 feedback = f"老板拒绝了代码合并请求，请在沙盒工厂中根据以下原因继续修复：\n【拒绝理由】: {feedback}"
 
-        if not ignore:
+        # 🌟 dependency_check 类型为系统启动检查，与 Agent 任务无关，不需要回调通知 Agent
+        if not ignore and req_type != "dependency_check":
             decision_text = "【同意并已生效】" if approved else "【被拒绝】"
             callback_msg = f"🔔 【系统通知】请求 (ID: {req_id}) | 目标: {target} | 结果: {decision_text}\n系统反馈/批注: {feedback}"
             if approved and req_type not in [

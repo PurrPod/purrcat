@@ -35,6 +35,10 @@ contextBridge.exposeInMainWorld('purrcat', {
   // ===== 独立预览窗口 =====
   openPreviewWindow: (url, title, type) => ipcRenderer.invoke('preview:open-file', { url, title, type }),
 
+  // ===== 在系统默认浏览器中打开外部 URL =====
+  // 用于依赖检查警告跳转部署指南等场景
+  openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
+
   // ===== 窗口控制（主窗口/预览窗口共用，手绘风格按钮调用）=====
   winMinimize: () => ipcRenderer.invoke('win:minimize'),
   winToggleMaximize: () => ipcRenderer.invoke('win:toggle-maximize'),
