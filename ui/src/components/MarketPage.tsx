@@ -29,6 +29,31 @@ interface McpEntry {
   mcpServers: Record<string, any>;
 }
 
+// Sensor 注册表条目结构（PurrPod/sensors registry.json）
+interface SensorEntry {
+  name: string;
+  description?: string;
+  enabled?: boolean;
+  env?: Record<string, string>;
+  capabilities?: Record<string, any>;
+  [k: string]: any;
+}
+
+interface InstalledSensor {
+  name: string;
+  enabled?: boolean;
+  has_code?: boolean;
+}
+
+// Graph 注册表条目结构（PurrPod/graphs registry.json 中 graphs[]）
+interface GraphEntry {
+  name: string;
+  description?: string;
+  version?: string;
+  global_schema?: any;
+  [k: string]: any;
+}
+
 // skill 图标（无 icon-link 时回退为 Zap 圆标）
 function SkillIcon({ skill, size = 40 }: { skill: SkillEntry; size?: number }) {
   const [errored, setErrored] = useState(false);
@@ -120,6 +145,22 @@ export default function MarketPage({ onBack }: { onBack: () => void }) {
   const [factoryGoal, setFactoryGoal] = useState('');
   const [isBuildingMcp, setIsBuildingMcp] = useState(false);
 
+  // 🌟 Sensor 市场状态
+  const [sensorData, setSensorData] = useState<SensorEntry[]>([]);
+  const [isFetchingSensor, setIsFetchingSensor] = useState(false);
+  const [sensorSearchQuery, setSensorSearchQuery] = useState('');
+  const [selectedSensor, setSelectedSensor] = useState<SensorEntry | null>(null);
+  const [installedSensorMap, setInstalledSensorMap] = useState<Map<string, InstalledSensor>>(new Map());
+  const [installingSensorSet, setInstallingSensorSet] = useState<Set<string>>(new Set());
+
+  // 🌟 Graph 市场状态
+  const [graphData, setGraphData] = useState<GraphEntry[]>([]);
+  const [isFetchingGraph, setIsFetchingGraph] = useState(false);
+  const [graphSearchQuery, setGraphSearchQuery] = useState('');
+  const [selectedGraph, setSelectedGraph] = useState<GraphEntry | null>(null);
+  const [installedGraphNames, setInstalledGraphNames] = useState<Set<string>>(new Set());
+  const [installingGraphSet, setInstallingGraphSet] = useState<Set<string>>(new Set());
+
   // 🌟 Skill 市场新状态：搜索 / 排版切换 / repo 下钻 / 详情弹窗 / 安装状态
   const [searchQuery, setSearchQuery] = useState('');
   const [layoutMode, setLayoutMode] = useState<LayoutMode>('repo');
@@ -194,6 +235,69 @@ export default function MarketPage({ onBack }: { onBack: () => void }) {
     } finally {
       setIsFetchingMcp(false);
     }
+  };
+
+  // 拉取 Sensor 注册表（通过后端 API，带超时 + 错误提示）
+  const fetchSensorData = async (isManual = false) => {
+    setIsFetchingSensor(true);
+    try {
+      const res = await fetch(`/api/tools/market/sensors?t=${Date.now()}`);
+      if (res.ok) {
+        const data = await res.json();
+        setSensorData(Array.isArray(data?.sensors) ? data.sensors : []);
+        if (isManual) toast.success("Sensors 列表已刷新！");
+      } else {
+        const err = await res.json().catch(() => null);
+        toast.error(err?.detail || "Sensors 仓库请求失败");
+      }
+    } catch {
+      toast.error("Sensors 仓库请求失败");
+    } finally {
+      setIsFetchingSensor(false);
+    }
+  };
+
+  // 拉取本地已安装 Sensor
+  const fetchLocalSensors = async () => {
+    try {
+      const res = await fetch('/api/tools/market/sensors/installed');
+      if (res.ok) {
+        const list: InstalledSensor[] = await res.json();
+        const map = new Map<string, InstalledSensor>();
+        for (const s of list) if (s?.name) map.set(String(s.name).toLowerCase(), s);
+        setInstalledSensorMap(map);
+      }
+    } catch { /* noop */ }
+  };
+
+  // 拉取 Graph 注册表（通过后端 API）
+  const fetchGraphData = async (isManual = false) => {
+    setIsFetchingGraph(true);
+    try {
+      const res = await fetch(`/api/tools/market/graphs?t=${Date.now()}`);
+      if (res.ok) {
+        const data = await res.json();
+        setGraphData(Array.isArray(data?.graphs) ? data.graphs : []);
+        if (isManual) toast.success("Graphs 列表已刷新！");
+      } else {
+        const err = await res.json().catch(() => null);
+        toast.error(err?.detail || "Graphs 仓库请求失败");
+      }
+    } catch {
+      toast.error("Graphs 仓库请求失败");
+    } finally {
+      setIsFetchingGraph(false);
+    }
+  };
+
+  const fetchLocalGraphs = async () => {
+    try {
+      const res = await fetch('/api/tools/market/graphs/installed');
+      if (res.ok) {
+        const list: string[] = await res.json();
+        setInstalledGraphNames(new Set(list.map(n => String(n).toLowerCase())));
+      }
+    } catch { /* noop */ }
   };
 
   // 拉取本地 mcp_config.json 中已配置的 server 名列表（"已安装"检测）
@@ -294,12 +398,22 @@ export default function MarketPage({ onBack }: { onBack: () => void }) {
       if (mcpData.length === 0) fetchMcpData();
       fetchLocalMcps();
     }
+    if (activeTab === 'sensor') {
+      if (sensorData.length === 0) fetchSensorData();
+      fetchLocalSensors();
+    }
+    if (activeTab === 'graph') {
+      if (graphData.length === 0) fetchGraphData();
+      fetchLocalGraphs();
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
 
   const handleRefresh = () => {
     if (activeTab === 'skill') { fetchSkillData(true); fetchLocalSkills(); }
     if (activeTab === 'mcp') { fetchMcpData(true); fetchLocalMcps(); }
+    if (activeTab === 'sensor') { fetchSensorData(true); fetchLocalSensors(); }
+    if (activeTab === 'graph') { fetchGraphData(true); fetchLocalGraphs(); }
   };
 
   const copyToClipboard = (text: string) => {
@@ -335,6 +449,84 @@ export default function MarketPage({ onBack }: { onBack: () => void }) {
     }
   };
 
+  // ========= Sensor 工具方法 =========
+  const isSensorInstalled = (s: SensorEntry) => installedSensorMap.has(String(s.name).toLowerCase());
+  const isSensorInstalling = (s: SensorEntry) => installingSensorSet.has(String(s.name).toLowerCase());
+
+  const handleInstallSensor = async (s: SensorEntry) => {
+    const key = String(s.name);
+    if (!key) return;
+    if (installingSensorSet.has(key)) return;
+    setInstallingSensorSet(prev => new Set(prev).add(key));
+    try {
+      const res = await fetch('/api/tools/market/sensors/install', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sensor: s }),
+      });
+      const data = await res.json().catch(() => null);
+      if (res.ok) {
+        if (data?.status === 'partial') {
+          toast(data?.message || 'Sensor 配置已安装，代码下载稍后重试', { icon: '⚠️' });
+        } else {
+          toast.success(data?.message || `Sensor '${key}' 安装成功！`);
+        }
+        await fetchLocalSensors();
+      } else {
+        toast.error(data?.detail || 'Sensor 安装失败');
+      }
+    } catch {
+      toast.error('Sensor 安装失败，请检查网络');
+    } finally {
+      setInstallingSensorSet(prev => { const n = new Set(prev); n.delete(key); return n; });
+    }
+  };
+
+  const filteredSensors = useMemo(() => {
+    const q = sensorSearchQuery.trim().toLowerCase();
+    if (!q) return sensorData;
+    return sensorData.filter(s =>
+      [s.name, s.description].some(f => (f || '').toLowerCase().includes(q))
+    );
+  }, [sensorData, sensorSearchQuery]);
+
+  // ========= Graph 工具方法 =========
+  const isGraphInstalled = (g: GraphEntry) => installedGraphNames.has(String(g.name).toLowerCase());
+  const isGraphInstalling = (g: GraphEntry) => installingGraphSet.has(String(g.name).toLowerCase());
+
+  const handleInstallGraph = async (g: GraphEntry) => {
+    const key = String(g.name);
+    if (!key) return;
+    if (installingGraphSet.has(key) || isGraphInstalled(g)) return;
+    setInstallingGraphSet(prev => new Set(prev).add(key));
+    try {
+      const res = await fetch('/api/tools/market/graphs/install', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: key }),
+      });
+      const data = await res.json().catch(() => null);
+      if (res.ok) {
+        toast.success(data?.message || `Graph '${key}' 安装成功！`);
+        await fetchLocalGraphs();
+      } else {
+        toast.error(data?.detail || 'Graph 安装失败');
+      }
+    } catch {
+      toast.error('Graph 安装失败，请检查网络');
+    } finally {
+      setInstallingGraphSet(prev => { const n = new Set(prev); n.delete(key); return n; });
+    }
+  };
+
+  const filteredGraphs = useMemo(() => {
+    const q = graphSearchQuery.trim().toLowerCase();
+    if (!q) return graphData;
+    return graphData.filter(g =>
+      [g.name, g.description].some(f => (f || '').toLowerCase().includes(q))
+    );
+  }, [graphData, graphSearchQuery]);
+
   // 关键词过滤：匹配 name / desc / repo / author
   const filteredSkills = useMemo(() => {
     const all = Object.values(skillData);
@@ -355,7 +547,11 @@ export default function MarketPage({ onBack }: { onBack: () => void }) {
     return Array.from(groups.entries());
   }, [filteredSkills]);
 
-  const isFetching = activeTab === 'skill' ? isFetchingSkill : isFetchingMcp;
+  const isFetching =
+    activeTab === 'skill' ? isFetchingSkill :
+    activeTab === 'mcp' ? isFetchingMcp :
+    activeTab === 'sensor' ? isFetchingSensor :
+    isFetchingGraph;
 
   return (
     <div ref={rootRef} className="absolute inset-0 bg-[#fdfaf5] bg-[radial-gradient(#1a1a1a_1px,transparent_1px)] [background-size:24px_24px] p-6 md:p-8 flex gap-6 overflow-hidden font-sans">
@@ -551,6 +747,191 @@ export default function MarketPage({ onBack }: { onBack: () => void }) {
         </div>
       )}
 
+      {/* 🌟 Sensor 详情弹窗（无图标：用 Activity 色块占位） */}
+      {selectedSensor && (() => {
+        const installed = isSensorInstalled(selectedSensor);
+        const installing = isSensorInstalling(selectedSensor);
+        const installedInfo = installedSensorMap.get(String(selectedSensor.name).toLowerCase());
+        const envKeys = Object.keys(selectedSensor.env || {});
+        return (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center bg-ink/70 backdrop-blur-sm p-4 pointer-events-auto" onClick={() => setSelectedSensor(null)}>
+            <div style={sketchyShape2} className="bg-paper border-4 border-ink shadow-[16px_16px_0px_0px_rgba(26,26,26,1)] w-full max-w-2xl flex flex-col relative rotate-[0.5deg]" onClick={e => e.stopPropagation()}>
+              <div className="absolute -top-4 left-1/4 w-32 h-10 bg-[#a3be8c]/60 border-2 border-ink rotate-2 z-50 pointer-events-none" style={sketchyShape1}></div>
+
+              <div className="flex justify-between items-start p-6 border-b-4 border-ink/20 shrink-0 gap-4">
+                <div className="flex items-center gap-4 min-w-0">
+                  <div className="rounded-full border-2 border-ink bg-[#a3be8c] flex items-center justify-center shrink-0" style={{ width: 56, height: 56 }}>
+                    <Activity size={30} strokeWidth={2.5} className="text-ink" />
+                  </div>
+                  <div className="min-w-0">
+                    <h2 className="text-2xl font-black tracking-wide text-ink break-all" style={{ fontFamily: '"Comic Sans MS", cursive' }}>{selectedSensor.name}</h2>
+                    <div className="flex items-center gap-2 mt-1 flex-wrap">
+                      {selectedSensor.capabilities?.observe && (
+                        <span className="text-[10px] font-black px-2 py-0.5 bg-cream border-2 border-ink text-ink" style={sketchyShape3}>OBSERVE</span>
+                      )}
+                      {selectedSensor.capabilities?.express && (
+                        <span className="text-[10px] font-black px-2 py-0.5 bg-cream border-2 border-ink text-ink" style={sketchyShape1}>EXPRESS</span>
+                      )}
+                      {installed && (
+                        <span className="text-[10px] font-black px-2 py-0.5 bg-[#a3be8c] border-2 border-ink text-ink flex items-center gap-1" style={sketchyShape3}>
+                          <Check size={10} strokeWidth={4} />
+                          {installedInfo?.enabled ? '已启用' : '已安装'}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <button onClick={() => setSelectedSensor(null)} className="p-2 border-2 border-ink bg-cream text-ink hover:bg-[#bf616a] hover:text-paper transition-all shrink-0" style={sketchyShape3}>
+                  <X size={24} strokeWidth={3} />
+                </button>
+              </div>
+
+              <div className="p-6 flex-1 overflow-y-auto max-h-[45vh] flex flex-col gap-5">
+                <div className="flex flex-col gap-2">
+                  <span className="font-black text-ink tracking-widest text-sm">DESCRIPTION:</span>
+                  <p className="text-[15px] font-bold leading-relaxed text-ink/80 whitespace-pre-wrap break-words">{selectedSensor.description || '（暂无描述）'}</p>
+                </div>
+
+                {envKeys.length > 0 && (
+                  <div className="flex flex-col gap-2">
+                    <div className="flex justify-between items-end">
+                      <span className="font-black text-ink tracking-widest text-sm">REQUIRED ENV:</span>
+                      <span className="text-[11px] font-bold text-ink/40">安装后请到配置里填写真实值</span>
+                    </div>
+                    <div style={sketchyShape1} className="bg-[#FDF8F0] border-4 border-ink p-4 overflow-x-auto shadow-[inset_4px_4px_0px_0px_rgba(26,26,26,0.05)]">
+                      <div className="flex flex-col gap-2">
+                        {envKeys.map(k => (
+                          <div key={k} className="flex items-start gap-2 min-w-0">
+                            <span className="font-mono font-black text-[13px] text-[#bf616a] shrink-0 w-56 truncate" title={k}>{k}</span>
+                            <span className="font-mono text-[12px] text-ink/70 min-w-0 break-all">
+                              {(selectedSensor.env?.[k] || '') === '' ? '<必填>' : selectedSensor.env?.[k]}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="p-6 pt-4 border-t-4 border-ink/10 flex items-center justify-end gap-4 shrink-0 flex-wrap">
+                <a
+                  href="https://github.com/PurrPod/sensors"
+                  target="_blank"
+                  rel="noreferrer"
+                  title="跳转官方仓库"
+                  style={sketchyShape1}
+                  className="w-14 h-14 flex items-center justify-center bg-cream text-ink border-4 border-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:bg-[#a3be8c] hover:text-paper transition-all active:translate-y-1 active:shadow-none"
+                >
+                  <Link2 size={22} strokeWidth={3} />
+                </a>
+                <button
+                  onClick={() => handleInstallSensor(selectedSensor)}
+                  disabled={installing}
+                  title={installed ? '已安装（重装可用于更新配置占位）' : '下载安装'}
+                  style={sketchyShape2}
+                  className={`h-14 px-6 flex items-center gap-2 border-4 border-ink font-black text-lg shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] transition-all active:translate-y-1 active:shadow-none ${
+                    installing
+                      ? 'bg-[#EBCB8B] text-ink cursor-wait'
+                      : 'bg-[#a3be8c] text-ink hover:-translate-y-0.5'
+                  }`}
+                >
+                  {installing ? <Loader2 size={22} strokeWidth={3} className="animate-spin" /> : installed ? <Check size={22} strokeWidth={3} /> : <Download size={22} strokeWidth={3} />}
+                  <span style={{ fontFamily: '"Comic Sans MS", cursive' }}>
+                    {installing ? '安装中...' : installed ? '更新配置' : '下载'}
+                  </span>
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* 🌟 Graph 详情弹窗（无图标：用 GitMerge 色块占位） */}
+      {selectedGraph && (() => {
+        const installed = isGraphInstalled(selectedGraph);
+        const installing = isGraphInstalling(selectedGraph);
+        return (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center bg-ink/70 backdrop-blur-sm p-4 pointer-events-auto" onClick={() => setSelectedGraph(null)}>
+            <div style={sketchyShape2} className="bg-paper border-4 border-ink shadow-[16px_16px_0px_0px_rgba(26,26,26,1)] w-full max-w-2xl flex flex-col relative rotate-[0.5deg]" onClick={e => e.stopPropagation()}>
+              <div className="absolute -top-4 left-1/4 w-32 h-10 bg-[#b48ead]/60 border-2 border-ink rotate-2 z-50 pointer-events-none" style={sketchyShape1}></div>
+
+              <div className="flex justify-between items-start p-6 border-b-4 border-ink/20 shrink-0 gap-4">
+                <div className="flex items-center gap-4 min-w-0">
+                  <div className="rounded-full border-2 border-ink bg-[#b48ead] flex items-center justify-center shrink-0" style={{ width: 56, height: 56 }}>
+                    <GitMerge size={30} strokeWidth={2.5} className="text-paper" />
+                  </div>
+                  <div className="min-w-0">
+                    <h2 className="text-2xl font-black tracking-wide text-ink break-all" style={{ fontFamily: '"Comic Sans MS", cursive' }}>{selectedGraph.name}</h2>
+                    <div className="flex items-center gap-2 mt-1 flex-wrap">
+                      {selectedGraph.version && (
+                        <span className="text-[10px] font-black px-2 py-0.5 bg-cream border-2 border-ink text-ink" style={sketchyShape3}>v{selectedGraph.version}</span>
+                      )}
+                      <span className="text-[10px] font-black px-2 py-0.5 uppercase bg-ink text-paper border-2 border-ink shrink-0" style={sketchyShape3}>Graph</span>
+                      {installed && (
+                        <span className="text-[10px] font-black px-2 py-0.5 bg-[#a3be8c] border-2 border-ink text-ink flex items-center gap-1" style={sketchyShape1}>
+                          <Check size={10} strokeWidth={4} /> 已安装
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <button onClick={() => setSelectedGraph(null)} className="p-2 border-2 border-ink bg-cream text-ink hover:bg-[#bf616a] hover:text-paper transition-all shrink-0" style={sketchyShape3}>
+                  <X size={24} strokeWidth={3} />
+                </button>
+              </div>
+
+              <div className="p-6 flex-1 overflow-y-auto max-h-[45vh] flex flex-col gap-5">
+                <div className="flex flex-col gap-2">
+                  <span className="font-black text-ink tracking-widest text-sm">DESCRIPTION:</span>
+                  <p className="text-[15px] font-bold leading-relaxed text-ink/80 whitespace-pre-wrap break-words">{selectedGraph.description || '（暂无描述）'}</p>
+                </div>
+
+                {selectedGraph.global_schema && Object.keys(selectedGraph.global_schema).length > 0 && (
+                  <div className="flex flex-col gap-2">
+                    <span className="font-black text-ink tracking-widest text-sm">INPUT SCHEMA (启动参数):</span>
+                    <pre style={sketchyShape3} className="bg-[#FDF8F0] border-4 border-ink p-4 overflow-x-auto text-xs font-mono font-bold shadow-[inset_4px_4px_0px_0px_rgba(26,26,26,0.05)] text-ink">
+                      {JSON.stringify(selectedGraph.global_schema, null, 2)}
+                    </pre>
+                  </div>
+                )}
+              </div>
+
+              <div className="p-6 pt-4 border-t-4 border-ink/10 flex items-center justify-end gap-4 shrink-0 flex-wrap">
+                <a
+                  href="https://github.com/PurrPod/graphs"
+                  target="_blank"
+                  rel="noreferrer"
+                  title="跳转官方仓库"
+                  style={sketchyShape1}
+                  className="w-14 h-14 flex items-center justify-center bg-cream text-ink border-4 border-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:bg-[#b48ead] hover:text-paper transition-all active:translate-y-1 active:shadow-none"
+                >
+                  <Link2 size={22} strokeWidth={3} />
+                </a>
+                <button
+                  onClick={() => handleInstallGraph(selectedGraph)}
+                  disabled={installing || installed}
+                  title={installed ? '已安装' : '下载安装'}
+                  style={sketchyShape2}
+                  className={`h-14 px-6 flex items-center gap-2 border-4 border-ink font-black text-lg shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] transition-all active:translate-y-1 active:shadow-none ${
+                    installed
+                      ? 'bg-[#d8d8d0] text-ink/40 cursor-not-allowed'
+                      : installing
+                        ? 'bg-[#EBCB8B] text-ink cursor-wait'
+                        : 'bg-[#b48ead] text-paper hover:-translate-y-0.5'
+                  }`}
+                >
+                  {installing ? <Loader2 size={22} strokeWidth={3} className="animate-spin" /> : installed ? <Check size={22} strokeWidth={3} /> : <Download size={22} strokeWidth={3} />}
+                  <span style={{ fontFamily: '"Comic Sans MS", cursive' }}>
+                    {installing ? '安装中...' : installed ? '已安装' : '下载'}
+                  </span>
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* 🌟 MCP 工厂构建弹窗：build a mcp from scratch */}
       {showMcpFactoryModal && (
         <div className="fixed inset-0 z-[210] flex items-center justify-center bg-ink/70 backdrop-blur-sm p-4 pointer-events-auto">
@@ -688,7 +1069,7 @@ export default function MarketPage({ onBack }: { onBack: () => void }) {
 
           <button
             onClick={handleRefresh}
-            disabled={isFetching || (activeTab !== 'skill' && activeTab !== 'mcp')}
+            disabled={isFetching}
             style={sketchyShape2}
             className="flex items-center gap-2 px-5 py-2.5 bg-[#EBCB8B] text-ink border-4 border-ink font-black text-lg shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:bg-sand hover:-translate-y-0.5 active:translate-y-0.5 active:shadow-none transition-all rotate-2 disabled:opacity-50 shrink-0"
           >
@@ -887,12 +1268,147 @@ export default function MarketPage({ onBack }: { onBack: () => void }) {
             </div>
           )}
 
-          {activeTab !== 'skill' && activeTab !== 'mcp' && (
-            <div className="flex flex-col items-center justify-center h-[60vh] gap-6 opacity-40 text-ink">
-              {activeTab === 'sensor' && <Activity size={80} strokeWidth={1.5} />}
-              {activeTab === 'graph' && <GitMerge size={80} strokeWidth={1.5} />}
-              <p className="text-3xl font-black tracking-widest" style={{ fontFamily: '"Comic Sans MS", cursive' }}>COMING SOON</p>
-              <p className="font-bold text-lg">此模块的在线集市正在施工中...</p>
+          {/* ================= SENSORS 列表渲染（搜索框 + 卡片平铺 + 无图标） ================= */}
+          {activeTab === 'sensor' && (
+            <div className={`${isNarrow ? 'p-4 gap-4' : 'p-10 gap-6'} flex flex-col`}>
+              {/* 搜索框 */}
+              <div className="flex items-center gap-3 bg-paper border-4 border-ink px-4 py-2.5 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)]" style={sketchyShape2}>
+                <Search size={18} strokeWidth={3} className="text-ink/40 shrink-0" />
+                <input
+                  value={sensorSearchQuery}
+                  onChange={e => setSensorSearchQuery(e.target.value)}
+                  placeholder="搜索 Sensor 名称 / 描述..."
+                  className="flex-1 min-w-0 bg-transparent outline-none font-bold text-ink placeholder:text-ink/40 text-[15px]"
+                />
+                {sensorSearchQuery && (
+                  <button onClick={() => setSensorSearchQuery('')} className="p-1 text-ink/40 hover:text-ink transition-colors shrink-0">
+                    <X size={16} strokeWidth={3} />
+                  </button>
+                )}
+              </div>
+
+              {isFetchingSensor && sensorData.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-[40vh] gap-4 opacity-50"><RefreshCw className="animate-spin text-[#a3be8c]" size={64} strokeWidth={2} /><p className="text-2xl font-black tracking-widest" style={{ fontFamily: '"Comic Sans MS", cursive' }}>Fetching Sensors...</p></div>
+              ) : filteredSensors.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-[40vh] gap-4 opacity-50 text-ink"><AlertCircle size={64} strokeWidth={2} /><p className="text-2xl font-black tracking-widest" style={{ fontFamily: '"Comic Sans MS", cursive' }}>{sensorSearchQuery ? 'No Match.' : 'Registry is empty.'}</p></div>
+              ) : (
+                <div className={`grid ${cardCols} ${isNarrow ? 'gap-4' : 'gap-8'} pb-8`}>
+                  {filteredSensors.map((s, idx) => {
+                    const installed = isSensorInstalled(s);
+                    const installing = isSensorInstalling(s);
+                    const installedInfo = installedSensorMap.get(String(s.name).toLowerCase());
+                    return (
+                      <button
+                        key={s.name}
+                        onClick={() => setSelectedSensor(s)}
+                        style={idx % 2 === 0 ? sketchyShape1 : sketchyShape2}
+                        className={`bg-paper border-4 border-ink ${isNarrow ? 'p-4' : 'p-6'} flex flex-col gap-3 shadow-[6px_6px_0px_0px_rgba(26,26,26,1)] hover:-translate-y-2 hover:shadow-[10px_10px_0px_0px_rgba(26,26,26,1)] transition-all text-left ${idx % 3 === 0 ? 'rotate-1' : '-rotate-1'}`}
+                      >
+                        <div className="flex items-center gap-3 border-b-2 border-ink/10 pb-3 min-w-0">
+                          {/* Sensor 无 icon：Activity 彩色圆标占位 */}
+                          <div className="rounded-full border-2 border-ink bg-[#a3be8c] flex items-center justify-center shrink-0" style={{ width: 44, height: 44 }}>
+                            <Activity size={22} strokeWidth={2.5} className="text-ink" />
+                          </div>
+                          <h3 className="text-xl font-black truncate text-ink flex-1 min-w-0" style={{ fontFamily: '"Comic Sans MS", cursive' }} title={s.name}>{s.name}</h3>
+                          {installed && (
+                            <span className="flex items-center gap-1 text-[10px] font-black px-2 py-1 bg-[#a3be8c] text-ink border-2 border-ink shrink-0" style={sketchyShape3}>
+                              <Check size={10} strokeWidth={4} />
+                              {installedInfo?.enabled ? '已启用' : '已安装'}
+                            </span>
+                          )}
+                          {installing && (
+                            <Loader2 size={16} strokeWidth={3} className="animate-spin shrink-0 text-[#EBCB8B]" />
+                          )}
+                        </div>
+
+                        <p className="text-sm font-bold text-ink/70 leading-relaxed line-clamp-3 flex-1">{s.description || '（暂无描述）'}</p>
+
+                        <div className="flex items-center justify-between mt-1 pt-3 border-t-2 border-ink/10 border-dashed gap-2">
+                          <div className="flex items-center gap-1 flex-wrap min-w-0">
+                            {s.capabilities?.observe && (
+                              <span className="text-[9px] font-black px-1.5 py-0.5 bg-cream border-2 border-ink text-ink" style={sketchyShape1}>OBSERVE</span>
+                            )}
+                            {s.capabilities?.express && (
+                              <span className="text-[9px] font-black px-1.5 py-0.5 bg-cream border-2 border-ink text-ink" style={sketchyShape3}>EXPRESS</span>
+                            )}
+                            {s.env && Object.keys(s.env).length > 0 && (
+                              <span className="text-[9px] font-black px-1.5 py-0.5 bg-[#FDF8F0] border-2 border-ink text-[#bf616a]" style={sketchyShape2}>ENV x{Object.keys(s.env).length}</span>
+                            )}
+                          </div>
+                          <span className="text-[10px] font-black px-2 py-1 uppercase bg-ink text-paper border-2 border-ink shrink-0" style={sketchyShape3}>SENSOR</span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ================= GRAPHS 列表渲染（搜索框 + 卡片平铺 + 无图标） ================= */}
+          {activeTab === 'graph' && (
+            <div className={`${isNarrow ? 'p-4 gap-4' : 'p-10 gap-6'} flex flex-col`}>
+              {/* 搜索框 */}
+              <div className="flex items-center gap-3 bg-paper border-4 border-ink px-4 py-2.5 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)]" style={sketchyShape2}>
+                <Search size={18} strokeWidth={3} className="text-ink/40 shrink-0" />
+                <input
+                  value={graphSearchQuery}
+                  onChange={e => setGraphSearchQuery(e.target.value)}
+                  placeholder="搜索 Graph 名称 / 描述..."
+                  className="flex-1 min-w-0 bg-transparent outline-none font-bold text-ink placeholder:text-ink/40 text-[15px]"
+                />
+                {graphSearchQuery && (
+                  <button onClick={() => setGraphSearchQuery('')} className="p-1 text-ink/40 hover:text-ink transition-colors shrink-0">
+                    <X size={16} strokeWidth={3} />
+                  </button>
+                )}
+              </div>
+
+              {isFetchingGraph && graphData.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-[40vh] gap-4 opacity-50"><RefreshCw className="animate-spin text-[#b48ead]" size={64} strokeWidth={2} /><p className="text-2xl font-black tracking-widest" style={{ fontFamily: '"Comic Sans MS", cursive' }}>Fetching Graphs...</p></div>
+              ) : filteredGraphs.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-[40vh] gap-4 opacity-50 text-ink"><AlertCircle size={64} strokeWidth={2} /><p className="text-2xl font-black tracking-widest" style={{ fontFamily: '"Comic Sans MS", cursive' }}>{graphSearchQuery ? 'No Match.' : 'Registry is empty.'}</p></div>
+              ) : (
+                <div className={`grid ${cardCols} ${isNarrow ? 'gap-4' : 'gap-8'} pb-8`}>
+                  {filteredGraphs.map((g, idx) => {
+                    const installed = isGraphInstalled(g);
+                    const installing = isGraphInstalling(g);
+                    return (
+                      <button
+                        key={g.name}
+                        onClick={() => setSelectedGraph(g)}
+                        style={idx % 2 === 0 ? sketchyShape3 : sketchyShape1}
+                        className={`bg-paper border-4 border-ink ${isNarrow ? 'p-4' : 'p-6'} flex flex-col gap-3 shadow-[6px_6px_0px_0px_rgba(26,26,26,1)] hover:-translate-y-2 hover:shadow-[10px_10px_0px_0px_rgba(26,26,26,1)] transition-all text-left ${idx % 3 === 0 ? '-rotate-1' : 'rotate-1'}`}
+                      >
+                        <div className="flex items-center gap-3 border-b-2 border-ink/10 pb-3 min-w-0">
+                          {/* Graph 无 icon：GitMerge 彩色圆标占位 */}
+                          <div className="rounded-full border-2 border-ink bg-[#b48ead] flex items-center justify-center shrink-0" style={{ width: 44, height: 44 }}>
+                            <GitMerge size={22} strokeWidth={2.5} className="text-paper" />
+                          </div>
+                          <h3 className="text-xl font-black truncate text-ink flex-1 min-w-0" style={{ fontFamily: '"Comic Sans MS", cursive' }} title={g.name}>{g.name}</h3>
+                          {installed && (
+                            <span className="flex items-center gap-1 text-[10px] font-black px-2 py-1 bg-[#a3be8c] text-ink border-2 border-ink shrink-0" style={sketchyShape3}>
+                              <Check size={10} strokeWidth={4} /> 已安装
+                            </span>
+                          )}
+                          {installing && (
+                            <Loader2 size={16} strokeWidth={3} className="animate-spin shrink-0 text-[#EBCB8B]" />
+                          )}
+                        </div>
+
+                        <p className="text-sm font-bold text-ink/70 leading-relaxed line-clamp-3 flex-1">{g.description || '（暂无描述）'}</p>
+
+                        <div className="flex items-center justify-between mt-1 pt-3 border-t-2 border-ink/10 border-dashed gap-2">
+                          <p className="text-xs font-bold text-ink/40 truncate">
+                            {g.version ? `v${g.version}` : g.global_schema && Object.keys(g.global_schema).length > 0 ? `${Object.keys(g.global_schema).length} input args` : 'No version info'}
+                          </p>
+                          <span className="text-[10px] font-black px-2 py-1 uppercase bg-ink text-paper border-2 border-ink shrink-0" style={sketchyShape3}>GRAPH</span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
 
