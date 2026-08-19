@@ -894,8 +894,15 @@ ipcMain.handle('win:close', (e) => { BrowserWindow.fromWebContents(e.sender)?.cl
 
 // ===== IPC: 应用重启（首次启动设置数据盘后自动重启生效）=====
 ipcMain.handle('app:restart', () => {
-  app.relaunch();
-  app.exit(0);
+  if (IS_DEV) {
+    // 开发模式：backend/vite 由 `concurrently -k` 托管，relaunch 后这些进程会被一并杀掉，
+    // 新起的 Electron 也连不上（端口已随父进程退出）。这里只关闭应用，让用户手动重跑
+    // `npm run dev` 使 data_root 生效即可。
+    app.exit(0);
+  } else {
+    app.relaunch();
+    app.exit(0);
+  }
 });
 
 // ===== IPC: 内置浏览器独立窗口 =====

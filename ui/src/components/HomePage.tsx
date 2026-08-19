@@ -101,7 +101,7 @@ export default function HomePage({
 
         {/* 🐱 中间小猫 Logo */}
         <div className="shrink-0 w-[260px] md:w-[350px] lg:w-[450px] h-[340px] md:h-[585px] flex items-end justify-center z-10 hover:scale-[1.03] transition-transform duration-500 relative order-1 md:order-2">
-          <img src="/src/purrcat-logo.png" alt="PurrCat Logo" className="w-full h-full object-contain filter drop-shadow-[4px_4px_0px_rgba(26,26,26,0.15)]" draggable={false} />
+          <img src="/purrcat-logo.png" alt="PurrCat Logo" className="w-full h-full object-contain filter drop-shadow-[4px_4px_0px_rgba(26,26,26,0.15)]" draggable={false} />
         </div>
 
         {/* 👉 右侧按钮组 (MARKET, MEMORY, EVOLVE) */}
