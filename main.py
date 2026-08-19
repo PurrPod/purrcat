@@ -1,8 +1,18 @@
 import asyncio
 import multiprocessing
 import os
+import sys
 import warnings
 import argparse
+
+# Windows 下管道 stdout/stderr 默认 GBK 编码，print 含 emoji 会抛
+# UnicodeEncodeError 直接崩掉整个后端进程（Electron 用管道拉起时必现）。
+# 必须在导入任何业务模块之前重配为 UTF-8 + errors=replace，杜绝崩溃。
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
 
 # 核心模块
 from src.agent import init_agent, shutdown_agent, branch_session
@@ -158,16 +168,21 @@ async def run_api(host: str = "0.0.0.0", port: int = 8000):
     app.include_router(evolve_router)
     app.include_router(terminal_router)
 
-    # 🌟 托管前端构建产物（打包成桌面应用后，前后端同源单端口运行）
+    # 🌟 健康检查必须注册在 app.mount("/") 之前！
+    # Starlette 按注册顺序匹配路由，"/" 的静态文件挂载是贪婪前缀匹配，
+    # 会吞掉它之后注册的所有路由（/api/health 会变成 404），
+    # 导致 Electron 的生产模式轮询永远失败、白屏等 60 秒。
+    @app.get("/api/health")
+    def ping():
+        return {"message": "PurrCat Backend is running."}
+
+    # 🌟 托管前端构建产物（打包成桌面应用后，前后端同源单端口运行）。
+    # 静态文件挂载放到所有 API 路由最后，避免遮蔽 /api/* 接口。
     from fastapi.staticfiles import StaticFiles
     from pathlib import Path as _Path
     _ui_dist = _Path(__file__).resolve().parent / "ui" / "dist"
     if _ui_dist.exists():
         app.mount("/", StaticFiles(directory=str(_ui_dist), html=True), name="ui")
-
-    @app.get("/api/health")
-    def ping():
-        return {"message": "PurrCat Backend is running."}
 
     logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
     

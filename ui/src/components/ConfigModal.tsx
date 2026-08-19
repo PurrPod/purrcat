@@ -219,7 +219,7 @@ export default function ConfigModal({ isOpen, onClose }: { isOpen: boolean; onCl
                 {activeTab === 'settings' && (
                   <div className="mt-2 p-2 bg-paper border-2 border-ink rounded text-[11px] text-ink/60 flex items-start gap-1">
                     <Info size={14} className="shrink-0 mt-0.5" />
-                    修改 data_root 后必须重启程序才生效
+                    数据盘（data_root）首次启动设置后已锁定，不可在此修改
                   </div>
                 )}
               </div>
@@ -304,6 +304,8 @@ export default function ConfigModal({ isOpen, onClose }: { isOpen: boolean; onCl
                 ) : (
                   Object.keys(configData).map((key, idx) => {
                     if (key === '__ARRAY_WRAPPER__') return null;
+                    // data_root 由首次启动引导锁定，可视化编辑里隐藏，防止误改/误删
+                    if (key === 'data_root') return null;
                     const isExpanded = expandedKey === key;
                     const val = configData[key];
                     const valType = Array.isArray(val) ? 'array' : typeof val;

@@ -1,4 +1,5 @@
 // src/App.tsx
+import { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, useNavigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { Minus, Square, X } from 'lucide-react';
@@ -11,6 +12,7 @@ import EditorPage from './components/EditorPage';
 import MarketPage from './components/MarketPage'; // 🌟 导入新页面
 import EvolvePage from './components/EvolvePage'; // 🌟 导入新页面
 import IDEPanel from './components/chat/IDEPanel'; // IDE 独立窗口
+import DataSetupModal from './components/DataSetupModal'; // 首次启动数据盘引导
 
 const sketchyBtn = { borderRadius: '6px 10px 5px 8px/8px 5px 10px 6px' };
 
@@ -42,6 +44,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <WindowControls />
+      <DataSetupGate />
       <Routes>
         <Route path="/" element={<HomeRouteWrapper />} />
         <Route path="/chat/:sessionId?" element={<ChatRouteWrapper />} />
@@ -71,6 +74,19 @@ export default function App() {
       />
     </BrowserRouter>
   );
+}
+
+// 首次启动数据盘引导：后端 setup-status 返回 configured=false 时弹出，配置完成后锁定
+function DataSetupGate() {
+  const [show, setShow] = useState(false);
+  useEffect(() => {
+    fetch('/api/config/setup-status')
+      .then((r) => r.json())
+      .then((s) => { if (s && s.configured === false) setShow(true); })
+      .catch(() => {});
+  }, []);
+  if (!show) return null;
+  return <DataSetupModal onDone={() => setShow(false)} />;
 }
 
 function HomeRouteWrapper() {

@@ -42,6 +42,7 @@ dependencies = [
 
     # Web框架与 UI
     "fastapi>=0.109.0", "uvicorn>=0.27.0", "textual>=0.50.0",
+    "aiofiles>=23.2.1",
 
     # 终端 PTY (Windows 伪终端，让 xterm.js 获得真终端体验：backspace/tab/颜色/交互)
     "pywinpty>=2.0.0; sys_platform == 'win32'",

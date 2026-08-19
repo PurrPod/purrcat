@@ -1,6 +1,13 @@
 # -*- mode: python ; coding: utf-8 -*-
+import os
+import sys
 from PyInstaller.utils.hooks import collect_data_files
 from PyInstaller.utils.hooks import collect_all
+
+# 把项目根目录加入 sys.path，否则 spec 执行时 collect_all/collect_data_files
+# 找不到 src/tui 包，导致源码里的数据文件（harness 节点 JSON、系统规则、TUI 样式）漏打包
+# 注意：spec 由 exec() 执行，没有 __file__，PyInstaller 执行前会切到 spec 所在目录，用 os.getcwd()
+sys.path.insert(0, os.path.abspath(os.getcwd()))
 
 datas = [('ui/dist', 'ui/dist')]
 binaries = []

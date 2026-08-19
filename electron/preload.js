@@ -43,6 +43,8 @@ contextBridge.exposeInMainWorld('purrcat', {
   winMinimize: () => ipcRenderer.invoke('win:minimize'),
   winToggleMaximize: () => ipcRenderer.invoke('win:toggle-maximize'),
   winClose: () => ipcRenderer.invoke('win:close'),
+  // 重启应用（首次启动设置数据盘后调用，让 data_root 生效）
+  restartApp: () => ipcRenderer.invoke('app:restart'),
 
   // ===== 内置浏览器（多 Tab WebContentsView）=====
   // 新建一个浏览器 Tab，加载 url，返回 tabId

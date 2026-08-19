@@ -15,6 +15,9 @@ const IS_DEV = !!process.env.ELECTRON_DEV;
 const DEV_URL = 'http://localhost:3000';   // vite dev server（热更新）
 const PROD_URL = 'http://localhost:8000';  // 后端托管的前端 dist
 
+// 应用图标（exe/安装包已由 electron-builder 打上 icon.ico，这里给窗口/任务栏用）
+const APP_ICON = path.join(__dirname, 'icon.ico');
+
 let mainWindow = null;
 let backendProcess = null;
 
@@ -137,6 +140,7 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     title: 'PurrCat',
     titleBarStyle: 'hidden',
+    icon: APP_ICON,
     width: 1280,
     height: 800,
     webPreferences: {
@@ -259,6 +263,7 @@ ipcMain.handle('ide:detach', (_e, workspacePath) => {
     width: 1200, height: 800,
     title: 'PurrCat IDE',
     titleBarStyle: 'hidden',
+    icon: APP_ICON,
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -887,6 +892,12 @@ ipcMain.handle('win:toggle-maximize', (e) => {
 });
 ipcMain.handle('win:close', (e) => { BrowserWindow.fromWebContents(e.sender)?.close(); });
 
+// ===== IPC: 应用重启（首次启动设置数据盘后自动重启生效）=====
+ipcMain.handle('app:restart', () => {
+  app.relaunch();
+  app.exit(0);
+});
+
 // ===== IPC: 内置浏览器独立窗口 =====
 ipcMain.handle('browser:detach', () => {
   if (browserDetached || !mainWindow) return;
@@ -900,6 +911,7 @@ ipcMain.handle('browser:detach', () => {
     width: 1200, height: 800,
     title: 'PurrCat Browser',
     titleBarStyle: 'hidden',
+    icon: APP_ICON,
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -1292,6 +1304,7 @@ ipcMain.handle('preview:open-file', (_e, { url, title, type }) => {
     height: type === 'video' ? 540 : 700,
     title: title || 'Preview',
     titleBarStyle: 'hidden',
+    icon: APP_ICON,
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
