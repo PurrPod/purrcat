@@ -2,104 +2,114 @@
 
 # PurrCat
 
-**[📖 文档（仍在更新中）](https://purrpod.github.io/)**
+English | [简体中文](README.zh-CN.md)
 
-经济、高效、可定制化、更懂你的本地优先个人 AI Agent
+An economical, efficient, customizable, local-first personal AI Agent framework.
+
+[Documentation](https://purrpod.github.io/) | [Deployment](https://purrpod.github.io/guide/deployment) | [Architecture](https://purrpod.github.io/develop/architecture) | [Extension](https://purrpod.github.io/develop/extension) | [Configuration](https://purrpod.github.io/config/) | [FAQ](https://purrpod.github.io/guide/faq)
+
 </div>
 
 ---
 
-<img src="purrcat-logo.png" width="260" height="260" alt="PurrCat" align="right" />
+<img src="purrcat-logo.png" width="220" height="220" alt="PurrCat" align="right" />
 
-## ✨ 核心亮点与技术架构
+## Quickstart
 
-### 01 混合记忆与知识图谱系统
+### Requirements
 
-解决传统 Agent「记不住事」的痛点，本系统参考神经科学记忆分类理论进行了深度设计：
+- Python 3.10+, [uv](https://docs.astral.sh/uv/), Node.js 18+, Git
+- [Docker](https://docs.docker.com/get-docker/) (required by the sandboxed Bash tool)
+- Alternatively, run `purrcat setup` to initialize the environment (uv, Docker, embedding model, Playwright) in one step
 
-- **短时工作记忆**：常驻内存的 memo 变量，可跨越单次会话断层，保留最近 10 次浓缩总结，完美解决「切会话就失忆」痛点。
-- **核心通用记忆**：系统级档案（MEMORY.md）固化用户画像与工作经验，在初始化时注入 System Prompt，确立 Agent 行为基调。
-- **长期结构化记忆 (PurrMemo)**：搭载情景记忆引擎（SQLite + FTS5）与语义记忆引擎（ChromaDB + NetworkX），支持动态实体关系建立与强化/削弱机制，并提供 HTML 可视化图谱导出。
-- **底层技术支撑**：采用 RRF 混合检索算法，通过全局线程池多路并发，将 BM25（关键词匹配）与语义匹配进行倒数排名融合，大幅提升召回准确率。
-- **异步消化与艾宾浩斯遗忘**：前台新认知存入 pending 后，由后台独立守护进程静默转化为三元组写入图谱，绝不阻塞用户交互，并配合动态衰减机制自动清理长时间未强化的记忆。
+### Option 1: Electron desktop (recommended)
 
-### 02 DAG 工作流引擎
+```bash
+git clone https://github.com/PurrPod/purrcat.git
+cd purrcat
+uv sync                    # Python dependencies
+npm install                # Root dependencies (Electron, etc.)
+npm install --prefix ui    # Frontend dependencies
+npm run dev                # Starts backend + frontend + Electron
+```
 
-作为可编排思维链与生产级状态机，Harness 解决了多 Agent 通信瓶颈与工具噪音问题：
+### Option 2: Web UI (lightweight)
 
-- **Multi-Agent 并发**：抛弃传统框架通过自然语言喊话导致的巨大 Token 冗余，采用同一人多脑并发执行策略，大幅降低通信开销与推理成本。
-- **精准任务约束**：特定任务绑定特定工具，支持在特定阶段注入特定提示，防止 Agent 在复杂情景下发生混乱。
-- **多态节点矩阵**：内置强大的节点系统，包含直连大模型 Vision 能力的图片生成节点、精准多路分支的条件路由节点，以及可交出控制权的人工干预节点等节点，基本覆盖日常使用场景。
-- **状态机安全回滚**：支持随时在特定节点注入人工指令，连带下游节点清除旧状态，实现精准断点重连，防止「数据脏读」。
-- **JSON 热插拔**：导入或部署复杂工作流，仅需一个 JSON 配置文件即可完成动态装载与热更新。
+```bash
+uv sync
+npm install --prefix ui
+npm run build:ui                             # Build frontend assets
+uv run python main.py --api --headless       # Open http://localhost:8000 in a browser
+```
 
-### 03 全能安全工具链
+> Note: several features (local file access, terminal, etc.) depend on the Electron runtime and may misbehave in a plain browser. The desktop client is recommended for full functionality.
 
-为大模型装上拥有绝对安全防护的「手和脚」，提供八大原生工具构建核心感官：
+## Architecture
 
-- **持久化沙盒 Bash 工具**：放弃正则拦截命令行，直接使用 Docker 构建独立虚拟机，保障绝对的文件安全并减少 human-in-loop，支持挂载目录访问外部。
-- **全能 FileSystem 套件**：提供基本文件系统交互（read / edit / write / search / glob）能力，底层实现 PDF/DOCX/XLSX 等格式的无感降维阅读转 Markdown。
-- **安全跨界传导**：底层设置黑白名单物理级拦截，Import 严格校验 30MB 上限与路径穿越，Export 自动触发 Git 快照防止灾难覆盖。
-- **核心扩展工具矩阵**：包含动态路由 CallMCP、混合检索 Search（召回率超 90%）、网页转 Markdown 的 Fetch、异步提炼的 Memo、定时任务 Cron，电脑操作 ComputerUse、复杂计划编排工具 BrainStorm、自我进化工具 KernelUpgrade 以及派发后台任务的 Task 调度器等工具，支持外部 MCP 工具拓展。
+### 01 Hybrid Memory and Knowledge Graph
 
-### 04 智能体中枢与会话管理
+- Short-term working memory: in-memory `memo` variables retain condensed summaries of the last 10 interactions across session switches.
+- Core memory: `MEMORY.md` stores user profiles and work experience, injected into the system prompt at initialization.
+- Long-term structured memory (PurrMemo): episodic engine (SQLite + FTS5) and semantic engine (ChromaDB + NetworkX), with dynamic relation strengthening/weakening and HTML graph export.
+- Hybrid retrieval: RRF fusion of BM25 and vector search, executed concurrently through a global thread pool.
+- Asynchronous digestion: new cognitions are buffered in `pending` and converted to triples by a background daemon; a decay mechanism cleans up long-unused memories.
 
-作为协调大模型与外部世界的交互网关，赋予 Agent 专属灵魂与极强鲁棒性：
+### 02 Harness DAG Workflow Engine
 
-- **Git 式会话分支**：支持 new session、branch session 与 switch session 自由切换，方便试错并随时安全切回主干。
-- **完善异常修复**：包括但不限于自动检查 tool calls 匹配情况，拦截残缺工具消息并回滚到安全状态，防止模型逻辑混乱。
-- **智能上下文截断**：Token 超限时自动进行记忆压缩。
-- **生命力与灵魂注入**：通过 SOUL.md 定义人格价值观，系统时钟驱动 Heartbeat + SOLO + TODO 机制，在空闲时自主巡查、清理垃圾并主动汇报。
-- **专属视觉顾问**：为模型配备独立 vision 顾问，将图片信息从主会话剥离单独处理，极大提高信噪比并减少幻觉。
+- Multi-agent concurrency under a single persona, avoiding natural-language inter-agent chatter and its token cost.
+- Per-task tool binding and stage-specific prompt injection.
+- Polymorphic node matrix: LLM-vision image generation, conditional routing (if/else, switch), human intervention, and more.
+- Safe rollback: inject commands at any node; downstream states are cleared for precise breakpoint recovery.
+- Workflows load from a single JSON file and hot-update at runtime.
 
-### 05 主动感知与事件网关
+### 03 Secure Toolchain
 
-从被动「问答机器」跨越到主动「智能助手」，采用物理级解耦的类 MCP 事件驱动架构：
+- Sandboxed Bash: commands run in isolated Docker containers, with optional directory mounts for external access.
+- FileSystem suite: `read` / `edit` / `write` / `search` / `glob`, with PDF/DOCX/XLSX converted to Markdown via MarkItDown.
+- Boundary control: physical black/white lists; imports are checked against a 30MB limit and path traversal, exports trigger Git snapshots.
+- Extension tools: CallMCP, hybrid Search, Fetch, Memo, Cron, Task, ComputerUse, BrainStorm, KernelUpgrade; external MCP servers supported.
 
-- **独立进程与零依赖冲突**：集成 uv 工具 + PEP 723 内联依赖，所有传感器作为独立子进程运行（拉起时秒建虚拟环境），单个 Sensor 崩溃绝不影响主进程。
-- **标准流通信防污染**：摒弃复杂网络端口，采用 Stdio 管道 JSON-RPC 通信，重定向 stdout 到 stderr，仅合规 JSON 可进入解析器，实现极致轻量与零网络开销。
-- **多源传感器矩阵**：内置 System Sensor（心跳守护/定时轮询）、Feishu Sensor（WebSocket 双向解析 Markdown）、RSS Sensor（科技博客轮询与主动推送）以及 Audio Sensor（基于 Whisper + pyttsx3 的声控捕获）。
+### 04 Agent Hub and Session Management
 
-### 06 模型调度与高并发网关
+- Git-style session branching: new, branch, and switch sessions; trial-and-error without losing the main trunk.
+- Automatic repair: malformed tool calls are intercepted and rolled back to a safe state.
+- Context truncation: when token limits are exceeded, older history is replaced by memo summaries at safe cut points.
+- Persona and vitality: `SOUL.md` defines values; a heartbeat-driven mechanism lets the agent patrol, clean up, and report during idle time.
+- A dedicated vision consultant isolates image processing from the main session to improve signal-to-noise ratio.
 
-基于操作系统原理打造的工业级 LLM 资源调度管理中心：
+### 05 Proactive Perception and Event Gateway
 
-- **API Key 负载均衡**：底层通过线程锁（_usage_lock）维护可用 Key 列表，自动分配最空闲的密钥，防止单 Key 触发限制。
-- **并发锁与指数退避**：面对多 Agent 协同与高频并发场景，底层实现 Semaphore 信号量排队与带 Jitter 的指数退避重试（最高 8 次），确保 API 调用绝对高可用。
+- Sensors run as independent subprocesses with PEP 723 inline dependencies managed by uv; a single sensor crash does not affect the main process.
+- Stdio JSON-RPC communication over pipes; no network ports involved.
+- Built-in sensors: System (heartbeat/polling), Feishu (WebSocket), RSS, and Audio (Whisper + pyttsx3).
 
-### 07 极致的 KV Cache 命中率与 Token 经济学
+### 06 Model Scheduling and Concurrency
 
-在长上下文与多任务并发场景下，通过一系列深度工程优化实现了极致的降本增效：
+- API key load balancing: idle-first key allocation under a thread lock, preventing single-key rate limits.
+- Semaphore queuing and jittered exponential backoff (up to 8 retries) for high-concurrency availability.
 
-- **超高缓存命中率**：在动态切换多会话的复杂环境下，长会话仍能保持稳定的缓存命中率，提供极速响应体验，并对钱包友好（以 DeepSeek-V4-Flash 为例，消耗 1 亿命中 Token 仅需 2 元人民币）。
-- **生命周期强绑定**：底层 APIKeyManager 实现任务/会话与单一密钥强绑定，彻底杜绝负载均衡切 Key 导致的命中率雪崩。
-- **双效经济学设计**：依托 DAG 消除传统 Agent 互相对话的 Token 冗余；借助记忆摘要机制，要求任务执行者自行提炼 Summary 抛给后台消化，避免全量历史读取浪费。
+### 07 KV Cache and Token Economics
 
-### 08 极致解耦、无代码拓展与工程美学
+- Stable KV cache hit rates across session switches, via strong key-to-session binding in the API key manager.
+- DAG execution removes inter-agent token redundancy; task executors produce summaries for background digestion instead of full-history reads.
 
-秉承高内聚、低耦合原则，所有核心拓展组件均实现了数据驱动的配置化装载：
+### 08 Configuration-Driven Extension
 
-- **零代码接入 MCP**：只需将标准 JSON 粘贴至 mcp_config.json，系统即可自动握手、落盘缓存并热更新大模型工具树，实现分钟级能力泛化。
-- **终端一键装载 Skill**：通过执行 `purrcat install skill <url>`，秒速下载社区 SOP 流程并热加载至检索树，供前台精准召回。
-- **可视化 DAG 部署**：内置前端 UI 引擎，支持直接拖拽连线编排节点，或一键导入 JSON 图谱完成复杂工作流的秒级部署。
-- **配置即安装传感器**：UI 界面提供一键 ON/OFF 拨动开关，系统启动若遇缺失 Sensor，会自动从云端拉取脚本秒速运行，赋予 Agent 主动改变自身感官的能力。
+- Zero-code MCP integration: paste standard JSON into `mcp_config.json`; the tool tree hot-updates after handshake.
+- `purrcat install skill <url>` downloads community skills and loads them into the retrieval tree.
+- Visual DAG editing in the UI, with one-click JSON import/export.
+- Sensors toggle on/off in the UI; missing sensor scripts are fetched automatically at startup.
 
 <br clear="right" />
 
 ---
 
-## 🙏 致谢
+## Acknowledgments
 
-- 感谢 **[zhenghuanle](https://github.com/zhenghuanle)** 测试了从零开始的安装流程。
-- 感谢 **[Gaeulczy](https://github.com/Gaeulczy)** 测试了一键安装和运行脚本。
-- 感谢 **中山大学开放鸿蒙技术俱乐部** 举办的智能体开发大赛提供的决赛金奖奖金赞助与所有校内外评委的指导。
+- [zhenghuanle](https://github.com/zhenghuanle) tested the installation flow from scratch.
+- [Gaeulczy](https://github.com/Gaeulczy) tested the one-click setup and run scripts.
+- Sponsored by the Smart Agent Development Competition hosted by the Sun Yat-sen University OpenHarmony Technology Club.
 
-最后也是最重要的是，感谢每一个愿意为 PurrCat 献出 Star 的你！
+## License
 
----
-
-## 📄 许可证
-
-本项目采用 [MIT](LICENSE) 许可证开源。你可以毫无负担地自由使用、修改、分发甚至将本项目用于商业化用途。
-
-在这个 Agent 技术爆发的时代，没有永远的护城河，也没有所谓的个人英雄主义，只有推着所有人向前的浪潮。PurrCat 的诞生是我对这股浪潮的一份微小回应。如果您能从中获得一丝灵感或便利，那便是 PurrCat 存在的最大意义。玩得开心！
+Released under the [MIT](LICENSE) license. You are free to use, modify, and distribute this project, including for commercial purposes.
