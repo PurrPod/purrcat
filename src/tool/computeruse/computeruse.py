@@ -7,7 +7,6 @@ import os
 
 from src.tool.computeruse.executor import execute_action
 from src.tool.computeruse.exceptions import ComputerUseError
-from src.tool.computeruse.cursor_manager import notify_ai_active
 from src.tool.utils.format import error_response, text_response, warning_response
 from src.utils.config import DATA_DIR
 
@@ -75,9 +74,6 @@ def ComputerUse(
                 f"3. 若当前有其他无强关联的独立任务（如查阅文档、整理数据），你可以先执行其他任务。"
             )
             return warning_response(msg, f"⏳ 已自动申请权限: {req_result['id']}")
-
-        # 👇 添加这一行：通知 AI 正在控制鼠标 👇
-        notify_ai_active()
 
         # 调度执行
         result = execute_action(

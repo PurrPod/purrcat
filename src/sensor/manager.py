@@ -89,6 +89,10 @@ class SensorManager:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
+                # 子进程 PYTHONIOENCODING=utf-8，这里必须显式按 UTF-8 解码，
+                # 否则 Windows 中文系统默认 GBK 解码，读到多字节 UTF-8 会 UnicodeDecodeError
+                encoding="utf-8",
+                errors="replace",
                 bufsize=1,
             )
             self.processes[name] = process

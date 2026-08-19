@@ -22,6 +22,8 @@ from src.utils.config import (
     get_model_config,
     get_sensor_config,
     get_global_settings,
+    is_data_root_configured,
+    save_global_setting,
     PURRCAT_DIR,
     DATA_ROOT,
     BASE_DIR,
@@ -202,12 +204,56 @@ def api_get_settings():
 
 @router.put("/settings")
 def api_update_settings(config: Dict[str, Any]):
-    """整体覆盖保存 settings.json。保存成功后 data_root 要重启才会生效（_get_data_root 仅模块加载时读一次）。"""
+    """整体覆盖保存 settings.json。保存成功后 data_root 要重启才会生效（_get_data_root 仅模块加载时读一次）。
+    data_root 首次启动设置后即锁定：已配置时不允许改成其它值。"""
+    existing = get_global_settings()
+    existing_root = existing.get("data_root")
+    new_root = config.get("data_root")
+    # 已配置的 data_root 不允许被修改或删除（删除会把"已配置"状态重置，绕过首启锁定）
+    if existing_root and (not new_root or existing_root != new_root):
+        raise HTTPException(
+            status_code=409,
+            detail="data_root 已锁定：首次启动设置后不可修改或删除，如需变更请手动编辑 ~/.purrcat/settings.json",
+        )
     # data_root 为空字符串时，视为「使用默认 PURRCAT_DIR」，保存时去掉该键，下次加载即 fallback
     save_data = {k: v for k, v in config.items() if not (k == "data_root" and (v == "" or v is None))}
     if _save_json_file(str(GLOBAL_CONFIG_FILE), save_data):
         return {"status": "ok", "message": "Settings saved. data_root will take effect after restart."}
     raise HTTPException(status_code=500, detail="Failed to save settings")
+
+
+# ── 首次启动数据盘引导（一次性设置，之后锁定） ──
+@router.get("/setup-status")
+def api_setup_status():
+    """首启引导用：数据盘是否已配置（配置过就不再弹引导）"""
+    configured = is_data_root_configured()
+    return {"configured": configured, "data_root": DATA_ROOT if configured else ""}
+
+
+@router.post("/setup-data-root")
+def api_setup_data_root(payload: Dict[str, Any] = Body(default={})):
+    """首次启动设置数据盘（仅允许一次，配置后锁定不可再改）"""
+    if is_data_root_configured():
+        raise HTTPException(status_code=409, detail="数据盘已配置，不可重复设置")
+
+    value = (payload or {}).get("data_root", "")
+    if not isinstance(value, str) or not value.strip():
+        raise HTTPException(status_code=400, detail="数据目录不能为空")
+    value = value.strip()
+
+    if not os.path.isabs(value):
+        raise HTTPException(status_code=400, detail="数据目录必须是绝对路径，如 D:\\purrcat_data")
+
+    # 拒绝磁盘根目录，避免 agent_vm 等直接散落在盘符根下
+    drive, _ = os.path.splitdrive(value)
+    if drive and os.path.normpath(value) == os.path.normpath(drive + os.sep):
+        raise HTTPException(status_code=400, detail="不能直接选择磁盘根目录，请选择盘下的一个子目录")
+
+    if not save_global_setting("data_root", value):
+        raise HTTPException(status_code=500, detail="保存数据盘配置失败")
+
+    print(f"[Config API] 首次启动数据盘已设置: {value}（重启后生效，之后锁定）")
+    return {"status": "ok", "data_root": value, "message": "数据盘设置成功，重启后生效"}
 
 
 # ── Cron Config (cron.json) ──

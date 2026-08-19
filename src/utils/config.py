@@ -16,16 +16,33 @@ APP_CONFIG_PATH = os.path.join(PURRCAT_DIR, "app_config.json")
 
 # 大型数据目录：用户可选，默认 = ~/.purrcat
 def _get_data_root() -> str:
-    """从 settings.json 读用户配置的 data_root，默认返回 PURRCAT_DIR"""
+    """从 settings.json 读用户配置的 data_root，默认返回 PURRCAT_DIR。
+    只接受非空绝对路径，其它一律回退默认，防止填错搞坏路径。"""
     try:
         settings_path = os.path.join(PURRCAT_DIR, "settings.json")
         if os.path.exists(settings_path):
             with open(settings_path, "r", encoding="utf-8") as f:
                 settings = json.load(f)
-            return settings.get("data_root") or PURRCAT_DIR
+            value = settings.get("data_root")
+            if isinstance(value, str) and value.strip() and os.path.isabs(value.strip()):
+                return value.strip()
     except Exception:
         pass
     return PURRCAT_DIR
+
+
+def is_data_root_configured() -> bool:
+    """settings.json 里是否已配置过 data_root。
+    首次启动引导设置后即锁定（不可再改），避免用户乱改导致数据目录损坏。"""
+    try:
+        settings_path = os.path.join(PURRCAT_DIR, "settings.json")
+        if os.path.exists(settings_path):
+            with open(settings_path, "r", encoding="utf-8") as f:
+                settings = json.load(f)
+            return bool(settings.get("data_root"))
+    except Exception:
+        pass
+    return False
 
 
 DATA_ROOT = _get_data_root()
