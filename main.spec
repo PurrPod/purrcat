@@ -16,6 +16,13 @@ datas += collect_data_files('tui')
 tmp_ret = collect_all('src')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
+# chromadb / sentence-transformers 等库存在大量动态 import 和数据文件，
+# PyInstaller 静态分析收集不全，缺了会导致打包后 ChromaDB 初始化失败
+# （表现为记忆页工作经验库一片空白）
+for pkg in ['chromadb', 'sentence_transformers', 'tokenizers', 'onnxruntime', 'huggingface_hub']:
+    tmp = collect_all(pkg)
+    datas += tmp[0]; binaries += tmp[1]; hiddenimports += tmp[2]
+
 
 a = Analysis(
     ['main.py'],

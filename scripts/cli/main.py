@@ -6,8 +6,6 @@ import sys
 
 from scripts.cli.cmd_install import run_install
 from scripts.cli.cmd_setup import run_setup
-from scripts.cli.cmd_start import run_start
-from scripts.cli.cmd_update import run_update
 
 
 def _setup_path():
@@ -37,15 +35,11 @@ PurrCat CLI - Cross-platform AI Agent Framework
     print("Commands:")
     print("  setup   - Initialize environment (uv, Docker, Models)")
     print("  install - Install extensions (skill, node, graph, mcp)")
-    print("  update  - Update PurrCat to the latest version from GitHub")
-    print("  start   - Start PurrCat with Web UI (default)")
     print("")
     print("Examples:")
     print("  purrcat setup")
     print("")
-    print(
-        "  # Install Graph from PurrPod/graphs (Auto-installs its MCP/Skill dependencies)"
-    )
+    print("  # Install Graph from PurrPod/graphs (Auto-installs its MCP/Skill dependencies)")
     print("  purrcat install graph financial")
     print("")
     print("  # Install MCP server manually")
@@ -57,11 +51,6 @@ PurrCat CLI - Cross-platform AI Agent Framework
     print(
         "  purrcat install skill https://github.com/user/repo/tree/main/path/to/skill"
     )
-    print("")
-    print("  purrcat update")
-    print('  purrcat update --version="2026.05.15"')
-    print("  purrcat start")
-    print("  purrcat start --tui")
     print("")
     print("Docs:     https://purrpod.github.io/")
     print("GitHub:   https://github.com/PurrPod/purrcat")
@@ -81,20 +70,10 @@ def main():
         "command",
         nargs="?",
         default="help",
-        choices=["help", "install", "setup", "start", "update"],
-    )
-    parser.add_argument(
-        "--tui",
-        action="store_true",
-        help="Launch Terminal UI instead of the default Web UI (for start command)",
+        choices=["help", "install", "setup"],
     )
     parser.add_argument(
         "--help", "-h", action="store_true", help="Show this help message"
-    )
-    parser.add_argument(
-        "--version",
-        type=str,
-        help="Specify release version to update to (e.g., 2026.05.15 or v2026.05.15)",
     )
     parser.add_argument(
         "ext_type",
@@ -118,11 +97,6 @@ def main():
         run_install(args.ext_type, args.source)
     elif args.command == "setup":
         run_setup()
-    elif args.command == "update":
-        run_update(target_version=args.version)
-    elif args.command == "start":
-        # 传递 tui 标志到启动函数
-        run_start(tui=args.tui)
     else:
         cmd_help()
 

@@ -141,6 +141,7 @@ function createWindow() {
     title: 'PurrCat',
     titleBarStyle: 'hidden',
     icon: APP_ICON,
+    backgroundColor: '#FAF8F5', // 等后端期间 about:blank 用主题底色，避免白屏闪烁
     width: 1280,
     height: 800,
     webPreferences: {
@@ -167,8 +168,7 @@ function createWindow() {
 }
 
 async function pollBackendAndLoad(targetUrl) {
-  // 先给后端 sidecar 足够启动时间（uvicorn 绑定 + 预热）
-  await new Promise((r) => setTimeout(r, 1500));
+  // 立即开始轮询：后端就绪即刻加载 UI，不再固定 sleep 白等
   const started = Date.now();
   const MAX_WAIT_MS = 60_000;
   while (Date.now() - started < MAX_WAIT_MS) {
@@ -179,7 +179,7 @@ async function pollBackendAndLoad(targetUrl) {
         return;
       }
     } catch (_) {}
-    await new Promise((r) => setTimeout(r, 500));
+    await new Promise((r) => setTimeout(r, 200));
   }
   // 超时也强制加载，由前端自行处理后端未就绪
   console.warn('[PurrCat] 后端就绪超时，强制加载前端...');

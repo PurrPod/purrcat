@@ -1,5 +1,6 @@
 import datetime
 import threading
+import traceback
 
 from .core.memory_worker.worker_agent import MemoryAgent
 from .core.search_tool import RAGSearchTool
@@ -130,7 +131,9 @@ class PurrMemoClient(metaclass=SingletonMeta):
                     )
             experiences.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
             return experiences[:limit]
-        except Exception:
+        except Exception as e:
+            print(f"[PurrMemo] 获取最近经验失败（工作经验库将为空）: {e}")
+            traceback.print_exc()
             return []
 
     def visualize_graph(self, output_file=None):

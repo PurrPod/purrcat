@@ -31,6 +31,7 @@ def get_experiences():
     try:
         return get_recent_experiences(limit=30)
     except Exception:
+        traceback.print_exc()
         return []
 
 
