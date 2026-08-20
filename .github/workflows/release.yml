@@ -137,3 +137,164 @@ jobs:
           cd ui/dist
           zip -r purrcat-ui-${{ inputs.version }}.zip .
           gh release upload "$TAG" purrcat-ui-${{ inputs.version }}.zip
+
+  build-windows:
+    name: Build Windows Desktop
+    needs: [publish]
+    runs-on: windows-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.validate.outputs.tag }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install Python Dependencies
+        run: uv sync
+
+      - name: Install Node Dependencies
+        run: |
+          npm ci
+          npm ci --prefix ui
+
+      - name: Set Version
+        env:
+          VERSION: ${{ inputs.version }}
+        run: npm version $env:VERSION --no-git-tag-version
+
+      - name: Build UI
+        run: npm run build:ui
+
+      - name: Build Backend (PyInstaller)
+        run: uv run pyinstaller main.spec --noconfirm
+
+      - name: Build Desktop (electron-builder)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: npx electron-builder --win --publish never
+
+      - name: Upload Release Assets
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.validate.outputs.tag }}
+        run: |
+          cd release
+          gh release upload "$env:TAG" "PurrCat-Setup-${{ inputs.version }}.exe" "PurrCat-Setup-${{ inputs.version }}.exe.blockmap" "latest.yml" --clobber
+
+  build-macos:
+    name: Build macOS Desktop (arm64)
+    needs: [publish]
+    runs-on: macos-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.validate.outputs.tag }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install Python Dependencies
+        run: uv sync
+
+      - name: Install Node Dependencies
+        run: |
+          npm ci
+          npm ci --prefix ui
+
+      - name: Set Version
+        env:
+          VERSION: ${{ inputs.version }}
+        run: npm version $VERSION --no-git-tag-version
+
+      - name: Build UI
+        run: npm run build:ui
+
+      - name: Build Backend (PyInstaller)
+        run: uv run pyinstaller main.spec --noconfirm
+
+      - name: Build Desktop (electron-builder)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # 未购买 Apple Developer 证书，禁用签名流程
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npx electron-builder --mac --publish never
+
+      - name: Upload Release Assets
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.validate.outputs.tag }}
+        run: |
+          cd release
+          gh release upload "$TAG" "PurrCat-${{ inputs.version }}-arm64.dmg" --clobber
+
+  build-linux:
+    name: Build Linux Desktop (x64)
+    needs: [publish]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.validate.outputs.tag }}
+
+      - name: Install System Dependencies (pyaudio needs portaudio)
+        run: sudo apt-get update && sudo apt-get install -y portaudio19-dev
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install Python Dependencies
+        run: uv sync
+
+      - name: Install Node Dependencies
+        run: |
+          npm ci
+          npm ci --prefix ui
+
+      - name: Set Version
+        env:
+          VERSION: ${{ inputs.version }}
+        run: npm version $VERSION --no-git-tag-version
+
+      - name: Build UI
+        run: npm run build:ui
+
+      - name: Build Backend (PyInstaller)
+        run: uv run pyinstaller main.spec --noconfirm
+
+      - name: Build Desktop (electron-builder)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: npx electron-builder --linux --publish never
+
+      - name: Upload Release Assets
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.validate.outputs.tag }}
+        run: |
+          cd release
+          gh release upload "$TAG" "PurrCat-${{ inputs.version }}-x86_64.AppImage" --clobber

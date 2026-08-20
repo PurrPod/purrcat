@@ -36,14 +36,39 @@
       {
         "from": "dist/main",
         "to": "backend",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       }
     ],
     "win": {
       "icon": "electron/icon.ico",
+      "artifactName": "PurrCat-Setup-${version}.exe",
       "target": [
         "nsis"
       ]
+    },
+    "mac": {
+      "icon": "electron/icon.png",
+      "artifactName": "PurrCat-${version}-${arch}.dmg",
+      "category": "public.app-category.productivity",
+      "target": [
+        "dmg"
+      ],
+      "identity": null
+    },
+    "linux": {
+      "icon": "electron/icon.png",
+      "artifactName": "PurrCat-${version}-${arch}.AppImage",
+      "category": "Utility",
+      "target": [
+        "AppImage"
+      ]
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "PurrPod",
+      "repo": "purrcat"
     },
     "nsis": {
       "oneClick": false,
@@ -52,5 +77,8 @@
       "uninstallerIcon": "electron/icon.ico",
       "createDesktopShortcut": true
     }
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
   }
 }

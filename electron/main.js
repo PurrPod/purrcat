@@ -1324,9 +1324,43 @@ ipcMain.handle('preview:open-file', (_e, { url, title, type }) => {
 });
 
 // ===== 生命周期 =====
+
+// 自动更新：生产模式从 GitHub Releases 检查（Windows/Linux 可用；macOS 未签名不支持静默更新，需重新下载 dmg）
+function initAutoUpdate() {
+  if (IS_DEV) return;
+  try {
+    const { autoUpdater } = require('electron-updater');
+    autoUpdater.autoDownload = true;
+
+    autoUpdater.on('update-downloaded', (info) => {
+      dialog.showMessageBox({
+        type: 'info',
+        title: 'PurrCat 更新',
+        message: `新版本 ${info.version} 已下载完成，重启应用以完成更新。`,
+        buttons: ['立即重启', '稍后'],
+        defaultId: 0,
+      }).then(({ response }) => {
+        if (response === 0) autoUpdater.quitAndInstall();
+      });
+    });
+
+    autoUpdater.checkForUpdates().catch((e) =>
+      console.warn('[PurrCat] 检查更新失败:', e.message)
+    );
+    // 每 4 小时复查一次
+    setInterval(
+      () => autoUpdater.checkForUpdates().catch(() => {}),
+      4 * 60 * 60 * 1000
+    );
+  } catch (e) {
+    console.warn('[PurrCat] electron-updater 不可用:', e.message);
+  }
+}
+
 app.whenReady().then(() => {
   createBackend();
   createWindow();
+  initAutoUpdate();
 });
 
 app.on('window-all-closed', () => {
