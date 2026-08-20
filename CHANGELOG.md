@@ -38,7 +38,7 @@ First public beta release.
 - Git-style session branching: new, branch, and switch sessions.
 - Automatic repair: malformed tool calls are intercepted and rolled back to a safe state.
 - Context truncation: older history is replaced by memo summaries at safe cut points when token limits are exceeded.
-- Persona system: `SOUL.md` defines values; a heartbeat-driven mechanism (Heartbeat + SOLO + TODO) patrols and reports during idle time.
+- Persona system: `SOUL.md` defines values; a heartbeat-driven mechanism (Heartbeat + GOAL.md) patrols and reports during idle time.
 - Dedicated vision consultant isolates image processing from the main session.
 - Customizable agent loop: the execution paradigm (triggers, lifecycle hooks, periodic injections, tool-use checks, loop exit conditions) is defined declaratively in `PARADIGM.yaml` using near-natural-language rules — rewrite the loop's behavior without touching core code.
 
