@@ -9,7 +9,6 @@ import os
 from src.utils.config import (
     PURRCAT_DIR,
     AGENT_CORE_DIR,
-    AGENT_VM_DIR,
     MODEL_CONFIG_PATH,
     SENSOR_CONFIG_PATH,
     FILE_CONFIG_PATH,
@@ -67,12 +66,10 @@ SOUL_MD_TEMPLATE = """## 性格
 
 def _get_model_config_dict():
     return {
-        "embedding": "embedding",
         "main": {
             "openai:deepseek-v4-flash": {
-                "api_keys": ["sk-your-first-api-key-here"],
+                "api_keys": [""],
                 "base_url": "https://api.deepseek.com",
-                "description": "LLM worker",
                 "rpm": 60,
                 "tpm": 1000000,
                 "concurrency": 3,
@@ -81,9 +78,8 @@ def _get_model_config_dict():
         },
         "task": {
             "openai:deepseek-v4-flash": {
-                "api_keys": ["sk-your-task-api-key-here"],
+                "api_keys": [""],
                 "base_url": "https://api.deepseek.com",
-                "description": "Task Model",
                 "rpm": 60,
                 "tpm": 1000000,
                 "concurrency": 3,
@@ -91,8 +87,8 @@ def _get_model_config_dict():
             }
         },
         "vision": {
-            "qwen3.6-plus": {
-                "api_keys": ["sk-your-vision-api-key-here"],
+            "openai:qwen3.6-plus": {
+                "api_keys": [""],
                 "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
             }
         },
@@ -100,46 +96,11 @@ def _get_model_config_dict():
 
 
 def _get_sensor_config_dict():
-    from pathlib import Path
-
-    return {
-        "feishu_bot": {
-            "enabled": False,
-            "env": {"FEISHU_APP_ID": "", "FEISHU_APP_SECRET": "", "FEISHU_CHAT_ID": ""},
-            "capabilities": {"observe": True, "express": True},
-        },
-        "system_clock": {
-            "enabled": True,
-            "env": {"CRON_FILE": str(Path.home() / ".purrcat" / "core" / "cron.json")},
-            "capabilities": {"observe": True, "express": False},
-        },
-        "rss_watcher": {
-            "enabled": False,
-            "env": {
-                "INTERVAL": "1800",
-                "RSS_SUBSCRIPTIONS_JSON": '[{"name": "Lilian Weng\'s Blog", "rss_url": "https://lilianweng.github.io/lil-log/feed.xml"},{"name": "Ahead of AI", "rss_url": "https://magazine.sebastianraschka.com/feed"},{"name": "Latepost 晚点", "rss_url": "https://rsshub.rssforever.com/latepost"}]',
-            },
-            "capabilities": {"observe": True, "express": False},
-        },
-        "audio_assistant": {
-            "enabled": False,
-            "env": {
-                "WHISPER_MODEL": "small",
-                "LANGUAGE": "zh",
-                "TTS_RATE": "150",
-                "TTS_VOLUME": "1.0",
-            },
-            "capabilities": {"observe": True, "express": True},
-        },
-    }
+    return {}
 
 
 def _get_file_config_dict():
-    from datetime import datetime
-
     return {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "$comment": f"PurrCat File System Configuration File - Generated at {datetime.now().strftime('%Y-%m-%d %H:%M')}",
         "default_permission": "readonly",
         "permissions": {
             "blocked": [
@@ -150,34 +111,17 @@ def _get_file_config_dict():
                 ".env",
             ],
             "readonly": [],
-            "writable": [
-                AGENT_VM_DIR,
-                "./exports",
-                "D:/test",
-            ],
+            "writable": [],
         },
     }
 
 
 def _get_mcp_config_dict():
-    return {
-        "mcpServers": {
-            "github": {
-                "command": "npx",
-                "args": ["-y", "@modelcontextprotocol/server-github"],
-                "env": {"GITHUB_PERSONAL_ACCESS_TOKEN": ""},
-            },
-            "chrome-devtools": {
-                "command": "npx",
-                "args": ["-y", "chrome-devtools-mcp@latest"],
-            },
-        }
-    }
+    return {"mcpServers": {}}
 
 
 def _get_app_config_dict():
     return {
-        "微信": "D:\\Path\\to\\WeChat.exe",
         "GitHub": "https://github.com",
     }
 

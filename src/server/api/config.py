@@ -21,7 +21,6 @@ from src.utils.config import (
     get_mcp_config,
     get_model_config,
     get_sensor_config,
-    get_global_settings,
     is_data_root_configured,
     save_global_setting,
     PURRCAT_DIR,
@@ -185,65 +184,13 @@ def api_get_info_config():
         return {"skills": [], "workshops": []}
 
 
-# ── Global Settings (settings.json) ──
-@router.get("/settings")
-def api_get_settings():
-    """读取全局 settings.json，含 data_root、sandbox_engine 等。
-    文件不存在或为空时，返回带默认字段的结构，方便前端直接编辑。"""
-    settings = get_global_settings()
-    # 兜底：给前端一些默认占位字段，用户可以直接填
-    defaults = {
-        "data_root": "",  # 空字符串 = 使用 PURRCAT_DIR
-        "sandbox_engine": "docker",
-    }
-    for k, v in defaults.items():
-        if k not in settings:
-            settings[k] = v
-    return settings
+# ── 数据根目录（settings.json 内部管理，UI 无全局设置编辑页） ──
+# 数据根目录下需要整体搬迁的大型数据子目录
+LARGE_DATA_SUBDIRS = ("agent_vm", "embedding")
 
 
-@router.put("/settings")
-def api_update_settings(config: Dict[str, Any]):
-    """整体覆盖保存 settings.json。保存成功后 data_root 要重启才会生效（_get_data_root 仅模块加载时读一次）。
-    data_root 首次启动设置后即锁定：已配置时不允许改成其它值。"""
-    existing = get_global_settings()
-    existing_root = existing.get("data_root")
-    new_root = config.get("data_root")
-    # 已配置的 data_root 不允许被修改或删除（删除会把"已配置"状态重置，绕过首启锁定）
-    if existing_root and (not new_root or existing_root != new_root):
-        raise HTTPException(
-            status_code=409,
-            detail="data_root 已锁定：首次启动设置后不可修改或删除，如需变更请手动编辑 ~/.purrcat/settings.json",
-        )
-    # data_root 为空字符串时，视为「使用默认 PURRCAT_DIR」，保存时去掉该键，下次加载即 fallback
-    save_data = {
-        k: v
-        for k, v in config.items()
-        if not (k == "data_root" and (v == "" or v is None))
-    }
-    if _save_json_file(str(GLOBAL_CONFIG_FILE), save_data):
-        return {
-            "status": "ok",
-            "message": "Settings saved. data_root will take effect after restart.",
-        }
-    raise HTTPException(status_code=500, detail="Failed to save settings")
-
-
-# ── 首次启动数据盘引导（一次性设置，之后锁定） ──
-@router.get("/setup-status")
-def api_setup_status():
-    """首启引导用：数据盘是否已配置（配置过就不再弹引导）"""
-    configured = is_data_root_configured()
-    return {"configured": configured, "data_root": DATA_ROOT if configured else ""}
-
-
-@router.post("/setup-data-root")
-def api_setup_data_root(payload: Dict[str, Any] = Body(default={})):
-    """首次启动设置数据盘（仅允许一次，配置后锁定不可再改）"""
-    if is_data_root_configured():
-        raise HTTPException(status_code=409, detail="数据盘已配置，不可重复设置")
-
-    value = (payload or {}).get("data_root", "")
+def _validate_data_root(value: str) -> str:
+    """校验数据根目录候选路径，非法直接抛 HTTPException"""
     if not isinstance(value, str) or not value.strip():
         raise HTTPException(status_code=400, detail="数据目录不能为空")
     value = value.strip()
@@ -259,12 +206,100 @@ def api_setup_data_root(payload: Dict[str, Any] = Body(default={})):
         raise HTTPException(
             status_code=400, detail="不能直接选择磁盘根目录，请选择盘下的一个子目录"
         )
+    return os.path.normpath(value)
+
+
+# ── 首次启动数据盘引导 ──
+@router.get("/setup-status")
+def api_setup_status():
+    """首启引导用：数据盘是否已配置（配置过就不再弹引导）"""
+    configured = is_data_root_configured()
+    return {"configured": configured, "data_root": DATA_ROOT if configured else ""}
+
+
+@router.post("/setup-data-root")
+def api_setup_data_root(payload: Dict[str, Any] = Body(default={})):
+    """首次启动设置数据盘（仅首次引导使用；后续变更走 /change-data-root）"""
+    if is_data_root_configured():
+        raise HTTPException(status_code=409, detail="数据盘已配置，变更请使用配置中心的数据根目录入口")
+
+    value = _validate_data_root((payload or {}).get("data_root", ""))
 
     if not save_global_setting("data_root", value):
         raise HTTPException(status_code=500, detail="保存数据盘配置失败")
 
-    print(f"[Config API] 首次启动数据盘已设置: {value}（重启后生效，之后锁定）")
+    print(f"[Config API] 首次启动数据盘已设置: {value}（重启后生效）")
     return {"status": "ok", "data_root": value, "message": "数据盘设置成功，重启后生效"}
+
+
+@router.post("/change-data-root")
+def api_change_data_root(payload: Dict[str, Any] = Body(default={})):
+    """随时更改数据根目录：搬迁旧根目录下的大型数据到新位置，落盘配置，前端随后重启生效"""
+    import shutil
+
+    new_root = _validate_data_root((payload or {}).get("data_root", ""))
+    old_root = os.path.normpath(DATA_ROOT)
+
+    if new_root == old_root:
+        raise HTTPException(status_code=400, detail=f"新目录与当前数据根目录相同：{old_root}")
+
+    # 新旧目录互为父子时搬迁会自嵌套，直接拒绝
+    if old_root.startswith(new_root + os.sep) or new_root.startswith(old_root + os.sep):
+        raise HTTPException(
+            status_code=400, detail="新目录不能位于当前数据根目录内部，也不能是它的父目录"
+        )
+
+    # 搬迁大型数据子目录（agent_vm / embedding）
+    moved = []
+    try:
+        os.makedirs(new_root, exist_ok=True)
+        for name in LARGE_DATA_SUBDIRS:
+            src = os.path.join(old_root, name)
+            if not os.path.exists(src):
+                continue
+            dst = os.path.join(new_root, name)
+            if os.path.exists(dst):
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"目标位置已存在同名子目录：{dst}，请先清理后重试",
+                )
+            shutil.move(src, dst)
+            moved.append(name)
+    except HTTPException:
+        _rollback_moved_dirs(new_root, old_root, moved)
+        raise
+    except Exception as e:
+        _rollback_moved_dirs(new_root, old_root, moved)
+        raise HTTPException(status_code=500, detail=f"数据搬迁失败: {str(e)}")
+
+    if not save_global_setting("data_root", new_root):
+        _rollback_moved_dirs(new_root, old_root, moved)
+        raise HTTPException(status_code=500, detail="保存数据盘配置失败")
+
+    print(
+        f"[Config API] 数据根目录已切换: {old_root} -> {new_root}"
+        f"（搬迁: {', '.join(moved) if moved else '无'}，重启后生效）"
+    )
+    return {
+        "status": "ok",
+        "data_root": new_root,
+        "moved": moved,
+        "message": "数据已搬迁并落盘配置，重启后生效",
+    }
+
+
+def _rollback_moved_dirs(new_root: str, old_root: str, moved: list):
+    """搬迁中途失败时，把已搬走的子目录挪回旧根目录，避免半迁移状态"""
+    import shutil
+
+    for name in moved:
+        src = os.path.join(new_root, name)
+        dst = os.path.join(old_root, name)
+        try:
+            if os.path.exists(src) and not os.path.exists(dst):
+                shutil.move(src, dst)
+        except Exception:
+            pass
 
 
 # ── Cron Config (cron.json) ──

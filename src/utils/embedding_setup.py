@@ -31,7 +31,13 @@ def _model_exists(local_dir: str) -> bool:
 
 def ensure_embedding_model() -> None:
     """幂等检查嵌入模型，不存在则后台下载（不阻塞启动）。"""
-    from src.utils.config import get_embedding_model
+    from src.utils.config import get_embedding_model, is_data_root_configured
+
+    # 数据根目录尚未配置（首启引导还没完成）时不下载，
+    # 否则会下到默认位置，等用户选好数据盘后还得重下
+    if not is_data_root_configured():
+        print("[*] 数据根目录尚未配置，跳过嵌入模型下载（配置好并重启后会自动下载）")
+        return
 
     target = get_embedding_model()
 

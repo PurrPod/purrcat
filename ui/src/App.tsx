@@ -1,6 +1,6 @@
 // src/App.tsx
 import { useEffect, useState } from 'react';
-import { BrowserRouter, Routes, Route, useNavigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, useNavigate, useSearchParams } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { Minus, Square, X } from 'lucide-react';
 
@@ -116,10 +116,15 @@ function TaskRouteWrapper() {
   return <TaskPage onBack={() => navigate(-1)} />;
 }
 
-// 🌟 Market 的 Wrapper
+// 🌟 Market 的 Wrapper（支持 ?tab=mcp|sensor|graph|skill 直达对应标签页）
 function MarketRouteWrapper() {
   const navigate = useNavigate();
-  return <MarketPage onBack={() => navigate(-1)} />;
+  const [searchParams] = useSearchParams();
+  const tab = searchParams.get('tab');
+  const initialTab = ['skill', 'mcp', 'sensor', 'graph'].includes(tab ?? '')
+    ? (tab as 'skill' | 'mcp' | 'sensor' | 'graph')
+    : undefined;
+  return <MarketPage onBack={() => navigate(-1)} initialTab={initialTab} />;
 }
 
 // 🌟 Evolve 的 Wrapper

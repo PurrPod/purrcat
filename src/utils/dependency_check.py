@@ -99,12 +99,13 @@ def check_and_warn_dependencies() -> None:
             }
         )
     if not _check_embedding():
-        missing.append(
-            {
-                "name": "embedding",
-                "reason": "嵌入模型未就绪（首次启动会后台下载，可能仍在进行中）。",
-            }
-        )
+        from src.utils.config import is_data_root_configured
+
+        if is_data_root_configured():
+            reason = "嵌入模型未就绪（首次启动会后台下载，可能仍在进行中）。"
+        else:
+            reason = "嵌入模型未就绪（数据根目录尚未配置，配置好并重启后会自动下载）。"
+        missing.append({"name": "embedding", "reason": reason})
     sandbox_ok, sandbox_reason = _check_sandbox()
     if not sandbox_ok:
         missing.append({"name": "sandbox", "reason": sandbox_reason})

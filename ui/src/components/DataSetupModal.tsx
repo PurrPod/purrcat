@@ -1,5 +1,5 @@
 // src/components/DataSetupModal.tsx
-// 首次启动数据盘引导：选一次数据盘（或使用默认位置），之后锁定不再弹出
+// 首次启动数据盘引导：选一次数据盘（或使用默认位置）；日后可在配置中心随时更换
 import { useEffect, useState } from 'react';
 import { Folder, FolderRoot, HardDrive, Loader2 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
@@ -73,7 +73,7 @@ export default function DataSetupModal({ onDone }: { onDone: () => void }) {
         <div className="text-[15px] font-bold text-ink/80 leading-relaxed mb-6">
           沙盒虚拟环境（agent_vm）、向量模型等<b className="text-ink">大文件</b>会存放在数据盘；
           对话记录、配置等<b className="text-ink">小数据固定在用户目录</b>。
-          数据盘只会设置一次，之后锁定不可修改。
+          之后随时可以在配置中心更换数据盘（自动搬迁数据并重启）。
         </div>
 
         <div className="flex flex-col gap-4 mb-6">
@@ -88,10 +88,10 @@ export default function DataSetupModal({ onDone }: { onDone: () => void }) {
             </div>
           </div>
 
-          {/* 说明：锁定 */}
+          {/* 说明：可随时更换 */}
           <div className="flex items-start gap-2 text-xs font-bold text-ink/50">
-            <span className="shrink-0">🔒</span>
-            设置完成后自动重启生效，且不再询问。
+            <span className="shrink-0">💡</span>
+            设置完成后自动重启生效；日后如需更换，可在配置中心数据根目录旁点击铅笔图标。
           </div>
         </div>
 

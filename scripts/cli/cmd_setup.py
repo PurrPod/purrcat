@@ -1,11 +1,9 @@
 """PurrCat setup command - Cross-platform environment setup"""
 
-import json
 import os
 import platform
 import subprocess
 import sys
-from pathlib import Path
 
 UV_CMD = "uv.exe" if os.name == "nt" else "uv"
 
@@ -54,32 +52,6 @@ def _check_docker():
         sys.exit(1)
 
     print("  [*] Docker engine is running.")
-
-
-def _save_engine_preference(engine: str):
-    """Save engine preference to global config (统一写 docker，兼容旧字段)"""
-    from src.utils.config import PURRCAT_DIR
-
-    global_config_dir = Path(PURRCAT_DIR)
-    global_config_file = global_config_dir / "settings.json"
-
-    global_config_dir.mkdir(parents=True, exist_ok=True)
-
-    try:
-        if global_config_file.exists():
-            with open(global_config_file, "r", encoding="utf-8") as f:
-                settings = json.load(f)
-        else:
-            settings = {}
-
-        settings["sandbox_engine"] = engine
-
-        with open(global_config_file, "w", encoding="utf-8") as f:
-            json.dump(settings, f, indent=4, ensure_ascii=False)
-
-        print(f"[*] Engine preference saved: {engine}")
-    except Exception as e:
-        print(f"[!] Failed to save engine preference: {e}")
 
 
 def _get_sandbox_choice():
@@ -179,7 +151,6 @@ def _setup_sandbox_interactive():
     print("")
     print("=== Docker Sandbox ===")
     _check_docker()
-    _save_engine_preference("docker")
 
     if check_image_exists(docker_cmd(), SANDBOX_IMAGE_TAG):
         print(f"[*] Sandbox image already exists: {SANDBOX_IMAGE_TAG}")

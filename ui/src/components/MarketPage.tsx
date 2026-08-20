@@ -123,8 +123,8 @@ function shortDesc(desc: string, n = 30): string {
   return desc.length > n ? desc.slice(0, n) + '…' : desc;
 }
 
-export default function MarketPage({ onBack }: { onBack: () => void }) {
-  const [activeTab, setActiveTab] = useState<MarketTab>('skill');
+export default function MarketPage({ onBack, initialTab }: { onBack: () => void; initialTab?: MarketTab }) {
+  const [activeTab, setActiveTab] = useState<MarketTab>(initialTab ?? 'skill');
 
   const [skillData, setSkillData] = useState<Record<string, SkillEntry>>({});
   const [isFetchingSkill, setIsFetchingSkill] = useState(false);
@@ -450,13 +450,17 @@ export default function MarketPage({ onBack }: { onBack: () => void }) {
   };
 
   // ========= Sensor 工具方法 =========
-  const isSensorInstalled = (s: SensorEntry) => installedSensorMap.has(String(s.name).toLowerCase());
+  // 已安装核对：配置存在 + 传感器代码文件存在本地（has_code）才算已安装
+  const isSensorInstalled = (s: SensorEntry) => {
+    const info = installedSensorMap.get(String(s.name).toLowerCase());
+    return !!info && !!info.has_code;
+  };
   const isSensorInstalling = (s: SensorEntry) => installingSensorSet.has(String(s.name).toLowerCase());
 
   const handleInstallSensor = async (s: SensorEntry) => {
     const key = String(s.name);
     if (!key) return;
-    if (installingSensorSet.has(key)) return;
+    if (installingSensorSet.has(key) || isSensorInstalled(s)) return;
     setInstallingSensorSet(prev => new Set(prev).add(key));
     try {
       const res = await fetch('/api/tools/market/sensors/install', {
@@ -827,18 +831,20 @@ export default function MarketPage({ onBack }: { onBack: () => void }) {
                 </a>
                 <button
                   onClick={() => handleInstallSensor(selectedSensor)}
-                  disabled={installing}
-                  title={installed ? '已安装（重装可用于更新配置占位）' : '下载安装'}
+                  disabled={installing || installed}
+                  title={installed ? '已安装（配置与代码文件均在本地）' : '下载安装'}
                   style={sketchyShape2}
                   className={`h-14 px-6 flex items-center gap-2 border-4 border-ink font-black text-lg shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] transition-all active:translate-y-1 active:shadow-none ${
-                    installing
-                      ? 'bg-[#EBCB8B] text-ink cursor-wait'
-                      : 'bg-[#a3be8c] text-ink hover:-translate-y-0.5'
+                    installed
+                      ? 'bg-[#d8d8d0] text-ink/40 cursor-not-allowed'
+                      : installing
+                        ? 'bg-[#EBCB8B] text-ink cursor-wait'
+                        : 'bg-[#a3be8c] text-ink hover:-translate-y-0.5'
                   }`}
                 >
                   {installing ? <Loader2 size={22} strokeWidth={3} className="animate-spin" /> : installed ? <Check size={22} strokeWidth={3} /> : <Download size={22} strokeWidth={3} />}
                   <span style={{ fontFamily: '"Comic Sans MS", cursive' }}>
-                    {installing ? '安装中...' : installed ? '更新配置' : '下载'}
+                    {installing ? '安装中...' : installed ? '已安装' : '下载'}
                   </span>
                 </button>
               </div>

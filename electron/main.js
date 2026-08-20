@@ -135,7 +135,7 @@ function createBackend() {
     console.warn('[PurrCat] 后端 sidecar 未找到:', exe, '（生产包需先 PyInstaller 打包到 dist/main/）');
     return;
   }
-  backendProcess = spawn(exe, ['--api', '--headless'], { cwd: path.dirname(exe) });
+  backendProcess = spawn(exe, ['--api', '--headless'], { cwd: path.dirname(exe), windowsHide: true });
   backendProcess.stdout.on('data', (d) => process.stdout.write(d));
   backendProcess.stderr.on('data', (d) => process.stderr.write(d));
   backendProcess.on('exit', (code) => console.warn('[PurrCat] backend exited with', code));

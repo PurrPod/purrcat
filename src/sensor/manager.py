@@ -15,20 +15,35 @@ class SensorManager:
         # 用户扩展传感器目录：~/.purrcat/sensor（内置传感器已移除，仅支持外部扩展）
         self.extension_dir = SENSOR_EXTENSION_DIR
         self.processes = {}
+        # 官方传感器仓库 PurrPod/sensors，代码位于 sensors/ 子目录下
         self.github_repo_base = (
-            "https://raw.githubusercontent.com/PurrPod/sensor-source/main"
+            "https://raw.githubusercontent.com/PurrPod/sensors/main/sensors"
         )
         self._watchdog_started = False
 
         os.makedirs(self.extension_dir, exist_ok=True)
 
     def _download_and_start_sensor_bg(
-        self, sensor_name: str, url: str, local_path: str, cfg: dict
+        self, sensor_name: str, urls: list, local_path: str, cfg: dict
     ):
-        """🌟 新增：后台下载逻辑"""
+        """🌟 后台下载逻辑：依次尝试候选 URL（仓库结构 sensors/<name>/<name>.py 或 sensors/<name>.py）"""
         try:
-            urllib.request.urlretrieve(url, local_path)
-            print(f"✅ [Manager] {sensor_name} 云端下载完成！")
+            last_err = None
+            for url in urls:
+                try:
+                    urllib.request.urlretrieve(url, local_path)
+                    print(f"✅ [Manager] {sensor_name} 云端下载完成！")
+                    break
+                except Exception as e:
+                    last_err = e
+                    # 清理下载失败的半成品文件，避免被误认为已安装
+                    if os.path.exists(local_path):
+                        try:
+                            os.remove(local_path)
+                        except Exception:
+                            pass
+            else:
+                raise last_err or RuntimeError("所有候选 URL 均下载失败")
             # 下载完毕后再启动
             self._start_sensor(sensor_name, local_path, cfg)
         except urllib.error.HTTPError as e:
@@ -62,10 +77,13 @@ class SensorManager:
             else:
                 # 🌟 重构：开启子线程去下载，绝不阻塞当前循环
                 print(f"🔄 [Manager] 本地无 {name}.py，已派发后台下载任务...")
-                url = f"{self.github_repo_base}/{name}.py"
+                urls = [
+                    f"{self.github_repo_base}/{name}/{name}.py",
+                    f"{self.github_repo_base}/{name}.py",
+                ]
                 threading.Thread(
                     target=self._download_and_start_sensor_bg,
-                    args=(name, url, local_path, cfg),
+                    args=(name, urls, local_path, cfg),
                     daemon=True,
                 ).start()
 
@@ -82,6 +100,9 @@ class SensorManager:
         try:
             command = ["uv", "run", script_path]
 
+            # Windows 下隐藏传感器子进程的终端弹窗（uv/pytest 等都是控制台程序）
+            creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+
             process = subprocess.Popen(
                 command,
                 env=env,
@@ -94,6 +115,7 @@ class SensorManager:
                 encoding="utf-8",
                 errors="replace",
                 bufsize=1,
+                creationflags=creationflags,
             )
             self.processes[name] = process
 

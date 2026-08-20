@@ -435,7 +435,8 @@ SENSORS_REGISTRY_URL = (
 GRAPHS_REGISTRY_URL = (
     "https://raw.githubusercontent.com/PurrPod/graphs/main/registry.json"
 )
-SENSORS_CODE_BASE = "https://raw.githubusercontent.com/PurrPod/sensors/main"
+# 传感器代码位于官方仓库 sensors/ 子目录下：sensors/<name>/<name>.py（如 feishu-bot）
+SENSORS_CODE_BASE = "https://raw.githubusercontent.com/PurrPod/sensors/main/sensors"
 GRAPHS_CODE_BASE = "https://raw.githubusercontent.com/PurrPod/graphs/main/graphs"
 
 
@@ -523,6 +524,7 @@ class InstallSensorReq(BaseModel):
 def install_sensor_api(req: InstallSensorReq):
     """
     安装 Sensor：
+      0) 已安装核对：配置存在 + 传感器文件存在本地 → 直接返回，避免重复安装
       1) 把配置合并写入 activate_sensor.json（按 name 覆盖，保留用户已填 env）
       2) 下载对应的代码文件 <name>.py 到 ~/.purrcat/sensor/
     """
@@ -532,8 +534,17 @@ def install_sensor_api(req: InstallSensorReq):
         if not name:
             raise HTTPException(status_code=400, detail="sensor 缺少 name 字段")
 
-        # 1. 合并配置：已有配置的 env 非空值不被 registry 占位覆盖
+        # 0. 已安装核对：配置 + 代码文件都在本地才算已安装，拦截无限重复安装
         existing_cfg = get_sensor_config() or {}
+        code_path = os.path.join(SENSOR_EXTENSION_DIR, f"{name}.py")
+        if name in existing_cfg and os.path.exists(code_path):
+            return {
+                "status": "already",
+                "message": f"Sensor '{name}' 已安装（配置与代码文件均在本地），无需重复安装。",
+                "code_downloaded": True,
+            }
+
+        # 1. 合并配置：已有配置的 env 非空值不被 registry 占位覆盖
         existing_entry = (
             existing_cfg.get(name, {}) if isinstance(existing_cfg, dict) else {}
         )
@@ -575,7 +586,7 @@ def install_sensor_api(req: InstallSensorReq):
         os.makedirs(os.path.dirname(SENSOR_CONFIG_PATH), exist_ok=True)
         _save_json_file(SENSOR_CONFIG_PATH, existing_cfg)
 
-        # 2. 下载代码：优先 <repo>/<name>/<name>.py，其次 <repo>/<name>.py
+        # 2. 下载代码：优先 sensors/<name>/<name>.py，其次 sensors/<name>.py
         code_bytes = None
         last_err = None
         for candidate in (
@@ -589,11 +600,11 @@ def install_sensor_api(req: InstallSensorReq):
                 last_err = e
                 code_bytes = None
         if code_bytes is None:
-            # 代码下载失败不阻断配置落盘（SensorManager 启动时会再次尝试从 sensor-source 下载）
+            # 代码下载失败不阻断配置落盘（SensorManager 启动时会再次尝试从官方 sensors 仓库下载）
             msg = (
                 f"Sensor '{name}' 配置已写入激活配置，但代码文件下载失败"
                 + (f": {last_err}" if last_err else "")
-                + "；启动阶段会再次尝试从官方 sensor-source 仓库下载。"
+                + "；启动阶段会再次尝试从官方 sensors 仓库下载。"
             )
             return {"status": "partial", "message": msg, "code_downloaded": False}
 

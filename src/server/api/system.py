@@ -14,7 +14,6 @@ from pydantic import BaseModel
 
 from src.utils.config import (
     get_container_engine,
-    set_container_engine,
     TRACKER_DIR,
     BUFFER_DIR,
 )
@@ -201,8 +200,6 @@ def _install_task(engine: str):
     try:
         _install_status = "installing"
         _install_progress = 10
-
-        set_container_engine(engine)
 
         if shutil.which("docker"):
             success = True

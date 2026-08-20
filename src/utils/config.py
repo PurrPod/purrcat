@@ -36,8 +36,8 @@ def _get_data_root() -> str:
 
 
 def is_data_root_configured() -> bool:
-    """settings.json 里是否已配置过 data_root。
-    首次启动引导设置后即锁定（不可再改），避免用户乱改导致数据目录损坏。"""
+    """settings.json 里是否已配置过 data_root（首启引导是否已完成的判定依据）。
+    数据根目录支持随时变更：走配置中心的迁移入口（搬迁数据后重启生效）。"""
     try:
         settings_path = os.path.join(PURRCAT_DIR, "settings.json")
         if os.path.exists(settings_path):
@@ -89,8 +89,6 @@ os.makedirs(SESSIONS_DIR, exist_ok=True)
 
 MCP_SCHEMA_CACHE_FILE = os.path.join(PURRCAT_DIR, "mcp_schema.json")
 
-CONTAINER_ENGINE_CONFIG_KEY = "container_engine"
-
 GLOBAL_CONFIG_DIR = Path(PURRCAT_DIR)
 GLOBAL_CONFIG_FILE = GLOBAL_CONFIG_DIR / "settings.json"
 
@@ -139,7 +137,8 @@ def save_global_setting(key: str, value: Any) -> bool:
 
 
 def get_engine_preference() -> str:
-    return get_global_settings().get("sandbox_engine", "auto")
+    """容器引擎固定为 docker，无个性化配置"""
+    return "docker"
 
 
 def get_model_config() -> Dict[str, Any]:
@@ -182,8 +181,8 @@ def get_agent_model() -> str:
 
 
 def get_embedding_model() -> str:
-    model_config = get_model_config()
-    return model_config.get("embedding", os.path.join(DATA_ROOT, "embedding"))
+    """嵌入模型固定存放在数据目录 DATA_ROOT/embedding，不再走 model.json 配置"""
+    return os.path.join(DATA_ROOT, "embedding")
 
 
 def get_data_dir() -> str:
@@ -191,7 +190,7 @@ def get_data_dir() -> str:
 
 
 def get_container_engine(engine_preference: str = "docker") -> str:
-    """统一只返回 docker 命令的绝对路径（不再支持 podman）"""
+    """统一只返回 docker 命令的绝对路径（引擎固定为 docker，无配置项）"""
     import shutil
 
     path = shutil.which("docker")
@@ -202,12 +201,3 @@ def get_container_engine(engine_preference: str = "docker") -> str:
         "未检测到 docker 命令。请先安装 Docker Desktop：\n"
         "https://docs.docker.com/get-docker/"
     )
-
-
-def set_container_engine(engine: str) -> bool:
-    """仅接受 docker（向下兼容旧接口）"""
-    if engine != "docker":
-        print(f"[Config] 不支持的容器引擎: {engine}，当前版本仅支持 docker")
-        return False
-
-    return save_global_setting("sandbox_engine", "docker")
