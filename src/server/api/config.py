@@ -221,7 +221,9 @@ def api_setup_status():
 def api_setup_data_root(payload: Dict[str, Any] = Body(default={})):
     """首次启动设置数据盘（仅首次引导使用；后续变更走 /change-data-root）"""
     if is_data_root_configured():
-        raise HTTPException(status_code=409, detail="数据盘已配置，变更请使用配置中心的数据根目录入口")
+        raise HTTPException(
+            status_code=409, detail="数据盘已配置，变更请使用配置中心的数据根目录入口"
+        )
 
     value = _validate_data_root((payload or {}).get("data_root", ""))
 
@@ -241,12 +243,15 @@ def api_change_data_root(payload: Dict[str, Any] = Body(default={})):
     old_root = os.path.normpath(DATA_ROOT)
 
     if new_root == old_root:
-        raise HTTPException(status_code=400, detail=f"新目录与当前数据根目录相同：{old_root}")
+        raise HTTPException(
+            status_code=400, detail=f"新目录与当前数据根目录相同：{old_root}"
+        )
 
     # 新旧目录互为父子时搬迁会自嵌套，直接拒绝
     if old_root.startswith(new_root + os.sep) or new_root.startswith(old_root + os.sep):
         raise HTTPException(
-            status_code=400, detail="新目录不能位于当前数据根目录内部，也不能是它的父目录"
+            status_code=400,
+            detail="新目录不能位于当前数据根目录内部，也不能是它的父目录",
         )
 
     # 搬迁大型数据子目录（agent_vm / embedding）
