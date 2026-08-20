@@ -11,6 +11,14 @@ const fs = require('fs');
 // 升级会导致 ERR_SSL_PROTOCOL_ERROR。必须在 app ready 前设置。
 app.commandLine.appendSwitch('disable-features', 'HttpsUpgrades');
 
+// 🌟 GPU 兼容防御：部分老旧/异常显卡驱动上 Chromium GPU 进程反复崩溃，
+// 表现为主窗口大片空白/卡死（实测用户机器复现：顶部标题栏渲染、主体全白）。
+// 检测到 GPU 进程崩溃时写入标记并自动重启，下次启动禁用硬件加速（软渲染）。
+const GPU_FLAG = path.join(app.getPath('userData'), 'gpu-disabled.flag');
+if (fs.existsSync(GPU_FLAG)) {
+  app.disableHardwareAcceleration();
+}
+
 const IS_DEV = !!process.env.ELECTRON_DEV;
 const DEV_URL = 'http://localhost:3000';   // vite dev server（热更新）
 const PROD_URL = 'http://localhost:8000';  // 后端托管的前端 dist
@@ -131,6 +139,22 @@ function createBackend() {
   backendProcess.stdout.on('data', (d) => process.stdout.write(d));
   backendProcess.stderr.on('data', (d) => process.stderr.write(d));
   backendProcess.on('exit', (code) => console.warn('[PurrCat] backend exited with', code));
+}
+
+// 🌟 树杀后端：Windows 上 Node 的 kill() 只终止 main.exe 本体，不会带走它派生的
+// multiprocessing 子进程（沙盒/子 agent 实测存在）；必须 taskkill /T 整树清理，
+// 否则子进程变孤儿，端口/句柄泄漏
+function killBackendTree() {
+  const p = backendProcess;
+  backendProcess = null;
+  if (!p || p.pid === undefined || p.exitCode !== null) return;
+  try {
+    if (process.platform === 'win32') {
+      spawn('taskkill', ['/pid', String(p.pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true });
+    } else {
+      p.kill('SIGTERM');
+    }
+  } catch (_) {}
 }
 
 function createWindow() {
@@ -913,8 +937,23 @@ ipcMain.handle('app:restart', () => {
     // `npm run dev` 使 data_root 生效即可。
     app.exit(0);
   } else {
+    // 🌟 必须先显式树杀后端：app.exit() 不触发 before-quit/will-quit，
+    // 后端会变孤儿继续占住 8000，重启后的新后端绑定失败 → 白屏
+    killBackendTree();
     app.relaunch();
     app.exit(0);
+    // 🌟 看门狗：实测 app.exit() 可能被第三方注入 DLL 的退出钩子卡死
+    // （本机复现：主窗口已隐藏、进程不退、relauncher 永久等待、后端占住端口）。
+    // 派生独立进程延时强杀自己（不带 /T，保留 relauncher 拉起新实例），确保旧实例必然退出。
+    // 注意 timeout 命令在无 stdin 时会报错，用 ping 代替延时
+    const self = process.pid;
+    try {
+      if (process.platform === 'win32') {
+        spawn('cmd.exe', ['/c', `ping -n 4 127.0.0.1 >nul & taskkill /PID ${self} /F >nul 2>&1`], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
+      } else {
+        spawn('/bin/sh', ['-c', `(sleep 3; kill -9 ${self}) >/dev/null 2>&1`], { detached: true, stdio: 'ignore' }).unref();
+      }
+    } catch (_) {}
   }
 });
 
@@ -1377,14 +1416,39 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
-  if (backendProcess) { try { backendProcess.kill(); } catch (_) {} }
+  killBackendTree();
   app.quit();
 });
 
+// 🌟 GPU 进程崩溃自愈：首次崩溃写标记并自动重启（下次以软渲染启动）；
+// 已是软渲染仍崩溃则不再折腾，避免无限重启循环
+app.on('child-process-gone', (_e, details) => {
+  if (details.type === 'GPU Process' && details.reason !== 'clean-exit') {
+    console.error('[PurrCat] GPU 进程异常退出:', details.reason);
+    if (!fs.existsSync(GPU_FLAG)) {
+      try { fs.writeFileSync(GPU_FLAG, String(Date.now())); } catch (_) {}
+      app.relaunch();
+      app.exit(0);
+    }
+  }
+});
+
+// 🌟 渲染进程崩溃自愈：自动重载页面，避免停留在白屏死状态
+app.on('render-process-gone', (_e, wc, details) => {
+  console.error('[PurrCat] 渲染进程异常退出:', details.reason);
+  if (details.reason !== 'clean-exit' && !wc.isDestroyed()) {
+    try { wc.reload(); } catch (_) {}
+  }
+});
+
 app.on('before-quit', () => {
-  if (backendProcess) { try { backendProcess.kill(); } catch (_) {} }
+  killBackendTree();
   for (const [, t] of tabs) {
-    if (mainWindow) mainWindow.contentView.removeChildView(t.view);
+    // 🌟 mainWindow 可能已销毁（用户先关主窗口再触发退出等场景），访问已销毁对象的
+    // contentView 会抛 "Object has been destroyed" 并中断退出流程 → 应用变僵尸
+    try {
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.contentView.removeChildView(t.view);
+    } catch (_) {}
     try { t.view.webContents.destroy(); } catch (_) {}
   }
   tabs.clear();

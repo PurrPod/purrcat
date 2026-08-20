@@ -200,27 +200,37 @@ def _write_text(path: str, content: str):
 
 
 def _generate_all_configs():
-    """在 ~/.purrcat 下生成全部默认配置文件（仅首次启动调用）"""
+    """在 ~/.purrcat 下生成缺失的默认配置文件（幂等：逐文件检查，已有文件绝不覆盖）"""
     os.makedirs(PURRCAT_DIR, exist_ok=True)
     os.makedirs(AGENT_CORE_DIR, exist_ok=True)
 
     # JSON 配置文件
-    _write_json(MODEL_CONFIG_PATH, _get_model_config_dict())
-    _write_json(SENSOR_CONFIG_PATH, _get_sensor_config_dict())
-    _write_json(FILE_CONFIG_PATH, _get_file_config_dict())
-    _write_json(MCP_CONFIG_PATH, _get_mcp_config_dict())
-    _write_json(APP_CONFIG_PATH, _get_app_config_dict())
+    if not os.path.exists(MODEL_CONFIG_PATH):
+        _write_json(MODEL_CONFIG_PATH, _get_model_config_dict())
+    if not os.path.exists(SENSOR_CONFIG_PATH):
+        _write_json(SENSOR_CONFIG_PATH, _get_sensor_config_dict())
+    if not os.path.exists(FILE_CONFIG_PATH):
+        _write_json(FILE_CONFIG_PATH, _get_file_config_dict())
+    if not os.path.exists(MCP_CONFIG_PATH):
+        _write_json(MCP_CONFIG_PATH, _get_mcp_config_dict())
+    if not os.path.exists(APP_CONFIG_PATH):
+        _write_json(APP_CONFIG_PATH, _get_app_config_dict())
 
     # core/ 目录文件
-    _write_json(
-        os.path.join(AGENT_CORE_DIR, "info.json"), {"skills": [], "workshops": []}
-    )
-    _write_text(CRON_FILE, CRON_CONFIG_TEMPLATE)
-    _write_text(HEARTBEAT_FILE, HEARTBEAT_CONFIG_TEMPLATE)
-    _write_text(os.path.join(AGENT_CORE_DIR, "MEMORY.md"), MEMORY_MD_TEMPLATE)
-    _write_text(SOUL_MD_PATH, SOUL_MD_TEMPLATE)
+    if not os.path.exists(os.path.join(AGENT_CORE_DIR, "info.json")):
+        _write_json(
+            os.path.join(AGENT_CORE_DIR, "info.json"), {"skills": [], "workshops": []}
+        )
+    if not os.path.exists(CRON_FILE):
+        _write_text(CRON_FILE, CRON_CONFIG_TEMPLATE)
+    if not os.path.exists(HEARTBEAT_FILE):
+        _write_text(HEARTBEAT_FILE, HEARTBEAT_CONFIG_TEMPLATE)
+    if not os.path.exists(os.path.join(AGENT_CORE_DIR, "MEMORY.md")):
+        _write_text(os.path.join(AGENT_CORE_DIR, "MEMORY.md"), MEMORY_MD_TEMPLATE)
+    if not os.path.exists(SOUL_MD_PATH):
+        _write_text(SOUL_MD_PATH, SOUL_MD_TEMPLATE)
 
-    print(f"[+] 配置目录已初始化: {PURRCAT_DIR}")
+    print(f"[+] 配置目录已就绪: {PURRCAT_DIR}")
 
 
 # ==========================================
@@ -229,9 +239,16 @@ def _generate_all_configs():
 
 
 def ensure_initialized():
-    """检查 ~/.purrcat 是否存在，不存在则自动生成默认配置"""
-    if not os.path.exists(PURRCAT_DIR):
+    """确保 ~/.purrcat 及全部默认配置就绪（幂等：逐文件补缺，绝不覆盖用户已有配置）
+
+    注意：必须在所有业务模块 import 之前调用。import 链上存在模块级副作用
+    （如 usage_tracer 实例化时会创建 ~/.purrcat 子目录），若目录先被创建，
+    这里不能再以"目录是否存在"作为跳过依据，否则模板永远不会生成。
+    """
+    first_run = not os.path.exists(PURRCAT_DIR)
+    if first_run:
         print("[*] 首次运行，正在自动初始化 ~/.purrcat 配置目录...")
-        _generate_all_configs()
+    _generate_all_configs()
+    if first_run:
         print(f"[*] 请编辑 {MODEL_CONFIG_PATH} 填入你的 Agent 模型和 API Key")
         print("")

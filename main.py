@@ -14,6 +14,69 @@ for _stream in (sys.stdout, sys.stderr):
     except Exception:
         pass
 
+# 🌟 配置初始化必须在所有业务模块 import 之前执行：
+# import 链上存在模块级副作用（如 usage_tracer 实例化时会创建 ~/.purrcat 子目录），
+# 若目录先被创建，"目录存在即跳过"的判断会让模板配置永远不生成（首启配置为空的根因）
+from src.utils.initial import ensure_initialized
+
+ensure_initialized()
+
+
+def _setup_file_logging():
+    """🌟 stdout/stderr 同步落盘到 ~/.purrcat/logs/backend.log。
+    生产模式后端由 Electron 管道拉起，用户看不到控制台；后端崩溃时报错
+    只打在无人可见的管道里（表现为白屏，无从排查）。落盘后让用户把日志
+    发回来即可定位。注意：若连日志文件都没生成，说明解释器本身没起来
+    （DLL 缺失/杀软拦截），这本身就是强信号。
+    """
+    try:
+        import datetime as _dt
+
+        from src.utils.initial import PURRCAT_DIR
+
+        class _Tee:
+            def __init__(self, stream, fobj):
+                self._stream, self._f = stream, fobj
+
+            def write(self, s):
+                try:
+                    self._stream.write(s)
+                except Exception:
+                    pass
+                try:
+                    self._f.write(s)
+                except Exception:
+                    pass
+
+            def flush(self):
+                for target in (self._stream, self._f):
+                    try:
+                        target.flush()
+                    except Exception:
+                        pass
+
+        log_dir = os.path.join(PURRCAT_DIR, "logs")
+        os.makedirs(log_dir, exist_ok=True)
+        log_path = os.path.join(log_dir, "backend.log")
+        # 超过 5MB 轮转，防止无限增长
+        try:
+            if os.path.exists(log_path) and os.path.getsize(log_path) > 5 * 1024 * 1024:
+                os.replace(log_path, log_path + ".old")
+        except Exception:
+            pass
+        _f = open(log_path, "a", encoding="utf-8", errors="replace")
+        sys.stdout = _Tee(sys.stdout, _f)
+        sys.stderr = _Tee(sys.stderr, _f)
+        print(
+            f"=== PurrCat backend start {_dt.datetime.now():%Y-%m-%d %H:%M:%S} "
+            f"pid={os.getpid()} log={log_path} ==="
+        )
+    except Exception:
+        pass  # 日志系统绝不能阻断主流程
+
+
+_setup_file_logging()
+
 # 核心模块
 from src.agent import init_agent, shutdown_agent, branch_session
 from src.tool.callmcp.session_manager import mcp_manager
@@ -238,10 +301,6 @@ def main():
     multiprocessing.freeze_support()
 
     _setup_warnings()
-
-    # 首次启动自动初始化 ~/.purrcat
-    from src.utils.initial import ensure_initialized
-    ensure_initialized()
 
     parser = argparse.ArgumentParser(description="PurrCat Agent")
     parser.add_argument("--headless", action="store_true", help="Run without TUI")
