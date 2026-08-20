@@ -1427,6 +1427,9 @@ app.on('child-process-gone', (_e, details) => {
     console.error('[PurrCat] GPU 进程异常退出:', details.reason);
     if (!fs.existsSync(GPU_FLAG)) {
       try { fs.writeFileSync(GPU_FLAG, String(Date.now())); } catch (_) {}
+      // 🌟 app.exit() 不触发 before-quit，必须先树杀后端，否则旧后端孤儿化
+      // 占住 8000 端口，重启后的新后端绑定失败 → 白屏（与 app:restart 同理）
+      killBackendTree();
       app.relaunch();
       app.exit(0);
     }
@@ -1434,9 +1437,16 @@ app.on('child-process-gone', (_e, details) => {
 });
 
 // 🌟 渲染进程崩溃自愈：自动重载页面，避免停留在白屏死状态
+// 滑动窗口限流：60 秒内崩溃超过 5 次则放弃重载，防止崩溃循环烧 CPU
+let _renderCrashTimes = [];
 app.on('render-process-gone', (_e, wc, details) => {
-  console.error('[PurrCat] 渲染进程异常退出:', details.reason);
-  if (details.reason !== 'clean-exit' && !wc.isDestroyed()) {
+  if (details.reason === 'clean-exit' || wc.isDestroyed()) return;
+  const now = Date.now();
+  _renderCrashTimes = _renderCrashTimes.filter((t) => now - t < 60_000);
+  _renderCrashTimes.push(now);
+  console.error('[PurrCat] 渲染进程异常退出:', details.reason,
+    `(${_renderCrashTimes.length}/60s)`);
+  if (_renderCrashTimes.length <= 5) {
     try { wc.reload(); } catch (_) {}
   }
 });

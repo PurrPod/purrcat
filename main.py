@@ -55,6 +55,18 @@ def _setup_file_logging():
                     except Exception:
                         pass
 
+            # 🌟 uvicorn 的 logging formatter 会调用 sys.stdout.isatty()，
+            # 其他库也可能访问 fileno()/encoding/writelines 等——未实现的属性
+            # 一律透传给原始流，避免 "no attribute" 崩溃。
+            # 下划线守卫：防止 _stream 尚未赋值时（copy/pickle 等）无限递归
+            def isatty(self):
+                return False
+
+            def __getattr__(self, name):
+                if name.startswith("_"):
+                    raise AttributeError(name)
+                return getattr(self._stream, name)
+
         log_dir = os.path.join(PURRCAT_DIR, "logs")
         os.makedirs(log_dir, exist_ok=True)
         log_path = os.path.join(log_dir, "backend.log")
@@ -64,7 +76,8 @@ def _setup_file_logging():
                 os.replace(log_path, log_path + ".old")
         except Exception:
             pass
-        _f = open(log_path, "a", encoding="utf-8", errors="replace")
+        # buffering=1 行缓冲：进程被强杀（taskkill /F）时也不丢最后的崩溃日志
+        _f = open(log_path, "a", encoding="utf-8", errors="replace", buffering=1)
         sys.stdout = _Tee(sys.stdout, _f)
         sys.stderr = _Tee(sys.stderr, _f)
         print(

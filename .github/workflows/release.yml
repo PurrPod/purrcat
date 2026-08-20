@@ -67,13 +67,23 @@ jobs:
           set -euo pipefail
           
           TAG="v$VERSION"
-          
-          # 幂等：tag 已存在则复用，构建失败后重新触发时无需手动清理
+
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+
+          # 🌟 tag 自动跟随 main：重跑同一版本号时，若 tag 落后于当前 main（修 bug 后
+          # 重新发版），强制前移。否则 build job checkout 旧 tag，构建的还是旧代码——
+          # 这正是"重跑了 workflow 但白屏修复没生效"的根因
           if git rev-parse "$TAG" >/dev/null 2>&1; then
-            echo "Tag $TAG already exists, reusing"
+            # 注意：annotated tag 的 rev-parse 返回标签对象 SHA，必须 ^{commit} 解引用成 commit SHA 再比较
+            if [ "$(git rev-parse "$TAG^{commit}")" = "$(git rev-parse HEAD)" ]; then
+              echo "Tag $TAG already at HEAD, reusing"
+            else
+              echo "Tag $TAG exists but behind HEAD, force-moving"
+              git tag -f -a "$TAG" -m "Release $TAG"
+              git push -f origin "$TAG"
+            fi
           else
-            git config user.name "GitHub Actions"
-            git config user.email "actions@github.com"
             git tag -a "$TAG" -m "Release $TAG"
             git push origin "$TAG"
           fi
