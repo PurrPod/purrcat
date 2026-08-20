@@ -106,13 +106,17 @@ jobs:
             RELEASE_NOTES="Release $VERSION"
           fi
           
-          # 幂等：release 已存在则跳过创建，产物由各 build job --clobber 覆盖上传
+          # 幂等：release 已存在则补打 Latest 标记，产物由各 build job --clobber 覆盖上传
           if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "Release $TAG already exists, skipping creation"
+            echo "Release $TAG already exists, ensuring Latest flag"
+            gh release edit "$TAG" --latest
           else
+            # --latest 显式标记 Latest：prerelease 默认不参与 Latest 评选，
+            # 会导致主页侧边栏不显示、只有 tag（显式指定可覆盖该规则）
             gh release create "$TAG" \
               --title "PurrCat $VERSION" \
               --notes "$RELEASE_NOTES" \
+              --latest \
               ${{ inputs.release_type != 'stable' && '--prerelease' || '' }}
           fi
 
@@ -301,4 +305,13 @@ jobs:
           TAG: v${{ inputs.version }}
         run: |
           cd release
-          gh release upload "$TAG" "PurrCat-${{ inputs.version }}-x86_64.tar.gz" --clobber
+          ls -la
+          # electron-builder 的 ${arch} 在 Linux tar.gz/AppImage 产物上是 x64，
+          # 不是 x86_64（那是 rpm 的命名，deb 是 amd64）——不要硬编码，用 glob 兜底
+          shopt -s nullglob
+          artifacts=(PurrCat-*.tar.gz)
+          if [ ${#artifacts[@]} -eq 0 ]; then
+            echo "::error::No PurrCat-*.tar.gz found in release/"
+            exit 1
+          fi
+          gh release upload "$TAG" "${artifacts[@]}" --clobber
