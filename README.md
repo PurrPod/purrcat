@@ -75,6 +75,7 @@ uv run python main.py --api --headless       # Open http://localhost:8000 in a b
 - Automatic repair: malformed tool calls are intercepted and rolled back to a safe state.
 - Context truncation: when token limits are exceeded, older history is replaced by memo summaries at safe cut points.
 - Persona and vitality: `SOUL.md` defines values; a heartbeat-driven mechanism lets the agent patrol, clean up, and report during idle time.
+- Declarative execution paradigm (PARADIGM): `PARADIGM.yaml` defines triggers, lifecycle hooks, tool-use checks, and loop exit conditions in near-natural-language rules — rewrite the Agent loop by editing config.
 - A dedicated vision consultant isolates image processing from the main session to improve signal-to-noise ratio.
 
 ### 05 Proactive Perception and Event Gateway

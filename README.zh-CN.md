@@ -18,9 +18,9 @@
 
 ### 环境要求
 
-- Python 3.10+、[uv](https://docs.astral.sh/uv/)、Node.js 18+、Git
-- [Docker](https://docs.docker.com/get-docker/)（沙盒 Bash 工具需要）
-- 也可运行 `purrcat setup` 一步初始化环境（uv、Docker、嵌入模型、Playwright）
+- [Docker](https://docs.docker.com/get-docker/)（**必需**，沙盒 Bash 工具与文件隔离依赖它）
+- Python 3.10+ / [uv](https://docs.astral.sh/uv/)、Node.js 18+、Git：**非部署必需**，但为体验完整拓展功能（安装 Skill、接入 MCP、构建 Electron 桌面端/Web 界面）的必备依赖
+- 推荐运行 `purrcat setup` 一键初始化环境（Docker 沙盒、Python 依赖、嵌入模型）
 
 ### 方式一：Electron 桌面端（推荐）
 
@@ -75,6 +75,7 @@ uv run python main.py --api --headless       # 浏览器打开 http://localhost:
 - 异常修复：自动检查 tool calls 匹配情况，拦截残缺工具消息并回滚到安全状态。
 - 上下文截断：Token 超限时在安全断点用 Memo 摘要替换较早历史。
 - 生命力与灵魂：`SOUL.md` 定义人格价值观；Heartbeat 机制驱动空闲时自主巡查与汇报。
+- 声明式执行范式（PARADIGM）：`PARADIGM.yaml` 以近自然语言规则定义触发器、生命周期钩子、工具使用检查与循环退出条件，改配置即可重写 Agent 主循环行为。
 - 独立视觉顾问：将图片处理从主会话剥离，提高信噪比。
 
 ### 05 主动感知与事件网关
