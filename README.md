@@ -6,7 +6,7 @@ English | [简体中文](README.zh-CN.md)
 
 An economical, efficient, customizable, local-first personal AI Agent framework.
 
-[Documentation](https://purrpod.github.io/) | [Deployment](https://purrpod.github.io/guide/deployment) | [Architecture](https://purrpod.github.io/develop/architecture) | [Extension](https://purrpod.github.io/develop/extension) | [Configuration](https://purrpod.github.io/config/) | [FAQ](https://purrpod.github.io/guide/faq)
+[Documentation](https://purrpod.github.io/) | [Deployment](https://purrpod.github.io/guide/deployment)
 
 </div>
 

@@ -6,7 +6,7 @@
 
 经济、高效、可定制、本地优先的个人 AI Agent 框架。
 
-[文档](https://purrpod.github.io/) | [部署](https://purrpod.github.io/guide/deployment) | [架构](https://purrpod.github.io/develop/architecture) | [扩展](https://purrpod.github.io/develop/extension) | [配置](https://purrpod.github.io/config/) | [FAQ](https://purrpod.github.io/guide/faq)
+[文档](https://purrpod.github.io/) | [部署](https://purrpod.github.io/guide/deployment)
 
 </div>
 
