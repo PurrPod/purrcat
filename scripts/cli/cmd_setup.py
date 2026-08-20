@@ -252,5 +252,7 @@ def run_setup():
         print("==========================================")
 
     print("Congratulations! PurrCat environment is ready.")
-    print("Next: Run 'npm run dev' (Electron desktop) from the project root to start the application.")
+    print(
+        "Next: Run 'npm run dev' (Electron desktop) from the project root to start the application."
+    )
     print("Engine: Docker (sandbox)")

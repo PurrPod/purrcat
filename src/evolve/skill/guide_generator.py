@@ -5,9 +5,7 @@ Skill 指南生成器模块 (evolve/skill/guide_generator.py)
 
 
 def generate_skill_guide(skill_name: str, goal: str = "") -> str:
-    goal_section = (
-        f"\n> 🎯 **本次构建目标**：{goal}\n" if goal else ""
-    )
+    goal_section = f"\n> 🎯 **本次构建目标**：{goal}\n" if goal else ""
     return f"""# {skill_name} 技能工厂指南 (GUIDE)
 
 本指南覆盖创建、升级、盲测与提交全流程，动手前请先通读。

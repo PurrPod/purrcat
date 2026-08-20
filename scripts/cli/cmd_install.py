@@ -298,9 +298,7 @@ def run_install(ext_type, source):
                 f"[*] Fetching skill '{skill_name}' from {parsed['owner']}/{parsed['repo']}"
             )
             if _download_and_extract_subfolder(zip_url, parsed["path"], dest_dir):
-                print(
-                    f"[+] Successfully installed skill '{skill_name}' to {dest_dir}"
-                )
+                print(f"[+] Successfully installed skill '{skill_name}' to {dest_dir}")
         else:
             print("[x] Error: Invalid source URL resolved.")
 

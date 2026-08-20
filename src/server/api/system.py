@@ -12,7 +12,12 @@ from docker.errors import DockerException, ImageNotFound
 from fastapi import APIRouter, BackgroundTasks, HTTPException, UploadFile, File
 from pydantic import BaseModel
 
-from src.utils.config import get_container_engine, set_container_engine, TRACKER_DIR, BUFFER_DIR
+from src.utils.config import (
+    get_container_engine,
+    set_container_engine,
+    TRACKER_DIR,
+    BUFFER_DIR,
+)
 from src.model.manager.usage_tracer import usage_tracer
 
 router = APIRouter(prefix="/api/system", tags=["System Environment"])
@@ -122,9 +127,7 @@ def get_environment_status():
                 engine_version=version,
                 error="Docker daemon 未启动，请启动 Docker Desktop。",
             )
-        return EnvStatusResponse(
-            is_ready=True, engine=engine, engine_version=version
-        )
+        return EnvStatusResponse(is_ready=True, engine=engine, engine_version=version)
     except RuntimeError as e:
         return EnvStatusResponse(is_ready=False, error=str(e))
 
@@ -142,7 +145,7 @@ def get_env_status_simple():
 @router.get("/image-status", response_model=ImageStatusResponse)
 def get_image_status(image_name: str = "my_agent_env:latest"):
     try:
-        engine = get_container_engine()
+        get_container_engine()  # 校验 docker 存在，缺失时抛 RuntimeError
         client = docker.from_env()
         try:
             client.images.get(image_name)
@@ -150,9 +153,7 @@ def get_image_status(image_name: str = "my_agent_env:latest"):
         except ImageNotFound:
             return ImageStatusResponse(exists=False, image_name=image_name)
     except RuntimeError as e:
-        return ImageStatusResponse(
-            exists=False, image_name=image_name, error=str(e)
-        )
+        return ImageStatusResponse(exists=False, image_name=image_name, error=str(e))
     except DockerException as e:
         return ImageStatusResponse(
             exists=False, image_name=image_name, error=f"Docker 连接失败: {str(e)}"
@@ -160,7 +161,6 @@ def get_image_status(image_name: str = "my_agent_env:latest"):
 
 
 def _pull_image_task(image_name: str):
-    import time as _t
     global _install_progress, _install_status, _install_error
     _install_status = "installing"
     _install_progress = 5
@@ -178,7 +178,7 @@ def _pull_image_task(image_name: str):
 @router.post("/image/pull", response_model=PullImageResponse)
 def pull_image(request: PullImageRequest, background_tasks: BackgroundTasks):
     try:
-        engine = get_container_engine()
+        get_container_engine()  # 校验 docker 存在，缺失时抛 RuntimeError
         background_tasks.add_task(_pull_image_task, request.image_name)
 
         return PullImageResponse(
@@ -188,9 +188,7 @@ def pull_image(request: PullImageRequest, background_tasks: BackgroundTasks):
     except RuntimeError as e:
         raise HTTPException(status_code=500, detail=str(e))
     except DockerException as e:
-        raise HTTPException(
-            status_code=500, detail=f"Docker 连接失败: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Docker 连接失败: {str(e)}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"镜像拉取启动失败: {str(e)}")
 

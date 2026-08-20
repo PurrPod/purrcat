@@ -1,4 +1,5 @@
 """记忆系统内部配置（不对外暴露，用户无需修改）"""
+
 import os
 from src.utils.config import MEMORY_DIR
 

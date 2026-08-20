@@ -34,12 +34,12 @@ TOOL_FUNC_MAP = {
 # 其余工具（memo/filesystem/cron/task/brainstorm/kernelupgrade）持有进程内状态
 # （如 brainstorm/task 会 lazy import AgentManager），子进程化会出灾难性后果，保持进程内执行
 PROCESS_ISOLATED_TOOLS = {
-    "bash",        # 长时命令 / 死循环
-    "request",     # 网络请求
-    "fetch",       # 网络抓取
-    "search",      # 向量检索（含嵌入计算）
-    "callmcp",     # 外部 MCP Server 调用
-    "computeruse", # UI 自动化
+    "bash",  # 长时命令 / 死循环
+    "request",  # 网络请求
+    "fetch",  # 网络抓取
+    "search",  # 向量检索（含嵌入计算）
+    "callmcp",  # 外部 MCP Server 调用
+    "computeruse",  # UI 自动化
 }
 
 
@@ -92,7 +92,10 @@ def _handle_media_content(content_data: Any, tool_name: str) -> Any:
             filename = f"{tool_name}_{timestamp}_{marker_id}{ext}"
             filepath = os.path.join(buffer_dir, filename)
             # 🌟 带超时的流式下载（urlretrieve 无超时，卡死时同样无法打断）
-            with urllib.request.urlopen(url, timeout=60) as r, open(filepath, "wb") as f:
+            with (
+                urllib.request.urlopen(url, timeout=60) as r,
+                open(filepath, "wb") as f,
+            ):
                 shutil.copyfileobj(r, f)
 
         elif media_type in ["image", "video", "audio", "pdf", "mcp_media"]:
@@ -247,7 +250,7 @@ def _execute_tool_isolated(target_func, arguments: dict, cancel_event) -> Any:
                 p.join()
             return {
                 "content": (
-                    f"⚠️ 工具执行已超过 {HARD_WALL_LIMIT//60} 分钟硬上限，已被系统强制终止。"
+                    f"⚠️ 工具执行已超过 {HARD_WALL_LIMIT // 60} 分钟硬上限，已被系统强制终止。"
                     "如果是长时任务请改用 Bash + nohup/后台启动，并通过日志文件跟进结果。"
                 ),
                 "metadata": {
@@ -283,14 +286,18 @@ def _execute_tool_isolated(target_func, arguments: dict, cancel_event) -> Any:
     raise Exception(res["error"])
 
 
-def _execute_tool(target_func, arguments: dict, cancel_event=None, tool_name: str = "") -> Any:
+def _execute_tool(
+    target_func, arguments: dict, cancel_event=None, tool_name: str = ""
+) -> Any:
     """执行工具函数：按隔离名单分流（子进程=可物理打断 / 进程内=轻量快速）"""
     if tool_name.lower() in PROCESS_ISOLATED_TOOLS:
         return _execute_tool_isolated(target_func, arguments, cancel_event)
     return _execute_tool_inline(target_func, arguments, cancel_event)
 
 
-def dispatch_tool(tool_name: str, arguments: dict, available_tokens: int = None, cancel_event=None):
+def dispatch_tool(
+    tool_name: str, arguments: dict, available_tokens: int = None, cancel_event=None
+):
     """
     核心路由枢纽：纯净的数据流处理
     cancel_event: threading.Event，被 set 时物理掐断正在执行的工具并返回伪造打断结果
@@ -312,7 +319,9 @@ def dispatch_tool(tool_name: str, arguments: dict, available_tokens: int = None,
         target_func = getattr(tool_module, func_name)
 
         # 1. 获得执行结果 (新版统一格式 {"content": ..., "metadata": {...}})
-        result_obj = _execute_tool(target_func, arguments, cancel_event=cancel_event, tool_name=tool_name_lower)
+        result_obj = _execute_tool(
+            target_func, arguments, cancel_event=cancel_event, tool_name=tool_name_lower
+        )
 
         # 2. 优雅解包数据与元数据
         if isinstance(result_obj, dict) and "metadata" in result_obj:

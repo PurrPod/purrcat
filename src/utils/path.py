@@ -18,7 +18,7 @@ def convert_sandbox_path(path: str) -> str:
         path = path[1:]
 
     if path.startswith("/agent_vm/"):
-        path = os.path.join(AGENT_VM_DIR, path[len("/agent_vm/"):])
+        path = os.path.join(AGENT_VM_DIR, path[len("/agent_vm/") :])
     elif path == "/agent_vm":
         path = AGENT_VM_DIR
 

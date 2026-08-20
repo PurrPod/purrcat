@@ -193,7 +193,7 @@ def api_get_settings():
     settings = get_global_settings()
     # 兜底：给前端一些默认占位字段，用户可以直接填
     defaults = {
-        "data_root": "",      # 空字符串 = 使用 PURRCAT_DIR
+        "data_root": "",  # 空字符串 = 使用 PURRCAT_DIR
         "sandbox_engine": "docker",
     }
     for k, v in defaults.items():
@@ -216,9 +216,16 @@ def api_update_settings(config: Dict[str, Any]):
             detail="data_root 已锁定：首次启动设置后不可修改或删除，如需变更请手动编辑 ~/.purrcat/settings.json",
         )
     # data_root 为空字符串时，视为「使用默认 PURRCAT_DIR」，保存时去掉该键，下次加载即 fallback
-    save_data = {k: v for k, v in config.items() if not (k == "data_root" and (v == "" or v is None))}
+    save_data = {
+        k: v
+        for k, v in config.items()
+        if not (k == "data_root" and (v == "" or v is None))
+    }
     if _save_json_file(str(GLOBAL_CONFIG_FILE), save_data):
-        return {"status": "ok", "message": "Settings saved. data_root will take effect after restart."}
+        return {
+            "status": "ok",
+            "message": "Settings saved. data_root will take effect after restart.",
+        }
     raise HTTPException(status_code=500, detail="Failed to save settings")
 
 
@@ -242,12 +249,16 @@ def api_setup_data_root(payload: Dict[str, Any] = Body(default={})):
     value = value.strip()
 
     if not os.path.isabs(value):
-        raise HTTPException(status_code=400, detail="数据目录必须是绝对路径，如 D:\\purrcat_data")
+        raise HTTPException(
+            status_code=400, detail="数据目录必须是绝对路径，如 D:\\purrcat_data"
+        )
 
     # 拒绝磁盘根目录，避免 agent_vm 等直接散落在盘符根下
     drive, _ = os.path.splitdrive(value)
     if drive and os.path.normpath(value) == os.path.normpath(drive + os.sep):
-        raise HTTPException(status_code=400, detail="不能直接选择磁盘根目录，请选择盘下的一个子目录")
+        raise HTTPException(
+            status_code=400, detail="不能直接选择磁盘根目录，请选择盘下的一个子目录"
+        )
 
     if not save_global_setting("data_root", value):
         raise HTTPException(status_code=500, detail="保存数据盘配置失败")
@@ -280,9 +291,9 @@ def api_update_cron_config(config: Dict[str, Any]):
 def api_get_config_meta():
     """返回当前正在生效的路径常量，便于前端显示给用户做参考。"""
     return {
-        "PURRCAT_DIR": PURRCAT_DIR,     # ~/.purrcat（配置类目录，固定）
-        "DATA_ROOT": DATA_ROOT,         # 大型数据根目录（读 settings.json data_root，重启生效）
-        "BASE_DIR": BASE_DIR,           # 程序只读目录（打包后是 _MEIPASS）
+        "PURRCAT_DIR": PURRCAT_DIR,  # ~/.purrcat（配置类目录，固定）
+        "DATA_ROOT": DATA_ROOT,  # 大型数据根目录（读 settings.json data_root，重启生效）
+        "BASE_DIR": BASE_DIR,  # 程序只读目录（打包后是 _MEIPASS）
         "settings_path": str(GLOBAL_CONFIG_FILE),
         "cron_path": CRON_FILE,
     }

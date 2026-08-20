@@ -8,11 +8,9 @@
 都不行 → 打印引导，不阻塞、不崩溃
 """
 
-import os
 import subprocess
 import sys
 import threading
-from pathlib import Path
 
 from src.utils.config import BASE_DIR
 
@@ -146,7 +144,9 @@ def ensure_sandbox_image() -> None:
                 print(f"[+] 沙盒镜像已就绪: {SANDBOX_IMAGE_TAG}")
             else:
                 print("[!] 沙盒镜像拉取失败。")
-                print("    可手动执行: docker pull ghcr.io/purrpod/purrcat-sandbox:light")
+                print(
+                    "    可手动执行: docker pull ghcr.io/purrpod/purrcat-sandbox:light"
+                )
                 print(
                     "    或通过: purrcat setup （支持选择 full 镜像、国内镜像源、本地 build）"
                 )
@@ -161,6 +161,7 @@ def ensure_sandbox_image() -> None:
 # ========================================================
 # 以下函数仅供 purrcat setup 命令（带交互）复用
 # ========================================================
+
 
 def interactive_build_sandbox(
     variant: str = "light",
@@ -184,8 +185,6 @@ def interactive_build_sandbox(
 
     ghcr_image = f"ghcr.io/purrpod/purrcat-sandbox:{variant}"
     dockerfile = f"Dockerfile.{variant}"
-
-    encoding = "gbk" if sys.platform == "win32" else "utf-8"
 
     if source == "pull":
         print(f"Pulling sandbox image from {ghcr_image} ...")

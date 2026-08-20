@@ -21,7 +21,9 @@ def _ensure_requests_file():
             json.dump({}, f)
 
 
-def submit_request(request_type: str, target: str, reason: str, extra: dict = None) -> dict:
+def submit_request(
+    request_type: str, target: str, reason: str, extra: dict = None
+) -> dict:
     """
     提交一个人类审批请求到 requests.json
 

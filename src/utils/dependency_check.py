@@ -10,7 +10,11 @@ import os
 import shutil
 import time
 
-from src.tool.request.request_operations import REQUESTS_FILE, REQUEST_LOCK, _ensure_requests_file
+from src.tool.request.request_operations import (
+    REQUESTS_FILE,
+    REQUEST_LOCK,
+    _ensure_requests_file,
+)
 
 DEPLOYMENT_GUIDE_URL = "https://purrpod.github.io/guide/deployment.html"
 # 固定 req_id：避免每次重启堆积重复请求；启动时整体替换为最新检查结果
@@ -39,7 +43,9 @@ def _check_embedding() -> bool:
     if os.path.isabs(target) and _model_exists(target):
         return True
     # 2) 配置就是 EMBEDDING_DIR 且已完整
-    if os.path.abspath(target) == os.path.abspath(EMBEDDING_DIR) and _model_exists(EMBEDDING_DIR):
+    if os.path.abspath(target) == os.path.abspath(EMBEDDING_DIR) and _model_exists(
+        EMBEDDING_DIR
+    ):
         return True
     # 3) EMBEDDING_DIR 本身已完整（SentenceTransformer fallback 路径）
     if _model_exists(EMBEDDING_DIR):
@@ -75,13 +81,30 @@ def check_and_warn_dependencies() -> None:
     """
     missing = []
     if not _check_git():
-        missing.append({"name": "git", "reason": "未检测到 git 命令，文件版本控制与分支功能将不可用。"})
+        missing.append(
+            {
+                "name": "git",
+                "reason": "未检测到 git 命令，文件版本控制与分支功能将不可用。",
+            }
+        )
     if not _check_uv():
-        missing.append({"name": "uv", "reason": "未检测到 uv 命令，Python 依赖管理将不可用。"})
+        missing.append(
+            {"name": "uv", "reason": "未检测到 uv 命令，Python 依赖管理将不可用。"}
+        )
     if not _check_node():
-        missing.append({"name": "node", "reason": "未检测到 node 命令，部分 MCP Server / 工具将不可用。"})
+        missing.append(
+            {
+                "name": "node",
+                "reason": "未检测到 node 命令，部分 MCP Server / 工具将不可用。",
+            }
+        )
     if not _check_embedding():
-        missing.append({"name": "embedding", "reason": "嵌入模型未就绪（首次启动会后台下载，可能仍在进行中）。"})
+        missing.append(
+            {
+                "name": "embedding",
+                "reason": "嵌入模型未就绪（首次启动会后台下载，可能仍在进行中）。",
+            }
+        )
     sandbox_ok, sandbox_reason = _check_sandbox()
     if not sandbox_ok:
         missing.append({"name": "sandbox", "reason": sandbox_reason})

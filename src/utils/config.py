@@ -24,7 +24,11 @@ def _get_data_root() -> str:
             with open(settings_path, "r", encoding="utf-8") as f:
                 settings = json.load(f)
             value = settings.get("data_root")
-            if isinstance(value, str) and value.strip() and os.path.isabs(value.strip()):
+            if (
+                isinstance(value, str)
+                and value.strip()
+                and os.path.isabs(value.strip())
+            ):
                 return value.strip()
     except Exception:
         pass

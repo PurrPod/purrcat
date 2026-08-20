@@ -550,7 +550,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
 
       // 1. 通过 Electron 拿真实绝对路径（替代 Tauri 的 file.path）
       let realPath: string | null = null;
-      try { realPath = purrcat.getPathForFile(file); } catch (_) { realPath = null; }
+      try { realPath = purrcat.getPathForFile(file); } catch { realPath = null; }
       if (!realPath) {
         console.warn('无法获取文件路径，跳过:', file.name);
         continue;
@@ -832,7 +832,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
       try {
         const pid = await (window as any).purrcat?.browserNewTab?.(url);
         if (pid) tabId = pid;
-      } catch (_) { /* 非 Electron 环境，用临时 id */ }
+      } catch { /* 非 Electron 环境，用临时 id */ }
       const newTab: BrowserTab = { id: tabId, url, title };
       setBrowserTabs(prev => [...prev, newTab]);
       setActiveTabId(newTab.id);

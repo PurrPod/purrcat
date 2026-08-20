@@ -5,9 +5,7 @@ MCP 指南生成器模块 (evolve/mcp/guide_generator.py)
 
 
 def generate_mcp_guide(mcp_name: str, goal: str = "") -> str:
-    goal_section = (
-        f"\n> 🎯 **本次构建目标**：{goal}\n\n" if goal else ""
-    )
+    goal_section = f"\n> 🎯 **本次构建目标**：{goal}\n\n" if goal else ""
     return f"""# {mcp_name} MCP 工厂指南 (GUIDE)
 
 {goal_section}## 1. 架构（防循环导入）

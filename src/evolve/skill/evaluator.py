@@ -113,7 +113,9 @@ def _run_trigger_evals(workplace_id: str, skill_name: str) -> str:
     iteration_dir, iteration_idx = _get_next_iteration_dir(workplace_root, "trigger")
     os.makedirs(iteration_dir, exist_ok=True)
 
-    report_lines = [f"# {skill_name} Trigger 激发测试报告 (Iteration {iteration_idx})\n"]
+    report_lines = [
+        f"# {skill_name} Trigger 激发测试报告 (Iteration {iteration_idx})\n"
+    ]
     success = 0
 
     for idx, t_case in enumerate(triggers):
@@ -130,10 +132,16 @@ def _run_trigger_evals(workplace_id: str, skill_name: str) -> str:
 
         hit = res["is_triggered"]
         if should_trigger and hit:
-            icon, status_text = "✅", f"唤醒成功 (排名第 {res['rank']}，得分: {res['score']})"
+            icon, status_text = (
+                "✅",
+                f"唤醒成功 (排名第 {res['rank']}，得分: {res['score']})",
+            )
             success += 1
         elif should_trigger and not hit:
-            icon, status_text = "❌", f"激发失败 (得分: {res['score']}，未进 Top 3 或低于唤醒阈值)"
+            icon, status_text = (
+                "❌",
+                f"激发失败 (得分: {res['score']}，未进 Top 3 或低于唤醒阈值)",
+            )
         elif not should_trigger and not hit:
             icon, status_text = "✅", "反例拦截成功 (技能保持静默)"
             success += 1
@@ -148,7 +156,9 @@ def _run_trigger_evals(workplace_id: str, skill_name: str) -> str:
         report_lines.append(f"- **评测状态**: {icon} **{status_text}**")
         report_lines.append(f"- **语义竞争者 (Top 3)**: {comp_str}\n")
 
-    report_lines.append(f"📈 **意图路由总唤醒率 (Trigger Pass Rate)**: **{success}/{len(triggers)}**")
+    report_lines.append(
+        f"📈 **意图路由总唤醒率 (Trigger Pass Rate)**: **{success}/{len(triggers)}**"
+    )
 
     final_report = "\n".join(report_lines)
     with open(

@@ -140,7 +140,7 @@ class HookHandler:
         if path.startswith("@"):
             return PATH_ALIASES.get(path, path)
         if path.startswith(".purrcat/"):
-            return os.path.join(PURRCAT_DIR, path[len(".purrcat/"):])
+            return os.path.join(PURRCAT_DIR, path[len(".purrcat/") :])
         if path.startswith("src/"):
             return os.path.join(BASE_DIR, path)
         if path.startswith("agent_vm"):

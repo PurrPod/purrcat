@@ -1,5 +1,4 @@
 import json
-import os
 import traceback
 
 from src.tool.utils.format import error_response, text_response, warning_response

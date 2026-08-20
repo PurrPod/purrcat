@@ -66,7 +66,9 @@ class RollbackReq(BaseModel):
 # 🔧 通用 Git 操作辅助函数
 # ==========================================
 def unified_generate_diff(name: str, workplace_root: str, module_type: str) -> str:
-    source_dir = f"./mcps/{name}" if module_type == "mcp" else os.path.join(SKILL_DIR, name)
+    source_dir = (
+        f"./mcps/{name}" if module_type == "mcp" else os.path.join(SKILL_DIR, name)
+    )
     target_dir = os.path.join(workplace_root, name)
 
     if not os.path.exists(source_dir):
@@ -139,9 +141,7 @@ def list_workplaces(type: str = "skill"):
                 for item in os.listdir(w_path):
                     if os.path.isdir(
                         os.path.join(w_path, item)
-                    ) and not item.startswith(
-                        ("iteration-", "trigger-")
-                    ):
+                    ) and not item.startswith(("iteration-", "trigger-")):
                         item_name = item
                         break
                 if item_name != "unknown":
@@ -258,7 +258,9 @@ def get_eval_report_api(
         # 按 iteration 索引配对 trigger-K/trigger_report.md；缺失则不附加（避免每轮都显示同一份）
         if type != "mcp" and report_md:
             trigger_path = ""
-            candidate = os.path.join(w_path, f"trigger-{iteration}", "trigger_report.md")
+            candidate = os.path.join(
+                w_path, f"trigger-{iteration}", "trigger_report.md"
+            )
             if os.path.exists(candidate):
                 trigger_path = candidate
             if trigger_path:

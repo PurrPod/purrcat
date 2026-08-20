@@ -277,9 +277,17 @@ def get_session_status(session_id: str):
         status = get_agent_status()
         if status.get("session_id") == session_id:
             is_thinking = status.get("state") != "idle"
-            result = {"is_thinking": is_thinking, "state": status.get("state", "idle"), "compressing": status.get("compressing", False)}
+            result = {
+                "is_thinking": is_thinking,
+                "state": status.get("state", "idle"),
+                "compressing": status.get("compressing", False),
+            }
         else:
-            result = {"is_thinking": False, "state": "idle", "compressing": status.get("compressing", False)}
+            result = {
+                "is_thinking": False,
+                "state": "idle",
+                "compressing": status.get("compressing", False),
+            }
         return result
     except Exception as e:
         print(f"[ERROR] /api/sessions/{session_id}/status - 异常: {e}")

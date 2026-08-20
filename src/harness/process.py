@@ -128,6 +128,7 @@ class Task:
 
     def load_graph(self):
         from src.utils.config import GRAPHS_DIR
+
         graph_path = os.path.join(GRAPHS_DIR, f"{self.graph_name}.json")
         if not os.path.exists(graph_path):
             return {

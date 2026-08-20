@@ -33,14 +33,18 @@ def list_directory(path: str):
     """列出目录内容，返回 { name, isDir, path }[]"""
     try:
         entries = []
-        for entry in sorted(os.scandir(path), key=lambda e: (not e.is_dir(), e.name.lower())):
-            if entry.name.startswith('.'):
+        for entry in sorted(
+            os.scandir(path), key=lambda e: (not e.is_dir(), e.name.lower())
+        ):
+            if entry.name.startswith("."):
                 continue
-            entries.append({
-                'name': entry.name,
-                'isDir': entry.is_dir(),
-                'path': entry.path,
-            })
+            entries.append(
+                {
+                    "name": entry.name,
+                    "isDir": entry.is_dir(),
+                    "path": entry.path,
+                }
+            )
         return entries
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -51,9 +55,9 @@ def read_file(path: str):
     """读取文件文本内容（/agent_vm 沙盒路径自动转换，含 agent_vm 层缺失回退）"""
     try:
         resolved = _resolve_preview_path(path)
-        with open(resolved, 'r', encoding='utf-8', errors='replace') as f:
+        with open(resolved, "r", encoding="utf-8", errors="replace") as f:
             content = f.read()
-        return {'content': content}
+        return {"content": content}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -64,7 +68,7 @@ def stat_file(path: str):
     try:
         resolved = convert_sandbox_path(path)
         st = os.stat(resolved)
-        return {'size': st.st_size}
+        return {"size": st.st_size}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -75,9 +79,9 @@ def write_file(req: UIWriteReq):
     try:
         resolved = convert_sandbox_path(req.path)
         os.makedirs(os.path.dirname(resolved), exist_ok=True)
-        with open(resolved, 'w', encoding='utf-8') as f:
+        with open(resolved, "w", encoding="utf-8") as f:
             f.write(req.content)
-        return {'status': 'success'}
+        return {"status": "success"}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 

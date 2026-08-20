@@ -221,7 +221,9 @@ def resolve_request(
                     import glob
                     from src.evolve import skill_request_handle
 
-                    paths = glob.glob(os.path.join(AGENT_VM_DIR, "skill_workplace", "*", target))
+                    paths = glob.glob(
+                        os.path.join(AGENT_VM_DIR, "skill_workplace", "*", target)
+                    )
                     if paths:
                         workplace_root = os.path.dirname(paths[0])
                         sys_note = skill_request_handle(
@@ -235,7 +237,9 @@ def resolve_request(
                     import glob
                     from src.evolve import mcp_request_handle
 
-                    paths = glob.glob(os.path.join(AGENT_VM_DIR, "mcp_workplace", "*", target))
+                    paths = glob.glob(
+                        os.path.join(AGENT_VM_DIR, "mcp_workplace", "*", target)
+                    )
                     if paths:
                         workplace_root = os.path.dirname(paths[0])
                         sys_note = mcp_request_handle(

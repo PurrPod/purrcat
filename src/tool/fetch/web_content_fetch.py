@@ -29,12 +29,16 @@ def _looks_like_raw_text_url(url: str) -> bool:
     if any(m in u for m in raw_host_markers):
         return True
     # 常见纯文本后缀
-    if re.search(r"\.(json|txt|md|py|js|ts|yaml|yml|toml|ini|cfg|csv|log|xml)(\?|$)", u):
+    if re.search(
+        r"\.(json|txt|md|py|js|ts|yaml|yml|toml|ini|cfg|csv|log|xml)(\?|$)", u
+    ):
         return True
     return False
 
 
-def _fast_fetch_raw_text(url: str, timeout: int = 20) -> Tuple[Optional[Dict], Optional[str]]:
+def _fast_fetch_raw_text(
+    url: str, timeout: int = 20
+) -> Tuple[Optional[Dict], Optional[str]]:
     """
     纯文本地址快速通道：直接 urllib 下载，按 text/markdown 返回，
     不再启动 Playwright 浏览器（避免 FETCH 工具无限卡死）。
@@ -89,7 +93,9 @@ def _fast_fetch_raw_text(url: str, timeout: int = 20) -> Tuple[Optional[Dict], O
     elif path.endswith(".xml"):
         fenced_lang = "xml"
 
-    content = f"```\n{text}\n```" if not fenced_lang else f"```{fenced_lang}\n{text}\n```"
+    content = (
+        f"```\n{text}\n```" if not fenced_lang else f"```{fenced_lang}\n{text}\n```"
+    )
 
     filename = url.rsplit("/", 1)[-1].split("?", 1)[0] or "raw"
     return {
@@ -300,6 +306,7 @@ async def web_content_fetch_playwright(
 
 _SEC_HIGH_THRESHOLD = 600  # 大于 600 认为是毫秒单位
 
+
 def _to_seconds(value: float) -> float:
     return value / 1000.0 if value > _SEC_HIGH_THRESHOLD else value
 
@@ -346,9 +353,7 @@ async def _async_timeout_polyfill(sec: float):
     wrapper_task: Optional[asyncio.Task] = None
     timed_out = False
     try:
-        wrapper_task = asyncio.create_task(
-            asyncio.wait_for(_wrap_body(), timeout=sec)
-        )
+        wrapper_task = asyncio.create_task(asyncio.wait_for(_wrap_body(), timeout=sec))
         await entered  # 等待 wrapper 进入 yield 点
         yield
         done.set_result(None)  # 告诉 wrapper 执行完成

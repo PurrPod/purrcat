@@ -160,7 +160,7 @@ export default function AgentBrowserPanel({
   useEffect(() => {
     return () => {
       if (hasElectron) {
-        try { purrcat.browserHide(); } catch (_) {}
+        try { purrcat.browserHide(); } catch { /* 忽略非 Electron 环境 */ }
       }
     };
   }, [hasElectron]);
@@ -196,7 +196,7 @@ export default function AgentBrowserPanel({
       // 如果组件卸载，或者依赖项发生变化时，如果当前不是 browse 模式，
       // 必须强制通知主进程关闭当前 Tab 的 CDP Pick 模式，防止后端卡死在 F12
       if (mode !== 'browse' && hasElectron) {
-        try { purrcat.browserPickEnd(activeTabId).catch(() => {}); } catch (_) {}
+        try { purrcat.browserPickEnd(activeTabId).catch(() => {}); } catch { /* 忽略非 Electron 环境 */ }
       }
     };
   }, [mode, activeTabId, hasElectron]);
@@ -235,7 +235,7 @@ export default function AgentBrowserPanel({
       try {
         const pid = await purrcat.browserNewTab(finalUrl);
         if (pid) tabId = pid;
-      } catch (_) {}
+      } catch { /* 非 Electron 环境，用临时 id */ }
       setTabs(prev => [...prev, { id: tabId, url: finalUrl, title: '' }]);
       setActiveTabId(tabId);
     }

@@ -93,7 +93,9 @@ def install_skill_api(req: InstallSkillReq):
     try:
         url = req.url
         # 1. 解析 GitHub URL (支持子目录或仓库根目录两种形式)
-        match = re.match(r"https?://github\.com/([^/]+)/([^/]+)/tree/([^/]+)(?:/(.*))?", url)
+        match = re.match(
+            r"https?://github\.com/([^/]+)/([^/]+)/tree/([^/]+)(?:/(.*))?", url
+        )
         if not match:
             raise HTTPException(
                 status_code=400,
@@ -223,7 +225,7 @@ def _download_official_mcp_source(repo: str, server_names: list) -> str:
             dest_dir = os.path.join(MCP_SOURCE_DIR, name)
             for file_info in z.infolist():
                 if file_info.filename.startswith(target_prefix):
-                    relative_path = file_info.filename[len(target_prefix):]
+                    relative_path = file_info.filename[len(target_prefix) :]
                     if not relative_path:
                         continue
                     local_path = os.path.join(dest_dir, relative_path)
@@ -383,13 +385,17 @@ def get_heartbeat_api():
     from src.agent.heartbeat import get_heartbeat_manager
 
     cfg = get_heartbeat_manager().get_config()
-    return {"interval": cfg["interval"], "active": cfg["active"], "goal": get_heartbeat_manager().read_goal()}
+    return {
+        "interval": cfg["interval"],
+        "active": cfg["active"],
+        "goal": get_heartbeat_manager().read_goal(),
+    }
 
 
 @router.post("/heartbeat")
 def save_heartbeat_api(req: HeartbeatReq):
     """保存心跳配置；开启心跳时必须提交非空 GOAL.md 内容"""
-    from src.agent.heartbeat import get_heartbeat_manager, MIN_INTERVAL
+    from src.agent.heartbeat import MIN_INTERVAL
 
     goal = (req.goal or "").strip()
     if req.active and not goal:
@@ -493,7 +499,9 @@ def list_installed_sensors_api():
             installed.append(
                 {
                     "name": name,
-                    "enabled": bool(entry.get("enabled", False)) if isinstance(entry, dict) else False,
+                    "enabled": bool(entry.get("enabled", False))
+                    if isinstance(entry, dict)
+                    else False,
                     "has_code": os.path.exists(
                         os.path.join(SENSOR_EXTENSION_DIR, f"{name}.py")
                     ),
@@ -502,7 +510,9 @@ def list_installed_sensors_api():
         return installed
     except Exception as e:
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"读取本地 Sensor 列表失败: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"读取本地 Sensor 列表失败: {str(e)}"
+        )
 
 
 class InstallSensorReq(BaseModel):
@@ -524,7 +534,9 @@ def install_sensor_api(req: InstallSensorReq):
 
         # 1. 合并配置：已有配置的 env 非空值不被 registry 占位覆盖
         existing_cfg = get_sensor_config() or {}
-        existing_entry = existing_cfg.get(name, {}) if isinstance(existing_cfg, dict) else {}
+        existing_entry = (
+            existing_cfg.get(name, {}) if isinstance(existing_cfg, dict) else {}
+        )
         if not isinstance(existing_entry, dict):
             existing_entry = {}
 
@@ -637,7 +649,11 @@ def list_installed_graphs_api():
     try:
         names = set()
         for entry in list_graphs():
-            fn = entry.get("filename") or entry.get("name") if isinstance(entry, dict) else None
+            fn = (
+                entry.get("filename") or entry.get("name")
+                if isinstance(entry, dict)
+                else None
+            )
             if fn:
                 n = fn[:-5] if fn.endswith(".json") else fn
                 if n:
@@ -645,7 +661,9 @@ def list_installed_graphs_api():
         return sorted(names)
     except Exception as e:
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"读取本地 Graph 列表失败: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"读取本地 Graph 列表失败: {str(e)}"
+        )
 
 
 class InstallGraphReq(BaseModel):

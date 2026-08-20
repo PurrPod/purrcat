@@ -186,6 +186,7 @@ def _get_app_config_dict():
 # 文件生成函数
 # ==========================================
 
+
 def _write_json(path: str, data: dict):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
@@ -211,7 +212,9 @@ def _generate_all_configs():
     _write_json(APP_CONFIG_PATH, _get_app_config_dict())
 
     # core/ 目录文件
-    _write_json(os.path.join(AGENT_CORE_DIR, "info.json"), {"skills": [], "workshops": []})
+    _write_json(
+        os.path.join(AGENT_CORE_DIR, "info.json"), {"skills": [], "workshops": []}
+    )
     _write_text(CRON_FILE, CRON_CONFIG_TEMPLATE)
     _write_text(HEARTBEAT_FILE, HEARTBEAT_CONFIG_TEMPLATE)
     _write_text(os.path.join(AGENT_CORE_DIR, "MEMORY.md"), MEMORY_MD_TEMPLATE)
@@ -223,6 +226,7 @@ def _generate_all_configs():
 # ==========================================
 # 对外入口
 # ==========================================
+
 
 def ensure_initialized():
     """检查 ~/.purrcat 是否存在，不存在则自动生成默认配置"""

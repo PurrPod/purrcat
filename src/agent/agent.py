@@ -108,7 +108,10 @@ class Agent:
         self._state = value
 
     def _get_tool_schema(self):
-        from src.tool import AGENT_TOOL_SCHEMA  # 延迟 import，打破与 src.tool 的循环依赖
+        from src.tool import (
+            AGENT_TOOL_SCHEMA,
+        )  # 延迟 import，打破与 src.tool 的循环依赖
+
         return AGENT_TOOL_SCHEMA
 
     def _get_current_interaction_id(self):
