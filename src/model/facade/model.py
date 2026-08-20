@@ -152,7 +152,9 @@ class AgentModel(Model):
             self.key_prefix = ""
             self.semaphore = None
             self._client = None
-            log("⚠️ Agent 模型尚未配置 API Key，请在「配置中心」完成配置后再使用（后端已正常启动）")
+            log(
+                "⚠️ Agent 模型尚未配置 API Key，请在「配置中心」完成配置后再使用（后端已正常启动）"
+            )
             return
 
         self._init_client(model_cfg)
