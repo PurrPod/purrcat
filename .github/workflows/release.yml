@@ -24,8 +24,6 @@ jobs:
   validate:
     name: Validate Release
     runs-on: ubuntu-latest
-    outputs:
-      tag: ${{ steps.tag.outputs.tag }}
     steps:
       - name: Checkout Code
         uses: actions/checkout@v6
@@ -63,7 +61,6 @@ jobs:
           fi
 
       - name: Create Tag
-        id: tag
         env:
           VERSION: ${{ inputs.version }}
         run: |
@@ -71,17 +68,15 @@ jobs:
           
           TAG="v$VERSION"
           
+          # 幂等：tag 已存在则复用，构建失败后重新触发时无需手动清理
           if git rev-parse "$TAG" >/dev/null 2>&1; then
-            echo "::error::Tag $TAG already exists"
-            exit 1
+            echo "Tag $TAG already exists, reusing"
+          else
+            git config user.name "GitHub Actions"
+            git config user.email "actions@github.com"
+            git tag -a "$TAG" -m "Release $TAG"
+            git push origin "$TAG"
           fi
-          
-          git config user.name "GitHub Actions"
-          git config user.email "actions@github.com"
-          git tag -a "$TAG" -m "Release $TAG"
-          git push origin "$TAG"
-          
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
   publish:
     name: Publish Release
@@ -91,12 +86,12 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v6
         with:
-          ref: ${{ needs.validate.outputs.tag }}
+          ref: v${{ inputs.version }}
 
       - name: Create GitHub Release
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          TAG: ${{ needs.validate.outputs.tag }}
+          TAG: v${{ inputs.version }}
           VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
@@ -111,10 +106,15 @@ jobs:
             RELEASE_NOTES="Release $VERSION"
           fi
           
-          gh release create "$TAG" \
-            --title "PurrCat $VERSION" \
-            --notes "$RELEASE_NOTES" \
-            ${{ inputs.release_type != 'stable' && '--prerelease' || '' }}
+          # 幂等：release 已存在则跳过创建，产物由各 build job --clobber 覆盖上传
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists, skipping creation"
+          else
+            gh release create "$TAG" \
+              --title "PurrCat $VERSION" \
+              --notes "$RELEASE_NOTES" \
+              ${{ inputs.release_type != 'stable' && '--prerelease' || '' }}
+          fi
 
       - name: Build UI
         working-directory: ui
@@ -132,11 +132,11 @@ jobs:
       - name: Upload Release Asset
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          TAG: ${{ needs.validate.outputs.tag }}
+          TAG: v${{ inputs.version }}
         run: |
           cd ui/dist
           zip -r purrcat-ui-${{ inputs.version }}.zip .
-          gh release upload "$TAG" purrcat-ui-${{ inputs.version }}.zip
+          gh release upload "$TAG" purrcat-ui-${{ inputs.version }}.zip --clobber
 
   build-windows:
     name: Build Windows Desktop
@@ -146,7 +146,7 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v6
         with:
-          ref: ${{ needs.validate.outputs.tag }}
+          ref: v${{ inputs.version }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -159,7 +159,7 @@ jobs:
           enable-cache: true
 
       - name: Install Python Dependencies
-        run: uv sync
+        run: uv sync --python 3.12
 
       - name: Install Node Dependencies
         run: |
@@ -185,7 +185,7 @@ jobs:
       - name: Upload Release Assets
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          TAG: ${{ needs.validate.outputs.tag }}
+          TAG: v${{ inputs.version }}
         run: |
           cd release
           gh release upload "$env:TAG" "PurrCat-Setup-${{ inputs.version }}.exe" "PurrCat-Setup-${{ inputs.version }}.exe.blockmap" "latest.yml" --clobber
@@ -198,7 +198,7 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v6
         with:
-          ref: ${{ needs.validate.outputs.tag }}
+          ref: v${{ inputs.version }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -210,8 +210,12 @@ jobs:
         with:
           enable-cache: true
 
+      # pyaudio 需从源码编译，链接 portaudio；Python 固定 3.12（3.14 生态 wheel 不齐）
+      - name: Install System Dependencies (portaudio for pyaudio)
+        run: brew install portaudio
+
       - name: Install Python Dependencies
-        run: uv sync
+        run: uv sync --python 3.12
 
       - name: Install Node Dependencies
         run: |
@@ -239,7 +243,7 @@ jobs:
       - name: Upload Release Assets
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          TAG: ${{ needs.validate.outputs.tag }}
+          TAG: v${{ inputs.version }}
         run: |
           cd release
           gh release upload "$TAG" "PurrCat-${{ inputs.version }}-arm64.dmg" --clobber
@@ -252,7 +256,7 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v6
         with:
-          ref: ${{ needs.validate.outputs.tag }}
+          ref: v${{ inputs.version }}
 
       - name: Install System Dependencies (pyaudio needs portaudio)
         run: sudo apt-get update && sudo apt-get install -y portaudio19-dev
@@ -268,7 +272,7 @@ jobs:
           enable-cache: true
 
       - name: Install Python Dependencies
-        run: uv sync
+        run: uv sync --python 3.12
 
       - name: Install Node Dependencies
         run: |
@@ -294,7 +298,7 @@ jobs:
       - name: Upload Release Assets
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          TAG: ${{ needs.validate.outputs.tag }}
+          TAG: v${{ inputs.version }}
         run: |
           cd release
           gh release upload "$TAG" "PurrCat-${{ inputs.version }}-x86_64.AppImage" --clobber
