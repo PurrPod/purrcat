@@ -141,21 +141,57 @@ class AgentModel(Model):
         if not self.api_key:
             api_keys = model_cfg.get("api_keys") or []
             valid_keys = [k for k in api_keys if k and k.strip()]
-            if not valid_keys:
-                raise ValueError("Agent 专属模型缺少有效的 api-key 配置")
-            self.api_key = valid_keys[0]
+            self.api_key = valid_keys[0] if valid_keys else None
 
+        # 🌟 惰性初始化：全新安装尚未配置 API Key 时不再抛异常（曾导致后端
+        # 启动即崩、桌面端白屏）。后端正常启动，用户在配置中心填写并保存后，
+        # /api/config 的保存钩子会触发 reload_model() 重建本对象；即便热重载
+        # 未触发，chat() 里也会兜底重读一次配置。
         if not self.base_url or not self.api_key:
-            raise ValueError("Agent 专属模型配置缺失")
+            self.api_key = None
+            self.key_prefix = ""
+            self.semaphore = None
+            self._client = None
+            log("⚠️ Agent 模型尚未配置 API Key，请在「配置中心」完成配置后再使用（后端已正常启动）")
+            return
 
+        self._init_client(model_cfg)
+
+    def _init_client(self, model_cfg: dict):
         self.key_prefix = self.api_key[:15]
-
         limits = model_cfg.get("limits", {})
         max_concurrency = limits.get("concurrency", 1)
         self.semaphore = get_key_semaphore(self.api_key, max_concurrency)
-
         self._client = LLMClient(api_key=self.api_key, base_url=self.base_url)
-
         log(
             f"🤖 全局 Agent 锁定模型 {self.model_name}，使用专属 API Key: {self.key_prefix}..."
         )
+
+    def _ensure_client(self):
+        """确保客户端可用；未配置时兜底重读配置，仍缺失则抛出可读错误"""
+        if self._client is not None:
+            return
+
+        from src.utils.config import get_agent_model
+
+        model_name = get_agent_model()
+        model_cfg = get_model_config().get("main", {}).get(model_name, {})
+        api_key = model_cfg.get("api_key")
+        if not api_key:
+            api_keys = model_cfg.get("api_keys") or []
+            valid = [k for k in api_keys if k and k.strip()]
+            api_key = valid[0] if valid else None
+        base_url = model_cfg.get("base_url")
+
+        if api_key and base_url:
+            self.model_name = model_name
+            self.base_url = base_url
+            self.api_key = api_key
+            self._init_client(model_cfg)
+            return
+
+        raise ValueError("模型未配置：请在「配置中心」填写 API Key 并保存后再发送消息")
+
+    def chat(self, messages: list, tools: list = None, **kwargs):
+        self._ensure_client()
+        return super().chat(messages, tools, **kwargs)

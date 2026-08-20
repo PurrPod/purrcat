@@ -60,10 +60,10 @@
     },
     "linux": {
       "icon": "electron/icon.png",
-      "artifactName": "PurrCat-${version}-${arch}.AppImage",
+      "artifactName": "PurrCat-${version}-${arch}.tar.gz",
       "category": "Utility",
       "target": [
-        "AppImage"
+        "tar.gz"
       ]
     },
     "publish": {

@@ -301,4 +301,4 @@ jobs:
           TAG: v${{ inputs.version }}
         run: |
           cd release
-          gh release upload "$TAG" "PurrCat-${{ inputs.version }}-x86_64.AppImage" --clobber
+          gh release upload "$TAG" "PurrCat-${{ inputs.version }}-x86_64.tar.gz" --clobber
