@@ -22,6 +22,7 @@ jobs:
     outputs:
       python_changed: ${{ steps.detect.outputs.python_changed }}
       ui_changed: ${{ steps.detect.outputs.ui_changed }}
+      electron_changed: ${{ steps.detect.outputs.electron_changed }}
 
     steps:
       - name: Checkout
@@ -44,6 +45,7 @@ jobs:
             echo "Warning: Base commit $BASE not found, assuming full rebuild"
             echo "python_changed=true" >> "$GITHUB_OUTPUT"
             echo "ui_changed=true" >> "$GITHUB_OUTPUT"
+            echo "electron_changed=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           
@@ -60,6 +62,13 @@ jobs:
             echo "ui_changed=true" >> "$GITHUB_OUTPUT"
           else
             echo "ui_changed=false" >> "$GITHUB_OUTPUT"
+          fi
+          
+          # Electron 桌面端：electron/ 目录 + 根 package.json/package-lock.json（electron-builder 配置在此）
+          if echo "$CHANGED_FILES" | grep -qE "^(electron/|package\.json|package-lock\.json)"; then
+            echo "electron_changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "electron_changed=false" >> "$GITHUB_OUTPUT"
           fi
 
   ui-check-and-build:
@@ -91,6 +100,41 @@ jobs:
         working-directory: ui
         run: npm run build
 
+  electron-check:
+    name: Electron Check
+    needs: [preflight]
+    if: needs.preflight.outputs.electron_changed == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20.x
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+
+      - name: Install Root Dependencies
+        run: npm ci
+
+      - name: Syntax Check (main.js / preload.js)
+        run: |
+          node --check electron/main.js
+          node --check electron/preload.js
+
+      - name: Package Config Sanity (dist config parses, extraResources resolvable)
+        run: |
+          node -e "
+          const cfg = require('./package.json').build;
+          if (!cfg.files || !cfg.files.includes('electron/**/*')) throw new Error('build.files missing electron/**/*');
+          if (!cfg.extraResources || !cfg.extraResources.length) throw new Error('build.extraResources missing');
+          if (!cfg.appId || !cfg.productName) throw new Error('appId/productName missing');
+          console.log('electron-builder config OK');
+          "
+
   security-check:
     name: Security Check
     runs-on: ubuntu-latest
@@ -106,24 +150,27 @@ jobs:
 
   ci-summary:
     name: CI Summary
-    needs: [preflight, ui-check-and-build, security-check]
+    needs: [preflight, ui-check-and-build, electron-check, security-check]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
       - name: Check CI Results
         env:
           UI_RESULT: ${{ needs.ui-check-and-build.result }}
+          ELECTRON_RESULT: ${{ needs.electron-check.result }}
           SECURITY_RESULT: ${{ needs.security-check.result }}
         run: |
           set -euo pipefail
           
           echo "=== CI Summary ==="
           echo "UI Check & Build: $UI_RESULT"
+          echo "Electron Check: $ELECTRON_RESULT"
           echo "Security Check: $SECURITY_RESULT"
           
           FAILED_JOBS=()
           
           if [ "$UI_RESULT" = "failure" ] && [ "${{ needs.preflight.outputs.ui_changed }}" = "true" ]; then FAILED_JOBS+=("ui-check-and-build"); fi
+          if [ "$ELECTRON_RESULT" = "failure" ] && [ "${{ needs.preflight.outputs.electron_changed }}" = "true" ]; then FAILED_JOBS+=("electron-check"); fi
           if [ "$SECURITY_RESULT" = "failure" ]; then FAILED_JOBS+=("security-check"); fi
           
           if [ ${#FAILED_JOBS[@]} -gt 0 ]; then
