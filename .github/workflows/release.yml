@@ -106,18 +106,29 @@ jobs:
             RELEASE_NOTES="Release $VERSION"
           fi
           
-          # 幂等：release 已存在则补打 Latest 标记，产物由各 build job --clobber 覆盖上传
+          # 🌟 GitHub API 不允许 prerelease 标记 Latest（HTTP 422:
+          # "Latest release cannot be draft or prerelease"）。
+          # beta 版想挂 Latest 必须做成完整发布，"beta" 只留在版本号里（OpenClaw 等项目的做法）；
+          # 仅 alpha 内测保留 Pre-release 标记（不参与 Latest 评选，主页侧边栏也不展示）。
+          IS_ALPHA=$([ "${{ inputs.release_type }}" = "alpha" ] && echo true || echo false)
+
           if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "Release $TAG already exists, ensuring Latest flag"
-            gh release edit "$TAG" --latest
+            echo "Release $TAG already exists"
+            if [ "$IS_ALPHA" = "false" ]; then
+              gh release edit "$TAG" --prerelease=false --latest
+            fi
           else
-            # --latest 显式标记 Latest：prerelease 默认不参与 Latest 评选，
-            # 会导致主页侧边栏不显示、只有 tag（显式指定可覆盖该规则）
-            gh release create "$TAG" \
-              --title "PurrCat $VERSION" \
-              --notes "$RELEASE_NOTES" \
-              --latest \
-              ${{ inputs.release_type != 'stable' && '--prerelease' || '' }}
+            if [ "$IS_ALPHA" = "true" ]; then
+              gh release create "$TAG" \
+                --title "PurrCat $VERSION" \
+                --notes "$RELEASE_NOTES" \
+                --prerelease
+            else
+              gh release create "$TAG" \
+                --title "PurrCat $VERSION" \
+                --notes "$RELEASE_NOTES" \
+                --latest
+            fi
           fi
 
       - name: Build UI
