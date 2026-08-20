@@ -181,9 +181,22 @@ async function pollBackendAndLoad(targetUrl) {
     } catch (_) {}
     await new Promise((r) => setTimeout(r, 200));
   }
-  // 超时也强制加载，由前端自行处理后端未就绪
-  console.warn('[PurrCat] 后端就绪超时，强制加载前端...');
-  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.loadURL(targetUrl);
+  // 超时：加载错误提示页而不是白屏，方便用户定位后端启动失败
+  console.warn('[PurrCat] 后端就绪超时，后端可能启动失败');
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    const backendDir = path.join(process.resourcesPath, 'backend');
+    const errHtml = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+      body{background:#1e1e2e;color:#cdd6f4;font-family:system-ui;padding:48px;line-height:1.7}
+      h1{font-size:20px;color:#f38ba8} code{background:#313244;padding:2px 8px;border-radius:4px;font-size:13px}
+    </style></head><body>
+      <h1>后端服务启动失败</h1>
+      <p>PurrCat 的 Python 后端（端口 8000）在 60 秒内未就绪，界面无法加载。</p>
+      <p>排查方法：打开命令行，运行</p>
+      <p><code>${path.join(backendDir, process.platform === 'win32' ? 'main.exe' : 'main')} --api --headless</code></p>
+      <p>查看输出的错误信息，并到 GitHub 提交 issue。</p>
+    </body></html>`;
+    mainWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(errHtml));
+  }
 }
 
 // ===== IPC: File Reference =====

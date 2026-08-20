@@ -47,8 +47,10 @@ exe = EXE(
     name='main',
     debug=False,
     bootloader_ignore_signals=False,
+    # UPX 会压坏 torch/onnxruntime 等原生 DLL 导致运行时崩溃
+    # （GitHub Actions Windows runner 预装 UPX，PyInstaller 会自动使用）
     strip=False,
-    upx=True,
+    upx=False,
     console=True,
     disable_windowed_traceback=False,
     argv_emulation=False,
@@ -61,7 +63,7 @@ coll = COLLECT(
     a.binaries,
     a.datas,
     strip=False,
-    upx=True,
+    upx=False,
     upx_exclude=[],
     name='main',
 )

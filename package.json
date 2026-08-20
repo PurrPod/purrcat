@@ -25,6 +25,7 @@
   "build": {
     "appId": "com.purrpod.purrcat",
     "productName": "PurrCat",
+    "compression": "maximum",
     "directories": {
       "output": "release"
     },
