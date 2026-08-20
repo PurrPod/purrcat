@@ -42,7 +42,7 @@
       }
     ],
     "win": {
-      "icon": "electron/icon.ico",
+      "icon": "electron/app.ico",
       "artifactName": "PurrCat-Setup-${version}.exe",
       "target": [
         "nsis"
@@ -73,8 +73,8 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "installerIcon": "electron/icon.ico",
-      "uninstallerIcon": "electron/icon.ico",
+      "installerIcon": "electron/app.ico",
+      "uninstallerIcon": "electron/app.ico",
       "createDesktopShortcut": true
     }
   },
