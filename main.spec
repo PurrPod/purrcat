@@ -23,6 +23,16 @@ for pkg in ['chromadb', 'sentence_transformers', 'tokenizers', 'onnxruntime', 'h
     tmp = collect_all(pkg)
     datas += tmp[0]; binaries += tmp[1]; hiddenimports += tmp[2]
 
+# pywinpty 的 PTY 后端依赖包内的 winpty-agent.exe（WinPTY 回退）和 OpenConsole.exe
+# （ConPTY 会话宿主），PyInstaller 静态分析只收 .pyd/.dll，漏掉这两个 exe 会导致
+# 打包后终端 PTY 实例化失败（打开即红字：ConPTY 无效句柄 + winpty-agent.exe 不存在）。
+# collect_all 把整个 winpty 目录（含 exe）收进 _internal/winpty/。非 Windows 构建无此包，跳过。
+try:
+    tmp = collect_all('winpty')
+    datas += tmp[0]; binaries += tmp[1]; hiddenimports += tmp[2]
+except Exception:
+    pass
+
 
 a = Analysis(
     ['main.py'],
