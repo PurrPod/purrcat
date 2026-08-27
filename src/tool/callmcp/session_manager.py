@@ -79,13 +79,29 @@ class MCPSessionManager:
     async def _server_lifecycle_task(
         self, server_name: str, config: dict, ready_event: asyncio.Event
     ):
-        raw_command = config["command"]
+        raw_command = config.get("command", "")
+        if not raw_command:
+            print(f"⚠️ [MCP 异常] Server '{server_name}' 配置缺失 command")
+            ready_event.set()
+            return
+
         resolved_command = shutil.which(raw_command) or raw_command
+
+        # 【核心修复】：安全处理 env，防止值为 null/None 导致 {**os.environ, **None} 崩溃
+        custom_env = config.get("env")
+        if not isinstance(custom_env, dict):
+            custom_env = {}
+
+        # 确保所有的 env 变量值都被显式转换为字符串，否则 subprocess 会抛错
+        safe_env = os.environ.copy()
+        for k, v in custom_env.items():
+            if v is not None:
+                safe_env[k] = str(v)
 
         server_params = StdioServerParameters(
             command=resolved_command,
             args=config.get("args", []),
-            env={**os.environ, **config.get("env", {})},
+            env=safe_env,
         )
 
         try:

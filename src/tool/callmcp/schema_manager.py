@@ -46,16 +46,17 @@ async def _fetch_all_schemas_async() -> List[Dict]:
 
 
 def fetch_and_cache_schemas() -> List[Dict]:
-    """拉取所有 Schema 并写入 JSON 文件"""
+    """拉取所有 Schema 并写入 JSONL 文件"""
     with SCHEMA_LOCK:
         schemas = _run_sync(_fetch_all_schemas_async)
 
-        # 确保缓存目录存在（PURRCAT_DIR 通常已存在，这里兜底）
+        # 确保缓存目录存在
         os.makedirs(os.path.dirname(MCP_SCHEMA_CACHE_FILE), exist_ok=True)
 
-        # 将原本的 jsonl 逐行写入，改为直接作为一个完整的 JSON 数组写入
+        # 【核心修复】：恢复为 JSONL (逐行 JSON) 格式，修复盲测框架报 index out of bounds 的问题！
         with open(MCP_SCHEMA_CACHE_FILE, "w", encoding="utf-8") as f:
-            json.dump(schemas, f, ensure_ascii=False, indent=4)
+            for schema in schemas:
+                f.write(json.dumps(schema, ensure_ascii=False) + "\n")
 
         print(f"信息: [MCP] Schema 已缓存至 {MCP_SCHEMA_CACHE_FILE}")
         return schemas
@@ -68,11 +69,19 @@ def load_cached_schemas() -> List[Dict]:
             return fetch_and_cache_schemas()
 
         try:
-            # 从原本的逐行读取 jsonl，改为直接读取整个 JSON 文件
+            schemas = []
             with open(MCP_SCHEMA_CACHE_FILE, "r", encoding="utf-8") as f:
-                schemas = json.load(f)
-                if not isinstance(schemas, list):
-                    schemas = []
+                content = f.read().strip()
+                if not content:
+                    return schemas
+                
+                # 【向下兼容】：同时支持读取 JSON 数组和 JSONL，防止残留文件报错
+                if content.startswith("["):
+                    schemas = json.loads(content)
+                else:
+                    for line in content.split("\n"):
+                        if line.strip():
+                            schemas.append(json.loads(line))
         except Exception as e:
             print(f"警告: [MCP] 读取 Schema 缓存失败: {e}")
             return fetch_and_cache_schemas()

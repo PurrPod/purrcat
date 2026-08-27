@@ -12,6 +12,26 @@ from src.utils.config import MCP_CONFIG_PATH, DATA_ROOT, AGENT_VM_DIR
 from .guide_generator import generate_mcp_guide
 
 
+MCP_SERVER_CONFIG_FILE = "mcp_server_config.json"
+
+
+def _ensure_server_config_template(mcp_dir: str):
+    """确保沙盒中存在标准配置模板（全新创建时生成，升级时保留原有）"""
+    config_path = os.path.join(mcp_dir, MCP_SERVER_CONFIG_FILE)
+    if os.path.exists(config_path):
+        return
+    # 模板与合并注册逻辑配套：uv run --directory "." 由系统在合并时定位到正式目录
+    default_config = {
+        "command": "uv",
+        "args": ["run", "--directory", ".", "server.py"],
+        "env": {},
+    }
+    with open(
+        config_path, "w", encoding="utf-8", newline="\n"
+    ) as f:
+        json.dump(default_config, f, indent=4, ensure_ascii=False)
+
+
 def _write_goal_and_guide(workplace_root: str, mcp_name: str, goal: str):
     """落盘构建目标 GOAL.md + 生成单文件 GUIDE.md"""
     if goal:
@@ -189,7 +209,10 @@ if __name__ == "__main__": asyncio.run(main())
     ) as f:
         f.write(evaluation_script)
 
-    # 10. 生成构建目标与单文件指南
+    # 10. 生成标准配置模板（合并注册的唯一依据，Agent 须按实际情况维护）
+    _ensure_server_config_template(workplace_mcp_dir)
+
+    # 11. 生成构建目标与单文件指南
     _write_goal_and_guide(workplace_root, mcp_name, goal)
     return (
         f"【MCP 工厂分配成功】工作区路径：/agent_vm/mcp_workplace/{short_uuid}（workplace_id: {short_uuid}）。\n"
@@ -213,6 +236,8 @@ def mcp_upgrade_init(mcp_name: str, goal: str = "") -> tuple[str, str]:
         return [".venv", "venv", "__pycache__", ".git", "node_modules", ".env", "*.pyc"]
 
     shutil.copytree(target_dir, workplace_mcp_dir, ignore=ignore_files)
+    # 老版本 MCP 没有配置文件，补齐模板（已有则保留 Agent/原版维护的内容）
+    _ensure_server_config_template(workplace_mcp_dir)
     _write_goal_and_guide(workplace_root, mcp_name, goal)
     return (
         f"【MCP 升级派发成功】工作区路径：/agent_vm/mcp_workplace/{short_uuid}（workplace_id: {short_uuid}）。\n"
@@ -230,17 +255,58 @@ def mcp_request_handle(workplace_root: str, mcp_name: str, is_approved: bool) ->
     target_dir = abs_target_dir
     is_upgrade = os.path.exists(target_dir)
 
-    # 1. 代码覆盖与拷贝
+    # 1. 强校验：读取 Agent 维护的 mcp_server_config.json（合并注册的唯一依据）
+    sandbox_config_path = os.path.join(source_dir, MCP_SERVER_CONFIG_FILE)
+    if not os.path.exists(sandbox_config_path):
+        return (
+            f"❌ 合并失败：沙盒中丢失了必需的配置文件 `{MCP_SERVER_CONFIG_FILE}`，"
+            f"请 Agent 重新生成该文件并填写正确配置后再申请合并！"
+        )
+    try:
+        with open(sandbox_config_path, "r", encoding="utf-8") as f:
+            sandbox_config = json.load(f)
+    except json.JSONDecodeError:
+        return (
+            f"❌ 合并失败：`{MCP_SERVER_CONFIG_FILE}` JSON 格式损坏，"
+            f"请 Agent 修复后再申请合并。"
+        )
+
+    # 只提取合法键，过滤掉 Agent 可能乱加的废数据
+    env_data = sandbox_config.get("env", {})
+    if not isinstance(env_data, dict):
+        env_data = {}
+    command = sandbox_config.get("command", "uv")
+    args = sandbox_config.get("args", [])
+    if not isinstance(args, list):
+        args = []
+
+    # STDIO 启动不支持 cwd：相对的 --directory 必须定位到正式目录
+    if "--directory" in args:
+        idx = args.index("--directory")
+        if idx + 1 < len(args) and not os.path.isabs(args[idx + 1]):
+            args = list(args)
+            args[idx + 1] = abs_target_dir
+
+    # 2. 代码覆盖与拷贝（配置文件为沙盒元数据，不进入正式目录）
     if os.path.exists(target_dir):
         shutil.rmtree(target_dir, ignore_errors=True)
     os.makedirs(os.path.dirname(target_dir), exist_ok=True)
 
     def ignore_files(d, c):
-        return [".venv", "venv", "__pycache__", ".git", "node_modules", ".env", "*.pyc"]
+        return [
+            ".venv",
+            "venv",
+            "__pycache__",
+            ".git",
+            "node_modules",
+            ".env",
+            "*.pyc",
+            MCP_SERVER_CONFIG_FILE,
+        ]
 
     shutil.copytree(source_dir, target_dir, ignore=ignore_files)
 
-    # 2. Git 自动接管
+    # 3. Git 自动接管
     mcps_root = os.path.join(DATA_ROOT, "mcps")
     if not os.path.exists(os.path.join(mcps_root, ".git")):
         os.makedirs(mcps_root, exist_ok=True)
@@ -252,7 +318,7 @@ def mcp_request_handle(workplace_root: str, mcp_name: str, is_approved: bool) ->
     commit_msg = f"{'upgrade' if is_upgrade else 'add'} mcp {mcp_name} {datetime.now().strftime('%Y-%m-%d')}"
     subprocess.run(["git", "commit", "-m", commit_msg], cwd=mcps_root)
 
-    # 3. 自动注入 JSON 配置到 .purrcat/mcp_config.json
+    # 4. 注入 Agent 声明的配置到 .purrcat/mcp_config.json
     config_path = MCP_CONFIG_PATH
     os.makedirs(os.path.dirname(config_path), exist_ok=True)
 
@@ -268,8 +334,9 @@ def mcp_request_handle(workplace_root: str, mcp_name: str, is_approved: bool) ->
         mcp_config["mcpServers"] = {}
 
     mcp_config["mcpServers"][mcp_name] = {
-        "command": "uv",
-        "args": ["run", "--directory", abs_target_dir, "server.py"],
+        "command": command,
+        "args": args,
+        "env": env_data,
     }
 
     with open(config_path, "w", encoding="utf-8", newline="\n") as f:
@@ -279,6 +346,7 @@ def mcp_request_handle(workplace_root: str, mcp_name: str, is_approved: bool) ->
     return (
         f"🎉 审批通过！MCP '{mcp_name}' 成功合并。\n"
         f"📁 正式路径: {abs_target_dir}\n"
-        f"⚙️ `.purrcat/mcp_config.json` 客户端配置已由系统自动更新，立刻生效！\n"
+        f"⚙️ 配置已注入全局 `mcp_config.json`（含 {len(env_data)} 个环境变量声明）。\n"
+        f"💡 若 env 中存在留空的密钥，请老板在 `.purrcat/mcp_config.json` 中补齐后重启生效。\n"
         f"Git: {commit_msg}"
     )
