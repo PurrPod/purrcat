@@ -2,6 +2,8 @@
 
 import asyncio
 import atexit
+import hashlib
+import json
 import os
 import shutil
 import threading
@@ -49,6 +51,18 @@ def load_configs() -> dict:
     except Exception as e:
         print(f"[MCP 网关] 加载配置文件失败: {e}")
         return {}
+
+
+def _config_fingerprint(config: dict) -> str:
+    """计算启动配置指纹：command/args/env 任一变化即需要重启子进程"""
+    env = config.get("env")
+    material = {
+        "command": config.get("command", ""),
+        "args": config.get("args", []),
+        "env": env if isinstance(env, dict) else {},
+    }
+    raw = json.dumps(material, sort_keys=True, ensure_ascii=False)
+    return hashlib.md5(raw.encode("utf-8")).hexdigest()
 
 
 class MCPSessionManager:
@@ -114,6 +128,7 @@ class MCPSessionManager:
                         "session": session,
                         "last_active": time.time(),
                         "close_event": close_event,
+                        "fingerprint": _config_fingerprint(config),
                     }
                     ready_event.set()
                     print(f"✅ 连接到 {server_name} MCP服务器")
@@ -168,8 +183,26 @@ class MCPSessionManager:
         lock = await self._get_lock(server_name)
         async with lock:
             if server_name in self.sessions:
-                self.sessions[server_name]["last_active"] = time.time()
-                return self.sessions[server_name]["session"]
+                ctx = self.sessions[server_name]
+                # 指纹一致 → 复用长连接
+                if ctx.get("fingerprint") == _config_fingerprint(config):
+                    ctx["last_active"] = time.time()
+                    return ctx["session"]
+
+                # 配置已变化（如老板补填了 env / 修改了启动命令）：
+                # env 在子进程 spawn 时固化，必须重启进程才能生效
+                print(
+                    f"🔄 [MCP] '{server_name}' 启动配置已变化，正在重启子进程以应用新配置…"
+                )
+                await self._close_session(server_name)
+                old_task = self.lifecycle_tasks.get(server_name)
+                if old_task:
+                    try:
+                        # 等待旧生命周期任务退出（会终止旧子进程并清理 sessions 槽位），
+                        # 防止旧任务的 finally 误删新会话
+                        await asyncio.wait_for(asyncio.shield(old_task), timeout=15)
+                    except Exception:
+                        pass
 
             print(f"[+] 正在启动 {server_name} 并建立长连接...")
             ready_event = asyncio.Event()

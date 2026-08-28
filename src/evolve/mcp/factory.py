@@ -6,10 +6,33 @@ import os
 import shutil
 import uuid
 import subprocess
+import threading
 import json
 from datetime import datetime
 from src.utils.config import MCP_CONFIG_PATH, DATA_ROOT, AGENT_VM_DIR
 from .guide_generator import generate_mcp_guide
+
+
+def _hot_reload_after_merge():
+    """合并后在后台线程热刷新 Schema 缓存与搜索索引，让新 MCP 立即可被调用/搜索。
+
+    放后台执行是因为 uv run 冷启动可能较慢（建 venv 装依赖），
+    不阻塞老板的审批响应；若失败不影响已完成的代码合并与配置写入。
+    """
+
+    def _worker():
+        try:
+            from src.tool.callmcp.schema_manager import refresh_schemas
+            from src.tool.search.mcp_search import MCPSearcher, rebuild_vectors_async
+
+            schemas = refresh_schemas()
+            MCPSearcher().reload_index()
+            rebuild_vectors_async()
+            print(f"✅ [MCP工厂] 合并后热加载完成，系统共载入 {len(schemas)} 个 MCP 工具")
+        except Exception as e:
+            print(f"⚠️ [MCP工厂] 合并后热加载失败（不影响代码合并，可手动刷新）: {e}")
+
+    threading.Thread(target=_worker, daemon=True, name="MCP-Merge-HotReload").start()
 
 
 MCP_SERVER_CONFIG_FILE = "mcp_server_config.json"
@@ -342,11 +365,16 @@ def mcp_request_handle(workplace_root: str, mcp_name: str, is_approved: bool) ->
     with open(config_path, "w", encoding="utf-8", newline="\n") as f:
         json.dump(mcp_config, f, indent=2, ensure_ascii=False)
 
-    # 5. 精简干净的返回
+    # 5. 后台热刷新 Schema 缓存与搜索索引：合并即生效，无需重启系统
+    _hot_reload_after_merge()
+
+    # 6. 精简干净的返回
     return (
         f"🎉 审批通过！MCP '{mcp_name}' 成功合并。\n"
         f"📁 正式路径: {abs_target_dir}\n"
-        f"⚙️ 配置已注入全局 `mcp_config.json`（含 {len(env_data)} 个环境变量声明）。\n"
-        f"💡 若 env 中存在留空的密钥，请老板在 `.purrcat/mcp_config.json` 中补齐后重启生效。\n"
+        f"⚙️ 配置已注入全局 `mcp_config.json`（含 {len(env_data)} 个环境变量声明），"
+        f"系统正在后台热加载，稍候即可直接调用与搜索。\n"
+        f"💡 若 env 中存在留空的密钥，请老板在 `.purrcat/mcp_config.json` 中补齐并保存，"
+        f"下次调用会自动以新配置重启该 MCP 子进程，无需重启系统。\n"
         f"Git: {commit_msg}"
     )

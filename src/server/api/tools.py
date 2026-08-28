@@ -1,6 +1,7 @@
 import io
 import os
 import re
+import threading
 import urllib.request
 import zipfile
 import traceback
@@ -10,8 +11,8 @@ from pydantic import BaseModel
 
 # 引入底层工具操作
 from src.tool.callmcp.schema_manager import load_cached_schemas, refresh_schemas
-from src.tool.search.mcp_search import MCPSearcher
-from src.tool.search.skill_search import SkillSearcher
+from src.tool.search.mcp_search import MCPSearcher, rebuild_vectors_async
+from src.tool.search.skill_search import SkillSearcher, rebuild_skill_vectors_async
 from src.tool.cron.cron_operations import list_crons, add_cron, delete_cron
 
 # 🌟 新增：引入读取与保存 MCP 配置文件需要的依赖
@@ -172,14 +173,22 @@ def get_crons_api():
 # ==========================================
 # 4. MCP Schema 刷新 API
 # ==========================================
+# single-flight 门闸：刷新进行中时直接返回，防止连点导致全量刷新排队堆积
+_MCP_REFRESH_GATE = threading.Lock()
+
+
 @router.post("/mcp/refresh")
 def refresh_mcp_api():
     """手动刷新 MCP Schema 并更新内存检索树"""
+    if not _MCP_REFRESH_GATE.acquire(blocking=False):
+        return {"status": "refreshing", "message": "MCP 正在刷新中，请稍候…"}
     try:
         # 1. 重新拉取物理文件
         schemas = refresh_schemas()
         # 2. 触发 Searcher 的内存热更新
         MCPSearcher().reload_index()
+        # 3. 后台重建向量矩阵，避免刷新后首次搜索 JIT 卡顿
+        rebuild_vectors_async()
 
         return {
             "status": "success",
@@ -188,6 +197,8 @@ def refresh_mcp_api():
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"刷新 MCP 失败: {str(e)}")
+    finally:
+        _MCP_REFRESH_GATE.release()
 
 
 # ==========================================
@@ -279,6 +290,7 @@ def install_mcp_api(req: InstallMCPReq):
         # 5. 刷新 Schema 并重建检索树 (它会自动通信子进程并更新 mcp_schema.json)
         schemas = refresh_schemas()
         MCPSearcher().reload_index()
+        rebuild_vectors_async()
 
         return {
             "status": "success",
@@ -313,12 +325,19 @@ def list_configured_mcps_api():
 # ==========================================
 # 5. Skill 刷新 API
 # ==========================================
+_SKILL_REFRESH_GATE = threading.Lock()
+
+
 @router.post("/skills/refresh")
 def refresh_skills_api():
     """手动扫描本地 Skill 文件夹并更新内存检索树"""
+    if not _SKILL_REFRESH_GATE.acquire(blocking=False):
+        return {"status": "refreshing", "message": "Skill 正在刷新中，请稍候…"}
     try:
         searcher = SkillSearcher()
         searcher.reload_index()
+        # 后台重建向量矩阵，避免刷新后首次搜索 JIT 卡顿
+        rebuild_skill_vectors_async()
 
         return {
             "status": "success",
@@ -327,6 +346,8 @@ def refresh_skills_api():
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"刷新 Skill 失败: {str(e)}")
+    finally:
+        _SKILL_REFRESH_GATE.release()
 
 
 # ==========================================

@@ -273,3 +273,16 @@ def reload_mcp_index():
     """MCP索引热更新入口"""
     searcher = MCPSearcher()
     searcher.reload_index()
+
+
+def rebuild_vectors_async():
+    """后台线程重建向量矩阵：刷新索引后立即调用，避免首次搜索 JIT 同步构建卡顿"""
+    import threading
+
+    def _worker():
+        try:
+            MCPSearcher().build_vectors_in_background()
+        except Exception as e:
+            print(f"[-] MCP 向量后台构建失败: {e}")
+
+    threading.Thread(target=_worker, daemon=True, name="MCP-Vector-Build").start()

@@ -1,5 +1,6 @@
 """MCP Schema 管理，负责拉取并缓存 MCP 服务器的 Schema"""
 
+import asyncio
 import json
 import os
 import threading
@@ -36,12 +37,25 @@ async def _fetch_server_schemas_async(server_name: str, config: dict) -> List[Di
 
 
 async def _fetch_all_schemas_async() -> List[Dict]:
-    """异步拉取所有 MCP Server 的 Schema"""
+    """异步并发拉取所有 MCP Server 的 Schema（单服务器慢不再拖垮整体刷新）"""
     servers = load_configs()
+    if not servers:
+        return []
+
+    results = await asyncio.gather(
+        *[
+            _fetch_server_schemas_async(server_name, config)
+            for server_name, config in servers.items()
+        ],
+        return_exceptions=True,
+    )
+
     all_schemas = []
-    for server_name, config in servers.items():
-        schemas = await _fetch_server_schemas_async(server_name, config)
-        all_schemas.extend(schemas)
+    for r in results:
+        if isinstance(r, Exception):
+            print(f"警告: [MCP] 拉取 Schema 失败: {r}")
+        elif r:
+            all_schemas.extend(r)
     return all_schemas
 
 

@@ -37,8 +37,15 @@ def generate_mcp_guide(mcp_name: str, goal: str = "") -> str:
 1. **启动命令**：入口文件不是 `server.py`，或通过 `uvx` 等指令启动时，务必修改 `command` 和 `args`
    （`uv run` 的 `--directory` 可写相对路径 `.`，合并时系统会自动定位到正式目录）。
 2. **环境变量 (env)**：依赖外部 API Key 或参数时，**必须**在 `env` 字典中显式声明。
-   * 示例：`"env": {"OPENAI_API_KEY": "", "CUSTOM_PORT": "8080"}`
+   * 示例：`"env": {{"OPENAI_API_KEY": "", "CUSTOM_PORT": "8080"}}`
    * 敏感密钥的值请留空字符串 `""`，框架合并后老板会在主配置中填写真实密钥。
+   * 🔴 代码侧读取范式：合并后 `env` 会注入 MCP 子进程的环境变量，工具代码中必须用
+     `os.getenv("OPENAI_API_KEY")` 读取（**不要硬编码密钥**），并处理缺失场景：
+     ```python
+     key = os.getenv("OPENAI_API_KEY")
+     if not key:
+         raise ValueError("缺少 OPENAI_API_KEY，请老板在 mcp_config.json 中补填后重试")
+     ```
 3. 该文件必须是格式合法的 JSON 且**不得重命名**，否则合并将直接报错失败！
 
 ## 6. 流水线

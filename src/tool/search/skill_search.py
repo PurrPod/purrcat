@@ -230,6 +230,19 @@ def reload_skill_index():
     skill_searcher.reload_index()
 
 
+def rebuild_skill_vectors_async():
+    """后台线程重建向量矩阵：刷新索引后立即调用，避免首次搜索 JIT 同步构建卡顿"""
+    import threading
+
+    def _worker():
+        try:
+            SkillSearcher(SKILL_DIR).build_vectors_in_background()
+        except Exception as e:
+            print(f"[-] Skill 向量后台构建失败: {e}")
+
+    threading.Thread(target=_worker, daemon=True, name="Skill-Vector-Build").start()
+
+
 def search_skills(query: str, top_k: int = 3) -> tuple:
     """
     搜索技能

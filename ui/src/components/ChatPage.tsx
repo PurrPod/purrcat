@@ -122,9 +122,12 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   const [sensorData, setSensorData] = useState<any>({});
   const [mcpData, setMcpData] = useState<Record<string, any[]>>({});
   const [expandedMcp, setExpandedMcp] = useState<string | null>(null);
-  
+  const [isRefreshingMcp, setIsRefreshingMcp] = useState(false);
+
   const [skillData, setSkillData] = useState<any[]>([]);
   const [expandedSkill, setExpandedSkill] = useState<string | null>(null);
+  const [isRefreshingSkill, setIsRefreshingSkill] = useState(false);
+  const [isReloadingSensors, setIsReloadingSensors] = useState(false);
   
   const [showInstallSkillModal, setShowInstallSkillModal] = useState(false);
   const [skillInstallUrl, setSkillInstallUrl] = useState('');
@@ -586,16 +589,43 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   const saveMdContent = async () => { setIsSavingMd(true); try { const res = await fetch(`/api/config/markdown/${mdType}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: mdContent }) }); if (res.ok) setShowMdModal(false); } catch { /* noop */ } finally { setIsSavingMd(false); } };
 
   const fetchSensorData = async () => { try { const res = await fetch('/api/config/sensor'); if (res.ok) setSensorData(await res.json()); } catch { /* noop */ } };
-  const reloadSensors = async () => { try { await fetch('/api/config/sensor/reload', { method: 'POST' }); toast.success("Sensors 已热重启"); } catch { /* noop */ } };
+  const reloadSensors = async () => {
+    if (isReloadingSensors) return;
+    setIsReloadingSensors(true);
+    try {
+      const res = await fetch('/api/config/sensor/reload', { method: 'POST' });
+      const data = await res.json().catch(() => null);
+      if (res.ok) toast.success(data?.message || "Sensors 已热重启");
+      else toast.error(data?.detail || 'Sensors 热重启失败');
+    } catch { toast.error('Sensors 热重启失败'); } finally { setIsReloadingSensors(false); }
+  };
   const toggleSensorStatus = async (sensorName: string) => { try { const newSensorData = JSON.parse(JSON.stringify(sensorData)); newSensorData[sensorName].enabled = !newSensorData[sensorName].enabled; setSensorData(newSensorData); const resSave = await fetch('/api/config/sensor', { method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(newSensorData) }); if (resSave.ok) await reloadSensors(); } catch { /* noop */ } };
   const handleInstallSensor = async () => { setIsInstallingSensor(true); try { const parsed = JSON.parse(sensorInstallJson); const newSensors = parsed.sensors ? parsed.sensors : parsed; const currentData = JSON.parse(JSON.stringify(sensorData)); Object.assign(currentData, newSensors); const resSave = await fetch('/api/config/sensor', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(currentData) }); if (resSave.ok) { await reloadSensors(); setShowInstallSensorModal(false); fetchSensorData(); } } catch { /* noop */ } finally { setIsInstallingSensor(false); } };
 
   const fetchMcp = async () => { try { const res = await fetch('/api/tools/mcp'); if (res.ok) setMcpData(await res.json()); } catch { /* noop */ } };
-  const refreshMcp = async () => { try { await fetch('/api/tools/mcp/refresh', { method: 'POST' }); fetchMcp(); } catch { /* noop */ } };
+  const refreshMcp = async () => {
+    if (isRefreshingMcp) return;
+    setIsRefreshingMcp(true);
+    try {
+      const res = await fetch('/api/tools/mcp/refresh', { method: 'POST' });
+      const data = await res.json().catch(() => null);
+      if (res.ok) { toast.success(data?.message || 'MCP 已刷新'); fetchMcp(); }
+      else toast.error(data?.detail || '刷新 MCP 失败');
+    } catch { toast.error('刷新 MCP 失败'); } finally { setIsRefreshingMcp(false); }
+  };
   const handleInstallMcp = async () => { setIsInstallingMcp(true); try { const res = await fetch('/api/tools/mcp/install', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ config_json: mcpInstallJson.trim() }) }); if (res.ok) { setShowInstallMcpModal(false); fetchMcp(); } } catch { /* noop */ } finally { setIsInstallingMcp(false); } };
 
   const fetchSkill = async () => { try { const res = await fetch('/api/tools/skills'); if (res.ok) setSkillData(await res.json()); } catch { /* noop */ } };
-  const refreshSkill = async () => { try { await fetch('/api/tools/skills/refresh', { method: 'POST' }); fetchSkill(); } catch { /* noop */ } };
+  const refreshSkill = async () => {
+    if (isRefreshingSkill) return;
+    setIsRefreshingSkill(true);
+    try {
+      const res = await fetch('/api/tools/skills/refresh', { method: 'POST' });
+      const data = await res.json().catch(() => null);
+      if (res.ok) { toast.success(data?.message || 'Skill 已刷新'); fetchSkill(); }
+      else toast.error(data?.detail || '刷新 Skill 失败');
+    } catch { toast.error('刷新 Skill 失败'); } finally { setIsRefreshingSkill(false); }
+  };
   const handleInstallSkill = async () => { setIsInstallingSkill(true); try { const res = await fetch('/api/tools/skills/install', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: skillInstallUrl.trim() }) }); if (res.ok) { setShowInstallSkillModal(false); fetchSkill(); } } catch { /* noop */ } finally { setIsInstallingSkill(false); } };
 
   const fetchGraphData = async () => { try { const res = await fetch('/api/graphs'); if (res.ok) setGraphData(await res.json()); } catch { /* noop */ } };
@@ -1057,9 +1087,9 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   const sidebarProps = {
     onBack, onSwitchToTask, setShowSessionModal, navigate,
     sidebarMode, setSidebarMode,
-    sensorData, toggleSensorStatus, reloadSensors, setShowInstallSensorModal, fetchSensorData,
-    mcpData, expandedMcp, setExpandedMcp, refreshMcp, setShowInstallMcpModal, fetchMcp,
-    skillData, expandedSkill, setExpandedSkill, refreshSkill, setShowInstallSkillModal, fetchSkill,
+    sensorData, toggleSensorStatus, reloadSensors, isReloadingSensors, setShowInstallSensorModal, fetchSensorData,
+    mcpData, expandedMcp, setExpandedMcp, refreshMcp, isRefreshingMcp, setShowInstallMcpModal, fetchMcp,
+    skillData, expandedSkill, setExpandedSkill, refreshSkill, isRefreshingSkill, setShowInstallSkillModal, fetchSkill,
     cronData, deleteCron, setShowAddCronModal, fetchCron,
     openMdEditor, graphData, fetchGraphData  // 🌟 追加这两个！
   };

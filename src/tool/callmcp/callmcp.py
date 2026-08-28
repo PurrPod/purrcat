@@ -111,9 +111,10 @@ def reload_mcp_schema():
     try:
         schemas = refresh_schemas()
 
-        from src.tool.search.mcp_search import MCPSearcher
+        from src.tool.search.mcp_search import MCPSearcher, rebuild_vectors_async
 
         MCPSearcher().reload_index()
+        rebuild_vectors_async()
 
         return text_response(
             {
