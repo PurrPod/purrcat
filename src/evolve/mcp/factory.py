@@ -28,7 +28,9 @@ def _hot_reload_after_merge():
             schemas = refresh_schemas()
             MCPSearcher().reload_index()
             rebuild_vectors_async()
-            print(f"✅ [MCP工厂] 合并后热加载完成，系统共载入 {len(schemas)} 个 MCP 工具")
+            print(
+                f"✅ [MCP工厂] 合并后热加载完成，系统共载入 {len(schemas)} 个 MCP 工具"
+            )
         except Exception as e:
             print(f"⚠️ [MCP工厂] 合并后热加载失败（不影响代码合并，可手动刷新）: {e}")
 
@@ -49,9 +51,7 @@ def _ensure_server_config_template(mcp_dir: str):
         "args": ["run", "--directory", ".", "server.py"],
         "env": {},
     }
-    with open(
-        config_path, "w", encoding="utf-8", newline="\n"
-    ) as f:
+    with open(config_path, "w", encoding="utf-8", newline="\n") as f:
         json.dump(default_config, f, indent=4, ensure_ascii=False)
 
 

@@ -88,7 +88,7 @@ def load_cached_schemas() -> List[Dict]:
                 content = f.read().strip()
                 if not content:
                     return schemas
-                
+
                 # 【向下兼容】：同时支持读取 JSON 数组和 JSONL，防止残留文件报错
                 if content.startswith("["):
                     schemas = json.loads(content)
