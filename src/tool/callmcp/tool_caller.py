@@ -1,5 +1,6 @@
 """MCP 工具调用模块 - 执行 MCP 工具调用"""
 
+import asyncio
 import base64
 import os
 import time
@@ -27,7 +28,12 @@ async def _call_tool_async(
 
     try:
         session = await mcp_manager.get_session(server_name, config)
-        result = await session.call_tool(tool_name, arguments)
+        # ⏱️ callmcp 已改为进程内执行以维持 MCP 长连接（不能靠杀子进程防卡死），
+        # 用 wait_for 超时兜底；超时会走下方异常分支清理并重建会话
+        call_timeout = config.get("call_timeout", 300)
+        result = await asyncio.wait_for(
+            session.call_tool(tool_name, arguments), timeout=call_timeout
+        )
 
         if server_name in mcp_manager.sessions:
             mcp_manager.sessions[server_name]["last_active"] = time.time()

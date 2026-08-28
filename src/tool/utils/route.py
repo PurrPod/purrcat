@@ -31,14 +31,16 @@ TOOL_FUNC_MAP = {
 }
 
 # 🌟 进程隔离名单：只有这些「易卡死」的工具才丢进子进程执行（可被物理级 terminate）
-# 其余工具（memo/filesystem/cron/task/brainstorm/kernelupgrade）持有进程内状态
-# （如 brainstorm/task 会 lazy import AgentManager），子进程化会出灾难性后果，保持进程内执行
+# 其余工具（memo/filesystem/cron/task/brainstorm/callmcp/kernelupgrade）持有进程内状态
+# （如 brainstorm/task 会 lazy import AgentManager、callmcp 持有 MCP 长连接），
+# 子进程化会出灾难性后果，保持进程内执行
+# ⚠️ callmcp 曾被隔离导致 MCP 连接随子进程退出被销毁（Chrome 等被连带关闭），
+# 防卡死改由 tool_caller 中的 asyncio.wait_for 超时兜底
 PROCESS_ISOLATED_TOOLS = {
     "bash",  # 长时命令 / 死循环
     "request",  # 网络请求
     "fetch",  # 网络抓取
     "search",  # 向量检索（含嵌入计算）
-    "callmcp",  # 外部 MCP Server 调用
     "computeruse",  # UI 自动化
 }
 
