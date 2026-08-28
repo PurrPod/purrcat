@@ -12,7 +12,9 @@ def is_in_agent_vm(path: str) -> bool:
     """判断路径是否位于 agent 沙盒内（agent 自己的电脑，权限全开）"""
     try:
         return (
-            os.path.commonpath([os.path.normcase(os.path.abspath(path)), _AGENT_VM_ROOT])
+            os.path.commonpath(
+                [os.path.normcase(os.path.abspath(path)), _AGENT_VM_ROOT]
+            )
             == _AGENT_VM_ROOT
         )
     except ValueError:  # Windows 下跨盘符等情况

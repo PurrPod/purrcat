@@ -25,7 +25,10 @@ def _has_write_permission(target_path: str) -> bool:
 
     # 沙盒内是 agent 自己的电脑，无论用户是否配置权限，一律全放行
     try:
-        if os.path.commonpath([os.path.normcase(path), _AGENT_VM_ROOT]) == _AGENT_VM_ROOT:
+        if (
+            os.path.commonpath([os.path.normcase(path), _AGENT_VM_ROOT])
+            == _AGENT_VM_ROOT
+        ):
             return True
     except ValueError:  # Windows 下跨盘符等情况
         pass
