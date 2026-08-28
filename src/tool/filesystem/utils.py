@@ -1,7 +1,22 @@
 import os
 from pathlib import Path
 from src.tool.filesystem.exceptions import PermissionDeniedError
+from src.utils.config import AGENT_VM_DIR
 from src.utils.path import convert_sandbox_path
+
+# 沙盒根目录（预计算，用于快速放行）
+_AGENT_VM_ROOT = os.path.normcase(os.path.abspath(AGENT_VM_DIR))
+
+
+def is_in_agent_vm(path: str) -> bool:
+    """判断路径是否位于 agent 沙盒内（agent 自己的电脑，权限全开）"""
+    try:
+        return (
+            os.path.commonpath([os.path.normcase(os.path.abspath(path)), _AGENT_VM_ROOT])
+            == _AGENT_VM_ROOT
+        )
+    except ValueError:  # Windows 下跨盘符等情况
+        return False
 
 
 def get_path_permission(target_path: str) -> str:
@@ -9,6 +24,10 @@ def get_path_permission(target_path: str) -> str:
     核心：基于最长匹配原则，支持绝对路径前缀匹配 和 .gitignore 风格的通配符匹配。
     返回值: 'blocked', 'readonly', 'writable'
     """
+    # 沙盒内是 agent 自己的电脑，无论用户是否配置权限，一律全放行
+    if is_in_agent_vm(target_path):
+        return "writable"
+
     # 统一转换路径大小写（Windows 下忽略大小写，Linux 下保持）
     target_norm = os.path.normcase(os.path.abspath(target_path))
     target_path_obj = Path(target_norm)

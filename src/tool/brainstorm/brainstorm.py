@@ -8,8 +8,11 @@ from src.agent.sub_runner import (
     run_dag_graph,
     ensure_sub_loop,
 )
-from src.utils.config import get_file_config
+from src.utils.config import AGENT_VM_DIR, get_file_config
 from src.utils.path import convert_sandbox_path
+
+# 沙盒根目录（预计算，用于快速放行）
+_AGENT_VM_ROOT = os.path.normcase(os.path.abspath(AGENT_VM_DIR))
 
 
 def _has_write_permission(target_path: str) -> bool:
@@ -19,6 +22,13 @@ def _has_write_permission(target_path: str) -> bool:
     """
     # 1. 路径映射：将沙盒路径转换为宿主机实际路径
     path = convert_sandbox_path(target_path)
+
+    # 沙盒内是 agent 自己的电脑，无论用户是否配置权限，一律全放行
+    try:
+        if os.path.commonpath([os.path.normcase(path), _AGENT_VM_ROOT]) == _AGENT_VM_ROOT:
+            return True
+    except ValueError:  # Windows 下跨盘符等情况
+        pass
 
     target_norm = os.path.normcase(path)
     target_path_obj = Path(target_norm)
