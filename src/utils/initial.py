@@ -28,9 +28,12 @@ CRON_CONFIG_TEMPLATE = """[
   {
     "id": "crn_cdbcc1d4",
     "title": "test-persist",
+    "description": "",
     "trigger_time": "07:30",
     "repeat_rule": "weekly_1",
-    "active": true
+    "active": true,
+    "task_hook": "Agent",
+    "task_inputs": {}
   }
 ]
 """

@@ -54,9 +54,10 @@ def Cron(
                 active_count = sum(1 for c in crons if c.get("active", False))
                 snip = f"⏰ {len(crons)}个 | {active_count}激活"
                 # 将 crons 列表拼成平文本
+                # 兼容旧版/外部写入的记录可能缺少字段，统一用 .get() 兜底
                 cron_text = "\n".join(
                     [
-                        f"- [{c['id']}] {c['title']} | 时间: {c['trigger_time']} | 重复: {c['repeat_rule']} | 激活: {c['active']}\n  描述: {c['description']}"
+                        f"- [{c.get('id')}] {c.get('title')} | 时间: {c.get('trigger_time')} | 重复: {c.get('repeat_rule')} | 激活: {c.get('active')}\n  描述: {c.get('description', '')}"
                         for c in crons
                     ]
                 )

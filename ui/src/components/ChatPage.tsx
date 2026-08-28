@@ -347,6 +347,15 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
     handleRawLinkClick(rawHref);
   };
 
+  // 🌟 主进程拦截的 window.open / target=_blank 链接统一走链接路由（http → 内置浏览器）
+  // 用 ref 穿透闭包，保证监听器始终调用最新版 handleRawLinkClick（其内部依赖 browserTabs 等状态）
+  const rawLinkClickRef = useRef(handleRawLinkClick);
+  rawLinkClickRef.current = handleRawLinkClick;
+  useEffect(() => {
+    const off = (window as any).purrcat?.onOpenUrl?.((url: string) => rawLinkClickRef.current(url));
+    return () => { if (off) off(); };
+  }, []);
+
   const [showSkillSelectModal, setShowSkillSelectModal] = useState(false);
   const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
   const [tempSelectedSkills, setTempSelectedSkills] = useState<string[]>([]);
@@ -1548,10 +1557,10 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
               </div>
 
               <div className="flex items-center gap-4 shrink-0 ml-4">
-                {/* 外部浏览器打开兜底按钮 */}
-                <a href={previewUrl} target="_blank" rel="noreferrer" className="flex items-center gap-2 p-2 px-4 bg-cream border-4 border-ink hover:bg-[#3498DB] hover:text-paper shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] transition-all font-black text-sm active:translate-y-1 active:shadow-none" title="Open in Browser" style={sketchyShape1}>
+                {/* 外部浏览器打开兜底按钮：显式走 shell.openExternal 唤起系统浏览器 */}
+                <button onClick={() => { const full = window.location.origin + previewUrl; if ((window as any).purrcat?.openExternal) (window as any).purrcat.openExternal(full); else window.open(full, '_blank'); }} className="flex items-center gap-2 p-2 px-4 bg-cream border-4 border-ink hover:bg-[#3498DB] hover:text-paper shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] transition-all font-black text-sm active:translate-y-1 active:shadow-none" title="Open in Browser" style={sketchyShape1}>
                   OPEN EXTERNALLY <ExternalLink size={16} strokeWidth={3} />
-                </a>
+                </button>
                 <button onClick={() => setPreviewUrl(null)} className="hover:text-terracotta hover:scale-110 transition-all">
                   <X size={32} strokeWidth={3} />
                 </button>

@@ -189,6 +189,16 @@ function createWindow() {
   mainWindow.webContents.on('did-finish-load', () => {
     try { mainWindow.webContents.setZoomFactor(1); } catch (_) {}
   });
+
+  // 🌟 拦截所有 window.open / target=_blank：Electron 默认会新建一个原生 BrowserWindow 弹窗，
+  // 这里统一拒绝弹窗，把 URL 转发给前端走统一链接路由（http 链接 → 内置浏览器）。
+  // 需要真正唤起系统浏览器的场景应显式调用 shell:openExternal IPC，不走 window.open。
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (url && url !== 'about:blank') {
+      mainWindow.webContents.send('purrcat:open-url', url);
+    }
+    return { action: 'deny' };
+  });
 }
 
 async function pollBackendAndLoad(targetUrl) {
@@ -913,9 +923,10 @@ function escapeHtmlAttr(str) {
   return String(str).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-// 在系统默认浏览器中打开外部 URL（依赖检查警告跳转部署指南等场景）
+// 在系统默认浏览器中打开外部 URL（内置浏览器"外部浏览器"按钮、依赖检查警告跳转部署指南等场景）
+// file:// 用于内置浏览器中打开的本地 HTML/SVG 文件唤起系统浏览器
 ipcMain.handle('shell:openExternal', (_e, url) => {
-  if (typeof url === 'string' && /^https?:\/\//i.test(url)) {
+  if (typeof url === 'string' && /^(https?|file):\/\//i.test(url)) {
     shell.openExternal(url);
   }
 });

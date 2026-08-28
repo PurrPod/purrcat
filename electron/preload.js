@@ -39,6 +39,14 @@ contextBridge.exposeInMainWorld('purrcat', {
   // 用于依赖检查警告跳转部署指南等场景
   openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
 
+  // ===== 监听主进程拦截的 window.open / target=_blank 链接 =====
+  // 主窗口内所有弹窗式打开都被拒绝并转发到这里，由前端统一路由（http → 内置浏览器）
+  onOpenUrl: (callback) => {
+    const handler = (_e, url) => callback(url);
+    ipcRenderer.on('purrcat:open-url', handler);
+    return () => ipcRenderer.removeListener('purrcat:open-url', handler);
+  },
+
   // ===== 窗口控制（主窗口/预览窗口共用，手绘风格按钮调用）=====
   winMinimize: () => ipcRenderer.invoke('win:minimize'),
   winToggleMaximize: () => ipcRenderer.invoke('win:toggle-maximize'),
