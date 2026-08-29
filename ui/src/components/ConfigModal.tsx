@@ -15,8 +15,7 @@ const CONFIG_TABS: Array<{ key: string; label: string; tip: string }> = [
   { key: 'sensor',   label: '传感器',   tip: 'activate_sensor.json · 钩子/定时任务' },
   { key: 'file',     label: '文件白名单', tip: 'file.json · 文件系统可见范围' },
   { key: 'mcp',      label: 'MCP 服务', tip: 'mcp_config.json · MCP 服务端注册' },
-  { key: 'app',      label: '应用白名单', tip: 'app_config.json · 系统可见应用' },
-  { key: 'cron',     label: '定时任务', tip: 'cron.json · Cron 表达式任务' },
+  { key: 'app',     label: '应用白名单', tip: 'app_config.json · 系统可见应用' },
 ];
 
 // ── 模型配置页：三个模型角色 ──
@@ -464,8 +463,8 @@ export default function ConfigModal({ isOpen, onClose }: { isOpen: boolean; onCl
 
           {/* 右侧：编辑区 */}
           <div className="flex-1 overflow-y-auto p-6 md:p-8 flex flex-col gap-4">
-            {/* 顶部：标签说明 + 模式切换 + 保存按钮 */}
-            <div className="flex flex-wrap items-center justify-between gap-3">
+            {/* 顶部：标签说明 + 模式切换 + 保存按钮（右侧留白避开右上角关闭按钮） */}
+            <div className="flex flex-wrap items-center justify-between gap-3 pr-16">
               <div>
                 <div className="text-3xl font-black text-ink flex items-center gap-2" style={{ fontFamily: '"Comic Sans MS", cursive' }}>
                   {currentTabMeta?.label ?? activeTab}
