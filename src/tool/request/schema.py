@@ -4,7 +4,7 @@ REQUEST_TOOL_SCHEMA = {
     "type": "function",
     "function": {
         "name": "Request",
-        "description": "遇到权限拦截或缺失关键能力时，向人类（老板）发起审批请求。提交后等待老板审批，期间可挂起当前任务。技能工厂流程：skill_test 提交后 Trigger 激发测试立即免审运行，后台盲测部分需老板批准后由系统自动运行（本地无 skill_eval 图时自动跳过盲测），测试通过再申请 skill_merge 合并至主库。",
+        "description": "遇到权限拦截或缺失关键能力时，向人类（老板）发起审批请求。提交后等待老板审批，期间可挂起当前任务。技能工厂流程：skill_test 提交后 Trigger 激发测试立即免审运行，后台盲测部分需老板批准后由系统自动运行（本地无 skill_eval 图时自动跳过盲测），测试通过再申请 skill_merge 合并至主库。Sensor 工厂流程：沙盒手测通过后申请 sensor_merge 合并至正式目录并热重启。",
         "parameters": {
             "type": "object",
             "properties": {
@@ -22,11 +22,12 @@ REQUEST_TOOL_SCHEMA = {
                         "skill_test",  # Skill 盲测：批准后由系统自动运行
                         "skill_merge",  # 保留：合并代码仍需审批
                         "mcp_merge",  # 新增：MCP 代码合并
+                        "sensor_merge",  # 新增：Sensor 代码合并
                     ],
                 },
                 "target": {
                     "type": "string",
-                    "description": "目标对象。文件权限填路径；安装类填插件名；申请技能盲测(skill_test)填沙盒工作区前缀 'uuid/技能名'；申请代码合并(skill_merge/mcp_merge)填具体的插件名。",
+                    "description": "目标对象。文件权限填路径；安装类填插件名；申请技能盲测(skill_test)填沙盒工作区前缀 'uuid/技能名'；申请代码合并(skill_merge/mcp_merge/sensor_merge)填具体的插件名。",
                 },
                 "reason": {
                     "type": "string",

@@ -4,7 +4,7 @@ KERNELUPGRADE_TOOL_SCHEMA = {
     "type": "function",
     "function": {
         "name": "KernelUpgrade",
-        "description": "Agent 的核心自我进化工具。用于在隔离沙盒中自由地创建、升级和测试代码模块（目前支持 Skill 和 MCP Server）",
+        "description": "Agent 的核心自我进化工具。用于在隔离沙盒中自由地创建、升级和测试代码模块（目前支持 Skill、MCP Server 和 Sensor 外部感知器）",
         "parameters": {
             "type": "object",
             "properties": {
@@ -16,11 +16,13 @@ KERNELUPGRADE_TOOL_SCHEMA = {
                         "create_mcp",
                         "upgrade_mcp",
                         "test_mcp",
+                        "create_sensor",
+                        "upgrade_sensor",
                     ],
                 },
                 "target": {
                     "type": "string",
-                    "description": "目标对象。当 action 为 'trace_to_skill' 或 'create_mcp' 时，填写具体的名称；当 action 为 'test_mcp' 时，必须严格填写为当前沙盒的路径前缀 'uuid/name'。注意：Skill 盲测不在此工具内，须通过 Request 工具的 skill_test 类型申请。",
+                    "description": "目标对象。当 action 为 'trace_to_skill'、'create_mcp'、'create_sensor'、'upgrade_sensor' 时，填写具体的名称；当 action 为 'test_mcp' 时，必须严格填写为当前沙盒的路径前缀 'uuid/name'。注意：Skill 盲测不在此工具内，须通过 Request 工具的 skill_test 类型申请。",
                 },
             },
             "required": ["action", "target"],

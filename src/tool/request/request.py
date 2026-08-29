@@ -60,6 +60,7 @@ def Request(request_type: str, target: str, reason: str, **kwargs) -> str:
             "skill_test",  # Skill 盲测：批准后由系统自动运行
             "skill_merge",  # 保留：合并代码仍需审批
             "mcp_merge",  # 新增：MCP 代码合并
+            "sensor_merge",  # 新增：Sensor 代码合并
         ]
 
         if request_type not in valid_types:

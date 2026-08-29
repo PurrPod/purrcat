@@ -250,6 +250,34 @@ def resolve_request(
                         feedback = (
                             f"合并失败：未找到 {target} 对应的 MCP 工厂沙盒目录。"
                         )
+                # ---- Sensor 合并逻辑 ----
+                elif req_type == "sensor_merge":
+                    import glob
+                    from src.evolve import sensor_request_handle
+
+                    # sensor 沙盒结构：sensor_workplace/<uuid>/<name>.py（单文件而非目录）
+                    paths = glob.glob(
+                        os.path.join(AGENT_VM_DIR, "sensor_workplace", "*", target)
+                    )
+                    py_path = os.path.join(
+                        AGENT_VM_DIR, "sensor_workplace", "*", f"{target}.py"
+                    )
+                    if not paths:
+                        paths = glob.glob(py_path)
+                    if paths:
+                        workplace_root = (
+                            os.path.dirname(paths[0])
+                            if paths[0].endswith(".py")
+                            else paths[0]
+                        )
+                        sys_note = sensor_request_handle(
+                            workplace_root, target, is_approved=True
+                        )
+                        feedback = f"{sys_note}\n(老板批注: {feedback})"
+                    else:
+                        feedback = (
+                            f"合并失败：未找到 {target} 对应的 Sensor 工厂沙盒文件。"
+                        )
             except Exception as e:
                 approved = False
                 feedback = f"老板已同意，但执行失败: {str(e)}。{feedback}"
@@ -258,7 +286,7 @@ def resolve_request(
         elif not approved and not ignore:
             if req_type == "skill_test":
                 feedback = f"老板拒绝了测试申请，请根据以下原因调整沙盒代码或测试用例后再次申请：\n【拒绝理由】: {feedback}"
-            elif req_type in ["skill_merge", "mcp_merge"]:
+            elif req_type in ["skill_merge", "mcp_merge", "sensor_merge"]:
                 # 让Agent收到拒绝的理由并继续改进
                 feedback = f"老板拒绝了代码合并请求，请在沙盒工厂中根据以下原因继续修复：\n【拒绝理由】: {feedback}"
 
@@ -270,6 +298,7 @@ def resolve_request(
                 "skill_test",
                 "skill_merge",
                 "mcp_merge",
+                "sensor_merge",
             ]:
                 callback_msg += (
                     "\n系统已为你自动下发权限或安装插件，请直接继续执行被挂起的任务。"
