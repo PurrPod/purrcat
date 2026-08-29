@@ -2,12 +2,16 @@ import json
 import subprocess
 import threading
 import os
+import re
+import base64
+import mimetypes
+import time
 import urllib.request
 import urllib.error
 import atexit
 import sys
-from .gateway import get_gateway, RemoteSensorProxy
-from src.utils.config import get_sensor_config, SENSOR_EXTENSION_DIR
+from .gateway import get_gateway, RemoteSensorProxy, MAX_SENSOR_FILE_BYTES
+from src.utils.config import get_sensor_config, SENSOR_EXTENSION_DIR, AGENT_VM_DIR
 
 
 class SensorManager:
@@ -92,7 +96,27 @@ class SensorManager:
             self._watchdog_started = True
             print("🛡️ [Manager] 进程守护线程已启动")
 
+    def _kill_process_tree(self, process):
+        """整树击杀 sensor 进程。Windows 下 terminate() 只杀 uv 包装进程，
+        会留下 sensor python 孤儿——孤儿 bot 会继续重连外部服务（如飞书 WS）
+        抢占事件，且其 stdout 已无人监听，事件会被静默吞掉"""
+        try:
+            if os.name == "nt":
+                subprocess.run(
+                    ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                    capture_output=True,
+                    creationflags=subprocess.CREATE_NO_WINDOW,
+                )
+            else:
+                process.terminate()
+        except Exception:
+            pass
+
     def _start_sensor(self, name: str, script_path: str, cfg: dict):
+        # 防御：同名 sensor 已在运行时先整树击杀，避免双实例抢占外部连接
+        old = self.processes.get(name)
+        if old and old.poll() is None:
+            self._kill_process_tree(old)
         env = os.environ.copy()
         env.update(cfg.get("env", {}))
         env["PYTHONIOENCODING"] = "utf-8"
@@ -119,7 +143,12 @@ class SensorManager:
             )
             self.processes[name] = process
 
-            proxy = RemoteSensorProxy(name, cfg.get("capabilities", {}), process.stdin)
+            proxy = RemoteSensorProxy(
+                name,
+                cfg.get("capabilities", {}),
+                process.stdin,
+                tool_detail=cfg.get("tool_detail", False),
+            )
             get_gateway().register(proxy)
 
             threading.Thread(
@@ -137,6 +166,46 @@ class SensorManager:
         except Exception as e:
             print(f"❌ [Manager] 启动 {name} 失败: {e}")
 
+    def _save_inbound_file(self, sensor_name: str, params: dict) -> str | None:
+        """处理 sensor 上报的 file 类 observe：base64 解码后落盘到
+        AGENT_VM_DIR/sensor/files/<sensor_name>/，返回推给 Agent 的提示文本"""
+        try:
+            data = base64.b64decode(params.get("content_b64") or "")
+        except Exception as e:
+            print(f"❌ [Manager] {sensor_name} 上报文件 base64 解码失败: {e}")
+            return None
+        if not data:
+            return None
+        if len(data) > MAX_SENSOR_FILE_BYTES:
+            print(
+                f"⚠️ [Manager] {sensor_name} 上报文件超过 "
+                f"{MAX_SENSOR_FILE_BYTES // 1024 // 1024}MB 上限，已丢弃"
+            )
+            return None
+
+        # 文件名只保留 basename 并清洗 Windows 非法字符，防路径穿越
+        raw_name = str(params.get("name") or "file")
+        file_name = re.sub(r'[<>:"/\\|?*]', "_", os.path.basename(raw_name)).strip("._") or "file"
+
+        mime = params.get("mime") or "application/octet-stream"
+        # 无扩展名时按 mime 补一个，方便 Agent 和前端识别
+        if not os.path.splitext(file_name)[1]:
+            ext = mimetypes.guess_extension(mime)
+            if ext:
+                file_name += ext
+
+        target_dir = os.path.join(AGENT_VM_DIR, "sensor", "files", sensor_name)
+        os.makedirs(target_dir, exist_ok=True)
+        target = os.path.join(target_dir, f"{int(time.time() * 1000)}_{file_name}")
+        with open(target, "wb") as f:
+            f.write(data)
+
+        size = len(data)
+        size_h = f"{size / 1024 / 1024:.1f}MB" if size >= 1024 * 1024 else f"{size / 1024:.0f}KB"
+        sandbox_path = f"/agent_vm/sensor/files/{sensor_name}/{os.path.basename(target)}"
+        print(f"📎 [Manager] {sensor_name} 上报文件已落盘: {target} ({size_h})")
+        return f"[{sensor_name} Sensor 收到文件] {sandbox_path} ({mime}, {size_h})"
+
     def _listen_to_stdout(self, name: str, process: subprocess.Popen):
         gateway = get_gateway()
         for line in iter(process.stdout.readline, ""):
@@ -147,7 +216,11 @@ class SensorManager:
                 method = msg.get("method")
 
                 if method == "observe":
-                    content = msg.get("params", {}).get("content")
+                    params = msg.get("params", {})
+                    if params.get("type") == "file":
+                        content = self._save_inbound_file(name, params)
+                    else:
+                        content = params.get("content")
                     if content:
                         gateway.push(name, content)
                 elif method == "log":
@@ -211,10 +284,7 @@ class SensorManager:
 
     def stop_all(self):
         for name, process in self.processes.items():
-            try:
-                process.terminate()
-            except Exception:
-                pass
+            self._kill_process_tree(process)
 
         self.processes.clear()
 
