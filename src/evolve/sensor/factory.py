@@ -141,7 +141,9 @@ def _write_goal_and_guide(workplace_root: str, sensor_name: str, goal: str):
         f.write(generate_sensor_guide(sensor_name, goal))
 
 
-def sensor_factory_init(sensor_name: str, is_upgrade: bool, goal: str = "") -> tuple[str, str]:
+def sensor_factory_init(
+    sensor_name: str, is_upgrade: bool, goal: str = ""
+) -> tuple[str, str]:
     """初始化 Sensor 进化沙盒，返回 (系统提示, workplace_id)"""
     short_uuid = uuid.uuid4().hex[:5]
     workplace_root = os.path.join(AGENT_VM_DIR, "sensor_workplace", short_uuid)
@@ -163,7 +165,8 @@ def sensor_factory_init(sensor_name: str, is_upgrade: bool, goal: str = "") -> t
         config = {
             "name": sensor_name,
             "env": cfg.get("env") or {"MY_TOKEN": ""},
-            "capabilities": cfg.get("capabilities") or {"observe": True, "express": True},
+            "capabilities": cfg.get("capabilities")
+            or {"observe": True, "express": True},
             "tool_detail": cfg.get("tool_detail", False),
         }
         with open(
@@ -210,12 +213,18 @@ def _hot_restart_sensors():
             manager.load_and_start_all()
             print("✅ [Sensor工厂] 合并后热重启完成")
         except Exception as e:
-            print(f"⚠️ [Sensor工厂] 合并后热重启失败（不影响代码合并，可手动 reload）: {e}")
+            print(
+                f"⚠️ [Sensor工厂] 合并后热重启失败（不影响代码合并，可手动 reload）: {e}"
+            )
 
-    threading.Thread(target=_worker, daemon=True, name="Sensor-Merge-HotRestart").start()
+    threading.Thread(
+        target=_worker, daemon=True, name="Sensor-Merge-HotRestart"
+    ).start()
 
 
-def sensor_request_handle(workplace_root: str, sensor_name: str, is_approved: bool) -> str:
+def sensor_request_handle(
+    workplace_root: str, sensor_name: str, is_approved: bool
+) -> str:
     """处理 Sensor 合并请求：拷贝正式目录 + 写 activate_sensor.json + 热重启"""
     if not is_approved:
         return f"人类拒绝了 {sensor_name} 的合并请求，已保留当前工作区供调整。"

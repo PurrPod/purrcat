@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0-beta.2]
+
+Bug-fix and stability release.
+
+### Fixed
+
+- MCP sessions are no longer recycled mid-task: `callmcp` now runs in-process instead of a subprocess, so long-lived MCP servers (e.g. Chrome via chrome-devtools) stay alive across tool calls. Anti-hang protection via a configurable timeout on tool calls.
+- Terminal failed to connect in some scenarios.
+- Opening a page in the external browser misbehaved.
+- MCP config template produced invalid `env` entries.
+- UI refresh error after merging MCP market installs.
+
+### Changed
+
+- The agent now has full access to files inside the sandbox.
+
+### Docs
+
+- Requirements slimmed down (Docker core-only), GOAL.md mechanism and PARADIGM added to the architecture overview.
+
 ## [1.0.0-beta.1]
 
 First public beta release.

@@ -564,7 +564,8 @@ class Agent:
             from src.sensor import send_to_sensors
 
             send_to_sensors(
-                f"🔧{target_tool_name}({args_str[:50]}...)\n\n---\n\n{snip}"
+                f"🔧{target_tool_name}({args_str[:50]}...)\n\n---\n\n{snip}",
+                tool_detail=True,
             )
             self._append_history(
                 {

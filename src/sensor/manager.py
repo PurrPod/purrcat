@@ -185,7 +185,10 @@ class SensorManager:
 
         # 文件名只保留 basename 并清洗 Windows 非法字符，防路径穿越
         raw_name = str(params.get("name") or "file")
-        file_name = re.sub(r'[<>:"/\\|?*]', "_", os.path.basename(raw_name)).strip("._") or "file"
+        file_name = (
+            re.sub(r'[<>:"/\\|?*]', "_", os.path.basename(raw_name)).strip("._")
+            or "file"
+        )
 
         mime = params.get("mime") or "application/octet-stream"
         # 无扩展名时按 mime 补一个，方便 Agent 和前端识别
@@ -201,8 +204,14 @@ class SensorManager:
             f.write(data)
 
         size = len(data)
-        size_h = f"{size / 1024 / 1024:.1f}MB" if size >= 1024 * 1024 else f"{size / 1024:.0f}KB"
-        sandbox_path = f"/agent_vm/sensor/files/{sensor_name}/{os.path.basename(target)}"
+        size_h = (
+            f"{size / 1024 / 1024:.1f}MB"
+            if size >= 1024 * 1024
+            else f"{size / 1024:.0f}KB"
+        )
+        sandbox_path = (
+            f"/agent_vm/sensor/files/{sensor_name}/{os.path.basename(target)}"
+        )
         print(f"📎 [Manager] {sensor_name} 上报文件已落盘: {target} ({size_h})")
         return f"[{sensor_name} Sensor 收到文件] {sandbox_path} ({mime}, {size_h})"
 
