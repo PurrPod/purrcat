@@ -273,66 +273,67 @@ jobs:
           cd release
           gh release upload "$TAG" "PurrCat-${{ inputs.version }}-arm64.dmg" --clobber
 
-  build-linux:
-    name: Build Linux Desktop (x64)
-    needs: [publish]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v6
-        with:
-          ref: v${{ inputs.version }}
+  # 暂不打包 Linux，需要时取消注释即可
+  # build-linux:
+  #   name: Build Linux Desktop (x64)
+  #   needs: [publish]
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: Checkout Code
+  #       uses: actions/checkout@v6
+  #       with:
+  #         ref: v${{ inputs.version }}
 
-      - name: Install System Dependencies (pyaudio needs portaudio)
-        run: sudo apt-get update && sudo apt-get install -y portaudio19-dev
+  #     - name: Install System Dependencies (pyaudio needs portaudio)
+  #       run: sudo apt-get update && sudo apt-get install -y portaudio19-dev
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
+  #     - name: Setup Node.js
+  #       uses: actions/setup-node@v4
+  #       with:
+  #         node-version: 20
 
-      - name: Setup uv
-        uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
+  #     - name: Setup uv
+  #       uses: astral-sh/setup-uv@v5
+  #       with:
+  #         enable-cache: true
 
-      - name: Install Python Dependencies
-        run: uv sync --python 3.12
+  #     - name: Install Python Dependencies
+  #       run: uv sync --python 3.12
 
-      - name: Install Node Dependencies
-        run: |
-          npm ci
-          npm ci --prefix ui
+  #     - name: Install Node Dependencies
+  #       run: |
+  #         npm ci
+  #         npm ci --prefix ui
 
-      - name: Set Version
-        env:
-          VERSION: ${{ inputs.version }}
-        run: npm version $VERSION --no-git-tag-version
+  #     - name: Set Version
+  #       env:
+  #         VERSION: ${{ inputs.version }}
+  #       run: npm version $VERSION --no-git-tag-version
 
-      - name: Build UI
-        run: npm run build:ui
+  #     - name: Build UI
+  #       run: npm run build:ui
 
-      - name: Build Backend (PyInstaller)
-        run: uv run pyinstaller main.spec --noconfirm
+  #     - name: Build Backend (PyInstaller)
+  #       run: uv run pyinstaller main.spec --noconfirm
 
-      - name: Build Desktop (electron-builder)
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: npx electron-builder --linux --publish never
+  #     - name: Build Desktop (electron-builder)
+  #       env:
+  #         GH_TOKEN: ${{ github.token }}
+  #       run: npx electron-builder --linux --publish never
 
-      - name: Upload Release Assets
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          TAG: v${{ inputs.version }}
-        run: |
-          cd release
-          ls -la
-          # electron-builder 的 ${arch} 在 Linux tar.gz/AppImage 产物上是 x64，
-          # 不是 x86_64（那是 rpm 的命名，deb 是 amd64）——不要硬编码，用 glob 兜底
-          shopt -s nullglob
-          artifacts=(PurrCat-*.tar.gz)
-          if [ ${#artifacts[@]} -eq 0 ]; then
-            echo "::error::No PurrCat-*.tar.gz found in release/"
-            exit 1
-          fi
-          gh release upload "$TAG" "${artifacts[@]}" --clobber
+  #     - name: Upload Release Assets
+  #       env:
+  #         GITHUB_TOKEN: ${{ github.token }}
+  #         TAG: v${{ inputs.version }}
+  #       run: |
+  #         cd release
+  #         ls -la
+  #         # electron-builder 的 ${arch} 在 Linux tar.gz/AppImage 产物上是 x64，
+  #         # 不是 x86_64（那是 rpm 的命名，deb 是 amd64）——不要硬编码，用 glob 兜底
+  #         shopt -s nullglob
+  #         artifacts=(PurrCat-*.tar.gz)
+  #         if [ ${#artifacts[@]} -eq 0 ]; then
+  #           echo "::error::No PurrCat-*.tar.gz found in release/"
+  #           exit 1
+  #         fi
+  #         gh release upload "$TAG" "${artifacts[@]}" --clobber
