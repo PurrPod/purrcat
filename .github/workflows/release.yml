@@ -154,15 +154,6 @@ jobs:
           path: ui/dist/
           retention-days: 7
 
-      - name: Upload Release Asset
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          TAG: v${{ inputs.version }}
-        run: |
-          cd ui/dist
-          zip -r purrcat-ui-${{ inputs.version }}.zip .
-          gh release upload "$TAG" purrcat-ui-${{ inputs.version }}.zip --clobber
-
   build-windows:
     name: Build Windows Desktop
     needs: [publish]
