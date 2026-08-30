@@ -21,6 +21,17 @@ from src.utils.initial import ensure_initialized
 
 ensure_initialized()
 
+# 🌟 静态资源 MIME 修正：Python 的 mimetypes 在 Windows 上读注册表猜类型，
+# 普通用户机器上 .js 常被注册为 text/plain（Windows 默认值），Starlette 便会以
+# text/plain 返回前端 JS 包 → Chromium 拒绝执行模块脚本 → 首屏白屏（只剩 CSS
+# 渲染的顶部网点条）。开发者机器因装过开发工具注册表正确，故无法本地复现。
+# 必须在 StaticFiles 挂载（guess_type 调用）前强制覆盖。
+import mimetypes as _mimetypes
+
+_mimetypes.add_type("text/javascript", ".js")
+_mimetypes.add_type("text/javascript", ".mjs")
+_mimetypes.add_type("text/css", ".css")
+
 
 def _setup_file_logging():
     """🌟 stdout/stderr 同步落盘到 ~/.purrcat/logs/backend.log。
