@@ -8,6 +8,71 @@ from src.harness.node.base import BaseNode, _format_result
 from src.harness.utils.llm_helper import call_llm
 from src.harness.utils.tool_helper import execute_global_tool, extract_tool_calling
 
+from json_repair import repair_json
+
+
+def _loads_json_tolerant(s: str):
+    """多重容错解析：标准解析 -> 容忍裸控制字符 -> json_repair 修复器（主 Agent 同款）"""
+    try:
+        return json.loads(s)
+    except json.JSONDecodeError:
+        pass
+    try:
+        return json.loads(s, strict=False)
+    except json.JSONDecodeError:
+        pass
+    try:
+        return repair_json(s, return_objects=True)
+    except Exception:
+        return None
+
+
+def _parse_tool_arguments(raw) -> tuple:
+    """
+    🌟 解析模型工具参数，返回 (arguments_dict, error_message_or_None)
+    与主 Agent (src/agent/agent.py) 的容错能力对齐，并额外处理：
+    - 部分网关直接返回已解析的 dict
+    - 双重编码：模型把整个 JSON 当字符串输出（"'{\\"summary\\": ...}'"）
+    - 多余包装：模型把参数包在 {"arguments": ...} 下（值可能是 dict 或再编码的字符串）
+    """
+    if isinstance(raw, dict):
+        return raw, None
+
+    if not raw or not isinstance(raw, str):
+        return {}, None
+
+    parsed = _loads_json_tolerant(raw)
+
+    # 双重编码：解析结果是字符串，说明模型把 JSON 整体加了引号，再解一层
+    if isinstance(parsed, str):
+        inner = _loads_json_tolerant(parsed)
+        if isinstance(inner, dict):
+            parsed = inner
+
+    if not isinstance(parsed, dict):
+        return {}, (
+            f"解析结果不是 JSON 对象 ({type(parsed).__name__}) | 原文片段(前200字符): {raw[:200]}"
+        )
+
+    # 多余包装：唯一的 "arguments" 键（值为 dict 或字符串化的 JSON）一律解包，最多剥三层
+    for _ in range(3):
+        if set(parsed.keys()) == {"arguments"}:
+            inner = parsed["arguments"]
+            if isinstance(inner, dict):
+                parsed = inner
+            elif isinstance(inner, str):
+                inner_parsed = _loads_json_tolerant(inner)
+                if isinstance(inner_parsed, dict):
+                    parsed = inner_parsed
+                else:
+                    break
+            else:
+                break
+        else:
+            break
+
+    return parsed, None
+
 
 class AgentNode(BaseNode):
     """
@@ -95,8 +160,17 @@ class AgentNode(BaseNode):
                 with open(memory_path, "r", encoding="utf-8") as f:
                     for line in f:
                         line = line.strip()
-                        if line:
+                        if not line:
+                            continue
+                        try:
                             messages.append(json.loads(line))
+                        except json.JSONDecodeError:
+                            # 🌟 修复：并发追加可能产生残行，跳过而不是让节点每次重启都崩溃
+                            self.log(
+                                context,
+                                "WARNING",
+                                f"⚠️ [记忆残行] 跳过无法解析的行: {line[:80]}",
+                            )
             except Exception as e:
                 self.log(context, "WARNING", f"⚠️ [记忆加载失败] {e}")
 
@@ -162,14 +236,8 @@ class AgentNode(BaseNode):
         # 🌟 获取当前节点专属的记忆文件路径
         mem_path = self.get_memory_file_path(context)
 
-        # 1. 从自己的专属文件读取历史记忆 (按行读，速度极快)
-        messages = []
-        if os.path.exists(mem_path):
-            with open(mem_path, "r", encoding="utf-8") as f:
-                for line in f:
-                    line = line.strip()
-                    if line:
-                        messages.append(json.loads(line))
+        # 1. 从自己的专属文件读取历史记忆 (复用带容错的加载器，防止残行导致节点永久崩溃)
+        messages = self.load_memory_from_file(context)
 
         # 2. 如果上游传来了新的 messages，合并进来并立刻存盘
         new_upstream_msgs = inputs.get("messages", [])
@@ -183,7 +251,8 @@ class AgentNode(BaseNode):
         # 3. 处理强制推送的指令（通过 node_memory 传递）
         my_memory = context.node_memory.setdefault(self.node_id, {})
         pending_push = my_memory.pop("force_push", [])
-        if isinstance(pending_push, list) and pending_push:
+        has_manual_push = isinstance(pending_push, list) and bool(pending_push)
+        if has_manual_push:
             force_push_msgs = [
                 {"role": "user", "content": f"[人工指令] {msg}"} for msg in pending_push
             ]
@@ -192,6 +261,10 @@ class AgentNode(BaseNode):
             await asyncio.to_thread(
                 self.append_memory_to_file, context, force_push_msgs
             )
+
+        # 4. 🌟 历史消毒：修复崩溃/强杀留下的悬空 tool_calls，防止回放残缺历史
+        #    导致网关 400 或模型输出畸形参数
+        messages = self._sanitize_messages(messages)
 
         # ========================================================
         # 🌟 新增：注入 task_done 工具使用说明与格式强校验文案 (User角色)
@@ -217,7 +290,8 @@ class AgentNode(BaseNode):
                 has_injected = True
                 break
 
-        if not has_injected:
+        # 🌟 人工指令注入时只注入指令本身，不再附加"任务完结要求"文案
+        if not has_injected and not has_manual_push:
             # 修改点：这里将 role 从 system 改为了 user
             user_msg = {"role": "user", "content": task_done_prompt}
             messages.append(user_msg)
@@ -300,6 +374,15 @@ class AgentNode(BaseNode):
             )
             response, messages = await call_llm(context.model, messages, tools)
             assistant_msg = response.choices[0].message
+
+            # 🌟 截断预警：输出被长度上限切断时，工具参数 JSON 必然残缺
+            finish_reason = getattr(response.choices[0], "finish_reason", None)
+            if finish_reason == "length":
+                self.log(
+                    context,
+                    "WARNING",
+                    "⚠️ [输出截断] 模型输出因长度上限被截断，本轮工具参数可能不完整",
+                )
 
             # 🌟 新增：核心 Token 收集，安全累加到 Task 的统计信息中
             if hasattr(response, "usage") and response.usage:
@@ -406,14 +489,31 @@ class AgentNode(BaseNode):
 
         for tc in tool_calls:
             original_tool_name = tc.function.name
-            arguments_str = tc.function.arguments
-            try:
-                arguments = json.loads(arguments_str) if arguments_str else {}
-                # 💡 类型防御：防止解析为 None 或 List
-                if not isinstance(arguments, dict):
-                    arguments = {}
-            except json.JSONDecodeError:
-                arguments = {}
+
+            # 🌟 核心修复：与主 Agent 对齐的多重容错解析（json.loads -> strict=False -> json_repair）
+            arguments, args_parse_error = _parse_tool_arguments(tc.function.arguments)
+
+            # 🌟 修复：解析失败必须把真实原因告知模型，而不是伪装成"缺字段"误导它反复重试
+            if args_parse_error:
+                self.log(
+                    context,
+                    "ERROR",
+                    f"❌ [参数JSON解析失败] {original_tool_name}: {args_parse_error}",
+                )
+                tool_messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tc.id,
+                        "name": original_tool_name,
+                        "content": _format_result(
+                            {
+                                "error": f"❌ 工具 {original_tool_name} 的 arguments 无法解析为 JSON 对象：{args_parse_error}",
+                                "instruction": "请重新调用该工具：arguments 必须是单个合法的 JSON 对象（不要输出字符串包裹的 JSON，不要额外包一层 arguments 键）；字符串内的换行写成 \\n；若参数过长被截断，请精简参数内容后重试。",
+                            }
+                        ),
+                    }
+                )
+                continue
 
             self.log(context, "SYSTEM", f"  🔧 [执行工具] {original_tool_name}")
             args_preview = json.dumps(arguments, ensure_ascii=False)[:100]
@@ -428,12 +528,11 @@ class AgentNode(BaseNode):
             if original_tool_name == "task_done":
                 summary = arguments.get("summary", {})
 
-                # 🌟 新增容错：如果大模型外层包了引号变成了字符串，先尝试解析它
+                # 🌟 容错：summary 被当成 JSON 字符串双重编码，用容错解析器再解一层
                 if isinstance(summary, str):
-                    try:
-                        summary = json.loads(summary)
-                    except json.JSONDecodeError:
-                        pass  # 如果解析失败，再交给下面的 raw 兜底
+                    parsed_summary, _ = _parse_tool_arguments(summary)
+                    if isinstance(parsed_summary, dict) and parsed_summary:
+                        summary = parsed_summary
 
                 # 如果此时依然不是 dict，再做兜底
                 if not isinstance(summary, dict):
@@ -456,7 +555,17 @@ class AgentNode(BaseNode):
                         if k not in summary
                     ]
                     if missing_keys:
-                        error_msg = f"❌ [格式错误] 你尝试完成任务，但 summary 缺失了系统强制要求的关键信息：{', '.join(missing_keys)}。"
+                        # 🌟 报错文案保持稳定并附带可照抄的模板：
+                        # 措辞频繁变化会诱导模型对报错做格式元推理，越改越错
+                        template = {
+                            k: f"<{desc}>" for k, desc in self.task_done_info.items()
+                        }
+                        error_msg = (
+                            "❌ [格式错误] task_done 被拒：summary 缺失关键字段："
+                            + ", ".join(missing_keys)
+                            + "。请严格按以下模板重新调用 task_done："
+                            + json.dumps({"summary": template}, ensure_ascii=False)
+                        )
                         self.log(
                             context,
                             "WARNING",
@@ -465,7 +574,6 @@ class AgentNode(BaseNode):
                         final_content = _format_result(
                             {
                                 "error": error_msg,
-                                "instruction": "请重新调用 task_done 工具，并确保 summary 参数严格包含上述提到的所有键值对！",
                                 "required_schema": self.task_done_info,
                             }
                         )
@@ -550,11 +658,68 @@ class AgentNode(BaseNode):
         return tool_messages, is_task_done, is_yield
 
     def _extract_summary(self, tool_calls, fallback_content):
+        """只采纳最后一个匹配成功（含全部校验字段）的 task_done 的 summary"""
         summary = fallback_content or "任务完成"
         for tc in tool_calls:
-            if tc.function.name == "task_done":
-                try:
-                    summary = json.loads(tc.function.arguments).get("summary", summary)
-                except Exception:
-                    pass
+            if tc.function.name != "task_done":
+                continue
+            args, _ = _parse_tool_arguments(tc.function.arguments)
+            if not isinstance(args, dict):
+                continue
+            candidate = args.get("summary")
+            if isinstance(candidate, str):
+                parsed_candidate, _ = _parse_tool_arguments(candidate)
+                if isinstance(parsed_candidate, dict) and parsed_candidate:
+                    candidate = parsed_candidate
+            # 只有真正包含全部校验字段（= 匹配成功）才覆盖，失败的尝试不影响结果
+            if isinstance(candidate, dict) and candidate:
+                if not self.task_done_info or all(
+                    k in candidate for k in self.task_done_info
+                ):
+                    summary = candidate
         return summary
+
+    @staticmethod
+    def _sanitize_messages(messages: List[Dict]) -> List[Dict]:
+        """
+        🌟 历史消毒：修复崩溃/强杀留下的悬空 tool_calls
+        assistant 发起了工具调用但没有配对的 tool 响应时，直接回放会导致：
+        - 严格网关直接 400
+        - 模型协议混乱，后续输出畸形参数（双重编码/多余包装）
+        参照项目既有经验：被中断的工具调用必须补一条合成 tool 消息。
+        """
+        if not messages:
+            return messages
+
+        result = []
+        pending = []  # 尚未等到响应的 (tool_call_id, name)
+
+        def _flush_pending():
+            for tc_id, name in pending:
+                result.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tc_id,
+                        "name": name or "unknown",
+                        "content": "[系统提示] 该工具调用因进程中断未留下结果，请忽略并继续当前任务。",
+                    }
+                )
+            pending.clear()
+
+        for msg in messages:
+            if msg.get("role") == "assistant" and msg.get("tool_calls"):
+                _flush_pending()
+                pending = [
+                    (t.get("id"), (t.get("function") or {}).get("name", ""))
+                    for t in msg["tool_calls"]
+                ]
+                result.append(msg)
+            elif msg.get("role") == "tool":
+                pending = [p for p in pending if p[0] != msg.get("tool_call_id")]
+                result.append(msg)
+            else:
+                _flush_pending()
+                result.append(msg)
+
+        _flush_pending()
+        return result

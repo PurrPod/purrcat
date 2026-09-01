@@ -88,60 +88,65 @@ class InstallSkillReq(BaseModel):
     url: str
 
 
+def _download_skill_from_github(url: str) -> str:
+    """根据 GitHub URL 下载第三方 Skill 到本地 SKILL_DIR，返回 skill 名"""
+    # 1. 解析 GitHub URL (支持子目录或仓库根目录两种形式)
+    match = re.match(
+        r"https?://github\.com/([^/]+)/([^/]+)/tree/([^/]+)(?:/(.*))?", url
+    )
+    if not match:
+        raise HTTPException(
+            status_code=400,
+            detail="URL格式错误！正确格式示例: https://github.com/owner/repo/tree/branch/path/to/skill",
+        )
+
+    owner, repo, branch, path = match.groups()
+    path = (path or "").strip("/")
+    # 仓库根目录即 skill 时，用仓库名作为 skill 名
+    skill_name = os.path.basename(path) if path else repo
+
+    # 2. 定位 skills 文件夹
+    dest_dir = os.path.join(SKILL_DIR, skill_name)
+    zip_url = f"https://github.com/{owner}/{repo}/archive/refs/heads/{branch}.zip"
+
+    # 3. 内存下载并仅解压目标子文件夹
+    response = urllib.request.urlopen(zip_url)
+    zip_data = response.read()
+
+    with zipfile.ZipFile(io.BytesIO(zip_data)) as z:
+        root_folder = z.namelist()[0].split("/")[0]
+        target_prefix = f"{root_folder}/{path}".rstrip("/") + "/"
+
+        extracted_count = 0
+        for file_info in z.infolist():
+            if file_info.filename.startswith(target_prefix):
+                relative_path = file_info.filename[len(target_prefix) :]
+                if not relative_path:
+                    continue
+
+                local_path = os.path.join(dest_dir, relative_path)
+                if file_info.is_dir():
+                    os.makedirs(local_path, exist_ok=True)
+                else:
+                    os.makedirs(os.path.dirname(local_path), exist_ok=True)
+                    with open(local_path, "wb") as f:
+                        f.write(z.read(file_info.filename))
+                extracted_count += 1
+
+        if extracted_count == 0:
+            raise HTTPException(
+                status_code=404, detail=f"仓库中找不到文件夹 '{path}'"
+            )
+    return skill_name
+
+
 @router.post("/skills/install")
 def install_skill_api(req: InstallSkillReq):
     """根据 GitHub URL 下载第三方 Skill 并热更新内存"""
     try:
-        url = req.url
-        # 1. 解析 GitHub URL (支持子目录或仓库根目录两种形式)
-        match = re.match(
-            r"https?://github\.com/([^/]+)/([^/]+)/tree/([^/]+)(?:/(.*))?", url
-        )
-        if not match:
-            raise HTTPException(
-                status_code=400,
-                detail="URL格式错误！正确格式示例: https://github.com/owner/repo/tree/branch/path/to/skill",
-            )
+        skill_name = _download_skill_from_github(req.url)
 
-        owner, repo, branch, path = match.groups()
-        path = (path or "").strip("/")
-        # 仓库根目录即 skill 时，用仓库名作为 skill 名
-        skill_name = os.path.basename(path) if path else repo
-
-        # 2. 定位 skills 文件夹
-        dest_dir = os.path.join(SKILL_DIR, skill_name)
-        zip_url = f"https://github.com/{owner}/{repo}/archive/refs/heads/{branch}.zip"
-
-        # 3. 内存下载并仅解压目标子文件夹
-        response = urllib.request.urlopen(zip_url)
-        zip_data = response.read()
-
-        with zipfile.ZipFile(io.BytesIO(zip_data)) as z:
-            root_folder = z.namelist()[0].split("/")[0]
-            target_prefix = f"{root_folder}/{path}".rstrip("/") + "/"
-
-            extracted_count = 0
-            for file_info in z.infolist():
-                if file_info.filename.startswith(target_prefix):
-                    relative_path = file_info.filename[len(target_prefix) :]
-                    if not relative_path:
-                        continue
-
-                    local_path = os.path.join(dest_dir, relative_path)
-                    if file_info.is_dir():
-                        os.makedirs(local_path, exist_ok=True)
-                    else:
-                        os.makedirs(os.path.dirname(local_path), exist_ok=True)
-                        with open(local_path, "wb") as f:
-                            f.write(z.read(file_info.filename))
-                    extracted_count += 1
-
-            if extracted_count == 0:
-                raise HTTPException(
-                    status_code=404, detail=f"仓库中找不到文件夹 '{path}'"
-                )
-
-        # 4. 解压成功后，触发 searcher 的内存热更新
+        # 解压成功后，触发 searcher 的内存热更新
         searcher = SkillSearcher()
         searcher.reload_index()
 
@@ -702,11 +707,134 @@ class InstallGraphReq(BaseModel):
     name: str
 
 
+# ==========================================
+# 11. Graph 依赖自动安装：安装 graph 前补齐其 dependencies 声明的 mcp/skill
+# ==========================================
+MCP_REGISTRY_URL = "https://raw.githubusercontent.com/PurrPod/mcps/main/registry.json"
+SKILL_REGISTRY_URL = (
+    "https://raw.githubusercontent.com/PurrPod/skills/main/registry.json"
+)
+
+
+def _ensure_graph_mcp_deps(mcp_names) -> list:
+    """本地缺失的 MCP 依赖从市场安装；市场也缺失时跳过。返回处理说明列表"""
+    notes = []
+    names = [str(n).strip() for n in (mcp_names or []) if str(n).strip()]
+    if not names:
+        return notes
+
+    configured = set(get_mcp_config().get("mcpServers", {}).keys())
+    missing = [n for n in names if n not in configured]
+    if not missing:
+        return notes
+
+    data = _http_get_json(MCP_REGISTRY_URL)
+    raw = data.get("mcps", []) if isinstance(data, dict) else data
+    entries = list(raw.values()) if isinstance(raw, dict) else (raw or [])
+
+    merged_servers = {}
+    repo_server_pairs = []  # (repo, [server names])
+    for name in missing:
+        target = None
+        for e in entries:
+            if not isinstance(e, dict):
+                continue
+            servers = e.get("mcpServers") or {}
+            if str(e.get("name", "")).lower() == name.lower() or any(
+                k.lower() == name.lower() for k in servers
+            ):
+                target = e
+                break
+        if not target or not target.get("mcpServers"):
+            notes.append(f"MCP '{name}' 本地与市场均缺失，已跳过")
+            continue
+        merged_servers.update(target["mcpServers"])
+        repo_server_pairs.append(
+            (target.get("repo") or "", list(target["mcpServers"].keys()))
+        )
+
+    if not merged_servers:
+        return notes
+
+    # 合并配置落盘
+    existing_config = get_mcp_config()
+    existing_config.setdefault("mcpServers", {}).update(merged_servers)
+    os.makedirs(os.path.dirname(MCP_CONFIG_PATH), exist_ok=True)
+    with open(MCP_CONFIG_PATH, "w", encoding="utf-8") as f:
+        json.dump(existing_config, f, indent=2, ensure_ascii=False)
+
+    # 官方源码下载（失败不阻断配置安装）
+    for repo, server_names in repo_server_pairs:
+        try:
+            _download_official_mcp_source(repo, server_names)
+        except Exception as e:
+            traceback.print_exc()
+
+    # 热更新 Schema 与检索树
+    refresh_schemas()
+    MCPSearcher().reload_index()
+    rebuild_vectors_async()
+    notes.append(f"已从市场自动安装 MCP 依赖: {', '.join(merged_servers.keys())}")
+    return notes
+
+
+def _ensure_graph_skill_deps(skill_names) -> list:
+    """本地缺失的 Skill 依赖从市场安装；市场也缺失时跳过。返回处理说明列表"""
+    notes = []
+    names = [str(n).strip() for n in (skill_names or []) if str(n).strip()]
+    if not names:
+        return notes
+
+    try:
+        local_names = set()
+        for s in SkillSearcher().skills:
+            local_names.add(str(s.get("name", "")).lower())
+            local_names.add(str(s.get("dir_name", "")).lower())
+    except Exception:
+        local_names = set()
+
+    missing = [n for n in names if n.lower() not in local_names]
+    if not missing:
+        return notes
+
+    data = _http_get_json(SKILL_REGISTRY_URL)
+    raw = data.get("skills", {}) if isinstance(data, dict) else {}
+    items = list(raw.items()) if isinstance(raw, dict) else enumerate(raw or [])
+
+    installed = []
+    for name in missing:
+        target = None
+        for key, e in items:
+            if not isinstance(e, dict):
+                continue
+            if str(key or "").lower() == name.lower() or str(
+                e.get("name", "")
+            ).lower() == name.lower():
+                target = e
+                break
+        link = (target or {}).get("skill-single-link") or ""
+        if not link:
+            notes.append(f"Skill '{name}' 本地与市场均缺失，已跳过")
+            continue
+        try:
+            installed.append(_download_skill_from_github(link))
+        except Exception as e:
+            traceback.print_exc()
+            notes.append(f"Skill '{name}' 安装失败({e})，已跳过")
+
+    if installed:
+        SkillSearcher().reload_index()
+        rebuild_skill_vectors_async()
+        notes.append(f"已从市场自动安装 Skill 依赖: {', '.join(installed)}")
+    return notes
+
+
 @router.post("/market/graphs/install")
 def install_graph_api(req: InstallGraphReq):
     """
     安装 Graph：
-      从 PurrPod/graphs 仓库拉取 <name>.json 并保存到 ~/.purrcat/graph/<name>.json
+      从 PurrPod/graphs 仓库拉取 <name>.json；
+      安装前检查 dependencies 声明的 mcp/skill 依赖，本地缺失的先从市场下载，市场也缺失时跳过
     """
     try:
         name = req.name.strip()
@@ -736,15 +864,27 @@ def install_graph_api(req: InstallGraphReq):
         if not isinstance(graph_data, dict):
             raise HTTPException(status_code=502, detail="Graph JSON 顶层必须是对象")
 
+        # 🌟 依赖补齐：graph 声明的 mcps/skills，本地缺失的先从市场安装（缺失即跳过）
+        try:
+            deps = graph_data.get("dependencies", {}) or {}
+            dep_notes = _ensure_graph_mcp_deps(deps.get("mcps", []))
+            dep_notes += _ensure_graph_skill_deps(deps.get("skills", []))
+        except Exception as e:
+            traceback.print_exc()
+            dep_notes = [f"依赖检测失败({e})，已跳过"]
+
         # 用 save_graph 写入保证与现有加载逻辑一致
         filename = safe_name
         if not filename.endswith(".json"):
             filename = filename + ".json"
         os.makedirs(GRAPHS_DIR, exist_ok=True)
         save_graph(filename, graph_data)
+        message = f"Graph '{safe_name}' 已安装到 {os.path.join(GRAPHS_DIR, filename)}"
+        if dep_notes:
+            message += "。" + "；".join(dep_notes)
         return {
             "status": "success",
-            "message": f"Graph '{safe_name}' 已安装到 {os.path.join(GRAPHS_DIR, filename)}",
+            "message": message,
         }
     except HTTPException:
         raise

@@ -63,6 +63,7 @@ class Node(AgentNode):
 
         # 🌟 提取人工干预的指令，并立刻追加落盘防丢失
         pending_push = my_memory.pop("force_push", [])
+        has_manual_push = bool(pending_push)
         if pending_push:
             self.log(
                 context, "SYSTEM", f"🔔 [人工指令] 收到 {len(pending_push)} 条人工指令"
@@ -119,7 +120,8 @@ class Node(AgentNode):
                 has_injected = True
                 break
 
-        if not has_injected:
+        # 🌟 人工指令注入时只注入指令本身，不再附加"任务完结要求"文案
+        if not has_injected and not has_manual_push:
             # 修改点：这里将 role 从 system 改为了 user
             user_msg = {"role": "user", "content": task_done_prompt}
             messages.append(user_msg)

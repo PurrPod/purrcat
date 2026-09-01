@@ -10,6 +10,7 @@ src/tool/callmcp/mcp_schema.json
 .buffer/
 skills/
 mcps/
+Intro.md
 PLAN.md
 exports/
 scripts/start_mini.bat

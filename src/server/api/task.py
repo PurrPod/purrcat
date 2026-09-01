@@ -6,6 +6,7 @@ from pydantic import BaseModel
 
 # 用于激活运行中任务注入指令
 from src.harness.process import TASK_INSTANCES, Task, kill_task
+from src.harness.enums import TaskState
 
 # 引入统一封装的 API，支持访问休眠与活跃任务
 from src.utils.task_api import (
@@ -16,6 +17,29 @@ from src.utils.task_api import (
 )
 
 router = APIRouter(prefix="/api/tasks", tags=["Tasks"])
+
+# 🌟 修复：持有后台引擎协程的强引用，防止 fire-and-forget 任务被 GC 中途回收
+_BACKGROUND_ENGINE_TASKS = set()
+
+
+def _restart_task_engine(task):
+    """安全重启任务引擎：兜住异常并写入任务日志，避免静默吞掉崩溃原因（前端只看到 ERROR 无提示）"""
+
+    async def _runner():
+        try:
+            await task.run()
+        except Exception as e:
+            import traceback
+
+            task.log(
+                "ERROR",
+                f"后台任务引擎异常: {e}\n{traceback.format_exc()}",
+                "system",
+            )
+
+    t = asyncio.create_task(_runner())
+    _BACKGROUND_ENGINE_TASKS.add(t)
+    t.add_done_callback(_BACKGROUND_ENGINE_TASKS.discard)
 
 
 class SubmitInstructionRequest(BaseModel):
@@ -180,16 +204,17 @@ async def submit_instruction_api(task_id: str, req: SubmitInstructionRequest):
         else:
             raise HTTPException(status_code=404, detail="Task not found or not active")
 
+    # 🌟 修复：先记录注入前的状态；任务仍在运行时交给现有引擎消费指令，绝不重复拉起第二个引擎
+    was_running = task.state == TaskState.RUNNING
+
     # 使用新的规范化 API，自带类型校验和级联重置
     result = task.inject_instruction(req.node_id, req.content)
 
     if result["status"] == "error":
         raise HTTPException(status_code=400, detail=result["message"])
 
-    from src.harness.enums import TaskState
-
-    if task.state != TaskState.RUNNING:
-        asyncio.create_task(task.run())
+    if not was_running:
+        _restart_task_engine(task)
 
     return result
 
@@ -207,14 +232,15 @@ async def push_to_task(task_id: str, req: TaskPushReq):
             detail="拒绝操作：必须指定 node_id，已废弃不安全的全局广播注入。",
         )
 
+    # 🌟 修复：先记录注入前的状态；任务仍在运行时交给现有引擎消费指令，绝不重复拉起第二个引擎
+    was_running = task.state == TaskState.RUNNING
+
     result = task.inject_instruction(req.node_id, req.message)
     if result["status"] == "error":
         raise HTTPException(status_code=400, detail=result["message"])
 
-    from src.harness.enums import TaskState
-
-    if task.state != TaskState.RUNNING:
-        asyncio.create_task(task.run())
+    if not was_running:
+        _restart_task_engine(task)
 
     return {"status": "success", "message": "指令已精确注入"}
 
@@ -253,10 +279,9 @@ async def reset_node_api(task_id: str, node_id: str):
     if result["status"] == "error":
         raise HTTPException(status_code=400, detail=result["message"])
 
-    from src.harness.enums import TaskState
-
+    # reset_node 内部已保护运行中状态；这里仅在引擎确实停了时重启，并兜住异常写入日志
     if task.state != TaskState.RUNNING:
-        asyncio.create_task(task.run())
+        _restart_task_engine(task)
 
     return result
 

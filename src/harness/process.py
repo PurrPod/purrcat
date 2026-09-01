@@ -464,7 +464,10 @@ class Task:
         self._cascade_reset(node_id, is_injection=True)
 
         # 4. 唤醒整个任务流
-        self.state = TaskState.READY
+        # 🌟 修复：任务仍在运行时保持 RUNNING，交给现有引擎消费指令；
+        # 若此处改成 READY，API 层会误判任务已停止而重复拉起第二个引擎，导致双事件循环崩溃
+        if self.state != TaskState.RUNNING:
+            self.state = TaskState.READY
 
         # 🌟 状态极小，直接同步写
         self.save_state()
@@ -580,6 +583,11 @@ class Task:
         """
         os.makedirs(self.checkpoint_dir, exist_ok=True)
 
+        # 🌟 修复：注入线程与引擎线程会并发调用 save_state，用 _io_lock 串行化，防止 state.json 写坏
+        with self._io_lock:
+            self._save_state_unlocked()
+
+    def _save_state_unlocked(self):
         dag_state = {
             n_id: {
                 "state": self.node_state[n_id].value

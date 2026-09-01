@@ -226,13 +226,18 @@ def force_push_task(task_id: str, content: str):
     if not task:
         return False
 
+    from src.harness.enums import TaskState
+
+    # 🌟 修复：注入前记录状态，任务仍在运行时交给现有引擎消费指令，绝不重复拉起第二个引擎
+    was_running = task.state == TaskState.RUNNING
+
     injected = False
     for nid, node_instance in task.node_list.items():
         if isinstance(node_instance, AgentNode):
             task.inject_instruction(nid, content)
             injected = True
 
-    if injected:
+    if injected and not was_running:
         # 尝试拉起大循环（非阻塞）
         try:
             loop = asyncio.get_running_loop()
