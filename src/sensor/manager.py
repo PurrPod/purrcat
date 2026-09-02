@@ -11,7 +11,12 @@ import urllib.error
 import atexit
 import sys
 from .gateway import get_gateway, RemoteSensorProxy, MAX_SENSOR_FILE_BYTES
-from src.utils.config import get_sensor_config, SENSOR_EXTENSION_DIR, AGENT_VM_DIR
+from src.utils.config import (
+    get_sensor_config,
+    get_enriched_env,
+    SENSOR_EXTENSION_DIR,
+    AGENT_VM_DIR,
+)
 
 
 class SensorManager:
@@ -117,7 +122,8 @@ class SensorManager:
         old = self.processes.get(name)
         if old and old.poll() is None:
             self._kill_process_tree(old)
-        env = os.environ.copy()
+        # 🌟 合并注册表最新 PATH：用户中途安装 uv 后无需重启程序即可拉起 sensor
+        env = get_enriched_env()
         env.update(cfg.get("env", {}))
         env["PYTHONIOENCODING"] = "utf-8"
 

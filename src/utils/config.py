@@ -1,5 +1,6 @@
 import json
 import os
+import sys
 from pathlib import Path
 from typing import Any, Dict
 
@@ -187,6 +188,44 @@ def get_embedding_model() -> str:
 
 def get_data_dir() -> str:
     return DATA_DIR
+
+
+def get_enriched_env() -> Dict[str, str]:
+    """返回合并注册表最新 PATH 后的环境变量副本。
+
+    Windows 上用户中途安装 uv/node 后，已运行进程的 PATH 不会自动更新
+    （新开的 PowerShell 能 --version，但老进程里 shutil.which 仍找不到）。
+    从 HKCU/HKLM 注册表把最新 PATH 合并进来，让 Sensor/MCP 子进程
+    不重启也能找到新装的依赖。
+    """
+    env = os.environ.copy()
+    if not sys.platform.startswith("win"):
+        return env
+    try:
+        import winreg
+
+        paths = []
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment") as k:
+            user_path, _ = winreg.QueryValueEx(k, "Path")
+            paths.append(os.path.expandvars(user_path or ""))
+        with winreg.OpenKey(
+            winreg.HKEY_LOCAL_MACHINE,
+            r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment",
+        ) as k:
+            sys_path, _ = winreg.QueryValueEx(k, "Path")
+            paths.append(os.path.expandvars(sys_path or ""))
+
+        merged = os.pathsep.join([env.get("PATH", "")] + paths)
+        seen = set()
+        parts = [
+            p
+            for p in merged.split(os.pathsep)
+            if p and not (p.casefold() in seen or seen.add(p.casefold()))
+        ]
+        env["PATH"] = os.pathsep.join(parts)
+    except Exception:
+        pass
+    return env
 
 
 def get_container_engine(engine_preference: str = "docker") -> str:

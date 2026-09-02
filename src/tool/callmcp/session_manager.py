@@ -13,7 +13,7 @@ from typing import Dict
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
-from src.utils.config import get_mcp_config
+from src.utils.config import get_enriched_env, get_mcp_config
 
 # ── 延迟初始化核心原语 ──
 _mcp_loop = None
@@ -99,18 +99,22 @@ class MCPSessionManager:
             ready_event.set()
             return
 
-        resolved_command = shutil.which(raw_command) or raw_command
-
         # 【核心修复】：安全处理 env，防止值为 null/None 导致 {**os.environ, **None} 崩溃
+        # 🌟 合并注册表最新 PATH：用户中途安装 node/npx 后无需重启程序即可连上 MCP
         custom_env = config.get("env")
         if not isinstance(custom_env, dict):
             custom_env = {}
 
         # 确保所有的 env 变量值都被显式转换为字符串，否则 subprocess 会抛错
-        safe_env = os.environ.copy()
+        safe_env = get_enriched_env()
         for k, v in custom_env.items():
             if v is not None:
                 safe_env[k] = str(v)
+
+        # 用合并后的 PATH 解析命令，新装依赖的安装目录（如 nodejs）才能被 which 到
+        resolved_command = (
+            shutil.which(raw_command, path=safe_env.get("PATH")) or raw_command
+        )
 
         server_params = StdioServerParameters(
             command=resolved_command,

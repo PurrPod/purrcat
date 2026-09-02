@@ -15,22 +15,27 @@ from src.tool.request.request_operations import (
     REQUEST_LOCK,
     _ensure_requests_file,
 )
+from src.utils.config import get_enriched_env
 
 DEPLOYMENT_GUIDE_URL = "https://purrpod.github.io/guide/deployment.html"
 # 固定 req_id：避免每次重启堆积重复请求；启动时整体替换为最新检查结果
 DEP_REQ_ID = "req_dep_check_startup"
 
+# 合并注册表最新 PATH 后再检测：用户装完依赖没重启电脑时，
+# 进程自身 PATH 还是旧的，直接 which 会误报"依赖缺失"
+_ENRICHED_PATH = get_enriched_env().get("PATH")
+
 
 def _check_git() -> bool:
-    return shutil.which("git") is not None
+    return shutil.which("git", path=_ENRICHED_PATH) is not None
 
 
 def _check_uv() -> bool:
-    return shutil.which("uv") is not None
+    return shutil.which("uv", path=_ENRICHED_PATH) is not None
 
 
 def _check_node() -> bool:
-    return shutil.which("node") is not None
+    return shutil.which("node", path=_ENRICHED_PATH) is not None
 
 
 def _check_embedding() -> bool:
