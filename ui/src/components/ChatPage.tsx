@@ -1,5 +1,5 @@
 // src/components/ChatPage.tsx
-import { useState, useEffect, useLayoutEffect, useRef } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Send, Cat, Clock, Activity, Server, Zap, Brain, GitMerge, Loader2, FolderOpen, Bell, Paperclip, X, Heart, List, ExternalLink, Plus, BookOpen, ClipboardCopy, TerminalSquare, AlertTriangle, Globe, Pause } from 'lucide-react';
 import { toast } from 'react-hot-toast';
@@ -525,6 +525,30 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
     });
   }, []);
 
+  // 处理浏览器发来的评论，直接发送给 Agent（附带 currentUrl）
+  const handleBrowserComment = useCallback(async (pixelData: any, comment: string, currentUrl: string) => {
+    if (!currentSessionId) return;
+
+    const eventsToPush = [
+      {
+        type: 'browser-comment',
+        content: `User marked an area in browser.\nURL: ${currentUrl}\nMode: ${pixelData.mode}\nElement/Pixels: ${JSON.stringify(pixelData.rect)}\nContext: ${pixelData.domContext}\nViewport: ${JSON.stringify(pixelData.viewport)}\nComment: ${comment}`
+      },
+      { type: 'user', content: comment }
+    ];
+
+    setIsAgentThinking(true);
+    setMessages(prev => [...prev, { role: 'user', content: JSON.stringify({ events: eventsToPush }) }]);
+
+    try {
+      await fetch('/api/chat/batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_id: currentSessionId, events: eventsToPush })
+      });
+    } catch { toast.error("发送浏览器指令失败"); }
+  }, [currentSessionId]);
+
   // 监听独立窗口拾取的 comment（用户在独立浏览器窗口选取元素后转发到聊天）
   // 依赖 currentSessionId 以保证 comment 发到正确的会话
   useEffect(() => {
@@ -533,7 +557,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
     return purrcat.onBrowserComment((data: any) => {
       handleBrowserComment(data.pixelData, data.comment, data.url);
     });
-  }, [currentSessionId]);
+  }, [currentSessionId, handleBrowserComment]);
 
   const handleResolveReq = async (reqId: string, approved: boolean, ignore: boolean, duration: number = 5) => {
     const feedback = feedbackInputs[reqId] || '';
@@ -953,30 +977,6 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   const MdPreviewComponents: any = {
     ...MarkdownComponents,
     img: ({ src, ...props }: any) => <img src={resolveMdAsset(String(src || ''))} {...props} />,
-  };
-
-  // 处理浏览器发来的评论，直接发送给 Agent（附带 currentUrl）
-  const handleBrowserComment = async (pixelData: any, comment: string, currentUrl: string) => {
-    if (!currentSessionId) return;
-    
-    const eventsToPush = [
-      { 
-        type: 'browser-comment', 
-        content: `User marked an area in browser.\nURL: ${currentUrl}\nMode: ${pixelData.mode}\nElement/Pixels: ${JSON.stringify(pixelData.rect)}\nContext: ${pixelData.domContext}\nViewport: ${JSON.stringify(pixelData.viewport)}\nComment: ${comment}` 
-      },
-      { type: 'user', content: comment }
-    ];
-
-    setIsAgentThinking(true);
-    setMessages(prev => [...prev, { role: 'user', content: JSON.stringify({ events: eventsToPush }) }]);
-
-    try { 
-      await fetch('/api/chat/batch', { 
-        method: 'POST', 
-        headers: { 'Content-Type': 'application/json' }, 
-        body: JSON.stringify({ session_id: currentSessionId, events: eventsToPush }) 
-      }); 
-    } catch { toast.error("发送浏览器指令失败"); }
   };
 
   const confirmTraceToSkill = async () => {

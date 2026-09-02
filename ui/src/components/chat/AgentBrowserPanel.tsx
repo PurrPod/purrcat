@@ -154,7 +154,7 @@ export default function AgentBrowserPanel({
       window.removeEventListener('resize', sync);
       window.removeEventListener('purrcat-browser-force-sync', sync);
     };
-  }, [hasElectron]);
+  }, [hasElectron, purrcat]);
 
   // 卸载时通知主进程把原生 view 移到屏外，避免它继续盖住 React 工作区
   useEffect(() => {
@@ -163,7 +163,7 @@ export default function AgentBrowserPanel({
         try { purrcat.browserHide(); } catch { /* 忽略非 Electron 环境 */ }
       }
     };
-  }, [hasElectron]);
+  }, [hasElectron, purrcat]);
 
   useEffect(() => {
     if (!hasElectron || !activeTabId) return;
@@ -199,7 +199,7 @@ export default function AgentBrowserPanel({
         try { purrcat.browserPickEnd(activeTabId).catch(() => {}); } catch { /* 忽略非 Electron 环境 */ }
       }
     };
-  }, [mode, activeTabId, hasElectron]);
+  }, [mode, activeTabId, hasElectron, purrcat]);
 
   useEffect(() => {
     if (!hasElectron) return;
@@ -212,7 +212,7 @@ export default function AgentBrowserPanel({
       }
     });
     return () => { if (off) off(); };
-  }, [hasElectron, activeTabId, setTabs]);
+  }, [hasElectron, activeTabId, setTabs, purrcat]);
 
   const switchTab = (id: string) => {
     setActiveTabId(id);
@@ -398,7 +398,7 @@ export default function AgentBrowserPanel({
       window.removeEventListener('mousemove', onMove, true);
       if (purrcat?.browserCdpUnhighlight) purrcat.browserCdpUnhighlight(activeTabId).catch(() => {});
     };
-  }, [mode, activeTabId, hasElectron, viewScale, toLogicalCoords]);
+  }, [mode, activeTabId, hasElectron, viewScale, toLogicalCoords, purrcat]);
 
   const submitComment = () => {
     if (!commentText.trim() || !currentRect || !activeTab) return;

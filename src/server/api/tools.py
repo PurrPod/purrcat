@@ -134,9 +134,7 @@ def _download_skill_from_github(url: str) -> str:
                 extracted_count += 1
 
         if extracted_count == 0:
-            raise HTTPException(
-                status_code=404, detail=f"仓库中找不到文件夹 '{path}'"
-            )
+            raise HTTPException(status_code=404, detail=f"仓库中找不到文件夹 '{path}'")
     return skill_name
 
 
@@ -807,9 +805,10 @@ def _ensure_graph_skill_deps(skill_names) -> list:
         for key, e in items:
             if not isinstance(e, dict):
                 continue
-            if str(key or "").lower() == name.lower() or str(
-                e.get("name", "")
-            ).lower() == name.lower():
+            if (
+                str(key or "").lower() == name.lower()
+                or str(e.get("name", "")).lower() == name.lower()
+            ):
                 target = e
                 break
         link = (target or {}).get("skill-single-link") or ""

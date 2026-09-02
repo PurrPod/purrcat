@@ -134,7 +134,6 @@ export default function ConfigModal({ isOpen, onClose }: { isOpen: boolean; onCl
       setModelDrafts({});
       fetchMeta();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
 
   // 切换标签页 / 打开时加载对应配置（草稿不随切页丢失）

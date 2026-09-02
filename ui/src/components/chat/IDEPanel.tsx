@@ -363,7 +363,7 @@ export default function IDEPanel({ workspacePath, onClose, onOpenLink }: IDEPane
   const hasElectron = !!purrcat?.readDir;
 
   // ---- 文件操作 ----
-  const readDirectory = async (dirPath: string): Promise<FileNode[]> => {
+  const readDirectory = useCallback(async (dirPath: string): Promise<FileNode[]> => {
     if (purrcat?.readDir) {
       try {
         const entries = await purrcat.readDir(dirPath);
@@ -378,7 +378,7 @@ export default function IDEPanel({ workspacePath, onClose, onOpenLink }: IDEPane
       }
     } catch (e) { console.warn('HTTP readDir fallback failed:', e); }
     return [];
-  };
+  }, [purrcat]);
 
   const readFileContent = async (filePath: string): Promise<string> => {
     if (purrcat?.readFile) {
@@ -418,7 +418,7 @@ export default function IDEPanel({ workspacePath, onClose, onOpenLink }: IDEPane
     if (!workspacePath) return;
     setLoading(true);
     readDirectory(workspacePath).then((tree) => { setFileTree(tree); setLoading(false); });
-  }, [workspacePath]);
+  }, [workspacePath, readDirectory]);
 
   // ---- File Changes：轮询全局变更（同 ChatPage，3s）----
   const fetchDiffs = useCallback(async () => {
@@ -527,7 +527,7 @@ export default function IDEPanel({ workspacePath, onClose, onOpenLink }: IDEPane
       } catch { /* noop */ }
     })();
     return () => { cancelled = true; };
-  }, [activeChange?.path, fileChanges]);
+  }, [activeChange, fileChanges]);
 
   // 变更路径 → 匹配已打开 Tab 的真实路径（ack/rollback 后刷新其缓存）
   const findOpenTabForChange = (changePath: string): string | null => {

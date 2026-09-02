@@ -194,8 +194,7 @@ class SkillSearcher:
         final_scores = np.array(
             [
                 # 同 search()：BM25 负分截断到 0，避免 log1p 产生 nan
-                float(dense_scores[i])
-                + np.log1p(max(raw_bm25_scores[i], 0.0)) * 0.03
+                float(dense_scores[i]) + np.log1p(max(raw_bm25_scores[i], 0.0)) * 0.03
                 for i in range(len(temp_corpus))
             ]
         )
