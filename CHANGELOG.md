@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0-beta.3]
+
+Bug-fix and stability release.
+
+### Fixed
+
+- Electron process lifecycle hardening: single-instance lock (second launch focuses the existing window), auxiliary windows destroyed on close, and a quit watchdog to prevent orphaned backend processes.
+- Browser panel: tab close now activates the correct neighbor tab, and view focus handling fixed.
+- Harness DAG engine: reload error fixed.
+- Long-term memory stayed empty in fresh installs: the memory worker now defers (instead of dropping) pending experiences while the embedding model is unavailable.
+- Terminal failed to spawn when the agent_vm working directory was missing.
+- Bash tool: default timeout reduced to 30s; timeout errors now report the actual limit and include partial output captured so far.
+- Skill trigger test scoring miscalculation fixed.
+
+### Changed
+
+- Config center: model form drafts survive tab switches and collapse; default vision template updated to `openai:deepseek-v4-flash-vision-exp`.
+- Subprocess PATH is enriched from the Windows registry, so dependencies installed after the backend starts are found without a reboot.
+- UI lint cleanup across ChatPage, ConfigModal, AgentBrowserPanel and IDEPanel.
+
 ## [1.0.0-beta.2]
 
 Bug-fix and stability release.
