@@ -98,13 +98,24 @@ def _build_spawn_unix(cmd: str | None) -> tuple[str, list[str]]:
 # ─────────────────────────────────────────────
 # Windows: pywinpty 实现
 # ─────────────────────────────────────────────
+def _ensure_terminal_cwd() -> str:
+    """确保终端工作目录存在：数据盘刚配置/迁移后 AGENT_VM_DIR 可能尚未建立，
+    数据盘被拔掉时目录也可能消失。此时以无效 cwd 启动 shell 会报
+    "目录名称无效"并直接 disconnected，这里兜底创建、失败则回退用户主目录。"""
+    try:
+        os.makedirs(AGENT_VM_DIR, exist_ok=True)
+        return AGENT_VM_DIR
+    except Exception:
+        return os.path.expanduser("~")
+
+
 async def _serve_winpty(websocket: WebSocket, cmd: str | None):
     cols, rows = 80, 24
     pty = winpty.PTY(cols=cols, rows=rows)
 
     appname, cmdline = _build_spawn_win(cmd)
     try:
-        pty.spawn(appname, cmdline=cmdline, cwd=AGENT_VM_DIR)
+        pty.spawn(appname, cmdline=cmdline, cwd=_ensure_terminal_cwd())
     except Exception as e:
         await websocket.send_text(f"\r\n\x1b[31m[Failed to spawn] {e}\x1b[0m\r\n")
         await websocket.close()
@@ -205,7 +216,11 @@ async def _serve_unix_pty(websocket: WebSocket, cmd: str | None):
         os.dup2(slave_fd, 2)
         os.close(slave_fd)
         try:
-            os.chdir(AGENT_VM_DIR)
+            try:
+                os.makedirs(AGENT_VM_DIR, exist_ok=True)
+                os.chdir(AGENT_VM_DIR)
+            except Exception:
+                os.chdir(os.path.expanduser("~"))
             os.execvp(program, argv)
         except Exception:
             os._exit(127)
