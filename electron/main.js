@@ -182,11 +182,19 @@ function killBackendTree() {
 // 派生独立进程延时强杀自己（不带 /T，保留 relauncher 拉起新实例），确保旧实例必然退出。
 // 正常退出时进程早已消失，taskkill 静默失败，无副作用。
 // 注意 timeout 命令在无 stdin 时会报错，用 ping 代替延时
+let _watchdogArmed = false;
 function spawnQuitWatchdog() {
+  // before-quit 可能多次触发（quit 被卡住重试等），看门狗只挂一次
+  if (_watchdogArmed) return;
+  _watchdogArmed = true;
   const self = process.pid;
   try {
     if (process.platform === 'win32') {
-      spawn('cmd.exe', ['/c', `ping -n 4 127.0.0.1 >nul & taskkill /PID ${self} /F >nul 2>&1`], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
+      // 🌟 千万不要加 detached: true —— 它会给 cmd 挂 DETACHED_PROCESS，与
+      // windowsHide 的 CREATE_NO_WINDOW 冲突：cmd/ping 各自 AllocConsole 弹出
+      // 可见终端窗口（"正在 Ping ... 具有 32 字节的数据"）。Windows 下子进程
+      // 本就不会随父进程退出而级联死亡，去掉 detached 看门狗照样存活。
+      spawn('cmd.exe', ['/c', `ping -n 4 127.0.0.1 >nul & taskkill /PID ${self} /F >nul 2>&1`], { stdio: 'ignore', windowsHide: true }).unref();
     } else {
       spawn('/bin/sh', ['-c', `(sleep 3; kill -9 ${self}) >/dev/null 2>&1`], { detached: true, stdio: 'ignore' }).unref();
     }

@@ -248,27 +248,22 @@ def get_eval_report_api(
         iteration = max(iters) if iters else None
 
     if iteration is not None:
-        report_name = "test_report.md" if type == "mcp" else "eval_report.md"
-        report_path = os.path.join(w_path, f"iteration-{iteration}", report_name)
+        iter_dir = os.path.join(w_path, f"iteration-{iteration}")
         report_md = ""
-        if os.path.exists(report_path):
-            with open(report_path, "r", encoding="utf-8") as f:
-                report_md = f.read()
-        # Skill 类型：把 Trigger 激发测试报告一并合并展示
-        # 按 iteration 索引配对 trigger-K/trigger_report.md；缺失则不附加（避免每轮都显示同一份）
-        if type != "mcp" and report_md:
-            trigger_path = ""
-            candidate = os.path.join(
-                w_path, f"trigger-{iteration}", "trigger_report.md"
-            )
-            if os.path.exists(candidate):
-                trigger_path = candidate
-            if trigger_path:
-                try:
-                    with open(trigger_path, "r", encoding="utf-8") as f:
-                        report_md = f"{f.read()}\n\n---\n\n{report_md}"
-                except Exception:
-                    pass
+        if type != "mcp":
+            # 同一迭代目录内合并展示：Trigger 报告在前，盲测报告在后（缺失则跳过）
+            parts = []
+            for report_name in ("trigger_report.md", "eval_report.md"):
+                report_path = os.path.join(iter_dir, report_name)
+                if os.path.exists(report_path):
+                    with open(report_path, "r", encoding="utf-8") as f:
+                        parts.append(f.read())
+            report_md = "\n\n---\n\n".join(parts)
+        else:
+            report_path = os.path.join(iter_dir, "test_report.md")
+            if os.path.exists(report_path):
+                with open(report_path, "r", encoding="utf-8") as f:
+                    report_md = f.read()
         if report_md:
             return {"report_md": report_md}
     return {"report_md": ""}

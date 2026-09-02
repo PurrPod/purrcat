@@ -10,6 +10,7 @@ src/tool/callmcp/mcp_schema.json
 .buffer/
 skills/
 mcps/
+*.bak
 Intro.md
 PLAN.md
 exports/

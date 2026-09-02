@@ -110,7 +110,7 @@ def _run_trigger_evals(workplace_id: str, skill_name: str) -> str:
 
     searcher = SkillSearcher()
 
-    iteration_dir, iteration_idx = _get_next_iteration_dir(workplace_root, "trigger")
+    iteration_dir, iteration_idx = _get_next_iteration_dir(workplace_root)
     os.makedirs(iteration_dir, exist_ok=True)
 
     report_lines = [
@@ -169,24 +169,34 @@ def _run_trigger_evals(workplace_id: str, skill_name: str) -> str:
     return final_report
 
 
-def _get_next_iteration_dir(
-    workplace_root: str, test_type: str = "iteration"
-) -> tuple[str, int]:
-    """按 test_type 前缀分配独立迭代目录，避免 trigger 与盲测互相挤占计数器。
-
-    test_type="iteration" -> iteration-N（盲测，前端 Iteration 列表只认这个）
-    test_type="trigger"   -> trigger-N（激发测试，独立计数，不污染盲测列表）
-    """
+def _get_latest_iteration_idx(workplace_root: str) -> int:
+    """返回当前最大迭代编号；尚无迭代时返回 0"""
     max_idx = 0
     if os.path.exists(workplace_root):
         for item in os.listdir(workplace_root):
-            match = re.match(rf"{test_type}-(\d+)", item)
+            match = re.match(r"iteration-(\d+)", item)
             if match:
                 idx = int(match.group(1))
                 if idx > max_idx:
                     max_idx = idx
-    next_idx = max_idx + 1
-    return os.path.join(workplace_root, f"{test_type}-{next_idx}"), next_idx
+    return max_idx
+
+
+def _get_next_iteration_dir(workplace_root: str) -> tuple[str, int]:
+    """分配新的迭代目录 iteration-N（Trigger 与盲测共用同一套计数）"""
+    next_idx = _get_latest_iteration_idx(workplace_root) + 1
+    return os.path.join(workplace_root, f"iteration-{next_idx}"), next_idx
+
+
+def _get_eval_iteration_dir(workplace_root: str) -> tuple[str, int]:
+    """盲测归入最近一轮 Trigger 测试的迭代目录（一个迭代 = trigger 报告 + 盲测报告同目录）；
+    仅当最新迭代已含 eval_report.md（重复盲测）或尚无迭代时才新开一代。"""
+    latest_idx = _get_latest_iteration_idx(workplace_root)
+    if latest_idx > 0:
+        dir_path = os.path.join(workplace_root, f"iteration-{latest_idx}")
+        if not os.path.exists(os.path.join(dir_path, "eval_report.md")):
+            return dir_path, latest_idx
+    return _get_next_iteration_dir(workplace_root)
 
 
 def _calculate_stats(values: list[float]) -> dict:
@@ -410,7 +420,8 @@ async def _async_run_evals(workplace_id: str, skill_name: str) -> str:
     if not cases:
         return "测试报告：evals.json 中没有任何测试用例。"
 
-    iteration_dir, iteration_idx = _get_next_iteration_dir(workplace_root)
+    # 盲测与最近一轮 Trigger 测试共用同一迭代目录
+    iteration_dir, iteration_idx = _get_eval_iteration_dir(workplace_root)
     os.makedirs(iteration_dir, exist_ok=True)
 
     # 🌟 核心拆分 2：启动错位并发任务池

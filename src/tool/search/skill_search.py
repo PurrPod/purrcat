@@ -110,7 +110,8 @@ class SkillSearcher:
         final_scores = []
         for i in range(len(current_corpus)):
             base_score = float(dense_scores[i])
-            bm25_bonus = np.log1p(raw_bm25_scores[i]) * 0.03
+            # BM25 小语料下会出现负分（词出现在多数文档时 idf<0），log1p 负数产生 nan，需截断
+            bm25_bonus = np.log1p(max(raw_bm25_scores[i], 0.0)) * 0.03
             combined_score = base_score + bm25_bonus
             final_scores.append(combined_score)
 
@@ -192,7 +193,9 @@ class SkillSearcher:
 
         final_scores = np.array(
             [
-                float(dense_scores[i]) + np.log1p(raw_bm25_scores[i]) * 0.03
+                # 同 search()：BM25 负分截断到 0，避免 log1p 产生 nan
+                float(dense_scores[i])
+                + np.log1p(max(raw_bm25_scores[i], 0.0)) * 0.03
                 for i in range(len(temp_corpus))
             ]
         )
