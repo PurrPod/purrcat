@@ -57,8 +57,8 @@ contextBridge.exposeInMainWorld('purrcat', {
   // ===== 内置浏览器（多 Tab WebContentsView）=====
   // 新建一个浏览器 Tab，加载 url，返回 tabId
   browserNewTab: (url) => ipcRenderer.invoke('browser:new-tab', url),
-  // 关闭指定 Tab
-  browserCloseTab: (tabId) => ipcRenderer.invoke('browser:close-tab', tabId),
+  // 关闭指定 Tab；nextTabId 可选：关闭后希望激活的 tab（不传由主进程取最近剩余 tab，无剩余则显示空白页）
+  browserCloseTab: (tabId, nextTabId) => ipcRenderer.invoke('browser:close-tab', tabId, nextTabId),
   // 切换到指定 Tab（显示其 view，隐藏其余）
   browserSwitchTab: (tabId) => ipcRenderer.invoke('browser:switch-tab', tabId),
   // 指定 Tab 导航到 url

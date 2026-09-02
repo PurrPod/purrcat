@@ -57,6 +57,7 @@ const _pickModeTabs = new Set();
 const _inspectListeners = new Map(); // tabId -> cleanup function (CDP inspect mode)
 let detachedWin = null;
 let browserDetached = false;
+let browserHidden = false; // 面板是否处于隐藏状态（browser:hide 置 true，set-bounds 重新可见时复位）
 
 function getTargetWin() {
   return (browserDetached && detachedWin && !detachedWin.isDestroyed()) ? detachedWin : mainWindow;
@@ -117,6 +118,10 @@ function showView(tabId) {
     t.view.setBounds(currentBounds);
     try { t.view.webContents.setZoomFactor(currentScale || 1); } catch (_) {}
   }
+  // 🌟 主动聚焦：Electron 31 的 WebContentsView 点击不会转移键盘焦点（宿主 React 页面一直持有），
+  //    页面 document.hasFocus()=false → requestPointerLock 抛 WrongDocumentError，
+  //    表现为"游戏只能看不能玩"（FPS 视角锁不了鼠标）
+  try { t.view.webContents.focus(); } catch (_) {}
 }
 
 function hideView(tabId) {
@@ -425,6 +430,12 @@ ipcMain.handle('browser:new-tab', (_e, url) => {
     if (t) t.url = navUrl;
     pushTabEvent({ type: 'navigate', tabId, url: navUrl });
   });
+  // 🌟 dom-ready 后再聚焦一次：new-tab 时 showView 的 focus() 可能早于渲染进程就绪而失效
+  view.webContents.once('dom-ready', () => {
+    if (activeTabId === tabId) {
+      try { view.webContents.focus(); } catch (_) {}
+    }
+  });
 
   tabs.set(tabId, { view, url: url || '', title: '' });
   if (url) view.webContents.loadURL(url);
@@ -436,7 +447,11 @@ ipcMain.handle('browser:new-tab', (_e, url) => {
   return tabId;
 });
 
-ipcMain.handle('browser:close-tab', (_e, tabId) => {
+// nextTabId：前端关闭后希望激活的 tab（与前端 tabs 列表对齐，避免主/前端状态不一致）。
+// 不传时回退为"最近打开的剩余 tab"；无剩余 tab 时 activeTabId=null，前端显示默认空白页。
+// 🌟 之前取 tabs.keys().next().value（Map 插入序=最早打开的 tab），前端却取最后一个剩余 tab，
+//    两边不一致导致"叉掉最后一个标签页后显示最早打开的那一页"
+ipcMain.handle('browser:close-tab', (_e, tabId, nextTabId) => {
   const t = tabs.get(tabId);
   if (!t) return;
   _pickModeTabs.delete(tabId);
@@ -447,7 +462,13 @@ ipcMain.handle('browser:close-tab', (_e, tabId) => {
   try { t.view.webContents.destroy(); } catch (_) {}
   tabs.delete(tabId);
   if (activeTabId === tabId) {
-    const next = tabs.keys().next().value;
+    let next = null;
+    if (nextTabId && tabs.has(nextTabId)) {
+      next = nextTabId;
+    } else {
+      const keys = [...tabs.keys()];
+      next = keys.length ? keys[keys.length - 1] : null;
+    }
     activeTabId = next || null;
     if (next) {
       _pickModeTabs.delete(next);
@@ -499,6 +520,12 @@ ipcMain.handle('browser:set-bounds', (_e, { x, y, w, h, scale }) => {
         if (!_pickModeTabs.has(activeTabId)) {
           t.view.setBounds(currentBounds);
           try { t.view.webContents.setZoomFactor(factor); } catch (_) {}
+          // 面板从隐藏恢复可见（browser:hide → 重新挂载后首次 set-bounds）：重新聚焦页面，
+          // 否则 view 保持失焦状态，页内 pointer lock / 键盘操作全部失效
+          if (browserHidden) {
+            browserHidden = false;
+            try { t.view.webContents.focus(); } catch (_) {}
+          }
         }
       }
     }
@@ -508,6 +535,7 @@ ipcMain.handle('browser:set-bounds', (_e, { x, y, w, h, scale }) => {
 // 隐藏内置浏览器：前端面板卸载时调用，把所有原生 view 移到屏外，避免盖住 React 工作区
 ipcMain.handle('browser:hide', () => {
   if (browserDetached) return; // 独立窗口模式下不隐藏
+  browserHidden = true;
   for (const id of tabs.keys()) hideView(id);
 });
 
@@ -1454,6 +1482,16 @@ function initAutoUpdate() {
 
 app.whenReady().then(() => {
   createBackend();
+  // 🌟 内置浏览器会话显式授权 pointerLock/fullscreen：
+  //    WebContentsView 中的游戏（如 FPS 类）依赖 requestPointerLock，不授权会静默失败
+  try {
+    const browserSession = session.fromPartition('persist:browser');
+    browserSession.setPermissionRequestHandler((_wc, permission, callback) => {
+      callback(['pointerLock', 'fullscreen', 'media', 'audioCapture'].includes(permission));
+    });
+  } catch (err) {
+    console.warn('[PurrCat] browser session permission handler failed:', err);
+  }
   createWindow();
   initAutoUpdate();
 });

@@ -242,13 +242,16 @@ export default function AgentBrowserPanel({
   };
 
   const closeTab = (id: string) => {
-    if (hasElectron) purrcat.browserCloseTab(id).catch(() => {});
     const newTabs = tabs.filter(t => t.id !== id);
     setTabs(newTabs);
     if (activeTabId === id) {
+      // 前端直接告诉主进程关闭后激活哪个 tab（取剩余的最后一个）；
+      // 无剩余时传 null → 主进程不显示任何 view，面板回到默认空白页
       const next = newTabs.length > 0 ? newTabs[newTabs.length - 1].id : null;
       setActiveTabId(next);
-      if (next && hasElectron) purrcat.browserSwitchTab(next).catch(() => {});
+      if (hasElectron) purrcat.browserCloseTab(id, next).catch(() => {});
+    } else if (hasElectron) {
+      purrcat.browserCloseTab(id).catch(() => {});
     }
     setMode('browse');
     setShowCommentBox(false);
