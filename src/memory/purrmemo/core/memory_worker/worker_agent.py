@@ -210,6 +210,16 @@ class MemoryAgent:
                 )
                 messages.append(tool_results[-1])
 
+    def _vector_ready(self) -> bool:
+        """嵌入模型是否已就绪（下载完成且可加载）。"""
+        if self.vector_engine is None:
+            return False
+        try:
+            self.vector_engine.embedding_model  # 触发懒加载
+            return True
+        except Exception:
+            return False
+
     def _process_file(self, file_path):
         try:
             with open(file_path, "r", encoding="utf-8") as f:
@@ -226,9 +236,23 @@ class MemoryAgent:
             cognition = data.get("cognition", [])
             user_profile = data.get("user_profile", [])
             work_exp = data.get("work_exp", [])
+            events = data.get("events", [])
+
+            # 🌟 嵌入模型未就绪（首启仍在下载 / 直连 HF 下载失败）时，向量写入必然失败。
+            # 此时不要继续处理并归档，文件留在 pending 等模型就绪后自动重试，
+            # 否则工作经验会被静默丢弃 —— 表现为"别的记忆库都满了，vector 经验库一直为空"
+            if (
+                self.vector_engine
+                and (events or work_exp or user_profile)
+                and not self._vector_ready()
+            ):
+                print(
+                    f"⏳ [Worker] 嵌入模型未就绪，"
+                    f"{os.path.basename(file_path)} 留在 pending 待重试"
+                )
+                return False
 
             # 1. 处理 Events (事件库 + 向量库双写)
-            events = data.get("events", [])
             for event in events:
                 event_content = (
                     event.get("event", "") if isinstance(event, dict) else event

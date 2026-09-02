@@ -63,32 +63,53 @@ def ensure_embedding_model() -> None:
             return
         _downloading_flag.set()
 
+    def _download_from(endpoint: str | None) -> None:
+        """从指定 HF 端点下载模型。endpoint=None 走官方 huggingface.co。"""
+        # huggingface_hub 在 import 时固化 HF_ENDPOINT；若已被 import 过
+        # （如 sentence_transformers 提前加载过），清缓存强制按新端点重载
+        if endpoint:
+            os.environ["HF_ENDPOINT"] = endpoint
+            import sys
+
+            for mod in list(sys.modules):
+                if mod.startswith("huggingface_hub"):
+                    del sys.modules[mod]
+
+        from huggingface_hub import snapshot_download
+
+        os.makedirs(EMBEDDING_DIR, exist_ok=True)
+        snapshot_download(
+            repo_id=MODEL_NAME,
+            local_dir=EMBEDDING_DIR,
+            ignore_patterns=[
+                "*.ot",
+                "*.h5",
+                "*.msgpack",
+                "*.flax",
+                "*.tensorflow",
+                "*.tf",
+                "*.tflite",
+            ],
+        )
+
     def _do_download():
         try:
             print("[*] 首次运行，正在后台下载嵌入模型（~120MB）...")
             print(f"    模型: {MODEL_NAME}")
             print(f"    目录: {EMBEDDING_DIR}")
-
-            from huggingface_hub import snapshot_download
-
-            os.makedirs(EMBEDDING_DIR, exist_ok=True)
-            snapshot_download(
-                repo_id=MODEL_NAME,
-                local_dir=EMBEDDING_DIR,
-                ignore_patterns=[
-                    "*.ot",
-                    "*.h5",
-                    "*.msgpack",
-                    "*.flax",
-                    "*.tensorflow",
-                    "*.tf",
-                    "*.tflite",
-                ],
-            )
+            _download_from(None)
             print("[+] 嵌入模型下载完成！")
         except Exception as e:
-            print(f"[!] 嵌入模型下载失败: {e}")
-            print("    你可以稍后手动执行: purrcat setup")
+            # 直连 huggingface.co 失败（国内网络常态）→ 自动切 hf-mirror.com 镜像重试，
+            # 否则嵌入模型永远缺失，向量经验库会一直写不进数据
+            print(f"[!] 直连 huggingface.co 下载失败: {e}")
+            print("[*] 切换 hf-mirror.com 镜像重试...")
+            try:
+                _download_from("https://hf-mirror.com")
+                print("[+] 嵌入模型（镜像）下载完成！")
+            except Exception as e2:
+                print(f"[!] 嵌入模型下载失败: {e2}")
+                print("    你可以稍后手动执行: purrcat setup")
         finally:
             _downloading_flag.clear()
 
