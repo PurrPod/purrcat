@@ -12,7 +12,7 @@ BASH_TOOL_SCHEMA = {
                 },
                 "timeout": {
                     "type": "integer",
-                    "description": "命令执行的超时时间（秒），如果不确定请不要传，默认 300 秒",
+                    "description": "命令执行的超时时间（秒），如果不确定请不要传，默认 30 秒；长耗时任务（测试、构建、网络下载）请显式传入更大值或用 nohup 放后台",
                 },
             },
             "required": ["command"],

@@ -267,7 +267,7 @@ class DockerManager:
         session["process"] = new_process
 
     def execute(
-        self, session_id: str, command: str, timeout: int = 300
+        self, session_id: str, command: str, timeout: int = 30
     ) -> tuple[int, str, str]:
         self._ensure_shell(session_id)
         with self.pool_lock:

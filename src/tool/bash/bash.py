@@ -12,13 +12,13 @@ from .exceptions import (
 )
 
 
-def Bash(command: str, timeout: int = 300, session_id: str = "default", **kwarg) -> str:
+def Bash(command: str, timeout: int = 30, session_id: str = "default", **kwarg) -> str:
     """
     在安全的沙盒环境 (Docker) 中执行 Shell 命令。
 
     Args:
         command: 要执行的 Shell 命令（支持连串命令和多行文本，请注意正确的引号转义）
-        timeout: 命令执行的超时时间（秒），默认 300 秒
+        timeout: 命令执行的超时时间（秒），默认 30 秒
         session_id: 会话 ID（由系统注入，模型无需关注）
     Returns:
         格式化后的 JSON 字符串，包含 timestamp, type, content, snip 字段
@@ -61,10 +61,16 @@ def Bash(command: str, timeout: int = 300, session_id: str = "default", **kwarg)
             "Docker启动或构建容器异常，请提醒老板进行相关操作", "❌ 环境异常"
         )
 
-    except BashTimeoutError:
-        # 处理 Bash 执行超时异常
+    except BashTimeoutError as e:
+        # 处理 Bash 执行超时异常（异常消息中携带超时前的部分输出，帮助定位卡点）
+        partial = str(e).strip()
+        partial_hint = f"\n\n超时前的部分输出:\n{partial}" if partial else ""
         return error_response(
-            "执行超时（超过300秒）。如果该操作涉及网络下载（如 pip install、apt-get 等），由于沙盒网络与宿主机不同步，极易因为网络阻塞导致卡死。请优先考虑在命令中临时换源（例如使用 pip install 包名 -i https://pypi.tuna.tsinghua.edu.cn/simple）并重试。",
+            f"执行超时（超过{timeout}秒）。如果该操作涉及网络下载（如 pip install、apt-get 等），"
+            f"由于沙盒网络与宿主机不同步，极易因为网络阻塞导致卡死，请优先考虑在命令中临时换源"
+            f"（例如使用 pip install 包名 -i https://pypi.tuna.tsinghua.edu.cn/simple）并重试。"
+            f"如果是长耗时任务（测试、构建等），请在调用时显式传入更大的 timeout 参数，"
+            f"或将命令放到后台执行（nohup ... &）后轮询结果。{partial_hint}",
             "❌ 执行超时(建议换源)",
         )
 
