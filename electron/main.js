@@ -23,6 +23,21 @@ const IS_DEV = !!process.env.ELECTRON_DEV;
 const DEV_URL = 'http://localhost:3000';   // vite dev server（热更新）
 const PROD_URL = 'http://localhost:8000';  // 后端托管的前端 dist
 
+// ===== 单实例锁 =====
+// 🌟 旧实例未退干净（退出被注入 DLL 卡死等）时用户再点图标会双开：
+// 新后端绑不上 8000 端口，前端实际连的是旧后端 —— 旧后端持有安装 uv/node 之前的
+// 过期环境变量，MCP/Sensor 子进程全部拉不起来，用户只能重启电脑才恢复。
+// 加锁后第二实例只聚焦已有窗口，不重复拉后端。
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+}
+app.on('second-instance', () => {
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.focus();
+  }
+});
+
 // 应用图标（exe/安装包已由 electron-builder 打上 icon.ico，这里给窗口/任务栏用）
 const APP_ICON = path.join(__dirname, 'icon.ico');
 
@@ -157,6 +172,22 @@ function killBackendTree() {
   } catch (_) {}
 }
 
+// 🌟 退出看门狗：实测 quit()/exit() 可能被第三方注入 DLL 的退出钩子卡死
+// （本机复现：主窗口已隐藏、进程不退、relauncher 永久等待、后端占住端口）。
+// 派生独立进程延时强杀自己（不带 /T，保留 relauncher 拉起新实例），确保旧实例必然退出。
+// 正常退出时进程早已消失，taskkill 静默失败，无副作用。
+// 注意 timeout 命令在无 stdin 时会报错，用 ping 代替延时
+function spawnQuitWatchdog() {
+  const self = process.pid;
+  try {
+    if (process.platform === 'win32') {
+      spawn('cmd.exe', ['/c', `ping -n 4 127.0.0.1 >nul & taskkill /PID ${self} /F >nul 2>&1`], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
+    } else {
+      spawn('/bin/sh', ['-c', `(sleep 3; kill -9 ${self}) >/dev/null 2>&1`], { detached: true, stdio: 'ignore' }).unref();
+    }
+  } catch (_) {}
+}
+
 function createWindow() {
   // 去掉默认菜单栏（File/Edit/View/Help 及 app-name 标签），啥都不要
   Menu.setApplicationMenu(null);
@@ -198,6 +229,18 @@ function createWindow() {
       mainWindow.webContents.send('purrcat:open-url', url);
     }
     return { action: 'deny' };
+  });
+
+  // 🌟 主窗口关闭 = 用户想退出应用：连带销毁所有附属窗口（IDE / 浏览器独立窗口）。
+  // 否则 window-all-closed 不触发，应用连同后端进程残留成僵尸，
+  // 用户下次"重启程序"实际变成第二实例，前端连到持有过期环境变量的旧后端。
+  // destroy() 不触发 close 事件，不会误触 reattach 回主窗口（主窗口正在销毁）。
+  mainWindow.on('close', () => {
+    try { if (detachedWin && !detachedWin.isDestroyed()) detachedWin.destroy(); } catch (_) {}
+    detachedWin = null;
+    browserDetached = false;
+    try { if (ideDetachedWin && !ideDetachedWin.isDestroyed()) ideDetachedWin.destroy(); } catch (_) {}
+    ideDetachedWin = null;
   });
 }
 
@@ -953,18 +996,7 @@ ipcMain.handle('app:restart', () => {
     killBackendTree();
     app.relaunch();
     app.exit(0);
-    // 🌟 看门狗：实测 app.exit() 可能被第三方注入 DLL 的退出钩子卡死
-    // （本机复现：主窗口已隐藏、进程不退、relauncher 永久等待、后端占住端口）。
-    // 派生独立进程延时强杀自己（不带 /T，保留 relauncher 拉起新实例），确保旧实例必然退出。
-    // 注意 timeout 命令在无 stdin 时会报错，用 ping 代替延时
-    const self = process.pid;
-    try {
-      if (process.platform === 'win32') {
-        spawn('cmd.exe', ['/c', `ping -n 4 127.0.0.1 >nul & taskkill /PID ${self} /F >nul 2>&1`], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
-      } else {
-        spawn('/bin/sh', ['-c', `(sleep 3; kill -9 ${self}) >/dev/null 2>&1`], { detached: true, stdio: 'ignore' }).unref();
-      }
-    } catch (_) {}
+    spawnQuitWatchdog();
   }
 });
 
@@ -1443,6 +1475,7 @@ app.on('child-process-gone', (_e, details) => {
       killBackendTree();
       app.relaunch();
       app.exit(0);
+      spawnQuitWatchdog();
     }
   }
 });
@@ -1464,6 +1497,9 @@ app.on('render-process-gone', (_e, wc, details) => {
 
 app.on('before-quit', () => {
   killBackendTree();
+  // 🌟 正常退出也挂看门狗：quit() 同样可能被注入 DLL 卡死成僵尸进程，
+  // 后端虽已树杀但主进程残留，下次启动单实例锁会误判"已在运行"只聚焦僵尸窗口
+  spawnQuitWatchdog();
   for (const [, t] of tabs) {
     // 🌟 mainWindow 可能已销毁（用户先关主窗口再触发退出等场景），访问已销毁对象的
     // contentView 会抛 "Object has been destroyed" 并中断退出流程 → 应用变僵尸

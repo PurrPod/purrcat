@@ -35,13 +35,10 @@ export default function DataSetupModal({ onDone }: { onDone: () => void }) {
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        toast.success('数据盘设置成功，即将重启生效');
+        // 🌟 不再自动重启：实测部分机器上 app:restart 的强杀看门狗会被安全软件/注入
+        // DLL 干扰，重启变成 JS 报错卡死。改为明确提示用户手动重启，data_root 重启后生效
+        toast.success('数据盘设置成功，请手动重启 PurrCat 后生效', { duration: 8000 });
         onDone();
-        // 让用户看到提示后自动重启，data_root 重启后才会真正生效
-        setTimeout(() => {
-          if (purrcat?.restartApp) purrcat.restartApp();
-          else window.location.reload();
-        }, 1500);
       } else {
         toast.error(typeof data?.detail === 'string' ? data.detail : '保存失败');
       }
@@ -91,7 +88,7 @@ export default function DataSetupModal({ onDone }: { onDone: () => void }) {
           {/* 说明：可随时更换 */}
           <div className="flex items-start gap-2 text-xs font-bold text-ink/50">
             <span className="shrink-0">💡</span>
-            设置完成后自动重启生效；日后如需更换，可在配置中心数据根目录旁点击铅笔图标。
+            设置完成后请重启程序生效；日后如需更换，可在配置中心数据根目录旁点击铅笔图标。
           </div>
         </div>
 
