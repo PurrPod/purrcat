@@ -68,6 +68,8 @@ export default function ConfigModal({ isOpen, onClose }: { isOpen: boolean; onCl
   // ── 模型配置页状态 ──
   const [modelFormCat, setModelFormCat] = useState<string | null>(null);
   const [modelForm, setModelForm] = useState<ModelForm | null>(null);
+  // 每个模型角色的表单草稿：折叠 / 切页不丢，只要配置中心没关就一直保留
+  const [modelDrafts, setModelDrafts] = useState<Record<string, ModelForm>>({});
 
   // ── MCP 配置页状态 ──
   const [mcpExpanded, setMcpExpanded] = useState<string | null>(null);
@@ -126,11 +128,18 @@ export default function ConfigModal({ isOpen, onClose }: { isOpen: boolean; onCl
     }
   };
 
+  // 打开/关闭配置中心：新会话清空上一会话遗留的模型表单草稿
   useEffect(() => {
     if (isOpen) {
+      setModelDrafts({});
       fetchMeta();
-      fetchConfig(activeTab);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen]);
+
+  // 切换标签页 / 打开时加载对应配置（草稿不随切页丢失）
+  useEffect(() => {
+    if (isOpen) fetchConfig(activeTab);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, activeTab]);
 
@@ -202,15 +211,22 @@ export default function ConfigModal({ isOpen, onClose }: { isOpen: boolean; onCl
   const openModelForm = (cat: string) => {
     if (modelFormCat === cat) { setModelFormCat(null); setModelForm(null); return; }
     setModelFormCat(cat);
-    setModelForm(buildModelForm(cat));
+    // 优先恢复本会话内已填写的草稿，折叠/切页后再展开不会丢
+    setModelForm(modelDrafts[cat] || buildModelForm(cat));
   };
 
-  const applyModelForm = () => {
-    if (!modelFormCat || !modelForm) return;
-    const f = modelForm;
-    if (!f.modelName.trim()) { toast.error('请填写模型名'); return; }
-    if (!f.apiKey.trim()) { toast.error('请填写 API Key'); return; }
-    if (!f.baseUrl.trim()) { toast.error('请填写 Base URL'); return; }
+  // 表单字段变更：写入草稿 + 必填项齐全时自动暂存进 configData（SAVE ALL 直接可落盘）
+  const updateModelForm = (patch: Partial<ModelForm>) => {
+    if (!modelForm || !modelFormCat) return;
+    const next = { ...modelForm, ...patch };
+    setModelForm(next);
+    setModelDrafts((d) => ({ ...d, [modelFormCat]: next }));
+    foldModelDraft(modelFormCat, next);
+  };
+
+  const foldModelDraft = (cat: string, f: ModelForm) => {
+    // 必填项没填全的半成品只留在草稿里，不回写 configData
+    if (!f.modelName.trim() || !f.apiKey.trim() || !f.baseUrl.trim()) return;
 
     const entryKey = `${f.sdk}:${f.modelName.trim()}`;
     const entry: any = {
@@ -218,19 +234,16 @@ export default function ConfigModal({ isOpen, onClose }: { isOpen: boolean; onCl
       base_url: f.baseUrl.trim(),
     };
     // 视觉顾问只需要 sdk / 模型名 / baseurl / apikey
-    if (modelFormCat !== 'vision') {
+    if (cat !== 'vision') {
       entry.rpm = Number(f.rpm) || Number(MODEL_LIMIT_DEFAULTS.rpm);
       entry.tpm = Number(f.tpm) || Number(MODEL_LIMIT_DEFAULTS.tpm);
       entry.concurrency = Number(f.concurrency) || Number(MODEL_LIMIT_DEFAULTS.concurrency);
       entry.max_token = Number(f.maxToken) || Number(MODEL_LIMIT_DEFAULTS.max_token);
     }
 
-    const newData = { ...configData, [modelFormCat]: { [entryKey]: entry } };
+    const newData = { ...configData, [cat]: { [entryKey]: entry } };
     setConfigData(newData);
     setRawJsonStr(JSON.stringify(getRawData(newData), null, 2));
-    setModelFormCat(null);
-    setModelForm(null);
-    toast.success('已暂存到内存，记得点 SAVE ALL 落盘！');
   };
 
   const modelEntrySummary = (cat: string): string => {
@@ -551,7 +564,7 @@ export default function ConfigModal({ isOpen, onClose }: { isOpen: boolean; onCl
                               <div className={labelCls}>SDK</div>
                               <select
                                 value={modelForm.sdk}
-                                onChange={(e) => setModelForm({ ...modelForm, sdk: e.target.value })}
+                                onChange={(e) => updateModelForm({ sdk: e.target.value })}
                                 className="w-full bg-[#FDF8F0] border-4 border-ink px-4 py-2.5 font-black focus:outline-none focus:bg-white"
                               >
                                 {MODEL_SDKS.map(s => <option key={s} value={s}>{s}</option>)}
@@ -561,7 +574,7 @@ export default function ConfigModal({ isOpen, onClose }: { isOpen: boolean; onCl
                               <div className={labelCls}>模型名（MODEL NAME）</div>
                               <input
                                 value={modelForm.modelName}
-                                onChange={(e) => setModelForm({ ...modelForm, modelName: e.target.value })}
+                                onChange={(e) => updateModelForm({ modelName: e.target.value })}
                                 placeholder="例：deepseek-v4-flash"
                                 className={inputCls}
                                 spellCheck={false}
@@ -571,7 +584,7 @@ export default function ConfigModal({ isOpen, onClose }: { isOpen: boolean; onCl
                               <div className={labelCls}>API KEY</div>
                               <input
                                 value={modelForm.apiKey}
-                                onChange={(e) => setModelForm({ ...modelForm, apiKey: e.target.value })}
+                                onChange={(e) => updateModelForm({ apiKey: e.target.value })}
                                 placeholder="sk-..."
                                 type="password"
                                 className={inputCls}
@@ -582,7 +595,7 @@ export default function ConfigModal({ isOpen, onClose }: { isOpen: boolean; onCl
                               <div className={labelCls}>BASE URL</div>
                               <input
                                 value={modelForm.baseUrl}
-                                onChange={(e) => setModelForm({ ...modelForm, baseUrl: e.target.value })}
+                                onChange={(e) => updateModelForm({ baseUrl: e.target.value })}
                                 placeholder="https://api.deepseek.com"
                                 className={inputCls}
                                 spellCheck={false}
@@ -595,32 +608,22 @@ export default function ConfigModal({ isOpen, onClose }: { isOpen: boolean; onCl
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-2 border-t-2 border-ink/10 border-dashed">
                               <div>
                                 <div className={labelCls}>RPM</div>
-                                <input value={modelForm.rpm} onChange={(e) => setModelForm({ ...modelForm, rpm: e.target.value })} className={inputCls} type="number" spellCheck={false} />
+                                <input value={modelForm.rpm} onChange={(e) => updateModelForm({ rpm: e.target.value })} className={inputCls} type="number" spellCheck={false} />
                               </div>
                               <div>
                                 <div className={labelCls}>TPM</div>
-                                <input value={modelForm.tpm} onChange={(e) => setModelForm({ ...modelForm, tpm: e.target.value })} className={inputCls} type="number" spellCheck={false} />
+                                <input value={modelForm.tpm} onChange={(e) => updateModelForm({ tpm: e.target.value })} className={inputCls} type="number" spellCheck={false} />
                               </div>
                               <div>
                                 <div className={labelCls}>CONCURRENCY</div>
-                                <input value={modelForm.concurrency} onChange={(e) => setModelForm({ ...modelForm, concurrency: e.target.value })} className={inputCls} type="number" spellCheck={false} />
+                                <input value={modelForm.concurrency} onChange={(e) => updateModelForm({ concurrency: e.target.value })} className={inputCls} type="number" spellCheck={false} />
                               </div>
                               <div>
                                 <div className={labelCls}>MAX TOKEN</div>
-                                <input value={modelForm.maxToken} onChange={(e) => setModelForm({ ...modelForm, maxToken: e.target.value })} className={inputCls} type="number" spellCheck={false} />
+                                <input value={modelForm.maxToken} onChange={(e) => updateModelForm({ maxToken: e.target.value })} className={inputCls} type="number" spellCheck={false} />
                               </div>
                             </div>
                           )}
-
-                          <div className="flex justify-end">
-                            <button
-                              onClick={applyModelForm}
-                              style={sketchyShape1}
-                              className="px-6 py-2 bg-[#a3be8c] border-4 border-ink text-ink font-black flex items-center gap-2 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:bg-[#8eb072] active:translate-y-1 active:shadow-none transition-all rotate-1"
-                            >
-                              <Save size={18} strokeWidth={3} /> 应用修改（暂存内存）
-                            </button>
-                          </div>
                         </div>
                       )}
                     </div>
@@ -629,7 +632,7 @@ export default function ConfigModal({ isOpen, onClose }: { isOpen: boolean; onCl
 
                 <div className="text-xs font-bold text-ink/40 flex items-start gap-1">
                   <Info size={14} className="shrink-0 mt-0.5" />
-                  修改后暂存内存，点右上角 SAVE ALL 落盘并热重载模型；视觉顾问仅需 SDK / 模型名 / Base URL / API Key。
+                  填写内容实时暂存，折叠 / 切页不会丢失，只要不关掉配置中心就一直在；点右上角 SAVE ALL 统一落盘并热重载模型。视觉顾问仅需 SDK / 模型名 / Base URL / API Key。
                 </div>
               </div>
             )}

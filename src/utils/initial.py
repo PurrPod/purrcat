@@ -90,9 +90,9 @@ def _get_model_config_dict():
             }
         },
         "vision": {
-            "openai:qwen3.6-plus": {
+            "openai:deepseek-v4-flash-vision-exp": {
                 "api_keys": [""],
-                "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+                "base_url": "https://api.deepseek.com",
             }
         },
     }
