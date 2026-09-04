@@ -44,6 +44,31 @@ uv run python main.py --api --headless       # 浏览器打开 http://localhost:
 
 > 注：本地文件操作、终端等功能依赖 Electron 运行时，纯浏览器模式下可能出现异常。建议使用桌面端获得完整体验。
 
+## 📦 安装预编译版本（macOS 必读）
+
+> **macOS 用户注意：** PurrCat 桌面端目前 **未做 Apple Developer ID 签名与公证**（项目是开源的，没有付费证书）。从 macOS Catalina 起 —— 尤其是 **macOS Sequoia (15)** —— 打开从互联网下载的未签名 `.app`，会被 **XProtect** 直接视为恶意程序并自动移动到废纸篓，提示类似 "PurrCat will damage your computer"。**这是 Gatekeeper 因缺失签名产生的误报，跟代码本身没有关系。**
+
+### 临时绕过方案（二选一）
+
+**方案 A —— 终端一行命令去除隔离标签（推荐）：**
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/PurrCat.app"
+open "/Applications/PurrCat.app"
+```
+
+注意：每发一个新版本都需要重新执行一次，因为每次重新下载都会重新打上 `com.apple.quarantine` 扩展属性。
+
+**方案 B —— 不开终端，首次启动手动信任：**
+
+1. 把 `PurrCat.app` 从 dmg 拖进 `/Applications`。
+2. 在 Finder 里 **右键**（或按住 Control 点击）应用图标 → 选择 **打开**。
+3. 在系统弹窗里点 **打开**。之后再次双击即可正常启动。
+
+### 长期方案
+
+正式签名 + 公证需要注册 Apple Developer 账号（$99/年）。根因在 `package.json` → `build.mac.identity` 和 `.github/workflows/release.yml` → `CSC_IDENTITY_AUTO_DISCOVERY: false` 这两处，欢迎社区提 PR。
+
 ## 架构
 
 ### 01 混合记忆与知识图谱
