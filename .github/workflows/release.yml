@@ -105,17 +105,30 @@ jobs:
           VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
-          
+
           RELEASE_NOTES=$(awk -v version="$VERSION" '
             $0 == "## [" version "]" { in_section = 1; next }
             /^## / && in_section { exit }
             in_section { print }
           ' CHANGELOG.md)
-          
+
           if [ -z "$RELEASE_NOTES" ]; then
             RELEASE_NOTES="Release $VERSION"
           fi
-          
+
+          # 🌟 macOS 临时绕过提示：项目尚未做签名+公证，用户首次打开可能被 XProtect
+          #    扔进废纸篓。固定从仓库内文件读取拼到 release notes 末尾，保证用户
+          #    在下载页就能看到、不会漏掉；更新版本号占位符为本次发版号；
+          #    文件不可用时整个跳过，不要让 release 卡死。
+          if [ -f .github/release-notes-macos.md ]; then
+            MACOS_NOTE=$(sed "s/\${VERSION}/$VERSION/g" .github/release-notes-macos.md)
+            # 单行拼避免 YAML literal block 把内容提前 end 掉
+            FULL_NOTES=$(printf '%s\n\n%s' "$RELEASE_NOTES" "$MACOS_NOTE")
+          else
+            echo "::warning::.github/release-notes-macos.md not found, skipping macOS note"
+            FULL_NOTES="$RELEASE_NOTES"
+          fi
+
           # 🌟 GitHub API 不允许 prerelease 标记 Latest（HTTP 422:
           # "Latest release cannot be draft or prerelease"）。
           # beta 版想挂 Latest 必须做成完整发布，"beta" 只留在版本号里（OpenClaw 等项目的做法）；
@@ -123,20 +136,22 @@ jobs:
           IS_ALPHA=$([ "${{ inputs.release_type }}" = "alpha" ] && echo true || echo false)
 
           if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "Release $TAG already exists"
+            echo "Release $TAG already exists, refreshing notes"
             if [ "$IS_ALPHA" = "false" ]; then
-              gh release edit "$TAG" --prerelease=false --latest
+              gh release edit "$TAG" --prerelease=false --latest --notes "$FULL_NOTES"
+            else
+              gh release edit "$TAG" --prerelease --notes "$FULL_NOTES"
             fi
           else
             if [ "$IS_ALPHA" = "true" ]; then
               gh release create "$TAG" \
                 --title "PurrCat $VERSION" \
-                --notes "$RELEASE_NOTES" \
+                --notes "$FULL_NOTES" \
                 --prerelease
             else
               gh release create "$TAG" \
                 --title "PurrCat $VERSION" \
-                --notes "$RELEASE_NOTES" \
+                --notes "$FULL_NOTES" \
                 --latest
             fi
           fi

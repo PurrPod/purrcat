@@ -44,6 +44,31 @@ uv run python main.py --api --headless       # Open http://localhost:8000 in a b
 
 > Note: several features (local file access, terminal, etc.) depend on the Electron runtime and may misbehave in a plain browser. The desktop client is recommended for full functionality.
 
+## 📦 Installing a pre-built release (macOS)
+
+> **Heads-up for macOS users:** PurrCat desktop builds are **not yet signed or notarized** with an Apple Developer ID (the project is open source and does not own a paid certificate). On macOS Catalina and later — especially **macOS Sequoia (15)** — opening an unsigned `.app` downloaded from the internet can trigger **XProtect**, which may quarantine the app and move it to the Trash with a "PurrCat will damage your computer" / "malware" warning. **This is a false positive driven by the missing signature, not by anything in the code.**
+
+### Workarounds (pick one)
+
+**Option A — Strip the quarantine flag (recommended, one-liner):**
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/PurrCat.app"
+open "/Applications/PurrCat.app"
+```
+
+You will need to repeat this after installing each new release, because every freshly downloaded `.app` ships with a new quarantine attribute.
+
+**Option B — Trust on first launch (no terminal):**
+
+1. Drag `PurrCat.app` out of the DMG into `/Applications` as usual.
+2. In Finder, **right-click** (or Control-click) the app → choose **Open**.
+3. Click **Open** in the system dialog. From the next launch on, double-clicking works as normal.
+
+### Long-term fix
+
+Apple Developer ID signing + notarization (requires a registered Apple Developer account, $99/year). The root cause lives in `package.json` → `build.mac.identity` and `.github/workflows/release.yml` → `CSC_IDENTITY_AUTO_DISCOVERY: false`. Tracked as a follow-up; community PRs welcome.
+
 ## Architecture
 
 ### 01 Hybrid Memory and Knowledge Graph
