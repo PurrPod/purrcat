@@ -1,5 +1,4 @@
 import os
-import shutil
 import yaml
 import json
 import subprocess
@@ -11,11 +10,13 @@ from src.utils.config import (
     SYSTEM_RULES_DIR,
     SOUL_MD_PATH,
     AGENT_CORE_DIR,
+    PARADIGMS_DIR,
 )
 
-# PARADIGM.yaml 的默认模板（程序内置）与用户配置（~/.purrcat/core/）
-DEFAULT_PARADIGM_PATH = os.path.join(SYSTEM_RULES_DIR, "PARADIGM.yaml")
-USER_PARADIGM_PATH = os.path.join(AGENT_CORE_DIR, "PARADIGM.yaml")
+# Agent Loop（PARADIGM）配置：
+# 多个 loop 存放于 ~/.purrcat/paradigms/，其中 PARADIGM.yaml 是默认 Agent Loop
+USER_PARADIGM_PATH = os.path.join(PARADIGMS_DIR, "PARADIGM.yaml")  # 用户默认 Agent Loop
+DEFAULT_PARADIGM_PATH = os.path.join(SYSTEM_RULES_DIR, "PARADIGM.yaml")  # 仅作读取兜底
 
 # 符号 → 绝对路径 映射（PARADIGM.yaml 里用 @符号 引用文件）
 PATH_ALIASES = {
@@ -27,16 +28,20 @@ PATH_ALIASES = {
 
 
 def _default_paradigm_path() -> str:
-    """优先用户配置，不存在则从内置模板复制一份到用户目录"""
+    """优先 paradigms/PARADIGM.yaml；读不到时用 initial.py 的默认模板就地生成，然后再读取。"""
     if os.path.exists(USER_PARADIGM_PATH):
         return USER_PARADIGM_PATH
-    if os.path.exists(DEFAULT_PARADIGM_PATH):
-        try:
-            os.makedirs(AGENT_CORE_DIR, exist_ok=True)
-            shutil.copy(DEFAULT_PARADIGM_PATH, USER_PARADIGM_PATH)
-            return USER_PARADIGM_PATH
-        except Exception:
-            return DEFAULT_PARADIGM_PATH
+    try:
+        os.makedirs(PARADIGMS_DIR, exist_ok=True)
+        # 默认模板定义在 src/utils/initial.py（懒加载，避免 import 环）
+        from src.utils.initial import DEFAULT_PARADIGM_YAML
+
+        with open(USER_PARADIGM_PATH, "w", encoding="utf-8") as f:
+            f.write(DEFAULT_PARADIGM_YAML)
+    except Exception:
+        pass
+    if os.path.exists(USER_PARADIGM_PATH):
+        return USER_PARADIGM_PATH
     return DEFAULT_PARADIGM_PATH
 
 
@@ -112,6 +117,20 @@ class HookHandler:
                 elif action_type == "memo_injection":
                     # 兼容保留原有的记忆注入机制
                     res = self._memo_injection(params, **kwargs)
+
+                # 循环结束时的“退出期望”：检查项可声明 expect: fail，
+                # 表示该条件“未满足”才算通过，从而决定能否跳出循环。
+                # 期望通过后才允许退出，故通过时不注入任何提示。
+                if res and stage_name == "on_loop_end":
+                    expected = params.get("expect")
+                    expect_fail = expected is False or (
+                        isinstance(expected, str)
+                        and expected.lower() in ("fail", "false")
+                    )
+                    if expect_fail:
+                        res["success"] = not bool(res.get("success"))
+                    if res.get("success"):
+                        res["inject_prompt"] = ""
 
                 if res:
                     results.append(res)

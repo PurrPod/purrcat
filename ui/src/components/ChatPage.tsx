@@ -1,7 +1,7 @@
 // src/components/ChatPage.tsx
 import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Send, Cat, Clock, Activity, Server, Zap, Brain, GitMerge, Loader2, FolderOpen, Bell, Paperclip, X, Heart, List, ExternalLink, Plus, BookOpen, ClipboardCopy, TerminalSquare, AlertTriangle, Globe, Pause } from 'lucide-react';
+import { Send, Cat, Clock, Activity, Server, Zap, Brain, GitMerge, Loader2, FolderOpen, Bell, Paperclip, X, Heart, List, ExternalLink, Plus, BookOpen, ClipboardCopy, TerminalSquare, AlertTriangle, Globe, Pause, ArrowLeftRight, Search } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import ReactMarkdown, { defaultUrlTransform } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -80,9 +80,11 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
 
   const [showSessionModal, setShowSessionModal] = useState(false);
   const [showModal, setShowModal] = useState(false);
+  const [showParadigmModal, setShowParadigmModal] = useState(false);
+  const [paradigmSearch, setParadigmSearch] = useState('');
   const [newAlias, setNewAlias] = useState('');
-  const [selectedProject, setSelectedProject] = useState('');
-  const [infoData, setInfoData] = useState<{skills: string[], workshops: string[]}>({skills: [], workshops: []});
+  const [selectedParadigm, setSelectedParadigm] = useState('');
+  const [paradigms, setParadigms] = useState<{ name: string; is_default: boolean }[]>([]);
   const [showBranchModal, setShowBranchModal] = useState(false);
   const [branchAlias, setBranchAlias] = useState('');
   const [sessionToDelete, setSessionToDelete] = useState<string | null>(null);
@@ -178,16 +180,25 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
     return () => window.removeEventListener('resize', check);
   }, []);
 
-  // 🌟 挂载时拉取 info.json (skills & workshops)
-  useEffect(() => {
-    const fetchInfoData = async () => {
-      try {
-        const res = await fetch('/api/config/info');
-        if (res.ok) setInfoData(await res.json());
-      } catch { /* noop */ }
-    };
-    fetchInfoData();
+  // 🌟 paradigms/ 文件列表（新会话挑选 & 热切换 Agent Loop；默认 PARADIGM.yaml 兜底）
+  const refreshParadigms = useCallback(async () => {
+    try {
+      const res = await fetch('/api/paradigms');
+      if (res.ok) {
+        const data = await res.json();
+        setParadigms((data.files ?? []) as { name: string; is_default: boolean }[]);
+      }
+    } catch { /* noop */ }
   }, []);
+  useEffect(() => {
+    void refreshParadigms();
+  }, [refreshParadigms]);
+
+  const paradigmQ = paradigmSearch.trim().toLowerCase();
+  const otherParadigms = paradigms.filter((f) => f.name !== 'PARADIGM');
+  const shownParadigms = paradigmQ
+    ? otherParadigms.filter((f) => f.name.toLowerCase().includes(paradigmQ))
+    : otherParadigms;
 
   // 🌟 保存心跳配置（开启时必须提交非空 GOAL.md 内容）
   const saveHeartbeat = async () => {
@@ -814,32 +825,43 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
     setShowModal(false);
     setIsCheckingOut(true);
     try {
+      // 不选择范式 = 使用默认 PARADIGM.yaml 兜底
+      const payload: Record<string, unknown> = { alias: newAlias.trim() };
+      if (selectedParadigm) payload.paradigm = selectedParadigm;
+
       const res = await fetch('/api/sessions/new', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ alias: newAlias.trim() })
+        body: JSON.stringify(payload)
       });
       if (res.ok) {
         const data = await res.json();
         await loadSessions();
         await handleSelectSession(data.id);
-
-        // 如果选择了作坊，则自动发送第一条消息注入上下文
-        if (selectedProject) {
-          await fetch('/api/chat/batch', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              session_id: data.id,
-              events: [{ type: 'user', content: `我们现在来处理作坊项目：${selectedProject}` }]
-            })
-          });
-        }
       }
     } catch { /* noop */ } finally {
       setIsCheckingOut(false);
       setNewAlias('');
-      setSelectedProject('');
+      setSelectedParadigm('');
+    }
+  };
+  // 🌟 会话暂停时热切换 Agent Loop：仅替换 Hook 循环逻辑，不改动系统提示词（保住 KV Cache）
+  const handleSwitchParadigm = async (name: string) => {
+    setShowParadigmModal(false);
+    if (!currentSessionId) return;
+    try {
+      const res = await fetch(`/api/sessions/${currentSessionId}/paradigm`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paradigm: name })
+      });
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => null);
+        throw new Error((errBody && errBody.detail) || '切换失败');
+      }
+      toast.success(name ? `已切换 Agent Loop：${name}` : '已恢复默认 PARADIGM.yaml');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '切换失败');
     }
   };
   const confirmBranchSession = async () => { setShowBranchModal(false); setIsCheckingOut(true); try { const res = await fetch(`/api/sessions/${currentSessionId}/branch`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ alias: branchAlias.trim() }) }); if (res.ok) { const data = await res.json(); await loadSessions(); await handleSelectSession(data.id); } } catch { /* noop */ } finally { setIsCheckingOut(false); } };
@@ -1075,7 +1097,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   // --- Props 组织区 ---
   const modalProps = {
     isCheckingOut, showBusyModal, setShowBusyModal,
-    showModal, setShowModal, newAlias, setNewAlias, selectedProject, setSelectedProject, workshops: infoData.workshops, confirmNewSession,
+    showModal, setShowModal, newAlias, setNewAlias, selectedParadigm, setSelectedParadigm, paradigmFiles: paradigms, confirmNewSession,
     showBranchModal, setShowBranchModal, branchAlias, setBranchAlias, confirmBranchSession,
     sessionToDelete, setSessionToDelete, confirmDeleteSession,
     branchToDelete, setBranchToDelete, currentSessionId, loadSessionHistory, loadBranches, setCurrentBranchId,
@@ -1110,6 +1132,57 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
     <div className="absolute inset-0 bg-[#fdfaf5] bg-[radial-gradient(#1a1a1a_1px,transparent_1px)] [background-size:24px_24px] p-6 md:p-8 flex gap-6 overflow-hidden font-sans">
 
       <ChatModals {...modalProps} />
+
+      {/* 暂停时热切换 Agent Loop */}
+      {showParadigmModal && (
+        <div className="fixed inset-0 bg-ink/40 backdrop-blur-sm z-[170] flex items-center justify-center p-4">
+          <div style={sketchyShape2} className="bg-paper border-4 border-ink p-6 flex flex-col gap-4 shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] -rotate-1 max-w-md w-full">
+            <div className="flex justify-between items-center rotate-1">
+              <h3 className="text-2xl font-black tracking-widest flex items-center gap-2" style={{ fontFamily: '"Comic Sans MS", cursive' }}>
+                <ArrowLeftRight size={22} strokeWidth={2.5} />
+                切换 Agent Loop
+              </h3>
+              <button onClick={() => setShowParadigmModal(false)} className="hover:text-terracotta hover:scale-110 transition-all"><X size={26} strokeWidth={3}/></button>
+            </div>
+            <div className="flex items-center gap-2 rotate-1 shrink-0">
+              <Search size={15} strokeWidth={2.5} className="text-ink/40 shrink-0" />
+              <input
+                value={paradigmSearch}
+                onChange={(e) => setParadigmSearch(e.target.value)}
+                placeholder="搜索 Agent Loop 关键词…"
+                className="flex-1 bg-cream border-2 border-ink px-3 py-2 font-bold text-sm focus:outline-none focus:bg-white shadow-[inset_2px_2px_0px_0px_rgba(26,26,26,0.05)] placeholder:text-ink/30"
+                style={sketchyShape3}
+              />
+            </div>
+            <div className="max-h-72 overflow-y-auto flex flex-col gap-2 rotate-1">
+              {!paradigmQ && (
+                <button
+                  onClick={() => void handleSwitchParadigm('')}
+                  style={sketchyShape3}
+                  className="w-full text-left px-4 py-3 border-4 border-ink bg-cream hover:bg-sand font-black text-ink text-lg transition-colors"
+                >
+                  默认范式（PARADIGM.yaml 兜底）
+                </button>
+              )}
+              {shownParadigms.map((f) => (
+                <button
+                  key={f.name}
+                  onClick={() => void handleSwitchParadigm(f.name)}
+                  style={sketchyShape1}
+                  className="w-full text-left px-4 py-3 border-4 border-ink bg-paper hover:bg-[#bfdcef] font-black text-ink text-lg transition-colors"
+                >
+                  {f.name}
+                </button>
+              ))}
+              {shownParadigms.length === 0 && (
+                <div className="text-center py-4 font-bold text-ink/40 text-sm" style={{ fontFamily: '"Comic Sans MS", cursive' }}>
+                  {paradigmQ ? '无匹配的 Agent Loop' : '暂无其它范式文件'}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
       <ConfigModal isOpen={isConfigOpen} onClose={() => setIsConfigOpen(false)} />
       
       {/* 🌟 如果浏览器和 IDE 都没有打开，才显示左侧边栏 */}
@@ -1327,6 +1400,15 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
                             title="Branch (基于当前会话新建分支并切换过去)"
                           >
                             {isCheckingOut ? <Loader2 size={18} strokeWidth={2.5} className="animate-spin" /> : <GitMerge size={18} strokeWidth={2.5} />}
+                          </button>
+                          <button
+                            onClick={() => { void refreshParadigms(); setParadigmSearch(''); setShowParadigmModal(true); }}
+                            disabled={isCheckingOut}
+                            className="p-2 bg-paper border-2 border-ink hover:bg-[#5e81ac] hover:text-paper shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] transition-all hover:-translate-y-[1px] active:translate-y-0 active:shadow-none disabled:opacity-50 disabled:hover:bg-paper disabled:hover:text-ink disabled:hover:translate-y-0"
+                            style={sketchyShape3}
+                            title="切换 Agent Loop（只换循环逻辑，不动系统提示词，保住 KV Cache）"
+                          >
+                            <ArrowLeftRight size={18} strokeWidth={2.5} />
                           </button>
                         </div>
                       )}

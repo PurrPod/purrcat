@@ -78,6 +78,9 @@ HEARTBEAT_FILE = os.path.join(AGENT_CORE_DIR, "heartbeat.json")
 GOAL_MD_PATH = os.path.join(AGENT_CORE_DIR, "GOAL.md")
 SYSTEM_RULES_DIR = os.path.join(AGENT_DIR, "system_rules")
 
+# 多个 Agent Loop（paradigm）YAML 配置目录；PARADIGM.yaml 为默认 Agent Loop
+PARADIGMS_DIR = os.path.join(PURRCAT_DIR, "paradigms")
+
 SESSIONS_DIR = os.path.join(DATA_DIR, "checkpoints", "agent")
 SESSION_INDEX_PATH = os.path.join(SESSIONS_DIR, "index.json")
 
