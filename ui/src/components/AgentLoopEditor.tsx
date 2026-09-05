@@ -153,6 +153,11 @@ const HIDE_HANDLE_CSS = `
 `;
 
 // 每个可编辑节点（Hook/决策站）四个方向都提供收发锚点，供不同走向的边使用
+// 另有一对「顶部固定高度」与一对「底部固定高度」的侧向锚点：
+//  - 顶部锚点（top:40）：迭代分支正向线（epoch → tool）专用。两站顶部对齐，
+//    固定高度保证连线恒为水平线，不随动作数量（站点高度）变化而打折
+//  - 底部锚点（bottom:20）：工具检查回线（tool → epoch）专用，与顶部分层走线，
+//    任何高度组合下都不会与正向线或主干竖线重叠
 const STATION_HANDLES = (
   <>
     <Handle type="target" position={Position.Top} id="t_top" className="ag-node-hidden-handle" />
@@ -163,6 +168,10 @@ const STATION_HANDLES = (
     <Handle type="source" position={Position.Left} id="s_left" className="ag-node-hidden-handle" />
     <Handle type="target" position={Position.Right} id="t_right" className="ag-node-hidden-handle" />
     <Handle type="source" position={Position.Right} id="s_right" className="ag-node-hidden-handle" />
+    <Handle type="source" position={Position.Right} id="s_right_top" className="ag-node-hidden-handle" style={{ top: 40 }} />
+    <Handle type="target" position={Position.Left} id="t_left_top" className="ag-node-hidden-handle" style={{ top: 40 }} />
+    <Handle type="source" position={Position.Left} id="s_left_low" className="ag-node-hidden-handle" style={{ top: 'auto', bottom: 20 }} />
+    <Handle type="target" position={Position.Right} id="t_right_low" className="ag-node-hidden-handle" style={{ top: 'auto', bottom: 20 }} />
   </>
 );
 
@@ -977,7 +986,6 @@ const AgentLoopEditor = forwardRef<AgentLoopEditorHandle, AgentLoopEditorProps>(
 
   const deleteFile = async (name: string) => {
     if (!name) return;
-    if (!window.confirm(`确定删除 paradigm「${name}」？该操作不可恢复。`)) return;
     try {
       const res = await fetch(`/api/paradigms/${encodeURIComponent(name)}`, { method: 'DELETE' });
       if (!res.ok) {
@@ -1145,10 +1153,11 @@ const AgentLoopEditor = forwardRef<AgentLoopEditorHandle, AgentLoopEditorProps>(
     addNode(endNode);
 
     // ---- 回环路由点：左侧外绕轨道 ----
-    // 轨道1（x = loopRailX1）：循环结束检查(失败) → 每轮循环迭代
-    // 轨道2（x = loopRailX2）：结束 → 用户输入（下一轮任务）
-    const loopRailX1 = X_LEFT - 140; // 60
-    const loopRailX2 = X_LEFT - 70; // 110
+    // 内轨（x = loopRailX1，靠内）：循环结束检查(失败) → 每轮循环迭代
+    // 外轨（x = loopRailX2，最外）：结束 → 用户输入（下一轮任务）。
+    // 外环竖跨整条主链，必须放在更外侧，否则其竖线会与内轨的水平段交叉
+    const loopRailX1 = X_LEFT - 70; // 110
+    const loopRailX2 = X_LEFT - 140; // 40
     const endCheckTop = endCheckNode.position!.y;
 
     const pivotD = {
@@ -1193,18 +1202,21 @@ const AgentLoopEditor = forwardRef<AgentLoopEditorHandle, AgentLoopEditorProps>(
     addEdge('user_input', 's_bot', 'on_loop_start', 't_top');
     addEdge('on_loop_start', 's_bot', 'on_loop_epoch', 't_top');
     // 分支：有工具调用 → 工具调用检查；无工具调用 → 直达结束检查
-    addEdge('on_loop_epoch', 's_right', 'on_tool_calling', 't_left', '有工具调用');
+    // 正向线走顶部固定锚点：两站顶部对齐，恒为水平线，不受站点高度差影响
+    addEdge('on_loop_epoch', 's_right_top', 'on_tool_calling', 't_left_top', '有工具调用');
     addEdge('on_loop_epoch', 's_bot', 'on_loop_end', 't_top', '无工具调用');
-    // 工具调用检查通过 → 回到「每轮循环迭代时」（进行下一轮迭代；无工具调用时才进入结束检查）
-    addEdge('on_tool_calling', 's_bot', 'on_loop_epoch', 't_bot');
-    // 环1：结束检查未通过 → 左侧绕回「每轮循环迭代」
-    addEdge('on_loop_end', 's_left', 'loop_pivot_bottom', 't_left', undefined, false);
+    // 工具调用检查通过 → 底部锚点水平回到「每轮循环迭代」
+    // （不能走底部中心 s_bot/t_bot：那里有去结束检查的主干竖线，会导致重叠与下方绕行凸起）
+    addEdge('on_tool_calling', 's_left_low', 'on_loop_epoch', 't_right_low');
+    // 环1：结束检查未通过 → 左侧内轨绕回「每轮循环迭代」
+    // （进入轨道点用 t_right：从右侧水平接入，避免 t_left 先过冲 20px 再折返的凸起）
+    addEdge('on_loop_end', 's_left', 'loop_pivot_bottom', 't_right', undefined, false);
     addEdge('loop_pivot_bottom', 's_top', 'loop_pivot_top', 't_bot', '失败 · 下一轮', false);
     addEdge('loop_pivot_top', 's_right', 'on_loop_epoch', 't_left');
     // 结束检查通过 → 结束
     addEdge('on_loop_end', 's_bot', 'end', 't_top', '成功 · 结束');
-    // 环2：结束后回到「用户输入」（新一轮任务循环）
-    addEdge('end', 's_left', 'end_loop_bottom', 't_left', undefined, false);
+    // 环2：结束后回到「用户输入」（新一轮任务循环），走最外侧轨道
+    addEdge('end', 's_left', 'end_loop_bottom', 't_right', undefined, false);
     addEdge('end_loop_bottom', 's_top', 'end_loop_top', 't_bot', undefined, false);
     addEdge('end_loop_top', 's_right', 'user_input', 't_left');
 

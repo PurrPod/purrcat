@@ -44,6 +44,8 @@ export default function Toolbar({ onBack, mode = 'workflow', onModeChange, agent
 
   // 清空画布确认弹窗状态
   const [isClearModalOpen, setIsClearModalOpen] = useState(false)
+  // 删除 paradigm 确认（涂鸦风格弹窗）
+  const [paradigmToDelete, setParadigmToDelete] = useState<string | null>(null)
 
   // 点击外部关闭 Open 菜单
   useEffect(() => {
@@ -120,6 +122,7 @@ export default function Toolbar({ onBack, mode = 'workflow', onModeChange, agent
     if (!handle) return
     await handle.deleteFile(name)
     await loadParadigmList()
+    setParadigmToDelete(null)
   }
   const saveParadigm = () => {
     void agentLoop?.ref.current?.save()
@@ -342,7 +345,10 @@ export default function Toolbar({ onBack, mode = 'workflow', onModeChange, agent
                           {!f.is_default && (
                             <button
                               title={`删除 ${f.name}`}
-                              onClick={() => void deleteParadigm(f.name)}
+                              onClick={() => {
+                                setShowFileMenu(false)
+                                setParadigmToDelete(f.name)
+                              }}
                               style={sketchyShape2}
                               className="shrink-0 flex items-center justify-center px-2 bg-cream border-4 border-ink text-ink/50 hover:text-paper hover:bg-[#bf616a] transition-colors"
                             >
@@ -436,6 +442,30 @@ export default function Toolbar({ onBack, mode = 'workflow', onModeChange, agent
               </button>
               <button onClick={() => { clearGraph(); setIsClearModalOpen(false); }} style={sketchyShape2} className="flex-1 py-3 bg-[#bf616a] text-paper border-4 border-ink font-black shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:bg-red-500 transition-all">
                 CLEAR
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* === 删除 Paradigm 确认弹窗（涂鸦风格） === */}
+      {paradigmToDelete && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-ink/40 backdrop-blur-sm p-4 pointer-events-auto">
+          <div style={sketchyShape3} className="bg-paper border-4 border-ink shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] w-full max-w-sm p-8 relative -rotate-1">
+            <h3 className="text-2xl font-black mb-4 tracking-widest text-[#bf616a]" style={{ fontFamily: '"Comic Sans MS", cursive' }}>DELETE PARADIGM?</h3>
+            <p className="font-bold mb-6 opacity-80 text-lg">
+              确定要删除 paradigm「{paradigmToDelete}」？该操作不可恢复！
+            </p>
+            <div className="flex gap-4">
+              <button onClick={() => setParadigmToDelete(null)} style={sketchyShape1} className="flex-1 py-3 bg-cream text-ink border-4 border-ink font-black shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:bg-sand transition-all">
+                CANCEL
+              </button>
+              <button
+                onClick={() => void deleteParadigm(paradigmToDelete)}
+                style={sketchyShape2}
+                className="flex-1 py-3 bg-[#bf616a] text-paper border-4 border-ink font-black shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:bg-red-500 transition-all"
+              >
+                DELETE
               </button>
             </div>
           </div>
