@@ -3,7 +3,8 @@
 约定：GET/POST/DELETE 的 {name} 均为不带 .yaml 后缀的文件名；
 POST 会整体覆盖写回，天然承担“新建”与“保存”两种语义。
 """
-from typing import Any, Dict, List
+
+from typing import Any, Dict
 
 from fastapi import APIRouter, HTTPException
 

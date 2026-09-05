@@ -1,13 +1,13 @@
 // src/components/MarketPage.tsx
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { ArrowLeft, Store, RefreshCw, User, AlertCircle, Zap, Server, Activity, GitMerge, X, Copy, Search, LayoutGrid, FolderGit2, Download, Check, ChevronLeft, Loader2, Link2 } from 'lucide-react';
+import { ArrowLeft, Store, RefreshCw, User, AlertCircle, Zap, Server, Activity, GitMerge, X, Copy, Search, LayoutGrid, FolderGit2, Download, Check, ChevronLeft, Loader2, Link2, Repeat } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
 const sketchyShape1 = { borderRadius: '255px 15px 225px 15px/15px 225px 15px 255px' };
 const sketchyShape2 = { borderRadius: '15px 225px 15px 255px/255px 15px 225px 15px' };
 const sketchyShape3 = { borderRadius: '225px 15px 255px 15px/15px 255px 15px 225px' };
 
-type MarketTab = 'skill' | 'mcp' | 'sensor' | 'graph';
+type MarketTab = 'skill' | 'mcp' | 'sensor' | 'graph' | 'loop';
 type LayoutMode = 'repo' | 'skill';
 
 // Registry v2.0 的 skill 条目结构
@@ -555,7 +555,8 @@ export default function MarketPage({ onBack, initialTab }: { onBack: () => void;
     activeTab === 'skill' ? isFetchingSkill :
     activeTab === 'mcp' ? isFetchingMcp :
     activeTab === 'sensor' ? isFetchingSensor :
-    isFetchingGraph;
+    activeTab === 'graph' ? isFetchingGraph :
+    false;
 
   return (
     <div ref={rootRef} className="absolute inset-0 bg-[#fdfaf5] bg-[radial-gradient(#1a1a1a_1px,transparent_1px)] [background-size:24px_24px] p-6 md:p-8 flex gap-6 overflow-hidden font-sans">
@@ -1046,6 +1047,14 @@ export default function MarketPage({ onBack, initialTab }: { onBack: () => void;
               </div>
             </button>
 
+            <button onClick={() => setActiveTab('loop')} style={sketchyShape2} className={`p-4 border-4 border-ink text-left transition-all flex items-center gap-4 ${activeTab === 'loop' ? 'bg-[#5e81ac] text-paper shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] -translate-y-1' : 'bg-cream text-ink hover:bg-sand'}`}>
+              <Repeat size={28} strokeWidth={2.5} className="shrink-0"/>
+              <div className="min-w-0">
+                <div className="font-black text-xl tracking-widest truncate" style={{ fontFamily: '"Comic Sans MS", cursive' }}>LOOPS</div>
+                <div className="text-xs font-bold opacity-70 truncate">Agent Loop Paradigms</div>
+              </div>
+            </button>
+
           </div>
         </div>
       </div>
@@ -1067,6 +1076,7 @@ export default function MarketPage({ onBack, initialTab }: { onBack: () => void;
               {activeTab === 'mcp' && <Server className="text-[#EBCB8B]" strokeWidth={2.5} />}
               {activeTab === 'sensor' && <Activity className="text-[#a3be8c]" strokeWidth={2.5} />}
               {activeTab === 'graph' && <GitMerge className="text-[#b48ead]" strokeWidth={2.5} />}
+              {activeTab === 'loop' && <Repeat className="text-[#5e81ac]" strokeWidth={2.5} />}
             </div>
             <h2 className={`${isNarrow ? 'text-lg' : 'text-3xl'} font-black tracking-widest text-ink uppercase truncate min-w-0`} style={{ fontFamily: '"Comic Sans MS", cursive' }}>
               {activeTab} EXPLORER
@@ -1415,6 +1425,19 @@ export default function MarketPage({ onBack, initialTab }: { onBack: () => void;
                   })}
                 </div>
               )}
+            </div>
+          )}
+
+          {/* ================= LOOPS 占位（coming soon） ================= */}
+          {activeTab === 'loop' && (
+            <div className="w-full h-full flex items-center justify-center">
+              <div style={sketchyShape2} className="flex flex-col items-center gap-6 bg-paper border-4 border-ink px-10 py-12 shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] -rotate-2 max-w-lg text-center mx-6">
+                <div style={sketchyShape1} className="w-24 h-24 bg-[#5e81ac] border-4 border-ink flex items-center justify-center rotate-6 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)]">
+                  <Repeat size={52} strokeWidth={2.5} className="text-paper" />
+                </div>
+                <h3 className="text-4xl font-black tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>COMING SOON</h3>
+                <p className="text-sm font-bold text-ink/60 leading-relaxed">Agent Loop 市场即将上线，敬请期待。</p>
+              </div>
             </div>
           )}
 

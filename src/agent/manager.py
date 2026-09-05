@@ -216,7 +216,10 @@ class AgentManager:
         self._agent.hook_handler.load_config(path)  # 仅热替换 hooks/循环配置
 
         SessionStore.set_session_paradigm(
-            session_id, paradigm.strip() if isinstance(paradigm, str) and paradigm.strip() else None
+            session_id,
+            paradigm.strip()
+            if isinstance(paradigm, str) and paradigm.strip()
+            else None,
         )
         print(f"[Paradigm] 会话 {session_id} 已切换范式: {path}")
         return path

@@ -124,7 +124,8 @@ class HookHandler:
                 if res and stage_name == "on_loop_end":
                     expected = params.get("expect")
                     expect_fail = expected is False or (
-                        isinstance(expected, str) and expected.lower() in ("fail", "false")
+                        isinstance(expected, str)
+                        and expected.lower() in ("fail", "false")
                     )
                     if expect_fail:
                         res["success"] = not bool(res.get("success"))

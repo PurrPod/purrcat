@@ -5,6 +5,7 @@
   - 其它文件为可切换编辑的备选 loop。
 首次访问时若无 PARADIGM.yaml，用 src/utils/initial.py 里的默认模板就地生成一份再读取。
 """
+
 import os
 import re
 

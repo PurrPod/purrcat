@@ -21,7 +21,9 @@ router = APIRouter(prefix="/api", tags=["Chat & Sessions"])
 
 class NewSessionReq(BaseModel):
     alias: str = "New Session"
-    paradigm: str = ""  # paradigms/ 下的文件名（不带 .yaml）；为空则使用默认 PARADIGM.yaml 兜底
+    paradigm: str = (
+        ""  # paradigms/ 下的文件名（不带 .yaml）；为空则使用默认 PARADIGM.yaml 兜底
+    )
 
 
 class ParadigmSwitchReq(BaseModel):
