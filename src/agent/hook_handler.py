@@ -11,11 +11,14 @@ from src.utils.config import (
     SYSTEM_RULES_DIR,
     SOUL_MD_PATH,
     AGENT_CORE_DIR,
+    PARADIGMS_DIR,
 )
 
-# PARADIGM.yaml 的默认模板（程序内置）与用户配置（~/.purrcat/core/）
-DEFAULT_PARADIGM_PATH = os.path.join(SYSTEM_RULES_DIR, "PARADIGM.yaml")
-USER_PARADIGM_PATH = os.path.join(AGENT_CORE_DIR, "PARADIGM.yaml")
+# Agent Loop（PARADIGM）模板与用户配置：
+# 多个 loop 存放于 ~/.purrcat/paradigms/，其中 PARADIGM.yaml 是默认 Agent Loop
+DEFAULT_PARADIGM_PATH = os.path.join(SYSTEM_RULES_DIR, "PARADIGM.yaml")  # 程序内置模板
+USER_PARADIGM_PATH = os.path.join(PARADIGMS_DIR, "PARADIGM.yaml")  # 用户默认 Agent Loop
+LEGACY_USER_PARADIGM_PATH = os.path.join(AGENT_CORE_DIR, "PARADIGM.yaml")  # 旧版本位置
 
 # 符号 → 绝对路径 映射（PARADIGM.yaml 里用 @符号 引用文件）
 PATH_ALIASES = {
@@ -27,16 +30,20 @@ PATH_ALIASES = {
 
 
 def _default_paradigm_path() -> str:
-    """优先用户配置，不存在则从内置模板复制一份到用户目录"""
+    """优先 paradigms/PARADIGM.yaml；缺失时从旧 core/ 位置迁移，否则从内置模板拷贝。"""
     if os.path.exists(USER_PARADIGM_PATH):
         return USER_PARADIGM_PATH
-    if os.path.exists(DEFAULT_PARADIGM_PATH):
-        try:
-            os.makedirs(AGENT_CORE_DIR, exist_ok=True)
+    try:
+        os.makedirs(PARADIGMS_DIR, exist_ok=True)
+        if os.path.exists(LEGACY_USER_PARADIGM_PATH):
+            # 旧版把默认范式存在 core/ 下，迁移到新目录，保留用户已编辑内容
+            shutil.copy(LEGACY_USER_PARADIGM_PATH, USER_PARADIGM_PATH)
+            return USER_PARADIGM_PATH
+        if os.path.exists(DEFAULT_PARADIGM_PATH):
             shutil.copy(DEFAULT_PARADIGM_PATH, USER_PARADIGM_PATH)
             return USER_PARADIGM_PATH
-        except Exception:
-            return DEFAULT_PARADIGM_PATH
+    except Exception:
+        pass
     return DEFAULT_PARADIGM_PATH
 
 
