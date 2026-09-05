@@ -1,11 +1,12 @@
 // src/components/EditorPage.tsx
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ReactFlowProvider } from '@xyflow/react';
 import Toolbar from './Toolbar';
 import NodePanel from './NodePanel';
 import FlowCanvas from './FlowCanvas';
 import AgentLoopEditor from './AgentLoopEditor';
+import type { AgentLoopEditorHandle } from './AgentLoopEditor';
 
 const sketchyShape1 = { borderRadius: '255px 15px 225px 15px/15px 225px 15px 255px' };
 const sketchyShape2 = { borderRadius: '15px 225px 15px 255px/255px 15px 225px 15px' };
@@ -53,11 +54,19 @@ const GlobalSketchyOverrides = () => (
 export default function EditorPage() {
   const navigate = useNavigate();
   const [viewMode, setViewMode] = useState<'workflow' | 'agent_loop'>('workflow');
+  const agentLoopRef = useRef<AgentLoopEditorHandle | null>(null);
+  const [agActive, setAgActive] = useState('');
+  const [agDirty, setAgDirty] = useState(false);
 
   return (
     <div className="absolute inset-0 bg-[#fdfaf5] bg-[radial-gradient(#1a1a1a_1px,transparent_1px)] [background-size:24px_24px] p-8 flex flex-col gap-8 overflow-hidden">
       <GlobalSketchyOverrides />
-      <Toolbar onBack={() => navigate(-1)} mode={viewMode} onModeChange={setViewMode} />
+      <Toolbar
+        onBack={() => navigate(-1)}
+        mode={viewMode}
+        onModeChange={setViewMode}
+        agentLoop={{ ref: agentLoopRef, active: agActive, dirty: agDirty }}
+      />
       <div className="flex-1 flex gap-10 min-h-0 relative z-10 w-full max-w-[1920px] mx-auto">
         {viewMode === 'workflow' ? (
           <ReactFlowProvider>
@@ -72,7 +81,11 @@ export default function EditorPage() {
             </div>
           </ReactFlowProvider>
         ) : (
-          <AgentLoopEditor />
+          <AgentLoopEditor
+            ref={agentLoopRef}
+            onActiveChange={setAgActive}
+            onDirtyChange={setAgDirty}
+          />
         )}
       </div>
     </div>
