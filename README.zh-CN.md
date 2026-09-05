@@ -16,6 +16,8 @@
 
 ## 快速开始
 
+> 如果你是 Windows 用户，可以直接在最新的 [Release](https://github.com/PurrPod/purrcat/releases) 下载安装包。Mac / Linux 用户暂时只能通过源码构建，且这两个版本因人力不足未经测试，仅 Windows 版本经过多人验证可用。
+
 ### 环境要求
 
 - [Docker](https://docs.docker.com/get-docker/)（**必需**，沙盒 Bash 工具与文件隔离依赖它）
@@ -109,6 +111,7 @@ uv run python main.py --api --headless       # 浏览器打开 http://localhost:
 
 - [zhenghuanle](https://github.com/zhenghuanle) 测试了从零开始的安装流程。
 - [Gaeulczy](https://github.com/Gaeulczy) 测试了一键安装与运行脚本。
+- [JohnWJ-co](https://github.com/JohnWJ-co) 帮忙测试了 Mac 版本并排查错误原因。
 - 感谢中山大学开放鸿蒙技术俱乐部举办的智能体开发大赛提供的奖金赞助。
 
 ## 许可证

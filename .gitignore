@@ -11,6 +11,7 @@ src/tool/callmcp/mcp_schema.json
 skills/
 mcps/
 *.bak
+asset/
 Intro.md
 PLAN.md
 exports/
