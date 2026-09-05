@@ -408,6 +408,8 @@ class Agent:
                 msg_resp = response.choices[0].message
                 has_tools = self._process_assistant_message(msg_resp)
 
+                # 本次消息发起的那一批工具调用（on_tool_calling 的 tool_use_check 只查这一批）
+                current_tools = {}
                 if msg_resp.tool_calls:
                     for t in msg_resp.tool_calls:
                         args_dict = {}
@@ -416,12 +418,16 @@ class Agent:
                                 args_dict = json.loads(t.function.arguments)
                             except Exception:
                                 pass
+                        # used_tools 为整轮累积记录（供 on_loop_end 等阶段使用）
                         used_tools.setdefault(t.function.name, []).append(args_dict)
+                        current_tools.setdefault(t.function.name, []).append(args_dict)
 
                 if has_tools:
                     should_pause = self._execute_tool_calls(msg_resp.tool_calls)
                     all_tool_success = self._inject_hook_results(
-                        "on_tool_calling", epoch=loop_epoch, used_tools=used_tools
+                        "on_tool_calling",
+                        epoch=loop_epoch,
+                        used_tools=current_tools,  # 只看本次调用的工具
                     )
                     if not all_tool_success:
                         continue
