@@ -9,7 +9,15 @@ const sketchyShape1 = { borderRadius: '255px 15px 225px 15px/15px 225px 15px 255
 const sketchyShape2 = { borderRadius: '15px 225px 15px 255px/255px 15px 225px 15px' };
 const sketchyShape3 = { borderRadius: '225px 15px 255px 15px/15px 255px 15px 225px' };
 
-export default function Toolbar({ onBack }: { onBack?: () => void }) {
+export type EditorViewMode = 'workflow' | 'agent_loop'
+
+interface ToolbarProps {
+  onBack?: () => void
+  mode?: EditorViewMode
+  onModeChange?: (mode: EditorViewMode) => void
+}
+
+export default function Toolbar({ onBack, mode = 'workflow', onModeChange }: ToolbarProps) {
   const { exportGraph, validateGraph, clearGraph, loadGraph } = useFlowStore()
 
   // Open 菜单状态
@@ -165,12 +173,33 @@ export default function Toolbar({ onBack }: { onBack?: () => void }) {
               <ArrowLeft size={24} strokeWidth={3} />
             </button>
           )}
-          <div className="flex items-center gap-4">
-            <h1 className="text-3xl font-black text-ink tracking-widest mt-1" style={{ fontFamily: '"Comic Sans MS", cursive' }}>WORKFLOW</h1>
-          </div>
+          {onModeChange ? (
+            <div className="flex items-center gap-2">
+              {/* 视图切换：Workflow / Agent Loop */}
+              <div className="flex items-center p-1 bg-cream border-4 border-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)]" style={sketchyShape2}>
+                {(['workflow', 'agent_loop'] as const).map((m) => (
+                  <button
+                    key={m}
+                    onClick={() => onModeChange(m)}
+                    style={sketchyShape1}
+                    className={`px-5 py-2 text-lg tracking-widest font-black transition-all ${
+                      mode === m ? 'bg-ink text-paper' : 'text-ink hover:bg-sand'
+                    }`}
+                  >
+                    {m === 'workflow' ? 'WORKFLOW' : 'AGENT LOOP'}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center gap-4">
+              <h1 className="text-3xl font-black text-ink tracking-widest mt-1" style={{ fontFamily: '"Comic Sans MS", cursive' }}>WORKFLOW</h1>
+            </div>
+          )}
         </div>
 
-        {/* === 右侧区域 === */}
+        {/* === 右侧区域 (仅 Workflow 模式下显示) === */}
+        {mode === 'workflow' && (
         <div 
           style={sketchyShape1}
           className="pointer-events-auto bg-paper border-4 border-ink shadow-[8px_8px_0px_0px_rgba(26,26,26,1)] px-8 py-5 flex items-center gap-6 rotate-1 relative"
@@ -219,6 +248,7 @@ export default function Toolbar({ onBack }: { onBack?: () => void }) {
             <span className="tracking-widest text-lg font-black" style={{ fontFamily: '"Comic Sans MS", cursive' }}>DEPLOY</span>
           </button>
         </div>
+        )}
       </div>
 
       {/* === 部署手绘风弹窗 (Modal) === */}

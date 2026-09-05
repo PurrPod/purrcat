@@ -1,0 +1,1115 @@
+// src/components/AgentLoopEditor.tsx
+// PARADIGM（Agent Loop）机制编辑器：
+//  - 数据源 = 后端 ~/.purrcat/paradigms/*.yaml（PARADIGM.yaml 为默认 Agent Loop）
+//  - 左侧：文件切换/新建/删除 + 各 Hook 的动作列表（可展开直接编辑 config）
+//  - 右侧：实时生成的「带环循环骨架」图（新增/编辑动作即时反映）
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { ReactFlow, Background, Controls, MarkerType, Handle, Position } from '@xyflow/react';
+import type { Node as FlowNode, Edge as FlowEdge } from '@xyflow/react';
+import '@xyflow/react/dist/style.css';
+import { toast } from 'react-hot-toast';
+import { ChevronDown, Plus, Trash2, Save, FolderPlus } from 'lucide-react';
+
+// ============ 领域模型 ============
+
+// 真实 PARADIGM 中支持的 Hook（顺序即流程图展示顺序）
+const HOOK_META = [
+  { key: 'on_build_system_prompt', label: '构建系统提示词时', color: '#FFE3B3' },
+  { key: 'on_loop_start', label: '循环开始时', color: '#BFDCF5' },
+  { key: 'on_loop_epoch', label: '每轮循环迭代时', color: '#C6E8B8' },
+  { key: 'on_loop_end', label: '循环结束时', color: '#F5C3CB' },
+  { key: 'on_tool_calling', label: '工具调用时', color: '#D9C6F0' },
+] as const;
+
+type HookKey = (typeof HOOK_META)[number]['key'];
+const HOOK_KEYS: HookKey[] = HOOK_META.map((h) => h.key);
+const HOOK_KEY_SET = new Set<string>(HOOK_KEYS);
+
+// 可选动作类型（与 hook_handler.py 分发一致；command_on 为旧版别名）
+const ACTION_TYPES = [
+  { key: 'injection', label: '提示注入', desc: '注入一段提示文本' },
+  { key: 'file_operation', label: '文件操作', desc: '读写 / 检查工作区文件' },
+  { key: 'memo_injection', label: '记忆注入', desc: '装载系统共享记忆缓存' },
+  { key: 'tool_use_check', label: '工具使用检查', desc: '校验本轮工具调用记录' },
+  { key: 'command_run', label: '命令执行', desc: '在终端执行一条命令' },
+] as const;
+
+type ActionTypeKey = (typeof ACTION_TYPES)[number]['key'];
+
+interface AgentAction {
+  id: string;
+  type: string;
+  label: string; // 中文名（已知类型展开 / 未知类型显示原名）
+  config: Record<string, unknown>; // YAML action 的参数（可被前端直接编辑）
+}
+
+interface FieldDef {
+  key: string;
+  label: string;
+  kind: 'text' | 'number' | 'textarea' | 'bool' | 'select';
+  options?: string[];
+  placeholder?: string;
+}
+
+// 各动作类型的“常用字段”定义（用于结构化编辑）；未覆盖的字段走通用 JSON 编辑器兜底
+const FIELD_SCHEMA: Record<string, FieldDef[]> = {
+  injection: [
+    { key: 'content', label: '注入内容', kind: 'textarea', placeholder: '注入给 Agent 的提示文本' },
+    { key: 'delay', label: '延迟触发轮次 delay', kind: 'number', placeholder: '例如 5，仅在指定轮次触发' },
+    { key: 'interval', label: '间隔轮次 interval', kind: 'number', placeholder: '例如 10，每隔 N 轮触发' },
+  ],
+  file_operation: [
+    { key: 'action', label: '操作', kind: 'select', options: ['read', 'exist_check', 'write_in', 'add_in', 'delete'] },
+    { key: 'path', label: '路径', kind: 'text', placeholder: '例如 @RULES / agent_vm/xxx.txt' },
+    { key: 'content', label: '写入内容', kind: 'textarea', placeholder: 'write_in / add_in 时写入的内容' },
+    { key: 'failed_prompt', label: '失败提示 failed_prompt', kind: 'text' },
+  ],
+  memo_injection: [
+    { key: 'type', label: '记忆类型', kind: 'text', placeholder: 'full / light / 其它键名' },
+    { key: 'count', label: '条数 count', kind: 'number' },
+  ],
+  tool_use_check: [
+    { key: 'name', label: '工具名 name', kind: 'text', placeholder: '例如 Memo / ComputerUse' },
+    { key: 'successed_prompt', label: '成功提示 successed_prompt', kind: 'text' },
+    { key: 'failed_prompt', label: '失败提示 failed_prompt', kind: 'text' },
+  ],
+  command_run: [
+    { key: 'command', label: '命令', kind: 'text', placeholder: '要执行的 shell 命令' },
+    { key: 'return_log', label: '回传输出 return_log', kind: 'bool' },
+    { key: 'failed_prompt', label: '失败提示 failed_prompt', kind: 'text' },
+  ],
+  command_on: [
+    { key: 'command', label: '命令', kind: 'text', placeholder: '要执行的 shell 命令' },
+    { key: 'return_log', label: '回传输出 return_log', kind: 'bool' },
+    { key: 'failed_prompt', label: '失败提示 failed_prompt', kind: 'text' },
+  ],
+};
+
+const labelOfType = (type: string) => ACTION_TYPES.find((a) => a.key === type)?.label ?? type;
+
+const isPlainObject = (v: unknown): v is Record<string, unknown> =>
+  !!v && typeof v === 'object' && !Array.isArray(v);
+
+const makeActionId = (hookKey: HookKey) => `${hookKey}-${Math.random().toString(36).slice(2, 9)}`;
+
+const makeEmptyHooks = (): Record<HookKey, AgentAction[]> => {
+  const st = {} as Record<HookKey, AgentAction[]>;
+  HOOK_KEYS.forEach((k) => (st[k] = []));
+  return st;
+};
+
+// 从 YAML 的 hook 动作数组转换到编辑器内部结构
+const toActions = (hookKey: HookKey, arr: unknown): AgentAction[] => {
+  if (!Array.isArray(arr)) return [];
+  return arr
+    .map((item, i) => {
+      if (!isPlainObject(item)) return null;
+      const keys = Object.keys(item);
+      if (keys.length === 0) return null;
+      const type = keys[0];
+      const cfg = item[type];
+      return {
+        id: `${hookKey}-${i}-${type}`,
+        type,
+        label: labelOfType(type),
+        config: isPlainObject(cfg) ? cfg : {},
+      };
+    })
+    .filter((x): x is AgentAction => x !== null);
+};
+
+const cloneJson = <T,>(v: T): T => JSON.parse(JSON.stringify(v));
+
+const sketchyShape1 = { borderRadius: '255px 15px 225px 15px/15px 225px 15px 255px' };
+const sketchyShape2 = { borderRadius: '15px 225px 15px 255px/255px 15px 225px 15px' };
+
+// 隐藏连线用锚点（保留 handle 用于精确连边，但视觉上不显示小圆点）；
+// ag-dummy 为纯路由用的隐形节点（回环边从主体左侧绕行）
+const HIDE_HANDLE_CSS = `
+  .react-flow__handle.ag-node-hidden-handle {
+    width: 0 !important;
+    height: 0 !important;
+    min-width: 0 !important;
+    min-height: 0 !important;
+    border: 0 !important;
+    background: transparent !important;
+    opacity: 0;
+  }
+  .react-flow__node.ag-dummy {
+    border: 0 !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+  }
+`;
+
+// 每个可编辑节点（Hook/决策站）四个方向都提供收发锚点，供不同走向的边使用
+const STATION_HANDLES = (
+  <>
+    <Handle type="target" position={Position.Top} id="t_top" className="ag-node-hidden-handle" />
+    <Handle type="source" position={Position.Top} id="s_top" className="ag-node-hidden-handle" />
+    <Handle type="target" position={Position.Bottom} id="t_bot" className="ag-node-hidden-handle" />
+    <Handle type="source" position={Position.Bottom} id="s_bot" className="ag-node-hidden-handle" />
+    <Handle type="target" position={Position.Left} id="t_left" className="ag-node-hidden-handle" />
+    <Handle type="source" position={Position.Left} id="s_left" className="ag-node-hidden-handle" />
+    <Handle type="target" position={Position.Right} id="t_right" className="ag-node-hidden-handle" />
+    <Handle type="source" position={Position.Right} id="s_right" className="ag-node-hidden-handle" />
+  </>
+);
+
+interface StationData {
+  label: string;
+  code: string;
+  color: string;
+  items: AgentAction[];
+}
+
+// Hook 决策站：一个“框”，头部为阶段名，框内列出该 Hook 已配置的 actions
+function StationNode({ data }: { data: StationData }) {
+  const { label, code, color, items } = data;
+  return (
+    <div className="flex flex-col w-full h-full bg-paper">
+      {STATION_HANDLES}
+      <div className="flex items-center gap-2 px-3 py-2" style={{ background: color }}>
+        <span
+          className="font-black text-ink text-[15px] leading-none truncate"
+          style={{ fontFamily: '"Comic Sans MS", cursive' }}
+        >
+          {label}
+        </span>
+        <span className="ml-auto shrink-0 bg-paper border-2 border-ink px-2 py-0.5 text-[11px] font-black text-ink leading-none" style={sketchyShape2}>
+          {items.length}
+        </span>
+      </div>
+      <div className="flex flex-col gap-1 px-2 py-1.5">
+        {items.length === 0 ? (
+          <div
+            className="text-center text-[11px] font-bold text-ink/35 border-2 border-dashed border-ink/25 py-2"
+            style={{ fontFamily: '"Comic Sans MS", cursive' }}
+          >
+            未配置动作（点击左侧 + 添加）
+          </div>
+        ) : (
+          items.map((it, idx) => (
+            <div key={it.id} className="flex items-center gap-2 border-2 border-ink/80 px-2 py-1 bg-cream" style={sketchyShape2}>
+              <span className="w-4 shrink-0 text-center text-[11px] font-black text-ink/40 leading-none">{idx + 1}</span>
+              <span className="font-black text-ink text-[13px] leading-none truncate" style={{ fontFamily: '"Comic Sans MS", cursive' }}>
+                {it.label}
+              </span>
+              <span className="ml-auto shrink-0 text-[10px] font-bold text-ink/40 leading-none">{it.type}</span>
+            </div>
+          ))
+        )}
+      </div>
+      <div className="px-3 pb-1.5 text-[10px] font-bold text-ink/30 leading-none">{code}</div>
+    </div>
+  );
+}
+
+// 骨架上的普通节点（用户输入 / 结束）
+function PlainNode({ data }: { data: { label: string } }) {
+  return (
+    <div className="w-full h-full flex items-center justify-center px-3">
+      <Handle type="target" position={Position.Top} id="t_top" className="ag-node-hidden-handle" />
+      <Handle type="source" position={Position.Bottom} id="s_bot" className="ag-node-hidden-handle" />
+      <span
+        className="font-black text-ink text-[15px] text-center leading-snug"
+        style={{ fontFamily: '"Comic Sans MS", cursive' }}
+      >
+        {data.label}
+      </span>
+    </div>
+  );
+}
+
+// 纯路由用的隐形节点：把「失败·下一轮」的回环边绕到主体左侧走线，避免与主干连线重叠
+function DummyNode() {
+  return (
+    <div className="w-0 h-0">
+      <Handle type="target" position={Position.Top} id="t_top" className="ag-node-hidden-handle" />
+      <Handle type="source" position={Position.Top} id="s_top" className="ag-node-hidden-handle" />
+      <Handle type="target" position={Position.Bottom} id="t_bot" className="ag-node-hidden-handle" />
+      <Handle type="source" position={Position.Bottom} id="s_bot" className="ag-node-hidden-handle" />
+      <Handle type="target" position={Position.Left} id="t_left" className="ag-node-hidden-handle" />
+      <Handle type="source" position={Position.Left} id="s_left" className="ag-node-hidden-handle" />
+      <Handle type="target" position={Position.Right} id="t_right" className="ag-node-hidden-handle" />
+      <Handle type="source" position={Position.Right} id="s_right" className="ag-node-hidden-handle" />
+    </div>
+  );
+}
+
+// 注册给 ReactFlow 使用的节点渲染器
+const nodeTypes = { station: StationNode, plain: PlainNode, dummy: DummyNode };
+
+// 骨架图布局常量
+const STATION_WIDTH = 300;
+const STATION_H = (count: number) => 48 + (count > 0 ? count * 34 : 34); // 头部 + 每行动作
+const PLAIN_H = 60;
+const GAP_V = 90;
+
+// ============ 配置字段控件 ============
+
+type FieldKind = 'text' | 'number' | 'textarea' | 'bool' | 'select' | 'json';
+
+interface FieldControlProps {
+  kind: FieldKind;
+  value: unknown;
+  options?: string[];
+  placeholder?: string;
+  onCommit: (v: unknown) => void; // '' / undefined 表示删除该字段
+}
+
+const prettyJson = (value: unknown): string => {
+  if (value === undefined || value === null) return '';
+  if (typeof value === 'string') return value;
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+};
+
+const inputCls =
+  'w-full bg-cream border-2 border-ink px-2 py-1 text-[13px] font-bold text-ink outline-none focus:bg-paper';
+
+function FieldControl({ kind, value, options = [], placeholder, onCommit }: FieldControlProps) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const [error, setError] = useState(false);
+
+  if (kind === 'select') {
+    const current = value === undefined || value === null ? '' : String(value);
+    return (
+      <select
+        className={inputCls}
+        value={current}
+        onChange={(e) => onCommit(e.target.value)}
+      >
+        <option value="">（未设置）</option>
+        {options.map((opt) => (
+          <option key={opt} value={opt}>
+            {opt}
+          </option>
+        ))}
+      </select>
+    );
+  }
+
+  if (kind === 'bool') {
+    const current = value === undefined || value === null ? '' : String(value);
+    return (
+      <select className={inputCls} value={current} onChange={(e) => onCommit(e.target.value)}>
+        <option value="">（未设置）</option>
+        <option value="true">是</option>
+        <option value="false">否</option>
+      </select>
+    );
+  }
+
+  if (kind === 'number') {
+    const current = value === undefined || value === null ? '' : String(value);
+    return (
+      <input
+        type="number"
+        className={inputCls}
+        value={current}
+        placeholder={placeholder}
+        onChange={(e) => {
+          const t = e.target.value;
+          if (t === '') return onCommit('');
+          const n = Number(t);
+          if (!Number.isNaN(n)) onCommit(n);
+        }}
+      />
+    );
+  }
+
+  if (kind === 'json') {
+    const shown = draft ?? prettyJson(value);
+    return (
+      <div className="w-full">
+        <textarea
+          rows={3}
+          className={`${inputCls} resize-y font-mono ${error ? '!border-[#bf616a] !bg-[#fdeceb]' : ''}`}
+          value={shown}
+          placeholder={placeholder ?? 'JSON 文本（留空则删除该配置）'}
+          onChange={(e) => {
+            setDraft(e.target.value);
+            setError(false);
+          }}
+          onBlur={() => {
+            const raw = (draft ?? prettyJson(value)).trim();
+            if (!raw) {
+              setDraft(null);
+              setError(false);
+              onCommit(undefined);
+              return;
+            }
+            try {
+              onCommit(JSON.parse(raw));
+              setDraft(null);
+              setError(false);
+            } catch {
+              setError(true);
+            }
+          }}
+        />
+        {error && (
+          <div className="text-[10px] font-bold text-[#bf616a] leading-tight mt-0.5">JSON 格式有误，未保存</div>
+        )}
+      </div>
+    );
+  }
+
+  if (kind === 'textarea') {
+    return (
+      <textarea
+        rows={2}
+        className={`${inputCls} resize-y`}
+        value={value === undefined || value === null ? '' : String(value)}
+        placeholder={placeholder}
+        onChange={(e) => onCommit(e.target.value)}
+      />
+    );
+  }
+
+  return (
+    <input
+      type="text"
+      className={inputCls}
+      value={value === undefined || value === null ? '' : String(value)}
+      placeholder={placeholder}
+      onChange={(e) => onCommit(e.target.value)}
+    />
+  );
+}
+
+// action 的配置编辑器：已知字段按类型渲染；未知字段用 JSON 兜底（不丢数据）
+function ConfigEditor({
+  action,
+  schema,
+  onField,
+  onReplace,
+}: {
+  action: AgentAction;
+  schema: FieldDef[];
+  onField: (key: string, val: unknown) => void;
+  onReplace: (cfg: Record<string, unknown>) => void;
+}) {
+  const cfg = action.config;
+  const schemaKeys = new Set(schema.map((f) => f.key));
+  const extraKeys = Object.keys(cfg).filter((k) => !schemaKeys.has(k));
+
+  const mergeExtra = (parsed: unknown) => {
+    const next: Record<string, unknown> = { ...cfg };
+    extraKeys.forEach((k) => delete next[k]);
+    if (isPlainObject(parsed)) {
+      Object.entries(parsed).forEach(([k, v]) => {
+        if (v !== undefined && v !== '') next[k] = v;
+      });
+    }
+    onReplace(next);
+  };
+
+  return (
+    <div className="flex flex-col gap-2 px-3 py-2 bg-paper border-t-2 border-ink/10">
+      {schema.length === 0 && (
+        <div className="text-[11px] font-bold text-ink/45" style={{ fontFamily: '"Comic Sans MS", cursive' }}>
+          该动作类型暂无结构化解（{action.type}），直接编辑完整配置：
+        </div>
+      )}
+      {schema.map((f) => (
+        <div key={f.key} className="flex flex-col gap-1">
+          <span className="text-[11px] font-black text-ink/60 leading-none">{f.label}</span>
+          <FieldControl
+            kind={f.kind}
+            value={cfg[f.key]}
+            options={f.options}
+            placeholder={f.placeholder}
+            onCommit={(v) => onField(f.key, v)}
+          />
+        </div>
+      ))}
+      {schema.length > 0 && extraKeys.length > 0 && (
+        <div className="flex flex-col gap-1">
+          <span className="text-[11px] font-black text-ink/60 leading-none">
+            其他字段（{extraKeys.join('、')}）
+          </span>
+          <FieldControl
+            kind="json"
+            value={Object.fromEntries(extraKeys.map((k) => [k, cfg[k]]))}
+            onCommit={(v) => mergeExtra(v)}
+          />
+        </div>
+      )}
+      {schema.length === 0 && (
+        <FieldControl kind="json" value={cfg} onCommit={(v) => onReplace(isPlainObject(v) ? v : {})} />
+      )}
+    </div>
+  );
+}
+
+// ============ 主组件 ============
+
+interface ParadigmFile {
+  name: string;
+  is_default: boolean;
+}
+
+export default function AgentLoopEditor() {
+  const [paradigmState, setParadigmState] = useState<Record<HookKey, AgentAction[]>>(makeEmptyHooks);
+  const [openHooks, setOpenHooks] = useState<HookKey[]>(HOOK_KEYS);
+  const [openActions, setOpenActions] = useState<Set<string>>(new Set());
+  const [menuFor, setMenuFor] = useState<HookKey | null>(null);
+  const sectionRef = useRef<HTMLDivElement | null>(null);
+
+  // 文件管理
+  const [files, setFiles] = useState<ParadigmFile[]>([]);
+  const [activeFile, setActiveFile] = useState('');
+  const [rootMeta, setRootMeta] = useState<Record<string, unknown>>({});
+  const [extraHooks, setExtraHooks] = useState<Record<string, unknown>>({});
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [newName, setNewName] = useState('');
+
+  // 点击下拉菜单以外区域时收起
+  useEffect(() => {
+    if (!menuFor) return;
+    const onDocDown = (e: MouseEvent) => {
+      if (sectionRef.current && !sectionRef.current.contains(e.target as Node)) {
+        setMenuFor(null);
+      }
+    };
+    document.addEventListener('mousedown', onDocDown);
+    return () => document.removeEventListener('mousedown', onDocDown);
+  }, [menuFor]);
+
+  const applyDoc = (name: string, root: Record<string, unknown>) => {
+    const hooks = isPlainObject(root.hooks) ? root.hooks : {};
+    const meta: Record<string, unknown> = {};
+    const extra: Record<string, unknown> = {};
+    Object.entries(root).forEach(([k, v]) => {
+      if (k === 'hooks') return;
+      meta[k] = v;
+    });
+    Object.entries(hooks).forEach(([k, v]) => {
+      if (!HOOK_KEY_SET.has(k)) extra[k] = v;
+    });
+
+    const st = {} as Record<HookKey, AgentAction[]>;
+    HOOK_KEYS.forEach((hk) => {
+      st[hk] = toActions(hk, hooks[hk]);
+    });
+    setParadigmState(st);
+    setRootMeta(meta);
+    setExtraHooks(extra);
+    setActiveFile(name);
+    setDirty(false);
+    setOpenActions(new Set());
+  };
+
+  const refreshFiles = async (): Promise<string> => {
+    const res = await fetch('/api/paradigms');
+    if (!res.ok) throw new Error('获取 paradigm 列表失败');
+    const data = await res.json();
+    setFiles(data.files ?? []);
+    return data.default as string;
+  };
+
+  const loadFile = async (name: string) => {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/paradigms/${encodeURIComponent(name)}`);
+      if (!res.ok) throw new Error(`paradigm 不存在: ${name}`);
+      const body = await res.json();
+      applyDoc(name, body.data ?? {});
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '加载失败');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 启动时默认加载 PARADIGM.yaml（默认 Agent Loop）
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const defaultName = await refreshFiles();
+        if (!cancelled && defaultName) await loadFile(defaultName);
+      } catch (e) {
+        if (!cancelled) toast.error(e instanceof Error ? e.message : '无法连接后端');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const switchFile = async (name: string) => {
+    if (!name || name === activeFile) return;
+    if (dirty && !window.confirm('当前文件有未保存的修改，切换将丢弃这些修改，确定继续？')) return;
+    await loadFile(name);
+  };
+
+  const toggleHook = (hookKey: HookKey) => {
+    setOpenHooks((prev) => (prev.includes(hookKey) ? prev.filter((k) => k !== hookKey) : [...prev, hookKey]));
+  };
+
+  const toggleAction = (actionId: string) => {
+    setOpenActions((prev) => {
+      const next = new Set(prev);
+      if (next.has(actionId)) next.delete(actionId);
+      else next.add(actionId);
+      return next;
+    });
+  };
+
+  const markDirty = () => setDirty(true);
+
+  const handleAddAction = (hookKey: HookKey, type: ActionTypeKey) => {
+    setParadigmState((prev) => ({
+      ...prev,
+      [hookKey]: [
+        ...prev[hookKey],
+        { id: makeActionId(hookKey), type, label: labelOfType(type), config: {} },
+      ],
+    }));
+    setMenuFor(null);
+    markDirty();
+  };
+
+  const handleRemoveAction = (hookKey: HookKey, actionId: string) => {
+    setParadigmState((prev) => ({
+      ...prev,
+      [hookKey]: prev[hookKey].filter((a) => a.id !== actionId),
+    }));
+    markDirty();
+  };
+
+  // 更新单个字段：''/undefined 表示删除该字段
+  const commitField = (hookKey: HookKey, actionId: string, key: string, val: unknown) => {
+    setParadigmState((prev) => ({
+      ...prev,
+      [hookKey]: prev[hookKey].map((a) => {
+        if (a.id !== actionId) return a;
+        const next = { ...a.config };
+        if (val === '' || val === undefined || val === null) delete next[key];
+        else next[key] = val;
+        return { ...a, config: next };
+      }),
+    }));
+    markDirty();
+  };
+
+  // 整体替换 config（含 JSON 兜底编辑器）
+  const replaceConfig = (hookKey: HookKey, actionId: string, cfg: Record<string, unknown>) => {
+    setParadigmState((prev) => ({
+      ...prev,
+      [hookKey]: prev[hookKey].map((a) => (a.id === actionId ? { ...a, config: cfg } : a)),
+    }));
+    markDirty();
+  };
+
+  const buildYamlDoc = (): Record<string, unknown> => {
+    const hooks: Record<string, unknown> = { ...cloneJson(extraHooks) };
+    HOOK_KEYS.forEach((hk) => {
+      hooks[hk] = paradigmState[hk].map((a) => {
+        const cfg = isPlainObject(a.config) ? cloneJson(a.config) : {};
+        return { [a.type]: cfg };
+      });
+    });
+    return { ...cloneJson(rootMeta), hooks };
+  };
+
+  const handleSave = async () => {
+    if (!activeFile) return;
+    setSaving(true);
+    try {
+      const doc = buildYamlDoc();
+      const res = await fetch(`/api/paradigms/${encodeURIComponent(activeFile)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ data: doc }),
+      });
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => null);
+        throw new Error((errBody && errBody.detail) || '保存失败');
+      }
+      setDirty(false);
+      toast.success(`已保存 ${activeFile}.yaml`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '保存失败');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteFile = async () => {
+    if (!activeFile) return;
+    if (!window.confirm(`确定删除 paradigm「${activeFile}」？该操作不可恢复。`)) return;
+    try {
+      const res = await fetch(`/api/paradigms/${encodeURIComponent(activeFile)}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => null);
+        throw new Error((errBody && errBody.detail) || '删除失败');
+      }
+      toast.success(`已删除 ${activeFile}.yaml`);
+      const defaultName = await refreshFiles();
+      await loadFile(defaultName);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '删除失败');
+    }
+  };
+
+  const handleCreate = async () => {
+    const name = newName.trim();
+    if (!name) {
+      toast.error('请输入文件名');
+      return;
+    }
+    setSaving(true);
+    try {
+      const skeleton: Record<string, unknown> = {
+        name,
+        description: '新的 Agent Loop',
+        path: 'agent_vm',
+        hooks: HOOK_KEYS.reduce<Record<string, unknown[]>>((acc, k) => {
+          acc[k] = [];
+          return acc;
+        }, {}),
+      };
+      const res = await fetch(`/api/paradigms/${encodeURIComponent(name)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ data: skeleton }),
+      });
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => null);
+        throw new Error((errBody && errBody.detail) || '新建失败');
+      }
+      setCreating(false);
+      setNewName('');
+      const defaultName = await refreshFiles();
+      await loadFile(name || defaultName);
+      toast.success(`已新建 ${name}.yaml`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '新建失败');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // ===== 依据左侧状态，在「带环骨架」上推导流程图 =====
+  // 骨架语义（对应 Mermaid 示例）：
+  //   构建系统提示词 → 用户输入 → 循环开始 → 每轮循环迭代 →
+  //     ├─ 有工具调用 → 工具调用检查 ─┐
+  //     └─ 无工具调用 ────────────┼→ 循环结束检查 →(成功)→ 结束
+  //                                   └─(失败)→ 回到「每轮循环迭代」（形成环）
+  const { nodes, edges } = useMemo(() => {
+    const generatedNodes: FlowNode[] = [];
+    const generatedEdges: FlowEdge[] = [];
+
+    const addNode = (node: FlowNode) => {
+      generatedNodes.push(node);
+    };
+
+    const addEdge = (
+      source: string,
+      sourceHandle: string,
+      target: string,
+      targetHandle: string,
+      label?: string,
+      arrow: boolean = true
+    ) => {
+      const edge: FlowEdge = {
+        id: `e-${source}->${target}@${sourceHandle}-${targetHandle}`,
+        source,
+        sourceHandle,
+        target,
+        targetHandle,
+        type: 'smoothstep',
+        animated: true,
+        style: { stroke: '#1A1A1A', strokeWidth: 2 },
+        markerEnd: arrow
+          ? { type: MarkerType.ArrowClosed, color: '#1A1A1A', width: 16, height: 16 }
+          : undefined,
+      };
+      if (label) {
+        edge.label = label;
+        edge.labelStyle = { fill: '#1A1A1A', fontSize: 13, fontWeight: 700, fontFamily: '"Comic Sans MS", cursive' };
+        edge.labelBgStyle = { fill: '#FAF8F5', stroke: '#1A1A1A', strokeWidth: 1 };
+        edge.labelBgPadding = [8, 5] as never;
+      }
+      generatedEdges.push(edge);
+    };
+
+    const metaOf = (key: HookKey) => HOOK_META.find((h) => h.key === key)!;
+    const station = (key: HookKey, items: AgentAction[]): FlowNode => {
+      const meta = metaOf(key);
+      return {
+        id: key,
+        type: 'station',
+        position: { x: 0, y: 0 },
+        data: { label: meta.label, code: key, color: meta.color, items },
+        style: { width: STATION_WIDTH },
+      };
+    };
+    const plain = (id: string, label: string): FlowNode => ({
+      id,
+      type: 'plain',
+      position: { x: 0, y: 0 },
+      data: { label },
+      style: { width: STATION_WIDTH, height: PLAIN_H, background: '#EDE6D9' },
+    });
+
+    // ---- 布局：主链居左（X_LEFT），每轮迭代检查与工具调用分支左右并排 ----
+    const X_LEFT = 180;
+    const X_RIGHT = X_LEFT + 470; // 右侧列：工具调用检查
+    let cursorY = 28;
+
+    const put = (node: FlowNode, x: number, y: number, height: number) => {
+      node.position = { x, y };
+      addNode(node);
+      cursorY = Math.max(cursorY, y + height + GAP_V);
+    };
+
+    const buildItems = paradigmState.on_build_system_prompt;
+    put(station('on_build_system_prompt', buildItems), X_LEFT, cursorY, STATION_H(buildItems.length));
+    put(plain('user_input', '用户输入'), X_LEFT, cursorY, PLAIN_H);
+    const startItems = paradigmState.on_loop_start;
+    put(station('on_loop_start', startItems), X_LEFT, cursorY, STATION_H(startItems.length));
+
+    const epochTop = cursorY;
+    const epochItems = paradigmState.on_loop_epoch;
+    const epochH = STATION_H(epochItems.length);
+    const epochNode = station('on_loop_epoch', epochItems);
+    epochNode.position = { x: X_LEFT, y: epochTop };
+    addNode(epochNode);
+
+    const toolItems = paradigmState.on_tool_calling;
+    const toolNode = station('on_tool_calling', toolItems);
+    toolNode.position = { x: X_RIGHT, y: epochTop };
+    addNode(toolNode);
+
+    const rowBottom = Math.max(epochTop + epochH, epochTop + STATION_H(toolItems.length));
+    const endCheckItems = paradigmState.on_loop_end;
+    const endCheckNode = station('on_loop_end', endCheckItems);
+    endCheckNode.position = { x: X_LEFT, y: rowBottom + GAP_V };
+    addNode(endCheckNode);
+
+    const endY = rowBottom + GAP_V + STATION_H(endCheckItems.length) + GAP_V;
+    const endNode = plain('end', '结束');
+    endNode.position = { x: X_LEFT, y: endY };
+    addNode(endNode);
+
+    // ---- 回环路由点：让「失败 · 下一轮」从主体左侧绕行 ----
+    const loopRailX = X_LEFT - 110;
+    const endCheckTop = endCheckNode.position!.y;
+    const pivotD = {
+      id: 'loop_pivot_top',
+      type: 'dummy',
+      position: { x: loopRailX, y: epochTop + epochH / 2 },
+      style: { width: 1, height: 1 },
+      className: 'ag-dummy',
+    };
+    const pivotF = {
+      id: 'loop_pivot_bottom',
+      type: 'dummy',
+      position: { x: loopRailX, y: endCheckTop + STATION_H(endCheckItems.length) / 2 },
+      style: { width: 1, height: 1 },
+      className: 'ag-dummy',
+    };
+    addNode(pivotD as FlowNode);
+    addNode(pivotF as FlowNode);
+
+    // ---- 连线 ----
+    addEdge('on_build_system_prompt', 's_bot', 'user_input', 't_top');
+    addEdge('user_input', 's_bot', 'on_loop_start', 't_top');
+    addEdge('on_loop_start', 's_bot', 'on_loop_epoch', 't_top');
+    addEdge('on_loop_epoch', 's_right', 'on_tool_calling', 't_left', '有工具调用');
+    addEdge('on_loop_epoch', 's_bot', 'on_loop_end', 't_top', '无工具调用');
+    addEdge('on_tool_calling', 's_bot', 'on_loop_end', 't_right');
+    addEdge('on_loop_end', 's_left', 'loop_pivot_bottom', 't_left', undefined, false);
+    addEdge('loop_pivot_bottom', 's_top', 'loop_pivot_top', 't_bot', '失败 · 下一轮', false);
+    addEdge('loop_pivot_top', 's_right', 'on_loop_epoch', 't_left');
+    addEdge('on_loop_end', 's_bot', 'end', 't_top', '成功 · 结束');
+
+    return { nodes: generatedNodes, edges: generatedEdges };
+  }, [paradigmState]);
+
+  const activeFileMeta = files.find((f) => f.name === activeFile);
+
+  return (
+    <div className="flex-1 min-h-0 flex gap-10 h-full w-full min-w-0">
+      {/* ===== 左侧：文件 + Hook 配置面板 ===== */}
+      <div
+        style={sketchyShape1}
+        className="w-[360px] shrink-0 h-full bg-paper border-4 border-ink shadow-[10px_10px_0px_0px_rgba(26,26,26,1)] flex flex-col overflow-hidden relative z-10"
+      >
+        {/* 文件管理头 */}
+        <div className="px-4 pt-4 pb-3 border-b-4 border-ink bg-cream flex flex-col gap-2">
+          <div className="flex items-center justify-between">
+            <h3 className="text-xl font-black text-ink m-0 tracking-widest flex items-center gap-2" style={{ fontFamily: '"Comic Sans MS", cursive' }}>
+              AGENT LOOP
+              {dirty && <span className="inline-block w-2.5 h-2.5 rounded-full bg-[#D47A5A] border-2 border-ink" title="有未保存修改" />}
+            </h3>
+            <button
+              title="新建 Paradigm"
+              onClick={() => setCreating(true)}
+              className="w-8 h-8 flex items-center justify-center bg-cream border-2 border-ink text-ink hover:bg-sand transition-colors"
+              style={sketchyShape2}
+            >
+              <FolderPlus size={16} strokeWidth={2.5} />
+            </button>
+          </div>
+          <div className="flex items-center gap-2">
+            <select
+              className="flex-1 min-w-0 bg-cream border-2 border-ink px-2 py-1.5 text-[13px] font-black text-ink outline-none"
+              value={activeFile}
+              onChange={(e) => void switchFile(e.target.value)}
+            >
+              {!activeFile && <option value="">（未加载）</option>}
+              {files.map((f) => (
+                <option key={f.name} value={f.name}>
+                  {f.name}{f.is_default ? '（默认）' : ''}
+                </option>
+              ))}
+            </select>
+            {activeFile && !activeFileMeta?.is_default && (
+              <button
+                title="删除当前 Paradigm"
+                onClick={() => void handleDeleteFile()}
+                className="w-8 h-8 shrink-0 flex items-center justify-center text-ink/50 hover:text-paper hover:bg-[#bf616a] border-2 border-ink/40 hover:border-ink transition-colors"
+                style={sketchyShape2}
+              >
+                <Trash2 size={14} strokeWidth={2.5} />
+              </button>
+            )}
+          </div>
+          <p className="m-0 text-[11px] font-bold text-ink/40 leading-tight truncate" style={{ fontFamily: '"Comic Sans MS", cursive' }}>
+            {loading ? '加载中…' : activeFile ? `~/.purrcat/paradigms/${activeFile}.yaml` : '未连接后端'}
+          </p>
+        </div>
+
+        {/* Hook 列表（可折叠 + action 可展开编辑配置） */}
+        <div className="flex-1 min-h-0 overflow-y-auto p-4 flex flex-col gap-3">
+          {HOOK_META.map((hook) => {
+            const open = openHooks.includes(hook.key);
+            const actions = paradigmState[hook.key];
+            return (
+              <div key={hook.key} ref={menuFor === hook.key ? sectionRef : undefined}>
+                <div className="relative bg-paper border-2 border-ink overflow-visible">
+                  {/* Hook 头部 */}
+                  <div
+                    onClick={() => toggleHook(hook.key)}
+                    className="flex items-center justify-between gap-2 px-3 py-2.5 cursor-pointer select-none bg-cream"
+                    style={sketchyShape2}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <ChevronDown
+                        size={16}
+                        strokeWidth={3}
+                        className={`shrink-0 transition-transform ${open ? '' : '-rotate-90'}`}
+                      />
+                      <span className="w-3 h-3 shrink-0 border-2 border-ink inline-block" style={{ background: hook.color }} />
+                      <span className="font-black text-ink text-[15px] truncate" style={{ fontFamily: '"Comic Sans MS", cursive' }}>
+                        {hook.label}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <span className="text-xs font-bold text-ink/50">{actions.length}</span>
+                      <button
+                        title={`为「${hook.label}」添加动作`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setMenuFor((cur) => (cur === hook.key ? null : hook.key));
+                        }}
+                        className="w-7 h-7 flex items-center justify-center bg-cream border-2 border-ink text-ink hover:bg-sand transition-colors"
+                        style={sketchyShape2}
+                      >
+                        <Plus size={15} strokeWidth={3} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* 添加动作下拉 */}
+                  {menuFor === hook.key && (
+                    <div
+                      style={sketchyShape1}
+                      className="absolute top-full right-2 left-2 z-40 bg-paper border-2 border-ink shadow-[6px_6px_0px_0px_rgba(26,26,26,1)] mt-2"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {ACTION_TYPES.map((at) => (
+                        <button
+                          key={at.key}
+                          onClick={() => handleAddAction(hook.key, at.key)}
+                          className="w-full text-left px-3 py-2 hover:bg-cream flex flex-col gap-0.5 group"
+                        >
+                          <span className="font-black text-ink text-sm leading-tight" style={{ fontFamily: '"Comic Sans MS", cursive' }}>
+                            {at.label}
+                          </span>
+                          <span className="text-xs font-bold text-ink/40 leading-tight">{at.desc}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* action 列表 */}
+                  {open && (
+                    <ul className="divide-y-2 divide-ink/10">
+                      {actions.length === 0 && (
+                        <li className="px-3 py-3 text-center text-sm font-bold text-ink/40 border-2 border-dashed border-ink/30 m-2" style={{ fontFamily: '"Comic Sans MS", cursive' }}>
+                          暂无动作，点击上方 + 添加
+                        </li>
+                      )}
+                      {actions.map((action) => {
+                        const expanded = openActions.has(action.id);
+                        return (
+                          <li key={action.id}>
+                            <div
+                              onClick={() => toggleAction(action.id)}
+                              className="flex items-center justify-between gap-2 px-3 py-2 cursor-pointer group hover:bg-cream"
+                            >
+                              <div className="min-w-0 flex items-center gap-1.5">
+                                <ChevronDown
+                                  size={13}
+                                  strokeWidth={3}
+                                  className={`shrink-0 text-ink/40 transition-transform ${expanded ? '' : '-rotate-90'}`}
+                                />
+                                <div className="min-w-0">
+                                  <div className="font-black text-ink text-[15px] leading-tight truncate" style={{ fontFamily: '"Comic Sans MS", cursive' }}>
+                                    {action.label}
+                                  </div>
+                                  <div className="text-[11px] font-bold text-ink/40 leading-tight truncate">
+                                    {action.type}
+                                    {Object.keys(action.config).length > 0 && ` · ${Object.keys(action.config).join(', ')}`}
+                                  </div>
+                                </div>
+                              </div>
+                              <button
+                                title="删除动作"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleRemoveAction(hook.key, action.id);
+                                }}
+                                className="w-7 h-7 shrink-0 flex items-center justify-center text-ink/40 hover:text-paper hover:bg-[#bf616a] border-2 border-transparent hover:border-ink transition-colors"
+                                style={sketchyShape2}
+                              >
+                                <Trash2 size={14} strokeWidth={2.5} />
+                              </button>
+                            </div>
+                            {expanded && (
+                              <ConfigEditor
+                                action={action}
+                                schema={FIELD_SCHEMA[action.type] ?? []}
+                                onField={(key, val) => commitField(hook.key, action.id, key, val)}
+                                onReplace={(cfg) => replaceConfig(hook.key, action.id, cfg)}
+                              />
+                            )}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* 底部保存 */}
+        <div className="px-4 py-3 border-t-4 border-ink bg-cream">
+          <button
+            onClick={() => void handleSave()}
+            disabled={!activeFile || loading || saving}
+            style={sketchyShape1}
+            className="w-full flex items-center justify-center gap-2 py-3 bg-ink text-paper border-4 border-ink font-black tracking-widest text-lg shadow-[4px_4px_0px_0px_rgba(212,122,90,1)] hover:translate-y-0.5 hover:shadow-none active:translate-y-1 transition-all disabled:opacity-40 disabled:pointer-events-none"
+          >
+            <Save size={18} strokeWidth={2.5} />
+            <span style={{ fontFamily: '"Comic Sans MS", cursive' }}>
+              {saving ? '保存中…' : dirty ? '保存修改 *' : `保存 ${activeFile || ''}`}
+            </span>
+          </button>
+          <p className="m-0 mt-2 text-center text-[11px] font-bold text-ink/40" style={{ fontFamily: '"Comic Sans MS", cursive' }}>
+            直接写回 paradigms 目录对应 YAML；改动即时反映到右侧流程图
+          </p>
+        </div>
+      </div>
+
+      {/* ===== 右侧：实时流转图 ===== */}
+      <div
+        style={sketchyShape2}
+        className="flex-1 min-w-0 h-full bg-paper border-4 border-ink shadow-[16px_16px_0px_0px_rgba(26,26,26,1)] relative overflow-hidden flex flex-col rotate-[0.5deg]"
+      >
+        <div
+          className="absolute -top-6 left-20 w-40 h-10 bg-[#EBCB8B]/80 border-4 border-ink -rotate-2 z-50 pointer-events-none"
+          style={sketchyShape1}
+        ></div>
+        <div className="flex-1 min-h-0 w-full relative">
+          <style dangerouslySetInnerHTML={{ __html: HIDE_HANDLE_CSS }} />
+          <ReactFlow
+            nodes={nodes}
+            edges={edges}
+            nodeTypes={nodeTypes}
+            fitView
+            fitViewOptions={{ padding: 0.25 }}
+            nodesDraggable={false}
+            nodesConnectable={false}
+            elementsSelectable
+            className="bg-cream"
+          >
+            <Background color="#D47A5A" gap={24} size={1} variant={'dots' as any} />
+            <Controls className="!bg-paper !border-2 !border-ink shadow-soft rounded-xl overflow-hidden" />
+          </ReactFlow>
+        </div>
+      </div>
+
+      {/* 新建 Paradigm 弹窗 */}
+      {creating && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-ink/40 backdrop-blur-sm p-4 pointer-events-auto">
+          <div style={sketchyShape1} className="bg-paper border-4 border-ink shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] w-full max-w-sm p-6 relative rotate-1">
+            <h3 className="text-2xl font-black mb-1 tracking-widest" style={{ fontFamily: '"Comic Sans MS", cursive' }}>
+              新建 Paradigm
+            </h3>
+            <p className="font-bold mb-3 text-sm opacity-60" style={{ fontFamily: '"Comic Sans MS", cursive' }}>
+              将创建 {`~/.purrcat/paradigms/{名称}.yaml`}，初始只有空的五个 Hook
+            </p>
+            <input
+              autoFocus
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void handleCreate();
+              }}
+              style={sketchyShape2}
+              className="w-full bg-cream border-4 border-ink p-3 text-lg font-bold mb-4 focus:outline-none"
+              placeholder="例如 my_agent_loop"
+            />
+            <div className="flex gap-3">
+              <button
+                onClick={() => setCreating(false)}
+                style={sketchyShape1}
+                className="flex-1 py-2.5 bg-cream text-ink border-4 border-ink font-black shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:bg-sand transition-all"
+              >
+                取消
+              </button>
+              <button
+                onClick={() => void handleCreate()}
+                disabled={saving}
+                style={sketchyShape2}
+                className="flex-1 py-2.5 bg-ink text-paper border-4 border-ink font-black shadow-[4px_4px_0px_0px_rgba(212,122,90,1)] hover:bg-gray-800 transition-all disabled:opacity-40"
+              >
+                创建
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
