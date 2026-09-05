@@ -21,6 +21,11 @@ router = APIRouter(prefix="/api", tags=["Chat & Sessions"])
 
 class NewSessionReq(BaseModel):
     alias: str = "New Session"
+    paradigm: str = ""  # paradigms/ 下的文件名（不带 .yaml）；为空则使用默认 PARADIGM.yaml 兜底
+
+
+class ParadigmSwitchReq(BaseModel):
+    paradigm: str = ""  # 为空表示恢复默认 PARADIGM.yaml
 
 
 # 👇 新增：重命名模型
@@ -191,12 +196,35 @@ def get_session_branches_api(session_id: str):
 def create_new_session(req: NewSessionReq):
     try:
         _ensure_manager_initialized()
-        session_id = new_session(branch_alias=req.alias)
+        session_id = new_session(
+            branch_alias=req.alias, paradigm=req.paradigm.strip() or None
+        )
         return {"id": session_id, "alias": req.alias or session_id}
     except Exception as e:
         print(f"[ERROR] /api/sessions/new - 异常: {e}")
         traceback.print_exc()
         raise
+
+
+@router.post("/sessions/{session_id}/paradigm")
+def switch_session_paradigm_api(session_id: str, req: ParadigmSwitchReq):
+    """会话暂停时热切换 Agent Loop（只换循环逻辑，不动系统提示词，保留 KV Cache）。"""
+    from src.agent.manager import AgentManager
+
+    manager = AgentManager()
+    try:
+        path = manager.switch_paradigm(session_id, req.paradigm.strip() or None)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        print(f"[ERROR] /api/sessions/{session_id}/paradigm - 异常: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e)) from e
+    return {
+        "ok": True,
+        "paradigm": req.paradigm.strip() or None,
+        "paradigm_path": path,
+    }
 
 
 @router.post("/sessions/{session_id}/branch")

@@ -1,11 +1,12 @@
 // src/components/chat/ChatModals.tsx
-import { Loader2, X, Trash2, Check, ChevronUp, ChevronDown, Plus, Download, Save, FileText, GitFork, Pencil, Clock, BookOpen } from 'lucide-react';
+import { useState } from 'react';
+import { Loader2, X, Trash2, Check, ChevronUp, ChevronDown, Plus, Download, Save, FileText, GitFork, Pencil, Clock, BookOpen, Search } from 'lucide-react';
 import { sketchyShape1, sketchyShape2, sketchyShape3 } from './ChatShared';
 
 export default function ChatModals(props: any) {
   const {
     isCheckingOut, showBusyModal, setShowBusyModal,
-    showModal, setShowModal, newAlias, setNewAlias, selectedProject, setSelectedProject, workshops, confirmNewSession,
+    showModal, setShowModal, newAlias, setNewAlias, selectedParadigm, setSelectedParadigm, paradigmFiles, confirmNewSession,
     showBranchModal, setShowBranchModal, branchAlias, setBranchAlias, confirmBranchSession,
     sessionToDelete, setSessionToDelete, confirmDeleteSession,
     branchToDelete, setBranchToDelete, currentSessionId, loadSessionHistory, loadBranches, setCurrentBranchId,
@@ -22,6 +23,28 @@ export default function ChatModals(props: any) {
     pendingSwitchId, setPendingSwitchId, unacceptedChangeCount, confirmAckAllAndSwitch,
     showTraceModal, setShowTraceModal, traceType, setTraceType, traceSkillName, setTraceSkillName, traceExpectation, setTraceExpectation, confirmTraceToSkill, isTracing
   } = props;
+
+  // 关键词检索（skill / mcp / graph 选择面板，条目多时不会撑爆弹窗）
+  const [skillSearch, setSkillSearch] = useState('');
+  const [mcpSearch, setMcpSearch] = useState('');
+  const [graphSearch, setGraphSearch] = useState('');
+  const skillQ = skillSearch.trim().toLowerCase();
+  const mcpQ = mcpSearch.trim().toLowerCase();
+  const graphQ = graphSearch.trim().toLowerCase();
+  const filteredSkills = skillQ
+    ? (skillData || []).filter((s: any) => `${s.name || ''} ${s.description || ''}`.toLowerCase().includes(skillQ))
+    : (skillData || []);
+  const filteredMcpEntries = (
+    mcpQ
+      ? Object.entries(mcpData).filter(([server, tools]: any) =>
+          String(server).toLowerCase().includes(mcpQ) ||
+          (tools || []).some((t: any) => `${t.name || ''} ${t.description || ''}`.toLowerCase().includes(mcpQ))
+        )
+      : Object.entries(mcpData)
+  ) as [string, any][];
+  const filteredGraphs = graphQ
+    ? (graphData || []).filter((g: any) => String(g.name || '').replace('.json', '').toLowerCase().includes(graphQ))
+    : (graphData || []);
 
   return (
     <>
@@ -98,15 +121,15 @@ export default function ChatModals(props: any) {
             <div className="-rotate-1 flex flex-col gap-4">
               <input autoFocus value={newAlias} onChange={e => setNewAlias(e.target.value)} onKeyDown={e => e.key === 'Enter' && confirmNewSession()} placeholder="Give it a cool name..." className="w-full border-4 border-ink bg-cream p-4 font-bold text-lg focus:outline-none focus:bg-white shadow-[inset_4px_4px_0px_0px_rgba(26,26,26,0.05)] placeholder:text-ink/30" style={sketchyShape3} />
               <select
-                value={selectedProject || ''}
-                onChange={e => setSelectedProject(e.target.value)}
+                value={selectedParadigm || ''}
+                onChange={e => setSelectedParadigm(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && confirmNewSession()}
                 className="w-full border-4 border-ink bg-cream p-4 font-bold text-lg focus:outline-none focus:bg-white shadow-[inset_4px_4px_0px_0px_rgba(26,26,26,0.05)] cursor-pointer text-ink/70"
                 style={sketchyShape2}
               >
-                <option value="">No specific workshop (Sandbox only)</option>
-                {workshops && workshops.map((w: string) => (
-                  <option key={w} value={w}>{w}</option>
+                <option value="">默认范式（PARADIGM.yaml 兜底）</option>
+                {paradigmFiles && paradigmFiles.filter((f: any) => f.name !== 'PARADIGM').map((f: any) => (
+                  <option key={f.name} value={f.name}>{f.name}</option>
                 ))}
               </select>
             </div>
@@ -311,9 +334,19 @@ export default function ChatModals(props: any) {
               <h3 className="text-2xl font-black tracking-widest text-[#d08770]" style={{ fontFamily: '"Comic Sans MS", cursive' }}>SELECT SKILLS</h3>
               <button onClick={() => setShowSkillSelectModal(false)} className="hover:text-terracotta hover:scale-110 transition-all"><X size={28} strokeWidth={3}/></button>
             </div>
+            <div className="flex items-center gap-2 -rotate-1 shrink-0">
+              <Search size={15} strokeWidth={2.5} className="text-ink/40 shrink-0" />
+              <input
+                value={skillSearch}
+                onChange={(e) => setSkillSearch(e.target.value)}
+                placeholder="搜索技能关键词…"
+                className="flex-1 bg-cream border-2 border-ink px-3 py-2 font-bold text-sm focus:outline-none focus:bg-white shadow-[inset_2px_2px_0px_0px_rgba(26,26,26,0.05)] placeholder:text-ink/30"
+                style={sketchyShape3}
+              />
+            </div>
             <div className="flex-1 overflow-y-auto flex flex-col gap-3 -rotate-1 p-1">
-              {skillData.length === 0 ? <p className="font-bold text-center mt-6 opacity-50 text-sm">No Skills loaded</p> : (
-                 skillData.map((skill: any, idx: number) => {
+              {filteredSkills.length === 0 ? <p className="font-bold text-center mt-6 opacity-50 text-sm">{skillData.length === 0 ? 'No Skills loaded' : '无匹配的技能'}</p> : (
+                 filteredSkills.map((skill: any, idx: number) => {
                    const isSelected = tempSelectedSkills.includes(skill.name);
                    return (
                      <div key={skill.name} style={idx % 2 === 0 ? sketchyShape1 : sketchyShape3} className={`border-4 border-ink bg-cream p-3 transition-all ${isSelected ? 'shadow-[4px_4px_0px_0px_rgba(212,122,90,1)] border-terracotta bg-terracotta/10' : 'shadow-[4px_4px_0px_0px_rgba(26,26,26,1)]'} flex flex-col gap-2 cursor-pointer`} onClick={() => {
@@ -349,9 +382,19 @@ export default function ChatModals(props: any) {
               <h3 className="text-2xl font-black tracking-widest text-[#b8956e]" style={{ fontFamily: '"Comic Sans MS", cursive' }}>SELECT MCP</h3>
               <button onClick={() => setShowMcpSelectModal(false)} className="hover:text-terracotta hover:scale-110 transition-all"><X size={28} strokeWidth={3}/></button>
             </div>
+            <div className="flex items-center gap-2 -rotate-1 shrink-0">
+              <Search size={15} strokeWidth={2.5} className="text-ink/40 shrink-0" />
+              <input
+                value={mcpSearch}
+                onChange={(e) => setMcpSearch(e.target.value)}
+                placeholder="搜索 MCP 服务 / 工具关键词…"
+                className="flex-1 bg-cream border-2 border-ink px-3 py-2 font-bold text-sm focus:outline-none focus:bg-white shadow-[inset_2px_2px_0px_0px_rgba(26,26,26,0.05)] placeholder:text-ink/30"
+                style={sketchyShape3}
+              />
+            </div>
             <div className="flex-1 overflow-y-auto flex flex-col gap-3 -rotate-1 p-1">
-              {Object.keys(mcpData).length === 0 ? <p className="font-bold text-center mt-6 opacity-50 text-sm">No MCP loaded</p> : (
-                 Object.entries(mcpData).map(([server, tools]: any, idx) => {
+              {filteredMcpEntries.length === 0 ? <p className="font-bold text-center mt-6 opacity-50 text-sm">{Object.keys(mcpData).length === 0 ? 'No MCP loaded' : '无匹配的 MCP'}</p> : (
+                 filteredMcpEntries.map(([server, tools]: any, idx) => {
                    const isSelected = tempSelectedMcps.includes(server);
                    return (
                      <div key={server} style={idx % 2 === 0 ? sketchyShape1 : sketchyShape3} className={`border-4 border-ink bg-cream p-3 transition-all ${isSelected ? 'shadow-[4px_4px_0px_0px_rgba(212,122,90,1)] border-terracotta bg-terracotta/10' : 'shadow-[4px_4px_0px_0px_rgba(26,26,26,1)]'} flex flex-col gap-2 cursor-pointer`} onClick={() => {
@@ -410,9 +453,19 @@ export default function ChatModals(props: any) {
               <h3 className="text-2xl font-black tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>SELECT GRAPH</h3>
               <button onClick={() => setShowGraphSelectModal(false)} className="hover:text-terracotta hover:scale-110 transition-all"><X size={28} strokeWidth={3}/></button>
             </div>
+            <div className="flex items-center gap-2 -rotate-1 shrink-0">
+              <Search size={15} strokeWidth={2.5} className="text-ink/40 shrink-0" />
+              <input
+                value={graphSearch}
+                onChange={(e) => setGraphSearch(e.target.value)}
+                placeholder="搜索工作流关键词…"
+                className="flex-1 bg-cream border-2 border-ink px-3 py-2 font-bold text-sm focus:outline-none focus:bg-white shadow-[inset_2px_2px_0px_0px_rgba(26,26,26,0.05)] placeholder:text-ink/30"
+                style={sketchyShape3}
+              />
+            </div>
             <div className="flex-1 overflow-y-auto flex flex-col gap-3 -rotate-1 p-1">
-              {graphData.length === 0 ? <p className="font-bold text-center mt-6 opacity-50 text-sm">No Graphs found</p> : (
-                 graphData.map((graph: any, idx: number) => {
+              {filteredGraphs.length === 0 ? <p className="font-bold text-center mt-6 opacity-50 text-sm">{graphData.length === 0 ? 'No Graphs found' : '无匹配的工作流'}</p> : (
+                 filteredGraphs.map((graph: any, idx: number) => {
                    const graphName = graph.name.replace('.json', '');
                    const isSelected = tempSelectedGraphs.includes(graphName);
                    return (
@@ -452,7 +505,7 @@ export default function ChatModals(props: any) {
                  }} className="p-2 bg-cream border-4 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)]" style={sketchyShape1} title="Branch (Fork) Current Chat"><GitFork size={24} strokeWidth={3}/></button>
                  <button onClick={() => { 
                    if (isAgentThinking) { setShowBusyModal(true); return; }
-                   setShowSessionModal(false); setNewAlias('New Chat'); setSelectedProject(''); setShowModal(true); 
+                   setShowSessionModal(false); setNewAlias('New Chat'); setSelectedParadigm(''); setShowModal(true); 
                  }} className="p-2 bg-terracotta text-paper border-4 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)]" style={sketchyShape3} title="New Chat"><Plus size={24} strokeWidth={3}/></button>
                  <div className="w-1 h-8 bg-ink/20 mx-1 rounded-full"></div>
                  <button onClick={() => setShowSessionModal(false)} className="p-2 hover:text-terracotta hover:scale-110 transition-all"><X size={32} strokeWidth={3}/></button>

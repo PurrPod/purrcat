@@ -154,6 +154,46 @@ class SessionStore:
             return []
 
     @classmethod
+    def set_session_paradigm(cls, session_id, paradigm=None):
+        """把某个会话绑定的范式写入 meta.json 与全局索引（None 表示回落默认，移除记录）。"""
+        session_dir = os.path.join(SESSIONS_DIR, session_id)
+        os.makedirs(session_dir, exist_ok=True)
+        meta_path = os.path.join(session_dir, "meta.json")
+
+        with cls._get_file_lock(f"{session_id}_meta"):
+            meta_data = {}
+            if os.path.exists(meta_path):
+                try:
+                    with open(meta_path, "r", encoding="utf-8") as f:
+                        meta_data = json.load(f)
+                except Exception:
+                    meta_data = {}
+            if paradigm:
+                meta_data["paradigm"] = paradigm
+            else:
+                meta_data.pop("paradigm", None)
+            meta_data["updated_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+            try:
+                with open(meta_path, "w", encoding="utf-8") as f:
+                    json.dump(meta_data, f, ensure_ascii=False, indent=2)
+            except Exception:
+                pass
+
+        with cls._index_lock:
+            try:
+                index_data = cls.get_all_sessions()
+                session_info = index_data.get(session_id, {})
+                if paradigm:
+                    session_info["paradigm"] = paradigm
+                else:
+                    session_info.pop("paradigm", None)
+                index_data[session_id] = session_info
+                with open(SESSION_INDEX_PATH, "w", encoding="utf-8") as f:
+                    json.dump(index_data, f, ensure_ascii=False, indent=2)
+            except Exception:
+                pass
+
+    @classmethod
     def save_session(
         cls,
         session_id,
@@ -161,6 +201,7 @@ class SessionStore:
         branch_id="main",
         parent_id=None,
         alias=None,
+        paradigm=None,
         window_token=0,
         deliverable=None,
         action=None,
@@ -204,6 +245,8 @@ class SessionStore:
             meta_data["updated_at"] = timestamp
             if alias:
                 meta_data["alias"] = alias
+            if paradigm:
+                meta_data["paradigm"] = paradigm
             if parent_id:
                 meta_data["parent_id"] = parent_id
 
@@ -242,6 +285,8 @@ class SessionStore:
             session_info["updated_at"] = timestamp
             if alias:
                 session_info["alias"] = alias  # 🌟 修复：创建时把自定义名字正确存入索引
+            if paradigm:
+                session_info["paradigm"] = paradigm
 
             session_info["messages_count"] = (
                 len(history)
@@ -257,7 +302,12 @@ class SessionStore:
 
     @classmethod
     def create_branch(
-        cls, current_session_id, current_history, branch_alias=None, window_token=0
+        cls,
+        current_session_id,
+        current_history,
+        branch_alias=None,
+        paradigm=None,
+        window_token=0,
     ):
         new_session_id = cls._generate_id()
         cls.save_session(
@@ -265,6 +315,7 @@ class SessionStore:
             history=current_history,
             parent_id=current_session_id,
             alias=branch_alias,
+            paradigm=paradigm,
             window_token=window_token,
         )
         return new_session_id

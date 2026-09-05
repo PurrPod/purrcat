@@ -3,40 +3,46 @@
 所有 Agent Loop 配置存放于 ~/.purrcat/paradigms/ 下，一个文件一个 loop：
   - PARADIGM.yaml 为默认 Agent Loop；
   - 其它文件为可切换编辑的备选 loop。
-首次访问时若无 PARADIGM.yaml：优先迁移旧的 ~/.purrcat/core/PARADIGM.yaml，
-否则从内置模板 src/agent/system_rules/PARADIGM.yaml 拷贝一份。
+首次访问时若无 PARADIGM.yaml，用 src/utils/initial.py 里的默认模板就地生成一份再读取。
 """
 import os
 import re
-import shutil
 
 import yaml
 
-from src.utils.config import AGENT_CORE_DIR, PARADIGMS_DIR, SYSTEM_RULES_DIR
+from src.utils.config import PARADIGMS_DIR
 
 DEFAULT_FILE_NAME = "PARADIGM.yaml"
 DEFAULT_FILE_BASE = "PARADIGM"  # 前端展示/路由用的 base 名
-TEMPLATE_PATH = os.path.join(SYSTEM_RULES_DIR, DEFAULT_FILE_NAME)
-LEGACY_PATH = os.path.join(AGENT_CORE_DIR, DEFAULT_FILE_NAME)
 
 # 仅限制危险字符，允许中文等普通文件名
 _INVALID_NAME = re.compile(r"[/\\:\x00-\x1f]")
 
 
 def ensure_default_paradigm() -> str:
-    """确保 paradigms 目录与默认 PARADIGM.yaml 存在，返回其路径。"""
+    """确保 paradigms 目录与默认 PARADIGM.yaml 存在（缺失时用 initial 里的模板生成），返回其路径。"""
     os.makedirs(PARADIGMS_DIR, exist_ok=True)
     target = os.path.join(PARADIGMS_DIR, DEFAULT_FILE_NAME)
     if not os.path.exists(target):
-        if os.path.exists(LEGACY_PATH):
-            # 从旧位置（core/）迁移，保留用户已编辑过的内容
-            shutil.copy(LEGACY_PATH, target)
-        elif os.path.exists(TEMPLATE_PATH):
-            shutil.copy(TEMPLATE_PATH, target)
-        else:
-            with open(target, "w", encoding="utf-8") as f:
-                f.write("name: default\ndescription: default agent loop\nhooks: {}\n")
+        # 模板定义在 initial.py（懒加载，避免 import 环）
+        from src.utils.initial import DEFAULT_PARADIGM_YAML
+
+        with open(target, "w", encoding="utf-8") as f:
+            f.write(DEFAULT_PARADIGM_YAML)
     return target
+
+
+def resolve_paradigm_path(name=None) -> str:
+    """把范式名（不带 .yaml）解析为绝对路径；name 为空或缺文件时回落到默认 PARADIGM.yaml。"""
+    if name:
+        try:
+            base = _safe_name(name)
+        except ValueError:
+            base = DEFAULT_FILE_BASE
+        target = os.path.join(PARADIGMS_DIR, f"{base}.yaml")
+        if os.path.exists(target):
+            return target
+    return ensure_default_paradigm()
 
 
 def _safe_name(name: str) -> str:

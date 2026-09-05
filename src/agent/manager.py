@@ -47,11 +47,20 @@ class AgentManager:
         ):
             history.pop()
 
+        # 恢复该会话绑定的范式（未绑定则回落默认 PARADIGM.yaml）
+        paradigm_path = None
+        stored_paradigm = all_sessions.get(session_id, {}).get("paradigm")
+        if stored_paradigm:
+            from src.utils.paradigm_api import resolve_paradigm_path
+
+            paradigm_path = resolve_paradigm_path(stored_paradigm)
+
         self._agent = Agent(
             session_id=session_id,
             initial_history=history,
             name=name,
             save_callback=self._notify_save,
+            paradigm_path=paradigm_path,
         )
 
         # 恢复 Token 进度
@@ -133,12 +142,18 @@ class AgentManager:
                 "window_token", 0
             )
 
+        # 载入该会话绑定的范式（未绑定则回落默认 PARADIGM.yaml）
+        from src.utils.paradigm_api import resolve_paradigm_path
+
+        stored_paradigm = all_sessions.get(target_session_id, {}).get("paradigm")
+        self._agent.hook_handler.load_config(resolve_paradigm_path(stored_paradigm))
+
         self._agent.model.bind_task(target_session_id, "AgentMain")
         print(f"[Switch] 检出成功: {target_session_id}")
         return True
 
-    def new_session(self, branch_alias=None):
-        """原 create_clean_session：开启一个全新的空白会话"""
+    def new_session(self, branch_alias=None, paradigm=None):
+        """原 create_clean_session：开启一个全新的空白会话（可指定其范式文件）"""
         if not self._agent:
             self.init_agent()
 
@@ -149,10 +164,16 @@ class AgentManager:
 
         self._notify_save()
 
+        from src.utils.paradigm_api import resolve_paradigm_path
+
+        paradigm_path = resolve_paradigm_path(paradigm)
+
         from src.agent.agent import Agent as TempAgent
 
         temp_agent = TempAgent(
-            session_id=SessionStore._generate_id(), initial_history=[]
+            session_id=SessionStore._generate_id(),
+            initial_history=[],
+            paradigm_path=paradigm_path,
         )
         fresh_prompt = temp_agent._build_system_prompt()
 
@@ -164,6 +185,7 @@ class AgentManager:
             history=clean_history,
             parent_id=None,
             alias=branch_alias,
+            paradigm=paradigm,
         )
 
         with self._agent._history_lock:
@@ -171,9 +193,33 @@ class AgentManager:
             self._agent.window_token = 0
             self._agent.current_history = clean_history
 
+        # 新会话立刻按所选范式工作（未选则默认 PARADIGM.yaml）
+        self._agent.hook_handler.load_config(paradigm_path)
+
         self._agent.model.bind_task(new_id, "AgentMain")
         print(f"[Create] 成功创建纯净新分支: {new_id}")
         return new_id
+
+    def switch_paradigm(self, session_id, paradigm=None):
+        """会话暂停时热切换 Agent Loop：只替换 Hook 循环逻辑，绝不重建系统提示词（保住 KV Cache）。"""
+        if not self._agent:
+            self.init_agent(session_id=session_id)
+
+        if self._agent.session_id != session_id:
+            raise ValueError("只能切换当前活跃会话的范式")
+        if self._agent.state != "idle":
+            raise ValueError("Agent 正在忙，请稍后再切换范式")
+
+        from src.utils.paradigm_api import resolve_paradigm_path
+
+        path = resolve_paradigm_path(paradigm)
+        self._agent.hook_handler.load_config(path)  # 仅热替换 hooks/循环配置
+
+        SessionStore.set_session_paradigm(
+            session_id, paradigm.strip() if isinstance(paradigm, str) and paradigm.strip() else None
+        )
+        print(f"[Paradigm] 会话 {session_id} 已切换范式: {path}")
+        return path
 
     def branch_session(self, branch_alias=None):
         """原 branch_current_session：基于当前进度衍生新分支"""
@@ -189,10 +235,21 @@ class AgentManager:
         safe_history = self._agent.get_history()
         current_token = self._agent.window_token
 
+        # 分支继承当前会话绑定的范式（仅在非默认范式时记录）
+        inherit_paradigm = None
+        current_path = getattr(
+            getattr(self._agent, "hook_handler", None), "paradigm_path", None
+        )
+        if current_path:
+            base = os.path.splitext(os.path.basename(current_path))[0]
+            if base and base.lower() != "paradigm":
+                inherit_paradigm = base
+
         new_id = SessionStore.create_branch(
             current_session_id=self._agent.session_id,
             current_history=safe_history,
             branch_alias=branch_alias,
+            paradigm=inherit_paradigm,
             window_token=current_token,
         )
 

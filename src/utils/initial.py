@@ -19,6 +19,64 @@ from src.utils.config import (
     SOUL_MD_PATH,
 )
 
+# 默认 Agent Loop（PARADIGM.yaml）模板。
+# 首次需要默认范式时（agent 读取或 paradigms 目录为空），由此模板在
+# ~/.purrcat/paradigms/PARADIGM.yaml 生成后读取。
+DEFAULT_PARADIGM_YAML = """name: "default"
+description: "default system loop"
+path: "agent_vm"
+loop_end_max_retry: 3
+trigger:
+  - cron:
+      time: "08:08"
+      injection: "【Demo】闹钟响了"
+  - cron:
+      time: "12:00"
+      injection: "【Demo】该吃饭了"
+hooks:
+  on_build_system_prompt:
+    - file_operation: 
+        path: "@RULES"
+        action: "read"
+    - file_operation:
+        path: "@INFO"
+        action: "read"
+    - file_operation:
+        path: "@SOUL"
+        action: "read"
+    - file_operation:
+        path: "@MEMORY"
+        action: "read"
+    - memo_injection: 
+        type: "full"
+        count: 10
+  on_loop_start:
+    - injection: 
+        content: "如遇复杂任务，请先编排好主线路的执行计划，先规划TODO后执行"
+    - file_operation:
+        action: "exist_check"
+        path: "@RULES"
+        failed_prompt: "检测到系统指导文件不存在"
+  on_loop_epoch:
+    - injection:
+        delay: 5
+        content: "[system regular hint]在执行任务前可使用 Search 工具和 Memo 工具搜索有无对应的能力与历史经验"
+    - injection:
+        interval: 10
+        content: "[system regular hint]请随时按进度更新主路规划或与用户对齐需求，防止跑偏"
+  on_loop_end:
+    # only ALL check passed can exit the loop
+    - tool_use_check:
+        name: "Memo"
+        parameter_check:
+          - action: "add"
+        failed_prompt: "检查到本轮对话你未调用 Memo 工具进行记忆总结，最好总结一下，让你的能力随记忆系统的丰富而增强，如无经验更新，可添加短期记忆以免会话切换时失忆"
+  on_tool_calling:
+    - tool_use_check:
+        name: "ComputerUse"
+        successed_prompt: "组件找不到时使用 Vision 顾问进行询问。浏览器相关操作可以用浏览器相关 MCP 工具，更加高效。"
+"""
+
 
 # ==========================================
 # 默认配置模板

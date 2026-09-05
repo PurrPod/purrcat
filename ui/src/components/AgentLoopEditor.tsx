@@ -610,12 +610,14 @@ function ConfigEditor({
   action,
   schema,
   allowTiming,
+  allowExpect,
   onField,
   onReplace,
 }: {
   action: AgentAction;
   schema: FieldDef[];
   allowTiming: boolean; // 仅 on_loop_epoch（每轮循环运行时）允许配置 delay/interval
+  allowExpect: boolean; // 仅 on_loop_end（循环结束时）允许配置退出期望（成功/失败）
   onField: (key: string, val: unknown) => void;
   onReplace: (cfg: Record<string, unknown>) => void;
 }) {
@@ -624,8 +626,9 @@ function ConfigEditor({
   // allowTiming 时 delay/interval 由“触发时机”开关管理；tool_use_check 的 parameter_check 走结构化编辑器
   const isTimingKey = (k: string) => allowTiming && (k === 'delay' || k === 'interval');
   const isParamCheckKey = (k: string) => action.type === 'tool_use_check' && k === 'parameter_check';
+  const isExpectKey = (k: string) => allowExpect && k === 'expect';
   const extraKeys = Object.keys(cfg).filter(
-    (k) => !schemaKeys.has(k) && !isTimingKey(k) && !isParamCheckKey(k)
+    (k) => !schemaKeys.has(k) && !isTimingKey(k) && !isParamCheckKey(k) && !isExpectKey(k)
   );
 
   const mergeExtra = (parsed: unknown) => {
@@ -652,6 +655,27 @@ function ConfigEditor({
     onReplace(next);
   };
 
+  // ---- 循环结束时的“退出期望”：该条件符合期望才算通过、才能跳出循环 ----
+  const expectFail = cfg.expect === 'fail' || cfg.expect === false;
+  const commitExpect = (fail: boolean) => {
+    const next: Record<string, unknown> = { ...cfg };
+    delete next.expect;
+    if (fail) next.expect = 'fail';
+    onReplace(next);
+  };
+
+  const expectBtn = (fail: boolean) => (
+    <button
+      onClick={() => commitExpect(fail)}
+      className={`flex-1 py-1.5 px-2 border-2 border-ink text-[12px] font-black transition-colors ${
+        expectFail === fail ? 'bg-ink text-paper' : 'bg-cream text-ink hover:bg-sand'
+      }`}
+      style={sketchyShape2}
+    >
+      {fail ? '期望失败' : '期望成功'}
+    </button>
+  );
+
   return (
     <div className="flex flex-col gap-2 px-3 py-2 bg-paper border-t-2 border-ink/10">
       {allowTiming && (
@@ -672,6 +696,15 @@ function ConfigEditor({
             placeholder={timingOn ? '每隔 N 轮触发一次' : '仅在第 N 轮触发一次'}
             onCommit={(v) => commitTiming(timingOn, v)}
           />
+        </div>
+      )}
+      {allowExpect && (
+        <div className="flex flex-col gap-1.5 border-2 border-dashed border-ink/30 p-2 bg-cream/50">
+          <span className="text-[11px] font-black text-ink/60 leading-none">退出期望（决定能否跳出循环）</span>
+          <div className="flex gap-2">{expectBtn(false)}{expectBtn(true)}</div>
+          <p className="m-0 text-[10px] font-bold text-ink/40 leading-tight" style={{ fontFamily: '"Comic Sans MS", cursive' }}>
+            期望“失败”= 该条件未满足才算通过，允许结束本轮
+          </p>
         </div>
       )}
       {schema.length === 0 && (
@@ -755,19 +788,16 @@ const AgentLoopEditor = forwardRef<AgentLoopEditorHandle, AgentLoopEditorProps>(
   const [extraHooks, setExtraHooks] = useState<Record<string, unknown>>({});
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [dirty, setDirty] = useState(false);
+  // 最近一次加载/保存的完整 YAML 快照（JSON），用于精确计算是否有未保存改动
+  const [baselineKey, setBaselineKey] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
 
-  // 把内部状态汇报给 EditorPage（用于顶部 Toolbar 展示当前文件 / 脏标记）
+  // 把内部状态汇报给 EditorPage（用于顶部 Toolbar 展示当前文件）
   useEffect(() => {
     onActiveChange?.(activeFile);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeFile]);
-  useEffect(() => {
-    onDirtyChange?.(dirty);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dirty]);
 
   // 点击下拉菜单以外区域时收起
   useEffect(() => {
@@ -801,7 +831,7 @@ const AgentLoopEditor = forwardRef<AgentLoopEditorHandle, AgentLoopEditorProps>(
     setRootMeta(meta);
     setExtraHooks(extra);
     setActiveFile(name);
-    setDirty(false);
+    setBaselineKey(JSON.stringify(cloneJson(root)));
     setOpenActions(new Set());
     setMenuFor(null);
   };
@@ -844,13 +874,6 @@ const AgentLoopEditor = forwardRef<AgentLoopEditorHandle, AgentLoopEditorProps>(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Toolbar 通过 ref 打开文件（带未保存确认）
-  const openFile = async (name: string) => {
-    if (!name || name === activeFile) return;
-    if (dirty && !window.confirm('当前文件有未保存的修改，切换将丢弃这些修改，确定继续？')) return;
-    await loadFile(name);
-  };
-
   const toggleHook = (hookKey: HookKey) => {
     setOpenHooks((prev) => (prev.includes(hookKey) ? prev.filter((k) => k !== hookKey) : [...prev, hookKey]));
   };
@@ -864,8 +887,6 @@ const AgentLoopEditor = forwardRef<AgentLoopEditorHandle, AgentLoopEditorProps>(
     });
   };
 
-  const markDirty = () => setDirty(true);
-
   const handleAddAction = (hookKey: HookKey, type: ActionTypeKey) => {
     setParadigmState((prev) => ({
       ...prev,
@@ -875,7 +896,6 @@ const AgentLoopEditor = forwardRef<AgentLoopEditorHandle, AgentLoopEditorProps>(
       ],
     }));
     setMenuFor(null);
-    markDirty();
   };
 
   const handleRemoveAction = (hookKey: HookKey, actionId: string) => {
@@ -883,7 +903,6 @@ const AgentLoopEditor = forwardRef<AgentLoopEditorHandle, AgentLoopEditorProps>(
       ...prev,
       [hookKey]: prev[hookKey].filter((a) => a.id !== actionId),
     }));
-    markDirty();
   };
 
   // 更新单个字段：''/undefined 表示删除该字段
@@ -898,7 +917,6 @@ const AgentLoopEditor = forwardRef<AgentLoopEditorHandle, AgentLoopEditorProps>(
         return { ...a, config: next };
       }),
     }));
-    markDirty();
   };
 
   // 整体替换 config（含 JSON 兜底编辑器）
@@ -907,7 +925,6 @@ const AgentLoopEditor = forwardRef<AgentLoopEditorHandle, AgentLoopEditorProps>(
       ...prev,
       [hookKey]: prev[hookKey].map((a) => (a.id === actionId ? { ...a, config: cfg } : a)),
     }));
-    markDirty();
   };
 
   const buildYamlDoc = (): Record<string, unknown> => {
@@ -919,6 +936,20 @@ const AgentLoopEditor = forwardRef<AgentLoopEditorHandle, AgentLoopEditorProps>(
       });
     });
     return { ...cloneJson(rootMeta), hooks };
+  };
+
+  // 与“加载/保存的基线”精确对比：改回原样即不再标脏
+  const dirty = baselineKey !== null && JSON.stringify(buildYamlDoc()) !== baselineKey;
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dirty]);
+
+  // Toolbar 通过 ref 打开文件（带未保存确认）
+  const openFile = async (name: string) => {
+    if (!name || name === activeFile) return;
+    if (dirty && !window.confirm('当前文件有未保存的修改，切换将丢弃这些修改，确定继续？')) return;
+    await loadFile(name);
   };
 
   const handleSave = async () => {
@@ -935,7 +966,7 @@ const AgentLoopEditor = forwardRef<AgentLoopEditorHandle, AgentLoopEditorProps>(
         const errBody = await res.json().catch(() => null);
         throw new Error((errBody && errBody.detail) || '保存失败');
       }
-      setDirty(false);
+      setBaselineKey(JSON.stringify(doc));
       toast.success(`已保存 ${activeFile}.yaml`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '保存失败');
@@ -1310,6 +1341,7 @@ const AgentLoopEditor = forwardRef<AgentLoopEditorHandle, AgentLoopEditorProps>(
                                 action={action}
                                 schema={FIELD_SCHEMA[action.type] ?? []}
                                 allowTiming={hook.key === 'on_loop_epoch'}
+                                allowExpect={hook.key === 'on_loop_end'}
                                 onField={(key, val) => commitField(hook.key, action.id, key, val)}
                                 onReplace={(cfg) => replaceConfig(hook.key, action.id, cfg)}
                               />
