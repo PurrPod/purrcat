@@ -25,6 +25,9 @@ follow 标记，你无需（也不应）实现任何会话切换逻辑。
 * stdout **只能**输出协议 JSON-RPC（一行一条）。调试 print 必须走 stderr：`sys.stdout = sys.stderr`
 * 严禁退出主进程。连接崩溃要无限重连（带 sleep 缓冲），守护线程只救意外退出
 * 配置凭证一律从环境变量读取（由 activate_sensor.json 的 env 注入），禁止硬编码密钥
+* 有游标/会话状态的（长轮询 cursor、扫码换的 token 等），持久化到脚本同目录的
+  state 文件并随更新落盘——sensor 会被热重启，不落盘就丢消息或丢登录态
+* 一切外部网络调用放后台线程，主线程只跑 stdin 读取循环
 
 ## 2. 协议规范（JSON-RPC 2.0 over stdio）
 
@@ -41,16 +44,33 @@ follow 标记，你无需（也不应）实现任何会话切换逻辑。
 {{"jsonrpc": "2.0", "id": 3, "method": "session/prompt", "params": {{"sessionId": "<sid>", "prompt": [{{"type": "text", "text": "[{sensor_name} 收到用户消息] 你好"}}]}}}}
 ```
 prompt 响应不会立即返回——Agent 跑完当前轮次后网关才回 `{{"stopReason": "end_turn"}}`。
+连发多条 prompt 无需自行排队——网关按序处理，stopReason 也会按 FIFO 逐条回填，
+因此**不要在等 stopReason 的同时阻塞你的事件监听**（prompt 全部 fire-and-forget 即可）。
 
-上传文件给 Agent（content_b64 为 base64 编码的原始字节，单文件 ≤ 20MB，
-网关自动落盘 `/agent_vm/sensor/files/{sensor_name}/` 并把沙盒路径告知 Agent）：
+取消当前轮次（用户说"停下"等场景；通知无 id，网关不回响应）：
+```json
+{{"jsonrpc": "2.0", "method": "session/cancel", "params": {{"sessionId": "<sid>"}}}}
+```
+被取消的 prompt 会收到 `{{"stopReason": "cancelled"}}`。
+
+触发后台任务图谱（时钟类 sensor 专用，无需等 Agent 应答的自动化触发；
+available 检查 initialize 响应的 `agentCapabilities._meta.purrcat.dev.launch_task`）：
+```json
+{{"jsonrpc": "2.0", "id": 4, "method": "_purrcat/launch_task", "params": {{"graph_name": "my_graph", "inputs": {{"key": "value"}}, "title": "任务标题"}}}}
+```
+
+上传文件给 Agent（content_b64 为 base64 编码的原始字节，单文件 ≤ 20MB；
+网关落盘到 `/agent_vm/sensor/files/{sensor_name}/` 并在响应中返回沙盒路径，
+**拿到路径后请再用 session/prompt 告知 Agent**，如
+`[{sensor_name} Sensor 收到文件] {{path}} ({{mime}}, {{size}})`）：
 ```json
 {{"jsonrpc": "2.0", "id": 4, "method": "_purrcat/upload_file", "params": {{"name": "photo.jpg", "mime": "image/jpeg", "content_b64": "..."}}}}
 ```
 
 ### 入向（stdin ← 网关）
 
-Agent 文本回复（agent_message_chunk 逐条到达，多条拼接才是完整回复）：
+Agent 文本回复（agent_message_chunk 逐条到达；当前为事件级粒度——
+一条 chunk 即一条完整 assistant 消息，一个轮次可能有多条）：
 ```json
 {{"jsonrpc": "2.0", "method": "session/update", "params": {{"sessionId": "<sid>", "update": {{"sessionUpdate": "agent_message_chunk", "messageId": "msg_1", "content": {{"type": "text", "text": "回复内容"}}}}}}}}
 ```
@@ -70,7 +90,9 @@ Agent 发的文件（Agent 消息里含本地文件链接时网关自动追加�
 Sensor 首次启动往往需要凭证（App Secret、API Token 等）。**严禁缺凭证时静默退出或空转**，必须：
 
 1. 启动时检测凭证是否为空；
-2. 为空则立即用 **session/prompt 发送文字消息向 Agent 求助**，说清三件事：缺哪些凭证、去哪配置（前端配置中心 → Sensor 设置 → 填写 env 后启用）、凭证到位后自己会做什么；
+2. 为空则立即用 **session/prompt 发送文字消息向 Agent 求助**，说清四件事：缺哪些凭证、
+   **去哪获取**（外部平台控制台的网址与完整步骤，用户不看文档也能照做）、
+   去哪配置（前端配置中心 → Sensor 设置 → 填写 env 后启用）、凭证到位后自己会做什么；
 3. Agent 会转告用户并协助完成配置（配置保存后系统会热重启 sensor，届时读到新 env 自动恢复）；
 4. 主进程保持存活待命，不要退出。
 
