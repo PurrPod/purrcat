@@ -1,7 +1,7 @@
 # ACP 统一网关架构改造计划
 
 > 分支：`refactor/acp-gateway`
-> 状态：Phase 1 已完成（含规范核对修正）；sensor 侧全部冻结，先打穿 ACP 线
+> 状态：Phase 1 + Phase 2 完成并验收（Obsidian Agent Client 插件实测通过）；Phase 3 解冻 ⬅ 当前阶段
 > 原则：每阶段独立可冒烟，任何时刻 main 行为不受影响
 
 ## 1. 背景与目标
@@ -126,7 +126,7 @@ message → turn_end）。
 代理，localhost 请求被代理劫持返回 502 —— relay 访问后端必须
 `trust_env=False`（或 NO_PROXY=127.0.0.1）。
 
-### Phase 2 — Zed 转接 sensor（纯搬运，接通即用）⬅ 当前阶段
+### Phase 2 — Zed 转接 sensor（纯搬运，接通即用）✅ 已完成
 `scripts/acp_relay.py`（仓库内，PEP 723 单文件，stdlib-only）：
 
 - stdio 侧：读编辑器的 JSON-RPC 行 → 转发网关 HTTP
@@ -136,14 +136,89 @@ message → turn_end）。
 - 端口/token 发现：读 `~/.purrcat/` 配置文件（D9）
 - Zed settings.json 一行：`"agent": {"command": "uv", "args": ["run", "<abs>/scripts/acp_relay.py"]}`
 
-验收：Zed 里对话、看 thinking/工具气泡、中断（cancelled 收尾）。
+实现要点（2026-09-10 落码）：
 
-### Phase 3 — 存量 sensor 改造（🧊 冻结，等 ACP 线验收后再启动）
+1. **持住 prompt**：网关对 `session/prompt` 只回受理凭据（accepted/promptId），
+   relay 持住请求 id，SSE `turn_end` 事件到达后才按 stopReason 回写真正的响应；
+   update 通知先于响应写出（同 SSE 线程，顺序天然保证）
+2. **`session/new` 用 3600s 长超时**：网关侧排队等 Agent idle（同 chat.py 语义），
+   Agent 忙时 Zed 开新 chat 会阻塞——15s 默认超时会误报连接错误
+3. **断流保底**：SSE 断开重连（指数退避，封顶 10s）；挂住的 prompt 计 60s 死线，
+   超时回 -32603 错误防止编辑器 UI 永久卡死；404（后端重启会话丢失）直接终局
+4. **绕过系统代理**：`urllib.request.ProxyHandler({})`（stdlib 版 trust_env=False，
+   Phase 1 踩坑的系统代理劫持 localhost 问题）
+5. **Windows UTF-8**：stdin/stdout/stderr 显式 reconfigure utf-8
+   （管道默认 GBK，规范要求 JSON-RPC 必须 UTF-8）
+6. 发现顺序：env `PURRCAT_ACP_PORT`/`PURRCAT_ACP_TOKEN` →
+   `~/.purrcat/settings.json` 的 `acp_port` → 默认 `127.0.0.1:8000`；
+   token 固定 `~/.purrcat/acp_token`（缺失时退出并提示先启动一次桌面端）
+
+冒烟 21 项全过（Python 3.10，假网关 = stdlib http.server 模拟 /rpc + SSE）：
+后端不可达可读报错 / initialize+token 头 / session/new / prompt 持住 +
+update×2 先于响应 + stopReason 回包（end_turn 与 cancelled）/ cancel 通知零回写 /
+网关错误透传 / 非 JSON 行忽略 / 中文全链路 UTF-8。
+测试脚本：`agent_vm/.acp_smoke/smoke_relay.py`（gitignore 内，不入库）。
+
+验收（Zed 手工）：Zed 里对话、看 thinking/工具气泡、中断（cancelled 收尾）。
+
+**验收记录（2026-09-10，✅ 通过）**：实际用 **Obsidian "Agent Client" 插件**
+（RAIT-09，ACP 客户端，261k 下载）完成——第三方生态客户端开箱即用，比 Zed 单一
+客户端更具兼容性说服力。配置：Custom Agent → `uv run <abs>/scripts/acp_relay.py`。
+踩坑：网关 token 是惰性生成（首个 /acp/rpc 请求才落盘），relay 先于后端跑过一次
+就永久退出——冷启动顺序：后端 → 触发一次 /acp/rpc（401 即成功）→ 再开客户端。
+
+**打包分发方案（2026-09-10 落码，"Phase 2.5"）**：relay 以 .py 形态部署到
+**配置目录稳定路径** `~/.purrcat/bin/acp_relay.py`，编辑器配置指向它，App 升级/
+重装/卸载都不影响（用户保证全员有 uv，无需 exe 化）：
+
+1. `main.spec`：`datas += [('scripts/acp_relay.py', 'scripts')]`——PyInstaller
+   datas 是**原样拷贝**进 `_internal/scripts/`（同 `ui/dist` 前端的机制），
+   最小 onedir 探针实测：frozen 态 `__file__` 落 `_internal` →
+   `BASE_DIR/scripts/acp_relay.py` 可读，13796 字节含 PEP 723 头完好
+2. `initial.py::deploy_acp_relay()`：启动时对比内容部署/刷新（幂等，版本漂移
+   自动修复）；同函数供配置页"重新部署"按钮复用（force=True）
+3. token 预生成：启动即调 `get_acp_token()` 落盘，修掉上面"惰性生成"的冷启动坑
+4. 配置中心新增 **ACP 接入页**（`/api/config/acp`）：转接脚本状态卡
+   （部署/版本/uv 三 chip + 路径复制 + 重新部署）、通用接入配置卡
+   （agent_servers JSON 片段 + Path/Arguments 拆分格式，一键复制）、
+   令牌与端口卡（重置令牌 + acp_port 保存；token 不对用户透出——
+   relay 自动读取，仅泄露疑虑时重置）
+   ——"文件不见了"的一键修复即"重新部署"；"恢复出厂"即"重置令牌"
+5. 冒烟 4/4 过（TestClient）：GET 状态 / PUT 端口（含非法 400）/ POST redeploy
+   / POST reset-token（变更后即时还原，不打断已连接编辑器）；
+   部署版 relay（~/.purrcat/bin/）连真实后端 initialize 往返成功
+
+### Phase 3 — 存量 sensor 改造（⬅ 当前阶段，2026-09-10 解冻）
 飞书、时钟改说 ACP 方言，传输保持 stdio（零网络代码）：飞书
 `session/prompt` 攒齐回群；时钟 `_purrcat/launch_task`；Manager 识别
 JSON-RPC 载荷直调网关，旧 observe/express 走 SensorGateway 共存。
 
-验收：飞书全功能回归（消息/文件/斜杠命令）；时钟任务照常触发。
+细化实施（本仓库部分，三步走）：
+
+1. **dispatch 抽取**：新增 `src/server/acp/dispatch.py`——把 api/acp.py 的
+   方法分发 + `_to_updates` 词汇翻译搬过去，`handle_rpc(msg) -> dict`；
+   HTTP 端点瘦成"鉴权 + 直调"（词汇路由器物理唯一，SSE/stdio 桥共用）
+2. **stdio 桥**：新增 `src/sensor/bridge.py`（`AcpSensorBridge`）：
+   - 入向：sensor stdout JSON-RPC → 后台线程直调 dispatch（session/new
+     阻塞等 idle，不得占用监听线程）
+   - 出向：session/new 成功后 bus.subscribe（同步回调）→ session/update
+     逐行写 sensor stdin
+   - prompt 持住：与 relay 同机制，turn_end 后回写 stopReason 响应
+3. **Manager 分流**：`_listen_to_stdout` 按载荷分流——有 `jsonrpc` 键走桥，
+   否则走旧 observe/express（wechat-clawbot 等旧方言 sensor 原样运行到 Phase 4）
+
+扩展词汇（stdio 文件传输契约，进 dispatch 分发表）：
+- `_purrcat/upload_file`（sensor→agent 请求）：base64 落盘 → 返回 sandbox
+  路径（替代旧 observe type=file）
+- `_purrcat/file`（agent→sensor 通知）：回复提及文件路径时推 base64
+  （替代旧 express_file，复用 gateway.extract_file_paths 检测）
+
+出仓库（云端 PurrPod/sensors，另立任务）：飞书/时钟/微信 sensor 重写为
+ACP 方言（initialize → session/new → session/prompt 循环）。
+
+验收：假 ACP 方言 sensor 子进程全回路冒烟（initialize/new/prompt/
+update 顺序/turn_end 响应/upload_file 回环）；HTTP 端点 16 项冒烟复验
+（抽取无回归）；旧方言行仍走旧路径。
 
 ### Phase 4 — 删旧与瘦身（🧊 冻结，最后执行）
 删 `src/sensor/gateway.py`；Manager 删旧词汇路由保留进程托管 + stdio→网关
@@ -167,6 +242,6 @@ JSON-RPC 载荷直调网关，旧 observe/express 走 SensorGateway 共存。
 ## 7. 顺序总结
 
 ```
-Phase 1 网关 ✅ ──► 规范修正 ⬅ 当前 ──► Phase 2 转接 ──► (Zed 可用)
-                                    ──► Phase 3/4 🧊 冻结，等 ACP 线验收
+Phase 1 网关 ✅ ──► 规范修正 ✅ ──► Phase 2 转接 ✅ 已验收 ──► Phase 3 sensor ⬅ 当前
+                                                            ──► Phase 4 🧊 冻结
 ```

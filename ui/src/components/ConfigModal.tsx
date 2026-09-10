@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   X, Save, FileJson, AlertCircle, Plus, Trash2, RefreshCw,
   ToggleLeft, ToggleRight, Folder, FolderRoot, Info, HardDrive, Pencil,
-  Loader2, Server, Cpu, Eye, Store, Languages
+  Loader2, Server, Cpu, Eye, Store, Languages, Copy, Plug, KeyRound
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { sketchyShape1, sketchyShape2, sketchyShape3 } from './chat/ChatShared';
@@ -17,6 +17,7 @@ const CONFIG_TABS: Array<{ key: string; label: string; tip: string }> = [
   { key: 'file',     label: 'config.tabFile', tip: 'config.tipFile' },
   { key: 'mcp',      label: 'config.tabMcp', tip: 'config.tipMcp' },
   { key: 'app',     label: 'config.tabApp', tip: 'config.tipApp' },
+  { key: 'acp',     label: 'config.tabAcp', tip: 'config.tipAcp' },
 ];
 
 // ── 模型配置页：三个模型角色 ──
@@ -82,6 +83,16 @@ export default function ConfigModal({ isOpen, onClose }: { isOpen: boolean; onCl
   // ── 数据根目录迁移状态 ──
   const [pendingRoot, setPendingRoot] = useState<string | null>(null); // 待确认的新目录
   const [migrating, setMigrating] = useState(false);
+
+  // ── ACP 配置页状态 ──
+  const [acpBusy, setAcpBusy] = useState<string | null>(null); // 'redeploy' | 'reset-token' | 'port'
+  const [acpPortDraft, setAcpPortDraft] = useState<string>('');
+
+  // ACP 状态加载后同步端口草稿
+  useEffect(() => {
+    if (activeTab === 'acp' && configData?.port != null) setAcpPortDraft(String(configData.port));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [configData]);
 
   // 如果数据被包过 __ARRAY_WRAPPER__，保存和 raw 显示时要解包
   const getRawData = (d: any) => {
@@ -178,6 +189,71 @@ export default function ConfigModal({ isOpen, onClose }: { isOpen: boolean; onCl
       setMigrating(false);
     }
   };
+
+  // ══════════════ ACP 配置页逻辑 ══════════════
+
+  const copyText = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success(t('config.acpCopyOk'));
+    } catch {
+      toast.error(t('config.acpCopyFail'));
+    }
+  };
+
+  const acpAction = async (action: 'redeploy' | 'reset-token') => {
+    if (action === 'reset-token' && !window.confirm(t('config.acpResetTokenConfirm'))) return;
+    setAcpBusy(action);
+    try {
+      const res = await fetch(`/api/config/acp/${action}`, { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        toast.success(action === 'redeploy' ? t('config.acpRedeployOk') : t('config.acpResetTokenOk'));
+        fetchConfig('acp');
+      } else {
+        toast.error(typeof data?.detail === 'string' ? data.detail : t('config.networkError'));
+      }
+    } catch {
+      toast.error(t('config.networkError'));
+    } finally {
+      setAcpBusy(null);
+    }
+  };
+
+  const saveAcpPort = async () => {
+    const port = Number(acpPortDraft);
+    if (!Number.isInteger(port) || port <= 0 || port > 65535) {
+      toast.error(t('config.acpPortInvalid'));
+      return;
+    }
+    setAcpBusy('port');
+    try {
+      const res = await fetch('/api/config/acp', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ port }),
+      });
+      if (res.ok) {
+        toast.success(t('config.acpPortSaved'));
+        fetchConfig('acp');
+      } else {
+        toast.error(t('config.networkError'));
+      }
+    } catch {
+      toast.error(t('config.networkError'));
+    } finally {
+      setAcpBusy(null);
+    }
+  };
+
+  // 通用接入配置片段（路径统一用正斜杠，JSON 内免转义，uv/Python 均兼容）
+  const acpRelayCmdPath = (configData?.relay_path || '').replace(/\\/g, '/');
+  const acpJsonSnippet = JSON.stringify(
+    { purrcat: { command: 'uv', args: ['run', acpRelayCmdPath] } },
+    null,
+    2
+  );
+  const acpArgsText = `run\n${acpRelayCmdPath}`;
 
   // ══════════════ 模型配置页逻辑 ══════════════
 
@@ -543,6 +619,158 @@ export default function ConfigModal({ isOpen, onClose }: { isOpen: boolean; onCl
               </div>
             )}
 
+            {/* ── ACP 编辑器接入页（状态/命令/令牌与端口，非 JSON 编辑） ── */}
+            {activeTab === 'acp' && (
+              <div className="flex flex-col gap-5 flex-1">
+
+                {/* 卡 1：转接脚本状态 */}
+                <div style={sketchyShape2} className="bg-paper border-4 border-ink p-5 flex flex-col gap-3 shadow-[6px_6px_0px_0px_rgba(26,26,26,1)]">
+                  <div className="flex items-center justify-between gap-3 flex-wrap">
+                    <div className="flex items-center gap-3">
+                      <div style={sketchyShape3} className="w-10 h-10 bg-[#88c0d0] border-4 border-ink flex items-center justify-center text-paper rotate-3">
+                        <Plug size={22} strokeWidth={3} />
+                      </div>
+                      <div>
+                        <div className="text-xl font-black text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>{t('config.acpRelayCardTitle')}</div>
+                        <div className="text-sm font-bold text-ink/50">{t('config.acpRelayCardSub')}</div>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => acpAction('redeploy')}
+                      disabled={acpBusy === 'redeploy'}
+                      style={sketchyShape1}
+                      className="px-5 py-2 bg-[#EBCB8B] border-4 border-ink text-ink font-black flex items-center gap-2 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:bg-[#dbb76f] active:translate-y-1 active:shadow-none transition-all -rotate-1 disabled:opacity-50"
+                    >
+                      {acpBusy === 'redeploy' ? <Loader2 size={18} strokeWidth={3} className="animate-spin" /> : <RefreshCw size={18} strokeWidth={3} />}
+                      {t('config.acpRedeploy')}
+                    </button>
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className={`px-2 py-0.5 border-2 border-ink font-black text-xs ${configData?.relay_deployed ? 'bg-[#a3be8c]' : 'bg-terracotta/60'}`}>
+                      {configData?.relay_deployed ? t('config.acpChipDeployed') : t('config.acpChipMissing')}
+                    </span>
+                    <span className={`px-2 py-0.5 border-2 border-ink font-black text-xs ${configData?.relay_matches_source ? 'bg-[#a3be8c]' : 'bg-[#EBCB8B]'}`}>
+                      {configData?.relay_matches_source ? t('config.acpChipLatest') : t('config.acpChipOutdated')}
+                    </span>
+                    <span className={`px-2 py-0.5 border-2 border-ink font-black text-xs ${configData?.uv_found ? 'bg-[#a3be8c]' : 'bg-terracotta/60'}`}>
+                      {configData?.uv_found ? t('config.acpChipUvOk') : t('config.acpChipUvMissing')}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2 bg-[#FDF8F0] border-4 border-ink p-3">
+                    <div className="flex-1 break-all font-mono font-bold text-[13px] text-ink/80">{configData?.relay_path || '…'}</div>
+                    <button
+                      onClick={() => copyText(configData?.relay_path || '')}
+                      title={t('config.acpCopy')}
+                      className="shrink-0 p-2 border-2 border-ink bg-paper hover:bg-sand active:translate-y-1 transition-all"
+                      style={sketchyShape3}
+                    >
+                      <Copy size={16} strokeWidth={3} />
+                    </button>
+                  </div>
+                </div>
+
+                {/* 卡 2：通用接入配置 */}
+                <div style={sketchyShape3} className="bg-paper border-4 border-ink p-5 flex flex-col gap-3 shadow-[6px_6px_0px_0px_rgba(26,26,26,1)]">
+                  <div className="flex items-center gap-3">
+                    <div style={sketchyShape1} className="w-10 h-10 bg-[#EBCB8B] border-4 border-ink flex items-center justify-center text-ink -rotate-2">
+                      <Store size={22} strokeWidth={3} />
+                    </div>
+                    <div>
+                      <div className="text-xl font-black text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>{t('config.acpEditorCardTitle')}</div>
+                      <div className="text-sm font-bold text-ink/50">{t('config.acpEditorCardSub')}</div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="text-xs font-black text-ink/50 tracking-widest mb-1">{t('config.acpJsonTitle')}</div>
+                    <div className="relative">
+                      <pre className="bg-[#FDF8F0] border-4 border-ink p-4 font-mono text-[13px] leading-relaxed font-bold break-all whitespace-pre-wrap pr-14">{acpJsonSnippet}</pre>
+                      <button
+                        onClick={() => copyText(acpJsonSnippet)}
+                        title={t('config.acpCopy')}
+                        className="absolute top-2 right-2 p-2 border-2 border-ink bg-paper hover:bg-sand active:translate-y-1 transition-all"
+                        style={sketchyShape3}
+                      >
+                        <Copy size={16} strokeWidth={3} />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="text-xs font-black text-ink/50 tracking-widest mb-1">{t('config.acpArgsTitle')}</div>
+                    <div className="bg-[#FDF8F0] border-4 border-ink p-3 flex flex-col gap-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-black text-xs text-ink/50 w-20 shrink-0">Path</span>
+                        <span className="font-mono font-bold text-[13px] text-ink/80">uv</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-black text-xs text-ink/50 w-20 shrink-0">Arguments</span>
+                        <span className="flex-1 font-mono font-bold text-[13px] text-ink/80 break-all">{acpArgsText}</span>
+                        <button
+                          onClick={() => copyText(acpArgsText)}
+                          title={t('config.acpCopy')}
+                          className="shrink-0 p-1.5 border-2 border-ink bg-paper hover:bg-sand active:translate-y-1 transition-all"
+                          style={sketchyShape3}
+                        >
+                          <Copy size={14} strokeWidth={3} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 卡 3：令牌与端口 */}
+                <div style={sketchyShape1} className="bg-paper border-4 border-ink p-5 flex flex-col gap-3 shadow-[6px_6px_0px_0px_rgba(26,26,26,1)]">
+                  <div className="flex items-center gap-3">
+                    <div style={sketchyShape2} className="w-10 h-10 bg-[#a3be8c] border-4 border-ink flex items-center justify-center text-ink rotate-1">
+                      <KeyRound size={22} strokeWidth={3} />
+                    </div>
+                    <div>
+                      <div className="text-xl font-black text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>{t('config.acpTokenCardTitle')}</div>
+                      <div className="text-sm font-bold text-ink/50">{t('config.acpTokenCardSub')}</div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <button
+                      onClick={() => acpAction('reset-token')}
+                      disabled={acpBusy === 'reset-token'}
+                      style={sketchyShape3}
+                      className="px-5 py-2 bg-terracotta/60 border-4 border-ink text-ink font-black flex items-center gap-2 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:bg-terracotta hover:text-paper active:translate-y-1 active:shadow-none transition-all rotate-1 disabled:opacity-50"
+                    >
+                      {acpBusy === 'reset-token' ? <Loader2 size={18} strokeWidth={3} className="animate-spin" /> : <RefreshCw size={18} strokeWidth={3} />}
+                      {t('config.acpResetToken')}
+                    </button>
+                    <div className="text-xs font-bold text-ink/40 flex-1 min-w-[200px]">{t('config.acpTokenAutoHint')}</div>
+                  </div>
+
+                  <div className="flex items-end gap-3 flex-wrap">
+                    <div className="flex flex-col gap-1">
+                      <div className="text-xs font-black text-ink/50 tracking-widest">{t('config.acpPortLabel')}</div>
+                      <input
+                        value={acpPortDraft}
+                        onChange={(e) => setAcpPortDraft(e.target.value)}
+                        className="w-36 bg-[#FDF8F0] border-4 border-ink px-4 py-2.5 font-mono font-bold text-[14px] focus:outline-none focus:bg-white"
+                        spellCheck={false}
+                      />
+                    </div>
+                    <button
+                      onClick={saveAcpPort}
+                      disabled={acpBusy === 'port'}
+                      style={sketchyShape2}
+                      className="px-5 py-2.5 bg-[#a3be8c] border-4 border-ink text-ink font-black flex items-center gap-2 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:bg-[#8eb072] active:translate-y-1 active:shadow-none transition-all disabled:opacity-50"
+                    >
+                      {acpBusy === 'port' ? <Loader2 size={18} strokeWidth={3} className="animate-spin" /> : <Save size={18} strokeWidth={3} />}
+                      {t('config.acpPortSave')}
+                    </button>
+                    <div className="text-xs font-bold text-ink/40 flex-1 min-w-[200px]">{t('config.acpPortHint')}</div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* ── 编辑模式：可视化 · 模型配置 ── */}
             {editMode === 'visual' && activeTab === 'model' && (
               <div className="flex flex-col gap-5 flex-1">
@@ -753,7 +981,7 @@ export default function ConfigModal({ isOpen, onClose }: { isOpen: boolean; onCl
             )}
 
             {/* ── 编辑模式：可视化 · 通用 key-value（传感器/文件白名单/应用白名单/定时任务） ── */}
-            {editMode === 'visual' && activeTab !== 'model' && activeTab !== 'mcp' && (
+            {editMode === 'visual' && activeTab !== 'model' && activeTab !== 'mcp' && activeTab !== 'acp' && (
               <div className="flex flex-col gap-5 flex-1">
                 {Object.keys(configData).length === 0 ? (
                   <div className="text-center font-bold text-ink/40 mt-10 text-2xl" style={{ fontFamily: '"Comic Sans MS", cursive' }}>

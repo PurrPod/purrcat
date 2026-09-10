@@ -95,6 +95,11 @@ MCP_SCHEMA_CACHE_FILE = os.path.join(PURRCAT_DIR, "mcp_schema.json")
 
 # 🌟 ACP 网关本地鉴权 token（外部 sensor/编辑器经 HTTP 接入时校验）
 ACP_TOKEN_FILE = os.path.join(PURRCAT_DIR, "acp_token")
+# 🌟 ACP 转接脚本部署位置：~/.purrcat/bin/acp_relay.py
+# 编辑器（Zed/Obsidian/VSCode）配置指向该稳定路径；启动时由 initial.py 从内置源
+# 自动部署/刷新，App 升级后编辑器侧配置永不失效（relays 耐漂移：翻译全在网关）
+ACP_BIN_DIR = os.path.join(PURRCAT_DIR, "bin")
+ACP_RELAY_PATH = os.path.join(ACP_BIN_DIR, "acp_relay.py")
 
 
 def get_acp_token() -> str:
