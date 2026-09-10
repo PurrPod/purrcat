@@ -6,9 +6,7 @@ import urllib.request
 import urllib.error
 import atexit
 import sys
-from .gateway import get_gateway, RemoteSensorProxy
 from .bridge import AcpSensorBridge
-from src.server.acp.dispatch import save_inbound_file
 from src.utils.config import (
     get_sensor_config,
     get_enriched_env,
@@ -146,14 +144,6 @@ class SensorManager:
             )
             self.processes[name] = process
 
-            proxy = RemoteSensorProxy(
-                name,
-                cfg.get("capabilities", {}),
-                process.stdin,
-                tool_detail=cfg.get("tool_detail", False),
-            )
-            get_gateway().register(proxy)
-
             threading.Thread(
                 target=self._listen_to_stdout, args=(name, process), daemon=True
             ).start()
@@ -170,7 +160,6 @@ class SensorManager:
             print(f"❌ [Manager] 启动 {name} 失败: {e}")
 
     def _listen_to_stdout(self, name: str, process: subprocess.Popen):
-        gateway = get_gateway()
         bridge: AcpSensorBridge | None = None  # 惰性建桥：首条 JSON-RPC 行到达时
         for line in iter(process.stdout.readline, ""):
             if not line:
@@ -180,68 +169,23 @@ class SensorManager:
             except json.JSONDecodeError:
                 continue
 
-            # ── ACP 方言：JSON-RPC 载荷（有 jsonrpc 键）走 stdio 桥 ──
-            if "jsonrpc" in msg:
-                if bridge is None:
-                    cfg = get_sensor_config().get(name, {})
-                    bridge = AcpSensorBridge(
-                        name,
-                        process.stdin,
-                        tool_detail=cfg.get("tool_detail", False),
-                    )
-                bridge.handle_line(msg)
+            # ACP 方言：JSON-RPC 载荷（有 jsonrpc 键）走 stdio 桥；
+            # 其余（旧 observe/express/log 方言已删除）忽略——旧 sensor 请重写
+            if "jsonrpc" not in msg:
+                print(
+                    f"⚠️ [Manager] {name} 输出了非 ACP 方言载荷（已忽略，"
+                    "旧协议已移除，请将 sensor 升级为 ACP 方言）: {line.strip()[:120]}"
+                )
                 continue
 
-            # ── 旧方言：observe / express / launch_task（Phase 4 删） ──
-            method = msg.get("method")
-
-            if method == "observe":
-                params = msg.get("params", {})
-                if params.get("type") == "file":
-                    saved = save_inbound_file(name, params)
-                    content = (
-                        f"[{name} Sensor 收到文件] {saved['path']} "
-                        f"({saved['mime']}, {saved['size_h']})"
-                        if saved
-                        else None
-                    )
-                else:
-                    content = params.get("content")
-                if content:
-                    gateway.push(name, content)
-            elif method == "log":
-                print(f"📝 [{name}]: {msg.get('params', {}).get('msg')}")
-            elif method == "launch_task":
-                # 解析传来的任务信息
-                params = msg.get("params", {})
-                graph_name = params.get("graph_name")
-                inputs = params.get("inputs", {})
-                title = params.get("title", "cron_task")
-
-                print(
-                    f"🚀 [Manager] 收到时钟触发，准备拉起后台任务图谱: {graph_name}"
+            if bridge is None:
+                cfg = get_sensor_config().get(name, {})
+                bridge = AcpSensorBridge(
+                    name,
+                    process.stdin,
+                    tool_detail=cfg.get("tool_detail", False),
                 )
-
-                # 定义后台执行任务
-                def _run_bg_task():
-                    import asyncio
-                    from src.harness.process import Task
-
-                    try:
-                        # 因为这是在新线程中，需要给它配一个新的独立事件循环
-                        loop = asyncio.new_event_loop()
-                        asyncio.set_event_loop(loop)
-
-                        # 实例化并运行 Harness 的 Task
-                        task = Task(
-                            task_name=title, inputs=inputs, graph_name=graph_name
-                        )
-                        loop.run_until_complete(task.run())
-                    except Exception as e:
-                        print(f"❌ [Manager] 定时后台任务执行崩溃: {e}")
-
-                # 通过独立线程启动，防止阻塞 Manager 监听 stdout
-                threading.Thread(target=_run_bg_task, daemon=True).start()
+            bridge.handle_line(msg)
 
     def _listen_to_stderr(self, name: str, process: subprocess.Popen):
         for line in iter(process.stderr.readline, ""):

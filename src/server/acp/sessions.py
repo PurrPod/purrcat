@@ -27,7 +27,7 @@ class AcpSessionRegistry:
         - follow_active=False（编辑器）：内部创建一个全新 purrcat 会话
           （AgentManager 排队等 idle 再 switch）
         - follow_active=True（sensor）：不建 purrcat 会话，prompt 始终注入
-          **当前活跃会话**（agent_force_push 直达，与旧 SensorGateway.push 同语义）；
+          **当前活跃会话**（agent_force_push 直达，无 switch 无排队）；
           事件订阅按"全订阅"生效——单活跃会话模型下全订阅 ≈ 活跃会话
         """
         if follow_active:
@@ -101,8 +101,7 @@ def ensure_active_and_push(purr_session_id: str, message: str, source: str = "ac
 def push_by_entry(entry: dict, message: str, source: str = "acp"):
     """按会话映射注入消息（后台线程调用）。
 
-    - follow 模式（sensor）：直达当前活跃会话，不 switch 不排队——
-      与旧 SensorGateway.push 的 agent_force_push 完全同语义
+    - follow 模式（sensor）：直达当前活跃会话，不 switch 不排队
     - 映射模式（编辑器）：排队等 idle 再 switch（ensure_active_and_push）
     """
     if entry.get("follow"):

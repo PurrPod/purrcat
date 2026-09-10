@@ -627,9 +627,6 @@ class Agent:
         if rc:
             get_bus().publish(self.session_id, "agent_thought", {"text": rc})
         if msg_resp.content:
-            from src.sensor import send_to_sensors
-
-            send_to_sensors(f"{msg_resp.content}")
             get_bus().publish(
                 self.session_id, "agent_message", {"text": msg_resp.content}
             )
@@ -692,7 +689,6 @@ class Agent:
 
             if target_tool_name == "Bash":
                 arguments["session_id"] = self.session_id
-            args_str = str(arguments)
             if target_tool_name == "BrainStorm":
                 # 🌟 注入本次调用的 tool_call_id，供 BS 伪造子代理上下文的
                 # tool result 时精确定位自己（批次内可能存在多个工具调用）
@@ -742,13 +738,7 @@ class Agent:
                 )
             except Exception:
                 snip = str(result_content)[:100]
-            from src.sensor import send_to_sensors
-
-            send_to_sensors(
-                f"🔧{target_tool_name}({args_str[:50]}...)\n\n---\n\n{snip}",
-                tool_detail=True,
-            )
-            # 🌟 ACP 总线：工具完成事件
+            # 🌟 ACP 总线：工具完成事件（tool_detail 过滤由各桥自决）
             from src.server.acp.bus import get_bus
 
             get_bus().publish(

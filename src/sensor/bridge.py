@@ -16,12 +16,60 @@ import base64
 import json
 import mimetypes
 import os
+import re
 import threading
 
 from src.server.acp.bus import get_bus
 from src.server.acp.dispatch import MAX_SENSOR_FILE_BYTES, handle_rpc, to_updates
 from src.server.acp.sessions import get_registry
-from src.sensor.gateway import extract_file_paths
+from src.utils.path import convert_sandbox_path
+
+# markdown 链接/图片的目标地址，如 ![报告](/agent_vm/report.png)
+_MD_LINK_RE = re.compile(r"\[[^\]]*\]\(\s*([^)\s]+)\s*\)")
+# 裸路径引用：/agent_vm/...（含 ./ ../ 前缀）、Windows 盘符绝对路径、file:// 协议
+# 盘符前加 (?<![A-Za-z0-9.]) 防止匹配到 "file:" 里的 "e:"
+_FILE_PATH_RE = re.compile(
+    r"(?:file:///(?:[A-Za-z]:|agent_vm)[^\s\"'<>,|]+"
+    r"|(?:/|\.{1,2}/)agent_vm[/\\][^\s\"'<>,|]+"
+    r"|(?<![A-Za-z0-9.])[A-Za-z]:[/\\][^\s\"'<>,|]+)"
+)
+
+
+def _normalize_candidate(raw: str) -> str | None:
+    """把文本中提取到的路径候选规范化为宿主机绝对路径，非法返回 None"""
+    p = raw.strip()
+    if p.startswith("file:///"):
+        p = p[len("file:///") :]
+    elif p.startswith("file://"):
+        return None
+    # 去掉行尾粘连的标点（中英文）
+    p = p.rstrip("。，；！？、.)]}'\"")
+    # ./agent_vm/... ../agent_vm/... agent_vm/... 统一成 /agent_vm/...
+    m = re.match(r"^(?:\.{1,2}/)*(agent_vm(?:/|$).*)$", p)
+    if m:
+        p = "/" + m.group(1)
+    if not (p.startswith("/agent_vm/") or re.match(r"^[A-Za-z]:[/\\]", p)):
+        return None
+    return p
+
+
+def extract_file_paths(text: str) -> list[str]:
+    """从消息文本中提取本地文件链接，返回宿主机绝对路径列表"""
+    candidates = [m.group(1) for m in _MD_LINK_RE.finditer(text)]
+    candidates += [m.group(0) for m in _FILE_PATH_RE.finditer(text)]
+
+    paths = []
+    seen = set()
+    for c in candidates:
+        p = _normalize_candidate(c)
+        if not p:
+            continue
+        host = convert_sandbox_path(p)
+        if host in seen or not os.path.isfile(host):
+            continue
+        seen.add(host)
+        paths.append(host)
+    return paths
 
 
 class AcpSensorBridge:
@@ -31,7 +79,6 @@ class AcpSensorBridge:
         self.name = name
         self.stdin = stdin_pipe
         # false 时只透传正文（agent_message_chunk + turn_end），工具/思考细节不发
-        # ——与旧 RemoteSensorProxy.tool_detail 语义一致
         self.tool_detail = tool_detail
         self.acp_sid = ""  # session/new 响应时记住（sensor 单进程长持一个会话）
         self._alive = True
