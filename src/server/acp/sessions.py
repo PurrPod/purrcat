@@ -19,16 +19,29 @@ class AcpSessionRegistry:
         # acp_sid -> {"purr_session_id", "client", "mode", "last_prompt_id", "created"}
         self._sessions = {}
 
-    def create(self, client: str = "unknown", alias: str = "ACP Session") -> dict:
-        """新建映射：内部创建一个全新 purrcat 会话（AgentManager 排队等 idle）"""
-        from src.agent import new_session as agent_new_session
+    def create(
+        self, client: str = "unknown", alias: str = "ACP Session", follow_active: bool = False
+    ) -> dict:
+        """新建映射。
 
-        purr_id = agent_new_session(branch_alias=alias)
+        - follow_active=False（编辑器）：内部创建一个全新 purrcat 会话
+          （AgentManager 排队等 idle 再 switch）
+        - follow_active=True（sensor）：不建 purrcat 会话，prompt 始终注入
+          **当前活跃会话**（agent_force_push 直达，与旧 SensorGateway.push 同语义）；
+          事件订阅按"全订阅"生效——单活跃会话模型下全订阅 ≈ 活跃会话
+        """
+        if follow_active:
+            purr_id = None
+        else:
+            from src.agent import new_session as agent_new_session
+
+            purr_id = agent_new_session(branch_alias=alias)
         acp_id = uuid.uuid4().hex
         entry = {
             "purr_session_id": purr_id,
             "client": client,
             "mode": "",
+            "follow": follow_active,
             "last_prompt_id": "",
             "created": time.time(),
         }
@@ -83,6 +96,21 @@ def ensure_active_and_push(purr_session_id: str, message: str, source: str = "ac
         manager.switch_session(purr_session_id)
 
     manager.agent_force_push(message, type=source)
+
+
+def push_by_entry(entry: dict, message: str, source: str = "acp"):
+    """按会话映射注入消息（后台线程调用）。
+
+    - follow 模式（sensor）：直达当前活跃会话，不 switch 不排队——
+      与旧 SensorGateway.push 的 agent_force_push 完全同语义
+    - 映射模式（编辑器）：排队等 idle 再 switch（ensure_active_and_push）
+    """
+    if entry.get("follow"):
+        from src.agent import agent_force_push
+
+        agent_force_push(message, type=source)
+        return
+    ensure_active_and_push(entry["purr_session_id"], message, source)
 
 
 _registry = AcpSessionRegistry()

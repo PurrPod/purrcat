@@ -1,7 +1,7 @@
 # ACP 统一网关架构改造计划
 
 > 分支：`refactor/acp-gateway`
-> 状态：Phase 1 + Phase 2 完成并验收（Obsidian Agent Client 插件实测通过）；Phase 3 解冻 ⬅ 当前阶段
+> 状态：Phase 1 + 2 + 3 完成（编辑器实测验收 + sensor 39 项冒烟）；Phase 4 删旧 🧊 冻结
 > 原则：每阶段独立可冒烟，任何时刻 main 行为不受影响
 
 ## 1. 背景与目标
@@ -188,37 +188,66 @@ update×2 先于响应 + stopReason 回包（end_turn 与 cancelled）/ cancel �
    / POST reset-token（变更后即时还原，不打断已连接编辑器）；
    部署版 relay（~/.purrcat/bin/）连真实后端 initialize 往返成功
 
-### Phase 3 — 存量 sensor 改造（⬅ 当前阶段，2026-09-10 解冻）
+### Phase 3 — 存量 sensor 改造（✅ 2026-09-10 完成）
 飞书、时钟改说 ACP 方言，传输保持 stdio（零网络代码）：飞书
 `session/prompt` 攒齐回群；时钟 `_purrcat/launch_task`；Manager 识别
 JSON-RPC 载荷直调网关，旧 observe/express 走 SensorGateway 共存。
 
-细化实施（本仓库部分，三步走）：
+**两项用户拍板的设计决策（2026-09-10）**：
 
-1. **dispatch 抽取**：新增 `src/server/acp/dispatch.py`——把 api/acp.py 的
-   方法分发 + `_to_updates` 词汇翻译搬过去，`handle_rpc(msg) -> dict`；
-   HTTP 端点瘦成"鉴权 + 直调"（词汇路由器物理唯一，SSE/stdio 桥共用）
-2. **stdio 桥**：新增 `src/sensor/bridge.py`（`AcpSensorBridge`）：
-   - 入向：sensor stdout JSON-RPC → 后台线程直调 dispatch（session/new
-     阻塞等 idle，不得占用监听线程）
-   - 出向：session/new 成功后 bus.subscribe（同步回调）→ session/update
-     逐行写 sensor stdin
-   - prompt 持住：与 relay 同机制，turn_end 后回写 stopReason 响应
-3. **Manager 分流**：`_listen_to_stdout` 按载荷分流——有 `jsonrpc` 键走桥，
-   否则走旧 observe/express（wechat-clawbot 等旧方言 sensor 原样运行到 Phase 4）
+1. **开关逻辑不变**：`enabled` 门禁在 Manager（spawn 点），`/api/config/sensor/reload`
+   照常工作——"开的时候才 spawn"，ACP 方言 sensor 完全继承
+2. **会话定向分流**：Manager 拉起的 stdio sensor **固定当前活跃会话**
+   （`push_by_entry` follow 分支 = 旧 `gateway.push` 的 `agent_force_push`
+   直达，无 switch 无排队）；新建会话/切换会话的逻辑**只属于 HTTP 端的
+   编辑器客户端**（`ensure_active_and_push` 排队 switch）。bridge 对
+   `session/new` 无条件注入 `_meta.purrcat.follow_active=true`——sensor
+   端零决策零配置
 
-扩展词汇（stdio 文件传输契约，进 dispatch 分发表）：
+实施（三步落码）：
+
+1. **dispatch 抽取** ✅：`src/server/acp/dispatch.py`——`handle_rpc(msg)`
+   + `to_updates(envelope)` + `save_inbound_file()`（原 manager 的落盘
+   逻辑共享化，旧 observe type=file 同函数）；api/acp.py 瘦成鉴权薄壳
+   （词汇路由器物理唯一，SSE/stdio 桥共用）
+2. **stdio 桥** ✅：`src/sensor/bridge.py`（`AcpSensorBridge`）：
+   - 入向：sensor stdout JSON-RPC → 监听线程直调 dispatch → 响应写 stdin
+     （upload_file 调用前注入 sensor 名作落盘 source）
+   - 出向：session/new 成功后 bus.subscribe(None)（follow 全订阅，单活跃
+     会话模型下 ≈ 活跃会话）→ to_updates 逐行写 stdin；turn_end 回写
+     持住的 prompt 响应（FIFO 配对 promptId→req_id）
+   - tool_detail=False 过滤思考/工具细节（同旧 RemoteSensorProxy 语义）
+   - `_purrcat/file` 出向通知：agent 消息提及文件路径时推 base64
+     （复用 gateway.extract_file_paths 检测，20MB 上限）
+   - stdin 断（进程死）→ 自动退订停摆；watchdog 重启 → initialize 时
+     `drop_by_client` 清 stale 映射（D7）
+3. **Manager 分流** ✅：`_listen_to_stdout` 按 `jsonrpc` 键分流——有则
+   惰性建桥（首条 JSON-RPC 行到达时），无则走旧 observe/express
+   （wechat-clawbot 等旧方言 sensor 原样运行到 Phase 4）
+
+扩展词汇（stdio 文件传输契约，已进 dispatch 分发表）：
 - `_purrcat/upload_file`（sensor→agent 请求）：base64 落盘 → 返回 sandbox
   路径（替代旧 observe type=file）
 - `_purrcat/file`（agent→sensor 通知）：回复提及文件路径时推 base64
-  （替代旧 express_file，复用 gateway.extract_file_paths 检测）
+  （替代旧 express_file）
+
+冒烟 39 项全过（`agent_vm/.acp_smoke/smoke_acp_phase3.py`，agent 侧全 mock）：
+- A 组 dispatch×16（Phase 1 HTTP 复验 + follow 模式：A7 编辑器走排队
+  switch / A9 sensor 走 force_push 直达 + SSE 端到端真 uvicorn）
+- B 组 bridge×9（initialize 往返 / 强制 follow / prompt 持住 / update 回填 /
+  turn_end 回写 / tool_detail 过滤 / _purrcat/file / upload_file source /
+  cancel 零回写 / stdin 断停摆）
+- C 组 Manager 分流×4（旧方言 observe 走旧 gateway.push；ACP 行建桥，
+  follow 模式）
+- D 组词汇×2（tool_call 成对 / turn_end stopReason）
+
+测试踩坑记录：Starlette TestClient 的流式响应在跨线程消费时挂起
+（Phase 1 已知），SSE 端到端用真 uvicorn + httpx（trust_env=False）；
+httpx `iter_lines()` 不可重复调用（StreamConsumed），单迭代器 + next()。
 
 出仓库（云端 PurrPod/sensors，另立任务）：飞书/时钟/微信 sensor 重写为
-ACP 方言（initialize → session/new → session/prompt 循环）。
-
-验收：假 ACP 方言 sensor 子进程全回路冒烟（initialize/new/prompt/
-update 顺序/turn_end 响应/upload_file 回环）；HTTP 端点 16 项冒烟复验
-（抽取无回归）；旧方言行仍走旧路径。
+ACP 方言（initialize → session/new → session/prompt 循环；
+session/new 无需带 follow 标记——bridge 硬性注入）。
 
 ### Phase 4 — 删旧与瘦身（🧊 冻结，最后执行）
 删 `src/sensor/gateway.py`；Manager 删旧词汇路由保留进程托管 + stdio→网关

@@ -2,20 +2,17 @@ import json
 import subprocess
 import threading
 import os
-import re
-import base64
-import mimetypes
-import time
 import urllib.request
 import urllib.error
 import atexit
 import sys
-from .gateway import get_gateway, RemoteSensorProxy, MAX_SENSOR_FILE_BYTES
+from .gateway import get_gateway, RemoteSensorProxy
+from .bridge import AcpSensorBridge
+from src.server.acp.dispatch import save_inbound_file
 from src.utils.config import (
     get_sensor_config,
     get_enriched_env,
     SENSOR_EXTENSION_DIR,
-    AGENT_VM_DIR,
 )
 
 
@@ -172,107 +169,79 @@ class SensorManager:
         except Exception as e:
             print(f"❌ [Manager] 启动 {name} 失败: {e}")
 
-    def _save_inbound_file(self, sensor_name: str, params: dict) -> str | None:
-        """处理 sensor 上报的 file 类 observe：base64 解码后落盘到
-        AGENT_VM_DIR/sensor/files/<sensor_name>/，返回推给 Agent 的提示文本"""
-        try:
-            data = base64.b64decode(params.get("content_b64") or "")
-        except Exception as e:
-            print(f"❌ [Manager] {sensor_name} 上报文件 base64 解码失败: {e}")
-            return None
-        if not data:
-            return None
-        if len(data) > MAX_SENSOR_FILE_BYTES:
-            print(
-                f"⚠️ [Manager] {sensor_name} 上报文件超过 "
-                f"{MAX_SENSOR_FILE_BYTES // 1024 // 1024}MB 上限，已丢弃"
-            )
-            return None
-
-        # 文件名只保留 basename 并清洗 Windows 非法字符，防路径穿越
-        raw_name = str(params.get("name") or "file")
-        file_name = (
-            re.sub(r'[<>:"/\\|?*]', "_", os.path.basename(raw_name)).strip("._")
-            or "file"
-        )
-
-        mime = params.get("mime") or "application/octet-stream"
-        # 无扩展名时按 mime 补一个，方便 Agent 和前端识别
-        if not os.path.splitext(file_name)[1]:
-            ext = mimetypes.guess_extension(mime)
-            if ext:
-                file_name += ext
-
-        target_dir = os.path.join(AGENT_VM_DIR, "sensor", "files", sensor_name)
-        os.makedirs(target_dir, exist_ok=True)
-        target = os.path.join(target_dir, f"{int(time.time() * 1000)}_{file_name}")
-        with open(target, "wb") as f:
-            f.write(data)
-
-        size = len(data)
-        size_h = (
-            f"{size / 1024 / 1024:.1f}MB"
-            if size >= 1024 * 1024
-            else f"{size / 1024:.0f}KB"
-        )
-        sandbox_path = (
-            f"/agent_vm/sensor/files/{sensor_name}/{os.path.basename(target)}"
-        )
-        print(f"📎 [Manager] {sensor_name} 上报文件已落盘: {target} ({size_h})")
-        return f"[{sensor_name} Sensor 收到文件] {sandbox_path} ({mime}, {size_h})"
-
     def _listen_to_stdout(self, name: str, process: subprocess.Popen):
         gateway = get_gateway()
+        bridge: AcpSensorBridge | None = None  # 惰性建桥：首条 JSON-RPC 行到达时
         for line in iter(process.stdout.readline, ""):
             if not line:
                 break
             try:
                 msg = json.loads(line.strip())
-                method = msg.get("method")
-
-                if method == "observe":
-                    params = msg.get("params", {})
-                    if params.get("type") == "file":
-                        content = self._save_inbound_file(name, params)
-                    else:
-                        content = params.get("content")
-                    if content:
-                        gateway.push(name, content)
-                elif method == "log":
-                    print(f"📝 [{name}]: {msg.get('params', {}).get('msg')}")
-                elif method == "launch_task":
-                    # 解析传来的任务信息
-                    params = msg.get("params", {})
-                    graph_name = params.get("graph_name")
-                    inputs = params.get("inputs", {})
-                    title = params.get("title", "cron_task")
-
-                    print(
-                        f"🚀 [Manager] 收到时钟触发，准备拉起后台任务图谱: {graph_name}"
-                    )
-
-                    # 定义后台执行任务
-                    def _run_bg_task():
-                        import asyncio
-                        from src.harness.process import Task
-
-                        try:
-                            # 因为这是在新线程中，需要给它配一个新的独立事件循环
-                            loop = asyncio.new_event_loop()
-                            asyncio.set_event_loop(loop)
-
-                            # 实例化并运行 Harness 的 Task
-                            task = Task(
-                                task_name=title, inputs=inputs, graph_name=graph_name
-                            )
-                            loop.run_until_complete(task.run())
-                        except Exception as e:
-                            print(f"❌ [Manager] 定时后台任务执行崩溃: {e}")
-
-                    # 通过独立线程启动，防止阻塞 Manager 监听 stdout
-                    threading.Thread(target=_run_bg_task, daemon=True).start()
             except json.JSONDecodeError:
-                pass
+                continue
+
+            # ── ACP 方言：JSON-RPC 载荷（有 jsonrpc 键）走 stdio 桥 ──
+            if "jsonrpc" in msg:
+                if bridge is None:
+                    cfg = get_sensor_config().get(name, {})
+                    bridge = AcpSensorBridge(
+                        name,
+                        process.stdin,
+                        tool_detail=cfg.get("tool_detail", False),
+                    )
+                bridge.handle_line(msg)
+                continue
+
+            # ── 旧方言：observe / express / launch_task（Phase 4 删） ──
+            method = msg.get("method")
+
+            if method == "observe":
+                params = msg.get("params", {})
+                if params.get("type") == "file":
+                    saved = save_inbound_file(name, params)
+                    content = (
+                        f"[{name} Sensor 收到文件] {saved['path']} "
+                        f"({saved['mime']}, {saved['size_h']})"
+                        if saved
+                        else None
+                    )
+                else:
+                    content = params.get("content")
+                if content:
+                    gateway.push(name, content)
+            elif method == "log":
+                print(f"📝 [{name}]: {msg.get('params', {}).get('msg')}")
+            elif method == "launch_task":
+                # 解析传来的任务信息
+                params = msg.get("params", {})
+                graph_name = params.get("graph_name")
+                inputs = params.get("inputs", {})
+                title = params.get("title", "cron_task")
+
+                print(
+                    f"🚀 [Manager] 收到时钟触发，准备拉起后台任务图谱: {graph_name}"
+                )
+
+                # 定义后台执行任务
+                def _run_bg_task():
+                    import asyncio
+                    from src.harness.process import Task
+
+                    try:
+                        # 因为这是在新线程中，需要给它配一个新的独立事件循环
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+
+                        # 实例化并运行 Harness 的 Task
+                        task = Task(
+                            task_name=title, inputs=inputs, graph_name=graph_name
+                        )
+                        loop.run_until_complete(task.run())
+                    except Exception as e:
+                        print(f"❌ [Manager] 定时后台任务执行崩溃: {e}")
+
+                # 通过独立线程启动，防止阻塞 Manager 监听 stdout
+                threading.Thread(target=_run_bg_task, daemon=True).start()
 
     def _listen_to_stderr(self, name: str, process: subprocess.Popen):
         for line in iter(process.stderr.readline, ""):

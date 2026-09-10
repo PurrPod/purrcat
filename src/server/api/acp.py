@@ -1,30 +1,28 @@
 """
 ACP 网关 HTTP 端点 (server/api/acp.py)
 
-外部频道（Zed 转接 sensor / HTTP 版 sensor）的统一词汇入口：
-- POST /acp/rpc    JSON-RPC 分发（initialize / newSession / session/prompt / ...）
+外部频道（Zed 转接 sensor / HTTP 版 sensor）的传输入口（鉴权薄壳）：
+- POST /acp/rpc    JSON-RPC 分发（直调 server/acp/dispatch.py）
 - GET  /acp/stream  SSE 事件流（session/update 系 + turn_end）
 - POST /acp/file    multipart 文件上传（落 agent_vm）
 - GET  /acp/file    sandbox 路径受限下载
 
-鉴权：X-PurrCat-Token 头 == ~/.purrcat/acp_token 内容。
-stdio 版 sensor 不走本端点，由 Manager 同进程直调 sessions/bus（Phase 3）。
+词汇分发与翻译的唯一实现在 dispatch.py；stdio 版 sensor 由
+sensor/bridge.py 同进程直调 dispatch，不经本端点。
 """
 
 import asyncio
-import itertools
 import json
 import os
 import re
-import threading
 import time
-import uuid
 
 from fastapi import APIRouter, Depends, Header, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 
 from src.server.acp.bus import get_bus
-from src.server.acp.sessions import ensure_active_and_push, get_registry
+from src.server.acp.dispatch import handle_rpc, to_updates
+from src.server.acp.sessions import get_registry
 from src.utils.config import AGENT_VM_DIR, get_acp_token
 
 router = APIRouter(prefix="/acp", tags=["ACP Gateway"])
@@ -39,215 +37,13 @@ def verify_token(x_purrcat_token: str = Header(default="")):
         raise HTTPException(status_code=401, detail="invalid ACP token")
 
 
-def _rpc_result(req_id, result: dict) -> dict:
-    return {"jsonrpc": "2.0", "id": req_id, "result": result}
-
-
-def _rpc_error(req_id, code: int, message: str) -> dict:
-    return {"jsonrpc": "2.0", "id": req_id, "error": {"code": code, "message": message}}
-
-
-def _extract_prompt_text(prompt_blocks: list) -> str:
-    """ACP prompt 内容块（[{type:"text",text:...}]）→ 纯文本"""
-    parts = []
-    for block in prompt_blocks or []:
-        if isinstance(block, dict) and block.get("type") == "text":
-            parts.append(block.get("text", ""))
-    return "\n".join(p for p in parts if p)
-
-
-def _handle_prompt(req: dict) -> dict:
-    """session/prompt：异步注入（排队等 idle），立即返回受理凭据。
-
-    最终 stopReason 不在本次响应给出 —— 由 SSE 的 turn_end 事件补，
-    转接方据此回 JSON-RPC 响应给编辑器。
-    """
-    params = req.get("params", {})
-    acp_sid = params.get("sessionId", "")
-    text = _extract_prompt_text(params.get("prompt"))
-    if not text:
-        return _rpc_error(req.get("id"), -32602, "empty prompt")
-
-    entry = get_registry().get(acp_sid)
-    if entry is None:
-        return _rpc_error(req.get("id"), -32602, f"unknown sessionId: {acp_sid}")
-
-    prompt_id = uuid.uuid4().hex
-    get_registry().mark_prompt(acp_sid, prompt_id)
-    threading.Thread(
-        target=ensure_active_and_push,
-        args=(entry["purr_session_id"], text),
-        kwargs={"source": "acp"},
-        daemon=True,
-    ).start()
-    return _rpc_result(req.get("id"), {"accepted": True, "promptId": prompt_id})
-
-
-def _handle_launch_task(req: dict) -> dict:
-    """purrcat/launch_task 扩展方法：后台线程拉起 Harness Task 图谱
-
-    （与 sensor/manager.py 收到时钟触发后的启动逻辑一致）
-    """
-    params = req.get("params", {})
-    graph_name = params.get("graph_name")
-    if not graph_name:
-        return _rpc_error(req.get("id"), -32602, "graph_name required")
-
-    inputs = params.get("inputs", {})
-    title = params.get("title", "acp_task")
-
-    def _run_bg_task():
-        import asyncio
-        from src.harness.process import Task
-
-        try:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            task = Task(task_name=title, inputs=inputs, graph_name=graph_name)
-            loop.run_until_complete(task.run())
-        except Exception as e:
-            print(f"❌ [ACP] 后台任务执行崩溃: {e}")
-
-    threading.Thread(target=_run_bg_task, daemon=True).start()
-    return _rpc_result(req.get("id"), {"launched": True})
-
-
 @router.post("/rpc")
 def acp_rpc(req: dict, _: str = Depends(verify_token)):
-    """JSON-RPC 2.0 单条分发（v1 不做 batch）"""
-    method = req.get("method", "")
-    req_id = req.get("id")
-    params = req.get("params", {})
-
-    if method == "initialize":
-        return _rpc_result(
-            req_id,
-            {
-                "protocolVersion": 1,
-                "agentCapabilities": {
-                    "loadSession": False,
-                    "_meta": {"purrcat.dev": {"launch_task": True}},
-                },
-                "agentInfo": {"name": "PurrCat", "version": "0.1.0"},
-            },
-        )
-
-    if method == "session/new":
-        client = (params.get("clientInfo") or {}).get("name", "unknown")
-        created = get_registry().create(client=client)
-        return _rpc_result(req_id, {"sessionId": created["acpSessionId"]})
-
-    if method == "session/prompt":
-        return _handle_prompt(req)
-
-    if method == "session/cancel":
-        # ACP 规范：cancel 是通知（无 id 无响应）。HTTP 层天然请求-响应，
-        # 这里返回受理标记；转接脚本负责不向编辑器回写任何响应。
-        from src.agent import agent_force_interrupt
-
-        agent_force_interrupt()
-        return _rpc_result(req_id, {"accepted": True})
-
-    if method == "session/set_mode":
-        ok = get_registry().set_mode(params.get("sessionId", ""), params.get("modeId", ""))
-        if not ok:
-            return _rpc_error(req_id, -32602, "unknown sessionId")
-        return _rpc_result(req_id, {"modeId": params.get("modeId", "")})
-
-    if method == "_purrcat/launch_task":
-        return _handle_launch_task(req)
-
-    return _rpc_error(req_id, -32601, f"method not found: {method}")
+    """JSON-RPC 2.0 单条分发（v1 不做 batch）——直调 dispatch"""
+    return handle_rpc(req)
 
 
-# ==== SSE 事件流：内部事件 → ACP 词汇 ====
-
-_tool_call_counter = itertools.count(1)
-_msg_counter = itertools.count(1)
-
-
-def _upd(acp_sid: str, update: dict) -> dict:
-    """组装一条 session/update 通知载荷"""
-    return {
-        "jsonrpc": "2.0",
-        "method": "session/update",
-        "params": {"sessionId": acp_sid, "update": update},
-    }
-
-
-def _to_updates(envelope: dict) -> list[dict]:
-    """内部事件信封 → SSE data 载荷列表（空列表 = 不透出）。
-
-    规范词汇映射（v1 事件粒度）：
-    - agent_message → agent_message_chunk（带 messageId，一条 assistant 消息一个 id）
-    - agent_thought → agent_thought_chunk
-    - tool_call    → tool_call(pending) + tool_call_update(completed) 成对
-                     （规范要求初始 tool_call 无内容、状态流转走 update）
-    - turn_end     → 自定义终结信号（转接方据此回 session/prompt 响应，stopReason）
-    """
-    etype = envelope["type"]
-    data = envelope.get("data", {})
-
-    if etype == "agent_message":
-        return [
-            _upd(
-                "",
-                {
-                    "sessionUpdate": "agent_message_chunk",
-                    "messageId": f"msg_{next(_msg_counter)}",
-                    "content": {"type": "text", "text": data.get("text", "")},
-                },
-            )
-        ]
-
-    if etype == "agent_thought":
-        return [
-            _upd(
-                "",
-                {
-                    "sessionUpdate": "agent_thought_chunk",
-                    "content": {"type": "text", "text": data.get("text", "")},
-                },
-            )
-        ]
-
-    if etype == "tool_call":
-        tcid = f"acp_{next(_tool_call_counter)}"
-        return [
-            _upd(
-                "",
-                {
-                    "sessionUpdate": "tool_call",
-                    "toolCallId": tcid,
-                    "title": data.get("name", "tool"),
-                    "kind": "execute",
-                    "status": "pending",
-                },
-            ),
-            _upd(
-                "",
-                {
-                    "sessionUpdate": "tool_call_update",
-                    "toolCallId": tcid,
-                    "status": "completed",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": data.get("snip", ""),
-                        }
-                    ],
-                },
-            ),
-        ]
-
-    if etype == "phase":
-        # ACP 无直接对应；自定义事件透出，转接方可忽略
-        return [{"phase": data.get("phase", "idle")}]
-
-    if etype == "turn_end":
-        return [{"stopReason": data.get("stopReason", "end_turn")}]
-
-    return []
+# ==== SSE 事件流：内部事件 → ACP 词汇（to_updates 唯一实现于 dispatch） ====
 
 
 @router.get("/stream")
@@ -272,7 +68,7 @@ async def acp_stream(session: str, _: str = Depends(verify_token)):
                 except asyncio.TimeoutError:
                     yield ": keepalive\n\n"
                     continue
-                for payload in _to_updates(envelope):
+                for payload in to_updates(envelope):
                     is_update = payload.get("method") == "session/update"
                     if is_update:
                         # update 载荷里回填 ACP sessionId（信封里是内部 purrcat 会话）
