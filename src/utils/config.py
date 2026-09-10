@@ -93,6 +93,27 @@ os.makedirs(SESSIONS_DIR, exist_ok=True)
 
 MCP_SCHEMA_CACHE_FILE = os.path.join(PURRCAT_DIR, "mcp_schema.json")
 
+# 🌟 ACP 网关本地鉴权 token（外部 sensor/编辑器经 HTTP 接入时校验）
+ACP_TOKEN_FILE = os.path.join(PURRCAT_DIR, "acp_token")
+
+
+def get_acp_token() -> str:
+    """读取 ACP 网关 token，首次调用时自动生成落盘"""
+    tok = ""
+    try:
+        with open(ACP_TOKEN_FILE, "r", encoding="utf-8") as f:
+            tok = f.read().strip()
+    except OSError:
+        pass
+    if tok:
+        return tok
+    import secrets
+
+    tok = secrets.token_hex(16)
+    with open(ACP_TOKEN_FILE, "w", encoding="utf-8") as f:
+        f.write(tok)
+    return tok
+
 GLOBAL_CONFIG_DIR = Path(PURRCAT_DIR)
 GLOBAL_CONFIG_FILE = GLOBAL_CONFIG_DIR / "settings.json"
 
