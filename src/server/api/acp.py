@@ -50,9 +50,17 @@ def acp_rpc(req: dict, _: str = Depends(verify_token)):
 async def acp_stream(session: str, _: str = Depends(verify_token)):
     """SSE：按 ACP session 订阅对应 purrcat 会话的事件流"""
     entry = get_registry().get(session)
-    if entry is None:
-        raise HTTPException(status_code=404, detail=f"unknown sessionId: {session}")
-    purr_sid = entry["purr_session_id"]
+    if entry is not None:
+        purr_sid = entry["purr_session_id"]
+    else:
+        # session/load 前置流：编辑器先连流再发 load（保回放不丢），
+        # 此刻映射尚未建立——ACP id 即 purrcat 会话 id，校验存在即放行订阅
+        from src.agent.session_store import SessionStore
+
+        if session in SessionStore.get_all_sessions():
+            purr_sid = session
+        else:
+            raise HTTPException(status_code=404, detail=f"unknown sessionId: {session}")
 
     loop = asyncio.get_running_loop()
     queue: asyncio.Queue = asyncio.Queue()
@@ -74,9 +82,17 @@ async def acp_stream(session: str, _: str = Depends(verify_token)):
                         # update 载荷里回填 ACP sessionId（信封里是内部 purrcat 会话）
                         payload["params"]["sessionId"] = session
                     elif "stopReason" in payload:
-                        payload["promptId"] = entry.get("last_prompt_id", "")
-                    event_name = "update" if is_update else (
-                        "turn_end" if "stopReason" in payload else "phase"
+                        # 惰性解析：前置流场景下 load 尚未 mark_prompt，须实时查
+                        e = get_registry().get(session) or {}
+                        payload["promptId"] = e.get("last_prompt_id", "")
+                    event_name = (
+                        "update"
+                        if is_update
+                        else (
+                            "turn_end"
+                            if "stopReason" in payload
+                            else "replay_end" if "replayDone" in payload else "phase"
+                        )
                     )
                     yield f"event: {event_name}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
         finally:

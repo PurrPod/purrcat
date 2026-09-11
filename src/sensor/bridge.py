@@ -6,6 +6,7 @@ Manager 拉起的 ACP 方言 sensor 子进程 ↔ dispatch 的同进程直调桥
   （upload_file 调用前注入 sensor 名作落盘 source）
 - 出向：bus 全订阅（follow 模式，单活跃会话模型下 ≈ 活跃会话）→
   to_updates 逐行写 stdin；turn_end 回写持住的 prompt 响应（stopReason）
+  并下发 _purrcat/turn_end 通知（sensor 据此收尾，如流式卡片关流式模式）
 - 文件出向：agent 消息提及本地文件路径时，推 `_purrcat/file` 通知
   （替代旧 express_file，sensor 自行发送）
 
@@ -151,6 +152,14 @@ class AcpSensorBridge:
                     self._push_files(update["content"].get("text", ""))
             elif "stopReason" in payload:
                 self._finish_prompt(payload["stopReason"])
+                # 轮次终结通知：sensor 据此收尾（如飞书流式卡片关流式模式）；不消费则忽略
+                self._write(
+                    {
+                        "jsonrpc": "2.0",
+                        "method": "_purrcat/turn_end",
+                        "params": {"stopReason": payload["stopReason"]},
+                    }
+                )
             # phase 类事件不写 stdin（sensor 不消费）
 
     def _finish_prompt(self, stop_reason: str) -> None:
@@ -224,3 +233,8 @@ class AcpSensorBridge:
             except Exception:
                 pass
             self._unsub = None
+        # 关闭写端管道：进程已死，残留 stdin 若留给 GC，flush 会报 OSError[Errno 22]
+        try:
+            self.stdin.close()
+        except Exception:
+            pass

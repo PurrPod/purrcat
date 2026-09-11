@@ -52,6 +52,10 @@ _RPC_TIMEOUT = 15
 _RPC_TIMEOUT_SLOW = 3600
 
 
+# session/load 挂起兜底：SSE 未在此时限内给出 replay_end 就直接放行响应（秒）
+_LOAD_FAIL_AFTER = 30
+
+
 class RelayError(Exception):
     """转发失败（后端不可达等），message 面向用户可读"""
 
@@ -106,6 +110,8 @@ class Relay:
         self.streams: dict[str, dict] = {}
         # 挂住的 prompt：sid -> {"id", "promptId", "fail_at"?}
         self.pending: dict[str, dict] = {}
+        # 挂住的 session/load：sid -> {"id", "result", "sent"}（等 replay_end 放行）
+        self.load_pending: dict[str, dict] = {}
         # 明确绕过系统代理（httpx trust_env / urllib getproxies 都会劫持 localhost）
         self.opener = urllib.request.build_opener(
             urllib.request.ProxyHandler({})
@@ -177,7 +183,31 @@ class Relay:
 
     def _on_request(self, msg: dict) -> None:
         method = msg.get("method", "")
-        timeout = _RPC_TIMEOUT_SLOW if method == "session/new" else _RPC_TIMEOUT
+        if method == "session/load":
+            # 回放事件经 SSE 下发：必须先连流再发请求，否则 replay 的
+            # user/agent/tool update 会在流建立前发布而丢失。
+            # connected.wait：等订阅真正生效（网关侧队列就绪）才发 RPC
+            sid = (msg.get("params") or {}).get("sessionId", "")
+            if sid:
+                state = self._start_stream(sid)
+                if not state["connected"].wait(timeout=_SSE_TIMEOUT):
+                    self.send(
+                        {
+                            "jsonrpc": "2.0",
+                            "id": msg["id"],
+                            "error": {
+                                "code": -32603,
+                                "message": "ACP session stream unavailable "
+                                "(backend restarted?)",
+                            },
+                        }
+                    )
+                    return
+        timeout = (
+            _RPC_TIMEOUT_SLOW
+            if method in ("session/new", "session/load")
+            else _RPC_TIMEOUT
+        )
         try:
             resp = self.rpc(msg, timeout=timeout)
         except RelayError as e:
@@ -196,6 +226,11 @@ class Relay:
             # 网关只回受理凭据；真正的 stopReason 响应等 SSE turn_end 补
             sid = (msg.get("params") or {}).get("sessionId", "")
             self._hold_prompt(sid, msg["id"], resp.get("result", {}))
+            return
+        if method == "session/load" and "result" in resp:
+            # 规范要求全部回放 update 先于 load 响应：挂住等 SSE replay_end
+            sid = (msg.get("params") or {}).get("sessionId", "")
+            self._hold_load(sid, msg["id"])
             return
         if method == "session/new":
             sid = resp.get("result", {}).get("sessionId", "")
@@ -249,28 +284,65 @@ class Relay:
         elif time.time() > pend["fail_at"]:
             self._fail_pending(sid, f"backend SSE stream unreachable for {_SSE_FAIL_AFTER}s")
 
+    # ==== session/load 持住（等 replay_end，保住 update 先于响应的规范顺序） ====
+
+    def _hold_load(self, sid: str, req_id) -> None:
+        state = {
+            "id": req_id,
+            "sent": False,
+        }
+        self.load_pending[sid] = state
+        # 兜底：SSE 异常时也放行响应，防编辑器 UI 永久卡住
+        threading.Timer(
+            _LOAD_FAIL_AFTER, self._finish_load, args=(sid, state)
+        ).start()
+
+    def _finish_load(self, sid: str, state: dict) -> None:
+        if self.load_pending.get(sid) is not state or state.get("sent"):
+            return
+        state["sent"] = True
+        self.load_pending.pop(sid, None)
+        self.send({"jsonrpc": "2.0", "id": state["id"], "result": None})
+
+    def _fail_load(self, sid: str, reason: str) -> None:
+        state = self.load_pending.pop(sid, None)
+        if state is None or state.get("sent"):
+            return
+        state["sent"] = True
+        self.send(
+            {
+                "jsonrpc": "2.0",
+                "id": state["id"],
+                "error": {"code": -32603, "message": reason},
+            }
+        )
+
     # ==== SSE 消费 ====
 
-    def _start_stream(self, sid: str) -> None:
+    def _start_stream(self, sid: str) -> dict:
         if sid in self.streams:
-            return
-        state = {"gone": False}
+            return self.streams[sid]
+        state = {"gone": False, "connected": threading.Event()}
         self.streams[sid] = state
         threading.Thread(
             target=self._stream_loop, args=(sid, state), daemon=True
         ).start()
+        return state
 
     def _stream_loop(self, sid: str, state: dict) -> None:
         backoff = 1
         while not state.get("gone"):
             try:
-                self._consume_stream(sid)
+                self._consume_stream(sid, state)
                 backoff = 1
             except urllib.error.HTTPError as e:
                 if e.code == 404:
                     # 网关侧会话映射丢失（后端重启过）：终局，停流并失败挂住的 prompt
                     state["gone"] = True
                     self._fail_pending(
+                        sid, f"ACP session lost on backend (HTTP 404): {sid}"
+                    )
+                    self._fail_load(
                         sid, f"ACP session lost on backend (HTTP 404): {sid}"
                     )
                     return
@@ -283,7 +355,7 @@ class Relay:
             time.sleep(backoff)
             backoff = min(backoff * 2, 10)
 
-    def _consume_stream(self, sid: str) -> None:
+    def _consume_stream(self, sid: str, state: dict) -> None:
         """阻塞消费一条 SSE 流（连接断开/超时则抛异常回到重连循环）"""
         req = urllib.request.Request(
             f"{self.base}/acp/stream"
@@ -294,7 +366,9 @@ class Relay:
             },
         )
         with self.opener.open(req, timeout=_SSE_TIMEOUT) as resp:
-            # 连接成功：清掉挂住 prompt 的失败死线
+            # 连接成功：清掉挂住 prompt 的失败死线，并广播「流已建立」
+            # （session/load 据此确认订阅就绪后才发 RPC，保回放不丢）
+            state["connected"].set()
             pend = self.pending.get(sid)
             if pend is not None:
                 pend.pop("fail_at", None)
@@ -339,6 +413,11 @@ class Relay:
                         },
                     }
                 )
+        elif event == "replay_end":
+            # session/load 回放完毕：放行持住的 load 响应（update 已全部送达）
+            state = self.load_pending.get(sid)
+            if state is not None:
+                self._finish_load(sid, state)
         elif event == "phase":
             pass  # 自定义事件（非 ACP 词汇），不得写 stdout
 

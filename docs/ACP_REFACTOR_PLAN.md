@@ -93,8 +93,8 @@ permissions/content 模块划分与我们的网关分层一致，作架构参照
 5. **扩展能力通告**：`agentCapabilities._meta`（如
    `{"purrcat.dev": {"launch_task": true}}`），自定义数据进各类型 `_meta` 字段。
 6. **协议文件路径必须绝对路径**；camelCase 键名 + snake_case 判别值（已符合）。
-7. 可选项：`usage_update`（window_token 现成，v1.1 加）、`authenticate`/
-   `logout`（不需要）、`session/load`（loadSession=false 已如实通告）。
+7. 可选项：`usage_update`、`session/list`、`session/load`、`session/delete`
+   已在 Phase 3.5 实现（见下）；`authenticate`/`logout` 不需要。
 8. 取消契约细节：客户端取消后，未决的 `request_permission` 必须以 cancelled
    收场；取消后仍可继续发 update，但都必须在 prompt 响应之前。
 
@@ -202,7 +202,10 @@ JSON-RPC 载荷直调网关，旧 observe/express 走 SensorGateway 共存。
    直达，无 switch 无排队）；新建会话/切换会话的逻辑**只属于 HTTP 端的
    编辑器客户端**（`ensure_active_and_push` 排队 switch）。bridge 对
    `session/new` 无条件注入 `_meta.purrcat.follow_active=true`——sensor
-   端零决策零配置
+   端零决策零配置。
+   **消息 type 语义（2026-09-11 拍板）**：follow 分支统一
+   `type="user"` + 正文 `[sensor名]` 前缀——主 UI 渲染 + is_real_user_input
+   hooks 触发，来源标识走正文不走 type（替代旧 type=sensor名 方言）
 
 实施（三步落码）：
 
@@ -249,6 +252,78 @@ httpx `iter_lines()` 不可重复调用（StreamConsumed），单迭代器 + nex
 ACP 方言（initialize → session/new → session/prompt 循环；
 session/new 无需带 follow 标记——bridge 硬性注入）。
 
+### Phase 3.5 — 规范补全与兼容扩展（✅ 2026-09-11 完成）
+
+对照 protocol-v1 全量文档复盘后补齐（dispatch.py 词汇翻译 + agent.py 钩子 +
+relay/acp.py 时序）：
+
+**规范修复（原实现不符）**：
+1. `tool_call_update.content` 改为规范外层包装
+   `[{"type":"content","content":{"type":"text",...}}]`（原裸内容块）
+2. 状态流转补 `in_progress`：tool_call(pending) → update(in_progress) →
+   update(completed/failed) 三段（failed=结果 JSON 带 error 键）
+3. 工具结果全量透出：agent.py 工具完成事件携带 `arguments`/`result`/`tool_call_id`
+   （原只有 name+snip 截断）；dispatch 统一按共享 token 工具截 2000 token
+4. `kind` 按工具名/FileSystem action 映射（read/edit/delete/move/search/execute/
+   think/fetch/other），附 `title`（参数摘要）、`locations`（convert_sandbox_path
+   宿主路径）、`rawInput`/`rawOutput`（dict 形态）
+5. prompt 支持 `resource_link`（baseline MUST）+ `resource`（嵌入式，宽容兼容）
+
+**会话词汇（底层数据就绪，补映射）**：
+6. `session/list`：initialize 通告 `sessionCapabilities.list/delete`；
+   SessionStore index.json → SessionInfo（updatedAt 转 ISO 8601 本地时区，
+   `_meta.messageCount`，倒序；cwd 过滤/cursor 分页不做）
+7. `session/load`（loadSession:true）：注册表 `bind()`（ACP id 复用 purrcat 会话
+   id）+ main 分支历史回放（user/agent/thought/tool 事件复用 to_updates 翻译，
+   2000 token 截断）；后续 prompt 走排队 switch 续接
+8. `session/delete`：复用 AgentManager 删除（活跃会话 -32602，不存在静默成功），
+   `drop_by_purr` 连带清映射
+9. `usage_update`：agent.py 在 window_token 更新点发 usage 事件
+   （used=window_token，size=模型 max_token）
+10. 模式通告：paradigm（Agent Loop）即 ACP mode——session/new 带
+    `modes.availableModes`（list_paradigms），set_mode 对映射会话触发
+    `switch_paradigm` 热切换
+11. `session_info_update`：turn_end 时同步 updatedAt（先于 stopReason，规范顺序）
+
+**load 回放的传输时序（SSE 特有，两处配合）**：
+- 网关回放末尾发 `replay_done` 终结标记 → SSE `event: replay_end`
+- relay 收到 session/load 先连 SSE 流（connected.wait 确认订阅生效）再发 RPC，
+  持住响应直到 replay_end（30s 兜底放行）——保证「所有 update 先于 load 响应」
+- acp.py SSE 支持 pre-bind：合法 purrcat 会话 id 未映射也放行订阅
+  （load 前置流场景），last_prompt_id 改为循环内惰性解析
+
+**Obsidian 实测反馈修复（2026-09-11 第二轮）**：
+12. 回放 user 消息过滤：对齐 ui/ ChatShared.parseEventsContent——user 消息是
+    `{"events":[...]}` 包装，仅 `type=user` 事件渲染，file/skill/tool/mcp/graph-quote
+    转文本引用行，记忆/上下文注入不透出；解析失败视为纯文本整条透出
+13. 工具结果解包：dispatch_tool 统一封包 `{"content","metadata"}` 在 dispatch
+    翻译层解开——编辑器看 content 本体（无 JSON 噪音），`metadata.type=error`
+    → failed；rawOutput 保留完整封包。Memo 之前只显示调用无返回，因旧版只发
+    snip 且 Memo 的 add 操作 snip 为空
+14. 并发排队锁：`ensure_active_and_push` 的「等idle→switch→push」整段持
+    `_switch_lock`——多编辑器并发 prompt 时防消息注入错误会话（排队等待语义
+    不变：不打断进行中轮次）
+15. 回放过滤修正（实测 load 显示全部内容的根因，三层叠加）：
+    a. JSON dict 但无 events 键的 user 消息（workflow_hint 等独立注入）→
+       不渲染（原实现原样返回全文）；纯文本消息仍整条渲染（与 UI catch 一致）
+    b. 注入源头 type 修复：编辑器 prompt 曾以 client 名（clientInfo 缺失时
+       为 "unknown"）作为 events type 落库 → 真人消息被当系统注入（回放吞、
+       is_real_user_input hook 不触发）。`ensure_active_and_push` 统一
+       type="user"（与 chat.py UI 路径一致）
+    c. 旧数据宽容：回放对 type=unknown/客户端名的旧错存消息仍渲染
+       （_SYSTEM_EVENT_TYPES = system/system_clock/workflow_hint/task_message/
+       memory 白名单外即用户消息），避免修复后 load 旧会话消息消失
+
+冒烟 `agent_vm/.acp_smoke/smoke_acp_compat.py` 37 项全过（agent 侧全 mock，
+含 SSE pre-bind 端到端 + relay 持住逻辑）；phase3 回归 39/39、relay 21/21、
+config 全过（顺带新版 relay 已重部署 ~/.purrcat/bin）。
+第二轮实测反馈后冒烟扩至 44 项（回放过滤/封包解包/并发排队 H 组/
+unknown 宽容/workflow_hint 独立注入）。
+
+遗留（后续可选）：`session/load` 不回放 assistant tool_calls 的参数细节
+（仅结果）；`request_permission`/`plan`/`available_commands_update` 未实现
+（第 3 档）；auto-title 生成未做（session_info_update 仅 updatedAt）。
+
 ### Phase 4 — 删旧与瘦身（🧊 冻结，最后执行）
 删 `src/sensor/gateway.py`；Manager 删旧词汇路由保留进程托管 + stdio→网关
 桥接；evolve 骨架换 ACP 方言模板；`send_to_sensors` 改只发总线。
@@ -271,6 +346,6 @@ session/new 无需带 follow 标记——bridge 硬性注入）。
 ## 7. 顺序总结
 
 ```
-Phase 1 网关 ✅ ──► 规范修正 ✅ ──► Phase 2 转接 ✅ 已验收 ──► Phase 3 sensor ⬅ 当前
-                                                            ──► Phase 4 🧊 冻结
+Phase 1 网关 ✅ ──► 规范修正 ✅ ──► Phase 2 转接 ✅ 已验收 ──► Phase 3 sensor ✅
+──► Phase 3.5 兼容补全 ✅ ──► Phase 4 🧊 冻结
 ```

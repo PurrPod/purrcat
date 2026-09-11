@@ -96,6 +96,14 @@ class SensorManager:
             self._watchdog_started = True
             print("🛡️ [Manager] 进程守护线程已启动")
 
+    def _close_stdin(self, process):
+        """显式关闭 stdin 写端：进程死后残留管道若交给 GC，flush 会报 OSError[Errno 22]"""
+        try:
+            if process.stdin is not None and not process.stdin.closed:
+                process.stdin.close()
+        except Exception:
+            pass
+
     def _kill_process_tree(self, process):
         """整树击杀 sensor 进程。Windows 下 terminate() 只杀 uv 包装进程，
         会留下 sensor python 孤儿——孤儿 bot 会继续重连外部服务（如飞书 WS）
@@ -111,6 +119,7 @@ class SensorManager:
                 process.terminate()
         except Exception:
             pass
+        self._close_stdin(process)
 
     def _start_sensor(self, name: str, script_path: str, cfg: dict):
         # 防御：同名 sensor 已在运行时先整树击杀，避免双实例抢占外部连接
@@ -187,6 +196,11 @@ class SensorManager:
                 )
             bridge.handle_line(msg)
 
+        # 进程退出（stdout EOF）：退订桥 + 关 stdin 写端（防 GC flush 报错）
+        if bridge is not None:
+            bridge.close()
+        self._close_stdin(process)
+
     def _listen_to_stderr(self, name: str, process: subprocess.Popen):
         for line in iter(process.stderr.readline, ""):
             if line:
@@ -203,6 +217,7 @@ class SensorManager:
                         f"🚨 [Manager] 检测到 Sensor [{name}] 已退出，清理进程引用并尝试重启..."
                     )
 
+                    self._close_stdin(process)
                     del self.processes[name]
 
                     config = get_sensor_config().get(name, {})

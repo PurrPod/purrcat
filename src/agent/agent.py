@@ -424,6 +424,21 @@ class Agent:
 
                 if usage is not None:
                     self.window_token = usage.total_tokens
+                    # 🌟 ACP 总线：上下文用量（编辑器侧 usage_update 词汇）
+                    from src.server.acp.bus import get_bus
+                    from src.utils.config import get_model_config
+
+                    model_cfg = (
+                        get_model_config().get("main", {}).get(self.name, {})
+                    )
+                    get_bus().publish(
+                        self.session_id,
+                        "usage",
+                        {
+                            "used": self.window_token,
+                            "size": model_cfg.get("max_token", 500000),
+                        },
+                    )
                 has_tools = self._process_assistant_message(msg_resp)
 
                 # 本次消息发起的那一批工具调用（on_tool_calling 的 tool_use_check 只查这一批）
@@ -730,21 +745,20 @@ class Agent:
                 )
                 continue
 
-            try:
-                snip = (
-                    json.loads(result_content).get("snip", "")
-                    if isinstance(json.loads(result_content), dict)
-                    else ""
-                )
-            except Exception:
-                snip = str(result_content)[:100]
-            # 🌟 ACP 总线：工具完成事件（tool_detail 过滤由各桥自决）
+            # 🌟 ACP 总线：工具完成事件——完整结果/参数随载荷透出，
+            # dispatch 侧统一截断（编辑器看 tool_call_update.content）；
+            # tool_detail 过滤由各桥自决
             from src.server.acp.bus import get_bus
 
             get_bus().publish(
                 self.session_id,
                 "tool_call",
-                {"name": target_tool_name, "snip": snip},
+                {
+                    "name": target_tool_name,
+                    "tool_call_id": tool_call.id,
+                    "arguments": arguments,
+                    "result": result_content,
+                },
             )
             self._append_history(
                 {

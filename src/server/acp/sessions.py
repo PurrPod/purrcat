@@ -53,6 +53,43 @@ class AcpSessionRegistry:
         with self._lock:
             return self._sessions.get(acp_sid)
 
+    def bind(self, purr_session_id: str) -> dict:
+        """session/load：把既有 purrcat 会话绑定为 ACP 会话。
+
+        ACP sessionId 直接复用 purrcat 会话 id（session/list 返回的就是它），
+        编辑器 load 后无需换 id 续接；已存在映射则原样返回（幂等重入）。
+        """
+        with self._lock:
+            entry = self._sessions.get(purr_session_id)
+            if entry is None:
+                entry = {
+                    "purr_session_id": purr_session_id,
+                    "client": "acp",
+                    "mode": "",
+                    "follow": False,
+                    "last_prompt_id": "",
+                    "created": time.time(),
+                }
+                self._sessions[purr_session_id] = entry
+            return {"acpSessionId": purr_session_id, **entry}
+
+    def drop(self, acp_sid: str) -> None:
+        """按 ACP sessionId 删映射（session/delete）"""
+        with self._lock:
+            self._sessions.pop(acp_sid, None)
+
+    def drop_by_purr(self, purr_sid: str) -> int:
+        """按 purrcat 会话 id 清映射（session/delete：连带编辑器映射）"""
+        with self._lock:
+            stale = [
+                k
+                for k, v in self._sessions.items()
+                if v.get("purr_session_id") == purr_sid
+            ]
+            for k in stale:
+                del self._sessions[k]
+            return len(stale)
+
     def set_mode(self, acp_sid: str, mode_id: str) -> bool:
         with self._lock:
             entry = self._sessions.get(acp_sid)
@@ -82,37 +119,51 @@ def ensure_active_and_push(purr_session_id: str, message: str, source: str = "ac
     """确保 Agent 活跃会话为目标会话后注入消息（后台线程调用）。
 
     排队语义与 server/api/chat.py 的 _run_agent_task 一致：等 idle 再 switch，
-    绝不打断进行中的轮次。
-    """
+绝不打断进行中的轮次。
+
+🚫 竞态防护：「等idle→switch→push」整段持锁串行——两个编辑器各自排队时，
+若不加锁，先到的线程 switch 后、push 前可能被后到线程抢 switch，导致消息
+注入进错误会话。锁内忙等会让其它排队线程在锁外自然排队（串行语义正确）。
+"""
     from src.agent.manager import AgentManager
 
     manager = AgentManager()
     if manager._agent is None:
         manager.init_agent()
 
-    if manager._agent.session_id != purr_session_id:
-        while manager._agent.state != "idle":
-            time.sleep(0.3)
-        manager.switch_session(purr_session_id)
+    with _switch_lock:
+        if manager._agent.session_id != purr_session_id:
+            while manager._agent.state != "idle":
+                time.sleep(0.3)
+            manager.switch_session(purr_session_id)
 
-    manager.agent_force_push(message, type=source)
+        # 🌟 真人输入统一 type="user"（与 chat.py UI 路径一致）——
+        # events type 决定 UI/回放过滤与 is_real_user_input hook 触发，
+        # 不能传客户端名（旧 bug：clientInfo 缺失时落库 type=unknown，
+        # 用户消息被当系统注入，回放与 hook 双双失效）
+        manager.agent_force_push(message, type="user")
 
 
 def push_by_entry(entry: dict, message: str, source: str = "acp"):
     """按会话映射注入消息（后台线程调用）。
 
-    - follow 模式（sensor）：直达当前活跃会话，不 switch 不排队
+    - follow 模式（sensor）：直达当前活跃会话，不 switch 不排队。
+      统一 type="user"（主 UI 渲染 + is_real_user_input hooks 触发），
+      来源标识由正文前缀 [sensor名] 承担（替代旧 type=sensor名 方言）
     - 映射模式（编辑器）：排队等 idle 再 switch（ensure_active_and_push）
     """
     if entry.get("follow"):
         from src.agent import agent_force_push
 
-        agent_force_push(message, type=source)
+        agent_force_push(f"[{source}] {message}", type="user")
         return
     ensure_active_and_push(entry["purr_session_id"], message, source)
 
 
 _registry = AcpSessionRegistry()
+
+# 「等idle→switch→push」排队段的串行锁（多编辑器并发 prompt 防消息串会话）
+_switch_lock = threading.Lock()
 
 
 def get_registry() -> AcpSessionRegistry:
