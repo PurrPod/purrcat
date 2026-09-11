@@ -69,13 +69,12 @@ available 检查 initialize 响应的 `agentCapabilities._meta.purrcat.dev.launc
 
 ### 入向（stdin ← 网关）
 
-Agent 文本回复（agent_message_chunk 逐条到达；当前为事件级粒度——
-一条 chunk 即一条完整 assistant 消息，一个轮次可能有多条）：
+Agent 文本回复（agent_message 逐条到达；消息级粒度——
+一条事件即一条完整 assistant 消息，一个轮次可能有多条）：
 ```json
-{{"jsonrpc": "2.0", "method": "session/update", "params": {{"sessionId": "<sid>", "update": {{"sessionUpdate": "agent_message_chunk", "messageId": "msg_1", "content": {{"type": "text", "text": "回复内容"}}}}}}}}
+{{"jsonrpc": "2.0", "method": "session/update", "params": {{"sessionId": "<sid>", "update": {{"sessionUpdate": "agent_message", "messageId": "msg_1", "content": {{"type": "text", "text": "回复内容"}}}}}}}}
 ```
-其他 update 类型（按 tool_detail 配置决定是否下发）：`agent_thought_chunk`（思考）、
-`tool_call` / `tool_call_update`（工具调用，含 `toolCallId`/`title`/`content`）。
+其他 update 类型见下方词汇总表（受 tool_detail 配置控制是否下发）。
 
 Agent 发的文件（Agent 消息里含本地文件链接时网关自动追加）：
 ```json
@@ -84,6 +83,29 @@ Agent 发的文件（Agent 消息里含本地文件链接时网关自动追加�
 你需 base64 解码后自行发送到外部渠道。若渠道 API 是"先上传换 key 再发消息"两段式（如飞书），请在后台线程完成，**严禁阻塞 stdin 读取循环**。
 
 还有 request 的响应（`{{"id": ..., "result": ...}}`）——按 id 匹配你发出的请求。
+
+### 词汇总表
+
+**sessionUpdate 值**（`session/update` 的 `update.sessionUpdate` 字段）——ACP 标准词汇：
+
+| 词汇 | 说明 | tool_detail=false 时 |
+|---|---|---|
+| `agent_message` | Agent 文本回复。**消息级粒度**：一条事件即一条完整 assistant 消息（非流式分片），一个轮次可能有多条 | ✅ 下发（唯一总是下发的词汇） |
+| `agent_thought_chunk` | Agent 思考过程文本 | ❌ 过滤 |
+| `tool_call` | 工具调用开始（status=pending；含 `toolCallId`/`title`/`kind`，文件类工具带 `locations`，参数对象带 `rawInput`） | ❌ 过滤 |
+| `tool_call_update` | 工具状态流转（in_progress → completed/failed），content 带截断后的结果文本 | ❌ 过滤 |
+| `usage_update` | token 用量（`used`=窗口已用，`size`=模型上限） | ❌ 过滤 |
+| `session_info_update` | 会话元数据（updatedAt），每轮结束前同步 | ❌ 过滤 |
+| `user_message_chunk` | 历史回放专用（编辑器 session/load 场景），stdio sensor 不会收到 | — |
+
+**PurrCat 扩展词汇**（`_purrcat/` 前缀）：
+
+| 词汇 | 方向 | 说明 |
+|---|---|---|
+| `_purrcat/upload_file` | sensor → 网关（方法） | 上传文件给 Agent（base64，单文件 ≤ 20MB；见上方出向示例） |
+| `_purrcat/launch_task` | sensor → 网关（方法） | 触发后台任务图谱（时钟类 sensor 专用，无需等 Agent 应答） |
+| `_purrcat/file` | 网关 → sensor（通知） | Agent 消息提及本地文件时网关自动追加（base64，解码后自行发送到外部渠道） |
+| `_purrcat/turn_end` | 网关 → sensor（通知） | 轮次终结标记（params 带 stopReason）；不消费则忽略 |
 
 ## 3. 首次启动鉴权规范 ⭐（最重要）
 
@@ -108,7 +130,7 @@ ACP 骨架（initialize → session/new → prompt 求助 → update 消费循�
 
 ```bash
 cd /agent_vm/sensor_workplace/<uuid>
-echo '{{"jsonrpc":"2.0","method":"session/update","params":{{"update":{{"sessionUpdate":"agent_message_chunk","content":{{"type":"text","text":"hello"}}}}}}}}' | uv run {sensor_name}.py
+echo '{{"jsonrpc":"2.0","method":"session/update","params":{{"update":{{"sessionUpdate":"agent_message","content":{{"type":"text","text":"hello"}}}}}}}}' | uv run {sensor_name}.py
 ```
 
 观察 stderr 日志与外部渠道是否收到消息；鉴权求助与握手会打到 stdout。

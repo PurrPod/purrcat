@@ -549,7 +549,8 @@ def to_updates(envelope: dict) -> list[dict]:
     """内部事件信封 → update 载荷列表（空列表 = 不透出）。
 
     规范词汇映射（v1 事件粒度）：
-    - agent_message → agent_message_chunk（带 messageId，一条 assistant 消息一个 id）
+    - agent_message → agent_message（带 messageId，一条 assistant 消息一个 id；
+      消息级粒度——一条事件即一条完整 assistant 消息，非流式分片）
     - agent_thought → agent_thought_chunk
     - user_message → user_message_chunk（session/load 回放专用）
     - tool_call    → tool_call(pending) + tool_call_update(in_progress)
@@ -568,7 +569,7 @@ def to_updates(envelope: dict) -> list[dict]:
             _upd(
                 "",
                 {
-                    "sessionUpdate": "agent_message_chunk",
+                    "sessionUpdate": "agent_message",
                     "messageId": f"msg_{next(_msg_counter)}",
                     "content": {
                         "type": "text",
