@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { MousePointer2, Frame, Globe, Send, X, Code2, ExternalLink, PictureInPicture2, Palette, RotateCw } from 'lucide-react';
+import { toast } from 'react-hot-toast';
 import { sketchyShape1, sketchyShape2, sketchyShape3 } from './ChatShared';
 import type { BrowserTab } from '../ChatPage';
 import { useTranslation } from '../../i18n';
@@ -211,10 +212,13 @@ export default function AgentBrowserPanel({
       } else if (evt.type === 'navigate') {
         setTabs(prev => prev.map(t => t.id === evt.tabId ? { ...t, url: evt.url } : t));
         if (evt.tabId === activeTabId) setAddressInput(evt.url);
+      } else if (evt.type === 'blocked') {
+        // 主进程拦截导航（如打开应用自身地址）：提示用户，避免"输入网址无反应"
+        toast.error(evt.reason || t('chat.selfUrlBlocked'));
       }
     });
     return () => { if (off) off(); };
-  }, [hasElectron, activeTabId, setTabs, purrcat]);
+  }, [hasElectron, activeTabId, setTabs, purrcat, t]);
 
   const switchTab = (id: string) => {
     setActiveTabId(id);
@@ -233,11 +237,14 @@ export default function AgentBrowserPanel({
       if (hasElectron) purrcat.browserNavigate(activeTabId, finalUrl).catch(() => {});
     } else if (hasElectron) {
       // 无标签页：新建一个并加载该网址
-      let tabId = Date.now().toString();
+      // 🌟 主进程返回 null（如 isSelfUrl 拦截）时不能再用临时 id 创建"幽灵 tab"——
+      //    前端高亮的 tab 在主进程没有对应 view，画面仍显示旧页面，前后端状态错位。
+      //    blocked 原因由 onTabEvent 的 blocked 事件 toast 提示。
+      let tabId: string | null = null;
       try {
-        const pid = await purrcat.browserNewTab(finalUrl);
-        if (pid) tabId = pid;
-      } catch { /* 非 Electron 环境，用临时 id */ }
+        tabId = await purrcat.browserNewTab(finalUrl);
+      } catch { /* 主进程异常，同样不建幽灵 tab */ }
+      if (!tabId) return;
       setTabs(prev => [...prev, { id: tabId, url: finalUrl, title: '' }]);
       setActiveTabId(tabId);
     }

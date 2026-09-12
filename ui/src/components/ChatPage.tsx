@@ -945,11 +945,21 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
       (window as any).purrcat?.browserSwitchTab?.(existingTab.id);
     } else {
       // 桌面端：先让主进程创建 WebContentsView，用返回的 tabId 作为前端 tab.id（两者对齐）
-      let tabId = Date.now().toString();
-      try {
-        const pid = await (window as any).purrcat?.browserNewTab?.(url);
-        if (pid) tabId = pid;
-      } catch { /* 非 Electron 环境，用临时 id */ }
+      const purrcat = (window as any).purrcat;
+      let tabId: string | null = null;
+      if (purrcat?.browserNewTab) {
+        try {
+          tabId = await purrcat.browserNewTab(url);
+        } catch { /* 主进程异常，同样不建幽灵 tab */ }
+        // 🌟 返回 null（如 isSelfUrl 拦截）时不能用临时 id 创建"幽灵 tab"——
+        //    前端高亮的 tab 在主进程没有对应 view，画面仍显示旧页面，前后端状态错位
+        if (!tabId) {
+          toast.error(t('chat.selfUrlBlocked'));
+          return;
+        }
+      } else {
+        tabId = Date.now().toString(); // 非 Electron 环境（Web 预览），仅前端展示
+      }
       const newTab: BrowserTab = { id: tabId, url, title };
       setBrowserTabs(prev => [...prev, newTab]);
       setActiveTabId(newTab.id);

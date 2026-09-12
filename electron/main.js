@@ -92,10 +92,12 @@ function reattachBrowser() {
     }
   }
   browserDetached = false;
-  // 🌟 主动调用 showView：跨窗口 reparent 后 WebContentsView 关联到新 DPI/坐标系，
-  // 必须立即用 currentBounds + currentScale 重设，否则 view 还停留在 OFFSCREEN 或
-  // zoomFactor=1 状态，用户看到"错位"，必须切换模式刷新才能恢复
-  if (activeTabId) showView(activeTabId);
+  // 🌟 不再主动 showView：若用户当前不在聊天页（ChatPage 未挂载），
+  //    没有面板会重新挂载来接管这个 view，它就会直接显示在主窗口盖住当前页面。
+  //    改为标记 browserHidden=true：所有 view 保持屏外，
+  //    前端收到 browser:reattached 重新挂载面板后，set-bounds 会用
+  //    currentBounds + currentScale 恢复 bounds/zoom（跨窗口 DPI 重设逻辑不变）。
+  browserHidden = true;
   // 通知前端恢复面板，前端会重新挂载 AgentBrowserPanel 并触发 sync 更新 bounds
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('browser:reattached');
@@ -133,6 +135,19 @@ function hideView(tabId) {
   } else {
     t.view.setBounds(OFFSCREEN);
   }
+}
+
+// 🌟 视图对账：强制收敛到唯一不变式——只有 activeTabId 对应的 view 在屏幕上，其余全部屏外。
+//    tab 操作后调用，无论此前前后端状态如何错位（异常/竞态残留/幽灵 tab），都能自愈。
+//    面板隐藏时保持全部屏外；pick 模式的 view 保持 1280x800 屏外截图布局。
+function reconcileViews() {
+  for (const id of tabs.keys()) {
+    if (id !== activeTabId) hideView(id);
+  }
+  if (!activeTabId) return;
+  if (browserHidden && !browserDetached) return; // 面板已隐藏：等重新挂载后的 set-bounds 恢复
+  if (_pickModeTabs.has(activeTabId)) return;    // pick 模式：保持截图布局，不拉回屏幕
+  showView(activeTabId);
 }
 
 function pushTabEvent(payload) {
@@ -478,20 +493,20 @@ ipcMain.handle('browser:close-tab', (_e, tabId, nextTabId) => {
       next = keys.length ? keys[keys.length - 1] : null;
     }
     activeTabId = next || null;
-    if (next) {
-      _pickModeTabs.delete(next);
-      showView(next);
-    }
+    if (next) _pickModeTabs.delete(next);
   }
+  // 🌟 收尾对账：无论前面状态是否错位，强制回到"只有 activeTabId 的 view 在屏幕上"，
+  //    自愈"关掉标签页后画面仍停留在旧页面"的错位
+  reconcileViews();
 });
 
 ipcMain.handle('browser:switch-tab', (_e, tabId) => {
   if (!tabs.has(tabId)) return;
-  if (activeTabId && tabs.has(activeTabId)) hideView(activeTabId);
   activeTabId = tabId;
   // 切换到新 tab 时清理 pick 状态（否则回到 browse 时保持 1280x800 的屏外尺寸）
   _pickModeTabs.delete(tabId);
-  showView(tabId);
+  // 🌟 收尾对账：隐藏其余所有 view，只显示 activeTabId（自愈任何前后端错位）
+  reconcileViews();
 });
 
 ipcMain.handle('browser:navigate', (_e, { tabId, url }) => {
@@ -551,6 +566,11 @@ ipcMain.handle('browser:set-bounds', (_e, { x, y, w, h, scale }) => {
 ipcMain.handle('browser:hide', () => {
   if (browserDetached) return; // 独立窗口模式下不隐藏
   browserHidden = true;
+  // 🌟 竞态修复：必须取消尚未落地的 set-bounds debounce。否则 hide 刚把 view 移到屏外，
+  //    16ms 后 timer 又把 activeTabId 的 view setBounds(currentBounds) 拉回屏幕，
+  //    且把 browserHidden 重置为 false —— 这就是"关掉内置浏览器后网页还贴在屏幕上盖住聊天框"的根因。
+  //    面板重新挂载后会发来新的 set-bounds，届时再恢复显示即可。
+  if (_setBoundsTimer) { clearTimeout(_setBoundsTimer); _setBoundsTimer = null; }
   for (const id of tabs.keys()) hideView(id);
 });
 
@@ -614,7 +634,10 @@ ipcMain.handle('browser:pick-start', async (_e, tabId) => {
 // 退出选取模式：view 恢复到容器 bounds，并恢复当前的 zoomFactor
 ipcMain.handle('browser:pick-end', (_e, tabId) => {
   _pickModeTabs.delete(tabId);
-  showView(tabId);
+  // 🌟 竞态修复：面板卸载时 React 清理顺序是 hide 先、pick 后，pick-end 会晚于 browser:hide 到达。
+  //    若无条件 showView 会把刚移到屏外的 view 又拉回屏幕盖住聊天区。
+  //    面板隐藏时保持屏外，等重新挂载后的 set-bounds 恢复。
+  if (!browserHidden) showView(tabId);
 });
 
 // 跨域元素定位（见下方 locateInFrame）
