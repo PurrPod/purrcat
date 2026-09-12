@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { MousePointer2, Frame, Globe, Send, X, Code2, ExternalLink, PictureInPicture2, Palette } from 'lucide-react';
+import { MousePointer2, Frame, Globe, Send, X, Code2, ExternalLink, PictureInPicture2, Palette, RotateCw } from 'lucide-react';
 import { sketchyShape1, sketchyShape2, sketchyShape3 } from './ChatShared';
 import type { BrowserTab } from '../ChatPage';
 import { useTranslation } from '../../i18n';
@@ -460,6 +460,7 @@ export default function AgentBrowserPanel({
           <button onClick={() => { setMode('draw'); setShowCommentBox(false); setCurrentRect(null); setPickedElement(null); setHoverRect(null); }} className={`p-2 border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] transition-colors ${mode === 'draw' ? 'bg-[#bf616a] text-paper' : 'bg-white hover:bg-sand'}`} style={sketchyShape2} title={t('chat.drawMode')}><Frame size={18} strokeWidth={3} /></button>
         </div>
         <input value={addressInput} onChange={e => setAddressInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAddressSubmit()} className="flex-1 border-4 border-ink bg-white px-3 py-1.5 font-bold focus:outline-none text-sm" style={sketchyShape3} placeholder={t('chat.addressPh')} />
+        <button onClick={() => { if (activeTabId && purrcat?.browserReload) purrcat.browserReload(activeTabId).catch(() => {}); }} disabled={!activeTabId} className="p-2 border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] transition-colors bg-white hover:bg-sand disabled:opacity-40 disabled:cursor-not-allowed" style={sketchyShape2} title={t('chat.refreshPage')}><RotateCw size={16} strokeWidth={3} /></button>
         <button onClick={() => { const url = activeTab?.url || addressInput; if (!url) return; const finalUrl = url.startsWith('http') || url.startsWith('blob') || url.startsWith('data') || url.startsWith('file') ? url : 'http://' + url; if (purrcat?.openExternal) purrcat.openExternal(finalUrl); else window.open(finalUrl, '_blank'); }} disabled={!activeTabId} className="p-2 border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] transition-colors bg-white hover:bg-sand disabled:opacity-40 disabled:cursor-not-allowed" style={sketchyShape3} title={t('chat.openInExternal')}><ExternalLink size={16} strokeWidth={3} /></button>
         {hasElectron && <button onClick={onDetach} disabled={!activeTabId} className="p-2 border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] transition-colors bg-[#88c0d0] text-paper hover:bg-[#5e81ac] disabled:opacity-40 disabled:cursor-not-allowed" style={sketchyShape3} title={t('chat.detachWindow')}><PictureInPicture2 size={16} strokeWidth={3} /></button>}
       </div>

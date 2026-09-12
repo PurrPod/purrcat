@@ -379,7 +379,7 @@ export default function Toolbar({ onBack, mode = 'workflow', onModeChange, agent
             >
               <Upload size={22} strokeWidth={2.5} />
               <span className="tracking-widest text-lg font-black" style={{ fontFamily: '"Comic Sans MS", cursive' }}>
-                {agentLoop.dirty ? 'DEPLOY*' : 'DEPLOY'}
+                {agentLoop.dirty ? `${t('editor.deploy')}*` : t('editor.deploy')}
               </span>
             </button>
           </div>

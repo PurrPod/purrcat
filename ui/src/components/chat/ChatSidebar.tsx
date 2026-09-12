@@ -56,23 +56,23 @@ export default function ChatSidebar(props: any) {
                </button>
                <button onClick={() => {setSidebarMode('mcp'); fetchMcp();}} style={sketchyShape2} className="shrink-0 border-4 border-ink bg-[#F9E2AF]/50 hover:bg-[#F9E2AF] shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center gap-3 hover:-translate-y-1 hover:scale-[1.02] transition-all rotate-1 active:shadow-none active:translate-y-1 min-h-[60px]">
                    <Server size={28} strokeWidth={2.5} className="text-[#b8956e]"/>
-                   <span className="font-black text-xl tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>MCP</span>
+                   <span className="font-black text-xl tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>{t('chat.mcpMenu')}</span>
                </button>
                <button onClick={() => {setSidebarMode('skill'); fetchSkill();}} style={sketchyShape3} className="shrink-0 border-4 border-ink bg-[#FCD5CE]/50 hover:bg-[#FCD5CE] shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center gap-3 hover:-translate-y-1 hover:scale-[1.02] transition-all -rotate-2 active:shadow-none active:translate-y-1 min-h-[60px]">
                    <Zap size={28} strokeWidth={2.5} className="text-[#d08770]"/>
-                   <span className="font-black text-xl tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>SKILL</span>
+                   <span className="font-black text-xl tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>{t('chat.skillMenu')}</span>
                </button>
                <button onClick={() => {setSidebarMode('cron'); fetchCron();}} style={sketchyShape1} className="shrink-0 border-4 border-ink bg-[#E8D1C5]/50 hover:bg-[#E8D1C5] shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center gap-3 hover:-translate-y-1 hover:scale-[1.02] transition-all rotate-2 active:shadow-none active:translate-y-1 min-h-[60px]">
                    <AlarmClock size={28} strokeWidth={2.5} className="text-[#a07b8a]"/>
-                   <span className="font-black text-xl tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>CRON</span>
+                   <span className="font-black text-xl tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>{t('chat.cronMenu')}</span>
                </button>
                <button onClick={() => openMdEditor('SOUL')} style={sketchyShape2} className="shrink-0 border-4 border-ink bg-[#b48ead]/50 hover:bg-[#b48ead] shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center gap-3 hover:-translate-y-1 hover:scale-[1.02] transition-all rotate-1 active:shadow-none active:translate-y-1 min-h-[60px]">
                    <FileText size={28} strokeWidth={2.5} className="text-[#8f6a88]"/>
-                   <span className="font-black text-xl tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>SOUL</span>
+                   <span className="font-black text-xl tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>{t('chat.soulMenu')}</span>
                </button>
                <button onClick={() => {setSidebarMode('sensor'); fetchSensorData();}} style={sketchyShape3} className="shrink-0 border-4 border-ink bg-[#EBCB8B]/40 hover:bg-[#EBCB8B] shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex items-center justify-center gap-3 hover:-translate-y-1 hover:scale-[1.02] transition-all rotate-2 active:shadow-none active:translate-y-1 min-h-[60px]">
                    <Activity size={28} strokeWidth={2.5} className="text-[#b8956e]"/>
-                   <span className="font-black text-xl tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>SENSOR</span>
+                   <span className="font-black text-xl tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>{t('chat.sensorMenu')}</span>
                </button>
            </div>
         )}
@@ -81,7 +81,7 @@ export default function ChatSidebar(props: any) {
            <div className="flex-1 flex flex-col h-full overflow-hidden mt-1">
                <div className="flex justify-between items-center mb-4 shrink-0 border-b-4 border-ink/20 pb-3">
                    <button onClick={() => setSidebarMode('menu')} className="p-1 bg-cream border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:-translate-x-1 transition-all"><ArrowLeft size={18} strokeWidth={3}/></button>
-                   <span className="font-black tracking-widest text-lg" style={{ fontFamily: '"Comic Sans MS", cursive' }}>MCP SERVERS</span>
+                   <span className="font-black tracking-widest text-lg" style={{ fontFamily: '"Comic Sans MS", cursive' }}>{t('chat.mcpMenu')}</span>
                    <div className="flex items-center gap-2">
                       <button onClick={() => setShowInstallMcpModal(true)} className="p-1 bg-[#88c0d0] text-paper border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:scale-110 transition-all"><Plus size={18} strokeWidth={3}/></button>
                       <button onClick={refreshMcp} disabled={isRefreshingMcp} title={isRefreshingMcp ? t('chat.refreshingMcp') : t('chat.refreshMcp')} className="p-1 bg-[#F9E2AF] border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:rotate-180 transition-all disabled:opacity-60 disabled:shadow-none disabled:cursor-not-allowed"><RefreshCw size={18} strokeWidth={3} className={isRefreshingMcp ? 'animate-spin' : ''}/></button>
@@ -115,7 +115,7 @@ export default function ChatSidebar(props: any) {
            <div className="flex-1 flex flex-col h-full overflow-hidden mt-1">
                <div className="flex justify-between items-center mb-4 shrink-0 border-b-4 border-ink/20 pb-3">
                    <button onClick={() => setSidebarMode('menu')} className="p-1 bg-cream border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:-translate-x-1 transition-all"><ArrowLeft size={18} strokeWidth={3}/></button>
-                   <span className="font-black tracking-widest text-lg" style={{ fontFamily: '"Comic Sans MS", cursive' }}>SKILLS</span>
+                   <span className="font-black tracking-widest text-lg" style={{ fontFamily: '"Comic Sans MS", cursive' }}>{t('chat.skillMenu')}</span>
                    <div className="flex items-center gap-2">
                       <button onClick={() => setShowInstallSkillModal(true)} className="p-1 bg-terracotta text-paper border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:scale-110 transition-all"><Plus size={18} strokeWidth={3}/></button>
                       <button onClick={refreshSkill} disabled={isRefreshingSkill} title={isRefreshingSkill ? t('chat.refreshingSkill') : t('chat.refreshSkill')} className="p-1 bg-[#FCD5CE] border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:rotate-180 transition-all disabled:opacity-60 disabled:shadow-none disabled:cursor-not-allowed"><RefreshCw size={18} strokeWidth={3} className={isRefreshingSkill ? 'animate-spin' : ''}/></button>

@@ -505,6 +505,13 @@ ipcMain.handle('browser:navigate', (_e, { tabId, url }) => {
   t.view.webContents.loadURL(url);
 });
 
+// 刷新指定 Tab 的当前页面
+ipcMain.handle('browser:reload', (_e, tabId) => {
+  const t = tabs.get(tabId);
+  if (!t) return;
+  t.view.webContents.reload();
+});
+
 let _setBoundsTimer = null;
 ipcMain.handle('browser:set-bounds', (_e, { x, y, w, h, scale }) => {
   if (browserDetached) return;

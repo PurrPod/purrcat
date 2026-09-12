@@ -63,6 +63,8 @@ contextBridge.exposeInMainWorld('purrcat', {
   browserSwitchTab: (tabId) => ipcRenderer.invoke('browser:switch-tab', tabId),
   // 指定 Tab 导航到 url
   browserNavigate: (tabId, url) => ipcRenderer.invoke('browser:navigate', { tabId, url }),
+  // 刷新指定 Tab 的当前页面
+  browserReload: (tabId) => ipcRenderer.invoke('browser:reload', tabId),
   // 跨域元素定位：在指定 Tab 的所有 frame（含跨域 iframe）里 elementFromPoint(x,y)
   browserLocate: (tabId, x, y) => ipcRenderer.invoke('browser:locate', { tabId, x, y }),
   // 同步内置浏览器容器的 bounds（相对主窗口内容区的 CSS 像素坐标），主进程据此摆放活跃 view
