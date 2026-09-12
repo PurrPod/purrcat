@@ -591,7 +591,7 @@ def list_installed_sensors_api():
 
 
 class InstallSensorReq(BaseModel):
-    sensor: dict  # registry 中的单条 sensor 对象（含 name / description / enabled / env / capabilities 等）
+    sensor: dict  # registry 中的单条 sensor 对象（含 name / description / enabled / env 等）
 
 
 @router.post("/market/sensors/install")
@@ -647,13 +647,11 @@ def install_sensor_api(req: InstallSensorReq):
                 bool(sensor.get("enabled", False)) if "enabled" in sensor else False,
             ),
             "env": merged_env,
-            "capabilities": sensor.get("capabilities")
-            or existing_entry.get("capabilities")
-            or {},
         }
-        # 其余 registry 字段原封不动保留一份（方便调试/回查）
+        # 其余 registry 字段原封不动保留一份（方便调试/回查；
+        # capabilities 为旧架构字段，已废弃不落盘）
         for k, v in sensor.items():
-            if k not in ("enabled", "env", "capabilities", "name"):
+            if k not in ("enabled", "env", "name", "capabilities"):
                 merged[k] = v
 
         existing_cfg[name] = merged

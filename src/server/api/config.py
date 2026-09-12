@@ -130,6 +130,76 @@ def api_update_app_config(config: Dict[str, Any]):
     raise HTTPException(status_code=500, detail="Failed to save app config")
 
 
+# ── ACP 编辑器接入（任意 ACP 客户端：编辑器 / IDE 等）──
+
+
+@router.get("/acp")
+def api_get_acp_status():
+    """ACP 接入状态：relay 部署情况 / 端口 / uv 可用性"""
+    import shutil
+
+    from src.utils.config import ACP_RELAY_PATH, get_global_settings
+
+    source = os.path.join(BASE_DIR, "scripts", "acp_relay.py")
+    source_found = os.path.isfile(source)
+    deployed = os.path.isfile(ACP_RELAY_PATH)
+    matches = False
+    if deployed and source_found:
+        try:
+            with open(ACP_RELAY_PATH, "r", encoding="utf-8") as f:
+                deployed_src = f.read()
+            with open(source, "r", encoding="utf-8") as f:
+                matches = deployed_src == f.read()
+        except Exception:
+            matches = False
+
+    port = get_global_settings().get("acp_port")
+    return {
+        "relay_path": ACP_RELAY_PATH,
+        "relay_deployed": deployed,
+        "relay_source_found": source_found,
+        "relay_matches_source": matches,
+        "port": port if isinstance(port, int) and 0 < port < 65536 else 8000,
+        "uv_found": shutil.which("uv") is not None,
+    }
+
+
+@router.put("/acp")
+def api_update_acp_config(payload: Dict[str, Any]):
+    """更新 ACP 接入设置（目前仅后端端口，写入 settings.json 的 acp_port）"""
+    port = payload.get("port")
+    if port is not None:
+        if not isinstance(port, int) or not (0 < port < 65536):
+            raise HTTPException(status_code=400, detail="端口必须是 1-65536 的整数")
+        if not save_global_setting("acp_port", port):
+            raise HTTPException(status_code=500, detail="保存 acp_port 失败")
+    return {"status": "ok", "message": "ACP settings updated"}
+
+
+@router.post("/acp/redeploy")
+def api_redeploy_acp_relay():
+    """重新部署 relay 脚本（文件被误删 / 版本落后时的一键修复）"""
+    from src.utils.initial import deploy_acp_relay
+
+    if not deploy_acp_relay(force=True):
+        raise HTTPException(status_code=500, detail="部署失败：内置源缺失或写入错误")
+    return api_get_acp_status() | {"status": "ok"}
+
+
+@router.post("/acp/reset-token")
+def api_reset_acp_token():
+    """重置 ACP 网关 token（旧令牌立即失效；客户端侧 relay 需重启后重连）"""
+    from src.utils.config import ACP_TOKEN_FILE, get_acp_token
+
+    try:
+        if os.path.exists(ACP_TOKEN_FILE):
+            os.remove(ACP_TOKEN_FILE)
+        get_acp_token()  # 立即重新生成
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"token 重置失败: {e}")
+    return {"status": "ok"}
+
+
 # ── Markdown Files (SOUL.md / GOAL.md) ──
 @router.get("/markdown/{filename}")
 def api_get_markdown_file(filename: str):

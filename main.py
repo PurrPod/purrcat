@@ -234,6 +234,7 @@ async def run_api(host: str = "0.0.0.0", port: int = 8000):
     from src.server.api.evolve import router as evolve_router
     from src.server.api.terminal import router as terminal_router
     from src.server.api.paradigms import router as paradigms_router
+    from src.server.api.acp import router as acp_router
 
     app = FastAPI(title="PurrCat API System")
 
@@ -256,6 +257,7 @@ async def run_api(host: str = "0.0.0.0", port: int = 8000):
     app.include_router(evolve_router)
     app.include_router(terminal_router)
     app.include_router(paradigms_router)
+    app.include_router(acp_router)
 
     # 🌟 健康检查必须注册在 app.mount("/") 之前！
     # Starlette 按注册顺序匹配路由，"/" 的静态文件挂载是贪婪前缀匹配，

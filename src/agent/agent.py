@@ -111,6 +111,20 @@ class Agent:
     def state(self, value):
         self._state = value
 
+    def _set_live_phase(self, phase: str):
+        """🌟 ACP 总线：阶段变化事件（thinking/processing/idle）。
+
+        取代裸赋值 self._live_phase = x，保证赋值点与总线事件同点触发；
+        构造函数里的初始 idle 不发事件（无消费者）。
+        """
+        self._live_phase = phase
+        try:
+            from src.server.acp.bus import get_bus
+
+            get_bus().publish(self.session_id, "phase", {"phase": phase})
+        except Exception:
+            pass
+
     def _get_tool_schema(self):
         from src.tool import (
             AGENT_TOOL_SCHEMA,
@@ -383,6 +397,7 @@ class Agent:
         used_tools = {}
         loop_epoch = 0
         loop_end_retry = 0
+        turn_ended = False  # 打断/断层路径已在 _handle_interaction_error 发过 turn_end
         self._check_and_fix_toolchain()
         while True:
             try:
@@ -409,6 +424,19 @@ class Agent:
 
                 if usage is not None:
                     self.window_token = usage.total_tokens
+                    # 🌟 ACP 总线：上下文用量（编辑器侧 usage_update 词汇）
+                    from src.server.acp.bus import get_bus
+                    from src.utils.config import get_model_config
+
+                    model_cfg = get_model_config().get("main", {}).get(self.name, {})
+                    get_bus().publish(
+                        self.session_id,
+                        "usage",
+                        {
+                            "used": self.window_token,
+                            "size": model_cfg.get("max_token", 500000),
+                        },
+                    )
                 has_tools = self._process_assistant_message(msg_resp)
 
                 # 本次消息发起的那一批工具调用（on_tool_calling 的 tool_use_check 只查这一批）
@@ -466,12 +494,19 @@ class Agent:
             except (KeyboardInterrupt, InterruptedError):
                 # 用户强制打断（含模型调用重试期间被打断）：不写入交互断层，只记录打断标记
                 self._handle_interaction_error(is_interrupt=True)
+                turn_ended = True
                 break
             except Exception as e:
                 self._handle_interaction_error(e=e)
+                turn_ended = True
                 break
 
-        self._live_phase = "idle"
+        self._set_live_phase("idle")
+        # 🌟 ACP 总线：一轮交互结束，SSE 消费方据此补 prompt 的 stopReason
+        if not turn_ended:
+            from src.server.acp.bus import get_bus
+
+            get_bus().publish(self.session_id, "turn_end", {"stopReason": "end_turn"})
         self.save_checkpoint()
 
     def _chat_stream(self, messages, tools, interaction_id):
@@ -481,7 +516,7 @@ class Agent:
         原有非流式调用，保证 Agent 主循环行为不受影响。
         """
         try:
-            self._live_phase = "thinking"
+            self._set_live_phase("thinking")
             return self._consume_stream(messages, tools, interaction_id)
         except InterruptedError:
             # 用户打断：不做非流式兜底重试，直接上抛让主循环静默收尾
@@ -597,10 +632,15 @@ class Agent:
                 for t in msg_resp.tool_calls
             ]
         self._append_history(assist_msg)
-        if msg_resp.content:
-            from src.sensor import send_to_sensors
+        # 🌟 ACP 总线：思考/消息事件（与旧 sensor 网关并存，Phase 4 删旧路径）
+        from src.server.acp.bus import get_bus
 
-            send_to_sensors(f"{msg_resp.content}")
+        if rc:
+            get_bus().publish(self.session_id, "agent_thought", {"text": rc})
+        if msg_resp.content:
+            get_bus().publish(
+                self.session_id, "agent_message", {"text": msg_resp.content}
+            )
 
         return bool(msg_resp.tool_calls)
 
@@ -625,7 +665,7 @@ class Agent:
         return isinstance(args, dict) and args.get("action") == "create"
 
     def _execute_tool_calls(self, tool_calls) -> bool:
-        self._live_phase = "processing"
+        self._set_live_phase("processing")
         # 🌟 快照派发类工具（BrainStorm create）延后到批次末尾执行：
         # 确保同批次其它工具的返回结果先写入 history，BS 随后的快照才能完整兜住
         if len(tool_calls) > 1:
@@ -660,7 +700,6 @@ class Agent:
 
             if target_tool_name == "Bash":
                 arguments["session_id"] = self.session_id
-            args_str = str(arguments)
             if target_tool_name == "BrainStorm":
                 # 🌟 注入本次调用的 tool_call_id，供 BS 伪造子代理上下文的
                 # tool result 时精确定位自己（批次内可能存在多个工具调用）
@@ -702,19 +741,20 @@ class Agent:
                 )
                 continue
 
-            try:
-                snip = (
-                    json.loads(result_content).get("snip", "")
-                    if isinstance(json.loads(result_content), dict)
-                    else ""
-                )
-            except Exception:
-                snip = str(result_content)[:100]
-            from src.sensor import send_to_sensors
+            # 🌟 ACP 总线：工具完成事件——完整结果/参数随载荷透出，
+            # dispatch 侧统一截断（编辑器看 tool_call_update.content）；
+            # tool_detail 过滤由各桥自决
+            from src.server.acp.bus import get_bus
 
-            send_to_sensors(
-                f"🔧{target_tool_name}({args_str[:50]}...)\n\n---\n\n{snip}",
-                tool_detail=True,
+            get_bus().publish(
+                self.session_id,
+                "tool_call",
+                {
+                    "name": target_tool_name,
+                    "tool_call_id": tool_call.id,
+                    "arguments": arguments,
+                    "result": result_content,
+                },
             )
             self._append_history(
                 {
@@ -752,6 +792,19 @@ class Agent:
         self._check_and_fix_toolchain()
 
         self._append_history({"role": "assistant", "content": content_msg})
+
+        # 🌟 ACP 总线：非正常收尾（打断/断层）也要发 turn_end，SSE 消费方才能补 stopReason
+        # 规范 stopReason 枚举无 error：打断→cancelled，故障→end_turn（错误文本已走消息通道）
+        from src.server.acp.bus import get_bus
+
+        get_bus().publish(
+            self.session_id,
+            "turn_end",
+            {
+                "stopReason": "cancelled" if is_interrupt else "end_turn",
+                "message": content_msg,
+            },
+        )
 
     def sensor(self):
         print("[Init] Agent 后台主核已启动...")

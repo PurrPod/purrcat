@@ -23,7 +23,7 @@ from .guide_generator import generate_sensor_guide
 
 
 def _skeleton(sensor_name: str) -> str:
-    """全新 sensor 的可运行骨架：鉴权求助 + 事件线程占位 + express 循环"""
+    """全新 sensor 的可运行骨架（ACP 方言）：鉴权求助 + 事件线程 + update 消费循环"""
     return f'''# /// script
 # requires-python = ">=3.10"
 # dependencies = [
@@ -41,12 +41,52 @@ import os
 _REAL_STDOUT = sys.stdout
 sys.stdout = sys.stderr
 
+_session_id = {{}}  # session/new 响应时回填
 
-def send_json_to_main(method: str, params: dict):
+
+def send_request(req_id: int, method: str, params: dict) -> None:
     _REAL_STDOUT.write(
-        json.dumps({{"method": method, "params": params}}, ensure_ascii=False) + "\\n"
+        json.dumps(
+            {{"jsonrpc": "2.0", "id": req_id, "method": method, "params": params}},
+            ensure_ascii=False,
+        )
+        + "\\n"
     )
     _REAL_STDOUT.flush()
+
+
+def handle_response(resp: dict) -> None:
+    if resp.get("id") == 2 and "result" in resp:
+        _session_id.update(resp["result"])
+
+
+def handle_notification(msg: dict) -> None:
+    """处理网关下发：session/update（Agent 回复）与 _purrcat/file（文件）"""
+    method = msg.get("method", "")
+    params = msg.get("params", {{}})
+
+    if method == "session/update":
+        update = params.get("update", {{}})
+        kind = update.get("sessionUpdate", "")
+        if kind == "agent_message":
+            text = update.get("content", {{}}).get("text", "")
+            print(f"💬 [{sensor_name}] 收到 Agent 回复: {{text}}")
+            # TODO: 把 text 转发到外部渠道（注意在后台线程执行网络请求）
+    elif method == "_purrcat/file":
+        import base64
+
+        name = params.get("name", "file")
+        data = base64.b64decode(params.get("content_b64", ""))
+        print(f"📎 [{sensor_name}] 收到网关文件: {{name}} ({{len(data)}} bytes)")
+        # TODO: 解码后发送到外部渠道（注意在后台线程执行网络请求）
+
+
+def prompt_agent(text: str) -> None:
+    """把外部事件（用户消息/提醒/鉴权求助）注入当前活跃会话"""
+    send_request(3, "session/prompt", {{
+        "sessionId": _session_id.get("sessionId", ""),
+        "prompt": [{{"type": "text", "text": text}}],
+    }})
 
 
 def check_auth() -> bool:
@@ -54,18 +94,17 @@ def check_auth() -> bool:
     # TODO: 按实际情况替换凭证名
     token = os.environ.get("MY_TOKEN", "")
     if not token:
-        send_json_to_main(
-            "observe",
-            {{"content": "[{sensor_name} 求助] 首次启动需要鉴权凭证 MY_TOKEN（当前为空）。"
-             "请用户在前端配置中心 → Sensor 设置里为 {sensor_name} 填写 MY_TOKEN 后保存启用，"
-             "我会在热重启后自动连接并保持待命。"}},
+        prompt_agent(
+            "[{sensor_name} 求助] 首次启动需要鉴权凭证 MY_TOKEN（当前为空）。"
+            "请用户在前端配置中心 → Sensor 设置里为 {sensor_name} 填写 MY_TOKEN 后保存启用，"
+            "我会在热重启后自动连接并保持待命。"
         )
         return False
     return True
 
 
 def start_event_listener():
-    """后台线程：连接外部服务，把事件 observe 给 Agent。此处为占位示例。"""
+    """后台线程：连接外部服务，把事件 prompt 给 Agent。此处为占位示例。"""
 
     def _worker():
         while True:
@@ -79,22 +118,8 @@ def start_event_listener():
     threading.Thread(target=_worker, daemon=True).start()
 
 
-def handle_express(params: dict):
-    """处理网关下发的 express：文本直接转发，文件类自行投递到外部渠道"""
-    if params.get("type") == "file":
-        import base64
-
-        name = params.get("name", "file")
-        data = base64.b64decode(params.get("content_b64", ""))
-        print(f"📎 [{sensor_name}] 收到网关文件: {{name}} ({{len(data)}} bytes)")
-        # TODO: 解码后发送到外部渠道（注意在后台线程执行网络请求）
-        return
-
-    message = params.get("message", "")
-    kwargs = params.get("kwargs", {{}})
-    print(f"💬 [{sensor_name}] 收到 Agent 回复: {{message}}")
-    # TODO: 把 message 转发到外部渠道（注意在后台线程执行网络请求）
-
+send_request(1, "initialize", {{"clientInfo": {{"name": "{sensor_name}"}}}})
+send_request(2, "session/new", {{"clientInfo": {{"name": "{sensor_name}"}}}})
 
 if not check_auth():
     # 凭证未就绪：仍保持进程存活，热重启读到新 env 后自动恢复
@@ -106,13 +131,15 @@ for line in sys.stdin:
     if not line.strip():
         continue
     try:
-        req = json.loads(line)
-        if req.get("method") == "express":
-            handle_express(req["params"])
+        msg = json.loads(line)
+        if "method" in msg:
+            handle_notification(msg)
+        elif "result" in msg or "error" in msg:
+            handle_response(msg)
     except json.JSONDecodeError:
         pass
     except Exception as e:
-        print(f"❌ [{sensor_name}] 处理 express 异常: {{e}}")
+        print(f"❌ [{sensor_name}] 处理下发消息异常: {{e}}")
 '''
 
 
@@ -121,7 +148,6 @@ def _config_template(sensor_name: str) -> str:
         {
             "name": sensor_name,
             "env": {"MY_TOKEN": ""},
-            "capabilities": {"observe": True, "express": True},
             "tool_detail": False,
         },
         indent=2,
@@ -165,8 +191,6 @@ def sensor_factory_init(
         config = {
             "name": sensor_name,
             "env": cfg.get("env") or {"MY_TOKEN": ""},
-            "capabilities": cfg.get("capabilities")
-            or {"observe": True, "express": True},
             "tool_detail": cfg.get("tool_detail", False),
         }
         with open(
@@ -249,9 +273,6 @@ def sensor_request_handle(
     env_data = sandbox_config.get("env", {})
     if not isinstance(env_data, dict):
         env_data = {}
-    capabilities = sandbox_config.get("capabilities", {})
-    if not isinstance(capabilities, dict):
-        capabilities = {"observe": True, "express": True}
 
     # 2. 拷贝 Sensor 本体至正式目录
     os.makedirs(SENSOR_EXTENSION_DIR, exist_ok=True)
@@ -285,7 +306,6 @@ def sensor_request_handle(
     sensor_config[sensor_name] = {
         "enabled": True,
         "env": env_data,
-        "capabilities": capabilities,
         "tool_detail": bool(sandbox_config.get("tool_detail", False)),
     }
     os.makedirs(os.path.dirname(SENSOR_CONFIG_PATH), exist_ok=True)

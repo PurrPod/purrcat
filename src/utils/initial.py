@@ -17,6 +17,9 @@ from src.utils.config import (
     CRON_FILE,
     HEARTBEAT_FILE,
     SOUL_MD_PATH,
+    BASE_DIR,
+    ACP_RELAY_PATH,
+    get_acp_token,
 )
 
 # 默认 Agent Loop（PARADIGM.yaml）模板。
@@ -224,6 +227,16 @@ def _generate_all_configs():
     if not os.path.exists(APP_CONFIG_PATH):
         _write_json(APP_CONFIG_PATH, _get_app_config_dict())
 
+    # ACP 网关 token 预生成（幂等）：启动即落盘，编辑器 relay 冷启动即可读到，
+    # 修掉"首个 /acp/rpc 请求才生成"导致的 relay 永久退出问题
+    try:
+        get_acp_token()
+    except Exception as e:
+        print(f"[!] ACP token 预生成失败: {e}")
+
+    # ACP 转接脚本部署/刷新（幂等）：~/.purrcat/bin/acp_relay.py
+    deploy_acp_relay()
+
     # core/ 目录文件
     if not os.path.exists(os.path.join(AGENT_CORE_DIR, "info.json")):
         _write_json(
@@ -239,6 +252,37 @@ def _generate_all_configs():
         _write_text(SOUL_MD_PATH, SOUL_MD_TEMPLATE)
 
     print(f"[+] 配置目录已就绪: {PURRCAT_DIR}")
+
+
+# ==========================================
+# ACP 转接脚本部署
+# ==========================================
+
+
+def deploy_acp_relay(force: bool = False) -> bool:
+    """把 ACP 转接脚本部署到 ~/.purrcat/bin/acp_relay.py。
+
+    - 源：BASE_DIR/scripts/acp_relay.py（开发态=仓库；打包后=_internal/scripts）
+    - 幂等：已部署且内容与内置源一致时跳过；force=True 或内容有变（升级）时覆盖
+    - 编辑器配置指向该稳定路径，App 升级后自动刷新，用户侧配置永不失效
+    """
+    src = os.path.join(BASE_DIR, "scripts", "acp_relay.py")
+    if not os.path.isfile(src):
+        print(f"[!] ACP relay 内置源缺失: {src}")
+        return False
+    try:
+        with open(src, "r", encoding="utf-8") as f:
+            source = f.read()
+        if not force and os.path.isfile(ACP_RELAY_PATH):
+            with open(ACP_RELAY_PATH, "r", encoding="utf-8") as f:
+                if f.read() == source:
+                    return True  # 已是最新，无需动
+        _write_text(ACP_RELAY_PATH, source)
+        print(f"[+] ACP relay 已部署: {ACP_RELAY_PATH}")
+        return True
+    except Exception as e:
+        print(f"[!] ACP relay 部署失败: {e}")
+        return False
 
 
 # ==========================================
