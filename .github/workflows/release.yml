@@ -206,63 +206,66 @@ jobs:
           cd release
           gh release upload "$env:TAG" "PurrCat-Setup-${{ inputs.version }}.exe" "PurrCat-Setup-${{ inputs.version }}.exe.blockmap" "latest.yml" --clobber
 
-  build-macos:
-    name: Build macOS Desktop (arm64)
-    needs: [publish]
-    runs-on: macos-latest
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v6
-        with:
-          ref: v${{ inputs.version }}
+  # 暂不打包 macOS dmg：未购买 Apple Developer 证书，无签名 dmg 会被 Gatekeeper
+  # 拦截（"已损坏/无法验证开发者"），用户体验极差。购入证书后取消注释，
+  # 并配置 CSC_LINK / CSC_KEY_PASSWORD 走正式签名 + 公证流程
+  # build-macos:
+  #   name: Build macOS Desktop (arm64)
+  #   needs: [publish]
+  #   runs-on: macos-latest
+  #   steps:
+  #     - name: Checkout Code
+  #       uses: actions/checkout@v6
+  #       with:
+  #         ref: v${{ inputs.version }}
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
+  #     - name: Setup Node.js
+  #       uses: actions/setup-node@v4
+  #       with:
+  #         node-version: 20
 
-      - name: Setup uv
-        uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
+  #     - name: Setup uv
+  #       uses: astral-sh/setup-uv@v5
+  #       with:
+  #         enable-cache: true
 
-      # pyaudio 需从源码编译，链接 portaudio；Python 固定 3.12（3.14 生态 wheel 不齐）
-      - name: Install System Dependencies (portaudio for pyaudio)
-        run: brew install portaudio
+  #     # pyaudio 需从源码编译，链接 portaudio；Python 固定 3.12（3.14 生态 wheel 不齐）
+  #     - name: Install System Dependencies (portaudio for pyaudio)
+  #       run: brew install portaudio
 
-      - name: Install Python Dependencies
-        run: uv sync --python 3.12
+  #     - name: Install Python Dependencies
+  #       run: uv sync --python 3.12
 
-      - name: Install Node Dependencies
-        run: |
-          npm ci
-          npm ci --prefix ui
+  #     - name: Install Node Dependencies
+  #       run: |
+  #         npm ci
+  #         npm ci --prefix ui
 
-      - name: Set Version
-        env:
-          VERSION: ${{ inputs.version }}
-        run: npm version $VERSION --no-git-tag-version
+  #     - name: Set Version
+  #       env:
+  #         VERSION: ${{ inputs.version }}
+  #       run: npm version $VERSION --no-git-tag-version
 
-      - name: Build UI
-        run: npm run build:ui
+  #     - name: Build UI
+  #       run: npm run build:ui
 
-      - name: Build Backend (PyInstaller)
-        run: uv run pyinstaller main.spec --noconfirm
+  #     - name: Build Backend (PyInstaller)
+  #       run: uv run pyinstaller main.spec --noconfirm
 
-      - name: Build Desktop (electron-builder)
-        env:
-          GH_TOKEN: ${{ github.token }}
-          # 未购买 Apple Developer 证书，禁用签名流程
-          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-        run: npx electron-builder --mac --publish never
+  #     - name: Build Desktop (electron-builder)
+  #       env:
+  #         GH_TOKEN: ${{ github.token }}
+  #         CSC_LINK: ${{ secrets.MAC_CERTIFICATE }}
+  #         CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
+  #       run: npx electron-builder --mac --publish never
 
-      - name: Upload Release Assets
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          TAG: v${{ inputs.version }}
-        run: |
-          cd release
-          gh release upload "$TAG" "PurrCat-${{ inputs.version }}-arm64.dmg" --clobber
+  #     - name: Upload Release Assets
+  #       env:
+  #         GITHUB_TOKEN: ${{ github.token }}
+  #         TAG: v${{ inputs.version }}
+  #       run: |
+  #         cd release
+  #         gh release upload "$TAG" "PurrCat-${{ inputs.version }}-arm64.dmg" --clobber
 
   # 暂不打包 Linux，需要时取消注释即可
   # build-linux:

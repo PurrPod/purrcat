@@ -62,9 +62,3 @@ body:
       label: Python version
       description: Which Python version are you using?
       placeholder: "e.g., 3.11"
-
-  - type: textarea
-    id: additional
-    attributes:
-      label: Additional context
-      description: Add any other context about the problem here.
