@@ -119,6 +119,7 @@ def get_acp_token() -> str:
         f.write(tok)
     return tok
 
+
 GLOBAL_CONFIG_DIR = Path(PURRCAT_DIR)
 GLOBAL_CONFIG_FILE = GLOBAL_CONFIG_DIR / "settings.json"
 

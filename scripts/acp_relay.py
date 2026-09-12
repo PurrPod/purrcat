@@ -75,9 +75,7 @@ def discover() -> tuple[str, str]:
         port = int(env_port)
     if port is None:
         try:
-            settings = json.loads(
-                (home / "settings.json").read_text(encoding="utf-8")
-            )
+            settings = json.loads((home / "settings.json").read_text(encoding="utf-8"))
             v = settings.get("acp_port")
             if isinstance(v, int) and 0 < v < 65536:
                 port = v
@@ -113,9 +111,7 @@ class Relay:
         # 挂住的 session/load：sid -> {"id", "result", "sent"}（等 replay_end 放行）
         self.load_pending: dict[str, dict] = {}
         # 明确绕过系统代理（httpx trust_env / urllib getproxies 都会劫持 localhost）
-        self.opener = urllib.request.build_opener(
-            urllib.request.ProxyHandler({})
-        )
+        self.opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
     # ==== 输出 ====
 
@@ -282,7 +278,9 @@ class Relay:
         if "fail_at" not in pend:
             pend["fail_at"] = time.time() + _SSE_FAIL_AFTER
         elif time.time() > pend["fail_at"]:
-            self._fail_pending(sid, f"backend SSE stream unreachable for {_SSE_FAIL_AFTER}s")
+            self._fail_pending(
+                sid, f"backend SSE stream unreachable for {_SSE_FAIL_AFTER}s"
+            )
 
     # ==== session/load 持住（等 replay_end，保住 update 先于响应的规范顺序） ====
 
@@ -293,9 +291,7 @@ class Relay:
         }
         self.load_pending[sid] = state
         # 兜底：SSE 异常时也放行响应，防编辑器 UI 永久卡住
-        threading.Timer(
-            _LOAD_FAIL_AFTER, self._finish_load, args=(sid, state)
-        ).start()
+        threading.Timer(_LOAD_FAIL_AFTER, self._finish_load, args=(sid, state)).start()
 
     def _finish_load(self, sid: str, state: dict) -> None:
         if self.load_pending.get(sid) is not state or state.get("sent"):
@@ -358,8 +354,7 @@ class Relay:
     def _consume_stream(self, sid: str, state: dict) -> None:
         """阻塞消费一条 SSE 流（连接断开/超时则抛异常回到重连循环）"""
         req = urllib.request.Request(
-            f"{self.base}/acp/stream"
-            f"?session={urllib.parse.quote(sid)}",
+            f"{self.base}/acp/stream?session={urllib.parse.quote(sid)}",
             headers={
                 "X-PurrCat-Token": self.token,
                 "Accept": "text/event-stream",
@@ -384,9 +379,9 @@ class Relay:
                     event, data_lines = None, []
                     continue
                 if line.startswith("event:"):
-                    event = line[len("event:"):].strip()
+                    event = line[len("event:") :].strip()
                 elif line.startswith("data:"):
-                    data_lines.append(line[len("data:"):].lstrip())
+                    data_lines.append(line[len("data:") :].lstrip())
                 # retry: 等其它 SSE 指令行忽略
 
     def _on_stream_event(self, sid: str, event: str, data: str) -> None:
@@ -408,9 +403,7 @@ class Relay:
                     {
                         "jsonrpc": "2.0",
                         "id": pend["id"],
-                        "result": {
-                            "stopReason": obj.get("stopReason", "end_turn")
-                        },
+                        "result": {"stopReason": obj.get("stopReason", "end_turn")},
                     }
                 )
         elif event == "replay_end":

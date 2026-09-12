@@ -233,9 +233,11 @@ def _tool_title(name: str, args) -> str:
         if name == "Memo":
             action = str(args.get("action", "") or "memo")
             if action == "search":
-                q = (args.get("query") or {}).get("prompt", "") if isinstance(
-                    args.get("query"), dict
-                ) else ""
+                q = (
+                    (args.get("query") or {}).get("prompt", "")
+                    if isinstance(args.get("query"), dict)
+                    else ""
+                )
                 return f"Memo search {str(q)[:40]}".strip()
             return f"Memo {action}".strip()
     return name
@@ -299,15 +301,19 @@ def _handle_session_list(req: dict) -> dict:
             "_meta": {"messageCount": info.get("messages_count", 0)},
         }
         sessions.append(entry)
-    sessions.sort(
-        key=lambda s: s.get("updatedAt") or s["sessionId"], reverse=True
-    )
+    sessions.sort(key=lambda s: s.get("updatedAt") or s["sessionId"], reverse=True)
     return _rpc_result(req.get("id"), {"sessions": sessions})
 
 
 # 已知系统注入事件 type（不渲染为用户消息；代码证据：hooks/sub_runner=system、
 # heartbeat=system_clock、bg搜索提示=workflow_hint、task工具=task_message）
-_SYSTEM_EVENT_TYPES = {"system", "system_clock", "workflow_hint", "task_message", "memory"}
+_SYSTEM_EVENT_TYPES = {
+    "system",
+    "system_clock",
+    "workflow_hint",
+    "task_message",
+    "memory",
+}
 
 
 def _user_visible_text(content) -> str:
@@ -352,7 +358,7 @@ def _user_visible_text(content) -> str:
         else:
             # user 及宽容兜底（unknown/客户端名等旧 ACP 错存的真人输入）
             lines.append(text)
-    return "\n".join(l for l in lines if l)
+    return "\n".join(line for line in lines if line)
 
 
 def _replay_history(purr_sid: str) -> None:
@@ -459,7 +465,11 @@ def handle_rpc(req: dict) -> dict:
                     "sessionCapabilities": {"list": {}, "delete": {}},
                     "_meta": {"purrcat.dev": {"launch_task": True}},
                 },
-                "agentInfo": {"name": "PurrCat", "title": "PurrCat", "version": "0.1.0"},
+                "agentInfo": {
+                    "name": "PurrCat",
+                    "title": "PurrCat",
+                    "version": "0.1.0",
+                },
             },
         )
 
@@ -668,7 +678,14 @@ def to_updates(envelope: dict) -> list[dict]:
 
         return [
             _upd("", call),
-            _upd("", {"sessionUpdate": "tool_call_update", "toolCallId": tcid, "status": "in_progress"}),
+            _upd(
+                "",
+                {
+                    "sessionUpdate": "tool_call_update",
+                    "toolCallId": tcid,
+                    "status": "in_progress",
+                },
+            ),
             _upd("", update),
         ]
 

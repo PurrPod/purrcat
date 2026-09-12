@@ -64,15 +64,15 @@ async def acp_stream(session: str, _: str = Depends(verify_token)):
 
     loop = asyncio.get_running_loop()
     queue: asyncio.Queue = asyncio.Queue()
-    unsubscribe = get_bus().subscribe(
-        purr_sid, callback=queue.put_nowait, loop=loop
-    )
+    unsubscribe = get_bus().subscribe(purr_sid, callback=queue.put_nowait, loop=loop)
 
     async def _gen():
         try:
             while True:
                 try:
-                    envelope = await asyncio.wait_for(queue.get(), timeout=_SSE_KEEPALIVE)
+                    envelope = await asyncio.wait_for(
+                        queue.get(), timeout=_SSE_KEEPALIVE
+                    )
                 except asyncio.TimeoutError:
                     yield ": keepalive\n\n"
                     continue
@@ -91,7 +91,9 @@ async def acp_stream(session: str, _: str = Depends(verify_token)):
                         else (
                             "turn_end"
                             if "stopReason" in payload
-                            else "replay_end" if "replayDone" in payload else "phase"
+                            else "replay_end"
+                            if "replayDone" in payload
+                            else "phase"
                         )
                     )
                     yield f"event: {event_name}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"

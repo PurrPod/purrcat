@@ -98,7 +98,9 @@ class AcpSensorBridge:
         if method == "initialize":
             dropped = get_registry().drop_by_client(self.name)
             if dropped:
-                print(f"♻️ [ACP Bridge] {self.name} 重新 initialize，清理 {dropped} 条 stale 会话")
+                print(
+                    f"♻️ [ACP Bridge] {self.name} 重新 initialize，清理 {dropped} 条 stale 会话"
+                )
 
         # stdio sensor 固定当前活跃会话（硬性行为，sensor 端零决策零配置）：
         # 无条件覆盖——新建/切换会话的逻辑只属于 HTTP 端的编辑器客户端
@@ -140,11 +142,7 @@ class AcpSensorBridge:
                 update = payload["params"]["update"]
                 kind = update.get("sessionUpdate", "")
                 # tool_detail 关闭时只发正文：过滤思考/工具细节
-                if (
-                    not self.tool_detail
-                    and kind
-                    not in ("agent_message",)
-                ):
+                if not self.tool_detail and kind not in ("agent_message",):
                     continue
                 payload["params"]["sessionId"] = self.acp_sid
                 self._write(payload)

@@ -20,7 +20,10 @@ class AcpSessionRegistry:
         self._sessions = {}
 
     def create(
-        self, client: str = "unknown", alias: str = "ACP Session", follow_active: bool = False
+        self,
+        client: str = "unknown",
+        alias: str = "ACP Session",
+        follow_active: bool = False,
     ) -> dict:
         """新建映射。
 
@@ -118,13 +121,13 @@ class AcpSessionRegistry:
 def ensure_active_and_push(purr_session_id: str, message: str, source: str = "acp"):
     """确保 Agent 活跃会话为目标会话后注入消息（后台线程调用）。
 
-    排队语义与 server/api/chat.py 的 _run_agent_task 一致：等 idle 再 switch，
-绝不打断进行中的轮次。
+        排队语义与 server/api/chat.py 的 _run_agent_task 一致：等 idle 再 switch，
+    绝不打断进行中的轮次。
 
-🚫 竞态防护：「等idle→switch→push」整段持锁串行——两个编辑器各自排队时，
-若不加锁，先到的线程 switch 后、push 前可能被后到线程抢 switch，导致消息
-注入进错误会话。锁内忙等会让其它排队线程在锁外自然排队（串行语义正确）。
-"""
+    🚫 竞态防护：「等idle→switch→push」整段持锁串行——两个编辑器各自排队时，
+    若不加锁，先到的线程 switch 后、push 前可能被后到线程抢 switch，导致消息
+    注入进错误会话。锁内忙等会让其它排队线程在锁外自然排队（串行语义正确）。
+    """
     from src.agent.manager import AgentManager
 
     manager = AgentManager()

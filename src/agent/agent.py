@@ -428,9 +428,7 @@ class Agent:
                     from src.server.acp.bus import get_bus
                     from src.utils.config import get_model_config
 
-                    model_cfg = (
-                        get_model_config().get("main", {}).get(self.name, {})
-                    )
+                    model_cfg = get_model_config().get("main", {}).get(self.name, {})
                     get_bus().publish(
                         self.session_id,
                         "usage",
@@ -508,9 +506,7 @@ class Agent:
         if not turn_ended:
             from src.server.acp.bus import get_bus
 
-            get_bus().publish(
-                self.session_id, "turn_end", {"stopReason": "end_turn"}
-            )
+            get_bus().publish(self.session_id, "turn_end", {"stopReason": "end_turn"})
         self.save_checkpoint()
 
     def _chat_stream(self, messages, tools, interaction_id):
