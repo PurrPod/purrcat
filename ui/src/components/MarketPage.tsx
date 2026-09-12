@@ -39,7 +39,6 @@ interface SensorEntry {
   'description-zh'?: string;
   enabled?: boolean;
   env?: Record<string, string>;
-  capabilities?: Record<string, any>;
   [k: string]: any;
 }
 
@@ -840,12 +839,6 @@ export default function MarketPage({ onBack, initialTab }: { onBack: () => void;
                   <div className="min-w-0">
                     <h2 className="text-2xl font-black tracking-wide text-ink break-all" style={{ fontFamily: '"Comic Sans MS", cursive' }}>{selectedSensor.name}</h2>
                     <div className="flex items-center gap-2 mt-1 flex-wrap">
-                      {selectedSensor.capabilities?.observe && (
-                        <span className="text-[10px] font-black px-2 py-0.5 bg-cream border-2 border-ink text-ink" style={sketchyShape3}>{t('market.observe')}</span>
-                      )}
-                      {selectedSensor.capabilities?.express && (
-                        <span className="text-[10px] font-black px-2 py-0.5 bg-cream border-2 border-ink text-ink" style={sketchyShape1}>{t('market.express')}</span>
-                      )}
                       {installed && (
                         <span className="text-[10px] font-black px-2 py-0.5 bg-[#a3be8c] border-2 border-ink text-ink flex items-center gap-1" style={sketchyShape3}>
                           <Check size={10} strokeWidth={4} />
@@ -1438,12 +1431,6 @@ export default function MarketPage({ onBack, initialTab }: { onBack: () => void;
 
                         <div className="flex items-center justify-between mt-1 pt-3 border-t-2 border-ink/10 border-dashed gap-2">
                           <div className="flex items-center gap-1 flex-wrap min-w-0">
-                            {s.capabilities?.observe && (
-                              <span className="text-[9px] font-black px-1.5 py-0.5 bg-cream border-2 border-ink text-ink" style={sketchyShape1}>{t('market.observe')}</span>
-                            )}
-                            {s.capabilities?.express && (
-                              <span className="text-[9px] font-black px-1.5 py-0.5 bg-cream border-2 border-ink text-ink" style={sketchyShape3}>{t('market.express')}</span>
-                            )}
                             {s.env && Object.keys(s.env).length > 0 && (
                               <span className="text-[9px] font-black px-1.5 py-0.5 bg-[#FDF8F0] border-2 border-ink text-[#bf616a]" style={sketchyShape2}>ENV x{Object.keys(s.env).length}</span>
                             )}

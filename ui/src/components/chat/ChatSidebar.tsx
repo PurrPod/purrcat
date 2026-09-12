@@ -180,10 +180,6 @@ export default function ChatSidebar(props: any) {
                              </button>
                           </div>
                           {cfg.description && <div className="text-xs font-bold opacity-70 leading-relaxed mt-1">{cfg.description}</div>}
-                          <div className="flex gap-2 mt-2 border-t-2 border-ink/10 pt-2 border-dashed">
-                             {cfg.capabilities?.observe && <div title="Observe" className="w-4 h-4 bg-[#88c0d0] border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:scale-110 transition-transform rotate-3" style={sketchyShape2}></div>}
-                             {cfg.capabilities?.express && <div title="Express" className="w-4 h-4 bg-[#EBCB8B] border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:scale-110 transition-transform -rotate-3" style={sketchyShape1}></div>}
-                          </div>
                       </div>
                   )))}
                </div>
