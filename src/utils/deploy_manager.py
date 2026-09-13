@@ -478,7 +478,10 @@ def _install_embedding(item: str) -> bool:
     if _model_exists(EMBEDDING_DIR):
         _append_log(item, "[*] 嵌入模型已存在，跳过下载")
         return True
-    log = lambda m: _append_log(item, m)
+
+    def log(m):
+        _append_log(item, m)
+
     try:
         _append_log(item, f"[*] 下载嵌入模型 {MODEL_NAME}（~120MB，请保持网络稳定）...")
         download_model(log=log)

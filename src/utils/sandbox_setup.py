@@ -12,8 +12,6 @@ import subprocess
 import sys
 import threading
 
-from src.utils.config import BASE_DIR
-
 SANDBOX_IMAGE_TAG = "my_agent_env:latest"
 GHCR_LIGHT_IMAGE = "ghcr.io/purrpod/purrcat-sandbox:light"
 DOCKER_NOT_FOUND_HINT = (
@@ -147,13 +145,10 @@ def ensure_sandbox_image() -> None:
                 print(
                     "    可手动执行: docker pull ghcr.io/purrpod/purrcat-sandbox:light"
                 )
-                print(
-                    "    或在应用内 配置中心 → 部署 页一键安装"
-                )
+                print("    或在应用内 配置中心 → 部署 页一键安装")
         except Exception as e:
             print(f"[!] 沙盒镜像下载异常: {e}")
         finally:
             _sandbox_running.clear()
 
     threading.Thread(target=_do_pull, daemon=True).start()
-

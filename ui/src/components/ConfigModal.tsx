@@ -305,7 +305,6 @@ export default function ConfigModal({ isOpen, onClose, initialTab }: { isOpen: b
     fetchDeployStatus();
     const timer = setInterval(fetchDeployStatus, 2500);
     return () => clearInterval(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, activeTab]);
 
   const startDeploy = async (item: string) => {
