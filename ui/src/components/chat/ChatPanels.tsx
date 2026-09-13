@@ -1,6 +1,6 @@
 // src/components/chat/ChatPanels.tsx
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { History, Minus, CheckCircle, FileText, Undo2, Bell, X, Activity, ChevronDown, ChevronUp, TerminalSquare, Plus, ChevronRight, AlertTriangle, ExternalLink } from 'lucide-react';
+import { History, Minus, CheckCircle, FileText, Undo2, Bell, X, Activity, ChevronDown, ChevronUp, TerminalSquare, Plus, ChevronRight, AlertTriangle, Rocket } from 'lucide-react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
@@ -82,19 +82,8 @@ export function FileChangesPanel(props: any) {
 
 export function RequestQueuePanel(props: any) {
   const { t } = useTranslation();
-  const { showReqQueue, setShowReqQueue, pendingReqs, handleResolveReq, feedbackInputs, setFeedbackInputs, authDurations, setAuthDurations, expandedReasons, setExpandedReasons } = props;
+  const { showReqQueue, setShowReqQueue, pendingReqs, handleResolveReq, feedbackInputs, setFeedbackInputs, authDurations, setAuthDurations, expandedReasons, setExpandedReasons, onGoDeploy } = props;
   if (!showReqQueue) return null;
-
-  // 🌟 在系统默认浏览器中打开外部 URL（依赖检查警告跳转部署指南等）
-  // 桌面端优先走 Electron shell.openExternal，浏览器 fallback 到 window.open
-  const openExternal = (url: string) => {
-    const purrcat = (window as any).purrcat;
-    if (purrcat?.openExternal) {
-      purrcat.openExternal(url);
-    } else {
-      try { window.open(url, '_blank', 'noopener,noreferrer'); } catch { /* noop */ }
-    }
-  };
 
   return (
     <div style={sketchyShape3} className="w-[340px] shrink-0 bg-paper border-4 border-ink shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] flex flex-col overflow-hidden relative z-20">
@@ -134,7 +123,7 @@ export function RequestQueuePanel(props: any) {
                 )}
                 {isDepCheck ? (
                   <div className="flex gap-2 mt-1">
-                    <button onClick={() => { if (req.guide_url) openExternal(req.guide_url); handleResolveReq(req.id, true, false); }} className="flex-1 bg-[#EBCB8B] text-ink font-black text-xs py-2 border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:bg-[#d8b877] active:translate-y-1 active:shadow-none transition-all flex justify-center items-center gap-1.5" style={sketchyShape1}><ExternalLink size={12} strokeWidth={3} />{t('chat.viewDeployGuide')}</button>
+                    <button onClick={() => { if (onGoDeploy) onGoDeploy(); handleResolveReq(req.id, true, false); }} className="flex-1 bg-[#EBCB8B] text-ink font-black text-xs py-2 border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:bg-[#d8b877] active:translate-y-1 active:shadow-none transition-all flex justify-center items-center gap-1.5" style={sketchyShape1}><Rocket size={12} strokeWidth={3} />{t('chat.goToDeploy')}</button>
                     <button onClick={() => handleResolveReq(req.id, false, false)} className="flex-1 bg-cream text-ink font-black text-xs py-2 border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:bg-sand active:translate-y-1 active:shadow-none transition-all" style={sketchyShape2}>{t('chat.gotIt')}</button>
                   </div>
                 ) : (
