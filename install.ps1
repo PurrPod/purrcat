@@ -1,6 +1,7 @@
-﻿# PurrCat 一键安装脚本（源码模式）
-# 用法: irm https://raw.githubusercontent.com/PurrPod/purrcat/main/install.ps1 | iex
-# 自动安装缺失的前置依赖: git / uv / Node.js 18+ / Docker Desktop / 嵌入模型，并注册全局 purrcat 命令
+﻿# PurrCat one-line installer (source mode)
+# Usage: irm https://raw.githubusercontent.com/PurrPod/purrcat/main/install.ps1 | iex
+# Auto-installs missing prerequisites (git / uv / Node.js 18+ / Docker Desktop / embedding model)
+# and registers a global `purrcat` command.
 $ErrorActionPreference = "Stop"
 
 $RepoUrl    = "https://github.com/PurrPod/purrcat.git"
@@ -12,44 +13,44 @@ function Ok($m)   { Write-Host "[+] $m" -ForegroundColor Green }
 function Warn($m) { Write-Host "[!] $m" -ForegroundColor Yellow }
 function Fail($m) { throw $m }
 
-# winget 安装完成后刷新当前会话 PATH（注册表已更新，当前进程不会自动生效）
+# Refresh session PATH after winget installs (registry is updated, current process is not)
 function Update-SessionPath {
     $env:Path = [Environment]::GetEnvironmentVariable("Path", "Machine") + ";" +
                 [Environment]::GetEnvironmentVariable("Path", "User")
 }
 
 function Install-ByWinget($id) {
-    Info "（若弹出 UAC 授权窗口请允许）"
+    Info "(Please allow the UAC prompt if it appears)"
     winget install --id $id -e --accept-source-agreements --accept-package-agreements
     return ($LASTEXITCODE -eq 0)
 }
 
 # ---------- git ----------
 if (Get-Command git -ErrorAction SilentlyContinue) {
-    Info "已检测到 git: $(git --version)"
+    Info "git detected: $(git --version)"
 } else {
     if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
-        Fail "未检测到 winget，请手动安装 git: https://git-scm.com/download/win"
+        Fail "winget not found; install git manually: https://git-scm.com/download/win"
     }
-    Info "安装 git ..."
+    Info "Installing git ..."
     $null = Install-ByWinget "Git.Git"
     Update-SessionPath
     if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
-        Fail "git 安装失败，请手动安装: https://git-scm.com/download/win"
+        Fail "git installation failed; install it manually: https://git-scm.com/download/win"
     }
-    Ok "git 安装完成: $(git --version)"
+    Ok "git installed: $(git --version)"
 }
 
 # ---------- uv ----------
 if (Get-Command uv -ErrorAction SilentlyContinue) {
-    Info "已检测到 uv: $(Get-Command uv).Source"
+    Info "uv detected: $(Get-Command uv).Source"
 } else {
-    Info "安装 uv 包管理器 ..."
+    Info "Installing uv ..."
     irm https://astral.sh/uv/install.ps1 | iex
 }
 $env:Path = "$BinDir;$env:Path"
 if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
-    Fail "uv 安装失败，请手动执行: irm https://astral.sh/uv/install.ps1 | iex"
+    Fail "uv installation failed; run manually: irm https://astral.sh/uv/install.ps1 | iex"
 }
 
 # ---------- Node.js 18+ ----------
@@ -57,59 +58,59 @@ $nodeOk = $false
 if (Get-Command node -ErrorAction SilentlyContinue) {
     $nodeMajor = [int]((node -v).TrimStart('v').Split('.')[0])
     if ($nodeMajor -ge 18) {
-        Info "已检测到 Node.js: $(node -v)"
+        Info "Node.js detected: $(node -v)"
         $nodeOk = $true
     } else {
-        Warn "Node.js 版本过低（当前 $(node -v)，需 18+），请先升级后重试: https://nodejs.org/"
-        Fail "Node.js 版本不满足要求"
+        Warn "Node.js too old (found $(node -v), need 18+); upgrade first: https://nodejs.org/"
+        Fail "Node.js version requirement not met"
     }
 }
 if (-not $nodeOk) {
     if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
-        Fail "未检测到 winget，请手动安装 Node.js 18+: https://nodejs.org/"
+        Fail "winget not found; install Node.js 18+ manually: https://nodejs.org/"
     }
-    Info "安装 Node.js LTS ..."
+    Info "Installing Node.js LTS ..."
     $null = Install-ByWinget "OpenJS.NodeJS.LTS"
     Update-SessionPath
     if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
-        Fail "Node.js 安装失败，请手动安装 18+ 版本: https://nodejs.org/"
+        Fail "Node.js installation failed; install an 18+ version manually: https://nodejs.org/"
     }
-    Ok "Node.js 安装完成: $(node -v)"
+    Ok "Node.js installed: $(node -v)"
 }
 
-# ---------- 获取源码 ----------
+# ---------- Fetch source ----------
 if (Test-Path "$InstallDir\.git") {
-    Info "检测到已有源码: $InstallDir，拉取最新..."
+    Info "Existing source detected at $InstallDir, pulling latest ..."
     git -C $InstallDir pull --ff-only
-    if ($LASTEXITCODE -ne 0) { Fail "git pull 失败，请检查本地改动后重试" }
+    if ($LASTEXITCODE -ne 0) { Fail "git pull failed; check local changes and retry" }
 } elseif (Test-Path $InstallDir) {
-    Fail "目录已存在且不是 PurrCat 仓库: $InstallDir"
+    Fail "Directory exists but is not a PurrCat repo: $InstallDir"
 } else {
-    Info "克隆 PurrCat 源码到 $InstallDir ..."
+    Info "Cloning PurrCat source to $InstallDir ..."
     git clone --depth 1 $RepoUrl $InstallDir
-    if ($LASTEXITCODE -ne 0) { Fail "git clone 失败，请检查网络" }
+    if ($LASTEXITCODE -ne 0) { Fail "git clone failed; check your network" }
 }
 
-# ---------- 安装依赖 ----------
-Info "同步 Python 依赖 (uv sync) ..."
+# ---------- Dependencies ----------
+Info "Syncing Python dependencies (uv sync) ..."
 Push-Location $InstallDir
 try {
     uv sync
-    if ($LASTEXITCODE -ne 0) { Fail "uv sync 失败" }
+    if ($LASTEXITCODE -ne 0) { Fail "uv sync failed" }
 
-    Info "安装桌面端依赖 (npm install) ..."
+    Info "Installing desktop dependencies (npm install) ..."
     npm install
-    if ($LASTEXITCODE -ne 0) { Fail "npm install 失败" }
+    if ($LASTEXITCODE -ne 0) { Fail "npm install failed" }
 
-    Info "安装前端依赖 (npm install --prefix ui) ..."
+    Info "Installing frontend dependencies (npm install --prefix ui) ..."
     npm install --prefix ui
-    if ($LASTEXITCODE -ne 0) { Fail "npm install --prefix ui 失败" }
+    if ($LASTEXITCODE -ne 0) { Fail "npm install --prefix ui failed" }
 } finally {
     Pop-Location
 }
 
-# ---------- 嵌入模型（遵循应用逻辑：数据盘未配置时跳过，首启后自动下载）----------
-Info "检查嵌入模型 (embedding model) ..."
+# ---------- Embedding model (follows app logic: skip while data root unconfigured) ----------
+Info "Checking embedding model ..."
 Push-Location $InstallDir
 @'
 import time
@@ -121,47 +122,47 @@ from src.utils.embedding_setup import (
 )
 
 if _model_exists(EMBEDDING_DIR):
-    print("[+] 嵌入模型已存在")
+    print("[+] Embedding model already present")
 else:
     ensure_embedding_model()
     while _downloading_flag.is_set():
         time.sleep(1)
     if _model_exists(EMBEDDING_DIR):
-        print("[+] 嵌入模型下载完成")
+        print("[+] Embedding model downloaded")
     else:
-        print("[*] 嵌入模型暂未下载（首次启动完成数据盘配置后会自动下载，或稍后在配置中心「部署」页安装）")
+        print("[*] Embedding model not downloaded yet (auto-downloads after first-run data-root setup, or later from Config Center -> Deploy)")
 '@ | uv run python -
 if ($LASTEXITCODE -ne 0) {
-    Warn "嵌入模型检查失败（不影响安装，稍后可在应用内 配置中心 → 部署 页安装）"
+    Warn "Embedding model check failed (non-fatal; retry later from the app's Config Center -> Deploy page)"
 }
 Pop-Location
 
-# ---------- Docker Desktop（失败仅警告，可稍后在应用内「部署」页重试）----------
+# ---------- Docker Desktop (failure is non-fatal; retry later from the app's Deploy page) ----------
 if (Get-Command docker -ErrorAction SilentlyContinue) {
-    Info "已检测到 Docker: $(docker --version)"
+    Info "Docker detected: $(docker --version)"
 } else {
     $dockerInstalled = $false
     if (Get-Command winget -ErrorAction SilentlyContinue) {
-        Info "安装 Docker Desktop（体积较大，可能需要数分钟）..."
+        Info "Installing Docker Desktop (large download, may take several minutes) ..."
         $dockerInstalled = Install-ByWinget "Docker.DockerDesktop"
         Update-SessionPath
     }
     if ($dockerInstalled -and (Get-Command docker -ErrorAction SilentlyContinue)) {
-        # 尝试启动 Docker Desktop 完成首次初始化（接受协议、启用 WSL2 后端）
+        # Launch Docker Desktop to finish first-run setup (accept agreement, enable WSL2 backend)
         $dockerDesktop = "C:\Program Files\Docker\Docker\Docker Desktop.exe"
         if (Test-Path $dockerDesktop) {
             Start-Process $dockerDesktop
-            Ok "Docker Desktop 安装完成（已启动，请在弹出的窗口中完成首次设置）"
+            Ok "Docker Desktop installed (launched; finish first-run setup in the window that opens)"
         } else {
-            Ok "Docker Desktop 安装完成（请手动启动一次以完成初始化）"
+            Ok "Docker Desktop installed (launch it once manually to finish initialization)"
         }
     } else {
-        Warn "Docker 安装失败——不影响 PurrCat 本体安装，但沙盒 Bash 工具依赖它。"
-        Warn "可稍后在应用内 配置中心 → 部署 页重试，或手动安装: https://docs.docker.com/desktop/install/windows-install/"
+        Warn "Docker installation failed — PurrCat itself is fine, but the sandboxed Bash tool requires it."
+        Warn "Retry later from the app's Config Center -> Deploy page, or install manually: https://docs.docker.com/desktop/install/windows-install/"
     }
 }
 
-# ---------- 生成 purrcat 命令 ----------
+# ---------- Register purrcat command ----------
 New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
 @'
 @echo off
@@ -174,23 +175,23 @@ cd /d "%PURRCAT_HOME%" || (
 uv run python -m scripts.cli.main %*
 '@ | Set-Content -Path "$BinDir\purrcat.cmd" -Encoding ascii
 
-# ---------- 确保 ~/.local/bin 在用户 PATH ----------
+# ---------- Ensure ~/.local/bin is in user PATH ----------
 $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
 if ($userPath -notlike "*$BinDir*") {
     [Environment]::SetEnvironmentVariable("Path", "$userPath;$BinDir", "User")
-    Info "已将 $BinDir 加入用户 PATH"
+    Info "Added $BinDir to user PATH"
 }
 
-# ---------- 完成 ----------
+# ---------- Done ----------
 Write-Host ""
-Ok "PurrCat 安装完成!"
+Ok "PurrCat installed successfully!"
 Write-Host ""
-Write-Host "  源码位置:  $InstallDir"
-Write-Host "  命令位置:  $BinDir\purrcat.cmd"
+Write-Host "  Source location:  $InstallDir"
+Write-Host "  Command location: $BinDir\purrcat.cmd"
 Write-Host ""
-Write-Host "下一步:"
-Write-Host "  1. 重新打开终端（使 PATH 生效）"
-Write-Host "  2. 启动桌面端:    purrcat desktop start"
-Write-Host "  3. 日常更新源码:  purrcat desktop update"
+Write-Host "Next steps:"
+Write-Host "  1. Reopen your terminal (to apply PATH)"
+Write-Host "  2. Start the desktop app:   purrcat desktop start"
+Write-Host "  3. Update source anytime:   purrcat desktop update"
 Write-Host ""
-Write-Host "（沙盒镜像会在后端启动时自动拉取；其余组件均可在应用内 配置中心 → 部署 页管理）"
+Write-Host "(The sandbox image auto-pulls on backend start; all other components are managed in the app's Config Center -> Deploy page)"

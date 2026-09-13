@@ -238,7 +238,9 @@ def _install_node(item: str) -> bool:
                 item, "[!] 未检测到 winget，请手动安装 Node.js: https://nodejs.org/"
             )
             return False
-        _append_log(item, "[*] 通过 winget 安装 Node.js LTS（安装包较大，请耐心等待）...")
+        _append_log(
+            item, "[*] 通过 winget 安装 Node.js LTS（安装包较大，请耐心等待）..."
+        )
         code = _run_stream(
             item,
             [
@@ -284,13 +286,18 @@ def _install_node(item: str) -> bool:
             _append_log(item, f"[!] {mgr} 安装失败，尝试下一种方式")
         else:
             _append_log(item, "[!] 自动安装失败。请手动安装 Node.js，例如：")
-            _append_log(item, "    sudo apt-get install -y nodejs npm   # Debian/Ubuntu")
+            _append_log(
+                item, "    sudo apt-get install -y nodejs npm   # Debian/Ubuntu"
+            )
             _append_log(item, "    或参考 https://nodejs.org/en/download")
             return False
     if not _which_enriched("node"):
         _append_log(item, "[!] 安装完成但未找到 node 命令，请重启程序后重试")
         return False
-    _append_log(item, f"[+] Node.js 安装成功: {_quick_version([_which_enriched('node'), '--version'])}")
+    _append_log(
+        item,
+        f"[+] Node.js 安装成功: {_quick_version([_which_enriched('node'), '--version'])}",
+    )
     return True
 
 
@@ -349,7 +356,9 @@ def _install_sandbox(item: str) -> bool:
                     "[!] 未检测到 winget，请手动安装 Docker Desktop: https://docs.docker.com/desktop/",
                 )
                 return False
-            _append_log(item, "[*] 通过 winget 安装 Docker Desktop（体积大，耗时较长）...")
+            _append_log(
+                item, "[*] 通过 winget 安装 Docker Desktop（体积大，耗时较长）..."
+            )
             code = _run_stream(
                 item,
                 [
@@ -372,7 +381,8 @@ def _install_sandbox(item: str) -> bool:
             docker = _which_enriched("docker")
             if not docker:
                 _append_log(
-                    item, "[!] Docker 已安装但当前会话找不到命令，请重启程序后再点一键部署"
+                    item,
+                    "[!] Docker 已安装但当前会话找不到命令，请重启程序后再点一键部署",
                 )
                 return False
         elif _MAC:
@@ -384,14 +394,17 @@ def _install_sandbox(item: str) -> bool:
                 )
                 return False
             _append_log(item, "[*] 通过 Homebrew 安装 Docker Desktop ...")
-            code = _run_stream(item, [brew, "install", "--cask", "docker"], timeout=3600)
+            code = _run_stream(
+                item, [brew, "install", "--cask", "docker"], timeout=3600
+            )
             if code != 0:
                 _append_log(item, "[!] brew install docker 失败")
                 return False
             docker = _which_enriched("docker")
             if not docker:
                 _append_log(
-                    item, "[!] Docker 已安装但当前会话找不到命令，请重启程序后再点一键部署"
+                    item,
+                    "[!] Docker 已安装但当前会话找不到命令，请重启程序后再点一键部署",
                 )
                 return False
         else:
@@ -408,7 +421,9 @@ def _install_sandbox(item: str) -> bool:
                 return False
             docker = _which_enriched("docker")
             if not docker:
-                _append_log(item, "[!] Docker 已安装但未找到命令，请重启程序后再点一键部署")
+                _append_log(
+                    item, "[!] Docker 已安装但未找到命令，请重启程序后再点一键部署"
+                )
                 return False
 
     # 2) daemon 未运行 → 尝试启动并等待就绪
@@ -427,12 +442,17 @@ def _install_sandbox(item: str) -> bool:
     if check_image_exists(docker, SANDBOX_IMAGE_TAG):
         _append_log(item, f"[*] 镜像 {SANDBOX_IMAGE_TAG} 已存在，跳过拉取")
         return True
-    _append_log(item, f"[*] 从 GitHub 拉取沙盒镜像 {GHCR_LIGHT_IMAGE}（请保持网络 / VPN 稳定）...")
+    _append_log(
+        item,
+        f"[*] 从 GitHub 拉取沙盒镜像 {GHCR_LIGHT_IMAGE}（请保持网络 / VPN 稳定）...",
+    )
     code = _run_stream(item, [docker, "pull", GHCR_LIGHT_IMAGE], timeout=3600)
     if code != 0:
         _append_log(item, "[!] 镜像拉取失败，请检查网络（ghcr.io 需稳定连接）后重试")
         return False
-    code = _run_stream(item, [docker, "tag", GHCR_LIGHT_IMAGE, SANDBOX_IMAGE_TAG], timeout=60)
+    code = _run_stream(
+        item, [docker, "tag", GHCR_LIGHT_IMAGE, SANDBOX_IMAGE_TAG], timeout=60
+    )
     if code != 0:
         _append_log(item, "[!] 镜像打标签失败")
         return False
@@ -510,7 +530,9 @@ def start_deploy(item: str) -> tuple[bool, str]:
             _tasks[item]["finished_at"] = time.time()
         _append_log(
             item,
-            "[+] 部署成功，重启程序后生效" if ok else "[!] 部署失败，可根据日志排查后重试",
+            "[+] 部署成功，重启程序后生效"
+            if ok
+            else "[!] 部署失败，可根据日志排查后重试",
         )
 
     threading.Thread(target=_worker, daemon=True).start()
@@ -522,7 +544,11 @@ def get_overview() -> dict:
     items = check_all()
     with _lock:
         tasks = {
-            k: {"state": v["state"], "log": list(v["log"]), "finished_at": v["finished_at"]}
+            k: {
+                "state": v["state"],
+                "log": list(v["log"]),
+                "finished_at": v["finished_at"],
+            }
             for k, v in _tasks.items()
         }
     return {"items": items, "tasks": tasks}

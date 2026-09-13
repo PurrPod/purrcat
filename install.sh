@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# PurrCat 一键安装脚本（源码模式）
-# 用法: curl -fsSL https://raw.githubusercontent.com/PurrPod/purrcat/main/install.sh | bash
-# 自动安装缺失的前置依赖: git / uv / Node.js 18+ / Docker / 嵌入模型，并注册全局 purrcat 命令
+# PurrCat one-line installer (source mode)
+# Usage: curl -fsSL https://raw.githubusercontent.com/PurrPod/purrcat/main/install.sh | bash
+# Auto-installs missing prerequisites (git / uv / Node.js 18+ / Docker / embedding model)
+# and registers a global `purrcat` command.
 set -euo pipefail
 
 REPO_URL="https://github.com/PurrPod/purrcat.git"
@@ -13,7 +14,7 @@ ok()   { printf '[+] %s\n' "$*"; }
 warn() { printf '[!] %s\n' "$*"; }
 fail() { printf '[x] %s\n' "$*" >&2; exit 1; }
 
-command -v curl >/dev/null 2>&1 || fail "未检测到 curl，请先安装后重试"
+command -v curl >/dev/null 2>&1 || fail "curl not found; please install it and retry"
 
 SUDO=""
 if [ "$(id -u)" -ne 0 ] 2>/dev/null && command -v sudo >/dev/null 2>&1; then
@@ -22,7 +23,7 @@ fi
 
 is_mac() { [[ "$OSTYPE" == darwin* ]]; }
 
-# 探测发行版包管理器（macOS 走 brew）
+# Detect distro package manager (macOS uses brew)
 detect_pkgmgr() {
   for m in apt-get dnf yum pacman zypper apk; do
     command -v "$m" >/dev/null 2>&1 && { echo "$m"; return; }
@@ -32,23 +33,23 @@ detect_pkgmgr() {
 
 require_root() {
   if [ "$(id -u)" -ne 0 ] && [ -z "$SUDO" ]; then
-    fail "安装系统包需要 root 权限：请以 root 运行，或先安装 sudo"
+    fail "Installing system packages requires root: run as root or install sudo first"
   fi
 }
 
 # ---------- git ----------
 ensure_git() {
   if command -v git >/dev/null 2>&1; then
-    info "已检测到 git: $(git --version)"
+    info "git detected: $(git --version)"
     return
   fi
-  info "安装 git ..."
+  info "Installing git ..."
   if is_mac; then
     if command -v brew >/dev/null 2>&1; then
-      brew install git || fail "brew 安装 git 失败，请手动安装: https://git-scm.com/downloads"
+      brew install git || fail "brew failed to install git; install it manually: https://git-scm.com/downloads"
     else
       xcode-select --install || true
-      fail "已触发 Xcode Command Line Tools 安装（含 git），完成后请重新运行本脚本"
+      fail "Xcode Command Line Tools installation triggered (includes git); re-run this script after it completes"
     fi
   else
     case "$(detect_pkgmgr)" in
@@ -58,23 +59,23 @@ ensure_git() {
       pacman)  require_root; $SUDO pacman -S --noconfirm git ;;
       zypper)  require_root; $SUDO zypper install -y git ;;
       apk)     require_root; $SUDO apk add git ;;
-      "") fail "未识别到包管理器，请手动安装 git: https://git-scm.com/downloads" ;;
+      "") fail "No supported package manager found; install git manually: https://git-scm.com/downloads" ;;
     esac
   fi
-  command -v git >/dev/null 2>&1 || fail "git 安装失败，请手动安装: https://git-scm.com/downloads"
-  ok "git 安装完成: $(git --version)"
+  command -v git >/dev/null 2>&1 || fail "git installation failed; install it manually: https://git-scm.com/downloads"
+  ok "git installed: $(git --version)"
 }
 
 # ---------- uv ----------
 ensure_uv() {
   if command -v uv >/dev/null 2>&1; then
-    info "已检测到 uv: $(command -v uv)"
+    info "uv detected: $(command -v uv)"
     return
   fi
-  info "安装 uv 包管理器 ..."
+  info "Installing uv ..."
   curl -LsSf https://astral.sh/uv/install.sh | sh
-  command -v uv >/dev/null 2>&1 || fail "uv 安装失败，请手动执行: curl -LsSf https://astral.sh/uv/install.sh | sh"
-  ok "uv 安装完成"
+  command -v uv >/dev/null 2>&1 || fail "uv installation failed; run manually: curl -LsSf https://astral.sh/uv/install.sh | sh"
+  ok "uv installed"
 }
 
 # ---------- Node.js 18+ ----------
@@ -85,22 +86,22 @@ node_version_ok() {
 
 ensure_node() {
   if node_version_ok; then
-    info "已检测到 Node.js: $(node -v)"
+    info "Node.js detected: $(node -v)"
     return
   fi
   if command -v node >/dev/null 2>&1; then
-    warn "Node.js 版本过低（$(node -v)，需 18+），安装新版 ..."
+    warn "Node.js too old ($(node -v), need 18+); installing a newer version ..."
   else
-    info "安装 Node.js LTS ..."
+    info "Installing Node.js LTS ..."
   fi
   if is_mac; then
-    command -v brew >/dev/null 2>&1 || fail "请先安装 Homebrew 后重试: https://brew.sh"
-    brew install node || fail "brew 安装 Node.js 失败，请手动安装: https://nodejs.org/"
+    command -v brew >/dev/null 2>&1 || fail "Homebrew is required; install it first: https://brew.sh"
+    brew install node || fail "brew failed to install Node.js; install it manually: https://nodejs.org/"
   else
     case "$(detect_pkgmgr)" in
       apt-get)
         require_root
-        # 发行版源自带的 nodejs 普遍过旧，走 NodeSource LTS
+        # distro nodejs packages are usually too old; use NodeSource LTS
         curl -fsSL https://deb.nodesource.com/setup_lts.x | $SUDO bash -
         $SUDO apt-get install -y nodejs
         ;;
@@ -112,29 +113,29 @@ ensure_node() {
       pacman)  require_root; $SUDO pacman -S --noconfirm nodejs npm ;;
       zypper)  require_root; $SUDO zypper install -y nodejs npm ;;
       apk)      require_root; $SUDO apk add nodejs npm ;;
-      "") fail "未识别到包管理器，请手动安装 Node.js 18+: https://nodejs.org/" ;;
+      "") fail "No supported package manager found; install Node.js 18+ manually: https://nodejs.org/" ;;
     esac
   fi
-  node_version_ok || fail "Node.js 安装失败，请手动安装 18+ 版本: https://nodejs.org/"
-  ok "Node.js 安装完成: $(node -v)"
+  node_version_ok || fail "Node.js installation failed; install an 18+ version manually: https://nodejs.org/"
+  ok "Node.js installed: $(node -v)"
 }
 
-# ---------- Docker（失败仅警告，可稍后在应用内「部署」页重试）----------
+# ---------- Docker (failure is non-fatal; retry later from the app's Deploy page) ----------
 docker_fail_hint() {
-  warn "Docker 安装失败——不影响 PurrCat 本体安装，但沙盒 Bash 工具依赖它。"
-  warn "可稍后在应用内 配置中心 → 部署 页重试，或手动安装: https://docs.docker.com/get-docker/"
+  warn "Docker installation failed — PurrCat itself is fine, but the sandboxed Bash tool requires it."
+  warn "Retry later from the app's Config Center -> Deploy page, or install manually: https://docs.docker.com/get-docker/"
 }
 
 ensure_docker() {
   if command -v docker >/dev/null 2>&1; then
-    info "已检测到 Docker: $(docker --version)"
+    info "Docker detected: $(docker --version)"
     return
   fi
-  info "安装 Docker ..."
+  info "Installing Docker ..."
   if is_mac; then
     if command -v brew >/dev/null 2>&1 && brew install --cask docker; then
       open -a Docker 2>/dev/null || true
-      ok "Docker Desktop 安装完成（请在弹出的窗口中完成首次设置）"
+      ok "Docker Desktop installed (finish first-run setup in the window that opens)"
     else
       docker_fail_hint
     fi
@@ -142,16 +143,16 @@ ensure_docker() {
     if curl -fsSL https://get.docker.com | $SUDO sh; then
       $SUDO systemctl enable --now docker 2>/dev/null || true
       $SUDO usermod -aG docker "$USER" 2>/dev/null || true
-      ok "Docker 安装完成（已将 $USER 加入 docker 组，重新登录后免 sudo 使用）"
+      ok "Docker installed ($USER added to the docker group; re-login to use it without sudo)"
     else
       docker_fail_hint
     fi
   fi
 }
 
-# ---------- 嵌入模型（遵循应用逻辑：数据盘未配置时跳过，首启后自动下载）----------
+# ---------- Embedding model (follows app logic: skip while data root unconfigured) ----------
 ensure_embedding() {
-  info "检查嵌入模型 (embedding model) ..."
+  info "Checking embedding model ..."
   ( cd "$INSTALL_DIR" && uv run python - <<'PYEOF'
 import time
 from src.utils.embedding_setup import (
@@ -162,31 +163,31 @@ from src.utils.embedding_setup import (
 )
 
 if _model_exists(EMBEDDING_DIR):
-    print("[+] 嵌入模型已存在")
+    print("[+] Embedding model already present")
 else:
     ensure_embedding_model()
     while _downloading_flag.is_set():
         time.sleep(1)
     if _model_exists(EMBEDDING_DIR):
-        print("[+] 嵌入模型下载完成")
+        print("[+] Embedding model downloaded")
     else:
-        print("[*] 嵌入模型暂未下载（首次启动完成数据盘配置后会自动下载，或稍后在配置中心「部署」页安装）")
+        print("[*] Embedding model not downloaded yet (auto-downloads after first-run data-root setup, or later from Config Center -> Deploy)")
 PYEOF
-  ) || warn "嵌入模型检查失败（不影响安装，稍后可在应用内 配置中心 → 部署 页安装）"
+  ) || warn "Embedding model check failed (non-fatal; retry later from the app's Config Center -> Deploy page)"
 }
 
-# ---- 1. 前置依赖 ----
+# ---- 1. Prerequisites ----
 ensure_git
 ensure_uv
 
-# 确保 ~/.local/bin 在 PATH（对当前进程与未来终端均生效）
+# Ensure ~/.local/bin is in PATH (for the current process and future shells)
 case ":$PATH:" in
   *":$BIN_DIR:"*) ;;
   *)
     for rc in "$HOME/.profile" "$HOME/.bashrc" "$HOME/.zshrc"; do
       if [ -f "$rc" ] && ! grep -q '.local/bin' "$rc"; then
         printf '\nexport PATH="$HOME/.local/bin:$PATH"\n' >> "$rc"
-        info "已将 ~/.local/bin 加入 $rc"
+        info "Added ~/.local/bin to $rc"
       fi
     done
     ;;
@@ -195,52 +196,52 @@ export PATH="$BIN_DIR:$PATH"
 
 ensure_node
 
-# ---- 2. 获取源码 ----
+# ---- 2. Fetch source ----
 if [ -d "$INSTALL_DIR/.git" ]; then
-  info "检测到已有源码: $INSTALL_DIR，拉取最新..."
-  git -C "$INSTALL_DIR" pull --ff-only || fail "git pull 失败，请检查本地改动后重试"
+  info "Existing source detected at $INSTALL_DIR, pulling latest ..."
+  git -C "$INSTALL_DIR" pull --ff-only || fail "git pull failed; check local changes and retry"
 elif [ -e "$INSTALL_DIR" ]; then
-  fail "目录已存在且不是 PurrCat 仓库: $INSTALL_DIR"
+  fail "Directory exists but is not a PurrCat repo: $INSTALL_DIR"
 else
-  info "克隆 PurrCat 源码到 $INSTALL_DIR ..."
+  info "Cloning PurrCat source to $INSTALL_DIR ..."
   git clone --depth 1 "$REPO_URL" "$INSTALL_DIR"
 fi
 
-# ---- 3. 安装依赖 ----
-info "同步 Python 依赖 (uv sync) ..."
+# ---- 3. Dependencies ----
+info "Syncing Python dependencies (uv sync) ..."
 ( cd "$INSTALL_DIR" && uv sync )
 
-info "安装桌面端依赖 (npm install) ..."
+info "Installing desktop dependencies (npm install) ..."
 ( cd "$INSTALL_DIR" && npm install )
 
-info "安装前端依赖 (npm install --prefix ui) ..."
+info "Installing frontend dependencies (npm install --prefix ui) ..."
 ( cd "$INSTALL_DIR" && npm install --prefix ui )
 
-# ---- 4. 嵌入模型 / Docker ----
+# ---- 4. Embedding model / Docker ----
 ensure_embedding
 ensure_docker
 
-# ---- 5. 生成 purrcat 命令 ----
+# ---- 5. Register purrcat command ----
 mkdir -p "$BIN_DIR"
 cat > "$BIN_DIR/purrcat" <<'EOF'
 #!/usr/bin/env bash
 # PurrCat CLI launcher
 PURRCAT_HOME="${PURRCAT_HOME:-$HOME/purrcat}"
-cd "$PURRCAT_HOME" || { echo "[x] PurrCat 源码目录不存在: $PURRCAT_HOME" >&2; exit 1; }
+cd "$PURRCAT_HOME" || { echo "[x] PurrCat source directory not found: $PURRCAT_HOME" >&2; exit 1; }
 exec uv run python -m scripts.cli.main "$@"
 EOF
 chmod +x "$BIN_DIR/purrcat"
 
-# ---- 6. 完成 ----
+# ---- 6. Done ----
 echo ""
-ok "PurrCat 安装完成!"
+ok "PurrCat installed successfully!"
 echo ""
-echo "  源码位置:  $INSTALL_DIR"
-echo "  命令位置:  $BIN_DIR/purrcat"
+echo "  Source location:  $INSTALL_DIR"
+echo "  Command location: $BIN_DIR/purrcat"
 echo ""
-echo "下一步:"
-echo "  1. 重新打开终端（使 PATH 生效）"
-echo "  2. 启动桌面端:    purrcat desktop start"
-echo "  3. 日常更新源码:  purrcat desktop update"
+echo "Next steps:"
+echo "  1. Reopen your terminal (to apply PATH)"
+echo "  2. Start the desktop app:   purrcat desktop start"
+echo "  3. Update source anytime:   purrcat desktop update"
 echo ""
-echo "（沙盒镜像会在后端启动时自动拉取；其余组件均可在应用内 配置中心 → 部署 页管理）"
+echo "(The sandbox image auto-pulls on backend start; all other components are managed in the app's Config Center -> Deploy page)"
