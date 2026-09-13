@@ -60,6 +60,9 @@ def download_model(endpoint: str | None = None, log=print) -> None:
             "*.tensorflow",
             "*.tf",
             "*.tflite",
+            # onnx/openvino 导出变体应用永远不会加载，体积却占总下载量大半
+            "onnx/*",
+            "openvino/*",
         ],
     )
 
@@ -102,7 +105,7 @@ def ensure_embedding_model() -> None:
 
     def _do_download():
         try:
-            print("[*] 首次运行，正在后台下载嵌入模型（~120MB）...")
+            print("[*] 首次运行，正在后台下载嵌入模型（~500MB）...")
             download_model()
             print("[+] 嵌入模型下载完成！")
         except Exception as e:
