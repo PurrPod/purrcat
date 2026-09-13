@@ -6,7 +6,6 @@ import sys
 
 from scripts.cli.cmd_desktop import run as run_desktop
 from scripts.cli.cmd_install import run_install
-from scripts.cli.cmd_setup import run_setup
 
 
 def _setup_path():
@@ -34,13 +33,10 @@ PurrCat CLI - Cross-platform AI Agent Framework
     print("Usage: purrcat <command> [options]")
     print("")
     print("Commands:")
-    print("  setup   - Initialize environment (uv, Docker, Models)")
     print("  install - Install extensions (skill, node, graph, mcp)")
     print("  desktop - Start or update the desktop app (start | update)")
     print("")
     print("Examples:")
-    print("  purrcat setup")
-    print("")
     print("  # Start the Electron desktop app (source mode)")
     print("  purrcat desktop start")
     print("")
@@ -86,7 +82,7 @@ def main():
         "command",
         nargs="?",
         default="help",
-        choices=["help", "install", "setup", "desktop"],
+        choices=["help", "install", "desktop"],
     )
     parser.add_argument(
         "--help", "-h", action="store_true", help="Show this help message"

@@ -32,23 +32,22 @@ curl -fsSL https://raw.githubusercontent.com/PurrPod/purrcat/main/install.sh | b
 irm https://raw.githubusercontent.com/PurrPod/purrcat/main/install.ps1 | iex
 ```
 
-The script installs `uv`, clones the source to `~/purrcat`, sets up all dependencies, and registers a global `purrcat` command. Then:
+The script auto-installs missing prerequisites (git, uv, Node.js 18+, Docker, embedding model), clones the source to `~/purrcat`, sets up all dependencies, and registers a global `purrcat` command. Then:
 
 ```bash
 purrcat desktop start    # Launch the Electron desktop app
 purrcat desktop update    # Pull latest source & refresh dependencies
 ```
 
-(Docker still needs to be installed separately for the sandboxed Bash tool — run `purrcat setup` afterwards to initialize it.)
+> On Windows, Docker Desktop requires one manual first launch to accept its agreement.
 
 ### Requirements
 
 What you need depends on how you deploy:
 
-- **Installer**: only [Docker](https://docs.docker.com/get-docker/) is required (the sandboxed Bash tool and file isolation rely on it) — no extra tools needed
-- **From source**: [Docker](https://docs.docker.com/get-docker/) + [uv](https://docs.astral.sh/uv/) (**required** — it manages Python versions and dependencies) + Node.js 18+; Git is used to fetch the source code (or download the ZIP)
-
-- Alternatively, run `purrcat setup` to initialize the environment (uv, Docker, embedding model, Playwright) in one step
+- **One-line install**: nothing to prepare — git, uv, Node.js 18+, Docker and the embedding model are installed automatically when missing
+- **Release installer**: only [Docker](https://docs.docker.com/get-docker/) is required (the sandboxed Bash tool and file isolation rely on it) — no extra tools needed
+- **From source (manual)**: [Docker](https://docs.docker.com/get-docker/) + [uv](https://docs.astral.sh/uv/) (**required** — it manages Python versions and dependencies) + Node.js 18+; Git is used to fetch the source code (or download the ZIP)
 
 ### Option 1: Electron desktop (recommended)
 

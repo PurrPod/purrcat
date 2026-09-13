@@ -111,7 +111,7 @@ def ensure_embedding_model() -> None:
                 print("[+] 嵌入模型（镜像）下载完成！")
             except Exception as e2:
                 print(f"[!] 嵌入模型下载失败: {e2}")
-                print("    你可以稍后手动执行: purrcat setup")
+                print("    可稍后在应用内 配置中心 → 部署 页重试")
         finally:
             _downloading_flag.clear()
 
