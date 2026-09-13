@@ -32,14 +32,14 @@ curl -fsSL https://raw.githubusercontent.com/PurrPod/purrcat/main/install.sh | b
 irm https://raw.githubusercontent.com/PurrPod/purrcat/main/install.ps1 | iex
 ```
 
-脚本会安装 `uv`、克隆源码到 `~/purrcat`、装好全部依赖并注册全局 `purrcat` 命令。之后：
+脚本会自动装好缺失的前置依赖（git / uv / Node.js 18+ / Docker / 嵌入模型），克隆源码到 `~/purrcat`、装好全部依赖并注册全局 `purrcat` 命令。之后：
 
 ```bash
 purrcat desktop start    # 启动 Electron 桌面端
 purrcat desktop update    # 拉取最新源码并刷新依赖
 ```
 
-（沙盒 Bash 依赖的 Docker 仍需单独安装，装好后运行 `purrcat setup` 初始化。）
+> Windows 下 Docker Desktop 安装后需手动启动一次以接受协议。
 
 ### 环境要求
 
