@@ -1,8 +1,10 @@
 """
-嵌入模型自动下载与校验
+嵌入模型校验与下载
 检查 get_embedding_model() 指向的位置：
   - 是本地目录且包含 config.json → 跳过
-  - 否则 → 后台线程下载到 BASE_DIR/embedding/
+  - 否则 → 下载到 DATA_ROOT/embedding/
+应用内不再启动时自动下载（与部署页并发写会互相踩踏），
+下载入口：安装脚本（ensure_embedding_model）与 配置中心 → 部署 页（deploy_manager）
 """
 
 import os
@@ -31,7 +33,7 @@ def _model_exists(local_dir: str) -> bool:
 
 def download_model(endpoint: str | None = None, log=print) -> None:
     """同步下载嵌入模型到 EMBEDDING_DIR。endpoint=None 走官方 huggingface.co。
-    供启动后台线程（ensure_embedding_model）与配置中心「部署」页（deploy_manager）复用。"""
+    供配置中心「部署」页（deploy_manager）与安装脚本（ensure_embedding_model）复用。"""
     # huggingface_hub 在 import 时固化 HF_ENDPOINT；若已被 import 过
     # （如 sentence_transformers 提前加载过），清缓存强制按新端点重载
     if endpoint:
@@ -69,7 +71,9 @@ def ensure_embedding_model() -> None:
     # 数据根目录尚未配置（首启引导还没完成）时不下载，
     # 否则会下到默认位置，等用户选好数据盘后还得重下
     if not is_data_root_configured():
-        print("[*] 数据根目录尚未配置，跳过嵌入模型下载（配置好并重启后会自动下载）")
+        print(
+            "[*] 数据根目录尚未配置，跳过嵌入模型下载（可在应用内 配置中心 → 部署 页安装）"
+        )
         return
 
     target = get_embedding_model()

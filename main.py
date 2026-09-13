@@ -124,24 +124,24 @@ async def _bg_heavy_init(enable_tui: bool):
     if not enable_tui:
         print("[*] API/UI已就绪，开始后台预热服务...")
 
-    # 2. 嵌入模型 & 沙盒镜像 & MCP/Skill 元数据（不阻塞前台）
+    # 2. 沙盒镜像 & MCP/Skill 元数据（不阻塞前台）
+    # 嵌入模型不再启动时自动下载：与部署页并发写同一目录会互相踩踏，
+    # 统一由 配置中心 → 部署 页（或安装脚本）单点安装
     def _init_light_tools():
         from src.tool.callmcp.callmcp import initialize_mcp_sync
         from src.tool.search.mcp_search import MCPSearcher
         from src.tool.search.skill_search import SkillSearcher
-        from src.utils.embedding_setup import ensure_embedding_model
         from src.utils.sandbox_setup import ensure_sandbox_image
 
         initialize_mcp_sync()
         MCPSearcher()  # 触发 __init__ 读取 JSON
         SkillSearcher()  # 触发 __init__ 读取 MD
-        ensure_embedding_model()   # 缺则后台线程下载（~120MB）
         ensure_sandbox_image()     # 缺则后台线程拉取 light 镜像
 
     await asyncio.to_thread(_init_light_tools)
 
     # 🌟 依赖就绪检查：git/uv/node/嵌入模型/沙盒，缺则向 requests.json 推送 pending 警告
-    # 放在 _init_light_tools 之后：此时自动下载/拉取线程已派发，检查结果反映最新状态
+    # 放在 _init_light_tools 之后：此时沙盒镜像拉取线程已派发，检查结果反映最新状态
     try:
         from src.utils.dependency_check import check_and_warn_dependencies
         check_and_warn_dependencies()
