@@ -1,4 +1,4 @@
-﻿# PurrCat one-line installer (source mode)
+# PurrCat one-line installer (source mode)
 # Usage: irm https://raw.githubusercontent.com/PurrPod/purrcat/main/install.ps1 | iex
 # Auto-installs missing prerequisites (git / uv / Node.js 18+ / Docker Desktop / embedding model)
 # and registers a global `purrcat` command.
