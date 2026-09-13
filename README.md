@@ -41,26 +41,6 @@ purrcat desktop update    # Pull latest source & refresh dependencies
 
 > On Windows, Docker Desktop requires one manual first launch to accept its agreement.
 
-### Requirements
-
-What you need depends on how you deploy:
-
-- **One-line install**: nothing to prepare — git, uv, Node.js 18+, Docker and the embedding model are installed automatically when missing
-- **Release installer**: only [Docker](https://docs.docker.com/get-docker/) is required (the sandboxed Bash tool and file isolation rely on it) — no extra tools needed
-- **From source (manual)**: [Docker](https://docs.docker.com/get-docker/) + [uv](https://docs.astral.sh/uv/) (**required** — it manages Python versions and dependencies) + Node.js 18+; Git is used to fetch the source code (or download the ZIP)
-
-### Alternative: Web UI (lightweight)
-
-```bash
-cd ~/purrcat                                # source directory from the one-line install
-uv sync
-npm install --prefix ui
-npm run build:ui                             # Build frontend assets
-uv run python main.py --api --headless       # Open http://localhost:8000 in a browser
-```
-
-> Note: several features (local file access, terminal, etc.) depend on the Electron runtime and may misbehave in a plain browser. The desktop client is recommended for full functionality.
-
 ## Architecture
 
 ### 01 Hybrid Memory and Knowledge Graph

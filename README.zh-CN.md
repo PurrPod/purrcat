@@ -41,26 +41,6 @@ purrcat desktop update    # 拉取最新源码并刷新依赖
 
 > Windows 下 Docker Desktop 安装后需手动启动一次以接受协议。
 
-### 环境要求
-
-所需依赖取决于部署方式：
-
-- **一键安装**：无需提前准备——git / uv / Node.js 18+ / Docker / 嵌入模型缺失时脚本会自动安装
-- **Release 安装包**：只需安装 [Docker](https://docs.docker.com/get-docker/)（沙盒 Bash 工具与文件隔离依赖它）即可运行，无需额外工具
-- **从源码部署（手动）**：需要 [Docker](https://docs.docker.com/get-docker/) + [uv](https://docs.astral.sh/uv/)（**必需**，负责 Python 依赖与版本管理）+ Node.js 18+；Git 用于获取源码（也可下载压缩包）
-
-### 备选：Web UI（轻量）
-
-```bash
-cd ~/purrcat                                 # 一键安装的源码目录
-uv sync
-npm install --prefix ui
-npm run build:ui                             # 构建前端静态文件
-uv run python main.py --api --headless       # 浏览器打开 http://localhost:8000
-```
-
-> 注：本地文件操作、终端等功能依赖 Electron 运行时，纯浏览器模式下可能出现异常。建议使用桌面端获得完整体验。
-
 ## 架构
 
 ### 01 混合记忆与知识图谱
