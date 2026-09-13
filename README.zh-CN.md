@@ -49,20 +49,10 @@ purrcat desktop update    # 拉取最新源码并刷新依赖
 - **Release 安装包**：只需安装 [Docker](https://docs.docker.com/get-docker/)（沙盒 Bash 工具与文件隔离依赖它）即可运行，无需额外工具
 - **从源码部署（手动）**：需要 [Docker](https://docs.docker.com/get-docker/) + [uv](https://docs.astral.sh/uv/)（**必需**，负责 Python 依赖与版本管理）+ Node.js 18+；Git 用于获取源码（也可下载压缩包）
 
-### 方式一：Electron 桌面端（推荐）
+### 备选：Web UI（轻量）
 
 ```bash
-git clone https://github.com/PurrPod/purrcat.git
-cd purrcat
-uv sync                    # 安装 Python 依赖
-npm install                # 根目录依赖（Electron 等）
-npm install --prefix ui    # 前端依赖
-npm run dev                # 一键拉起 后端 + 前端 + Electron
-```
-
-### 方式二：Web UI（轻量）
-
-```bash
+cd ~/purrcat                                 # 一键安装的源码目录
 uv sync
 npm install --prefix ui
 npm run build:ui                             # 构建前端静态文件

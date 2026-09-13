@@ -49,20 +49,10 @@ What you need depends on how you deploy:
 - **Release installer**: only [Docker](https://docs.docker.com/get-docker/) is required (the sandboxed Bash tool and file isolation rely on it) — no extra tools needed
 - **From source (manual)**: [Docker](https://docs.docker.com/get-docker/) + [uv](https://docs.astral.sh/uv/) (**required** — it manages Python versions and dependencies) + Node.js 18+; Git is used to fetch the source code (or download the ZIP)
 
-### Option 1: Electron desktop (recommended)
+### Alternative: Web UI (lightweight)
 
 ```bash
-git clone https://github.com/PurrPod/purrcat.git
-cd purrcat
-uv sync                    # Python dependencies
-npm install                # Root dependencies (Electron, etc.)
-npm install --prefix ui    # Frontend dependencies
-npm run dev                # Starts backend + frontend + Electron
-```
-
-### Option 2: Web UI (lightweight)
-
-```bash
+cd ~/purrcat                                # source directory from the one-line install
 uv sync
 npm install --prefix ui
 npm run build:ui                             # Build frontend assets
