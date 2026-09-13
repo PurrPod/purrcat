@@ -1,11 +1,9 @@
-"""PurrCat CLI - Cross-platform AI Agent Framework"""
+"""PurrCat CLI - desktop launcher"""
 
-import argparse
 import os
 import sys
 
 from scripts.cli.cmd_desktop import run as run_desktop
-from scripts.cli.cmd_install import run_install
 
 
 def _setup_path():
@@ -17,102 +15,19 @@ def _setup_path():
         sys.path.insert(0, PROJECT_ROOT)
 
 
-def cmd_help():
-    """Print help menu with ASCII Cat Logo"""
-    cat_logo = r"""
-      /\_/\
-     ( O_O )
-      |>  <|⟆
-
-PurrCat CLI - Cross-platform AI Agent Framework
-===============================================
-    """
-    print(cat_logo)
-    print("Version: v2026.05.15")
-    print("")
-    print("Usage: purrcat <command> [options]")
-    print("")
-    print("Commands:")
-    print("  install - Install extensions (skill, node, graph, mcp)")
-    print("  desktop - Start or update the desktop app (start | update)")
-    print("")
-    print("Examples:")
-    print("  # Start the Electron desktop app (source mode)")
-    print("  purrcat desktop start")
-    print("")
-    print("  # Pull latest source and refresh dependencies")
-    print("  purrcat desktop update")
-    print("")
-    print(
-        "  # Install Graph from PurrPod/graphs (Auto-installs its MCP/Skill dependencies)"
-    )
-    print("  purrcat install graph financial")
-    print("")
-    print("  # Install MCP server manually")
-    print(
-        '  purrcat install mcp \'{"tradingview": {"command": "uvx", "args": ["tradingview-mcp-server"]}}\''
-    )
-    print("")
-    print("  # Install third-party skill from any GitHub repo")
-    print(
-        "  purrcat install skill https://github.com/user/repo/tree/main/path/to/skill"
-    )
-    print("")
-    print("Docs:     https://purrpod.github.io/")
-    print("GitHub:   https://github.com/PurrPod/purrcat")
-    print("License:  GNU GPL-3.0")
-    print("")
-
-
 def main():
     _setup_path()
 
-    # desktop 命令携带二级动词（start/update），在顶层 argparse 之前分发
     argv = sys.argv[1:]
     if argv and argv[0] == "desktop":
         run_desktop(argv[1:])
         return
 
-    parser = argparse.ArgumentParser(
-        prog="purrcat",
-        description="PurrCat - Cross-platform AI Agent Framework",
-        add_help=False,
-    )
-    parser.add_argument(
-        "command",
-        nargs="?",
-        default="help",
-        choices=["help", "install", "desktop"],
-    )
-    parser.add_argument(
-        "--help", "-h", action="store_true", help="Show this help message"
-    )
-    parser.add_argument(
-        "ext_type",
-        nargs="?",
-        choices=["skill", "node", "graph", "mcp"],
-        help="Type of extension to install",
-    )
-    parser.add_argument("source", nargs="?", help="Name or GitHub URL")
-
-    args, _ = parser.parse_known_args()
-
-    if args.help or args.command == "help":
-        cmd_help()
-    elif args.command == "install":
-        if not args.ext_type or not args.source:
-            print("X Error: install requires both <ext_type> and <source>")
-            print(
-                "  Example: purrcat install skill https://github.com/user/repo/tree/main/skills/my_skill"
-            )
-            sys.exit(1)
-        run_install(args.ext_type, args.source)
-    elif args.command == "setup":
-        run_setup()
-    else:
-        cmd_help()
+    print("Usage: purrcat desktop <start | update>")
+    if argv:
+        print(f"Unknown command: {argv[0]}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
-    _setup_path()
     main()

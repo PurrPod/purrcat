@@ -124,7 +124,7 @@ uv run python main.py --api --headless       # 浏览器打开 http://localhost:
 ### 08 配置驱动的扩展机制
 
 - 零代码接入 MCP：将标准 JSON 粘贴至 `mcp_config.json`，握手后工具树自动热更新。
-- `purrcat install skill <url>` 下载社区 Skill 并加载至检索树。
+- 社区 Skill：将包含 `SKILL.md` 的技能目录放入 `~/.purrcat/skills`，即自动加载至检索树。
 - 前端可视化编排 DAG 节点，支持 JSON 一键导入导出。
 - 传感器在 UI 中一键开关，启动时缺失的传感器脚本自动从云端拉取。
 

@@ -145,7 +145,7 @@ uv run python main.py --api --headless       # Open http://localhost:8000 in a b
 
 - Zero-code MCP integration: paste standard JSON into `mcp_config.json`; the tool tree hot-updates after handshake.
 
-- `purrcat install skill <url>` downloads community skills and loads them into the retrieval tree.
+- Community skills: drop a skill folder (containing `SKILL.md`) into `~/.purrcat/skills` and it joins the retrieval tree.
 
 - Visual DAG editing in the UI, with one-click JSON import/export.
 
