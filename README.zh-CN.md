@@ -20,6 +20,27 @@
 
 > Windows 用户也可直接从最新的 [Release](https://github.com/PurrPod/purrcat/releases) 下载安装包快速上手；macOS / Linux 安装包因人力原因暂未经测试，请从源码部署。
 
+### 一键安装（源码模式）
+
+```bash
+# macOS / Linux
+curl -fsSL https://raw.githubusercontent.com/PurrPod/purrcat/main/install.sh | bash
+```
+
+```powershell
+# Windows（PowerShell）
+irm https://raw.githubusercontent.com/PurrPod/purrcat/main/install.ps1 | iex
+```
+
+脚本会安装 `uv`、克隆源码到 `~/purrcat`、装好全部依赖并注册全局 `purrcat` 命令。之后：
+
+```bash
+purrcat desktop start    # 启动 Electron 桌面端
+purrcat desktop update    # 拉取最新源码并刷新依赖
+```
+
+（沙盒 Bash 依赖的 Docker 仍需单独安装，装好后运行 `purrcat setup` 初始化。）
+
 ### 环境要求
 
 所需依赖取决于部署方式：

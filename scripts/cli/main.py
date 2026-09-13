@@ -4,6 +4,7 @@ import argparse
 import os
 import sys
 
+from scripts.cli.cmd_desktop import run as run_desktop
 from scripts.cli.cmd_install import run_install
 from scripts.cli.cmd_setup import run_setup
 
@@ -35,9 +36,16 @@ PurrCat CLI - Cross-platform AI Agent Framework
     print("Commands:")
     print("  setup   - Initialize environment (uv, Docker, Models)")
     print("  install - Install extensions (skill, node, graph, mcp)")
+    print("  desktop - Start or update the desktop app (start | update)")
     print("")
     print("Examples:")
     print("  purrcat setup")
+    print("")
+    print("  # Start the Electron desktop app (source mode)")
+    print("  purrcat desktop start")
+    print("")
+    print("  # Pull latest source and refresh dependencies")
+    print("  purrcat desktop update")
     print("")
     print(
         "  # Install Graph from PurrPod/graphs (Auto-installs its MCP/Skill dependencies)"
@@ -63,6 +71,12 @@ PurrCat CLI - Cross-platform AI Agent Framework
 def main():
     _setup_path()
 
+    # desktop 命令携带二级动词（start/update），在顶层 argparse 之前分发
+    argv = sys.argv[1:]
+    if argv and argv[0] == "desktop":
+        run_desktop(argv[1:])
+        return
+
     parser = argparse.ArgumentParser(
         prog="purrcat",
         description="PurrCat - Cross-platform AI Agent Framework",
@@ -72,7 +86,7 @@ def main():
         "command",
         nargs="?",
         default="help",
-        choices=["help", "install", "setup"],
+        choices=["help", "install", "setup", "desktop"],
     )
     parser.add_argument(
         "--help", "-h", action="store_true", help="Show this help message"

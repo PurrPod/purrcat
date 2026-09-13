@@ -20,6 +20,27 @@ An economical, efficient, customizable, local-first personal AI Agent framework.
 
 > Windows users can also grab the installer from the latest [Release](https://github.com/PurrPod/purrcat/releases) for a quick start. macOS/Linux installers are not yet tested due to limited manpower, so please build from source on those platforms.
 
+### One-line install (source mode)
+
+```bash
+# macOS / Linux
+curl -fsSL https://raw.githubusercontent.com/PurrPod/purrcat/main/install.sh | bash
+```
+
+```powershell
+# Windows (PowerShell)
+irm https://raw.githubusercontent.com/PurrPod/purrcat/main/install.ps1 | iex
+```
+
+The script installs `uv`, clones the source to `~/purrcat`, sets up all dependencies, and registers a global `purrcat` command. Then:
+
+```bash
+purrcat desktop start    # Launch the Electron desktop app
+purrcat desktop update    # Pull latest source & refresh dependencies
+```
+
+(Docker still needs to be installed separately for the sandboxed Bash tool — run `purrcat setup` afterwards to initialize it.)
+
 ### Requirements
 
 What you need depends on how you deploy:
