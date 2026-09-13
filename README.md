@@ -20,14 +20,34 @@ An economical, efficient, customizable, local-first personal AI Agent framework.
 
 > Windows users can also grab the installer from the latest [Release](https://github.com/PurrPod/purrcat/releases) for a quick start. macOS/Linux installers are not yet tested due to limited manpower, so please build from source on those platforms.
 
+### One-line install (source mode)
+
+```bash
+# macOS / Linux
+curl -fsSL https://raw.githubusercontent.com/PurrPod/purrcat/main/install.sh | bash
+```
+
+```powershell
+# Windows (PowerShell)
+irm https://raw.githubusercontent.com/PurrPod/purrcat/main/install.ps1 | iex
+```
+
+The script auto-installs missing prerequisites (git, uv, Node.js 18+, Docker, embedding model), clones the source to `~/purrcat`, sets up all dependencies, and registers a global `purrcat` command. Then:
+
+```bash
+purrcat desktop start    # Launch the Electron desktop app
+purrcat desktop update    # Pull latest source & refresh dependencies
+```
+
+> On Windows, Docker Desktop requires one manual first launch to accept its agreement.
+
 ### Requirements
 
 What you need depends on how you deploy:
 
-- **Installer**: only [Docker](https://docs.docker.com/get-docker/) is required (the sandboxed Bash tool and file isolation rely on it) — no extra tools needed
-- **From source**: [Docker](https://docs.docker.com/get-docker/) + [uv](https://docs.astral.sh/uv/) (**required** — it manages Python versions and dependencies) + Node.js 18+; Git is used to fetch the source code (or download the ZIP)
-
-- Alternatively, run `purrcat setup` to initialize the environment (uv, Docker, embedding model, Playwright) in one step
+- **One-line install**: nothing to prepare — git, uv, Node.js 18+, Docker and the embedding model are installed automatically when missing
+- **Release installer**: only [Docker](https://docs.docker.com/get-docker/) is required (the sandboxed Bash tool and file isolation rely on it) — no extra tools needed
+- **From source (manual)**: [Docker](https://docs.docker.com/get-docker/) + [uv](https://docs.astral.sh/uv/) (**required** — it manages Python versions and dependencies) + Node.js 18+; Git is used to fetch the source code (or download the ZIP)
 
 ### Option 1: Electron desktop (recommended)
 
@@ -125,7 +145,7 @@ uv run python main.py --api --headless       # Open http://localhost:8000 in a b
 
 - Zero-code MCP integration: paste standard JSON into `mcp_config.json`; the tool tree hot-updates after handshake.
 
-- `purrcat install skill <url>` downloads community skills and loads them into the retrieval tree.
+- Community skills: drop a skill folder (containing `SKILL.md`) into `~/.purrcat/skills` and it joins the retrieval tree.
 
 - Visual DAG editing in the UI, with one-click JSON import/export.
 

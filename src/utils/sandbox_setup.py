@@ -12,8 +12,6 @@ import subprocess
 import sys
 import threading
 
-from src.utils.config import BASE_DIR
-
 SANDBOX_IMAGE_TAG = "my_agent_env:latest"
 GHCR_LIGHT_IMAGE = "ghcr.io/purrpod/purrcat-sandbox:light"
 DOCKER_NOT_FOUND_HINT = (
@@ -147,80 +145,10 @@ def ensure_sandbox_image() -> None:
                 print(
                     "    可手动执行: docker pull ghcr.io/purrpod/purrcat-sandbox:light"
                 )
-                print(
-                    "    或通过: purrcat setup （支持选择 full 镜像、国内镜像源、本地 build）"
-                )
+                print("    或在应用内 配置中心 → 部署 页一键安装")
         except Exception as e:
             print(f"[!] 沙盒镜像下载异常: {e}")
         finally:
             _sandbox_running.clear()
 
     threading.Thread(target=_do_pull, daemon=True).start()
-
-
-# ========================================================
-# 以下函数仅供 purrcat setup 命令（带交互）复用
-# ========================================================
-
-
-def interactive_build_sandbox(
-    variant: str = "light",
-    apt_mirror: str = "deb.debian.org",
-    source: str = "pull",
-) -> bool:
-    """
-    交互 setup 调用的沙盒构建函数。
-    variant: "light" | "full"
-    apt_mirror: deb.debian.org | mirrors.aliyun.com
-    source: "pull" | "build"
-    """
-    docker = docker_cmd()
-    if not docker:
-        print(DOCKER_NOT_FOUND_HINT)
-        return False
-
-    if not check_docker_running(docker):
-        print(DOCKER_DAEMON_HINT)
-        return False
-
-    ghcr_image = f"ghcr.io/purrpod/purrcat-sandbox:{variant}"
-    dockerfile = f"Dockerfile.{variant}"
-
-    if source == "pull":
-        print(f"Pulling sandbox image from {ghcr_image} ...")
-        success = (
-            subprocess.call(
-                [docker, "pull", ghcr_image],
-                stdout=sys.stdout,
-                stderr=sys.stderr,
-            )
-            == 0
-        )
-        if not success:
-            print("Pull failed.")
-            return False
-        success = (
-            subprocess.call(
-                [docker, "tag", ghcr_image, SANDBOX_IMAGE_TAG],
-                stdout=sys.stdout,
-                stderr=sys.stderr,
-            )
-            == 0
-        )
-        if success:
-            print(f"Tagged as {SANDBOX_IMAGE_TAG}")
-        return success
-    else:
-        print(f"Building sandbox using {dockerfile} (APT mirror: {apt_mirror}) ...")
-        build_cmd = [
-            docker,
-            "build",
-            "-f",
-            dockerfile,
-            "-t",
-            SANDBOX_IMAGE_TAG,
-            "--build-arg",
-            f"APT_MIRROR={apt_mirror}",
-            ".",
-        ]
-        return subprocess.call(build_cmd, cwd=BASE_DIR) == 0

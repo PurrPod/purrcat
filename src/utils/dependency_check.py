@@ -2,7 +2,7 @@
 启动时依赖就绪检查
 每次启动时检查：git / 嵌入模型 / 沙盒容器 / uv / node
 若任一缺失或未就绪，向 requests.json 写入一条 dependency_check 类型 pending 请求，
-前端 ChatPage 的 pending 队列会自动渲染，用户可确认跳转部署指南、取消或静默忽略。
+前端 ChatPage 的 pending 队列会自动渲染，用户可点「前往部署」直达配置中心部署页、取消或静默忽略。
 """
 
 import json
@@ -17,7 +17,6 @@ from src.tool.request.request_operations import (
 )
 from src.utils.config import get_enriched_env
 
-DEPLOYMENT_GUIDE_URL = "https://purrpod.github.io/guide/deployment.html"
 # 固定 req_id：避免每次重启堆积重复请求；启动时整体替换为最新检查结果
 DEP_REQ_ID = "req_dep_check_startup"
 
@@ -142,7 +141,6 @@ def check_and_warn_dependencies() -> None:
             "target": f"启动依赖检查（{len(missing)} 项缺失）",
             "reason": f"以下依赖缺失或未就绪：\n{reason_lines}",
             "missing": [m["name"] for m in missing],
-            "guide_url": DEPLOYMENT_GUIDE_URL,
             "status": "pending",
             "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
         }

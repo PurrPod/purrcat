@@ -402,6 +402,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   const [isInstallingSensor, setIsInstallingSensor] = useState(false);
 
   const [isConfigOpen, setIsConfigOpen] = useState(false);
+  const [configInitialTab, setConfigInitialTab] = useState<string | undefined>(undefined);
 
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -1168,7 +1169,9 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   };
 
   const fileViewProps = { showFileView, setShowFileView, fileChanges, activeDiffPath, setActiveDiffPath, handleAck, handleRollback, handleAckAll };
-  const queueProps = { showReqQueue, setShowReqQueue, pendingReqs, handleResolveReq, feedbackInputs, setFeedbackInputs, authDurations, setAuthDurations, expandedReasons, setExpandedReasons };
+  // 依赖检查请求「前往部署」：打开配置中心并直达部署标签页
+  const openConfigAt = (tab: string) => { setConfigInitialTab(tab); setIsConfigOpen(true); };
+  const queueProps = { showReqQueue, setShowReqQueue, pendingReqs, handleResolveReq, feedbackInputs, setFeedbackInputs, authDurations, setAuthDurations, expandedReasons, setExpandedReasons, onGoDeploy: () => openConfigAt('deploy') };
 
   return (
     <div className="absolute inset-0 bg-[#fdfaf5] bg-[radial-gradient(#1a1a1a_1px,transparent_1px)] [background-size:24px_24px] p-6 md:p-8 flex gap-6 overflow-hidden font-sans">
@@ -1225,7 +1228,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
           </div>
         </div>
       )}
-      <ConfigModal isOpen={isConfigOpen} onClose={() => setIsConfigOpen(false)} />
+      <ConfigModal isOpen={isConfigOpen} onClose={() => setIsConfigOpen(false)} initialTab={configInitialTab} />
       
       {/* 🌟 如果浏览器和 IDE 都没有打开，才显示左侧边栏 */}
       {!showBrowser && !showIDE && !isCompact && <ChatSidebar {...sidebarProps} />}

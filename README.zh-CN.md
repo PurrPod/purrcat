@@ -20,13 +20,34 @@
 
 > Windows 用户也可直接从最新的 [Release](https://github.com/PurrPod/purrcat/releases) 下载安装包快速上手；macOS / Linux 安装包因人力原因暂未经测试，请从源码部署。
 
+### 一键安装（源码模式）
+
+```bash
+# macOS / Linux
+curl -fsSL https://raw.githubusercontent.com/PurrPod/purrcat/main/install.sh | bash
+```
+
+```powershell
+# Windows（PowerShell）
+irm https://raw.githubusercontent.com/PurrPod/purrcat/main/install.ps1 | iex
+```
+
+脚本会自动装好缺失的前置依赖（git / uv / Node.js 18+ / Docker / 嵌入模型），克隆源码到 `~/purrcat`、装好全部依赖并注册全局 `purrcat` 命令。之后：
+
+```bash
+purrcat desktop start    # 启动 Electron 桌面端
+purrcat desktop update    # 拉取最新源码并刷新依赖
+```
+
+> Windows 下 Docker Desktop 安装后需手动启动一次以接受协议。
+
 ### 环境要求
 
 所需依赖取决于部署方式：
 
-- **安装包方式**：只需安装 [Docker](https://docs.docker.com/get-docker/)（沙盒 Bash 工具与文件隔离依赖它）即可运行，无需额外工具
-- **从源码部署**：需要 [Docker](https://docs.docker.com/get-docker/) + [uv](https://docs.astral.sh/uv/)（**必需**，负责 Python 依赖与版本管理）+ Node.js 18+；Git 用于获取源码（也可下载压缩包）
-- 推荐运行 `purrcat setup` 一键初始化环境（Docker 沙盒、Python 依赖、嵌入模型）
+- **一键安装**：无需提前准备——git / uv / Node.js 18+ / Docker / 嵌入模型缺失时脚本会自动安装
+- **Release 安装包**：只需安装 [Docker](https://docs.docker.com/get-docker/)（沙盒 Bash 工具与文件隔离依赖它）即可运行，无需额外工具
+- **从源码部署（手动）**：需要 [Docker](https://docs.docker.com/get-docker/) + [uv](https://docs.astral.sh/uv/)（**必需**，负责 Python 依赖与版本管理）+ Node.js 18+；Git 用于获取源码（也可下载压缩包）
 
 ### 方式一：Electron 桌面端（推荐）
 
@@ -103,7 +124,7 @@ uv run python main.py --api --headless       # 浏览器打开 http://localhost:
 ### 08 配置驱动的扩展机制
 
 - 零代码接入 MCP：将标准 JSON 粘贴至 `mcp_config.json`，握手后工具树自动热更新。
-- `purrcat install skill <url>` 下载社区 Skill 并加载至检索树。
+- 社区 Skill：将包含 `SKILL.md` 的技能目录放入 `~/.purrcat/skills`，即自动加载至检索树。
 - 前端可视化编排 DAG 节点，支持 JSON 一键导入导出。
 - 传感器在 UI 中一键开关，启动时缺失的传感器脚本自动从云端拉取。
 

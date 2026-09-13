@@ -1,24 +1,51 @@
 // src/components/ConfigModal.tsx
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   X, Save, FileJson, AlertCircle, Plus, Trash2, RefreshCw,
   ToggleLeft, ToggleRight, Folder, FolderRoot, Info, HardDrive, Pencil,
-  Loader2, Server, Cpu, Eye, Store, Languages, Copy, Plug, KeyRound
+  Loader2, Server, Cpu, Eye, Store, Languages, Copy, Plug, KeyRound,
+  Package, Braces, Container, Brain, Rocket, Globe, RotateCw, Terminal, ChevronDown, CheckCircle
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { sketchyShape1, sketchyShape2, sketchyShape3 } from './chat/ChatShared';
 import { useTranslation } from '../i18n';
 
 // 配置标签配置：key -> i18n 键 + 说明（全局 settings 不再提供编辑页，数据根目录走侧栏迁移入口）
-const CONFIG_TABS: Array<{ key: string; label: string; tip: string }> = [
+// sub：标签按钮下方小字（默认显示 key.json，非 JSON 配置的标签页可覆盖）
+const CONFIG_TABS: Array<{ key: string; label: string; tip: string; sub?: string }> = [
   { key: 'model',    label: 'config.tabModel', tip: 'config.tipModel' },
   { key: 'sensor',   label: 'config.tabSensor', tip: 'config.tipSensor' },
   { key: 'file',     label: 'config.tabFile', tip: 'config.tipFile' },
   { key: 'mcp',      label: 'config.tabMcp', tip: 'config.tipMcp' },
   { key: 'app',     label: 'config.tabApp', tip: 'config.tipApp' },
   { key: 'acp',     label: 'config.tabAcp', tip: 'config.tipAcp' },
+  { key: 'deploy',  label: 'config.tabDeploy', tip: 'config.tipDeploy', sub: 'one-click' },
 ];
+
+// 部署页的线性步骤定义（顺序即展示顺序）
+const DEPLOY_STEPS = [
+  { key: 'uv',        icon: Package,   label: 'config.deployItemUv' },
+  { key: 'node',      icon: Braces,    label: 'config.deployItemNode' },
+  { key: 'sandbox',   icon: Container, label: 'config.deployItemSandbox' },
+  { key: 'embedding', icon: Brain,     label: 'config.deployItemEmbedding' },
+] as const;
+
+// 部署日志框：自动滚动到底部（最新输出）
+function DeployLogBox({ lines, emptyText }: { lines: string[]; emptyText: string }) {
+  const ref = useRef<HTMLPreElement>(null);
+  useEffect(() => {
+    if (ref.current) ref.current.scrollTop = ref.current.scrollHeight;
+  }, [lines]);
+  return (
+    <pre
+      ref={ref}
+      className="mt-2 max-h-48 overflow-y-auto bg-[#FDF8F0] border-2 border-ink p-3 font-mono text-[12px] leading-relaxed font-bold text-ink/80 whitespace-pre-wrap break-all"
+    >
+      {lines.length ? lines.join('\n') : emptyText}
+    </pre>
+  );
+}
 
 // ── 模型配置页：三个模型角色 ──
 const MODEL_CATEGORIES = [
@@ -51,7 +78,7 @@ type ModelForm = {
 
 const MCP_NEW_SERVER_TEMPLATE = '{\n  "command": "npx",\n  "args": [],\n  "env": {}\n}';
 
-export default function ConfigModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
+export default function ConfigModal({ isOpen, onClose, initialTab }: { isOpen: boolean; onClose: () => void; initialTab?: string }) {
   const { locale, setLocale, t } = useTranslation();
   const purrcat = (window as any).purrcat;
   const navigate = useNavigate();
@@ -88,6 +115,10 @@ export default function ConfigModal({ isOpen, onClose }: { isOpen: boolean; onCl
   const [acpBusy, setAcpBusy] = useState<string | null>(null); // 'redeploy' | 'reset-token' | 'port'
   const [acpPortDraft, setAcpPortDraft] = useState<string>('');
 
+  // ── 部署页状态 ──
+  const [deployInfo, setDeployInfo] = useState<any>(null); // { items: {...}, tasks: {...} }
+  const [deployLogOpen, setDeployLogOpen] = useState<Record<string, boolean>>({});
+
   // ACP 状态加载后同步端口草稿
   useEffect(() => {
     if (activeTab === 'acp' && configData?.port != null) setAcpPortDraft(String(configData.port));
@@ -118,6 +149,7 @@ export default function ConfigModal({ isOpen, onClose }: { isOpen: boolean; onCl
 
   // ── 加载配置 ──
   const fetchConfig = async (tab: string) => {
+    if (tab === 'deploy') return; // 部署页走独立的状态轮询，不是 JSON 配置
     try {
       const res = await fetch(`/api/config/${tab}`);
       if (res.ok) {
@@ -146,7 +178,10 @@ export default function ConfigModal({ isOpen, onClose }: { isOpen: boolean; onCl
     if (isOpen) {
       setModelDrafts({});
       fetchMeta();
+      // 指定了初始标签页时直达（如依赖检查请求「前往部署」→ deploy）
+      if (initialTab) setActiveTab(initialTab);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
 
   // 切换标签页 / 打开时加载对应配置（草稿不随切页丢失）
@@ -254,6 +289,38 @@ export default function ConfigModal({ isOpen, onClose }: { isOpen: boolean; onCl
     2
   );
   const acpArgsText = `run\n${acpRelayCmdPath}`;
+
+  // ══════════════ 部署页逻辑 ══════════════
+
+  const fetchDeployStatus = async () => {
+    try {
+      const res = await fetch('/api/config/deploy');
+      if (res.ok) setDeployInfo(await res.json());
+    } catch { /* 轮询失败静默，下次重试 */ }
+  };
+
+  // 部署页打开时轮询状态（间隔 2.5s，兼顾日志实时性与后端检测开销）
+  useEffect(() => {
+    if (!isOpen || activeTab !== 'deploy') return;
+    fetchDeployStatus();
+    const timer = setInterval(fetchDeployStatus, 2500);
+    return () => clearInterval(timer);
+  }, [isOpen, activeTab]);
+
+  const startDeploy = async (item: string) => {
+    try {
+      const res = await fetch(`/api/config/deploy/${item}`, { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        toast.success(data?.message || t('config.deployStarted'));
+        fetchDeployStatus();
+      } else {
+        toast.error(typeof data?.detail === 'string' ? data.detail : t('config.networkError'));
+      }
+    } catch {
+      toast.error(t('config.networkError'));
+    }
+  };
 
   // ══════════════ 模型配置页逻辑 ══════════════
 
@@ -553,7 +620,7 @@ export default function ConfigModal({ isOpen, onClose }: { isOpen: boolean; onCl
                     className={`px-4 py-2 font-black border-4 border-ink uppercase tracking-wider transition-all shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] text-left ${isActive ? 'bg-[#EBCB8B] text-ink -translate-x-1' : 'bg-paper text-ink/70 hover:bg-sand'} ${rotation}`}
                   >
                     <div className="text-base" style={{ fontFamily: '"Comic Sans MS", cursive' }}>{t(tab.label)}</div>
-                    <div className="text-[10px] font-bold opacity-60 normal-case tracking-normal mt-0.5">{tab.key}.json</div>
+                    <div className="text-[10px] font-bold opacity-60 normal-case tracking-normal mt-0.5">{tab.sub ?? `${tab.key}.json`}</div>
                   </button>
                 )
               })}
@@ -567,7 +634,7 @@ export default function ConfigModal({ isOpen, onClose }: { isOpen: boolean; onCl
               <div>
                 <div className="text-3xl font-black text-ink flex items-center gap-2" style={{ fontFamily: '"Comic Sans MS", cursive' }}>
                   {currentTabMeta ? t(currentTabMeta.label) : activeTab}
-                  <button onClick={() => fetchConfig(activeTab)} title={t('config.reloadFromDisk')} className="p-2 border-2 border-ink bg-paper hover:bg-sand active:translate-y-1 transition-all" style={sketchyShape3}>
+                  <button onClick={() => (activeTab === 'deploy' ? fetchDeployStatus() : fetchConfig(activeTab))} title={t('config.reloadFromDisk')} className="p-2 border-2 border-ink bg-paper hover:bg-sand active:translate-y-1 transition-all" style={sketchyShape3}>
                     <RefreshCw size={18} strokeWidth={3} />
                   </button>
                   {(activeTab === 'mcp' || activeTab === 'sensor') && (
@@ -585,27 +652,31 @@ export default function ConfigModal({ isOpen, onClose }: { isOpen: boolean; onCl
               </div>
 
               <div className="flex items-center gap-3">
-                <button
-                  onClick={editMode === 'visual' ? switchToRaw : switchToVisual}
-                  style={sketchyShape2}
-                  className="flex items-center gap-2 px-4 py-2 bg-paper border-4 border-ink font-black shadow-[3px_3px_0px_0px_rgba(26,26,26,1)] hover:-translate-y-1 transition-all"
-                >
-                  {editMode === 'visual' ? <ToggleLeft size={20} strokeWidth={3} /> : <ToggleRight size={20} strokeWidth={3} className="text-[#a3be8c]" />}
-                  <span>{editMode === 'visual' ? t('config.visualEdit') : t('config.rawEdit')}</span>
-                </button>
+                {activeTab !== 'deploy' && (
+                  <>
+                    <button
+                      onClick={editMode === 'visual' ? switchToRaw : switchToVisual}
+                      style={sketchyShape2}
+                      className="flex items-center gap-2 px-4 py-2 bg-paper border-4 border-ink font-black shadow-[3px_3px_0px_0px_rgba(26,26,26,1)] hover:-translate-y-1 transition-all"
+                    >
+                      {editMode === 'visual' ? <ToggleLeft size={20} strokeWidth={3} /> : <ToggleRight size={20} strokeWidth={3} className="text-[#a3be8c]" />}
+                      <span>{editMode === 'visual' ? t('config.visualEdit') : t('config.rawEdit')}</span>
+                    </button>
 
-                <button
-                  onClick={handleSaveAll}
-                  style={sketchyShape1}
-                  className="px-6 py-2 bg-[#a3be8c] border-4 border-ink text-ink font-black flex items-center gap-2 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:bg-[#8eb072] active:translate-y-1 active:shadow-none transition-all rotate-1"
-                >
-                  <Save size={20} strokeWidth={3} /> {t('chat.saveAll')}
-                </button>
+                    <button
+                      onClick={handleSaveAll}
+                      style={sketchyShape1}
+                      className="px-6 py-2 bg-[#a3be8c] border-4 border-ink text-ink font-black flex items-center gap-2 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:bg-[#8eb072] active:translate-y-1 active:shadow-none transition-all rotate-1"
+                    >
+                      <Save size={20} strokeWidth={3} /> {t('chat.saveAll')}
+                    </button>
+                  </>
+                )}
               </div>
             </div>
 
             {/* ── 编辑模式：原始 JSON ── */}
-            {editMode === 'raw' && (
+            {editMode === 'raw' && activeTab !== 'deploy' && (
               <div style={sketchyShape3} className="bg-paper border-4 border-ink p-4 flex flex-col gap-3 shadow-[inset_4px_4px_0px_0px_rgba(26,26,26,0.1)] flex-1">
                 <div className="flex items-center gap-2 text-ink/60 font-bold text-sm bg-terracotta/10 p-2 border-2 border-ink border-dashed" style={sketchyShape1}>
                   <AlertCircle size={16} strokeWidth={3} /> {t('config.rawEditHint')}
@@ -767,6 +838,110 @@ export default function ConfigModal({ isOpen, onClose }: { isOpen: boolean; onCl
                     </button>
                     <div className="text-xs font-bold text-ink/40 flex-1 min-w-[200px]">{t('config.acpPortHint')}</div>
                   </div>
+                </div>
+              </div>
+            )}
+
+            {/* ── 部署页：线性部署列表（uv / node / sandbox / embedding） ── */}
+            {activeTab === 'deploy' && (
+              <div className="flex flex-col gap-5 flex-1">
+
+                {/* 提示条：重启生效 + 网络稳定 */}
+                <div style={sketchyShape1} className="bg-[#EBCB8B]/30 border-2 border-ink border-dashed p-3 flex flex-col gap-1.5 text-sm font-bold">
+                  <div className="flex items-center gap-2 text-terracotta"><RotateCw size={16} strokeWidth={3} className="shrink-0" /> {t('config.deployRestartHint')}</div>
+                  <div className="flex items-center gap-2 text-[#8eb072]"><Globe size={16} strokeWidth={3} className="shrink-0" /> {t('config.deployVpnHint')}</div>
+                </div>
+
+                {/* 线性步骤列表 */}
+                <div className="flex flex-col">
+                  {DEPLOY_STEPS.map((step, idx) => {
+                    const item = deployInfo?.items?.[step.key];
+                    const task = deployInfo?.tasks?.[step.key];
+                    const running = task?.state === 'running';
+                    // 按钮即状态：未部署/失败 → 亮色可点；部署中/已安装待重启/已就绪 → 暗色禁用
+                    const state = running ? 'running'
+                      : task?.state === 'success' ? 'installed'
+                        : task?.state === 'failed' ? 'failed'
+                          : item?.ready ? 'ready'
+                            : 'missing';
+                    const clickable = state === 'missing' || state === 'failed';
+                    const btnCls = state === 'missing' ? 'bg-[#88c0d0] hover:bg-[#7bb2c4] text-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)]'
+                      : state === 'failed' ? 'bg-terracotta hover:bg-[#bf616a] text-paper shadow-[4px_4px_0px_0px_rgba(26,26,26,1)]'
+                        : state === 'running' ? 'bg-[#EBCB8B]/60 text-ink/50 shadow-none cursor-default'
+                          : 'bg-[#a3be8c]/50 text-ink/50 shadow-none cursor-default';
+                    const btnText = state === 'missing' ? t('config.deployAction')
+                      : state === 'failed' ? t('config.deployRedeploy')
+                        : state === 'running' ? t('config.deployChipRunning')
+                          : state === 'installed' ? t('config.deployChipSuccessPending')
+                            : t('config.deployChipReady');
+                    const dotCls = state === 'ready' || state === 'installed' ? 'bg-[#a3be8c]'
+                      : state === 'failed' ? 'bg-terracotta text-paper'
+                        : state === 'running' ? 'bg-[#EBCB8B]'
+                          : 'bg-paper';
+                    const Icon = step.icon;
+                    const logOpen = !!deployLogOpen[step.key];
+                    const logLines: string[] = task?.log ?? [];
+                    return (
+                      <div key={step.key} className="flex gap-4">
+                        {/* 左侧：步骤序号 + 连接线 */}
+                        <div className="flex flex-col items-center">
+                          <div style={sketchyShape3} className={`w-10 h-10 border-4 border-ink flex items-center justify-center font-black text-lg shrink-0 ${dotCls}`}>
+                            {idx + 1}
+                          </div>
+                          {idx < DEPLOY_STEPS.length - 1 && <div className="w-0.5 flex-1 border-l-4 border-dashed border-ink/30 my-1" />}
+                        </div>
+
+                        {/* 右侧：步骤卡片 */}
+                        <div style={sketchyShape2} className="bg-paper border-4 border-ink p-4 flex-1 flex flex-col gap-2.5 shadow-[6px_6px_0px_0px_rgba(26,26,26,1)] mb-5">
+                          <div className="flex items-center justify-between gap-3 flex-wrap">
+                            <div className="flex items-center gap-3 min-w-0">
+                              <Icon size={24} strokeWidth={2.5} className="text-ink/70 shrink-0" />
+                              <div className="min-w-0">
+                                <div className="text-lg font-black text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>{t(step.label)}</div>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              {/* sandbox 子状态徽章：Docker / 镜像 */}
+                              {step.key === 'sandbox' && (
+                                <>
+                                  <span className={`px-2 py-0.5 border-2 border-ink font-black text-xs ${item?.docker_installed ? 'bg-[#a3be8c]' : 'bg-terracotta/60'}`}>
+                                    {t('config.deployDockerChip')} {item?.docker_installed ? '✓' : '✗'}
+                                  </span>
+                                  <span className={`px-2 py-0.5 border-2 border-ink font-black text-xs ${item?.image_ready ? 'bg-[#a3be8c]' : 'bg-[#EBCB8B]'}`}>
+                                    {t('config.deployImageChip')} {item?.image_ready ? '✓' : '✗'}
+                                  </span>
+                                </>
+                              )}
+                              {/* 按钮即状态：未部署亮色「一键部署」；就绪后暗色「已就绪」不可点 */}
+                              <button
+                                onClick={() => startDeploy(step.key)}
+                                disabled={!clickable}
+                                style={sketchyShape3}
+                                className={`px-4 py-1.5 border-4 border-ink font-black flex items-center gap-2 transition-all ${btnCls} ${clickable ? 'active:translate-y-1 active:shadow-none' : ''}`}
+                              >
+                                {running ? <Loader2 size={16} strokeWidth={3} className="animate-spin" /> : clickable ? <Rocket size={16} strokeWidth={3} /> : <CheckCircle size={16} strokeWidth={3} />}
+                                {btnText}
+                              </button>
+                            </div>
+                          </div>
+
+                          {item?.detail && <div className="text-xs font-mono font-bold text-ink/60 break-all">{item.detail}</div>}
+
+                          {/* 日志折叠区 */}
+                          <div>
+                            <button
+                              onClick={() => setDeployLogOpen((m) => ({ ...m, [step.key]: !m[step.key] }))}
+                              className="flex items-center gap-1.5 text-xs font-black text-ink/50 hover:text-ink transition-colors"
+                            >
+                              <Terminal size={14} strokeWidth={3} /> {t('config.deployViewLog')}
+                              <ChevronDown size={14} strokeWidth={3} className={`transition-transform ${logOpen ? 'rotate-180' : ''}`} />
+                            </button>
+                            {logOpen && <DeployLogBox lines={logLines} emptyText={t('config.deployLogEmpty')} />}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -981,7 +1156,7 @@ export default function ConfigModal({ isOpen, onClose }: { isOpen: boolean; onCl
             )}
 
             {/* ── 编辑模式：可视化 · 通用 key-value（传感器/文件白名单/应用白名单/定时任务） ── */}
-            {editMode === 'visual' && activeTab !== 'model' && activeTab !== 'mcp' && activeTab !== 'acp' && (
+            {editMode === 'visual' && activeTab !== 'model' && activeTab !== 'mcp' && activeTab !== 'acp' && activeTab !== 'deploy' && (
               <div className="flex flex-col gap-5 flex-1">
                 {Object.keys(configData).length === 0 ? (
                   <div className="text-center font-bold text-ink/40 mt-10 text-2xl" style={{ fontFamily: '"Comic Sans MS", cursive' }}>

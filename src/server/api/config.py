@@ -200,6 +200,28 @@ def api_reset_acp_token():
     return {"status": "ok"}
 
 
+# ── 部署中心（配置中心「部署」标签页：uv / node / sandbox / embedding） ──
+
+
+@router.get("/deploy")
+def api_get_deploy_overview():
+    """各依赖项就绪状态 + 部署任务进度与日志（前端轮询）"""
+    from src.utils.deploy_manager import get_overview
+
+    return get_overview()
+
+
+@router.post("/deploy/{item}")
+def api_deploy_item(item: str):
+    """一键部署指定依赖项，后台线程执行，进度通过 GET /deploy 轮询"""
+    from src.utils.deploy_manager import start_deploy
+
+    ok, message = start_deploy(item)
+    if not ok:
+        raise HTTPException(status_code=409, detail=message)
+    return {"status": "ok", "message": message}
+
+
 # ── Markdown Files (SOUL.md / GOAL.md) ──
 @router.get("/markdown/{filename}")
 def api_get_markdown_file(filename: str):
