@@ -141,6 +141,7 @@ def _get_model_config_dict():
                 "tpm": 1000000,
                 "concurrency": 3,
                 "max_token": 500000,
+                "vision": False,
             }
         },
         "task": {
@@ -151,6 +152,7 @@ def _get_model_config_dict():
                 "tpm": 1000000,
                 "concurrency": 3,
                 "max_token": 500000,
+                "vision": False,
             }
         },
         "vision": {

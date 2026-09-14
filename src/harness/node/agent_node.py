@@ -6,7 +6,11 @@ from typing import Any, Dict, List
 from src.harness.enums import LogType, NodeState
 from src.harness.node.base import BaseNode, _format_result
 from src.harness.utils.llm_helper import call_llm
-from src.harness.utils.tool_helper import execute_global_tool, extract_tool_calling
+from src.harness.utils.tool_helper import (
+    execute_global_tool,
+    extract_tool_calling,
+)
+from src.tool.utils.route import extract_tool_message_content
 
 from json_repair import repair_json
 
@@ -634,7 +638,13 @@ class AgentNode(BaseNode):
                         context=context,
                     )
 
-                    final_content = _format_result(raw_result)
+                    # 🌟 vision 直注结果：tool 消息 content 直接用 OpenAI
+                    # 多模态 parts 列表（含 image_url），跳过 _format_result
+                    vision_parts = extract_tool_message_content(raw_result)
+                    if isinstance(vision_parts, list):
+                        final_content = vision_parts
+                    else:
+                        final_content = _format_result(raw_result)
                     self.log(
                         context,
                         LogType.TOOL,

@@ -139,12 +139,26 @@ export function renderSketchyHeatmap(heatmapData: Record<string, number> = {}) {
 // 作为 tool 消息的 content 下发，直接展示会带出 metadata 且换行变成字面 \n。
 // 这里解析后只取 content 字段（真实换行交给 whitespace-pre-wrap 渲染）；
 // 兼容异常路径的 {"error": ...} 格式；非该格式则原样展示。
+// vision 直注时 content 是 OpenAI 多模态 parts 数组：只展示文本占位（图片路径），
+// 不渲染图片本体。
 export function extractToolContent(content: unknown): string {
+  if (Array.isArray(content)) {
+    const textParts = content
+      .filter((p: any) => p && p.type === 'text' && typeof p.text === 'string')
+      .map((p: any) => p.text);
+    return textParts.join('\n') || '[图片已注入对话]';
+  }
   if (typeof content === 'string') {
     try {
       const parsed = JSON.parse(content);
       if (parsed && typeof parsed === 'object') {
         if (typeof parsed.content === 'string') return parsed.content;
+        if (Array.isArray(parsed.content)) {
+          const textParts = parsed.content
+            .filter((p: any) => p && p.type === 'text' && typeof p.text === 'string')
+            .map((p: any) => p.text);
+          return textParts.join('\n') || '[图片已注入对话]';
+        }
         if (typeof parsed.error === 'string') return parsed.error;
       }
     } catch { /* 非 JSON 格式，原样展示 */ }

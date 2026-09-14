@@ -10,7 +10,11 @@ from json_repair import repair_json
 from src.agent.hook_handler import HookHandler
 from src.agent.session_store import SessionStore
 from src.model import AgentModel
-from src.tool.utils.route import dispatch_tool
+from src.tool.utils.route import (
+    build_display_result,
+    dispatch_tool,
+    extract_tool_message_content,
+)
 from src.utils.config import (
     BUFFER_DIR,
     get_agent_model,
@@ -708,7 +712,11 @@ class Agent:
             current_iid = self._get_current_interaction_id()
             try:
                 result_content = dispatch_tool(
-                    target_tool_name, arguments, cancel_event=self._tool_interrupt_event
+                    target_tool_name,
+                    arguments,
+                    cancel_event=self._tool_interrupt_event,
+                    # 🌟 主模型开启 vision 直注时，工具输出图片不落盘直接注入对话
+                    vision_mode=getattr(self.model, "vision", False),
                 )
             except Exception as e:
                 result_content = json.dumps(
@@ -731,7 +739,7 @@ class Agent:
                             "role": "tool",
                             "tool_call_id": tool_call.id,
                             "name": target_tool_name,
-                            "content": result_content,
+                            "content": extract_tool_message_content(result_content),
                         }
                     )
                     self._tool_interrupt_event.clear()
@@ -743,7 +751,7 @@ class Agent:
 
             # 🌟 ACP 总线：工具完成事件——完整结果/参数随载荷透出，
             # dispatch 侧统一截断（编辑器看 tool_call_update.content）；
-            # tool_detail 过滤由各桥自决
+            # tool_detail 过滤由各桥自决；vision 直注结果先剥离图片 base64 只透出占位文本
             from src.server.acp.bus import get_bus
 
             get_bus().publish(
@@ -753,7 +761,7 @@ class Agent:
                     "name": target_tool_name,
                     "tool_call_id": tool_call.id,
                     "arguments": arguments,
-                    "result": result_content,
+                    "result": build_display_result(result_content),
                 },
             )
             self._append_history(
@@ -761,7 +769,9 @@ class Agent:
                     "role": "tool",
                     "tool_call_id": tool_call.id,
                     "name": target_tool_name,
-                    "content": result_content,
+                    # vision 直注时为 OpenAI 多模态 parts 列表（含 image_url），
+                    # 普通结果为 JSON 字符串
+                    "content": extract_tool_message_content(result_content),
                 }
             )
 

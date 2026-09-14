@@ -74,6 +74,7 @@ type ModelForm = {
   tpm: string;
   concurrency: string;
   maxToken: string;
+  vision: boolean;
 };
 
 const MCP_NEW_SERVER_TEMPLATE = '{\n  "command": "npx",\n  "args": [],\n  "env": {}\n}';
@@ -335,6 +336,7 @@ export default function ConfigModal({ isOpen, onClose, initialTab }: { isOpen: b
       tpm: MODEL_LIMIT_DEFAULTS.tpm,
       concurrency: MODEL_LIMIT_DEFAULTS.concurrency,
       maxToken: MODEL_LIMIT_DEFAULTS.max_token,
+      vision: false,
     };
     if (catCfg && typeof catCfg === 'object' && !Array.isArray(catCfg)) {
       const entryKey = Object.keys(catCfg)[0];
@@ -347,6 +349,7 @@ export default function ConfigModal({ isOpen, onClose, initialTab }: { isOpen: b
         form.tpm = entry.tpm != null ? String(entry.tpm) : MODEL_LIMIT_DEFAULTS.tpm;
         form.concurrency = entry.concurrency != null ? String(entry.concurrency) : MODEL_LIMIT_DEFAULTS.concurrency;
         form.maxToken = entry.max_token != null ? String(entry.max_token) : MODEL_LIMIT_DEFAULTS.max_token;
+        form.vision = cat !== 'vision' && entry.vision === true;
       }
     }
     return form;
@@ -383,6 +386,7 @@ export default function ConfigModal({ isOpen, onClose, initialTab }: { isOpen: b
       entry.tpm = Number(f.tpm) || Number(MODEL_LIMIT_DEFAULTS.tpm);
       entry.concurrency = Number(f.concurrency) || Number(MODEL_LIMIT_DEFAULTS.concurrency);
       entry.max_token = Number(f.maxToken) || Number(MODEL_LIMIT_DEFAULTS.max_token);
+      entry.vision = !!f.vision; // 🌟 视觉直注：工具输出图片不落盘，直接注入对话
     }
 
     const newData = { ...configData, [cat]: { [entryKey]: entry } };
@@ -1034,6 +1038,24 @@ export default function ConfigModal({ isOpen, onClose, initialTab }: { isOpen: b
                               <div>
                                 <div className={labelCls}>MAX TOKEN</div>
                                 <input value={modelForm.maxToken} onChange={(e) => updateModelForm({ maxToken: e.target.value })} className={inputCls} type="number" spellCheck={false} />
+                              </div>
+                            </div>
+                          )}
+
+                          {/* 🌟 视觉直注开关（仅核心/后台模型，视觉顾问不需要） */}
+                          {modelFormCat !== 'vision' && (
+                            <div className="flex items-center gap-3 pt-2 border-t-2 border-ink/10 border-dashed">
+                              <button
+                                onClick={() => updateModelForm({ vision: !modelForm.vision })}
+                                style={sketchyShape2}
+                                className={`w-10 h-10 shrink-0 flex items-center justify-center border-4 border-ink transition-colors ${modelForm.vision ? 'bg-ink text-paper' : 'bg-[#FDF8F0] text-ink/30'}`}
+                                title={t('config.visionToggleHint')}
+                              >
+                                {modelForm.vision ? <ToggleRight size={22} /> : <ToggleLeft size={22} />}
+                              </button>
+                              <div className="min-w-0">
+                                <div className="font-black text-sm">{t('config.visionToggleLabel')}</div>
+                                <div className="text-xs font-bold opacity-60 mt-0.5">{t('config.visionToggleHint')}</div>
                               </div>
                             </div>
                           )}

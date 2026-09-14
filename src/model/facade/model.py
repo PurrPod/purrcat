@@ -29,6 +29,9 @@ class Model:
         valid_keys = [k for k in api_keys if k and k.strip()]
         self.base_url = model_info.get("base_url")
 
+        # 🌟 vision 直注开关：后台任务模型支持视觉时，工具输出图片直接注入对话
+        self.vision = bool(model_info.get("vision", False))
+
         self.api_key = key_manager.allocate_key(valid_keys, recovered_key_prefix)
         self.key_prefix = self.api_key[:15]
 
@@ -138,6 +141,8 @@ class AgentModel(Model):
         self.task_id = task_id or "default_task"
         self.base_url = model_cfg.get("base_url")
         self.api_key = model_cfg.get("api_key")
+        # 🌟 vision 直注开关：主 Agent 模型支持视觉时，工具输出图片直接注入对话
+        self.vision = bool(model_cfg.get("vision", False))
 
         if not self.api_key:
             api_keys = model_cfg.get("api_keys") or []
@@ -190,6 +195,7 @@ class AgentModel(Model):
             self.model_name = model_name
             self.base_url = base_url
             self.api_key = api_key
+            self.vision = bool(model_cfg.get("vision", False))
             self._init_client(model_cfg)
             return
 

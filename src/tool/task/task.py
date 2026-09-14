@@ -12,7 +12,7 @@ from src.tool.task.task_operations import (
     submit_request_operation,
     get_task_details_operation,
 )
-from src.tool.task.vision import vision
+from src.tool.task.vision import vision, vision_inline
 from src.tool.filesystem.exceptions import FileSystemError, HostPathNotFoundError
 from src.tool.utils.format import error_response, text_response, warning_response
 
@@ -274,13 +274,30 @@ def _handle_get_details(**kwargs) -> str:
 
 
 def _handle_vision(**kwargs) -> str:
-    """视觉顾问：调用大模型分析图片/视频/音频附件，纯图片失败时 OCR 兜底"""
+    """视觉能力：调用方模型开 vision 直注时直接返回图片本体；否则走视觉顾问分析"""
     attachment_paths = kwargs.get("attachment_paths") or []
     if not attachment_paths:
         return error_response(
             "vision 操作必须提供 attachment_paths 参数（附件路径数组，支持图片/视频/音频）",
             "❌ 参数缺失",
         )
+
+    # 🌟 vision 直注模式：调用方模型自身支持视觉（model.json vision=true），
+    # 直接把图片塞回对话（相当于读取图片），无需 prompt 描述、不调视觉顾问
+    if kwargs.pop("_vision_mode", False):
+        try:
+            return vision_inline(attachment_paths)
+        except FileNotFoundError as e:
+            # require_read 只查权限不查存在性，open() 会抛内建 FileNotFoundError
+            return error_response(
+                f"附件路径不存在: {e}，请先确认文件已生成（如截图需等待工具执行完成）",
+                "❌ 路径不存在",
+            )
+        except HostPathNotFoundError as e:
+            return error_response(str(e), "❌ 路径不存在")
+        except FileSystemError as e:
+            return error_response(str(e), "❌ 附件读取失败")
+
     try:
         result = vision(
             paths=attachment_paths,

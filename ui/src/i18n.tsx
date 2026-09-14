@@ -164,6 +164,7 @@ const messages = {
       migrateSuccess: '数据已搬迁，即将重启生效', migrateFailed: '数据目录迁移失败',
       noFolderPicker: '当前环境不支持选择文件夹',
       modelNameLabel: '模型名（MODEL NAME）', modelNamePh: '例：deepseek-v4-flash',
+      visionToggleLabel: '视觉直注（VISION）', visionToggleHint: '开启后工具输出的图片不落盘，直接注入对话历史，Task 视觉模式直接读取图片',
     },
     agentLoop: {
       hook_on_build_system_prompt: '构建系统提示词时', hook_on_loop_start: '循环开始时',
@@ -406,6 +407,7 @@ const messages = {
       migrateSuccess: 'Data migrated; restarting to apply', migrateFailed: 'Data root migration failed',
       noFolderPicker: 'Folder selection is not available in this environment',
       modelNameLabel: 'Model Name', modelNamePh: 'e.g. deepseek-v4-flash',
+      visionToggleLabel: 'Vision Inline', visionToggleHint: 'Tool output images skip disk and are injected into chat history directly; Task vision reads images directly',
     },
     agentLoop: {
       hook_on_build_system_prompt: 'On Build System Prompt', hook_on_loop_start: 'On Loop Start',

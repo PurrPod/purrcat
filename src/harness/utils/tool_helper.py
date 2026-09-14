@@ -18,8 +18,10 @@ def get_system_schema() -> List[dict]:
 def execute_global_tool(tool_name: str, arguments: dict, context: Any = None) -> Any:
     """
     全局非业务拓展工具的路由执行器：直接打给底层路由
+    context.model.vision=True 时开启 vision 直注（工具输出图片不落盘直接注入对话）
     """
-    return dispatch_tool(tool_name, arguments)
+    vision_mode = bool(getattr(getattr(context, "model", None), "vision", False))
+    return dispatch_tool(tool_name, arguments, vision_mode=vision_mode)
 
 
 def extract_tool_calling(response) -> list:

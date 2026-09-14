@@ -8,7 +8,10 @@ import json
 import datetime
 
 from src.model import AgentModel
-from src.tool.utils.route import dispatch_tool
+from src.tool.utils.route import (
+    dispatch_tool,
+    extract_tool_message_content,
+)
 from src.harness.utils.tool_helper import extract_tool_calling
 from src.utils.path import convert_sandbox_path
 from src.agent.session_store import SessionStore
@@ -482,13 +485,19 @@ class SubAgentRunner:
                         f"{self.main_session_id}_{self.internal_branch_id}"
                     )
 
-                result = await asyncio.to_thread(dispatch_tool, tool_name, args)
+                result = await asyncio.to_thread(
+                    dispatch_tool,
+                    tool_name,
+                    args,
+                    vision_mode=getattr(self.model, "vision", False),
+                )
                 self.messages.append(
                     {
                         "role": "tool",
                         "tool_call_id": tc.id,
                         "name": tool_name,
-                        "content": result,
+                        # vision 直注时为 OpenAI 多模态 parts 列表
+                        "content": extract_tool_message_content(result),
                     }
                 )
                 self._save_history()  # 工具执行后落盘

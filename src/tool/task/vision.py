@@ -125,6 +125,69 @@ def _fallback_ocr(paths: list, original_error: str) -> dict:
     }
 
 
+def vision_inline(paths: list) -> dict:
+    """🌟 vision 直注模式：直接读取图片附件构造 OpenAI 多模态 content 列表。
+
+    调用方模型自身支持视觉（model.json 配置 vision=true）时，Task 的 vision
+    action 不再走视觉顾问模型+prompt 分析，而是把图片本体直接塞回对话历史
+    （相当于读取图片），prompt 参数无需填写。
+    仅支持 API 实际接受的位图格式（png/jpg/jpeg/gif/webp）。
+    """
+    import base64
+    import os
+    import time
+
+    # OpenAI 兼容接口实际接受的图片格式（SVG/BMP 等会被 API 以 400 拒绝）
+    _INLINE_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
+
+    if isinstance(paths, str):
+        paths = [paths]
+    if not paths:
+        raise ImageReadError("未提供任何有效的附件路径")
+
+    resolved_paths = [require_read(p) for p in paths]
+
+    # 校验：vision 直注仅支持 API 接受的位图格式（OpenAI content parts 规范）
+    for p in resolved_paths:
+        ext = os.path.splitext(p)[1].lower()
+        if ext == ".svg":
+            raise ImageReadError(
+                f"SVG 是矢量文本格式，API 不支持直注（仅支持 png/jpg/jpeg/gif/webp）: {p}\n"
+                "💡 SVG 本质是文本源码，请直接使用 FileSystem 工具 read 该文件即可理解内容"
+            )
+        if ext not in _INLINE_IMAGE_EXTS:
+            raise ImageReadError(
+                f"vision 直注模式仅支持 png/jpg/jpeg/gif/webp 位图: {p}（{ext} 不受 API 支持），"
+                "音视频/其他格式请由用户将模型 vision 配置关闭后走视觉顾问分析"
+            )
+
+    parts = [
+        {
+            "type": "text",
+            "text": (
+                f"👁️ [vision直注] 已直接读取 {len(resolved_paths)} 张图片注入本轮对话"
+                f"（路径: {resolved_paths}），无需视觉顾问转述，请直接查看。"
+            ),
+        }
+    ]
+    for path in resolved_paths:
+        mime_type, _ = mimetypes.guess_type(path)
+        with open(path, "rb") as f:
+            b64 = base64.b64encode(f.read()).decode("utf-8")
+        parts.append(
+            {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{b64}"}}
+        )
+
+    return {
+        "content": parts,
+        "metadata": {
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "type": "text",
+            "snip": f"👁️ vision 直注 {len(resolved_paths)} 张图片",
+        },
+    }
+
+
 def _extract_message(message) -> tuple:
     """从响应消息中提取 (content, reasoning_content)，兼容 pydantic 与普通对象。"""
     raw = message.model_dump() if hasattr(message, "model_dump") else vars(message)

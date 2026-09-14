@@ -622,30 +622,56 @@ def to_updates(envelope: dict) -> list[dict]:
         name = data.get("name", "tool")
         args = data.get("arguments")
         raw_result = data.get("result", "")
-        # 结果解包：dispatch_tool 统一封包 {"content": 正文, "metadata": {type, snip}}
-        # → 编辑器看 content 本体（不带 JSON 噪音）；宽容兼容裸 error dict / 纯文本
-        try:
-            parsed = json.loads(raw_result) if raw_result else None
-        except Exception:
-            parsed = None
-        if (
-            isinstance(parsed, dict)
-            and isinstance(parsed.get("metadata"), dict)
-            and "content" in parsed
-        ):
-            body = str(parsed.get("content", "") or "")
-            raw_output = parsed
-            status = (
-                "failed" if parsed["metadata"].get("type") == "error" else "completed"
+
+        # 🌟 vision 直注：result 可能是 OpenAI 多模态 parts 列表（回放历史时
+        # tool 消息 content 原样透传），编辑器侧只看文本占位，不透出 base64
+        def _vision_text_parts(parts: list) -> str:
+            return "\n".join(
+                str(p.get("text", ""))
+                for p in parts
+                if isinstance(p, dict) and p.get("type") == "text"
             )
-        elif isinstance(parsed, dict):
-            body = raw_result
-            raw_output = parsed
-            status = "failed" if parsed.get("error") else "completed"
-        else:
-            body = str(raw_result or "")
-            raw_output = None
+
+        if isinstance(raw_result, list):
+            body = _vision_text_parts(raw_result) or "[图片已注入对话]"
+            raw_output = {"content": body, "metadata": {}}
             status = "completed"
+            parsed = None
+        else:
+            # 结果解包：dispatch_tool 统一封包 {"content": 正文, "metadata": {type, snip}}
+            # → 编辑器看 content 本体（不带 JSON 噪音）；宽容兼容裸 error dict / 纯文本
+            try:
+                parsed = json.loads(raw_result) if raw_result else None
+            except Exception:
+                parsed = None
+            if (
+                isinstance(parsed, dict)
+                and isinstance(parsed.get("metadata"), dict)
+                and "content" in parsed
+            ):
+                raw_content = parsed.get("content")
+                if isinstance(raw_content, list):
+                    # vision 直注结果（防御：调用方未净化的旁路）
+                    body = _vision_text_parts(raw_content) or "[图片已注入对话]"
+                    parsed = dict(parsed)
+                    parsed["content"] = body
+                else:
+                    body = str(raw_content or "")
+                raw_output = parsed
+                status = (
+                    "failed"
+                    if isinstance(parsed.get("metadata"), dict)
+                    and parsed["metadata"].get("type") == "error"
+                    else "completed"
+                )
+            elif isinstance(parsed, dict):
+                body = raw_result
+                raw_output = parsed
+                status = "failed" if parsed.get("error") else "completed"
+            else:
+                body = str(raw_result or "")
+                raw_output = None
+                status = "completed"
 
         tcid = f"acp_{next(_tool_call_counter)}"
         call = {

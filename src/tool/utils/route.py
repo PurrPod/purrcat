@@ -66,8 +66,92 @@ def _safe_truncate(data: Any, max_tokens: int) -> str:
     return f"{preview}\n\n... [后续约 {omitted_chars} 字符已被截断，请使用 Bash 工具读取落盘的缓存文件] ..."
 
 
-def _handle_media_content(content_data: Any, tool_name: str) -> Any:
-    """处理多媒体内容，直接对原生 content_data 操作"""
+# 图片扩展名集合：vision 直注时据此判断媒体是否为图片
+# （OpenAI 兼容接口仅接受 webp/png/jpeg/gif，SVG/BMP 等走落盘路径）
+_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
+
+
+def _is_openai_content_parts(data: Any) -> bool:
+    """判断 data 是否为 OpenAI 多模态 content parts 列表（vision 直注结果的特征签名）"""
+    return (
+        isinstance(data, list)
+        and bool(data)
+        and all(
+            isinstance(p, dict) and p.get("type") in ("text", "image_url")
+            for p in data
+        )
+    )
+
+
+def _image_data_url(base64_str: str, ext: str, mime_type: str = None) -> str:
+    """图片 base64 → data URL；mcp_media 场景直接用工具给的 mimeType"""
+    if not mime_type:
+        mime_type = mimetypes.guess_type(f"file{ext}")[0] or "image/png"
+    return f"data:{mime_type};base64,{base64_str}"
+
+
+def _build_vision_inline_parts(
+    media_type: str, content_data: dict, tool_name: str
+) -> list | None:
+    """vision 直注：把工具输出的图片字典构造为 OpenAI 多模态 content parts。
+
+    仅处理图片（视频/音频/PDF 仍走落盘路径）；返回 None 表示该媒体不适用直注。
+    """
+    timestamp = time.strftime("%Y%m%d_%H%M%S")
+    marker_id = uuid.uuid4().hex[:8]
+
+    if media_type == "image":
+        ext = content_data.get("ext", ".png")
+        if ext not in _IMAGE_EXTS:
+            return None
+        data_url = _image_data_url(content_data["data"], ext)
+    elif media_type == "mcp_media":
+        mime_type = str(content_data.get("mimeType", ""))
+        ext = mimetypes.guess_extension(mime_type) or ""
+        # SVG（image/svg+xml）等矢量/非常规格式 API 不接受，按扩展名白名单拦截
+        if ext not in _IMAGE_EXTS:
+            return None
+        data_url = _image_data_url(content_data["data"], ext, mime_type)
+    elif media_type == "media_base64":
+        ext = content_data.get("ext", ".bin")
+        if ext not in _IMAGE_EXTS:
+            return None
+        data_url = _image_data_url(content_data["data"], ext)
+    elif media_type == "media_url":
+        ext = content_data.get("ext", ".bin")
+        if ext not in _IMAGE_EXTS:
+            return None
+        # 图片 URL：下载后内联为 data URL，与直注语义保持一致（不落盘）
+        import urllib.request
+
+        with urllib.request.urlopen(content_data["url"], timeout=60) as r:
+            raw = r.read()
+        data_url = _image_data_url(
+            base64.b64encode(raw).decode("utf-8"), ext
+        )
+    else:
+        return None
+
+    # 占位路径仅供前端/模型引用展示，文件本体并未写入磁盘
+    placeholder_name = f"vision_{tool_name}_{timestamp}_{marker_id}{ext}"
+    text_part = {
+        "type": "text",
+        "text": (
+            "🖼️ [vision直注] 图片未落盘，已直接注入本轮对话。\n"
+            f"📂 占位路径: /agent_vm/.buffer/{placeholder_name}"
+        ),
+    }
+    image_part = {"type": "image_url", "image_url": {"url": data_url}}
+    return [text_part, image_part]
+
+
+def _handle_media_content(
+    content_data: Any, tool_name: str, vision_mode: bool = False
+) -> Any:
+    """处理多媒体内容，直接对原生 content_data 操作
+
+    vision_mode=True 且媒体为图片时，不落盘，直接返回 OpenAI 多模态 parts 列表。
+    """
     if not isinstance(content_data, dict):
         return content_data
 
@@ -82,6 +166,13 @@ def _handle_media_content(content_data: Any, tool_name: str) -> Any:
         "media_base64",
     ]:
         return content_data
+
+    # 🌟 vision 直注：图片跳过落盘，直接构造 OpenAI 格式注入对话历史
+    if vision_mode:
+        inline_parts = _build_vision_inline_parts(media_type, content_data, tool_name)
+        if inline_parts is not None:
+            return inline_parts
+        # 非图片（视频/音频/PDF 等）继续走原有落盘路径
 
     buffer_dir = BUFFER_DIR
     os.makedirs(buffer_dir, exist_ok=True)
@@ -302,15 +393,26 @@ def _execute_tool(
 
 
 def dispatch_tool(
-    tool_name: str, arguments: dict, available_tokens: int = None, cancel_event=None
+    tool_name: str,
+    arguments: dict,
+    available_tokens: int = None,
+    cancel_event=None,
+    vision_mode: bool = False,
 ):
     """
     核心路由枢纽：纯净的数据流处理
     cancel_event: threading.Event，被 set 时物理掐断正在执行的工具并返回伪造打断结果
+    vision_mode: 调用方模型开启了 vision 直注（图片不落盘，直接以 OpenAI
+    多模态格式返回，由调用方解包进 tool 消息的 content）
     """
     try:
         tool_name_lower = tool_name.lower()
         func_name = TOOL_FUNC_MAP.get(tool_name_lower, tool_name.capitalize())
+
+        # 🌟 vision 直注模式下，告知 Task 工具调用方支持视觉
+        # （action=vision 时直接返回图片本体，不再走视觉顾问模型）
+        if vision_mode and tool_name_lower == "task":
+            arguments["_vision_mode"] = True
 
         module_path = f"src.tool.{tool_name_lower}.{tool_name_lower}"
         try:
@@ -343,7 +445,27 @@ def dispatch_tool(
             }
 
         # 3. 如果是多媒体文件字典，这里将其退化成纯文本的路径提示
-        content_data = _handle_media_content(content_data, tool_name_lower)
+        #    （vision_mode=True 时图片直接变成 OpenAI 多模态 parts，不落盘）
+        content_data = _handle_media_content(
+            content_data, tool_name_lower, vision_mode=vision_mode
+        )
+
+        # 3.5 🌟 vision 直注结果：跳过长度拦截与格式化，直接封包返回
+        #     （base64 图片不能被 token 截断/yaml 转换污染）
+        if _is_openai_content_parts(content_data):
+            # 原始 metadata.snip 中的关键提示（如 ComputerUse 的 SoM 元素表）
+            # 并入文本 part，保证模型仍能看到
+            snip = str(metadata.get("snip") or "").strip()
+            if snip:
+                for part in content_data:
+                    if part.get("type") == "text":
+                        part["text"] = f"{part['text']}\n{snip}"
+                        break
+            metadata = dict(metadata)
+            metadata["type"] = "text"
+            return json.dumps(
+                {"content": content_data, "metadata": metadata}, ensure_ascii=False
+            )
 
         # 4. 生成用于判断长度与落盘的纯净字符串
         if isinstance(content_data, (dict, list)):
@@ -412,3 +534,48 @@ def dispatch_tool(
             },
         }
         return json.dumps(final_err_res, ensure_ascii=False)
+
+
+# ==========================================
+# 🌟 vision 直注结果的调用方辅助函数
+# ==========================================
+
+
+def extract_tool_message_content(result: Any) -> Any:
+    """dispatch_tool 返回值 → tool 消息的 content。
+
+    vision 直注结果（{"content": [OpenAI parts], "metadata": ...}）解包为
+    多模态 parts 列表（符合 OpenAI tool 消息 content 数组规范）；
+    普通结果原样返回字符串。
+    """
+    if isinstance(result, str):
+        try:
+            obj = json.loads(result)
+            if isinstance(obj, dict) and _is_openai_content_parts(obj.get("content")):
+                return obj["content"]
+        except Exception:
+            pass
+    return result
+
+
+def build_display_result(result: Any) -> str:
+    """dispatch_tool 返回值 → 前端/ACP 总线展示用结果。
+
+    vision 直注结果剥离 image_url parts（base64 不外泄），只保留文本占位。
+    """
+    parts = extract_tool_message_content(result)
+    if isinstance(parts, list):
+        texts = [
+            str(p.get("text", ""))
+            for p in parts
+            if isinstance(p, dict) and p.get("type") == "text"
+        ]
+        try:
+            metadata = json.loads(result).get("metadata", {})
+        except Exception:
+            metadata = {}
+        return json.dumps(
+            {"content": "\n".join(t for t in texts if t), "metadata": metadata},
+            ensure_ascii=False,
+        )
+    return result
