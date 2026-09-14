@@ -236,7 +236,6 @@ function createWindow() {
 
   if (IS_DEV) {
     mainWindow.loadURL(DEV_URL);
-    mainWindow.webContents.openDevTools({ mode: 'detach' });
   } else {
     // 生产模式：等后端就绪再 loadURL，避免端口未就绪导致空白页
     mainWindow.loadURL('about:blank');
