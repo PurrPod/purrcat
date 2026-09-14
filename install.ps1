@@ -185,12 +185,14 @@ try {
     uv sync
     if ($LASTEXITCODE -ne 0) { Fail "uv sync failed" }
 
+    # npm.cmd: PowerShell prefers the npm.ps1 shim, which the default Restricted
+    # execution policy blocks (UnauthorizedAccess); the .cmd shim is unaffected
     Info "Installing desktop dependencies (npm install) ..."
-    npm install
+    npm.cmd install
     if ($LASTEXITCODE -ne 0) { Fail "npm install failed" }
 
     Info "Installing frontend dependencies (npm install --prefix ui) ..."
-    npm install --prefix ui
+    npm.cmd install --prefix ui
     if ($LASTEXITCODE -ne 0) { Fail "npm install --prefix ui failed" }
 } finally {
     Pop-Location
