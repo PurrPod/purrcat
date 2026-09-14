@@ -30,21 +30,39 @@ function Install-ByWinget($id) {
     return ($LASTEXITCODE -eq 0)
 }
 
+# Fallback: official Git installer when winget is unusable (broken sources, blocked CDN, etc.)
+function Install-GitBySetup {
+    $ProgressPreference = "SilentlyContinue"  # speed up Invoke-WebRequest
+    $r = Invoke-RestMethod "https://api.github.com/repos/git-for-windows/git/releases/latest"
+    $asset = $r.assets | Where-Object { $_.name -match '^Git-.*-64-bit\.exe$' } | Select-Object -First 1
+    if (-not $asset) { return $false }
+    $setup = "$env:TEMP\git-setup.exe"
+    Info "Downloading Git installer: $($asset.name) ..."
+    Invoke-WebRequest $asset.browser_download_url -OutFile $setup
+    Info "Running the installer (please allow the UAC prompt if it appears) ..."
+    $p = Start-Process $setup -ArgumentList '/VERYSILENT','/NORESTART','/NOCANCEL','/SP-' -Wait -PassThru
+    return ($p.ExitCode -eq 0)
+}
+
 # ---------- git ----------
 if (Get-Command git -ErrorAction SilentlyContinue) {
     Info "git detected: $(git --version)"
 } else {
-    if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
-        Fail "winget not found; install git manually: https://git-scm.com/download/win"
+    $gitInstalled = $false
+    if (Get-Command winget -ErrorAction SilentlyContinue) {
+        Info "Installing git ..."
+        $gitInstalled = Install-ByWinget "Git.Git"
     }
-    Info "Installing git ..."
-    $gitInstalled = Install-ByWinget "Git.Git"
+    if (-not $gitInstalled) {
+        Warn "winget failed; falling back to the official Git installer ..."
+        $gitInstalled = Install-GitBySetup
+    }
     Update-SessionPath
     if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
         if ($gitInstalled) {
             Fail "git was installed but is not in PATH yet; reopen your terminal and re-run this script"
         }
-        Fail "git installation failed (see the winget output above); if it was the UAC prompt being dismissed, re-run and allow it. Otherwise install manually: https://git-scm.com/download/win"
+        Fail "git installation failed; install it manually: https://git-scm.com/download/win"
     }
     Ok "git installed: $(git --version)"
 }
