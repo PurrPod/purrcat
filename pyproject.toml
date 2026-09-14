@@ -16,9 +16,7 @@ dependencies = [
     "mcp>=0.1.0",
 
     # 传感器与通信
-    "lark-oapi>=1.2.4", "feedparser>=6.0.10", "soundfile>=0.12.1",
-    "SpeechRecognition>=3.10.0", "pyaudio>=0.2.14", "pyttsx3>=2.90",
-    "openai-whisper>=20231117",
+    "lark-oapi>=1.2.4", "feedparser>=6.0.10",
 
     # Web 搜索与自动化
     "curl-cffi>=0.6.0", "ddgs>=0.1.0", "beautifulsoup4>=4.12.3",
