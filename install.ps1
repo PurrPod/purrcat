@@ -21,7 +21,8 @@ function Update-SessionPath {
 
 function Install-ByWinget($id) {
     Info "(Please allow the UAC prompt if it appears)"
-    winget install --id $id -e --accept-source-agreements --accept-package-agreements
+    # Out-Host: pass winget output straight to the console so failures are visible
+    winget install --id $id -e --accept-source-agreements --accept-package-agreements | Out-Host
     return ($LASTEXITCODE -eq 0)
 }
 
@@ -33,10 +34,13 @@ if (Get-Command git -ErrorAction SilentlyContinue) {
         Fail "winget not found; install git manually: https://git-scm.com/download/win"
     }
     Info "Installing git ..."
-    $null = Install-ByWinget "Git.Git"
+    $gitInstalled = Install-ByWinget "Git.Git"
     Update-SessionPath
     if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
-        Fail "git installation failed; install it manually: https://git-scm.com/download/win"
+        if ($gitInstalled) {
+            Fail "git was installed but is not in PATH yet; reopen your terminal and re-run this script"
+        }
+        Fail "git installation failed (see the winget output above); if it was the UAC prompt being dismissed, re-run and allow it. Otherwise install manually: https://git-scm.com/download/win"
     }
     Ok "git installed: $(git --version)"
 }
