@@ -44,6 +44,35 @@ function Install-GitBySetup {
     return ($p.ExitCode -eq 0)
 }
 
+# Fallback: official Node.js LTS MSI when winget is unusable
+function Install-NodeBySetup {
+    $ProgressPreference = "SilentlyContinue"  # speed up Invoke-WebRequest
+    $lts = Invoke-RestMethod "https://nodejs.org/dist/index.json" | Where-Object { $_.lts } | Select-Object -First 1
+    if (-not $lts) { return $false }
+    $msi = "$env:TEMP\node-setup.msi"
+    Info "Downloading Node.js $($lts.version) LTS ..."
+    Invoke-WebRequest "https://nodejs.org/dist/$($lts.version)/node-$($lts.version)-x64.msi" -OutFile $msi
+    Info "Running the installer (please allow the UAC prompt if it appears) ..."
+    $p = Start-Process msiexec.exe -ArgumentList '/i', $msi, '/qn', '/norestart' -Wait -PassThru
+    return ($p.ExitCode -eq 0)
+}
+
+# Fallback: uv from GitHub releases when astral.sh is unreachable
+function Install-UvByGitHub {
+    $ProgressPreference = "SilentlyContinue"  # speed up Invoke-WebRequest
+    $r = Invoke-RestMethod "https://api.github.com/repos/astral-sh/uv/releases/latest"
+    $asset = $r.assets | Where-Object { $_.name -match '^uv-x86_64-pc-windows-msvc\.zip$' } | Select-Object -First 1
+    if (-not $asset) { return $false }
+    $tmp = "$env:TEMP\uv-download"
+    $zip = "$tmp.zip"
+    Info "Downloading uv $($r.tag_name) from GitHub releases ..."
+    Invoke-WebRequest $asset.browser_download_url -OutFile $zip
+    Expand-Archive $zip -DestinationPath $tmp -Force
+    New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
+    Get-ChildItem $tmp -Recurse -Include uv.exe, uvx.exe | Move-Item -Destination $BinDir -Force
+    return (Test-Path "$BinDir\uv.exe")
+}
+
 # ---------- git ----------
 if (Get-Command git -ErrorAction SilentlyContinue) {
     Info "git detected: $(git --version)"
@@ -72,11 +101,18 @@ if (Get-Command uv -ErrorAction SilentlyContinue) {
     Info "uv detected: $(Get-Command uv).Source"
 } else {
     Info "Installing uv ..."
-    irm https://astral.sh/uv/install.ps1 | iex
+    try {
+        irm https://astral.sh/uv/install.ps1 | iex
+    } catch {
+        Warn "official uv installer failed ($($_.Exception.Message)); falling back to GitHub releases ..."
+    }
 }
 $env:Path = "$BinDir;$env:Path"
 if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
-    Fail "uv installation failed; run manually: irm https://astral.sh/uv/install.ps1 | iex"
+    $null = Install-UvByGitHub
+}
+if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
+    Fail "uv installation failed; install it manually: https://docs.astral.sh/uv/getting-started/installation/"
 }
 
 # ---------- Node.js 18+ ----------
@@ -92,13 +128,20 @@ if (Get-Command node -ErrorAction SilentlyContinue) {
     }
 }
 if (-not $nodeOk) {
-    if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
-        Fail "winget not found; install Node.js 18+ manually: https://nodejs.org/"
+    $nodeInstalled = $false
+    if (Get-Command winget -ErrorAction SilentlyContinue) {
+        Info "Installing Node.js LTS ..."
+        $nodeInstalled = Install-ByWinget "OpenJS.NodeJS.LTS"
     }
-    Info "Installing Node.js LTS ..."
-    $null = Install-ByWinget "OpenJS.NodeJS.LTS"
+    if (-not $nodeInstalled) {
+        Warn "winget failed; falling back to the official Node.js LTS installer ..."
+        $nodeInstalled = Install-NodeBySetup
+    }
     Update-SessionPath
     if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
+        if ($nodeInstalled) {
+            Fail "Node.js was installed but is not in PATH yet; reopen your terminal and re-run this script"
+        }
         Fail "Node.js installation failed; install an 18+ version manually: https://nodejs.org/"
     }
     Ok "Node.js installed: $(node -v)"
@@ -202,11 +245,17 @@ uv run python -m scripts.cli.main %*
 '@ | Set-Content -Path "$BinDir\purrcat.cmd" -Encoding ascii
 
 # ---------- Ensure ~/.local/bin is in user PATH ----------
-$userPath = [Environment]::GetEnvironmentVariable("Path", "User")
-if ($userPath -notlike "*$BinDir*") {
-    [Environment]::SetEnvironmentVariable("Path", "$userPath;$BinDir", "User")
+# Write via the registry API: SetEnvironmentVariable would change REG_EXPAND_SZ to REG_SZ,
+# breaking %USERPROFILE%-style entries and WindowsApps aliases
+$envKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey("Environment", $true)
+$userPath = $envKey.GetValue("Path", "", [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+if ("$userPath" -notlike "*$BinDir*") {
+    try { $kind = $envKey.GetValueKind("Path") } catch { $kind = [Microsoft.Win32.RegistryValueKind]::ExpandString }
+    $newPath = if ([string]::IsNullOrEmpty($userPath)) { $BinDir } else { "$userPath;$BinDir" }
+    $envKey.SetValue("Path", $newPath, $kind)
     Info "Added $BinDir to user PATH"
 }
+$envKey.Close()
 
 # ---------- Done ----------
 Write-Host ""
