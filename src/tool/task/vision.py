@@ -153,21 +153,16 @@ def vision_inline(paths: list) -> dict:
         if ext == ".svg":
             raise ImageReadError(
                 f"SVG 是矢量文本格式，API 不支持直注（仅支持 png/jpg/jpeg/gif/webp）: {p}\n"
-                "💡 SVG 本质是文本源码，请直接使用 FileSystem 工具 read 该文件即可理解内容"
             )
         if ext not in _INLINE_IMAGE_EXTS:
             raise ImageReadError(
-                f"vision 直注模式仅支持 png/jpg/jpeg/gif/webp 位图: {p}（{ext} 不受 API 支持），"
-                "音视频/其他格式请由用户将模型 vision 配置关闭后走视觉顾问分析"
+                f"vision 直注模式仅支持 png/jpg/jpeg/gif/webp 位图: {p}（{ext} 不受 API 支持）"
             )
 
     parts = [
         {
             "type": "text",
-            "text": (
-                f"👁️ [vision直注] 已直接读取 {len(resolved_paths)} 张图片注入本轮对话"
-                f"（路径: {resolved_paths}），无需视觉顾问转述，请直接查看。"
-            ),
+            "text": (f"[vision直注] 已直接读取 {len(resolved_paths)} 张图片"),
         }
     ]
     for path in resolved_paths:
@@ -175,7 +170,10 @@ def vision_inline(paths: list) -> dict:
         with open(path, "rb") as f:
             b64 = base64.b64encode(f.read()).decode("utf-8")
         parts.append(
-            {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{b64}"}}
+            {
+                "type": "image_url",
+                "image_url": {"url": f"data:{mime_type};base64,{b64}"},
+            }
         )
 
     return {
@@ -183,7 +181,7 @@ def vision_inline(paths: list) -> dict:
         "metadata": {
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
             "type": "text",
-            "snip": f"👁️ vision 直注 {len(resolved_paths)} 张图片",
+            "snip": f"查看了 {len(resolved_paths)} 张图片",
         },
     }
 

@@ -157,12 +157,7 @@ class DockerManager:
         r"""挂载路径归一化：D:/x、d:/x、/d/x 统一成 d 盘反斜杠形式（大小写不敏感）"""
         p = str(p).replace("/", os.sep)
         # Docker Desktop 偶尔记录成 /d/x 形式（盘符风格），转成 d:\x
-        if (
-            len(p) >= 3
-            and p[0] == os.sep
-            and p[1].isalpha()
-            and p[2] == os.sep
-        ):
+        if len(p) >= 3 and p[0] == os.sep and p[1].isalpha() and p[2] == os.sep:
             p = p[1] + ":" + p[2:]
         return os.path.normpath(p).lower()
 
@@ -190,11 +185,9 @@ class DockerManager:
                 existing_container.reload()
                 mount_src = self._get_container_mount_source(existing_container)
                 want_src = os.path.abspath(self.workspace_dir)
-                if (
-                    mount_src is not None
-                    and self._norm_mount_path(mount_src)
-                    != self._norm_mount_path(want_src)
-                ):
+                if mount_src is not None and self._norm_mount_path(
+                    mount_src
+                ) != self._norm_mount_path(want_src):
                     print(
                         f"⚠️ 沙盒 ({self.container_name}) 挂载错位: 容器挂 {mount_src}，"
                         f"当前数据根要求 {want_src}，销毁重建..."

@@ -77,8 +77,7 @@ def _is_openai_content_parts(data: Any) -> bool:
         isinstance(data, list)
         and bool(data)
         and all(
-            isinstance(p, dict) and p.get("type") in ("text", "image_url")
-            for p in data
+            isinstance(p, dict) and p.get("type") in ("text", "image_url") for p in data
         )
     )
 
@@ -126,9 +125,7 @@ def _build_vision_inline_parts(
 
         with urllib.request.urlopen(content_data["url"], timeout=60) as r:
             raw = r.read()
-        data_url = _image_data_url(
-            base64.b64encode(raw).decode("utf-8"), ext
-        )
+        data_url = _image_data_url(base64.b64encode(raw).decode("utf-8"), ext)
     else:
         return None
 
