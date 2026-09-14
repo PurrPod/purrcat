@@ -141,6 +141,31 @@ class DockerManager:
         self.pool_lock = threading.Lock()
         self._started = False
 
+    def _get_container_mount_source(self, container) -> str | None:
+        """读取容器 /agent_vm 挂载的宿主机源路径（读不到返回 None）"""
+        try:
+            mounts = container.attrs.get("Mounts") or []
+            for m in mounts:
+                if m.get("Destination") == self.container_workspace:
+                    return m.get("Source")
+        except Exception:
+            pass
+        return None
+
+    @staticmethod
+    def _norm_mount_path(p: str) -> str:
+        r"""挂载路径归一化：D:/x、d:/x、/d/x 统一成 d 盘反斜杠形式（大小写不敏感）"""
+        p = str(p).replace("/", os.sep)
+        # Docker Desktop 偶尔记录成 /d/x 形式（盘符风格），转成 d:\x
+        if (
+            len(p) >= 3
+            and p[0] == os.sep
+            and p[1].isalpha()
+            and p[2] == os.sep
+        ):
+            p = p[1] + ":" + p[2:]
+        return os.path.normpath(p).lower()
+
     def start(self):
         if self._started and self.container is not None:
             try:
@@ -157,6 +182,28 @@ class DockerManager:
         # ---------- 替换旧容器清理逻辑：唤醒休眠容器 ----------
         try:
             existing_container = self.client.containers.get(self.container_name)
+
+            # 🌟 挂载校验：数据根目录变更后（换盘），旧容器的 /agent_vm
+            # 还挂着旧路径，复用会造成"沙盒写了、宿主看不到"的读写错位，
+            # 必须销毁重建（容器内系统变更随销毁丢失，属预期）
+            if self.workspace_dir is not None:
+                existing_container.reload()
+                mount_src = self._get_container_mount_source(existing_container)
+                want_src = os.path.abspath(self.workspace_dir)
+                if (
+                    mount_src is not None
+                    and self._norm_mount_path(mount_src)
+                    != self._norm_mount_path(want_src)
+                ):
+                    print(
+                        f"⚠️ 沙盒 ({self.container_name}) 挂载错位: 容器挂 {mount_src}，"
+                        f"当前数据根要求 {want_src}，销毁重建..."
+                    )
+                    if existing_container.status == "running":
+                        existing_container.stop(timeout=2)
+                    existing_container.remove(force=True)
+                    raise NotFound("mount mismatch, force recreate")
+
             if existing_container.status != "running":
                 print(f"[-] 发现休眠沙盒 ({self.container_name})，正在唤醒...")
                 existing_container.start()

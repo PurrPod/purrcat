@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   X, Save, FileJson, AlertCircle, Plus, Trash2, RefreshCw,
-  ToggleLeft, ToggleRight, Folder, FolderRoot, Info, HardDrive, Pencil,
+  ToggleLeft, ToggleRight, Folder, FolderRoot, HardDrive, Pencil,
   Loader2, Server, Cpu, Eye, Store, Languages, Copy, Plug, KeyRound,
   Package, Braces, Container, Brain, Rocket, Globe, RotateCw, Terminal, ChevronDown, CheckCircle
 } from 'lucide-react';
@@ -1315,8 +1315,8 @@ export default function ConfigModal({ isOpen, onClose, initialTab }: { isOpen: b
                 <div className="text-xs font-black text-ink/50 tracking-widest mt-2">{t('config.newRoot')}</div>
                 <div className="font-mono text-[14px] font-bold text-[#a3be8c] break-all">{pendingRoot}</div>
               </div>
-              <div className="flex items-start gap-2 text-xs font-bold text-ink/50">
-                <Info size={14} className="shrink-0 mt-0.5" />
+              <div style={sketchyShape3} className="bg-[#f6d5a8] border-2 border-ink/40 p-3 flex items-start gap-2 text-xs font-bold text-ink/80 leading-relaxed">
+                <AlertCircle size={14} className="shrink-0 mt-0.5 text-terracotta" />
                 {t('config.migrateHint')}
               </div>
             </div>

@@ -278,7 +278,9 @@ def api_get_info_config():
 
 # ── 数据根目录（settings.json 内部管理，UI 无全局设置编辑页） ──
 # 数据根目录下需要整体搬迁的大型数据子目录
-LARGE_DATA_SUBDIRS = ("agent_vm", "embedding")
+# ⚠️ agent_vm 不搬迁：它挂载进沙盒容器，路径绑定容器生命周期，
+# 换根后旧容器即失效（销毁重建），新位置直接建全新空目录即可
+LARGE_DATA_SUBDIRS = ("embedding",)
 
 
 def _validate_data_root(value: str) -> str:
@@ -328,7 +330,7 @@ def api_setup_data_root(payload: Dict[str, Any] = Body(default={})):
 
 @router.post("/change-data-root")
 def api_change_data_root(payload: Dict[str, Any] = Body(default={})):
-    """随时更改数据根目录：搬迁旧根目录下的大型数据到新位置，落盘配置，前端随后重启生效"""
+    """随时更改数据根目录：搬迁可迁移数据到新位置，落盘配置，销毁旧沙盒容器，前端随后重启生效"""
     import shutil
 
     new_root = _validate_data_root((payload or {}).get("data_root", ""))
@@ -346,7 +348,7 @@ def api_change_data_root(payload: Dict[str, Any] = Body(default={})):
             detail="新目录不能位于当前数据根目录内部，也不能是它的父目录",
         )
 
-    # 搬迁大型数据子目录（agent_vm / embedding）
+    # 搬迁大型数据子目录（embedding 等；agent_vm 不搬，见下方）
     moved = []
     try:
         os.makedirs(new_root, exist_ok=True)
@@ -362,6 +364,11 @@ def api_change_data_root(payload: Dict[str, Any] = Body(default={})):
                 )
             shutil.move(src, dst)
             moved.append(name)
+
+        # agent_vm 不搬迁：旧位置数据保留在旧盘（用户自行处置），
+        # 新位置直接创建全新空目录（已存在则跳过，不影响其中数据）
+        new_agent_vm = os.path.join(new_root, "agent_vm")
+        os.makedirs(new_agent_vm, exist_ok=True)
     except HTTPException:
         _rollback_moved_dirs(new_root, old_root, moved)
         raise
@@ -373,6 +380,10 @@ def api_change_data_root(payload: Dict[str, Any] = Body(default={})):
         _rollback_moved_dirs(new_root, old_root, moved)
         raise HTTPException(status_code=500, detail="保存数据盘配置失败")
 
+    # 🌟 销毁旧沙盒容器：其 /agent_vm 挂载绑定的是旧根目录路径，
+    # 换根后必然读写错位，保留只会造成"沙盒写了、宿主看不到"的幽灵文件问题
+    _destroy_sandbox_container()
+
     print(
         f"[Config API] 数据根目录已切换: {old_root} -> {new_root}"
         f"（搬迁: {', '.join(moved) if moved else '无'}，重启后生效）"
@@ -381,8 +392,31 @@ def api_change_data_root(payload: Dict[str, Any] = Body(default={})):
         "status": "ok",
         "data_root": new_root,
         "moved": moved,
-        "message": "数据已搬迁并落盘配置，重启后生效",
+        "message": "数据已就绪（agent_vm 已在新位置全新初始化，沙盒容器已销毁，重启后自动重建）",
     }
+
+
+def _destroy_sandbox_container():
+    """销毁旧沙盒容器（best-effort）：docker 不可用时忽略，由重启后的创建逻辑兜底。
+
+    容器内的系统变更（apt 安装的包等）会随销毁丢失——这是预期行为：
+    换根即换盘，旧挂载已无意义。
+    """
+    try:
+        import docker
+        from docker.errors import NotFound
+
+        client = docker.from_env(timeout=5)
+        container = client.containers.get("agent_computer")
+        if container.status == "running":
+            container.stop(timeout=2)
+        container.remove(force=True)
+        print("[Config API] 旧沙盒容器 (agent_computer) 已销毁，重启后按新数据根重建")
+    except NotFound:
+        pass  # 本来就没有容器
+    except Exception as e:
+        # docker 未装/引擎未启动：忽略，重启后 get_docker_manager 会按新 AGENT_VM_DIR 创建
+        print(f"[Config API] 销毁旧沙盒容器失败(忽略，重启后重建): {e}")
 
 
 def _rollback_moved_dirs(new_root: str, old_root: str, moved: list):
