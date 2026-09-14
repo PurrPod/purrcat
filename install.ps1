@@ -6,6 +6,7 @@ $ErrorActionPreference = "Stop"
 
 # Decode native tool output (winget) as UTF-8; otherwise CJK Windows shows mojibake
 try { [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new() } catch { }
+try { $Host.UI.RawUI.WindowTitle = "PurrCat Installer" } catch { }
 
 $RepoUrl    = "https://github.com/PurrPod/purrcat.git"
 $InstallDir = if ($env:PURRCAT_HOME) { $env:PURRCAT_HOME } else { "$env:USERPROFILE\purrcat" }
@@ -20,6 +21,16 @@ function Fail($m) { throw $m }
 function Update-SessionPath {
     $env:Path = [Environment]::GetEnvironmentVariable("Path", "Machine") + ";" +
                 [Environment]::GetEnvironmentVariable("Path", "User")
+}
+
+# Some installers write PATH asynchronously; poll until the command shows up
+function Wait-CommandOnPath($name, $timeoutSec = 15) {
+    for ($i = 0; $i -lt ($timeoutSec * 2); $i++) {
+        if (Get-Command $name -ErrorAction SilentlyContinue) { return $true }
+        Update-SessionPath
+        Start-Sleep -Milliseconds 500
+    }
+    return $false
 }
 
 function Install-ByWinget($id) {
@@ -87,7 +98,7 @@ if (Get-Command git -ErrorAction SilentlyContinue) {
         $gitInstalled = Install-GitBySetup
     }
     Update-SessionPath
-    if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+    if (-not (Wait-CommandOnPath git)) {
         if ($gitInstalled) {
             Fail "git was installed but is not in PATH yet; reopen your terminal and re-run this script"
         }
@@ -101,14 +112,21 @@ if (Get-Command uv -ErrorAction SilentlyContinue) {
     Info "uv detected: $(Get-Command uv).Source"
 } else {
     Info "Installing uv ..."
+    # Run the official installer in a child process: isolates its exit behavior,
+    # and keeps our $ErrorActionPreference=Stop from altering its internal error handling
     try {
-        irm https://astral.sh/uv/install.ps1 | iex
+        $uvScript = "$env:TEMP\uv-install.ps1"
+        Invoke-WebRequest https://astral.sh/uv/install.ps1 -OutFile $uvScript
+        powershell -NoProfile -ExecutionPolicy Bypass -File $uvScript
+        if ($LASTEXITCODE -ne 0) {
+            Warn "official uv installer exited with code $LASTEXITCODE; falling back to GitHub releases ..."
+        }
     } catch {
         Warn "official uv installer failed ($($_.Exception.Message)); falling back to GitHub releases ..."
     }
 }
 $env:Path = "$BinDir;$env:Path"
-if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
+if (-not (Wait-CommandOnPath uv)) {
     $null = Install-UvByGitHub
 }
 if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
@@ -138,7 +156,7 @@ if (-not $nodeOk) {
         $nodeInstalled = Install-NodeBySetup
     }
     Update-SessionPath
-    if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
+    if (-not (Wait-CommandOnPath node)) {
         if ($nodeInstalled) {
             Fail "Node.js was installed but is not in PATH yet; reopen your terminal and re-run this script"
         }
