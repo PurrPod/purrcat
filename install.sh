@@ -53,12 +53,12 @@ ensure_git() {
     fi
   else
     case "$(detect_pkgmgr)" in
-      apt-get) require_root; $SUDO apt-get update -qq; $SUDO apt-get install -y git ;;
-      dnf)     require_root; $SUDO dnf install -y git ;;
-      yum)     require_root; $SUDO yum install -y git ;;
-      pacman)  require_root; $SUDO pacman -S --noconfirm git ;;
-      zypper)  require_root; $SUDO zypper install -y git ;;
-      apk)     require_root; $SUDO apk add git ;;
+      apt-get) require_root; $SUDO apt-get update -qq || true; $SUDO apt-get install -y git || fail "apt-get failed to install git; install it manually: https://git-scm.com/downloads" ;;
+      dnf)     require_root; $SUDO dnf install -y git || fail "dnf failed to install git; install it manually: https://git-scm.com/downloads" ;;
+      yum)     require_root; $SUDO yum install -y git || fail "yum failed to install git; install it manually: https://git-scm.com/downloads" ;;
+      pacman)  require_root; $SUDO pacman -S --noconfirm git || fail "pacman failed to install git; install it manually: https://git-scm.com/downloads" ;;
+      zypper)  require_root; $SUDO zypper install -y git || fail "zypper failed to install git; install it manually: https://git-scm.com/downloads" ;;
+      apk)     require_root; $SUDO apk add git || fail "apk failed to install git; install it manually: https://git-scm.com/downloads" ;;
       "") fail "No supported package manager found; install git manually: https://git-scm.com/downloads" ;;
     esac
   fi
@@ -67,14 +67,40 @@ ensure_git() {
 }
 
 # ---------- uv ----------
+install_uv_from_github() {
+  # Fallback: uv from GitHub releases when astral.sh is unreachable
+  local arch libc asset
+  case "$(uname -m)" in
+    x86_64|amd64)  arch=x86_64 ;;
+    aarch64|arm64) arch=aarch64 ;;
+    *) return 1 ;;
+  esac
+  if is_mac; then
+    asset="uv-${arch}-apple-darwin.tar.gz"
+  else
+    libc="gnu"
+    ldd --version 2>/dev/null | grep -qi musl && libc="musl"
+    asset="uv-${arch}-unknown-linux-${libc}.tar.gz"
+  fi
+  info "Downloading uv from GitHub releases ..."
+  mkdir -p "$BIN_DIR"
+  curl -fsSL "https://github.com/astral-sh/uv/releases/latest/download/${asset}" \
+    | tar xz -C "$BIN_DIR" --strip-components 1
+}
+
 ensure_uv() {
   if command -v uv >/dev/null 2>&1; then
     info "uv detected: $(command -v uv)"
     return
   fi
   info "Installing uv ..."
-  curl -LsSf https://astral.sh/uv/install.sh | sh
-  command -v uv >/dev/null 2>&1 || fail "uv installation failed; run manually: curl -LsSf https://astral.sh/uv/install.sh | sh"
+  if ! curl -LsSf https://astral.sh/uv/install.sh | sh; then
+    warn "official uv installer failed; falling back to GitHub releases ..."
+  fi
+  if ! command -v uv >/dev/null 2>&1; then
+    install_uv_from_github || warn "GitHub fallback failed too"
+  fi
+  command -v uv >/dev/null 2>&1 || fail "uv installation failed; install it manually: https://docs.astral.sh/uv/getting-started/installation/"
   ok "uv installed"
 }
 
@@ -102,17 +128,21 @@ ensure_node() {
       apt-get)
         require_root
         # distro nodejs packages are usually too old; use NodeSource LTS
-        curl -fsSL https://deb.nodesource.com/setup_lts.x | $SUDO bash -
-        $SUDO apt-get install -y nodejs
+        curl -fsSL https://deb.nodesource.com/setup_lts.x | $SUDO bash - \
+          || fail "NodeSource setup failed; check your network or install Node.js manually: https://nodejs.org/"
+        $SUDO apt-get install -y nodejs \
+          || fail "apt-get failed to install Node.js; install an 18+ version manually: https://nodejs.org/"
         ;;
       dnf|yum)
         require_root
-        curl -fsSL https://rpm.nodesource.com/setup_lts.x | $SUDO bash -
-        $SUDO dnf install -y nodejs || $SUDO yum install -y nodejs
+        curl -fsSL https://rpm.nodesource.com/setup_lts.x | $SUDO bash - \
+          || fail "NodeSource setup failed; check your network or install Node.js manually: https://nodejs.org/"
+        $SUDO dnf install -y nodejs || $SUDO yum install -y nodejs \
+          || fail "failed to install Node.js; install an 18+ version manually: https://nodejs.org/"
         ;;
-      pacman)  require_root; $SUDO pacman -S --noconfirm nodejs npm ;;
-      zypper)  require_root; $SUDO zypper install -y nodejs npm ;;
-      apk)      require_root; $SUDO apk add nodejs npm ;;
+      pacman)  require_root; $SUDO pacman -S --noconfirm nodejs npm || fail "pacman failed to install Node.js; install an 18+ version manually: https://nodejs.org/" ;;
+      zypper)  require_root; $SUDO zypper install -y nodejs npm || fail "zypper failed to install Node.js; install an 18+ version manually: https://nodejs.org/" ;;
+      apk)      require_root; $SUDO apk add nodejs npm || fail "apk failed to install Node.js; install an 18+ version manually: https://nodejs.org/" ;;
       "") fail "No supported package manager found; install Node.js 18+ manually: https://nodejs.org/" ;;
     esac
   fi
@@ -178,9 +208,10 @@ PYEOF
 
 # ---- 1. Prerequisites ----
 ensure_git
-ensure_uv
 
-# Ensure ~/.local/bin is in PATH (for the current process and future shells)
+# Ensure ~/.local/bin is in PATH (for the current process and future shells).
+# Must run BEFORE ensure_uv: the uv installer puts the binary there, and on fresh
+# systems the current shell's PATH does not include it yet.
 case ":$PATH:" in
   *":$BIN_DIR:"*) ;;
   *)
@@ -194,6 +225,7 @@ case ":$PATH:" in
 esac
 export PATH="$BIN_DIR:$PATH"
 
+ensure_uv
 ensure_node
 
 # ---- 2. Fetch source ----
@@ -204,18 +236,18 @@ elif [ -e "$INSTALL_DIR" ]; then
   fail "Directory exists but is not a PurrCat repo: $INSTALL_DIR"
 else
   info "Cloning PurrCat source to $INSTALL_DIR ..."
-  git clone --depth 1 "$REPO_URL" "$INSTALL_DIR"
+  git clone --depth 1 "$REPO_URL" "$INSTALL_DIR" || fail "git clone failed; check your network"
 fi
 
 # ---- 3. Dependencies ----
 info "Syncing Python dependencies (uv sync) ..."
-( cd "$INSTALL_DIR" && uv sync )
+( cd "$INSTALL_DIR" && uv sync ) || fail "uv sync failed"
 
 info "Installing desktop dependencies (npm install) ..."
-( cd "$INSTALL_DIR" && npm install )
+( cd "$INSTALL_DIR" && npm install ) || fail "npm install failed"
 
 info "Installing frontend dependencies (npm install --prefix ui) ..."
-( cd "$INSTALL_DIR" && npm install --prefix ui )
+( cd "$INSTALL_DIR" && npm install --prefix ui ) || fail "npm install --prefix ui failed"
 
 # ---- 4. Embedding model / Docker ----
 ensure_embedding

@@ -17,9 +17,11 @@ function Ok($m)   { Write-Host "[+] $m" -ForegroundColor Green }
 function Warn($m) { Write-Host "[!] $m" -ForegroundColor Yellow }
 function Fail($m) { throw $m }
 
-# Refresh session PATH after winget installs (registry is updated, current process is not)
+# Refresh session PATH after winget installs (registry is updated, current process is not).
+# Always keep $BinDir first: the uv fallback drops uv.exe there, and rebuilds must not lose it.
 function Update-SessionPath {
-    $env:Path = [Environment]::GetEnvironmentVariable("Path", "Machine") + ";" +
+    $env:Path = "$BinDir;" +
+                [Environment]::GetEnvironmentVariable("Path", "Machine") + ";" +
                 [Environment]::GetEnvironmentVariable("Path", "User")
 }
 
@@ -64,20 +66,20 @@ function Install-NodeBySetup {
     Info "Downloading Node.js $($lts.version) LTS ..."
     Invoke-WebRequest "https://nodejs.org/dist/$($lts.version)/node-$($lts.version)-x64.msi" -OutFile $msi
     Info "Running the installer (please allow the UAC prompt if it appears) ..."
-    $p = Start-Process msiexec.exe -ArgumentList '/i', $msi, '/qn', '/norestart' -Wait -PassThru
+    try {
+        # -Verb RunAs: msiexec /qn cannot show a UAC prompt, so non-elevated sessions would fail
+        $p = Start-Process msiexec.exe -ArgumentList '/i', $msi, '/qn', '/norestart' -Wait -PassThru -Verb RunAs
+    } catch { return $false }  # UAC declined
     return ($p.ExitCode -eq 0)
 }
 
 # Fallback: uv from GitHub releases when astral.sh is unreachable
 function Install-UvByGitHub {
     $ProgressPreference = "SilentlyContinue"  # speed up Invoke-WebRequest
-    $r = Invoke-RestMethod "https://api.github.com/repos/astral-sh/uv/releases/latest"
-    $asset = $r.assets | Where-Object { $_.name -match '^uv-x86_64-pc-windows-msvc\.zip$' } | Select-Object -First 1
-    if (-not $asset) { return $false }
-    $tmp = "$env:TEMP\uv-download"
-    $zip = "$tmp.zip"
-    Info "Downloading uv $($r.tag_name) from GitHub releases ..."
-    Invoke-WebRequest $asset.browser_download_url -OutFile $zip
+    $zip = "$env:TEMP\uv.zip"
+    $tmp = "$env:TEMP\uv-extract"
+    Info "Downloading uv from GitHub releases ..."
+    Invoke-WebRequest "https://github.com/astral-sh/uv/releases/latest/download/uv-x86_64-pc-windows-msvc.zip" -OutFile $zip
     Expand-Archive $zip -DestinationPath $tmp -Force
     New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
     Get-ChildItem $tmp -Recurse -Include uv.exe, uvx.exe | Move-Item -Destination $BinDir -Force
