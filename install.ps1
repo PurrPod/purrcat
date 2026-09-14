@@ -4,6 +4,9 @@
 # and registers a global `purrcat` command.
 $ErrorActionPreference = "Stop"
 
+# Decode native tool output (winget) as UTF-8; otherwise CJK Windows shows mojibake
+try { [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new() } catch { }
+
 $RepoUrl    = "https://github.com/PurrPod/purrcat.git"
 $InstallDir = if ($env:PURRCAT_HOME) { $env:PURRCAT_HOME } else { "$env:USERPROFILE\purrcat" }
 $BinDir     = "$env:USERPROFILE\.local\bin"
@@ -21,8 +24,9 @@ function Update-SessionPath {
 
 function Install-ByWinget($id) {
     Info "(Please allow the UAC prompt if it appears)"
-    # Out-Host: pass winget output straight to the console so failures are visible
-    winget install --id $id -e --accept-source-agreements --accept-package-agreements | Out-Host
+    # --source winget: bypass the msstore source, which is frequently broken (0x80070057)
+    # Out-Host: stream winget output to the console so failures are visible
+    winget install --id $id -e --source winget --accept-source-agreements --accept-package-agreements | Out-Host
     return ($LASTEXITCODE -eq 0)
 }
 
