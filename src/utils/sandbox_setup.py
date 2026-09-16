@@ -15,12 +15,13 @@ import threading
 SANDBOX_IMAGE_TAG = "my_agent_env:latest"
 IMAGE_TAG = "purrcat-sandbox:light"
 
-# 拉取源：依次尝试。Docker Hub 可被国内镜像加速器代理，排最前；
-# ghcr.io 国内直连不稳定，跟南大 ghcr 镜像站兜底（DaoCloud 公共代理已匿名 DENIED，不可用）
+# 拉取源：依次尝试。ghcr.io 为官方源排最前；国内直连不稳时走南大镜像站；
+# Docker Hub 排最后兜底——只有配置了镜像加速器的用户能吃到（加速器不代理 ghcr），
+# 未配加速器的国内用户直连 docker.io 基本连不上（DaoCloud 公共代理已匿名 DENIED，不可用）
 SANDBOX_IMAGE_SOURCES = [
-    f"docker.io/sukice/{IMAGE_TAG}",
     f"ghcr.io/purrpod/{IMAGE_TAG}",
     f"ghcr.nju.edu.cn/purrpod/{IMAGE_TAG}",
+    f"docker.io/sukice/{IMAGE_TAG}",
 ]
 DOCKER_NOT_FOUND_HINT = (
     "[*] 未检测到 Docker。沙盒功能（Bash 执行）将不可用。\n"
