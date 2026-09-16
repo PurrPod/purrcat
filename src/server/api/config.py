@@ -227,7 +227,9 @@ def api_deploy_item(item: str):
 def api_get_sandbox_registry():
     from src.utils.config import get_global_settings
 
-    return {"sandbox_registry": str(get_global_settings().get("sandbox_registry") or "")}
+    return {
+        "sandbox_registry": str(get_global_settings().get("sandbox_registry") or "")
+    }
 
 
 @router.put("/sandbox-registry")

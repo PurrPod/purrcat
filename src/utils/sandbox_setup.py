@@ -74,7 +74,9 @@ def _custom_sources() -> list:
     try:
         from src.utils.config import get_global_settings
 
-        value = str(get_global_settings().get("sandbox_registry") or "").strip().rstrip("/")
+        value = (
+            str(get_global_settings().get("sandbox_registry") or "").strip().rstrip("/")
+        )
     except Exception:
         return []
     return [f"{value}/{IMAGE_TAG}"] if value else []
