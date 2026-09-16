@@ -17,6 +17,12 @@ jobs:
       contents: read
       packages: write
 
+    # Docker Hub 双发布：配置 DOCKERHUB_USERNAME / DOCKERHUB_TOKEN secrets 后自动生效
+    # （国内镜像加速器普遍只代理 docker.io，Dual-publish 让客户端多源回退更稳）
+    env:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+
     strategy:
       matrix:
         variant: [light, full]
@@ -57,3 +63,17 @@ jobs:
           SHA_IMAGE="ghcr.io/${REPO_LOWER}:${{ matrix.variant }}-${{ github.sha }}"
           docker push "$IMAGE"
           docker push "$SHA_IMAGE"
+
+      - name: Push to Docker Hub
+        if: ${{ env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != '' }}
+        env:
+          REPO_LOWER: ${{ github.repository_owner }}/purrcat-sandbox
+          VARIANT: ${{ matrix.variant }}
+        run: |
+          REPO_LOWER="$(echo "$REPO_LOWER" | tr '[:upper:]' '[:lower:]')"
+          GHCR_IMAGE="ghcr.io/${REPO_LOWER}:${VARIANT}"
+          DH_IMAGE="docker.io/${DOCKERHUB_USERNAME}/purrcat-sandbox:${VARIANT}"
+          docker tag "$GHCR_IMAGE" "$DH_IMAGE"
+          echo "${DOCKERHUB_TOKEN}" | docker login -u "${DOCKERHUB_USERNAME}" --password-stdin
+          docker push "$DH_IMAGE"
+          docker logout

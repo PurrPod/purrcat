@@ -33,6 +33,7 @@ src/agent/checkpoint.json
 *.so
 todo.md
 venv/
+website/
 .venv/
 env/
 lib

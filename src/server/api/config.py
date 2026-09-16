@@ -222,6 +222,23 @@ def api_deploy_item(item: str):
     return {"status": "ok", "message": message}
 
 
+# ── 沙盒镜像源（部署页自定义，写入 settings.json 的 sandbox_registry）──
+@router.get("/sandbox-registry")
+def api_get_sandbox_registry():
+    from src.utils.config import get_global_settings
+
+    return {"sandbox_registry": str(get_global_settings().get("sandbox_registry") or "")}
+
+
+@router.put("/sandbox-registry")
+def api_update_sandbox_registry(payload: Dict[str, Any]):
+    """registry 前缀（如 ghcr.m.daocloud.io），留空 = 自动依次尝试官方与公共源"""
+    value = str(payload.get("sandbox_registry") or "").strip().rstrip("/")
+    if not save_global_setting("sandbox_registry", value):
+        raise HTTPException(status_code=500, detail="保存 sandbox_registry 失败")
+    return {"status": "ok"}
+
+
 # ── Markdown Files (SOUL.md / GOAL.md) ──
 @router.get("/markdown/{filename}")
 def api_get_markdown_file(filename: str):

@@ -338,10 +338,10 @@ def _wait_docker(docker: str, timeout: float) -> bool:
 
 def _install_sandbox(item: str) -> bool:
     from src.utils.sandbox_setup import (
-        GHCR_LIGHT_IMAGE,
         SANDBOX_IMAGE_TAG,
         check_docker_running,
         check_image_exists,
+        pull_sandbox_image,
     )
 
     docker = _which_enriched("docker")
@@ -438,23 +438,20 @@ def _install_sandbox(item: str) -> bool:
             return False
         _append_log(item, "[+] Docker daemon 已就绪")
 
-    # 3) 拉取沙盒镜像并打标签
+    # 3) 多源拉取沙盒镜像并打标签（自定义源 → ghcr.io → 公共代理，失败自动换源）
     if check_image_exists(docker, SANDBOX_IMAGE_TAG):
         _append_log(item, f"[*] 镜像 {SANDBOX_IMAGE_TAG} 已存在，跳过拉取")
         return True
-    _append_log(
-        item,
-        f"[*] 从 GitHub 拉取沙盒镜像 {GHCR_LIGHT_IMAGE}（请保持网络 / VPN 稳定）...",
+    ok = pull_sandbox_image(
+        docker, log=lambda line: _append_log(item, line), timeout=3600
     )
-    code = _run_stream(item, [docker, "pull", GHCR_LIGHT_IMAGE], timeout=3600)
-    if code != 0:
-        _append_log(item, "[!] 镜像拉取失败，请检查网络（ghcr.io 需稳定连接）后重试")
-        return False
-    code = _run_stream(
-        item, [docker, "tag", GHCR_LIGHT_IMAGE, SANDBOX_IMAGE_TAG], timeout=60
-    )
-    if code != 0:
-        _append_log(item, "[!] 镜像打标签失败")
+    if not ok:
+        _append_log(item, "[!] 所有镜像源均拉取失败")
+        _append_log(item, "    可在上方「镜像源」填写自定义源后重试")
+        _append_log(
+            item,
+            "    或手动拉取任一源后执行: docker tag <镜像> my_agent_env:latest",
+        )
         return False
     if not check_image_exists(docker, SANDBOX_IMAGE_TAG):
         _append_log(item, "[!] 镜像拉取流程完成但未检测到目标镜像")

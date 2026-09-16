@@ -119,6 +119,8 @@ export default function ConfigModal({ isOpen, onClose, initialTab }: { isOpen: b
   // ── 部署页状态 ──
   const [deployInfo, setDeployInfo] = useState<any>(null); // { items: {...}, tasks: {...} }
   const [deployLogOpen, setDeployLogOpen] = useState<Record<string, boolean>>({});
+  const [sandboxRegistry, setSandboxRegistry] = useState(''); // 自定义镜像源（settings.json sandbox_registry）
+  const [registrySaving, setRegistrySaving] = useState(false);
 
   // ACP 状态加载后同步端口草稿
   useEffect(() => {
@@ -304,9 +306,30 @@ export default function ConfigModal({ isOpen, onClose, initialTab }: { isOpen: b
   useEffect(() => {
     if (!isOpen || activeTab !== 'deploy') return;
     fetchDeployStatus();
+    fetch('/api/config/sandbox-registry')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => d && setSandboxRegistry(d.sandbox_registry || ''))
+      .catch(() => {});
     const timer = setInterval(fetchDeployStatus, 2500);
     return () => clearInterval(timer);
   }, [isOpen, activeTab]);
+
+  const saveSandboxRegistry = async () => {
+    setRegistrySaving(true);
+    try {
+      const res = await fetch('/api/config/sandbox-registry', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sandbox_registry: sandboxRegistry }),
+      });
+      if (res.ok) toast.success(t('config.deployRegistrySaved'));
+      else toast.error(t('config.networkError'));
+    } catch {
+      toast.error(t('config.networkError'));
+    } finally {
+      setRegistrySaving(false);
+    }
+  };
 
   const startDeploy = async (item: string) => {
     try {
@@ -854,6 +877,30 @@ export default function ConfigModal({ isOpen, onClose, initialTab }: { isOpen: b
                 <div style={sketchyShape1} className="bg-[#EBCB8B]/30 border-2 border-ink border-dashed p-3 flex flex-col gap-1.5 text-sm font-bold">
                   <div className="flex items-center gap-2 text-terracotta"><RotateCw size={16} strokeWidth={3} className="shrink-0" /> {t('config.deployRestartHint')}</div>
                   <div className="flex items-center gap-2 text-[#8eb072]"><Globe size={16} strokeWidth={3} className="shrink-0" /> {t('config.deployVpnHint')}</div>
+                </div>
+
+                {/* 镜像源：默认自动多源回退，失败可自定义前缀 */}
+                <div style={sketchyShape2} className="bg-paper border-4 border-ink p-3 flex items-end gap-3 flex-wrap shadow-[6px_6px_0px_0px_rgba(26,26,26,1)]">
+                  <div className="flex flex-col gap-1">
+                    <div className="text-xs font-black text-ink/50 tracking-widest">{t('config.deployRegistryLabel')}</div>
+                    <input
+                      value={sandboxRegistry}
+                      onChange={(e) => setSandboxRegistry(e.target.value)}
+                      placeholder={t('config.deployRegistryPlaceholder')}
+                      className="w-72 bg-[#FDF8F0] border-4 border-ink px-4 py-2 font-mono font-bold text-[13px] focus:outline-none focus:bg-white"
+                      spellCheck={false}
+                    />
+                  </div>
+                  <button
+                    onClick={saveSandboxRegistry}
+                    disabled={registrySaving}
+                    style={sketchyShape3}
+                    className="px-4 py-2 bg-[#a3be8c] border-4 border-ink text-ink font-black flex items-center gap-2 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:bg-[#8eb072] active:translate-y-1 active:shadow-none transition-all disabled:opacity-50"
+                  >
+                    {registrySaving ? <Loader2 size={16} strokeWidth={3} className="animate-spin" /> : <Save size={16} strokeWidth={3} />}
+                    {t('config.deployRegistrySave')}
+                  </button>
+                  <div className="text-xs font-bold text-ink/40 flex-1 min-w-[200px]">{t('config.deployRegistryHint')}</div>
                 </div>
 
                 {/* 线性步骤列表 */}
