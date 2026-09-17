@@ -79,7 +79,7 @@ class AcpSensorBridge:
     def __init__(self, name: str, stdin_pipe, tool_detail: bool = False):
         self.name = name
         self.stdin = stdin_pipe
-        # false 时只透传正文（agent_message + turn_end），工具/思考细节不发
+        # false 时只透传正文（agent_message_chunk + turn_end），工具/思考细节不发
         self.tool_detail = tool_detail
         self.acp_sid = ""  # session/new 响应时记住（sensor 单进程长持一个会话）
         self._alive = True
@@ -142,11 +142,12 @@ class AcpSensorBridge:
                 update = payload["params"]["update"]
                 kind = update.get("sessionUpdate", "")
                 # tool_detail 关闭时只发正文：过滤思考/工具细节
-                if not self.tool_detail and kind not in ("agent_message",):
+                # （正文词汇兼容两种拼写：规范 agent_message_chunk + 曾用的 agent_message）
+                if not self.tool_detail and kind not in ("agent_message", "agent_message_chunk"):
                     continue
                 payload["params"]["sessionId"] = self.acp_sid
                 self._write(payload)
-                if kind == "agent_message":
+                if kind in ("agent_message", "agent_message_chunk"):
                     self._push_files(update["content"].get("text", ""))
             elif "stopReason" in payload:
                 self._finish_prompt(payload["stopReason"])

@@ -69,10 +69,11 @@ available 检查 initialize 响应的 `agentCapabilities._meta.purrcat.dev.launc
 
 ### 入向（stdin ← 网关）
 
-Agent 文本回复（agent_message 逐条到达；消息级粒度——
-一条事件即一条完整 assistant 消息，一个轮次可能有多条）：
+Agent 文本回复（agent_message_chunk 逐条到达；消息级粒度——
+一条事件即一条完整 assistant 消息，一个轮次可能有多条；
+messageId 每条唯一，变化即新消息边界）：
 ```json
-{{"jsonrpc": "2.0", "method": "session/update", "params": {{"sessionId": "<sid>", "update": {{"sessionUpdate": "agent_message", "messageId": "msg_1", "content": {{"type": "text", "text": "回复内容"}}}}}}}}
+{{"jsonrpc": "2.0", "method": "session/update", "params": {{"sessionId": "<sid>", "update": {{"sessionUpdate": "agent_message_chunk", "messageId": "msg_1", "content": {{"type": "text", "text": "回复内容"}}}}}}}}
 ```
 其他 update 类型见下方词汇总表（受 tool_detail 配置控制是否下发）。
 
@@ -90,7 +91,7 @@ Agent 发的文件（Agent 消息里含本地文件链接时网关自动追加�
 
 | 词汇 | 说明 | tool_detail=false 时 |
 |---|---|---|
-| `agent_message` | Agent 文本回复。**消息级粒度**：一条事件即一条完整 assistant 消息（非流式分片），一个轮次可能有多条 | ✅ 下发（唯一总是下发的词汇） |
+| `agent_message_chunk` | Agent 文本回复。**消息级粒度**：一条事件即一条完整 assistant 消息，每条一个唯一 messageId（id 变化即新消息边界），一个轮次可能有多条。消费端建议同时容忍旧拼写 `agent_message` | ✅ 下发（唯一总是下发的词汇） |
 | `agent_thought_chunk` | Agent 思考过程文本 | ❌ 过滤 |
 | `tool_call` | 工具调用开始（status=pending；含 `toolCallId`/`title`/`kind`，文件类工具带 `locations`，参数对象带 `rawInput`） | ❌ 过滤 |
 | `tool_call_update` | 工具状态流转（in_progress → completed/failed），content 带截断后的结果文本 | ❌ 过滤 |
@@ -130,7 +131,7 @@ ACP 骨架（initialize → session/new → prompt 求助 → update 消费循�
 
 ```bash
 cd /agent_vm/sensor_workplace/<uuid>
-echo '{{"jsonrpc":"2.0","method":"session/update","params":{{"update":{{"sessionUpdate":"agent_message","content":{{"type":"text","text":"hello"}}}}}}}}' | uv run {sensor_name}.py
+echo '{{"jsonrpc":"2.0","method":"session/update","params":{{"update":{{"sessionUpdate":"agent_message_chunk","content":{{"type":"text","text":"hello"}}}}}}}}' | uv run {sensor_name}.py
 ```
 
 观察 stderr 日志与外部渠道是否收到消息；鉴权求助与握手会打到 stdout。

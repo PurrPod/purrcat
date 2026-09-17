@@ -68,7 +68,7 @@ def handle_notification(msg: dict) -> None:
     if method == "session/update":
         update = params.get("update", {{}})
         kind = update.get("sessionUpdate", "")
-        if kind == "agent_message":
+        if kind in ("agent_message", "agent_message_chunk"):
             text = update.get("content", {{}}).get("text", "")
             print(f"💬 [{sensor_name}] 收到 Agent 回复: {{text}}")
             # TODO: 把 text 转发到外部渠道（注意在后台线程执行网络请求）
