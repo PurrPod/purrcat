@@ -308,7 +308,7 @@ export default function ConfigModal({ isOpen, onClose, initialTab }: { isOpen: b
     fetchDeployStatus();
     fetch('/api/config/sandbox-registry')
       .then((r) => (r.ok ? r.json() : null))
-      .then((d) => d && setSandboxRegistry(d.sandbox_registry || ''))
+      .then((d) => d && setSandboxRegistry(d.sandbox_registry || 'ghcr.io/purrpod'))
       .catch(() => {});
     const timer = setInterval(fetchDeployStatus, 2500);
     return () => clearInterval(timer);
@@ -337,6 +337,7 @@ export default function ConfigModal({ isOpen, onClose, initialTab }: { isOpen: b
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
         toast.success(data?.message || t('config.deployStarted'));
+        setDeployLogOpen((m) => ({ ...m, [item]: true })); // 部署日志自动展开，无需用户手动点开
         fetchDeployStatus();
       } else {
         toast.error(typeof data?.detail === 'string' ? data.detail : t('config.networkError'));
@@ -879,30 +880,6 @@ export default function ConfigModal({ isOpen, onClose, initialTab }: { isOpen: b
                   <div className="flex items-center gap-2 text-[#8eb072]"><Globe size={16} strokeWidth={3} className="shrink-0" /> {t('config.deployVpnHint')}</div>
                 </div>
 
-                {/* 镜像源：默认自动多源回退，失败可自定义前缀 */}
-                <div style={sketchyShape2} className="bg-paper border-4 border-ink p-3 flex items-end gap-3 flex-wrap shadow-[6px_6px_0px_0px_rgba(26,26,26,1)]">
-                  <div className="flex flex-col gap-1">
-                    <div className="text-xs font-black text-ink/50 tracking-widest">{t('config.deployRegistryLabel')}</div>
-                    <input
-                      value={sandboxRegistry}
-                      onChange={(e) => setSandboxRegistry(e.target.value)}
-                      placeholder={t('config.deployRegistryPlaceholder')}
-                      className="w-72 bg-[#FDF8F0] border-4 border-ink px-4 py-2 font-mono font-bold text-[13px] focus:outline-none focus:bg-white"
-                      spellCheck={false}
-                    />
-                  </div>
-                  <button
-                    onClick={saveSandboxRegistry}
-                    disabled={registrySaving}
-                    style={sketchyShape3}
-                    className="px-4 py-2 bg-[#a3be8c] border-4 border-ink text-ink font-black flex items-center gap-2 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:bg-[#8eb072] active:translate-y-1 active:shadow-none transition-all disabled:opacity-50"
-                  >
-                    {registrySaving ? <Loader2 size={16} strokeWidth={3} className="animate-spin" /> : <Save size={16} strokeWidth={3} />}
-                    {t('config.deployRegistrySave')}
-                  </button>
-                  <div className="text-xs font-bold text-ink/40 flex-1 min-w-[200px]">{t('config.deployRegistryHint')}</div>
-                </div>
-
                 {/* 线性步骤列表 */}
                 <div className="flex flex-col">
                   {DEPLOY_STEPS.map((step, idx) => {
@@ -975,6 +952,32 @@ export default function ConfigModal({ isOpen, onClose, initialTab }: { isOpen: b
                               </button>
                             </div>
                           </div>
+
+                          {/* 镜像源：仅 Docker 步骤卡片内；默认 ghcr.io/purrpod（官方源，多源回退第一跳） */}
+                          {step.key === 'sandbox' && (
+                            <div className="border-2 border-dashed border-ink/40 bg-[#FDF8F0]/60 p-2.5 flex items-end gap-3 flex-wrap">
+                              <div className="flex flex-col gap-1">
+                                <div className="text-xs font-black text-ink/50 tracking-widest">{t('config.deployRegistryLabel')}</div>
+                                <input
+                                  value={sandboxRegistry}
+                                  onChange={(e) => setSandboxRegistry(e.target.value)}
+                                  placeholder={t('config.deployRegistryPlaceholder')}
+                                  className="w-72 bg-white border-2 border-ink px-3 py-1.5 font-mono font-bold text-[13px] focus:outline-none"
+                                  spellCheck={false}
+                                />
+                              </div>
+                              <button
+                                onClick={saveSandboxRegistry}
+                                disabled={registrySaving}
+                                style={sketchyShape3}
+                                className="px-4 py-1.5 bg-[#a3be8c] border-2 border-ink text-ink font-black flex items-center gap-2 hover:bg-[#8eb072] active:translate-y-0.5 transition-all disabled:opacity-50"
+                              >
+                                {registrySaving ? <Loader2 size={14} strokeWidth={3} className="animate-spin" /> : <Save size={14} strokeWidth={3} />}
+                                {t('config.deployRegistrySave')}
+                              </button>
+                              <div className="text-xs font-bold text-ink/40 flex-1 min-w-[200px] pb-1">{t('config.deployRegistryHint')}</div>
+                            </div>
+                          )}
 
                           {item?.detail && <div className="text-xs font-mono font-bold text-ink/60 break-all">{item.detail}</div>}
 
