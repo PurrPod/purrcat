@@ -4,6 +4,82 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0-beta.4]
+
+Distribution model change: the one-line source installer replaces pre-built desktop installers.
+
+**English**
+
+### Added
+
+- One-line installers (Windows / Linux / macOS) — this is now the only install path. The script clones the source, auto-installs missing prerequisites (git / uv / Node.js 18+ / Docker / embedding model) with multi-level fallbacks (winget → official installers → GitHub releases), and registers a global `purrcat` command.
+- One-click start and update: `purrcat desktop start` lazily installs dependencies on first launch and boots the desktop app; `purrcat desktop update` pulls the latest source and syncs dependencies.
+- Deploy page in Config Center: visual deployment of the embedding model, Docker, and the sandbox image (multi-source pull with automatic fallback: ghcr.io → NJU mirror → Docker Hub), greatly lowering the deployment barrier.
+- Agent Loop Editor: edit the execution paradigm (`PARADIGM.yaml`) from the UI, with per-session paradigm selection and hot switching.
+- Live streaming of the model's reasoning content into the thinking bubble.
+- Vision inline mode.
+- Market: batch "install all" button on repo detail pages.
+
+### Changed
+
+- Sensor module refactored onto the ACP protocol: a new ACP server, stdio bridge, and unified message dispatch replace the legacy sensor vocabulary layer; sensors get a dedicated config page with editor relay and stable-path deploy.
+- Full UI localization: Chinese/English switching in Config Center, covering chat, market, Agent Loop Editor, sidebar menus and toasts; market plugin details include a zh/en description toggle. Default language is fixed to English instead of following the system language.
+- Tool output limits switched from characters to tokens (10,000) with a shared token utility.
+- FileSystem list returns single-level `ls`-style output (type/size/mtime); hidden entries are no longer filtered.
+- Skill loading returns the full SOP as the tool result.
+- Simplified tool result display: the frontend extracts pure content from the JSON wrapper.
+- Prompt wording cleanup: replaced "老板" (boss) with "用户" (user) across tool descriptions.
+
+### Fixed
+
+- Data-root migration error on startup.
+- Force-interrupt stuck in the "dozing" state; chat action buttons vanishing after interrupt.
+- Vision returning empty analysis when thinking models exhausted the max_tokens budget on reasoning.
+- Sandboxed Bash: the shared container no longer sleeps on subprocess exit; one automatic retry on EOF.
+- Garbled lint-checker output and `biome` not found on Windows.
+- Brainstorm sub-agent snapshots missing sibling tool results in the same batch; sub-agent final reply is now appended to the branch finish notification.
+- Browser webview covering the chat area after closing the panel, and stale pages after closing a tab.
+- Terminal view error, file-url parse error, and chat draft restore broken by React StrictMode double-run.
+- Embedding model no longer auto-downloads at startup (the Deploy page is the single writer); onnx/openvino exports skipped with a corrected size hint.
+- Installer hardening: BOM stripped from `install.ps1` for `irm | iex` compatibility, `npm.cmd` used to bypass execution-policy blocking, and Node/uv/git fallbacks improved.
+
+---
+
+**中文**
+
+### 新增
+
+- 一键安装指令（Windows / Linux / macOS），并成为唯一的安装方式：脚本自动克隆源码、补齐缺失的前置依赖（git / uv / Node.js 18+ / Docker / 向量模型，内置多级回退：winget → 官方安装器 → GitHub Releases），并注册全局 `purrcat` 命令。不再提供打包好的安装包。
+- 一键启动与一键更新：`purrcat desktop start` 首次启动自动安装依赖并拉起桌面端；`purrcat desktop update` 拉取最新源码并同步依赖。
+- 配置中心新增部署页面：向量模型、Docker、沙箱镜像全部可视化部署（镜像多源拉取自动回退：ghcr.io → 南大镜像站 → Docker Hub），进一步降低部署难度。
+- 主循环编辑器：在界面中直接编辑执行范式（`PARADIGM.yaml`），支持按会话选择范式并热切换。
+- 模型思考内容实时流式展示到思考气泡。
+- 视觉内联模式。
+- 市场：仓库详情页新增"全部安装"批量按钮。
+
+### 变更
+
+- Sensor 模块基于 ACP 协议重构：新增 ACP 服务端、stdio 桥接与统一消息分发，移除旧版 sensor 词汇层；Sensor 提供独立配置页，支持编辑器中继与稳定路径部署。
+- 界面完整本地化：配置中心支持中英文切换，覆盖聊天、市场、主循环编辑器、侧边栏菜单与提示语；市场插件详情支持中英文描述切换。默认语言固定为英文，不再跟随系统语言。
+- 工具输出上限从字符数改为 token 数（10000），使用统一的 token 计算工具。
+- 文件列表改为单层 `ls` 风格输出（类型/大小/修改时间），不再过滤隐藏条目。
+- 技能加载返回完整 SOP 作为工具结果。
+- 简化工具结果展示：前端从 JSON 包装中提取纯内容。
+- 提示词措辞清理：工具描述中的"老板"统一改为"用户"。
+
+### 修复
+
+- 启动时数据根目录迁移报错。
+- 强制中断卡在"打盹"状态；中断后聊天操作按钮消失。
+- 思考模型把 max_tokens 预算耗尽在推理上导致视觉分析返回空内容。
+- 沙箱 Bash：子进程退出不再休眠共享容器；EOF 时自动重试一次。
+- Windows 下检查器输出乱码、找不到 `biome`。
+- BrainStorm 子代理快照丢失同批次兄弟工具结果；子代理最终回复现在会追加到分支完成通知中。
+- 关闭面板后浏览器 webview 遮挡聊天区域、关闭标签页后显示旧页面。
+- 终端视图报错、文件 URL 解析错误、React StrictMode 双执行导致草稿恢复失败。
+- 向量模型不再在启动时自动下载（部署页面为唯一入口）；跳过 onnx/openvino 导出并修正体积提示。
+- 安装脚本加固：`install.ps1` 去除 BOM 以兼容 `irm | iex`、改用 `npm.cmd` 绕过执行策略限制、完善 Node/uv/git 回退逻辑。
+
 ## [1.0.0-beta.3]
 
 Bug-fix and stability release.

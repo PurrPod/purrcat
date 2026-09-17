@@ -143,7 +143,10 @@ class AcpSensorBridge:
                 kind = update.get("sessionUpdate", "")
                 # tool_detail 关闭时只发正文：过滤思考/工具细节
                 # （正文词汇兼容两种拼写：规范 agent_message_chunk + 曾用的 agent_message）
-                if not self.tool_detail and kind not in ("agent_message", "agent_message_chunk"):
+                if not self.tool_detail and kind not in (
+                    "agent_message",
+                    "agent_message_chunk",
+                ):
                     continue
                 payload["params"]["sessionId"] = self.acp_sid
                 self._write(payload)

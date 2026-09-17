@@ -141,71 +141,10 @@ jobs:
             fi
           fi
 
-      - name: Build UI
-        working-directory: ui
-        run: |
-          npm ci
-          npm run build
-
-      - name: Upload UI Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ui-dist
-          path: ui/dist/
-          retention-days: 7
-
-  build-windows:
-    name: Build Windows Desktop
-    needs: [publish]
-    runs-on: windows-latest
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v6
-        with:
-          ref: v${{ inputs.version }}
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - name: Setup uv
-        uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
-
-      - name: Install Python Dependencies
-        run: uv sync --python 3.12
-
-      - name: Install Node Dependencies
-        run: |
-          npm ci
-          npm ci --prefix ui
-
-      - name: Set Version
-        env:
-          VERSION: ${{ inputs.version }}
-        run: npm version $env:VERSION --no-git-tag-version
-
-      - name: Build UI
-        run: npm run build:ui
-
-      - name: Build Backend (PyInstaller)
-        run: uv run pyinstaller main.spec --noconfirm
-
-      - name: Build Desktop (electron-builder)
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: npx electron-builder --win --publish never
-
-      - name: Upload Release Assets
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          TAG: v${{ inputs.version }}
-        run: |
-          cd release
-          gh release upload "$env:TAG" "PurrCat-Setup-${{ inputs.version }}.exe" "PurrCat-Setup-${{ inputs.version }}.exe.blockmap" "latest.yml" --clobber
-
+  # 分发模式已切换为源码 + 一键安装（install.ps1 / install.sh），不再打包桌面端
+  # 安装包。GitHub Release 会自动附带 tag 的 Source code (zip/tar.gz) 产物，
+  # 无需额外的打包步骤；UI 构建校验由 ci.yml 在 main 分支上覆盖
+  #
   # 暂不打包 macOS dmg：未购买 Apple Developer 证书，无签名 dmg 会被 Gatekeeper
   # 拦截（"已损坏/无法验证开发者"），用户体验极差。购入证书后取消注释，
   # 并配置 CSC_LINK / CSC_KEY_PASSWORD 走正式签名 + 公证流程
