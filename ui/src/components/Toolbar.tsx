@@ -100,7 +100,7 @@ export default function Toolbar({ onBack, mode = 'workflow', onModeChange, agent
       if (res.ok) {
         const data = await res.json()
         loadGraph(data)
-        setWorkflowName(fileName.replace(/\.json$/, ''))
+        setWorkflowName(fileName)
         setWorkflowDescription(data.description || '')
         toast.success(`已加载: ${fileName}`)
         setShowFileMenu(false)

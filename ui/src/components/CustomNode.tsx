@@ -45,17 +45,28 @@ export default function CustomNode({ id, data, selected }: any) {
     setIsEditingName(false);
   };
 
-  const isConnected = (handleId: string, type: 'target' | 'source') => {
-    return edges.some((e) => type === 'target' 
-      ? e.target === id && e.targetHandle === handleId 
-      : e.source === id && e.sourceHandle === handleId);
+  // 🌟 订阅全量 nodes：上游 string 节点 value 变化时联动刷新本节点动态端口
+  const allNodes = useFlowStore((state) => state.nodes);
+
+  // 🌟 沿连线取上游节点的输出值（string 节点的 config value），供动态端口提取规则使用
+  const getUpstreamPortValue = (portName: string): string => {
+    const edge = edges.find((e: any) => e.target === id && e.targetHandle === portName);
+    if (!edge) return '';
+    const src = allNodes.find((n: any) => n.id === edge.source);
+    if (!src) return '';
+    // 约定：上游为 string 节点时，其 data.value 即输出内容
+    return String(src.data?.value ?? '');
   };
 
   const getDynamicHandles = (portDef: any) => {
     if (portDef.port_type !== 'dynamic' || !portDef.dynamic_rules) return [];
     const rules = portDef.dynamic_rules;
-    const sourceData = data[rules.watch_config];
-    
+    let sourceData = data[rules.watch_config];
+    // 内容性输入已收回连线：watch 端口已连线时，从上游 string 节点取值
+    if (sourceData === undefined || sourceData === '') {
+      sourceData = getUpstreamPortValue(rules.watch_config);
+    }
+
     if (rules.method === 'regex') {
       const regex = new RegExp(rules.pattern, 'g');
       const matches = [...(sourceData || '').matchAll(regex)];
@@ -68,9 +79,14 @@ export default function CustomNode({ id, data, selected }: any) {
     return [];
   };
 
+  // 动态端口数量：依赖上游值时随 allNodes 变化，触发 updateNodeInternals 刷新引脚
+  const dynamicHandleCount = [...(data.inputs || []), ...(data.outputs || [])]
+    .filter((p: any) => p.port_type === 'dynamic')
+    .reduce((acc: number, p: any) => acc + getDynamicHandles(p).length, 0);
+
   React.useEffect(() => {
     updateNodeInternals(id);
-  }, [data, id, updateNodeInternals]);
+  }, [data, dynamicHandleCount, id, updateNodeInternals]);
 
   const handleAddListVar = () => {
     if (!listModalField) return;
@@ -280,18 +296,14 @@ export default function CustomNode({ id, data, selected }: any) {
           </div>
         )}
 
-        {data.configSchema?.map((configField: any) => {
-           const isHandleConnected = isConnected(configField.name, 'target');
-           return (
-             <div key={`cfg-${configField.name}`} className="flex flex-col gap-1 mt-1 border-t-2 border-dashed border-ink/10 pt-2">
-               <span className="text-xs font-bold uppercase opacity-80 flex justify-between">
-                 {configField.label}
-                 {isHandleConnected && <span className="text-[10px] text-terracotta">连线已接管</span>}
-               </span>
-               {!isHandleConnected && renderConfigField(configField)}
-             </div>
-           );
-        })}
+        {data.configSchema?.map((configField: any) => (
+          <div key={`cfg-${configField.name}`} className="flex flex-col gap-1 mt-1 border-t-2 border-dashed border-ink/10 pt-2">
+            <span className="text-xs font-bold uppercase opacity-80 flex justify-between">
+              {configField.label}
+            </span>
+            {renderConfigField(configField)}
+          </div>
+        ))}
 
         {data.outputs && data.outputs.length > 0 && (
           <div className="flex flex-col gap-2 items-end mt-2 pt-2 border-t-2 border-ink/10 border-dashed">

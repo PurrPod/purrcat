@@ -1,0 +1,32 @@
+{
+    "type": "string",
+    "name": "字符串",
+    "description": "静态文本字面量节点。在面板输入框填写内容，通过连线输出 string 信封给下游。所有写死的文本都应改用此节点。",
+    "color": "#8FBCBB",
+    "inputs": [
+        {
+            "name": "trigger",
+            "type": "any",
+            "port_type": "static",
+            "description": "触发信号（可选）。如果不连线，节点将在开局自动执行；如果连线，将等待收到上游数据/信号后再执行。",
+            "required": false
+        }
+    ],
+    "outputs": [
+        {
+            "name": "text",
+            "type": "string",
+            "port_type": "static",
+            "description": "输入框中的文本内容"
+        }
+    ],
+    "config": [
+        {
+            "name": "value",
+            "type": "textarea",
+            "label": "文本内容",
+            "default": "",
+            "description": "要输出给下游的静态文本"
+        }
+    ]
+}

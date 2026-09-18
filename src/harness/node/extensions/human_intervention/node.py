@@ -24,16 +24,17 @@ class Node(AgentNode):
                 "context_data": inputs.get("context_data"),
             }
 
-        prompt_message = self.config.get(
-            "prompt_message", "流程已暂停，请审查并输入您的指示："
+        prompt_message = self.unpack(inputs, "prompt") or (
+            "流程已暂停，请审查以上数据并输入您的指示："
         )
         context_data = inputs.get("context_data")
 
         if context_data:
+            data_preview = str(self.unpack(inputs, "context_data"))
             data_preview = (
-                str(context_data)[:200] + "..."
-                if len(str(context_data)) > 200
-                else str(context_data)
+                data_preview[:200] + "..."
+                if len(data_preview) > 200
+                else data_preview
             )
             self.log(context, "SYSTEM", f"📄 [待审数据]: {data_preview}")
 

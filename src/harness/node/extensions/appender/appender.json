@@ -6,13 +6,13 @@
     "inputs": [
         {
             "name": "base_list",
-            "type": "array",
+            "type": "list",
             "port_type": "static",
             "description": "基础列表"
         },
         {
             "name": "append_list",
-            "type": "array",
+            "type": "list",
             "port_type": "static",
             "description": "要追加的列表"
         }
@@ -20,7 +20,7 @@
     "outputs": [
         {
             "name": "merged_list",
-            "type": "array",
+            "type": "list",
             "port_type": "static",
             "description": "合并后的列表"
         }

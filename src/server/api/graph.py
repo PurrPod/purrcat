@@ -17,18 +17,18 @@ def list_graphs_api():
     return list_graphs()
 
 
-@router.get("/{filename}")
-def get_graph_api(filename: str):
-    result = get_graph(filename)
+@router.get("/{name}")
+def get_graph_api(name: str):
+    result = get_graph(name)
     if result is None:
         raise HTTPException(status_code=404, detail="Graph not found")
     return result
 
 
-@router.get("/{filename}/schema")
-def get_graph_schema_api(filename: str):
+@router.get("/{name}/schema")
+def get_graph_schema_api(name: str):
     """获取工作流的全局输入参数 Schema，前端可据此动态生成参数填写表单"""
-    result = get_graph(filename)
+    result = get_graph(name)
     if result is None:
         raise HTTPException(status_code=404, detail="Graph not found")
 
@@ -40,11 +40,11 @@ def get_graph_schema_api(filename: str):
         }
 
     return {
-        "graph_name": filename,
+        "graph_name": name,
         "global_schema": global_schema,
     }
 
 
-@router.post("/{filename}")
-def save_graph_api(filename: str, graph_data: Dict[str, Any]):
-    return save_graph(filename, graph_data)
+@router.post("/{name}")
+def save_graph_api(name: str, graph_data: Dict[str, Any]):
+    return save_graph(name, graph_data)

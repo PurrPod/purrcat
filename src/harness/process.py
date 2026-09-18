@@ -12,6 +12,7 @@ from typing import Any, List
 from src.model.facade import Model
 from src.utils.config import DATA_DIR
 
+from . import envelope
 from .enums import NodeState, PortState, TaskState
 
 TASK_INSTANCES = {}
@@ -90,6 +91,7 @@ class Task:
         self.node_state = {}  # 节点状态 {node_id: NodeState}
         self.output_port_states = {}  # 端口状态 {source_node: {source_port: PortState}}
         self.node_memory = {}  # 控制指令寄存器 {node_id: {"force_push": []}}
+        self.node_types = {}  # 节点类型映射 {node_id: node_type}（信封校验用）
 
         # 🌟 已彻底移除在内存中存储大体积的 edge_mailboxes
 
@@ -129,11 +131,16 @@ class Task:
     def load_graph(self):
         from src.utils.config import GRAPHS_DIR
 
+        # 文件夹式优先，兼容迁移前的单文件
         graph_path = os.path.join(GRAPHS_DIR, f"{self.graph_name}.json")
+        if os.path.isdir(os.path.join(GRAPHS_DIR, self.graph_name)):
+            graph_path = os.path.join(
+                GRAPHS_DIR, self.graph_name, "graph.json"
+            )
         if not os.path.exists(graph_path):
             return {
                 "status": "error",
-                "message": f"找不到图表定义文件: {self.graph_name}.json",
+                "message": f"找不到图表定义文件: {self.graph_name}",
             }
 
         with open(graph_path, "r", encoding="utf-8") as f:
@@ -207,9 +214,20 @@ class Task:
                     f"src.harness.node.extensions.{node_type}.node"
                 )
                 self.node_list[node_id] = module.Node(node_id=node_id, config=config)
+                self.node_types[node_id] = node_type
                 self.node_state[node_id] = NodeState.READY
             except Exception as e:
-                error_msg = f"节点加载失败 [{node_type}]: {e}"
+                from src.utils.graph_api import DEPRECATED_NODE_TYPES
+
+                if node_type in DEPRECATED_NODE_TYPES:
+                    error_msg = (
+                        f"节点类型 [{node_type}] 已在信封协议重构中移除，"
+                        f"请用编辑器打开 graph 替换该节点（预览文件请改用 preview 节点，"
+                        f"静态文本请改用 string 节点连线输入，"
+                        f"数据组装/逻辑分流请交给 agent_loop）"
+                    )
+                else:
+                    error_msg = f"节点加载失败 [{node_type}]: {e}"
                 self.state = TaskState.ERROR
                 self.init_error = error_msg
                 return {"status": "error", "message": error_msg}
@@ -321,8 +339,25 @@ class Task:
         except Exception:
             raise
 
+    def _get_port_declared_type(self, node_id: str, direction: str, port_name: str):
+        """读节点 schema 中端口的类型声明（支持 union 列表）；动态端口返回 None（视为 any）"""
+        node_type = self.node_types.get(node_id)
+        if not node_type:
+            return None
+        from src.harness.node import get_node_schema
+
+        schema = get_node_schema(node_type)
+        if not schema:
+            return None
+        for port_def in schema.get(direction, []):
+            if port_def.get("name") == port_name:
+                if port_def.get("port_type") == "dynamic":
+                    return None
+                return port_def.get("type", "any")
+        return None  # 端口不在 schema 里（动态变量名）→ any
+
     def _build_node_inputs(self, node_id: str) -> dict:
-        """纯文件指针推导，从上游物理文件组装 input"""
+        """纯文件指针推导，从上游物理文件组装 input（信封化 + 类型硬校验）"""
         inputs = {}
         edges = [e for e in self.graph.get("edges", []) if e["target"] == node_id]
         for edge in edges:
@@ -342,21 +377,74 @@ class Task:
                         with open(outputs_file, "r", encoding="utf-8") as f:
                             src_data = json.load(f)
                             if src_port in src_data:
-                                inputs[tgt_port] = src_data[src_port]
+                                raw = src_data[src_port]
+                                # 裸值（旧 checkpoint）惰性包装为信封
+                                declared = self._get_port_declared_type(
+                                    node_id, "inputs", tgt_port
+                                )
+                                env = envelope.coerce(raw, declared)
+                                # 引擎硬校验：any 万能，union 支持交集
+                                ok, err = envelope.check(env, declared)
+                                if not ok:
+                                    raise ValueError(
+                                        f"端口 [{tgt_port}] {err}"
+                                    )
+                                inputs[tgt_port] = env
+                    except ValueError:
+                        raise
                     except Exception as e:
                         self.log("ERROR", f"读取上游 {src_id} 数据失败: {e}", node_id)
         return inputs
 
+    # 大内容剥离阈值：声明为 file 的端口，data 超过此长度自动落盘
+    FILE_STRIP_THRESHOLD = 4096
+
+    _MIME_EXT = {
+        "text/html": ".html",
+        "image/svg+xml": ".svg",
+        "text/markdown": ".md",
+        "text/plain": ".txt",
+        "application/pdf": ".pdf",
+        "application/json": ".json",
+    }
+
     def _save_node_outputs(self, node_id: str, result: dict):
-        """让节点输出数据落入自治领地"""
+        """节点输出按端口 schema 包装为信封落盘；file 端口大内容自动剥离为文件"""
         if not result:
             return
         out_dir = os.path.join(self.checkpoint_dir, "nodes", node_id)
         os.makedirs(out_dir, exist_ok=True)
+
+        packed = {}
+        for port, raw in result.items():
+            declared = self._get_port_declared_type(node_id, "outputs", port)
+            env = envelope.coerce(raw, declared)
+            # 声明为 file 且 data 是超大内联字符串 → 剥离到节点 files/ 目录
+            if (
+                declared == "file"
+                and env.get("type") not in ("file",)
+                and isinstance(env.get("data"), str)
+                and len(env["data"]) > self.FILE_STRIP_THRESHOLD
+            ):
+                mime = env.get("mime", "text/plain")
+                ext = self._MIME_EXT.get(mime, ".txt")
+                files_dir = os.path.join(out_dir, "files")
+                os.makedirs(files_dir, exist_ok=True)
+                fname = f"{port}{ext}"
+                with open(
+                    os.path.join(files_dir, fname), "w", encoding="utf-8"
+                ) as f:
+                    f.write(env["data"])
+                uri = envelope.to_task_uri(self.checkpoint_dir, node_id, fname)
+                env = envelope.make(
+                    "file", uri, mime, {"bytes": len(env["data"])}
+                )
+            packed[port] = env
+
         out_file = os.path.join(out_dir, "outputs.json")
         try:
             with open(out_file, "w", encoding="utf-8") as f:
-                json.dump(result, f, ensure_ascii=False)
+                json.dump(packed, f, ensure_ascii=False)
         except Exception as e:
             self.log("ERROR", f"节点结果落盘失败: {e}", node_id)
 

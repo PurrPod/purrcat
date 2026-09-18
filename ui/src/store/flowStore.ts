@@ -139,22 +139,29 @@ export const useFlowStore = create<FlowState>()(
                 'ToolList': 'list',
                 'integer': 'number',
                 'float': 'number',
-                'LLMResponse': 'object'
+                'LLMResponse': 'object',
+                'filepath': 'file',
+                'File': 'file'
             };
             return typeMap[t] || t.toLowerCase();
         }
 
-        // 查出原始类型
+        // 端口声明归一化为类型集合：支持 union 数组声明（如 ["string","file"]）
+        const toTypeSet = (raw: any): string[] => {
+            const list = Array.isArray(raw) ? raw : [raw]
+            return list.map((t: any) => normalizeType(String(t)))
+        }
+        const fmtType = (raw: any) => Array.isArray(raw) ? raw.join(' | ') : String(raw)
+
+        // 查出原始类型（union 端口返回数组）
         const rawSourceType = getPortType(sourceNode, params.sourceHandle || 'default', 'source');
         const rawTargetType = getPortType(targetNode, params.targetHandle || 'default', 'target');
-        
-        // 归一化对比
-        const sType = normalizeType(rawSourceType);
-        const tType = normalizeType(rawTargetType);
 
-        // 🌟 4. 智能类型校验
-        if (sType !== 'any' && tType !== 'any' && sType !== tType) {
-            toast.error(`类型不兼容！无法将 [${rawSourceType}] 连到 [${rawTargetType}] 上`);
+        // 🌟 4. 智能类型校验：any 万能；类型集合交集非空即可连线（与引擎 envelope.check 规则一致）
+        const sSet = toTypeSet(rawSourceType);
+        const tSet = toTypeSet(rawTargetType);
+        if (!sSet.includes('any') && !tSet.includes('any') && !sSet.some(s => tSet.includes(s))) {
+            toast.error(`类型不兼容！无法将 [${fmtType(rawSourceType)}] 连到 [${fmtType(rawTargetType)}] 上`);
             return false;
         }
 

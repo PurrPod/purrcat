@@ -5,6 +5,8 @@ import sys
 from pathlib import Path
 from typing import Any, Dict
 
+from src.harness import envelope
+
 
 def _format_result(result_data) -> str:
     if isinstance(result_data, str):
@@ -58,6 +60,38 @@ class BaseNode:
     async def execute(self, inputs: Dict[str, Any], context: Any) -> Dict[str, Any]:
         """由子类实现的具体执行逻辑，必须返回字典作为向外投递的包裹"""
         raise NotImplementedError
+
+    # ==================== 信封便捷方法 ====================
+
+    def unpack(self, inputs: Dict[str, Any], port: str, expect: str = "any", default=None) -> Any:
+        """取端口信封的 data。裸值（旧 checkpoint / 未包装）直接透传。"""
+        v = inputs.get(port)
+        if v is None:
+            return default
+        if envelope.is_envelope(v):
+            return v["data"]
+        return v
+
+    def unpack_env(self, inputs: Dict[str, Any], port: str) -> Any:
+        """取端口完整信封（需要 mime 等元数据时用）；裸值原样返回"""
+        return inputs.get(port)
+
+    def pack(self, data: Any, type_: str = "any", mime: str = None, meta: dict = None) -> dict:
+        """包装输出信封"""
+        return envelope.make(type_, data, mime, meta)
+
+    def file_env(self, context: Any, filename: str, content: Any, mime: str = None) -> dict:
+        """将内容落盘到本节点 files/ 目录，返回 file 信封（data 为 purrcat:// URI）"""
+        node_dir = os.path.join(context.checkpoint_dir, "nodes", self.node_id)
+        files_dir = os.path.join(node_dir, "files")
+        os.makedirs(files_dir, exist_ok=True)
+        file_path = os.path.join(files_dir, filename)
+        mode = "wb" if isinstance(content, bytes) else "w"
+        with open(file_path, mode, **({} if isinstance(content, bytes) else {"encoding": "utf-8"})) as f:
+            f.write(content)
+        uri = envelope.to_task_uri(context.checkpoint_dir, self.node_id, filename)
+        meta = {"bytes": os.path.getsize(file_path)}
+        return envelope.make("file", uri, mime, meta)
 
     def log(self, context: Any, log_type: str, content: str, node_id: str = None):
         nid = node_id or self.node_id

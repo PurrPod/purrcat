@@ -29,23 +29,10 @@
     "outputs": [
         {
             "name": "message_list",
-            "type": "array",
+            "type": "MessageList",
             "port_type": "static",
             "description": "标准消息列表"
         }
     ],
-    "config": [
-        {
-            "name": "content",
-            "type": "string",
-            "label": "消息内容",
-            "default": ""
-        },
-        {
-            "name": "role",
-            "type": "string",
-            "label": "消息角色",
-            "default": "user"
-        }
-    ]
+    "config": []
 }

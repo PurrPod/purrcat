@@ -45,7 +45,7 @@ export default function ChatModals(props: any) {
       : Object.entries(mcpData)
   ) as [string, any][];
   const filteredGraphs = graphQ
-    ? (graphData || []).filter((g: any) => String(g.name || '').replace('.json', '').toLowerCase().includes(graphQ))
+    ? (graphData || []).filter((g: any) => String(g.name || '').toLowerCase().includes(graphQ))
     : (graphData || []);
 
   return (
@@ -219,7 +219,7 @@ export default function ChatModals(props: any) {
             >
               <option value="Agent">{t('chat.wakeAgent')}</option>
               {graphData && graphData.map((g: any) => {
-                const nameClean = g.name.replace('.json', '');
+                const nameClean = g.name;
                 return <option key={nameClean} value={nameClean}>{t('chat.backgroundFlowPrefix')}{nameClean}</option>
               })}
             </select>
@@ -468,7 +468,7 @@ export default function ChatModals(props: any) {
             <div className="flex-1 overflow-y-auto flex flex-col gap-3 -rotate-1 p-1">
               {filteredGraphs.length === 0 ? <p className="font-bold text-center mt-6 opacity-50 text-sm">{graphData.length === 0 ? t('task.noGraphs') : t('chat.noMatchGraphs')}</p> : (
                  filteredGraphs.map((graph: any, idx: number) => {
-                   const graphName = graph.name.replace('.json', '');
+                   const graphName = graph.name;
                    const isSelected = tempSelectedGraphs.includes(graphName);
                    return (
                      <div key={graphName} style={idx % 2 === 0 ? sketchyShape1 : sketchyShape3} className={`border-4 border-ink bg-cream p-3 transition-all ${isSelected ? 'shadow-[4px_4px_0px_0px_rgba(212,122,90,1)] border-terracotta bg-terracotta/10' : 'shadow-[4px_4px_0px_0px_rgba(26,26,26,1)]'} flex flex-col gap-2 cursor-pointer`} onClick={() => {
