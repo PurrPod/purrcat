@@ -1425,7 +1425,9 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
             })}
             </>
           )}
-          {isAgentThinking && (
+          {/* 🌟 live 思考气泡只属于 main 分支的主 Agent 循环（status 轮询只回报主干状态），
+              子代理分支视图内不渲染，避免主干的 THINKING/PROCESSING 标签串台到子代理视图 */}
+          {isAgentThinking && currentBranchId === 'main' && (
             <div className="flex justify-start mb-3 w-full max-w-[85%]">
               <ReasoningBubble text={liveReasoning} live phase={livePhase} onPause={handleForceInterrupt} />
             </div>
