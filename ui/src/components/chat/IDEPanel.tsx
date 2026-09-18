@@ -555,6 +555,9 @@ export default function IDEPanel({ workspacePath, onClose, onOpenLink }: IDEPane
     try {
       const res = await fetch('/api/filesystem/ack', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: change.path, backup_id: change.newest_backup_id }) });
       if (res.ok) {
+        // 文件已被外部迁移或销毁时，后端直接清掉这条改动记录并标记 purged_stale
+        const data = await res.json().catch(() => ({}));
+        if (data?.purged_stale) toast(t('chat.staleRecordPurged'));
         const next = displayChanges.find(c => c.path !== change.path);
         setActiveChangePath(next ? next.path : null);
         // 该文件若有已打开的 Tab（且未编辑），立即重读内容保证所见即所得
@@ -572,6 +575,8 @@ export default function IDEPanel({ workspacePath, onClose, onOpenLink }: IDEPane
     try {
       const res = await fetch('/api/filesystem/ack_all', { method: 'POST' });
       if (res.ok) {
+        const data = await res.json().catch(() => ({}));
+        if ((data?.purged_stale ?? 0) > 0) toast(`${data.purged_stale}${t('chat.ackAllStaleDetailSuffix')}`);
         setActiveChangePath(null);
         setChangeContents({});
         fetchDiffs();

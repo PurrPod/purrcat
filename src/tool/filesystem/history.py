@@ -173,13 +173,53 @@ def get_all_diffs() -> list:
     return consolidated_diffs
 
 
-def ack_backup(target_path: str, backup_id: str):
-    """用户确认更改，释放磁盘空间。执行【向前截断】：清理当前及更旧的备份"""
+def purge_change_record(display_path: str) -> int:
+    """按展示路径直接清理整条变更记录（备份体 + .empty + .meta）。
+
+    使用场景：沙盒路径迁移是换索引而不是移动文件夹，旧记录指向的宿主位置
+    已被外部迁移或销毁，当前沙盒解析不到其备份时，接受操作直接删掉这条
+    改动记录。返回实际清理的文件数。
+    """
+    if not os.path.exists(HISTORY_DIR):
+        return 0
+
+    # 1. 找出属于该展示路径的所有 meta，取其文件名主干（safe_name@backup_id）
+    stems = []
+    for f in os.listdir(HISTORY_DIR):
+        if not f.endswith(".meta"):
+            continue
+        try:
+            with open(os.path.join(HISTORY_DIR, f), "r", encoding="utf-8") as fp:
+                m = json.load(fp)
+            if m.get("path") == display_path:
+                stems.append(f[: -len(".meta")])
+        except Exception:
+            continue
+
+    # 2. 删除主干本身（内容备份）及其 .empty / .meta 变体
+    removed = 0
+    for f in os.listdir(HISTORY_DIR):
+        if any(f == s or f.startswith(s + ".") for s in stems):
+            try:
+                os.remove(os.path.join(HISTORY_DIR, f))
+                removed += 1
+            except OSError:
+                pass
+    return removed
+
+
+def ack_backup(target_path: str, backup_id: str) -> int:
+    """用户确认更改，释放磁盘空间。执行【向前截断】：清理当前及更旧的备份。
+
+    返回实际清理的文件数；返回 0 表示当前解析路径下没有任何备份
+    （记录可能指向已被外部迁移或销毁的位置）。
+    """
     if not backup_id:
-        return
+        return 0
     history_file = _get_history_path(target_path)
     history_prefix = history_file + "@"
 
+    removed = 0
     for f in os.listdir(HISTORY_DIR):
         full_path = os.path.join(HISTORY_DIR, f)
         if full_path.startswith(history_prefix):
@@ -193,8 +233,10 @@ def ack_backup(target_path: str, backup_id: str):
                 # 核心：只要备份的时间戳 <= 当前确认的时间戳，就统统删掉！
                 if ts_str and int(ts_str) <= int(backup_id):
                     os.remove(full_path)
+                    removed += 1
             except ValueError:
                 pass
+    return removed
 
 
 def rewind_file_by_id(target_path: str, backup_id: str) -> str:

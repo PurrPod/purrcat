@@ -482,7 +482,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   useEffect(() => { if (fileChanges.length > 0 && (!activeDiffPath || !fileChanges.some(c => c.path === activeDiffPath))) setActiveDiffPath(fileChanges[0].path); }, [fileChanges, activeDiffPath]);
 
   const handleAck = async (path: string, newestBackupId: string) => {
-    try { const res = await fetch(`/api/filesystem/ack`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path, backup_id: newestBackupId }) }); if (res.ok) { toast.success(t('chat.changeConfirmed')); fetchGlobalDiffs(); } } catch { /* noop */ }
+    try { const res = await fetch(`/api/filesystem/ack`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path, backup_id: newestBackupId }) }); if (res.ok) { const data = await res.json().catch(() => ({})); toast.success(data?.purged_stale ? t('chat.staleRecordPurged') : t('chat.changeConfirmed')); fetchGlobalDiffs(); } } catch { /* noop */ }
   };
   // 🌟 一键接受全部更改（FileChangesPanel / 切换会话拦截弹窗共用）
   const handleAckAll = async (): Promise<boolean> => {
@@ -490,7 +490,9 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
       const res = await fetch('/api/filesystem/ack_all', { method: 'POST' });
       if (res.ok) {
         const data = await res.json().catch(() => ({}));
-        toast.success(`${t('chat.ackAllDonePrefix')}${data.total ?? 0}${t('chat.ackAllDoneSuffix')}`);
+        let msg = `${t('chat.ackAllDonePrefix')}${data.total ?? 0}${t('chat.ackAllDoneSuffix')}`;
+        if ((data.purged_stale ?? 0) > 0) msg += `${t('chat.ackAllStaleDetailPrefix')}${data.purged_stale}${t('chat.ackAllStaleDetailSuffix')}`;
+        toast.success(msg);
         fetchGlobalDiffs();
         return true;
       }
