@@ -12,10 +12,11 @@ from src.utils.config import SRC_DIR, GRAPHS_DIR
 
 NODES_DIR = os.path.join(SRC_DIR, "harness", "node", "extensions")
 
-# 已移除的节点类型：迁移时用于检测旧 graph 引用并留下警告
+# 已移除/改名的节点类型：迁移时用于检测旧 graph 引用并留下警告
+# 注：file_writer 已重新恢复为「文件落盘」节点；preview 已改名为 file_reader
 DEPRECATED_NODE_TYPES = {
     "image_generator",
-    "file_writer",
+    "preview",
     "text_file_reader",
     "if_else_router",
     "switch_router",

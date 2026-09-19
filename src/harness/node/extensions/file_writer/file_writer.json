@@ -1,0 +1,46 @@
+{
+    "type": "file_writer",
+    "name": "文件落盘",
+    "description": "将 string 内容写入磁盘文件，输出 file 信封供下游（如文件读取/预览节点或其他消费者）继续使用。落盘逻辑独立于此节点，预览节点不再承担写盘。",
+    "color": "#2ECC71",
+    "inputs": [
+        {
+            "name": "trigger",
+            "type": "any",
+            "port_type": "static",
+            "description": "触发信号（可选）。如果不连线，节点将在开局自动执行；如果连线，将等待收到上游数据/信号后再执行。",
+            "required": false
+        },
+        {
+            "name": "content",
+            "type": "string",
+            "port_type": "static",
+            "description": "要写入文件的文本内容",
+            "required": true
+        },
+        {
+            "name": "filename",
+            "type": "string",
+            "port_type": "static",
+            "description": "输出文件名（含扩展名）。缺省使用面板的 filename 配置。",
+            "required": false
+        }
+    ],
+    "outputs": [
+        {
+            "name": "file",
+            "type": "file",
+            "port_type": "static",
+            "description": "写入后的文件信封（data 为 purrcat:// URI）"
+        }
+    ],
+    "config": [
+        {
+            "name": "filename",
+            "type": "string",
+            "label": "文件名",
+            "default": "output.txt",
+            "description": "输出文件默认名（含扩展名），可被输入连线覆盖"
+        }
+    ]
+}

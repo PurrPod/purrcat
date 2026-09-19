@@ -41,6 +41,10 @@ def _mime_to_kind(mime: str) -> str:
     return "text"
 
 
+# 文本类 mime（能从磁盘读回字符串内容作为 content 输出）
+_TEXT_KINDS = {"text", "html", "svg"}
+
+
 def _sniff_string_mime(text: str) -> str:
     """string 内容嗅探 mime"""
     stripped = text.lstrip()[:200].lower()
@@ -86,53 +90,74 @@ def _wrap_markdown_html(content: str) -> str:
 
 
 class Node(BaseNode):
-    """预览看板：string/file 输入按 mime 渲染，string 落盘，输出统一 file 信封"""
+    """文件读取/预览：string/file 输入按 mime 渲染，并透出文件文本（content）。
 
-    def _emit_artifact(self, context: Any, kind: str, uri: str, mime: str):
-        """推送结构化 ARTIFACT 日志（前端按 kind 分支渲染）"""
-        payload = json.dumps(
-            {"kind": kind, "uri": uri, "mime": mime},
-            ensure_ascii=False,
-        )
-        self.log(context, LogType.ARTIFACT, payload)
+    - file 输入：读回文本作为 content 输出，同时保留 file 引用输出；预览走 URI（前端 /artifact 渲染）。
+    - string 输入：不落盘，内容以 content 输出；预览以内联 content 交给前端渲染。
+    """
+
+    def _emit_artifact(
+        self,
+        context: Any,
+        kind: str,
+        mime: str,
+        uri: str = None,
+        content: str = None,
+        name: str = None,
+    ):
+        """推送结构化 ARTIFACT 日志（前端按 kind/uri 或内联 content 渲染）"""
+        payload: Dict[str, Any] = {"kind": kind, "mime": mime}
+        if uri:
+            payload["uri"] = uri
+        if content is not None:
+            payload["content"] = content
+        if name:
+            payload["name"] = name
+        self.log(context, LogType.ARTIFACT, json.dumps(payload, ensure_ascii=False))
 
     async def execute(self, inputs: Dict[str, Any], context: Any) -> Dict[str, Any]:
-        self.log(context, "SYSTEM", "🖼️ [预览] 节点启动")
+        self.log(context, "SYSTEM", "📖 [文件读取/预览] 节点启动")
 
         env = self.unpack_env(inputs, "source")
         if env is None:
-            raise ValueError("预览节点缺少 [source] 输入")
+            raise ValueError("文件读取节点缺少 [source] 输入")
 
         env = envelope.coerce(env, ["string", "file"])
         env_type = env.get("type")
 
         if env_type == "file":
             return self._handle_file(env, context)
-
-        # string 输入：嗅探 mime 并落盘为文件
-        return await self._handle_string(env, context)
+        return self._handle_string(env, context)
 
     def _handle_file(self, env: dict, context: Any) -> Dict[str, Any]:
-        """file 输入：补全 mime 后透传引用"""
+        """file 输入：尽量读回文本，保留文件引用，预览走 URI 透传"""
         uri = env.get("data")
         if not isinstance(uri, str) or not uri:
-            raise ValueError("file 信封缺少有效的 data (URI)")
+            raise ValueError("文件信封缺少有效的 data (URI)")
 
         mime = env.get("mime")
         if not mime:
-            # 按扩展名补全
             _, ext = os.path.splitext(str(uri))
             mime = _EXT_MIME.get(ext.lower(), "application/octet-stream")
-
         kind = _mime_to_kind(mime)
-        self.log(context, "SYSTEM", f"📎 [预览] 透传文件引用: {uri} ({mime})")
-        self._emit_artifact(context, kind, uri, mime)
+
+        text: Optional[str] = None
+        path = envelope.parse_uri(uri, checkpoint_dir=context.checkpoint_dir)
+        if path and path.is_file() and kind in _TEXT_KINDS:
+            try:
+                text = path.read_text(encoding="utf-8")
+            except Exception:
+                text = None
+
+        name = os.path.basename(str(uri))
+        self.log(context, "SYSTEM", f"📎 [读取] {uri} ({mime})")
+        self._emit_artifact(context, kind, mime, uri=uri, name=name)
 
         out = envelope.make("file", uri, mime, env.get("meta"))
-        return {"file": out}
+        return {"content": text, "file": out}
 
-    async def _handle_string(self, env: dict, context: Any) -> Dict[str, Any]:
-        """string 输入：嗅探内容类型，落盘到本节点 files/ 并输出 file 信封"""
+    def _handle_string(self, env: dict, context: Any) -> Dict[str, Any]:
+        """string 输入：不落盘；输出 content，预览以内联 HTML 交给前端"""
         text = env.get("data")
         if not isinstance(text, str):
             text = str(text)
@@ -141,21 +166,12 @@ class Node(BaseNode):
         kind = _mime_to_kind(mime)
 
         if mime == "text/markdown":
-            # Markdown / 纯文本包装为带样式的 HTML 看板
-            full_html = _wrap_markdown_html(text)
-            fname, mime, kind = "preview.html", "text/html", "html"
-            file_env = self.file_env(context, fname, full_html, mime)
-        elif mime == "text/html":
-            fname = "preview.html"
-            file_env = self.file_env(context, fname, text, mime)
+            html = _wrap_markdown_html(text)
+            render_mim, render_kind = "text/html", "html"
         elif mime == "image/svg+xml":
-            fname = "preview.svg"
-            file_env = self.file_env(context, fname, text, mime)
-        else:
-            fname = "preview.txt"
-            mime, kind = "text/plain", "text"
-            file_env = self.file_env(context, fname, text, mime)
+            html, render_mim, render_kind = text, mime, "svg"
+        else:  # text/html
+            html, render_mim, render_kind = text, mime, "html"
 
-        self.log(context, "SYSTEM", f"💾 [预览] string 已落盘为 {fname} ({mime})")
-        self._emit_artifact(context, kind, file_env["data"], mime)
-        return {"file": file_env}
+        self._emit_artifact(context, render_kind, render_mim, content=html)
+        return {"content": text}

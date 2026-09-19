@@ -682,21 +682,19 @@ export default function TaskPage({ onBack }: { onBack: () => void }) {
                        if (log.type === "WARNING") colorClass = "text-[#d08770] font-bold";
                        const isArtifact = log.type.toUpperCase() === "ARTIFACT";
                        if (isArtifact) colorClass = "text-[#88c0d0] font-black";
-                       // 🌟 新版结构化 ARTIFACT：{kind, uri, mime, title}；旧版 content 为 html 字符串
+                       // 🌟 新版结构化 ARTIFACT：{kind, uri?, mime, content?, name}；uri 缺失时用内联 content 渲染；旧版 content 为 html 字符串
                        let artifact: any = null;
                        if (isArtifact) {
                          try {
                            const parsed = JSON.parse(log.content);
-                           if (parsed && typeof parsed === 'object' && parsed.kind && parsed.uri) artifact = parsed;
+                           if (parsed && typeof parsed === 'object' && parsed.kind) artifact = parsed;
                          } catch { /* 旧格式，回退 srcDoc */ }
                        }
-                       const artifactUrl = artifact
+                       const artifactUrl = artifact && artifact.uri
                          ? `/api/tasks/${selectedTaskId}/artifact?uri=${encodeURIComponent(artifact.uri)}${artifact.mime ? `&mime=${encodeURIComponent(artifact.mime)}` : ''}`
                          : '';
                        // 文件管理器预览风格：标题栏显示文件名
-                       const artifactName = (() => {
-                         try { return decodeURIComponent((artifact?.uri || '').split('/').pop() || '') } catch { return artifact?.uri || '' }
-                       })();
+                       const artifactName = artifact?.name || (() => { try { return decodeURIComponent((artifact?.uri || '').split('/').pop() || '') } catch { return artifact?.uri || '' } })();
                        return (
                          <div key={idx} className={`flex ${isArtifact ? 'flex-col gap-2' : 'gap-4'} hover:bg-ink/5 p-1 rounded transition-colors break-all`}>
                            <div className="flex gap-4 items-start">
@@ -714,9 +712,13 @@ export default function TaskPage({ onBack }: { onBack: () => void }) {
                                  <span className="text-xs font-bold text-ink/40 ml-2" style={{ fontFamily: '"Comic Sans MS", cursive' }}>{artifactName || t('task.dashboard')}</span>
                                </div>
                                {artifact ? (
-                                 artifact.kind === 'image'
+                                 artifact.kind === 'image' && artifactUrl
                                    ? <img src={artifactUrl} alt={artifactName || 'preview'} className="w-full h-[calc(100%-2rem)] mt-8 object-contain bg-[#FDF8F0]" />
-                                   : <iframe src={artifactUrl} className="w-full h-[calc(100%-2rem)] mt-8 border-none" sandbox="allow-scripts allow-popups" />
+                                   : artifactUrl
+                                     ? <iframe src={artifactUrl} className="w-full h-[calc(100%-2rem)] mt-8 border-none" sandbox="allow-scripts allow-popups" />
+                                     : artifact.kind === 'text'
+                                       ? <pre className="w-full h-[calc(100%-2rem)] mt-8 overflow-auto p-4 whitespace-pre-wrap">{artifact.content}</pre>
+                                       : <iframe srcDoc={artifact.content} className="w-full h-[calc(100%-2rem)] mt-8 border-none" sandbox="allow-scripts allow-popups" />
                                ) : (
                                  <iframe srcDoc={log.content} className="w-full h-[calc(100%-2rem)] mt-8 border-none" sandbox="allow-scripts allow-popups" />
                                )}
