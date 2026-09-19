@@ -131,12 +131,7 @@ class Task:
     def load_graph(self):
         from src.utils.config import GRAPHS_DIR
 
-        # 文件夹式优先，兼容迁移前的单文件
-        graph_path = os.path.join(GRAPHS_DIR, f"{self.graph_name}.json")
-        if os.path.isdir(os.path.join(GRAPHS_DIR, self.graph_name)):
-            graph_path = os.path.join(
-                GRAPHS_DIR, self.graph_name, "graph.json"
-            )
+        graph_path = os.path.join(GRAPHS_DIR, self.graph_name, "graph.json")
         if not os.path.exists(graph_path):
             return {
                 "status": "error",
@@ -147,12 +142,6 @@ class Task:
             self.graph = json.load(f)
 
         global_schema = self.graph.get("global_schema", {})
-
-        if not global_schema and "required_inputs" in self.graph:
-            old_reqs = self.graph["required_inputs"]
-            global_schema = {
-                k: {"required": True, "description": v} for k, v in old_reqs.items()
-            }
 
         validation_errors = []
 

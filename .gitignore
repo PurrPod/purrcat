@@ -34,6 +34,8 @@ src/agent/checkpoint.json
 todo.md
 venv/
 website/
+extension/
+.trae/
 .venv/
 env/
 lib

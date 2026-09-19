@@ -345,8 +345,6 @@ export const useFlowStore = create<FlowState>()(
             dynamicInputs = sourceData.exposed_keys.map((k: string) => ({ key: k, desc: 'any' }));
           } else if (node.data?.dynamic_inputs) {
             dynamicInputs = node.data.dynamic_inputs;
-          } else if (node.type === 'task_input' && graphData.required_inputs) {
-             Object.keys(graphData.required_inputs).forEach(k => dynamicInputs.push({ key: k, desc: graphData.required_inputs[k] }));
           }
 
           const defaultData: Record<string, any> = {

@@ -38,19 +38,10 @@ def graph_file(name: str) -> str:
 def list_graphs() -> List[Dict[str, str]]:
     _ensure_graphs_dir()
     graphs = []
-    seen = set()
-    # 文件夹式 graph（正式格式）
     for entry in os.listdir(GRAPHS_DIR):
         if os.path.isdir(os.path.join(GRAPHS_DIR, entry)):
             if os.path.exists(graph_file(entry)):
                 graphs.append({"name": entry, "path": graph_file(entry)})
-                seen.add(entry)
-    # 兼容迁移前的残留单文件（尚未迁移时仍可见）
-    for entry in os.listdir(GRAPHS_DIR):
-        if entry.endswith(".json") and not entry.endswith(".bak"):
-            name = entry[: -len(".json")]
-            if name not in seen:
-                graphs.append({"name": name, "path": os.path.join(GRAPHS_DIR, entry)})
     return graphs
 
 
@@ -73,19 +64,10 @@ def get_all_nodes() -> List[Dict[str, Any]]:
 
 def get_graph(name: str) -> Optional[Dict[str, Any]]:
     _ensure_graphs_dir()
-    # 文件夹式优先
     folder_file = graph_file(name)
     if os.path.exists(folder_file):
         try:
             with open(folder_file, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            return None
-    # 兼容迁移前的单文件
-    legacy = os.path.join(GRAPHS_DIR, f"{name}.json")
-    if os.path.exists(legacy):
-        try:
-            with open(legacy, "r", encoding="utf-8") as f:
                 return json.load(f)
         except Exception:
             return None
@@ -105,6 +87,7 @@ def save_graph(name: str, graph_data: Dict[str, Any]) -> Dict[str, Any]:
 def migrate_graphs_to_folders() -> List[str]:
     """把旧单文件 graph 迁移为文件夹结构（幂等），返回迁移成功的名字列表。
     - {name}.json → {name}/graph.json，原文件改 .json.bak 保留
+    - 旧格式 required_inputs 同步升级为 global_schema（运行时不再兼容旧格式）
     - 检测已移除节点类型的引用，写 {name}/DEPRECATED_NODES.txt 警告
     """
     _ensure_graphs_dir()
@@ -125,6 +108,14 @@ def migrate_graphs_to_folders() -> List[str]:
         except Exception as e:
             print(f"⚠️ [Graph迁移] 跳过无法解析的 {entry}: {e}")
             continue
+
+        # 旧格式 required_inputs → global_schema（一次性升级，运行时不兼容旧格式）
+        if not graph_data.get("global_schema") and "required_inputs" in graph_data:
+            graph_data["global_schema"] = {
+                k: {"required": True, "description": v}
+                for k, v in graph_data["required_inputs"].items()
+            }
+            del graph_data["required_inputs"]
 
         target_dir = graph_dir(name)
         os.makedirs(target_dir, exist_ok=True)

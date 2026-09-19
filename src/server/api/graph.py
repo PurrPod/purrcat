@@ -33,11 +33,6 @@ def get_graph_schema_api(name: str):
         raise HTTPException(status_code=404, detail="Graph not found")
 
     global_schema = result.get("global_schema", {})
-    if not global_schema and "required_inputs" in result:
-        global_schema = {
-            k: {"required": True, "description": v}
-            for k, v in result["required_inputs"].items()
-        }
 
     return {
         "graph_name": name,

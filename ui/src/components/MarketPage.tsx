@@ -458,7 +458,7 @@ export default function MarketPage({ onBack, initialTab }: { onBack: () => void;
 
   const handleInstallSkill = async (skill: SkillEntry) => {
     const key = skill.name;
-    if (installingSet.has(key) || isInstalled(skill)) return;
+    if (installingSet.has(key)) return;
     setInstallingSet(prev => new Set(prev).add(key));
     try {
       const res = await fetch('/api/tools/skills/install', {
@@ -480,18 +480,17 @@ export default function MarketPage({ onBack, initialTab }: { onBack: () => void;
     }
   };
 
-  // 一键安装仓库内全部 skill（后端按仓库分组下载，只装未安装的）
+  // 一键（重新）下载仓库内全部 skill（后端按仓库分组下载，已安装的也覆盖重下）
   const handleInstallAllInRepo = async (skills: SkillEntry[]) => {
     if (isInstallingAll) return;
-    const pending = skills.filter(s => !isInstalled(s));
-    if (pending.length === 0) return toast.success(t('market.repoAllInstalled'));
+    if (skills.length === 0) return;
     setIsInstallingAll(true);
-    const tid = toast.loading(`${t('market.batchInstallingPrefix')}${pending.length}${t('market.batchInstallingSuffix')}`);
+    const tid = toast.loading(`${t('market.batchInstallingPrefix')}${skills.length}${t('market.batchInstallingSuffix')}`);
     try {
       const res = await fetch('/api/tools/skills/install-batch', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ urls: pending.map(s => s['skill-single-link']) }),
+        body: JSON.stringify({ urls: skills.map(s => s['skill-single-link']) }),
       });
       const data = await res.json().catch(() => null);
       if (res.ok) {
@@ -522,7 +521,7 @@ export default function MarketPage({ onBack, initialTab }: { onBack: () => void;
   const handleInstallSensor = async (s: SensorEntry) => {
     const key = String(s.name);
     if (!key) return;
-    if (installingSensorSet.has(key) || isSensorInstalled(s)) return;
+    if (installingSensorSet.has(key)) return;
     setInstallingSensorSet(prev => new Set(prev).add(key));
     try {
       const res = await fetch('/api/tools/market/sensors/install', {
@@ -563,7 +562,7 @@ export default function MarketPage({ onBack, initialTab }: { onBack: () => void;
   const handleInstallGraph = async (g: GraphEntry) => {
     const key = String(g.name);
     if (!key) return;
-    if (installingGraphSet.has(key) || isGraphInstalled(g)) return;
+    if (installingGraphSet.has(key)) return;
     setInstallingGraphSet(prev => new Set(prev).add(key));
     try {
       const res = await fetch('/api/tools/market/graphs/install', {
@@ -670,19 +669,17 @@ export default function MarketPage({ onBack, initialTab }: { onBack: () => void;
                 </a>
                 <button
                   onClick={() => handleInstallSkill(selectedSkill)}
-                  disabled={installed || installing}
-                  title={installed ? t('market.installed') : t('market.downloadInstall')}
+                  disabled={installing}
+                  title={installed ? t('market.redownload') : t('market.downloadInstall')}
                   style={sketchyShape2}
                   className={`h-14 px-6 flex items-center gap-2 border-4 border-ink font-black text-lg shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] transition-all active:translate-y-1 active:shadow-none ${
-                    installed
-                      ? 'bg-[#d8d8d0] text-ink/40 cursor-not-allowed'
-                      : installing
-                        ? 'bg-[#EBCB8B] text-ink cursor-wait'
-                        : 'bg-terracotta text-paper hover:-translate-y-0.5'
+                    installing
+                      ? 'bg-[#EBCB8B] text-ink cursor-wait'
+                      : 'bg-terracotta text-paper hover:-translate-y-0.5'
                   }`}
                 >
-                  {installing ? <Loader2 size={22} strokeWidth={3} className="animate-spin" /> : installed ? <Check size={22} strokeWidth={3} /> : <Download size={22} strokeWidth={3} />}
-                  <span style={{ fontFamily: '"Comic Sans MS", cursive' }}>{installing ? t('market.installing') : installed ? t('market.installed') : t('market.download')}</span>
+                  {installing ? <Loader2 size={22} strokeWidth={3} className="animate-spin" /> : installed ? <RefreshCw size={22} strokeWidth={3} /> : <Download size={22} strokeWidth={3} />}
+                  <span style={{ fontFamily: '"Comic Sans MS", cursive' }}>{installing ? t('market.installing') : installed ? t('market.redownload') : t('market.download')}</span>
                 </button>
               </div>
             </div>
@@ -751,19 +748,17 @@ export default function MarketPage({ onBack, initialTab }: { onBack: () => void;
                 </a>
                 <button
                   onClick={() => setMcpInstallConfirm(selectedMcpInfo)}
-                  disabled={installed || installing}
-                  title={installed ? t('market.installed') : t('market.install')}
+                  disabled={installing}
+                  title={installed ? t('market.redownload') : t('market.install')}
                   style={sketchyShape2}
                   className={`h-14 px-6 flex items-center gap-2 border-4 border-ink font-black text-lg shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] transition-all active:translate-y-1 active:shadow-none ${
-                    installed
-                      ? 'bg-[#d8d8d0] text-ink/40 cursor-not-allowed'
-                      : installing
-                        ? 'bg-[#EBCB8B] text-ink cursor-wait'
-                        : 'bg-[#EBCB8B] text-ink hover:-translate-y-0.5'
+                    installing
+                      ? 'bg-[#EBCB8B] text-ink cursor-wait'
+                      : 'bg-[#EBCB8B] text-ink hover:-translate-y-0.5'
                   }`}
                 >
-                  {installing ? <Loader2 size={22} strokeWidth={3} className="animate-spin" /> : installed ? <Check size={22} strokeWidth={3} /> : <Download size={22} strokeWidth={3} />}
-                  <span style={{ fontFamily: '"Comic Sans MS", cursive' }}>{installing ? t('market.installing') : installed ? t('market.installed') : t('market.install')}</span>
+                  {installing ? <Loader2 size={22} strokeWidth={3} className="animate-spin" /> : installed ? <RefreshCw size={22} strokeWidth={3} /> : <Download size={22} strokeWidth={3} />}
+                  <span style={{ fontFamily: '"Comic Sans MS", cursive' }}>{installing ? t('market.installing') : installed ? t('market.redownload') : t('market.install')}</span>
                 </button>
               </div>
             </div>
@@ -897,20 +892,18 @@ export default function MarketPage({ onBack, initialTab }: { onBack: () => void;
                 </a>
                 <button
                   onClick={() => handleInstallSensor(selectedSensor)}
-                  disabled={installing || installed}
-                  title={installed ? t('market.installedFull') : t('market.downloadInstall')}
+                  disabled={installing}
+                  title={installed ? t('market.redownload') : t('market.downloadInstall')}
                   style={sketchyShape2}
                   className={`h-14 px-6 flex items-center gap-2 border-4 border-ink font-black text-lg shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] transition-all active:translate-y-1 active:shadow-none ${
-                    installed
-                      ? 'bg-[#d8d8d0] text-ink/40 cursor-not-allowed'
-                      : installing
-                        ? 'bg-[#EBCB8B] text-ink cursor-wait'
-                        : 'bg-[#a3be8c] text-ink hover:-translate-y-0.5'
+                    installing
+                      ? 'bg-[#EBCB8B] text-ink cursor-wait'
+                      : 'bg-[#a3be8c] text-ink hover:-translate-y-0.5'
                   }`}
                 >
-                  {installing ? <Loader2 size={22} strokeWidth={3} className="animate-spin" /> : installed ? <Check size={22} strokeWidth={3} /> : <Download size={22} strokeWidth={3} />}
+                  {installing ? <Loader2 size={22} strokeWidth={3} className="animate-spin" /> : installed ? <RefreshCw size={22} strokeWidth={3} /> : <Download size={22} strokeWidth={3} />}
                   <span style={{ fontFamily: '"Comic Sans MS", cursive' }}>
-                    {installing ? t('market.installing') : installed ? t('market.installed') : t('market.download')}
+                    {installing ? t('market.installing') : installed ? t('market.redownload') : t('market.download')}
                   </span>
                 </button>
               </div>
@@ -985,20 +978,18 @@ export default function MarketPage({ onBack, initialTab }: { onBack: () => void;
                 </a>
                 <button
                   onClick={() => handleInstallGraph(selectedGraph)}
-                  disabled={installing || installed}
-                  title={installed ? t('market.installed') : t('market.downloadInstall')}
+                  disabled={installing}
+                  title={installed ? t('market.redownload') : t('market.downloadInstall')}
                   style={sketchyShape2}
                   className={`h-14 px-6 flex items-center gap-2 border-4 border-ink font-black text-lg shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] transition-all active:translate-y-1 active:shadow-none ${
-                    installed
-                      ? 'bg-[#d8d8d0] text-ink/40 cursor-not-allowed'
-                      : installing
-                        ? 'bg-[#EBCB8B] text-ink cursor-wait'
-                        : 'bg-[#b48ead] text-paper hover:-translate-y-0.5'
+                    installing
+                      ? 'bg-[#EBCB8B] text-ink cursor-wait'
+                      : 'bg-[#b48ead] text-paper hover:-translate-y-0.5'
                   }`}
                 >
-                  {installing ? <Loader2 size={22} strokeWidth={3} className="animate-spin" /> : installed ? <Check size={22} strokeWidth={3} /> : <Download size={22} strokeWidth={3} />}
+                  {installing ? <Loader2 size={22} strokeWidth={3} className="animate-spin" /> : installed ? <RefreshCw size={22} strokeWidth={3} /> : <Download size={22} strokeWidth={3} />}
                   <span style={{ fontFamily: '"Comic Sans MS", cursive' }}>
-                    {installing ? t('market.installing') : installed ? t('market.installed') : t('market.download')}
+                    {installing ? t('market.installing') : installed ? t('market.redownload') : t('market.download')}
                   </span>
                 </button>
               </div>
@@ -1249,19 +1240,17 @@ export default function MarketPage({ onBack, initialTab }: { onBack: () => void;
                         <span className="text-xs font-black px-2 py-1 bg-ink text-paper border-2 border-ink shrink-0" style={sketchyShape3}>{repoSkills.length} skills</span>
                         <button
                           onClick={() => handleInstallAllInRepo(repoSkills)}
-                          disabled={isInstallingAll || allInstalled}
-                          title={allInstalled ? t('market.allInstalled') : t('market.installAllTitle')}
+                          disabled={isInstallingAll}
+                          title={allInstalled ? t('market.redownloadAll') : t('market.installAllTitle')}
                           style={sketchyShape2}
                           className={`ml-auto h-11 px-5 flex items-center gap-2 border-4 border-ink font-black text-sm shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] transition-all active:translate-y-1 active:shadow-none shrink-0 ${
-                            allInstalled
-                              ? 'bg-[#d8d8d0] text-ink/40 cursor-not-allowed'
-                              : isInstallingAll
-                                ? 'bg-[#EBCB8B] text-ink cursor-wait'
-                                : 'bg-terracotta text-paper hover:-translate-y-0.5'
+                            isInstallingAll
+                              ? 'bg-[#EBCB8B] text-ink cursor-wait'
+                              : 'bg-terracotta text-paper hover:-translate-y-0.5'
                           }`}
                         >
-                          {isInstallingAll ? <Loader2 size={18} strokeWidth={3} className="animate-spin" /> : allInstalled ? <Check size={18} strokeWidth={3} /> : <Download size={18} strokeWidth={3} />}
-                          {!isNarrow && <span style={{ fontFamily: '"Comic Sans MS", cursive' }}>{isInstallingAll ? t('market.installing') : allInstalled ? t('market.allInstalled') : t('market.installAllBtn')}</span>}
+                          {isInstallingAll ? <Loader2 size={18} strokeWidth={3} className="animate-spin" /> : allInstalled ? <RefreshCw size={18} strokeWidth={3} /> : <Download size={18} strokeWidth={3} />}
+                          {!isNarrow && <span style={{ fontFamily: '"Comic Sans MS", cursive' }}>{isInstallingAll ? t('market.installing') : allInstalled ? t('market.redownloadAll') : t('market.installAllBtn')}</span>}
                         </button>
                       </div>
                     );
