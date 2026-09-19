@@ -135,8 +135,8 @@ def submit_request_operation(task_id: str, content: str, node_id: str) -> tuple:
         if node_id not in task.node_list:
             return None, f"注入失败：任务中不存在节点 [{node_id}]"
 
-        # 执行规范化单节点注入
-        result = task.inject_instruction(node_id, content)
+        # 执行规范化单节点注入（source="agent"：人工干预节点会被拒绝，须由用户亲自输入指令）
+        result = task.inject_instruction(node_id, content, source="agent")
         success = result.get("status") == "success"
 
         if success:

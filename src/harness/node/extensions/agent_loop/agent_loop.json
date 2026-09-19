@@ -13,16 +13,16 @@
         },
         {
             "name": "target_files",
-            "type": "string",
+            "type": ["string", "list"],
             "port_type": "static",
-            "description": "动态传入的目标文件路径 (支持 List 列表 或 逗号分隔的 String)",
+            "description": "动态传入的目标文件路径（List 列表，或逗号分隔的 String）",
             "required": false
         },
         {
             "name": "task_done_info",
-            "type": "string",
+            "type": "jsonstring",
             "port_type": "static",
-            "description": "动态注入的完成规则，可由前置节点动态决定输出格式",
+            "description": "动态注入的完成规则（JSON 文本，形如 {\"字段名\": \"要求\"}），可由前置节点动态决定输出格式",
             "required": false
         }
     ],

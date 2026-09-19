@@ -17,7 +17,6 @@ DEPRECATED_NODE_TYPES = {
     "image_generator",
     "file_writer",
     "text_file_reader",
-    "json_builder",
     "if_else_router",
     "switch_router",
     "python_runner",

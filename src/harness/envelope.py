@@ -1,12 +1,13 @@
 """
 端口信封协议 (Port Envelope)
 节点间每条连线传递一个自描述 JSON 信封：
-    { "type": "string|number|boolean|list|file|MessageList|any",
+    { "type": "string|jsonstring|number|boolean|list|file|MessageList|any",
       "data": <内联值 或 purrcat:// URI>,
       "mime": "text/html",
       "meta": {} }
 
 - string/number/boolean 内联；file 只存 URI（实体在节点 files/ 或 graph asset/）
+- jsonstring：内容为 JSON 文本的 string 子类型（纯声明语义，与 string 双向兼容）
 - list 是透明容器：data 存原始数组，元素可为裸值或信封（消费方按需 is_envelope 判断）
 - MessageList 的 data 直接是消息数组（AgentNode 特例）
 """
@@ -17,6 +18,7 @@ from typing import Any, List, Optional, Tuple
 
 ENVELOPE_TYPES = {
     "string",
+    "jsonstring",
     "number",
     "boolean",
     "list",
@@ -94,7 +96,7 @@ def normalize_allowed(allowed: Any) -> AllowedTypes:
 
 def check(env: dict, allowed: Any) -> Tuple[bool, str]:
     """校验信封类型是否在端口允许列表内。
-    any 万能；MessageList 兼容 list 端口（前端既有归一化规则）。"""
+    any 万能；MessageList↔list 双向兼容；jsonstring↔string 双向兼容（子类型）。"""
     allowed_list = normalize_allowed(allowed)
     if "any" in allowed_list:
         return True, ""
@@ -105,6 +107,11 @@ def check(env: dict, allowed: Any) -> Tuple[bool, str]:
         return True, ""
     # list 信封亦可进 MessageList 端口（消息数组是 list 的特例，双向兼容）
     if env_type == "list" and "MessageList" in allowed_list:
+        return True, ""
+    # jsonstring 是 string 的子类型，双向兼容（消费方自行 parse JSON）
+    if env_type == "jsonstring" and "string" in allowed_list:
+        return True, ""
+    if env_type == "string" and "jsonstring" in allowed_list:
         return True, ""
     if env_type in allowed_list:
         return True, ""

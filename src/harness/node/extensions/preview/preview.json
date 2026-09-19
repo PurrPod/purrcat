@@ -1,7 +1,7 @@
 {
     "type": "preview",
     "name": "预览看板",
-    "description": "接收 string 或 file 输入，按 mime 自动渲染：图片、文本文件、HTML、SVG、PDF 等。string 输入会落盘为文件；输出统一的 file 信封供下游继续使用（取代旧的本地文件落盘/读取节点）。",
+    "description": "文件管理器式的预览窗口：接收 string 或 file 输入，按 mime 自动渲染：图片、文本文件、HTML、SVG、PDF 等。string 输入会落盘为文件；输出统一的 file 信封供下游继续使用（取代旧的本地文件落盘/读取节点）。",
     "color": "#3498DB",
     "inputs": [
         {
@@ -27,12 +27,5 @@
             "description": "规范化后的文件信封（string 输入已落盘；file 输入透传引用）"
         }
     ],
-    "config": [
-        {
-            "name": "title",
-            "type": "string",
-            "label": "看板标题",
-            "default": "Preview"
-        }
-    ]
+    "config": []
 }

@@ -266,9 +266,24 @@ class Task:
                         self.state = TaskState.INTERRUPTED
                         self.execution_time += time.time() - start_time  # 🌟 累加用时
                         self.save_state()  # 🌟 状态极小，直接同步写
+                        # 点名挂起的人工干预节点：提醒 Agent 无权代答，须找用户确认
+                        waiting_hi = [
+                            nid
+                            for nid, st in self.node_state.items()
+                            if st == NodeState.WAITING
+                            and self.node_types.get(nid) == "human_intervention"
+                        ]
+                        if waiting_hi:
+                            message = (
+                                f"任务已在人工干预节点 {waiting_hi} 处挂起，等待人类指令。"
+                                "你没有对人工干预节点注入指令的权力，"
+                                "请转告用户：到任务面板对应节点亲自输入指令后，工作流才会继续。"
+                            )
+                        else:
+                            message = "任务已挂起，等待人工干预"
                         return {
                             "status": "suspended",
-                            "message": "任务已挂起，等待人工干预",
+                            "message": message,
                         }
                     self.state = TaskState.COMPLETED
                     self.execution_time += time.time() - start_time  # 🌟 累加用时
@@ -519,10 +534,14 @@ class Task:
                 out_port = edge.get("sourceHandle", "default")
                 self.output_port_states[node_id][out_port] = PortState.VOID
 
-    def inject_instruction(self, node_id: str, instruction: str) -> dict:
+    def inject_instruction(
+        self, node_id: str, instruction: str, source: str = "user"
+    ) -> dict:
         """
         🌟 官方推荐的指令注入入口：自带类型校验和正确的级联重置（新架构）
-        通过 node_memory 传递指令
+        通过 node_memory 传递指令。
+        source: "user"（前端/REST 人类通道）或 "agent"（主 Agent 工具通道）。
+        人工干预节点只接受人类指令，Agent 无权注入。
         """
         if node_id not in self.node_list:
             return {"status": "error", "message": "节点不存在"}
@@ -536,7 +555,18 @@ class Task:
                 "message": "拒绝操作：只有 Agent 类型的节点才能注入指令和记忆！",
             }
 
-        # 2. 🌟 新架构：将指令放入 node_memory 的 force_push 队列
+        # 2. 权限拦截：人工干预节点是人类专属通道，Agent 无权强制注入
+        if source == "agent" and self.node_types.get(node_id) == "human_intervention":
+            return {
+                "status": "error",
+                "message": (
+                    "拒绝操作：[人工干预] 节点只接受人类亲自输入的指令，"
+                    "Agent 没有对人工干预节点注入指令的权力。"
+                    "请把问题转达给用户，由用户在任务面板输入指令后工作流才会继续。"
+                ),
+            }
+
+        # 3. 🌟 新架构：将指令放入 node_memory 的 force_push 队列
         if node_id not in self.node_memory:
             self.node_memory[node_id] = {}
 
@@ -548,10 +578,10 @@ class Task:
 
         self.node_memory[node_id]["force_push"].append(instruction)
 
-        # 3. 触发正确的级联重置 (is_injection=True，保护当前节点的记忆)
+        # 4. 触发正确的级联重置 (is_injection=True，保护当前节点的记忆)
         self._cascade_reset(node_id, is_injection=True)
 
-        # 4. 唤醒整个任务流
+        # 5. 唤醒整个任务流
         # 🌟 修复：任务仍在运行时保持 RUNNING，交给现有引擎消费指令；
         # 若此处改成 READY，API 层会误判任务已停止而重复拉起第二个引擎，导致双事件循环崩溃
         if self.state != TaskState.RUNNING:
@@ -949,8 +979,11 @@ class Task:
             node_names[node_data["id"]] = node_data.get("name", node_data["id"])
 
         # 2. 遍历内存中的实例列表，筛选具备注入能力的节点
+        # （人工干预节点只接受人类在前端面板输入指令，对 Agent 的注入视图隐藏）
         for node_id, node_instance in self.node_list.items():
             if getattr(node_instance, "can_inject", False):
+                if self.node_types.get(node_id) == "human_intervention":
+                    continue
                 node_name = node_names.get(node_id, node_id)
                 state = self.node_state.get(node_id, NodeState.READY)
                 state_str = state.value if hasattr(state, "value") else str(state)

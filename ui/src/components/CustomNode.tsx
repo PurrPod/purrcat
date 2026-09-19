@@ -275,7 +275,7 @@ export default function CustomNode({ id, data, selected }: any) {
                     <Handle type="target" position={Position.Left} id={input.name} className="!bg-ink !w-4 !h-4 !border-2 !border-paper !-left-[28px] z-10 hover:!bg-terracotta hover:!scale-125 transition-transform" />
                     <span className="text-xs font-bold uppercase ml-1 opacity-80">
                       {input.name}
-                      {input.type && <span className="text-terracotta opacity-90 ml-1 text-[10px] lowercase">({input.type})</span>}
+                      {input.type && <span className="text-terracotta opacity-90 ml-1 text-[10px] lowercase">({Array.isArray(input.type) ? input.type.join(' | ') : input.type})</span>}
                     </span>
                   </div>
                 );
@@ -313,7 +313,7 @@ export default function CustomNode({ id, data, selected }: any) {
                   <div key={`out-${output.name}`} className="relative flex items-center justify-end w-full">
                     <span className="text-xs font-bold uppercase mr-1 opacity-80">
                       {output.name}
-                      {output.type && <span className="text-terracotta opacity-90 ml-1 text-[10px] lowercase">({output.type})</span>}
+                      {output.type && <span className="text-terracotta opacity-90 ml-1 text-[10px] lowercase">({Array.isArray(output.type) ? output.type.join(' | ') : output.type})</span>}
                     </span>
                     <Handle type="source" position={Position.Right} id={output.name} className="!bg-ink !w-4 !h-4 !border-2 !border-paper !-right-[28px] z-10 hover:!bg-[#a3be8c] hover:!scale-125 transition-transform" />
                   </div>

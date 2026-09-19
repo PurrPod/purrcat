@@ -12,6 +12,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { extractToolContent } from './chat/ChatShared';
 import { useTranslation } from '../i18n';
+import { inferAutoLayout } from '../store/flowStore';
 
 const sketchyShape1 = { borderRadius: '255px 15px 225px 15px/15px 225px 15px 255px' };
 const sketchyShape2 = { borderRadius: '15px 225px 15px 255px/255px 15px 225px 15px' };
@@ -226,6 +227,8 @@ export default function TaskPage({ onBack }: { onBack: () => void }) {
   
   // 🌟 修改：默认关闭 Dashboard 面板侧边栏
   const [isDashboardOpen, setIsDashboardOpen] = useState(false);
+  // 🌟 graph.json 顶层 dashboard 键：配置后 DASHBOARD 面板变为浏览器视图（iframe 加载该 URL）
+  const [dashboardUrl, setDashboardUrl] = useState<string | null>(null);
   
   const logsContainerRef = useRef<HTMLDivElement>(null);
   const logEndRef = useRef<HTMLDivElement>(null);
@@ -466,13 +469,21 @@ export default function TaskPage({ onBack }: { onBack: () => void }) {
         const nodeStates = stateData.node_state || stateData.dag_state || stateData.node_states || stateData.nodes || {};
         const isCurrentlyRunning = ['running', 'starting'].includes((stateData.state || '').toLowerCase());
 
+        // 🌟 graph.dashboard：配置后 DASHBOARD 面板切换为浏览器视图
+        const gDashboard = stateData.graph?.dashboard;
+        setDashboardUrl(typeof gDashboard === 'string' && gDashboard.trim() ? gDashboard.trim() : null);
+
+        // 🌟 无坐标节点的拓扑分层自动布局（后继 X 严格大于全部前继）
+        const autoPos = inferAutoLayout(graph.nodes || [], graph.edges || []);
+
         const flowNodes = (graph.nodes || []).map((n: GraphNode, idx: number) => {
           if (!n) return null;
           const currentState = extractState(nodeStates[n.id]);
-          
-          let posX = 100 + (idx % 3) * 280, posY = 100 + Math.floor(idx / 3) * 180;
-          if (Array.isArray(n.position)) { posX = n.position[0]; posY = n.position[1]; } 
+
+          let posX: number, posY: number;
+          if (Array.isArray(n.position)) { posX = n.position[0]; posY = n.position[1]; }
           else if (n.position?.x !== undefined) { posX = n.position.x; posY = n.position.y; }
+          else { const p = autoPos[n.id] || { x: 100, y: 100 }; posX = p.x; posY = p.y; }
 
           const inHandles = [...new Set((graph.edges || []).filter((e: GraphEdge) => e.target === n.id).map((e: GraphEdge) => e.targetHandle || 'default'))];
           const outHandles = [...new Set((graph.edges || []).filter((e: GraphEdge) => e.source === n.id).map((e: GraphEdge) => e.sourceHandle || 'default'))];
@@ -503,7 +514,7 @@ export default function TaskPage({ onBack }: { onBack: () => void }) {
 
         setNodes(flowNodes); setEdges(flowEdges);
       }
-    } catch { toast.error(`加载图谱失败`); } finally { setIsCheckingOut(false); }
+    } catch { setDashboardUrl(null); toast.error(`加载图谱失败`); } finally { setIsCheckingOut(false); }
   };
 
   useEffect(() => {
@@ -560,7 +571,7 @@ export default function TaskPage({ onBack }: { onBack: () => void }) {
       const res = await fetch(`/api/tasks/${taskToDelete}`, { method: 'DELETE' });
       if (res.ok) {
         toast.success("任务及存档已彻底抹除"); setTaskToDelete(null);
-        if (selectedTaskId === taskToDelete) { setSelectedTaskId(null); setNodes([]); setEdges([]); }
+        if (selectedTaskId === taskToDelete) { setSelectedTaskId(null); setNodes([]); setEdges([]); setDashboardUrl(null); }
         loadTasks();
       }
     } catch { toast.error("删除失败"); }
@@ -682,13 +693,17 @@ export default function TaskPage({ onBack }: { onBack: () => void }) {
                        const artifactUrl = artifact
                          ? `/api/tasks/${selectedTaskId}/artifact?uri=${encodeURIComponent(artifact.uri)}${artifact.mime ? `&mime=${encodeURIComponent(artifact.mime)}` : ''}`
                          : '';
+                       // 文件管理器预览风格：标题栏显示文件名
+                       const artifactName = (() => {
+                         try { return decodeURIComponent((artifact?.uri || '').split('/').pop() || '') } catch { return artifact?.uri || '' }
+                       })();
                        return (
                          <div key={idx} className={`flex ${isArtifact ? 'flex-col gap-2' : 'gap-4'} hover:bg-ink/5 p-1 rounded transition-colors break-all`}>
                            <div className="flex gap-4 items-start">
                              <span className="opacity-40 shrink-0 select-none">[{timeStr}]</span>
                              <span className={`shrink-0 w-24 select-none ${colorClass}`}>[{log.type}]</span>
                              {!isArtifact && <span className={`whitespace-pre-wrap ${colorClass}`}>{log.content}</span>}
-                             {isArtifact && artifact && <span className={`text-xs ${colorClass}`}>{artifact.title || artifact.uri} ({artifact.mime || artifact.kind})</span>}
+                             {isArtifact && artifact && <span className={`text-xs ${colorClass}`}>{artifactName || artifact.uri} ({artifact.mime || artifact.kind})</span>}
                            </div>
                            {isArtifact && (
                              <div className="mt-2 w-full h-[600px] border-4 border-ink bg-white shadow-[6px_6px_0px_0px_rgba(26,26,26,1)] relative overflow-hidden" style={sketchyShape3}>
@@ -696,11 +711,11 @@ export default function TaskPage({ onBack }: { onBack: () => void }) {
                                  <div className="w-3 h-3 rounded-full bg-[#bf616a] border-2 border-ink"></div>
                                  <div className="w-3 h-3 rounded-full bg-[#EBCB8B] border-2 border-ink"></div>
                                  <div className="w-3 h-3 rounded-full bg-[#a3be8c] border-2 border-ink"></div>
-                                 <span className="text-xs font-bold text-ink/40 ml-2" style={{ fontFamily: '"Comic Sans MS", cursive' }}>{artifact?.title || t('task.dashboard')}</span>
+                                 <span className="text-xs font-bold text-ink/40 ml-2" style={{ fontFamily: '"Comic Sans MS", cursive' }}>{artifactName || t('task.dashboard')}</span>
                                </div>
                                {artifact ? (
                                  artifact.kind === 'image'
-                                   ? <img src={artifactUrl} alt={artifact.title || 'preview'} className="w-full h-[calc(100%-2rem)] mt-8 object-contain bg-[#FDF8F0]" />
+                                   ? <img src={artifactUrl} alt={artifactName || 'preview'} className="w-full h-[calc(100%-2rem)] mt-8 object-contain bg-[#FDF8F0]" />
                                    : <iframe src={artifactUrl} className="w-full h-[calc(100%-2rem)] mt-8 border-none" sandbox="allow-scripts allow-popups" />
                                ) : (
                                  <iframe srcDoc={log.content} className="w-full h-[calc(100%-2rem)] mt-8 border-none" sandbox="allow-scripts allow-popups" />
@@ -1002,7 +1017,7 @@ export default function TaskPage({ onBack }: { onBack: () => void }) {
 
       {/* === 🌟 右侧独立 Dashboard 面板抽屉 === */}
       {isDashboardOpen && selectedTaskId && (
-        <div style={sketchyShape3} className="w-[340px] shrink-0 bg-paper border-4 border-ink shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] flex flex-col overflow-hidden relative z-20">
+        <div style={sketchyShape3} className={`${dashboardUrl ? 'w-[640px]' : 'w-[340px]'} shrink-0 bg-paper border-4 border-ink shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] flex flex-col overflow-hidden relative z-20`}>
           <div className="flex flex-col shrink-0 p-4 bg-paper">
             <div className="flex justify-between items-center">
               <div className="flex items-center gap-2">
@@ -1016,10 +1031,21 @@ export default function TaskPage({ onBack }: { onBack: () => void }) {
               </button>
             </div>
           </div>
-          
+
+          {dashboardUrl ? (
+            /* 🌟 graph.dashboard 已配置：面板变为浏览器视图 */
+            <div className="flex-1 overflow-hidden p-2 bg-paper">
+              <iframe
+                src={dashboardUrl}
+                title="Dashboard"
+                className="w-full h-full border-2 border-ink bg-white"
+                style={sketchyShape1}
+              />
+            </div>
+          ) : (
           <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3 bg-paper">
             {(() => {
-              const agentNodes = nodes.filter((n: any) => 
+              const agentNodes = nodes.filter((n: any) =>
                 ['agent_loop', 'human_intervention'].includes(n.data.nodeType)
               );
 
@@ -1056,6 +1082,7 @@ export default function TaskPage({ onBack }: { onBack: () => void }) {
               })
             })()}
           </div>
+          )}
         </div>
       )}
 
