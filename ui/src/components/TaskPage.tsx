@@ -227,8 +227,11 @@ export default function TaskPage({ onBack }: { onBack: () => void }) {
   
   // 🌟 修改：默认关闭 Dashboard 面板侧边栏
   const [isDashboardOpen, setIsDashboardOpen] = useState(false);
-  // 🌟 graph.json 顶层 dashboard 键：配置后 DASHBOARD 面板变为浏览器视图（iframe 加载该 URL）
-  const [dashboardUrl, setDashboardUrl] = useState<string | null>(null);
+  // 🌟 graph.json 顶层 dashboard 键：支持单个 URL，或 [{name,url}] 多看板可切换
+  // 归一化为 [{name,url}]，activeDashboardIdx 记录当前看板
+  const [dashboards, setDashboards] = useState<{ name: string; url: string }[]>([]);
+  const [activeDashboardIdx, setActiveDashboardIdx] = useState(0);
+  const dashboardUrl = dashboards[activeDashboardIdx]?.url || null;
   
   const logsContainerRef = useRef<HTMLDivElement>(null);
   const logEndRef = useRef<HTMLDivElement>(null);
@@ -470,8 +473,21 @@ export default function TaskPage({ onBack }: { onBack: () => void }) {
         const isCurrentlyRunning = ['running', 'starting'].includes((stateData.state || '').toLowerCase());
 
         // 🌟 graph.dashboard：配置后 DASHBOARD 面板切换为浏览器视图
-        const gDashboard = stateData.graph?.dashboard;
-        setDashboardUrl(typeof gDashboard === 'string' && gDashboard.trim() ? gDashboard.trim() : null);
+        // 支持单个 URL 字符串，或 [{name,url}] 多看板；{task_id} 占位符在每条 url 上替换为当前任务 id
+        const rawDash = stateData.graph?.dashboard;
+        const subTid = (u: string) => u.split('{task_id}').join(task.id);
+        const dashList =
+          typeof rawDash === 'string'
+            ? (rawDash.trim() ? [{ name: t('task.dashboard'), url: subTid(rawDash.trim()) }] : [])
+            : Array.isArray(rawDash)
+              ? rawDash
+                  .map((d: any, i: number) => d && d.url
+                    ? { name: String(d.name || t('task.dashboard') + (rawDash.length > 1 ? ' ' + (i + 1) : '')), url: subTid(String(d.url)) }
+                    : null)
+                  .filter(Boolean)
+              : [];
+        setDashboards(dashList as { name: string; url: string }[]);
+        setActiveDashboardIdx(0);
 
         // 🌟 无坐标节点的拓扑分层自动布局（后继 X 严格大于全部前继）
         const autoPos = inferAutoLayout(graph.nodes || [], graph.edges || []);
@@ -514,7 +530,7 @@ export default function TaskPage({ onBack }: { onBack: () => void }) {
 
         setNodes(flowNodes); setEdges(flowEdges);
       }
-    } catch { setDashboardUrl(null); toast.error(`加载图谱失败`); } finally { setIsCheckingOut(false); }
+    } catch { setDashboards([]); setActiveDashboardIdx(0); toast.error(`加载图谱失败`); } finally { setIsCheckingOut(false); }
   };
 
   useEffect(() => {
@@ -571,7 +587,7 @@ export default function TaskPage({ onBack }: { onBack: () => void }) {
       const res = await fetch(`/api/tasks/${taskToDelete}`, { method: 'DELETE' });
       if (res.ok) {
         toast.success("任务及存档已彻底抹除"); setTaskToDelete(null);
-        if (selectedTaskId === taskToDelete) { setSelectedTaskId(null); setNodes([]); setEdges([]); setDashboardUrl(null); }
+        if (selectedTaskId === taskToDelete) { setSelectedTaskId(null); setNodes([]); setEdges([]); setDashboards([]); setActiveDashboardIdx(0); }
         loadTasks();
       }
     } catch { toast.error("删除失败"); }
@@ -966,128 +982,145 @@ export default function TaskPage({ onBack }: { onBack: () => void }) {
       </div>
 
       <div style={sketchyShape1} className="flex-1 bg-paper border-4 border-ink shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] overflow-hidden relative rotate-[0.5deg] z-10 flex flex-col">
-        <div className="absolute -top-4 right-12 w-32 h-8 bg-terracotta/40 border-2 border-ink -rotate-3 z-50" style={sketchyShape2}></div>
-        
-        <div className="pt-8 px-10 pb-4 flex items-center justify-between shrink-0 absolute top-0 left-0 right-0 z-50 pointer-events-none">
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-4 bg-paper/80 backdrop-blur-md p-3 border-4 border-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] pointer-events-auto -rotate-1" style={sketchyShape3}>
-              <Terminal size={24} className="text-terracotta" strokeWidth={3} />
-              <h2 className="text-2xl font-black tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>{t('task.visualizer')}</h2>
-            </div>
-
-            {selectedTaskId && currentSelectedTask?.state === 'running' && (
-              <button
-                onClick={handleKillTask} style={sketchyShape2}
-                className="pointer-events-auto flex items-center gap-2 bg-[#bf616a] text-paper border-4 border-ink px-5 py-2.5 font-black text-base shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:bg-red-500 hover:-translate-y-0.5 active:translate-y-0.5 active:shadow-none transition-all rotate-1"
-              >
-                <Square size={16} strokeWidth={3} fill="currentColor" /><span style={{ fontFamily: '"Comic Sans MS", cursive' }}>{t('task.stopProcess')}</span>
-              </button>
-            )}
-          </div>
-          
-          <div className="flex items-center gap-2 pointer-events-auto">
-            {!isDashboardOpen && selectedTaskId && (
-              <button
-                onClick={() => setIsDashboardOpen(true)}
-                style={sketchyShape2}
-                className="flex items-center gap-2 bg-[#EBCB8B] text-ink border-4 border-ink px-4 py-2 font-black shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:-translate-y-0.5 active:translate-y-0.5 active:shadow-none transition-all rotate-1"
-              >
-                <Activity size={18} strokeWidth={3} />
-                <span className="tracking-widest text-sm" style={{ fontFamily: '"Comic Sans MS", cursive' }}>{t('task.dashboard')}</span>
-              </button>
-            )}
-          </div>
-        </div>
-        
-        <div className="flex-1 w-full h-full bg-cream/30 relative">
-          
-          {selectedTaskId ? (
-            <ReactFlow
-              nodes={nodes} edges={edges} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} nodeTypes={nodeTypes}
-              nodesDraggable={true} elementsSelectable={true} zoomOnScroll={true} panOnDrag={true} fitView className="!h-full"
-            >
-              <Background gap={24} size={2} color="#1a1a1a" variant={'dots' as any} />
-            </ReactFlow>
-          ) : (
-            <div className="h-full flex flex-col items-center justify-center text-ink gap-6">
-               <div style={sketchyShape1} className="p-8 border-4 border-ink bg-cream shadow-[6px_6px_0px_0px_rgba(26,26,26,1)] -rotate-3"><Activity size={60} strokeWidth={2} className="text-[#EBCB8B]" /></div>
-               <p className="text-2xl font-black rotate-2 text-ink/60" style={{ fontFamily: '"Comic Sans MS", cursive' }}>{t('task.selectTask')}</p>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* === 🌟 右侧独立 Dashboard 面板抽屉 === */}
-      {isDashboardOpen && selectedTaskId && (
-        <div style={sketchyShape3} className={`${dashboardUrl ? 'w-[640px]' : 'w-[340px]'} shrink-0 bg-paper border-4 border-ink shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] flex flex-col overflow-hidden relative z-20`}>
-          <div className="flex flex-col shrink-0 p-4 bg-paper">
-            <div className="flex justify-between items-center">
-              <div className="flex items-center gap-2">
-                <Activity size={24} strokeWidth={2.5} className="text-[#EBCB8B]" />
-                <h3 className="text-2xl font-black tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>
-                  DASHBOARD
-                </h3>
+        {/* 🌟 dashboard 开：整块右区替换为看板框（丢弃原图与悬浮标题栏） */}
+        {isDashboardOpen && selectedTaskId ? (
+          <>
+            <div className="flex flex-col shrink-0 p-4 bg-paper">
+              <div className="flex justify-between items-center">
+                <div className="flex items-center gap-2">
+                  <Activity size={24} strokeWidth={2.5} className="text-[#EBCB8B]" />
+                  <h3 className="text-2xl font-black tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>{t('task.dashboard')}</h3>
+                </div>
+                <button onClick={() => setIsDashboardOpen(false)} className="hover:text-terracotta hover:rotate-90 transition-all p-1 bg-paper border-2 border-ink" style={sketchyShape1}>
+                  <X size={20} strokeWidth={3} />
+                </button>
               </div>
-              <button onClick={() => setIsDashboardOpen(false)} className="hover:text-terracotta hover:rotate-90 transition-all p-1 bg-paper border-2 border-ink" style={sketchyShape1}>
-                <X size={20} strokeWidth={3} />
-              </button>
+              {/* 🌟 多看板：顶部标签切换 */}
+              {dashboards.length > 1 && (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {dashboards.map((d, i) => (
+                    <button
+                      key={i}
+                      onClick={() => setActiveDashboardIdx(i)}
+                      style={i === activeDashboardIdx ? sketchyShape2 : sketchyShape3}
+                      className={`px-3 py-1 text-xs font-black tracking-wider border-2 border-ink transition-all ${
+                        i === activeDashboardIdx
+                          ? 'bg-ink text-paper shadow-[2px_2px_0px_0px_rgba(26,26,26,1)]'
+                          : 'bg-cream text-ink hover:bg-sand'
+                      }`}
+                    >
+                      {d.name}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
-          </div>
+            {dashboardUrl ? (
+              /* 🌟 graph.dashboard 已配置：整块右区显示看板 */
+              <div className="flex-1 overflow-hidden p-2 bg-paper">
+                <iframe
+                  src={dashboardUrl}
+                  title="Dashboard"
+                  className="w-full h-full border-2 border-ink bg-white"
+                  style={sketchyShape1}
+                />
+              </div>
+            ) : (
+              /* 🌟 无 dashboard：整块右区显示核心 Agent 节点状态清单 */
+              <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3 bg-paper">
+                {(() => {
+                  const agentNodes = nodes.filter((n: any) =>
+                    ['agent_loop', 'human_intervention'].includes(n.data.nodeType)
+                  );
 
-          {dashboardUrl ? (
-            /* 🌟 graph.dashboard 已配置：面板变为浏览器视图 */
-            <div className="flex-1 overflow-hidden p-2 bg-paper">
-              <iframe
-                src={dashboardUrl}
-                title="Dashboard"
-                className="w-full h-full border-2 border-ink bg-white"
-                style={sketchyShape1}
-              />
-            </div>
-          ) : (
-          <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3 bg-paper">
-            {(() => {
-              const agentNodes = nodes.filter((n: any) =>
-                ['agent_loop', 'human_intervention'].includes(n.data.nodeType)
-              );
+                  if (agentNodes.length === 0) {
+                    return <div className="text-center font-bold text-ink/40 py-4 text-sm">{t('task.noAgentNodes')}</div>;
+                  }
 
-              if (agentNodes.length === 0) {
-                return <div className="text-center font-bold text-ink/40 py-4 text-sm">{t('task.noAgentNodes')}</div>;
-              }
+                  return agentNodes.map((n, idx) => {
+                    const sColor = n.data.nodeState === 'running' ? 'bg-[#3498DB] text-paper' :
+                                    n.data.nodeState === 'completed' ? 'bg-[#a3be8c] text-ink' :
+                                    n.data.nodeState === 'error' ? 'bg-[#bf616a] text-paper' :
+                                    n.data.nodeState === 'waiting' ? 'bg-[#d08770] text-paper animate-pulse' :
+                                    n.data.nodeState === 'skipped' ? 'bg-ink/20 text-ink' : 'bg-[#EBCB8B] text-ink';
 
-              return agentNodes.map((n, idx) => {
-                const sColor = n.data.nodeState === 'running' ? 'bg-[#3498DB] text-paper' :
-                                n.data.nodeState === 'completed' ? 'bg-[#a3be8c] text-ink' :
-                                n.data.nodeState === 'error' ? 'bg-[#bf616a] text-paper' :
-                                n.data.nodeState === 'waiting' ? 'bg-[#d08770] text-paper animate-pulse' :
-                                n.data.nodeState === 'skipped' ? 'bg-ink/20 text-ink' : 'bg-[#EBCB8B] text-ink';
+                    return (
+                      <div
+                        key={n.id}
+                        onClick={() => setLogModalNode({ id: n.id, name: String(n.data.label), state: String(n.data.nodeState), nodeType: String(n.data.nodeType) })}
+                        style={idx % 2 === 0 ? sketchyShape2 : sketchyShape1}
+                        className="flex items-center justify-between p-3 border-2 border-ink bg-cream hover:bg-sand cursor-pointer transition-all hover:-translate-y-[2px] shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] active:translate-y-0 active:shadow-none"
+                        title="Click to view logs"
+                      >
+                        <div className="flex items-center gap-2 overflow-hidden pr-2">
+                          <Terminal size={14} className="shrink-0 text-ink/50" />
+                          <span className="font-bold text-sm truncate" style={{ fontFamily: '"Comic Sans MS", cursive' }}>
+                            {String(n.data.label)}
+                          </span>
+                        </div>
+                        <span className={`shrink-0 text-[10px] font-black tracking-wider border-2 border-ink px-1.5 py-0.5 ${sColor}`}>
+                          {(String(n.data.nodeState) || 'READY').toUpperCase()}
+                        </span>
+                      </div>
+                    );
+                  })
+                })()}
+              </div>
+            )}
+          </>
+        ) : (
+          <>
+            <div className="absolute -top-4 right-12 w-32 h-8 bg-terracotta/40 border-2 border-ink -rotate-3 z-50" style={sketchyShape2}></div>
 
-                return (
-                  <div
-                    key={n.id}
-                    onClick={() => setLogModalNode({ id: n.id, name: String(n.data.label), state: String(n.data.nodeState), nodeType: String(n.data.nodeType) })}
-                    style={idx % 2 === 0 ? sketchyShape2 : sketchyShape1}
-                    className="flex items-center justify-between p-3 border-2 border-ink bg-cream hover:bg-sand cursor-pointer transition-all hover:-translate-y-[2px] shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] active:translate-y-0 active:shadow-none"
-                    title="Click to view logs"
+            <div className="pt-8 px-10 pb-4 flex items-center justify-between shrink-0 absolute top-0 left-0 right-0 z-50 pointer-events-none">
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-4 bg-paper/80 backdrop-blur-md p-3 border-4 border-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] pointer-events-auto -rotate-1" style={sketchyShape3}>
+                  <Terminal size={24} className="text-terracotta" strokeWidth={3} />
+                  <h2 className="text-2xl font-black tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>{t('task.visualizer')}</h2>
+                </div>
+
+                {selectedTaskId && currentSelectedTask?.state === 'running' && (
+                  <button
+                    onClick={handleKillTask} style={sketchyShape2}
+                    className="pointer-events-auto flex items-center gap-2 bg-[#bf616a] text-paper border-4 border-ink px-5 py-2.5 font-black text-base shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:bg-red-500 hover:-translate-y-0.5 active:translate-y-0.5 active:shadow-none transition-all rotate-1"
                   >
-                    <div className="flex items-center gap-2 overflow-hidden pr-2">
-                      <Terminal size={14} className="shrink-0 text-ink/50" />
-                      <span className="font-bold text-sm truncate" style={{ fontFamily: '"Comic Sans MS", cursive' }}>
-                        {String(n.data.label)}
-                      </span>
-                    </div>
-                    <span className={`shrink-0 text-[10px] font-black tracking-wider border-2 border-ink px-1.5 py-0.5 ${sColor}`}>
-                      {(String(n.data.nodeState) || 'READY').toUpperCase()}
-                    </span>
-                  </div>
-                );
-              })
-            })()}
-          </div>
-          )}
-        </div>
-      )}
+                    <Square size={16} strokeWidth={3} fill="currentColor" /><span style={{ fontFamily: '"Comic Sans MS", cursive' }}>{t('task.stopProcess')}</span>
+                  </button>
+                )}
+              </div>
 
+              <div className="flex items-center gap-2 pointer-events-auto">
+                {selectedTaskId && (
+                  <button
+                    onClick={() => setIsDashboardOpen(true)}
+                    style={sketchyShape2}
+                    className="flex items-center gap-2 bg-[#EBCB8B] text-ink border-4 border-ink px-4 py-2 font-black shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:-translate-y-0.5 active:translate-y-0.5 active:shadow-none transition-all rotate-1"
+                  >
+                    <Activity size={18} strokeWidth={3} />
+                    <span className="tracking-widest text-sm" style={{ fontFamily: '"Comic Sans MS", cursive' }}>{t('task.dashboard')}</span>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="flex-1 w-full h-full bg-cream/30 relative">
+              {selectedTaskId ? (
+                <ReactFlow
+                  nodes={nodes} edges={edges} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} nodeTypes={nodeTypes}
+                  nodesDraggable={true} elementsSelectable={true} zoomOnScroll={true} panOnDrag={true} fitView className="!h-full"
+                >
+                  <Background gap={24} size={2} color="#1a1a1a" variant={'dots' as any} />
+                </ReactFlow>
+              ) : (
+                <div className="h-full flex flex-col items-center justify-center text-ink gap-6">
+                   <div style={sketchyShape1} className="p-8 border-4 border-ink bg-cream shadow-[6px_6px_0px_0px_rgba(26,26,26,1)] -rotate-3"><Activity size={60} strokeWidth={2} className="text-[#EBCB8B]" /></div>
+                   <p className="text-2xl font-black rotate-2 text-ink/60" style={{ fontFamily: '"Comic Sans MS", cursive' }}>{t('task.selectTask')}</p>
+                </div>
+              )}
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }

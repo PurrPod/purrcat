@@ -3,6 +3,7 @@ import datetime
 import importlib
 import json
 import os
+import shutil
 import threading
 import time
 import uuid
@@ -123,10 +124,47 @@ class Task:
         self.core = self.graph.get("core", "openai:deepseek-v4-flash")
         self.model = Model(self.core)
 
+        # 🌟 任务创建时把图目录整体快照到 checkpoint，并按任务隔离 dashboard 引用，
+        #   杜绝同一张图并发跑多个任务时共享/互改同一份看板文件
+        self._snapshot_graph_src()
+
         self.reload()
 
         # 🌟 只在创建时保存一次元数据，后续不再修改
         self.save_meta()
+
+    def _snapshot_graph_src(self):
+        """把图源目录整体快照到 checkpoint/graph_src，并将本任务 dashboard 引用改指该快照。
+
+        目的：同一张图可并发跑多个任务，各自拥有独立的图资源副本，
+        避免多个任务共享/互改位于源图目录（GRAPHS_DIR）的看板文件。
+        """
+        from src.utils.config import GRAPHS_DIR
+
+        graph_path = os.path.join(GRAPHS_DIR, self.graph_name)
+        os.makedirs(self.checkpoint_dir, exist_ok=True)
+        if os.path.isdir(graph_path):
+            try:
+                shutil.copytree(
+                    graph_path,
+                    os.path.join(self.checkpoint_dir, "graph_src"),
+                    dirs_exist_ok=True,
+                )
+            except OSError:
+                pass
+
+        # 把 dashboard 指向共享图目录的引用改指本任务快照，实现按任务隔离
+        prefix_src = f"purrcat://graph/{self.graph_name}/"
+        prefix_task = "purrcat://task/src/"
+        rewrite = lambda url: url.replace(prefix_src, prefix_task)
+
+        dash = self.graph.get("dashboard")
+        if isinstance(dash, str):
+            self.graph["dashboard"] = rewrite(dash)
+        elif isinstance(dash, list):
+            self.graph["dashboard"] = [
+                dict(item, url=rewrite(item["url"])) for item in dash
+            ]
 
     def load_graph(self):
         from src.utils.config import GRAPHS_DIR

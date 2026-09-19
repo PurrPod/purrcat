@@ -30,7 +30,8 @@ interface FlowState {
   clearGraph: () => void;
   loadGraph: (graphData: any) => void;
   // 🌟 加载的原 graph 顶层附加键（env / dashboard 等），导出时原样保留
-  graphExtras: { env?: any; dashboard?: string } | null;
+  // dashboard 支持单字符串 URL，或 [{name,url}] 多看板
+  graphExtras: { env?: any; dashboard?: string | { name: string; url: string }[] } | null;
 }
 
 // 辅助：检查环路
