@@ -42,13 +42,17 @@ const hasCycle = (node: Node, targetNodeId: string, nodes: Node[], edges: Edge[]
 
 // 🌟 坐标推理：无坐标 graph 的拓扑分层自动布局
 // 规则：列距/行距均大于卡片尺寸；后继节点的 X 严格大于其全部前继节点（数据从左向右流）
+// 分层策略（拉紧布局）：
+//   1) 先按最长路径分层（拓扑安全的起点）
+//   2) 从右往左迭代上拉：节点优先紧贴其最浅后继的前一层（如 Skill 消息卡贴在消息合并 1 前一层），
+//      贴不到时保持原位（受前驱约束）；每次拉动都校验不越过任何前驱/后继，拓扑永远合法
 export const inferAutoLayout = (
   nodes: Array<{ id: string }>,
   edges: Array<{ source: string; target: string }>
 ): Record<string, { x: number; y: number }> => {
   const depth: Record<string, number> = {}
   nodes.forEach(n => { depth[n.id] = 0 })
-  // 迭代松弛求最长路径深度（拓扑层）；轮数上限防御异常环
+  // 1) 迭代松弛求最长路径深度（拓扑层）；轮数上限防御异常环
   for (let round = 0; round <= nodes.length; round++) {
     let changed = false
     edges.forEach(e => {
@@ -57,7 +61,31 @@ export const inferAutoLayout = (
     })
     if (!changed) break
   }
-  const COL = 420, ROW = 320, PAD = 80 // 间距均大于卡片宽高
+  // 2) 拉紧：从深层往浅层迭代，尽量贴住最浅后继的前一层（层号只增，单调收敛）
+  const succsOf: Record<string, string[]> = {}
+  const predsOf: Record<string, string[]> = {}
+  edges.forEach(e => {
+    ;(succsOf[e.source] ||= []).push(e.target)
+    ;(predsOf[e.target] ||= []).push(e.source)
+  })
+  for (let round = 0; round <= nodes.length; round++) {
+    let changed = false
+    const order = [...nodes].sort((a, b) => (depth[b.id] ?? 0) - (depth[a.id] ?? 0))
+    order.forEach(n => {
+      const succs = succsOf[n.id] || []
+      if (succs.length === 0) return
+      const minSucc = Math.min(...succs.map(s => depth[s] ?? 0))
+      const preds = predsOf[n.id] || []
+      const lower = preds.length ? Math.max(...preds.map(p => (depth[p] ?? 0) + 1)) : 0
+      const target = Math.max(minSucc - 1, lower)
+      // 仅当能严格贴到后继前一层（target < minSucc）且比当前更靠右时才拉动
+      if (target > (depth[n.id] ?? 0) && target < minSucc) {
+        depth[n.id] = target; changed = true
+      }
+    })
+    if (!changed) break
+  }
+  const COL = 480, ROW = 480, PAD = 100 // 间距均大于卡片宽高（最大卡约 280 宽 / 450 高）
   const buckets: Record<number, string[]> = {}
   nodes.forEach(n => {
     const d = Math.min(depth[n.id] ?? 0, Math.max(nodes.length - 1, 0))
