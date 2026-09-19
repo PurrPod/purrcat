@@ -358,7 +358,11 @@ export const useFlowStore = create<FlowState>()(
           };
 
           Object.keys(sourceData).forEach((key) => {
-            if (!['exposed_keys'].includes(key)) defaultData[key] = sourceData[key];
+            // 端口/配置 schema 一律以节点定义为准：历史图文件里内嵌的
+            // inputs/outputs/configSchema/color 是过时的序列化结果，不得覆盖定义
+            if (!['exposed_keys', 'inputs', 'outputs', 'configSchema', 'color'].includes(key)) {
+              defaultData[key] = sourceData[key];
+            }
           });
 
           return {
