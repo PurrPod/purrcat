@@ -11,6 +11,7 @@ import { toast } from 'react-hot-toast';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { extractToolContent } from './chat/ChatShared';
+import DashboardBrowser from './chat/DashboardBrowser';
 import { useTranslation } from '../i18n';
 import { inferAutoLayout } from '../store/flowStore';
 
@@ -476,13 +477,18 @@ export default function TaskPage({ onBack }: { onBack: () => void }) {
         // 支持单个 URL 字符串，或 [{name,url}] 多看板；{task_id} 占位符在每条 url 上替换为当前任务 id
         const rawDash = stateData.graph?.dashboard;
         const subTid = (u: string) => u.split('{task_id}').join(task.id);
+        // 内部浏览器（WebContentsView.loadURL）需要绝对地址：相对 /api 按当前 origin 补全
+        // （dev 3000 由 Vite 代理、prod 8000 直连后端；绝对 http(s) 地址原样返回）
+        const toAbs = (u: string) => {
+          try { return new URL(u, window.location.origin).href; } catch { return u; }
+        };
         const dashList =
           typeof rawDash === 'string'
-            ? (rawDash.trim() ? [{ name: t('task.dashboard'), url: subTid(rawDash.trim()) }] : [])
+            ? (rawDash.trim() ? [{ name: t('task.dashboard'), url: toAbs(subTid(rawDash.trim())) }] : [])
             : Array.isArray(rawDash)
               ? rawDash
                   .map((d: any, i: number) => d && d.url
-                    ? { name: String(d.name || t('task.dashboard') + (rawDash.length > 1 ? ' ' + (i + 1) : '')), url: subTid(String(d.url)) }
+                    ? { name: String(d.name || t('task.dashboard') + (rawDash.length > 1 ? ' ' + (i + 1) : '')), url: toAbs(subTid(String(d.url))) }
                     : null)
                   .filter(Boolean)
               : [];
@@ -1016,14 +1022,9 @@ export default function TaskPage({ onBack }: { onBack: () => void }) {
               )}
             </div>
             {dashboardUrl ? (
-              /* 🌟 graph.dashboard 已配置：整块右区显示看板 */
-              <div className="flex-1 overflow-hidden p-2 bg-paper">
-                <iframe
-                  src={dashboardUrl}
-                  title="Dashboard"
-                  className="w-full h-full border-2 border-ink bg-white"
-                  style={sketchyShape1}
-                />
+              /* 🌟 graph.dashboard 已配置：用内部浏览器（Electron WebContentsView）渲染真实页面，无工具栏纯预览 */
+              <div className="flex-1 overflow-hidden bg-paper">
+                <DashboardBrowser url={dashboardUrl} />
               </div>
             ) : (
               /* 🌟 无 dashboard：整块右区显示核心 Agent 节点状态清单 */
