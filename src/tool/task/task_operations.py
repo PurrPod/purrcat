@@ -13,7 +13,9 @@ def add_task_operation(name: str, inputs: dict, graph_name: str) -> tuple:
         model_name = single_task.core
         from src.utils.config import get_model_config
 
-        models = get_model_config().get("main", {})
+        # 工作流图由 task 段模型驱动（AgentNode/agent_loop 均读 get_model_config()["task"]），
+        # 校验也应在 task 段，而非 main（main 是聊天主 Agent 的模型段）。
+        models = get_model_config().get("task", {})
 
         if model_name not in models:
             return (
