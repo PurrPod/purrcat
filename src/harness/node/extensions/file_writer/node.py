@@ -2,7 +2,6 @@ import json
 import os
 from typing import Any, Dict
 
-from src.harness import envelope
 from src.harness.enums import LogType
 from src.harness.node.base import BaseNode
 
@@ -43,7 +42,9 @@ class Node(BaseNode):
     """文件落盘：将 string 内容写入本节点 files/ 目录，输出 file 信封供下游消费。"""
 
     def _emit_artifact(self, context: Any, kind: str, uri: str, mime: str):
-        payload = json.dumps({"kind": kind, "uri": uri, "mime": mime}, ensure_ascii=False)
+        payload = json.dumps(
+            {"kind": kind, "uri": uri, "mime": mime}, ensure_ascii=False
+        )
         self.log(context, LogType.ARTIFACT, payload)
 
     async def execute(self, inputs: Dict[str, Any], context: Any) -> Dict[str, Any]:

@@ -68,8 +68,10 @@ export const inferAutoLayout = (
   const succsOf: Record<string, string[]> = {}
   const predsOf: Record<string, string[]> = {}
   edges.forEach(e => {
-    ;(succsOf[e.source] ||= []).push(e.target)
-    ;(predsOf[e.target] ||= []).push(e.source)
+    if (!succsOf[e.source]) succsOf[e.source] = []
+    succsOf[e.source].push(e.target)
+    if (!predsOf[e.target]) predsOf[e.target] = []
+    predsOf[e.target].push(e.source)
   })
   for (let round = 0; round <= nodes.length; round++) {
     let changed = false

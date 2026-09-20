@@ -163,7 +163,6 @@ class Node(BaseNode):
             text = str(text)
 
         mime = _sniff_string_mime(text)
-        kind = _mime_to_kind(mime)
 
         if mime == "text/markdown":
             html = _wrap_markdown_html(text)

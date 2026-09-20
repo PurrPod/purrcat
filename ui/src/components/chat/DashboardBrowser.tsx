@@ -20,16 +20,6 @@ export default function DashboardBrowser({ url }: DashboardBrowserProps) {
   const purrcat = (window as any).purrcat;
   const hasElectron = !!purrcat?.browserNewTab;
 
-  // 非 Electron（纯 Web）环境：无法用原生 WebContentsView
-  if (!hasElectron) {
-    return (
-      <div className="h-full w-full flex flex-col items-center justify-center bg-[#e5e9f0] text-ink/40">
-        <Globe size={48} strokeWidth={2} className="mb-4" />
-        <p className="text-sm font-bold">{t('chat.desktopOnly')}</p>
-      </div>
-    );
-  }
-
   // 建 Tab 并铺满容器（Letterbox 等比，固定 1280×800 逻辑视口）
   useEffect(() => {
     if (!hasElectron) return;
@@ -119,6 +109,16 @@ export default function DashboardBrowser({ url }: DashboardBrowserProps) {
     });
     return () => { if (off) off(); };
   }, [hasElectron, purrcat, t]);
+
+  // 非 Electron（纯 Web）环境：无法用原生 WebContentsView
+  if (!hasElectron) {
+    return (
+      <div className="h-full w-full flex flex-col items-center justify-center bg-[#e5e9f0] text-ink/40">
+        <Globe size={48} strokeWidth={2} className="mb-4" />
+        <p className="text-sm font-bold">{t('chat.desktopOnly')}</p>
+      </div>
+    );
+  }
 
   return (
     // 🌟 bg 用纸面底 + 歪切圆角：原生 view 内缩后，边缘是一圈同色纸面圆角框，
