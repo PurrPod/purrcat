@@ -339,6 +339,9 @@ async def _run_single_eval_case(
         if res.get("status") == "success":
             outputs = res.get("outputs", {})
             eval_res = outputs.get("eval_result", {})
+            # 解包信封：{"type": ..., "data": ...}；data 可能是裸 dict 或 JSON 字符串
+            if isinstance(eval_res, dict) and "data" in eval_res:
+                eval_res = eval_res.get("data")
             if isinstance(eval_res, str):
                 try:
                     eval_res = json.loads(eval_res)
@@ -349,16 +352,22 @@ async def _run_single_eval_case(
             reason = eval_res.get("reason", "未提供理由")
             grading_data = eval_res.get("grading_data", {})
 
-            # 兼容 skill_eval 图 v2.0：裁判经 task_done 返回
-            # {"status": ..., "summary": {"assertion_results": [...], "summary": {"passed","failed","total","pass_rate"}}}
+            # 兼容 skill_eval 图 v2.0：裁判经 task_done 输出
+            # {"assertion_results": [...], "summary": {"passed","failed","total","pass_rate"}}
+            # （或外层再包一层 {"status":..., "summary": {...}}）
             summary = eval_res.get("summary")
+            assertion_results = eval_res.get("assertion_results", [])
             if isinstance(summary, dict):
                 inner = summary.get("summary", summary)
-                assertion_results = summary.get("assertion_results", [])
+                if summary.get("assertion_results"):
+                    assertion_results = summary["assertion_results"]
                 passed, total = inner.get("passed"), inner.get("total")
                 if passed is not None and total:
                     is_pass = passed == total
-                    grading_data = summary
+                    grading_data = {
+                        "assertion_results": assertion_results,
+                        "summary": inner,
+                    }
                     pass_rate = inner.get("pass_rate")
                     reason_lines = [f"裁判判定 {passed}/{total} 条断言通过"]
                     if isinstance(pass_rate, (int, float)):
