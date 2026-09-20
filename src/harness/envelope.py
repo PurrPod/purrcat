@@ -144,7 +144,6 @@ def parse_uri(
     """解析 purrcat:// URI 或绝对路径为物理路径。
 
     - purrcat://graph/{name}/asset/x → GRAPHS_DIR/{name}/asset/x
-    - purrcat://task/src/asset/x → checkpoint_dir/graph_src/asset/x（任务启动时的图快照，按任务隔离）
     - purrcat://task/node/{nid}/files/x → checkpoint_dir/nodes/{nid}/files/x
     - purrcat://task/{tid}/node/{nid}/files/x → 同上（tid 仅作标识，靠 checkpoint_dir 定位）
     - 其它非 purrcat:// 的按绝对路径兜底（仅本地信任域）
@@ -167,14 +166,6 @@ def parse_uri(
         name = parts[1]
         rest = "/".join(parts[2:])
         return _safe_join(Path(GRAPHS_DIR) / name, rest)
-
-    # 🌟 图源快照（先于通用 task 分支匹配，否则会被误判为 task/node 结构）
-    if len(parts) >= 3 and parts[0] == "task" and parts[1] == "src":
-        # purrcat://task/src/asset/x → checkpoint_dir/graph_src/asset/x
-        rest = "/".join(parts[2:])
-        if not checkpoint_dir:
-            return None
-        return _safe_join(Path(checkpoint_dir) / "graph_src", rest)
 
     if len(parts) >= 4 and parts[0] == "task":
         # purrcat://task[/node]/{nid}/files/... 或 purrcat://task/{tid}/node/{nid}/files/...
