@@ -202,9 +202,7 @@ def get_task_state_endpoint(task_id: str):
     # 禁用缓存：reset 后前端必须读到最新节点状态/记忆，避免命中旧 GET 缓存
     from fastapi.responses import JSONResponse
 
-    return JSONResponse(
-        content=state_data, headers={"Cache-Control": "no-store"}
-    )
+    return JSONResponse(content=state_data, headers={"Cache-Control": "no-store"})
 
 
 @router.post("/{task_id}/submit")
