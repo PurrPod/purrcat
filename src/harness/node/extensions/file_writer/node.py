@@ -55,7 +55,7 @@ class Node(BaseNode):
         if not isinstance(content, str):
             content = str(content)
 
-        filename = self.unpack(inputs, "filename") or self.config.get("filename", "output.txt")
+        filename = self.unpack(inputs, "filename") or "output.txt"
         filename = str(filename).strip() or "output.txt"
 
         _, ext = os.path.splitext(filename)

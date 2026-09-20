@@ -1,7 +1,7 @@
 {
     "type": "string",
-    "name": "字符串",
-    "description": "静态文本字面量节点。在面板输入框填写内容，通过连线输出 string 信封给下游。所有写死的文本都应改用此节点。",
+    "name": "自定义输入",
+    "description": "直接书写内容，按内容推导出字符串 / 数字 / 布尔 / JSON 四种数据类型的输出端口，供下游按需取用。文本类静态值都建议用此节点。",
     "color": "#8FBCBB",
     "inputs": [
         {
@@ -17,16 +17,34 @@
             "name": "text",
             "type": "string",
             "port_type": "static",
-            "description": "输入框中的文本内容"
+            "description": "字符串（原文内容，未做解析）"
+        },
+        {
+            "name": "number",
+            "type": "number",
+            "port_type": "static",
+            "description": "数字（内容可解析为整数/浮点时才有值，否则为空）"
+        },
+        {
+            "name": "boolean",
+            "type": "boolean",
+            "port_type": "static",
+            "description": "布尔（内容为 true/false/1/0/是/否 时才有值，否则为空）"
+        },
+        {
+            "name": "json",
+            "type": "jsonstring",
+            "port_type": "static",
+            "description": "JSON（内容整体可解析为对象/数组时才有值，否则为空）"
         }
     ],
     "config": [
         {
             "name": "value",
             "type": "textarea",
-            "label": "文本内容",
+            "label": "内容",
             "default": "",
-            "description": "要输出给下游的静态文本"
+            "description": "在此书写要输出的内容，节点会按内容自动派生出对应的数据类型输出端口"
         }
     ]
 }

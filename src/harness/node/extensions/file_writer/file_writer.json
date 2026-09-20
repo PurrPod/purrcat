@@ -22,7 +22,7 @@
             "name": "filename",
             "type": "string",
             "port_type": "static",
-            "description": "输出文件名（含扩展名）。缺省使用面板的 filename 配置。",
+            "description": "输出文件名（含扩展名）。不连线则缺省 output.txt。",
             "required": false
         }
     ],
@@ -32,15 +32,6 @@
             "type": "file",
             "port_type": "static",
             "description": "写入后的文件信封（data 为 purrcat:// URI）"
-        }
-    ],
-    "config": [
-        {
-            "name": "filename",
-            "type": "string",
-            "label": "文件名",
-            "default": "output.txt",
-            "description": "输出文件默认名（含扩展名），可被输入连线覆盖"
         }
     ]
 }
