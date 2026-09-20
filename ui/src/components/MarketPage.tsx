@@ -1,6 +1,6 @@
 // src/components/MarketPage.tsx
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { ArrowLeft, Store, RefreshCw, User, AlertCircle, Zap, Server, Activity, GitMerge, X, Copy, Search, LayoutGrid, FolderGit2, Download, Check, ChevronLeft, Loader2, Link2, Repeat, Languages } from 'lucide-react';
+import { ArrowLeft, Store, RefreshCw, User, AlertCircle, Zap, Server, Activity, GitMerge, X, Copy, Search, LayoutGrid, FolderGit2, Download, Check, ChevronLeft, Loader2, Link2, Repeat, Languages, Trash2 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { useTranslation } from '../i18n';
 
@@ -199,6 +199,10 @@ export default function MarketPage({ onBack, initialTab }: { onBack: () => void;
   const [installedNames, setInstalledNames] = useState<Set<string>>(new Set());
   const [installingSet, setInstallingSet] = useState<Set<string>>(new Set());
   const [isInstallingAll, setIsInstallingAll] = useState(false);
+
+  // 🌟 删除确认弹窗状态：type + name 由各类已安装按钮触发
+  const [deleteTarget, setDeleteTarget] = useState<{ type: 'skill' | 'mcp' | 'sensor' | 'graph'; name: string } | null>(null);
+  const [deletingKey, setDeletingKey] = useState<string | null>(null);
 
   // 🌟 容器宽度监听（ResizeObserver）：字号 / 网格列数 / 侧栏显隐全部按容器实际宽度自适应
   const rootRef = useRef<HTMLDivElement>(null);
@@ -584,6 +588,40 @@ export default function MarketPage({ onBack, initialTab }: { onBack: () => void;
     }
   };
 
+  // 🌟 通用删除：按类型调用对应卸载接口，成功后刷新本地已安装列表（按钮随之变回"下载"）
+  const handleDeletePlugin = async () => {
+    if (!deleteTarget) return;
+    const { type, name } = deleteTarget;
+    setDeletingKey(`${type}:${name}`);
+    try {
+      const url =
+        type === 'skill' ? '/api/tools/skills/uninstall' :
+        type === 'mcp' ? '/api/tools/mcp/uninstall' :
+        type === 'sensor' ? '/api/tools/market/sensors/uninstall' :
+        '/api/tools/market/graphs/uninstall';
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      });
+      const data = await res.json().catch(() => null);
+      if (res.ok) {
+        toast.success(data?.message || t('market.deleted'));
+        setDeleteTarget(null);
+        if (type === 'skill') await fetchLocalSkills();
+        if (type === 'mcp') await fetchLocalMcps();
+        if (type === 'sensor') await fetchLocalSensors();
+        if (type === 'graph') await fetchLocalGraphs();
+      } else {
+        toast.error(data?.detail || t('market.deleteFailed'));
+      }
+    } catch {
+      toast.error(t('market.deleteFailedNetwork'));
+    } finally {
+      setDeletingKey(null);
+    }
+  };
+
   const filteredGraphs = useMemo(() => {
     const q = graphSearchQuery.trim().toLowerCase();
     if (!q) return graphData;
@@ -668,18 +706,19 @@ export default function MarketPage({ onBack, initialTab }: { onBack: () => void;
                   <Link2 size={22} strokeWidth={3} />
                 </a>
                 <button
-                  onClick={() => handleInstallSkill(selectedSkill)}
+                  onClick={() => installed ? setDeleteTarget({ type: 'skill', name: selectedSkill.name }) : handleInstallSkill(selectedSkill)}
                   disabled={installing}
-                  title={installed ? t('market.redownload') : t('market.downloadInstall')}
+                  title={installed ? t('market.delete') : t('market.downloadInstall')}
                   style={sketchyShape2}
                   className={`h-14 px-6 flex items-center gap-2 border-4 border-ink font-black text-lg shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] transition-all active:translate-y-1 active:shadow-none ${
                     installing
                       ? 'bg-[#EBCB8B] text-ink cursor-wait'
+                      : installed ? 'bg-[#bf616a] text-paper hover:-translate-y-0.5'
                       : 'bg-terracotta text-paper hover:-translate-y-0.5'
                   }`}
                 >
-                  {installing ? <Loader2 size={22} strokeWidth={3} className="animate-spin" /> : installed ? <RefreshCw size={22} strokeWidth={3} /> : <Download size={22} strokeWidth={3} />}
-                  <span style={{ fontFamily: '"Comic Sans MS", cursive' }}>{installing ? t('market.installing') : installed ? t('market.redownload') : t('market.download')}</span>
+                  {installing ? <Loader2 size={22} strokeWidth={3} className="animate-spin" /> : installed ? <Trash2 size={22} strokeWidth={3} /> : <Download size={22} strokeWidth={3} />}
+                  <span style={{ fontFamily: '"Comic Sans MS", cursive' }}>{installing ? t('market.installing') : installed ? t('market.delete') : t('market.download')}</span>
                 </button>
               </div>
             </div>
@@ -747,18 +786,19 @@ export default function MarketPage({ onBack, initialTab }: { onBack: () => void;
                   <Link2 size={22} strokeWidth={3} />
                 </a>
                 <button
-                  onClick={() => setMcpInstallConfirm(selectedMcpInfo)}
+                  onClick={() => installed ? setDeleteTarget({ type: 'mcp', name: selectedMcpInfo.name }) : setMcpInstallConfirm(selectedMcpInfo)}
                   disabled={installing}
-                  title={installed ? t('market.redownload') : t('market.install')}
+                  title={installed ? t('market.delete') : t('market.install')}
                   style={sketchyShape2}
                   className={`h-14 px-6 flex items-center gap-2 border-4 border-ink font-black text-lg shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] transition-all active:translate-y-1 active:shadow-none ${
                     installing
                       ? 'bg-[#EBCB8B] text-ink cursor-wait'
+                      : installed ? 'bg-[#bf616a] text-paper hover:-translate-y-0.5'
                       : 'bg-[#EBCB8B] text-ink hover:-translate-y-0.5'
                   }`}
                 >
-                  {installing ? <Loader2 size={22} strokeWidth={3} className="animate-spin" /> : installed ? <RefreshCw size={22} strokeWidth={3} /> : <Download size={22} strokeWidth={3} />}
-                  <span style={{ fontFamily: '"Comic Sans MS", cursive' }}>{installing ? t('market.installing') : installed ? t('market.redownload') : t('market.install')}</span>
+                  {installing ? <Loader2 size={22} strokeWidth={3} className="animate-spin" /> : installed ? <Trash2 size={22} strokeWidth={3} /> : <Download size={22} strokeWidth={3} />}
+                  <span style={{ fontFamily: '"Comic Sans MS", cursive' }}>{installing ? t('market.installing') : installed ? t('market.delete') : t('market.install')}</span>
                 </button>
               </div>
             </div>
@@ -809,6 +849,47 @@ export default function MarketPage({ onBack, initialTab }: { onBack: () => void;
               >
                 {installingMcpName === mcpInstallConfirm.name && <Loader2 size={18} strokeWidth={3} className="animate-spin" />}
                 <span style={{ fontFamily: '"Comic Sans MS", cursive' }}>{installingMcpName === mcpInstallConfirm.name ? t('market.installing') : t('market.confirmInstall')}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🌟 删除确认弹窗（skill/mcp/sensor/graph 通用） */}
+      {deleteTarget && (
+        <div className="fixed inset-0 z-[210] flex items-center justify-center bg-ink/70 backdrop-blur-sm p-4 pointer-events-auto">
+          <div style={sketchyShape2} className="bg-paper border-4 border-ink shadow-[16px_16px_0px_0px_rgba(26,26,26,1)] w-full max-w-lg flex flex-col relative rotate-[0.5deg]">
+            <div className="absolute -top-4 left-1/4 w-32 h-10 bg-[#bf616a]/50 border-2 border-ink rotate-2 z-50 pointer-events-none" style={sketchyShape1}></div>
+
+            <div className="flex justify-between items-center p-5 border-b-4 border-ink/20 shrink-0">
+              <h3 className="text-xl font-black text-ink tracking-wide" style={{ fontFamily: '"Comic Sans MS", cursive' }}>{t('market.deleteConfirmTitle')}</h3>
+              <button onClick={() => setDeleteTarget(null)} className="p-1.5 border-2 border-ink bg-cream text-ink hover:bg-[#bf616a] hover:text-paper transition-all" style={sketchyShape3}>
+                <X size={20} strokeWidth={3} />
+              </button>
+            </div>
+
+            <div className="p-6 flex flex-col gap-4">
+              <p className="font-bold text-ink">
+                {t('market.deleteConfirmPrefix')}<span className="font-black" style={{ fontFamily: '"Comic Sans MS", cursive' }}>{deleteTarget.name}</span>{t('market.deleteConfirmSuffix')}
+              </p>
+            </div>
+
+            <div className="p-5 pt-2 border-t-4 border-ink/10 flex justify-end gap-4 shrink-0">
+              <button
+                onClick={() => setDeleteTarget(null)}
+                style={sketchyShape1}
+                className="px-5 h-12 flex items-center bg-cream text-ink border-4 border-ink font-black shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:bg-sand transition-all active:translate-y-1 active:shadow-none"
+              >
+                {t('common.cancel')}
+              </button>
+              <button
+                onClick={() => handleDeletePlugin()}
+                disabled={deletingKey !== null}
+                style={sketchyShape2}
+                className={`px-5 h-12 flex items-center gap-2 border-4 border-ink font-black shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] transition-all active:translate-y-1 active:shadow-none ${deletingKey !== null ? 'bg-[#EBCB8B] text-ink cursor-wait' : 'bg-[#bf616a] text-paper hover:-translate-y-0.5'}`}
+              >
+                {deletingKey !== null && <Loader2 size={18} strokeWidth={3} className="animate-spin" />}
+                <span style={{ fontFamily: '"Comic Sans MS", cursive' }}>{deletingKey !== null ? t('market.deleting') : t('market.confirmDelete')}</span>
               </button>
             </div>
           </div>
@@ -891,19 +972,20 @@ export default function MarketPage({ onBack, initialTab }: { onBack: () => void;
                   <Link2 size={22} strokeWidth={3} />
                 </a>
                 <button
-                  onClick={() => handleInstallSensor(selectedSensor)}
+                  onClick={() => installed ? setDeleteTarget({ type: 'sensor', name: selectedSensor.name }) : handleInstallSensor(selectedSensor)}
                   disabled={installing}
-                  title={installed ? t('market.redownload') : t('market.downloadInstall')}
+                  title={installed ? t('market.delete') : t('market.downloadInstall')}
                   style={sketchyShape2}
                   className={`h-14 px-6 flex items-center gap-2 border-4 border-ink font-black text-lg shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] transition-all active:translate-y-1 active:shadow-none ${
                     installing
                       ? 'bg-[#EBCB8B] text-ink cursor-wait'
+                      : installed ? 'bg-[#bf616a] text-paper hover:-translate-y-0.5'
                       : 'bg-[#a3be8c] text-ink hover:-translate-y-0.5'
                   }`}
                 >
-                  {installing ? <Loader2 size={22} strokeWidth={3} className="animate-spin" /> : installed ? <RefreshCw size={22} strokeWidth={3} /> : <Download size={22} strokeWidth={3} />}
+                  {installing ? <Loader2 size={22} strokeWidth={3} className="animate-spin" /> : installed ? <Trash2 size={22} strokeWidth={3} /> : <Download size={22} strokeWidth={3} />}
                   <span style={{ fontFamily: '"Comic Sans MS", cursive' }}>
-                    {installing ? t('market.installing') : installed ? t('market.redownload') : t('market.download')}
+                    {installing ? t('market.installing') : installed ? t('market.delete') : t('market.download')}
                   </span>
                 </button>
               </div>
@@ -977,19 +1059,20 @@ export default function MarketPage({ onBack, initialTab }: { onBack: () => void;
                   <Link2 size={22} strokeWidth={3} />
                 </a>
                 <button
-                  onClick={() => handleInstallGraph(selectedGraph)}
+                  onClick={() => installed ? setDeleteTarget({ type: 'graph', name: selectedGraph.name }) : handleInstallGraph(selectedGraph)}
                   disabled={installing}
-                  title={installed ? t('market.redownload') : t('market.downloadInstall')}
+                  title={installed ? t('market.delete') : t('market.downloadInstall')}
                   style={sketchyShape2}
                   className={`h-14 px-6 flex items-center gap-2 border-4 border-ink font-black text-lg shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] transition-all active:translate-y-1 active:shadow-none ${
                     installing
                       ? 'bg-[#EBCB8B] text-ink cursor-wait'
+                      : installed ? 'bg-[#bf616a] text-paper hover:-translate-y-0.5'
                       : 'bg-[#b48ead] text-paper hover:-translate-y-0.5'
                   }`}
                 >
-                  {installing ? <Loader2 size={22} strokeWidth={3} className="animate-spin" /> : installed ? <RefreshCw size={22} strokeWidth={3} /> : <Download size={22} strokeWidth={3} />}
+                  {installing ? <Loader2 size={22} strokeWidth={3} className="animate-spin" /> : installed ? <Trash2 size={22} strokeWidth={3} /> : <Download size={22} strokeWidth={3} />}
                   <span style={{ fontFamily: '"Comic Sans MS", cursive' }}>
-                    {installing ? t('market.installing') : installed ? t('market.redownload') : t('market.download')}
+                    {installing ? t('market.installing') : installed ? t('market.delete') : t('market.download')}
                   </span>
                 </button>
               </div>

@@ -84,6 +84,9 @@ const messages = {
       sensorPartialInstalled: 'Sensor 配置已安装，代码下载稍后重试', sensorInstalledPrefix: "Sensor '", sensorInstalledSuffix: "' 安装成功！",
       sensorInstallFailed: 'Sensor 安装失败', sensorInstallFailedNetwork: 'Sensor 安装失败，请检查网络',
       graphInstalledPrefix: "Graph '", graphInstalledSuffix: "' 安装成功！", graphInstallFailed: 'Graph 安装失败', graphInstallFailedNetwork: 'Graph 安装失败，请检查网络',
+      delete: '删除', deleted: '删除成功', deleting: '删除中...',
+      deleteConfirmTitle: '删除确认', deleteConfirmPrefix: '确定要删除 ', deleteConfirmSuffix: ' 吗？删除后需重新下载才能恢复。',
+      confirmDelete: '确认删除', deleteFailed: '删除失败', deleteFailedNetwork: '删除失败，请检查网络',
     },
     evolve: {
       back: '返回', factory: '工厂', processing: '进行中的工作区', noItems: '当前没有进行中的工作区。',
@@ -332,6 +335,9 @@ const messages = {
       sensorPartialInstalled: 'Sensor config installed; code download will retry later', sensorInstalledPrefix: "Sensor '", sensorInstalledSuffix: "' installed!",
       sensorInstallFailed: 'Sensor install failed', sensorInstallFailedNetwork: 'Sensor install failed, please check your network',
       graphInstalledPrefix: "Graph '", graphInstalledSuffix: "' installed!", graphInstallFailed: 'Graph install failed', graphInstallFailedNetwork: 'Graph install failed, please check your network',
+      delete: 'Delete', deleted: 'Deleted successfully', deleting: 'Deleting...',
+      deleteConfirmTitle: 'Confirm Delete', deleteConfirmPrefix: 'Are you sure you want to delete ', deleteConfirmSuffix: '? You will need to re-download it to use it again.',
+      confirmDelete: 'Delete', deleteFailed: 'Failed to delete', deleteFailedNetwork: 'Failed to delete, please check your network',
     },
     evolve: {
       back: 'BACK', factory: 'FACTORY', processing: 'Processing Lines', noItems: 'No items processing.',

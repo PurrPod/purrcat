@@ -32,6 +32,7 @@ from src.utils.config import (
     _save_json_file,
 )
 from src.utils.graph_api import list_graphs
+from src.utils.skill_helper import _find_skill_md_file
 
 router = APIRouter(prefix="/api/tools", tags=["Tools Management"])
 
@@ -171,6 +172,35 @@ def install_skill_api(req: InstallSkillReq):
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Skill 下载/解压失败: {str(e)}")
+
+
+class UninstallSkillReq(BaseModel):
+    name: str
+
+
+@router.post("/skills/uninstall")
+def uninstall_skill_api(req: UninstallSkillReq):
+    """删除本地已安装的 Skill（目录名或 SKILL.md 的 name 匹配），并热更新内存"""
+    try:
+        name = req.name.strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="缺少 skill name")
+
+        md_file, _ = _find_skill_md_file(name)
+        if not md_file.exists():
+            raise HTTPException(
+                status_code=404, detail=f"未找到已安装的 Skill '{name}'"
+            )
+
+        shutil.rmtree(md_file.parent)
+        SkillSearcher().reload_index()
+        return {"status": "success", "message": f"Skill '{name}' 已删除"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"删除 Skill 失败: {str(e)}")
 
 
 @router.post("/skills/install-batch")
@@ -364,6 +394,49 @@ def install_mcp_api(req: InstallMCPReq):
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"安装 MCP 失败: {str(e)}")
+
+
+class UninstallMCPReq(BaseModel):
+    name: str
+
+
+@router.post("/mcp/uninstall")
+def uninstall_mcp_api(req: UninstallMCPReq):
+    """从 mcp_config.json 移除该 Server，清理本地源码并热更新 Schema"""
+    try:
+        name = req.name.strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="缺少 server 名")
+
+        existing = get_mcp_config()
+        servers = existing.get("mcpServers", {})
+        if name not in servers:
+            raise HTTPException(
+                status_code=404, detail=f"未配置 MCP Server '{name}'"
+            )
+
+        del servers[name]
+        with open(MCP_CONFIG_PATH, "w", encoding="utf-8") as f:
+            json.dump(existing, f, indent=2, ensure_ascii=False)
+
+        # 清理官方源码目录（若有）
+        src_dir = os.path.join(MCP_SOURCE_DIR, name)
+        if os.path.isdir(src_dir):
+            shutil.rmtree(src_dir)
+
+        refresh_schemas()
+        MCPSearcher().reload_index()
+        rebuild_vectors_async()
+        return {
+            "status": "success",
+            "message": f"MCP Server '{name}' 已删除",
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"删除 MCP 失败: {str(e)}")
 
 
 # ==========================================
@@ -692,6 +765,41 @@ def install_sensor_api(req: InstallSensorReq):
         raise HTTPException(status_code=500, detail=f"安装 Sensor 失败: {str(e)}")
 
 
+class UninstallSensorReq(BaseModel):
+    name: str
+
+
+@router.post("/market/sensors/uninstall")
+def uninstall_sensor_api(req: UninstallSensorReq):
+    """从 activate_sensor.json 移除该 Sensor 并删除本地代码文件"""
+    try:
+        name = req.name.strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="缺少 sensor 名")
+
+        cfg = get_sensor_config() or {}
+        if name not in cfg:
+            raise HTTPException(
+                status_code=404, detail=f"未配置 Sensor '{name}'"
+            )
+
+        del cfg[name]
+        os.makedirs(os.path.dirname(SENSOR_CONFIG_PATH), exist_ok=True)
+        _save_json_file(SENSOR_CONFIG_PATH, cfg)
+
+        code_file = os.path.join(SENSOR_EXTENSION_DIR, f"{name}.py")
+        if os.path.exists(code_file):
+            os.remove(code_file)
+
+        return {"status": "success", "message": f"Sensor '{name}' 已删除"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"删除 Sensor 失败: {str(e)}")
+
+
 # ==========================================
 # 10. Graph 市场：Registry + 已安装列表 + 安装
 # ==========================================
@@ -968,3 +1076,34 @@ def install_graph_api(req: InstallGraphReq):
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"安装 Graph 失败: {str(e)}")
+
+
+class UninstallGraphReq(BaseModel):
+    name: str
+
+
+@router.post("/market/graphs/uninstall")
+def uninstall_graph_api(req: UninstallGraphReq):
+    """删除 {GRAPHS_DIR}/{name} 文件夹（新目录结构）"""
+    try:
+        name = req.name.strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="缺少 graph name")
+        safe_name = os.path.basename(name).replace("\\", "/")
+        if not safe_name or safe_name in (".", ".."):
+            raise HTTPException(status_code=400, detail="非法 graph name")
+
+        target_dir = os.path.join(GRAPHS_DIR, safe_name)
+        if not os.path.isdir(target_dir):
+            raise HTTPException(
+                status_code=404, detail=f"未安装 Graph '{safe_name}'"
+            )
+
+        shutil.rmtree(target_dir)
+        return {"status": "success", "message": f"Graph '{safe_name}' 已删除"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"删除 Graph 失败: {str(e)}")
