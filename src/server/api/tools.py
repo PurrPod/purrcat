@@ -411,9 +411,7 @@ def uninstall_mcp_api(req: UninstallMCPReq):
         existing = get_mcp_config()
         servers = existing.get("mcpServers", {})
         if name not in servers:
-            raise HTTPException(
-                status_code=404, detail=f"未配置 MCP Server '{name}'"
-            )
+            raise HTTPException(status_code=404, detail=f"未配置 MCP Server '{name}'")
 
         del servers[name]
         with open(MCP_CONFIG_PATH, "w", encoding="utf-8") as f:
@@ -779,9 +777,7 @@ def uninstall_sensor_api(req: UninstallSensorReq):
 
         cfg = get_sensor_config() or {}
         if name not in cfg:
-            raise HTTPException(
-                status_code=404, detail=f"未配置 Sensor '{name}'"
-            )
+            raise HTTPException(status_code=404, detail=f"未配置 Sensor '{name}'")
 
         del cfg[name]
         os.makedirs(os.path.dirname(SENSOR_CONFIG_PATH), exist_ok=True)
@@ -1095,9 +1091,7 @@ def uninstall_graph_api(req: UninstallGraphReq):
 
         target_dir = os.path.join(GRAPHS_DIR, safe_name)
         if not os.path.isdir(target_dir):
-            raise HTTPException(
-                status_code=404, detail=f"未安装 Graph '{safe_name}'"
-            )
+            raise HTTPException(status_code=404, detail=f"未安装 Graph '{safe_name}'")
 
         shutil.rmtree(target_dir)
         return {"status": "success", "message": f"Graph '{safe_name}' 已删除"}
