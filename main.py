@@ -172,10 +172,16 @@ async def _bg_heavy_init(enable_tui: bool):
     # 用独立的 Task 去算矩阵，完全不影响主体
     asyncio.create_task(asyncio.to_thread(_build_heavy_vectors))
 
-    # 6. 后台会话对账 (取代原本开局的耗时操作)
+    # 后台会话对账 (取代原本开局的耗时操作)
     def _reconcile_sessions():
         from src.agent.session_store import SessionStore
         from src.harness.process import auto_load_all_tasks
+        from src.utils.graph_api import migrate_graphs_to_folders
+
+        # 旧单文件 graph → 文件夹结构（幂等），必须在任务恢复前完成
+        migrated = migrate_graphs_to_folders()
+        if migrated:
+            print(f"✅ [Graph迁移] 已迁移 {len(migrated)} 个 graph 为文件夹结构: {migrated}")
 
         SessionStore.background_sync_sessions()
         auto_load_all_tasks()

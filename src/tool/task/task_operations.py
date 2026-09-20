@@ -13,7 +13,9 @@ def add_task_operation(name: str, inputs: dict, graph_name: str) -> tuple:
         model_name = single_task.core
         from src.utils.config import get_model_config
 
-        models = get_model_config().get("main", {})
+        # 工作流图由 task 段模型驱动（AgentNode/agent_loop 均读 get_model_config()["task"]），
+        # 校验也应在 task 段，而非 main（main 是聊天主 Agent 的模型段）。
+        models = get_model_config().get("task", {})
 
         if model_name not in models:
             return (
@@ -135,8 +137,8 @@ def submit_request_operation(task_id: str, content: str, node_id: str) -> tuple:
         if node_id not in task.node_list:
             return None, f"注入失败：任务中不存在节点 [{node_id}]"
 
-        # 执行规范化单节点注入
-        result = task.inject_instruction(node_id, content)
+        # 执行规范化单节点注入（source="agent"：人工干预节点会被拒绝，须由用户亲自输入指令）
+        result = task.inject_instruction(node_id, content, source="agent")
         success = result.get("status") == "success"
 
         if success:

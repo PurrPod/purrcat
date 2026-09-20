@@ -260,6 +260,41 @@ def get_task_log_endpoint(task_id: str):
     return {"task_id": task_id, "grouped_logs": grouped_logs}
 
 
+@router.get("/{task_id}/artifact")
+def get_task_artifact(task_id: str, uri: str, mime: str = None):
+    """按 purrcat:// URI（或绝对路径兜底）返回任务产物文件，供前端 preview 渲染"""
+    import os
+
+    from fastapi.responses import FileResponse
+
+    from src.harness import envelope
+
+    # 定位 checkpoint_dir：内存优先，磁盘兜底（与 state 端点同模式）
+    checkpoint_dir = None
+    if task_id in TASK_INSTANCES:
+        checkpoint_dir = TASK_INSTANCES[task_id].checkpoint_dir
+    else:
+        from src.utils.config import DATA_DIR
+
+        base_dir = os.path.join(DATA_DIR, "checkpoints", "task")
+        if os.path.exists(base_dir):
+            for entry in os.listdir(base_dir):
+                if task_id in entry:
+                    checkpoint_dir = os.path.join(base_dir, entry)
+                    break
+
+    # parse_uri 内置路径穿越与 scheme 校验：非法一律返回 None
+    path = envelope.parse_uri(uri, checkpoint_dir=checkpoint_dir)
+    if path is None or not path.is_file():
+        raise HTTPException(
+            status_code=404, detail="Artifact not found or URI rejected"
+        )
+
+    # html 类产物强制沙箱，防止产物内脚本接触宿主页面上下文
+    headers = {"Content-Security-Policy": "sandbox allow-scripts"}
+    return FileResponse(str(path), media_type=mime, headers=headers)
+
+
 @router.delete("/{task_id}")
 def delete_task_endpoint(task_id: str):
     """删除任务：使用安全的物理删除 API，同时支持清理休眠和活跃任务"""

@@ -1,45 +1,37 @@
 {
     "type": "file_writer",
-    "name": "本地文件落盘",
-    "description": "将纯文本内容写入到本地物理机的指定路径。支持绝对路径、相对路径及 ~ 符号。自动创建缺失的父级目录。",
-    "color": "#8E44AD",
+    "name": "文件落盘",
+    "description": "将 string 内容写入磁盘文件，输出 file 信封供下游（如文件读取/预览节点或其他消费者）继续使用。落盘逻辑独立于此节点，预览节点不再承担写盘。",
+    "color": "#2ECC71",
     "inputs": [
         {
             "name": "trigger",
             "type": "any",
             "port_type": "static",
-            "description": "触发信号。如果没有收到上游信号，将不会执行落盘。"
+            "description": "触发信号（可选）。如果不连线，节点将在开局自动执行；如果连线，将等待收到上游数据/信号后再执行。",
+            "required": false
         },
         {
             "name": "content",
             "type": "string",
             "port_type": "static",
-            "description": "需要写入文件的文本内容",
+            "description": "要写入文件的文本内容",
             "required": true
         },
         {
-            "name": "file_path",
+            "name": "filename",
             "type": "string",
             "port_type": "static",
-            "description": "文件的本地物理路径，优先读取连线输入。",
+            "description": "输出文件名（含扩展名）。不连线则缺省 output.txt。",
             "required": false
         }
     ],
     "outputs": [
         {
-            "name": "absolute_path",
-            "type": "string",
+            "name": "file",
+            "type": "file",
             "port_type": "static",
-            "description": "写入成功后的物理绝对路径"
-        }
-    ],
-    "config": [
-        {
-            "name": "file_path",
-            "type": "string",
-            "label": "文件物理路径",
-            "default": "",
-            "description": "输入本地电脑上的保存路径，支持绝对路径 (如 /Users/xxx/output.txt)、相对路径或 ~ 符号。"
+            "description": "写入后的文件信封（data 为 purrcat:// URI）"
         }
     ]
 }

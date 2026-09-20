@@ -6,9 +6,9 @@
     "inputs": [
         {
             "name": "data",
-            "type": "any",
+            "type": "jsonstring",
             "port_type": "static",
-            "description": "输入的 JSON 字符串或 Python 字典对象",
+            "description": "输入的 JSON 字符串或结构化对象（dict）",
             "required": true
         }
     ],

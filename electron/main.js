@@ -418,6 +418,9 @@ function isSelfUrl(url) {
   if (!url || typeof url !== 'string') return false;
   try {
     const u = new URL(url.startsWith('http') ? url : 'http://' + url);
+    // 后端静态/产物接口（/api/...）返回的是文件而非应用 SPA 壳，允许内置浏览器打开，
+    // 用于在 dashboard 里以内部浏览器预览本地看板（同类名不构成 storage 循环）
+    if (u.pathname.startsWith('/api/')) return false;
     const selfUrls = [DEV_URL, PROD_URL].map(s => { try { return new URL(s); } catch { return null; } });
     return selfUrls.some(s => s && u.hostname === s.hostname && u.port === s.port);
   } catch { return false; }

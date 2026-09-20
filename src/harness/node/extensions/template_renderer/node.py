@@ -12,13 +12,15 @@ class Node(BaseNode):
     async def execute(self, inputs: Dict[str, Any], context: Any) -> Dict[str, Any]:
         self.log(context, "SYSTEM", "📝 [模板渲染] 开始执行")
 
-        template_str = inputs.get("template") or self.config.get("template", "")
+        template_str = self.unpack(inputs, "template") or self.config.get(
+            "template", ""
+        )
 
         if not template_str:
             self.log(context, "WARNING", "⚠️ [模板渲染] 模板为空，将输出空字符串。")
             return {"rendered_text": ""}
 
-        variables = {k: v for k, v in inputs.items() if k != "template"}
+        variables = {k: self.unpack(inputs, k) for k in inputs if k != "template"}
 
         self.log(
             context,

@@ -24,7 +24,7 @@
     "outputs": [
         {
             "name": "json_string",
-            "type": "string",
+            "type": "jsonstring",
             "port_type": "static",
             "description": "打包生成的 JSON 字符串"
         }

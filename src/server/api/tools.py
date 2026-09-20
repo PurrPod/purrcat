@@ -1,6 +1,7 @@
 import io
 import os
 import re
+import shutil
 import threading
 import urllib.request
 import zipfile
@@ -30,7 +31,7 @@ from src.utils.config import (
     get_sensor_config,
     _save_json_file,
 )
-from src.utils.graph_api import save_graph, list_graphs
+from src.utils.graph_api import list_graphs
 
 router = APIRouter(prefix="/api/tools", tags=["Tools Management"])
 
@@ -112,6 +113,10 @@ def _extract_skill_from_zip(zip_data: bytes, repo: str, path: str) -> str:
     skill_name = os.path.basename(path) if path else repo
 
     dest_dir = os.path.join(SKILL_DIR, skill_name)
+
+    # 覆盖式重装：先清掉旧目录，保证与仓库当前版本一致
+    if os.path.isdir(dest_dir):
+        shutil.rmtree(dest_dir)
 
     with zipfile.ZipFile(io.BytesIO(zip_data)) as z:
         root_folder = z.namelist()[0].split("/")[0]
@@ -597,10 +602,9 @@ class InstallSensorReq(BaseModel):
 @router.post("/market/sensors/install")
 def install_sensor_api(req: InstallSensorReq):
     """
-    安装 Sensor：
-      0) 已安装核对：配置存在 + 传感器文件存在本地 → 直接返回，避免重复安装
+    安装 Sensor（支持覆盖式重新下载）：
       1) 把配置合并写入 activate_sensor.json（按 name 覆盖，保留用户已填 env）
-      2) 下载对应的代码文件 <name>.py 到 ~/.purrcat/sensor/
+      2) 下载对应的代码文件 <name>.py 到 ~/.purrcat/sensor/（覆盖旧文件）
     """
     try:
         sensor = req.sensor or {}
@@ -608,17 +612,8 @@ def install_sensor_api(req: InstallSensorReq):
         if not name:
             raise HTTPException(status_code=400, detail="sensor 缺少 name 字段")
 
-        # 0. 已安装核对：配置 + 代码文件都在本地才算已安装，拦截无限重复安装
-        existing_cfg = get_sensor_config() or {}
-        code_path = os.path.join(SENSOR_EXTENSION_DIR, f"{name}.py")
-        if name in existing_cfg and os.path.exists(code_path):
-            return {
-                "status": "already",
-                "message": f"Sensor '{name}' 已安装（配置与代码文件均在本地），无需重复安装。",
-                "code_downloaded": True,
-            }
-
         # 1. 合并配置：已有配置的 env 非空值不被 registry 占位覆盖
+        existing_cfg = get_sensor_config() or {}
         existing_entry = (
             existing_cfg.get(name, {}) if isinstance(existing_cfg, dict) else {}
         )
@@ -700,24 +695,26 @@ def install_sensor_api(req: InstallSensorReq):
 # ==========================================
 # 10. Graph 市场：Registry + 已安装列表 + 安装
 # ==========================================
+def _extract_registry_graphs(data) -> list:
+    """从 registry 数据中提取 graphs 列表（兼容 graphs list 或 { graphs: [...] }）"""
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        for key in ("graphs", "items", "data"):
+            if isinstance(data.get(key), list):
+                return data[key]
+    return []
+
+
 @router.get("/market/graphs")
 def get_graph_registry_api():
     """从官方 PurrPod/graphs 仓库拉取 registry.json 返回前端市场"""
     try:
         data = _http_get_json(GRAPHS_REGISTRY_URL)
-        # 兼容 graphs list 或 { graphs: [...] }
-        graphs = []
-        if isinstance(data, list):
-            graphs = data
-        elif isinstance(data, dict):
-            for key in ("graphs", "items", "data"):
-                if isinstance(data.get(key), list):
-                    graphs = data[key]
-                    break
         return {
             "version": data.get("version") if isinstance(data, dict) else None,
             "repository": data.get("repository") if isinstance(data, dict) else None,
-            "graphs": graphs,
+            "graphs": _extract_registry_graphs(data),
         }
     except HTTPException:
         raise
@@ -728,19 +725,13 @@ def get_graph_registry_api():
 
 @router.get("/market/graphs/installed")
 def list_installed_graphs_api():
-    """返回 ~/.purrcat/graph 目录下已存在的 graph 文件名列表"""
+    """返回 ~/.purrcat/graph 目录下已安装的 graph（文件夹结构）名字列表"""
     try:
-        names = set()
-        for entry in list_graphs():
-            fn = (
-                entry.get("filename") or entry.get("name")
-                if isinstance(entry, dict)
-                else None
-            )
-            if fn:
-                n = fn[:-5] if fn.endswith(".json") else fn
-                if n:
-                    names.add(n)
+        names = {
+            entry["name"]
+            for entry in list_graphs()
+            if isinstance(entry, dict) and entry.get("name")
+        }
         return sorted(names)
     except Exception as e:
         traceback.print_exc()
@@ -879,9 +870,10 @@ def _ensure_graph_skill_deps(skill_names) -> list:
 @router.post("/market/graphs/install")
 def install_graph_api(req: InstallGraphReq):
     """
-    安装 Graph：
-      从 PurrPod/graphs 仓库拉取 <name>.json；
-      安装前检查 dependencies 声明的 mcp/skill 依赖，本地缺失的先从市场下载，市场也缺失时跳过
+    安装 Graph（文件夹结构）：
+      从 registry 拿到该 graph 的文件清单（graph.json + asset/* 等），
+      逐文件从 PurrPod/graphs 仓库下载写入 {GRAPHS_DIR}/{name}/；
+      安装前检查 graph.json 声明的 mcp/skill 依赖，本地缺失的先从市场安装，市场也缺失时跳过
     """
     try:
         name = req.name.strip()
@@ -891,22 +883,64 @@ def install_graph_api(req: InstallGraphReq):
         if not safe_name or safe_name in (".", ".."):
             raise HTTPException(status_code=400, detail="非法 graph name")
 
-        url = f"{GRAPHS_CODE_BASE}/{safe_name}.json"
+        # 1) 从 registry 取条目与文件清单
         try:
-            raw = _http_download(url)
+            registry = _http_get_json(GRAPHS_REGISTRY_URL)
         except Exception as e:
+            raise HTTPException(status_code=502, detail=f"拉取 Graph 注册表失败: {e}")
+        entry = next(
+            (
+                g
+                for g in _extract_registry_graphs(registry)
+                if isinstance(g, dict)
+                and str(g.get("name", "")).strip().lower() == safe_name.lower()
+            ),
+            None,
+        )
+        if entry is None:
             raise HTTPException(
-                status_code=502, detail=f"下载 Graph JSON 失败 ({url}): {e}"
+                status_code=404, detail=f"市场注册表中找不到 Graph '{safe_name}'"
             )
 
-        try:
-            text = raw.decode("utf-8")
-        except UnicodeDecodeError:
-            text = raw.decode("utf-8", errors="replace")
-        try:
-            graph_data = json.loads(text)
-        except json.JSONDecodeError as e:
-            raise HTTPException(status_code=502, detail=f"Graph JSON 解析失败: {e}")
+        files = [str(f) for f in (entry.get("files") or []) if str(f).strip()]
+        if "graph.json" not in files:
+            files.insert(0, "graph.json")
+        # 相对路径防御：不允许绝对路径 / 上跳
+        for rel in files:
+            if rel.startswith(("/", "\\")) or ".." in rel.replace("\\", "/").split("/"):
+                raise HTTPException(
+                    status_code=502, detail=f"注册表文件清单含非法路径: {rel}"
+                )
+
+        # 2) 重装场景下清掉旧目录，保证与市场版本一致
+        target_dir = os.path.join(GRAPHS_DIR, safe_name)
+        if os.path.isdir(target_dir):
+            shutil.rmtree(target_dir)
+        os.makedirs(target_dir, exist_ok=True)
+
+        graph_data = None
+        downloaded = []
+        for rel in files:
+            url = f"{GRAPHS_CODE_BASE}/{safe_name}/{rel}"
+            try:
+                raw = _http_download(url)
+            except Exception as e:
+                raise HTTPException(
+                    status_code=502, detail=f"下载 Graph 文件失败 ({url}): {e}"
+                )
+            dest = os.path.join(target_dir, *rel.replace("\\", "/").split("/"))
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            with open(dest, "wb") as f:
+                f.write(raw)
+            downloaded.append(rel)
+
+            if rel == "graph.json":
+                try:
+                    graph_data = json.loads(raw.decode("utf-8"))
+                except (UnicodeDecodeError, json.JSONDecodeError) as e:
+                    raise HTTPException(
+                        status_code=502, detail=f"Graph JSON 解析失败: {e}"
+                    )
 
         if not isinstance(graph_data, dict):
             raise HTTPException(status_code=502, detail="Graph JSON 顶层必须是对象")
@@ -920,13 +954,9 @@ def install_graph_api(req: InstallGraphReq):
             traceback.print_exc()
             dep_notes = [f"依赖检测失败({e})，已跳过"]
 
-        # 用 save_graph 写入保证与现有加载逻辑一致
-        filename = safe_name
-        if not filename.endswith(".json"):
-            filename = filename + ".json"
-        os.makedirs(GRAPHS_DIR, exist_ok=True)
-        save_graph(filename, graph_data)
-        message = f"Graph '{safe_name}' 已安装到 {os.path.join(GRAPHS_DIR, filename)}"
+        message = (
+            f"Graph '{safe_name}' 已安装到 {target_dir}（{len(downloaded)} 个文件）"
+        )
         if dep_notes:
             message += "。" + "；".join(dep_notes)
         return {

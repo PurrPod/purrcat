@@ -28,7 +28,7 @@ interface ToolbarProps {
 
 export default function Toolbar({ onBack, mode = 'workflow', onModeChange, agentLoop }: ToolbarProps) {
   const { t } = useTranslation()
-  const { exportGraph, validateGraph, clearGraph, loadGraph } = useFlowStore()
+  const { exportGraph, validateGraph, clearGraph, loadGraph, setDashboard } = useFlowStore()
 
   // Open 菜单状态
   const [showFileMenu, setShowFileMenu] = useState(false)
@@ -40,6 +40,7 @@ export default function Toolbar({ onBack, mode = 'workflow', onModeChange, agent
   const [isDeployModalOpen, setIsDeployModalOpen] = useState(false)
   const [workflowName, setWorkflowName] = useState('my_awesome_flow')
   const [workflowDescription, setWorkflowDescription] = useState('')
+  const [workflowDashboard, setWorkflowDashboard] = useState('')
 
   // 退出弹窗状态
   const [isExitModalOpen, setIsExitModalOpen] = useState(false)
@@ -100,8 +101,10 @@ export default function Toolbar({ onBack, mode = 'workflow', onModeChange, agent
       if (res.ok) {
         const data = await res.json()
         loadGraph(data)
-        setWorkflowName(fileName.replace(/\.json$/, ''))
+        setWorkflowName(fileName)
         setWorkflowDescription(data.description || '')
+        const rawDash = data.dashboard
+        setWorkflowDashboard(typeof rawDash === 'string' ? rawDash : Array.isArray(rawDash) ? rawDash.map((d:any)=>d.url).join(',') : '')
         toast.success(`已加载: ${fileName}`)
         setShowFileMenu(false)
       }
@@ -149,6 +152,7 @@ export default function Toolbar({ onBack, mode = 'workflow', onModeChange, agent
     }
 
     // 1. 获取基础导出图谱数据
+    setDashboard(workflowDashboard.trim() ? workflowDashboard.trim() : undefined)
     const graph = exportGraph(workflowName, workflowDescription)
     
     // 2. 扫描图中所有节点，提取技能与MCP依赖并利用 Set 去重
@@ -294,7 +298,7 @@ export default function Toolbar({ onBack, mode = 'workflow', onModeChange, agent
           </button>
 
           {/* 部署按钮 (唤起弹窗) */}
-          <button onClick={() => setIsDeployModalOpen(true)} style={sketchyShape1} className="flex items-center gap-3 px-8 py-3 bg-ink text-paper border-4 border-ink hover:bg-gray-800 transition-all shadow-[6px_6px_0px_0px_rgba(212,122,90,1)] active:shadow-none active:translate-y-1 rotate-1 ml-4">
+          <button onClick={() => { setWorkflowDashboard(typeof useFlowStore.getState().graphExtras?.dashboard === 'string' ? (useFlowStore.getState().graphExtras!.dashboard as string) : ''); setIsDeployModalOpen(true) }} style={sketchyShape1} className="flex items-center gap-3 px-8 py-3 bg-ink text-paper border-4 border-ink hover:bg-gray-800 transition-all shadow-[6px_6px_0px_0px_rgba(212,122,90,1)] active:shadow-none active:translate-y-1 rotate-1 ml-4">
             <Upload size={22} strokeWidth={2.5} />
             <span className="tracking-widest text-lg font-black" style={{ fontFamily: '"Comic Sans MS", cursive' }}>{t('editor.deploy')}</span>
           </button>
@@ -403,8 +407,14 @@ export default function Toolbar({ onBack, mode = 'workflow', onModeChange, agent
             <p className="font-bold mb-2 opacity-60">{t('editor.descriptionPrompt')}</p>
             <textarea 
               value={workflowDescription} onChange={e => setWorkflowDescription(e.target.value)}
-              style={sketchyShape1} className="w-full bg-cream border-4 border-ink p-4 text-lg font-bold mb-8 focus:outline-none resize-none h-24"
+              style={sketchyShape1} className="w-full bg-cream border-4 border-ink p-4 text-lg font-bold mb-4 focus:outline-none resize-none h-24"
               placeholder="Describe what this workflow does..."
+            />
+            <p className="font-bold mb-2 opacity-60">看板地址 (Dashboard URI / URL) · 可选</p>
+            <input 
+              value={workflowDashboard} onChange={e => setWorkflowDashboard(e.target.value)}
+              style={sketchyShape2} className="w-full bg-cream border-4 border-ink p-4 text-lg font-bold mb-8 focus:outline-none"
+              placeholder="purrcat://graph/xxx/asset/dashboard.html 或 https://..."
             />
             <div className="flex gap-4">
               <button onClick={handleRealDeploy} style={sketchyShape1} className="flex-1 py-4 bg-terracotta text-paper border-4 border-ink font-black text-xl shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:translate-y-1 hover:shadow-none transition-all">

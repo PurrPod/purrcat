@@ -15,6 +15,13 @@
             "type": "any",
             "port_type": "static",
             "description": "（可选）需要人类审核的上游数据。连线后可以在提示中展示给人类看。"
+        },
+        {
+            "name": "prompt",
+            "type": "string",
+            "port_type": "static",
+            "description": "（可选）挂起时展示给人类的提问文案，未连线时使用默认文案",
+            "required": false
         }
     ],
     "outputs": [
@@ -31,13 +38,5 @@
             "description": "透传上游传入的审查数据，方便下游一并使用"
         }
     ],
-    "config": [
-        {
-            "name": "prompt_message",
-            "type": "string",
-            "label": "向人类提问的文案",
-            "default": "流程已暂停，请审查以上数据并输入您的指示：",
-            "description": "挂起时会在日志中展示给用户的提示语"
-        }
-    ]
+    "config": []
 }

@@ -1,0 +1,50 @@
+{
+    "type": "string",
+    "name": "自定义输入",
+    "description": "直接书写内容，按内容推导出字符串 / 数字 / 布尔 / JSON 四种数据类型的输出端口，供下游按需取用。文本类静态值都建议用此节点。",
+    "color": "#8FBCBB",
+    "inputs": [
+        {
+            "name": "trigger",
+            "type": "any",
+            "port_type": "static",
+            "description": "触发信号（可选）。如果不连线，节点将在开局自动执行；如果连线，将等待收到上游数据/信号后再执行。",
+            "required": false
+        }
+    ],
+    "outputs": [
+        {
+            "name": "text",
+            "type": "string",
+            "port_type": "static",
+            "description": "字符串（原文内容，未做解析）"
+        },
+        {
+            "name": "number",
+            "type": "number",
+            "port_type": "static",
+            "description": "数字（内容可解析为整数/浮点时才有值，否则为空）"
+        },
+        {
+            "name": "boolean",
+            "type": "boolean",
+            "port_type": "static",
+            "description": "布尔（内容为 true/false/1/0/是/否 时才有值，否则为空）"
+        },
+        {
+            "name": "json",
+            "type": "jsonstring",
+            "port_type": "static",
+            "description": "JSON（内容整体可解析为对象/数组时才有值，否则为空）"
+        }
+    ],
+    "config": [
+        {
+            "name": "value",
+            "type": "textarea",
+            "label": "内容",
+            "default": "",
+            "description": "在此书写要输出的内容，节点会按内容自动派生出对应的数据类型输出端口"
+        }
+    ]
+}

@@ -11,7 +11,9 @@ import { toast } from 'react-hot-toast';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { extractToolContent } from './chat/ChatShared';
+import DashboardBrowser from './chat/DashboardBrowser';
 import { useTranslation } from '../i18n';
+import { inferAutoLayout } from '../store/flowStore';
 
 const sketchyShape1 = { borderRadius: '255px 15px 225px 15px/15px 225px 15px 255px' };
 const sketchyShape2 = { borderRadius: '15px 225px 15px 255px/255px 15px 225px 15px' };
@@ -226,6 +228,11 @@ export default function TaskPage({ onBack }: { onBack: () => void }) {
   
   // 🌟 修改：默认关闭 Dashboard 面板侧边栏
   const [isDashboardOpen, setIsDashboardOpen] = useState(false);
+  // 🌟 graph.json 顶层 dashboard 键：支持单个 URL，或 [{name,url}] 多看板可切换
+  // 归一化为 [{name,url}]，activeDashboardIdx 记录当前看板
+  const [dashboards, setDashboards] = useState<{ name: string; url: string }[]>([]);
+  const [activeDashboardIdx, setActiveDashboardIdx] = useState(0);
+  const dashboardUrl = dashboards[activeDashboardIdx]?.url || null;
   
   const logsContainerRef = useRef<HTMLDivElement>(null);
   const logEndRef = useRef<HTMLDivElement>(null);
@@ -466,13 +473,39 @@ export default function TaskPage({ onBack }: { onBack: () => void }) {
         const nodeStates = stateData.node_state || stateData.dag_state || stateData.node_states || stateData.nodes || {};
         const isCurrentlyRunning = ['running', 'starting'].includes((stateData.state || '').toLowerCase());
 
+        // 🌟 graph.dashboard：配置后 DASHBOARD 面板切换为浏览器视图
+        // 支持单个 URL 字符串，或 [{name,url}] 多看板；{task_id} 占位符在每条 url 上替换为当前任务 id
+        const rawDash = stateData.graph?.dashboard;
+        const subTid = (u: string) => u.split('{task_id}').join(task.id);
+        // 内部浏览器（WebContentsView.loadURL）需要绝对地址：相对 /api 按当前 origin 补全
+        // （dev 3000 由 Vite 代理、prod 8000 直连后端；绝对 http(s) 地址原样返回）
+        const toAbs = (u: string) => {
+          try { return new URL(u, window.location.origin).href; } catch { return u; }
+        };
+        const dashList =
+          typeof rawDash === 'string'
+            ? (rawDash.trim() ? [{ name: t('task.dashboard'), url: toAbs(subTid(rawDash.trim())) }] : [])
+            : Array.isArray(rawDash)
+              ? rawDash
+                  .map((d: any, i: number) => d && d.url
+                    ? { name: String(d.name || t('task.dashboard') + (rawDash.length > 1 ? ' ' + (i + 1) : '')), url: toAbs(subTid(String(d.url))) }
+                    : null)
+                  .filter(Boolean)
+              : [];
+        setDashboards(dashList as { name: string; url: string }[]);
+        setActiveDashboardIdx(0);
+
+        // 🌟 无坐标节点的拓扑分层自动布局（后继 X 严格大于全部前继）
+        const autoPos = inferAutoLayout(graph.nodes || [], graph.edges || []);
+
         const flowNodes = (graph.nodes || []).map((n: GraphNode, idx: number) => {
           if (!n) return null;
           const currentState = extractState(nodeStates[n.id]);
-          
-          let posX = 100 + (idx % 3) * 280, posY = 100 + Math.floor(idx / 3) * 180;
-          if (Array.isArray(n.position)) { posX = n.position[0]; posY = n.position[1]; } 
+
+          let posX: number, posY: number;
+          if (Array.isArray(n.position)) { posX = n.position[0]; posY = n.position[1]; }
           else if (n.position?.x !== undefined) { posX = n.position.x; posY = n.position.y; }
+          else { const p = autoPos[n.id] || { x: 100, y: 100 }; posX = p.x; posY = p.y; }
 
           const inHandles = [...new Set((graph.edges || []).filter((e: GraphEdge) => e.target === n.id).map((e: GraphEdge) => e.targetHandle || 'default'))];
           const outHandles = [...new Set((graph.edges || []).filter((e: GraphEdge) => e.source === n.id).map((e: GraphEdge) => e.sourceHandle || 'default'))];
@@ -503,7 +536,7 @@ export default function TaskPage({ onBack }: { onBack: () => void }) {
 
         setNodes(flowNodes); setEdges(flowEdges);
       }
-    } catch { toast.error(`加载图谱失败`); } finally { setIsCheckingOut(false); }
+    } catch { setDashboards([]); setActiveDashboardIdx(0); toast.error(`加载图谱失败`); } finally { setIsCheckingOut(false); }
   };
 
   useEffect(() => {
@@ -560,7 +593,7 @@ export default function TaskPage({ onBack }: { onBack: () => void }) {
       const res = await fetch(`/api/tasks/${taskToDelete}`, { method: 'DELETE' });
       if (res.ok) {
         toast.success("任务及存档已彻底抹除"); setTaskToDelete(null);
-        if (selectedTaskId === taskToDelete) { setSelectedTaskId(null); setNodes([]); setEdges([]); }
+        if (selectedTaskId === taskToDelete) { setSelectedTaskId(null); setNodes([]); setEdges([]); setDashboards([]); setActiveDashboardIdx(0); }
         loadTasks();
       }
     } catch { toast.error("删除失败"); }
@@ -671,22 +704,46 @@ export default function TaskPage({ onBack }: { onBack: () => void }) {
                        if (log.type === "WARNING") colorClass = "text-[#d08770] font-bold";
                        const isArtifact = log.type.toUpperCase() === "ARTIFACT";
                        if (isArtifact) colorClass = "text-[#88c0d0] font-black";
+                       // 🌟 新版结构化 ARTIFACT：{kind, uri?, mime, content?, name}；uri 缺失时用内联 content 渲染；旧版 content 为 html 字符串
+                       let artifact: any = null;
+                       if (isArtifact) {
+                         try {
+                           const parsed = JSON.parse(log.content);
+                           if (parsed && typeof parsed === 'object' && parsed.kind) artifact = parsed;
+                         } catch { /* 旧格式，回退 srcDoc */ }
+                       }
+                       const artifactUrl = artifact && artifact.uri
+                         ? `/api/tasks/${selectedTaskId}/artifact?uri=${encodeURIComponent(artifact.uri)}${artifact.mime ? `&mime=${encodeURIComponent(artifact.mime)}` : ''}`
+                         : '';
+                       // 文件管理器预览风格：标题栏显示文件名
+                       const artifactName = artifact?.name || (() => { try { return decodeURIComponent((artifact?.uri || '').split('/').pop() || '') } catch { return artifact?.uri || '' } })();
                        return (
                          <div key={idx} className={`flex ${isArtifact ? 'flex-col gap-2' : 'gap-4'} hover:bg-ink/5 p-1 rounded transition-colors break-all`}>
                            <div className="flex gap-4 items-start">
                              <span className="opacity-40 shrink-0 select-none">[{timeStr}]</span>
                              <span className={`shrink-0 w-24 select-none ${colorClass}`}>[{log.type}]</span>
                              {!isArtifact && <span className={`whitespace-pre-wrap ${colorClass}`}>{log.content}</span>}
+                             {isArtifact && artifact && <span className={`text-xs ${colorClass}`}>{artifactName || artifact.uri} ({artifact.mime || artifact.kind})</span>}
                            </div>
                            {isArtifact && (
                              <div className="mt-2 w-full h-[600px] border-4 border-ink bg-white shadow-[6px_6px_0px_0px_rgba(26,26,26,1)] relative overflow-hidden" style={sketchyShape3}>
-                               <div className="absolute top-0 left-0 right-0 h-8 bg-ink/5 border-b-2 border-ink flex items-center px-4 gap-2">
+                               <div className="absolute top-0 left-0 right-0 h-8 bg-ink/5 border-b-2 border-ink flex items-center px-4 gap-2 z-10">
                                  <div className="w-3 h-3 rounded-full bg-[#bf616a] border-2 border-ink"></div>
                                  <div className="w-3 h-3 rounded-full bg-[#EBCB8B] border-2 border-ink"></div>
                                  <div className="w-3 h-3 rounded-full bg-[#a3be8c] border-2 border-ink"></div>
-                                 <span className="text-xs font-bold text-ink/40 ml-2" style={{ fontFamily: '"Comic Sans MS", cursive' }}>{t('task.dashboard')}</span>
+                                 <span className="text-xs font-bold text-ink/40 ml-2" style={{ fontFamily: '"Comic Sans MS", cursive' }}>{artifactName || t('task.dashboard')}</span>
                                </div>
-                               <iframe srcDoc={log.content} className="w-full h-[calc(100%-2rem)] mt-8 border-none" sandbox="allow-scripts allow-popups" />
+                               {artifact ? (
+                                 artifact.kind === 'image' && artifactUrl
+                                   ? <img src={artifactUrl} alt={artifactName || 'preview'} className="w-full h-[calc(100%-2rem)] mt-8 object-contain bg-[#FDF8F0]" />
+                                   : artifactUrl
+                                     ? <iframe src={artifactUrl} className="w-full h-[calc(100%-2rem)] mt-8 border-none" sandbox="allow-scripts allow-popups" />
+                                     : artifact.kind === 'text'
+                                       ? <pre className="w-full h-[calc(100%-2rem)] mt-8 overflow-auto p-4 whitespace-pre-wrap">{artifact.content}</pre>
+                                       : <iframe srcDoc={artifact.content} className="w-full h-[calc(100%-2rem)] mt-8 border-none" sandbox="allow-scripts allow-popups" />
+                               ) : (
+                                 <iframe srcDoc={log.content} className="w-full h-[calc(100%-2rem)] mt-8 border-none" sandbox="allow-scripts allow-popups" />
+                               )}
                              </div>
                            )}
                          </div>
@@ -844,7 +901,7 @@ export default function TaskPage({ onBack }: { onBack: () => void }) {
                 {isTriggerDropdownOpen && (
                   <div className="absolute left-0 right-0 top-[110%] bg-paper border-4 border-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] z-[200] max-h-48 overflow-y-auto p-2" style={sketchyShape2}>
                     {availableGraphs.map((g) => {
-                      const name = g.name.replace('.json', '');
+                      const name = g.name;
                       return (
                         <div key={name} onClick={() => { setTriggerForm({...triggerForm, graph: name}); setIsTriggerDropdownOpen(false); }} className={`p-2 font-bold cursor-pointer transition-colors ${triggerForm.graph === name ? 'bg-[#d08770] text-paper' : 'hover:bg-cream'}`}>
                           {name}
@@ -931,116 +988,140 @@ export default function TaskPage({ onBack }: { onBack: () => void }) {
       </div>
 
       <div style={sketchyShape1} className="flex-1 bg-paper border-4 border-ink shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] overflow-hidden relative rotate-[0.5deg] z-10 flex flex-col">
-        <div className="absolute -top-4 right-12 w-32 h-8 bg-terracotta/40 border-2 border-ink -rotate-3 z-50" style={sketchyShape2}></div>
-        
-        <div className="pt-8 px-10 pb-4 flex items-center justify-between shrink-0 absolute top-0 left-0 right-0 z-50 pointer-events-none">
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-4 bg-paper/80 backdrop-blur-md p-3 border-4 border-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] pointer-events-auto -rotate-1" style={sketchyShape3}>
-              <Terminal size={24} className="text-terracotta" strokeWidth={3} />
-              <h2 className="text-2xl font-black tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>{t('task.visualizer')}</h2>
-            </div>
-
-            {selectedTaskId && currentSelectedTask?.state === 'running' && (
-              <button
-                onClick={handleKillTask} style={sketchyShape2}
-                className="pointer-events-auto flex items-center gap-2 bg-[#bf616a] text-paper border-4 border-ink px-5 py-2.5 font-black text-base shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:bg-red-500 hover:-translate-y-0.5 active:translate-y-0.5 active:shadow-none transition-all rotate-1"
-              >
-                <Square size={16} strokeWidth={3} fill="currentColor" /><span style={{ fontFamily: '"Comic Sans MS", cursive' }}>{t('task.stopProcess')}</span>
-              </button>
-            )}
-          </div>
-          
-          <div className="flex items-center gap-2 pointer-events-auto">
-            {!isDashboardOpen && selectedTaskId && (
-              <button
-                onClick={() => setIsDashboardOpen(true)}
-                style={sketchyShape2}
-                className="flex items-center gap-2 bg-[#EBCB8B] text-ink border-4 border-ink px-4 py-2 font-black shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:-translate-y-0.5 active:translate-y-0.5 active:shadow-none transition-all rotate-1"
-              >
-                <Activity size={18} strokeWidth={3} />
-                <span className="tracking-widest text-sm" style={{ fontFamily: '"Comic Sans MS", cursive' }}>{t('task.dashboard')}</span>
-              </button>
-            )}
-          </div>
-        </div>
-        
-        <div className="flex-1 w-full h-full bg-cream/30 relative">
-          
-          {selectedTaskId ? (
-            <ReactFlow
-              nodes={nodes} edges={edges} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} nodeTypes={nodeTypes}
-              nodesDraggable={true} elementsSelectable={true} zoomOnScroll={true} panOnDrag={true} fitView className="!h-full"
-            >
-              <Background gap={24} size={2} color="#1a1a1a" variant={'dots' as any} />
-            </ReactFlow>
-          ) : (
-            <div className="h-full flex flex-col items-center justify-center text-ink gap-6">
-               <div style={sketchyShape1} className="p-8 border-4 border-ink bg-cream shadow-[6px_6px_0px_0px_rgba(26,26,26,1)] -rotate-3"><Activity size={60} strokeWidth={2} className="text-[#EBCB8B]" /></div>
-               <p className="text-2xl font-black rotate-2 text-ink/60" style={{ fontFamily: '"Comic Sans MS", cursive' }}>{t('task.selectTask')}</p>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* === 🌟 右侧独立 Dashboard 面板抽屉 === */}
-      {isDashboardOpen && selectedTaskId && (
-        <div style={sketchyShape3} className="w-[340px] shrink-0 bg-paper border-4 border-ink shadow-[12px_12px_0px_0px_rgba(26,26,26,1)] flex flex-col overflow-hidden relative z-20">
-          <div className="flex flex-col shrink-0 p-4 bg-paper">
-            <div className="flex justify-between items-center">
-              <div className="flex items-center gap-2">
-                <Activity size={24} strokeWidth={2.5} className="text-[#EBCB8B]" />
-                <h3 className="text-2xl font-black tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>
-                  DASHBOARD
-                </h3>
+        {/* 🌟 dashboard 开：整块右区替换为看板框（丢弃原图与悬浮标题栏） */}
+        {isDashboardOpen && selectedTaskId ? (
+          <>
+            <div className="flex flex-col shrink-0 p-4 bg-paper">
+              <div className="flex justify-between items-center">
+                <div className="flex items-center gap-2">
+                  <Activity size={24} strokeWidth={2.5} className="text-[#EBCB8B]" />
+                  <h3 className="text-2xl font-black tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>{t('task.dashboard')}</h3>
+                </div>
+                <button onClick={() => setIsDashboardOpen(false)} className="hover:text-terracotta hover:rotate-90 transition-all p-1 bg-paper border-2 border-ink" style={sketchyShape1}>
+                  <X size={20} strokeWidth={3} />
+                </button>
               </div>
-              <button onClick={() => setIsDashboardOpen(false)} className="hover:text-terracotta hover:rotate-90 transition-all p-1 bg-paper border-2 border-ink" style={sketchyShape1}>
-                <X size={20} strokeWidth={3} />
-              </button>
+              {/* 🌟 多看板：顶部标签切换 */}
+              {dashboards.length > 1 && (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {dashboards.map((d, i) => (
+                    <button
+                      key={i}
+                      onClick={() => setActiveDashboardIdx(i)}
+                      style={i === activeDashboardIdx ? sketchyShape2 : sketchyShape3}
+                      className={`px-3 py-1 text-xs font-black tracking-wider border-2 border-ink transition-all ${
+                        i === activeDashboardIdx
+                          ? 'bg-ink text-paper shadow-[2px_2px_0px_0px_rgba(26,26,26,1)]'
+                          : 'bg-cream text-ink hover:bg-sand'
+                      }`}
+                    >
+                      {d.name}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
-          </div>
-          
-          <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3 bg-paper">
-            {(() => {
-              const agentNodes = nodes.filter((n: any) => 
-                ['agent_loop', 'human_intervention'].includes(n.data.nodeType)
-              );
+            {dashboardUrl ? (
+              /* 🌟 graph.dashboard 已配置：用内部浏览器（Electron WebContentsView）渲染真实页面，无工具栏纯预览 */
+              <div className="flex-1 overflow-hidden bg-paper">
+                <DashboardBrowser url={dashboardUrl} />
+              </div>
+            ) : (
+              /* 🌟 无 dashboard：整块右区显示核心 Agent 节点状态清单 */
+              <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3 bg-paper">
+                {(() => {
+                  const agentNodes = nodes.filter((n: any) =>
+                    ['agent_loop', 'human_intervention'].includes(n.data.nodeType)
+                  );
 
-              if (agentNodes.length === 0) {
-                return <div className="text-center font-bold text-ink/40 py-4 text-sm">{t('task.noAgentNodes')}</div>;
-              }
+                  if (agentNodes.length === 0) {
+                    return <div className="text-center font-bold text-ink/40 py-4 text-sm">{t('task.noAgentNodes')}</div>;
+                  }
 
-              return agentNodes.map((n, idx) => {
-                const sColor = n.data.nodeState === 'running' ? 'bg-[#3498DB] text-paper' :
-                                n.data.nodeState === 'completed' ? 'bg-[#a3be8c] text-ink' :
-                                n.data.nodeState === 'error' ? 'bg-[#bf616a] text-paper' :
-                                n.data.nodeState === 'waiting' ? 'bg-[#d08770] text-paper animate-pulse' :
-                                n.data.nodeState === 'skipped' ? 'bg-ink/20 text-ink' : 'bg-[#EBCB8B] text-ink';
+                  return agentNodes.map((n, idx) => {
+                    const sColor = n.data.nodeState === 'running' ? 'bg-[#3498DB] text-paper' :
+                                    n.data.nodeState === 'completed' ? 'bg-[#a3be8c] text-ink' :
+                                    n.data.nodeState === 'error' ? 'bg-[#bf616a] text-paper' :
+                                    n.data.nodeState === 'waiting' ? 'bg-[#d08770] text-paper animate-pulse' :
+                                    n.data.nodeState === 'skipped' ? 'bg-ink/20 text-ink' : 'bg-[#EBCB8B] text-ink';
 
-                return (
-                  <div
-                    key={n.id}
-                    onClick={() => setLogModalNode({ id: n.id, name: String(n.data.label), state: String(n.data.nodeState), nodeType: String(n.data.nodeType) })}
-                    style={idx % 2 === 0 ? sketchyShape2 : sketchyShape1}
-                    className="flex items-center justify-between p-3 border-2 border-ink bg-cream hover:bg-sand cursor-pointer transition-all hover:-translate-y-[2px] shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] active:translate-y-0 active:shadow-none"
-                    title="Click to view logs"
+                    return (
+                      <div
+                        key={n.id}
+                        onClick={() => setLogModalNode({ id: n.id, name: String(n.data.label), state: String(n.data.nodeState), nodeType: String(n.data.nodeType) })}
+                        style={idx % 2 === 0 ? sketchyShape2 : sketchyShape1}
+                        className="flex items-center justify-between p-3 border-2 border-ink bg-cream hover:bg-sand cursor-pointer transition-all hover:-translate-y-[2px] shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] active:translate-y-0 active:shadow-none"
+                        title="Click to view logs"
+                      >
+                        <div className="flex items-center gap-2 overflow-hidden pr-2">
+                          <Terminal size={14} className="shrink-0 text-ink/50" />
+                          <span className="font-bold text-sm truncate" style={{ fontFamily: '"Comic Sans MS", cursive' }}>
+                            {String(n.data.label)}
+                          </span>
+                        </div>
+                        <span className={`shrink-0 text-[10px] font-black tracking-wider border-2 border-ink px-1.5 py-0.5 ${sColor}`}>
+                          {(String(n.data.nodeState) || 'READY').toUpperCase()}
+                        </span>
+                      </div>
+                    );
+                  })
+                })()}
+              </div>
+            )}
+          </>
+        ) : (
+          <>
+            <div className="absolute -top-4 right-12 w-32 h-8 bg-terracotta/40 border-2 border-ink -rotate-3 z-50" style={sketchyShape2}></div>
+
+            <div className="pt-8 px-10 pb-4 flex items-center justify-between shrink-0 absolute top-0 left-0 right-0 z-50 pointer-events-none">
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-4 bg-paper/80 backdrop-blur-md p-3 border-4 border-ink shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] pointer-events-auto -rotate-1" style={sketchyShape3}>
+                  <Terminal size={24} className="text-terracotta" strokeWidth={3} />
+                  <h2 className="text-2xl font-black tracking-widest text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>{t('task.visualizer')}</h2>
+                </div>
+
+                {selectedTaskId && currentSelectedTask?.state === 'running' && (
+                  <button
+                    onClick={handleKillTask} style={sketchyShape2}
+                    className="pointer-events-auto flex items-center gap-2 bg-[#bf616a] text-paper border-4 border-ink px-5 py-2.5 font-black text-base shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:bg-red-500 hover:-translate-y-0.5 active:translate-y-0.5 active:shadow-none transition-all rotate-1"
                   >
-                    <div className="flex items-center gap-2 overflow-hidden pr-2">
-                      <Terminal size={14} className="shrink-0 text-ink/50" />
-                      <span className="font-bold text-sm truncate" style={{ fontFamily: '"Comic Sans MS", cursive' }}>
-                        {String(n.data.label)}
-                      </span>
-                    </div>
-                    <span className={`shrink-0 text-[10px] font-black tracking-wider border-2 border-ink px-1.5 py-0.5 ${sColor}`}>
-                      {(String(n.data.nodeState) || 'READY').toUpperCase()}
-                    </span>
-                  </div>
-                );
-              })
-            })()}
-          </div>
-        </div>
-      )}
+                    <Square size={16} strokeWidth={3} fill="currentColor" /><span style={{ fontFamily: '"Comic Sans MS", cursive' }}>{t('task.stopProcess')}</span>
+                  </button>
+                )}
+              </div>
 
+              <div className="flex items-center gap-2 pointer-events-auto">
+                {selectedTaskId && (
+                  <button
+                    onClick={() => setIsDashboardOpen(true)}
+                    style={sketchyShape2}
+                    className="flex items-center gap-2 bg-[#EBCB8B] text-ink border-4 border-ink px-4 py-2 font-black shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:-translate-y-0.5 active:translate-y-0.5 active:shadow-none transition-all rotate-1"
+                  >
+                    <Activity size={18} strokeWidth={3} />
+                    <span className="tracking-widest text-sm" style={{ fontFamily: '"Comic Sans MS", cursive' }}>{t('task.dashboard')}</span>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="flex-1 w-full h-full bg-cream/30 relative">
+              {selectedTaskId ? (
+                <ReactFlow
+                  nodes={nodes} edges={edges} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} nodeTypes={nodeTypes}
+                  nodesDraggable={true} elementsSelectable={true} zoomOnScroll={true} panOnDrag={true} fitView className="!h-full"
+                >
+                  <Background gap={24} size={2} color="#1a1a1a" variant={'dots' as any} />
+                </ReactFlow>
+              ) : (
+                <div className="h-full flex flex-col items-center justify-center text-ink gap-6">
+                   <div style={sketchyShape1} className="p-8 border-4 border-ink bg-cream shadow-[6px_6px_0px_0px_rgba(26,26,26,1)] -rotate-3"><Activity size={60} strokeWidth={2} className="text-[#EBCB8B]" /></div>
+                   <p className="text-2xl font-black rotate-2 text-ink/60" style={{ fontFamily: '"Comic Sans MS", cursive' }}>{t('task.selectTask')}</p>
+                </div>
+              )}
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }

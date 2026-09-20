@@ -10,6 +10,7 @@ from src.tool.filesystem.history import (
     rewind_file_by_id,
     ack_backup,
     get_valid_backup_ids,
+    purge_change_record,
     HISTORY_DIR,
     get_all_diffs,
 )
@@ -152,7 +153,12 @@ def ui_ack_action(req: UIRollbackReq):
     """用户确认更改，删除磁盘备份，解决空间膨胀"""
     try:
         resolved_path = convert_sandbox_path(req.path)
-        ack_backup(resolved_path, req.backup_id)
+        removed = ack_backup(resolved_path, req.backup_id)
+        if removed == 0:
+            # 当前沙盒解析不到任何备份：文件可能已被外部迁移或销毁
+            # （沙盒迁移是换索引而非移动文件夹），直接清掉这条改动记录
+            if purge_change_record(req.path) > 0:
+                return {"status": "success", "purged_stale": True}
         return {"status": "success"}
     except Exception as e:
         traceback.print_exc()
@@ -165,16 +171,20 @@ def ui_ack_all_action():
     try:
         diffs = get_all_diffs()
         failed = 0
+        purged_stale = 0
         for d in diffs:
             try:
                 resolved_path = convert_sandbox_path(d["path"])
-                ack_backup(resolved_path, d["newest_backup_id"])
+                if ack_backup(resolved_path, d["newest_backup_id"]) == 0:
+                    # 当前沙盒解析不到：文件已被外部迁移或销毁，直接清掉该记录
+                    if purge_change_record(d["path"]) > 0:
+                        purged_stale += 1
             except Exception:
                 traceback.print_exc()
                 failed += 1
         if failed > 0:
             return {"status": "partial", "failed": failed, "total": len(diffs)}
-        return {"status": "success", "total": len(diffs)}
+        return {"status": "success", "total": len(diffs), "purged_stale": purged_stale}
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"批量清理备份失败: {str(e)}")

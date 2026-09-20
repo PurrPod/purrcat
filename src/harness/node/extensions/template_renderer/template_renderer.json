@@ -37,12 +37,5 @@
             "description": "渲染后的最终文本结果"
         }
     ],
-    "config": [
-        { 
-            "name": "template", 
-            "type": "textarea", 
-            "label": "Jinja2 模板",
-            "description": "Jinja2 模板字符串，使用 {{variable_name}} 语法引用变量。支持条件判断、循环等 Jinja2 特性"
-        }
-    ]
+    "config": []
 }

@@ -39,7 +39,7 @@ TASK_TOOL_SCHEMA = {
                 },
                 "node_id": {
                     "type": "string",
-                    "description": "节点ID（action=submit_request 时【绝对必填】。必须明确指定要向哪个具体的 Agent 节点注入指令，不支持全局广播）",
+                    "description": "节点ID（action=submit_request 时【绝对必填】。必须明确指定要向哪个具体的 Agent 节点注入指令，不支持全局广播。注意：[人工干预] 节点只接受人类亲自输入的指令，你没有对其注入的权力——遇到工作流在人工干预节点挂起时，请转告用户到任务面板输入指令）",
                 },
                 "content": {
                     "type": "string",

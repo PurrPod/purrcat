@@ -20,9 +20,9 @@ class Node(BaseNode):
             if not key_name:
                 continue
 
-            if key_name in inputs and inputs[key_name] is not None:
-                val = inputs[key_name]
-            else:
+            # 信封解包：连线值优先（unpack 自动取信封 data，裸值透传）
+            val = self.unpack(inputs, key_name)
+            if val is None:
                 val = item.get("value", "")
 
             result_dict[key_name] = val

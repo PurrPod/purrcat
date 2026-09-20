@@ -1,6 +1,7 @@
 import importlib
 import json
 import os
+from functools import lru_cache
 from typing import Any, Dict, List
 
 
@@ -38,6 +39,7 @@ def load_node_module(node_type: str):
         raise
 
 
+@lru_cache(maxsize=None)
 def get_node_schema(node_type: str) -> Dict[str, Any]:
     """获取指定节点类型的 schema"""
     base_dir = os.path.join(os.path.dirname(__file__), "extensions")

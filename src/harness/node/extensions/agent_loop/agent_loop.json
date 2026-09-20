@@ -6,30 +6,30 @@
     "inputs": [
         {
             "name": "messages",
-            "type": "array",
+            "type": "MessageList",
             "port_type": "static",
             "description": "消息上下文",
             "required": true
         },
         {
             "name": "target_files",
-            "type": "string",
+            "type": ["string", "list"],
             "port_type": "static",
-            "description": "动态传入的目标文件路径 (支持 List 列表 或 逗号分隔的 String)",
+            "description": "动态传入的目标文件路径（List 列表，或逗号分隔的 String）",
             "required": false
         },
         {
             "name": "task_done_info",
-            "type": "string",
+            "type": "jsonstring",
             "port_type": "static",
-            "description": "动态注入的完成规则，可由前置节点动态决定输出格式",
+            "description": "动态注入的完成规则（JSON 文本，形如 {\"字段名\": \"要求\"}），可由前置节点动态决定输出格式",
             "required": false
         }
     ],
     "outputs": [
         {
             "name": "messages",
-            "type": "array",
+            "type": "MessageList",
             "port_type": "static",
             "description": "完整的消息历史"
         },
@@ -40,20 +40,5 @@
             "description": "任务完成的总结信息"
         }
     ],
-    "config": [
-        {
-            "name": "target_files",
-            "type": "string",
-            "label": "强制验收文件列表",
-            "default": "",
-            "description": "需要强制校验生成的沙盒绝对路径。多个文件请用英文逗号 (,) 分隔。必须以 /agent_vm 开头。若留空，则不进行文件校验，直接产出总结。"
-        },
-        {
-            "name": "task_done_info",
-            "type": "json",
-            "label": "任务完结强校验字段 (JSON)",
-            "default": {},
-            "description": "配置要求大模型完结时必须输出的 JSON 键值对。例如: {\"summary\": \"总结\", \"score\": \"评分\"}"
-        }
-    ]
+    "config": []
 }

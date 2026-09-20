@@ -29,6 +29,11 @@ interface FlowState {
   exportGraph: (name: string, description?: string) => GraphExport;
   clearGraph: () => void;
   loadGraph: (graphData: any) => void;
+  // 🌟 加载的原 graph 顶层附加键（env / dashboard 等），导出时原样保留
+  // dashboard 支持单字符串 URL，或 [{name,url}] 多看板
+  graphExtras: { env?: any; dashboard?: string | { name: string; url: string }[] } | null;
+  // 设置看板地址（uri 或 url）；传 undefined 表示清除
+  setDashboard: (dashboard?: any) => void;
 }
 
 // 辅助：检查环路
@@ -38,6 +43,66 @@ const hasCycle = (node: Node, targetNodeId: string, nodes: Node[], edges: Edge[]
   return outgoers.some((outgoer) => hasCycle(outgoer, targetNodeId, nodes, edges))
 }
 
+// 🌟 坐标推理：无坐标 graph 的拓扑分层自动布局
+// 规则：列距/行距均大于卡片尺寸；后继节点的 X 严格大于其全部前继节点（数据从左向右流）
+// 分层策略（拉紧布局）：
+//   1) 先按最长路径分层（拓扑安全的起点）
+//   2) 从右往左迭代上拉：节点优先紧贴其最浅后继的前一层（如 Skill 消息卡贴在消息合并 1 前一层），
+//      贴不到时保持原位（受前驱约束）；每次拉动都校验不越过任何前驱/后继，拓扑永远合法
+export const inferAutoLayout = (
+  nodes: Array<{ id: string }>,
+  edges: Array<{ source: string; target: string }>
+): Record<string, { x: number; y: number }> => {
+  const depth: Record<string, number> = {}
+  nodes.forEach(n => { depth[n.id] = 0 })
+  // 1) 迭代松弛求最长路径深度（拓扑层）；轮数上限防御异常环
+  for (let round = 0; round <= nodes.length; round++) {
+    let changed = false
+    edges.forEach(e => {
+      const d = (depth[e.source] ?? 0) + 1
+      if ((depth[e.target] ?? 0) < d) { depth[e.target] = d; changed = true }
+    })
+    if (!changed) break
+  }
+  // 2) 拉紧：从深层往浅层迭代，尽量贴住最浅后继的前一层（层号只增，单调收敛）
+  const succsOf: Record<string, string[]> = {}
+  const predsOf: Record<string, string[]> = {}
+  edges.forEach(e => {
+    if (!succsOf[e.source]) succsOf[e.source] = []
+    succsOf[e.source].push(e.target)
+    if (!predsOf[e.target]) predsOf[e.target] = []
+    predsOf[e.target].push(e.source)
+  })
+  for (let round = 0; round <= nodes.length; round++) {
+    let changed = false
+    const order = [...nodes].sort((a, b) => (depth[b.id] ?? 0) - (depth[a.id] ?? 0))
+    order.forEach(n => {
+      const succs = succsOf[n.id] || []
+      if (succs.length === 0) return
+      const minSucc = Math.min(...succs.map(s => depth[s] ?? 0))
+      const preds = predsOf[n.id] || []
+      const lower = preds.length ? Math.max(...preds.map(p => (depth[p] ?? 0) + 1)) : 0
+      const target = Math.max(minSucc - 1, lower)
+      // 仅当能严格贴到后继前一层（target < minSucc）且比当前更靠右时才拉动
+      if (target > (depth[n.id] ?? 0) && target < minSucc) {
+        depth[n.id] = target; changed = true
+      }
+    })
+    if (!changed) break
+  }
+  const COL = 480, ROW = 480, PAD = 100 // 间距均大于卡片宽高（最大卡约 280 宽 / 450 高）
+  const buckets: Record<number, string[]> = {}
+  nodes.forEach(n => {
+    const d = Math.min(depth[n.id] ?? 0, Math.max(nodes.length - 1, 0))
+    ;(buckets[d] ||= []).push(n.id)
+  })
+  const pos: Record<string, { x: number; y: number }> = {}
+  Object.keys(buckets).forEach(d => {
+    buckets[+d].forEach((id, i) => { pos[id] = { x: PAD + +d * COL, y: PAD + i * ROW } })
+  })
+  return pos
+}
+
 export const useFlowStore = create<FlowState>()(
   persist(
     (set, get) => ({
@@ -45,6 +110,7 @@ export const useFlowStore = create<FlowState>()(
       edges: [],
       catalog: [],
       selectedNodeId: null,
+      graphExtras: null,
 
       fetchCatalog: async () => {
         const res = await fetch('/api/graphs/nodes')
@@ -139,22 +205,33 @@ export const useFlowStore = create<FlowState>()(
                 'ToolList': 'list',
                 'integer': 'number',
                 'float': 'number',
-                'LLMResponse': 'object'
+                'LLMResponse': 'object',
+                'filepath': 'file',
+                'File': 'file'
             };
             return typeMap[t] || t.toLowerCase();
         }
 
-        // 查出原始类型
+        // 端口声明归一化为类型集合：支持 union 数组声明（如 ["string","file"]）
+        const toTypeSet = (raw: any): string[] => {
+            const list = Array.isArray(raw) ? raw : [raw]
+            return list.map((t: any) => normalizeType(String(t)))
+        }
+        const fmtType = (raw: any) => Array.isArray(raw) ? raw.join(' | ') : String(raw)
+
+        // 查出原始类型（union 端口返回数组）
         const rawSourceType = getPortType(sourceNode, params.sourceHandle || 'default', 'source');
         const rawTargetType = getPortType(targetNode, params.targetHandle || 'default', 'target');
-        
-        // 归一化对比
-        const sType = normalizeType(rawSourceType);
-        const tType = normalizeType(rawTargetType);
 
-        // 🌟 4. 智能类型校验
-        if (sType !== 'any' && tType !== 'any' && sType !== tType) {
-            toast.error(`类型不兼容！无法将 [${rawSourceType}] 连到 [${rawTargetType}] 上`);
+        // 🌟 4. 智能类型校验：any 万能；类型集合兼容即可连线（与引擎 envelope.check 规则一致）
+        // 双向软兼容对（子类型）：jsonstring 是 string 的子类型，MessageList 经 normalizeType 已归一为 list
+        const SOFT_PAIRS: [string, string][] = [['jsonstring', 'string']];
+        const isCompatible = (s: string, t: string) =>
+            s === t || SOFT_PAIRS.some(([a, b]) => (s === a && t === b) || (s === b && t === a));
+        const sSet = toTypeSet(rawSourceType);
+        const tSet = toTypeSet(rawTargetType);
+        if (!sSet.includes('any') && !tSet.includes('any') && !sSet.some(s => tSet.some(t => isCompatible(s, t)))) {
+            toast.error(`类型不兼容！无法将 [${fmtType(rawSourceType)}] 连到 [${fmtType(rawTargetType)}] 上`);
             return false;
         }
 
@@ -169,14 +246,12 @@ export const useFlowStore = create<FlowState>()(
       validateGraph: () => {
         const { nodes, edges } = get()
         const errors: string[] = []
-        // 检查输入输出节点
-        if (!nodes.find(n => n.data.nodeType === 'task_input')) errors.push("缺失 [全局输入] 节点")
-        if (!nodes.find(n => n.data.nodeType === 'task_output')) errors.push("缺失 [全局输出] 节点")
+        // 全局输入/输出节点是可选的：无外部参数/无对外产出的工作流不需要它们
 
         // 检查孤立节点（没有连线的节点，除了输入输出外建议校验）
         nodes.forEach(node => {
-            const hasConnection = edges.some(e => e.source === node.id || e.target === node.id)
-            if (!hasConnection) errors.push(`节点 [${node.data.name}] 尚未连接任何路径`)
+          const hasConnection = edges.some(e => e.source === node.id || e.target === node.id)
+          if (!hasConnection) errors.push(`节点 [${node.data.name}] 尚未连接任何路径`)
         })
 
         return errors
@@ -210,11 +285,15 @@ export const useFlowStore = create<FlowState>()(
           idMap[n.id] = `${n.data.nodeType}_${Math.random().toString(36).substring(2, 8)}`;
         });
 
+        // 🌟 保留原 graph 的顶层附加键（env / dashboard），避免编辑器保存时丢失
+        const extras = get().graphExtras;
         return {
           version: "2.0",
           name,
           description: description || "PurrCat Web Export - V2",
           global_schema: globalSchema,
+          ...(extras?.env ? { env: extras.env } : {}),
+          ...(extras?.dashboard ? { dashboard: extras.dashboard } : {}),
           nodes: nodes.map(n => {
             const { nodeType, ...finalConfig } = n.data;
 
@@ -239,7 +318,10 @@ export const useFlowStore = create<FlowState>()(
         } as any;
       },
 
-      clearGraph: () => set({ nodes: [], edges: [], selectedNodeId: null }),
+      clearGraph: () => set({ nodes: [], edges: [], selectedNodeId: null, graphExtras: null }),
+      // 更新看板地址到顶层附加键；undefined 清除。导出时丢给 exportGraph 透传
+      setDashboard: (dashboard?: any) =>
+        set({ graphExtras: { ...(get().graphExtras || {}), dashboard: dashboard || undefined } }),
 
       loadGraph: async (graphData: any) => {
         if (get().catalog.length === 0) await get().fetchCatalog();
@@ -247,16 +329,22 @@ export const useFlowStore = create<FlowState>()(
         
         const nodes = graphData.nodes || [];
         const edges = graphData.edges || [];
-        
-        const loadedNodes: Node[] = nodes.map((node: any, index: number) => {
+
+        // 🌟 无坐标节点的拓扑分层自动布局（后继 X 严格大于全部前继）
+        const autoPos = inferAutoLayout(nodes, edges);
+
+        const loadedNodes: Node[] = nodes.map((node: any) => {
           const definition = catalog.find((item) => item.type === node.type);
           if (!definition) return null;
 
-          let posX = 100 + (index % 3) * 300, posY = 100 + Math.floor(index / 3) * 150;
+          let posX: number, posY: number;
           if (Array.isArray(node.position)) {
             posX = node.position[0]; posY = node.position[1];
           } else if (node.position?.x !== undefined) {
             posX = node.position.x; posY = node.position.y;
+          } else {
+            const p = autoPos[node.id] || { x: 100, y: 100 };
+            posX = p.x; posY = p.y;
           }
 
           const sourceData = node.config || node.data || {};
@@ -265,8 +353,6 @@ export const useFlowStore = create<FlowState>()(
             dynamicInputs = sourceData.exposed_keys.map((k: string) => ({ key: k, desc: 'any' }));
           } else if (node.data?.dynamic_inputs) {
             dynamicInputs = node.data.dynamic_inputs;
-          } else if (node.type === 'task_input' && graphData.required_inputs) {
-             Object.keys(graphData.required_inputs).forEach(k => dynamicInputs.push({ key: k, desc: graphData.required_inputs[k] }));
           }
 
           const defaultData: Record<string, any> = {
@@ -280,7 +366,11 @@ export const useFlowStore = create<FlowState>()(
           };
 
           Object.keys(sourceData).forEach((key) => {
-            if (!['exposed_keys'].includes(key)) defaultData[key] = sourceData[key];
+            // 端口/配置 schema 一律以节点定义为准：历史图文件里内嵌的
+            // inputs/outputs/configSchema/color 是过时的序列化结果，不得覆盖定义
+            if (!['exposed_keys', 'inputs', 'outputs', 'configSchema', 'color'].includes(key)) {
+              defaultData[key] = sourceData[key];
+            }
           });
 
           return {
@@ -298,7 +388,7 @@ export const useFlowStore = create<FlowState>()(
           animated: true,
         }));
 
-        set({ nodes: loadedNodes, edges: loadedEdges, selectedNodeId: null });
+        set({ nodes: loadedNodes, edges: loadedEdges, selectedNodeId: null, graphExtras: { env: graphData.env, dashboard: graphData.dashboard } });
       }
     }),
     { name: 'purrcat-flow-cache' } // localStorage 键名

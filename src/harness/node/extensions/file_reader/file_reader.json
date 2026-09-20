@@ -1,0 +1,37 @@
+{
+    "type": "file_reader",
+    "name": "文件读取/预览",
+    "description": "文件管理器式的读取预览窗口：接收 string 或 file 输入。file 输入会读回文件文本作为 content 输出，并保留 file 引用；string 输入不落盘，直接以 content 输出。两者都会在面板按 mime 渲染（图片、文本、HTML、SVG、PDF 等）。",
+    "color": "#3498DB",
+    "inputs": [
+        {
+            "name": "trigger",
+            "type": "any",
+            "port_type": "static",
+            "description": "触发信号（可选）。如果不连线，节点将在开局自动执行；如果连线，将等待收到上游数据/信号后再执行。",
+            "required": false
+        },
+        {
+            "name": "source",
+            "type": ["string", "file"],
+            "port_type": "static",
+            "description": "要读取/预览的内容：string 文本或 file 文件引用（图片/文本/HTML/SVG/PDF）",
+            "required": true
+        }
+    ],
+    "outputs": [
+        {
+            "name": "content",
+            "type": "string",
+            "port_type": "static",
+            "description": "读到的文件文本内容（文本类文件）或 string 输入原文；二进制文件（图片/PDF）时为 null"
+        },
+        {
+            "name": "file",
+            "type": "file",
+            "port_type": "static",
+            "description": "文件引用信封（仅 file 输入时产出，供下游继续消费文件）"
+        }
+    ],
+    "config": []
+}

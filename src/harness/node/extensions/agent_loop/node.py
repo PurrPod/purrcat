@@ -14,7 +14,7 @@ class Node(AgentNode):
     async def execute(self, inputs: Dict[str, Any], context: Any) -> Dict[str, Any]:
         self.log(context, "SYSTEM", "🤖 [Agent循环] 开始执行")
 
-        dynamic_info = inputs.get("task_done_info")
+        dynamic_info = self.unpack(inputs, "task_done_info")
         if dynamic_info:
             try:
                 if isinstance(dynamic_info, str):
@@ -54,7 +54,7 @@ class Node(AgentNode):
 
         # 🌟 如果硬盘里没记忆（说明是首次运行），才把上游数据塞入并落盘，防止重复塞入
         if not messages:
-            upstream_msgs = inputs.get("messages", [])
+            upstream_msgs = self.unpack(inputs, "messages") or []
             if upstream_msgs:
                 messages.extend(upstream_msgs)
                 await asyncio.to_thread(
@@ -78,9 +78,7 @@ class Node(AgentNode):
         # 核心修复结束
         # ========================================================
 
-        target_files_raw = inputs.get("target_files") or self.config.get(
-            "target_files", []
-        )
+        target_files_raw = self.unpack(inputs, "target_files") or []
         if isinstance(target_files_raw, str):
             target_files = [f.strip() for f in target_files_raw.split(",") if f.strip()]
         else:

@@ -7,8 +7,8 @@ class Node(BaseNode):
     """列表追加器：将 append_list 追加到 base_list 后面"""
 
     async def execute(self, inputs: Dict[str, Any], context: Any) -> Dict[str, Any]:
-        base_list = inputs.get("base_list", [])
-        append_list = inputs.get("append_list", [])
+        base_list = self.unpack(inputs, "base_list") or []
+        append_list = self.unpack(inputs, "append_list") or []
 
         result_list = list(base_list) if base_list else []
 

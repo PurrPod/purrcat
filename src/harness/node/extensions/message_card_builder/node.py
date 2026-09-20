@@ -9,8 +9,8 @@ class Node(BaseNode):
     async def execute(self, inputs: Dict[str, Any], context: Any) -> Dict[str, Any]:
         self.log(context, "SYSTEM", "💬 [消息构建] 开始执行")
 
-        content = inputs.get("content") or self.config.get("content", "")
-        role = inputs.get("role") or self.config.get("role", "user")
+        content = self.unpack(inputs, "content")
+        role = self.unpack(inputs, "role") or "user"
 
         if not content:
             self.log(context, "WARNING", "⚠️ [消息构建] 收到空内容，返回空列表。")

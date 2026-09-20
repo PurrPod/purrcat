@@ -9,7 +9,7 @@ class Node(BaseNode):
     async def execute(self, inputs: Dict[str, Any], context: Any) -> Dict[str, Any]:
         self.log(context, "SYSTEM", "🔍 [JSON提取] 节点启动")
 
-        raw_data = inputs.get("data")
+        raw_data = self.unpack(inputs, "data")
 
         data_dict = {}
         if isinstance(raw_data, str):

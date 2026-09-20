@@ -18,40 +18,44 @@ from src.tool.utils.format import error_response, text_response, warning_respons
 
 
 def _get_all_graphs_info() -> dict:
-    """扫描 ~/.purrcat/graph 目录，获取所有可用的工作流图定义、模型(core)及参数要求"""
+    """扫描 ~/.purrcat/graph/{name}/graph.json（文件夹架构），获取所有可用工作流图及参数要求"""
     from src.utils.config import GRAPHS_DIR
 
-    graph_dir = GRAPHS_DIR
-    if not os.path.exists(graph_dir):
+    graph_root = GRAPHS_DIR
+    if not os.path.exists(graph_root):
         return {}
 
     graphs = {}
-    for file in os.listdir(graph_dir):
-        if file.endswith(".json"):
-            try:
-                with open(os.path.join(graph_dir, file), "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                    g_name = data.get("name", file.replace(".json", ""))
+    for entry in os.listdir(graph_root):
+        graph_file = os.path.join(graph_root, entry, "graph.json")
+        if not os.path.isdir(os.path.join(graph_root, entry)) or not os.path.exists(
+            graph_file
+        ):
+            continue
+        try:
+            with open(graph_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            g_name = data.get("name", entry)
 
-                    global_schema = data.get("global_schema", {})
-                    required_inputs = data.get("required_inputs", {})
+            global_schema = data.get("global_schema", {})
+            required_inputs = data.get("required_inputs", {})
 
-                    if global_schema:
-                        param_schema = global_schema
-                    else:
-                        param_schema = {
-                            k: {"required": True, "description": v}
-                            for k, v in required_inputs.items()
-                        }
+            if global_schema:
+                param_schema = global_schema
+            else:
+                param_schema = {
+                    k: {"required": True, "description": v}
+                    for k, v in required_inputs.items()
+                }
 
-                    graphs[g_name] = {
-                        "description": data.get("description", "无描述"),
-                        # 从 JSON 中提取 core，如果没有则提供一个默认兜底
-                        "core": data.get("core", "openai:deepseek-v4-flash"),
-                        "param_schema": param_schema,
-                    }
-            except Exception:
-                pass
+            graphs[g_name] = {
+                "description": data.get("description", "无描述"),
+                # 从 JSON 中提取 core，如果没有则提供一个默认兜底
+                "core": data.get("core", "openai:deepseek-v4-flash"),
+                "param_schema": param_schema,
+            }
+        except Exception:
+            pass
     return graphs
 
 

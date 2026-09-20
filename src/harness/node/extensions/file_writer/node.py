@@ -1,70 +1,69 @@
+import json
 import os
-import asyncio
 from typing import Any, Dict
+
+from src.harness.enums import LogType
 from src.harness.node.base import BaseNode
+
+# 扩展名 → mime（用于 fallback）
+_EXT_MIME = {
+    ".html": "text/html",
+    ".htm": "text/html",
+    ".svg": "image/svg+xml",
+    ".md": "text/markdown",
+    ".markdown": "text/markdown",
+    ".txt": "text/plain",
+    ".json": "application/json",
+    ".pdf": "application/pdf",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+}
+
+
+def _mime_to_kind(mime: str) -> str:
+    """mime → 前端渲染分支"""
+    if not mime:
+        return "text"
+    if mime == "application/pdf":
+        return "pdf"
+    if mime == "image/svg+xml":
+        return "svg"
+    if mime.startswith("image/"):
+        return "image"
+    if mime == "text/html":
+        return "html"
+    return "text"
 
 
 class Node(BaseNode):
-    """通用的本地文件写入器：支持任意本地物理路径，自动创建父目录"""
+    """文件落盘：将 string 内容写入本节点 files/ 目录，输出 file 信封供下游消费。"""
 
-    def _sync_write(self, target_path: str, content: str):
-        """将同步写操作剥离出来的普通函数，供线程池调用"""
-        with open(target_path, "w", encoding="utf-8") as f:
-            f.write(content)
+    def _emit_artifact(self, context: Any, kind: str, uri: str, mime: str):
+        payload = json.dumps(
+            {"kind": kind, "uri": uri, "mime": mime}, ensure_ascii=False
+        )
+        self.log(context, LogType.ARTIFACT, payload)
 
     async def execute(self, inputs: Dict[str, Any], context: Any) -> Dict[str, Any]:
         self.log(context, "SYSTEM", "💾 [文件落盘] 节点启动")
 
-        content = inputs.get("content", "")
-        if not content:
-            self.log(
-                context, "WARNING", "⚠️ [文件落盘] 收到的内容为空，仍将创建空文件。"
-            )
+        content = self.unpack(inputs, "content")
+        if content is None:
+            raise ValueError("文件落盘节点缺少 [content] 输入")
+        if not isinstance(content, str):
+            content = str(content)
 
-        raw_file_path = inputs.get("file_path") or self.config.get("file_path", "")
+        filename = self.unpack(inputs, "filename") or "output.txt"
+        filename = str(filename).strip() or "output.txt"
 
-        if not raw_file_path:
-            self.log(context, "ERROR", "❌ [文件落盘] 缺失 file_path 参数")
-            raise ValueError("必须提供文件的保存路径 (file_path)！")
+        _, ext = os.path.splitext(filename)
+        mime = _EXT_MIME.get(ext.lower(), "text/plain")
 
-        target_path = os.path.abspath(os.path.expanduser(raw_file_path))
-
-        self.log(
-            context, "SYSTEM", f"📂 [文件落盘] 规范化后的物理保存路径: {target_path}"
-        )
-
-        parent_dir = os.path.dirname(target_path)
-        if parent_dir:
-            try:
-                # 🌟 创建目录也放入线程池，避免阻塞
-                await asyncio.to_thread(os.makedirs, parent_dir, exist_ok=True)
-            except PermissionError:
-                self.log(
-                    context,
-                    "ERROR",
-                    f"❌ [文件落盘] 权限不足，无法创建目录: {parent_dir}",
-                )
-                raise PermissionError(
-                    f"权限不足：无法在目标位置创建文件夹: {parent_dir}"
-                )
-
-        try:
-            # 🌟 关键修改：将写文件操作放入线程池执行，坚决不阻塞事件循环
-            await asyncio.to_thread(self._sync_write, target_path, str(content))
-            self.log(
-                context,
-                "SYSTEM",
-                f"✅ [文件落盘] 成功写入 {len(str(content))} 字符至: {target_path}",
-            )
-        except PermissionError:
-            self.log(
-                context, "ERROR", f"❌ [文件落盘] 权限不足，无法写入文件: {target_path}"
-            )
-            raise PermissionError(
-                f"权限不足：当前系统账户没有写入该文件的权限: {target_path}"
-            )
-        except Exception as e:
-            self.log(context, "ERROR", f"❌ [文件落盘] 发生未知错误: {e}")
-            raise RuntimeError(f"写入文件时发生系统级错误: {str(e)}")
-
-        return {"absolute_path": target_path}
+        file_env = self.file_env(context, filename, content, mime)
+        kind = _mime_to_kind(mime)
+        self.log(context, "SYSTEM", f"📝 [落盘] 已写入 {filename} ({mime})")
+        self._emit_artifact(context, kind, file_env["data"], mime)
+        return {"file": file_env}
