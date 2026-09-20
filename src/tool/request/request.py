@@ -5,7 +5,8 @@ import traceback
 
 from src.tool.request.request_operations import submit_request
 from src.tool.utils.format import error_response, text_response
-from src.utils.config import GRAPHS_DIR, AGENT_VM_DIR
+from src.utils.config import AGENT_VM_DIR
+from src.utils.graph_api import graph_file
 
 
 def _validate_skill_test(target: str) -> tuple[str, str] | None:
@@ -75,7 +76,7 @@ def Request(request_type: str, target: str, reason: str, **kwargs) -> str:
 
             # 🌟 统一入队：Trigger 免审测试由主进程轮询接管自动启动（工具运行在隔离子进程，
             # 此处不能直接起后台线程，否则线程会随子进程退出被杀）
-            has_graph = os.path.exists(os.path.join(GRAPHS_DIR, "skill_eval.json"))
+            has_graph = os.path.exists(graph_file("skill_eval"))
             result = submit_request(
                 request_type=request_type,
                 target=target,
@@ -87,7 +88,7 @@ def Request(request_type: str, target: str, reason: str, **kwargs) -> str:
                 "🎯 Trigger 激发测试无需审批，系统即将自动启动，完成后通过系统级通知汇报结果。"
                 if has_graph
                 else "🎯 Trigger 激发测试无需审批，系统即将自动启动，完成后通过系统级通知汇报结果。\n"
-                "⚠️ 注意：本地无 skill test 的图（图库缺少 skill_eval.json），将跳过后台盲测；"
+                "⚠️ 注意：本地无 skill test 的图（图库缺少 skill_eval 测试图），将跳过后台盲测；"
                 "如需完整盲测，请用户先安装 skill_eval 测试图，再重新提交 skill_test 申请。"
             )
             blind_note = (

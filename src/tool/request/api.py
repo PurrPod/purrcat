@@ -7,7 +7,8 @@ import zipfile
 import io
 
 from src.tool.request.request_operations import REQUESTS_FILE, REQUEST_LOCK
-from src.utils.config import FILE_CONFIG_PATH, SKILL_DIR, AGENT_VM_DIR, GRAPHS_DIR
+from src.utils.config import FILE_CONFIG_PATH, SKILL_DIR, AGENT_VM_DIR
+from src.utils.graph_api import graph_file
 
 
 def get_pending_requests() -> list:
@@ -62,7 +63,7 @@ def kick_pending_skill_tests():
             changed = True
 
             # 本地无 skill_eval 图：盲测自动跳过，请求脱离待审队列
-            if not os.path.exists(os.path.join(GRAPHS_DIR, "skill_eval.json")):
+            if not os.path.exists(graph_file("skill_eval")):
                 req["status"] = "trigger_only"
 
         if changed:
