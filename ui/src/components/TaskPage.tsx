@@ -127,6 +127,7 @@ interface TaskMonitorNodeData {
   outHandles?: string[];
   onShowLog: (id: string) => void;
   onReset: (id: string) => void;
+  resetting?: boolean;
 }
 
 interface TaskMonitorNodeProps {
@@ -201,12 +202,16 @@ const TaskMonitorNode = ({ id, data, selected }: TaskMonitorNodeProps) => {
           <Terminal size={14} strokeWidth={3} /> Logs
         </button>
         <button
-          onClick={(e) => { e.stopPropagation(); data.onReset(id); }}
-          className="px-3 flex items-center justify-center bg-[#EBCB8B] border-2 border-ink py-2 text-ink hover:bg-[#d8b877] transition-all shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] active:shadow-none active:translate-y-0.5"
+          onClick={(e) => { if (data.resetting) return; e.stopPropagation(); data.onReset(id); }}
+          disabled={data.resetting}
+          className={`px-3 flex items-center justify-center border-2 py-2 transition-all shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] 
+            ${data.resetting
+              ? 'bg-sand text-ink/40 border-ink/40 cursor-not-allowed shadow-none active:translate-y-0'
+              : 'bg-[#EBCB8B] border-ink text-ink hover:bg-[#d8b877] active:shadow-none active:translate-y-0.5'}`}
           style={sketchyShape1}
-          title="重置节点并执行下游"
+          title={data.resetting ? '正在重置…' : '重置节点并执行下游'}
         >
-          <RefreshCw size={14} strokeWidth={3} />
+          <RefreshCw size={14} strokeWidth={3} className={data.resetting ? 'animate-spin' : ''} />
         </button>
       </div>
 
@@ -224,6 +229,7 @@ export default function TaskPage({ onBack }: { onBack: () => void }) {
   const { t } = useTranslation();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [resettingNodeId, setResettingNodeId] = useState<string | null>(null);
   const [currentNodeLogs, setCurrentNodeLogs] = useState<LogEntry[]>([]);
   
   // 🌟 修改：默认关闭 Dashboard 面板侧边栏
@@ -362,7 +368,7 @@ export default function TaskPage({ onBack }: { onBack: () => void }) {
   const fetchTaskState = useCallback(async () => {
     if (!selectedTaskId) return;
     try {
-      const res = await fetch(`/api/tasks/${selectedTaskId}/state`);
+      const res = await fetch(`/api/tasks/${selectedTaskId}/state`, { cache: 'no-store' });
       if (res.ok) {
         const data = await res.json();
         setTaskMemory(data.node_memory || {}); // 🌟 把后端抛出的新数据存下来，用于渲染气泡
@@ -391,10 +397,14 @@ export default function TaskPage({ onBack }: { onBack: () => void }) {
     } catch { /* ignore */ }
   }, [selectedTaskId, setNodes, setEdges]);
 
-  const handleResetNode = async (nodeId: string) => {
-    if (!selectedTaskId) return;
+  const handleResetNode = async (taskId: string, nodeId: string) => {
+    if (!taskId) {
+      toast.error('请先选择一个任务再重置节点');
+      return;
+    }
+    setResettingNodeId(nodeId); // 点击即置 dead，避免期间无任何反馈
     try {
-      const res = await fetch(`/api/tasks/${selectedTaskId}/nodes/${nodeId}/reset`, { method: 'POST' });
+      const res = await fetch(`/api/tasks/${taskId}/nodes/${nodeId}/reset`, { method: 'POST' });
       if (res.ok) {
         toast.success(`已重置节点 [${nodeId}] 并执行下游`);
         fetchTaskState(); 
@@ -405,6 +415,8 @@ export default function TaskPage({ onBack }: { onBack: () => void }) {
       }
     } catch {
       toast.error('网络错误');
+    } finally {
+      setResettingNodeId(null);
     }
   };
 
@@ -466,7 +478,7 @@ export default function TaskPage({ onBack }: { onBack: () => void }) {
     setNodes([]); setEdges([]); setCurrentNodeLogs([]);
 
     try {
-      const stateRes = await fetch(`/api/tasks/${task.id}/state`);
+      const stateRes = await fetch(`/api/tasks/${task.id}/state`, { cache: 'no-store' });
       if (stateRes.ok) {
         const stateData = await stateRes.json();
         const graph = stateData.graph || { nodes: [], edges: [] };
@@ -520,7 +532,8 @@ export default function TaskPage({ onBack }: { onBack: () => void }) {
               nodeState: currentState,
               inHandles, outHandles,
               onShowLog: (nodeId: string) => setLogModalNode({ id: nodeId, name: n.name || nodeId, state: currentState, nodeType: n.type }), // 🌟 传出 nodeType
-              onReset: (nodeId: string) => handleResetNode(nodeId)
+              onReset: (nodeId: string) => handleResetNode(task.id, nodeId),
+              resetting: resettingNodeId === n.id
             }
           };
         }).filter(Boolean) as Node[];
