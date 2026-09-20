@@ -40,7 +40,25 @@ export default function Toolbar({ onBack, mode = 'workflow', onModeChange, agent
   const [isDeployModalOpen, setIsDeployModalOpen] = useState(false)
   const [workflowName, setWorkflowName] = useState('my_awesome_flow')
   const [workflowDescription, setWorkflowDescription] = useState('')
-  const [workflowDashboard, setWorkflowDashboard] = useState('')
+  // 🌟 多看板条目：{name,url}[]；部署时序列化为 string 或 [{name,url}] 数组
+  const [dashboardEntries, setDashboardEntries] = useState<{ name: string; url: string }[]>([])
+
+  // 归一化：任意 dashboard 值 → {name,url}[]
+  const dashboardToEntries = (dash: any): { name: string; url: string }[] => {
+    if (typeof dash === 'string') return dash.trim() ? [{ name: '', url: dash.trim() }] : []
+    if (Array.isArray(dash))
+      return dash
+        .filter((d: any) => d && d.url)
+        .map((d: any) => ({ name: String(d.name || ''), url: String(d.url) }))
+    return []
+  }
+  // 序列化：{name,url}[] → undefined / 裸 URL 字符串 / [{name,url}] 数组
+  const entriesToDashboard = (entries: { name: string; url: string }[]) => {
+    const valid = entries.filter((e) => e.url.trim())
+    if (valid.length === 0) return undefined
+    if (valid.length === 1 && !valid[0].name.trim()) return valid[0].url.trim()
+    return valid.map((e) => ({ name: e.name.trim(), url: e.url.trim() }))
+  }
 
   // 退出弹窗状态
   const [isExitModalOpen, setIsExitModalOpen] = useState(false)
@@ -103,8 +121,8 @@ export default function Toolbar({ onBack, mode = 'workflow', onModeChange, agent
         loadGraph(data)
         setWorkflowName(fileName)
         setWorkflowDescription(data.description || '')
-        const rawDash = data.dashboard
-        setWorkflowDashboard(typeof rawDash === 'string' ? rawDash : Array.isArray(rawDash) ? rawDash.map((d:any)=>d.url).join(',') : '')
+        // 🌟 回填多看板条目（字符串或数组都归一到 {name,url}[]）
+        setDashboardEntries(dashboardToEntries(data.dashboard))
         toast.success(`已加载: ${fileName}`)
         setShowFileMenu(false)
       }
@@ -151,8 +169,8 @@ export default function Toolbar({ onBack, mode = 'workflow', onModeChange, agent
       return
     }
 
-    // 1. 获取基础导出图谱数据
-    setDashboard(workflowDashboard.trim() ? workflowDashboard.trim() : undefined)
+    // 1. 获取基础导出图谱数据（多看板条目序列化为 string / 数组）
+    setDashboard(entriesToDashboard(dashboardEntries))
     const graph = exportGraph(workflowName, workflowDescription)
     
     // 2. 扫描图中所有节点，提取技能与MCP依赖并利用 Set 去重
@@ -298,7 +316,7 @@ export default function Toolbar({ onBack, mode = 'workflow', onModeChange, agent
           </button>
 
           {/* 部署按钮 (唤起弹窗) */}
-          <button onClick={() => { setWorkflowDashboard(typeof useFlowStore.getState().graphExtras?.dashboard === 'string' ? (useFlowStore.getState().graphExtras!.dashboard as string) : ''); setIsDeployModalOpen(true) }} style={sketchyShape1} className="flex items-center gap-3 px-8 py-3 bg-ink text-paper border-4 border-ink hover:bg-gray-800 transition-all shadow-[6px_6px_0px_0px_rgba(212,122,90,1)] active:shadow-none active:translate-y-1 rotate-1 ml-4">
+          <button onClick={() => { setDashboardEntries(dashboardToEntries(useFlowStore.getState().graphExtras?.dashboard)); setIsDeployModalOpen(true) }} style={sketchyShape1} className="flex items-center gap-3 px-8 py-3 bg-ink text-paper border-4 border-ink hover:bg-gray-800 transition-all shadow-[6px_6px_0px_0px_rgba(212,122,90,1)] active:shadow-none active:translate-y-1 rotate-1 ml-4">
             <Upload size={22} strokeWidth={2.5} />
             <span className="tracking-widest text-lg font-black" style={{ fontFamily: '"Comic Sans MS", cursive' }}>{t('editor.deploy')}</span>
           </button>
@@ -410,12 +428,47 @@ export default function Toolbar({ onBack, mode = 'workflow', onModeChange, agent
               style={sketchyShape1} className="w-full bg-cream border-4 border-ink p-4 text-lg font-bold mb-4 focus:outline-none resize-none h-24"
               placeholder="Describe what this workflow does..."
             />
-            <p className="font-bold mb-2 opacity-60">看板地址 (Dashboard URI / URL) · 可选</p>
-            <input 
-              value={workflowDashboard} onChange={e => setWorkflowDashboard(e.target.value)}
-              style={sketchyShape2} className="w-full bg-cream border-4 border-ink p-4 text-lg font-bold mb-8 focus:outline-none"
-              placeholder="purrcat://graph/xxx/asset/dashboard.html 或 https://..."
-            />
+            <p className="font-bold mb-2 opacity-60">看板 (Dashboard URI / URL) · 可选 · 可多个</p>
+            <div className="flex flex-col gap-3 mb-3 max-h-[260px] overflow-y-auto pr-1">
+              {dashboardEntries.length === 0 && (
+                <p className="font-bold text-ink/40 text-sm">尚未配置看板，点下方 + 新增</p>
+              )}
+              {dashboardEntries.map((d, idx) => (
+                <div key={idx} className="flex items-start gap-2">
+                  {/* name + url 共用同一外框，避免两栏混淆 */}
+                  <div style={sketchyShape2} className="flex-1 flex flex-col bg-cream border-4 border-ink">
+                    <input
+                      value={d.name}
+                      onChange={(e) => setDashboardEntries(prev => prev.map((x, i) => i === idx ? { ...x, name: e.target.value } : x))}
+                      className="w-full bg-transparent p-2 text-base font-bold focus:outline-none border-b-2 border-ink/20"
+                      placeholder="看板名（可选）"
+                    />
+                    <input
+                      value={d.url}
+                      onChange={(e) => setDashboardEntries(prev => prev.map((x, i) => i === idx ? { ...x, url: e.target.value } : x))}
+                      className="w-full bg-transparent p-2 text-base font-bold focus:outline-none"
+                      placeholder="purrcat://graph/xxx/asset/dashboard.html 或 https://..."
+                    />
+                  </div>
+                  <button
+                    onClick={() => setDashboardEntries(prev => prev.filter((_, i) => i !== idx))}
+                    style={sketchyShape3}
+                    className="p-2 shrink-0 bg-cream border-4 border-ink text-ink/50 hover:text-paper hover:bg-[#bf616a] transition-colors mt-1"
+                    title="删除该项"
+                  >
+                    <Trash2 size={18} strokeWidth={3} />
+                  </button>
+                </div>
+              ))}
+            </div>
+            <button
+              onClick={() => setDashboardEntries(prev => [...prev, { name: '', url: '' }])}
+              style={sketchyShape1}
+              className="flex items-center gap-2 px-4 py-2 mb-8 bg-cream border-4 border-ink text-ink font-black hover:bg-sand transition-all shadow-[3px_3px_0px_0px_rgba(26,26,26,1)] active:shadow-none active:translate-y-1"
+            >
+              <Plus size={18} strokeWidth={3} />
+              <span className="text-sm tracking-widest">新增看板</span>
+            </button>
             <div className="flex gap-4">
               <button onClick={handleRealDeploy} style={sketchyShape1} className="flex-1 py-4 bg-terracotta text-paper border-4 border-ink font-black text-xl shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:translate-y-1 hover:shadow-none transition-all">
                 CONFIRM DEPLOY

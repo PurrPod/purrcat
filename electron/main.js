@@ -529,6 +529,18 @@ ipcMain.handle('browser:reload', (_e, tabId) => {
   t.view.webContents.reload();
 });
 
+// 前进 / 后退：走内核历史（看板导航条用）
+ipcMain.handle('browser:go-back', (_e, tabId) => {
+  const t = tabs.get(tabId);
+  if (!t) return;
+  try { t.view.webContents.goBack(); } catch (_) {}
+});
+ipcMain.handle('browser:go-forward', (_e, tabId) => {
+  const t = tabs.get(tabId);
+  if (!t) return;
+  try { t.view.webContents.goForward(); } catch (_) {}
+});
+
 let _setBoundsTimer = null;
 ipcMain.handle('browser:set-bounds', (_e, { x, y, w, h, scale }) => {
   if (browserDetached) return;
