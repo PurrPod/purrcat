@@ -1,0 +1,55 @@
+{
+    "type": "command",
+    "name": "命令执行",
+    "description": "按指定的目标 OS 在宿主机上执行【命令行】输入。若宿主机系统与目标 OS 输入不匹配，则直接标记完成、不运行命令。",
+    "color": "#5E81AC",
+    "inputs": [
+        {
+            "name": "command",
+            "type": "string",
+            "port_type": "static",
+            "description": "要执行的命令行（必需，连线接入）",
+            "required": true
+        },
+        {
+            "name": "os",
+            "type": "string",
+            "port_type": "static",
+            "description": "目标 OS（可选）：any / windows / linux / mac。不连线视为 any（跟随宿主机）。宿主机不匹配则不执行。",
+            "required": false
+        },
+        {
+            "name": "trigger",
+            "type": "any",
+            "port_type": "static",
+            "description": "触发信号（可选）。不连线则开局自动执行；连线则收到上游数据/信号后再执行。",
+            "required": false
+        }
+    ],
+    "outputs": [
+        {
+            "name": "stdout",
+            "type": "string",
+            "port_type": "static",
+            "description": "命令的标准输出"
+        },
+        {
+            "name": "stderr",
+            "type": "string",
+            "port_type": "static",
+            "description": "命令的标准错误"
+        },
+        {
+            "name": "exit_code",
+            "type": "number",
+            "port_type": "static",
+            "description": "退出码；超时被中止时为 -1"
+        },
+        {
+            "name": "skipped",
+            "type": "boolean",
+            "port_type": "static",
+            "description": "是否因 OS 不匹配（或命令为空）而跳过执行"
+        }
+    ]
+}
