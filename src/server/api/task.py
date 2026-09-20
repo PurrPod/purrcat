@@ -22,6 +22,35 @@ router = APIRouter(prefix="/api/tasks", tags=["Tasks"])
 _BACKGROUND_ENGINE_TASKS = set()
 
 
+def _load_task_from_checkpoint(task_id: str) -> Task:
+    """按需把任务从磁盘 checkpoint 加载回内存；找不到则抛 404。
+
+    程序重启后已结束/挂起任务不在 TASK_INSTANCES，reset/注入等操作先经此激活。
+    """
+    import os
+
+    from src.utils.config import DATA_DIR
+
+    task = TASK_INSTANCES.get(task_id)
+    if task:
+        return task
+
+    checkpoints_dir = os.path.join(DATA_DIR, "checkpoints", "task")
+    task_dir = None
+    for dir_name in os.listdir(checkpoints_dir):
+        if dir_name.endswith(f"_{task_id}") or dir_name == task_id:
+            task_dir = os.path.join(checkpoints_dir, dir_name)
+            break
+
+    if task_dir and os.path.exists(task_dir):
+        task = Task.load_checkpoint(task_dir)
+        if task:
+            print(f"✅ 从磁盘加载任务到内存: {task.task_id}")
+            return task
+
+    raise HTTPException(status_code=404, detail="Task not found or not active")
+
+
 def _restart_task_engine(task):
     """安全重启任务引擎：兜住异常并写入任务日志，避免静默吞掉崩溃原因（前端只看到 ERROR 无提示）"""
 
@@ -170,39 +199,16 @@ def get_task_state_endpoint(task_id: str):
                     frontend_memory[node_id]["messages"] = messages
 
     state_data["node_memory"] = frontend_memory
-    return state_data
+    # 禁用缓存：reset 后前端必须读到最新节点状态/记忆，避免命中旧 GET 缓存
+    from fastapi.responses import JSONResponse
+
+    return JSONResponse(content=state_data, headers={"Cache-Control": "no-store"})
 
 
 @router.post("/{task_id}/submit")
 async def submit_instruction_api(task_id: str, req: SubmitInstructionRequest):
     """注入人工指令（任务必须在内存中处于活跃状态）"""
-    task = TASK_INSTANCES.get(task_id)
-
-    # 如果任务不在内存中，尝试从磁盘加载
-    if not task:
-        from src.harness.process import Task
-        import os
-        from src.utils.config import DATA_DIR
-
-        checkpoints_dir = os.path.join(DATA_DIR, "checkpoints", "task")
-        task_dir = None
-
-        # 查找匹配的任务目录
-        for dir_name in os.listdir(checkpoints_dir):
-            if dir_name.endswith(f"_{task_id}") or dir_name == task_id:
-                task_dir = os.path.join(checkpoints_dir, dir_name)
-                break
-
-        if task_dir and os.path.exists(task_dir):
-            task = Task.load_checkpoint(task_dir)
-            if task:
-                print(f"✅ 从磁盘加载任务到内存: {task.task_id}")
-            else:
-                raise HTTPException(
-                    status_code=404, detail="Task not found or not active"
-                )
-        else:
-            raise HTTPException(status_code=404, detail="Task not found or not active")
+    task = _load_task_from_checkpoint(task_id)
 
     # 🌟 修复：先记录注入前的状态；任务仍在运行时交给现有引擎消费指令，绝不重复拉起第二个引擎
     was_running = task.state == TaskState.RUNNING
@@ -291,7 +297,11 @@ def get_task_artifact(task_id: str, uri: str, mime: str = None):
         )
 
     # html 类产物强制沙箱，防止产物内脚本接触宿主页面上下文
-    headers = {"Content-Security-Policy": "sandbox allow-scripts"}
+    headers = {
+        "Content-Security-Policy": "sandbox allow-scripts",
+        # 禁用缓存：reset 清掉的产物，前端 <img>/<iframe> 不得命中旧缓存
+        "Cache-Control": "no-store",
+    }
     return FileResponse(str(path), media_type=mime, headers=headers)
 
 
@@ -305,10 +315,11 @@ def delete_task_endpoint(task_id: str):
 
 @router.post("/{task_id}/nodes/{node_id}/reset")
 async def reset_node_api(task_id: str, node_id: str):
-    """供前端点击重置节点后调用，触发级联清理及引擎重启"""
-    task = TASK_INSTANCES.get(task_id)
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found or not active")
+    """供前端点击重置节点后调用，触发级联清理及引擎重启。
+
+    任务可能已结束/程序重启后不在内存，先按需从 checkpoint 激活。
+    """
+    task = _load_task_from_checkpoint(task_id)
 
     result = task.reset_node(node_id)
     if result["status"] == "error":

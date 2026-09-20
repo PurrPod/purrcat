@@ -196,6 +196,22 @@ class Task:
             self.init_error = error_msg
             return {"status": "error", "message": error_msg}
 
+        err = self._build_node_instances()
+        if err:
+            self.state = TaskState.ERROR
+            self.init_error = err
+            return {"status": "error", "message": err}
+
+        return {"status": "success", "message": "图表解析与参数校验通过"}
+
+    def _build_node_instances(self) -> str:
+        """按 self.graph 重建节点实例/类型/状态（覆盖 node_list）。返回错误信息，无则空串。
+
+        从 checkpoint 恢复的任务可能因输入参数校验失败在 build 之前提前 return，
+        导致 node_list 为空；reset/注入等操作据此兜底重建，避免误报"节点不存在"。
+        """
+        self.node_list = {}
+        self.node_types = {}
         for node_data in self.graph.get("nodes", []):
             node_id = node_data["id"]
             node_type = node_data["type"]
@@ -212,19 +228,21 @@ class Task:
                 from src.utils.graph_api import DEPRECATED_NODE_TYPES
 
                 if node_type in DEPRECATED_NODE_TYPES:
-                    error_msg = (
+                    return (
                         f"节点类型 [{node_type}] 已在信封协议重构中移除，"
                         f"请用编辑器打开 graph 替换该节点（预览文件请改用 preview 节点，"
                         f"静态文本请改用 string 节点连线输入，"
                         f"数据组装/逻辑分流请交给 agent_loop）"
                     )
-                else:
-                    error_msg = f"节点加载失败 [{node_type}]: {e}"
-                self.state = TaskState.ERROR
-                self.init_error = error_msg
-                return {"status": "error", "message": error_msg}
+                return f"节点加载失败 [{node_type}]: {e}"
 
-        return {"status": "success", "message": "图表解析与参数校验通过"}
+        return ""
+
+    def _ensure_node_list(self) -> str:
+        """reset/注入前置兜底：node_list 为空时按自带 graph 重建。返回错误信息，无则空串。"""
+        if self.node_list:
+            return ""
+        return self._build_node_instances()
 
     async def run(self, max_concurrency: int = 5):
         if self.state == TaskState.ERROR and self.init_error:
@@ -529,6 +547,9 @@ class Task:
         source: "user"（前端/REST 人类通道）或 "agent"（主 Agent 工具通道）。
         人工干预节点只接受人类指令，Agent 无权注入。
         """
+        err = self._ensure_node_list()
+        if err:
+            return {"status": "error", "message": err}
         if node_id not in self.node_list:
             return {"status": "error", "message": "节点不存在"}
 
@@ -580,6 +601,9 @@ class Task:
 
     def reset_node(self, node_id: str) -> dict:
         """用户点击'重新运行'的入口：目标节点连带下游一起彻底清空记忆"""
+        err = self._ensure_node_list()
+        if err:
+            return {"status": "error", "message": err}
         if node_id not in self.node_list:
             return {"status": "error", "message": "节点不存在"}
 
