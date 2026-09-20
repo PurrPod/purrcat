@@ -349,6 +349,29 @@ async def _run_single_eval_case(
             reason = eval_res.get("reason", "未提供理由")
             grading_data = eval_res.get("grading_data", {})
 
+            # 兼容 skill_eval 图 v2.0：裁判经 task_done 返回
+            # {"status": ..., "summary": {"assertion_results": [...], "summary": {"passed","failed","total","pass_rate"}}}
+            summary = eval_res.get("summary")
+            if isinstance(summary, dict):
+                inner = summary.get("summary", summary)
+                assertion_results = summary.get("assertion_results", [])
+                passed, total = inner.get("passed"), inner.get("total")
+                if passed is not None and total:
+                    is_pass = passed == total
+                    grading_data = summary
+                    pass_rate = inner.get("pass_rate")
+                    reason_lines = [f"裁判判定 {passed}/{total} 条断言通过"]
+                    if isinstance(pass_rate, (int, float)):
+                        reason_lines.append(f"（通过率 {pass_rate * 100:.0f}%）")
+                    failed_items = [a for a in assertion_results if not a.get("passed")]
+                    if failed_items:
+                        reason_lines.append("未通过的断言：")
+                        reason_lines.extend(
+                            f"- {a.get('text', '')}：{a.get('evidence', '无证据')}"
+                            for a in failed_items
+                        )
+                    reason = "\n".join(reason_lines)
+
             with open(
                 os.path.join(eval_run_dir, "grading.json"), "w", encoding="utf-8"
             ) as f:
