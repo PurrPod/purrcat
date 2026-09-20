@@ -286,7 +286,9 @@ def get_task_artifact(task_id: str, uri: str, mime: str = None):
     # parse_uri 内置路径穿越与 scheme 校验：非法一律返回 None
     path = envelope.parse_uri(uri, checkpoint_dir=checkpoint_dir)
     if path is None or not path.is_file():
-        raise HTTPException(status_code=404, detail="Artifact not found or URI rejected")
+        raise HTTPException(
+            status_code=404, detail="Artifact not found or URI rejected"
+        )
 
     # html 类产物强制沙箱，防止产物内脚本接触宿主页面上下文
     headers = {"Content-Security-Policy": "sandbox allow-scripts"}

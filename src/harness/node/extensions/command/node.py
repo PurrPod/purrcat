@@ -64,7 +64,9 @@ class Node(BaseNode):
         if not cmd.strip():
             self.log(context, "WARN", "⚠️ [命令执行] 命令为空，已标记完成")
             return {
-                "stdout": self.pack("[空命令] 未执行任何命令行", "string", "text/plain"),
+                "stdout": self.pack(
+                    "[空命令] 未执行任何命令行", "string", "text/plain"
+                ),
                 "stderr": self.pack("", "string", "text/plain"),
                 "exit_code": self.pack(0, "number", "application/json"),
                 "skipped": self.pack(False, "boolean", "application/json"),
@@ -86,12 +88,12 @@ class Node(BaseNode):
                 )
             )
         except subprocess.TimeoutExpired:
-            self.log(
-                context, "ERROR", f"⏰ [命令执行] 超时({timeout}s)已中止"
-            )
+            self.log(context, "ERROR", f"⏰ [命令执行] 超时({timeout}s)已中止")
             return {
                 "stdout": self.pack("", "string", "text/plain"),
-                "stderr": self.pack(f"[超时] 命令超过 {timeout}s 被中止", "string", "text/plain"),
+                "stderr": self.pack(
+                    f"[超时] 命令超过 {timeout}s 被中止", "string", "text/plain"
+                ),
                 "exit_code": self.pack(-1, "number", "application/json"),
                 "skipped": self.pack(False, "boolean", "application/json"),
             }

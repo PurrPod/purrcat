@@ -127,11 +127,13 @@ def migrate_graphs_to_folders() -> List[str]:
         migrated.append(name)
 
         # 检测已移除节点引用
-        removed = sorted({
-            n.get("type")
-            for n in graph_data.get("nodes", [])
-            if n.get("type") in DEPRECATED_NODE_TYPES
-        })
+        removed = sorted(
+            {
+                n.get("type")
+                for n in graph_data.get("nodes", [])
+                if n.get("type") in DEPRECATED_NODE_TYPES
+            }
+        )
         if removed:
             note = os.path.join(target_dir, "DEPRECATED_NODES.txt")
             with open(note, "w", encoding="utf-8") as f:
@@ -139,5 +141,7 @@ def migrate_graphs_to_folders() -> List[str]:
                     f"此 graph 引用了已移除的节点类型: {', '.join(removed)}\n"
                     f"请用编辑器打开该 graph 替换这些节点后重新保存。\n"
                 )
-            print(f"⚠️ [Graph迁移] {name} 引用已移除节点: {removed}（已写入 DEPRECATED_NODES.txt）")
+            print(
+                f"⚠️ [Graph迁移] {name} 引用已移除节点: {removed}（已写入 DEPRECATED_NODES.txt）"
+            )
     return migrated

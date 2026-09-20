@@ -393,9 +393,7 @@ class Task:
                                 # 引擎硬校验：any 万能，union 支持交集
                                 ok, err = envelope.check(env, declared)
                                 if not ok:
-                                    raise ValueError(
-                                        f"端口 [{tgt_port}] {err}"
-                                    )
+                                    raise ValueError(f"端口 [{tgt_port}] {err}")
                                 inputs[tgt_port] = env
                     except ValueError:
                         raise
@@ -438,14 +436,10 @@ class Task:
                 files_dir = os.path.join(out_dir, "files")
                 os.makedirs(files_dir, exist_ok=True)
                 fname = f"{port}{ext}"
-                with open(
-                    os.path.join(files_dir, fname), "w", encoding="utf-8"
-                ) as f:
+                with open(os.path.join(files_dir, fname), "w", encoding="utf-8") as f:
                     f.write(env["data"])
                 uri = envelope.to_task_uri(self.checkpoint_dir, node_id, fname)
-                env = envelope.make(
-                    "file", uri, mime, {"bytes": len(env["data"])}
-                )
+                env = envelope.make("file", uri, mime, {"bytes": len(env["data"])})
             packed[port] = env
 
         out_file = os.path.join(out_dir, "outputs.json")

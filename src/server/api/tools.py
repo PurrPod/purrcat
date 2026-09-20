@@ -887,9 +887,7 @@ def install_graph_api(req: InstallGraphReq):
         try:
             registry = _http_get_json(GRAPHS_REGISTRY_URL)
         except Exception as e:
-            raise HTTPException(
-                status_code=502, detail=f"拉取 Graph 注册表失败: {e}"
-            )
+            raise HTTPException(status_code=502, detail=f"拉取 Graph 注册表失败: {e}")
         entry = next(
             (
                 g

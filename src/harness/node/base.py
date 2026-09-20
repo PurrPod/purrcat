@@ -63,7 +63,9 @@ class BaseNode:
 
     # ==================== 信封便捷方法 ====================
 
-    def unpack(self, inputs: Dict[str, Any], port: str, expect: str = "any", default=None) -> Any:
+    def unpack(
+        self, inputs: Dict[str, Any], port: str, expect: str = "any", default=None
+    ) -> Any:
         """取端口信封的 data。裸值（旧 checkpoint / 未包装）直接透传。"""
         v = inputs.get(port)
         if v is None:
@@ -76,18 +78,26 @@ class BaseNode:
         """取端口完整信封（需要 mime 等元数据时用）；裸值原样返回"""
         return inputs.get(port)
 
-    def pack(self, data: Any, type_: str = "any", mime: str = None, meta: dict = None) -> dict:
+    def pack(
+        self, data: Any, type_: str = "any", mime: str = None, meta: dict = None
+    ) -> dict:
         """包装输出信封"""
         return envelope.make(type_, data, mime, meta)
 
-    def file_env(self, context: Any, filename: str, content: Any, mime: str = None) -> dict:
+    def file_env(
+        self, context: Any, filename: str, content: Any, mime: str = None
+    ) -> dict:
         """将内容落盘到本节点 files/ 目录，返回 file 信封（data 为 purrcat:// URI）"""
         node_dir = os.path.join(context.checkpoint_dir, "nodes", self.node_id)
         files_dir = os.path.join(node_dir, "files")
         os.makedirs(files_dir, exist_ok=True)
         file_path = os.path.join(files_dir, filename)
         mode = "wb" if isinstance(content, bytes) else "w"
-        with open(file_path, mode, **({} if isinstance(content, bytes) else {"encoding": "utf-8"})) as f:
+        with open(
+            file_path,
+            mode,
+            **({} if isinstance(content, bytes) else {"encoding": "utf-8"}),
+        ) as f:
             f.write(content)
         uri = envelope.to_task_uri(context.checkpoint_dir, self.node_id, filename)
         meta = {"bytes": os.path.getsize(file_path)}

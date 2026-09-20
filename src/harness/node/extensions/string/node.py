@@ -58,7 +58,9 @@ class Node(BaseNode):
             parsed = json.loads(text)
             if isinstance(parsed, (dict, list)):
                 out_json = self.pack(
-                    json.dumps(parsed, ensure_ascii=False), "jsonstring", "application/json"
+                    json.dumps(parsed, ensure_ascii=False),
+                    "jsonstring",
+                    "application/json",
                 )
             else:
                 out_json = self.pack(None, "jsonstring", "application/json")

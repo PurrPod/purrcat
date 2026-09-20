@@ -32,9 +32,7 @@ class Node(AgentNode):
         if context_data:
             data_preview = str(self.unpack(inputs, "context_data"))
             data_preview = (
-                data_preview[:200] + "..."
-                if len(data_preview) > 200
-                else data_preview
+                data_preview[:200] + "..." if len(data_preview) > 200 else data_preview
             )
             self.log(context, "SYSTEM", f"📄 [待审数据]: {data_preview}")
 

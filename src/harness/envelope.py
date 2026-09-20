@@ -158,7 +158,7 @@ def parse_uri(
 
     from src.utils.config import GRAPHS_DIR
 
-    body = uri[len(PURRCAT_SCHEME):]
+    body = uri[len(PURRCAT_SCHEME) :]
     parts = body.split("/")
 
     if len(parts) >= 3 and parts[0] == "graph":
