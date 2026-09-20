@@ -139,11 +139,18 @@ def list_workplaces(type: str = "skill"):
             if os.path.isdir(w_path):
                 item_name = "unknown"
                 for item in os.listdir(w_path):
-                    if os.path.isdir(
-                        os.path.join(w_path, item)
-                    ) and not item.startswith(("iteration-", "trigger-")):
-                        item_name = item
-                        break
+                    item_path = os.path.join(w_path, item)
+                    if not os.path.isdir(item_path) or item.startswith(
+                        ("iteration-", "trigger-")
+                    ):
+                        continue
+                    # skill 工厂：技能本体是含 SKILL.md 的目录（跳过 blind-* 等评估产物目录）
+                    if type == "skill" and not os.path.exists(
+                        os.path.join(item_path, "SKILL.md")
+                    ):
+                        continue
+                    item_name = item
+                    break
                 if item_name != "unknown":
                     workplaces.append(
                         {"workplace_id": wid, "name": item_name, "status": "processing"}
