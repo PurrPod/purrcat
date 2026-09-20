@@ -110,6 +110,19 @@ class MCPSessionManager:
             if v is not None:
                 safe_env[k] = str(v)
 
+        # 【修复】剥离父进程（桌面壳自身的 venv）透传的 Python 环境变量，
+        # 否则 uv/uvx/npx 等子进程会复用父进程的 PYTHONHOME/PYTHONPATH，
+        # 冲掉 uv-managed 独立 CPython 的标注库路径，import 时抛
+        # "AssertionError: SRE module mismatch" 导致 MCP 启动即崩溃。
+        for k in (
+            "PYTHONHOME",
+            "PYTHONPATH",
+            "VIRTUAL_ENV",
+            "PYTHONSTARTUP",
+            "PYTHONUSERBASE",
+        ):
+            safe_env.pop(k, None)
+
         # 用合并后的 PATH 解析命令，新装依赖的安装目录（如 nodejs）才能被 which 到
         resolved_command = (
             shutil.which(raw_command, path=safe_env.get("PATH")) or raw_command

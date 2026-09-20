@@ -2,12 +2,15 @@
 MCP 进化工厂核心逻辑 (evolve/mcp/factory.py)
 """
 
+import asyncio
+import json
 import os
 import shutil
-import uuid
 import subprocess
+import sys
 import threading
-import json
+import time
+import uuid
 from datetime import datetime
 from src.utils.config import MCP_CONFIG_PATH, DATA_ROOT, AGENT_VM_DIR
 from .guide_generator import generate_mcp_guide
@@ -35,6 +38,86 @@ def _hot_reload_after_merge():
             print(f"⚠️ [MCP工厂] 合并后热加载失败（不影响代码合并，可手动刷新）: {e}")
 
     threading.Thread(target=_worker, daemon=True, name="MCP-Merge-HotReload").start()
+
+
+def _stop_running_mcp(server_name: str, target_dir: str):
+    """合并前停止正在运行的 MCP 服务，释放其对本 MCP 目录（尤其 .venv）的文件占用。
+
+    二次合并时，若目标 MCP 仍在内存运行，其 .venv 里的 python.exe/.pyd 会被进程
+    锁定，导致 rmtree 删不掉、copytree 报 WinError 183。因此先优雅关闭会话，
+    再按命令行强制终止仍占用该目录的残留子进程（如 uv 包装进程）。
+    """
+    try:
+        from src.tool.callmcp.session_manager import ensure_mcp_loop
+
+        loop = ensure_mcp_loop()
+        fut = asyncio.run_coroutine_threadsafe(_close_mcp_session(server_name), loop)
+        fut.result(timeout=30)
+    except Exception as e:
+        print(f"[MCP工厂] 优雅关闭 {server_name} 失败，将尝试强制结束进程: {e}")
+
+    _kill_processes_by_dir(target_dir)
+    time.sleep(0.5)
+
+
+async def _close_mcp_session(server_name: str):
+    from src.tool.callmcp.session_manager import mcp_manager
+
+    ctx = mcp_manager.sessions.get(server_name)
+    if ctx is None:
+        return
+    await mcp_manager._close_session(server_name)
+    task = mcp_manager.lifecycle_tasks.get(server_name)
+    if task:
+        try:
+            await asyncio.wait_for(asyncio.shield(task), timeout=20)
+        except Exception:
+            pass
+
+
+def _kill_processes_by_dir(keyword: str):
+    """Windows 下按命令行关键字强制终止残留进程树，释放文件锁。"""
+    if not sys.platform.startswith("win") or not keyword:
+        return
+    import subprocess
+
+    ps_cmd = (
+        "Get-CimInstance Win32_Process | "
+        f"Where-Object {{ $_.CommandLine -like '*{keyword}*' }} | "
+        "ForEach-Object { $_.ProcessId }"
+    )
+    try:
+        out = (
+            subprocess.run(
+                ["powershell", "-NoProfile", "-Command", ps_cmd],
+                capture_output=True,
+                text=True,
+                timeout=20,
+            ).stdout
+            or ""
+        )
+    except Exception:
+        return
+    for pid in out.split():
+        pid = pid.strip()
+        if not pid or pid == str(os.getpid()):
+            continue
+        try:
+            subprocess.run(["taskkill", "/PID", pid, "/T", "/F"], capture_output=True)
+        except Exception:
+            pass
+
+
+def _remove_dir_retry(path: str, attempts: int = 8):
+    """删除目录并重试，避免 Windows 文件锁导致残留（不再静默吞错）。"""
+    for i in range(attempts):
+        try:
+            shutil.rmtree(path)
+            return
+        except OSError:
+            if i == attempts - 1:
+                raise
+            time.sleep(0.75)
 
 
 MCP_SERVER_CONFIG_FILE = "mcp_server_config.json"
@@ -311,8 +394,13 @@ def mcp_request_handle(workplace_root: str, mcp_name: str, is_approved: bool) ->
             args[idx + 1] = abs_target_dir
 
     # 2. 代码覆盖与拷贝（配置文件为沙盒元数据，不进入正式目录）
+    # ① 先停止正在运行的本 MCP 服务，释放对 .venv 等文件的占用，
+    #    否则二次合并时 rmtree 删不掉被锁文件，copytree 会报 WinError 183。
+    _stop_running_mcp(mcp_name, target_dir)
+
+    # ② 删除旧目录（不静默吞错，确保真正删干净后再拷入）
     if os.path.exists(target_dir):
-        shutil.rmtree(target_dir, ignore_errors=True)
+        _remove_dir_retry(target_dir)
     os.makedirs(os.path.dirname(target_dir), exist_ok=True)
 
     def ignore_files(d, c):
