@@ -32,6 +32,8 @@ interface FlowState {
   // 🌟 加载的原 graph 顶层附加键（env / dashboard 等），导出时原样保留
   // dashboard 支持单字符串 URL，或 [{name,url}] 多看板
   graphExtras: { env?: any; dashboard?: string | { name: string; url: string }[] } | null;
+  // 设置看板地址（uri 或 url）；传 undefined 表示清除
+  setDashboard: (dashboard?: any) => void;
 }
 
 // 辅助：检查环路
@@ -315,6 +317,9 @@ export const useFlowStore = create<FlowState>()(
       },
 
       clearGraph: () => set({ nodes: [], edges: [], selectedNodeId: null, graphExtras: null }),
+      // 更新看板地址到顶层附加键；undefined 清除。导出时丢给 exportGraph 透传
+      setDashboard: (dashboard?: any) =>
+        set({ graphExtras: { ...(get().graphExtras || {}), dashboard: dashboard || undefined } }),
 
       loadGraph: async (graphData: any) => {
         if (get().catalog.length === 0) await get().fetchCatalog();
