@@ -122,13 +122,22 @@ def KernelUpgrade(action: str, target: str, **kwargs) -> dict:
             stale_warning = None
 
             def _newest_source(root):
-                skip = (".venv", "venv", "__pycache__", "node_modules", ".git", "scripts")
+                skip = (
+                    ".venv",
+                    "venv",
+                    "__pycache__",
+                    "node_modules",
+                    ".git",
+                    "scripts",
+                )
                 newest = 0.0
                 for dirpath, dirnames, filenames in os.walk(root):
                     dirnames[:] = [d for d in dirnames if d not in skip]
                     for fn in filenames:
                         if fn.endswith(".py"):
-                            newest = max(newest, os.path.getmtime(os.path.join(dirpath, fn)))
+                            newest = max(
+                                newest, os.path.getmtime(os.path.join(dirpath, fn))
+                            )
                 return newest
 
             newest_src = _newest_source(mcp_dir)
