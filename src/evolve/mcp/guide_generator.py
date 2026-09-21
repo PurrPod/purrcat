@@ -32,10 +32,15 @@ def generate_mcp_guide(mcp_name: str, goal: str = "", agent_vm_dir: str = "") ->
 * 禁用 CallMCP（沙盒未合并，宿主机感知不到）；禁用 Mock 数据，必须真实链路可用。
 * 在 `scripts/` 下自行编写测试脚本验证逻辑；发现报错严禁放弃，必须修复核心代码使其健壮。
 * 🔴 严禁修改 `scripts/evaluation.py`（工厂标准产物生成器，破坏后 test_mcp 永远无法通过）。
+* 🔴 **每次改动代码或工具描述后**，建议重新执行 `python scripts/evaluation.py` 刷新快照，避免报告用旧描述渲染。宿主机只读快照、**不会自动重跑**；若 schema_dump 比源码旧，`test_mcp` 会在返回中给出"快照可能已过期"提醒（不拦截，可自行判断是否忽略）。
 
 ## 4. 测试用例（evals.json）
-* `triggers`：至少 10 个正反例，检验 description 的语义竞争力。
-* `executions`：覆盖所有边界场景的入参，检验 inputSchema 健壮性。
+* `triggers`：至少 10 个正反例，检验 description 的语义竞争力；反例 `expected_tool` 设为 `null`。
+* `executions`：**最好不要超过 10 个用例，工具过多的话可以适当增加**（真实链路并发，过多会显著拉长盲测耗时）。覆盖所有边界场景的入参，检验 inputSchema 健壮性。每个执行用例按实际数据特性选一档断言：
+  * **稳定不变量**（标记/字段名/错误信息/布尔）→ `expected_output`：校验返回值包含该子串。
+  * **易变实时数据**（价格/排名/数量等会漂移）→ `not_empty: true`：只断言"返回非空"，不对具体值下判断，避免值漂移误红。
+  * **预期报错**（参数校验、越界）→ `"expect_error": true`：必须抛错才 PASS，否则负例会误判为失败；可用 `error_contains` 再校验异常关键字。
+  * 三种都不写 = 只证明"没抛异常"，证明不了结果，属于弱覆盖。
 
 ## 5. 路径与宿主机环境 🚨 必读
 MCP 合并后将在**宿主机**上运行（宿主机读取 mcp_config.json 并以子进程启动你的 server），
