@@ -114,6 +114,36 @@ def KernelUpgrade(action: str, target: str, **kwargs) -> dict:
                     "❌ 缺失前置产物",
                 )
 
+            # ⚠️ 过期提醒（不拦截）：schema_dump 可能是旧代码生成的、会静默假绿。
+            # 宿主只读快照、不重跑 evaluation.py，故比对"快照时间"与"最近源码(含 evals.json)时间"，
+            # 快照更旧时在返回消息里给出提醒，让 Agent 自行判断是否重跑刷新。
+            mcp_dir = os.path.abspath(os.path.join(schema_path, "..", "..", ".."))
+            schema_mtime = os.path.getmtime(schema_path)
+            stale_warning = None
+
+            def _newest_source(root):
+                skip = (".venv", "venv", "__pycache__", "node_modules", ".git", "scripts")
+                newest = 0.0
+                for dirpath, dirnames, filenames in os.walk(root):
+                    dirnames[:] = [d for d in dirnames if d not in skip]
+                    for fn in filenames:
+                        if fn.endswith(".py"):
+                            newest = max(newest, os.path.getmtime(os.path.join(dirpath, fn)))
+                return newest
+
+            newest_src = _newest_source(mcp_dir)
+            evals_json = os.path.join(mcp_dir, "evals", "evals.json")
+            if os.path.exists(evals_json):
+                newest_src = max(newest_src, os.path.getmtime(evals_json))
+
+            if schema_mtime < newest_src:
+                stale_warning = (
+                    "⚠️ **注意：测试快照可能已过期！**\n"
+                    "源码/工具描述相较 `schema_dump.json` 有新改动，当前快照可能仍是旧代码生成的，"
+                    "报告会用旧描述渲染。若确实改了描述/逻辑，请先在沙盒重跑 "
+                    "`python scripts/evaluation.py` 刷新快照后再测；若改动无关描述，可忽略本提醒。"
+                )
+
             # 只有通过了检查，才允许往下走启动后台任务
             from src.agent.manager import manager
 
@@ -127,6 +157,8 @@ def KernelUpgrade(action: str, target: str, **kwargs) -> dict:
                 f"🚀 MCP '{mcp_name}' 的并发测试流水线已在后台启动！{task_id_info}\n"
                 f"💡 提示：你可以使用 `Task` 工具查询状态或挂起当前任务等待系统级通知。\n"
             )
+            if stale_warning:
+                msg = f"{stale_warning}\n\n{msg}"
             return text_response(msg, f"⏳ {mcp_name} 宿主机评测中")
 
         else:
