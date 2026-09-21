@@ -183,6 +183,8 @@ async def _async_run_mcp_evals(workplace_id: str, mcp_name: str) -> str:
         )
 
     # 三、用例并发执行与可用性断言
+    #    判分依据沙盒产出的 verdict（pass/fail）：正常用例校验 expected_output，
+    #    expect_error 用例校验"必须抛错"，从"没抛异常"升级为"返回的内容是对的"。
     report_lines.append("## ⚡ 三、用例并发真实执行校验 (Execution & Robustness)")
     try:
         with open(
@@ -191,10 +193,19 @@ async def _async_run_mcp_evals(workplace_id: str, mcp_name: str) -> str:
             exec_results = json.load(f)
 
         executions_cases = evals_data.get("executions", [])
-        success_count = sum(1 for r in exec_results if r["status"] == "success")
+
+        # 兼容旧产物（无 verdict 时回退为"成功返回即通过"）
+        def _passed(r):
+            if "verdict" in r:
+                return r.get("verdict") == "pass"
+            return r.get("status") == "success"
+
+        pass_count = sum(1 for r in exec_results if _passed(r))
+        fail_count = len(exec_results) - pass_count
 
         report_lines.append(
-            f"📊 **执行统计**: 总计并发运行 **{len(exec_results)}** 个边界用例 | **成功返回**: {success_count} 个 | **失败/阻断**: {len(exec_results) - success_count} 个\n"
+            f"📊 **执行统计**: 总计并发运行 **{len(exec_results)}** 个边界用例 | "
+            f"**通过 (pass)**: {pass_count} 个 | **失败 (fail)**: {fail_count} 个\n"
         )
 
         for idx, res in enumerate(exec_results):
@@ -208,24 +219,45 @@ async def _async_run_mcp_evals(workplace_id: str, mcp_name: str) -> str:
                     ensure_ascii=False,
                 )
 
-            if res["status"] == "success":
+            passed = _passed(res)
+            state = res.get("status", "exception")
+            if passed:
                 report_lines.append(
                     f"### 🟢 用例 {idx + 1}: [{res['tool']}] - {case_desc}"
                 )
                 report_lines.append(f"- **测试入参**: `{case_args}`")
-                report_lines.append("- **执行状态**: `SUCCESS` ✅")
-                report_lines.append("- **返回值输出截断 (Stdout Snip)**:")
-                report_lines.append(f"  ```text\n  {res.get('result', '')}\n  ```\n")
+                if state == "exception":
+                    report_lines.append(
+                        "- **执行状态**: 期望报错，异常匹配 → `PASS` ✅"
+                    )
+                    report_lines.append("- **异常信息 (Exception Stack)**:")
+                    report_lines.append(
+                        f"  ```python\n  {res.get('error', '')}\n  ```\n"
+                    )
+                else:
+                    report_lines.append("- **执行状态**: `PASS` ✅（断言通过）")
+                    report_lines.append("- **返回值输出截断 (Stdout Snip)**:")
+                    report_lines.append(
+                        f"  ```text\n  {res.get('result', '')}\n  ```\n"
+                    )
             else:
                 report_lines.append(
                     f"### 🔴 用例 {idx + 1}: [{res['tool']}] - {case_desc}"
                 )
                 report_lines.append(f"- **测试入参**: `{case_args}`")
-                report_lines.append(f"- **执行状态**: `{res['status'].upper()}` ❌")
-                report_lines.append("- **致命报错与堆栈信息 (Exception Stack)**:")
                 report_lines.append(
-                    f"  ```python\n  {res.get('error', '未知错误导致沙盒进程中断')}\n  ```\n"
+                    f"- **执行状态**: `FAIL` ❌（原因: {res.get('reason', state.upper() or res.get('error', ''))}）"
                 )
+                if state == "exception":
+                    report_lines.append("- **致命报错与堆栈信息 (Exception Stack)**:")
+                    report_lines.append(
+                        f"  ```python\n  {res.get('error', '')}\n  ```\n"
+                    )
+                else:
+                    report_lines.append("- **返回值输出截断 (Stdout Snip)**:")
+                    report_lines.append(
+                        f"  ```text\n  {res.get('result', '')}\n  ```\n"
+                    )
 
     except Exception as e:
         report_lines.append(f"⚠️ **解析 Execution 执行结果失败**: {e}")

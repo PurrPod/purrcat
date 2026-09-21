@@ -169,9 +169,30 @@ def mcp_improve_init(mcp_name: str, goal: str = "") -> tuple[str, str]:
 
     # 2. 固化环境搭建脚本
     # ⚠️ mcp 2.0.0 移除了 mcp.server.fastmcp.FastMCP，模板 app.py 依赖 FastMCP，
-    #    故约束 mcp<2（实测 1.29.0 全链路通过）
-    setup_script = """#!/bin/bash
-uv init 2>/dev/null || true
+    #    故约束 mcp<2（实测 1.29.0 全链路通过）。
+    # ⚠️ 工厂自写工程骨架，不再依赖 `uv init`：uv init 依版本可能额外生成 src 空包和
+    #    `[project.scripts]` demo 入口（指向 __init__.py 的 main），导致 pyproject 里的
+    #    "入口" 是个打印一行字就退出码 0 的假壳、`uv build` 产出空壳。true 入口统一为 server.py。
+    setup_script = f"""#!/bin/bash
+# 若工程文件被清空需重建骨架时，保证存在无假入口的 pyproject。
+# package=false 禁止把工程作为整包安装，从根源上消除 src 空包与 demo 入口。
+# 依赖已预置并钉死版本契约：mcp 2.0.0 移除了 FastMCP，本骨架依赖它，必须 <2！
+if [ ! -f pyproject.toml ]; then
+  cat > pyproject.toml <<'PYEOF'
+[project]
+name = "{mcp_name}"
+version = "0.1.0"
+description = "MCP server: {mcp_name}"
+requires-python = ">=3.10"
+dependencies = [
+    "mcp[cli]<2",  # ⚠️ 框架约束：本骨架的 app/server 依赖 FastMCP，mcp 2.0.0 已移除，禁止升到 2.x
+    "httpx",
+]
+
+[tool.uv]
+package = false
+PYEOF
+fi
 uv venv --allow-existing
 source .venv/bin/activate
 uv add "mcp[cli]<2" httpx
@@ -246,10 +267,13 @@ if __name__ == "__main__":
     evals_template = """{
   "mcp_name": "__MCP_NAME__",
   "triggers": [
-    {"query": "测试唤醒", "expected_tool": "sample_tool"}
+    {"query": "测试唤醒", "expected_tool": "sample_tool"},
+    {"query": "完全无关的闲聊", "expected_tool": null}
   ],
   "executions": [
-    {"tool": "sample_tool", "arguments": {"param": "test"}, "description": "正常参数测试"}
+    {"tool": "sample_tool", "arguments": {"param": "test"}, "description": "正常参数测试", "expected_output": "Processed test"},
+    {"tool": "sample_tool", "arguments": {"param": "live"}, "description": "易变实时数据示例：只断言返回非空", "not_empty": true},
+    {"tool": "sample_tool", "arguments": {"param": ""}, "description": "期望报错的用例请加 expect_error: true（sample_tool 不抛错，此处仅为字段示例）", "expect_error": true}
   ]
 }""".replace("__MCP_NAME__", mcp_name)
     with open(
@@ -270,6 +294,11 @@ if __name__ == "__main__":
         f.write(".venv/\n__pycache__/\n*.pyc\n")
 
     # 9. 生成沙盒内部评测脚本
+    #    executions 支持断言字段（与宿主机 evaluator.py 配套判分），二者互斥、可选其一：
+    #     - expected_output: 稳定不变量用（标记/字段名/错误信息/布尔），校验 str(返回值) 包含该子串。
+    #     - not_empty: 易变实时数据用（价格/排名/数量），只断言"返回非空"，避免值漂移导致误红。
+    #     - 二者都不写 = 只证明"没抛异常"，不证明结果；期望报错的负例用 expect_error / error_contains。
+    #    判定输出统一写入 verdict("pass"/"fail")，宿主机会据此生成绿/红报告。
     evaluation_script = """import os, sys, json, asyncio
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
@@ -279,27 +308,64 @@ from app import mcp
 OUTPUT_DIR = "evals/outputs"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
+def _is_empty(v):
+    if v is None:
+        return True
+    if isinstance(v, bool):
+        return False
+    if isinstance(v, (list, dict, str)) and len(v) == 0:
+        return True
+    return False
+
 async def main():
     schema_dump = [{"name": t.name, "description": t.description, "inputSchema": t.parameters} for t in mcp._tool_manager._tools.values()]
     with open(os.path.join(OUTPUT_DIR, "schema_dump.json"), "w", encoding="utf-8") as f:
         json.dump(schema_dump, f, ensure_ascii=False, indent=2)
-    
+
     try:
         with open("evals/evals.json", "r", encoding="utf-8") as f: evals = json.load(f)
     except Exception:
         print("❌ 找不到 evals.json")
         return
-    
+
     executions = evals.get("executions", [])
     async def run_tool(exec_case):
         t_name = exec_case.get("tool")
-        if t_name not in mcp._tool_manager._tools: return {"tool": t_name, "status": "error", "error": "Not found"}
+        expect_error = bool(exec_case.get("expect_error", False))
+        expected = exec_case.get("expected_output")
+        not_empty = bool(exec_case.get("not_empty", False))
+        error_contains = exec_case.get("error_contains")
+
+        if t_name not in mcp._tool_manager._tools:
+            return {"tool": t_name, "verdict": "fail", "status": "error", "error": "Not found", "reason": "工具未注册"}
+
         try:
             fn = mcp._tool_manager._tools[t_name].fn
             res = await fn(**exec_case.get("arguments", {})) if asyncio.iscoroutinefunction(fn) else fn(**exec_case.get("arguments", {}))
-            return {"tool": t_name, "status": "success", "result": str(res)[:500]}
-        except Exception as e: return {"tool": t_name, "status": "exception", "error": str(e)}
-        
+        except Exception as e:
+            err = str(e)
+            if expect_error:
+                ok = (error_contains is None) or (error_contains in err)
+                return {
+                    "tool": t_name, "verdict": "pass" if ok else "fail", "status": "exception", "error": err,
+                    "reason": ("期望报错且异常信息匹配" if ok else f"期望报错但异常信息未包含关键字: {error_contains}"),
+                }
+            return {"tool": t_name, "verdict": "fail", "status": "exception", "error": err, "reason": "不应报错却抛异常"}
+
+        # 正常返回
+        if expect_error:
+            return {"tool": t_name, "verdict": "fail", "status": "success", "result": str(res)[:500], "reason": "期望报错但未抛出异常"}
+
+        ok = True
+        reason = ""
+        if expected is not None:
+            ok = str(expected) in str(res)
+            reason = "" if ok else f"返回值不包含期望内容: {expected}"
+        elif not_empty:
+            ok = not _is_empty(res)
+            reason = "" if ok else "期望返回非空，但工具返回了空内容"
+        return {"tool": t_name, "verdict": "pass" if ok else "fail", "status": "success", "result": str(res)[:500], "reason": reason}
+
     res = await asyncio.gather(*[run_tool(c) for c in executions])
     with open(os.path.join(OUTPUT_DIR, "execution_results.json"), "w", encoding="utf-8") as f:
         json.dump(res, f, ensure_ascii=False, indent=2)
