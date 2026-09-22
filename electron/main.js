@@ -266,6 +266,19 @@ function createWindow() {
     try { mainWindow.webContents.setZoomFactor(1); } catch (_) {}
   });
 
+  // 应用无菜单（Menu.setApplicationMenu(null)），Chromium 默认的 Ctrl+R/F5 刷新被禁用，
+  // 只重启才能看到前端改动。这里手动绑定刷新快捷键，方便改完热刷新（后端实时读盘提供静态文件）。
+  mainWindow.webContents.on('before-input-event', (_e, input) => {
+    if (!input || input.type !== 'keyDown') return;
+    const isReload =
+      input.key === 'F5' ||
+      ((input.control || input.meta) && (input.key === 'r' || input.key === 'R'));
+    if (isReload) {
+      _e.preventDefault();
+      try { mainWindow.webContents.reload(); } catch (_) {}
+    }
+  });
+
   // 🌟 拦截所有 window.open / target=_blank：Electron 默认会新建一个原生 BrowserWindow 弹窗，
   // 这里统一拒绝弹窗，把 URL 转发给前端走统一链接路由（http 链接 → 内置浏览器）。
   // 需要真正唤起系统浏览器的场景应显式调用 shell:openExternal IPC，不走 window.open。
