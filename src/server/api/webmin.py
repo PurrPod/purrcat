@@ -161,8 +161,8 @@ def api_webmin_manifest():
     return {
         "ui_mode": str(get_global_settings().get("ui_mode") or "normal"),
         "plugins": plugins,
-        # 最左图标栏持久化状态（收起 + 各插件隐藏开关）
-        "rail": stored_cfg.get("rail") or {"collapsed": False, "hidden": {}},
+        # 最左图标栏持久化状态（stage 0=收起 1=仅图标 2=图标+名称 + 各插件隐藏开关）
+        "rail": stored_cfg.get("rail") or {"stage": 1, "hidden": {}},
     }
 
 
@@ -218,8 +218,12 @@ def api_webmin_put_config(body: dict):
     )
     cfg = {"plugins": new_plugins}
     if isinstance(body, dict) and isinstance(body.get("rail"), dict):
+        try:
+            stage = int(body["rail"].get("stage"))
+        except (TypeError, ValueError):
+            stage = 1
         cfg["rail"] = {
-            "collapsed": bool(body["rail"].get("collapsed")),
+            "stage": stage if 0 <= stage <= 2 else 1,
             "hidden": (
                 body["rail"].get("hidden")
                 if isinstance(body["rail"].get("hidden"), dict)

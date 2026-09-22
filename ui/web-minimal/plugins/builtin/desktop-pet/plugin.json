@@ -1,6 +1,7 @@
 {
   "id": "desktop-pet",
   "name": "桌宠",
+  "icon": "♡",
   "slot": "pet",
   "entry": "index.html",
   "configSchema": [

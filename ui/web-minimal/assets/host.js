@@ -26,19 +26,20 @@
     empty: true,
     plugins: [],              // manifest 注解后的插件列表（供设置面板使用）
   };
-  // 最左图标栏状态：collapsed=收起(仅保留顶部开关)；hidden=各插件隐藏开关（持久化）
-  const railState = { collapsed: false, hidden: {} };
+  // 最左图标栏状态：stage 0=收起(仅开关) 1=仅图标 2=图标+名称(左侧栏)；hidden=各插件隐藏开关（持久化）
+  const railState = { stage: 1, hidden: {} };
 
   // ---- 图标栏（固定组件）----
-  const RAIL_ICONS = { sidebar: '≡', history: '❏', input: '✎', background: '▦', conversation: '❖', pet: '♡', settings: '⚙' };
-  function railIcon(p) {
-    return RAIL_ICONS[p.slot] || ((p.name || p.id || '?').charAt(0) || '?').toUpperCase();
-  }
+  const RAIL_STAGES = 3;
+  // 图标与名称由插件本体(plugin.json)定义；无 icon 时退回名称首字符
+  function railIcon(p) { return p.icon || ((p.name || p.id || '?').charAt(0) || '?').toUpperCase(); }
   function isRailPlugin(p) { return p && p.entry; }
   function railHidden(id) { return !!(railState.hidden && railState.hidden[id]); }
   function applySlotHidden(slot, hidden) {
     const el = HOST.document.querySelector(`[data-slot="${slot}"]`);
     if (el) el.style.display = hidden ? 'none' : '';
+    // 会话列表(侧栏)隐藏时，让主区舒展到最左，腾出侧栏空间
+    if (slot === 'sidebar') HOST.document.body.classList.toggle('rail-nosidebar', !!hidden);
   }
   function persistRail() {
     return fetch('/api/webmin/config', {
@@ -47,10 +48,23 @@
       body: JSON.stringify({ plugins: configByPlugin, rail: railState }),
     }).then((res) => { if (!res.ok) throw new Error(res.status); });
   }
-  function setRailCollapsed(c) {
-    railState.collapsed = !!c;
-    HOST.document.body.classList.toggle('rail-collapsed', !!c);
+  function applyRailStage() {
+    HOST.document.body.classList.remove('rail-0', 'rail-1', 'rail-2');
+    HOST.document.body.classList.add('rail-' + railState.stage);
+    const t = HOST.document.getElementById('railToggle');
+    if (t) {
+      t.textContent = railState.stage === 2 ? '▤' : (railState.stage === 1 ? '☰' : '≡');
+      t.title = railState.stage === 2 ? '收为图标栏' : (railState.stage === 1 ? '展开为左侧栏' : '展开图标栏');
+    }
+  }
+  function cycleRail() {
+    railState.stage = (railState.stage + 1) % RAIL_STAGES;   // 0→1→2→0
+    applyRailStage();
     persistRail().catch(() => {});
+  }
+  function bindRailToggle() {
+    const t = HOST.document.getElementById('railToggle');
+    if (t) t.addEventListener('click', cycleRail);
   }
   function setPluginHidden(id, hidden) {
     if (!railState.hidden) railState.hidden = {};
@@ -61,17 +75,25 @@
   }
   function buildRail() {
     const iconsEl = HOST.document.getElementById('railIcons');
-    const toggleBtn = HOST.document.getElementById('railToggle');
-    if (!iconsEl || !toggleBtn) return;
-    HOST.document.body.classList.toggle('rail-collapsed', !!railState.collapsed);
-    toggleBtn.addEventListener('click', () => setRailCollapsed(!railState.collapsed));
+    if (!iconsEl) return;
+    applyRailStage();
     iconsEl.innerHTML = '';
     groupState.plugins.filter(isRailPlugin).forEach((p) => {
       const btn = HOST.document.createElement('button');
-      btn.className = 'rail-ico' + (railHidden(p.id) ? ' off' : ' on');
+      btn.className = 'rail-ico' + (p.railAction ? ' on' : (railHidden(p.id) ? ' off' : ' on'));
       btn.title = (p.name || p.id);
-      btn.textContent = railIcon(p);
-      btn.addEventListener('click', () => setPluginHidden(p.id, !railHidden(p.id)));
+      const g = HOST.document.createElement('span');
+      g.className = 'rail-glyph';
+      g.textContent = railIcon(p);
+      btn.appendChild(g);
+      const nm = HOST.document.createElement('span');
+      nm.className = 'rail-name';
+      nm.textContent = p.name || p.id;
+      btn.appendChild(nm);
+      btn.addEventListener('click', () => {
+        if (p.railAction) { callAction(p.railAction, {}).catch(() => {}); return; }  // 例如设置 → 打开设置面板
+        setPluginHidden(p.id, !railHidden(p.id));
+      });
       iconsEl.appendChild(btn);
     });
   }
@@ -374,13 +396,15 @@
     // 读取图标栏持久化状态
     const railSaved = manifest.rail;
     if (railSaved && typeof railSaved === 'object') {
-      railState.collapsed = !!railSaved.collapsed;
+      const stage = Number(railSaved.stage);
+      railState.stage = (stage >= 0 && stage < RAIL_STAGES) ? stage : 1;
       railState.hidden = (railSaved.hidden && typeof railSaved.hidden === 'object') ? railSaved.hidden : {};
     }
     for (const slot of SLOTS) {
       pluginBySlot[slot] = groupState.plugins.find((p) => p.slot === slot) || null;
     }
     SLOTS.forEach(mountSlot);
+    bindRailToggle();
     buildRail();
     // 应用持久化的插件隐藏状态（需在挂载后重设，避免被 iframe 覆盖样式）
     Object.keys(railState.hidden).forEach((id) => {

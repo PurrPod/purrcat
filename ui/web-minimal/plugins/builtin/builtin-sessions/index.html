@@ -10,7 +10,6 @@
     --bg: var(--wm-bg-input, #f2f4f7);
     --hover: var(--wm-bg-hover, #e9edf1);
     --accent: var(--wm-accent, #567efe);
-    --accent-ink: #ffffff;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { height: 100%; }
@@ -22,9 +21,9 @@
     flex-direction: column;
     padding: 10px;
   }
-  .brand { padding: 4px 6px 12px; }
-  .brand .title { font-size: 14px; font-weight: 700; }
-  .brand .sub { font-size: 11px; color: var(--dim); margin-top: 2px; }
+  .head { display: flex; align-items: center; justify-content: space-between; padding: 4px 4px 10px; }
+  .head .title { font-size: 13px; font-weight: 600; }
+  .head .new { font-size: 12px; color: var(--dim); }
 
   .primary {
     width: 100%;
@@ -43,14 +42,7 @@
   }
   .primary:hover { background: var(--hover); }
 
-  .panel {
-    margin-top: 8px;
-    background: #ffffff;
-    border-radius: 10px;
-    box-shadow: var(--wm-shadow-sm, 0 1px 2px rgba(15,17,21,.04));
-    overflow: hidden;
-  }
-  .panel.hidden { display: none; }
+  .list { flex: 1; overflow-y: auto; margin-top: 8px; display: flex; flex-direction: column; }
   .item {
     width: 100%;
     font-family: inherit;
@@ -61,34 +53,19 @@
     padding: 10px 12px;
     text-align: left;
     cursor: pointer;
+    border-radius: 8px;
   }
   .item:hover { background: var(--hover); }
-  .item.new { color: var(--label); font-weight: 600; }
-  .item.active { color: var(--accent); font-weight: 600; }
+  .item.active { color: var(--accent); font-weight: 600; background: var(--bg); }
   .item-meta { font-size: 11px; color: var(--dim); margin-top: 2px; }
-
-  .spacer { flex: 1; }
-  .footer { display: flex; flex-direction: column; gap: 4px; }
-  .footer button { width: 100%; font-family: inherit; font-size: 13px; color: var(--label-2nd); background: transparent; border: none; border-radius: 8px; padding: 9px 12px; text-align: left; cursor: pointer; }
-  .footer button:hover { background: var(--hover); }
 </style>
 </head>
 <body>
-  <div class="brand">
-    <div class="title">PurrCat 极简</div>
-    <div class="sub">独立轻量界面</div>
+  <div class="head">
+    <span class="title">会话列表</span>
   </div>
-
-  <button id="sessionsBtn" class="primary">会话列表</button>
-  <div id="panel" class="panel hidden">
-    <button id="newBtn" class="item new">＋ 新建会话</button>
-    <div id="list"></div>
-  </div>
-
-  <div class="spacer"></div>
-  <div class="footer">
-    <button id="settingsBtn">设置</button>
-  </div>
+  <button id="newBtn" class="primary">＋ 新建会话</button>
+  <div id="list" class="list"></div>
 
 <script>
 (function () {
@@ -107,21 +84,15 @@
       window.parent.postMessage({ type: 'callAction', id: id, actionId: actionId, payload: payload || {} }, '*');
     });
   }
-  function esc(s) {
-    return String(s || '').replace(/[&<>"']/g, function (c) {
-      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
-    });
-  }
 
-  var panel = document.getElementById('panel');
   var listEl = document.getElementById('list');
   var sessions = [];
 
-  function renderList() {
+  function renderList(activeId) {
     listEl.innerHTML = '';
     sessions.forEach(function (s) {
       var b = document.createElement('button');
-      b.className = 'item' + (s.active ? ' active' : '');
+      b.className = 'item' + (s.id === activeId ? ' active' : '');
       var dt = document.createElement('div');
       dt.textContent = s.alias || s.id;
       var meta = document.createElement('div');
@@ -129,7 +100,7 @@
       meta.textContent = (s.updated_at || '').slice(0, 16);
       b.appendChild(dt);
       b.appendChild(meta);
-      b.addEventListener('click', function () { callAction('session.switch', { session_id: s.id }).catch(function () {}); toggle(false); });
+      b.addEventListener('click', function () { callAction('session.switch', { session_id: s.id }).catch(function () {}); });
       listEl.appendChild(b);
     });
   }
@@ -138,25 +109,17 @@
     return callAction('sessions.list')
       .then(function (list) {
         return callAction('state.get').then(function (st) {
-          var active = st.activeSessionId || '';
+          var active = (st && st.activeSessionId) || '';
           sessions = (list || []).map(function (s) { s.active = s.id === active; return s; });
-          renderList();
+          renderList(active);
         });
       })
       .catch(function () {});
   }
 
-  function toggle(force) {
-    var show = force !== undefined ? !!force : panel.classList.contains('hidden');
-    panel.classList.toggle('hidden', !show);
-    if (show) load();
-  }
-
-  document.getElementById('sessionsBtn').addEventListener('click', function () { toggle(); });
   document.getElementById('newBtn').addEventListener('click', function () {
-    callAction('sessions.new').then(function () { toggle(true); load(); }).catch(function () {});
+    callAction('sessions.new').then(function () { load(); }).catch(function () {});
   });
-  document.getElementById('settingsBtn').addEventListener('click', function () { callAction('settings.open').catch(function () {}); });
 
   window.addEventListener('message', function (e) {
     var m = e.data;

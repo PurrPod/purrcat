@@ -1,6 +1,8 @@
 {
   "id": "builtin-settings",
   "name": "设置",
+  "icon": "⚙",
   "slot": "settings",
-  "entry": "index.html"
+  "entry": "index.html",
+  "railAction": "settings.open"
 }

@@ -107,7 +107,7 @@ body.electron .win-controls { display: flex; }
 }
 .win-btn:hover { background: var(--wm-bl-150); color: var(--wm-label); }
 
-/* 最左图标栏（固定组件，非插件）：白底，顶部为收起开关，其下为各插件显隐图标 */
+/* 最左图标栏（固定组件，非插件）：白底，顶部为状态开关，其下为各插件显隐图标 */
 .wm-rail {
   position: fixed;
   top: 0; left: 0; bottom: 0;
@@ -119,6 +119,7 @@ body.electron .win-controls { display: flex; }
   flex-direction: column;
   align-items: center;
   padding-top: 2px;
+  transition: width 0.15s ease;
   -webkit-app-region: no-drag;
 }
 .wm-rail .rail-toggle {
@@ -126,7 +127,7 @@ body.electron .win-controls { display: flex; }
   width: 40px; height: 40px;
   display: flex; align-items: center; justify-content: center;
   border: none; background: transparent; color: var(--wm-label-2nd);
-  font-size: 18px; line-height: 1; cursor: pointer; border-radius: 8px;
+  font-size: 17px; line-height: 1; cursor: pointer; border-radius: 8px;
   transition: background 0.12s ease, color 0.12s ease;
 }
 .wm-rail .rail-toggle:hover { background: var(--wm-bg-hover); color: var(--wm-label); }
@@ -142,17 +143,27 @@ body.electron .win-controls { display: flex; }
 }
 .wm-rail .rail-ico {
   flex: none;
-  width: 38px; height: 38px;
+  width: 40px; height: 40px;
   display: flex; align-items: center; justify-content: center;
+  gap: 8px;
   border: none; background: transparent; color: var(--wm-label-2nd);
-  font-size: 17px; line-height: 1; cursor: pointer; border-radius: 8px;
+  font-size: 16px; line-height: 1; cursor: pointer; border-radius: 8px;
+  padding: 0 6px; overflow: hidden;
   transition: background 0.12s ease, color 0.12s ease, opacity 0.12s ease;
 }
 .wm-rail .rail-ico:hover { background: var(--wm-bg-hover); color: var(--wm-label); }
 .wm-rail .rail-ico.on { background: var(--wm-bg-active); color: var(--wm-label); }
 .wm-rail .rail-ico.off { opacity: 0.4; }
-/* 收起状态：只保留顶部开关图标 */
-body.rail-collapsed .wm-rail .rail-icons { display: none; }
+.wm-rail .rail-ico .rail-glyph { flex: none; }
+.wm-rail .rail-ico .rail-name { display: none; flex: 1; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 13px; }
+
+/* 阶段 0：收起，只保留顶部开关 */
+body.rail-0 .wm-rail .rail-icons { display: none; }
+/* 阶段 2：图标+名称，图标栏变左侧栏 */
+body.rail-2 { --wm-rail-w: 196px; }
+body.rail-2 .wm-rail .rail-icons { align-items: stretch; padding: 0 6px; }
+body.rail-2 .wm-rail .rail-ico { width: 100%; justify-content: flex-start; }
+body.rail-2 .wm-rail .rail-ico .rail-name { display: inline; }
 
 /* 侧栏：浅灰，无右边界线（右移出图标栏） */
 [data-layer="sidebar"] {
@@ -173,12 +184,18 @@ body.rail-collapsed .wm-rail .rail-icons { display: none; }
   z-index: 5;
   display: grid;
   grid-template-rows: 1fr auto;
+  gap: 10px;
+  padding: 14px;
   background: var(--wm-bg-base);
 }
+/* 会话列表(侧栏)隐藏时：主区舒展到最左，填满侧栏空间 */
+body.rail-nosidebar .wm-main { left: var(--wm-rail-w); }
 .wm-main [data-slot="conversation"] {
   min-height: 0;
   overflow: hidden;
   background: var(--wm-bg-panel);
+  border-radius: 18px;
+  box-shadow: var(--wm-shadow-sm);
 }
 
 /* 空态：无活动会话或无消息 → 聊天框居中（欢迎态） */
@@ -220,8 +237,8 @@ body.settings-open [data-layer="settings"] { display: flex; }
 [data-layer="pet"]:has(iframe) { display: block; }
 [data-layer="pet"] iframe { border: 0; }
 .settings-panel {
-  width: min(860px, 94vw);
-  max-height: 84vh;
+  width: min(1040px, 96vw);
+  max-height: 90vh;
   display: flex;
   flex-direction: column;
   background: var(--wm-bg-panel);

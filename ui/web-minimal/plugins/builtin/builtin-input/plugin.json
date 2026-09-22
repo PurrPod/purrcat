@@ -1,6 +1,7 @@
 {
   "id": "builtin-input",
   "name": "输入框",
+  "icon": "✎",
   "slot": "input",
   "entry": "index.html"
 }
