@@ -10,13 +10,19 @@
   <!-- 背景 slot：默认白底或自定义壁纸（由背景插件决定） -->
   <div class="wm-slot" data-slot="background" data-layer="background"></div>
 
-  <!-- 顶部细条：可拖拽窗口区域 + 窗口控制按钮（仅 Electron 下显示） -->
+  <!-- 顶部细条：透明可拖拽窗口区域 + 窗口控制按钮（仅 Electron 下显示） -->
   <div class="wm-slot" data-layer="topbar">
     <div class="win-controls">
-      <button class="win-btn" id="winMinimize" title="最小化" aria-label="最小化">─</button>
+      <button class="win-btn" id="winMinimize" title="最小化" aria-label="最小化">—</button>
       <button class="win-btn" id="winMaximize" title="最大化" aria-label="最大化">□</button>
-      <button class="win-btn close" id="winClose" title="关闭" aria-label="关闭">✕</button>
+      <button class="win-btn" id="winClose" title="关闭" aria-label="关闭">✕</button>
     </div>
+  </div>
+
+  <!-- 最左图标栏（固定组件，非插件）：顶部图标收起/展开，其下为各插件显隐图标 -->
+  <div class="wm-rail" id="rail">
+    <button class="rail-toggle" id="railToggle" title="收起 / 展开插件栏" aria-label="收起展开插件栏">☰</button>
+    <div class="rail-icons" id="railIcons"></div>
   </div>
 
   <!-- 左侧栏 slot -->
@@ -31,9 +37,15 @@
   <!-- 浮动槽位：桌宠等可自置顶层的放这里（如无插件则隐藏） -->
   <div class="wm-slot wm-pet" data-slot="pet" data-layer="pet"></div>
 
-  <!-- 设置面板 overlay（由 sidebar 的"设置"触发，宿主切 body.settings-open） -->
+  <!-- 设置面板 overlay（由"设置"触发，宿主切 body.settings-open） -->
   <div class="wm-slot" data-slot="settings" data-layer="settings">
-    <div class="settings-panel"></div>
+    <div class="settings-panel">
+      <div class="settings-head">
+        <div class="settings-title">设置</div>
+        <button class="settings-close" id="settingsClose" title="关闭" aria-label="关闭设置">✕</button>
+      </div>
+      <div class="settings-body"></div>
+    </div>
   </div>
 
   <script src="/minimal/assets/host.js"></script>

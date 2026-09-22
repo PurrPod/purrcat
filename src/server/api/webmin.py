@@ -148,7 +148,8 @@ def api_webmin_manifest():
     每条插件附 configSchema（插件自声明）与 config（webminConfig 中的已存值），
     有效配置 = configSchema 默认值 ∪ config 覆盖；backend 表明该插件是否自带后端。
     """
-    stored = _load_webmin_config().get("plugins") or {}
+    stored_cfg = _load_webmin_config()
+    stored = stored_cfg.get("plugins") or {}
     plugins = []
     for p in _merge_plugins():
         p = dict(p)
@@ -160,6 +161,8 @@ def api_webmin_manifest():
     return {
         "ui_mode": str(get_global_settings().get("ui_mode") or "normal"),
         "plugins": plugins,
+        # 最左图标栏持久化状态（收起 + 各插件隐藏开关）
+        "rail": stored_cfg.get("rail") or {"collapsed": False, "hidden": {}},
     }
 
 
@@ -207,13 +210,22 @@ def api_webmin_get_config():
 
 @router.put("/config")
 def api_webmin_put_config(body: dict):
-    """整体覆写插件配置（前端做默认值合并后提交）。"""
+    """整体覆写插件配置 + 可选的图标栏状态（前端做默认值合并后提交）。"""
     new_plugins = (
         body.get("plugins")
         if isinstance(body, dict) and isinstance(body.get("plugins"), dict)
         else {}
     )
     cfg = {"plugins": new_plugins}
+    if isinstance(body, dict) and isinstance(body.get("rail"), dict):
+        cfg["rail"] = {
+            "collapsed": bool(body["rail"].get("collapsed")),
+            "hidden": (
+                body["rail"].get("hidden")
+                if isinstance(body["rail"].get("hidden"), dict)
+                else {}
+            ),
+        }
     _save_webmin_config(cfg)
     return {"status": "ok"}
 

@@ -25,6 +25,8 @@
   .msg.assistant { margin-right: auto; background: var(--wm-bg-input, #f2f4f7); border: 1px solid var(--wm-border-soft, rgba(15,17,21,.05)); }
 
   /* 折叠块 */
+  /* 折叠块：标题在上、内容展开在下方（纵向，不再挤到右边） */
+  .row.fold { flex-direction: column; align-items: stretch; }
   .cap {
     width: 100%; text-align: left; font-family: inherit; font-size: 12px; font-weight: 600;
     color: var(--wm-label-2nd, #4c5560); background: var(--wm-bg-hover, #e9edf1);
@@ -102,7 +104,11 @@
           else if (['file-quote','skill-quote','tool-quote','mcp-quote','graph-quote'].indexOf(t) >= 0) att.push(c);
         });
       } else { throw 0; }
-    } catch (e) { msgs.push(content); }
+    } catch (e) {
+      // 非事件结构：仅当是普通文本时当作 user 正文；若为 JSON 则忽略，避免把 type=其他 的内容渲染出来
+      var s = String(content || '');
+      if (!/^[\{\[]/.test(s.trim())) msgs.push(content);
+    }
     return { att: att, msgs: msgs };
   }
 
@@ -185,6 +191,7 @@
     wrap.appendChild(col);
 
     if (role === 'user') {
+      // 严格只渲染 type=user 的正文（*-quote 作为附件展示），其余类型一律不渲染
       var parsed = parseUser(m.content || '');
       if (parsed.att.length) {
         var attWrap = document.createElement('div');
@@ -201,7 +208,6 @@
       parsed.msgs.forEach(function (txt) {
         if (txt) col.appendChild(bubble('user', esc(txt)));
       });
-      if (!parsed.msgs.length && !parsed.att.length) col.appendChild(bubble('user', esc(m.content || '')));
     } else if (role === 'assistant') {
       col.style.alignItems = 'flex-start';
       if (m.reasoning_content) {

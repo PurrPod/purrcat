@@ -17,98 +17,130 @@
     display: flex;
     flex-direction: column;
     justify-content: flex-end;
-    padding: 16px 20px;
+    padding: 12px 20px 16px;
+    background: transparent;
   }
   /* 空态：居中欢迎 + 大输入 */
-  .welcome { display: none; }
+  .welcome { display: none; margin-bottom: 16px; text-align: center; }
   body.centered { background: transparent; }
   body.centered .center { justify-content: center; align-items: center; max-width: 760px; margin: 0 auto; }
-  body.centered .welcome { display: block; text-align: center; margin-bottom: 18px; }
-  body.centered .welcome .wt { font-size: 18px; font-weight: 600; margin-bottom: 8px; }
-  body.centered .welcome .ws { font-size: 13px; color: var(--wm-label-dim, #8b96a3); }
+  body.centered .welcome { display: block; }
+  body.centered .welcome .wt { font-size: 18px; font-weight: 600; }
   body.centered .bar { width: 100%; }
-  body.centered textarea { font-size: 15px; min-height: 120px; }
 
-  /* 引用面板 */
+  /* 引用面板（＋ 展开） */
   .refPanel {
     display: none;
-    width: 100%;
-    background: var(--wm-bg-panel, #ffffff);
-    border: 1px solid var(--wm-border, rgba(15,17,21,.08));
+    margin-bottom: 8px;
+    background: var(--wm-bl-0, #ffffff);
     border-radius: 12px;
     box-shadow: var(--wm-shadow, 0 4px 16px rgba(15,17,21,.08));
-    padding: 10px;
-    margin-bottom: 8px;
+    padding: 12px;
   }
   .refPanel.open { display: block; }
-  .refPanel .row { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
+  .refPanel .head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+  .refPanel .head .hint { font-size: 12px; color: var(--wm-label-dim, #8b96a3); }
+  .refPanel .close { border: none; background: transparent; color: var(--wm-label-2nd, #4c5560); font-size: 14px; cursor: pointer; padding: 2px 6px; border-radius: 6px; }
+  .refPanel .close:hover { background: var(--wm-bg-hover, #e9edf1); }
+  .refPanel .row { display: flex; gap: 6px; flex-wrap: wrap; }
   .refPanel .opt {
     font-family: inherit; font-size: 12px; color: var(--wm-label, #16191d);
     background: var(--wm-bg-input, #f2f4f7); border: none; border-radius: 999px; padding: 6px 12px; cursor: pointer;
   }
   .refPanel .opt:hover { background: var(--wm-bg-hover, #e9edf1); }
-  .refPanel .graphlist { display: none; max-height: 160px; overflow: auto; }
-  .refPanel .graphlist .g {
+  .refPanel .listbox { display: none; margin-top: 8px; max-height: 170px; overflow: auto; }
+  .refPanel .listbox.open { display: block; }
+  .refPanel .lb-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+  .refPanel .lb-head .lb-name { font-size: 12px; font-weight: 600; color: var(--wm-label-2nd, #4c5560); }
+  .refPanel .lb-head .lb-cancel { border: none; background: transparent; color: var(--wm-accent, #567efe); font-size: 12px; cursor: pointer; padding: 3px 8px; border-radius: 6px; }
+  .refPanel .lb-head .lb-cancel:hover { background: var(--wm-bg-hover, #e9edf1); }
+  .refPanel .item {
     display: block; width: 100%; text-align: left; font-size: 12.5px; color: var(--wm-label, #16191d);
     background: transparent; border: none; padding: 7px 8px; border-radius: 8px; cursor: pointer;
   }
-  .refPanel .graphlist .g:hover { background: var(--wm-bg-hover, #e9edf1); }
+  .refPanel .item:hover { background: var(--wm-bg-hover, #e9edf1); }
+  .refPanel .item.sel { color: var(--wm-accent, #567efe); font-weight: 600; }
+  .refPanel .lb-empty { font-size: 12px; color: var(--wm-label-dim, #8b96a3); padding: 8px; }
 
   /* 已选引用 */
   .quotes { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
   .quote {
     display: inline-flex; align-items: center; gap: 6px;
     font-size: 12px; color: var(--wm-label, #16191d);
-    background: var(--wm-bg-input, #f2f4f7); border-radius: 999px; padding: 5px 10px; max-width: 240px;
+    background: var(--wm-bg-input, #f2f4f7); border-radius: 999px; padding: 5px 10px; max-width: 260px;
   }
   .quote span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .quote .x { border: none; background: transparent; color: var(--wm-label-dim, #8b96a3); cursor: pointer; font-size: 12px; }
+  .quote .x { border: none; background: transparent; color: var(--wm-label-dim, #8b96a3); cursor: pointer; font-size: 12px; line-height: 1; }
 
-  .bar { display: flex; gap: 8px; align-items: flex-end; }
+  /* 输入条：＋ 与发送键均在框内，与历史融合（白底、无边框、仅轻阴影） */
+  .bar {
+    display: flex;
+    align-items: flex-end;
+    gap: 4px;
+    background: var(--wm-bl-0, #ffffff);
+    border: none;
+    border-radius: 16px;
+    box-shadow: var(--wm-shadow-sm, 0 1px 2px rgba(15,17,21,.04));
+    padding: 6px 8px;
+    min-height: 52px;
+  }
   .plusBtn {
-    flex: none; width: 40px; height: 40px;
-    font-size: 20px; line-height: 1; color: var(--wm-label-2nd, #4c5560);
-    background: var(--wm-bg-input, #f2f4f7); border: none; border-radius: 12px; cursor: pointer;
+    flex: none; width: 38px; height: 38px;
+    font-size: 19px; line-height: 1; color: var(--wm-label-2nd, #4c5560);
+    background: transparent; border: none; border-radius: 10px; cursor: pointer;
     display: flex; align-items: center; justify-content: center;
+    align-self: flex-end;
   }
   .plusBtn:hover { background: var(--wm-bg-hover, #e9edf1); }
-  .plusBtn.active { color: #fff; background: var(--wm-accent, #567efe); }
+  .plusBtn.active { color: var(--wm-accent, #567efe); }
   textarea {
-    flex: 1; resize: none; font-family: inherit; font-size: 14px; line-height: 1.5;
+    flex: 1; min-width: 0; resize: none; font-family: inherit; font-size: 14px; line-height: 1.5;
     color: var(--wm-label, #16191d);
-    background: var(--wm-bg-input, #f2f4f7);
-    border: none; border-radius: 14px; padding: 12px 14px; outline: none; min-height: 40px;
+    background: transparent;
+    border: none; padding: 8px 6px; outline: none; min-height: 38px; max-height: 160px;
+    overflow-y: auto;
   }
-  textarea:focus { box-shadow: 0 0 0 2px var(--wm-accent-weak, rgba(86,134,254,.2)); }
   textarea::placeholder { color: var(--wm-label-dim, #8b96a3); }
   .sendBtn {
-    flex: none; width: 40px; height: 40px; border: none; border-radius: 12px; cursor: pointer;
+    flex: none; width: 38px; height: 38px; border: none; border-radius: 12px; cursor: pointer;
     background: var(--wm-accent, #567efe); color: #fff;
     display: flex; align-items: center; justify-content: center;
+    align-self: flex-end;
   }
   .sendBtn:hover { background: var(--wm-accent-hi, #679efe); }
   .sendBtn:disabled { background: var(--wm-bl-200, #dfe4ea); color: #fff; cursor: default; }
-  .sendBtn svg { width: 18px; height: 18px; }
+  .sendBtn svg { width: 17px; height: 17px; }
 </style>
 </head>
 <body>
   <div class="center">
     <div class="welcome">
       <div class="wt">有什么可以帮你的？</div>
-      <div class="ws">直接输入，或用 ＋ 引用文件 / 文件夹 / Graph</div>
     </div>
     <div class="refPanel" id="refPanel">
-      <div class="row">
-        <button class="opt" id="pickFile">＋ 引用文件</button>
-        <button class="opt" id="pickFolder">＋ 引用文件夹</button>
-        <button class="opt" id="pickGraph">＋ 引用 Graph</button>
+      <div class="head">
+        <span class="hint">添加引用</span>
+        <button class="close" id="refClose" title="关闭">✕</button>
       </div>
-      <div class="graphlist" id="graphlist"></div>
+      <div class="row">
+        <button class="opt" id="pickFile">＋ 文件</button>
+        <button class="opt" id="pickFolder">＋ 文件夹</button>
+        <button class="opt" id="pickGraph">＋ Graph</button>
+        <button class="opt" id="pickSkill">＋ Skill</button>
+        <button class="opt" id="pickMcp">＋ MCP</button>
+      </div>
+      <div class="listbox" id="listbox">
+        <div class="lb-head">
+          <span class="lb-name" id="lbName"></span>
+          <button class="lb-cancel" id="lbCancel">取消</button>
+        </div>
+        <div id="lbItems"></div>
+      </div>
     </div>
     <div class="quotes" id="quotes"></div>
     <div class="bar">
       <button class="plusBtn" id="plus" title="添加引用">＋</button>
-      <textarea id="input" rows="3" placeholder="输入消息，Enter 发送 / Shift+Enter 换行"></textarea>
+      <textarea id="input" rows="1" placeholder="输入消息，Enter 发送 / Shift+Enter 换行"></textarea>
       <button class="sendBtn" id="send" title="发送" aria-label="发送">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
       </button>
@@ -132,11 +164,6 @@
       window.parent.postMessage({ type: 'callAction', id: id, actionId: actionId, payload: payload || {} }, '*');
     });
   }
-  function esc(s) {
-    return String(s || '').replace(/[&<>"']/g, function (c) {
-      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
-    });
-  }
   function pickPath(r) {
     if (!r) return null;
     if (Array.isArray(r)) return r[0];
@@ -146,22 +173,38 @@
     if (typeof r.path === 'string') return r.path;
     return null;
   }
+  function esc(s) {
+    return String(s || '').replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
 
   var input = document.getElementById('input');
   var sendBtn = document.getElementById('send');
   var plusBtn = document.getElementById('plus');
   var refPanel = document.getElementById('refPanel');
-  var graphlist = document.getElementById('graphlist');
+  var listbox = document.getElementById('listbox');
+  var lbName = document.getElementById('lbName');
+  var lbItems = document.getElementById('lbItems');
   var quotesEl = document.getElementById('quotes');
-  var quotes = [];
 
+  // ---------- 引用 ----------
+  var quotes = [];
   function addQuote(type, content, label) {
     quotes.push({ type: type, content: content, label: label || content });
     renderQuotes();
   }
+  function hasQuote(label) {
+    return quotes.some(function (q) { return q.label === label; });
+  }
+  function removeQuote(label) {
+    quotes = quotes.filter(function (q) { return q.label !== label; });
+    renderQuotes();
+    markSelections();
+  }
   function renderQuotes() {
     quotesEl.innerHTML = '';
-    quotes.forEach(function (q, i) {
+    quotes.forEach(function (q) {
       var d = document.createElement('div');
       d.className = 'quote';
       var s = document.createElement('span');
@@ -169,19 +212,57 @@
       var x = document.createElement('button');
       x.className = 'x';
       x.textContent = '✕';
-      x.addEventListener('click', function () { quotes.splice(i, 1); renderQuotes(); });
+      x.title = '移除引用';
+      x.addEventListener('click', function () { removeQuote(q.label); });
       d.appendChild(s); d.appendChild(x);
       quotesEl.appendChild(d);
     });
   }
 
+  // ---------- 引用面板开合 ----------
+  function setListbox(open) {
+    listbox.classList.toggle('open', !!open);
+    if (!open) { lbName.textContent = ''; lbItems.innerHTML = ''; }
+  }
   function toggleRef(open) {
     var show = open !== undefined ? !!open : !refPanel.classList.contains('open');
     refPanel.classList.toggle('open', show);
     plusBtn.classList.toggle('active', show);
+    if (!show) setListbox(false);
   }
-
   plusBtn.addEventListener('click', function () { toggleRef(); });
+  document.getElementById('refClose').addEventListener('click', function () { toggleRef(false); });
+  document.getElementById('lbCancel').addEventListener('click', function () { setListbox(false); });
+
+  // ---------- 引用选项 ----------
+  function showListbox(name, items) {
+    lbName.textContent = name;
+    lbItems.innerHTML = '';
+    if (!items || !items.length) {
+      var e = document.createElement('div');
+      e.className = 'lb-empty';
+      e.textContent = '暂无可用项';
+      lbItems.appendChild(e);
+    } else {
+      items.forEach(function (it) {
+        var b = document.createElement('button');
+        b.className = 'item' + (hasQuote(it.label) ? ' sel' : '');
+        b.textContent = it.text;
+        b.title = it.hint || '';
+        b.addEventListener('click', function () {
+          if (hasQuote(it.label)) removeQuote(it.label);
+          else addQuote(it.type, it.content, it.label);
+        });
+        lbItems.appendChild(b);
+      });
+    }
+    setListbox(true);
+  }
+  // 选中状态回显
+  function markSelections() {
+    var btns = lbItems.querySelectorAll('.item');
+    btns.forEach(function (b) { b.classList.toggle('sel', hasQuote(b.textContent)); });
+  }
 
   document.getElementById('pickFile').addEventListener('click', function () {
     callAction('dialog.files').then(function (r) {
@@ -196,21 +277,31 @@
     }).catch(function (e) { alert(String(e.message || e)); });
   });
   document.getElementById('pickGraph').addEventListener('click', function () {
-    if (!graphlist.classList.contains('hidden') && graphlist.style.display === 'block') { graphlist.style.display = 'none'; return; }
-    callAction('ref.graphs').then(function (names) {
-      graphlist.innerHTML = '';
-      (names || []).forEach(function (g) {
-        var b = document.createElement('button');
-        b.className = 'g';
-        b.textContent = g;
-        b.addEventListener('click', function () { addQuote('graph-quote', 'user quote the graph：' + g, g); });
-        graphlist.appendChild(b);
-      });
-      graphlist.style.display = (names && names.length) ? 'block' : 'none';
-      if (!names || !names.length) alert('暂无可引用的 Graph');
+    fetch('/api/webmin/ref/graphs').then(function (r) { return r.json(); }).then(function (names) {
+      showListbox('选择 Graph（可多选，点击已选项取消）', (names || []).map(function (g) {
+        return { label: g, text: g, type: 'graph-quote', content: 'user quote the graph：' + g };
+      }));
+    }).catch(function () {});
+  });
+  document.getElementById('pickSkill').addEventListener('click', function () {
+    fetch('/api/tools/skills').then(function (r) { return r.json(); }).then(function (skills) {
+      showListbox('选择 Skill（可多选，点击已选项取消）', (skills || []).map(function (s) {
+        var n = s.name || s.dir_name || 'unknown';
+        return { label: n, text: n, hint: s.description || '', type: 'skill-quote', content: 'user want you fetch skill：' + n };
+      }));
+    }).catch(function () {});
+  });
+  document.getElementById('pickMcp').addEventListener('click', function () {
+    fetch('/api/tools/mcp').then(function (r) { return r.json(); }).then(function (servers) {
+      var names = [];
+      if (servers && typeof servers === 'object') names = Object.keys(servers);
+      showListbox('选择 MCP（可多选，点击已选项取消）', names.map(function (n) {
+        return { label: n, text: n, type: 'mcp-quote', content: 'user want you fetch mcp：' + n };
+      }));
     }).catch(function () {});
   });
 
+  // ---------- 发送 ----------
   function send() {
     var text = input.value.trim();
     if (!text && !quotes.length) return;
@@ -223,11 +314,17 @@
       .catch(function (e) { alert('发送失败: ' + e.message); })
       .finally(function () { sendBtn.disabled = false; });
   }
-
   input.addEventListener('keydown', function (e) {
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); }
   });
   sendBtn.addEventListener('click', send);
+
+  // 自适应高度防溢出
+  function autoResize() {
+    input.style.height = 'auto';
+    input.style.height = Math.min(input.scrollHeight, 160) + 'px';
+  }
+  input.addEventListener('input', autoResize);
 
   function setCentered(empty) { document.body.classList.toggle('centered', !!empty); }
   window.addEventListener('message', function (e) {

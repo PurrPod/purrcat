@@ -26,6 +26,55 @@
     empty: true,
     plugins: [],              // manifest 注解后的插件列表（供设置面板使用）
   };
+  // 最左图标栏状态：collapsed=收起(仅保留顶部开关)；hidden=各插件隐藏开关（持久化）
+  const railState = { collapsed: false, hidden: {} };
+
+  // ---- 图标栏（固定组件）----
+  const RAIL_ICONS = { sidebar: '≡', history: '❏', input: '✎', background: '▦', conversation: '❖', pet: '♡', settings: '⚙' };
+  function railIcon(p) {
+    return RAIL_ICONS[p.slot] || ((p.name || p.id || '?').charAt(0) || '?').toUpperCase();
+  }
+  function isRailPlugin(p) { return p && p.entry; }
+  function railHidden(id) { return !!(railState.hidden && railState.hidden[id]); }
+  function applySlotHidden(slot, hidden) {
+    const el = HOST.document.querySelector(`[data-slot="${slot}"]`);
+    if (el) el.style.display = hidden ? 'none' : '';
+  }
+  function persistRail() {
+    return fetch('/api/webmin/config', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ plugins: configByPlugin, rail: railState }),
+    }).then((res) => { if (!res.ok) throw new Error(res.status); });
+  }
+  function setRailCollapsed(c) {
+    railState.collapsed = !!c;
+    HOST.document.body.classList.toggle('rail-collapsed', !!c);
+    persistRail().catch(() => {});
+  }
+  function setPluginHidden(id, hidden) {
+    if (!railState.hidden) railState.hidden = {};
+    if (hidden) railState.hidden[id] = true; else delete railState.hidden[id];
+    const slot = slotOfPlugin(id);
+    if (slot) applySlotHidden(slot, hidden);
+    persistRail().catch(() => {});
+  }
+  function buildRail() {
+    const iconsEl = HOST.document.getElementById('railIcons');
+    const toggleBtn = HOST.document.getElementById('railToggle');
+    if (!iconsEl || !toggleBtn) return;
+    HOST.document.body.classList.toggle('rail-collapsed', !!railState.collapsed);
+    toggleBtn.addEventListener('click', () => setRailCollapsed(!railState.collapsed));
+    iconsEl.innerHTML = '';
+    groupState.plugins.filter(isRailPlugin).forEach((p) => {
+      const btn = HOST.document.createElement('button');
+      btn.className = 'rail-ico' + (railHidden(p.id) ? ' off' : ' on');
+      btn.title = (p.name || p.id);
+      btn.textContent = railIcon(p);
+      btn.addEventListener('click', () => setPluginHidden(p.id, !railHidden(p.id)));
+      iconsEl.appendChild(btn);
+    });
+  }
 
   // ---- 工具 ----
   function effectiveConfig(desc) {
@@ -272,7 +321,7 @@
     iframe.setAttribute('tabindex', '-1');
     iframe.src = `/api/webmin/plugin/${encodeURIComponent(desc.id)}/${desc.entry.split('/').map(encodeURIComponent).join('/')}`;
     iframe.title = desc.name || desc.id;
-    const holder = slot === 'settings' ? container.querySelector('.settings-panel') : container;
+    const holder = slot === 'settings' ? container.querySelector('.settings-body') : container;
     holder.appendChild(iframe);
     frames[slot] = iframe;
     // 注入该插件配置
@@ -294,6 +343,7 @@
   async function reloadManifest() {
     await loadManifest();
     SLOTS.forEach(mountSlot);
+    buildRail();
   }
 
   // ---- Electron 窗口控制 ----
@@ -309,6 +359,9 @@
   // ---- 入口 ----
   async function boot() {
     wireWindowControls();
+    // 设置面板关闭按钮
+    const settingsClose = HOST.document.getElementById('settingsClose');
+    if (settingsClose) settingsClose.addEventListener('click', () => setSettingsOpen(false));
     let manifest;
     try {
       manifest = await (await fetch('/api/webmin/manifest')).json();
@@ -318,10 +371,22 @@
       return;
     }
     groupState.plugins = manifest.plugins || [];
+    // 读取图标栏持久化状态
+    const railSaved = manifest.rail;
+    if (railSaved && typeof railSaved === 'object') {
+      railState.collapsed = !!railSaved.collapsed;
+      railState.hidden = (railSaved.hidden && typeof railSaved.hidden === 'object') ? railSaved.hidden : {};
+    }
     for (const slot of SLOTS) {
       pluginBySlot[slot] = groupState.plugins.find((p) => p.slot === slot) || null;
     }
     SLOTS.forEach(mountSlot);
+    buildRail();
+    // 应用持久化的插件隐藏状态（需在挂载后重设，避免被 iframe 覆盖样式）
+    Object.keys(railState.hidden).forEach((id) => {
+      const slot = slotOfPlugin(id);
+      if (slot && railState.hidden[id]) applySlotHidden(slot, true);
+    });
 
     try {
       const list = await (await fetch('/api/sessions')).json();

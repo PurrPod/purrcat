@@ -50,6 +50,7 @@
   --wm-radius-sm: 8px;
   --wm-topbar-h: 36px;
   --wm-sidebar-w: 264px;
+  --wm-rail-w: 48px;          /* 最左图标栏宽度（约为一个图标大小） */
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -81,44 +82,93 @@ body {
   background: var(--wm-bg-base);
 }
 
-/* 顶部细条：可拖拽窗口区 + 右侧窗口控制按钮 */
+/* 顶部细条：透明、仅用于拖拽 + 右侧窗口控制按钮（视觉上只看到按钮） */
 [data-layer="topbar"] {
   position: fixed;
   top: 0; left: 0; right: 0;
   height: var(--wm-topbar-h);
-  z-index: 20;
+  z-index: 22;
   display: flex;
   align-items: center;
   justify-content: flex-end;
+  background: transparent;
   -webkit-app-region: drag;          /* Electron 下整个细条可拖拽移动窗口 */
   user-select: none;
+  pointer-events: none;
 }
-.win-controls { display: none; align-items: center; height: 100%; -webkit-app-region: no-drag; }
+.win-controls { display: none; align-items: center; height: 100%; -webkit-app-region: no-drag; pointer-events: auto; margin-left: auto; }
 body.electron .win-controls { display: flex; }
+/* 三窗口按钮统一样式 */
 .win-btn {
-  width: 42px; height: 100%;
+  width: 46px; height: 100%;
   display: flex; align-items: center; justify-content: center;
   border: none; background: transparent; color: var(--wm-label-2nd);
-  font-size: 13px; line-height: 1; cursor: pointer; transition: background 0.12s ease;
+  font-size: 14px; line-height: 1; cursor: pointer; transition: background 0.12s ease, color 0.12s ease;
 }
-.win-btn:hover { background: var(--wm-bg-hover); color: var(--wm-label); }
-.win-btn.close:hover { background: #e81123; color: #fff; }
+.win-btn:hover { background: var(--wm-bl-150); color: var(--wm-label); }
 
-/* 侧栏：浅灰，无右边界线 */
+/* 最左图标栏（固定组件，非插件）：白底，顶部为收起开关，其下为各插件显隐图标 */
+.wm-rail {
+  position: fixed;
+  top: 0; left: 0; bottom: 0;
+  width: var(--wm-rail-w);
+  z-index: 30;
+  background: var(--wm-bl-0);
+  border-right: 1px solid var(--wm-border-soft);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 2px;
+  -webkit-app-region: no-drag;
+}
+.wm-rail .rail-toggle {
+  flex: none;
+  width: 40px; height: 40px;
+  display: flex; align-items: center; justify-content: center;
+  border: none; background: transparent; color: var(--wm-label-2nd);
+  font-size: 18px; line-height: 1; cursor: pointer; border-radius: 8px;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.wm-rail .rail-toggle:hover { background: var(--wm-bg-hover); color: var(--wm-label); }
+.wm-rail .rail-icons {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  overflow-y: auto;
+  width: 100%;
+}
+.wm-rail .rail-ico {
+  flex: none;
+  width: 38px; height: 38px;
+  display: flex; align-items: center; justify-content: center;
+  border: none; background: transparent; color: var(--wm-label-2nd);
+  font-size: 17px; line-height: 1; cursor: pointer; border-radius: 8px;
+  transition: background 0.12s ease, color 0.12s ease, opacity 0.12s ease;
+}
+.wm-rail .rail-ico:hover { background: var(--wm-bg-hover); color: var(--wm-label); }
+.wm-rail .rail-ico.on { background: var(--wm-bg-active); color: var(--wm-label); }
+.wm-rail .rail-ico.off { opacity: 0.4; }
+/* 收起状态：只保留顶部开关图标 */
+body.rail-collapsed .wm-rail .rail-icons { display: none; }
+
+/* 侧栏：浅灰，无右边界线（右移出图标栏） */
 [data-layer="sidebar"] {
   position: fixed;
   top: var(--wm-topbar-h);
-  left: 0; bottom: 0;
+  left: var(--wm-rail-w); bottom: 0;
   width: var(--wm-sidebar-w);
   z-index: 10;
   background: var(--wm-bg-sidebar);
 }
 
-/* 主区：侧栏右侧，容纳 会话 + 输入 */
+/* 主区：侧栏右侧，容纳 会话 + 输入（右移出图标栏） */
 .wm-main {
   position: fixed;
   top: var(--wm-topbar-h);
-  left: var(--wm-sidebar-w);
+  left: calc(var(--wm-rail-w) + var(--wm-sidebar-w));
   right: 0; bottom: 0;
   z-index: 5;
   display: grid;
@@ -170,13 +220,36 @@ body.settings-open [data-layer="settings"] { display: flex; }
 [data-layer="pet"]:has(iframe) { display: block; }
 [data-layer="pet"] iframe { border: 0; }
 .settings-panel {
-  width: min(680px, 92vw);
-  max-height: 80vh;
-  overflow: auto;
+  width: min(860px, 94vw);
+  max-height: 84vh;
+  display: flex;
+  flex-direction: column;
   background: var(--wm-bg-panel);
   border-radius: 14px;
   box-shadow: var(--wm-shadow);
-  padding: 20px;
+  overflow: hidden;
+}
+.settings-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px 12px;
+}
+.settings-head .settings-title { font-size: 16px; font-weight: 600; }
+.settings-close {
+  width: 32px; height: 32px;
+  display: flex; align-items: center; justify-content: center;
+  border: none; background: transparent; color: var(--wm-label-2nd);
+  font-size: 15px; line-height: 1; cursor: pointer; border-radius: 8px;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.settings-close:hover { background: var(--wm-bg-hover); color: var(--wm-label); }
+.settings-body {
+  flex: 1;
+  overflow: auto;
+  padding: 4px 20px 20px;
+  min-height: 0;
 }
 .settings-panel h3 { font-size: 15px; font-weight: 600; margin-bottom: 12px; }
 
