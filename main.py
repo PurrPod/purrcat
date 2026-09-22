@@ -241,6 +241,7 @@ async def run_api(host: str = "0.0.0.0", port: int = 8000):
     from src.server.api.terminal import router as terminal_router
     from src.server.api.paradigms import router as paradigms_router
     from src.server.api.acp import router as acp_router
+    from src.server.api.webmin import router as webmin_router
 
     app = FastAPI(title="PurrCat API System")
 
@@ -264,6 +265,14 @@ async def run_api(host: str = "0.0.0.0", port: int = 8000):
     app.include_router(terminal_router)
     app.include_router(paradigms_router)
     app.include_router(acp_router)
+    app.include_router(webmin_router)
+
+    # 🌟 关闭时回收所有插件后端子进程，避免残留孤儿进程
+    from src.server.api import plugin_runtime as _plugin_runtime
+
+    @app.on_event("shutdown")
+    def _shutdown_plugin_runtimes():
+        _plugin_runtime.stop_all()
 
     # 🌟 健康检查必须注册在 app.mount("/") 之前！
     # Starlette 按注册顺序匹配路由，"/" 的静态文件挂载是贪婪前缀匹配，
@@ -277,6 +286,13 @@ async def run_api(host: str = "0.0.0.0", port: int = 8000):
     # 静态文件挂载放到所有 API 路由最后，避免遮蔽 /api/* 接口。
     from fastapi.staticfiles import StaticFiles
     from pathlib import Path as _Path
+
+    # 🌟 极简模式（web-minimal）：独立纯静态宿主，挂载在 /minimal，与主 React UI 互不干扰。
+    # 必须挂在 "/" 之前，否则会被根目录贪婪前缀匹配吞掉。
+    _webmin_root = _Path(__file__).resolve().parent / "ui" / "web-minimal"
+    if _webmin_root.exists():
+        app.mount("/minimal", StaticFiles(directory=str(_webmin_root), html=True), name="webmin")
+
     _ui_dist = _Path(__file__).resolve().parent / "ui" / "dist"
     if _ui_dist.exists():
         app.mount("/", StaticFiles(directory=str(_ui_dist), html=True), name="ui")

@@ -21,6 +21,7 @@ const CONFIG_TABS: Array<{ key: string; label: string; tip: string; sub?: string
   { key: 'app',     label: 'config.tabApp', tip: 'config.tipApp' },
   { key: 'acp',     label: 'config.tabAcp', tip: 'config.tipAcp' },
   { key: 'deploy',  label: 'config.tabDeploy', tip: 'config.tipDeploy', sub: 'one-click' },
+  { key: 'view',    label: 'config.tabView', tip: 'config.tipView', sub: 'minimal' },
 ];
 
 // 部署页的线性步骤定义（顺序即展示顺序）
@@ -255,6 +256,27 @@ export default function ConfigModal({ isOpen, onClose, initialTab }: { isOpen: b
       toast.error(t('config.networkError'));
     } finally {
       setAcpBusy(null);
+    }
+  };
+
+  // ══════════════ View 设置页逻辑（极简模式开关）══════════════
+  const toggleMinimal = async () => {
+    const next = configData?.ui_mode === 'minimal' ? 'normal' : 'minimal';
+    try {
+      const res = await fetch('/api/config/view', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ui_mode: next }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        toast.success(next === 'minimal' ? t('config.viewEnabled') : t('config.viewDisabled'));
+        fetchConfig('view');
+      } else {
+        toast.error(typeof data?.detail === 'string' ? data.detail : t('config.networkError'));
+      }
+    } catch {
+      toast.error(t('config.networkError'));
     }
   };
 
@@ -680,7 +702,7 @@ export default function ConfigModal({ isOpen, onClose, initialTab }: { isOpen: b
               </div>
 
               <div className="flex items-center gap-3">
-                {activeTab !== 'deploy' && (
+                {activeTab !== 'deploy' && activeTab !== 'view' && (
                   <>
                     <button
                       onClick={editMode === 'visual' ? switchToRaw : switchToVisual}
@@ -704,7 +726,7 @@ export default function ConfigModal({ isOpen, onClose, initialTab }: { isOpen: b
             </div>
 
             {/* ── 编辑模式：原始 JSON ── */}
-            {editMode === 'raw' && activeTab !== 'deploy' && (
+            {editMode === 'raw' && activeTab !== 'deploy' && activeTab !== 'view' && (
               <div style={sketchyShape3} className="bg-paper border-4 border-ink p-4 flex flex-col gap-3 shadow-[inset_4px_4px_0px_0px_rgba(26,26,26,0.1)] flex-1">
                 <div className="flex items-center gap-2 text-ink/60 font-bold text-sm bg-terracotta/10 p-2 border-2 border-ink border-dashed" style={sketchyShape1}>
                   <AlertCircle size={16} strokeWidth={3} /> {t('config.rawEditHint')}
@@ -866,6 +888,41 @@ export default function ConfigModal({ isOpen, onClose, initialTab }: { isOpen: b
                     </button>
                     <div className="text-xs font-bold text-ink/40 flex-1 min-w-[200px]">{t('config.acpPortHint')}</div>
                   </div>
+                </div>
+              </div>
+            )}
+
+            {/* ── 视图设置页：极简模式开关（web-minimal） ── */}
+            {activeTab === 'view' && (
+              <div className="flex flex-col gap-5 flex-1">
+
+                {/* 提示条：重启 electron 生效 */}
+                <div style={sketchyShape1} className="bg-[#EBCB8B]/30 border-2 border-ink border-dashed p-3 flex items-center gap-2 text-sm font-bold text-terracotta">
+                  <RotateCw size={16} strokeWidth={3} className="shrink-0" /> {t('config.viewRestartHint')}
+                </div>
+
+                {/* 极简模式卡片 */}
+                <div style={sketchyShape2} className="bg-paper border-4 border-ink p-5 flex flex-col gap-4 shadow-[6px_6px_0px_0px_rgba(26,26,26,1)]">
+                  <div className="flex items-center justify-between gap-3 flex-wrap">
+                    <div className="flex items-center gap-3">
+                      <div style={sketchyShape3} className="w-10 h-10 bg-[#5f96ff] border-4 border-ink flex items-center justify-center text-ink rotate-3">
+                        <Eye size={22} strokeWidth={3} />
+                      </div>
+                      <div>
+                        <div className="text-xl font-black text-ink" style={{ fontFamily: '"Comic Sans MS", cursive' }}>{t('config.viewTitle')}</div>
+                        <div className="text-sm font-bold text-ink/50">{t('config.viewSub')}</div>
+                      </div>
+                    </div>
+                    <button
+                      onClick={toggleMinimal}
+                      style={sketchyShape1}
+                      className={`px-5 py-2 border-4 border-ink text-ink font-black flex items-center gap-2 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:bg-[#dbb76f] active:translate-y-1 active:shadow-none transition-all -rotate-1 ${configData?.ui_mode === 'minimal' ? 'bg-[#a3be8c]' : 'bg-[#EBCB8B]'}`}
+                    >
+                      {configData?.ui_mode === 'minimal' ? <ToggleRight size={18} strokeWidth={3} /> : <ToggleLeft size={18} strokeWidth={3} />}
+                      {configData?.ui_mode === 'minimal' ? t('config.viewOn') : t('config.viewOff')}
+                    </button>
+                  </div>
+                  <div className="text-xs font-bold text-ink/50 leading-relaxed">{t('config.viewDesc')}</div>
                 </div>
               </div>
             )}

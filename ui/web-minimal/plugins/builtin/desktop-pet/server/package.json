@@ -1,0 +1,10 @@
+{
+  "name": "desktop-pet-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "commonjs",
+  "description": "桌宠插件后端（Node 子进程）。依赖由本目录自管，主程序不接触。",
+  "scripts": {
+    "start": "node server.js"
+  }
+}

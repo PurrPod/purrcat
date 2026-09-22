@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; }
+  body { background: transparent; }
+  .layer {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    object-fit: cover;
+    opacity: 0;
+    transition: opacity 0.8s ease;
+  }
+  .layer.on { opacity: 1; }
+</style>
+</head>
+<body>
+<script>
+(function () {
+  var seq = 0;
+  function callAction(actionId, payload) {
+    return new Promise(function (resolve, reject) {
+      var id = ++seq;
+      function onMsg(e) {
+        var m = e.data;
+        if (m && m.type === 'callActionResult' && m.id === id) {
+          window.removeEventListener('message', onMsg);
+          if (m.ok) resolve(m.data); else reject(new Error(m.error));
+        }
+      }
+      window.addEventListener('message', onMsg);
+      window.parent.postMessage({ type: 'callAction', id: id, actionId: actionId, payload: payload || {} }, '*');
+    });
+  }
+
+  var timer = null;
+  var idx = 0;
+
+  function clear() {
+    if (timer) { clearInterval(timer); timer = null; }
+    document.querySelectorAll('.layer').forEach(function (el) { el.remove(); });
+    idx = 0;
+  }
+
+  function isVideo(url) {
+    return /\.(mp4|webm|mov)(\?|$)/i.test(url);
+  }
+
+  function render(cfg) {
+    clear();
+    if (!cfg || cfg.mode !== 'wallpaper' || !Array.isArray(cfg.wallpapers) || !cfg.wallpapers.length) {
+      return; // 默认白底由宿主背景层提供
+    }
+    var items = cfg.wallpapers.filter(function (w) { return w && w.src; });
+    if (!items.length) return;
+    items.forEach(function (w) {
+      var el;
+      if (isVideo(w.src) || w.type === 'video') {
+        el = document.createElement('video');
+        el.src = w.src;
+        el.muted = true;
+        el.loop = true;
+        el.autoplay = true;
+        el.playsInline = true;
+      } else {
+        el = document.createElement('img');
+        el.src = w.src;
+        el.alt = '';
+        el.draggable = false;
+      }
+      el.className = 'layer';
+      document.body.appendChild(el);
+    });
+    var layers = document.querySelectorAll('.layer');
+    layers[0].classList.add('on');
+    var interval = Number(cfg.intervalSec) || 0;
+    if (items.length > 1 && interval > 0) {
+      timer = setInterval(function () {
+        idx = (idx + 1) % layers.length;
+        layers.forEach(function (l) { l.classList.remove('on'); });
+        layers[idx].classList.add('on');
+      }, interval * 1000);
+    }
+  }
+
+  function apply(cfg) {
+    if (typeof cfg === 'object' && cfg) render(cfg);
+  }
+  window.addEventListener('message', function (e) {
+    var m = e.data;
+    if (!m || typeof m !== 'object') return;
+    if (m.type === 'configApply') apply(m.config);
+    else if (m.type === 'event' && m.event === 'config.updated') {
+      callAction('config.get', { plugin_id: 'builtin-background' }).then(apply).catch(function () {});
+    }
+  });
+  callAction('config.get', { plugin_id: 'builtin-background' }).then(apply).catch(function () {});
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,11 @@
+{
+  "id": "builtin-background",
+  "name": "默认背景",
+  "slot": "background",
+  "entry": "index.html",
+  "configSchema": [
+    { "key": "mode", "label": "背景模式", "type": "select", "options": ["none", "wallpaper"], "default": "none" },
+    { "key": "wallpapers", "label": "壁纸列表", "type": "wallpapers", "default": [] },
+    { "key": "intervalSec", "label": "轮播间隔（秒，0 不轮播）", "type": "number", "default": 0 }
+  ]
+}

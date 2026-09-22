@@ -6,6 +6,7 @@ const { app, BrowserWindow, Menu, dialog, ipcMain, WebContentsView, session, she
 const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 
 // 关掉 Chromium 的 HTTP→HTTPS 自动升级：vite/后端都跑明文 http://localhost，
 // 升级会导致 ERR_SSL_PROTOCOL_ERROR。必须在 app ready 前设置。
@@ -22,6 +23,19 @@ if (fs.existsSync(GPU_FLAG)) {
 const IS_DEV = !!process.env.ELECTRON_DEV;
 const DEV_URL = 'http://localhost:3000';   // vite dev server（热更新）
 const PROD_URL = 'http://localhost:8000';  // 后端托管的前端 dist
+const MINIMAL_URL = 'http://localhost:8000/minimal/'; // 极简宿主（纯静态，后端托管）
+
+// 🌟 极简模式开关：读取全局配置 ~/.purrcat/settings.json 的 ui_mode
+// 'minimal' -> Electron 启动加载极简宿主；否则（normal/缺省）加载主 React UI。
+function readUiMode() {
+  try {
+    const settingsPath = path.join(os.homedir(), '.purrcat', 'settings.json');
+    const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
+    return settings.ui_mode === 'minimal' ? 'minimal' : 'normal';
+  } catch (_) {
+    return 'normal';
+  }
+}
 
 // ===== 单实例锁 =====
 // 🌟 旧实例未退干净（退出被注入 DLL 卡死等）时用户再点图标会双开：
@@ -234,7 +248,11 @@ function createWindow() {
     },
   });
 
-  if (IS_DEV) {
+  if (readUiMode() === 'minimal') {
+    // 极简模式：加载独立宿主（纯静态，由后端托管在 /minimal）。恒等后端就绪再加载。
+    mainWindow.loadURL('about:blank');
+    pollBackendAndLoad(MINIMAL_URL);
+  } else if (IS_DEV) {
     mainWindow.loadURL(DEV_URL);
   } else {
     // 生产模式：等后端就绪再 loadURL，避免端口未就绪导致空白页

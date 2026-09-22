@@ -1,0 +1,6 @@
+{
+  "id": "builtin-input",
+  "name": "输入框",
+  "slot": "input",
+  "entry": "index.html"
+}

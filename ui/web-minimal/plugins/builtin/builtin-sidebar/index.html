@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<style>
+  :root {
+    --label: var(--wm-label, #16191d);
+    --label-2nd: var(--wm-label-2nd, #4c5560);
+    --dim: var(--wm-label-dim, #8b96a3);
+    --bg: var(--wm-bg-input, #f2f4f7);
+    --hover: var(--wm-bg-hover, #e9edf1);
+    --accent: var(--wm-accent, #567efe);
+    --accent-ink: #ffffff;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: var(--wm-font, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif);
+    background: transparent;
+    color: var(--label);
+    display: flex;
+    flex-direction: column;
+    padding: 10px;
+  }
+  .brand { padding: 4px 6px 12px; }
+  .brand .title { font-size: 14px; font-weight: 700; }
+  .brand .sub { font-size: 11px; color: var(--dim); margin-top: 2px; }
+
+  .primary {
+    width: 100%;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--label);
+    background: #ffffff;
+    border: none;
+    border-radius: 10px;
+    padding: 10px 12px;
+    text-align: left;
+    cursor: pointer;
+    box-shadow: var(--wm-shadow-sm, 0 1px 2px rgba(15,17,21,.04));
+    transition: background 0.12s ease;
+  }
+  .primary:hover { background: var(--hover); }
+
+  .panel {
+    margin-top: 8px;
+    background: #ffffff;
+    border-radius: 10px;
+    box-shadow: var(--wm-shadow-sm, 0 1px 2px rgba(15,17,21,.04));
+    overflow: hidden;
+  }
+  .panel.hidden { display: none; }
+  .item {
+    width: 100%;
+    font-family: inherit;
+    font-size: 13px;
+    color: var(--label-2nd);
+    background: transparent;
+    border: none;
+    padding: 10px 12px;
+    text-align: left;
+    cursor: pointer;
+  }
+  .item:hover { background: var(--hover); }
+  .item.new { color: var(--label); font-weight: 600; }
+  .item.active { color: var(--accent); font-weight: 600; }
+  .item-meta { font-size: 11px; color: var(--dim); margin-top: 2px; }
+
+  .spacer { flex: 1; }
+  .footer { display: flex; flex-direction: column; gap: 4px; }
+  .footer button { width: 100%; font-family: inherit; font-size: 13px; color: var(--label-2nd); background: transparent; border: none; border-radius: 8px; padding: 9px 12px; text-align: left; cursor: pointer; }
+  .footer button:hover { background: var(--hover); }
+</style>
+</head>
+<body>
+  <div class="brand">
+    <div class="title">PurrCat 极简</div>
+    <div class="sub">独立轻量界面</div>
+  </div>
+
+  <button id="sessionsBtn" class="primary">会话列表</button>
+  <div id="panel" class="panel hidden">
+    <button id="newBtn" class="item new">＋ 新建会话</button>
+    <div id="list"></div>
+  </div>
+
+  <div class="spacer"></div>
+  <div class="footer">
+    <button id="settingsBtn">设置</button>
+    <button id="normalBtn">回到完整模式</button>
+  </div>
+
+<script>
+(function () {
+  var seq = 0;
+  function callAction(actionId, payload) {
+    return new Promise(function (resolve, reject) {
+      var id = ++seq;
+      function onMsg(e) {
+        var m = e.data;
+        if (m && m.type === 'callActionResult' && m.id === id) {
+          window.removeEventListener('message', onMsg);
+          if (m.ok) resolve(m.data); else reject(new Error(m.error));
+        }
+      }
+      window.addEventListener('message', onMsg);
+      window.parent.postMessage({ type: 'callAction', id: id, actionId: actionId, payload: payload || {} }, '*');
+    });
+  }
+  function esc(s) {
+    return String(s || '').replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  var panel = document.getElementById('panel');
+  var listEl = document.getElementById('list');
+  var sessions = [];
+
+  function renderList() {
+    listEl.innerHTML = '';
+    sessions.forEach(function (s) {
+      var b = document.createElement('button');
+      b.className = 'item' + (s.active ? ' active' : '');
+      var dt = document.createElement('div');
+      dt.textContent = s.alias || s.id;
+      var meta = document.createElement('div');
+      meta.className = 'item-meta';
+      meta.textContent = (s.updated_at || '').slice(0, 16);
+      b.appendChild(dt);
+      b.appendChild(meta);
+      b.addEventListener('click', function () { callAction('session.switch', { session_id: s.id }).catch(function () {}); toggle(false); });
+      listEl.appendChild(b);
+    });
+  }
+
+  function load() {
+    return callAction('sessions.list')
+      .then(function (list) {
+        return callAction('state.get').then(function (st) {
+          var active = st.activeSessionId || '';
+          sessions = (list || []).map(function (s) { s.active = s.id === active; return s; });
+          renderList();
+        });
+      })
+      .catch(function () {});
+  }
+
+  function toggle(force) {
+    var show = force !== undefined ? !!force : panel.classList.contains('hidden');
+    panel.classList.toggle('hidden', !show);
+    if (show) load();
+  }
+
+  document.getElementById('sessionsBtn').addEventListener('click', function () { toggle(); });
+  document.getElementById('newBtn').addEventListener('click', function () {
+    callAction('sessions.new').then(function () { toggle(true); load(); }).catch(function () {});
+  });
+  document.getElementById('settingsBtn').addEventListener('click', function () { callAction('settings.open').catch(function () {}); });
+  document.getElementById('normalBtn').addEventListener('click', function () { callAction('switch_to_normal').catch(function () {}); });
+
+  window.addEventListener('message', function (e) {
+    var m = e.data;
+    if (!m || typeof m !== 'object' || m.type !== 'event') return;
+    if (m.event === 'session.switched' || m.event === 'conversation.updated') load();
+  });
+
+  load();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: var(--wm-font, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif);
+    background: transparent;
+    color: var(--wm-label, #16191d);
+    display: flex;
+  }
+  .center {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    padding: 16px 20px;
+  }
+  /* 空态：居中欢迎 + 大输入 */
+  .welcome { display: none; }
+  body.centered { background: transparent; }
+  body.centered .center { justify-content: center; align-items: center; max-width: 760px; margin: 0 auto; }
+  body.centered .welcome { display: block; text-align: center; margin-bottom: 18px; }
+  body.centered .welcome .wt { font-size: 18px; font-weight: 600; margin-bottom: 8px; }
+  body.centered .welcome .ws { font-size: 13px; color: var(--wm-label-dim, #8b96a3); }
+  body.centered .bar { width: 100%; }
+  body.centered textarea { font-size: 15px; min-height: 120px; }
+
+  /* 引用面板 */
+  .refPanel {
+    display: none;
+    width: 100%;
+    background: var(--wm-bg-panel, #ffffff);
+    border: 1px solid var(--wm-border, rgba(15,17,21,.08));
+    border-radius: 12px;
+    box-shadow: var(--wm-shadow, 0 4px 16px rgba(15,17,21,.08));
+    padding: 10px;
+    margin-bottom: 8px;
+  }
+  .refPanel.open { display: block; }
+  .refPanel .row { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
+  .refPanel .opt {
+    font-family: inherit; font-size: 12px; color: var(--wm-label, #16191d);
+    background: var(--wm-bg-input, #f2f4f7); border: none; border-radius: 999px; padding: 6px 12px; cursor: pointer;
+  }
+  .refPanel .opt:hover { background: var(--wm-bg-hover, #e9edf1); }
+  .refPanel .graphlist { display: none; max-height: 160px; overflow: auto; }
+  .refPanel .graphlist .g {
+    display: block; width: 100%; text-align: left; font-size: 12.5px; color: var(--wm-label, #16191d);
+    background: transparent; border: none; padding: 7px 8px; border-radius: 8px; cursor: pointer;
+  }
+  .refPanel .graphlist .g:hover { background: var(--wm-bg-hover, #e9edf1); }
+
+  /* 已选引用 */
+  .quotes { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+  .quote {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 12px; color: var(--wm-label, #16191d);
+    background: var(--wm-bg-input, #f2f4f7); border-radius: 999px; padding: 5px 10px; max-width: 240px;
+  }
+  .quote span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .quote .x { border: none; background: transparent; color: var(--wm-label-dim, #8b96a3); cursor: pointer; font-size: 12px; }
+
+  .bar { display: flex; gap: 8px; align-items: flex-end; }
+  .plusBtn {
+    flex: none; width: 40px; height: 40px;
+    font-size: 20px; line-height: 1; color: var(--wm-label-2nd, #4c5560);
+    background: var(--wm-bg-input, #f2f4f7); border: none; border-radius: 12px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .plusBtn:hover { background: var(--wm-bg-hover, #e9edf1); }
+  .plusBtn.active { color: #fff; background: var(--wm-accent, #567efe); }
+  textarea {
+    flex: 1; resize: none; font-family: inherit; font-size: 14px; line-height: 1.5;
+    color: var(--wm-label, #16191d);
+    background: var(--wm-bg-input, #f2f4f7);
+    border: none; border-radius: 14px; padding: 12px 14px; outline: none; min-height: 40px;
+  }
+  textarea:focus { box-shadow: 0 0 0 2px var(--wm-accent-weak, rgba(86,134,254,.2)); }
+  textarea::placeholder { color: var(--wm-label-dim, #8b96a3); }
+  .sendBtn {
+    flex: none; width: 40px; height: 40px; border: none; border-radius: 12px; cursor: pointer;
+    background: var(--wm-accent, #567efe); color: #fff;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .sendBtn:hover { background: var(--wm-accent-hi, #679efe); }
+  .sendBtn:disabled { background: var(--wm-bl-200, #dfe4ea); color: #fff; cursor: default; }
+  .sendBtn svg { width: 18px; height: 18px; }
+</style>
+</head>
+<body>
+  <div class="center">
+    <div class="welcome">
+      <div class="wt">有什么可以帮你的？</div>
+      <div class="ws">直接输入，或用 ＋ 引用文件 / 文件夹 / Graph</div>
+    </div>
+    <div class="refPanel" id="refPanel">
+      <div class="row">
+        <button class="opt" id="pickFile">＋ 引用文件</button>
+        <button class="opt" id="pickFolder">＋ 引用文件夹</button>
+        <button class="opt" id="pickGraph">＋ 引用 Graph</button>
+      </div>
+      <div class="graphlist" id="graphlist"></div>
+    </div>
+    <div class="quotes" id="quotes"></div>
+    <div class="bar">
+      <button class="plusBtn" id="plus" title="添加引用">＋</button>
+      <textarea id="input" rows="3" placeholder="输入消息，Enter 发送 / Shift+Enter 换行"></textarea>
+      <button class="sendBtn" id="send" title="发送" aria-label="发送">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+      </button>
+    </div>
+  </div>
+
+<script>
+(function () {
+  var seq = 0;
+  function callAction(actionId, payload) {
+    return new Promise(function (resolve, reject) {
+      var id = ++seq;
+      function onMsg(e) {
+        var m = e.data;
+        if (m && m.type === 'callActionResult' && m.id === id) {
+          window.removeEventListener('message', onMsg);
+          if (m.ok) resolve(m.data); else reject(new Error(m.error));
+        }
+      }
+      window.addEventListener('message', onMsg);
+      window.parent.postMessage({ type: 'callAction', id: id, actionId: actionId, payload: payload || {} }, '*');
+    });
+  }
+  function esc(s) {
+    return String(s || '').replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function pickPath(r) {
+    if (!r) return null;
+    if (Array.isArray(r)) return r[0];
+    if (Array.isArray(r.filePaths)) return r.filePaths[0];
+    if (Array.isArray(r.paths)) return r.paths[0];
+    if (typeof r === 'string') return r;
+    if (typeof r.path === 'string') return r.path;
+    return null;
+  }
+
+  var input = document.getElementById('input');
+  var sendBtn = document.getElementById('send');
+  var plusBtn = document.getElementById('plus');
+  var refPanel = document.getElementById('refPanel');
+  var graphlist = document.getElementById('graphlist');
+  var quotesEl = document.getElementById('quotes');
+  var quotes = [];
+
+  function addQuote(type, content, label) {
+    quotes.push({ type: type, content: content, label: label || content });
+    renderQuotes();
+  }
+  function renderQuotes() {
+    quotesEl.innerHTML = '';
+    quotes.forEach(function (q, i) {
+      var d = document.createElement('div');
+      d.className = 'quote';
+      var s = document.createElement('span');
+      s.textContent = q.label;
+      var x = document.createElement('button');
+      x.className = 'x';
+      x.textContent = '✕';
+      x.addEventListener('click', function () { quotes.splice(i, 1); renderQuotes(); });
+      d.appendChild(s); d.appendChild(x);
+      quotesEl.appendChild(d);
+    });
+  }
+
+  function toggleRef(open) {
+    var show = open !== undefined ? !!open : !refPanel.classList.contains('open');
+    refPanel.classList.toggle('open', show);
+    plusBtn.classList.toggle('active', show);
+  }
+
+  plusBtn.addEventListener('click', function () { toggleRef(); });
+
+  document.getElementById('pickFile').addEventListener('click', function () {
+    callAction('dialog.files').then(function (r) {
+      var p = pickPath(r);
+      if (p) addQuote('file-quote', 'user quote the file：' + p, p.split(/[\\/]/).pop());
+    }).catch(function (e) { alert(String(e.message || e)); });
+  });
+  document.getElementById('pickFolder').addEventListener('click', function () {
+    callAction('dialog.folder').then(function (r) {
+      var p = pickPath(r);
+      if (p) addQuote('file-quote', 'user quote the file：' + p, p);
+    }).catch(function (e) { alert(String(e.message || e)); });
+  });
+  document.getElementById('pickGraph').addEventListener('click', function () {
+    if (!graphlist.classList.contains('hidden') && graphlist.style.display === 'block') { graphlist.style.display = 'none'; return; }
+    callAction('ref.graphs').then(function (names) {
+      graphlist.innerHTML = '';
+      (names || []).forEach(function (g) {
+        var b = document.createElement('button');
+        b.className = 'g';
+        b.textContent = g;
+        b.addEventListener('click', function () { addQuote('graph-quote', 'user quote the graph：' + g, g); });
+        graphlist.appendChild(b);
+      });
+      graphlist.style.display = (names && names.length) ? 'block' : 'none';
+      if (!names || !names.length) alert('暂无可引用的 Graph');
+    }).catch(function () {});
+  });
+
+  function send() {
+    var text = input.value.trim();
+    if (!text && !quotes.length) return;
+    var events = [];
+    quotes.forEach(function (q) { events.push({ type: q.type, content: q.content }); });
+    if (text) events.push({ type: 'user', content: text });
+    sendBtn.disabled = true;
+    callAction('chat.sendBatch', { events: events })
+      .then(function () { input.value = ''; quotes = []; renderQuotes(); toggleRef(false); })
+      .catch(function (e) { alert('发送失败: ' + e.message); })
+      .finally(function () { sendBtn.disabled = false; });
+  }
+
+  input.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); }
+  });
+  sendBtn.addEventListener('click', send);
+
+  function setCentered(empty) { document.body.classList.toggle('centered', !!empty); }
+  window.addEventListener('message', function (e) {
+    var m = e.data;
+    if (!m || typeof m !== 'object') return;
+    if (m.type === 'layout.empty') setCentered(m.empty);
+  });
+  callAction('state.get').then(function (s) { setCentered(s && s.empty); }).catch(function () {});
+})();
+</script>
+</body>
+</html>

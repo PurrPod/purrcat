@@ -1,0 +1,9 @@
+{
+  "id": "desktop-pet",
+  "name": "桌宠",
+  "slot": "pet",
+  "entry": "index.html",
+  "configSchema": [
+    { "key": "greeting", "label": "开机问候", "type": "text", "default": "喵，主人～" }
+  ]
+}

@@ -1,0 +1,6 @@
+{
+  "id": "builtin-history",
+  "name": "历史会话窗口",
+  "slot": "conversation",
+  "entry": "index.html"
+}

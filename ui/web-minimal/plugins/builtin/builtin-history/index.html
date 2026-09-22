@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: var(--wm-font, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif);
+    background: transparent;
+    color: var(--wm-label, #16191d);
+  }
+  .list { height: 100%; overflow-y: auto; padding: 18px 20px; display: flex; flex-direction: column; gap: 14px; }
+
+  .row { width: 100%; display: flex; }
+  .attachments { width: 100%; display: flex; flex-wrap: wrap; gap: 6px; }
+  .att {
+    font-size: 12px; color: var(--wm-label-2nd, #4c5560);
+    background: var(--wm-bg-input, #f2f4f7); border: 1px solid var(--wm-border, rgba(15,17,21,.08));
+    border-radius: 999px; padding: 4px 10px; max-width: 320px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .msg { max-width: 78%; padding: 10px 14px; border-radius: 12px; word-break: break-word; }
+  .msg.user { margin-left: auto; background: var(--wm-user-bubble, rgba(86,134,254,.10)); border: 1px solid rgba(86,134,254,0.18); white-space: pre-wrap; }
+  .msg.assistant { margin-right: auto; background: var(--wm-bg-input, #f2f4f7); border: 1px solid var(--wm-border-soft, rgba(15,17,21,.05)); }
+
+  /* 折叠块 */
+  .cap {
+    width: 100%; text-align: left; font-family: inherit; font-size: 12px; font-weight: 600;
+    color: var(--wm-label-2nd, #4c5560); background: var(--wm-bg-hover, #e9edf1);
+    border: none; border-radius: 8px; padding: 6px 10px; cursor: pointer; display: flex; align-items: center; gap: 6px;
+  }
+  .cap .arrow { transition: transform 0.15s ease; font-size: 10px; }
+  .cap.open .arrow { transform: rotate(90deg); }
+  .cap .tag { font-weight: 400; color: var(--wm-label-dim, #8b96a3); }
+  .fold-body { display: none; margin-top: 6px; overflow: hidden; }
+  .fold-body.open { display: block; }
+
+  .reason-body { white-space: pre-wrap; font-size: 13px; color: var(--wm-label-2nd, #4c5560); background: transparent; padding: 4px 2px; }
+  .tool-body { font-family: var(--wm-mono, ui-monospace, Consolas, monospace); font-size: 12px; color: var(--wm-label-2nd, #4c5560); background: #fff; border: 1px solid var(--wm-border-soft, rgba(15,17,21,.05)); border-radius: 8px; padding: 8px 10px; overflow-x: auto; }
+  .tool-body .tname { font-weight: 700; color: var(--wm-accent, #567efe); margin-bottom: 4px; }
+
+  .empty { align-self: center; color: var(--wm-label-dim, #8b96a3); font-size: 13px; margin-top: 48px; }
+
+  /* markdown */
+  .md { font-size: 14px; line-height: 1.65; color: var(--wm-label, #16191d); }
+  .md h1, .md h2, .md h3, .md h4 { font-weight: 700; margin: 0.7em 0 0.35em; line-height: 1.3; }
+  .md h1 { font-size: 1.25em; } .md h2 { font-size: 1.12em; } .md h3, .md h4 { font-size: 1em; }
+  .md p { margin: 0.4em 0; }
+  .md ul, .md ol { margin: 0.4em 0; padding-left: 1.4em; }
+  .md li { margin: 0.2em 0; }
+  .md code { font-family: var(--wm-mono, Consolas, monospace); font-size: 0.88em; background: rgba(15,17,21,.06); border-radius: 4px; padding: 1px 4px; }
+  .md pre { background: var(--wm-bg-input, #f2f4f7); border-radius: 8px; padding: 10px 12px; overflow-x: auto; margin: 0.5em 0; }
+  .md pre code { background: transparent; padding: 0; display: block; }
+  .md blockquote { border-left: 3px solid var(--wm-bl-300, #c7cfd9); margin: 0.4em 0; padding: 2px 12px; color: var(--wm-label-2nd, #4c5560); }
+  .md a { color: var(--wm-accent, #567efe); text-decoration: none; }
+  .md a:hover { text-decoration: underline; }
+  .md table { border-collapse: collapse; margin: 0.5em 0; }
+  .md th, .md td { border: 1px solid var(--wm-border, rgba(15,17,21,.08)); padding: 4px 8px; }
+  .md hr { border: none; border-top: 1px solid var(--wm-border, rgba(15,17,21,.08)); margin: 0.8em 0; }
+</style>
+</head>
+<body>
+  <div class="list" id="list">
+    <div class="empty">暂无消息</div>
+  </div>
+
+<script>
+(function () {
+  var listEl = document.getElementById('list');
+
+  // ---------- 工具函数 ----------
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) { return { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]; });
+  }
+  // 提取工具消息的可读文本
+  function toolText(content) {
+    if (content == null) return '';
+    if (typeof content === 'string') {
+      try { var o = JSON.parse(content); if (o && typeof o === 'object') return extractFrom(o); } catch (e) {}
+      return content;
+    }
+    if (typeof content === 'object') return extractFrom(content);
+    return String(content);
+  }
+  function extractFrom(o) {
+    if (typeof o.content === 'string') return o.content;
+    if (typeof o.error === 'string') return o.error;
+    if (typeof o.output === 'string' || typeof o.output === 'number') return String(o.output);
+    for (var k in o) { var v = o[k]; if (typeof v === 'string' && v.length < 400) return v; }
+    try { return JSON.stringify(o); } catch (e) { return ''; }
+  }
+  // ---- 用户消息解析：只保留 type=user 的正文，*-quote 作附件 ----
+  function parseUser(content) {
+    var att = [], msgs = [];
+    try {
+      var d = JSON.parse(content);
+      if (d && Array.isArray(d.events)) {
+        d.events.forEach(function (ev) {
+          var t = ev.type || '', c = ev.content || '';
+          if (t === 'user') msgs.push(c);
+          else if (['file-quote','skill-quote','tool-quote','mcp-quote','graph-quote'].indexOf(t) >= 0) att.push(c);
+        });
+      } else { throw 0; }
+    } catch (e) { msgs.push(content); }
+    return { att: att, msgs: msgs };
+  }
+
+  // ---------- 折叠控件 ----------
+  function makeCollapsible(label, tag, bodyEl) {
+    var cap = document.createElement('button');
+    cap.className = 'cap';
+    cap.innerHTML = '<span class="arrow">▶</span>' + esc(label) + '<span class="tag">' + esc(tag || '') + '</span>';
+    var wrap = document.createElement('div');
+    bodyEl.className = 'fold-body';
+    wrap.appendChild(cap); wrap.appendChild(bodyEl);
+    cap.addEventListener('click', function () {
+      var open = bodyEl.classList.toggle('open');
+      cap.classList.toggle('open', open);
+    });
+    wrap.className = 'row' + ' fold';
+    return wrap;
+  }
+
+  // ---------- 轻量 Markdown（GFM 子集，默认转义，离线可用） ----------
+  function inlineMd(s) {
+    // code span
+    s = s.replace(/`([^`]+)`/g, function (m, c) { return '<code>' + esc(c) + '</code>'; });
+    // links
+    s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, function (m, t, u) { return '<a href="' + esc(u) + '">' + t + '</a>'; });
+    // bold, italic, strike
+    s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    s = s.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+    s = s.replace(/~~([^~]+)~~/g, '<del>$1</del>');
+    return s;
+  }
+  function mdToHtml(src) {
+    src = String(src == null ? '' : src).replace(/\r\n/g, '\n');
+    var blocks = [];
+    // fenced code blocks
+    src = src.replace(/```(\w*)\n?([\s\S]*?)```/g, function (m, lang, code) {
+      var key = 'C' + blocks.length;
+      blocks.push('<pre><code>' + esc(code) + '</code></pre>');
+      return '\n__BLOCK_' + key + '__\n';
+    });
+    var lines = src.split('\n');
+    var html = '';
+    var list = null;
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i];
+      if (/^__BLOCK_C\d+__$/.test(line.trim())) { flushList(); html += blocks[Number(line.trim().slice(8, -2))]; continue; }
+      var h = line.match(/^(#{1,4})\s+(.*)/);
+      if (h) { flushList(); html += '<h' + h[1].length + '>' + inlineMd(h[2]) + '</h' + h[1].length + '>'; continue; }
+      if (/^---+\s*$/.test(line)) { flushList(); html += '<hr/>'; continue; }
+      if (/^&gt;/.test(line) || /^> /.test(line)) { flushList(); html += '<blockquote>' + inlineMd(line.replace(/^&gt;\s?|^>\s?/, '')) + '</blockquote>'; continue; }
+      var ul = line.match(/^\s*[-*+]\s+(.*)/);
+      var ol = line.match(/^\s*\d+\.\s+(.*)/);
+      if (ul || ol) {
+        if (!list) { list = { tag: ol ? 'ol' : 'ul', items: [] }; }
+        list.items.push(inlineMd((ul ? ul[1] : ol[1])));
+        continue;
+      } else { flushList(); }
+      if (line.trim() === '') { continue; }
+      html += '<p>' + inlineMd(line) + '</p>';
+      function flushList() { if (list) { html += '<' + list.tag + '>' + list.items.map(function (x) { return '<li>' + x + '</li>'; }).join('') + '</' + list.tag + '>'; list = null; } }
+    }
+    flushList();
+    return html;
+  }
+
+  // ---------- 渲染 ----------
+  function bubble(clsName, inner) {
+    var d = document.createElement('div');
+    d.className = 'msg ' + clsName;
+    d.innerHTML = inner;
+    return d;
+  }
+
+  function renderMessage(m) {
+    var role = m.role || 'assistant';
+    var wrap = document.createElement('div');
+    wrap.className = 'row';
+    var col = document.createElement('div');
+    col.style.cssText = 'width:100%;display:flex;flex-direction:column;gap:8px;';
+    wrap.appendChild(col);
+
+    if (role === 'user') {
+      var parsed = parseUser(m.content || '');
+      if (parsed.att.length) {
+        var attWrap = document.createElement('div');
+        attWrap.className = 'attachments';
+        parsed.att.forEach(function (a) {
+          var c = document.createElement('span');
+          c.className = 'att';
+          c.textContent = a;
+          c.title = a;
+          attWrap.appendChild(c);
+        });
+        col.appendChild(attWrap);
+      }
+      parsed.msgs.forEach(function (txt) {
+        if (txt) col.appendChild(bubble('user', esc(txt)));
+      });
+      if (!parsed.msgs.length && !parsed.att.length) col.appendChild(bubble('user', esc(m.content || '')));
+    } else if (role === 'assistant') {
+      col.style.alignItems = 'flex-start';
+      if (m.reasoning_content) {
+        var rb = document.createElement('div');
+        rb.className = 'reason-body';
+        rb.textContent = m.reasoning_content;
+        col.appendChild(makeCollapsible('思考过程', '', rb));
+      }
+      if (m.content) {
+        var mb = document.createElement('div');
+        mb.className = 'md';
+        mb.innerHTML = mdToHtml(m.content);
+        col.appendChild(mb);
+      } else if (!m.reasoning_content && !m.tool_calls) {
+        col.appendChild(bubble('assistant', '（无内容）'));
+      }
+      if (m.tool_calls && m.tool_calls.length) {
+        m.tool_calls.forEach(function (tc) {
+          var tb = document.createElement('div');
+          tb.className = 'tool-body';
+          var name = tc.name || tc.function || 'tool';
+          if (tc.function && typeof tc.function === 'object' && tc.function.name) name = tc.function.name;
+          tb.innerHTML = '<div class="tname">' + esc(name) + '</div>';
+          if (tc.arguments) tb.appendChild(document.createTextNode(String(tc.arguments)));
+          col.appendChild(makeCollapsible('调用工具', name, tb));
+        });
+      }
+    } else {
+      // role === 'tool'
+      col.style.alignItems = 'flex-start';
+      var tb = document.createElement('div');
+      tb.className = 'tool-body';
+      tb.textContent = toolText(m.content);
+      col.appendChild(makeCollapsible('工具结果', m.name, tb));
+    }
+    return wrap;
+  }
+
+  function renderMessages(rows) {
+    listEl.innerHTML = '';
+    if (!rows || !rows.length) {
+      listEl.innerHTML = '<div class="empty">暂无消息</div>';
+      return;
+    }
+    rows.forEach(function (m) {
+      listEl.appendChild(renderMessage(m));
+    });
+    listEl.scrollTop = listEl.scrollHeight;
+  }
+
+  // ---------- 数据装载 ----------
+  var seq = 0;
+  function callAction(actionId, payload) {
+    return new Promise(function (resolve, reject) {
+      var id = ++seq;
+      function onMsg(e) {
+        var m = e.data;
+        if (m && m.type === 'callActionResult' && m.id === id) {
+          window.removeEventListener('message', onMsg);
+          if (m.ok) resolve(m.data); else reject(new Error(m.error));
+        }
+      }
+      window.addEventListener('message', onMsg);
+      window.parent.postMessage({ type: 'callAction', id: id, actionId: actionId, payload: payload || {} }, '*');
+    });
+  }
+
+  var activeSessionId = '';
+
+  function load(sessionId) {
+    if (!sessionId) { renderMessages([]); return; }
+    fetch('/api/sessions/' + encodeURIComponent(sessionId))
+      .then(function (r) { return r.json(); })
+      .then(function (history) {
+        var rows = Array.isArray(history) ? history
+          : (history && Array.isArray(history.history)) ? history.history
+          : (history && Array.isArray(history.messages)) ? history.messages : [];
+        renderMessages(rows);
+      })
+      .catch(function () { renderMessages([]); });
+  }
+
+  function refresh() {
+    callAction('state.get').then(function (st) {
+      activeSessionId = (st && st.activeSessionId) || activeSessionId || '';
+      load(activeSessionId);
+    }).catch(function () { load(activeSessionId); });
+  }
+
+  window.addEventListener('message', function (e) {
+    var m = e.data;
+    if (!m || typeof m !== 'object' || m.type !== 'event') return;
+    if (m.event === 'session.switched') {
+      activeSessionId = m.data && m.data.session_id;
+      refresh();
+    } else if (m.event === 'conversation.updated') {
+      load(activeSessionId);
+    }
+  });
+  refresh();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,6 @@
+{
+  "id": "builtin-sidebar",
+  "name": "左侧栏",
+  "slot": "sidebar",
+  "entry": "index.html"
+}

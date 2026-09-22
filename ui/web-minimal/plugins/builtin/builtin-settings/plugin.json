@@ -1,0 +1,6 @@
+{
+  "id": "builtin-settings",
+  "name": "设置",
+  "slot": "settings",
+  "entry": "index.html"
+}

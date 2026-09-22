@@ -241,6 +241,26 @@ def api_update_sandbox_registry(payload: Dict[str, Any]):
     return {"status": "ok"}
 
 
+# ── View 设置（极简模式开关，ui_mode: normal | minimal）──
+@router.get("/view")
+def api_get_view_settings():
+    from src.utils.config import get_global_settings
+
+    mode = str(get_global_settings().get("ui_mode") or "normal")
+    return {"ui_mode": mode}
+
+
+@router.put("/view")
+def api_update_view_settings(payload: Dict[str, Any]):
+    """写入 ui_mode；重启 Electron 后按此加载极简宿主或主 React UI。"""
+    value = str(payload.get("ui_mode") or "normal").strip()
+    if value not in ("normal", "minimal"):
+        raise HTTPException(status_code=400, detail="ui_mode 仅支持 normal / minimal")
+    if not save_global_setting("ui_mode", value):
+        raise HTTPException(status_code=500, detail="保存 ui_mode 失败")
+    return {"status": "ok"}
+
+
 # ── Markdown Files (SOUL.md / GOAL.md) ──
 @router.get("/markdown/{filename}")
 def api_get_markdown_file(filename: str):

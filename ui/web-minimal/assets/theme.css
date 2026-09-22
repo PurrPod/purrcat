@@ -1,0 +1,189 @@
+/* ============================================================
+   web-minimal 极简模式主题（白灰配色 · 无外框线）
+   改为白/浅灰配色：默认背景为白，侧栏/会话透出浅灰面板，
+   无深色磨砂、无硬边框；仅用轻分隔与阴影表达层级。
+   ============================================================ */
+
+:root {
+  /* 白灰中性色板 */
+  --wm-bl-0:    #ffffff;
+  --wm-bl-50:   #fafbfc;
+  --wm-bl-100:  #f2f4f7;   /* 侧栏 / 面板浅灰 */
+  --wm-bl-150:  #e9edf1;
+  --wm-bl-200:  #dfe4ea;
+  --wm-bl-300:  #c7cfd9;
+  --wm-bl-400:  #a9b3bf;
+  --wm-bl-500:  #8b96a3;
+  --wm-bl-600:  #6b7684;
+  --wm-bl-700:  #4c5560;
+  --wm-bl-800:  #2f3841;
+  --wm-bl-900:  #16191d;
+
+  /* deepseek 蓝（仅引用/发送按钮等强调用） */
+  --wm-ds-400:  rgb(103, 158, 254);
+  --wm-ds-450:  rgb(86, 134, 254);
+  --wm-ds-500:  rgb(65, 118, 230);
+  --wm-ds-50:   rgb(237, 243, 254);
+
+  /* 语义别名 */
+  --wm-bg-base:     var(--wm-bl-0);     /* 默认背景：白 */
+  --wm-bg-sidebar:  var(--wm-bl-100);   /* 侧栏浅灰 */
+  --wm-bg-panel:    var(--wm-bl-0);     /* 会话/面板白 */
+  --wm-bg-input:    var(--wm-bl-100);   /* 输入条字段浅灰 */
+  --wm-bg-hover:    var(--wm-bl-150);
+  --wm-bg-active:   var(--wm-bl-100);
+  --wm-label:       var(--wm-bl-900);
+  --wm-label-2nd:   var(--wm-bl-700);
+  --wm-label-dim:   var(--wm-bl-500);
+  --wm-border:      rgba(15, 17, 21, 0.08);   /* 极轻分隔，仅需处 */
+  --wm-border-soft: rgba(15, 17, 21, 0.05);
+  --wm-accent:      var(--wm-ds-450);
+  --wm-accent-hi:   var(--wm-ds-400);
+  --wm-accent-weak: var(--wm-ds-50);
+  --wm-user-bubble: rgba(86, 134, 254, 0.10);  /* 用户气泡（圆弧） */
+  --wm-shadow-sm:   0 1px 2px rgba(15, 17, 21, 0.04);
+  --wm-shadow:      0 4px 16px rgba(15, 17, 21, 0.08);
+
+  --wm-font: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", Roboto, sans-serif;
+  --wm-mono: ui-monospace, "SF Mono", "Cascadia Code", Consolas, "Courier New", monospace;
+  --wm-radius: 10px;
+  --wm-radius-sm: 8px;
+  --wm-topbar-h: 36px;
+  --wm-sidebar-w: 264px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+
+body {
+  font-family: var(--wm-font);
+  background: var(--wm-bg-base);
+  color: var(--wm-label);
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  font-size: 14px;
+}
+
+/* 薄滚动条（浅灰） */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: var(--wm-bl-300); border-radius: 999px; }
+::-webkit-scrollbar-thumb:hover { background: var(--wm-bl-400); }
+
+/* slot 基础容器 */
+.wm-slot { position: relative; }
+
+/* 背景层：默认白，由背景插件决定是否叠加壁纸 */
+[data-layer="background"] {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: var(--wm-bg-base);
+}
+
+/* 顶部细条：可拖拽窗口区 + 右侧窗口控制按钮 */
+[data-layer="topbar"] {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: var(--wm-topbar-h);
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  -webkit-app-region: drag;          /* Electron 下整个细条可拖拽移动窗口 */
+  user-select: none;
+}
+.win-controls { display: none; align-items: center; height: 100%; -webkit-app-region: no-drag; }
+body.electron .win-controls { display: flex; }
+.win-btn {
+  width: 42px; height: 100%;
+  display: flex; align-items: center; justify-content: center;
+  border: none; background: transparent; color: var(--wm-label-2nd);
+  font-size: 13px; line-height: 1; cursor: pointer; transition: background 0.12s ease;
+}
+.win-btn:hover { background: var(--wm-bg-hover); color: var(--wm-label); }
+.win-btn.close:hover { background: #e81123; color: #fff; }
+
+/* 侧栏：浅灰，无右边界线 */
+[data-layer="sidebar"] {
+  position: fixed;
+  top: var(--wm-topbar-h);
+  left: 0; bottom: 0;
+  width: var(--wm-sidebar-w);
+  z-index: 10;
+  background: var(--wm-bg-sidebar);
+}
+
+/* 主区：侧栏右侧，容纳 会话 + 输入 */
+.wm-main {
+  position: fixed;
+  top: var(--wm-topbar-h);
+  left: var(--wm-sidebar-w);
+  right: 0; bottom: 0;
+  z-index: 5;
+  display: grid;
+  grid-template-rows: 1fr auto;
+  background: var(--wm-bg-base);
+}
+.wm-main [data-slot="conversation"] {
+  min-height: 0;
+  overflow: hidden;
+  background: var(--wm-bg-panel);
+}
+
+/* 空态：无活动会话或无消息 → 聊天框居中（欢迎态） */
+body.empty .wm-main { grid-template-rows: 1fr; }
+body.empty .wm-main [data-slot="conversation"] { display: none; }
+body.empty .wm-main [data-slot="input"] {
+  height: 100%;
+  background: transparent;
+  border-top: none;
+}
+
+/* 设置面板：modal overlay，默认隐藏，由宿主切换 body.settings-open */
+[data-layer="settings"] {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: none;
+  background: rgba(15, 17, 21, 0.35);
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 8vh;
+}
+body.settings-open [data-layer="settings"] { display: flex; }
+
+/* 浮动槽位（桌宠等）：默认隐藏；挂载插件后显示为右上角悬浮卡片 */
+[data-layer="pet"] {
+  position: fixed;
+  top: 46px;
+  right: 16px;
+  z-index: 100;
+  width: 300px;
+  height: 360px;
+  display: none;
+  background: var(--wm-bg-panel);
+  border-radius: 14px;
+  box-shadow: 0 8px 24px rgba(22, 25, 29, 0.14);
+  overflow: hidden;
+}
+[data-layer="pet"]:has(iframe) { display: block; }
+[data-layer="pet"] iframe { border: 0; }
+.settings-panel {
+  width: min(680px, 92vw);
+  max-height: 80vh;
+  overflow: auto;
+  background: var(--wm-bg-panel);
+  border-radius: 14px;
+  box-shadow: var(--wm-shadow);
+  padding: 20px;
+}
+.settings-panel h3 { font-size: 15px; font-weight: 600; margin-bottom: 12px; }
+
+/* iframe 铺满 slot */
+.wm-slot iframe, .wm-main iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+}
