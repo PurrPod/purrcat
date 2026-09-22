@@ -29,26 +29,15 @@
   }
   .head { display: flex; align-items: center; justify-content: space-between; padding: 4px 4px 10px; }
   .head .title { font-size: 13px; font-weight: 600; }
-  .head .new { font-size: 12px; color: var(--dim); }
-
-  .primary {
-    width: 100%;
-    font-family: inherit;
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--label);
-    background: #ffffff;
-    border: none;
-    border-radius: 10px;
-    padding: 10px 12px;
-    text-align: left;
-    cursor: pointer;
-    box-shadow: var(--wm-shadow-sm, 0 1px 2px rgba(15,17,21,.04));
-    transition: background 0.12s ease;
+  .head .new {
+    flex: none; width: 26px; height: 26px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px; line-height: 1; color: var(--label-2nd, #4c5560);
+    background: transparent; border: none; border-radius: 6px; cursor: pointer;
   }
-  .primary:hover { background: var(--hover); }
+  .head .new:hover { background: var(--hover); }
 
-  .list { flex: 1; overflow-y: auto; margin-top: 8px; display: flex; flex-direction: column; }
+  .list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; }
   .item {
     width: 100%;
     font-family: inherit;
@@ -69,8 +58,8 @@
 <body>
   <div class="head">
     <span class="title">会话列表</span>
+    <button id="newBtn" class="new" title="新建会话" aria-label="新建会话">＋</button>
   </div>
-  <button id="newBtn" class="primary">＋ 新建会话</button>
   <div id="list" class="list"></div>
 
 <script>

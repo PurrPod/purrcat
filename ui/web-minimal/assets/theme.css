@@ -134,6 +134,22 @@ body.electron .win-controls { display: flex; }
   transition: background 0.12s ease, color 0.12s ease;
 }
 .wm-rail .rail-toggle:hover { background: var(--wm-bg-hover); color: var(--wm-label); }
+/* 顶行：左上角图标固定在原位（不随栏宽右移），右侧为展开态品牌区 */
+.wm-rail .rail-top {
+  flex: none;
+  display: flex; align-items: center;
+  width: 100%;
+  gap: 2px;
+  padding: 2px 2px 0;
+}
+.rail-brand { display: none; align-items: center; gap: 6px; min-width: 0; overflow: hidden; }
+body.rail-2 .rail-brand { display: flex; }
+.rail-brand .brand-name { font-size: 14px; font-weight: 700; color: var(--wm-label); white-space: nowrap; }
+.rail-brand .brand-beta {
+  flex: none; font-size: 9.5px; font-weight: 700; line-height: 1;
+  color: #fff; background: var(--wm-accent, #567efe);
+  border-radius: 6px; padding: 3px 5px; letter-spacing: 0.3px;
+}
 .wm-rail .rail-icons {
   flex: 1;
   display: flex;
@@ -196,15 +212,25 @@ body.rail-2 .wm-rail .rail-ico .rail-name { display: inline; }
 }
 /* 会话列表(侧栏)隐藏时：主区舒展到最左，保留与白条的间隙 */
 body.rail-nosidebar .wm-main { left: calc(var(--wm-rail-w) + var(--wm-sidebar-gap)); }
+/* 主区右侧大圆角框：会话(顶) + 输入(底) 合成一个带细描边的连续圆角框；
+   纯白面板在外层纯白下圆角不可见(=看似直角)，故加一圈极细描边勾勒圆角轮廓。
+   顶部圆角、底部由输入框补齐；二者衔接处(会话底/输入顶)不描边，保持无缝无分界线 */
 .wm-main [data-slot="conversation"] {
   min-height: 0;
   overflow: hidden;
   background: transparent; /* 会话面板底色由历史会话插件按自身 opacity 绘制 */
-  border-radius: 18px 18px 0 0; /* 顶部圆角；底部由输入框补齐，合并成一个整体圆角面板 */
+  border: 1px solid var(--wm-border, rgba(15,17,21,.08));
+  border-bottom: none;
+  border-radius: 18px 18px 0 0;
 }
 
-/* 输入框：与上方会话面板零间距/同底色，只保留底部圆角，视觉上嵌进同一面板 */
+/* 输入框槽：与上方会话面板零间距/同底色，延续右侧大圆角框的边框与底部圆角。
+   overflow:hidden 必须与上方会话框一致：内部白色面板靠它被裁剪进 18px 圆角，
+   否则透明槽内的白面板是直角方块，会把底部圆角"撑"成直角 */
 .wm-main [data-slot="input"] {
+  background: transparent;
+  border: 1px solid var(--wm-border, rgba(15,17,21,.08));
+  border-top: none;
   border-radius: 0 0 18px 18px;
   overflow: hidden;
 }
@@ -216,10 +242,12 @@ body.empty .wm-main [data-slot="input"] {
   height: 100%;
   background: transparent;
   border-top: none;
+  border-radius: 18px;
+  overflow: hidden;
 }
-/* 引用菜单展开：非空态下给输入区腾出更高行（1fr）以完整展示分类/列表，避免被会话区裁切 */
+/* 引用菜单展开：输入区让出刚好够的高度展示引用/引用列表（不过度把会话顶起） */
 body.input-menu:not(.empty) .wm-main {
-  grid-template-rows: minmax(0, 1fr) minmax(0, min(62vh, 480px));
+  grid-template-rows: minmax(0, 1fr) minmax(0, min(58vh, 520px));
 }
 
 /* 设置面板：modal overlay，默认隐藏，由宿主切换 body.settings-open */

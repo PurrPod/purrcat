@@ -447,7 +447,7 @@
 
   async function ensureSessionId(sessionId) {
     if (sessionId) return sessionId;
-    const created = await (await fetch('/api/sessions/new', { method: 'POST' })).json();
+    const created = await (await fetch('/api/sessions/new', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).json();
     if (created && created.id) {
       groupState.activeSessionId = created.id;
       await refreshSessions();
@@ -510,7 +510,7 @@
         return groupState.sessions;
       }
       case 'sessions.new': {
-        const res = await (await fetch('/api/sessions/new', { method: 'POST' })).json();
+        const res = await (await fetch('/api/sessions/new', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).json();
         if (res && res.id) { groupState.activeSessionId = res.id; await refreshSessions(); updateEmpty(); broadcastSessions('session.switched', { session_id: res.id }); }
         return res;
       }

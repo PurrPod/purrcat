@@ -27,7 +27,13 @@
 
   <!-- 最左图标栏（固定组件，非插件）：顶部图标收起/展开，其下为各插件显隐图标 -->
   <div class="wm-rail" id="rail">
-    <button class="rail-toggle" id="railToggle" title="收起 / 展开插件栏" aria-label="收起展开插件栏">☰</button>
+    <div class="rail-top">
+      <button class="rail-toggle" id="railToggle" title="收起 / 展开插件栏" aria-label="收起展开插件栏">☰</button>
+      <div class="rail-brand" id="railBrand">
+        <span class="brand-name">PurrCat</span>
+        <span class="brand-beta">beta</span>
+      </div>
+    </div>
     <div class="rail-icons" id="railIcons"></div>
   </div>
 

@@ -30,15 +30,23 @@
   /* 折叠块 */
   /* 折叠块：标题在上、内容展开在下方（纵向，不再挤到右边） */
   .row.fold { flex-direction: column; align-items: stretch; }
+  /* 折叠块整体一个小框：把「标题 + 展开的工具/思考内容」框在一组，比父气泡略浅、同属一体 */
+  .row.fold {
+    border: 1px solid rgba(86,134,254,0.14);
+    background: rgba(86,134,254,0.04);
+    border-radius: 10px;
+    padding: 4px 6px;
+  }
   .cap {
     width: 100%; text-align: left; font-family: inherit; font-size: 12px; font-weight: 600;
-    color: var(--wm-label-2nd, #4c5560); background: var(--wm-bg-hover, #e9edf1);
-    border: none; border-radius: 8px; padding: 6px 10px; cursor: pointer; display: flex; align-items: center; gap: 6px;
+    color: var(--wm-label-2nd, #4c5560); background: transparent;
+    border: none; border-radius: 6px; padding: 6px 8px; cursor: pointer; display: flex; align-items: center; gap: 6px;
   }
+  .cap:hover { background: var(--wm-bg-hover, #e9edf1); }
   .cap .arrow { transition: transform 0.15s ease; font-size: 10px; }
   .cap.open .arrow { transform: rotate(90deg); }
   .cap .tag { font-weight: 400; color: var(--wm-label-dim, #8b96a3); }
-  .fold-body { display: none; margin-top: 6px; overflow: hidden; }
+  .fold-body { display: none; margin-top: 4px; overflow: hidden; }
   .fold-body.open { display: block; }
 
   .reason-body { white-space: pre-wrap; font-size: 13px; line-height: 1.6; color: var(--wm-label-2nd, #4c5560); background: var(--wm-bl-100, #f2f4f7); border-radius: 8px; padding: 8px 10px; }
@@ -77,7 +85,7 @@
 (function () {
   var listEl = document.getElementById('list');
 
-  // 面板透明度：宿主会话外壳已透明，由本插件按自身 opacity 绘制半透明白底
+  // 会话历史面板底色：白色，可调透明度（输入框悬浮其上，二者不互相遮盖）
   var DEF_OP = 0.82;
   function applyPanel(cfg) {
     var o = cfg && typeof cfg.opacity === 'number' ? cfg.opacity : DEF_OP;
