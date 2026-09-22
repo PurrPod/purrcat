@@ -38,9 +38,9 @@
   .fold-body { display: none; margin-top: 6px; overflow: hidden; }
   .fold-body.open { display: block; }
 
-  .reason-body { white-space: pre-wrap; font-size: 13px; color: var(--wm-label-2nd, #4c5560); background: transparent; padding: 4px 2px; }
-  .tool-body { font-family: var(--wm-mono, ui-monospace, Consolas, monospace); font-size: 12px; color: var(--wm-label-2nd, #4c5560); background: #fff; border: 1px solid var(--wm-border-soft, rgba(15,17,21,.05)); border-radius: 8px; padding: 8px 10px; overflow-x: auto; }
-  .tool-body .tname { font-weight: 700; color: var(--wm-accent, #567efe); margin-bottom: 4px; }
+  .reason-body { white-space: pre-wrap; font-size: 13px; line-height: 1.6; color: var(--wm-label-2nd, #4c5560); background: var(--wm-bl-100, #f2f4f7); border-radius: 8px; padding: 8px 10px; }
+  .tool-body { font-family: var(--wm-mono, ui-monospace, Consolas, monospace); font-size: 12px; line-height: 1.55; color: var(--wm-label-2nd, #4c5560); background: var(--wm-bl-100, #f2f4f7); border: 1px solid var(--wm-border-soft, rgba(15,17,21,.05)); border-radius: 8px; padding: 8px 10px; overflow-x: auto; white-space: pre-wrap; word-break: break-word; }
+  .tool-body .tname { font-weight: 700; color: var(--wm-accent, #567efe); margin-bottom: 6px; }
 
   .empty { align-self: center; color: var(--wm-label-dim, #8b96a3); font-size: 13px; margin-top: 48px; }
 
@@ -226,12 +226,19 @@
       }
       if (m.tool_calls && m.tool_calls.length) {
         m.tool_calls.forEach(function (tc) {
+          var fn = (tc.function && typeof tc.function === 'object') ? tc.function : {};
+          var name = fn.name || tc.name || tc.function || 'tool';
           var tb = document.createElement('div');
           tb.className = 'tool-body';
-          var name = tc.name || tc.function || 'tool';
-          if (tc.function && typeof tc.function === 'object' && tc.function.name) name = tc.function.name;
           tb.innerHTML = '<div class="tname">' + esc(name) + '</div>';
-          if (tc.arguments) tb.appendChild(document.createTextNode(String(tc.arguments)));
+          // 渲染工具参数（arguments 为 JSON 字符串，解析后美化；换行用 pre-wrap 保留）
+          var rawArgs = fn.arguments != null ? fn.arguments : (tc.arguments != null ? tc.arguments : '');
+          if (rawArgs !== '') {
+            var argText = '';
+            try { var ao = JSON.parse(rawArgs); argText = JSON.stringify(ao, null, 2); }
+            catch (e) { argText = String(rawArgs); }
+            if (argText) tb.appendChild(document.createTextNode(argText));
+          }
           col.appendChild(makeCollapsible('调用工具', name, tb));
         });
       }

@@ -238,7 +238,7 @@ body.settings-open [data-layer="settings"] { display: flex; }
 [data-layer="pet"] iframe { border: 0; }
 .settings-panel {
   width: min(1040px, 96vw);
-  max-height: 90vh;
+  height: 86vh;
   display: flex;
   flex-direction: column;
   background: var(--wm-bg-panel);

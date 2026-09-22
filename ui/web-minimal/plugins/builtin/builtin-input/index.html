@@ -330,6 +330,8 @@
   window.addEventListener('message', function (e) {
     var m = e.data;
     if (!m || typeof m !== 'object') return;
+    // 兼容宿主广播格式（{type:'event', event:'layout.empty', data:{empty}}）
+    if (m.type === 'event' && m.event === 'layout.empty') { setCentered(m.data && m.data.empty); return; }
     if (m.type === 'layout.empty') setCentered(m.empty);
   });
   callAction('state.get').then(function (s) { setCentered(s && s.empty); }).catch(function () {});

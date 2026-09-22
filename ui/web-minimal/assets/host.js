@@ -28,6 +28,7 @@
   };
   // 最左图标栏状态：stage 0=收起(仅开关) 1=仅图标 2=图标+名称(左侧栏)；hidden=各插件隐藏开关（持久化）
   const railState = { stage: 1, hidden: {} };
+  const railButtons = {};   // plugin_id -> 图标栏按钮元素（供即时刷新高亮）
 
   // ---- 图标栏（固定组件）----
   const RAIL_STAGES = 3;
@@ -53,8 +54,9 @@
     HOST.document.body.classList.add('rail-' + railState.stage);
     const t = HOST.document.getElementById('railToggle');
     if (t) {
-      t.textContent = railState.stage === 2 ? '▤' : (railState.stage === 1 ? '☰' : '≡');
-      t.title = railState.stage === 2 ? '收为图标栏' : (railState.stage === 1 ? '展开为左侧栏' : '展开图标栏');
+      // 图标形态固定不变，仅通过展开/收起影响侧栏布局
+      t.textContent = '☰';
+      t.title = '收起 / 展开插件栏';
     }
   }
   function cycleRail() {
@@ -73,6 +75,22 @@
     if (slot) applySlotHidden(slot, hidden);
     persistRail().catch(() => {});
   }
+  // 按当前显隐状态即时重算单个图标按钮的 on/off 高亮
+  function updateRailButton(btn, p) {
+    if (!btn) return;
+    btn.classList.remove('on', 'off');
+    if (p.railAction) {
+      // 动作型图标不表达"显隐"，只在对应面板开启时高亮（如设置）
+      if (panelActionActive(p)) btn.classList.add('on');
+    } else {
+      btn.classList.add(railHidden(p.id) ? 'off' : 'on');
+    }
+  }
+  // 动作型图标当前是否"激活"（用于高亮跟随面板开合）
+  function panelActionActive(p) {
+    if (p.railAction === 'settings.open') return HOST.document.body.classList.contains('settings-open');
+    return false;
+  }
   function buildRail() {
     const iconsEl = HOST.document.getElementById('railIcons');
     if (!iconsEl) return;
@@ -80,7 +98,7 @@
     iconsEl.innerHTML = '';
     groupState.plugins.filter(isRailPlugin).forEach((p) => {
       const btn = HOST.document.createElement('button');
-      btn.className = 'rail-ico' + (p.railAction ? ' on' : (railHidden(p.id) ? ' off' : ' on'));
+      btn.className = 'rail-ico';
       btn.title = (p.name || p.id);
       const g = HOST.document.createElement('span');
       g.className = 'rail-glyph';
@@ -90,9 +108,12 @@
       nm.className = 'rail-name';
       nm.textContent = p.name || p.id;
       btn.appendChild(nm);
+      updateRailButton(btn, p);   // 初始高亮
+      railButtons[p.id] = btn;    // 登记，供面板开合状态即时刷新高亮
       btn.addEventListener('click', () => {
         if (p.railAction) { callAction(p.railAction, {}).catch(() => {}); return; }  // 例如设置 → 打开设置面板
         setPluginHidden(p.id, !railHidden(p.id));
+        updateRailButton(btn, p); // 即时刷新高亮，无需重建
       });
       iconsEl.appendChild(btn);
     });
@@ -137,10 +158,25 @@
     }
     setEmpty(empty);
   }
+  // 重新拉取会话列表，保证 empty 判定与侧栏高亮基于最新数据
+  async function refreshSessions() {
+    try {
+      const list = await (await fetch('/api/sessions')).json();
+      groupState.sessions = Array.isArray(list) ? list : groupState.sessions;
+    } catch (_) { /* 保持原样 */ }
+  }
+  // 会话状态变更事件需同时通知会话卡片(history)与侧栏(列表)，侧栏据此刷新选中高亮
+  function broadcastSessions(event, data) {
+    broadcast('conversation', event, data);
+    broadcast('sidebar', event, data);
+  }
 
   // ---- 设置面板开合 ----
   function setSettingsOpen(open) {
     HOST.document.body.classList.toggle('settings-open', !!open);
+    // 设置图标高亮跟随面板开合状态
+    const sp = groupState.plugins.find((x) => x && x.railAction === 'settings.open');
+    if (sp && railButtons[sp.id]) updateRailButton(railButtons[sp.id], sp);
     if (open) broadcast('settings', 'settings.opened', { plugins: groupState.plugins });
   }
 
@@ -168,7 +204,9 @@
     const created = await (await fetch('/api/sessions/new', { method: 'POST' })).json();
     if (created && created.id) {
       groupState.activeSessionId = created.id;
-      broadcast('conversation', 'session.switched', { session_id: created.id });
+      await refreshSessions();
+      updateEmpty();
+      broadcastSessions('session.switched', { session_id: created.id });
       return created.id;
     }
     return '';
@@ -200,7 +238,8 @@
         });
         if (!res.ok) throw new Error(await res.text());
         setEmpty(false);
-        broadcast('conversation', 'conversation.updated', { session_id: sessionId });
+        refreshSessions().then(updateEmpty);   // 更新 messages_count，维持 empty 状态准确
+        broadcastSessions('conversation.updated', { session_id: sessionId });
         return await res.json();
       }
       case 'chat.sendBatch': {
@@ -214,7 +253,8 @@
         });
         if (!res.ok) throw new Error(await res.text());
         setEmpty(false);
-        broadcast('conversation', 'conversation.updated', { session_id: sessionId });
+        refreshSessions().then(updateEmpty);
+        broadcastSessions('conversation.updated', { session_id: sessionId });
         return await res.json();
       }
       case 'sessions.list': {
@@ -225,11 +265,11 @@
       }
       case 'sessions.new': {
         const res = await (await fetch('/api/sessions/new', { method: 'POST' })).json();
-        if (res && res.id) { groupState.activeSessionId = res.id; updateEmpty(); broadcast('conversation', 'session.switched', { session_id: res.id }); }
+        if (res && res.id) { groupState.activeSessionId = res.id; await refreshSessions(); updateEmpty(); broadcastSessions('session.switched', { session_id: res.id }); }
         return res;
       }
       case 'session.switch': {
-        if (payload.session_id) { groupState.activeSessionId = payload.session_id; updateEmpty(); broadcast('conversation', 'session.switched', { session_id: payload.session_id }); }
+        if (payload.session_id) { groupState.activeSessionId = payload.session_id; await refreshSessions(); updateEmpty(); broadcastSessions('session.switched', { session_id: payload.session_id }); }
         return { status: 'ok' };
       }
       case 'chat.interrupt':
