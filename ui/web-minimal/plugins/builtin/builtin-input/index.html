@@ -26,44 +26,53 @@
   body.centered .center { justify-content: center; align-items: center; max-width: 760px; margin: 0 auto; }
   body.centered .welcome { display: block; }
   body.centered .welcome .wt { font-size: 18px; font-weight: 600; }
-  body.centered .bar { width: 100%; }
+  body.centered .bar, body.centered .refPanel { width: 100%; }
 
-  /* 引用面板（＋ 展开） */
+  /* 引用面板（＋ 展开）：左竖分类 + 右侧条目，鼠标悬浮分类即出列表 */
   .refPanel {
     display: none;
     margin-bottom: 8px;
     background: var(--wm-bl-0, #ffffff);
     border-radius: 12px;
     box-shadow: var(--wm-shadow, 0 4px 16px rgba(15,17,21,.08));
-    padding: 12px;
+    padding: 10px;
+    overflow: hidden;
   }
   .refPanel.open { display: block; }
-  .refPanel .head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
-  .refPanel .head .hint { font-size: 12px; color: var(--wm-label-dim, #8b96a3); }
-  .refPanel .close { border: none; background: transparent; color: var(--wm-label-2nd, #4c5560); font-size: 14px; cursor: pointer; padding: 2px 6px; border-radius: 6px; }
-  .refPanel .close:hover { background: var(--wm-bg-hover, #e9edf1); }
-  .refPanel .row { display: flex; gap: 6px; flex-wrap: wrap; }
-  .refPanel .opt {
-    font-family: inherit; font-size: 12px; color: var(--wm-label, #16191d);
-    background: var(--wm-bg-input, #f2f4f7); border: none; border-radius: 999px; padding: 6px 12px; cursor: pointer;
+  .ref-pick { display: flex; gap: 8px; height: min(56vh, 460px); }
+  .cats {
+    flex: none; width: 128px;
+    display: flex; flex-direction: column; gap: 2px;
+    border-right: 1px solid var(--wm-border-soft, rgba(15,17,21,.05));
+    padding-right: 6px;
+    overflow: hidden;
   }
-  .refPanel .opt:hover { background: var(--wm-bg-hover, #e9edf1); }
-  .refPanel .listbox { display: none; margin-top: 8px; max-height: 170px; overflow: auto; }
-  .refPanel .listbox.open { display: block; }
-  .refPanel .lb-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
-  .refPanel .lb-head .lb-name { font-size: 12px; font-weight: 600; color: var(--wm-label-2nd, #4c5560); }
-  .refPanel .lb-head .lb-cancel { border: none; background: transparent; color: var(--wm-accent, #567efe); font-size: 12px; cursor: pointer; padding: 3px 8px; border-radius: 6px; }
-  .refPanel .lb-head .lb-cancel:hover { background: var(--wm-bg-hover, #e9edf1); }
-  .refPanel .item {
+  .cat {
+    display: block; width: 100%; text-align: left;
+    font-family: inherit; font-size: 13px; color: var(--wm-label, #16191d);
+    background: transparent; border: none; border-radius: 8px; padding: 8px 10px; cursor: pointer;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .cat:hover { background: var(--wm-bg-hover, #e9edf1); }
+  .cat.active { background: var(--wm-bg-hover, #e9edf1); color: var(--wm-accent, #567efe); font-weight: 600; }
+  .right {
+    flex: 1; min-width: 0;
+    display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+  .right-head { flex: none; padding: 4px 6px 6px; font-size: 12px; color: var(--wm-label-2nd, #4c5560); font-weight: 600; }
+  .items { flex: 1; min-height: 0; overflow-y: auto; }
+  .item {
     display: block; width: 100%; text-align: left; font-size: 12.5px; color: var(--wm-label, #16191d);
     background: transparent; border: none; padding: 7px 8px; border-radius: 8px; cursor: pointer;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
-  .refPanel .item:hover { background: var(--wm-bg-hover, #e9edf1); }
-  .refPanel .item.sel { color: var(--wm-accent, #567efe); font-weight: 600; }
-  .refPanel .lb-empty { font-size: 12px; color: var(--wm-label-dim, #8b96a3); padding: 8px; }
+  .item:hover { background: var(--wm-bg-hover, #e9edf1); }
+  .item.sel { color: var(--wm-accent, #567efe); font-weight: 600; }
+  .lb-empty { font-size: 12px; color: var(--wm-label-dim, #8b96a3); padding: 8px; }
 
   /* 已选引用 */
-  .quotes { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+  .quotes { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; max-height: 56px; overflow-y: auto; }
   .quote {
     display: inline-flex; align-items: center; gap: 6px;
     font-size: 12px; color: var(--wm-label, #16191d);
@@ -72,40 +81,48 @@
   .quote span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .quote .x { border: none; background: transparent; color: var(--wm-label-dim, #8b96a3); cursor: pointer; font-size: 12px; line-height: 1; }
 
-  /* 输入条：＋ 与发送键均在框内，与历史融合（白底、无边框、仅轻阴影） */
+  /* 输入条：上下两半——上半写字，下半放＋与纸飞机。白底、无边框、仅轻阴影 */
   .bar {
     display: flex;
-    align-items: flex-end;
-    gap: 4px;
+    flex-direction: column;
+    gap: 6px;
     background: var(--wm-bl-0, #ffffff);
     border: none;
     border-radius: 16px;
     box-shadow: var(--wm-shadow-sm, 0 1px 2px rgba(15,17,21,.04));
-    padding: 6px 8px;
-    min-height: 52px;
+    padding: 10px 10px 8px;
+    min-height: 168px;
+  }
+  .bar textarea {
+    flex: 1;
+    min-height: 0;
+    resize: none;
+    font-family: inherit; font-size: 14px; line-height: 1.5;
+    color: var(--wm-label, #16191d);
+    background: transparent;
+    border: none; padding: 2px 4px; outline: none;
+    overflow-y: auto;
+    text-align: left;
+  }
+  textarea::placeholder { color: var(--wm-label-dim, #8b96a3); }
+  .bar-foot {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
   }
   .plusBtn {
-    flex: none; width: 38px; height: 38px;
+    flex: none; width: 36px; height: 36px;
     font-size: 19px; line-height: 1; color: var(--wm-label-2nd, #4c5560);
     background: transparent; border: none; border-radius: 10px; cursor: pointer;
     display: flex; align-items: center; justify-content: center;
-    align-self: flex-end;
   }
   .plusBtn:hover { background: var(--wm-bg-hover, #e9edf1); }
   .plusBtn.active { color: var(--wm-accent, #567efe); }
-  textarea {
-    flex: 1; min-width: 0; resize: none; font-family: inherit; font-size: 14px; line-height: 1.5;
-    color: var(--wm-label, #16191d);
-    background: transparent;
-    border: none; padding: 8px 6px; outline: none; min-height: 38px; max-height: 160px;
-    overflow-y: auto;
-  }
-  textarea::placeholder { color: var(--wm-label-dim, #8b96a3); }
   .sendBtn {
-    flex: none; width: 38px; height: 38px; border: none; border-radius: 12px; cursor: pointer;
+    flex: none; width: 36px; height: 36px; border: none; border-radius: 12px; cursor: pointer;
     background: var(--wm-accent, #567efe); color: #fff;
     display: flex; align-items: center; justify-content: center;
-    align-self: flex-end;
   }
   .sendBtn:hover { background: var(--wm-accent-hi, #679efe); }
   .sendBtn:disabled { background: var(--wm-bl-200, #dfe4ea); color: #fff; cursor: default; }
@@ -118,32 +135,23 @@
       <div class="wt">有什么可以帮你的？</div>
     </div>
     <div class="refPanel" id="refPanel">
-      <div class="head">
-        <span class="hint">添加引用</span>
-        <button class="close" id="refClose" title="关闭">✕</button>
-      </div>
-      <div class="row">
-        <button class="opt" id="pickFile">＋ 文件</button>
-        <button class="opt" id="pickFolder">＋ 文件夹</button>
-        <button class="opt" id="pickGraph">＋ Graph</button>
-        <button class="opt" id="pickSkill">＋ Skill</button>
-        <button class="opt" id="pickMcp">＋ MCP</button>
-      </div>
-      <div class="listbox" id="listbox">
-        <div class="lb-head">
-          <span class="lb-name" id="lbName"></span>
-          <button class="lb-cancel" id="lbCancel">取消</button>
+      <div class="ref-pick">
+        <div class="cats" id="cats"></div>
+        <div class="right">
+          <div class="right-head" id="rName"></div>
+          <div class="items" id="rItems"></div>
         </div>
-        <div id="lbItems"></div>
       </div>
     </div>
     <div class="quotes" id="quotes"></div>
     <div class="bar">
-      <button class="plusBtn" id="plus" title="添加引用">＋</button>
       <textarea id="input" rows="1" placeholder="输入消息，Enter 发送 / Shift+Enter 换行"></textarea>
-      <button class="sendBtn" id="send" title="发送" aria-label="发送">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
-      </button>
+      <div class="bar-foot">
+        <button class="plusBtn" id="plus" title="添加引用">＋</button>
+        <button class="sendBtn" id="send" title="发送" aria-label="发送">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+        </button>
+      </div>
     </div>
   </div>
 
@@ -173,34 +181,37 @@
     if (typeof r.path === 'string') return r.path;
     return null;
   }
-  function esc(s) {
-    return String(s || '').replace(/[&<>"']/g, function (c) {
-      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
-    });
-  }
 
   var input = document.getElementById('input');
   var sendBtn = document.getElementById('send');
   var plusBtn = document.getElementById('plus');
   var refPanel = document.getElementById('refPanel');
-  var listbox = document.getElementById('listbox');
-  var lbName = document.getElementById('lbName');
-  var lbItems = document.getElementById('lbItems');
+  var catsEl = document.getElementById('cats');
+  var rName = document.getElementById('rName');
+  var rItems = document.getElementById('rItems');
   var quotesEl = document.getElementById('quotes');
+
+  // 面板透明度：宿主外壳已透明，本插件按自身 opacity 绘制半透明白底
+  var DEF_OP = 0.82;
+  function applyPanel(cfg) {
+    var o = cfg && typeof cfg.opacity === 'number' ? cfg.opacity : DEF_OP;
+    o = Math.max(0, Math.min(1, o));
+    document.body.style.backgroundColor = 'rgba(255,255,255,' + o.toFixed(2) + ')';
+  }
+  callAction('config.get', { plugin_id: 'builtin-input' }).then(applyPanel).catch(function () {});
 
   // ---------- 引用 ----------
   var quotes = [];
   function addQuote(type, content, label) {
     quotes.push({ type: type, content: content, label: label || content });
-    renderQuotes();
+    renderQuotes(); markSel();
   }
   function hasQuote(label) {
     return quotes.some(function (q) { return q.label === label; });
   }
   function removeQuote(label) {
     quotes = quotes.filter(function (q) { return q.label !== label; });
-    renderQuotes();
-    markSelections();
+    renderQuotes(); markSel();
   }
   function renderQuotes() {
     quotesEl.innerHTML = '';
@@ -219,87 +230,131 @@
     });
   }
 
-  // ---------- 引用面板开合 ----------
-  function setListbox(open) {
-    listbox.classList.toggle('open', !!open);
-    if (!open) { lbName.textContent = ''; lbItems.innerHTML = ''; }
+  // ---------- 左分类 ----------
+  var CATS = [
+    { t: 'file', label: '＋ 文件', dialog: true },
+    { t: 'folder', label: '＋ 文件夹', dialog: true },
+    { t: 'skill', label: 'Skill' },
+    { t: 'mcp', label: 'MCP' },
+    { t: 'graph', label: 'Graph' }
+  ];
+  var activeCat = null;
+  var cache = {};   // skill/mcp/graph 的 fetched items
+  function setActive(t) {
+    activeCat = t;
+    catsEl.querySelectorAll('.cat').forEach(function (c) { c.classList.toggle('active', c.dataset.t === t); });
   }
-  function toggleRef(open) {
-    var show = open !== undefined ? !!open : !refPanel.classList.contains('open');
-    refPanel.classList.toggle('open', show);
-    plusBtn.classList.toggle('active', show);
-    if (!show) setListbox(false);
+  function buildCats() {
+    catsEl.innerHTML = '';
+    CATS.forEach(function (c) {
+      var b = document.createElement('button');
+      b.className = 'cat';
+      b.dataset.t = c.t;
+      b.textContent = c.label;
+      b.addEventListener('mouseenter', function () {
+        setActive(c.t);
+        if (c.dialog) showRight(c.label, []);
+        else openCat(c.t);
+      });
+      b.addEventListener('click', function () { handleCatClick(c); });
+      catsEl.appendChild(b);
+    });
   }
-  plusBtn.addEventListener('click', function () { toggleRef(); });
-  document.getElementById('refClose').addEventListener('click', function () { toggleRef(false); });
-  document.getElementById('lbCancel').addEventListener('click', function () { setListbox(false); });
 
-  // ---------- 引用选项 ----------
-  function showListbox(name, items) {
-    lbName.textContent = name;
-    lbItems.innerHTML = '';
+  // 右侧提示/条目
+  function showRight(title, items) {
+    rName.textContent = title;
+    rItems.innerHTML = '';
     if (!items || !items.length) {
       var e = document.createElement('div');
       e.className = 'lb-empty';
       e.textContent = '暂无可用项';
-      lbItems.appendChild(e);
-    } else {
-      items.forEach(function (it) {
-        var b = document.createElement('button');
-        b.className = 'item' + (hasQuote(it.label) ? ' sel' : '');
-        b.textContent = it.text;
-        b.title = it.hint || '';
-        b.addEventListener('click', function () {
-          if (hasQuote(it.label)) removeQuote(it.label);
-          else addQuote(it.type, it.content, it.label);
-        });
-        lbItems.appendChild(b);
-      });
+      rItems.appendChild(e);
+      return;
     }
-    setListbox(true);
+    items.forEach(function (it) {
+      var b = document.createElement('button');
+      b.className = 'item' + (hasQuote(it.label) ? ' sel' : '');
+      b.textContent = it.text;
+      b.title = it.hint || it.label;
+      b.addEventListener('click', function () {
+        if (hasQuote(it.label)) removeQuote(it.label);
+        else addQuote(it.type, it.content, it.label);
+      });
+      rItems.appendChild(b);
+    });
   }
-  // 选中状态回显
-  function markSelections() {
-    var btns = lbItems.querySelectorAll('.item');
-    btns.forEach(function (b) { b.classList.toggle('sel', hasQuote(b.textContent)); });
+  // 已选状态回显
+  function markSel() {
+    var bs = rItems.querySelectorAll('.item');
+    bs.forEach(function (b) { b.classList.toggle('sel', hasQuote(b.textContent)); });
   }
 
-  document.getElementById('pickFile').addEventListener('click', function () {
-    callAction('dialog.files').then(function (r) {
-      var p = pickPath(r);
-      if (p) addQuote('file-quote', 'user quote the file：' + p, p.split(/[\\/]/).pop());
-    }).catch(function (e) { alert(String(e.message || e)); });
-  });
-  document.getElementById('pickFolder').addEventListener('click', function () {
-    callAction('dialog.folder').then(function (r) {
-      var p = pickPath(r);
-      if (p) addQuote('file-quote', 'user quote the file：' + p, p);
-    }).catch(function (e) { alert(String(e.message || e)); });
-  });
-  document.getElementById('pickGraph').addEventListener('click', function () {
-    fetch('/api/webmin/ref/graphs').then(function (r) { return r.json(); }).then(function (names) {
-      showListbox('选择 Graph（可多选，点击已选项取消）', (names || []).map(function (g) {
-        return { label: g, text: g, type: 'graph-quote', content: 'user quote the graph：' + g };
-      }));
-    }).catch(function () {});
-  });
-  document.getElementById('pickSkill').addEventListener('click', function () {
-    fetch('/api/tools/skills').then(function (r) { return r.json(); }).then(function (skills) {
-      showListbox('选择 Skill（可多选，点击已选项取消）', (skills || []).map(function (s) {
-        var n = s.name || s.dir_name || 'unknown';
-        return { label: n, text: n, hint: s.description || '', type: 'skill-quote', content: 'user want you fetch skill：' + n };
-      }));
-    }).catch(function () {});
-  });
-  document.getElementById('pickMcp').addEventListener('click', function () {
-    fetch('/api/tools/mcp').then(function (r) { return r.json(); }).then(function (servers) {
-      var names = [];
-      if (servers && typeof servers === 'object') names = Object.keys(servers);
-      showListbox('选择 MCP（可多选，点击已选项取消）', names.map(function (n) {
+  function fetchList(t) {
+    if (cache[t]) return Promise.resolve(cache[t]);
+    var p;
+    if (t === 'skill') p = fetch('/api/tools/skills').then(function (r) { return r.json(); }).then(function (s) {
+      return (s || []).map(function (x) {
+        var n = x.name || x.dir_name || 'unknown';
+        return { label: n, text: n, hint: x.description || '', type: 'skill-quote', content: 'user want you fetch skill：' + n };
+      });
+    });
+    else if (t === 'mcp') p = fetch('/api/tools/mcp').then(function (r) { return r.json(); }).then(function (servers) {
+      var names = (servers && typeof servers === 'object') ? Object.keys(servers) : [];
+      return names.map(function (n) {
         return { label: n, text: n, type: 'mcp-quote', content: 'user want you fetch mcp：' + n };
-      }));
-    }).catch(function () {});
-  });
+      });
+    });
+    else p = fetch('/api/webmin/ref/graphs').then(function (r) { return r.json(); }).then(function (names) {
+      return (names || []).map(function (g) {
+        return { label: g, text: g, type: 'graph-quote', content: 'user quote the graph：' + g };
+      });
+    });
+    return p.catch(function () { return []; }).then(function (items) { cache[t] = items; return items; });
+  }
+
+  function openCat(t) {
+    setActive(t);
+    fetchList(t).then(function (items) {
+      if (activeCat !== t) return;
+      var names = { skill: '选择 Skill', mcp: '选择 MCP', graph: '选择 Graph' };
+      showRight(names[t] || t, items);
+      markSel();
+    });
+  }
+
+  function handleCatClick(c) {
+    if (c.t === 'file') {
+      callAction('dialog.files').then(function (r) {
+        var p = pickPath(r);
+        if (p) addQuote('file-quote', 'user quote the file：' + p, p.split(/[\\/]/).pop());
+      }).catch(function (e) { alert(String(e.message || e)); });
+    } else if (c.t === 'folder') {
+      callAction('dialog.folder').then(function (r) {
+        var p = pickPath(r);
+        if (p) addQuote('file-quote', 'user quote the file：' + p, p);
+      }).catch(function (e) { alert(String(e.message || e)); });
+    } else {
+      openCat(c.t);
+    }
+  }
+
+  // ---------- 面板开合 ----------
+  function setMenuOpenT(open) {
+    callAction('input.dropdown', { open: open }).catch(function () {});
+  }
+  function toggleRef(show) {
+    var open = show !== undefined ? !!show : !refPanel.classList.contains('open');
+    refPanel.classList.toggle('open', open);
+    plusBtn.classList.toggle('active', open);
+    setMenuOpenT(open);
+    if (open) {
+      // 默认悬浮在第一个分类上（文件）
+      var first = catsEl.querySelector('.cat');
+      if (first) first.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+    }
+  }
+  plusBtn.addEventListener('click', function () { toggleRef(); });
 
   // ---------- 发送 ----------
   function send() {
@@ -319,22 +374,22 @@
   });
   sendBtn.addEventListener('click', send);
 
-  // 自适应高度防溢出
-  function autoResize() {
-    input.style.height = 'auto';
-    input.style.height = Math.min(input.scrollHeight, 160) + 'px';
-  }
-  input.addEventListener('input', autoResize);
-
   function setCentered(empty) { document.body.classList.toggle('centered', !!empty); }
+  function resyncEmpty() {
+    callAction('state.get').then(function (s) { setCentered(s && s.empty); }).catch(function () {});
+  }
   window.addEventListener('message', function (e) {
     var m = e.data;
     if (!m || typeof m !== 'object') return;
-    // 兼容宿主广播格式（{type:'event', event:'layout.empty', data:{empty}}）
+    if (m.type === 'configApply') { applyPanel(m.config); return; }
     if (m.type === 'event' && m.event === 'layout.empty') { setCentered(m.data && m.data.empty); return; }
     if (m.type === 'layout.empty') setCentered(m.empty);
+    if (m.type === 'event' && (m.event === 'session.switched' || m.event === 'conversation.updated')) resyncEmpty();
   });
-  callAction('state.get').then(function (s) { setCentered(s && s.empty); }).catch(function () {});
+
+  buildCats();
+  markSel();
+  resyncEmpty();
 })();
 </script>
 </body>

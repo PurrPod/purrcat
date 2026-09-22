@@ -5,6 +5,9 @@
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { height: 100%; }
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #c6cdd5; border-radius: 999px; }
   body {
     font-family: var(--wm-font, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif);
     background: transparent;
@@ -67,9 +70,27 @@
     <div class="empty">暂无消息</div>
   </div>
 
+  <!-- GFM markdown 引擎（本地 vendor，离线可用），暴露 window.marked -->
+  <script src="/minimal/assets/vendor/marked.min.js"></script>
+
 <script>
 (function () {
   var listEl = document.getElementById('list');
+
+  // 面板透明度：宿主会话外壳已透明，由本插件按自身 opacity 绘制半透明白底
+  var DEF_OP = 0.82;
+  function applyPanel(cfg) {
+    var o = cfg && typeof cfg.opacity === 'number' ? cfg.opacity : DEF_OP;
+    o = Math.max(0, Math.min(1, o));
+    document.body.style.backgroundColor = 'rgba(255,255,255,' + o.toFixed(2) + ')';
+  }
+  window.addEventListener('message', function (e) {
+    var m = e.data;
+    if (!m || typeof m !== 'object') return;
+    if (m.type === 'configApply') applyPanel(m.config);
+    else if (m.type === 'event' && m.event === 'config.updated') { callAction('config.get', { plugin_id: 'builtin-history' }).then(applyPanel).catch(function () {}); }
+  });
+  callAction('config.get', { plugin_id: 'builtin-history' }).then(applyPanel).catch(function () {});
 
   // ---------- 工具函数 ----------
   function esc(s) {
@@ -128,50 +149,38 @@
     return wrap;
   }
 
-  // ---------- 轻量 Markdown（GFM 子集，默认转义，离线可用） ----------
-  function inlineMd(s) {
-    // code span
-    s = s.replace(/`([^`]+)`/g, function (m, c) { return '<code>' + esc(c) + '</code>'; });
-    // links
-    s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, function (m, t, u) { return '<a href="' + esc(u) + '">' + t + '</a>'; });
-    // bold, italic, strike
-    s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-    s = s.replace(/\*([^*]+)\*/g, '<em>$1</em>');
-    s = s.replace(/~~([^~]+)~~/g, '<del>$1</del>');
-    return s;
+  // ---------- Markdown 渲染（复用成熟引擎 marked，与主 UI 的 react-markdown + GFM 一致） ----------
+  // 兜底：marked 未加载时退化为「转义 + 保留换行」的纯文本，保证内容不丢
+  function mdFallback(src) {
+    return src.split(/\n{2,}/).map(function (p) {
+      p = p.replace(/\n/g, '<br>');
+      return p ? '<p>' + esc(p) + '</p>' : '';
+    }).join('');
   }
   function mdToHtml(src) {
     src = String(src == null ? '' : src).replace(/\r\n/g, '\n');
-    var blocks = [];
-    // fenced code blocks
-    src = src.replace(/```(\w*)\n?([\s\S]*?)```/g, function (m, lang, code) {
-      var key = 'C' + blocks.length;
-      blocks.push('<pre><code>' + esc(code) + '</code></pre>');
-      return '\n__BLOCK_' + key + '__\n';
-    });
-    var lines = src.split('\n');
     var html = '';
-    var list = null;
-    for (var i = 0; i < lines.length; i++) {
-      var line = lines[i];
-      if (/^__BLOCK_C\d+__$/.test(line.trim())) { flushList(); html += blocks[Number(line.trim().slice(8, -2))]; continue; }
-      var h = line.match(/^(#{1,4})\s+(.*)/);
-      if (h) { flushList(); html += '<h' + h[1].length + '>' + inlineMd(h[2]) + '</h' + h[1].length + '>'; continue; }
-      if (/^---+\s*$/.test(line)) { flushList(); html += '<hr/>'; continue; }
-      if (/^&gt;/.test(line) || /^> /.test(line)) { flushList(); html += '<blockquote>' + inlineMd(line.replace(/^&gt;\s?|^>\s?/, '')) + '</blockquote>'; continue; }
-      var ul = line.match(/^\s*[-*+]\s+(.*)/);
-      var ol = line.match(/^\s*\d+\.\s+(.*)/);
-      if (ul || ol) {
-        if (!list) { list = { tag: ol ? 'ol' : 'ul', items: [] }; }
-        list.items.push(inlineMd((ul ? ul[1] : ol[1])));
-        continue;
-      } else { flushList(); }
-      if (line.trim() === '') { continue; }
-      html += '<p>' + inlineMd(line) + '</p>';
-      function flushList() { if (list) { html += '<' + list.tag + '>' + list.items.map(function (x) { return '<li>' + x + '</li>'; }).join('') + '</' + list.tag + '>'; list = null; } }
+    if (window.marked && window.marked.parse) {
+      // gfm=true：表格/删除线/GITHUB 自动链接；breaks=true：单个换行即换行
+      try { html = window.marked.parse(src, { gfm: true, breaks: true }); }
+      catch (e) { /* 语法异常时兜底 */ }
     }
-    flushList();
-    return html;
+    if (!html) html = mdFallback(src);
+    return safeLinks(html);
+  }
+  // 链接处理：绝对外链加 target=_blank（在新标签页打开，聊天作为返回点始终保留＝能返回）；
+  // 相对/未知/危险链接去掉 href 退化为纯文本（仍可选中复制），避免把 iframe 或新标签页跳成后端 JSON 404
+  function safeLinks(html) {
+    return String(html).replace(/<a\b([^>]*)>/g, function (m, attrs) {
+      var h = /href\s*=\s*(?:"|')([^"']*)(?:"|')/.exec(attrs);
+      var hv = h ? h[1] : '';
+      if (/^(https?:|mailto:|tel:|#)/i.test(hv)) {
+        if (/\btarget\s*=/i.test(attrs)) return m;
+        return '<a' + attrs + ' target="_blank" rel="noopener noreferrer">';
+      }
+      // 去掉 href → 退化为不可跳转的文本
+      return '<a' + attrs.replace(/\s+href\s*=\s*(?:"|')(?:[^"']*)(?:"|')/i, '') + '>';
+    });
   }
 
   // ---------- 渲染 ----------

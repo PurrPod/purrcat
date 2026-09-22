@@ -37,15 +37,26 @@
 
   var timer = null;
   var idx = 0;
+  var layers = [];
+  var opacity = 1;
 
   function clear() {
     if (timer) { clearInterval(timer); timer = null; }
     document.querySelectorAll('.layer').forEach(function (el) { el.remove(); });
+    layers = [];
     idx = 0;
   }
 
   function isVideo(url) {
     return /\.(mp4|webm|mov)(\?|$)/i.test(url);
+  }
+
+  // 将透明度应用到当前显示层：仅激活层带 cfg 透明度，其余层保持不可见
+  function show(i) {
+    layers.forEach(function (l, ix) {
+      l.classList.toggle('on', ix === i);
+      l.style.opacity = (ix === i) ? opacity : 0;
+    });
   }
 
   function render(cfg) {
@@ -55,6 +66,7 @@
     }
     var items = cfg.wallpapers.filter(function (w) { return w && w.src; });
     if (!items.length) return;
+    var o = Number(cfg.opacity); opacity = (o >= 0 && o <= 1) ? o : 1;
     items.forEach(function (w) {
       var el;
       if (isVideo(w.src) || w.type === 'video') {
@@ -72,15 +84,14 @@
       }
       el.className = 'layer';
       document.body.appendChild(el);
+      layers.push(el);
     });
-    var layers = document.querySelectorAll('.layer');
-    layers[0].classList.add('on');
+    show(0);
     var interval = Number(cfg.intervalSec) || 0;
     if (items.length > 1 && interval > 0) {
       timer = setInterval(function () {
         idx = (idx + 1) % layers.length;
-        layers.forEach(function (l) { l.classList.remove('on'); });
-        layers[idx].classList.add('on');
+        show(idx);
       }, interval * 1000);
     }
   }

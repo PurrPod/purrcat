@@ -1,8 +1,14 @@
 import json
+import contextlib
 import os
 import sys
 from pathlib import Path
 from typing import Any, Dict
+
+if sys.platform == "win32":
+    import msvcrt
+else:
+    import fcntl
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SRC_DIR = os.path.join(BASE_DIR, "src")
@@ -154,17 +160,44 @@ def get_global_settings() -> dict:
         return {}
 
 
+@contextlib.contextmanager
+def _global_lock():
+    """跨进程文件锁：settings.json 的读改写要整体互斥，避免旧实例/并发写回
+    用过期快照整盘覆写、冲掉 ui_mode / data_root 等其它键。"""
+    lock_path = str(GLOBAL_CONFIG_FILE) + ".lock"
+    f = open(lock_path, "w")
+    try:
+        if sys.platform == "win32":
+            f.seek(0)
+            msvcrt.locking(f.fileno(), msvcrt.LK_LOCK, 1)
+        else:
+            fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+        yield f
+    finally:
+        try:
+            if sys.platform == "win32":
+                f.seek(0)
+                msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+        except Exception:
+            pass
+        f.close()
+
+
 def save_global_setting(key: str, value: Any) -> bool:
     GLOBAL_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    settings = get_global_settings()
-    settings[key] = value
-    try:
-        with open(GLOBAL_CONFIG_FILE, "w", encoding="utf-8") as f:
-            json.dump(settings, f, indent=4, ensure_ascii=False)
-        return True
-    except Exception as e:
-        print(f"[Config] 保存全局配置失败: {e}")
-        return False
+    with _global_lock():
+        settings = get_global_settings()
+        settings[key] = value
+        ok = True
+        try:
+            with open(GLOBAL_CONFIG_FILE, "w", encoding="utf-8") as f:
+                json.dump(settings, f, indent=4, ensure_ascii=False)
+        except Exception as e:
+            print(f"[Config] 保存全局配置失败: {e}")
+            ok = False
+    return ok
 
 
 def get_engine_preference() -> str:

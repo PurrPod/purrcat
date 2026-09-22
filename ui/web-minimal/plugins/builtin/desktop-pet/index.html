@@ -7,8 +7,11 @@
   html, body { height: 100%; }
   body { background: transparent; font-family: system-ui, "Microsoft YaHei", sans-serif; color: #26303b; }
   .pet { display: flex; flex-direction: column; height: 100%; width: 300px; }
-  .pet-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px; }
-  .pet-avatar { width: 42px; height: 42px; border-radius: 50%; background: linear-gradient(135deg,#9ec5fe,#4c7bff); color:#fff; font-size:20px; display:flex; align-items:center; justify-content:center; }
+  .pet-head { display: flex; align-items: center; gap: 8px; padding: 10px 8px 10px 12px; cursor: grab; user-select: none; }
+  .pet-head:active { cursor: grabbing; }
+  .pet-close { flex: none; width: 24px; height: 24px; margin-left: auto; border: none; background: transparent; color: #8b96a3; font-size: 14px; line-height: 1; border-radius: 6px; cursor: pointer; }
+  .pet-close:hover { background: #f2f4f7; color: #26303b; }
+  .pet-avatar { width: 42px; height: 42px; border-radius: 50%; background: linear-gradient(135deg,#9ec5fe,#4c7bff); color:#fff; font-size:20px; display:flex; align-items:center; justify-content:center; flex: none; }
   .pet-info { flex: 1; }
   .pet-title { font-weight: 600; font-size: 13px; }
   .pet-sub { font-size: 11px; color: #8b96a3; }
@@ -33,6 +36,7 @@
         <div class="pet-title">桌宠 · 测试插件</div>
         <div class="pet-sub" id="greet">--</div>
       </div>
+      <button class="pet-close" id="petClose" title="关闭桌宠">✕</button>
     </div>
     <div class="pet-actions">
       <button id="btnList">枚举本地应用</button>
@@ -100,6 +104,29 @@
     if (m && m.type === 'configApply') {
       document.getElementById('greet').textContent = (m.config && m.config.greeting) || '喵，主人～';
     }
+  });
+
+  // ---------- 拖拽 / 关闭（卡片手势由本插件自行设计） ----------
+  // 宿主仅提供通用原语：slot.move 移动本插件所在卡片、slot.close 隐藏卡片（图标栏可再次唤出）
+  var head = document.querySelector('.pet-head');
+  var dragging = false, sx = 0, sy = 0;
+  head.addEventListener('pointerdown', function (e) {
+    if (e.target && e.target.closest && e.target.closest('.pet-close')) return; // 别拖到关闭键
+    dragging = true; sx = e.clientX; sy = e.clientY;
+    try { head.setPointerCapture(e.pointerId); } catch (err) {}
+    e.preventDefault();
+  });
+  head.addEventListener('pointermove', function (e) {
+    if (!dragging) return;
+    var dx = e.clientX - sx, dy = e.clientY - sy;
+    sx = e.clientX; sy = e.clientY;
+    callAction('slot.move', { dx: dx, dy: dy }).catch(function () {});
+  });
+  function endDrag() { dragging = false; }
+  head.addEventListener('pointerup', endDrag);
+  head.addEventListener('pointercancel', endDrag);
+  document.getElementById('petClose').addEventListener('click', function () {
+    callAction('slot.close').catch(function () {});
   });
 
   // 启动时自动枚举一次，验证后端链路是否就绪

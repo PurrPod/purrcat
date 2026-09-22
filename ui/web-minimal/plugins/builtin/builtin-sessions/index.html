@@ -12,7 +12,11 @@
     --accent: var(--wm-accent, #567efe);
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { background: transparent; } /* 让 body 圆角外的角落露出壁纸，否则白底糊掉圆角 */
   html, body { height: 100%; }
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #c6cdd5; border-radius: 999px; }
   body {
     font-family: var(--wm-font, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif);
     background: transparent;
@@ -20,6 +24,8 @@
     display: flex;
     flex-direction: column;
     padding: 10px;
+    border-radius: 18px; /* 会话列表整体为圆角框 */
+    overflow: hidden;
   }
   .head { display: flex; align-items: center; justify-content: space-between; padding: 4px 4px 10px; }
   .head .title { font-size: 13px; font-weight: 600; }
@@ -47,7 +53,7 @@
     width: 100%;
     font-family: inherit;
     font-size: 13px;
-    color: var(--label-2nd);
+    color: var(--label, #16191d); /* 加深，与聊天正文文字同深 */
     background: transparent;
     border: none;
     padding: 10px 12px;
@@ -87,6 +93,21 @@
 
   var listEl = document.getElementById('list');
   var sessions = [];
+
+  // 面板底色：浅灰（区别于宿主白底），确保圆角四角与背景有对比、看得见；透明度可调
+  var DEF_OP = 0.9;
+  function applyPanel(cfg) {
+    var o = cfg && typeof cfg.opacity === 'number' ? cfg.opacity : DEF_OP;
+    o = Math.max(0, Math.min(1, o));
+    document.body.style.backgroundColor = 'rgba(242,244,247,' + o.toFixed(2) + ')';
+  }
+  window.addEventListener('message', function (e) {
+    var m = e.data;
+    if (!m || typeof m !== 'object') return;
+    if (m.type === 'configApply') applyPanel(m.config);
+    else if (m.type === 'event' && m.event === 'config.updated') { callAction('config.get', { plugin_id: 'builtin-sessions' }).then(applyPanel).catch(function () {}); }
+  });
+  callAction('config.get', { plugin_id: 'builtin-sessions' }).then(applyPanel).catch(function () {});
 
   function renderList(activeId) {
     listEl.innerHTML = '';

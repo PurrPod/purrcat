@@ -51,6 +51,8 @@
   --wm-topbar-h: 36px;
   --wm-sidebar-w: 264px;
   --wm-rail-w: 48px;          /* 最左图标栏宽度（约为一个图标大小） */
+  --wm-sidebar-gap: 8px;      /* 会话列表与左侧白条的横向间隙 */
+  --wm-sidebar-inset: 14px;   /* 会话列表上下缩进，与右侧面板高度保持一致 */
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -66,7 +68,8 @@ body {
 }
 
 /* 薄滚动条（浅灰） */
-::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--wm-bl-300); border-radius: 999px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--wm-bl-400); }
 
@@ -112,8 +115,8 @@ body.electron .win-controls { display: flex; }
   position: fixed;
   top: 0; left: 0; bottom: 0;
   width: var(--wm-rail-w);
-  z-index: 30;
-  background: var(--wm-bl-0);
+  z-index: 60; /* 始终高于设置遮罩(50)等所有层，保证白条一直可点 */
+  background: var(--wm-rail-bg, #ffffff); /* 与「新建会话」按钮同白；透明度由宿主设置(--wm-rail-bg) */
   border-right: 1px solid var(--wm-border-soft);
   display: flex;
   flex-direction: column;
@@ -168,34 +171,42 @@ body.rail-2 .wm-rail .rail-ico .rail-name { display: inline; }
 /* 侧栏：浅灰，无右边界线（右移出图标栏） */
 [data-layer="sidebar"] {
   position: fixed;
-  top: var(--wm-topbar-h);
-  left: var(--wm-rail-w); bottom: 0;
+  top: calc(var(--wm-topbar-h) + var(--wm-sidebar-inset));
+  left: calc(var(--wm-rail-w) + var(--wm-sidebar-gap));
+  bottom: var(--wm-sidebar-inset);
   width: var(--wm-sidebar-w);
   z-index: 10;
-  background: var(--wm-bg-sidebar);
+  background: transparent; /* 由侧栏插件按自身 opacity 绘制，宿主不设底色 */
+  border-radius: 18px; /* 宿主层裁剪 iframe → 圆角在最外层可靠生效 */
+  overflow: hidden;
 }
 
 /* 主区：侧栏右侧，容纳 会话 + 输入（右移出图标栏） */
 .wm-main {
   position: fixed;
   top: var(--wm-topbar-h);
-  left: calc(var(--wm-rail-w) + var(--wm-sidebar-w));
+  left: calc(var(--wm-rail-w) + var(--wm-sidebar-gap) + var(--wm-sidebar-w));
   right: 0; bottom: 0;
   z-index: 5;
   display: grid;
   grid-template-rows: 1fr auto;
-  gap: 10px;
+  gap: 0; /* 会话与输入零间距，合并成一个整体圆角面板 */
   padding: 14px;
-  background: var(--wm-bg-base);
+  background: transparent; /* 空白缝隙直接露出壁纸；面板底色由会话/输入插件各自绘制 */
 }
-/* 会话列表(侧栏)隐藏时：主区舒展到最左，填满侧栏空间 */
-body.rail-nosidebar .wm-main { left: var(--wm-rail-w); }
+/* 会话列表(侧栏)隐藏时：主区舒展到最左，保留与白条的间隙 */
+body.rail-nosidebar .wm-main { left: calc(var(--wm-rail-w) + var(--wm-sidebar-gap)); }
 .wm-main [data-slot="conversation"] {
   min-height: 0;
   overflow: hidden;
-  background: var(--wm-bg-panel);
-  border-radius: 18px;
-  box-shadow: var(--wm-shadow-sm);
+  background: transparent; /* 会话面板底色由历史会话插件按自身 opacity 绘制 */
+  border-radius: 18px 18px 0 0; /* 顶部圆角；底部由输入框补齐，合并成一个整体圆角面板 */
+}
+
+/* 输入框：与上方会话面板零间距/同底色，只保留底部圆角，视觉上嵌进同一面板 */
+.wm-main [data-slot="input"] {
+  border-radius: 0 0 18px 18px;
+  overflow: hidden;
 }
 
 /* 空态：无活动会话或无消息 → 聊天框居中（欢迎态） */
@@ -205,6 +216,10 @@ body.empty .wm-main [data-slot="input"] {
   height: 100%;
   background: transparent;
   border-top: none;
+}
+/* 引用菜单展开：非空态下给输入区腾出更高行（1fr）以完整展示分类/列表，避免被会话区裁切 */
+body.input-menu:not(.empty) .wm-main {
+  grid-template-rows: minmax(0, 1fr) minmax(0, min(62vh, 480px));
 }
 
 /* 设置面板：modal overlay，默认隐藏，由宿主切换 body.settings-open */
@@ -270,10 +285,53 @@ body.settings-open [data-layer="settings"] { display: flex; }
 }
 .settings-panel h3 { font-size: 15px; font-weight: 600; margin-bottom: 12px; }
 
+/* 设置面板宿主原生渲染（白条透明度 + 各插件配置） */
+.settings-body .plugin {
+  border: 1px solid var(--wm-border); border-radius: 10px;
+  padding: 12px 14px; margin-bottom: 12px; background: var(--wm-bl-50);
+}
+.settings-body .p-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.settings-body .p-name { font-weight: 600; }
+.settings-body .p-tag { font-size: 11px; color: var(--wm-label-dim); }
+.settings-body .p-sep { height: 1px; background: var(--wm-border); margin: 10px 0; }
+.settings-body .field { margin-bottom: 10px; }
+.settings-body .field:last-child { margin-bottom: 0; }
+.settings-body .field label { display: block; font-size: 12px; color: var(--wm-label-2nd); margin-bottom: 5px; }
+.settings-body .field input[type=text],
+.settings-body .field input[type=number],
+.settings-body .field select {
+  width: 100%; padding: 6px 8px; border: 1px solid var(--wm-border); border-radius: 7px;
+  font-size: 13px; background: var(--wm-bg-panel); color: var(--wm-label); outline: none;
+}
+.settings-body .field input:focus, .settings-body .field select:focus { border-color: var(--wm-accent); }
+.settings-body .range-val { font-size: 11px; color: var(--wm-label-dim); text-align: right; margin-top: 2px; }
+.settings-body .switch-row { display: flex; align-items: center; justify-content: space-between; }
+.settings-body .switch { position: relative; width: 38px; height: 22px; }
+.settings-body .switch input { opacity: 0; width: 0; height: 0; }
+.settings-body .slider { position: absolute; inset: 0; background: var(--wm-bl-300); border-radius: 22px; transition: .2s; cursor: pointer; }
+.settings-body .slider:before { content: ""; position: absolute; width: 16px; height: 16px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: .2s; }
+.settings-body .switch input:checked + .slider { background: var(--wm-accent); }
+.settings-body .switch input:checked + .slider:before { transform: translateX(16px); }
+.settings-body .walls { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.settings-body .wall-thumb { position: relative; width: 56px; height: 56px; border-radius: 8px; overflow: hidden; border: 1px solid var(--wm-border); background: var(--wm-bg-sidebar); }
+.settings-body .wall-thumb img, .settings-body .wall-thumb video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.settings-body .wall-del { position: absolute; right: 2px; top: 2px; width: 16px; height: 16px; line-height: 15px; text-align: center; background: rgba(0,0,0,.55); color: #fff; border: none; border-radius: 50%; font-size: 11px; cursor: pointer; }
+.settings-body .btn { padding: 5px 10px; border-radius: 7px; border: 1px solid var(--wm-border); background: var(--wm-bg-panel); color: var(--wm-label-2nd); cursor: pointer; font-size: 12px; }
+.settings-body .btn:hover { border-color: var(--wm-accent); color: var(--wm-accent); }
+.settings-body .btn.primary { background: var(--wm-accent); color: #fff; border-color: var(--wm-accent); }
+.settings-body .btn.danger { color: #d0453b; border-color: #f0c9c6; }
+.settings-body .btn.sm { padding: 3px 8px; }
+.settings-body .row-actions { display: flex; gap: 8px; }
+.settings-body .mode-row { display: flex; gap: 8px; margin-bottom: 12px; }
+
 /* iframe 铺满 slot */
 .wm-slot iframe, .wm-main iframe {
   width: 100%;
   height: 100%;
   border: 0;
   display: block;
+}
+/* 会话列表面板圆角：直接给 iframe 自身设圆角，最可靠地裁掉其内容四角 */
+[data-slot="sidebar"] iframe {
+  border-radius: 18px;
 }

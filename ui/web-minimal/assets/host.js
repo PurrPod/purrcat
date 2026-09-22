@@ -14,7 +14,7 @@
   'use strict';
 
   const HOST = window;
-  const SLOTS = ['pet', 'sidebar', 'history', 'input', 'background', 'conversation', 'settings'];
+  const SLOTS = ['pet', 'sidebar', 'history', 'input', 'background', 'conversation'];
 
   // ---- 状态 ----
   const pluginBySlot = {};    // slot -> descriptor（含 configSchema/config/builtin）
@@ -26,8 +26,8 @@
     empty: true,
     plugins: [],              // manifest 注解后的插件列表（供设置面板使用）
   };
-  // 最左图标栏状态：stage 0=收起(仅开关) 1=仅图标 2=图标+名称(左侧栏)；hidden=各插件隐藏开关（持久化）
-  const railState = { stage: 1, hidden: {} };
+  // 最左图标栏状态：stage 0=收起(仅开关) 1=仅图标 2=图标+名称(左侧栏)；hidden=各插件隐藏开关（持久化）；opacity=白条透明度
+  const railState = { stage: 1, hidden: {}, opacity: 1 };
   const railButtons = {};   // plugin_id -> 图标栏按钮元素（供即时刷新高亮）
 
   // ---- 图标栏（固定组件）----
@@ -58,6 +58,12 @@
       t.textContent = '☰';
       t.title = '收起 / 展开插件栏';
     }
+  }
+  function applyRailOpacity() {
+    let o = typeof railState.opacity === 'number' ? railState.opacity : 1;
+    o = Math.min(1, Math.max(0, o));
+    const rail = HOST.document.getElementById('rail');
+    if (rail) rail.style.setProperty('--wm-rail-bg', 'rgba(255,255,255,' + o.toFixed(3) + ')');
   }
   function cycleRail() {
     railState.stage = (railState.stage + 1) % RAIL_STAGES;   // 0→1→2→0
@@ -117,6 +123,23 @@
       });
       iconsEl.appendChild(btn);
     });
+    // 设置按钮（宿主固有资产，非插件）：固定在图标栏末尾
+    const sb = HOST.document.createElement('button');
+    sb.className = 'rail-ico';
+    sb.id = 'railSettings';
+    sb.title = '设置';
+    const sg = HOST.document.createElement('span');
+    sg.className = 'rail-glyph';
+    sg.textContent = '⚙';
+    sb.appendChild(sg);
+    const snm = HOST.document.createElement('span');
+    snm.className = 'rail-name';
+    snm.textContent = '设置';
+    sb.appendChild(snm);
+    sb.addEventListener('click', () => setSettingsOpen(!HOST.document.body.classList.contains('settings-open')));
+    iconsEl.appendChild(sb);
+    railButtons['__settings__'] = sb;
+    applyRailOpacity();
   }
 
   // ---- 工具 ----
@@ -169,15 +192,238 @@
   function broadcastSessions(event, data) {
     broadcast('conversation', event, data);
     broadcast('sidebar', event, data);
+    broadcast('input', event, data);   // 输入框据此重新对账空态（欢迎语/居中）
   }
 
-  // ---- 设置面板开合 ----
+  // ---- 设置面板开合（宿主固有资产，非插件）：原生渲染到 .settings-body ----
   function setSettingsOpen(open) {
     HOST.document.body.classList.toggle('settings-open', !!open);
-    // 设置图标高亮跟随面板开合状态
-    const sp = groupState.plugins.find((x) => x && x.railAction === 'settings.open');
-    if (sp && railButtons[sp.id]) updateRailButton(railButtons[sp.id], sp);
-    if (open) broadcast('settings', 'settings.opened', { plugins: groupState.plugins });
+    // 设置按钮高亮跟随面板开合
+    const sb = HOST.document.getElementById('railSettings');
+    if (sb) sb.classList.toggle('on', !!open);
+    if (open) renderSettings();
+  }
+
+  // 设置面板内"配置变更后防抖重建"，避免高频事件打乱滑块
+  let settingsRenderT = null;
+  function scheduleSettingsRender() {
+    clearTimeout(settingsRenderT);
+    settingsRenderT = setTimeout(renderSettings, 250);
+  }
+  function settingsSave(pid, cfg) {
+    callAction('config.set', { plugin_id: pid, config: cfg }).catch(() => {});
+    scheduleSettingsRender();
+  }
+
+  // 白条透明度（宿主外观项，不依赖插件）
+  function renderRailAppearance(container) {
+    const box = HOST.document.createElement('div');
+    box.className = 'plugin';
+    const head = HOST.document.createElement('div');
+    head.className = 'p-head';
+    const nm = HOST.document.createElement('span');
+    nm.className = 'p-name';
+    nm.textContent = '左侧白条';
+    head.appendChild(nm);
+    box.appendChild(head);
+    const sep = HOST.document.createElement('div');
+    sep.className = 'p-sep';
+    box.appendChild(sep);
+    const form = HOST.document.createElement('div');
+    const row = HOST.document.createElement('div');
+    row.className = 'field';
+    const label = HOST.document.createElement('label');
+    label.textContent = '透明度';
+    row.appendChild(label);
+    const rng = HOST.document.createElement('input');
+    rng.type = 'range';
+    rng.min = 0.15;
+    rng.max = 1;
+    rng.step = 0.05;
+    rng.style.width = '100%';
+    const o = typeof railState.opacity === 'number' ? railState.opacity : 1;
+    rng.value = Math.min(1, Math.max(0.15, o));
+    const valEl = HOST.document.createElement('div');
+    valEl.className = 'range-val';
+    function upd() { valEl.textContent = '透明度 ' + Number(rng.value).toFixed(2); }
+    rng.addEventListener('input', function () {
+      railState.opacity = Number(rng.value);
+      applyRailOpacity();
+      persistRail().catch(() => {});
+      upd();
+    });
+    upd();
+    row.appendChild(rng);
+    row.appendChild(valEl);
+    form.appendChild(row);
+    box.appendChild(form);
+    container.appendChild(box);
+  }
+
+  function renderPluginCard(container, p, cfg) {
+    const box = HOST.document.createElement('div');
+    box.className = 'plugin';
+    const head = HOST.document.createElement('div');
+    head.className = 'p-head';
+    const name = HOST.document.createElement('span');
+    name.className = 'p-name';
+    name.textContent = p.name || p.id;
+    const right = HOST.document.createElement('span');
+    right.className = 'row-actions';
+    const slug = HOST.document.createElement('span');
+    slug.className = 'p-tag';
+    slug.textContent = p.slot || '';
+    right.appendChild(slug);
+    if (!p.builtin) {
+      const del = HOST.document.createElement('button');
+      del.className = 'btn sm danger';
+      del.textContent = '删除';
+      del.addEventListener('click', function () {
+        if (HOST.confirm('确定删除插件 “' + (p.name || p.id) + '” 吗？')) {
+          callAction('plugin.delete', { plugin_id: p.id }).then(function () { renderSettings(); }).catch(function (e) { HOST.alert('删除失败：' + e.message); });
+        }
+      });
+      right.appendChild(del);
+    }
+    head.appendChild(name);
+    head.appendChild(right);
+    box.appendChild(head);
+    if (p.configSchema && p.configSchema.length) {
+      const sep2 = HOST.document.createElement('div');
+      sep2.className = 'p-sep';
+      box.appendChild(sep2);
+      renderFields(box, p, cfg);
+    } else {
+      const none = HOST.document.createElement('div');
+      none.className = 'p-tag';
+      none.textContent = '该插件无配置项';
+      box.appendChild(none);
+    }
+    container.appendChild(box);
+  }
+
+  function renderFields(form, p, cfg) {
+    (p.configSchema || []).forEach(function (field) {
+      const key = field.key;
+      const type = field.type || 'text';
+      const row = HOST.document.createElement('div');
+      row.className = 'field';
+      const label = HOST.document.createElement('label');
+      label.textContent = field.label || key;
+      if (type === 'switch') {
+        row.classList.add('switch-row');
+        const left = HOST.document.createElement('div');
+        left.appendChild(label);
+        row.appendChild(left);
+        const sw = HOST.document.createElement('label');
+        sw.className = 'switch';
+        sw.innerHTML = '<input type="checkbox"><span class="slider"></span>';
+        const chk = sw.querySelector('input');
+        chk.checked = !!cfg[key];
+        chk.addEventListener('change', function () { cfg[key] = chk.checked; settingsSave(p.id, cfg); });
+        row.appendChild(sw);
+      } else if (type === 'select') {
+        const sel = HOST.document.createElement('select');
+        (field.options || []).forEach(function (op) {
+          const o2 = HOST.document.createElement('option');
+          o2.value = op;
+          o2.textContent = op;
+          sel.appendChild(o2);
+        });
+        sel.value = cfg[key] || '';
+        sel.addEventListener('change', function () { cfg[key] = sel.value; settingsSave(p.id, cfg); });
+        row.appendChild(sel);
+      } else if (type === 'number') {
+        const num = HOST.document.createElement('input');
+        num.type = 'number';
+        num.step = 'any';
+        num.value = cfg[key] == null ? 0 : cfg[key];
+        num.addEventListener('change', function () { cfg[key] = num.value === '' ? null : Number(num.value); settingsSave(p.id, cfg); });
+        row.appendChild(num);
+      } else if (type === 'range') {
+        const rng = HOST.document.createElement('input');
+        rng.type = 'range';
+        rng.min = (field.min != null) ? field.min : 0;
+        rng.max = (field.max != null) ? field.max : 1;
+        rng.step = (field.step != null) ? field.step : 0.01;
+        rng.style.width = '100%';
+        let fv = cfg[key];
+        rng.value = (typeof fv === 'number' && !isNaN(fv)) ? fv : ((field.default != null) ? field.default : rng.max);
+        const valEl = HOST.document.createElement('div');
+        valEl.className = 'range-val';
+        function upd() { valEl.textContent = (field.label || key) + ' ' + Number(rng.value).toFixed(2); }
+        rng.addEventListener('input', function () { upd(); cfg[key] = Number(rng.value); settingsSave(p.id, cfg); });
+        upd();
+        row.appendChild(rng);
+        row.appendChild(valEl);
+      } else if (type === 'wallpapers') {
+        const wallsWrap = HOST.document.createElement('div');
+        wallsWrap.className = 'walls';
+        const list = Array.isArray(cfg[key]) ? cfg[key] : [];
+        function isV(url) { return /\.(mp4|webm|mov)(\?|$)/i.test(url); }
+        function draw() {
+          wallsWrap.innerHTML = '';
+          list.forEach(function (w, i) {
+            const t = HOST.document.createElement('div');
+            t.className = 'wall-thumb';
+            if (isV(w.src || '')) { const v = HOST.document.createElement('video'); v.src = w.src; v.muted = true; v.loop = true; t.appendChild(v); }
+            else { const im = HOST.document.createElement('img'); im.src = w.src; im.alt = ''; t.appendChild(im); }
+            const del = HOST.document.createElement('button');
+            del.className = 'wall-del';
+            del.textContent = '×';
+            del.addEventListener('click', function () { list.splice(i, 1); commit(); draw(); });
+            t.appendChild(del);
+            wallsWrap.appendChild(t);
+          });
+          const add = HOST.document.createElement('button');
+          add.className = 'btn sm';
+          add.textContent = '+ 添加';
+          add.addEventListener('click', function () {
+            callAction('dialog.pickWallpaper', {}).then(function (up) {
+              if (!up || !up.url) return;
+              list.push({ src: up.url, type: isV(up.url) ? 'video' : 'image', name: up.filename });
+              cfg.mode = 'wallpaper';
+              commit();
+              draw();
+            }).catch(function () {});
+          });
+          wallsWrap.appendChild(add);
+        }
+        function commit() { cfg[key] = list; settingsSave(p.id, cfg); }
+        draw();
+        row.appendChild(wallsWrap);
+      } else {
+        const txt = HOST.document.createElement('input');
+        txt.type = 'text';
+        txt.value = cfg[key] || '';
+        txt.addEventListener('change', function () { cfg[key] = txt.value; settingsSave(p.id, cfg); });
+        row.appendChild(txt);
+      }
+      form.appendChild(row);
+    });
+  }
+
+  function renderSettings() {
+    const bodyEl = HOST.document.querySelector('[data-layer="settings"] .settings-body');
+    if (!bodyEl) return;
+    bodyEl.innerHTML = '';
+    renderRailAppearance(bodyEl);
+    const btnNormal = HOST.document.createElement('div');
+    btnNormal.className = 'mode-row';
+    const b = HOST.document.createElement('button');
+    b.className = 'btn';
+    b.textContent = '回到完整模式';
+    b.addEventListener('click', function () {
+      callAction('switch_to_normal', {}).then(function (d) { if (d && d.restart) HOST.alert('已切换为完整模式，请重启应用生效。'); }).catch(function () {});
+    });
+    btnNormal.appendChild(b);
+    bodyEl.appendChild(btnNormal);
+    groupState.plugins.forEach(function (p) {
+      const base = {};
+      (p.configSchema || []).forEach(function (f) { if (f.default !== undefined) base[f.key] = f.default; });
+      const cfg = Object.assign({}, base, configByPlugin[p.id] || {});
+      renderPluginCard(bodyEl, p, cfg);
+    });
   }
 
   // ---- 配置持久化与下发 ----
@@ -224,7 +470,7 @@
   }
 
   // ---- 动作分发：宿主直接处理 ----
-  async function dispatch(actionId, payload) {
+  async function dispatch(actionId, payload, origin) {
     payload = payload || {};
     switch (actionId) {
       case 'chat.send': {
@@ -274,6 +520,26 @@
       }
       case 'chat.interrupt':
         return (await fetch('/api/chat/interrupt', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })).json();
+      // ---- 浮动卡片原语：宿主不关心具体插件，只对"调用方所在 slot"做通用移动/关闭 ----
+      case 'slot.move': {
+        const slot = origin && origin.slot;
+        if (!slot) throw new Error('缺少调用方 slot');
+        const el = HOST.document.querySelector(`[data-slot="${slot}"]`);
+        if (el && (payload.dx || payload.dy)) {
+          const r = el.getBoundingClientRect();
+          const w = el.offsetWidth, h = el.offsetHeight;
+          el.style.right = 'auto';
+          el.style.left = Math.max(0, Math.min(HOST.innerWidth - w, r.left + (Number(payload.dx) || 0))) + 'px';
+          el.style.top = Math.max(0, Math.min(HOST.innerHeight - h, r.top + (Number(payload.dy) || 0))) + 'px';
+        }
+        return { status: 'ok' };
+      }
+      case 'slot.close': {
+        const slot = origin && origin.slot;
+        const dd = pluginBySlot[slot];
+        if (dd) setPluginHidden(dd.id, true);   // 走既有显隐机制，图标栏可重新唤出
+        return { status: 'ok' };
+      }
       // ---- 配置 ----
       case 'config.get':
         return configByPlugin[payload.plugin_id] || {};
@@ -281,9 +547,10 @@
         const pid = payload.plugin_id;
         if (!pid) throw new Error('缺少 plugin_id');
         configByPlugin[pid] = Object.assign({}, configByPlugin[pid], payload.config || {});
-        await saveConfig();
+        // 先实时下发到目标插件（透明度热加载），再持久化；写盘失败不阻断视觉更新
         applyConfigTo(pid);
         broadcast('settings', 'config.updated', { plugin_id: pid, config: configByPlugin[pid] });
+        await saveConfig();
         return configByPlugin[pid];
       }
       case 'settings.meta':
@@ -332,13 +599,17 @@
       }
       case 'state.get':
         return { ...groupState, plugins: undefined };
+      // 输入插件展开引用菜单时，宿主腾出更高输入区，避免面板被容器裁切
+      case 'input.dropdown':
+        HOST.document.body.classList.toggle('input-menu', !!payload.open);
+        return { status: 'ok' };
       default:
         return null;
     }
   }
 
   // ---- 命令入口 ----
-  async function callAction(actionId, payload) {
+  async function callAction(actionId, payload, origin) {
     if (actionId === 'switch_to_normal') {
       const res = await fetch('/api/webmin/action', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ actionId, payload: payload || {} }) });
       if (!res.ok) throw new Error(await res.text());
@@ -346,7 +617,7 @@
       if (data && data.restart) HOST.alert('已切换为完整模式，请重启应用生效。');
       return data;
     }
-    return dispatch(actionId, payload);
+    return dispatch(actionId, payload, origin);
   }
 
   // ---- 广播事件到某 slot ----
@@ -363,7 +634,11 @@
     if (!msg || typeof msg !== 'object') return;
     if (msg.type === 'callAction') {
       const id = msg.id;
-      callAction(msg.actionId, msg.payload)
+      // 从消息来源反查调用方 slot，据此界定原语作用对象（如 slot.move / slot.close）
+      const srcSlot = Object.keys(frames).find((k) => frames[k].contentWindow === e.source) || null;
+      const srcPlugin = srcSlot && pluginBySlot[srcSlot] ? pluginBySlot[srcSlot].id : null;
+      const origin = { slot: srcSlot, pluginId: srcPlugin };
+      callAction(msg.actionId, msg.payload, origin)
         .then((data) => { if (e.source) e.source.postMessage({ type: 'callActionResult', id, ok: true, data }, '*'); })
         .catch((err) => { if (e.source) e.source.postMessage({ type: 'callActionResult', id, ok: false, error: String(err) }, '*'); });
     }
@@ -375,16 +650,12 @@
     const container = document.querySelector(`[data-slot="${slot}"]`);
     if (!container) return;
     container.querySelectorAll('iframe').forEach((f) => f.remove());
-    if (slot !== 'settings') {
-      // 非 settings slot：铺满 iframe；settings 由宿主内部结构承载
-    }
     if (!desc || !desc.entry) return;
     const iframe = document.createElement('iframe');
     iframe.setAttribute('tabindex', '-1');
     iframe.src = `/api/webmin/plugin/${encodeURIComponent(desc.id)}/${desc.entry.split('/').map(encodeURIComponent).join('/')}`;
     iframe.title = desc.name || desc.id;
-    const holder = slot === 'settings' ? container.querySelector('.settings-body') : container;
-    holder.appendChild(iframe);
+    container.appendChild(iframe);
     frames[slot] = iframe;
     // 注入该插件配置
     configByPlugin[desc.id] = effectiveConfig(desc);
@@ -439,7 +710,9 @@
       const stage = Number(railSaved.stage);
       railState.stage = (stage >= 0 && stage < RAIL_STAGES) ? stage : 1;
       railState.hidden = (railSaved.hidden && typeof railSaved.hidden === 'object') ? railSaved.hidden : {};
+      railState.opacity = (typeof railSaved.opacity === 'number') ? railSaved.opacity : 1;
     }
+    applyRailOpacity();
     for (const slot of SLOTS) {
       pluginBySlot[slot] = groupState.plugins.find((p) => p.slot === slot) || null;
     }
