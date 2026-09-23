@@ -250,10 +250,11 @@ body.input-menu:not(.empty) .wm-main {
   grid-template-rows: minmax(0, 1fr) minmax(0, min(58vh, 520px));
 }
 
-/* 设置面板：modal overlay，默认隐藏，由宿主切换 body.settings-open */
+/* 设置面板：modal overlay（在白条右侧渲染，左侧白条区域始终专属白条），默认隐藏 */
 [data-layer="settings"] {
   position: fixed;
-  inset: 0;
+  top: 0; right: 0; bottom: 0;
+  left: var(--wm-rail-w); /* 紧随白条；rail-2 展开成 196px 时自动右移，绝不被展开区遮住 */
   z-index: 50;
   display: none;
   background: rgba(15, 17, 21, 0.35);

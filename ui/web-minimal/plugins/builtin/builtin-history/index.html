@@ -271,15 +271,53 @@
   }
 
   function renderMessages(rows) {
+    // 保留已展开的折叠卡片跨轮询恢复，避免刷新自动收起。
+    // 折叠块是嵌在消息 col 里的 .row.fold，故直接以每个折叠块的 data-fk(消息序号#块序号)为稳定 key，
+    // 不能用消息 wrap 的 data-k（折叠块上取不到），否则收集为空、展开状态丢
+    var openSet = {};
+    listEl.querySelectorAll('.row.fold[data-fk]').forEach(function (f) {
+      var capc = f.querySelector('.cap');
+      if (capc && capc.classList.contains('open')) openSet[f.getAttribute('data-fk')] = true;
+    });
     listEl.innerHTML = '';
     if (!rows || !rows.length) {
       listEl.innerHTML = '<div class="empty">暂无消息</div>';
       return;
     }
-    rows.forEach(function (m) {
-      listEl.appendChild(renderMessage(m));
+    rows.forEach(function (m, i) {
+      var node = renderMessage(m);
+      node.setAttribute('data-k', String(i));
+      node.querySelectorAll('.row.fold').forEach(function (f, fi) {
+        var fk = i + '#' + fi;
+        f.setAttribute('data-fk', fk);
+        if (openSet[fk]) {
+          var cap = f.querySelector('.cap'); if (cap) cap.classList.add('open');
+          var fb = f.querySelector('.fold-body'); if (fb) fb.classList.add('open');
+        }
+      });
+      listEl.appendChild(node);
     });
     listEl.scrollTop = listEl.scrollHeight;
+  }
+
+  // 合并渲染：服务端历史 + 尚未被服务端确认的本地乐观消息（发送后即时显示，fetch 慢时不同步丢失）
+  function renderRows(rows) {
+    var server = Array.isArray(rows) ? rows : [];
+    var confirmed = {};
+    server.forEach(function (r) {
+      if (!r || r.role !== 'user') return;
+      // 服务端存的用户消息常是 events JSON；与原 UI 一样先解析出正文再判重，
+      // 否则本地乐观的"你好"与历史里的"你好"匹配不上，会重复渲染成两条
+      var parsed = parseUser(r.content);
+      if (parsed.msgs && parsed.msgs.length) {
+        parsed.msgs.forEach(function (t) { confirmed[String(t)] = true; });
+      } else {
+        confirmed[String(r.content)] = true;
+      }
+    });
+    // 已被服务端确认的从本地缓冲移除，避免后续 fetch 再次合并造成重复
+    localBuffer = localBuffer.filter(function (u) { return !confirmed[u.content]; });
+    renderMessages(server.concat(localBuffer.map(function (u) { return { role: 'user', content: u.content }; })));
   }
 
   // ---------- 数据装载 ----------
@@ -300,16 +338,17 @@
   }
 
   var activeSessionId = '';
+  var localBuffer = [];   // 本会话本地乐观插入的用户消息，等待服务端确认后合并去重
 
   function load(sessionId) {
-    if (!sessionId) { renderMessages([]); return; }
+    if (!sessionId) { localBuffer = []; renderMessages([]); return; }
     fetch('/api/sessions/' + encodeURIComponent(sessionId))
       .then(function (r) { return r.json(); })
       .then(function (history) {
         var rows = Array.isArray(history) ? history
           : (history && Array.isArray(history.history)) ? history.history
           : (history && Array.isArray(history.messages)) ? history.messages : [];
-        renderMessages(rows);
+        renderRows(rows);
       })
       .catch(function () { renderMessages([]); });
   }
@@ -318,17 +357,58 @@
     callAction('state.get').then(function (st) {
       activeSessionId = (st && st.activeSessionId) || activeSessionId || '';
       load(activeSessionId);
-    }).catch(function () { load(activeSessionId); });
+      ensurePoll();
+    }).catch(function () { load(activeSessionId); ensurePoll(); });
+  }
+
+  // ---------- 轻量轮询刷新（与原 UI 一致的机制）----------
+  // 原 UI(ChatPage)：思考期间每 0.5s、非思考每 1.5s 轮询当前会话历史，使 agent 回复自动出现。
+  // 复刻同样节奏：activeSessionId 存在即轮询，is_thinking 决定快/慢两档，每次拉全量历史并合并本地乐观消息去重。
+  var POLL_FAST = 500, POLL_SLOW = 1500;
+  var pollTimer = null;
+  function stopPoll() { if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } }
+  function setPoll(intv) {
+    if (pollTimer && pollTimer._i === intv) return;
+    if (pollTimer) clearInterval(pollTimer);
+    pollTimer = setInterval(pollTick, intv);
+    pollTimer._i = intv;
+  }
+  function ensurePoll() {
+    if (!activeSessionId) { stopPoll(); return; }
+    setPoll(POLL_SLOW);
+  }
+  function pollTick() {
+    if (!activeSessionId) { stopPoll(); return; }
+    fetch('/api/sessions/' + encodeURIComponent(activeSessionId) + '/status')
+      .then(function (r) { return r.json(); })
+      .then(function (st) {
+        setPoll(st && st.is_thinking ? POLL_FAST : POLL_SLOW);
+        load(activeSessionId);
+      })
+      .catch(function () { setPoll(POLL_SLOW); });   // 会话暂不可用等：保持慢档，不轰炸
   }
 
   window.addEventListener('message', function (e) {
     var m = e.data;
     if (!m || typeof m !== 'object' || m.type !== 'event') return;
     if (m.event === 'session.switched') {
+      localBuffer = [];   // 切换会话：本地乐观消息属于旧会话，丢弃
       activeSessionId = m.data && m.data.session_id;
+      ensurePoll();
       refresh();
     } else if (m.event === 'conversation.updated') {
+      ensurePoll();
       load(activeSessionId);
+    } else if (m.event === 'conversation.local') {
+      ensurePoll();   // 刚发送，后端即将 busy，立即进入快速轮询
+      var evs = (m.data && Array.isArray(m.data.events)) ? m.data.events : [];
+      evs.forEach(function (ev) {
+        var txt = String(ev && ev.content || ''); if (!txt) return;
+        localBuffer.push({ content: txt });
+        var empty = listEl.querySelector('.empty'); if (empty) empty.remove();
+        listEl.appendChild(renderMessage({ role: 'user', content: txt }));
+      });
+      if (evs.length) listEl.scrollTop = listEl.scrollHeight;
     }
   });
   refresh();

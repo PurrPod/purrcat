@@ -484,6 +484,8 @@
         });
         if (!res.ok) throw new Error(await res.text());
         setEmpty(false);
+        // 乐观本地即时显示用户消息，随后 fetch 同步（后端异步写入，fetch 慢时也不丢"你好"）
+        if (payload.message) broadcast('conversation', 'conversation.local', { session_id: sessionId, events: [{ role: 'user', content: String(payload.message) }] });
         refreshSessions().then(updateEmpty);   // 更新 messages_count，维持 empty 状态准确
         broadcastSessions('conversation.updated', { session_id: sessionId });
         return await res.json();
@@ -499,6 +501,9 @@
         });
         if (!res.ok) throw new Error(await res.text());
         setEmpty(false);
+        // 乐观本地即时显示 type=user 的事件，随后 fetch 同步去重
+        const uv = Array.isArray(payload.events) ? payload.events.filter((e) => e && e.type === 'user').map((e) => ({ role: 'user', content: String(e.content || '') })) : [];
+        if (uv.length) broadcast('conversation', 'conversation.local', { session_id: sessionId, events: uv });
         refreshSessions().then(updateEmpty);
         broadcastSessions('conversation.updated', { session_id: sessionId });
         return await res.json();
