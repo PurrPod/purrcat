@@ -680,7 +680,28 @@
     activateSlotPlugin(p);
   }
 
-  // ---- 原配置中心逐标签页复刻 ----
+  // ---- 原配置中心逐标签页复刻（卡片 + 裸 JSON 双模式）----
+  const MODEL_CATS = [ // 三个模型角色：title/desc/jsonKey
+    { key: 'main', title: '核心模型', desc: '对话主模型' },
+    { key: 'task', title: '后台模型', desc: '子任务/后台 agent' },
+    { key: 'vision', title: '视觉顾问', desc: '图像理解' },
+  ];
+  const MODEL_SDKS = ['openai'];
+  const DEPLOY_ITEMS = ['uv', 'node', 'sandbox', 'embedding'];
+  const DEPLOY_LABEL = { uv: 'uv', node: 'node', sandbox: 'sandbox / Docker 沙盒', embedding: 'embedding' };
+  const MCP_NEW_TEMPLATE = '{\n  "command": "npx",\n  "args": [],\n  "env": {}\n}';
+  const cfgState = {
+    data: {},         // tab -> 已加载的配置对象（GET /api/config/{tab}）
+    mode: {},         // tab -> 'cards'|'json'
+    openKey: {},      // tab -> 处于展开态的顶级 key
+    editStr: {},      // tab+'::'+key -> 编辑区文本
+    modelCat: null,   // model：展开的角色
+    modelForm: null,  // model：编辑中的表单
+    mcpNewName: '', mcpNewJson: MCP_NEW_TEMPLATE,
+    genNewKey: '', genNewType: 'string', genNewValue: '',
+    sandboxRegistry: '',
+    deployLogOpen: {},
+  };
   function makeSection(title, main) {
     const sec = HOST.document.createElement('div');
     sec.className = 'settings-section';
@@ -691,25 +712,63 @@
     main.appendChild(sec);
     return sec;
   }
-  function renderConfigSection(main, key) {
-    if (key === 'view') return renderViewSection(main);
-    if (key === 'acp') return renderAcpSection(main);
-    if (key === 'deploy') return renderDeploySection(main);
-    renderJsonEditor(main, key);   // model/sensor/file/mcp/app 均为整块 JSON
+  // 配置缓存读取（首次拉取后复用），以及保存
+  async function cfgData(tab) {
+    if (!cfgState.data[tab]) {
+      try { cfgState.data[tab] = await (await fetch('/api/config/' + tab)).json(); }
+      catch (e) { cfgState.data[tab] = {}; }
+    }
+    return cfgState.data[tab];
   }
-  function renderJsonEditor(main, key) {
-    const sec = makeSection(CONFIG_LABEL[key] || key, main);
+  async function putCfg(tab, obj) {
+    cfgState.data[tab] = obj;
+    const r = await fetch('/api/config/' + tab, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(obj) });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+  }
+  function rerenderConfig(main, key) { main.innerHTML = ''; renderConfigSection(main, key); }
+
+  // 每个 JSON 型 tab 里：左上角「卡片 / 裸 JSON」切换
+  function cfgToolbar(main, key) {
+    const tb = HOST.document.createElement('div');
+    tb.className = 'cfg-toolbar';
+    ['卡片', 'JSON'].forEach(function (label, i) {
+      const mode = i === 0 ? 'cards' : 'json';
+      const seg = HOST.document.createElement('button');
+      seg.className = 'cfg-seg' + ((cfgState.mode[key] || 'cards') === mode ? ' active' : '');
+      seg.textContent = label;
+      seg.addEventListener('click', function () { cfgState.mode[key] = mode; rerenderConfig(main, key); });
+      tb.appendChild(seg);
+    });
+    main.appendChild(tb);
+    return tb;
+  }
+
+  function renderConfigSection(main, key) {
+    if (key === 'view') return renderViewCard(main);
+    if (key === 'acp') return renderAcpCard(main);
+    if (key === 'deploy') return renderDeployCards(main);
+    cfgToolbar(main, key);
+    if ((cfgState.mode[key] || 'cards') === 'json') {
+      renderRawJson(main, key);
+    } else if (key === 'model') {
+      renderModelCards(main, key);
+    } else if (key === 'mcp') {
+      renderMcpCards(main, key);
+    } else {
+      renderGenericCards(main, key);
+    }
+  }
+
+  // ---- 裸 JSON 编辑 ----
+  function renderRawJson(main, key) {
     const tx = HOST.document.createElement('textarea');
     tx.className = 'settings-json';
     tx.spellcheck = false;
     tx.placeholder = '读取配置…';
-    sec.appendChild(tx);
+    main.appendChild(tx);
     const status = HOST.document.createElement('span');
     status.className = 'p-tag';
-    fetch('/api/config/' + key).then(function (r) { return r.json(); }).then(function (data) {
-      tx.value = JSON.stringify(data, null, 2);
-      status.textContent = '已加载';
-    }).catch(function () { tx.value = ''; status.textContent = '读取失败'; });
+    cfgData(key).then(function (data) { tx.value = JSON.stringify(data, null, 2); status.textContent = '已加载'; });
     const bar = HOST.document.createElement('div');
     bar.className = 'settings-actions';
     const save = HOST.document.createElement('button');
@@ -718,143 +777,574 @@
     save.addEventListener('click', function () {
       let obj;
       try { obj = JSON.parse(tx.value); } catch (e) { HOST.alert('JSON 解析失败：' + e.message); return; }
-      fetch('/api/config/' + key, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(obj) })
-        .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); status.textContent = '已保存'; })
-        .catch(function (e) { status.textContent = '保存失败'; HOST.alert('保存失败：' + (e && e.message || '')); });
+      putCfg(key, obj).then(function () { status.textContent = '已保存'; }).catch(function (e) { status.textContent = '保存失败'; HOST.alert('保存失败：' + (e && e.message || '')); });
     });
     bar.appendChild(save);
     bar.appendChild(status);
-    sec.appendChild(bar);
+    main.appendChild(bar);
   }
-  function renderViewSection(main) {
-    const sec = makeSection('视图设置', main);
-    const row = HOST.document.createElement('div');
-    row.className = 'field switch-row';
+
+  // 通用卡片：卡片头 + 右上动作（编辑/删除）
+  function cfgCard(main) {
+    const c = HOST.document.createElement('div');
+    c.className = 'cfg-card';
+    main.appendChild(c);
+    return c;
+  }
+  function cfgCardHead(card, title, kind) {
+    const head = HOST.document.createElement('div');
+    head.className = 'cfg-card-head';
     const left = HOST.document.createElement('div');
-    const label = HOST.document.createElement('label');
-    label.textContent = '极简模式（minimal）';
-    left.appendChild(label);
-    row.appendChild(left);
-    const sw = HOST.document.createElement('label');
-    sw.className = 'switch';
-    sw.innerHTML = '<input type="checkbox"><span class="slider"></span>';
-    const chk = sw.querySelector('input');
+    left.className = 'cfg-card-title';
+    const t = HOST.document.createElement('div');
+    t.textContent = title;
+    left.appendChild(t);
+    if (kind) { const k = HOST.document.createElement('span'); k.className = 'cfg-chip type'; k.textContent = kind; left.appendChild(k); }
+    head.appendChild(left);
+    const right = HOST.document.createElement('div');
+    right.className = 'cfg-card-act';
+    head.appendChild(right);
+    card.appendChild(head);
+    return { head: head, right: right };
+  }
+
+  // ---- model：三角色卡片（每个角色内含多个「sdk:模型名 → 条目」）----
+  function modelList(data, cat) {
+    return (data && data[cat] && typeof data[cat] === 'object') ? Object.keys(data[cat]) : [];
+  }
+  function modelSummaryLine(data, cat) {
+    const list = modelList(data, cat);
+    return list.length ? list.join('、') : '未配置';
+  }
+  function openModelForm(data, cat, entryKey) {
+    const e = (data[cat] || {})[entryKey] || {};
+    const idx = entryKey.indexOf(':');
+    const sdk = idx >= 0 ? entryKey.slice(0, idx) : 'openai';
+    const modelName = idx >= 0 ? entryKey.slice(idx + 1) : entryKey;
+    cfgState.mEdit = {
+      cat: cat, entryKey: entryKey,
+      form: {
+        sdk: sdk || 'openai',
+        modelName: modelName,
+        apiKey: (Array.isArray(e.api_keys) && e.api_keys[0]) ? e.api_keys[0] : '',
+        baseUrl: e.base_url || '',
+        rpm: e.rpm != null ? String(e.rpm) : '60',
+        tpm: e.tpm != null ? String(e.tpm) : '1000000',
+        concurrency: e.concurrency != null ? String(e.concurrency) : '3',
+        maxToken: e.max_token != null ? String(e.max_token) : '500000',
+        vision: !!e.vision,
+      },
+    };
+  }
+  function modelField(grid, label, input) {
+    const f = HOST.document.createElement('div');
+    f.className = 'cfg-field';
+    const lb = HOST.document.createElement('label');
+    lb.className = 'cfg-label';
+    lb.textContent = label;
+    f.appendChild(lb);
+    input.className = 'cfg-input';
+    f.appendChild(input);
+    grid.appendChild(f);
+  }
+  function renderModelCards(main, key) {
+    cfgData(key).then(function (data) {
+      MODEL_CATS.forEach(function (cat) {
+        const card = cfgCard(main);
+        const h = cfgCardHead(card, cat.title, 'model');
+        const sub = HOST.document.createElement('div');
+        sub.className = 'cfg-card-sub';
+        sub.textContent = cat.desc + ' · ' + modelSummaryLine(data, cat.key);
+        h.head.insertBefore(sub, h.head.querySelector('.cfg-card-title').nextSibling);
+        modelList(data, cat.key).forEach(function (entryKey) {
+          const isEditing = cfgState.mEdit && cfgState.mEdit.cat === cat.key && cfgState.mEdit.entryKey === entryKey;
+          renderModelEntry(card, key, data, cat.key, entryKey, isEditing);
+        });
+        // 该角色下新增一条模型
+        const addRow = HOST.document.createElement('div');
+        addRow.className = 'cfg-add-row';
+        const newNm = HOST.document.createElement('input');
+        newNm.type = 'text'; newNm.placeholder = '新增: 模型名 (如 deepseek-chat)';
+        newNm.addEventListener('input', function () { newNm._v = newNm.value; });
+        const addBtn = HOST.document.createElement('button');
+        addBtn.className = 'btn cfg-save';
+        addBtn.textContent = '+ 添加';
+        addBtn.addEventListener('click', function () {
+          const nm = (newNm._v || '').trim();
+          if (!nm) { HOST.alert('请填写模型名'); return; }
+          const nk = 'openai:' + nm;
+          if (data[cat.key][nk]) { HOST.alert('该模型已存在'); return; }
+          openModelForm(data, cat.key, nk);
+          data[cat.key][nk] = { api_keys: [''], base_url: '' };
+          cfgState.modelCat = cat.key;
+          rerenderConfig(main, key);
+        });
+        addRow.appendChild(newNm);
+        addRow.appendChild(addBtn);
+        card.appendChild(addRow);
+      });
+    });
+  }
+  // 单个条目的展开编辑体
+  function renderModelEntry(card, key, data, cat, entryKey, isEditing) {
+    const sub = HOST.document.createElement('div');
+    sub.className = 'cfg-entry';
+    const e = (data[cat] || {})[entryKey] || {};
+    const head = HOST.document.createElement('div');
+    head.className = 'cfg-entry-head';
+    const ti = HOST.document.createElement('div');
+    ti.className = 'cfg-entry-title';
+    const nm = HOST.document.createElement('span');
+    nm.textContent = entryKey;
+    ti.appendChild(nm);
+    const sum = HOST.document.createElement('span');
+    sum.className = 'cfg-card-sub';
+    sum.textContent = (e.base_url || '') + ' · ' + ((Array.isArray(e.api_keys) && e.api_keys[0]) ? 'sk-***' : '无 key');
+    ti.appendChild(sum);
+    head.appendChild(ti);
+    const edit = HOST.document.createElement('button');
+    edit.className = 'btn cfg-edit';
+    edit.textContent = isEditing ? '关闭' : '编辑';
+    edit.addEventListener('click', function () {
+      if (isEditing) cfgState.mEdit = null; else openModelForm(data, cat, entryKey);
+      rerenderConfig(main, key);
+    });
+    head.appendChild(edit);
+    sub.appendChild(head);
+    if (!isEditing) { card.appendChild(sub); return; }
+    const f = cfgState.mEdit ? cfgState.mEdit.form : null;
+    if (!f) return;
+    const body = HOST.document.createElement('div');
+    body.className = 'cfg-card-body';
+    const grid = HOST.document.createElement('div');
+    grid.className = 'cfg-grid';
+    const mk = HOST.document.createElement('input'); mk.type = 'text'; mk.value = f.modelName; mk.addEventListener('input', function () { f.modelName = mk.value; });
+    modelField(grid, '模型名 (key 后缀)', mk);
+    const ak = HOST.document.createElement('input'); ak.type = 'password'; ak.value = f.apiKey; ak.placeholder = 'sk-...'; ak.spellcheck = false; ak.addEventListener('input', function () { f.apiKey = ak.value; });
+    modelField(grid, 'API KEY', ak);
+    const bu = HOST.document.createElement('input'); bu.type = 'text'; bu.value = f.baseUrl; bu.placeholder = 'https://api.deepseek.com'; bu.spellcheck = false; bu.addEventListener('input', function () { f.baseUrl = bu.value; });
+    modelField(grid, 'BASE URL', bu);
+    if (cat !== 'vision') {
+      [['rpm', 'RPM'], ['tpm', 'TPM'], ['concurrency', '并发数'], ['maxToken', 'MAX TOKEN']].forEach(function (pair) {
+        const e2 = HOST.document.createElement('input'); e2.type = 'number'; e2.value = f[pair[0]]; e2.addEventListener('input', function () { f[pair[0]] = e2.value; });
+        modelField(grid, pair[1], e2);
+      });
+    }
+    body.appendChild(grid);
+    if (cat !== 'vision') {
+      const swRow = HOST.document.createElement('div');
+      swRow.className = 'cfg-field switch-row';
+      const swl = HOST.document.createElement('label');
+      swl.textContent = '视觉直注（把图片直接注入上下文）';
+      swRow.appendChild(swl);
+      const sw = HOST.document.createElement('label');
+      sw.className = 'switch';
+      sw.innerHTML = '<input type="checkbox"><span class="slider"></span>';
+      sw.querySelector('input').checked = f.vision;
+      sw.querySelector('input').addEventListener('change', function (e2) { f.vision = e2.target.checked; });
+      swRow.appendChild(sw);
+      body.appendChild(swRow);
+    }
+    const save = HOST.document.createElement('button');
+    save.className = 'btn cfg-save';
+    save.textContent = '保存该模型';
+    save.addEventListener('click', function () {
+      const newKey = (f.sdk || 'openai') + ':' + f.modelName.trim();
+      const obj = { api_keys: [f.apiKey.trim()], base_url: f.baseUrl.trim() };
+      if (cat !== 'vision') {
+        obj.rpm = Number(f.rpm) || 60; obj.tpm = Number(f.tpm) || 1000000; obj.concurrency = Number(f.concurrency) || 3; obj.max_token = Number(f.maxToken) || 500000; obj.vision = f.vision;
+      }
+      if (newKey !== entryKey) delete data[cat][entryKey];
+      data[cat][newKey] = obj;
+      cfgState.mEdit = null;
+      putCfg(key, data).then(function () { rerenderConfig(main, key); HOST.alert('模型已保存并热重载。'); }).catch(function (e) { HOST.alert('保存失败：' + (e && e.message || '')); });
+    });
+    body.appendChild(save);
+    sub.appendChild(body);
+    card.appendChild(sub);
+  }
+
+  // ---- mcp：服务器卡片（按单服务器拆分）----
+  function renderMcpCards(main, key) {
+    cfgData(key).then(function (data) {
+      const servers = data || {};
+      const names = Object.keys(servers);
+      if (names.length === 0) {
+        const empty = HOST.document.createElement('div'); empty.className = 'p-tag'; empty.textContent = '（暂无 MCP 服务器）'; main.appendChild(empty);
+      }
+      names.forEach(function (name) {
+        const isOpen = cfgState.openKey[key] === name;
+        const val = servers[name];
+        const card = cfgCard(main);
+        const h = cfgCardHead(card, name, (Array.isArray(val) ? 'array' : typeof val));
+        const prev = HOST.document.createElement('div');
+        prev.className = 'cfg-card-sub';
+        prev.textContent = JSON.stringify(val).slice(0, 90) + (JSON.stringify(val).length > 90 ? '…' : '');
+        h.head.insertBefore(prev, h.head.querySelector('.cfg-card-title').nextSibling);
+        const edit = HOST.document.createElement('button');
+        edit.className = 'btn cfg-edit';
+        edit.textContent = isOpen ? '关闭' : '编辑';
+        edit.addEventListener('click', function () {
+          if (isOpen) delete cfgState.openKey[key]; else { cfgState.openKey[key] = name; cfgState.editStr[key + '::' + name] = JSON.stringify(val, null, 2); }
+          rerenderConfig(main, key);
+        });
+        h.right.appendChild(edit);
+        const del = HOST.document.createElement('button');
+        del.className = 'btn cfg-del';
+        del.textContent = '删除';
+        del.addEventListener('click', function () {
+          if (!HOST.confirm('删除 MCP 服务器 "' + name + '"？')) return;
+          delete servers[name];
+          delete cfgState.openKey[key];
+          putCfg(key, servers).then(function () { rerenderConfig(main, key); }).catch(function (e) { HOST.alert('删除失败：' + (e && e.message || '')); });
+        });
+        h.right.appendChild(del);
+        if (!isOpen) return;
+        const body = HOST.document.createElement('div');
+        body.className = 'cfg-card-body';
+        const ta = HOST.document.createElement('textarea');
+        ta.className = 'settings-json';
+        ta.style.minHeight = '150px';
+        ta.value = cfgState.editStr[key + '::' + name] || JSON.stringify(val, null, 2);
+        ta.addEventListener('input', function () { cfgState.editStr[key + '::' + name] = ta.value; });
+        body.appendChild(ta);
+        const save = HOST.document.createElement('button');
+        save.className = 'btn cfg-save';
+        save.textContent = '保存该服务器';
+        save.addEventListener('click', function () {
+          let obj;
+          try { obj = JSON.parse(cfgState.editStr[key + '::' + name]); } catch (e) { HOST.alert('JSON 解析失败：' + e.message); return; }
+          servers[name] = obj;
+          delete cfgState.openKey[key];
+          putCfg(key, servers).then(function () { rerenderConfig(main, key); }).catch(function (e) { HOST.alert('保存失败：' + (e && e.message || '')); });
+        });
+        body.appendChild(save);
+        card.appendChild(body);
+      });
+      // 新增服务器
+      const add = HOST.document.createElement('div');
+      add.className = 'cfg-add';
+      const t = HOST.document.createElement('div');
+      t.className = 'cfg-add-title';
+      t.textContent = '新增 MCP 服务器';
+      add.appendChild(t);
+      const row = HOST.document.createElement('div');
+      row.className = 'cfg-add-row';
+      const nm = HOST.document.createElement('input');
+      nm.type = 'text'; nm.placeholder = '服务器名称 (name)'; nm.value = cfgState.mcpNewName;
+      nm.addEventListener('input', function () { cfgState.mcpNewName = nm.value; });
+      row.appendChild(nm);
+      const btn = HOST.document.createElement('button');
+      btn.className = 'btn';
+      btn.textContent = '添加';
+      btn.addEventListener('click', function () {
+        const n = cfgState.mcpNewName.trim();
+        if (!n) { HOST.alert('请填写服务器名称'); return; }
+        servers[n] = {};
+        cfgState.openKey[key] = n;
+        cfgState.editStr[key + '::' + n] = cfgState.mcpNewJson;
+        rerenderConfig(main, key);
+      });
+      row.appendChild(btn);
+      add.appendChild(row);
+      const ta = HOST.document.createElement('textarea');
+      ta.className = 'settings-json';
+      ta.style.minHeight = '100px';
+      ta.value = cfgState.mcpNewJson;
+      ta.addEventListener('input', function () { cfgState.mcpNewJson = ta.value; });
+      add.appendChild(ta);
+      main.appendChild(add);
+    });
+  }
+
+  // ---- 通用 key-value（sensor/file/app）----
+  function coerceVal(str, orig) {
+    if (orig === null || orig === undefined) return str;
+    const t = Array.isArray(orig) ? 'array' : typeof orig;
+    if (t === 'number') return Number(str);
+    if (t === 'boolean') return (str === 'true' || str === '1' || str === '是');
+    if (t === 'object') { try { return JSON.parse(str); } catch (e) { return orig; } }
+    return str;
+  }
+  function typedVal(str, type) {
+    if (type === 'number') return (str === '' || isNaN(Number(str))) ? 0 : Number(str);
+    if (type === 'boolean') return (str === 'true' || str === '1' || str === '是');
+    if (type === 'object' || type === 'array') { try { return JSON.parse(str); } catch (e) { throw new Error('JSON 解析失败'); } }
+    return str;
+  }
+  function renderGenericCards(main, key) {
+    cfgData(key).then(function (data) {
+      const obj = data || {};
+      const keys = Object.keys(obj).filter(function (k) { return k !== '__ARRAY_WRAPPER__'; });
+      if (keys.length === 0) { const e = HOST.document.createElement('div'); e.className = 'p-tag'; e.textContent = '（空配置）'; main.appendChild(e); }
+      keys.forEach(function (k) {
+        const val = obj[k];
+        const isOpen = cfgState.openKey[key] === k;
+        const card = cfgCard(main);
+        const h = cfgCardHead(card, k, (Array.isArray(val) ? 'array' : typeof val));
+        const prev = HOST.document.createElement('div');
+        prev.className = 'cfg-card-sub';
+        prev.textContent = (typeof val === 'object' ? JSON.stringify(val).slice(0, 90) : String(val).slice(0, 90)) + ((typeof val === 'object' ? JSON.stringify(val) : String(val)).length > 90 ? '…' : '');
+        h.head.insertBefore(prev, h.head.querySelector('.cfg-card-title').nextSibling);
+        const edit = HOST.document.createElement('button');
+        edit.className = 'btn cfg-edit';
+        edit.textContent = isOpen ? '关闭' : '编辑';
+        edit.addEventListener('click', function () {
+          if (isOpen) delete cfgState.openKey[key]; else { cfgState.openKey[key] = k; cfgState.editStr[key + '::' + k] = (typeof val === 'object' ? JSON.stringify(val, null, 2) : String(val)); }
+          rerenderConfig(main, key);
+        });
+        h.right.appendChild(edit);
+        const del = HOST.document.createElement('button');
+        del.className = 'btn cfg-del';
+        del.textContent = '删除';
+        del.addEventListener('click', function () {
+          if (!HOST.confirm('删除配置项 "' + k + '"？')) return;
+          delete obj[k];
+          delete cfgState.openKey[key];
+          putCfg(key, obj).then(function () { rerenderConfig(main, key); }).catch(function (e) { HOST.alert('删除失败：' + (e && e.message || '')); });
+        });
+        h.right.appendChild(del);
+        if (!isOpen) return;
+        const body = HOST.document.createElement('div');
+        body.className = 'cfg-card-body';
+        const ta = HOST.document.createElement('textarea');
+        ta.className = 'settings-json';
+        ta.style.minHeight = '140px';
+        ta.value = cfgState.editStr[key + '::' + k] || (typeof val === 'object' ? JSON.stringify(val, null, 2) : String(val));
+        ta.addEventListener('input', function () { cfgState.editStr[key + '::' + k] = ta.value; });
+        body.appendChild(ta);
+        const save = HOST.document.createElement('button');
+        save.className = 'btn cfg-save';
+        save.textContent = '保存该配置项';
+        save.addEventListener('click', function () {
+          let newVal;
+          try { newVal = coerceVal(cfgState.editStr[key + '::' + k], val); } catch (e) { HOST.alert(e.message); return; }
+          obj[k] = newVal;
+          delete cfgState.openKey[key];
+          putCfg(key, obj).then(function () { rerenderConfig(main, key); }).catch(function (e) { HOST.alert('保存失败：' + (e && e.message || '')); });
+        });
+        body.appendChild(save);
+        card.appendChild(body);
+      });
+      // 新增配置项
+      const add = HOST.document.createElement('div');
+      add.className = 'cfg-add';
+      const t = HOST.document.createElement('div');
+      t.className = 'cfg-add-title';
+      t.textContent = '新增配置项';
+      add.appendChild(t);
+      const row = HOST.document.createElement('div');
+      row.className = 'cfg-add-row';
+      const nk = HOST.document.createElement('input');
+      nk.type = 'text'; nk.placeholder = 'key 名称'; nk.value = cfgState.genNewKey;
+      nk.addEventListener('input', function () { cfgState.genNewKey = nk.value; });
+      row.appendChild(nk);
+      const st = HOST.document.createElement('select');
+      ['string', 'number', 'boolean', 'object', 'array'].forEach(function (tl) {
+        const o = HOST.document.createElement('option'); o.value = tl; o.textContent = tl; if (tl === cfgState.genNewType) o.selected = true; st.appendChild(o);
+      });
+      st.addEventListener('change', function () { cfgState.genNewType = st.value; });
+      row.appendChild(st);
+      const va = HOST.document.createElement('textarea');
+      va.placeholder = 'value';
+      va.style.width = '100%';
+      va.style.minHeight = '70px';
+      va.value = cfgState.genNewValue;
+      va.addEventListener('input', function () { cfgState.genNewValue = va.value; });
+      add.appendChild(row);
+      add.appendChild(va);
+      const addBtn = HOST.document.createElement('button');
+      addBtn.className = 'btn cfg-save';
+      addBtn.textContent = '添加';
+      addBtn.addEventListener('click', function () {
+        const k = cfgState.genNewKey.trim();
+        if (!k) { HOST.alert('请填写 key 名称'); return; }
+        try { obj[k] = typedVal(cfgState.genNewValue, cfgState.genNewType); }
+        catch (e) { HOST.alert(e.message); return; }
+        cfgState.genNewKey = ''; cfgState.genNewValue = '';
+        putCfg(key, obj).then(function () { rerenderConfig(main, key); }).catch(function (e) { HOST.alert('保存失败：' + (e && e.message || '')); });
+      });
+      add.appendChild(addBtn);
+      main.appendChild(add);
+    });
+  }
+
+  // ---- view：极简模式卡片 ----
+  function renderViewCard(main) {
+    const sec = makeSection('视图设置', main);
+    const card = HOST.document.createElement('div');
+    card.className = 'cfg-card';
+    sec.appendChild(card);
+    const h = cfgCardHead(card, '极简模式（minimal）', 'ui_mode');
+    const sub = HOST.document.createElement('div');
+    sub.className = 'cfg-card-sub';
+    sub.textContent = '开启后极简 UI 作为默认界面，需重启应用生效';
+    h.head.insertBefore(sub, h.head.querySelector('.cfg-card-title').nextSibling);
+    const swl = HOST.document.createElement('label');
+    swl.className = 'switch';
+    swl.innerHTML = '<input type="checkbox"><span class="slider"></span>';
+    const chk = swl.querySelector('input');
+    h.right.appendChild(swl);
     fetch('/api/config/view').then(function (r) { return r.json(); }).then(function (d) { chk.checked = d.ui_mode === 'minimal'; }).catch(function () {});
     chk.addEventListener('change', function () {
       fetch('/api/config/view', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ui_mode: chk.checked ? 'minimal' : 'normal' }) })
         .then(function (r) { if (!r.ok) throw new Error(''); HOST.alert('视图模式已更新，请重启应用生效。'); })
         .catch(function () { chk.checked = !chk.checked; HOST.alert('保存失败'); });
     });
-    row.appendChild(sw);
-    sec.appendChild(row);
-    const hint = HOST.document.createElement('div');
-    hint.className = 'p-tag';
-    hint.textContent = '开启后极简模式作为默认 UI，需重启应用生效。';
-    sec.appendChild(hint);
   }
-  function renderAcpSection(main) {
+
+  // ---- acp：接入卡片 ----
+  function renderAcpCard(main) {
     const sec = makeSection('ACP 接入', main);
-    const info = HOST.document.createElement('div');
-    info.className = 'acp-info';
-    const portRow = HOST.document.createElement('div');
-    portRow.className = 'field';
-    const pl = HOST.document.createElement('label');
-    pl.textContent = '端口';
-    portRow.appendChild(pl);
-    const port = HOST.document.createElement('input');
-    port.type = 'number'; port.min = 1; port.max = 65535; port.style.width = '100%';
-    portRow.appendChild(port);
-    const enact = HOST.document.createElement('button');
-    enact.className = 'btn';
-    enact.textContent = '保存端口';
-    enact.addEventListener('click', function () {
-      fetch('/api/config/acp', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ port: Number(port.value) }) })
-        .then(function (r) { if (!r.ok) throw new Error(''); HOST.alert('端口已更新'); }).catch(function () { HOST.alert('保存失败'); });
-    });
-    portRow.appendChild(enact);
-    info.appendChild(portRow);
-    const ops = HOST.document.createElement('div');
-    ops.className = 'settings-actions';
-    const red = HOST.document.createElement('button');
-    red.className = 'btn';
-    red.textContent = '重新部署 relay';
-    red.addEventListener('click', function () { fetch('/api/config/acp/redeploy', { method: 'POST' }).then(function (r) { if (!r.ok) throw new Error(''); HOST.alert('已重新部署'); }).catch(function () { HOST.alert('部署失败'); }); });
-    ops.appendChild(red);
-    const rtk = HOST.document.createElement('button');
-    rtk.className = 'btn';
-    rtk.textContent = '重置 token';
-    rtk.addEventListener('click', function () { fetch('/api/config/acp/reset-token', { method: 'POST' }).then(function (r) { if (!r.ok) throw new Error(''); HOST.alert('token 已重置，relay 需重启重连'); }).catch(function () { HOST.alert('重置失败'); }); });
-    ops.appendChild(rtk);
-    info.appendChild(ops);
+    const card = cfgCard(sec);
+    const h = cfgCardHead(card, 'ACP 编辑器接入', 'relay');
     fetch('/api/config/acp').then(function (r) { return r.json(); }).then(function (d) {
-      if (d.port) port.value = d.port;
-      const ul = HOST.document.createElement('ul');
-      ul.className = 'acp-status';
-      [[(d.relay_deployed ? 'relay 已部署：是' : 'relay 已部署：否')], [(d.relay_matches_source ? 'relay 与源一致：是' : 'relay 与源一致：否')], ['uv 可用：' + (d.uv_found ? '是' : '否')]].forEach(function (arr) {
-        const li = HOST.document.createElement('li'); li.textContent = arr[0]; ul.appendChild(li);
-      });
-      info.insertBefore(ul, info.firstChild);
+      const sub = HOST.document.createElement('div');
+      sub.className = 'cfg-card-sub';
+      sub.textContent = 'relay 已部署:' + (d.relay_deployed ? '是' : '否') + ' · 与源一致:' + (d.relay_matches_source ? '是' : '否') + ' · uv:' + (d.uv_found ? '可用' : '缺失');
+      h.head.insertBefore(sub, h.head.querySelector('.cfg-card-title').nextSibling);
+      const body = HOST.document.createElement('div');
+      body.className = 'cfg-card-body';
+      const grid = HOST.document.createElement('div');
+      grid.className = 'cfg-grid';
+      const portF = HOST.document.createElement('div');
+      portF.className = 'cfg-field';
+      const plb = HOST.document.createElement('label'); plb.className = 'cfg-label'; plb.textContent = '端口';
+      portF.appendChild(plb);
+      const port = HOST.document.createElement('input'); port.type = 'number'; port.className = 'cfg-input'; if (d.port) port.value = d.port;
+      portF.appendChild(port);
+      grid.appendChild(portF);
+      body.appendChild(grid);
+      const ops = HOST.document.createElement('div');
+      ops.className = 'settings-actions';
+      const enact = HOST.document.createElement('button'); enact.className = 'btn'; enact.textContent = '保存端口';
+      enact.addEventListener('click', function () { fetch('/api/config/acp', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ port: Number(port.value) }) }).then(function (r) { if (!r.ok) throw new Error(''); HOST.alert('端口已更新'); }).catch(function () { HOST.alert('保存失败'); }); });
+      ops.appendChild(enact);
+      const red = HOST.document.createElement('button'); red.className = 'btn'; red.textContent = '重新部署 relay';
+      red.addEventListener('click', function () { fetch('/api/config/acp/redeploy', { method: 'POST' }).then(function (r) { if (!r.ok) throw new Error(''); HOST.alert('已重新部署'); }).catch(function () { HOST.alert('部署失败'); }); });
+      ops.appendChild(red);
+      const rtk = HOST.document.createElement('button'); rtk.className = 'btn'; rtk.textContent = '重置 token';
+      rtk.addEventListener('click', function () { fetch('/api/config/acp/reset-token', { method: 'POST' }).then(function (r) { if (!r.ok) throw new Error(''); HOST.alert('token 已重置，relay 需重启重连'); }).catch(function () { HOST.alert('重置失败'); }); });
+      ops.appendChild(rtk);
+      body.appendChild(ops);
+      card.appendChild(body);
     }).catch(function () {});
-    sec.appendChild(info);
+    sec.appendChild(card);
   }
-  function renderDeploySection(main) {
+
+  // ---- deploy：四步线性列表 + 状态指示灯 ----
+  function deployState(it, ov) {
+    const item = (ov && ov.items) ? ov.items[it] : null;
+    const task = (ov && ov.tasks) ? ov.tasks[it] : null;
+    const running = task && task.state === 'running';
+    let state;
+    if (running) state = 'running';
+    else if (task && task.state === 'success') state = 'installed';
+    else if (task && task.state === 'failed') state = 'failed';
+    else if (item && item.ready) state = 'ready';
+    else state = 'missing';
+    const clickable = state === 'missing' || state === 'failed';
+    const text = state === 'missing' ? '一键部署' : state === 'failed' ? '重新部署' : state === 'running' ? '部署中…' : state === 'installed' ? '已安装待重启' : '已就绪';
+    return { state: state, clickable: clickable, text: text, item: item, task: task };
+  }
+  function renderDeployCards(main) {
     const sec = makeSection('部署中心', main);
-    const items = ['uv', 'node', 'sandbox', 'embedding'];
-    const ops = HOST.document.createElement('div');
-    ops.className = 'settings-actions';
-    items.forEach(function (it) {
-      const b = HOST.document.createElement('button');
-      b.className = 'btn';
-      b.textContent = '部署 ' + it;
-      b.addEventListener('click', function () {
-        fetch('/api/config/deploy/' + it, { method: 'POST' })
-          .then(function (r) { if (!r.ok) return r.json().then(function (d2) { throw new Error(d2.detail || '部署冲突'); }); HOST.alert('已启动部署 ' + it); })
-          .catch(function (e) { HOST.alert('失败：' + (e && e.message || '')); });
-      });
-      ops.appendChild(b);
-    });
-    sec.appendChild(ops);
-    // 沙盒镜像源
-    const reg = HOST.document.createElement('div');
-    reg.className = 'field';
-    const rl = HOST.document.createElement('label');
-    rl.textContent = '沙盒镜像源（留空 = 自动）';
-    reg.appendChild(rl);
-    const regRow = HOST.document.createElement('div');
-    regRow.className = 'settings-actions';
-    const regIn = HOST.document.createElement('input');
-    regIn.type = 'text';
-    regIn.style.width = '100%';
-    fetch('/api/config/sandbox-registry').then(function (r) { return r.json(); }).then(function (d) { if (d) regIn.value = d.sandbox_registry || ''; }).catch(function () {});
-    const rSave = HOST.document.createElement('button');
-    rSave.className = 'btn';
-    rSave.textContent = '保存镜像源';
-    rSave.addEventListener('click', function () {
-      fetch('/api/config/sandbox-registry', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sandbox_registry: regIn.value }) })
-        .then(function (r) { if (!r.ok) throw new Error(''); HOST.alert('已保存'); }).catch(function () { HOST.alert('保存失败'); });
-    });
-    regRow.appendChild(regIn);
-    regRow.appendChild(rSave);
-    reg.appendChild(regRow);
-    sec.appendChild(reg);
-    // 状态 / 日志（轮询）
-    const log = HOST.document.createElement('pre');
-    log.className = 'settings-log';
-    sec.appendChild(log);
-    function poll() {
-      fetch('/api/config/deploy').then(function (r) { return r.json(); }).then(function (d) {
-        const out = [];
-        const its = d.items || {}; const tasks = d.tasks || {};
-        items.forEach(function (it) {
-          const st = its[it] || {}; const tk = tasks[it] || {};
-          out.push('[' + it + '] 就绪:' + (st.ready ? '是' : '否') + (st.detail ? ' · ' + st.detail : '') + ' · 状态:' + (tk.state || 'idle'));
-          if (tk.log && tk.log.length) out.push(String(tk.log[tk.log.length - 1]));
-        });
-        log.textContent = out.join('\n');
-      }).catch(function () { log.textContent = '读取部署状态失败'; });
+    const tip = HOST.document.createElement('div');
+    tip.className = 'cfg-tip';
+    tip.textContent = '按顺序逐步安装依赖：uv → node → sandbox → embedding。需重启应用生效，建议网络稳定。';
+    sec.appendChild(tip);
+    const list = HOST.document.createElement('div');
+    list.className = 'cfg-stepper';
+    sec.appendChild(list);
+    if (!cfgState.sandboxRegistry) {
+      fetch('/api/config/sandbox-registry').then(function (r) { return r.json(); }).then(function (d) { if (d) cfgState.sandboxRegistry = d.sandbox_registry || 'ghcr.io/purrpod'; }).catch(function () { cfgState.sandboxRegistry = 'ghcr.io/purrpod'; });
     }
-    poll();
-    deployPollT = setInterval(poll, 3000);
+    function draw() {
+      cfgData('deploy').then(function (ov) {
+        list.innerHTML = '';
+        DEPLOY_ITEMS.forEach(function (it, idx) {
+          const st = deployState(it, ov);
+          const row = HOST.document.createElement('div');
+          row.className = 'cfg-step';
+          const rail = HOST.document.createElement('div');
+          rail.className = 'cfg-step-rail';
+          const dot = HOST.document.createElement('div');
+          dot.className = 'cfg-step-dot ' + st.state;
+          dot.textContent = idx + 1;
+          rail.appendChild(dot);
+          if (idx < DEPLOY_ITEMS.length - 1) { const line = HOST.document.createElement('div'); line.className = 'cfg-step-line'; rail.appendChild(line); }
+          row.appendChild(rail);
+          const body = HOST.document.createElement('div');
+          body.className = 'cfg-step-body';
+          const head = HOST.document.createElement('div');
+          head.className = 'cfg-step-head';
+          const nm = HOST.document.createElement('div');
+          nm.className = 'cfg-step-title';
+          nm.textContent = DEPLOY_LABEL[it];
+          head.appendChild(nm);
+          const act = HOST.document.createElement('div');
+          act.className = 'cfg-step-act';
+          if (it === 'sandbox' && st.item) {
+            const docker = HOST.document.createElement('span');
+            docker.className = 'cfg-chip ' + (st.item.docker_installed ? 'ok' : 'bad');
+            docker.textContent = 'Docker ' + (st.item.docker_installed ? '✓' : '✗');
+            act.appendChild(docker);
+            const img = HOST.document.createElement('span');
+            img.className = 'cfg-chip ' + (st.item.image_ready ? 'ok' : 'warn');
+            img.textContent = '镜像 ' + (st.item.image_ready ? '✓' : '✗');
+            act.appendChild(img);
+          }
+          const btn = HOST.document.createElement('button');
+          btn.className = 'btn cfg-deploy-btn ' + st.state;
+          btn.disabled = !st.clickable;
+          btn.textContent = (st.state === 'running' ? '··· ' : '') + st.text;
+          btn.addEventListener('click', function () {
+            if (!st.clickable) return;
+            fetch('/api/config/deploy/' + it, { method: 'POST' }).then(function (r) { if (!r.ok) return r.json().then(function (d2) { throw new Error(d2.detail || '部署冲突'); }); }).then(function () { delete cfgState.data.deploy; draw(); }).catch(function (e) { HOST.alert('失败：' + (e && e.message || '')); });
+          });
+          act.appendChild(btn);
+          head.appendChild(act);
+          body.appendChild(head);
+          if (it === 'sandbox') {
+            const reg = HOST.document.createElement('div');
+            reg.className = 'cfg-add-row';
+            const inp = HOST.document.createElement('input');
+            inp.type = 'text'; inp.placeholder = 'ghcr.io/…（默认 ghcr.io/purrpod）'; inp.value = cfgState.sandboxRegistry;
+            inp.addEventListener('input', function () { cfgState.sandboxRegistry = inp.value; });
+            const rs = HOST.document.createElement('button');
+            rs.className = 'btn'; rs.textContent = '保存镜像源';
+            rs.addEventListener('click', function () { cfgData('deploy'); fetch('/api/config/sandbox-registry', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sandbox_registry: cfgState.sandboxRegistry }) }).then(function (r) { if (!r.ok) throw new Error(''); HOST.alert('镜像源已保存'); }).catch(function () { HOST.alert('保存失败'); }); });
+            reg.appendChild(inp);
+            reg.appendChild(rs);
+            body.appendChild(reg);
+          }
+          if (st.item && st.item.detail) { const det = HOST.document.createElement('div'); det.className = 'cfg-card-sub'; det.textContent = st.item.detail; body.appendChild(det); }
+          const lgToggle = HOST.document.createElement('button');
+          lgToggle.className = 'cfg-log-toggle';
+          lgToggle.textContent = (cfgState.deployLogOpen[it] ? '收起日志 ▾' : '查看日志 ▸');
+          lgToggle.addEventListener('click', function () { cfgState.deployLogOpen[it] = !cfgState.deployLogOpen[it]; draw(); });
+          body.appendChild(lgToggle);
+          if (cfgState.deployLogOpen[it]) {
+            const lgr = HOST.document.createElement('pre');
+            lgr.className = 'settings-log';
+            lgr.style.minHeight = '80px';
+            lgr.textContent = (st.task && st.task.log && st.task.log.length) ? st.task.log.join('\n') : '（暂无日志）';
+            body.appendChild(lgr);
+          }
+          row.appendChild(body);
+          list.appendChild(row);
+        });
+      });
+    }
+    draw();
+    if (deployPollT) clearInterval(deployPollT);
+    deployPollT = setInterval(function () {
+      if (!HOST.document.body.classList.contains('settings-open')) return;
+      delete cfgState.data.deploy;   // 失效缓存
+      // 聚焦于列表内输入（如镜像源）时不打断编辑，下个 tick 再重建
+      if (HOST.document.activeElement && list.contains(HOST.document.activeElement)) return;
+      draw();
+    }, 3000);
   }
 
   // ---- 配置持久化与下发 ----
