@@ -395,19 +395,14 @@
     right.className = 'row-actions';
     const slug = HOST.document.createElement('span');
     slug.className = 'p-tag';
-    slug.textContent = p.slot || '';
+    slug.textContent = (p.slotDef && p.slotDef.type) || p.slot || '';
     right.appendChild(slug);
-    if (!p.builtin) {
-      const del = HOST.document.createElement('button');
-      del.className = 'btn sm danger';
-      del.textContent = '删除';
-      del.addEventListener('click', function () {
-        if (HOST.confirm('确定删除插件 “' + (p.name || p.id) + '” 吗？')) {
-          callAction('plugin.delete', { plugin_id: p.id }).then(function () { renderSettings(); }).catch(function (e) { HOST.alert('删除失败：' + e.message); });
-        }
-      });
-      right.appendChild(del);
-    }
+    const menuBtn = HOST.document.createElement('button');
+    menuBtn.className = 'btn icon menu-btn';
+    menuBtn.textContent = '▾';
+    menuBtn.title = '打开 / 关闭 / 删除';
+    menuBtn.addEventListener('click', function (ev) { openPluginCardMenu(ev, menuBtn, p); });
+    right.appendChild(menuBtn);
     head.appendChild(name);
     head.appendChild(right);
     box.appendChild(head);
@@ -526,12 +521,42 @@
     });
   }
 
+  // ---- 设置面板：左导航 + 内容区（宿主固有资产，非插件）----
+  // 主导航：UI 插件 + 原配置中心逐标签页
+  const CONFIG_NAV = ['plugins', 'view', 'model', 'sensor', 'file', 'mcp', 'app', 'acp', 'deploy'];
+  const CONFIG_LABEL = { plugins: 'UI 插件', view: '视图设置', model: '模型', sensor: '传感器', file: '文件', mcp: 'MCP', app: '应用', acp: 'ACP', deploy: '部署' };
+  let settingsTab = 'plugins';
+  let deployPollT = null;   // 部署页轮询定时器句柄
+
   function renderSettings() {
     const bodyEl = HOST.document.querySelector('[data-layer="settings"] .settings-body');
     if (!bodyEl) return;
+    if (deployPollT) { clearInterval(deployPollT); deployPollT = null; }
     bodyEl.innerHTML = '';
-    renderRailAppearance(bodyEl);
-    renderPanelContainerSettings(bodyEl);
+    // 左导航
+    const nav = HOST.document.createElement('div');
+    nav.className = 'settings-nav';
+    CONFIG_NAV.forEach(function (key) {
+      const it = HOST.document.createElement('button');
+      it.className = 'settings-nav-item' + (settingsTab === key ? ' active' : '');
+      it.textContent = CONFIG_LABEL[key] || key;
+      it.addEventListener('click', function () { settingsTab = key; renderSettings(); });
+      nav.appendChild(it);
+    });
+    bodyEl.appendChild(nav);
+    // 内容区
+    const main = HOST.document.createElement('div');
+    main.className = 'settings-main';
+    bodyEl.appendChild(main);
+    if (settingsTab === 'plugins') renderPluginsTab(main);
+    else renderConfigSection(main, settingsTab);
+  }
+
+  // ---- UI 插件主面板：按 slot 竖排分组 ----
+  function renderPluginsTab(main) {
+    renderPluginGroup(main, '固定组件', 'fixed', renderRailAppearance);
+    renderPluginGroup(main, '面板插件', 'panel', renderPanelContainerSettings);
+    renderPluginGroup(main, '浮动插件', 'float', null);
     const btnNormal = HOST.document.createElement('div');
     btnNormal.className = 'mode-row';
     const b = HOST.document.createElement('button');
@@ -541,13 +566,295 @@
       callAction('switch_to_normal', {}).then(function (d) { if (d && d.restart) HOST.alert('已切换为完整模式，请重启应用生效。'); }).catch(function () {});
     });
     btnNormal.appendChild(b);
-    bodyEl.appendChild(btnNormal);
-    groupState.plugins.forEach(function (p) {
-      const base = {};
-      (p.configSchema || []).forEach(function (f) { if (f.default !== undefined) base[f.key] = f.default; });
-      const cfg = Object.assign({}, base, configByPlugin[p.id] || {});
-      renderPluginCard(bodyEl, p, cfg);
+    main.appendChild(btnNormal);
+  }
+  function renderPluginGroup(main, title, slotType, hostRenderer) {
+    const group = HOST.document.createElement('div');
+    group.className = 'settings-group';
+    const gt = HOST.document.createElement('div');
+    gt.className = 'settings-group-title';
+    gt.textContent = title;
+    group.appendChild(gt);
+    if (hostRenderer) hostRenderer(group);
+    groupState.plugins
+      .filter(function (p) { return (p.slotDef || {}).type === slotType; })
+      .forEach(function (p) {
+        const base = {};
+        (p.configSchema || []).forEach(function (f) { if (f.default !== undefined) base[f.key] = f.default; });
+        const cfg = Object.assign({}, base, configByPlugin[p.id] || {});
+        renderPluginCard(group, p, cfg);
+      });
+    if (!group.querySelector('.plugin')) {
+      const none = HOST.document.createElement('div');
+      none.className = 'p-tag';
+      none.textContent = '（无 ' + slotType + ' 类型插件）';
+      group.appendChild(none);
+    }
+    main.appendChild(group);
+  }
+
+  // ---- 插件卡片右上角抽屉：打开/关闭（文字随状态）+ 删除 ----
+  function pluginVisible(p) { return !railHidden(p.id); }
+  function closeSettingsMenus() {
+    HOST.document.querySelectorAll('.settings-card-menu').forEach(function (m) { m.remove(); });
+  }
+  function openPluginCardMenu(ev, btn, p) {
+    ev.stopPropagation();
+    closeSettingsMenus();
+    const menu = HOST.document.createElement('div');
+    menu.className = 'settings-card-menu';
+    const vis = pluginVisible(p);
+    const t = HOST.document.createElement('button');
+    t.className = 'settings-menu-btn' + (vis ? '' : ' open');
+    t.textContent = vis ? '关闭' : '打开';
+    t.addEventListener('click', function () { closeSettingsMenus(); togglePluginOpen(p); renderSettings(); });
+    menu.appendChild(t);
+    if (p.builtin) {
+      const dis = HOST.document.createElement('button');
+      dis.className = 'settings-menu-btn disabled';
+      dis.textContent = '内置插件';
+      dis.disabled = true;
+      menu.appendChild(dis);
+    } else {
+      const d = HOST.document.createElement('button');
+      d.className = 'settings-menu-btn danger';
+      d.textContent = '删除';
+      d.addEventListener('click', function () {
+        closeSettingsMenus();
+        if (HOST.confirm('确定删除插件 “' + (p.name || p.id) + '” 吗？')) {
+          callAction('plugin.delete', { plugin_id: p.id }).then(function () { renderSettings(); }).catch(function (e) { HOST.alert('删除失败：' + e.message); });
+        }
+      });
+      menu.appendChild(d);
+    }
+    HOST.document.body.appendChild(menu);
+    const r = btn.getBoundingClientRect();
+    menu.style.right = (HOST.innerWidth - r.right) + 'px';
+    menu.style.top = (r.bottom + 4) + 'px';
+  }
+
+  // 单实例槽（fixed/panel）当前占据且可见的插件；float 无单例概念返回 null
+  function currentActivePlugin(slot) {
+    if (slot === 'panel') {
+      if (panelState && panelState.activeId && panelState.activeId !== '__none__') {
+        const p = groupState.plugins.find(function (x) { return x.id === panelState.activeId; });
+        if (p && !railHidden(p.id)) return p;
+      }
+      return null;
+    }
+    const p = pluginBySlot[slot];
+    if (p && !railHidden(p.id)) return p;
+    return null;
+  }
+  // 把某插件置为对应槽位的当前活动实例（fixed 卸旧挂新；panel 切换抽屉选中）
+  function activateSlotPlugin(p) {
+    const slot = p.slot;
+    const type = (p.slotDef || {}).type;
+    if (type === 'panel') {
+      if (panelState) { panelState.activeId = p.id; renderPanelContent(panelState); }
+      setContainerHidden(false);
+      if (railHidden(p.id)) setPluginHidden(p.id, false);
+      buildRail();
+      return;
+    }
+    // fixed：已是主挂载则仅取消隐藏；否则卸载当前并挂载目标
+    if (pluginBySlot[slot] !== p) {
+      if (frames[slot]) { frames[slot].forEach(function (f) { if (f.iframe && f.iframe.parentNode) f.iframe.parentNode.removeChild(f.iframe); }); frames[slot] = []; }
+      pluginBySlot[slot] = p;
+      const anchor = HOST.document.querySelector('[data-slot="' + slot + '"]');
+      if (anchor) {
+        anchor.innerHTML = '';
+        const fr = mountFrame(anchor, p);
+        if (fr) frames[slot] = [fr];
+      }
+    }
+    if (railHidden(p.id)) setPluginHidden(p.id, false);
+    buildRail();
+  }
+  function togglePluginOpen(p) {
+    if (!railHidden(p.id)) { setPluginHidden(p.id, true); buildRail(); return; }   // 关闭
+    if ((p.slotDef || {}).type !== 'float') {
+      const active = currentActivePlugin(p.slot);
+      if (active && active.id !== p.id) { HOST.alert('已有其他插件打开：' + (active.name || active.id) + '，需先关闭它才能生效'); return; }
+    }
+    activateSlotPlugin(p);
+  }
+
+  // ---- 原配置中心逐标签页复刻 ----
+  function makeSection(title, main) {
+    const sec = HOST.document.createElement('div');
+    sec.className = 'settings-section';
+    const t = HOST.document.createElement('div');
+    t.className = 'settings-section-title';
+    t.textContent = title;
+    sec.appendChild(t);
+    main.appendChild(sec);
+    return sec;
+  }
+  function renderConfigSection(main, key) {
+    if (key === 'view') return renderViewSection(main);
+    if (key === 'acp') return renderAcpSection(main);
+    if (key === 'deploy') return renderDeploySection(main);
+    renderJsonEditor(main, key);   // model/sensor/file/mcp/app 均为整块 JSON
+  }
+  function renderJsonEditor(main, key) {
+    const sec = makeSection(CONFIG_LABEL[key] || key, main);
+    const tx = HOST.document.createElement('textarea');
+    tx.className = 'settings-json';
+    tx.spellcheck = false;
+    tx.placeholder = '读取配置…';
+    sec.appendChild(tx);
+    const status = HOST.document.createElement('span');
+    status.className = 'p-tag';
+    fetch('/api/config/' + key).then(function (r) { return r.json(); }).then(function (data) {
+      tx.value = JSON.stringify(data, null, 2);
+      status.textContent = '已加载';
+    }).catch(function () { tx.value = ''; status.textContent = '读取失败'; });
+    const bar = HOST.document.createElement('div');
+    bar.className = 'settings-actions';
+    const save = HOST.document.createElement('button');
+    save.className = 'btn';
+    save.textContent = '保存';
+    save.addEventListener('click', function () {
+      let obj;
+      try { obj = JSON.parse(tx.value); } catch (e) { HOST.alert('JSON 解析失败：' + e.message); return; }
+      fetch('/api/config/' + key, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(obj) })
+        .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); status.textContent = '已保存'; })
+        .catch(function (e) { status.textContent = '保存失败'; HOST.alert('保存失败：' + (e && e.message || '')); });
     });
+    bar.appendChild(save);
+    bar.appendChild(status);
+    sec.appendChild(bar);
+  }
+  function renderViewSection(main) {
+    const sec = makeSection('视图设置', main);
+    const row = HOST.document.createElement('div');
+    row.className = 'field switch-row';
+    const left = HOST.document.createElement('div');
+    const label = HOST.document.createElement('label');
+    label.textContent = '极简模式（minimal）';
+    left.appendChild(label);
+    row.appendChild(left);
+    const sw = HOST.document.createElement('label');
+    sw.className = 'switch';
+    sw.innerHTML = '<input type="checkbox"><span class="slider"></span>';
+    const chk = sw.querySelector('input');
+    fetch('/api/config/view').then(function (r) { return r.json(); }).then(function (d) { chk.checked = d.ui_mode === 'minimal'; }).catch(function () {});
+    chk.addEventListener('change', function () {
+      fetch('/api/config/view', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ui_mode: chk.checked ? 'minimal' : 'normal' }) })
+        .then(function (r) { if (!r.ok) throw new Error(''); HOST.alert('视图模式已更新，请重启应用生效。'); })
+        .catch(function () { chk.checked = !chk.checked; HOST.alert('保存失败'); });
+    });
+    row.appendChild(sw);
+    sec.appendChild(row);
+    const hint = HOST.document.createElement('div');
+    hint.className = 'p-tag';
+    hint.textContent = '开启后极简模式作为默认 UI，需重启应用生效。';
+    sec.appendChild(hint);
+  }
+  function renderAcpSection(main) {
+    const sec = makeSection('ACP 接入', main);
+    const info = HOST.document.createElement('div');
+    info.className = 'acp-info';
+    const portRow = HOST.document.createElement('div');
+    portRow.className = 'field';
+    const pl = HOST.document.createElement('label');
+    pl.textContent = '端口';
+    portRow.appendChild(pl);
+    const port = HOST.document.createElement('input');
+    port.type = 'number'; port.min = 1; port.max = 65535; port.style.width = '100%';
+    portRow.appendChild(port);
+    const enact = HOST.document.createElement('button');
+    enact.className = 'btn';
+    enact.textContent = '保存端口';
+    enact.addEventListener('click', function () {
+      fetch('/api/config/acp', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ port: Number(port.value) }) })
+        .then(function (r) { if (!r.ok) throw new Error(''); HOST.alert('端口已更新'); }).catch(function () { HOST.alert('保存失败'); });
+    });
+    portRow.appendChild(enact);
+    info.appendChild(portRow);
+    const ops = HOST.document.createElement('div');
+    ops.className = 'settings-actions';
+    const red = HOST.document.createElement('button');
+    red.className = 'btn';
+    red.textContent = '重新部署 relay';
+    red.addEventListener('click', function () { fetch('/api/config/acp/redeploy', { method: 'POST' }).then(function (r) { if (!r.ok) throw new Error(''); HOST.alert('已重新部署'); }).catch(function () { HOST.alert('部署失败'); }); });
+    ops.appendChild(red);
+    const rtk = HOST.document.createElement('button');
+    rtk.className = 'btn';
+    rtk.textContent = '重置 token';
+    rtk.addEventListener('click', function () { fetch('/api/config/acp/reset-token', { method: 'POST' }).then(function (r) { if (!r.ok) throw new Error(''); HOST.alert('token 已重置，relay 需重启重连'); }).catch(function () { HOST.alert('重置失败'); }); });
+    ops.appendChild(rtk);
+    info.appendChild(ops);
+    fetch('/api/config/acp').then(function (r) { return r.json(); }).then(function (d) {
+      if (d.port) port.value = d.port;
+      const ul = HOST.document.createElement('ul');
+      ul.className = 'acp-status';
+      [[(d.relay_deployed ? 'relay 已部署：是' : 'relay 已部署：否')], [(d.relay_matches_source ? 'relay 与源一致：是' : 'relay 与源一致：否')], ['uv 可用：' + (d.uv_found ? '是' : '否')]].forEach(function (arr) {
+        const li = HOST.document.createElement('li'); li.textContent = arr[0]; ul.appendChild(li);
+      });
+      info.insertBefore(ul, info.firstChild);
+    }).catch(function () {});
+    sec.appendChild(info);
+  }
+  function renderDeploySection(main) {
+    const sec = makeSection('部署中心', main);
+    const items = ['uv', 'node', 'sandbox', 'embedding'];
+    const ops = HOST.document.createElement('div');
+    ops.className = 'settings-actions';
+    items.forEach(function (it) {
+      const b = HOST.document.createElement('button');
+      b.className = 'btn';
+      b.textContent = '部署 ' + it;
+      b.addEventListener('click', function () {
+        fetch('/api/config/deploy/' + it, { method: 'POST' })
+          .then(function (r) { if (!r.ok) return r.json().then(function (d2) { throw new Error(d2.detail || '部署冲突'); }); HOST.alert('已启动部署 ' + it); })
+          .catch(function (e) { HOST.alert('失败：' + (e && e.message || '')); });
+      });
+      ops.appendChild(b);
+    });
+    sec.appendChild(ops);
+    // 沙盒镜像源
+    const reg = HOST.document.createElement('div');
+    reg.className = 'field';
+    const rl = HOST.document.createElement('label');
+    rl.textContent = '沙盒镜像源（留空 = 自动）';
+    reg.appendChild(rl);
+    const regRow = HOST.document.createElement('div');
+    regRow.className = 'settings-actions';
+    const regIn = HOST.document.createElement('input');
+    regIn.type = 'text';
+    regIn.style.width = '100%';
+    fetch('/api/config/sandbox-registry').then(function (r) { return r.json(); }).then(function (d) { if (d) regIn.value = d.sandbox_registry || ''; }).catch(function () {});
+    const rSave = HOST.document.createElement('button');
+    rSave.className = 'btn';
+    rSave.textContent = '保存镜像源';
+    rSave.addEventListener('click', function () {
+      fetch('/api/config/sandbox-registry', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sandbox_registry: regIn.value }) })
+        .then(function (r) { if (!r.ok) throw new Error(''); HOST.alert('已保存'); }).catch(function () { HOST.alert('保存失败'); });
+    });
+    regRow.appendChild(regIn);
+    regRow.appendChild(rSave);
+    reg.appendChild(regRow);
+    sec.appendChild(reg);
+    // 状态 / 日志（轮询）
+    const log = HOST.document.createElement('pre');
+    log.className = 'settings-log';
+    sec.appendChild(log);
+    function poll() {
+      fetch('/api/config/deploy').then(function (r) { return r.json(); }).then(function (d) {
+        const out = [];
+        const its = d.items || {}; const tasks = d.tasks || {};
+        items.forEach(function (it) {
+          const st = its[it] || {}; const tk = tasks[it] || {};
+          out.push('[' + it + '] 就绪:' + (st.ready ? '是' : '否') + (st.detail ? ' · ' + st.detail : '') + ' · 状态:' + (tk.state || 'idle'));
+          if (tk.log && tk.log.length) out.push(String(tk.log[tk.log.length - 1]));
+        });
+        log.textContent = out.join('\n');
+      }).catch(function () { log.textContent = '读取部署状态失败'; });
+    }
+    poll();
+    deployPollT = setInterval(poll, 3000);
   }
 
   // ---- 配置持久化与下发 ----

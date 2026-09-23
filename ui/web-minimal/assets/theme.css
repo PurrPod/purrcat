@@ -328,13 +328,90 @@ body.settings-open [data-layer="settings"] { display: flex; }
 .settings-close:hover { background: var(--wm-bg-hover); color: var(--wm-label); }
 .settings-body {
   flex: 1;
-  overflow: auto;
-  padding: 4px 20px 20px;
+  display: flex;
   min-height: 0;
+  overflow: hidden;
 }
 .settings-panel h3 { font-size: 15px; font-weight: 600; margin-bottom: 12px; }
 
+/* 设置面板：左导航 + 内容区（宿主固有资产） */
+.settings-nav {
+  flex: none;
+  width: 132px;
+  border-right: 1px solid var(--wm-border);
+  padding: 10px 8px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.settings-nav-item {
+  text-align: left;
+  padding: 7px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--wm-label-2nd);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.settings-nav-item:hover { background: var(--wm-bg-hover); color: var(--wm-label); }
+.settings-nav-item.active { background: var(--wm-bg-active); color: var(--wm-ds-500); font-weight: 600; }
+.settings-main { flex: 1; overflow-y: auto; padding: 8px 20px 20px; min-width: 0; }
+
+/* slot 竖排分组（UI 插件二级分类） */
+.settings-group { margin-bottom: 20px; }
+.settings-group-title {
+  font-size: 12px; font-weight: 700; color: var(--wm-label-dim);
+  letter-spacing: 0.3px; margin-bottom: 8px; text-transform: uppercase;
+}
+
+/* 插件卡片右上角抽屉菜单 */
+.settings-card-menu {
+  position: fixed; z-index: 70;
+  min-width: 128px;
+  background: var(--wm-bg-panel);
+  border: 1px solid var(--wm-border);
+  border-radius: 10px;
+  box-shadow: var(--wm-shadow);
+  padding: 4px;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.settings-menu-btn {
+  text-align: left; padding: 7px 10px; border: none; border-radius: 7px;
+  background: transparent; color: var(--wm-label); font-size: 13px; cursor: pointer;
+}
+.settings-menu-btn:hover { background: var(--wm-bg-hover); }
+.settings-menu-btn.open { color: var(--wm-ds-500); }
+.settings-menu-btn.danger { color: #d0453b; }
+.settings-menu-btn.danger:hover { background: #fdf1f0; }
+.settings-menu-btn.disabled { color: var(--wm-label-dim); cursor: default; }
+
+.menu-btn { padding: 2px 6px; line-height: 1; }
+
+/* 原配置中心各标签页通用 */
+.settings-section { margin-bottom: 20px; }
+.settings-section-title { font-size: 14px; font-weight: 600; margin-bottom: 10px; }
+.settings-actions { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+.settings-json {
+  width: 100%; min-height: 46vh; resize: vertical;
+  font-family: var(--wm-mono); font-size: 12px; line-height: 1.5;
+  padding: 10px; border: 1px solid var(--wm-border); border-radius: 8px;
+  background: var(--wm-bl-50); color: var(--wm-label); outline: none;
+}
+.settings-json:focus { border-color: var(--wm-accent); }
+.settings-log {
+  width: 100%; min-height: 130px; margin-top: 12px; overflow: auto;
+  font-family: var(--wm-mono); font-size: 11.5px; line-height: 1.5; white-space: pre-wrap;
+  padding: 10px; border: 1px solid var(--wm-border); border-radius: 8px;
+  background: var(--wm-bl-50); color: var(--wm-label-2nd);
+}
+.acp-status { list-style: none; margin: 10px 0; }
+.acp-status li { font-size: 12.5px; color: var(--wm-label-2nd); padding: 3px 0; }
+
 /* 设置面板宿主原生渲染（白条透明度 + 各插件配置） */
+.settings-body .settings-nav + .settings-main .plugin,
 .settings-body .plugin {
   border: 1px solid var(--wm-border); border-radius: 10px;
   padding: 12px 14px; margin-bottom: 12px; background: var(--wm-bl-50);
