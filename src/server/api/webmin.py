@@ -107,6 +107,57 @@ def _scan_plugins(root: str) -> dict:
     return result
 
 
+def _slot_id(p: dict) -> str:
+    """插件的 slot id（宿主分组键 / rail / 设置面板展示用）。
+
+    仅声明窗口类型：fixed 取 area；panel 内容插件共享宿主单例容器固定键
+    ``panel``；float 每插件独立键 ``float:{plugin_id}``。
+    旧字符串声明按 pet→float、其余→fixed 归一。
+    """
+    pid = str(p.get("id") or "")
+    slot = p.get("slot")
+    if isinstance(slot, dict):
+        typ = str(slot.get("type") or "fixed")
+        if typ == "panel":
+            # 所有 panel 内容插件共享宿主系统级单例容器 panel-container，分组键固定为 "panel"
+            return "panel"
+        if typ == "float":
+            return "float:" + pid
+        # fixed / 未知：以 area（回退 id）作为分组键
+        return str(slot.get("area") or slot.get("id") or pid)
+    lid = str(slot or "")
+    if lid == "pet":
+        return "float:" + pid
+    return lid or pid
+
+
+def _slot_def(p: dict) -> dict:
+    """归一化插件的 slot 声明为简化的「窗口类型」语义。
+
+    新模型：fixed（锚定单例，同 area 只取第一个生效）、panel（内容插件，入驻
+    宿主系统级单例容器 panel-container，经容器右上角抽屉切换显示）与 float
+    （弹窗，多插件各自独立、可拖拽可缩放）。缺省值用于兼容旧字符串声明。
+    """
+    pid = str(p.get("id") or "")
+    slot = p.get("slot")
+    if isinstance(slot, dict):
+        typ = str(slot.get("type") or "fixed")
+        if typ == "panel":
+            # panel 内容插件：入驻宿主 panel-container 中栏，经容器右上角抽屉切换
+            return {"type": "panel"}
+        if typ == "float":
+            return {"type": "float"}
+        return {
+            "type": "fixed",
+            "area": str(slot.get("area") or slot.get("id") or pid),
+        }
+    # 旧字符串声明：pet 槽默认浮层（可拖拽可缩放），其余锚定单例
+    lid = str(slot or "")
+    if lid == "pet":
+        return {"type": "float"}
+    return {"type": "fixed", "area": lid or pid}
+
+
 def _merge_plugins():
     """内置插件为底，用户同名插件覆盖（下重上）。返回按 slot 分组的列表。"""
     merged = _scan_plugins(BUILTIN_PLUGIN_ROOT)
@@ -115,7 +166,7 @@ def _merge_plugins():
     ordered = ["sidebar", "history", "input", "background", "conversation"]
     plugins.sort(
         key=lambda p: (
-            ordered.index(p.get("slot")) if p.get("slot") in ordered else 999,
+            ordered.index(_slot_id(p)) if _slot_id(p) in ordered else 999,
             p.get("name", ""),
         )
     )
@@ -157,12 +208,20 @@ def api_webmin_manifest():
         p["config"] = dict(stored.get(p["id"]) or {})
         p["builtin"] = _is_builtin(p.get("dir") or "")
         p["backend"] = _plugin_backend_info(p.get("dir") or "")
+        # slot 归一化：p["slot"] 始终为字符串(id)；完整语义放 p["slotDef"]。
+        # 必须先基于原始 slot（仍为 dict）计算 slotDef，再把 slot 字符串化——
+        # 否则 _slot_id 已把 slot 覆盖成 "panel:main"/"float:..." 字符串，
+        # _slot_def 会误走「旧字符串声明」分支把 panel/float 归成 fixed。
+        p["slotDef"] = _slot_def(p)
+        p["slot"] = _slot_id(p)
         plugins.append(p)
     return {
         "ui_mode": str(get_global_settings().get("ui_mode") or "normal"),
         "plugins": plugins,
         # 最左图标栏持久化状态（stage 0=收起 1=仅图标 2=图标+名称 + 各插件隐藏开关 + 白条透明度）
         "rail": stored_cfg.get("rail") or {"stage": 1, "hidden": {}, "opacity": 1},
+        # 宿主固有中栏容器配置（透明度/默认宽度），存于 plugins['panel-container']
+        "panelContainer": stored.get("panel-container") or {},
     }
 
 

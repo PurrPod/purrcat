@@ -53,6 +53,7 @@
   --wm-rail-w: 48px;          /* 最左图标栏宽度（约为一个图标大小） */
   --wm-sidebar-gap: 8px;      /* 会话列表与左侧白条的横向间隙 */
   --wm-sidebar-inset: 14px;   /* 会话列表上下缩进，与右侧面板高度保持一致 */
+  --wm-chat-w: 420px;         /* 右侧聊天列固定宽度：中栏面板最大化时留给聊天的横向宽度 */
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -264,11 +265,12 @@ body.input-menu:not(.empty) .wm-main {
 }
 body.settings-open [data-layer="settings"] { display: flex; }
 
-/* 浮动槽位（桌宠等）：默认隐藏；挂载插件后显示为右上角悬浮卡片 */
-[data-layer="pet"] {
+/* 通用浮层槽（type=float 弹窗，如桌宠；每个插件一个独立实例都用 .wm-float）：
+   默认右上角起始，宿主总是注入拖拽/缩放手柄，left/top 可被拖拽覆盖 */
+[data-layer="pet"], .wm-float {
   position: fixed;
   top: 46px;
-  right: 16px;
+  left: calc(100% - 300px - 16px); /* 默认右上角；拖拽后写 inline left/top */
   z-index: 100;
   width: 300px;
   height: 360px;
@@ -278,8 +280,26 @@ body.settings-open [data-layer="settings"] { display: flex; }
   box-shadow: 0 8px 24px rgba(22, 25, 29, 0.14);
   overflow: hidden;
 }
-[data-layer="pet"]:has(iframe) { display: block; }
-[data-layer="pet"] iframe { border: 0; }
+[data-layer="pet"]:has(iframe), .wm-float.wm-mount { display: block; }
+[data-layer="pet"] iframe, .wm-float iframe { border: 0; width: 100%; height: 100%; display: block; }
+
+/* 浮层内通用拖拽/缩放手柄：宿主对 float 类型总是注入，宿主不感知具体插件 */
+.wm-fgrab {
+  position: absolute; top: 0; left: 0; right: 0; height: 18px;
+  cursor: grab; z-index: 3;
+}
+.wm-fgrab:active { cursor: grabbing; }
+.wm-fresize {
+  position: absolute; right: 0; bottom: 0; width: 20px; height: 20px;
+  cursor: nwse-resize; z-index: 3;
+}
+.wm-fresize::before {
+  content: ""; position: absolute; right: 5px; bottom: 5px;
+  width: 8px; height: 8px;
+  border-right: 2px solid var(--wm-bl-400);
+  border-bottom: 2px solid var(--wm-bl-400);
+  border-radius: 0 0 4px 0;
+}
 .settings-panel {
   width: min(1040px, 96vw);
   height: 86vh;
@@ -364,3 +384,105 @@ body.settings-open [data-layer="settings"] { display: flex; }
 [data-slot="sidebar"] iframe {
   border-radius: 18px;
 }
+
+/* ===== panel-container：宿主系统级中栏容器（三栏：左侧栏 | 中栏容器 | 聊天历史+输入）=====
+   三栏布局：最左 rail → 左侧栏 → 中间 panel-container → 最右 聊天历史(上)+输入(下)。
+   所有 type=panel 内容插件（如浏览器）入驻此单例容器，经右上角抽屉切换显示。
+   容器是固定布局列（非弹窗、不可拖拽整个窗口），宽度由中栏右缘分隔条拖动调整。
+   打开时（body.has-panels）聊天区右移到中栏之后；隐藏时不占位、聊天区舒展。 */
+:root { --wm-panel-w: 0px; }
+.wm-ppanel {
+  position: fixed;
+  /* 高度与右侧聊天框对齐：与 .wm-main 同用 topbar + inset 上下内缩 */
+  top: calc(var(--wm-topbar-h) + var(--wm-sidebar-inset));
+  bottom: var(--wm-sidebar-inset);
+  left: calc(var(--wm-rail-w) + var(--wm-sidebar-gap) + var(--wm-sidebar-w) + var(--wm-sidebar-gap));
+  width: var(--wm-panel-w, 0px);
+  z-index: 20;              /* 在聊天区(main z5)之上、顶栏(22)之下 */
+  background: var(--wm-panel-bg, var(--wm-bl-100));  /* 透明底由宿主 applyPanelContainerCfg 注入 */
+  border: 1px solid var(--wm-border);
+  border-radius: 18px;
+  overflow: hidden;
+  display: none;
+  flex-direction: column;
+  transition: width 0.15s ease;
+}
+.wm-ppanel.wm-mount { display: flex; }
+/* 左侧栏隐藏时，中栏左移贴住白条 */
+body.rail-nosidebar .wm-ppanel {
+  left: calc(var(--wm-rail-w) + var(--wm-sidebar-gap));
+}
+/* 中栏打开时，聊天+输入右移到中栏之后（覆盖默认左侧栏偏移） */
+body.has-panels .wm-main {
+  left: calc(var(--wm-rail-w) + var(--wm-sidebar-gap) + var(--wm-sidebar-w) + var(--wm-sidebar-gap) + var(--wm-panel-w) + var(--wm-sidebar-gap));
+}
+body.rail-nosidebar.has-panels .wm-main {
+  left: calc(var(--wm-rail-w) + var(--wm-sidebar-gap) + var(--wm-panel-w) + var(--wm-sidebar-gap));
+}
+.wm-pp_head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  /* ☰ 抽屉在左、✕ 关闭在右，两端对齐 */
+  justify-content: space-between;
+  padding: 0 8px;
+  height: 34px;
+  background: var(--wm-panel-bg, var(--wm-bl-150));   /* 头部继承容器透明度变量，随面板容器设置一同透明 */
+}
+.wm-pp_drawer {
+  flex: none;
+  width: 26px; height: 26px;
+  display: flex; align-items: center; justify-content: center;
+  border: none; background: transparent; color: var(--wm-label-2nd);
+  font-size: 13px; line-height: 1; cursor: pointer; border-radius: 6px;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.wm-pp_drawer:hover { background: var(--wm-bg-hover); color: var(--wm-label); }
+.wm-pp_body { flex: 1; min-height: 0; position: relative; }
+.wm-pp_body iframe { border: 0; width: 100%; height: 100%; display: block; }
+.wm-pp_empty {
+  height: 100%;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--wm-label-dim);
+  font-size: 13px;
+}
+/* 面板右上角抽屉下拉：悬浮于面板标题栏右侧，宿主通用（不感知具体插件） */
+.wm-pp_menu {
+  position: fixed;
+  z-index: 120;
+  min-width: 160px;
+  max-width: 280px;
+  background: var(--wm-bg-panel);
+  border: 1px solid var(--wm-border);
+  border-radius: 10px;
+  box-shadow: var(--wm-shadow);
+  padding: 4px;
+}
+.wm-pp_menu-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 10px; border-radius: 7px;
+  font-size: 13px; color: var(--wm-label-2nd); cursor: pointer;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.wm-pp_menu-item:hover { background: var(--wm-bg-hover); color: var(--wm-label); }
+.wm-pp_menu-item.active { background: var(--wm-bg-active); color: var(--wm-label); }
+.wm-pp_menu-ico { flex: none; width: 18px; text-align: center; }
+/* 中栏与聊天区之间的纵向分隔条：仅在中栏打开时出现，拖动调整中栏宽度 */
+.wm-pbar {
+  display: none;
+  position: fixed;
+  top: calc(var(--wm-topbar-h) + var(--wm-sidebar-inset));
+  bottom: var(--wm-sidebar-inset);
+  left: calc(var(--wm-rail-w) + var(--wm-sidebar-gap) + var(--wm-sidebar-w) + var(--wm-sidebar-gap) + var(--wm-panel-w));
+  width: 6px;
+  margin-left: -3px;
+  z-index: 21;
+  cursor: col-resize;
+  background: transparent;
+}
+body.has-panels .wm-pbar { display: block; }
+/* 侧栏隐藏时，分隔条也应去掉侧栏宽度、贴面板右缘，否则拖动手柄位置错乱 */
+body.rail-nosidebar.has-panels .wm-pbar {
+  left: calc(var(--wm-rail-w) + var(--wm-sidebar-gap) + var(--wm-panel-w));
+}
+.wm-pbar:hover { background: var(--wm-accent-weak); }

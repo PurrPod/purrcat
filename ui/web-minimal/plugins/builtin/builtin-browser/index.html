@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>浏览器</title>
+<style>
+  :root {
+    --rack: #ffffff;
+    --field: #f2f4f7;
+    --field-2: #eef1f4;
+    --line: rgba(15,17,21,0.08);
+    --ink: #16191d;
+    --ink-2: #6b7684;
+    --accent: #567efe;
+    font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; background: var(--rack); color: var(--ink); font-size: 13px; }
+  .toolbar {
+    position: relative; z-index: 2;
+    display: flex; align-items: center; gap: 6px;
+    padding: 6px 10px; background: var(--rack);
+  }
+  .tb-btn {
+    flex: none; width: 30px; height: 30px;
+    display: flex; align-items: center; justify-content: center;
+    border: none; border-radius: 7px; background: transparent;
+    color: var(--ink-2); font-size: 15px; cursor: pointer; line-height: 1;
+    transition: background .12s ease, color .12s ease;
+  }
+  .tb-btn:hover { background: var(--field); color: var(--ink); }
+  .tb-btn:disabled { opacity: .35; cursor: default; }
+  .addr {
+    flex: 1; display: flex; align-items: center; gap: 8px;
+    height: 30px; padding: 0 12px;
+    background: var(--field); border-radius: 15px;
+    color: var(--ink-2); border: 1px solid transparent; min-width: 0;
+  }
+  .addr input {
+    flex: 1; min-width: 0; border: none; outline: none; background: transparent;
+    font: inherit; color: var(--ink);
+  }
+  .addr:focus-within { border-color: var(--accent); background: #fff; }
+  .go {
+    flex: none; height: 30px; padding: 0 12px;
+    border: none; border-radius: 15px; background: var(--accent);
+    color: #fff; font: inherit; cursor: pointer;
+  }
+  .go:hover { filter: brightness(1.05); }
+  .tb-btn.ext { color: var(--accent); font-size: 13px; width: auto; padding: 0 8px; }
+  .frame-wrap { position: absolute; top: 42px; left: 0; right: 0; bottom: 0; background: var(--field-2); }
+  iframe { width: 100%; height: 100%; border: 0; display: block; background: #fff; }
+  .mask {
+    display: none; position: absolute; inset: 0; z-index: 3;
+    align-items: center; justify-content: center; text-align: center;
+    background: var(--field-2); padding: 24px;
+  }
+  .mask.on { display: flex; }
+  .mask .title { font-size: 15px; font-weight: 600; margin-bottom: 6px; }
+  .mask .desc { color: var(--ink-2); margin-bottom: 14px; max-width: 460px; line-height: 1.7; word-break: break-all; }
+  .mask .row { display: flex; gap: 8px; justify-content: center; }
+  .mask button {
+    padding: 6px 16px; border: none; border-radius: 8px; cursor: pointer; font: inherit;
+  }
+  .mask .primary { background: var(--accent); color: #fff; }
+  .mask .ghost { background: var(--field); color: var(--ink-2); }
+</style>
+</head>
+<body>
+  <div class="toolbar">
+    <button class="tb-btn" id="back" title="后退" disabled>←</button>
+    <button class="tb-btn" id="fwd" title="前进" disabled>→</button>
+    <button class="tb-btn" id="reload" title="刷新">↻</button>
+    <button class="tb-btn" id="home" title="主页">⌂</button>
+    <div class="addr">
+      <span>◉</span>
+      <input id="url" type="text" spellcheck="false" autocomplete="off" placeholder="输入网址或搜索，回车跳转" />
+    </div>
+    <button class="go" id="go">前往</button>
+    <button class="tb-btn ext" id="ext" title="在外部浏览器打开">↗</button>
+  </div>
+  <div class="frame-wrap">
+    <iframe id="view" title="浏览器页面"></iframe>
+    <div class="mask" id="mask">
+      <div>
+        <div class="title">该页面无法内嵌显示</div>
+        <div class="desc" id="maskDesc"></div>
+        <div class="row">
+          <button class="ghost" id="maskRetry">重试</button>
+          <button class="primary" id="maskExt">在外部浏览器打开</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+(function () {
+  'use strict';
+  var HOME = 'https://www.bing.com';
+  var view = document.getElementById('view');
+  var urlInput = document.getElementById('url');
+  var back = document.getElementById('back');
+  var fwd = document.getElementById('fwd');
+  var mask = document.getElementById('mask');
+  var maskDesc = document.getElementById('maskDesc');
+  var stack = [];
+  var pos = -1;
+  var loadTimer = null;
+
+  function openExternal(u) {
+    if (window.purrcat && window.purrcat.openExternal) { window.purrcat.openExternal(u).catch(function () {}); }
+    else window.open(u, '_blank', 'noopener');
+  }
+
+  function showMask(u) {
+    maskDesc.textContent = u || urlInput.value || HOME;
+    mask.classList.add('on');
+  }
+
+  // 内嵌被拒（X-Frame-Options / CSP）时 iframe 不会触发 load：超时兜底提示
+  function armTimer() {
+    clearTimeout(loadTimer);
+    loadTimer = setTimeout(function () {
+      if (view.src) showMask(view.src);
+    }, 4500);
+  }
+  view.addEventListener('load', function () { clearTimeout(loadTimer); });
+  view.addEventListener('error', function () { clearTimeout(loadTimer); showMask(view.src); });
+
+  function refreshNav() {
+    back.disabled = pos <= 0;
+    fwd.disabled = pos >= stack.length - 1;
+  }
+  function setUrlText(u) { urlInput.value = u; }
+  function nav(u) {
+    mask.classList.remove('on');
+    view.src = u;
+    urlInput.value = u;
+    // 直接改 src 不必然进历史（同 URL 不触发 load），显式维护并跳指针
+    stack = stack.slice(0, pos + 1);
+    stack.push(u);
+    pos = stack.length - 1;
+    refreshNav();
+    armTimer();
+  }
+  function go() {
+    var raw = urlInput.value.trim();
+    if (!raw) return;
+    var u;
+    if (/^(https?:|mailto:|file:)/i.test(raw)) u = raw;
+    else if (/^[^ ]+\.[^ ]{2,}$/.test(raw)) u = 'https://' + raw;
+    else u = 'https://www.bing.com/search?q=' + encodeURIComponent(raw);
+    nav(u);
+  }
+  function stepGo(i) {
+    mask.classList.remove('on');
+    view.src = stack[i];
+    urlInput.value = stack[i];
+    refreshNav();
+    armTimer();
+  }
+
+  back.addEventListener('click', function () { if (pos > 0) { pos--; stepGo(pos); } });
+  fwd.addEventListener('click', function () { if (pos < stack.length - 1) { pos++; stepGo(pos); } });
+  document.getElementById('reload').addEventListener('click', function () { mask.classList.remove('on'); view.src = view.src; armTimer(); });
+  document.getElementById('home').addEventListener('click', function () { nav(HOME); });
+  document.getElementById('go').addEventListener('click', go);
+  document.getElementById('ext').addEventListener('click', function () { openExternal(view.src || urlInput.value || HOME); });
+  document.getElementById('maskExt').addEventListener('click', function () { openExternal(view.src || urlInput.value || HOME); });
+  document.getElementById('maskRetry').addEventListener('click', function () { mask.classList.remove('on'); armTimer(); });
+  urlInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') go(); });
+
+  nav(HOME);
+})();
+</script>
+</body>
+</html>

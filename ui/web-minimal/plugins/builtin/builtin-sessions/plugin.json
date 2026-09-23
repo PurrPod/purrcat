@@ -2,7 +2,7 @@
   "id": "builtin-sessions",
   "name": "会话列表",
   "icon": "≡",
-  "slot": "sidebar",
+  "slot": { "type": "fixed", "area": "sidebar" },
   "entry": "index.html",
   "configSchema": [
     { "key": "opacity", "label": "面板透明度", "type": "range", "min": 0.15, "max": 1, "step": 0.05, "default": 0.9 }
