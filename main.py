@@ -5,6 +5,47 @@ import sys
 import warnings
 import argparse
 
+from src.api_port import DEFAULT_API_PORT, resolve_api_port
+
+
+def _preflight_explicit_api_port() -> None:
+    """Reject an explicitly unusable port before importing heavy agent modules."""
+
+    if "--api" not in sys.argv or "--multiprocessing-fork" in sys.argv:
+        return
+
+    cli_port = None
+    has_cli_port = False
+    for index, argument in enumerate(sys.argv):
+        if argument == "--api-port":
+            has_cli_port = True
+            next_argument = sys.argv[index + 1] if index + 1 < len(sys.argv) else None
+            cli_port = (
+                "__missing__"
+                if next_argument is None or next_argument.startswith("--")
+                else next_argument
+            )
+            break
+        if argument.startswith("--api-port="):
+            has_cli_port = True
+            cli_port = argument.split("=", 1)[1]
+            if cli_port == "":
+                cli_port = "__missing__"
+            break
+
+    requested = cli_port if has_cli_port else os.environ.get("PURRCAT_API_PORT")
+    if requested is None:
+        return
+
+    try:
+        resolve_api_port(requested)
+    except ValueError as exc:
+        print(f"PurrCat API startup error: {exc}", file=sys.stderr)
+        raise SystemExit(2) from exc
+
+
+_preflight_explicit_api_port()
+
 # Windows 下管道 stdout/stderr 默认 GBK 编码，print 含 emoji 会抛
 # UnicodeEncodeError 直接崩掉整个后端进程（Electron 用管道拉起时必现）。
 # 必须在导入任何业务模块之前重配为 UTF-8 + errors=replace，杜绝崩溃。
@@ -221,7 +262,7 @@ async def shutdown_core():
     await asyncio.to_thread(shutdown_agent)
 
 
-async def run_api(host: str = "0.0.0.0", port: int = 8000):
+async def run_api(host: str = "0.0.0.0", port: int = DEFAULT_API_PORT):
     from fastapi import FastAPI
     from fastapi.middleware.cors import CORSMiddleware
     import uvicorn
@@ -341,14 +382,32 @@ def main():
     parser.add_argument("--session", type=str, help="Specify session ID to load")
     parser.add_argument("--branch", type=str, help="Create new branch with given name on startup")
     parser.add_argument("--api", action="store_true", help="Enable API server")
-    parser.add_argument("--api-port", type=int, default=8000, help="API server port (default: 8000)")
+    parser.add_argument(
+        "--api-port",
+        type=int,
+        default=None,
+        help="API server port (overrides PURRCAT_API_PORT; defaults to 8000 with automatic fallback)",
+    )
     args = parser.parse_args()
+
+    api_port = DEFAULT_API_PORT
+    if args.api:
+        requested_api_port = (
+            args.api_port
+            if args.api_port is not None
+            else os.environ.get("PURRCAT_API_PORT")
+        )
+        try:
+            api_port = resolve_api_port(requested_api_port)
+        except ValueError as exc:
+            parser.error(str(exc))
+        print(f"[*] API port selected: {api_port}")
 
     try:
         asyncio.run(main_async(
             enable_tui=not args.headless,
             enable_api=args.api,
-            api_port=args.api_port,
+            api_port=api_port,
             cli_session=args.session,
             cli_branch=args.branch
         ))

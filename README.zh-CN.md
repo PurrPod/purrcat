@@ -41,6 +41,10 @@ purrcat desktop update    # 拉取最新源码并刷新依赖
 
 > Windows 下 Docker Desktop 安装后需手动启动一次以接受协议。
 
+### API 端口选择
+
+桌面 API 默认使用 `8000` 端口。运行 `npm run dev` 时会优先尝试该端口；如果不可用，会自动选择后续可用端口。需要固定端口时设置 `PURRCAT_API_PORT`，或直接给 `main.py` 传入 `--api-port`；显式指定的端口不可用时会给出明确错误，不会静默改用其他端口。
+
 ## 架构
 
 ### 01 混合记忆与知识图谱

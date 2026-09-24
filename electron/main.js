@@ -6,6 +6,11 @@ const { app, BrowserWindow, Menu, dialog, ipcMain, WebContentsView, session, she
 const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
+const {
+  DEFAULT_API_PORT,
+  findAvailablePort,
+  parsePort,
+} = require('./api-port.cjs');
 
 // 关掉 Chromium 的 HTTP→HTTPS 自动升级：vite/后端都跑明文 http://localhost，
 // 升级会导致 ERR_SSL_PROTOCOL_ERROR。必须在 app ready 前设置。
@@ -21,11 +26,16 @@ if (fs.existsSync(GPU_FLAG)) {
 
 const IS_DEV = !!process.env.ELECTRON_DEV;
 const DEV_URL = 'http://localhost:3000';   // vite dev server（热更新）
-const PROD_URL = 'http://localhost:8000';  // 后端托管的前端 dist
+let apiPort = DEFAULT_API_PORT;
+let backendConfigError = null;
+
+function getProdUrl() {
+  return `http://127.0.0.1:${apiPort}`;
+}
 
 // ===== 单实例锁 =====
 // 🌟 旧实例未退干净（退出被注入 DLL 卡死等）时用户再点图标会双开：
-// 新后端绑不上 8000 端口，前端实际连的是旧后端 —— 旧后端持有安装 uv/node 之前的
+// 新后端绑不上 API 端口，前端实际连的是旧后端 —— 旧后端持有安装 uv/node 之前的
 // 过期环境变量，MCP/Sensor 子进程全部拉不起来，用户只能重启电脑才恢复。
 // 加锁后第二实例只聚焦已有窗口，不重复拉后端。
 if (!app.requestSingleInstanceLock()) {
@@ -160,20 +170,43 @@ function pushTabEvent(payload) {
 }
 
 // ===== 后端 sidecar =====
-function createBackend() {
-  // 开发模式后端由 `npm run dev` 的 concurrently 拉起（uv run python main.py --api --headless）
-  if (IS_DEV) return;
+async function createBackend() {
+  // 开发模式后端由 `scripts/dev.mjs` 拉起，并通过环境变量共享最终 API 端口。
+  if (IS_DEV) {
+    try {
+      apiPort = parsePort(process.env.PURRCAT_API_PORT) || DEFAULT_API_PORT;
+    } catch (error) {
+      backendConfigError = error;
+    }
+    return backendConfigError === null;
+  }
   // 生产模式：PyInstaller --onedir 产物为 main.exe + _internal/，由 extraResources 带到 resources/backend/
   const exeName = process.platform === 'win32' ? 'main.exe' : 'main';
   const exe = path.join(process.resourcesPath, 'backend', exeName);
   if (!fs.existsSync(exe)) {
     console.warn('[PurrCat] 后端 sidecar 未找到:', exe, '（生产包需先 PyInstaller 打包到 dist/main/）');
-    return;
+    return false;
   }
-  backendProcess = spawn(exe, ['--api', '--headless'], { cwd: path.dirname(exe), windowsHide: true });
+  try {
+    apiPort = await findAvailablePort(process.env.PURRCAT_API_PORT);
+  } catch (error) {
+    backendConfigError = error;
+    console.error('[PurrCat] API port selection failed:', error.message);
+    return false;
+  }
+  backendProcess = spawn(
+    exe,
+    ['--api', '--headless', '--api-port', String(apiPort)],
+    {
+      cwd: path.dirname(exe),
+      env: { ...process.env, PURRCAT_API_PORT: String(apiPort) },
+      windowsHide: true,
+    },
+  );
   backendProcess.stdout.on('data', (d) => process.stdout.write(d));
   backendProcess.stderr.on('data', (d) => process.stderr.write(d));
   backendProcess.on('exit', (code) => console.warn('[PurrCat] backend exited with', code));
+  return true;
 }
 
 // 🌟 树杀后端：Windows 上 Node 的 kill() 只终止 main.exe 本体，不会带走它派生的
@@ -239,7 +272,7 @@ function createWindow() {
   } else {
     // 生产模式：等后端就绪再 loadURL，避免端口未就绪导致空白页
     mainWindow.loadURL('about:blank');
-    pollBackendAndLoad(PROD_URL);
+    pollBackendAndLoad(getProdUrl());
   }
 
   // 重置主窗口页面缩放：Chromium 会按 origin 记住 Ctrl+滚轮/Ctrl+- 的缩放，
@@ -277,7 +310,7 @@ async function pollBackendAndLoad(targetUrl) {
   const MAX_WAIT_MS = 60_000;
   while (Date.now() - started < MAX_WAIT_MS) {
     try {
-      const res = await fetch('http://localhost:8000/api/health');
+      const res = await fetch(`${getProdUrl()}/api/health`);
       if (res.ok) {
         if (mainWindow && !mainWindow.isDestroyed()) mainWindow.loadURL(targetUrl);
         return;
@@ -294,9 +327,9 @@ async function pollBackendAndLoad(targetUrl) {
       h1{font-size:20px;color:#f38ba8} code{background:#313244;padding:2px 8px;border-radius:4px;font-size:13px}
     </style></head><body>
       <h1>后端服务启动失败</h1>
-      <p>PurrCat 的 Python 后端（端口 8000）在 60 秒内未就绪，界面无法加载。</p>
+      <p>PurrCat 的 Python 后端（端口 ${apiPort}）在 60 秒内未就绪，界面无法加载。</p>
       <p>排查方法：打开命令行，运行</p>
-      <p><code>${path.join(backendDir, process.platform === 'win32' ? 'main.exe' : 'main')} --api --headless</code></p>
+      <p><code>${path.join(backendDir, process.platform === 'win32' ? 'main.exe' : 'main')} --api --headless --api-port ${apiPort}</code></p>
       <p>查看输出的错误信息，并到 GitHub 提交 issue。</p>
     </body></html>`;
     mainWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(errHtml));
@@ -373,7 +406,7 @@ let ideDetachedWin = null;
 
 ipcMain.handle('ide:detach', (_e, workspacePath) => {
   if (ideDetachedWin) return;
-  const base = IS_DEV ? DEV_URL : PROD_URL;
+  const base = IS_DEV ? DEV_URL : getProdUrl();
   const wsHash = workspacePath ? encodeURIComponent(workspacePath) : '';
   // IDE 独立窗口走专用 /ide 路由，只渲染 IDE，不带聊天框
   ideDetachedWin = new BrowserWindow({
@@ -412,7 +445,7 @@ ipcMain.handle('ide:reattach', () => {
 
 // ===== IPC: 内置浏览器 Tab 管理 =====
 
-// 阻止在内置浏览器中加载主窗口自身的 URL（localhost:3000 / localhost:8000），
+// 阻止在内置浏览器中加载主窗口自身的 URL（localhost:3000 / 动态 API 端口），
 // 否则两个完整 React 应用共享同一 origin，localStorage/storage 事件 + Vite HMR WebSocket 形成循环风暴
 function isSelfUrl(url) {
   if (!url || typeof url !== 'string') return false;
@@ -421,7 +454,7 @@ function isSelfUrl(url) {
     // 后端静态/产物接口（/api/...）返回的是文件而非应用 SPA 壳，允许内置浏览器打开，
     // 用于在 dashboard 里以内部浏览器预览本地看板（同类名不构成 storage 循环）
     if (u.pathname.startsWith('/api/')) return false;
-    const selfUrls = [DEV_URL, PROD_URL].map(s => { try { return new URL(s); } catch { return null; } });
+    const selfUrls = [DEV_URL, getProdUrl()].map(s => { try { return new URL(s); } catch { return null; } });
     return selfUrls.some(s => s && u.hostname === s.hostname && u.port === s.port);
   } catch { return false; }
 }
@@ -1066,13 +1099,13 @@ ipcMain.handle('win:close', (e) => { BrowserWindow.fromWebContents(e.sender)?.cl
 // ===== IPC: 应用重启（首次启动设置数据盘后自动重启生效）=====
 ipcMain.handle('app:restart', () => {
   if (IS_DEV) {
-    // 开发模式：backend/vite 由 `concurrently -k` 托管，relaunch 后这些进程会被一并杀掉，
+    // 开发模式：backend/vite 由 `scripts/dev.mjs` 托管，relaunch 后这些进程会被一并杀掉，
     // 新起的 Electron 也连不上（端口已随父进程退出）。这里只关闭应用，让用户手动重跑
     // `npm run dev` 使 data_root 生效即可。
     app.exit(0);
   } else {
     // 🌟 必须先显式树杀后端：app.exit() 不触发 before-quit/will-quit，
-    // 后端会变孤儿继续占住 8000，重启后的新后端绑定失败 → 白屏
+    // 后端会变孤儿继续占住 API 端口，重启后的新后端绑定失败 → 白屏
     killBackendTree();
     app.relaunch();
     app.exit(0);
@@ -1532,8 +1565,13 @@ function initAutoUpdate() {
   }
 }
 
-app.whenReady().then(() => {
-  createBackend();
+app.whenReady().then(async () => {
+  const backendStarted = await createBackend();
+  if (!backendStarted && backendConfigError) {
+    dialog.showErrorBox('PurrCat 后端启动失败', backendConfigError.message);
+    app.quit();
+    return;
+  }
   // 🌟 内置浏览器会话显式授权 pointerLock/fullscreen：
   //    WebContentsView 中的游戏（如 FPS 类）依赖 requestPointerLock，不授权会静默失败
   try {
@@ -1561,7 +1599,7 @@ app.on('child-process-gone', (_e, details) => {
     if (!fs.existsSync(GPU_FLAG)) {
       try { fs.writeFileSync(GPU_FLAG, String(Date.now())); } catch (_) {}
       // 🌟 app.exit() 不触发 before-quit，必须先树杀后端，否则旧后端孤儿化
-      // 占住 8000 端口，重启后的新后端绑定失败 → 白屏（与 app:restart 同理）
+      // 占住 API 端口，重启后的新后端绑定失败 → 白屏（与 app:restart 同理）
       killBackendTree();
       app.relaunch();
       app.exit(0);
