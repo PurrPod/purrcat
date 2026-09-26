@@ -222,6 +222,9 @@ def api_webmin_manifest():
         "rail": stored_cfg.get("rail") or {"stage": 1, "hidden": {}, "opacity": 1},
         # 宿主固有中栏容器配置（透明度/默认宽度），存于 plugins['panel-container']
         "panelContainer": stored.get("panel-container") or {},
+        # 单例槽当前选中的插件（fixed: {area: plugin_id}；panel 容器: {panel: plugin_id|'__none__'}），
+        # 重启后据此恢复用户上次的选择，而不是回退到声明顺序第一个
+        "active": stored_cfg.get("active") or {},
     }
 
 
@@ -269,30 +272,39 @@ def api_webmin_get_config():
 
 @router.put("/config")
 def api_webmin_put_config(body: dict):
-    """整体覆写插件配置 + 可选的图标栏状态（前端做默认值合并后提交）。"""
-    new_plugins = (
-        body.get("plugins")
-        if isinstance(body, dict) and isinstance(body.get("plugins"), dict)
-        else {}
-    )
-    cfg = {"plugins": new_plugins}
-    if isinstance(body, dict) and isinstance(body.get("rail"), dict):
+    """按分节更新宿主配置（plugins / rail / active），未提供的分节保持原值。
+
+    前端每次只提交自己修改的分节（例如滑块只提交 plugins），避免局部保存把
+    其他分节（图标栏状态、单例槽选中项）意外清空。
+    """
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="请求体必须是 JSON 对象")
+    cfg = _load_webmin_config()
+    if isinstance(body.get("plugins"), dict):
+        cfg["plugins"] = body["plugins"]
+    if isinstance(body.get("rail"), dict):
+        rail = body["rail"]
         try:
-            stage = int(body["rail"].get("stage"))
+            stage = int(rail.get("stage"))
         except (TypeError, ValueError):
             stage = 1
         try:
-            opacity = float(body["rail"].get("opacity"))
+            opacity = float(rail.get("opacity"))
         except (TypeError, ValueError):
             opacity = 1
         cfg["rail"] = {
             "stage": stage if 0 <= stage <= 2 else 1,
             "opacity": max(0.0, min(1.0, opacity)),
             "hidden": (
-                body["rail"].get("hidden")
-                if isinstance(body["rail"].get("hidden"), dict)
-                else {}
+                rail.get("hidden") if isinstance(rail.get("hidden"), dict) else {}
             ),
+        }
+    if isinstance(body.get("active"), dict):
+        # 单例槽（fixed 各 area 与共享的 panel 容器）当前选中的插件 id
+        cfg["active"] = {
+            str(k): str(v)
+            for k, v in body["active"].items()
+            if isinstance(v, (str, int)) and str(v)
         }
     _save_webmin_config(cfg)
     return {"status": "ok"}
