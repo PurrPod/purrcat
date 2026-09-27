@@ -437,6 +437,7 @@ body.settings-open [data-layer="settings"] { display: flex; }
 .cfg-card-body { border-top: 1px solid var(--wm-border); padding: 14px; display: flex; flex-direction: column; gap: 12px; }
 
 .cfg-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 14px; }
+.cfg-grid.one-col { grid-template-columns: 1fr; }
 .cfg-field { display: flex; flex-direction: column; gap: 4px; }
 .cfg-field.switch-row { flex-direction: row; align-items: center; justify-content: space-between; }
 .cfg-field.switch-row .switch { flex: none; }

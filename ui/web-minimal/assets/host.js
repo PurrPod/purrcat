@@ -301,6 +301,16 @@
     grid.appendChild(f);
   }
 
+  // 透明度控件（统一方向：滑块数值越大越透明）。
+  // 落盘值仍是 alpha（不透明度），因此既有配置与视觉默认值均不变，仅反转控件方向。
+  function transparencyField(grid, label, alphaMin, alphaValue, step, onAlpha) {
+    const a = Math.min(1, Math.max(alphaMin, alphaValue));
+    cfgRangeField(grid, label, 0, Number((1 - alphaMin).toFixed(4)), step,
+      Number((1 - a).toFixed(4)),
+      function (t) { return label + ' ' + t.toFixed(2); },
+      function (t) { onAlpha(Number((1 - t).toFixed(4))); });
+  }
+
   // 白条透明度（宿主外观项，不依赖插件）——统一 cfg-card 风格
   function renderRailAppearance(container) {
     const card = HOST.document.createElement('div');
@@ -309,15 +319,13 @@
     const body = HOST.document.createElement('div');
     body.className = 'cfg-card-body';
     const grid = HOST.document.createElement('div');
-    grid.className = 'cfg-grid';
+    grid.className = 'cfg-grid one-col';
     const o = typeof railState.opacity === 'number' ? railState.opacity : 1;
-    cfgRangeField(grid, '透明度', 0.15, 1, 0.05, Math.min(1, Math.max(0.15, o)),
-      function (v) { return '透明度 ' + v.toFixed(2); },
-      function (v) {
-        railState.opacity = v;
-        applyRailOpacity();
-        persistRail().catch(() => {});
-      });
+    transparencyField(grid, '透明度', 0.15, o, 0.05, function (v) {
+      railState.opacity = v;
+      applyRailOpacity();
+      persistRail().catch(() => {});
+    });
     body.appendChild(grid);
     card.appendChild(body);
     container.appendChild(card);
@@ -339,17 +347,15 @@
     const body = HOST.document.createElement('div');
     body.className = 'cfg-card-body';
     const grid = HOST.document.createElement('div');
-    grid.className = 'cfg-grid';
+    grid.className = 'cfg-grid one-col';
 
     // 透明度
     const o = Number(panelContainerCfg.opacity);
-    cfgRangeField(grid, '透明度', 0.15, 1, 0.05, (o >= 0.15 && o <= 1) ? o : 0.9,
-      function (v) { return '透明度 ' + v.toFixed(2); },
-      function (v) {
-        panelContainerCfg.opacity = v;
-        applyPanelContainerCfg();
-        settingsSavePanel();
-      });
+    transparencyField(grid, '透明度', 0.15, (o >= 0.15 && o <= 1) ? o : 0.9, 0.05, function (v) {
+      panelContainerCfg.opacity = v;
+      applyPanelContainerCfg();
+      settingsSavePanel();
+    });
 
     // 默认宽度
     const wf = HOST.document.createElement('div');
@@ -422,7 +428,7 @@
       const body = HOST.document.createElement('div');
       body.className = 'cfg-card-body';
       const grid = HOST.document.createElement('div');
-      grid.className = 'cfg-grid';
+      grid.className = 'cfg-grid one-col';
       renderFields(grid, p, cfg);
       body.appendChild(grid);
       card.appendChild(body);
@@ -463,13 +469,16 @@
       if (type === 'range') {
         let fv = cfg[key];
         const initVal = (typeof fv === 'number' && !isNaN(fv)) ? fv : ((field.default != null) ? field.default : ((field.max != null) ? field.max : 1));
-        cfgRangeField(grid, label,
-          (field.min != null) ? field.min : 0,
-          (field.max != null) ? field.max : 1,
-          (field.step != null) ? field.step : 0.01,
-          initVal,
-          function (v) { return label + ' ' + v.toFixed(2); },
-          function (v) { cfg[key] = v; settingsSave(p.id, cfg); });
+        const min0 = (field.min != null) ? field.min : 0;
+        const step0 = (field.step != null) ? field.step : 0.01;
+        const applyVal = function (v) { cfg[key] = v; settingsSave(p.id, cfg); };
+        if (key === 'opacity') {
+          // 透明度：滑块越大越透明（落盘仍是 alpha，视觉默认不变）
+          transparencyField(grid, label, min0, initVal, step0, applyVal);
+        } else {
+          cfgRangeField(grid, label, min0, (field.max != null) ? field.max : 1, step0, initVal,
+            function (v) { return label + ' ' + v.toFixed(2); }, applyVal);
+        }
         return;
       }
       const f = HOST.document.createElement('div');
