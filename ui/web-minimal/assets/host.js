@@ -1514,6 +1514,52 @@
       }
       case 'chat.interrupt':
         return (await fetch('/api/chat/interrupt', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })).json();
+      // 会话分支：基于当前会话新建分支并切换过去（对齐后端 POST /api/sessions/{id}/branch）
+      case 'session.branch': {
+        const sid = String(payload.session_id || groupState.activeSessionId || '');
+        if (!sid) throw new Error('缺少 session_id');
+        const res = await fetch('/api/sessions/' + encodeURIComponent(sid) + '/branch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ alias: String(payload.alias || '') }),
+        });
+        if (!res.ok) throw new Error((await res.text()) || '分支失败');
+        const data = await res.json();
+        if (data && data.id) {
+          groupState.activeSessionId = data.id;
+          await refreshSessions();
+          updateEmpty();
+          broadcastSessions('session.switched', { session_id: data.id });
+        }
+        return data;
+      }
+      // trace2skill：分配技能工厂并向当前会话注入 evolve_factory 事件（对齐原 UI confirmTraceToSkill）
+      case 'chat.traceToSkill': {
+        const sid = String(payload.session_id || groupState.activeSessionId || '');
+        if (!sid) throw new Error('缺少 session_id');
+        const name = String(payload.name || '').trim();
+        const goal = String(payload.goal || '').trim();
+        if (!name) throw new Error('技能名称不能为空');
+        if (!goal) throw new Error('期望描述不能为空');
+        const initRes = await fetch('/api/evolve/init', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type: 'skill', name, is_upgrade: !!payload.is_upgrade, goal }),
+        });
+        if (!initRes.ok) throw new Error((await initRes.text()) || '工厂分配失败');
+        const initData = await initRes.json();
+        const factoryPath = '/agent_vm/skill_workplace/' + initData.workplace_id + '/' + name;
+        const content = '用户使用了trace_to_skill功能，已为你分配了技能工厂' + factoryPath + '/，请根据用户需要和本次会话的交互记录与历史经验升级或创建对应技能。以下是用户期望：\n' + goal;
+        const batchRes = await fetch('/api/chat/batch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ session_id: sid, events: [{ type: 'evolve_factory', content }] }),
+        });
+        if (!batchRes.ok) throw new Error((await batchRes.text()) || '任务下发失败');
+        setEmpty(false);
+        broadcastSessions('conversation.updated', { session_id: sid });
+        return { status: 'ok' };
+      }
       // ---- 浮层原语：宿主只认"调用方所属实例"，做通用移动/关闭（不感知具体插件；many 槽各实例独立） ----
       case 'slot.move': {
         const el = origin && origin.inst;

@@ -54,6 +54,67 @@
   .reason-body { font-family: var(--wm-mono, ui-monospace, Consolas, monospace); white-space: pre-wrap; word-break: break-all; font-size: 12px; line-height: 1.55; color: var(--wm-label-2nd, #4c5560); background: var(--wm-bl-100, #f2f4f7); border-radius: 8px; padding: 8px 10px; max-height: 18rem; overflow-y: auto; }
   .tool-body { font-family: var(--wm-mono, ui-monospace, Consolas, monospace); white-space: pre-wrap; word-break: break-all; font-size: 12px; line-height: 1.55; color: var(--wm-label-2nd, #4c5560); background: var(--wm-bl-100, #f2f4f7); border: 1px solid var(--wm-border-soft, rgba(15,17,21,.05)); border-radius: 8px; padding: 8px 10px; max-height: 18rem; overflow-y: auto; }
   .tool-body .tname { font-weight: 700; color: var(--wm-accent, #16191d); margin-bottom: 6px; }
+  /* workflow hint：系统注入的工作流提示，比工具块更轻，走虚线边框区分 */
+  .hint-body { font-family: var(--wm-mono, ui-monospace, Consolas, monospace); white-space: pre-wrap; word-break: break-all; font-size: 12px; line-height: 1.55; color: var(--wm-label-2nd, #4c5560); background: var(--wm-bl-100, #f2f4f7); border: 1px dashed var(--wm-border, rgba(15,17,21,.14)); border-radius: 8px; padding: 8px 10px; max-height: 18rem; overflow-y: auto; }
+
+  /* 复制按钮：hover 消息时在右上角浮现（对齐完整模式的 ClipboardCopy 交互） */
+  .has-copy { position: relative; }
+  .copy-btn {
+    position: absolute; top: 6px; right: 6px;
+    width: 24px; height: 24px; padding: 0;
+    display: flex; align-items: center; justify-content: center;
+    border: none; border-radius: 6px; cursor: pointer;
+    background: rgba(255,255,255,.9); color: var(--wm-label-dim, #8b96a3);
+    box-shadow: 0 1px 3px rgba(15,17,21,.12);
+    opacity: 0; transition: opacity .12s ease, color .12s ease;
+  }
+  .has-copy:hover .copy-btn { opacity: 1; }
+  .copy-btn:hover { color: var(--wm-label, #16191d); }
+  .copy-btn.ok { color: #3f9d63; }
+  .copy-btn svg { width: 14px; height: 14px; }
+
+  /* 底部动作行：记忆压缩 / 会话分支 / trace2skill（对齐完整模式的消息区动作按钮） */
+  .acts { display: flex; gap: 8px; padding: 2px 0 2px 2px; }
+  .act-btn {
+    width: 30px; height: 30px; padding: 0;
+    display: flex; align-items: center; justify-content: center;
+    border: 1px solid var(--wm-border, rgba(15,17,21,.12)); border-radius: 8px;
+    background: var(--wm-bl-0, #fff); color: var(--wm-label-2nd, #4c5560); cursor: pointer;
+    transition: background .12s ease, color .12s ease;
+  }
+  .act-btn:hover { background: var(--wm-bg-hover, #e9edf1); color: var(--wm-label, #16191d); }
+  .act-btn:disabled { opacity: .45; cursor: default; }
+  .act-btn svg { width: 16px; height: 16px; }
+  .act-btn.busy svg { animation: wm-spin .9s linear infinite; }
+  @keyframes wm-spin { to { transform: rotate(360deg); } }
+
+  /* trace2skill 表单弹层（插件自带，覆盖聊天区） */
+  .t2s-mask { position: fixed; inset: 0; z-index: 20; display: none; align-items: center; justify-content: center; background: rgba(15,17,21,.32); padding: 16px; }
+  .t2s-mask.on { display: flex; }
+  .t2s {
+    width: 100%; max-width: 420px; background: var(--wm-bl-0, #fff); border-radius: 14px;
+    box-shadow: 0 12px 40px rgba(15,17,21,.22); padding: 16px; display: flex; flex-direction: column; gap: 10px;
+  }
+  .t2s h3 { font-size: 14px; font-weight: 600; }
+  .t2s .seg { display: flex; gap: 6px; }
+  .t2s .seg button { flex: 1; font: inherit; font-size: 12px; padding: 6px 0; border-radius: 8px; cursor: pointer; border: 1px solid var(--wm-border, rgba(15,17,21,.12)); background: var(--wm-bg-input, #f2f4f7); color: var(--wm-label-2nd, #4c5560); }
+  .t2s .seg button.on { background: var(--wm-accent, #16191d); color: #fff; border-color: transparent; }
+  .t2s input, .t2s textarea { width: 100%; font: inherit; font-size: 13px; color: var(--wm-label, #16191d); background: var(--wm-bg-input, #f2f4f7); border: 1px solid transparent; border-radius: 8px; padding: 8px 10px; outline: none; resize: none; }
+  .t2s input:focus, .t2s textarea:focus { border-color: var(--wm-accent, #16191d); background: #fff; }
+  .t2s textarea { min-height: 88px; }
+  .t2s .foot { display: flex; justify-content: flex-end; gap: 8px; }
+  .t2s .foot button { font: inherit; font-size: 12.5px; padding: 7px 14px; border-radius: 8px; cursor: pointer; border: 1px solid var(--wm-border, rgba(15,17,21,.12)); background: #fff; color: var(--wm-label-2nd, #4c5560); }
+  .t2s .foot button.primary { background: var(--wm-accent, #16191d); color: #fff; border-color: transparent; }
+  .t2s .foot button:disabled { opacity: .5; cursor: default; }
+
+  /* 轻量提示（复制成功 / 操作结果） */
+  .toast {
+    position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%) translateY(6px);
+    background: rgba(22,25,29,.92); color: #fff; font-size: 12.5px;
+    padding: 7px 14px; border-radius: 999px; opacity: 0; pointer-events: none;
+    transition: opacity .18s ease, transform .18s ease; z-index: 40;
+  }
+  .toast.on { opacity: 1; transform: translateX(-50%) translateY(0); }
 
   .empty { align-self: center; color: var(--wm-label-dim, #8b96a3); font-size: 13px; margin-top: 48px; }
 
@@ -80,6 +141,24 @@
     <div class="empty">暂无消息</div>
   </div>
 
+  <!-- trace2skill 表单（插件自带弹层，不依赖宿主弹窗能力） -->
+  <div class="t2s-mask" id="t2sMask">
+    <div class="t2s">
+      <h3>trace2skill</h3>
+      <div class="seg">
+        <button type="button" id="t2sUpgrade" class="on">升级技能</button>
+        <button type="button" id="t2sCreate">创建技能</button>
+      </div>
+      <input id="t2sName" type="text" placeholder="技能名称" spellcheck="false" autocomplete="off" />
+      <textarea id="t2sGoal" placeholder="期望：本次会话要沉淀/升级成什么样的技能"></textarea>
+      <div class="foot">
+        <button type="button" id="t2sCancel">取消</button>
+        <button type="button" id="t2sOk" class="primary">确定</button>
+      </div>
+    </div>
+  </div>
+  <div class="toast" id="toast"></div>
+
   <!-- GFM markdown 引擎（本地 vendor，离线可用），暴露 window.marked -->
   <script src="/minimal/assets/vendor/marked.min.js"></script>
 
@@ -89,18 +168,30 @@
 
   // 会话历史面板底色：白色，可调透明度（输入框悬浮其上，二者不互相遮盖）
   var DEF_OP = 0.82;
+  // 展示开关：工具调用 / 思考内容默认展示（保持既有行为）；workflow hint 为系统注入，
+  // 默认不展示（与原 UI 一致），用户可在设置里打开
+  var show = { tool: true, reasoning: true, hint: false };
   function applyPanel(cfg) {
     var o = cfg && typeof cfg.opacity === 'number' ? cfg.opacity : DEF_OP;
     o = Math.max(0, Math.min(1, o));
     document.body.style.backgroundColor = 'rgba(255,255,255,' + o.toFixed(2) + ')';
+    show.tool = !cfg || cfg.show_tool_calls !== false;
+    show.reasoning = !cfg || cfg.show_reasoning !== false;
+    show.hint = !!(cfg && cfg.show_workflow_hint === true);
+  }
+  function applyConfig(cfg) {
+    var before = JSON.stringify(show);
+    applyPanel(cfg);
+    // 展示开关变化需要重绘消息；仅透明度变化不必重绘
+    if (JSON.stringify(show) !== before && typeof lastRows !== 'undefined' && lastRows) renderMessages(lastRows);
   }
   window.addEventListener('message', function (e) {
     var m = e.data;
     if (!m || typeof m !== 'object') return;
-    if (m.type === 'configApply') applyPanel(m.config);
-    else if (m.type === 'event' && m.event === 'config.updated') { callAction('config.get', { plugin_id: 'builtin-history' }).then(applyPanel).catch(function () {}); }
+    if (m.type === 'configApply') applyConfig(m.config);
+    else if (m.type === 'event' && m.event === 'config.updated') { callAction('config.get', { plugin_id: 'builtin-history' }).then(applyConfig).catch(function () {}); }
   });
-  callAction('config.get', { plugin_id: 'builtin-history' }).then(applyPanel).catch(function () {});
+  callAction('config.get', { plugin_id: 'builtin-history' }).then(applyConfig).catch(function () {});
 
   // ---------- 工具函数 ----------
   function esc(s) {
@@ -123,24 +214,70 @@
     for (var k in o) { var v = o[k]; if (typeof v === 'string' && v.length < 400) return v; }
     try { return JSON.stringify(o); } catch (e) { return ''; }
   }
-  // ---- 用户消息解析：只保留 type=user 的正文，*-quote 作附件 ----
+  // ---- 用户消息解析：只保留 type=user 的正文，*-quote 作附件，workflow_hint 单独归类 ----
   function parseUser(content) {
-    var att = [], msgs = [];
+    var att = [], msgs = [], hints = [];
     try {
       var d = JSON.parse(content);
       if (d && Array.isArray(d.events)) {
         d.events.forEach(function (ev) {
           var t = ev.type || '', c = ev.content || '';
           if (t === 'user') msgs.push(c);
+          else if (t === 'workflow_hint') hints.push(c);
           else if (['file-quote','skill-quote','tool-quote','mcp-quote','graph-quote'].indexOf(t) >= 0) att.push(c);
         });
+      } else if (d && typeof d === 'object' && d.type === 'workflow_hint') {
+        // 系统独立注入：{"type":"workflow_hint","content":"..."}（无 events 外壳）
+        hints.push(d.content || '');
       } else { throw 0; }
     } catch (e) {
       // 非事件结构：仅当是普通文本时当作 user 正文；若为 JSON 则忽略，避免把 type=其他 的内容渲染出来
       var s = String(content || '');
       if (!/^[\{\[]/.test(s.trim())) msgs.push(content);
     }
-    return { att: att, msgs: msgs };
+    return { att: att, msgs: msgs, hints: hints };
+  }
+
+  // ---- 复制按钮 ----
+  var SVG_HEAD = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">';
+  var ICON_COPY = SVG_HEAD + '<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+  var ICON_CHECK = SVG_HEAD + '<path d="M20 6 9 17l-5-5"/></svg>';
+  function fallbackCopy(text) {
+    var ta = document.createElement('textarea');
+    ta.value = String(text == null ? '' : text);
+    ta.style.cssText = 'position:fixed;left:-9999px;top:0;';
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); } catch (e) {}
+    document.body.removeChild(ta);
+  }
+  function copyText(text, btn) {
+    var done = function () {
+      btn.classList.add('ok'); btn.innerHTML = ICON_CHECK;
+      setTimeout(function () { btn.classList.remove('ok'); btn.innerHTML = ICON_COPY; }, 1200);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(String(text == null ? '' : text)).then(done).catch(function () { fallbackCopy(text); done(); });
+    } else { fallbackCopy(text); done(); }
+  }
+  // 给气泡挂一个 hover 显示的复制按钮（对齐完整模式 ClipboardCopy 交互）
+  function attachCopy(el, text) {
+    el.classList.add('has-copy');
+    var b = document.createElement('button');
+    b.className = 'copy-btn'; b.type = 'button'; b.title = '复制';
+    b.innerHTML = ICON_COPY;
+    b.addEventListener('click', function (ev) { ev.stopPropagation(); copyText(text, b); });
+    el.appendChild(b);
+    return el;
+  }
+
+  // ---- 轻量提示 ----
+  var toastEl = document.getElementById('toast');
+  var toastTimer = null;
+  function toast(msg) {
+    toastEl.textContent = msg;
+    toastEl.classList.add('on');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { toastEl.classList.remove('on'); }, 2200);
   }
 
   // ---------- 折叠控件 ----------
@@ -209,9 +346,10 @@
     var col = document.createElement('div');
     col.style.cssText = 'width:100%;display:flex;flex-direction:column;gap:8px;';
     wrap.appendChild(col);
+    var count = 0;   // 实际渲染出的内容块数；整条被展示开关隐藏时返回 null 跳过
 
     if (role === 'user') {
-      // 严格只渲染 type=user 的正文（*-quote 作为附件展示），其余类型一律不渲染
+      // 严格只渲染 type=user 的正文（纯文本，不走 markdown）；*-quote 作附件；workflow_hint 按开关展示
       var parsed = parseUser(m.content || '');
       if (parsed.att.length) {
         var attWrap = document.createElement('div');
@@ -223,28 +361,34 @@
           c.title = a;
           attWrap.appendChild(c);
         });
-        col.appendChild(attWrap);
+        col.appendChild(attWrap); count++;
       }
       parsed.msgs.forEach(function (txt) {
-        if (txt) col.appendChild(bubble('user', esc(txt)));
+        if (txt) { col.appendChild(attachCopy(bubble('user', esc(txt)), txt)); count++; }
       });
+      if (show.hint) {
+        parsed.hints.forEach(function (h) {
+          var hb = document.createElement('div');
+          hb.className = 'hint-body';
+          hb.textContent = h;
+          col.appendChild(makeCollapsible('工作流提示', '', hb)); count++;
+        });
+      }
     } else if (role === 'assistant') {
       col.style.alignItems = 'flex-start';
-      if (m.reasoning_content) {
+      if (show.reasoning && m.reasoning_content) {
         var rb = document.createElement('div');
         rb.className = 'reason-body';
         rb.textContent = m.reasoning_content;
-        col.appendChild(makeCollapsible('思考过程', '', rb));
+        col.appendChild(makeCollapsible('思考过程', '', rb)); count++;
       }
       if (m.content) {
         var mb = document.createElement('div');
         mb.className = 'md';
         mb.innerHTML = mdToHtml(m.content);
-        col.appendChild(mb);
-      } else if (!m.reasoning_content && !m.tool_calls) {
-        col.appendChild(bubble('assistant', '（无内容）'));
+        col.appendChild(attachCopy(mb, m.content)); count++;
       }
-      if (m.tool_calls && m.tool_calls.length) {
+      if (show.tool && m.tool_calls && m.tool_calls.length) {
         m.tool_calls.forEach(function (tc) {
           var fn = (tc.function && typeof tc.function === 'object') ? tc.function : {};
           var name = fn.name || tc.name || tc.function || 'tool';
@@ -259,18 +403,24 @@
             catch (e) { argText = String(rawArgs); }
             if (argText) tb.appendChild(document.createTextNode(argText));
           }
-          col.appendChild(makeCollapsible('调用工具', name, tb));
+          col.appendChild(makeCollapsible('调用工具', name, tb)); count++;
         });
+      }
+      if (!count) {
+        // 完全没有内容才是「无内容」；仅内容被开关隐藏的整条跳过，避免留下空壳
+        if (!m.reasoning_content && !m.tool_calls) { col.appendChild(bubble('assistant', '（无内容）')); count++; }
+        else return null;
       }
     } else {
       // role === 'tool'
+      if (!show.tool) return null;
       col.style.alignItems = 'flex-start';
       var tb = document.createElement('div');
       tb.className = 'tool-body';
       tb.textContent = toolText(m.content);
-      col.appendChild(makeCollapsible('工具结果', m.name, tb));
+      col.appendChild(makeCollapsible('工具结果', m.name, tb)); count++;
     }
-    return wrap;
+    return count ? wrap : null;
   }
 
   function renderMessages(rows) {
@@ -294,12 +444,14 @@
       if (fb && fb.scrollTop > 0) innerTop[fk] = fb.scrollTop;
     });
     listEl.innerHTML = '';
+    lastRows = rows || [];
     if (!rows || !rows.length) {
       listEl.innerHTML = '<div class="empty">暂无消息</div>';
       return;
     }
     rows.forEach(function (m, i) {
       var node = renderMessage(m);
+      if (!node) return;   // 整条被展示开关隐藏
       node.setAttribute('data-k', String(i));
       node.querySelectorAll('.row.fold').forEach(function (f, fi) {
         var fk = i + '#' + fi;
@@ -311,6 +463,8 @@
       });
       listEl.appendChild(node);
     });
+    // 消息区动作行（记忆压缩 / 会话分支 / trace2skill）：仅在有消息且 Agent 空闲时出现
+    if (!thinking) listEl.appendChild(buildActions());
     // 内部滚动位置放在所有节点都进 DOM 之后再恢复：折叠块 display:none 时设 scrollTop 会被夹成 0
     Object.keys(innerTop).forEach(function (fk) {
       var f = listEl.querySelector('.row.fold[data-fk="' + fk + '"]');
@@ -341,6 +495,97 @@
     renderMessages(server.concat(localBuffer.map(function (u) { return { role: 'user', content: u.content }; })));
   }
 
+  // ---------- 消息区动作行：记忆压缩 / 会话分支 / trace2skill ----------
+  // 图标与宿主白条同款线性风格（插件自带，不依赖宿主图标集）
+  var ICON_BRAIN = SVG_HEAD + '<path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/><path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/><path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4"/></svg>';
+  var ICON_BRANCH = SVG_HEAD + '<circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M6 21V9a9 9 0 0 0 9 9"/></svg>';
+  var ICON_BOOK = SVG_HEAD + '<path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg>';
+  var ICON_SPIN = SVG_HEAD + '<path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>';
+
+  function actBtn(busy, icon, title, onClick) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'act-btn' + (busy ? ' busy' : '');
+    b.title = title;
+    b.disabled = busy;
+    b.innerHTML = busy ? ICON_SPIN : icon;
+    b.addEventListener('click', onClick);
+    return b;
+  }
+  function buildActions() {
+    var bar = document.createElement('div');
+    bar.className = 'acts';
+    bar.appendChild(actBtn(branchBusy, ICON_BRANCH, '会话分支', doBranch));
+    bar.appendChild(actBtn(compressBusy, ICON_BRAIN, '记忆压缩', compressMemory));
+    bar.appendChild(actBtn(false, ICON_BOOK, 'trace2skill', openTraceModal));
+    return bar;
+  }
+
+  // 记忆压缩：触发全局大总结并截断上下文（后台异步），轮询 compressing 标记直到结束
+  function compressMemory() {
+    if (compressBusy || !activeSessionId) return;
+    compressBusy = true; rerenderActions();
+    var sid = activeSessionId;
+    fetch('/api/chat/compress-memory', { method: 'POST' })
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json().catch(function () { return {}; }); })
+      .then(function () {
+        toast('记忆压缩已启动');
+        var done = function () { clearInterval(timer); compressBusy = false; rerenderActions(); };
+        var timer = setInterval(function () {
+          fetch('/api/sessions/' + encodeURIComponent(sid) + '/status')
+            .then(function (r) { return r.json(); })
+            .then(function (st) { if (st && st.compressing === false) { done(); toast('记忆压缩完成'); } })
+            .catch(function () {});
+        }, 1500);
+      })
+      .catch(function (e) { compressBusy = false; rerenderActions(); toast('压缩失败：' + (e.message || e)); });
+  }
+
+  // 会话分支：交给宿主（对齐后端 POST /api/sessions/{id}/branch），宿主负责切到新会话并广播
+  function doBranch() {
+    if (branchBusy || !activeSessionId) return;
+    branchBusy = true; rerenderActions();
+    callAction('session.branch', { session_id: activeSessionId, alias: '' })
+      .then(function () { toast('已创建分支会话'); })
+      .catch(function (e) { toast('分支失败：' + (e.message || e)); })
+      .finally(function () { branchBusy = false; rerenderActions(); });
+  }
+
+  // trace2skill：表单 → 宿主分配技能工厂并向本会话注入 evolve_factory 事件
+  var t2sMask = document.getElementById('t2sMask');
+  var t2sType = 'upgrade';
+  var t2sBusy = false;
+  function setT2sType(t) {
+    t2sType = t;
+    document.getElementById('t2sUpgrade').classList.toggle('on', t === 'upgrade');
+    document.getElementById('t2sCreate').classList.toggle('on', t === 'create');
+  }
+  function openTraceModal() {
+    document.getElementById('t2sName').value = '';
+    document.getElementById('t2sGoal').value = '';
+    setT2sType('upgrade');
+    t2sMask.classList.add('on');
+    setTimeout(function () { document.getElementById('t2sName').focus(); }, 0);
+  }
+  function closeTraceModal() { t2sMask.classList.remove('on'); }
+  document.getElementById('t2sUpgrade').addEventListener('click', function () { setT2sType('upgrade'); });
+  document.getElementById('t2sCreate').addEventListener('click', function () { setT2sType('create'); });
+  document.getElementById('t2sCancel').addEventListener('click', closeTraceModal);
+  t2sMask.addEventListener('click', function (e) { if (e.target === t2sMask) closeTraceModal(); });
+  document.getElementById('t2sOk').addEventListener('click', function () {
+    if (t2sBusy) return;
+    var name = document.getElementById('t2sName').value.trim();
+    var goal = document.getElementById('t2sGoal').value.trim();
+    if (!name) { toast('请填写技能名称'); return; }
+    if (!goal) { toast('请填写期望描述'); return; }
+    t2sBusy = true;
+    var okBtn = document.getElementById('t2sOk'); okBtn.disabled = true;
+    callAction('chat.traceToSkill', { session_id: activeSessionId, name: name, is_upgrade: t2sType === 'upgrade', goal: goal })
+      .then(function () { toast('技能任务已下发'); closeTraceModal(); })
+      .catch(function (e) { toast('下发失败：' + (e.message || e)); })
+      .finally(function () { t2sBusy = false; okBtn.disabled = false; });
+  });
+
   // ---------- 数据装载 ----------
   var seq = 0;
   function callAction(actionId, payload) {
@@ -360,6 +605,16 @@
 
   var activeSessionId = '';
   var localBuffer = [];   // 本会话本地乐观插入的用户消息，等待服务端确认后合并去重
+  var lastRows = null;    // 最近一次渲染的原始行（展示开关变化时可就地重绘）
+  var thinking = false;   // Agent 是否思考中（思考中隐藏动作行）
+  var compressBusy = false;
+  var branchBusy = false;
+  // 仅重绘动作行（不整段重建历史，避免打断滚动位置与折叠展开态）
+  function rerenderActions() {
+    var old = listEl.querySelector('.acts');
+    if (old) old.remove();
+    if (lastRows && lastRows.length && !thinking) listEl.appendChild(buildActions());
+  }
 
   function load(sessionId) {
     if (!sessionId) { localBuffer = []; renderMessages([]); return; }
@@ -403,7 +658,9 @@
     fetch('/api/sessions/' + encodeURIComponent(activeSessionId) + '/status')
       .then(function (r) { return r.json(); })
       .then(function (st) {
-        setPoll(st && st.is_thinking ? POLL_FAST : POLL_SLOW);
+        var t = !!(st && st.is_thinking);
+        if (t !== thinking) { thinking = t; rerenderActions(); }   // 思考中隐藏动作行
+        setPoll(t ? POLL_FAST : POLL_SLOW);
         load(activeSessionId);
       })
       .catch(function () { setPoll(POLL_SLOW); });   // 会话暂不可用等：保持慢档，不轰炸
@@ -415,6 +672,7 @@
     if (m.event === 'session.switched') {
       localBuffer = [];   // 切换会话：本地乐观消息属于旧会话，丢弃
       activeSessionId = m.data && m.data.session_id;
+      thinking = false;
       ensurePoll();
       refresh();
     } else if (m.event === 'conversation.updated') {
