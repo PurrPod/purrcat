@@ -135,6 +135,22 @@
   .t2s .foot button.primary { background: var(--wm-accent, #16191d); color: #fff; border-color: transparent; }
   .t2s .foot button:disabled { opacity: .5; cursor: default; }
 
+  /* 文件预览弹窗（图片 / 视频 / 文本），对齐完整模式的链接预览弹层 */
+  .pv-mask { position: fixed; inset: 0; z-index: 30; display: none; align-items: center; justify-content: center; background: rgba(15,17,21,.42); padding: 14px; }
+  .pv-mask.on { display: flex; }
+  .pv { width: 100%; height: 100%; max-width: 1200px; background: var(--wm-bl-0, #fff); border-radius: 14px; box-shadow: 0 12px 40px rgba(15,17,21,.28); display: flex; flex-direction: column; overflow: hidden; }
+  .pv-head { flex: none; display: flex; align-items: center; gap: 6px; padding: 8px 10px 8px 14px; border-bottom: 1px solid var(--wm-border-soft, rgba(15,17,21,.06)); }
+  .pv-name { flex: 1; min-width: 0; font-size: 12.5px; font-weight: 600; color: var(--wm-label, #16191d); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pv-btn { flex: none; width: 26px; height: 26px; padding: 0; display: flex; align-items: center; justify-content: center; border: none; border-radius: 7px; background: transparent; color: var(--wm-label-dim, #8b96a3); cursor: pointer; }
+  .pv-btn:hover { background: var(--wm-bg-hover, #e9edf1); color: var(--wm-label, #16191d); }
+  .pv-btn svg { width: 15px; height: 15px; }
+  .pv-body { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; overflow: auto; background: var(--wm-bl-100, #f2f4f7); }
+  .pv-img { max-width: 100%; max-height: 100%; object-fit: contain; }
+  .pv-video { max-width: 100%; max-height: 100%; background: #000; }
+  .pv-text { align-self: stretch; width: 100%; margin: 0; padding: 12px 14px; font-family: var(--wm-mono, ui-monospace, Consolas, monospace); font-size: 12.5px; line-height: 1.6; color: var(--wm-label, #16191d); white-space: pre-wrap; word-break: break-all; }
+  /* 消息里的本地文件链接（点击唤起预览） */
+  .filelink { cursor: pointer; text-decoration: underline; text-decoration-style: dotted; }
+
   /* 轻量提示（复制成功 / 操作结果） */
   .toast {
     position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%) translateY(6px);
@@ -183,6 +199,21 @@
         <button type="button" id="t2sCancel">取消</button>
         <button type="button" id="t2sOk" class="primary">确定</button>
       </div>
+    </div>
+  </div>
+  <!-- 文件预览弹窗：点击消息里的本地文件链接唤起（图片 / 视频 / 文本） -->
+  <div class="pv-mask" id="pvMask">
+    <div class="pv">
+      <div class="pv-head">
+        <span class="pv-name" id="pvName"></span>
+        <button class="pv-btn" id="pvExt" type="button" title="用系统浏览器打开">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+        </button>
+        <button class="pv-btn" id="pvClose" type="button" title="关闭">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
+        </button>
+      </div>
+      <div class="pv-body" id="pvBody"></div>
     </div>
   </div>
   <div class="toast" id="toast"></div>
@@ -344,18 +375,42 @@
     if (!html) html = mdFallback(src);
     return safeLinks(html);
   }
+  // 本地文件路径识别（对齐完整模式 handleRawLinkClick 的判定范围）：
+  // file:// 、/agent_vm/... 、Windows 绝对路径、./ 或 ../ 相对路径 + 已知扩展名
+  var LOCAL_EXTS = ['png','jpg','jpeg','gif','webp','svg','bmp','ico','mp4','webm','mov','ogg','avi','mkv','pdf',
+    'txt','text','md','markdown','csv','json','jsonc','log','html','htm',
+    'py','js','ts','tsx','jsx','vue','java','c','cpp','h','hpp','cs','go','rs','rb','php','kt','swift','lua','pl','r','sh','bash','bat','ps1','sql','xml','yaml','yml','toml','ini','cfg','conf','css','scss','less','ipynb','env'];
+  function safeDecode(s) { try { return decodeURIComponent(s); } catch (e) { return s; } }
+  function localFilePath(href) {
+    if (!href) return '';
+    if (href.indexOf('file://') === 0) {
+      var p = href.replace(/^file:\/\//, '');
+      if (p.charAt(0) === '/' && p.charAt(2) === ':') p = p.substring(1);   // /C:/x → C:/x
+      return safeDecode(p);
+    }
+    if (/^(?:\.{0,2}\/)agent_vm(?:\/|$)/.test(href)) return safeDecode(href);
+    if (/^[A-Za-z]:[/\\]/.test(href)) return safeDecode(href);
+    if (href.indexOf('./') === 0 || href.indexOf('../') === 0) {
+      var ext = (href.split('.').pop() || '').toLowerCase();
+      if (LOCAL_EXTS.indexOf(ext) >= 0) return safeDecode(href);
+    }
+    return '';
+  }
   // 链接处理：绝对外链加 target=_blank（在新标签页打开，聊天作为返回点始终保留＝能返回）；
-  // 相对/未知/危险链接去掉 href 退化为纯文本（仍可选中复制），避免把 iframe 或新标签页跳成后端 JSON 404
+  // 本地文件链接去掉 href（防 iframe 跳走）后挂 data-fpath，由点击处理器唤起预览弹窗；
+  // 其余相对/未知/危险链接去掉 href 退化为纯文本（仍可选中复制）
   function safeLinks(html) {
     return String(html).replace(/<a\b([^>]*)>/g, function (m, attrs) {
       var h = /href\s*=\s*(?:"|')([^"']*)(?:"|')/.exec(attrs);
       var hv = h ? h[1] : '';
+      var noHref = attrs.replace(/\s+href\s*=\s*(?:"|')(?:[^"']*)(?:"|')/i, '');
       if (/^(https?:|mailto:|tel:|#)/i.test(hv)) {
         if (/\btarget\s*=/i.test(attrs)) return m;
         return '<a' + attrs + ' target="_blank" rel="noopener noreferrer">';
       }
-      // 去掉 href → 退化为不可跳转的文本
-      return '<a' + attrs.replace(/\s+href\s*=\s*(?:"|')(?:[^"']*)(?:"|')/i, '') + '>';
+      var fp = localFilePath(hv);
+      if (fp) return '<a' + noHref + ' class="filelink" data-fpath="' + esc(fp) + '">';
+      return '<a' + noHref + '>';
     });
   }
 
@@ -692,6 +747,61 @@
     appendLive(stick);
     if (stick) listEl.scrollTop = listEl.scrollHeight;
   }
+
+  // ---------- 文件预览弹窗（图片 / 视频 / 文本）----------
+  // 内容由后端文件接口提供：媒体走 /api/filesystem/preview（FileResponse 带正确 MIME），
+  // 文本走 /api/filesystem/read 取原文用 pre 展示（对齐完整模式的链接预览能力）。
+  var pvMask = document.getElementById('pvMask');
+  var pvBody = document.getElementById('pvBody');
+  var pvName = document.getElementById('pvName');
+  var pvPath = '';
+  var PV_IMG = ['png','jpg','jpeg','gif','webp','svg','bmp','ico'];
+  var PV_VIDEO = ['mp4','webm','mov','ogg','avi','mkv'];
+  function previewURL(path) { return '/api/filesystem/preview?path=' + encodeURIComponent(path); }
+  function fileNameOf(path) { return String(path).replace(/\\/g, '/').split('/').pop() || String(path); }
+  function openPreview(path) {
+    if (!path) return;
+    pvPath = path;
+    pvName.textContent = fileNameOf(path);
+    pvName.title = path;
+    pvBody.innerHTML = '';
+    var ext = (String(path).split('.').pop() || '').toLowerCase();
+    if (PV_IMG.indexOf(ext) >= 0) {
+      var img = document.createElement('img');
+      img.className = 'pv-img'; img.alt = fileNameOf(path); img.src = previewURL(path);
+      pvBody.appendChild(img);
+    } else if (PV_VIDEO.indexOf(ext) >= 0) {
+      var v = document.createElement('video');
+      v.className = 'pv-video'; v.src = previewURL(path); v.controls = true; v.autoplay = true;
+      pvBody.appendChild(v);
+    } else {
+      var pre = document.createElement('pre');
+      pre.className = 'pv-text'; pre.textContent = '加载中…';
+      pvBody.appendChild(pre);
+      fetch('/api/filesystem/read?path=' + encodeURIComponent(path))
+        .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+        .then(function (d) { pre.textContent = (d && d.content) || '(空文件)'; })
+        .catch(function () { pre.textContent = '无法预览该文件（可能是二进制内容）'; });
+    }
+    pvMask.classList.add('on');
+  }
+  function closePreview() { pvMask.classList.remove('on'); pvBody.innerHTML = ''; pvPath = ''; }
+  document.getElementById('pvClose').addEventListener('click', closePreview);
+  document.getElementById('pvExt').addEventListener('click', function () {
+    if (!pvPath) return;
+    var full = window.location.origin + previewURL(pvPath);
+    if (window.purrcat && window.purrcat.openExternal) window.purrcat.openExternal(full);
+    else window.open(full, '_blank');
+  });
+  pvMask.addEventListener('click', function (e) { if (e.target === pvMask) closePreview(); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && pvMask.classList.contains('on')) closePreview(); });
+  // 消息里的本地文件链接（.filelink）点击 → 唤起预览
+  listEl.addEventListener('click', function (e) {
+    var a = e.target && e.target.closest ? e.target.closest('a.filelink') : null;
+    if (!a) return;
+    e.preventDefault();
+    openPreview(a.getAttribute('data-fpath') || '');
+  });
 
   // ---------- 数据装载 ----------
   var seq = 0;
