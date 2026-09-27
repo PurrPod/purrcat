@@ -173,7 +173,9 @@
   .md pre { background: var(--wm-bg-input, #f2f4f7); border-radius: 8px; padding: 10px 12px; overflow-x: auto; margin: 0.5em 0; }
   .md pre code { background: transparent; padding: 0; display: block; }
   .md blockquote { border-left: 3px solid var(--wm-bl-300, #c7cfd9); margin: 0.4em 0; padding: 2px 12px; color: var(--wm-label-2nd, #4c5560); }
-  .md a { color: var(--wm-accent, #16191d); text-decoration: none; }
+  .md a { color: var(--wm-label, #16191d); text-decoration: none; }
+  /* 可点击的链接统一用蓝色区分：外链（带 href）与可预览的本地文件链接 */
+  .md a[href], .md a.filelink, .filelink { color: #2f6fdb; }
   .md a:hover { text-decoration: underline; }
   .md table { border-collapse: collapse; margin: 0.5em 0; }
   .md th, .md td { border: 1px solid var(--wm-border, rgba(15,17,21,.08)); padding: 4px 8px; }

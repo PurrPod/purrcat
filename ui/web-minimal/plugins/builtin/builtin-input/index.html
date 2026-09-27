@@ -150,11 +150,10 @@
   .modeMenu button.sel { font-weight: 600; color: var(--wm-accent, #16191d); }
   .foot-right { display: flex; align-items: center; gap: 6px; }
   /* 上下文占用圆环：黑色=已占用，浅色=未占用；hover 弹出数据气泡（对齐完整模式 /api/agent/token） */
-  .ctx-wrap { position: relative; display: none; align-items: center; }
-  .ctx-wrap.on { display: flex; }
+  .ctx-wrap { position: relative; display: flex; align-items: center; }
   .ctx-btn { display: flex; align-items: center; justify-content: center; width: 26px; height: 26px; color: var(--wm-label, #16191d); }
   .ctx-btn svg { width: 20px; height: 20px; }
-  .ctx-btn .track { stroke: rgba(15,17,21,.12); }
+  .ctx-btn .track { stroke: rgba(15,17,21,.18); }
   .ctx-btn .arc { stroke: var(--wm-accent, #16191d); transition: stroke-dasharray .3s ease; }
   .ctx-tip {
     display: none; position: absolute; right: 0; bottom: calc(100% + 8px);
@@ -499,7 +498,6 @@
 
   // ---------- 上下文占用圆环（对齐完整模式的 /api/agent/token 进度）----------
   // 黑色弧 = 已占用，浅色轨道 = 未占用；hover 显示已占用/剩余/最大窗口/百分比
-  var ctxWrap = document.getElementById('ctxWrap');
   var ctxArc = document.getElementById('ctxArc');
   var ctxTip = document.getElementById('ctxTip');
   var CTX_C = 2 * Math.PI * 9;   // 圆环周长（r=9）
@@ -509,7 +507,9 @@
     used = Number(used) || 0;
     max = Number(max) || 0;
     var ratio = max > 0 ? Math.min(1, used / max) : 0;
-    ctxArc.setAttribute('stroke-dasharray', (ratio * CTX_C).toFixed(2) + ' ' + CTX_C.toFixed(2));
+    // 有占用时给一个最小可见弧长（否则占比很小时黑弧短到看不见）
+    var arcLen = ratio > 0 ? Math.max(ratio * CTX_C, 2.4) : 0;
+    ctxArc.setAttribute('stroke-dasharray', arcLen.toFixed(2) + ' ' + CTX_C.toFixed(2));
     var pct = max > 0 ? (used / max) * 100 : 0;
     ctxTip.innerHTML =
       '已占用：<b>' + fmtNum(used) + '</b><br>' +
@@ -518,15 +518,11 @@
       '占用百分比：<b>' + pct.toFixed(1) + '%</b>';
   }
   function refreshCtx() {
-    callAction('state.get').then(function (s) {
-      var sid = (s && s.activeSessionId) || '';
-      ctxWrap.classList.toggle('on', !!sid);   // 无会话时隐藏（对齐完整模式只在会话内显示）
-      if (!sid) return;
-      return fetch('/api/agent/token')
-        .then(function (r) { return r.json(); })
-        .then(function (d) { renderCtx(d && d.window_token, d && d.max_token); })
-        .catch(function () {});
-    }).catch(function () {});
+    // Token 用量是 Agent 的全局状态，不依赖当前会话，始终显示
+    fetch('/api/agent/token')
+      .then(function (r) { return r.json(); })
+      .then(function (d) { renderCtx(d && d.window_token, d && d.max_token); })
+      .catch(function () {});
   }
   refreshCtx();
   setInterval(refreshCtx, 5000);   // 与完整模式一致：5s 刷新一次

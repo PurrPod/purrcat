@@ -2041,6 +2041,16 @@
     frameByPluginId[p.id] = iframe;
     iframe.addEventListener('load', function onLoad() {
       applyConfigTo(p.id);
+      // 启动竞态修复：activeSessionId 由 boot 里的异步请求确定，可能晚于 iframe 加载；
+      // 只靠 boot 时的一次广播会让晚加载的插件错过 → 给刚加载的插件补推当前会话
+      if (groupState.activeSessionId) {
+        try {
+          iframe.contentWindow.postMessage(
+            { type: 'event', event: 'session.switched', data: { session_id: groupState.activeSessionId } },
+            '*'
+          );
+        } catch (_) { /* noop */ }
+      }
       iframe.removeEventListener('load', onLoad);
     });
     return { iframe, pluginId: p.id, el };
@@ -2220,6 +2230,9 @@
       if (Array.isArray(list) && list.length) {
         groupState.sessions = list;
         groupState.activeSessionId = list[0].id || '';
+        // 修复：已加载完成的插件此刻才拿到 activeSessionId，必须补一次广播，
+        // 否则聊天历史等插件会一直停在空态，直到用户手动点一次别的会话
+        broadcastSessions('session.switched', { session_id: groupState.activeSessionId });
       }
     } catch (_) { /* 无会话时保持空 */ }
     updateEmpty();
