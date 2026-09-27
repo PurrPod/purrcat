@@ -19,11 +19,10 @@
   --wm-bl-800:  #2f3841;
   --wm-bl-900:  #16191d;
 
-  /* deepseek 蓝（仅引用/发送按钮等强调用） */
-  --wm-ds-400:  rgb(103, 158, 254);
-  --wm-ds-450:  rgb(86, 134, 254);
-  --wm-ds-500:  rgb(65, 118, 230);
-  --wm-ds-50:   rgb(237, 243, 254);
+  /* 强调色：中性黑（原 deepseek 蓝已全量替换，极简模式不再使用彩色强调） */
+  --wm-ink:       #16191d;
+  --wm-ink-soft:  #2f3841;
+  --wm-ink-weak:  #e9edf1;
 
   /* 语义别名 */
   --wm-bg-base:     var(--wm-bl-0);     /* 默认背景：白 */
@@ -37,10 +36,10 @@
   --wm-label-dim:   var(--wm-bl-500);
   --wm-border:      rgba(15, 17, 21, 0.08);   /* 极轻分隔，仅需处 */
   --wm-border-soft: rgba(15, 17, 21, 0.05);
-  --wm-accent:      var(--wm-ds-450);
-  --wm-accent-hi:   var(--wm-ds-400);
-  --wm-accent-weak: var(--wm-ds-50);
-  --wm-user-bubble: rgba(86, 134, 254, 0.10);  /* 用户气泡（圆弧） */
+  --wm-accent:      var(--wm-ink);
+  --wm-accent-hi:   var(--wm-ink-soft);
+  --wm-accent-weak: var(--wm-ink-weak);
+  --wm-user-bubble: rgba(15, 17, 21, 0.06);    /* 用户气泡（圆弧） */
   --wm-shadow-sm:   0 1px 2px rgba(15, 17, 21, 0.04);
   --wm-shadow:      0 4px 16px rgba(15, 17, 21, 0.08);
 
@@ -148,7 +147,7 @@ body.rail-2 .rail-brand { display: flex; }
 .rail-brand .brand-name { font-size: 14px; font-weight: 700; color: var(--wm-label); white-space: nowrap; }
 .rail-brand .brand-beta {
   flex: none; font-size: 9.5px; font-weight: 700; line-height: 1;
-  color: #fff; background: var(--wm-accent, #567efe);
+  color: #fff; background: var(--wm-accent, #16191d);
   border-radius: 6px; padding: 3px 5px; letter-spacing: 0.3px;
 }
 .wm-rail .rail-icons {
@@ -360,7 +359,7 @@ body.settings-open [data-layer="settings"] { display: flex; }
   transition: background 0.12s ease, color 0.12s ease;
 }
 .settings-nav-item:hover { background: var(--wm-bg-hover); color: var(--wm-label); }
-.settings-nav-item.active { background: var(--wm-bg-active); color: var(--wm-ds-500); font-weight: 600; }
+.settings-nav-item.active { background: var(--wm-bg-active); color: var(--wm-ink); font-weight: 600; }
 .settings-main { flex: 1; overflow-y: auto; padding: 8px 20px 20px; min-width: 0; }
 
 /* slot 竖排分组（UI 插件二级分类） */
@@ -386,7 +385,7 @@ body.settings-open [data-layer="settings"] { display: flex; }
   background: transparent; color: var(--wm-label); font-size: 13px; cursor: pointer;
 }
 .settings-menu-btn:hover { background: var(--wm-bg-hover); }
-.settings-menu-btn.open { color: var(--wm-ds-500); }
+.settings-menu-btn.open { color: var(--wm-ink); }
 .settings-menu-btn.danger { color: #d0453b; }
 .settings-menu-btn.danger:hover { background: #fdf1f0; }
 .settings-menu-btn.disabled { color: var(--wm-label-dim); cursor: default; }
@@ -421,7 +420,7 @@ body.settings-open [data-layer="settings"] { display: flex; }
   transition: background 0.12s ease, color 0.12s ease;
 }
 .cfg-seg:hover { background: var(--wm-bg-hover); color: var(--wm-label); }
-.cfg-seg.active { background: var(--wm-bg-active); color: var(--wm-ds-500); font-weight: 600; }
+.cfg-seg.active { background: var(--wm-bg-active); color: var(--wm-ink); font-weight: 600; }
 
 .cfg-card {
   border: 1px solid var(--wm-border); border-radius: 12px; margin-bottom: 12px;
@@ -467,7 +466,7 @@ body.settings-open [data-layer="settings"] { display: flex; }
 .cfg-chip.bad { background: rgba(228, 88, 78, 0.2); color: #b0433b; }
 
 .cfg-edit, .cfg-del, .cfg-save { font-size: 12.5px; padding: 4px 12px; }
-.cfg-edit { color: var(--wm-ds-500); }
+.cfg-edit { color: var(--wm-ink); }
 .cfg-del { color: #d0453b; border-color: rgba(208, 69, 59, 0.4); }
 .cfg-save { background: var(--wm-bg-active); font-weight: 600; }
 
@@ -496,7 +495,7 @@ body.settings-open [data-layer="settings"] { display: flex; }
 .cfg-step-title { font-weight: 600; font-size: 14px; }
 .cfg-step-act { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .cfg-deploy-btn { font-size: 12.5px; padding: 5px 14px; }
-.cfg-deploy-btn.missing { color: var(--wm-ds-500); font-weight: 600; }
+.cfg-deploy-btn.missing { color: var(--wm-ink); font-weight: 600; }
 .cfg-deploy-btn.failed { color: #d0453b; }
 .cfg-deploy-btn.running, .cfg-deploy-btn.installed, .cfg-deploy-btn.ready { opacity: 0.6; cursor: default; }
 .cfg-deploy-btn:disabled { pointer-events: none; }

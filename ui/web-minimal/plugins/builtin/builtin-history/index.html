@@ -24,7 +24,7 @@
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   .msg { max-width: 78%; padding: 10px 14px; border-radius: 12px; word-break: break-word; }
-  .msg.user { margin-left: auto; background: var(--wm-user-bubble, rgba(86,134,254,.10)); border: 1px solid rgba(86,134,254,0.18); white-space: pre-wrap; }
+  .msg.user { margin-left: auto; background: var(--wm-user-bubble, rgba(15,17,21,.10)); border: 1px solid rgba(15,17,21,0.18); white-space: pre-wrap; }
   .msg.assistant { margin-right: auto; background: var(--wm-bg-input, #f2f4f7); border: 1px solid var(--wm-border-soft, rgba(15,17,21,.05)); }
 
   /* 折叠块 */
@@ -32,8 +32,8 @@
   .row.fold { flex-direction: column; align-items: stretch; }
   /* 折叠块整体一个小框：把「标题 + 展开的工具/思考内容」框在一组，比父气泡略浅、同属一体 */
   .row.fold {
-    border: 1px solid rgba(86,134,254,0.14);
-    background: rgba(86,134,254,0.04);
+    border: 1px solid rgba(15,17,21,0.14);
+    background: rgba(15,17,21,0.04);
     border-radius: 10px;
     padding: 4px 6px;
   }
@@ -51,7 +51,7 @@
 
   .reason-body { white-space: pre-wrap; font-size: 13px; line-height: 1.6; color: var(--wm-label-2nd, #4c5560); background: var(--wm-bl-100, #f2f4f7); border-radius: 8px; padding: 8px 10px; }
   .tool-body { font-family: var(--wm-mono, ui-monospace, Consolas, monospace); font-size: 12px; line-height: 1.55; color: var(--wm-label-2nd, #4c5560); background: var(--wm-bl-100, #f2f4f7); border: 1px solid var(--wm-border-soft, rgba(15,17,21,.05)); border-radius: 8px; padding: 8px 10px; overflow-x: auto; white-space: pre-wrap; word-break: break-word; }
-  .tool-body .tname { font-weight: 700; color: var(--wm-accent, #567efe); margin-bottom: 6px; }
+  .tool-body .tname { font-weight: 700; color: var(--wm-accent, #16191d); margin-bottom: 6px; }
 
   .empty { align-self: center; color: var(--wm-label-dim, #8b96a3); font-size: 13px; margin-top: 48px; }
 
@@ -66,7 +66,7 @@
   .md pre { background: var(--wm-bg-input, #f2f4f7); border-radius: 8px; padding: 10px 12px; overflow-x: auto; margin: 0.5em 0; }
   .md pre code { background: transparent; padding: 0; display: block; }
   .md blockquote { border-left: 3px solid var(--wm-bl-300, #c7cfd9); margin: 0.4em 0; padding: 2px 12px; color: var(--wm-label-2nd, #4c5560); }
-  .md a { color: var(--wm-accent, #567efe); text-decoration: none; }
+  .md a { color: var(--wm-accent, #16191d); text-decoration: none; }
   .md a:hover { text-decoration: underline; }
   .md table { border-collapse: collapse; margin: 0.5em 0; }
   .md th, .md td { border: 1px solid var(--wm-border, rgba(15,17,21,.08)); padding: 4px 8px; }
