@@ -294,6 +294,7 @@
     // 设置按钮高亮跟随面板开合
     const sb = HOST.document.getElementById('railSettings');
     if (sb) sb.classList.toggle('on', !!open);
+    if (!open) closeSettingsMenus();   // 菜单挂在 body 上，面板关掉后不能留在界面上
     if (open) renderSettings();
   }
 
@@ -598,12 +599,18 @@
   const CONFIG_NAV = ['plugins', 'view', 'model', 'sensor', 'file', 'mcp', 'app', 'acp', 'deploy'];
   const CONFIG_LABEL = { plugins: 'UI 插件', view: '视图设置', model: '模型', sensor: '传感器', file: '文件', mcp: 'MCP', app: '应用', acp: 'ACP', deploy: '部署' };
   let settingsTab = 'plugins';
+  let settingsRenderedTab = '';   // 上一次渲染的标签页（同页重建才恢复滚动位置）
   let deployPollT = null;   // 部署页轮询定时器句柄
 
   function renderSettings() {
     const bodyEl = HOST.document.querySelector('[data-layer="settings"] .settings-body');
     if (!bodyEl) return;
     if (deployPollT) { clearInterval(deployPollT); deployPollT = null; }
+    closeSettingsMenus();   // 卡片菜单挂在 body 上，重建后锚点按钮已消失，先收起避免残留
+    // 内容区滚动位置：同一标签页内重建（改配置项触发的防抖重建）恢复原地，切标签页则回到顶部。
+    // 卡片是 fetch 回来后才插入的，故用一次 MutationObserver 在异步内容落地后再兜底恢复一次。
+    const prevMain = bodyEl.querySelector('.settings-main');
+    const keepTop = (settingsRenderedTab === settingsTab && prevMain) ? prevMain.scrollTop : 0;
     bodyEl.innerHTML = '';
     // 左导航
     const nav = HOST.document.createElement('div');
@@ -622,6 +629,13 @@
     bodyEl.appendChild(main);
     if (settingsTab === 'plugins') renderPluginsTab(main);
     else renderConfigSection(main, settingsTab);
+    settingsRenderedTab = settingsTab;
+    if (keepTop) {
+      main.scrollTop = keepTop;
+      const mo = new MutationObserver(function () { main.scrollTop = keepTop; mo.disconnect(); });
+      mo.observe(main, { childList: true, subtree: true });
+      setTimeout(function () { mo.disconnect(); }, 2000);
+    }
   }
 
   // ---- UI 插件主面板：按「区域」竖排分组（卡片 / JSON 双模式，与配置中心一致）----
@@ -754,9 +768,12 @@
   }
   function openPluginCardMenu(ev, btn, p) {
     ev.stopPropagation();
+    const wasOpen = !!HOST.document.querySelector('.settings-card-menu[data-owner="' + p.id + '"]');
     closeSettingsMenus();
+    if (wasOpen) return;   // 再次点同一个按钮 = 收起（否则只能靠点别处才关得掉）
     const menu = HOST.document.createElement('div');
     menu.className = 'settings-card-menu';
+    menu.setAttribute('data-owner', p.id);
     if (p.builtin) {
       const dis = HOST.document.createElement('button');
       dis.className = 'settings-menu-btn disabled';
@@ -2020,6 +2037,9 @@
     // 设置面板关闭按钮
     const settingsClose = HOST.document.getElementById('settingsClose');
     if (settingsClose) settingsClose.addEventListener('click', () => setSettingsOpen(false));
+    // 弹出菜单（设置卡片 ▾ / 面板抽屉 ☰）都挂在 body 上：点界面空白处统一收起。
+    // 触发按钮自身的 click 已 stopPropagation，因此不会误关刚打开的菜单。
+    HOST.document.addEventListener('click', function () { closeSettingsMenus(); closePanelMenus(); });
     let manifest;
     try {
       manifest = await (await fetch('/api/webmin/manifest')).json();

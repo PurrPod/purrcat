@@ -49,8 +49,10 @@
   .fold-body { display: none; margin-top: 4px; overflow: hidden; }
   .fold-body.open { display: block; }
 
-  .reason-body { white-space: pre-wrap; font-size: 13px; line-height: 1.6; color: var(--wm-label-2nd, #4c5560); background: var(--wm-bl-100, #f2f4f7); border-radius: 8px; padding: 8px 10px; }
-  .tool-body { font-family: var(--wm-mono, ui-monospace, Consolas, monospace); font-size: 12px; line-height: 1.55; color: var(--wm-label-2nd, #4c5560); background: var(--wm-bl-100, #f2f4f7); border: 1px solid var(--wm-border-soft, rgba(15,17,21,.05)); border-radius: 8px; padding: 8px 10px; overflow-x: auto; white-space: pre-wrap; word-break: break-word; }
+  /* 思考/工具内容：对齐原 UI（ChatShared 的 ReasoningBubble / 工具气泡）——
+     等宽字体、小字号、break-all 保证长串（路径/JSON/URL）也能换行、限高内滚 */
+  .reason-body { font-family: var(--wm-mono, ui-monospace, Consolas, monospace); white-space: pre-wrap; word-break: break-all; font-size: 12px; line-height: 1.55; color: var(--wm-label-2nd, #4c5560); background: var(--wm-bl-100, #f2f4f7); border-radius: 8px; padding: 8px 10px; max-height: 18rem; overflow-y: auto; }
+  .tool-body { font-family: var(--wm-mono, ui-monospace, Consolas, monospace); white-space: pre-wrap; word-break: break-all; font-size: 12px; line-height: 1.55; color: var(--wm-label-2nd, #4c5560); background: var(--wm-bl-100, #f2f4f7); border: 1px solid var(--wm-border-soft, rgba(15,17,21,.05)); border-radius: 8px; padding: 8px 10px; max-height: 18rem; overflow-y: auto; }
   .tool-body .tname { font-weight: 700; color: var(--wm-accent, #16191d); margin-bottom: 6px; }
 
   .empty { align-self: center; color: var(--wm-label-dim, #8b96a3); font-size: 13px; margin-top: 48px; }
@@ -147,7 +149,8 @@
     cap.className = 'cap';
     cap.innerHTML = '<span class="arrow">▶</span>' + esc(label) + '<span class="tag">' + esc(tag || '') + '</span>';
     var wrap = document.createElement('div');
-    bodyEl.className = 'fold-body';
+    // 追加而不是覆盖：调用方传进来的 body 自带样式类（reason-body / tool-body）必须保留
+    bodyEl.className = (bodyEl.className ? bodyEl.className + ' ' : '') + 'fold-body';
     wrap.appendChild(cap); wrap.appendChild(bodyEl);
     cap.addEventListener('click', function () {
       var open = bodyEl.classList.toggle('open');
@@ -271,6 +274,11 @@
   }
 
   function renderMessages(rows) {
+    // 轮询会把整段历史重建一次；若用户已经往上翻看，重建后不能强行拉回底部，
+    // 只在「重建前本来就贴着底部」（含首次进入）时才跟随到底。
+    // 注意 listEl.innerHTML='' 会把 scrollTop 归零，故旧位置必须先存下来。
+    var prevTop = listEl.scrollTop;
+    var stick = listEl.scrollHeight - listEl.scrollTop - listEl.clientHeight < 40;
     // 保留已展开的折叠卡片跨轮询恢复，避免刷新自动收起。
     // 折叠块是嵌在消息 col 里的 .row.fold，故直接以每个折叠块的 data-fk(消息序号#块序号)为稳定 key，
     // 不能用消息 wrap 的 data-k（折叠块上取不到），否则收集为空、展开状态丢
@@ -297,7 +305,7 @@
       });
       listEl.appendChild(node);
     });
-    listEl.scrollTop = listEl.scrollHeight;
+    listEl.scrollTop = stick ? listEl.scrollHeight : prevTop;
   }
 
   // 合并渲染：服务端历史 + 尚未被服务端确认的本地乐观消息（发送后即时显示，fetch 慢时不同步丢失）
