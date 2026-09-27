@@ -59,8 +59,11 @@
 
   /* 流式思考块：Agent 思考期间用 /status 的 live_reasoning 实时透出（对齐原 UI ReasoningBubble 的 live 态） */
   .row.live {
-    border: 1px dashed rgba(15,17,21,0.22);
-    background: rgba(15,17,21,0.03);
+    /* 与 .row.fold 一致：纵向排列，标题在上、思考内容换行在下方 */
+    flex-direction: column;
+    align-items: stretch;
+    border: 1px solid rgba(15,17,21,0.14);
+    background: rgba(15,17,21,0.04);
     border-radius: 10px;
     padding: 4px 6px;
   }
