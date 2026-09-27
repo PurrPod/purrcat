@@ -791,14 +791,11 @@
   const MODEL_SDKS = ['openai'];
   const DEPLOY_ITEMS = ['uv', 'node', 'sandbox', 'embedding'];
   const DEPLOY_LABEL = { uv: 'uv', node: 'node', sandbox: 'sandbox / Docker 沙盒', embedding: 'embedding' };
-  const MCP_NEW_TEMPLATE = '{\n  "command": "npx",\n  "args": [],\n  "env": {}\n}';
   const cfgState = {
     data: {},         // tab -> 已加载的配置对象（GET /api/config/{tab}）
     mode: {},         // tab -> 'cards'|'json'
     openKey: {},      // tab -> 处于展开态的顶级 key
     editStr: {},      // tab+'::'+key -> 编辑区文本
-    mcpNewName: '', mcpNewJson: MCP_NEW_TEMPLATE,
-    genNewKey: '', genNewType: 'string', genNewValue: '',
     sandboxRegistry: '',
     deployLogOpen: {},
   };
@@ -1076,39 +1073,6 @@
         body.appendChild(save);
         card.appendChild(body);
       });
-      // 新增服务器
-      const add = HOST.document.createElement('div');
-      add.className = 'cfg-add';
-      const t = HOST.document.createElement('div');
-      t.className = 'cfg-add-title';
-      t.textContent = '新增 MCP 服务器';
-      add.appendChild(t);
-      const row = HOST.document.createElement('div');
-      row.className = 'cfg-add-row';
-      const nm = HOST.document.createElement('input');
-      nm.type = 'text'; nm.placeholder = '服务器名称 (name)'; nm.value = cfgState.mcpNewName;
-      nm.addEventListener('input', function () { cfgState.mcpNewName = nm.value; });
-      row.appendChild(nm);
-      const btn = HOST.document.createElement('button');
-      btn.className = 'btn';
-      btn.textContent = '添加';
-      btn.addEventListener('click', function () {
-        const n = cfgState.mcpNewName.trim();
-        if (!n) { HOST.alert('请填写服务器名称'); return; }
-        servers[n] = {};
-        cfgState.openKey[key] = n;
-        cfgState.editStr[key + '::' + n] = cfgState.mcpNewJson;
-        rerenderConfig(main, key);
-      });
-      row.appendChild(btn);
-      add.appendChild(row);
-      const ta = HOST.document.createElement('textarea');
-      ta.className = 'settings-json';
-      ta.style.minHeight = '100px';
-      ta.value = cfgState.mcpNewJson;
-      ta.addEventListener('input', function () { cfgState.mcpNewJson = ta.value; });
-      add.appendChild(ta);
-      main.appendChild(add);
     });
   }
 
@@ -1119,12 +1083,6 @@
     if (t === 'number') return Number(str);
     if (t === 'boolean') return (str === 'true' || str === '1' || str === '是');
     if (t === 'object') { try { return JSON.parse(str); } catch (e) { return orig; } }
-    return str;
-  }
-  function typedVal(str, type) {
-    if (type === 'number') return (str === '' || isNaN(Number(str))) ? 0 : Number(str);
-    if (type === 'boolean') return (str === 'true' || str === '1' || str === '是');
-    if (type === 'object' || type === 'array') { try { return JSON.parse(str); } catch (e) { throw new Error('JSON 解析失败'); } }
     return str;
   }
   function renderGenericCards(main, key) {
@@ -1178,46 +1136,6 @@
         body.appendChild(save);
         card.appendChild(body);
       });
-      // 新增配置项
-      const add = HOST.document.createElement('div');
-      add.className = 'cfg-add';
-      const t = HOST.document.createElement('div');
-      t.className = 'cfg-add-title';
-      t.textContent = '新增配置项';
-      add.appendChild(t);
-      const row = HOST.document.createElement('div');
-      row.className = 'cfg-add-row';
-      const nk = HOST.document.createElement('input');
-      nk.type = 'text'; nk.placeholder = 'key 名称'; nk.value = cfgState.genNewKey;
-      nk.addEventListener('input', function () { cfgState.genNewKey = nk.value; });
-      row.appendChild(nk);
-      const st = HOST.document.createElement('select');
-      ['string', 'number', 'boolean', 'object', 'array'].forEach(function (tl) {
-        const o = HOST.document.createElement('option'); o.value = tl; o.textContent = tl; if (tl === cfgState.genNewType) o.selected = true; st.appendChild(o);
-      });
-      st.addEventListener('change', function () { cfgState.genNewType = st.value; });
-      row.appendChild(st);
-      const va = HOST.document.createElement('textarea');
-      va.placeholder = 'value';
-      va.style.width = '100%';
-      va.style.minHeight = '70px';
-      va.value = cfgState.genNewValue;
-      va.addEventListener('input', function () { cfgState.genNewValue = va.value; });
-      add.appendChild(row);
-      add.appendChild(va);
-      const addBtn = HOST.document.createElement('button');
-      addBtn.className = 'btn cfg-save';
-      addBtn.textContent = '添加';
-      addBtn.addEventListener('click', function () {
-        const k = cfgState.genNewKey.trim();
-        if (!k) { HOST.alert('请填写 key 名称'); return; }
-        try { obj[k] = typedVal(cfgState.genNewValue, cfgState.genNewType); }
-        catch (e) { HOST.alert(e.message); return; }
-        cfgState.genNewKey = ''; cfgState.genNewValue = '';
-        putCfg(key, obj).then(function () { rerenderConfig(main, key); }).catch(function (e) { HOST.alert('保存失败：' + (e && e.message || '')); });
-      });
-      add.appendChild(addBtn);
-      main.appendChild(add);
     });
   }
 

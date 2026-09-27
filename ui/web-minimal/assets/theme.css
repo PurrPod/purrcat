@@ -464,8 +464,6 @@ body.settings-open [data-layer="settings"] { display: flex; }
 .cfg-del { color: #d0453b; border-color: rgba(208, 69, 59, 0.4); }
 .cfg-save { background: var(--wm-bg-active); font-weight: 600; }
 
-.cfg-add { border: 1px dashed var(--wm-bl-300); border-radius: 12px; padding: 14px; margin-top: 6px; display: flex; flex-direction: column; gap: 10px; }
-.cfg-add-title { font-weight: 600; font-size: 13px; }
 .cfg-add-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .cfg-add-row input, .cfg-add-row select { flex: 1; min-width: 120px; }
 
