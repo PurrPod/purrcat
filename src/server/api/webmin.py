@@ -24,6 +24,7 @@ from src.utils.config import (
     BASE_DIR,
     PURRCAT_DIR,
     GRAPHS_DIR,
+    SESSIONS_DIR,
     get_global_settings,
     save_global_setting,
 )
@@ -393,6 +394,24 @@ def api_webmin_ref_graphs():
         if os.path.isdir(d) and os.path.isfile(os.path.join(d, "graph.json")):
             names.append(name)
     return names
+
+
+@router.get("/session-paradigm/{session_id}")
+def api_webmin_session_paradigm(session_id: str):
+    """读取某会话当前绑定的 Agent Loop（paradigm）；空串表示使用默认 PARADIGM。
+
+    只读端点：供极简模式的输入框回显当前 Mode，不改动任何现有 /api/* 行为。
+    """
+    if not session_id or any(c in session_id for c in ("/", "\\", "..")):
+        raise HTTPException(status_code=400, detail="非法的会话 id")
+    meta_path = os.path.join(SESSIONS_DIR, session_id, "meta.json")
+    paradigm = ""
+    try:
+        with open(meta_path, "r", encoding="utf-8") as f:
+            paradigm = str((json.load(f) or {}).get("paradigm") or "")
+    except Exception:
+        paradigm = ""
+    return {"paradigm": paradigm}
 
 
 @router.get("/plugin/{plugin_id}/{path:path}")

@@ -113,6 +113,7 @@
     align-items: center;
     justify-content: space-between;
   }
+  .foot-left { display: flex; align-items: center; gap: 2px; min-width: 0; }
   .plusBtn {
     flex: none; width: 36px; height: 36px;
     font-size: 19px; line-height: 1; color: var(--wm-label-2nd, #4c5560);
@@ -121,6 +122,32 @@
   }
   .plusBtn:hover { background: var(--wm-bg-hover, #e9edf1); }
   .plusBtn.active { color: var(--wm-accent, #16191d); }
+  /* Mode（Agent Loop）选择：贴＋右侧的小按钮，展开为向上弹出的列表 */
+  .modeWrap { position: relative; min-width: 0; }
+  .modeBtn {
+    display: flex; align-items: center; gap: 3px;
+    height: 30px; max-width: 200px; padding: 0 8px;
+    font: inherit; font-size: 12px; color: var(--wm-label-2nd, #4c5560);
+    background: transparent; border: none; border-radius: 8px; cursor: pointer;
+  }
+  .modeBtn:hover { background: var(--wm-bg-hover, #e9edf1); }
+  .modeBtn span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .modeBtn svg { flex: none; width: 12px; height: 12px; }
+  .modeMenu {
+    display: none; position: absolute; left: 0; bottom: calc(100% + 6px);
+    min-width: 176px; max-height: 240px; overflow-y: auto;
+    background: var(--wm-bl-0, #fff); border-radius: 10px;
+    box-shadow: var(--wm-shadow, 0 8px 28px rgba(15,17,21,.18)); padding: 6px; z-index: 12;
+  }
+  .modeMenu.open { display: block; }
+  .modeMenu button {
+    display: block; width: 100%; text-align: left;
+    font: inherit; font-size: 12.5px; color: var(--wm-label, #16191d);
+    background: transparent; border: none; border-radius: 8px; padding: 7px 9px; cursor: pointer;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .modeMenu button:hover { background: var(--wm-bg-hover, #e9edf1); }
+  .modeMenu button.sel { font-weight: 600; color: var(--wm-accent, #16191d); }
   .sendBtn {
     flex: none; width: 36px; height: 36px; border: none; border-radius: 12px; cursor: pointer;
     background: var(--wm-accent, #16191d); color: #fff;
@@ -149,7 +176,16 @@
     <div class="bar">
       <textarea id="input" rows="1" placeholder="输入消息，Shift+Enter 换行"></textarea>
       <div class="bar-foot">
-        <button class="plusBtn" id="plus" title="添加引用">＋</button>
+        <div class="foot-left">
+          <button class="plusBtn" id="plus" title="添加引用">＋</button>
+          <span class="modeWrap" id="modeWrap">
+            <button class="modeBtn" id="mode" title="切换 Agent Loop">
+              <span id="modeLabel">默认</span>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+            </button>
+            <div class="modeMenu" id="modeMenu"></div>
+          </span>
+        </div>
         <button class="sendBtn" id="send" title="发送" aria-label="发送">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
         </button>
@@ -358,6 +394,82 @@
   }
   plusBtn.addEventListener('click', function () { toggleRef(); });
 
+  // ---------- Mode（切换 Agent Loop / paradigm，对齐原 UI 的热切换）----------
+  var modeWrap = document.getElementById('modeWrap');
+  var modeBtn = document.getElementById('mode');
+  var modeMenu = document.getElementById('modeMenu');
+  var modeLabel = document.getElementById('modeLabel');
+  var modes = [{ name: '', label: '默认' }];
+  var currentMode = '';
+  var curSessionId = '';
+
+  function modeLabelOf(name) { return name || '默认'; }
+  function setModeLabel() {
+    modeLabel.textContent = modeLabelOf(currentMode);
+    modeBtn.title = '切换 Agent Loop，当前：' + modeLabelOf(currentMode);
+  }
+  function loadModes() {
+    return fetch('/api/paradigms').then(function (r) { return r.json(); }).then(function (d) {
+      var files = (d && d.files) || [];
+      modes = [{ name: '', label: '默认' }];
+      files.forEach(function (f) {
+        // PARADIGM 即默认文件，已由「默认」项代表，不重复列出
+        if (f && f.name && f.name !== 'PARADIGM') modes.push({ name: f.name, label: f.name });
+      });
+    }).catch(function () {});
+  }
+  function renderModeMenu() {
+    modeMenu.innerHTML = '';
+    modes.forEach(function (m) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = m.label;
+      if (m.name === currentMode) b.className = 'sel';
+      b.addEventListener('click', function () { setMode(m.name); });
+      modeMenu.appendChild(b);
+    });
+  }
+  // 当前 Mode 取自会话 meta.json（'' = 默认 PARADIGM）
+  function loadMode() {
+    curSessionId = '';
+    currentMode = '';
+    setModeLabel();
+    callAction('state.get').then(function (s) {
+      curSessionId = (s && s.activeSessionId) || '';
+      if (!curSessionId) return;
+      return fetch('/api/webmin/session-paradigm/' + encodeURIComponent(curSessionId))
+        .then(function (r) { return r.json(); })
+        .then(function (d) { currentMode = (d && d.paradigm) || ''; setModeLabel(); })
+        .catch(function () {});
+    }).catch(function () {});
+  }
+  function setMode(name) {
+    closeModeMenu();
+    if (!curSessionId) { alert('请先发送一条消息以创建会话'); return; }
+    if (name === currentMode) return;
+    fetch('/api/sessions/' + encodeURIComponent(curSessionId) + '/paradigm', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ paradigm: name })
+    }).then(function (r) {
+      if (!r.ok) throw new Error('切换失败');
+      currentMode = name;
+      setModeLabel();
+    }).catch(function (e) { alert('Mode 切换失败: ' + String(e.message || e)); });
+  }
+  function closeModeMenu() { modeMenu.classList.remove('open'); }
+  function openModeMenu() {
+    loadModes().then(function () { renderModeMenu(); modeMenu.classList.add('open'); });
+  }
+  modeBtn.addEventListener('click', function (e) {
+    e.stopPropagation();
+    if (modeMenu.classList.contains('open')) closeModeMenu();
+    else openModeMenu();
+  });
+  document.addEventListener('click', function (e) {
+    if (!modeWrap.contains(e.target)) closeModeMenu();
+  });
+
   // ---------- 发送 ----------
   function send() {
     var text = input.value.trim();
@@ -386,12 +498,14 @@
     if (m.type === 'configApply') { applyPanel(m.config); return; }
     if (m.type === 'event' && m.event === 'layout.empty') { setCentered(m.data && m.data.empty); return; }
     if (m.type === 'layout.empty') setCentered(m.empty);
-    if (m.type === 'event' && (m.event === 'session.switched' || m.event === 'conversation.updated')) resyncEmpty();
+    if (m.type === 'event' && m.event === 'session.switched') { resyncEmpty(); loadMode(); return; }
+    if (m.type === 'event' && m.event === 'conversation.updated') resyncEmpty();
   });
 
   buildCats();
   markSel();
   resyncEmpty();
+  loadMode();
 })();
 </script>
 </body>
