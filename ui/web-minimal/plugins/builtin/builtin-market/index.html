@@ -1,0 +1,713 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>插件市场</title>
+<style>
+  /* 插件运行在独立 iframe 中，宿主 CSS 变量不跨文档继承：自带变量并给 fallback */
+  :root {
+    --label: var(--wm-label, #16191d);
+    --label-2nd: var(--wm-label-2nd, #4c5560);
+    --dim: var(--wm-label-dim, #8b96a3);
+    --bg: var(--wm-bg-input, #f2f4f7);
+    --bg-soft: #f7f8fa;
+    --hover: var(--wm-bg-hover, #e9edf1);
+    --line: rgba(15, 17, 21, 0.08);
+    --accent: var(--wm-accent, #16191d);
+    --ok: #3f7a4d;
+    --err: #bf616a;
+    --mono: var(--wm-mono, ui-monospace, "Cascadia Code", Consolas, monospace);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: var(--wm-font, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif);
+    font-size: 13px; color: var(--label); background: #fff;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #c6cdd5; border-radius: 999px; }
+  /* 图标语言：与白条/浏览器插件的线性图标统一（描边、1.5 线宽） */
+  svg { display: block; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+
+  /* 头部：顶部 18px 为宿主注入的拖拽手柄（.wm-fgrab），按钮须落在其下方 */
+  .head { flex: none; display: flex; align-items: center; gap: 4px; padding: 20px 12px 8px; }
+  .head .title { font-size: 13px; font-weight: 600; margin-right: auto; }
+  .hbtn {
+    width: 26px; height: 26px; flex: none;
+    display: flex; align-items: center; justify-content: center;
+    border: none; border-radius: 7px; background: transparent; color: var(--label-2nd); cursor: pointer;
+  }
+  .hbtn:hover { background: var(--hover); color: var(--label); }
+  .hbtn svg { width: 15px; height: 15px; }
+  .hbtn.spin svg { animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .tabs { flex: none; display: flex; gap: 2px; padding: 0 10px; overflow-x: auto; }
+  .tab {
+    flex: none; padding: 6px 10px; font: inherit; font-size: 12px;
+    color: var(--label-2nd); background: transparent; border: none; border-radius: 7px;
+    cursor: pointer; white-space: nowrap;
+  }
+  .tab:hover { background: var(--hover); }
+  .tab.on { background: var(--accent); color: #fff; font-weight: 600; }
+
+  /* Skill 的排版切换（按仓库 / 全部），与完整模式市场一致 */
+  .subbar { flex: none; display: none; align-items: center; gap: 4px; padding: 8px 12px 0; }
+  .seg {
+    font: inherit; font-size: 11.5px; padding: 4px 10px; cursor: pointer;
+    color: var(--label-2nd); background: transparent; border: 1px solid var(--line); border-radius: 7px;
+  }
+  .seg:hover { background: var(--hover); }
+  .seg.on { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  .chip-neutral { background: rgba(15, 17, 21, .07); color: var(--label-2nd); }
+  .backrow {
+    display: flex; align-items: center; padding: 7px 10px; margin-bottom: 2px;
+    font-size: 12px; color: var(--label-2nd); border-radius: 8px; cursor: pointer;
+  }
+  .backrow:hover { background: var(--hover); }
+
+  .search { flex: none; padding: 8px 12px 6px; }
+  .search input {
+    width: 100%; height: 30px; padding: 0 12px; font: inherit; color: var(--label);
+    background: var(--bg); border: 1px solid transparent; border-radius: 15px; outline: none;
+  }
+  .search input:focus { border-color: var(--accent); background: #fff; }
+
+  .body { flex: 1; min-height: 0; display: flex; }
+  .list { width: 290px; flex: none; overflow-y: auto; padding: 2px 6px 12px 10px; border-right: 1px solid var(--line); }
+  .detail { flex: 1; min-width: 0; overflow-y: auto; padding: 2px 16px 16px; }
+
+  .item { padding: 9px 10px; border-radius: 8px; cursor: pointer; }
+  .item:hover { background: var(--hover); }
+  .item.on { background: var(--bg); }
+  .item-name { display: flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 600; }
+  .item-name .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .item-desc { margin-top: 3px; font-size: 11.5px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chip { flex: none; padding: 1px 6px; border-radius: 999px; font-size: 10px; background: rgba(63, 122, 77, .12); color: var(--ok); }
+
+  .hint { padding: 14px 12px; font-size: 12px; color: var(--dim); line-height: 1.7; }
+  .hint.err { color: var(--err); word-break: break-all; }
+
+  .d-head { display: flex; align-items: center; gap: 8px; }
+  .d-name { font-size: 15px; font-weight: 700; word-break: break-word; }
+  .d-meta { margin-top: 4px; font-size: 11.5px; color: var(--dim); word-break: break-all; }
+  .d-desc { margin-top: 10px; font-size: 12.5px; line-height: 1.75; color: var(--label-2nd); white-space: pre-wrap; word-break: break-word; }
+  .lang {
+    margin-top: 8px; padding: 2px 9px; font: inherit; font-size: 11px;
+    color: var(--label-2nd); background: transparent; border: 1px solid var(--line); border-radius: 999px; cursor: pointer;
+  }
+  .lang:hover { background: var(--hover); }
+  .d-sub { margin: 14px 0 6px; font-size: 11.5px; font-weight: 600; color: var(--label-2nd); }
+  .d-pre {
+    max-height: 220px; overflow: auto; padding: 8px 10px;
+    font-family: var(--mono); font-size: 11px; line-height: 1.6; color: var(--label-2nd);
+    background: var(--bg-soft); border: 1px solid var(--line); border-radius: 8px;
+    white-space: pre-wrap; word-break: break-all;
+  }
+  .d-env-row { font-family: var(--mono); font-size: 11.5px; color: var(--label-2nd); line-height: 1.8; word-break: break-all; }
+
+  .d-foot { display: flex; align-items: center; gap: 8px; margin-top: 16px; }
+  .d-confirm { flex: 1; min-width: 0; font-size: 12px; color: var(--err); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .btn {
+    height: 30px; padding: 0 14px; font: inherit; font-size: 12px;
+    color: var(--label-2nd); background: #fff; border: 1px solid var(--line); border-radius: 8px; cursor: pointer;
+  }
+  .btn:hover { background: var(--hover); }
+  .btn:disabled { opacity: .55; cursor: default; }
+  .btn.primary { background: var(--accent); border-color: transparent; color: #fff; }
+  .btn.primary:hover { background: var(--accent); filter: brightness(1.15); }
+  .btn.danger { background: var(--err); border-color: transparent; color: #fff; }
+  .btn.danger:hover { background: var(--err); filter: brightness(1.08); }
+
+  /* 「即将上线」占位 */
+  .soon { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 24px; text-align: center; }
+  .soon-title { font-size: 15px; font-weight: 700; }
+  .soon-desc { max-width: 340px; font-size: 12.5px; line-height: 1.8; color: var(--dim); }
+
+  /* 轻提示条（插件自带，不弹宿主级弹窗） */
+  .toast {
+    position: fixed; left: 50%; bottom: 18px; max-width: 80%;
+    padding: 7px 14px; border-radius: 999px; font-size: 12px;
+    background: rgba(22, 25, 29, .92); color: #fff;
+    opacity: 0; pointer-events: none;
+    transform: translateX(-50%) translateY(8px);
+    transition: opacity .18s ease, transform .18s ease;
+  }
+  .toast.on { opacity: 1; transform: translateX(-50%) translateY(0); }
+  .toast.err { background: rgba(191, 97, 106, .95); }
+
+  .only-narrow { display: none; }
+  /* 窄窗口（用户把弹窗拖窄）：列表与详情改为单栏切换 */
+  @media (max-width: 620px) {
+    .body { position: relative; }
+    .list { width: 100%; border-right: none; }
+    .detail { display: none; }
+    body.detail-open .list { display: none; }
+    body.detail-open .detail { display: block; }
+    .only-narrow { display: flex; }
+  }
+</style>
+</head>
+<body>
+  <div class="head">
+    <span class="title">插件市场</span>
+    <button class="hbtn" id="refreshBtn" title="刷新当前列表" aria-label="刷新">
+      <svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>
+    </button>
+    <button class="hbtn" id="closeBtn" title="关闭窗口" aria-label="关闭">
+      <svg viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+    </button>
+  </div>
+  <div class="tabs" id="tabs"></div>
+  <div class="subbar" id="subbar"></div>
+  <div class="search" id="searchWrap"><input id="search" type="text" spellcheck="false" autocomplete="off" /></div>
+  <div class="body">
+    <div class="list" id="list"></div>
+    <div class="detail" id="detail"></div>
+  </div>
+  <div class="toast" id="toast"></div>
+
+<script>
+(function () {
+  'use strict';
+
+  // ---- 与宿主通信（postMessage 协议，与其它内置插件一致）----
+  var seq = 0;
+  function callAction(actionId, payload) {
+    return new Promise(function (resolve, reject) {
+      var id = ++seq;
+      function onMsg(e) {
+        var m = e.data;
+        if (m && m.type === 'callActionResult' && m.id === id) {
+          window.removeEventListener('message', onMsg);
+          if (m.ok) resolve(m.data); else reject(new Error(m.error));
+        }
+      }
+      window.addEventListener('message', onMsg);
+      window.parent.postMessage({ type: 'callAction', id: id, actionId: actionId, payload: payload || {} }, '*');
+    });
+  }
+
+  // ---- 小工具 ----
+  function el(tag, cls, text) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text != null) n.textContent = text;
+    return n;
+  }
+  function svgIcon(paths) {
+    return '<svg viewBox="0 0 24 24">' + paths + '</svg>';
+  }
+  function shortDesc(s, n) {
+    s = String(s == null ? '' : s);
+    return s.length > n ? s.slice(0, n) + '…' : s;
+  }
+  function repoName(url) {
+    return String(url || '').replace(/\/+$/, '').split('/').pop() || url || '';
+  }
+  // 与后端一致：由 skill-single-link 推断安装后的本地目录名
+  function expectedDirName(skill) {
+    var m = String(skill['skill-single-link'] || '').match(/github\.com\/[^/]+\/([^/]+)\/tree\/[^/]+(?:\/(.*))?/);
+    if (m) {
+      var path = (m[2] || '').replace(/\/+$/, '');
+      return path ? path.split('/').pop() : m[1];
+    }
+    return skill.name;
+  }
+  function post(body) {
+    return { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
+  }
+  function jsonFetch(url, opts) {
+    return fetch(url, opts).then(function (res) {
+      return res.text().then(function (t) {
+        var d = null;
+        try { d = t ? JSON.parse(t) : null; } catch (e) { /* 非 JSON 响应 */ }
+        if (!res.ok) throw new Error((d && (d.detail || d.message)) || ('HTTP ' + res.status));
+        return d;
+      });
+    });
+  }
+
+  // ---- 标签页定义（最后一条为即将上线的 UI 插件占位）----
+  var TABS = [
+    { id: 'skill', label: 'Skill', ph: '搜索名称 / 作者 / 仓库' },
+    { id: 'mcp', label: 'MCP', ph: '搜索名称 / 说明' },
+    { id: 'sensor', label: '传感器', ph: '搜索名称 / 说明' },
+    { id: 'graph', label: 'Graph', ph: '搜索名称 / 说明' },
+    { id: 'ui', label: 'UI 插件', soon: true }
+  ];
+  function tabDef(id) {
+    for (var i = 0; i < TABS.length; i++) if (TABS[i].id === id) return TABS[i];
+    return TABS[0];
+  }
+
+  var REG_SKILL = 'https://raw.githubusercontent.com/PurrPod/skills/main/registry.json';
+  var REG_MCP = 'https://raw.githubusercontent.com/PurrPod/mcps/main/registry.json';
+
+  // 每标签独立状态：列表缓存 / 已安装集合 / 加载与错误 / 搜索 / 选中项 / 进行中与待确认
+  var state = {};
+  TABS.forEach(function (t) {
+    state[t.id] = {
+      items: [], installed: null, loaded: false, loading: false, error: '',
+      q: '', sel: null, pending: {}, confirm: '', showZh: false
+    };
+  });
+  var active = 'skill';
+  // Skill 标签的排版状态：按仓库分类（默认，与完整模式一致）/ 全部；repo 为当前下钻的仓库
+  state.skill.layout = 'repo';
+  state.skill.repo = null;
+  state.skill.allBusy = false;
+
+  var tabsEl = document.getElementById('tabs');
+  var subbarEl = document.getElementById('subbar');
+  var listEl = document.getElementById('list');
+  var detailEl = document.getElementById('detail');
+  var searchWrap = document.getElementById('searchWrap');
+  var searchInput = document.getElementById('search');
+  var toastEl = document.getElementById('toast');
+  var toastTimer = null;
+
+  function toast(msg, isErr) {
+    toastEl.textContent = msg;
+    toastEl.className = 'toast on' + (isErr ? ' err' : '');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { toastEl.className = 'toast'; }, 2800);
+  }
+
+  // ---- 已安装判定（对齐 MarketPage：skill 按目录名，mcp 按 server 名，sensor 需 has_code，graph 按名称）----
+  function isInstalled(tabId, it) {
+    var st = state[tabId];
+    if (!st.installed) return false;
+    if (tabId === 'skill') return st.installed.has(String(expectedDirName(it)).toLowerCase());
+    if (tabId === 'mcp') {
+      var keys = Object.keys(it.mcpServers || {});
+      for (var i = 0; i < keys.length; i++) if (st.installed.has(keys[i].toLowerCase())) return true;
+      return false;
+    }
+    if (tabId === 'sensor') {
+      var info = st.installed.get(String(it.name || '').toLowerCase());
+      return !!(info && info.has_code);
+    }
+    return st.installed.has(String(it.name || '').toLowerCase());
+  }
+
+  // ---- 数据源（与 MarketPage 完全一致）----
+  function loadSkills(st) {
+    return Promise.all([
+      jsonFetch(REG_SKILL + '?t=' + Date.now()),
+      jsonFetch('/api/tools/skills').catch(function () { return []; })
+    ]).then(function (r) {
+      var skills = (r[0] && r[0].skills) || {};
+      st.items = Object.keys(skills).map(function (k) {
+        var s = skills[k] || {};
+        if (!s.name) s.name = k;
+        return s;
+      });
+      st.installed = new Set();
+      (Array.isArray(r[1]) ? r[1] : []).forEach(function (s) {
+        if (s && s.name) st.installed.add(String(s.name).toLowerCase());
+        if (s && s.dir_name) st.installed.add(String(s.dir_name).toLowerCase());
+      });
+    });
+  }
+  function loadMcps(st) {
+    return Promise.all([
+      jsonFetch(REG_MCP + '?t=' + Date.now()),
+      jsonFetch('/api/tools/mcp/list').catch(function () { return []; })
+    ]).then(function (r) {
+      var mcps = (r[0] && r[0].mcps) || [];
+      st.items = Array.isArray(mcps) ? mcps : Object.keys(mcps).map(function (k) {
+        var m = mcps[k] || {};
+        if (!m.name) m.name = k;
+        return m;
+      });
+      st.installed = new Set();
+      (Array.isArray(r[1]) ? r[1] : []).forEach(function (n) { if (n) st.installed.add(String(n).toLowerCase()); });
+    });
+  }
+  function loadSensors(st) {
+    return Promise.all([
+      jsonFetch('/api/tools/market/sensors?t=' + Date.now()),
+      jsonFetch('/api/tools/market/sensors/installed').catch(function () { return []; })
+    ]).then(function (r) {
+      st.items = (r[0] && r[0].sensors) || [];
+      st.installed = new Map();
+      (Array.isArray(r[1]) ? r[1] : []).forEach(function (s) {
+        if (s && s.name) st.installed.set(String(s.name).toLowerCase(), s);
+      });
+    });
+  }
+  function loadGraphs(st) {
+    return Promise.all([
+      jsonFetch('/api/tools/market/graphs?t=' + Date.now()),
+      jsonFetch('/api/tools/market/graphs/installed').catch(function () { return []; })
+    ]).then(function (r) {
+      st.items = (r[0] && r[0].graphs) || [];
+      st.installed = new Set();
+      (Array.isArray(r[1]) ? r[1] : []).forEach(function (n) { if (n) st.installed.add(String(n).toLowerCase()); });
+    });
+  }
+  function load(tabId, force) {
+    var st = state[tabId];
+    if (tabDef(tabId).soon) { render(); return Promise.resolve(); }
+    if (st.loading) return Promise.resolve();
+    if (st.loaded && !force) return Promise.resolve();
+    st.loading = true; st.error = '';
+    render();
+    var job =
+      tabId === 'skill' ? loadSkills(st) :
+      tabId === 'mcp' ? loadMcps(st) :
+      tabId === 'sensor' ? loadSensors(st) : loadGraphs(st);
+    return job
+      .then(function () { st.loaded = true; })
+      .catch(function (e) { st.error = String((e && e.message) || e || '加载失败'); })
+      .then(function () { st.loading = false; render(); });
+  }
+
+  // ---- 安装 / 卸载（请求体与 MarketPage 一致）----
+  var OPS = {
+    skill: {
+      install: function (it) { return jsonFetch('/api/tools/skills/install', post({ url: it['skill-single-link'] })); },
+      uninstall: function (it) { return jsonFetch('/api/tools/skills/uninstall', post({ name: it.name })); }
+    },
+    mcp: {
+      install: function (it) {
+        return jsonFetch('/api/tools/mcp/install', post({ config_json: JSON.stringify({ mcpServers: it.mcpServers || {} }), repo: it.repo || '' }));
+      },
+      uninstall: function (it) { return jsonFetch('/api/tools/mcp/uninstall', post({ name: it.name })); }
+    },
+    sensor: {
+      install: function (it) { return jsonFetch('/api/tools/market/sensors/install', post({ sensor: it })); },
+      uninstall: function (it) { return jsonFetch('/api/tools/market/sensors/uninstall', post({ name: it.name })); }
+    },
+    graph: {
+      install: function (it) { return jsonFetch('/api/tools/market/graphs/install', post({ name: it.name })); },
+      uninstall: function (it) { return jsonFetch('/api/tools/market/graphs/uninstall', post({ name: it.name })); }
+    }
+  };
+  function toggleInstall(tabId, it) {
+    var st = state[tabId];
+    var key = String(it.name || '');
+    if (!key || st.pending[key]) return;
+    var installed = isInstalled(tabId, it);
+    st.pending[key] = true; st.confirm = '';
+    render();
+    OPS[tabId][installed ? 'uninstall' : 'install'](it)
+      .then(function (d) {
+        toast((d && d.message) || ((installed ? '已删除 ' : '已安装 ') + key));
+        st.pending[key] = false;
+        return load(tabId, true);
+      })
+      .catch(function (e) {
+        toast(String((e && e.message) || e || '操作失败'), true);
+        st.pending[key] = false;
+        render();
+      });
+  }
+
+  function fieldsOf(it) {
+    return active === 'skill'
+      ? [it.name, it.desc, it.repo, it.author]
+      : [it.name, it.desc, it.description];
+  }
+  function descEn(it) {
+    return (active === 'skill' || active === 'mcp') ? (it.desc || '') : (it.description || '');
+  }
+  function descZh(it) {
+    return it['desc-zh'] || it['description-zh'] || '';
+  }
+  function filtered() {
+    var st = state[active];
+    var q = String(st.q || '').trim().toLowerCase();
+    if (!q) return st.items;
+    return st.items.filter(function (it) {
+      return fieldsOf(it).some(function (f) { return String(f == null ? '' : f).toLowerCase().indexOf(q) >= 0; });
+    });
+  }
+
+  // ---- Skill 按仓库分类（与完整模式一致：先按仓库聚合，再下钻）----
+  function skillGroups() {
+    var st = state.skill;
+    var q = String(st.q || '').trim().toLowerCase();
+    var items = st.items.filter(function (it) {
+      if (!q) return true;
+      return [it.name, it.desc, it.repo, it.author].some(function (f) {
+        return String(f == null ? '' : f).toLowerCase().indexOf(q) >= 0;
+      });
+    });
+    var groups = [], index = {};
+    items.forEach(function (s) {
+      var r = s.repo || '未分类';
+      if (!index[r]) { index[r] = { repo: r, skills: [] }; groups.push(index[r]); }
+      index[r].skills.push(s);
+    });
+    return groups;
+  }
+  function findGroup(repo) {
+    var gs = skillGroups(), hit = null;
+    gs.forEach(function (g) { if (g.repo === repo) hit = g; });
+    return hit;
+  }
+  // 一键（重新）下载该仓库全部 Skill（对齐 MarketPage：install-batch {urls}）
+  function installAllRepo(repo) {
+    var st = state.skill;
+    if (st.allBusy) return;
+    var g = findGroup(repo);
+    if (!g || !g.skills.length) return;
+    st.allBusy = true;
+    render();
+    jsonFetch('/api/tools/skills/install-batch', post({
+      urls: g.skills.map(function (s) { return s['skill-single-link']; })
+    }))
+      .then(function (d) {
+        if (d && d.failed && d.failed.length) toast(d.message || '部分 Skill 安装失败', true);
+        else toast((d && d.message) || '该仓库 Skill 已全部安装');
+        st.allBusy = false;
+        return load('skill', true);
+      })
+      .catch(function (e) {
+        toast(String((e && e.message) || e || '安装失败'), true);
+        st.allBusy = false;
+        render();
+      });
+  }
+
+  // ---- 渲染 ----
+  function render() {
+    renderTabs();
+    renderSubbar();
+    renderSearch();
+    renderList();
+    renderDetail();
+  }
+  function renderTabs() {
+    tabsEl.innerHTML = '';
+    TABS.forEach(function (t) {
+      var b = el('button', 'tab' + (t.id === active ? ' on' : ''), t.label);
+      b.addEventListener('click', function () {
+        if (active === t.id) return;
+        active = t.id;
+        document.body.classList.remove('detail-open');
+        render();
+        load(active);
+      });
+      tabsEl.appendChild(b);
+    });
+  }
+  // Skill 的「按仓库 / 全部」排版切换（仅 Skill 标签显示）
+  function renderSubbar() {
+    subbarEl.innerHTML = '';
+    if (active !== 'skill') { subbarEl.style.display = 'none'; return; }
+    subbarEl.style.display = 'flex';
+    var st = state.skill;
+    [['repo', '按仓库'], ['skill', '全部']].forEach(function (pair) {
+      var b = el('button', 'seg' + (st.layout === pair[0] ? ' on' : ''), pair[1]);
+      b.addEventListener('click', function () {
+        if (st.layout === pair[0]) return;
+        st.layout = pair[0];
+        st.repo = null;
+        st.sel = null;
+        document.body.classList.remove('detail-open');
+        render();
+      });
+      subbarEl.appendChild(b);
+    });
+  }
+  function renderSearch() {
+    var st = state[active];
+    if (tabDef(active).soon) { searchWrap.style.display = 'none'; return; }
+    searchWrap.style.display = '';
+    if (active === 'skill') {
+      searchInput.placeholder = st.layout === 'repo'
+        ? (st.repo ? '搜索本仓库内的 Skill' : '搜索仓库 / 名称 / 作者')
+        : tabDef(active).ph;
+    } else {
+      searchInput.placeholder = tabDef(active).ph;
+    }
+    if (searchInput.value !== st.q) searchInput.value = st.q;
+  }
+  function itemCard(st, it) {
+    var card = el('div', 'item' + (st.sel && st.sel.name === it.name ? ' on' : ''));
+    var row = el('div', 'item-name');
+    row.appendChild(el('span', 'nm', it.name || '(未命名)'));
+    if (isInstalled(active, it)) row.appendChild(el('span', 'chip', '已安装'));
+    card.appendChild(row);
+    card.appendChild(el('div', 'item-desc', shortDesc(descEn(it) || descZh(it), 42)));
+    card.addEventListener('click', function () {
+      st.sel = it; st.confirm = '';
+      document.body.classList.add('detail-open');
+      render();
+    });
+    return card;
+  }
+  function renderList() {
+    var st = state[active];
+    listEl.innerHTML = '';
+    if (tabDef(active).soon) return;
+    if (st.error) { listEl.appendChild(el('div', 'hint err', st.error)); return; }
+    if (st.loading && !st.items.length) { listEl.appendChild(el('div', 'hint', '加载中…')); return; }
+    // Skill「按仓库」：仓库列表 → 下钻到该仓库内的 Skill 列表
+    if (active === 'skill' && st.layout === 'repo') { renderRepoList(st); return; }
+    var items = filtered();
+    if (!items.length) { listEl.appendChild(el('div', 'hint', st.items.length ? '没有匹配的条目' : '暂无可安装条目')); return; }
+    items.forEach(function (it) { listEl.appendChild(itemCard(st, it)); });
+  }
+  function renderRepoList(st) {
+    var groups = skillGroups();
+    if (!groups.length) { listEl.appendChild(el('div', 'hint', st.items.length ? '没有匹配的仓库 / Skill' : '暂无可安装条目')); return; }
+    if (st.repo) {
+      var back = el('div', 'backrow', '← 返回仓库列表');
+      back.addEventListener('click', function () { st.repo = null; st.sel = null; render(); });
+      listEl.appendChild(back);
+      var g = findGroup(st.repo);
+      if (!g) { listEl.appendChild(el('div', 'hint', '该仓库下没有匹配的条目')); return; }
+      g.skills.forEach(function (it) { listEl.appendChild(itemCard(st, it)); });
+      return;
+    }
+    groups.forEach(function (g) {
+      var card = el('div', 'item');
+      var row = el('div', 'item-name');
+      row.appendChild(el('span', 'nm', repoName(g.repo) || g.repo));
+      row.appendChild(el('span', 'chip chip-neutral', g.skills.length + ' skills'));
+      card.appendChild(row);
+      card.appendChild(el('div', 'item-desc', 'by ' + ((g.skills[0] && g.skills[0].author) || 'Unknown')));
+      card.addEventListener('click', function () {
+        st.repo = g.repo; st.sel = null;
+        if (window.innerWidth < 620) document.body.classList.add('detail-open');  // 窄窗口直接进仓库详情
+        render();
+      });
+      listEl.appendChild(card);
+    });
+  }
+  function renderDetail() {
+    var st = state[active];
+    detailEl.innerHTML = '';
+    if (tabDef(active).soon) {
+      var soon = el('div', 'soon');
+      soon.appendChild(el('div', 'soon-title', 'UI 插件市场'));
+      soon.appendChild(el('div', 'soon-desc', '即将上线：在这里浏览、安装与管理极简模式的 UI 插件（侧栏 / 输入框 / 会话 / 面板 / 弹窗等区域插件）。'));
+      detailEl.appendChild(soon);
+      return;
+    }
+    // Skill「按仓库」下钻且未选中具体 Skill：展示仓库详情（含一键下载全部）
+    if (active === 'skill' && st.layout === 'repo' && st.repo && !st.sel) { renderRepoDetail(st); return; }
+    var it = st.sel;
+    if (!it) { detailEl.appendChild(el('div', 'hint', '从左侧选择一个条目查看详情')); return; }
+
+    var head = el('div', 'd-head');
+    var back = el('button', 'hbtn only-narrow');
+    back.title = '返回列表';
+    back.innerHTML = svgIcon('<path d="M19 12H5"/><path d="m12 19-7-7 7-7"/>');
+    back.addEventListener('click', function () { document.body.classList.remove('detail-open'); });
+    head.appendChild(back);
+    head.appendChild(el('h3', 'd-name', it.name || '(未命名)'));
+    detailEl.appendChild(head);
+
+    var bits = [];
+    if (it.author) bits.push(it.author);
+    if (it.repo) bits.push(repoName(it.repo));
+    if (it.version) bits.push('v' + it.version);
+    if (bits.length) detailEl.appendChild(el('div', 'd-meta', bits.join(' · ')));
+
+    var zh = descZh(it);
+    var showZh = st.showZh && !!zh;
+    var text = showZh ? zh : descEn(it);
+    if (text) detailEl.appendChild(el('p', 'd-desc', text));
+    if (zh) {
+      var lb = el('button', 'lang', showZh ? 'EN' : '中');
+      lb.title = '切换描述语言';
+      lb.addEventListener('click', function () { st.showZh = !st.showZh; renderDetail(); });
+      detailEl.appendChild(lb);
+    }
+
+    if (active === 'mcp' && it.mcpServers) {
+      detailEl.appendChild(el('div', 'd-sub', 'MCP 配置'));
+      var pre = el('pre', 'd-pre');
+      pre.textContent = JSON.stringify({ mcpServers: it.mcpServers }, null, 2);
+      detailEl.appendChild(pre);
+    }
+    if (active === 'sensor' && it.env && Object.keys(it.env).length) {
+      detailEl.appendChild(el('div', 'd-sub', '环境变量'));
+      var envBox = el('div');
+      Object.keys(it.env).forEach(function (k) {
+        envBox.appendChild(el('div', 'd-env-row', k + ' = ' + it.env[k]));
+      });
+      detailEl.appendChild(envBox);
+    }
+
+    var key = String(it.name || '');
+    var installed = isInstalled(active, it);
+    var pending = !!st.pending[key];
+    var foot = el('div', 'd-foot');
+    if (st.confirm === key) {
+      foot.appendChild(el('span', 'd-confirm', '确认删除「' + (it.name || key) + '」？'));
+      var no = el('button', 'btn', '取消');
+      no.addEventListener('click', function () { st.confirm = ''; renderDetail(); });
+      foot.appendChild(no);
+      var yes = el('button', 'btn danger', '删除');
+      yes.addEventListener('click', function () { toggleInstall(active, it); });
+      foot.appendChild(yes);
+    } else {
+      var b = el('button', 'btn' + (installed ? ' danger' : ' primary'),
+        pending ? (installed ? '删除中…' : '安装中…') : (installed ? '删除' : '下载安装'));
+      b.disabled = pending;
+      b.addEventListener('click', function () {
+        if (installed) { st.confirm = key; renderDetail(); }
+        else toggleInstall(active, it);
+      });
+      foot.appendChild(b);
+    }
+    detailEl.appendChild(foot);
+  }
+  // 仓库详情：仓库名 + Skill 数 + 一键下载全部（对齐完整模式的下钻页）
+  function renderRepoDetail(st) {
+    var g = findGroup(st.repo);
+    var skills = g ? g.skills : [];
+    var installedN = skills.filter(function (s) { return isInstalled('skill', s); }).length;
+    var head = el('div', 'd-head');
+    var back = el('button', 'hbtn only-narrow');
+    back.title = '返回仓库列表';
+    back.innerHTML = svgIcon('<path d="M19 12H5"/><path d="m12 19-7-7 7-7"/>');
+    back.addEventListener('click', function () {
+      st.repo = null; st.sel = null;
+      document.body.classList.remove('detail-open');
+      render();
+    });
+    head.appendChild(back);
+    head.appendChild(el('h3', 'd-name', repoName(st.repo) || st.repo));
+    detailEl.appendChild(head);
+    detailEl.appendChild(el('div', 'd-meta', st.repo));
+    detailEl.appendChild(el('p', 'd-desc', skills.length + ' 个 Skill' + (installedN ? '（已安装 ' + installedN + '）' : '')));
+    var foot = el('div', 'd-foot');
+    var all = el('button', 'btn primary', st.allBusy ? '安装中…' : '一键下载全部');
+    all.disabled = !!st.allBusy;
+    all.addEventListener('click', function () { installAllRepo(st.repo); });
+    foot.appendChild(all);
+    detailEl.appendChild(foot);
+  }
+
+  // ---- 交互绑定 ----
+  searchInput.addEventListener('input', function () {
+    state[active].q = searchInput.value;
+    renderList();
+  });
+  document.getElementById('refreshBtn').addEventListener('click', function () {
+    if (tabDef(active).soon) return;
+    var btn = this;
+    btn.classList.add('spin');
+    load(active, true).then(function () { btn.classList.remove('spin'); });
+  });
+  document.getElementById('closeBtn').addEventListener('click', function () {
+    // slot.hide：关闭并记住（与白条开关同一状态源），重启后仍保持关闭
+    callAction('slot.hide').catch(function () {});
+  });
+
+  // ---- 启动 ----
+  render();
+  load('skill');
+})();
+</script>
+</body>
+</html>

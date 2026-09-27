@@ -159,7 +159,17 @@ def _slot_def(p: dict) -> dict:
     可拖拽可缩放）。
     """
     area = _plugin_area(p)
-    return {"type": _area_behavior(area), "area": area}
+    out = {"type": _area_behavior(area), "area": area}
+    slot = p.get("slot")
+    if isinstance(slot, dict):
+        # float（弹窗）可选声明默认尺寸与初始居中：
+        # {"area": "popup", "size": {"w": "min(1040px, 96vw)", "h": "86vh"}, "center": true}
+        # size 的 w/h 可为数字（px）或 CSS 长度串（如 "86vh"）
+        if isinstance(slot.get("size"), dict):
+            out["size"] = slot["size"]
+        if slot.get("center"):
+            out["center"] = True
+    return out
 
 
 def _merge_plugins():

@@ -1,0 +1,7 @@
+{
+  "id": "builtin-market",
+  "name": "插件市场",
+  "icon": "<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M3 9h18\"/><path d=\"M4 9V6a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v3\"/><path d=\"M5 9v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9\"/><path d=\"M9 14h6\"/></svg>",
+  "slot": { "area": "popup", "center": true, "size": { "w": "min(1040px, 96vw)", "h": "86vh" } },
+  "entry": "index.html"
+}

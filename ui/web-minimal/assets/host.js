@@ -1523,6 +1523,17 @@
         if (el) el.style.display = 'none';   // 只隐藏调用方实例
         return { status: 'ok' };
       }
+      // 插件请求「关闭并记住」：与白条开关共用同一状态源（webminConfig.rail.hidden），
+      // 重启后保持关闭；白条图标同步置灰，点白条图标即可重新启用
+      case 'slot.hide': {
+        const pid = origin && origin.pluginId;
+        if (!pid) throw new Error('缺少调用方插件');
+        setPluginHidden(pid, true);
+        const pbtn = railButtons[pid];
+        const pdef = groupState.plugins.find((x) => x.id === pid);
+        if (pbtn && pdef) updateRailButton(pbtn, pdef);
+        return { status: 'ok' };
+      }
       // ---- 配置 ----
       case 'config.get':
         return configByPlugin[payload.plugin_id] || {};
@@ -1634,27 +1645,64 @@
   });
 
   // ---- 通用拖拽/缩放（type=float 弹窗：多插件各自独立、宿主只操作容器几何） ----
+  // 关键：在手柄上做 pointer capture。否则鼠标快速移出手柄条、落到 iframe 上时，
+  // pointermove 事件会被 iframe 吞掉，拖拽随即「失去控制」。
+  function beginFloatGesture(handle, e, onMove) {
+    const pid = e.pointerId;
+    try { handle.setPointerCapture(pid); } catch (_) { /* 不支持时退化为仅手柄内有效 */ }
+    const move = (ev) => { if (ev.pointerId === pid) onMove(ev); };
+    const end = (ev) => {
+      if (ev.pointerId !== pid) return;
+      try { handle.releasePointerCapture(pid); } catch (_) { /* noop */ }
+      handle.removeEventListener('pointermove', move);
+      handle.removeEventListener('pointerup', end);
+      handle.removeEventListener('pointercancel', end);
+    };
+    handle.addEventListener('pointermove', move);
+    handle.addEventListener('pointerup', end);
+    handle.addEventListener('pointercancel', end);
+  }
   function startFloatDrag(el, e) {
     e.preventDefault(); e.stopPropagation();
     const sx = e.clientX, sy = e.clientY, r0 = el.getBoundingClientRect();
     const w = el.offsetWidth, h = el.offsetHeight;
-    const move = (ev) => {
+    beginFloatGesture(e.currentTarget, e, (ev) => {
+      el.style.right = 'auto';
       el.style.left = Math.max(0, Math.min(HOST.innerWidth - w, r0.left + (ev.clientX - sx))) + 'px';
       el.style.top = Math.max(0, Math.min(HOST.innerHeight - h, r0.top + (ev.clientY - sy))) + 'px';
-      el.style.right = 'auto';
-    };
-    const up = () => { HOST.removeEventListener('pointermove', move); HOST.removeEventListener('pointerup', up); };
-    HOST.addEventListener('pointermove', move); HOST.addEventListener('pointerup', up);
+    });
   }
   function startFloatResize(el, e) {
     e.preventDefault(); e.stopPropagation();
     const sx = e.clientX, sy = e.clientY, r0 = el.getBoundingClientRect();
-    const move = (ev) => {
+    beginFloatGesture(e.currentTarget, e, (ev) => {
       el.style.width = Math.max(160, r0.width + (ev.clientX - sx)) + 'px';
       el.style.height = Math.max(160, r0.height + (ev.clientY - sy)) + 'px';
-    };
-    const up = () => { HOST.removeEventListener('pointermove', move); HOST.removeEventListener('pointerup', up); };
-    HOST.addEventListener('pointermove', move); HOST.addEventListener('pointerup', up);
+    });
+  }
+  // float 尺寸：数字按 px，字符串按 CSS 长度（如 "min(1040px, 96vw)" / "86vh"）
+  function applyFloatSize(el, size, i) {
+    if (!size) return;
+    const w = size.w, h = size.h;
+    if (typeof w === 'string' && w) {
+      el.style.width = w;
+    } else if (Number(w) > 0) {
+      const wpx = Number(w);
+      el.style.width = wpx + 'px';
+      el.style.left = `calc(100% - ${wpx + (i || 0) * 26}px - 16px)`;   // 保持右上角起始
+    }
+    if (typeof h === 'string' && h) el.style.height = h;
+    else if (Number(h) > 0) el.style.height = Number(h) + 'px';
+  }
+  // 初始居中（须在 appendChild 之后调用，否则拿不到实际尺寸）
+  function centerFloat(el) {
+    const railEl = HOST.document.getElementById('rail');
+    const railW = railEl ? railEl.getBoundingClientRect().width : 0;
+    const avail = Math.max(0, HOST.innerWidth - railW);
+    const w = el.offsetWidth, h = el.offsetHeight;
+    el.style.right = 'auto';
+    el.style.left = Math.max(0, Math.round(railW + (avail - w) / 2)) + 'px';
+    el.style.top = Math.max(0, Math.round((HOST.innerHeight - h) / 2)) + 'px';
   }
   // float 类型天然可拖拽可缩放：总会补上两个手柄（宿主不感知具体插件）
   function attachFloatHandles(el) {
@@ -1967,7 +2015,11 @@
         el.dataset.finst = String(i);
         el.style.top = 46 + i * 26 + 'px';
         el.style.left = `calc(100% - ${300 + i * 26}px - 16px)`;
+        // 插件可声明默认尺寸（slot.size={w,h}：数字=px，字符串=CSS 长度）
+        applyFloatSize(el, def.size, i);
         HOST.document.body.appendChild(el);
+        // 声明 center 的弹窗初始居中（居中区域避开左侧白条，组件窗口绝不伸入白条）
+        if (def.center) centerFloat(el);
         slotByPluginId[p.id] = sid;
         const fr = mountFrame(el, p);
         if (fr) frames[sid].push(fr);
