@@ -466,6 +466,8 @@ body.settings-open [data-layer="settings"] { display: flex; }
 
 .cfg-add-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .cfg-add-row input, .cfg-add-row select { flex: 1; min-width: 120px; }
+.cfg-registry-row { display: flex; gap: 8px; align-items: center; margin-top: 6px; }
+.cfg-registry-row input { flex: 0 0 auto; width: 260px; max-width: 62%; }
 
 .cfg-tip { font-size: 12px; color: var(--wm-label-2nd); padding: 8px 10px; border-radius: 8px; background: var(--wm-bl-100); margin-bottom: 14px; }
 

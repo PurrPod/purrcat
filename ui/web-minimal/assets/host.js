@@ -1273,7 +1273,7 @@
           body.appendChild(head);
           if (it === 'sandbox') {
             const reg = HOST.document.createElement('div');
-            reg.className = 'cfg-add-row';
+            reg.className = 'cfg-registry-row';
             const inp = HOST.document.createElement('input');
             inp.type = 'text'; inp.placeholder = 'ghcr.io/…（默认 ghcr.io/purrpod）'; inp.value = cfgState.sandboxRegistry;
             inp.addEventListener('input', function () { cfgState.sandboxRegistry = inp.value; });
