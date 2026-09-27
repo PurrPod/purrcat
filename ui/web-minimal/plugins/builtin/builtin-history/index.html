@@ -57,6 +57,31 @@
   /* workflow hint：系统注入的工作流提示，比工具块更轻，走虚线边框区分 */
   .hint-body { font-family: var(--wm-mono, ui-monospace, Consolas, monospace); white-space: pre-wrap; word-break: break-all; font-size: 12px; line-height: 1.55; color: var(--wm-label-2nd, #4c5560); background: var(--wm-bl-100, #f2f4f7); border: 1px dashed var(--wm-border, rgba(15,17,21,.14)); border-radius: 8px; padding: 8px 10px; max-height: 18rem; overflow-y: auto; }
 
+  /* 流式思考块：Agent 思考期间用 /status 的 live_reasoning 实时透出（对齐原 UI ReasoningBubble 的 live 态） */
+  .row.live {
+    border: 1px dashed rgba(15,17,21,0.22);
+    background: rgba(15,17,21,0.03);
+    border-radius: 10px;
+    padding: 4px 6px;
+  }
+  .live-head { display: flex; align-items: center; gap: 6px; padding: 4px 6px; }
+  .live-ico { display: flex; align-items: center; color: var(--wm-label-2nd, #4c5560); }
+  .live-ico svg { width: 14px; height: 14px; }
+  .live-ico.spin svg { animation: wm-spin .9s linear infinite; }
+  .live-title { font-size: 12px; font-weight: 600; color: var(--wm-label-2nd, #4c5560); }
+  .live-btn {
+    margin-left: auto; display: flex; align-items: center; justify-content: center;
+    width: 22px; height: 22px; padding: 0; border: none; border-radius: 6px;
+    background: transparent; color: var(--wm-label-dim, #8b96a3); cursor: pointer;
+  }
+  .live-btn + .live-btn { margin-left: 2px; }
+  .live-btn:hover { background: var(--wm-bg-hover, #e9edf1); color: var(--wm-label, #16191d); }
+  .live-btn:disabled { opacity: .45; cursor: default; }
+  .live-btn svg { width: 14px; height: 14px; }
+  .live-btn.collapsed svg { transform: rotate(-90deg); }
+  .live-hint { padding: 0 6px 6px; font-size: 12px; color: var(--wm-label-dim, #8b96a3); }
+  .live-body { margin-top: 4px; }
+
   /* 复制按钮：hover 消息时在右上角浮现（对齐完整模式的 ClipboardCopy 交互） */
   .has-copy { position: relative; }
   .copy-btn {
@@ -445,26 +470,31 @@
     });
     listEl.innerHTML = '';
     lastRows = rows || [];
-    if (!rows || !rows.length) {
+    var hasRows = !!(rows && rows.length);
+    // 空会话且 Agent 空闲 → 空态；思考中则继续往下渲染流式思考块（首条消息尚未落地）
+    if (!hasRows && !thinking) {
       listEl.innerHTML = '<div class="empty">暂无消息</div>';
       return;
     }
-    rows.forEach(function (m, i) {
-      var node = renderMessage(m);
-      if (!node) return;   // 整条被展示开关隐藏
-      node.setAttribute('data-k', String(i));
-      node.querySelectorAll('.row.fold').forEach(function (f, fi) {
-        var fk = i + '#' + fi;
-        f.setAttribute('data-fk', fk);
-        if (openSet[fk]) {
-          var cap = f.querySelector('.cap'); if (cap) cap.classList.add('open');
-          var fb = f.querySelector('.fold-body'); if (fb) fb.classList.add('open');
-        }
+    if (hasRows) {
+      rows.forEach(function (m, i) {
+        var node = renderMessage(m);
+        if (!node) return;   // 整条被展示开关隐藏
+        node.setAttribute('data-k', String(i));
+        node.querySelectorAll('.row.fold').forEach(function (f, fi) {
+          var fk = i + '#' + fi;
+          f.setAttribute('data-fk', fk);
+          if (openSet[fk]) {
+            var cap = f.querySelector('.cap'); if (cap) cap.classList.add('open');
+            var fb = f.querySelector('.fold-body'); if (fb) fb.classList.add('open');
+          }
+        });
+        listEl.appendChild(node);
       });
-      listEl.appendChild(node);
-    });
-    // 消息区动作行（记忆压缩 / 会话分支 / trace2skill）：仅在有消息且 Agent 空闲时出现
-    if (!thinking) listEl.appendChild(buildActions());
+      // 消息区动作行（记忆压缩 / 会话分支 / trace2skill）：仅在有消息且 Agent 空闲时出现
+      if (!thinking) listEl.appendChild(buildActions());
+    }
+    if (thinking) appendLive(stick);
     // 内部滚动位置放在所有节点都进 DOM 之后再恢复：折叠块 display:none 时设 scrollTop 会被夹成 0
     Object.keys(innerTop).forEach(function (fk) {
       var f = listEl.querySelector('.row.fold[data-fk="' + fk + '"]');
@@ -586,6 +616,80 @@
       .finally(function () { t2sBusy = false; okBtn.disabled = false; });
   });
 
+  // ---------- 流式思考块（Agent 思考期间实时透出思考增量）----------
+  // 后端只在「一条消息真正落地」时才追加进历史（agent._append_history），思考阶段历史里
+  // 没有新内容，所以只轮询历史会显得"卡住"、像要等整轮结束才刷新。这里对齐原 UI：
+  // 思考期间用 /status 的 live_reasoning + phase 实时渲染流式块（THINKING/PROCESSING/ABORTING）。
+  var live = { text: '', phase: 'idle' };
+  var liveOpen = true;   // 展开/收起状态跨轮询保留
+
+  var ICON_PAUSE = SVG_HEAD + '<rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>';
+  var ICON_CHEVRON = SVG_HEAD + '<path d="m6 9 6 6 6-6"/></svg>';
+
+  function liveTitle() {
+    if (live.phase === 'processing') return '工具执行中…';
+    if (live.phase === 'aborting') return '中断中…';
+    return '思考中…';
+  }
+  function appendLive(stick) {
+    var wrap = document.createElement('div');
+    wrap.className = 'row live';
+    var head = document.createElement('div');
+    head.className = 'live-head';
+    var spinning = live.phase === 'processing' || live.phase === 'aborting';
+    var ico = document.createElement('span');
+    ico.className = 'live-ico' + (spinning ? ' spin' : '');
+    ico.innerHTML = spinning ? ICON_SPIN : ICON_BRAIN;
+    var title = document.createElement('span');
+    title.className = 'live-title';
+    title.textContent = liveTitle();
+    // 中断当前回合（对齐原 UI ReasoningBubble 的 onPause）
+    var pause = document.createElement('button');
+    pause.type = 'button'; pause.className = 'live-btn'; pause.title = '中断当前回合';
+    pause.innerHTML = ICON_PAUSE;
+    pause.addEventListener('click', function () {
+      pause.disabled = true;
+      callAction('chat.interrupt').catch(function () {}).finally(function () { pause.disabled = false; });
+    });
+    head.appendChild(ico); head.appendChild(title); head.appendChild(pause);
+    if (live.text) {
+      var tg = document.createElement('button');
+      tg.type = 'button';
+      tg.className = 'live-btn' + (liveOpen ? '' : ' collapsed');
+      tg.title = liveOpen ? '收起思考内容' : '展开思考内容';
+      tg.innerHTML = ICON_CHEVRON;
+      tg.addEventListener('click', function () { liveOpen = !liveOpen; renderMessages(lastRows); });
+      head.appendChild(tg);
+    }
+    wrap.appendChild(head);
+    var body = null;
+    if (live.text) {
+      if (liveOpen) {
+        body = document.createElement('div');
+        body.className = 'reason-body live-body';
+        body.textContent = live.text;
+        wrap.appendChild(body);
+      }
+    } else {
+      var hint = document.createElement('div');
+      hint.className = 'live-hint';
+      hint.textContent = live.phase === 'processing' ? '正在执行工具…' : '正在思考…';
+      wrap.appendChild(hint);
+    }
+    listEl.appendChild(wrap);
+    // 流式跟随：本来贴着底部时让思考内容始终停在最新一段
+    if (body && stick) body.scrollTop = body.scrollHeight;
+  }
+  // 只增量刷新流式思考块（不重建整段历史）：思考期间的高频拍走这条路
+  function updateLiveOnly() {
+    if (!thinking) return;
+    var stick = listEl.scrollHeight - listEl.scrollTop - listEl.clientHeight < 40;
+    var old = listEl.querySelector('.row.live');
+    if (old) old.remove();
+    appendLive(stick);
+    if (stick) listEl.scrollTop = listEl.scrollHeight;
+  }
+
   // ---------- 数据装载 ----------
   var seq = 0;
   function callAction(actionId, payload) {
@@ -642,6 +746,7 @@
   // 复刻同样节奏：activeSessionId 存在即轮询，is_thinking 决定快/慢两档，每次拉全量历史并合并本地乐观消息去重。
   var POLL_FAST = 500, POLL_SLOW = 1500;
   var pollTimer = null;
+  var tick = 0;   // 轮询拍数（对齐原 UI：思考期间历史降频、status 保持高频）
   function stopPoll() { if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } }
   function setPoll(intv) {
     if (pollTimer && pollTimer._i === intv) return;
@@ -655,13 +760,21 @@
   }
   function pollTick() {
     if (!activeSessionId) { stopPoll(); return; }
+    tick += 1;
     fetch('/api/sessions/' + encodeURIComponent(activeSessionId) + '/status')
       .then(function (r) { return r.json(); })
       .then(function (st) {
         var t = !!(st && st.is_thinking);
-        if (t !== thinking) { thinking = t; rerenderActions(); }   // 思考中隐藏动作行
+        // 对齐原 UI：status 保持 500ms 高频（流式思考顺滑）；历史是全量 deepcopy 较重，
+        // 思考期间降为每 3 拍拉一次，其余拍只增量更新流式思考块，避免重建整段历史。
+        var pollHistory = !t || tick % 3 === 1;
+        if (t !== thinking) { thinking = t; rerenderActions(); pollHistory = true; }
+        // 流式思考内容与交互阶段（思考结束自动清空，改由 assistant 消息的 reasoning_content 渲染）
+        live.text = t ? String((st && st.live_reasoning) || '') : '';
+        live.phase = t ? String((st && st.phase) || 'thinking') : 'idle';
         setPoll(t ? POLL_FAST : POLL_SLOW);
-        load(activeSessionId);
+        if (pollHistory) load(activeSessionId);
+        else updateLiveOnly();
       })
       .catch(function () { setPoll(POLL_SLOW); });   // 会话暂不可用等：保持慢档，不轰炸
   }
@@ -673,6 +786,7 @@
       localBuffer = [];   // 切换会话：本地乐观消息属于旧会话，丢弃
       activeSessionId = m.data && m.data.session_id;
       thinking = false;
+      live.text = ''; live.phase = 'idle';
       ensurePoll();
       refresh();
     } else if (m.event === 'conversation.updated') {
@@ -688,6 +802,13 @@
         listEl.appendChild(renderMessage({ role: 'user', content: txt }));
       });
       if (evs.length) listEl.scrollTop = listEl.scrollHeight;
+      // 发送即进入思考态：不等下一轮 /status，立刻显示"思考中"块（对齐原 UI 的即时反馈）
+      if (evs.length && !thinking) {
+        thinking = true; live.text = ''; live.phase = 'thinking';
+        rerenderActions();          // 思考中收起动作行
+        appendLive(true);           // 复用同一套流式块，后续由 500ms 轮询续写
+        listEl.scrollTop = listEl.scrollHeight;
+      }
     }
   });
   refresh();
