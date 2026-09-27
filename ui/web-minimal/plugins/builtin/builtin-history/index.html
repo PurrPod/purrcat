@@ -283,9 +283,15 @@
     // 折叠块是嵌在消息 col 里的 .row.fold，故直接以每个折叠块的 data-fk(消息序号#块序号)为稳定 key，
     // 不能用消息 wrap 的 data-k（折叠块上取不到），否则收集为空、展开状态丢
     var openSet = {};
+    // 展开块内部（思考/工具内容限高内滚）的滚动位置也要跨重建保留，
+    // 否则每次轮询重建都会被弹回内容顶部。同样以 data-fk 为稳定 key。
+    var innerTop = {};
     listEl.querySelectorAll('.row.fold[data-fk]').forEach(function (f) {
+      var fk = f.getAttribute('data-fk');
       var capc = f.querySelector('.cap');
-      if (capc && capc.classList.contains('open')) openSet[f.getAttribute('data-fk')] = true;
+      if (capc && capc.classList.contains('open')) openSet[fk] = true;
+      var fb = f.querySelector('.fold-body');
+      if (fb && fb.scrollTop > 0) innerTop[fk] = fb.scrollTop;
     });
     listEl.innerHTML = '';
     if (!rows || !rows.length) {
@@ -304,6 +310,13 @@
         }
       });
       listEl.appendChild(node);
+    });
+    // 内部滚动位置放在所有节点都进 DOM 之后再恢复：折叠块 display:none 时设 scrollTop 会被夹成 0
+    Object.keys(innerTop).forEach(function (fk) {
+      var f = listEl.querySelector('.row.fold[data-fk="' + fk + '"]');
+      if (!f) return;
+      var fb = f.querySelector('.fold-body');
+      if (fb) fb.scrollTop = innerTop[fk];
     });
     listEl.scrollTop = stick ? listEl.scrollHeight : prevTop;
   }
