@@ -43,10 +43,40 @@
   // 由后端 webminConfig.active 持久化，重启后恢复用户上次的选择。
   const activeBySlot = {};
 
+  // ---- 图标集（宿主内置内联 SVG 线性图标，描边跟随 currentColor）----
+  // 插件在 plugin.json 的 icon 写这里登记的名字即可；也可内嵌自己的 <svg>…</svg>；
+  // 写其它任意字符则按文本字形渲染（兼容只给字符的老插件）。尺寸由宿主 CSS 统一控制。
+  const ICON_SVG = {
+    list: '<path d="M3 6h.01M3 12h.01M3 18h.01"/><path d="M8 6h13M8 12h13M8 18h13"/>',
+    pencil: '<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
+    history: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/>',
+    image: '<rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>',
+    globe: '<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>',
+    'panel-left': '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/>',
+    'layout-panel-left': '<rect width="7" height="18" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/>',
+    settings: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
+  };
+  const ICON_SVG_ATTR = 'viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"';
+  // 把 icon 画进容器：登记名 → 内置 SVG；<svg> → 去脚本后原样内嵌；其它 → 文本字形
+  function paintIcon(el, icon, fallbackChar) {
+    const raw = String(icon == null ? '' : icon).trim();
+    if (/^<svg[\s>]/i.test(raw)) {
+      el.innerHTML = raw.replace(/<script[\s\S]*?<\/script>/gi, '');
+      return;
+    }
+    if (ICON_SVG[raw]) {
+      el.innerHTML = '<svg ' + ICON_SVG_ATTR + '>' + ICON_SVG[raw] + '</svg>';
+      return;
+    }
+    el.textContent = raw || fallbackChar || '';
+  }
+  function paintPluginIcon(el, p) {
+    const nm = (p && (p.name || p.id)) || '?';
+    paintIcon(el, p && p.icon, (nm.charAt(0) || '?').toUpperCase());
+  }
+
   // ---- 图标栏（固定组件）----
   const RAIL_STAGES = 3;
-  // 图标与名称由插件本体(plugin.json)定义；无 icon 时退回名称首字符
-  function railIcon(p) { return p.icon || ((p.name || p.id || '?').charAt(0) || '?').toUpperCase(); }
   function isRailPlugin(p) { return p && p.entry; }
   function railHidden(id) { return !!(railState.hidden && railState.hidden[id]); }
   function applySlotHidden(slot, hidden) {
@@ -97,7 +127,7 @@
     const t = HOST.document.getElementById('railToggle');
     if (t) {
       // 图标形态固定不变，仅通过展开/收起影响侧栏布局
-      t.textContent = '☰';
+      paintIcon(t, 'panel-left', '☰');
       t.title = '收起 / 展开插件栏';
     }
   }
@@ -153,7 +183,7 @@
         btn.title = (p.name || p.id);
         const g = HOST.document.createElement('span');
         g.className = 'rail-glyph';
-        g.textContent = railIcon(p);
+        paintPluginIcon(g, p);
         btn.appendChild(g);
         const nm = HOST.document.createElement('span');
         nm.className = 'rail-name';
@@ -175,7 +205,7 @@
       cb.title = '面板容器';
       const cg = HOST.document.createElement('span');
       cg.className = 'rail-glyph';
-      cg.textContent = '▦';
+      paintIcon(cg, 'layout-panel-left', '▦');
       cb.appendChild(cg);
       const cnm = HOST.document.createElement('span');
       cnm.className = 'rail-name';
@@ -196,7 +226,7 @@
     sb.title = '设置';
     const sg = HOST.document.createElement('span');
     sg.className = 'rail-glyph';
-    sg.textContent = '⚙';
+    paintIcon(sg, 'settings', '⚙');
     sb.appendChild(sg);
     const snm = HOST.document.createElement('span');
     snm.className = 'rail-name';
@@ -1731,7 +1761,7 @@
         item.className = 'wm-pp_menu-item' + (p.id === st.activeId ? ' active' : '');
         const g = HOST.document.createElement('span');
         g.className = 'wm-pp_menu-ico';
-        g.textContent = p.icon || (p.name || p.id || '?').charAt(0);
+        paintPluginIcon(g, p);
         item.appendChild(g);
         const nm = HOST.document.createElement('span');
         nm.textContent = p.name || p.id;

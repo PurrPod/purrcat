@@ -1,7 +1,7 @@
 {
   "id": "builtin-background",
   "name": "背景",
-  "icon": "▦",
+  "icon": "image",
   "slot": { "area": "background" },
   "entry": "index.html",
   "configSchema": [

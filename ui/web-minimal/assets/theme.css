@@ -174,7 +174,10 @@ body.rail-2 .rail-brand { display: flex; }
 .wm-rail .rail-ico:hover { background: var(--wm-bg-hover); color: var(--wm-label); }
 .wm-rail .rail-ico.on { background: var(--wm-bg-active); color: var(--wm-label); }
 .wm-rail .rail-ico.off { opacity: 0.4; }
-.wm-rail .rail-ico .rail-glyph { flex: none; }
+.wm-rail .rail-ico .rail-glyph { flex: none; display: flex; align-items: center; justify-content: center; width: 20px; height: 20px; }
+/* 内置 SVG 图标统一尺寸；描边与颜色跟随按钮 currentColor */
+.wm-rail .rail-glyph svg { display: block; width: 18px; height: 18px; }
+.wm-rail .rail-toggle svg { display: block; width: 18px; height: 18px; }
 .wm-rail .rail-ico .rail-name { display: none; flex: 1; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 13px; }
 
 /* 阶段 0：收起，只保留顶部开关 */
@@ -617,7 +620,8 @@ body.rail-nosidebar.has-panels .wm-main {
 }
 .wm-pp_menu-item:hover { background: var(--wm-bg-hover); color: var(--wm-label); }
 .wm-pp_menu-item.active { background: var(--wm-bg-active); color: var(--wm-label); }
-.wm-pp_menu-ico { flex: none; width: 18px; text-align: center; }
+.wm-pp_menu-ico { flex: none; display: flex; align-items: center; justify-content: center; width: 18px; height: 18px; }
+.wm-pp_menu-ico svg { display: block; width: 15px; height: 15px; }
 /* 中栏与聊天区之间的纵向分隔条：仅在中栏打开时出现，拖动调整中栏宽度 */
 .wm-pbar {
   display: none;

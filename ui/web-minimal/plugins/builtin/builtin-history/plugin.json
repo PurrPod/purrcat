@@ -1,7 +1,7 @@
 {
   "id": "builtin-history",
   "name": "历史会话",
-  "icon": "❏",
+  "icon": "history",
   "slot": { "area": "conversation" },
   "entry": "index.html",
   "configSchema": [

@@ -1,7 +1,7 @@
 {
   "id": "builtin-input",
   "name": "输入框",
-  "icon": "✎",
+  "icon": "pencil",
   "slot": { "area": "input" },
   "entry": "index.html",
   "configSchema": [

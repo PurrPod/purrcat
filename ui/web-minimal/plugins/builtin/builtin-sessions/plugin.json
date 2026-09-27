@@ -1,7 +1,7 @@
 {
   "id": "builtin-sessions",
   "name": "会话列表",
-  "icon": "≡",
+  "icon": "list",
   "slot": { "area": "sidebar" },
   "entry": "index.html",
   "configSchema": [

@@ -1,7 +1,7 @@
 {
   "id": "builtin-browser",
   "name": "浏览器",
-  "icon": "◉",
+  "icon": "globe",
   "slot": { "area": "panel" },
   "entry": "index.html"
 }
