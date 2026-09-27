@@ -442,7 +442,10 @@ body.settings-open [data-layer="settings"] { display: flex; }
 .cfg-field.switch-row { flex-direction: row; align-items: center; justify-content: space-between; }
 .cfg-field.switch-row .switch { flex: none; }
 .cfg-field.wide { grid-column: 1 / -1; }
-.cfg-range { width: 100%; accent-color: var(--wm-accent); cursor: pointer; }
+/* 滑轨自定义：未拉部分白色，已拉部分由 cfgRangeField 注入强调色渐变 */
+.cfg-range { -webkit-appearance: none; appearance: none; width: 100%; height: 6px; border-radius: 999px; background: #fff; cursor: pointer; outline: none; }
+.cfg-range::-webkit-slider-runnable-track { height: 6px; border-radius: 999px; background: transparent; }
+.cfg-range::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; margin-top: -4px; border-radius: 50%; background: var(--wm-accent); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.1); }
 .cfg-label { font-size: 11px; font-weight: 600; color: var(--wm-label-dim); text-transform: uppercase; letter-spacing: 0.3px; }
 .cfg-input {
   width: 100%; padding: 7px 9px; border: 1px solid var(--wm-border); border-radius: 8px;

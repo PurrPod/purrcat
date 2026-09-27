@@ -294,8 +294,15 @@
     const valEl = HOST.document.createElement('div');
     valEl.className = 'range-val';
     function upd() { valEl.textContent = fmt(Number(rng.value)); }
-    rng.addEventListener('input', function () { upd(); onInput(Number(rng.value)); });
+    // 已拉部分填强调色，未拉部分保持白色
+    function paint() {
+      const span = (Number(max) - Number(min)) || 1;
+      const pct = Math.max(0, Math.min(100, (Number(rng.value) - Number(min)) / span * 100));
+      rng.style.background = 'linear-gradient(90deg, var(--wm-accent) 0 ' + pct + '%, #fff ' + pct + '% 100%)';
+    }
+    rng.addEventListener('input', function () { paint(); upd(); onInput(Number(rng.value)); });
     upd();
+    paint();
     f.appendChild(rng);
     f.appendChild(valEl);
     grid.appendChild(f);
