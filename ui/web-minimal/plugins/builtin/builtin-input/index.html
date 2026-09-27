@@ -155,11 +155,13 @@
   .ctx-btn svg { width: 20px; height: 20px; }
   .ctx-btn .track { stroke: rgba(15,17,21,.18); }
   .ctx-btn .arc { stroke: var(--wm-accent, #16191d); transition: stroke-dasharray .3s ease; }
+  /* 气泡放在圆环左侧、与圆环同一行：输入槽 overflow:hidden 且高度仅容纳输入条，
+     向上弹出会越出 iframe 被裁掉，向左展开则完全落在容器内，无需改动容器尺寸 */
   .ctx-tip {
-    display: none; position: absolute; right: 0; bottom: calc(100% + 8px);
-    min-width: 196px; padding: 8px 10px; border-radius: 10px;
+    display: none; position: absolute; right: calc(100% + 10px); bottom: 0;
+    padding: 5px 9px; border-radius: 8px;
     background: var(--wm-bl-0, #fff); box-shadow: var(--wm-shadow, 0 8px 28px rgba(15,17,21,.18));
-    font-size: 12px; line-height: 1.75; color: var(--wm-label-2nd, #4c5560); white-space: nowrap; z-index: 12;
+    font-size: 12px; line-height: 1.4; color: var(--wm-label-2nd, #4c5560); white-space: nowrap; z-index: 12;
   }
   .ctx-tip b { color: var(--wm-label, #16191d); font-weight: 600; }
   .ctx-wrap:hover .ctx-tip { display: block; }
@@ -511,11 +513,10 @@
     var arcLen = ratio > 0 ? Math.max(ratio * CTX_C, 2.4) : 0;
     ctxArc.setAttribute('stroke-dasharray', arcLen.toFixed(2) + ' ' + CTX_C.toFixed(2));
     var pct = max > 0 ? (used / max) * 100 : 0;
+    // 精简单行，避免气泡过高（输入槽高度有限）
     ctxTip.innerHTML =
-      '已占用：<b>' + fmtNum(used) + '</b><br>' +
-      '剩余：<b>' + fmtNum(Math.max(0, max - used)) + '</b><br>' +
-      '最大窗口：<b>' + fmtNum(max) + '</b><br>' +
-      '占用百分比：<b>' + pct.toFixed(1) + '%</b>';
+      '已占用 <b>' + fmtNum(used) + ' / ' + fmtNum(max) + '</b>' +
+      '（<b>' + pct.toFixed(1) + '%</b>）';
   }
   function refreshCtx() {
     // Token 用量是 Agent 的全局状态，不依赖当前会话，始终显示
