@@ -84,9 +84,13 @@
     const anchor = HOST.document.querySelector(`[data-slot="${slot}"]`);
     if (anchor) anchor.style.display = hidden ? 'none' : '';
     if (slot === 'sidebar') HOST.document.body.classList.toggle('rail-nosidebar', !!hidden);
-    // float：弹窗实例（data-fslot=slot）
+    // float：自由浮窗实例（data-fslot=slot）
     HOST.document.querySelectorAll(`.wm-float[data-fslot="${slot}"]`).forEach((el) => {
       el.style.display = hidden ? 'none' : 'block';
+    });
+    // modal：模态弹窗（data-mslot=slot），连遮罩一起显隐
+    HOST.document.querySelectorAll(`.wm-modal-wrap[data-mslot="${slot}"]`).forEach((el) => {
+      el.style.display = hidden ? 'none' : 'flex';
     });
     // panel：内容插件驻宿主单例容器（data-pslot=panel），隐藏/显示容器并切换让位
     if (slot === 'panel') {
@@ -130,6 +134,9 @@
       paintIcon(t, 'panel-left', '☰');
       t.title = '收起 / 展开插件栏';
     }
+    // 白条宽度变化（48px ↔ 196px）会改变可用区域：弹窗需重排，
+    // 否则居中弹窗的左缘会被展开后的白条压住
+    reflowFloats();
   }
   function applyRailOpacity() {
     let o = typeof railState.opacity === 'number' ? railState.opacity : 1;
@@ -438,7 +445,7 @@
   // 插件卡片（与配置中心统一的 cfg-card 风格）：标题/行为chip/状态chip + 打开关闭 + 抽屉菜单 + 可视化字段
   function renderPluginCard(container, p, cfg) {
     const type = (p.slotDef || {}).type || 'fixed';
-    const typeName = type === 'fixed' ? '固定' : (type === 'panel' ? '面板' : '弹窗');
+    const typeName = type === 'fixed' ? '固定' : (type === 'panel' ? '面板' : (type === 'modal' ? '模态' : '浮窗'));
     const vis = pluginVisible(p);
     const card = HOST.document.createElement('div');
     card.className = 'cfg-card';
@@ -642,7 +649,8 @@
   // area 是插件声明的唯一维度；行为（单例 / 容器抽屉 / 浮窗）由宿主按区域内置。
   const AREA_LABEL = {
     rail: '左侧白条', sidebar: '会话列表', input: '输入框', background: '背景',
-    conversation: '历史会话', 'panel-container': '面板容器', panel: '面板', popup: '弹窗类',
+    conversation: '历史会话', 'panel-container': '面板容器', panel: '面板',
+    pet: '浮窗类', popup: '模态弹窗',
   };
   // 宿主原生资产（非插件）挂在所属区域内；singleton 标记「同区域同时只能启用一个插件」
   const UI_GROUPS = [
@@ -653,6 +661,7 @@
     { area: 'conversation', singleton: true },
     { area: 'panel-container', host: renderPanelContainerSettings },
     { area: 'panel' },
+    { area: 'pet' },
     { area: 'popup' },
   ];
   function cfgFor(p) { return Object.assign({}, configByPlugin[p.id] || {}); }
@@ -1694,6 +1703,14 @@
     if (typeof h === 'string' && h) el.style.height = h;
     else if (Number(h) > 0) el.style.height = Number(h) + 'px';
   }
+  // modal 尺寸：只设宽高（位置由遮罩 flex 居中，不写 left/top）
+  function applyModalSize(el, size) {
+    if (!size) return;
+    if (typeof size.w === 'string' && size.w) el.style.width = size.w;
+    else if (Number(size.w) > 0) el.style.width = Number(size.w) + 'px';
+    if (typeof size.h === 'string' && size.h) el.style.height = size.h;
+    else if (Number(size.h) > 0) el.style.height = Number(size.h) + 'px';
+  }
   // 初始居中（须在 appendChild 之后调用，否则拿不到实际尺寸）
   function centerFloat(el) {
     const railEl = HOST.document.getElementById('rail');
@@ -1704,6 +1721,25 @@
     el.style.left = Math.max(0, Math.round(railW + (avail - w) / 2)) + 'px';
     el.style.top = Math.max(0, Math.round((HOST.innerHeight - h) / 2)) + 'px';
   }
+  // 窗口尺寸变化：弹窗尺寸用 vw/vh 时会自动跟随，但像素位置不会——
+  // 居中声明的重新居中，其余夹回视口内，避免窗口缩小后被挤出屏幕/被覆盖
+  function reflowFloats() {
+    Object.keys(frames).forEach((sid) => {
+      (frames[sid] || []).forEach((f) => {
+        const el = f.el;
+        if (!el || !el.classList.contains('wm-float') || el.style.display === 'none') return;
+        const p = groupState.plugins.find((x) => x.id === f.pluginId);
+        const def = (p && p.slotDef) || {};
+        if (def.center) { centerFloat(el); return; }
+        const w = el.offsetWidth, h = el.offsetHeight;
+        const r = el.getBoundingClientRect();
+        el.style.right = 'auto';
+        el.style.left = Math.max(0, Math.min(Math.max(0, HOST.innerWidth - w), r.left)) + 'px';
+        el.style.top = Math.max(0, Math.min(Math.max(0, HOST.innerHeight - h), r.top)) + 'px';
+      });
+    });
+  }
+  HOST.addEventListener('resize', reflowFloats);
   // float 类型天然可拖拽可缩放：总会补上两个手柄（宿主不感知具体插件）
   function attachFloatHandles(el) {
     el.querySelectorAll('.wm-fgrab, .wm-fresize').forEach((hd) => hd.remove());
@@ -1983,7 +2019,7 @@
     });
   }
 
-  // ---- 动态挂载全部类型窗口（type：fixed 锚定单例 / panel 分栏抽屉 / float 弹窗多开） ----
+  // ---- 动态挂载全部类型窗口（type：fixed 锚定单例 / panel 分栏抽屉 / float 自由浮窗多开 / modal 模态弹窗） ----
   function mountAll() {
     // 1) fixed：按 area 挂到 html 锚定容器；优先挂载用户上次选中的插件（activeBySlot），否则取第一个
     Object.keys(slotMap).forEach((sid) => {
@@ -2001,7 +2037,7 @@
     });
     // 2) panel：无面板插件则不占位；有则建 .wm-ppanel（右上角抽屉切换）
     mountPanels();
-    // 3) float：每个插件一个独立 .wm-float，可拖拽可缩放
+    // 3) pet（area=pet）：自由浮窗，每个插件一个独立 .wm-float，可拖拽可缩放
     Object.keys(slotMap).forEach((sid) => {
       const list = slotMap[sid];
       const def = (list[0].slotDef || {});
@@ -2024,6 +2060,29 @@
         const fr = mountFrame(el, p);
         if (fr) frames[sid].push(fr);
         attachFloatHandles(el);
+      });
+    });
+    // 4) modal（area=popup）：模态弹窗，遮罩铺满主区（白条与设置中心在其之上），
+    //    固定居中、不可拖拽；尺寸用 CSS 长度随窗口自适应，无需 resize 重排
+    Object.keys(slotMap).forEach((sid) => {
+      const list = slotMap[sid];
+      const def = (list[0].slotDef || {});
+      if (def.type !== 'modal') return;
+      pluginBySlot[sid] = list[0];
+      frames[sid] = [];
+      list.forEach((p) => {
+        const wrap = HOST.document.createElement('div');
+        wrap.className = 'wm-modal-wrap wm-mount';
+        wrap.dataset.mslot = sid;
+        const box = HOST.document.createElement('div');
+        box.className = 'wm-modal';
+        applyModalSize(box, def.size);
+        wrap.appendChild(box);
+        HOST.document.body.appendChild(wrap);
+        slotByPluginId[p.id] = sid;
+        const fr = mountFrame(box, p);
+        // 以整体遮罩为实例单位：显隐/清理/关闭时连遮罩一起处理
+        if (fr) { fr.el = wrap; frames[sid].push(fr); }
       });
     });
     reconcilePanels();

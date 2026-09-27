@@ -108,46 +108,51 @@ def _scan_plugins(root: str) -> dict:
 
 
 AREA_PANEL = "panel"
-AREA_POPUP = "popup"
+AREA_PET = "pet"        # 自由浮窗：可任意摆放/拖拽缩放，不干扰其它插件
+AREA_POPUP = "popup"    # 模态弹窗：与设置中心同级，遮罩铺满主区（仅白条与设置中心可操作）
 
 
 def _plugin_area(p: dict) -> str:
     """插件声明所在区域——area 是插件声明的唯一维度。
 
     区域取值：rail / sidebar / input / background / conversation /
-    panel-container / panel / popup。字符串声明直接视作区域（旧 'pet' → popup）。
+    panel-container / panel / pet / popup。字符串声明直接视作区域。
     """
     pid = str(p.get("id") or "")
     slot = p.get("slot")
     if isinstance(slot, dict):
         return str(slot.get("area") or pid)
-    lid = str(slot or "")
-    return AREA_POPUP if lid == "pet" else (lid or pid)
+    return str(slot or pid)
 
 
 def _area_behavior(area: str) -> str:
     """区域 → 宿主行为类别（不写进 plugin.json，由宿主按区域内置）。
 
-    panel=入驻容器抽屉；popup=自由浮窗（可拖拽缩放）；其余区域=锚定单例。
+    panel=入驻容器抽屉；pet=自由浮窗（可拖拽缩放）；popup=模态弹窗
+    （遮罩铺满主区，白条与设置中心仍可操作）；其余区域=锚定单例。
     """
     if area == AREA_PANEL:
         return "panel"
-    if area == AREA_POPUP:
+    if area == AREA_PET:
         return "float"
+    if area == AREA_POPUP:
+        return "modal"
     return "fixed"
 
 
 def _slot_id(p: dict) -> str:
     """插件的 slot id（宿主分组键 / 单例状态键 / 设置面板展示用）。
 
-    panel 内容插件共享宿主单例容器固定键 ``panel``；popup 每插件独立键
-    ``float:{plugin_id}``；其余区域以 area 本身为键。
+    panel 内容插件共享宿主单例容器固定键 ``panel``；pet/popup 每插件独立键
+    ``float:{plugin_id}`` / ``modal:{plugin_id}``；其余区域以 area 本身为键。
     """
     area = _plugin_area(p)
     if area == AREA_PANEL:
         return "panel"
-    if area == AREA_POPUP:
+    if area == AREA_PET:
         return "float:" + str(p.get("id") or "")
+    if area == AREA_POPUP:
+        return "modal:" + str(p.get("id") or "")
     return area
 
 
@@ -155,16 +160,17 @@ def _slot_def(p: dict) -> dict:
     """归一化插件的 slot 声明：area 为唯一维度，行为类别 type 由宿主按区域推导。
 
     fixed（锚定单例，同 area 只取第一个生效）、panel（入驻宿主系统级单例容器
-    panel-container，经容器右上角抽屉切换显示）与 float（弹窗，多插件各自独立、
-    可拖拽可缩放）。
+    panel-container，经容器右上角抽屉切换显示）、float（pet 自由浮窗，多插件各自
+    独立、可拖拽可缩放）与 modal（popup 模态弹窗，遮罩铺满主区、尺寸随窗口自适应）。
     """
     area = _plugin_area(p)
     out = {"type": _area_behavior(area), "area": area}
     slot = p.get("slot")
     if isinstance(slot, dict):
-        # float（弹窗）可选声明默认尺寸与初始居中：
-        # {"area": "popup", "size": {"w": "min(1040px, 96vw)", "h": "86vh"}, "center": true}
-        # size 的 w/h 可为数字（px）或 CSS 长度串（如 "86vh"）
+        # float/modal 可选声明默认尺寸；size 的 w/h 可为数字（px）或 CSS 长度串。
+        # center 仅对 float（pet 自由浮窗）有意义：modal（popup）天然居中。
+        # {"area": "pet", "size": {"w": 300, "h": 360}, "center": true}
+        # {"area": "popup", "size": {"w": "min(1040px, 96vw)", "h": "86vh"}}
         if isinstance(slot.get("size"), dict):
             out["size"] = slot["size"]
         if slot.get("center"):
@@ -177,7 +183,7 @@ def _merge_plugins():
     merged = _scan_plugins(BUILTIN_PLUGIN_ROOT)
     merged.update(_scan_plugins(USER_PLUGIN_ROOT))  # 用户覆盖内置
     plugins = list(merged.values())
-    ordered = ["sidebar", "input", "background", "conversation", "panel", "popup"]
+    ordered = ["sidebar", "input", "background", "conversation", "panel", "pet", "popup"]
     plugins.sort(
         key=lambda p: (
             ordered.index(_slot_id(p)) if _slot_id(p) in ordered else 999,

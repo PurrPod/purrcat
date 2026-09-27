@@ -302,6 +302,35 @@ body.settings-open [data-layer="settings"] { display: flex; }
   border-bottom: 2px solid var(--wm-bl-400);
   border-radius: 0 0 4px 0;
 }
+
+/* 模态弹窗（area=popup，type=modal，如插件市场）：与设置中心同级的遮罩层。
+   遮罩铺满白条右侧的主区，主界面不可点；白条(z60)与设置中心(z50) 在遮罩之上，
+   故「未关闭时只能操作弹窗自身、设置中心与左侧白条」。尺寸用 CSS 长度，
+   随窗口自动收缩，无需 JS 重排。 */
+.wm-modal-wrap {
+  position: fixed;
+  top: 0; right: 0; bottom: 0;
+  left: var(--wm-rail-w);   /* 白条区域始终专属白条，遮罩绝不伸入 */
+  z-index: 45;              /* 低于设置中心 50、低于白条 60 */
+  display: none;
+  background: rgba(15, 17, 21, 0.35);
+  align-items: center;
+  justify-content: center;
+  padding: 4vh 3vw;
+}
+.wm-modal-wrap.wm-mount { display: flex; }
+.wm-modal {
+  width: min(1040px, 96vw);
+  height: 86vh;
+  max-width: 100%;
+  max-height: 100%;
+  background: var(--wm-bg-panel);
+  border-radius: 14px;
+  box-shadow: 0 12px 40px rgba(22, 25, 29, 0.22);
+  overflow: hidden;
+}
+/* 模态容器内不注入拖拽/缩放手柄（与设置中心一致：固定居中不可拖） */
+.wm-modal iframe { border: 0; width: 100%; height: 100%; display: block; }
 .settings-panel {
   width: min(1040px, 96vw);
   height: 86vh;
