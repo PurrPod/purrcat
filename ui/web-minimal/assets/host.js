@@ -56,7 +56,7 @@
     'layout-panel-left': '<rect width="7" height="18" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/>',
     settings: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
   };
-  const ICON_SVG_ATTR = 'viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"';
+  const ICON_SVG_ATTR = 'viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"';
   // 把 icon 画进容器：登记名 → 内置 SVG；<svg> → 去脚本后原样内嵌；其它 → 文本字形
   function paintIcon(el, icon, fallbackChar) {
     const raw = String(icon == null ? '' : icon).trim();
@@ -1453,6 +1453,37 @@
       }
       case 'session.switch': {
         if (payload.session_id) { groupState.activeSessionId = payload.session_id; await refreshSessions(); updateEmpty(); broadcastSessions('session.switched', { session_id: payload.session_id }); }
+        return { status: 'ok' };
+      }
+      // 重命名会话：对齐后端 PUT /api/sessions/{id}/rename
+      case 'session.rename': {
+        const sid = String(payload.session_id || '');
+        const alias = String(payload.alias || '').trim();
+        if (!sid) throw new Error('缺少 session_id');
+        if (!alias) throw new Error('会话名称不能为空');
+        const res = await fetch('/api/sessions/' + encodeURIComponent(sid) + '/rename', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ alias }),
+        });
+        if (!res.ok) throw new Error((await res.text()) || '重命名失败');
+        await refreshSessions();
+        broadcastSessions('conversation.updated', { session_id: sid });
+        return { status: 'ok', alias };
+      }
+      // 删除会话：对齐后端 DELETE /api/sessions/{id}
+      case 'session.delete': {
+        const sid = String(payload.session_id || '');
+        if (!sid) throw new Error('缺少 session_id');
+        const res = await fetch('/api/sessions/' + encodeURIComponent(sid), { method: 'DELETE' });
+        if (!res.ok) throw new Error((await res.text()) || '删除失败');
+        // 删掉的正是当前会话：清空活动会话（回到欢迎态），并让各 slot 重新对账
+        const wasActive = groupState.activeSessionId === sid;
+        if (wasActive) groupState.activeSessionId = '';
+        await refreshSessions();
+        updateEmpty();
+        // 只有当前会话被删才需要切换事件；删其它会话不打断正在进行的会话（避免清空乐观消息缓冲）
+        broadcastSessions(wasActive ? 'session.switched' : 'conversation.updated', { session_id: groupState.activeSessionId });
         return { status: 'ok' };
       }
       case 'chat.interrupt':

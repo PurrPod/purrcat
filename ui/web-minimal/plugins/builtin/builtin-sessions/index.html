@@ -40,19 +40,45 @@
   .list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; }
   .item {
     width: 100%;
-    font-family: inherit;
+    display: flex;
+    align-items: flex-start;
+    gap: 4px;
     font-size: 13px;
     color: var(--label, #16191d); /* 加深，与聊天正文文字同深 */
     background: transparent;
-    border: none;
     padding: 10px 12px;
-    text-align: left;
-    cursor: pointer;
     border-radius: 8px;
+    cursor: pointer;
   }
   .item:hover { background: var(--hover); }
   .item.active { color: var(--accent); font-weight: 600; background: var(--bg); }
+  .item-text { flex: 1; min-width: 0; }
+  .item-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .item-meta { font-size: 11px; color: var(--dim); margin-top: 2px; }
+  /* 卡片右上角动作区：默认隐去，hover 或处于编辑态时显现 */
+  .item-acts { flex: none; display: flex; align-items: center; gap: 2px; opacity: 0; transition: opacity 0.12s ease; }
+  .item:hover .item-acts, .item.editing .item-acts { opacity: 1; }
+  .ico {
+    width: 24px; height: 24px; flex: none;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--dim); background: transparent; border: none; border-radius: 6px; cursor: pointer; padding: 0;
+  }
+  .ico:hover { background: rgba(15, 17, 21, 0.06); color: var(--label); }
+  .ico.danger:hover { background: rgba(191, 97, 106, 0.12); color: #bf616a; }
+  .ico svg { display: block; width: 15px; height: 15px; }
+  /* 行内重命名输入框 */
+  .item-title-input {
+    width: 100%; font: inherit; color: inherit;
+    background: #fff; border: 1px solid var(--accent); border-radius: 6px;
+    padding: 2px 6px; outline: none;
+  }
+  /* 删除前的行内确认（不弹宿主级弹窗，插件自带） */
+  .confirm { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; }
+  .confirm-msg { flex: 1; min-width: 0; font-size: 12px; color: #bf616a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cbtn { flex: none; font: inherit; font-size: 12px; padding: 2px 8px; border-radius: 6px; cursor: pointer; border: 1px solid rgba(15, 17, 21, 0.12); background: #fff; color: var(--label-2nd); }
+  .cbtn:hover { background: var(--hover); }
+  .cbtn.danger { border-color: transparent; background: #bf616a; color: #fff; }
+  .cbtn.danger:hover { background: #a94f58; }
 </style>
 </head>
 <body>
@@ -82,6 +108,12 @@
 
   var listEl = document.getElementById('list');
   var sessions = [];
+  var activeId = '';                                  // 当前活动会话（由宿主 state 对账）
+  var editingId = '', editingVal = '', confirmingId = '';   // 行内重命名 / 行内删除确认
+  // 动作图标：与宿主图标集同款线性 SVG（插件自带，不依赖宿主实现）
+  var SVG_HEAD = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">';
+  var ICON_PENCIL = SVG_HEAD + '<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
+  var ICON_TRASH = SVG_HEAD + '<path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>';
 
   // 面板底色：浅灰（区别于宿主白底），确保圆角四角与背景有对比、看得见；透明度可调
   var DEF_OP = 0.9;
@@ -98,20 +130,108 @@
   });
   callAction('config.get', { plugin_id: 'builtin-sessions' }).then(applyPanel).catch(function () {});
 
-  function renderList(activeId) {
+  function findSession(id) {
+    for (var i = 0; i < sessions.length; i++) if (sessions[i].id === id) return sessions[i];
+    return null;
+  }
+
+  // 重命名：交给宿主（对齐后端 PUT /api/sessions/{id}/rename）；空值或未改动视为取消
+  function commitRename(id) {
+    if (editingId !== id) return;   // Enter 与 blur 可能连发，只提交一次
+    editingId = '';
+    var val = String(editingVal || '').trim();
+    var cur = findSession(id);
+    if (!val || (cur && val === (cur.alias || ''))) { renderList(); return; }
+    callAction('session.rename', { session_id: id, alias: val })
+      .then(function () { load(); })
+      .catch(function () { renderList(); });
+  }
+
+  // 删除：交给宿主（对齐后端 DELETE /api/sessions/{id}）
+  function doDelete(id) {
+    confirmingId = '';
+    callAction('session.delete', { session_id: id })
+      .then(function () { load(); })
+      .catch(function () { renderList(); });
+  }
+
+  function iconButton(cls, title, svg, onClick) {
+    var b = document.createElement('button');
+    b.className = 'ico' + (cls ? ' ' + cls : '');
+    b.title = title;
+    b.innerHTML = svg;
+    b.addEventListener('click', function (ev) { ev.stopPropagation(); onClick(); });
+    return b;
+  }
+
+  function renderList() {
     listEl.innerHTML = '';
     sessions.forEach(function (s) {
-      var b = document.createElement('button');
-      b.className = 'item' + (s.id === activeId ? ' active' : '');
-      var dt = document.createElement('div');
-      dt.textContent = s.alias || s.id;
+      var card = document.createElement('div');
+      card.className = 'item' + (s.id === activeId ? ' active' : '') + (editingId === s.id ? ' editing' : '');
+      card.addEventListener('click', function () { callAction('session.switch', { session_id: s.id }).catch(function () {}); });
+
+      // 删除确认态：整张卡片换成「删除「名称」？[删除][取消]」
+      if (confirmingId === s.id) {
+        var bar = document.createElement('div');
+        bar.className = 'confirm';
+        var msg = document.createElement('span');
+        msg.className = 'confirm-msg';
+        msg.textContent = '删除「' + (s.alias || s.id) + '」？';
+        bar.appendChild(msg);
+        var yes = document.createElement('button');
+        yes.className = 'cbtn danger';
+        yes.textContent = '删除';
+        yes.addEventListener('click', function (ev) { ev.stopPropagation(); doDelete(s.id); });
+        var no = document.createElement('button');
+        no.className = 'cbtn';
+        no.textContent = '取消';
+        no.addEventListener('click', function (ev) { ev.stopPropagation(); confirmingId = ''; renderList(); });
+        bar.appendChild(yes);
+        bar.appendChild(no);
+        card.appendChild(bar);
+        listEl.appendChild(card);
+        return;
+      }
+
+      var text = document.createElement('div');
+      text.className = 'item-text';
+      if (editingId === s.id) {
+        var inp = document.createElement('input');
+        inp.className = 'item-title-input';
+        inp.value = editingVal;
+        inp.addEventListener('click', function (ev) { ev.stopPropagation(); });
+        inp.addEventListener('input', function () { editingVal = inp.value; });
+        inp.addEventListener('keydown', function (ev) {
+          if (ev.key === 'Enter') { ev.preventDefault(); commitRename(s.id); }
+          else if (ev.key === 'Escape') { ev.preventDefault(); editingId = ''; renderList(); }
+        });
+        inp.addEventListener('blur', function () { commitRename(s.id); });
+        text.appendChild(inp);
+        setTimeout(function () { inp.focus(); inp.select(); }, 0);
+      } else {
+        var dt = document.createElement('div');
+        dt.className = 'item-title';
+        dt.textContent = s.alias || s.id;
+        text.appendChild(dt);
+      }
       var meta = document.createElement('div');
       meta.className = 'item-meta';
       meta.textContent = (s.updated_at || '').slice(0, 16);
-      b.appendChild(dt);
-      b.appendChild(meta);
-      b.addEventListener('click', function () { callAction('session.switch', { session_id: s.id }).catch(function () {}); });
-      listEl.appendChild(b);
+      text.appendChild(meta);
+
+      var acts = document.createElement('div');
+      acts.className = 'item-acts';
+      acts.appendChild(iconButton('', '重命名', ICON_PENCIL, function () {
+        editingId = s.id; editingVal = s.alias || ''; confirmingId = ''; renderList();
+      }));
+      acts.appendChild(iconButton('danger', '删除', ICON_TRASH, function () {
+        confirmingId = s.id; editingId = ''; renderList();
+      }));
+
+      card.appendChild(text);
+      card.appendChild(acts);
+      listEl.appendChild(card);
     });
   }
 
@@ -119,9 +239,12 @@
     return callAction('sessions.list')
       .then(function (list) {
         return callAction('state.get').then(function (st) {
-          var active = (st && st.activeSessionId) || '';
-          sessions = (list || []).map(function (s) { s.active = s.id === active; return s; });
-          renderList(active);
+          activeId = (st && st.activeSessionId) || '';
+          sessions = (list || []).map(function (s) { s.active = s.id === activeId; return s; });
+          // 刷新后清掉指向已消失会话的编辑/确认态
+          if (editingId && !findSession(editingId)) editingId = '';
+          if (confirmingId && !findSession(confirmingId)) confirmingId = '';
+          renderList();
         });
       })
       .catch(function () {});

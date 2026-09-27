@@ -174,10 +174,10 @@ body.rail-2 .rail-brand { display: flex; }
 .wm-rail .rail-ico:hover { background: var(--wm-bg-hover); color: var(--wm-label); }
 .wm-rail .rail-ico.on { background: var(--wm-bg-active); color: var(--wm-label); }
 .wm-rail .rail-ico.off { opacity: 0.4; }
-.wm-rail .rail-ico .rail-glyph { flex: none; display: flex; align-items: center; justify-content: center; width: 20px; height: 20px; }
+.wm-rail .rail-ico .rail-glyph { flex: none; display: flex; align-items: center; justify-content: center; width: 18px; height: 18px; }
 /* 内置 SVG 图标统一尺寸；描边与颜色跟随按钮 currentColor */
-.wm-rail .rail-glyph svg { display: block; width: 18px; height: 18px; }
-.wm-rail .rail-toggle svg { display: block; width: 18px; height: 18px; }
+.wm-rail .rail-glyph svg { display: block; width: 16px; height: 16px; }
+.wm-rail .rail-toggle svg { display: block; width: 16px; height: 16px; }
 .wm-rail .rail-ico .rail-name { display: none; flex: 1; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 13px; }
 
 /* 阶段 0：收起，只保留顶部开关 */
