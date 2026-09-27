@@ -25,13 +25,16 @@ function spawnChild(command, args, env) {
     env,
     stdio: 'inherit',
     windowsHide: true,
+    // Windows 的 npm/npx 是 .cmd 脚本：Node ≥18.20/20.12 修复 CVE-2024-27980 后，
+    // 不带 shell 直接 spawn .cmd/.bat 会同步抛 EINVAL，必须经 shell 调起
+    shell: command.endsWith('.cmd'),
   });
   children.add(child);
   child.once('exit', () => children.delete(child));
   return child;
 }
 
-function waitForPort(port, child, label, timeoutMs = 60_000) {
+function waitForPort(port, child, label, timeoutMs = 60_000, host = '127.0.0.1') {
   const started = Date.now();
   return new Promise((resolve, reject) => {
     let timer;
@@ -56,7 +59,7 @@ function waitForPort(port, child, label, timeoutMs = 60_000) {
         finish(new Error(`${label} did not open port ${port} within ${timeoutMs / 1000}s`));
         return;
       }
-      const socket = net.createConnection({ host: '127.0.0.1', port });
+      const socket = net.createConnection({ host, port });
       socket.once('connect', () => {
         socket.destroy();
         finish();
@@ -103,7 +106,9 @@ async function main() {
 
   await Promise.all([
     waitForPort(apiPort, backend, 'Python backend'),
-    waitForPort(3000, vite, 'Vite dev server'),
+    // vite 默认按 dns 解析 'localhost' 的结果绑定监听栈（Windows 上常为 ::1），
+    // 探测 127.0.0.1 会 ECONNREFUSED；用同名 host 探测才能命中同一协议栈
+    waitForPort(3000, vite, 'Vite dev server', 60_000, 'localhost'),
   ]);
 
   const electron = spawnChild(
