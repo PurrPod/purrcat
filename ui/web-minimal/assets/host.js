@@ -305,7 +305,7 @@
   function renderRailAppearance(container) {
     const card = HOST.document.createElement('div');
     card.className = 'cfg-card';
-    cfgCardHead(card, '左侧白条', '宿主', '最左图标栏外观');
+    cfgCardHead(card, '外观设置', '宿主', '最左图标栏外观 · 透明度实时生效');
     const body = HOST.document.createElement('div');
     body.className = 'cfg-card-body';
     const grid = HOST.document.createElement('div');
@@ -335,7 +335,7 @@
   function renderPanelContainerSettings(container) {
     const card = HOST.document.createElement('div');
     card.className = 'cfg-card';
-    cfgCardHead(card, '面板容器', '宿主', '中栏系统级容器 · 透明度与默认宽度');
+    cfgCardHead(card, '容器设置', '宿主', '中栏系统级容器 · 透明度与默认宽度');
     const body = HOST.document.createElement('div');
     body.className = 'cfg-card-body';
     const grid = HOST.document.createElement('div');
@@ -391,15 +391,14 @@
     container.appendChild(card);
   }
 
-  // 插件卡片（与配置中心统一的 cfg-card 风格）：标题/类型chip/状态chip + 打开关闭 + 抽屉菜单 + 可视化字段
-  function renderPluginCard(container, p, cfg, singleton) {
+  // 插件卡片（与配置中心统一的 cfg-card 风格）：标题/行为chip/状态chip + 打开关闭 + 抽屉菜单 + 可视化字段
+  function renderPluginCard(container, p, cfg) {
     const type = (p.slotDef || {}).type || 'fixed';
-    const typeName = type === 'fixed' ? '固定' : (type === 'panel' ? '面板' : '浮动');
+    const typeName = type === 'fixed' ? '固定' : (type === 'panel' ? '面板' : '弹窗');
     const vis = pluginVisible(p);
     const card = HOST.document.createElement('div');
     card.className = 'cfg-card';
-    const sub = p.id + (singleton ? ' · 该位置同时只能启用一个插件' : '');
-    const h = cfgCardHead(card, p.name || p.id, typeName, sub);
+    const h = cfgCardHead(card, p.name || p.id, typeName, p.id);
     // 状态 chip：panel 表达"容器当前显示哪个"；fixed/float 表达启停
     const st = HOST.document.createElement('span');
     st.className = 'cfg-chip ' + (vis ? 'on' : 'off');
@@ -579,14 +578,23 @@
     else renderConfigSection(main, settingsTab);
   }
 
-  // ---- UI 插件主面板：按 slot 类型竖排分组（卡片 / JSON 双模式，与配置中心一致）----
-  const SLOT_TYPE_LABEL = { fixed: '固定组件', panel: '面板插件', float: '浮动插件' };
-  const SLOT_TYPE_DESC = {
-    fixed: '锚定在界面固定位置；同一位置同时只能启用一个插件',
-    panel: '入驻中栏面板容器，经容器抽屉切换显示，允许多个共存',
-    float: '独立浮窗，可拖拽 / 缩放，允许多个同时打开',
+  // ---- UI 插件主面板：按「区域」竖排分组（卡片 / JSON 双模式，与配置中心一致）----
+  // area 是插件声明的唯一维度；行为（单例 / 容器抽屉 / 浮窗）由宿主按区域内置。
+  const AREA_LABEL = {
+    rail: '左侧白条', sidebar: '会话列表', input: '输入框', background: '背景',
+    conversation: '历史会话', 'panel-container': '面板容器', panel: '面板', popup: '弹窗类',
   };
-  const AREA_LABEL = { sidebar: '左侧栏', input: '输入框', conversation: '会话历史', background: '背景' };
+  // 宿主原生资产（非插件）挂在所属区域内；singleton 标记「同区域同时只能启用一个插件」
+  const UI_GROUPS = [
+    { area: 'rail', host: renderRailAppearance },
+    { area: 'sidebar', singleton: true },
+    { area: 'input', singleton: true },
+    { area: 'background', singleton: true },
+    { area: 'conversation', singleton: true },
+    { area: 'panel-container', host: renderPanelContainerSettings },
+    { area: 'panel' },
+    { area: 'popup' },
+  ];
   function cfgFor(p) { return Object.assign({}, configByPlugin[p.id] || {}); }
 
   function renderPluginsTab(main) {
@@ -595,9 +603,7 @@
       renderWebminJson(main);
       return;
     }
-    renderPluginGroup(main, 'fixed', renderRailAppearance);
-    renderPluginGroup(main, 'panel', renderPanelContainerSettings);
-    renderPluginGroup(main, 'float', null);
+    UI_GROUPS.forEach(function (grp) { renderPluginGroup(main, grp); });
     const btnNormal = HOST.document.createElement('div');
     btnNormal.className = 'mode-row';
     const b = HOST.document.createElement('button');
@@ -656,39 +662,27 @@
     main.appendChild(bar);
   }
 
-  function renderPluginGroup(main, slotType, hostRenderer) {
+  function renderPluginGroup(main, grp) {
     const group = HOST.document.createElement('div');
     group.className = 'settings-group';
     const gt = HOST.document.createElement('div');
     gt.className = 'settings-group-title';
-    gt.textContent = SLOT_TYPE_LABEL[slotType] + ' · ' + SLOT_TYPE_DESC[slotType];
+    gt.textContent = AREA_LABEL[grp.area] || grp.area;
     group.appendChild(gt);
-    if (hostRenderer) hostRenderer(group);
-    const list = groupState.plugins.filter(function (p) { return (p.slotDef || {}).type === slotType; });
-    if (slotType === 'fixed') {
-      // fixed 按 area（槽位）细分：单插件直接出卡片；同槽多插件归入同一子分组并标注单例语义
-      const byArea = {};
-      list.forEach(function (p) { (byArea[p.slot] = byArea[p.slot] || []).push(p); });
-      Object.keys(byArea).forEach(function (area) {
-        const plugins = byArea[area];
-        if (plugins.length > 1) {
-          const sub = HOST.document.createElement('div');
-          sub.className = 'settings-subgroup';
-          sub.textContent = (AREA_LABEL[area] || area) + '（同时只能启用一个）';
-          group.appendChild(sub);
-          plugins.forEach(function (p) { renderPluginCard(group, p, cfgFor(p), true); });
-        } else {
-          renderPluginCard(group, plugins[0], cfgFor(plugins[0]), false);
-        }
-      });
-    } else {
-      // panel / float：同类型多个插件合并在同一分区
-      list.forEach(function (p) { renderPluginCard(group, p, cfgFor(p), false); });
+    if (grp.host) grp.host(group);   // 宿主原生资产（左侧白条 / 面板容器）
+    const list = groupState.plugins.filter(function (p) { return ((p.slotDef || {}).area || '') === grp.area; });
+    const multi = grp.singleton && list.length > 1;
+    if (multi) {
+      const sub = HOST.document.createElement('div');
+      sub.className = 'settings-subgroup';
+      sub.textContent = '同时只能启用一个插件';
+      group.appendChild(sub);
     }
+    list.forEach(function (p) { renderPluginCard(group, p, cfgFor(p)); });
     if (!group.querySelector('.cfg-card')) {
       const none = HOST.document.createElement('div');
       none.className = 'p-tag';
-      none.textContent = '（无 ' + SLOT_TYPE_LABEL[slotType] + '）';
+      none.textContent = '（暂无插件）';
       group.appendChild(none);
     }
     main.appendChild(group);
@@ -789,10 +783,10 @@
   }
 
   // ---- 原配置中心逐标签页复刻（卡片 + 裸 JSON 双模式）----
-  const MODEL_CATS = [ // 三个模型角色：title/desc/jsonKey
-    { key: 'main', title: '核心模型', desc: '对话主模型' },
-    { key: 'task', title: '后台模型', desc: '子任务/后台 agent' },
-    { key: 'vision', title: '视觉顾问', desc: '图像理解' },
+  const MODEL_CATS = [ // 三个模型角色：title/jsonKey
+    { key: 'main', title: '核心模型' },
+    { key: 'task', title: '后台模型' },
+    { key: 'vision', title: '视觉顾问' },
   ];
   const MODEL_SDKS = ['openai'];
   const DEPLOY_ITEMS = ['uv', 'node', 'sandbox', 'embedding'];
@@ -803,8 +797,6 @@
     mode: {},         // tab -> 'cards'|'json'
     openKey: {},      // tab -> 处于展开态的顶级 key
     editStr: {},      // tab+'::'+key -> 编辑区文本
-    modelCat: null,   // model：展开的角色
-    modelForm: null,  // model：编辑中的表单
     mcpNewName: '', mcpNewJson: MCP_NEW_TEMPLATE,
     genNewKey: '', genNewType: 'string', genNewValue: '',
     sandboxRegistry: '',
@@ -926,32 +918,26 @@
     return { head: head, right: right, left: left, titleRow: trow };
   }
 
-  // ---- model：三角色卡片（每个角色内含多个「sdk:模型名 → 条目」）----
+  // ---- model：三角色卡片（每个角色直接平铺展示编辑表单，无展开/收起）----
   function modelList(data, cat) {
     return (data && data[cat] && typeof data[cat] === 'object') ? Object.keys(data[cat]) : [];
   }
-  function modelSummaryLine(data, cat) {
-    const list = modelList(data, cat);
-    return list.length ? list.join('、') : '未配置';
-  }
-  function openModelForm(data, cat, entryKey) {
-    const e = (data[cat] || {})[entryKey] || {};
+  // 由已有条目构造编辑表单（无条目时给出空白表单，模型名留空）
+  function modelFormOf(entry, entryKey) {
+    const e = entry || {};
     const idx = entryKey.indexOf(':');
     const sdk = idx >= 0 ? entryKey.slice(0, idx) : 'openai';
     const modelName = idx >= 0 ? entryKey.slice(idx + 1) : entryKey;
-    cfgState.mEdit = {
-      cat: cat, entryKey: entryKey,
-      form: {
-        sdk: sdk || 'openai',
-        modelName: modelName,
-        apiKey: (Array.isArray(e.api_keys) && e.api_keys[0]) ? e.api_keys[0] : '',
-        baseUrl: e.base_url || '',
-        rpm: e.rpm != null ? String(e.rpm) : '60',
-        tpm: e.tpm != null ? String(e.tpm) : '1000000',
-        concurrency: e.concurrency != null ? String(e.concurrency) : '3',
-        maxToken: e.max_token != null ? String(e.max_token) : '500000',
-        vision: !!e.vision,
-      },
+    return {
+      sdk: sdk || 'openai',
+      modelName: modelName,
+      apiKey: (Array.isArray(e.api_keys) && e.api_keys[0]) ? e.api_keys[0] : '',
+      baseUrl: e.base_url || '',
+      rpm: e.rpm != null ? String(e.rpm) : '60',
+      tpm: e.tpm != null ? String(e.tpm) : '1000000',
+      concurrency: e.concurrency != null ? String(e.concurrency) : '3',
+      maxToken: e.max_token != null ? String(e.max_token) : '500000',
+      vision: !!e.vision,
     };
   }
   function modelField(grid, label, input) {
@@ -969,65 +955,19 @@
     cfgData(key).then(function (data) {
       MODEL_CATS.forEach(function (cat) {
         const card = cfgCard(main);
-        cfgCardHead(card, cat.title, 'model', cat.desc + ' · ' + modelSummaryLine(data, cat.key));
-        modelList(data, cat.key).forEach(function (entryKey) {
-          const isEditing = cfgState.mEdit && cfgState.mEdit.cat === cat.key && cfgState.mEdit.entryKey === entryKey;
-          renderModelEntry(card, key, data, cat.key, entryKey, isEditing);
+        const head = cfgCardHead(card, cat.title, 'model');
+        if (!data[cat.key] || typeof data[cat.key] !== 'object') data[cat.key] = {};
+        const keys = modelList(data, cat.key);
+        // 无已配置条目时也平铺一个空白表单，直接填写即可
+        (keys.length ? keys : ['']).forEach(function (entryKey) {
+          renderModelForm(card, key, data, cat.key, entryKey, head.right);
         });
-        // 该角色下新增一条模型
-        const addRow = HOST.document.createElement('div');
-        addRow.className = 'cfg-add-row';
-        const newNm = HOST.document.createElement('input');
-        newNm.type = 'text'; newNm.placeholder = '新增: 模型名 (如 deepseek-chat)';
-        newNm.addEventListener('input', function () { newNm._v = newNm.value; });
-        const addBtn = HOST.document.createElement('button');
-        addBtn.className = 'btn cfg-save';
-        addBtn.textContent = '+ 添加';
-        addBtn.addEventListener('click', function () {
-          const nm = (newNm._v || '').trim();
-          if (!nm) { HOST.alert('请填写模型名'); return; }
-          const nk = 'openai:' + nm;
-          if (data[cat.key][nk]) { HOST.alert('该模型已存在'); return; }
-          openModelForm(data, cat.key, nk);
-          data[cat.key][nk] = { api_keys: [''], base_url: '' };
-          cfgState.modelCat = cat.key;
-          rerenderConfig(main, key);
-        });
-        addRow.appendChild(newNm);
-        addRow.appendChild(addBtn);
-        card.appendChild(addRow);
       });
     });
   }
-  // 单个条目的展开编辑体
-  function renderModelEntry(card, key, data, cat, entryKey, isEditing) {
-    const sub = HOST.document.createElement('div');
-    sub.className = 'cfg-entry';
-    const e = (data[cat] || {})[entryKey] || {};
-    const head = HOST.document.createElement('div');
-    head.className = 'cfg-entry-head';
-    const ti = HOST.document.createElement('div');
-    ti.className = 'cfg-entry-title';
-    const nm = HOST.document.createElement('span');
-    nm.textContent = entryKey;
-    ti.appendChild(nm);
-    const sum = HOST.document.createElement('span');
-    sum.className = 'cfg-card-sub';
-    sum.textContent = (e.base_url || '') + ' · ' + ((Array.isArray(e.api_keys) && e.api_keys[0]) ? 'sk-***' : '无 key');
-    ti.appendChild(sum);
-    head.appendChild(ti);
-    const edit = HOST.document.createElement('button');
-    edit.className = 'btn cfg-edit';
-    edit.textContent = isEditing ? '关闭' : '编辑';
-    edit.addEventListener('click', function () {
-      if (isEditing) cfgState.mEdit = null; else openModelForm(data, cat, entryKey);
-      rerenderConfig(main, key);
-    });
-    head.appendChild(edit);
-    sub.appendChild(head);
-    if (!isEditing) { card.appendChild(sub); return; }
-    const f = cfgState.mEdit ? cfgState.mEdit.form : null;
-    if (!f) return;
+  // 角色下的单个模型表单：直接平铺展示，保存后写回并热重载
+  function renderModelForm(card, key, data, cat, entryKey, act) {
+    const f = modelFormOf((data[cat] || {})[entryKey], entryKey);
     const body = HOST.document.createElement('div');
     body.className = 'cfg-card-body';
     const grid = HOST.document.createElement('div');
@@ -1061,27 +1001,31 @@
     }
     const save = HOST.document.createElement('button');
     save.className = 'btn cfg-save';
-    save.textContent = '保存该模型';
+    save.textContent = '保存';
     save.addEventListener('click', function () {
-      const newKey = (f.sdk || 'openai') + ':' + f.modelName.trim();
+      const nm = f.modelName.trim();
+      if (!nm) { HOST.alert('请填写模型名'); return; }
+      const newKey = (f.sdk || 'openai') + ':' + nm;
       const obj = { api_keys: [f.apiKey.trim()], base_url: f.baseUrl.trim() };
       if (cat !== 'vision') {
         obj.rpm = Number(f.rpm) || 60; obj.tpm = Number(f.tpm) || 1000000; obj.concurrency = Number(f.concurrency) || 3; obj.max_token = Number(f.maxToken) || 500000; obj.vision = f.vision;
       }
-      if (newKey !== entryKey) delete data[cat][entryKey];
+      if (entryKey && newKey !== entryKey) delete data[cat][entryKey];
       data[cat][newKey] = obj;
-      cfgState.mEdit = null;
       putCfg(key, data).then(function () { rerenderConfig(main, key); HOST.alert('模型已保存并热重载。'); }).catch(function (e) { HOST.alert('保存失败：' + (e && e.message || '')); });
     });
-    body.appendChild(save);
-    sub.appendChild(body);
-    card.appendChild(sub);
+    (act || card).appendChild(save);
+    card.appendChild(body);
   }
 
   // ---- mcp：服务器卡片（按单服务器拆分）----
   function renderMcpCards(main, key) {
     cfgData(key).then(function (data) {
-      const servers = data || {};
+      // mcp_config.json 的结构为 { mcpServers: { 服务器名: 配置 } }，需先解包这一层
+      if (!data || typeof data !== 'object' || Array.isArray(data)) data = {};
+      if (!data.mcpServers || typeof data.mcpServers !== 'object' || Array.isArray(data.mcpServers)) data.mcpServers = {};
+      cfgState.data[key] = data;
+      const servers = data.mcpServers;
       const names = Object.keys(servers);
       if (names.length === 0) {
         const empty = HOST.document.createElement('div'); empty.className = 'p-tag'; empty.textContent = '（暂无 MCP 服务器）'; main.appendChild(empty);
@@ -1091,7 +1035,7 @@
         const val = servers[name];
         const card = cfgCard(main);
         const preview = JSON.stringify(val);
-        cfgCardHead(card, name, (Array.isArray(val) ? 'array' : typeof val), preview.slice(0, 90) + (preview.length > 90 ? '…' : ''));
+        const h = cfgCardHead(card, name, (Array.isArray(val) ? 'array' : typeof val), preview.slice(0, 90) + (preview.length > 90 ? '…' : ''));
         const edit = HOST.document.createElement('button');
         edit.className = 'btn cfg-edit';
         edit.textContent = isOpen ? '关闭' : '编辑';
@@ -1107,7 +1051,7 @@
           if (!HOST.confirm('删除 MCP 服务器 "' + name + '"？')) return;
           delete servers[name];
           delete cfgState.openKey[key];
-          putCfg(key, servers).then(function () { rerenderConfig(main, key); }).catch(function (e) { HOST.alert('删除失败：' + (e && e.message || '')); });
+          putCfg(key, data).then(function () { rerenderConfig(main, key); }).catch(function (e) { HOST.alert('删除失败：' + (e && e.message || '')); });
         });
         h.right.appendChild(del);
         if (!isOpen) return;
@@ -1127,7 +1071,7 @@
           try { obj = JSON.parse(cfgState.editStr[key + '::' + name]); } catch (e) { HOST.alert('JSON 解析失败：' + e.message); return; }
           servers[name] = obj;
           delete cfgState.openKey[key];
-          putCfg(key, servers).then(function () { rerenderConfig(main, key); }).catch(function (e) { HOST.alert('保存失败：' + (e && e.message || '')); });
+          putCfg(key, data).then(function () { rerenderConfig(main, key); }).catch(function (e) { HOST.alert('保存失败：' + (e && e.message || '')); });
         });
         body.appendChild(save);
         card.appendChild(body);
@@ -1193,7 +1137,7 @@
         const isOpen = cfgState.openKey[key] === k;
         const card = cfgCard(main);
         const raw = (typeof val === 'object') ? JSON.stringify(val) : String(val);
-        cfgCardHead(card, k, (Array.isArray(val) ? 'array' : typeof val), raw.slice(0, 90) + (raw.length > 90 ? '…' : ''));
+        const h = cfgCardHead(card, k, (Array.isArray(val) ? 'array' : typeof val), raw.slice(0, 90) + (raw.length > 90 ? '…' : ''));
         const edit = HOST.document.createElement('button');
         edit.className = 'btn cfg-edit';
         edit.textContent = isOpen ? '关闭' : '编辑';

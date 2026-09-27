@@ -499,12 +499,6 @@ body.settings-open [data-layer="settings"] { display: flex; }
 }
 .cfg-log-toggle:hover { color: var(--wm-label); }
 
-.cfg-entry { border-top: 1px solid var(--wm-border-soft); padding: 8px 14px; }
-.cfg-entry-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.cfg-entry-title { display: flex; flex-direction: column; min-width: 0; }
-.cfg-entry-title > span:first-child { font-weight: 600; font-size: 13px; word-break: break-all; }
-.cfg-entry + .cfg-entry { border-top-width: 1px; }
-
 /* 设置面板通用控件（UI 插件卡片与配置中心卡片共用同一 cfg-card 体系） */
 .settings-subgroup { font-size: 12px; font-weight: 600; color: var(--wm-label-2nd); margin: 12px 0 6px; }
 .settings-body .p-tag { font-size: 11px; color: var(--wm-label-dim); }

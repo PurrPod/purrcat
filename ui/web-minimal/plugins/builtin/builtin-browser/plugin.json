@@ -2,6 +2,6 @@
   "id": "builtin-browser",
   "name": "浏览器",
   "icon": "◉",
-  "slot": { "type": "panel" },
+  "slot": { "area": "panel" },
   "entry": "index.html"
 }

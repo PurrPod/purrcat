@@ -2,7 +2,7 @@
   "id": "builtin-background",
   "name": "背景",
   "icon": "▦",
-  "slot": { "type": "fixed", "area": "background" },
+  "slot": { "area": "background" },
   "entry": "index.html",
   "configSchema": [
     { "key": "mode", "label": "背景模式", "type": "select", "options": ["none", "wallpaper"], "default": "none" },
