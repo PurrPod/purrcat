@@ -3,5 +3,8 @@
   "name": "浏览器",
   "icon": "globe",
   "slot": { "area": "panel" },
-  "entry": "index.html"
+  "entry": "index.html",
+  "configSchema": [
+    { "key": "homepage", "label": "主页地址", "type": "text", "default": "https://www.bing.com" }
+  ]
 }

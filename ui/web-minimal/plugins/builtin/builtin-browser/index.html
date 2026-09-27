@@ -130,7 +130,9 @@
 <script>
 (function () {
   'use strict';
-  var HOME = 'https://www.bing.com';
+  var DEFAULT_HOME = 'https://www.bing.com';
+  var HOME = DEFAULT_HOME;   // 由插件配置 homepage 覆盖，默认必应
+  var opened = false;        // 首页只在首次拿到配置（或兜底超时）后打开一次
   var view = document.getElementById('view');
   var urlInput = document.getElementById('url');
   var back = document.getElementById('back');
@@ -204,7 +206,18 @@
   document.getElementById('maskRetry').addEventListener('click', function () { mask.classList.remove('on'); armTimer(); });
   urlInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') go(); });
 
-  nav(HOME);
+  // 首页地址来自插件配置（宿主在 iframe load 时下发 configApply），默认必应
+  function applyConfig(cfg) {
+    var h = cfg && typeof cfg.homepage === 'string' ? cfg.homepage.trim() : '';
+    HOME = h || DEFAULT_HOME;
+    if (!opened) { opened = true; nav(HOME); }
+  }
+  window.addEventListener('message', function (e) {
+    var m = e.data;
+    if (m && typeof m === 'object' && m.type === 'configApply') applyConfig(m.config);
+  });
+  // 兜底：宿主未下发配置（独立打开等）时仍按默认主页打开
+  setTimeout(function () { if (!opened) { opened = true; nav(HOME); } }, 300);
 })();
 </script>
 </body>
