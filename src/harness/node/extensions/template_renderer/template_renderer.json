@@ -37,5 +37,13 @@
             "description": "渲染后的最终文本结果"
         }
     ],
-    "config": []
+    "config": [
+        {
+            "name": "template",
+            "type": "textarea",
+            "label": "模板内容",
+            "default": "",
+            "description": "在此书写 Jinja2 模板正文，使用 {{变量名}} 引用变量；编辑器会按正文中的变量名自动生成左侧输入端口。若同时用连线接入 template 端口，则连线内容优先。"
+        }
+    ]
 }

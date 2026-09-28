@@ -872,6 +872,13 @@
       refreshSummary(node);
       drawEdges();
     };
+    // 实时联动：边输入边重算动态端口（如模板渲染器按 {{变量名}} 生成输入端口）。
+    // refreshSummary 内部只重绘端口 DOM、不重建检查器，故输入焦点不会丢失。
+    ta2.oninput = EV.debounce(function () {
+      node.config[f.name] = ta2.value;
+      state.dirty = true;
+      refreshSummary(node);
+    }, 300);
     wrap.appendChild(ta2);
     if (f.description) wrap.appendChild(EV.el('div', 'desc', f.description));
     return wrap;
