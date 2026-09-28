@@ -11,7 +11,16 @@ from src.api_port import DEFAULT_API_PORT, resolve_api_port
 def _preflight_explicit_api_port() -> None:
     """Reject an explicitly unusable port before importing heavy agent modules."""
 
-    if "--api" not in sys.argv or "--multiprocessing-fork" in sys.argv:
+    # 🌟 spawn 子进程（工具隔离执行）会以 __mp_main__ 重跑本模块，且 sys.argv 被还原为
+    # 父进程的原始命令行——此时 API 端口正被父进程占用，若继续校验就会把子进程直接
+    # SystemExit(2) 掉，表现为所有隔离子进程工具（bash/request/fetch/search）都报
+    # 「工具子进程意外终止」。此阶段 multiprocessing.parent_process() 尚未初始化，
+    # 只能用模块名 __mp_main__ 判别；--multiprocessing-fork 则是打包态的同类标记。
+    if (
+        __name__ != "__main__"
+        or "--api" not in sys.argv
+        or "--multiprocessing-fork" in sys.argv
+    ):
         return
 
     cli_port = None
