@@ -162,9 +162,9 @@
     background-image: radial-gradient(#d7cec2 1px, transparent 1px);
     background-size: 22px 22px;
   }
-  .gcanvas.drag { cursor: grabbing; }
+  .gcanvas.drag, .gcanvas.nodedrag { cursor: grabbing; }
   .gworld { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
-  .gworld svg { position: absolute; left: 0; top: 0; overflow: visible; }
+  .gworld svg.gedges { position: absolute; left: 0; top: 0; overflow: visible; }
   g.e .ehit { fill: none; stroke: transparent; stroke-width: 16; pointer-events: stroke; cursor: pointer; }
   g.e .epath { fill: none; stroke: #1A1A1A; stroke-width: 3; pointer-events: none; }
   g.e .earrow { fill: #1A1A1A; pointer-events: none; }
@@ -177,13 +177,17 @@
   g.e:hover .earrow { fill: #D47A5A; }
   g.e:hover .elabel { fill: #D47A5A; }
   .gnode {
-    position: absolute; display: flex; align-items: center; justify-content: center;
+    position: absolute; left: 0; top: 0; display: flex; align-items: center; justify-content: center;
     border: 3px solid #1A1A1A; border-radius: 7px; background: #FAF8F5; color: #1A1A1A;
-    box-shadow: 5px 5px 0 rgba(26,26,26,1); padding: 0 9px; overflow: hidden;
+    box-shadow: 5px 5px 0 rgba(26,26,26,1); padding: 0 9px; overflow: hidden; cursor: grab;
     font-family: var(--hand); font-size: 13px; font-weight: 700; text-align: center;
     white-space: nowrap; text-overflow: ellipsis;
   }
   .gnode:hover { border-color: var(--terracotta); background: #FDF8F0; color: var(--terracotta); }
+  .gnode.dragging {
+    z-index: 3; cursor: grabbing; border-color: var(--terracotta);
+    background: #FDF8F0; color: var(--terracotta); box-shadow: 8px 8px 0 rgba(212,122,90,.55);
+  }
   .gtip {
     position: absolute; left: 16px; top: 12px; z-index: 5; pointer-events: none;
     background: var(--paper); border: 2px solid rgba(26,26,26,.3); border-radius: 9px;
@@ -436,7 +440,6 @@
     experiences: [],
     graph: null,
     graphLoading: true,
-    layout: null,
     deleteTarget: null,
     savingMd: false
   };
@@ -495,10 +498,8 @@
     $('mh-ico').style.color = ICO_COLORS[mode];
     $('mh-ico').innerHTML = ICONS[mode];
     $('btn-refresh').hidden = (mode !== 'graph');
-    if (mode === 'graph') {
-      if (!S.layout && S.graph && (S.graph.nodes || []).length) computeLayout();
-      paintGraph(true);
-    }
+    if (mode === 'graph') renderGraphView();
+    else stopLoop();
   }
 
   /* ======================== 混合检索 ======================== */
@@ -633,77 +634,105 @@
     return { w: Math.max(58, Math.min(300, Math.ceil(w) + 26)), h: 34 };
   }
 
-  // 力导向布局（对齐完整模式 forceAtlas2Based 的观感）
-  function computeLayout() {
+  /* ---- 实时力导向物理（对齐完整模式 forceAtlas2Based 的观感） ---- */
+  var PHYS = {
+    A: 42000,          // 斥力强度
+    L: 150,            // 弹簧自然长度
+    B: 0.06,           // 弹簧刚度
+    G: 0.0016,         // 向心引力
+    DECAY: 0.6,        // 速度阻尼
+    VMAX: 25,          // 速度上限
+    ALPHA_DECAY: 0.985,
+    WARM: 0.1,         // 首屏预热阈值（避免炸开）
+    REHEAT: 0.45,      // 拖拽时回温
+    MIN_ALPHA: 0.008
+  };
+  var sim = null;
+
+  function buildSim() {
     var nodes = (S.graph && S.graph.nodes) || [];
     var edges = (S.graph && S.graph.edges) || [];
-    var N = nodes.length;
-    var size = {}, idx = {};
-    for (var i = 0; i < N; i++) {
-      var id = nodes[i].id;
-      idx[id] = i;
-      size[id] = nodeSize(nodes[i].label);
-    }
-    var cx = new Float64Array(N), cy = new Float64Array(N);
+    var N = nodes.length, i;
+    if (!N) { sim = null; world.innerHTML = ''; return; }
+    var idx = {}, ns = [], es = [];
     for (i = 0; i < N; i++) {
-      var ang = i * 2.399963, r = 26 * Math.sqrt(i + 1);
-      cx[i] = Math.cos(ang) * r;
-      cy[i] = Math.sin(ang) * r;
+      var sz = nodeSize(nodes[i].label);
+      idx[nodes[i].id] = i;
+      ns.push({ id: nodes[i].id, label: nodes[i].label, x: 0, y: 0, vx: 0, vy: 0, w: sz.w, h: sz.h, el: null });
     }
-    var E = [];
+    for (i = 0; i < N; i++) {                        // 点火发射式初始散布
+      var ang = i * 2.399963, r = 26 * Math.sqrt(i + 1);
+      ns[i].x = Math.cos(ang) * r;
+      ns[i].y = Math.sin(ang) * r;
+    }
     edges.forEach(function (e) {
       var a = idx[e.from], b = idx[e.to];
-      if (a != null && b != null && a !== b) E.push([a, b]);
+      if (a != null && b != null && a !== b) {
+        es.push({ a: a, b: b, from: e.from, to: e.to, label: e.label || '', g: null, hit: null, path: null, arw: null, lbl: null });
+      }
     });
-    var K = 150;                 // 理想边长
-    var ITER = 140;
-    for (var it = 0; it < ITER; it++) {
-      var fx = new Float64Array(N), fy = new Float64Array(N);
-      for (i = 0; i < N; i++) {
-        var xi = cx[i], yi = cy[i];
-        for (var j = i + 1; j < N; j++) {
-          var dx = xi - cx[j], dy = yi - cy[j];
-          var d2 = dx * dx + dy * dy;
-          if (d2 < 0.01) { dx = ((i % 7) - 3) * 0.5 + 0.1; dy = ((j % 5) - 2) * 0.5 + 0.1; d2 = dx * dx + dy * dy; }
-          var d = Math.sqrt(d2);
-          var f = (K * K) / d;      // 粒子斥力
-          var ux = dx / d, uy = dy / d;
-          fx[i] += ux * f; fy[i] += uy * f;
-          fx[j] -= ux * f; fy[j] -= uy * f;
-        }
-      }
-      for (var k = 0; k < E.length; k++) {
-        var A = E[k][0], B = E[k][1];
-        var ddx = cx[A] - cx[B], ddy = cy[A] - cy[B];
-        var dd = Math.sqrt(ddx * ddx + ddy * ddy) || 0.01;
-        var ff = (dd * dd) / K;     // 弹簧引力
-        var vx = ddx / dd, vy = ddy / dd;
-        fx[A] -= vx * ff; fy[A] -= vy * ff;
-        fx[B] += vx * ff; fy[B] += vy * ff;
-      }
-      for (i = 0; i < N; i++) {
-        fx[i] -= cx[i] * 0.05;      // 向心引力
-        fy[i] -= cy[i] * 0.05;
-        cx[i] += Math.max(-20, Math.min(20, fx[i] * 0.02));
-        cy[i] += Math.max(-20, Math.min(20, fy[i] * 0.02));
-      }
-    }
-    var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    var geom = {};
+    sim = {
+      ns: ns, es: es, idx: idx, N: N, E: es.length,
+      fx: new Float64Array(N), fy: new Float64Array(N),
+      alpha: 1, raf: 0, running: false, drag: -1,
+      offX: 0, offY: 0, poffX: 0, poffY: 0, onscreen: false, userMoved: false,
+      svgEl: null, dragEl: null, grabDX: 0, grabDY: 0
+    };
+    var guard = 0;
+    while (sim.alpha > PHYS.WARM && guard++ < 4000) stepSim();
+    buildGraphDom();
+  }
+
+  function stepSim() {
+    if (!sim) return;
+    var s = sim, ns = s.ns, N = s.N, alpha = s.alpha, i, j;
+    var fx = s.fx, fy = s.fy;
+    for (i = 0; i < N; i++) { fx[i] = 0; fy[i] = 0; }
     for (i = 0; i < N; i++) {
-      var n = nodes[i];
-      var s = size[n.id];
-      var x = cx[i], y = cy[i];
-      geom[n.id] = { x: x, y: y, w: s.w, h: s.h };
-      minX = Math.min(minX, x - s.w / 2); maxX = Math.max(maxX, x + s.w / 2);
-      minY = Math.min(minY, y - s.h / 2); maxY = Math.max(maxY, y + s.h / 2);
+      var xi = ns[i].x, yi = ns[i].y;
+      for (j = i + 1; j < N; j++) {
+        var dx = xi - ns[j].x, dy = yi - ns[j].y;
+        var d2 = dx * dx + dy * dy;
+        if (d2 < 1) { dx = ((i % 7) - 3) * 0.3 + 0.05; dy = ((j % 5) - 2) * 0.3 + 0.05; d2 = dx * dx + dy * dy; }
+        var d = Math.sqrt(d2), f = PHYS.A / d2, ux = dx / d, uy = dy / d;
+        fx[i] += ux * f; fy[i] += uy * f;
+        fx[j] -= ux * f; fy[j] -= uy * f;
+      }
     }
+    var es = s.es;
+    for (var k = 0; k < es.length; k++) {
+      var A = es[k].a, B = es[k].b;
+      var ddx = ns[A].x - ns[B].x, ddy = ns[A].y - ns[B].y;
+      var dd = Math.sqrt(ddx * ddx + ddy * ddy) || 0.01;
+      var ff = (dd - PHYS.L) * PHYS.B, sx = ddx / dd, sy = ddy / dd;
+      fx[A] -= sx * ff; fy[A] -= sy * ff;
+      fx[B] += sx * ff; fy[B] += sy * ff;
+    }
+    for (i = 0; i < N; i++) {
+      var n = ns[i];
+      if (i === s.drag) { n.vx = 0; n.vy = 0; continue; }   // 被拖拽的节点由指针接管
+      fx[i] -= n.x * PHYS.G; fy[i] -= n.y * PHYS.G;
+      n.vx = Math.max(-PHYS.VMAX, Math.min(PHYS.VMAX, (n.vx + fx[i] * alpha) * PHYS.DECAY));
+      n.vy = Math.max(-PHYS.VMAX, Math.min(PHYS.VMAX, (n.vy + fy[i] * alpha) * PHYS.DECAY));
+      n.x += n.vx; n.y += n.vy;
+    }
+    s.alpha *= PHYS.ALPHA_DECAY;
+  }
+
+  // 把模拟坐标整体平移到正区间，并给出每帧的世界尺寸
+  function frameGeom() {
+    var ns = sim.ns, N = sim.N, i;
+    var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (i = 0; i < N; i++) {
+      var n = ns[i];
+      if (n.x - n.w / 2 < minX) minX = n.x - n.w / 2;
+      if (n.x + n.w / 2 > maxX) maxX = n.x + n.w / 2;
+      if (n.y - n.h / 2 < minY) minY = n.y - n.h / 2;
+      if (n.y + n.h / 2 > maxY) maxY = n.y + n.h / 2;
+    }
+    if (!isFinite(minX)) { minX = 0; minY = 0; maxX = 1; maxY = 1; }
     var PAD = 60;
-    for (var key in geom) {
-      geom[key].x += PAD - minX;
-      geom[key].y += PAD - minY;
-    }
-    S.layout = { geom: geom, W: (maxX - minX) + PAD * 2, H: (maxY - minY) + PAD * 2 };
+    return { offX: PAD - minX, offY: PAD - minY, W: (maxX - minX) + PAD * 2, H: (maxY - minY) + PAD * 2 };
   }
 
   // 中心连线与矩形边框的交点
@@ -732,79 +761,161 @@
     applyView();
   }
 
-  function paintGraph(doFit) {
-    var L = S.layout;
-    var nodes = (S.graph && S.graph.nodes) || [];
-    var edges = (S.graph && S.graph.edges) || [];
+  function svgEl(name) { return document.createElementNS('http://www.w3.org/2000/svg', name); }
+
+  // 一次性建好 DOM 并缓存引用，之后每帧只改 transform / d / points，不再重建 innerHTML
+  function buildGraphDom() {
+    world.innerHTML = '';
+    if (!sim) return;
+    var svg = svgEl('svg');
+    svg.setAttribute('class', 'gedges');
+    svg.setAttribute('width', '10');
+    svg.setAttribute('height', '10');
+    sim.es.forEach(function (e) {
+      var g = svgEl('g');
+      g.setAttribute('class', 'e');
+      g.setAttribute('data-from', e.from);
+      g.setAttribute('data-to', e.to);
+      e.hit = svgEl('path'); e.hit.setAttribute('class', 'ehit');
+      e.path = svgEl('path'); e.path.setAttribute('class', 'epath');
+      e.arw = svgEl('polygon'); e.arw.setAttribute('class', 'earrow');
+      g.appendChild(e.hit); g.appendChild(e.path); g.appendChild(e.arw);
+      if (e.label) {
+        e.lbl = svgEl('text');
+        e.lbl.setAttribute('class', 'elabel');
+        e.lbl.setAttribute('text-anchor', 'middle');
+        e.lbl.setAttribute('dominant-baseline', 'middle');
+        e.lbl.textContent = e.label;
+        g.appendChild(e.lbl);
+      }
+      e.g = g;
+      svg.appendChild(g);
+    });
+    world.appendChild(svg);
+    sim.svgEl = svg;
+    var frag = document.createDocumentFragment();
+    sim.ns.forEach(function (n) {
+      var d = document.createElement('div');
+      d.className = 'gnode';
+      d.setAttribute('data-nid', n.id);
+      d.title = n.label;
+      d.textContent = n.label;
+      d.style.width = n.w + 'px';
+      d.style.height = n.h + 'px';
+      d.style.transform = 'translate(-99999px,-99999px)';
+      n.el = d;
+      frag.appendChild(d);
+    });
+    world.appendChild(frag);
+  }
+
+  function paintEdge(e, ns, ox, oy) {
+    var q1 = borderPoint(ns[e.a], ns[e.b]), q2 = borderPoint(ns[e.b], ns[e.a]);
+    var p1x = q1.x + ox, p1y = q1.y + oy, p2x = q2.x + ox, p2y = q2.y + oy;
+    var dx = p2x - p1x, dy = p2y - p1y;
+    var dist = Math.sqrt(dx * dx + dy * dy) || 1;
+    var bow = Math.min(dist * 0.16, 40);
+    var nx = -dy / dist, ny = dx / dist;
+    var mx = (p1x + p2x) / 2 + nx * bow, my = (p1y + p2y) / 2 + ny * bow;
+    var c1x = p1x + (mx - p1x) * 0.7, c1y = p1y + (my - p1y) * 0.7;
+    var c2x = p2x + (mx - p2x) * 0.7, c2y = p2y + (my - p2y) * 0.7;
+    var ux = p2x - c2x, uy = p2y - c2y;
+    var ul = Math.sqrt(ux * ux + uy * uy) || 1;
+    ux /= ul; uy /= ul;
+    var ex = p2x - ux * 11, ey = p2y - uy * 11;
+    var d = 'M' + p1x + ' ' + p1y + 'C' + c1x + ' ' + c1y + ',' + c2x + ' ' + c2y + ',' + ex + ' ' + ey;
+    e.path.setAttribute('d', d);
+    e.hit.setAttribute('d', d);
+    var px = -uy * 5.5, py = ux * 5.5;
+    e.arw.setAttribute('points', p2x + ',' + p2y + ' ' + (ex + px) + ',' + (ey + py) + ' ' + (ex - px) + ',' + (ey - py));
+    if (e.lbl) {
+      e.lbl.setAttribute('x', 0.125 * p1x + 0.375 * c1x + 0.375 * c2x + 0.125 * p2x);
+      e.lbl.setAttribute('y', 0.125 * p1y + 0.375 * c1y + 0.375 * c2y + 0.125 * p2y);
+    }
+  }
+
+  function paintSim(doFit) {
+    if (!sim) return;
+    var g = frameGeom();
+    var dx = g.offX - sim.poffX, dy = g.offY - sim.poffY;
+    sim.poffX = g.offX; sim.poffY = g.offY;
+    sim.offX = g.offX; sim.offY = g.offY;
+    if (sim.onscreen && (dx || dy)) {   // 原点漂移时补偿视口，保证画面稳定
+      view.x -= dx * view.s;
+      view.y -= dy * view.s;
+      applyView();
+    }
+    sim.ns.forEach(function (n) {
+      if (!n.el) return;
+      n.el.style.transform = 'translate(' + (n.x - n.w / 2 + g.offX) + 'px,' + (n.y - n.h / 2 + g.offY) + 'px)';
+    });
+    var ns = sim.ns;
+    sim.es.forEach(function (e) { paintEdge(e, ns, g.offX, g.offY); });
+    if (sim.svgEl) { sim.svgEl.setAttribute('width', g.W); sim.svgEl.setAttribute('height', g.H); }
+    if (doFit) { fitView(g.W, g.H); sim.onscreen = true; }
+  }
+
+  function loop() {
+    if (!sim || !sim.running) return;
+    stepSim();
+    paintSim(false);
+    if (sim.drag < 0 && sim.alpha <= PHYS.MIN_ALPHA) {
+      sim.running = false; sim.raf = 0;
+      if (!sim.userMoved) paintSim(true);   // 沉降结束后再贴合一次视口
+      return;
+    }
+    sim.raf = requestAnimationFrame(loop);
+  }
+  function startLoop() {
+    if (!sim || sim.running) return;
+    sim.running = true;
+    sim.raf = requestAnimationFrame(loop);
+  }
+  function stopLoop() {
+    if (sim && sim.raf) cancelAnimationFrame(sim.raf);
+    if (sim) { sim.running = false; sim.raf = 0; sim.drag = -1; }
+  }
+
+  function renderGraphView() {
     $('g-load').hidden = !S.graphLoading;
     if (S.graphLoading) { $('g-empty').hidden = true; return; }
-    if (!L || !nodes.length) {
+    if (!S.graph || !(S.graph.nodes || []).length) {
+      stopLoop();
+      sim = null;
       world.innerHTML = '';
       $('g-empty').hidden = false;
       return;
     }
     $('g-empty').hidden = true;
-    var h = '';
-    nodes.forEach(function (n) {
-      var g = L.geom[n.id];
-      if (!g) return;
-      h += '<div class="gnode" data-nid="' + esc(n.id) + '" title="' + esc(n.label) + '"'
-        + ' style="left:' + (g.x - g.w / 2) + 'px;top:' + (g.y - g.h / 2) + 'px;width:' + g.w + 'px;height:' + g.h + 'px">'
-        + esc(n.label) + '</div>';
-    });
-    var svg = '';
-    edges.forEach(function (e) {
-      var a = L.geom[e.from], b = L.geom[e.to];
-      if (!a || !b) return;
-      var p1 = borderPoint(a, b), p2 = borderPoint(b, a);
-      var dx = p2.x - p1.x, dy = p2.y - p1.y;
-      var dist = Math.sqrt(dx * dx + dy * dy) || 1;
-      var bow = Math.min(dist * 0.16, 40);
-      var nx = -dy / dist, ny = dx / dist;
-      var mx = (p1.x + p2.x) / 2 + nx * bow, my = (p1.y + p2.y) / 2 + ny * bow;
-      var c1 = { x: p1.x + (mx - p1.x) * 0.7, y: p1.y + (my - p1.y) * 0.7 };
-      var c2 = { x: p2.x + (mx - p2.x) * 0.7, y: p2.y + (my - p2.y) * 0.7 };
-      var ux = p2.x - c2.x, uy = p2.y - c2.y;
-      var ul = Math.sqrt(ux * ux + uy * uy) || 1;
-      ux /= ul; uy /= ul;
-      var end = { x: p2.x - ux * 11, y: p2.y - uy * 11 };
-      var d = 'M' + p1.x + ' ' + p1.y + 'C' + c1.x + ' ' + c1.y + ',' + c2.x + ' ' + c2.y + ',' + end.x + ' ' + end.y;
-      var bx = p2.x - ux * 11, by = p2.y - uy * 11;
-      var px = -uy * 5.5, py = ux * 5.5;
-      var tri = p2.x + ',' + p2.y + ' ' + (bx + px) + ',' + (by + py) + ' ' + (bx - px) + ',' + (by - py);
-      var lx = 0.125 * p1.x + 0.375 * c1.x + 0.375 * c2.x + 0.125 * p2.x;
-      var ly = 0.125 * p1.y + 0.375 * c1.y + 0.375 * c2.y + 0.125 * p2.y;
-      svg += '<g class="e" data-from="' + esc(e.from) + '" data-to="' + esc(e.to) + '">'
-        + '<path class="ehit" d="' + d + '"/><path class="epath" d="' + d + '"/>'
-        + '<polygon class="earrow" points="' + tri + '"/>'
-        + (e.label ? '<text class="elabel" x="' + lx + '" y="' + ly + '" text-anchor="middle" dominant-baseline="middle">' + esc(e.label) + '</text>' : '')
-        + '</g>';
-    });
-    world.innerHTML = '<svg width="' + L.W + '" height="' + L.H + '">' + svg + '</svg>' + h;
-    if (doFit) fitView(L.W, L.H);
+    if (!sim) { buildSim(); paintSim(true); } else { paintSim(false); }
+    startLoop();
   }
-
   function loadGraph(quiet) {
     S.graphLoading = true;
-    if (S.view === 'graph') paintGraph(false);
+    if (S.view === 'graph') renderGraphView();
     return jget(API.graph).then(function (d) {
       S.graph = { nodes: (d && d.nodes) || [], edges: (d && d.edges) || [] };
-      S.layout = null;
       S.graphLoading = false;
+      stopLoop();
+      sim = null;
       if (!quiet) toast('全量刷新成功！共加载 ' + S.graph.nodes.length + ' 个节点');
-      if (S.view === 'graph' && S.graph.nodes.length) computeLayout();
-      if (S.view === 'graph') paintGraph(true);
+      if (S.view === 'graph') renderGraphView();
     }).catch(function () {
       S.graphLoading = false;
-      if (S.view === 'graph') paintGraph(false);
+      if (S.view === 'graph') renderGraphView();
       toast('全量加载图谱失败', false);
     });
   }
 
   /* ======================== 画布交互 ======================== */
   var drag = null, moved = false;
+  function worldPoint(e) {
+    var r = canvas.getBoundingClientRect();
+    return { x: (e.clientX - r.left - view.x) / view.s, y: (e.clientY - r.top - view.y) / view.s };
+  }
   canvas.addEventListener('wheel', function (e) {
     e.preventDefault();
+    if (sim) sim.userMoved = true;
     var r = canvas.getBoundingClientRect();
     var mx = e.clientX - r.left, my = e.clientY - r.top;
     var ns = Math.min(3, Math.max(0.08, view.s * (e.deltaY < 0 ? 1.1 : 1 / 1.1)));
@@ -815,12 +926,38 @@
     applyView();
   }, { passive: false });
   canvas.addEventListener('pointerdown', function (e) {
+    var el = (sim && e.target.closest) ? e.target.closest('.gnode') : null;
+    var i = el ? sim.idx[el.getAttribute('data-nid')] : null;
+    if (i != null) {                       // 命中节点 → 拖拽节点
+      var p = worldPoint(e);
+      sim.drag = i;
+      sim.dragEl = el;
+      sim.grabDX = sim.ns[i].x - p.x;
+      sim.grabDY = sim.ns[i].y - p.y;
+      sim.userMoved = true;
+      el.classList.add('dragging');
+      canvas.classList.add('nodedrag');
+      sim.alpha = Math.max(sim.alpha, PHYS.REHEAT);
+      startLoop();
+      try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* noop */ }
+      e.preventDefault();
+      return;
+    }
     drag = { x: e.clientX, y: e.clientY, vx: view.x, vy: view.y };
     moved = false;
     canvas.classList.add('drag');
     try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* noop */ }
   });
   canvas.addEventListener('pointermove', function (e) {
+    if (sim && sim.drag >= 0) {             // 拖拽节点：位置跟随指针并持续回温
+      var p = worldPoint(e), n = sim.ns[sim.drag];
+      n.x = p.x + sim.grabDX;
+      n.y = p.y + sim.grabDY;
+      n.vx = 0; n.vy = 0;
+      sim.alpha = Math.max(sim.alpha, PHYS.REHEAT);
+      paintSim(false);
+      return;
+    }
     if (!drag) return;
     var ddx = e.clientX - drag.x, ddy = e.clientY - drag.y;
     if (Math.abs(ddx) + Math.abs(ddy) > 3) moved = true;
@@ -828,14 +965,25 @@
     view.y = drag.vy + ddy;
     applyView();
   });
-  canvas.addEventListener('pointerup', function () {
+  function endPointer() {
+    if (sim && sim.drag >= 0) {             // 松手后留一点回温，让邻居弹一弹再归位
+      if (sim.dragEl) sim.dragEl.classList.remove('dragging');
+      sim.dragEl = null;
+      sim.drag = -1;
+      sim.alpha = Math.max(sim.alpha, PHYS.REHEAT);
+      canvas.classList.remove('nodedrag');
+      startLoop();
+      return;
+    }
     drag = null;
     canvas.classList.remove('drag');
-  });
+  }
+  canvas.addEventListener('pointerup', endPointer);
+  canvas.addEventListener('pointercancel', endPointer);
   canvas.addEventListener('click', function (e) {
     if (moved) return;
     var g = e.target.closest ? e.target.closest('g.e') : null;
-    if (!g || !S.layout) return;
+    if (!g || !sim) return;
     var from = g.getAttribute('data-from'), to = g.getAttribute('data-to');
     var info = null;
     (S.graph.edges || []).forEach(function (x) { if (!info && x.from === from && x.to === to) info = x; });
@@ -883,6 +1031,12 @@
     S.events.forEach(function (x) { if (x.id === evt || x.event_id === evt) row = x; });
     askDelete({ type: 'event', id: evt, text: (row && row.content) || '' });
   });
+
+  window.addEventListener('message', function (e) {
+    var m = e.data;
+    if (m && m.type === 'event' && m.event === 'host.unmount') stopLoop();
+  });
+  window.addEventListener('pagehide', stopLoop);
 
   /* ======================== 启动 ======================== */
   renderSearchHint();
