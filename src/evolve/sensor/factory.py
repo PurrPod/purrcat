@@ -554,12 +554,20 @@ def _latest_protocol_verdict(workplace_root: str) -> tuple[bool, str]:
         newer = [
             item
             for item in os.listdir(workplace_root)
-            if item.endswith(".py") and os.path.getmtime(os.path.join(workplace_root, item)) > os.path.getmtime(bench_path)
+            if item.endswith(".py")
+            and os.path.getmtime(os.path.join(workplace_root, item))
+            > os.path.getmtime(bench_path)
         ]
         if newer:
-            return False, f"体检后又改动过 {', '.join(newer)}，证据已过期，需重跑 sensor_test"
+            return (
+                False,
+                f"体检后又改动过 {', '.join(newer)}，证据已过期，需重跑 sensor_test",
+            )
 
-    return True, f"iteration-{latest_idx} 协议体检通过（{summary.get('passed', 0)}/{summary.get('total', 0)}）"
+    return (
+        True,
+        f"iteration-{latest_idx} 协议体检通过（{summary.get('passed', 0)}/{summary.get('total', 0)}）",
+    )
 
 
 def sensor_request_handle(

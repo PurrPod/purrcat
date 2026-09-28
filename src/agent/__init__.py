@@ -81,7 +81,19 @@ def get_window_token():
 
 
 def get_agent_max_token():
-    return 1000000
+    """上下文窗口上限：跟随当前模型配置里的 max_token。
+
+    原先这里写死 1000000，与 Agent 自身的记忆截断口径（model.json 的
+    main.<模型>.max_token，默认 500000）不一致，导致前端圆环显示错误。
+    """
+    model_name = getattr(getattr(_manager_instance, "_agent", None), "name", None)
+    if not model_name:
+        return 500000
+
+    from src.utils.config import get_model_config
+
+    model_cfg = get_model_config().get("main", {}).get(model_name, {})
+    return model_cfg.get("max_token", 500000)
 
 
 # ==========================================

@@ -163,7 +163,9 @@ def _static_checks(
         "pep723",
         "PEP 723 内联依赖声明",
         has_pep723,
-        "已声明内联依赖块" if has_pep723 else "缺少 `# /// script` 内联依赖块，uv run 无法建环境",
+        "已声明内联依赖块"
+        if has_pep723
+        else "缺少 `# /// script` 内联依赖块，uv run 无法建环境",
     )
 
     # 2. stdout 重定向（协议通道纯净的前提）
@@ -271,7 +273,9 @@ class _GatewayFixture:
 
     # -- 生命周期 ---------------------------------------------------------- #
     def start(self):
-        self._stderr_file = open(self.stderr_path, "w", encoding="utf-8", errors="replace")
+        self._stderr_file = open(
+            self.stderr_path, "w", encoding="utf-8", errors="replace"
+        )
         flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
         self.proc = subprocess.Popen(
             ["uv", "run", self.script_path],
@@ -517,7 +521,9 @@ def _runtime_checks(
         )
 
         # 2. 空凭证逼出鉴权求助
-        got_prompt = fixture.wait_for(lambda: bool(fixture.prompts), _AUTH_PROMPT_TIMEOUT)
+        got_prompt = fixture.wait_for(
+            lambda: bool(fixture.prompts), _AUTH_PROMPT_TIMEOUT
+        )
         add(
             "auth_prompt",
             "空凭证冷启动发出鉴权求助",
@@ -556,14 +562,14 @@ def _runtime_checks(
         if got_prompt:
             hit_keys = [k for k in declared if k in prompt_text]
             hint_ok = any(
-                word in prompt_text for word in ("http", "配置", "获取", "控制台", "官网")
+                word in prompt_text
+                for word in ("http", "配置", "获取", "控制台", "官网")
             )
             add(
                 "auth_hint",
                 "求助文本含凭证名与获取入口",
                 bool(hit_keys) and hint_ok,
-                f"命中凭证名 {hit_keys}，"
-                f"{'含' if hint_ok else '未见'}获取入口提示"
+                f"命中凭证名 {hit_keys}，{'含' if hint_ok else '未见'}获取入口提示"
                 if hit_keys
                 else "求助文本里没有出现已声明的凭证名，用户不知道要填什么",
             )
@@ -576,7 +582,9 @@ def _runtime_checks(
             "garbage_tolerance",
             "非法输入不崩溃",
             fixture.alive(),
-            "注入 5 类垃圾行后进程仍存活" if fixture.alive() else "注入垃圾行后进程已退出",
+            "注入 5 类垃圾行后进程仍存活"
+            if fixture.alive()
+            else "注入垃圾行后进程已退出",
         )
 
         # 6. 未知 method 下发
@@ -798,9 +806,7 @@ def _run_protocol_eval(workplace_id: str, sensor_name: str) -> str:
     iteration_dir, iteration_idx = _get_next_iteration_dir(workplace_root)
     os.makedirs(iteration_dir, exist_ok=True)
 
-    static_cases = _static_checks(
-        script_text, config, config_error, sensor_name
-    )
+    static_cases = _static_checks(script_text, config, config_error, sensor_name)
     runtime_cases, trace = _runtime_checks(
         script_path, workplace_root, declared, iteration_dir
     )
@@ -821,7 +827,9 @@ def _run_protocol_eval(workplace_id: str, sensor_name: str) -> str:
             "passed": passed,
             "total": len(cases),
             "errors": err_count,
-            "warnings": len([c for c in cases if not c["pass"] and c["level"] == "warn"]),
+            "warnings": len(
+                [c for c in cases if not c["pass"] and c["level"] == "warn"]
+            ),
         },
         "cases": cases,
     }
@@ -830,9 +838,7 @@ def _run_protocol_eval(workplace_id: str, sensor_name: str) -> str:
     ) as f:
         json.dump(benchmark, f, ensure_ascii=False, indent=2)
 
-    report = _render_report(
-        sensor_name, workplace_id, iteration_idx, config, cases
-    )
+    report = _render_report(sensor_name, workplace_id, iteration_idx, config, cases)
     report += (
         f"\n\n📁 取证文件：`iteration-{iteration_idx}/handshake.json`（全量抓包）、"
         f"`benchmark.json`、`sensor_stderr.log`"
