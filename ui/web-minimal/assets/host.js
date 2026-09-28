@@ -1527,6 +1527,30 @@
         broadcastSessions(wasActive ? 'session.switched' : 'conversation.updated', { session_id: groupState.activeSessionId });
         return { status: 'ok' };
       }
+      // 待审批队列：对齐后端 GET /api/requests（主进程会在轮询时顺带 kick skill/sensor 免审测试）
+      case 'requests.list': {
+        const list = await (await fetch('/api/requests')).json();
+        return Array.isArray(list) ? list : [];
+      }
+      // 审批裁决：对齐后端 POST /api/requests/{id}/resolve
+      case 'requests.resolve': {
+        const rid = String(payload.request_id || '');
+        if (!rid) throw new Error('缺少 request_id');
+        const res = await fetch('/api/requests/' + encodeURIComponent(rid) + '/resolve', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            approved: !!payload.approved,
+            feedback: String(payload.feedback || ''),
+            ignore: !!payload.ignore,
+            duration: Number(payload.duration || 5),
+          }),
+        });
+        if (!res.ok) throw new Error((await res.text()) || '裁决失败');
+        const data = await res.json();
+        broadcastAll('requests.updated', { request_id: rid });
+        return data;
+      }
       case 'chat.interrupt':
         return (await fetch('/api/chat/interrupt', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })).json();
       // 会话分支：基于当前会话新建分支并切换过去（对齐后端 POST /api/sessions/{id}/branch）

@@ -27,17 +27,44 @@
     border-radius: 18px; /* 会话列表整体为圆角框 */
     overflow: hidden;
   }
-  .head { display: flex; align-items: center; justify-content: space-between; padding: 4px 4px 10px; }
-  .head .title { font-size: 13px; font-weight: 600; }
-  .head .new {
+
+  /* ---------- 抽屉（可折叠分组） ---------- */
+  .drawer { display: flex; flex-direction: column; min-height: 0; }
+  .drawer.open#drawerSessions { flex: 1 1 auto; min-height: 0; }
+  .drawer:not(.open)#drawerSessions { flex: 0 0 auto; }
+  .drawer.open#drawerPending { flex: 0 1 auto; max-height: 56%; min-height: 0; }
+  .drawer:not(.open)#drawerPending { flex: 0 0 auto; }
+  .dhead {
+    flex: none; display: flex; align-items: center; gap: 6px;
+    padding: 5px 6px; border-radius: 8px; cursor: pointer; user-select: none;
+  }
+  .dhead:hover { background: var(--hover); }
+  .dhead .dtitle { font-size: 13px; font-weight: 600; }
+  .dhead .spacer { flex: 1; }
+  .chev {
+    flex: none; width: 14px; height: 14px; display: flex; align-items: center; justify-content: center;
+    color: var(--dim); transition: transform 0.15s ease;
+  }
+  .chev svg { display: block; width: 13px; height: 13px; }
+  .drawer:not(.open) .chev { transform: rotate(-90deg); }
+  .badge {
+    flex: none; min-width: 17px; height: 17px; padding: 0 5px; border-radius: 999px;
+    background: #EBCB8B; color: #16191d; font-size: 11px; font-weight: 600;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .badge.zero { display: none; }
+  .dbody { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; padding-top: 4px; }
+  .drawer:not(.open) .dbody { display: none; }
+  .dhead .new {
     flex: none; width: 26px; height: 26px;
     display: flex; align-items: center; justify-content: center;
     font-size: 16px; line-height: 1; color: var(--label-2nd, #4c5560);
     background: transparent; border: none; border-radius: 6px; cursor: pointer;
   }
-  .head .new:hover { background: var(--hover); }
+  .dhead .new:hover { background: var(--hover); }
 
-  .list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; }
+  /* ---------- 列表 ---------- */
+  .list { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
   .item {
     width: 100%;
     display: flex;
@@ -79,14 +106,65 @@
   .cbtn:hover { background: var(--hover); }
   .cbtn.danger { border-color: transparent; background: #bf616a; color: #fff; }
   .cbtn.danger:hover { background: #a94f58; }
+
+  /* ---------- 待审批卡片 ---------- */
+  .req {
+    flex: none; display: flex; flex-direction: column; gap: 6px;
+    background: rgba(255, 255, 255, 0.66); border-radius: 10px;
+    padding: 8px 10px; margin-bottom: 6px;
+  }
+  .req-top { display: flex; align-items: center; gap: 6px; }
+  .req-type {
+    font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 999px;
+    background: #EBCB8B; color: #16191d; white-space: nowrap;
+  }
+  .req-type.dep { background: #d08770; color: #fff; }
+  .req-x { margin-left: auto; }
+  .req-target { font-size: 12.5px; font-weight: 600; word-break: break-all; line-height: 1.35; }
+  .req-reason-btn {
+    align-self: flex-start; font: inherit; font-size: 11px; color: var(--dim);
+    background: none; border: none; cursor: pointer; padding: 0;
+  }
+  .req-reason-btn:hover { color: var(--label-2nd); }
+  .req-reason {
+    font-size: 11px; color: var(--label-2nd); background: rgba(15, 17, 21, 0.05);
+    border-radius: 6px; padding: 6px; white-space: pre-wrap; word-break: break-all; line-height: 1.5;
+  }
+  .req-input {
+    width: 100%; font: inherit; font-size: 11.5px; padding: 4px 6px;
+    border: 1px solid rgba(15, 17, 21, 0.12); border-radius: 6px; background: #fff; outline: none;
+  }
+  .req-input:focus { border-color: var(--accent); }
+  .req-dur { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--label-2nd); }
+  .req-dur select { font: inherit; font-size: 11px; padding: 2px 4px; border: 1px solid rgba(15, 17, 21, 0.12); border-radius: 6px; background: #fff; }
+  .req-acts { display: flex; gap: 6px; }
+  .rbtn { flex: 1; font: inherit; font-size: 12px; padding: 4px 0; border: none; border-radius: 7px; cursor: pointer; }
+  .rbtn.ok { background: #a3be8c; color: #16191d; font-weight: 600; }
+  .rbtn.ok:hover { background: #8eb072; }
+  .rbtn.no { background: #bf616a; color: #fff; }
+  .rbtn.no:hover { background: #a54e56; }
+  .empty { padding: 14px 8px; font-size: 12px; color: var(--dim); text-align: center; }
 </style>
 </head>
 <body>
-  <div class="head">
-    <span class="title">会话列表</span>
-    <button id="newBtn" class="new" title="新建会话" aria-label="新建会话">＋</button>
+  <div class="drawer open" id="drawerSessions">
+    <div class="dhead" id="headSessions">
+      <span class="chev"></span>
+      <span class="dtitle">会话列表</span>
+      <span class="spacer"></span>
+      <button id="newBtn" class="new" title="新建会话" aria-label="新建会话">＋</button>
+    </div>
+    <div class="dbody"><div id="list" class="list"></div></div>
   </div>
-  <div id="list" class="list"></div>
+
+  <div class="drawer" id="drawerPending">
+    <div class="dhead" id="headPending">
+      <span class="chev"></span>
+      <span class="dtitle">待审批</span>
+      <span class="badge zero" id="pendBadge">0</span>
+    </div>
+    <div class="dbody"><div id="reqList" class="list"></div></div>
+  </div>
 
 <script>
 (function () {
@@ -107,13 +185,23 @@
   }
 
   var listEl = document.getElementById('list');
+  var reqListEl = document.getElementById('reqList');
+  var badgeEl = document.getElementById('pendBadge');
   var sessions = [];
+  var requests = [];
   var activeId = '';                                  // 当前活动会话（由宿主 state 对账）
   var editingId = '', editingVal = '', confirmingId = '';   // 行内重命名 / 行内删除确认
+  var pendingOpen = false;                            // 待审批抽屉默认收起，有待办时自动展开
+  var expandedReasons = {};                           // req_id -> 是否展开理由
+  var feedbacks = {};                                 // req_id -> 反馈文本
+  var durations = {};                                 // req_id -> computer_use 授权时长(分钟)
+
   // 动作图标：与宿主图标集同款线性 SVG（插件自带，不依赖宿主实现）
   var SVG_HEAD = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">';
   var ICON_PENCIL = SVG_HEAD + '<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
   var ICON_TRASH = SVG_HEAD + '<path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>';
+  var ICON_X = SVG_HEAD + '<path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
+  var ICON_CHEV = SVG_HEAD + '<path d="m6 9 6 6 6-6"/></svg>';
 
   // 面板底色：浅灰（区别于宿主白底），确保圆角四角与背景有对比、看得见；透明度可调
   var DEF_OP = 0.9;
@@ -127,9 +215,11 @@
     if (!m || typeof m !== 'object') return;
     if (m.type === 'configApply') applyPanel(m.config);
     else if (m.type === 'event' && m.event === 'config.updated') { callAction('config.get', { plugin_id: 'builtin-sessions' }).then(applyPanel).catch(function () {}); }
+    else if (m.type === 'event' && m.event === 'requests.updated') loadRequests();
   });
   callAction('config.get', { plugin_id: 'builtin-sessions' }).then(applyPanel).catch(function () {});
 
+  /* ---------------- 会话列表 ---------------- */
   function findSession(id) {
     for (var i = 0; i < sessions.length; i++) if (sessions[i].id === id) return sessions[i];
     return null;
@@ -166,10 +256,20 @@
 
   function renderList() {
     listEl.innerHTML = '';
+    if (!sessions.length) {
+      var emp = document.createElement('div');
+      emp.className = 'empty';
+      emp.textContent = '暂无会话';
+      listEl.appendChild(emp);
+      return;
+    }
     sessions.forEach(function (s) {
       var card = document.createElement('div');
       card.className = 'item' + (s.id === activeId ? ' active' : '') + (editingId === s.id ? ' editing' : '');
-      card.addEventListener('click', function () { callAction('session.switch', { session_id: s.id }).catch(function () {}); });
+      card.addEventListener('click', function () {
+        // 点行内按钮/确认条时不切换会话（由子元素自行 stopPropagation）
+        callAction('session.switch', { session_id: s.id }).catch(function () {});
+      });
 
       // 删除确认态：整张卡片换成「删除「名称」？[删除][取消]」
       if (confirmingId === s.id) {
@@ -250,9 +350,173 @@
       .catch(function () {});
   }
 
-  document.getElementById('newBtn').addEventListener('click', function () {
+  /* ---------------- 待审批 ---------------- */
+  function setPendingOpen(open) {
+    pendingOpen = !!open;
+    document.getElementById('drawerPending').classList.toggle('open', pendingOpen);
+  }
+
+  function resolveReq(id, approved, ignore) {
+    var payload = {
+      request_id: id,
+      approved: !!approved,
+      ignore: !!ignore,
+      feedback: String(feedbacks[id] || ''),
+      duration: Number(durations[id] || 5)
+    };
+    callAction('requests.resolve', payload)
+      .then(function () { delete feedbacks[id]; loadRequests(); })
+      .catch(function () {});
+  }
+
+  function updateBadge() {
+    badgeEl.textContent = String(requests.length);
+    badgeEl.classList.toggle('zero', requests.length === 0);
+  }
+
+  function renderRequests() {
+    updateBadge();
+    reqListEl.innerHTML = '';
+    if (!requests.length) {
+      var emp = document.createElement('div');
+      emp.className = 'empty';
+      emp.textContent = '暂无待审批';
+      reqListEl.appendChild(emp);
+      return;
+    }
+    requests.forEach(function (req) {
+      var isDep = req.type === 'dependency_check';
+      var card = document.createElement('div');
+      card.className = 'req';
+
+      // 顶行：类型标签 + 静默忽略
+      var top = document.createElement('div');
+      top.className = 'req-top';
+      var chip = document.createElement('span');
+      chip.className = 'req-type' + (isDep ? ' dep' : '');
+      chip.textContent = req.type || 'request';
+      top.appendChild(chip);
+      var x = iconButton('req-x', '静默忽略', ICON_X, function () { resolveReq(req.id, false, true); });
+      top.appendChild(x);
+      card.appendChild(top);
+
+      var target = document.createElement('div');
+      target.className = 'req-target';
+      target.textContent = req.target || '(无标题)';
+      card.appendChild(target);
+
+      if (req.reason) {
+        var rbtn = document.createElement('button');
+        rbtn.className = 'req-reason-btn';
+        rbtn.textContent = expandedReasons[req.id] ? '收起理由 ▲' : '查看理由 ▼';
+        rbtn.addEventListener('click', function () {
+          expandedReasons[req.id] = !expandedReasons[req.id];
+          renderRequests();
+        });
+        card.appendChild(rbtn);
+        if (expandedReasons[req.id]) {
+          var reason = document.createElement('div');
+          reason.className = 'req-reason';
+          reason.textContent = req.reason;
+          card.appendChild(reason);
+        }
+      }
+
+      if (req.type === 'computer_use') {
+        var dur = document.createElement('div');
+        dur.className = 'req-dur';
+        var lab = document.createElement('span');
+        lab.textContent = '授权时长';
+        dur.appendChild(lab);
+        var sel = document.createElement('select');
+        [[10, '10 分钟'], [30, '30 分钟'], [-1, '今天不再询问']].forEach(function (o) {
+          var opt = document.createElement('option');
+          opt.value = String(o[0]);
+          opt.textContent = o[1];
+          sel.appendChild(opt);
+        });
+        sel.value = String(durations[req.id] || 10);
+        if (durations[req.id] === undefined) durations[req.id] = 10;   // 默认 10 分钟，与完整模式一致
+        sel.addEventListener('change', function () { durations[req.id] = parseInt(sel.value, 10); });
+        dur.appendChild(sel);
+        card.appendChild(dur);
+      }
+
+      if (!isDep) {
+        var fb = document.createElement('input');
+        fb.className = 'req-input';
+        fb.placeholder = '可选：给 Agent 的反馈';
+        fb.value = feedbacks[req.id] || '';
+        fb.addEventListener('input', function () { feedbacks[req.id] = fb.value; });
+        card.appendChild(fb);
+      }
+
+      // dependency_check 无需反馈，且原 UI 只有一个「知道了」（等价 rejected + 不忽略）
+      var acts = document.createElement('div');
+      acts.className = 'req-acts';
+      if (isDep) {
+        var ack = document.createElement('button');
+        ack.className = 'rbtn ok';
+        ack.textContent = '知道了';
+        ack.addEventListener('click', function () { resolveReq(req.id, false, false); });
+        acts.appendChild(ack);
+      } else {
+        var ok = document.createElement('button');
+        ok.className = 'rbtn ok';
+        ok.textContent = '批准';
+        ok.addEventListener('click', function () { resolveReq(req.id, true, false); });
+        var no = document.createElement('button');
+        no.className = 'rbtn no';
+        no.textContent = '拒绝';
+        no.addEventListener('click', function () { resolveReq(req.id, false, false); });
+        acts.appendChild(ok);
+        acts.appendChild(no);
+      }
+      card.appendChild(acts);
+
+      reqListEl.appendChild(card);
+    });
+  }
+
+  // 轮询用的是同一批 DOM：内容没变就不重绘，否则会打断正在输入的反馈框
+  var lastReqSig = null;
+  function reqSig(list) {
+    return list.map(function (r) { return r.id + ':' + (r.status || '') + ':' + (r.type || ''); }).join('|');
+  }
+
+  function loadRequests() {
+    return callAction('requests.list')
+      .then(function (list) {
+        var prev = requests.length;
+        requests = Array.isArray(list) ? list : [];
+        // 清掉已裁决项残留的本地态
+        Object.keys(expandedReasons).forEach(function (k) {
+          if (!requests.some(function (r) { return r.id === k; })) { delete expandedReasons[k]; delete feedbacks[k]; delete durations[k]; }
+        });
+        // 从「无」变「有」时自动展开，避免新审批被折叠状态藏起来
+        if (prev === 0 && requests.length > 0) setPendingOpen(true);
+        var sig = reqSig(requests);
+        updateBadge();
+        if (sig !== lastReqSig) { lastReqSig = sig; renderRequests(); }
+      })
+      .catch(function () {});
+  }
+
+  /* ---------------- 抽屉交互 ---------------- */
+  document.getElementById('headSessions').addEventListener('click', function (ev) {
+    if (ev.target && ev.target.closest && ev.target.closest('#newBtn')) return;
+    document.getElementById('drawerSessions').classList.toggle('open');
+  });
+  document.getElementById('headPending').addEventListener('click', function () {
+    setPendingOpen(!pendingOpen);
+  });
+  document.getElementById('newBtn').addEventListener('click', function (ev) {
+    ev.stopPropagation();
     callAction('sessions.new').then(function () { load(); }).catch(function () {});
   });
+
+  // 抽屉箭头图标（内联 SVG，避免额外图标依赖）
+  document.querySelectorAll('.chev').forEach(function (c) { c.innerHTML = ICON_CHEV; });
 
   window.addEventListener('message', function (e) {
     var m = e.data;
@@ -261,6 +525,9 @@
   });
 
   load();
+  loadRequests();
+  // 待审批无推送通道，按原 UI 同频轮询（3s）
+  setInterval(loadRequests, 3000);
 })();
 </script>
 </body>
