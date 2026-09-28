@@ -61,7 +61,7 @@
   .pane { flex: 1; min-height: 0; display: flex; overflow: hidden; }
 
   /* 左列表 + 右详情 */
-  .side { width: 268px; flex: none; display: flex; flex-direction: column; border-right: 1px solid var(--line); overflow: hidden; }
+  .side { width: 200px; flex: none; display: flex; flex-direction: column; border-right: 1px solid var(--line); overflow: hidden; }
   .side-head {
     flex: none; display: flex; align-items: center; gap: 6px; padding: 8px 12px 6px;
     font-size: 11px; font-weight: 600; letter-spacing: .06em; color: var(--dim); text-transform: uppercase;
@@ -294,7 +294,7 @@
  *   EV.confirm({title, message, okLabel, danger}) → Promise<boolean>
  *   EV.prompt({title, label, value, placeholder, okLabel}) → Promise<string|null>
  *   EV.setActions([{icon|label, title, primary, danger, disabled, onClick}])  右上角动作按钮
- *   EV.attachSideToggle(sideEl, headEl)  在左列表头部追加「收起」开关
+ *   EV.attachSideToggle(sideEl, headEl, label, onToggle)  在左列表头部追加「收起」开关
  *   EV.drawer(title, count, open, onToggle, fill)  左列表内的可折叠抽屉
  *   EV.md(text)                          markdown → HTML
  *   EV.escape(text) / EV.debounce(fn,ms) / EV.fmtTime(s)
@@ -568,16 +568,17 @@
   // ---------- 左侧列表收起开关 ----------
   // 把一个 ☰ 开关追加到头部；点击在 sideEl 上切换 ev-collapsed，
   // 收起后仅保留头部窄条与开关本身，主区域自动铺满。
-  function attachSideToggle(sideEl, headEl, label) {
+  function attachSideToggle(sideEl, headEl, label, onToggle) {
     var what = label || '左侧列表';
     var btn = el('button', 'side-toggle');
     btn.type = 'button';
     btn.innerHTML = icon('menu', 15);
-    btn.title = '收起' + what;
+    btn.title = (sideEl.classList.contains('ev-collapsed') ? '展开' : '收起') + what;
     btn.onclick = function (e) {
       e.stopPropagation();
       var collapsed = sideEl.classList.toggle('ev-collapsed');
       btn.title = (collapsed ? '展开' : '收起') + what;
+      if (onToggle) onToggle(collapsed);
     };
     headEl.appendChild(btn);
     return btn;

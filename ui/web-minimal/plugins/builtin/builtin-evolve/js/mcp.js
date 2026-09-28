@@ -379,7 +379,7 @@
     } else if (state.step === 'report') {
       var wrap2 = EV.el('div', 'pane');
       var left = EV.el('div', 'side');
-      left.style.width = '220px';
+      left.style.width = '170px';
       left.appendChild(EV.el('div', 'side-head', '测试存档'));
       var lb = EV.el('div', 'side-body');
       if (!state.iterations.length) lb.appendChild(EV.el('div', 'hint', '暂无测试存档。\n点击右上角「运行测试」启动流水线。'));

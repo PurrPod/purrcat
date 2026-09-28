@@ -343,7 +343,7 @@
     if (state.step === 'files') {
       var wrap = EV.el('div', 'pane');
       var flist = EV.el('div', 'side');
-      flist.style.width = '220px';
+      flist.style.width = '170px';
       flist.appendChild(EV.el('div', 'side-head', '沙盒文件'));
       var fbody = EV.el('div', 'side-body');
       if (!state.files.length) fbody.appendChild(EV.el('div', 'hint', '沙盒中暂无可见文件。'));
@@ -383,7 +383,7 @@
     } else if (state.step === 'evals') {
       var wrap2 = EV.el('div', 'pane');
       var left = EV.el('div', 'side');
-      left.style.width = '220px';
+      left.style.width = '170px';
       left.appendChild(EV.el('div', 'side-head', '评测存档'));
       var lb = EV.el('div', 'side-body');
       if (!state.iterations.length) lb.appendChild(EV.el('div', 'hint', '暂无评测存档。\n点击右上角「运行评测」启动流水线。'));

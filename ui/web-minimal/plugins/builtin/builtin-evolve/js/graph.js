@@ -7,6 +7,14 @@
   var EV = window.EV;
 
   var PORT_W = 11;
+  var KEY_INSP = 'purrcat.evolve.graph.inspCollapsed';
+
+  function readFlag(key) {
+    try { return localStorage.getItem(key) === '1'; } catch (e) { return false; }
+  }
+  function writeFlag(key, val) {
+    try { localStorage.setItem(key, val ? '1' : '0'); } catch (e) { /* 忽略隐私模式等写入失败 */ }
+  }
 
   var state = {
     catalog: [],
@@ -683,6 +691,7 @@
         ev.stopPropagation();
         state.selectedEdgeId = e.id;
         state.selectedId = null;
+        drawEdges();          // 重绘以在连线中点生成 ✕ 删除按钮
         paintSelection();
       });
       var p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
@@ -814,6 +823,7 @@
       if (e.target !== canvasEl && e.target !== svgEl && e.target !== worldEl) return;
       state.selectedId = null;
       state.selectedEdgeId = null;
+      drawEdges();            // 取消连线选中后同步移除 ✕ 删除按钮
       paintSelection();
       var start = { mx: e.clientX, my: e.clientY, x: state.view.x, y: state.view.y };
       canvasEl.style.cursor = 'grabbing';
@@ -884,8 +894,11 @@
       };
       head.appendChild(del);
     }
-    // 保留右侧面板但支持收起（编辑已可直接在节点卡片上完成）
-    var toggleBtn = EV.attachSideToggle(inspEl, head, '配置面板');
+    // 保留右侧面板但支持收起（编辑已可直接在节点卡片上完成）；收起状态持久化
+    var toggleBtn = EV.attachSideToggle(inspEl, head, '配置面板', function (collapsed) {
+      state.inspCollapsed = collapsed;
+      writeFlag(KEY_INSP, collapsed);
+    });
     if (state.inspCollapsed) toggleBtn.title = '展开配置面板';
     inspEl.appendChild(head);
 
@@ -1372,9 +1385,9 @@
   EV.defineTab('graph', 'Graph', {
     mount: function (root) {
       injectStyle();
+      state.inspCollapsed = readFlag(KEY_INSP);   // 恢复上次的配置面板收起状态
 
       var side = EV.el('div', 'side');
-      side.style.width = '240px';
       var sideHead = EV.el('div', 'side-head');
       sideHead.appendChild(EV.el('span', null, '图谱'));
       sideHead.appendChild(EV.el('span', 'spacer'));
