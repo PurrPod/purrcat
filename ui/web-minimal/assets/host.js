@@ -904,10 +904,25 @@
     }
     return cfgState.data[tab];
   }
+  // 运行时重载端点：sensor/mcp 的配置在子进程 spawn 时固化，写盘后必须通知运行中的
+  // 实例重载（重启进程 / 重建 schema 与检索索引），否则「保存了但没生效」。
+  const RELOAD_EP = { sensor: '/api/config/sensor/reload', mcp: '/api/config/mcp/reload' };
+  async function reloadRuntime(tab) {
+    const ep = RELOAD_EP[tab];
+    if (!ep) return null;
+    const r = await fetch(ep, { method: 'POST' });
+    const body = await r.json().catch(function () { return {}; });
+    if (!r.ok) throw new Error((body && body.detail) || ('HTTP ' + r.status));
+    return body;
+  }
   async function putCfg(tab, obj) {
     cfgState.data[tab] = obj;
     const r = await fetch('/api/config/' + tab, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(obj) });
     if (!r.ok) throw new Error('HTTP ' + r.status);
+    // 对齐完整模式：切换开关保存后自动重载。重载失败不阻断保存（可点「重载到内存」重试）
+    if (RELOAD_EP[tab]) {
+      try { await reloadRuntime(tab); } catch (e) { /* 见上 */ }
+    }
   }
   function rerenderConfig(main, key) { main.innerHTML = ''; renderConfigSection(main, key); }
 
@@ -924,6 +939,22 @@
       seg.addEventListener('click', function () { cfgState.mode[key] = mode; fn(main, key); });
       tb.appendChild(seg);
     });
+    // sensor/mcp：手动强制重载（改了 ~/.purrcat 下的代码或外部配置文件时用）
+    if (RELOAD_EP[key]) {
+      const rl = HOST.document.createElement('button');
+      rl.className = 'cfg-seg cfg-reload';
+      rl.textContent = '重载到内存';
+      rl.title = '让磁盘上的配置与代码立即生效（重启子进程 / 重建索引），无需重启应用';
+      rl.addEventListener('click', function () {
+        rl.disabled = true;
+        rl.textContent = '重载中…';
+        reloadRuntime(key)
+          .then(function (d) { HOST.alert((d && d.message) || '已重载到内存'); })
+          .catch(function (e) { HOST.alert('重载失败：' + (e && e.message || '')); })
+          .finally(function () { rl.disabled = false; rl.textContent = '重载到内存'; });
+      });
+      tb.appendChild(rl);
+    }
     main.appendChild(tb);
     return tb;
   }

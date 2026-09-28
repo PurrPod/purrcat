@@ -128,6 +128,19 @@ class SensorManager:
             self._kill_process_tree(old)
         # 🌟 合并注册表最新 PATH：用户中途安装 uv 后无需重启程序即可拉起 sensor
         env = get_enriched_env()
+        # 【修复】剥离父进程（桌面壳自身 venv）透传的 Python 环境变量，否则
+        # `uv run` 子进程会带着父进程的 PYTHONHOME（指向 uv-managed CPython）去加载
+        # 纯 Python 标准库，而 _sre 扩展来自实际选中的解释器，两者版本错配，
+        # import json 即抛 "AssertionError: SRE module mismatch"，
+        # 被 watchdog 判定退出后无限重启（与 MCP 子进程同款问题）。
+        for k in (
+            "PYTHONHOME",
+            "PYTHONPATH",
+            "VIRTUAL_ENV",
+            "PYTHONSTARTUP",
+            "PYTHONUSERBASE",
+        ):
+            env.pop(k, None)
         env.update(cfg.get("env", {}))
         env["PYTHONIOENCODING"] = "utf-8"
 

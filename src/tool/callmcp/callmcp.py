@@ -106,19 +106,30 @@ def initialize_mcp_sync():
         traceback.print_exc()
 
 
+def reload_mcp_schema_core() -> int:
+    """重建 MCP Schema 缓存并热更新内存检索树，返回重载到的工具总数。
+
+    配置已变化的 Server 会在 get_session 的指纹比对处自动重启子进程，
+    新增的 Server 则在此刻首次拉起。Agent 工具 reload_mcp_schema 与
+    配置中心「MCP」页的「重载到内存」按钮共用这一实现，避免逻辑漂移。
+    """
+    schemas = refresh_schemas()
+
+    from src.tool.search.mcp_search import MCPSearcher, rebuild_vectors_async
+
+    MCPSearcher().reload_index()
+    rebuild_vectors_async()
+    return len(schemas)
+
+
 def reload_mcp_schema():
     """手动刷新 MCP Schema 缓存：重建 json 缓存并重载到内存重新向量化"""
     try:
-        schemas = refresh_schemas()
-
-        from src.tool.search.mcp_search import MCPSearcher, rebuild_vectors_async
-
-        MCPSearcher().reload_index()
-        rebuild_vectors_async()
+        count = reload_mcp_schema_core()
 
         return text_response(
             {
-                "message": f"✅ Schema 重新握手并写入缓存成功！内存检索树已热更新。共载入 {len(schemas)} 个工具。"
+                "message": f"✅ Schema 重新握手并写入缓存成功！内存检索树已热更新。共载入 {count} 个工具。"
             },
             "",
         )

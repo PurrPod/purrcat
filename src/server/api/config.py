@@ -117,6 +117,25 @@ def api_update_mcp_config(config: Dict[str, Any]):
     raise HTTPException(status_code=500, detail="Failed to save MCP config")
 
 
+@router.post("/mcp/reload")
+def api_reload_mcp_runtime():
+    """重新握手所有 MCP Server（新增的即时拉起、改配置的自动重启子进程），
+    重建 schema 缓存并热更新内存检索树"""
+    try:
+        from src.tool.callmcp.callmcp import reload_mcp_schema_core
+
+        count = reload_mcp_schema_core()
+        return {
+            "status": "ok",
+            "message": f"MCP 已重载到内存：检索树已热更新，共 {count} 个工具",
+        }
+    except Exception as e:
+        import traceback
+
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"MCP 重载失败: {str(e)}")
+
+
 # ── App Config ──
 @router.get("/app")
 def api_get_app_config():
