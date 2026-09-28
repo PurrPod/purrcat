@@ -566,17 +566,18 @@
   }
 
   // ---------- 左侧列表收起开关 ----------
-  // 把一个 ☰ 开关追加到左列表头部；点击在 .side 上切换 ev-collapsed，
+  // 把一个 ☰ 开关追加到头部；点击在 sideEl 上切换 ev-collapsed，
   // 收起后仅保留头部窄条与开关本身，主区域自动铺满。
-  function attachSideToggle(sideEl, headEl) {
+  function attachSideToggle(sideEl, headEl, label) {
+    var what = label || '左侧列表';
     var btn = el('button', 'side-toggle');
     btn.type = 'button';
     btn.innerHTML = icon('menu', 15);
-    btn.title = '收起左侧列表';
+    btn.title = '收起' + what;
     btn.onclick = function (e) {
       e.stopPropagation();
       var collapsed = sideEl.classList.toggle('ev-collapsed');
-      btn.title = collapsed ? '展开左侧列表' : '收起左侧列表';
+      btn.title = (collapsed ? '展开' : '收起') + what;
     };
     headEl.appendChild(btn);
     return btn;

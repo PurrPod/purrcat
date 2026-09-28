@@ -20,6 +20,7 @@
     graphName: '',
     description: '',
     dirty: false,
+    inspCollapsed: false,                   // 右侧节点配置面板是否收起
     drawers: { files: true, nodes: true }   // 左侧两个抽屉的展开状态
   };
 
@@ -337,7 +338,7 @@
     var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     state.nodes.forEach(function (n) {
       minX = Math.min(minX, n.x); minY = Math.min(minY, n.y);
-      maxX = Math.max(maxX, n.x + 210); maxY = Math.max(maxY, n.y + 200);
+      maxX = Math.max(maxX, n.x + 240); maxY = Math.max(maxY, n.y + 200);
     });
     var cw = canvasEl.clientWidth || 800, ch = canvasEl.clientHeight || 600;
     var pad = 60;
@@ -409,33 +410,45 @@
           nm.appendChild(EV.el('span', 'nm', def.name));
           it.appendChild(nm);
           if (def.description) it.appendChild(EV.el('div', 'item-sub', def.description));
-          it.title = '点击添加到画布中心';
+          it.title = '点击添加到画布中心，或直接拖拽进画布';
           it.onclick = function () { addNode(def.type); };
+          // 支持从左侧列表拖拽节点进画布
+          it.draggable = true;
+          it.addEventListener('dragstart', function (e) {
+            e.dataTransfer.effectAllowed = 'copy';
+            e.dataTransfer.setData('text/plain', def.type);
+          });
           body.appendChild(it);
         });
       }
     ));
   }
 
-  function addNode(type) {
+  function addNode(type, at) {
     var def = defOf(type);
     if (!def) return;
     var cfg = {};
     (def.config || []).forEach(function (f) {
       cfg[f.name] = f.type === 'list' ? clone(f.default || []) : (f.default === undefined ? '' : f.default);
     });
-    var center = toWorld(
-      canvasEl.getBoundingClientRect().left + canvasEl.clientWidth / 2,
-      canvasEl.getBoundingClientRect().top + canvasEl.clientHeight / 2
-    );
-    // 稍微错开，避免重叠
-    var off = state.nodes.length % 6;
+    var pos;
+    if (at) {
+      pos = at;   // 拖拽落点
+    } else {
+      var center = toWorld(
+        canvasEl.getBoundingClientRect().left + canvasEl.clientWidth / 2,
+        canvasEl.getBoundingClientRect().top + canvasEl.clientHeight / 2
+      );
+      // 稍微错开，避免重叠
+      var off = state.nodes.length % 6;
+      pos = { x: center.x + off * 24, y: center.y + off * 24 };
+    }
     var node = {
       id: type + '_' + rand6(),
       type: type,
       name: def.name,
-      x: Math.round(center.x - 105 + off * 24),
-      y: Math.round(center.y - 60 + off * 24),
+      x: Math.round(pos.x - 120),
+      y: Math.round(pos.y - 60),
       config: cfg
     };
     state.nodes.push(node);
@@ -460,21 +473,25 @@
       var dot = EV.el('span', 'g-node-dot');
       dot.style.background = (def && def.color) || '#9aa5b1';
       head.appendChild(dot);
-      head.appendChild(EV.el('span', 'nm', n.name));
+      var nameEl = EV.el('span', 'nm', n.name);
+      nameEl.style.flex = '1';
+      head.appendChild(nameEl);
+      // 重命名入口（头部 pointerdown 已用于拖拽，故用独立按钮而非双击）
+      var editBtn = EV.el('button', 'g-node-edit');
+      editBtn.innerHTML = EV.icon('edit', 12);
+      editBtn.title = '重命名';
+      editBtn.addEventListener('pointerdown', function (e) { e.stopPropagation(); });
+      editBtn.onclick = function (e) { e.stopPropagation(); startRename(n, nameEl, head); };
+      head.appendChild(editBtn);
       head.style.overflow = 'hidden';
-      head.lastChild.style.overflow = 'hidden';
-      head.lastChild.style.textOverflow = 'ellipsis';
-      head.lastChild.style.whiteSpace = 'nowrap';
+      nameEl.style.overflow = 'hidden';
+      nameEl.style.textOverflow = 'ellipsis';
+      nameEl.style.whiteSpace = 'nowrap';
       el.appendChild(head);
 
-      var bodyEl = null;
-      var summary = summarize(n, def);
-      if (summary) {
-        bodyEl = EV.el('div', 'g-node-b', summary);
-        el.appendChild(bodyEl);
-      }
-
-      renderPortsInto(n, def, el, bodyEl);
+      // 配置项直接落在节点卡片上编辑（对齐完整模式 CustomNode）
+      renderCfgInto(el, n, def);
+      renderPortsInto(n, def, el);
 
       head.addEventListener('pointerdown', function (e) { startNodeDrag(e, n, el); });
       el.addEventListener('pointerdown', function () {
@@ -487,21 +504,124 @@
     drawEdges();
   }
 
-  function summarize(n, def) {
-    if (!def) return '';
-    var parts = [];
-    (def.config || []).forEach(function (f) {
-      var v = n.config[f.name];
-      if (v === undefined || v === null || v === '') return;
-      if (Array.isArray(v)) {
-        if (!v.length) return;
-        parts.push(f.name + ' × ' + v.length);
-      } else {
-        var s = String(v);
-        parts.push(f.name + ': ' + (s.length > 22 ? s.slice(0, 22) + '…' : s));
+  // 头部名称：就地改名
+  function startRename(node, nameEl, head) {
+    var inp = EV.el('input', 'g-node-rename');
+    inp.value = node.name;
+    inp.addEventListener('pointerdown', function (e) { e.stopPropagation(); });
+    nameEl.style.display = 'none';
+    head.appendChild(inp);
+    inp.focus();
+    inp.select();
+    var done = false;
+    function commit(save) {
+      if (done) return;
+      done = true;
+      if (save) {
+        var v = inp.value.trim();
+        if (v && v !== node.name) { node.name = v; state.dirty = true; }
       }
+      inp.remove();
+      nameEl.textContent = node.name;
+      nameEl.style.display = '';
+      renderInspector();
+      renderToolbar();
+    }
+    inp.onblur = function () { commit(true); };
+    inp.onkeydown = function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); commit(true); }
+      else if (e.key === 'Escape') { e.preventDefault(); commit(false); }
+    };
+  }
+
+  // 卡片配置区：非列表项逐一渲染为内联控件（列表项由端口区的 listBlock 承担）
+  function renderCfgInto(nodeEl, node, def) {
+    var old = nodeEl.querySelector('.g-cfg');
+    if (old) old.remove();
+    var cfgEl = EV.el('div', 'g-cfg');
+    ((def && def.config) || []).forEach(function (f) {
+      if (f.type === 'list') return;
+      cfgEl.appendChild(inlineField(node, f));
     });
-    return parts.slice(0, 3).join('  ·  ');
+    if (!cfgEl.childNodes.length) return;
+    var head = nodeEl.querySelector('.g-node-h');
+    nodeEl.insertBefore(cfgEl, head.nextSibling);
+    Array.prototype.slice.call(cfgEl.querySelectorAll('textarea')).forEach(autoGrow);
+  }
+
+  function inlineField(node, f) {
+    var wrap = EV.el('div', 'g-cfgf');
+    wrap.appendChild(EV.el('span', 'g-cfgl', f.label || f.name));
+    var ctrl;
+
+    if (f.type === 'select') {
+      ctrl = EV.el('select', 'g-cfgin');
+      ctrl.dataset.cfg = f.name;
+      var empty = EV.el('option', null, '（未设置）');
+      empty.value = '';
+      ctrl.appendChild(empty);
+      (f.options || []).forEach(function (o) {
+        var val = (o && typeof o === 'object') ? (o.value !== undefined ? o.value : o) : o;
+        var lab = (o && typeof o === 'object' && o.label) ? o.label : val;
+        var op = EV.el('option', null, String(lab));
+        op.value = String(val);
+        ctrl.appendChild(op);
+      });
+      var cv = node.config[f.name];
+      ctrl.value = cv === undefined || cv === null ? '' : String(cv);
+      ctrl.onchange = function () {
+        if (ctrl.value === '') delete node.config[f.name];
+        else node.config[f.name] = ctrl.value;
+        state.dirty = true;
+        setCfgValue(inspEl, f.name, ctrl.value);
+        refreshConfigDeps(node);
+      };
+    } else {
+      ctrl = EV.el('textarea', 'g-cfgin mono');
+      ctrl.dataset.cfg = f.name;
+      ctrl.rows = 1;
+      ctrl.spellcheck = false;
+      var curv = node.config[f.name];
+      ctrl.value = curv === undefined || curv === null ? '' : (typeof curv === 'string' ? curv : JSON.stringify(curv, null, 2));
+      ctrl.oninput = function () {
+        node.config[f.name] = ctrl.value;
+        state.dirty = true;
+        autoGrow(ctrl);
+        setCfgValue(inspEl, f.name, ctrl.value);
+        // 动态端口（如模板渲染器按 {{变量}} 生成输入端口）随输入实时重算
+        debouncedConfigDeps(node);
+      };
+      ctrl.onchange = function () { refreshConfigDeps(node); };
+    }
+    wrap.appendChild(ctrl);
+    return wrap;
+  }
+
+  function autoGrow(ta) {
+    ta.style.height = 'auto';
+    ta.style.height = Math.max(26, ta.scrollHeight) + 'px';
+  }
+
+  // 把值同步到另一个编辑面（卡片 ↔ 右侧面板），不打断正在输入的控件
+  function setCfgValue(scopeEl, name, value) {
+    if (!scopeEl) return;
+    var c = scopeEl.querySelector('[data-cfg="' + cssEsc(name) + '"]');
+    if (!c || c === document.activeElement) return;
+    c.value = value === undefined || value === null ? '' : String(value);
+  }
+
+  var cfgDepsTimer = null;
+  function debouncedConfigDeps(node) {
+    if (cfgDepsTimer) clearTimeout(cfgDepsTimer);
+    cfgDepsTimer = setTimeout(function () { cfgDepsTimer = null; refreshConfigDeps(node); }, 220);
+  }
+
+  // 配置变化后：重绘端口（动态端口按新值生成/回收）+ 刷新下游与连线
+  function refreshConfigDeps(node) {
+    var el = worldEl.querySelector('.g-node[data-id="' + cssEsc(node.id) + '"]');
+    if (el) renderPorts(node, el);
+    refreshDownstream(node);
+    renderToolbar();
   }
 
   function portEl(node, port, dir) {
@@ -727,35 +847,54 @@
     }, { passive: false });
 
     window.addEventListener('resize', EV.debounce(function () { drawEdges(); }, 120));
+
+    // 从左侧「添加节点」抽屉拖拽入画布
+    canvasEl.addEventListener('dragover', function (e) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+    });
+    canvasEl.addEventListener('drop', function (e) {
+      e.preventDefault();
+      var type = e.dataTransfer.getData('text/plain');
+      if (!type || !defOf(type)) return;
+      addNode(type, toWorld(e.clientX, e.clientY));
+    });
   }
 
   /* ---------------- 检查器（节点配置） ---------------- */
   function renderInspector() {
     inspEl.innerHTML = '';
+    inspEl.classList.toggle('ev-collapsed', state.inspCollapsed);
     var node = state.selectedId ? nodeById(state.selectedId) : null;
-    if (!node) {
-      inspEl.appendChild(EV.el('div', 'side-head', '节点配置'));
-      inspEl.appendChild(EV.el('div', 'hint', '选中画布上的节点后，在此编辑其配置。\n\n滚轮缩放 · 拖拽空白平移 · 拖动右侧端口连线 · 点击连线中点 ✕ 删除连线。'));
-      return;
+    var def = node ? defOf(node.type) : null;
+
+    var head = EV.el('div', 'side-head');
+    head.appendChild(EV.el('span', 'nm', node ? node.name : '节点配置'));
+    head.appendChild(EV.el('span', 'spacer'));
+    if (node) {
+      var del = EV.el('button', 'ibtn danger');
+      del.innerHTML = EV.icon('trash', 13);
+      del.title = '删除节点';
+      del.onclick = function () {
+        state.nodes = state.nodes.filter(function (n) { return n.id !== node.id; });
+        state.edges = state.edges.filter(function (e) { return e.source !== node.id && e.target !== node.id; });
+        state.selectedId = null;
+        state.dirty = true;
+        renderAll();
+      };
+      head.appendChild(del);
     }
-    var def = defOf(node.type);
-    var head = EV.el('div', 'side-head', node.name);
-    var fill = EV.el('span', 'spacer');
-    head.appendChild(fill);
-    var del = EV.el('button', 'ibtn danger');
-    del.innerHTML = EV.icon('trash', 13);
-    del.title = '删除节点';
-    del.onclick = function () {
-      state.nodes = state.nodes.filter(function (n) { return n.id !== node.id; });
-      state.edges = state.edges.filter(function (e) { return e.source !== node.id && e.target !== node.id; });
-      state.selectedId = null;
-      state.dirty = true;
-      renderAll();
-    };
-    head.appendChild(del);
+    // 保留右侧面板但支持收起（编辑已可直接在节点卡片上完成）
+    var toggleBtn = EV.attachSideToggle(inspEl, head, '配置面板');
+    if (state.inspCollapsed) toggleBtn.title = '展开配置面板';
     inspEl.appendChild(head);
 
     var body = EV.el('div', 'side-body');
+    if (!node) {
+      body.appendChild(EV.el('div', 'hint', '选中画布上的节点后，在此编辑其配置。\n\n也可以直接在节点卡片上编辑；滚轮缩放 · 拖拽空白平移 · 拖动右侧端口连线 · 点击连线中点 ✕ 删除连线。'));
+      inspEl.appendChild(body);
+      return;
+    }
     body.appendChild(EV.el('div', 'item-sub', node.type));
     if (def && def.description) body.appendChild(EV.el('div', 'desc', def.description));
 
@@ -854,6 +993,7 @@
 
     if (f.type === 'select') {
       var sel = EV.el('select', 'select');
+      sel.dataset.cfg = f.name;
       var empty = EV.el('option', null, '（未设置）');
       empty.value = '';
       sel.appendChild(empty);
@@ -879,6 +1019,7 @@
 
     var ta2 = EV.el('textarea', 'textarea mono');
     ta2.rows = 4;
+    ta2.dataset.cfg = f.name;
     var curv = node.config[f.name];
     ta2.value = curv === undefined || curv === null ? '' : (typeof curv === 'string' ? curv : JSON.stringify(curv, null, 2));
     ta2.onchange = function () {
@@ -899,24 +1040,15 @@
     return wrap;
   }
 
+  // 右侧面板改动配置后：同步卡片上的同名控件（未在编辑时），再重绘端口/下游
   function refreshSummary(node) {
     var el = worldEl.querySelector('.g-node[data-id="' + cssEsc(node.id) + '"]');
-    if (!el) return;
-    var def = defOf(node.type);
-    var body = el.querySelector('.g-node-b');
-    var text = summarize(node, def);
-    if (!text) {
-      if (body) body.remove();
-      body = null;
-    } else if (!body) {
-      body = EV.el('div', 'g-node-b');
-      var head = el.querySelector('.g-node-h');
-      head.parentNode.insertBefore(body, head.nextSibling);
-    }
-    if (body) body.textContent = text;
-    // 端口可能因动态规则变化，整体重绘端口
-    renderPorts(node, el);
-    refreshDownstream(node);
+    ((defOf(node.type) || {}).config || []).forEach(function (f) {
+      if (f.type === 'list') return;
+      var v = node.config[f.name];
+      setCfgValue(el, f.name, v === undefined || v === null ? '' : (typeof v === 'string' ? v : JSON.stringify(v, null, 2)));
+    });
+    refreshConfigDeps(node);
   }
 
   // 上游内容变了（如「自定义输入」正文），下游节点按正则推导的动态端口要跟着重算
@@ -933,10 +1065,10 @@
   }
 
   function renderPorts(node, nodeEl) {
-    renderPortsInto(node, defOf(node.type), nodeEl, nodeEl.querySelector('.g-node-b'));
+    renderPortsInto(node, defOf(node.type), nodeEl);
   }
 
-  function renderPortsInto(node, def, nodeEl, bodyEl) {
+  function renderPortsInto(node, def, nodeEl) {
     var old = nodeEl.querySelector('.g-ports');
     if (old) old.remove();
     var ports = EV.el('div', 'g-ports');
@@ -957,7 +1089,7 @@
     listsOut.forEach(function (p) { right.appendChild(listBlock(node, p)); });
     ports.appendChild(left);
     ports.appendChild(right);
-    nodeEl.insertBefore(ports, bodyEl ? bodyEl.nextSibling : null);
+    nodeEl.appendChild(ports);
     drawEdges();
   }
 
@@ -1191,13 +1323,27 @@
       + '.g-edge{fill:none;stroke:#9aa5b1;stroke-width:1.6}'
       + '.g-edge.on{stroke:#16191d;stroke-width:2.2}'
       + '.g-edge-hit{fill:none;stroke:transparent;stroke-width:12;pointer-events:stroke;cursor:pointer}'
-      + '.g-node{position:absolute;width:210px;background:#fff;border:1px solid rgba(15,17,21,.10);border-radius:10px;'
+      + '.g-node{position:absolute;width:240px;background:#fff;border:1px solid rgba(15,17,21,.10);border-radius:10px;'
       + 'box-shadow:0 1px 2px rgba(15,17,21,.06),0 8px 20px rgba(15,17,21,.06);user-select:none}'
       + '.g-node.on{border-color:#16191d;box-shadow:0 0 0 2px rgba(22,25,29,.14),0 10px 24px rgba(15,17,21,.12)}'
       + '.g-node-h{display:flex;align-items:center;gap:7px;padding:8px 10px;border-bottom:1px solid rgba(15,17,21,.08);'
       + 'font-size:12px;font-weight:600;cursor:grab;overflow:hidden}'
       + '.g-node-dot{width:9px;height:9px;border-radius:3px;flex:none}'
-      + '.g-node-b{padding:7px 10px;font-size:11px;color:#8b96a3;line-height:1.55;word-break:break-all}'
+      // 卡片内联配置区（直接编辑，无需右侧面板）
+      + '.g-cfg{display:flex;flex-direction:column;gap:6px;padding:7px 10px 3px}'
+      + '.g-cfgf{display:flex;flex-direction:column;gap:3px}'
+      + '.g-cfgl{font-size:9.5px;font-weight:700;letter-spacing:.05em;color:#8b96a3;text-transform:uppercase}'
+      + '.g-cfgin{width:100%;font-family:inherit;font-size:11.5px;color:#16191d;background:#f7f8fa;'
+      + 'border:1px solid rgba(15,17,21,.10);border-radius:6px;padding:5px 7px;outline:none;resize:none;line-height:1.55}'
+      + '.g-cfgin:focus{border-color:#16191d;background:#fff}'
+      + '.g-cfgin.mono{font-family:ui-monospace,Consolas,monospace;font-size:11px;white-space:pre-wrap;word-break:break-word;overflow:hidden}'
+      + '.g-cfg textarea,.g-cfg select,.g-node-rename{user-select:text}'
+      + '.g-node-rename{flex:1;min-width:0;font:inherit;font-size:12px;font-weight:600;color:#16191d;'
+      + 'background:#f7f8fa;border:1px solid rgba(15,17,21,.16);border-radius:6px;padding:2px 6px;outline:none}'
+      + '.g-node-edit{display:none;flex:none;width:18px;height:18px;align-items:center;justify-content:center;'
+      + 'border:none;border-radius:5px;background:transparent;color:#8b96a3;cursor:pointer}'
+      + '.g-node:hover .g-node-edit{display:inline-flex}'
+      + '.g-node-edit:hover{background:#e9edf1;color:#16191d}'
       + '.g-ports{display:flex;justify-content:space-between;padding:2px 0 8px}'
       + '.g-pcol{display:flex;flex-direction:column;gap:6px;min-width:0}'
       + '.g-pcol.r{align-items:flex-end}'
@@ -1212,7 +1358,12 @@
       + '.g-lrow .nm{font-style:italic}'
       + '.g-ladd{align-self:flex-start;margin-left:6px}'
       + '.g-lblock.r .g-ladd{align-self:flex-end;margin-left:0;margin-right:6px}'
-      + '.g-insp{width:292px;flex:none;border-left:1px solid rgba(15,17,21,.08);display:flex;flex-direction:column;min-height:0}';
+      + '.g-insp{width:292px;flex:none;border-left:1px solid rgba(15,17,21,.08);display:flex;flex-direction:column;min-height:0}'
+      // 右侧面板收起态：只留头部窄条与开关
+      + '.g-insp.ev-collapsed{width:46px}'
+      + '.g-insp.ev-collapsed > .side-head{padding:8px 0 6px;justify-content:center}'
+      + '.g-insp.ev-collapsed > .side-head > *:not(.side-toggle){display:none}'
+      + '.g-insp.ev-collapsed > .side-body{display:none}';
     var st = EV.el('style');
     st.textContent = css;
     document.head.appendChild(st);
