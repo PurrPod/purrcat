@@ -24,6 +24,9 @@
     --mono: ui-monospace, "SF Mono", Consolas, "Courier New", monospace;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
+  /* 本插件大量用 [hidden] 控制显隐，而下方选择器（.btn/.empty/.dash…）都声明了 display，
+     作者样式优先级高于 UA 的 [hidden]{display:none}，故必须在此显式兜底 */
+  [hidden] { display: none !important; }
   html, body { height: 100%; overflow: hidden; }
   ::-webkit-scrollbar { width: 5px; height: 5px; }
   ::-webkit-scrollbar-track { background: transparent; }
@@ -626,7 +629,7 @@
     if (!S.sel || !S.graph || !(S.graph.nodes || []).length) {
       world.innerHTML = '';
       empty.hidden = false;
-      empty.textContent = S.sel ? '该任务暂无图谱数据' : '选择一个任务';
+      empty.textContent = !S.sel ? '选择一个任务' : (S.graph ? '该任务暂无图谱数据' : '正在加载图谱…');
       return;
     }
     var nodes = (S.graph.nodes || []).filter(Boolean);
@@ -750,6 +753,7 @@
 
   function selectTask(id) {
     S.sel = id; S.nodeStates = {}; S.nodeMemory = {}; S.graph = null; S.graphKey = '';
+    S.curState = ''; S.isRunning = false;   // 清掉上一个任务的运行态，避免「停止」按钮残留
     S.logs = []; S.logSig = '';
     closeLog();
     if (S.view === 'dash') { S.view = 'graph'; $('dash').hidden = true; canvas.hidden = false; }

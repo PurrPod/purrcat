@@ -1207,6 +1207,112 @@
     });
   }
 
+  /* ---------------- 看板（Dashboard）配置 ----------------
+   * 与完整模式部署弹窗同一套语义：graph.json 顶层 dashboard 键
+   *   空 → undefined；单个且无名称 → 裸 URL 字符串；否则 → [{name,url}]
+   * 运行期由任务页读取（URL 中的 {task_id} 会替换为真实任务 ID）。 */
+  function dashToEntries(dash) {
+    if (typeof dash === 'string') return dash.trim() ? [{ name: '', url: dash.trim() }] : [];
+    if (Array.isArray(dash)) {
+      return dash.filter(function (d) { return d && d.url; })
+        .map(function (d) { return { name: String(d.name || ''), url: String(d.url) }; });
+    }
+    return [];
+  }
+  function entriesToDash(entries) {
+    var valid = entries.filter(function (e) { return e && e.url && e.url.trim(); });
+    if (!valid.length) return undefined;
+    if (valid.length === 1 && !(valid[0].name || '').trim()) return valid[0].url.trim();
+    return valid.map(function (e) { return { name: (e.name || '').trim(), url: e.url.trim() }; });
+  }
+  function hasDashboard() {
+    var d = state.extras && state.extras.dashboard;
+    if (!d) return false;
+    return typeof d === 'string' ? !!d.trim() : d.length > 0;
+  }
+
+  function openDashConfig() {
+    var entries = dashToEntries(state.extras && state.extras.dashboard);
+    var wrap = EV.el('div');
+    wrap.appendChild(EV.el('div', 'hint',
+      '为当前工作流配置运行看板：任务页的「看板」入口将加载这些地址。\n' +
+      '支持 purrcat://graph/xxx/asset/dashboard.html 或 https://…；' +
+      'URL 中可用 {task_id} 占位，运行时替换为真实任务 ID。多个看板时名称作为切换标签。'));
+
+    var list = EV.el('div', 'field');
+    list.style.marginTop = '10px';
+    wrap.appendChild(list);
+
+    function paint() {
+      list.innerHTML = '';
+      if (!entries.length) {
+        list.appendChild(EV.el('div', 'hint', '尚未配置看板，点下方「新增看板」添加。'));
+      }
+      entries.forEach(function (ent, idx) {
+        var row = EV.el('div', 'row');
+        row.style.alignItems = 'flex-start';
+        row.style.gap = '6px';
+        row.style.marginBottom = '6px';
+
+        var box = EV.el('div');
+        box.style.flex = '1';
+        box.style.minWidth = '0';
+
+        var nmIn = EV.el('input', 'input');
+        nmIn.placeholder = '看板名（可选，多看板时用于切换）';
+        nmIn.value = ent.name || '';
+        nmIn.oninput = function () { ent.name = nmIn.value; };
+        box.appendChild(nmIn);
+
+        var urlIn = EV.el('input', 'input mono');
+        urlIn.placeholder = 'purrcat://graph/xxx/asset/dashboard.html 或 https://…';
+        urlIn.style.marginTop = '5px';
+        urlIn.value = ent.url || '';
+        urlIn.oninput = function () { ent.url = urlIn.value; };
+        box.appendChild(urlIn);
+
+        row.appendChild(box);
+
+        var del = EV.el('button', 'ibtn danger');
+        del.innerHTML = EV.icon('trash', 14);
+        del.title = '删除该项看板';
+        del.onclick = function () { entries.splice(idx, 1); paint(); };
+        row.appendChild(del);
+
+        list.appendChild(row);
+      });
+    }
+    paint();
+
+    var addBtn = EV.el('button', 'btn sm');
+    addBtn.innerHTML = EV.icon('plus', 13);
+    addBtn.appendChild(EV.el('span', null, '新增看板'));
+    addBtn.onclick = function () { entries.push({ name: '', url: '' }); paint(); };
+    wrap.appendChild(addBtn);
+
+    EV.modal({
+      title: '看板配置（Dashboard）',
+      width: '540px',
+      node: wrap,
+      actions: [
+        { label: '取消' },
+        {
+          label: '保存', kind: 'primary',
+          onClick: function (h) {
+            var dash = entriesToDash(entries);
+            state.extras = state.extras || {};
+            if (dash) state.extras.dashboard = dash;
+            else delete state.extras.dashboard;
+            state.dirty = true;
+            renderToolbar();
+            EV.toast(dash ? '看板已配置，保存工作流后生效' : '已清空看板配置');
+            h.close();
+          }
+        }
+      ]
+    });
+  }
+
   /* ---------------- 工具栏 ---------------- */
   function renderToolbar() {
     toolbarEl.innerHTML = '';
@@ -1255,6 +1361,15 @@
         renderAll();
       });
     }, 'danger');
+
+    // 看板入口：graph.json 顶层 dashboard 键的配置面板（已配置时按钮高亮）
+    var dashBtn = tbtn('monitor', '配置看板（Dashboard）：任务运行页的「看板」入口',
+      openDashConfig);
+    if (hasDashboard()) {
+      dashBtn.style.background = '#EBCB8B';
+      dashBtn.style.color = '#16191d';
+      dashBtn.title = '看板已配置，点击修改';
+    }
 
     var save = EV.el('button', 'btn primary');
     save.innerHTML = EV.icon('upload', 14);
