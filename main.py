@@ -338,12 +338,16 @@ async def run_api(host: str = "0.0.0.0", port: int = DEFAULT_API_PORT):
     if _ui_dist.exists():
         app.mount("/", StaticFiles(directory=str(_ui_dist), html=True), name="ui")
 
-    # 🌟 极简模式静态资源禁用缓存：host.js / theme.css 等改动后，
+    # 🌟 极简模式静态资源禁用缓存：host.js / theme.css / 插件 JS 等改动后，
     # 仅刷新页面即可生效，避免 Electron 渲染进程命中旧缓存导致"改了没反应"。
+    # 注意：插件资源经 /api/webmin/plugin/{id}/... 提供，Starlette StaticFiles 不下发
+    # Cache-Control，Chromium 会按启发式规则缓存子资源（reload 也不重新拉取），
+    # 表现为"插件的修复代码没生效、仍报同样的错"，故一并纳入 no-store。
     @app.middleware("http")
     async def _webmin_no_cache(request, call_next):
         response = await call_next(request)
-        if request.url.path.startswith("/minimal"):
+        path = request.url.path
+        if path.startswith("/minimal") or path.startswith("/api/webmin"):
             response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
             response.headers["Pragma"] = "no-cache"
         return response

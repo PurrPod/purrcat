@@ -941,21 +941,23 @@
 
   function listBlock(node, p) {
     var block = EV.el('div', 'g-lblock' + (p.dir === 'out' ? ' r' : ''));
+    // 兜底：动态端口未携带 field 时退化为「以端口名当配置项名」，绝不让属性读取抛错中断整张图的加载
+    var field = p.field || { name: p.name, label: p.name, item_schema: [] };
     var cfg = node.config || {};
-    var items = Array.isArray(cfg[p.field.name]) ? cfg[p.field.name] : [];
+    var items = Array.isArray(cfg[field.name]) ? cfg[field.name] : [];
     items.forEach(function (it) {
       var nm = (it && typeof it === 'object') ? (it.name || it.key) : it;
       if (!nm) return;
       var tp = (it && typeof it === 'object' && it.type) ? it.type : 'any';
       var row = portEl(node, { name: String(nm), type: tp, dynamic: true }, p.dir);
       row.classList.add('g-lrow');
-      row.title = String(nm) + ' : ' + tp + '　来自「' + (p.field.label || p.field.name) + '」';
+      row.title = String(nm) + ' : ' + tp + '　来自「' + (field.label || field.name) + '」';
       block.appendChild(row);
     });
     var add = EV.el('button', 'ibtn g-ladd');
     add.innerHTML = EV.icon('plus', 12);
-    add.title = '新增一个「' + (p.field.label || p.field.name) + '」端口';
-    add.onclick = function (ev) { ev.stopPropagation(); addListItem(node, p.field); };
+    add.title = '新增一个「' + (field.label || field.name) + '」端口';
+    add.onclick = function (ev) { ev.stopPropagation(); addListItem(node, field); };
     block.appendChild(add);
     return block;
   }

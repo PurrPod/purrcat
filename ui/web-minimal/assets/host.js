@@ -1895,8 +1895,12 @@
       });
     });
   }
-  // 窗口尺寸变化：浮窗重排；面板容器宽度重新夹到可用范围（窗口缩小时不再溢出被覆盖，放大后恢复期望宽度）
-  HOST.addEventListener('resize', function () { reflowFloats(); applyPanelWidth(); });
+  // 窗口尺寸变化：先夹紧面板宽度（缩小后必须立刻收回，否则右缘越出可视区），再重排浮窗。
+  // 各自 try/catch 隔离：任一环节抛错都不能阻断另一个。
+  HOST.addEventListener('resize', function () {
+    try { applyPanelWidth(); } catch (_) {}
+    try { reflowFloats(); } catch (_) {}
+  });
   // float 类型天然可拖拽可缩放：总会补上两个手柄（宿主不感知具体插件）
   function attachFloatHandles(el) {
     el.querySelectorAll('.wm-fgrab, .wm-fresize').forEach((hd) => hd.remove());
@@ -1928,8 +1932,12 @@
     o = Math.min(1, Math.max(0.15, o));
     el.style.setProperty('--wm-panel-bg', 'rgba(242,244,247,' + o.toFixed(3) + ')');
   }
+  // 读取 CSS 变量数值。必须从 body 作用域读取：布局变量可能在 body 上被覆盖
+  // （如 body.rail-2 把 --wm-rail-w 改为 196px），从 documentElement 读会一直得到
+  // :root 的 48px，导致 rail 展开时面板宽度上限偏大、右缘越出窗口。
   function cssNum(name, dflt) {
-    const v = HOST.getComputedStyle(HOST.document.documentElement).getPropertyValue(name);
+    const scope = HOST.document.body || HOST.document.documentElement;
+    const v = HOST.getComputedStyle(scope).getPropertyValue(name);
     const n = parseFloat(v);
     return (n >= 0) ? n : dflt;
   }
@@ -1970,8 +1978,18 @@
   // 期望宽度本身保留，窗口放大后自动恢复原宽，不引入永久性 max-width。
   function applyPanelWidth() {
     if (!hasPanelsDef()) return;
-    const limit = panelMaxLimit();
-    const raw = (panelDesiredWidth != null) ? panelDesiredWidth : maxPanelWidth();
+    const gap = cssNum('--wm-sidebar-gap', 8);
+    let limit = panelMaxLimit();
+    // 硬性兜底：按面板元素「当前实际左缘」再夹一次。窗口缩小/白条展开等场景下，
+    // 只要右缘（含 ✕）会越过视口，就按实际左缘重算上限，保证面板绝不超出 app。
+    const el = HOST.document.querySelector('.wm-ppanel[data-pslot="panel"]');
+    if (el) {
+      const left = el.getBoundingClientRect().left;
+      if (isFinite(left)) limit = Math.min(limit, Math.floor(HOST.innerWidth - left - gap));
+    }
+    let raw = (panelDesiredWidth != null) ? panelDesiredWidth : maxPanelWidth();
+    if (!isFinite(raw)) raw = maxPanelWidth();
+    if (!isFinite(limit)) return;
     let w = Math.max(PANEL_MIN_W, raw);
     w = (limit < PANEL_MIN_W) ? Math.max(0, limit) : Math.min(w, limit);
     HOST.document.documentElement.style.setProperty('--wm-panel-w', Math.round(w) + 'px');

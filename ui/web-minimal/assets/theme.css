@@ -581,6 +581,10 @@ body.settings-open [data-layer="settings"] { display: flex; }
   bottom: var(--wm-sidebar-inset);
   left: calc(var(--wm-rail-w) + var(--wm-sidebar-gap) + var(--wm-sidebar-w) + var(--wm-sidebar-gap));
   width: var(--wm-panel-w, 0px);
+  /* 视口硬上限（动态，非固定 max-width）：width 有 0.15s 过渡，窗口缩小时 JS 夹紧会滞后，
+     这里按同一左缘公式兜底，保证面板右缘（含 ✕）任何瞬间都不越过窗口右边界。
+     --wm-rail-w 在 body 作用域解析，rail 展开(196px)时此处自动同步。 */
+  max-width: calc(100vw - var(--wm-rail-w) - var(--wm-sidebar-gap) - var(--wm-sidebar-w) - var(--wm-sidebar-gap) - var(--wm-sidebar-gap));
   z-index: 20;              /* 在聊天区(main z5)之上、顶栏(22)之下 */
   background: var(--wm-panel-bg, var(--wm-bl-100));  /* 透明底由宿主 applyPanelContainerCfg 注入 */
   border: 1px solid var(--wm-border);
@@ -594,6 +598,7 @@ body.settings-open [data-layer="settings"] { display: flex; }
 /* 左侧栏隐藏时，中栏左移贴住白条 */
 body.rail-nosidebar .wm-ppanel {
   left: calc(var(--wm-rail-w) + var(--wm-sidebar-gap));
+  max-width: calc(100vw - var(--wm-rail-w) - var(--wm-sidebar-gap) - var(--wm-sidebar-gap));
 }
 /* 中栏打开时，聊天+输入右移到中栏之后（覆盖默认左侧栏偏移）；
    同时左内边距归零：否则 main 的 14px padding 会叠加在 8px 间距上，
