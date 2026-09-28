@@ -87,8 +87,8 @@
       HOST.document.body.classList.toggle('rail-nosidebar', !!hidden);
       applyPanelWidth();   // 侧栏显隐改变可用区域，面板宽度需重新夹紧
     }
-    // conversation：历史会话插件启停改变右侧需预留的宽度，面板宽度需重算
-    if (slot === 'conversation') applyPanelWidth();
+    // conversation / input：聊天列插件的启停改变右侧需预留的宽度，面板宽度需重算
+    if (slot === 'conversation' || slot === 'input') applyPanelWidth();
     // float：自由浮窗实例（data-fslot=slot）
     HOST.document.querySelectorAll(`.wm-float[data-fslot="${slot}"]`).forEach((el) => {
       el.style.display = hidden ? 'none' : 'block';
@@ -1941,25 +1941,29 @@
     const noSidebar = HOST.document.body.classList.contains('rail-nosidebar');
     return noSidebar ? (rail + gap) : (rail + gap + side + gap);
   }
-  // 历史会话插件当前是否启用（被关闭或未挂载 → 不为历史框预留宽度）
-  function historyEnabled() {
-    const cur = pluginBySlot['conversation'];
+  // 槽位插件当前是否启用（被关闭或未挂载 → 该槽不占位，不为它预留宽度）
+  function slotEnabled(slot) {
+    const cur = pluginBySlot[slot];
     if (!cur) return false;              // 未挂载（被删除 / 未选中）
     return !railHidden(cur.id);          // 被设置或白条关闭
   }
+  function historyEnabled() { return slotEnabled('conversation'); }
+  function inputEnabled() { return slotEnabled('input'); }
   // 面板容器「最大舒展」宽度：面板占满左侧栏右侧全部，右侧留出聊天列。
-  // 历史会话未启用时不为历史框预留（只保输入框最小宽度），面板可舒展得更大；
-  // 历史会话启用后若空间不够，再由 panelMaxLimit 把面板夹紧、为其挤开位置。
+  // 历史会话未启用则不为它预留；输入框也未启用则聊天列整体不占位，面板可一直舒展到最右。
   function maxPanelWidth() {
     const gap = cssNum('--wm-sidebar-gap', 8);
-    const chat = historyEnabled() ? cssNum('--wm-chat-w', 420) : cssNum('--wm-chat-min-w', 360);
+    let chat = 0;
+    if (historyEnabled()) chat = cssNum('--wm-chat-w', 420);
+    else if (inputEnabled()) chat = cssNum('--wm-chat-min-w', 360);
     return Math.max(PANEL_MIN_W, Math.floor(HOST.innerWidth - panelLeftBase() - gap - chat));
   }
-  // 面板可用宽度上限：只保聊天列最小宽度（--wm-chat-min-w），
-  // 保证输入框/历史框不会被面板压得过窄，且面板右缘（含 ✕）始终留在可视区内
+  // 面板可用宽度上限：聊天列仍有插件启用时只保其最小宽度（--wm-chat-min-w），
+  // 保证输入框/历史框不会被面板压得过窄；二者都关闭则不再预留，面板可贴到最右。
+  // 无论哪种情况，面板右缘（含 ✕）都留在可视区内。
   function panelMaxLimit() {
     const gap = cssNum('--wm-sidebar-gap', 8);
-    const chatMin = cssNum('--wm-chat-min-w', 360);
+    const chatMin = (historyEnabled() || inputEnabled()) ? cssNum('--wm-chat-min-w', 360) : 0;
     return Math.floor(HOST.innerWidth - panelLeftBase() - gap - chatMin);
   }
   // 把「期望宽度」夹到 [下限, 可用上限] 后写入 CSS 变量。

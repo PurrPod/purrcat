@@ -58,8 +58,11 @@
 
   function portList(def, dir, node) {
     var src = (dir === 'in' ? def.inputs : def.outputs) || [];
-    var listFields = {};
-    ((def.config) || []).forEach(function (f) { if (f.type === 'list') listFields[f.name] = 1; });
+    var listFields = {}, fieldByName = {};
+    ((def.config) || []).forEach(function (f) {
+      fieldByName[f.name] = f;
+      if (f.type === 'list') listFields[f.name] = 1;
+    });
     var out = [];
     src.forEach(function (p) {
       if (p.port_type !== 'dynamic') {
@@ -69,6 +72,12 @@
       var rules = p.dynamic_rules || {};
       var key = rules.watch_config;
       if (!key) return;
+      // 列表型动态端口（全局输入/输出、环境变量、JSON 键值…）：一个配置项对应一组端口，
+      // 整组交给 listBlock 渲染（即使列表为空也要出「+」新增入口），故携带 field/dir。
+      if (listFields[key]) {
+        out.push({ name: key, type: 'any', dynamic: true, listBacked: true, field: fieldByName[key], dir: dir });
+        return;
+      }
       var val = node ? resolveWatchValue(node, key) : undefined;
       if (rules.method === 'regex') {
         if (typeof val !== 'string' || !rules.pattern) return;
@@ -85,7 +94,7 @@
           var nm = (it && typeof it === 'object') ? (it.name || it.key) : it;
           if (!nm) return;
           var tp = (it && typeof it === 'object' && it.type) ? it.type : 'any';
-          out.push({ name: String(nm), type: tp, dynamic: true, listBacked: !!listFields[key] });
+          out.push({ name: String(nm), type: tp, dynamic: true });
         });
       }
     });
@@ -932,7 +941,8 @@
 
   function listBlock(node, p) {
     var block = EV.el('div', 'g-lblock' + (p.dir === 'out' ? ' r' : ''));
-    var items = Array.isArray(node.config[p.field.name]) ? node.config[p.field.name] : [];
+    var cfg = node.config || {};
+    var items = Array.isArray(cfg[p.field.name]) ? cfg[p.field.name] : [];
     items.forEach(function (it) {
       var nm = (it && typeof it === 'object') ? (it.name || it.key) : it;
       if (!nm) return;
