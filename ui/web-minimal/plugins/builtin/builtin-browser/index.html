@@ -13,23 +13,24 @@
     --ink: #16191d;
     --ink-2: #6b7684;
     --accent: #16191d;
+    --pick: #EBCB8B;
     font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", Roboto, sans-serif;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { height: 100%; overflow: hidden; background: var(--rack); color: var(--ink); font-size: 13px; }
+  body { display: flex; flex-direction: column; }
   .toolbar {
-    position: relative; z-index: 2;
+    position: relative; z-index: 2; flex: none;
     display: flex; align-items: center; gap: 6px;
     padding: 6px 10px; background: var(--rack);
   }
   /* 图标统一：线性描边、统一线宽 1.5、随按钮颜色变化（与白条内置图标同一套语言） */
-  .tb-btn svg, .go svg, .mask-ico svg, .addr-ico svg {
+  .tb-btn svg, .go svg, .addr-ico svg {
     display: block; fill: none; stroke: currentColor;
     stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round;
   }
   .tb-btn svg, .go svg { width: 16px; height: 16px; }
   .addr-ico svg { width: 15px; height: 15px; }
-  .mask-ico svg { width: 19px; height: 19px; }
   /* 所有工具按钮同尺寸同圆角（全部图标化，不再有文字按钮） */
   .tb-btn {
     flex: none; width: 30px; height: 30px;
@@ -40,6 +41,7 @@
   }
   .tb-btn:hover { background: var(--field); color: var(--ink); }
   .tb-btn:disabled { opacity: .35; cursor: default; }
+  .tb-btn.on { background: var(--pick); color: var(--ink); }
   .addr {
     flex: 1; display: flex; align-items: center; gap: 8px;
     height: 30px; padding: 0 12px;
@@ -60,28 +62,45 @@
     color: #fff; cursor: pointer; transition: filter .12s ease;
   }
   .go:hover { filter: brightness(1.15); }
-  .frame-wrap { position: absolute; top: 42px; left: 0; right: 0; bottom: 0; background: var(--field-2); }
-  iframe { width: 100%; height: 100%; border: 0; display: block; background: #fff; }
-  .mask {
-    display: none; position: absolute; inset: 0; z-index: 3;
-    align-items: center; justify-content: center; text-align: center;
-    background: var(--field-2); padding: 24px;
+
+  /* 网页显示区：真实浏览器画面由 Electron 原生 WebContentsView 覆盖在此区域之上 */
+  .view-wrap { position: relative; flex: 1; min-height: 0; overflow: hidden; background: var(--field-2); }
+  .hint {
+    position: absolute; inset: 0; display: none; align-items: center; justify-content: center;
+    text-align: center; padding: 24px; color: var(--ink-2); line-height: 1.8; font-size: 13px;
   }
-  .mask.on { display: flex; }
-  .mask .title { font-size: 15px; font-weight: 600; margin-bottom: 6px; }
-  .mask .desc { color: var(--ink-2); margin-bottom: 14px; max-width: 460px; line-height: 1.7; word-break: break-all; }
-  .mask .row { display: flex; gap: 10px; justify-content: center; }
-  /* 遮罩里的操作同样是图标按钮，用 title 提示代替文字 */
-  .mask-ico {
-    width: 42px; height: 42px;
-    display: flex; align-items: center; justify-content: center;
-    border: none; border-radius: 10px; cursor: pointer;
-    background: var(--field); color: var(--ink-2);
-    transition: background .12s ease, color .12s ease, filter .12s ease;
+  /* 选取模式：原生视图被移出屏幕，改为渲染实时截图 + 标注层（与完整模式同一套流程） */
+  .stage { position: absolute; left: 0; top: 0; display: none; overflow: hidden; }
+  .stage.on { display: block; }
+  .logical { position: absolute; left: 0; top: 0; transform-origin: top left; }
+  .shot { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; pointer-events: none; }
+  .hit { position: absolute; inset: 0; cursor: crosshair; }
+  .rect { position: absolute; display: none; pointer-events: none; }
+  .rect.hover { border: 2px solid var(--pick); background: rgba(235,203,139,0.15); }
+  .rect.sel { border: 2px solid var(--pick); background: rgba(235,203,139,0.20); }
+  .cbox {
+    position: absolute; display: none; width: 280px;
+    background: #fff; border: 1px solid var(--line); border-radius: 10px;
+    box-shadow: 0 10px 30px rgba(15,17,21,0.18); padding: 10px;
   }
-  .mask-ico:hover { background: #e3e8ee; color: var(--ink); }
-  .mask-ico.primary { background: var(--accent); color: #fff; }
-  .mask-ico.primary:hover { background: var(--accent); color: #fff; filter: brightness(1.15); }
+  .cbox .t { font-size: 11px; font-weight: 700; letter-spacing: .06em; color: var(--ink-2); margin-bottom: 6px; }
+  .cbox textarea {
+    width: 100%; height: 68px; resize: none; font: inherit; color: var(--ink);
+    border: 1px solid var(--line); border-radius: 8px; padding: 8px; outline: none;
+  }
+  .cbox textarea:focus { border-color: var(--accent); }
+  .cbox .row { display: flex; gap: 8px; margin-top: 8px; }
+  .cbox button {
+    flex: 1; height: 30px; border: none; border-radius: 7px; cursor: pointer;
+    font: inherit; font-weight: 600; background: var(--field); color: var(--ink);
+  }
+  .cbox button.primary { background: var(--accent); color: #fff; }
+  .cbox button.primary:hover { filter: brightness(1.15); }
+  .toast {
+    position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%);
+    max-width: 80%; padding: 8px 14px; border-radius: 8px; display: none;
+    background: rgba(22,25,29,0.86); color: #fff; font-size: 12px; z-index: 9;
+  }
 </style>
 </head>
 <body>
@@ -105,119 +124,369 @@
     <button class="go" id="go" title="前往">
       <svg viewBox="0 0 24 24"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
     </button>
+    <button class="tb-btn" id="pick" title="元素选取（点击网页元素并评论）">
+      <svg viewBox="0 0 24 24"><path d="M12.586 12.586 19 19"/><path d="M3.688 3.037a.497.497 0 0 0-.651.651l6.5 15.999a.501.501 0 0 0 .947-.062l1.569-6.083a2 2 0 0 1 1.448-1.479l6.124-1.579a.5.5 0 0 0 .063-.947z"/></svg>
+    </button>
     <button class="tb-btn" id="ext" title="在外部浏览器打开">
       <svg viewBox="0 0 24 24"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>
     </button>
   </div>
-  <div class="frame-wrap">
-    <iframe id="view" title="浏览器页面"></iframe>
-    <div class="mask" id="mask">
-      <div>
-        <div class="title">该页面无法内嵌显示</div>
-        <div class="desc" id="maskDesc"></div>
-        <div class="row">
-          <button class="mask-ico" id="maskRetry" title="重试">
-            <svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>
-          </button>
-          <button class="mask-ico primary" id="maskExt" title="在外部浏览器打开">
-            <svg viewBox="0 0 24 24"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>
-          </button>
+  <div class="view-wrap" id="wrap">
+    <div class="stage" id="stage">
+      <div class="logical" id="logical">
+        <img class="shot" id="shot" alt="" />
+        <div class="hit" id="hit"></div>
+        <div class="rect hover" id="hoverRect"></div>
+        <div class="rect sel" id="selRect"></div>
+        <div class="cbox" id="cbox">
+          <div class="t">元素评论</div>
+          <textarea id="cmt" placeholder="描述你希望 Agent 对这个元素做什么…"></textarea>
+          <div class="row">
+            <button id="cmtCancel">取消</button>
+            <button id="cmtSend" class="primary">发送给 Agent</button>
+          </div>
         </div>
       </div>
     </div>
+    <div class="hint" id="hint"></div>
+    <div class="toast" id="toast"></div>
   </div>
 
 <script>
 (function () {
   'use strict';
   var DEFAULT_HOME = 'https://www.bing.com';
-  var HOME = DEFAULT_HOME;   // 由插件配置 homepage 覆盖，默认必应
-  var opened = false;        // 首页只在首次拿到配置（或兜底超时）后打开一次
-  var view = document.getElementById('view');
+  var HOME = DEFAULT_HOME;
+
+  var wrap = document.getElementById('wrap');
+  var stage = document.getElementById('stage');
+  var logical = document.getElementById('logical');
+  var shot = document.getElementById('shot');
+  var hit = document.getElementById('hit');
+  var hoverRectEl = document.getElementById('hoverRect');
+  var selRectEl = document.getElementById('selRect');
+  var cbox = document.getElementById('cbox');
+  var cmt = document.getElementById('cmt');
+  var hint = document.getElementById('hint');
+  var toastEl = document.getElementById('toast');
   var urlInput = document.getElementById('url');
-  var back = document.getElementById('back');
-  var fwd = document.getElementById('fwd');
-  var mask = document.getElementById('mask');
-  var maskDesc = document.getElementById('maskDesc');
-  var stack = [];
-  var pos = -1;
-  var loadTimer = null;
+  var backBtn = document.getElementById('back');
+  var fwdBtn = document.getElementById('fwd');
+  var pickBtn = document.getElementById('pick');
 
-  function openExternal(u) {
-    if (window.purrcat && window.purrcat.openExternal) { window.purrcat.openExternal(u).catch(function () {}); }
-    else window.open(u, '_blank', 'noopener');
+  // ---- 与宿主通信：插件 iframe 拿不到 window.purrcat（preload 只在主 frame 生效），
+  //      所有 Electron 原生浏览器能力统一经宿主 callAction 总线转发 ----
+  var seq = 0;
+  function callAction(actionId, payload) {
+    return new Promise(function (resolve, reject) {
+      var id = ++seq;
+      function onMsg(e) {
+        var m = e.data;
+        if (m && m.type === 'callActionResult' && m.id === id) {
+          window.removeEventListener('message', onMsg);
+          if (m.ok) resolve(m.data); else reject(new Error(m.error || '调用失败'));
+        }
+      }
+      window.addEventListener('message', onMsg);
+      window.parent.postMessage({ type: 'callAction', id: id, actionId: actionId, payload: payload || {} }, '*');
+    });
+  }
+  function silent(actionId, payload) { return callAction(actionId, payload).catch(function () {}); }
+
+  var tabId = null;
+  var mode = 'browse';          // browse=浏览（原生视图可见） / pick=元素选取（原生视图移出屏幕 + 截图标注）
+  var covered = false;          // 宿主出现设置中心/模态弹窗/下拉菜单：原生视图必须让位
+  var curUrl = '';
+  var started = false;
+  var vp = { w: 0, h: 0 };      // pick 模式逻辑视口（= 进入选取时的原生视图 CSS 视口）
+  var scale = 1;
+  var pickedEl = null;
+  var selRectData = null;
+  var hoverAt = 0;
+  var toastTimer = null;
+
+  function toast(msg) {
+    toastEl.textContent = msg;
+    toastEl.style.display = 'block';
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { toastEl.style.display = 'none'; }, 2600);
+  }
+  function showHint(text) { hint.textContent = text; hint.style.display = 'flex'; }
+  function hideHint() { hint.style.display = 'none'; }
+
+  // ---- 原生视图 bounds 同步（插件 iframe 局部坐标，宿主负责加上 iframe 偏移）----
+  var syncTimer = null;
+  var lastHidden = null;
+  function ensureHidden() {
+    if (lastHidden === true) return;
+    lastHidden = true;
+    silent('browser.hide');
+  }
+  // pick 模式绝不插手动原生视图：pick-start 已按原尺寸把它移到屏外，此时若再 hide
+  // 会把视图压成 1×1 → Chromium 重新布局 → 截图与 DOM 错位，元素拾取会偏。
+  function syncBounds(immediate) {
+    if (syncTimer) { clearTimeout(syncTimer); syncTimer = null; }
+    var run = function () {
+      if (mode === 'pick') return;
+      if (covered || !tabId) { ensureHidden(); return; }
+      var r = wrap.getBoundingClientRect();
+      if (!r || r.width < 40 || r.height < 40) { ensureHidden(); return; }
+      lastHidden = false;
+      silent('browser.bounds', { x: r.left, y: r.top, w: r.width, h: r.height });
+    };
+    if (immediate) run(); else syncTimer = setTimeout(run, 10);
   }
 
-  function showMask(u) {
-    maskDesc.textContent = u || urlInput.value || HOME;
-    mask.classList.add('on');
+  // ---- pick 模式布局：把截图按逻辑视口等比缩放居中 ----
+  function layoutStage() {
+    if (mode !== 'pick' || !vp.w || !vp.h) { stage.classList.remove('on'); return; }
+    var r = wrap.getBoundingClientRect();
+    var s = Math.min(r.width / vp.w, r.height / vp.h);
+    if (!(s > 0)) s = 1;
+    scale = Math.min(Math.max(s, 0.1), 2);
+    var sw = vp.w * scale, sh = vp.h * scale;
+    stage.classList.add('on');
+    stage.style.left = Math.max(0, (r.width - sw) / 2) + 'px';
+    stage.style.top = Math.max(0, (r.height - sh) / 2) + 'px';
+    stage.style.width = sw + 'px';
+    stage.style.height = sh + 'px';
+    logical.style.width = vp.w + 'px';
+    logical.style.height = vp.h + 'px';
+    logical.style.transform = 'scale(' + scale + ')';
+  }
+  // 屏幕坐标 → 逻辑视口坐标（CDP getNodeForLocation / getBoundingClientRect 用的正是这一坐标系）
+  function toLogical(clientX, clientY) {
+    var r = logical.getBoundingClientRect();
+    return { x: (clientX - r.left) / scale, y: (clientY - r.top) / scale };
   }
 
-  // 内嵌被拒（X-Frame-Options / CSP）时 iframe 不会触发 load：超时兜底提示
-  function armTimer() {
-    clearTimeout(loadTimer);
-    loadTimer = setTimeout(function () {
-      if (view.src) showMask(view.src);
-    }, 4500);
+  function setMode(m) {
+    if (m === mode) return;
+    if (m === 'pick') {
+      if (!tabId) { toast('内置浏览器尚未就绪'); return; }
+      mode = 'pick';
+      pickBtn.classList.add('on');
+      enterPick();
+    } else {
+      mode = 'browse';
+      pickBtn.classList.remove('on');
+      exitPick();
+    }
   }
-  view.addEventListener('load', function () { clearTimeout(loadTimer); });
-  view.addEventListener('error', function () { clearTimeout(loadTimer); showMask(view.src); });
+  function enterPick() {
+    callAction('browser.pickStart', { tabId: tabId }).then(function (res) {
+      if (mode !== 'pick') { silent('browser.pickEnd', { tabId: tabId }); return; }
+      if (!res || !res.imageDataUrl) { toast('无法截取网页画面'); setMode('browse'); return; }
+      shot.src = res.imageDataUrl;
+      vp = {
+        w: res.viewportCssWidth || res.width || 1280,
+        h: res.viewportCssHeight || res.height || 800
+      };
+      layoutStage();
+    }).catch(function (e) { toast('进入选取模式失败：' + (e && e.message || '')); setMode('browse'); });
+  }
+  function exitPick() {
+    stage.classList.remove('on');
+    shot.removeAttribute('src');
+    hoverRectEl.style.display = 'none';
+    selRectEl.style.display = 'none';
+    cbox.style.display = 'none';
+    pickedEl = null;
+    selRectData = null;
+    silent('browser.pickEnd', { tabId: tabId }).then(function () { syncBounds(true); });
+  }
 
-  function refreshNav() {
-    back.disabled = pos <= 0;
-    fwd.disabled = pos >= stack.length - 1;
+  // ---- 导航 ----
+  function normalizeUrl(raw) {
+    if (/^(https?:|mailto:|file:)/i.test(raw)) return raw;
+    if (/^[^ ]+\.[^ ]{2,}$/.test(raw)) return 'https://' + raw;
+    return 'https://www.bing.com/search?q=' + encodeURIComponent(raw);
   }
-  function setUrlText(u) { urlInput.value = u; }
-  function nav(u) {
-    mask.classList.remove('on');
-    view.src = u;
+  function navigate(u) {
+    if (!u) return;
+    if (!tabId) { ensureTab(silent('browser.loadThen', {})); return; }
+    curUrl = u;
     urlInput.value = u;
-    // 直接改 src 不必然进历史（同 URL 不触发 load），显式维护并跳指针
-    stack = stack.slice(0, pos + 1);
-    stack.push(u);
-    pos = stack.length - 1;
-    refreshNav();
-    armTimer();
+    hideHint();
+    silent('browser.navigate', { tabId: tabId, url: u }).then(function () { syncBounds(true); });
   }
   function go() {
     var raw = urlInput.value.trim();
     if (!raw) return;
-    var u;
-    if (/^(https?:|mailto:|file:)/i.test(raw)) u = raw;
-    else if (/^[^ ]+\.[^ ]{2,}$/.test(raw)) u = 'https://' + raw;
-    else u = 'https://www.bing.com/search?q=' + encodeURIComponent(raw);
-    nav(u);
-  }
-  function stepGo(i) {
-    mask.classList.remove('on');
-    view.src = stack[i];
-    urlInput.value = stack[i];
-    refreshNav();
-    armTimer();
+    navigate(normalizeUrl(raw));
   }
 
-  back.addEventListener('click', function () { if (pos > 0) { pos--; stepGo(pos); } });
-  fwd.addEventListener('click', function () { if (pos < stack.length - 1) { pos++; stepGo(pos); } });
-  document.getElementById('reload').addEventListener('click', function () { mask.classList.remove('on'); view.src = view.src; armTimer(); });
-  document.getElementById('home').addEventListener('click', function () { nav(HOME); });
+  // ---- 建立原生浏览器 Tab ----
+  function ensureTab() {
+    if (tabId) return;
+    callAction('browser.available').then(function (r) {
+      if (!r || !r.available) { showHint('内置浏览器仅在桌面客户端（Electron）中可用。'); return; }
+      return callAction('browser.newTab', { url: HOME }).then(function (res) {
+        if (res && res.tabId) {
+          tabId = res.tabId;
+          curUrl = HOME;
+          urlInput.value = HOME;
+          backBtn.disabled = false;
+          fwdBtn.disabled = false;
+          hideHint();
+          syncBounds(true);
+          silent('browser.focus', {});
+        } else {
+          showHint('无法打开内置浏览器：目标地址被应用自身地址拦截（不能在内置浏览器中打开 PurrCat 自己的页面）。');
+        }
+      });
+    }).catch(function (e) { showHint('打开内置浏览器失败：' + (e && e.message || '')); });
+  }
+
+  // ---- 元素评论：提交给 Agent（与完整模式同一条链路，交给宿主 chat.sendBatch 入会话）----
+  function submitComment() {
+    var text = cmt.value.trim();
+    if (!text || !selRectData) return;
+    var ctx;
+    if (pickedEl && pickedEl.outerHTML) {
+      var parts = [];
+      parts.push('Element: <' + pickedEl.tagName + '>');
+      if (pickedEl.innerText) parts.push('Text: "' + String(pickedEl.innerText).trim().slice(0, 200) + '"');
+      if (pickedEl.cssSelector) parts.push('CSS Selector: ' + pickedEl.cssSelector);
+      parts.push('HTML: ' + String(pickedEl.outerHTML).slice(0, 500));
+      ctx = parts.join('\n');
+    } else if (pickedEl) {
+      ctx = 'DOM Tag: <' + (pickedEl.tag || pickedEl.tagName) + '>';
+    } else {
+      ctx = 'User clicked specific coordinate';
+    }
+    var pixelData = { mode: 'pick', rect: selRectData, domContext: ctx, viewport: { width: vp.w, height: vp.h } };
+    var events = [
+      {
+        type: 'browser-comment',
+        content: 'User marked an area in browser.\nURL: ' + curUrl +
+          '\nMode: ' + pixelData.mode +
+          '\nElement/Pixels: ' + JSON.stringify(pixelData.rect) +
+          '\nContext: ' + pixelData.domContext +
+          '\nViewport: ' + JSON.stringify(pixelData.viewport) +
+          '\nComment: ' + text
+      },
+      { type: 'user', content: text }
+    ];
+    callAction('chat.sendBatch', { events: events })
+      .then(function () { toast('已发送给 Agent'); })
+      .catch(function (e) { toast('发送失败：' + (e && e.message || '')); });
+    cmt.value = '';
+    setMode('browse');
+  }
+
+  // ---- 标注层交互 ----
+  hit.addEventListener('mousemove', function (e) {
+    var now = Date.now();
+    if (now - hoverAt < 120) return;
+    hoverAt = now;
+    var p = toLogical(e.clientX, e.clientY);
+    callAction('browser.locate', { tabId: tabId, x: p.x, y: p.y }).then(function (el) {
+      if (mode !== 'pick' || cbox.style.display === 'block') return;
+      if (el && el.rect) {
+        hoverRectEl.style.display = 'block';
+        hoverRectEl.style.left = el.rect.x + 'px';
+        hoverRectEl.style.top = el.rect.y + 'px';
+        hoverRectEl.style.width = Math.max(el.rect.w, 4) + 'px';
+        hoverRectEl.style.height = Math.max(el.rect.h, 4) + 'px';
+      } else {
+        hoverRectEl.style.display = 'none';
+      }
+    }).catch(function () {});
+  });
+  hit.addEventListener('mouseleave', function () { hoverRectEl.style.display = 'none'; });
+  hit.addEventListener('mousedown', function (e) {
+    if (cbox.style.display === 'block') {
+      // 已展开评论框：点别处先收起，避免误拾取
+      cbox.style.display = 'none';
+      selRectEl.style.display = 'none';
+      return;
+    }
+    var clickX = e.clientX, clickY = e.clientY;
+    var p = toLogical(clickX, clickY);
+    callAction('browser.pickElement', { tabId: tabId, x: p.x, y: p.y }).then(function (el) {
+      if (mode !== 'pick') return;
+      pickedEl = el || null;
+      selRectData = (el && el.rect) ? el.rect : { x: p.x - 5, y: p.y - 5, w: 10, h: 10 };
+      selRectEl.style.display = 'block';
+      selRectEl.style.left = selRectData.x + 'px';
+      selRectEl.style.top = selRectData.y + 'px';
+      selRectEl.style.width = Math.max(selRectData.w, 8) + 'px';
+      selRectEl.style.height = Math.max(selRectData.h, 8) + 'px';
+      hoverRectEl.style.display = 'none';
+      cbox.style.display = 'block';
+      cbox.style.left = Math.min(selRectData.x + selRectData.w + 10, vp.w - 300) + 'px';
+      cbox.style.top = Math.max(10, selRectData.y - 20) + 'px';
+      cmt.value = '';
+      cmt.focus();
+    }).catch(function () { toast('元素拾取失败'); });
+  });
+  document.getElementById('cmtSend').addEventListener('click', submitComment);
+  document.getElementById('cmtCancel').addEventListener('click', function () { setMode('browse'); });
+  cmt.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitComment(); }
+  });
+
+  // ---- 工具栏 ----
+  backBtn.addEventListener('click', function () { if (tabId) silent('browser.goBack', { tabId: tabId }); });
+  fwdBtn.addEventListener('click', function () { if (tabId) silent('browser.goForward', { tabId: tabId }); });
+  document.getElementById('reload').addEventListener('click', function () { if (tabId) silent('browser.reload', { tabId: tabId }); });
+  document.getElementById('home').addEventListener('click', function () { navigate(HOME); });
   document.getElementById('go').addEventListener('click', go);
-  document.getElementById('ext').addEventListener('click', function () { openExternal(view.src || urlInput.value || HOME); });
-  document.getElementById('maskExt').addEventListener('click', function () { openExternal(view.src || urlInput.value || HOME); });
-  document.getElementById('maskRetry').addEventListener('click', function () { mask.classList.remove('on'); armTimer(); });
+  pickBtn.addEventListener('click', function () { setMode(mode === 'pick' ? 'browse' : 'pick'); });
+  document.getElementById('ext').addEventListener('click', function () {
+    silent('browser.openExternal', { url: curUrl || urlInput.value || HOME });
+  });
   urlInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') go(); });
+
+  // ---- 尺寸变化：浏览时同步原生视图 bounds；选取时重排截图 ----
+  function onResize() {
+    if (mode === 'pick') layoutStage(); else syncBounds();
+  }
+  try { new ResizeObserver(onResize).observe(wrap); } catch (_) { /* noop */ }
+  window.addEventListener('resize', onResize);
+
+  // ---- 宿主事件 ----
+  window.addEventListener('message', function (e) {
+    var m = e.data;
+    if (!m || typeof m !== 'object') return;
+    if (m.type === 'configApply') { applyConfig(m.config); return; }
+    if (m.type !== 'event') return;
+    if (m.event === 'browser.tabEvent') { onTabEvent(m.data || {}); return; }
+    if (m.event === 'host.nativeCover') {
+      covered = !!(m.data && m.data.covered);
+      syncBounds();
+      return;
+    }
+    if (m.event === 'host.unmount') { cleanup(); return; }
+  });
+  function onTabEvent(data) {
+    if (data.tabId && tabId && data.tabId !== tabId) return;
+    if (data.type === 'navigate') {
+      curUrl = data.url || curUrl;
+      urlInput.value = curUrl;
+    } else if (data.type === 'blocked') {
+      toast(data.reason || '该地址已被拦截');
+    }
+  }
+
+  // 插件被卸载（抽屉切换 / 面板重建 / 关闭面板）：隐藏原生视图并关掉自己的 Tab
+  function cleanup() {
+    if (cleanup.done) return;
+    cleanup.done = true;
+    ensureHidden();
+    if (tabId) { silent('browser.closeTab', { tabId: tabId }); tabId = null; }
+  }
+  window.addEventListener('pagehide', cleanup);
 
   // 首页地址来自插件配置（宿主在 iframe load 时下发 configApply），默认必应
   function applyConfig(cfg) {
     var h = cfg && typeof cfg.homepage === 'string' ? cfg.homepage.trim() : '';
     HOME = h || DEFAULT_HOME;
-    if (!opened) { opened = true; nav(HOME); }
+    if (!started) { started = true; ensureTab(); }
   }
-  window.addEventListener('message', function (e) {
-    var m = e.data;
-    if (m && typeof m === 'object' && m.type === 'configApply') applyConfig(m.config);
-  });
-  // 兜底：宿主未下发配置（独立打开等）时仍按默认主页打开
-  setTimeout(function () { if (!opened) { opened = true; nav(HOME); } }, 300);
+  // 兜底：宿主未下发配置（独立打开等）时仍按默认主页建立 Tab
+  setTimeout(function () { if (!started) { started = true; ensureTab(); } }, 300);
 })();
 </script>
 </body>

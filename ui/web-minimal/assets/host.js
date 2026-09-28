@@ -100,6 +100,7 @@
       if (hidden) { HOST.document.body.classList.remove('has-panels'); if (panelBar) panelBar.style.display = 'none'; }
       else { HOST.document.body.classList.add('has-panels'); if (panelBar) panelBar.style.display = ''; }
     }
+    syncNativeCover();
   }
   function persistRail() {
     return fetch('/api/webmin/config', {
@@ -303,6 +304,7 @@
     if (sb) sb.classList.toggle('on', !!open);
     if (!open) closeSettingsMenus();   // 菜单挂在 body 上，面板关掉后不能留在界面上
     if (open) renderSettings();
+    syncNativeCover();
   }
 
   // 设置面板内"配置变更后防抖重建"（仅离散操作调用：滑块等连续输入不打断交互）
@@ -774,6 +776,7 @@
   }
   function closeSettingsMenus() {
     HOST.document.querySelectorAll('.settings-card-menu').forEach(function (m) { m.remove(); });
+    syncNativeCover();
   }
   function openPluginCardMenu(ev, btn, p) {
     ev.stopPropagation();
@@ -805,6 +808,7 @@
     const r = btn.getBoundingClientRect();
     menu.style.right = (HOST.innerWidth - r.right) + 'px';
     menu.style.top = (r.bottom + 4) + 'px';
+    syncNativeCover();
   }
 
   // 把某插件置为对应槽位的当前活动实例（fixed 卸旧挂新；panel 切换抽屉选中），并持久化用户选择
@@ -1646,6 +1650,75 @@
         if (!res.ok) throw new Error((await res.text()) || '插件后端调用失败');
         return (await res.json()).result;
       }
+      // ---- 内置浏览器（原生 WebContentsView，非 iframe）----
+      // 插件 iframe 拿不到 window.purrcat（preload 只在主 frame 生效，未开
+      // nodeIntegrationInSubFrames），因此由宿主把原生浏览器原语转发给 purrcat，
+      // 并负责「插件 iframe 局部坐标 → 主窗口内容区坐标」的换算。
+      case 'browser.available':
+        return { available: !!(HOST.purrcat && HOST.purrcat.browserNewTab) };
+      case 'browser.bounds': {
+        const pc = HOST.purrcat;
+        if (!pc || !pc.browserSetBounds) throw new Error('内置浏览器仅在 Electron 内可用');
+        let ox = 0, oy = 0;
+        const fr = origin && origin.iframe;
+        if (fr && fr.getBoundingClientRect) { const r = fr.getBoundingClientRect(); ox = r.left; oy = r.top; }
+        await pc.browserSetBounds(
+          Math.round(ox + (Number(payload.x) || 0)),
+          Math.round(oy + (Number(payload.y) || 0)),
+          Math.round(Number(payload.w) || 1),
+          Math.round(Number(payload.h) || 1),
+          1,
+        );
+        return { status: 'ok' };
+      }
+      case 'browser.hide': {
+        if (HOST.purrcat && HOST.purrcat.browserHide) await HOST.purrcat.browserHide();
+        return { status: 'ok' };
+      }
+      case 'browser.newTab': {
+        if (!HOST.purrcat || !HOST.purrcat.browserNewTab) throw new Error('内置浏览器仅在 Electron 内可用');
+        return { tabId: await HOST.purrcat.browserNewTab(payload.url || '') };
+      }
+      case 'browser.closeTab': {
+        if (HOST.purrcat && HOST.purrcat.browserCloseTab) await HOST.purrcat.browserCloseTab(payload.tabId, payload.nextTabId || undefined);
+        return { status: 'ok' };
+      }
+      case 'browser.navigate': {
+        if (HOST.purrcat && HOST.purrcat.browserNavigate) await HOST.purrcat.browserNavigate(payload.tabId, payload.url);
+        return { status: 'ok' };
+      }
+      case 'browser.reload': {
+        if (HOST.purrcat && HOST.purrcat.browserReload) await HOST.purrcat.browserReload(payload.tabId);
+        return { status: 'ok' };
+      }
+      case 'browser.goBack': {
+        if (HOST.purrcat && HOST.purrcat.browserGoBack) await HOST.purrcat.browserGoBack(payload.tabId);
+        return { status: 'ok' };
+      }
+      case 'browser.goForward': {
+        if (HOST.purrcat && HOST.purrcat.browserGoForward) await HOST.purrcat.browserGoForward(payload.tabId);
+        return { status: 'ok' };
+      }
+      case 'browser.pickStart': {
+        if (!HOST.purrcat || !HOST.purrcat.browserPickStart) throw new Error('内置浏览器仅在 Electron 内可用');
+        return await HOST.purrcat.browserPickStart(payload.tabId);
+      }
+      case 'browser.pickEnd': {
+        if (HOST.purrcat && HOST.purrcat.browserPickEnd) await HOST.purrcat.browserPickEnd(payload.tabId);
+        return { status: 'ok' };
+      }
+      case 'browser.locate': {
+        if (!HOST.purrcat || !HOST.purrcat.browserLocate) return null;
+        return await HOST.purrcat.browserLocate(payload.tabId, payload.x, payload.y);
+      }
+      case 'browser.pickElement': {
+        if (!HOST.purrcat || !HOST.purrcat.browserCdpPickElement) return null;
+        return await HOST.purrcat.browserCdpPickElement(payload.tabId, payload.x, payload.y);
+      }
+      case 'browser.openExternal': {
+        if (HOST.purrcat && HOST.purrcat.openExternal) await HOST.purrcat.openExternal(payload.url);
+        return { status: 'ok' };
+      }
       case 'state.get':
         return { ...groupState, plugins: undefined };
       // 输入插件展开引用菜单时，宿主腾出更高输入区，避免面板被容器裁切
@@ -1678,6 +1751,32 @@
     });
   }
 
+  // ---- 广播事件到全部插件帧（不区分 slot）：宿主级通用状态（如原生视图遮挡）通知 ----
+  function broadcastAll(event, data) {
+    Object.keys(frames).forEach((k) => { broadcast(k, event, data); });
+  }
+
+  // ---- 原生视图遮挡：内置浏览器等原生 WebContentsView 永远绘制在 DOM 之上，
+  //      宿主的设置中心 / 模态弹窗 / 各类下拉菜单出现时必须让持有原生视图的插件
+  //      暂时隐藏视图。宿主不感知具体插件，只广播一个通用布尔状态由插件自行响应。
+  let _nativeCover = null;
+  function nativeCoverActive() {
+    if (HOST.document.body.classList.contains('settings-open')) return true;
+    if (HOST.document.querySelector('.wm-pp_menu')) return true;
+    if (HOST.document.querySelector('.settings-card-menu')) return true;
+    const modals = HOST.document.querySelectorAll('.wm-modal-wrap');
+    for (let i = 0; i < modals.length; i++) {
+      if (HOST.getComputedStyle(modals[i]).display !== 'none') return true;
+    }
+    return false;
+  }
+  function syncNativeCover() {
+    const v = nativeCoverActive();
+    if (v === _nativeCover) return;
+    _nativeCover = v;
+    broadcastAll('host.nativeCover', { covered: v });
+  }
+
   // ---- 监听插件 iframe 消息 ----
   HOST.addEventListener('message', (e) => {
     const msg = e.data;
@@ -1692,7 +1791,7 @@
         });
       });
       const srcPlugin = srcFrame ? srcFrame.pluginId : null;
-      const origin = { slot: srcSlot, pluginId: srcPlugin, inst: srcFrame ? srcFrame.el : null };
+      const origin = { slot: srcSlot, pluginId: srcPlugin, inst: srcFrame ? srcFrame.el : null, iframe: srcFrame ? srcFrame.iframe : null };
       callAction(msg.actionId, msg.payload, origin)
         .then((data) => { if (e.source) e.source.postMessage({ type: 'callActionResult', id, ok: true, data }, '*'); })
         .catch((err) => { if (e.source) e.source.postMessage({ type: 'callActionResult', id, ok: false, error: String(err) }, '*'); });
@@ -1895,10 +1994,12 @@
   // 关闭面板右上角抽屉下拉
   function closePanelMenus() {
     HOST.document.querySelectorAll('.wm-pp_menu').forEach((m) => m.remove());
+    syncNativeCover();
   }
   // panel 内容区重建：标题 + 抽屉 + 当前选中插件 iframe（切换即在容器内卸载旧图挂新图）
   function renderPanelContent(st) {
     const el = st.el;
+    notifyUnmount(el);
     el.innerHTML = '';
     const cur = st.plugins.find((x) => x.p.id === st.activeId) || null;   // 支持 none：不选中任意插件时显示空面板
     const head = HOST.document.createElement('div');
@@ -1958,6 +2059,7 @@
       menu.style.right = 'auto';
       menu.style.left = Math.max(8, r.right - menu.offsetWidth) + 'px';
       menu.style.top = (r.bottom + 4) + 'px';
+      syncNativeCover();
     });
     head.appendChild(dbtn);
     // ✕ 关闭按钮放右上角：关闭面板容器（统一走 setContainerHidden，同步状态并持久化）
@@ -1999,7 +2101,7 @@
     });
     // 无 panel 插件：移除容器与状态
     if (!byArea.panel.length) {
-      if (panelState && panelState.el && panelState.el.parentNode) panelState.el.remove();
+      if (panelState && panelState.el && panelState.el.parentNode) { notifyUnmount(panelState.el); panelState.el.remove(); }
       panelState = null;
       closePanelMenus();
       return;
@@ -2026,7 +2128,18 @@
   }
 
   // ---- 渲染：把某插件实例装进对应容器内的 iframe ----
+  // 卸载通知：iframe 被移除前给插件最后一次收尾机会（如关掉自己开的浏览器 Tab、
+  // 把原生视图移出屏幕）。postMessage 已入队，即使随后移除 iframe 仍会投递。
+  function notifyUnmount(rootEl) {
+    if (!rootEl || !rootEl.querySelectorAll) return;
+    rootEl.querySelectorAll('iframe').forEach(function (f) {
+      try {
+        if (f.contentWindow) f.contentWindow.postMessage({ type: 'event', event: 'host.unmount', data: {} }, '*');
+      } catch (_) { /* noop */ }
+    });
+  }
   function mountFrame(el, p) {
+    notifyUnmount(el);
     el.querySelectorAll('iframe').forEach((f) => f.remove());
     el.querySelectorAll('.wm-fgrab, .wm-fresize').forEach((h) => h.remove());
     if (!p || !p.entry) return null;
@@ -2060,7 +2173,7 @@
   function buildSlotIndex() {
     // 清理已挂载的动态实例浮层（保留 html 里的锚定容器）
     Object.keys(frames).forEach((k) => {
-      (frames[k] || []).forEach((f) => { if (f.el && f.el.parentNode && !f.el.hasAttribute('data-layer')) f.el.remove(); });
+      (frames[k] || []).forEach((f) => { if (f.el && f.el.parentNode && !f.el.hasAttribute('data-layer')) { notifyUnmount(f.el); f.el.remove(); } });
     });
     Object.keys(slotMap).forEach((k) => delete slotMap[k]);
     Object.keys(pluginBySlot).forEach((k) => delete pluginBySlot[k]);
@@ -2224,6 +2337,15 @@
     applyPanelContainerCfg();
     // 应用持久化的插件隐藏状态（需在挂载后重设，避免被 iframe 覆盖样式）
     applyPersistedHidden();
+
+    // 原生浏览器 Tab 事件（标题/导航/被拦截）转发给全部插件帧，由持有原生视图的插件消费
+    if (HOST.purrcat && HOST.purrcat.onTabEvent) {
+      HOST.purrcat.onTabEvent(function (evt) { broadcastAll('browser.tabEvent', evt); });
+    }
+    // 原生视图遮挡状态：设置中心 / 模态弹窗 / 下拉菜单出现时通知插件隐藏原生视图。
+    // 在各开关点显式调用 syncNativeCover()（见 setSettingsOpen/applySlotHidden/菜单开合），
+    // 不用 MutationObserver：浮窗拖拽会高频改内联样式，观察 style 会造成 getComputedStyle 抖动。
+    syncNativeCover();
 
     try {
       const list = await (await fetch('/api/sessions')).json();

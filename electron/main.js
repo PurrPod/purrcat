@@ -12,6 +12,13 @@ const os = require('os');
 // 升级会导致 ERR_SSL_PROTOCOL_ERROR。必须在 app ready 前设置。
 app.commandLine.appendSwitch('disable-features', 'HttpsUpgrades');
 
+// 🌟 开放本地 CDP 调试端口（仅回环地址）：让 chrome-devtools-mcp 通过
+//    --browser-url=http://127.0.0.1:9222 连到本应用的内置浏览器 WebContentsView，
+//    从而让 callmcp / computeruse 操作的是应用内置浏览器，而不是另起一个外部 Chrome。
+//    必须在 app ready 前设置。仅监听 127.0.0.1，不对外暴露。
+app.commandLine.appendSwitch('remote-debugging-address', '127.0.0.1');
+app.commandLine.appendSwitch('remote-debugging-port', '9222');
+
 // 🌟 GPU 兼容防御：部分老旧/异常显卡驱动上 Chromium GPU 进程反复崩溃，
 // 表现为主窗口大片空白/卡死（实测用户机器复现：顶部标题栏渲染、主体全白）。
 // 检测到 GPU 进程崩溃时写入标记并自动重启，下次启动禁用硬件加速（软渲染）。
