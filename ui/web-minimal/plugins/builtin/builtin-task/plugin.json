@@ -1,0 +1,7 @@
+{
+  "id": "builtin-task",
+  "name": "任务",
+  "icon": "<svg viewBox=\"0 0 24 24\"><path d=\"M22 12h-4l-3 9L9 3l-3 9H2\"/></svg>",
+  "slot": { "area": "panel" },
+  "entry": "index.html"
+}
