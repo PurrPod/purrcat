@@ -70,6 +70,34 @@
   .side-body { flex: 1; min-height: 0; overflow-y: auto; padding: 0 8px 12px; }
   .main { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
 
+  /* 左侧列表收起按钮：样式对齐白条底部的 rail-toggle（☰） */
+  .side-toggle {
+    flex: none; width: 24px; height: 24px; display: inline-flex; align-items: center; justify-content: center;
+    border: none; border-radius: 6px; background: transparent; color: var(--ink-2); cursor: pointer;
+    transition: background .12s ease, color .12s ease;
+  }
+  .side-toggle:hover { background: var(--hover); color: var(--ink); }
+  .side-toggle svg { width: 15px; height: 15px; }
+  /* 收起态：左列表缩成一条只保留开关的窄条 */
+  .side.ev-collapsed { width: 46px !important; }
+  .side.ev-collapsed > .side-head { padding: 8px 0 6px; justify-content: center; }
+  .side.ev-collapsed > .side-head > *:not(.side-toggle) { display: none; }
+  .side.ev-collapsed > .side-body { display: none; }
+
+  /* 左侧列表内的抽屉（可折叠分组） */
+  .drawer { border-radius: 8px; }
+  .drawer > summary {
+    display: flex; align-items: center; gap: 6px; list-style: none; cursor: pointer;
+    padding: 7px 10px; border-radius: 8px; font-size: 11px; font-weight: 600;
+    letter-spacing: .06em; color: var(--dim); text-transform: uppercase; user-select: none;
+  }
+  .drawer > summary::-webkit-details-marker { display: none; }
+  .drawer > summary:hover { background: var(--hover); }
+  .drawer > summary .chev { display: inline-flex; flex: none; transition: transform .15s ease; }
+  .drawer[open] > summary .chev { transform: rotate(90deg); }
+  .drawer > summary .spacer { margin-left: auto; }
+  .drawer-body { padding: 2px 0 8px; }
+
   .item { padding: 8px 10px; border-radius: 8px; cursor: pointer; position: relative; }
   .item:hover { background: var(--hover); }
   .item.on { background: var(--field); }
@@ -266,6 +294,8 @@
  *   EV.confirm({title, message, okLabel, danger}) → Promise<boolean>
  *   EV.prompt({title, label, value, placeholder, okLabel}) → Promise<string|null>
  *   EV.setActions([{icon|label, title, primary, danger, disabled, onClick}])  右上角动作按钮
+ *   EV.attachSideToggle(sideEl, headEl)  在左列表头部追加「收起」开关
+ *   EV.drawer(title, count, open, onToggle, fill)  左列表内的可折叠抽屉
  *   EV.md(text)                          markdown → HTML
  *   EV.escape(text) / EV.debounce(fn,ms) / EV.fmtTime(s)
  * ========================================================================== */
@@ -298,6 +328,7 @@
     upload: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 9 5-5 5 5"/><path d="M12 4v12"/>',
     download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 11 5 5 5-5"/><path d="M12 16V4"/>',
     chevron: '<path d="m9 6 6 6-6 6"/>',
+    menu: '<path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h16"/>',
     dot: '<circle cx="12" cy="12" r="4"/>'
   };
 
@@ -534,6 +565,42 @@
     });
   }
 
+  // ---------- 左侧列表收起开关 ----------
+  // 把一个 ☰ 开关追加到左列表头部；点击在 .side 上切换 ev-collapsed，
+  // 收起后仅保留头部窄条与开关本身，主区域自动铺满。
+  function attachSideToggle(sideEl, headEl) {
+    var btn = el('button', 'side-toggle');
+    btn.type = 'button';
+    btn.innerHTML = icon('menu', 15);
+    btn.title = '收起左侧列表';
+    btn.onclick = function (e) {
+      e.stopPropagation();
+      var collapsed = sideEl.classList.toggle('ev-collapsed');
+      btn.title = collapsed ? '展开左侧列表' : '收起左侧列表';
+    };
+    headEl.appendChild(btn);
+    return btn;
+  }
+
+  // 生成一个可折叠抽屉（<details>），fill(bodyEl) 负责填充内容
+  function drawer(title, count, open, onToggle, fill) {
+    var d = el('details', 'drawer');
+    d.open = !!open;
+    var s = el('summary');
+    var chev = el('span', 'chev');
+    chev.innerHTML = icon('chevron', 12);
+    s.appendChild(chev);
+    s.appendChild(el('span', null, title));
+    s.appendChild(el('span', 'spacer'));
+    if (count) s.appendChild(el('span', 'chip mute', String(count)));
+    d.appendChild(s);
+    var body = el('div', 'drawer-body');
+    fill(body);
+    d.appendChild(body);
+    d.addEventListener('toggle', function () { if (onToggle) onToggle(d.open); });
+    return d;
+  }
+
   // ---------- 标签路由 ----------
   function register(id, mod) {
     if (registry[id]) return;
@@ -574,6 +641,7 @@
     el: el, icon: icon, escape: escapeHtml, debounce: debounce, fmtTime: fmtTime,
     toast: toast, api: api, qs: qs, modal: modal, confirm: confirm, prompt: prompt,
     md: md, setActions: setActions, register: register, activate: activate,
+    attachSideToggle: attachSideToggle, drawer: drawer,
     on: function () {}
   };
   // 供标签模块在 mount 前声明标签元信息

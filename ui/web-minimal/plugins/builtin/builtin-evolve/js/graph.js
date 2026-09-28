@@ -19,7 +19,8 @@
     extras: null,       // {env, dashboard}
     graphName: '',
     description: '',
-    dirty: false
+    dirty: false,
+    drawers: { files: true, nodes: true }   // 左侧两个抽屉的展开状态
   };
 
   var sideBodyEl, canvasEl, worldEl, svgEl, inspEl, toolbarEl, hintEl;
@@ -353,12 +354,13 @@
   function renderSide() {
     sideBodyEl.innerHTML = '';
 
-    var gh = EV.el('div', 'side-head', '已保存图谱');
-    sideBodyEl.appendChild(gh);
+    // 最上方：新建画布
     var newBtn = EV.el('button', 'btn sm');
     newBtn.innerHTML = EV.icon('plus', 13);
     newBtn.appendChild(EV.el('span', null, '新建画布'));
-    newBtn.style.margin = '0 4px 8px';
+    newBtn.style.margin = '2px 4px 8px';
+    newBtn.style.width = 'calc(100% - 8px)';
+    newBtn.style.justifyContent = 'center';
     newBtn.onclick = function () {
       state.nodes = []; state.edges = []; state.selectedId = null; state.selectedEdgeId = null;
       state.graphName = ''; state.description = ''; state.extras = null; state.dirty = false;
@@ -366,40 +368,53 @@
     };
     sideBodyEl.appendChild(newBtn);
 
-    if (!state.files.length) {
-      sideBodyEl.appendChild(EV.el('div', 'hint', '暂无已保存的图谱。'));
-    } else {
-      state.files.forEach(function (f) {
-        var it = EV.el('div', 'item' + (state.graphName === f.name ? ' on' : ''));
-        var nm = EV.el('div', 'item-name');
-        nm.innerHTML = EV.icon('graph', 14);
-        nm.appendChild(EV.el('span', 'nm', f.name));
-        it.appendChild(nm);
-        it.onclick = function () { openGraph(f.name); };
-        sideBodyEl.appendChild(it);
-      });
-    }
+    // 抽屉 1：打开已有图谱
+    sideBodyEl.appendChild(EV.drawer(
+      '打开已有图谱', state.files.length, state.drawers.files,
+      function (open) { state.drawers.files = open; },
+      function (body) {
+        if (!state.files.length) {
+          body.appendChild(EV.el('div', 'hint', '暂无已保存的图谱。'));
+          return;
+        }
+        state.files.forEach(function (f) {
+          var it = EV.el('div', 'item' + (state.graphName === f.name ? ' on' : ''));
+          var nm = EV.el('div', 'item-name');
+          nm.innerHTML = EV.icon('graph', 14);
+          nm.appendChild(EV.el('span', 'nm', f.name));
+          it.appendChild(nm);
+          it.onclick = function () { openGraph(f.name); };
+          body.appendChild(it);
+        });
+      }
+    ));
 
-    sideBodyEl.appendChild(EV.el('div', 'side-head', '节点目录'));
-    if (!state.catalog.length) {
-      sideBodyEl.appendChild(EV.el('div', 'hint', '正在加载节点目录…'));
-      return;
-    }
-    state.catalog.forEach(function (def) {
-      var it = EV.el('div', 'item');
-      var nm = EV.el('div', 'item-name');
-      var dot = EV.el('span');
-      dot.style.width = '9px'; dot.style.height = '9px';
-      dot.style.borderRadius = '3px'; dot.style.flex = 'none';
-      dot.style.background = def.color || '#9aa5b1';
-      nm.appendChild(dot);
-      nm.appendChild(EV.el('span', 'nm', def.name));
-      it.appendChild(nm);
-      if (def.description) it.appendChild(EV.el('div', 'item-sub', def.description));
-      it.title = '点击添加到画布中心';
-      it.onclick = function () { addNode(def.type); };
-      sideBodyEl.appendChild(it);
-    });
+    // 抽屉 2：添加节点
+    sideBodyEl.appendChild(EV.drawer(
+      '添加节点', state.catalog.length, state.drawers.nodes,
+      function (open) { state.drawers.nodes = open; },
+      function (body) {
+        if (!state.catalog.length) {
+          body.appendChild(EV.el('div', 'hint', '正在加载节点目录…'));
+          return;
+        }
+        state.catalog.forEach(function (def) {
+          var it = EV.el('div', 'item');
+          var nm = EV.el('div', 'item-name');
+          var dot = EV.el('span');
+          dot.style.width = '9px'; dot.style.height = '9px';
+          dot.style.borderRadius = '3px'; dot.style.flex = 'none';
+          dot.style.background = def.color || '#9aa5b1';
+          nm.appendChild(dot);
+          nm.appendChild(EV.el('span', 'nm', def.name));
+          it.appendChild(nm);
+          if (def.description) it.appendChild(EV.el('div', 'item-sub', def.description));
+          it.title = '点击添加到画布中心';
+          it.onclick = function () { addNode(def.type); };
+          body.appendChild(it);
+        });
+      }
+    ));
   }
 
   function addNode(type) {
@@ -1209,6 +1224,11 @@
 
       var side = EV.el('div', 'side');
       side.style.width = '240px';
+      var sideHead = EV.el('div', 'side-head');
+      sideHead.appendChild(EV.el('span', null, '图谱'));
+      sideHead.appendChild(EV.el('span', 'spacer'));
+      EV.attachSideToggle(side, sideHead);
+      side.appendChild(sideHead);
       sideBodyEl = EV.el('div', 'side-body');
       side.appendChild(sideBodyEl);
       root.appendChild(side);

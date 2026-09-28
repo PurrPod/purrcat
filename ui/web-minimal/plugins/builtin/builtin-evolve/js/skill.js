@@ -227,7 +227,6 @@
       var item = EV.el('div', 'item' + (sel ? ' on' : ''));
       var nm = EV.el('div', 'item-name');
       nm.appendChild(EV.el('span', 'nm', wp.name));
-      nm.appendChild(EV.el('span', 'chip', '加工中'));
       item.appendChild(nm);
       item.appendChild(EV.el('div', 'item-sub', wp.workplace_id));
       var x = EV.el('button', 'item-x');
@@ -484,7 +483,11 @@
   EV.defineTab('skill', '技能', {
     mount: function (root) {
       var side = EV.el('div', 'side');
-      side.appendChild(EV.el('div', 'side-head', '加工沙盒'));
+      var sideHead = EV.el('div', 'side-head');
+      sideHead.appendChild(EV.el('span', null, '加工沙盒'));
+      sideHead.appendChild(EV.el('span', 'spacer'));
+      EV.attachSideToggle(side, sideHead);
+      side.appendChild(sideHead);
       sideBodyEl = EV.el('div', 'side-body');
       side.appendChild(sideBodyEl);
       root.appendChild(side);

@@ -1,7 +1,7 @@
 /* ============================================================================
  * 「Agent Loop」标签：与完整模式 AgentLoopEditor 对齐
  *   paradigm（~/.purrcat/paradigms/*.yaml）的查看与编辑：
- *   基础信息 + 五个 Hook 的动作编排（含触发时机 / 退出期望 / 参数约束 / 技能选择）
+ *   五个 Hook 的动作编排（含触发时机 / 退出期望 / 参数约束 / 技能选择）
  * ========================================================================== */
 (function () {
   'use strict';
@@ -80,9 +80,7 @@
     hooks: emptyHooks(),
     extraHooks: {},
     baseline: '',
-    dirty: false,
-    extraRootText: '{}',
-    extraRootErr: false
+    dirty: false
   };
 
   var sideBodyEl, toolbarEl, bodyEl;
@@ -141,32 +139,10 @@
       });
     }
   }
-  function refreshExtraRoot() {
-    var rest = {};
-    Object.keys(state.rootMeta).forEach(function (k) {
-      if (['name', 'description', 'path', 'loop_end_max_retry'].indexOf(k) < 0) rest[k] = state.rootMeta[k];
-    });
-    state.extraRootText = JSON.stringify(rest, null, 2);
-    state.extraRootErr = false;
-  }
   function refreshDirty() {
     state.dirty = JSON.stringify(buildDoc()) !== state.baseline;
   }
   function touch() { refreshDirty(); renderToolbar(); }
-  function commitExtraRoot() {
-    var parsed;
-    try { parsed = JSON.parse(state.extraRootText || '{}'); }
-    catch (e) { state.extraRootErr = true; renderBody(); return; }
-    if (!isPlainObject(parsed)) { state.extraRootErr = true; renderBody(); return; }
-    // 移除旧的附加键，再写回新的
-    Object.keys(state.rootMeta).forEach(function (k) {
-      if (['name', 'description', 'path', 'loop_end_max_retry'].indexOf(k) < 0) delete state.rootMeta[k];
-    });
-    Object.keys(parsed).forEach(function (k) { state.rootMeta[k] = parsed[k]; });
-    state.extraRootErr = false;
-    touch();
-    renderBody();
-  }
 
   /* ---------------- 数据 ---------------- */
   async function loadFileList() {
@@ -197,7 +173,6 @@
     try {
       var data = await EV.api.get('/api/paradigms/' + encodeURIComponent(name));
       applyDoc(data && data.data);
-      refreshExtraRoot();
       state.activeName = name;
       state.baseline = JSON.stringify(buildDoc());
       state.dirty = false;
@@ -210,15 +185,6 @@
 
   async function save() {
     if (!state.activeName) return;
-    // 未提交的“其它顶层字段”先落盘
-    var parsed;
-    try { parsed = JSON.parse(state.extraRootText || '{}'); }
-    catch (e) { EV.toast('「其它顶层字段」JSON 格式不合法，无法保存', true); return; }
-    Object.keys(state.rootMeta).forEach(function (k) {
-      if (['name', 'description', 'path', 'loop_end_max_retry'].indexOf(k) < 0) delete state.rootMeta[k];
-    });
-    Object.keys(parsed || {}).forEach(function (k) { state.rootMeta[k] = parsed[k]; });
-
     try {
       await EV.api.post('/api/paradigms/' + encodeURIComponent(state.activeName), { data: buildDoc() });
       state.baseline = JSON.stringify(buildDoc());
@@ -232,25 +198,63 @@
   }
 
   async function createFile() {
-    var name = await EV.prompt({
-      title: '新建 Paradigm',
-      label: '文件名（将创建 ~/.purrcat/paradigms/{名称}.yaml）',
-      placeholder: '例如 my_agent_loop',
-      okLabel: '创建'
-    });
-    if (!name) return;
+    var info = await askNewFile();
+    if (!info) return;
     var hooks = {};
     HOOK_KEYS.forEach(function (k) { hooks[k] = []; });
-    var doc = { name: name, description: '新的主循环', path: 'agent_vm', hooks: hooks };
+    var doc = { name: info.name, description: info.description, path: 'agent_vm', hooks: hooks };
     try {
-      await EV.api.post('/api/paradigms/' + encodeURIComponent(name), { data: doc });
-      EV.toast('已新建 ' + name + '.yaml');
+      await EV.api.post('/api/paradigms/' + encodeURIComponent(info.name), { data: doc });
+      EV.toast('已新建 ' + info.name + '.yaml');
       state.dirty = false;
       await loadFileList();
-      await openFile(name);
+      await openFile(info.name);
     } catch (e) {
       EV.toast('新建失败：' + e.message, true);
     }
+  }
+
+  // 新建时只让用户填「名称」与「描述」，其它字段一律使用默认骨架
+  function askNewFile() {
+    return new Promise(function (resolve) {
+      var wrap = EV.el('div');
+
+      var nameField = EV.el('div', 'field');
+      nameField.appendChild(EV.el('label', null, '名称（将创建 ~/.purrcat/paradigms/{名称}.yaml）'));
+      var nameInput = EV.el('input', 'input');
+      nameInput.placeholder = '例如 my_agent_loop';
+      nameField.appendChild(nameInput);
+      wrap.appendChild(nameField);
+
+      var descField = EV.el('div', 'field');
+      descField.appendChild(EV.el('label', null, '描述'));
+      var descInput = EV.el('input', 'input');
+      descInput.placeholder = '简单描述这个主循环的用途';
+      descField.appendChild(descInput);
+      wrap.appendChild(descField);
+
+      var answered = false;
+      EV.modal({
+        title: '新建 Paradigm',
+        width: '440px',
+        node: wrap,
+        actions: [
+          { label: '取消', onClick: function (m) { answered = true; resolve(null); m.close(); } },
+          {
+            label: '创建', kind: 'primary',
+            onClick: function (m) {
+              var nm = nameInput.value.trim();
+              if (!nm) { EV.toast('名称不能为空', true); return; }
+              answered = true;
+              resolve({ name: nm, description: descInput.value.trim() });
+              m.close();
+            }
+          }
+        ],
+        onOpen: function () { setTimeout(function () { nameInput.focus(); }, 30); },
+        onClose: function () { if (!answered) resolve(null); }
+      });
+    });
   }
 
   async function deleteFile(name) {
@@ -270,7 +274,6 @@
         state.extraHooks = {};
         state.baseline = '';
         state.dirty = false;
-        refreshExtraRoot();
       }
       await loadFileList();
       renderMain();
@@ -837,31 +840,6 @@
     }
     var sc = EV.el('div', 'scroll pad');
 
-    // 基础信息
-    var base = EV.el('div', 'card');
-    var bh = EV.el('div', 'card-head');
-    bh.innerHTML = EV.icon('edit', 15);
-    bh.appendChild(EV.el('span', 'card-title', '基础信息'));
-    base.appendChild(bh);
-    [
-      { key: 'name', label: '名称 name', kind: 'text' },
-      { key: 'description', label: '描述 description', kind: 'text' },
-      { key: 'path', label: '工作路径 path', kind: 'text', ph: '例如 agent_vm' },
-      { key: 'loop_end_max_retry', label: '循环最大重试 loop_end_max_retry', kind: 'number' }
-    ].forEach(function (f) {
-      var input = EV.el('input', 'input');
-      input.type = f.kind === 'number' ? 'number' : 'text';
-      input.placeholder = f.ph || '';
-      input.value = state.rootMeta[f.key] === undefined || state.rootMeta[f.key] === null ? '' : String(state.rootMeta[f.key]);
-      input.onchange = function () {
-        if (input.value === '') delete state.rootMeta[f.key];
-        else state.rootMeta[f.key] = f.kind === 'number' ? Number(input.value) : input.value;
-        touch();
-      };
-      base.appendChild(fieldRow(f.label, input));
-    });
-    sc.appendChild(base);
-
     // 五个标准 Hook
     HOOK_KEYS.forEach(function (k) {
       var meta = null;
@@ -883,22 +861,6 @@
       sc.appendChild(ex);
     }
 
-    // 其它顶层字段
-    var other = EV.el('div', 'card');
-    var oh = EV.el('div', 'card-head');
-    oh.innerHTML = EV.icon('file', 15);
-    oh.appendChild(EV.el('span', 'card-title', '其它顶层字段（如 trigger）'));
-    other.appendChild(oh);
-    other.appendChild(EV.el('div', 'desc', '直接编辑 JSON，保存时整体写回。留空表示无附加字段。'));
-    var ta = EV.el('textarea', 'textarea mono');
-    ta.rows = 8;
-    ta.value = state.extraRootText;
-    if (state.extraRootErr) ta.style.borderColor = 'var(--err)';
-    ta.onchange = function () { state.extraRootText = ta.value; commitExtraRoot(); };
-    other.appendChild(ta);
-    if (state.extraRootErr) other.appendChild(EV.el('div', 'desc', 'JSON 格式不合法，未应用。'));
-    sc.appendChild(other);
-
     bodyEl.appendChild(sc);
   }
 
@@ -910,7 +872,11 @@
   EV.defineTab('agentloop', 'Agent Loop', {
     mount: function (root) {
       var side = EV.el('div', 'side');
-      side.appendChild(EV.el('div', 'side-head', 'Paradigm 文件'));
+      var sideHead = EV.el('div', 'side-head');
+      sideHead.appendChild(EV.el('span', null, 'Paradigm 文件'));
+      sideHead.appendChild(EV.el('span', 'spacer'));
+      EV.attachSideToggle(side, sideHead);
+      side.appendChild(sideHead);
       sideBodyEl = EV.el('div', 'side-body');
       side.appendChild(sideBodyEl);
       root.appendChild(side);
@@ -924,7 +890,6 @@
       main.appendChild(bodyEl);
       root.appendChild(main);
 
-      refreshExtraRoot();
       renderMain();
       loadFileList();
     },
