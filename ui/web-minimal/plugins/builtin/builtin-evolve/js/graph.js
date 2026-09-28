@@ -38,8 +38,28 @@
   }
 
   /* ---------------- 端口推导 ---------------- */
-  function portList(def, dir, config) {
+  // 取「被 watch 的字段」当前值：优先读节点配置；配置为空时沿连线取上游节点的输出内容。
+  // 对齐完整模式 CustomNode.getUpstreamPortValue —— 模板类节点的正文常通过连线传入
+  // （string → template），只有读到模板正文才能用正则推导出 {{变量}} 动态端口。
+  function resolveWatchValue(node, key) {
+    var v = (node && node.config) ? node.config[key] : undefined;
+    if (v !== undefined && v !== null && v !== '') return v;
+    var edge = null;
+    for (var i = 0; i < state.edges.length; i++) {
+      var e = state.edges[i];
+      if (e.target === node.id && e.targetHandle === key) { edge = e; break; }
+    }
+    if (!edge) return v;
+    var src = nodeById(edge.source);
+    if (!src || !src.config) return v;
+    var up = src.config.value;
+    return (up !== undefined && up !== null && up !== '') ? up : v;
+  }
+
+  function portList(def, dir, node) {
     var src = (dir === 'in' ? def.inputs : def.outputs) || [];
+    var listFields = {};
+    ((def.config) || []).forEach(function (f) { if (f.type === 'list') listFields[f.name] = 1; });
     var out = [];
     src.forEach(function (p) {
       if (p.port_type !== 'dynamic') {
@@ -49,7 +69,7 @@
       var rules = p.dynamic_rules || {};
       var key = rules.watch_config;
       if (!key) return;
-      var val = config ? config[key] : undefined;
+      var val = node ? resolveWatchValue(node, key) : undefined;
       if (rules.method === 'regex') {
         if (typeof val !== 'string' || !rules.pattern) return;
         var re;
@@ -65,7 +85,7 @@
           var nm = (it && typeof it === 'object') ? (it.name || it.key) : it;
           if (!nm) return;
           var tp = (it && typeof it === 'object' && it.type) ? it.type : 'any';
-          out.push({ name: String(nm), type: tp, dynamic: true });
+          out.push({ name: String(nm), type: tp, dynamic: true, listBacked: !!listFields[key] });
         });
       }
     });
@@ -173,7 +193,10 @@
       else if (n.position && n.position.x !== undefined) { x = n.position.x; y = n.position.y; }
       else { var p = autoPos[n.id] || { x: 100, y: 100 }; x = p.x; y = p.y; }
       var cfg = clone(n.config || {});
-      delete cfg.exposed_keys;
+      // 旧图文件里 task_output 会内嵌导出时派生的 exposed_keys；只有当节点定义本身
+      // 不声明该配置项时才剔除，否则会误删 env_loader 自己的 exposed_keys 配置
+      var declaresExposedKeys = (def.config || []).some(function (f) { return f.name === 'exposed_keys'; });
+      if (!declaresExposedKeys) delete cfg.exposed_keys;
       (def.config || []).forEach(function (f) {
         if (!(f.name in cfg)) cfg[f.name] = f.type === 'list' ? (f.default || []) : f.default;
       });
@@ -260,7 +283,7 @@
   function portTypeOf(node, handleName, dir) {
     var def = defOf(node.type);
     if (!def) return 'any';
-    var ports = portList(def, dir, node.config);
+    var ports = portList(def, dir, node);
     for (var i = 0; i < ports.length; i++) if (ports[i].name === handleName) return ports[i].type;
     return 'any';
   }
@@ -420,24 +443,14 @@
       head.lastChild.style.whiteSpace = 'nowrap';
       el.appendChild(head);
 
+      var bodyEl = null;
       var summary = summarize(n, def);
       if (summary) {
-        var body = EV.el('div', 'g-node-b', summary);
-        el.appendChild(body);
+        bodyEl = EV.el('div', 'g-node-b', summary);
+        el.appendChild(bodyEl);
       }
 
-      var ports = EV.el('div', 'g-ports');
-      var left = EV.el('div', 'g-pcol');
-      portList(def, 'in', n.config).forEach(function (p) {
-        left.appendChild(portEl(n, p, 'in'));
-      });
-      var right = EV.el('div', 'g-pcol r');
-      portList(def, 'out', n.config).forEach(function (p) {
-        right.appendChild(portEl(n, p, 'out'));
-      });
-      ports.appendChild(left);
-      ports.appendChild(right);
-      el.appendChild(ports);
+      renderPortsInto(n, def, el, bodyEl);
 
       head.addEventListener('pointerdown', function (e) { startNodeDrag(e, n, el); });
       el.addEventListener('pointerdown', function () {
@@ -807,15 +820,8 @@
       var add = EV.el('button', 'btn sm');
       add.innerHTML = EV.icon('plus', 13);
       add.appendChild(EV.el('span', null, '添加'));
-      add.onclick = function () {
-        var obj = {};
-        itemSchema.forEach(function (sub) {
-          if (sub.default !== undefined) obj[sub.name] = sub.default;
-        });
-        items.push(itemSchema.length ? obj : '');
-        commit();
-        renderInspector();
-      };
+      // 走与卡片「+」相同的表单弹层：先填变量名再入列，避免产生无名的空端口项
+      add.onclick = function () { addListItem(node, f); };
       listWrap.appendChild(add);
       wrap.appendChild(listWrap);
       if (f.description) wrap.appendChild(EV.el('div', 'desc', f.description));
@@ -870,31 +876,156 @@
     var text = summarize(node, def);
     if (!text) {
       if (body) body.remove();
-      return;
-    }
-    if (!body) {
+      body = null;
+    } else if (!body) {
       body = EV.el('div', 'g-node-b');
-      var ports = el.querySelector('.g-ports');
-      el.insertBefore(body, ports);
+      var head = el.querySelector('.g-node-h');
+      head.parentNode.insertBefore(body, head.nextSibling);
     }
-    body.textContent = text;
+    if (body) body.textContent = text;
     // 端口可能因动态规则变化，整体重绘端口
     renderPorts(node, el);
+    refreshDownstream(node);
+  }
+
+  // 上游内容变了（如「自定义输入」正文），下游节点按正则推导的动态端口要跟着重算
+  // —— 对齐完整模式 CustomNode 订阅全量 nodes 的联动刷新
+  function refreshDownstream(node) {
+    var ids = {};
+    state.edges.forEach(function (e) { if (e.source === node.id) ids[e.target] = 1; });
+    Object.keys(ids).forEach(function (id) {
+      var target = nodeById(id);
+      if (!target) return;
+      var el = worldEl.querySelector('.g-node[data-id="' + cssEsc(id) + '"]');
+      if (el) renderPorts(target, el);
+    });
   }
 
   function renderPorts(node, nodeEl) {
-    var def = defOf(node.type);
+    renderPortsInto(node, defOf(node.type), nodeEl, nodeEl.querySelector('.g-node-b'));
+  }
+
+  function renderPortsInto(node, def, nodeEl, bodyEl) {
     var old = nodeEl.querySelector('.g-ports');
     if (old) old.remove();
     var ports = EV.el('div', 'g-ports');
     var left = EV.el('div', 'g-pcol');
-    portList(def, 'in', node.config).forEach(function (p) { left.appendChild(portEl(node, p, 'in')); });
     var right = EV.el('div', 'g-pcol r');
-    portList(def, 'out', node.config).forEach(function (p) { right.appendChild(portEl(node, p, 'out')); });
+    var listsIn = [], listsOut = [];
+    portList(def, 'in', node).forEach(function (p) {
+      if (p.listBacked) { listsIn.push(p); return; }
+      left.appendChild(portEl(node, p, 'in'));
+    });
+    portList(def, 'out', node).forEach(function (p) {
+      if (p.listBacked) { listsOut.push(p); return; }
+      right.appendChild(portEl(node, p, 'out'));
+    });
+    // 列表型动态端口（全局输入/输出、环境变量、JSON 键值…）：列表每一项占一行并带端口点，
+    // 行尾提供「+」新增入口 —— 对齐完整模式卡片上 list 项直接出引脚 + ADD 按钮的交互
+    listsIn.forEach(function (p) { left.appendChild(listBlock(node, p)); });
+    listsOut.forEach(function (p) { right.appendChild(listBlock(node, p)); });
     ports.appendChild(left);
     ports.appendChild(right);
-    nodeEl.appendChild(ports);
+    nodeEl.insertBefore(ports, bodyEl ? bodyEl.nextSibling : null);
     drawEdges();
+  }
+
+  function listBlock(node, p) {
+    var block = EV.el('div', 'g-lblock' + (p.dir === 'out' ? ' r' : ''));
+    var items = Array.isArray(node.config[p.field.name]) ? node.config[p.field.name] : [];
+    items.forEach(function (it) {
+      var nm = (it && typeof it === 'object') ? (it.name || it.key) : it;
+      if (!nm) return;
+      var tp = (it && typeof it === 'object' && it.type) ? it.type : 'any';
+      var row = portEl(node, { name: String(nm), type: tp, dynamic: true }, p.dir);
+      row.classList.add('g-lrow');
+      row.title = String(nm) + ' : ' + tp + '　来自「' + (p.field.label || p.field.name) + '」';
+      block.appendChild(row);
+    });
+    var add = EV.el('button', 'ibtn g-ladd');
+    add.innerHTML = EV.icon('plus', 12);
+    add.title = '新增一个「' + (p.field.label || p.field.name) + '」端口';
+    add.onclick = function (ev) { ev.stopPropagation(); addListItem(node, p.field); };
+    block.appendChild(add);
+    return block;
+  }
+
+  // 新增列表项 = 新增一个动态端口。按 item_schema 生成表单弹层（自由文本型列表则直接输入内容）
+  function addListItem(node, field) {
+    var schema = field.item_schema || [];
+    var vals = {};
+    schema.forEach(function (sub) {
+      if (!sub.name) return;
+      vals[sub.name] = sub.default !== undefined ? sub.default : (sub.type === 'boolean' ? false : '');
+    });
+    var freeText = '';
+
+    var wrap = EV.el('div');
+    if (!schema.length) {
+      var ta = EV.el('textarea', 'textarea mono');
+      ta.rows = 3;
+      ta.placeholder = '输入内容，内容本身即为端口名';
+      ta.oninput = function () { freeText = ta.value; };
+      wrap.appendChild(ta);
+      wrap.appendChild(EV.el('div', 'hint', '例如：user_query'));
+    } else {
+      schema.forEach(function (sub) {
+        var f = EV.el('div', 'field');
+        f.appendChild(EV.el('label', null, sub.label || sub.name));
+        if (sub.type === 'boolean') {
+          var cb = EV.el('input');
+          cb.type = 'checkbox';
+          cb.checked = !!vals[sub.name];
+          cb.onchange = function () { vals[sub.name] = cb.checked; };
+          f.appendChild(cb);
+        } else {
+          var inp = EV.el('input', 'input');
+          inp.value = vals[sub.name] === undefined || vals[sub.name] === null ? '' : String(vals[sub.name]);
+          inp.placeholder = sub.label || sub.name;
+          inp.oninput = function () { vals[sub.name] = inp.value; };
+          f.appendChild(inp);
+        }
+        wrap.appendChild(f);
+      });
+    }
+
+    EV.modal({
+      title: '新增「' + (field.label || field.name) + '」',
+      width: '420px',
+      node: wrap,
+      actions: [
+        { label: '取消' },
+        {
+          label: '添加', kind: 'primary',
+          onClick: function (h) {
+            var item;
+            if (!schema.length) {
+              var txt = freeText.trim();
+              if (!txt) { EV.toast('内容不能为空', true); return; }
+              item = txt;
+            } else {
+              var nm = vals.name === undefined || vals.name === null ? '' : String(vals.name).trim();
+              if (!nm) { EV.toast('请填写变量名', true); return; }
+              item = {};
+              Object.keys(vals).forEach(function (k) { item[k] = vals[k]; });
+              item.name = nm;
+              if (item.type === '' || item.type === undefined) delete item.type;
+            }
+            if (!Array.isArray(node.config[field.name])) node.config[field.name] = [];
+            var portName = (item && typeof item === 'object') ? item.name : item;
+            var exists = node.config[field.name].some(function (it) {
+              return ((it && typeof it === 'object') ? (it.name || it.key) : it) === portName;
+            });
+            if (exists) { EV.toast('已存在同名端口：' + portName, true); return; }
+            node.config[field.name].push(item);
+            state.dirty = true;
+            renderInspector();
+            refreshSummary(node);
+            h.close();
+          }
+        }
+      ]
+    });
   }
 
   /* ---------------- 工具栏 ---------------- */
@@ -1042,6 +1173,11 @@
       + '.g-port .dot:hover{background:#16191d;border-color:#16191d}'
       + '.g-port.l .dot{margin-left:-13px}'
       + '.g-port.r .dot{margin-right:-13px}'
+      + '.g-lblock{display:flex;flex-direction:column;gap:5px;width:100%;margin:1px 0 3px}'
+      + '.g-lblock.r .g-port{justify-content:flex-end}'
+      + '.g-lrow .nm{font-style:italic}'
+      + '.g-ladd{align-self:flex-start;margin-left:6px}'
+      + '.g-lblock.r .g-ladd{align-self:flex-end;margin-left:0;margin-right:6px}'
       + '.g-insp{width:292px;flex:none;border-left:1px solid rgba(15,17,21,.08);display:flex;flex-direction:column;min-height:0}';
     var st = EV.el('style');
     st.textContent = css;
