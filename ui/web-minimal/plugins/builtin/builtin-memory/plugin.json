@@ -1,0 +1,7 @@
+{
+  "id": "builtin-memory",
+  "name": "记忆",
+  "icon": "<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M9.5 3A4.5 4.5 0 0 0 5 7.5 4 4 0 0 0 3.6 15 4 4 0 0 0 7 21a3 3 0 0 0 5-3V6a3 3 0 0 0-2.5-3Z\"/><path d=\"M14.5 3A4.5 4.5 0 0 1 19 7.5 4 4 0 0 1 20.4 15 4 4 0 0 1 17 21a3 3 0 0 1-5-3\"/><path d=\"M8 9h3\"/><path d=\"M8 14h3\"/><path d=\"M13 9h3\"/></svg>",
+  "slot": { "area": "panel" },
+  "entry": "index.html"
+}

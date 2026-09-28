@@ -1,0 +1,896 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>记忆</title>
+<style>
+  :root {
+    --ink: #16191d;
+    --ink2: #4c5560;
+    --dim: #8b96a3;
+    --line: rgba(15,17,21,0.08);
+    --line2: rgba(15,17,21,0.18);
+    --field: #f2f4f7;
+    --field2: #e9edf1;
+    --paper: #ffffff;
+    --cream: #f7f3ea;
+    --sand: #efe7d8;
+    --terracotta: #d47a5a;
+    --blue: #3498DB;
+    --green: #a3be8c;
+    --red: #bf616a;
+    --yellow: #EBCB8B;
+    --purple: #b48ead;
+    --mono: ui-monospace, "SF Mono", Consolas, "Courier New", monospace;
+    --hand: "Comic Sans MS", cursive;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  /* 本插件大量用 [hidden] 控制显隐，而下方选择器（.view/.ov/.btn…）都声明了 display，
+     作者样式优先级高于 UA 的 [hidden]{display:none}，故必须在此显式兜底 */
+  [hidden] { display: none !important; }
+  html, body { height: 100%; overflow: hidden; }
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #c7cfd9; border-radius: 999px; }
+  body {
+    background: var(--paper); color: var(--ink); font-size: 13px;
+    font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  button { font: inherit; cursor: pointer; color: inherit; }
+  input[type=text], textarea { width: 100%; outline: none; color: var(--ink); }
+  svg { display: block; }
+
+  #root { height: 100%; display: flex; min-width: 0; }
+
+  /* ---------- 左侧入口 ---------- */
+  .side {
+    width: 216px; flex: none; display: flex; flex-direction: column;
+    border-right: 1px solid var(--line); background: var(--field);
+  }
+  .side-head {
+    flex: none; display: flex; align-items: center; gap: 6px; padding: 10px 12px 4px;
+    font-size: 11px; font-weight: 800; letter-spacing: .08em; color: var(--ink2); text-transform: uppercase;
+  }
+  .side-head svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .nav { flex: 1; min-height: 0; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 9px; }
+  .navbtn {
+    text-align: left; display: flex; align-items: center; gap: 10px; padding: 10px 11px;
+    border: 2px solid var(--ink); border-radius: 12px; background: var(--paper);
+    box-shadow: 3px 3px 0 rgba(26,26,26,1); transition: transform .1s ease, box-shadow .1s ease, background .12s ease;
+  }
+  .navbtn:hover { background: var(--cream); transform: translateY(-1px); }
+  .navbtn:active { transform: translate(1px,1px); box-shadow: none; }
+  .navbtn svg { width: 19px; height: 19px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .navbtn .nt { font-family: var(--hand); font-weight: 700; font-size: 14px; letter-spacing: .04em; }
+  .navbtn .ns { font-size: 10px; font-weight: 700; opacity: .65; margin-top: 2px; }
+  .navbtn.on { transform: translateY(-2px); }
+  .navbtn.on.v-search { background: var(--red); color: #fff; }
+  .navbtn.on.v-graph { background: var(--yellow); }
+  .navbtn.on.v-experiences { background: var(--blue); color: #fff; }
+  .navbtn.on.v-events { background: var(--terracotta); color: #fff; }
+  .navbtn.v-md { background: rgba(180,142,173,.28); }
+  .navbtn.v-md:hover { background: rgba(180,142,173,.55); }
+  .navbtn.v-md svg { color: #8f6a88; }
+
+  /* ---------- 主区 ---------- */
+  .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .mh {
+    flex: none; height: 46px; display: flex; align-items: center; gap: 10px;
+    padding: 0 12px; border-bottom: 1px solid var(--line);
+  }
+  .mh .ico {
+    width: 28px; height: 28px; flex: none; border: 2px solid var(--ink); border-radius: 9px;
+    background: var(--ink); display: flex; align-items: center; justify-content: center; transform: rotate(6deg);
+  }
+  .mh .ico svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+  .mh-title { font-family: var(--hand); font-weight: 700; font-size: 17px; letter-spacing: .08em; text-transform: uppercase; }
+  .mh-right { margin-left: auto; flex: none; display: flex; gap: 6px; }
+
+  .btn {
+    border: 2px solid var(--ink); background: var(--paper); border-radius: 9px;
+    padding: 5px 11px; font-weight: 700; font-size: 12px;
+    box-shadow: 2px 2px 0 rgba(26,26,26,1); transition: transform .08s ease, box-shadow .08s ease, background .12s ease;
+    display: inline-flex; align-items: center; gap: 5px; white-space: nowrap;
+  }
+  .btn:hover { background: var(--cream); }
+  .btn:active { transform: translate(1px,1px); box-shadow: none; }
+  .btn:disabled { opacity: .45; cursor: not-allowed; box-shadow: none; }
+  .btn.primary { background: var(--green); }
+  .btn.yellow { background: var(--yellow); }
+  .btn.dark { background: var(--ink); color: #fff; }
+  .btn.danger { background: var(--red); color: #fff; }
+  .btn.wide { flex: 1; justify-content: center; }
+  .btn svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .btn.spin svg { animation: sp .8s linear infinite; }
+  @keyframes sp { to { transform: rotate(360deg); } }
+  .ring {
+    width: 16px; height: 16px; flex: none; border: 3px solid currentColor; border-top-color: transparent;
+    border-radius: 50%; animation: sp .75s linear infinite; display: inline-block;
+  }
+
+  .body { flex: 1; min-height: 0; position: relative; background: #fdfaf5; }
+  .view { position: absolute; inset: 0; overflow: auto; }
+  .view.graph { overflow: hidden; }
+
+  /* ---------- 混合检索 ---------- */
+  .sbox { padding: 22px 26px; display: flex; flex-direction: column; min-height: 100%; max-width: 900px; margin: 0 auto; }
+  .srow { flex: none; display: flex; gap: 10px; margin-bottom: 20px; }
+  .srow input {
+    flex: 1; border: 3px solid var(--ink); border-radius: 10px; background: var(--paper);
+    padding: 11px 13px; font-size: 15px; font-weight: 700;
+  }
+  .srow input:focus { background: #fffdf8; }
+  .sres { flex: 1; min-height: 0; }
+  .scard {
+    border: 3px solid var(--ink); border-radius: 12px; background: var(--paper);
+    box-shadow: 6px 6px 0 rgba(26,26,26,1); padding: 18px 20px;
+  }
+  .shint {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 12px; min-height: 190px; opacity: .38; font-family: var(--hand); font-weight: 700; font-size: 18px;
+  }
+  .shint svg { width: 54px; height: 54px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+
+  /* markdown 结果排版（对齐完整模式 MarkdownComponents） */
+  .md { font-size: 13px; }
+  .md h1, .md h2, .md h3 { font-weight: 900; margin: 18px 0 12px; }
+  .md h2 {
+    font-size: 20px; color: var(--terracotta); border-bottom: 3px solid var(--ink);
+    display: inline-block; padding-bottom: 3px;
+  }
+  .md h1 { font-size: 22px; }
+  .md h3 { font-size: 16px; }
+  .md p { margin-bottom: 12px; font-weight: 700; line-height: 1.65; }
+  .md ul { list-style: disc; padding-left: 24px; margin-bottom: 14px; font-weight: 700; }
+  .md ol { list-style: decimal; padding-left: 24px; margin-bottom: 14px; font-weight: 700; }
+  .md li { line-height: 1.65; margin-bottom: 6px; }
+  .md code { font-family: var(--mono); font-size: 12px; background: var(--cream); padding: 1px 4px; border-radius: 4px; }
+  .md pre { background: var(--cream); border: 2px solid var(--ink); border-radius: 8px; padding: 10px; overflow: auto; margin-bottom: 12px; }
+  .md pre code { background: none; padding: 0; }
+  .md a { color: var(--terracotta); font-weight: 700; }
+  .md blockquote { border-left: 4px solid var(--line2); padding-left: 12px; color: var(--ink2); margin-bottom: 12px; }
+  .md table { border-collapse: collapse; margin-bottom: 12px; }
+  .md th, .md td { border: 2px solid var(--ink); padding: 4px 8px; font-weight: 700; }
+  .md hr { border: none; border-top: 2px dashed var(--line2); margin: 16px 0; }
+
+  /* ---------- 知识图谱 ---------- */
+  .gcanvas {
+    position: absolute; inset: 0; overflow: hidden; cursor: grab;
+    background-color: #fdfaf5;
+    background-image: radial-gradient(#d7cec2 1px, transparent 1px);
+    background-size: 22px 22px;
+  }
+  .gcanvas.drag { cursor: grabbing; }
+  .gworld { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+  .gworld svg { position: absolute; left: 0; top: 0; overflow: visible; }
+  g.e .ehit { fill: none; stroke: transparent; stroke-width: 16; pointer-events: stroke; cursor: pointer; }
+  g.e .epath { fill: none; stroke: #1A1A1A; stroke-width: 3; pointer-events: none; }
+  g.e .earrow { fill: #1A1A1A; pointer-events: none; }
+  g.e .elabel {
+    font-family: var(--hand); font-size: 11px; font-weight: 700; fill: #1A1A1A;
+    paint-order: stroke; stroke: #FAF8F5; stroke-width: 4px; stroke-linejoin: round;
+    pointer-events: none; user-select: none;
+  }
+  g.e:hover .epath { stroke: #D47A5A; }
+  g.e:hover .earrow { fill: #D47A5A; }
+  g.e:hover .elabel { fill: #D47A5A; }
+  .gnode {
+    position: absolute; display: flex; align-items: center; justify-content: center;
+    border: 3px solid #1A1A1A; border-radius: 7px; background: #FAF8F5; color: #1A1A1A;
+    box-shadow: 5px 5px 0 rgba(26,26,26,1); padding: 0 9px; overflow: hidden;
+    font-family: var(--hand); font-size: 13px; font-weight: 700; text-align: center;
+    white-space: nowrap; text-overflow: ellipsis;
+  }
+  .gnode:hover { border-color: var(--terracotta); background: #FDF8F0; color: var(--terracotta); }
+  .gtip {
+    position: absolute; left: 16px; top: 12px; z-index: 5; pointer-events: none;
+    background: var(--paper); border: 2px solid rgba(26,26,26,.3); border-radius: 9px;
+    padding: 3px 9px; font-size: 12px; font-weight: 700; color: rgba(26,26,26,.55);
+  }
+  .gempty {
+    position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; gap: 12px; color: var(--dim); font-weight: 700; z-index: 4;
+  }
+  .gempty svg { width: 56px; height: 56px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+  .gload {
+    position: absolute; inset: 0; z-index: 7; display: flex; align-items: center; justify-content: center; gap: 10px;
+    background: rgba(253,250,245,.75); font-family: var(--hand); font-weight: 700; font-size: 16px; color: var(--ink);
+  }
+  .gload .ring { width: 20px; height: 20px; border-width: 4px; color: var(--terracotta); }
+
+  /* ---------- 向量记忆 / 客观事件 ---------- */
+  .grid { padding: 22px 26px; display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 16px; }
+  .xcard {
+    position: relative; border: 3px solid var(--ink); border-radius: 12px; background: var(--paper);
+    box-shadow: 5px 5px 0 rgba(26,26,26,1); padding: 14px 15px;
+    transition: transform .12s ease, box-shadow .12s ease;
+  }
+  .xcard:hover { transform: translateY(-3px); box-shadow: 7px 8px 0 rgba(26,26,26,1); }
+  .xcard .q { width: 18px; height: 18px; color: var(--blue); fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; margin-bottom: 7px; }
+  .xcard .xb { font-weight: 700; font-size: 13px; line-height: 1.6; word-break: break-word; }
+  .xcard .xt {
+    margin-top: 11px; padding-top: 9px; border-top: 3px dashed var(--line); display: flex; align-items: center; gap: 5px;
+    font-size: 11px; font-weight: 700; color: var(--dim);
+  }
+  .xcard .xt svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+  .del {
+    position: absolute; top: -9px; right: -9px; width: 26px; height: 26px; z-index: 3;
+    border: 2px solid var(--ink); background: var(--red); color: #fff; border-radius: 50% 12% 50% 12%;
+    display: flex; align-items: center; justify-content: center; opacity: 0;
+    box-shadow: 2px 2px 0 rgba(26,26,26,1); transition: opacity .12s ease, transform .12s ease;
+  }
+  .del svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+  .xcard:hover .del, .erow:hover .del { opacity: 1; }
+  .del:hover { transform: scale(1.12); }
+
+  .erows { padding: 22px 26px; display: flex; flex-direction: column; gap: 14px; max-width: 900px; margin: 0 auto; }
+  .erow {
+    position: relative; display: flex; align-items: flex-start; gap: 16px;
+    border: 3px solid var(--ink); border-radius: 12px; background: var(--cream); padding: 14px 16px;
+    box-shadow: 5px 5px 0 rgba(212,122,90,.4);
+  }
+  .erow .et {
+    flex: none; background: var(--terracotta); color: #fff; border: 2px solid var(--ink); border-radius: 8px;
+    padding: 2px 8px; font-family: var(--hand); font-weight: 700; font-size: 12px; white-space: nowrap;
+  }
+  .erow .eb { font-weight: 700; font-size: 13px; line-height: 1.65; padding-top: 1px; word-break: break-word; }
+
+  /* ---------- 弹层 ---------- */
+  .ov {
+    position: absolute; inset: 0; z-index: 60; background: rgba(22,25,29,.42);
+    display: flex; align-items: center; justify-content: center; padding: 14px;
+  }
+  .card {
+    background: var(--paper); border: 3px solid var(--ink); border-radius: 14px;
+    box-shadow: 8px 8px 0 rgba(26,26,26,1); display: flex; flex-direction: column;
+    width: min(440px, 96%); max-height: 94%; overflow: hidden;
+  }
+  .card.md { width: min(1000px, 97%); height: 88%; }
+  .card-head {
+    flex: none; display: flex; align-items: center; gap: 9px; padding: 11px 12px 11px 15px;
+    border-bottom: 3px solid var(--line2);
+  }
+  .card-head .ct { font-family: var(--hand); font-weight: 700; font-size: 19px; letter-spacing: .06em; }
+  .card-head .ct.bad { color: var(--red); }
+  .card-head svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; color: var(--terracotta); }
+  .close {
+    margin-left: auto; width: 28px; height: 28px; flex: none; border: none; background: transparent;
+    border-radius: 8px; font-size: 16px; color: var(--ink2);
+  }
+  .close:hover { background: var(--field2); color: var(--terracotta); }
+  .card-body { flex: 1; min-height: 0; overflow: auto; padding: 15px; }
+  .card-body .note { font-weight: 700; font-size: 12px; color: var(--ink2); margin-bottom: 10px; }
+  .card-body .qbox {
+    border: 2px dashed var(--ink); border-radius: 10px; background: var(--cream);
+    padding: 11px; font-weight: 700; font-size: 13px; line-height: 1.6;
+    max-height: 150px; overflow-y: auto; word-break: break-word;
+  }
+  .card-foot { flex: none; display: flex; gap: 10px; padding: 11px 13px; border-top: 3px solid var(--line2); }
+  .card-body.mdedit { padding: 0; display: flex; }
+  .card-body.mdedit textarea {
+    flex: 1; width: 100%; height: 100%; border: 0; resize: none; background: #FDF8F0;
+    padding: 16px; font-family: var(--mono); font-size: 13px; line-height: 1.65; font-weight: 700;
+  }
+  .card-body.mdedit textarea:focus { background: #fff; }
+
+  .toast {
+    position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%) translateY(8px);
+    max-width: 86%; padding: 8px 14px; border-radius: 9px; background: rgba(22,25,29,.9);
+    color: #fff; font-size: 12px; font-weight: 600; z-index: 99; opacity: 0; pointer-events: none;
+    transition: opacity .16s ease, transform .16s ease;
+  }
+  .toast.on { opacity: 1; transform: translateX(-50%) translateY(0); }
+  .toast.err { background: rgba(191,97,106,.95); }
+</style>
+</head>
+<body>
+<div id="root">
+  <div class="side">
+    <div class="side-head">
+      <svg viewBox="0 0 24 24"><path d="M9.5 3A4.5 4.5 0 0 0 5 7.5 4 4 0 0 0 3.6 15 4 4 0 0 0 7 21a3 3 0 0 0 5-3V6a3 3 0 0 0-2.5-3Z"/><path d="M14.5 3A4.5 4.5 0 0 1 19 7.5 4 4 0 0 1 20.4 15 4 4 0 0 1 17 21a3 3 0 0 1-5-3"/></svg>
+      <span>记忆数据库</span>
+    </div>
+    <div class="nav">
+      <button class="navbtn v-search" data-view="search">
+        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <div><div class="nt">搜索</div><div class="ns">混合检索</div></div>
+      </button>
+      <button class="navbtn v-graph" data-view="graph">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="2.5"/><circle cx="5" cy="19" r="2.5"/><circle cx="19" cy="19" r="2.5"/><path d="M12 7.5 6 16.5"/><path d="m12 7.5 6 9"/></svg>
+        <div><div class="nt">知识图谱</div><div class="ns">知识图谱</div></div>
+      </button>
+      <button class="navbtn v-experiences" data-view="experiences">
+        <svg viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg>
+        <div><div class="nt">经验记忆</div><div class="ns">向量记忆（最多 30 条）</div></div>
+      </button>
+      <button class="navbtn v-events" data-view="events">
+        <svg viewBox="0 0 24 24"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3.5 6h.01"/><path d="M3.5 12h.01"/><path d="M3.5 18h.01"/></svg>
+        <div><div class="nt">事件记录</div><div class="ns">客观事实（最多 30 条）</div></div>
+      </button>
+      <button class="navbtn v-md" id="btn-md">
+        <svg viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5"/><path d="M9 13h6"/><path d="M9 17h4"/></svg>
+        <div><div class="nt">MEMORY.MD</div><div class="ns">原始记忆笔记</div></div>
+      </button>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="mh">
+      <div class="ico" id="mh-ico"></div>
+      <span class="mh-title" id="mh-title">知识图谱</span>
+      <div class="mh-right">
+        <button class="btn yellow" id="btn-refresh" hidden>
+          <svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>刷新
+        </button>
+      </div>
+    </div>
+
+    <div class="body">
+      <!-- 混合检索 -->
+      <div class="view" id="v-search" hidden>
+        <div class="sbox">
+          <div class="srow">
+            <input type="text" id="s-input" placeholder="向你的记忆提问…" spellcheck="false" />
+            <button class="btn dark" id="s-go" title="搜索">
+              <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+            </button>
+          </div>
+          <div class="sres" id="s-res"></div>
+        </div>
+      </div>
+
+      <!-- 知识图谱 -->
+      <div class="view graph" id="v-graph" hidden>
+        <div class="gcanvas" id="g-canvas">
+          <div class="gworld" id="g-world"></div>
+        </div>
+        <div class="gtip">提示：点击任意边（连线）即可遗忘关系。</div>
+        <div class="gempty" id="g-empty" hidden>
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="2.5"/><circle cx="5" cy="19" r="2.5"/><circle cx="19" cy="19" r="2.5"/><path d="M12 7.5 6 16.5"/><path d="m12 7.5 6 9"/></svg>
+          <p>图谱为空，请点击刷新。</p>
+        </div>
+        <div class="gload" id="g-load" hidden><span class="ring"></span><span>正在同步所有三元组…</span></div>
+      </div>
+
+      <!-- 向量记忆 -->
+      <div class="view" id="v-experiences" hidden><div class="grid" id="x-list"></div></div>
+
+      <!-- 客观事件 -->
+      <div class="view" id="v-events" hidden><div class="erows" id="e-list"></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- 统一记忆删除确认弹窗 -->
+<div class="ov" id="del-ov" hidden>
+  <div class="card">
+    <div class="card-head">
+      <span class="ct bad">确定要遗忘这条记忆吗？</span>
+      <button class="close" id="del-x" title="关闭">✕</button>
+    </div>
+    <div class="card-body">
+      <p class="note">此段记忆将被永久抹除，确定继续吗？</p>
+      <div class="qbox" id="del-text"></div>
+    </div>
+    <div class="card-foot">
+      <button class="btn wide" id="del-keep">保留</button>
+      <button class="btn danger wide" id="del-forget">遗忘</button>
+    </div>
+  </div>
+</div>
+
+<!-- MEMORY.md 编辑弹窗 -->
+<div class="ov" id="md-ov" hidden>
+  <div class="card md">
+    <div class="card-head">
+      <svg viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5"/><path d="M9 13h6"/><path d="M9 17h4"/></svg>
+      <span class="ct">MEMORY.md</span>
+      <button class="close" id="md-x" title="关闭">✕</button>
+    </div>
+    <div class="card-body mdedit">
+      <textarea id="md-ta" spellcheck="false" placeholder="在此处以 Markdown 格式沉淀或修改你的原始记忆笔记..."></textarea>
+    </div>
+    <div class="card-foot" style="justify-content:flex-end">
+      <button class="btn" id="md-close">关闭</button>
+      <button class="btn primary" id="md-save">
+        <svg viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg>保存到磁盘
+      </button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="/minimal/assets/vendor/marked.min.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  var ICONS = {
+    search: '<svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>',
+    graph: '<svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="2.5"/><circle cx="5" cy="19" r="2.5"/><circle cx="19" cy="19" r="2.5"/><path d="M12 7.5 6 16.5"/><path d="m12 7.5 6 9"/></svg>',
+    experiences: '<svg viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg>',
+    events: '<svg viewBox="0 0 24 24"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3.5 6h.01"/><path d="M3.5 12h.01"/><path d="M3.5 18h.01"/></svg>'
+  };
+  var ICO_COLORS = { search: 'var(--red)', graph: 'var(--yellow)', experiences: 'var(--blue)', events: 'var(--terracotta)' };
+  var TITLES = { search: '混合搜索', graph: '知识图谱', experiences: '向量记忆', events: '客观事件' };
+
+  var API = {
+    events: '/api/memory/events',
+    experiences: '/api/memory/experiences',
+    graph: '/api/memory/graph',
+    markdown: '/api/memory/markdown',
+    search: function (q) { return '/api/memory/search?q=' + encodeURIComponent(q); },
+    delEvent: function (id) { return '/api/memory/events/' + encodeURIComponent(id); },
+    delExp: function (id) { return '/api/memory/experiences/' + encodeURIComponent(id); },
+    delRel: function (s, t) {
+      return '/api/memory/graph/relation?source_node_id=' + encodeURIComponent(s) + '&target_node_id=' + encodeURIComponent(t);
+    }
+  };
+
+  var S = {
+    view: 'graph',
+    events: [],
+    experiences: [],
+    graph: null,
+    graphLoading: true,
+    layout: null,
+    deleteTarget: null,
+    savingMd: false
+  };
+
+  function $(id) { return document.getElementById(id); }
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function jget(url) {
+    return fetch(url, { cache: 'no-store' }).then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    });
+  }
+  function jsend(method, url, body) {
+    var opt = { method: method, cache: 'no-store' };
+    if (body !== undefined) { opt.headers = { 'Content-Type': 'application/json' }; opt.body = JSON.stringify(body); }
+    return fetch(url, opt).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (d) {
+        if (!r.ok) throw new Error(d.detail || ('HTTP ' + r.status));
+        return d;
+      });
+    });
+  }
+  var toastEl = $('toast'), toastTimer = null;
+  function toast(msg, ok) {
+    toastEl.textContent = String(msg);
+    toastEl.className = 'toast on' + (ok === false ? ' err' : '');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { toastEl.className = 'toast'; }, 2400);
+  }
+  function mdToHtml(text) {
+    if (window.marked && typeof window.marked.parse === 'function') {
+      try { return window.marked.parse(String(text), { gfm: true, breaks: true }); } catch (e) { /* fallthrough */ }
+    }
+    return '<p>' + esc(text).replace(/\n/g, '<br>') + '</p>';
+  }
+  // 与完整模式一致的时间显示：去掉 T 分隔后截断到分钟
+  function fmtStamp(ts, fallback) {
+    if (!ts) return fallback;
+    return String(ts).replace('T', ' ').substring(0, 16);
+  }
+
+  /* ======================== 视图切换 ======================== */
+  function switchView(mode) {
+    S.view = mode;
+    var ids = { search: 'v-search', graph: 'v-graph', experiences: 'v-experiences', events: 'v-events' };
+    Object.keys(ids).forEach(function (k) { $(ids[k]).hidden = (k !== mode); });
+    Array.prototype.forEach.call(document.querySelectorAll('.navbtn[data-view]'), function (b) {
+      var on = b.getAttribute('data-view') === mode;
+      b.classList.toggle('on', on);
+    });
+    $('mh-title').textContent = TITLES[mode];
+    $('mh-ico').style.color = ICO_COLORS[mode];
+    $('mh-ico').innerHTML = ICONS[mode];
+    $('btn-refresh').hidden = (mode !== 'graph');
+    if (mode === 'graph') {
+      if (!S.layout && S.graph && (S.graph.nodes || []).length) computeLayout();
+      paintGraph(true);
+    }
+  }
+
+  /* ======================== 混合检索 ======================== */
+  function renderSearchHint() {
+    $('s-res').innerHTML = '<div class="shint">' + ICONS.search + '<p>按 Enter 搜索记忆…</p></div>';
+  }
+  function doSearch() {
+    var q = $('s-input').value.trim();
+    if (!q) return;
+    var btn = $('s-go');
+    btn.disabled = true;
+    btn.classList.add('spin');
+    jget(API.search(q)).then(function (d) {
+      var result = (d && d.result) || '';
+      $('s-res').innerHTML = result
+        ? '<div class="scard md">' + mdToHtml(result) + '</div>'
+        : '<div class="shint">' + ICONS.search + '<p>按 Enter 搜索记忆…</p></div>';
+    }).catch(function () {
+      toast('检索失败', false);
+    }).then(function () {
+      btn.disabled = false;
+      btn.classList.remove('spin');
+    });
+  }
+
+  /* ======================== 事件 / 经验 ======================== */
+  function loadEvents() {
+    return jget(API.events).then(function (d) {
+      S.events = Array.isArray(d) ? d : [];
+      renderEvents();
+    }).catch(function () { /* silent */ });
+  }
+  function loadExperiences() {
+    return jget(API.experiences).then(function (d) {
+      S.experiences = Array.isArray(d) ? d : [];
+      renderExperiences();
+    }).catch(function () { /* silent */ });
+  }
+  var TRASH = '<svg viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M6 6l1 15h10l1-15"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>';
+  var CLOCK = '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
+  var QUOTE = '<svg class="q" viewBox="0 0 24 24"><path d="M9 7H5.5A2.5 2.5 0 0 0 3 9.5v1A2.5 2.5 0 0 0 5.5 13H7v1.5A2.5 2.5 0 0 1 4.5 17"/><path d="M20 7h-3.5A2.5 2.5 0 0 0 14 9.5v1a2.5 2.5 0 0 0 2.5 2.5H18v1.5A2.5 2.5 0 0 1 15.5 17"/></svg>';
+
+  function renderExperiences() {
+    var h = '';
+    S.experiences.forEach(function (exp) {
+      h += '<div class="xcard">'
+        + '<button class="del" data-del-exp="' + esc(exp.exp_id) + '" title="Forget Experience">' + TRASH + '</button>'
+        + QUOTE
+        + '<div class="xb">' + esc(exp.content) + '</div>'
+        + '<div class="xt">' + CLOCK + '<span>' + esc(fmtStamp(exp.timestamp, 'Unknown')) + '</span></div>'
+        + '</div>';
+    });
+    $('x-list').innerHTML = h;
+  }
+  function renderEvents() {
+    var h = '';
+    S.events.forEach(function (evt, i) {
+      h += '<div class="erow">'
+        + '<button class="del" data-del-evt="' + esc(evt.event_id || '') + '" title="Forget Event">' + TRASH + '</button>'
+        + '<div class="et">' + esc(fmtStamp(evt.timestamp, 'Fact')) + '</div>'
+        + '<div class="eb" data-i="' + i + '">' + esc(evt.content) + '</div>'
+        + '</div>';
+    });
+    $('e-list').innerHTML = h;
+  }
+
+  /* ======================== 删除确认 ======================== */
+  function askDelete(target) {
+    S.deleteTarget = target;
+    $('del-text').textContent = target.text || '';
+    $('del-ov').hidden = false;
+  }
+  function closeDelete() {
+    S.deleteTarget = null;
+    $('del-ov').hidden = true;
+  }
+  function confirmDelete() {
+    var t = S.deleteTarget;
+    if (!t) return;
+    var req;
+    if (t.type === 'event') req = jsend('DELETE', API.delEvent(t.id));
+    else if (t.type === 'experience') req = jsend('DELETE', API.delExp(t.id));
+    else req = jsend('DELETE', API.delRel(t.source, t.target));
+    req.then(function () {
+      toast('记忆已被永久擦除！');
+      if (t.type === 'event') loadEvents();
+      else if (t.type === 'experience') loadExperiences();
+      else loadGraph(true);
+    }).catch(function () {
+      toast('删除失败', false);
+    }).then(closeDelete);
+  }
+
+  /* ======================== MEMORY.md ======================== */
+  function openMd() {
+    $('md-ta').value = 'Loading...';
+    $('md-ov').hidden = false;
+    jget(API.markdown).then(function (d) {
+      $('md-ta').value = (d && d.content) || '';
+    }).catch(function () {
+      toast('读取 MEMORY.md 失败', false);
+      $('md-ta').value = '';
+    });
+  }
+  function saveMd() {
+    if (S.savingMd) return;
+    S.savingMd = true;
+    setSaveBtn(true);
+    jsend('PUT', API.markdown, { content: $('md-ta').value }).then(function () {
+      toast('[MEMORY.md] 笔记已成功落盘保存！');
+      $('md-ov').hidden = true;
+    }).catch(function () {
+      toast('保存文件失败', false);
+    }).then(function () {
+      S.savingMd = false;
+      setSaveBtn(false);
+    });
+  }
+  function setSaveBtn(busy) {
+    var b = $('md-save');
+    b.disabled = busy;
+    b.classList.toggle('spin', busy);
+  }
+
+  /* ======================== 知识图谱 ======================== */
+  var mctx = document.createElement('canvas').getContext('2d');
+  mctx.font = '700 13px "Comic Sans MS", cursive';
+
+  function nodeSize(label) {
+    var t = String(label || '');
+    var w = mctx.measureText(t).width;
+    return { w: Math.max(58, Math.min(300, Math.ceil(w) + 26)), h: 34 };
+  }
+
+  // 力导向布局（对齐完整模式 forceAtlas2Based 的观感）
+  function computeLayout() {
+    var nodes = (S.graph && S.graph.nodes) || [];
+    var edges = (S.graph && S.graph.edges) || [];
+    var N = nodes.length;
+    var size = {}, idx = {};
+    for (var i = 0; i < N; i++) {
+      var id = nodes[i].id;
+      idx[id] = i;
+      size[id] = nodeSize(nodes[i].label);
+    }
+    var cx = new Float64Array(N), cy = new Float64Array(N);
+    for (i = 0; i < N; i++) {
+      var ang = i * 2.399963, r = 26 * Math.sqrt(i + 1);
+      cx[i] = Math.cos(ang) * r;
+      cy[i] = Math.sin(ang) * r;
+    }
+    var E = [];
+    edges.forEach(function (e) {
+      var a = idx[e.from], b = idx[e.to];
+      if (a != null && b != null && a !== b) E.push([a, b]);
+    });
+    var K = 150;                 // 理想边长
+    var ITER = 140;
+    for (var it = 0; it < ITER; it++) {
+      var fx = new Float64Array(N), fy = new Float64Array(N);
+      for (i = 0; i < N; i++) {
+        var xi = cx[i], yi = cy[i];
+        for (var j = i + 1; j < N; j++) {
+          var dx = xi - cx[j], dy = yi - cy[j];
+          var d2 = dx * dx + dy * dy;
+          if (d2 < 0.01) { dx = ((i % 7) - 3) * 0.5 + 0.1; dy = ((j % 5) - 2) * 0.5 + 0.1; d2 = dx * dx + dy * dy; }
+          var d = Math.sqrt(d2);
+          var f = (K * K) / d;      // 粒子斥力
+          var ux = dx / d, uy = dy / d;
+          fx[i] += ux * f; fy[i] += uy * f;
+          fx[j] -= ux * f; fy[j] -= uy * f;
+        }
+      }
+      for (var k = 0; k < E.length; k++) {
+        var A = E[k][0], B = E[k][1];
+        var ddx = cx[A] - cx[B], ddy = cy[A] - cy[B];
+        var dd = Math.sqrt(ddx * ddx + ddy * ddy) || 0.01;
+        var ff = (dd * dd) / K;     // 弹簧引力
+        var vx = ddx / dd, vy = ddy / dd;
+        fx[A] -= vx * ff; fy[A] -= vy * ff;
+        fx[B] += vx * ff; fy[B] += vy * ff;
+      }
+      for (i = 0; i < N; i++) {
+        fx[i] -= cx[i] * 0.05;      // 向心引力
+        fy[i] -= cy[i] * 0.05;
+        cx[i] += Math.max(-20, Math.min(20, fx[i] * 0.02));
+        cy[i] += Math.max(-20, Math.min(20, fy[i] * 0.02));
+      }
+    }
+    var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    var geom = {};
+    for (i = 0; i < N; i++) {
+      var n = nodes[i];
+      var s = size[n.id];
+      var x = cx[i], y = cy[i];
+      geom[n.id] = { x: x, y: y, w: s.w, h: s.h };
+      minX = Math.min(minX, x - s.w / 2); maxX = Math.max(maxX, x + s.w / 2);
+      minY = Math.min(minY, y - s.h / 2); maxY = Math.max(maxY, y + s.h / 2);
+    }
+    var PAD = 60;
+    for (var key in geom) {
+      geom[key].x += PAD - minX;
+      geom[key].y += PAD - minY;
+    }
+    S.layout = { geom: geom, W: (maxX - minX) + PAD * 2, H: (maxY - minY) + PAD * 2 };
+  }
+
+  // 中心连线与矩形边框的交点
+  function borderPoint(a, b) {
+    var dx = b.x - a.x, dy = b.y - a.y;
+    if (!dx && !dy) return { x: a.x, y: a.y };
+    var hw = a.w / 2, hh = a.h / 2;
+    var tx = dx ? hw / Math.abs(dx) : Infinity;
+    var ty = dy ? hh / Math.abs(dy) : Infinity;
+    var t = Math.min(tx, ty, 1);
+    return { x: a.x + dx * t, y: a.y + dy * t };
+  }
+
+  var view = { x: 0, y: 0, s: 1 };
+  var canvas = $('g-canvas'), world = $('g-world');
+  function applyView() {
+    world.style.transform = 'translate(' + view.x + 'px,' + view.y + 'px) scale(' + view.s + ')';
+  }
+  function fitView(W, H) {
+    var cw = canvas.clientWidth || 900, ch = canvas.clientHeight || 600;
+    var s = Math.min(1, (cw - 28) / Math.max(W, 1), (ch - 28) / Math.max(H, 1));
+    if (!isFinite(s) || s <= 0) s = 1;
+    view.s = Math.max(0.1, s);
+    view.x = Math.max(12, (cw - W * view.s) / 2);
+    view.y = Math.max(12, (ch - H * view.s) / 2);
+    applyView();
+  }
+
+  function paintGraph(doFit) {
+    var L = S.layout;
+    var nodes = (S.graph && S.graph.nodes) || [];
+    var edges = (S.graph && S.graph.edges) || [];
+    $('g-load').hidden = !S.graphLoading;
+    if (S.graphLoading) { $('g-empty').hidden = true; return; }
+    if (!L || !nodes.length) {
+      world.innerHTML = '';
+      $('g-empty').hidden = false;
+      return;
+    }
+    $('g-empty').hidden = true;
+    var h = '';
+    nodes.forEach(function (n) {
+      var g = L.geom[n.id];
+      if (!g) return;
+      h += '<div class="gnode" data-nid="' + esc(n.id) + '" title="' + esc(n.label) + '"'
+        + ' style="left:' + (g.x - g.w / 2) + 'px;top:' + (g.y - g.h / 2) + 'px;width:' + g.w + 'px;height:' + g.h + 'px">'
+        + esc(n.label) + '</div>';
+    });
+    var svg = '';
+    edges.forEach(function (e) {
+      var a = L.geom[e.from], b = L.geom[e.to];
+      if (!a || !b) return;
+      var p1 = borderPoint(a, b), p2 = borderPoint(b, a);
+      var dx = p2.x - p1.x, dy = p2.y - p1.y;
+      var dist = Math.sqrt(dx * dx + dy * dy) || 1;
+      var bow = Math.min(dist * 0.16, 40);
+      var nx = -dy / dist, ny = dx / dist;
+      var mx = (p1.x + p2.x) / 2 + nx * bow, my = (p1.y + p2.y) / 2 + ny * bow;
+      var c1 = { x: p1.x + (mx - p1.x) * 0.7, y: p1.y + (my - p1.y) * 0.7 };
+      var c2 = { x: p2.x + (mx - p2.x) * 0.7, y: p2.y + (my - p2.y) * 0.7 };
+      var ux = p2.x - c2.x, uy = p2.y - c2.y;
+      var ul = Math.sqrt(ux * ux + uy * uy) || 1;
+      ux /= ul; uy /= ul;
+      var end = { x: p2.x - ux * 11, y: p2.y - uy * 11 };
+      var d = 'M' + p1.x + ' ' + p1.y + 'C' + c1.x + ' ' + c1.y + ',' + c2.x + ' ' + c2.y + ',' + end.x + ' ' + end.y;
+      var bx = p2.x - ux * 11, by = p2.y - uy * 11;
+      var px = -uy * 5.5, py = ux * 5.5;
+      var tri = p2.x + ',' + p2.y + ' ' + (bx + px) + ',' + (by + py) + ' ' + (bx - px) + ',' + (by - py);
+      var lx = 0.125 * p1.x + 0.375 * c1.x + 0.375 * c2.x + 0.125 * p2.x;
+      var ly = 0.125 * p1.y + 0.375 * c1.y + 0.375 * c2.y + 0.125 * p2.y;
+      svg += '<g class="e" data-from="' + esc(e.from) + '" data-to="' + esc(e.to) + '">'
+        + '<path class="ehit" d="' + d + '"/><path class="epath" d="' + d + '"/>'
+        + '<polygon class="earrow" points="' + tri + '"/>'
+        + (e.label ? '<text class="elabel" x="' + lx + '" y="' + ly + '" text-anchor="middle" dominant-baseline="middle">' + esc(e.label) + '</text>' : '')
+        + '</g>';
+    });
+    world.innerHTML = '<svg width="' + L.W + '" height="' + L.H + '">' + svg + '</svg>' + h;
+    if (doFit) fitView(L.W, L.H);
+  }
+
+  function loadGraph(quiet) {
+    S.graphLoading = true;
+    if (S.view === 'graph') paintGraph(false);
+    return jget(API.graph).then(function (d) {
+      S.graph = { nodes: (d && d.nodes) || [], edges: (d && d.edges) || [] };
+      S.layout = null;
+      S.graphLoading = false;
+      if (!quiet) toast('全量刷新成功！共加载 ' + S.graph.nodes.length + ' 个节点');
+      if (S.view === 'graph' && S.graph.nodes.length) computeLayout();
+      if (S.view === 'graph') paintGraph(true);
+    }).catch(function () {
+      S.graphLoading = false;
+      if (S.view === 'graph') paintGraph(false);
+      toast('全量加载图谱失败', false);
+    });
+  }
+
+  /* ======================== 画布交互 ======================== */
+  var drag = null, moved = false;
+  canvas.addEventListener('wheel', function (e) {
+    e.preventDefault();
+    var r = canvas.getBoundingClientRect();
+    var mx = e.clientX - r.left, my = e.clientY - r.top;
+    var ns = Math.min(3, Math.max(0.08, view.s * (e.deltaY < 0 ? 1.1 : 1 / 1.1)));
+    var k = ns / view.s;
+    view.x = mx - (mx - view.x) * k;
+    view.y = my - (my - view.y) * k;
+    view.s = ns;
+    applyView();
+  }, { passive: false });
+  canvas.addEventListener('pointerdown', function (e) {
+    drag = { x: e.clientX, y: e.clientY, vx: view.x, vy: view.y };
+    moved = false;
+    canvas.classList.add('drag');
+    try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* noop */ }
+  });
+  canvas.addEventListener('pointermove', function (e) {
+    if (!drag) return;
+    var ddx = e.clientX - drag.x, ddy = e.clientY - drag.y;
+    if (Math.abs(ddx) + Math.abs(ddy) > 3) moved = true;
+    view.x = drag.vx + ddx;
+    view.y = drag.vy + ddy;
+    applyView();
+  });
+  canvas.addEventListener('pointerup', function () {
+    drag = null;
+    canvas.classList.remove('drag');
+  });
+  canvas.addEventListener('click', function (e) {
+    if (moved) return;
+    var g = e.target.closest ? e.target.closest('g.e') : null;
+    if (!g || !S.layout) return;
+    var from = g.getAttribute('data-from'), to = g.getAttribute('data-to');
+    var info = null;
+    (S.graph.edges || []).forEach(function (x) { if (!info && x.from === from && x.to === to) info = x; });
+    var nl = {};
+    (S.graph.nodes || []).forEach(function (n) { nl[n.id] = n.label; });
+    askDelete({
+      type: 'relation', source: from, target: to,
+      text: '[' + (nl[from] || from) + '] —(' + ((info && info.label) || '') + ')—> [' + (nl[to] || to) + ']'
+    });
+  });
+
+  /* ======================== 事件绑定 ======================== */
+  Array.prototype.forEach.call(document.querySelectorAll('.navbtn[data-view]'), function (b) {
+    b.addEventListener('click', function () { switchView(b.getAttribute('data-view')); });
+  });
+  $('btn-md').addEventListener('click', openMd);
+  $('s-go').addEventListener('click', doSearch);
+  $('s-input').addEventListener('keydown', function (e) { if (e.key === 'Enter') doSearch(); });
+  $('btn-refresh').addEventListener('click', function () {
+    var b = $('btn-refresh');
+    if (b.disabled) return;
+    b.disabled = true; b.classList.add('spin');
+    loadGraph(false).then(function () { b.disabled = false; b.classList.remove('spin'); });
+  });
+
+  $('del-x').addEventListener('click', closeDelete);
+  $('del-keep').addEventListener('click', closeDelete);
+  $('del-forget').addEventListener('click', confirmDelete);
+  $('md-x').addEventListener('click', function () { $('md-ov').hidden = true; });
+  $('md-close').addEventListener('click', function () { $('md-ov').hidden = true; });
+  $('md-save').addEventListener('click', saveMd);
+
+  document.addEventListener('click', function (e) {
+    var t = e.target.closest ? e.target.closest('[data-del-exp],[data-del-evt]') : null;
+    if (!t) return;
+    var exp = t.getAttribute('data-del-exp');
+    if (exp) {
+      var item = null;
+      S.experiences.forEach(function (x) { if (x.exp_id === exp) item = x; });
+      askDelete({ type: 'experience', id: exp, text: (item && item.content) || '' });
+      return;
+    }
+    var evt = t.getAttribute('data-del-evt');
+    var row = null;
+    S.events.forEach(function (x) { if (x.id === evt || x.event_id === evt) row = x; });
+    askDelete({ type: 'event', id: evt, text: (row && row.content) || '' });
+  });
+
+  /* ======================== 启动 ======================== */
+  renderSearchHint();
+  switchView('graph');
+  loadEvents();
+  loadExperiences();
+  loadGraph(true);
+})();
+</script>
+</body>
+</html>
