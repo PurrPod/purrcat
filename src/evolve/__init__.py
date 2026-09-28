@@ -35,6 +35,7 @@ from .skill.evaluator import (
 from .mcp.factory import mcp_improve_init, mcp_upgrade_init, mcp_request_handle
 from .mcp.evaluator import run_mcp_eval_background
 from .sensor.factory import sensor_factory_init, sensor_request_handle
+from .sensor.evaluator import run_sensor_eval_background
 
 __all__ = [
     "skill_improve_init",
@@ -49,4 +50,5 @@ __all__ = [
     "mcp_request_handle",
     "sensor_factory_init",
     "sensor_request_handle",
+    "run_sensor_eval_background",
 ]

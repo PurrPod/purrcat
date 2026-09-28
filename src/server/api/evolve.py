@@ -1,3 +1,4 @@
+import json
 import os
 import re
 import stat
@@ -18,14 +19,28 @@ from src.evolve import (
     mcp_upgrade_init,
     mcp_request_handle,
     run_mcp_eval_background,
+    sensor_factory_init,
+    sensor_request_handle,
+    run_sensor_eval_background,
 )
-from src.utils.config import SKILL_DIR, AGENT_VM_DIR
+from src.utils.config import SKILL_DIR, AGENT_VM_DIR, SENSOR_EXTENSION_DIR
 
 router = APIRouter(prefix="/api/evolve", tags=["Evolution Factory"])
 
 
 def get_root(module_type: str) -> str:
     return os.path.join(AGENT_VM_DIR, f"{module_type}_workplace")
+
+
+def body_root(module_type: str, workplace_id: str, name: str) -> str:
+    """沙盒内「本体」所在目录。
+
+    skill/mcp 的本体是 workplace 下的同名子目录；sensor 的本体是 workplace
+    根目录下的单个 <name>.py（没有独立子目录），故直接返回工作区根。
+    """
+    if module_type == "sensor":
+        return os.path.join(get_root(module_type), workplace_id)
+    return os.path.join(get_root(module_type), workplace_id, name)
 
 
 # ==========================================
@@ -66,13 +81,22 @@ class RollbackReq(BaseModel):
 # 🔧 通用 Git 操作辅助函数
 # ==========================================
 def unified_generate_diff(name: str, workplace_root: str, module_type: str) -> str:
-    source_dir = (
-        f"./mcps/{name}" if module_type == "mcp" else os.path.join(SKILL_DIR, name)
-    )
-    target_dir = os.path.join(workplace_root, name)
+    if module_type == "sensor":
+        # sensor 本体是单文件：正式库 <name>.py ↔ 沙盒 <name>.py
+        source_dir = os.path.join(SENSOR_EXTENSION_DIR, f"{name}.py")
+        target_dir = os.path.join(workplace_root, f"{name}.py")
+        label = "Sensor"
+    elif module_type == "mcp":
+        source_dir = f"./mcps/{name}"
+        target_dir = os.path.join(workplace_root, name)
+        label = "MCP"
+    else:
+        source_dir = os.path.join(SKILL_DIR, name)
+        target_dir = os.path.join(workplace_root, name)
+        label = "Skill"
 
     if not os.path.exists(source_dir):
-        return f"这是一个全新的 {'MCP' if module_type == 'mcp' else 'Skill'}：{name}，无历史版本（全部为新增）。"
+        return f"这是一个全新的 {label}：{name}，无历史版本（全部为新增）。"
 
     try:
         result = subprocess.run(
@@ -89,7 +113,12 @@ def unified_generate_diff(name: str, workplace_root: str, module_type: str) -> s
 
 
 def unified_rollback(name: str, module_type: str) -> str:
-    repo_root = "./mcps" if module_type == "mcp" else SKILL_DIR
+    if module_type == "sensor":
+        repo_root = SENSOR_EXTENSION_DIR
+        target = f"{name}.py"
+    else:
+        repo_root = "./mcps" if module_type == "mcp" else SKILL_DIR
+        target = name
     git_dir = os.path.join(repo_root, ".git")
 
     if not os.path.exists(git_dir):
@@ -97,7 +126,7 @@ def unified_rollback(name: str, module_type: str) -> str:
 
     try:
         log_check = subprocess.run(
-            ["git", "log", "--oneline", "--", name],
+            ["git", "log", "--oneline", "--", target],
             cwd=repo_root,
             capture_output=True,
             text=True,
@@ -106,7 +135,7 @@ def unified_rollback(name: str, module_type: str) -> str:
             return f"回滚失败：未找到 '{name}' 的任何 Git 提交历史。"
 
         subprocess.run(
-            ["git", "checkout", "HEAD~1", "--", name],
+            ["git", "checkout", "HEAD~1", "--", target],
             cwd=repo_root,
             check=True,
             capture_output=True,
@@ -136,25 +165,42 @@ def list_workplaces(type: str = "skill"):
     if os.path.exists(root):
         for wid in os.listdir(root):
             w_path = os.path.join(root, wid)
-            if os.path.isdir(w_path):
+            if not os.path.isdir(w_path):
+                continue
+
+            if type == "sensor":
+                # sensor 工厂：本体是工作区根目录下的单个 <name>.py（不是同名子目录）
                 item_name = "unknown"
-                for item in os.listdir(w_path):
-                    item_path = os.path.join(w_path, item)
-                    if not os.path.isdir(item_path) or item.startswith(
-                        ("iteration-", "trigger-")
+                for item in sorted(os.listdir(w_path)):
+                    if item.endswith(".py") and os.path.isfile(
+                        os.path.join(w_path, item)
                     ):
-                        continue
-                    # skill 工厂：技能本体是含 SKILL.md 的目录（跳过 blind-* 等评估产物目录）
-                    if type == "skill" and not os.path.exists(
-                        os.path.join(item_path, "SKILL.md")
-                    ):
-                        continue
-                    item_name = item
-                    break
+                        item_name = item[:-3]
+                        break
                 if item_name != "unknown":
                     workplaces.append(
                         {"workplace_id": wid, "name": item_name, "status": "processing"}
                     )
+                continue
+
+            item_name = "unknown"
+            for item in os.listdir(w_path):
+                item_path = os.path.join(w_path, item)
+                if not os.path.isdir(item_path) or item.startswith(
+                    ("iteration-", "trigger-")
+                ):
+                    continue
+                # skill 工厂：技能本体是含 SKILL.md 的目录（跳过 blind-* 等评估产物目录）
+                if type == "skill" and not os.path.exists(
+                    os.path.join(item_path, "SKILL.md")
+                ):
+                    continue
+                item_name = item
+                break
+            if item_name != "unknown":
+                workplaces.append(
+                    {"workplace_id": wid, "name": item_name, "status": "processing"}
+                )
     return workplaces
 
 
@@ -167,6 +213,8 @@ def init_sandbox_api(req: InitReq):
                 if req.is_upgrade
                 else mcp_improve_init(req.name, req.goal)
             )
+        elif req.type == "sensor":
+            msg, workplace_id = sensor_factory_init(req.name, req.is_upgrade, req.goal)
         else:
             msg, workplace_id = skill_improve_init(req.name, req.is_upgrade, req.goal)
 
@@ -182,16 +230,21 @@ def init_sandbox_api(req: InitReq):
 
 @router.get("/file")
 def get_file_api(workplace_id: str, name: str, type: str = "skill", filename: str = ""):
-    base_path = os.path.join(get_root(type), workplace_id, name)
+    base_path = body_root(type, workplace_id, name)
     if not os.path.exists(base_path):
         raise HTTPException(status_code=404, detail="沙盒工作区不存在")
 
     if not filename:
         files_list = []
-        for r, _, files in os.walk(base_path):
+        for r, dirs, files in os.walk(base_path):
+            # 评估产物目录（iteration-* / trigger-*）与依赖目录不进文件树
+            dirs[:] = [
+                d
+                for d in dirs
+                if d not in ("__pycache__", ".venv", "node_modules")
+                and not d.startswith(("iteration-", "trigger-"))
+            ]
             for file in files:
-                if "__pycache__" in r or ".venv" in r or "node_modules" in r:
-                    continue
                 if file.endswith((".pyc", ".png", ".jpg")):
                     continue
                 rel_path = os.path.relpath(os.path.join(r, file), base_path)
@@ -210,7 +263,7 @@ def update_file_api(
     workplace_id: str, name: str, filename: str, req: FileUpdateReq, type: str = "skill"
 ):
     try:
-        file_path = os.path.join(get_root(type), workplace_id, name, filename)
+        file_path = os.path.join(body_root(type, workplace_id, name), filename)
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
         with open(file_path, "w", encoding="utf-8") as f:
             f.write(req.content)
@@ -225,6 +278,8 @@ def run_evals_api(req: TestRunReq):
     try:
         if req.type == "mcp":
             run_mcp_eval_background(req.workplace_id, req.name, req.session_id)
+        elif req.type == "sensor":
+            run_sensor_eval_background(req.workplace_id, req.name)
         else:
             run_skill_eval_background(req.workplace_id, req.name, req.session_id)
         return {"status": "success", "message": "盲测已启动"}
@@ -257,7 +312,17 @@ def get_eval_report_api(
     if iteration is not None:
         iter_dir = os.path.join(w_path, f"iteration-{iteration}")
         report_md = ""
-        if type != "mcp":
+        if type == "mcp":
+            report_path = os.path.join(iter_dir, "test_report.md")
+            if os.path.exists(report_path):
+                with open(report_path, "r", encoding="utf-8") as f:
+                    report_md = f.read()
+        elif type == "sensor":
+            report_path = os.path.join(iter_dir, "protocol_report.md")
+            if os.path.exists(report_path):
+                with open(report_path, "r", encoding="utf-8") as f:
+                    report_md = f.read()
+        else:
             # 同一迭代目录内合并展示：Trigger 报告在前，盲测报告在后（缺失则跳过）
             parts = []
             for report_name in ("trigger_report.md", "eval_report.md"):
@@ -266,14 +331,31 @@ def get_eval_report_api(
                     with open(report_path, "r", encoding="utf-8") as f:
                         parts.append(f.read())
             report_md = "\n\n---\n\n".join(parts)
-        else:
-            report_path = os.path.join(iter_dir, "test_report.md")
-            if os.path.exists(report_path):
-                with open(report_path, "r", encoding="utf-8") as f:
-                    report_md = f.read()
         if report_md:
             return {"report_md": report_md}
     return {"report_md": ""}
+
+
+@router.get("/test/benchmark")
+def get_benchmark_api(
+    workplace_id: str, type: str = "sensor", iteration: Optional[int] = None
+):
+    """读取某轮体检的结构化结论（benchmark.json），供前端展示逐条判据与未覆盖项"""
+    w_path = os.path.join(get_root(type), workplace_id)
+    if iteration is None:
+        iters = list_iterations_api(workplace_id, type)
+        iteration = max(iters) if iters else None
+    if iteration is None:
+        return {"benchmark": None}
+
+    bench_path = os.path.join(w_path, f"iteration-{iteration}", "benchmark.json")
+    if not os.path.exists(bench_path):
+        return {"benchmark": None}
+    try:
+        with open(bench_path, "r", encoding="utf-8") as f:
+            return {"benchmark": json.load(f)}
+    except (json.JSONDecodeError, OSError):
+        return {"benchmark": None}
 
 
 @router.get("/diff")
@@ -291,7 +373,9 @@ def handle_request_api(req: HandleReq):
     try:
         w_path = os.path.join(get_root(req.type), req.workplace_id)
         if not req.is_approved:
-            reason_path = os.path.join(w_path, req.name, "REJECT_REASON.md")
+            reason_path = os.path.join(
+                body_root(req.type, req.workplace_id, req.name), "REJECT_REASON.md"
+            )
             with open(reason_path, "w", encoding="utf-8") as f:
                 f.write(
                     f"# Human Code Review Feedback\n\n你的 Pull Request 被人类拒绝。请阅读以下修复建议并重新修改代码：\n\n{req.reject_reason}"
@@ -303,6 +387,8 @@ def handle_request_api(req: HandleReq):
 
         if req.type == "mcp":
             msg = mcp_request_handle(w_path, req.name, req.is_approved)
+        elif req.type == "sensor":
+            msg = sensor_request_handle(w_path, req.name, req.is_approved)
         else:
             msg = skill_request_handle(w_path, req.name, req.is_approved)
         return {"status": "success", "message": msg}

@@ -65,8 +65,9 @@
 
 #### 9. Request (越权审批)
 
-当遇到读写宿主机文件被拦截、缺失某 MCP/Skill/插件，或**技能工厂的测试与合并**（`skill_test` 申请盲测 / `skill_merge` 申请合并主库）时，向用户发起审批。
+当遇到读写宿主机文件被拦截、缺失某 MCP/Skill/插件，或**技能/传感器工厂的测试与合并**（`skill_test` 申请盲测 / `sensor_test` 申请协议体检 / `skill_merge`·`sensor_merge` 申请合并）时，向用户发起审批。
 - **skill_test**：你无权直接运行测试！须 `request_type="skill_test", target="工作区uuid/技能名"` 发起：Trigger 激发测试免审直接后台运行；后台盲测需用户批准后由系统自动运行（本地无 skill_eval 图时自动跳过盲测，请用户安装后重新申请）
+- **sensor_test**：你无权直接触发协议体检！须 `request_type="sensor_test", target="工作区uuid/传感器名"` 发起：宿主会免审亲自扮演网关实跑该 sensor（L0 静态契约 + L1 协议夹具），结果通过系统通知回推。沙盒内可先用 `uv run evals/gateway_probe.py` 自测；**体检全绿且报告晚于最后一次改动**，`sensor_merge` 才会被放行
 - **切勿催促**：提交后不要反复重试，直接挂起任务或转去处理其他无关联任务，静待通知
 - **安全限制**：install 功能仅对 PurrCat 官方仓库收录的拓展与插件有效
 

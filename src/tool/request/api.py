@@ -74,6 +74,49 @@ def kick_pending_skill_tests():
                 pass
 
 
+def kick_pending_sensor_tests():
+    """主进程轮询钩子：为新的 sensor_test 请求自动启动免审协议体检。
+
+    与 skill_test 同理，体检必须在主进程内起后台线程。体检全绿后才能申请
+    sensor_merge，故这里没有需要人类审批的环节，启动后直接把请求移出待审队列。
+    """
+    if not os.path.exists(REQUESTS_FILE):
+        return
+    with REQUEST_LOCK:
+        try:
+            with open(REQUESTS_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            return
+
+        changed = False
+        for req in data.values():
+            if (
+                req.get("type") != "sensor_test"
+                or req.get("status") != "pending"
+                or req.get("eval_started")
+            ):
+                continue
+
+            workplace_id, _, sensor_name = req.get("target", "").partition("/")
+            if not workplace_id or not sensor_name:
+                continue
+
+            from src.evolve import run_sensor_eval_background
+
+            run_sensor_eval_background(workplace_id, sensor_name)
+            req["eval_started"] = True
+            req["status"] = "eval_only"
+            changed = True
+
+        if changed:
+            try:
+                with open(REQUESTS_FILE, "w", encoding="utf-8") as f:
+                    json.dump(data, f, ensure_ascii=False, indent=2)
+            except OSError:
+                pass
+
+
 def _grant_file_permission(req_type: str, target: str):
     """自动将目标路径写入 file.json 对应的权限组，实现人类授权豁免"""
     with open(FILE_CONFIG_PATH, "r", encoding="utf-8") as f:
@@ -287,6 +330,8 @@ def resolve_request(
         elif not approved and not ignore:
             if req_type == "skill_test":
                 feedback = f"用户拒绝了测试申请，请根据以下原因调整沙盒代码或测试用例后再次申请：\n【拒绝理由】: {feedback}"
+            elif req_type == "sensor_test":
+                feedback = f"用户拒绝了协议体检申请，请根据以下原因调整沙盒代码或 sensor_config.json 后再次申请：\n【拒绝理由】: {feedback}"
             elif req_type in ["skill_merge", "mcp_merge", "sensor_merge"]:
                 # 让Agent收到拒绝的理由并继续改进
                 feedback = f"用户拒绝了代码合并请求，请在沙盒工厂中根据以下原因继续修复：\n【拒绝理由】: {feedback}"
@@ -297,6 +342,7 @@ def resolve_request(
             callback_msg = f"🔔 【系统通知】请求 (ID: {req_id}) | 目标: {target} | 结果: {decision_text}\n系统反馈/批注: {feedback}"
             if approved and req_type not in [
                 "skill_test",
+                "sensor_test",
                 "skill_merge",
                 "mcp_merge",
                 "sensor_merge",

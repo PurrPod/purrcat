@@ -282,7 +282,7 @@
  * 进化工厂（builtin-evolve）插件核心：样式 token + 通用工具 + 标签路由
  *
  * 各标签实现位于 js/*.js，通过 EV.register(id, { mount(root) }) 注册：
- *   id ∈ 'skill' | 'mcp' | 'graph' | 'agentloop'
+ *   id ∈ 'skill' | 'mcp' | 'graph' | 'agentloop' | 'sensor'
  *   mount(root)：首次激活时调用一次；root 已清空，模块自行渲染并保留 DOM。
  *
  * 可用工具（window.EV）：
@@ -661,7 +661,7 @@
   // ---------- 模块加载完成后构建标签 ----------
   window.EVOLVE_BOOT = function () {
     buildTabs();
-    var first = ['skill', 'mcp', 'graph', 'agentloop'].filter(function (id) { return registry[id]; });
+    var first = ['skill', 'mcp', 'graph', 'agentloop', 'sensor'].filter(function (id) { return registry[id]; });
     if (first.length === 0) {
       stageEl.innerHTML = '<div class="center"><div class="big">没有可用的标签</div></div>';
       return;
@@ -675,6 +675,7 @@
 <script src="js/mcp.js"></script>
 <script src="js/graph.js"></script>
 <script src="js/agentloop.js"></script>
+<script src="js/sensor.js"></script>
 <script>window.EVOLVE_BOOT();</script>
 </body>
 </html>

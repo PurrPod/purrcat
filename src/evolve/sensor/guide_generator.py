@@ -18,8 +18,9 @@ Sensor 是一个**独立的常驻子进程**，由宿主机 SensorManager 用 `u
 * **session/prompt（你 → Agent）**：外部事件（用户消息、提醒、状态变化）注入当前活跃会话
 * **session/update（Agent → 你）**：Agent 的回复通过你转发到外部渠道（群聊、邮件等）
 
-会话规则：stdio sensor **固定当前活跃会话**——网关会在 session/new 时自动注入
-follow 标记，你无需（也不应）实现任何会话切换逻辑。
+会话规则：stdio sensor **固定当前活跃会话**——宿主 stdio 桥会在你发 session/new 时
+无条件改写 `_meta` 注入 follow 标记（网关本身的默认值是"新开会话"，别自己传这个标记），
+你无需（也不应）实现任何会话切换逻辑。
 
 铁律：
 * stdout **只能**输出协议 JSON-RPC（一行一条）。调试 print 必须走 stderr：`sys.stdout = sys.stderr`
@@ -28,6 +29,8 @@ follow 标记，你无需（也不应）实现任何会话切换逻辑。
 * 有游标/会话状态的（长轮询 cursor、扫码换的 token 等），持久化到脚本同目录的
   state 文件并随更新落盘——sensor 会被热重启，不落盘就丢消息或丢登录态
 * 一切外部网络调用放后台线程，主线程只跑 stdin 读取循环
+* 鉴权求助必须**同时**写清凭证名与"去哪获取"（控制台网址 + 步骤），协议体检会校验这两项
+* 合并前必须通过协议体检（见第 7 节），体检报告会被宿主复跑核对，无法用自述蒙混
 
 ## 2. 协议规范（JSON-RPC 2.0 over stdio）
 
@@ -127,14 +130,21 @@ ACP 骨架（initialize → session/new → prompt 求助 → update 消费循�
 
 ## 5. 测试方法
 
-沙盒内可以直接手测（不经过宿主机）：
+沙盒根目录已内置**真网关夹具**，它会扮演网关拉起你的 sensor（凭证留空，逼出鉴权路径），
+自动核对握手顺序、求助发出、sessionId 回填、stdout 纯净、空转存活：
 
 ```bash
 cd /agent_vm/sensor_workplace/<uuid>
-echo '{{"jsonrpc":"2.0","method":"session/update","params":{{"update":{{"sessionUpdate":"agent_message_chunk","content":{{"type":"text","text":"hello"}}}}}}}}' | uv run {sensor_name}.py
+uv run evals/gateway_probe.py
 ```
 
-观察 stderr 日志与外部渠道是否收到消息；鉴权求助与握手会打到 stdout。
+失败项的排查线索在 `evals/probe_stderr.log`（sensor 的 stderr 全量日志）。
+
+需要观察单条下发消息的处理时，也可以直接用 echo 手测：
+
+```bash
+echo '{{"jsonrpc":"2.0","method":"session/update","params":{{"update":{{"sessionUpdate":"agent_message_chunk","content":{{"type":"text","text":"hello"}}}}}}}}' | uv run {sensor_name}.py
+```
 
 ## 6. sensor_config.json（合并注册的唯一依据）
 
@@ -144,19 +154,47 @@ echo '{{"jsonrpc":"2.0","method":"session/update","params":{{"update":{{"session
 {{
   "name": "{sensor_name}",
   "env": {{ "MY_TOKEN": "" }},
-  "tool_detail": false
+  "tool_detail": false,
+  "source": "remote"
 }}
 ```
 
-* `env`：声明全部所需凭证（留空字符串占位，用户配置后注入）
+* `env`：声明全部所需凭证（留空字符串占位，用户配置后注入）。
+  代码里 `os.environ.get("X")` 读到的每个键都**必须**在此声明——协议体检会做双向交叉校验，
+  漏声明会导致合并后用户无从配置
 * `tool_detail`：true 时 Agent 的工具调用细节（工具名/结果片段）也会推送到本 sensor；false（默认）时只推送回复正文
+* `source`：`"remote"`（默认，外部源在远程平台）或 `"local"`（外部源是可本地构造的文件/本地服务）。
+  标 `local` 的 sensor 有机会把"外部事件 → 注入会话"这一段也纳入自动化闭环
 
-## 7. 提交合并
+## 7. 验收标准（协议体检）
 
-测试通过后调用 `Request(request_type="sensor_merge", target="{sensor_name}")`，
+提交 `Request(request_type="sensor_test", target="<uuid>/{sensor_name}")` 后，宿主会**亲自扮演网关**
+实跑你的 sensor（L0 静态契约 + L1 协议夹具），全绿才允许合并。硬性判据：
+
+| # | 判据 | 说明 |
+|---|---|---|
+| 1 | 协议纯净 | stdout 只有合法 JSON-RPC，日志全在 stderr |
+| 2 | 永不退出 | 空转与异常输入下进程都存活 |
+| 3 | 契约自述 | sensor_config.json 合法，代码读的 env 键全部已声明 |
+| 4 | 依赖可装 | `uv run` 能建成环境并完成握手（PEP 723 有效） |
+| 5 | 握手时序 | 先 `initialize`(id=1) 再 `session/new`(id=2) |
+| 6 | 鉴权自服务 | 空凭证时主动求助，文本含凭证名与获取入口 |
+| 7 | sessionId 回填 | 用 session/new 响应回传的 sessionId 发所有 prompt（回填错会让注入静默失效） |
+| 8 | 故障可见 | 异常不崩溃，关键路径日志可读 |
+
+体检产物落在 `iteration-N/`：`protocol_report.md`、`benchmark.json`、`handshake.json`（全量抓包）、
+`sensor_stderr.log`。**外部渠道未被 mock**，所以"Agent 回复在渠道里长什么样""幂等去重""游标续传"
+这类真实链路行为不在自动体检范围内，报告会显式列在「未覆盖项」里——别把它们当成已验证。
+
+## 8. 提交合并
+
+体检通过后调用 `Request(request_type="sensor_merge", target="{sensor_name}")`，
 并在 reason 中简述功能点供用户 Code Review。批准后系统会：
 
 1. 拷贝 `{sensor_name}.py` 至正式目录并写入 activate_sensor.json（enabled=true）
 2. Git 提交版本记录
 3. 热重启 Sensor 线程池——**若凭证未填，你会立刻收到该 sensor 的鉴权求助消息**，请转告用户协助配置。
+
+⚠️ 合并前系统会复核最近一次协议体检结论，且要求报告**晚于**最后一次代码改动：
+改完代码务必重跑 `sensor_test`，拿着过期报告申请合并会被直接拒绝。
 """

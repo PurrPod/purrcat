@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from src.tool.request.api import (
     get_pending_requests,
     kick_pending_skill_tests,
+    kick_pending_sensor_tests,
     resolve_request,
     get_resolved_requests,
     delete_request,
@@ -29,6 +30,11 @@ def list_pending_requests_api():
         # 🌟 主进程钩子：为新的 skill_test 请求自动启动 Trigger 免审测试
         try:
             kick_pending_skill_tests()
+        except Exception:
+            pass
+        # 🌟 主进程钩子：为新的 sensor_test 请求自动启动免审协议体检
+        try:
+            kick_pending_sensor_tests()
         except Exception:
             pass
         return get_pending_requests()
