@@ -41,6 +41,10 @@ purrcat desktop update    # Pull latest source & refresh dependencies
 
 > On Windows, Docker Desktop requires one manual first launch to accept its agreement.
 
+### API port selection
+
+The desktop API uses port `8000` by default. `npm run dev` tries that port first and automatically selects the next available port when it is unavailable. Set `PURRCAT_API_PORT` (or pass `--api-port` to `main.py`) when a fixed port is required; an explicitly requested port fails with a clear error instead of silently changing.
+
 ## Architecture
 
 ### 01 Hybrid Memory and Knowledge Graph

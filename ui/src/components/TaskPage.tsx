@@ -490,7 +490,7 @@ export default function TaskPage({ onBack }: { onBack: () => void }) {
         const rawDash = stateData.graph?.dashboard;
         const subTid = (u: string) => u.split('{task_id}').join(task.id);
         // 内部浏览器（WebContentsView.loadURL）需要绝对地址：相对 /api 按当前 origin 补全
-        // （dev 3000 由 Vite 代理、prod 8000 直连后端；绝对 http(s) 地址原样返回）
+        // （dev 3000 由 Vite 代理、prod 动态 API 端口直连后端；绝对 http(s) 地址原样返回）
         const toAbs = (u: string) => {
           try { return new URL(u, window.location.origin).href; } catch { return u; }
         };
