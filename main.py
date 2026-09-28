@@ -338,6 +338,16 @@ async def run_api(host: str = "0.0.0.0", port: int = DEFAULT_API_PORT):
     if _ui_dist.exists():
         app.mount("/", StaticFiles(directory=str(_ui_dist), html=True), name="ui")
 
+    # 🌟 极简模式静态资源禁用缓存：host.js / theme.css 等改动后，
+    # 仅刷新页面即可生效，避免 Electron 渲染进程命中旧缓存导致"改了没反应"。
+    @app.middleware("http")
+    async def _webmin_no_cache(request, call_next):
+        response = await call_next(request)
+        if request.url.path.startswith("/minimal"):
+            response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+            response.headers["Pragma"] = "no-cache"
+        return response
+
     logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
     
     # 🌟 关键修复：关闭 Uvicorn 的信号处理，避免与 Textual 抢夺 Ctrl+C 导致死锁

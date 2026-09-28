@@ -53,6 +53,7 @@
   --wm-sidebar-gap: 8px;      /* 会话列表与左侧白条的横向间隙 */
   --wm-sidebar-inset: 14px;   /* 会话列表上下缩进，与右侧面板高度保持一致 */
   --wm-chat-w: 420px;         /* 右侧聊天列固定宽度：中栏面板最大化时留给聊天的横向宽度 */
+  --wm-chat-min-w: 360px;     /* 聊天列（历史框+输入框）最小宽度：面板容器再宽也不会把它压得比这更窄 */
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -594,12 +595,16 @@ body.settings-open [data-layer="settings"] { display: flex; }
 body.rail-nosidebar .wm-ppanel {
   left: calc(var(--wm-rail-w) + var(--wm-sidebar-gap));
 }
-/* 中栏打开时，聊天+输入右移到中栏之后（覆盖默认左侧栏偏移） */
+/* 中栏打开时，聊天+输入右移到中栏之后（覆盖默认左侧栏偏移）；
+   同时左内边距归零：否则 main 的 14px padding 会叠加在 8px 间距上，
+   使「面板↔聊天框」缝隙(约22px)明显大于「会话列表↔面板」缝隙(8px) */
 body.has-panels .wm-main {
   left: calc(var(--wm-rail-w) + var(--wm-sidebar-gap) + var(--wm-sidebar-w) + var(--wm-sidebar-gap) + var(--wm-panel-w) + var(--wm-sidebar-gap));
+  padding-left: 0;
 }
 body.rail-nosidebar.has-panels .wm-main {
   left: calc(var(--wm-rail-w) + var(--wm-sidebar-gap) + var(--wm-panel-w) + var(--wm-sidebar-gap));
+  padding-left: 0;
 }
 .wm-pp_head {
   flex: none;

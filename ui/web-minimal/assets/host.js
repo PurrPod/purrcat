@@ -83,7 +83,12 @@
     // fixed：锚定容器
     const anchor = HOST.document.querySelector(`[data-slot="${slot}"]`);
     if (anchor) anchor.style.display = hidden ? 'none' : '';
-    if (slot === 'sidebar') HOST.document.body.classList.toggle('rail-nosidebar', !!hidden);
+    if (slot === 'sidebar') {
+      HOST.document.body.classList.toggle('rail-nosidebar', !!hidden);
+      applyPanelWidth();   // 侧栏显隐改变可用区域，面板宽度需重新夹紧
+    }
+    // conversation：历史会话插件启停改变右侧需预留的宽度，面板宽度需重算
+    if (slot === 'conversation') applyPanelWidth();
     // float：自由浮窗实例（data-fslot=slot）
     HOST.document.querySelectorAll(`.wm-float[data-fslot="${slot}"]`).forEach((el) => {
       el.style.display = hidden ? 'none' : 'block';
@@ -98,7 +103,11 @@
         el.style.display = hidden ? 'none' : 'flex';
       });
       if (hidden) { HOST.document.body.classList.remove('has-panels'); if (panelBar) panelBar.style.display = 'none'; }
-      else { HOST.document.body.classList.add('has-panels'); if (panelBar) panelBar.style.display = ''; }
+      else {
+        HOST.document.body.classList.add('has-panels');
+        if (panelBar) panelBar.style.display = '';
+        applyPanelWidth();   // 重新打开面板时按当前窗口宽度夹紧
+      }
     }
     syncNativeCover();
   }
@@ -136,8 +145,9 @@
       t.title = '收起 / 展开插件栏';
     }
     // 白条宽度变化（48px ↔ 196px）会改变可用区域：弹窗需重排，
-    // 否则居中弹窗的左缘会被展开后的白条压住
+    // 否则居中弹窗的左缘会被展开后的白条压住；面板容器宽度也需重新夹紧
     reflowFloats();
+    applyPanelWidth();
   }
   function applyRailOpacity() {
     let o = typeof railState.opacity === 'number' ? railState.opacity : 1;
@@ -421,15 +431,16 @@
     num.addEventListener('change', function () {
       if (!num.value) {   // 清空 = 回到「最大舒展」
         panelSavedWidth = null;
-        delete panelContainerCfg.width;
-        HOST.document.documentElement.style.removeProperty('--wm-panel-w');
+        panelDesiredWidth = null;
+        applyPanelWidth();
         settingsSavePanel();
         return;
       }
       const w = Number(num.value);
       if (w >= 260) {
         panelSavedWidth = w;
-        panelContainerCfg.width = w;
+        panelDesiredWidth = w;
+        applyPanelWidth();
         settingsSavePanel();
       } else {
         HOST.alert('宽度不能小于 260px');
@@ -1884,7 +1895,8 @@
       });
     });
   }
-  HOST.addEventListener('resize', reflowFloats);
+  // 窗口尺寸变化：浮窗重排；面板容器宽度重新夹到可用范围（窗口缩小时不再溢出被覆盖，放大后恢复期望宽度）
+  HOST.addEventListener('resize', function () { reflowFloats(); applyPanelWidth(); });
   // float 类型天然可拖拽可缩放：总会补上两个手柄（宿主不感知具体插件）
   function attachFloatHandles(el) {
     el.querySelectorAll('.wm-fgrab, .wm-fresize').forEach((hd) => hd.remove());
@@ -1904,8 +1916,10 @@
   //     内容插件，右上角抽屉切换显示；宽度由中栏右缘分隔条拖动调整（--wm-panel-w）。
   let panelBar = null;             // 中栏与聊天区之间的纵向分隔条
   let panelState = null;           // 单例：{ plugins:[{p,def}], activeId, el, area:'panel' }
-  let panelContainerCfg = { opacity: 0.9 }; // 宿主固有中栏容器配置（透明度/运行时宽度）
+  const PANEL_MIN_W = 260;         // 面板容器拖动下限
+  let panelContainerCfg = { opacity: 0.9 }; // 宿主固有中栏容器配置（透明度）
   let panelSavedWidth = null;      // 用户显式保存的默认宽度（null=最大舒展，不落盘）
+  let panelDesiredWidth = null;    // 运行时「期望宽度」：窗口缩小时显示被夹紧，但此值保留，放大后恢复
   function applyPanelContainerCfg() {
     const el = HOST.document.querySelector('.wm-ppanel[data-pslot="panel"]');
     if (!el) return;
@@ -1913,25 +1927,50 @@
     if (!(o >= 0)) o = 0.9;
     o = Math.min(1, Math.max(0.15, o));
     el.style.setProperty('--wm-panel-bg', 'rgba(242,244,247,' + o.toFixed(3) + ')');
-    const w = Number(panelContainerCfg.width);
-    if (w >= 260) {   // 只保下限，不设最大宽度，面板可尽量舒展
-      HOST.document.documentElement.style.setProperty('--wm-panel-w', w + 'px');
-    }
   }
   function cssNum(name, dflt) {
     const v = HOST.getComputedStyle(HOST.document.documentElement).getPropertyValue(name);
     const n = parseFloat(v);
     return (n >= 0) ? n : dflt;
   }
-  // 面板容器「最大舒展」宽度：面板占满左侧栏右侧全部，右侧留出固定聊天列（--wm-chat-w）
-  function maxPanelWidth() {
+  // 面板左侧起始偏移（rail → [侧栏]）
+  function panelLeftBase() {
     const rail = cssNum('--wm-rail-w', 48);
     const gap = cssNum('--wm-sidebar-gap', 8);
     const side = cssNum('--wm-sidebar-w', 264);
-    const chat = cssNum('--wm-chat-w', 420);
     const noSidebar = HOST.document.body.classList.contains('rail-nosidebar');
-    const left = noSidebar ? (rail + gap) : (rail + gap + side + gap);
-    return Math.max(260, Math.floor(HOST.innerWidth - left - gap - chat));
+    return noSidebar ? (rail + gap) : (rail + gap + side + gap);
+  }
+  // 历史会话插件当前是否启用（被关闭或未挂载 → 不为历史框预留宽度）
+  function historyEnabled() {
+    const cur = pluginBySlot['conversation'];
+    if (!cur) return false;              // 未挂载（被删除 / 未选中）
+    return !railHidden(cur.id);          // 被设置或白条关闭
+  }
+  // 面板容器「最大舒展」宽度：面板占满左侧栏右侧全部，右侧留出聊天列。
+  // 历史会话未启用时不为历史框预留（只保输入框最小宽度），面板可舒展得更大；
+  // 历史会话启用后若空间不够，再由 panelMaxLimit 把面板夹紧、为其挤开位置。
+  function maxPanelWidth() {
+    const gap = cssNum('--wm-sidebar-gap', 8);
+    const chat = historyEnabled() ? cssNum('--wm-chat-w', 420) : cssNum('--wm-chat-min-w', 360);
+    return Math.max(PANEL_MIN_W, Math.floor(HOST.innerWidth - panelLeftBase() - gap - chat));
+  }
+  // 面板可用宽度上限：只保聊天列最小宽度（--wm-chat-min-w），
+  // 保证输入框/历史框不会被面板压得过窄，且面板右缘（含 ✕）始终留在可视区内
+  function panelMaxLimit() {
+    const gap = cssNum('--wm-sidebar-gap', 8);
+    const chatMin = cssNum('--wm-chat-min-w', 360);
+    return Math.floor(HOST.innerWidth - panelLeftBase() - gap - chatMin);
+  }
+  // 把「期望宽度」夹到 [下限, 可用上限] 后写入 CSS 变量。
+  // 期望宽度本身保留，窗口放大后自动恢复原宽，不引入永久性 max-width。
+  function applyPanelWidth() {
+    if (!hasPanelsDef()) return;
+    const limit = panelMaxLimit();
+    const raw = (panelDesiredWidth != null) ? panelDesiredWidth : maxPanelWidth();
+    let w = Math.max(PANEL_MIN_W, raw);
+    w = (limit < PANEL_MIN_W) ? Math.max(0, limit) : Math.min(w, limit);
+    HOST.document.documentElement.style.setProperty('--wm-panel-w', Math.round(w) + 'px');
   }
   function setContainerHidden(hidden) {
     if (!railState.hidden) railState.hidden = {};
@@ -1953,11 +1992,12 @@
     e.preventDefault();
     const el = e.currentTarget;   // 分隔条
     const w0 = HOST.document.documentElement.style.getPropertyValue('--wm-panel-w');
-    const base = w0 ? parseFloat(w0) : 420;
+    const base = w0 ? parseFloat(w0) : ((panelDesiredWidth != null) ? panelDesiredWidth : 420);
     const sx0 = e.clientX;
     const move = (ev) => {
-      const w = Math.max(260, base + (ev.clientX - sx0));   // 只保下限，不设最大宽度
-      HOST.document.documentElement.style.setProperty('--wm-panel-w', w + 'px');
+      // 拖动只记录「期望宽度」，实际宽度由 applyPanelWidth 夹到可用范围（右缘/✕ 不出可视区）
+      panelDesiredWidth = Math.max(PANEL_MIN_W, base + (ev.clientX - sx0));
+      applyPanelWidth();
     };
     const up = () => {
       el.removeEventListener('pointermove', move);
@@ -1974,10 +2014,8 @@
   function reconcilePanels() {
     if (hasPanelsDef()) {
       HOST.document.body.classList.add('has-panels');
-      // 未拖动过：中栏默认宽度 = 最大舒展（右侧留出聊天列）
-      if (!HOST.document.documentElement.style.getPropertyValue('--wm-panel-w')) {
-        HOST.document.documentElement.style.setProperty('--wm-panel-w', maxPanelWidth() + 'px');
-      }
+      // 宽度交给 applyPanelWidth：期望宽度为 null 时取「最大舒展」，否则沿用用户宽度并夹到可用范围
+      applyPanelWidth();
       if (!panelBar || !panelBar.isConnected) {
         panelBar = HOST.document.createElement('div');
         panelBar.className = 'wm-pbar';
@@ -2164,6 +2202,15 @@
           );
         } catch (_) { /* noop */ }
       }
+      // 启动竞态修复：插件可能在「设置中心/模态弹窗已打开」之后才挂载，
+      // 此时早先的 host.nativeCover 广播已经发过，插件会误以为未被遮挡而展示原生视图（覆盖设置）。
+      // 给刚加载的插件补推一次当前遮挡状态。
+      try {
+        iframe.contentWindow.postMessage(
+          { type: 'event', event: 'host.nativeCover', data: { covered: nativeCoverActive() } },
+          '*'
+        );
+      } catch (_) { /* noop */ }
       iframe.removeEventListener('load', onLoad);
     });
     return { iframe, pluginId: p.id, el };
@@ -2277,7 +2324,8 @@
     const savedPanel = (manifest.panelContainer && typeof manifest.panelContainer === 'object') ? manifest.panelContainer : {};
     panelSavedWidth = (Number(savedPanel.width) >= 260) ? Number(savedPanel.width) : null;
     panelContainerCfg = { opacity: (typeof savedPanel.opacity === 'number') ? savedPanel.opacity : 0.9 };
-    if (panelSavedWidth != null) panelContainerCfg.width = panelSavedWidth;
+    // 有保存宽度则作为期望宽度；无则保留本次会话中拖动产生的期望宽度
+    if (panelSavedWidth != null) panelDesiredWidth = panelSavedWidth;
     configByPlugin['panel-container'] = Object.assign({}, savedPanel);
     // 单例槽选中项（剔除已卸载插件的残留）
     const savedActive = (manifest.active && typeof manifest.active === 'object') ? manifest.active : {};
