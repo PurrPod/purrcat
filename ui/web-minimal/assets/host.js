@@ -1785,6 +1785,9 @@
         if (HOST.purrcat && HOST.purrcat.openExternal) await HOST.purrcat.openExternal(payload.url);
         return { status: 'ok' };
       }
+      // 网页链接统一路由：主进程拦下的 target=_blank/window.open 与插件显式调用都走这里
+      case 'browser.openUrl':
+        return openUrlInBrowserPanel(payload.url);
       case 'state.get':
         return { ...groupState, plugins: undefined };
       // 输入插件展开引用菜单时，宿主腾出更高输入区，避免面板被容器裁切
@@ -1975,6 +1978,9 @@
   //     内容插件，右上角抽屉切换显示；宽度由中栏右缘分隔条拖动调整（--wm-panel-w）。
   let panelBar = null;             // 中栏与聊天区之间的纵向分隔条
   let panelState = null;           // 单例：{ plugins:[{p,def}], activeId, el, area:'panel' }
+  // 待投递给内置浏览器面板的地址：目标 iframe 尚未加载完成时先挂起，
+  // 由 mountFrame 的 load 回调补投（新挂载的面板帧收不到挂载前发出的广播）
+  let pendingBrowserUrl = null;
   const PANEL_MIN_W = 260;         // 面板容器拖动下限
   let panelContainerCfg = { opacity: 0.9 }; // 宿主固有中栏容器配置（透明度）
   let panelSavedWidth = null;      // 用户显式保存的默认宽度（null=最大舒展，不落盘）
@@ -2242,6 +2248,47 @@
     closePanelMenus();
   }
 
+  // ---- 网页链接路由 ----
+  // 聊天历史等插件里的网页链接（target=_blank / window.open）由主进程
+  // setWindowOpenHandler 拦下，经 purrcat:open-url 回传到宿主，这里统一交给
+  // 「声明了 openUrl 能力的 panel 插件」（内置浏览器）打开，与完整模式同一规则。
+  // 宿主不硬编码插件 id：能力由插件在自己的 plugin.json 里声明。
+  function browserPanel() {
+    if (!panelState) return null;
+    return panelState.plugins.find((x) => (x.p || {}).openUrl) || null;
+  }
+  function deliverPendingBrowserUrl() {
+    if (!pendingBrowserUrl) return;
+    const hit = browserPanel();
+    if (!hit || !panelState || panelState.activeId !== hit.p.id) return;
+    const slot = hit.p.slot;
+    if (!(frames[slot] || []).some((f) => f.loaded)) return;   // 帧未加载完：等 load 回调再投
+    const url = pendingBrowserUrl;
+    pendingBrowserUrl = null;
+    broadcast(slot, 'browser.openUrl', { url: url });
+  }
+  function openUrlInBrowserPanel(url) {
+    const u = String(url || '').trim();
+    const pc = HOST.purrcat;
+    const hit = browserPanel();
+    // 非网页（mailto:/tel:/file: 等）或面板里没有可用内置浏览器 → 退回系统处理
+    if (!/^https?:\/\//i.test(u) || !hit || !pc || !pc.browserNewTab) {
+      if (pc && pc.openExternal && u) pc.openExternal(u);
+      return { status: 'external' };
+    }
+    const rerender = panelState.activeId !== hit.p.id;
+    if (rerender) {
+      panelState.activeId = hit.p.id;
+      activeBySlot['panel'] = hit.p.id;    // 记住选择：下次启动直接停在浏览器面板
+      persistActive();
+    }
+    setContainerHidden(false);             // 面板被关掉时自动重新打开
+    if (rerender) renderPanelContent(panelState);
+    pendingBrowserUrl = u;
+    deliverPendingBrowserUrl();
+    return { status: 'ok' };
+  }
+
   // ---- 渲染：把某插件实例装进对应容器内的 iframe ----
   // 卸载通知：iframe 被移除前给插件最后一次收尾机会（如关掉自己开的浏览器 Tab、
   // 把原生视图移出屏幕）。postMessage 已入队，即使随后移除 iframe 仍会投递。
@@ -2267,7 +2314,9 @@
     // 这里不再覆写，避免用 boot 时的 manifest 旧值冲掉运行中的未保存编辑
     slotByPluginId[p.id] = p.slot;
     frameByPluginId[p.id] = iframe;
+    const rec = { iframe: iframe, pluginId: p.id, el: el, loaded: false };
     iframe.addEventListener('load', function onLoad() {
+      rec.loaded = true;
       applyConfigTo(p.id);
       // 启动竞态修复：activeSessionId 由 boot 里的异步请求确定，可能晚于 iframe 加载；
       // 只靠 boot 时的一次广播会让晚加载的插件错过 → 给刚加载的插件补推当前会话
@@ -2288,9 +2337,10 @@
           '*'
         );
       } catch (_) { /* noop */ }
+      deliverPendingBrowserUrl();   // 帧刚就绪：补投挂起的网页链接（若有）
       iframe.removeEventListener('load', onLoad);
     });
-    return { iframe, pluginId: p.id, el };
+    return rec;
   }
 
   // ---- 依据 manifest 的 slot 声明建立槽集合（去硬编码） ----
@@ -2466,6 +2516,11 @@
     // 原生浏览器 Tab 事件（标题/导航/被拦截）转发给全部插件帧，由持有原生视图的插件消费
     if (HOST.purrcat && HOST.purrcat.onTabEvent) {
       HOST.purrcat.onTabEvent(function (evt) { broadcastAll('browser.tabEvent', evt); });
+    }
+    // 网页链接路由：聊天历史里的 target=_blank / window.open 被主进程拦下后回传（与完整
+    // 模式同一链路），极简模式转交内置浏览器面板打开，而不是弹原生窗口或跳走 iframe
+    if (HOST.purrcat && HOST.purrcat.onOpenUrl) {
+      HOST.purrcat.onOpenUrl(function (url) { openUrlInBrowserPanel(url); });
     }
     // 原生视图遮挡状态：设置中心 / 模态弹窗 / 下拉菜单出现时通知插件隐藏原生视图。
     // 在各开关点显式调用 syncNativeCover()（见 setSettingsOpen/applySlotHidden/菜单开合），

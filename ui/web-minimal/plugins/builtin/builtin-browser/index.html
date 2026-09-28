@@ -194,6 +194,8 @@
   function silent(actionId, payload) { return callAction(actionId, payload).catch(function () {}); }
 
   var tabId = null;
+  var starting = false;         // 建 Tab 期间的重入守卫：宿主下发配置与网页链接请求可能同时到达
+  var pendingUrl = null;        // 待打开地址：Tab 尚未就绪时先记下，建好 Tab 后直接落在该地址
   var mode = 'browse';          // browse=浏览（原生视图可见） / pick=元素选取（原生视图移出屏幕 + 截图标注）
   var covered = false;          // 宿主出现设置中心/模态弹窗/下拉菜单：原生视图必须让位
   var curUrl = '';
@@ -304,11 +306,20 @@
   }
   function navigate(u) {
     if (!u) return;
-    if (!tabId) { ensureTab(silent('browser.loadThen', {})); return; }
+    // Tab 未就绪（宿主刚把本插件挂上）：挂起地址，建好 Tab 时直接落在该地址，
+    // 避免先加载主页再跳转的闪烁
+    if (!tabId) { openUrl(u); return; }
     curUrl = u;
     urlInput.value = u;
     hideHint();
     silent('browser.navigate', { tabId: tabId, url: u }).then(function () { syncBounds(true); });
+  }
+  // 打开指定网页：宿主网页链接路由（browser.openUrl 事件）与地址栏共用
+  function openUrl(u) {
+    if (!u) return;
+    if (tabId) { navigate(u); return; }
+    pendingUrl = u;
+    ensureTab();
   }
   function go() {
     var raw = urlInput.value.trim();
@@ -318,14 +329,17 @@
 
   // ---- 建立原生浏览器 Tab ----
   function ensureTab() {
-    if (tabId) return;
+    if (tabId || starting) return;
+    starting = true;
+    var first = pendingUrl || HOME;   // 有挂起地址就直接开在它上面
+    pendingUrl = null;
     callAction('browser.available').then(function (r) {
       if (!r || !r.available) { showHint('内置浏览器仅在桌面客户端（Electron）中可用。'); return; }
-      return callAction('browser.newTab', { url: HOME }).then(function (res) {
+      return callAction('browser.newTab', { url: first }).then(function (res) {
         if (res && res.tabId) {
           tabId = res.tabId;
-          curUrl = HOME;
-          urlInput.value = HOME;
+          curUrl = first;
+          urlInput.value = first;
           backBtn.disabled = false;
           fwdBtn.disabled = false;
           hideHint();
@@ -335,7 +349,8 @@
           showHint('无法打开内置浏览器：目标地址被应用自身地址拦截（不能在内置浏览器中打开 PurrCat 自己的页面）。');
         }
       });
-    }).catch(function (e) { showHint('打开内置浏览器失败：' + (e && e.message || '')); });
+    }).catch(function (e) { showHint('打开内置浏览器失败：' + (e && e.message || '')); })
+      .then(function () { starting = false; });
   }
 
   // ---- 元素评论：提交给 Agent（与完整模式同一条链路，交给宿主 chat.sendBatch 入会话）----
@@ -453,6 +468,8 @@
     if (m.type === 'configApply') { applyConfig(m.config); return; }
     if (m.type !== 'event') return;
     if (m.event === 'browser.tabEvent') { onTabEvent(m.data || {}); return; }
+    // 网页链接路由：聊天历史里的网页链接被宿主统一转到这里打开
+    if (m.event === 'browser.openUrl') { openUrl((m.data || {}).url); return; }
     if (m.event === 'host.nativeCover') {
       covered = !!(m.data && m.data.covered);
       syncBounds();
@@ -474,6 +491,7 @@
   function cleanup() {
     if (cleanup.done) return;
     cleanup.done = true;
+    pendingUrl = null;
     ensureHidden();
     if (tabId) { silent('browser.closeTab', { tabId: tabId }); tabId = null; }
   }
