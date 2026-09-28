@@ -109,8 +109,8 @@ def _scan_plugins(root: str) -> dict:
 
 
 AREA_PANEL = "panel"
-AREA_PET = "pet"        # 自由浮窗：可任意摆放/拖拽缩放，不干扰其它插件
-AREA_POPUP = "popup"    # 模态弹窗：与设置中心同级，遮罩铺满主区（仅白条与设置中心可操作）
+AREA_PET = "pet"  # 自由浮窗：可任意摆放/拖拽缩放，不干扰其它插件
+AREA_POPUP = "popup"  # 模态弹窗：与设置中心同级，遮罩铺满主区（仅白条与设置中心可操作）
 
 
 def _plugin_area(p: dict) -> str:
@@ -184,7 +184,15 @@ def _merge_plugins():
     merged = _scan_plugins(BUILTIN_PLUGIN_ROOT)
     merged.update(_scan_plugins(USER_PLUGIN_ROOT))  # 用户覆盖内置
     plugins = list(merged.values())
-    ordered = ["sidebar", "input", "background", "conversation", "panel", "pet", "popup"]
+    ordered = [
+        "sidebar",
+        "input",
+        "background",
+        "conversation",
+        "panel",
+        "pet",
+        "popup",
+    ]
     plugins.sort(
         key=lambda p: (
             ordered.index(_slot_id(p)) if _slot_id(p) in ordered else 999,
