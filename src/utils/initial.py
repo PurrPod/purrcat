@@ -38,31 +38,22 @@ trigger:
       injection: "【Demo】该吃饭了"
 hooks:
   on_build_system_prompt:
-    - file_operation: 
-        path: "@RULES"
-        action: "read"
-    - file_operation:
-        path: "@INFO"
-        action: "read"
-    - file_operation:
-        path: "@SOUL"
-        action: "read"
-    - file_operation:
-        path: "@MEMORY"
-        action: "read"
+    - injection:
+        content: "@RULES"
+    - injection:
+        content: "@INFO"
+    - injection:
+        content: "@SOUL"
+    - injection:
+        content: "@MEMORY"
     - memo_injection:
         type: "full"
         count: 10
-    - file_operation:
-        action: "read"
-        path: "@SYS"
+    - injection:
+        content: "@SYS"
   on_loop_start:
     - injection: 
         content: "如遇复杂任务，请先编排好主线路的执行计划，先规划TODO后执行"
-    - file_operation:
-        action: "exist_check"
-        path: "@RULES"
-        failed_prompt: "检测到系统指导文件不存在"
   on_loop_epoch:
     - injection:
         delay: 5
