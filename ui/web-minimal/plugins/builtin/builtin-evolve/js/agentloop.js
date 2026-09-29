@@ -329,6 +329,14 @@
     create.onclick = createFile;
     toolbarEl.appendChild(create);
 
+    var vizBtn = EV.el('button', 'btn');
+    vizBtn.innerHTML = EV.icon('graph', 14);
+    vizBtn.appendChild(EV.el('span', null, '可视化'));
+    vizBtn.title = '查看当前编排的循环信息流转图';
+    vizBtn.disabled = !state.activeName;
+    vizBtn.onclick = openVisualize;
+    toolbarEl.appendChild(vizBtn);
+
     var saveBtn = EV.el('button', 'btn primary');
     saveBtn.innerHTML = EV.icon('save', 14);
     saveBtn.appendChild(EV.el('span', null, state.dirty ? '保存 *' : '保存'));
@@ -867,6 +875,320 @@
   function renderMain() {
     renderToolbar();
     renderBody();
+  }
+
+  /* ============================================================================
+   * 可视化：当前 paradigm 的「循环信息流转图」
+   *   对齐完整模式 AgentLoopEditor 的骨架图语义（无 ReactFlow / mermaid，全部手绘 SVG）：
+   *     构建系统提示词 → 用户输入 → 循环开始 → 每轮循环迭代 ─┬─(有工具调用)→ 工具调用检查 ─┐
+   *                                                        └─(无工具调用)───────────────┴→ 循环结束检查
+   *     循环结束检查 ─(失败)→ 回到「每轮循环迭代」；─(成功)→ 结束 → 回到「用户输入」
+   * ========================================================================== */
+  var VIZ = {
+    CW: 264, HEAD_H: 34, ROW_H: 26, FOOT_H: 15, PLAIN_H: 52, GAP_V: 62, PAD: 30,
+    X_LEFT: 200
+  };
+  VIZ.X_RIGHT = VIZ.X_LEFT + 404;
+  VIZ.RAIL1 = VIZ.X_LEFT - 64;    // 内轨：结束检查(失败) → 每轮循环迭代
+  VIZ.RAIL2 = VIZ.X_LEFT - 128;   // 外轨：结束 → 用户输入
+  var VIZ_INK = '#1A1A1A';
+  var VIZ_HAND = '"Comic Sans MS", cursive';
+  var VIZ_CREAM = '#F7F3EA';
+
+  function vizStationH(count) {
+    return VIZ.HEAD_H + (count > 0 ? count * VIZ.ROW_H : VIZ.ROW_H) + VIZ.FOOT_H;
+  }
+  function sEl(tag, attrs) {
+    var n = document.createElementNS('http://www.w3.org/2000/svg', tag);
+    if (attrs) Object.keys(attrs).forEach(function (k) { n.setAttribute(k, attrs[k]); });
+    return n;
+  }
+  function sText(x, y, str, o) {
+    o = o || {};
+    var t = sEl('text', {
+      x: x, y: y,
+      fill: o.fill || VIZ_INK,
+      'font-size': o.size || 12,
+      'font-weight': o.weight || 700,
+      'text-anchor': o.anchor || 'start'
+    });
+    if (o.hand) t.setAttribute('font-family', VIZ_HAND);
+    t.textContent = str;
+    if (o.bg) {   // 文字压在连线上时用描边留白（等于给文字加白底）
+      t.setAttribute('paint-order', 'stroke');
+      t.setAttribute('stroke', o.bg);
+      t.setAttribute('stroke-width', '4');
+      t.setAttribute('stroke-linejoin', 'round');
+    }
+    return t;
+  }
+
+  // 卡片锚点：侧向锚点取「头部中线」（与完整模式一样走顶部固定锚点，保证连线恒为水平）
+  function vizAnchor(n, where) {
+    var sideY = n.kind === 'plain' ? n.y + n.h / 2 : n.y + VIZ.HEAD_H / 2;
+    if (where === 'top') return [n.x + n.w / 2, n.y];
+    if (where === 'bottom') return [n.x + n.w / 2, n.y + n.h];
+    if (where === 'left') return [n.x, sideY];
+    if (where === 'right') return [n.x + n.w, sideY];
+    if (where === 'leftTop') return [n.x, n.y + 20];
+    if (where === 'rightTop') return [n.x + n.w, n.y + 20];
+    if (where === 'leftLow') return [n.x, n.y + n.h - 11];
+    return [n.x + n.w, n.y + n.h - 11];   // rightLow
+  }
+
+  function buildVizModel() {
+    var nodes = [];
+    function station(key, x, y) {
+      var actions = state.hooks[key] || [];
+      var meta = null;
+      HOOK_META.forEach(function (m) { if (m.key === key) meta = m; });
+      var n = {
+        id: key, kind: 'station', key: key, label: hookLabel(key),
+        color: (meta && meta.color) || '#cccccc', items: actions,
+        x: x, y: y, w: VIZ.CW, h: vizStationH(actions.length)
+      };
+      nodes.push(n);
+      return n;
+    }
+    function plain(id, label, x, y) {
+      var n = { id: id, kind: 'plain', label: label, x: x, y: y, w: VIZ.CW, h: VIZ.PLAIN_H };
+      nodes.push(n);
+      return n;
+    }
+
+    var cur = VIZ.PAD;
+    var b = station('on_build_system_prompt', VIZ.X_LEFT, cur);
+    cur += b.h + VIZ.GAP_V;
+    var ui = plain('user_input', '用户输入', VIZ.X_LEFT, cur);
+    cur += ui.h + VIZ.GAP_V;
+    var st = station('on_loop_start', VIZ.X_LEFT, cur);
+    cur += st.h + VIZ.GAP_V;
+
+    var ep = station('on_loop_epoch', VIZ.X_LEFT, cur);
+    var tc = station('on_tool_calling', VIZ.X_RIGHT, cur);
+    var rowBottom = cur + Math.max(ep.h, tc.h);
+    var ec = station('on_loop_end', VIZ.X_LEFT, rowBottom + VIZ.GAP_V);
+    var end = plain('end', '结束', VIZ.X_LEFT, ec.y + ec.h + VIZ.GAP_V);
+
+    var edges = [];
+    function edge(pts, label, labelAt, anchor) {
+      edges.push({ pts: pts, label: label, labelAt: labelAt, anchor: anchor });
+    }
+    // 主干
+    edge([vizAnchor(b, 'bottom'), vizAnchor(ui, 'top')]);
+    edge([vizAnchor(ui, 'bottom'), vizAnchor(st, 'top')]);
+    edge([vizAnchor(st, 'bottom'), vizAnchor(ep, 'top')]);
+    // 分支：有工具调用 → 走顶部锚点的水平线；无工具调用 → 直达结束检查
+    var rTop = vizAnchor(ep, 'rightTop'), lTop = vizAnchor(tc, 'leftTop');
+    edge([rTop, lTop], '有工具调用', [(rTop[0] + lTop[0]) / 2, rTop[1] - 9], 'middle');
+    var eBot = vizAnchor(ep, 'bottom'), ecTop = vizAnchor(ec, 'top');
+    edge([eBot, ecTop], '无工具调用', [eBot[0] + 9, (eBot[1] + ecTop[1]) / 2]);
+    // 工具调用检查通过 → 走底部锚点水平回到「每轮循环迭代」
+    edge([vizAnchor(tc, 'leftLow'), vizAnchor(ep, 'rightLow')]);
+    // 环 1：结束检查未通过 → 左侧内轨绕回「每轮循环迭代」
+    var ecLeft = vizAnchor(ec, 'left'), epLeft = vizAnchor(ep, 'left');
+    var p1b = [VIZ.RAIL1, ecLeft[1]], p1t = [VIZ.RAIL1, epLeft[1]];
+    edge([ecLeft, p1b, p1t, epLeft], '失败，继续下一轮', [VIZ.RAIL1 - 9, (p1t[1] + p1b[1]) / 2], 'end');
+    // 通过 → 结束
+    var ecBot = vizAnchor(ec, 'bottom'), endTop = vizAnchor(end, 'top');
+    edge([ecBot, endTop], '成功，结束', [ecBot[0] + 9, (ecBot[1] + endTop[1]) / 2]);
+    // 环 2：结束后 → 最外侧轨道回到「用户输入」（下一轮任务）
+    var endLeft = vizAnchor(end, 'left'), uiLeft = vizAnchor(ui, 'left');
+    edge([endLeft, [VIZ.RAIL2, endLeft[1]], [VIZ.RAIL2, uiLeft[1]], uiLeft]);
+
+    return {
+      nodes: nodes, edges: edges,
+      w: VIZ.X_RIGHT + VIZ.CW + VIZ.PAD,
+      h: end.y + end.h + VIZ.PAD
+    };
+  }
+
+  function vizCardShadow(n) {
+    return sEl('rect', {
+      x: n.x + 4, y: n.y + 4, width: n.w, height: n.h, rx: 12,
+      fill: 'rgba(26,26,26,.92)'
+    });
+  }
+
+  function vizStationNode(n) {
+    var g = sEl('g');
+    g.appendChild(vizCardShadow(n));
+    g.appendChild(sEl('rect', {
+      x: n.x, y: n.y, width: n.w, height: n.h, rx: 12,
+      fill: '#FFFFFF', stroke: VIZ_INK, 'stroke-width': 2
+    }));
+    g.appendChild(sEl('line', {
+      x1: n.x + 1, y1: n.y + VIZ.HEAD_H, x2: n.x + n.w - 1, y2: n.y + VIZ.HEAD_H,
+      stroke: 'rgba(26,26,26,.18)', 'stroke-width': 2
+    }));
+    // 头部：Hook 色块 + 名称 + 动作数
+    g.appendChild(sEl('rect', {
+      x: n.x + 12, y: n.y + 11, width: 12, height: 12,
+      fill: n.color, stroke: VIZ_INK, 'stroke-width': 2
+    }));
+    g.appendChild(sText(n.x + 32, n.y + VIZ.HEAD_H / 2 + 5, n.label, { size: 13, weight: 800, hand: true }));
+    g.appendChild(sEl('rect', {
+      x: n.x + n.w - 42, y: n.y + 8, width: 30, height: 18, rx: 6,
+      fill: VIZ_CREAM, stroke: VIZ_INK, 'stroke-width': 2
+    }));
+    g.appendChild(sText(n.x + n.w - 27, n.y + VIZ.HEAD_H / 2 + 5, String(n.items.length),
+      { size: 11, anchor: 'middle', weight: 800 }));
+
+    // 动作列表
+    var rowY = n.y + VIZ.HEAD_H + 6;
+    if (!n.items.length) {
+      g.appendChild(sEl('rect', {
+        x: n.x + 10, y: rowY, width: n.w - 20, height: VIZ.ROW_H - 4, rx: 6,
+        fill: 'none', stroke: 'rgba(26,26,26,.28)', 'stroke-width': 2, 'stroke-dasharray': '5 4'
+      }));
+      g.appendChild(sText(n.x + n.w / 2, rowY + (VIZ.ROW_H - 4) / 2 + 4, '（无动作）',
+        { size: 10.5, anchor: 'middle', fill: 'rgba(26,26,26,.42)', hand: true }));
+    } else {
+      n.items.forEach(function (a, i) {
+        var y = rowY + i * VIZ.ROW_H;
+        var hh = VIZ.ROW_H - 4;
+        g.appendChild(sEl('rect', {
+          x: n.x + 10, y: y, width: n.w - 20, height: hh, rx: 6,
+          fill: VIZ_CREAM, stroke: 'rgba(26,26,26,.78)', 'stroke-width': 1.5
+        }));
+        g.appendChild(sText(n.x + 18, y + hh / 2 + 4, String(i + 1),
+          { size: 10, fill: 'rgba(26,26,26,.45)', weight: 800 }));
+        var label = actionLabel(a.type);
+        if (label.length > 10) label = label.slice(0, 9) + '…';
+        g.appendChild(sText(n.x + 34, y + hh / 2 + 4, label, { size: 11.5, weight: 800, hand: true }));
+        g.appendChild(sText(n.x + n.w - 18, y + hh / 2 + 4, a.type,
+          { size: 9.5, anchor: 'end', fill: 'rgba(26,26,26,.45)' }));
+      });
+    }
+    // 底部：hook 键名
+    g.appendChild(sText(n.x + 12, n.y + n.h - 5, n.key, { size: 9.5, fill: 'rgba(26,26,26,.35)' }));
+    return g;
+  }
+
+  function vizPlainNode(n) {
+    var g = sEl('g');
+    g.appendChild(vizCardShadow(n));
+    g.appendChild(sEl('rect', {
+      x: n.x, y: n.y, width: n.w, height: n.h, rx: 12,
+      fill: '#FFFFFF', stroke: VIZ_INK, 'stroke-width': 2
+    }));
+    g.appendChild(sText(n.x + n.w / 2, n.y + n.h / 2 + 5, n.label,
+      { size: 15, weight: 800, anchor: 'middle', hand: true }));
+    return g;
+  }
+
+  function renderVizSvg(model) {
+    var svg = sEl('svg', {
+      viewBox: '0 0 ' + model.w + ' ' + model.h,
+      width: model.w, height: model.h,
+      xmlns: 'http://www.w3.org/2000/svg'
+    });
+    var defs = sEl('defs');
+    var marker = sEl('marker', {
+      id: 'viz-arrow', viewBox: '0 0 10 10', refX: '9', refY: '5',
+      markerWidth: '5', markerHeight: '5', orient: 'auto-start-reverse'
+    });
+    marker.appendChild(sEl('path', { d: 'M0 0 L10 5 L0 10 z', fill: VIZ_INK }));
+    defs.appendChild(marker);
+    svg.appendChild(defs);
+
+    // 连线（直角折线 + 末端箭头）；先画线，节点卡片后画以遮住穿过的线段
+    model.edges.forEach(function (e) {
+      var d = e.pts.map(function (p, i) { return (i ? 'L' : 'M') + p[0] + ' ' + p[1]; }).join(' ');
+      svg.appendChild(sEl('path', {
+        d: d, fill: 'none', stroke: VIZ_INK, 'stroke-width': 2,
+        'stroke-linejoin': 'round', 'marker-end': 'url(#viz-arrow)'
+      }));
+      if (e.label) {
+        svg.appendChild(sText(e.labelAt[0], e.labelAt[1], e.label,
+          { size: 11, hand: true, bg: '#FDFAF5', anchor: e.anchor || 'start' }));
+      }
+    });
+    model.nodes.forEach(function (n) {
+      svg.appendChild(n.kind === 'station' ? vizStationNode(n) : vizPlainNode(n));
+    });
+    return svg;
+  }
+
+  function openVisualize() {
+    if (!state.activeName) { EV.toast('请先打开或新建一个 paradigm', true); return; }
+    var model = buildVizModel();
+    var svg = renderVizSvg(model);
+
+    var stage = EV.el('div');
+    stage.style.display = 'flex';
+    stage.style.alignItems = 'flex-start';
+    stage.style.justifyContent = 'center';
+    stage.style.minWidth = '100%';
+    stage.style.width = 'max-content';
+    stage.style.padding = '16px';
+
+    var scroller = EV.el('div');
+    scroller.style.flex = '1';
+    scroller.style.minHeight = '0';
+    scroller.style.overflow = 'auto';
+    scroller.style.background = '#FDFAF5';
+    scroller.style.backgroundImage = 'radial-gradient(#ded5c8 1px, transparent 1px)';
+    scroller.style.backgroundSize = '20px 20px';
+    scroller.appendChild(stage);
+    stage.appendChild(svg);
+
+    var zoom = 1;
+    function applyZoom(z) {
+      zoom = Math.max(0.3, Math.min(2, z));
+      svg.style.width = (model.w * zoom) + 'px';
+      svg.style.height = (model.h * zoom) + 'px';
+      pct.textContent = Math.round(zoom * 100) + '%';
+    }
+
+    var bar = EV.el('div', 'row');
+    bar.style.gap = '2px';
+    bar.style.marginLeft = 'auto';
+    var minus = EV.el('button', 'ibtn');
+    minus.innerHTML = EV.icon('zoomOut', 14);
+    minus.title = '缩小';
+    minus.onclick = function () { applyZoom(zoom / 1.2); };
+    var pct = EV.el('span');
+    pct.textContent = '100%';
+    pct.style.fontSize = '11.5px';
+    pct.style.color = 'var(--dim)';
+    pct.style.minWidth = '38px';
+    pct.style.textAlign = 'center';
+    var plus = EV.el('button', 'ibtn');
+    plus.innerHTML = EV.icon('zoomIn', 14);
+    plus.title = '放大';
+    plus.onclick = function () { applyZoom(zoom * 1.2); };
+    var fit = EV.el('button', 'ibtn');
+    fit.innerHTML = EV.icon('fit', 14);
+    fit.title = '适应窗口';
+    fit.onclick = function () {
+      applyZoom(Math.min(1, (scroller.clientWidth - 44) / model.w, (scroller.clientHeight - 44) / model.h));
+    };
+    bar.appendChild(minus); bar.appendChild(pct); bar.appendChild(plus); bar.appendChild(fit);
+
+    var inner = EV.el('div');
+    inner.style.display = 'flex';
+    inner.style.flexDirection = 'column';
+    inner.style.flex = '1';
+    inner.style.minHeight = '0';
+    inner.appendChild(scroller);
+    var legend = EV.el('div', 'hint');
+    legend.style.padding = '8px 14px';
+    legend.style.borderTop = '1px solid var(--line)';
+    legend.textContent = '箭头表示信息流转方向；「有工具调用 / 无工具调用 / 失败 / 成功」为分支条件。'
+      + '该图随当前编辑内容实时生成，保存前后皆可预览。';
+    inner.appendChild(legend);
+
+    EV.modal({
+      title: '循环可视化 — ' + state.activeName + '.yaml',
+      width: '1180px',
+      flush: true,
+      node: inner,
+      headExtra: bar,
+      onOpen: function () {
+        applyZoom(Math.min(1, (scroller.clientWidth - 44) / model.w, (scroller.clientHeight - 44) / model.h));
+      }
+    });
   }
 
   EV.defineTab('agentloop', 'Agent Loop', {
