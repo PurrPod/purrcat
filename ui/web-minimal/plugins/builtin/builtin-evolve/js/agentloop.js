@@ -9,6 +9,7 @@
 
   var HOOK_META = [
     { key: 'on_build_system_prompt', color: '#FFD27D', label: '构建系统提示词时' },
+    { key: 'on_input_received', color: '#F0A868', label: '收到输入时' },
     { key: 'on_loop_start', color: '#7FB8E6', label: '循环开始时' },
     { key: 'on_loop_epoch', color: '#8CC98F', label: '每轮循环迭代时' },
     { key: 'on_loop_end', color: '#E8909A', label: '循环结束时' },
@@ -20,10 +21,12 @@
 
   var ACTION_TYPES = [
     { type: 'injection', label: '提示注入' },
+    { type: 'search', label: '搜索' },
     { type: 'file_operation', label: '文件操作' },
     { type: 'skill_info', label: '技能注入' },
     { type: 'memo_injection', label: '记忆注入' },
     { type: 'tool_use_check', label: '工具使用检查' },
+    { type: 'keyword_check', label: 'in检查（关键词检查）', onlyHook: 'on_input_received' },
     { type: 'command_run', label: '命令执行' },
     { type: 'command_on', label: '命令执行（旧版 command_on）' }
   ];
@@ -34,7 +37,12 @@
 
   var FIELD_SCHEMA = {
     injection: [
-      { key: 'content', label: '注入内容', kind: 'textarea', ph: '注入给 Agent 的提示文本' }
+      { key: 'content', label: '注入内容', kind: 'textarea', ph: '注入给 Agent 的提示文本（可用 @USERQUERY 引用本次收到的用户输入）' }
+    ],
+    // 搜索：用 query 调 Search 工具检索能力/记忆/网络，把结果注入给 Agent
+    search: [
+      { key: 'query', label: '搜索内容 query', kind: 'text', ph: '可用 @USERQUERY 引用本次收到的用户输入' },
+      { key: 'route', label: '搜索路由 route（留空=local）', kind: 'select', options: ['local', 'skill', 'mcp', 'memory', 'web'] }
     ],
     file_operation: [
       { key: 'action', label: '操作', kind: 'select', options: ['read', 'exist_check', 'write_in', 'add_in', 'delete'] },
@@ -58,6 +66,13 @@
       { key: 'command', label: '命令', kind: 'text', ph: '要执行的 shell 命令' },
       { key: 'return_log', label: '回传输出 return_log', kind: 'bool' },
       { key: 'failed_prompt', label: '失败提示 failed_prompt', kind: 'text' }
+    ],
+    // in检查：仅「收到输入时」可用（只检查送入该钩子的那批 role=user 消息）
+    keyword_check: [
+      { key: 'keyword', label: '关键词', kind: 'text', ph: '要检查的关键词' },
+      { key: 'type', label: '消息类型 type', kind: 'text', ph: '只检查该类型，如 user / system / workflow_hint；留空不限' },
+      { key: 'successed_prompt', label: '成功提示 successed_prompt', kind: 'text', ph: '命中时注入，可为空' },
+      { key: 'failed_prompt', label: '失败提示 failed_prompt', kind: 'text', ph: '未命中时注入，可为空' }
     ]
   };
   FIELD_SCHEMA.command_on = FIELD_SCHEMA.command_run;
@@ -796,6 +811,11 @@
     }
     card.appendChild(head);
 
+    if (!loose && meta.key === 'on_input_received') {
+      card.appendChild(EV.el('div', 'hint',
+        '本 Hook 在每次以 role=user 注入历史时触发；用 @USERQUERY 引用本次收到的那批 type=user 输入（多条按换行拼接）。'));
+    }
+
     if (hooks.length === 0) {
       card.appendChild(EV.el('div', 'hint', loose ? '（无）' : '暂无动作，点击右上角「添加动作」。'));
       return card;
@@ -815,7 +835,10 @@
 
   function openAddAction(hookKey) {
     var wrap = EV.el('div');
-    ACTION_TYPES.forEach(function (at) {
+    ACTION_TYPES.filter(function (at) {
+      // onlyHook：专属动作只在指定钩子下可选
+      return !at.onlyHook || at.onlyHook === hookKey;
+    }).forEach(function (at) {
       var row = EV.el('div', 'item');
       var nm = EV.el('div', 'item-name', at.label);
       row.appendChild(nm);
@@ -880,8 +903,8 @@
   /* ============================================================================
    * 可视化：当前 paradigm 的「循环信息流转图」
    *   对齐完整模式 AgentLoopEditor 的骨架图语义（无 ReactFlow / mermaid，全部手绘 SVG）：
-   *     构建系统提示词 → 用户输入 → 循环开始 → 每轮循环迭代 ─┬─(有工具调用)→ 工具调用检查 ─┐
-   *                                                        └─(无工具调用)───────────────┴→ 循环结束检查
+   *     构建系统提示词 → 用户输入 → 收到输入时 → 循环开始 → 每轮循环迭代 ─┬─(有工具调用)→ 工具调用检查 ─┐
+   *                                                                    └─(无工具调用)───────────────┴→ 循环结束检查
    *     循环结束检查 ─(失败)→ 回到「每轮循环迭代」；─(成功)→ 结束 → 回到「用户输入」
    * ========================================================================== */
   var VIZ = {
@@ -1007,6 +1030,8 @@
     cur += b.h + VIZ.GAP_V;
     var ui = plain('user_input', '用户输入', VIZ.X_LEFT, cur);
     cur += ui.h + VIZ.GAP_V;
+    var ir = station('on_input_received', VIZ.X_LEFT, cur);
+    cur += ir.h + VIZ.GAP_V;
     var st = station('on_loop_start', VIZ.X_LEFT, cur);
     cur += st.h + VIZ.GAP_V;
 
@@ -1022,7 +1047,8 @@
     }
     // 主干
     edge([vizAnchor(b, 'bottom'), vizAnchor(ui, 'top')]);
-    edge([vizAnchor(ui, 'bottom'), vizAnchor(st, 'top')]);
+    edge([vizAnchor(ui, 'bottom'), vizAnchor(ir, 'top')]);
+    edge([vizAnchor(ir, 'bottom'), vizAnchor(st, 'top')]);
     edge([vizAnchor(st, 'bottom'), vizAnchor(ep, 'top')]);
     // 分支：有工具调用 → 走顶部锚点的水平线；无工具调用 → 直达结束检查
     var rTop = vizAnchor(ep, 'rightTop'), lTop = vizAnchor(tc, 'leftTop');
@@ -1056,7 +1082,8 @@
     card.style.top = n.y + 'px';
     card.style.width = n.w + 'px';
     if (n.kind === 'plain') {
-      card.style.height = n.h + 'px';
+      // 高度由调用方量完再回写：此处 n.h 还是 0，写死会把卡片压成一条黑线
+      if (n.h > 0) card.style.height = n.h + 'px';
       card.appendChild(EV.el('div', 'viz-pt', n.label));
       return card;
     }
@@ -1135,6 +1162,7 @@
     inner.appendChild(canvas);
     inner.appendChild(EV.el('div', 'viz-hint',
       '箭头表示信息流转方向；「有工具调用 / 无工具调用 / 失败 / 成功」为分支条件。'
+      + '「收到输入时」在每次以 role=user 注入历史时触发（用户输入、强制注入、钩子注入）。'
       + '拖拽平移、滚轮缩放；该图随当前编辑内容实时生成，保存前后皆可预览。'));
 
     var model = null;
@@ -1221,11 +1249,17 @@
       node: inner,
       headExtra: bar,
       onOpen: function () {
-        // 卡片先进 DOM 再量高度，坐标与连线锚点才能和实际渲染一致
+        // 卡片先进 DOM 再量高度，坐标与连线锚点才能和实际渲染一致。
+        // 量到的值明显偏小时（卡片自带 overflow:hidden，高度一旦被压小就只剩两条
+        // 边框，视觉上就是一条粗黑线）一律用公式兜底，并回写显式高度钉死。
         model = buildVizModel(function (n) {
           var el = vizCardEl(n);
           world.appendChild(el);
-          return el.offsetHeight || (n.kind === 'station' ? vizStationH(n.items.length) : VIZ.PLAIN_H);
+          var fallback = n.kind === 'station' ? vizStationH(n.items.length) : VIZ.PLAIN_H;
+          var m = el.offsetHeight || 0;
+          n.h = m >= fallback * 0.6 ? m : fallback;
+          el.style.height = n.h + 'px';
+          return n.h;
         });
         svg.setAttribute('width', model.w);
         svg.setAttribute('height', model.h);

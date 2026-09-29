@@ -50,6 +50,8 @@ class Agent:
         self._live_phase = "idle"
         self._history_lock = threading.RLock()
         self._push_lock = threading.RLock()
+        # 🌟 「收到输入时」(on_input_received) 钩子执行中标记：钩子自身的注入不再递归触发
+        self._in_input_hook = False
         self._save_callback = save_callback
         self.model = AgentModel(self.session_id)
         self.model.bind_task(self.session_id, "AgentMain")
@@ -89,6 +91,7 @@ class Agent:
             stage_name, agent=self, epoch=epoch, **kwargs
         )
         all_success = True
+        injected = []
         for res in results:
             if not res.get("success"):
                 all_success = False
@@ -100,7 +103,27 @@ class Agent:
                         "content": json.dumps(hint_data, ensure_ascii=False),
                     }
                 )
+                injected.append(hint_data)
+        # 🌟 任何以 role=user 注入历史的消息都会触发「收到输入时」钩子
+        self._fire_input_received(injected)
         return all_success
+
+    def _fire_input_received(self, messages):
+        """触发「收到输入时」(on_input_received) 钩子。
+
+        messages 是本批以 role=user 注入历史的消息列表：
+        元素形如 {"type": ..., "content": ...}，可能只有 1 条，也可能同批多条。
+        钩子自身的注入不再递归触发（_in_input_hook 防重入）。
+        """
+        if not messages or self._in_input_hook:
+            return
+        self._in_input_hook = True
+        try:
+            self._inject_hook_results(
+                "on_input_received", epoch=0, received_messages=messages
+            )
+        finally:
+            self._in_input_hook = False
 
     def stop(self):
         self._stop_event.set()
@@ -282,6 +305,8 @@ class Agent:
             self._append_history(
                 {"role": "user", "content": json.dumps(batch_data, ensure_ascii=False)}
             )
+            # 🌟 强制注入 / 消费队列：整批（1 条或多条）交给「收到输入时」钩子
+            self._fire_input_received(local_push)
 
     def process_message(self):
         current_interaction_id = self._increment_interaction_id()
@@ -490,6 +515,8 @@ class Agent:
                                 "content": json.dumps(hint_data, ensure_ascii=False),
                             }
                         )
+                        # 🌟 打回提示同样是以 role=user 注入的消息，触发「收到输入时」钩子
+                        self._fire_input_received([hint_data])
                         print(
                             f"[Debug] 当前第 {loop_epoch} 轮条件不足，被打回重新触发模型迭代。"
                         )

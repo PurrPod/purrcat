@@ -17,6 +17,7 @@ import { useTranslation } from '../i18n';
 // 真实 PARADIGM 中支持的 Hook（顺序即流程图展示顺序）；显示名走 i18n：agentLoop.hook_<key>
 const HOOK_META = [
   { key: 'on_build_system_prompt', color: '#FFD27D' },
+  { key: 'on_input_received', color: '#F0A868' },
   { key: 'on_loop_start', color: '#7FB8E6' },
   { key: 'on_loop_epoch', color: '#8CC98F' },
   { key: 'on_loop_end', color: '#E8909A' },
@@ -30,15 +31,22 @@ const HOOK_KEY_SET = new Set<string>(HOOK_KEYS);
 // 可选动作类型（与 hook_handler.py 分发一致；command_on 为旧版别名）；显示名走 i18n：agentLoop.act_<type>
 const ACTION_TYPES = [
   'injection',
+  'search',
   'file_operation',
   'skill_info',
   'memo_injection',
   'tool_use_check',
+  'keyword_check',
   'command_run',
 ] as const;
 
 type ActionTypeKey = (typeof ACTION_TYPES)[number];
 const ACTION_TYPE_SET = new Set<string>(ACTION_TYPES);
+
+// 专属动作：只在指定 Hook 下可选（in检查只出现在「收到输入时」）
+const ACTION_ONLY_HOOK: Partial<Record<ActionTypeKey, HookKey>> = {
+  keyword_check: 'on_input_received',
+};
 
 // 渲染时解析动作显示名：已知类型走 i18n，未知类型（旧版别名等）显示原名
 const actionLabel = (t: (key: string) => string, type: string) =>
@@ -66,6 +74,11 @@ const FIELD_SCHEMA: Record<string, FieldDef[]> = {
     { key: 'content', label: 'agentLoop.fContent', kind: 'textarea', placeholder: 'agentLoop.fContentPh' },
     // 注意：delay / interval 不放在这里——它们仅在 on_loop_epoch（每轮循环运行时）以“二选一开关”出现
   ],
+  // 搜索：用 query 调 Search 工具检索能力/记忆/网络，把结果注入给 Agent
+  search: [
+    { key: 'query', label: 'agentLoop.fQuery', kind: 'text', placeholder: 'agentLoop.fQueryPh' },
+    { key: 'route', label: 'agentLoop.fRoute', kind: 'select', options: ['local', 'skill', 'mcp', 'memory', 'web'] },
+  ],
   file_operation: [
     { key: 'action', label: 'agentLoop.fAction', kind: 'select', options: ['read', 'exist_check', 'write_in', 'add_in', 'delete'] },
     { key: 'path', label: 'agentLoop.fPath', kind: 'text', placeholder: 'agentLoop.fPathPh' },
@@ -88,6 +101,13 @@ const FIELD_SCHEMA: Record<string, FieldDef[]> = {
   ],
   tool_use_check: [
     { key: 'name', label: 'agentLoop.fToolName', kind: 'text', placeholder: 'agentLoop.fToolNamePh' },
+    { key: 'successed_prompt', label: 'agentLoop.fSuccessPrompt', kind: 'text' },
+    { key: 'failed_prompt', label: 'agentLoop.fFailedPrompt', kind: 'text' },
+  ],
+  // in检查：仅「收到输入时」可用（只检查该钩子收到的那批 role=user 消息）
+  keyword_check: [
+    { key: 'keyword', label: 'agentLoop.fKeyword', kind: 'text', placeholder: 'agentLoop.fKeywordPh' },
+    { key: 'type', label: 'agentLoop.fMsgType', kind: 'text', placeholder: 'agentLoop.fMsgTypePh' },
     { key: 'successed_prompt', label: 'agentLoop.fSuccessPrompt', kind: 'text' },
     { key: 'failed_prompt', label: 'agentLoop.fFailedPrompt', kind: 'text' },
   ],
@@ -1388,6 +1408,10 @@ const AgentLoopEditor = forwardRef<AgentLoopEditorHandle, AgentLoopEditorProps>(
     const userInputTop = cursorY;
     put(plain('user_input', t('agentLoop.userNode')), X_LEFT, cursorY, PLAIN_H);
 
+    // 收到输入时（每次以 role=user 注入历史都会触发）
+    const inputItems = paradigmState.on_input_received;
+    put(station('on_input_received', inputItems), X_LEFT, cursorY, STATION_H(inputItems.length));
+
     const startItems = paradigmState.on_loop_start;
     put(station('on_loop_start', startItems), X_LEFT, cursorY, STATION_H(startItems.length));
 
@@ -1461,7 +1485,8 @@ const AgentLoopEditor = forwardRef<AgentLoopEditorHandle, AgentLoopEditorProps>(
 
     // ---- 连线（全部横平竖直，使用直角 step 连线） ----
     addEdge('on_build_system_prompt', 's_bot', 'user_input', 't_top');
-    addEdge('user_input', 's_bot', 'on_loop_start', 't_top');
+    addEdge('user_input', 's_bot', 'on_input_received', 't_top');
+    addEdge('on_input_received', 's_bot', 'on_loop_start', 't_top');
     addEdge('on_loop_start', 's_bot', 'on_loop_epoch', 't_top');
     // 分支：有工具调用 → 工具调用检查；无工具调用 → 直达结束检查
     // 正向线走顶部固定锚点：两站顶部对齐，恒为水平线，不受站点高度差影响
@@ -1544,6 +1569,13 @@ const AgentLoopEditor = forwardRef<AgentLoopEditorHandle, AgentLoopEditorProps>(
                     </div>
                   </div>
 
+                  {/* 「收到输入时」专属说明：@USERQUERY 引用本次收到的用户输入 */}
+                  {hook.key === 'on_input_received' && (
+                    <div className="px-3 py-2 text-[11px] font-bold text-ink/50 border-t-2 border-ink/10">
+                      {t('agentLoop.userQueryHint')}
+                    </div>
+                  )}
+
                   {/* 添加动作下拉 */}
                   {menuFor === hook.key && (
                     <div
@@ -1551,7 +1583,7 @@ const AgentLoopEditor = forwardRef<AgentLoopEditorHandle, AgentLoopEditorProps>(
                       className="absolute top-full right-2 left-2 z-40 bg-paper border-2 border-ink shadow-[6px_6px_0px_0px_rgba(26,26,26,1)] mt-2"
                       onClick={(e) => e.stopPropagation()}
                     >
-                      {ACTION_TYPES.map((at) => (
+                      {ACTION_TYPES.filter((at) => !ACTION_ONLY_HOOK[at] || ACTION_ONLY_HOOK[at] === hook.key).map((at) => (
                         <button
                           key={at}
                           onClick={() => handleAddAction(hook.key, at)}

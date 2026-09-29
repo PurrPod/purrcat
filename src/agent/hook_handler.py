@@ -28,6 +28,21 @@ PATH_ALIASES = {
 }
 
 
+def _expand_user_query(value, user_query: str):
+    """把钩子参数里的 @USERQUERY 占位符替换成本次收到的输入。
+
+    @USERQUERY 指「收到输入时」(on_input_received) 那一批里 type=user 的消息，
+    多条直接用换行符拼接。返回新对象，不改动 YAML 载入的原始配置。
+    """
+    if isinstance(value, str):
+        return value.replace("@USERQUERY", user_query)
+    if isinstance(value, dict):
+        return {k: _expand_user_query(v, user_query) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_expand_user_query(v, user_query) for v in value]
+    return value
+
+
 def _default_paradigm_path() -> str:
     """优先 paradigms/PARADIGM.yaml；读不到时用 initial.py 的默认模板就地生成，然后再读取。"""
     if os.path.exists(USER_PARADIGM_PATH):
@@ -98,8 +113,19 @@ class HookHandler:
         actions = self.hooks[stage_name]
         results = []
 
+        # @USERQUERY：仅当本阶段带 received_messages（即「收到输入时」）时才展开
+        user_query = None
+        if "received_messages" in kwargs:
+            user_query = "\n".join(
+                str(msg.get("content", ""))
+                for msg in (kwargs.get("received_messages") or [])
+                if msg.get("type") == "user"
+            )
+
         for task in actions:
             for action_type, params in task.items():
+                if user_query is not None:
+                    params = _expand_user_query(params, user_query)
                 if not self._should_trigger(params, epoch):
                     continue
 
@@ -120,6 +146,11 @@ class HookHandler:
                 elif action_type == "memo_injection":
                     # 兼容保留原有的记忆注入机制
                     res = self._memo_injection(params, **kwargs)
+                elif action_type == "keyword_check":
+                    # in检查：仅「收到输入时」(on_input_received) 这类带 received_messages 的钩子有意义
+                    res = self._keyword_check(params, **kwargs)
+                elif action_type == "search":
+                    res = self._search(params, **kwargs)
 
                 # 循环结束时的“退出期望”：检查项可声明 expect: fail，
                 # 表示该条件“未满足”才算通过，从而决定能否跳出循环。
@@ -368,6 +399,72 @@ class HookHandler:
                 return {"success": False, "inject_prompt": failed_prompt}
 
         return {"success": True, "inject_prompt": successed_prompt}
+
+    def _search(self, params, **kwargs):
+        """search 动作：用 query 调 Search 工具检索，把检索结果注入为提示。
+
+        参数：
+          query  搜索内容（支持 @USERQUERY 占位符）
+          route  搜索路由：skill / mcp / memory / local（技能+MCP）/ web，默认 local
+
+        检索结果（含「未找到」与失败原因）统一作为 inject_prompt 注入，
+        以便 Agent 判断有无对应能力或历史经验。
+        """
+        query = str(params.get("query") or "").strip()
+        route = str(params.get("route") or "local").strip().lower()
+
+        if not query:
+            return {"success": False, "inject_prompt": ""}
+
+        try:
+            if route == "memory":
+                from src.tool.memo.memo import Memo
+
+                res = Memo(action="search", query={"prompt": query})
+            else:
+                from src.tool.search.search import Search
+
+                res = Search(route=route, query=query)
+        except Exception as e:
+            return {"success": False, "inject_prompt": f"搜索失败({route}): {e}"}
+
+        if not isinstance(res, dict):
+            return {"success": True, "inject_prompt": str(res)}
+        meta_type = (res.get("metadata") or {}).get("type")
+        return {
+            "success": meta_type != "error",
+            "inject_prompt": str(res.get("content") or ""),
+        }
+
+    def _keyword_check(self, params, **kwargs):
+        """in检查（关键词检查）：只检查本批收到的输入里是否包含关键词。
+
+        参数：
+          keyword          关键词
+          type             只检查该类型的消息（可为空，为空则不限制类型）
+          successed_prompt 命中时注入的提示（可为空）
+          failed_prompt    未命中时注入的提示（可为空）
+
+        输入来源是 kwargs["received_messages"]，由「收到输入时」钩子传入，
+        一次可能只有 1 条，也可能同批多条；任一命中即算通过。
+        """
+        keyword = params.get("keyword", "")
+        msg_type = params.get("type")
+        successed_prompt = params.get("successed_prompt", "")
+        failed_prompt = params.get("failed_prompt", "")
+        received = kwargs.get("received_messages") or []
+
+        hit = False
+        for msg in received:
+            if msg_type and msg.get("type") != msg_type:
+                continue
+            if keyword and keyword in str(msg.get("content", "")):
+                hit = True
+                break
+
+        if hit:
+            return {"success": True, "inject_prompt": successed_prompt}
+        return {"success": False, "inject_prompt": failed_prompt}
 
     def _memo_injection(self, params, **kwargs):
         agent = kwargs.get("agent")
