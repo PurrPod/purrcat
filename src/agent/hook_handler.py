@@ -1,5 +1,6 @@
 import os
 import platform
+import re
 import yaml
 import json
 import subprocess
@@ -28,18 +29,28 @@ PATH_ALIASES = {
 }
 
 
-def _expand_user_query(value, user_query: str):
-    """把钩子参数里的 @USERQUERY 占位符替换成本次收到的输入。
+# 可以在参数里被展开成「内容」的引用符号（@RULES 这类文件符号 + @SYS + @USERQUERY）
+CONTENT_ALIASES = tuple(PATH_ALIASES.keys()) + ("@SYS", "@USERQUERY")
+_REF_RE = re.compile("|".join(re.escape(a) for a in CONTENT_ALIASES))
 
-    @USERQUERY 指「收到输入时」(on_input_received) 那一批里 type=user 的消息，
-    多条直接用换行符拼接。返回新对象，不改动 YAML 载入的原始配置。
+
+def _expand_refs(value, resolve):
+    """把钩子参数里的 @引用 展开成具体内容，返回新对象，不改动 YAML 载入的原始配置。
+
+    resolve(alias) 返回该引用的内容；返回 None 表示当前场景不展开（保持原始 @符号）。
+    单次左到右替换，展开出来的内容不会被再次当作引用处理。
     """
+
+    def sub(m):
+        text = resolve(m.group(0))
+        return m.group(0) if text is None else text
+
     if isinstance(value, str):
-        return value.replace("@USERQUERY", user_query)
+        return _REF_RE.sub(sub, value)
     if isinstance(value, dict):
-        return {k: _expand_user_query(v, user_query) for k, v in value.items()}
+        return {k: _expand_refs(v, resolve) for k, v in value.items()}
     if isinstance(value, list):
-        return [_expand_user_query(v, user_query) for v in value]
+        return [_expand_refs(v, resolve) for v in value]
     return value
 
 
@@ -112,20 +123,16 @@ class HookHandler:
         epoch = kwargs.get("epoch", 0)
         actions = self.hooks[stage_name]
         results = []
-
-        # @USERQUERY：仅当本阶段带 received_messages（即「收到输入时」）时才展开
-        user_query = None
-        if "received_messages" in kwargs:
-            user_query = "\n".join(
-                str(msg.get("content", ""))
-                for msg in (kwargs.get("received_messages") or [])
-                if msg.get("type") == "user"
-            )
+        ref_cache = {}  # @引用 → 内容，同一次 execute 内复用，避免重复读文件
 
         for task in actions:
             for action_type, params in task.items():
-                if user_query is not None:
-                    params = _expand_user_query(params, user_query)
+                # @引用展开：file_operation 除外，那里需要原始路径去读文件
+                if action_type != "file_operation":
+                    params = _expand_refs(
+                        params,
+                        lambda alias: self._ref_content(alias, kwargs, ref_cache),
+                    )
                 if not self._should_trigger(params, epoch):
                     continue
 
@@ -199,6 +206,41 @@ class HookHandler:
         if path.startswith("agent_vm"):
             return os.path.join(AGENT_VM_DIR, path.lstrip("agent_vm"))
         return path
+
+    def _ref_content(self, alias, kwargs, cache):
+        """取 @引用的展开内容（供非 file_operation 的参数直接引用）。
+
+        - @USERQUERY：仅「收到输入时」这类带 received_messages 的钩子展开，
+          指代本批 type=user 的消息（多条按换行拼接）
+        - @RULES/@SOUL/@MEMORY/@INFO：读取对应文件内容
+        - @SYS：现场生成当前系统信息
+
+        取不到内容时返回 None，参数里的原始 @符号保持不变。
+        """
+        if alias in cache:
+            return cache[alias]
+
+        text = None
+        if alias == "@USERQUERY":
+            if "received_messages" in kwargs:
+                text = "\n".join(
+                    str(msg.get("content", ""))
+                    for msg in (kwargs.get("received_messages") or [])
+                    if msg.get("type") == "user"
+                )
+        elif alias == "@SYS":
+            text = self._get_system_info()
+        else:
+            path = PATH_ALIASES.get(alias)
+            if path and os.path.exists(path):
+                try:
+                    with open(path, "r", encoding="utf-8") as f:
+                        text = f.read().strip()
+                except Exception:
+                    text = None
+
+        cache[alias] = text
+        return text
 
     def _file_operation(self, params, **kwargs):
         raw_path = params.get("path", "")

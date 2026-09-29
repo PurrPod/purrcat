@@ -37,16 +37,16 @@
 
   var FIELD_SCHEMA = {
     injection: [
-      { key: 'content', label: '注入内容', kind: 'textarea', ph: '注入给 Agent 的提示文本（可用 @USERQUERY 引用本次收到的用户输入）' }
+      { key: 'content', label: '注入内容', kind: 'textarea', ph: '注入给 Agent 的提示文本（可用 @RULES/@SOUL/@MEMORY/@INFO/@SYS/@USERQUERY 直接引用其内容）' }
     ],
     // 搜索：用 query 调 Search 工具检索能力/记忆/网络，把结果注入给 Agent
     search: [
-      { key: 'query', label: '搜索内容 query', kind: 'text', ph: '可用 @USERQUERY 引用本次收到的用户输入' },
+      { key: 'query', label: '搜索内容 query', kind: 'text', ph: '可用 @USERQUERY 等 @引用 拼进搜索内容' },
       { key: 'route', label: '搜索路由 route（留空=local）', kind: 'select', options: ['local', 'skill', 'mcp', 'memory', 'web'] }
     ],
     file_operation: [
       { key: 'action', label: '操作', kind: 'select', options: ['read', 'exist_check', 'write_in', 'add_in', 'delete'] },
-      { key: 'path', label: '路径', kind: 'text', ph: '例如 @RULES / @SYS（系统信息）/ agent_vm/xxx.txt' },
+      { key: 'path', label: '路径', kind: 'text', ph: '例如 @RULES / @SYS（系统信息）/ agent_vm/xxx.txt（此处不展开，按路径读取）' },
       { key: 'content', label: '写入内容', kind: 'textarea', ph: 'write_in / add_in 时写入的内容', when: { key: 'action', in: ['write_in', 'add_in'] } },
       { key: 'failed_prompt', label: '失败提示 failed_prompt', kind: 'text' }
     ],
@@ -100,14 +100,15 @@
     drawers: { files: true, refs: true }
   };
 
-  // 「特殊引用说明」：与后端 hook_handler.py 的 PATH_ALIASES / @SYS / @USERQUERY 保持一致
+  // 「特殊引用说明」：与后端 hook_handler.py 的 PATH_ALIASES / @SYS / @USERQUERY 保持一致。
+  // 这些符号在非 file_operation 的字符串参数里会展开成具体内容，在 file_operation 里只当路径用
   var REFS = [
-    { k: '@RULES', d: '系统规则指南', use: 'file_operation.path', to: 'src/agent/system_rules/RULES.md' },
-    { k: '@SOUL', d: '人格设定', use: 'file_operation.path', to: '~/.purrcat/core/SOUL.md' },
-    { k: '@MEMORY', d: '长期记忆', use: 'file_operation.path', to: '~/.purrcat/core/MEMORY.md' },
-    { k: '@INFO', d: '用户信息', use: 'file_operation.path', to: '~/.purrcat/core/info.json' },
-    { k: '@SYS', d: '实时系统信息（不读文件，直接注入）', use: 'file_operation 且 action=read', to: 'OS / 主机名 / CPU / GPU / AgentVM 路径' },
-    { k: '@USERQUERY', d: '本次收到的 type=user 输入，多条按换行拼接', use: '「收到输入时」下任意字符串参数', to: '仅该钩子的当前批次' }
+    { k: '@RULES', d: '系统规则指南', to: '内容可引用 · src/agent/system_rules/RULES.md' },
+    { k: '@SOUL', d: '人格设定', to: '内容可引用 · ~/.purrcat/core/SOUL.md' },
+    { k: '@MEMORY', d: '长期记忆', to: '内容可引用 · ~/.purrcat/core/MEMORY.md' },
+    { k: '@INFO', d: '用户信息', to: '内容可引用 · ~/.purrcat/core/info.json' },
+    { k: '@SYS', d: '实时系统信息（不读文件）', to: '内容可引用 · OS / 主机名 / CPU / GPU / AgentVM 路径' },
+    { k: '@USERQUERY', d: '本次收到的 type=user 输入，多条按换行拼接', to: '内容可引用 · 仅「收到输入时」钩子' }
   ];
 
   var sideBodyEl, toolbarEl, bodyEl;
@@ -328,10 +329,10 @@
     REFS.forEach(function (r) {
       var box = EV.el('div', 'ref');
       box.appendChild(EV.el('div', 'ref-k', r.k + '  ' + r.d));
-      box.appendChild(EV.el('div', 'ref-d', r.use + ' → ' + r.to));
+      box.appendChild(EV.el('div', 'ref-d', r.to));
       body.appendChild(box);
     });
-    body.appendChild(EV.el('div', 'hint', '路径另支持 agent_vm/…、.purrcat/…、src/… 前缀。'));
+    body.appendChild(EV.el('div', 'hint', '以上符号在 file_operation 里不展开，直接按路径读取文件；路径另支持 agent_vm/…、.purrcat/…、src/… 前缀。'));
   }
 
   function renderFileList(body) {
