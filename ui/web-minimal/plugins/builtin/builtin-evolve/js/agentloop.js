@@ -885,18 +885,58 @@
    *     循环结束检查 ─(失败)→ 回到「每轮循环迭代」；─(成功)→ 结束 → 回到「用户输入」
    * ========================================================================== */
   var VIZ = {
-    CW: 264, HEAD_H: 34, ROW_H: 26, FOOT_H: 15, PLAIN_H: 52, GAP_V: 62, PAD: 30,
-    X_LEFT: 200
+    CW: 268, HEAD_H: 32, ROW_H: 24, PLAIN_H: 52, GAP_V: 54, PAD: 26, X_LEFT: 210
   };
-  VIZ.X_RIGHT = VIZ.X_LEFT + 404;
-  VIZ.RAIL1 = VIZ.X_LEFT - 64;    // 内轨：结束检查(失败) → 每轮循环迭代
-  VIZ.RAIL2 = VIZ.X_LEFT - 128;   // 外轨：结束 → 用户输入
+  VIZ.X_RIGHT = VIZ.X_LEFT + 400;
+  VIZ.RAIL1 = VIZ.X_LEFT - 62;    // 内轨：结束检查(失败) → 每轮循环迭代
+  VIZ.RAIL2 = VIZ.X_LEFT - 124;   // 外轨：结束 → 用户输入
   var VIZ_INK = '#1A1A1A';
   var VIZ_HAND = '"Comic Sans MS", cursive';
-  var VIZ_CREAM = '#F7F3EA';
 
+  // 卡片高度兜底（DOM 已布局时以实测 offsetHeight 为准）
   function vizStationH(count) {
-    return VIZ.HEAD_H + (count > 0 ? count * VIZ.ROW_H : VIZ.ROW_H) + VIZ.FOOT_H;
+    return count > 0 ? (VIZ.HEAD_H + count * VIZ.ROW_H + 26) : (VIZ.HEAD_H + 50);
+  }
+
+  // 卡片用 DOM 渲染（文字始终原生清晰），画布只让 SVG 承担连线
+  var VIZ_CSS = ''
+    + '.viz-canvas{position:relative;overflow:hidden;cursor:grab;'
+    + 'background:radial-gradient(circle at 1px 1px, rgba(26,26,26,.13) 1px, transparent 0) 0 0/20px 20px, #FDFAF5}'
+    + '.viz-canvas.drag{cursor:grabbing}'
+    + '.viz-world{position:absolute;left:0;top:0;transform-origin:0 0}'
+    + '.viz-edges{position:absolute;left:0;top:0;overflow:visible;pointer-events:none}'
+    + '.viz-lbl{font-family:"Comic Sans MS",cursive;font-size:12px;font-weight:700;fill:#1A1A1A;'
+    + 'paint-order:stroke;stroke:#FDFAF5;stroke-width:4px;stroke-linejoin:round}'
+    + '.viz-card{position:absolute;display:flex;flex-direction:column;background:#fff;'
+    + 'border:2px solid #1A1A1A;border-radius:12px;box-shadow:4px 4px 0 rgba(26,26,26,1);overflow:hidden}'
+    + '.viz-card.plain{align-items:center;justify-content:center}'
+    + '.viz-pt{font-family:"Comic Sans MS",cursive;font-size:15px;font-weight:800;color:#1A1A1A}'
+    + '.viz-ch{display:flex;align-items:center;gap:8px;padding:0 10px;border-bottom:2px solid rgba(26,26,26,.16);flex:none}'
+    + '.viz-dot{width:12px;height:12px;flex:none;border:2px solid #1A1A1A;border-radius:3px}'
+    + '.viz-ct{flex:1;min-width:0;font-family:"Comic Sans MS",cursive;font-size:13px;font-weight:800;color:#1A1A1A;'
+    + 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis}'
+    + '.viz-cn{flex:none;font-size:11px;font-weight:800;line-height:16px;padding:0 6px;color:#1A1A1A;'
+    + 'background:#F7F3EA;border:2px solid #1A1A1A;border-radius:6px}'
+    + '.viz-cb{display:flex;flex-direction:column;gap:4px;padding:5px 10px 6px}'
+    + '.viz-row{display:flex;align-items:center;gap:6px;padding:0 6px;background:#F7F3EA;'
+    + 'border:1.5px solid rgba(26,26,26,.78);border-radius:6px}'
+    + '.viz-ri{flex:none;font-size:10.5px;font-weight:800;color:rgba(26,26,26,.45)}'
+    + '.viz-rl{flex:1;min-width:0;font-family:"Comic Sans MS",cursive;font-size:12px;font-weight:800;color:#1A1A1A;'
+    + 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis}'
+    + '.viz-rt{flex:none;font-size:10.5px;color:rgba(26,26,26,.45)}'
+    + '.viz-empty{height:20px;display:flex;align-items:center;justify-content:center;'
+    + 'border:2px dashed rgba(26,26,26,.28);border-radius:6px;'
+    + 'font-family:"Comic Sans MS",cursive;font-size:11px;color:rgba(26,26,26,.42)}'
+    + '.viz-ck{padding:0 10px 5px;font-size:10px;color:rgba(26,26,26,.35)}'
+    + '.viz-hint{flex:none;padding:8px 14px;border-top:1px solid rgba(15,17,21,.08);'
+    + 'font-size:11.5px;line-height:1.7;color:#8b96a3}';
+
+  function vizInjectStyle() {
+    if (document.getElementById('viz-style')) return;
+    var st = document.createElement('style');
+    st.id = 'viz-style';
+    st.textContent = VIZ_CSS;
+    document.head.appendChild(st);
   }
   function sEl(tag, attrs) {
     var n = document.createElementNS('http://www.w3.org/2000/svg', tag);
@@ -936,8 +976,12 @@
     return [n.x + n.w, n.y + n.h - 11];   // rightLow
   }
 
-  function buildVizModel() {
+  // measure(n) 由调用方提供：先建卡片再量高度，保证连线锚点与 DOM 实际高度一致
+  function buildVizModel(measure) {
     var nodes = [];
+    var hOf = measure || function (n) {
+      return n.kind === 'station' ? vizStationH(n.items.length) : VIZ.PLAIN_H;
+    };
     function station(key, x, y) {
       var actions = state.hooks[key] || [];
       var meta = null;
@@ -945,13 +989,15 @@
       var n = {
         id: key, kind: 'station', key: key, label: hookLabel(key),
         color: (meta && meta.color) || '#cccccc', items: actions,
-        x: x, y: y, w: VIZ.CW, h: vizStationH(actions.length)
+        x: x, y: y, w: VIZ.CW, h: 0
       };
+      n.h = hOf(n);
       nodes.push(n);
       return n;
     }
     function plain(id, label, x, y) {
-      var n = { id: id, kind: 'plain', label: label, x: x, y: y, w: VIZ.CW, h: VIZ.PLAIN_H };
+      var n = { id: id, kind: 'plain', label: label, x: x, y: y, w: VIZ.CW, h: 0 };
+      n.h = hOf(n);
       nodes.push(n);
       return n;
     }
@@ -1003,86 +1049,45 @@
     };
   }
 
-  function vizCardShadow(n) {
-    return sEl('rect', {
-      x: n.x + 4, y: n.y + 4, width: n.w, height: n.h, rx: 12,
-      fill: 'rgba(26,26,26,.92)'
-    });
-  }
+  // Hook 站卡片 / 普通节点卡片：全部用 DOM，文字不参与缩放栅格化
+  function vizCardEl(n) {
+    var card = EV.el('div', 'viz-card' + (n.kind === 'plain' ? ' plain' : ''));
+    card.style.left = n.x + 'px';
+    card.style.top = n.y + 'px';
+    card.style.width = n.w + 'px';
+    if (n.kind === 'plain') {
+      card.style.height = n.h + 'px';
+      card.appendChild(EV.el('div', 'viz-pt', n.label));
+      return card;
+    }
+    var head = EV.el('div', 'viz-ch');
+    head.style.height = VIZ.HEAD_H + 'px';
+    var dot = EV.el('span', 'viz-dot');
+    dot.style.background = n.color;
+    head.appendChild(dot);
+    head.appendChild(EV.el('span', 'viz-ct', n.label));
+    head.appendChild(EV.el('span', 'viz-cn', String(n.items.length)));
+    card.appendChild(head);
 
-  function vizStationNode(n) {
-    var g = sEl('g');
-    g.appendChild(vizCardShadow(n));
-    g.appendChild(sEl('rect', {
-      x: n.x, y: n.y, width: n.w, height: n.h, rx: 12,
-      fill: '#FFFFFF', stroke: VIZ_INK, 'stroke-width': 2
-    }));
-    g.appendChild(sEl('line', {
-      x1: n.x + 1, y1: n.y + VIZ.HEAD_H, x2: n.x + n.w - 1, y2: n.y + VIZ.HEAD_H,
-      stroke: 'rgba(26,26,26,.18)', 'stroke-width': 2
-    }));
-    // 头部：Hook 色块 + 名称 + 动作数
-    g.appendChild(sEl('rect', {
-      x: n.x + 12, y: n.y + 11, width: 12, height: 12,
-      fill: n.color, stroke: VIZ_INK, 'stroke-width': 2
-    }));
-    g.appendChild(sText(n.x + 32, n.y + VIZ.HEAD_H / 2 + 5, n.label, { size: 13, weight: 800, hand: true }));
-    g.appendChild(sEl('rect', {
-      x: n.x + n.w - 42, y: n.y + 8, width: 30, height: 18, rx: 6,
-      fill: VIZ_CREAM, stroke: VIZ_INK, 'stroke-width': 2
-    }));
-    g.appendChild(sText(n.x + n.w - 27, n.y + VIZ.HEAD_H / 2 + 5, String(n.items.length),
-      { size: 11, anchor: 'middle', weight: 800 }));
-
-    // 动作列表
-    var rowY = n.y + VIZ.HEAD_H + 6;
+    var body = EV.el('div', 'viz-cb');
     if (!n.items.length) {
-      g.appendChild(sEl('rect', {
-        x: n.x + 10, y: rowY, width: n.w - 20, height: VIZ.ROW_H - 4, rx: 6,
-        fill: 'none', stroke: 'rgba(26,26,26,.28)', 'stroke-width': 2, 'stroke-dasharray': '5 4'
-      }));
-      g.appendChild(sText(n.x + n.w / 2, rowY + (VIZ.ROW_H - 4) / 2 + 4, '（无动作）',
-        { size: 10.5, anchor: 'middle', fill: 'rgba(26,26,26,.42)', hand: true }));
+      body.appendChild(EV.el('div', 'viz-empty', '（无动作）'));
     } else {
       n.items.forEach(function (a, i) {
-        var y = rowY + i * VIZ.ROW_H;
-        var hh = VIZ.ROW_H - 4;
-        g.appendChild(sEl('rect', {
-          x: n.x + 10, y: y, width: n.w - 20, height: hh, rx: 6,
-          fill: VIZ_CREAM, stroke: 'rgba(26,26,26,.78)', 'stroke-width': 1.5
-        }));
-        g.appendChild(sText(n.x + 18, y + hh / 2 + 4, String(i + 1),
-          { size: 10, fill: 'rgba(26,26,26,.45)', weight: 800 }));
-        var label = actionLabel(a.type);
-        if (label.length > 10) label = label.slice(0, 9) + '…';
-        g.appendChild(sText(n.x + 34, y + hh / 2 + 4, label, { size: 11.5, weight: 800, hand: true }));
-        g.appendChild(sText(n.x + n.w - 18, y + hh / 2 + 4, a.type,
-          { size: 9.5, anchor: 'end', fill: 'rgba(26,26,26,.45)' }));
+        var row = EV.el('div', 'viz-row');
+        row.style.height = (VIZ.ROW_H - 4) + 'px';
+        row.appendChild(EV.el('span', 'viz-ri', String(i + 1)));
+        row.appendChild(EV.el('span', 'viz-rl', actionLabel(a.type)));
+        row.appendChild(EV.el('span', 'viz-rt', a.type));
+        body.appendChild(row);
       });
     }
-    // 底部：hook 键名
-    g.appendChild(sText(n.x + 12, n.y + n.h - 5, n.key, { size: 9.5, fill: 'rgba(26,26,26,.35)' }));
-    return g;
+    card.appendChild(body);
+    card.appendChild(EV.el('div', 'viz-ck', n.key));
+    return card;
   }
 
-  function vizPlainNode(n) {
-    var g = sEl('g');
-    g.appendChild(vizCardShadow(n));
-    g.appendChild(sEl('rect', {
-      x: n.x, y: n.y, width: n.w, height: n.h, rx: 12,
-      fill: '#FFFFFF', stroke: VIZ_INK, 'stroke-width': 2
-    }));
-    g.appendChild(sText(n.x + n.w / 2, n.y + n.h / 2 + 5, n.label,
-      { size: 15, weight: 800, anchor: 'middle', hand: true }));
-    return g;
-  }
-
-  function renderVizSvg(model) {
-    var svg = sEl('svg', {
-      viewBox: '0 0 ' + model.w + ' ' + model.h,
-      width: model.w, height: model.h,
-      xmlns: 'http://www.w3.org/2000/svg'
-    });
+  function vizDrawEdges(svg, model) {
     var defs = sEl('defs');
     var marker = sEl('marker', {
       id: 'viz-arrow', viewBox: '0 0 10 10', refX: '9', refY: '5',
@@ -1092,7 +1097,7 @@
     defs.appendChild(marker);
     svg.appendChild(defs);
 
-    // 连线（直角折线 + 末端箭头）；先画线，节点卡片后画以遮住穿过的线段
+    // 直角折线 + 末端箭头（卡片是 DOM 之后绘制，自然遮住穿过的线段）
     model.edges.forEach(function (e) {
       var d = e.pts.map(function (p, i) { return (i ? 'L' : 'M') + p[0] + ' ' + p[1]; }).join(' ');
       svg.appendChild(sEl('path', {
@@ -1100,45 +1105,66 @@
         'stroke-linejoin': 'round', 'marker-end': 'url(#viz-arrow)'
       }));
       if (e.label) {
-        svg.appendChild(sText(e.labelAt[0], e.labelAt[1], e.label,
-          { size: 11, hand: true, bg: '#FDFAF5', anchor: e.anchor || 'start' }));
+        var t = sText(e.labelAt[0], e.labelAt[1], e.label,
+          { size: 12, hand: true, anchor: e.anchor || 'start' });
+        t.setAttribute('class', 'viz-lbl');
+        svg.appendChild(t);
       }
     });
-    model.nodes.forEach(function (n) {
-      svg.appendChild(n.kind === 'station' ? vizStationNode(n) : vizPlainNode(n));
-    });
-    return svg;
   }
 
   function openVisualize() {
     if (!state.activeName) { EV.toast('请先打开或新建一个 paradigm', true); return; }
-    var model = buildVizModel();
-    var svg = renderVizSvg(model);
+    vizInjectStyle();
 
-    var stage = EV.el('div');
-    stage.style.display = 'flex';
-    stage.style.alignItems = 'flex-start';
-    stage.style.justifyContent = 'center';
-    stage.style.minWidth = '100%';
-    stage.style.width = 'max-content';
-    stage.style.padding = '16px';
+    var svg = sEl('svg', { 'class': 'viz-edges' });
+    var world = EV.el('div', 'viz-world');
+    world.appendChild(svg);
+    var canvas = EV.el('div', 'viz-canvas');
+    // 画布子元素全是绝对定位，必须给一个确定高度，否则弹层会被压塌
+    canvas.style.flex = 'none';
+    canvas.style.height = 'calc(88vh - 126px)';
+    canvas.style.minHeight = '320px';
+    canvas.appendChild(world);
 
-    var scroller = EV.el('div');
-    scroller.style.flex = '1';
-    scroller.style.minHeight = '0';
-    scroller.style.overflow = 'auto';
-    scroller.style.background = '#FDFAF5';
-    scroller.style.backgroundImage = 'radial-gradient(#ded5c8 1px, transparent 1px)';
-    scroller.style.backgroundSize = '20px 20px';
-    scroller.appendChild(stage);
-    stage.appendChild(svg);
+    var inner = EV.el('div');
+    inner.style.display = 'flex';
+    inner.style.flexDirection = 'column';
+    inner.style.flex = '1';
+    inner.style.minHeight = '0';
+    inner.appendChild(canvas);
+    inner.appendChild(EV.el('div', 'viz-hint',
+      '箭头表示信息流转方向；「有工具调用 / 无工具调用 / 失败 / 成功」为分支条件。'
+      + '拖拽平移、滚轮缩放；该图随当前编辑内容实时生成，保存前后皆可预览。'));
 
-    var zoom = 1;
-    function applyZoom(z) {
-      zoom = Math.max(0.3, Math.min(2, z));
-      svg.style.width = (model.w * zoom) + 'px';
-      svg.style.height = (model.h * zoom) + 'px';
-      pct.textContent = Math.round(zoom * 100) + '%';
+    var model = null;
+    var view = { x: 20, y: 20, s: 1 };
+
+    var pct = EV.el('button', 'ibtn');
+    pct.style.width = 'auto';
+    pct.style.padding = '0 7px';
+    pct.style.fontSize = '11.5px';
+    pct.style.fontWeight = '800';
+    pct.title = '恢复 100%（1:1 原尺寸，文字最清晰）';
+    pct.onclick = function () { setScale(1); };
+
+    function applyView() {
+      world.style.transform = 'translate(' + view.x + 'px,' + view.y + 'px) scale(' + view.s + ')';
+      pct.textContent = Math.round(view.s * 100) + '%';
+    }
+    function setScale(s) {
+      view.s = Math.max(0.3, Math.min(2, s));
+      var cw = canvas.clientWidth || 900;
+      view.x = Math.max(20, Math.round((cw - model.w * view.s) / 2));
+      view.y = 20;
+      applyView();
+    }
+    function fit() {
+      var cw = canvas.clientWidth || 900, ch = canvas.clientHeight || 600;
+      view.s = Math.max(0.3, Math.min(1.2, (cw - 40) / model.w, (ch - 40) / model.h));
+      view.x = Math.max(20, Math.round((cw - model.w * view.s) / 2));
+      view.y = Math.max(20, Math.round((ch - model.h * view.s) / 2));
+      applyView();
     }
 
     var bar = EV.el('div', 'row');
@@ -1147,37 +1173,46 @@
     var minus = EV.el('button', 'ibtn');
     minus.innerHTML = EV.icon('zoomOut', 14);
     minus.title = '缩小';
-    minus.onclick = function () { applyZoom(zoom / 1.2); };
-    var pct = EV.el('span');
-    pct.textContent = '100%';
-    pct.style.fontSize = '11.5px';
-    pct.style.color = 'var(--dim)';
-    pct.style.minWidth = '38px';
-    pct.style.textAlign = 'center';
+    minus.onclick = function () { setScale(view.s / 1.2); };
     var plus = EV.el('button', 'ibtn');
     plus.innerHTML = EV.icon('zoomIn', 14);
     plus.title = '放大';
-    plus.onclick = function () { applyZoom(zoom * 1.2); };
-    var fit = EV.el('button', 'ibtn');
-    fit.innerHTML = EV.icon('fit', 14);
-    fit.title = '适应窗口';
-    fit.onclick = function () {
-      applyZoom(Math.min(1, (scroller.clientWidth - 44) / model.w, (scroller.clientHeight - 44) / model.h));
-    };
-    bar.appendChild(minus); bar.appendChild(pct); bar.appendChild(plus); bar.appendChild(fit);
+    plus.onclick = function () { setScale(view.s * 1.2); };
+    var fitBtn = EV.el('button', 'ibtn');
+    fitBtn.innerHTML = EV.icon('fit', 14);
+    fitBtn.title = '适应窗口';
+    fitBtn.onclick = fit;
+    bar.appendChild(minus); bar.appendChild(pct); bar.appendChild(plus); bar.appendChild(fitBtn);
 
-    var inner = EV.el('div');
-    inner.style.display = 'flex';
-    inner.style.flexDirection = 'column';
-    inner.style.flex = '1';
-    inner.style.minHeight = '0';
-    inner.appendChild(scroller);
-    var legend = EV.el('div', 'hint');
-    legend.style.padding = '8px 14px';
-    legend.style.borderTop = '1px solid var(--line)';
-    legend.textContent = '箭头表示信息流转方向；「有工具调用 / 无工具调用 / 失败 / 成功」为分支条件。'
-      + '该图随当前编辑内容实时生成，保存前后皆可预览。';
-    inner.appendChild(legend);
+    // 空白处按下拖拽平移
+    canvas.addEventListener('pointerdown', function (e) {
+      if (e.target !== canvas && e.target !== world && e.target !== svg) return;
+      canvas.classList.add('drag');
+      var sx = e.clientX, sy = e.clientY, ox = view.x, oy = view.y;
+      function move(ev) {
+        view.x = ox + (ev.clientX - sx);
+        view.y = oy + (ev.clientY - sy);
+        applyView();
+      }
+      function up() {
+        document.removeEventListener('pointermove', move);
+        document.removeEventListener('pointerup', up);
+        canvas.classList.remove('drag');
+      }
+      document.addEventListener('pointermove', move);
+      document.addEventListener('pointerup', up);
+    });
+    // 滚轮以指针位置为锚点缩放
+    canvas.addEventListener('wheel', function (e) {
+      e.preventDefault();
+      var r = canvas.getBoundingClientRect();
+      var mx = e.clientX - r.left, my = e.clientY - r.top;
+      var wx = (mx - view.x) / view.s, wy = (my - view.y) / view.s;
+      view.s = Math.max(0.3, Math.min(2, view.s * (e.deltaY < 0 ? 1.1 : 1 / 1.1)));
+      view.x = mx - wx * view.s;
+      view.y = my - wy * view.s;
+      applyView();
+    }, { passive: false });
 
     EV.modal({
       title: '循环可视化 — ' + state.activeName + '.yaml',
@@ -1186,7 +1221,17 @@
       node: inner,
       headExtra: bar,
       onOpen: function () {
-        applyZoom(Math.min(1, (scroller.clientWidth - 44) / model.w, (scroller.clientHeight - 44) / model.h));
+        // 卡片先进 DOM 再量高度，坐标与连线锚点才能和实际渲染一致
+        model = buildVizModel(function (n) {
+          var el = vizCardEl(n);
+          world.appendChild(el);
+          return el.offsetHeight || (n.kind === 'station' ? vizStationH(n.items.length) : VIZ.PLAIN_H);
+        });
+        svg.setAttribute('width', model.w);
+        svg.setAttribute('height', model.h);
+        svg.setAttribute('viewBox', '0 0 ' + model.w + ' ' + model.h);
+        vizDrawEdges(svg, model);
+        setScale(1);   // 默认 1:1（文字原生清晰），需要总览时再点「适应窗口」
       }
     });
   }
