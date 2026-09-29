@@ -98,6 +98,12 @@
   .drawer > summary .spacer { margin-left: auto; }
   .drawer-body { padding: 2px 0 8px; }
 
+  /* 抽屉内的「特殊引用说明」条目：键 + 说明 */
+  .ref { padding: 6px 10px; border-radius: 8px; }
+  .ref:hover { background: var(--field-soft); }
+  .ref-k { font-family: var(--mono); font-size: 12px; font-weight: 700; color: var(--ink); }
+  .ref-d { font-size: 11px; line-height: 1.65; color: var(--dim); margin-top: 2px; word-break: break-all; }
+
   .item { padding: 8px 10px; border-radius: 8px; cursor: pointer; position: relative; }
   .item:hover { background: var(--hover); }
   .item.on { background: var(--field); }

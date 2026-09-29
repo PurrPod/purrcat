@@ -95,8 +95,20 @@
     hooks: emptyHooks(),
     extraHooks: {},
     baseline: '',
-    dirty: false
+    dirty: false,
+    // 左列表两个抽屉的展开状态（重渲染后沿用）
+    drawers: { files: true, refs: true }
   };
+
+  // 「特殊引用说明」：与后端 hook_handler.py 的 PATH_ALIASES / @SYS / @USERQUERY 保持一致
+  var REFS = [
+    { k: '@RULES', d: '系统规则指南', use: 'file_operation.path', to: 'src/agent/system_rules/RULES.md' },
+    { k: '@SOUL', d: '人格设定', use: 'file_operation.path', to: '~/.purrcat/core/SOUL.md' },
+    { k: '@MEMORY', d: '长期记忆', use: 'file_operation.path', to: '~/.purrcat/core/MEMORY.md' },
+    { k: '@INFO', d: '用户信息', use: 'file_operation.path', to: '~/.purrcat/core/info.json' },
+    { k: '@SYS', d: '实时系统信息（不读文件，直接注入）', use: 'file_operation 且 action=read', to: 'OS / 主机名 / CPU / GPU / AgentVM 路径' },
+    { k: '@USERQUERY', d: '本次收到的 type=user 输入，多条按换行拼接', use: '「收到输入时」下任意字符串参数', to: '仅该钩子的当前批次' }
+  ];
 
   var sideBodyEl, toolbarEl, bodyEl;
 
@@ -297,11 +309,34 @@
     }
   }
 
-  /* ---------------- 渲染：左列表 ---------------- */
+  /* ---------------- 渲染：左列表（两个抽屉） ---------------- */
   function renderSide() {
     sideBodyEl.innerHTML = '';
+    sideBodyEl.appendChild(EV.drawer(
+      'Paradigm 文件', state.files.length, state.drawers.files,
+      function (open) { state.drawers.files = open; },
+      renderFileList
+    ));
+    sideBodyEl.appendChild(EV.drawer(
+      '特殊引用说明', REFS.length, state.drawers.refs,
+      function (open) { state.drawers.refs = open; },
+      renderRefs
+    ));
+  }
+
+  function renderRefs(body) {
+    REFS.forEach(function (r) {
+      var box = EV.el('div', 'ref');
+      box.appendChild(EV.el('div', 'ref-k', r.k + '  ' + r.d));
+      box.appendChild(EV.el('div', 'ref-d', r.use + ' → ' + r.to));
+      body.appendChild(box);
+    });
+    body.appendChild(EV.el('div', 'hint', '路径另支持 agent_vm/…、.purrcat/…、src/… 前缀。'));
+  }
+
+  function renderFileList(body) {
     if (!state.files.length) {
-      sideBodyEl.appendChild(EV.el('div', 'hint', '暂无 paradigm 文件。'));
+      body.appendChild(EV.el('div', 'hint', '暂无 paradigm 文件。'));
       return;
     }
     state.files.forEach(function (f) {
@@ -319,7 +354,7 @@
         item.appendChild(x);
       }
       item.onclick = function () { if (state.activeName !== f.name) openFile(f.name); };
-      sideBodyEl.appendChild(item);
+      body.appendChild(item);
     });
   }
 
@@ -1274,7 +1309,7 @@
     mount: function (root) {
       var side = EV.el('div', 'side');
       var sideHead = EV.el('div', 'side-head');
-      sideHead.appendChild(EV.el('span', null, 'Paradigm 文件'));
+      sideHead.appendChild(EV.el('span', null, 'Agent Loop'));
       sideHead.appendChild(EV.el('span', 'spacer'));
       EV.attachSideToggle(side, sideHead);
       side.appendChild(sideHead);
