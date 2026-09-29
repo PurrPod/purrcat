@@ -4,7 +4,7 @@ KERNELUPGRADE_TOOL_SCHEMA = {
     "type": "function",
     "function": {
         "name": "KernelUpgrade",
-        "description": "Agent 的核心自我进化工具。用于在隔离沙盒中自由地创建、升级和测试代码模块（目前支持 Skill、MCP Server 和 Sensor 外部感知器）",
+        "description": "Agent 的核心自我进化工具。用于在隔离沙盒中自由地创建、升级和测试代码模块（目前支持 Skill、MCP Server、Sensor 外部感知器，以及极简模式（web-minimal）的 UI 插件）",
         "parameters": {
             "type": "object",
             "properties": {
@@ -18,11 +18,16 @@ KERNELUPGRADE_TOOL_SCHEMA = {
                         "test_mcp",
                         "create_sensor",
                         "upgrade_sensor",
+                        "create_ui_plugin",
                     ],
                 },
                 "target": {
                     "type": "string",
-                    "description": "目标对象。当 action 为 'trace_to_skill'、'create_mcp'、'create_sensor'、'upgrade_sensor' 时，填写具体的名称；当 action 为 'test_mcp' 时，必须严格填写为当前沙盒的路径前缀 'uuid/name'。注意：Skill 盲测不在此工具内，须通过 Request 工具的 skill_test 类型申请。",
+                    "description": "目标对象。当 action 为 'trace_to_skill'、'create_mcp'、'create_sensor'、'upgrade_sensor' 时，填写具体的名称；当 action 为 'test_mcp' 时，必须严格填写为当前沙盒的路径前缀 'uuid/name'；当 action 为 'create_ui_plugin' 时，填写插件 id（只用小写字母/数字/-/_，同时作为沙盒目录名与 plugin.json 的 id）。注意：Skill 盲测不在此工具内，须通过 Request 工具的 skill_test 类型申请。",
+                },
+                "name": {
+                    "type": "string",
+                    "description": "仅 action='create_ui_plugin'：插件显示名，缺省用插件 id。",
                 },
             },
             "required": ["action", "target"],

@@ -6,7 +6,8 @@
 
 插件来源：
   - 内置四件套：{BASE_DIR}/ui/web-minimal/plugins/builtin/*（随 App 分发，只读）
-  - 用户插件：  {PURRCAT_DIR}/webmin-plugins/*（热插拔，同名 id 覆盖内置）
+  - 沙盒插件：  {AGENT_VM_DIR}/ui-plugin/*（Agent 在沙盒里开发的插件，同名 id 可覆盖内置）
+  - 用户插件：  {PURRCAT_DIR}/webmin-plugins/*（热插拔，优先级最高，同名 id 覆盖前两者）
 
 互不干扰原则：本文件只新增路由，不修改任何现有 /api/* 路由行为。
 """
@@ -21,6 +22,7 @@ from fastapi.responses import FileResponse
 
 from src.server.api import plugin_runtime
 from src.utils.config import (
+    AGENT_VM_DIR,
     BASE_DIR,
     PURRCAT_DIR,
     GRAPHS_DIR,
@@ -31,9 +33,14 @@ from src.utils.config import (
 
 router = APIRouter(prefix="/api/webmin", tags=["WebMinimal"])
 
-# 内置插件根目录（随 App 分发，只读）；用户插件根目录（热插拔）
+# 内置插件根目录（随 App 分发，只读）
 BUILTIN_PLUGIN_ROOT = os.path.join(BASE_DIR, "ui", "web-minimal", "plugins", "builtin")
+# 沙盒插件根目录（Agent 的插件开发区，位于 AgentVM 内，Agent 可直接读写）
+SANDBOX_PLUGIN_ROOT = os.path.join(AGENT_VM_DIR, "ui-plugin")
+# 用户插件根目录（热插拔）
 USER_PLUGIN_ROOT = os.path.join(PURRCAT_DIR, "webmin-plugins")
+# 三个插件根目录，按优先级从高到低（同名 id 先命中者生效）
+PLUGIN_ROOTS = (USER_PLUGIN_ROOT, SANDBOX_PLUGIN_ROOT, BUILTIN_PLUGIN_ROOT)
 # 后台壁纸托管目录（用户选择的本地壁纸复制进来后自此统一静态托管）
 WALLPAPER_DIR = os.path.join(PURRCAT_DIR, "webmin-wallpapers")
 # 允许托管的壁纸扩展名
@@ -180,9 +187,10 @@ def _slot_def(p: dict) -> dict:
 
 
 def _merge_plugins():
-    """内置插件为底，用户同名插件覆盖（下重上）。返回按 slot 分组的列表。"""
+    """内置插件为底，沙盒与用户同名插件依次覆盖（下重上）。返回按 slot 分组的列表。"""
     merged = _scan_plugins(BUILTIN_PLUGIN_ROOT)
-    merged.update(_scan_plugins(USER_PLUGIN_ROOT))  # 用户覆盖内置
+    merged.update(_scan_plugins(SANDBOX_PLUGIN_ROOT))  # 沙盒（Agent 开发）覆盖内置
+    merged.update(_scan_plugins(USER_PLUGIN_ROOT))  # 用户插件优先级最高
     plugins = list(merged.values())
     ordered = [
         "sidebar",
@@ -203,9 +211,9 @@ def _merge_plugins():
 
 
 def _resolve_plugin_file(plugin_id: str, rel_path: str) -> str | None:
-    """在用户/内置插件根目录中定位插件文件，沙箱到插件目录内防路径穿越。"""
+    """在用户/沙盒/内置插件根目录中定位插件文件，沙箱到插件目录内防路径穿越。"""
     rel_path = rel_path.replace("\\", "/").lstrip("/")
-    for root in (USER_PLUGIN_ROOT, BUILTIN_PLUGIN_ROOT):
+    for root in PLUGIN_ROOTS:
         if not os.path.isdir(root):
             continue
         plugin_dir = os.path.join(root, plugin_id)
@@ -285,8 +293,8 @@ def api_webmin_plugin_rpc(plugin_id: str, handler: str, body: dict):
 
 
 def _resolve_plugin_dir(plugin_id: str) -> str | None:
-    """返回插件所在目录（用户目录优先，内置次之）。"""
-    for root in (USER_PLUGIN_ROOT, BUILTIN_PLUGIN_ROOT):
+    """返回插件所在目录（用户目录优先，其次沙盒，最后内置）。"""
+    for root in PLUGIN_ROOTS:
         d = os.path.join(root, plugin_id)
         if os.path.isdir(d):
             return d
@@ -341,21 +349,22 @@ def api_webmin_put_config(body: dict):
 
 @router.post("/plugin/{plugin_id}/delete")
 def api_webmin_delete_plugin(plugin_id: str):
-    """删除用户插件：把 ~/.purrcat/webmin-plugins/{id} 移动为 <id>.trash（可恢复），内置拒绝。"""
+    """删除插件：用户/沙盒插件移动为各自根目录下的 <id>.trash（可恢复），内置拒绝。"""
     if not plugin_id or any(c in plugin_id for c in ("/", "\\", "..")):
         raise HTTPException(status_code=400, detail="非法的插件 id")
-    target = os.path.join(USER_PLUGIN_ROOT, plugin_id)
-    builtin_target = os.path.join(BUILTIN_PLUGIN_ROOT, plugin_id)
-    if not os.path.isdir(target):
-        if os.path.isdir(builtin_target):
-            raise HTTPException(status_code=403, detail="内置插件不可删除")
-        raise HTTPException(status_code=404, detail=f"插件 {plugin_id} 不存在")
-    trash = os.path.join(USER_PLUGIN_ROOT, f"{plugin_id}.trash")
-    if os.path.exists(trash):
-        shutil.rmtree(trash, ignore_errors=True)
-    plugin_runtime.stop(plugin_id)  # 先停后端的子进程，再移动目录
-    shutil.move(target, trash)
-    return {"status": "ok", "deleted": plugin_id}
+    for root in (USER_PLUGIN_ROOT, SANDBOX_PLUGIN_ROOT):
+        target = os.path.join(root, plugin_id)
+        if not os.path.isdir(target):
+            continue
+        trash = os.path.join(root, f"{plugin_id}.trash")
+        if os.path.exists(trash):
+            shutil.rmtree(trash, ignore_errors=True)
+        plugin_runtime.stop(plugin_id)  # 先停后端的子进程，再移动目录
+        shutil.move(target, trash)
+        return {"status": "ok", "deleted": plugin_id}
+    if os.path.isdir(os.path.join(BUILTIN_PLUGIN_ROOT, plugin_id)):
+        raise HTTPException(status_code=403, detail="内置插件不可删除")
+    raise HTTPException(status_code=404, detail=f"插件 {plugin_id} 不存在")
 
 
 @router.post("/wallpaper")

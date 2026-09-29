@@ -10,6 +10,7 @@ from src.evolve import (
     mcp_upgrade_init,
     run_mcp_eval_background,
     sensor_factory_init,
+    ui_plugin_init,
 )
 
 
@@ -22,6 +23,7 @@ def KernelUpgrade(action: str, target: str, **kwargs) -> dict:
     - action="test_mcp": 在后台运行 MCP 并发测试
     - action="create_sensor": 生成全新的 Sensor（外部感知器）骨架
     - action="upgrade_sensor": 拷贝现存的 Sensor 进行修改
+    - action="create_ui_plugin": 在沙盒里生成极简模式 UI 插件框架（含开发指南）
     （注：Skill 盲测权力已收回，须通过 Request 工具的 skill_test 类型获得用户批准后由系统自动运行）
     """
     try:
@@ -82,6 +84,21 @@ def KernelUpgrade(action: str, target: str, **kwargs) -> dict:
             return text_response(
                 f"✅ 现存 Sensor 已拷贝至进化沙盒，准备好进行升级！\n\n{sys_note}",
                 f"📦 {target} Sensor沙盒已就绪",
+            )
+
+        elif action == "create_ui_plugin":
+            sys_note, plugin_dir = ui_plugin_init(
+                target,
+                name=kwargs.get("name", ""),
+                goal=kwargs.get("goal", ""),
+            )
+            if not plugin_dir:
+                return error_response(sys_note, "❌ UI 插件框架创建失败")
+            return text_response(
+                f"✅ UI 插件沙盒已就绪：{plugin_dir}\n"
+                f"（宿主已把 agent_vm/ui-plugin/ 作为插件根目录扫描，写完让用户按 Ctrl+R 刷新即可看到）\n\n"
+                f"{sys_note}",
+                f"🧩 {target} UI插件已创建",
             )
 
         elif action == "test_mcp":
