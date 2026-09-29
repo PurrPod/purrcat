@@ -204,7 +204,10 @@ class HookHandler:
         if path.startswith("src/"):
             return os.path.join(BASE_DIR, path)
         if path.startswith("agent_vm"):
-            return os.path.join(AGENT_VM_DIR, path.lstrip("agent_vm"))
+            # 注意：不能用 lstrip("agent_vm")，它按字符集裁剪，会把 "agent_vm/x" 变成 "/x"，
+            # 而 os.path.join 遇到以分隔符开头的片段会直接丢弃 AGENT_VM_DIR，落到盘根目录
+            rel = path[len("agent_vm") :].lstrip("/\\")
+            return os.path.join(AGENT_VM_DIR, rel)
         return path
 
     def _ref_content(self, alias, kwargs, cache):
