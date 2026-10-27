@@ -1,4 +1,5 @@
 import json
+import time
 import traceback
 
 from src.tool.callmcp.exceptions import (
@@ -15,6 +16,72 @@ from src.tool.callmcp.session_manager import load_configs
 from src.tool.callmcp.tool_caller import call_mcp_tool
 from src.tool.utils.format import error_response, text_response, warning_response
 from src.utils.config import MCP_SCHEMA_CACHE_FILE
+
+
+def _open_url_in_builtin_browser(url: str) -> bool:
+    """请宿主（Electron 主进程）在内置浏览器中打开一个用户可见的标签页。
+
+    宿主控制口只监听回环地址，端口与令牌写在 ~/.purrcat/run/control.json。
+    """
+    import os
+    import urllib.request
+
+    state_file = os.path.join(os.path.expanduser("~"), ".purrcat", "run", "control.json")
+    try:
+        with open(state_file, "r", encoding="utf-8") as f:
+            state = json.load(f)
+        port = int(state.get("port") or 0)
+        token = str(state.get("token") or "")
+        if not port or not token:
+            return False
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{port}/control/browser/open-url",
+            data=json.dumps({"url": url}).encode("utf-8"),
+            headers={
+                "content-type": "application/json",
+                "x-purrcat-token": token,
+            },
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            return resp.status == 200
+    except Exception as err:
+        print(f"[CallMCP] 内置浏览器回落失败: {err}")
+        return False
+
+
+def _new_page_fallback(server_name: str, tool_name: str, args: dict, message: str):
+    """chrome-devtools 的 new_page 依赖 CDP Target.createTarget，Electron 不支持。
+
+    命中该错误时改为让宿主在内置浏览器里开一个可见标签页，并把最新页面列表回给 Agent。
+    """
+    if server_name != "chrome-devtools" or tool_name != "new_page":
+        return None
+    if "Target.createTarget" not in message:
+        return None
+    url = str(args.get("url") or "").strip()
+    if not url.startswith(("http://", "https://")):
+        return None
+    if not _open_url_in_builtin_browser(url):
+        return None
+    time.sleep(0.8)  # 等内置浏览器标签页创建完成，便于紧接的 list_pages 看到它
+    page_list = ""
+    try:
+        page_list = "\n".join(call_mcp_tool(server_name, "list_pages", {}))
+    except Exception:
+        pass
+    body = (
+        f"宿主已在你的内置浏览器中新开标签页并加载：{url}\n"
+        "（Electron 的 CDP 不支持 Target.createTarget，因此改为由宿主直接创建内置浏览器标签页。）"
+    )
+    if page_list:
+        body += (
+            f"\n当前页面列表：\n{page_list}\n"
+            "请使用与该 URL 匹配的页面；禁止操作标题为「PurrCat · 极简模式」的页面。"
+        )
+    else:
+        body += "\n请调用 list_pages 获取新标签页的 pageId，再继续操作。"
+    return text_response(body, "✅ 已在内置浏览器新开标签页")
 
 
 def CallMCP(server_name: str, tool_name: str, arguments: dict = None, **kwargs) -> str:
@@ -68,7 +135,10 @@ def CallMCP(server_name: str, tool_name: str, arguments: dict = None, **kwargs) 
             result = call_mcp_tool(server_name, tool_name, args)
             return text_response(result, f"✅ {tool_name}成功")
 
-        except ToolExecutionError:
+        except ToolExecutionError as err:
+            fallback = _new_page_fallback(server_name, tool_name, args, str(err))
+            if fallback:
+                return fallback
             # 捕获参数不匹配、缺少参数等错误
             param_schema_str = json.dumps(
                 tool_schema.get("parameters", {}), ensure_ascii=False
@@ -79,6 +149,9 @@ def CallMCP(server_name: str, tool_name: str, arguments: dict = None, **kwargs) 
         except ServerNotFoundError as err:
             return error_response(str(err), "❌ 服务器未找到")
         except MCPError as e:
+            fallback = _new_page_fallback(server_name, tool_name, args, str(e))
+            if fallback:
+                return fallback
             return warning_response(str(e), "⚠️ 执行警告")
 
     except Exception as e:

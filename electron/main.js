@@ -6,6 +6,9 @@ const { app, BrowserWindow, Menu, dialog, ipcMain, WebContentsView, session, she
 const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
+const http = require('http');
+const os = require('os');
+const crypto = require('crypto');
 const {
   DEFAULT_API_PORT,
   findAvailablePort,
@@ -398,6 +401,20 @@ function isSelfUrl(url) {
   } catch { return false; }
 }
 
+// 主窗口唯一允许停留的页面：应用自身的极简宿主（/minimal）。
+// 主窗口一旦被导航到外部网页，整个 PurrCat UI 就被目标页面替换（见下方的 webRequest 守卫）。
+function isAppPageUrl(url) {
+  if (!url || typeof url !== 'string') return false;
+  try {
+    const u = new URL(url);
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return false;
+    if (!LOOPBACK_HOSTS.has(u.hostname)) return false;
+    const port = u.port || (u.protocol === 'https:' ? '443' : '80');
+    if (port !== String(apiPort)) return false;
+    return u.pathname === '/minimal' || u.pathname.startsWith('/minimal/');
+  } catch { return false; }
+}
+
 // 允许 webContents 加载的 scheme 白名单。其余（purrcat:/mailto:/tel: 等）一律不得 loadURL：
 // Chromium 遇到不认识的 scheme 会把它委托给操作系统外壳，Windows 便弹出
 // 「找不到能打开此链接的应用」。非 web scheme 统一拦下并转交前端链接路由处理。
@@ -413,6 +430,80 @@ function isWebScheme(url) {
 function routeUrlToApp(url) {
   if (!url || url === 'about:blank') return;
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('purrcat:open-url', url);
+}
+
+// ===== 宿主控制口（仅回环） =====
+// Chrome DevTools MCP 的 new_page 走 CDP Target.createTarget，Electron 不支持，
+// 后端捕获该错误后回调这里，由宿主在内置浏览器里真开一个可见标签页。
+// 端口随机、只监听 127.0.0.1，并把端口/令牌写入 ~/.purrcat/run/control.json 供后端读取。
+const CONTROL_STATE_FILE = path.join(os.homedir(), '.purrcat', 'run', 'control.json');
+let controlServer = null;
+let controlPort = 0;
+let controlToken = '';
+
+function writeControlState() {
+  try {
+    fs.mkdirSync(path.dirname(CONTROL_STATE_FILE), { recursive: true });
+    fs.writeFileSync(
+      CONTROL_STATE_FILE,
+      JSON.stringify({ port: controlPort, token: controlToken, pid: process.pid }),
+      'utf-8'
+    );
+  } catch (err) {
+    console.warn('[PurrCat] 控制口状态写入失败:', err.message);
+  }
+}
+
+function handleControlRequest(req, res) {
+  const reply = (status, payload) => {
+    res.writeHead(status, { 'content-type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify(payload));
+  };
+  if (req.headers['x-purrcat-token'] !== controlToken) {
+    return reply(403, { ok: false, error: 'forbidden' });
+  }
+  if (req.method !== 'POST' || req.url !== '/control/browser/open-url') {
+    return reply(404, { ok: false, error: 'not found' });
+  }
+  let body = '';
+  req.setEncoding('utf-8');
+  req.on('data', (chunk) => {
+    body += chunk;
+    if (body.length > 8192) req.destroy();
+  });
+  req.on('end', () => {
+    let url = '';
+    try {
+      url = String(JSON.parse(body || '{}').url || '').trim();
+    } catch (_) {
+      return reply(400, { ok: false, error: 'bad json' });
+    }
+    if (!isWebScheme(url)) return reply(400, { ok: false, error: 'only web urls' });
+    if (isSelfUrl(url)) return reply(400, { ok: false, error: 'self url blocked' });
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      return reply(503, { ok: false, error: 'ui not ready' });
+    }
+    // 复用前端统一链接路由：会打开内置浏览器面板并新建用户可见的标签页
+    routeUrlToApp(url);
+    reply(200, { ok: true, url });
+  });
+}
+
+function startControlServer() {
+  try { fs.unlinkSync(CONTROL_STATE_FILE); } catch (_) {}
+  controlToken = crypto.randomBytes(16).toString('hex');
+  controlServer = http.createServer(handleControlRequest);
+  return new Promise((resolve) => {
+    controlServer.once('error', (err) => {
+      console.warn('[PurrCat] 控制口启动失败:', err.message);
+      resolve();
+    });
+    controlServer.listen(0, '127.0.0.1', () => {
+      controlPort = controlServer.address().port;
+      writeControlState();
+      resolve();
+    });
+  });
 }
 
 ipcMain.handle('browser:new-tab', (_e, url) => {
@@ -1483,6 +1574,7 @@ function initAutoUpdate() {
 }
 
 app.whenReady().then(async () => {
+  await startControlServer();
   const backendStarted = await createBackend();
   if (!backendStarted && backendConfigError) {
     dialog.showErrorBox('PurrCat 后端启动失败', backendConfigError.message);
@@ -1514,6 +1606,26 @@ app.whenReady().then(async () => {
   } catch (err) {
     console.warn('[PurrCat] browser session permission handler failed:', err);
   }
+  // 🌟 主窗口防「夺舍」：chrome-devtools-mcp 经 CDP(9222) 发起的 Page.navigate 属于浏览器进程
+  //    导航，不会触发 will-navigate（那里只拦非 web scheme），Agent 只要把主窗口当普通页面
+  //    导航一次，整个 PurrCat UI 就被目标网页替换。这里在主窗口 session 的 mainFrame 请求层
+  //    兜底：除应用自身的 /minimal 外一律取消，并转交应用内链接路由（http → 内置浏览器）。
+  session.defaultSession.webRequest.onBeforeRequest(
+    { urls: ['http://*/*', 'https://*/*'] },
+    (details, callback) => {
+      if (
+        details.resourceType === 'mainFrame' &&
+        mainWindow && !mainWindow.isDestroyed() &&
+        details.webContentsId === mainWindow.webContents.id &&
+        !isAppPageUrl(details.url)
+      ) {
+        routeUrlToApp(details.url);
+        callback({ cancel: true });
+        return;
+      }
+      callback({});
+    }
+  );
   createWindow();
   initAutoUpdate();
 });
@@ -1557,6 +1669,8 @@ app.on('render-process-gone', (_e, wc, details) => {
 
 app.on('before-quit', () => {
   killBackendTree();
+  try { if (controlServer) { controlServer.close(); controlServer = null; } } catch (_) {}
+  try { fs.unlinkSync(CONTROL_STATE_FILE); } catch (_) {}
   // 🌟 正常退出也挂看门狗：quit() 同样可能被注入 DLL 卡死成僵尸进程，
   // 后端虽已树杀但主进程残留，下次启动单实例锁会误判"已在运行"只聚焦僵尸窗口
   spawnQuitWatchdog();
