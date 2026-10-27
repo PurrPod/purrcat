@@ -229,6 +229,8 @@
     padding: 12px 20px 16px;
     background: transparent;
   }
+  /* 输入条整体（引用面板 + 已选引用 + 输入框）：作为引用浮层的定位基准 */
+  .bar-wrap { position: relative; width: 100%; }
   /* 空态：无活动会话/无消息 → 隐藏历史列表与分支栏，输入区居中欢迎 */
   body.centered .list { display: none; }
   body.centered .branch-bar { display: none; }
@@ -240,8 +242,11 @@
   body.centered .welcome { display: block; }
   .welcome .wt { font-size: 18px; font-weight: 600; }
   body.centered .bar, body.centered .refPanel { width: 100%; }
-  /* 引用菜单展开时贴底排列，避免居中布局把输入框/引用挤出窗口 */
-  .composer:has(.refPanel.open) { justify-content: flex-end; }
+  /* 欢迎态：引用面板浮在输入条上方、不参与布局，避免展开时把输入框顶回最底部 */
+  body.centered .refPanel.open {
+    position: absolute; left: 0; right: 0; bottom: 100%;
+    margin-bottom: 8px; z-index: 5;
+  }
 
   /* 引用面板（＋ 展开）：左竖分类 + 右侧条目，鼠标悬浮分类即出列表 */
   .refPanel {
@@ -254,6 +259,7 @@
     overflow: hidden;
   }
   .refPanel.open { display: block; }
+  /* 固定高度，避免切换分类时面板高低变化造成跳动 */
   .ref-pick { display: flex; gap: 8px; height: min(46vh, 380px); }
   .cats {
     flex: none; width: 128px;
@@ -445,43 +451,45 @@
     <div class="welcome">
       <div class="wt">有什么可以帮你的？</div>
     </div>
-    <div class="refPanel" id="refPanel">
-      <div class="ref-pick">
-        <div class="cats" id="cats"></div>
-        <div class="right">
-          <div class="right-head" id="rName"></div>
-          <input class="right-search hide" id="rSearch" type="text" placeholder="搜索" spellcheck="false" autocomplete="off" />
-          <div class="items" id="rItems"></div>
+    <div class="bar-wrap">
+      <div class="refPanel" id="refPanel">
+        <div class="ref-pick">
+          <div class="cats" id="cats"></div>
+          <div class="right">
+            <div class="right-head" id="rName"></div>
+            <input class="right-search hide" id="rSearch" type="text" placeholder="搜索" spellcheck="false" autocomplete="off" />
+            <div class="items" id="rItems"></div>
+          </div>
         </div>
       </div>
-    </div>
-    <div class="quotes" id="quotes"></div>
-    <div class="bar">
-      <textarea id="input" rows="1" placeholder="输入消息，Shift+Enter 换行"></textarea>
-      <div class="bar-foot">
-        <div class="foot-left">
-          <button class="plusBtn" id="plus" title="添加引用">＋</button>
-          <span class="modeWrap" id="modeWrap">
-            <button class="modeBtn" id="mode" title="切换 Agent Loop">
-              <span id="modeLabel">默认</span>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
-            </button>
-            <div class="modeMenu" id="modeMenu"></div>
-          </span>
-        </div>
-        <div class="foot-right">
-          <span class="ctx-wrap" id="ctxWrap">
-            <span class="ctx-btn" aria-label="上下文占用">
-              <svg viewBox="0 0 24 24">
-                <circle class="track" cx="12" cy="12" r="9" fill="none" stroke-width="3"></circle>
-                <circle class="arc" id="ctxArc" cx="12" cy="12" r="9" fill="none" stroke-width="3" transform="rotate(-90 12 12)" stroke-dasharray="0 56.55"></circle>
-              </svg>
+      <div class="quotes" id="quotes"></div>
+      <div class="bar">
+        <textarea id="input" rows="1" placeholder="输入消息，Shift+Enter 换行"></textarea>
+        <div class="bar-foot">
+          <div class="foot-left">
+            <button class="plusBtn" id="plus" title="添加引用">＋</button>
+            <span class="modeWrap" id="modeWrap">
+              <button class="modeBtn" id="mode" title="切换 Agent Loop">
+                <span id="modeLabel">默认</span>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+              </button>
+              <div class="modeMenu" id="modeMenu"></div>
             </span>
-            <div class="ctx-tip" id="ctxTip"></div>
-          </span>
-          <button class="sendBtn" id="send" title="发送" aria-label="发送">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
-          </button>
+          </div>
+          <div class="foot-right">
+            <span class="ctx-wrap" id="ctxWrap">
+              <span class="ctx-btn" aria-label="上下文占用">
+                <svg viewBox="0 0 24 24">
+                  <circle class="track" cx="12" cy="12" r="9" fill="none" stroke-width="3"></circle>
+                  <circle class="arc" id="ctxArc" cx="12" cy="12" r="9" fill="none" stroke-width="3" transform="rotate(-90 12 12)" stroke-dasharray="0 56.55"></circle>
+                </svg>
+              </span>
+              <div class="ctx-tip" id="ctxTip"></div>
+            </span>
+            <button class="sendBtn" id="send" title="发送" aria-label="发送">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+            </button>
+          </div>
         </div>
       </div>
     </div>
