@@ -8,6 +8,9 @@ from src.utils.config import SESSION_INDEX_PATH, SESSIONS_DIR
 
 
 class SessionStore:
+    # 每个会话一份 BrainStorm 总计划（@PLAN 引用读取它）
+    PLAN_FILENAME = "plan.md"
+
     _index_lock = threading.RLock()
     _file_locks = {}
     _file_locks_lock = threading.Lock()
@@ -22,6 +25,32 @@ class SessionStore:
     @staticmethod
     def _generate_id():
         return f"session_{uuid.uuid4().hex[:8]}"
+
+    @classmethod
+    def get_plan_path(cls, session_id):
+        """会话级 BrainStorm 计划文件的宿主机绝对路径。"""
+        return os.path.join(SESSIONS_DIR, session_id, cls.PLAN_FILENAME)
+
+    @classmethod
+    def save_session_plan(cls, session_id, content):
+        """整体刷新某会话的 BrainStorm 总计划（每次 BrainStorm 调用后覆盖写入）。"""
+        path = cls.get_plan_path(session_id)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        temp_path = f"{path}.tmp"
+        with cls._get_file_lock(f"{session_id}_plan"):
+            with open(temp_path, "w", encoding="utf-8", newline="\n") as f:
+                f.write(content)
+            os.replace(temp_path, path)
+
+    @classmethod
+    def read_session_plan(cls, session_id):
+        """读取某会话的 BrainStorm 总计划；不存在或读取失败时返回空串。"""
+        path = cls.get_plan_path(session_id)
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return f.read().strip()
+        except OSError:
+            return ""
 
     @classmethod
     def load_global_memo(cls):

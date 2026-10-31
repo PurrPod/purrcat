@@ -1,7 +1,9 @@
 import os
 import asyncio
+from datetime import datetime
 from pathlib import Path
 from src.tool.utils.format import text_response, error_response
+from src.agent.session_store import SessionStore
 from src.agent.sub_runner import (
     cancel_sub_branch,
     run_dag_graph,
@@ -72,6 +74,45 @@ def _has_write_permission(target_path: str) -> bool:
     return best_perm == "writable"
 
 
+def _render_plan_markdown(main_plan: list = None, sub_branches: list = None) -> str:
+    """把 BrainStorm 指定的计划解析成 Markdown 总计划，供会话级 @PLAN 引用。"""
+    main_plan = main_plan or []
+    sub_branches = sub_branches or []
+
+    lines = [
+        "# BrainStorm 总计划",
+        "",
+        f"- 刷新时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+        f"- 主干步骤：{len(main_plan)} 步",
+        f"- 后台支线：{len(sub_branches)} 个",
+        "",
+        "## 主干 Main 分支执行大纲",
+    ]
+    if main_plan:
+        lines.extend(f"{i}. {step}" for i, step in enumerate(main_plan, 1))
+    else:
+        lines.append("（无）")
+
+    lines.extend(["", "## 后台支线任务"])
+    if sub_branches:
+        for branch in sub_branches:
+            lines.append(f"### {branch.get('branch_id', '未命名支线')}")
+            lines.append(f"- 任务：{branch.get('action', '')}")
+            lines.append("- 交付物：")
+            deliverables = branch.get("deliverable") or []
+            if deliverables:
+                lines.extend(f"  - `{item}`" for item in deliverables)
+            else:
+                lines.append("  （无）")
+            depends_on = branch.get("depends_on") or []
+            lines.append(f"- 依赖：{'、'.join(depends_on) if depends_on else '无'}")
+            lines.append("")
+    else:
+        lines.append("（无）")
+
+    return "\n".join(lines).rstrip() + "\n"
+
+
 def BrainStorm(
     action: str,
     main_plan: list = None,
@@ -132,16 +173,26 @@ def BrainStorm(
                     f"\n后台支线任务 ({len(sub_branches)}个) 已成功递交底层引擎，在暗中开辟独立线程快马加鞭运转中。"
                 )
 
+            # 📄 把本次计划整体刷新到当前会话的 plan.md，供范式 @PLAN 引用
+            from src.agent.manager import AgentManager
+
+            manager = AgentManager()
+            main_session_id = manager.get_active_session_id()
+            if main_session_id:
+                try:
+                    SessionStore.save_session_plan(
+                        main_session_id,
+                        _render_plan_markdown(main_plan, sub_branches),
+                    )
+                except Exception as e:
+                    msg_lines.append(f"\n⚠️ 总计划落盘失败：{e}")
+
             msg_lines.append(
                 "\n💡 指示：工具已闭环，你不需要进行任何循环查询。请立即按照你刚才定下的 Main 主线计划第一步去沙盒开展工作。子任务结果出来后系统会自动通知。"
             )
             final_response_text = "\n".join(msg_lines)
 
             if sub_branches:
-                from src.agent.manager import AgentManager
-
-                manager = AgentManager()
-                main_session_id = manager.get_active_session_id()
                 main_history = manager._agent.get_history()
 
                 # 🌟 从尾部往前定位本批次的 assistant 消息（带 tool_calls）。

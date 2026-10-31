@@ -14,6 +14,7 @@ from src.utils.config import (
     AGENT_CORE_DIR,
     PARADIGMS_DIR,
 )
+from src.agent.session_store import SessionStore
 
 # Agent Loop（PARADIGM）配置：
 # 多个 loop 存放于 ~/.purrcat/paradigms/，其中 PARADIGM.yaml 是默认 Agent Loop
@@ -29,8 +30,8 @@ PATH_ALIASES = {
 }
 
 
-# 可以在参数里被展开成「内容」的引用符号（@RULES 这类文件符号 + @SYS + @USERQUERY）
-CONTENT_ALIASES = tuple(PATH_ALIASES.keys()) + ("@SYS", "@USERQUERY")
+# 可以在参数里被展开成「内容」的引用符号（@RULES 这类文件符号 + @SYS + @USERQUERY + @PLAN）
+CONTENT_ALIASES = tuple(PATH_ALIASES.keys()) + ("@SYS", "@USERQUERY", "@PLAN")
 _REF_RE = re.compile("|".join(re.escape(a) for a in CONTENT_ALIASES))
 
 
@@ -226,8 +227,12 @@ class HookHandler:
     # 工具函数区
     # ==========================================
 
-    def _resolve_path(self, path: str) -> str:
+    def _resolve_path(self, path: str, agent=None) -> str:
         """把 PARADIGM 里的路径符号/前缀解析成绝对路径"""
+        if path == "@PLAN":
+            session_id = getattr(agent, "session_id", None)
+            if session_id:
+                return SessionStore.get_plan_path(session_id)
         if path.startswith("@"):
             aliases = {**PATH_ALIASES, **self.extra_path_aliases}
             if path in aliases:
@@ -256,6 +261,7 @@ class HookHandler:
           指代本批 type=user 的消息（多条按换行拼接）
         - @RULES/@SOUL/@MEMORY/@INFO：读取对应文件内容
         - @SYS：现场生成当前系统信息
+        - @PLAN：读取当前会话最近一次 BrainStorm 落盘的总计划（每次 BrainStorm 调用刷新）
 
         取不到内容时返回 None，参数里的原始 @符号保持不变。
         """
@@ -272,6 +278,13 @@ class HookHandler:
                 )
         elif alias == "@SYS":
             text = self._get_system_info()
+        elif alias == "@PLAN":
+            session_id = getattr(kwargs.get("agent"), "session_id", None)
+            text = (
+                SessionStore.read_session_plan(session_id)
+                if session_id
+                else ""
+            ) or "暂无 BrainStorm 计划"
         elif alias in self.extra_content_aliases:
             # 动态别名（如 @TASKSPACE）：直接展开为注册的内容（沙盒可见路径），不读文件
             text = self.extra_content_aliases[alias]
@@ -289,7 +302,7 @@ class HookHandler:
 
     def _file_operation(self, params, **kwargs):
         raw_path = params.get("path", "")
-        path = self._resolve_path(raw_path)
+        path = self._resolve_path(raw_path, kwargs.get("agent"))
         action = params.get("action")
         content = params.get("content", "")
         failed_prompt = params.get("failed_prompt", f"文件操作 {action} 失败: {path}")

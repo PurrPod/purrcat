@@ -150,6 +150,7 @@ on_input_received:
 | `@SYS` | 系统提示 |
 | `@USERQUERY` | 本轮用户输入 |
 | `@TASKSPACE` | 任务空间 |
+| `@PLAN` | BrainStorm 总计划（每次调用 BrainStorm 刷新；无计划时返回「暂无 BrainStorm 计划」） |
 
 ---
 

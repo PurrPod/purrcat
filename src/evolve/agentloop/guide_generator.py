@@ -209,7 +209,10 @@ hooks:                             # 阶段 → hook 列表（必填、非空）
   多项之间为**或**——任一项命中即视为「用了且满足条件」。
 
 **`@引用` 符号**（`injection.content` 内可直接使用）：
-`@RULES`、`@INFO`、`@SOUL`、`@MEMORY`、`@SYS`、`@USERQUERY`、`@TASKSPACE`。
+`@RULES`、`@INFO`、`@SOUL`、`@MEMORY`、`@SYS`、`@USERQUERY`、`@TASKSPACE`、`@PLAN`。
+
+> `@PLAN` 展开为**当前会话最近一次 BrainStorm 落盘的总计划**（主干 Main 纲要 + 后台支线任务明细）。
+> BrainStorm 每次被调用都会整体刷新这份计划；会话尚无计划时展开为「暂无 BrainStorm 计划」。
 
 ## 5. 校验脚本（格式 / 功能 / 关键词汇）
 

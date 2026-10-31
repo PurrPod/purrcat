@@ -26,7 +26,9 @@ def _open_url_in_builtin_browser(url: str) -> bool:
     import os
     import urllib.request
 
-    state_file = os.path.join(os.path.expanduser("~"), ".purrcat", "run", "control.json")
+    state_file = os.path.join(
+        os.path.expanduser("~"), ".purrcat", "run", "control.json"
+    )
     try:
         with open(state_file, "r", encoding="utf-8") as f:
             state = json.load(f)

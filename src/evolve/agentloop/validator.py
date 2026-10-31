@@ -81,6 +81,7 @@ REF_ALIASES = {
     "@SYS",
     "@USERQUERY",
     "@TASKSPACE",
+    "@PLAN",
 }
 
 # 顶层必填字段（硬性）：缺失直接判 error
