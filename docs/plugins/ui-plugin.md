@@ -269,6 +269,7 @@ window.parent.postMessage({ type: 'callAction', id: 'req-1', actionId: 'config.g
 - **资源引用**：`index.html` 内使用相对路径引用同目录资源。
 - **自带后端**：声明 `backend: { "kind": "npm" }` 并提供 `server/server.js`（Node；依赖放插件自己的 `package.json` / `node_modules`），插件侧用 `plugin.rpc` 调用。
   宿主把它当独立子进程拉起；**进程退出后，下次 RPC 会自动重新拉起**。
+  - **生命周期**：面板标签打开（iframe 挂载）时宿主自动 `start`，标签关闭时自动 `stop`。改完 `server.js` 关掉再打开标签即可加载新代码，无需重启 PurrCat；标签开着时也可调 `POST /api/webmin/plugin-backend/{plugin_id}/restart` 主动重启。
   - 宿主 → 插件（stdin，一行一条）：`{"id","handler","payload"}`。
   - 插件 → 宿主（stdout，一行一条，必须回）：`{"id","ok":true,"result":...}` 或 `{"id","ok":false,"error":"..."}`。
   - **启动后必须向 stdout 打一行 `{"event":"ready"}`**：宿主据此判定"后端已就绪"，15 秒内未收到会杀掉进程并报"后端未就绪"，前端 `plugin.rpc` 随之失败。

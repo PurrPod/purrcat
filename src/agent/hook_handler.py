@@ -281,9 +281,7 @@ class HookHandler:
         elif alias == "@PLAN":
             session_id = getattr(kwargs.get("agent"), "session_id", None)
             text = (
-                SessionStore.read_session_plan(session_id)
-                if session_id
-                else ""
+                SessionStore.read_session_plan(session_id) if session_id else ""
             ) or "暂无 BrainStorm 计划"
         elif alias in self.extra_content_aliases:
             # 动态别名（如 @TASKSPACE）：直接展开为注册的内容（沙盒可见路径），不读文件

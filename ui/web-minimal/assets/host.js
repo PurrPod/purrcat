@@ -2967,12 +2967,26 @@
   // ---- 渲染：把某插件实例装进对应容器内的 iframe ----
   // 卸载通知：iframe 被移除前给插件最后一次收尾机会（如关掉自己开的浏览器 Tab、
   // 把原生视图移出屏幕）。postMessage 已入队，即使随后移除 iframe 仍会投递。
+  // 插件后端随 iframe 生命周期存活：挂载时 start、卸载时 stop。
+  // 改完 server/server.js 只需关掉再打开标签页，后端就会重新拉起（不必重启 PurrCat）。
+  function syncPluginBackend(id, action) {
+    if (!id) return;
+    try {
+      fetch('/api/webmin/plugin-backend/' + encodeURIComponent(id) + '/' + action, {
+        method: 'POST',
+        cache: 'no-store',
+      }).catch(function () { /* 后端启动失败不影响 UI */ });
+    } catch (_) { /* noop */ }
+  }
   function notifyUnmount(rootEl) {
     if (!rootEl || !rootEl.querySelectorAll) return;
     rootEl.querySelectorAll('iframe').forEach(function (f) {
       try {
         if (f.contentWindow) f.contentWindow.postMessage({ type: 'event', event: 'host.unmount', data: {} }, '*');
       } catch (_) { /* noop */ }
+      if (f.dataset && f.dataset.backend === '1' && f.dataset.pid) {
+        syncPluginBackend(f.dataset.pid, 'stop');
+      }
     });
   }
   function mountFrame(el, p) {
@@ -2984,6 +2998,11 @@
     iframe.setAttribute('tabindex', '-1');
     iframe.src = `/api/webmin/plugin/${encodeURIComponent(p.id)}/${p.entry.split('/').map(encodeURIComponent).join('/')}`;
     iframe.title = p.name || p.id;
+    iframe.dataset.pid = p.id;
+    if (p.backend) {
+      iframe.dataset.backend = '1';
+      syncPluginBackend(p.id, 'start');
+    }
     el.appendChild(iframe);
     // 注意：configByPlugin 的唯一初始化点是 applyManifestState（覆盖全部插件），
     // 这里不再覆写，避免用 boot 时的 manifest 旧值冲掉运行中的未保存编辑

@@ -92,6 +92,41 @@ curl -X POST 'http://127.0.0.1:8000/api/webmin/plugin-rpc/my-plugin/echo' \
 
 ---
 
+## POST `/api/webmin/plugin-backend/{plugin_id}/{action}`
+
+管理插件自带后端子进程（`server/server.js`）的生命周期。宿主在面板标签打开（iframe 挂载）时自动 `start`，标签关闭（iframe 卸载）时自动 `stop`；
+所以改完 `server/server.js` 只需关掉再打开标签就能加载新代码，**无需重启 PurrCat**。
+
+**请求**
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| plugin_id | path | string | 是 | 插件 id（不得含 `/`、`\`、`..`） |
+| action | path | string | 是 | `start` / `stop` / `restart` / `status` |
+
+- `start`：拉起进程（已在运行则直接返回），响应带 `pid`。
+- `stop`：停掉进程（未运行视为成功）。
+- `restart`：先停后起，标签页开着也能重启后端。
+- `status`：只查询是否在运行，不会拉起进程。
+
+**响应**
+
+```json
+{ "status": "ok", "running": true, "pid": 12345 }
+```
+
+`stop` / `status` 未运行时为 `{ "status": "ok", "running": false }`。
+
+`plugin_id` 非法或 `action` 未知返回 `400`；插件不存在返回 `404` 与 `{ "detail": "插件 <plugin_id> 不存在" }`；启动失败（如插件没有后端或 `server.js` 未在 15 秒内输出 `ready`）返回 `502`，`detail` 为异常信息。
+
+**示例**
+
+```bash
+curl -X POST 'http://127.0.0.1:8000/api/webmin/plugin-backend/my-plugin/restart'
+```
+
+---
+
 ## GET `/api/webmin/config`
 
 读取插件配置。
@@ -332,3 +367,4 @@ window.parent.postMessage(
 - 插件 id 冲突按 `用户 > 沙盒 > 内置` 生效；想改造内置插件请另起 id。
 - 宿主 CSS 变量**不跨 iframe 继承**，插件用 `var(--wm-*, fallback)` 自带兜底。
 - 新增插件或改动 `plugin.json` 后，用户按 `Ctrl+R` 刷新即可生效（无需重启应用）。
+- 插件后端（`server/server.js`）的生命周期跟随面板标签：开标签 start、关标签 stop；改后端代码后关掉再打开标签即可，或用上面的 `restart` 接口主动重启。

@@ -246,6 +246,12 @@ def restart(plugin_id: str):
     return True
 
 
+def start(plugin_id: str, plugin_dir: str):
+    """主动拉起插件后端子进程（不依赖首次 RPC）。"""
+    proc = _get_or_start(plugin_id, plugin_dir)
+    return {"running": True, "pid": proc._proc.pid if proc._proc else None}
+
+
 def stop(plugin_id: str):
     return restart(plugin_id)
 

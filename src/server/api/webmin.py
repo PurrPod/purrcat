@@ -368,6 +368,33 @@ def _resolve_plugin_dir(plugin_id: str) -> str | None:
     return None
 
 
+@router.post("/plugin-backend/{plugin_id}/{action}")
+def api_webmin_plugin_backend(plugin_id: str, action: str):
+    """插件后端子进程生命周期：start / stop / restart / status。
+
+    宿主在面板标签打开时 start、关闭时 stop，使插件后端随标签存活，
+    因此改完 ``server/server.js`` 只要关掉再打开标签即可生效，无需重启 PurrCat。
+    """
+    if not plugin_id or any(c in plugin_id for c in ("/", "\\", "..")):
+        raise HTTPException(status_code=400, detail="非法的插件 id")
+    if action not in ("start", "stop", "restart", "status"):
+        raise HTTPException(status_code=400, detail=f"未知操作: {action}")
+    if action == "status":
+        return {"status": "ok", "running": plugin_runtime.is_running(plugin_id)}
+    if action in ("stop", "restart"):
+        plugin_runtime.stop(plugin_id)
+        if action == "stop":
+            return {"status": "ok", "running": False}
+    plugin_dir = _resolve_plugin_dir(plugin_id)
+    if plugin_dir is None:
+        raise HTTPException(status_code=404, detail=f"插件 {plugin_id} 不存在")
+    try:
+        info = plugin_runtime.start(plugin_id, plugin_dir)
+    except plugin_runtime.PluginProcessError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    return {"status": "ok", **info}
+
+
 @router.get("/config")
 def api_webmin_get_config():
     """读取插件配置：{ "plugins": { plugin_id: config } }。"""
