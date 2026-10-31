@@ -677,13 +677,14 @@
     if (n !== el) return '';
     return String(sel.toString() || '');
   }
-  // 复制「屏幕上看得见的文字」：消息是 markdown 渲染出来的，直接复制源码会把 **、#、``` 等标记带进去
+  // 兜底：没有原文时复制「屏幕上看得见的文字」
   function visibleText(el) {
     var t = el.innerText != null ? el.innerText : el.textContent;
     return String(t == null ? '' : t).replace(/[ \t]*\n[ \t]*$/, '');
   }
   // 给气泡挂一个 hover 显示的复制按钮（对齐完整模式 ClipboardCopy 交互）
-  function attachCopy(el) {
+  // raw：消息的原始 Markdown 文本；整条复制时保留 [文本](链接) 等源码，选中片段时只复制选中部分
+  function attachCopy(el, raw) {
     el.classList.add('has-copy');
     var b = document.createElement('button');
     b.className = 'copy-btn'; b.type = 'button'; b.title = '复制';
@@ -692,7 +693,9 @@
     b.addEventListener('mousedown', function (ev) { ev.preventDefault(); });
     b.addEventListener('click', function (ev) {
       ev.stopPropagation();
-      copyText(selectionIn(el) || visibleText(el), b);
+      var picked = selectionIn(el);
+      var text = picked || (raw != null ? String(raw) : visibleText(el));
+      copyText(text, b);
     });
     el.appendChild(b);
     return el;
@@ -816,7 +819,7 @@
         col.appendChild(attWrap); count++;
       }
       parsed.msgs.forEach(function (txt) {
-        if (txt) { col.appendChild(attachCopy(bubble('user', esc(txt)))); count++; }
+        if (txt) { col.appendChild(attachCopy(bubble('user', esc(txt)), txt)); count++; }
       });
       if (show.hint) {
         parsed.hints.forEach(function (h) {
@@ -838,7 +841,7 @@
         var mb = document.createElement('div');
         mb.className = 'md';
         mb.innerHTML = mdToHtml(m.content);
-        col.appendChild(attachCopy(mb)); count++;
+        col.appendChild(attachCopy(mb, m.content)); count++;
       }
       if (show.tool && m.tool_calls && m.tool_calls.length) {
         m.tool_calls.forEach(function (tc) {
@@ -1187,9 +1190,16 @@
       pre.className = 'pv-text'; pre.textContent = '加载中…';
       pvBody.appendChild(pre);
       fetch('/api/filesystem/read?path=' + encodeURIComponent(path))
-        .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+        .then(function (r) {
+          if (!r.ok) {
+            // 404 是路径已失效（文件被移动/改名/删除），不是内容二进制，提示要区分开
+            if (r.status === 404) throw new Error('文件不存在，可能已被移动或重命名');
+            throw new Error('HTTP ' + r.status);
+          }
+          return r.json();
+        })
         .then(function (d) { pre.textContent = (d && d.content) || '(空文件)'; })
-        .catch(function () { pre.textContent = '无法预览该文件（可能是二进制内容）'; });
+        .catch(function (e) { pre.textContent = (e && e.message) || '无法预览该文件'; });
     }
     pvMask.classList.add('on');
   }
