@@ -247,6 +247,10 @@ class HookHandler:
             return os.path.join(PURRCAT_DIR, path[len(".purrcat/") :])
         if path.startswith("src/"):
             return os.path.join(BASE_DIR, path)
+        if path.startswith("/agent_vm"):
+            # 兼容沙盒视角的绝对路径（/agent_vm/...），文件工具会做同样映射
+            rel = path[len("/agent_vm") :].lstrip("/\\")
+            return os.path.join(AGENT_VM_DIR, rel)
         if path.startswith("agent_vm"):
             # 注意：不能用 lstrip("agent_vm")，它按字符集裁剪，会把 "agent_vm/x" 变成 "/x"，
             # 而 os.path.join 遇到以分隔符开头的片段会直接丢弃 AGENT_VM_DIR，落到盘根目录
