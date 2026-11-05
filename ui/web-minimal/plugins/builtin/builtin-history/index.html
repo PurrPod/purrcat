@@ -18,10 +18,27 @@
     background: transparent;
     color: var(--wm-label, #16191d);
     display: flex; flex-direction: column;
-    border-radius: 18px;
+    border-radius: 24px;
     overflow: hidden;
   }
   .list { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 18px 20px; display: flex; flex-direction: column; gap: 14px; }
+
+  /* 顶部会话信息条：标题 + 完整会话 ID */
+  .sess-head {
+    flex: none; display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+    padding: 10px 20px 9px; border-bottom: 1px solid var(--wm-border);
+  }
+  /* 草稿态（尚未产生会话）不显示顶部信息条 */
+  body.sess-draft .sess-head { display: none; }
+  .sess-title {
+    max-width: 100%; font-size: 14px; font-weight: 600;
+    color: var(--wm-label, #16191d); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .sess-id {
+    max-width: 100%; font-family: var(--wm-mono, ui-monospace, Consolas, monospace);
+    font-size: 11px; color: var(--wm-label-dim, #6a6a6a);
+    word-break: break-all;
+  }
 
   /* 子代理分支视图切换栏：对齐完整模式的 MAIN / b1 / b2 分支标签（存在子分支时才出现） */
   .branch-bar { display: none; flex: none; align-items: center; gap: 8px; padding: 12px 20px 0; overflow-x: auto; }
@@ -56,9 +73,11 @@
     border-radius: 999px; padding: 4px 10px; max-width: 320px;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
-  .msg { max-width: 78%; padding: 10px 14px; border-radius: 12px; word-break: break-word; }
-  .msg.user { margin-left: auto; background: var(--wm-user-bubble, rgba(15,17,21,.10)); border: 1px solid rgba(15,17,21,0.18); white-space: pre-wrap; }
-  .msg.assistant { margin-right: auto; background: var(--wm-bg-input, #f2f4f7); border: 1px solid var(--wm-border-soft, rgba(15,17,21,.05)); }
+  .msg { max-width: 78%; padding: 10px 14px; border-radius: 10px; word-break: break-word; }
+  /* 用户气泡：浅灰、无描边 */
+  .msg.user { margin-left: auto; background: var(--wm-user-bubble, #f3f3f5); border: none; white-space: pre-wrap; }
+  /* 助手回复：整段文字直接铺在面板白底上，不加气泡容器 */
+  .msg.assistant { margin-right: auto; max-width: 100%; padding: 0; background: transparent; border: none; }
 
   /* 折叠块 */
   /* 折叠块：标题在上、内容展开在下方（纵向，不再挤到右边） */
@@ -441,6 +460,10 @@
 </style>
 </head>
 <body>
+  <div class="sess-head">
+    <div class="sess-title" id="sessTitle">新会话</div>
+    <div class="sess-id" id="sessId"></div>
+  </div>
   <div class="branch-bar" id="branchBar"></div>
   <div class="list" id="list">
     <div class="empty">暂无消息</div>
@@ -576,7 +599,7 @@
 
   // ---------- 面板底色 / 展示开关（历史 + 输入同属一个面板，共用一套配置） ----------
   // 会话面板底色：白色，可调透明度（输入条悬浮其上，二者不互相遮盖）
-  var DEF_OP = 0.82;
+  var DEF_OP = 1;
   // 展示开关：工具调用 / 思考内容默认展示（保持既有行为）；workflow hint 为系统注入，
   // 默认不展示（与原 UI 一致），用户可在设置里打开
   var show = { tool: true, reasoning: true, hint: false };
@@ -1308,6 +1331,30 @@
       .catch(function () { branches = { main: {} }; currentBranchId = 'main'; renderBranchBar(); });
   }
 
+  // 顶部信息条：展示当前会话标题与 ID
+  var headerSid = '';
+  function setSessHeader(sid, alias) {
+    var t = document.getElementById('sessTitle');
+    var i = document.getElementById('sessId');
+    if (!t || !i) return;
+    if (document.body) document.body.classList.toggle('sess-draft', !sid);
+    if (!sid) { t.textContent = '新会话'; t.title = ''; i.textContent = ''; i.title = ''; return; }
+    i.textContent = sid;
+    i.title = sid;
+    t.textContent = alias || '未命名会话';
+    t.title = t.textContent;
+  }
+  function updateSessHeader(sid) {
+    headerSid = sid || '';
+    if (!sid) { setSessHeader('', ''); return; }
+    setSessHeader(sid, '');
+    callAction('sessions.list').then(function (list) {
+      if (headerSid !== sid) return;
+      var s = (Array.isArray(list) ? list : []).filter(function (x) { return x.id === sid; })[0];
+      if (s) setSessHeader(sid, s.alias || s.title);
+    }).catch(function () {});
+  }
+
   function load(sessionId) {
     if (!sessionId) { localBuffer = []; renderMessages([]); return; }
     fetch('/api/sessions/' + encodeURIComponent(sessionId) + '?branch_id=' + encodeURIComponent(currentBranchId))
@@ -1324,6 +1371,7 @@
   function refresh() {
     callAction('state.get').then(function (st) {
       activeSessionId = (st && st.activeSessionId) || activeSessionId || '';
+      updateSessHeader(activeSessionId);
       load(activeSessionId);
       loadBranches(activeSessionId);
       ensurePoll();
@@ -1865,6 +1913,8 @@
       ensurePoll();
       refresh();
       resyncEmpty(); loadMode(); refreshCtx();
+    } else if (m.event === 'session.renamed') {
+      if (d.session_id === headerSid) setSessHeader(headerSid, d.alias || '');
     } else if (m.event === 'branch.switched') {
       // 宿主回推当前分支视图（含晚加载补推）：与本插件本地态对账，必要时重载；同时切换输入只读
       var bid = d.branch_id || 'main';
