@@ -174,7 +174,7 @@
     let o = typeof railState.opacity === 'number' ? railState.opacity : 1;
     o = Math.min(1, Math.max(0, o));
     const rail = HOST.document.getElementById('rail');
-    if (rail) rail.style.setProperty('--wm-rail-bg', 'rgba(255,255,255,' + o.toFixed(3) + ')');
+    if (rail) rail.style.setProperty('--wm-rail-bg', 'rgba(248,248,249,' + o.toFixed(3) + ')');
   }
   function cycleRail() {
     railState.stage = (railState.stage + 1) % RAIL_STAGES;   // 0→1→0
@@ -218,8 +218,8 @@
     if (!iconsEl) return;
     applyRailStage();
     iconsEl.innerHTML = '';
-    // 1) 固定区域（同区域互斥，最多一个生效）：按「区域」共用一个图标——同区域多个插件
-    //    （如原生会话 / 涂鸦会话）不再各占一个图标，避免认知负担；点击弹出候选菜单切换。
+    // 1) 固定区域（同区域互斥，最多一个生效）：按「区域」共用一个图标，
+    //    点击弹出候选菜单切换，避免同一区域在左侧铺开成多个图标。
     fixedAreaIds().forEach((area) => { iconsEl.appendChild(makeAreaRailButton(area)); });
     // 2) 多实例类型（float 自由浮窗 / modal 模态弹窗，可多个同时存在）：逐个插件各占一个图标。
     //    panel 内容插件不进白条，由「面板容器」区域图标统辖。
@@ -560,7 +560,7 @@
 
     // 透明度
     const o = Number(panelContainerCfg.opacity);
-    transparencyField(grid, '透明度', 0.15, (o >= 0.15 && o <= 1) ? o : 0.9, 0.05, function (v) {
+    transparencyField(grid, '透明度', 0.15, (o >= 0.15 && o <= 1) ? o : 1, 0.05, function (v) {
       panelContainerCfg.opacity = v;
       applyPanelContainerCfg();
       settingsSavePanel();
@@ -854,7 +854,7 @@
   // ---- UI 插件主面板：按「区域」竖排分组（卡片 / JSON 双模式，与配置中心一致）----
   // area 是插件声明的唯一维度；行为（单例 / 容器抽屉 / 浮窗）由宿主按区域内置。
   const AREA_LABEL = {
-    rail: '左侧白条', sidebar: '会话列表', session: '会话', background: '背景',
+    rail: '左侧白条', sidebar: '会话列表', session: '会话位', background: '背景',
     'panel-container': '面板容器', panel: '面板',
     pet: '浮窗类', popup: '模态弹窗',
   };
@@ -2046,6 +2046,7 @@
         if (!res.ok) throw new Error((await res.text()) || '重命名失败');
         await refreshSessions();
         broadcastSessions('conversation.updated', { session_id: sid });
+        broadcast('session', 'session.renamed', { session_id: sid, alias });
         return { status: 'ok', alias };
       }
       // 删除会话：对齐后端 DELETE /api/sessions/{id}
@@ -2226,6 +2227,12 @@
         await reloadManifest();
         return { status: 'ok' };
       }
+      case 'plugin.activate': {
+        const p = (groupState.plugins || []).find((x) => x.id === payload.plugin_id);
+        if (!p) throw new Error('插件不存在');
+        activateSlotPlugin(p);
+        return { status: 'ok' };
+      }
       case 'ref.graphs': {
         const graphs = await (await fetch('/api/graphs')).json();
         return (graphs || []).map((g) => (typeof g === 'string' ? g : g.name));
@@ -2326,7 +2333,7 @@
         return { status: 'ok', paradigm: groupState.draftParadigm };
       }
       case 'state.get':
-        return { ...groupState, plugins: undefined };
+        return { ...groupState, plugins: undefined, activeBySlot: { ...activeBySlot } };
       // 子代理分支视图切换：会话插件据此切换查看分支（同时由分支状态进入/退出输入只读）
       case 'branch.select': {
         const bid = String(payload.branch_id || 'main');
@@ -2547,9 +2554,9 @@
     const el = HOST.document.querySelector('.wm-ppanel[data-pslot="panel"]');
     if (!el) return;
     let o = Number(panelContainerCfg.opacity);
-    if (!(o >= 0)) o = 0.9;
+    if (!(o >= 0)) o = 1;
     o = Math.min(1, Math.max(0.15, o));
-    el.style.setProperty('--wm-panel-bg', 'rgba(242,244,247,' + o.toFixed(3) + ')');
+    el.style.setProperty('--wm-panel-bg', 'rgba(255,255,255,' + o.toFixed(3) + ')');
   }
   // 读取 CSS 变量数值。必须从 body 作用域读取：布局变量可能在 body 上被覆盖
   // （如 body.rail-1 把 --wm-rail-w 改为 196px），从 documentElement 读会一直得到
@@ -2748,8 +2755,11 @@
       st.views = {};
       st.frames = {};
     }
-    // 丢弃已卸载插件的残留标签
-    panelTabs = panelTabs.filter((id) => !!st.pluginsById[id]);
+    // 丢弃已卸载或已改挂到固定区域的插件残留标签
+    panelTabs = panelTabs.filter((id) => {
+      const rec = st.pluginsById[id];
+      return !!rec && (rec.p.slotDef || {}).type === 'panel';
+    });
     if (panelTabs.indexOf(st.activeId) < 0) st.activeId = panelTabs[0] || '';
     // 标签条：仅按钮，重建不触及 iframe
     st.strip.innerHTML = '';
