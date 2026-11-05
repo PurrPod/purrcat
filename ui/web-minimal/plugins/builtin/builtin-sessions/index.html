@@ -63,23 +63,20 @@
   .badge.zero { display: none; }
   .dbody { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; padding-top: 2px; }
   .drawer:not(.open) .dbody { display: none; }
-  /* 新建会话：抬升的白色主操作，形成第一层视觉重心 */
+  /* 新建会话：与列表行同构的扁平入口，无色块、无边框、无投影 */
   .new-session {
-    flex: none; width: 100%; height: 36px; display: flex; align-items: center; gap: 10px;
-    padding: 0 10px; margin-bottom: 10px; text-align: left;
-    font: inherit; font-size: 13px; font-weight: 500; color: var(--label);
-    background: #fff; border: 1px solid var(--wm-border); border-radius: 10px; cursor: pointer;
-    box-shadow: var(--wm-shadow-sm);
+    flex: none; width: 100%; height: 30px; display: flex; align-items: center; gap: 8px;
+    padding: 0 8px; margin-bottom: 6px; text-align: left;
+    font: inherit; font-size: 13px; font-weight: 400; color: var(--label-2nd);
+    background: transparent; border: none; border-radius: 4px; cursor: pointer;
   }
-  .new-session:hover {
-    border-color: rgba(16, 26, 39, 0.14);
-    box-shadow: 0 4px 10px rgba(16, 26, 39, 0.08);
-  }
+  .new-session:hover { background: var(--hover); color: var(--label); }
   .new-session .ns-ic {
-    flex: none; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center;
-    color: #fff; background: var(--wm-ink, #16191d); border-radius: 6px;
+    flex: none; width: 16px; height: 16px; display: flex; align-items: center; justify-content: center;
+    color: var(--dim); background: transparent;
   }
-  .new-session .ns-ic svg { display: block; width: 13px; height: 13px; }
+  .new-session:hover .ns-ic { color: var(--label-2nd); }
+  .new-session .ns-ic svg { display: block; width: 14px; height: 14px; }
   .new-session .ns-tx { flex: 1; }
   .dcount {
     margin-left: auto; font-size: 11px; font-weight: 400; letter-spacing: 0;
@@ -88,26 +85,24 @@
 
   /* ---------- 列表 ---------- */
   /* 列表各自滚动：会话列表超出限高时自己滚，待审批放不下时才自己滚 */
-  .list { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 1px; }
+  .list { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
   .item {
     position: relative;
-    width: 100%; height: 30px;
+    flex: none;
+    width: 100%; height: 26px;
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
     font-size: 13px;
     font-weight: 400;
     color: var(--label-2nd);
     background: transparent;
-    padding: 0 8px;
-    border-radius: 8px;
+    padding: 0 6px;
+    border-radius: 4px;
     cursor: pointer;
   }
   .item:hover { background: var(--hover); color: var(--label); }
   .item.active { color: var(--label); background: var(--hover); }
-  .item-lead { flex: none; width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; color: var(--dim); }
-  .item-lead svg { display: block; width: 14px; height: 14px; }
-  .item.active .item-lead { color: var(--label-2nd); }
   .item-text { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; }
   .item-title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .item-meta { flex: none; font-size: 11px; color: var(--dim); }
@@ -281,7 +276,6 @@
   var ICON_TRASH = SVG_HEAD + '<path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>';
   var ICON_X = SVG_HEAD + '<path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
   var ICON_CHEV = SVG_HEAD + '<path d="m6 9 6 6 6-6"/></svg>';
-  var ICON_CHAT = SVG_HEAD + '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
 
   // 面板底色：浅灰（区别于宿主白底），确保圆角四角与背景有对比、看得见；透明度可调
   var DEF_OP = 1;
@@ -383,11 +377,6 @@
         listEl.appendChild(card);
         return;
       }
-
-      var lead = document.createElement('span');
-      lead.className = 'item-lead';
-      lead.innerHTML = ICON_CHAT;
-      card.appendChild(lead);
 
       var text = document.createElement('div');
       text.className = 'item-text';
