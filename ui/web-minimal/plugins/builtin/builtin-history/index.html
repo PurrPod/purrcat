@@ -23,11 +23,12 @@
   }
   .list { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 18px 20px; display: flex; flex-direction: column; gap: 14px; }
 
-  /* 顶部会话信息条：标题 + 完整会话 ID */
+  /* 顶部会话信息条：标题 + 完整会话 ID，右侧为最近会话切换入口 */
   .sess-head {
-    flex: none; display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
-    padding: 10px 20px 9px; border-bottom: 1px solid var(--wm-border);
+    flex: none; display: flex; align-items: center; gap: 8px;
+    padding: 8px 12px 8px 20px; border-bottom: 1px solid var(--wm-border);
   }
+  .sess-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
   /* 草稿态（尚未产生会话）不显示顶部信息条 */
   body.sess-draft .sess-head { display: none; }
   .sess-title {
@@ -39,6 +40,40 @@
     font-size: 11px; color: var(--wm-label-dim, #6a6a6a);
     word-break: break-all;
   }
+  /* 最近会话：图标悬停展开下拉，点击即切换 */
+  .sess-recent { position: relative; flex: none; }
+  .sess-recent-btn {
+    width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;
+    color: var(--wm-label-dim, #6a6a6a); background: transparent; border: none;
+    border-radius: 8px; cursor: pointer; padding: 0;
+  }
+  .sess-recent-btn:hover, .sess-recent.open .sess-recent-btn {
+    background: var(--wm-bg-hover, #e9edf1); color: var(--wm-label, #16191d);
+  }
+  .sess-recent-btn svg { display: block; width: 16px; height: 16px; }
+  .sess-recent-menu {
+    position: absolute; right: 0; top: calc(100% + 6px); z-index: 20;
+    width: 232px; max-width: calc(100vw - 32px); padding: 6px;
+    display: none; flex-direction: column; gap: 2px;
+    background: var(--wm-bl-0, #fff); border: 1px solid var(--wm-border);
+    border-radius: 10px; box-shadow: 0 8px 24px rgba(16, 26, 39, .14);
+  }
+  /* 图标与下拉之间留出的 6px 用不可见缓冲区衔接，鼠标移入时不会中途丢失悬停 */
+  .sess-recent-menu::before {
+    content: ''; position: absolute; left: 0; right: 0; top: -8px; height: 8px;
+  }
+  .sess-recent:hover .sess-recent-menu,
+  .sess-recent-btn:hover ~ .sess-recent-menu,
+  .sess-recent:focus-within .sess-recent-menu { display: flex; }
+  .rec-item {
+    width: 100%; font: inherit; font-size: 12.5px; text-align: left;
+    padding: 6px 8px; border: none; border-radius: 6px; cursor: pointer;
+    background: transparent; color: var(--wm-label-2nd, #4c5560);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .rec-item:hover { background: var(--wm-bg-hover, #e9edf1); color: var(--wm-label, #16191d); }
+  .rec-item.active { background: var(--wm-bg-hover, #e9edf1); color: var(--wm-label, #16191d); font-weight: 500; }
+  .rec-empty { padding: 6px 8px; font-size: 12px; color: var(--wm-label-dim, #6a6a6a); }
 
   /* 子代理分支视图切换栏：对齐完整模式的 MAIN / b1 / b2 分支标签（存在子分支时才出现） */
   .branch-bar { display: none; flex: none; align-items: center; gap: 8px; padding: 12px 20px 0; overflow-x: auto; }
@@ -467,8 +502,16 @@
 </head>
 <body>
   <div class="sess-head">
-    <div class="sess-title" id="sessTitle">新会话</div>
-    <div class="sess-id" id="sessId"></div>
+    <div class="sess-meta">
+      <div class="sess-title" id="sessTitle">新会话</div>
+      <div class="sess-id" id="sessId"></div>
+    </div>
+    <div class="sess-recent" id="sessRecent">
+      <button type="button" class="sess-recent-btn" id="sessRecentBtn" title="最近会话">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg>
+      </button>
+      <div class="sess-recent-menu" id="sessRecentMenu"></div>
+    </div>
   </div>
   <div class="branch-bar" id="branchBar"></div>
   <div class="list" id="list">
@@ -1360,6 +1403,46 @@
       if (s) setSessHeader(sid, s.alias || s.title);
     }).catch(function () {});
   }
+
+  // 顶部右侧「最近会话」：悬停列出最近几个会话，点击即切换
+  function renderRecentMenu(list) {
+    var menu = document.getElementById('sessRecentMenu');
+    if (!menu) return;
+    menu.innerHTML = '';
+    var recent = (Array.isArray(list) ? list : []).slice(0, 5);
+    if (!recent.length) {
+      var empty = document.createElement('div');
+      empty.className = 'rec-empty';
+      empty.textContent = '暂无最近会话';
+      menu.appendChild(empty);
+      return;
+    }
+    recent.forEach(function (s) {
+      var item = document.createElement('button');
+      item.type = 'button';
+      item.className = 'rec-item' + (s.id === headerSid ? ' active' : '');
+      item.textContent = s.alias || s.title || s.id;
+      item.title = s.id;
+      item.addEventListener('click', function () {
+        callAction('session.switch', { session_id: s.id }).catch(function () {});
+      });
+      menu.appendChild(item);
+    });
+  }
+  function refreshRecentMenu() {
+    callAction('sessions.list').then(function (list) {
+      var arr = (Array.isArray(list) ? list : []).slice();
+      arr.sort(function (a, b) {
+        return String(b.updated_at || b.created_at || '')
+          .localeCompare(String(a.updated_at || a.created_at || ''));
+      });
+      renderRecentMenu(arr);
+    }).catch(function () { renderRecentMenu([]); });
+  }
+  (function bindRecentMenu() {
+    var wrap = document.getElementById('sessRecent');
+    if (wrap) wrap.addEventListener('mouseenter', refreshRecentMenu);
+  })();
 
   function load(sessionId) {
     if (!sessionId) { localBuffer = []; renderMessages([]); return; }
