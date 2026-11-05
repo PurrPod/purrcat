@@ -1,7 +1,7 @@
 {
   "id": "builtin-history",
   "root": "builtin",
-  "name": "会话位",
+  "name": "会话历史",
   "icon": "history",
   "slot": { "area": "session" },
   "entry": "index.html",
