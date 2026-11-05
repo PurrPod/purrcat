@@ -385,56 +385,6 @@ curl -X POST 'http://127.0.0.1:8000/api/config/mcp/reload'
 
 ---
 
-## GET `/api/config/app`
-
-读取应用白名单配置（`~/.purrcat/app_config.json`）。
-
-**请求**
-
-无参数。
-
-**响应**
-
-```json
-{ "GitHub": "https://github.com" }
-```
-
-**示例**
-
-```bash
-curl 'http://127.0.0.1:8000/api/config/app'
-```
-
----
-
-## PUT `/api/config/app`
-
-更新应用白名单配置（`~/.purrcat/app_config.json`），整体覆盖写入。
-
-**请求**
-
-| 参数 | 位置 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- | --- |
-| `config` | body | object | 是 | 完整应用配置对象，整体覆盖写入 |
-
-**响应**
-
-```json
-{ "status": "ok", "message": "App config updated successfully" }
-```
-
-保存失败返回 `500`：`{ "detail": "Failed to save app config" }`
-
-**示例**
-
-```bash
-curl -X PUT 'http://127.0.0.1:8000/api/config/app' \
-  -H 'Content-Type: application/json' \
-  -d '{"GitHub":"https://github.com"}'
-```
-
----
-
 ## GET `/api/config/acp`
 
 读取 ACP 接入状态：relay 部署情况、端口与 `uv` 可用性。

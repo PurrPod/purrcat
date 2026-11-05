@@ -18,7 +18,6 @@ MODEL_CONFIG_PATH = os.path.join(PURRCAT_DIR, "model.json")
 SENSOR_CONFIG_PATH = os.path.join(PURRCAT_DIR, "activate_sensor.json")
 FILE_CONFIG_PATH = os.path.join(PURRCAT_DIR, "file.json")
 MCP_CONFIG_PATH = os.path.join(PURRCAT_DIR, "mcp_config.json")
-APP_CONFIG_PATH = os.path.join(PURRCAT_DIR, "app_config.json")
 
 
 # 大型数据目录：用户可选，默认 = ~/.purrcat
@@ -226,13 +225,6 @@ def get_file_config() -> Dict[str, Any]:
 def get_mcp_config() -> Dict[str, Any]:
     if os.path.exists(MCP_CONFIG_PATH):
         return _load_json_file(MCP_CONFIG_PATH)
-    return {}
-
-
-def get_app_config() -> Dict[str, Any]:
-    """获取用户配置的应用白名单 (app_config.json)"""
-    if os.path.exists(APP_CONFIG_PATH):
-        return _load_json_file(APP_CONFIG_PATH)
     return {}
 
 

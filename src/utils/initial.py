@@ -13,7 +13,6 @@ from src.utils.config import (
     SENSOR_CONFIG_PATH,
     FILE_CONFIG_PATH,
     MCP_CONFIG_PATH,
-    APP_CONFIG_PATH,
     CRON_FILE,
     HEARTBEAT_FILE,
     SOUL_MD_PATH,
@@ -182,12 +181,6 @@ def _get_mcp_config_dict():
     }
 
 
-def _get_app_config_dict():
-    return {
-        "GitHub": "https://github.com",
-    }
-
-
 # ==========================================
 # 文件生成函数
 # ==========================================
@@ -219,8 +212,6 @@ def _generate_all_configs():
         _write_json(FILE_CONFIG_PATH, _get_file_config_dict())
     if not os.path.exists(MCP_CONFIG_PATH):
         _write_json(MCP_CONFIG_PATH, _get_mcp_config_dict())
-    if not os.path.exists(APP_CONFIG_PATH):
-        _write_json(APP_CONFIG_PATH, _get_app_config_dict())
 
     # ACP 网关 token 预生成（幂等）：启动即落盘，编辑器 relay 冷启动即可读到，
     # 修掉"首个 /acp/rpc 请求才生成"导致的 relay 永久退出问题

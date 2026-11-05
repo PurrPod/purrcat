@@ -780,8 +780,8 @@
 
   // ---- 设置面板：左导航 + 内容区（宿主固有资产，非插件）----
   // 主导航：UI 插件 + 原配置中心逐标签页
-  const CONFIG_NAV = ['plugins', 'model', 'sensor', 'file', 'mcp', 'app', 'soul', 'acp', 'deploy'];
-  const CONFIG_LABEL = { plugins: 'UI 插件', model: '模型', sensor: '传感器', file: '文件', mcp: 'MCP', app: '应用', soul: '全局人设', acp: 'ACP', deploy: '部署' };
+  const CONFIG_NAV = ['plugins', 'model', 'sensor', 'file', 'mcp', 'soul', 'acp', 'deploy'];
+  const CONFIG_LABEL = { plugins: 'UI 插件', model: '模型', sensor: '传感器', file: '文件', mcp: 'MCP', soul: '全局人设', acp: 'ACP', deploy: '部署' };
   let settingsTab = 'plugins';
   let settingsRenderedTab = '';   // 上一次渲染的标签页（同页重建才恢复滚动位置）
   let deployPollT = null;   // 部署页轮询定时器句柄
