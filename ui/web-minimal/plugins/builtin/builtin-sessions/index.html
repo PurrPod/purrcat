@@ -22,7 +22,7 @@
   ::-webkit-scrollbar-thumb { background: #c6cdd5; border-radius: 999px; }
   body {
     font-family: var(--wm-font, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif);
-    background: transparent;
+    background: var(--wm-bl-0, #fff);
     color: var(--label);
     display: flex;
     flex-direction: column;
@@ -39,10 +39,12 @@
   .drawer:not(.open) { flex: 0 0 auto; }
   /* 待审批：按内容自然高度，不设上限；整块放不下时才收缩，列表内滚动 */
   .drawer.open#drawerPending { flex: 0 1 auto; }
+  /* 分组之间留出呼吸间距，避免新建入口与列表、待审批挤在一起 */
+  #drawerPending { margin-top: 12px; }
   .dhead {
-    flex: none; display: flex; align-items: center; gap: 4px;
-    height: 22px; padding: 0 8px; margin: 0 4px;
-    border-radius: 4px; cursor: pointer; user-select: none;
+    flex: none; display: flex; align-items: center; gap: 6px;
+    height: 26px; padding: 0 10px; margin: 0 2px;
+    border-radius: 6px; cursor: pointer; user-select: none;
   }
   .dhead:hover { background: var(--hover); }
   .dhead .dtitle {
@@ -61,14 +63,14 @@
     display: flex; align-items: center; justify-content: center;
   }
   .badge.zero { display: none; }
-  .dbody { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; padding-top: 2px; }
+  .dbody { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; padding-top: 4px; }
   .drawer:not(.open) .dbody { display: none; }
   /* 新建会话：与列表行同构的扁平入口，无色块、无边框、无投影 */
   .new-session {
-    flex: none; width: 100%; height: 30px; display: flex; align-items: center; gap: 8px;
-    padding: 0 8px; margin-bottom: 6px; text-align: left;
+    flex: none; width: 100%; height: 32px; display: flex; align-items: center; gap: 10px;
+    padding: 0 10px; margin-bottom: 14px; text-align: left;
     font: inherit; font-size: 13px; font-weight: 400; color: var(--label-2nd);
-    background: transparent; border: none; border-radius: 4px; cursor: pointer;
+    background: transparent; border: none; border-radius: 6px; cursor: pointer;
   }
   .new-session:hover { background: var(--hover); color: var(--label); }
   .new-session .ns-ic {
@@ -85,28 +87,27 @@
 
   /* ---------- 列表 ---------- */
   /* 列表各自滚动：会话列表超出限高时自己滚，待审批放不下时才自己滚 */
-  .list { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+  .list { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; padding: 2px 0; }
   .item {
     position: relative;
     flex: none;
-    width: 100%; height: 26px;
+    width: 100%; height: 30px;
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
     font-size: 13px;
     font-weight: 400;
     color: var(--label-2nd);
     background: transparent;
-    padding: 0 6px;
-    border-radius: 4px;
+    padding: 0 10px;
+    border-radius: 6px;
     cursor: pointer;
   }
   .item:hover { background: var(--hover); color: var(--label); }
   .item.active { color: var(--label); background: var(--hover); }
   .item-text { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; }
   .item-title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .item-meta { flex: none; font-size: 11px; color: var(--dim); }
-  /* 行尾动作区：默认隐去，hover 或处于编辑态时覆盖日期显现 */
+  /* 行尾动作区：默认隐去，hover 或处于编辑态时显现 */
   .item-acts {
     position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
     display: flex; align-items: center; gap: 2px; padding-left: 2px;
@@ -277,12 +278,12 @@
   var ICON_X = SVG_HEAD + '<path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
   var ICON_CHEV = SVG_HEAD + '<path d="m6 9 6 6 6-6"/></svg>';
 
-  // 面板底色：浅灰（区别于宿主白底），确保圆角四角与背景有对比、看得见；透明度可调
+  // 面板底色：与会话历史面板一致的白色；透明度可调
   var DEF_OP = 1;
   function applyPanel(cfg) {
     var o = cfg && typeof cfg.opacity === 'number' ? cfg.opacity : DEF_OP;
     o = Math.max(0, Math.min(1, o));
-    document.body.style.backgroundColor = 'rgba(248,248,249,' + o.toFixed(2) + ')';
+    document.body.style.backgroundColor = 'rgba(255,255,255,' + o.toFixed(2) + ')';
   }
   window.addEventListener('message', function (e) {
     var m = e.data;
@@ -399,11 +400,6 @@
         dt.textContent = s.alias || s.id;
         text.appendChild(dt);
       }
-      var meta = document.createElement('div');
-      meta.className = 'item-meta';
-      meta.textContent = (s.updated_at || '').slice(0, 16);
-      text.appendChild(meta);
-
       var acts = document.createElement('div');
       acts.className = 'item-acts';
       acts.appendChild(iconButton('', '重命名', ICON_PENCIL, function () {
