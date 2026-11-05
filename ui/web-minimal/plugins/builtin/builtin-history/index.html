@@ -262,9 +262,15 @@
   .welcome .wt { font-size: 18px; font-weight: 600; }
   body.centered .bar, body.centered .refPanel { width: 100%; }
   /* 欢迎态：引用面板浮在输入条上方、不参与布局，避免展开时把输入框顶回最底部 */
+  /* 高度按上方可用空间自适应：输入条居中，最多占到面板顶部，避免超出后被容器裁掉 */
   body.centered .refPanel.open {
-    position: absolute; left: 0; right: 0; bottom: 100%;
-    margin-bottom: 8px; z-index: 5;
+    position: absolute; left: 0; right: 0; bottom: calc(100% + 8px);
+    margin-bottom: 0; z-index: 5;
+    display: flex; flex-direction: column;
+    max-height: calc(50vh - 80px);
+  }
+  body.centered .refPanel.open .ref-pick {
+    flex: 1 1 auto; min-height: 0; height: auto;
   }
 
   /* 引用面板（＋ 展开）：左竖分类 + 右侧条目，鼠标悬浮分类即出列表 */
