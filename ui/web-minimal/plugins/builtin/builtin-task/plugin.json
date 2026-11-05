@@ -1,8 +1,8 @@
 {
   "id": "builtin-task",
   "root": "builtin",
-  "name": "任务",
+  "name": "后台任务",
   "icon": "<svg viewBox=\"0 0 24 24\"><path d=\"M22 12h-4l-3 9L9 3l-3 9H2\"/></svg>",
-  "slot": { "area": "panel" },
+  "slot": { "area": "session" },
   "entry": "index.html"
 }
