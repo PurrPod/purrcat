@@ -42,15 +42,17 @@
   }
   /* 最近会话：图标悬停展开下拉，点击即切换 */
   .sess-recent { position: relative; flex: none; }
-  .sess-recent-btn {
+  /* 顶部右侧动作：最近会话 / 子代理分支 / 新建会话 */
+  .sess-acts { flex: none; display: flex; align-items: center; gap: 2px; }
+  .sess-act {
     width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;
     color: var(--wm-label-dim, #6a6a6a); background: transparent; border: none;
     border-radius: 8px; cursor: pointer; padding: 0;
   }
-  .sess-recent-btn:hover, .sess-recent.open .sess-recent-btn {
-    background: var(--wm-bg-hover, #e9edf1); color: var(--wm-label, #16191d);
-  }
-  .sess-recent-btn svg { display: block; width: 16px; height: 16px; }
+  .sess-act:hover:not([disabled]) { background: var(--wm-bg-hover, #e9edf1); color: var(--wm-label, #16191d); }
+  .sess-act.on { background: var(--wm-bg-hover, #e9edf1); color: var(--wm-label, #16191d); }
+  .sess-act[disabled] { opacity: .45; cursor: default; }
+  .sess-act svg { display: block; width: 16px; height: 16px; }
   .sess-recent-menu {
     position: absolute; right: 0; top: calc(100% + 6px); z-index: 20;
     width: 232px; max-width: calc(100vw - 32px); padding: 6px;
@@ -63,7 +65,7 @@
     content: ''; position: absolute; left: 0; right: 0; top: -8px; height: 8px;
   }
   .sess-recent:hover .sess-recent-menu,
-  .sess-recent-btn:hover ~ .sess-recent-menu,
+  .sess-recent > .sess-act:hover ~ .sess-recent-menu,
   .sess-recent:focus-within .sess-recent-menu { display: flex; }
   .rec-item {
     width: 100%; font: inherit; font-size: 12.5px; text-align: left;
@@ -75,30 +77,7 @@
   .rec-item.active { background: var(--wm-bg-hover, #e9edf1); color: var(--wm-label, #16191d); font-weight: 500; }
   .rec-empty { padding: 6px 8px; font-size: 12px; color: var(--wm-label-dim, #6a6a6a); }
 
-  /* 子代理分支视图切换栏：对齐完整模式的 MAIN / b1 / b2 分支标签（存在子分支时才出现） */
-  .branch-bar { display: none; flex: none; align-items: center; gap: 8px; padding: 12px 20px 0; overflow-x: auto; }
-  .branch-bar.on { display: flex; }
-  .branch-item { position: relative; flex: none; display: flex; align-items: center; }
-  .branch-tab {
-    flex: none; font: inherit; font-size: 12px; font-weight: 600; letter-spacing: .04em;
-    padding: 5px 12px; border-radius: 999px; cursor: pointer;
-    border: 1px solid var(--wm-border, rgba(15,17,21,.12));
-    background: var(--wm-bl-0, #fff); color: var(--wm-label-2nd, #4c5560);
-    transition: background .12s ease, color .12s ease;
-  }
-  .branch-tab:hover { background: var(--wm-bg-hover, #e9edf1); color: var(--wm-label, #16191d); }
-  .branch-tab.active { background: var(--wm-accent, #16191d); color: #fff; border-color: transparent; }
-  .branch-tab.has-del { padding-right: 26px; }
-  /* 删除分支（含强制终止后台子代理）：hover 时浮现，对齐完整模式分支标签上的 × */
-  .branch-del {
-    position: absolute; right: 5px; top: 50%; transform: translateY(-50%);
-    width: 15px; height: 15px; padding: 0; border: none; border-radius: 50%; cursor: pointer;
-    display: flex; align-items: center; justify-content: center;
-    background: #bf616a; color: #fff; font-size: 11px; line-height: 1;
-    opacity: 0; transition: opacity .12s ease;
-  }
-  .branch-item:hover .branch-del { opacity: 1; }
-  .branch-del:hover { background: #a54e56; }
+  /* 子代理分支视图：不再占用顶部一行，收敛为右侧机器人图标（见 renderBranchBar） */
 
   .row { width: 100%; display: flex; }
   .attachments { width: 100%; display: flex; flex-wrap: wrap; gap: 6px; }
@@ -285,9 +264,8 @@
   }
   /* 输入条整体（引用面板 + 已选引用 + 输入框）：作为引用浮层的定位基准 */
   .bar-wrap { position: relative; width: 100%; }
-  /* 空态：无活动会话/无消息 → 隐藏历史列表与分支栏，输入区居中欢迎 */
+  /* 空态：无活动会话/无消息 → 隐藏历史列表，输入区居中欢迎 */
   body.centered .list { display: none; }
-  body.centered .branch-bar { display: none; }
   body.centered .composer {
     flex: 1 1 auto; justify-content: center; align-items: center;
     width: 100%; max-width: 760px; margin: 0 auto;
@@ -506,14 +484,21 @@
       <div class="sess-title" id="sessTitle">新会话</div>
       <div class="sess-id" id="sessId"></div>
     </div>
-    <div class="sess-recent" id="sessRecent">
-      <button type="button" class="sess-recent-btn" id="sessRecentBtn" title="最近会话">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg>
+    <div class="sess-acts">
+      <div class="sess-recent" id="sessRecent">
+        <button type="button" class="sess-act" id="sessRecentBtn" title="最近会话">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg>
+        </button>
+        <div class="sess-recent-menu" id="sessRecentMenu"></div>
+      </div>
+      <button type="button" class="sess-act" id="sessBranchBtn" title="暂无子代理分支" disabled>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="12" rx="3"/><path d="M12 4v4"/><circle cx="12" cy="3" r="1"/><path d="M9 13h.01M15 13h.01"/><path d="M2 13h1M21 13h1"/></svg>
       </button>
-      <div class="sess-recent-menu" id="sessRecentMenu"></div>
+      <button type="button" class="sess-act" id="sessNewBtn" title="新建会话">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+      </button>
     </div>
   </div>
-  <div class="branch-bar" id="branchBar"></div>
   <div class="list" id="list">
     <div class="empty">暂无消息</div>
   </div>
@@ -1309,37 +1294,18 @@
     if (lastRows && lastRows.length && !thinking) listEl.appendChild(buildActions());
   }
 
-  // ---------- 子代理分支视图切换（对齐完整模式：分支 > 1 时顶部出现 MAIN / b1 / b2 标签）----------
-  var branchBarEl = document.getElementById('branchBar');
+  // ---------- 子代理分支视图切换（顶部信息条右侧机器人图标：点击在 MAIN / 子分支间轮换）----------
   function branchLabel(bId) { return bId === 'main' ? 'MAIN' : (bId.split('_')[1] || bId); }
   function renderBranchBar() {
+    var btn = document.getElementById('sessBranchBtn');
+    if (!btn) return;
     var ids = Object.keys(branches);
-    // 仅主干时不出切换栏（与完整模式一致）
-    if (ids.length <= 1) { branchBarEl.classList.remove('on'); branchBarEl.innerHTML = ''; return; }
-    branchBarEl.innerHTML = '';
-    ids.forEach(function (bId) {
-      var item = document.createElement('div');
-      item.className = 'branch-item';
-      var b = document.createElement('button');
-      b.type = 'button';
-      b.className = 'branch-tab' + (bId === currentBranchId ? ' active' : '') + (bId === 'main' ? '' : ' has-del');
-      b.textContent = branchLabel(bId);
-      b.title = bId;
-      b.addEventListener('click', function () { switchBranch(bId); });
-      item.appendChild(b);
-      // 非主干分支支持删除（后端会一并强制终止其后台子代理）
-      if (bId !== 'main') {
-        var del = document.createElement('button');
-        del.type = 'button';
-        del.className = 'branch-del';
-        del.textContent = '×';
-        del.title = '删除分支（强制终止子代理）';
-        del.addEventListener('click', function (ev) { ev.stopPropagation(); deleteBranch(bId); });
-        item.appendChild(del);
-      }
-      branchBarEl.appendChild(item);
-    });
-    branchBarEl.classList.add('on');
+    var hasSub = ids.length > 1;
+    btn.disabled = !hasSub;
+    btn.classList.toggle('on', hasSub && currentBranchId !== 'main');
+    btn.title = hasSub
+      ? '子代理分支：' + branchLabel(currentBranchId) + '（点击切换）'
+      : '暂无子代理分支';
   }
   function switchBranch(bId) {
     if (bId === currentBranchId) return;
@@ -1348,24 +1314,6 @@
     renderBranchBar();
     load(activeSessionId);
     callAction('branch.select', { branch_id: bId }).catch(function () {});   // 通知宿主：输入框据此进入/退出只读
-  }
-  // 删除子代理分支：对齐后端 DELETE /api/sessions/{id}/branches/{branch_id}
-  // （后端先 cancel_sub_branch 斩断后台任务，再删除元数据与历史文件）
-  function deleteBranch(bId) {
-    if (!activeSessionId) return;
-    if (!window.confirm('删除子代理分支 ' + branchLabel(bId) + '？将强制终止其后台运行。')) return;
-    fetch('/api/sessions/' + encodeURIComponent(activeSessionId) + '/branches/' + encodeURIComponent(bId), { method: 'DELETE' })
-      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json().catch(function () { return {}; }); })
-      .then(function () {
-        toast('已删除分支');
-        if (currentBranchId === bId) {
-          currentBranchId = 'main';
-          callAction('branch.select', { branch_id: 'main' }).catch(function () {});
-        }
-        loadBranches(activeSessionId);
-        load(activeSessionId);
-      })
-      .catch(function (e) { toast('删除失败：' + (e.message || e)); });
   }
   function loadBranches(sessionId) {
     if (!sessionId) { branches = {}; renderBranchBar(); return; }
@@ -1442,6 +1390,25 @@
   (function bindRecentMenu() {
     var wrap = document.getElementById('sessRecent');
     if (wrap) wrap.addEventListener('mouseenter', refreshRecentMenu);
+  })();
+
+  // 顶部右侧动作：子代理分支切换（MAIN → 各子分支依次轮换）、新建会话
+  (function bindHeaderActions() {
+    var branchBtn = document.getElementById('sessBranchBtn');
+    if (branchBtn) {
+      branchBtn.addEventListener('click', function () {
+        var ids = Object.keys(branches);
+        if (ids.length <= 1) return;
+        var i = ids.indexOf(currentBranchId);
+        switchBranch(ids[(i + 1) % ids.length]);
+      });
+    }
+    var newBtn = document.getElementById('sessNewBtn');
+    if (newBtn) {
+      newBtn.addEventListener('click', function () {
+        callAction('sessions.new').catch(function () {});
+      });
+    }
   })();
 
   function load(sessionId) {
