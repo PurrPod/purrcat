@@ -178,10 +178,20 @@ body.rail-1 .rail-brand { display: flex; }
 .wm-rail .rail-glyph svg { display: block; width: 16px; height: 16px; }
 .wm-rail .rail-toggle svg { display: block; width: 16px; height: 16px; }
 .wm-rail .rail-ico .rail-name { display: none; flex: 1; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 13px; }
+/* 底部固定区（设置）：不随上方图标列表滚动，始终贴在白条最底下（无分隔线） */
+.wm-rail .rail-foot {
+  flex: none;
+  width: 100%;
+  display: flex; flex-direction: column; align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  padding: 6px 0 4px;
+}
 
 /* 阶段 1：图标+名称，图标栏变左侧栏 */
 body.rail-1 { --wm-rail-w: 196px; }
 body.rail-1 .wm-rail .rail-icons { align-items: stretch; padding: 0 6px; }
+body.rail-1 .wm-rail .rail-foot { align-items: stretch; padding: 6px 6px 4px; }
 body.rail-1 .wm-rail .rail-ico { width: 100%; justify-content: flex-start; }
 body.rail-1 .wm-rail .rail-ico .rail-name { display: inline; }
 

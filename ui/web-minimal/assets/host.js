@@ -197,86 +197,42 @@
     }
     persistRail().catch(() => {});
   }
-  // 按当前生效状态即时重算单个图标按钮的 on/off 高亮
-  function updateRailButton(btn, p) {
-    if (!btn) return;
-    btn.classList.remove('on', 'off');
-    if (p.railAction) {
-      // 动作型图标不表达"显隐"，只在对应面板开启时高亮（如设置）
-      if (panelActionActive(p)) btn.classList.add('on');
-    } else {
-      btn.classList.add(pluginVisible(p) ? 'on' : 'off');
-    }
-  }
-  // 动作型图标当前是否"激活"（用于高亮跟随面板开合）
-  function panelActionActive(p) {
-    if (p.railAction === 'settings.open') return HOST.document.body.classList.contains('settings-open');
-    return false;
-  }
   function buildRail() {
     const iconsEl = HOST.document.getElementById('railIcons');
     if (!iconsEl) return;
     applyRailStage();
     iconsEl.innerHTML = '';
-    // 1) 固定区域（同区域互斥，最多一个生效）：按「区域」共用一个图标，
-    //    点击弹出候选菜单切换，避免同一区域在左侧铺开成多个图标。
-    fixedAreaIds().forEach((area) => { iconsEl.appendChild(makeAreaRailButton(area)); });
-    // 2) 多实例类型（float 自由浮窗 / modal 模态弹窗，可多个同时存在）：逐个插件各占一个图标。
-    //    panel 内容插件不进白条，由「面板容器」区域图标统辖。
-    groupState.plugins
-      .filter(isRailPlugin)
-      .filter((p) => {
-        const t = (p.slotDef || {}).type;
-        return t === 'float' || t === 'modal';
-      })
-      .forEach((p) => {
-        const btn = HOST.document.createElement('button');
-        btn.className = 'rail-ico';
-        btn.title = (p.name || p.id);
-        const g = HOST.document.createElement('span');
-        g.className = 'rail-glyph';
-        paintPluginIcon(g, p);
-        btn.appendChild(g);
-        const nm = HOST.document.createElement('span');
-        nm.className = 'rail-name';
-        nm.textContent = p.name || p.id;
-        btn.appendChild(nm);
-        updateRailButton(btn, p);   // 初始高亮
-        railButtons[p.id] = btn;    // 登记，供开合状态即时刷新高亮
-        btn.addEventListener('click', () => {
-          if (p.railAction) { callAction(p.railAction, {}).catch(() => {}); return; }  // 例如设置 → 打开设置面板
-          // float / modal：开=显示实例，关=隐藏（与设置面板同一套开关语义）
-          togglePluginOpen(p);
-          buildRail();
-        });
-        iconsEl.appendChild(btn);
-      });
-    // 面板容器（内置容器）不再单列开关：它是 panel-container 区域的候选之一，
-    // 已并入上方的「区域图标」（见 makeAreaRailButton / areaCandidates）。
-    // 设置按钮（宿主固有资产，非插件）：固定在图标栏末尾
+    // 底部固定区独立重建，避免每次 buildRail 在其后追加导致设置按钮越积越多
+    const footEl = HOST.document.getElementById('railFoot') || iconsEl;
+    if (footEl !== iconsEl) footEl.innerHTML = '';
+    // 白条只保留固定的几个区域图标：插件注册后按其声明的区域自动归入对应图标，
+    // 同区域共用一个图标（多个插件时点击弹出候选菜单），命名与排列次序均由宿主决定。
+    railAreaList().forEach((area) => { iconsEl.appendChild(makeAreaRailButton(area)); });
+    // 设置按钮（宿主固有入口，独立归类为「设置」）：固定在白条最底部的固定区，
+    // 不随上方区域图标列表滚动，也不属于任何插件区域（如弹窗类）。
     const sb = HOST.document.createElement('button');
     sb.className = 'rail-ico';
     sb.id = 'railSettings';
-    sb.title = '设置';
+    sb.title = areaLabel('settings');
     const sg = HOST.document.createElement('span');
     sg.className = 'rail-glyph';
     paintIcon(sg, 'settings', '⚙');
     sb.appendChild(sg);
     const snm = HOST.document.createElement('span');
     snm.className = 'rail-name';
-    snm.textContent = '设置';
+    snm.textContent = areaLabel('settings');
     sb.appendChild(snm);
     // 与区域/插件图标一致：未打开设置时按「关闭」态变淡，打开时高亮
     const sbOpen = HOST.document.body.classList.contains('settings-open');
     sb.classList.toggle('on', sbOpen);
     sb.classList.toggle('off', !sbOpen);
     sb.addEventListener('click', () => setSettingsOpen(!HOST.document.body.classList.contains('settings-open')));
-    iconsEl.appendChild(sb);
+    footEl.appendChild(sb);
     railButtons['__settings__'] = sb;
     applyRailOpacity();
   }
 
-  // ---- 固定区域：白条按区域合并图标（同区域互斥，最多一个生效）----
+  // ---- 区域图标：白条按「区域」合并，同区域共用一个图标 ----
   // 区域显示名复用设置面板的 AREA_LABEL（单一来源，见下方「UI 插件主面板」分组）
   // 「内置容器」是真实的内置插件（plugins/builtin/builtin-panel）：与第三方容器插件
   // （如涂鸦面板容器）同属 panel-container 区域、等位互斥，白条上可按区域独立开关。
@@ -285,20 +241,31 @@
   // 面板容器区域在白条/菜单里的统一字形：窗口 + 顶部标签条
   const PANEL_AREA_ICON = 'panel-top';
   function areaLabel(area) { return AREA_LABEL[area] || area; }
-  // 需要按区域合并图标的固定区域（type=fixed）
-  function fixedAreaIds() {
-    return Object.keys(slotMap).filter((sid) => {
-      const list = slotMap[sid] || [];
-      return list.length > 0 && (list[0].slotDef || {}).type === 'fixed';
+  // 白条分区次序：固定写死，插件按其 slot 区域自动归位；未列出的区域排在最后
+  const RAIL_AREA_ORDER = ['session', 'panel-container', 'popup', 'sidebar', 'background'];
+  // 白条上的区域：除入驻容器（panel）外的全部区域，去重后按固定次序排列
+  function railAreaList() {
+    const areas = [];
+    groupState.plugins.forEach((p) => {
+      const def = p.slotDef || {};
+      if (def.type === 'panel' || !def.area) return;
+      if (areas.indexOf(def.area) < 0) areas.push(def.area);
     });
+    const rank = (a) => { const i = RAIL_AREA_ORDER.indexOf(a); return i < 0 ? RAIL_AREA_ORDER.length : i; };
+    return areas.sort((a, b) => rank(a) - rank(b));
   }
-  // 区域候选：即声明该区域的插件（内置容器也是一个普通插件，不再有合成候选）
+  // 区域候选：声明该区域的全部插件（内置容器也是一个普通插件，不再有合成候选）
   function areaCandidates(area) {
-    return (slotMap[area] || []).slice();
+    return groupState.plugins.filter((p) => (p.slotDef || {}).area === area && isRailPlugin(p));
   }
-  // 区域当前生效的候选（全部关闭时返回 null）——即该区域当前挂载的那个插件
+  // 区域当前处于开启状态的候选（单例区域最多一个；弹窗/浮窗可多个同时开启）
+  function areaOpen(area) { return areaCandidates(area).filter(pluginVisible); }
+  function areaOn(area) { return areaOpen(area).length > 0; }
+  // 区域当前生效的候选（单例区域为已挂载的那个，其余区域以首个开启者为准）
   function areaActive(area) {
-    return pluginBySlot[area] || null;
+    const mounted = pluginBySlot[area];
+    if (mounted) return mounted;
+    return areaOpen(area)[0] || null;
   }
   // 切换区域到某个候选：固定区域统一走 activateSlotPlugin（同区域互斥 + 持久化 + 即时重挂）
   function activateAreaCandidate(area, cand) {
@@ -307,21 +274,25 @@
   // 关闭整个区域：区域内全部候选一起让位（内置容器与容器插件互斥，一起关才真正空出中栏）
   function deactivateArea(area) {
     if (!railState.hidden) railState.hidden = {};
-    (slotMap[area] || []).forEach((p) => { railState.hidden[p.id] = true; });
-    refreshFixedSlot(area);
+    areaCandidates(area).forEach((p) => {
+      railState.hidden[p.id] = true;
+      // 单例区域的显隐由 refreshFixedSlot 统一重算；弹窗/浮窗是独立实例，逐个隐藏
+      if ((p.slotDef || {}).type !== 'fixed') applySlotHidden(p.slot, true);
+    });
+    if (slotMap[area]) refreshFixedSlot(area);
     persistRail().catch(() => {});
+    syncNativeCover();
   }
   // 重算区域图标的 on/off 与字形（内置容器与入驻插件互斥切换、开关变化后即时刷新）
   function refreshAreaRail(area) {
     const btn = railButtons['__area__:' + area];
     if (!btn) return;
-    const active = areaActive(area);
     btn.classList.remove('on', 'off');
-    btn.classList.add(active ? 'on' : 'off');
+    btn.classList.add(areaOn(area) ? 'on' : 'off');
     const g = btn.querySelector('.rail-glyph');
     if (!g) return;
-    // 区域候选统一按插件图标渲染；区域空无插件时回落到面板容器字形，避免文本兜底
-    const target = active || areaCandidates(area)[0] || null;
+    // 字形跟随该区域当前生效的插件；全关时回落到首个候选，避免文本兜底
+    const target = areaActive(area) || areaCandidates(area)[0] || null;
     if (target) paintPluginIcon(g, target);
     else paintIcon(g, PANEL_AREA_ICON, '▤');
   }
@@ -342,27 +313,27 @@
     btn.addEventListener('click', (ev) => {
       ev.stopPropagation();   // 触发按钮自身阻止冒泡，避免被 body 的统一收起立刻关掉菜单
       const cands = areaCandidates(area);
-      const active = areaActive(area);
+      if (!cands.length) return;
       if (cands.length <= 1) {
-        if (active) deactivateArea(area);
-        else if (cands[0]) activateAreaCandidate(area, cands[0]);
+        togglePluginOpen(cands[0]);
         buildRail();
         return;
       }
-      openAreaMenu(area, btn, cands, active);
+      openAreaMenu(area, btn, cands, areaOpen(area));
     });
     return btn;
   }
   // 区域候选菜单：列出该区域全部候选（含内置容器），点击即切换；区域生效时附「关闭」项
-  function openAreaMenu(area, anchor, cands, active) {
+  function openAreaMenu(area, anchor, cands, openList) {
     const already = HOST.document.getElementById('rail-area-menu');
     closePanelMenus();
     if (already) return;   // 再次点同一区域图标 = 收起
     const menu = HOST.document.createElement('div');
     menu.className = 'wm-pp_menu';
     menu.id = 'rail-area-menu';
+    const openIds = (openList || []).map((x) => x.id);
     cands.forEach((c) => {
-      const isActive = !!active && active.id === c.id;
+      const isActive = openIds.indexOf(c.id) >= 0;
       const item = HOST.document.createElement('div');
       item.className = 'wm-pp_menu-item' + (isActive ? ' active' : '');
       const g = HOST.document.createElement('span');
@@ -381,7 +352,7 @@
       item.addEventListener('click', () => { closePanelMenus(); activateAreaCandidate(area, c); buildRail(); });
       menu.appendChild(item);
     });
-    if (active) {
+    if (openIds.length) {
       const off = HOST.document.createElement('div');
       off.className = 'wm-pp_menu-item';
       const og = HOST.document.createElement('span');
@@ -853,10 +824,11 @@
 
   // ---- UI 插件主面板：按「区域」竖排分组（卡片 / JSON 双模式，与配置中心一致）----
   // area 是插件声明的唯一维度；行为（单例 / 容器抽屉 / 浮窗）由宿主按区域内置。
+  // 白条/设置面板统一使用的区域名：由宿主固定，插件不再自行决定
   const AREA_LABEL = {
-    rail: '左侧白条', sidebar: '会话列表', session: '会话位', background: '背景',
-    'panel-container': '面板容器', panel: '面板',
-    pet: '浮窗类', popup: '模态弹窗',
+    session: '会话位', 'panel-container': '面板容器', popup: '弹窗类',
+    sidebar: '列表位', background: '背景', rail: '左侧白条', panel: '面板', pet: '浮窗类',
+    settings: '设置',   // 宿主固有入口，独立归类的伪区域
   };
   // 宿主原生资产（非插件）挂在所属区域内；singleton 标记「同区域同时只能启用一个插件」
   const UI_GROUPS = [
