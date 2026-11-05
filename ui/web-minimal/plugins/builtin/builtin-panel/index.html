@@ -11,11 +11,12 @@
         注入宿主文档，并按下面 <body> 里的结构渲染容器（类名是宿主与本插件的约定）。
      容器在屏幕上的「位置 / 宽度」由宿主 theme.css 负责，外观与内部结构全在本文件。
      ============================================================ */
-  /* 容器本体外观：背景/圆角（透明底由宿主按容器设置注入 --wm-panel-bg） */
+  /* 容器本体外观：背景/圆角/阴影（透明底由宿主按容器设置注入 --wm-panel-bg） */
   .wm-ppanel {
-    background: var(--wm-panel-bg, var(--wm-bl-100));
+    background: var(--wm-panel-bg, var(--wm-bl-0));
     border: 1px solid var(--wm-border);
-    border-radius: 18px;
+    border-radius: 24px;
+    box-shadow: var(--wm-shadow-sm);
     overflow: hidden;
     display: none;
     flex-direction: column;
@@ -29,7 +30,8 @@
     gap: 6px;
     padding: 5px 8px;
     height: 38px;
-    background: var(--wm-panel-bg, var(--wm-bl-150));   /* 头部继承容器透明度变量，随容器设置一同透明 */
+    background: var(--wm-panel-bg, var(--wm-bl-0));   /* 与内容同底色 */
+    border-bottom: 1px solid var(--wm-border);
   }
   /* 多标签条（Chrome 风格）：横向排列、溢出可横向滚动，滚动条隐藏 */
   .wm-pp_tabs {
@@ -52,7 +54,7 @@
     gap: 6px;
     height: 26px;
     padding: 0 4px 0 8px;
-    border-radius: 8px;
+    border-radius: 999px;
     color: var(--wm-label-2nd);
     font-size: 12px;
     cursor: pointer;

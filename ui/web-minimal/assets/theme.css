@@ -5,19 +5,19 @@
    ============================================================ */
 
 :root {
-  /* 白灰中性色板 */
-  --wm-bl-0:    #ffffff;
-  --wm-bl-50:   #fafbfc;
-  --wm-bl-100:  #f2f4f7;   /* 侧栏 / 面板浅灰 */
-  --wm-bl-150:  #e9edf1;
-  --wm-bl-200:  #dfe4ea;
-  --wm-bl-300:  #c7cfd9;
-  --wm-bl-400:  #a9b3bf;
-  --wm-bl-500:  #8b96a3;
-  --wm-bl-600:  #6b7684;
-  --wm-bl-700:  #4c5560;
-  --wm-bl-800:  #2f3841;
-  --wm-bl-900:  #16191d;
+  /* 白灰中性色板：chrome / canvas / panel 三层由深到浅 */
+  --wm-bl-0:    #ffffff;   /* panel / scene */
+  --wm-bl-50:   #fdfdfd;   /* canvas */
+  --wm-bl-100:  #f8f8f9;   /* chrome：左侧白条 / 侧栏 */
+  --wm-bl-150:  #f3f3f5;   /* quiet hover / 输入底 */
+  --wm-bl-200:  #ededee;
+  --wm-bl-300:  #d9d9dc;
+  --wm-bl-400:  #b8b8bc;
+  --wm-bl-500:  #8c8c90;
+  --wm-bl-600:  #6a6a6a;
+  --wm-bl-700:  #4f4f52;
+  --wm-bl-800:  #2e2e31;
+  --wm-bl-900:  #1b1b1e;
 
   /* 强调色：中性黑（原 deepseek 蓝已全量替换，极简模式不再使用彩色强调） */
   --wm-ink:       #16191d;
@@ -26,22 +26,22 @@
 
   /* 语义别名 */
   --wm-bg-base:     var(--wm-bl-0);     /* 默认背景：白 */
-  --wm-bg-sidebar:  var(--wm-bl-100);   /* 侧栏浅灰 */
+  --wm-bg-sidebar:  var(--wm-bl-100);   /* 侧栏浅灰（chrome） */
   --wm-bg-panel:    var(--wm-bl-0);     /* 会话/面板白 */
-  --wm-bg-input:    var(--wm-bl-100);   /* 输入条字段浅灰 */
-  --wm-bg-hover:    var(--wm-bl-150);
-  --wm-bg-active:   var(--wm-bl-100);
-  --wm-label:       var(--wm-bl-900);
-  --wm-label-2nd:   var(--wm-bl-700);
-  --wm-label-dim:   var(--wm-bl-500);
-  --wm-border:      rgba(15, 17, 21, 0.08);   /* 极轻分隔，仅需处 */
-  --wm-border-soft: rgba(15, 17, 21, 0.05);
+  --wm-bg-input:    var(--wm-bl-150);   /* 输入条字段 / quiet hover */
+  --wm-bg-hover:    var(--wm-bl-150);   /* 悬浮：quiet hover */
+  --wm-bg-active:   rgba(0, 0, 0, 0.08); /* 选中态：selection surface */
+  --wm-label:       rgba(0, 0, 0, 0.80);
+  --wm-label-2nd:   rgba(0, 0, 0, 0.60);
+  --wm-label-dim:   #6a6a6a;
+  --wm-border:      rgba(16, 26, 39, 0.08);   /* 极轻分隔 */
+  --wm-border-soft: rgba(16, 26, 39, 0.05);
   --wm-accent:      var(--wm-ink);
   --wm-accent-hi:   var(--wm-ink-soft);
   --wm-accent-weak: var(--wm-ink-weak);
-  --wm-user-bubble: rgba(15, 17, 21, 0.06);    /* 用户气泡（圆弧） */
-  --wm-shadow-sm:   0 1px 2px rgba(15, 17, 21, 0.04);
-  --wm-shadow:      0 4px 16px rgba(15, 17, 21, 0.08);
+  --wm-user-bubble: var(--wm-bl-150);          /* 用户气泡浅灰 */
+  --wm-shadow-sm:   0 2px 4px rgba(16, 26, 39, 0.055);
+  --wm-shadow:      0 4px 8px rgba(16, 26, 39, 0.07);
 
   --wm-font: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", Roboto, sans-serif;
   --wm-mono: ui-monospace, "SF Mono", "Cascadia Code", Consolas, "Courier New", monospace;
@@ -111,14 +111,13 @@ body.electron .win-controls { display: flex; }
 }
 .win-btn:hover { background: var(--wm-bl-150); color: var(--wm-label); }
 
-/* 最左图标栏（固定组件，非插件）：白底，顶部为状态开关，其下为各插件显隐图标 */
+/* 最左图标栏（固定组件，非插件）：chrome 浅灰底，顶部为状态开关，其下为各插件显隐图标 */
 .wm-rail {
   position: fixed;
   top: 0; left: 0; bottom: 0;
   width: var(--wm-rail-w);
   z-index: 60; /* 始终高于设置遮罩(50)等所有层，保证白条一直可点 */
-  background: var(--wm-rail-bg, #ffffff); /* 与「新建会话」按钮同白；透明度由宿主设置(--wm-rail-bg) */
-  border-right: 1px solid var(--wm-border-soft);
+  background: var(--wm-rail-bg, #f8f8f9); /* chrome 底；透明度由宿主设置(--wm-rail-bg) */
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -216,6 +215,9 @@ body.rail-nosidebar .wm-main { left: calc(var(--wm-rail-w) + var(--wm-sidebar-ga
 .wm-main [data-slot="session"] {
   min-height: 0;
   background: transparent;
+  border-radius: 24px;        /* 会话面板圆角 */
+  box-shadow: var(--wm-shadow);
+  overflow: hidden;
 }
 
 /* 设置面板：modal overlay（在白条右侧渲染，左侧白条区域始终专属白条），默认隐藏 */
