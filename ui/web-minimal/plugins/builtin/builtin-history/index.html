@@ -285,9 +285,7 @@
     display: flex; flex-direction: column;
     max-height: calc(50vh - 80px);
   }
-  body.centered .refPanel.open .ref-pick {
-    flex: 1 1 auto; min-height: 0; height: auto;
-  }
+  /* 高度由左栏内容决定（见 sizeRefPick），右栏超出部分在自身内部滚动 */
 
   /* 引用面板（＋ 展开）：左竖分类 + 右侧条目，鼠标悬浮分类即出列表 */
   .refPanel {
@@ -300,8 +298,8 @@
     overflow: hidden;
   }
   .refPanel.open { display: block; }
-  /* 固定高度，避免切换分类时面板高低变化造成跳动 */
-  .ref-pick { display: flex; gap: 8px; height: min(46vh, 380px); }
+  /* 左栏决定高度：分类按内容自然排布、不拉伸；右栏撑满同高并内部滚动 */
+  .ref-pick { display: flex; gap: 8px; align-items: flex-start; flex: none; max-height: min(46vh, 380px); }
   .cats {
     flex: none; width: 128px;
     display: flex; flex-direction: column; gap: 2px;
@@ -318,7 +316,7 @@
   .cat:hover { background: var(--wm-bg-hover, #e9edf1); }
   .cat.active { background: var(--wm-bg-hover, #e9edf1); color: var(--wm-accent, #16191d); font-weight: 600; }
   .right {
-    flex: 1; min-width: 0;
+    flex: 1; min-width: 0; align-self: stretch;
     display: flex; flex-direction: column;
     overflow: hidden;
   }
@@ -1767,6 +1765,17 @@
   }
 
   // ---------- 引用面板开合 ----------
+  // 面板高度跟随左侧分类栏的实际内容高度：底部与最后一个分类（自托管）齐平，
+  // 右栏条目超出时在 .items 内部滚动，不把面板撑高
+  function sizeRefPick() {
+    var pick = refPanel.querySelector('.ref-pick');
+    if (!pick || !catsEl.children.length) return;
+    var cap = Math.min(window.innerHeight * 0.46, 380);
+    if (document.body.classList.contains('centered')) {
+      cap = Math.min(cap, Math.max(120, window.innerHeight * 0.5 - 96));
+    }
+    pick.style.height = Math.min(catsEl.scrollHeight, cap) + 'px';
+  }
   function toggleRef(show) {
     var open = show !== undefined ? !!show : !refPanel.classList.contains('open');
     refPanel.classList.toggle('open', open);
@@ -1775,8 +1784,12 @@
       // 默认悬浮在第一个分类上（文件）
       var first = catsEl.querySelector('.cat');
       if (first) first.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+      sizeRefPick();
     }
   }
+  window.addEventListener('resize', function () {
+    if (refPanel.classList.contains('open')) sizeRefPick();
+  });
   plusBtn.addEventListener('click', function () { toggleRef(); });
   // 点击面板以外的区域（含输入框、历史列表）自动收起；点＋本身或面板内部不收起
   document.addEventListener('click', function (e) {
