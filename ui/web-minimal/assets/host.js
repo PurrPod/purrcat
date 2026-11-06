@@ -38,6 +38,7 @@
     // 首条消息发送时才按 draftParadigm 建会话并生成系统提示词。
     draft: false,
     draftParadigm: '',
+    draftProjectId: '',       // 草稿态所属项目（从项目内新建时携带，用于注入 MEMORY.md 路径）
     plugins: [],              // manifest 注解后的插件列表（供设置面板使用）
   };
   // 最左图标栏状态：stage 0=仅图标 1=图标+文字；hidden=各插件隐藏开关（持久化）；opacity=白条透明度
@@ -703,6 +704,64 @@
         }
         return;
       }
+      if (type === 'plugin-multi') {
+        // 插件多选：扫描当前插件清单，勾选后由插件自己在界面上消费（如侧栏快捷栏）
+        const f = HOST.document.createElement('div');
+        f.className = 'cfg-field wide';
+        const lb = HOST.document.createElement('label');
+        lb.className = 'cfg-label';
+        lb.textContent = label;
+        f.appendChild(lb);
+
+        const box = HOST.document.createElement('div');
+        box.className = 'plugin-picker';
+        let sel = Array.isArray(cfg[key]) ? cfg[key].slice() : [];
+        const cands = (groupState.plugins || []).filter(function (x) { return x.id !== p.id && x.entry; });
+        if (!cands.length) {
+          const emp = HOST.document.createElement('div');
+          emp.className = 'p-tag';
+          emp.textContent = '没有可添加的插件';
+          box.appendChild(emp);
+        }
+        cands.forEach(function (pl) {
+          const row = HOST.document.createElement('div');
+          row.className = 'pk-row';
+          const info = HOST.document.createElement('div');
+          info.className = 'pk-info';
+          const nm = HOST.document.createElement('div');
+          nm.className = 'pk-name';
+          nm.textContent = pl.name || pl.id;
+          info.appendChild(nm);
+          const area = HOST.document.createElement('div');
+          area.className = 'pk-area';
+          const areaName = AREA_LABEL[(pl.slotDef || {}).area] || (pl.slotDef || {}).area || '';
+          area.textContent = pl.id + (areaName ? ' · ' + areaName : '');
+          info.appendChild(area);
+          row.appendChild(info);
+
+          const sw = HOST.document.createElement('label');
+          sw.className = 'switch';
+          sw.innerHTML = '<input type="checkbox"><span class="slider"></span>';
+          const chk = sw.querySelector('input');
+          chk.checked = sel.indexOf(pl.id) >= 0;
+          chk.addEventListener('change', function () {
+            if (chk.checked) { if (sel.indexOf(pl.id) < 0) sel.push(pl.id); }
+            else sel = sel.filter(function (x) { return x !== pl.id; });
+            cfg[key] = sel;
+            settingsSave(p.id, cfg);
+          });
+          row.appendChild(sw);
+          box.appendChild(row);
+        });
+        f.appendChild(box);
+
+        const hint = HOST.document.createElement('div');
+        hint.className = 'pk-hint';
+        hint.textContent = '勾选后出现在侧栏「快捷栏」，点击即可唤起对应插件。';
+        f.appendChild(hint);
+        grid.appendChild(f);
+        return;
+      }
       const f = HOST.document.createElement('div');
       f.className = 'cfg-field' + (type === 'wallpapers' ? ' wide' : '');
       const lb = HOST.document.createElement('label');
@@ -1036,6 +1095,12 @@
       buildRail();
       persistActive();
       persistRail().catch(() => {});
+      return;
+    }
+    // modal：弹窗实例按 railState.hidden 控制显示/隐藏（快捷栏等外部入口也走这里）
+    if (type === 'modal') {
+      if (railHidden(p.id)) setPluginHidden(p.id, false);
+      buildRail();
       return;
     }
     // float：自由浮窗无单例约束，直接显示
@@ -1880,15 +1945,34 @@
   // 兼容：frames 用对象，保留原访问方式（值为该 slot 的实例数组）
   function slots(s) { return frames[s]; }
 
-  async function ensureSessionId(sessionId) {
+  // 草稿首条消息 → 会话名：剔除控制字符/零宽与双向控制符，折叠空白，最多保留 10 个字。
+  // 侧栏卡片用 textContent 渲染并带省略号截断，无需额外转义。
+  function draftSessionAlias(message) {
+    let text = String(message == null ? '' : message)
+      .replace(/[\u0000-\u001f\u007f-\u009f\u200b\u200e\u200f\u202a-\u202e\u2066-\u2069\ufeff]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!text) return '';
+    const chars = Array.from(text);
+    let alias = chars.length > 10 ? chars.slice(0, 10).join('') : text;
+    return alias.replace(/[\u200c\u200d]+$/, '').trim();   // 截断后可能留下尾部的零宽连接符
+  }
+
+  async function ensureSessionId(sessionId, firstMessage) {
     if (sessionId) return sessionId;
     // 草稿态下首个消息到此：此刻才真正建会话，并把用户选的范式一并带入，
     // 保证系统提示词用「所选范式」生成（而非默认范式）。
-    const created = await (await fetch('/api/sessions/new', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ paradigm: groupState.draftParadigm || '' }) })).json();
+    // draftProjectId 非空 = 在某个项目里点「新建会话」：后端会把该项目 MEMORY.md 的路径与维护约定注入系统提示
+    // 首条消息同时作为会话名（最多 10 个字），之后仍可手动重命名
+    const body = { paradigm: groupState.draftParadigm || '', project_id: groupState.draftProjectId || '' };
+    const alias = draftSessionAlias(firstMessage);
+    if (alias) body.alias = alias;
+    const created = await (await fetch('/api/sessions/new', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })).json();
     if (created && created.id) {
       groupState.activeSessionId = created.id;
       groupState.draft = false;
       groupState.draftParadigm = '';
+      groupState.draftProjectId = '';
       await refreshSessions();
       updateEmpty();
       broadcastSessions('session.switched', { session_id: created.id });
@@ -1921,11 +2005,26 @@
   }
 
   // ---- 动作分发：宿主直接处理 ----
+  // 后端错误统一是 {"detail": "..."}，取 detail 作为可读错误信息
+  async function apiErrorMessage(res, fallback) {
+    try {
+      const text = await res.text();
+      try {
+        const data = JSON.parse(text);
+        return (data && (data.detail || data.message)) || fallback;
+      } catch (_) {
+        return text || fallback;
+      }
+    } catch (_) {
+      return fallback;
+    }
+  }
+
   async function dispatch(actionId, payload, origin) {
     payload = payload || {};
     switch (actionId) {
       case 'chat.send': {
-        let sessionId = await ensureSessionId(payload.session_id || groupState.activeSessionId);
+        let sessionId = await ensureSessionId(payload.session_id || groupState.activeSessionId, payload.message);
         if (!sessionId) throw new Error('无法创建会话');
         groupState.activeSessionId = sessionId;
         const res = await fetch('/api/chat', {
@@ -1946,7 +2045,10 @@
         return body;
       }
       case 'chat.sendBatch': {
-        let sessionId = await ensureSessionId(payload.session_id || groupState.activeSessionId);
+        // 草稿态建会话时用批次里的首条用户文本命名（输入框消息就是这个事件）
+        const batch = Array.isArray(payload.events) ? payload.events : [];
+        const firstUser = batch.find((ev) => ev && ev.type === 'user' && typeof ev.content === 'string');
+        let sessionId = await ensureSessionId(payload.session_id || groupState.activeSessionId, firstUser ? firstUser.content : '');
         if (!sessionId) throw new Error('无法创建会话');
         groupState.activeSessionId = sessionId;
         const res = await fetch('/api/chat/batch', {
@@ -1976,9 +2078,10 @@
         // Agent 忙碌时禁止新建并切走，避免打断正在进行的任务
         if (await activeSessionBusy()) return { status: 'busy' };
         // 纯前端草稿态：不落盘、不进列表。会话延迟到首条消息时由 ensureSessionId 创建，
-        // 届时按 draftParadigm 生成系统提示词。
+        // 届时按 draftParadigm 生成系统提示词；从项目内新建时携带 draftProjectId。
         groupState.draft = true;
         groupState.draftParadigm = '';
+        groupState.draftProjectId = String(payload.project_id || '');
         groupState.activeSessionId = '';
         await refreshSessions();
         updateEmpty();
@@ -1989,8 +2092,11 @@
         const target = String(payload.session_id || '');
         // 切到「同一个」会话无需拦截；切到不同会话时若 Agent 忙碌则拒绝（对齐原 UI：等待任务完成再切换）
         if (target && target !== groupState.activeSessionId && (await activeSessionBusy())) return { status: 'busy' };
-        // 切到已有会话即退出草稿态（放弃未发送的新会话占位）
-        if (target) groupState.draft = false;
+        // 切到已有会话即退出草稿态（放弃未发送的新会话占位与项目草稿归属）
+        if (target) {
+          groupState.draft = false;
+          groupState.draftProjectId = '';
+        }
         if (target) {
           // 关键：把后端「当前活跃会话」一并检出。后端 Agent 只挂载一个活跃会话，
           // 未指定 session_id 的外部事件会路由到它；只改前端状态不 checkout，
@@ -2044,6 +2150,83 @@
         // 只有当前会话被删才需要切换事件；删其它会话不打断正在进行的会话（避免清空乐观消息缓冲）
         broadcastSessions(wasActive ? 'session.switched' : 'conversation.updated', { session_id: groupState.activeSessionId });
         return { status: 'ok' };
+      }
+      // ---- 项目（会话分类器）：对齐后端 /api/projects* ----
+      case 'projects.list': {
+        const list = await (await fetch('/api/projects')).json();
+        return Array.isArray(list) ? list : [];
+      }
+      case 'projects.create': {
+        const name = String(payload.name || '').trim();
+        if (!name) throw new Error('项目名称不能为空');
+        const res = await fetch('/api/projects', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name }),
+        });
+        if (!res.ok) throw new Error(await apiErrorMessage(res, '创建项目失败'));
+        const data = await res.json();
+        broadcast('sidebar', 'projects.updated', { project_id: data.id });
+        return data;
+      }
+      case 'projects.update': {
+        const pid = String(payload.project_id || '');
+        if (!pid) throw new Error('缺少 project_id');
+        const body = {};
+        if (payload.name !== undefined) body.name = String(payload.name).trim();
+        const res = await fetch('/api/projects/' + encodeURIComponent(pid), {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) throw new Error(await apiErrorMessage(res, '保存项目失败'));
+        const data = await res.json();
+        broadcast('sidebar', 'projects.updated', { project_id: pid });
+        return data;
+      }
+      case 'projects.delete': {
+        const pid = String(payload.project_id || '');
+        if (!pid) throw new Error('缺少 project_id');
+        const deleteSessions = !!payload.delete_sessions;
+        // 连会话一起删时，先把当前活跃会话挪出该项目（后端拒删活跃会话）
+        if (deleteSessions) {
+          const inProject = groupState.sessions.filter((s) => String(s.project_id || '') === pid);
+          if (inProject.some((s) => s.id === groupState.activeSessionId)) {
+            const other = groupState.sessions.find((s) => String(s.project_id || '') !== pid);
+            if (!other) throw new Error('项目内只剩当前活跃会话，请先新建或切换到其它会话再删除');
+            const co = await fetch('/api/sessions/' + encodeURIComponent(other.id) + '/checkout', { method: 'POST' });
+            if (!co.ok) throw new Error(await apiErrorMessage(co, '切换会话失败'));
+            groupState.activeSessionId = other.id;
+            groupState.draft = false;
+            groupState.draftProjectId = '';
+            broadcastSessions('session.switched', { session_id: other.id });
+          }
+        }
+        const res = await fetch('/api/projects/' + encodeURIComponent(pid) + '?delete_sessions=' + (deleteSessions ? 'true' : 'false'), { method: 'DELETE' });
+        if (!res.ok) throw new Error(await apiErrorMessage(res, '删除项目失败'));
+        const data = await res.json();
+        await refreshSessions();
+        updateEmpty();
+        broadcast('sidebar', 'projects.updated', { project_id: pid });
+        broadcastSessions('conversation.updated', { session_id: groupState.activeSessionId });
+        return data;
+      }
+      // 会话归入/移出项目（空 project_id = 移回未分类）；不改写会话系统提示
+      case 'session.moveToProject': {
+        const sid = String(payload.session_id || '');
+        const pid = String(payload.project_id || '');
+        if (!sid) throw new Error('缺少 session_id');
+        const res = await fetch('/api/sessions/' + encodeURIComponent(sid) + '/project', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ project_id: pid }),
+        });
+        if (!res.ok) throw new Error(await apiErrorMessage(res, '移动会话失败'));
+        const data = await res.json();
+        await refreshSessions();
+        broadcast('sidebar', 'projects.updated', { project_id: pid });
+        broadcastSessions('conversation.updated', { session_id: groupState.activeSessionId });
+        return data;
       }
       // 待审批队列：对齐后端 GET /api/requests（主进程会在轮询时顺带 kick skill/sensor 免审测试）
       case 'requests.list': {

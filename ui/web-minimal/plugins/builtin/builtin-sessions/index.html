@@ -31,63 +31,80 @@
     overflow: hidden;
   }
 
-  /* ---------- 抽屉（可折叠分组） ---------- */
-  /* 会话列表：弹性限高——最多把「待审批」标题顶到容器底部，再多的会话在列表内滚动。
-     basis 为 0 表示它不参与收缩，剩余空间优先让给待审批；min-height 只保底留一行标题 */
-  .drawer { display: flex; flex-direction: column; min-height: 0; }
-  .drawer.open#drawerSessions { flex: 1 1 0; min-height: 36px; }
-  .drawer:not(.open) { flex: 0 0 auto; }
-  /* 待审批：按内容自然高度，不设上限；整块放不下时才收缩，列表内滚动 */
-  .drawer.open#drawerPending { flex: 0 1 auto; }
-  /* 分组之间留出呼吸间距，避免新建入口与列表、待审批挤在一起 */
-  #drawerPending { margin-top: 12px; }
-  .dhead {
-    flex: none; display: flex; align-items: center; gap: 6px;
-    height: 26px; padding: 0 10px; margin: 0 2px;
-    border-radius: 6px; cursor: pointer; user-select: none;
-  }
-  .dhead:hover { background: var(--hover); }
-  .dhead .dtitle {
-    font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase;
-    color: var(--dim);
-  }
-  .chev {
-    flex: none; width: 12px; height: 12px; display: flex; align-items: center; justify-content: center;
-    color: var(--dim); transition: transform 0.15s ease;
-  }
-  .chev svg { display: block; width: 12px; height: 12px; }
-  .drawer:not(.open) .chev { transform: rotate(-90deg); }
-  .badge {
-    flex: none; min-width: 17px; height: 17px; padding: 0 5px; border-radius: 999px;
-    background: #EBCB8B; color: #16191d; font-size: 11px; font-weight: 600;
+  /* ---------- 搜索框 ---------- */
+  .search-wrap { flex: none; position: relative; margin: 0 2px 8px; }
+  .search-ic {
+    position: absolute; left: 9px; top: 50%; transform: translateY(-50%);
     display: flex; align-items: center; justify-content: center;
+    color: var(--dim); pointer-events: none;
   }
-  .badge.zero { display: none; }
-  .dbody { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; padding-top: 4px; }
-  .drawer:not(.open) .dbody { display: none; }
-  /* 新建会话：与列表行同构的扁平入口，无色块、无边框、无投影 */
-  .new-session {
-    flex: none; width: 100%; height: 32px; display: flex; align-items: center; gap: 10px;
-    padding: 0 10px; margin-bottom: 14px; text-align: left;
+  .search-ic svg { display: block; width: 13px; height: 13px; }
+  #searchInput {
+    width: 100%; height: 30px; font: inherit; font-size: 12.5px; color: var(--label);
+    background: var(--bg); border: 1px solid transparent; border-radius: 8px;
+    padding: 0 10px 0 27px; outline: none;
+  }
+  #searchInput::placeholder { color: var(--dim); }
+  #searchInput:focus { background: #fff; border-color: rgba(15, 17, 21, 0.16); }
+
+  /* ---------- 小标题（快捷栏 / 项目 / 默认） ---------- */
+  .section-head {
+    flex: none; display: flex; align-items: center; gap: 6px;
+    height: 26px; padding: 0 4px 0 6px; user-select: none; cursor: pointer;
+  }
+  .section-head.drop { background: rgba(47, 111, 219, 0.10); box-shadow: inset 0 0 0 1px rgba(47, 111, 219, 0.45); border-radius: 6px; }
+  .section-title {
+    font-size: 12px; font-weight: 600; letter-spacing: .02em;
+    color: var(--label);
+  }
+  .section-acts { margin-left: auto; display: flex; align-items: center; gap: 2px; }
+  .hbtn {
+    width: 24px; height: 24px; flex: none;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--label-2nd); background: transparent; border: none; border-radius: 6px; cursor: pointer; padding: 0;
+  }
+  .hbtn:hover { background: var(--hover); color: var(--label); }
+  .hbtn svg { display: block; width: 15px; height: 15px; }
+
+  /* ---------- 快捷栏 ---------- */
+  .quickbar { display: flex; flex-direction: column; gap: 2px; padding: 0 2px; }
+  /* 一行一个：与会话行同构的扁平入口 */
+  .qpill {
+    width: 100%; height: 30px; display: flex; align-items: center; gap: 8px;
+    padding: 0 10px; text-align: left;
     font: inherit; font-size: 13px; font-weight: 400; color: var(--label-2nd);
     background: transparent; border: none; border-radius: 6px; cursor: pointer;
   }
-  .new-session:hover { background: var(--hover); color: var(--label); }
-  .new-session .ns-ic {
+  .qpill:hover { background: var(--hover); color: var(--label); }
+  .qpill .qic {
     flex: none; width: 16px; height: 16px; display: flex; align-items: center; justify-content: center;
-    color: var(--dim); background: transparent;
-  }
-  .new-session:hover .ns-ic { color: var(--label-2nd); }
-  .new-session .ns-ic svg { display: block; width: 14px; height: 14px; }
-  .new-session .ns-tx { flex: 1; }
-  .dcount {
-    margin-left: auto; font-size: 11px; font-weight: 400; letter-spacing: 0;
     color: var(--dim);
   }
+  .qpill:hover .qic { color: var(--label-2nd); }
+  .qpill .qic svg { display: block; width: 14px; height: 14px; }
+  .qpill .qtx { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .qempty {
+    font: inherit; font-size: 11.5px; color: var(--dim);
+    background: none; border: none; cursor: pointer; padding: 0 6px 0 0; text-align: left;
+  }
+  .qempty:hover { color: var(--label-2nd); }
+  .qnone { font-size: 11.5px; color: var(--dim); padding: 0 6px; }
 
-  /* ---------- 列表 ---------- */
-  /* 列表各自滚动：会话列表超出限高时自己滚，待审批放不下时才自己滚 */
-  .list { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; padding: 2px 0; }
+  /* ---------- 分区（快捷栏 / 项目 / 默认） ---------- */
+  .list {
+    flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 2px 0;
+    display: flex; flex-direction: column;
+  }
+  .section { flex: none; display: flex; flex-direction: column; }
+  .section + .section { margin-top: 6px; }
+  .section-body {
+    flex: none;
+    display: flex; flex-direction: column; gap: 2px; padding: 2px 0 4px;
+  }
+  .section.collapsed .section-body { display: none; }
+  .hbtn.chev { color: var(--dim); }
+  .hbtn.chev svg { transition: transform 0.15s ease; }
+  .section.collapsed .hbtn.chev svg { transform: rotate(-90deg); }
   .item {
     position: relative;
     flex: none;
@@ -137,41 +154,85 @@
   .cbtn.danger { border-color: transparent; background: #bf616a; color: #fff; }
   .cbtn.danger:hover { background: #a94f58; }
 
-  /* ---------- 待审批卡片 ---------- */
-  .req {
-    flex: none; display: flex; flex-direction: column; gap: 6px;
-    background: rgba(255, 255, 255, 0.9); border-radius: 8px;
-    padding: 8px 10px; margin-bottom: 6px;
+  /* ---------- 项目分组（会话分类器） ---------- */
+  .pgroup { flex: none; margin-top: 6px; }
+  .phead {
+    display: flex; align-items: center; gap: 6px;
+    height: 28px; padding: 0 6px; border-radius: 6px;
+    cursor: pointer; user-select: none;
   }
-  .req-top { display: flex; align-items: center; gap: 6px; }
-  .req-type {
-    font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 999px;
-    background: #EBCB8B; color: #16191d; white-space: nowrap;
+  .phead:hover { background: var(--hover); }
+  .phead.drop { background: rgba(47, 111, 219, 0.10); box-shadow: inset 0 0 0 1px rgba(47, 111, 219, 0.45); }
+  .pchev {
+    flex: none; width: 12px; height: 12px; display: flex; align-items: center; justify-content: center;
+    color: var(--dim); transition: transform 0.15s ease;
   }
-  .req-type.dep { background: #d08770; color: #fff; }
-  .req-x { margin-left: auto; }
-  .req-target { font-size: 12.5px; font-weight: 600; word-break: break-all; line-height: 1.35; }
-  .req-reason-btn {
-    align-self: flex-start; font: inherit; font-size: 11px; color: var(--dim);
-    background: none; border: none; cursor: pointer; padding: 0;
+  .pchev svg { display: block; width: 12px; height: 12px; }
+  .pgroup.collapsed .pchev { transform: rotate(-90deg); }
+  .pname {
+    flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-size: 12.5px; font-weight: 600; color: var(--label);
   }
-  .req-reason-btn:hover { color: var(--label-2nd); }
-  .req-reason {
-    font-size: 11px; color: var(--label-2nd); background: rgba(15, 17, 21, 0.05);
-    border-radius: 6px; padding: 6px; white-space: pre-wrap; word-break: break-all; line-height: 1.5;
+  /* 行内重命名：直接把项目名变成输入框 */
+  .pname-input {
+    flex: 1 1 auto; min-width: 0; height: 22px;
+    font: inherit; font-size: 12.5px; font-weight: 600; color: var(--label);
+    background: #fff; border: 1px solid var(--accent); border-radius: 4px;
+    padding: 0 6px; outline: none;
   }
-  .req-input {
-    width: 100%; font: inherit; font-size: 11.5px; padding: 4px 6px;
-    border: 1px solid rgba(15, 17, 21, 0.12); border-radius: 6px; background: #fff; outline: none;
+  .pacts { flex: none; display: flex; align-items: center; gap: 2px; opacity: 0; transition: opacity 0.12s ease; }
+  .phead:hover .pacts, .phead.editing .pacts, .phead.confirming .pacts { opacity: 1; }
+  .pico {
+    width: 20px; height: 20px; flex: none;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--dim); background: transparent; border: none; border-radius: 4px; cursor: pointer; padding: 0;
   }
-  .req-input:focus { border-color: var(--accent); }
-  .req-acts { display: flex; gap: 6px; }
-  .rbtn { flex: 1; font: inherit; font-size: 12px; padding: 4px 0; border: 1px solid #16191d; border-radius: 7px; cursor: pointer; }
-  .rbtn.ok { background: #16191d; color: #fff; font-weight: 600; }
-  .rbtn.ok:hover { background: #000; }
-  .rbtn.no { background: #fff; color: #16191d; font-weight: 600; }
-  .rbtn.no:hover { background: rgba(15, 17, 21, 0.08); }
-  .empty { padding: 10px 8px; font-size: 12px; color: var(--dim); }
+  .pico:hover { background: rgba(0, 0, 0, 0.06); color: var(--label); }
+  .pico.danger:hover { background: rgba(191, 97, 106, 0.12); color: #bf616a; }
+  .pico svg { display: block; width: 13px; height: 13px; }
+  .pbody { display: flex; flex-direction: column; gap: 4px; padding: 2px 0 0 8px; }
+  .pgroup.collapsed .pbody { display: none; }
+  .pempty { padding: 2px 8px 6px; font-size: 11.5px; color: var(--dim); }
+  .pdel {
+    margin: 2px 0 6px; padding: 8px 8px 9px;
+    display: flex; flex-direction: column; gap: 6px;
+    background: rgba(255, 255, 255, 0.92); border-radius: 8px;
+  }
+  .pf-input {
+    width: 100%; height: 26px; font: inherit; font-size: 12px; color: var(--label);
+    background: #fff; border: 1px solid rgba(15, 17, 21, 0.14); border-radius: 6px;
+    padding: 0 7px; outline: none; box-sizing: border-box;
+  }
+  .pf-input:focus { border-color: var(--accent); }
+  .pf-acts { display: flex; gap: 6px; }
+  .pf-acts .cbtn { flex: 1; }
+  .pf-err { font-size: 11px; color: #bf616a; line-height: 1.4; }
+  .pdel-msg { font-size: 12px; color: var(--label-2nd); line-height: 1.45; }
+  .pdel .cbtn { width: 100%; }
+  .pcreate {
+    display: none; flex-direction: column; gap: 6px;
+    margin: 2px 0 6px; padding: 8px;
+    background: rgba(255, 255, 255, 0.92); border-radius: 8px;
+  }
+  .pcreate.on { display: flex; }
+  .section.collapsed .pcreate { display: none; }
+  .mmenu {
+    display: flex; flex-direction: column; gap: 2px;
+    margin: 2px 0 4px 6px; padding: 4px;
+    background: rgba(255, 255, 255, 0.96); border-radius: 8px;
+    box-shadow: 0 6px 18px rgba(15, 17, 21, 0.10);
+  }
+  .mopt {
+    width: 100%; text-align: left; font: inherit; font-size: 12px; color: var(--label-2nd);
+    background: transparent; border: none; border-radius: 5px; padding: 5px 8px; cursor: pointer;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .mopt:hover { background: var(--hover); color: var(--label); }
+  .mopt.on { color: var(--label); font-weight: 600; }
+  .item.dragging { opacity: 0.45; }
+
+  /* ---------- 空状态 ---------- */
+  .section-empty { padding: 4px 10px 6px; font-size: 11.5px; color: var(--dim); }
 
   /* ---------- Agent 忙碌提示弹层（插件自带，遮罩铺满侧栏） ---------- */
   .busy-mask {
@@ -203,30 +264,72 @@
 </style>
 </head>
 <body>
-  <!-- 新建会话：独立按钮，置于会话列表上方 -->
-  <button id="newBtn" class="new-session" title="新建会话" aria-label="新建会话">
-    <span class="ns-ic">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M12 8v6"/><path d="M9 11h6"/></svg>
+  <div class="search-wrap">
+    <span class="search-ic">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.4-3.4"/></svg>
     </span>
-    <span class="ns-tx">新建会话</span>
-  </button>
-
-  <div class="drawer open" id="drawerSessions">
-    <div class="dhead" id="headSessions">
-      <span class="chev"></span>
-      <span class="dtitle">会话列表</span>
-      <span class="dcount" id="sessCount"></span>
-    </div>
-    <div class="dbody"><div id="list" class="list"></div></div>
+    <input id="searchInput" type="text" placeholder="搜索会话或项目" autocomplete="off" spellcheck="false" />
   </div>
 
-  <div class="drawer" id="drawerPending">
-    <div class="dhead" id="headPending">
-      <span class="chev"></span>
-      <span class="dtitle">待审批</span>
-      <span class="badge zero" id="pendBadge">0</span>
+  <div id="list" class="list">
+    <!-- 快捷栏 -->
+    <div class="section" id="quickSection">
+      <div class="section-head">
+        <span class="section-title">快捷栏</span>
+        <div class="section-acts">
+          <button id="quickConfigBtn" class="hbtn" type="button" title="配置快捷栏" aria-label="配置快捷栏">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m9.06 11.9 8.07-8.06a2.85 2.85 0 1 1 4.03 4.03l-8.06 8.08"/><path d="M7.07 14.94c-1.66 0-3 1.35-3 3.02 0 1.33-2.5 1.52-2 2.02 1.08 1.1 2.49 2.02 4 2.02 2.2 0 4-1.8 4-4.04a3.01 3.01 0 0 0-3-3.02z"/></svg>
+          </button>
+          <button id="quickToggleBtn" class="hbtn chev" type="button" title="收起快捷栏" aria-label="收起快捷栏">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="section-body">
+        <div id="quickBar" class="quickbar"></div>
+      </div>
     </div>
-    <div class="dbody"><div id="reqList" class="list"></div></div>
+
+    <!-- 项目：归类过的会话 -->
+    <div class="section" id="projectSection">
+      <div class="section-head">
+        <span class="section-title">项目</span>
+        <div class="section-acts">
+          <button id="newProjectBtn" class="hbtn" type="button" title="新建项目" aria-label="新建项目">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h4l2 2h9a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2Z"/><path d="M12 11v6"/><path d="M9 14h6"/></svg>
+          </button>
+          <button id="projectToggleBtn" class="hbtn chev" type="button" title="收起项目" aria-label="收起项目">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+          </button>
+        </div>
+      </div>
+      <!-- 新建项目：只需命名，MEMORY.md 由 Agent 维护 -->
+      <div class="pcreate" id="pCreate">
+        <input id="pCreateName" class="pf-input" placeholder="项目名称" />
+        <div class="pf-err" id="pCreateErr"></div>
+        <div class="pf-acts">
+          <button id="pCreateOk" class="cbtn" type="button">创建</button>
+          <button id="pCreateCancel" class="cbtn" type="button">取消</button>
+        </div>
+      </div>
+      <div class="section-body" id="projectBody"></div>
+    </div>
+
+    <!-- 默认：未分类会话，直接平铺 -->
+    <div class="section" id="defaultSection">
+      <div class="section-head" id="defaultHead">
+        <span class="section-title">默认</span>
+        <div class="section-acts">
+          <button id="newBtn" class="hbtn" type="button" title="新建会话" aria-label="新建会话">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M12 8v6"/><path d="M9 11h6"/></svg>
+          </button>
+          <button id="defaultToggleBtn" class="hbtn chev" type="button" title="收起默认" aria-label="收起默认">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="section-body" id="defaultBody"></div>
+    </div>
   </div>
 
   <!-- Agent 忙碌提示：切到其它会话 / 新建 / 拉分支被宿主拦截时弹出 -->
@@ -260,23 +363,46 @@
   }
 
   var listEl = document.getElementById('list');
-  var reqListEl = document.getElementById('reqList');
-  var badgeEl = document.getElementById('pendBadge');
+  var searchInput = document.getElementById('searchInput');
+  var quickBarEl = document.getElementById('quickBar');
+  var projectBodyEl = document.getElementById('projectBody');
+  var defaultBodyEl = document.getElementById('defaultBody');
+  var quickSectionEl = document.getElementById('quickSection');
+  var projectSectionEl = document.getElementById('projectSection');
+  var defaultSectionEl = document.getElementById('defaultSection');
   var busyMask = document.getElementById('busyMask');
   var sessions = [];
-  var requests = [];
+  var projects = [];
   var activeId = '';                                  // 当前活动会话（由宿主 state 对账）
   var editingId = '', editingVal = '', confirmingId = '';   // 行内重命名 / 行内删除确认
-  var pendingOpen = false;                            // 待审批抽屉默认收起，有待办时自动展开
-  var expandedReasons = {};                           // req_id -> 是否展开理由
-  var feedbacks = {};                                 // req_id -> 反馈文本
+  var searchQuery = '';                               // 搜索关键词（小写，空串表示不过滤）
+  var pluginCfg = {};                                 // 本插件配置（含 quickPlugins）
+  var pluginMeta = {};                                // plugin_id -> {name, icon}，用于快捷栏
+
+  // 区块展开状态（默认全部展开）
+  var quickOpen = true;
+  var projOpen = true;
+  var defOpen = true;
+
+  // 项目（会话分类器）本地态
+  var UNGROUPED = '__ungrouped__';                    // 「默认」分组的伪项目 id
+  var pCollapsed = {};                                // 分组 id -> 是否折叠
+  var pEditing = '';                                  // 正在内联编辑的项目 id
+  var pEditingName = '';
+  var pDeleting = '';                                 // 正在确认删除的项目 id
+  var pDeleteError = '';
+  var pCreating = false;                              // 新建项目表单是否展开
+  var moveMenuId = '';                                // 正在展开「移动到项目」菜单的会话 id
+  var dragSessionId = '';                             // 正在拖拽的会话 id
+  var dropTarget = '';                                // 拖拽悬停目标（project_id 或 UNGROUPED）
 
   // 动作图标：与宿主图标集同款线性 SVG（插件自带，不依赖宿主实现）
   var SVG_HEAD = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">';
   var ICON_PENCIL = SVG_HEAD + '<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
   var ICON_TRASH = SVG_HEAD + '<path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>';
-  var ICON_X = SVG_HEAD + '<path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
   var ICON_CHEV = SVG_HEAD + '<path d="m6 9 6 6 6-6"/></svg>';
+  var ICON_PLUS = SVG_HEAD + '<path d="M12 5v14"/><path d="M5 12h14"/></svg>';
+  var ICON_MOVE = SVG_HEAD + '<path d="M4 20a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h4l2 2h9a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2Z"/><path d="M9 13h6"/><path d="m13 10 3 3-3 3"/></svg>';
 
   // 面板底色：与会话历史面板一致的白色；透明度可调
   var DEF_OP = 1;
@@ -285,14 +411,25 @@
     o = Math.max(0, Math.min(1, o));
     document.body.style.backgroundColor = 'rgba(255,255,255,' + o.toFixed(2) + ')';
   }
+  function applyConfig(cfg) {
+    pluginCfg = cfg || {};
+    applyPanel(pluginCfg);
+    renderQuickBar();
+  }
   window.addEventListener('message', function (e) {
     var m = e.data;
     if (!m || typeof m !== 'object') return;
-    if (m.type === 'configApply') applyPanel(m.config);
-    else if (m.type === 'event' && m.event === 'config.updated') { callAction('config.get', { plugin_id: 'builtin-sessions' }).then(applyPanel).catch(function () {}); }
-    else if (m.type === 'event' && m.event === 'requests.updated') loadRequests();
+    if (m.type === 'configApply') applyConfig(m.config);
+    else if (m.type === 'event' && m.event === 'config.updated') { callAction('config.get', { plugin_id: 'builtin-sessions' }).then(applyConfig).catch(function () {}); }
   });
-  callAction('config.get', { plugin_id: 'builtin-sessions' }).then(applyPanel).catch(function () {});
+  callAction('config.get', { plugin_id: 'builtin-sessions' }).then(applyConfig).catch(function () {});
+  // 快捷栏需要插件名与图标：向宿主要一份当前插件清单
+  callAction('settings.meta').then(function (meta) {
+    ((meta && meta.plugins) || []).forEach(function (p) {
+      pluginMeta[p.id] = { name: p.name || p.id, icon: p.icon || '' };
+    });
+    renderQuickBar();
+  }).catch(function () {});
 
   /* ---------------- Agent 忙碌提示 ---------------- */
   // 宿主在 Agent 工作时会拒绝切换/新建/拉分支，返回 {status:'busy'}；此处弹出提示。
@@ -302,10 +439,20 @@
   busyMask.addEventListener('click', function (ev) { if (ev.target === busyMask) hideBusy(); });
   function handleBusy(res) { if (res && res.status === 'busy') { showBusy(); return true; } return false; }
 
-  /* ---------------- 会话列表 ---------------- */
+  /* ---------------- 项目 / 会话列表 ---------------- */
   function findSession(id) {
     for (var i = 0; i < sessions.length; i++) if (sessions[i].id === id) return sessions[i];
     return null;
+  }
+
+  function findProject(pid) {
+    for (var i = 0; i < projects.length; i++) if (projects[i].id === pid) return projects[i];
+    return null;
+  }
+
+  function sessionGroupId(s) { return String((s && s.project_id) || ''); }
+  function sessionsIn(pid) {
+    return sessions.filter(function (s) { return sessionGroupId(s) === pid; });
   }
 
   // 重命名：交给宿主（对齐后端 PUT /api/sessions/{id}/rename）；空值或未改动视为取消
@@ -337,269 +484,610 @@
     return b;
   }
 
-  function renderList() {
-    listEl.innerHTML = '';
-    var cntEl = document.getElementById('sessCount');
-    if (cntEl) cntEl.textContent = sessions.length ? String(sessions.length) : '';
-    if (!sessions.length) {
-      var emp = document.createElement('div');
-      emp.className = 'empty';
-      emp.textContent = '暂无会话';
-      listEl.appendChild(emp);
+  function projectIcon(cls, title, svg, onClick) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'pico' + (cls ? ' ' + cls : '');
+    b.title = title;
+    b.innerHTML = svg;
+    b.addEventListener('click', function (ev) { ev.stopPropagation(); onClick(); });
+    return b;
+  }
+
+  /* ----- 项目操作 ----- */
+  function openProjectEdit(p) {
+    pEditing = p.id;
+    pEditingName = p.name || p.id;
+    pDeleting = '';
+    pDeleteError = '';
+    renderList();
+  }
+
+  function saveProjectEdit(pid) {
+    if (pEditing !== pid) return;   // Enter 与 blur 可能连发，只提交一次
+    pEditing = '';
+    var name = String(pEditingName || '').trim();
+    var cur = projects.find(function (x) { return x.id === pid; });
+    if (!name || (cur && name === (cur.name || ''))) { renderList(); return; }
+    callAction('projects.update', { project_id: pid, name: name })
+      .then(function () { return load(); })
+      .catch(function () { renderList(); });
+  }
+
+  function deleteProject(pid, deleteSessions) {
+    pDeleteError = '';
+    callAction('projects.delete', { project_id: pid, delete_sessions: !!deleteSessions })
+      .then(function () { pDeleting = ''; return load(); })
+      .catch(function (err) {
+        pDeleteError = String((err && err.message) || '删除项目失败');
+        renderList();
+      });
+  }
+
+  function moveSessionTo(sessionId, pid) {
+    moveMenuId = '';
+    callAction('session.moveToProject', { session_id: sessionId, project_id: pid })
+      .then(function () { return load(); })
+      .catch(function () { renderList(); });
+  }
+
+  // 在项目内新建会话：宿主会把该项目 MEMORY.md 的位置与维护约定注入系统提示（仅此路径注入）
+  function newSessionInProject(pid) {
+    callAction('sessions.new', { project_id: pid })
+      .then(function (res) { if (!handleBusy(res)) load(); })
+      .catch(function () {});
+  }
+
+  function toggleCollapse(gid) {
+    pCollapsed[gid] = !pCollapsed[gid];
+    renderList();
+  }
+
+  /* ----- 拖拽归组 ----- */
+  function clearDropHint() {
+    var nodes = listEl.querySelectorAll('.drop');
+    for (var i = 0; i < nodes.length; i++) nodes[i].classList.remove('drop');
+  }
+
+  function attachDropTarget(head, gid) {
+    head.addEventListener('dragover', function (ev) {
+      if (!dragSessionId) return;
+      ev.preventDefault();
+      if (ev.dataTransfer) ev.dataTransfer.dropEffect = 'move';
+      dropTarget = gid;
+      head.classList.add('drop');
+    });
+    head.addEventListener('dragleave', function (ev) {
+      if (ev.relatedTarget && head.contains(ev.relatedTarget)) return;
+      if (dropTarget === gid) { dropTarget = ''; head.classList.remove('drop'); }
+    });
+    head.addEventListener('drop', function (ev) {
+      if (!dragSessionId) return;
+      ev.preventDefault();
+      var sid = dragSessionId;
+      dragSessionId = '';
+      dropTarget = '';
+      clearDropHint();
+      moveSessionTo(sid, gid === UNGROUPED ? '' : gid);
+    });
+  }
+
+  /* ----- 渲染：分组头 ----- */
+  function renderGroupHead(gid, name, opts) {
+    var editing = !!(opts && opts.editing);
+    var head = document.createElement('div');
+    head.className = 'phead' + (editing ? ' editing' : '') + (opts && opts.confirming ? ' confirming' : '');
+    head.addEventListener('click', function (ev) {
+      if (editing || ev.target.closest('button, input')) return;
+      toggleCollapse(gid);
+    });
+    var chev = document.createElement('span');
+    chev.className = 'pchev';
+    chev.innerHTML = ICON_CHEV;
+    head.appendChild(chev);
+
+    if (editing) {
+      // 与会话重命名一致：名字就地变成输入框，回车/失焦保存，Esc 取消
+      var inp = document.createElement('input');
+      inp.className = 'pname-input';
+      inp.value = pEditingName;
+      inp.addEventListener('click', function (ev) { ev.stopPropagation(); });
+      inp.addEventListener('input', function () { pEditingName = inp.value; });
+      inp.addEventListener('keydown', function (ev) {
+        if (ev.key === 'Enter') { ev.preventDefault(); saveProjectEdit(gid); }
+        else if (ev.key === 'Escape') { ev.preventDefault(); pEditing = ''; renderList(); }
+      });
+      inp.addEventListener('blur', function () { saveProjectEdit(gid); });
+      head.appendChild(inp);
+      setTimeout(function () { inp.focus(); inp.select(); }, 0);
+    } else {
+      var label = document.createElement('span');
+      label.className = 'pname';
+      label.textContent = name;
+      label.title = name;
+      head.appendChild(label);
+    }
+
+    var acts = document.createElement('div');
+    acts.className = 'pacts';
+    head.appendChild(acts);
+    head._acts = acts;
+    return head;
+  }
+
+  /* ----- 渲染：项目删除确认 ----- */
+  function renderProjectDeletePanel(p, count) {
+    var box = document.createElement('div');
+    box.className = 'pdel';
+    box.addEventListener('click', function (ev) { ev.stopPropagation(); });
+
+    var msg = document.createElement('div');
+    msg.className = 'pdel-msg';
+    msg.textContent = '删除项目「' + (p.name || p.id) + '」？';
+    box.appendChild(msg);
+
+    var only = document.createElement('button');
+    only.type = 'button';
+    only.className = 'cbtn';
+    only.textContent = '仅删除项目（会话回到默认）';
+    only.addEventListener('click', function () { deleteProject(p.id, false); });
+    box.appendChild(only);
+
+    if (count > 0) {
+      var all = document.createElement('button');
+      all.type = 'button';
+      all.className = 'cbtn danger';
+      all.textContent = '连同 ' + count + ' 个会话一起删除';
+      all.addEventListener('click', function () { deleteProject(p.id, true); });
+      box.appendChild(all);
+    }
+
+    var cancel = document.createElement('button');
+    cancel.type = 'button';
+    cancel.className = 'cbtn';
+    cancel.textContent = '取消';
+    cancel.addEventListener('click', function () { pDeleting = ''; pDeleteError = ''; renderList(); });
+    box.appendChild(cancel);
+
+    if (pDeleteError) {
+      var err = document.createElement('div');
+      err.className = 'pf-err';
+      err.textContent = pDeleteError;
+      box.appendChild(err);
+    }
+    return box;
+  }
+
+  /* ----- 渲染：会话行（含移动到项目菜单、拖拽） ----- */
+  function renderSessionItem(s) {
+    var wrap = document.createElement('div');
+    wrap.className = 'sitem';
+
+    var card = document.createElement('div');
+    card.className = 'item' + (s.id === activeId ? ' active' : '') + (editingId === s.id ? ' editing' : '') + (dragSessionId === s.id ? ' dragging' : '');
+    card.draggable = editingId !== s.id;
+    card.addEventListener('click', function () {
+      // 点行内按钮/确认条时不切换会话（由子元素自行 stopPropagation）
+      callAction('session.switch', { session_id: s.id }).then(handleBusy).catch(function () {});
+    });
+    card.addEventListener('dragstart', function (ev) {
+      dragSessionId = s.id;
+      try { ev.dataTransfer.setData('text/plain', s.id); ev.dataTransfer.effectAllowed = 'move'; } catch (_) {}
+      card.classList.add('dragging');
+    });
+    card.addEventListener('dragend', function () {
+      dragSessionId = '';
+      dropTarget = '';
+      clearDropHint();
+      card.classList.remove('dragging');
+    });
+
+    // 删除确认态：整张卡片换成「删除「名称」？[删除][取消]」
+    if (confirmingId === s.id) {
+      var bar = document.createElement('div');
+      bar.className = 'confirm';
+      var msg = document.createElement('span');
+      msg.className = 'confirm-msg';
+      msg.textContent = '删除「' + (s.alias || s.id) + '」？';
+      bar.appendChild(msg);
+      var yes = document.createElement('button');
+      yes.className = 'cbtn danger';
+      yes.textContent = '删除';
+      yes.addEventListener('click', function (ev) { ev.stopPropagation(); doDelete(s.id); });
+      var no = document.createElement('button');
+      no.className = 'cbtn';
+      no.textContent = '取消';
+      no.addEventListener('click', function (ev) { ev.stopPropagation(); confirmingId = ''; renderList(); });
+      bar.appendChild(yes);
+      bar.appendChild(no);
+      card.appendChild(bar);
+      wrap.appendChild(card);
+      return wrap;
+    }
+
+    var text = document.createElement('div');
+    text.className = 'item-text';
+    if (editingId === s.id) {
+      var inp = document.createElement('input');
+      inp.className = 'item-title-input';
+      inp.value = editingVal;
+      inp.addEventListener('click', function (ev) { ev.stopPropagation(); });
+      inp.addEventListener('input', function () { editingVal = inp.value; });
+      inp.addEventListener('keydown', function (ev) {
+        if (ev.key === 'Enter') { ev.preventDefault(); commitRename(s.id); }
+        else if (ev.key === 'Escape') { ev.preventDefault(); editingId = ''; renderList(); }
+      });
+      inp.addEventListener('blur', function () { commitRename(s.id); });
+      text.appendChild(inp);
+      setTimeout(function () { inp.focus(); inp.select(); }, 0);
+    } else {
+      var dt = document.createElement('div');
+      dt.className = 'item-title';
+      dt.textContent = s.alias || s.id;
+      text.appendChild(dt);
+    }
+
+    var acts = document.createElement('div');
+    acts.className = 'item-acts';
+    acts.appendChild(iconButton('', '重命名', ICON_PENCIL, function () {
+      editingId = s.id; editingVal = s.alias || ''; confirmingId = ''; moveMenuId = ''; renderList();
+    }));
+    acts.appendChild(iconButton('', '移动到项目', ICON_MOVE, function () {
+      moveMenuId = moveMenuId === s.id ? '' : s.id;
+      editingId = ''; confirmingId = ''; renderList();
+    }));
+    acts.appendChild(iconButton('danger', '删除', ICON_TRASH, function () {
+      confirmingId = s.id; editingId = ''; moveMenuId = ''; renderList();
+    }));
+
+    card.appendChild(text);
+    card.appendChild(acts);
+    wrap.appendChild(card);
+
+    // 移动到项目：行内展开菜单（不弹出浮层，避免窄侧栏里被裁切）
+    if (moveMenuId === s.id) {
+      var menu = document.createElement('div');
+      menu.className = 'mmenu';
+      menu.addEventListener('click', function (ev) { ev.stopPropagation(); });
+      var cur = sessionGroupId(s);
+      var options = [{ id: '', name: '默认' }].concat(projects.map(function (p) {
+        return { id: p.id, name: p.name || p.id };
+      }));
+      options.forEach(function (o) {
+        var opt = document.createElement('button');
+        opt.type = 'button';
+        opt.className = 'mopt' + (cur === o.id ? ' on' : '');
+        opt.textContent = (cur === o.id ? '✓ ' : '') + o.name;
+        opt.title = o.name;
+        opt.addEventListener('click', function (ev) { ev.stopPropagation(); moveSessionTo(s.id, o.id); });
+        menu.appendChild(opt);
+      });
+      wrap.appendChild(menu);
+    }
+    return wrap;
+  }
+
+  /* ----- 渲染：项目分组 / 未分类分组 ----- */
+  function matchesQuery(text) {
+    return !searchQuery || String(text || '').toLowerCase().indexOf(searchQuery) >= 0;
+  }
+
+  function matchesSession(s) {
+    return matchesQuery(s.alias || s.id);
+  }
+
+  function renderProjectGroup(p, items) {
+    var pid = p.id;
+    var wrap = document.createElement('div');
+    wrap.className = 'pgroup' + (!searchQuery && pCollapsed[pid] ? ' collapsed' : '');
+
+    var head = renderGroupHead(pid, p.name || pid, {
+      editing: pEditing === pid,
+      confirming: pDeleting === pid,
+    });
+    attachDropTarget(head, pid);
+    head._acts.appendChild(projectIcon('', '在此项目中新建会话', ICON_PLUS, function () { newSessionInProject(pid); }));
+    head._acts.appendChild(projectIcon('', '重命名项目', ICON_PENCIL, function () { openProjectEdit(p); }));
+    head._acts.appendChild(projectIcon('danger', '删除项目', ICON_TRASH, function () {
+      pDeleting = pid; pEditing = ''; pDeleteError = ''; pCollapsed[pid] = false; renderList();
+    }));
+    wrap.appendChild(head);
+
+    var body = document.createElement('div');
+    body.className = 'pbody';
+    if (pDeleting === pid) body.appendChild(renderProjectDeletePanel(p, items.length));
+    if (items.length) {
+      items.forEach(function (s) { body.appendChild(renderSessionItem(s)); });
+    } else if (pDeleting !== pid) {
+      var empty = document.createElement('div');
+      empty.className = 'pempty';
+      empty.textContent = '暂无会话';
+      body.appendChild(empty);
+    }
+    wrap.appendChild(body);
+    return wrap;
+  }
+
+  /* ----- 新建项目（内联表单） ----- */
+  function syncCreateForm() {
+    var form = document.getElementById('pCreate');
+    if (form) form.classList.toggle('on', pCreating);
+  }
+
+  function startCreateProject() {
+    pCreating = true;
+    document.getElementById('pCreateErr').textContent = '';
+    syncCreateForm();
+    setTimeout(function () {
+      var el = document.getElementById('pCreateName');
+      if (el) el.focus();
+    }, 0);
+  }
+
+  function createProjectFromInput() {
+    var input = document.getElementById('pCreateName');
+    var errEl = document.getElementById('pCreateErr');
+    var name = String(input.value || '').trim();
+    if (!name) {
+      errEl.textContent = '项目名称不能为空';
+      input.focus();
       return;
     }
-    sessions.forEach(function (s) {
-      var card = document.createElement('div');
-      card.className = 'item' + (s.id === activeId ? ' active' : '') + (editingId === s.id ? ' editing' : '');
-      card.addEventListener('click', function () {
-        // 点行内按钮/确认条时不切换会话（由子元素自行 stopPropagation）
-        callAction('session.switch', { session_id: s.id }).then(handleBusy).catch(function () {});
+    callAction('projects.create', { name: name })
+      .then(function () {
+        pCreating = false;
+        input.value = '';
+        errEl.textContent = '';
+        syncCreateForm();
+        return load();
+      })
+      .catch(function (err) {
+        errEl.textContent = String((err && err.message) || '创建项目失败');
       });
+  }
 
-      // 删除确认态：整张卡片换成「删除「名称」？[删除][取消]」
-      if (confirmingId === s.id) {
-        var bar = document.createElement('div');
-        bar.className = 'confirm';
-        var msg = document.createElement('span');
-        msg.className = 'confirm-msg';
-        msg.textContent = '删除「' + (s.alias || s.id) + '」？';
-        bar.appendChild(msg);
-        var yes = document.createElement('button');
-        yes.className = 'cbtn danger';
-        yes.textContent = '删除';
-        yes.addEventListener('click', function (ev) { ev.stopPropagation(); doDelete(s.id); });
-        var no = document.createElement('button');
-        no.className = 'cbtn';
-        no.textContent = '取消';
-        no.addEventListener('click', function (ev) { ev.stopPropagation(); confirmingId = ''; renderList(); });
-        bar.appendChild(yes);
-        bar.appendChild(no);
-        card.appendChild(bar);
-        listEl.appendChild(card);
+  /* ----- 区块折叠 ----- */
+  function applySections() {
+    quickSectionEl.classList.toggle('collapsed', !quickOpen);
+    projectSectionEl.classList.toggle('collapsed', !projOpen);
+    defaultSectionEl.classList.toggle('collapsed', !defOpen);
+  }
+
+  /* ----- 渲染：项目 / 默认 ----- */
+  function renderList() {
+    projectBodyEl.innerHTML = '';
+    defaultBodyEl.innerHTML = '';
+    var search = !!searchQuery;
+
+    var projectShown = 0;
+    projects.forEach(function (p) {
+      var all = sessionsIn(p.id);
+      var nameHit = search && matchesQuery(p.name || p.id);
+      // 搜索时：项目名命中就展示其全部会话，否则只展示命中的会话
+      var items = !search ? all : (nameHit ? all : all.filter(matchesSession));
+      if (search && !nameHit && !items.length) return;
+      projectBodyEl.appendChild(renderProjectGroup(p, items));
+      projectShown++;
+    });
+    if (!projectShown) {
+      var pEmpty = document.createElement('div');
+      pEmpty.className = 'section-empty';
+      pEmpty.textContent = search ? '没有匹配的项目' : '暂无项目';
+      projectBodyEl.appendChild(pEmpty);
+    }
+
+    var ungrouped = sessionsIn('');
+    var items = search ? ungrouped.filter(matchesSession) : ungrouped;
+    if (items.length) {
+      items.forEach(function (s) { defaultBodyEl.appendChild(renderSessionItem(s)); });
+    } else {
+      var dEmpty = document.createElement('div');
+      dEmpty.className = 'section-empty';
+      dEmpty.textContent = search ? '没有匹配的会话' : '暂无会话';
+      defaultBodyEl.appendChild(dEmpty);
+    }
+  }
+
+  /* ----- 快捷栏：配置中心勾选的插件入口 ----- */
+  var PLUGIN_ICONS = {
+    list: '<path d="M3 6h.01M3 12h.01M3 18h.01"/><path d="M8 6h13M8 12h13M8 18h13"/>',
+    history: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/>',
+    image: '<rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>',
+    globe: '<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>',
+  };
+
+  function paintPluginIcon(el, meta) {
+    var raw = String(meta.icon || '').trim();
+    if (raw && raw.charAt(0) === '<') {
+      // 插件自带内联 SVG 时直接用（去掉脚本标签）
+      el.innerHTML = raw.replace(/<script[\s\S]*?<\/script>/gi, '');
+      return;
+    }
+    if (PLUGIN_ICONS[raw]) {
+      el.innerHTML = SVG_HEAD + PLUGIN_ICONS[raw] + '</svg>';
+      return;
+    }
+    el.textContent = raw || ((meta.name || '?').charAt(0) || '?');
+  }
+
+  function renderQuickBar() {
+    quickBarEl.innerHTML = '';
+    var ids = Array.isArray(pluginCfg.quickPlugins) ? pluginCfg.quickPlugins : [];
+    if (!ids.length) {
+      var hint = document.createElement('button');
+      hint.type = 'button';
+      hint.className = 'qempty';
+      hint.textContent = '在配置中心添加快捷入口';
+      hint.addEventListener('click', function () { callAction('settings.open').catch(function () {}); });
+      quickBarEl.appendChild(hint);
+      return;
+    }
+    if (searchQuery) {
+      // 搜索时快捷入口同样参与过滤，按插件名称或 id 命中
+      ids = ids.filter(function (id) {
+        var meta = pluginMeta[id];
+        return matchesQuery(id) || matchesQuery(meta && meta.name);
+      });
+      if (!ids.length) {
+        var none = document.createElement('div');
+        none.className = 'qnone';
+        none.textContent = '没有匹配的快捷入口';
+        quickBarEl.appendChild(none);
         return;
       }
-
-      var text = document.createElement('div');
-      text.className = 'item-text';
-      if (editingId === s.id) {
-        var inp = document.createElement('input');
-        inp.className = 'item-title-input';
-        inp.value = editingVal;
-        inp.addEventListener('click', function (ev) { ev.stopPropagation(); });
-        inp.addEventListener('input', function () { editingVal = inp.value; });
-        inp.addEventListener('keydown', function (ev) {
-          if (ev.key === 'Enter') { ev.preventDefault(); commitRename(s.id); }
-          else if (ev.key === 'Escape') { ev.preventDefault(); editingId = ''; renderList(); }
-        });
-        inp.addEventListener('blur', function () { commitRename(s.id); });
-        text.appendChild(inp);
-        setTimeout(function () { inp.focus(); inp.select(); }, 0);
-      } else {
-        var dt = document.createElement('div');
-        dt.className = 'item-title';
-        dt.textContent = s.alias || s.id;
-        text.appendChild(dt);
-      }
-      var acts = document.createElement('div');
-      acts.className = 'item-acts';
-      acts.appendChild(iconButton('', '重命名', ICON_PENCIL, function () {
-        editingId = s.id; editingVal = s.alias || ''; confirmingId = ''; renderList();
-      }));
-      acts.appendChild(iconButton('danger', '删除', ICON_TRASH, function () {
-        confirmingId = s.id; editingId = ''; renderList();
-      }));
-
-      card.appendChild(text);
-      card.appendChild(acts);
-      listEl.appendChild(card);
+    }
+    ids.forEach(function (id) {
+      var meta = pluginMeta[id] || { name: id, icon: '' };
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'qpill';
+      b.title = meta.name;
+      var ic = document.createElement('span');
+      ic.className = 'qic';
+      paintPluginIcon(ic, meta);
+      var tx = document.createElement('span');
+      tx.className = 'qtx';
+      tx.textContent = meta.name;
+      b.appendChild(ic);
+      b.appendChild(tx);
+      b.addEventListener('click', function () {
+        callAction('plugin.activate', { plugin_id: id }).catch(function () {});
+      });
+      quickBarEl.appendChild(b);
     });
   }
 
   function load() {
-    return callAction('sessions.list')
-      .then(function (list) {
-        return callAction('state.get').then(function (st) {
-          activeId = (st && st.activeSessionId) || '';
-          sessions = (list || []).map(function (s) { s.active = s.id === activeId; return s; });
-          // 刷新后清掉指向已消失会话的编辑/确认态
-          if (editingId && !findSession(editingId)) editingId = '';
-          if (confirmingId && !findSession(confirmingId)) confirmingId = '';
-          renderList();
+    return callAction('projects.list')
+      .then(function (list) { projects = Array.isArray(list) ? list : []; })
+      .catch(function () { projects = []; })
+      .then(function () {
+        return callAction('sessions.list').then(function (list) {
+          return callAction('state.get').then(function (st) {
+            activeId = (st && st.activeSessionId) || '';
+            sessions = (list || []).map(function (s) { s.active = s.id === activeId; return s; });
+            // 刷新后清掉指向已消失会话/项目的编辑、确认、菜单态
+            if (editingId && !findSession(editingId)) editingId = '';
+            if (confirmingId && !findSession(confirmingId)) confirmingId = '';
+            if (moveMenuId && !findSession(moveMenuId)) moveMenuId = '';
+            if (pEditing && !findProject(pEditing)) pEditing = '';
+            if (pDeleting && !findProject(pDeleting)) pDeleting = '';
+            renderList();
+          });
         });
       })
       .catch(function () {});
   }
 
-  /* ---------------- 待审批 ---------------- */
-  function setPendingOpen(open) {
-    pendingOpen = !!open;
-    document.getElementById('drawerPending').classList.toggle('open', pendingOpen);
-    // 待审批展开时收起会话列表：两块同时铺开会把彼此挤得很矮（会话列表展开时也反向收起待审批）
-    if (pendingOpen) document.getElementById('drawerSessions').classList.remove('open');
-  }
-
-  function resolveReq(id, approved, ignore) {
-    var payload = {
-      request_id: id,
-      approved: !!approved,
-      ignore: !!ignore,
-      feedback: String(feedbacks[id] || '')
-    };
-    callAction('requests.resolve', payload)
-      .then(function () { delete feedbacks[id]; loadRequests(); })
-      .catch(function () {});
-  }
-
-  function updateBadge() {
-    badgeEl.textContent = String(requests.length);
-    badgeEl.classList.toggle('zero', requests.length === 0);
-  }
-
-  function renderRequests() {
-    updateBadge();
-    reqListEl.innerHTML = '';
-    if (!requests.length) {
-      var emp = document.createElement('div');
-      emp.className = 'empty';
-      emp.textContent = '暂无待审批';
-      reqListEl.appendChild(emp);
-      return;
+  /* ---------------- 搜索 ---------------- */
+  function expandSectionsForSearch() {
+    if (!quickOpen || !projOpen || !defOpen) {
+      quickOpen = true;
+      projOpen = true;
+      defOpen = true;
+      applySections();
     }
-    requests.forEach(function (req) {
-      var isDep = req.type === 'dependency_check';
-      var card = document.createElement('div');
-      card.className = 'req';
-
-      // 顶行：类型标签 + 静默忽略
-      var top = document.createElement('div');
-      top.className = 'req-top';
-      var chip = document.createElement('span');
-      chip.className = 'req-type' + (isDep ? ' dep' : '');
-      chip.textContent = req.type || 'request';
-      top.appendChild(chip);
-      var x = iconButton('req-x', '静默忽略', ICON_X, function () { resolveReq(req.id, false, true); });
-      top.appendChild(x);
-      card.appendChild(top);
-
-      var target = document.createElement('div');
-      target.className = 'req-target';
-      target.textContent = req.target || '(无标题)';
-      card.appendChild(target);
-
-      if (req.reason) {
-        var rbtn = document.createElement('button');
-        rbtn.className = 'req-reason-btn';
-        rbtn.textContent = expandedReasons[req.id] ? '收起理由 ▲' : '查看理由 ▼';
-        rbtn.addEventListener('click', function () {
-          expandedReasons[req.id] = !expandedReasons[req.id];
-          renderRequests();
-        });
-        card.appendChild(rbtn);
-        if (expandedReasons[req.id]) {
-          var reason = document.createElement('div');
-          reason.className = 'req-reason';
-          reason.textContent = req.reason;
-          card.appendChild(reason);
-        }
-      }
-
-      if (!isDep) {
-        var fb = document.createElement('input');
-        fb.className = 'req-input';
-        fb.placeholder = '可选：给 Agent 的反馈';
-        fb.value = feedbacks[req.id] || '';
-        fb.addEventListener('input', function () { feedbacks[req.id] = fb.value; });
-        card.appendChild(fb);
-      }
-
-      // dependency_check 无需反馈，且原 UI 只有一个「知道了」（等价 rejected + 不忽略）
-      var acts = document.createElement('div');
-      acts.className = 'req-acts';
-      if (isDep) {
-        var ack = document.createElement('button');
-        ack.className = 'rbtn ok';
-        ack.textContent = '知道了';
-        ack.addEventListener('click', function () { resolveReq(req.id, false, false); });
-        acts.appendChild(ack);
-      } else {
-        var ok = document.createElement('button');
-        ok.className = 'rbtn ok';
-        ok.textContent = '批准';
-        ok.addEventListener('click', function () { resolveReq(req.id, true, false); });
-        var no = document.createElement('button');
-        no.className = 'rbtn no';
-        no.textContent = '拒绝';
-        no.addEventListener('click', function () { resolveReq(req.id, false, false); });
-        acts.appendChild(ok);
-        acts.appendChild(no);
-      }
-      card.appendChild(acts);
-
-      reqListEl.appendChild(card);
-    });
   }
-
-  // 轮询用的是同一批 DOM：内容没变就不重绘，否则会打断正在输入的反馈框
-  var lastReqSig = null;
-  function reqSig(list) {
-    return list.map(function (r) { return r.id + ':' + (r.status || '') + ':' + (r.type || ''); }).join('|');
-  }
-
-  function loadRequests() {
-    return callAction('requests.list')
-      .then(function (list) {
-        var prev = requests.length;
-        requests = Array.isArray(list) ? list : [];
-        // 清掉已裁决项残留的本地态
-        Object.keys(expandedReasons).forEach(function (k) {
-          if (!requests.some(function (r) { return r.id === k; })) { delete expandedReasons[k]; delete feedbacks[k]; }
-        });
-        // 从「无」变「有」时自动展开，避免新审批被折叠状态藏起来
-        if (prev === 0 && requests.length > 0) setPendingOpen(true);
-        var sig = reqSig(requests);
-        updateBadge();
-        if (sig !== lastReqSig) { lastReqSig = sig; renderRequests(); }
-      })
-      .catch(function () {});
-  }
-
-  /* ---------------- 抽屉交互 ---------------- */
-  document.getElementById('headSessions').addEventListener('click', function () {
-    // 展开会话列表时顺手收起待审批：两块同时铺开会把会话列表挤得很矮
-    if (document.getElementById('drawerSessions').classList.toggle('open')) setPendingOpen(false);
+  searchInput.addEventListener('input', function () {
+    searchQuery = String(searchInput.value || '').trim().toLowerCase();
+    if (searchQuery) expandSectionsForSearch();
+    renderQuickBar();
+    renderList();
   });
-  document.getElementById('headPending').addEventListener('click', function () {
-    setPendingOpen(!pendingOpen);
+  searchInput.addEventListener('keydown', function (ev) {
+    if (ev.key === 'Escape' && searchInput.value) {
+      ev.preventDefault();
+      searchInput.value = '';
+      searchQuery = '';
+      renderQuickBar();
+      renderList();
+    }
   });
+
+  /* ---------------- 标题栏与区块折叠 ---------------- */
   document.getElementById('newBtn').addEventListener('click', function (ev) {
     ev.stopPropagation();
+    // 全局「新建会话」= 默认（项目内新建走分组头上的 +）
     callAction('sessions.new').then(function (res) { if (!handleBusy(res)) load(); }).catch(function () {});
   });
 
-  // 抽屉箭头图标（内联 SVG，避免额外图标依赖）
-  document.querySelectorAll('.chev').forEach(function (c) { c.innerHTML = ICON_CHEV; });
-
-  // 标题不在列表滚动容器内，滚轮落在标题上时转发给对应列表，避免「滚轮没反应」
-  [['headSessions', 'list'], ['headPending', 'reqList']].forEach(function (pair) {
-    var head = document.getElementById(pair[0]);
-    var list = document.getElementById(pair[1]);
-    head.addEventListener('wheel', function (ev) {
-      if (list.scrollHeight <= list.clientHeight) return;
-      list.scrollTop += ev.deltaY;
-      ev.preventDefault();
-    }, { passive: false });
+  document.getElementById('newProjectBtn').addEventListener('click', function (ev) {
+    ev.stopPropagation();
+    startCreateProject();
   });
+  document.getElementById('pCreateOk').addEventListener('click', function (ev) {
+    ev.stopPropagation();
+    createProjectFromInput();
+  });
+  document.getElementById('pCreateCancel').addEventListener('click', function (ev) {
+    ev.stopPropagation();
+    pCreating = false;
+    document.getElementById('pCreateName').value = '';
+    document.getElementById('pCreateErr').textContent = '';
+    syncCreateForm();
+  });
+  document.getElementById('pCreateName').addEventListener('keydown', function (ev) {
+    if (ev.key === 'Enter') { ev.preventDefault(); createProjectFromInput(); }
+    else if (ev.key === 'Escape') {
+      ev.preventDefault();
+      pCreating = false;
+      syncCreateForm();
+    }
+  });
+
+  // 快捷栏右下角画笔：跳到配置中心配置入口
+  document.getElementById('quickConfigBtn').addEventListener('click', function (ev) {
+    ev.stopPropagation();
+    callAction('settings.open').catch(function () {});
+  });
+
+  document.getElementById('quickToggleBtn').addEventListener('click', function (ev) {
+    ev.stopPropagation();
+    quickOpen = !quickOpen;
+    applySections();
+  });
+
+  document.getElementById('projectToggleBtn').addEventListener('click', function (ev) {
+    ev.stopPropagation();
+    projOpen = !projOpen;
+    applySections();
+  });
+
+  document.getElementById('defaultToggleBtn').addEventListener('click', function (ev) {
+    ev.stopPropagation();
+    defOpen = !defOpen;
+    applySections();
+  });
+
+  // 点小标题与点右侧箭头行为一致：都可收起/展开
+  document.querySelector('#quickSection .section-head').addEventListener('click', function (ev) {
+    if (ev.target.closest('button')) return;
+    quickOpen = !quickOpen;
+    applySections();
+  });
+  document.querySelector('#projectSection .section-head').addEventListener('click', function (ev) {
+    if (ev.target.closest('button')) return;
+    projOpen = !projOpen;
+    applySections();
+  });
+  document.getElementById('defaultHead').addEventListener('click', function (ev) {
+    if (ev.target.closest('button')) return;
+    defOpen = !defOpen;
+    applySections();
+  });
+
+  // 会话可拖回默认
+  attachDropTarget(document.getElementById('defaultHead'), UNGROUPED);
+
+  applySections();
 
   window.addEventListener('message', function (e) {
     var m = e.data;
     if (!m || typeof m !== 'object' || m.type !== 'event') return;
-    if (m.event === 'session.switched' || m.event === 'conversation.updated') load();
+    if (m.event === 'session.switched' || m.event === 'conversation.updated' || m.event === 'projects.updated') load();
   });
 
   load();
-  loadRequests();
-  // 待审批无推送通道，按原 UI 同频轮询（3s）
-  setInterval(loadRequests, 3000);
 })();
 </script>
 </body>
