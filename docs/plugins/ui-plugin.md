@@ -81,7 +81,7 @@ ui-plugins/<id>/               # 市场仓库中的单元
 
 ## 4. `configSchema` 配置表单
 
-宿主据此渲染配置面板并调用 `configApply` 下发。`type` 取值：`text`（默认，单行文本）、`switch`（开关）、`number`（数字）、`select`（下拉，需 `options[]`）、`range`（滑块，配 `min` / `max` / `step`）、`wallpapers`（壁纸选择）。每个字段含 `key` / `type` / `label` / `default`。
+宿主据此渲染配置面板并调用 `configApply` 下发。`type` 取值：`text`（默认，单行文本）、`switch`（开关）、`number`（数字）、`select`（下拉，需 `options[]`）、`range`（滑块，配 `min` / `max` / `step`）、`wallpapers`（壁纸选择）、`plugin-multi`（插件多选，值为插件 id 数组，由插件自行消费，如侧栏快捷栏）。每个字段含 `key` / `type` / `label` / `default`。
 
 插件侧读取方式：监听宿主下发的 `configApply`（见下节事件），或主动 `callAction('config.get', { plugin_id })`。
 
@@ -116,16 +116,21 @@ window.parent.postMessage({ type: 'callAction', id: 'req-1', actionId: 'config.g
 | actionId | payload | data（返回） |
 | --- | --- | --- |
 | `state.get` | 无 | 宿主群状态副本 `{activeSessionId, sessions, draft, draftParadigm, activeBranchId, ...}`（其中 `plugins` 为 `undefined`） |
-| `chat.send` | `{session_id?, message}` | 后端 `/api/chat` 的 JSON body（含 `processed_message`） |
+| `chat.send` | `{session_id?, message}` | 后端 `/api/chat` 的 JSON body（含 `processed_message`）；会话为空且处于草稿态时先用 `message` 建会话，并把首条消息截断为前 10 个字作为会话名 |
 | `chat.sendBatch` | `{session_id?, events: [...]}` | 后端 `/api/chat/batch` 的 JSON body（含 `processed_events`） |
 | `chat.interrupt` | `{session_id?}` | 后端 `/api/chat/interrupt` 的 JSON body |
 | `chat.traceToSkill` | `{session_id?, name, goal, is_upgrade?}` | `{status:"ok"}`（`name` / `goal` 为空会抛错） |
-| `sessions.list` | 无 | 会话数组 |
-| `sessions.new` | 无 | `{status:"ok", draft:true}`；Agent 忙碌时 `{status:"busy"}`（不新建） |
+| `sessions.list` | 无 | 会话数组（含 `project_id`，空串表示未分类） |
+| `sessions.new` | `{project_id?}` | `{status:"ok", draft:true}`；Agent 忙碌时 `{status:"busy"}`（不新建）。`project_id` 非空表示在该项目内新建，后端会注入该项目 `MEMORY.md` 的路径与维护约定 |
 | `session.switch` | `{session_id}` | `{status:"ok"}`；忙碌且切到别的会话时 `{status:"busy"}` |
 | `session.rename` | `{session_id, alias}` | `{status:"ok", alias}` |
 | `session.delete` | `{session_id}` | `{status:"ok"}` |
 | `session.branch` | `{session_id?, alias?}` | 后端返回的会话对象（含 `id`）；忙碌时 `{status:"busy"}` |
+| `session.moveToProject` | `{session_id, project_id}` | `{status:"ok", project_id}`；`project_id` 为空表示移回未分类 |
+| `projects.list` | 无 | 项目数组（含 `session_count`、`memory_path`） |
+| `projects.create` | `{name}` | 后端创建的项目对象 |
+| `projects.update` | `{project_id, name?}` | 后端返回的项目对象 |
+| `projects.delete` | `{project_id, delete_sessions?}` | `{status:"ok", deleted_sessions}` |
 | `session.setDraftParadigm` | `{paradigm}` | `{status:"ok", paradigm}`；非草稿态 `{status:"noop"}` |
 | `branch.select` | `{branch_id?}`（默认 `main`） | `{status:"ok"}` |
 | `requests.list` | 无 | 待审批请求数组 |
@@ -206,6 +211,7 @@ window.parent.postMessage({ type: 'callAction', id: 'req-1', actionId: 'config.g
 | `browser.openUrl` | 请求在浏览器打开某链接 | `{ url }` | 命中槽 |
 | `conversation.local` | 本会话消息流本地即时插入 | `{ session_id, events }` | `session` / `sidebar` |
 | `conversation.updated` | 本会话消息流发生变化 | `{ session_id }` | `session` / `sidebar` |
+| `projects.updated` | 项目增删改或会话归属变化 | `{ project_id }` | `sidebar` |
 
 > `panel` 槽的插件**收不到** `conversation.*`，而且它只带 `session_id`（无消息内容、无"完成"标记）：
 > 插件若要判定 Agent 任务完成，需自行轮询（产物 `mtime` / `state.get`）+ 超时兜底。

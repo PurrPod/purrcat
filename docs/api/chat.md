@@ -1,6 +1,6 @@
 # 会话与对话
 
-> 源码：`src/server/api/chat.py` ｜ 前缀：`/api` ｜ 端点：17 个
+> 源码：`src/server/api/chat.py` ｜ 前缀：`/api` ｜ 端点：18 个
 
 涵盖会话管理（`/api/sessions*`）、对话受理（`/api/chat*`）与 Agent Token 用量（`/api/agent/token`）。
 其中发送消息、批量发送、记忆压缩、记忆打断等为**后台异步**接口，立即返回受理态，实际进度走 `/api/sessions/{session_id}/status` 轮询。
@@ -20,10 +20,13 @@
     "id": "session_xxx",
     "alias": "New Session",
     "messages_count": 12,
-    "updated_at": "2026-10-14T10:00:00"
+    "updated_at": "2026-10-14T10:00:00",
+    "project_id": ""
   }
 ]
 ```
+
+`project_id` 为所属项目 id；空串表示未归入任何项目（「未分类」）。
 
 **示例**
 
@@ -35,7 +38,7 @@ curl 'http://127.0.0.1:8000/api/sessions'
 
 ## POST `/api/sessions/new`
 
-新建一个会话，可选指定别名与 Agent Loop（paradigm）。
+新建一个会话，可选指定别名、Agent Loop（paradigm）与所属项目。
 
 **请求**
 
@@ -43,6 +46,9 @@ curl 'http://127.0.0.1:8000/api/sessions'
 | --- | --- | --- | --- | --- |
 | `alias` | body | string | 否 | 会话别名，默认 `New Session` |
 | `paradigm` | body | string | 否 | `paradigms/` 下的文件名（不带 `.yaml`）；为空则用默认 `PARADIGM.yaml` |
+| `project_id` | body | string | 否 | 项目 id；非空时把该项目 `MEMORY.md` 的路径与维护约定注入系统提示，并写入会话归属 |
+
+> 项目记忆**只在新建时**注入一次（只给 `MEMORY.md` 的路径与维护约定，不注入正文）。把已有会话移入项目（见下方 `PUT /api/sessions/{session_id}/project`）不会改写其系统提示。
 
 **响应**
 
@@ -166,6 +172,33 @@ curl -X PUT 'http://127.0.0.1:8000/api/sessions/session_xxx/rename' -H 'Content-
 
 ---
 
+## PUT `/api/sessions/{session_id}/project`
+
+把会话归入某个项目，或移回「未分类」。仅改归属，不改写会话既有系统提示。
+
+**请求**
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| `session_id` | path | string | 是 | 会话 id（须以 `session_` 开头） |
+| `project_id` | body | string | 否 | 目标项目 id；空串表示移回「未分类」 |
+
+**响应**
+
+```json
+{ "status": "ok", "project_id": "project_xxx" }
+```
+
+会话不存在或项目不存在时返回 `404`；`session_id` 非法时返回 `400`。
+
+**示例**
+
+```bash
+curl -X PUT 'http://127.0.0.1:8000/api/sessions/session_xxx/project' -H 'Content-Type: application/json' -d '{"project_id":"project_xxx"}'
+```
+
+---
+
 ## POST `/api/sessions/{session_id}/checkout`
 
 检出/切换到指定会话。`session_id` 必须以 `session_` 开头，否则返回 `400`。
@@ -193,6 +226,8 @@ curl -X POST 'http://127.0.0.1:8000/api/sessions/session_xxx/checkout'
 ## POST `/api/sessions/{session_id}/branch`
 
 以指定会话为起点新建一个子分支。
+
+新建的分支会话会继承源会话所属项目（写入 `meta.json` 与 `index.json` 的 `project_id`），因此会直接归档在源会话所在的项目下。
 
 **请求**
 

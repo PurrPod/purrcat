@@ -15,7 +15,8 @@
 | 模块 | 前缀 | 端点数 | 文档 |
 | --- | --- | --- | --- |
 | 极简模式插件系统 | `/api/webmin` | 10 | [webmin.md](webmin.md) |
-| 会话与对话 | `/api` | 17 | [chat.md](chat.md) |
+| 会话与对话 | `/api` | 18 | [chat.md](chat.md) |
+| 项目（会话分类器） | `/api/projects` | 4 | [projects.md](projects.md) |
 | 配置 | `/api/config` | 29 | [config.md](config.md) |
 | 工具 | `/api/tools` | 31 | [tools.md](tools.md) |
 | 文件系统 | `/api/filesystem` | 12 | [filesystem.md](filesystem.md) |

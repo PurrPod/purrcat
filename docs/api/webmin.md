@@ -345,7 +345,7 @@ window.parent.postMessage(
 | --- | --- |
 | `{ type: 'callActionResult', id, ok, data \| error }` | 上一次 `callAction` 的结果，按 `id` 对应 |
 | `{ type: 'configApply', config }` | 用户在设置面板改了配置 → 实时下发全量 config |
-| `{ type: 'event', event, data }` | 宿主广播：`host.unmount`、`host.nativeCover`（`{covered}`）、`layout.empty`（`{empty}`）、`session.switched`、`branch.switched`、`config.updated` |
+| `{ type: 'event', event, data }` | 宿主广播：`host.unmount`、`host.nativeCover`（`{covered}`）、`layout.empty`（`{empty}`）、`session.switched`、`branch.switched`、`config.updated`、`projects.updated` |
 
 ### actionId 清单
 
@@ -353,7 +353,8 @@ window.parent.postMessage(
 
 | 分类 | actionId |
 | --- | --- |
-| 会话／对话 | `chat.send`、`chat.sendBatch`、`chat.interrupt`、`chat.traceToSkill`、`sessions.list`、`sessions.new`、`session.switch`、`session.rename`、`session.delete`、`session.branch`、`requests.list`、`requests.resolve` |
+| 会话／对话 | `chat.send`、`chat.sendBatch`、`chat.interrupt`、`chat.traceToSkill`、`sessions.list`、`sessions.new`、`session.switch`、`session.rename`、`session.delete`、`session.branch`、`session.moveToProject`、`requests.list`、`requests.resolve` |
+| 项目（会话分类器） | `projects.list`、`projects.create`（`{name}`）、`projects.update`（`{project_id, name?}`）、`projects.delete`（`{project_id, delete_sessions?}`） |
 | 配置 | `config.get`（payload `{plugin_id}`）、`config.set`、`settings.meta`、`settings.open`、`settings.close` |
 | 文件／数据 | `dialog.files`、`dialog.folder`、`dialog.resolveFiles`、`dialog.pickWallpaper`、`ref.graphs` |
 | 容器（float／modal 插件） | `slot.move`、`slot.close`、`slot.hide` |

@@ -63,7 +63,7 @@ __GOAL__
 | --- | --- |
 | `key` | 配置键名（会出现在 config 对象里） |
 | `label` | 设置面板里的显示名，缺省用 key |
-| `type` | `text`（默认）／`switch`／`number`／`select`／`range`／`wallpapers` |
+| `type` | `text`（默认）／`switch`／`number`／`select`／`range`／`wallpapers`／`plugin-multi`（插件多选，值为插件 id 数组，由插件自行消费） |
 | `default` | 默认值；不写则 switch=false、number=0、select=第一个 option、其余为空串 |
 | `options` | 仅 `select`：字符串数组 |
 | `min` / `max` / `step` | 仅 `range`：`min` 默认 0、`max` 默认 1、`step` 默认 0.01；滑块初值取 `default`，未写则取 `max`；key 叫 `opacity` 时会渲染成"透明度"滑块（值越大越透明） |
@@ -112,6 +112,7 @@ window.parent.postMessage({ type: 'callAction', id: id, actionId: 'state.get', p
 | `session.switched` | `{session_id}` | 全体 | 用户切换了会话 |
 | `branch.switched` | `{branch_id}` | 全体 | 用户切换了会话分支 |
 | `requests.updated` | `{request_id}` | 全体 | 待审批请求发生变化 |
+| `projects.updated` | `{project_id}` | `sidebar` | 项目增删改或会话归属变化 |
 | `browser.tabEvent` | `{...}` | 全体 | 内置浏览器 Tab 事件 |
 | `layout.empty` | `{empty}` | `session` | 当前区域是否为空（未挂载任何插件） |
 | `config.updated` | `{plugin_id, config}` | `settings` | 配置已变更（普通插件用 `configApply` 消息即可） |
@@ -145,12 +146,17 @@ window.parent.postMessage({ type: 'callAction', id: id, actionId: 'state.get', p
 | `chat.sendBatch` | `{session_id?, events: [...]}` | 后端 `/api/chat/batch` 的 JSON body（含 `processed_events`） |
 | `chat.interrupt` | `{session_id?}` | 后端 `/api/chat/interrupt` 的 JSON body |
 | `chat.traceToSkill` | `{session_id?, name, goal, is_upgrade?}` | `{status:"ok"}`（`name` / `goal` 为空会抛错） |
-| `sessions.list` | 无 | 会话数组 |
-| `sessions.new` | 无 | `{status:"ok", draft:true}`；Agent 忙碌时 `{status:"busy"}`（不新建） |
+| `sessions.list` | 无 | 会话数组（含 `project_id`，空串表示未分类） |
+| `sessions.new` | `{project_id?}` | `{status:"ok", draft:true}`；Agent 忙碌时 `{status:"busy"}`（不新建）；`project_id` 非空时在该项目内新建并注入该项目 `MEMORY.md` 的路径与维护约定 |
 | `session.switch` | `{session_id}` | `{status:"ok"}`；忙碌且切到别的会话时 `{status:"busy"}` |
 | `session.rename` | `{session_id, alias}` | `{status:"ok", alias}` |
 | `session.delete` | `{session_id}` | `{status:"ok"}` |
 | `session.branch` | `{session_id?, alias?}` | 后端返回的会话对象（含 `id`）；忙碌时 `{status:"busy"}` |
+| `session.moveToProject` | `{session_id, project_id}` | `{status:"ok", project_id}`；`project_id` 为空表示移回未分类 |
+| `projects.list` | 无 | 项目数组（含 `session_count`、`memory_path`） |
+| `projects.create` | `{name}` | 后端创建的项目对象 |
+| `projects.update` | `{project_id, name?}` | 后端返回的项目对象 |
+| `projects.delete` | `{project_id, delete_sessions?}` | `{status:"ok", deleted_sessions}` |
 | `session.setDraftParadigm` | `{paradigm}` | `{status:"ok", paradigm}`；非草稿态 `{status:"noop"}` |
 | `branch.select` | `{branch_id?}`（默认 `main`） | `{status:"ok"}` |
 | `requests.list` | 无 | 待审批请求数组 |
