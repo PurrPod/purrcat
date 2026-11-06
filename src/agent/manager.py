@@ -160,8 +160,12 @@ class AgentManager:
         print(f"[Switch] 检出成功: {target_session_id}")
         return True
 
-    def new_session(self, branch_alias=None, paradigm=None):
-        """原 create_clean_session：开启一个全新的空白会话（可指定其范式文件）"""
+    def new_session(self, branch_alias=None, paradigm=None, project_id=None):
+        """原 create_clean_session：开启一个全新的空白会话（可指定范式与所属项目）。
+
+        project_id 非空时，把该项目的 MEMORY.md 路径与维护约定追加进系统提示词——只在此刻（项目内
+        新建会话）注入一次；把旧会话拖进项目不会改动其既有系统提示。
+        """
         if not self._agent:
             self.init_agent()
 
@@ -185,6 +189,13 @@ class AgentManager:
         )
         fresh_prompt = temp_agent._build_system_prompt()
 
+        if project_id:
+            from src.agent.project_store import ProjectStore
+
+            block = ProjectStore.prompt_block(project_id)
+            if block:
+                fresh_prompt = f"{fresh_prompt}\n\n---\n\n{block}"
+
         new_id = SessionStore._generate_id()
         clean_history = [{"role": "system", "content": fresh_prompt}]
 
@@ -194,6 +205,7 @@ class AgentManager:
             parent_id=None,
             alias=branch_alias,
             paradigm=paradigm,
+            project_id=project_id or None,
         )
 
         with self._agent._history_lock:
@@ -258,6 +270,9 @@ class AgentManager:
             if base and base.lower() != "paradigm":
                 inherit_paradigm = base
 
+        # 分支留在源会话所属项目（系统提示已随历史一并继承，不再重复注入 MEMORY.md）
+        source_project = SessionStore.get_session_project(self._agent.session_id)
+
         new_id = SessionStore.create_branch(
             current_session_id=self._agent.session_id,
             current_history=safe_history,
@@ -265,6 +280,7 @@ class AgentManager:
             paradigm=inherit_paradigm,
             window_token=current_token,
             consumed_tokens=current_consumed,
+            project_id=source_project,
         )
 
         new_history = SessionStore.load_session_history(new_id)

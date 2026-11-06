@@ -297,6 +297,7 @@ async def run_api(host: str = "0.0.0.0", port: int = DEFAULT_API_PORT):
     
     # API 路由也尽量懒加载，防止影响入口速度
     from src.server.api.chat import router as chat_router
+    from src.server.api.projects import router as projects_router
     from src.server.api.graph import router as graph_router
     from src.server.api.task import router as task_router
     from src.server.api.config import router as config_router
@@ -321,6 +322,7 @@ async def run_api(host: str = "0.0.0.0", port: int = DEFAULT_API_PORT):
     )
 
     app.include_router(chat_router)
+    app.include_router(projects_router)
     app.include_router(graph_router)
     app.include_router(task_router)
     app.include_router(config_router)

@@ -89,12 +89,17 @@ PARADIGMS_DIR = os.path.join(PURRCAT_DIR, "paradigms")
 SESSIONS_DIR = os.path.join(DATA_DIR, "checkpoints", "agent")
 SESSION_INDEX_PATH = os.path.join(SESSIONS_DIR, "index.json")
 
+# 项目（会话分类器）：索引 + 每个项目一个文件夹（内含 MEMORY.md 项目记忆文件）
+PROJECTS_DIR = os.path.join(DATA_DIR, "projects")
+PROJECT_INDEX_PATH = os.path.join(PROJECTS_DIR, "index.json")
+
 os.makedirs(DATA_DIR, exist_ok=True)
 os.makedirs(MEMORY_DIR, exist_ok=True)
 os.makedirs(TRACKER_DIR, exist_ok=True)
 os.makedirs(SCHEDULE_DIR, exist_ok=True)
 os.makedirs(DATABASE_DIR, exist_ok=True)
 os.makedirs(SESSIONS_DIR, exist_ok=True)
+os.makedirs(PROJECTS_DIR, exist_ok=True)
 
 MCP_SCHEMA_CACHE_FILE = os.path.join(PURRCAT_DIR, "mcp_schema.json")
 

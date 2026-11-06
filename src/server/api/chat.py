@@ -24,6 +24,7 @@ class NewSessionReq(BaseModel):
     paradigm: str = (
         ""  # paradigms/ 下的文件名（不带 .yaml）；为空则使用默认 PARADIGM.yaml 兜底
     )
+    project_id: str = ""  # 非空表示在项目内新建：把该项目的 MEMORY.md 路径与维护约定注入系统提示
 
 
 class ParadigmSwitchReq(BaseModel):
@@ -37,6 +38,10 @@ class RenameSessionReq(BaseModel):
 
 class BranchSessionReq(BaseModel):
     alias: str = "Branch Session"
+
+
+class MoveSessionProjectReq(BaseModel):
+    project_id: str = ""  # 空串表示移回「未分类」
 
 
 class ChatReq(BaseModel):
@@ -104,6 +109,7 @@ def get_sessions():
                     "alias": info.get("alias", sid),
                     "messages_count": info.get("messages_count", 0),
                     "updated_at": info.get("updated_at", ""),
+                    "project_id": info.get("project_id", ""),
                 }
             )
         sess_list.sort(key=lambda x: str(x.get("updated_at") or ""), reverse=True)
@@ -144,6 +150,33 @@ def rename_session_api(session_id: str, req: RenameSessionReq):
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/sessions/{session_id}/project")
+def move_session_project_api(session_id: str, req: MoveSessionProjectReq):
+    """把会话归入某个项目；project_id 为空表示移回「未分类」。
+
+    仅改归属，不改写会话系统提示——项目记忆只在「项目内新建会话」时注入。
+    """
+    from src.agent.project_store import ProjectStore
+    from src.agent.session_store import SessionStore
+
+    if not session_id.startswith("session_"):
+        raise HTTPException(status_code=400, detail="Invalid session ID")
+    if session_id not in SessionStore.get_all_sessions():
+        raise HTTPException(status_code=404, detail="会话不存在")
+
+    project_id = (req.project_id or "").strip()
+    if project_id and not ProjectStore.get_project(project_id):
+        raise HTTPException(status_code=404, detail="项目不存在")
+
+    try:
+        SessionStore.set_session_project(session_id, project_id or None)
+        return {"status": "ok", "project_id": project_id}
+    except Exception as e:
+        print(f"[ERROR] /api/sessions/{session_id}/project - 异常: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 # 👇 修改 checkout 接口，物理阻断恶意 session_id (如 requests) 的污染
@@ -199,7 +232,9 @@ def create_new_session(req: NewSessionReq):
     try:
         _ensure_manager_initialized()
         session_id = new_session(
-            branch_alias=req.alias, paradigm=req.paradigm.strip() or None
+            branch_alias=req.alias,
+            paradigm=req.paradigm.strip() or None,
+            project_id=req.project_id.strip() or None,
         )
         return {"id": session_id, "alias": req.alias or session_id}
     except Exception as e:

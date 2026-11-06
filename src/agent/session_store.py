@@ -124,6 +124,7 @@ class SessionStore:
                         created_at = time.strftime("%Y-%m-%d %H:%M:%S")
                         updated_at = created_at
                         alias = session_id
+                        project_id = ""
                         if os.path.exists(meta_path):
                             try:
                                 with open(meta_path, "r", encoding="utf-8") as f:
@@ -131,6 +132,7 @@ class SessionStore:
                                     created_at = m_data.get("created_at", created_at)
                                     updated_at = m_data.get("updated_at", updated_at)
                                     alias = m_data.get("alias", alias)
+                                    project_id = m_data.get("project_id", "")
                             except Exception:
                                 pass
 
@@ -142,6 +144,8 @@ class SessionStore:
                             "updated_at": updated_at,
                             "messages_count": msg_count,
                         }
+                        if project_id:
+                            index_data[session_id]["project_id"] = project_id
                         needs_save = True
                     else:
                         index_data[session_id]["messages_count"] = msg_count
@@ -265,6 +269,75 @@ class SessionStore:
                 pass
 
     @classmethod
+    def set_session_project(cls, session_id, project_id=None):
+        """把会话归入项目；project_id 为 None/空表示回到「未分类」。
+
+        只改归属，不动 updated_at，避免把老会话顶到列表最前面。
+        """
+        if not session_id or not str(session_id).startswith("session_"):
+            raise ValueError("非法的会话 id")
+        session_dir = os.path.join(SESSIONS_DIR, session_id)
+        os.makedirs(session_dir, exist_ok=True)
+        meta_path = os.path.join(session_dir, "meta.json")
+
+        with cls._get_file_lock(f"{session_id}_meta"):
+            meta_data = {}
+            if os.path.exists(meta_path):
+                try:
+                    with open(meta_path, "r", encoding="utf-8") as f:
+                        meta_data = json.load(f) or {}
+                except Exception:
+                    meta_data = {}
+            meta_data.setdefault("session_id", session_id)
+            if project_id:
+                meta_data["project_id"] = project_id
+            else:
+                meta_data.pop("project_id", None)
+            try:
+                with open(meta_path, "w", encoding="utf-8") as f:
+                    json.dump(meta_data, f, ensure_ascii=False, indent=2)
+            except Exception as e:
+                print(f"[Warn] 写入会话项目归属失败: {e}")
+
+        with cls._index_lock:
+            index_data = cls.get_all_sessions()
+            session_info = index_data.get(session_id)
+            if session_info is None:
+                timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+                session_info = {
+                    "id": session_id,
+                    "alias": session_id,
+                    "created_at": timestamp,
+                    "updated_at": timestamp,
+                    "messages_count": 0,
+                }
+            if project_id:
+                session_info["project_id"] = project_id
+            else:
+                session_info.pop("project_id", None)
+            index_data[session_id] = session_info
+            try:
+                with open(SESSION_INDEX_PATH, "w", encoding="utf-8") as f:
+                    json.dump(index_data, f, ensure_ascii=False, indent=2)
+            except Exception as e:
+                print(f"[Warn] 更新会话索引失败: {e}")
+
+    @classmethod
+    def get_session_project(cls, session_id):
+        """会话所属项目：以 meta.json 为准（索引可能滞后），缺失时回退索引。"""
+        if not session_id:
+            return None
+        meta_path = os.path.join(SESSIONS_DIR, session_id, "meta.json")
+        try:
+            with open(meta_path, "r", encoding="utf-8") as f:
+                project_id = (json.load(f) or {}).get("project_id")
+            if project_id:
+                return project_id
+        except Exception:
+            pass
+        return cls.get_all_sessions().get(session_id, {}).get("project_id")
+
+    @classmethod
     def save_session(
         cls,
         session_id,
@@ -277,6 +350,7 @@ class SessionStore:
         deliverable=None,
         action=None,
         consumed_tokens=None,
+        project_id=None,
     ):
         """🌟 重构：线程安全地进行多文件分支隔离归档，并追溯分叉拓扑"""
         session_dir = os.path.join(SESSIONS_DIR, session_id)
@@ -321,6 +395,8 @@ class SessionStore:
                 meta_data["paradigm"] = paradigm
             if parent_id:
                 meta_data["parent_id"] = parent_id
+            if project_id:
+                meta_data["project_id"] = project_id
 
             if "branches" not in meta_data:
                 meta_data["branches"] = {}
@@ -374,6 +450,8 @@ class SessionStore:
                 if branch_id == "main"
                 else session_info.get("messages_count", 0)
             )
+            if project_id:
+                session_info["project_id"] = project_id
             index_data[session_id] = session_info
             try:
                 with open(SESSION_INDEX_PATH, "w", encoding="utf-8") as f:
@@ -390,6 +468,7 @@ class SessionStore:
         paradigm=None,
         window_token=0,
         consumed_tokens=None,
+        project_id=None,
     ):
         new_session_id = cls._generate_id()
         cls.save_session(
@@ -400,6 +479,7 @@ class SessionStore:
             paradigm=paradigm,
             window_token=window_token,
             consumed_tokens=consumed_tokens,
+            project_id=project_id,
         )
         return new_session_id
 
