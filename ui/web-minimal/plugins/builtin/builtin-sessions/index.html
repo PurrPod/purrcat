@@ -90,6 +90,45 @@
   .qempty:hover { color: var(--label-2nd); }
   .qnone { font-size: 11.5px; color: var(--dim); padding: 0 6px; }
 
+  /* ---------- 待办（请求 / 依赖检查通知） ---------- */
+  .tbadge {
+    flex: none; min-width: 16px; height: 16px; padding: 0 5px; border-radius: 999px;
+    background: #EBCB8B; color: #16191d; font-size: 10.5px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .tbadge.zero { display: none; }
+  .todo-empty { padding: 3px 10px 6px; font-size: 11.5px; color: var(--dim); }
+  #todoBody { gap: 6px; padding: 2px 4px 4px; }
+  .req {
+    flex: none; display: flex; flex-direction: column; gap: 6px;
+    background: var(--bg); border-radius: 10px; padding: 8px 9px 9px;
+  }
+  .req.busy { opacity: 0.6; pointer-events: none; }
+  .req-top { display: flex; align-items: center; gap: 6px; }
+  .req-type {
+    max-width: 100%; overflow: hidden; text-overflow: ellipsis;
+    font-size: 10px; font-weight: 600; line-height: 16px; padding: 0 6px; border-radius: 999px;
+    background: #EBCB8B; color: #16191d; white-space: nowrap;
+  }
+  .req-type.dep { background: #d08770; color: #fff; }
+  .req-title { font-size: 12px; font-weight: 600; line-height: 1.35; word-break: break-all; color: var(--label); }
+  .req-x { margin-left: auto; }
+  /* 理由直接以浅色正文展示，不再折叠 */
+  .req-reason {
+    font-size: 11px; color: var(--dim); white-space: pre-wrap; word-break: break-word; line-height: 1.55;
+  }
+  .req-acts { display: flex; align-items: center; gap: 5px; }
+  .rbtn {
+    flex: 1 1 0; min-width: 0; height: 24px; font: inherit; font-size: 11.5px; white-space: nowrap;
+    border: 1px solid rgba(15, 17, 21, 0.12); border-radius: 6px; cursor: pointer;
+    background: #fff; color: var(--label-2nd); padding: 0 4px;
+  }
+  .rbtn:hover { background: var(--hover); color: var(--label); }
+  .rbtn.ok { border-color: var(--accent); background: var(--accent); color: #fff; font-weight: 600; }
+  .rbtn.ok:hover { background: #000; }
+  .rbtn.no { border-color: rgba(15, 17, 21, 0.2); color: var(--label); font-weight: 600; }
+  .rbtn.no:hover { background: var(--hover); }
+
   /* ---------- 分区（快捷栏 / 项目 / 默认） ---------- */
   .list {
     flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 2px 0;
@@ -290,6 +329,20 @@
       </div>
     </div>
 
+    <!-- 待办：请求 / 依赖检查通知 -->
+    <div class="section" id="todoSection">
+      <div class="section-head">
+        <span class="section-title">待办</span>
+        <span id="todoBadge" class="tbadge zero">0</span>
+        <div class="section-acts">
+          <button id="todoToggleBtn" class="hbtn chev" type="button" title="收起待办" aria-label="收起待办">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="section-body" id="todoBody"></div>
+    </div>
+
     <!-- 项目：归类过的会话 -->
     <div class="section" id="projectSection">
       <div class="section-head">
@@ -368,10 +421,14 @@
   var projectBodyEl = document.getElementById('projectBody');
   var defaultBodyEl = document.getElementById('defaultBody');
   var quickSectionEl = document.getElementById('quickSection');
+  var todoSectionEl = document.getElementById('todoSection');
+  var todoBodyEl = document.getElementById('todoBody');
+  var todoBadgeEl = document.getElementById('todoBadge');
   var projectSectionEl = document.getElementById('projectSection');
   var defaultSectionEl = document.getElementById('defaultSection');
   var busyMask = document.getElementById('busyMask');
   var sessions = [];
+  var requests = [];                                  // 待办：请求 / 依赖检查通知
   var projects = [];
   var activeId = '';                                  // 当前活动会话（由宿主 state 对账）
   var editingId = '', editingVal = '', confirmingId = '';   // 行内重命名 / 行内删除确认
@@ -381,8 +438,12 @@
 
   // 区块展开状态（默认全部展开）
   var quickOpen = true;
+  var todoOpen = true;
   var projOpen = true;
   var defOpen = true;
+
+  // 待办本地态：正在裁决
+  var reqBusy = {};                                   // req_id -> 是否正在提交裁决
 
   // 项目（会话分类器）本地态
   var UNGROUPED = '__ungrouped__';                    // 「默认」分组的伪项目 id
@@ -403,6 +464,7 @@
   var ICON_CHEV = SVG_HEAD + '<path d="m6 9 6 6 6-6"/></svg>';
   var ICON_PLUS = SVG_HEAD + '<path d="M12 5v14"/><path d="M5 12h14"/></svg>';
   var ICON_MOVE = SVG_HEAD + '<path d="M4 20a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h4l2 2h9a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2Z"/><path d="M9 13h6"/><path d="m13 10 3 3-3 3"/></svg>';
+  var ICON_X = SVG_HEAD + '<path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
 
   // 面板底色：与会话历史面板一致的白色；透明度可调
   var DEF_OP = 1;
@@ -849,6 +911,7 @@
   /* ----- 区块折叠 ----- */
   function applySections() {
     quickSectionEl.classList.toggle('collapsed', !quickOpen);
+    todoSectionEl.classList.toggle('collapsed', !todoOpen);
     projectSectionEl.classList.toggle('collapsed', !projOpen);
     defaultSectionEl.classList.toggle('collapsed', !defOpen);
   }
@@ -957,6 +1020,151 @@
     });
   }
 
+  /* ----- 待办：请求 / 依赖检查通知 ----- */
+  var REQ_TYPE_LABEL = {
+    file_read: '读取文件',
+    file_write: '写入文件',
+    skill_test: '技能盲测',
+    sensor_test: '协议体检',
+    skill_merge: '技能合并',
+    mcp_merge: 'MCP 合并',
+    sensor_merge: 'Sensor 合并',
+    agentloop_merge: '范式合并',
+    graph_merge: '图合并',
+    dependency_check: '依赖检查',
+    computer_use: '电脑操作'
+  };
+
+  function updateTodoBadge() {
+    todoBadgeEl.textContent = String(requests.length);
+    todoBadgeEl.classList.toggle('zero', requests.length === 0);
+  }
+
+  // 裁决：批准 / 拒绝 / 静默忽略（忽略只记录，不回传 Agent）
+  function resolveReq(id, approved, ignore) {
+    if (reqBusy[id]) return;
+    reqBusy[id] = true;
+    renderTodo();
+    callAction('requests.resolve', {
+      request_id: id,
+      approved: !!approved,
+      ignore: !!ignore
+    })
+      .then(function () {
+        delete reqBusy[id];
+        return loadRequests();
+      })
+      .catch(function () { delete reqBusy[id]; renderTodo(); });
+  }
+
+  function renderTodo() {
+    updateTodoBadge();
+    todoBodyEl.innerHTML = '';
+    if (!requests.length) {
+      var empty = document.createElement('div');
+      empty.className = 'todo-empty';
+      empty.textContent = '暂无待办';
+      todoBodyEl.appendChild(empty);
+      return;
+    }
+    requests.forEach(function (req) {
+      var isDep = req.type === 'dependency_check';
+      var busy = !!reqBusy[req.id];
+      var card = document.createElement('div');
+      card.className = 'req' + (busy ? ' busy' : '');
+      card.addEventListener('click', function (ev) { ev.stopPropagation(); });
+
+      // 顶行：类型标签 + 右上角忽略（叉）
+      var top = document.createElement('div');
+      top.className = 'req-top';
+      var chip = document.createElement('span');
+      chip.className = 'req-type' + (isDep ? ' dep' : '');
+      chip.textContent = REQ_TYPE_LABEL[req.type] || (req.type || '请求');
+      chip.title = req.type || '';
+      top.appendChild(chip);
+      var ig = iconButton('req-x', '忽略（不通知 Agent）', ICON_X, function () {
+        resolveReq(req.id, false, true);
+      });
+      top.appendChild(ig);
+      card.appendChild(top);
+
+      // 目标（文件名 / 技能名 / 依赖检查摘要）
+      var title = document.createElement('div');
+      title.className = 'req-title';
+      title.textContent = req.target || '(无标题)';
+      title.title = req.target || '';
+      card.appendChild(title);
+
+      // 申请理由：直接以浅色正文展示
+      if (req.reason) {
+        var reason = document.createElement('div');
+        reason.className = 'req-reason';
+        reason.textContent = req.reason;
+        card.appendChild(reason);
+      }
+
+      // 动作：普通请求为批准/拒绝；依赖检查只提供「前往部署」
+      var acts = document.createElement('div');
+      acts.className = 'req-acts';
+      if (isDep) {
+        var go = document.createElement('button');
+        go.type = 'button';
+        go.className = 'rbtn ok';
+        go.textContent = '前往部署';
+        go.addEventListener('click', function (ev) {
+          ev.stopPropagation();
+          callAction('settings.open', { tab: 'deploy' }).catch(function () {});
+        });
+        acts.appendChild(go);
+      } else {
+        var ok = document.createElement('button');
+        ok.type = 'button';
+        ok.className = 'rbtn ok';
+        ok.textContent = '批准';
+        ok.addEventListener('click', function (ev) { ev.stopPropagation(); resolveReq(req.id, true, false); });
+        acts.appendChild(ok);
+        var no = document.createElement('button');
+        no.type = 'button';
+        no.className = 'rbtn no';
+        no.textContent = '拒绝';
+        no.addEventListener('click', function (ev) { ev.stopPropagation(); resolveReq(req.id, false, false); });
+        acts.appendChild(no);
+      }
+      card.appendChild(acts);
+
+      todoBodyEl.appendChild(card);
+    });
+  }
+
+  // 轮询用同一批 DOM：内容没变就不重绘
+  var lastReqSig = null;
+  function reqSig(list) {
+    return list.map(function (r) {
+      return r.id + ':' + (r.status || '') + ':' + (r.type || '') + ':' + (r.target || '');
+    }).join('|');
+  }
+
+  function loadRequests() {
+    return callAction('requests.list')
+      .then(function (list) {
+        var prev = requests.length;
+        requests = Array.isArray(list) ? list : [];
+        // 清掉已裁决项残留的忙碌态
+        Object.keys(reqBusy).forEach(function (k) {
+          if (!requests.some(function (r) { return r.id === k; })) delete reqBusy[k];
+        });
+        // 从「无」变「有」时自动展开，避免新待办被折叠状态藏起来
+        if (prev === 0 && requests.length > 0 && !todoOpen) {
+          todoOpen = true;
+          applySections();
+        }
+        var sig = reqSig(requests);
+        updateTodoBadge();
+        if (sig !== lastReqSig) { lastReqSig = sig; renderTodo(); }
+      })
+      .catch(function () {});
+  }
+
   function load() {
     return callAction('projects.list')
       .then(function (list) { projects = Array.isArray(list) ? list : []; })
@@ -1047,6 +1255,12 @@
     applySections();
   });
 
+  document.getElementById('todoToggleBtn').addEventListener('click', function (ev) {
+    ev.stopPropagation();
+    todoOpen = !todoOpen;
+    applySections();
+  });
+
   document.getElementById('projectToggleBtn').addEventListener('click', function (ev) {
     ev.stopPropagation();
     projOpen = !projOpen;
@@ -1063,6 +1277,11 @@
   document.querySelector('#quickSection .section-head').addEventListener('click', function (ev) {
     if (ev.target.closest('button')) return;
     quickOpen = !quickOpen;
+    applySections();
+  });
+  document.querySelector('#todoSection .section-head').addEventListener('click', function (ev) {
+    if (ev.target.closest('button')) return;
+    todoOpen = !todoOpen;
     applySections();
   });
   document.querySelector('#projectSection .section-head').addEventListener('click', function (ev) {
@@ -1085,9 +1304,13 @@
     var m = e.data;
     if (!m || typeof m !== 'object' || m.type !== 'event') return;
     if (m.event === 'session.switched' || m.event === 'conversation.updated' || m.event === 'projects.updated') load();
+    else if (m.event === 'requests.updated') loadRequests();
   });
 
   load();
+  loadRequests();
+  // 待办没有推送通道（新请求只在后端落盘），按原 UI 同频轮询
+  setInterval(loadRequests, 3000);
 })();
 </script>
 </body>
