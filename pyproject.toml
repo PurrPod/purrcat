@@ -15,23 +15,24 @@ dependencies = [
     # MCP 与 插件协议
     "mcp>=0.1.0",
 
-    # Web 搜索与自动化
-    "curl-cffi>=0.6.0", "ddgs>=0.1.0", "beautifulsoup4>=4.12.3",
+    # Web 搜索与自动化（直接抓 Bing 结果页；Playwright 改为可选依赖，桌面端不再打进安装包）
+    "curl-cffi>=0.6.0", "beautifulsoup4>=4.12.3",
     "markdown>=3.5.0", "markdownify>=0.11.6",
-    "playwright>=1.45.0",
 
-    # OCR 兜底（视觉大模型不可用时）
-    "easyocr>=1.7.0",
+    # OCR 兜底（视觉大模型不可用时）：RapidOCR 走 ONNX，且自带 opencv-python-headless
+    "rapidocr>=3.10.0",
 
-    # 系统与沙盒
-    "docker>=7.0.0", "pexpect>=4.9.0", "markitdown[all]>=0.0.1", "ruff>=0.3.0",
+    # 系统与沙盒：只装文档读取所需格式，去掉音频转录（speechrecognition）等无关 extras
+    "docker>=7.0.0", "pexpect>=4.9.0", "markitdown[pdf,docx,xlsx,xls,pptx]>=0.0.1", "ruff>=0.3.0",
 
-    # RAG 检索 (这里会引入 torch，我们将通过下面的配置拦截它)
-    "jieba>=0.42.1", "rank_bm25>=0.2.2", "sentence-transformers>=2.3.1",
-    "huggingface_hub>=0.21.0", "chromadb>=0.5.0", "scikit-learn>=1.4.0",
+    # RAG 检索：embedding 用 onnxruntime 加载原模型，不再依赖 torch/transformers；
+    # 模型权重由 embedding_setup 用 curl_cffi 多源直连下载，不需要 huggingface_hub
+    "jieba>=0.42.1", "rank_bm25>=0.2.2",
+    "chromadb>=0.5.0",
+    "onnxruntime>=1.17.0", "tokenizers>=0.15.0",
 
     # Web框架与 UI
-    "fastapi>=0.109.0", "uvicorn>=0.27.0", "textual>=0.50.0",
+    "fastapi>=0.109.0", "uvicorn>=0.27.0",
     "aiofiles>=23.2.1",
 
     # 终端 PTY (Windows 伪终端，让 xterm.js 获得真终端体验：backspace/tab/颜色/交互)
@@ -41,15 +42,9 @@ dependencies = [
 [dependency-groups]
 dev = ["pyinstaller>=6.0"]
 
-[tool.uv.sources]
-torch = { index = "pytorch-cpu" }
-torchaudio = { index = "pytorch-cpu" }
-torchvision = { index = "pytorch-cpu" }
-
-[[tool.uv.index]]
-name = "pytorch-cpu"
-url = "https://download.pytorch.org/whl/cpu"
-explicit = true
+[project.optional-dependencies]
+# 桌面端默认不安装；Server/Docker 或需要渲染 JS 页面时使用
+browser = ["playwright>=1.45.0"]
 
 [tool.ruff]
 target-version = "py310"
