@@ -167,17 +167,16 @@ SYSTEM_READY_EVENT = asyncio.Event()
 def _setup_warnings():
     warnings.filterwarnings("ignore", category=RuntimeWarning, message="coroutine 'ExpiringCache._start_clear_cron' was never awaited")
     warnings.filterwarnings("ignore", category=UserWarning, message="pkg_resources is deprecated as an API")
-    # 🌟 在程序启动时就拦截 PyTorch 的 pin_memory 警告（必须在 sentence_transformers 导入前生效）
+    # 兼容旧版本遗留的 PyTorch 警告过滤（当前默认 ONNX 推理，不再加载 torch）
     warnings.filterwarnings("ignore", message=".*'pin_memory' argument is set as true but no accelerator is found.*", category=UserWarning)
 
 
-async def _bg_heavy_init(enable_tui: bool):
+async def _bg_heavy_init():
     """🌟 终极重构：打散耗时任务，按优先级延迟加载，保证秒级首屏"""
 
-    # 1. 强制休眠 0.5 秒，让 FastAPI 的 uvicorn 和 Textual 界面先完成绑定和渲染
+    # 1. 强制休眠 0.5 秒，让 FastAPI 的 uvicorn 先完成绑定
     await asyncio.sleep(0.5)
-    if not enable_tui:
-        print("[*] API/UI已就绪，开始后台预热服务...")
+    print("[*] API/UI已就绪，开始后台预热服务...")
 
     # 2. 沙盒镜像 & MCP/Skill 元数据（不阻塞前台）
     # 嵌入模型不再启动时自动下载：与部署页并发写同一目录会互相踩踏，
@@ -257,27 +256,24 @@ async def _bg_heavy_init(enable_tui: bool):
     asyncio.create_task(asyncio.to_thread(_disk_maintenance_probe))
 
     SYSTEM_READY_EVENT.set()
-    if not enable_tui:
-        print("[*] 所有后台子系统派发完毕！")
+    print("[*] 所有后台子系统派发完毕！")
 
 
-async def init_core(cli_session_id: str = None, cli_branch_name: str = None, enable_tui: bool = False):
+async def init_core(cli_session_id: str = None, cli_branch_name: str = None):
     os.environ.pop("HTTP_PROXY", None)
     os.environ.pop("HTTPS_PROXY", None)
 
-    # 1. 核心 Agent 在主线程立即启动，保证 TUI 和 API 秒开
+    # 1. 核心 Agent 在主线程立即启动，保证 API 秒开
     init_agent(session_id=cli_session_id)
 
     if cli_branch_name:
         new_id = branch_session(cli_branch_name)
-        if not enable_tui:
-            print(f"[*] 已从 {cli_session_id or '最新会话'} 创建并切换到新分支: {cli_branch_name} ({new_id})")
+        print(f"[*] 已从 {cli_session_id or '最新会话'} 创建并切换到新分支: {cli_branch_name} ({new_id})")
 
     # 2. 启动后台异步预热，使用 asyncio.create_task 替代 threading.Thread
-    asyncio.create_task(_bg_heavy_init(enable_tui))
+    asyncio.create_task(_bg_heavy_init())
 
-    if not enable_tui:
-        print("[+] Agent core initialized, heavy services warming up in background...")
+    print("[+] Agent core initialized, heavy services warming up in background...")
 
 
 async def shutdown_core():
@@ -389,7 +385,7 @@ async def run_api(host: str = "0.0.0.0", port: int = DEFAULT_API_PORT):
 
     logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
     
-    # 🌟 关键修复：关闭 Uvicorn 的信号处理，避免与 Textual 抢夺 Ctrl+C 导致死锁
+    # 🌟 关键修复：关闭 Uvicorn 的信号处理，统一由外层 main 处理 Ctrl+C
     config = uvicorn.Config(app, host=host, port=port, log_level="warning")
     server = uvicorn.Server(config)
     # 取消 uvicorn 的 signal handler 注册
@@ -401,26 +397,18 @@ async def run_api(host: str = "0.0.0.0", port: int = DEFAULT_API_PORT):
         pass
 
 
-async def main_async(enable_tui: bool, enable_api: bool, api_port: int, cli_session: str = None, cli_branch: str = None):
+async def main_async(enable_api: bool, api_port: int, cli_session: str = None, cli_branch: str = None):
     # 启动核心
-    await init_core(cli_session, cli_branch, enable_tui)
+    await init_core(cli_session, cli_branch)
 
     tasks = []
     if enable_api:
-        if not enable_tui:
-            print(f"[*] API server: http://0.0.0.0:{api_port}")
+        print(f"[*] API server: http://0.0.0.0:{api_port}")
         api_task = asyncio.create_task(run_api(port=api_port))
         tasks.append(api_task)
 
-    if enable_tui:
-        from tui.app import PurrCatTUI
-        app = PurrCatTUI()
-        tui_task = asyncio.create_task(app.run_async())
-        tasks.append(tui_task)
-
     try:
         if tasks:
-            # 使用 FIRST_COMPLETED，这样无论 TUI 退出还是 API 崩溃，都能正常结束
             await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
         else:
             print("[*] Headless 模式运行中, 按 Ctrl+C 退出...")
@@ -443,7 +431,7 @@ def main():
     _setup_warnings()
 
     parser = argparse.ArgumentParser(description="PurrCat Agent")
-    parser.add_argument("--headless", action="store_true", help="Run without TUI")
+    parser.add_argument("--headless", action="store_true", help="兼容保留参数（TUI 已移除，始终无界面运行）")
     parser.add_argument("--session", type=str, help="Specify session ID to load")
     parser.add_argument("--branch", type=str, help="Create new branch with given name on startup")
     parser.add_argument("--api", action="store_true", help="Enable API server")
@@ -470,7 +458,6 @@ def main():
 
     try:
         asyncio.run(main_async(
-            enable_tui=not args.headless,
             enable_api=args.api,
             api_port=api_port,
             cli_session=args.session,
