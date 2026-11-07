@@ -1,4 +1,8 @@
-"""Web 搜索模块 - 国内外自适应 + 防拦截终极版 (与 Fetch 完全解耦)"""
+"""Web 搜索模块 - 直接抓取 Bing 结果页（与 Fetch 完全解耦）
+
+之所以不再依赖 ddgs：DuckDuckGo 在国内基本不可达，且 ddgs 会额外引入
+lxml + primp（约 19MB）。Bing 结果页用 curl_cffi 的 chrome 指纹就能稳定拿到。
+"""
 
 import urllib.parse
 
@@ -13,38 +17,10 @@ DEFAULT_HEADERS = {
 }
 
 
-def _duckduckgo_search(query: str, max_results: int = 5) -> list:
-    """策略一：外网首选 DuckDuckGo"""
-    print("\n[Search Debug] 🦆 正在尝试 DuckDuckGo 搜索...")
-    try:
-        from ddgs import DDGS
-
-        with DDGS() as ddgs:
-            results = list(ddgs.text(query, max_results=max_results))
-            if results:
-                print(
-                    f"[Search Debug] 🦆 DuckDuckGo 搜索成功，获取到 {len(results)} 条结果！"
-                )
-            return [
-                {
-                    "title": r.get("title", ""),
-                    "url": r.get("href", ""),
-                    "snippet": r.get("body", ""),
-                }
-                for r in results
-            ]
-    except ImportError:
-        print("[Search Debug] ⚠️ 未安装 ddgs 库，跳过...")
-        return []
-    except Exception as e:
-        print(f"[Search Debug] ❌ DuckDuckGo 搜索异常: {e}")
-        return []
-
-
 def _bing_search(query: str, max_results: int = 5) -> list:
-    """策略二：伪装版 Bing 爬虫（使用 chrome 指纹绕过 SSL 拦截）"""
+    """伪装版 Bing 爬虫（使用 chrome 指纹绕过 SSL 拦截）"""
     url = f"https://cn.bing.com/search?q={urllib.parse.quote(query)}"
-    print(f"[Search Debug] 🌐 正在降级至 Bing 搜索: {url}")
+    print(f"[Search Debug] 🌐 正在请求 Bing 搜索: {url}")
 
     try:
         response = requests.get(
@@ -80,21 +56,17 @@ def _bing_search(query: str, max_results: int = 5) -> list:
         return results
 
     except Exception as e:
-        print(f"[Search Debug] ❌ Bing 搜索也发生报错: {e}")
+        print(f"[Search Debug] ❌ Bing 搜索异常: {e}")
         return []
 
 
 def web_search(query: str, max_results: int = 5) -> tuple:
-    """纯粹的互联网内容检索 (自适应主备版)"""
+    """纯粹的互联网内容检索"""
     try:
-        results = _duckduckgo_search(query, max_results)
+        results = _bing_search(query, max_results)
 
         if not results:
-            print("[Search Debug] ⚠️ 触发降级策略...")
-            results = _bing_search(query, max_results)
-
-        if not results:
-            return [], "搜索未找到相关结果 (DuckDuckGo 与 Bing 均被拦截或无结果)"
+            return [], "搜索未找到相关结果 (Bing 被拦截或无结果)"
 
         return results, None
 

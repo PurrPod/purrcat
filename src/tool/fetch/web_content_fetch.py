@@ -6,10 +6,6 @@ from contextlib import asynccontextmanager
 from typing import Any, Dict, Optional, Tuple
 from bs4 import BeautifulSoup
 from markdownify import markdownify as md
-from playwright.async_api import (
-    async_playwright,
-    TimeoutError as PlaywrightTimeoutError,
-)
 
 
 def _looks_like_raw_text_url(url: str) -> bool:
@@ -112,6 +108,17 @@ async def web_content_fetch_playwright(
     # 🌟 先尝试快速通道：纯文本地址不启浏览器
     if _looks_like_raw_text_url(url):
         return _fast_fetch_raw_text(url, timeout=max(5, timeout_ms // 1000))
+
+    try:
+        from playwright.async_api import (
+            async_playwright,
+            TimeoutError as PlaywrightTimeoutError,
+        )
+    except ImportError:
+        return None, (
+            "当前环境未安装 Playwright，无法渲染需要 JS 的页面。"
+            "可改用 HTTP 抓取，或安装 `playwright` 后重试。"
+        )
 
     try:
         async with async_timeout(timeout_ms + 10000), async_playwright() as p:
