@@ -30,7 +30,9 @@ class ProjectStore:
     @classmethod
     def _valid_id(cls, project_id):
         pid = str(project_id or "")
-        return pid.startswith("project_") and not any(c in pid for c in ("/", "\\", ".."))
+        return pid.startswith("project_") and not any(
+            c in pid for c in ("/", "\\", "..")
+        )
 
     @classmethod
     def _project_dir(cls, project_id):
@@ -82,7 +84,9 @@ class ProjectStore:
         items = [dict(v, id=k) for k, v in projects.items() if isinstance(v, dict)]
         for item in items:
             cls._migrate_legacy(item["id"])
-        items.sort(key=lambda p: (str(p.get("created_at") or ""), str(p.get("id") or "")))
+        items.sort(
+            key=lambda p: (str(p.get("created_at") or ""), str(p.get("id") or ""))
+        )
         return items
 
     @classmethod

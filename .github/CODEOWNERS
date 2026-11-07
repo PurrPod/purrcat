@@ -15,9 +15,6 @@
 # UI code
 /ui/ @Sukice
 
-# TUI code
-/tui/ @Sukice
-
 # Test files
 /test/ @Sukice
 

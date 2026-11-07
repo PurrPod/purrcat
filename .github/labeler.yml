@@ -51,10 +51,6 @@ labelPRs:
     files:
       - "ui/**/*"
 
-  - label: "area: tui"
-    files:
-      - "tui/**/*"
-
   - label: "area: ci-cd"
     files:
       - ".github/**/*"

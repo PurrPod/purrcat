@@ -24,7 +24,9 @@ class NewSessionReq(BaseModel):
     paradigm: str = (
         ""  # paradigms/ 下的文件名（不带 .yaml）；为空则使用默认 PARADIGM.yaml 兜底
     )
-    project_id: str = ""  # 非空表示在项目内新建：把该项目的 MEMORY.md 路径与维护约定注入系统提示
+    project_id: str = (
+        ""  # 非空表示在项目内新建：把该项目的 MEMORY.md 路径与维护约定注入系统提示
+    )
 
 
 class ParadigmSwitchReq(BaseModel):
