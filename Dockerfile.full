@@ -54,10 +54,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 RUN pip config set global.index-url https://mirrors.aliyun.com/pypi/simple/ \
-    && pip install --no-cache-dir uv ruff \
-    # Install Playwright for browser automation
-    && pip install --no-cache-dir playwright \
-    && playwright install chromium
+    && pip install --no-cache-dir uv ruff
 
 WORKDIR /agent_vm
 

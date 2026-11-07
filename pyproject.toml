@@ -42,10 +42,6 @@ dependencies = [
 [dependency-groups]
 dev = ["pyinstaller>=6.0"]
 
-[project.optional-dependencies]
-# 桌面端默认不安装；Server/Docker 或需要渲染 JS 页面时使用
-browser = ["playwright>=1.45.0"]
-
 [tool.ruff]
 target-version = "py310"
 line-length = 88
