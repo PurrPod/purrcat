@@ -120,6 +120,15 @@ def _html_to_markdown(html: str, url: str) -> Tuple[str, str]:
     for tag in soup(_STRIP_TAGS):
         tag.decompose()
 
+    # 广告位占位文案：B 站等站点在广告未填充时会预置「该内容被 AdGuard/AdBlock 类
+    # 插件屏蔽」的提示，属于纯噪声（广告本身也不值得喂给模型）
+    for el in soup.find_all(["div", "p", "span", "section"]):
+        if getattr(el, "decomposed", False):
+            continue
+        text = el.get_text(strip=True)
+        if len(text) <= 60 and "屏蔽" in text and ("AdGuard" in text or "AdBlock" in text):
+            el.decompose()
+
     main_content = soup.find("main") or soup.find("article")
     if not main_content:
         main_content = soup.find("body") or soup
