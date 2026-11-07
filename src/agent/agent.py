@@ -7,13 +7,6 @@ import time
 
 from json_repair import repair_json
 
-from src.agent.attachments import (
-    materialize_message,
-    max_request_bytes,
-    replace_refs_with_text,
-    serialized_size,
-    snapshot_message,
-)
 from src.agent.hook_handler import HookHandler
 from src.agent.session_store import SessionStore
 from src.model import AgentModel
@@ -22,9 +15,16 @@ from src.tool.utils.route import (
     dispatch_tool,
     extract_tool_message_content,
 )
+from src.utils.attachments import (
+    materialize_message,
+    max_request_bytes,
+    serialized_size,
+    snapshot_message,
+)
 from src.utils.config import (
     BUFFER_DIR,
     get_agent_model,
+    get_model_config,
 )
 from src.utils.tracker import Tracker
 
@@ -71,8 +71,6 @@ class Agent:
         self.current_history = [
             snapshot_message(msg, session_id) for msg in self.current_history
         ]
-        # 🌟 请求超限时的图片描述缓存（副本路径 → 视觉模型转述文本）
-        self._image_desc_cache = {}
         self.hook_handler = HookHandler(paradigm_path)
         if not self.current_history:
             fresh_prompt = self._build_system_prompt()
@@ -196,8 +194,6 @@ class Agent:
             return copy.deepcopy(self.current_history)
 
     def _append_history(self, message: dict):
-        # 图片 base64 不进历史：落副本到 attachment/，历史只存路径占位
-        message = snapshot_message(message, self.session_id)
         with self._history_lock:
             self.current_history.append(message)
             try:
@@ -563,46 +559,21 @@ class Agent:
             get_bus().publish(self.session_id, "turn_end", {"stopReason": "end_turn"})
         self.save_checkpoint()
 
-    def _describe_image(self, path: str) -> str:
-        """请求超限时把图片交给 vision 模型转述（失败返回可读错误文本）"""
-        cached = self._image_desc_cache.get(path)
-        if cached:
-            return cached
-        name = os.path.basename(path)
-        try:
-            from src.tool.task.vision import vision
-
-            result = vision(
-                [path], "请用中文简洁描述这张图片的主要内容（200 字以内），不要推测。"
-            )
-            text = str(result.get("analysis_result", "")).strip()
-            if not text:
-                raise RuntimeError("视觉模型未返回内容")
-            desc = f"[图片 {name} 的视觉描述]\n{text}"
-        except Exception as e:
-            desc = f"[图片读取失败: {name}] {e}"
-        self._image_desc_cache[path] = desc
-        return desc
-
     def _prepare_history_for_model(self, messages):
-        """发送模型前：还原图片副本为 base64；整体体积超限则改用视觉模型转述"""
-        from src.utils.config import get_model_config
+        """发送模型前：把历史里的图片副本路径还原成 base64"""
+        return [materialize_message(msg) for msg in messages]
 
-        materialized = [materialize_message(msg) for msg in messages]
+    def _vision_request_limit(self) -> int:
         cfg = get_model_config().get("main", {}).get(self.name, {})
-        limit = max_request_bytes(cfg)
-        size = serialized_size(materialized)
-        if size <= limit:
-            return materialized
+        return max_request_bytes(cfg)
 
-        print(
-            f"[Vision] 请求体积 {size / 1024 / 1024:.1f}MB 超过上限 "
-            f"{limit / 1024 / 1024:.1f}MB，图片改用视觉模型转述"
+    def _materialized_request_bytes(self) -> int:
+        """当前历史还原图片后的序列化体积，供 Task 直注前估算"""
+        with self._history_lock:
+            raw_history = list(self.current_history)
+        return serialized_size(
+            [materialize_message(msg) for msg in raw_history]
         )
-        converted = [
-            replace_refs_with_text(msg, self._describe_image) for msg in messages
-        ]
-        return [materialize_message(msg) for msg in converted]
 
     def _chat_stream(self, messages, tools, interaction_id):
         """
@@ -795,6 +766,12 @@ class Agent:
 
             if target_tool_name == "Bash":
                 arguments["session_id"] = self.session_id
+            if target_tool_name == "Task" and getattr(self.model, "vision", False):
+                # 🌟 视觉直注前由 Task 判断本次请求体积：超限则改用视觉顾问，
+                # 直注时图片副本写入会话 attachment/ 目录
+                arguments["_session_id"] = self.session_id
+                arguments["_request_bytes"] = self._materialized_request_bytes()
+                arguments["_request_limit_bytes"] = self._vision_request_limit()
             if target_tool_name == "BrainStorm":
                 # 🌟 注入本次调用的 tool_call_id，供 BS 伪造子代理上下文的
                 # tool result 时精确定位自己（批次内可能存在多个工具调用）

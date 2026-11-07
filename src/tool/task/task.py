@@ -289,8 +289,37 @@ def _handle_vision(**kwargs) -> str:
     # 🌟 vision 直注模式：调用方模型自身支持视觉（model.json vision=true），
     # 直接把图片塞回对话（相当于读取图片），无需 prompt 描述、不调视觉顾问
     if kwargs.pop("_vision_mode", False):
+        session_id = kwargs.get("_session_id")
+        used_bytes = int(kwargs.get("_request_bytes") or 0)
+        limit_bytes = int(kwargs.get("_request_limit_bytes") or 0)
+        # 直注新增体积约等于图片文件大小的 1.4 倍（base64 膨胀）
+        extra_bytes = 0
+        for path in attachment_paths:
+            try:
+                extra_bytes += int(os.path.getsize(path) * 1.4)
+            except OSError:
+                pass
+        if session_id and limit_bytes > 0 and used_bytes + extra_bytes > limit_bytes:
+            print(
+                f"[Vision] 直注后请求体积约 {(used_bytes + extra_bytes) / 1024 / 1024:.1f}MB "
+                f"超过上限 {limit_bytes / 1024 / 1024:.1f}MB，改用视觉顾问分析"
+            )
+            try:
+                result = vision(
+                    paths=attachment_paths,
+                    prompt=kwargs.get("prompt")
+                    or "请用中文简洁描述这些附件的主要内容（200 字以内），不要推测。",
+                )
+                content = result.get("analysis_result") or str(result)
+                return text_response(
+                    content,
+                    f"👁️ 请求体积超限，已由视觉顾问分析 {len(attachment_paths)} 个附件",
+                )
+            except Exception as e:
+                return error_response(f"图片读取失败: {e}", "❌ 读取失败")
+
         try:
-            return vision_inline(attachment_paths)
+            return vision_inline(attachment_paths, session_id=session_id)
         except FileNotFoundError as e:
             # require_read 只查权限不查存在性，open() 会抛内建 FileNotFoundError
             return error_response(

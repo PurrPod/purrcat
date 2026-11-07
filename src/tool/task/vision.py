@@ -84,13 +84,17 @@ def _get_vision_config():
     }
 
 
-def vision_inline(paths: list) -> dict:
+def vision_inline(paths: list, session_id: str | None = None) -> dict:
     """🌟 vision 直注模式：直接读取图片附件构造 OpenAI 多模态 content 列表。
 
     调用方模型自身支持视觉（model.json 配置 vision=true）时，Task 的 vision
     action 不再走视觉顾问模型+prompt 分析，而是把图片本体直接塞回对话历史
     （相当于读取图片），prompt 参数无需填写。
     仅支持 API 实际接受的位图格式（png/jpg/jpeg/gif/webp）。
+
+    session_id 非空时，图片会复制到该会话的 attachment/ 目录，历史里只写
+    「[图片 1.png]」文本占位 + 副本路径，调用模型前再还原 base64，避免会话
+    JSON 被 base64 撑爆；为空时（如子代理临时上下文）仍按原样内联。
     """
     import base64
     import os
@@ -127,7 +131,15 @@ def vision_inline(paths: list) -> dict:
     for path in resolved_paths:
         mime_type, _ = mimetypes.guess_type(path)
         with open(path, "rb") as f:
-            b64 = base64.b64encode(f.read()).decode("utf-8")
+            raw = f.read()
+        if session_id:
+            # 副本落会话目录，历史只保留路径占位
+            from src.utils.attachments import build_ref_part
+
+            ext = os.path.splitext(path)[1] or ".png"
+            parts.append(build_ref_part(session_id, raw, ext))
+            continue
+        b64 = base64.b64encode(raw).decode("utf-8")
         parts.append(
             {
                 "type": "image_url",

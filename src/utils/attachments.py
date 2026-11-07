@@ -1,9 +1,10 @@
-"""会话图片附件：历史里只存副本路径，调用模型前再还原成 base64。
+"""会话图片附件：Task 视觉直注落副本，历史只存副本路径，发送前再还原 base64。
 
-vision 直注会把图片编码成 data URL 写进 current_history，落盘后一张 1MB 的图
-会膨胀成约 1.4MB 的 JSON 文本。这里在写入历史前把图片复制到
+Task 的 vision 直注会把图片编码成 data URL 直接注入对话，落盘后一张 1MB 的图
+会膨胀成约 1.4MB 的 JSON 文本。除直注外，图片一律只在工具调用时按真实路径
+使用（视觉顾问模式），不进入历史。直注时把图片复制到
 <会话目录>/attachment/（按 1.png、2.jpg… 递增命名），历史只保留文本占位和
-副本绝对路径；真正发给模型时再按路径读取编码，避免会话文件随轮次失控增长。
+副本绝对路径；真正发给模型时再按路径读取编码。
 """
 
 import base64
@@ -97,7 +98,7 @@ def _text_part(text: str, image_ref: str | None = None) -> dict:
 
 
 def snapshot_message(message: dict, session_id: str) -> dict:
-    """写入历史前：base64 图片 → 会话副本 + 路径占位"""
+    """旧会话迁移：加载历史时把存量 base64 图片转成会话副本 + 路径占位"""
     if not session_id:
         return message
     content = message.get("content")
@@ -171,24 +172,7 @@ def serialized_size(messages: list) -> int:
     return len(json.dumps(messages, ensure_ascii=False).encode("utf-8"))
 
 
-def replace_refs_with_text(message: dict, describe) -> dict:
-    """把历史中的图片占位替换为 describe(path) 生成的文本描述"""
-    content = message.get("content")
-    if not isinstance(content, list):
-        return message
-
-    parts = []
-    changed = False
-    for part in content:
-        ref = part.get("image_ref") if isinstance(part, dict) else None
-        if not ref:
-            parts.append(part)
-            continue
-        parts.append(_text_part(describe(ref)))
-        changed = True
-
-    if not changed:
-        return message
-    new_message = dict(message)
-    new_message["content"] = parts
-    return new_message
+def build_ref_part(session_id: str, raw: bytes, ext: str) -> dict:
+    """把图片字节存入会话 attachment/，返回历史用的文本占位 part"""
+    path = store_image(session_id, raw, ext)
+    return _text_part(f"[图片 {os.path.basename(path)}]", path)
