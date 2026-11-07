@@ -210,7 +210,7 @@ window.parent.postMessage({ type: 'callAction', id: 'req-1', actionId: 'config.g
 > 上表覆盖插件常用动作，可直接照用。完整 / 权威实现见宿主应用目录下的 `ui/web-minimal/assets/host.js` 的 `dispatch()`；
 > 宿主 HTTP 接口清单见 [../api/webmin.md](../api/webmin.md)。
 >
-> **文件与上传**：宿主 / 前端 / 后端同机运行，`dialog.files` 返回的是绝对路径，后端可直接 `fs` 读取（不必读成 base64 再走 `plugin.rpc`）；要交给 Agent（大模型）读时用 `POST /agent/upload`（落盘 `agent_vm/.buffer/upload`）。
+> **文件与上传**：宿主 / 前端 / 后端同机运行，`dialog.files` 返回的是绝对路径，后端可直接 `fs` 读取（不必读成 base64 再走 `plugin.rpc`）；要交给 Agent（大模型）读时用 `POST /api/system/agent/upload`（落盘 `agent_vm/.buffer/upload`）。
 
 ### 5.4 事件（`type: 'event'`）
 

@@ -221,7 +221,7 @@ window.parent.postMessage({ type: 'callAction', id: id, actionId: 'state.get', p
 
 * 拿路径：`dialog.files` / `dialog.folder` 返回的是**绝对路径数组**。
 * 读内容：把路径放进 `plugin.rpc` 的 payload，**后端直接用 `fs` 读**（`fs.readFileSync` 或流式）；别让前端读成 base64 再塞进 RPC。
-* 要**交给 Agent（大模型）读**：走宿主 HTTP 接口 `POST /agent/upload`（落盘到 `agent_vm/.buffer/upload`，Agent 在沙盒内可见），前端 `fetch` 即可。
+* 要**交给 Agent（大模型）读**：走宿主 HTTP 接口 `POST /api/system/agent/upload`（落盘到 `agent_vm/.buffer/upload`，Agent 在沙盒内可见），前端 `fetch` 即可。
 * `plugin.rpc` 是 stdio 单行 JSON，**没有明确体积上限，但也绝不适合传文件内容**——一律传路径。
 
 ### 5.4 发消息后如何判定"完成"

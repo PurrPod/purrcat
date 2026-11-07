@@ -237,18 +237,17 @@ curl 'http://127.0.0.1:8000/api/system/container-engine'
 ```json
 {
   "success": true,
-  "saved_path": ".purrcat/agent_vm/.buffer/upload/demo.txt",
+  "saved_path": "D:\\cat-in-cup\\agent_vm\\.buffer\\upload\\demo.txt",
   "size_bytes": 1024,
-  "agent_path": "D:\\...\\.buffer\\upload\\demo.txt"
+  "agent_path": "D:\\cat-in-cup\\agent_vm\\.buffer\\upload\\demo.txt"
 }
 ```
 
 **示例**
 
 ```bash
-curl -X POST 'http://127.0.0.1:8000/api/system/agent/upload' \
-  -F 'file=@./demo.txt' \
-  -F 'filename=demo.txt'
+curl -X POST 'http://127.0.0.1:8000/api/system/agent/upload?filename=demo.txt' \
+  -F 'file=@./demo.txt'
 ```
 
 ---
