@@ -17,10 +17,10 @@ hiddenimports = []
 tmp_ret = collect_all('src')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
-# chromadb / onnxruntime / rapidocr 等库存在大量动态 import 和数据文件，
-# PyInstaller 静态分析收集不全，缺了会导致 ChromaDB 初始化失败或 OCR 模型缺失
-# （表现为记忆页工作经验库一片空白 / OCR 兜底不可用）
-for pkg in ['chromadb', 'tokenizers', 'onnxruntime', 'rapidocr']:
+# chromadb / onnxruntime 等库存在大量动态 import 和数据文件，
+# PyInstaller 静态分析收集不全，缺了会导致 ChromaDB 初始化失败
+# （表现为记忆页工作经验库一片空白）
+for pkg in ['chromadb', 'tokenizers', 'onnxruntime']:
     tmp = collect_all(pkg)
     datas += tmp[0]; binaries += tmp[1]; hiddenimports += tmp[2]
 
@@ -48,7 +48,8 @@ a = Analysis(
     excludes=[
         'torch', 'torchvision', 'torchaudio',
         'transformers', 'sentence_transformers',
-        'easyocr', 'playwright', 'textual', 'ddgs', 'primp',
+        'easyocr', 'playwright',
+        'rapidocr', 'rapidocr_onnxruntime', 'cv2', 'opencv', 'textual', 'ddgs', 'primp',
         # tokenizers 只是把它列为依赖，模拟权重下载已改走 curl_cffi，运行时用不到
         'huggingface_hub',
         'sklearn', 'scipy', 'numba', 'llvmlite',

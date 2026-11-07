@@ -19,9 +19,6 @@ dependencies = [
     "curl-cffi>=0.6.0", "beautifulsoup4>=4.12.3",
     "markdown>=3.5.0", "markdownify>=0.11.6",
 
-    # OCR 兜底（视觉大模型不可用时）：RapidOCR 走 ONNX，且自带 opencv-python-headless
-    "rapidocr>=3.10.0",
-
     # 系统与沙盒：只装文档读取所需格式，去掉音频转录（speechrecognition）等无关 extras
     "docker>=7.0.0", "pexpect>=4.9.0", "markitdown[pdf,docx,xlsx,xls,pptx]>=0.0.1", "ruff>=0.3.0",
 

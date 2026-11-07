@@ -1,8 +1,7 @@
-"""视觉顾问功能 - 将宿主机图片/视频/音频附件转码并交由大模型分析 (图片失败时 OCR 兜底)"""
+"""视觉顾问功能 - 将宿主机图片/视频/音频附件转码并交由大模型分析"""
 
 import base64
 import mimetypes
-import threading
 from openai import OpenAI
 
 from src.tool.filesystem.exceptions import ImageReadError
@@ -85,86 +84,6 @@ def _get_vision_config():
     }
 
 
-_OCR_LOCK = threading.Lock()
-_OCR_BACKEND: str | None = None
-_OCR_ENGINE = None
-
-
-def _load_ocr_engine():
-    """懒加载 OCR 引擎：RapidOCR（ONNX）。"""
-    global _OCR_BACKEND, _OCR_ENGINE
-    if _OCR_BACKEND is not None:
-        return _OCR_BACKEND, _OCR_ENGINE
-
-    with _OCR_LOCK:
-        if _OCR_BACKEND is not None:
-            return _OCR_BACKEND, _OCR_ENGINE
-
-        try:
-            # rapidocr>=3：默认 onnxruntime 引擎，依赖 opencv-python-headless
-            from rapidocr import RapidOCR
-
-            _OCR_ENGINE = RapidOCR()
-            _OCR_BACKEND = "rapidocr"
-            return _OCR_BACKEND, _OCR_ENGINE
-        except Exception as e:
-            raise ImageReadError(
-                f"视觉大模型不可用，且 OCR 引擎初始化失败。\n"
-                f"RapidOCR: {e}\n"
-                f"💡 提示：确认已安装 `rapidocr` 后重试。"
-            )
-
-
-def _extract_ocr_text(raw_result) -> str:
-    """兼容 RapidOCR 各版本的返回结构，过滤低置信度结果。"""
-    # RapidOCR 返回 (结果, 耗时)，部分版本直接返回 RapidOCROutput 对象
-    if isinstance(raw_result, tuple) and len(raw_result) == 2:
-        raw_result = raw_result[0]
-    if raw_result is None:
-        return ""
-    if hasattr(raw_result, "txts"):
-        texts = getattr(raw_result, "txts", None) or []
-        scores = getattr(raw_result, "scores", None) or []
-        return " ".join(
-            str(text)
-            for text, score in zip(texts, scores)
-            if score is not None and score > 0.4 and str(text).strip()
-        )
-
-    texts = []
-    for item in raw_result:
-        if not isinstance(item, (list, tuple)) or len(item) < 3:
-            continue
-        text, score = item[1], item[2]
-        if score is not None and score > 0.4 and str(text).strip():
-            texts.append(str(text))
-    return " ".join(texts)
-
-
-def _fallback_ocr(paths: list, original_error: str) -> dict:
-    """OCR 兜底识别函数（仅适用于图片附件）"""
-    backend, engine = _load_ocr_engine()
-
-    results = []
-    for path in paths:
-        try:
-            raw_result = engine(path)
-            text = _extract_ocr_text(raw_result)
-            if not text.strip():
-                text = "[未识别到明显文字]"
-            results.append(f"【文件】{path} 的 OCR 识别结果:\n{text}")
-        except Exception as e:
-            results.append(f"【文件】{path} 的 OCR 识别失败: {str(e)}")
-
-    return {
-        "image_count": len(paths),
-        "paths": paths,
-        "analysis_result": f"⚠️ [系统提示: 视觉大模型不可用，已自动兜底使用 OCR 提取文本]\n失败原因: {original_error}\n\n"
-        + "\n\n".join(results),
-        "message": f"视觉大模型调用失败，使用 OCR 兜底读取了 {len(paths)} 张图片",
-    }
-
-
 def vision_inline(paths: list) -> dict:
     """🌟 vision 直注模式：直接读取图片附件构造 OpenAI 多模态 content 列表。
 
@@ -235,7 +154,6 @@ def _extract_message(message) -> tuple:
 def vision(paths: list, prompt: str) -> dict:
     """
     读取一个或多个图片/视频/音频附件，转码为 base64 并按 OpenAI 多模态格式发送给视觉大模型。
-    仅当附件全部为图片且大模型不可用时，才使用 OCR 兜底。
 
     Args:
         paths: 单个附件路径字符串，或附件路径字符串列表（支持图片/视频/音频）
@@ -250,25 +168,15 @@ def vision(paths: list, prompt: str) -> dict:
     # 批量校验权限
     resolved_paths = [require_read(p) for p in paths]
 
-    # 校验媒体类型并分类：只有图片能走 OCR 兜底，音视频不行
+    # 校验媒体类型：只接受图片/视频/音频
     kinds = {p: _media_kind(p) for p in resolved_paths}
     unsupported = [p for p, k in kinds.items() if not k]
     if unsupported:
         raise ImageReadError(
             f"无法识别或不支持的附件类型: {unsupported}，仅支持图片/视频/音频"
         )
-    image_paths = [p for p in resolved_paths if kinds[p] == "image"]
-    non_image_paths = [p for p in resolved_paths if kinds[p] != "image"]
 
-    # 1. 尝试获取 vision 配置 (若未配置：仅纯图片场景可走 OCR 兜底)
-    try:
-        vision_config = _get_vision_config()
-    except ImageReadError as e:
-        if non_image_paths:
-            raise ImageReadError(
-                f"视觉大模型不可用 ({e})，且附件中含音视频无法用 OCR 兜底，请配置可用的 vision 模型"
-            )
-        return _fallback_ocr(image_paths, str(e))
+    vision_config = _get_vision_config()
 
     # 构建大模型的多模态 payload content
     content_list = [{"type": "text", "text": prompt}]
@@ -280,7 +188,7 @@ def vision(paths: list, prompt: str) -> dict:
         {"role": "user", "content": content_list},
     ]
 
-    # 2. 尝试调用 OpenAI 兼容接口 (网络报错/超时：仅纯图片场景可走 OCR 兜底)
+    # 2. 调用 OpenAI 兼容接口
     try:
         client = OpenAI(
             api_key=vision_config["api_key"],
@@ -305,12 +213,7 @@ def vision(paths: list, prompt: str) -> dict:
         result_text, reasoning_text = _extract_message(choice.message)
 
     except Exception as e:
-        # API 异常时：含音视频则直接报错，纯图片则触发 OCR 兜底
-        if non_image_paths:
-            raise ImageReadError(
-                f"API 访问异常: {str(e)}，且附件中含音视频无法用 OCR 兜底"
-            )
-        return _fallback_ocr(image_paths, f"API 访问异常: {str(e)}")
+        raise ImageReadError(f"视觉模型调用失败: {e}")
 
     # 正文为空：多半是模型输出超限（思考耗尽预算，finish_reason=length），直接报错给 agent
     if not result_text.strip():
