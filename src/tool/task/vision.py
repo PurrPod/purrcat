@@ -2,6 +2,7 @@
 
 import base64
 import mimetypes
+import threading
 from openai import OpenAI
 
 from src.tool.filesystem.exceptions import ImageReadError
@@ -84,27 +85,71 @@ def _get_vision_config():
     }
 
 
+_OCR_LOCK = threading.Lock()
+_OCR_BACKEND: str | None = None
+_OCR_ENGINE = None
+
+
+def _load_ocr_engine():
+    """懒加载 OCR 引擎：RapidOCR（ONNX）。"""
+    global _OCR_BACKEND, _OCR_ENGINE
+    if _OCR_BACKEND is not None:
+        return _OCR_BACKEND, _OCR_ENGINE
+
+    with _OCR_LOCK:
+        if _OCR_BACKEND is not None:
+            return _OCR_BACKEND, _OCR_ENGINE
+
+        try:
+            # rapidocr>=3：默认 onnxruntime 引擎，依赖 opencv-python-headless
+            from rapidocr import RapidOCR
+
+            _OCR_ENGINE = RapidOCR()
+            _OCR_BACKEND = "rapidocr"
+            return _OCR_BACKEND, _OCR_ENGINE
+        except Exception as e:
+            raise ImageReadError(
+                f"视觉大模型不可用，且 OCR 引擎初始化失败。\n"
+                f"RapidOCR: {e}\n"
+                f"💡 提示：确认已安装 `rapidocr` 后重试。"
+            )
+
+
+def _extract_ocr_text(raw_result) -> str:
+    """兼容 RapidOCR 各版本的返回结构，过滤低置信度结果。"""
+    # RapidOCR 返回 (结果, 耗时)，部分版本直接返回 RapidOCROutput 对象
+    if isinstance(raw_result, tuple) and len(raw_result) == 2:
+        raw_result = raw_result[0]
+    if raw_result is None:
+        return ""
+    if hasattr(raw_result, "txts"):
+        texts = getattr(raw_result, "txts", None) or []
+        scores = getattr(raw_result, "scores", None) or []
+        return " ".join(
+            str(text)
+            for text, score in zip(texts, scores)
+            if score is not None and score > 0.4 and str(text).strip()
+        )
+
+    texts = []
+    for item in raw_result:
+        if not isinstance(item, (list, tuple)) or len(item) < 3:
+            continue
+        text, score = item[1], item[2]
+        if score is not None and score > 0.4 and str(text).strip():
+            texts.append(str(text))
+    return " ".join(texts)
+
+
 def _fallback_ocr(paths: list, original_error: str) -> dict:
     """OCR 兜底识别函数（仅适用于图片附件）"""
-    try:
-        import easyocr
-
-        # 默认加载简中和英文识别模型，禁用 GPU 以提升兼容性
-        reader = easyocr.Reader(["ch_sim", "en"], gpu=False)
-    except ImportError:
-        # 如果连 easyocr 都没有，则抛出带有详细提示的终极异常
-        raise ImageReadError(
-            f"视觉大模型不可用 ({original_error})，且环境未安装 easyocr 无法进行 OCR 兜底。\n"
-            f"💡 提示：请在终端运行 `pip install easyocr` 以启用兜底功能。"
-        )
+    backend, engine = _load_ocr_engine()
 
     results = []
     for path in paths:
         try:
-            # easyocr 直接支持传入本地路径读取
-            ocr_results = reader.readtext(path)
-            # 过滤掉置信度低于 0.4 的结果
-            text = " ".join([item[1] for item in ocr_results if item[2] > 0.4])
+            raw_result = engine(path)
+            text = _extract_ocr_text(raw_result)
             if not text.strip():
                 text = "[未识别到明显文字]"
             results.append(f"【文件】{path} 的 OCR 识别结果:\n{text}")
