@@ -78,11 +78,12 @@ class VectorEngine(metaclass=SingletonMeta):
     @property
     def embedding_model(self):
         if self._embedding_model is None:
-            from sentence_transformers import SentenceTransformer
+            # ONNX 推理，兼容原 SentenceTransformer 模型的权重与 tokenizer
+            from src.utils.local_embedding import get_local_embedder
 
-            print("[+] 加载 SentenceTransformer 模型...")
-            self._embedding_model = SentenceTransformer(self.embedding_model_name)
-            print("[*] SentenceTransformer 加载完毕。")
+            print("[+] 加载 ONNX 嵌入模型...")
+            self._embedding_model = get_local_embedder(self.embedding_model_name)
+            print("[*] ONNX 嵌入模型加载完毕。")
         return self._embedding_model
 
     def _get_embedding(self, text):

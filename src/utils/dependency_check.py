@@ -51,7 +51,7 @@ def _check_embedding() -> bool:
         EMBEDDING_DIR
     ):
         return True
-    # 3) EMBEDDING_DIR 本身已完整（SentenceTransformer fallback 路径）
+    # 3) EMBEDDING_DIR 本身已完整
     if _model_exists(EMBEDDING_DIR):
         return True
     return False

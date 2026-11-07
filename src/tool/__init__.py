@@ -63,7 +63,7 @@ def init_tools():
             initialize_mcp_sync()
 
             # 2. 预热本地 Embedding 模型并构建 MCP 检索树
-            # 触发单例的 __new__ 初始化，这会在后台加载 SentenceTransformer 模型并执行向量化
+            # 触发单例的 __new__ 初始化，这会在后台加载 ONNX 嵌入模型并执行向量化
             from src.tool.search.mcp_search import MCPSearcher
 
             print("🚀 正在后台初始化 [MCP] 内存检索树...")

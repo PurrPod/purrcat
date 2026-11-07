@@ -1,18 +1,9 @@
 import threading
-import warnings  # 🌟 引入 warnings 模块
 
 import jieba
 import numpy as np
-from sklearn.metrics.pairwise import cosine_similarity
 
 from src.utils.config import get_embedding_model
-
-# 🌟 精准拦截 PyTorch 在 CPU 环境下的 pin_memory 警告
-warnings.filterwarnings(
-    "ignore",
-    message=".*'pin_memory' argument is set as true but no accelerator is found.*",
-    category=UserWarning,
-)
 
 
 def hybrid_tokenize(text: str) -> list[str]:
@@ -42,14 +33,13 @@ class LocalEmbeddingSearcher:
 
     @property
     def model(self):
-        # 真正需要计算向量时，才去加载几十/几百MB的本地模型
+        # 真正需要计算向量时，才去加载本地 ONNX 模型
         if self._model is None:
-            print("⏳ [LazyLoad] 正在加载 SentenceTransformer 模型入显存/内存...")
+            print("⏳ [LazyLoad] 正在加载 ONNX 嵌入模型入内存...")
             # 局部导入，防止阻塞整个文件加载
-            from sentence_transformers import SentenceTransformer
+            from src.utils.local_embedding import get_local_embedder
 
-            embedding_path = get_embedding_model()
-            self._model = SentenceTransformer(embedding_path)
+            self._model = get_local_embedder(get_embedding_model())
             print("✅ [LazyLoad] 模型加载完毕。")
         return self._model
 
@@ -61,5 +51,10 @@ class LocalEmbeddingSearcher:
     ) -> np.ndarray:
         if corpus_matrix is None or len(corpus_matrix) == 0:
             return np.array([])
-        query_vector = np.array(query_vector).reshape(1, -1)
-        return cosine_similarity(query_vector, corpus_matrix).flatten()
+        query = np.asarray(query_vector, dtype=np.float32).reshape(1, -1)
+        corpus = np.asarray(corpus_matrix, dtype=np.float32)
+        query_norm = np.linalg.norm(query, axis=1, keepdims=True)
+        corpus_norm = np.linalg.norm(corpus, axis=1, keepdims=True)
+        query_norm[query_norm == 0] = 1e-12
+        corpus_norm[corpus_norm == 0] = 1e-12
+        return ((corpus / corpus_norm) @ (query / query_norm).T).ravel()

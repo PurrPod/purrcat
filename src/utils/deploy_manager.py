@@ -480,18 +480,12 @@ def _install_embedding(item: str) -> bool:
         _append_log(item, m)
 
     try:
-        _append_log(item, f"[*] 下载嵌入模型 {MODEL_NAME}（~500MB，请保持网络稳定）...")
+        _append_log(item, f"[*] 下载嵌入模型 {MODEL_NAME}（int8 约 113MB，自动多源回退）...")
         download_model(log=log)
         _append_log(item, "[+] 嵌入模型下载完成")
     except Exception as e:
-        _append_log(item, f"[!] 直连 huggingface.co 失败: {e}")
-        _append_log(item, "[*] 切换 hf-mirror.com 镜像重试...")
-        try:
-            download_model("https://hf-mirror.com", log=log)
-            _append_log(item, "[+] 嵌入模型（镜像）下载完成")
-        except Exception as e2:
-            _append_log(item, f"[!] 嵌入模型下载失败: {e2}")
-            return False
+        _append_log(item, f"[!] 嵌入模型下载失败: {e}")
+        return False
     return _model_exists(EMBEDDING_DIR)
 
 
