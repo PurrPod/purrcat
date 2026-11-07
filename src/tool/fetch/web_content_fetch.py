@@ -1,3 +1,5 @@
+import json
+import os
 import re
 import urllib.error
 import urllib.request
@@ -191,12 +193,73 @@ def _fetch_html_http(url: str, timeout: int = 20) -> Tuple[Optional[Dict], Optio
     }, None
 
 
-def web_content_fetch(url: str) -> Tuple[Optional[Dict], Optional[str]]:
-    """FETCH(source='web') 的同步入口：纯文本直读，HTML 走 HTTP 抓取 + 正文抽取。
+_CONTROL_STATE_FILE = os.path.join(
+    os.path.expanduser("~"), ".purrcat", "run", "control.json"
+)
 
-    不依赖 Playwright / 无头浏览器，桌面安装包里也不会再带 chromium。
+
+def _render_via_host(url: str, timeout: int = 20) -> Optional[str]:
+    """请桌面端宿主（Electron）用隐藏窗口渲染页面，返回渲染后的完整 HTML。
+
+    宿主在 ~/.purrcat/run/control.json 暴露随机端口 + 令牌的控制口；
+    纯服务端 / 容器里没有 Electron，读不到状态文件就直接返回 None。
+    """
+    try:
+        with open(_CONTROL_STATE_FILE, "r", encoding="utf-8") as f:
+            state = json.load(f)
+        port = int(state.get("port") or 0)
+        token = str(state.get("token") or "")
+        if not port or not token:
+            return None
+    except Exception:
+        return None
+
+    try:
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{port}/control/browser/render",
+            data=json.dumps(
+                {"url": url, "timeout_ms": timeout * 1000}
+            ).encode("utf-8"),
+            headers={
+                "content-type": "application/json",
+                "x-purrcat-token": token,
+            },
+            method="POST",
+        )
+        # 宿主侧有渲染超时，这里再多留一点网络往返余量
+        with urllib.request.urlopen(req, timeout=timeout + 10) as resp:
+            payload = json.load(resp)
+        if payload.get("ok") and payload.get("html"):
+            return payload["html"]
+    except Exception as e:
+        print(f"[Fetch] 宿主渲染失败: {e}")
+    return None
+
+
+def web_content_fetch(url: str) -> Tuple[Optional[Dict], Optional[str]]:
+    """FETCH(source='web') 的同步入口。
+
+    1. 纯文本地址 → urllib 直读
+    2. 普通 HTML → curl_cffi 抓取 + 正文抽取（不执行 JS）
+    3. HTTP 拿不到正文（纯 SPA / 反爬）→ 交给桌面端 Electron 隐藏窗口渲染
     """
     if _looks_like_raw_text_url(url):
         return _fast_fetch_raw_text(url, timeout=20)
 
-    return _fetch_html_http(url)
+    result, error = _fetch_html_http(url)
+    if result is not None:
+        return result, None
+
+    html = _render_via_host(url)
+    if html:
+        doc_title, markdown_text = _html_to_markdown(html, url)
+        if len(markdown_text) >= 150:
+            return {
+                "url": url,
+                "title": doc_title,
+                "content": markdown_text,
+                "content_type": "html",
+            }, None
+        return None, "浏览器渲染后正文仍为空，页面可能需要登录或交互后才能显示内容。"
+
+    return None, error

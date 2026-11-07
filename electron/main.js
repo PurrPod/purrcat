@@ -454,6 +454,60 @@ function writeControlState() {
   }
 }
 
+// 后端 FETCH 用：隐藏窗口渲染需要 JS 的页面，取渲染后的完整 HTML。
+// 不新开可见标签页、不额外安装 chromium —— 直接复用应用自带的 Electron 内核。
+function renderUrlForBackend(url, timeoutMs) {
+  return new Promise((resolve) => {
+    let win = null;
+    let finished = false;
+    const finish = (payload) => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timer);
+      try {
+        if (win && !win.isDestroyed()) win.destroy();
+      } catch (_) {}
+      resolve(payload);
+    };
+    const timer = setTimeout(
+      () => finish({ ok: false, error: 'render timeout' }),
+      timeoutMs
+    );
+    try {
+      win = new BrowserWindow({
+        show: false,
+        width: 1280,
+        height: 900,
+        webPreferences: {
+          contextIsolation: true,
+          sandbox: true,
+          session: session.fromPartition('persist:browser'),
+        },
+      });
+    } catch (err) {
+      return finish({ ok: false, error: `window create failed: ${err.message}` });
+    }
+    // 主框架加载失败才算失败；子资源失败（广告/统计脚本）不影响正文
+    win.webContents.on('did-fail-load', (_e, code, desc, _u, isMainFrame) => {
+      if (isMainFrame) finish({ ok: false, error: `load failed (${code}) ${desc}` });
+    });
+    win.webContents.once('did-finish-load', async () => {
+      // 给前端框架留出水合/首屏数据渲染的时间（React/Vue 常见）
+      await new Promise((r) => setTimeout(r, 900));
+      try {
+        const snapshot = await win.webContents.executeJavaScript(
+          '({ html: document.documentElement.outerHTML, url: location.href })',
+          true
+        );
+        finish({ ok: true, html: snapshot.html, finalUrl: snapshot.url });
+      } catch (err) {
+        finish({ ok: false, error: `execute failed: ${err.message}` });
+      }
+    });
+    win.loadURL(url).catch((err) => finish({ ok: false, error: err.message }));
+  });
+}
+
 function handleControlRequest(req, res) {
   const reply = (status, payload) => {
     res.writeHead(status, { 'content-type': 'application/json; charset=utf-8' });
@@ -462,7 +516,11 @@ function handleControlRequest(req, res) {
   if (req.headers['x-purrcat-token'] !== controlToken) {
     return reply(403, { ok: false, error: 'forbidden' });
   }
-  if (req.method !== 'POST' || req.url !== '/control/browser/open-url') {
+  const CONTROL_ROUTES = new Set([
+    '/control/browser/open-url',
+    '/control/browser/render',
+  ]);
+  if (req.method !== 'POST' || !CONTROL_ROUTES.has(req.url)) {
     return reply(404, { ok: false, error: 'not found' });
   }
   let body = '';
@@ -471,15 +529,26 @@ function handleControlRequest(req, res) {
     body += chunk;
     if (body.length > 8192) req.destroy();
   });
-  req.on('end', () => {
-    let url = '';
+  req.on('end', async () => {
+    let payload = {};
     try {
-      url = String(JSON.parse(body || '{}').url || '').trim();
+      payload = JSON.parse(body || '{}');
     } catch (_) {
       return reply(400, { ok: false, error: 'bad json' });
     }
+    const url = String(payload.url || '').trim();
     if (!isWebScheme(url)) return reply(400, { ok: false, error: 'only web urls' });
     if (isSelfUrl(url)) return reply(400, { ok: false, error: 'self url blocked' });
+
+    if (req.url === '/control/browser/render') {
+      const timeoutMs = Math.min(
+        Math.max(Number(payload.timeout_ms) || 15000, 3000),
+        60000
+      );
+      const result = await renderUrlForBackend(url, timeoutMs);
+      return reply(result.ok ? 200 : 502, result);
+    }
+
     if (!mainWindow || mainWindow.isDestroyed()) {
       return reply(503, { ok: false, error: 'ui not ready' });
     }
