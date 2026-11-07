@@ -29,6 +29,8 @@ PurrCat 通过「插件」扩展能力。除社区通用的 **Skill**（技能�
 - 无依赖时写 `[]`。
 - 用户从市场安装某插件时，其 `dependency` 中声明的依赖会被**自动一并安装**。典型用法：一个 UI 插件依赖某个 AgentLoop / Graph / Sensor 来配套工作。
 
+> `dependency` 只描述“插件类型依赖”。UI 插件引用宿主共享的前端库（marked / KaTeX / highlight.js 等）用 `requires`，两者互不替代，详见 [ui-plugin.md](ui-plugin.md#31-共享运行时requires)。
+
 ## 市场与注册表
 
 官方插件市场仓库按类型拆分，各自维护 `registry.json`（由 CI 自动生成）：

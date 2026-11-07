@@ -1,10 +1,12 @@
 """极简模式（web-minimal）：插件后端子进程运行时。
 
 设计目标：让“自带后端功能”的 UI 插件在不修改任何 /api/* 路由的前提下，
-以独立子进程方式被拉起，并处理其依赖一致性——每个插件在它自己的目录里
-管理依赖（npm -> package.json/node_modules，uv -> pyproject.toml），
-主进程的 Python / PyInstaller 打包完全不接触插件依赖，因此插件可以自由
-携带任意第三方包，且做到“装插件即生效 / 改插件热重启 / 卸插件即退出”。
+以独立子进程方式被拉起，并为插件自带后端管理依赖：插件只需声明
+``server/package.json``（推荐附 lockfile），宿主在首次启动/依赖变更时于插件
+目录内执行安装（``--omit=dev --ignore-scripts``），主进程的 Python /
+PyInstaller 打包完全不接触插件依赖，因此插件可以自由携带任意第三方包，且做到
+“装插件即生效 / 改插件热重启 / 卸插件即退出”。只读的内置插件不执行运行时
+安装，依赖需随插件目录分发。
 
 治理模型（与调用方约定）：
   - 这是“插件全信”模型：插件运行在其目录下的独立子进程，拥有本地能力。
@@ -18,14 +20,22 @@
 子进程接到请求后必须回一行结果；允许多个请求排队（子进程串行处理）。
 """
 
+import hashlib
 import json
 import os
 import shutil
 import subprocess
 import threading
 
+from src.utils.config import PURRCAT_DIR
+
 # 允许出现的 backend 启动器类型
 _NODE = "node"
+
+# 后端依赖安装状态（按插件 id 记录已安装的 package.json/lockfile 指纹）
+_DEPS_STATE_DIR = os.path.join(PURRCAT_DIR, "plugin-deps")
+_DEPS_LOCK = threading.Lock()
+_NPM_TIMEOUT = 300
 
 
 class PluginProcessError(Exception):
@@ -206,8 +216,138 @@ def _locate_plugin(plugin_dir: str) -> tuple[str, str, str]:
     )
 
 
-def _get_or_start(plugin_id: str, plugin_dir: str) -> _PluginProcess:
+def _hash_file(path: str) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _deps_fingerprint(server_dir: str) -> str:
+    """package.json 与 lockfile 的内容指纹；任一变化即视为需要重装。"""
+    parts = []
+    for name in ("package.json", "package-lock.json", "npm-shrinkwrap.json"):
+        path = os.path.join(server_dir, name)
+        if os.path.isfile(path):
+            parts.append(f"{name}:{_hash_file(path)}")
+    return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()
+
+
+def _deps_state_path(plugin_id: str) -> str:
+    return os.path.join(_DEPS_STATE_DIR, f"{plugin_id}.json")
+
+
+def _read_deps_state(plugin_id: str) -> dict:
+    try:
+        with open(_deps_state_path(plugin_id), "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _write_deps_state(plugin_id: str, fingerprint: str):
+    os.makedirs(_DEPS_STATE_DIR, exist_ok=True)
+    path = _deps_state_path(plugin_id)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump({"fingerprint": fingerprint}, f)
+    os.replace(tmp, path)
+
+
+def _run_npm(args: list, cwd: str) -> subprocess.CompletedProcess:
+    """执行 npm；Windows 下 npm 是 .cmd，必须经 cmd.exe 运行。"""
+    npm = shutil.which("npm")
+    if not npm:
+        raise PluginProcessError("未找到 npm：插件后端依赖安装需要 Node.js 环境")
+    kwargs = dict(
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=_NPM_TIMEOUT,
+    )
+    try:
+        if os.name == "nt":
+            return subprocess.run(
+                subprocess.list2cmdline([npm] + args), shell=True, **kwargs
+            )
+        return subprocess.run([npm] + args, **kwargs)
+    except subprocess.TimeoutExpired:
+        raise PluginProcessError(f"插件后端依赖安装超时（>{_NPM_TIMEOUT}s）")
+    except Exception as e:
+        raise PluginProcessError(f"插件后端依赖安装失败：{e}")
+
+
+def _has_runtime_deps(server_dir: str) -> bool:
+    """package.json 是否声明了运行时依赖（devDependencies 已在安装时排除）。"""
+    try:
+        with open(os.path.join(server_dir, "package.json"), "r", encoding="utf-8") as f:
+            data = json.load(f)
+        deps = data.get("dependencies") if isinstance(data, dict) else None
+        return bool(isinstance(deps, dict) and deps)
+    except Exception:
+        return False
+
+
+def _deps_ready(server_dir: str, fingerprint: str, state: dict) -> bool:
+    if state.get("fingerprint") != fingerprint:
+        return False
+    if os.path.isdir(os.path.join(server_dir, "node_modules")):
+        return True
+    # 没有依赖时 npm 不会生成 node_modules，指纹一致即视为就绪。
+    return not _has_runtime_deps(server_dir)
+
+
+def _ensure_dependencies(plugin_id: str, plugin_dir: str, allow_install: bool):
+    """确保插件后端依赖可用；已随插件分发 node_modules 时直接复用。"""
+    server_dir = os.path.join(plugin_dir, "server")
+    if not os.path.isfile(os.path.join(server_dir, "package.json")):
+        return
+    fingerprint = _deps_fingerprint(server_dir)
+    node_modules = os.path.join(server_dir, "node_modules")
+
+    state = _read_deps_state(plugin_id)
+    if _deps_ready(server_dir, fingerprint, state):
+        return
+    # 插件自带 node_modules（作者已打包依赖）时信任现成结果，不联网重装。
+    if os.path.isdir(node_modules) and not state:
+        _write_deps_state(plugin_id, fingerprint)
+        return
+    if not allow_install:
+        return
+
+    with _DEPS_LOCK:
+        # 等锁期间状态可能已被其它调用更新，重新读取指纹与状态再判断。
+        fingerprint = _deps_fingerprint(server_dir)
+        state = _read_deps_state(plugin_id)
+        if _deps_ready(server_dir, fingerprint, state):
+            return
+        has_lock = any(
+            os.path.isfile(os.path.join(server_dir, name))
+            for name in ("package-lock.json", "npm-shrinkwrap.json")
+        )
+        args = ["ci" if has_lock else "install"]
+        args += ["--omit=dev", "--ignore-scripts", "--no-audit", "--no-fund"]
+        result = _run_npm(args, server_dir)
+        if result.returncode != 0:
+            tail = (result.stderr or result.stdout or "").strip()[-1200:]
+            raise PluginProcessError(
+                f"插件 {plugin_id} 后端依赖安装失败：{tail or 'npm 返回非零退出码'}"
+            )
+        # 安装会生成/更新 lockfile，必须记录安装后的指纹，否则下次会重复安装。
+        _write_deps_state(plugin_id, _deps_fingerprint(server_dir))
+
+
+def _get_or_start(
+    plugin_id: str, plugin_dir: str, allow_install: bool = True
+) -> _PluginProcess:
     """获取已运行的进程；未运行则拉起新进程。跨线程安全。"""
+    if not os.path.isdir(plugin_dir):
+        raise PluginProcessError(f"插件 {plugin_id} 目录不存在")
+    _ensure_dependencies(plugin_id, plugin_dir, allow_install)
     with _PROC_LOCK:
         proc = _PROCESSES.get(plugin_id)
         if (
@@ -231,10 +371,15 @@ def _get_or_start(plugin_id: str, plugin_dir: str) -> _PluginProcess:
 
 
 def rpc_plugin(
-    plugin_id: str, plugin_dir: str, handler: str, payload: dict, timeout: float = 30.0
+    plugin_id: str,
+    plugin_dir: str,
+    handler: str,
+    payload: dict,
+    timeout: float = 30.0,
+    allow_install: bool = True,
 ):
     """对外 RPC 入口：确保进程在跑并调用其 handler。"""
-    proc = _get_or_start(plugin_id, plugin_dir)
+    proc = _get_or_start(plugin_id, plugin_dir, allow_install=allow_install)
     return proc.rpc(handler, payload, timeout)
 
 
@@ -246,9 +391,9 @@ def restart(plugin_id: str):
     return True
 
 
-def start(plugin_id: str, plugin_dir: str):
+def start(plugin_id: str, plugin_dir: str, allow_install: bool = True):
     """主动拉起插件后端子进程（不依赖首次 RPC）。"""
-    proc = _get_or_start(plugin_id, plugin_dir)
+    proc = _get_or_start(plugin_id, plugin_dir, allow_install=allow_install)
     return {"running": True, "pid": proc._proc.pid if proc._proc else None}
 
 

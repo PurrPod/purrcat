@@ -237,7 +237,9 @@ window.parent.postMessage({ type: 'callAction', id: id, actionId: 'state.get', p
 
 ## 6. 可选后端（server/server.js）
 
-在插件目录里放 `server/server.js`（Node；依赖放插件自己的 `package.json` / `node_modules`，与主程序完全隔离），
+在插件目录里放 `server/server.js`（Node），依赖声明在 `server/package.json`（建议附 `package-lock.json`）。
+宿主首次启动时会执行 `npm ci`（有锁文件）或 `npm install`，固定 `--omit=dev --ignore-scripts`，把依赖装进插件目录，
+与主程序完全隔离；若插件自带 `node_modules` 则直接复用，不会联网重装。
 宿主会把它当作独立子进程拉起；进程退出后，下次 RPC 会自动重新拉起：
 
 * **启动握手（必须）**：进程就绪后先往 stdout 打一行 `{"event": "ready"}`。
@@ -334,7 +336,9 @@ send({ event: 'ready' });
 
 ## 8. 铁律
 
-1. 只能引用插件目录内的文件：宿主的静态资源路由做了路径穿越校验，`../` 一律 404。
+1. 插件自身资源用相对路径引用同目录文件：宿主的静态资源路由做了路径穿越校验，`../` 一律 404。
+   需要 marked / KaTeX / highlight.js 时，用宿主共享运行时 `/minimal/shared/<name>/<version>/...`
+   （版本清单见 `/minimal/shared/manifest.json`），并在 `plugin.json` 的 `requires` 里声明。
 2. 区域随你挑，但要知道代价：占用单例槽（sidebar / session / background）
    会把内置插件顶掉——可以，但要在交付说明里告诉用户，以及怎么在设置面板里改回去。
 3. id 撞车时按 用户 > 沙盒(你) > 内置 生效；想改造内置插件请另起 id。

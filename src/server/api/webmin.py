@@ -120,6 +120,66 @@ def _normalize_dependency(raw) -> list:
     return out
 
 
+# 宿主共享运行时清单：/minimal/shared/manifest.json（按版本目录发布，路径不可变）
+SHARED_MANIFEST_PATH = os.path.join(
+    BASE_DIR, "ui", "web-minimal", "shared", "manifest.json"
+)
+_SHARED_CACHE = {"mtime": None, "data": {}}
+
+
+def _shared_catalog() -> dict:
+    """读取共享运行时清单，返回 {name: {version, base}}。失败时返回空表。"""
+    try:
+        mtime = os.path.getmtime(SHARED_MANIFEST_PATH)
+        if _SHARED_CACHE["mtime"] == mtime:
+            return _SHARED_CACHE["data"]
+        with open(SHARED_MANIFEST_PATH, "r", encoding="utf-8") as f:
+            raw = json.load(f)
+        data = {}
+        if isinstance(raw, dict):
+            for name, item in raw.items():
+                if not isinstance(item, dict):
+                    continue
+                version = str(item.get("version") or "").strip()
+                base = str(item.get("base") or "").strip()
+                if name and version and base:
+                    data[str(name)] = {"version": version, "base": base}
+        _SHARED_CACHE["mtime"] = mtime
+        _SHARED_CACHE["data"] = data
+        return data
+    except Exception:
+        return {}
+
+
+def _normalize_requires(raw) -> list:
+    """归一化 requires：解析宿主共享运行时依赖，附带实际版本与 base 路径。"""
+    out = []
+    if not isinstance(raw, list):
+        return out
+    catalog = _shared_catalog()
+    for item in raw:
+        if isinstance(item, str):
+            name, rng = item.strip(), ""
+        elif isinstance(item, dict):
+            name = str(item.get("name") or "").strip()
+            rng = str(item.get("range") or "").strip()
+        else:
+            continue
+        if not name:
+            continue
+        entry = catalog.get(name)
+        out.append(
+            {
+                "name": name,
+                "range": rng,
+                "version": entry["version"] if entry else "",
+                "base": entry["base"] if entry else "",
+                "ok": bool(entry),
+            }
+        )
+    return out
+
+
 def _read_plugin_descriptor(plugin_dir: str) -> dict:
     """读取某插件文件夹的 plugin.json；不存在或非法则返回 None。"""
     desc_path = os.path.join(plugin_dir, "plugin.json")
@@ -313,6 +373,8 @@ def api_webmin_manifest():
         p["rootOk"] = (not p["root"]) or (p["root"] == origin)
         # dependency：归一化为 [{type,id}]，类型限定白名单
         p["dependency"] = _normalize_dependency(p.get("dependency"))
+        # requires：宿主共享运行时依赖（marked/katex 等），附解析后的版本与 base
+        p["requires"] = _normalize_requires(p.get("requires"))
         # slot 归一化：p["slot"] 始终为字符串(id)；完整语义放 p["slotDef"]。
         # 必须先基于原始 slot（仍为 dict）计算 slotDef，再把 slot 字符串化——
         # 否则 _slot_id 已把 slot 覆盖成 "panel"/"float:..." 字符串，
@@ -322,6 +384,8 @@ def api_webmin_manifest():
         plugins.append(p)
     return {
         "plugins": plugins,
+        # 宿主共享运行时清单：{name: {version, base}}，供插件按版本目录引用
+        "shared": _shared_catalog(),
         # 最左图标栏持久化状态（stage 0=仅图标 1=图标+文字 + 各插件隐藏开关 + 白条透明度）
         "rail": stored_cfg.get("rail") or {"stage": 0, "hidden": {}, "opacity": 1},
         # 宿主固有中栏容器配置（透明度/默认宽度），存于 plugins['panel-container']
@@ -352,7 +416,12 @@ def api_webmin_plugin_rpc(plugin_id: str, handler: str, body: dict):
         raise HTTPException(status_code=404, detail=f"插件 {plugin_id} 不存在")
     try:
         result = plugin_runtime.rpc_plugin(
-            plugin_id, plugin_dir, handler, payload, timeout=timeout
+            plugin_id,
+            plugin_dir,
+            handler,
+            payload,
+            timeout=timeout,
+            allow_install=not _is_builtin(plugin_dir),
         )
     except plugin_runtime.PluginProcessError as e:
         raise HTTPException(status_code=502, detail=str(e))
@@ -389,7 +458,9 @@ def api_webmin_plugin_backend(plugin_id: str, action: str):
     if plugin_dir is None:
         raise HTTPException(status_code=404, detail=f"插件 {plugin_id} 不存在")
     try:
-        info = plugin_runtime.start(plugin_id, plugin_dir)
+        info = plugin_runtime.start(
+            plugin_id, plugin_dir, allow_install=not _is_builtin(plugin_dir)
+        )
     except plugin_runtime.PluginProcessError as e:
         raise HTTPException(status_code=502, detail=str(e))
     return {"status": "ok", **info}

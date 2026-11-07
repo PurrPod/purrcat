@@ -233,27 +233,57 @@
 
   .empty { align-self: center; color: var(--wm-label-dim, #8b96a3); font-size: 13px; margin-top: 48px; }
 
-  /* markdown：作为 flex 子项必须限制宽度（否则长代码/宽表格按 max-content 无限撑开），
-     长串（URL/命令）允许任意位置断行，避免字体横向溢出 */
-  .md { font-size: 14px; line-height: 1.65; color: var(--wm-label, #16191d); min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
-  .md h1, .md h2, .md h3, .md h4 { font-weight: 700; margin: 0.7em 0 0.35em; line-height: 1.3; }
-  .md h1 { font-size: 1.25em; } .md h2 { font-size: 1.12em; } .md h3, .md h4 { font-size: 1em; }
-  .md p { margin: 0.4em 0; }
-  .md ul, .md ol { margin: 0.4em 0; padding-left: 1.4em; }
-  .md li { margin: 0.2em 0; }
-  .md code { font-family: var(--wm-mono, Consolas, monospace); font-size: 0.88em; background: rgba(15,17,21,.06); border-radius: 4px; padding: 1px 4px; }
-  /* 代码块：按容器宽度自动换行（行高随内容增长），不再横向无限延伸 */
-  .md pre { background: var(--wm-bg-input, #f2f4f7); border-radius: 8px; padding: 10px 12px; max-width: 100%; white-space: pre-wrap; overflow-wrap: anywhere; margin: 0.5em 0; }
-  .md pre code { background: transparent; padding: 0; display: block; }
-  .md blockquote { border-left: 3px solid var(--wm-bl-300, #c7cfd9); margin: 0.4em 0; padding: 2px 12px; color: var(--wm-label-2nd, #4c5560); }
+  /* markdown：整体留白与层级按统一节律排布；代码块 / 表格使用独立外壳，
+     宽内容在壳内横向滚动，不再撑破气泡 */
+  .md { font-size: 14px; line-height: 1.68; color: var(--wm-label, #16191d); min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+  .md > * { margin-block: 0; }
+  .md > :first-child { margin-top: 0 !important; }
+  .md > :last-child { margin-bottom: 0 !important; }
+  .md > :not(:first-child) { margin-top: 12px; }
+  .md p + p { margin-top: 6px; }
+  .md h1, .md h2, .md h3, .md h4, .md h5, .md h6 { font-weight: 600; line-height: 1.35; margin: 20px 0 8px; }
+  .md h1 { font-size: 18px; } .md h2 { font-size: 16.5px; } .md h3 { font-size: 15.5px; }
+  .md h4, .md h5, .md h6 { font-size: 14.5px; }
+  .md ul, .md ol { margin: 12px 0; padding-left: 24px; }
+  .md li { margin: 0; }
+  .md li + li { margin-top: 4px; }
+  .md ul ul, .md ol ol, .md ul ol, .md ol ul { margin: 4px 0 0; padding-left: 22px; }
+  .md code { font-family: var(--wm-mono, ui-monospace, Consolas, monospace); font-size: .92em; background: var(--wm-bl-100, #f2f4f7); border-radius: 4px; padding: 1px 4px; }
+  .md pre { margin: 0; padding: 0; background: transparent; }
+  .md pre code { background: transparent; padding: 0; font-size: inherit; }
+  .md blockquote { border-left: 2px solid var(--wm-border-strong, #d5dae1); margin: 12px 0; padding: 2px 0 2px 12px; color: var(--wm-label-2nd, #4c5560); }
+  .md blockquote > :first-child { margin-top: 0; }
+  .md blockquote > :last-child { margin-bottom: 0; }
   .md a { color: var(--wm-label, #16191d); text-decoration: none; }
   /* 可点击的链接统一用蓝色区分：外链（带 href）与可预览的本地文件链接 */
-  .md a[href], .md a.filelink, .filelink { color: #2f6fdb; }
-  .md a:hover { text-decoration: underline; }
-  /* 表格：块级化后在自身内部横向滚动，宽表格不会再顶破气泡 */
-  .md table { display: block; width: max-content; max-width: 100%; overflow-x: auto; border-collapse: collapse; margin: 0.5em 0; }
-  .md th, .md td { border: 1px solid var(--wm-border, rgba(15,17,21,.08)); padding: 4px 8px; }
-  .md hr { border: none; border-top: 1px solid var(--wm-border, rgba(15,17,21,.08)); margin: 0.8em 0; }
+  .md a[href], .md a.filelink, .filelink { color: #2f6fdb; text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 2px; }
+  .md a:hover { color: #1f5fce; }
+  .md hr { border: none; border-top: 1px solid var(--wm-border, rgba(15,17,21,.08)); margin: 20px 0; }
+  .md img { max-width: 100%; height: auto; border-radius: 8px; }
+
+  /* 代码块外壳：语言标签 + 复制按钮的工具栏，代码区横向滚动 */
+  .code-block { margin: 12px 0; border-radius: 12px; overflow: hidden; background: #f7f8fa; border: 1px solid rgba(15,17,21,.06); }
+  .code-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 30px; padding: 2px 6px 2px 14px; background: #f1f3f6; }
+  .code-lang { font-size: 11px; letter-spacing: .02em; color: var(--wm-label-dim, #6a7380); user-select: none; }
+  .code-copy { flex: none; width: 24px; height: 24px; padding: 0; display: flex; align-items: center; justify-content: center; border: none; border-radius: 6px; background: transparent; color: var(--wm-label-dim, #8b96a3); cursor: pointer; }
+  .code-copy:hover { background: rgba(15,17,21,.06); color: var(--wm-label, #16191d); }
+  .code-copy.ok { color: #3f9d63; }
+  .code-copy svg { width: 14px; height: 14px; }
+  .code-body { overflow-x: auto; }
+  .code-body pre { margin: 0; padding: 12px 16px; white-space: pre; overflow-wrap: normal; }
+  .md .code-body pre code, .md .code-body pre code.hljs { display: block; overflow: visible; background: transparent; padding: 0; font-family: var(--wm-mono, ui-monospace, Consolas, monospace); font-size: 12.5px; line-height: 1.55; color: #24292f; }
+
+  /* 表格外壳：圆角浅底 + 表头底色，去掉逐格描边 */
+  .table-wrap { margin: 12px 0; max-width: 100%; overflow-x: auto; overflow-y: hidden; border-radius: 12px; background: #f7f8fa; }
+  .table-wrap table { width: 100%; margin: 0; border-collapse: collapse; border-spacing: 0; font-size: 13.5px; }
+  .table-wrap th, .table-wrap td { border: 0; padding: 7px 14px; text-align: left; vertical-align: top; min-width: 8ch; }
+  .table-wrap thead { background: #eef1f5; }
+  .table-wrap th { font-size: 12.5px; font-weight: 600; color: var(--wm-label-2nd, #4c5560); white-space: nowrap; }
+  .table-wrap tbody tr:hover { background: #f2f4f7; }
+
+  /* 公式：块级公式超宽时可在原位横向滚动 */
+  .md .katex-display { overflow-x: auto; overflow-y: hidden; padding: 4px 0; margin: 12px 0; }
+  .md .katex { font-size: 1.06em; }
 
   /* ================= 输入区（原「输入框」插件，已并入会话面板） ================= */
   /* 输入区贴底（非空态）；空态时撑满并居中（欢迎态） */
@@ -478,6 +508,8 @@
   .sendBtn:disabled { background: var(--wm-bl-200, #dfe4ea); color: #fff; cursor: default; }
   .sendBtn svg { width: 17px; height: 17px; }
 </style>
+<link rel="stylesheet" href="/minimal/shared/katex/0.16.11/katex.min.css">
+<link rel="stylesheet" href="/minimal/shared/highlight/11.11.1/github.min.css">
 </head>
 <body>
   <div class="sess-head">
@@ -589,8 +621,10 @@
   </div>
   <div class="toast" id="toast"></div>
 
-  <!-- GFM markdown 引擎（本地 vendor，离线可用），暴露 window.marked -->
-  <script src="/minimal/assets/vendor/marked.min.js"></script>
+  <!-- GFM markdown 引擎（宿主共享运行时，离线可用），暴露 window.marked -->
+  <script src="/minimal/shared/marked/12.0.2/marked.min.js"></script>
+  <script src="/minimal/shared/katex/0.16.11/katex.min.js"></script>
+  <script src="/minimal/shared/highlight/11.11.1/highlight.min.js"></script>
 
 <script>
 (function () {
@@ -789,7 +823,7 @@
     return wrap;
   }
 
-  // ---------- Markdown 渲染（复用成熟引擎 marked，与主 UI 的 react-markdown + GFM 一致） ----------
+  // ---------- Markdown 渲染（marked 解析 + KaTeX 公式 + 代码高亮，代码/表格套独立外壳） ----------
   // 兜底：marked 未加载时退化为「转义 + 保留换行」的纯文本，保证内容不丢
   function mdFallback(src) {
     return src.split(/\n{2,}/).map(function (p) {
@@ -797,17 +831,151 @@
       return p ? '<p>' + esc(p) + '</p>' : '';
     }).join('');
   }
+
+  // 语言标签：常见别名统一成可读名称，未知语言按原样首字母大写
+  var LANG_LABELS = {
+    js: 'JavaScript', jsx: 'JavaScript', mjs: 'JavaScript', cjs: 'JavaScript',
+    ts: 'TypeScript', tsx: 'TSX', py: 'Python', rs: 'Rust', go: 'Go', rb: 'Ruby',
+    sh: 'Shell', bash: 'Bash', zsh: 'Zsh', fish: 'Fish', md: 'Markdown',
+    yml: 'YAML', yaml: 'YAML', json: 'JSON', html: 'HTML', css: 'CSS',
+    scss: 'SCSS', sass: 'Sass', less: 'Less', cpp: 'C++', cxx: 'C++', hpp: 'C++',
+    hxx: 'C++', cc: 'C++', c: 'C', cs: 'C#', fs: 'F#', swift: 'Swift',
+    kt: 'Kotlin', java: 'Java', sql: 'SQL', graphql: 'GraphQL',
+    dockerfile: 'Dockerfile', makefile: 'Makefile', toml: 'TOML', xml: 'XML',
+    rust: 'Rust', typescript: 'TypeScript', javascript: 'JavaScript'
+  };
+  function formatLangLabel(lang) {
+    if (!lang) return 'Text';
+    var key = String(lang).toLowerCase();
+    if (LANG_LABELS[key]) return LANG_LABELS[key];
+    var raw = key.replace(/[_-]/g, ' ');
+    return raw.charAt(0).toUpperCase() + raw.slice(1);
+  }
+  // 高亮器使用的语言名与 Markdown 别名不完全一致，这里做一次归一
+  var HLJS_ALIASES = {
+    js: 'javascript', jsx: 'javascript', mjs: 'javascript', cjs: 'javascript',
+    ts: 'typescript', tsx: 'typescript', py: 'python', rb: 'ruby', rs: 'rust',
+    sh: 'bash', zsh: 'bash', fish: 'bash', md: 'markdown', yml: 'yaml',
+    cpp: 'cpp', 'c++': 'cpp', cxx: 'cpp', hpp: 'cpp', hxx: 'cpp', cc: 'cpp',
+    cs: 'csharp', 'c#': 'csharp', html: 'xml', kt: 'kotlin', toml: 'ini'
+  };
+
+  // 公式占位：先生成 HTML 存起来，解析后再回填，避免 LaTeX 的反斜杠/下划线被 Markdown 吃掉
+  var MATH_TOKEN_RE = /@@math(\d+)@@/g;
+  var CODE_SEGMENT_RE = /(```[\s\S]*?```|`[^`\n]*`)/g;
+  function renderMathHTML(expr, display) {
+    var body = String(expr == null ? '' : expr).trim();
+    if (!body) return '';
+    if (window.katex && window.katex.renderToString) {
+      try {
+        return window.katex.renderToString(body, {
+          displayMode: !!display, throwOnError: false, strict: false, trust: false
+        });
+      } catch (e) { /* 渲染失败时退回原文 */ }
+    }
+    return '<code>' + esc(display ? '$$' + body + '$$' : '$' + body + '$') + '</code>';
+  }
+  function protectMath(src) {
+    var store = [];
+    function token(expr, display) {
+      var i = store.length;
+      store.push(renderMathHTML(expr, display));
+      return '@@math' + i + '@@';
+    }
+    function scan(seg) {
+      seg = seg.replace(/\\\[([\s\S]+?)\\\]/g, function (m, e) { return token(e, true); });
+      seg = seg.replace(/\$\$([\s\S]+?)\$\$/g, function (m, e) { return token(e, true); });
+      seg = seg.replace(/\\\(([\s\S]+?)\\\)/g, function (m, e) { return token(e, false); });
+      seg = seg.replace(/\$([^\$\n]+?)\$/g, function (m, e, offset, whole) {
+        var after = whole.charAt(offset + m.length);
+        // 排除「$100-$200」这类金额区间：收尾 $ 后紧跟数字、内容两端带空白时不当作公式
+        if (/\d/.test(after) || /^\s|\s$/.test(e)) return m;
+        return token(e, false);
+      });
+      return seg;
+    }
+    var text = src.split(CODE_SEGMENT_RE).map(function (part, idx) {
+      return idx % 2 ? part : scan(part);
+    }).join('');
+    return { text: text, store: store };
+  }
+
+  function decorateCodeBlocks(root) {
+    Array.prototype.slice.call(root.querySelectorAll('pre')).forEach(function (pre) {
+      var codeEl = pre.querySelector('code');
+      if (!codeEl) return;
+      var raw = codeEl.textContent.replace(/\n$/, '');
+      var langMatch = /(?:^|\s)language-([^\s]+)/.exec(codeEl.className || '');
+      var lang = langMatch ? langMatch[1].toLowerCase() : '';
+      var hljsLang = HLJS_ALIASES[lang] || lang;
+      var highlighted = '';
+      if (hljsLang && window.hljs && window.hljs.getLanguage(hljsLang)) {
+        try {
+          highlighted = window.hljs.highlight(raw, { language: hljsLang, ignoreIllegals: true }).value;
+        } catch (e) { /* 个别语法异常时退回纯文本 */ }
+      }
+      var codeHtml = '<code class="hljs' + (lang ? ' language-' + esc(lang) : '') + '">' +
+        (highlighted || esc(raw)) + '</code>';
+      var block = document.createElement('div');
+      block.className = 'code-block';
+      block.innerHTML =
+        '<div class="code-toolbar">' +
+          '<span class="code-lang">' + esc(formatLangLabel(lang)) + '</span>' +
+          '<button type="button" class="code-copy" title="复制" aria-label="复制">' + ICON_COPY + '</button>' +
+        '</div>' +
+        '<div class="code-body"><pre>' + codeHtml + '</pre></div>';
+      pre.parentNode.replaceChild(block, pre);
+    });
+  }
+
+  function decorateTables(root) {
+    Array.prototype.slice.call(root.querySelectorAll('table')).forEach(function (table) {
+      var wrap = document.createElement('div');
+      wrap.className = 'table-wrap';
+      table.parentNode.insertBefore(wrap, table);
+      wrap.appendChild(table);
+    });
+  }
+
   function mdToHtml(src) {
     src = String(src == null ? '' : src).replace(/\r\n/g, '\n');
-    var html = '';
+    var text = src;
+    var store = [];
+    var protectedSrc = null;
     if (window.marked && window.marked.parse) {
       // gfm=true：表格/删除线/GITHUB 自动链接；breaks=true：单个换行即换行
-      try { html = window.marked.parse(src, { gfm: true, breaks: true }); }
+      protectedSrc = protectMath(src);
+      text = protectedSrc.text;
+      store = protectedSrc.store;
+    }
+    var html = '';
+    if (window.marked && window.marked.parse) {
+      try { html = window.marked.parse(text, { gfm: true, breaks: true }); }
       catch (e) { /* 语法异常时兜底 */ }
     }
     if (!html) html = mdFallback(src);
-    return safeLinks(html);
+    if (store.length) {
+      html = html.replace(/<p>\s*(@@math\d+@@)\s*<\/p>/g, '$1');
+      html = html.replace(MATH_TOKEN_RE, function (m, i) { return store[Number(i)] || ''; });
+    }
+    var holder = document.createElement('div');
+    holder.innerHTML = html;
+    decorateCodeBlocks(holder);
+    decorateTables(holder);
+    return safeLinks(holder.innerHTML);
   }
+
+  // 代码块复制：事件委托，重建历史时无需重新绑定
+  document.addEventListener('click', function (ev) {
+    var btn = ev.target && ev.target.closest ? ev.target.closest('.code-copy') : null;
+    if (!btn) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    var block = btn.closest('.code-block');
+    var codeEl = block ? block.querySelector('code') : null;
+    copyText(codeEl ? codeEl.textContent : '', btn);
+  });
+
   // 本地文件路径识别（对齐完整模式 handleRawLinkClick 的判定范围）：
   // file:// 、/agent_vm/... 、Windows 绝对路径、./ 或 ../ 相对路径 + 已知扩展名
   var LOCAL_EXTS = ['png','jpg','jpeg','gif','webp','svg','bmp','ico','mp4','webm','mov','ogg','avi','mkv','pdf',

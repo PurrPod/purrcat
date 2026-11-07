@@ -55,6 +55,9 @@ htmlcov/
 .hypothesis/
 
 
+# 内置插件共享运行时（由 npm install / npm run sync:vendor 生成）
+ui/web-minimal/shared/
+
 node_modules/
 test_mcp.py
 .next/

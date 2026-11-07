@@ -5,17 +5,24 @@
   "description": "PurrCat desktop shell (Electron) — local-first AI Agent",
   "main": "electron/main.js",
   "scripts": {
+    "postinstall": "node scripts/sync-vendor.mjs",
+    "sync:vendor": "node scripts/sync-vendor.mjs",
+    "predev": "node scripts/sync-vendor.mjs",
     "dev": "node scripts/dev.mjs",
+    "predev:split": "node scripts/sync-vendor.mjs",
     "dev:split": "node scripts/dev.mjs",
     "electron:dev": "cross-env ELECTRON_DEV=1 electron .",
     "dist": "electron-builder --win",
     "lint": "echo no-root-lint"
   },
   "devDependencies": {
+    "@highlightjs/cdn-assets": "^11.11.1",
     "concurrently": "^9.1.0",
     "cross-env": "^7.0.3",
     "electron": "^31.7.0",
     "electron-builder": "^24.13.3",
+    "katex": "^0.16.11",
+    "marked": "^12.0.2",
     "wait-on": "^8.0.1"
   },
   "engines": {

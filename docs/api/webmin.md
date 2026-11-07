@@ -40,18 +40,25 @@
       "root": "builtin",
       "origin": "builtin",
       "rootOk": true,
-      "dependency": [{ "type": "skill", "id": "xxx" }]
+      "dependency": [{ "type": "skill", "id": "xxx" }],
+      "requires": [
+        { "name": "marked", "range": "^12", "version": "12.0.2", "base": "/minimal/shared/marked/12.0.2", "ok": true }
+      ]
     }
   ],
+  "shared": {
+    "marked": { "version": "12.0.2", "base": "/minimal/shared/marked/12.0.2" },
+    "katex": { "version": "0.16.11", "base": "/minimal/shared/katex/0.16.11" }
+  },
   "rail": { "stage": 0, "hidden": {}, "opacity": 1 },
   "panelContainer": {},
   "active": { "panel": "builtin-history" }
 }
 ```
 
-每条插件附：`configSchema`（插件自声明）与 `config`（`webminConfig` 中已存值，有效配置 = schema 默认值 ∪ config 覆盖）、`builtin`（是否位于内置根）、`backend`（是否自带后端，有 `server/server.js` 则为 `{ "kind": "npm" }`，否则 `null`）；`root`（声明的期望位置）、`origin`（后端回填的实际所在根）、`rootOk`（两者是否一致）；`dependency` 归一化为 `[{ "type", "id" }]`（类型限定白名单：`skill` / `plugin` / `mcp` / `agentloop` / `sensor` / `graph`）；`slot` 归一化为字符串 id，完整语义见 `slotDef`。
+每条插件附：`configSchema`（插件自声明）与 `config`（`webminConfig` 中已存值，有效配置 = schema 默认值 ∪ config 覆盖）、`builtin`（是否位于内置根）、`backend`（是否自带后端，有 `server/server.js` 则为 `{ "kind": "npm" }`，否则 `null`）；`root`（声明的期望位置）、`origin`（后端回填的实际所在根）、`rootOk`（两者是否一致）；`dependency` 归一化为 `[{ "type", "id" }]`（类型限定白名单：`skill` / `plugin` / `mcp` / `agentloop` / `sensor` / `graph`）；`requires` 归一化为 `[{ "name", "range", "version", "base", "ok" }]`，其中 `version` / `base` 来自宿主共享运行时清单，缺失时为 `""` 且 `ok=false`；`slot` 归一化为字符串 id，完整语义见 `slotDef`。
 
-顶层另返回 `rail`（最左图标栏状态：`stage`、`hidden`、`opacity`）、`panelContainer`（宿主中栏容器配置）、`active`（单例槽当前选中的插件 id）。
+顶层另返回 `shared`（共享运行时清单 `{ name: { version, base } }`）、`rail`（最左图标栏状态：`stage`、`hidden`、`opacity`）、`panelContainer`（宿主中栏容器配置）、`active`（单例槽当前选中的插件 id）。
 
 **示例**
 

@@ -55,10 +55,9 @@ ui-plugins/<id>/               # 市场仓库中的单元
 | `root` | 否 | 来源标记：`user` / `sandbox` / `builtin`（同 id 冲突时优先级 **用户 > 沙盒 > 内置**）|
 | `builtin` | 否 | 是否随宿主内置（内置插件不受用户删除影响）|
 | `dependency` | 否 | 依赖数组，见 [README.md](README.md#依赖机制dependency) |
+| `requires` | 否 | 宿主共享运行时依赖（前端库），见第 3.1 节 |
 | `configSchema` | 否 | 声明式配置表单，见第 4 节 |
 | `backend` | 否 | 后端形态；`{ "kind": "npm" }` 表示插件自带 `server/server.js`（Node 后端）|
-
----
 
 ## 3. `slot.area` 区域清单（专有词汇表 · 区域）
 
@@ -76,6 +75,25 @@ ui-plugins/<id>/               # 市场仓库中的单元
 | `popup` | 模态弹窗 | 居中模态弹窗 | 模态 |
 
 > 宿主在 `UI_GROUPS` 中声明各区域行为；`slot` 只声明“入驻哪个区域”，**不要试图在插件里自行声明窗口类型**。
+
+## 3.1 共享运行时（`requires`）
+
+宿主随包提供一组常用前端库，按**版本目录**发布，路径不可变：
+
+```json
+"requires": [
+  { "name": "marked", "range": "^12" },
+  { "name": "katex", "range": "^0.16" },
+  { "name": "highlight", "range": "^11" }
+]
+```
+
+- 这些库在主程序 `package.json` 里声明为 `devDependencies`；`npm install` 的 `postinstall` 会执行 `scripts/sync-vendor.mjs`，从 `node_modules` 生成到 `ui/web-minimal/shared/<name>/<version>/`。生成目录**不进入版本库**（已加入 `.gitignore`）。
+- 通过 `/minimal/shared/<name>/<version>/...` 引用（例如 `/minimal/shared/marked/12.0.2/marked.min.js`）；升级时改依赖版本并重新 `npm install` 即可，路径随版本变化。
+- 当前清单见 `ui/web-minimal/shared/manifest.json`；`GET /api/webmin/manifest` 的 `shared` 字段会返回解析后的 `{ version, base }`。
+- 内置插件可以引用这些资源；外部插件同样可用，但应把它当作稳定公共接口（版本目录不会原地替换）。
+- 若 `shared/` 被删除，`purrcat desktop start` / `update` 会检测并自动重建；手动可用 `npm run sync:vendor`。
+- `requires` 只做声明与校验，不触发下载；缺失的库会在清单响应里标记 `ok: false`。
 
 ---
 
@@ -273,8 +291,10 @@ window.parent.postMessage({ type: 'callAction', id: 'req-1', actionId: 'config.g
 - **本地预览**：插件目录放到 `~/.purrcat/webmin-plugins/<id>/`，重启极简宿主（`/minimal` 页面 `Ctrl+R`）即可加载。
 - **调试**：插件在 iframe 内运行，用浏览器开发者工具选中对应 iframe 上下文看 Console；`callAction` 出错会落宿主控制台。
 - **资源引用**：`index.html` 内使用相对路径引用同目录资源。
-- **自带后端**：声明 `backend: { "kind": "npm" }` 并提供 `server/server.js`（Node；依赖放插件自己的 `package.json` / `node_modules`），插件侧用 `plugin.rpc` 调用。
+- **自带后端**：声明 `backend: { "kind": "npm" }` 并提供 `server/server.js`（Node；依赖写在插件自己的 `server/package.json`），插件侧用 `plugin.rpc` 调用。
   宿主把它当独立子进程拉起；**进程退出后，下次 RPC 会自动重新拉起**。
+  - **依赖安装**：首次启动时若检测到 `server/package.json`，宿主会在插件目录内执行 `npm ci`（有 `package-lock.json` / `npm-shrinkwrap.json` 时）或 `npm install`，并固定使用 `--omit=dev --ignore-scripts --no-audit --no-fund`。依赖变化后按文件指纹自动重装；安装结果记录在 `~/.purrcat/plugin-deps/<plugin_id>.json`。
+  - **离线分发**：插件目录里自带 `server/node_modules` 时直接复用，不联网重装；内置插件为只读目录，不做运行时安装，必须随包携带依赖。
   - **生命周期**：面板标签打开（iframe 挂载）时宿主自动 `start`，标签关闭时自动 `stop`。改完 `server.js` 关掉再打开标签即可加载新代码，无需重启 PurrCat；标签开着时也可调 `POST /api/webmin/plugin-backend/{plugin_id}/restart` 主动重启。
   - 宿主 → 插件（stdin，一行一条）：`{"id","handler","payload"}`。
   - 插件 → 宿主（stdout，一行一条，必须回）：`{"id","ok":true,"result":...}` 或 `{"id","ok":false,"error":"..."}`。

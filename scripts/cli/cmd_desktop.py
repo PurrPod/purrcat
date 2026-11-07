@@ -10,6 +10,20 @@ def _get_project_root():
     return os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
+_SHARED_MANIFEST = os.path.join("ui", "web-minimal", "shared", "manifest.json")
+
+
+def _ensure_shared_runtime(root):
+    """共享运行时缺失时重新生成：有 node_modules 直接同步，否则先装依赖。"""
+    if os.path.isfile(os.path.join(root, _SHARED_MANIFEST)):
+        return
+    print("[*] 共享运行时资源缺失，正在生成...")
+    if os.path.isdir(os.path.join(root, "node_modules")):
+        _run("node scripts/sync-vendor.mjs", cwd=root)
+    else:
+        _run("npm install", cwd=root)
+
+
 def _run(command, cwd=None, check=True):
     """前台执行命令（输出直接透传终端），返回是否成功"""
     print(f"$ {command}")
@@ -65,6 +79,8 @@ def cmd_start():
         print("[*] 首次启动，安装桌面端依赖 (npm install)...")
         _run("npm install", cwd=root)
 
+    _ensure_shared_runtime(root)
+
     _check_for_updates(root)
 
     print("$ npm run dev")
@@ -93,6 +109,7 @@ def cmd_update():
     _run("git pull --ff-only", cwd=root)
     _run("uv sync", cwd=root)
     _run("npm install", cwd=root)
+    _ensure_shared_runtime(root)
 
     print("")
     print("[+] 更新完成! 运行 purrcat desktop start 启动。")
