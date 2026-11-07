@@ -122,12 +122,7 @@ def vision_inline(paths: list, session_id: str | None = None) -> dict:
                 f"vision 直注模式仅支持 png/jpg/jpeg/gif/webp 位图: {p}（{ext} 不受 API 支持）"
             )
 
-    parts = [
-        {
-            "type": "text",
-            "text": (f"[vision直注] 已直接读取 {len(resolved_paths)} 张图片"),
-        }
-    ]
+    parts = []
     for path in resolved_paths:
         mime_type, _ = mimetypes.guess_type(path)
         with open(path, "rb") as f:
