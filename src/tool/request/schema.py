@@ -22,7 +22,7 @@ REQUEST_TOOL_SCHEMA = {
                 },
                 "reason": {
                     "type": "string",
-                    "description": "申请理由，明确告诉用户为什么需要这个权限或操作。",
+                    "description": "申请理由，用一两句话简要说明即可。",
                 },
             },
             "required": ["request_type", "target", "reason"],
