@@ -227,7 +227,7 @@ curl -X POST 'http://127.0.0.1:8000/api/sessions/session_xxx/checkout'
 
 以指定会话为起点新建一个子分支。
 
-新建的分支会话会继承源会话所属项目（写入 `meta.json` 与 `index.json` 的 `project_id`），因此会直接归档在源会话所在的项目下。
+新建的分支会话会继承源会话所属项目（写入 `meta.json` 与 `index.json` 的 `project_id`），因此会直接归档在源会话所在的项目下。未显式传入 `alias` 时，分支命名为「源会话名（分支）」。
 
 **请求**
 

@@ -273,6 +273,15 @@ class AgentManager:
         # 分支留在源会话所属项目（系统提示已随历史一并继承，不再重复注入 MEMORY.md）
         source_project = SessionStore.get_session_project(self._agent.session_id)
 
+        # 未显式命名时，分支沿用源会话在列表里的名字并追加「（分支）」
+        if not branch_alias:
+            source_alias = (
+                SessionStore.get_all_sessions()
+                .get(self._agent.session_id, {})
+                .get("alias")
+            )
+            branch_alias = f"{source_alias or self._agent.session_id}（分支）"
+
         new_id = SessionStore.create_branch(
             current_session_id=self._agent.session_id,
             current_history=safe_history,
