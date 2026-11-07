@@ -480,7 +480,9 @@ def _install_embedding(item: str) -> bool:
         _append_log(item, m)
 
     try:
-        _append_log(item, f"[*] 下载嵌入模型 {MODEL_NAME}（int8 约 113MB，自动多源回退）...")
+        _append_log(
+            item, f"[*] 下载嵌入模型 {MODEL_NAME}（int8 约 113MB，自动多源回退）..."
+        )
         download_model(log=log)
         _append_log(item, "[+] 嵌入模型下载完成")
     except Exception as e:

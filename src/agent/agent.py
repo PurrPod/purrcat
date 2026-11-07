@@ -571,9 +571,7 @@ class Agent:
         """当前历史还原图片后的序列化体积，供 Task 直注前估算"""
         with self._history_lock:
             raw_history = list(self.current_history)
-        return serialized_size(
-            [materialize_message(msg) for msg in raw_history]
-        )
+        return serialized_size([materialize_message(msg) for msg in raw_history])
 
     def _chat_stream(self, messages, tools, interaction_id):
         """

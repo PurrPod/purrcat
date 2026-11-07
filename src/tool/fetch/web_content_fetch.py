@@ -128,9 +128,7 @@ def _html_to_markdown(html: str, url: str) -> Tuple[str, str]:
     markdown_text = re.sub(r"\n{3,}", "\n\n", markdown_text).strip()
 
     if len(markdown_text) < 150:
-        paragraphs = soup.find_all(
-            ["h1", "h2", "h3", "h4", "p", "li", "code", "div"]
-        )
+        paragraphs = soup.find_all(["h1", "h2", "h3", "h4", "p", "li", "code", "div"])
         text_lines = []
         for p in paragraphs:
             text = p.get_text(strip=True)
@@ -141,7 +139,9 @@ def _html_to_markdown(html: str, url: str) -> Tuple[str, str]:
     return doc_title, markdown_text
 
 
-def _fetch_html_http(url: str, timeout: int = 20) -> Tuple[Optional[Dict], Optional[str]]:
+def _fetch_html_http(
+    url: str, timeout: int = 20
+) -> Tuple[Optional[Dict], Optional[str]]:
     """curl_cffi（chrome 指纹）直接抓 HTML，再转 markdown。
 
     不做 JS 渲染：需要前端渲染的单页应用正文可能为空，此时给出明确提示，
@@ -217,9 +217,7 @@ def _render_via_host(url: str, timeout: int = 20) -> Optional[str]:
     try:
         req = urllib.request.Request(
             f"http://127.0.0.1:{port}/control/browser/render",
-            data=json.dumps(
-                {"url": url, "timeout_ms": timeout * 1000}
-            ).encode("utf-8"),
+            data=json.dumps({"url": url, "timeout_ms": timeout * 1000}).encode("utf-8"),
             headers={
                 "content-type": "application/json",
                 "x-purrcat-token": token,

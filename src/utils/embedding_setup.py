@@ -47,8 +47,12 @@ _SHARED_FILES = {
 
 # 优先 int8（约 113MB，检索效果几乎无损）；镜像缺 int8 时退回 fp32（约 448MB）
 _MODEL_PROFILES = (
-    {"onnx/model_quint8_avx2.onnx": "98a01d88b7de996cdea58c32ca71208c09968d143798814b2ea09d3439dc334f"},
-    {"onnx/model.onnx": "10f7a088420252b26caf819236ca2c9d2987afd0fc06fec7553b542a5655a05a"},
+    {
+        "onnx/model_quint8_avx2.onnx": "98a01d88b7de996cdea58c32ca71208c09968d143798814b2ea09d3439dc334f"
+    },
+    {
+        "onnx/model.onnx": "10f7a088420252b26caf819236ca2c9d2987afd0fc06fec7553b542a5655a05a"
+    },
 )
 
 _download_lock = threading.Lock()
