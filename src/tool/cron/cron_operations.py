@@ -4,6 +4,7 @@ import json
 import os
 import threading
 import uuid
+from datetime import datetime
 from typing import Any, Dict, List
 
 from src.tool.cron.exceptions import (
@@ -45,9 +46,16 @@ def _read_json(filepath: str) -> List[Dict[str, Any]]:
 
 
 def _write_json(filepath: str, data: List[Dict[str, Any]]):
-    """写入 JSON 文件"""
-    with open(filepath, "w", encoding="utf-8") as f:
+    """原子写入 JSON 文件
+
+    System Clock 是独立进程，会同时读写 cron.json。直接 `open(..., "w")`
+    会让对方在写入途中读到半截 JSON；用 tmp + os.replace 保证读者只能看到
+    完整的旧版本或完整的新版本。
+    """
+    tmp = f"{filepath}.{os.getpid()}.tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, filepath)
 
 
 def _validate_time_format(time_str: str) -> bool:
@@ -112,6 +120,10 @@ def add_cron(
             "trigger_time": trigger_time,
             "repeat_rule": repeat_rule,
             "active": True,
+            # 武装时刻：一次性闹钟的"预定场次"从这里算起，
+            # 而不是每次进程启动时重新理解为"下一次 HH:MM"
+            "armed_at": datetime.now().isoformat(timespec="seconds"),
+            "last_fired_at": None,
             "task_hook": task_hook,  # 🌟 默认绑定为唤醒 Agent
             "task_inputs": task_inputs or {},  # 🌟 若有工作流入参则附带
         }
@@ -152,19 +164,31 @@ def update_cron(
             raise CronNotFoundError(identifier)
 
         cron = crons[idx]
+        now_iso = datetime.now().isoformat(timespec="seconds")
+        rearmed = False
 
         if trigger_time is not None:
             if not _validate_time_format(trigger_time):
                 raise InvalidTimeFormatError(trigger_time)
             cron["trigger_time"] = trigger_time
+            rearmed = True
 
         if repeat_rule is not None:
             if not _validate_repeat_rule(repeat_rule):
                 raise InvalidRepeatRuleError(repeat_rule)
             cron["repeat_rule"] = repeat_rule
+            rearmed = True
 
         if active is not None:
             cron["active"] = active
+            # 重新启用一次性闹钟时重新武装，否则会沿用旧的 armed_at 直接判过期
+            if active and cron.get("repeat_rule") == "none":
+                rearmed = True
+
+        # 时间/规则/启用状态变化后，下一次触发从"现在"重新计算
+        if rearmed:
+            cron["armed_at"] = now_iso
+            cron["last_fired_at"] = None
 
         if description is not None:
             cron["description"] = description
