@@ -15,7 +15,7 @@ dependencies = [
     # MCP 与 插件协议
     "mcp>=0.1.0",
 
-    # Web 搜索与自动化（直接抓 Bing 结果页；Playwright 改为可选依赖，桌面端不再打进安装包）
+    # Web 搜索与抓取：Bing 结果页 + 目标页面都用 curl_cffi 直抓，不依赖无头浏览器
     "curl-cffi>=0.6.0", "beautifulsoup4>=4.12.3",
     "markdown>=3.5.0", "markdownify>=0.11.6",
 
