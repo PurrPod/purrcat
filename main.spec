@@ -48,8 +48,7 @@ a = Analysis(
     excludes=[
         'torch', 'torchvision', 'torchaudio',
         'transformers', 'sentence_transformers',
-        'easyocr', 'playwright',
-        'rapidocr', 'rapidocr_onnxruntime', 'cv2', 'opencv', 'textual', 'ddgs', 'primp',
+        'easyocr', 'playwright', 'textual', 'ddgs', 'primp',
         # tokenizers 只是把它列为依赖，模拟权重下载已改走 curl_cffi，运行时用不到
         'huggingface_hub',
         'sklearn', 'scipy', 'numba', 'llvmlite',
