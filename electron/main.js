@@ -175,6 +175,32 @@ function reconcileViews() {
   showView(activeTabId);
 }
 
+// 🌟 宿主整页刷新（Ctrl+R / F5 / 崩溃自愈重载）时的原生图层清场：
+//    内置浏览器的 WebContentsView 是主进程的原生图层，不随宿主页面刷新而销毁。
+//    刷新后宿主 DOM 全部重建、浏览器面板已不存在，但旧视图仍停留在刷新前的 bounds 上，
+//    表现为「浏览器画面溢出、贴在/盖住前端页面」，且没人再引用这些 Tab（常驻内存泄漏）。
+//    因此在主 frame 每次开始导航时立即销毁全部内置浏览器 Tab 并复位 bounds 状态，
+//    刷新完成后由插件重新建 Tab、重新上报 bounds，界面自然恢复正常。
+function resetBrowserForHostReload() {
+  if (browserDetached) return; // 独立窗口内的视图归独立窗口维护，不受主窗口刷新影响
+  browserHidden = true;
+  _boundsInitialized = false;
+  currentBounds = { x: 0, y: 0, width: 0, height: 0 };
+  currentScale = 1;
+  for (const [id, t] of tabs) {
+    _pickModeTabs.delete(id);
+    const cleanup = _inspectListeners.get(id);
+    if (cleanup) { cleanup(); _inspectListeners.delete(id); }
+    try {
+      const win = getTargetWin();
+      if (win && !win.isDestroyed()) win.contentView.removeChildView(t.view);
+    } catch (_) {}
+    try { t.view.webContents.destroy(); } catch (_) {}
+  }
+  tabs.clear();
+  activeTabId = null;
+}
+
 function pushTabEvent(payload) {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('browser:tab-event', payload);
@@ -303,6 +329,14 @@ function createWindow() {
       _e.preventDefault();
       try { mainWindow.webContents.reload(); } catch (_) {}
     }
+  });
+
+  // 🌟 整页刷新（含 Ctrl+R / F5 / 崩溃后自动 reload）时，主 frame 一定会先开始导航。
+  //    此刻立即销毁内置浏览器的原生视图并复位 bounds，避免旧 WebContentsView 停留在
+  //    刷新前的坐标、盖在新界面上（见 resetBrowserForHostReload）。
+  mainWindow.webContents.on('did-start-navigation', (_e, _url, isInPlace, isMainFrame) => {
+    if (!isMainFrame || isInPlace) return;
+    resetBrowserForHostReload();
   });
 
   // 🌟 拦截所有 window.open / target=_blank：Electron 默认会新建一个原生 BrowserWindow 弹窗，
@@ -1728,6 +1762,11 @@ app.on('child-process-gone', (_e, details) => {
 let _renderCrashTimes = [];
 app.on('render-process-gone', (_e, wc, details) => {
   if (details.reason === 'clean-exit' || wc.isDestroyed()) return;
+  // 主窗口渲染进程崩溃：界面即将（或无法）重载，先清场残留的原生浏览器视图，
+  // 否则崩溃页上仍会盖着浏览器画面（刷新后重载未成功的场景尤其明显）
+  if (mainWindow && !mainWindow.isDestroyed() && wc === mainWindow.webContents) {
+    resetBrowserForHostReload();
+  }
   const now = Date.now();
   _renderCrashTimes = _renderCrashTimes.filter((t) => now - t < 60_000);
   _renderCrashTimes.push(now);
