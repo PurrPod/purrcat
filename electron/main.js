@@ -487,6 +487,8 @@ function renderUrlForBackend(url, timeoutMs) {
     } catch (err) {
       return finish({ ok: false, error: `window create failed: ${err.message}` });
     }
+    // 隐藏渲染窗口不允许弹新窗（有些页面会在加载时 window.open 广告页）
+    win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
     // 主框架加载失败才算失败；子资源失败（广告/统计脚本）不影响正文
     win.webContents.on('did-fail-load', (_e, code, desc, _u, isMainFrame) => {
       if (isMainFrame) finish({ ok: false, error: `load failed (${code}) ${desc}` });

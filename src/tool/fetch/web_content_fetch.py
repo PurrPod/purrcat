@@ -239,16 +239,13 @@ def _render_via_host(url: str, timeout: int = 20) -> Optional[str]:
 def web_content_fetch(url: str) -> Tuple[Optional[Dict], Optional[str]]:
     """FETCH(source='web') 的同步入口。
 
-    1. 纯文本地址 → urllib 直读
-    2. 普通 HTML → curl_cffi 抓取 + 正文抽取（不执行 JS）
-    3. HTTP 拿不到正文（纯 SPA / 反爬）→ 交给桌面端 Electron 隐藏窗口渲染
+    1. 纯文本地址（.md/.txt/.json 等）→ urllib 直读，不渲染
+    2. 普通网页 → 优先让桌面端 Electron 渲染后取 DOM（懒加载、评论区等
+       JS 内容也能拿到），HTTP 直抓只作为兜底
+    3. 无宿主（服务端/容器）或渲染失败 → curl_cffi 抓原始 HTML + 正文抽取
     """
     if _looks_like_raw_text_url(url):
         return _fast_fetch_raw_text(url, timeout=20)
-
-    result, error = _fetch_html_http(url)
-    if result is not None:
-        return result, None
 
     html = _render_via_host(url)
     if html:
@@ -260,6 +257,10 @@ def web_content_fetch(url: str) -> Tuple[Optional[Dict], Optional[str]]:
                 "content": markdown_text,
                 "content_type": "html",
             }, None
-        return None, "浏览器渲染后正文仍为空，页面可能需要登录或交互后才能显示内容。"
 
+    result, error = _fetch_html_http(url)
+    if result is not None:
+        return result, None
+    if html:
+        return None, "浏览器渲染后正文仍为空，页面可能需要登录或交互后才能显示内容。"
     return None, error
