@@ -7,6 +7,13 @@ import time
 
 from json_repair import repair_json
 
+from src.agent.attachments import (
+    materialize_message,
+    max_request_bytes,
+    replace_refs_with_text,
+    serialized_size,
+    snapshot_message,
+)
 from src.agent.hook_handler import HookHandler
 from src.agent.session_store import SessionStore
 from src.model import AgentModel
@@ -59,6 +66,13 @@ class Agent:
         self.model.bind_task(self.session_id, "AgentMain")
         self.tracker = Tracker()
         self.current_history = initial_history or []
+        # 🌟 图片直注的历史只留副本路径：旧会话里的 base64 在加载时一次性迁移到
+        # <会话目录>/attachment/，避免恢复会话后继续携带大段 base64
+        self.current_history = [
+            snapshot_message(msg, session_id) for msg in self.current_history
+        ]
+        # 🌟 请求超限时的图片描述缓存（副本路径 → 视觉模型转述文本）
+        self._image_desc_cache = {}
         self.hook_handler = HookHandler(paradigm_path)
         if not self.current_history:
             fresh_prompt = self._build_system_prompt()
@@ -182,6 +196,8 @@ class Agent:
             return copy.deepcopy(self.current_history)
 
     def _append_history(self, message: dict):
+        # 图片 base64 不进历史：落副本到 attachment/，历史只存路径占位
+        message = snapshot_message(message, self.session_id)
         with self._history_lock:
             self.current_history.append(message)
             try:
@@ -444,7 +460,10 @@ class Agent:
                 self._checker()
 
                 with self._history_lock:
-                    safe_history = list(self.current_history)
+                    raw_history = list(self.current_history)
+
+                # 图片副本在这里按需还原成 base64；整体超限则改用视觉模型转述
+                safe_history = self._prepare_history_for_model(raw_history)
 
                 msg_resp, usage = self._chat_stream(
                     safe_history, self._get_tool_schema(), current_interaction_id
@@ -543,6 +562,47 @@ class Agent:
 
             get_bus().publish(self.session_id, "turn_end", {"stopReason": "end_turn"})
         self.save_checkpoint()
+
+    def _describe_image(self, path: str) -> str:
+        """请求超限时把图片交给 vision 模型转述（失败返回可读错误文本）"""
+        cached = self._image_desc_cache.get(path)
+        if cached:
+            return cached
+        name = os.path.basename(path)
+        try:
+            from src.tool.task.vision import vision
+
+            result = vision(
+                [path], "请用中文简洁描述这张图片的主要内容（200 字以内），不要推测。"
+            )
+            text = str(result.get("analysis_result", "")).strip()
+            if not text:
+                raise RuntimeError("视觉模型未返回内容")
+            desc = f"[图片 {name} 的视觉描述]\n{text}"
+        except Exception as e:
+            desc = f"[图片读取失败: {name}] {e}"
+        self._image_desc_cache[path] = desc
+        return desc
+
+    def _prepare_history_for_model(self, messages):
+        """发送模型前：还原图片副本为 base64；整体体积超限则改用视觉模型转述"""
+        from src.utils.config import get_model_config
+
+        materialized = [materialize_message(msg) for msg in messages]
+        cfg = get_model_config().get("main", {}).get(self.name, {})
+        limit = max_request_bytes(cfg)
+        size = serialized_size(materialized)
+        if size <= limit:
+            return materialized
+
+        print(
+            f"[Vision] 请求体积 {size / 1024 / 1024:.1f}MB 超过上限 "
+            f"{limit / 1024 / 1024:.1f}MB，图片改用视觉模型转述"
+        )
+        converted = [
+            replace_refs_with_text(msg, self._describe_image) for msg in messages
+        ]
+        return [materialize_message(msg) for msg in converted]
 
     def _chat_stream(self, messages, tools, interaction_id):
         """
@@ -903,7 +963,10 @@ class Agent:
         }
 
         with self._history_lock:
-            temp_history = self.current_history.copy() + [compression_prompt]
+            raw_history = self.current_history.copy()
+        temp_history = self._prepare_history_for_model(
+            raw_history + [compression_prompt]
+        )
 
         summary_text = None
         msg_resp = None
