@@ -161,7 +161,7 @@ window.parent.postMessage({ type: 'callAction', id: 'req-1', actionId: 'config.g
 | `config.get` | `{plugin_id}` | 该插件配置对象（无则 `{}`） |
 | `config.set` | `{plugin_id, config}` | 合并后的配置对象 |
 | `settings.meta` | 无 | `{plugins, config}` |
-| `settings.open` / `settings.close` | 无 | `{status:"ok"}` |
+| `settings.open` / `settings.close` | `settings.open`: `{tab?}`（`plugins`/`model`/`sensor`/`file`/`mcp`/`soul`/`acp`/`deploy`，缺省沿用上次标签页） | `{status:"ok"}` |
 
 **文件 / 数据**
 

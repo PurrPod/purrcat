@@ -2646,8 +2646,12 @@
       }
       case 'settings.meta':
         return { plugins: groupState.plugins, config: configByPlugin };
-      case 'settings.open':
+      case 'settings.open': {
+        // 可直接指定标签页（如部署页），未指定则沿用上次打开的标签页
+        const tab = String((payload && payload.tab) || '');
+        if (tab && CONFIG_NAV.indexOf(tab) >= 0) settingsTab = tab;
         setSettingsOpen(true); return { status: 'ok' };
+      }
       case 'settings.close':
         setSettingsOpen(false); return { status: 'ok' };
       // ---- 引用 ----
