@@ -12,6 +12,7 @@
     "predev:split": "node scripts/sync-vendor.mjs",
     "dev:split": "node scripts/dev.mjs",
     "electron:dev": "cross-env ELECTRON_DEV=1 electron .",
+    "installer:dev": "electron installer",
     "dist": "electron-builder --win",
     "lint": "echo no-root-lint"
   },

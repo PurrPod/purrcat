@@ -1,0 +1,9 @@
+{
+  "name": "purrcat-installer",
+  "version": "0.1.0",
+  "private": true,
+  "description": "PurrCat desktop installer",
+  "main": "main.js",
+  "author": "PurrPod",
+  "license": "MIT"
+}

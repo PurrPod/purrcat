@@ -67,6 +67,8 @@ build/
 # PyInstaller & Electron 构建产物
 dist/
 release/
+build_new/
+dist_new/
 
 npm-debug.log*
 yarn-debug.log*
@@ -101,3 +103,7 @@ scripts/push_pr.py
 
 # 本地配置
 purrcat.toml
+
+# 本地工具与预览缓存
+.trae-html-share-packages/
+.screenshots/

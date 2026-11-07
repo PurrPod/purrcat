@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'">
+  <title>PurrCat Setup</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="installer-app">
+    <header class="titlebar">
+      <div class="titlebar-drag">
+        <img class="titlebar-icon" src="../assets/icon.png" alt="">
+        <span class="titlebar-title" data-i18n="productName">PurrCat Setup</span>
+        <span class="preview-badge" id="previewBadge" hidden>Preview</span>
+      </div>
+      <div class="window-actions">
+        <button class="window-btn" id="themeToggle" type="button" data-i18n-title="window.toggleTheme">
+          <svg class="icon-sun" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="12" r="4"></circle>
+            <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"></path>
+          </svg>
+          <svg class="icon-moon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M20 15.2A8.5 8.5 0 0 1 8.8 4a8.5 8.5 0 1 0 11.2 11.2z"></path>
+          </svg>
+        </button>
+        <button class="window-btn" id="minimizeBtn" type="button" data-i18n-title="window.minimize">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"></path></svg>
+        </button>
+        <button class="window-btn window-btn--close" id="closeBtn" type="button" data-i18n-title="window.close">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg>
+        </button>
+      </div>
+    </header>
+
+    <nav class="steps" id="stepIndicator" hidden>
+      <ol>
+        <li data-step-index="0"><span data-i18n="steps.language"></span></li>
+        <li data-step-index="1"><span data-i18n="steps.install"></span></li>
+        <li data-step-index="2"><span data-i18n="steps.model"></span></li>
+        <li data-step-index="3"><span data-i18n="steps.complete"></span></li>
+      </ol>
+    </nav>
+
+    <main class="installer-content">
+      <section class="page welcome-page" data-page="language">
+        <div class="welcome-brand">
+          <div class="welcome-brand__identity">
+            <img class="brand-mark brand-mark--hero" src="../assets/icon.png" alt="PurrCat">
+            <h1 class="brand-name">PurrCat</h1>
+            <p class="brand-version" id="brandVersion">Version 0.1.0</p>
+          </div>
+        </div>
+        <div class="page-shell">
+          <div class="page-scroll">
+            <div class="page-container page-container--center welcome-content">
+              <div class="page-heading">
+                <h2 data-i18n="language.title"></h2>
+                <p class="page-description" data-i18n="language.description"></p>
+              </div>
+              <div class="choice-list" role="radiogroup" aria-label="Language">
+                <label class="choice-row">
+                  <input type="radio" name="language" value="zh">
+                  <span class="radio-mark"></span>
+                  <span class="choice-label">简体中文</span>
+                </label>
+                <label class="choice-row">
+                  <input type="radio" name="language" value="en">
+                  <span class="radio-mark"></span>
+                  <span class="choice-label">English</span>
+                </label>
+              </div>
+            </div>
+          </div>
+          <div class="page-footer">
+            <button class="btn btn-primary" id="languageContinue" type="button">
+              <span class="btn-label" data-i18n="language.continue"></span>
+              <svg class="btn-arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"></path></svg>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <section class="page" data-page="options" hidden>
+        <div class="page-shell">
+          <div class="page-scroll">
+            <div class="page-container">
+              <div class="page-heading">
+                <h2 data-i18n="options.title"></h2>
+              </div>
+              <section class="install-location">
+                <div class="field">
+                  <label class="field-label" for="installPath" data-i18n="options.pathLabel"></label>
+                  <div class="control-row">
+                    <input id="installPath" class="text-input" type="text" spellcheck="false" autocomplete="off">
+                    <button class="btn btn-fill" id="browseBtn" type="button" data-i18n="options.browse"></button>
+                  </div>
+                  <p class="field-error" id="pathError" hidden></p>
+                  <p class="field-notice" id="existingInstallNotice" hidden data-i18n="options.existingUpdate"></p>
+                  <div class="disk-row">
+                    <span><span data-i18n="options.required"></span>: <strong id="requiredSpace"></strong></span>
+                    <span><span data-i18n="options.available"></span>: <strong id="availableSpace"></strong></span>
+                    <span class="status-danger" id="insufficientSpace" hidden data-i18n="options.insufficientSpace"></span>
+                  </div>
+                </div>
+                <div class="field">
+                  <label class="field-label" for="dataRoot" data-i18n="options.dataRootLabel"></label>
+                  <div class="control-row">
+                    <input id="dataRoot" class="text-input" type="text" spellcheck="false" autocomplete="off">
+                    <button class="btn btn-fill" id="browseDataBtn" type="button" data-i18n="options.browse"></button>
+                  </div>
+                  <p class="field-hint" data-i18n="options.dataRootHint"></p>
+                  <div class="disk-row">
+                    <span><span data-i18n="options.available"></span>: <strong id="dataRootAvailable"></strong></span>
+                    <span class="status-danger" id="dataRootInsufficient" hidden data-i18n="options.insufficientSpace"></span>
+                  </div>
+                  <p class="field-error" id="dataRootError" hidden></p>
+                </div>
+              </section>
+              <fieldset class="install-options">
+                <legend class="section-label" data-i18n="options.optionsLabel"></legend>
+                <label class="check-row">
+                  <input type="checkbox" id="desktopShortcut" checked>
+                  <span class="check-box">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12l4 4L19 7"></path></svg>
+                  </span>
+                  <span data-i18n="options.desktopShortcut"></span>
+                </label>
+                <label class="check-row">
+                  <input type="checkbox" id="startMenu" checked>
+                  <span class="check-box">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12l4 4L19 7"></path></svg>
+                  </span>
+                  <span data-i18n="options.startMenu"></span>
+                </label>
+              </fieldset>
+              <p class="field-error install-error" id="installError" hidden></p>
+            </div>
+          </div>
+          <div class="page-footer page-footer--split">
+            <button class="btn btn-text" id="optionsBack" type="button" data-i18n="options.changeLanguage"></button>
+            <button class="btn btn-primary" id="installBtn" type="button">
+              <span class="btn-label" data-i18n="options.install"></span>
+              <svg class="btn-arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"></path></svg>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <section class="page" data-page="progress" hidden>
+        <div class="page-shell">
+          <div class="page-scroll">
+            <div class="page-container page-container--center progress-content">
+              <div class="progress-brand" id="progressBrand">
+                <span class="progress-glow"></span>
+                <img class="brand-mark brand-mark--progress" src="../assets/icon.png" alt="PurrCat">
+                <span class="progress-status-icon" id="progressStatusIcon">
+                  <svg class="status-success" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12l4 4L19 7"></path></svg>
+                  <svg class="status-error" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg>
+                </span>
+              </div>
+              <div class="page-heading progress-heading">
+                <h2 id="progressTitle" data-i18n="progress.title"></h2>
+                <p class="page-description" id="progressDescription" data-i18n="progress.description"></p>
+              </div>
+              <div class="progress-block" id="progressBlock">
+                <div class="progress-meta">
+                  <span id="progressStage"></span>
+                  <span id="progressPercent">0%</span>
+                </div>
+                <div class="progress-track"><span class="progress-fill" id="progressFill"></span></div>
+              </div>
+              <p class="progress-error" id="progressError" hidden></p>
+            </div>
+          </div>
+          <div class="page-footer page-footer--end">
+            <button class="btn btn-fill" id="progressBack" type="button" hidden data-i18n="progress.backOptions"></button>
+            <button class="btn btn-primary" id="progressRetry" type="button" hidden data-i18n="progress.retry"></button>
+            <button class="btn btn-primary" id="progressContinue" type="button" hidden>
+              <span class="btn-label" data-i18n="progress.continue"></span>
+              <svg class="btn-arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"></path></svg>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <section class="page" data-page="model" hidden>
+        <div class="page-shell">
+          <div class="page-scroll">
+            <div class="page-container">
+              <div class="page-heading">
+                <h2 data-i18n="model.title"></h2>
+                <p class="page-description" data-i18n="model.description"></p>
+              </div>
+              <div class="form form--horizontal">
+                <div class="field field--horizontal">
+                  <label class="field-label" for="providerSelect" data-i18n="model.providerLabel"></label>
+                  <div class="field-control">
+                    <div class="select-wrap">
+                      <select id="providerSelect" class="select"></select>
+                      <svg class="select-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg>
+                    </div>
+                  </div>
+                </div>
+                <div class="field field--horizontal">
+                  <label class="field-label" for="apiKeyInput" data-i18n="model.apiKeyLabel"></label>
+                  <div class="field-control">
+                    <div class="control-row">
+                      <input id="apiKeyInput" class="text-input" type="password" autocomplete="off" spellcheck="false">
+                      <button class="btn btn-text btn-sm key-toggle" id="toggleKeyBtn" type="button" data-i18n="model.show"></button>
+                    </div>
+                  </div>
+                </div>
+                <div class="field field--horizontal">
+                  <label class="field-label" for="modelSelect" data-i18n="model.modelLabel"></label>
+                  <div class="field-control">
+                    <div class="select-wrap" id="modelSelectWrap">
+                      <select id="modelSelect" class="select"></select>
+                      <svg class="select-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg>
+                    </div>
+                    <input id="modelCustomInput" class="text-input" type="text" spellcheck="false" autocomplete="off" hidden data-i18n-placeholder="model.customModelPlaceholder">
+                  </div>
+                </div>
+                <details class="disclosure" id="advancedDisclosure">
+                  <summary>
+                    <svg class="disclosure-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg>
+                    <span data-i18n="model.advanced"></span>
+                  </summary>
+                  <div class="disclosure-body">
+                    <div class="field field--horizontal">
+                      <label class="field-label" for="baseUrlInput" data-i18n="model.baseUrlLabel"></label>
+                      <div class="field-control">
+                        <input id="baseUrlInput" class="text-input" type="text" spellcheck="false" autocomplete="off">
+                        <p class="field-hint" data-i18n="model.baseUrlHint"></p>
+                      </div>
+                    </div>
+                  </div>
+                </details>
+              </div>
+              <div class="model-test">
+                <button class="btn btn-fill btn-sm" id="testModelBtn" type="button">
+                  <span class="btn-label" data-i18n="model.test"></span>
+                  <span class="spinner" hidden></span>
+                </button>
+                <span class="test-status" id="testStatus" hidden></span>
+              </div>
+              <p class="field-error install-error" id="modelError" hidden></p>
+            </div>
+          </div>
+          <div class="page-footer page-footer--split">
+            <button class="btn btn-text" id="skipModelBtn" type="button" data-i18n="model.skip"></button>
+            <button class="btn btn-primary" id="modelNextBtn" type="button" disabled>
+              <span class="btn-label" data-i18n="model.next"></span>
+              <svg class="btn-arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"></path></svg>
+              <span class="spinner" hidden></span>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <section class="page" data-page="finish" hidden>
+        <div class="page-shell">
+          <div class="page-scroll">
+            <div class="page-container">
+              <div class="finish-brand">
+                <img class="brand-mark brand-mark--finish" src="../assets/icon.png" alt="PurrCat">
+                <span class="finish-check">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12l4 4L19 7"></path></svg>
+                </span>
+              </div>
+              <div class="page-heading finish-heading">
+                <h2 data-i18n="finish.title"></h2>
+                <p class="page-description" id="finishDescription"></p>
+              </div>
+              <div class="summary">
+                <div class="summary-row">
+                  <span class="summary-label" data-i18n="finish.location"></span>
+                  <span class="summary-value summary-path" id="finishPath"></span>
+                </div>
+                <div class="summary-row">
+                  <span class="summary-label" data-i18n="finish.dataRoot"></span>
+                  <span class="summary-value summary-path" id="finishDataRoot"></span>
+                </div>
+                <div class="summary-row">
+                  <span class="summary-label" data-i18n="finish.model"></span>
+                  <span class="summary-value" id="finishModel"></span>
+                </div>
+              </div>
+              <button class="btn btn-text btn-sm finish-open" id="openFolderBtn" type="button" data-i18n="finish.openFolder"></button>
+              <p class="field-error install-error" id="finishError" hidden></p>
+            </div>
+          </div>
+          <div class="page-footer page-footer--split">
+            <label class="check-row">
+              <input type="checkbox" id="launchAfterInstall" checked>
+              <span class="check-box">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12l4 4L19 7"></path></svg>
+              </span>
+              <span data-i18n="finish.launch"></span>
+            </label>
+            <button class="btn btn-primary" id="finishBtn" type="button">
+              <span class="btn-label" data-i18n="finish.complete"></span>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12l4 4L19 7"></path></svg>
+              <span class="spinner" hidden></span>
+            </button>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
