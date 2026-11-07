@@ -2145,6 +2145,60 @@
   });
   sendBtn.addEventListener('click', send);
 
+  // ---------- 粘贴/拖拽文件 → 文件引用 ----------
+  function attachFiles(files) {
+    Array.prototype.forEach.call(files || [], function (file) {
+      // 拖拽进来的本地文件自带绝对路径，直接引用，不复制
+      if (file.path) {
+        addQuote('file-quote', 'user quote the file：' + file.path, file.path.split(/[\\/]/).pop());
+        return;
+      }
+      // 剪贴板里的图片/文件没有路径，先落到 buffer 再用返回路径引用
+      var fd = new FormData();
+      fd.append('file', file, file.name || 'clipboard.png');
+      fetch('/api/system/agent/upload', { method: 'POST', body: fd })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (!d || !d.saved_path) throw new Error('上传失败');
+          addQuote('file-quote', 'user quote the file：' + d.saved_path, d.saved_path.split(/[\\/]/).pop());
+        })
+        .catch(function (e) { alert('附件上传失败: ' + (e.message || e)); });
+    });
+  }
+  input.addEventListener('paste', function (e) {
+    var dt = e.clipboardData;
+    if (!dt) return;
+    var files = Array.prototype.slice.call(dt.files || []);
+    if (!files.length) {
+      files = Array.prototype.slice.call(dt.items || [])
+        .filter(function (it) { return it.kind === 'file'; })
+        .map(function (it) { return it.getAsFile(); })
+        .filter(Boolean);
+    }
+    if (!files.length) return;
+    e.preventDefault();
+    attachFiles(files);
+  });
+  var barWrap = input.closest('.bar-wrap');
+  ['dragenter', 'dragover'].forEach(function (ev) {
+    barWrap.addEventListener(ev, function (e) {
+      if (e.dataTransfer && Array.prototype.indexOf.call(e.dataTransfer.types || [], 'Files') >= 0) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    });
+  });
+  barWrap.addEventListener('drop', function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+    attachFiles(e.dataTransfer.files);
+  });
+  // 拖到输入框以外时阻止 Electron 把主窗口导航到 file://
+  window.addEventListener('dragover', function (e) {
+    if (e.dataTransfer && Array.prototype.indexOf.call(e.dataTransfer.types || [], 'Files') >= 0) e.preventDefault();
+  });
+  window.addEventListener('drop', function (e) { e.preventDefault(); });
+
   // ---------- 空态（欢迎语/居中）----------
   // 空态由宿主 layout.empty 下发：无活动会话或无消息 → 隐藏历史列表、输入区居中欢迎
   function setCentered(empty) { document.body.classList.toggle('centered', !!empty); }
