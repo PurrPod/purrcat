@@ -463,6 +463,14 @@ body.settings-open [data-layer="settings"] { display: flex; }
 .plugin-picker .pk-area { font-size: 10.5px; color: var(--wm-label-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .plugin-picker .pk-row .switch { flex: none; }
 .pk-hint { font-size: 10.5px; color: var(--wm-label-dim); line-height: 1.4; }
+/* sensor 字段表单的 kv / list 行编辑器 */
+.cfg-field .sensor-rows { display: flex; flex-direction: column; gap: 6px; }
+.cfg-field .sensor-row { display: flex; align-items: center; gap: 6px; }
+.cfg-field .sensor-row .cfg-input { flex: 1; min-width: 0; }
+.cfg-field .sensor-row .btn.sm { flex: none; padding: 4px 8px; font-size: 11px; }
+.cfg-field .sensor-add { align-self: flex-start; }
+.cfg-field .range-val { font-size: 11px; color: var(--wm-label-dim); }
+.cfg-tip { font-size: 10.5px; color: var(--wm-label-dim); line-height: 1.4; }
 /* 滑轨自定义：未拉部分白色，已拉部分由 cfgRangeField 注入强调色渐变 */
 .cfg-range { -webkit-appearance: none; appearance: none; width: 100%; height: 6px; border-radius: 999px; background: #fff; cursor: pointer; outline: none; }
 .cfg-range::-webkit-slider-runnable-track { height: 6px; border-radius: 999px; background: transparent; }

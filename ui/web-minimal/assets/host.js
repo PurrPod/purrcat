@@ -1498,6 +1498,280 @@
       .then(function (d) { const m = {}; ((d && d.running) || []).forEach(function (s) { m[s.name] = s; }); return m; })
       .catch(function () { return {}; });
   }
+  // ---- sensor 字段表单：按 config.json 的可选 fields 声明渲染 ----
+  // 所有值最终都落进 env（环境变量只能是字符串）：
+  //   number/switch -> "123" / "true"；kv/list -> JSON 字符串，sensor 侧 json.loads 读取。
+  // fields 只是"声明"，不执行任何脚本；无 fields 的 sensor 仍走原始 JSON 编辑。
+  function sensorJsonValue(raw, fallback) {
+    if (!raw) return fallback;
+    try {
+      const v = JSON.parse(raw);
+      return (v && typeof v === 'object') ? v : fallback;
+    } catch (e) { return fallback; }
+  }
+  function sensorFieldLabel(text) {
+    const lb = HOST.document.createElement('label');
+    lb.className = 'cfg-label';
+    lb.textContent = text;
+    return lb;
+  }
+  function sensorMiniBtn(text, title, onClick, cls) {
+    const b = HOST.document.createElement('button');
+    b.type = 'button';
+    b.className = 'btn sm' + (cls ? ' ' + cls : '');
+    b.textContent = text;
+    if (title) b.title = title;
+    b.addEventListener('click', onClick);
+    return b;
+  }
+  function renderSensorFields(body, sensorCfg, save) {
+    const fields = Array.isArray(sensorCfg.fields) ? sensorCfg.fields : [];
+    const env = (sensorCfg.env && typeof sensorCfg.env === 'object') ? sensorCfg.env : {};
+    const grid = HOST.document.createElement('div');
+    grid.className = 'cfg-grid';
+    const readers = [];
+
+    fields.forEach(function (field) {
+      const key = field.key;
+      if (!key) return;
+      const type = field.type || 'text';
+      const raw = env[key] == null ? '' : String(env[key]);
+      const label = field.label || key;
+      let read = function () { return raw; };
+
+      if (type === 'switch') {
+        const row = HOST.document.createElement('div');
+        row.className = 'cfg-field switch-row';
+        row.appendChild(sensorFieldLabel(label));
+        const sw = HOST.document.createElement('label');
+        sw.className = 'switch';
+        sw.innerHTML = '<input type="checkbox"><span class="slider"></span>';
+        const chk = sw.querySelector('input');
+        let on = raw === 'true' || raw === '1';
+        chk.checked = on;
+        chk.addEventListener('change', function () { on = chk.checked; });
+        row.appendChild(sw);
+        grid.appendChild(row);
+        read = function () { return on ? 'true' : 'false'; };
+      } else {
+        const f = HOST.document.createElement('div');
+        f.className = 'cfg-field' + ((type === 'kv' || type === 'list' || type === 'textarea') ? ' wide' : '');
+        f.appendChild(sensorFieldLabel(label));
+
+        if (type === 'select') {
+          const sel = HOST.document.createElement('select');
+          sel.className = 'cfg-input';
+          (field.options || []).forEach(function (op) {
+            const o = HOST.document.createElement('option');
+            const val = (op && typeof op === 'object') ? op.value : op;
+            o.value = String(val);
+            o.textContent = (op && typeof op === 'object') ? (op.label || val) : op;
+            sel.appendChild(o);
+          });
+          const init = raw || (field.default != null ? String(field.default) : '');
+          sel.value = init;
+          sel.addEventListener('change', function () { read = function () { return sel.value; }; });
+          read = function () { return sel.value; };
+          f.appendChild(sel);
+        } else if (type === 'number' || type === 'slider') {
+          const min = field.min != null ? Number(field.min) : 0;
+          const max = field.max != null ? Number(field.max) : 100;
+          const step = field.step != null ? Number(field.step) : 1;
+          let init = raw === '' ? (field.default != null ? Number(field.default) : min) : Number(raw);
+          if (!isFinite(init)) init = min;
+          if (type === 'slider') {
+            const rng = HOST.document.createElement('input');
+            rng.type = 'range';
+            rng.className = 'cfg-range';
+            rng.min = min; rng.max = max; rng.step = step; rng.value = init;
+            const valEl = HOST.document.createElement('div');
+            valEl.className = 'range-val';
+            const paint = function () {
+              const span = (max - min) || 1;
+              const pct = Math.max(0, Math.min(100, (Number(rng.value) - min) / span * 100));
+              rng.style.background = 'linear-gradient(90deg, var(--wm-accent) 0 ' + pct + '%, #fff ' + pct + '% 100%)';
+              valEl.textContent = rng.value + (field.unit ? ' ' + field.unit : '');
+            };
+            rng.addEventListener('input', function () { paint(); read = function () { return String(Number(rng.value)); }; });
+            read = function () { return String(Number(rng.value)); };
+            paint();
+            f.appendChild(rng);
+            f.appendChild(valEl);
+          } else {
+            const num = HOST.document.createElement('input');
+            num.type = 'number';
+            num.className = 'cfg-input';
+            num.min = min; num.max = max; num.step = step;
+            num.value = raw === '' ? (field.default != null ? field.default : '') : raw;
+            read = function () {
+              if (num.value === '' && field.default != null) return String(field.default);
+              return num.value;
+            };
+            f.appendChild(num);
+          }
+        } else if (type === 'kv') {
+          const dict = sensorJsonValue(raw, {});
+          const rows = Object.keys(dict).map(function (k) {
+            return { k: k, v: dict[k] == null ? '' : String(dict[k]) };
+          });
+          const wrap = HOST.document.createElement('div');
+          wrap.className = 'sensor-rows';
+          function draw() {
+            wrap.innerHTML = '';
+            rows.forEach(function (row, i) {
+              const line = HOST.document.createElement('div');
+              line.className = 'sensor-row';
+              const ki = HOST.document.createElement('input');
+              ki.className = 'cfg-input';
+              ki.placeholder = field.key_label || '键';
+              ki.value = row.k;
+              ki.addEventListener('input', function () { row.k = ki.value; });
+              const vi = HOST.document.createElement('input');
+              vi.className = 'cfg-input';
+              vi.placeholder = field.value_label || '值';
+              vi.value = row.v;
+              vi.addEventListener('input', function () { row.v = vi.value; });
+              line.appendChild(ki);
+              line.appendChild(vi);
+              line.appendChild(sensorMiniBtn('×', '删除这条', function () { rows.splice(i, 1); draw(); }, 'sensor-del'));
+              wrap.appendChild(line);
+            });
+            if (!rows.length) {
+              const emp = HOST.document.createElement('div');
+              emp.className = 'pk-hint';
+              emp.textContent = '还没有条目';
+              wrap.appendChild(emp);
+            }
+            wrap.appendChild(sensorMiniBtn('+ 添加', '', function () { rows.push({ k: '', v: '' }); draw(); }, 'sensor-add'));
+          }
+          draw();
+          f.appendChild(wrap);
+          read = function () {
+            const out = {};
+            rows.forEach(function (row) {
+              const k = String(row.k).trim();
+              if (k) out[k] = row.v;
+            });
+            return JSON.stringify(out);
+          };
+        } else if (type === 'list') {
+          const itemFields = Array.isArray(field.item_fields) ? field.item_fields : null;
+          const arr = sensorJsonValue(raw, []);
+          const rows = arr.map(function (item) {
+            if (itemFields) {
+              const obj = (item && typeof item === 'object') ? item : {};
+              return { vals: itemFields.map(function (sub) { return obj[sub.key] == null ? '' : String(obj[sub.key]); }) };
+            }
+            return { vals: [String(item == null ? '' : item)] };
+          });
+          const wrap = HOST.document.createElement('div');
+          wrap.className = 'sensor-rows';
+          function draw() {
+            wrap.innerHTML = '';
+            rows.forEach(function (row, i) {
+              const line = HOST.document.createElement('div');
+              line.className = 'sensor-row';
+              const subs = itemFields || [{ key: '', placeholder: field.item_placeholder || '值' }];
+              subs.forEach(function (sub, j) {
+                const inp = HOST.document.createElement('input');
+                inp.className = 'cfg-input';
+                inp.placeholder = sub.placeholder || sub.label || sub.key || '值';
+                inp.value = row.vals[j] || '';
+                inp.addEventListener('input', function () { row.vals[j] = inp.value; });
+                line.appendChild(inp);
+              });
+              line.appendChild(sensorMiniBtn('×', '删除这条', function () { rows.splice(i, 1); draw(); }, 'sensor-del'));
+              wrap.appendChild(line);
+            });
+            if (!rows.length) {
+              const emp = HOST.document.createElement('div');
+              emp.className = 'pk-hint';
+              emp.textContent = '还没有条目';
+              wrap.appendChild(emp);
+            }
+            wrap.appendChild(sensorMiniBtn('+ 添加', '', function () {
+              rows.push({ vals: (itemFields || [1]).map(function () { return ''; }) });
+              draw();
+            }, 'sensor-add'));
+          }
+          draw();
+          f.appendChild(wrap);
+          read = function () {
+            const out = [];
+            rows.forEach(function (row) {
+              if (itemFields) {
+                const obj = {};
+                let any = false;
+                itemFields.forEach(function (sub, j) {
+                  const v = row.vals[j] || '';
+                  obj[sub.key] = v;
+                  if (v.trim()) any = true;
+                });
+                if (any) out.push(obj);
+              } else if ((row.vals[0] || '').trim()) {
+                out.push(row.vals[0]);
+              }
+            });
+            return JSON.stringify(out);
+          };
+        } else if (type === 'textarea') {
+          const ta = HOST.document.createElement('textarea');
+          ta.className = 'cfg-input settings-json';
+          ta.style.minHeight = '96px';
+          ta.value = raw;
+          ta.addEventListener('input', function () { read = function () { return ta.value; }; });
+          read = function () { return ta.value; };
+          f.appendChild(ta);
+        } else {
+          const inp = HOST.document.createElement('input');
+          inp.type = (type === 'password') ? 'password' : (type === 'url' ? 'url' : 'text');
+          inp.className = 'cfg-input';
+          inp.spellcheck = false;
+          inp.placeholder = field.placeholder || '';
+          inp.value = raw === '' && field.default != null ? String(field.default) : raw;
+          inp.addEventListener('input', function () { read = function () { return inp.value; }; });
+          read = function () { return inp.value; };
+          f.appendChild(inp);
+        }
+
+        if (field.help) {
+          const hint = HOST.document.createElement('div');
+          hint.className = 'pk-hint';
+          hint.textContent = field.help;
+          f.appendChild(hint);
+        }
+        grid.appendChild(f);
+      }
+
+      readers.push({ field: field, key: key, read: read });
+    });
+
+    body.appendChild(grid);
+
+    const saveBtn = HOST.document.createElement('button');
+    saveBtn.className = 'btn cfg-save';
+    saveBtn.textContent = '保存';
+    saveBtn.addEventListener('click', function () {
+      const nextEnv = Object.assign({}, env);
+      for (var i = 0; i < readers.length; i++) {
+        const r = readers[i];
+        const v = r.read();
+        if (r.field.required && !String(v).trim()) {
+          HOST.alert('请填写：' + (r.field.label || r.key));
+          return;
+        }
+        nextEnv[r.key] = v;
+      }
+      save(nextEnv);
+    });
+    body.appendChild(saveBtn);
+
+    const tip = HOST.document.createElement('div');
+    tip.className = 'cfg-tip';
+    tip.textContent = '保存后会自动重载 sensor 进程；若仍未生效，可点顶部「重载到内存」再试。';
+    body.appendChild(tip);
+  }
+
   function renderGenericCards(main, key) {
     const isSensor = key === 'sensor';
     Promise.all([cfgData(key), isSensor ? sensorRuntimeMap() : Promise.resolve({})]).then(function (res) {
@@ -1617,6 +1891,28 @@
         if (!isOpen) return;
         const body = HOST.document.createElement('div');
         body.className = 'cfg-card-body';
+        const rawModeMap = cfgState.rawSensor || (cfgState.rawSensor = {});
+        const hasSchema = isSensor && val && typeof val === 'object'
+          && Array.isArray(val.fields) && val.fields.length > 0;
+
+        // 有 fields 声明：渲染成表单；否则（或切到原始模式）走 JSON 文本域
+        if (hasSchema && !rawModeMap[k]) {
+          renderSensorFields(body, val, function (nextEnv) {
+            val.env = nextEnv;
+            cfgState.editStr[key + '::' + k] = JSON.stringify(val, null, 2);
+            putCfg(key, obj)
+              .then(function () { delete cfgState.data[key]; HOST.alert('已保存'); rerenderConfig(main, key); })
+              .catch(function (e) { HOST.alert('保存失败：' + (e && e.message || '')); });
+          });
+          body.appendChild(sensorMiniBtn('编辑原始 JSON', '字段表单覆盖不到的高级项可切到原始 JSON', function () {
+            cfgState.editStr[key + '::' + k] = JSON.stringify(val, null, 2);
+            rawModeMap[k] = true;
+            rerenderConfig(main, key);
+          }, 'sensor-raw'));
+          card.appendChild(body);
+          return;
+        }
+
         const ta = HOST.document.createElement('textarea');
         ta.className = 'settings-json';
         ta.style.minHeight = '140px';
@@ -1634,6 +1930,12 @@
           putCfg(key, obj).then(function () { rerenderConfig(main, key); }).catch(function (e) { HOST.alert('保存失败：' + (e && e.message || '')); });
         });
         body.appendChild(save);
+        if (hasSchema) {
+          body.appendChild(sensorMiniBtn('返回字段表单', '', function () {
+            rawModeMap[k] = false;
+            rerenderConfig(main, key);
+          }, 'sensor-form'));
+        }
         card.appendChild(body);
       });
     });
