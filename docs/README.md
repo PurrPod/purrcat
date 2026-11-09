@@ -1,6 +1,15 @@
 # PurrCat 文档中心
 
-本目录是 PurrCat 的开发者文档入口，分为两大板块：
+本目录是 PurrCat 的开发者文档入口，分为三大板块：
+
+## 开发指南（`docs/develop/`）
+
+技术栈、目录地图、运行拓扑、启动与验证命令，以及前端 / 后端 / 桌面壳的改动指南。
+
+- [开发指南总览](develop/README.md)
+  - [后端开发](develop/backend.md)
+  - [前端开发](develop/frontend.md)
+  - [桌面壳与安装器](develop/installer.md)
 
 ## API 参考（`docs/api/`）
 
