@@ -2,13 +2,6 @@ name: "default"
 description: "default system loop"
 path: "agent_vm"
 loop_end_max_retry: 3
-trigger:
-  - cron:
-      time: "08:08"
-      injection: "【Demo】闹钟响了"
-  - cron:
-      time: "12:00"
-      injection: "【Demo】该吃饭了"
 hooks:
   on_build_system_prompt:
     - injection:

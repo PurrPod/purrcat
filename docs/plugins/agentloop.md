@@ -23,10 +23,6 @@ description: 中文一句话描述
 description-en: One-line English description.
 path: agent_vm                # 执行环境标识（保持默认即可）
 loop_end_max_retry: 3         # on_loop_end 检查未通过时的最大重试轮数
-trigger:                      # 定时触发声明（可选）
-  - cron:
-      time: "08:08"
-      injection: "【Demo】闹钟响了"
 hooks:
   on_build_system_prompt:
     - injection: { content: "你是一个严谨的助手。" }
@@ -47,12 +43,7 @@ hooks:
 | `description-en` | 是 | 英文描述 |
 | `path` | 是 | 执行环境，保持 `agent_vm` |
 | `loop_end_max_retry` | 否 | `on_loop_end` 检查未通过时的最大重试轮数 |
-| `trigger` | 否 | 定时触发声明（见下）|
 | `hooks` | 是 | 阶段 → hook 列表的映射 |
-
-### `trigger` 结构
-
-数组，元素形如 `{ "cron": { "time": "HH:MM", "injection": "文本" } }`：到点向当前会话注入一条消息（定时唤醒类场景）。
 
 ---
 
