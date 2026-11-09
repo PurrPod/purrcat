@@ -56,8 +56,8 @@ jobs:
             echo "python_changed=false" >> "$GITHUB_OUTPUT"
           fi
           
-          # Electron 桌面端：electron/ 目录 + 根 package.json/package-lock.json（electron-builder 配置在此）
-          if echo "$CHANGED_FILES" | grep -qE "^(electron/|package\.json|package-lock\.json)"; then
+          # Electron 桌面端 + 宿主前端：electron/ 目录 + web-minimal（宿主源码与构建产物）+ 根 package.json/package-lock.json
+          if echo "$CHANGED_FILES" | grep -qE "^(electron/|ui/web-minimal/|package\.json|package-lock\.json|tsconfig\.json)"; then
             echo "electron_changed=true" >> "$GITHUB_OUTPUT"
           else
             echo "electron_changed=false" >> "$GITHUB_OUTPUT"
@@ -87,6 +87,15 @@ jobs:
         run: |
           node --check electron/main.js
           node --check electron/preload.js
+
+      - name: Typecheck Host Sources
+        run: npm run typecheck
+
+      - name: Build Host Bundle
+        run: npm run build:ui
+
+      - name: Host Bundle In Sync
+        run: git diff --exit-code -- ui/web-minimal/assets/host.js ui/web-minimal/assets/host.js.map
 
       - name: Package Config Sanity (dist config parses, extraResources resolvable)
         run: |
