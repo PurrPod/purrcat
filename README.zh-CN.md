@@ -118,6 +118,12 @@ PurrCat 希望提供一个可定制、可扩展、可持续演进的 Agent 底�
 
 ---
 
+## 参与贡献
+
+贡献指南见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+
+如遇安装、配置出错，请提交 issue 说明遇到的问题，我们看到后会提供解决方案。
+
 ## 致谢
 
 - [zhenghuanle](https://github.com/zhenghuanle)：测试从零开始的安装流程。

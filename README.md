@@ -118,6 +118,12 @@ From how information enters the Agent, to how tasks execute, how memory is organ
 
 ---
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines.
+
+If you run into installation or configuration problems, open an issue and describe what happened. We will look into it and provide a solution.
+
 ## Acknowledgments
 
 - [zhenghuanle](https://github.com/zhenghuanle): tested the installation flow from scratch.
