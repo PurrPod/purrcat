@@ -2,7 +2,7 @@
 
 > 落地目录：`~/.purrcat/webmin-plugins/<id>/` ｜ 市场仓库：`PurrPod/ui-plugins` ｜ 宿主：`ui/web-minimal`（`/minimal`）｜ 相关接口：[../api/webmin.md](../api/webmin.md)
 
-UI Plugin 是极简模式（`web-minimal`）的界面插件。宿主是**纯静态页面**，插件以 **iframe** 挂载、按 `slot.area` 入驻不同区域，通过 **postMessage 的 `callAction` 动作总线**与宿主通信。
+UI Plugin 以 **iframe** 入驻极简模式（`web-minimal`）宿主的 `slot.area` 区域，通过 **postMessage 的 `callAction` 动作总线**与纯静态宿主通信。
 
 ---
 
@@ -207,7 +207,7 @@ window.parent.postMessage({ type: 'callAction', id: 'req-1', actionId: 'config.g
 | `browser.openExternal` | `{url}` | `{status:"ok"}`（系统浏览器打开） |
 | `browser.openUrl` | `{url}` | 统一链接路由结果（http → 内置浏览器） |
 
-> 上表覆盖插件常用动作，可直接照用。完整 / 权威实现见宿主应用目录下的 `ui/web-minimal/assets/host.js` 的 `dispatch()`；
+> 完整 / 权威实现见宿主源码 `ui/web-minimal/src/host/actions.ts` 的 `dispatch()`（由 esbuild 打包为 `assets/host.js`）；
 > 宿主 HTTP 接口清单见 [../api/webmin.md](../api/webmin.md)。
 >
 > **文件与上传**：宿主 / 前端 / 后端同机运行，`dialog.files` 返回的是绝对路径，后端可直接 `fs` 读取（不必读成 base64 再走 `plugin.rpc`）；要交给 Agent（大模型）读时用 `POST /api/system/agent/upload`（落盘 `agent_vm/.buffer/upload`）。

@@ -2,7 +2,6 @@
 
 > 源码：`src/server/api/chat.py` ｜ 前缀：`/api` ｜ 端点：18 个
 
-涵盖会话管理（`/api/sessions*`）、对话受理（`/api/chat*`）与 Agent Token 用量（`/api/agent/token`）。
 其中发送消息、批量发送、记忆压缩、记忆打断等为**后台异步**接口，立即返回受理态，实际进度走 `/api/sessions/{session_id}/status` 轮询。
 会话支持主体 + 子分支结构：`main` 为主干，其它 `branch_id` 为隔离子分支，历史读取与删除均按分支区分。
 
@@ -37,8 +36,6 @@ curl 'http://127.0.0.1:8000/api/sessions'
 ---
 
 ## POST `/api/sessions/new`
-
-新建一个会话，可选指定别名、Agent Loop（paradigm）与所属项目。
 
 **请求**
 
@@ -225,8 +222,6 @@ curl -X POST 'http://127.0.0.1:8000/api/sessions/session_xxx/checkout'
 
 ## POST `/api/sessions/{session_id}/branch`
 
-以指定会话为起点新建一个子分支。
-
 新建的分支会话会继承源会话所属项目（写入 `meta.json` 与 `index.json` 的 `project_id`），因此会直接归档在源会话所在的项目下。未显式传入 `alias` 时，分支命名为「源会话名（分支）」。
 
 **请求**
@@ -303,8 +298,6 @@ curl -X POST 'http://127.0.0.1:8000/api/sessions/session_xxx/paradigm' -H 'Conte
 
 ## DELETE `/api/sessions/{session_id}`
 
-删除指定会话。
-
 **请求**
 
 | 参数 | 位置 | 类型 | 必填 | 说明 |
@@ -353,8 +346,6 @@ curl -X DELETE 'http://127.0.0.1:8000/api/sessions/session_xxx/branches/session_
 ---
 
 ## POST `/api/chat`
-
-向指定会话推送一条用户消息，交由后台 Agent 异步处理。
 
 **请求**
 

@@ -2,7 +2,7 @@
 
 > 落地目录：`~/.purrcat/sensor/<name>.py` ｜ 运行时配置：`~/.purrcat/activate_sensor.json` ｜ 市场仓库：`PurrPod/sensors`
 
-Sensor 是 PurrCat Agent 的「感官中枢」：把外部世界的事件（飞书消息、微信消息、RSS 更新、闹钟到点…）推送给 Agent，并可将 Agent 的回复发回外部渠道。每个 Sensor 都是一个**独立的常驻 Python 子进程**。
+Sensor 把外部事件（飞书/微信消息、RSS 更新、闹钟等）推给 Agent，并可把回复发回外部渠道。每个 Sensor 是**独立常驻 Python 子进程**。
 
 ---
 
@@ -39,7 +39,7 @@ sensors/<sensor-name>/          # 市场仓库中的单元
 
 ### `env` 与凭证铁律
 
-**代码里 `os.environ.get("X")` 读到的每个键，都必须在 `env` 中声明**。运行时的实际值有两种来源：用户在前端配置中心 → Sensor 设置里填写，或在进化工厂沙盒的 `sensor_config.json` 里由 Agent 引导用户获取后直接填好——合并时会原样写入正式配置并注入，用户无需再重填（沙盒里留空的键会保留正式配置里的旧值）。禁止硬编码密钥。
+**代码里 `os.environ.get("X")` 读到的每个键，都必须在 `env` 中声明**。实际值由用户在前端配置中心填写，或在进化工厂沙盒的 `sensor_config.json` 中填好（合并规则见第 6 节）。禁止硬编码密钥。
 
 ---
 
@@ -148,8 +148,6 @@ stdio Sensor **固定当前活跃会话**——网关在你发 `session/new` 时
 1. Agent 先引导用户到外部平台获取所需凭证（App Secret、API Token 等）；
 2. 拿到凭证后，由 Agent（或用户）**直接在沙盒的 `sensor_config.json` 里把 `env` 填成真实值**；
 3. 合并时系统会把沙盒里的 `env` 原样写进 `activate_sensor.json` 并注入环境变量——**用户无需再去配置中心重填**；沙盒里留空的键会保留正式配置里已有的旧值，不会把用户之前填好的凭证清空（这条只兜底**升级**已有 Sensor 的情况；新 Sensor 留空即漏配，会一启动就报错）。
-
-因此 Sensor 代码本身只需：从环境变量读取凭证（禁止硬编码密钥）；缺凭证或连接失败时**上报失败详情**（含凭证名）并保持进程存活；连接成功时**保持静默**。
 
 ---
 

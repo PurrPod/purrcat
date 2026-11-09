@@ -2,7 +2,7 @@
 
 > 源码：`src/server/api/acp.py` ｜ 前缀：`/acp` ｜ 端点：4 个
 
-面向外部频道（Zed 转接 sensor / HTTP 版 sensor）的传输入口，是鉴权薄壳。词汇分发与翻译的唯一实现是 `src/server/acp/dispatch.py`；stdio 版 sensor 由 `src/sensor/bridge.py` 同进程直调 dispatch，不经本端点。
+面向外部频道（Zed 转接 sensor / HTTP 版 sensor）的传输入口。词汇分发与翻译的唯一实现是 `src/server/acp/dispatch.py`；stdio 版 sensor 由 `src/sensor/bridge.py` 同进程直调 dispatch，不经本端点。
 
 **约定**
 
@@ -14,7 +14,7 @@
 
 ## POST `/acp/rpc`
 
-JSON-RPC 2.0 单条分发（v1 不做 batch），直接调用 dispatch，返回 dispatch 的 JSON-RPC 结果。
+JSON-RPC 2.0 单条分发（v1 不做 batch），直接调用 dispatch。
 
 **请求**
 
@@ -44,7 +44,7 @@ curl -X POST 'http://127.0.0.1:8000/acp/rpc' \
 
 ## GET `/acp/stream`
 
-SSE 事件流：按 ACP `session` 订阅对应 purrcat 会话的事件流，将内部事件翻译为 ACP 词汇后推送。每 15 秒无事件时发送一行 `: keepalive` 心跳。支持 `session/load` 前置流场景（编辑器先连流再发 load）：此时映射尚未建立，只要该 id 存在于 purrcat 会话列表即放行订阅。
+按 ACP `session` 订阅对应 purrcat 会话的事件流，将内部事件翻译为 ACP 词汇后推送。每 15 秒无事件时发送一行 `: keepalive` 心跳。支持 `session/load` 前置流场景（编辑器先连流再发 load）：此时映射尚未建立，只要该 id 存在于 purrcat 会话列表即放行订阅。
 
 **请求**
 

@@ -170,8 +170,6 @@ curl -X POST 'http://127.0.0.1:8000/api/system/env/install' \
 
 ## GET `/api/system/env/install/status`
 
-查询环境安装进度。
-
 **请求**
 
 无请求参数。

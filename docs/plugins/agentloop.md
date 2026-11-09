@@ -2,7 +2,7 @@
 
 > 落地目录：`~/.purrcat/paradigms/` ｜ 市场仓库：`PurrPod/agentloops` ｜ 相关接口：[../api/paradigms.md](../api/paradigms.md)
 
-AgentLoop（范式 / PARADIGM）是 PurrCat Agent 的「主循环范式」：用一份 YAML 声明**每一轮循环在哪些阶段（stage）注入什么内容、执行什么检查**，从而定制 Agent 的思考与行动流程。
+AgentLoop（范式 / PARADIGM）用一份 YAML 声明**每轮循环在各阶段（stage）注入什么、执行什么检查**，定制 Agent 的思考与行动流程。
 
 ---
 
@@ -69,8 +69,6 @@ hooks:
 | `on_tool_calling` | 即将调用工具时 | `tool_use_check`、`injection` |
 | `on_loop_end` | 一轮循环结束判定时 | `tool_use_check`、`file_operation` |
 
-> `keyword_check`（in检查）只检查「本批收到的输入」是否含关键词，因此仅在带 `received_messages` 的 `on_input_received` 阶段有意义；它不拦截输入，唯一产出就是提示词——两个提示词都留空则等于什么都没做。
-
 > `on_build_system_prompt` 的**作用域**：主 Agent 会话里它是 system 头部；但在 **graph（任务图）的 `agent_loop` 节点**里，它的输出会被转成一条 **user** 消息、只在「从零开始的会话」时追加到上游输入末尾（不占 system 位、不破坏 KV Cache）。两个场景都照常写这个阶段即可，无需为 graph 改写范式。
 
 ---
@@ -119,8 +117,6 @@ hooks:
   | `on_tool_calling` | 拦下本次工具调用的后续流程、继续循环 | 注入 `failed_prompt`，模型据此重来 |
   | `on_loop_end` | 未达 `loop_end_max_retry` 上限时整轮打回重试（系统另附一条通用打回提示）| 注入 `failed_prompt`；**通过时 `successed_prompt` 不生效**（结束即静默放行）|
   | `on_input_received` | **不拦不挡，只做提示**（不决定循环能否结束）| 命中注入 `successed_prompt`，未命中注入 `failed_prompt` |
-
-- 结论：挂在 `on_input_received` 上的检查**价值 100% 体现在提示词上**，只写检查条件、两个提示词都留空，是最典型的“写了但没用”的写法。
 
 ### 4.6 in检查（`keyword_check`）的语义（重点）
 

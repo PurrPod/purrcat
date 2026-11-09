@@ -34,8 +34,6 @@ curl 'http://127.0.0.1:8000/api/requests'
 
 ## POST `/api/requests/{req_id}/resolve`
 
-前端点同意、拒绝或忽略时调用。
-
 **请求**
 
 | 参数 | 位置 | 类型 | 必填 | 说明 |

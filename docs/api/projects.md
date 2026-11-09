@@ -2,7 +2,7 @@
 
 > 源码：`src/server/api/projects.py`、`src/agent/project_store.py` ｜ 前缀：`/api` ｜ 端点：4 个
 
-项目是会话的归类容器：命名后把若干会话收进同一个「文件夹」，便于在极简 UI 侧栏按项目分组浏览。
+项目是会话的归类容器：把若干会话收进同一个「文件夹」，便于按项目分组浏览。
 每个项目带一份 `MEMORY.md` 项目记忆文件（新建项目时自动生成，内容只写明它自己的位置）。**只有在该项目内新建会话时**，才会把这份记忆文件的路径与维护约定追加进系统提示，由 Agent 在任务结束后按需手动编辑；把已有会话拖进项目不会改动其系统提示。
 
 存储位置（`data_root` 默认 `~/.purrcat`）：
@@ -80,8 +80,6 @@ curl -X POST 'http://127.0.0.1:8000/api/projects' -H 'Content-Type: application/
 ---
 
 ## PUT `/api/projects/{project_id}`
-
-更新项目名称。
 
 **请求**
 

@@ -1,6 +1,6 @@
 # 后端 API 总览
 
-覆盖 `src/server` 下的全部接口。**只描述当前接口，不含历史/兼容别名。**
+**只描述当前接口，不含历史/兼容别名。**
 
 ## 通用约定
 
@@ -31,4 +31,4 @@
 | 终端 WebSocket | `/api/terminal` | 1（WS） | [terminal.md](terminal.md) |
 | 通用 | — | 1 | [misc.md](misc.md) |
 
-> 每种接口的**参数 / 响应 / 调用示例**以“一接口一小节”的形式给出，标题形如 `## GET \`/api/xxx\``。极简模式宿主与 UI 插件的接入方式见 [webmin.md](webmin.md) 与 [插件开发文档](../plugins/README.md)。
+> 接口按“一接口一小节”给出，标题形如 `## GET \`/api/xxx\``。极简模式宿主与 UI 插件的接入方式见 [webmin.md](webmin.md) 与 [插件开发文档](../plugins/README.md)。

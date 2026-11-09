@@ -516,7 +516,7 @@ curl -X POST 'http://127.0.0.1:8000/api/config/acp/reset-token'
 
 ## GET `/api/config/deploy`
 
-获取各依赖项就绪状态 + 部署任务进度与日志，供前端轮询。
+获取各依赖项就绪状态、部署任务进度与日志。
 
 **请求**
 
@@ -975,7 +975,7 @@ curl -X PUT 'http://127.0.0.1:8000/api/config/cron' \
 
 ## GET `/api/config/meta`
 
-返回当前正在生效的路径常量，便于前端展示给用户参考。
+返回当前生效的路径常量。
 
 **请求**
 

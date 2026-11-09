@@ -1,6 +1,6 @@
 # PurrCat 插件体系总览
 
-PurrCat 通过「插件」扩展能力。除社区通用的 **Skill**（技能包）与 **MCP**（外部工具服务）外，PurrCat 另有四类**专属插件**，它们分别对应 Agent 的感官、编排、主循环与界面：
+PurrCat 除通用的 **Skill**（技能包）与 **MCP**（外部工具服务）外，另有四类**专属插件**，分别对应 Agent 的感官、编排、主循环与界面：
 
 | 类型 | Install ID 字段 | 定位 | 形态 | 落地目录 | 开发文档 |
 | --- | --- | --- | --- | --- | --- |
@@ -27,7 +27,7 @@ PurrCat 通过「插件」扩展能力。除社区通用的 **Skill**（技能�
 - 元素固定形如 `{ "type": "<类型>", "id": "<安装标识>" }`。
 - `type` 白名单：`skill` / `plugin` / `mcp` / `agentloop` / `sensor` / `graph`。
 - 无依赖时写 `[]`。
-- 用户从市场安装某插件时，其 `dependency` 中声明的依赖会被**自动一并安装**。典型用法：一个 UI 插件依赖某个 AgentLoop / Graph / Sensor 来配套工作。
+- 从市场安装插件时，`dependency` 中的依赖会被**自动一并安装**；典型用法是 UI 插件依赖配套的 AgentLoop / Graph / Sensor。
 
 > `dependency` 只描述“插件类型依赖”。UI 插件引用宿主共享的前端库（marked / KaTeX / highlight.js 等）用 `requires`，两者互不替代，详见 [ui-plugin.md](ui-plugin.md#31-共享运行时requires)。
 
@@ -46,8 +46,6 @@ PurrCat 通过「插件」扩展能力。除社区通用的 **Skill**（技能�
 
 ## 组合关系
 
-四类插件可以互相依赖与配合，形成完整闭环：
-
 ```text
 Sensor（外部事件）
    │ session/prompt 注入
@@ -58,10 +56,7 @@ AgentLoop（主循环范式）── 决策/调工具 ──▶ Graph（多步�
    └──────────── UI Plugin（极简模式界面）◀──┘
 ```
 
-- **Sensor → Agent**：Sensor 把外部事件经网关注入当前活跃会话。
-- **Agent ← AgentLoop**：会话绑定一份 AgentLoop，决定主循环在每个阶段的行为。
-- **Graph**：既可由 Agent 触发后台任务图谱，也可由 Sensor（时钟类）直接触发。
-- **UI Plugin**：宿主界面层，可声明依赖来带动上面的 AgentLoop / Graph / Sensor。
+- Sensor 把外部事件经网关注入当前活跃会话；会话绑定一份 AgentLoop 决定各阶段行为；Graph 可由 Agent 触发后台任务，也可由 Sensor（时钟类）直接触发；UI Plugin 可声明依赖带动上述插件。
 
 ## 通用开发约定
 

@@ -2,7 +2,7 @@
 
 > 落地目录：`~/.purrcat/graph/<name>/` ｜ 市场仓库：`PurrPod/graphs` ｜ 相关接口：[../api/graph.md](../api/graph.md)
 
-Graph（任务图 / 工作流）是 PurrCat Agent 的「任务编排中枢」：用**节点（Node）+ 边（Edge）**描述一条完整的多步骤工作流。每个 Graph 是一个**独立文件夹**，由运行时引擎解析并按拓扑顺序执行。
+Graph（任务图 / 工作流）用**节点（Node）+ 边（Edge）**描述多步骤工作流；每个 Graph 是**独立文件夹**，由运行时引擎按拓扑顺序执行。
 
 ---
 

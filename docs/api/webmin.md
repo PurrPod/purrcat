@@ -15,7 +15,7 @@
 
 ## GET `/api/webmin/manifest`
 
-返回当前已扫描到的全部插件列表。新增插件后无需重启，刷新页面即可感知。
+返回当前已扫描到的全部插件列表。
 
 **请求**
 
@@ -135,8 +135,6 @@ curl -X POST 'http://127.0.0.1:8000/api/webmin/plugin-backend/my-plugin/restart'
 ---
 
 ## GET `/api/webmin/config`
-
-读取插件配置。
 
 **请求**
 
@@ -356,7 +354,7 @@ window.parent.postMessage(
 
 ### actionId 清单
 
-（完整 payload → data 契约见 [../plugins/ui-plugin.md](../plugins/ui-plugin.md)；实现以宿主 `ui/web-minimal/assets/host.js` 的 `dispatch` 为准）
+（完整 payload → data 契约见 [../plugins/ui-plugin.md](../plugins/ui-plugin.md)；实现以宿主源码 `ui/web-minimal/src/host/actions.ts` 的 `dispatch` 为准）
 
 | 分类 | actionId |
 | --- | --- |
@@ -375,4 +373,3 @@ window.parent.postMessage(
 - 插件 id 冲突按 `用户 > 沙盒 > 内置` 生效；想改造内置插件请另起 id。
 - 宿主 CSS 变量**不跨 iframe 继承**，插件用 `var(--wm-*, fallback)` 自带兜底。
 - 新增插件或改动 `plugin.json` 后，用户按 `Ctrl+R` 刷新即可生效（无需重启应用）。
-- 插件后端（`server/server.js`）的生命周期跟随面板标签：开标签 start、关标签 stop；改后端代码后关掉再打开标签即可，或用上面的 `restart` 接口主动重启。

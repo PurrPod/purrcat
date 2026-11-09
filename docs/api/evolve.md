@@ -14,8 +14,6 @@
 
 ## GET `/api/evolve/list`
 
-扫描指定加工厂的沙盒列表。
-
 **请求**
 
 | 参数 | 位置 | 类型 | 必填 | 说明 |
@@ -41,8 +39,6 @@ curl 'http://127.0.0.1:8000/api/evolve/list?type=skill'
 ---
 
 ## POST `/api/evolve/init`
-
-初始化沙盒并分配 workplace。
 
 **请求**
 
@@ -110,8 +106,6 @@ curl 'http://127.0.0.1:8000/api/evolve/file?workplace_id=wp-001&name=my-skill&fi
 ---
 
 ## PUT `/api/evolve/file`
-
-写入沙盒内文件。
 
 **请求**
 
@@ -234,8 +228,6 @@ curl -X POST 'http://127.0.0.1:8000/api/evolve/test/run' \
 ---
 
 ## GET `/api/evolve/test/iterations`
-
-列出评测轮次。
 
 **请求**
 

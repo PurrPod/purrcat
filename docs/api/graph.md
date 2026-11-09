@@ -47,8 +47,6 @@ curl 'http://127.0.0.1:8000/api/graphs/nodes'
 
 ## GET `/api/graphs`
 
-列出所有 Graph。
-
 **请求**
 
 | 参数 | 位置 | 类型 | 必填 | 说明 |
@@ -107,7 +105,7 @@ curl 'http://127.0.0.1:8000/api/graphs/trading'
 
 ## GET `/api/graphs/{name}/schema`
 
-获取工作流的全局输入参数 Schema，前端可据此动态生成参数填写表单。
+获取工作流的全局输入参数 Schema。
 
 **请求**
 

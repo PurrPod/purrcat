@@ -298,8 +298,6 @@ curl 'http://127.0.0.1:8000/api/tools/cron'
 
 ## POST `/api/tools/cron`
 
-添加一个闹钟。
-
 **请求**
 
 | 参数 | 位置 | 类型 | 必填 | 说明 |

@@ -64,7 +64,7 @@ curl 'http://127.0.0.1:8000/api/filesystem/read?path=/agent_vm/README.md'
 
 ## GET `/api/filesystem/stat`
 
-返回文件元信息（大小），供 IDE 做超大文件拦截。
+返回文件元信息（大小）。
 
 **请求**
 
@@ -144,7 +144,7 @@ curl 'http://127.0.0.1:8000/api/filesystem/history_list'
 
 ## GET `/api/filesystem/backups`
 
-提供给前端：校验哪些快照仍在硬盘上存活。
+校验哪些快照仍在硬盘上存活。
 
 **响应**
 
@@ -164,7 +164,7 @@ curl 'http://127.0.0.1:8000/api/filesystem/backups'
 
 ## POST `/api/filesystem/undo`
 
-提供给前端 UI 的一键回滚（最高权限）：按 `backup_id` 将文件还原到指定快照。
+一键回滚（最高权限）：按 `backup_id` 将文件还原到指定快照。
 
 **请求**
 
@@ -250,7 +250,7 @@ curl -X POST 'http://127.0.0.1:8000/api/filesystem/ack_all'
 
 ## GET `/api/filesystem/diffs`
 
-提供给前端全局读取所有未确认的代码变更（DiffView）。
+全局读取所有未确认的代码变更（DiffView）。
 
 **响应**
 
