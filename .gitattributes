@@ -1,0 +1,2 @@
+# 宿主源码参与 esbuild sourcemap 的 sourcesContent，换行必须跨平台一致
+ui/web-minimal/src/**/*.ts text eol=lf
