@@ -9,7 +9,7 @@ from json_repair import repair_json
 
 from src.agent.hook_handler import HookHandler
 from src.agent.session_store import SessionStore
-from src.model import AgentModel
+from src.model import AgentModel, ChatModel
 from src.tool.utils.route import (
     build_display_result,
     dispatch_tool,
@@ -37,6 +37,7 @@ class Agent:
         name=None,
         save_callback=None,
         paradigm_path=None,
+        model: ChatModel | None = None,
     ):
         self.name = name or get_agent_model()
         self.session_id = session_id
@@ -62,7 +63,8 @@ class Agent:
         # 🌟 「收到输入时」(on_input_received) 钩子执行中标记：钩子自身的注入不再递归触发
         self._in_input_hook = False
         self._save_callback = save_callback
-        self.model = AgentModel(self.session_id)
+        # 🌟 模型可注入：测试与子流程可替换为 FakeModel，默认仍走全局 Agent 模型
+        self.model = model if model is not None else AgentModel(self.session_id)
         self.model.bind_task(self.session_id, "AgentMain")
         self.tracker = Tracker()
         self.current_history = initial_history or []

@@ -1,3 +1,3 @@
-from .facade import AgentModel, Model
+from .facade import AgentModel, ChatModel, Model
 
-__all__ = ["Model", "AgentModel"]
+__all__ = ["Model", "AgentModel", "ChatModel"]
