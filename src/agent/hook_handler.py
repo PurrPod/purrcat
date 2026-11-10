@@ -1,10 +1,11 @@
 import os
-import platform
 import re
-import yaml
 import json
 import subprocess
 
+from src.agent.hook_config import default_paradigm_path, read_paradigm_config
+from src.agent.hook_paths import get_gpu_info, get_system_info, resolve_hook_path
+from src.agent.hook_refs import build_ref_re, expand_refs, resolve_ref_content
 from src.utils.config import (
     BASE_DIR,
     PURRCAT_DIR,
@@ -36,44 +37,18 @@ _REF_RE = re.compile("|".join(re.escape(a) for a in CONTENT_ALIASES))
 
 
 def _expand_refs(value, resolve, ref_re=None):
-    """把钩子参数里的 @引用 展开成具体内容，返回新对象，不改动 YAML 载入的原始配置。
+    """把钩子参数里的 @引用 展开成具体内容，返回新对象，不改动原始配置。
 
-    resolve(alias) 返回该引用的内容；返回 None 表示当前场景不展开（保持原始 @符号）。
-    单次左到右替换，展开出来的内容不会被再次当作引用处理。
     ref_re: 引用正则；缺省用模块级 _REF_RE（兼容主循环），harness 会传入含动态别名的实例正则。
     """
-    if ref_re is None:
-        ref_re = _REF_RE
-
-    def sub(m):
-        text = resolve(m.group(0))
-        return m.group(0) if text is None else text
-
-    if isinstance(value, str):
-        return ref_re.sub(sub, value)
-    if isinstance(value, dict):
-        return {k: _expand_refs(v, resolve, ref_re) for k, v in value.items()}
-    if isinstance(value, list):
-        return [_expand_refs(v, resolve, ref_re) for v in value]
-    return value
+    return expand_refs(value, resolve, ref_re or _REF_RE)
 
 
 def _default_paradigm_path() -> str:
-    """优先 paradigms/PARADIGM.yaml；读不到时用 initial.py 的默认模板就地生成，然后再读取。"""
-    if os.path.exists(USER_PARADIGM_PATH):
-        return USER_PARADIGM_PATH
-    try:
-        os.makedirs(PARADIGMS_DIR, exist_ok=True)
-        # 默认模板定义在 src/utils/initial.py（懒加载，避免 import 环）
-        from src.utils.initial import DEFAULT_PARADIGM_YAML
-
-        with open(USER_PARADIGM_PATH, "w", encoding="utf-8") as f:
-            f.write(DEFAULT_PARADIGM_YAML)
-    except Exception:
-        pass
-    if os.path.exists(USER_PARADIGM_PATH):
-        return USER_PARADIGM_PATH
-    return DEFAULT_PARADIGM_PATH
+    """优先 paradigms/PARADIGM.yaml；读不到时用默认模板就地生成，然后再读取。"""
+    return default_paradigm_path(
+        USER_PARADIGM_PATH, PARADIGMS_DIR, DEFAULT_PARADIGM_PATH
+    )
 
 
 class HookHandler:
@@ -97,7 +72,7 @@ class HookHandler:
 
     def _build_ref_re(self):
         aliases = CONTENT_ALIASES + tuple(self.extra_content_aliases.keys())
-        return re.compile("|".join(re.escape(a) for a in aliases))
+        return build_ref_re(aliases)
 
     def add_alias(self, alias: str, host_path: str = None, content: str = None):
         """注册动态引用别名（如 @TASKSPACE）。
@@ -116,8 +91,7 @@ class HookHandler:
             self.paradigm_path = path
         if os.path.exists(self.paradigm_path):
             try:
-                with open(self.paradigm_path, "r", encoding="utf-8") as f:
-                    self.config = yaml.safe_load(f) or {}
+                self.config = read_paradigm_config(self.paradigm_path)
                 self.hooks = self.config.get("hooks", {})
             except Exception as e:
                 print(f"[Warn] 解析 PARADIGM.yaml 发生异常: {e}")
@@ -229,78 +203,44 @@ class HookHandler:
 
     def _resolve_path(self, path: str, agent=None) -> str:
         """把 PARADIGM 里的路径符号/前缀解析成绝对路径"""
+        plan_path = None
         if path == "@PLAN":
             session_id = getattr(agent, "session_id", None)
             if session_id:
-                return SessionStore.get_plan_path(session_id)
-        if path.startswith("@"):
-            aliases = {**PATH_ALIASES, **self.extra_path_aliases}
-            if path in aliases:
-                return aliases[path]
-            # 前缀匹配：@ALIAS/sub/path → host/sub/path（供 @TASKSPACE/xxx 等用法）
-            for alias, host in aliases.items():
-                if path.startswith(alias + "/") or path.startswith(alias + "\\"):
-                    rest = path[len(alias) :].lstrip("/\\")
-                    return os.path.join(host, rest)
-            return path
-        if path.startswith(".purrcat/"):
-            return os.path.join(PURRCAT_DIR, path[len(".purrcat/") :])
-        if path.startswith("src/"):
-            return os.path.join(BASE_DIR, path)
-        if path.startswith("/agent_vm"):
-            # 兼容沙盒视角的绝对路径（/agent_vm/...），文件工具会做同样映射
-            rel = path[len("/agent_vm") :].lstrip("/\\")
-            return os.path.join(AGENT_VM_DIR, rel)
-        if path.startswith("agent_vm"):
-            # 注意：不能用 lstrip("agent_vm")，它按字符集裁剪，会把 "agent_vm/x" 变成 "/x"，
-            # 而 os.path.join 遇到以分隔符开头的片段会直接丢弃 AGENT_VM_DIR，落到盘根目录
-            rel = path[len("agent_vm") :].lstrip("/\\")
-            return os.path.join(AGENT_VM_DIR, rel)
-        return path
+                plan_path = SessionStore.get_plan_path(session_id)
+        return resolve_hook_path(
+            path,
+            plan_path=plan_path,
+            path_aliases=PATH_ALIASES,
+            extra_path_aliases=self.extra_path_aliases,
+            agent_vm_dir=AGENT_VM_DIR,
+            purrcat_dir=PURRCAT_DIR,
+            base_dir=BASE_DIR,
+        )
+
+    def _read_plan(self, agent) -> str:
+        session_id = getattr(agent, "session_id", None)
+        return SessionStore.read_session_plan(session_id) if session_id else ""
 
     def _ref_content(self, alias, kwargs, cache):
         """取 @引用的展开内容（供非 file_operation 的参数直接引用）。
 
-        - @USERQUERY：仅「收到输入时」这类带 received_messages 的钩子展开，
-          指代本批 type=user 的消息（多条按换行拼接）
+        - @USERQUERY：仅带 received_messages 的钩子展开，指代本批 type=user 的消息
         - @RULES/@SOUL/@MEMORY/@INFO：读取对应文件内容
         - @SYS：现场生成当前系统信息
-        - @PLAN：读取当前会话最近一次 BrainStorm 落盘的总计划（每次 BrainStorm 调用刷新）
+        - @PLAN：读取当前会话最近一次 BrainStorm 落盘的总计划
 
         取不到内容时返回 None，参数里的原始 @符号保持不变。
         """
-        if alias in cache:
-            return cache[alias]
-
-        text = None
-        if alias == "@USERQUERY":
-            if "received_messages" in kwargs:
-                text = "\n".join(
-                    str(msg.get("content", ""))
-                    for msg in (kwargs.get("received_messages") or [])
-                    if msg.get("type") == "user"
-                )
-        elif alias == "@SYS":
-            text = self._get_system_info()
-        elif alias == "@PLAN":
-            session_id = getattr(kwargs.get("agent"), "session_id", None)
-            text = (
-                SessionStore.read_session_plan(session_id) if session_id else ""
-            ) or "暂无 BrainStorm 计划"
-        elif alias in self.extra_content_aliases:
-            # 动态别名（如 @TASKSPACE）：直接展开为注册的内容（沙盒可见路径），不读文件
-            text = self.extra_content_aliases[alias]
-        else:
-            path = PATH_ALIASES.get(alias)
-            if path and os.path.exists(path):
-                try:
-                    with open(path, "r", encoding="utf-8") as f:
-                        text = f.read().strip()
-                except Exception:
-                    text = None
-
-        cache[alias] = text
-        return text
+        return resolve_ref_content(
+            alias,
+            kwargs,
+            cache,
+            path_aliases=PATH_ALIASES,
+            extra_content_aliases=self.extra_content_aliases,
+            system_info=self._get_system_info,
+            plan_reader=self._read_plan,
+        )
 
     def _file_operation(self, params, **kwargs):
         raw_path = params.get("path", "")
@@ -428,48 +368,12 @@ class HookHandler:
     @staticmethod
     def _get_gpu_info() -> str:
         """探测 GPU 型号：优先 nvidia-smi，Windows 回退 WMI，均失败返回未知"""
-        try:
-            r = subprocess.run(
-                ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
-                capture_output=True,
-                text=True,
-                timeout=5,
-            )
-            if r.returncode == 0 and r.stdout.strip():
-                return r.stdout.strip()
-        except Exception:
-            pass
-        try:
-            if platform.system() == "Windows":
-                r = subprocess.run(
-                    [
-                        "powershell",
-                        "-NoProfile",
-                        "-Command",
-                        "(Get-CimInstance Win32_VideoController).Name",
-                    ],
-                    capture_output=True,
-                    text=True,
-                    timeout=8,
-                )
-                if r.returncode == 0 and r.stdout.strip():
-                    return r.stdout.strip()
-        except Exception:
-            pass
-        return "未知"
+        return get_gpu_info()
 
     @classmethod
     def _get_system_info(cls) -> str:
         """@SYS：注入当前系统信息（操作系统/主机名/CPU/GPU + AgentVM 绝对路径）"""
-        lines = [
-            "【当前系统信息】",
-            f"- 操作系统: {platform.system()} {platform.release()} ({platform.machine()})",
-            f"- 主机名: {platform.node()}",
-            f"- CPU 核心数: {os.cpu_count() or '未知'}",
-            f"- GPU: {cls._get_gpu_info()}",
-            f"- AgentVM 沙箱目录（绝对路径）: {AGENT_VM_DIR}",
-        ]
-        return "\n".join(lines)
+        return get_system_info(AGENT_VM_DIR)
 
     def _tool_use_check(self, params, **kwargs):
         tool_name = params.get("name")

@@ -4,12 +4,12 @@ Agent 系统网关 (Facade)
 所有外部交互必须通过此处的暴露函数进行。
 """
 
-from .manager import AgentManager
+from . import manager as _manager_module
 
 # ==========================================
-# 1. 核心实例化 (仅在 __init__ 被加载时执行一次)
+# 1. 复用 manager 模块里的单例，避免出现第二个状态源
 # ==========================================
-_manager_instance = AgentManager()
+_manager_instance = _manager_module.manager
 
 # ==========================================
 # 2. 方法提取与包装
@@ -100,10 +100,9 @@ def get_agent_max_token():
     if not model_name:
         return 500000
 
-    from src.utils.config import get_model_config
+    from src.utils.config import get_model_max_token
 
-    model_cfg = get_model_config().get("main", {}).get(model_name, {})
-    return model_cfg.get("max_token", 500000)
+    return get_model_max_token(model_name)
 
 
 # ==========================================

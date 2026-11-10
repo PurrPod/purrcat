@@ -5,6 +5,10 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+import pytest
+
+from src.agent import hook_handler as hook_mod
+from src.agent.hook_handler import HookHandler
 from src.utils import path as sandbox_path
 
 
@@ -49,3 +53,35 @@ def test_other_paths_are_only_absolutized(tmp_path):
     assert sandbox_path.convert_sandbox_path(str(tmp_path / "a.txt")) == str(
         tmp_path / "a.txt"
     )
+
+
+def _hook_path(tmp_path, monkeypatch, path):
+    root = tmp_path / "vm"
+    monkeypatch.setattr(hook_mod, "AGENT_VM_DIR", str(root))
+    return HookHandler(config_dict={"hooks": {}})._resolve_path(path), root
+
+
+def test_hook_maps_sandbox_absolute_path(tmp_path, monkeypatch):
+    result, root = _hook_path(tmp_path, monkeypatch, "/agent_vm/projects/a.txt")
+
+    assert Path(result) == root / "projects" / "a.txt"
+
+
+def test_hook_maps_sandbox_relative_path(tmp_path, monkeypatch):
+    result, root = _hook_path(tmp_path, monkeypatch, "agent_vm/projects/a.txt")
+
+    assert Path(result) == root / "projects" / "a.txt"
+
+
+@pytest.mark.parametrize("path", ["/agent_vm", "agent_vm"])
+def test_hook_maps_bare_sandbox_root(tmp_path, monkeypatch, path):
+    result, root = _hook_path(tmp_path, monkeypatch, path)
+
+    assert Path(result) == root
+
+
+@pytest.mark.parametrize("path", ["/agent_vm_backup/a.txt", "agent_vm_backup/a.txt"])
+def test_hook_ignores_lookalike_prefix(tmp_path, monkeypatch, path):
+    result, _ = _hook_path(tmp_path, monkeypatch, path)
+
+    assert result == path

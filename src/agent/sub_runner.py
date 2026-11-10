@@ -5,8 +5,15 @@ import uuid
 import copy
 import threading
 import json
-import datetime
 
+from src.agent.compression import (
+    SUB_COMPRESSION_INSTRUCTION,
+    SUB_SUMMARY_FALLBACK,
+    rebuild_sub_history,
+    run_summary_attempts,
+    sub_warning,
+)
+from src.agent.system_prompt import build_sub_system_prompt
 from src.model import AgentModel
 from src.tool.utils.route import (
     dispatch_tool,
@@ -135,267 +142,41 @@ class SubAgentRunner:
 
     def _build_system_prompt(self):
         """🌟 为主模型动态重建系统提示词的方法，保持最新规则与技能/作坊状态同步"""
-        soul_md, system_rules, memory_md = "", "", ""
-        skills_info, workshops_info = "", ""
-
-        def _extract_desc(file_path):
-            if not os.path.exists(file_path):
-                return None
-            try:
-                with open(file_path, "r", encoding="utf-8") as f:
-                    in_front_matter = False
-                    for line in f:
-                        line = line.strip()
-                        if line == "---":
-                            if not in_front_matter:
-                                in_front_matter = True
-                                continue
-                            else:
-                                break
-
-                        if in_front_matter and line.lower().startswith("description:"):
-                            val = line.split(":", 1)[1].strip()
-                            if (val.startswith('"') and val.endswith('"')) or (
-                                val.startswith("'") and val.endswith("'")
-                            ):
-                                val = val[1:-1]
-                            return val
-            except Exception:
-                pass
-            return None
-
-        try:
-            from src.utils.config import (
-                AGENT_CORE_DIR,
-                SKILL_DIR,
-                SOUL_MD_PATH,
-                SYSTEM_RULES_DIR,
-            )
-
-            info_json_path = os.path.join(AGENT_CORE_DIR, "info.json")
-            if os.path.exists(info_json_path):
-                with open(info_json_path, "r", encoding="utf-8") as f:
-                    info_data = json.load(f)
-
-                skills = info_data.get("skills", [])
-                if skills:
-                    skills_info += "以下是核心skill，所有的skill以本清单为第一优先级，请在工作过程中遇到对应任务就使用Fetch工具进行调用！！！\n"
-                    for skill in skills:
-                        desc = _extract_desc(os.path.join(SKILL_DIR, skill, "SKILL.md"))
-                        if desc:
-                            skills_info += f"- {skill}:{desc}\n"
-                        else:
-                            skills_info += f"- {skill}（技能加载失败，可能未安装）\n"
-                    skills_info += "对于本清单以外的其它普通skill，请使用Search工具进行检索和发现。\n"
-
-                workshops = info_data.get("workshops", [])
-                if workshops:
-                    workshops_info += "以下是系统常驻作坊，请在收到特定任务的时候进入对应的文件夹内读取对应项目的AGENTS.md或WORKSHOP.md进行工作，\n"
-                    for ws in workshops:
-                        desc = _extract_desc(os.path.join(ws, "WORKSHOP.md"))
-                        if desc:
-                            workshops_info += f"- {ws}:{desc}\n"
-                        else:
-                            workshops_info += (
-                                f"- {ws}（作坊加载失败，可能未找到WORKSHOP.md）\n"
-                            )
-                    workshops_info += "如无相关作坊，直接在沙盒内工作即可\n"
-
-            MEMORY_MD_PATH = os.path.join(AGENT_CORE_DIR, "MEMORY.md")
-            if os.path.exists(SOUL_MD_PATH):
-                with open(SOUL_MD_PATH, "r", encoding="utf-8") as f:
-                    soul_md = f.read().strip()
-            if os.path.exists(SYSTEM_RULES_DIR):
-                rule_files = sorted(
-                    [f for f in os.listdir(SYSTEM_RULES_DIR) if f.endswith(".md")]
-                )
-                for rf in rule_files:
-                    with open(
-                        os.path.join(SYSTEM_RULES_DIR, rf), "r", encoding="utf-8"
-                    ) as f:
-                        system_rules += f.read().strip() + "\n\n"
-                system_rules = system_rules.strip()
-            if os.path.exists(MEMORY_MD_PATH):
-                with open(MEMORY_MD_PATH, "r", encoding="utf-8") as f:
-                    memory_md = f.read().strip()
-        except Exception as e:
-            print(f"[Warn.SubAgent] Prompt 构建发生异常: {e}")
-
-        combined = system_rules
-        if soul_md:
-            combined += f"\n\n---\n\n{soul_md}"
-
-        if skills_info:
-            combined += f"\n\n---\n\n# 【核心技能档案】\n\n{skills_info}"
-        if workshops_info:
-            combined += f"\n\n---\n\n# 【常驻作坊 (Workshops)】\n\n{workshops_info}"
-
-        if memory_md:
-            combined += f"\n\n---\n\n# 【系统长期记忆档案】\n\n{memory_md}"
-
-        return combined
+        return build_sub_system_prompt()
 
     async def _truncate_memory_if_needed(self):
-        """🌟 新增：SubAgent专属同款记忆总结压缩机制（异步阻塞式拦截与严格校验）"""
-        from src.utils.config import get_model_config
+        """🌟 SubAgent 专属记忆总结压缩机制（异步阻塞式拦截与严格校验）"""
+        from src.utils.config import get_model_max_token
         from src.tool import AGENT_TOOL_SCHEMA
 
-        model_cfg = (
-            get_model_config().get("main", {}).get(self.model.model_name or "", {})
-        )
-        max_tokens = model_cfg.get("max_token", 500000)
+        max_tokens = get_model_max_token(self.model.model_name or None)
         if self.window_token < max_tokens:
             return
 
         print(
             f"[Truncate.SubAgent] 触发后台会话记忆截断 (当前约 {self.window_token} tokens)，请求大总结..."
         )
-        now_str = datetime.datetime.now().strftime("%m-%d %H:%M:%S")
 
-        # 1. 构造用于触发总结的临时指令 (type=system 注入)
-        compression_prompt = {
-            "role": "user",
-            "content": json.dumps(
-                {
-                    "events": [
-                        {
-                            "type": "system",
-                            "time": now_str,
-                            "content": "记忆窗口已达上限，系统将要删除所有对话历史。为防止上下文断层，请对当前所有会话细节、历史、当前工作记忆与进度进行大总结，然后调用 Memo 工具（必须设置 action='add'）传入总结报告。系统将仅保留这份总结。",
-                        }
-                    ]
-                },
-                ensure_ascii=False,
+        temp_history = self.messages.copy()
+        summary_text = await asyncio.to_thread(
+            run_summary_attempts,
+            lambda messages: self.model.chat(
+                messages=messages, tools=AGENT_TOOL_SCHEMA
             ),
-        }
+            temp_history,
+            instruction=SUB_COMPRESSION_INSTRUCTION,
+            warning_text=sub_warning,
+            fallback_text=SUB_SUMMARY_FALLBACK,
+            warning_prefix="[Warn.SubAgentBlock]",
+            error_prefix="[Error] 后台记忆总结请求网络异常",
+        )
 
-        temp_history = self.messages.copy() + [compression_prompt]
-
-        # 2. 阻塞式网络交互：请求模型，重试 3 次及过滤拦截
-        summary_text = None
-        max_retries = 3
-
-        for attempt in range(1, max_retries + 1):
-            try:
-                response = await asyncio.to_thread(
-                    self.model.chat, messages=temp_history, tools=AGENT_TOOL_SCHEMA
-                )
-                msg_resp = response.choices[0].message
-                valid_memo_found = False
-
-                # 拦截提取工具参数，拒绝向下派发和实际执行
-                if msg_resp.tool_calls:
-                    for tc in msg_resp.tool_calls:
-                        if tc.function.name == "Memo":
-                            try:
-                                args = json.loads(tc.function.arguments)
-                                if args.get("action") == "add" and args.get(
-                                    "memo_data"
-                                ):
-                                    summary_text = (
-                                        json.dumps(
-                                            args.get("memo_data"), ensure_ascii=False
-                                        )
-                                        if isinstance(args.get("memo_data"), dict)
-                                        else str(args.get("memo_data"))
-                                    )
-                                    valid_memo_found = True
-                                    break
-                            except Exception:
-                                pass
-
-                if valid_memo_found:
-                    break
-                else:
-                    # 校验失败：丢弃模型回复，直接追加 type=system 的 User 警告
-                    warning_msg = f"【第{attempt}次警告】未使用Memo工具进行记忆总结(或 action 不为 'add')！请只调用 Memo 工具并将 action 设为 'add'，不要完成无关工作。"
-                    warning_prompt = {
-                        "role": "user",
-                        "content": json.dumps(
-                            {
-                                "events": [
-                                    {
-                                        "type": "system",
-                                        "time": datetime.datetime.now().strftime(
-                                            "%m-%d %H:%M:%S"
-                                        ),
-                                        "content": warning_msg,
-                                    }
-                                ]
-                            },
-                            ensure_ascii=False,
-                        ),
-                    }
-                    temp_history.append(warning_prompt)
-                    print(f"[Warn.SubAgentBlock] {warning_msg}")
-
-            except Exception as e:
-                print(f"[Error] 后台记忆总结请求网络异常: {e}")
-                break
-
-        # 兜底降级处理
-        if not summary_text:
-            if "msg_resp" in locals() and msg_resp.content:
-                summary_text = msg_resp.content
-            else:
-                summary_text = "（后台子分支未能成功生成有效总结，上下文已强行截断）"
-
-        # 3. 开始重建子分支真实历史
         try:
-            original_len = len(self.messages)
-            keep_recent = 10
-            split_idx = original_len - keep_recent
-
-            # 寻找安全截断点
-            if split_idx > 1:
-                while split_idx > 1:
-                    curr_msg = self.messages[split_idx]
-                    prev_msg = self.messages[split_idx - 1]
-                    if curr_msg.get("role") == "tool":
-                        split_idx -= 1
-                        continue
-                    if prev_msg.get("role") == "assistant" and prev_msg.get(
-                        "tool_calls"
-                    ):
-                        split_idx -= 1
-                        continue
-                    break
-            if split_idx < 1:
-                split_idx = 1
-
-            recent_messages = self.messages[split_idx:original_len]
-
-            # 重建最新的系统提示词
-            fresh_system_content = self._build_system_prompt()
-            new_system_msg = {"role": "system", "content": fresh_system_content}
-
-            # 包装记忆总结为 type=system 事件
-            summary_msg = {
-                "role": "user",
-                "content": json.dumps(
-                    {
-                        "events": [
-                            {
-                                "type": "system",
-                                "time": datetime.datetime.now().strftime(
-                                    "%m-%d %H:%M:%S"
-                                ),
-                                "content": f"【历史记忆大总结】\n{summary_text}",
-                            }
-                        ]
-                    },
-                    ensure_ascii=False,
-                ),
-            }
-
-            # 组装最终历史：【重建系统提示词】+ 【最近10条信息】+ 【记忆大总结】
-            self.messages = [new_system_msg] + recent_messages + [summary_msg]
-
-            # 剔除思维链过程
-            for msg in self.messages:
-                if msg.get("role") == "assistant" and "reasoning_content" in msg:
-                    msg["reasoning_content"] = ""
-
+            self.messages = rebuild_sub_history(
+                self.messages,
+                self._build_system_prompt(),
+                summary_text,
+            )
             print("[Success] 后台子分支记忆大总结与安全截断完毕！")
             self.window_token = 0
             self._save_history()
@@ -512,8 +293,6 @@ class SubAgentRunner:
 
             # 4. 安全调用底层工具箱
             for tc in tool_calls:
-                import json
-
                 tool_name = tc.function.name
                 args = (
                     json.loads(tc.function.arguments) if tc.function.arguments else {}

@@ -1,4 +1,3 @@
-import json
 import os
 import threading
 import time
@@ -92,6 +91,34 @@ class AgentManager:
         if self._sensor_thread and self._sensor_thread.is_alive():
             self._sensor_thread.join(timeout=3.0)
 
+    def get_agent(self):
+        """暴露当前挂载的 Agent（未初始化时为 None）。"""
+        return self._agent
+
+    # ==========================================
+    # 1.1 会话切换的内部原子操作
+    # ==========================================
+    def _wait_until_idle(self, message: str) -> None:
+        """阻塞等待 Agent 释放资源，确保会话/分支切换安全。"""
+        if self._agent.state != "idle":
+            print(message)
+            while self._agent.state != "idle":
+                time.sleep(0.5)
+
+    def _adopt_session(
+        self,
+        session_id: str,
+        history: list,
+        window_token: int,
+        consumed_tokens: int,
+    ) -> None:
+        """在历史锁内一次性切换当前会话的上下文与配额。"""
+        with self._agent._history_lock:
+            self._agent.session_id = session_id
+            self._agent.current_history = history
+            self._agent.window_token = window_token
+            self._agent.consumed_tokens = consumed_tokens
+
     # ==========================================
     # 2. 交互与通信 (Interaction)
     # ==========================================
@@ -129,26 +156,21 @@ class AgentManager:
         if self._agent.session_id == target_session_id:
             return True
 
-        if self._agent.state != "idle":
-            print("[Wait] 正在阻塞等待 Agent 释放资源，以安全检出目标会话...")
-            while self._agent.state != "idle":
-                time.sleep(0.5)
+        self._wait_until_idle(
+            "[Wait] 正在阻塞等待 Agent 释放资源，以安全检出目标会话..."
+        )
 
         self._notify_save()
 
         new_history = SessionStore.load_session_history(target_session_id)
         all_sessions = SessionStore.get_all_sessions()
 
-        with self._agent._history_lock:
-            self._agent.session_id = target_session_id
-            self._agent.current_history = new_history
-            self._agent.window_token = SessionStore.get_session_window_token(
-                target_session_id
-            )
-            # 恢复目标会话的累计消耗（主/子分支聚合后取主干值）
-            self._agent.consumed_tokens = SessionStore.get_session_consumed_tokens(
-                target_session_id
-            )["main"]
+        self._adopt_session(
+            target_session_id,
+            new_history,
+            SessionStore.get_session_window_token(target_session_id),
+            SessionStore.get_session_consumed_tokens(target_session_id)["main"],
+        )
 
         # 载入该会话绑定的范式（未绑定则回落默认 PARADIGM.yaml）
         from src.utils.paradigm_api import resolve_paradigm_path
@@ -169,10 +191,7 @@ class AgentManager:
         if not self._agent:
             self.init_agent()
 
-        if self._agent.state != "idle":
-            print("[Wait] 正在阻塞等待 Agent 完成当前回复...")
-            while self._agent.state != "idle":
-                time.sleep(0.5)
+        self._wait_until_idle("[Wait] 正在阻塞等待 Agent 完成当前回复...")
 
         self._notify_save()
 
@@ -208,11 +227,7 @@ class AgentManager:
             project_id=project_id or None,
         )
 
-        with self._agent._history_lock:
-            self._agent.session_id = new_id
-            self._agent.window_token = 0
-            self._agent.consumed_tokens = 0
-            self._agent.current_history = clean_history
+        self._adopt_session(new_id, clean_history, 0, 0)
 
         # 新会话立刻按所选范式工作（未选则默认 PARADIGM.yaml）
         self._agent.hook_handler.load_config(paradigm_path)
@@ -250,10 +265,9 @@ class AgentManager:
         if not self._agent:
             self.init_agent()
 
-        if self._agent.state != "idle":
-            print("[Wait] 正在阻塞等待 Agent 完成当前回复，以确保安全拉取分支...")
-            while self._agent.state != "idle":
-                time.sleep(0.5)
+        self._wait_until_idle(
+            "[Wait] 正在阻塞等待 Agent 完成当前回复，以确保安全拉取分支..."
+        )
 
         self._notify_save()
         safe_history = self._agent.get_history()
@@ -294,11 +308,7 @@ class AgentManager:
 
         new_history = SessionStore.load_session_history(new_id)
 
-        with self._agent._history_lock:
-            self._agent.session_id = new_id
-            self._agent.window_token = current_token
-            self._agent.consumed_tokens = current_consumed
-            self._agent.current_history = new_history
+        self._adopt_session(new_id, new_history, current_token, current_consumed)
 
         self._agent.model.bind_task(new_id, "AgentMain")
         print(f"[Branch] 成功拉取新分支并检出: {new_id} ({branch_alias})")
@@ -310,29 +320,8 @@ class AgentManager:
         if self._agent and self._agent.session_id == session_id:
             raise ValueError("不能删除当前正在活跃的会话")
 
-        # 2. 执行删除（删除整个会话文件夹）
-        from src.utils.config import SESSIONS_DIR
-
-        session_dir = os.path.join(SESSIONS_DIR, session_id)
-        if os.path.exists(session_dir) and os.path.isdir(session_dir):
-            import shutil
-
-            shutil.rmtree(session_dir)
-            print(f"[Delete] 已删除会话文件夹: {session_dir}")
-
-        # 3. 更新索引文件
-        index_file = os.path.join(SESSIONS_DIR, "index.json")
-        if os.path.exists(index_file):
-            with SessionStore._index_lock:
-                try:
-                    with open(index_file, "r", encoding="utf-8") as f:
-                        idx = json.load(f)
-                    if session_id in idx:
-                        del idx[session_id]
-                        with open(index_file, "w", encoding="utf-8") as f:
-                            json.dump(idx, f, ensure_ascii=False, indent=2)
-                except Exception as e:
-                    print(f"Error updating index: {e}")
+        # 2. 删除会话文件夹并同步索引
+        SessionStore.delete_session(session_id)
         return True
 
     # ==========================================

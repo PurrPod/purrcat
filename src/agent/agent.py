@@ -5,27 +5,20 @@ import os
 import threading
 import time
 
-from json_repair import repair_json
-
+from src.agent import epoch, hint_search, lifecycle, memory_ops, tool_batch
+from src.agent.history import repair_toolchain
 from src.agent.hook_handler import HookHandler
 from src.agent.session_store import SessionStore
+from src.agent.tool_batch import ToolBatchExecutor
+from src.agent.tool_calls import is_snapshot_dispatch_tool
 from src.model import AgentModel, ChatModel
 from src.tool.utils.route import (
     build_display_result,
     dispatch_tool,
     extract_tool_message_content,
 )
-from src.utils.attachments import (
-    materialize_message,
-    max_request_bytes,
-    serialized_size,
-    snapshot_message,
-)
-from src.utils.config import (
-    BUFFER_DIR,
-    get_agent_model,
-    get_model_config,
-)
+from src.utils.attachments import snapshot_message
+from src.utils.config import BUFFER_DIR, get_agent_model
 from src.utils.tracker import Tracker
 
 
@@ -38,11 +31,15 @@ class Agent:
         save_callback=None,
         paradigm_path=None,
         model: ChatModel | None = None,
+        hook_handler=None,
+        tracker=None,
+        memo=None,
     ):
         self.name = name or get_agent_model()
         self.session_id = session_id
-        # === 常驻内存记忆缓存 ===
-        self.memo = SessionStore.load_global_memo()
+        # === 常驻内存记忆缓存（可注入，便于测试） ===
+        self.memo = memo if memo is not None else SessionStore.load_global_memo()
+
         self._state = "idle"
         self._interaction_id = 0
         self.pending_force_push = []
@@ -66,14 +63,16 @@ class Agent:
         # 🌟 模型可注入：测试与子流程可替换为 FakeModel，默认仍走全局 Agent 模型
         self.model = model if model is not None else AgentModel(self.session_id)
         self.model.bind_task(self.session_id, "AgentMain")
-        self.tracker = Tracker()
+        self.tracker = tracker if tracker is not None else Tracker()
         self.current_history = initial_history or []
         # 🌟 图片直注的历史只留副本路径：旧会话里的 base64 在加载时一次性迁移到
         # <会话目录>/attachment/，避免恢复会话后继续携带大段 base64
         self.current_history = [
             snapshot_message(msg, session_id) for msg in self.current_history
         ]
-        self.hook_handler = HookHandler(paradigm_path)
+        self.hook_handler = (
+            hook_handler if hook_handler is not None else HookHandler(paradigm_path)
+        )
         if not self.current_history:
             fresh_prompt = self._build_system_prompt()
             self.current_history = [{"role": "system", "content": fresh_prompt}]
@@ -257,57 +256,17 @@ class Agent:
             self.pending_force_push.extend(batch_push)
 
     def _check_and_fix_toolchain(self):
-        """
-        检查工具链完整性（支持多工具调用）。
-        从尾部往回遍历，找到最近一条带 tool_calls 但 tool 消息不完整的 assistant 消息，
-        清理其后所有消息（包括不完整的 tool 消息、中间插入的 workflow_hint、错误消息等），
-        并修正/删除该 assistant 消息。
-        """
+        """检查并清理断裂的 tool_calls / tool 响应链（逻辑见 history.repair_toolchain）。"""
         if not self.current_history:
             return
 
         with self._history_lock:
-            assistant_idx = -1
-            # 1. 从尾部往回找第一条带 tool_calls 的 assistant 消息
-            for i in range(len(self.current_history) - 1, -1, -1):
-                msg = self.current_history[i]
-                if msg.get("role") == "assistant" and msg.get("tool_calls"):
-                    assistant_idx = i
-                    break
+            repair = repair_toolchain(self.current_history)
 
-            if assistant_idx < 0:
-                return
-
-            assistant_msg = self.current_history[assistant_idx]
-            requested_ids = set(tc["id"] for tc in assistant_msg["tool_calls"])
-
-            # 2. 收集这条 assistant 之后所有 tool 消息的 id
-            answered_ids = set()
-            for msg in self.current_history[assistant_idx + 1 :]:
-                if msg.get("role") == "tool" and msg.get("tool_call_id"):
-                    answered_ids.add(msg["tool_call_id"])
-
-            # 3. 发现不匹配，说明工具链断裂
-            if requested_ids != answered_ids:
-                missing = requested_ids - answered_ids
-                extra = answered_ids - requested_ids
-                print(
-                    f"[Warn.ToolChain] 检测到未完成的多工具调用链 (请求: {len(requested_ids)}, 实际返回: {len(answered_ids)}, 缺失: {len(missing)}, 多余: {len(extra)})，正在清理并撤回悬空节点..."
-                )
-
-                # A. 弹出这条 assistant 之后的所有消息
-                while len(self.current_history) > assistant_idx + 1:
-                    self.current_history.pop()
-
-                # B. 如果 assistant 还有实质性的回复文本，保留文本，只摘除 tool_calls
-                if (
-                    assistant_msg.get("content")
-                    and str(assistant_msg.get("content")).strip()
-                ):
-                    del assistant_msg["tool_calls"]
-                else:
-                    # 否则这整条 assistant 消息都是多余的，直接弹出
-                    self.current_history.pop()
+        if repair is not None:
+            print(
+                f"[Warn.ToolChain] 检测到未完成的多工具调用链 (请求: {repair.requested}, 实际返回: {repair.answered}, 缺失: {repair.missing}, 多余: {repair.extra})，正在清理并撤回悬空节点..."
+            )
 
     def _checker(self):
         local_push = []
@@ -326,254 +285,51 @@ class Agent:
             self._fire_input_received(local_push)
 
     def process_message(self):
-        current_interaction_id = self._increment_interaction_id()
-        self._bg_search_task_id = current_interaction_id
-        # 清理上一轮遗留的打断信号，避免新交互的工具被误杀
-        self._tool_interrupt_event.clear()
+        lifecycle.process_message(self)
 
-        user_texts = [
-            msg["content"]
-            for msg in self.pending_force_push
-            if msg.get("type") == "user"
-        ]
-        merged_input = " ".join(user_texts).strip()
-        is_real_user_input = bool(merged_input)
+    def _begin_interaction(self) -> int:
+        return lifecycle.begin_interaction(self)
 
-        if is_real_user_input:
-            self._inject_hook_results("on_loop_start", epoch=0)
+    def _merged_user_input(self) -> str:
+        return lifecycle.merged_user_input(self)
 
-            def background_hint_check(task_id):
-                if getattr(self, "_bg_search_task_id", None) != task_id:
-                    return
+    def _spawn_hint_search(self, merged_input: str, task_id: int):
+        hint_search.spawn_hint_search(self, merged_input, task_id)
 
-                try:
-                    from src.tool.search.skill_search import search_skills
-                    from src.tool.search.mcp_search import mcp_search
-                    from src.memory.purrmemo.client import get_memory_client
-                    import time
+    def _background_hint_check(self, merged_input: str, task_id: int):
+        hint_search.background_check(self, merged_input, task_id)
 
-                    skill_res, _ = search_skills(merged_input, top_k=5)
-                    mcp_res, _ = mcp_search(merged_input, max_results=5)
+    def _run_agent_loop(self, interaction_id: int) -> bool:
+        return lifecycle.run_agent_loop(self, interaction_id)
 
-                    high_score_skills = len(
-                        [s for s in skill_res if s.get("score", 0) >= 0.5]
-                    )
-                    high_score_mcps = len(
-                        [m for m in mcp_res if m.get("score", 0) >= 0.5]
-                    )
-                    total_tools = high_score_skills + high_score_mcps
+    def _run_epoch(
+        self,
+        interaction_id: int,
+        loop_epoch: int,
+        used_tools: dict,
+        loop_end_retry: int,
+    ) -> str:
+        """执行一轮模型调用与工具/钩子处理，返回 break / continue / retry。"""
+        return epoch.run_epoch(
+            self, interaction_id, loop_epoch, used_tools, loop_end_retry
+        )
 
-                    if getattr(self, "_bg_search_task_id", None) != task_id:
-                        return
+    def _record_usage(self, usage) -> None:
+        epoch.record_usage(self, usage)
 
-                    client = get_memory_client()
-                    valid_memos = 0
-                    if client.search_tool.vector_engine:
-                        exps = client.search_tool.vector_engine.search_experiences(
-                            merged_input, top_k=5
-                        )
-                        valid_exps = len(
-                            [e for e in exps if e.get("score", 0.0) >= 0.5]
-                        )
-
-                        events = client.search_tool.vector_engine.search_events_vector(
-                            merged_input, top_k=5
-                        )
-                        valid_events = len(
-                            [e for e in events if e.get("score", 0.0) >= 0.5]
-                        )
-
-                        valid_memos = valid_exps + valid_events
-
-                    if total_tools == 0 and valid_memos == 0:
-                        return
-
-                    time.sleep(10)
-
-                    if (
-                        getattr(self, "_bg_search_task_id", None) != task_id
-                        or self.state != "handling"
-                    ):
-                        return
-
-                    already_searched = False
-                    already_memo_searched = False
-                    with self._history_lock:
-                        for msg in reversed(self.current_history):
-                            if msg.get("role") == "user":
-                                break
-                            if msg.get("role") == "assistant" and msg.get("tool_calls"):
-                                for tc in msg.get("tool_calls"):
-                                    func_name = tc.get("function", {}).get("name", "")
-                                    args_str = tc.get("function", {}).get(
-                                        "arguments", ""
-                                    )
-                                    if func_name == "Search" and any(
-                                        r in args_str for r in ["local", "skill", "mcp"]
-                                    ):
-                                        already_searched = True
-                                    elif (
-                                        func_name == "Memo"
-                                        and '"action":"search"'
-                                        in args_str.replace(" ", "")
-                                    ):
-                                        already_memo_searched = True
-
-                    hints = []
-                    if not already_searched and total_tools > 0:
-                        hints.append(
-                            f"检查到有 {total_tools} 条 skill/mcp 与本轮对话的总输入语义高度相关，可以尝试使用 Search 工具(route='local')检索相关数据。"
-                        )
-                    if not already_memo_searched and valid_memos > 0:
-                        hints.append(
-                            f"检查到记忆库中有 {valid_memos} 条经验/事件与本轮对话的总输入高度相关，可以尝试使用 Memo 工具(action='search')检索。"
-                        )
-
-                    if hints:
-                        self.force_push("\n\n".join(hints), type="system")
-                except Exception as e:
-                    print(f"[Warn] 后台预搜索线程异常: {e}")
-
-            threading.Thread(
-                target=background_hint_check,
-                args=(current_interaction_id,),
-                daemon=True,
-            ).start()
-
-        used_tools = {}
-        loop_epoch = 0
-        loop_end_retry = 0
-        turn_ended = False  # 打断/断层路径已在 _handle_interaction_error 发过 turn_end
-        self._check_and_fix_toolchain()
-        while True:
-            try:
-                loop_epoch += 1
-                self._inject_hook_results("on_loop_epoch", epoch=loop_epoch)
-                if self._get_current_interaction_id() != current_interaction_id:
-                    print(
-                        f"[Warn.Session] 检测到交互ID过期 ({current_interaction_id} != {self._get_current_interaction_id()})，丢弃旧响应"
-                    )
-                    break
-
-                self._checker()
-
-                with self._history_lock:
-                    raw_history = list(self.current_history)
-
-                # 图片副本在这里按需还原成 base64；整体超限则改用视觉模型转述
-                safe_history = self._prepare_history_for_model(raw_history)
-
-                msg_resp, usage = self._chat_stream(
-                    safe_history, self._get_tool_schema(), current_interaction_id
-                )
-
-                if self._get_current_interaction_id() != current_interaction_id:
-                    print("[Warn.Session] 网络响应返回后检测到交互ID过期，丢弃响应")
-                    break
-
-                if usage is not None:
-                    self.window_token = usage.total_tokens
-                    # 🌟 累计本会话消耗（子代理在 SubAgentRunner 中另行累计）
-                    self.consumed_tokens += getattr(usage, "total_tokens", 0) or 0
-                    # 🌟 ACP 总线：上下文用量（编辑器侧 usage_update 词汇）
-                    from src.server.acp.bus import get_bus
-                    from src.utils.config import get_model_config
-
-                    model_cfg = get_model_config().get("main", {}).get(self.name, {})
-                    get_bus().publish(
-                        self.session_id,
-                        "usage",
-                        {
-                            "used": self.window_token,
-                            "size": model_cfg.get("max_token", 500000),
-                        },
-                    )
-                has_tools = self._process_assistant_message(msg_resp)
-
-                # 本次消息发起的那一批工具调用（on_tool_calling 的 tool_use_check 只查这一批）
-                current_tools = {}
-                if msg_resp.tool_calls:
-                    for t in msg_resp.tool_calls:
-                        args_dict = {}
-                        if t.function.arguments:
-                            try:
-                                args_dict = json.loads(t.function.arguments)
-                            except Exception:
-                                pass
-                        # used_tools 为整轮累积记录（供 on_loop_end 等阶段使用）
-                        used_tools.setdefault(t.function.name, []).append(args_dict)
-                        current_tools.setdefault(t.function.name, []).append(args_dict)
-
-                if has_tools:
-                    should_pause = self._execute_tool_calls(msg_resp.tool_calls)
-                    all_tool_success = self._inject_hook_results(
-                        "on_tool_calling",
-                        epoch=loop_epoch,
-                        used_tools=current_tools,  # 只看本次调用的工具
-                    )
-                    if not all_tool_success:
-                        continue
-                    if should_pause:
-                        break
-                else:
-                    all_success = self._inject_hook_results(
-                        "on_loop_end",
-                        epoch=loop_epoch,
-                        used_tools=used_tools,
-                        loop_end_retry=loop_end_retry,
-                    )
-                    if all_success:
-                        print("[Debug] 所有条件及拦截器检验通过，正常关闭循环。")
-                        break
-                    else:
-                        loop_end_retry += 1
-                        hint_data = {
-                            "type": "workflow_hint",
-                            "content": "未满足结束循环条件，已自动打回",
-                        }
-                        self._append_history(
-                            {
-                                "role": "user",
-                                "content": json.dumps(hint_data, ensure_ascii=False),
-                            }
-                        )
-                        # 🌟 打回提示是 workflow_hint 系统注入，不算收到用户输入，不触发钩子
-                        print(
-                            f"[Debug] 当前第 {loop_epoch} 轮条件不足，被打回重新触发模型迭代。"
-                        )
-                        continue
-
-            except (KeyboardInterrupt, InterruptedError):
-                # 用户强制打断（含模型调用重试期间被打断）：不写入交互断层，只记录打断标记
-                self._handle_interaction_error(is_interrupt=True)
-                turn_ended = True
-                break
-            except Exception as e:
-                self._handle_interaction_error(e=e)
-                turn_ended = True
-                break
-
-        self._set_live_phase("idle")
-        # 🌟 ACP 总线：一轮交互结束，SSE 消费方据此补 prompt 的 stopReason
-        if not turn_ended:
-            from src.server.acp.bus import get_bus
-
-            get_bus().publish(self.session_id, "turn_end", {"stopReason": "end_turn"})
-        self.save_checkpoint()
+    def _finish_turn(self, turn_ended: bool) -> None:
+        lifecycle.finish_turn(self, turn_ended)
 
     def _prepare_history_for_model(self, messages):
         """发送模型前：把历史里的图片副本路径还原成 base64"""
-        return [materialize_message(msg) for msg in messages]
+        return epoch.prepare_history_for_model(messages)
 
     def _vision_request_limit(self) -> int:
-        cfg = get_model_config().get("main", {}).get(self.name, {})
-        return max_request_bytes(cfg)
+        return tool_batch.vision_request_limit(self)
 
     def _materialized_request_bytes(self) -> int:
         """当前历史还原图片后的序列化体积，供 Task 直注前估算"""
-        with self._history_lock:
-            raw_history = list(self.current_history)
-        return serialized_size([materialize_message(msg) for msg in raw_history])
+        return tool_batch.materialized_request_bytes(self)
 
     def _chat_stream(self, messages, tools, interaction_id):
         """
@@ -581,22 +337,7 @@ class Agent:
         （供 /status 轮询透出给前端）；流式链路出任何异常时自动回退到
         原有非流式调用，保证 Agent 主循环行为不受影响。
         """
-        try:
-            self._set_live_phase("thinking")
-            return self._consume_stream(messages, tools, interaction_id)
-        except InterruptedError:
-            # 用户打断：不做非流式兜底重试，直接上抛让主循环静默收尾
-            raise
-        except Exception as e:
-            if self._get_current_interaction_id() != interaction_id:
-                # 打断/会话切换引起的流中断：结果会被上层丢弃，无需回退
-                raise
-            print(f"[Warn.Stream] 流式调用失败，回退非流式重试: {e}")
-            self._live_reasoning = ""
-            response = self.model.chat(
-                messages=messages, tools=tools, cancel_event=self._tool_interrupt_event
-            )
-            return response.choices[0].message, getattr(response, "usage", None)
+        return epoch.chat_stream(self, messages, tools, interaction_id)
 
     def _consume_stream(self, messages, tools, interaction_id):
         """
@@ -604,285 +345,39 @@ class Agent:
         流结束后拼装出与非流式等价的 message 对象，仍走原有的
         _process_assistant_message 写入路径。
         """
-        from types import SimpleNamespace
-
-        self._live_reasoning = ""
-        response = self.model.chat(
-            messages=messages,
-            tools=tools,
-            stream=True,
-            cancel_event=self._tool_interrupt_event,
-        )
-
-        reasoning_parts = []
-        content_parts = []
-        tool_acc = {}  # index -> {"id","type","name","arguments"}
-        usage = None
-
-        for chunk in response:
-            if self._get_current_interaction_id() != interaction_id:
-                # 人类打断/会话切换：提前掐断流，拼装结果将被上层丢弃
-                break
-            if getattr(chunk, "usage", None):
-                usage = chunk.usage
-            if not getattr(chunk, "choices", None):
-                continue
-            delta = chunk.choices[0].delta
-            if delta is None:
-                continue
-
-            rc = getattr(delta, "reasoning_content", None)
-            if rc is None and hasattr(delta, "model_dump"):
-                try:
-                    rc = delta.model_dump().get("reasoning_content")
-                except Exception:
-                    rc = None
-            if rc:
-                reasoning_parts.append(rc)
-                self._live_reasoning = "".join(reasoning_parts)
-
-            if delta.content:
-                content_parts.append(delta.content)
-
-            for tc in getattr(delta, "tool_calls", None) or []:
-                slot = tool_acc.setdefault(
-                    tc.index,
-                    {"id": "", "type": "function", "name": "", "arguments": ""},
-                )
-                if tc.id:
-                    slot["id"] = tc.id
-                if tc.type:
-                    slot["type"] = tc.type
-                if tc.function:
-                    if tc.function.name:
-                        slot["name"] += tc.function.name
-                    if tc.function.arguments:
-                        slot["arguments"] += tc.function.arguments
-
-        self._live_reasoning = ""
-
-        tool_calls = [
-            SimpleNamespace(
-                id=slot["id"],
-                type=slot["type"],
-                function=SimpleNamespace(
-                    name=slot["name"], arguments=slot["arguments"]
-                ),
-            )
-            for _, slot in sorted(tool_acc.items())
-        ] or None
-
-        reasoning_text = "".join(reasoning_parts)
-        msg = SimpleNamespace(content="".join(content_parts), tool_calls=tool_calls)
-        if reasoning_text:
-            msg.reasoning_content = reasoning_text
-        return msg, usage
+        return epoch.consume_stream(self, messages, tools, interaction_id)
 
     def _process_assistant_message(self, msg_resp) -> bool:
-        assist_msg = {"role": "assistant", "content": msg_resp.content or ""}
-        rc = getattr(msg_resp, "reasoning_content", None)
-        if rc is None and hasattr(msg_resp, "model_dump"):
-            rc = msg_resp.model_dump().get("reasoning_content")
-        if rc is not None:
-            assist_msg["reasoning_content"] = rc
-        if msg_resp.tool_calls:
-            assist_msg["tool_calls"] = [
-                {
-                    "id": t.id,
-                    "type": t.type,
-                    "function": {
-                        "name": t.function.name,
-                        "arguments": t.function.arguments,
-                    },
-                }
-                for t in msg_resp.tool_calls
-            ]
-        self._append_history(assist_msg)
-        # 🌟 ACP 总线：思考/消息事件（与旧 sensor 网关并存，Phase 4 删旧路径）
-        from src.server.acp.bus import get_bus
-
-        if rc:
-            get_bus().publish(self.session_id, "agent_thought", {"text": rc})
-        if msg_resp.content:
-            get_bus().publish(
-                self.session_id, "agent_message", {"text": msg_resp.content}
-            )
-
-        return bool(msg_resp.tool_calls)
+        return epoch.process_assistant_message(self, msg_resp)
 
     @staticmethod
     def _is_snapshot_dispatch_tool(tool_call) -> bool:
-        """
-        识别「快照主历史并派发子代理」的工具（BrainStorm create）。
-        此类工具必须延后到批次末尾执行：先让同批次其它工具跑完并把结果写入
-        history，子代理快照才能兜住全部工具返回结果，否则 toolchain 断裂
-        会导致子代理首次 LLM 调用被 400 拒绝。
-        """
-        if tool_call.function.name != "BrainStorm":
-            return False
-        try:
-            args = (
-                json.loads(tool_call.function.arguments)
-                if tool_call.function.arguments
-                else {}
-            )
-        except Exception:
-            return False
-        return isinstance(args, dict) and args.get("action") == "create"
+        """识别「快照主历史并派发子代理」的工具（BrainStorm create）。"""
+        return is_snapshot_dispatch_tool(tool_call)
+
+    def _tool_batch_executor(self) -> ToolBatchExecutor:
+        return ToolBatchExecutor(
+            self,
+            dispatch=dispatch_tool,
+            extract_content=extract_tool_message_content,
+            build_display=build_display_result,
+        )
 
     def _execute_tool_calls(self, tool_calls) -> bool:
-        self._set_live_phase("processing")
-        # 🌟 快照派发类工具（BrainStorm create）延后到批次末尾执行：
-        # 确保同批次其它工具的返回结果先写入 history，BS 随后的快照才能完整兜住
-        if len(tool_calls) > 1:
-            deferred = [tc for tc in tool_calls if self._is_snapshot_dispatch_tool(tc)]
-            if deferred:
-                others = [
-                    tc for tc in tool_calls if not self._is_snapshot_dispatch_tool(tc)
-                ]
-                tool_calls = others + deferred
+        return self._tool_batch_executor().execute(
+            tool_calls, self._execute_single_tool
+        )
 
-        for tool_call in tool_calls:
-            target_tool_name = tool_call.function.name
-            arguments_str = tool_call.function.arguments
-            arguments = {}
-            if arguments_str:
-                try:
-                    arguments = json.loads(arguments_str)
-                except Exception:
-                    if repair_json:
-                        arguments = repair_json(arguments_str, return_objects=True)
-            if not isinstance(arguments, dict):
-                error_msg = "[Error] 系统拦截：工具参数格式严重损坏。"
-                self._append_history(
-                    {
-                        "role": "tool",
-                        "tool_call_id": tool_call.id,
-                        "name": target_tool_name,
-                        "content": error_msg,
-                    }
-                )
-                continue
+    def _execute_single_tool(self, tool_call) -> bool:
+        """执行单个工具并写入 tool 响应；返回 True 表示因人类打断而终止后续工具。"""
+        return self._tool_batch_executor().execute_one(tool_call)
 
-            if target_tool_name == "Bash":
-                arguments["session_id"] = self.session_id
-            if target_tool_name == "Task" and getattr(self.model, "vision", False):
-                # 🌟 视觉直注前由 Task 判断本次请求体积：超限则改用视觉顾问，
-                # 直注时图片副本写入会话 attachment/ 目录
-                arguments["_session_id"] = self.session_id
-                arguments["_request_bytes"] = self._materialized_request_bytes()
-                arguments["_request_limit_bytes"] = self._vision_request_limit()
-            if target_tool_name == "BrainStorm":
-                # 🌟 注入本次调用的 tool_call_id，供 BS 伪造子代理上下文的
-                # tool result 时精确定位自己（批次内可能存在多个工具调用）
-                arguments["_tool_call_id"] = tool_call.id
-
-            current_iid = self._get_current_interaction_id()
-            try:
-                result_content = dispatch_tool(
-                    target_tool_name,
-                    arguments,
-                    cancel_event=self._tool_interrupt_event,
-                    # 🌟 主模型开启 vision 直注时，工具输出图片不落盘直接注入对话
-                    vision_mode=getattr(self.model, "vision", False),
-                )
-            except Exception as e:
-                result_content = json.dumps(
-                    {"error": f"工具执行异常: {str(e)}", "type": "error"},
-                    ensure_ascii=False,
-                )
-                print(f"[Warn.Tool] 工具 {target_tool_name} 执行抛出异常: {e}")
-
-            if self._get_current_interaction_id() != current_iid:
-                # 🌟 区分两种场景：
-                # a) 人类强制打断：伪造结果必须写进 history，保证 assistant.tool_calls 有配对的
-                #    tool 响应（否则下轮 LLM 调用会被 API 以 toolchain 不完整拒绝），并停止执行后续工具
-                # b) 会话切换：保持原有的丢弃幽灵结果行为（避免污染新会话的 history）
-                if self._tool_interrupt_event.is_set():
-                    print(
-                        f"[Lock.Interrupt] 工具 {target_tool_name} 被人类强行打断，注入打断提示并终止本轮工具链。"
-                    )
-                    self._append_history(
-                        {
-                            "role": "tool",
-                            "tool_call_id": tool_call.id,
-                            "name": target_tool_name,
-                            "content": extract_tool_message_content(result_content),
-                        }
-                    )
-                    self._tool_interrupt_event.clear()
-                    break
-                print(
-                    f"[Warn.Interrupt] 工具 {target_tool_name} 执行完毕，但检测到会话已切换或被打断，丢弃幽灵结果。"
-                )
-                continue
-
-            # 🌟 ACP 总线：工具完成事件——完整结果/参数随载荷透出，
-            # dispatch 侧统一截断（编辑器看 tool_call_update.content）；
-            # tool_detail 过滤由各桥自决；vision 直注结果先剥离图片 base64 只透出占位文本
-            from src.server.acp.bus import get_bus
-
-            get_bus().publish(
-                self.session_id,
-                "tool_call",
-                {
-                    "name": target_tool_name,
-                    "tool_call_id": tool_call.id,
-                    "arguments": arguments,
-                    "result": build_display_result(result_content),
-                },
-            )
-            self._append_history(
-                {
-                    "role": "tool",
-                    "tool_call_id": tool_call.id,
-                    "name": target_tool_name,
-                    # vision 直注时为 OpenAI 多模态 parts 列表（含 image_url），
-                    # 普通结果为 JSON 字符串
-                    "content": extract_tool_message_content(result_content),
-                }
-            )
-
-            # ==== 在模型调用 Memo add 操作后，触发显性检查拦截 ====
-            if target_tool_name == "Memo" and arguments.get("action") == "add":
-                memo_data = arguments.get("memo_data")
-                if memo_data:
-                    self.memo.append(memo_data)
-                    if len(self.memo) > 30:
-                        self.memo = self.memo[-30:]
-                    SessionStore.save_global_memo(self.memo)
-                from src.utils.config import get_model_config
-
-                model_cfg = get_model_config().get("main", {}).get(self.name, {})
-                max_tokens = model_cfg.get("max_token", 500000)
-                if self.window_token >= max_tokens:
-                    self._truncate_memory_if_needed(force=True)
-        return False
+    def _maybe_update_memo(self, tool_name: str, arguments: dict) -> None:
+        """模型调用 Memo add 后同步内存缓存，并在窗口超限时强制压缩。"""
+        memory_ops.maybe_update_memo(self, tool_name, arguments)
 
     def _handle_interaction_error(self, e=None, is_interrupt=False):
-        content_msg = (
-            "[Warn.Interrupt] 运行被强制中断。"
-            if is_interrupt
-            else f"[Error.Fault] 交互断层: {e}"
-        )
-        print(content_msg)
-
-        self._check_and_fix_toolchain()
-
-        self._append_history({"role": "assistant", "content": content_msg})
-
-        # 🌟 ACP 总线：非正常收尾（打断/断层）也要发 turn_end，SSE 消费方才能补 stopReason
-        # 规范 stopReason 枚举无 error：打断→cancelled，故障→end_turn（错误文本已走消息通道）
-        from src.server.acp.bus import get_bus
-
-        get_bus().publish(
-            self.session_id,
-            "turn_end",
-            {
-                "stopReason": "cancelled" if is_interrupt else "end_turn",
-                "message": content_msg,
-            },
-        )
+        lifecycle.handle_interaction_error(self, e=e, is_interrupt=is_interrupt)
 
     def sensor(self):
         print("[Init] Agent 后台主核已启动...")
@@ -910,143 +405,4 @@ class Agent:
             self._compressing = False
 
     def _truncate_memory_if_needed(self, force=False):
-        from src.utils.config import get_model_config
-
-        model_cfg = get_model_config().get("main", {}).get(self.name, {})
-        max_tokens = model_cfg.get("max_token", 500000)
-        if not force and self.window_token < max_tokens:
-            return
-
-        print(
-            f"[Truncate] 触发记忆截断 (当前约 {self.window_token} tokens)，正在进入内部交互请求模型进行全局大总结..."
-        )
-
-        now_str = datetime.datetime.now().strftime("%m-%d %H:%M:%S")
-
-        compression_prompt = {
-            "role": "user",
-            "content": json.dumps(
-                {
-                    "events": [
-                        {
-                            "type": "system",
-                            "time": now_str,
-                            "content": "记忆窗口已达上限，系统将要删除所有对话历史。为防止上下文断层，请对当前所有会话细节、历史、当前工作记忆与进度进行大总结，然后调用 Memo 工具（必须设置 action='add'）传入总结。系统将仅保留这份总结。",
-                        }
-                    ]
-                },
-                ensure_ascii=False,
-            ),
-        }
-
-        with self._history_lock:
-            raw_history = self.current_history.copy()
-        temp_history = self._prepare_history_for_model(
-            raw_history + [compression_prompt]
-        )
-
-        summary_text = None
-        msg_resp = None
-        max_retries = 3
-
-        for attempt in range(1, max_retries + 1):
-            try:
-                response = self.model.chat(
-                    messages=temp_history,
-                    tools=self._get_tool_schema(),
-                    cancel_event=self._tool_interrupt_event,
-                )
-                msg_resp = response.choices[0].message
-
-                valid_memo_found = False
-
-                if msg_resp.tool_calls:
-                    for tc in msg_resp.tool_calls:
-                        if tc.function.name == "Memo":
-                            try:
-                                args = json.loads(tc.function.arguments)
-                                if args.get("action") == "add" and args.get(
-                                    "memo_data"
-                                ):
-                                    summary_text = (
-                                        json.dumps(
-                                            args.get("memo_data"), ensure_ascii=False
-                                        )
-                                        if isinstance(args.get("memo_data"), dict)
-                                        else str(args.get("memo_data"))
-                                    )
-                                    valid_memo_found = True
-                                    break
-                            except Exception as e:
-                                print(f"[Warn] 解析 Memo 参数失败: {e}")
-
-                if valid_memo_found:
-                    break
-                else:
-                    warning_msg = f"【第{attempt}次警告】未使用Memo工具进行记忆总结(或 action 不为 'add')！请只调用 Memo 工具并将 action 设为 'add'，不要调用其他任何无关工具。"
-
-                    warning_prompt = {
-                        "role": "user",
-                        "content": json.dumps(
-                            {
-                                "events": [
-                                    {
-                                        "type": "system",
-                                        "time": datetime.datetime.now().strftime(
-                                            "%m-%d %H:%M:%S"
-                                        ),
-                                        "content": warning_msg,
-                                    }
-                                ]
-                            },
-                            ensure_ascii=False,
-                        ),
-                    }
-                    temp_history.append(warning_prompt)
-                    print(f"[Warn.MemCompress] {warning_msg}")
-
-            except Exception as e:
-                print(f"[Error] 记忆总结网络请求失败: {e}")
-                break
-
-        if not summary_text:
-            if msg_resp and msg_resp.content:
-                summary_text = msg_resp.content
-            else:
-                summary_text = "（模型未能成功生成有效总结，上下文已强行截断）"
-
-        try:
-            with self._history_lock:
-                fresh_system_content = self._build_system_prompt()
-                new_system_msg = {"role": "system", "content": fresh_system_content}
-
-                summary_msg = {
-                    "role": "user",
-                    "content": json.dumps(
-                        {
-                            "events": [
-                                {
-                                    "type": "system",
-                                    "time": datetime.datetime.now().strftime(
-                                        "%m-%d %H:%M:%S"
-                                    ),
-                                    "content": f"【历史记忆大总结】\n{summary_text}",
-                                }
-                            ]
-                        },
-                        ensure_ascii=False,
-                    ),
-                }
-
-                self.current_history = [new_system_msg, summary_msg]
-
-                for msg in self.current_history:
-                    if msg.get("role") == "assistant" and "reasoning_content" in msg:
-                        msg["reasoning_content"] = ""
-
-            print("[Success] Agent 记忆大总结与安全截断完毕！")
-            self.window_token = 0
-            self.save_checkpoint()
-
-        except Exception as e:
-            print(f"[Error] 记忆重组发生严重异常: {e}")
+        memory_ops.truncate_memory_if_needed(self, force=force)

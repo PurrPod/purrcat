@@ -1,9 +1,21 @@
-import json
 import os
+import shutil
 import threading
 import time
 import uuid
 
+from src.agent.session_layout import (
+    branch_path,
+    filter_session_index,
+    is_session_id,
+    memo_path,
+    meta_path,
+    plan_path,
+    read_json,
+    session_dir,
+    write_json,
+    write_json_atomic,
+)
 from src.utils.config import SESSION_INDEX_PATH, SESSIONS_DIR
 
 
@@ -29,7 +41,7 @@ class SessionStore:
     @classmethod
     def get_plan_path(cls, session_id):
         """会话级 BrainStorm 计划文件的宿主机绝对路径。"""
-        return os.path.join(SESSIONS_DIR, session_id, cls.PLAN_FILENAME)
+        return plan_path(SESSIONS_DIR, session_id, cls.PLAN_FILENAME)
 
     @classmethod
     def save_session_plan(cls, session_id, content):
@@ -54,25 +66,21 @@ class SessionStore:
 
     @classmethod
     def load_global_memo(cls):
-        path = os.path.join(SESSIONS_DIR, "memo.json")
+        path = memo_path(SESSIONS_DIR)
         if not os.path.exists(path):
             return []
         try:
-            with open(path, "r", encoding="utf-8") as f:
-                return json.load(f)
+            return read_json(path)
         except Exception as e:
             print(f"[Error] 读取全局 memo 失败: {e}")
             return []
 
     @classmethod
     def save_global_memo(cls, memo_list):
-        path = os.path.join(SESSIONS_DIR, "memo.json")
-        temp_path = f"{path}.tmp"
+        path = memo_path(SESSIONS_DIR)
         with cls._index_lock:
             try:
-                with open(temp_path, "w", encoding="utf-8") as f:
-                    json.dump(memo_list, f, ensure_ascii=False, indent=2)
-                os.replace(temp_path, path)
+                write_json_atomic(path, memo_list)
             except Exception as e:
                 print(f"[Warn] 保存全局 memo 失败: {e}")
 
@@ -82,17 +90,30 @@ class SessionStore:
         with cls._index_lock:
             if os.path.exists(SESSION_INDEX_PATH):
                 try:
-                    with open(SESSION_INDEX_PATH, "r", encoding="utf-8") as f:
-                        data = json.load(f)
-                        # 👇 修复 1：强行过滤掉非 session_ 开头的异常数据（如 requests 空文件夹）
-                        return {
-                            k: v
-                            for k, v in data.items()
-                            if str(k).startswith("session_")
-                        }
+                    return filter_session_index(read_json(SESSION_INDEX_PATH))
                 except Exception as e:
                     print(f"[Warn] 读取索引失败: {e}")
             return {}
+
+    @classmethod
+    def delete_session(cls, session_id):
+        """删除会话目录并同步索引（调用方负责拦截活跃会话）。"""
+        directory = session_dir(SESSIONS_DIR, session_id)
+        if os.path.isdir(directory):
+            with cls._get_file_lock(session_id):
+                shutil.rmtree(directory)
+            print(f"[Delete] 已删除会话文件夹: {directory}")
+
+        with cls._index_lock:
+            if not os.path.exists(SESSION_INDEX_PATH):
+                return
+            try:
+                index_data = read_json(SESSION_INDEX_PATH)
+                if session_id in index_data:
+                    del index_data[session_id]
+                    write_json(SESSION_INDEX_PATH, index_data)
+            except Exception as e:
+                print(f"Error updating index: {e}")
 
     @classmethod
     def background_sync_sessions(cls):
@@ -106,17 +127,16 @@ class SessionStore:
             for item in os.listdir(SESSIONS_DIR):
                 if not item.startswith("session_"):
                     continue
-                session_dir = os.path.join(SESSIONS_DIR, item)
-                if os.path.isdir(session_dir):
+                directory = session_dir(SESSIONS_DIR, item)
+                if os.path.isdir(directory):
                     session_id = item
-                    meta_path = os.path.join(session_dir, "meta.json")
-                    main_path = os.path.join(session_dir, "main.json")
+                    meta_file = meta_path(SESSIONS_DIR, session_id)
+                    main_file = branch_path(SESSIONS_DIR, session_id, "main")
 
                     msg_count = 0
-                    if os.path.exists(main_path):
+                    if os.path.exists(main_file):
                         try:
-                            with open(main_path, "r", encoding="utf-8") as f:
-                                msg_count = len(json.load(f))
+                            msg_count = len(read_json(main_file))
                         except Exception:
                             pass
 
@@ -125,14 +145,13 @@ class SessionStore:
                         updated_at = created_at
                         alias = session_id
                         project_id = ""
-                        if os.path.exists(meta_path):
+                        if os.path.exists(meta_file):
                             try:
-                                with open(meta_path, "r", encoding="utf-8") as f:
-                                    m_data = json.load(f)
-                                    created_at = m_data.get("created_at", created_at)
-                                    updated_at = m_data.get("updated_at", updated_at)
-                                    alias = m_data.get("alias", alias)
-                                    project_id = m_data.get("project_id", "")
+                                m_data = read_json(meta_file)
+                                created_at = m_data.get("created_at", created_at)
+                                updated_at = m_data.get("updated_at", updated_at)
+                                alias = m_data.get("alias", alias)
+                                project_id = m_data.get("project_id", "")
                             except Exception:
                                 pass
 
@@ -149,26 +168,22 @@ class SessionStore:
                         needs_save = True
                     else:
                         index_data[session_id]["messages_count"] = msg_count
-                        if os.path.exists(meta_path):
+                        if os.path.exists(meta_file):
                             try:
-                                with open(meta_path, "r", encoding="utf-8") as f:
-                                    m_data = json.load(f)
-                                    if (
-                                        "alias" in m_data
-                                        and index_data[session_id].get("alias")
-                                        != m_data["alias"]
-                                    ):
-                                        index_data[session_id]["alias"] = m_data[
-                                            "alias"
-                                        ]
-                                        needs_save = True
+                                m_data = read_json(meta_file)
+                                if (
+                                    "alias" in m_data
+                                    and index_data[session_id].get("alias")
+                                    != m_data["alias"]
+                                ):
+                                    index_data[session_id]["alias"] = m_data["alias"]
+                                    needs_save = True
                             except Exception:
                                 pass
 
             if needs_save:
                 try:
-                    with open(SESSION_INDEX_PATH, "w", encoding="utf-8") as f:
-                        json.dump(index_data, f, ensure_ascii=False, indent=2)
+                    write_json(SESSION_INDEX_PATH, index_data)
                 except Exception:
                     pass
 
@@ -180,10 +195,8 @@ class SessionStore:
         由 save_session 落盘）；index.json 不保存该字段，故不能用 get_all_sessions。
         供 manager 在重启恢复 / 切换会话时还原 Token 圆环进度。
         """
-        meta_path = os.path.join(SESSIONS_DIR, session_id, "meta.json")
         try:
-            with open(meta_path, "r", encoding="utf-8") as f:
-                meta = json.load(f)
+            meta = read_json(meta_path(SESSIONS_DIR, session_id))
             return int(
                 meta.get("branches", {}).get("main", {}).get("window_token", 0) or 0
             )
@@ -198,11 +211,9 @@ class SessionStore:
         （branch_id == "main"）计入 main，其余子代理分支计入 sub，
         返回 {"main", "sub", "total"}。异常时安全回退为全 0。
         """
-        meta_path = os.path.join(SESSIONS_DIR, session_id, "meta.json")
         main_total, sub_total = 0, 0
         try:
-            with open(meta_path, "r", encoding="utf-8") as f:
-                meta = json.load(f)
+            meta = read_json(meta_path(SESSIONS_DIR, session_id))
             branches = meta.get("branches", {}) or {}
             for bid, info in branches.items():
                 value = int((info or {}).get("consumed_tokens", 0) or 0)
@@ -217,13 +228,11 @@ class SessionStore:
     @classmethod
     def load_session_history(cls, session_id, branch_id="main"):
         """🌟 重构：从会话文件夹内的特定分支文件加载历史"""
-        filename = "main.json" if branch_id == "main" else f"sub_{branch_id}.json"
-        path = os.path.join(SESSIONS_DIR, session_id, filename)
+        path = branch_path(SESSIONS_DIR, session_id, branch_id)
         if not os.path.exists(path):
             return []
         try:
-            with open(path, "r", encoding="utf-8") as f:
-                return json.load(f)
+            return read_json(path)
         except Exception as e:
             print(f"[Error] 读取会话 {session_id} 分支 {branch_id} 失败: {e}")
             return []
@@ -231,16 +240,15 @@ class SessionStore:
     @classmethod
     def set_session_paradigm(cls, session_id, paradigm=None):
         """把某个会话绑定的范式写入 meta.json 与全局索引（None 表示回落默认，移除记录）。"""
-        session_dir = os.path.join(SESSIONS_DIR, session_id)
-        os.makedirs(session_dir, exist_ok=True)
-        meta_path = os.path.join(session_dir, "meta.json")
+        directory = session_dir(SESSIONS_DIR, session_id)
+        os.makedirs(directory, exist_ok=True)
+        meta_file = meta_path(SESSIONS_DIR, session_id)
 
         with cls._get_file_lock(f"{session_id}_meta"):
             meta_data = {}
-            if os.path.exists(meta_path):
+            if os.path.exists(meta_file):
                 try:
-                    with open(meta_path, "r", encoding="utf-8") as f:
-                        meta_data = json.load(f)
+                    meta_data = read_json(meta_file)
                 except Exception:
                     meta_data = {}
             if paradigm:
@@ -249,8 +257,7 @@ class SessionStore:
                 meta_data.pop("paradigm", None)
             meta_data["updated_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
             try:
-                with open(meta_path, "w", encoding="utf-8") as f:
-                    json.dump(meta_data, f, ensure_ascii=False, indent=2)
+                write_json(meta_file, meta_data)
             except Exception:
                 pass
 
@@ -263,8 +270,7 @@ class SessionStore:
                 else:
                     session_info.pop("paradigm", None)
                 index_data[session_id] = session_info
-                with open(SESSION_INDEX_PATH, "w", encoding="utf-8") as f:
-                    json.dump(index_data, f, ensure_ascii=False, indent=2)
+                write_json(SESSION_INDEX_PATH, index_data)
             except Exception:
                 pass
 
@@ -274,18 +280,17 @@ class SessionStore:
 
         只改归属，不动 updated_at，避免把老会话顶到列表最前面。
         """
-        if not session_id or not str(session_id).startswith("session_"):
+        if not is_session_id(session_id):
             raise ValueError("非法的会话 id")
-        session_dir = os.path.join(SESSIONS_DIR, session_id)
-        os.makedirs(session_dir, exist_ok=True)
-        meta_path = os.path.join(session_dir, "meta.json")
+        directory = session_dir(SESSIONS_DIR, session_id)
+        os.makedirs(directory, exist_ok=True)
+        meta_file = meta_path(SESSIONS_DIR, session_id)
 
         with cls._get_file_lock(f"{session_id}_meta"):
             meta_data = {}
-            if os.path.exists(meta_path):
+            if os.path.exists(meta_file):
                 try:
-                    with open(meta_path, "r", encoding="utf-8") as f:
-                        meta_data = json.load(f) or {}
+                    meta_data = read_json(meta_file) or {}
                 except Exception:
                     meta_data = {}
             meta_data.setdefault("session_id", session_id)
@@ -294,8 +299,7 @@ class SessionStore:
             else:
                 meta_data.pop("project_id", None)
             try:
-                with open(meta_path, "w", encoding="utf-8") as f:
-                    json.dump(meta_data, f, ensure_ascii=False, indent=2)
+                write_json(meta_file, meta_data)
             except Exception as e:
                 print(f"[Warn] 写入会话项目归属失败: {e}")
 
@@ -317,8 +321,7 @@ class SessionStore:
                 session_info.pop("project_id", None)
             index_data[session_id] = session_info
             try:
-                with open(SESSION_INDEX_PATH, "w", encoding="utf-8") as f:
-                    json.dump(index_data, f, ensure_ascii=False, indent=2)
+                write_json(SESSION_INDEX_PATH, index_data)
             except Exception as e:
                 print(f"[Warn] 更新会话索引失败: {e}")
 
@@ -327,10 +330,10 @@ class SessionStore:
         """会话所属项目：以 meta.json 为准（索引可能滞后），缺失时回退索引。"""
         if not session_id:
             return None
-        meta_path = os.path.join(SESSIONS_DIR, session_id, "meta.json")
         try:
-            with open(meta_path, "r", encoding="utf-8") as f:
-                project_id = (json.load(f) or {}).get("project_id")
+            project_id = (read_json(meta_path(SESSIONS_DIR, session_id)) or {}).get(
+                "project_id"
+            )
             if project_id:
                 return project_id
         except Exception:
@@ -353,25 +356,21 @@ class SessionStore:
         project_id=None,
     ):
         """🌟 重构：线程安全地进行多文件分支隔离归档，并追溯分叉拓扑"""
-        session_dir = os.path.join(SESSIONS_DIR, session_id)
-        os.makedirs(session_dir, exist_ok=True)
+        directory = session_dir(SESSIONS_DIR, session_id)
+        os.makedirs(directory, exist_ok=True)
 
-        filename = "main.json" if branch_id == "main" else f"sub_{branch_id}.json"
-        path = os.path.join(session_dir, filename)
-        temp_path = f"{path}.tmp"
+        path = branch_path(SESSIONS_DIR, session_id, branch_id)
 
         file_lock = cls._get_file_lock(f"{session_id}_{branch_id}")
         with file_lock:
             try:
-                with open(temp_path, "w", encoding="utf-8") as f:
-                    json.dump(history, f, ensure_ascii=False, indent=2)
-                os.replace(temp_path, path)
+                write_json_atomic(path, history)
             except Exception as e:
                 print(f"[Warn] 保存分支 {branch_id} 失败: {e}")
                 return
 
         # 更新文件夹内的拓扑元数据 meta.json
-        meta_path = os.path.join(session_dir, "meta.json")
+        meta_file = meta_path(SESSIONS_DIR, session_id)
         timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
 
         meta_lock = cls._get_file_lock(f"{session_id}_meta")
@@ -381,10 +380,9 @@ class SessionStore:
                 "created_at": timestamp,
                 "branches": {},
             }
-            if os.path.exists(meta_path):
+            if os.path.exists(meta_file):
                 try:
-                    with open(meta_path, "r", encoding="utf-8") as f:
-                        meta_data = json.load(f)
+                    meta_data = read_json(meta_file)
                 except Exception:
                     pass
 
@@ -428,8 +426,7 @@ class SessionStore:
                 }
 
             try:
-                with open(meta_path, "w", encoding="utf-8") as f:
-                    json.dump(meta_data, f, ensure_ascii=False, indent=2)
+                write_json(meta_file, meta_data)
             except Exception:
                 pass
 
@@ -454,8 +451,7 @@ class SessionStore:
                 session_info["project_id"] = project_id
             index_data[session_id] = session_info
             try:
-                with open(SESSION_INDEX_PATH, "w", encoding="utf-8") as f:
-                    json.dump(index_data, f, ensure_ascii=False, indent=2)
+                write_json(SESSION_INDEX_PATH, index_data)
             except Exception:
                 pass
 
@@ -489,8 +485,7 @@ class SessionStore:
         if branch_id == "main":
             return False  # 保护主干不被这样删
 
-        session_dir = os.path.join(SESSIONS_DIR, session_id)
-        path = os.path.join(session_dir, f"sub_{branch_id}.json")
+        path = branch_path(SESSIONS_DIR, session_id, branch_id)
 
         # 1. 物理删除文件
         file_lock = cls._get_file_lock(f"{session_id}_{branch_id}")
@@ -499,17 +494,15 @@ class SessionStore:
                 os.remove(path)
 
         # 2. 从 meta.json 拓扑中抹除
-        meta_path = os.path.join(session_dir, "meta.json")
+        meta_file = meta_path(SESSIONS_DIR, session_id)
         meta_lock = cls._get_file_lock(f"{session_id}_meta")
         with meta_lock:
-            if os.path.exists(meta_path):
+            if os.path.exists(meta_file):
                 try:
-                    with open(meta_path, "r", encoding="utf-8") as f:
-                        meta_data = json.load(f)
+                    meta_data = read_json(meta_file)
                     if "branches" in meta_data and branch_id in meta_data["branches"]:
                         del meta_data["branches"][branch_id]
-                        with open(meta_path, "w", encoding="utf-8") as f:
-                            json.dump(meta_data, f, ensure_ascii=False, indent=2)
+                        write_json(meta_file, meta_data)
                 except Exception as e:
                     print(f"清理 meta.json 失败: {e}")
         return True
