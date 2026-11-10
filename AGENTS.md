@@ -48,6 +48,9 @@ uv run pytest -m l3             # 静态红线
 3. 确认测试为红后再实现；完成后跑 `uv run pytest -m "l0 or l1"`，涉及红线再跑 L3。
 4. 禁止为了变绿删除用例、放宽断言或新增 skip；确需调整测试须在提交说明中写明原因。
 5. 存量功能不强制补测；改到哪补哪，优先把下方“红线与已知坑”变成断言。
+6. 纯重构：一次只改一个子包；先补 characterization 测试锁住现状（docstring 引用 SPEC 编号），再把纯逻辑上浮为模块级函数，原入口保留薄委托。
+7. 重构不得改变阶段调用顺序、上下文拼接顺序、工具批次顺序、压缩重建顺序、DAG 状态级联顺序与 HTTP 路由契约；顺序类断言优先于快照。
+8. 按子包拆分提交，不把多个包的改动混进一个 commit；新增模块需能在 `tests/specs/` 中追溯到对应 SPEC。
 
 ## 功能删除清单
 
@@ -82,15 +85,20 @@ uv run pytest -m l3             # 静态红线
 14. 宿主 TS 保持 strict：禁止 `@ts-ignore` / `@ts-nocheck` / `@ts-expect-error`；纯类型整理不得夹带运行时改动。
 15. 注释保持简洁：只解释非显而易见的意图或约束，不复述代码、不写改动历史。
 16. 所有改动完成后检查文档是否同步（`docs/`、README、本文），避免代码与文档脱节。
+17. 重构只做搬运与拆层：不得顺手改提示词文本、消息顺序、字段名或日志文案；确需修正行为另开功能/修复提交。
 
 ## 常见改动落点
 
 | 改动 | 位置 |
 | --- | --- |
 | Agent 行为/阶段注入 | `~/.purrcat/paradigms/*.yaml` + `src/agent/hook_handler.py` |
+| 主 Agent 单轮编排 / 工具批次 | `src/agent/epoch.py`、`src/agent/tool_batch.py` |
+| Hook @引用 / 沙盒路径 | `src/agent/hook_refs.py`、`src/agent/hook_paths.py` |
+| 会话目录与索引 | `src/agent/session_layout.py` + `session_store.py` |
 | 新增工具 | `src/tool/<name>/` → `src/tool/__init__.py` → `route.py` 的 `TOOL_FUNC_MAP` |
 | 会话/聊天接口 | `src/server/api/chat.py` |
 | DAG 节点 | `src/harness/node/extensions/<type>/` |
+| DAG 调度 / 检查点 | `src/harness/task_scheduler.py`、`src/harness/task_persistence.py` |
 | 聊天渲染 / 输入框 | `plugins/builtin/builtin-history/index.html` |
 | 会话列表 | `plugins/builtin/builtin-sessions/index.html` |
 | 设置中心 | `src/host/config-center.ts`、`settings-tabs.ts` |
@@ -98,6 +106,9 @@ uv run pytest -m l3             # 静态红线
 | 内置浏览器 | `plugins/builtin/builtin-browser/index.html` + `electron/main.js`（`browser:*` IPC） |
 | 新增 UI 插件 | `~/.purrcat/webmin-plugins/<id>/` 或 `plugins/builtin/<id>/` |
 | 记忆 / 传感器 / 自进化 | `src/memory/` / `src/sensor/` + `src/server/acp/` / `src/evolve/<type>/` |
+| 记忆检索打分 / 过滤 | `src/memory/purrmemo/core/scoring.py`、`filters.py` |
+| Sensor 进程控制 | `src/sensor/processes.py`、`src/sensor/file_refs.py` |
+| 模型重试 / 用量账本 | `src/model/core/retry.py`、`src/model/manager/usage_stats.py` |
 
 ## 文档索引
 
