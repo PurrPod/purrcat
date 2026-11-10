@@ -6,7 +6,8 @@ from typing import Dict, List
 import numpy as np
 
 from src.tool.callmcp.schema_manager import load_cached_schemas
-from src.tool.search.semantic_utils import LocalEmbeddingSearcher, hybrid_tokenize
+from src.tool.search import _shared
+from src.tool.search.semantic_utils import LocalEmbeddingSearcher
 
 
 class MCPSearcher:
@@ -47,10 +48,9 @@ class MCPSearcher:
                     "description": description,
                 }
             )
-            text_representation = (
-                f"{server_name} {tool_name} {tool_name.replace('_', ' ')} {description}"
+            temp_corpus.append(
+                _shared.mcp_document_text(server_name, tool_name, description)
             )
-            temp_corpus.append(text_representation)
 
         self.tools = temp_tools
         self.corpus = temp_corpus
@@ -65,11 +65,9 @@ class MCPSearcher:
             print(
                 f"⏳ [Background] 正在为 {len(self.tools)} 个 MCP 工具构建向量矩阵..."
             )
-            self.corpus_matrix = self.embedding_searcher.encode(self.corpus)
-            tokenized_corpus = [hybrid_tokenize(doc) for doc in self.corpus]
-            from rank_bm25 import BM25Okapi  # 局部导入
-
-            self.bm25 = BM25Okapi(tokenized_corpus)
+            self.corpus_matrix, self.bm25 = _shared.build_hybrid_index(
+                self.embedding_searcher, self.corpus
+            )
             print("[*] MCP 向量矩阵构建完毕。")
 
     def reload_index(self):
@@ -87,38 +85,25 @@ class MCPSearcher:
 
             if self.corpus_matrix is None or self.bm25 is None:
                 print("⏳ [JIT] 检测到索引未就绪，正在强制同步构建...")
-                self.corpus_matrix = self.embedding_searcher.encode(self.corpus)
-                from rank_bm25 import BM25Okapi
-
-                tokenized_corpus = [hybrid_tokenize(doc) for doc in self.corpus]
-                self.bm25 = BM25Okapi(tokenized_corpus)
+                self.corpus_matrix, self.bm25 = _shared.build_hybrid_index(
+                    self.embedding_searcher, self.corpus
+                )
                 print("✅ [JIT] 同步构建完成！")
 
             # 获取引用快照以防止后续计算时被修改
-            current_corpus = self.corpus
             current_matrix = self.corpus_matrix
             current_bm25 = self.bm25
             current_tools = self.tools
 
         # 【优化】相似度计算可以在锁外执行（使用局部变量快照）
-        query_vector = self.embedding_searcher.encode([query])
-        dense_scores = self.embedding_searcher.calculate_similarity(
-            query_vector, current_matrix
+        final_scores, top_k_indices = _shared.score_top_k(
+            self.embedding_searcher,
+            query,
+            current_matrix,
+            current_bm25,
+            max_results,
+            clamp_negative=False,
         )
-
-        tokenized_query = hybrid_tokenize(query)
-        raw_bm25_scores = current_bm25.get_scores(tokenized_query)
-
-        final_scores = []
-        for i in range(len(current_corpus)):
-            base_score = float(dense_scores[i])
-            bm25_bonus = np.log1p(raw_bm25_scores[i]) * 0.03
-            combined_score = base_score + bm25_bonus
-            final_scores.append(combined_score)
-
-        final_scores = np.array(final_scores)
-
-        top_k_indices = np.argsort(final_scores)[::-1][:max_results]
 
         results = []
         for idx in top_k_indices:
@@ -162,7 +147,7 @@ class MCPSearcher:
         for tool in sandbox_tools:
             tool_name = tool.get("name", "")
             desc = tool.get("description", "")
-            text_repr = f"{sandbox_server_name} {tool_name} {tool_name.replace('_', ' ')} {desc}"
+            text_repr = _shared.mcp_document_text(sandbox_server_name, tool_name, desc)
             vector = self.embedding_searcher.encode([text_repr])
 
             # 寻找快照中是否已有同名工具 (如果是覆盖升级)
@@ -209,40 +194,20 @@ class MCPSearcher:
             target_idx = -1
 
         # 3. 执行真实的混合检索打分
-        query_vector = self.embedding_searcher.encode([query])
-        dense_scores = self.embedding_searcher.calculate_similarity(
-            query_vector, temp_matrix
+        temp_bm25 = _shared.build_bm25(temp_corpus)
+        final_scores, top_k_indices = _shared.score_top_k(
+            self.embedding_searcher,
+            query,
+            temp_matrix,
+            temp_bm25,
+            top_k,
+            clamp_negative=False,
         )
-
-        from rank_bm25 import BM25Okapi
-
-        tokenized_corpus = [hybrid_tokenize(doc) for doc in temp_corpus]
-        temp_bm25 = BM25Okapi(tokenized_corpus)
-
-        tokenized_query = hybrid_tokenize(query)
-        raw_bm25_scores = temp_bm25.get_scores(tokenized_query)
-
-        final_scores = np.array(
-            [
-                float(dense_scores[i]) + np.log1p(raw_bm25_scores[i]) * 0.03
-                for i in range(len(temp_corpus))
-            ]
-        )
-
-        top_k_indices = np.argsort(final_scores)[::-1][:top_k]
 
         # 4. 激发状态判定
-        is_triggered = False
-        rank = -1
-        score = 0.0
-
-        if target_idx != -1:
-            score = final_scores[target_idx]
-            for rank_pos, idx in enumerate(top_k_indices):
-                if idx == target_idx and score >= threshold:
-                    is_triggered = True
-                    rank = rank_pos + 1
-                    break
+        is_triggered, rank, score = _shared.evaluate_rank(
+            final_scores, top_k_indices, target_idx, threshold
+        )
 
         competitors = [
             f"[{temp_tools[idx]['server_name']}]{temp_tools[idx]['tool_name']} (得分: {round(float(final_scores[idx]), 4)})"

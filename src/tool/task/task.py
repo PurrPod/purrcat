@@ -2,9 +2,9 @@
 
 import json
 import os
-import re
 import traceback
 
+from src.tool.task import _shared
 from src.tool.task.task_operations import (
     add_task_operation,
     kill_task_operation,
@@ -132,12 +132,9 @@ def _handle_add(**kwargs) -> str:
 
     # 🌟 新增：清洗并校验任务名称，防止路径非法字符和目录穿越
     name = str(name).strip()
-    if re.search(r'[\\/:*?"<>|.]', name):
-        return error_response(
-            "❌ 任务名称(name)包含非法字符。\n"
-            '💡 引导建议：为了保障底层落盘和文件系统安全，任务名称不能包含斜杠、小数点及冒号等特殊字符（如 \\ / : * ? " < > | .）。请修改名称后重试！',
-            "❌ 名称非法",
-        )
+    name_error = _shared.validate_task_name(name)
+    if name_error:
+        return error_response(name_error, "❌ 名称非法")
 
     if not graph_name:
         return error_response(
@@ -158,36 +155,13 @@ def _handle_add(**kwargs) -> str:
     graph_info = graphs[graph_name]
     param_schema = graph_info["param_schema"]
 
-    validation_errors = []
-    missing_required = []
-
-    for k, v in param_schema.items():
-        is_req = v.get("required", True)
-        if is_req and (k not in inputs or inputs[k] is None):
-            param_type = v.get("type", "any")
-            desc = v.get("description", "无描述")
-            missing_required.append(
-                {"name": k, "type": param_type, "description": desc}
-            )
-
-    if missing_required:
-        miss_str = "\n".join(
-            [
-                f"  - '{p['name']}' (类型: {p['type']}, 描述: {p['description']})"
-                for p in missing_required
-            ]
-        )
-        validation_errors.append(f"❌ 缺少必填参数:\n{miss_str}")
-
-    extra_keys = [k for k in inputs.keys() if k not in param_schema]
-    if extra_keys:
-        extra_str = ", ".join([f"'{k}'" for k in extra_keys])
-        validation_errors.append(f"⚠️ 传入了未知参数: {extra_str}")
-
-    if validation_errors:
-        help_text = "\n".join(validation_errors)
-        help_text += f"\n\n💡 引导建议：你不确定参数时，请先调用 action='list_graphs' 仔细查看 '{graph_name}' 需要的 inputs 参数格式后再试！"
-        return error_response(help_text, "❌ 参数错误")
+    missing_required = _shared.collect_missing_required(param_schema, inputs)
+    extra_keys = _shared.collect_extra_keys(param_schema, inputs)
+    param_error = _shared.build_param_error_text(
+        missing_required, extra_keys, graph_name
+    )
+    if param_error:
+        return error_response(param_error, "❌ 参数错误")
 
     try:
         result, error = add_task_operation(name, inputs, graph_name)

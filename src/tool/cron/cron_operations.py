@@ -7,6 +7,7 @@ import uuid
 from datetime import datetime
 from typing import Any, Dict, List
 
+from src.tool.cron.cron_rules import is_valid_repeat_rule, is_valid_trigger_time
 from src.tool.cron.exceptions import (
     CronNotFoundError,
     InvalidRepeatRuleError,
@@ -16,18 +17,6 @@ from src.utils.config import CRON_FILE
 
 # 【修复】全局锁，保护 JSON 文件的并发读写
 CRON_LOCK = threading.Lock()
-
-VALID_REPEAT_RULES = [
-    "none",
-    "everyday",
-    "weekly_1",
-    "weekly_2",
-    "weekly_3",
-    "weekly_4",
-    "weekly_5",
-    "weekly_6",
-    "weekly_7",
-]
 
 
 def _ensure_file(filepath: str):
@@ -56,18 +45,6 @@ def _write_json(filepath: str, data: List[Dict[str, Any]]):
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
     os.replace(tmp, filepath)
-
-
-def _validate_time_format(time_str: str) -> bool:
-    """验证时间格式是否为 HH:MM"""
-    import re
-
-    return bool(re.match(r"^([01]\d|2[0-3]):[0-5]\d$", time_str))
-
-
-def _validate_repeat_rule(rule: str) -> bool:
-    """验证重复规则是否有效"""
-    return rule in VALID_REPEAT_RULES
 
 
 def _find_cron_index(crons: List[Dict[str, Any]], identifier: str) -> int:
@@ -103,10 +80,10 @@ def add_cron(
     Returns:
         包含 id, title, description, trigger_time, repeat_rule, active 的字典
     """
-    if not _validate_time_format(trigger_time):
+    if not is_valid_trigger_time(trigger_time):
         raise InvalidTimeFormatError(trigger_time)
 
-    if not _validate_repeat_rule(repeat_rule):
+    if not is_valid_repeat_rule(repeat_rule):
         raise InvalidRepeatRuleError(repeat_rule)
 
     with CRON_LOCK:
@@ -168,13 +145,13 @@ def update_cron(
         rearmed = False
 
         if trigger_time is not None:
-            if not _validate_time_format(trigger_time):
+            if not is_valid_trigger_time(trigger_time):
                 raise InvalidTimeFormatError(trigger_time)
             cron["trigger_time"] = trigger_time
             rearmed = True
 
         if repeat_rule is not None:
-            if not _validate_repeat_rule(repeat_rule):
+            if not is_valid_repeat_rule(repeat_rule):
                 raise InvalidRepeatRuleError(repeat_rule)
             cron["repeat_rule"] = repeat_rule
             rearmed = True

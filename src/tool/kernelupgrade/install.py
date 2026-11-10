@@ -13,14 +13,14 @@ import shutil
 import zipfile
 
 from src.tool.utils.format import error_response, text_response
-from src.utils.config import AGENT_VM_DIR, SKILL_DIR
-from .shared import market
+from src.utils.config import SKILL_DIR
+from .shared import is_url, market, normalize_target, resolve_agent_vm_path
 
 
 def install_module(t: str, target: str) -> dict:
     m = market()
     # Agent 常把 URL/配置串包在反引号或引号里，先剥掉外层包装再判类型
-    raw = (target or "").strip().strip("`\"'").strip()
+    raw = normalize_target(target)
     if not raw:
         return error_response(
             "install 需要 target（名字 / URL / MCP 配置串）", "❌ 参数错误"
@@ -44,7 +44,7 @@ def install_module(t: str, target: str) -> dict:
 # ------------------------------------------
 def _install_skill(target: str, m) -> dict:
     """target = 官方市场收录名；或 GitHub URL；或本地文件夹路径（需含 SKILL.md）"""
-    if target.startswith(("http://", "https://")):
+    if is_url(target):
         name = m._download_skill_from_github(target)
     else:
         local_dir = _local_skill_dir(target)
@@ -85,7 +85,7 @@ def _install_skill(target: str, m) -> dict:
 
 def _local_skill_dir(target: str) -> str | None:
     """target 指向存在的本地目录时返回其路径（兼容 /agent_vm/ 沙盒视角前缀），否则 None"""
-    path = _resolve_agent_vm_path(target)
+    path = resolve_agent_vm_path(target)
     return path if os.path.isdir(path) else None
 
 
@@ -202,7 +202,7 @@ def _install_sensor(target: str, m) -> dict:
 # graph
 # ------------------------------------------
 def _install_graph(target: str, m) -> dict:
-    if target.startswith(("http://", "https://")):
+    if is_url(target):
         name = _install_graph_from_url(target, m)
         dep_note = _ensure_url_graph_deps(m, name)
         return text_response(
@@ -292,7 +292,7 @@ def _install_agentloop(target: str, m) -> dict:
         )
 
     if target.lower().endswith((".yaml", ".yml")):
-        path = _resolve_agent_vm_path(target)
+        path = resolve_agent_vm_path(target)
         name = os.path.splitext(os.path.basename(path))[0]
         with open(path, "rb") as f:
             raw = f.read()
@@ -318,14 +318,6 @@ def _write_agentloop_yaml(root: str, name: str, raw: bytes):
     os.makedirs(root, exist_ok=True)
     with open(os.path.join(root, f"{name}.yaml"), "wb") as f:
         f.write(raw)
-
-
-def _resolve_agent_vm_path(path: str) -> str:
-    """兼容沙盒视角的 /agent_vm 前缀路径"""
-    p = path.replace("\\", "/")
-    if p.startswith("/agent_vm/"):
-        return os.path.join(AGENT_VM_DIR, p[len("/agent_vm/") :])
-    return path
 
 
 # ------------------------------------------

@@ -9,7 +9,7 @@ import os
 from src.tool.utils.format import error_response, text_response
 from src.tool.request.request_operations import submit_request
 from src.utils.config import AGENT_VM_DIR
-from .shared import MERGE_REQUEST_TYPES
+from .shared import MERGE_REQUEST_TYPES, parse_workplace_target
 
 # 合并前必须齐备的产物（缺一即会在审批通过后合并失败，故本地先拦截）。
 _MCP_CONFIG_FILE = "mcp_server_config.json"
@@ -94,13 +94,13 @@ def merge_module(t: str, target: str) -> dict:
             "执行失败：target 不能为空，应填 'uuid/名字'。",
             "❌ 参数错误",
         )
-    parts = [p.strip() for p in tgt.split("/")]
-    if len(parts) != 2 or not all(parts):
+    pair = parse_workplace_target(tgt, strip=True)
+    if not pair:
         return error_response(
             f"执行失败：target 格式不正确，应为 'uuid/名字'（工作区前缀 + 对象名）。当前输入为: '{target}'",
             "❌ 路径格式错误",
         )
-    workplace_id, obj_name = parts
+    workplace_id, obj_name = pair
     audit_error = _audit(t, workplace_id, obj_name)
     if audit_error:
         return error_response(audit_error, "❌ 无法合并")

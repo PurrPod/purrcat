@@ -2,7 +2,7 @@ import os
 import shutil
 import time
 import json
-import difflib  # 🌟 新增：用于动态计算首尾差异
+from src.tool.filesystem import _shared
 from src.tool.filesystem.exceptions import FileSystemError
 from src.utils.config import PURRCAT_DIR
 
@@ -20,6 +20,53 @@ def _get_history_path(target_path: str) -> str:
         .replace(":", "")
     )
     return os.path.join(HISTORY_DIR, safe_name)
+
+
+def _backup_timestamp(filename: str, history_prefix: str) -> int | None:
+    """从备份文件名中取出时间戳；非时间戳变体返回 None。"""
+    ts_str = (
+        filename.replace(os.path.basename(history_prefix), "")
+        .replace(".empty", "")
+        .replace(".meta", "")
+    )
+    if not ts_str:
+        return None
+    try:
+        return int(ts_str)
+    except ValueError:
+        return None
+
+
+def _extract_backup_id(filename: str) -> str | None:
+    """从 `<safe_name>@<id>[.empty|.meta]` 中提取纯数字 id。"""
+    backup_id = filename.split("@")[-1].replace(".empty", "").replace(".meta", "")
+    return backup_id if backup_id.isdigit() else None
+
+
+def _classify_change_type(is_created_here: bool, is_deleted_now: bool) -> str:
+    if is_created_here and is_deleted_now:
+        return "deleted"
+    if is_created_here:
+        return "created"
+    if is_deleted_now:
+        return "deleted"
+    return "modified"
+
+
+def _build_history_diff(
+    old_content: str, current_content: str, path: str, change_type: str
+) -> str:
+    """计算历史 diff；纯空文件的创建/删除补一条占位提示。"""
+    diff_text = _shared.build_diff(old_content, current_content, path)
+    if diff_text.strip():
+        return diff_text
+
+    format_path = _shared.format_diff_path(path)
+    if change_type == "created":
+        return f"--- /dev/null\n+++ b{format_path}\n@@ -0,0 +1,1 @@\n+ [新建文件]"
+    if change_type == "deleted":
+        return f"--- a{format_path}\n+++ /dev/null\n@@ -1,1 +0,0 @@\n- [文件已删除]"
+    return diff_text
 
 
 def track_edit(target_path: str) -> str:
@@ -107,13 +154,7 @@ def get_all_diffs() -> list:
         is_created_here = os.path.exists(oldest_backup_path + ".empty")
         is_deleted_now = not os.path.exists(host_path)
 
-        change_type = "modified"
-        if is_created_here and is_deleted_now:
-            change_type = "deleted"  # 建了又删
-        elif is_created_here:
-            change_type = "created"
-        elif is_deleted_now:
-            change_type = "deleted"
+        change_type = _classify_change_type(is_created_here, is_deleted_now)
 
         old_content = ""
         if os.path.exists(oldest_backup_path):
@@ -134,27 +175,7 @@ def get_all_diffs() -> list:
                 current_content = "[二进制文件或富文本，无法提供差异对比]\n"
 
         # 🌟 核心 2：计算 Diff，自带防空兜底
-        format_path = path if path.startswith("/") else "/" + path
-
-        diff_lines = list(
-            difflib.unified_diff(
-                old_content.splitlines(keepends=True),
-                current_content.splitlines(keepends=True),
-                fromfile=f"a{format_path}",
-                tofile=f"b{format_path}",
-                n=3,
-            )
-        )
-        diff_text = "".join(diff_lines)
-
-        # 如果是纯空文件的创建/删除，difflib 返回会是空的，强行注入提示！
-        if not diff_text.strip():
-            if change_type == "created":
-                diff_text = (
-                    f"--- /dev/null\n+++ b{format_path}\n@@ -0,0 +1,1 @@\n+ [新建文件]"
-                )
-            elif change_type == "deleted":
-                diff_text = f"--- a{format_path}\n+++ /dev/null\n@@ -1,1 +0,0 @@\n- [文件已删除]"
+        diff_text = _build_history_diff(old_content, current_content, path, change_type)
 
         consolidated_diffs.append(
             {
@@ -223,19 +244,13 @@ def ack_backup(target_path: str, backup_id: str) -> int:
     for f in os.listdir(HISTORY_DIR):
         full_path = os.path.join(HISTORY_DIR, f)
         if full_path.startswith(history_prefix):
-            try:
-                # 🌟 重大修复：追加 .replace(".meta", "") 清理 meta 文件
-                ts_str = (
-                    f.replace(os.path.basename(history_prefix), "")
-                    .replace(".empty", "")
-                    .replace(".meta", "")
-                )
-                # 核心：只要备份的时间戳 <= 当前确认的时间戳，就统统删掉！
-                if ts_str and int(ts_str) <= int(backup_id):
+            ts = _backup_timestamp(f, history_prefix)
+            if ts is not None and ts <= int(backup_id):
+                try:
                     os.remove(full_path)
                     removed += 1
-            except ValueError:
-                pass
+                except OSError:
+                    pass
     return removed
 
 
@@ -266,17 +281,12 @@ def rewind_file_by_id(target_path: str, backup_id: str) -> str:
     for f in os.listdir(HISTORY_DIR):
         full_path = os.path.join(HISTORY_DIR, f)
         if full_path.startswith(history_prefix):
-            try:
-                # 🌟 重大修复：追加 .replace(".meta", "") 清理 meta 文件
-                ts_str = (
-                    f.replace(os.path.basename(history_prefix), "")
-                    .replace(".empty", "")
-                    .replace(".meta", "")
-                )
-                if ts_str and int(ts_str) >= int(backup_id):
+            ts = _backup_timestamp(f, history_prefix)
+            if ts is not None and ts >= int(backup_id):
+                try:
                     os.remove(full_path)
-            except ValueError:
-                pass
+                except OSError:
+                    pass
 
     return msg
 
@@ -302,12 +312,7 @@ def rewind_file(target_path: str) -> str:
     latest_backup = backups[0]
 
     # 提取 backup_id
-    backup_id = (
-        os.path.basename(latest_backup)
-        .split("@")[-1]
-        .replace(".empty", "")
-        .replace(".meta", "")
-    )
+    backup_id = _extract_backup_id(os.path.basename(latest_backup)) or ""
 
     return rewind_file_by_id(target_path, backup_id)
 
@@ -320,9 +325,8 @@ def get_valid_backup_ids() -> list:
     valid_ids = set()
     for f in os.listdir(HISTORY_DIR):
         if "@" in f:
-            # 提取文件名中 @ 后面的纯数字时间戳
-            backup_id = f.split("@")[-1].replace(".empty", "").replace(".meta", "")
-            if backup_id.isdigit():
+            backup_id = _extract_backup_id(f)
+            if backup_id is not None:
                 valid_ids.add(backup_id)
 
     return list(valid_ids)

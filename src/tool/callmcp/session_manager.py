@@ -2,8 +2,6 @@
 
 import asyncio
 import atexit
-import hashlib
-import json
 import shutil
 import threading
 import time
@@ -12,6 +10,7 @@ from typing import Dict
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
+from src.tool.callmcp import _shared
 from src.utils.config import get_enriched_env, get_mcp_config
 
 # ── 延迟初始化核心原语 ──
@@ -54,14 +53,7 @@ def load_configs() -> dict:
 
 def _config_fingerprint(config: dict) -> str:
     """计算启动配置指纹：command/args/env 任一变化即需要重启子进程"""
-    env = config.get("env")
-    material = {
-        "command": config.get("command", ""),
-        "args": config.get("args", []),
-        "env": env if isinstance(env, dict) else {},
-    }
-    raw = json.dumps(material, sort_keys=True, ensure_ascii=False)
-    return hashlib.md5(raw.encode("utf-8")).hexdigest()
+    return _shared.config_fingerprint(config)
 
 
 class MCPSessionManager:
@@ -104,24 +96,9 @@ class MCPSessionManager:
         if not isinstance(custom_env, dict):
             custom_env = {}
 
-        # 确保所有的 env 变量值都被显式转换为字符串，否则 subprocess 会抛错
-        safe_env = get_enriched_env()
-        for k, v in custom_env.items():
-            if v is not None:
-                safe_env[k] = str(v)
-
-        # 【修复】剥离父进程（桌面壳自身的 venv）透传的 Python 环境变量，
-        # 否则 uv/uvx/npx 等子进程会复用父进程的 PYTHONHOME/PYTHONPATH，
-        # 冲掉 uv-managed 独立 CPython 的标注库路径，import 时抛
-        # "AssertionError: SRE module mismatch" 导致 MCP 启动即崩溃。
-        for k in (
-            "PYTHONHOME",
-            "PYTHONPATH",
-            "VIRTUAL_ENV",
-            "PYTHONSTARTUP",
-            "PYTHONUSERBASE",
-        ):
-            safe_env.pop(k, None)
+        # 确保 env 值全部转字符串，并剥离父进程（桌面壳 venv）的 Python 变量，
+        # 否则 uv/uvx/npx 子进程会复用 PYTHONHOME/PYTHONPATH 导致启动即崩溃。
+        safe_env = _shared.build_safe_env(custom_env, get_enriched_env())
 
         # 用合并后的 PATH 解析命令，新装依赖的安装目录（如 nodejs）才能被 which 到
         resolved_command = (

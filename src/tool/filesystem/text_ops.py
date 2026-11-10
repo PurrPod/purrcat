@@ -1,11 +1,10 @@
 import os
 import re
-import difflib
-import tempfile
 import hashlib
 import json
 from pathlib import PurePath
 from filelock import FileLock, Timeout
+from src.tool.filesystem import _shared
 from src.tool.filesystem.checker import run_code_check, count_code_check_issues
 from src.tool.filesystem.exceptions import (
     FileSystemError,
@@ -39,18 +38,6 @@ def _save_check_report(target_path: str, report: str) -> str:
 
     rel = os.path.relpath(report_path, AGENT_VM_DIR).replace(os.sep, "/")
     return f"/agent_vm/{rel}"
-
-
-def _normalize_newlines(text: str) -> str:
-    """归一化行尾为 \\n（匹配与替换统一在 \\n 口径进行）"""
-    return text.replace("\r\n", "\n").replace("\r", "\n")
-
-
-def _detect_dominant_newline(raw: bytes) -> str:
-    """检测字节内容的主导行尾：CRLF 占多数则返回 CRLF，否则 LF"""
-    crlf = raw.count(b"\r\n")
-    lf = raw.count(b"\n") - crlf
-    return "\r\n" if crlf > lf else "\n"
 
 
 def _get_cache(target_path: str, current_mtime: float):
@@ -165,8 +152,7 @@ def read_file(path_from: str, offset: int = 0, limit: int = MAX_LINES_TO_READ) -
         _set_cache(target_path, lines, current_mtime, is_converted)
 
     total_lines = len(lines)
-    start = max(0, offset)
-    end = min(total_lines, start + limit)
+    start, end = _shared.select_line_window(lines, offset, limit)
 
     formatted_lines = []
     for i in range(start, end):
@@ -199,8 +185,7 @@ def edit_file(
     if not os.path.exists(target_path):
         raise HostPathNotFoundError(target_path)
 
-    safe_lock_name = target_path.replace(os.sep, "%").replace(":", "") + ".lock"
-    lock_path = os.path.join(LOCK_DIR, safe_lock_name)
+    lock_path = _shared.build_lock_path(target_path, LOCK_DIR)
     lock = FileLock(lock_path, timeout=15)
 
     try:
@@ -208,65 +193,30 @@ def edit_file(
             # 🌟 字节级读取：检测原始行尾风格，杜绝 Windows 文本模式把 LF 改写成 CRLF
             with open(target_path, "rb") as f:
                 raw_content = f.read()
-            dominant_nl = _detect_dominant_newline(raw_content)
-            content = _normalize_newlines(raw_content.decode("utf-8"))
+            dominant_nl = _shared.detect_dominant_newline(raw_content)
+            content = _shared.normalize_newlines(raw_content.decode("utf-8"))
 
             # 匹配口径统一为 \n（read 展示给 Agent 的也是归一化内容）
-            old_string = _normalize_newlines(old_string)
-            new_string = _normalize_newlines(new_string)
+            old_string = _shared.normalize_newlines(old_string)
+            new_string = _shared.normalize_newlines(new_string)
 
-            occurrences = content.count(old_string)
-            if occurrences == 0:
-                raise FileSystemError(
-                    "⚠️ Edit 失败: old_string 在文件中未找到。文件已被其他 Agent 抢占修改！\n"
-                    "解决：请重新 read 文件获取最新内容后再进行 edit。"
-                )
-            if occurrences > 1 and not replace_all:
-                raise FileSystemError(
-                    f"⚠️ Edit 失败: old_string 出现了 {occurrences} 次，无法精确定位。"
-                )
+            new_content, occurrences = _shared.replace_occurrences(
+                content, old_string, new_string, replace_all
+            )
 
             backup_id = track_edit(target_path)
 
-            if replace_all:
-                new_content = content.replace(old_string, new_string)
-            else:
-                new_content = content.replace(old_string, new_string, 1)
-
-            fd, temp_path = tempfile.mkstemp(
-                dir=os.path.dirname(target_path), text=True
+            # newline="" 禁用平台行尾转换，按文件原主导行尾写回
+            _shared.atomic_write_text(
+                target_path,
+                _shared.apply_newline_style(new_content, dominant_nl),
             )
-            try:
-                # newline="" 禁用平台行尾转换，按文件原主导行尾写回
-                write_content = (
-                    new_content.replace("\n", dominant_nl)
-                    if dominant_nl != "\n"
-                    else new_content
-                )
-                with os.fdopen(fd, "w", encoding="utf-8", newline="") as f:
-                    f.write(write_content)
-                os.replace(temp_path, target_path)
-            except Exception as e:
-                if os.path.exists(temp_path):
-                    os.remove(temp_path)
-                raise e
 
     except Timeout:
         raise FileSystemError("文件正被其他 Agent 锁定修改，请稍后重试！")
 
     # 🌟 修复点：在 Diff 头中注入完整的相对/沙盒路径，不要用 basename
-    format_path = path_from if path_from.startswith("/") else "/" + path_from
-    diff_lines = list(
-        difflib.unified_diff(
-            content.splitlines(keepends=True),
-            new_content.splitlines(keepends=True),
-            fromfile=f"a{format_path}",
-            tofile=f"b{format_path}",
-            n=3,
-        )
-    )
-
-    diff_text = "".join(diff_lines)
+    diff_text = _shared.build_diff(content, new_content, path_from)
     save_backup_meta(
         target_path, backup_id, diff_text
     )  # 🌟 核心：保存 metadata 供全局读取
@@ -298,8 +248,7 @@ def write_file(path_from: str, content: str) -> dict:
     target_path = require_write(path_from)
     os.makedirs(os.path.dirname(target_path), exist_ok=True)
 
-    safe_lock_name = target_path.replace(os.sep, "%").replace(":", "") + ".lock"
-    lock_path = os.path.join(LOCK_DIR, safe_lock_name)
+    lock_path = _shared.build_lock_path(target_path, LOCK_DIR)
     lock = FileLock(lock_path, timeout=15)
 
     try:
@@ -310,47 +259,23 @@ def write_file(path_from: str, content: str) -> dict:
             if os.path.exists(target_path):
                 with open(target_path, "rb") as f:
                     old_raw = f.read()
-                dominant_nl = _detect_dominant_newline(old_raw)
-                old_content = _normalize_newlines(old_raw.decode("utf-8"))
+                dominant_nl = _shared.detect_dominant_newline(old_raw)
+                old_content = _shared.normalize_newlines(old_raw.decode("utf-8"))
 
             backup_id = track_edit(target_path)
 
             # 归一化后按旧文件主导行尾适配（新文件保持 LF），杜绝平台行尾转换
-            norm_content = _normalize_newlines(content)
-            write_content = (
-                norm_content.replace("\n", dominant_nl)
-                if dominant_nl != "\n"
-                else norm_content
+            norm_content = _shared.normalize_newlines(content)
+            _shared.atomic_write_text(
+                target_path,
+                _shared.apply_newline_style(norm_content, dominant_nl),
             )
-
-            fd, temp_path = tempfile.mkstemp(
-                dir=os.path.dirname(target_path), text=True
-            )
-            try:
-                with os.fdopen(fd, "w", encoding="utf-8", newline="") as f:
-                    f.write(write_content)
-                os.replace(temp_path, target_path)
-            except Exception as e:
-                if os.path.exists(temp_path):
-                    os.remove(temp_path)
-                raise e
 
     except Timeout:
         raise FileSystemError("文件正被其他 Agent 锁定修改，请稍后重试！")
 
     # 🌟 2. 使用 difflib 计算全量覆盖的真实 Diff
-    format_path = path_from if path_from.startswith("/") else "/" + path_from
-    diff_lines = list(
-        difflib.unified_diff(
-            old_content.splitlines(keepends=True),
-            norm_content.splitlines(keepends=True),
-            fromfile=f"a{format_path}",
-            tofile=f"b{format_path}",
-            n=3,
-        )
-    )
-
-    diff_text = "".join(diff_lines)
+    diff_text = _shared.build_diff(old_content, norm_content, path_from)
     save_backup_meta(
         target_path, backup_id, diff_text
     )  # 🌟 核心：保存 metadata 供全局读取
@@ -379,40 +304,15 @@ def search_file(path_from: str, pattern: str) -> dict:
     matches = []
     MAX_MATCHES = 50
 
-    IGNORE_DIRS = {
-        "node_modules",
-        "__pycache__",
-        "venv",
-        "env",
-        "dist",
-        "build",
-        "target",
-    }
-
-    IGNORE_EXTS = {
-        ".jpg",
-        ".png",
-        ".pdf",
-        ".zip",
-        ".tar",
-        ".gz",
-        ".mp4",
-        ".pyc",
-        ".exe",
-        ".dll",
-    }
-
     for root, dirs, files in os.walk(search_dir):
         dirs[:] = [
             d
             for d in dirs
-            if not d.startswith(".")
-            and d not in IGNORE_DIRS
-            and is_readable(os.path.join(root, d))
+            if not _shared.should_skip_dir(d) and is_readable(os.path.join(root, d))
         ]
 
         for file in files:
-            if file.startswith(".") or any(file.endswith(ext) for ext in IGNORE_EXTS):
+            if _shared.should_skip_file(file):
                 continue
 
             file_path = os.path.join(root, file)

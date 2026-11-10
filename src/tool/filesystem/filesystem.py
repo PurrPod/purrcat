@@ -2,6 +2,7 @@
 
 import traceback
 
+from src.tool.filesystem import _shared
 from src.tool.filesystem.copy_file import copy_file
 from src.tool.filesystem.delete_file import delete_file
 from src.tool.filesystem.exceptions import FileSystemError, HostPathNotFoundError
@@ -21,22 +22,6 @@ from src.tool.utils.token_limit import count_tokens, get_output_token_limit
 
 # read 前置拦截相对工具路由上限预留的 token 缓冲（吸收路由层包装文本的开销）
 READ_TOKEN_BUFFER = 100
-
-
-def _summarize_diff(diff_text: str) -> str:
-    """解析 unified diff 文本，计算新增和删除的代码行数"""
-    if not diff_text:
-        return "新增 0 行，删除 0 行"
-
-    additions = 0
-    deletions = 0
-    for line in diff_text.splitlines():
-        if line.startswith("+") and not line.startswith("+++"):
-            additions += 1
-        elif line.startswith("-") and not line.startswith("---"):
-            deletions += 1
-
-    return f"新增了 {additions} 行代码，删除了 {deletions} 行代码"
 
 
 def FileSystem(action: str, path: str = None, destination: str = None, **kwargs) -> str:
@@ -92,7 +77,7 @@ def FileSystem(action: str, path: str = None, destination: str = None, **kwargs)
             result = edit_file(path, old_str, new_str, kwargs.get("replace_all", False))
 
             diff_text = result.get("diff", "")
-            diff_summary = _summarize_diff(diff_text)
+            diff_summary = _shared.summarize_diff(diff_text)
             response_text = (
                 f"✂️ 修改成功！{diff_summary}。\n"
                 f"💡 提示：如果误删了重要代码，你可以随时使用 `action='undo'` 进行回溯。\n\n"
@@ -133,7 +118,7 @@ def FileSystem(action: str, path: str = None, destination: str = None, **kwargs)
             result = write_file(path, content)
 
             diff_text = result.get("diff", "")
-            diff_summary = _summarize_diff(diff_text)
+            diff_summary = _shared.summarize_diff(diff_text)
             response_text = (
                 f"{result['message']}\n\n"
                 f"📊 变更统计：{diff_summary}。\n"

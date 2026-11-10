@@ -1,7 +1,6 @@
 import atexit
 import multiprocessing
 import os
-import re
 import shutil
 import sys
 import threading
@@ -13,6 +12,7 @@ import pexpect
 from docker.errors import DockerException, ImageNotFound, NotFound
 
 from src.utils.config import AGENT_VM_DIR
+from . import _shared
 from .exceptions import (
     BashTimeoutError,
     DockerImageNotFoundError,
@@ -72,11 +72,7 @@ def _resolve_docker_cmd() -> str:
 
 
 def _get_container_exec_cmd(container_name: str) -> str:
-    docker = _resolve_docker_cmd()
-    if sys.platform == "win32":
-        return f"{docker} exec -i {container_name} /bin/bash"
-    else:
-        return f"{docker} exec -it {container_name} /bin/bash"
+    return _shared.build_exec_command(_resolve_docker_cmd(), container_name)
 
 
 _docker_manager_instance: Optional["DockerManager"] = None
@@ -116,13 +112,7 @@ def _get_container_env() -> dict:
     # 既然主机开了 TUN 模式，容器不需要任何代理环境变量，直接跟主机共享网络上下文
     # 缓存目录统一指向 tmpfs（/tmp），避免 pip/npm/uv 的下载缓存写进容器可写层、
     # 把 docker 数据盘 vhdx 越撑越大（tmpfs 随容器停机释放）
-    return {
-        "XDG_CACHE_HOME": "/tmp/.cache",
-        "PIP_CACHE_DIR": "/tmp/.cache/pip",
-        "UV_CACHE_DIR": "/tmp/.cache/uv",
-        "npm_config_cache": "/tmp/.cache/npm",
-        "YARN_CACHE_FOLDER": "/tmp/.cache/yarn",
-    }
+    return _shared.container_env()
 
 
 class DockerManager:
@@ -168,11 +158,7 @@ class DockerManager:
     @staticmethod
     def _norm_mount_path(p: str) -> str:
         r"""挂载路径归一化：D:/x、d:/x、/d/x 统一成 d 盘反斜杠形式（大小写不敏感）"""
-        p = str(p).replace("/", os.sep)
-        # Docker Desktop 偶尔记录成 /d/x 形式（盘符风格），转成 d:\x
-        if len(p) >= 3 and p[0] == os.sep and p[1].isalpha() and p[2] == os.sep:
-            p = p[1] + ":" + p[2:]
-        return os.path.normpath(p).lower()
+        return _shared.normalize_mount_path(p)
 
     def start(self):
         if self._started and self.container is not None:
@@ -420,10 +406,7 @@ class DockerManager:
                 marker_str = f"__CMD_DONE_{marker_id}__"
                 # 将大模型的命令包在一个代码块中，并强制将其输入重定向到 /dev/null
                 # 这样无论里面跑什么命令，都无法窃取终端后续的输入字符
-                full_payload = (
-                    f"{{\n{safe_command}\n}} < /dev/null\n"
-                    f'echo -e "\\n{marker_str}$?|$(pwd)"'
-                )
+                full_payload = _shared.build_shell_payload(safe_command, marker_str)
 
                 process.send(full_payload.replace("\r", "") + "\n")
                 try:
@@ -455,17 +438,11 @@ class DockerManager:
             exit_code = int(process.match.group(1))
             cwd = process.match.group(2).strip()
             cleaned_output = self._clean_ansi(process.before).strip()
-            lines = [
-                line
-                for line in cleaned_output.splitlines()
-                if line.strip() != command.strip()
-            ]
-            final_output = "\n".join(lines).strip()
+            final_output = _shared.strip_command_echo(cleaned_output, command)
             return exit_code, final_output, cwd
 
     def _clean_ansi(self, text: str) -> str:
-        text = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])").sub("", text)
-        return text.replace("\r", "")
+        return _shared.clean_ansi(text)
 
 
 def get_docker_manager() -> "DockerManager":

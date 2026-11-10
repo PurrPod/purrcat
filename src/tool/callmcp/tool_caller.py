@@ -1,12 +1,12 @@
 """MCP 工具调用模块 - 执行 MCP 工具调用"""
 
 import asyncio
-import base64
 import os
 import time
 import uuid
 from typing import Dict, List
 
+from src.tool.callmcp import _shared
 from src.tool.callmcp.exceptions import (
     ServerConnectionError,
     ServerNotFoundError,
@@ -50,14 +50,7 @@ async def _call_tool_async(
                 output.append(content.text)
             elif content.type == "image" or hasattr(content, "data"):
                 try:
-                    mime_type = getattr(content, "mimeType", "image/png")
-                    b64_data = content.data
-                    if "," in b64_data and b64_data.startswith("data:"):
-                        b64_data = b64_data.split(",", 1)[1]
-
-                    ext = mime_type.split("/")[-1] if "/" in mime_type else "png"
-                    if ext == "jpeg":
-                        ext = "jpg"
+                    raw_data, ext = _shared.decode_image_content(content)
 
                     save_dir = os.path.join(BUFFER_DIR, "mcp_media")
                     os.makedirs(save_dir, exist_ok=True)
@@ -66,7 +59,7 @@ async def _call_tool_async(
                         save_dir, f"mcp_img_{uuid.uuid4().hex[:8]}.{ext}"
                     )
                     with open(file_path, "wb") as f:
-                        f.write(base64.b64decode(b64_data))
+                        f.write(raw_data)
 
                     output.append(f"🖼️ [截图/图片已生成并保存至宿主机]: {file_path}")
                 except Exception as e:

@@ -3,7 +3,13 @@
 import json
 import os
 
-from src.tool.request.request_operations import REQUESTS_FILE, REQUEST_LOCK
+from src.tool.request import _shared
+from src.tool.request.request_operations import (
+    REQUESTS_FILE,
+    REQUEST_LOCK,
+    read_requests,
+    write_requests,
+)
 from src.utils.config import FILE_CONFIG_PATH, AGENT_VM_DIR
 from src.utils.graph_api import graph_file
 
@@ -14,8 +20,7 @@ def get_pending_requests() -> list:
         return []
     with REQUEST_LOCK:
         try:
-            with open(REQUESTS_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
+            data = read_requests()
         except json.JSONDecodeError:
             return []
     pending_list = [req for req in data.values() if req.get("status") == "pending"]
@@ -35,8 +40,7 @@ def kick_pending_skill_tests():
         return
     with REQUEST_LOCK:
         try:
-            with open(REQUESTS_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
+            data = read_requests()
         except (json.JSONDecodeError, OSError):
             return
 
@@ -65,8 +69,7 @@ def kick_pending_skill_tests():
 
         if changed:
             try:
-                with open(REQUESTS_FILE, "w", encoding="utf-8") as f:
-                    json.dump(data, f, ensure_ascii=False, indent=2)
+                write_requests(data)
             except OSError:
                 pass
 
@@ -81,8 +84,7 @@ def kick_pending_sensor_tests():
         return
     with REQUEST_LOCK:
         try:
-            with open(REQUESTS_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
+            data = read_requests()
         except (json.JSONDecodeError, OSError):
             return
 
@@ -108,8 +110,7 @@ def kick_pending_sensor_tests():
 
         if changed:
             try:
-                with open(REQUESTS_FILE, "w", encoding="utf-8") as f:
-                    json.dump(data, f, ensure_ascii=False, indent=2)
+                write_requests(data)
             except OSError:
                 pass
 
@@ -123,7 +124,7 @@ def _grant_file_permission(req_type: str, target: str):
         config["permissions"] = {"blocked": [], "readonly": [], "writable": []}
     perms = config["permissions"]
 
-    target_norm = target.replace("\\", "/")
+    target_norm = _shared.normalize_target_path(target)
 
     if req_type == "file_read":
         if target_norm in perms["blocked"]:
@@ -148,8 +149,7 @@ def _grant_file_permission(req_type: str, target: str):
 
 def _split_merge_target(target: str) -> tuple[str, str]:
     """合并目标统一为 'uuid/名字'，返回 (workplace_id, name)。"""
-    workplace_id, _, name = (target or "").partition("/")
-    return workplace_id.strip(), name.strip()
+    return _shared.split_merge_target(target)
 
 
 def resolve_request(
@@ -162,8 +162,7 @@ def resolve_request(
         return {"status": "error", "message": "文件不存在"}
 
     with REQUEST_LOCK:
-        with open(REQUESTS_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
+        data = read_requests()
         if req_id not in data:
             return {"status": "error", "message": "请求找不到"}
 
@@ -290,42 +289,20 @@ def resolve_request(
 
         # 处理人类的拒绝决策
         elif not approved and not ignore:
-            if req_type == "skill_test":
-                feedback = f"用户拒绝了测试申请，请根据以下原因调整沙盒代码或测试用例后再次申请：\n【拒绝理由】: {feedback}"
-            elif req_type == "sensor_test":
-                feedback = f"用户拒绝了协议体检申请，请根据以下原因调整沙盒代码或 sensor_config.json 后再次申请：\n【拒绝理由】: {feedback}"
-            elif req_type in [
-                "skill_merge",
-                "mcp_merge",
-                "sensor_merge",
-                "agentloop_merge",
-                "graph_merge",
-            ]:
-                # 让Agent收到拒绝的理由并继续改进
-                feedback = f"用户拒绝了代码合并请求，请在沙盒工厂中根据以下原因继续修复：\n【拒绝理由】: {feedback}"
+            feedback = _shared.format_rejection_feedback(req_type, feedback)
 
         # 🌟 dependency_check 类型为系统启动检查，与 Agent 任务无关，不需要回调通知 Agent
         if not ignore and req_type != "dependency_check":
-            decision_text = "【同意并已生效】" if approved else "【被拒绝】"
-            callback_msg = f"🔔 【系统通知】请求 (ID: {req_id}) | 目标: {target} | 结果: {decision_text}\n系统反馈/批注: {feedback}"
-            if approved and req_type not in [
-                "skill_test",
-                "sensor_test",
-                "skill_merge",
-                "mcp_merge",
-                "sensor_merge",
-                "agentloop_merge",
-                "graph_merge",
-            ]:
-                callback_msg += "\n系统已为你自动下发权限，请直接继续执行被挂起的任务。"
+            callback_msg = _shared.build_decision_callback(
+                req_id, target, approved, req_type, feedback
+            )
 
             from src.agent import agent_force_push
 
             agent_force_push(callback_msg, type="system")
 
         del data[req_id]
-        with open(REQUESTS_FILE, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        write_requests(data)
 
     return {"status": "success", "message": "处理完毕并移除"}
 
@@ -341,12 +318,10 @@ def delete_request(req_id: str) -> bool:
         return False
     with REQUEST_LOCK:
         try:
-            with open(REQUESTS_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
+            data = read_requests()
             if req_id in data:
                 del data[req_id]
-                with open(REQUESTS_FILE, "w", encoding="utf-8") as f:
-                    json.dump(data, f, ensure_ascii=False, indent=2)
+                write_requests(data)
                 return True
         except Exception:
             pass

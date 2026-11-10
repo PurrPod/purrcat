@@ -1,50 +1,18 @@
 import json
 import os
-import re
 import urllib.error
 import urllib.request
 from typing import Dict, Optional, Tuple
 
-from bs4 import BeautifulSoup
-from markdownify import markdownify as md
-
-# 单次抓取的最大响应体，防止 read 到超大文件把内存打满
-_MAX_BYTES = 2 * 1024 * 1024
-# 正文提取时直接丢弃的标签（导航/页脚/脚本等，对阅读没有价值）
-_STRIP_TAGS = (
-    "script",
-    "style",
-    "noscript",
-    "iframe",
-    "svg",
-    "nav",
-    "footer",
-    "header",
-    "aside",
+from ._shared import (
+    MAX_BYTES,
+    build_raw_text_result,
+    clip_bytes,
+    decode_bytes,
+    detect_charset,
+    html_to_markdown,
+    looks_like_raw_text_url,
 )
-
-
-def _looks_like_raw_text_url(url: str) -> bool:
-    """
-    判断 URL 是否属于「直接返回纯文本/原始内容」的场景。
-    这类地址不需要走 HTML 解析，直接按文本读取并加代码块返回。
-    """
-    u = (url or "").lower()
-    raw_host_markers = [
-        "raw.githubusercontent.com",
-        "gist.githubusercontent.com",
-        "cdn.jsdelivr.net",
-        "unpkg.com",
-        "pastebin.com/raw",
-    ]
-    if any(m in u for m in raw_host_markers):
-        return True
-    # 常见纯文本后缀
-    if re.search(
-        r"\.(json|txt|md|py|js|ts|yaml|yml|toml|ini|cfg|csv|log|xml)(\?|$)", u
-    ):
-        return True
-    return False
 
 
 def _fast_fetch_raw_text(
@@ -62,81 +30,14 @@ def _fast_fetch_raw_text(
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             charset = resp.headers.get_content_charset() or "utf-8"
             content_type = resp.headers.get("Content-Type", "")
-            data = resp.read(_MAX_BYTES + 1)
+            data = resp.read(MAX_BYTES + 1)
     except urllib.error.HTTPError as e:
         return None, f"HTTP {e.code}: {e.reason}"
     except (urllib.error.URLError, TimeoutError) as e:
         return None, f"下载失败: {e}"
 
-    try:
-        text = data.decode(charset, errors="replace")
-    except LookupError:
-        text = data.decode("utf-8", errors="replace")
-
-    # URL 推断内容类型
-    path = url.split("?", 1)[0].lower()
-    fenced_lang = ""
-    if path.endswith(".json"):
-        fenced_lang = "json"
-    elif path.endswith(".py"):
-        fenced_lang = "python"
-    elif path.endswith(".md") or path.endswith(".markdown"):
-        # Markdown 直接原样返回（不加代码块）
-        return {
-            "url": url,
-            "title": f"raw: {url.rsplit('/', 1)[-1].split('?', 1)[0] or url}",
-            "content": text,
-            "content_type": "markdown",
-        }, None
-    elif path.endswith((".js", ".ts", ".tsx", ".jsx")):
-        fenced_lang = "javascript"
-    elif path.endswith((".yaml", ".yml")):
-        fenced_lang = "yaml"
-    elif path.endswith((".toml", ".ini", ".cfg")):
-        fenced_lang = "ini"
-    elif path.endswith(".csv"):
-        fenced_lang = "csv"
-    elif path.endswith(".xml"):
-        fenced_lang = "xml"
-
-    content = (
-        f"```\n{text}\n```" if not fenced_lang else f"```{fenced_lang}\n{text}\n```"
-    )
-
-    filename = url.rsplit("/", 1)[-1].split("?", 1)[0] or "raw"
-    return {
-        "url": url,
-        "title": f"raw: {filename} ({content_type.split(';', 1)[0] or 'text'})",
-        "content": content,
-        "content_type": "text",
-    }, None
-
-
-def _html_to_markdown(html: str, url: str) -> Tuple[str, str]:
-    """HTML → 正文 markdown：去噪、优先 main/article、正文过短时退化为全文本。"""
-    soup = BeautifulSoup(html, "html.parser")
-    doc_title = soup.title.string if soup.title and soup.title.string else url
-
-    for tag in soup(_STRIP_TAGS):
-        tag.decompose()
-
-    main_content = soup.find("main") or soup.find("article")
-    if not main_content:
-        main_content = soup.find("body") or soup
-
-    markdown_text = md(str(main_content), heading_style="ATX")
-    markdown_text = re.sub(r"\n{3,}", "\n\n", markdown_text).strip()
-
-    if len(markdown_text) < 150:
-        paragraphs = soup.find_all(["h1", "h2", "h3", "h4", "p", "li", "code", "div"])
-        text_lines = []
-        for p in paragraphs:
-            text = p.get_text(strip=True)
-            if text and text not in text_lines:
-                text_lines.append(text)
-        markdown_text = "\n\n".join(text_lines)
-
-    return doc_title, markdown_text
+    text = decode_bytes(data, charset)
+    return build_raw_text_result(url, text, content_type), None
 
 
 def _fetch_html_http(
@@ -164,20 +65,13 @@ def _fetch_html_http(
         if resp.status_code >= 400:
             return None, f"HTTP {resp.status_code}: {url}"
 
-        charset = "utf-8"
         content_type = resp.headers.get("Content-Type", "") or ""
-        m = re.search(r"charset=([\w-]+)", content_type, re.I)
-        if m:
-            charset = m.group(1)
-
-        try:
-            html = resp.content[:_MAX_BYTES].decode(charset, errors="replace")
-        except LookupError:
-            html = resp.content[:_MAX_BYTES].decode("utf-8", errors="replace")
+        charset = detect_charset(content_type)
+        html = decode_bytes(clip_bytes(resp.content), charset)
     finally:
         resp.close()
 
-    doc_title, markdown_text = _html_to_markdown(html, url)
+    doc_title, markdown_text = html_to_markdown(html, url)
 
     if len(markdown_text) < 150:
         return None, (
@@ -242,12 +136,12 @@ def web_content_fetch(url: str) -> Tuple[Optional[Dict], Optional[str]]:
        JS 内容也能拿到），HTTP 直抓只作为兜底
     3. 无宿主（服务端/容器）或渲染失败 → curl_cffi 抓原始 HTML + 正文抽取
     """
-    if _looks_like_raw_text_url(url):
+    if looks_like_raw_text_url(url):
         return _fast_fetch_raw_text(url, timeout=20)
 
     html = _render_via_host(url)
     if html:
-        doc_title, markdown_text = _html_to_markdown(html, url)
+        doc_title, markdown_text = html_to_markdown(html, url)
         if len(markdown_text) >= 150:
             return {
                 "url": url,

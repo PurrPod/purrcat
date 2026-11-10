@@ -1,7 +1,14 @@
 import os
 import asyncio
-from datetime import datetime
 from pathlib import Path
+from src.tool.brainstorm._shared import (
+    build_create_message,
+    build_tool_reply,
+    find_assistant_tool_batch,
+    pick_own_tool_call,
+    render_plan_markdown,
+    unanswered_tool_calls,
+)
 from src.tool.utils.format import text_response, error_response
 from src.agent.session_store import SessionStore
 from src.agent.sub_runner import (
@@ -74,45 +81,6 @@ def _has_write_permission(target_path: str) -> bool:
     return best_perm == "writable"
 
 
-def _render_plan_markdown(main_plan: list = None, sub_branches: list = None) -> str:
-    """把 BrainStorm 指定的计划解析成 Markdown 总计划，供会话级 @PLAN 引用。"""
-    main_plan = main_plan or []
-    sub_branches = sub_branches or []
-
-    lines = [
-        "# BrainStorm 总计划",
-        "",
-        f"- 刷新时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-        f"- 主干步骤：{len(main_plan)} 步",
-        f"- 后台支线：{len(sub_branches)} 个",
-        "",
-        "## 主干 Main 分支执行大纲",
-    ]
-    if main_plan:
-        lines.extend(f"{i}. {step}" for i, step in enumerate(main_plan, 1))
-    else:
-        lines.append("（无）")
-
-    lines.extend(["", "## 后台支线任务"])
-    if sub_branches:
-        for branch in sub_branches:
-            lines.append(f"### {branch.get('branch_id', '未命名支线')}")
-            lines.append(f"- 任务：{branch.get('action', '')}")
-            lines.append("- 交付物：")
-            deliverables = branch.get("deliverable") or []
-            if deliverables:
-                lines.extend(f"  - `{item}`" for item in deliverables)
-            else:
-                lines.append("  （无）")
-            depends_on = branch.get("depends_on") or []
-            lines.append(f"- 依赖：{'、'.join(depends_on) if depends_on else '无'}")
-            lines.append("")
-    else:
-        lines.append("（无）")
-
-    return "\n".join(lines).rstrip() + "\n"
-
-
 def BrainStorm(
     action: str,
     main_plan: list = None,
@@ -161,36 +129,24 @@ def BrainStorm(
                                 f"安全策略拦截：系统拒绝派发此任务。请先调用 Request 工具为该路径申请 file_write 权限，或修改目标路径为沙盒内(/agent_vm)路径。"
                             )
 
-            msg_lines = ["🚀 [系统] 脑暴大纲与任务排期已成功落盘生效！"]
-
-            if main_plan:
-                msg_lines.append("\n### 📌 【主干 Main 分支后续执行大纲】")
-                for i, step in enumerate(main_plan, 1):
-                    msg_lines.append(f"**Step {i}**. {step}")
-
-            if sub_branches:
-                msg_lines.append(
-                    f"\n后台支线任务 ({len(sub_branches)}个) 已成功递交底层引擎，在暗中开辟独立线程快马加鞭运转中。"
-                )
-
             # 📄 把本次计划整体刷新到当前会话的 plan.md，供范式 @PLAN 引用
             from src.agent.manager import AgentManager
 
             manager = AgentManager()
             main_session_id = manager.get_active_session_id()
+            plan_error = None
             if main_session_id:
                 try:
                     SessionStore.save_session_plan(
                         main_session_id,
-                        _render_plan_markdown(main_plan, sub_branches),
+                        render_plan_markdown(main_plan, sub_branches),
                     )
                 except Exception as e:
-                    msg_lines.append(f"\n⚠️ 总计划落盘失败：{e}")
+                    plan_error = str(e)
 
-            msg_lines.append(
-                "\n💡 指示：工具已闭环，你不需要进行任何循环查询。请立即按照你刚才定下的 Main 主线计划第一步去沙盒开展工作。子任务结果出来后系统会自动通知。"
+            final_response_text = build_create_message(
+                main_plan, sub_branches, plan_error
             )
-            final_response_text = "\n".join(msg_lines)
 
             if sub_branches:
                 main_history = manager._agent.get_history()
@@ -199,46 +155,19 @@ def BrainStorm(
                 # BS 被调度器延后到批次末尾执行，此刻其后可能已跟了同批次
                 # 其它工具的返回结果（这些结果会随快照进入子代理上下文），
                 # 因此不能只看 history[-1]。
-                assistant_idx = -1
-                for i in range(len(main_history) - 1, -1, -1):
-                    msg = main_history[i]
-                    if msg.get("role") == "assistant" and msg.get("tool_calls"):
-                        assistant_idx = i
-                        break
+                assistant_idx = find_assistant_tool_batch(main_history)
 
                 if assistant_idx >= 0:
                     # 引入 json 模块以确保安全的字符串化
                     import json
 
-                    assistant_msg = main_history[assistant_idx]
-                    answered_ids = {
-                        m.get("tool_call_id")
-                        for m in main_history[assistant_idx + 1 :]
-                        if m.get("role") == "tool"
-                    }
-                    unanswered = [
-                        tc
-                        for tc in assistant_msg["tool_calls"]
-                        if tc.get("id") not in answered_ids
-                    ]
+                    answered_ids, unanswered = unanswered_tool_calls(
+                        main_history, assistant_idx
+                    )
 
                     # 定位本工具自己的 tool_call：优先用调度器注入的
                     # _tool_call_id，兜底按函数名匹配
-                    own_tc = None
-                    if _tool_call_id:
-                        own_tc = next(
-                            (tc for tc in unanswered if tc.get("id") == _tool_call_id),
-                            None,
-                        )
-                    if own_tc is None:
-                        own_tc = next(
-                            (
-                                tc
-                                for tc in unanswered
-                                if tc.get("function", {}).get("name") == "BrainStorm"
-                            ),
-                            None,
-                        )
+                    own_tc = pick_own_tool_call(unanswered, _tool_call_id)
 
                     # 1) 塞入 BS 自己的伪造结果（绝对安全的纯字符串）
                     if own_tc:
@@ -253,12 +182,7 @@ def BrainStorm(
                             else str(raw_resp)
                         )
                         main_history.append(
-                            {
-                                "role": "tool",
-                                "tool_call_id": own_tc["id"],
-                                "name": "BrainStorm",
-                                "content": safe_content,
-                            }
+                            build_tool_reply(own_tc, safe_content, name="BrainStorm")
                         )
                         answered_ids.add(own_tc["id"])
 
@@ -268,15 +192,11 @@ def BrainStorm(
                         if tc.get("id") in answered_ids:
                             continue
                         main_history.append(
-                            {
-                                "role": "tool",
-                                "tool_call_id": tc["id"],
-                                "name": tc.get("function", {}).get("name", ""),
-                                "content": (
-                                    "【系统提示】该工具调用与 BrainStorm 同批次发出，"
-                                    "其返回结果未注入本子代理上下文，请勿依赖此占位内容。"
-                                ),
-                            }
+                            build_tool_reply(
+                                tc,
+                                "【系统提示】该工具调用与 BrainStorm 同批次发出，"
+                                "其返回结果未注入本子代理上下文，请勿依赖此占位内容。",
+                            )
                         )
 
                 loop = ensure_sub_loop()

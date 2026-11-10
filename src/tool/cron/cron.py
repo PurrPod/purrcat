@@ -1,9 +1,9 @@
 """Cron 工具主入口 - 统一调度 list、add、delete、update 操作"""
 
-import re
 import traceback
 
 from src.tool.cron.cron_operations import add_cron, delete_cron, list_crons, update_cron
+from src.tool.cron.cron_rules import format_cron_list, is_valid_trigger_time
 from src.tool.cron.exceptions import CronError
 from src.tool.utils.format import error_response, text_response, warning_response
 
@@ -53,14 +53,8 @@ def Cron(
                 crons = list_crons()
                 active_count = sum(1 for c in crons if c.get("active", False))
                 snip = f"⏰ {len(crons)}个 | {active_count}激活"
-                # 将 crons 列表拼成平文本
                 # 兼容旧版/外部写入的记录可能缺少字段，统一用 .get() 兜底
-                cron_text = "\n".join(
-                    [
-                        f"- [{c.get('id')}] {c.get('title')} | 时间: {c.get('trigger_time')} | 重复: {c.get('repeat_rule')} | 激活: {c.get('active')}\n  描述: {c.get('description', '')}"
-                        for c in crons
-                    ]
-                )
+                cron_text = format_cron_list(crons)
                 return text_response(cron_text or "当前没有设定的闹钟。", snip)
             except CronError as e:
                 return error_response(str(e), "❌ 查询失败")
@@ -78,7 +72,7 @@ def Cron(
                     "参数缺失",
                 )
 
-            if not re.match(r"^([01]\d|2[0-3]):([0-5]\d)$", str(trigger_time).strip()):
+            if not is_valid_trigger_time(str(trigger_time).strip()):
                 return error_response(
                     f"时间格式错误：'{trigger_time}'。引导：必须严格使用 HH:MM 格式，例如 09:00 或 14:30。",
                     "参数格式错误",
@@ -133,9 +127,7 @@ def Cron(
                     "参数缺失",
                 )
 
-            if trigger_time and not re.match(
-                r"^([01]\d|2[0-3]):([0-5]\d)$", str(trigger_time).strip()
-            ):
+            if trigger_time and not is_valid_trigger_time(str(trigger_time).strip()):
                 return error_response(
                     f"时间格式错误：'{trigger_time}'。引导：修改的时间必须严格使用 HH:MM 格式。",
                     "参数格式错误",

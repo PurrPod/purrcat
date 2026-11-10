@@ -15,6 +15,7 @@ from src.tool.request.request_operations import submit_request
 from src.utils.config import AGENT_VM_DIR
 from src.utils.graph_api import graph_file
 from src.evolve import run_mcp_eval_background
+from .shared import parse_workplace_target
 
 
 def test_module(t: str, target: str) -> dict:
@@ -100,13 +101,13 @@ def _test_sensor(target: str) -> dict:
 
 def _test_mcp(target: str) -> dict:
     """MCP 测试：宿主侧重跑沙盒内的并发评测（需先产出 schema_dump.json）"""
-    parts = target.split("/")
-    if len(parts) != 2 or not all(parts):
+    pair = parse_workplace_target(target)
+    if not pair:
         return error_response(
             f"执行失败：target 格式不正确，应为 'uuid/mcp_name'。当前输入为: '{target}'",
             "❌ 路径格式错误",
         )
-    workplace_id, mcp_name = parts
+    workplace_id, mcp_name = pair
 
     mcp_dir = os.path.join(AGENT_VM_DIR, "mcp_workplace", workplace_id, mcp_name)
     if not os.path.isdir(mcp_dir):
@@ -181,10 +182,7 @@ def _stale_schema_warning(schema_path: str) -> str:
 # agentloop / graph：宿主侧静态校验（免审，与合并网关同一套权威校验）
 # ==========================================
 def _split_workplace(target: str) -> tuple[str, str] | None:
-    parts = target.split("/")
-    if len(parts) != 2 or not all(parts):
-        return None
-    return parts[0], parts[1]
+    return parse_workplace_target(target)
 
 
 def _test_agentloop(target: str) -> dict:
@@ -231,8 +229,8 @@ def _test_graph(target: str) -> dict:
     return _format_validation_report("graph", name, target, report)
 
 
-def _format_validation_report(kind: str, name: str, target: str, report: dict) -> dict:
-    """把宿主侧校验报告铺开给 Agent（免审，与合并网关同一事实来源）。"""
+def _format_validation_body(kind: str, name: str, target: str, report: dict) -> str:
+    """铺开校验报告正文，不含工具响应包装。"""
     checks = report.get("checks", [])
     errs = [c for c in checks if c["level"] == "error" and not c["ok"]]
     warns = [c for c in checks if c["level"] == "warn" and not c["ok"]]
@@ -270,6 +268,11 @@ def _format_validation_report(kind: str, name: str, target: str, report: dict) -
         )
         body = "\n".join(lines)
 
-    body += artifact_note
+    return body + artifact_note
+
+
+def _format_validation_report(kind: str, name: str, target: str, report: dict) -> dict:
+    """把宿主侧校验报告铺开给 Agent（免审，与合并网关同一事实来源）。"""
+    body = _format_validation_body(kind, name, target, report)
     snip = f"{'✅' if report.get('ok') else '❌'} {kind} {name} 校验"
     return text_response(body, snip)

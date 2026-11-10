@@ -1,5 +1,7 @@
 """KernelUpgrade 各 action 模块共享的常量与工具函数"""
 
+import os
+
 # action × type 全矩阵：create/upgrade 建沙盒，install 从市场/URL 落正式区，
 # merge/test 由本工具代发 Request（Agent 不再直接向 Request 传 test/merge）。
 ACTIONS = ("create", "upgrade", "install", "merge", "test")
@@ -26,6 +28,35 @@ def data_root() -> str:
     from src.utils.config import DATA_ROOT
 
     return DATA_ROOT
+
+
+def normalize_target(target: str) -> str:
+    """剥掉 Agent 常给 URL/配置串加的反引号或引号。"""
+    return (target or "").strip().strip("`\"'").strip()
+
+
+def is_url(target: str) -> bool:
+    return target.startswith(("http://", "https://"))
+
+
+def resolve_agent_vm_path(path: str) -> str:
+    """兼容沙盒视角的 /agent_vm 前缀路径。"""
+    from src.utils.config import AGENT_VM_DIR
+
+    p = path.replace("\\", "/")
+    if p.startswith("/agent_vm/"):
+        return os.path.join(AGENT_VM_DIR, p[len("/agent_vm/") :])
+    return path
+
+
+def parse_workplace_target(
+    target: str, *, strip: bool = False
+) -> tuple[str, str] | None:
+    """解析 `uuid/名字`；strip=True 时逐段去空白，兼容手写空格。"""
+    parts = [p.strip() for p in target.split("/")] if strip else target.split("/")
+    if len(parts) != 2 or not all(parts):
+        return None
+    return parts[0], parts[1]
 
 
 def record_trace_meta(workplace_id: str):

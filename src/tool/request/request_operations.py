@@ -6,6 +6,7 @@ import uuid
 import time
 import threading
 
+from src.tool.request._shared import build_request_record
 from src.utils.config import DATA_DIR
 
 # 统一存储在单文件 requests.json 中
@@ -19,6 +20,17 @@ def _ensure_requests_file():
     if not os.path.exists(REQUESTS_FILE):
         with open(REQUESTS_FILE, "w", encoding="utf-8") as f:
             json.dump({}, f)
+
+
+def read_requests() -> dict:
+    """读取 requests.json；调用方按场景决定是否捕获异常。"""
+    with open(REQUESTS_FILE, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def write_requests(data: dict) -> None:
+    with open(REQUESTS_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
 
 
 def submit_request(
@@ -42,27 +54,17 @@ def submit_request(
     req_id = f"req_{uuid.uuid4().hex[:8]}"
     timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
 
-    req_data = {
-        "id": req_id,
-        "type": request_type,
-        "target": target,
-        "reason": reason,
-        "status": "pending",  # 固定初始状态，等待人类给出 yes/no
-        "created_at": timestamp,
-    }
-    if extra:
-        req_data.update(extra)
+    req_data = build_request_record(
+        request_type, target, reason, req_id, timestamp, extra
+    )
 
     with REQUEST_LOCK:
         try:
-            with open(REQUESTS_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
+            data = read_requests()
         except json.JSONDecodeError:
             data = {}
 
         data[req_id] = req_data
-
-        with open(REQUESTS_FILE, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        write_requests(data)
 
     return req_data

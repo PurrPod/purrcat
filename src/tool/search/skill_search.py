@@ -6,7 +6,8 @@ from typing import Dict, List
 
 import numpy as np
 
-from src.tool.search.semantic_utils import LocalEmbeddingSearcher, hybrid_tokenize
+from src.tool.search import _shared
+from src.tool.search.semantic_utils import LocalEmbeddingSearcher
 from src.utils.config import SKILL_DIR
 from src.utils.skill_helper import _parse_skill_md
 
@@ -49,8 +50,9 @@ class SkillSearcher:
                         temp_skills.append(
                             {"name": name, "description": desc, "dir_name": item.name}
                         )
-                        text_representation = f"{name} {desc} {content}"
-                        temp_corpus.append(text_representation)
+                        temp_corpus.append(
+                            _shared.skill_document_text(name, desc, content)
+                        )
 
         self.skills = temp_skills
         self.corpus = temp_corpus
@@ -63,11 +65,9 @@ class SkillSearcher:
             if not self.corpus:
                 return
             print(f"[+] 正在为 {len(self.skills)} 个 Skill 构建向量矩阵...")
-            self.corpus_matrix = self.embedding_searcher.encode(self.corpus)
-            tokenized_corpus = [hybrid_tokenize(doc) for doc in self.corpus]
-            from rank_bm25 import BM25Okapi  # 局部导入
-
-            self.bm25 = BM25Okapi(tokenized_corpus)
+            self.corpus_matrix, self.bm25 = _shared.build_hybrid_index(
+                self.embedding_searcher, self.corpus
+            )
             print("[*] Skill 向量矩阵构建完毕。")
 
     def reload_index(self, skill_dir: str = SKILL_DIR):
@@ -85,38 +85,25 @@ class SkillSearcher:
 
             if self.corpus_matrix is None or self.bm25 is None:
                 print("[+] 检测到索引未就绪，正在强制同步构建...")
-                self.corpus_matrix = self.embedding_searcher.encode(self.corpus)
-                from rank_bm25 import BM25Okapi
-
-                tokenized_corpus = [hybrid_tokenize(doc) for doc in self.corpus]
-                self.bm25 = BM25Okapi(tokenized_corpus)
+                self.corpus_matrix, self.bm25 = _shared.build_hybrid_index(
+                    self.embedding_searcher, self.corpus
+                )
                 print("[*] 同步构建完成！")
 
             # 获取引用快照以防止后续计算时被修改
-            current_corpus = self.corpus
             current_matrix = self.corpus_matrix
             current_bm25 = self.bm25
             current_skills = self.skills
 
         # 【优化】相似度计算可以在锁外执行（使用局部变量快照）
-        query_vector = self.embedding_searcher.encode([query])
-        dense_scores = self.embedding_searcher.calculate_similarity(
-            query_vector, current_matrix
+        final_scores, top_k_indices = _shared.score_top_k(
+            self.embedding_searcher,
+            query,
+            current_matrix,
+            current_bm25,
+            top_k,
+            clamp_negative=True,
         )
-
-        tokenized_query = hybrid_tokenize(query)
-        raw_bm25_scores = current_bm25.get_scores(tokenized_query)
-
-        final_scores = []
-        for i in range(len(current_corpus)):
-            base_score = float(dense_scores[i])
-            # BM25 小语料下会出现负分（词出现在多数文档时 idf<0），log1p 负数产生 nan，需截断
-            bm25_bonus = np.log1p(max(raw_bm25_scores[i], 0.0)) * 0.03
-            combined_score = base_score + bm25_bonus
-            final_scores.append(combined_score)
-
-        final_scores = np.array(final_scores)
-        top_k_indices = np.argsort(final_scores)[::-1][:top_k]
 
         results = []
         for idx in top_k_indices:
@@ -150,7 +137,9 @@ class SkillSearcher:
         sandbox_name = sandbox_skill.get("name", "")
         sandbox_desc = sandbox_skill.get("description", "")
         sandbox_content = sandbox_skill.get("content", "")
-        sandbox_text = f"{sandbox_name} {sandbox_desc} {sandbox_content}"
+        sandbox_text = _shared.skill_document_text(
+            sandbox_name, sandbox_desc, sandbox_content
+        )
 
         sandbox_vector = self.embedding_searcher.encode([sandbox_text])
 
@@ -177,44 +166,26 @@ class SkillSearcher:
                 temp_matrix = sandbox_vector
 
         # 4. 执行真实的混合检索打分
-        query_vector = self.embedding_searcher.encode([query])
-        dense_scores = self.embedding_searcher.calculate_similarity(
-            query_vector, temp_matrix
-        )
-
         # 重新初始化轻量级 BM25 (由于语料少，耗时极短)
-        from rank_bm25 import BM25Okapi
-
-        tokenized_corpus = [hybrid_tokenize(doc) for doc in temp_corpus]
-        temp_bm25 = BM25Okapi(tokenized_corpus)
-
-        tokenized_query = hybrid_tokenize(query)
-        raw_bm25_scores = temp_bm25.get_scores(tokenized_query)
-
-        final_scores = np.array(
-            [
-                # 同 search()：BM25 负分截断到 0，避免 log1p 产生 nan
-                float(dense_scores[i]) + np.log1p(max(raw_bm25_scores[i], 0.0)) * 0.03
-                for i in range(len(temp_corpus))
-            ]
+        temp_bm25 = _shared.build_bm25(temp_corpus)
+        # 同 search()：BM25 负分截断到 0，避免 log1p 产生 nan
+        final_scores, top_k_indices = _shared.score_top_k(
+            self.embedding_searcher,
+            query,
+            temp_matrix,
+            temp_bm25,
+            top_k,
+            clamp_negative=True,
         )
-
-        top_k_indices = np.argsort(final_scores)[::-1][:top_k]
 
         # 5. 激发状态判定
         # 注意 target_idx 在新技能追加时，等于 len(temp_corpus) - 1
         if target_idx == -1:
             target_idx = len(temp_corpus) - 1
 
-        trigger_score = final_scores[target_idx]
-        is_triggered = False
-        rank = -1
-
-        for rank_pos, idx in enumerate(top_k_indices):
-            if idx == target_idx and trigger_score >= threshold:
-                is_triggered = True
-                rank = rank_pos + 1
-                break
+        is_triggered, rank, trigger_score = _shared.evaluate_rank(
+            final_scores, top_k_indices, target_idx, threshold
+        )
 
         return {
             "is_triggered": is_triggered,

@@ -2,12 +2,15 @@
 
 import json
 import os
-import re
 import traceback
-from datetime import datetime
 
 from src.agent.session_store import SessionStore
 from src.memory import search_memory, add_memory
+from src.tool.memo._shared import (
+    format_cached_memo,
+    format_search_results,
+    validate_date_format,
+)
 from src.tool.utils.format import error_response, text_response
 
 
@@ -50,18 +53,6 @@ def Memo(
         return error_response(f"记忆工具运行时异常: {str(e)}", "❌ Memo执行异常")
 
 
-def _validate_date_format(date_str: str) -> bool:
-    """验证日期格式 YYYY-MM-DD"""
-    pattern = r"^\d{4}-\d{2}-\d{2}$"
-    if not re.match(pattern, date_str):
-        return False
-    try:
-        datetime.strptime(date_str, "%Y-%m-%d")
-        return True
-    except ValueError:
-        return False
-
-
 def _handle_add(memo_data: dict = None) -> str:
     """处理写入记忆：完成后返回统计量而非全量JSON内容"""
     if not isinstance(memo_data, dict):
@@ -87,11 +78,7 @@ def _handle_search(query: dict = None) -> str:
     # 1. 如果不传 query 参数，直接返回全局最新的缓存记忆 (self.memo内容)
     if not query:
         memo_list = SessionStore.load_global_memo()
-        import yaml
-
-        cache_str = (
-            yaml.dump(memo_list, allow_unicode=True) if memo_list else "当前无缓存记忆"
-        )
+        cache_str = format_cached_memo(memo_list)
         return text_response(f"最新缓存记忆：\n{cache_str}", "🔍 缓存记忆")
 
     if isinstance(query, str):
@@ -116,7 +103,7 @@ def _handle_search(query: dict = None) -> str:
             "❌ 搜索参数校验失败",
         )
 
-    if date_filter and not _validate_date_format(date_filter):
+    if date_filter and not validate_date_format(date_filter):
         return error_response(
             "参数格式错误: date 日期格式不正确，应为 YYYY-MM-DD", "❌ 参数格式错误"
         )
@@ -137,18 +124,8 @@ def _handle_search(query: dict = None) -> str:
             f"🔍 [MemoSearch] search_memory 返回 | result长度={len(result) if result else 0}"
         )
 
-        # ====== 修复部分 ======
-        # 如果底层直接返回了组装好的文本，直接使用
-        if isinstance(result, str):
-            return text_response(result or "未检索到相关记忆。", "🔍 记忆检索成功")
-
-        # 如果返回的是字典列表，再使用 get 方法
-        res_str = ""
-        for idx, r in enumerate(result or []):
-            if isinstance(r, dict):
-                res_str += f"[{idx + 1}] {r.get('date', '')} - 相似度: {r.get('score', 0)}\n内容: {r.get('content', '')}\n\n"
-
-        return text_response(res_str or "未检索到相关记忆。", "🔍 记忆检索成功")
+        # 底层可能直接返回组装好的文本，也可能是字典列表
+        return text_response(format_search_results(result), "🔍 记忆检索成功")
 
     except Exception as e:
         print(f"❌ [MemoSearch] 异常: {e}")

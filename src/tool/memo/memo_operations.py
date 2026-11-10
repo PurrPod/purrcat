@@ -5,6 +5,7 @@ import os
 import threading
 
 from src.model import AgentModel
+from src.tool.memo._shared import build_memory_update_prompts, extract_overwrite_content
 from src.utils.config import AGENT_CORE_DIR
 
 MEMORY_MD_PATH = os.path.join(AGENT_CORE_DIR, "MEMORY.md")
@@ -41,42 +42,9 @@ def _smart_update_memory_md(work_exp: list, user_profile: list):
                 current_md = f.read()
 
         model = AgentModel(task_id="memory_writer")
-        system_prompt = (
-            "你是一个极其克制且追求高效的后台记忆整理 Agent。\n"
-            "\n"
-            "当前有两个存储层：\n"
-            "- 记忆数据库（事无巨细的全量日志，长期保留，不用你管）\n"
-            '- MEMORY.md（注入工作主 Agent 系统提示词的"浅层意识缓存"，只保留最通用、最高频的核心经验）\n'
-            "\n"
-            "你的任务：根据最新传入的工作经验和用户画像，智能更新 MEMORY.md。\n"
-            "\n"
-            "【定位铁律】\n"
-            "MEMORY.md 是主 Agent 在每一步决策时都会扫一眼的东西。它必须极度精炼、极度通用、没有一丝水分。\n"
-            "任何只对某个特定项目、某次特定运行有意义的细节，都不配进入这个文件。\n"
-            "每条经验必须能用一句话说清：什么情况下，应该立刻采取什么行动或想起什么规则。不超过 80 字。\n"
-            "\n"
-            "【通用性判别标准】\n"
-            "以下内容 **绝对不得收录**：\n"
-            "- 特定文件路径、IP地址、版本号\n"
-            '- 单次运行结果（如"某次测试通过率 97%"）\n'
-            "- 仅适用于某个特定项目、特定目录结构的操作步骤\n"
-            "\n"
-            "以下内容 **优先收录**：\n"
-            '- 跨项目反复出现的方法论（如"三层解耦架构"）\n'
-            '- 反直觉的系统行为（如"bash cp 无法跨环境到宿主机路径"）\n'
-            "- 曾被重复踩过的坑（同一类问题出现 2 次以上，说明有长期价值）\n"
-            "- 用户不可触碰的红线或隐性期待\n"
-            "\n"
-            "【数量与淘汰规则】\n"
-            "- MEMORY.md 中经验总数 **必须 ≤ 15 条**\n"
-            "- 每新增 1 条经验，必须从现有经验中淘汰至少 1 条（直接从文档中移除，不留删除线或批注）\n"
-            "- 淘汰时，优先移除：① 最久未更新的经验 ② 适用场景最窄的经验 ③ 与其他经验重叠度最高的经验\n"
-            "- 同类经验必须合并为一条，禁止出现两条指向同一场景的独立条目\n"
-            "\n"
-            "【写入方式】\n"
-            "你必须调用 overwrite_memory_md 工具，用整理后的全量内容（≤15 条）完整覆写 MEMORY.md。"
+        system_prompt, user_prompt = build_memory_update_prompts(
+            current_md, work_exp, user_profile
         )
-        user_prompt = f"【现有长期记忆档案】\n{current_md if current_md else '（暂无）'}\n\n【本次新增工作经验】\n{work_exp if work_exp else '（无）'}\n\n【本次新增用户画像】\n{user_profile if user_profile else '（无）'}"
 
         messages = [{"role": "system", "content": system_prompt}]
         messages.append({"role": "user", "content": user_prompt})
@@ -114,8 +82,9 @@ def _smart_update_memory_md(work_exp: list, user_profile: list):
                     for t in msg_resp.tool_calls:
                         if t.function.name == "overwrite_memory_md":
                             try:
-                                args = json.loads(t.function.arguments)
-                                new_md_content = args.get("new_markdown_content", "")
+                                new_md_content = extract_overwrite_content(
+                                    t.function.arguments
+                                )
                                 temp_path = f"{MEMORY_MD_PATH}.tmp"
                                 with open(temp_path, "w", encoding="utf-8") as f:
                                     f.write(new_md_content)
