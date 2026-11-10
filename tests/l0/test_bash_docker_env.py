@@ -61,3 +61,35 @@ def test_normalize_mount_path_handles_drive_style_and_case():
     assert _shared.normalize_mount_path("D:/work") == expected
     assert _shared.normalize_mount_path("/d/work") == expected
     assert _shared.normalize_mount_path("d:\\WORK") == expected
+
+
+def test_exit_hook_skips_docker_when_no_sandbox_was_created(monkeypatch):
+    """从未创建沙盒的进程（测试 / 纯 API）退出时不应触碰 Docker。"""
+    from src.tool.bash import docker_env
+
+    called = []
+    monkeypatch.setattr(docker_env, "_docker_manager_instance", None)
+    monkeypatch.setattr(docker_env.docker, "from_env", lambda **kw: called.append(kw))
+
+    docker_env._stop_sandbox_on_exit()
+
+    assert called == []
+
+
+def test_exit_hook_ignores_missing_container(monkeypatch, capsys):
+    """容器已被删除时静默返回，不打印误导性的失败日志。"""
+    from src.tool.bash import docker_env
+
+    class _Containers:
+        def get(self, name):
+            raise docker_env.NotFound("No such container")
+
+    class _Client:
+        containers = _Containers()
+
+    monkeypatch.setattr(docker_env, "_docker_manager_instance", object())
+    monkeypatch.setattr(docker_env.docker, "from_env", lambda **kw: _Client())
+
+    docker_env._stop_sandbox_on_exit()
+
+    assert "失败" not in capsys.readouterr().out

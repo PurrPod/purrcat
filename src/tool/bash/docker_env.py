@@ -93,12 +93,18 @@ def _stop_sandbox_on_exit():
     新建进程，若让子进程 atexit 去 stop 容器，会在其它并发会话的命令执行到一半时
     切断其 docker exec 连接，造成随机的 End Of File (EOF) 报错。
     """
+    if _docker_manager_instance is None:
+        # 本进程从未创建过沙盒（测试、纯 API 子命令），无需触碰 Docker
+        return
     try:
         client = docker.from_env(timeout=5)
         container = client.containers.get(SANDBOX_CONTAINER_NAME)
         if container.status == "running":
             container.stop(timeout=2)
             print(f"[*] 宿主退出：沙盒 ({SANDBOX_CONTAINER_NAME}) 已休眠")
+    except NotFound:
+        # 容器已被手动删除或从未创建，属于正常状态
+        pass
     except Exception as e:
         print(f"[*] 宿主退出时休眠沙盒失败(忽略): {e}")
 
