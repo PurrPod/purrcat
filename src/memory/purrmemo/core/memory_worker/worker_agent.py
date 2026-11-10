@@ -1,19 +1,22 @@
 # purrmemo/core/memory_worker/worker_agent.py
 
-import hashlib
 import json
 import os
 import shutil
 import time
-from datetime import datetime
 
 from src.utils.config import MEMORY_DIR, MEMORY_PENDING_DIR
 from src.memory.config import MEMORY_AGENT_POLLING_INTERVAL
 
+from ..clock import now_iso
+from ..ids import event_id_for, experience_id_for
 from ..search_tool import start_forgetfulness_scheduler
 from ..storage.event_engine import EventEngine
 from ..storage.graph_engine import GraphEngine
 from ..storage.vector_engine import VectorEngine
+from .payload import iter_event_records, parse_pending_payload
+from .prompts import build_messages
+from .schema import MEMORY_WORKER_TOOL_SCHEMAS, WRITE_TOOL_NAMES
 from .tools import add_relation, rag_search, reinforce_relation, weaken_relation
 
 ARCHIVED_DIR = os.path.join(MEMORY_DIR, "buffer", "archived")
@@ -25,22 +28,52 @@ os.makedirs(ERROR_DIR, exist_ok=True)
 
 
 class MemoryAgent:
-    def __init__(self):
+    def __init__(
+        self,
+        event_engine=None,
+        vector_engine=None,
+        graph_engine=None,
+        start_scheduler=True,
+        model_factory=None,
+    ):
         self.history = []
-        self.event_engine = EventEngine()
+        self.event_engine = event_engine if event_engine is not None else EventEngine()
+        self._model_factory = model_factory
 
-        try:
-            self.vector_engine = VectorEngine()
-        except Exception:
+        if vector_engine is not None:
+            self.vector_engine = vector_engine
+        else:
             self.vector_engine = None
-            print("VectorEngine 不可用，将在无向量搜索模式下运行")
+            try:
+                self.vector_engine = VectorEngine()
+            except Exception:
+                print("VectorEngine 不可用，将在无向量搜索模式下运行")
 
-        try:
-            self.graph_engine = GraphEngine()
-            start_forgetfulness_scheduler(self.graph_engine, interval_hours=24)
-        except Exception:
+        if graph_engine is not None:
+            self.graph_engine = graph_engine
+            try:
+                if start_scheduler:
+                    start_forgetfulness_scheduler(self.graph_engine, interval_hours=24)
+            except Exception:
+                self.graph_engine = None
+                print("GraphEngine 不可用，将无法处理图谱相关操作")
+        else:
             self.graph_engine = None
-            print("GraphEngine 不可用，将无法处理图谱相关操作")
+            try:
+                self.graph_engine = GraphEngine()
+                if start_scheduler:
+                    start_forgetfulness_scheduler(self.graph_engine, interval_hours=24)
+            except Exception:
+                self.graph_engine = None
+                print("GraphEngine 不可用，将无法处理图谱相关操作")
+
+    def _create_model(self):
+        """构造记忆工人的模型；未注入工厂时保持原有的懒加载行为。"""
+        if self._model_factory is not None:
+            return self._model_factory()
+        from src.model import AgentModel
+
+        return AgentModel(task_id="memory_worker")
 
     def _run_llm_step(self, cognition_data: list):
         """
@@ -49,88 +82,12 @@ class MemoryAgent:
         Args:
             cognition_data: 认知条目列表，如 ["用户喜欢吃苹果", "用户讨厌香蕉"]
         """
-        from src.model import AgentModel
-
         if not cognition_data:
             return
 
-        model = AgentModel(task_id="memory_worker")
+        model = self._create_model()
 
-        tools = [
-            {
-                "type": "function",
-                "function": {
-                    "name": "rag_search",
-                    "description": "批量检索知识库中是否存在相关节点",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "entity_keywords": {
-                                "type": "array",
-                                "items": {"type": "string"},
-                                "description": "关键词列表，从认知信息中提取的核心实体",
-                            }
-                        },
-                        "required": ["entity_keywords"],
-                    },
-                },
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "add_relation",
-                    "description": "新增三元组关系",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "source_node": {"type": "string"},
-                            "relation": {"type": "string"},
-                            "target_node": {"type": "string"},
-                            "source_event_id": {"type": "string", "default": "unknown"},
-                        },
-                        "required": ["source_node", "relation", "target_node"],
-                    },
-                },
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "reinforce_relation",
-                    "description": "强化已有关系",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "source_node": {"type": "string"},
-                            "relation": {"type": "string"},
-                            "target_node": {"type": "string"},
-                        },
-                        "required": ["source_node", "relation", "target_node"],
-                    },
-                },
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "weaken_relation",
-                    "description": "削弱已有关系（通常需要紧接着 add_relation）",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "source_node": {"type": "string"},
-                            "relation": {"type": "string"},
-                            "target_node": {"type": "string"},
-                            "reason": {"type": "string"},
-                        },
-                        "required": [
-                            "source_node",
-                            "relation",
-                            "target_node",
-                            "reason",
-                        ],
-                    },
-                },
-            },
-        ]
+        tools = MEMORY_WORKER_TOOL_SCHEMAS
 
         tool_map = {
             "rag_search": rag_search,
@@ -139,17 +96,7 @@ class MemoryAgent:
             "weaken_relation": weaken_relation,
         }
 
-        system_msg = {
-            "role": "system",
-            "content": "你是一个严谨的知识图谱构建助手。收到一批认知条目，你需要：\n1. 先用 rag_search 批量检索关键词\n2. 根据检索结果调用 add_relation/reinforce_relation/weaken_relation\n3. 所有条目处理完毕后回复'完成'",
-        }
-
-        user_content = "【待处理的认知条目】\n"
-        for i, item in enumerate(cognition_data, 1):
-            user_content += f"{i}. {item}\n"
-        user_content += "\n请开始处理：先用 rag_search 检索，然后逐条写入图谱。"
-
-        messages = [system_msg, {"role": "user", "content": user_content}]
+        messages = build_messages(cognition_data)
 
         max_turns = 50
         write_count = 0
@@ -191,11 +138,7 @@ class MemoryAgent:
             for tc in msg_resp.tool_calls:
                 tool_name = tc.function.name
 
-                if tool_name in [
-                    "add_relation",
-                    "reinforce_relation",
-                    "weaken_relation",
-                ]:
+                if tool_name in WRITE_TOOL_NAMES:
                     write_count += 1
 
                 try:
@@ -230,13 +173,14 @@ class MemoryAgent:
             return False
 
         try:
-            timestamp = data.get("timestamp", datetime.now().isoformat())
+            memo = parse_pending_payload(data)
+            timestamp = memo.timestamp
+            cognition = memo.cognition
+            user_profile = memo.user_profile
+            work_exp = memo.work_exp
+            events = memo.events
 
             event_id = None
-            cognition = data.get("cognition", [])
-            user_profile = data.get("user_profile", [])
-            work_exp = data.get("work_exp", [])
-            events = data.get("events", [])
 
             # 🌟 嵌入模型未就绪（首启仍在下载 / 直连 HF 下载失败）时，向量写入必然失败。
             # 此时不要继续处理并归档，文件留在 pending 等模型就绪后自动重试，
@@ -253,16 +197,8 @@ class MemoryAgent:
                 return False
 
             # 1. 处理 Events (事件库 + 向量库双写)
-            for event in events:
-                event_content = (
-                    event.get("event", "") if isinstance(event, dict) else event
-                )
-                event_time = (
-                    event.get("time", timestamp)
-                    if isinstance(event, dict)
-                    else timestamp
-                )
-                event_id = f"evt_{hashlib.md5(event_content.encode()).hexdigest()}"
+            for event_content, event_time in iter_event_records(events, timestamp):
+                event_id = event_id_for(event_content)
 
                 self.event_engine.insert_event(
                     event_id=event_id, content=event_content, timestamp=event_time
@@ -276,7 +212,7 @@ class MemoryAgent:
             experiences = work_exp + user_profile
             if self.vector_engine and experiences:
                 for exp_text in experiences:
-                    exp_id = f"exp_{hashlib.md5(exp_text.encode()).hexdigest()}"
+                    exp_id = experience_id_for(exp_text)
                     self.vector_engine.insert_experience(
                         exp_id=exp_id, content=exp_text, timestamp=timestamp
                     )
@@ -307,7 +243,7 @@ class MemoryAgent:
                 {
                     "event_id": event_id,
                     "file": os.path.basename(file_path),
-                    "processed_at": datetime.now().isoformat(),
+                    "processed_at": now_iso(),
                     "events_count": len(events),
                     "has_graph_materials": bool(cognition or user_profile),
                 }

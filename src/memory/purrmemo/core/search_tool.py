@@ -1,6 +1,5 @@
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime
 
 from src.memory.config import (
     RAG_TOP_K_EVENTS,
@@ -8,56 +7,41 @@ from src.memory.config import (
     RAG_TOP_K_GRAPH_NODES,
 )
 
+from .clock import days_since
+from .filters import filter_by_time_range, filter_experiences_by_score
+from .formatting import describe_relation, format_search_results
+from .schema import CANDIDATE_LIMIT, GRAPH_NODE_SEARCH_TOP_K, MIN_EXPERIENCE_SCORE
+from .scoring import decayed_confidence, reciprocal_rank_fusion
 from .storage.event_engine import EventEngine
 from .storage.graph_engine import GraphEngine
 from .storage.vector_engine import VectorEngine
 
 
-def reciprocal_rank_fusion(vector_results, bm25_results, k=60, top_k=5):
-    """
-    RRF 倒数排名融合算法
-    :param vector_results: 列表，包含 {'id': 'xxx', 'data': {...}, 'score': 0.8}
-    :param bm25_results: 列表，包含 {'id': 'xxx', 'data': {...}, 'score': 15.2}
-    """
-    fused_scores = {}
-    fused_data = {}
-
-    # 将两个列表放在一起遍历，消除重复代码块
-    for result_list in (vector_results, bm25_results):
-        for rank, item in enumerate(
-            sorted(result_list, key=lambda x: x["score"], reverse=True)
-        ):
-            item_id = item["id"]
-            fused_scores[item_id] = fused_scores.get(item_id, 0) + 1.0 / (k + rank + 1)
-            fused_data[item_id] = item["data"]
-
-    reranked = [
-        {"id": item_id, "data": fused_data[item_id], "rrf_score": score}
-        for item_id, score in sorted(
-            fused_scores.items(), key=lambda x: x[1], reverse=True
-        )
-    ]
-
-    return reranked[:top_k]
-
-
 class RAGSearchTool:
-    def __init__(self):
-        self.event_engine = EventEngine()
+    def __init__(
+        self, event_engine=None, vector_engine=None, graph_engine=None, max_workers=10
+    ):
+        self.event_engine = event_engine if event_engine is not None else EventEngine()
 
-        try:
-            self.vector_engine = VectorEngine()
-        except Exception:
+        if vector_engine is not None:
+            self.vector_engine = vector_engine
+        else:
             self.vector_engine = None
-            print("VectorEngine 不可用，将无法检索经验库")
+            try:
+                self.vector_engine = VectorEngine()
+            except Exception:
+                print("VectorEngine 不可用，将无法检索经验库")
 
-        try:
-            self.graph_engine = GraphEngine()
-        except Exception:
+        if graph_engine is not None:
+            self.graph_engine = graph_engine
+        else:
             self.graph_engine = None
-            print("GraphEngine 不可用，将无法检索图谱库")
+            try:
+                self.graph_engine = GraphEngine()
+            except Exception:
+                print("GraphEngine 不可用，将无法检索图谱库")
 
-        self.executor = ThreadPoolExecutor(max_workers=10)
+        self.executor = ThreadPoolExecutor(max_workers=max_workers)
 
     def search_memory_api(self, query: str, filters: dict = None):
         """统一检索接口"""
@@ -124,18 +108,16 @@ class RAGSearchTool:
             vector_results_raw = []
             if self.vector_engine:
                 vector_results_raw = self.vector_engine.search_events_vector(
-                    query, top_k=200, query_embedding=query_embedding
+                    query, top_k=CANDIDATE_LIMIT, query_embedding=query_embedding
                 )
 
                 if start_time and end_time:
-                    vector_results_raw = [
-                        e
-                        for e in vector_results_raw
-                        if start_time <= e["data"]["timestamp"] <= end_time
-                    ]
+                    vector_results_raw = filter_by_time_range(
+                        vector_results_raw, start_time, end_time
+                    )
 
             bm25_results_raw = self.event_engine.search_fts_bm25(
-                query, start_time, end_time, limit=200
+                query, start_time, end_time, limit=CANDIDATE_LIMIT
             )
 
             fused_results = reciprocal_rank_fusion(
@@ -172,7 +154,7 @@ class RAGSearchTool:
                 query_embedding=query_embedding,
             )
 
-            return [exp for exp in raw_experiences if exp["score"] >= 0.35]
+            return filter_experiences_by_score(raw_experiences, MIN_EXPERIENCE_SCORE)
         except Exception as e:
             print(f"检索经验失败: {e}")
             return []
@@ -194,7 +176,9 @@ class RAGSearchTool:
                 and self.graph_engine.vector_engine
             ):
                 similar_nodes = self.graph_engine.vector_engine.search_graph_nodes(
-                    query, top_k=5, query_embedding=query_embedding
+                    query,
+                    top_k=GRAPH_NODE_SEARCH_TOP_K,
+                    query_embedding=query_embedding,
                 )
             else:
                 return []
@@ -218,17 +202,20 @@ class RAGSearchTool:
                             relation["source_node_id"]
                         )
 
+                        source_name = source_node["name"] if source_node else "未知"
+                        target_name = target_node["name"] if target_node else "未知"
+
                         results.append(
                             {
-                                "source": (
-                                    source_node["name"] if source_node else "未知"
-                                ),
+                                "source": source_name,
                                 "relation": relation["relation_meaning"],
-                                "target": (
-                                    target_node["name"] if target_node else "未知"
-                                ),
+                                "target": target_name,
                                 "confidence": relation["confidence"],
-                                "description": f"{source_node['name'] if source_node else '未知'} {relation['relation_meaning']} {target_node['name'] if target_node else '未知'}",
+                                "description": describe_relation(
+                                    source_name,
+                                    relation["relation_meaning"],
+                                    target_name,
+                                ),
                             }
                         )
 
@@ -245,49 +232,19 @@ class RAGSearchTool:
 
     def _format_results(self, events, experiences, graph_results, events_warning=""):
         """将结果格式化为 Markdown"""
-        markdown_parts = []
-
-        if events_warning:
-            markdown_parts.append(events_warning)
-
-        if events:
-            markdown_parts.append("## 历史事件")
-            markdown_parts.extend(
-                [f"- [{event['timestamp']}] {event['content']}" for event in events]
-            )
-            markdown_parts.append("")
-
-        if experiences:
-            markdown_parts.append("## 工作经验")
-            markdown_parts.extend(
-                [f"- [{exp['score']:.2f}] {exp['content']}" for exp in experiences]
-            )
-            markdown_parts.append("")
-
-        if graph_results:
-            markdown_parts.append("## 知识图谱")
-            markdown_parts.extend(
-                [
-                    f"- {result['description']} (置信度: {result['confidence']:.2f})"
-                    for result in graph_results
-                ]
-            )
-            markdown_parts.append("")
-
-        if not markdown_parts:
-            markdown_parts.append("## 检索结果")
-            markdown_parts.append("没有找到相关信息")
-
-        return "\n".join(markdown_parts)
+        return format_search_results(events, experiences, graph_results, events_warning)
 
 
 class ForgetfulnessManager:
     """遗忘管理器"""
 
-    def __init__(self, graph_engine, min_confidence=0.3, decay_rate=0.05):
+    def __init__(
+        self, graph_engine, min_confidence=0.3, decay_rate=0.05, event_engine=None
+    ):
         self.graph_engine = graph_engine
         self.min_confidence = min_confidence
         self.decay_rate = decay_rate
+        self.event_engine = event_engine
 
     def decay_unreinforced_edges(self, days_threshold=7):
         """衰减长时间未强化的边"""
@@ -298,25 +255,23 @@ class ForgetfulnessManager:
         ):
             if "updated_at" in edge_data:
                 try:
-                    updated_at = datetime.fromisoformat(edge_data["updated_at"])
-                    days_since_update = (datetime.now() - updated_at).days
+                    days_since_update = days_since(edge_data["updated_at"])
+                    new_confidence = decayed_confidence(
+                        edge_data["confidence"],
+                        days_since_update,
+                        days_threshold,
+                        self.decay_rate,
+                        self.min_confidence,
+                    )
 
-                    if days_since_update >= days_threshold:
-                        decay_amount = self.decay_rate * (
-                            days_since_update - days_threshold
+                    if new_confidence is not None:
+                        edges_to_update.append(
+                            {
+                                "source_node_id": source_node_id,
+                                "target_node_id": target_node_id,
+                                "new_confidence": new_confidence,
+                            }
                         )
-                        new_confidence = max(
-                            self.min_confidence, edge_data["confidence"] - decay_amount
-                        )
-
-                        if new_confidence < edge_data["confidence"]:
-                            edges_to_update.append(
-                                {
-                                    "source_node_id": source_node_id,
-                                    "target_node_id": target_node_id,
-                                    "new_confidence": new_confidence,
-                                }
-                            )
                 except Exception as e:
                     print(f"处理边 {source_node_id} -> {target_node_id} 失败: {e}")
 
@@ -330,7 +285,9 @@ class ForgetfulnessManager:
         self.decay_unreinforced_edges(days_threshold=7)
 
         try:
-            event_engine = EventEngine()
+            event_engine = (
+                self.event_engine if self.event_engine is not None else EventEngine()
+            )
             deleted_count = event_engine.cleanup_old_events(days_threshold=90)
             if deleted_count > 0:
                 print(f"🧹 [遗忘机制] 已清理 {deleted_count} 条超过90天的陈旧事件")

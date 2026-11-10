@@ -1,13 +1,14 @@
-import hashlib
-
+from src.memory.purrmemo.core.ids import node_id_for
 from src.memory.purrmemo.core.storage.graph_engine import GraphEngine
 
 graph_engine = None
 
 
-def init_graph_engine():
+def init_graph_engine(engine=None):
     global graph_engine
-    if graph_engine is None:
+    if engine is not None:
+        graph_engine = engine
+    elif graph_engine is None:
         graph_engine = GraphEngine()
 
 
@@ -20,9 +21,7 @@ def get_node_id(node_name: str) -> str:
     Returns:
         稳定的节点 ID
     """
-    # 清洗节点名称：去空格、统一小写
-    cleaned_node_name = node_name.strip().lower()
-    return f"node_{hashlib.md5(cleaned_node_name.encode()).hexdigest()[:16]}"
+    return node_id_for(node_name)
 
 
 def add_relation(

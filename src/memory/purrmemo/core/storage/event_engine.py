@@ -1,16 +1,17 @@
 import os
 import sqlite3
-from datetime import datetime
 
 from src.memory.config import EVENTDB_PATH, EVENTDB_TABLE_NAME
 
+from ..clock import iso_days_ago, now_iso
+from ..filters import build_fts_query
 from ..utils import SingletonMeta
 
 
 class EventEngine(metaclass=SingletonMeta):
-    def __init__(self):
-        self.db_path = EVENTDB_PATH
-        self.table_name = EVENTDB_TABLE_NAME
+    def __init__(self, db_path=None, table_name=None):
+        self.db_path = db_path if db_path is not None else EVENTDB_PATH
+        self.table_name = table_name if table_name is not None else EVENTDB_TABLE_NAME
         self.conn = None
         self._init_db()
 
@@ -49,7 +50,7 @@ class EventEngine(metaclass=SingletonMeta):
     def insert_event(self, event_id, content, timestamp=None, source=None):
         """插入事件"""
         if timestamp is None:
-            timestamp = datetime.now().isoformat()
+            timestamp = now_iso()
 
         try:
             cursor = self.conn.cursor()
@@ -116,12 +117,9 @@ class EventEngine(metaclass=SingletonMeta):
         """利用 SQLite FTS5 执行 BM25 检索"""
         cursor = self.conn.cursor()
 
-        clean_query = query.replace('"', "").replace("'", "").strip()
-        tokens = clean_query.split()
-        if not tokens:
+        fts_query_str = build_fts_query(query)
+        if not fts_query_str:
             return []
-
-        fts_query_str = " AND ".join([f'"{t}"*' for t in tokens])
 
         sql = f"""
         SELECT e.event_id, e.content, e.timestamp, e.source, fts.rank as bm25_score
@@ -182,9 +180,7 @@ class EventEngine(metaclass=SingletonMeta):
 
     def cleanup_old_events(self, days_threshold=90):
         """清理超过 N 天的陈旧事件"""
-        from datetime import timedelta
-
-        cutoff_date = (datetime.now() - timedelta(days=days_threshold)).isoformat()
+        cutoff_date = iso_days_ago(days_threshold)
 
         try:
             cursor = self.conn.cursor()

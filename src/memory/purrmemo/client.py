@@ -1,8 +1,10 @@
-import datetime
 import threading
 import traceback
 
+from .core.filters import date_range_for
+from .core.formatting import collection_records_to_experiences, graph_to_payload
 from .core.memory_worker.worker_agent import MemoryAgent
+from .core.schema import DEFAULT_SEARCH_TOP_K
 from .core.search_tool import RAGSearchTool
 from .core.utils import SingletonMeta
 from .visualize_graph import GraphVisualizer
@@ -10,10 +12,11 @@ from src.utils.memory_utils import validate_memo_data, write_to_pending
 
 
 class PurrMemoClient(metaclass=SingletonMeta):
-    def __init__(self):
-        self.search_tool = RAGSearchTool()
+    def __init__(self, search_tool=None, auto_start=True):
+        self.search_tool = search_tool if search_tool is not None else RAGSearchTool()
         self._daemon_started = False
-        self.init()
+        if auto_start:
+            self.init()
 
     def _start_daemon(self):
         """启动守护进程监听 buffer/pending"""
@@ -37,18 +40,13 @@ class PurrMemoClient(metaclass=SingletonMeta):
         filters = filters or {}
 
         if "top_k" not in filters:
-            filters["top_k"] = 5
+            filters["top_k"] = DEFAULT_SEARCH_TOP_K
 
         if "date" in filters:
             raw_date = filters.pop("date")
             if raw_date and isinstance(raw_date, str):
                 try:
-                    parsed_date = datetime.datetime.strptime(
-                        raw_date.strip(), "%Y-%m-%d"
-                    )
-                    start_time = parsed_date.strftime("%Y-%m-%dT00:00:00")
-                    end_time = parsed_date.strftime("%Y-%m-%dT23:59:59.999999")
-                    filters["time_range"] = (start_time, end_time)
+                    filters["time_range"] = date_range_for(raw_date)
                 except ValueError:
                     print(
                         f"⚠️ [PurrMemo] 忽略无效的日期过滤参数 '{raw_date}'，期望格式为 YYYY-MM-DD"
@@ -85,24 +83,7 @@ class PurrMemoClient(metaclass=SingletonMeta):
             return {"nodes": [], "edges": []}
 
         graph = graph_engine.graph
-        nodes = []
-        edges = []
-        for node_id in graph.nodes:
-            data = graph.nodes[node_id]
-            nodes.append({"id": node_id, "label": data.get("name", node_id)})
-
-        for source, target, edge_data in graph.edges(data=True):
-            edges.append(
-                {
-                    "from": source,
-                    "to": target,
-                    "label": edge_data.get("relation_meaning", "unknown"),
-                    "confidence": edge_data.get("confidence", 0.0),
-                    "updated_at": edge_data.get("updated_at", ""),
-                }
-            )
-
-        return {"nodes": nodes, "edges": edges}
+        return graph_to_payload(graph)
 
     def get_recent_events(self, limit: int = 30):
         """获取最近的事件（从事件库）"""
@@ -118,19 +99,7 @@ class PurrMemoClient(metaclass=SingletonMeta):
             if not vector_engine or not getattr(vector_engine, "collection", None):
                 return []
             results = vector_engine.collection.get(include=["documents", "metadatas"])
-            experiences = []
-            if results and results.get("ids"):
-                for i in range(len(results["ids"])):
-                    meta = results["metadatas"][i] or {}
-                    experiences.append(
-                        {
-                            "exp_id": results["ids"][i],
-                            "content": results["documents"][i],
-                            "timestamp": meta.get("timestamp", ""),
-                        }
-                    )
-            experiences.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
-            return experiences[:limit]
+            return collection_records_to_experiences(results, limit)
         except Exception as e:
             print(f"[PurrMemo] 获取最近经验失败（工作经验库将为空）: {e}")
             traceback.print_exc()

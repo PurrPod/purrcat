@@ -10,25 +10,56 @@ from src.memory.config import (
     CHROMADB_EVENTS_COLLECTION_NAME,
 )
 
+from ..clock import days_since, now_iso
+from ..filters import clamp_top_k
+from ..schema import GRAPH_NODE_CANDIDATE_FACTOR, MIN_EXPERIENCE_SCORE
+from ..scoring import graph_node_boost, similarity_from_distance
 from ..utils import SingletonMeta
 
 
 class VectorEngine(metaclass=SingletonMeta):
     """🌟 重构：懒加载 ChromaDB 和 Embedding"""
 
-    def __init__(self):
-        self.persist_directory = CHROMADB_PERSIST_DIRECTORY
-        self.collection_name = CHROMADB_COLLECTION_NAME
-        self.graph_collection_name = CHROMADB_GRAPH_COLLECTION_NAME
-        self.events_collection_name = CHROMADB_EVENTS_COLLECTION_NAME
-        self.embedding_model_name = get_embedding_model()
+    def __init__(
+        self,
+        persist_directory=None,
+        collection_name=None,
+        graph_collection_name=None,
+        events_collection_name=None,
+        embedding_model_name=None,
+        client=None,
+        embedding_model=None,
+    ):
+        self.persist_directory = (
+            persist_directory
+            if persist_directory is not None
+            else CHROMADB_PERSIST_DIRECTORY
+        )
+        self.collection_name = (
+            collection_name if collection_name is not None else CHROMADB_COLLECTION_NAME
+        )
+        self.graph_collection_name = (
+            graph_collection_name
+            if graph_collection_name is not None
+            else CHROMADB_GRAPH_COLLECTION_NAME
+        )
+        self.events_collection_name = (
+            events_collection_name
+            if events_collection_name is not None
+            else CHROMADB_EVENTS_COLLECTION_NAME
+        )
+        self.embedding_model_name = (
+            embedding_model_name
+            if embedding_model_name is not None
+            else get_embedding_model()
+        )
 
         # 将实例置空
-        self._client = None
+        self._client = client
         self._collection = None
         self._graph_collection = None
         self._events_collection = None
-        self._embedding_model = None
+        self._embedding_model = embedding_model
 
         # 线程锁，防止并发初始化
         self._db_lock = threading.Lock()
@@ -101,8 +132,8 @@ class VectorEngine(metaclass=SingletonMeta):
 
             # 使用原生 upsert，一行搞定"有则更新，无则插入"
             metadata = {
-                "timestamp": timestamp or datetime.now().isoformat(),
-                "last_accessed": datetime.now().isoformat(),
+                "timestamp": timestamp or now_iso(),
+                "last_accessed": now_iso(),
                 "access_count": 1,
             }
             if source_event_id:
@@ -136,20 +167,19 @@ class VectorEngine(metaclass=SingletonMeta):
                 ids=[event_id],
                 embeddings=[embedding],
                 documents=[content],
-                metadatas=[{"timestamp": timestamp or datetime.now().isoformat()}],
+                metadatas=[{"timestamp": timestamp or now_iso()}],
             )
             return True
         except Exception as e:
             print(f"插入事件向量失败: {e}")
             return False
 
-    def get_event_by_id(self, event_id):
-        """根据 ID 获取事件"""
+    def _get_record(self, collection, record_id, id_key, label):
         try:
-            results = self.events_collection.get(ids=[event_id])
+            results = collection.get(ids=[record_id])
             if results["ids"]:
                 return {
-                    "event_id": results["ids"][0],
+                    id_key: results["ids"][0],
                     "content": results["documents"][0],
                     "metadata": (
                         results["metadatas"][0] if results["metadatas"][0] else {}
@@ -157,8 +187,12 @@ class VectorEngine(metaclass=SingletonMeta):
                 }
             return None
         except Exception as e:
-            print(f"获取事件失败: {e}")
+            print(f"获取{label}失败: {e}")
             return None
+
+    def get_event_by_id(self, event_id):
+        """根据 ID 获取事件"""
+        return self._get_record(self.events_collection, event_id, "event_id", "事件")
 
     def search_events_vector(self, query, top_k=200, query_embedding=None):
         """利用 ChromaDB 高效检索事件向量"""
@@ -168,7 +202,7 @@ class VectorEngine(metaclass=SingletonMeta):
             if not query_embedding:
                 return []
 
-            actual_top_k = min(top_k, self.events_collection.count())
+            actual_top_k = clamp_top_k(top_k, self.events_collection.count())
             if actual_top_k == 0:
                 return []
 
@@ -178,7 +212,7 @@ class VectorEngine(metaclass=SingletonMeta):
 
             events = []
             for i in range(len(results["ids"][0])):
-                similarity = 1.0 - results["distances"][0][i]
+                similarity = similarity_from_distance(results["distances"][0][i])
                 events.append(
                     {
                         "id": results["ids"][0][i],
@@ -206,7 +240,7 @@ class VectorEngine(metaclass=SingletonMeta):
             if not query_embedding:
                 return []
 
-            actual_top_k = min(top_k, self.collection.count())
+            actual_top_k = clamp_top_k(top_k, self.collection.count())
             if actual_top_k == 0:
                 return []
 
@@ -223,8 +257,8 @@ class VectorEngine(metaclass=SingletonMeta):
                     results["metadatas"][0][i] if results["metadatas"][0][i] else {}
                 )
 
-                similarity = 1.0 - distance
-                if similarity >= 0.35:
+                similarity = similarity_from_distance(distance)
+                if similarity >= MIN_EXPERIENCE_SCORE:
                     experiences.append(
                         {
                             "exp_id": exp_id,
@@ -241,20 +275,7 @@ class VectorEngine(metaclass=SingletonMeta):
 
     def get_experience_by_id(self, exp_id):
         """根据 ID 获取经验"""
-        try:
-            results = self.collection.get(ids=[exp_id])
-            if results["ids"]:
-                return {
-                    "exp_id": results["ids"][0],
-                    "content": results["documents"][0],
-                    "metadata": (
-                        results["metadatas"][0] if results["metadatas"][0] else {}
-                    ),
-                }
-            return None
-        except Exception as e:
-            print(f"获取经验失败: {e}")
-            return None
+        return self._get_record(self.collection, exp_id, "exp_id", "经验")
 
     def delete_experience(self, exp_id):
         """删除经验"""
@@ -299,7 +320,9 @@ class VectorEngine(metaclass=SingletonMeta):
             if not query_embedding:
                 return []
 
-            actual_top_k = min(top_k * 2, self.graph_collection.count())
+            actual_top_k = clamp_top_k(
+                top_k * GRAPH_NODE_CANDIDATE_FACTOR, self.graph_collection.count()
+            )
             if actual_top_k == 0:
                 return []
 
@@ -308,21 +331,11 @@ class VectorEngine(metaclass=SingletonMeta):
             )
 
             nodes = []
-            query_lower = query.lower()
 
             for i in range(len(vector_res["ids"][0])):
                 node_name = vector_res["documents"][0][i]
-                base_score = 1.0 - vector_res["distances"][0][i]
-                boost = (
-                    2.0
-                    if query_lower == node_name.lower()
-                    else (
-                        0.5
-                        if query_lower in node_name.lower()
-                        or node_name.lower() in query_lower
-                        else 0.0
-                    )
-                )
+                base_score = similarity_from_distance(vector_res["distances"][0][i])
+                boost = graph_node_boost(query, node_name)
 
                 nodes.append(
                     {
@@ -361,12 +374,11 @@ class VectorEngine(metaclass=SingletonMeta):
                 metadata = results["metadatas"][i] if results["metadatas"][i] else {}
 
                 if "last_accessed" in metadata:
-                    last_accessed = datetime.fromisoformat(metadata["last_accessed"])
+                    age_days = days_since(metadata["last_accessed"], current_time)
                     if (
-                        current_time - last_accessed
-                    ).days > days_threshold and metadata.get(
-                        "access_count", 0
-                    ) < min_access_count:
+                        age_days > days_threshold
+                        and metadata.get("access_count", 0) < min_access_count
+                    ):
                         self.collection.delete(ids=[exp_id])
                         deleted_count += 1
 

@@ -1,28 +1,34 @@
-import hashlib
 import os
-import pickle
 import threading
-from datetime import datetime
 
 import networkx as nx
 
 from src.memory.config import GRAPHDB_PATH, GRAPHDB_MIN_CONFIDENCE
 
+from ..clock import now_iso
+from ..formatting import relation_to_dict
+from ..ids import edge_id_for
 from ..utils import SingletonMeta
+from .graph_io import load_graph, save_graph
 from .vector_engine import VectorEngine
 
 
 class GraphEngine(metaclass=SingletonMeta):
-    def __init__(self):
+    def __init__(self, graph_path=None, min_confidence=None, vector_engine=None):
         self._rw_lock = threading.RLock()
-        self.graph_path = GRAPHDB_PATH
-        self.min_confidence = GRAPHDB_MIN_CONFIDENCE
+        self.graph_path = graph_path if graph_path is not None else GRAPHDB_PATH
+        self.min_confidence = (
+            min_confidence if min_confidence is not None else GRAPHDB_MIN_CONFIDENCE
+        )
         self.graph = None
-        self.vector_engine = None
-        try:
-            self.vector_engine = VectorEngine()
-        except Exception:
-            print("向量引擎依赖未安装，将在无向量搜索模式下运行")
+        if vector_engine is not None:
+            self.vector_engine = vector_engine
+        else:
+            self.vector_engine = None
+            try:
+                self.vector_engine = VectorEngine()
+            except Exception:
+                print("向量引擎依赖未安装，将在无向量搜索模式下运行")
         self._init_graph()
 
     def _init_graph(self):
@@ -32,8 +38,7 @@ class GraphEngine(metaclass=SingletonMeta):
         # 尝试加载已有的图谱
         try:
             if os.path.exists(self.graph_path):
-                with open(self.graph_path, "rb") as f:
-                    self.graph = pickle.load(f)
+                self.graph = load_graph(self.graph_path)
             else:
                 self.graph = nx.DiGraph()
         except Exception as e:
@@ -42,8 +47,7 @@ class GraphEngine(metaclass=SingletonMeta):
 
     def _generate_edge_id(self, source_node_id, target_node_id, relation_meaning):
         """生成边的唯一标识"""
-        key = f"{source_node_id}_{target_node_id}_{relation_meaning}"
-        return hashlib.md5(key.encode()).hexdigest()
+        return edge_id_for(source_node_id, target_node_id, relation_meaning)
 
     def add_node(self, node_id, name, vector=None):
         """添加节点
@@ -93,7 +97,7 @@ class GraphEngine(metaclass=SingletonMeta):
                 edge_id = self._generate_edge_id(
                     source_node_id, target_node_id, relation_meaning
                 )
-                timestamp = datetime.now().isoformat()
+                timestamp = now_iso()
 
                 # 检查是否已存在该关系
                 if self.graph.has_edge(source_node_id, target_node_id):
@@ -144,7 +148,7 @@ class GraphEngine(metaclass=SingletonMeta):
                 if edge_data.get("relation_meaning") == relation_meaning:
                     new_confidence = min(1.0, edge_data["confidence"] + increment)
                     edge_data["confidence"] = new_confidence
-                    edge_data["updated_at"] = datetime.now().isoformat()
+                    edge_data["updated_at"] = now_iso()
                     self.save_graph()
                     return True
             return False
@@ -174,7 +178,7 @@ class GraphEngine(metaclass=SingletonMeta):
                         self.min_confidence, edge_data["confidence"] - decrement
                     )
                     edge_data["confidence"] = new_confidence
-                    edge_data["updated_at"] = datetime.now().isoformat()
+                    edge_data["updated_at"] = now_iso()
                     self.save_graph()
                     return True
             return False
@@ -217,16 +221,7 @@ class GraphEngine(metaclass=SingletonMeta):
             with self._rw_lock:
                 if self.graph.has_edge(source_node_id, target_node_id):
                     edge_data = self.graph[source_node_id][target_node_id]
-                    return {
-                        "edge_id": edge_data.get("edge_id"),
-                        "source_node_id": source_node_id,
-                        "target_node_id": target_node_id,
-                        "relation_meaning": edge_data.get("relation_meaning"),
-                        "confidence": edge_data.get("confidence"),
-                        "created_at": edge_data.get("created_at"),
-                        "updated_at": edge_data.get("updated_at"),
-                        "source_event_id": edge_data.get("source_event_id"),
-                    }
+                    return relation_to_dict(source_node_id, target_node_id, edge_data)
             return None
         except Exception as e:
             print(f"获取关系失败: {e}")
@@ -254,18 +249,7 @@ class GraphEngine(metaclass=SingletonMeta):
                 for u, v in edges_to_check:
                     edge_data = self.graph[u][v]
                     if edge_data.get("confidence", 0) >= self.min_confidence:
-                        relations.append(
-                            {
-                                "edge_id": edge_data.get("edge_id"),
-                                "source_node_id": u,
-                                "target_node_id": v,
-                                "relation_meaning": edge_data.get("relation_meaning"),
-                                "confidence": edge_data.get("confidence"),
-                                "created_at": edge_data.get("created_at"),
-                                "updated_at": edge_data.get("updated_at"),
-                                "source_event_id": edge_data.get("source_event_id"),
-                            }
-                        )
+                        relations.append(relation_to_dict(u, v, edge_data))
 
             return relations
         except Exception as e:
@@ -276,8 +260,7 @@ class GraphEngine(metaclass=SingletonMeta):
         """保存图谱到文件"""
         with self._rw_lock:
             try:
-                with open(self.graph_path, "wb") as f:
-                    pickle.dump(self.graph, f)
+                save_graph(self.graph_path, self.graph)
             except Exception as e:
                 print(f"保存图谱失败: {e}")
 
@@ -313,7 +296,7 @@ class GraphEngine(metaclass=SingletonMeta):
                     if self.graph.has_edge(source_node_id, target_node_id):
                         edge_data = self.graph[source_node_id][target_node_id]
                         edge_data["confidence"] = new_confidence
-                        edge_data["updated_at"] = datetime.now().isoformat()
+                        edge_data["updated_at"] = now_iso()
                         updated_count += 1
 
                 # 如果成功更新了边，将图谱持久化到磁盘

@@ -1,5 +1,4 @@
 import os
-import pickle
 import sys
 
 import networkx as nx
@@ -7,6 +6,8 @@ from pyvis.network import Network
 
 from src.utils.config import MEMORY_DIR
 from src.memory.config import GRAPHDB_PATH
+from src.memory.purrmemo.core.formatting import edge_style
+from src.memory.purrmemo.core.storage.graph_io import load_graph
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 if project_root not in sys.path:
@@ -14,8 +15,8 @@ if project_root not in sys.path:
 
 
 class GraphVisualizer:
-    def __init__(self):
-        self.graph_path = GRAPHDB_PATH
+    def __init__(self, graph_path=None):
+        self.graph_path = graph_path if graph_path is not None else GRAPHDB_PATH
         self.graph = None
         self._load_graph()
 
@@ -23,8 +24,7 @@ class GraphVisualizer:
         """加载图谱"""
         try:
             if os.path.exists(self.graph_path):
-                with open(self.graph_path, "rb") as f:
-                    self.graph = pickle.load(f)
+                self.graph = load_graph(self.graph_path)
                 print(
                     f"成功加载图谱，包含 {self.graph.number_of_nodes()} 个节点和 {self.graph.number_of_edges()} 条边"
                 )
@@ -73,8 +73,7 @@ class GraphVisualizer:
                 confidence = edge_data.get("confidence", 0.5)
                 updated_at = edge_data.get("updated_at", "unknown")
 
-                width = 1 + confidence * 3
-                opacity = 0.3 + confidence * 0.7
+                width, opacity = edge_style(confidence)
 
                 net.add_edge(
                     source,
