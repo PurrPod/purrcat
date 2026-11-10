@@ -20,7 +20,8 @@ import hashlib
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 
-from src.server.api import plugin_runtime
+from src.server.api import plugin_runtime, webmin_manifest, webmin_scan
+from src.server.api.common import is_unsafe_name
 from src.utils.config import (
     AGENT_VM_DIR,
     BASE_DIR,
@@ -76,48 +77,12 @@ def _save_webmin_config(cfg: dict) -> bool:
 
 def _is_builtin(plugin_dir: str) -> bool:
     """某个插件路径是否位于内置根目录（决定能否被删除管理）。"""
-    try:
-        builtin_root = os.path.abspath(BUILTIN_PLUGIN_ROOT)
-        return (
-            os.path.commonpath([builtin_root, os.path.abspath(plugin_dir)])
-            == builtin_root
-        )
-    except Exception:
-        return False
+    return webmin_manifest.is_builtin(plugin_dir, BUILTIN_PLUGIN_ROOT)
 
 
 def _plugin_origin(plugin_dir: str) -> str:
-    """插件实际所在的根（回填 plugin.json 的 root）：user / sandbox / builtin。
-
-    与声明值比对即可发现「声明位置与实际放置位置不一致」。不在任何已知根内
-    （例如被移动到别处）返回空串。
-    """
-    abs_dir = os.path.abspath(plugin_dir)
-    for name, root in ROOT_TO_DIR.items():
-        abs_root = os.path.abspath(root)
-        try:
-            if os.path.commonpath([abs_root, abs_dir]) == abs_root:
-                return name
-        except ValueError:
-            # 不同盘符（Windows）必然不在该根下：跳过这一个根继续比对，
-            # 不能让单个根的失败中断整个循环。
-            continue
-    return ""
-
-
-def _normalize_dependency(raw) -> list:
-    """归一化 dependency：只保留白名单类型，统一为 {"type", "id"} 结构。"""
-    out = []
-    if not isinstance(raw, list):
-        return out
-    for item in raw:
-        if not isinstance(item, dict):
-            continue
-        dep_type = str(item.get("type") or "").strip()
-        dep_id = str(item.get("id") or "").strip()
-        if dep_type in DEP_TYPES and dep_id:
-            out.append({"type": dep_type, "id": dep_id})
-    return out
+    """插件实际所在的根（回填 plugin.json 的 root）：user / sandbox / builtin。"""
+    return webmin_manifest.plugin_origin(plugin_dir, ROOT_TO_DIR)
 
 
 # 宿主共享运行时清单：/minimal/shared/manifest.json（按版本目录发布，路径不可变）
@@ -135,15 +100,7 @@ def _shared_catalog() -> dict:
             return _SHARED_CACHE["data"]
         with open(SHARED_MANIFEST_PATH, "r", encoding="utf-8") as f:
             raw = json.load(f)
-        data = {}
-        if isinstance(raw, dict):
-            for name, item in raw.items():
-                if not isinstance(item, dict):
-                    continue
-                version = str(item.get("version") or "").strip()
-                base = str(item.get("base") or "").strip()
-                if name and version and base:
-                    data[str(name)] = {"version": version, "base": base}
+        data = webmin_manifest.normalize_shared_catalog(raw)
         _SHARED_CACHE["mtime"] = mtime
         _SHARED_CACHE["data"] = data
         return data
@@ -151,199 +108,12 @@ def _shared_catalog() -> dict:
         return {}
 
 
-def _normalize_requires(raw) -> list:
-    """归一化 requires：解析宿主共享运行时依赖，附带实际版本与 base 路径。"""
-    out = []
-    if not isinstance(raw, list):
-        return out
-    catalog = _shared_catalog()
-    for item in raw:
-        if isinstance(item, str):
-            name, rng = item.strip(), ""
-        elif isinstance(item, dict):
-            name = str(item.get("name") or "").strip()
-            rng = str(item.get("range") or "").strip()
-        else:
-            continue
-        if not name:
-            continue
-        entry = catalog.get(name)
-        out.append(
-            {
-                "name": name,
-                "range": rng,
-                "version": entry["version"] if entry else "",
-                "base": entry["base"] if entry else "",
-                "ok": bool(entry),
-            }
-        )
-    return out
-
-
-def _read_plugin_descriptor(plugin_dir: str) -> dict:
-    """读取某插件文件夹的 plugin.json；不存在或非法则返回 None。"""
-    desc_path = os.path.join(plugin_dir, "plugin.json")
-    try:
-        with open(desc_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        if isinstance(data, dict) and data.get("id"):
-            data["dir"] = plugin_dir
-            return data
-    except Exception:
-        pass
-    return None
-
-
-def _scan_plugins(root: str) -> dict:
-    """扫描某个根目录下所有插件，返回 { plugin_id: descriptor }。"""
-    result = {}
-    if not os.path.isdir(root):
-        return result
-    for name in os.listdir(root):
-        # 删除插件时目录被改名为 <id>.trash 留待恢复，扫描必须跳过，
-        # 否则它会连同内部 plugin.json 被当作仍存在的插件重新列出。
-        if name.endswith(".trash"):
-            continue
-        plugin_dir = os.path.join(root, name)
-        if not os.path.isdir(plugin_dir):
-            continue
-        desc = _read_plugin_descriptor(plugin_dir)
-        if desc:
-            result[desc["id"]] = desc
-    return result
-
-
-AREA_PANEL = "panel"
-AREA_PET = "pet"  # 自由浮窗：可任意摆放/拖拽缩放，不干扰其它插件
-AREA_POPUP = "popup"  # 模态弹窗：与设置中心同级，遮罩铺满主区（仅白条与设置中心可操作）
-
-
-def _plugin_area(p: dict) -> str:
-    """插件声明所在区域——area 是插件声明的唯一维度。
-
-    区域取值：rail / sidebar / session / background /
-    panel-container / panel / pet / popup。字符串声明直接视作区域。
-    """
-    pid = str(p.get("id") or "")
-    slot = p.get("slot")
-    if isinstance(slot, dict):
-        return str(slot.get("area") or pid)
-    return str(slot or pid)
-
-
-def _area_behavior(area: str) -> str:
-    """区域 → 宿主行为类别（不写进 plugin.json，由宿主按区域内置）。
-
-    panel=入驻容器抽屉；pet=自由浮窗（可拖拽缩放）；popup=模态弹窗
-    （遮罩铺满主区，白条与设置中心仍可操作）；其余区域=锚定单例。
-    """
-    if area == AREA_PANEL:
-        return "panel"
-    if area == AREA_PET:
-        return "float"
-    if area == AREA_POPUP:
-        return "modal"
-    return "fixed"
-
-
-def _slot_id(p: dict) -> str:
-    """插件的 slot id（宿主分组键 / 单例状态键 / 设置面板展示用）。
-
-    panel 内容插件共享宿主单例容器固定键 ``panel``；pet/popup 每插件独立键
-    ``float:{plugin_id}`` / ``modal:{plugin_id}``；其余区域以 area 本身为键。
-    """
-    area = _plugin_area(p)
-    if area == AREA_PANEL:
-        return "panel"
-    if area == AREA_PET:
-        return "float:" + str(p.get("id") or "")
-    if area == AREA_POPUP:
-        return "modal:" + str(p.get("id") or "")
-    return area
-
-
-def _slot_def(p: dict) -> dict:
-    """归一化插件的 slot 声明：area 为唯一维度，行为类别 type 由宿主按区域推导。
-
-    fixed（锚定单例，同 area 只取第一个生效）、panel（入驻宿主系统级单例容器
-    panel-container，经容器右上角抽屉切换显示）、float（pet 自由浮窗，多插件各自
-    独立、可拖拽可缩放）与 modal（popup 模态弹窗，遮罩铺满主区、尺寸随窗口自适应）。
-    """
-    area = _plugin_area(p)
-    out = {"type": _area_behavior(area), "area": area}
-    slot = p.get("slot")
-    if isinstance(slot, dict):
-        # float/modal 可选声明默认尺寸；size 的 w/h 可为数字（px）或 CSS 长度串。
-        # center 仅对 float（pet 自由浮窗）有意义：modal（popup）天然居中。
-        # {"area": "pet", "size": {"w": 300, "h": 360}, "center": true}
-        # {"area": "popup", "size": {"w": "min(1040px, 96vw)", "h": "86vh"}}
-        if isinstance(slot.get("size"), dict):
-            out["size"] = slot["size"]
-        if slot.get("center"):
-            out["center"] = True
-    return out
-
-
 def _merge_plugins():
     """内置插件为底，沙盒与用户同名插件依次覆盖（下重上）。返回按 slot 分组的列表。"""
-    merged = _scan_plugins(BUILTIN_PLUGIN_ROOT)
-    merged.update(_scan_plugins(SANDBOX_PLUGIN_ROOT))  # 沙盒（Agent 开发）覆盖内置
-    merged.update(_scan_plugins(USER_PLUGIN_ROOT))  # 用户插件优先级最高
-    plugins = list(merged.values())
-    ordered = [
-        "sidebar",
-        "session",
-        "background",
-        "panel",
-        "pet",
-        "popup",
-    ]
-    plugins.sort(
-        key=lambda p: (
-            ordered.index(_slot_id(p)) if _slot_id(p) in ordered else 999,
-            p.get("name", ""),
-        )
+    merged = webmin_scan.scan_plugin_roots(
+        (BUILTIN_PLUGIN_ROOT, SANDBOX_PLUGIN_ROOT, USER_PLUGIN_ROOT)
     )
-    return plugins
-
-
-def _resolve_plugin_file(plugin_id: str, rel_path: str) -> str | None:
-    """在用户/沙盒/内置插件根目录中定位插件文件，沙箱到插件目录内防路径穿越。"""
-    rel_path = rel_path.replace("\\", "/").lstrip("/")
-    for root in PLUGIN_ROOTS:
-        if not os.path.isdir(root):
-            continue
-        plugin_dir = os.path.join(root, plugin_id)
-        if not os.path.isdir(plugin_dir):
-            continue
-        abs_root = os.path.abspath(plugin_dir)
-        abs_target = os.path.abspath(os.path.join(abs_root, rel_path))
-        # 沙箱校验：目标必须在插件根目录内
-        if os.path.commonpath([abs_root, abs_target]) != abs_root:
-            return None
-        if os.path.isfile(abs_target):
-            return abs_target
-    return None
-
-
-def _resolve_plugin_subdir(plugin_id: str, rel_path: str) -> str | None:
-    """在用户/沙盒/内置插件根目录中定位插件内的某个目录（供列目录用，沙箱防穿越）。"""
-    rel_path = rel_path.replace("\\", "/").lstrip("/")
-    for root in PLUGIN_ROOTS:
-        if not os.path.isdir(root):
-            continue
-        plugin_dir = os.path.join(root, plugin_id)
-        if not os.path.isdir(plugin_dir):
-            continue
-        abs_root = os.path.abspath(plugin_dir)
-        abs_target = (
-            os.path.abspath(os.path.join(abs_root, rel_path)) if rel_path else abs_root
-        )
-        if os.path.commonpath([abs_root, abs_target]) != abs_root:
-            return None
-        if os.path.isdir(abs_target):
-            return abs_target
-    return None
+    return webmin_manifest.sort_plugins(list(merged.values()))
 
 
 @router.get("/manifest")
@@ -357,35 +127,25 @@ def api_webmin_manifest():
     """
     stored_cfg = _load_webmin_config()
     stored = stored_cfg.get("plugins") or {}
+    catalog = _shared_catalog()
     plugins = []
     for p in _merge_plugins():
-        p = dict(p)
-        p["configSchema"] = p.get("configSchema") or []
-        p["config"] = dict(stored.get(p["id"]) or {})
-        p["builtin"] = _is_builtin(p.get("dir") or "")
-        p["backend"] = _plugin_backend_info(p.get("dir") or "")
-        # root：插件声明的期望放置位置（builtin/sandbox/user，未声明为空）；
-        # origin：实际扫描到的根（由后端回填）；rootOk：声明与实际是否一致。
-        declared_root = str(p.get("root") or "").strip()
-        origin = _plugin_origin(p.get("dir") or "")
-        p["root"] = declared_root if declared_root in ROOT_TO_DIR else ""
-        p["origin"] = origin
-        p["rootOk"] = (not p["root"]) or (p["root"] == origin)
-        # dependency：归一化为 [{type,id}]，类型限定白名单
-        p["dependency"] = _normalize_dependency(p.get("dependency"))
-        # requires：宿主共享运行时依赖（marked/katex 等），附解析后的版本与 base
-        p["requires"] = _normalize_requires(p.get("requires"))
-        # slot 归一化：p["slot"] 始终为字符串(id)；完整语义放 p["slotDef"]。
-        # 必须先基于原始 slot（仍为 dict）计算 slotDef，再把 slot 字符串化——
-        # 否则 _slot_id 已把 slot 覆盖成 "panel"/"float:..." 字符串，
-        # _slot_def 会把 float 的独立键误当成区域名来推导行为。
-        p["slotDef"] = _slot_def(p)
-        p["slot"] = _slot_id(p)
-        plugins.append(p)
+        plugins.append(
+            webmin_manifest.build_manifest_entry(
+                p,
+                stored.get(p["id"]),
+                catalog=catalog,
+                dep_types=DEP_TYPES,
+                builtin=_is_builtin(p.get("dir") or ""),
+                backend=webmin_scan.plugin_backend_info(p.get("dir") or ""),
+                origin=_plugin_origin(p.get("dir") or ""),
+                root_to_dir=ROOT_TO_DIR,
+            )
+        )
     return {
         "plugins": plugins,
         # 宿主共享运行时清单：{name: {version, base}}，供插件按版本目录引用
-        "shared": _shared_catalog(),
+        "shared": catalog,
         # 最左图标栏持久化状态（stage 0=仅图标 1=图标+文字 + 各插件隐藏开关 + 白条透明度）
         "rail": stored_cfg.get("rail") or {"stage": 0, "hidden": {}, "opacity": 1},
         # 宿主固有中栏容器配置（透明度/默认宽度），存于 plugins['panel-container']
@@ -396,22 +156,14 @@ def api_webmin_manifest():
     }
 
 
-def _plugin_backend_info(plugin_dir: str) -> dict | None:
-    """探测插件是否自带后端：有 server/server.js 则报告 kind='npm'。"""
-    server_js = os.path.join(plugin_dir, "server", "server.js")
-    if os.path.isfile(server_js):
-        return {"kind": "npm"}
-    return None
-
-
 @router.post("/plugin-rpc/{plugin_id}/{handler}")
 def api_webmin_plugin_rpc(plugin_id: str, handler: str, body: dict):
     """调用插件自带的后端子进程 handler（RPC）。body: { payload?, timeout? }。"""
-    if not plugin_id or not handler or any(c in plugin_id for c in ("/", "\\", "..")):
+    if not plugin_id or not handler or is_unsafe_name(plugin_id):
         raise HTTPException(status_code=400, detail="非法的参数")
     payload = (body or {}).get("payload") or {}
     timeout = float((body or {}).get("timeout") or 30.0)
-    plugin_dir = _resolve_plugin_dir(plugin_id)
+    plugin_dir = webmin_scan.resolve_plugin_dir(plugin_id, PLUGIN_ROOTS)
     if plugin_dir is None:
         raise HTTPException(status_code=404, detail=f"插件 {plugin_id} 不存在")
     try:
@@ -428,15 +180,6 @@ def api_webmin_plugin_rpc(plugin_id: str, handler: str, body: dict):
     return {"status": "ok", "result": result}
 
 
-def _resolve_plugin_dir(plugin_id: str) -> str | None:
-    """返回插件所在目录（用户目录优先，其次沙盒，最后内置）。"""
-    for root in PLUGIN_ROOTS:
-        d = os.path.join(root, plugin_id)
-        if os.path.isdir(d):
-            return d
-    return None
-
-
 @router.post("/plugin-backend/{plugin_id}/{action}")
 def api_webmin_plugin_backend(plugin_id: str, action: str):
     """插件后端子进程生命周期：start / stop / restart / status。
@@ -444,7 +187,7 @@ def api_webmin_plugin_backend(plugin_id: str, action: str):
     宿主在面板标签打开时 start、关闭时 stop，使插件后端随标签存活，
     因此改完 ``server/server.js`` 只要关掉再打开标签即可生效，无需重启 PurrCat。
     """
-    if not plugin_id or any(c in plugin_id for c in ("/", "\\", "..")):
+    if is_unsafe_name(plugin_id):
         raise HTTPException(status_code=400, detail="非法的插件 id")
     if action not in ("start", "stop", "restart", "status"):
         raise HTTPException(status_code=400, detail=f"未知操作: {action}")
@@ -454,7 +197,7 @@ def api_webmin_plugin_backend(plugin_id: str, action: str):
         plugin_runtime.stop(plugin_id)
         if action == "stop":
             return {"status": "ok", "running": False}
-    plugin_dir = _resolve_plugin_dir(plugin_id)
+    plugin_dir = webmin_scan.resolve_plugin_dir(plugin_id, PLUGIN_ROOTS)
     if plugin_dir is None:
         raise HTTPException(status_code=404, detail=f"插件 {plugin_id} 不存在")
     try:
@@ -485,29 +228,10 @@ def api_webmin_put_config(body: dict):
     if isinstance(body.get("plugins"), dict):
         cfg["plugins"] = body["plugins"]
     if isinstance(body.get("rail"), dict):
-        rail = body["rail"]
-        try:
-            stage = int(rail.get("stage"))
-        except (TypeError, ValueError):
-            stage = 0
-        try:
-            opacity = float(rail.get("opacity"))
-        except (TypeError, ValueError):
-            opacity = 1
-        cfg["rail"] = {
-            "stage": stage if 0 <= stage <= 1 else 0,
-            "opacity": max(0.0, min(1.0, opacity)),
-            "hidden": (
-                rail.get("hidden") if isinstance(rail.get("hidden"), dict) else {}
-            ),
-        }
+        cfg["rail"] = webmin_manifest.sanitize_rail(body["rail"])
     if isinstance(body.get("active"), dict):
         # 单例槽（fixed 各 area 与共享的 panel 容器）当前选中的插件 id
-        cfg["active"] = {
-            str(k): str(v)
-            for k, v in body["active"].items()
-            if isinstance(v, (str, int)) and str(v)
-        }
+        cfg["active"] = webmin_manifest.normalize_active(body["active"])
     _save_webmin_config(cfg)
     return {"status": "ok"}
 
@@ -515,7 +239,7 @@ def api_webmin_put_config(body: dict):
 @router.post("/plugin/{plugin_id}/delete")
 def api_webmin_delete_plugin(plugin_id: str):
     """删除插件：用户/沙盒插件移动为各自根目录下的 <id>.trash（可恢复），内置拒绝。"""
-    if not plugin_id or any(c in plugin_id for c in ("/", "\\", "..")):
+    if is_unsafe_name(plugin_id):
         raise HTTPException(status_code=400, detail="非法的插件 id")
     for root in (USER_PLUGIN_ROOT, SANDBOX_PLUGIN_ROOT):
         target = os.path.join(root, plugin_id)
@@ -557,7 +281,7 @@ def api_webmin_import_wallpaper(body: dict):
 @router.get("/wallpaper/{filename}")
 def api_webmin_serve_wallpaper(filename: str):
     """静态托管壁纸文件（沙箱到 WALLPAPER_DIR 防穿越）。"""
-    if not filename or any(c in filename for c in ("/", "\\", "..")):
+    if is_unsafe_name(filename):
         raise HTTPException(status_code=400, detail="非法的文件名")
     target = os.path.join(WALLPAPER_DIR, filename)
     if not os.path.isfile(target):
@@ -568,14 +292,14 @@ def api_webmin_serve_wallpaper(filename: str):
 @router.get("/plugin/{plugin_id}/{path:path}")
 def api_webmin_plugin(plugin_id: str, path: str):
     """按路径读取插件目录内静态文件；未指定路径时回退到 descriptor 的 entry。"""
-    target = _resolve_plugin_file(plugin_id, path)
+    target = webmin_scan.resolve_plugin_file(plugin_id, path, PLUGIN_ROOTS)
     # 若只请求插件根路径或未命中文件，尝试拉取 entry 作为默认文档
     if target is None:
         desc = _merge_plugins()
         found = next((d for d in desc if d["id"] == plugin_id), None)
         if found:
             entry = str(found.get("entry") or "index.html")
-            target = _resolve_plugin_file(plugin_id, entry)
+            target = webmin_scan.resolve_plugin_file(plugin_id, entry, PLUGIN_ROOTS)
     if target is None:
         raise HTTPException(status_code=404, detail=f"插件 {plugin_id} 资源不存在")
     return FileResponse(target)
@@ -587,7 +311,7 @@ def api_webmin_plugin_dir(plugin_id: str, path: str = ""):
 
     只返回一层、不含文件内容；沙箱到插件目录内防穿越。
     """
-    target = _resolve_plugin_subdir(plugin_id, path)
+    target = webmin_scan.resolve_plugin_subdir(plugin_id, path, PLUGIN_ROOTS)
     if target is None:
         raise HTTPException(status_code=404, detail=f"插件 {plugin_id} 目录不存在")
     entries = []

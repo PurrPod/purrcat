@@ -87,40 +87,48 @@ def write_file(req: UIWriteReq):
         raise HTTPException(status_code=400, detail=str(e))
 
 
+def parse_history_filename(filename: str):
+    """解析 <safe_path>@<backup_id> 备份文件名；非法或 .empty 返回 None。"""
+    if filename.endswith(".empty"):
+        return None
+    parts = filename.rsplit("@", 1)
+    if len(parts) != 2:
+        return None
+    safe_path_part, backup_id = parts
+    # 还原原始路径格式并补 / 前缀使其成为沙盒路径
+    sandbox_path = "/" + safe_path_part.replace("%", os.sep)
+    return {
+        "id": filename,
+        "path": sandbox_path,
+        "backup_id": backup_id,
+        "time": "",
+    }
+
+
+def agent_vm_fallback_relative(path: str) -> str | None:
+    """为漏写 agent_vm 层的路径生成 /agent_vm/<stripped>；已含该层则返回 None。"""
+    norm = str(path or "").replace("\\", "/")
+    if "agent_vm" in norm:
+        return None
+    stripped = norm
+    # 去掉可能的盘符前缀 (D:/xxx -> xxx) 再拼 agent_vm
+    if len(stripped) >= 2 and stripped[1] == ":":
+        stripped = stripped[2:]
+    stripped = stripped.lstrip("/")
+    return f"/agent_vm/{stripped}"
+
+
 @router.get("/history_list")
 def get_history_list():
     """直接读取 .agent_history 目录，返回真实存在的备份文件列表"""
     if not os.path.exists(HISTORY_DIR):
         return []
 
-    files = os.listdir(HISTORY_DIR)
     history_list = []
-
-    for f in files:
-        if f.endswith(".empty"):
-            continue
-
-        # 解析文件名：safe_path@backup_id
-        parts = f.rsplit("@", 1)
-        if len(parts) != 2:
-            continue
-
-        safe_path_part = parts[0]
-        backup_id = parts[1]
-
-        # 还原原始路径格式
-        original_path = safe_path_part.replace("%", os.sep)
-        # 添加 / 前缀使其成为沙盒路径
-        sandbox_path = "/" + original_path
-
-        history_list.append(
-            {
-                "id": f,  # 使用完整文件名作为唯一ID
-                "path": sandbox_path,
-                "backup_id": backup_id,
-                "time": "",  # 时间戳可自行转换
-            }
-        )
+    for f in os.listdir(HISTORY_DIR):
+        entry = parse_history_filename(f)
+        if entry:
+            history_list.append(entry)
 
     return history_list
 
@@ -214,15 +222,9 @@ def _resolve_preview_path(path: str) -> str:
     # 路径回退：Agent 有时输出的路径漏掉了 agent_vm 沙盒层
     # 如果原始路径找不到，且路径不含 agent_vm，尝试在 agent_vm 下查找
     if not os.path.exists(resolved_path) or not os.path.isfile(resolved_path):
-        norm = path.replace("\\", "/")
-        if "agent_vm" not in norm:
-            # 尝试拼上 agent_vm 前缀再找一次
-            # 去掉可能的盘符前缀 (D:/xxx -> xxx) 再拼 agent_vm
-            stripped = norm
-            if len(stripped) >= 2 and stripped[1] == ":":
-                stripped = stripped[2:]
-            stripped = stripped.lstrip("/")
-            fallback = convert_sandbox_path(f"/agent_vm/{stripped}")
+        fallback_rel = agent_vm_fallback_relative(path)
+        if fallback_rel:
+            fallback = convert_sandbox_path(fallback_rel)
             if os.path.exists(fallback) and os.path.isfile(fallback):
                 resolved_path = fallback
 

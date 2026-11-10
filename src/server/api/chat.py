@@ -15,6 +15,12 @@ from src.agent import (
     agent_force_interrupt,
     flush_agent_memory,
 )
+from src.server.api.chat_views import (
+    apply_buffer_to_events,
+    build_session_list,
+    build_session_status,
+    build_token_status,
+)
 
 router = APIRouter(prefix="/api", tags=["Chat & Sessions"])
 
@@ -103,19 +109,7 @@ def get_sessions():
     try:
         _ensure_manager_initialized()
         sessions_dict = get_session_list()
-        sess_list = []
-        for sid, info in sessions_dict.items():
-            sess_list.append(
-                {
-                    "id": sid,
-                    "alias": info.get("alias", sid),
-                    "messages_count": info.get("messages_count", 0),
-                    "updated_at": info.get("updated_at", ""),
-                    "project_id": info.get("project_id", ""),
-                }
-            )
-        sess_list.sort(key=lambda x: str(x.get("updated_at") or ""), reverse=True)
-        return sess_list
+        return build_session_list(sessions_dict)
     except Exception as e:
         print(f"[ERROR] /api/sessions - 异常: {e}")
         traceback.print_exc()
@@ -348,12 +342,9 @@ def chat_batch(req: ChatBatchReq, background_tasks: BackgroundTasks):
         # 🌟 预处理：字数检验替换（与 Agent.force_push_batch 保持一致）
         from src.agent.agent import Agent
 
-        processed_events = []
-        for event in req.events:
-            event_type = event.get("type", "user")
-            event_content = event.get("content", "")
-            event_content = Agent._buffer_long_user_input(event_content, event_type)
-            processed_events.append({**event, "content": event_content})
+        processed_events = apply_buffer_to_events(
+            req.events, Agent._buffer_long_user_input
+        )
 
         # 后台传入已处理的 events：落盘占位符内嵌文件路径，若再 buffer 一次会生成
         # 另一个路径，导致前端乐观消息与历史记录对不上、无法去重
@@ -375,36 +366,7 @@ def get_session_status(session_id: str):
     """
     try:
         _ensure_manager_initialized()
-        status = get_agent_status()
-        if status.get("session_id") == session_id:
-            state = status.get("state", "idle")
-            is_thinking = state != "idle"
-            # 🌟 aborting = 已打断但旧交互还在 unwind（模型调用退出/工具终止中）
-            if state == "aborting":
-                phase = "aborting"
-            else:
-                phase = status.get("live_phase", "idle") if is_thinking else "idle"
-            result = {
-                "is_thinking": is_thinking,
-                "state": state,
-                "compressing": status.get("compressing", False),
-                # 🌟 思考期间透出流式思考内容，思考结束（idle）自动清空
-                "live_reasoning": status.get("live_reasoning", "")
-                if is_thinking
-                else "",
-                # 🌟 交互阶段：thinking=模型推理中 / processing=工具执行中 /
-                # aborting=打断等待收尾 / idle=空闲
-                "phase": phase,
-            }
-        else:
-            result = {
-                "is_thinking": False,
-                "state": "idle",
-                "compressing": status.get("compressing", False),
-                "live_reasoning": "",
-                "phase": "idle",
-            }
-        return result
+        return build_session_status(get_agent_status(), session_id)
     except Exception as e:
         print(f"[ERROR] /api/sessions/{session_id}/status - 异常: {e}")
         traceback.print_exc()
@@ -469,32 +431,14 @@ def get_token_status_api(session_id: str = None):
         from src.agent.manager import AgentManager as _AM
         from src.agent.session_store import SessionStore as _SS
 
-        agent = _AM()._agent
-        max_token = get_agent_max_token()
-
-        if session_id and (agent is None or agent.session_id != session_id):
-            consumed = _SS.get_session_consumed_tokens(session_id)
-            return {
-                "window_token": _SS.get_session_window_token(session_id),
-                "max_token": max_token,
-                "consumed_main": consumed["main"],
-                "consumed_sub": consumed["sub"],
-                "consumed_total": consumed["total"],
-            }
-
-        consumed_main = agent.consumed_tokens if agent is not None else 0
-        consumed_sub = (
-            _SS.get_session_consumed_tokens(agent.session_id)["sub"]
-            if agent is not None
-            else 0
+        return build_token_status(
+            session_id,
+            _AM()._agent,
+            max_token=get_agent_max_token(),
+            live_window_token=get_window_token,
+            stored_window_token=_SS.get_session_window_token,
+            stored_consumed=_SS.get_session_consumed_tokens,
         )
-        return {
-            "window_token": get_window_token(),
-            "max_token": max_token,
-            "consumed_main": consumed_main,
-            "consumed_sub": consumed_sub,
-            "consumed_total": consumed_main + consumed_sub,
-        }
     except Exception:
         import traceback
 

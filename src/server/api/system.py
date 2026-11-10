@@ -299,6 +299,35 @@ async def upload_buffer_file(
 # --- 🌟 Agent 大盘统计接口 ---
 
 
+def summarize_usage_days(day_summaries: dict, today: str) -> dict:
+    """把 {日期: 当日 model_usage 列表} 汇总为今日用量与热力图。"""
+    today_calls = 0
+    today_tokens = 0
+    today_cached_tokens = 0
+    heatmap_data = {}
+
+    for date_str, day_data in day_summaries.items():
+        day_total_calls = sum(item.get("calls", 0) for item in day_data)
+        day_total_tokens = sum(item.get("total_tokens", 0) for item in day_data)
+        day_cached_tokens = sum(item.get("cached_tokens", 0) for item in day_data)
+
+        heatmap_data[date_str] = day_total_calls
+
+        if date_str == today:
+            today_calls = day_total_calls
+            today_tokens = day_total_tokens
+            today_cached_tokens = day_cached_tokens
+
+    return {
+        "today": {
+            "calls": today_calls,
+            "total_tokens": today_tokens,
+            "cached_tokens": today_cached_tokens,
+        },
+        "heatmap": heatmap_data,
+    }
+
+
 @router.get("/agent/stats")
 def get_agent_stats():
     """前端首页调用：返回今日调用统计 + 热力图"""
@@ -310,42 +339,16 @@ def get_agent_stats():
     target_dir = os.path.join(TRACKER_DIR, "model_usage")
     today_str = datetime.now().strftime("%Y-%m-%d")
 
-    today_calls = 0
-    today_tokens = 0
-    today_cached_tokens = 0
-    heatmap_data = {}
-
+    day_summaries = {}
     if os.path.exists(target_dir):
         file_paths = glob.glob(os.path.join(target_dir, "*_summary.json"))
-
         for path in file_paths:
             filename = os.path.basename(path)
             date_str = filename.split("_")[0]
-
             try:
                 with open(path, "r", encoding="utf-8") as f:
-                    day_data = json.load(f)
-
-                day_total_calls = sum(item.get("calls", 0) for item in day_data)
-                day_total_tokens = sum(item.get("total_tokens", 0) for item in day_data)
-                day_cached_tokens = sum(
-                    item.get("cached_tokens", 0) for item in day_data
-                )
-
-                heatmap_data[date_str] = day_total_calls
-
-                if date_str == today_str:
-                    today_calls = day_total_calls
-                    today_tokens = day_total_tokens
-                    today_cached_tokens = day_cached_tokens
+                    day_summaries[date_str] = json.load(f)
             except Exception:
                 continue
 
-    return {
-        "today": {
-            "calls": today_calls,
-            "total_tokens": today_tokens,
-            "cached_tokens": today_cached_tokens,
-        },
-        "heatmap": heatmap_data,
-    }
+    return summarize_usage_days(day_summaries, today_str)

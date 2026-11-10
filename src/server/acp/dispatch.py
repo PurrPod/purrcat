@@ -1,16 +1,16 @@
 """
 ACP 词汇分发器 (server/acp/dispatch.py)
 
-JSON-RPC 方法分发 + 内部事件 → ACP 词汇翻译的**唯一实现**：
+JSON-RPC 方法分发；内部事件 → ACP 词汇翻译的唯一实现在 updates.py：
 - HTTP 端点（api/acp.py：鉴权薄壳）直调 handle_rpc / to_updates
 - stdio 桥（sensor/bridge.py：同进程直调）共用同一函数
 
 词汇路由器物理唯一，传输（HTTP/SSE 或 stdio）与词汇（ACP）正交。
+工具/事件词汇翻译见 tool_vocab.py 与 updates.py，本模块仅做 RPC 分发与传输辅助。
 """
 
 import base64
 import datetime
-import itertools
 import json
 import mimetypes
 import os
@@ -20,18 +20,13 @@ import time
 import uuid
 
 from src.server.acp.sessions import get_registry, push_by_entry
-from src.tool.utils.token_limit import count_tokens, truncate_to_tokens
+from src.server.acp.updates import to_updates
 from src.utils.config import AGENT_VM_DIR
+
+__all__ = ["MAX_SENSOR_FILE_BYTES", "handle_rpc", "save_inbound_file", "to_updates"]
 
 # stdio 单行传输的文件体积上限（原始字节），与旧 gateway 一致
 MAX_SENSOR_FILE_BYTES = 20 * 1024 * 1024
-
-# 单条 update 透出的内容 token 上限（工具结果/回放消息统一截断，
-# 复用共享 token 工具，见工程约定「token 限额一律走共享工具」）
-_UPDATE_TOKEN_LIMIT = 2000
-
-_tool_call_counter = itertools.count(1)
-_msg_counter = itertools.count(1)
 
 
 def _rpc_result(req_id, result: dict) -> dict:
@@ -40,19 +35,6 @@ def _rpc_result(req_id, result: dict) -> dict:
 
 def _rpc_error(req_id, code: int, message: str) -> dict:
     return {"jsonrpc": "2.0", "id": req_id, "error": {"code": code, "message": message}}
-
-
-def _truncate_update(text) -> str:
-    """update 内容按 token 上限截断（超限截断，不异常）"""
-    if not text:
-        return ""
-    text = str(text)
-    try:
-        if count_tokens(text) <= _UPDATE_TOKEN_LIMIT:
-            return text
-        return truncate_to_tokens(text, _UPDATE_TOKEN_LIMIT)
-    except Exception:
-        return text[:8000]
 
 
 def _extract_prompt_text(prompt_blocks: list) -> str:
@@ -175,98 +157,6 @@ def _handle_launch_task(req: dict) -> dict:
 
     threading.Thread(target=_run_bg_task, daemon=True).start()
     return _rpc_result(req.get("id"), {"launched": True})
-
-
-# ==== 工具词汇：purrcat 工具 → ACP ToolKind/标题/locations ====
-
-# ToolKind 枚举：read/edit/delete/move/search/execute/think/fetch/other
-_TOOL_KIND = {
-    "Bash": "execute",
-    "BrainStorm": "think",
-    "Memo": "think",
-    "Request": "fetch",
-    "Fetch": "fetch",
-    "Search": "search",
-    "CallMCP": "other",
-    "Cron": "other",
-    "Task": "other",
-    "KernelUpgrade": "other",
-}
-
-# FileSystem 按 action 细分（schema 枚举：list/read/edit/write/search/glob/move/copy/delete/undo）
-_FS_KIND = {
-    "list": "read",
-    "read": "read",
-    "edit": "edit",
-    "write": "edit",
-    "search": "search",
-    "glob": "search",
-    "move": "move",
-    "copy": "move",
-    "delete": "delete",
-    "undo": "other",
-}
-
-
-def _tool_kind(name: str, args) -> str:
-    """工具名+参数 → ToolKind（编辑器据此选图标/展示形态）"""
-    if name == "FileSystem" and isinstance(args, dict):
-        return _FS_KIND.get(str(args.get("action", "")), "other")
-    return _TOOL_KIND.get(name, "other")
-
-
-def _tool_title(name: str, args) -> str:
-    """人可读标题：工具名 + 关键参数摘要"""
-    if isinstance(args, dict):
-        if name == "FileSystem":
-            action = str(args.get("action", "") or "fs")
-            path = str(args.get("path", "") or args.get("destination", ""))
-            base = os.path.basename(path.replace("\\", "/")) if path else ""
-            return f"FileSystem {action} {base}".strip()
-        if name == "Bash":
-            return f"Bash {str(args.get('command', ''))[:60]}".strip()
-        if name == "Search":
-            return f"Search {str(args.get('query', ''))[:40]}".strip()
-        if name == "CallMCP":
-            return f"CallMCP {str(args.get('server_name', ''))[:30]}".strip()
-        if name == "Memo":
-            action = str(args.get("action", "") or "memo")
-            if action == "search":
-                q = (
-                    (args.get("query") or {}).get("prompt", "")
-                    if isinstance(args.get("query"), dict)
-                    else ""
-                )
-                return f"Memo search {str(q)[:40]}".strip()
-            return f"Memo {action}".strip()
-    return name
-
-
-def _tool_locations(name: str, args) -> list:
-    """follow-the-agent：涉及文件的工具报 locations（宿主机绝对路径）"""
-    if name != "FileSystem" or not isinstance(args, dict):
-        return []
-    path = args.get("path") or args.get("destination")
-    if not path:
-        return []
-    try:
-        from src.utils.path import convert_sandbox_path
-
-        return [{"path": convert_sandbox_path(str(path))}]
-    except Exception:
-        return []
-
-
-def _tool_raw(args) -> dict | None:
-    """rawInput：参数对象原样透出（超 token 预算则省略，防撑爆编辑器）"""
-    if not isinstance(args, dict) or not args:
-        return None
-    try:
-        if count_tokens(json.dumps(args, ensure_ascii=False)) <= _UPDATE_TOKEN_LIMIT:
-            return args
-    except Exception:
-        pass
-    return None
 
 
 # ==== 会话词汇：session/list / session/load / session/delete ====
@@ -540,215 +430,3 @@ def handle_rpc(req: dict) -> dict:
         return _rpc_result(req_id, {"path": saved["path"]})
 
     return _rpc_error(req_id, -32601, f"method not found: {method}")
-
-
-# ==== 内部事件 → ACP 词汇翻译（SSE 与 stdio 桥共用） ====
-
-
-def _upd(acp_sid: str, update: dict) -> dict:
-    """组装一条 session/update 通知载荷"""
-    return {
-        "jsonrpc": "2.0",
-        "method": "session/update",
-        "params": {"sessionId": acp_sid, "update": update},
-    }
-
-
-def to_updates(envelope: dict) -> list[dict]:
-    """内部事件信封 → update 载荷列表（空列表 = 不透出）。
-
-    规范词汇映射（v1 事件粒度）：
-    - agent_message → agent_message_chunk（规范唯一正文词汇；每条完整消息
-      一个唯一 messageId——规范 §Message IDs：id 变化即新消息边界，标准
-      客户端据此分条渲染不会粘连；自造的 agent_message 非规范词汇，
-      官方 SDK 客户端会静默丢弃，已废弃）
-    - agent_thought → agent_thought_chunk
-    - user_message → user_message_chunk（session/load 回放专用）
-    - tool_call    → tool_call(pending) + tool_call_update(in_progress)
-                     + tool_call_update(completed/failed+content) 三段
-                     （规范要求初始 tool_call 无内容、状态流转走 update；
-                     ToolCallContent 须包 {"type":"content","content":{...}}）
-    - usage        → usage_update（used=window_token，size=模型上限）
-    - turn_end     → session_info_update(updatedAt) + 自定义终结信号
-                     （传输方据 turn_end 回 session/prompt 响应，stopReason）
-    """
-    etype = envelope["type"]
-    data = envelope.get("data", {})
-
-    if etype == "agent_message":
-        return [
-            _upd(
-                "",
-                {
-                    "sessionUpdate": "agent_message_chunk",
-                    "messageId": f"msg_{next(_msg_counter)}",
-                    "content": {
-                        "type": "text",
-                        "text": _truncate_update(data.get("text", "")),
-                    },
-                },
-            )
-        ]
-
-    if etype == "agent_thought":
-        return [
-            _upd(
-                "",
-                {
-                    "sessionUpdate": "agent_thought_chunk",
-                    "content": {
-                        "type": "text",
-                        "text": _truncate_update(data.get("text", "")),
-                    },
-                },
-            )
-        ]
-
-    if etype == "user_message":
-        return [
-            _upd(
-                "",
-                {
-                    "sessionUpdate": "user_message_chunk",
-                    "messageId": f"msg_{next(_msg_counter)}",
-                    "content": {
-                        "type": "text",
-                        "text": _truncate_update(data.get("text", "")),
-                    },
-                },
-            )
-        ]
-
-    if etype == "tool_call":
-        name = data.get("name", "tool")
-        args = data.get("arguments")
-        raw_result = data.get("result", "")
-
-        # 🌟 vision 直注：result 可能是 OpenAI 多模态 parts 列表（回放历史时
-        # tool 消息 content 原样透传），编辑器侧只看文本占位，不透出 base64
-        def _vision_text_parts(parts: list) -> str:
-            return "\n".join(
-                str(p.get("text", ""))
-                for p in parts
-                if isinstance(p, dict) and p.get("type") == "text"
-            )
-
-        if isinstance(raw_result, list):
-            body = _vision_text_parts(raw_result) or "[图片已注入对话]"
-            raw_output = {"content": body, "metadata": {}}
-            status = "completed"
-            parsed = None
-        else:
-            # 结果解包：dispatch_tool 统一封包 {"content": 正文, "metadata": {type, snip}}
-            # → 编辑器看 content 本体（不带 JSON 噪音）；宽容兼容裸 error dict / 纯文本
-            try:
-                parsed = json.loads(raw_result) if raw_result else None
-            except Exception:
-                parsed = None
-            if (
-                isinstance(parsed, dict)
-                and isinstance(parsed.get("metadata"), dict)
-                and "content" in parsed
-            ):
-                raw_content = parsed.get("content")
-                if isinstance(raw_content, list):
-                    # vision 直注结果（防御：调用方未净化的旁路）
-                    body = _vision_text_parts(raw_content) or "[图片已注入对话]"
-                    parsed = dict(parsed)
-                    parsed["content"] = body
-                else:
-                    body = str(raw_content or "")
-                raw_output = parsed
-                status = (
-                    "failed"
-                    if isinstance(parsed.get("metadata"), dict)
-                    and parsed["metadata"].get("type") == "error"
-                    else "completed"
-                )
-            elif isinstance(parsed, dict):
-                body = raw_result
-                raw_output = parsed
-                status = "failed" if parsed.get("error") else "completed"
-            else:
-                body = str(raw_result or "")
-                raw_output = None
-                status = "completed"
-
-        tcid = f"acp_{next(_tool_call_counter)}"
-        call = {
-            "sessionUpdate": "tool_call",
-            "toolCallId": tcid,
-            "title": _tool_title(name, args),
-            "kind": _tool_kind(name, args),
-            "status": "pending",
-        }
-        locations = _tool_locations(name, args)
-        if locations:
-            call["locations"] = locations
-        raw_input = _tool_raw(args)
-        if raw_input is not None:
-            call["rawInput"] = raw_input
-
-        update = {
-            "sessionUpdate": "tool_call_update",
-            "toolCallId": tcid,
-            "status": status,
-            "content": [
-                {
-                    "type": "content",
-                    "content": {"type": "text", "text": _truncate_update(body)},
-                }
-            ],
-        }
-        if isinstance(raw_output, dict):
-            update["rawOutput"] = raw_output  # schema 类型为 object，仅 dict 形态透出
-
-        return [
-            _upd("", call),
-            _upd(
-                "",
-                {
-                    "sessionUpdate": "tool_call_update",
-                    "toolCallId": tcid,
-                    "status": "in_progress",
-                },
-            ),
-            _upd("", update),
-        ]
-
-    if etype == "usage":
-        return [
-            _upd(
-                "",
-                {
-                    "sessionUpdate": "usage_update",
-                    "used": data.get("used", 0),
-                    "size": data.get("size", 0),
-                },
-            )
-        ]
-
-    if etype == "phase":
-        # ACP 无直接对应；自定义事件透出，传输方可忽略
-        return [{"phase": data.get("phase", "idle")}]
-
-    if etype == "replay_done":
-        # session/load 回放终结标记（SSE 侧据补 load 响应；stdio 桥同步天然有序）
-        return [{"replayDone": True}]
-
-    if etype == "turn_end":
-        # 回应 prompt 前先同步会话元数据（规范：所有 update 必须先于 prompt 响应）
-        return [
-            _upd(
-                "",
-                {
-                    "sessionUpdate": "session_info_update",
-                    "updatedAt": datetime.datetime.now()
-                    .astimezone()
-                    .isoformat(timespec="seconds"),
-                },
-            ),
-            {"stopReason": data.get("stopReason", "end_turn")},
-        ]
-
-    return []

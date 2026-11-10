@@ -17,15 +17,29 @@ class ProjectUpdateReq(BaseModel):
     name: Optional[str] = None
 
 
-def _session_counts():
-    from src.agent.session_store import SessionStore
-
+def count_sessions_by_project(sessions: dict) -> dict:
+    """统计每个项目下的会话数量（未归属会话不计入）。"""
     counts = {}
-    for info in SessionStore.get_all_sessions().values():
+    for info in sessions.values():
         project_id = (info or {}).get("project_id")
         if project_id:
             counts[project_id] = counts.get(project_id, 0) + 1
     return counts
+
+
+def session_ids_for_project(sessions: dict, project_id: str) -> list:
+    """列出属于指定项目的会话 id（保持索引顺序）。"""
+    return [
+        sid
+        for sid, info in sessions.items()
+        if (info or {}).get("project_id") == project_id
+    ]
+
+
+def _session_counts():
+    from src.agent.session_store import SessionStore
+
+    return count_sessions_by_project(SessionStore.get_all_sessions())
 
 
 @router.get("/projects")
@@ -91,11 +105,7 @@ def delete_project_api(project_id: str, delete_sessions: bool = False):
     if not ProjectStore.get_project(project_id):
         raise HTTPException(status_code=404, detail="项目不存在")
 
-    session_ids = [
-        sid
-        for sid, info in SessionStore.get_all_sessions().items()
-        if (info or {}).get("project_id") == project_id
-    ]
+    session_ids = session_ids_for_project(SessionStore.get_all_sessions(), project_id)
 
     if not delete_sessions:
         for sid in session_ids:

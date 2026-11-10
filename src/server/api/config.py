@@ -1,7 +1,10 @@
-import json
+"""配置中心 API：路由声明与薄委托（SPEC-020）。
+
+参数校验在 config_validation.py，Sensor/数据根/磁盘编排在 config_services.py；
+本文件只保留路由表与需要就地读取的只读状态。
+"""
+
 import os
-import subprocess
-from datetime import datetime
 from typing import Any, Dict
 
 from fastapi import APIRouter, HTTPException, Body
@@ -11,12 +14,11 @@ from src.agent.manager import manager as agent_manager
 
 from src.api_port import read_runtime_port
 
+from src.server.api import common, config_services, config_validation
 from src.utils.config import (
     FILE_CONFIG_PATH,
     MCP_CONFIG_PATH,
     MODEL_CONFIG_PATH,
-    SENSOR_CONFIG_PATH,
-    SENSOR_EXTENSION_DIR,
     AGENT_CORE_DIR,
     GLOBAL_CONFIG_FILE,
     CRON_FILE,
@@ -36,14 +38,7 @@ router = APIRouter(prefix="/api/config", tags=["Configuration"])
 
 def _save_json_file(file_path: str, data: Dict[str, Any]) -> bool:
     """通用的 JSON 写入方法"""
-    try:
-        os.makedirs(os.path.dirname(file_path), exist_ok=True)
-        with open(file_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
-        return True
-    except Exception as e:
-        print(f"[Config API] 保存配置文件失败 {file_path}: {e}")
-        return False
+    return common.save_json_file(file_path, data, log_prefix="[Config API]")
 
 
 # ── Model Config ──
@@ -72,158 +67,32 @@ def api_get_sensor_config():
 
 @router.put("/sensor")
 def api_update_sensor_config(config: Dict[str, Any]):
-    if _save_json_file(SENSOR_CONFIG_PATH, config):
-        return {"status": "ok", "message": "Sensor config updated successfully"}
-    raise HTTPException(status_code=500, detail="Failed to save sensor config")
+    return config_services.save_sensor_config(config)
 
 
 @router.post("/sensor/reload")
 def api_reload_sensor_manager():
-    """停止所有运行中的 Sensor 进程，并重新读取配置拉起启用状态的 Sensor"""
-    try:
-        from src.sensor.manager import get_manager
-
-        manager = get_manager()
-        manager.stop_all()  # 杀死旧进程
-        manager.load_and_start_all()  # 重新读取 activate_sensor.json 并拉起
-        return {"status": "ok", "message": "Sensors reloaded successfully"}
-    except Exception as e:
-        import traceback
-
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"热重启失败: {str(e)}")
+    return config_services.reload_sensors()
 
 
 @router.get("/sensor/runtime")
 def api_get_sensor_runtime():
-    """列出当前运行中的 Sensor 进程（配置页「后台进程」展示用）"""
-    try:
-        from src.sensor.manager import get_manager
-
-        return {"running": get_manager().list_running()}
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"读取 Sensor 运行状态失败: {str(e)}"
-        )
+    return config_services.list_running_sensors()
 
 
 @router.post("/sensor/{name}/stop")
 def api_stop_sensor(name: str):
-    """停止指定 Sensor：先把配置置为 enabled=false（防 watchdog 复拉），再整树击杀进程"""
-    cfg = get_sensor_config()
-    if isinstance(cfg, dict) and isinstance(cfg.get(name), dict):
-        cfg[name]["enabled"] = False
-        if not _save_json_file(SENSOR_CONFIG_PATH, cfg):
-            raise HTTPException(status_code=500, detail="禁用配置写入失败，已放弃停止")
-
-    try:
-        from src.sensor.manager import get_manager
-
-        stopped = get_manager().stop_sensor(name)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"停止 Sensor 失败: {str(e)}")
-
-    message = (
-        f"已停止 Sensor '{name}' 并置为 enabled=false"
-        if stopped
-        else f"Sensor '{name}' 当前没有运行中的进程（已置为 enabled=false）"
-    )
-    return {"status": "ok", "stopped": stopped, "message": message}
+    return config_services.stop_sensor(name)
 
 
 @router.post("/sensor/{name}/purge")
 def api_purge_sensor(name: str):
-    """彻底删除指定 Sensor（不可恢复）：先从配置移除 → 再杀进程 → 最后删正式 <name>.py。
-
-    顺序很重要：配置项先消失，watchdog 才不会在杀进程后的窗口里把它又拉起来。
-    """
-    cfg = get_sensor_config()
-    if isinstance(cfg, dict) and name in cfg:
-        cfg.pop(name, None)
-        if not _save_json_file(SENSOR_CONFIG_PATH, cfg):
-            raise HTTPException(status_code=500, detail="配置写入失败，已放弃彻底删除")
-
-    stopped = False
-    try:
-        from src.sensor.manager import get_manager
-
-        stopped = get_manager().stop_sensor(name)
-    except Exception as e:
-        print(f"[Config API] 彻底删除时停止 Sensor 失败 {name}: {e}")
-
-    script_path = os.path.join(SENSOR_EXTENSION_DIR, f"{name}.py")
-    file_deleted = False
-    # 正式目录是 git 仓库：优先 git rm（连带清索引并提交），失败再退化为直接删文件
-    if os.path.isdir(os.path.join(SENSOR_EXTENSION_DIR, ".git")):
-        try:
-            rm = subprocess.run(
-                ["git", "rm", "-f", f"{name}.py"],
-                cwd=SENSOR_EXTENSION_DIR,
-                capture_output=True,
-                text=True,
-            )
-            if rm.returncode == 0:
-                file_deleted = True
-                subprocess.run(
-                    [
-                        "git",
-                        "commit",
-                        "-m",
-                        f"purge sensor {name} {datetime.now().strftime('%Y-%m-%d')}",
-                    ],
-                    cwd=SENSOR_EXTENSION_DIR,
-                    capture_output=True,
-                    text=True,
-                )
-        except Exception as e:
-            print(f"[Config API] 彻底删除时 git rm 失败 {name}: {e}")
-    if not file_deleted and os.path.isfile(script_path):
-        try:
-            os.remove(script_path)
-            file_deleted = True
-        except OSError as e:
-            raise HTTPException(
-                status_code=500, detail=f"删除 {script_path} 失败: {str(e)}"
-            )
-
-    message = (
-        f"已彻底删除 Sensor '{name}'（进程{'已停止' if stopped else '未在运行'}，"
-        f"文件{'已删除' if file_deleted else '不存在'}，配置已移除）"
-    )
-    return {
-        "status": "ok",
-        "stopped": stopped,
-        "file_deleted": file_deleted,
-        "message": message,
-    }
+    return config_services.purge_sensor(name)
 
 
 @router.post("/sensor/{name}/restart")
 def api_restart_sensor(name: str):
-    """重启指定 Sensor：先把配置置为 enabled=true（被停止过的是 false，否则 watchdog 不会复拉），
-    再整树击杀旧进程并按当前配置重新拉起"""
-    cfg = get_sensor_config()
-    if not isinstance(cfg, dict) or not isinstance(cfg.get(name), dict):
-        raise HTTPException(status_code=404, detail=f"未配置 Sensor '{name}'，无法重启")
-
-    if not cfg[name].get("enabled", False):
-        cfg[name]["enabled"] = True
-        if not _save_json_file(SENSOR_CONFIG_PATH, cfg):
-            raise HTTPException(status_code=500, detail="启用配置写入失败，已放弃重启")
-
-    try:
-        from src.sensor.manager import get_manager
-
-        started = get_manager().restart_sensor(name)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"重启 Sensor 失败: {str(e)}")
-
-    message = (
-        f"已重启 Sensor '{name}'（新进程已拉起）"
-        if started
-        else f"Sensor '{name}' 拉起失败：请检查本地是否存在 {name}.py 以及 uv 是否可用"
-    )
-    return {"status": "ok", "started": started, "message": message}
+    return config_services.restart_sensor(name)
 
 
 # ── File Config ──
@@ -313,13 +182,17 @@ def api_get_acp_status():
     }
 
 
+def _validate_acp_port(port) -> int:
+    """兼容旧入口；校验实现见 config_validation。"""
+    return config_validation.validate_acp_port(port)
+
+
 @router.put("/acp")
 def api_update_acp_config(payload: Dict[str, Any]):
     """更新 ACP 接入设置（目前仅后端端口，写入 settings.json 的 acp_port）"""
     port = payload.get("port")
     if port is not None:
-        if not isinstance(port, int) or not (0 < port < 65536):
-            raise HTTPException(status_code=400, detail="端口必须是 1-65536 的整数")
+        _validate_acp_port(port)
         if not save_global_setting("acp_port", port):
             raise HTTPException(status_code=500, detail="保存 acp_port 失败")
     return {"status": "ok", "message": "ACP settings updated"}
@@ -354,21 +227,12 @@ def api_reset_acp_token():
 
 @router.get("/deploy")
 def api_get_deploy_overview():
-    """各依赖项就绪状态 + 部署任务进度与日志（前端轮询）"""
-    from src.utils.deploy_manager import get_overview
-
-    return get_overview()
+    return config_services.deploy_overview()
 
 
 @router.post("/deploy/{item}")
 def api_deploy_item(item: str):
-    """一键部署指定依赖项，后台线程执行，进度通过 GET /deploy 轮询"""
-    from src.utils.deploy_manager import start_deploy
-
-    ok, message = start_deploy(item)
-    if not ok:
-        raise HTTPException(status_code=409, detail=message)
-    return {"status": "ok", "message": message}
+    return config_services.deploy_item(item)
 
 
 # ── 磁盘维护（部署页：vhdx 空洞观测 + 一键回收 + 构建缓存清理 + 沙盒重建）──
@@ -376,70 +240,40 @@ def api_deploy_item(item: str):
 
 @router.get("/deploy/disk")
 def api_get_disk_status():
-    """只读取 Docker 数据盘占盘 / 有效数据估算 / 空洞占比（前端轮询，不阻塞不提权）"""
-    from src.utils.disk_maintenance import get_disk_status
-
-    return get_disk_status()
+    return config_services.disk_status()
 
 
 @router.post("/deploy/disk/compact")
 def api_compact_disk():
-    """一键回收 vhdx 空洞（后台线程，会短暂停止 Docker/WSL 并触发一次 UAC 授权）"""
-    from src.utils.disk_maintenance import start_compact
-
-    ok, message = start_compact()
-    if not ok:
-        raise HTTPException(status_code=409, detail=message)
-    return {"status": "ok", "message": message}
+    return config_services.compact_disk()
 
 
 @router.post("/deploy/disk/prune")
 def api_prune_disk():
-    """清理 Docker 构建缓存（后台线程，从源头降低 vhdx 增长速度）"""
-    from src.utils.disk_maintenance import start_prune
-
-    ok, message = start_prune()
-    if not ok:
-        raise HTTPException(status_code=409, detail=message)
-    return {"status": "ok", "message": message}
+    return config_services.prune_disk()
 
 
 @router.post("/deploy/disk/rebuild")
 def api_rebuild_sandbox():
-    """删除沙盒容器，下次工具调用自动重建（丢弃容器累积的可写层与缓存）"""
-    from src.utils.disk_maintenance import rebuild_sandbox
-
-    ok, message = rebuild_sandbox()
-    if not ok:
-        raise HTTPException(status_code=409, detail=message)
-    return {"status": "ok", "message": message}
+    return config_services.rebuild_sandbox()
 
 
 # ── 沙盒镜像源（部署页自定义，写入 settings.json 的 sandbox_registry）──
 @router.get("/sandbox-registry")
 def api_get_sandbox_registry():
-    from src.utils.config import get_global_settings
-
-    return {
-        "sandbox_registry": str(get_global_settings().get("sandbox_registry") or "")
-    }
+    return config_services.get_sandbox_registry()
 
 
 @router.put("/sandbox-registry")
 def api_update_sandbox_registry(payload: Dict[str, Any]):
-    """registry 前缀（如 ghcr.m.daocloud.io），留空 = 自动依次尝试官方与公共源"""
-    value = str(payload.get("sandbox_registry") or "").strip().rstrip("/")
-    if not save_global_setting("sandbox_registry", value):
-        raise HTTPException(status_code=500, detail="保存 sandbox_registry 失败")
-    return {"status": "ok"}
+    return config_services.update_sandbox_registry(payload.get("sandbox_registry"))
 
 
 # ── Markdown Files (SOUL.md / GOAL.md) ──
 @router.get("/markdown/{filename}")
 def api_get_markdown_file(filename: str):
     # 限制只允许读取 SOUL 和 GOAL，防止任意路径穿越漏洞
-    if filename not in ["SOUL", "GOAL"]:
-        raise HTTPException(status_code=400, detail="Invalid filename")
+    filename = config_validation.validate_markdown_filename(filename)
 
     # 引入 config 中定义好的 AGENT_CORE_DIR (.purrcat/core/)
     file_path = os.path.join(AGENT_CORE_DIR, f"{filename}.md")
@@ -454,8 +288,7 @@ def api_get_markdown_file(filename: str):
 
 @router.put("/markdown/{filename}")
 def api_update_markdown_file(filename: str, payload: dict = Body(...)):
-    if filename not in ["SOUL", "GOAL"]:
-        raise HTTPException(status_code=400, detail="Invalid filename")
+    filename = config_validation.validate_markdown_filename(filename)
 
     content = payload.get("content", "")
 
@@ -477,42 +310,18 @@ def api_update_markdown_file(filename: str, payload: dict = Body(...)):
 @router.get("/info")
 def api_get_info_config():
     """读取 .purrcat/core/info.json，提供 skills 和 workshops 列表"""
-    try:
-        file_path = os.path.join(AGENT_CORE_DIR, "info.json")
-        if not os.path.exists(file_path):
-            return {"skills": [], "workshops": []}
-        with open(file_path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception as e:
-        print(f"[Config API] 读取 info.json 失败: {e}")
+    file_path = os.path.join(AGENT_CORE_DIR, "info.json")
+    if not os.path.exists(file_path):
         return {"skills": [], "workshops": []}
+    return config_validation.load_json_data(file_path, {"skills": [], "workshops": []})
 
 
 # ── 数据根目录（settings.json 内部管理，UI 无全局设置编辑页） ──
-# 数据根目录下需要整体搬迁的大型数据子目录
-# ⚠️ agent_vm 不搬迁：它挂载进沙盒容器，路径绑定容器生命周期，
-# 换根后旧容器即失效（销毁重建），新位置直接建全新空目录即可
-LARGE_DATA_SUBDIRS = ("embedding",)
 
 
 def _validate_data_root(value: str) -> str:
-    """校验数据根目录候选路径，非法直接抛 HTTPException"""
-    if not isinstance(value, str) or not value.strip():
-        raise HTTPException(status_code=400, detail="数据目录不能为空")
-    value = value.strip()
-
-    if not os.path.isabs(value):
-        raise HTTPException(
-            status_code=400, detail="数据目录必须是绝对路径，如 D:\\purrcat_data"
-        )
-
-    # 拒绝磁盘根目录，避免 agent_vm 等直接散落在盘符根下
-    drive, _ = os.path.splitdrive(value)
-    if drive and os.path.normpath(value) == os.path.normpath(drive + os.sep):
-        raise HTTPException(
-            status_code=400, detail="不能直接选择磁盘根目录，请选择盘下的一个子目录"
-        )
-    return os.path.normpath(value)
+    """兼容旧入口；校验实现见 config_validation。"""
+    return config_validation.validate_data_root(value)
 
 
 # ── 首次启动数据盘引导 ──
@@ -525,136 +334,18 @@ def api_setup_status():
 
 @router.post("/setup-data-root")
 def api_setup_data_root(payload: Dict[str, Any] = Body(default={})):
-    """首次启动设置数据盘（仅首次引导使用；后续变更走 /change-data-root）"""
-    if is_data_root_configured():
-        raise HTTPException(
-            status_code=409, detail="数据盘已配置，变更请使用配置中心的数据根目录入口"
-        )
-
-    value = _validate_data_root((payload or {}).get("data_root", ""))
-
-    if not save_global_setting("data_root", value):
-        raise HTTPException(status_code=500, detail="保存数据盘配置失败")
-
-    print(f"[Config API] 首次启动数据盘已设置: {value}（重启后生效）")
-    return {"status": "ok", "data_root": value, "message": "数据盘设置成功，重启后生效"}
+    return config_services.setup_data_root(payload)
 
 
 @router.post("/change-data-root")
 def api_change_data_root(payload: Dict[str, Any] = Body(default={})):
-    """随时更改数据根目录：搬迁可迁移数据到新位置，落盘配置，销毁旧沙盒容器，前端随后重启生效"""
-    import shutil
-
-    new_root = _validate_data_root((payload or {}).get("data_root", ""))
-    old_root = os.path.normpath(DATA_ROOT)
-
-    if new_root == old_root:
-        raise HTTPException(
-            status_code=400, detail=f"新目录与当前数据根目录相同：{old_root}"
-        )
-
-    # 新旧目录互为父子时搬迁会自嵌套，直接拒绝
-    if old_root.startswith(new_root + os.sep) or new_root.startswith(old_root + os.sep):
-        raise HTTPException(
-            status_code=400,
-            detail="新目录不能位于当前数据根目录内部，也不能是它的父目录",
-        )
-
-    # 搬迁大型数据子目录（embedding 等；agent_vm 不搬，见下方）
-    moved = []
-    try:
-        os.makedirs(new_root, exist_ok=True)
-        for name in LARGE_DATA_SUBDIRS:
-            src = os.path.join(old_root, name)
-            if not os.path.exists(src):
-                continue
-            dst = os.path.join(new_root, name)
-            if os.path.exists(dst):
-                raise HTTPException(
-                    status_code=409,
-                    detail=f"目标位置已存在同名子目录：{dst}，请先清理后重试",
-                )
-            shutil.move(src, dst)
-            moved.append(name)
-
-        # agent_vm 不搬迁：旧位置数据保留在旧盘（用户自行处置），
-        # 新位置直接创建全新空目录（已存在则跳过，不影响其中数据）
-        new_agent_vm = os.path.join(new_root, "agent_vm")
-        os.makedirs(new_agent_vm, exist_ok=True)
-    except HTTPException:
-        _rollback_moved_dirs(new_root, old_root, moved)
-        raise
-    except Exception as e:
-        _rollback_moved_dirs(new_root, old_root, moved)
-        raise HTTPException(status_code=500, detail=f"数据搬迁失败: {str(e)}")
-
-    if not save_global_setting("data_root", new_root):
-        _rollback_moved_dirs(new_root, old_root, moved)
-        raise HTTPException(status_code=500, detail="保存数据盘配置失败")
-
-    # 🌟 销毁旧沙盒容器：其 /agent_vm 挂载绑定的是旧根目录路径，
-    # 换根后必然读写错位，保留只会造成"沙盒写了、宿主看不到"的幽灵文件问题
-    _destroy_sandbox_container()
-
-    print(
-        f"[Config API] 数据根目录已切换: {old_root} -> {new_root}"
-        f"（搬迁: {', '.join(moved) if moved else '无'}，重启后生效）"
-    )
-    return {
-        "status": "ok",
-        "data_root": new_root,
-        "moved": moved,
-        "message": "数据已就绪（agent_vm 已在新位置全新初始化，沙盒容器已销毁，重启后自动重建）",
-    }
-
-
-def _destroy_sandbox_container():
-    """销毁旧沙盒容器（best-effort）：docker 不可用时忽略，由重启后的创建逻辑兜底。
-
-    容器内的系统变更（apt 安装的包等）会随销毁丢失——这是预期行为：
-    换根即换盘，旧挂载已无意义。
-    """
-    try:
-        import docker
-        from docker.errors import NotFound
-
-        client = docker.from_env(timeout=5)
-        container = client.containers.get("agent_computer")
-        if container.status == "running":
-            container.stop(timeout=2)
-        container.remove(force=True)
-        print("[Config API] 旧沙盒容器 (agent_computer) 已销毁，重启后按新数据根重建")
-    except NotFound:
-        pass  # 本来就没有容器
-    except Exception as e:
-        # docker 未装/引擎未启动：忽略，重启后 get_docker_manager 会按新 AGENT_VM_DIR 创建
-        print(f"[Config API] 销毁旧沙盒容器失败(忽略，重启后重建): {e}")
-
-
-def _rollback_moved_dirs(new_root: str, old_root: str, moved: list):
-    """搬迁中途失败时，把已搬走的子目录挪回旧根目录，避免半迁移状态"""
-    import shutil
-
-    for name in moved:
-        src = os.path.join(new_root, name)
-        dst = os.path.join(old_root, name)
-        try:
-            if os.path.exists(src) and not os.path.exists(dst):
-                shutil.move(src, dst)
-        except Exception:
-            pass
+    return config_services.change_data_root(payload)
 
 
 # ── Cron Config (cron.json) ──
 @router.get("/cron")
 def api_get_cron_config():
-    if not os.path.exists(CRON_FILE):
-        return {"jobs": []}
-    try:
-        with open(CRON_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return {"jobs": []}
+    return config_validation.load_json_data(CRON_FILE, {"jobs": []}, log_prefix="")
 
 
 @router.put("/cron")

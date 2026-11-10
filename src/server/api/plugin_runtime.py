@@ -20,7 +20,6 @@ PyInstaller 打包完全不接触插件依赖，因此插件可以自由携带�
 子进程接到请求后必须回一行结果；允许多个请求排队（子进程串行处理）。
 """
 
-import hashlib
 import json
 import os
 import shutil
@@ -28,18 +27,19 @@ import subprocess
 import threading
 
 from src.utils.config import PURRCAT_DIR
-
-# 允许出现的 backend 启动器类型
-_NODE = "node"
+from src.server.api.plugin_runtime_support import (
+    NODE as _NODE,
+    PluginProcessError,
+    deps_fingerprint,
+    deps_ready,
+    locate_plugin_entry,
+    strip_venv_env,
+)
 
 # 后端依赖安装状态（按插件 id 记录已安装的 package.json/lockfile 指纹）
 _DEPS_STATE_DIR = os.path.join(PURRCAT_DIR, "plugin-deps")
 _DEPS_LOCK = threading.Lock()
 _NPM_TIMEOUT = 300
-
-
-class PluginProcessError(Exception):
-    """插件进程层错误（找不到解释器/启动失败/超时/未就绪等）。"""
 
 
 class _PluginProcess:
@@ -67,19 +67,7 @@ class _PluginProcess:
         self._ready = False
         self._last_error = None
         # 继承父进程环境，但剥离 venv 相关变量，避免 uv/pyenv 干扰子进程解释器定位
-        env = {
-            k: v
-            for k, v in os.environ.items()
-            if not k.startswith(
-                (
-                    "PYTHONHOME",
-                    "PYTHONPATH",
-                    "PYTHONSTARTUP",
-                    "PYTHONUSERBASE",
-                    "VIRTUAL_ENV",
-                )
-            )
-        }
+        env = strip_venv_env(os.environ)
         self._proc = subprocess.Popen(
             cmd,
             cwd=self.cwd,
@@ -205,35 +193,6 @@ _PROC_LOCK = threading.Lock()
 _PROCESSES: dict[str, _PluginProcess] = {}
 
 
-def _locate_plugin(plugin_dir: str) -> tuple[str, str, str]:
-    """根据插件目录定位 backend -> (cwd, entry_abs, runner)。"""
-    plugin_dir = os.path.abspath(plugin_dir)
-    backend_file = os.path.join(plugin_dir, "server", "server.js")
-    if os.path.isfile(backend_file):
-        return plugin_dir, backend_file, _NODE
-    raise PluginProcessError(
-        f"插件 {os.path.basename(plugin_dir)} 无后端（缺少 server/server.js）"
-    )
-
-
-def _hash_file(path: str) -> str:
-    digest = hashlib.sha256()
-    with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(65536), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
-def _deps_fingerprint(server_dir: str) -> str:
-    """package.json 与 lockfile 的内容指纹；任一变化即视为需要重装。"""
-    parts = []
-    for name in ("package.json", "package-lock.json", "npm-shrinkwrap.json"):
-        path = os.path.join(server_dir, name)
-        if os.path.isfile(path):
-            parts.append(f"{name}:{_hash_file(path)}")
-    return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()
-
-
 def _deps_state_path(plugin_id: str) -> str:
     return os.path.join(_DEPS_STATE_DIR, f"{plugin_id}.json")
 
@@ -281,36 +240,16 @@ def _run_npm(args: list, cwd: str) -> subprocess.CompletedProcess:
         raise PluginProcessError(f"插件后端依赖安装失败：{e}")
 
 
-def _has_runtime_deps(server_dir: str) -> bool:
-    """package.json 是否声明了运行时依赖（devDependencies 已在安装时排除）。"""
-    try:
-        with open(os.path.join(server_dir, "package.json"), "r", encoding="utf-8") as f:
-            data = json.load(f)
-        deps = data.get("dependencies") if isinstance(data, dict) else None
-        return bool(isinstance(deps, dict) and deps)
-    except Exception:
-        return False
-
-
-def _deps_ready(server_dir: str, fingerprint: str, state: dict) -> bool:
-    if state.get("fingerprint") != fingerprint:
-        return False
-    if os.path.isdir(os.path.join(server_dir, "node_modules")):
-        return True
-    # 没有依赖时 npm 不会生成 node_modules，指纹一致即视为就绪。
-    return not _has_runtime_deps(server_dir)
-
-
 def _ensure_dependencies(plugin_id: str, plugin_dir: str, allow_install: bool):
     """确保插件后端依赖可用；已随插件分发 node_modules 时直接复用。"""
     server_dir = os.path.join(plugin_dir, "server")
     if not os.path.isfile(os.path.join(server_dir, "package.json")):
         return
-    fingerprint = _deps_fingerprint(server_dir)
+    fingerprint = deps_fingerprint(server_dir)
     node_modules = os.path.join(server_dir, "node_modules")
 
     state = _read_deps_state(plugin_id)
-    if _deps_ready(server_dir, fingerprint, state):
+    if deps_ready(server_dir, fingerprint, state):
         return
     # 插件自带 node_modules（作者已打包依赖）时信任现成结果，不联网重装。
     if os.path.isdir(node_modules) and not state:
@@ -321,9 +260,9 @@ def _ensure_dependencies(plugin_id: str, plugin_dir: str, allow_install: bool):
 
     with _DEPS_LOCK:
         # 等锁期间状态可能已被其它调用更新，重新读取指纹与状态再判断。
-        fingerprint = _deps_fingerprint(server_dir)
+        fingerprint = deps_fingerprint(server_dir)
         state = _read_deps_state(plugin_id)
-        if _deps_ready(server_dir, fingerprint, state):
+        if deps_ready(server_dir, fingerprint, state):
             return
         has_lock = any(
             os.path.isfile(os.path.join(server_dir, name))
@@ -338,7 +277,7 @@ def _ensure_dependencies(plugin_id: str, plugin_dir: str, allow_install: bool):
                 f"插件 {plugin_id} 后端依赖安装失败：{tail or 'npm 返回非零退出码'}"
             )
         # 安装会生成/更新 lockfile，必须记录安装后的指纹，否则下次会重复安装。
-        _write_deps_state(plugin_id, _deps_fingerprint(server_dir))
+        _write_deps_state(plugin_id, deps_fingerprint(server_dir))
 
 
 def _get_or_start(
@@ -363,7 +302,7 @@ def _get_or_start(
             _PROCESSES.pop(plugin_id, None)
         if not os.path.isdir(plugin_dir):
             raise PluginProcessError(f"插件 {plugin_id} 目录不存在")
-        cwd, entry, runner = _locate_plugin(plugin_dir)
+        cwd, entry, runner = locate_plugin_entry(plugin_dir)
         proc = _PluginProcess(plugin_id, cwd, entry, runner)
         proc._spawn()
         _PROCESSES[plugin_id] = proc
