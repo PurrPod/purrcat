@@ -47,6 +47,22 @@ PROCESS_ISOLATED_TOOLS = {
     "search",  # 向量检索（含嵌入计算）
 }
 
+# 系统注入参数：模型不可见，由 Agent / Harness / dispatch 自动补齐。
+# 注入点：agent.py（Bash 的 session_id、Task 的 _session_id/_request_bytes/
+# _request_limit_bytes、BrainStorm 的 _tool_call_id）、harness/agent_node.py
+# （session_id、_is_sub_branch）、dispatch_tool（Task 的 _vision_mode）。
+SYSTEM_INJECTED_ARGUMENTS = frozenset(
+    {
+        "session_id",
+        "_is_sub_branch",
+        "_session_id",
+        "_request_bytes",
+        "_request_limit_bytes",
+        "_tool_call_id",
+        "_vision_mode",
+    }
+)
+
 
 def _safe_truncate(data: Any, max_tokens: int) -> str:
     """结构化安全省略策略：按 token 预算截断预览"""
@@ -387,6 +403,24 @@ def _execute_tool(
     return _execute_tool_inline(target_func, arguments, cancel_event)
 
 
+def resolve_tool(tool_name: str):
+    """按工具名解析出真实可调用函数；dispatch 与注册契约测试共用同一份规则。"""
+    tool_name_lower = tool_name.lower()
+    func_name = TOOL_FUNC_MAP.get(tool_name_lower, tool_name.capitalize())
+
+    module_path = f"src.tool.{tool_name_lower}.{tool_name_lower}"
+    try:
+        tool_module = importlib.import_module(module_path)
+    except ImportError:
+        module_path = f"src.tool.{tool_name_lower}"
+        tool_module = importlib.import_module(module_path)
+
+    target_func = getattr(tool_module, func_name, None)
+    if target_func is None:
+        raise AttributeError(f"工具模块 '{module_path}' 中未找到函数: {func_name}")
+    return target_func
+
+
 def dispatch_tool(
     tool_name: str,
     arguments: dict,
@@ -402,24 +436,13 @@ def dispatch_tool(
     """
     try:
         tool_name_lower = tool_name.lower()
-        func_name = TOOL_FUNC_MAP.get(tool_name_lower, tool_name.capitalize())
 
         # 🌟 vision 直注模式下，告知 Task 工具调用方支持视觉
         # （action=vision 时直接返回图片本体，不再走视觉顾问模型）
         if vision_mode and tool_name_lower == "task":
             arguments["_vision_mode"] = True
 
-        module_path = f"src.tool.{tool_name_lower}.{tool_name_lower}"
-        try:
-            tool_module = importlib.import_module(module_path)
-        except ImportError:
-            module_path = f"src.tool.{tool_name_lower}"
-            tool_module = importlib.import_module(module_path)
-
-        if not hasattr(tool_module, func_name):
-            raise AttributeError(f"工具模块 '{module_path}' 中未找到函数: {func_name}")
-
-        target_func = getattr(tool_module, func_name)
+        target_func = resolve_tool(tool_name)
 
         # 1. 获得执行结果 (新版统一格式 {"content": ..., "metadata": {...}})
         result_obj = _execute_tool(
