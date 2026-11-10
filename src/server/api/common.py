@@ -12,6 +12,8 @@ from typing import Any
 
 from fastapi import HTTPException
 
+from src.utils._fs import read_json
+
 
 def save_json_file(path: str, data: Any, log_prefix: str = "[Config API]") -> bool:
     """写入缩进 JSON；失败时只记录日志并返回 False。"""
@@ -27,11 +29,7 @@ def save_json_file(path: str, data: Any, log_prefix: str = "[Config API]") -> bo
 
 def read_json_file(path: str, default: Any = None) -> Any:
     """读取 JSON；文件缺失、损坏或读取失败时返回 default。"""
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return default
+    return read_json(path, default)
 
 
 def unexpected_error(

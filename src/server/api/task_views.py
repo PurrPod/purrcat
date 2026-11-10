@@ -9,6 +9,8 @@ import copy
 import json
 import os
 
+from src.utils._fs import read_json
+
 
 def group_logs_by_node(logs) -> dict:
     """按 node_id 分组日志；缺省归入 system。"""
@@ -49,17 +51,10 @@ def _read_node_messages(node_path: str) -> list:
             pass
         return messages
     if os.path.exists(live_file_json):
-        try:
-            with open(live_file_json, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            return []
+        return read_json(live_file_json, [])
     if os.path.exists(out_file):
-        try:
-            with open(out_file, "r", encoding="utf-8") as f:
-                return json.load(f).get("messages", [])
-        except Exception:
-            return []
+        data = read_json(out_file, {})
+        return data.get("messages", []) if isinstance(data, dict) else []
     return []
 
 

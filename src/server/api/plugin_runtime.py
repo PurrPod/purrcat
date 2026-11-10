@@ -26,6 +26,7 @@ import shutil
 import subprocess
 import threading
 
+from src.utils._fs import read_json
 from src.utils.config import PURRCAT_DIR
 from src.server.api.plugin_runtime_support import (
     NODE as _NODE,
@@ -198,12 +199,8 @@ def _deps_state_path(plugin_id: str) -> str:
 
 
 def _read_deps_state(plugin_id: str) -> dict:
-    try:
-        with open(_deps_state_path(plugin_id), "r", encoding="utf-8") as f:
-            data = json.load(f)
-        return data if isinstance(data, dict) else {}
-    except Exception:
-        return {}
+    data = read_json(_deps_state_path(plugin_id))
+    return data if isinstance(data, dict) else {}
 
 
 def _write_deps_state(plugin_id: str, fingerprint: str):

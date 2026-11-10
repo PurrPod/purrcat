@@ -4,7 +4,14 @@ from __future__ import annotations
 
 import datetime
 
-from src.utils._format import format_datetime, format_hms, human_bytes, parse_size
+from src.utils._format import (
+    format_datetime,
+    format_hms,
+    human_bytes,
+    human_bytes_compact,
+    human_bytes_ls,
+    parse_size,
+)
 from src.utils.log_format import clean_log_entry, render_log_entry
 
 
@@ -23,6 +30,20 @@ def test_human_bytes_and_parse_size_round_trip_units():
     assert human_bytes(1536) == "1.5 KB"
     assert parse_size("1.5 KB") == 1500
     assert parse_size("1.5 KiB") == 1536
+
+
+def test_human_bytes_compact_matches_upload_receipt_format():
+    assert human_bytes_compact(900) == "1KB"
+    assert human_bytes_compact(1536) == "2KB"
+    assert human_bytes_compact(1024 * 1024) == "1.0MB"
+    assert human_bytes_compact(int(1.5 * 1024 * 1024)) == "1.5MB"
+
+
+def test_human_bytes_ls_matches_ls_style():
+    assert human_bytes_ls(10) == "10B"
+    assert human_bytes_ls(1536) == "1.5K"
+    assert human_bytes_ls(1024 * 1024) == "1.0M"
+    assert human_bytes_ls(1024**3) == "1.0G"
 
 
 def test_clean_tool_call_command_is_collapsed():

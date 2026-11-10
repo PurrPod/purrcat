@@ -21,6 +21,7 @@ import uuid
 
 from src.server.acp.sessions import get_registry, push_by_entry
 from src.server.acp.updates import to_updates
+from src.utils._format import human_bytes_compact
 from src.utils.config import AGENT_VM_DIR
 
 __all__ = ["MAX_SENSOR_FILE_BYTES", "handle_rpc", "save_inbound_file", "to_updates"]
@@ -95,9 +96,7 @@ def save_inbound_file(source: str, params: dict) -> dict | None:
         f.write(data)
 
     size = len(data)
-    size_h = (
-        f"{size / 1024 / 1024:.1f}MB" if size >= 1024 * 1024 else f"{size / 1024:.0f}KB"
-    )
+    size_h = human_bytes_compact(size)
     return {
         "path": f"/agent_vm/sensor/files/{source}/{os.path.basename(target)}",
         "mime": mime,

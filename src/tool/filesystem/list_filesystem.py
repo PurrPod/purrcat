@@ -5,17 +5,7 @@ import time
 
 from src.tool.filesystem.exceptions import HostPathNotFoundError, PermissionDeniedError
 from src.tool.filesystem.utils import require_read
-
-
-def _human_size(num_bytes: int) -> str:
-    """字节数转人类可读大小（ls -h 风格）"""
-    if num_bytes < 1024:
-        return f"{num_bytes}B"
-    if num_bytes < 1024 * 1024:
-        return f"{num_bytes / 1024:.1f}K"
-    if num_bytes < 1024 * 1024 * 1024:
-        return f"{num_bytes / 1024 / 1024:.1f}M"
-    return f"{num_bytes / 1024 / 1024 / 1024:.1f}G"
+from src.utils._format import human_bytes_ls
 
 
 def _format_entry_line(name: str, full_path: str) -> tuple[str, bool]:
@@ -33,14 +23,14 @@ def _format_entry_line(name: str, full_path: str) -> tuple[str, bool]:
             except OSError:
                 target = "?"
             return (
-                f"l    {_human_size(st.st_size):>10}  {mtime}  {name} -> {target}",
+                f"l    {human_bytes_ls(st.st_size):>10}  {mtime}  {name} -> {target}",
                 False,
             )
 
         if os.path.isdir(full_path):
             return f"d    {'-':>10}  {mtime}  {name}/", True
 
-        return f"-    {_human_size(st.st_size):>10}  {mtime}  {name}", False
+        return f"-    {human_bytes_ls(st.st_size):>10}  {mtime}  {name}", False
     except (OSError, PermissionError):
         return f"?    {'-':>10}  {'-':>16}  {name}  [不可访问]", False
 

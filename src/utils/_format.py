@@ -34,6 +34,25 @@ def human_bytes(n: int | float) -> str:
     return f"{n:.1f} TB"
 
 
+def human_bytes_compact(n: int | float) -> str:
+    """紧凑展示（无空格）：>=1MB 用 MB，否则用整数 KB。"""
+    size = float(n)
+    if size >= 1024 * 1024:
+        return f"{size / 1024 / 1024:.1f}MB"
+    return f"{size / 1024:.0f}KB"
+
+
+def human_bytes_ls(n: int | float) -> str:
+    """ls -h 风格：B/K/M/G，无空格，K 及以上保留一位小数。"""
+    size = float(n)
+    if size < 1024:
+        return f"{int(size)}B"
+    for unit, scale in (("K", 1024), ("M", 1024**2), ("G", 1024**3)):
+        if size < scale * 1024 or unit == "G":
+            return f"{size / scale:.1f}{unit}"
+    return f"{size / 1024**3:.1f}G"
+
+
 def format_hms(timestamp: float | int | None) -> str:
     if not timestamp:
         return "??:??:??"

@@ -12,7 +12,6 @@
 互不干扰原则：本文件只新增路由，不修改任何现有 /api/* 路由行为。
 """
 
-import json
 import os
 import shutil
 import hashlib
@@ -22,6 +21,7 @@ from fastapi.responses import FileResponse
 
 from src.server.api import plugin_runtime, webmin_manifest, webmin_scan
 from src.server.api.common import is_unsafe_name
+from src.utils._fs import read_json
 from src.utils.config import (
     AGENT_VM_DIR,
     BASE_DIR,
@@ -98,8 +98,9 @@ def _shared_catalog() -> dict:
         mtime = os.path.getmtime(SHARED_MANIFEST_PATH)
         if _SHARED_CACHE["mtime"] == mtime:
             return _SHARED_CACHE["data"]
-        with open(SHARED_MANIFEST_PATH, "r", encoding="utf-8") as f:
-            raw = json.load(f)
+        raw = read_json(SHARED_MANIFEST_PATH)
+        if raw is None:
+            return {}
         data = webmin_manifest.normalize_shared_catalog(raw)
         _SHARED_CACHE["mtime"] = mtime
         _SHARED_CACHE["data"] = data

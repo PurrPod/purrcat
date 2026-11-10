@@ -6,8 +6,9 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import os
+
+from src.utils._fs import read_json
 
 # 允许出现的 backend 启动器类型
 NODE = "node"
@@ -62,13 +63,9 @@ def deps_fingerprint(server_dir: str) -> str:
 
 def has_runtime_deps(server_dir: str) -> bool:
     """package.json 是否声明了运行时依赖（devDependencies 已在安装时排除）。"""
-    try:
-        with open(os.path.join(server_dir, "package.json"), "r", encoding="utf-8") as f:
-            data = json.load(f)
-        deps = data.get("dependencies") if isinstance(data, dict) else None
-        return bool(isinstance(deps, dict) and deps)
-    except Exception:
-        return False
+    data = read_json(os.path.join(server_dir, "package.json"))
+    deps = data.get("dependencies") if isinstance(data, dict) else None
+    return bool(isinstance(deps, dict) and deps)
 
 
 def deps_ready(server_dir: str, fingerprint: str, state: dict) -> bool:

@@ -5,23 +5,18 @@
 
 from __future__ import annotations
 
-import json
 import os
 
 from src.server.api.common import resolve_within
+from src.utils._fs import read_json
 
 
 def read_plugin_descriptor(plugin_dir: str) -> dict | None:
     """读取某插件文件夹的 plugin.json；不存在或非法则返回 None。"""
-    desc_path = os.path.join(plugin_dir, "plugin.json")
-    try:
-        with open(desc_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        if isinstance(data, dict) and data.get("id"):
-            data["dir"] = plugin_dir
-            return data
-    except Exception:
-        pass
+    data = read_json(os.path.join(plugin_dir, "plugin.json"))
+    if isinstance(data, dict) and data.get("id"):
+        data["dir"] = plugin_dir
+        return data
     return None
 
 
