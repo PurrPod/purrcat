@@ -13,19 +13,31 @@ from .config import (
 )
 from .log_api import clean_log_entry, format_task_log, get_task_log_structured
 from .skill_helper import get_available_skills, get_skill_content, get_skill_info
-from .task_api import (
-    delete_task,
-    force_push_task,
-    get_task_history,
-    get_task_list,
-    get_task_log_jsonl,
-    get_task_max_token,
-    get_task_state,
-    get_task_window_token,
-    kill_task,
-    submit_instruction,
-)
 from .tracker import Tracker
+
+# 任务 API 依赖 harness，而 harness 又依赖 model；若在此立即导入，
+# 全新进程 `import src.model` 会形成 utils → harness → model → utils 的循环。
+_TASK_API_NAMES = {
+    "delete_task",
+    "force_push_task",
+    "get_task_history",
+    "get_task_list",
+    "get_task_log_jsonl",
+    "get_task_max_token",
+    "get_task_state",
+    "get_task_window_token",
+    "kill_task",
+    "submit_instruction",
+}
+
+
+def __getattr__(name):
+    if name in _TASK_API_NAMES:
+        from . import task_api
+
+        return getattr(task_api, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 __all__ = [
     # Config
