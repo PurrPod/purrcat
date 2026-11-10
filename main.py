@@ -5,12 +5,7 @@ import sys
 import warnings
 import argparse
 
-from src.api_port import (
-    DEFAULT_API_PORT,
-    clear_runtime_state,
-    resolve_api_port,
-    write_runtime_state,
-)
+from src.api_port import DEFAULT_API_PORT, resolve_api_port
 
 
 def _preflight_explicit_api_port() -> None:
@@ -286,102 +281,13 @@ async def shutdown_core():
 
 
 async def run_api(host: str = "0.0.0.0", port: int = DEFAULT_API_PORT):
-    from fastapi import FastAPI
-    from fastapi.middleware.cors import CORSMiddleware
-    import uvicorn
     import logging
-    
-    # API 路由也尽量懒加载，防止影响入口速度
-    from src.server.api.chat import router as chat_router
-    from src.server.api.projects import router as projects_router
-    from src.server.api.graph import router as graph_router
-    from src.server.api.task import router as task_router
-    from src.server.api.config import router as config_router
-    from src.server.api.memory import router as memory_router
-    from src.server.api.tools import router as tools_router
-    from src.server.api.system import router as system_router
-    from src.server.api.request import router as request_router
-    from src.server.api.filesystem import router as filesystem_router
-    from src.server.api.evolve import router as evolve_router
-    from src.server.api.terminal import router as terminal_router
-    from src.server.api.paradigms import router as paradigms_router
-    from src.server.api.acp import router as acp_router
-    from src.server.api.webmin import router as webmin_router
 
-    app = FastAPI(title="PurrCat API System")
+    import uvicorn
 
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+    from src.server.app import create_app
 
-    app.include_router(chat_router)
-    app.include_router(projects_router)
-    app.include_router(graph_router)
-    app.include_router(task_router)
-    app.include_router(config_router)
-    app.include_router(memory_router)
-    app.include_router(tools_router)
-    app.include_router(system_router)
-    app.include_router(request_router)
-    app.include_router(filesystem_router)
-    app.include_router(evolve_router)
-    app.include_router(terminal_router)
-    app.include_router(paradigms_router)
-    app.include_router(acp_router)
-    app.include_router(webmin_router)
-
-    # 🌟 关闭时回收所有插件后端子进程，避免残留孤儿进程
-    from src.server.api import plugin_runtime as _plugin_runtime
-
-    @app.on_event("shutdown")
-    def _shutdown_plugin_runtimes():
-        _plugin_runtime.stop_all()
-
-    # 🌟 实际端口落盘：外部消费者（ACP relay / 配置中心）读它来发现本次运行的真实端口。
-    # 端口 fallback（8000→8001）后 settings.json 的 acp_port 仍是旧的期望值，不落盘
-    # 就会出现「面板显示 8000、relay 连 8000、后端其实在 8001」的不一致。
-    # 写在 startup：uvicorn 此时已完成 bind，绑定失败的进程不会留下误导性的状态文件。
-    @app.on_event("startup")
-    def _publish_runtime_port():
-        write_runtime_state(port)
-
-    @app.on_event("shutdown")
-    def _clear_runtime_port():
-        clear_runtime_state()
-
-    # 🌟 健康检查必须注册在静态挂载之前！
-    # Starlette 按注册顺序匹配路由，静态文件挂载是贪婪前缀匹配，
-    # 会吞掉它之后注册的所有路由（/api/health 会变成 404），
-    # 导致 Electron 的生产模式轮询永远失败、白屏等 60 秒。
-    @app.get("/api/health")
-    def ping():
-        return {"message": "PurrCat Backend is running."}
-
-    # 🌟 托管极简宿主（web-minimal）：独立纯静态宿主，挂载在 /minimal。
-    # 静态文件挂载放到所有 API 路由最后，避免遮蔽 /api/* 接口。
-    from fastapi.staticfiles import StaticFiles
-    from pathlib import Path as _Path
-
-    _webmin_root = _Path(__file__).resolve().parent / "ui" / "web-minimal"
-    if _webmin_root.exists():
-        app.mount("/minimal", StaticFiles(directory=str(_webmin_root), html=True), name="webmin")
-
-    # 🌟 极简模式静态资源禁用缓存：host.js / theme.css / 插件 JS 等改动后，
-    # 仅刷新页面即可生效，避免 Electron 渲染进程命中旧缓存导致"改了没反应"。
-    # 注意：插件资源经 /api/webmin/plugin/{id}/... 提供，Starlette StaticFiles 不下发
-    # Cache-Control，Chromium 会按启发式规则缓存子资源（reload 也不重新拉取），
-    # 表现为"插件的修复代码没生效、仍报同样的错"，故一并纳入 no-store。
-    @app.middleware("http")
-    async def _webmin_no_cache(request, call_next):
-        response = await call_next(request)
-        path = request.url.path
-        if path.startswith("/minimal") or path.startswith("/api/webmin"):
-            response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
-            response.headers["Pragma"] = "no-cache"
-        return response
+    app = create_app(port)
 
     logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
     

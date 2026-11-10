@@ -1,6 +1,22 @@
 # 后端 API 总览
 
-**只描述当前接口，不含历史/兼容别名。**
+> [!IMPORTANT]
+> [`openapi.md`](openapi.md) 与 [`openapi.json`](openapi.json) 是**生成物**，禁止手动修改。
+> 更新：`uv run python scripts/gen_api_docs.py`
+> 校验（CI 同款）：`uv run python scripts/check_api_docs.py`
+
+## 契约生成物
+
+生成器直接调用 `src/server/app.py` 的 `create_app().openapi()`，因此代码即契约：
+
+- `openapi.json`：FastAPI 契约的稳定序列化（key 排序、无时间戳、末尾换行）。
+- `openapi.md`：按 tag → path → 方法（GET/POST/PUT/PATCH/DELETE）排序的可读参考，包含参数、请求体字段与响应 Schema。
+
+`scripts/check_api_docs.py` 只比较生成物与当前代码，不落盘；有差异时退出码为 1。
+
+## 历史文档
+
+本目录下按模块手写的 `chat.md`、`config.md` 等为**历史文档，逐步迁移**，不再作为契约校验依据，请勿删除。新增或修改接口以生成物为准。
 
 ## 通用约定
 
