@@ -8,6 +8,7 @@ import uuid
 import subprocess
 from datetime import datetime
 
+from src.evolve.common.templates import write_goal_and_guide
 from src.utils.config import SKILL_DIR, AGENT_VM_DIR
 
 # 引入新的生成器
@@ -97,18 +98,7 @@ def skill_improve_init(
             )
 
     # 🌟 落盘构建目标 + 生成单文件官方指导手册
-    if goal:
-        with open(
-            os.path.join(workplace_root, "GOAL.md"), "w", encoding="utf-8", newline="\n"
-        ) as f:
-            f.write(f"# 🎯 Build Goal\n\n{goal}\n")
-    with open(
-        os.path.join(workplace_root, "GUIDE.md"),
-        "w",
-        encoding="utf-8",
-        newline="\n",
-    ) as f:
-        f.write(generate_skill_guide(skill_name, goal))
+    write_goal_and_guide(workplace_root, goal, generate_skill_guide(skill_name, goal))
 
     # 🌟 精准的 API 返回引导：显式携带 workplace_id，路径使用沙盒视角的 /agent_vm 前缀
     sandbox_root = f"/agent_vm/skill_workplace/{short_uuid}"

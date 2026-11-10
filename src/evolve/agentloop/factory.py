@@ -7,12 +7,14 @@ AgentLoop 进化工厂核心逻辑 (evolve/agentloop/factory.py)
 """
 
 import os
-import re
 import shutil
-import subprocess
 import uuid
 from datetime import datetime
 
+from src.evolve.common.git import commit_paths, ensure_git_repo
+from src.evolve.common.names import safe_name
+from src.evolve.common.templates import write_goal_and_guide, write_sandbox_validator
+from src.evolve.common.validation import validation_summary
 from src.utils.config import PARADIGMS_DIR, AGENT_VM_DIR
 
 from . import validator as _validator
@@ -21,17 +23,9 @@ from .validator import validate_agentloop_file
 
 WORKPLACE_KIND = "agentloop_workplace"
 
-# 文件名安全：仅限制危险字符，允许中文等普通名字
-_INVALID_NAME = re.compile(r"[/\\:\x00-\x1f]")
-
 
 def _safe_name(name: str) -> str:
-    base = (name or "").strip().removesuffix(".yaml").removesuffix(".yml")
-    if not base or base in (".", ".."):
-        raise ValueError("AgentLoop 名称不能为空或非法")
-    if _INVALID_NAME.search(base) or len(base) > 60:
-        raise ValueError("AgentLoop 名称包含不支持的字符")
-    return base
+    return safe_name(name, "AgentLoop", strip_suffixes=(".yaml", ".yml"))
 
 
 def _skeleton(name: str, goal: str = "") -> str:
@@ -49,28 +43,13 @@ hooks:
 """
 
 
-def _sandbox_validator_source() -> str:
-    """把校验器模块的源码逐字作为沙盒自测脚本（单一事实来源，逻辑不漂移）。"""
-    with open(_validator.__file__, "r", encoding="utf-8") as f:
-        return f.read()
-
-
 def _write_sandbox(root: str, name: str, goal: str):
     """写 GOAL.md / GUIDE.md / evals/validate.py。"""
-    if goal:
-        with open(
-            os.path.join(root, "GOAL.md"), "w", encoding="utf-8", newline="\n"
-        ) as f:
-            f.write(f"# 🎯 Build Goal\n\n{goal}\n")
-    with open(os.path.join(root, "GUIDE.md"), "w", encoding="utf-8", newline="\n") as f:
-        f.write(generate_agentloop_guide(name, goal))
+    write_goal_and_guide(root, goal, generate_agentloop_guide(name, goal))
 
     evals_dir = os.path.join(root, "evals")
     os.makedirs(evals_dir, exist_ok=True)
-    with open(
-        os.path.join(evals_dir, "validate.py"), "w", encoding="utf-8", newline="\n"
-    ) as f:
-        f.write(_sandbox_validator_source())
+    write_sandbox_validator(_validator, os.path.join(evals_dir, "validate.py"))
 
 
 def agentloop_factory_init(
@@ -120,12 +99,7 @@ def _latest_validation_ok(workplace_root: str, name: str) -> tuple[bool, str]:
     if not os.path.exists(yaml_path):
         return False, f"沙盒中未找到 '{name}.yaml'"
     report = validate_agentloop_file(yaml_path, expected_name=name)
-    if report["ok"]:
-        return True, f"校验通过（错误 0，警告 {report['warnings']}）"
-    bad = [
-        c["title"] for c in report["checks"] if c["level"] == "error" and not c["ok"]
-    ]
-    return False, f"校验未通过（{report['errors']} 处错误）：" + "；".join(bad[:5])
+    return validation_summary(report)
 
 
 def agentloop_request_handle(workplace_root: str, name: str, is_approved: bool) -> str:
@@ -153,19 +127,12 @@ def agentloop_request_handle(workplace_root: str, name: str, is_approved: bool) 
     shutil.copy2(source_path, target_path)
 
     # Git 版本接管（首次自动 init）
-    if not os.path.exists(os.path.join(PARADIGMS_DIR, ".git")):
-        subprocess.run(["git", "init"], cwd=PARADIGMS_DIR)
-        with open(
-            os.path.join(PARADIGMS_DIR, ".gitignore"), "w", encoding="utf-8"
-        ) as f:
-            f.write("__pycache__/\n*.pyc\n")
-        subprocess.run(["git", "add", ".gitignore"], cwd=PARADIGMS_DIR)
-    subprocess.run(["git", "add", f"{base}.yaml"], cwd=PARADIGMS_DIR)
+    ensure_git_repo(PARADIGMS_DIR, "__pycache__/\n*.pyc\n")
     commit_msg = (
         f"{'upgrade' if is_upgrade else 'add'} agentloop {base} "
         f"{datetime.now().strftime('%Y-%m-%d')}"
     )
-    subprocess.run(["git", "commit", "-m", commit_msg], cwd=PARADIGMS_DIR)
+    commit_paths(PARADIGMS_DIR, [f"{base}.yaml"], commit_msg)
 
     default_note = (
         "\n⚠️ 你覆盖的是**默认范式 PARADIGM.yaml**，它会在新会话立即生效；若行为异常请在沙盒回滚。"

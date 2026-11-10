@@ -12,6 +12,8 @@ import threading
 import time
 import uuid
 from datetime import datetime
+from src.evolve.common.git import commit_paths, ensure_git_repo
+from src.evolve.common.templates import write_goal_and_guide
 from src.utils.config import MCP_CONFIG_PATH, DATA_ROOT, AGENT_VM_DIR
 from .guide_generator import generate_mcp_guide
 
@@ -93,7 +95,6 @@ def _kill_processes_by_dir(keyword: str):
     """Windows 下按命令行关键字强制终止残留进程树，释放文件锁。"""
     if not sys.platform.startswith("win") or not keyword:
         return
-    import subprocess
 
     ps_cmd = (
         "Get-CimInstance Win32_Process | "
@@ -154,15 +155,9 @@ def _ensure_server_config_template(mcp_dir: str):
 
 def _write_goal_and_guide(workplace_root: str, mcp_name: str, goal: str):
     """落盘构建目标 GOAL.md + 生成单文件 GUIDE.md"""
-    if goal:
-        with open(
-            os.path.join(workplace_root, "GOAL.md"), "w", encoding="utf-8", newline="\n"
-        ) as f:
-            f.write(f"# 🎯 Build Goal\n\n{goal}\n")
-    with open(
-        os.path.join(workplace_root, "GUIDE.md"), "w", encoding="utf-8", newline="\n"
-    ) as f:
-        f.write(generate_mcp_guide(mcp_name, goal, AGENT_VM_DIR))
+    write_goal_and_guide(
+        workplace_root, goal, generate_mcp_guide(mcp_name, goal, AGENT_VM_DIR)
+    )
 
 
 def mcp_improve_init(mcp_name: str, goal: str = "") -> tuple[str, str]:
@@ -535,15 +530,11 @@ def mcp_request_handle(workplace_root: str, mcp_name: str, is_approved: bool) ->
 
     # 3. Git 自动接管
     mcps_root = os.path.join(DATA_ROOT, "mcps")
-    if not os.path.exists(os.path.join(mcps_root, ".git")):
-        os.makedirs(mcps_root, exist_ok=True)
-        subprocess.run(["git", "init"], cwd=mcps_root)
-        with open(os.path.join(mcps_root, ".gitignore"), "w") as f:
-            f.write("*.pyc\n__pycache__/\n.venv/\nvenv/\n")
-        subprocess.run(["git", "add", ".gitignore"], cwd=mcps_root)
-    subprocess.run(["git", "add", mcp_name], cwd=mcps_root)
+    ensure_git_repo(
+        mcps_root, "*.pyc\n__pycache__/\n.venv/\nvenv/\n", capture=True, create=True
+    )
     commit_msg = f"{'upgrade' if is_upgrade else 'add'} mcp {mcp_name} {datetime.now().strftime('%Y-%m-%d')}"
-    subprocess.run(["git", "commit", "-m", commit_msg], cwd=mcps_root)
+    commit_paths(mcps_root, [mcp_name], commit_msg, capture=True)
 
     # 4. 注入 Agent 声明的配置到 .purrcat/mcp_config.json
     config_path = MCP_CONFIG_PATH

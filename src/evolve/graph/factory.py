@@ -8,12 +8,14 @@ Graph 进化工厂核心逻辑 (evolve/graph/factory.py)
 
 import json
 import os
-import re
 import shutil
-import subprocess
 import uuid
 from datetime import datetime
 
+from src.evolve.common.git import commit_paths, ensure_git_repo
+from src.evolve.common.names import safe_name
+from src.evolve.common.templates import write_goal_and_guide, write_sandbox_validator
+from src.evolve.common.validation import validation_summary
 from src.utils.config import GRAPHS_DIR, AGENT_VM_DIR
 
 from . import validator as _validator
@@ -22,16 +24,9 @@ from .validator import validate_graph_folder
 
 WORKPLACE_KIND = "graph_workplace"
 
-_INVALID_NAME = re.compile(r"[/\\:\x00-\x1f]")
-
 
 def _safe_name(name: str) -> str:
-    base = (name or "").strip()
-    if not base or base in (".", ".."):
-        raise ValueError("Graph 名称不能为空或非法")
-    if _INVALID_NAME.search(base) or len(base) > 60:
-        raise ValueError("Graph 名称包含不支持的字符")
-    return base
+    return safe_name(name, "Graph")
 
 
 def _skeleton(name: str, goal: str = "") -> dict:
@@ -149,28 +144,13 @@ def _skeleton(name: str, goal: str = "") -> dict:
     }
 
 
-def _sandbox_validator_source() -> str:
-    """把校验器模块的源码逐字作为沙盒自测脚本（单一事实来源，逻辑不漂移）。"""
-    with open(_validator.__file__, "r", encoding="utf-8") as f:
-        return f.read()
-
-
 def _write_sandbox(root: str, graph_dir: str, name: str, goal: str):
     """写 GOAL.md / GUIDE.md / <name>/evals/validate.py。"""
-    if goal:
-        with open(
-            os.path.join(root, "GOAL.md"), "w", encoding="utf-8", newline="\n"
-        ) as f:
-            f.write(f"# 🎯 Build Goal\n\n{goal}\n")
-    with open(os.path.join(root, "GUIDE.md"), "w", encoding="utf-8", newline="\n") as f:
-        f.write(generate_graph_guide(name, goal))
+    write_goal_and_guide(root, goal, generate_graph_guide(name, goal))
 
     evals_dir = os.path.join(graph_dir, "evals")
     os.makedirs(evals_dir, exist_ok=True)
-    with open(
-        os.path.join(evals_dir, "validate.py"), "w", encoding="utf-8", newline="\n"
-    ) as f:
-        f.write(_sandbox_validator_source())
+    write_sandbox_validator(_validator, os.path.join(evals_dir, "validate.py"))
 
 
 def graph_factory_init(name: str, is_upgrade: bool, goal: str = "") -> tuple[str, str]:
@@ -226,12 +206,7 @@ def _latest_validation_ok(workplace_root: str, name: str) -> tuple[bool, str]:
     if not os.path.exists(os.path.join(folder, "graph.json")):
         return False, f"沙盒中未找到 '{name}/graph.json'"
     report = validate_graph_folder(folder, expected_name=name)
-    if report["ok"]:
-        return True, f"校验通过（错误 0，警告 {report['warnings']}）"
-    bad = [
-        c["title"] for c in report["checks"] if c["level"] == "error" and not c["ok"]
-    ]
-    return False, f"校验未通过（{report['errors']} 处错误）：" + "；".join(bad[:5])
+    return validation_summary(report)
 
 
 def graph_request_handle(workplace_root: str, name: str, is_approved: bool) -> str:
@@ -265,18 +240,12 @@ def graph_request_handle(workplace_root: str, name: str, is_approved: bool) -> s
     shutil.copytree(source_dir, target_dir, ignore=ignore)
 
     # Git 版本接管（首次自动 init）
-    if not os.path.exists(os.path.join(GRAPHS_DIR, ".git")):
-        os.makedirs(GRAPHS_DIR, exist_ok=True)
-        subprocess.run(["git", "init"], cwd=GRAPHS_DIR)
-        with open(os.path.join(GRAPHS_DIR, ".gitignore"), "w", encoding="utf-8") as f:
-            f.write("__pycache__/\n*.pyc\n")
-        subprocess.run(["git", "add", ".gitignore"], cwd=GRAPHS_DIR)
-    subprocess.run(["git", "add", base], cwd=GRAPHS_DIR)
+    ensure_git_repo(GRAPHS_DIR, "__pycache__/\n*.pyc\n", create=True)
     commit_msg = (
         f"{'upgrade' if is_upgrade else 'add'} graph {base} "
         f"{datetime.now().strftime('%Y-%m-%d')}"
     )
-    subprocess.run(["git", "commit", "-m", commit_msg], cwd=GRAPHS_DIR)
+    commit_paths(GRAPHS_DIR, [base], commit_msg)
 
     return (
         f"🎉 审批通过！Graph '{base}' 成功合并。\n"

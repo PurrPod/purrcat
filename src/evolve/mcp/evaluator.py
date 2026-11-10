@@ -7,15 +7,16 @@ import os
 import json
 import asyncio
 import threading
-import re
 import shutil
-from datetime import datetime
 
 from src.utils.config import AGENT_VM_DIR
 
 
-def _now_iso() -> str:
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+from src.evolve.common.paths import next_iteration_dir as _get_next_iteration_dir
+from src.evolve.common.report import (
+    now_iso as _now_iso,
+    write_report as _write_report,
+)
 
 
 def run_mcp_eval_background(workplace_id: str, mcp_name: str, main_session_id: str):
@@ -48,63 +49,16 @@ def run_mcp_eval_background(workplace_id: str, mcp_name: str, main_session_id: s
     ).start()
 
 
-def _get_next_iteration_dir(workplace_root: str) -> tuple[str, int]:
-    max_idx = 0
-    if os.path.exists(workplace_root):
-        for item in os.listdir(workplace_root):
-            match = re.match(r"iteration-(\d+)$", item)
-            if match:
-                idx = int(match.group(1))
-                if idx > max_idx:
-                    max_idx = idx
-    next_idx = max_idx + 1
-    return os.path.join(workplace_root, f"iteration-{next_idx}"), next_idx
+def _execution_passed(result: dict) -> bool:
+    """兼容旧产物：无 verdict 时回退为“成功返回即通过”。"""
+    verdict = result.get("verdict")
+    if verdict is None:
+        return result.get("status") == "success"
+    return verdict == "pass"
 
 
-async def _async_run_mcp_evals(workplace_id: str, mcp_name: str) -> str:
-    workplace_root = os.path.join(AGENT_VM_DIR, "mcp_workplace", workplace_id)
-    dev_mcp_dir = os.path.join(workplace_root, mcp_name)
-    evals_file = os.path.join(dev_mcp_dir, "evals", "evals.json")
-    outputs_dir = os.path.join(dev_mcp_dir, "evals", "outputs")
-
-    if not os.path.exists(evals_file):
-        return f"测试失败：未找到 {evals_file}。请确保你编写了测试用例。"
-
-    schema_path = os.path.join(outputs_dir, "schema_dump.json")
-    exec_results_path = os.path.join(outputs_dir, "execution_results.json")
-
-    # 检查沙盒内部的测试产物
-    if not os.path.exists(schema_path) or not os.path.exists(exec_results_path):
-        return "宿主机评测失败：未检测到沙盒内部的测试产物。请确保你已经先在沙盒内使用终端成功执行了 `python scripts/evaluation.py`！"
-
-    with open(evals_file, "r", encoding="utf-8") as f:
-        evals_data = json.load(f)
-
-    iteration_dir, iteration_idx = _get_next_iteration_dir(workplace_root)
-    os.makedirs(iteration_dir, exist_ok=True)
-
-    # 把沙盒产物归档到 iteration-N 目录
-    shutil.copy2(schema_path, os.path.join(iteration_dir, "schema_dump.json"))
-    shutil.copy2(
-        exec_results_path, os.path.join(iteration_dir, "execution_results.json")
-    )
-
-    try:
-        with open(
-            os.path.join(iteration_dir, "schema_dump.json"), "r", encoding="utf-8"
-        ) as f:
-            schema_dump = json.load(f)
-    except Exception:
-        schema_dump = []
-
-    # =========================================================================
-    # 渲染瑞士风 HTML 报告（报告即输出物，不列文件清单、不贴物理路径）
-    # =========================================================================
-    from src.evolve import report_html as H
-
-    blocks = []
-
-    # 一、工具矩阵注册大盘
+def _build_registration_block(schema_dump, H):
+    """一、工具矩阵注册大盘。"""
     if not schema_dump:
         reg_stat = [
             {
@@ -144,15 +98,15 @@ async def _async_run_mcp_evals(workplace_id: str, mcp_name: str) -> str:
                 ]
             )
         reg_body = H.table(["工具名称", "功能描述", "参数量"], reg_rows)
-    blocks.append(
-        H.section(
-            "01",
-            "工具矩阵注册大盘（Schema Registration）",
-            H.stats(reg_stat, cols=1) + reg_body,
-        )
+    return H.section(
+        "01",
+        "工具矩阵注册大盘（Schema Registration）",
+        H.stats(reg_stat, cols=1) + reg_body,
     )
 
-    # 二、语义检索与路由竞争分析
+
+def _build_trigger_block(evals_data, schema_dump, mcp_name, H):
+    """二、语义检索与路由竞争分析。"""
     triggers = evals_data.get("triggers", [])
     trig_stat = []
     if not triggers:
@@ -219,15 +173,13 @@ async def _async_run_mcp_evals(workplace_id: str, mcp_name: str) -> str:
             }
         ]
     trig_head = H.stats(trig_stat, cols=1) if trig_stat else ""
-    blocks.append(
-        H.section(
-            "02", "模型意图激发分析（Trigger Semantic Routing）", trig_head + trig_body
-        )
+    return H.section(
+        "02", "模型意图激发分析（Trigger Semantic Routing）", trig_head + trig_body
     )
 
-    # 三、用例并发执行与可用性断言
-    #    判分依据沙盒产出的 verdict（pass/fail）：正常用例校验 expected_output，
-    #    expect_error 用例校验"必须抛错"，从"没抛异常"升级为"返回的内容是对的"。
+
+def _build_execution_block(iteration_dir: str, evals_data, H):
+    """三、用例并发执行与可用性断言。"""
     exec_stat = []
     try:
         with open(
@@ -237,13 +189,7 @@ async def _async_run_mcp_evals(workplace_id: str, mcp_name: str) -> str:
 
         executions_cases = evals_data.get("executions", [])
 
-        # 兼容旧产物（无 verdict 时回退为"成功返回即通过"）
-        def _passed(r):
-            if "verdict" in r:
-                return r.get("verdict") == "pass"
-            return r.get("status") == "success"
-
-        pass_count = sum(1 for r in exec_results if _passed(r))
+        pass_count = sum(1 for r in exec_results if _execution_passed(r))
         fail_count = len(exec_results) - pass_count
         exec_stat = [
             {"label": "边界用例", "value": str(len(exec_results)), "icon_name": "list"},
@@ -272,7 +218,7 @@ async def _async_run_mcp_evals(workplace_id: str, mcp_name: str) -> str:
                     executions_cases[idx].get("arguments", {}), ensure_ascii=False
                 )
 
-            passed = _passed(res)
+            passed = _execution_passed(res)
             state = res.get("status", "exception")
             if state == "exception":
                 evidence = H.code_block(res.get("error", ""))
@@ -299,13 +245,57 @@ async def _async_run_mcp_evals(workplace_id: str, mcp_name: str) -> str:
     except Exception as e:
         exec_body = H.note(f"解析执行结果失败：{e}")
     exec_head = H.stats(exec_stat, cols=3) if exec_stat else ""
-    blocks.append(
-        H.section(
-            "03",
-            "用例并发真实执行校验（Execution & Robustness）",
-            exec_head + exec_body,
-        )
+    return H.section(
+        "03",
+        "用例并发真实执行校验（Execution & Robustness）",
+        exec_head + exec_body,
     )
+
+
+async def _async_run_mcp_evals(workplace_id: str, mcp_name: str) -> str:
+    workplace_root = os.path.join(AGENT_VM_DIR, "mcp_workplace", workplace_id)
+    dev_mcp_dir = os.path.join(workplace_root, mcp_name)
+    evals_file = os.path.join(dev_mcp_dir, "evals", "evals.json")
+    outputs_dir = os.path.join(dev_mcp_dir, "evals", "outputs")
+
+    if not os.path.exists(evals_file):
+        return f"测试失败：未找到 {evals_file}。请确保你编写了测试用例。"
+
+    schema_path = os.path.join(outputs_dir, "schema_dump.json")
+    exec_results_path = os.path.join(outputs_dir, "execution_results.json")
+
+    # 检查沙盒内部的测试产物
+    if not os.path.exists(schema_path) or not os.path.exists(exec_results_path):
+        return "宿主机评测失败：未检测到沙盒内部的测试产物。请确保你已经先在沙盒内使用终端成功执行了 `python scripts/evaluation.py`！"
+
+    with open(evals_file, "r", encoding="utf-8") as f:
+        evals_data = json.load(f)
+
+    iteration_dir, iteration_idx = _get_next_iteration_dir(workplace_root)
+    os.makedirs(iteration_dir, exist_ok=True)
+
+    # 把沙盒产物归档到 iteration-N 目录
+    shutil.copy2(schema_path, os.path.join(iteration_dir, "schema_dump.json"))
+    shutil.copy2(
+        exec_results_path, os.path.join(iteration_dir, "execution_results.json")
+    )
+
+    try:
+        with open(
+            os.path.join(iteration_dir, "schema_dump.json"), "r", encoding="utf-8"
+        ) as f:
+            schema_dump = json.load(f)
+    except Exception:
+        schema_dump = []
+
+    # 渲染瑞士风 HTML 报告（报告即输出物，不列文件清单、不贴物理路径）
+    from src.evolve import report_html as H
+
+    blocks = [
+        _build_registration_block(schema_dump, H),
+        _build_trigger_block(evals_data, schema_dump, mcp_name, H),
+        _build_execution_block(iteration_dir, evals_data, H),
+    ]
 
     html = H.page(
         title=f"{mcp_name} · MCP 测试合规报告",
@@ -321,8 +311,7 @@ async def _async_run_mcp_evals(workplace_id: str, mcp_name: str) -> str:
         footer_left="MCP Compliance Report",
         footer_right=f"Iteration {iteration_idx:02d}",
     )
-    with open(os.path.join(iteration_dir, "report.html"), "w", encoding="utf-8") as f:
-        f.write(html)
+    _write_report(iteration_dir, html)
 
     return (
         f"📊 MCP 测试完成：注册 {len(schema_dump)} 个工具，"
