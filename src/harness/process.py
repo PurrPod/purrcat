@@ -1,19 +1,27 @@
 import asyncio
 import datetime
-import importlib
 import json
 import os
 import threading
 import time
 import uuid
-from collections import deque
 from typing import Any, List
 
 from src.model.facade import Model
 from src.utils.config import DATA_DIR
 
-from . import envelope
-from .enums import NodeState, PortState, TaskState
+from . import checkpoint as checkpoint_io
+from . import (
+    dag_state,
+    graph_spec,
+    node_io,
+    node_runner,
+    reset,
+    task_persistence,
+    task_scheduler,
+    task_state,
+)
+from .enums import NodeState, TaskState
 
 TASK_INSTANCES = {}
 
@@ -134,64 +142,18 @@ class Task:
     def load_graph(self):
         from src.utils.config import GRAPHS_DIR
 
-        graph_path = os.path.join(GRAPHS_DIR, self.graph_name, "graph.json")
-        if not os.path.exists(graph_path):
+        graph = graph_spec.load_graph_file(GRAPHS_DIR, self.graph_name)
+        if graph is None:
             return {
                 "status": "error",
                 "message": f"找不到图表定义文件: {self.graph_name}",
             }
+        self.graph = graph
 
-        with open(graph_path, "r", encoding="utf-8") as f:
-            self.graph = json.load(f)
-
-        global_schema = self.graph.get("global_schema", {})
-
-        validation_errors = []
-
-        missing_required = []
-        for req_key, schema_info in global_schema.items():
-            is_req = schema_info.get("required", True)
-            if is_req and (req_key not in self.inputs or self.inputs[req_key] is None):
-                desc = schema_info.get("description", "无特定说明")
-                param_type = schema_info.get("type", "any")
-                missing_required.append(
-                    {
-                        "name": req_key,
-                        "type": param_type,
-                        "description": desc,
-                        "required": True,
-                    }
-                )
-
-        if missing_required:
-            param_list = "\n    - ".join(
-                [
-                    f"'{p['name']}' (类型: {p['type']}, 描述: {p['description']})"
-                    for p in missing_required
-                ]
-            )
-            validation_errors.append(f"❌ 缺少必填参数:\n    - {param_list}")
-
-        extra_keys = [k for k in self.inputs.keys() if k not in global_schema]
-        if extra_keys:
-            extra_list = ", ".join([f"'{k}'" for k in extra_keys])
-            validation_errors.append(f"⚠️ 传入了未知参数: {extra_list}")
-
-        if validation_errors:
-            all_params_info = []
-            for key, schema_info in global_schema.items():
-                is_req = schema_info.get("required", True)
-                param_type = schema_info.get("type", "any")
-                desc = schema_info.get("description", "无特定说明")
-                req_mark = "✅ 必填" if is_req else "⭕ 可选"
-                all_params_info.append(
-                    f"    - '{key}' (类型: {param_type}, {req_mark}, 描述: {desc})"
-                )
-
-            error_msg = "\n".join(validation_errors)
-            error_msg += "\n\n📋 有效的参数列表:\n" + "\n".join(all_params_info)
-            error_msg += "\n\n💡 请检查您的输入参数后重试。"
-
+        error_msg = graph_spec.validate_global_inputs(
+            self.inputs, self.graph.get("global_schema", {})
+        )
+        if error_msg:
             self.state = TaskState.ERROR
             self.init_error = error_msg
             return {"status": "error", "message": error_msg}
@@ -212,31 +174,14 @@ class Task:
         """
         self.node_list = {}
         self.node_types = {}
-        for node_data in self.graph.get("nodes", []):
-            node_id = node_data["id"]
-            node_type = node_data["type"]
-            config = node_data.get("config", node_data.get("data", {}))
-
-            try:
-                module = importlib.import_module(
-                    f"src.harness.node.extensions.{node_type}.node"
-                )
-                self.node_list[node_id] = module.Node(node_id=node_id, config=config)
-                self.node_types[node_id] = node_type
-                self.node_state[node_id] = NodeState.READY
-            except Exception as e:
-                from src.utils.graph_api import DEPRECATED_NODE_TYPES
-
-                if node_type in DEPRECATED_NODE_TYPES:
-                    return (
-                        f"节点类型 [{node_type}] 已在信封协议重构中移除，"
-                        f"请用编辑器打开 graph 替换该节点（预览文件请改用 preview 节点，"
-                        f"静态文本请改用 string 节点连线输入，"
-                        f"数据组装/逻辑分流请交给 agent_loop）"
-                    )
-                return f"节点加载失败 [{node_type}]: {e}"
-
-        return ""
+        (
+            self.node_list,
+            self.node_types,
+            built_states,
+            err,
+        ) = graph_spec.build_node_instances(self.graph)
+        self.node_state.update(built_states)
+        return err
 
     def _ensure_node_list(self) -> str:
         """reset/注入前置兜底：node_list 为空时按自带 graph 重建。返回错误信息，无则空串。"""
@@ -272,78 +217,31 @@ class Task:
                 runnable_nodes = self._get_runnable_nodes()
 
                 if not runnable_nodes and not self.running_tasks:
-                    if any(s == NodeState.WAITING for s in self.node_state.values()):
+                    if task_state.any_waiting(self.node_state):
                         self.state = TaskState.INTERRUPTED
                         self.execution_time += time.time() - start_time  # 🌟 累加用时
                         self.save_state()  # 🌟 状态极小，直接同步写
-                        # 点名挂起的人工干预节点：提醒 Agent 无权代答，须找用户确认
-                        waiting_hi = [
-                            nid
-                            for nid, st in self.node_state.items()
-                            if st == NodeState.WAITING
-                            and self.node_types.get(nid) == "human_intervention"
-                        ]
-                        if waiting_hi:
-                            message = (
-                                f"任务已在人工干预节点 {waiting_hi} 处挂起，等待人类指令。"
-                                "你没有对人工干预节点注入指令的权力，"
-                                "请转告用户：到任务面板对应节点亲自输入指令后，工作流才会继续。"
-                            )
-                        else:
-                            message = "任务已挂起，等待人工干预"
                         return {
                             "status": "suspended",
-                            "message": message,
+                            "message": task_state.suspended_message(
+                                self.node_state, self.node_types
+                            ),
                         }
                     self.state = TaskState.COMPLETED
                     self.execution_time += time.time() - start_time  # 🌟 累加用时
                     self.save_state()  # 🌟 状态极小，直接同步写
                     return {"status": "success", "outputs": self.outputs}
 
-                nodes_to_start = [
-                    n for n in runnable_nodes if n not in self.running_tasks.values()
-                ]
-                for node_id in nodes_to_start:
-                    if len(self.running_tasks) >= max_concurrency:
-                        break
-
-                    self.node_state[node_id] = NodeState.RUNNING
-                    node_instance = self.node_list[node_id]
-
-                    # 🌟 启动包装器任务：内部异步组装输入、执行、再将输出落盘
-                    task = asyncio.create_task(
-                        self._execute_node_wrapper(node_id, node_instance)
-                    )
-                    self.running_tasks[task] = node_id
-
-                if nodes_to_start:
-                    await asyncio.to_thread(self.save_state)
-
-                done, pending = await asyncio.wait(
-                    self.running_tasks.keys(), return_when=asyncio.FIRST_COMPLETED
+                error = await task_scheduler.run_round(
+                    self,
+                    runnable_nodes,
+                    max_concurrency=max_concurrency,
+                    save_state=self.save_state,
                 )
-
-                for task in done:
-                    node_id = self.running_tasks.pop(task, None)
-                    if node_id is None:
-                        continue
-                    try:
-                        result = task.result()
-                        self.node_state[node_id] = NodeState.COMPLETED
-                        self._update_port_states(node_id, result)
-                    except asyncio.CancelledError:
-                        pass
-                    except Exception as e:
-                        self.node_state[node_id] = NodeState.ERROR
-                        self.state = TaskState.ERROR
-                        self.execution_time += time.time() - start_time  # 🌟 累加用时
-                        await asyncio.to_thread(self.save_state)
-                        return {
-                            "status": "error",
-                            "message": f"节点 {node_id} 异常: {str(e)}",
-                        }
-
-                await asyncio.to_thread(self.save_state)
+                if error:
+                    self.execution_time += time.time() - start_time  # 🌟 累加用时
+                    await asyncio.to_thread(self.save_state)
+                    return error
 
         except Exception as e:
             self.state = TaskState.ERROR
@@ -353,16 +251,23 @@ class Task:
 
     async def _execute_node_wrapper(self, node_id: str, node_instance: Any):
         """核心包装器：隔离重型 I/O，让主循环轻装上阵"""
-        try:
-            # 1. 后台线程组装胖输入
-            inputs = await asyncio.to_thread(self._build_node_inputs, node_id)
-            # 2. 执行节点业务
-            result = await node_instance.execute(inputs, context=self)
-            # 3. 后台线程落盘胖输出
-            await asyncio.to_thread(self._save_node_outputs, node_id, result)
-            return result
-        except Exception:
-            raise
+        return await node_runner.execute_node(
+            node_id,
+            node_instance,
+            context=self,
+            build_inputs=self._build_node_inputs,
+            save_outputs=self._save_node_outputs,
+        )
+
+    def _handle_node_success(self, node_id: str, result: dict):
+        """节点成功：置 COMPLETED 并点亮下游端口（顺序固定）。"""
+        dag_state.mark_success(
+            self.node_state,
+            self.output_port_states,
+            node_id,
+            result,
+            self.graph.get("edges", []),
+        )
 
     def _get_port_declared_type(self, node_id: str, direction: str, port_name: str):
         """读节点 schema 中端口的类型声明（支持 union 列表）；动态端口返回 None（视为 any）"""
@@ -383,160 +288,50 @@ class Task:
 
     def _build_node_inputs(self, node_id: str) -> dict:
         """纯文件指针推导，从上游物理文件组装 input（信封化 + 类型硬校验）"""
-        inputs = {}
-        edges = [e for e in self.graph.get("edges", []) if e["target"] == node_id]
-        for edge in edges:
-            src_id = edge["source"]
-            src_port = edge.get("sourceHandle", "default")
-            tgt_port = edge.get("targetHandle", "default")
-
-            if (
-                self.output_port_states.get(src_id, {}).get(src_port)
-                == PortState.HAS_DATA
-            ):
-                outputs_file = os.path.join(
-                    self.checkpoint_dir, "nodes", src_id, "outputs.json"
-                )
-                if os.path.exists(outputs_file):
-                    try:
-                        with open(outputs_file, "r", encoding="utf-8") as f:
-                            src_data = json.load(f)
-                            if src_port in src_data:
-                                raw = src_data[src_port]
-                                # 裸值（旧 checkpoint）惰性包装为信封
-                                declared = self._get_port_declared_type(
-                                    node_id, "inputs", tgt_port
-                                )
-                                env = envelope.coerce(raw, declared)
-                                # 引擎硬校验：any 万能，union 支持交集
-                                ok, err = envelope.check(env, declared)
-                                if not ok:
-                                    raise ValueError(f"端口 [{tgt_port}] {err}")
-                                inputs[tgt_port] = env
-                    except ValueError:
-                        raise
-                    except Exception as e:
-                        self.log("ERROR", f"读取上游 {src_id} 数据失败: {e}", node_id)
-        return inputs
+        return node_io.build_node_inputs(
+            checkpoint_dir=self.checkpoint_dir,
+            graph=self.graph,
+            output_port_states=self.output_port_states,
+            node_id=node_id,
+            declared_type=self._get_port_declared_type,
+            log=self.log,
+        )
 
     # 大内容剥离阈值：声明为 file 的端口，data 超过此长度自动落盘
-    FILE_STRIP_THRESHOLD = 4096
-
-    _MIME_EXT = {
-        "text/html": ".html",
-        "image/svg+xml": ".svg",
-        "text/markdown": ".md",
-        "text/plain": ".txt",
-        "application/pdf": ".pdf",
-        "application/json": ".json",
-    }
+    FILE_STRIP_THRESHOLD = node_io.FILE_STRIP_THRESHOLD
 
     def _save_node_outputs(self, node_id: str, result: dict):
         """节点输出按端口 schema 包装为信封落盘；file 端口大内容自动剥离为文件"""
-        if not result:
-            return
-        out_dir = os.path.join(self.checkpoint_dir, "nodes", node_id)
-        os.makedirs(out_dir, exist_ok=True)
-
-        packed = {}
-        for port, raw in result.items():
-            declared = self._get_port_declared_type(node_id, "outputs", port)
-            env = envelope.coerce(raw, declared)
-            # 声明为 file 且 data 是超大内联字符串 → 剥离到节点 files/ 目录
-            if (
-                declared == "file"
-                and env.get("type") not in ("file",)
-                and isinstance(env.get("data"), str)
-                and len(env["data"]) > self.FILE_STRIP_THRESHOLD
-            ):
-                mime = env.get("mime", "text/plain")
-                ext = self._MIME_EXT.get(mime, ".txt")
-                files_dir = os.path.join(out_dir, "files")
-                os.makedirs(files_dir, exist_ok=True)
-                fname = f"{port}{ext}"
-                with open(os.path.join(files_dir, fname), "w", encoding="utf-8") as f:
-                    f.write(env["data"])
-                uri = envelope.to_task_uri(self.checkpoint_dir, node_id, fname)
-                env = envelope.make("file", uri, mime, {"bytes": len(env["data"])})
-            packed[port] = env
-
-        out_file = os.path.join(out_dir, "outputs.json")
-        try:
-            with open(out_file, "w", encoding="utf-8") as f:
-                json.dump(packed, f, ensure_ascii=False)
-        except Exception as e:
-            self.log("ERROR", f"节点结果落盘失败: {e}", node_id)
+        node_io.save_node_outputs(
+            checkpoint_dir=self.checkpoint_dir,
+            node_id=node_id,
+            result=result,
+            declared_type=lambda port: self._get_port_declared_type(
+                node_id, "outputs", port
+            ),
+            log=self.log,
+            strip_threshold=self.FILE_STRIP_THRESHOLD,
+        )
 
     def _get_runnable_nodes(self) -> List[str]:
-        runnable = []
-        edges = self.graph.get("edges", [])
-
-        for node_id, state in self.node_state.items():
-            if state != NodeState.READY:
-                continue
-
-            incoming_edges = [e for e in edges if e["target"] == node_id]
-
-            # 如果这是一个源头节点（没有任何输入连线），直接可以跑
-            if not incoming_edges:
-                runnable.append(node_id)
-                continue
-
-            all_resolved = True  # 是否所有的上游连线都已经有结果了 (HAS_DATA 或 VOID)
-            has_any_data = False  # 是否收到至少一份有效数据
-
-            for edge in incoming_edges:
-                src_node = edge["source"]
-                src_port = edge.get("sourceHandle", "default")
-
-                # 获取这条线对应的上游端口状态
-                port_state = self.output_port_states.get(src_node, {}).get(
-                    src_port, PortState.PENDING
-                )
-
-                if port_state == PortState.PENDING:
-                    # 只要有一个上游还没跑完，当前节点就继续等
-                    all_resolved = False
-                    break
-                elif port_state == PortState.HAS_DATA:
-                    has_any_data = True
-
-            # 🌟 核心容错逻辑：
-            if all_resolved:
-                if has_any_data:
-                    # 只要有数据，哪怕另外一根线是 VOID 废弃的，我也能被唤醒！(完美解决分支汇聚)
-                    runnable.append(node_id)
-                else:
-                    # 只有所有的线全传来了 VOID，我才确信自己在这个分支里彻底凉了
-                    self._cascade_skip(node_id)
-
-        return runnable
+        return task_scheduler.get_runnable_nodes(self)
 
     def _update_port_states(self, source_node_id: str, outputs: dict):
         """只更新状态红绿灯，坚决不碰载荷数据"""
-        if source_node_id not in self.output_port_states:
-            self.output_port_states[source_node_id] = {}
-        edges = self.graph.get("edges", [])
-        for edge in edges:
-            if edge["source"] == source_node_id:
-                out_port = edge.get("sourceHandle", "default")
-                if outputs and out_port in outputs:
-                    self.output_port_states[source_node_id][out_port] = (
-                        PortState.HAS_DATA
-                    )
-                else:
-                    self.output_port_states[source_node_id][out_port] = PortState.VOID
+        dag_state.update_port_states(
+            self.output_port_states,
+            source_node_id,
+            outputs,
+            self.graph.get("edges", []),
+        )
 
     def _cascade_skip(self, node_id: str):
-        self.node_state[node_id] = NodeState.SKIPPED
-        edges = self.graph.get("edges", [])
-        if node_id not in self.output_port_states:
-            self.output_port_states[node_id] = {}
-
-        for edge in edges:
-            if edge["source"] == node_id:
-                out_port = edge.get("sourceHandle", "default")
-                self.output_port_states[node_id][out_port] = PortState.VOID
+        dag_state.cascade_skip(
+            self.node_state,
+            self.output_port_states,
+            node_id,
+            self.graph.get("edges", []),
+        )
 
     def inject_instruction(
         self, node_id: str, instruction: str, source: str = "user"
@@ -574,30 +369,15 @@ class Task:
             }
 
         # 3. 🌟 新架构：将指令放入 node_memory 的 force_push 队列
-        if node_id not in self.node_memory:
-            self.node_memory[node_id] = {}
-
-        # 确保 force_push 是列表类型
-        if "force_push" not in self.node_memory[node_id]:
-            self.node_memory[node_id]["force_push"] = []
-        elif not isinstance(self.node_memory[node_id]["force_push"], list):
-            self.node_memory[node_id]["force_push"] = []
-
-        self.node_memory[node_id]["force_push"].append(instruction)
-
-        # 4. 注入＝「续跑」而非「重跑」：本节点记忆里已含上游上下文，
+        #    注入＝「续跑」而非「重跑」：本节点记忆里已含上游上下文，
         #    重跑时不能再吸收一次上游 messages，否则上游整段会重复落盘
-        #    （前端会看到同一条 user 消息被发了两遍）
-        self.node_memory[node_id]["skip_upstream"] = True
+        task_state.queue_force_push(self.node_memory, node_id, instruction)
 
-        # 5. 触发正确的级联重置 (is_injection=True，保护当前节点的记忆)
+        # 4. 触发正确的级联重置 (is_injection=True，保护当前节点的记忆)
         self._cascade_reset(node_id, is_injection=True)
 
-        # 6. 唤醒整个任务流
-        # 🌟 修复：任务仍在运行时保持 RUNNING，交给现有引擎消费指令；
-        # 若此处改成 READY，API 层会误判任务已停止而重复拉起第二个引擎，导致双事件循环崩溃
-        if self.state != TaskState.RUNNING:
-            self.state = TaskState.READY
+        # 5. 唤醒整个任务流：运行中保持 RUNNING，避免 API 误判后重复拉起引擎
+        self.state = task_state.wake_state(self.state)
 
         # 🌟 状态极小，直接同步写
         self.save_state()
@@ -636,284 +416,50 @@ class Task:
         记忆不再由 Task 管理，而是由各 AgentNode 自行管理在 nodes/ 目录下。
         """
 
+        def _cancel(task):
+            # 核心修复：使用线程安全的委托调用
+            if self._loop and self._loop.is_running():
+                self._loop.call_soon_threadsafe(task.cancel)
+            else:
+                task.cancel()
+
         with self._lock:
-            queue = deque([(start_node_id, True)])
-            visited = set([start_node_id])
-            edges = self.graph.get("edges", [])
-
-            while queue:
-                curr_id, is_target = queue.popleft()
-
-                # 1. 所有波及的节点，状态统统恢复待命
-                self.node_state[curr_id] = NodeState.READY
-
-                # 2. 清空该节点向外发射的端口状态 (让引擎知道它还没产出新数据)
-                if curr_id in self.output_port_states:
-                    self.output_port_states[curr_id].clear()
-
-                # 3. 打断可能正在苟延残喘的协程
-                task_to_cancel = [
-                    t for t, n in self.running_tasks.items() if n == curr_id
-                ]
-                for t in task_to_cancel:
-                    # 核心修复：使用线程安全的委托调用
-                    if self._loop and self._loop.is_running():
-                        self._loop.call_soon_threadsafe(t.cancel)
-                    else:
-                        t.cancel()
-                    self.running_tasks.pop(t, None)
-
-                # 4. 摧毁物理垃圾：清空自治目录
-                node_dir = os.path.join(self.checkpoint_dir, "nodes", curr_id)
-                if os.path.exists(node_dir):
-                    if is_target and is_injection:
-                        # 如果是指令注入，只删除 outputs.json 触发重算，保留 live_memory
-                        out_file = os.path.join(node_dir, "outputs.json")
-                        if os.path.exists(out_file):
-                            try:
-                                os.remove(out_file)
-                            except Exception:
-                                pass
-                    else:
-                        # 彻底重置：清空整个节点目录
-                        import shutil
-
-                        shutil.rmtree(node_dir, ignore_errors=True)
-
-                # 5. 顺藤摸瓜找下游
-                for edge in edges:
-                    if edge["source"] == curr_id:
-                        target_id = edge["target"]
-                        if target_id not in visited:
-                            visited.add(target_id)
-                            queue.append((target_id, False))
+            reset.cascade_reset(
+                start_node_id=start_node_id,
+                is_injection=is_injection,
+                checkpoint_dir=self.checkpoint_dir,
+                node_state=self.node_state,
+                output_port_states=self.output_port_states,
+                running_tasks=self.running_tasks,
+                edges=self.graph.get("edges", []),
+                cancel_task=_cancel,
+            )
 
     def save_meta(self):
-        """
-        🌟 只在任务创建时调用一次，保存不变的死数据
-        - 静态数据：graph、inputs、task_id 等
-        - 这些数据在任务运行期间绝对不会改变
-        """
-        os.makedirs(self.checkpoint_dir, exist_ok=True)
-        meta_data = {
-            "task_id": self.task_id,
-            "name": getattr(self, "task_name", "unnamed_task"),
-            "graph_name": getattr(self, "graph_name", "default"),
-            "create_time": getattr(self, "create_time", "2025-01-01 00:00:00"),
-            "core": getattr(self, "core", ""),
-            "inputs": self.inputs,
-            "graph": self.graph,  # 前端渲染用的巨无霸，只存一次！
-        }
-        meta_path = os.path.join(self.checkpoint_dir, "meta.json")
-        with open(meta_path, "w", encoding="utf-8") as f:
-            json.dump(meta_data, f, ensure_ascii=False, indent=2)
+        """保存任务创建时不变的静态数据。"""
+        task_persistence.save_meta(self)
 
     def save_state(self):
-        """
-        🌟 在大循环里高频调用，只存状态红绿灯
-        - 数据极小（几百字节），直接同步写毫无感觉
-        - 不再管理 node_memory，由各节点自行管理
-        """
-        os.makedirs(self.checkpoint_dir, exist_ok=True)
-
-        # 🌟 修复：注入线程与引擎线程会并发调用 save_state，用 _io_lock 串行化，防止 state.json 写坏
-        with self._io_lock:
-            self._save_state_unlocked()
+        """高频写状态红绿灯；`_io_lock` 串行化，防止并发写坏 state.json。"""
+        task_persistence.save_state(self)
 
     def _save_state_unlocked(self):
-        dag_state = {
-            n_id: {
-                "state": self.node_state[n_id].value
-                if hasattr(self.node_state[n_id], "value")
-                else self.node_state[n_id]
-            }
-            for n_id in self.node_list
-        }
-
-        state_data = {
-            "task_id": self.task_id,
-            "state": self.state.value if hasattr(self.state, "value") else self.state,
-            "outputs": self.outputs,
-            "total_tokens": self.total_tokens,  # 🌟 落盘：Token消耗
-            "execution_time": round(self.execution_time, 2),  # 🌟 落盘：执行耗时
-            "dag_state": dag_state,
-            "node_state": {
-                k: v.value if hasattr(v, "value") else v
-                for k, v in self.node_state.items()
-            },
-            "output_port_states": {
-                k: {p: s.value if hasattr(s, "value") else s for p, s in ports.items()}
-                for k, ports in self.output_port_states.items()
-            },
-            # 🌟 强制过滤：安检门！只允许极轻量的 force_push 指令落盘，其余全部丢弃
-            "node_memory": {
-                node_id: {"force_push": mem.get("force_push", [])}
-                for node_id, mem in self.node_memory.items()
-            },
-        }
-
-        state_path = os.path.join(self.checkpoint_dir, "state.json")
-        with open(state_path, "w", encoding="utf-8") as f:
-            json.dump(state_data, f, ensure_ascii=False, indent=2)
+        task_persistence.save_state_unlocked(self)
 
     def save(self):
         """兼容旧接口，已废弃，使用 save_meta() 和 save_state() 替代"""
         self.save_state()
 
     def reload(self):
-        """
-        🌟 兼容新旧版本的读档：
-        - 新格式：从 state.json (动态状态) + meta.json (静态元数据) 读取
-        - 过渡格式：从 state.json, graph.json, mailboxes.json 读取
-        - 旧格式：从 checkpoint.json 读取（向后兼容）
-        """
-        # 优先尝试最新格式
-        state_path = os.path.join(self.checkpoint_dir, "state.json")
-        meta_path = os.path.join(self.checkpoint_dir, "meta.json")
-        # 过渡格式文件
-        graph_path = os.path.join(self.checkpoint_dir, "graph.json")
-        mailboxes_path = os.path.join(self.checkpoint_dir, "mailboxes.json")
-        # 旧格式文件
-        old_checkpoint_path = os.path.join(self.checkpoint_dir, "checkpoint.json")
-
-        try:
-            # 最新格式：state.json + meta.json
-            if os.path.exists(state_path) and os.path.exists(meta_path):
-                with open(state_path, "r", encoding="utf-8") as f:
-                    state_data = json.load(f)
-
-                with open(meta_path, "r", encoding="utf-8") as f:
-                    meta_data = json.load(f)
-
-                # 恢复基础状态
-                self.state = TaskState(state_data.get("state", "ready"))
-                if self.state == TaskState.RUNNING:
-                    self.state = TaskState.INTERRUPTED
-
-                # 从 meta.json 恢复静态数据
-                self.create_time = meta_data.get("create_time", "2025-01-01 00:00:00")
-                self.inputs = meta_data.get("inputs", {})
-                self.graph = meta_data.get("graph", self.graph)
-
-                # 恢复引擎核心状态
-                saved_states = state_data.get(
-                    "node_state", state_data.get("dag_state", {})
-                )
-                self.node_state = {}
-                for k, v in saved_states.items():
-                    state_str = v.get("state", "ready") if isinstance(v, dict) else v
-                    if state_str == NodeState.RUNNING.value:
-                        state_str = NodeState.READY.value
-                    self.node_state[k] = NodeState(state_str)
-
-                # 安全恢复嵌套的端口状态
-                self.output_port_states = {}
-                for k, ports in state_data.get("output_port_states", {}).items():
-                    self.output_port_states[k] = {
-                        p: PortState(s) for p, s in ports.items()
-                    }
-
-                # 从 state.json 恢复通信数据
-                self.outputs = state_data.get("outputs", {})
-
-                # 🌟 从磁盘恢复统计信息
-                self.total_tokens = state_data.get("total_tokens", 0)
-                self.execution_time = state_data.get("execution_time", 0.0)
-
-                # node_memory 不再从这里加载，由各 AgentNode 自行加载
-
-            # 过渡格式：state.json + graph.json + mailboxes.json
-            elif os.path.exists(state_path) and os.path.exists(graph_path):
-                with open(state_path, "r", encoding="utf-8") as f:
-                    state_data = json.load(f)
-
-                with open(graph_path, "r", encoding="utf-8") as f:
-                    graph_data = json.load(f)
-
-                self.state = TaskState(state_data.get("state", "ready"))
-                if self.state == TaskState.RUNNING:
-                    self.state = TaskState.INTERRUPTED
-
-                self.create_time = state_data.get("create_time", "2025-01-01 00:00:00")
-
-                saved_states = state_data.get(
-                    "node_state", state_data.get("dag_state", {})
-                )
-                self.node_state = {}
-                for k, v in saved_states.items():
-                    state_str = v.get("state", "ready") if isinstance(v, dict) else v
-                    if state_str == NodeState.RUNNING.value:
-                        state_str = NodeState.READY.value
-                    self.node_state[k] = NodeState(state_str)
-
-                self.output_port_states = {}
-                for k, ports in state_data.get("output_port_states", {}).items():
-                    self.output_port_states[k] = {
-                        p: PortState(s) for p, s in ports.items()
-                    }
-
-                self.graph = graph_data
-
-                if os.path.exists(mailboxes_path):
-                    with open(mailboxes_path, "r", encoding="utf-8") as f:
-                        mailboxes_data = json.load(f)
-                    self.inputs = mailboxes_data.get("inputs", {})
-                    self.outputs = mailboxes_data.get("outputs", {})
-
-            # 旧格式：从 checkpoint.json 读取（向后兼容）
-            elif os.path.exists(old_checkpoint_path):
-                with open(old_checkpoint_path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-
-                self.state = TaskState(data.get("state", "ready"))
-                if self.state == TaskState.RUNNING:
-                    self.state = TaskState.INTERRUPTED
-
-                self.inputs = data.get("inputs", {})
-                self.outputs = data.get("outputs", {})
-                self.graph = data.get("graph", self.graph)
-                self.create_time = data.get("create_time", "2025-01-01 00:00:00")
-
-                saved_states = data.get("node_state", data.get("dag_state", {}))
-                self.node_state = {}
-                for k, v in saved_states.items():
-                    state_str = v.get("state", "ready") if isinstance(v, dict) else v
-                    if state_str == NodeState.RUNNING.value:
-                        state_str = NodeState.READY.value
-                    self.node_state[k] = NodeState(state_str)
-
-                self.output_port_states = {}
-                for k, ports in data.get("output_port_states", {}).items():
-                    self.output_port_states[k] = {
-                        p: PortState(s) for p, s in ports.items()
-                    }
-
-                # 旧格式的 node_memory 需要迁移到新位置
-                self.migrate_old_memory(data.get("node_memory", {}))
-
-            # 🌟 洗洗澡：无论从哪里加载，强行把内存里的 messages 剔除，防止污染新架构
-            for node_id, mem in self.node_memory.items():
-                mem.pop("messages", None)
-
-        except Exception as e:
-            print(f"❌ 读取 Checkpoint 失败: {e}")
+        """兼容新旧版本读档；细节见 task_persistence.reload。"""
+        task_persistence.reload(self)
 
     def migrate_old_memory(self, old_memory: dict):
         """将旧格式的 node_memory 迁移到新的节点自治目录结构"""
-        if not old_memory:
-            return
-
-        from src.harness.node.agent_node import AgentNode
-
-        for node_id, memory_data in old_memory.items():
-            if node_id in self.node_list:
-                node_instance = self.node_list[node_id]
-                if isinstance(node_instance, AgentNode):
-                    # 让 AgentNode 自己处理迁移
-                    node_instance.migrate_old_memory(memory_data, self)
+        task_persistence.migrate_old_memory(self, old_memory)
 
     def kill(self):
-        if self.state in [TaskState.COMPLETED, TaskState.ERROR, TaskState.KILLED]:
+        if not task_state.accepts_kill(self.state):
             return
         self._killed = True
         # 🌟 修复：立即打断所有正在运行的协程，而不是傻等它们跑完当前步骤
@@ -931,17 +477,8 @@ class Task:
     @staticmethod
     def load_checkpoint(checkpoint_dir: str) -> "Task":
         # 🌟 修复：任务复活需要的基础设定（如名字、节点结构）都在 meta.json 里
-        meta_path = os.path.join(checkpoint_dir, "meta.json")
-        old_checkpoint_path = os.path.join(checkpoint_dir, "checkpoint.json")
-
-        data = {}
-        if os.path.exists(meta_path):
-            with open(meta_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-        elif os.path.exists(old_checkpoint_path):
-            with open(old_checkpoint_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-        else:
+        data = checkpoint_io.read_task_descriptor(checkpoint_dir)
+        if data is None:
             return None
 
         task_id = data.get("task_id")
