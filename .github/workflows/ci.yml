@@ -50,7 +50,7 @@ jobs:
           CHANGED_FILES=$(git diff --name-only "$BASE" HEAD)
           
           # Refactored: Replaced environment.yml with pyproject.toml and uv.lock for uv-based tracking
-          if echo "$CHANGED_FILES" | grep -qE "^(src/|main\.py|pyproject\.toml|uv\.lock|scripts/)"; then
+          if echo "$CHANGED_FILES" | grep -qE "^(src/|tests/|main\.py|pyproject\.toml|uv\.lock|scripts/|docs/api/)"; then
             echo "python_changed=true" >> "$GITHUB_OUTPUT"
           else
             echo "python_changed=false" >> "$GITHUB_OUTPUT"
@@ -107,6 +107,31 @@ jobs:
           console.log('electron-builder config OK');
           "
 
+  python-tests:
+    name: Python Tests (L0/L1/L3)
+    needs: [preflight]
+    if: needs.preflight.outputs.python_changed == 'true' || needs.preflight.outputs.electron_changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Sync Dependencies
+        run: uv sync --locked --group dev
+
+      - name: Unit + Integration (L0/L1)
+        run: uv run pytest -m "l0 or l1"
+
+      - name: Static Guardrails (L3)
+        run: uv run pytest -m l3
+
   security-check:
     name: Security Check
     runs-on: ubuntu-latest
@@ -122,24 +147,27 @@ jobs:
 
   ci-summary:
     name: CI Summary
-    needs: [preflight, electron-check, security-check]
+    needs: [preflight, electron-check, python-tests, security-check]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
       - name: Check CI Results
         env:
           ELECTRON_RESULT: ${{ needs.electron-check.result }}
+          PYTHON_RESULT: ${{ needs.python-tests.result }}
           SECURITY_RESULT: ${{ needs.security-check.result }}
         run: |
           set -euo pipefail
           
           echo "=== CI Summary ==="
           echo "Electron Check: $ELECTRON_RESULT"
+          echo "Python Tests: $PYTHON_RESULT"
           echo "Security Check: $SECURITY_RESULT"
           
           FAILED_JOBS=()
           
           if [ "$ELECTRON_RESULT" = "failure" ] && [ "${{ needs.preflight.outputs.electron_changed }}" = "true" ]; then FAILED_JOBS+=("electron-check"); fi
+          if [ "$PYTHON_RESULT" = "failure" ]; then FAILED_JOBS+=("python-tests"); fi
           if [ "$SECURITY_RESULT" = "failure" ]; then FAILED_JOBS+=("security-check"); fi
           
           if [ ${#FAILED_JOBS[@]} -gt 0 ]; then

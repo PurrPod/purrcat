@@ -123,7 +123,9 @@ class RuntimeStateTests(unittest.TestCase):
         with open(blocker, "w", encoding="utf-8") as handle:
             handle.write("x")
         # 父路径是个普通文件：makedirs 必然失败，只允许返回 False 不能抛出
-        self.assertFalse(write_runtime_state(8000, os.path.join(blocker, "runtime.json")))
+        self.assertFalse(
+            write_runtime_state(8000, os.path.join(blocker, "runtime.json"))
+        )
 
     def test_read_missing_file_returns_none(self) -> None:
         self.assertIsNone(read_runtime_port(self.state_path))
@@ -141,7 +143,12 @@ class RuntimeStateTests(unittest.TestCase):
                 self.assertIsNone(read_runtime_port(self.state_path))
 
     def test_read_accepts_boundary_and_string_ports(self) -> None:
-        for value, expected in ((1, 1), (65535, 65535), ("8001", 8001), (" 8001 ", 8001)):
+        for value, expected in (
+            (1, 1),
+            (65535, 65535),
+            ("8001", 8001),
+            (" 8001 ", 8001),
+        ):
             with self.subTest(value=value):
                 self._write_json({"api_port": value})
                 self.assertEqual(read_runtime_port(self.state_path), expected)
@@ -183,7 +190,21 @@ class AcpRelayPortTests(unittest.TestCase):
         for value in (1, 65535, "8000", " 8001 "):
             with self.subTest(value=value):
                 self.assertIsNotNone(self.relay._valid_port(value))
-        for value in (0, -1, 65536, "0", "65536", "abc", "", "  ", True, False, 1.0, None, "8000a"):
+        for value in (
+            0,
+            -1,
+            65536,
+            "0",
+            "65536",
+            "abc",
+            "",
+            "  ",
+            True,
+            False,
+            1.0,
+            None,
+            "8000a",
+        ):
             with self.subTest(value=value):
                 self.assertIsNone(self.relay._valid_port(value))
 
@@ -200,17 +221,24 @@ class AcpRelayPortTests(unittest.TestCase):
     def test_invalid_env_falls_back_to_runtime(self) -> None:
         for env_port in ("", "  ", "99999", "0", "abc"):
             with self.subTest(env_port=env_port):
-                self.assertEqual(self.relay.pick_backend_port(env_port, 8001, 8000), 8001)
+                self.assertEqual(
+                    self.relay.pick_backend_port(env_port, 8001, 8000), 8001
+                )
 
     def test_invalid_runtime_falls_back_to_settings(self) -> None:
         for runtime_port in (None, "", "abc", 0, 65536, True, 1.0, {"port": 8001}):
             with self.subTest(runtime_port=runtime_port):
-                self.assertEqual(self.relay.pick_backend_port(None, runtime_port, 8000), 8000)
+                self.assertEqual(
+                    self.relay.pick_backend_port(None, runtime_port, 8000), 8000
+                )
 
     def test_invalid_settings_falls_back_to_default(self) -> None:
         for settings_port in (None, "", "abc", 0, 65536, True, 1.0):
             with self.subTest(settings_port=settings_port):
-                self.assertEqual(self.relay.pick_backend_port(None, None, settings_port), DEFAULT_API_PORT)
+                self.assertEqual(
+                    self.relay.pick_backend_port(None, None, settings_port),
+                    DEFAULT_API_PORT,
+                )
 
     def test_priority_is_by_source_not_by_port_size(self) -> None:
         # runtime 里的 8000 同样胜过 settings 里的 9000：先看来源，不比数值
@@ -231,11 +259,15 @@ class AcpRelayPortTests(unittest.TestCase):
             self.assertIsNone(self.relay._read_runtime_port(home_path))  # 缺字段
             runtime_file.write_text('{"api_port": 8001}', encoding="utf-8")
             self.assertEqual(
-                self.relay.pick_backend_port(None, self.relay._read_runtime_port(home_path), 8000),
+                self.relay.pick_backend_port(
+                    None, self.relay._read_runtime_port(home_path), 8000
+                ),
                 8001,
             )
 
-    def _fake_home(self, home: str, *, runtime: str | None = None, settings: str | None = None) -> None:
+    def _fake_home(
+        self, home: str, *, runtime: str | None = None, settings: str | None = None
+    ) -> None:
         config_dir = Path(home) / ".purrcat"
         config_dir.mkdir(parents=True, exist_ok=True)
         (config_dir / "acp_token").write_text("tok\n", encoding="utf-8")
@@ -245,7 +277,9 @@ class AcpRelayPortTests(unittest.TestCase):
             (config_dir / "settings.json").write_text(settings, encoding="utf-8")
 
     def _discover_with_home(self, home: str):
-        with mock.patch.dict(os.environ, {"HOME": home, "USERPROFILE": home}, clear=False):
+        with mock.patch.dict(
+            os.environ, {"HOME": home, "USERPROFILE": home}, clear=False
+        ):
             os.environ.pop("PURRCAT_ACP_PORT", None)
             os.environ.pop("PURRCAT_ACP_TOKEN", None)
             return self.relay.discover()
@@ -253,7 +287,11 @@ class AcpRelayPortTests(unittest.TestCase):
     def test_discover_prefers_runtime_over_settings(self) -> None:
         # 端口 fallback 后的真实场景：后端在 8007，settings 里的期望值仍是 8000
         with tempfile.TemporaryDirectory() as home:
-            self._fake_home(home, runtime='{"api_port": 8007, "pid": 1}', settings='{"acp_port": 8000}')
+            self._fake_home(
+                home,
+                runtime='{"api_port": 8007, "pid": 1}',
+                settings='{"acp_port": 8000}',
+            )
             base, token = self._discover_with_home(home)
             self.assertEqual(base, "http://127.0.0.1:8007")
             self.assertEqual(token, "tok")
@@ -272,8 +310,12 @@ class AcpRelayPortTests(unittest.TestCase):
 
     def test_discover_env_overrides_runtime_file(self) -> None:
         with tempfile.TemporaryDirectory() as home:
-            self._fake_home(home, runtime='{"api_port": 8007}', settings='{"acp_port": 8000}')
-            with mock.patch.dict(os.environ, {"HOME": home, "USERPROFILE": home}, clear=False):
+            self._fake_home(
+                home, runtime='{"api_port": 8007}', settings='{"acp_port": 8000}'
+            )
+            with mock.patch.dict(
+                os.environ, {"HOME": home, "USERPROFILE": home}, clear=False
+            ):
                 os.environ["PURRCAT_ACP_PORT"] = "9000"
                 os.environ.pop("PURRCAT_ACP_TOKEN", None)
                 base, _ = self.relay.discover()

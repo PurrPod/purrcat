@@ -73,13 +73,16 @@ uv run python main.py --api --headless --api-port 8000   # 只起后端
 提交前按需执行：
 
 ```powershell
-ruff check src/ scripts/
-ruff format --check src/ scripts/
+ruff check src/ scripts/ tests/
+ruff format --check src/ scripts/ tests/
 python scripts/check_api_docs.py      # 改了 src/server 必跑
 node --check electron/main.js
 npm run typecheck && npm run build:ui
-python -m pytest tests/test_api_port.py
+uv run pytest -m "l0 or l1"           # L0 单元 + L1 集成
+uv run pytest -m l3                   # L3 静态红线
 ```
+
+测试按 `tests/l0`（单元）、`tests/l1`（集成）、`tests/l3`（静态红线）分层，L2 桌面 E2E 手动运行。新增功能先在 `tests/specs/` 写 spec，流程见 [AGENTS.md](../../AGENTS.md)。
 
 ## 分册
 

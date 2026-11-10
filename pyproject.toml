@@ -37,7 +37,20 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["pyinstaller>=6.0"]
+dev = [
+    "pyinstaller>=6.0",
+    "pytest>=8.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+markers = [
+    "l0: 单元测试，纯逻辑，秒级，不碰网络/模型/Electron",
+    "l1: 集成测试，跨模块，fake 边界，临时数据目录",
+    "l2: 桌面 E2E，Electron，手动或夜间运行，不进 PR 门禁",
+    "l3: 静态红线与契约检查，源码扫描、文档同步",
+]
 
 [tool.ruff]
 target-version = "py310"

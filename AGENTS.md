@@ -23,15 +23,46 @@ npm run installer:dev          # 独立安装器
 提交前按需执行：
 
 ```powershell
-ruff check src/ scripts/
-ruff format --check src/ scripts/
+ruff check src/ scripts/ tests/
+ruff format --check src/ scripts/ tests/
 python scripts/check_api_docs.py
 node --check electron/main.js
 npm run typecheck && npm run build:ui
-python -m pytest tests/test_api_port.py
+uv run pytest -m "l0 or l1"     # 单元 + 集成
+uv run pytest -m l3             # 静态红线
 ```
 
 `assets/host.js` 与 `host.js.map` 是构建产物，必须与源码同一次提交；CI 会重建并比对。
+
+## 测试分层与 TDD
+
+- L0 `tests/l0/`：纯逻辑单元，秒级，不碰网络、模型与 Electron。
+- L1 `tests/l1/`：跨模块集成，用 `tests/support/fakes.py` 的替身与 `tmp_path`，不读写真实 `~/.purrcat`。
+- L2 桌面 E2E：手动或夜间运行，不进 PR 门禁。
+- L3 `tests/l3/`：静态红线与契约检查（Electron 安全、TS strict、API 文档同步）。
+
+改动流程：
+
+1. 新增功能或跨模块改动：先在 `tests/specs/` 写 spec（模板 `_TEMPLATE.md`），再写预期失败的测试。
+2. 修复 bug：可省略 spec，但必须先写一条能复现问题的失败测试。
+3. 确认测试为红后再实现；完成后跑 `uv run pytest -m "l0 or l1"`，涉及红线再跑 L3。
+4. 禁止为了变绿删除用例、放宽断言或新增 skip；确需调整测试须在提交说明中写明原因。
+5. 存量功能不强制补测；改到哪补哪，优先把下方“红线与已知坑”变成断言。
+
+## 功能删除清单
+
+功能下线时在同一次改动内完成，不拆到后续 PR：
+
+| 对象 | 动作 |
+| --- | --- |
+| 功能代码 / 路由 / 配置项 / 插件入口 | 删除 |
+| 对应 L0/L1/L3 用例 | 删除 |
+| 仅被该用例使用的 fixture、helper、fake 方法 | 删除 |
+| spec（`tests/specs/`） | 删除；有决策价值时标记 `Obsolete` |
+| `docs/api`、README、CHANGELOG | 同步 |
+
+判断：删功能后测试仍绿，说明它没测到行为边界，需审查后删除或改写。
+禁止用永久 `skip`/`xfail` 掩盖失效用例；确需挂起必须带 `reason=` 且包含任务编号。
 
 ## 红线与已知坑
 
