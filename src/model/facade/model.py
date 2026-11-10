@@ -2,7 +2,7 @@ from src.model.core.llm_client import LLMClient
 from src.model.manager.concurrency import get_key_semaphore
 from src.model.manager.key_manager import key_manager
 from src.model.manager.usage_tracer import usage_tracer
-from src.utils.config import get_model_config
+from src.utils.config import get_main_model_config, get_model_config
 import time
 
 
@@ -131,23 +131,31 @@ class Model:
 class AgentModel(Model):
     """全局 Agent 的专属大模型客户端，从 main 字段读取唯一 API"""
 
+    @staticmethod
+    def _pick_api_key(model_cfg: dict) -> str | None:
+        """优先 api_key，其次取 api_keys 里第一个非空值。"""
+        api_key = model_cfg.get("api_key")
+        if api_key:
+            return api_key
+        api_keys = model_cfg.get("api_keys") or []
+        valid_keys = [k for k in api_keys if k and k.strip()]
+        return valid_keys[0] if valid_keys else None
+
+    def _apply_model_config(self, model_name: str, model_cfg: dict) -> None:
+        self.model_name = model_name
+        self.base_url = model_cfg.get("base_url")
+        self.api_key = self._pick_api_key(model_cfg)
+        # 🌟 vision 直注开关：主 Agent 模型支持视觉时，工具输出图片直接注入对话
+        self.vision = bool(model_cfg.get("vision", False))
+
     def __init__(self, task_id: str = None):
         from src.utils.config import get_agent_model
 
         model_name = get_agent_model()
-        model_cfg = get_model_config().get("main", {}).get(model_name, {})
+        model_cfg = get_main_model_config(model_name)
 
-        self.model_name = model_name
         self.task_id = task_id or "default_task"
-        self.base_url = model_cfg.get("base_url")
-        self.api_key = model_cfg.get("api_key")
-        # 🌟 vision 直注开关：主 Agent 模型支持视觉时，工具输出图片直接注入对话
-        self.vision = bool(model_cfg.get("vision", False))
-
-        if not self.api_key:
-            api_keys = model_cfg.get("api_keys") or []
-            valid_keys = [k for k in api_keys if k and k.strip()]
-            self.api_key = valid_keys[0] if valid_keys else None
+        self._apply_model_config(model_name, model_cfg)
 
         # 🌟 惰性初始化：全新安装尚未配置 API Key 时不再抛异常（曾导致后端
         # 启动即崩、桌面端白屏）。后端正常启动，用户在配置中心填写并保存后，
@@ -183,19 +191,12 @@ class AgentModel(Model):
         from src.utils.config import get_agent_model
 
         model_name = get_agent_model()
-        model_cfg = get_model_config().get("main", {}).get(model_name, {})
-        api_key = model_cfg.get("api_key")
-        if not api_key:
-            api_keys = model_cfg.get("api_keys") or []
-            valid = [k for k in api_keys if k and k.strip()]
-            api_key = valid[0] if valid else None
+        model_cfg = get_main_model_config(model_name)
+        api_key = self._pick_api_key(model_cfg)
         base_url = model_cfg.get("base_url")
 
         if api_key and base_url:
-            self.model_name = model_name
-            self.base_url = base_url
-            self.api_key = api_key
-            self.vision = bool(model_cfg.get("vision", False))
+            self._apply_model_config(model_name, model_cfg)
             self._init_client(model_cfg)
             return
 

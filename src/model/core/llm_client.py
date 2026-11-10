@@ -1,13 +1,13 @@
-import random
 import time
 import traceback
 
-from openai import (
-    APIError,
-    APIConnectionError,
-    InternalServerError,
-    OpenAI,
-    RateLimitError,
+from openai import APIError, OpenAI, RateLimitError
+
+from src.model.core.retry import (
+    MAX_RETRIES,
+    backoff_seconds,
+    is_retryable_error,
+    strip_model_prefix,
 )
 
 
@@ -36,16 +36,13 @@ class LLMClient:
         **kwargs,
     ):
         """执行同步阻塞请求，处理限速和退避；cancel_event 置位时立即中止重试"""
-        max_retries = 8
-        base_delay = 2.0
-        if ":" in model_name:
-            model_name = model_name.split(":")[1]
+        model_name = strip_model_prefix(model_name)
         request_params = {"model": model_name, "messages": messages}
         if tools:
             request_params["tools"] = tools
         request_params.update(kwargs)
 
-        for attempt in range(max_retries):
+        for attempt in range(MAX_RETRIES):
             if cancel_event is not None and cancel_event.is_set():
                 log(f"🛑 任务 {task_id} 检测到用户打断信号，放弃后续重试")
                 raise InterruptedError(f"cancelled: 任务 {task_id} 被用户打断")
@@ -54,24 +51,11 @@ class LLMClient:
                     time.sleep(0.2)
                     return self.client.chat.completions.create(**request_params)
             except (RateLimitError, APIError) as e:
-                error_msg = str(e).lower()
-                # 判断是否属于需要重试的异常类型（限速、连接断开、服务端崩溃/网关错误）
-                is_retryable = (
-                    "rate limit" in error_msg
-                    or "429" in error_msg
-                    or "too many requests" in error_msg
-                    or isinstance(e, (APIConnectionError, InternalServerError))
-                    or "502" in error_msg
-                    or "503" in error_msg
-                    or "504" in error_msg
-                )
-
-                if is_retryable:
-                    if attempt == max_retries - 1:
+                if is_retryable_error(e):
+                    if attempt == MAX_RETRIES - 1:
                         log(f"❌ 任务 {task_id} 触发限速或网络中断，已达最大重试次数")
                         raise Exception(f"RetryLimitExceeded: {e}")
-                    jitter = random.uniform(0.8, 1.2)
-                    sleep_time = base_delay * (2**attempt) * jitter
+                    sleep_time = backoff_seconds(attempt)
                     log(
                         f"⏳ 任务 {task_id} 遇到临时网络异常 ({type(e).__name__})，退避休眠 {sleep_time:.1f} 秒后重试..."
                     )
