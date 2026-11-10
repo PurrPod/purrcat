@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -75,6 +76,7 @@ def test_extract_ignores_non_file_targets(agent_vm):
     assert file_refs.extract_file_paths(text) == []
 
 
+@pytest.mark.skipif(os.name != "nt", reason="盘符路径只在 Windows 具有绝对路径语义")
 def test_extract_accepts_windows_absolute_path(tmp_path):
     target = tmp_path / "win.txt"
     target.write_text("x", encoding="utf-8")

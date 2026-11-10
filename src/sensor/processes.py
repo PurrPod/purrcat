@@ -6,6 +6,10 @@
 import os
 import subprocess
 
+_IS_WINDOWS = os.name == "nt"
+# 非 Windows 解释器没有该常量，置 0 便于在 Linux/macOS 上单测 Windows 分支
+_CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+
 # 父进程（桌面壳 venv）透传的 Python 环境变量，会让 uv 子进程解释器版本错配
 PYTHON_ENV_KEYS = (
     "PYTHONHOME",
@@ -53,11 +57,11 @@ def kill_process_tree(process) -> None:
     重连外部服务（如飞书 WS）抢占事件，且其 stdout 已无人监听，事件会被静默吞掉。
     """
     try:
-        if os.name == "nt":
+        if _IS_WINDOWS:
             subprocess.run(
                 ["taskkill", "/PID", str(process.pid), "/T", "/F"],
                 capture_output=True,
-                creationflags=subprocess.CREATE_NO_WINDOW,
+                creationflags=_CREATE_NO_WINDOW,
             )
         else:
             process.terminate()

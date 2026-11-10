@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import subprocess
 
 import pytest
@@ -75,7 +74,7 @@ def test_close_stdin_handles_missing_and_closed_pipes():
 
 def test_kill_process_tree_uses_taskkill_on_windows(monkeypatch):
     calls = []
-    monkeypatch.setattr(os, "name", "nt")
+    monkeypatch.setattr(processes, "_IS_WINDOWS", True)
     monkeypatch.setattr(subprocess, "run", lambda *a, **kw: calls.append((a, kw)))
     proc = _FakeProcess()
 
@@ -86,7 +85,7 @@ def test_kill_process_tree_uses_taskkill_on_windows(monkeypatch):
 
 
 def test_kill_process_tree_terminates_on_posix(monkeypatch):
-    monkeypatch.setattr(os, "name", "posix")
+    monkeypatch.setattr(processes, "_IS_WINDOWS", False)
 
     class _Proc(_FakeProcess):
         terminated = False

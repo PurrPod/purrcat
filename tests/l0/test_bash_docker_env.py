@@ -60,7 +60,9 @@ def test_normalize_mount_path_handles_drive_style_and_case():
 
     assert _shared.normalize_mount_path("D:/work") == expected
     assert _shared.normalize_mount_path("/d/work") == expected
-    assert _shared.normalize_mount_path("d:\\WORK") == expected
+    if os.name == "nt":
+        # 反斜杠是 Windows 原生分隔符；POSIX 上它只是普通字符，不做归一化
+        assert _shared.normalize_mount_path("d:\\WORK") == expected
 
 
 def test_exit_hook_skips_docker_when_no_sandbox_was_created(monkeypatch):
