@@ -6,7 +6,6 @@ tools_registry / tools_validation / tools_serialization / tools_market。
 
 from __future__ import annotations
 
-import json
 import os
 import shutil
 import threading
@@ -20,6 +19,7 @@ from src.tool.search.mcp_search import MCPSearcher, rebuild_vectors_async
 from src.tool.search.skill_search import SkillSearcher, rebuild_skill_vectors_async
 from src.tool.cron.cron_operations import list_crons, add_cron, delete_cron
 
+from src.utils._fs import write_json_atomic
 from src.utils.config import (
     AGENT_CORE_DIR,
     GRAPHS_DIR,
@@ -396,10 +396,7 @@ def save_heartbeat_api(req: HeartbeatReq):
 
         # 再落盘心跳配置（原子写入）
         cfg = heartbeat_payload(req.interval, req.active, MIN_INTERVAL)
-        tmp_file = HEARTBEAT_FILE + ".tmp"
-        with open(tmp_file, "w", encoding="utf-8") as f:
-            json.dump(cfg, f, indent=2, ensure_ascii=False)
-        os.replace(tmp_file, HEARTBEAT_FILE)
+        write_json_atomic(HEARTBEAT_FILE, cfg)
         return {"status": "success", "data": cfg}
     except HTTPException:
         raise

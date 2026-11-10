@@ -14,6 +14,7 @@ import os
 import threading
 import time
 
+from src.utils._fs import write_json_atomic
 from src.utils.config import AGENT_CORE_DIR, GOAL_MD_PATH, HEARTBEAT_FILE
 
 # 最短心跳间隔（秒）
@@ -69,10 +70,7 @@ class HeartbeatManager:
             self._write_config({"interval": 1800, "active": False})
 
     def _write_config(self, cfg: dict):
-        tmp = HEARTBEAT_FILE + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(cfg, f, indent=2, ensure_ascii=False)
-        os.replace(tmp, HEARTBEAT_FILE)
+        write_json_atomic(HEARTBEAT_FILE, cfg)
 
     def get_config(self) -> dict:
         """读取心跳配置（mtime 变化时重载，供管理线程与 API 共用）"""

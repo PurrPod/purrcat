@@ -26,7 +26,7 @@ import shutil
 import subprocess
 import threading
 
-from src.utils._fs import read_json
+from src.utils._fs import read_json, write_json_atomic
 from src.utils.config import PURRCAT_DIR
 from src.server.api.plugin_runtime_support import (
     NODE as _NODE,
@@ -204,12 +204,8 @@ def _read_deps_state(plugin_id: str) -> dict:
 
 
 def _write_deps_state(plugin_id: str, fingerprint: str):
-    os.makedirs(_DEPS_STATE_DIR, exist_ok=True)
     path = _deps_state_path(plugin_id)
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump({"fingerprint": fingerprint}, f)
-    os.replace(tmp, path)
+    write_json_atomic(path, {"fingerprint": fingerprint}, indent=None)
 
 
 def _run_npm(args: list, cwd: str) -> subprocess.CompletedProcess:

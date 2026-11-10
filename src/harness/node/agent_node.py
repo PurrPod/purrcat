@@ -10,6 +10,7 @@ from src.harness.utils.tool_helper import (
     extract_tool_calling,
 )
 from src.tool.utils.route import extract_tool_message_content
+from src.utils._fs import read_jsonl
 
 from json_repair import repair_json
 
@@ -119,28 +120,22 @@ class AgentNode(BaseNode):
     def load_memory_from_file(self, context) -> List[Dict]:
         """从 JSONL 文件加载对话历史（追加写入格式）"""
         memory_path = self.get_memory_file_path(context)
-        messages = []
+        if not os.path.exists(memory_path):
+            return []
 
-        if os.path.exists(memory_path):
-            try:
-                with open(memory_path, "r", encoding="utf-8") as f:
-                    for line in f:
-                        line = line.strip()
-                        if not line:
-                            continue
-                        try:
-                            messages.append(json.loads(line))
-                        except json.JSONDecodeError:
-                            # 🌟 修复：并发追加可能产生残行，跳过而不是让节点每次重启都崩溃
-                            self.log(
-                                context,
-                                "WARNING",
-                                f"⚠️ [记忆残行] 跳过无法解析的行: {line[:80]}",
-                            )
-            except Exception as e:
-                self.log(context, "WARNING", f"⚠️ [记忆加载失败] {e}")
+        def _warn_broken_line(line: str):
+            # 并发追加可能产生残行，跳过而不是让节点每次重启都崩溃
+            self.log(
+                context,
+                "WARNING",
+                f"⚠️ [记忆残行] 跳过无法解析的行: {line[:80]}",
+            )
 
-        return messages
+        try:
+            return read_jsonl(memory_path, on_error=_warn_broken_line)
+        except Exception as e:
+            self.log(context, "WARNING", f"⚠️ [记忆加载失败] {e}")
+            return []
 
     def append_memory_to_file(self, context, new_messages: List[Dict]):
         """追加写入新消息到 JSONL 文件（O(1) 复杂度）"""

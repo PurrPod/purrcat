@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from src.utils import _fs
 
 
@@ -44,6 +46,43 @@ def test_api_common_read_json_file_delegates(tmp_path):
 
     assert read_json_file(str(target)) == {"id": "x"}
     assert read_json_file(str(tmp_path / "missing.json"), {}) == {}
+
+
+def test_read_jsonl_skips_blank_and_broken_lines(tmp_path):
+    target = tmp_path / "log.jsonl"
+    target.write_text('{"a": 1}\n\n{broken\n{"b": 2}\n', encoding="utf-8")
+
+    assert _fs.read_jsonl(str(target)) == [{"a": 1}, {"b": 2}]
+
+    broken: list[str] = []
+    assert _fs.read_jsonl(str(target), on_error=broken.append) == [
+        {"a": 1},
+        {"b": 2},
+    ]
+    assert broken == ["{broken"]
+
+
+def test_read_jsonl_propagates_missing_file(tmp_path):
+    with pytest.raises(FileNotFoundError):
+        _fs.read_jsonl(str(tmp_path / "missing.jsonl"))
+
+
+def test_write_json_atomic_replaces_and_cleans_temp(tmp_path):
+    target = tmp_path / "state.json"
+
+    _fs.write_json_atomic(str(target), {"n": 1})
+    _fs.write_json_atomic(str(target), {"n": 2, "猫": True})
+
+    assert json.loads(target.read_text(encoding="utf-8")) == {"n": 2, "猫": True}
+    assert [p.name for p in tmp_path.iterdir()] == ["state.json"]
+
+
+def test_write_json_atomic_supports_compact_output(tmp_path):
+    target = tmp_path / "deps.json"
+
+    _fs.write_json_atomic(str(target), {"fingerprint": "abc"}, indent=None)
+
+    assert target.read_text(encoding="utf-8") == '{"fingerprint": "abc"}'
 
 
 def test_find_child_dir_by_token_returns_first_match(tmp_path):

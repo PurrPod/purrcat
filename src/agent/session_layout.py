@@ -6,6 +6,8 @@ import json
 import os
 from typing import Any
 
+from src.utils._fs import write_json_atomic as _write_json_atomic
+
 MAIN_BRANCH = "main"
 META_FILENAME = "meta.json"
 MEMO_FILENAME = "memo.json"
@@ -58,7 +60,4 @@ def write_json(path: str, payload: Any) -> None:
 
 
 def write_json_atomic(path: str, payload: Any) -> None:
-    temp_path = f"{path}.tmp"
-    with open(temp_path, "w", encoding="utf-8") as f:
-        json.dump(payload, f, ensure_ascii=False, indent=2)
-    os.replace(temp_path, path)
+    _write_json_atomic(path, payload)

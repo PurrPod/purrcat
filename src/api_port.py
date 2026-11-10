@@ -6,6 +6,8 @@ import json
 import os
 import socket
 
+from src.utils._fs import write_json_atomic
+
 DEFAULT_API_PORT = 8000
 DEFAULT_SCAN_ATTEMPTS = 50
 
@@ -131,12 +133,8 @@ def write_runtime_state(port: object, path: str | None = None) -> bool:
 
     target = path or runtime_state_path()
     payload = {"api_port": parsed, "pid": os.getpid()}
-    tmp = f"{target}.tmp"
     try:
-        os.makedirs(os.path.dirname(target), exist_ok=True)
-        with open(tmp, "w", encoding="utf-8") as handle:
-            json.dump(payload, handle, ensure_ascii=False)
-        os.replace(tmp, target)
+        write_json_atomic(target, payload, indent=None)
     except Exception:
         return False
     return True

@@ -4,7 +4,7 @@ import json
 import os
 from datetime import datetime
 
-from src.utils._fs import find_child_dir_by_token
+from src.utils._fs import find_child_dir_by_token, read_jsonl
 from src.utils.config import DATA_DIR
 
 DEFAULT_CREATE_TIME = "2025-01-01 00:00:00"
@@ -124,20 +124,12 @@ def find_task_file(task_id: str, filename: str) -> str | None:
 
 
 def read_log_entries(path: str) -> list:
-    logs = []
     if not os.path.exists(path):
-        return logs
+        return []
     try:
-        with open(path, "r", encoding="utf-8") as f:
-            for line in f:
-                if line.strip():
-                    try:
-                        logs.append(json.loads(line))
-                    except json.JSONDecodeError:
-                        continue
-    except Exception:
-        pass
-    return logs
+        return read_jsonl(path)
+    except OSError:
+        return []
 
 
 def read_history(task_id: str) -> list:

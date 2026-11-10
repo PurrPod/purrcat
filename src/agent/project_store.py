@@ -5,6 +5,7 @@ import threading
 import time
 import uuid
 
+from src.utils._fs import write_json_atomic
 from src.utils.config import PROJECT_INDEX_PATH, PROJECTS_DIR
 
 
@@ -69,11 +70,8 @@ class ProjectStore:
     @classmethod
     def _save_index(cls, projects):
         with cls._index_lock:
-            temp_path = f"{PROJECT_INDEX_PATH}.tmp"
             try:
-                with open(temp_path, "w", encoding="utf-8") as f:
-                    json.dump({"projects": projects}, f, ensure_ascii=False, indent=2)
-                os.replace(temp_path, PROJECT_INDEX_PATH)
+                write_json_atomic(PROJECT_INDEX_PATH, {"projects": projects})
             except Exception as e:
                 print(f"[Warn] 保存项目索引失败: {e}")
 

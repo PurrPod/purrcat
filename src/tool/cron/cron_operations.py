@@ -13,6 +13,7 @@ from src.tool.cron.exceptions import (
     InvalidRepeatRuleError,
     InvalidTimeFormatError,
 )
+from src.utils._fs import write_json_atomic
 from src.utils.config import CRON_FILE
 
 # 【修复】全局锁，保护 JSON 文件的并发读写
@@ -38,13 +39,10 @@ def _write_json(filepath: str, data: List[Dict[str, Any]]):
     """原子写入 JSON 文件
 
     System Clock 是独立进程，会同时读写 cron.json。直接 `open(..., "w")`
-    会让对方在写入途中读到半截 JSON；用 tmp + os.replace 保证读者只能看到
-    完整的旧版本或完整的新版本。
+    会让对方在写入途中读到半截 JSON；原子替换保证读者只能看到完整的
+    旧版本或完整的新版本。
     """
-    tmp = f"{filepath}.{os.getpid()}.tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-    os.replace(tmp, filepath)
+    write_json_atomic(filepath, data)
 
 
 def _find_cron_index(crons: List[Dict[str, Any]], identifier: str) -> int:

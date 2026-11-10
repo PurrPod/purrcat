@@ -8,6 +8,7 @@ import uuid
 from typing import Any, List
 
 from src.model.facade import Model
+from src.utils._fs import read_jsonl
 from src.utils.config import DATA_DIR
 
 from . import checkpoint as checkpoint_io
@@ -508,18 +509,10 @@ class Task:
         return task
 
     def get_logs(self):
-        logs = []
         log_path = os.path.join(self.checkpoint_dir, "log.jsonl")
-        if os.path.exists(log_path):
-            with open(log_path, "r", encoding="utf-8") as f:
-                for line in f:
-                    line = line.strip()
-                    if line:
-                        try:
-                            logs.append(json.loads(line))
-                        except Exception:
-                            pass
-        return logs
+        if not os.path.exists(log_path):
+            return []
+        return read_jsonl(log_path)
 
     def get_injectable_nodes_info(self) -> list:
         """返回支持注入的节点信息 (结构化 List)，供前端渲染或 Agent 工具格式化"""
