@@ -4,6 +4,86 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1]
+
+A follow-up to 1.1.0 with project workspaces, sidebar and chat-header improvements, a graphical installer, a local rendered-fetch path, and a deep internal refactor: the backend packages are split into focused modules, and the HTTP API reference is now generated from the FastAPI schema instead of being maintained by hand.
+
+**English**
+
+### Added
+
+- **Projects**: a project store with REST API and session ownership, sidebar project groups with a quick bar, search and draft naming, and agent access to project memory files.
+- **Chat header and rail**: recent-session switcher, new-session/branch toggles, scrollable dropdowns, the session title above its history, rail icons grouped by slot area with settings pinned at the bottom, and switching fixed slot plugins from the rail menu.
+- **Pending-request todo list** in the sessions sidebar.
+- **Composer file input**: paste or drop files as quotes.
+- **Settings**: forms rendered from sensor field definitions, and `settings.open` can target a specific tab.
+- **Vision history**: attachment paths are kept in session history and restored to base64 when a message is resent.
+- **BrainStorm plans** are persisted per session and can be referenced with `@PLAN`.
+- **Plugin backend lifecycle** can be managed from panel tabs.
+- **Graphical installer** for desktop installs.
+- **Local fetch**: SPA pages are rendered in a hidden Electron window and the rendered DOM is preferred, with plain HTTP as fallback.
+- **Developer workflow**: typed host modules built by esbuild, development guides and CONTRIBUTING, a layered L0/L1/L3 pytest suite wired into CI, and an API reference generated from the FastAPI schema (`docs/api/openapi.json|md`) with a CI drift check.
+
+### Changed
+
+- TUI removed; the app runs headless only, and leftover TUI/app-config code was dropped.
+- OCR replaced by RapidOCR; vision models are used without an OCR fallback; embeddings run on ONNX Runtime; fetch uses `curl_cffi` with Playwright limited to development.
+- UI polish: unified palette and panel chrome, flatter session rows, proportional file preview, wrapped code blocks and tables, and a composer that stays fixed while the reference panel is open.
+- Memory compression now shares one prompt and fallback between main and sub agents, and the injected header is 【历史记忆总结】.
+- Internal: `utils`, `model`, `sensor`, `memory`, `tool`, `agent`, `harness`, `evolve` and `server` were split into focused modules with shared JSON/JSONL read and atomic-write helpers, an injectable ChatModel seam, and tool-registry contract tests.
+
+### Fixed
+
+- Branch sessions are named after their source session.
+- Native browser views are cleared when the host page reloads.
+- Cron writes `cron.json` atomically and tracks fire timestamps.
+- Hook path mapping for references resolved into the sandbox.
+- Copying raw markdown and distinguishing missing-file preview errors.
+- Opening the reference panel no longer pushes the composer.
+- Context-token tooltip stays inside the panel; long code blocks and tables wrap instead of overflowing.
+- Built-in browser keeps chrome-devtools navigation inside the browser.
+- The sandbox is no longer queried on exit when the host never created it.
+- Circular import between utils, harness and model; platform-specific tests now pass on Linux CI.
+
+---
+
+**中文**
+
+### 新增
+
+- **项目**：新增项目存储与 REST API、会话归属，侧边栏支持项目分组、快捷栏、搜索与草稿命名，Agent 可读写项目记忆文件。
+- **聊天头部与侧栏**：最近会话切换器、新建会话/分支开关、可内部滚动的下拉菜单、历史记录上方的会话标题；侧栏图标按 slot 区域分组并把设置固定在底部，可通过区域菜单切换固定位置的插件。
+- **待审批 todo 列表**：展示在会话侧边栏。
+- **输入框文件**：支持粘贴或拖拽文件为引用。
+- **设置**：按 sensor 字段定义渲染配置表单，`settings.open` 可定位到指定标签页。
+- **视觉附件历史**：附件路径写入会话历史，重发时还原为 base64。
+- **BrainStorm 计划**按会话持久化，并支持 `@PLAN` 引用。
+- **插件后端生命周期**可在面板标签页内管理。
+- **图形化安装器**。
+- **本地抓取**：在隐藏的 Electron 窗口中渲染 SPA 页面并优先使用渲染后的 DOM，HTTP 作为回退。
+- **开发流程**：宿主拆分为 esbuild 构建的强类型模块，补充开发指南与 CONTRIBUTING，接入 L0/L1/L3 分层 pytest 与 CI 门禁，API 参考改由 FastAPI schema 生成（`docs/api/openapi.json|md`）并在 CI 校验漂移。
+
+### 变更
+
+- 移除 TUI，仅以 headless 模式运行，并清理遗留的 TUI 与应用配置代码。
+- OCR 改用 RapidOCR；视觉模型不再回退 OCR；向量改由 ONNX Runtime 推理；抓取改用 `curl_cffi`，Playwright 仅开发期使用。
+- UI 细节：统一配色与面板外框、更扁平的会话行、按比例的预览弹窗、代码块与表格自动换行，参考面板展开时输入框保持固定。
+- 记忆压缩的主/子 Agent 共用同一提示词与兜底文案，注入标题改为【历史记忆总结】。
+- 内部：`utils`、`model`、`sensor`、`memory`、`tool`、`agent`、`harness`、`evolve`、`server` 拆分为职责单一的模块，合并 JSON/JSONL 读取与原子写入实现，新增可注入的 ChatModel 接缝与工具注册表契约测试。
+
+### 修复
+
+- 分支会话按来源会话命名。
+- 宿主页面刷新时清理原生浏览器视图。
+- cron 原子写入 `cron.json` 并记录触发时间。
+- 引用解析到沙盒路径时的 hook 路径映射。
+- 复制原始 Markdown，并区分文件缺失的预览错误。
+- 打开参考面板不再挤压输入框。
+- 上下文 token 提示框保持在面板内；长代码块与表格换行不再溢出。
+- 内置浏览器将 chrome-devtools 跳转限制在浏览器内。
+- 宿主从未创建沙盒时，退出不再查询 Docker。
+- 修复 utils、harness、model 之间的循环导入；平台相关测试在 Linux CI 上通过。
+
 ## [1.1.0]
 
 First stable release. Since 1.0.0-beta.4 this version reworks the front-end delivery model, the workflow engine and the tool set, and adds evolution factories for agent loops and graphs, sensor operations, and sandbox disk maintenance.
