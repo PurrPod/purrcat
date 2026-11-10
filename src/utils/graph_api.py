@@ -8,6 +8,7 @@ import json
 import os
 from typing import Any, Dict, List, Optional
 
+from src.utils._fs import write_json
 from src.utils.config import SRC_DIR, GRAPHS_DIR
 
 NODES_DIR = os.path.join(SRC_DIR, "harness", "node", "extensions")
@@ -24,25 +25,29 @@ DEPRECATED_NODE_TYPES = {
 }
 
 
-def _ensure_graphs_dir():
-    os.makedirs(GRAPHS_DIR, exist_ok=True)
+def _root(root: Optional[str]) -> str:
+    return root if root is not None else GRAPHS_DIR
 
 
-def graph_dir(name: str) -> str:
-    return os.path.join(GRAPHS_DIR, name)
+def _ensure_graphs_dir(root: Optional[str] = None) -> None:
+    os.makedirs(_root(root), exist_ok=True)
 
 
-def graph_file(name: str) -> str:
-    return os.path.join(GRAPHS_DIR, name, "graph.json")
+def graph_dir(name: str, root: Optional[str] = None) -> str:
+    return os.path.join(_root(root), name)
 
 
-def list_graphs() -> List[Dict[str, str]]:
-    _ensure_graphs_dir()
+def graph_file(name: str, root: Optional[str] = None) -> str:
+    return os.path.join(_root(root), name, "graph.json")
+
+
+def list_graphs(root: Optional[str] = None) -> List[Dict[str, str]]:
+    _ensure_graphs_dir(root)
     graphs = []
-    for entry in os.listdir(GRAPHS_DIR):
-        if os.path.isdir(os.path.join(GRAPHS_DIR, entry)):
-            if os.path.exists(graph_file(entry)):
-                graphs.append({"name": entry, "path": graph_file(entry)})
+    for entry in os.listdir(_root(root)):
+        if os.path.isdir(graph_dir(entry, root)):
+            if os.path.exists(graph_file(entry, root)):
+                graphs.append({"name": entry, "path": graph_file(entry, root)})
     return graphs
 
 
@@ -63,9 +68,9 @@ def get_all_nodes() -> List[Dict[str, Any]]:
     return all_nodes
 
 
-def get_graph(name: str) -> Optional[Dict[str, Any]]:
-    _ensure_graphs_dir()
-    folder_file = graph_file(name)
+def get_graph(name: str, root: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    _ensure_graphs_dir(root)
+    folder_file = graph_file(name, root)
     if os.path.exists(folder_file):
         try:
             with open(folder_file, "r", encoding="utf-8") as f:
@@ -75,33 +80,65 @@ def get_graph(name: str) -> Optional[Dict[str, Any]]:
     return None
 
 
-def save_graph(name: str, graph_data: Dict[str, Any]) -> Dict[str, Any]:
-    _ensure_graphs_dir()
-    target = graph_dir(name)
+def save_graph(
+    name: str, graph_data: Dict[str, Any], root: Optional[str] = None
+) -> Dict[str, Any]:
+    _ensure_graphs_dir(root)
+    target = graph_dir(name, root)
     os.makedirs(target, exist_ok=True)
     os.makedirs(os.path.join(target, "asset"), exist_ok=True)
-    with open(graph_file(name), "w", encoding="utf-8") as f:
-        json.dump(graph_data, f, ensure_ascii=False, indent=2)
+    write_json(graph_file(name, root), graph_data)
     return {"status": "ok", "name": name}
 
 
-def migrate_graphs_to_folders() -> List[str]:
+def upgrade_required_inputs(graph_data: Dict[str, Any]) -> Dict[str, Any]:
+    """旧格式 required_inputs → global_schema（一次性升级，运行时不兼容旧格式）。"""
+    if graph_data.get("global_schema") or "required_inputs" not in graph_data:
+        return graph_data
+    upgraded = dict(graph_data)
+    upgraded["global_schema"] = {
+        k: {"required": True, "description": v}
+        for k, v in graph_data["required_inputs"].items()
+    }
+    del upgraded["required_inputs"]
+    return upgraded
+
+
+def deprecated_node_types(graph_data: Dict[str, Any]) -> List[str]:
+    return sorted(
+        {
+            n.get("type")
+            for n in graph_data.get("nodes", [])
+            if n.get("type") in DEPRECATED_NODE_TYPES
+        }
+    )
+
+
+def deprecated_note(removed: List[str]) -> str:
+    return (
+        f"此 graph 引用了已移除的节点类型: {', '.join(removed)}\n"
+        f"请用编辑器打开该 graph 替换这些节点后重新保存。\n"
+    )
+
+
+def migrate_graphs_to_folders(root: Optional[str] = None) -> List[str]:
     """把旧单文件 graph 迁移为文件夹结构（幂等），返回迁移成功的名字列表。
     - {name}.json → {name}/graph.json，原文件改 .json.bak 保留
     - 旧格式 required_inputs 同步升级为 global_schema（运行时不再兼容旧格式）
     - 检测已移除节点类型的引用，写 {name}/DEPRECATED_NODES.txt 警告
     """
-    _ensure_graphs_dir()
+    _ensure_graphs_dir(root)
+    graphs_root = _root(root)
     migrated = []
-    for entry in list(os.listdir(GRAPHS_DIR)):
+    for entry in list(os.listdir(graphs_root)):
         if not entry.endswith(".json"):
             continue
         name = entry[: -len(".json")]
-        src_path = os.path.join(GRAPHS_DIR, entry)
+        src_path = os.path.join(graphs_root, entry)
         if not os.path.isfile(src_path):
             continue
         # 幂等：同名文件夹已存在则跳过
-        if os.path.isdir(graph_dir(name)):
+        if os.path.isdir(graph_dir(name, root)):
             continue
         try:
             with open(src_path, "r", encoding="utf-8") as f:
@@ -110,37 +147,21 @@ def migrate_graphs_to_folders() -> List[str]:
             print(f"⚠️ [Graph迁移] 跳过无法解析的 {entry}: {e}")
             continue
 
-        # 旧格式 required_inputs → global_schema（一次性升级，运行时不兼容旧格式）
-        if not graph_data.get("global_schema") and "required_inputs" in graph_data:
-            graph_data["global_schema"] = {
-                k: {"required": True, "description": v}
-                for k, v in graph_data["required_inputs"].items()
-            }
-            del graph_data["required_inputs"]
+        graph_data = upgrade_required_inputs(graph_data)
 
-        target_dir = graph_dir(name)
+        target_dir = graph_dir(name, root)
         os.makedirs(target_dir, exist_ok=True)
         os.makedirs(os.path.join(target_dir, "asset"), exist_ok=True)
-        with open(graph_file(name), "w", encoding="utf-8") as f:
-            json.dump(graph_data, f, ensure_ascii=False, indent=2)
+        write_json(graph_file(name, root), graph_data)
         os.rename(src_path, src_path + ".bak")
         migrated.append(name)
 
         # 检测已移除节点引用
-        removed = sorted(
-            {
-                n.get("type")
-                for n in graph_data.get("nodes", [])
-                if n.get("type") in DEPRECATED_NODE_TYPES
-            }
-        )
+        removed = deprecated_node_types(graph_data)
         if removed:
             note = os.path.join(target_dir, "DEPRECATED_NODES.txt")
             with open(note, "w", encoding="utf-8") as f:
-                f.write(
-                    f"此 graph 引用了已移除的节点类型: {', '.join(removed)}\n"
-                    f"请用编辑器打开该 graph 替换这些节点后重新保存。\n"
-                )
+                f.write(deprecated_note(removed))
             print(
                 f"⚠️ [Graph迁移] {name} 引用已移除节点: {removed}（已写入 DEPRECATED_NODES.txt）"
             )

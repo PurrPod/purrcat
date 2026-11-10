@@ -20,39 +20,33 @@ FILE_CONFIG_PATH = os.path.join(PURRCAT_DIR, "file.json")
 MCP_CONFIG_PATH = os.path.join(PURRCAT_DIR, "mcp_config.json")
 
 
+def _read_settings() -> Dict[str, Any]:
+    """读取 settings.json；缺失、损坏或非对象结构一律返回空 dict。"""
+    settings_path = os.path.join(PURRCAT_DIR, "settings.json")
+    if not os.path.exists(settings_path):
+        return {}
+    try:
+        with open(settings_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
 # 大型数据目录：用户可选，默认 = ~/.purrcat
 def _get_data_root() -> str:
     """从 settings.json 读用户配置的 data_root，默认返回 PURRCAT_DIR。
     只接受非空绝对路径，其它一律回退默认，防止填错搞坏路径。"""
-    try:
-        settings_path = os.path.join(PURRCAT_DIR, "settings.json")
-        if os.path.exists(settings_path):
-            with open(settings_path, "r", encoding="utf-8") as f:
-                settings = json.load(f)
-            value = settings.get("data_root")
-            if (
-                isinstance(value, str)
-                and value.strip()
-                and os.path.isabs(value.strip())
-            ):
-                return value.strip()
-    except Exception:
-        pass
+    value = _read_settings().get("data_root")
+    if isinstance(value, str) and value.strip() and os.path.isabs(value.strip()):
+        return value.strip()
     return PURRCAT_DIR
 
 
 def is_data_root_configured() -> bool:
     """settings.json 里是否已配置过 data_root（首启引导是否已完成的判定依据）。
     数据根目录支持随时变更：走配置中心的迁移入口（搬迁数据后重启生效）。"""
-    try:
-        settings_path = os.path.join(PURRCAT_DIR, "settings.json")
-        if os.path.exists(settings_path):
-            with open(settings_path, "r", encoding="utf-8") as f:
-                settings = json.load(f)
-            return bool(settings.get("data_root"))
-    except Exception:
-        pass
-    return False
+    return bool(_read_settings().get("data_root"))
 
 
 DATA_ROOT = _get_data_root()
@@ -209,28 +203,27 @@ def get_engine_preference() -> str:
     return "docker"
 
 
-def get_model_config() -> Dict[str, Any]:
-    if os.path.exists(MODEL_CONFIG_PATH):
-        return _load_json_file(MODEL_CONFIG_PATH)
+def _read_json_if_exists(file_path: str) -> Dict[str, Any]:
+    """配置文件存在才读取，缺失时返回空 dict（不打印错误）。"""
+    if os.path.exists(file_path):
+        return _load_json_file(file_path)
     return {}
+
+
+def get_model_config() -> Dict[str, Any]:
+    return _read_json_if_exists(MODEL_CONFIG_PATH)
 
 
 def get_sensor_config() -> Dict[str, Any]:
-    if os.path.exists(SENSOR_CONFIG_PATH):
-        return _load_json_file(SENSOR_CONFIG_PATH)
-    return {}
+    return _read_json_if_exists(SENSOR_CONFIG_PATH)
 
 
 def get_file_config() -> Dict[str, Any]:
-    if os.path.exists(FILE_CONFIG_PATH):
-        return _load_json_file(FILE_CONFIG_PATH)
-    return {}
+    return _read_json_if_exists(FILE_CONFIG_PATH)
 
 
 def get_mcp_config() -> Dict[str, Any]:
-    if os.path.exists(MCP_CONFIG_PATH):
-        return _load_json_file(MCP_CONFIG_PATH)
-    return {}
+    return _read_json_if_exists(MCP_CONFIG_PATH)
 
 
 def get_agent_model() -> str:
@@ -239,6 +232,30 @@ def get_agent_model() -> str:
     if isinstance(main, dict) and main:
         return next(iter(main.keys()))
     return "openai:deepseek-v4-flash"
+
+
+def get_main_model_config(model_name: str | None = None) -> Dict[str, Any]:
+    """取 model.json 中 main.<模型> 的配置。
+
+    model_name 为空时取 main 下的第一个模型（与 get_agent_model 保持一致）。
+    配置缺失或结构异常时返回空 dict。
+    """
+    main = get_model_config().get("main", {})
+    if not isinstance(main, dict) or not main:
+        return {}
+    if model_name is None:
+        model_name = next(iter(main.keys()), None)
+    cfg = main.get(model_name, {}) if model_name else {}
+    return cfg if isinstance(cfg, dict) else {}
+
+
+def get_model_max_token(model_name: str | None = None, default: int = 500000) -> int:
+    """上下文窗口上限；未配置时回落到默认值。"""
+    value = get_main_model_config(model_name).get("max_token", default)
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def get_embedding_model() -> str:

@@ -9,8 +9,9 @@
 """
 
 import subprocess
-import sys
 import threading
+
+from src.utils._proc import run_stream
 
 SANDBOX_IMAGE_TAG = "my_agent_env:latest"
 IMAGE_TAG = "purrcat-sandbox:light"
@@ -93,38 +94,7 @@ def _candidate_sources() -> list:
 
 def _run_and_log(cmd: list, log, timeout: float | None = None) -> int:
     """执行 docker 命令，输出逐行交给 log；返回退出码（超时/异常返回 -1）"""
-    encoding = "gbk" if sys.platform == "win32" else "utf-8"
-    try:
-        proc = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            encoding=encoding,
-            errors="replace",
-            bufsize=1,
-        )
-    except Exception as e:
-        log(f"[!] 启动命令失败: {cmd[0]}: {e}")
-        return -1
-
-    def _pump():
-        try:
-            for line in proc.stdout:
-                log(line.rstrip())
-        except Exception:
-            pass
-
-    reader = threading.Thread(target=_pump, daemon=True)
-    reader.start()
-    try:
-        proc.wait(timeout=timeout)
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        log(f"[!] 超时（{int(timeout)}秒），已终止")
-        return -1
-    reader.join(timeout=5)
-    return proc.returncode
+    return run_stream(cmd, log, timeout)
 
 
 def pull_sandbox_image(docker: str, log=print, timeout: float | None = None) -> bool:

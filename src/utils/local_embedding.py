@@ -7,12 +7,13 @@
 
 from __future__ import annotations
 
-import json
 import os
 import threading
 from typing import Iterable, List, Sequence
 
 import numpy as np
+
+from src.utils.embedding_manifest import read_max_seq_length
 
 _EMBEDDER_CACHE: dict[str, "LocalEmbedder"] = {}
 _EMBEDDER_LOCK = threading.Lock()
@@ -22,6 +23,18 @@ _ONNX_CANDIDATES = (
     os.path.join("onnx", "model_quint8_avx2.onnx"),
     "model.onnx",
 )
+
+
+def mean_pool(outputs: np.ndarray, attention_mask: np.ndarray) -> np.ndarray:
+    """与 SentenceTransformer 的 mean pooling 完全一致。"""
+    mask = attention_mask[..., None].astype(np.float32)
+    summed = (outputs * mask).sum(axis=1)
+    counts = np.clip(mask.sum(axis=1), 1e-9, None)
+    return np.asarray(summed / counts, dtype=np.float32)
+
+
+def choose_output_name(names: Sequence[str]) -> str:
+    return "last_hidden_state" if "last_hidden_state" in names else names[0]
 
 
 def _resolve_onnx_path(model_dir: str) -> str:
@@ -60,32 +73,12 @@ class LocalEmbedder:
         )
         self._input_names = {item.name for item in self._session.get_inputs()}
         output_names = [item.name for item in self._session.get_outputs()]
-        self._output_name = (
-            "last_hidden_state"
-            if "last_hidden_state" in output_names
-            else output_names[0]
-        )
+        self._output_name = choose_output_name(output_names)
         self._dim: int | None = None
 
     @staticmethod
     def _resolve_max_length(model_dir: str, default: int) -> int:
-        # sentence_bert_config.json 才是 SentenceTransformer 实际截断长度（通常 128）
-        for filename, key in (
-            ("sentence_bert_config.json", "max_seq_length"),
-            ("tokenizer_config.json", "model_max_length"),
-        ):
-            config_path = os.path.join(model_dir, filename)
-            if not os.path.exists(config_path):
-                continue
-            try:
-                with open(config_path, "r", encoding="utf-8") as f:
-                    value = int(json.load(f).get(key))
-            except (OSError, TypeError, ValueError):
-                continue
-            # 部分 tokenizer 配置会写成 1e30 之类的“无限长”，需要兜底到模型上限
-            if 0 < value <= 4096:
-                return value
-        return default
+        return read_max_seq_length(model_dir, default)
 
     def _encode_batch(self, texts: Sequence[str]) -> np.ndarray:
         encodings = self._tokenizer.encode_batch(list(texts))
@@ -110,11 +103,7 @@ class LocalEmbedder:
             # 少数导出版本直接输出 sentence_embedding
             return np.asarray(outputs, dtype=np.float32)
 
-        # 与 SentenceTransformer 的 mean pooling 完全一致
-        mask = attention_mask[..., None].astype(np.float32)
-        summed = (outputs * mask).sum(axis=1)
-        counts = np.clip(mask.sum(axis=1), 1e-9, None)
-        return np.asarray(summed / counts, dtype=np.float32)
+        return mean_pool(outputs, attention_mask)
 
     def encode(
         self,

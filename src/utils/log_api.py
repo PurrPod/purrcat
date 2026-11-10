@@ -1,10 +1,29 @@
-import datetime
 import json
 import os
-import re
 from typing import Any, Dict, Optional
 
+from src.utils._format import format_hms
+from src.utils._fs import find_child_dir_by_token
+from src.utils.log_format import clean_log_entry, render_log_entry
+
 _task_log_cache = {}
+
+__all__ = ["clean_log_entry", "format_task_log", "get_task_log_structured"]
+
+
+def _checkpoints_root() -> str:
+    from src.utils.config import DATA_DIR
+
+    return os.path.join(DATA_DIR, "checkpoints", "task")
+
+
+def _resolve_checkpoint_dir(task_id: str) -> Optional[str]:
+    from src.harness.process import TASK_INSTANCES
+
+    task_instance = TASK_INSTANCES.get(task_id)
+    if task_instance and hasattr(task_instance, "checkpoint_dir"):
+        return task_instance.checkpoint_dir
+    return find_child_dir_by_token(_checkpoints_root(), task_id)
 
 
 def get_task_log_structured(
@@ -26,24 +45,7 @@ def get_task_log_structured(
             "grouped_logs": Dict[str, List[dict]]  # 按节点分组
         }
     """
-    from src.harness.process import TASK_INSTANCES
-    from src.utils.config import DATA_DIR
-
-    checkpoint_dir = None
-
-    # 优先从运行中的任务实例获取
-    task_instance = TASK_INSTANCES.get(task_id)
-    if task_instance and hasattr(task_instance, "checkpoint_dir"):
-        checkpoint_dir = task_instance.checkpoint_dir
-    else:
-        # 尝试从 checkpoint 目录查找
-        base_dir = os.path.join(DATA_DIR, "checkpoints", "task")
-        if os.path.isdir(base_dir):
-            for entry in os.listdir(base_dir):
-                if task_id in entry:
-                    checkpoint_dir = os.path.join(base_dir, entry)
-                    break
-
+    checkpoint_dir = _resolve_checkpoint_dir(task_id)
     if not checkpoint_dir:
         return {"task_id": task_id, "total_lines": 0, "logs": [], "grouped_logs": {}}
 
@@ -68,16 +70,7 @@ def get_task_log_structured(
             try:
                 entry = json.loads(line)
                 entry["_line"] = i  # 添加行号标记，用于增量拉取
-
-                # 添加格式化的时间戳
-                timestamp = entry.get("timestamp", 0)
-                if timestamp:
-                    entry["_time"] = datetime.datetime.fromtimestamp(
-                        timestamp
-                    ).strftime("%H:%M:%S")
-                else:
-                    entry["_time"] = "??:??:??"
-
+                entry["_time"] = format_hms(entry.get("timestamp", 0))
                 logs.append(entry)
 
                 # 按节点分组
@@ -116,78 +109,9 @@ def get_task_log_structured(
     }
 
 
-def clean_log_entry(entry: dict) -> str:
-    card_type = entry.get("card_type", "unknown")
-    content = str(entry.get("content", ""))
-    metadata = entry.get("metadata", {})
-
-    if card_type == "tool_call":
-        args = metadata.get("arguments", {})
-        if "command" in args:
-            cmd = args["command"]
-            m = re.search(r"cat\s+>\s+([^\s]+)\s+<<\s*'PYEOF'", cmd)
-            if m:
-                file_name = m.group(1).split("/")[-1]
-                return f"execute_command ➔ 写入文件: {file_name} (长代码已折叠)"
-
-            clean_cmd = cmd.replace("\n", " ")
-            if len(clean_cmd) > 80:
-                return f"execute_command ➔ {clean_cmd[:80]}..."
-            return f"execute_command ➔ {clean_cmd}"
-
-        elif args:
-            args_str = ", ".join(f"{k}={v!r}" for k, v in args.items())
-            tool_name = content.split("(")[0].replace("🔧 助手调起工具: ", "").strip()
-            return f"{tool_name}({args_str})"
-
-    elif card_type == "tool":
-        try:
-            json_start = content.find("{")
-            if json_start != -1:
-                res = json.loads(content[json_start:])
-                if res.get("type") == "text":
-                    inner_content = res.get("content", {})
-                    exit_code = inner_content.get("exit_code")
-                    output = inner_content.get("output", "").strip()
-
-                    if exit_code == 0:
-                        out_msg = (
-                            f", 输出: {output[:30]}..." if output else ", 无标准输出"
-                        )
-                        return f"✅ 执行成功 (exit_code: 0{out_msg})"
-                    else:
-                        return f"❌ 执行失败 (exit_code: {exit_code}, 报错: {output[:50]}...)"
-        except Exception:
-            pass
-
-    prefixes_to_strip = [
-        "🔧 助手调起工具: ",
-        "📦 工具回传结果: ",
-        "🤖 助手思考: ",
-        "📋 ",
-    ]
-    for prefix in prefixes_to_strip:
-        content = content.replace(prefix, "")
-
-    return content.strip()
-
-
 def format_task_log(task_id: str, checkpoint_dir: Optional[str] = None) -> str:
-    from src.harness.process import TASK_INSTANCES
-    from src.utils.config import DATA_DIR
-
     if checkpoint_dir is None:
-        task_instance = TASK_INSTANCES.get(task_id)
-        if task_instance and hasattr(task_instance, "checkpoint_dir"):
-            checkpoint_dir = task_instance.checkpoint_dir
-        else:
-            base_dir = os.path.join(DATA_DIR, "checkpoints", "task")
-            checkpoint_dir = None
-            if os.path.isdir(base_dir):
-                for entry in os.listdir(base_dir):
-                    if task_id in entry:
-                        checkpoint_dir = os.path.join(base_dir, entry)
-                        break
+        checkpoint_dir = _resolve_checkpoint_dir(task_id)
 
     if not checkpoint_dir:
         return f"Task {task_id} not found"
@@ -225,46 +149,7 @@ def format_task_log(task_id: str, checkpoint_dir: Optional[str] = None) -> str:
             entry = json.loads(line)
         except json.JSONDecodeError:
             continue
-
-        card_type = entry.get("card_type", "unknown")
-        timestamp = entry.get("timestamp", 0)
-
-        from rich.markup import escape
-
-        cleaned_content = clean_log_entry(entry)
-        content = escape(cleaned_content)
-
-        if timestamp:
-            time_str = datetime.datetime.fromtimestamp(timestamp).strftime("%H:%M:%S")
-        else:
-            time_str = "??:??:??"
-
-        color_map = {
-            "system": "#9399b2",
-            "thought": "#88c0d0",
-            "tool_call": "#ebcb8b",
-            "tool": "#a3be8c",
-            "warning": "#d08770",
-            "error": "#bf616a",
-            "plan": "#81a1c1",
-        }
-        emoji_map = {
-            "system": "⚙️",
-            "thought": "🤖",
-            "tool_call": "🔧",
-            "tool": "📦",
-            "warning": "⚠️",
-            "error": "❌",
-            "plan": "📋",
-        }
-        color = color_map.get(card_type, "white")
-        emoji = emoji_map.get(card_type, "📄")
-
-        label = card_type.upper().ljust(9)
-
-        output_parts.append(
-            f"[dim][{time_str}][/dim] [{color}]{emoji} {label}[/{color}] │ {content}"
-        )
+        output_parts.append(render_log_entry(entry))
 
     result = "\n".join(output_parts)
 

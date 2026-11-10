@@ -15,26 +15,29 @@ from src.tool.request.request_operations import (
     REQUEST_LOCK,
     _ensure_requests_file,
 )
+from src.utils._fs import write_json
 from src.utils.config import get_enriched_env
 
 # 固定 req_id：避免每次重启堆积重复请求；启动时整体替换为最新检查结果
 DEP_REQ_ID = "req_dep_check_startup"
 
-# 合并注册表最新 PATH 后再检测：用户装完依赖没重启电脑时，
-# 进程自身 PATH 还是旧的，直接 which 会误报"依赖缺失"
-_ENRICHED_PATH = get_enriched_env().get("PATH")
+
+def _enriched_path() -> str | None:
+    # 合并注册表最新 PATH 后再检测：用户装完依赖没重启电脑时，
+    # 进程自身 PATH 还是旧的，直接 which 会误报"依赖缺失"
+    return get_enriched_env().get("PATH")
 
 
 def _check_git() -> bool:
-    return shutil.which("git", path=_ENRICHED_PATH) is not None
+    return shutil.which("git", path=_enriched_path()) is not None
 
 
 def _check_uv() -> bool:
-    return shutil.which("uv", path=_ENRICHED_PATH) is not None
+    return shutil.which("uv", path=_enriched_path()) is not None
 
 
 def _check_node() -> bool:
-    return shutil.which("node", path=_ENRICHED_PATH) is not None
+    return shutil.which("node", path=_enriched_path()) is not None
 
 
 def _check_embedding() -> bool:
@@ -76,13 +79,7 @@ def _check_sandbox():
     return True, ""
 
 
-def check_and_warn_dependencies() -> None:
-    """
-    启动时统一检查所有依赖；缺失则写入/覆盖一条 pending 请求到 requests.json。
-    - 已存在旧的同 ID 请求会被覆盖（保证反映最新检查结果）
-    - 全部就绪时移除旧请求，不写入新请求
-    - 幂等、线程安全（持有 REQUEST_LOCK）
-    """
+def _collect_missing() -> list:
     missing = []
     if not _check_git():
         missing.append(
@@ -113,6 +110,30 @@ def check_and_warn_dependencies() -> None:
     sandbox_ok, sandbox_reason = _check_sandbox()
     if not sandbox_ok:
         missing.append({"name": "sandbox", "reason": sandbox_reason})
+    return missing
+
+
+def build_dependency_request(missing: list, created_at: str | None = None) -> dict:
+    reason_lines = "\n".join(f"- {m['name']}: {m['reason']}" for m in missing)
+    return {
+        "id": DEP_REQ_ID,
+        "type": "dependency_check",
+        "target": f"启动依赖检查（{len(missing)} 项缺失）",
+        "reason": f"以下依赖缺失或未就绪：\n{reason_lines}",
+        "missing": [m["name"] for m in missing],
+        "status": "pending",
+        "created_at": created_at or time.strftime("%Y-%m-%d %H:%M:%S"),
+    }
+
+
+def check_and_warn_dependencies() -> None:
+    """
+    启动时统一检查所有依赖；缺失则写入/覆盖一条 pending 请求到 requests.json。
+    - 已存在旧的同 ID 请求会被覆盖（保证反映最新检查结果）
+    - 全部就绪时移除旧请求，不写入新请求
+    - 幂等、线程安全（持有 REQUEST_LOCK）
+    """
+    missing = _collect_missing()
 
     _ensure_requests_file()
     with REQUEST_LOCK:
@@ -128,25 +149,13 @@ def check_and_warn_dependencies() -> None:
         # 全部就绪 → 不写入新请求
         if not missing:
             try:
-                with open(REQUESTS_FILE, "w", encoding="utf-8") as f:
-                    json.dump(data, f, ensure_ascii=False, indent=2)
+                write_json(REQUESTS_FILE, data)
             except OSError:
                 pass
             return
 
-        reason_lines = "\n".join(f"- {m['name']}: {m['reason']}" for m in missing)
-        req_data = {
-            "id": DEP_REQ_ID,
-            "type": "dependency_check",
-            "target": f"启动依赖检查（{len(missing)} 项缺失）",
-            "reason": f"以下依赖缺失或未就绪：\n{reason_lines}",
-            "missing": [m["name"] for m in missing],
-            "status": "pending",
-            "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
-        }
-        data[DEP_REQ_ID] = req_data
+        data[DEP_REQ_ID] = build_dependency_request(missing)
         try:
-            with open(REQUESTS_FILE, "w", encoding="utf-8") as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
+            write_json(REQUESTS_FILE, data)
         except OSError:
             pass

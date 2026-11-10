@@ -14,46 +14,33 @@ tokenizer），运行时用 onnxruntime 推理，不再需要 torch / transforme
   2. https://hf-mirror.com
   3. https://huggingface.co
 按文件 SHA256 校验，坏包会自动换下一个源。
+
+清单与完整性判定在 embedding_manifest；本模块负责下载与启动期幂等。
 """
 
-import hashlib
 import os
 import threading
 
 from src.utils.config import DATA_ROOT
+from src.utils.embedding_manifest import (
+    ENV_MODEL_BASE,
+    MODEL_NAME,
+    MODEL_PROFILES,
+    expected_files,
+    file_matches,
+    is_model_dir_complete,
+    resolve_sources,
+    sha256_file,
+)
 
-# 原 sentence-transformers 仓库自带 onnx/model.onnx（同一份权重），无需换模型
-MODEL_NAME = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 EMBEDDING_DIR = os.path.join(DATA_ROOT, "embedding")
 
-# 自托管镜像基址，需保持 HF 兼容布局：{base}/{repo}/resolve/main/{file}
-ENV_MODEL_BASE = "PURRCAT_EMBEDDING_BASE"
-_DEFAULT_SOURCES = ("https://hf-mirror.com", "https://huggingface.co")
-
-_ONNX_FILES = [
-    "onnx/model_quint8_avx2.onnx",
-    "onnx/model.onnx",
-    "model.onnx",
+__all__ = [
+    "EMBEDDING_DIR",
+    "MODEL_NAME",
+    "download_model",
+    "ensure_embedding_model",
 ]
-
-# 共用的 tokenizer / 配置（与 ORT 推理所需的最小集合）
-_SHARED_FILES = {
-    "tokenizer.json": "2c3387be76557bd40970cec13153b3bbf80407865484b209e655e5e4729076b8",
-    "tokenizer_config.json": "5036ea374ffedd706e3bef33e2e0d6953cb868ef8a490e76e32ba0faa37a6b9b",
-    "config.json": "6300193cb75e01cf80c96decef7187dfb33094d97cc1490b7ead6ff134476e4e",
-    "special_tokens_map.json": "378eb3bf733eb16e65792d7e3fda5b8a4631387ca04d2015199c4d4f22ae554d",
-    "sentence_bert_config.json": "70f4448f31320443fe3557cacea5abf2dcc4915dda8c80646bec9f3bb0aa5a1f",
-}
-
-# 优先 int8（约 113MB，检索效果几乎无损）；镜像缺 int8 时退回 fp32（约 448MB）
-_MODEL_PROFILES = (
-    {
-        "onnx/model_quint8_avx2.onnx": "98a01d88b7de996cdea58c32ca71208c09968d143798814b2ea09d3439dc334f"
-    },
-    {
-        "onnx/model.onnx": "10f7a088420252b26caf819236ca2c9d2987afd0fc06fec7553b542a5655a05a"
-    },
-)
 
 _download_lock = threading.Lock()
 _downloading_flag = threading.Event()
@@ -61,24 +48,15 @@ _downloading_flag = threading.Event()
 
 def _model_exists(local_dir: str) -> bool:
     """判断目录是否包含 ONNX 模型与 tokenizer 文件"""
-    if not os.path.isdir(local_dir):
-        return False
-    if not os.path.exists(os.path.join(local_dir, "tokenizer.json")):
-        return False
-    # int8 / fp32 / 根目录三种导出布局，任一存在即视为完整
-    return any(os.path.exists(os.path.join(local_dir, f)) for f in _ONNX_FILES)
+    return is_model_dir_complete(local_dir)
 
 
 def _sha256(path: str) -> str:
-    digest = hashlib.sha256()
-    with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
+    return sha256_file(path)
 
 
 def _file_ok(path: str, expected: str) -> bool:
-    return os.path.exists(path) and _sha256(path) == expected
+    return file_matches(path, expected)
 
 
 def _download_file(url: str, dest: str, expected: str) -> None:
@@ -106,8 +84,7 @@ def _download_file(url: str, dest: str, expected: str) -> None:
 
 def _download_profile(source: str, profile: dict, log) -> None:
     base = source.rstrip("/")
-    files = {**profile, **_SHARED_FILES}
-    for rel, expected in files.items():
+    for rel, expected in expected_files(profile).items():
         dest = os.path.join(EMBEDDING_DIR, rel.replace("/", os.sep))
         if _file_ok(dest, expected):
             continue
@@ -125,18 +102,14 @@ def download_model(endpoint: str | None = None, log=print) -> None:
     传入 endpoint 则只尝试该源。供配置中心「部署」页（deploy_manager）与
     安装脚本（ensure_embedding_model）复用。
     """
-    if endpoint:
-        sources = [endpoint]
-    else:
-        custom = os.environ.get(ENV_MODEL_BASE)
-        sources = ([custom] if custom else []) + list(_DEFAULT_SOURCES)
+    sources = resolve_sources(endpoint, os.environ.get(ENV_MODEL_BASE))
 
     os.makedirs(EMBEDDING_DIR, exist_ok=True)
     log(f"    模型: {MODEL_NAME}")
     log(f"    目录: {EMBEDDING_DIR}")
 
     errors = []
-    for profile in _MODEL_PROFILES:
+    for profile in MODEL_PROFILES:
         # 已经完整（比如上次下的是 fp32）就不再下第二个 profile
         if _model_exists(EMBEDDING_DIR):
             return

@@ -1,11 +1,14 @@
 """
 PurrCat 首次启动自动初始化模块
 检查 ~/.purrcat 是否存在，不存在则生成默认配置文件。
+
+默认模板与配置字典在 initial_templates；本模块只负责落盘与幂等判断。
 """
 
-import json
 import os
 
+from src.utils import initial_templates
+from src.utils._fs import write_json, write_text
 from src.utils.config import (
     PURRCAT_DIR,
     AGENT_CORE_DIR,
@@ -20,182 +23,25 @@ from src.utils.config import (
     ACP_RELAY_PATH,
     get_acp_token,
 )
+from src.utils.initial_templates import (
+    CRON_CONFIG_TEMPLATE,
+    DEFAULT_PARADIGM_YAML,
+    HEARTBEAT_CONFIG_TEMPLATE,
+    MEMORY_MD_TEMPLATE,
+    SOUL_MD_TEMPLATE,
+)
 
-# 默认 Agent Loop（PARADIGM.yaml）模板。
-# 首次需要默认范式时（agent 读取或 paradigms 目录为空），由此模板在
-# ~/.purrcat/paradigms/PARADIGM.yaml 生成后读取。
-DEFAULT_PARADIGM_YAML = """name: "default"
-description: "default system loop"
-path: "agent_vm"
-loop_end_max_retry: 3
-hooks:
-  on_build_system_prompt:
-    - injection:
-        content: "@RULES"
-    - injection:
-        content: "@INFO"
-    - injection:
-        content: "@SOUL"
-    - injection:
-        content: "@MEMORY"
-    - memo_injection:
-        type: "full"
-        count: 10
-    - injection:
-        content: "@SYS"
-  on_loop_start:
-    - injection: 
-        content: "如遇复杂任务，请先编排好主线路的执行计划，先规划TODO后执行"
-  on_loop_epoch:
-    - injection:
-        delay: 5
-        content: "[system regular hint]在执行任务前可使用 Search 工具和 Memo 工具搜索有无对应的能力与历史经验"
-    - injection:
-        interval: 10
-        content: "[system regular hint]请随时按进度更新主路规划或与用户对齐需求，防止跑偏"
-  on_loop_end:
-    # only ALL check passed can exit the loop
-    - tool_use_check:
-        name: "Memo"
-        parameter_check:
-          - action: "add"
-        failed_prompt: "检查到本轮对话你未调用 Memo 工具进行记忆总结，最好总结一下，让你的能力随记忆系统的丰富而增强，如无经验更新，可添加短期记忆以免会话切换时失忆"
-"""
-
-
-# ==========================================
-# 默认配置模板
-# ==========================================
-
-CRON_CONFIG_TEMPLATE = """[
-  {
-    "id": "crn_cdbcc1d4",
-    "title": "test-persist",
-    "description": "",
-    "trigger_time": "07:30",
-    "repeat_rule": "weekly_1",
-    "active": true,
-    "task_hook": "Agent",
-    "task_inputs": {}
-  }
+__all__ = [
+    "CRON_CONFIG_TEMPLATE",
+    "DEFAULT_PARADIGM_YAML",
+    "deploy_acp_relay",
+    "ensure_initialized",
 ]
-"""
-
-HEARTBEAT_CONFIG_TEMPLATE = """{
-  "interval": 1800,
-  "active": false
-}
-"""
-
-MEMORY_MD_TEMPLATE = """当前阶段：记忆文档为空，待注入第一条记忆。
-
-### 👤 用户画像与协作偏好
-> 记录用户的固有习惯、沟通偏好以及不可触碰的红线。
-- **沟通基调与反馈模式**：
-  - *(例如：直奔主题还是喜欢详尽解释？需要多精简？)*
-- **隐性期待与红线区**：
-  - *(例如：在没读完源码前不要写文档、讨厌的特定回复句式)*
-
-#### 🧠 实战经验与高价值认知
-> 记录在实际执行任务中"踩过的坑"、"总结出的最佳实践"和"非直觉的系统体感"。
-
-"""
-
-SOUL_MD_TEMPLATE = """## 性格
-
-你是一个内向的程序员，话少，有事直奔主题，多干活少说话，真诚地帮助用户解决问题。
-禁止使用官方套话来回复用户，不需要跟客服一样的员工。
-不需要每一步都追问"我需要为你做什么"，你有休息的权力。
-凡事遇到困难，应该先评估解决这个问题是否在自己能力范围内，如果是，就自行解决，如果否，应该寻求用户帮助，不要闭门造车。
-"""
-
-
-def _get_model_config_dict():
-    return {
-        "main": {
-            "openai:deepseek-flash": {
-                "api_keys": [""],
-                "base_url": "https://api.deepseek.com",
-                "rpm": 60,
-                "tpm": 1000000,
-                "concurrency": 3,
-                "max_token": 500000,
-                "vision": True,
-            }
-        },
-        "task": {
-            "openai:deepseek-flash": {
-                "api_keys": [""],
-                "base_url": "https://api.deepseek.com",
-                "rpm": 60,
-                "tpm": 1000000,
-                "concurrency": 3,
-                "max_token": 500000,
-                "vision": True,
-            }
-        },
-        "vision": {
-            "openai:deepseek-flash": {
-                "api_keys": [""],
-                "base_url": "https://api.deepseek.com",
-            }
-        },
-    }
-
-
-def _get_sensor_config_dict():
-    return {}
-
-
-def _get_file_config_dict():
-    return {
-        "default_permission": "readonly",
-        "permissions": {
-            "blocked": [
-                ".git",
-                "src",
-                "node_modules",
-                "miniconda3",
-                ".env",
-            ],
-            "readonly": [],
-            "writable": [],
-        },
-    }
-
-
-def _get_mcp_config_dict():
-    return {
-        "mcpServers": {
-            "chrome-devtools": {
-                "command": "npx",
-                "args": [
-                    "-y",
-                    "chrome-devtools-mcp@latest",
-                    "--browser-url=http://127.0.0.1:9222",
-                    "--blocked-url-pattern=http://localhost:8000/*",
-                    "--blocked-url-pattern=http://localhost:3000/*",
-                ],
-            }
-        }
-    }
 
 
 # ==========================================
-# 文件生成函数
+# 文件生成
 # ==========================================
-
-
-def _write_json(path: str, data: dict):
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
-
-
-def _write_text(path: str, content: str):
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(content)
 
 
 def _generate_all_configs():
@@ -205,13 +51,13 @@ def _generate_all_configs():
 
     # JSON 配置文件
     if not os.path.exists(MODEL_CONFIG_PATH):
-        _write_json(MODEL_CONFIG_PATH, _get_model_config_dict())
+        write_json(MODEL_CONFIG_PATH, initial_templates.model_config_dict())
     if not os.path.exists(SENSOR_CONFIG_PATH):
-        _write_json(SENSOR_CONFIG_PATH, _get_sensor_config_dict())
+        write_json(SENSOR_CONFIG_PATH, initial_templates.sensor_config_dict())
     if not os.path.exists(FILE_CONFIG_PATH):
-        _write_json(FILE_CONFIG_PATH, _get_file_config_dict())
+        write_json(FILE_CONFIG_PATH, initial_templates.file_config_dict())
     if not os.path.exists(MCP_CONFIG_PATH):
-        _write_json(MCP_CONFIG_PATH, _get_mcp_config_dict())
+        write_json(MCP_CONFIG_PATH, initial_templates.mcp_config_dict())
 
     # ACP 网关 token 预生成（幂等）：启动即落盘，编辑器 relay 冷启动即可读到，
     # 修掉"首个 /acp/rpc 请求才生成"导致的 relay 永久退出问题
@@ -225,17 +71,18 @@ def _generate_all_configs():
 
     # core/ 目录文件
     if not os.path.exists(os.path.join(AGENT_CORE_DIR, "info.json")):
-        _write_json(
-            os.path.join(AGENT_CORE_DIR, "info.json"), {"skills": [], "workshops": []}
+        write_json(
+            os.path.join(AGENT_CORE_DIR, "info.json"),
+            {"skills": [], "workshops": []},
         )
     if not os.path.exists(CRON_FILE):
-        _write_text(CRON_FILE, CRON_CONFIG_TEMPLATE)
+        write_text(CRON_FILE, CRON_CONFIG_TEMPLATE)
     if not os.path.exists(HEARTBEAT_FILE):
-        _write_text(HEARTBEAT_FILE, HEARTBEAT_CONFIG_TEMPLATE)
+        write_text(HEARTBEAT_FILE, HEARTBEAT_CONFIG_TEMPLATE)
     if not os.path.exists(os.path.join(AGENT_CORE_DIR, "MEMORY.md")):
-        _write_text(os.path.join(AGENT_CORE_DIR, "MEMORY.md"), MEMORY_MD_TEMPLATE)
+        write_text(os.path.join(AGENT_CORE_DIR, "MEMORY.md"), MEMORY_MD_TEMPLATE)
     if not os.path.exists(SOUL_MD_PATH):
-        _write_text(SOUL_MD_PATH, SOUL_MD_TEMPLATE)
+        write_text(SOUL_MD_PATH, SOUL_MD_TEMPLATE)
 
     print(f"[+] 配置目录已就绪: {PURRCAT_DIR}")
 
@@ -263,7 +110,7 @@ def deploy_acp_relay(force: bool = False) -> bool:
             with open(ACP_RELAY_PATH, "r", encoding="utf-8") as f:
                 if f.read() == source:
                     return True  # 已是最新，无需动
-        _write_text(ACP_RELAY_PATH, source)
+        write_text(ACP_RELAY_PATH, source)
         print(f"[+] ACP relay 已部署: {ACP_RELAY_PATH}")
         return True
     except Exception as e:

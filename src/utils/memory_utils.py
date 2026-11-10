@@ -32,6 +32,20 @@ def normalize_iso_time(time_str: str) -> str:
     return time_str
 
 
+def _collect_string_list(value, field: str, item_error: str, errors: list) -> list:
+    """校验字符串数组字段并返回去空白后的值，错误信息沿用原有文案。"""
+    if not isinstance(value, list):
+        errors.append(f"{field} 必须是数组，收到 {type(value).__name__}")
+        return []
+    result = []
+    for i, item in enumerate(value):
+        if not isinstance(item, str) or not item.strip():
+            errors.append(f"{field}[{i}] 无效：{item_error}")
+        else:
+            result.append(item.strip())
+    return result
+
+
 def validate_memo_data(memo_data: dict) -> tuple[dict, list]:
     """校验 memo_data 参数，返回 (valid_data, errors)"""
     errors = []
@@ -52,25 +66,18 @@ def validate_memo_data(memo_data: dict) -> tuple[dict, list]:
     elif short_term:
         valid_data["short_term"] = short_term.strip()
 
-    work_exp = memo_data.get("work_exp", [])
-    if not isinstance(work_exp, list):
-        errors.append(f"work_exp 必须是数组，收到 {type(work_exp).__name__}")
-    else:
-        for i, w in enumerate(work_exp):
-            if not isinstance(w, str) or not w.strip():
-                errors.append(f"work_exp[{i}] 无效：每条经验必须是非空字符串")
-            else:
-                valid_data["work_exp"].append(w.strip())
-
-    user_profile = memo_data.get("user_profile", [])
-    if not isinstance(user_profile, list):
-        errors.append(f"user_profile 必须是数组，收到 {type(user_profile).__name__}")
-    else:
-        for i, u in enumerate(user_profile):
-            if not isinstance(u, str) or not u.strip():
-                errors.append(f"user_profile[{i}] 无效：每条画像必须是非空字符串")
-            else:
-                valid_data["user_profile"].append(u.strip())
+    valid_data["work_exp"] = _collect_string_list(
+        memo_data.get("work_exp", []),
+        "work_exp",
+        "每条经验必须是非空字符串",
+        errors,
+    )
+    valid_data["user_profile"] = _collect_string_list(
+        memo_data.get("user_profile", []),
+        "user_profile",
+        "每条画像必须是非空字符串",
+        errors,
+    )
 
     events = memo_data.get("events", [])
     if not isinstance(events, list):
@@ -94,15 +101,12 @@ def validate_memo_data(memo_data: dict) -> tuple[dict, list]:
                     }
                 )
 
-    cognition = memo_data.get("cognition", [])
-    if not isinstance(cognition, list):
-        errors.append(f"cognition 必须是数组，收到 {type(cognition).__name__}")
-    else:
-        for i, c in enumerate(cognition):
-            if not isinstance(c, str) or not c.strip():
-                errors.append(f"cognition[{i}] 无效：必须是非空字符串")
-            else:
-                valid_data["cognition"].append(c.strip())
+    valid_data["cognition"] = _collect_string_list(
+        memo_data.get("cognition", []),
+        "cognition",
+        "必须是非空字符串",
+        errors,
+    )
 
     return valid_data, errors
 
