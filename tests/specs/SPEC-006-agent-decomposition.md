@@ -9,10 +9,10 @@
 - 历史消息的构造与修复（workflow_hint、system 事件、断裂 toolchain 清理）由 `agent/history.py` 的纯函数完成，输入输出与改造前一致。
 - 流式分片拼装由 `agent/streaming.py` 完成：reasoning 增量、content 增量、tool_calls 按 index 合并并排序、usage 取最后一个非空分片。
 - 工具参数解析（含 json_repair 兜底）、快照派发工具延后排序、系统参数注入由 `agent/tool_calls.py` 完成；参数对象不被原地修改。
-- 记忆压缩的指令、警告文案、Memo 总结提取、最多 3 次重试与兜底文本由 `agent/compression.py` 统一；主/子 Agent 仅文案与日志前缀不同。
+- 记忆压缩的指令、警告文案、Memo 总结提取、最多 3 次重试与兜底文本由 `agent/compression.py` 统一；主/子 Agent 共用同一压缩指令，仅在警告文案、兜底文本与日志前缀上不同。
 - 压缩后的历史：
-  - 主 Agent = `[system 新提示词, system 事件(历史记忆大总结)]`
-  - 子 Agent = `[system 新提示词, 最近 N 条（安全截断点）, system 事件(历史记忆大总结)]`，并清空 assistant 的 reasoning_content。
+  - 主 Agent = `[system 新提示词, system 事件(历史记忆总结)]`
+  - 子 Agent = `[system 新提示词, 最近 N 条（安全截断点）, system 事件(历史记忆总结)]`，并清空 assistant 的 reasoning_content。
 - `Agent.__init__` 允许注入 `model / hook_handler / tracker / memo`，缺省时行为与改造前相同。
 - `process_message` 拆为 begin / loop / epoch / finish 阶段，阶段调用顺序、消息写入顺序、`turn_end` 发布时机不变。
 - 工具执行仍保证：argument 损坏时写入错误 tool 响应且不派发；BrainStorm create 在该批工具末尾执行；人类打断时写入配对 tool 响应并终止后续工具。

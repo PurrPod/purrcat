@@ -7,7 +7,7 @@ import threading
 import json
 
 from src.agent.compression import (
-    SUB_COMPRESSION_INSTRUCTION,
+    COMPRESSION_INSTRUCTION,
     SUB_SUMMARY_FALLBACK,
     rebuild_sub_history,
     run_summary_attempts,
@@ -164,7 +164,7 @@ class SubAgentRunner:
                 messages=messages, tools=AGENT_TOOL_SCHEMA
             ),
             temp_history,
-            instruction=SUB_COMPRESSION_INSTRUCTION,
+            instruction=COMPRESSION_INSTRUCTION,
             warning_text=sub_warning,
             fallback_text=SUB_SUMMARY_FALLBACK,
             warning_prefix="[Warn.SubAgentBlock]",

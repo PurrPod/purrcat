@@ -176,7 +176,7 @@ def test_rebuild_main_history_keeps_only_system_and_summary():
     assert [m["role"] for m in history] == ["system", "user"]
     assert history[0]["content"] == "新系统提示"
     summary_event = json.loads(history[1]["content"])["events"][0]
-    assert summary_event["content"] == "【历史记忆大总结】\n总结内容"
+    assert summary_event["content"] == "【历史记忆总结】\n总结内容"
 
 
 def test_rebuild_sub_history_keeps_recent_tail_and_clears_reasoning():
@@ -193,7 +193,7 @@ def test_rebuild_sub_history_keeps_recent_tail_and_clears_reasoning():
     assert [m["role"] for m in history[1:-1]] == ["assistant"] * 10
     assert all(m.get("reasoning_content") == "" for m in history[1:-1])
     summary_event = json.loads(history[-1]["content"])["events"][0]
-    assert summary_event["content"] == "【历史记忆大总结】\n总结"
+    assert summary_event["content"] == "【历史记忆总结】\n总结"
 
 
 @pytest.mark.parametrize("message_count", [0, 1, 9, 10])

@@ -11,16 +11,13 @@ from typing import Callable
 
 from src.agent.history import strip_reasoning, system_event
 
-MAIN_COMPRESSION_INSTRUCTION = (
+COMPRESSION_INSTRUCTION = (
     "记忆窗口已达上限，系统将要删除所有对话历史。为防止上下文断层，请对当前所有会话细节、"
     "历史、当前工作记忆与进度进行大总结，然后调用 Memo 工具（必须设置 action='add'）传入总结。"
     "系统将仅保留这份总结。"
 )
-SUB_COMPRESSION_INSTRUCTION = (
-    "记忆窗口已达上限，系统将要删除所有对话历史。为防止上下文断层，请对当前所有会话细节、"
-    "历史、当前工作记忆与进度进行大总结，然后调用 Memo 工具（必须设置 action='add'）传入总结报告。"
-    "系统将仅保留这份总结。"
-)
+
+SUMMARY_HEADER = "【历史记忆总结】"
 
 MAIN_SUMMARY_FALLBACK = "（模型未能成功生成有效总结，上下文已强行截断）"
 SUB_SUMMARY_FALLBACK = "（后台子分支未能成功生成有效总结，上下文已强行截断）"
@@ -126,7 +123,7 @@ def rebuild_main_history(
     """主 Agent 压缩后的历史：新系统提示词 + 总结。"""
     return [
         {"role": "system", "content": system_prompt},
-        system_event(f"【历史记忆大总结】\n{summary_text}", now=now),
+        system_event(f"{SUMMARY_HEADER}\n{summary_text}", now=now),
     ]
 
 
@@ -163,7 +160,7 @@ def rebuild_sub_history(
     history = (
         [{"role": "system", "content": system_prompt}]
         + recent_messages
-        + [system_event(f"【历史记忆大总结】\n{summary_text}", now=now)]
+        + [system_event(f"{SUMMARY_HEADER}\n{summary_text}", now=now)]
     )
     strip_reasoning(history)
     return history

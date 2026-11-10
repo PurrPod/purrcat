@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from src.agent.compression import (
-    MAIN_COMPRESSION_INSTRUCTION,
+    COMPRESSION_INSTRUCTION,
     MAIN_SUMMARY_FALLBACK,
     main_warning,
     rebuild_main_history,
@@ -51,7 +51,7 @@ def truncate_memory_if_needed(agent, force=False) -> None:
             cancel_event=agent._tool_interrupt_event,
         ),
         temp_history,
-        instruction=MAIN_COMPRESSION_INSTRUCTION,
+        instruction=COMPRESSION_INSTRUCTION,
         warning_text=main_warning,
         fallback_text=MAIN_SUMMARY_FALLBACK,
         warning_prefix="[Warn.MemCompress]",
