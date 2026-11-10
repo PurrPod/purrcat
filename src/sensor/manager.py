@@ -7,6 +7,14 @@ import urllib.error
 import atexit
 import sys
 from .bridge import AcpSensorBridge
+from .processes import (
+    DOWNLOAD_BASE,
+    build_sensor_env,
+    candidate_urls,
+    close_stdin,
+    kill_process_tree,
+    sensor_command,
+)
 from src.utils.config import (
     get_sensor_config,
     get_enriched_env,
@@ -20,9 +28,7 @@ class SensorManager:
         self.extension_dir = SENSOR_EXTENSION_DIR
         self.processes = {}
         # 官方传感器仓库 PurrPod/sensors，代码位于 sensors/ 子目录下
-        self.github_repo_base = (
-            "https://raw.githubusercontent.com/PurrPod/sensors/main/sensors"
-        )
+        self.github_repo_base = DOWNLOAD_BASE
         self._watchdog_started = False
 
         os.makedirs(self.extension_dir, exist_ok=True)
@@ -81,10 +87,7 @@ class SensorManager:
             else:
                 # 🌟 重构：开启子线程去下载，绝不阻塞当前循环
                 print(f"🔄 [Manager] 本地无 {name}.py，已派发后台下载任务...")
-                urls = [
-                    f"{self.github_repo_base}/{name}/{name}.py",
-                    f"{self.github_repo_base}/{name}.py",
-                ]
+                urls = candidate_urls(self.github_repo_base, name)
                 threading.Thread(
                     target=self._download_and_start_sensor_bg,
                     args=(name, urls, local_path, cfg),
@@ -98,28 +101,11 @@ class SensorManager:
 
     def _close_stdin(self, process):
         """显式关闭 stdin 写端：进程死后残留管道若交给 GC，flush 会报 OSError[Errno 22]"""
-        try:
-            if process.stdin is not None and not process.stdin.closed:
-                process.stdin.close()
-        except Exception:
-            pass
+        close_stdin(process)
 
     def _kill_process_tree(self, process):
-        """整树击杀 sensor 进程。Windows 下 terminate() 只杀 uv 包装进程，
-        会留下 sensor python 孤儿——孤儿 bot 会继续重连外部服务（如飞书 WS）
-        抢占事件，且其 stdout 已无人监听，事件会被静默吞掉"""
-        try:
-            if os.name == "nt":
-                subprocess.run(
-                    ["taskkill", "/PID", str(process.pid), "/T", "/F"],
-                    capture_output=True,
-                    creationflags=subprocess.CREATE_NO_WINDOW,
-                )
-            else:
-                process.terminate()
-        except Exception:
-            pass
-        self._close_stdin(process)
+        """整树击杀 sensor 进程（Windows 下 terminate 会留下孤儿 python）。"""
+        kill_process_tree(process)
 
     def _start_sensor(self, name: str, script_path: str, cfg: dict):
         # 防御：同名 sensor 已在运行时先整树击杀，避免双实例抢占外部连接
@@ -127,25 +113,10 @@ class SensorManager:
         if old and old.poll() is None:
             self._kill_process_tree(old)
         # 🌟 合并注册表最新 PATH：用户中途安装 uv 后无需重启程序即可拉起 sensor
-        env = get_enriched_env()
-        # 【修复】剥离父进程（桌面壳自身 venv）透传的 Python 环境变量，否则
-        # `uv run` 子进程会带着父进程的 PYTHONHOME（指向 uv-managed CPython）去加载
-        # 纯 Python 标准库，而 _sre 扩展来自实际选中的解释器，两者版本错配，
-        # import json 即抛 "AssertionError: SRE module mismatch"，
-        # 被 watchdog 判定退出后无限重启（与 MCP 子进程同款问题）。
-        for k in (
-            "PYTHONHOME",
-            "PYTHONPATH",
-            "VIRTUAL_ENV",
-            "PYTHONSTARTUP",
-            "PYTHONUSERBASE",
-        ):
-            env.pop(k, None)
-        env.update(cfg.get("env", {}))
-        env["PYTHONIOENCODING"] = "utf-8"
+        env = build_sensor_env(get_enriched_env(), cfg)
 
         try:
-            command = ["uv", "run", script_path]
+            command = sensor_command(script_path)
 
             # Windows 下隐藏传感器子进程的终端弹窗（uv/pytest 等都是控制台程序）
             creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
