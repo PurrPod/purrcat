@@ -9,7 +9,7 @@ import pytest
 from types import SimpleNamespace
 
 from src.agent.compression import (
-    MAIN_SUMMARY_FALLBACK,
+    SUMMARY_FALLBACK,
     compression_prompt,
     extract_memo_summary,
     find_safe_split_index,
@@ -86,7 +86,7 @@ def test_summary_attempts_stops_on_first_valid_memo():
         messages,
         instruction="压缩",
         warning_text=lambda attempt: f"警告{attempt}",
-        fallback_text=MAIN_SUMMARY_FALLBACK,
+        fallback_text=SUMMARY_FALLBACK,
         warning_prefix="[Warn.Test]",
         error_prefix="[Error.Test]",
     )
@@ -111,7 +111,7 @@ def test_summary_attempts_retries_with_warning_then_succeeds():
         messages,
         instruction="压缩",
         warning_text=lambda attempt: f"警告{attempt}",
-        fallback_text=MAIN_SUMMARY_FALLBACK,
+        fallback_text=SUMMARY_FALLBACK,
         warning_prefix="[Warn.Test]",
         error_prefix="[Error.Test]",
     )
@@ -131,7 +131,7 @@ def test_summary_attempts_falls_back_to_response_content():
         [],
         instruction="压缩",
         warning_text=lambda attempt: "警告",
-        fallback_text=MAIN_SUMMARY_FALLBACK,
+        fallback_text=SUMMARY_FALLBACK,
         warning_prefix="[Warn.Test]",
         error_prefix="[Error.Test]",
         max_retries=1,
@@ -149,12 +149,12 @@ def test_summary_attempts_network_error_uses_fallback():
         [],
         instruction="压缩",
         warning_text=lambda attempt: "警告",
-        fallback_text=MAIN_SUMMARY_FALLBACK,
+        fallback_text=SUMMARY_FALLBACK,
         warning_prefix="[Warn.Test]",
         error_prefix="[Error.Test]",
     )
 
-    assert summary == MAIN_SUMMARY_FALLBACK
+    assert summary == SUMMARY_FALLBACK
 
 
 def test_find_safe_split_index_moves_before_dangling_tool_messages():

@@ -8,7 +8,7 @@ import json
 
 from src.agent.compression import (
     COMPRESSION_INSTRUCTION,
-    SUB_SUMMARY_FALLBACK,
+    SUMMARY_FALLBACK,
     rebuild_sub_history,
     run_summary_attempts,
     sub_warning,
@@ -166,7 +166,7 @@ class SubAgentRunner:
             temp_history,
             instruction=COMPRESSION_INSTRUCTION,
             warning_text=sub_warning,
-            fallback_text=SUB_SUMMARY_FALLBACK,
+            fallback_text=SUMMARY_FALLBACK,
             warning_prefix="[Warn.SubAgentBlock]",
             error_prefix="[Error] 后台记忆总结请求网络异常",
         )

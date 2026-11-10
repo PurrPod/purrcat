@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from src.agent.compression import (
     COMPRESSION_INSTRUCTION,
-    MAIN_SUMMARY_FALLBACK,
+    SUMMARY_FALLBACK,
     main_warning,
     rebuild_main_history,
     run_summary_attempts,
@@ -53,7 +53,7 @@ def truncate_memory_if_needed(agent, force=False) -> None:
         temp_history,
         instruction=COMPRESSION_INSTRUCTION,
         warning_text=main_warning,
-        fallback_text=MAIN_SUMMARY_FALLBACK,
+        fallback_text=SUMMARY_FALLBACK,
         warning_prefix="[Warn.MemCompress]",
         error_prefix="[Error] 记忆总结网络请求失败",
         parse_error_prefix="[Warn] 解析 Memo 参数失败",

@@ -19,8 +19,7 @@ COMPRESSION_INSTRUCTION = (
 
 SUMMARY_HEADER = "【历史记忆总结】"
 
-MAIN_SUMMARY_FALLBACK = "（模型未能成功生成有效总结，上下文已强行截断）"
-SUB_SUMMARY_FALLBACK = "（后台子分支未能成功生成有效总结，上下文已强行截断）"
+SUMMARY_FALLBACK = "（模型未能成功生成有效总结，上下文已强行截断）"
 
 
 def main_warning(attempt: int) -> str:
