@@ -12,13 +12,14 @@ import { HOST } from './state.js';
   ];
   export const MODEL_SDKS = ['openai'];
   export const DEPLOY_ITEMS = ['uv', 'node', 'sandbox', 'embedding'];
-  export const DEPLOY_LABEL: Record<string, string> = { uv: 'uv', node: 'node', sandbox: 'sandbox / Docker 沙盒', embedding: 'embedding' };
+  export const DEPLOY_LABEL: Record<string, string> = { uv: 'uv', node: 'node', sandbox: 'Docker 沙盒', embedding: 'embedding' };
+  const DEPLOY_DESC: Record<string, string> = { uv: 'Python 依赖与运行环境', node: '前端宿主与插件构建', sandbox: 'Docker 隔离执行环境', embedding: '本地向量化模型' };
+  const DEPLOY_CHIP: Record<string, string> = { missing: '未安装', failed: '失败', running: '部署中', installed: '待重启', ready: '已就绪' };
   export const cfgState: {
     data: Record<string, any>;
     mode: Record<string, string>;
     openKey: Record<string, string>;
     editStr: Record<string, string>;
-    sandboxRegistry: string;
     deployLogOpen: Record<string, boolean>;
     diskLogOpen: boolean;
     rawSensor: Record<string, boolean>;
@@ -27,7 +28,6 @@ import { HOST } from './state.js';
     mode: {},         // tab -> 'cards'|'json'
     openKey: {},      // tab -> 处于展开态的顶级 key
     editStr: {},      // tab+'::'+key -> 编辑区文本
-    sandboxRegistry: '',
     deployLogOpen: {},
     diskLogOpen: false,
     rawSensor: {},
@@ -1306,10 +1306,10 @@ import { HOST } from './state.js';
     const sec = makeSection('部署中心', main);
     const tip = HOST.document.createElement('div');
     tip.className = 'cfg-tip';
-    tip.textContent = '按顺序逐步安装依赖：uv → node → sandbox → embedding。需重启应用生效，建议网络稳定。';
+    tip.textContent = '安装完成后需重启应用生效，建议网络稳定。';
     sec.appendChild(tip);
     const list = HOST.document.createElement('div');
-    list.className = 'cfg-stepper';
+    list.className = 'cfg-deploy-grid';
     sec.appendChild(list);
     // 磁盘维护卡片：只读展示 vhdx 空洞，用户点按钮才执行回收
     const diskTitle = HOST.document.createElement('div');
@@ -1443,44 +1443,49 @@ import { HOST } from './state.js';
       }
       diskWrap.appendChild(card);
     }
-    if (!cfgState.sandboxRegistry) {
-      fetch('/api/config/sandbox-registry').then(function (r) { return r.json(); }).then(function (d) { if (d) cfgState.sandboxRegistry = d.sandbox_registry || 'ghcr.io/purrpod'; }).catch(function () { cfgState.sandboxRegistry = 'ghcr.io/purrpod'; });
-    }
     function draw() {
       cfgData('deploy').then(function (ov) {
         list.innerHTML = '';
-        DEPLOY_ITEMS.forEach(function (it, idx) {
+        DEPLOY_ITEMS.forEach(function (it) {
           const st = deployState(it, ov);
-          const row = HOST.document.createElement('div');
-          row.className = 'cfg-step';
-          const rail = HOST.document.createElement('div');
-          rail.className = 'cfg-step-rail';
-          const dot = HOST.document.createElement('div');
-          dot.className = 'cfg-step-dot ' + st.state;
-          dot.textContent = String(idx + 1);
-          rail.appendChild(dot);
-          if (idx < DEPLOY_ITEMS.length - 1) { const line = HOST.document.createElement('div'); line.className = 'cfg-step-line'; rail.appendChild(line); }
-          row.appendChild(rail);
-          const body = HOST.document.createElement('div');
-          body.className = 'cfg-step-body';
+          const card = HOST.document.createElement('div');
+          card.className = 'cfg-card cfg-deploy-card';
           const head = HOST.document.createElement('div');
-          head.className = 'cfg-step-head';
+          head.className = 'cfg-card-head';
+          const left = HOST.document.createElement('div');
+          left.className = 'cfg-card-head-l';
+          const title = HOST.document.createElement('div');
+          title.className = 'cfg-card-title';
           const nm = HOST.document.createElement('div');
-          nm.className = 'cfg-step-title';
+          nm.className = 'cfg-card-name';
           nm.textContent = DEPLOY_LABEL[it];
-          head.appendChild(nm);
-          const act = HOST.document.createElement('div');
-          act.className = 'cfg-step-act';
-          if (it === 'sandbox' && st.item) {
-            const docker = HOST.document.createElement('span');
-            docker.className = 'cfg-chip ' + (st.item.docker_installed ? 'ok' : 'bad');
-            docker.textContent = 'Docker ' + (st.item.docker_installed ? '✓' : '✗');
-            act.appendChild(docker);
-            const img = HOST.document.createElement('span');
-            img.className = 'cfg-chip ' + (st.item.image_ready ? 'ok' : 'warn');
-            img.textContent = '镜像 ' + (st.item.image_ready ? '✓' : '✗');
-            act.appendChild(img);
+          let chipText = DEPLOY_CHIP[st.state];
+          let chipTone = st.state === 'ready' ? 'ok' : st.state === 'failed' || st.state === 'missing' ? 'bad' : 'warn';
+          if (it === 'sandbox' && st.item && st.state !== 'running' && st.state !== 'failed') {
+            if (!st.item.docker_installed) {
+              chipText = 'Docker 缺';
+              chipTone = 'bad';
+            } else if (!st.item.image_ready) {
+              chipText = '镜像缺';
+              chipTone = 'warn';
+            } else {
+              chipText = '已就绪';
+              chipTone = 'ok';
+            }
           }
+          const chip = HOST.document.createElement('span');
+          chip.className = 'cfg-chip ' + chipTone;
+          chip.textContent = chipText;
+          title.appendChild(nm);
+          title.appendChild(chip);
+          left.appendChild(title);
+          const sub = HOST.document.createElement('div');
+          sub.className = 'cfg-card-sub';
+          sub.textContent = (st.item && st.item.detail) || DEPLOY_DESC[it];
+          left.appendChild(sub);
+
+          const act = HOST.document.createElement('div');
+          act.className = 'cfg-card-act';
           const btn = HOST.document.createElement('button');
           btn.className = 'btn cfg-deploy-btn ' + st.state;
           btn.disabled = !st.clickable;
@@ -1490,36 +1495,26 @@ import { HOST } from './state.js';
             fetch('/api/config/deploy/' + it, { method: 'POST' }).then(function (r) { if (!r.ok) return r.json().then(function (d2) { throw new Error(d2.detail || '部署冲突'); }); }).then(function () { delete cfgState.data.deploy; draw(); }).catch(function (e) { HOST.alert('失败：' + (e && e.message || '')); });
           });
           act.appendChild(btn);
+          head.appendChild(left);
           head.appendChild(act);
-          body.appendChild(head);
-          if (it === 'sandbox') {
-            const reg = HOST.document.createElement('div');
-            reg.className = 'cfg-registry-row';
-            const inp = HOST.document.createElement('input');
-            inp.type = 'text'; inp.placeholder = 'ghcr.io/…（默认 ghcr.io/purrpod）'; inp.value = cfgState.sandboxRegistry;
-            inp.addEventListener('input', function () { cfgState.sandboxRegistry = inp.value; });
-            const rs = HOST.document.createElement('button');
-            rs.className = 'btn'; rs.textContent = '保存镜像源';
-            rs.addEventListener('click', function () { cfgData('deploy'); fetch('/api/config/sandbox-registry', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sandbox_registry: cfgState.sandboxRegistry }) }).then(function (r) { if (!r.ok) throw new Error(''); HOST.alert('镜像源已保存'); }).catch(function () { HOST.alert('保存失败'); }); });
-            reg.appendChild(inp);
-            reg.appendChild(rs);
-            body.appendChild(reg);
-          }
-          if (st.item && st.item.detail) { const det = HOST.document.createElement('div'); det.className = 'cfg-card-sub'; det.textContent = st.item.detail; body.appendChild(det); }
+          card.appendChild(head);
+
+          const foot = HOST.document.createElement('div');
+          foot.className = 'cfg-deploy-card-foot';
           const lgToggle = HOST.document.createElement('button');
           lgToggle.className = 'cfg-log-toggle';
           lgToggle.textContent = (cfgState.deployLogOpen[it] ? '收起日志 ▾' : '查看日志 ▸');
           lgToggle.addEventListener('click', function () { cfgState.deployLogOpen[it] = !cfgState.deployLogOpen[it]; draw(); });
-          body.appendChild(lgToggle);
+          foot.appendChild(lgToggle);
+          card.appendChild(foot);
           if (cfgState.deployLogOpen[it]) {
             const lgr = HOST.document.createElement('pre');
-            lgr.className = 'settings-log';
+            lgr.className = 'settings-log cfg-deploy-log';
             lgr.style.minHeight = '80px';
             lgr.textContent = (st.task && st.task.log && st.task.log.length) ? st.task.log.join('\n') : '（暂无日志）';
-            body.appendChild(lgr);
+            card.appendChild(lgr);
           }
-          row.appendChild(body);
-          list.appendChild(row);
+          list.appendChild(card);
         });
         renderDisk(ov && ov.disk);
       });

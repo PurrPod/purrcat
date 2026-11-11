@@ -1622,7 +1622,9 @@
     { key: "vision", title: "\u89C6\u89C9\u987E\u95EE" }
   ];
   var DEPLOY_ITEMS = ["uv", "node", "sandbox", "embedding"];
-  var DEPLOY_LABEL = { uv: "uv", node: "node", sandbox: "sandbox / Docker \u6C99\u76D2", embedding: "embedding" };
+  var DEPLOY_LABEL = { uv: "uv", node: "node", sandbox: "Docker \u6C99\u76D2", embedding: "embedding" };
+  var DEPLOY_DESC = { uv: "Python \u4F9D\u8D56\u4E0E\u8FD0\u884C\u73AF\u5883", node: "\u524D\u7AEF\u5BBF\u4E3B\u4E0E\u63D2\u4EF6\u6784\u5EFA", sandbox: "Docker \u9694\u79BB\u6267\u884C\u73AF\u5883", embedding: "\u672C\u5730\u5411\u91CF\u5316\u6A21\u578B" };
+  var DEPLOY_CHIP = { missing: "\u672A\u5B89\u88C5", failed: "\u5931\u8D25", running: "\u90E8\u7F72\u4E2D", installed: "\u5F85\u91CD\u542F", ready: "\u5DF2\u5C31\u7EEA" };
   var cfgState = {
     data: {},
     // tab -> 已加载的配置对象（GET /api/config/{tab}）
@@ -1632,7 +1634,6 @@
     // tab -> 处于展开态的顶级 key
     editStr: {},
     // tab+'::'+key -> 编辑区文本
-    sandboxRegistry: "",
     deployLogOpen: {},
     diskLogOpen: false,
     rawSensor: {}
@@ -3140,10 +3141,10 @@
     const sec = makeSection("\u90E8\u7F72\u4E2D\u5FC3", main);
     const tip = HOST.document.createElement("div");
     tip.className = "cfg-tip";
-    tip.textContent = "\u6309\u987A\u5E8F\u9010\u6B65\u5B89\u88C5\u4F9D\u8D56\uFF1Auv \u2192 node \u2192 sandbox \u2192 embedding\u3002\u9700\u91CD\u542F\u5E94\u7528\u751F\u6548\uFF0C\u5EFA\u8BAE\u7F51\u7EDC\u7A33\u5B9A\u3002";
+    tip.textContent = "\u5B89\u88C5\u5B8C\u6210\u540E\u9700\u91CD\u542F\u5E94\u7528\u751F\u6548\uFF0C\u5EFA\u8BAE\u7F51\u7EDC\u7A33\u5B9A\u3002";
     sec.appendChild(tip);
     const list = HOST.document.createElement("div");
-    list.className = "cfg-stepper";
+    list.className = "cfg-deploy-grid";
     sec.appendChild(list);
     const diskTitle = HOST.document.createElement("div");
     diskTitle.className = "settings-subgroup";
@@ -3283,54 +3284,48 @@
       }
       diskWrap.appendChild(card);
     }
-    if (!cfgState.sandboxRegistry) {
-      fetch("/api/config/sandbox-registry").then(function(r) {
-        return r.json();
-      }).then(function(d) {
-        if (d) cfgState.sandboxRegistry = d.sandbox_registry || "ghcr.io/purrpod";
-      }).catch(function() {
-        cfgState.sandboxRegistry = "ghcr.io/purrpod";
-      });
-    }
     function draw() {
       cfgData("deploy").then(function(ov) {
         list.innerHTML = "";
-        DEPLOY_ITEMS.forEach(function(it, idx) {
+        DEPLOY_ITEMS.forEach(function(it) {
           const st = deployState(it, ov);
-          const row = HOST.document.createElement("div");
-          row.className = "cfg-step";
-          const rail = HOST.document.createElement("div");
-          rail.className = "cfg-step-rail";
-          const dot = HOST.document.createElement("div");
-          dot.className = "cfg-step-dot " + st.state;
-          dot.textContent = String(idx + 1);
-          rail.appendChild(dot);
-          if (idx < DEPLOY_ITEMS.length - 1) {
-            const line = HOST.document.createElement("div");
-            line.className = "cfg-step-line";
-            rail.appendChild(line);
-          }
-          row.appendChild(rail);
-          const body = HOST.document.createElement("div");
-          body.className = "cfg-step-body";
+          const card = HOST.document.createElement("div");
+          card.className = "cfg-card cfg-deploy-card";
           const head = HOST.document.createElement("div");
-          head.className = "cfg-step-head";
+          head.className = "cfg-card-head";
+          const left = HOST.document.createElement("div");
+          left.className = "cfg-card-head-l";
+          const title = HOST.document.createElement("div");
+          title.className = "cfg-card-title";
           const nm = HOST.document.createElement("div");
-          nm.className = "cfg-step-title";
+          nm.className = "cfg-card-name";
           nm.textContent = DEPLOY_LABEL[it];
-          head.appendChild(nm);
-          const act = HOST.document.createElement("div");
-          act.className = "cfg-step-act";
-          if (it === "sandbox" && st.item) {
-            const docker = HOST.document.createElement("span");
-            docker.className = "cfg-chip " + (st.item.docker_installed ? "ok" : "bad");
-            docker.textContent = "Docker " + (st.item.docker_installed ? "\u2713" : "\u2717");
-            act.appendChild(docker);
-            const img = HOST.document.createElement("span");
-            img.className = "cfg-chip " + (st.item.image_ready ? "ok" : "warn");
-            img.textContent = "\u955C\u50CF " + (st.item.image_ready ? "\u2713" : "\u2717");
-            act.appendChild(img);
+          let chipText = DEPLOY_CHIP[st.state];
+          let chipTone = st.state === "ready" ? "ok" : st.state === "failed" || st.state === "missing" ? "bad" : "warn";
+          if (it === "sandbox" && st.item && st.state !== "running" && st.state !== "failed") {
+            if (!st.item.docker_installed) {
+              chipText = "Docker \u7F3A";
+              chipTone = "bad";
+            } else if (!st.item.image_ready) {
+              chipText = "\u955C\u50CF\u7F3A";
+              chipTone = "warn";
+            } else {
+              chipText = "\u5DF2\u5C31\u7EEA";
+              chipTone = "ok";
+            }
           }
+          const chip = HOST.document.createElement("span");
+          chip.className = "cfg-chip " + chipTone;
+          chip.textContent = chipText;
+          title.appendChild(nm);
+          title.appendChild(chip);
+          left.appendChild(title);
+          const sub = HOST.document.createElement("div");
+          sub.className = "cfg-card-sub";
+          sub.textContent = st.item && st.item.detail || DEPLOY_DESC[it];
+          left.appendChild(sub);
+          const act = HOST.document.createElement("div");
+          act.className = "cfg-card-act";
           const btn = HOST.document.createElement("button");
           btn.className = "btn cfg-deploy-btn " + st.state;
           btn.disabled = !st.clickable;
@@ -3349,40 +3344,11 @@
             });
           });
           act.appendChild(btn);
+          head.appendChild(left);
           head.appendChild(act);
-          body.appendChild(head);
-          if (it === "sandbox") {
-            const reg = HOST.document.createElement("div");
-            reg.className = "cfg-registry-row";
-            const inp = HOST.document.createElement("input");
-            inp.type = "text";
-            inp.placeholder = "ghcr.io/\u2026\uFF08\u9ED8\u8BA4 ghcr.io/purrpod\uFF09";
-            inp.value = cfgState.sandboxRegistry;
-            inp.addEventListener("input", function() {
-              cfgState.sandboxRegistry = inp.value;
-            });
-            const rs = HOST.document.createElement("button");
-            rs.className = "btn";
-            rs.textContent = "\u4FDD\u5B58\u955C\u50CF\u6E90";
-            rs.addEventListener("click", function() {
-              cfgData("deploy");
-              fetch("/api/config/sandbox-registry", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sandbox_registry: cfgState.sandboxRegistry }) }).then(function(r) {
-                if (!r.ok) throw new Error("");
-                HOST.alert("\u955C\u50CF\u6E90\u5DF2\u4FDD\u5B58");
-              }).catch(function() {
-                HOST.alert("\u4FDD\u5B58\u5931\u8D25");
-              });
-            });
-            reg.appendChild(inp);
-            reg.appendChild(rs);
-            body.appendChild(reg);
-          }
-          if (st.item && st.item.detail) {
-            const det = HOST.document.createElement("div");
-            det.className = "cfg-card-sub";
-            det.textContent = st.item.detail;
-            body.appendChild(det);
-          }
+          card.appendChild(head);
+          const foot = HOST.document.createElement("div");
+          foot.className = "cfg-deploy-card-foot";
           const lgToggle = HOST.document.createElement("button");
           lgToggle.className = "cfg-log-toggle";
           lgToggle.textContent = cfgState.deployLogOpen[it] ? "\u6536\u8D77\u65E5\u5FD7 \u25BE" : "\u67E5\u770B\u65E5\u5FD7 \u25B8";
@@ -3390,16 +3356,16 @@
             cfgState.deployLogOpen[it] = !cfgState.deployLogOpen[it];
             draw();
           });
-          body.appendChild(lgToggle);
+          foot.appendChild(lgToggle);
+          card.appendChild(foot);
           if (cfgState.deployLogOpen[it]) {
             const lgr = HOST.document.createElement("pre");
-            lgr.className = "settings-log";
+            lgr.className = "settings-log cfg-deploy-log";
             lgr.style.minHeight = "80px";
             lgr.textContent = st.task && st.task.log && st.task.log.length ? st.task.log.join("\n") : "\uFF08\u6682\u65E0\u65E5\u5FD7\uFF09";
-            body.appendChild(lgr);
+            card.appendChild(lgr);
           }
-          row.appendChild(body);
-          list.appendChild(row);
+          list.appendChild(card);
         });
         renderDisk(ov && ov.disk);
       });

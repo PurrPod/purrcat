@@ -467,6 +467,12 @@ body.settings-open .wm-modal-wrap { display: none !important; }
 .cfg-card-act { display: flex; align-items: center; gap: 6px; flex: none; }
 .cfg-card-body { border-top: 1px solid var(--wm-border); padding: 14px; display: flex; flex-direction: column; gap: 12px; }
 
+.cfg-deploy-grid { display: flex; flex-direction: column; gap: 12px; margin-bottom: 24px; }
+.cfg-deploy-card { margin-bottom: 0; }
+.cfg-deploy-card .cfg-card-head { align-items: flex-start; }
+.cfg-deploy-card-foot { padding: 0 14px 12px; }
+.cfg-deploy-log { margin: 0 14px 14px; }
+
 .cfg-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 14px; }
 .cfg-grid.one-col { grid-template-columns: 1fr; }
 .cfg-field { display: flex; flex-direction: column; gap: 4px; }
@@ -645,28 +651,8 @@ body.settings-open .wm-modal-wrap { display: none !important; }
 
 .cfg-add-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .cfg-add-row input, .cfg-add-row select { flex: 1; min-width: 120px; }
-.cfg-registry-row { display: flex; gap: 8px; align-items: center; margin-top: 6px; }
-.cfg-registry-row input { flex: 0 0 auto; width: 260px; max-width: 62%; }
-
 .cfg-tip { font-size: 12px; color: var(--wm-label-2nd); padding: 8px 10px; border-radius: 8px; background: var(--wm-bl-100); margin-bottom: 14px; }
 
-.cfg-stepper { display: flex; flex-direction: column; }
-.cfg-step { display: flex; gap: 12px; }
-.cfg-step-rail { display: flex; flex-direction: column; align-items: center; flex: none; width: 26px; }
-.cfg-step-dot {
-  width: 26px; height: 26px; border-radius: 8px; flex: none;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 13px; font-weight: 700; background: var(--wm-bl-150); color: var(--wm-label-2nd);
-  border: 1px solid var(--wm-border);
-}
-.cfg-step-dot.ready, .cfg-step-dot.installed { background: rgba(112, 180, 116, 0.35); border-color: rgba(112, 180, 116, 0.5); color: #39703c; }
-.cfg-step-dot.running { background: rgba(224, 177, 67, 0.35); border-color: rgba(224, 177, 67, 0.5); color: #8a6a1c; }
-.cfg-step-dot.failed { background: rgba(228, 88, 78, 0.3); border-color: rgba(228, 88, 78, 0.5); color: #a53a33; }
-.cfg-step-line { flex: 1; width: 0; border-left: 2px dashed var(--wm-bl-300); margin: 3px 0; min-height: 10px; }
-.cfg-step-body { flex: 1; min-width: 0; margin-bottom: 14px; }
-.cfg-step-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
-.cfg-step-title { font-weight: 600; font-size: 14px; }
-.cfg-step-act { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .cfg-deploy-btn { font-size: 12.5px; padding: 5px 14px; }
 .cfg-deploy-btn.missing { color: var(--wm-ink); font-weight: 600; }
 .cfg-deploy-btn.failed { color: #d0453b; }
