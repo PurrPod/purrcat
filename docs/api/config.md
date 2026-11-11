@@ -256,7 +256,12 @@ curl -X POST 'http://127.0.0.1:8000/api/config/sensor/feishu/restart'
 
 ## GET `/api/config/file`
 
-读取文件权限配置（`~/.purrcat/file.json`），定义 `blocked` / `readonly` / `writable` 三类路径规则与默认权限。
+读取文件权限配置（`~/.purrcat/file.json`），定义路径规则与默认权限。
+
+- `default_permission`：`readonly`（只读）、`writeonly`（只写）、`readwrite`（读写）、`blocked`（禁止读写）。
+- `permissions.blocked`：最高优先级，最先判定，命中后无论默认权限如何都禁止读写。
+- `permissions.readonly`：可读白名单，仅在默认权限不包含读取时（`writeonly` / `blocked`）生效。
+- `permissions.writable`：可写白名单，仅在默认权限不包含写入时（`readonly` / `blocked`）生效。
 
 **请求**
 

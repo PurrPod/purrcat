@@ -120,26 +120,24 @@ def _grant_file_permission(req_type: str, target: str):
     with open(FILE_CONFIG_PATH, "r", encoding="utf-8") as f:
         config = json.load(f)
 
-    if "permissions" not in config:
-        config["permissions"] = {"blocked": [], "readonly": [], "writable": []}
+    if "permissions" not in config or not isinstance(config["permissions"], dict):
+        config["permissions"] = {}
     perms = config["permissions"]
+    for group in ("blocked", "readonly", "writable"):
+        if not isinstance(perms.get(group), list):
+            perms[group] = []
 
     target_norm = _shared.normalize_target_path(target)
 
     if req_type == "file_read":
         if target_norm in perms["blocked"]:
             perms["blocked"].remove(target_norm)
-        if (
-            target_norm not in perms["readonly"]
-            and target_norm not in perms["writable"]
-        ):
+        if target_norm not in perms["readonly"]:
             perms["readonly"].append(target_norm)
 
     elif req_type == "file_write":
         if target_norm in perms["blocked"]:
             perms["blocked"].remove(target_norm)
-        if target_norm in perms["readonly"]:
-            perms["readonly"].remove(target_norm)
         if target_norm not in perms["writable"]:
             perms["writable"].append(target_norm)
 

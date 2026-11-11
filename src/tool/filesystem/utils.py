@@ -44,20 +44,43 @@ def is_in_agent_vm(path: str) -> bool:
         return False
 
 
+def _rule_matches(target_norm: str, target_path_obj: Path, rule: str) -> bool:
+    rule_norm = os.path.normcase(rule)
+    if os.path.isabs(rule_norm):
+        try:
+            return os.path.commonpath([target_norm, rule_norm]) == rule_norm
+        except ValueError:
+            return False
+    for current_node in [target_path_obj] + list(target_path_obj.parents):
+        if current_node.match(rule_norm):
+            return True
+    return False
+
+
+def _default_permission(config: dict) -> str:
+    value = str(config.get("default_permission") or "readonly")
+    if value in ("writable", "readwrite"):
+        return "readwrite"
+    if value in ("none", "blocked"):
+        return "blocked"
+    if value == "writeonly":
+        return "writeonly"
+    return "readonly"
+
+
 def get_path_permission(target_path: str) -> str:
     """
-    核心：基于最长匹配原则，支持绝对路径前缀匹配 和 .gitignore 风格的通配符匹配。
-    返回值: 'blocked', 'readonly', 'writable'
+    先判定 blocked；未命中时按全局默认权限计算读写能力。
+    返回值: 'blocked', 'readonly', 'writeonly', 'readwrite'
     """
     # 沙盒内是 agent 自己的电脑，无论用户是否配置权限，一律全放行
     if is_in_agent_vm(target_path):
-        return "writable"
+        return "readwrite"
 
     # 项目记忆文件由 Agent 维护，读写都直接放行（严格匹配项目目录下的 MEMORY.md）
     if is_project_memory_path(target_path):
-        return "writable"
+        return "readwrite"
 
-    # 统一转换路径大小写（Windows 下忽略大小写，Linux 下保持）
     target_norm = os.path.normcase(os.path.abspath(target_path))
     target_path_obj = Path(target_norm)
 
@@ -65,54 +88,49 @@ def get_path_permission(target_path: str) -> str:
 
     config = get_file_config()
     perms = config.get("permissions", {})
+    if not isinstance(perms, dict):
+        perms = {}
 
-    best_match_len = -1
-    best_perm = config.get("default_permission", "readonly")
+    for rule in perms.get("blocked", []) or []:
+        if _rule_matches(target_norm, target_path_obj, str(rule)):
+            return "blocked"
 
-    for perm_type in ["blocked", "readonly", "writable"]:
-        for rule in perms.get(perm_type, []):
-            rule_norm = os.path.normcase(rule)
-            is_match = False
+    default = _default_permission(config)
+    allow_read = default in ("readonly", "readwrite")
+    allow_write = default in ("writeonly", "readwrite")
 
-            # 1. 保留原有逻辑：绝对路径的前缀匹配（向下兼容）
-            if os.path.isabs(rule_norm):
-                try:
-                    if os.path.commonpath([target_norm, rule_norm]) == rule_norm:
-                        is_match = True
-                except ValueError:
-                    pass
+    if not allow_read:
+        allow_read = any(
+            _rule_matches(target_norm, target_path_obj, str(rule))
+            for rule in perms.get("readonly", []) or []
+        )
+    if not allow_write:
+        allow_write = any(
+            _rule_matches(target_norm, target_path_obj, str(rule))
+            for rule in perms.get("writable", []) or []
+        )
 
-            # 2. .gitignore 风格通配符匹配
-            if not is_match:
-                # 关键逻辑：遍历当前文件及其所有父级目录，只要任意一级匹配上了规则就算命中
-                # 这确保了如果拦截了 ".git" 目录，其子文件 ".git/config" 也会被拦截
-                for current_node in [target_path_obj] + list(target_path_obj.parents):
-                    if current_node.match(rule_norm):
-                        is_match = True
-                        break
+    if allow_read and allow_write:
+        return "readwrite"
+    if allow_read:
+        return "readonly"
+    if allow_write:
+        return "writeonly"
+    return "blocked"
 
-            # 3. 权重计算（特异性）
-            if is_match:
-                # 默认权重为规则字符串的长度
-                match_weight = len(rule_norm)
 
-                # 🌟 终极防弹逻辑：如果规则和目标路径一模一样（通常是人类通过 Request 批准的绝对路径）
-                # 直接赋予一个碾压级别的高权重，保证绝对优先！
-                if rule_norm == target_norm:
-                    match_weight += 10000
+def can_read(path: str) -> bool:
+    return get_path_permission(path) in ("readonly", "readwrite")
 
-                if match_weight > best_match_len:
-                    best_match_len = match_weight
-                    best_perm = perm_type
 
-    return best_perm
+def can_write(path: str) -> bool:
+    return get_path_permission(path) in ("writeonly", "readwrite")
 
 
 def require_read(path: str) -> str:
-    """要求读权限 (readonly 或 writable 均可)"""
+    """要求读权限"""
     resolved = convert_sandbox_path(path)
-    perm = get_path_permission(resolved)
-    if perm == "blocked":
+    if not can_read(resolved):
         raise PermissionDeniedError(
             resolved,
             "安全策略拦截：该路径不可读。请使用 Request 工具申请 file_read 权限。",
@@ -121,22 +139,16 @@ def require_read(path: str) -> str:
 
 
 def require_write(path: str) -> str:
-    """要求写权限 (必须是 writable)"""
+    """要求写权限"""
     resolved = convert_sandbox_path(path)
-    perm = get_path_permission(resolved)
-    if perm == "blocked":
+    if not can_write(resolved):
         raise PermissionDeniedError(
             resolved,
-            "安全策略拦截：该路径不可读不可写。请使用 Request 工具申请 file_write 权限。",
-        )
-    if perm == "readonly":
-        raise PermissionDeniedError(
-            resolved,
-            "安全保护：该路径当前仅可读，不可写。请使用 Request 工具申请 file_write 权限。",
+            "安全保护：该路径不可写。请使用 Request 工具申请 file_write 权限。",
         )
     return resolved
 
 
 def is_readable(path: str) -> bool:
     """用于 list/search/glob 遍历目录时的快速过滤"""
-    return get_path_permission(os.path.abspath(path)) != "blocked"
+    return can_read(os.path.abspath(path))
