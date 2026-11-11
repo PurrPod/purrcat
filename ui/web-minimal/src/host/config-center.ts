@@ -1283,6 +1283,64 @@ import { HOST } from './state.js';
       ops.appendChild(rtk);
       body.appendChild(ops);
       card.appendChild(body);
+
+      const conf = HOST.document.createElement('div');
+      conf.className = 'cfg-card';
+      cfgCardHead(conf, '客户端配置', 'stdio', '粘贴到 Zed 的 agent_servers 中，其他 ACP 客户端按各自格式填写');
+      const cbody = HOST.document.createElement('div');
+      cbody.className = 'cfg-card-body';
+      const tx = HOST.document.createElement('textarea');
+      tx.className = 'settings-json cfg-acp-json';
+      tx.readOnly = true;
+      tx.spellcheck = false;
+      const useUv = !!d.uv_found;
+      const script = "import os,runpy;runpy.run_path(os.path.expanduser('~/.purrcat/bin/acp_relay.py'), run_name='__main__')";
+      tx.value = JSON.stringify({ agent_servers: { PurrCat: { command: useUv ? 'uv' : 'python', args: useUv ? ['run', '--no-project', 'python', '-c', script] : ['-c', script] } } }, null, 2);
+      cbody.appendChild(tx);
+      const cbar = HOST.document.createElement('div');
+      cbar.className = 'settings-actions';
+      const cp = HOST.document.createElement('button');
+      cp.className = 'btn';
+      cp.textContent = '复制 JSON';
+      cp.addEventListener('click', function () {
+        let finished = false;
+        function feedback(ok: boolean) {
+          if (finished) return;
+          finished = true;
+          cp.textContent = ok ? '已复制' : '复制失败';
+          setTimeout(function () { cp.textContent = '复制 JSON'; }, 4000);
+        }
+        function legacyCopy() {
+          try {
+            const tmp = HOST.document.createElement('textarea');
+            tmp.value = tx.value;
+            tmp.style.position = 'fixed';
+            tmp.style.opacity = '0';
+            HOST.document.body.appendChild(tmp);
+            tmp.focus();
+            tmp.select();
+            const ok = HOST.document.execCommand('copy');
+            tmp.remove();
+            return ok;
+          } catch (e) {
+            return false;
+          }
+        }
+        if (legacyCopy()) return feedback(true);
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          try {
+            navigator.clipboard.writeText(tx.value).then(function () { feedback(true); }).catch(function () { feedback(false); });
+          } catch (e) {
+            feedback(false);
+          }
+        } else {
+          feedback(false);
+        }
+      });
+      cbar.appendChild(cp);
+      cbody.appendChild(cbar);
+      conf.appendChild(cbody);
+      sec.appendChild(conf);
     }).catch(function () {});
     sec.appendChild(card);
   }

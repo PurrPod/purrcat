@@ -429,6 +429,7 @@ body.settings-open .wm-modal-wrap { display: none !important; }
   background: var(--wm-bl-50); color: var(--wm-label); outline: none;
 }
 .settings-json:focus { border-color: var(--wm-accent); }
+.cfg-acp-json { min-height: 150px; }
 .settings-log {
   width: 100%; min-height: 130px; margin-top: 12px; overflow: auto;
   font-family: var(--wm-mono); font-size: 11.5px; line-height: 1.5; white-space: pre-wrap;

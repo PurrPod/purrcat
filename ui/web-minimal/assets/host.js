@@ -3119,6 +3119,69 @@
       ops.appendChild(rtk);
       body.appendChild(ops);
       card.appendChild(body);
+      const conf = HOST.document.createElement("div");
+      conf.className = "cfg-card";
+      cfgCardHead(conf, "\u5BA2\u6237\u7AEF\u914D\u7F6E", "stdio", "\u7C98\u8D34\u5230 Zed \u7684 agent_servers \u4E2D\uFF0C\u5176\u4ED6 ACP \u5BA2\u6237\u7AEF\u6309\u5404\u81EA\u683C\u5F0F\u586B\u5199");
+      const cbody = HOST.document.createElement("div");
+      cbody.className = "cfg-card-body";
+      const tx = HOST.document.createElement("textarea");
+      tx.className = "settings-json cfg-acp-json";
+      tx.readOnly = true;
+      tx.spellcheck = false;
+      const useUv = !!d.uv_found;
+      const script = "import os,runpy;runpy.run_path(os.path.expanduser('~/.purrcat/bin/acp_relay.py'), run_name='__main__')";
+      tx.value = JSON.stringify({ agent_servers: { PurrCat: { command: useUv ? "uv" : "python", args: useUv ? ["run", "--no-project", "python", "-c", script] : ["-c", script] } } }, null, 2);
+      cbody.appendChild(tx);
+      const cbar = HOST.document.createElement("div");
+      cbar.className = "settings-actions";
+      const cp = HOST.document.createElement("button");
+      cp.className = "btn";
+      cp.textContent = "\u590D\u5236 JSON";
+      cp.addEventListener("click", function() {
+        let finished = false;
+        function feedback(ok) {
+          if (finished) return;
+          finished = true;
+          cp.textContent = ok ? "\u5DF2\u590D\u5236" : "\u590D\u5236\u5931\u8D25";
+          setTimeout(function() {
+            cp.textContent = "\u590D\u5236 JSON";
+          }, 4e3);
+        }
+        function legacyCopy() {
+          try {
+            const tmp = HOST.document.createElement("textarea");
+            tmp.value = tx.value;
+            tmp.style.position = "fixed";
+            tmp.style.opacity = "0";
+            HOST.document.body.appendChild(tmp);
+            tmp.focus();
+            tmp.select();
+            const ok = HOST.document.execCommand("copy");
+            tmp.remove();
+            return ok;
+          } catch (e) {
+            return false;
+          }
+        }
+        if (legacyCopy()) return feedback(true);
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          try {
+            navigator.clipboard.writeText(tx.value).then(function() {
+              feedback(true);
+            }).catch(function() {
+              feedback(false);
+            });
+          } catch (e) {
+            feedback(false);
+          }
+        } else {
+          feedback(false);
+        }
+      });
+      cbar.appendChild(cp);
+      cbody.appendChild(cbar);
+      conf.appendChild(cbody);
+      sec.appendChild(conf);
     }).catch(function() {
     });
     sec.appendChild(card);

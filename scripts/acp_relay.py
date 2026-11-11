@@ -24,9 +24,12 @@ PurrCat ACP 转接（relay）：编辑器 stdio JSON-RPC ⇆ 后端 ACP 网关�
 4. 默认 http://127.0.0.1:8000；token 固定读 ~/.purrcat/acp_token（后端自动生成）
 
 编辑器接入（Zed settings.json）：
-    "agent": {
-        "command": "uv",
-        "args": ["run", "<repo绝对路径>/scripts/acp_relay.py"]
+    "agent_servers": {
+        "PurrCat": {
+            "command": "uv",
+            "args": ["run", "--no-project", "python", "-c",
+                     "import os,runpy;runpy.run_path(os.path.expanduser('~/.purrcat/bin/acp_relay.py'), run_name='__main__')"]
+        }
     }
 
 仅标准库实现；urllib 显式绕过系统代理（ProxyHandler({})），防止 localhost 被
