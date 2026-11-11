@@ -625,6 +625,24 @@ body.settings-open .wm-modal-wrap { display: none !important; }
 .cfg-inline-icon svg { width: 15px; height: 15px; }
 .cfg-inline-icon:hover { background: var(--wm-bg-hover); color: var(--wm-label); }
 
+/* 文件权限：分组行版式 */
+.perm-page { display: flex; flex-direction: column; gap: 34px; }
+.perm-section { display: flex; flex-direction: column; gap: 12px; }
+.perm-section-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.perm-section-text { min-width: 0; }
+.perm-section-title { margin: 0; font-size: 14px; font-weight: 600; color: var(--wm-label); }
+.perm-section-desc { margin: 4px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--wm-label-2nd); }
+.perm-actions { display: flex; flex: none; gap: 4px; }
+.perm-group { background: var(--wm-bl-100); border-radius: 12px; overflow: hidden; }
+.perm-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 48px; padding: 8px 12px 8px 16px; }
+.perm-row + .perm-row { border-top: 1px solid var(--wm-border-soft); }
+.perm-row-text { min-width: 0; }
+.perm-row-label { font-size: 13px; color: var(--wm-label); }
+.perm-row-desc { margin-top: 3px; font-size: 12px; color: var(--wm-label-2nd); }
+.perm-path { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--wm-mono); font-size: 12px; color: var(--wm-label); }
+.perm-select { flex: none; width: 150px; }
+.perm-empty { padding: 18px 16px; font-size: 12.5px; text-align: center; color: var(--wm-label-dim); }
+
 .cfg-add-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .cfg-add-row input, .cfg-add-row select { flex: 1; min-width: 120px; }
 .cfg-registry-row { display: flex; gap: 8px; align-items: center; margin-top: 6px; }

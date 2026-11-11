@@ -119,7 +119,7 @@ import { HOST } from './state.js';
     return tb;
   }
 
-  export const CONFIG_TITLE: Record<string, string> = { plugins: 'UI 插件设置', model: '模型设置', sensor: '传感器设置', file: '文件设置', mcp: 'MCP 设置', soul: '全局人设设置', acp: 'ACP 设置', deploy: '部署设置' };
+  export const CONFIG_TITLE: Record<string, string> = { plugins: 'UI 插件设置', model: '模型设置', sensor: '传感器设置', file: '文件权限设置', mcp: 'MCP 设置', soul: '全局人设设置', acp: 'ACP 设置', deploy: '部署设置' };
   const REFRESH_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 6.1"/><path d="M20 4v7h-7"/></svg>';
   const EYE_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
   const EYE_OFF_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l18 18"/><path d="M10.6 6.3A10.7 10.7 0 0 1 12 6c6.5 0 10 6 10 6a17.6 17.6 0 0 1-2.4 3.1"/><path d="M6.6 6.6C3.6 8.6 2 12 2 12s3.5 6 10 6c1.4 0 2.7-.3 3.9-.7"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>';
@@ -157,6 +157,7 @@ import { HOST } from './state.js';
     if (key === 'soul') return renderSoulEditor(main);
     if (key === 'mcp') return renderMcpCards(main, key);
     if (key === 'model') return renderModelCards(main, key);
+    if (key === 'file') return renderFilePermissions(main, key);
     cfgToolbar(main, key);
     if ((cfgState.mode[key] || 'cards') === 'json') {
       renderRawJson(main, key);
@@ -458,6 +459,208 @@ import { HOST } from './state.js';
         }
         grid.appendChild(card);
       });
+    });
+  }
+
+  // ---- 文件权限 ----
+  const FILE_PERM_MODES = [
+    { value: 'readonly', label: '只读' },
+    { value: 'writeonly', label: '只写' },
+    { value: 'readwrite', label: '读写' },
+    { value: 'blocked', label: '禁止读写' },
+  ];
+
+  function normalizeFilePerm(raw: any) {
+    const src = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+    let def = String(src.default_permission || 'readonly');
+    if (def === 'writable') def = 'readwrite';
+    if (def === 'none') def = 'blocked';
+    if (['readonly', 'writeonly', 'readwrite', 'blocked'].indexOf(def) < 0) def = 'readonly';
+    const p = src.permissions && typeof src.permissions === 'object' && !Array.isArray(src.permissions) ? src.permissions : {};
+    const list = function (v: any) { return Array.isArray(v) ? v.map(String).filter(Boolean) : []; };
+    return {
+      default_permission: def,
+      permissions: { blocked: list(p.blocked), readonly: list(p.readonly), writable: list(p.writable) },
+    };
+  }
+
+  function saveFilePerm(main: HTMLElement, key: string, data: any) {
+    return putCfg(key, data)
+      .then(function () { rerenderConfig(main, key); })
+      .catch(function (e) { HOST.alert('保存失败：' + (e && e.message || '')); });
+  }
+
+  function pickPermPaths(directory: boolean): Promise<string[]> {
+    const pc = HOST.purrcat;
+    if (!pc || !pc.openDialog) return Promise.reject(new Error('文件选择仅在桌面端可用'));
+    return pc.openDialog({
+      directory: directory,
+      properties: directory ? ['openDirectory', 'multiSelections'] : ['openFile', 'multiSelections'],
+    }).then(function (r) {
+      return Array.isArray(r) ? r.map(String).filter(Boolean) : [];
+    });
+  }
+
+  function appendPermSection(
+    wrap: HTMLElement,
+    opt: { title: string; desc: string; paths: string[]; onAdd: (directory: boolean) => void; onRemove: (path: string) => void }
+  ) {
+    const sec = HOST.document.createElement('section');
+    sec.className = 'perm-section';
+    const head = HOST.document.createElement('div');
+    head.className = 'perm-section-head';
+    const txt = HOST.document.createElement('div');
+    txt.className = 'perm-section-text';
+    const title = HOST.document.createElement('h3');
+    title.className = 'perm-section-title';
+    title.textContent = opt.title;
+    const desc = HOST.document.createElement('p');
+    desc.className = 'perm-section-desc';
+    desc.textContent = opt.desc;
+    txt.appendChild(title);
+    txt.appendChild(desc);
+    const actions = HOST.document.createElement('div');
+    actions.className = 'perm-actions';
+    const addFile = entryIconBtn('filePlus', '添加文件');
+    addFile.addEventListener('click', function () { opt.onAdd(false); });
+    const addFolder = entryIconBtn('folderPlus', '添加文件夹');
+    addFolder.addEventListener('click', function () { opt.onAdd(true); });
+    actions.appendChild(addFile);
+    actions.appendChild(addFolder);
+    head.appendChild(txt);
+    head.appendChild(actions);
+
+    const group = HOST.document.createElement('div');
+    group.className = 'perm-group';
+    if (opt.paths.length === 0) {
+      const empty = HOST.document.createElement('div');
+      empty.className = 'perm-empty';
+      empty.textContent = '暂无路径';
+      group.appendChild(empty);
+    } else {
+      opt.paths.forEach(function (path) {
+        const row = HOST.document.createElement('div');
+        row.className = 'perm-row';
+        const text = HOST.document.createElement('span');
+        text.className = 'perm-path';
+        text.textContent = path;
+        text.title = path;
+        const del = entryIconBtn('trash', '移除', true);
+        del.addEventListener('click', function () { opt.onRemove(path); });
+        row.appendChild(text);
+        row.appendChild(del);
+        group.appendChild(row);
+      });
+    }
+    sec.appendChild(head);
+    sec.appendChild(group);
+    wrap.appendChild(sec);
+  }
+
+  export function renderFilePermissions(main: HTMLElement, key: string) {
+    cfgData(key).then(function (raw) {
+      const data = normalizeFilePerm(raw);
+      cfgState.data[key] = data;
+      const readAllowed = data.default_permission === 'readonly' || data.default_permission === 'readwrite';
+      const writeAllowed = data.default_permission === 'writeonly' || data.default_permission === 'readwrite';
+      const wrap = HOST.document.createElement('div');
+      wrap.className = 'perm-page';
+
+      const defSec = HOST.document.createElement('section');
+      defSec.className = 'perm-section';
+      const defTitle = HOST.document.createElement('h3');
+      defTitle.className = 'perm-section-title';
+      defTitle.textContent = '默认权限';
+      const defGroup = HOST.document.createElement('div');
+      defGroup.className = 'perm-group';
+      const defRow = HOST.document.createElement('div');
+      defRow.className = 'perm-row';
+      const defTxt = HOST.document.createElement('div');
+      defTxt.className = 'perm-row-text';
+      const defLabel = HOST.document.createElement('div');
+      defLabel.className = 'perm-row-label';
+      defLabel.textContent = '全局默认权限';
+      const defDesc = HOST.document.createElement('div');
+      defDesc.className = 'perm-row-desc';
+      defDesc.textContent = '未命中任意路径规则时使用的读写策略';
+      defTxt.appendChild(defLabel);
+      defTxt.appendChild(defDesc);
+      const select = HOST.document.createElement('select');
+      select.className = 'cfg-input perm-select';
+      FILE_PERM_MODES.forEach(function (m) {
+        const o = HOST.document.createElement('option');
+        o.value = m.value;
+        o.textContent = m.label;
+        select.appendChild(o);
+      });
+      select.value = data.default_permission;
+      select.addEventListener('change', function () {
+        data.default_permission = select.value;
+        saveFilePerm(main, key, data);
+      });
+      defRow.appendChild(defTxt);
+      defRow.appendChild(select);
+      defGroup.appendChild(defRow);
+      defSec.appendChild(defTitle);
+      defSec.appendChild(defGroup);
+      wrap.appendChild(defSec);
+
+      if (!writeAllowed) {
+        appendPermSection(wrap, {
+          title: '可写白名单',
+          desc: '全局默认权限不包含写入时，允许写入的路径',
+          paths: data.permissions.writable,
+          onAdd: function (directory) {
+            pickPermPaths(directory).then(function (paths) {
+              if (!paths.length) return;
+              paths.forEach(function (p) { if (data.permissions.writable.indexOf(p) < 0) data.permissions.writable.push(p); });
+              saveFilePerm(main, key, data);
+            }).catch(function (e) { HOST.alert(e && e.message || '选择失败'); });
+          },
+          onRemove: function (path) {
+            data.permissions.writable = data.permissions.writable.filter(function (p) { return p !== path; });
+            saveFilePerm(main, key, data);
+          },
+        });
+      }
+
+      if (!readAllowed) {
+        appendPermSection(wrap, {
+          title: '可读白名单',
+          desc: '全局默认权限不包含读取时，允许读取的路径',
+          paths: data.permissions.readonly,
+          onAdd: function (directory) {
+            pickPermPaths(directory).then(function (paths) {
+              if (!paths.length) return;
+              paths.forEach(function (p) { if (data.permissions.readonly.indexOf(p) < 0) data.permissions.readonly.push(p); });
+              saveFilePerm(main, key, data);
+            }).catch(function (e) { HOST.alert(e && e.message || '选择失败'); });
+          },
+          onRemove: function (path) {
+            data.permissions.readonly = data.permissions.readonly.filter(function (p) { return p !== path; });
+            saveFilePerm(main, key, data);
+          },
+        });
+      }
+
+      appendPermSection(wrap, {
+        title: '最高优先级拦截',
+        desc: '最先判定，命中后无论全局默认权限如何都禁止读写',
+        paths: data.permissions.blocked,
+        onAdd: function (directory) {
+          pickPermPaths(directory).then(function (paths) {
+            if (!paths.length) return;
+            paths.forEach(function (p) { if (data.permissions.blocked.indexOf(p) < 0) data.permissions.blocked.push(p); });
+            saveFilePerm(main, key, data);
+          }).catch(function (e) { HOST.alert(e && e.message || '选择失败'); });
+        },
+        onRemove: function (path) {
+          data.permissions.blocked = data.permissions.blocked.filter(function (p) { return p !== path; });
+          saveFilePerm(main, key, data);
+        },
+      });
+
+      main.appendChild(wrap);
     });
   }
 
@@ -857,6 +1060,8 @@ import { HOST } from './state.js';
     stop: '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="7" y="7" width="10" height="10" rx="2"/></svg>',
     edit: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4l10.5-10.5a2.1 2.1 0 0 0-3-3L5 17v3z"/></svg>',
     trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M9 7V5h6v2"/><path d="M6 7l1 13h10l1-13"/><path d="M10 11v5M14 11v5"/></svg>',
+    filePlus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M12 12v6M9 15h6"/></svg>',
+    folderPlus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M12 11v6M9 14h6"/></svg>',
   };
 
   function entryIconBtn(name: string, title: string, danger?: boolean) {

@@ -1291,7 +1291,7 @@
 
   // ui/web-minimal/src/host/settings-tabs.ts
   var CONFIG_NAV = ["plugins", "model", "sensor", "file", "mcp", "soul", "acp", "deploy"];
-  var CONFIG_LABEL = { plugins: "UI \u63D2\u4EF6", model: "\u6A21\u578B", sensor: "\u4F20\u611F\u5668", file: "\u6587\u4EF6", mcp: "MCP", soul: "\u5168\u5C40\u4EBA\u8BBE", acp: "ACP", deploy: "\u90E8\u7F72" };
+  var CONFIG_LABEL = { plugins: "UI \u63D2\u4EF6", model: "\u6A21\u578B", sensor: "\u4F20\u611F\u5668", file: "\u6587\u4EF6\u6743\u9650", mcp: "MCP", soul: "\u5168\u5C40\u4EBA\u8BBE", acp: "ACP", deploy: "\u90E8\u7F72" };
   var settingsTab = "plugins";
   var settingsRenderedTab = "";
   var deployPollT = null;
@@ -1733,7 +1733,7 @@
     main.appendChild(tb);
     return tb;
   }
-  var CONFIG_TITLE = { plugins: "UI \u63D2\u4EF6\u8BBE\u7F6E", model: "\u6A21\u578B\u8BBE\u7F6E", sensor: "\u4F20\u611F\u5668\u8BBE\u7F6E", file: "\u6587\u4EF6\u8BBE\u7F6E", mcp: "MCP \u8BBE\u7F6E", soul: "\u5168\u5C40\u4EBA\u8BBE\u8BBE\u7F6E", acp: "ACP \u8BBE\u7F6E", deploy: "\u90E8\u7F72\u8BBE\u7F6E" };
+  var CONFIG_TITLE = { plugins: "UI \u63D2\u4EF6\u8BBE\u7F6E", model: "\u6A21\u578B\u8BBE\u7F6E", sensor: "\u4F20\u611F\u5668\u8BBE\u7F6E", file: "\u6587\u4EF6\u6743\u9650\u8BBE\u7F6E", mcp: "MCP \u8BBE\u7F6E", soul: "\u5168\u5C40\u4EBA\u8BBE\u8BBE\u7F6E", acp: "ACP \u8BBE\u7F6E", deploy: "\u90E8\u7F72\u8BBE\u7F6E" };
   var REFRESH_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 6.1"/><path d="M20 4v7h-7"/></svg>';
   var EYE_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
   var EYE_OFF_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l18 18"/><path d="M10.6 6.3A10.7 10.7 0 0 1 12 6c6.5 0 10 6 10 6a17.6 17.6 0 0 1-2.4 3.1"/><path d="M6.6 6.6C3.6 8.6 2 12 2 12s3.5 6 10 6c1.4 0 2.7-.3 3.9-.7"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>';
@@ -1769,6 +1769,7 @@
     if (key === "soul") return renderSoulEditor(main);
     if (key === "mcp") return renderMcpCards(main, key);
     if (key === "model") return renderModelCards(main, key);
+    if (key === "file") return renderFilePermissions(main, key);
     cfgToolbar(main, key);
     if ((cfgState.mode[key] || "cards") === "json") {
       renderRawJson(main, key);
@@ -2141,6 +2142,220 @@
         }
         grid.appendChild(card);
       });
+    });
+  }
+  var FILE_PERM_MODES = [
+    { value: "readonly", label: "\u53EA\u8BFB" },
+    { value: "writeonly", label: "\u53EA\u5199" },
+    { value: "readwrite", label: "\u8BFB\u5199" },
+    { value: "blocked", label: "\u7981\u6B62\u8BFB\u5199" }
+  ];
+  function normalizeFilePerm(raw) {
+    const src = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+    let def = String(src.default_permission || "readonly");
+    if (def === "writable") def = "readwrite";
+    if (def === "none") def = "blocked";
+    if (["readonly", "writeonly", "readwrite", "blocked"].indexOf(def) < 0) def = "readonly";
+    const p = src.permissions && typeof src.permissions === "object" && !Array.isArray(src.permissions) ? src.permissions : {};
+    const list = function(v) {
+      return Array.isArray(v) ? v.map(String).filter(Boolean) : [];
+    };
+    return {
+      default_permission: def,
+      permissions: { blocked: list(p.blocked), readonly: list(p.readonly), writable: list(p.writable) }
+    };
+  }
+  function saveFilePerm(main, key, data) {
+    return putCfg(key, data).then(function() {
+      rerenderConfig(main, key);
+    }).catch(function(e) {
+      HOST.alert("\u4FDD\u5B58\u5931\u8D25\uFF1A" + (e && e.message || ""));
+    });
+  }
+  function pickPermPaths(directory) {
+    const pc = HOST.purrcat;
+    if (!pc || !pc.openDialog) return Promise.reject(new Error("\u6587\u4EF6\u9009\u62E9\u4EC5\u5728\u684C\u9762\u7AEF\u53EF\u7528"));
+    return pc.openDialog({
+      directory,
+      properties: directory ? ["openDirectory", "multiSelections"] : ["openFile", "multiSelections"]
+    }).then(function(r) {
+      return Array.isArray(r) ? r.map(String).filter(Boolean) : [];
+    });
+  }
+  function appendPermSection(wrap, opt) {
+    const sec = HOST.document.createElement("section");
+    sec.className = "perm-section";
+    const head = HOST.document.createElement("div");
+    head.className = "perm-section-head";
+    const txt = HOST.document.createElement("div");
+    txt.className = "perm-section-text";
+    const title = HOST.document.createElement("h3");
+    title.className = "perm-section-title";
+    title.textContent = opt.title;
+    const desc = HOST.document.createElement("p");
+    desc.className = "perm-section-desc";
+    desc.textContent = opt.desc;
+    txt.appendChild(title);
+    txt.appendChild(desc);
+    const actions = HOST.document.createElement("div");
+    actions.className = "perm-actions";
+    const addFile = entryIconBtn("filePlus", "\u6DFB\u52A0\u6587\u4EF6");
+    addFile.addEventListener("click", function() {
+      opt.onAdd(false);
+    });
+    const addFolder = entryIconBtn("folderPlus", "\u6DFB\u52A0\u6587\u4EF6\u5939");
+    addFolder.addEventListener("click", function() {
+      opt.onAdd(true);
+    });
+    actions.appendChild(addFile);
+    actions.appendChild(addFolder);
+    head.appendChild(txt);
+    head.appendChild(actions);
+    const group = HOST.document.createElement("div");
+    group.className = "perm-group";
+    if (opt.paths.length === 0) {
+      const empty = HOST.document.createElement("div");
+      empty.className = "perm-empty";
+      empty.textContent = "\u6682\u65E0\u8DEF\u5F84";
+      group.appendChild(empty);
+    } else {
+      opt.paths.forEach(function(path) {
+        const row = HOST.document.createElement("div");
+        row.className = "perm-row";
+        const text = HOST.document.createElement("span");
+        text.className = "perm-path";
+        text.textContent = path;
+        text.title = path;
+        const del = entryIconBtn("trash", "\u79FB\u9664", true);
+        del.addEventListener("click", function() {
+          opt.onRemove(path);
+        });
+        row.appendChild(text);
+        row.appendChild(del);
+        group.appendChild(row);
+      });
+    }
+    sec.appendChild(head);
+    sec.appendChild(group);
+    wrap.appendChild(sec);
+  }
+  function renderFilePermissions(main, key) {
+    cfgData(key).then(function(raw) {
+      const data = normalizeFilePerm(raw);
+      cfgState.data[key] = data;
+      const readAllowed = data.default_permission === "readonly" || data.default_permission === "readwrite";
+      const writeAllowed = data.default_permission === "writeonly" || data.default_permission === "readwrite";
+      const wrap = HOST.document.createElement("div");
+      wrap.className = "perm-page";
+      const defSec = HOST.document.createElement("section");
+      defSec.className = "perm-section";
+      const defTitle = HOST.document.createElement("h3");
+      defTitle.className = "perm-section-title";
+      defTitle.textContent = "\u9ED8\u8BA4\u6743\u9650";
+      const defGroup = HOST.document.createElement("div");
+      defGroup.className = "perm-group";
+      const defRow = HOST.document.createElement("div");
+      defRow.className = "perm-row";
+      const defTxt = HOST.document.createElement("div");
+      defTxt.className = "perm-row-text";
+      const defLabel = HOST.document.createElement("div");
+      defLabel.className = "perm-row-label";
+      defLabel.textContent = "\u5168\u5C40\u9ED8\u8BA4\u6743\u9650";
+      const defDesc = HOST.document.createElement("div");
+      defDesc.className = "perm-row-desc";
+      defDesc.textContent = "\u672A\u547D\u4E2D\u4EFB\u610F\u8DEF\u5F84\u89C4\u5219\u65F6\u4F7F\u7528\u7684\u8BFB\u5199\u7B56\u7565";
+      defTxt.appendChild(defLabel);
+      defTxt.appendChild(defDesc);
+      const select = HOST.document.createElement("select");
+      select.className = "cfg-input perm-select";
+      FILE_PERM_MODES.forEach(function(m) {
+        const o = HOST.document.createElement("option");
+        o.value = m.value;
+        o.textContent = m.label;
+        select.appendChild(o);
+      });
+      select.value = data.default_permission;
+      select.addEventListener("change", function() {
+        data.default_permission = select.value;
+        saveFilePerm(main, key, data);
+      });
+      defRow.appendChild(defTxt);
+      defRow.appendChild(select);
+      defGroup.appendChild(defRow);
+      defSec.appendChild(defTitle);
+      defSec.appendChild(defGroup);
+      wrap.appendChild(defSec);
+      if (!writeAllowed) {
+        appendPermSection(wrap, {
+          title: "\u53EF\u5199\u767D\u540D\u5355",
+          desc: "\u5168\u5C40\u9ED8\u8BA4\u6743\u9650\u4E0D\u5305\u542B\u5199\u5165\u65F6\uFF0C\u5141\u8BB8\u5199\u5165\u7684\u8DEF\u5F84",
+          paths: data.permissions.writable,
+          onAdd: function(directory) {
+            pickPermPaths(directory).then(function(paths) {
+              if (!paths.length) return;
+              paths.forEach(function(p) {
+                if (data.permissions.writable.indexOf(p) < 0) data.permissions.writable.push(p);
+              });
+              saveFilePerm(main, key, data);
+            }).catch(function(e) {
+              HOST.alert(e && e.message || "\u9009\u62E9\u5931\u8D25");
+            });
+          },
+          onRemove: function(path) {
+            data.permissions.writable = data.permissions.writable.filter(function(p) {
+              return p !== path;
+            });
+            saveFilePerm(main, key, data);
+          }
+        });
+      }
+      if (!readAllowed) {
+        appendPermSection(wrap, {
+          title: "\u53EF\u8BFB\u767D\u540D\u5355",
+          desc: "\u5168\u5C40\u9ED8\u8BA4\u6743\u9650\u4E0D\u5305\u542B\u8BFB\u53D6\u65F6\uFF0C\u5141\u8BB8\u8BFB\u53D6\u7684\u8DEF\u5F84",
+          paths: data.permissions.readonly,
+          onAdd: function(directory) {
+            pickPermPaths(directory).then(function(paths) {
+              if (!paths.length) return;
+              paths.forEach(function(p) {
+                if (data.permissions.readonly.indexOf(p) < 0) data.permissions.readonly.push(p);
+              });
+              saveFilePerm(main, key, data);
+            }).catch(function(e) {
+              HOST.alert(e && e.message || "\u9009\u62E9\u5931\u8D25");
+            });
+          },
+          onRemove: function(path) {
+            data.permissions.readonly = data.permissions.readonly.filter(function(p) {
+              return p !== path;
+            });
+            saveFilePerm(main, key, data);
+          }
+        });
+      }
+      appendPermSection(wrap, {
+        title: "\u6700\u9AD8\u4F18\u5148\u7EA7\u62E6\u622A",
+        desc: "\u6700\u5148\u5224\u5B9A\uFF0C\u547D\u4E2D\u540E\u65E0\u8BBA\u5168\u5C40\u9ED8\u8BA4\u6743\u9650\u5982\u4F55\u90FD\u7981\u6B62\u8BFB\u5199",
+        paths: data.permissions.blocked,
+        onAdd: function(directory) {
+          pickPermPaths(directory).then(function(paths) {
+            if (!paths.length) return;
+            paths.forEach(function(p) {
+              if (data.permissions.blocked.indexOf(p) < 0) data.permissions.blocked.push(p);
+            });
+            saveFilePerm(main, key, data);
+          }).catch(function(e) {
+            HOST.alert(e && e.message || "\u9009\u62E9\u5931\u8D25");
+          });
+        },
+        onRemove: function(path) {
+          data.permissions.blocked = data.permissions.blocked.filter(function(p) {
+            return p !== path;
+          });
+          saveFilePerm(main, key, data);
+        }
+      });
+      main.appendChild(wrap);
     });
   }
   function coerceVal(str, orig) {
@@ -2625,7 +2840,9 @@
     restart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 6.1"/><path d="M20 4v7h-7"/></svg>',
     stop: '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="7" y="7" width="10" height="10" rx="2"/></svg>',
     edit: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4l10.5-10.5a2.1 2.1 0 0 0-3-3L5 17v3z"/></svg>',
-    trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M9 7V5h6v2"/><path d="M6 7l1 13h10l1-13"/><path d="M10 11v5M14 11v5"/></svg>'
+    trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M9 7V5h6v2"/><path d="M6 7l1 13h10l1-13"/><path d="M10 11v5M14 11v5"/></svg>',
+    filePlus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M12 12v6M9 15h6"/></svg>',
+    folderPlus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M12 11v6M9 14h6"/></svg>'
   };
   function entryIconBtn(name, title, danger) {
     const b = HOST.document.createElement("button");
