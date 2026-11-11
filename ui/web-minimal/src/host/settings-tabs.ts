@@ -1,7 +1,7 @@
 // 设置面板导航与插件总览（抽屉、启停、区域分组）
 import { PANEL_CONTAINER_ID } from './areas.js';
 import { callAction, syncNativeCover } from './bus.js';
-import { cfgState, cfgToolbar, renderConfigSection } from './config-center.js';
+import { cfgState, cfgToolbar, renderConfigSection, settingsPageHead } from './config-center.js';
 import { reloadManifest } from './manifest.js';
 import { refreshFixedSlot } from './mount.js';
 import { closePanelTab, openPanelTab, panelTabs } from './panel.js';
@@ -80,6 +80,9 @@ import type { PluginDescriptor } from './types.js';
   export function cfgFor(p: PluginDescriptor): Record<string, any> { return Object.assign({}, configByPlugin[p.id] || {}); }
 
   export function renderPluginsTab(main: HTMLElement) {
+    settingsPageHead(main, 'plugins', function () {
+      reloadManifest().then(function () { renderSettings(); });
+    });
     cfgToolbar(main, 'plugins', function (m: HTMLElement) { m.innerHTML = ''; renderPluginsTab(m); });
     if ((cfgState.mode['plugins'] || 'cards') === 'json') {
       renderWebminJson(main);

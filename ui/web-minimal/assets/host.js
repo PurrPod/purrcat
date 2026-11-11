@@ -1369,6 +1369,11 @@
     return Object.assign({}, configByPlugin[p.id] || {});
   }
   function renderPluginsTab(main) {
+    settingsPageHead(main, "plugins", function() {
+      reloadManifest().then(function() {
+        renderSettings();
+      });
+    });
     cfgToolbar(main, "plugins", function(m) {
       m.innerHTML = "";
       renderPluginsTab(m);
@@ -1693,18 +1698,20 @@
       });
       tb.appendChild(seg);
     });
-    const rf = HOST.document.createElement("button");
-    rf.className = "cfg-seg cfg-reload";
-    rf.textContent = "\u5237\u65B0";
-    rf.title = "\u4E22\u5F03\u672C\u5730\u7F13\u5B58\uFF0C\u91CD\u65B0\u4ECE\u78C1\u76D8\u8BFB\u53D6\u914D\u7F6E\u5E76\u91CD\u7ED8";
-    rf.addEventListener("click", function() {
-      delete cfgState.data[key];
-      cfgState.openKey = cfgState.openKey || {};
-      delete cfgState.openKey[key];
-      fn(main, key);
-    });
-    tb.appendChild(rf);
-    if (RELOAD_EP[key]) {
+    if (key !== "sensor") {
+      const rf = HOST.document.createElement("button");
+      rf.className = "cfg-seg cfg-reload";
+      rf.textContent = "\u5237\u65B0";
+      rf.title = "\u4E22\u5F03\u672C\u5730\u7F13\u5B58\uFF0C\u91CD\u65B0\u4ECE\u78C1\u76D8\u8BFB\u53D6\u914D\u7F6E\u5E76\u91CD\u7ED8";
+      rf.addEventListener("click", function() {
+        delete cfgState.data[key];
+        cfgState.openKey = cfgState.openKey || {};
+        delete cfgState.openKey[key];
+        fn(main, key);
+      });
+      tb.appendChild(rf);
+    }
+    if (RELOAD_EP[key] && key !== "sensor") {
       const rl = HOST.document.createElement("button");
       rl.className = "cfg-seg cfg-reload";
       rl.textContent = "\u91CD\u8F7D\u5230\u5185\u5B58";
@@ -1726,17 +1733,47 @@
     main.appendChild(tb);
     return tb;
   }
+  var CONFIG_TITLE = { plugins: "UI \u63D2\u4EF6\u8BBE\u7F6E", model: "\u6A21\u578B\u8BBE\u7F6E", sensor: "\u4F20\u611F\u5668\u8BBE\u7F6E", file: "\u6587\u4EF6\u8BBE\u7F6E", mcp: "MCP \u8BBE\u7F6E", soul: "\u5168\u5C40\u4EBA\u8BBE\u8BBE\u7F6E", acp: "ACP \u8BBE\u7F6E", deploy: "\u90E8\u7F72\u8BBE\u7F6E" };
+  var REFRESH_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 6.1"/><path d="M20 4v7h-7"/></svg>';
+  var EYE_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
+  var EYE_OFF_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l18 18"/><path d="M10.6 6.3A10.7 10.7 0 0 1 12 6c6.5 0 10 6 10 6a17.6 17.6 0 0 1-2.4 3.1"/><path d="M6.6 6.6C3.6 8.6 2 12 2 12s3.5 6 10 6c1.4 0 2.7-.3 3.9-.7"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>';
+  var COPY_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>';
+  function settingsPageHead(main, key, onRefresh) {
+    const head = HOST.document.createElement("div");
+    head.className = "settings-page-head";
+    const title = HOST.document.createElement("h2");
+    title.className = "settings-page-title";
+    title.textContent = CONFIG_TITLE[key] || key + "\u8BBE\u7F6E";
+    const rf = HOST.document.createElement("button");
+    rf.type = "button";
+    rf.className = "settings-page-refresh";
+    rf.title = "\u91CD\u65B0\u8BFB\u53D6\u914D\u7F6E\u6587\u4EF6";
+    rf.setAttribute("aria-label", "\u5237\u65B0");
+    rf.innerHTML = REFRESH_SVG;
+    rf.addEventListener("click", function() {
+      rf.classList.add("spinning");
+      rf.disabled = true;
+      delete cfgState.data[key];
+      delete cfgState.openKey[key];
+      if (onRefresh) onRefresh();
+      else rerenderConfig(main, key);
+    });
+    head.appendChild(title);
+    head.appendChild(rf);
+    main.appendChild(head);
+  }
   function renderConfigSection(main, key) {
+    settingsPageHead(main, key);
     if (key === "acp") return renderAcpCard(main);
     if (key === "deploy") return renderDeployCards(main);
     if (key === "soul") return renderSoulEditor(main);
+    if (key === "mcp") return renderMcpCards(main, key);
+    if (key === "model") return renderModelCards(main, key);
     cfgToolbar(main, key);
     if ((cfgState.mode[key] || "cards") === "json") {
       renderRawJson(main, key);
-    } else if (key === "model") {
-      renderModelCards(main, key);
-    } else if (key === "mcp") {
-      renderMcpCards(main, key);
+    } else if (key === "sensor") {
+      renderSensorCards(main, key);
     } else {
       renderGenericCards(main, key);
     }
@@ -1973,6 +2010,7 @@
     (act || card).appendChild(save);
     card.appendChild(body);
   }
+  var MCP_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="6" rx="2"/><rect x="3" y="14" width="18" height="6" rx="2"/><path d="M7 7h.01M7 17h.01"/></svg>';
   function renderMcpCards(main, key) {
     cfgData(key).then(function(data) {
       if (!data || typeof data !== "object" || Array.isArray(data)) data = {};
@@ -1982,19 +2020,64 @@
       const names = Object.keys(servers);
       if (names.length === 0) {
         const empty = HOST.document.createElement("div");
-        empty.className = "p-tag";
-        empty.textContent = "\uFF08\u6682\u65E0 MCP \u670D\u52A1\u5668\uFF09";
+        empty.className = "cfg-empty";
+        empty.textContent = "\u6682\u65E0 MCP \u670D\u52A1\u5668";
         main.appendChild(empty);
+        return;
       }
+      const grid = HOST.document.createElement("div");
+      grid.className = "entry-grid";
+      main.appendChild(grid);
       names.forEach(function(name) {
         const isOpen = cfgState.openKey[key] === name;
         const val = servers[name];
-        const card = cfgCard(main);
-        const preview = JSON.stringify(val);
-        const h = cfgCardHead(card, name, Array.isArray(val) ? "array" : typeof val, preview.slice(0, 90) + (preview.length > 90 ? "\u2026" : ""));
-        const edit = HOST.document.createElement("button");
-        edit.className = "btn cfg-edit";
-        edit.textContent = isOpen ? "\u5173\u95ED" : "\u7F16\u8F91";
+        const isObj = !!val && typeof val === "object" && !Array.isArray(val);
+        const kind = isObj ? val.url ? "http" : val.command ? "stdio" : "object" : Array.isArray(val) ? "array" : typeof val;
+        const envCount = isObj && val.env && typeof val.env === "object" ? Object.keys(val.env).length : 0;
+        const card = HOST.document.createElement("div");
+        card.className = "entry-card" + (isOpen ? " is-open" : "");
+        const head = HOST.document.createElement("div");
+        head.className = "entry-card-head";
+        const icon = HOST.document.createElement("span");
+        icon.className = "cfg-card-icon";
+        icon.innerHTML = MCP_ICON;
+        head.appendChild(icon);
+        const info = HOST.document.createElement("div");
+        info.className = "entry-card-info";
+        const titleRow = HOST.document.createElement("div");
+        titleRow.className = "entry-card-title";
+        const nm = HOST.document.createElement("span");
+        nm.className = "entry-card-name";
+        nm.textContent = name;
+        nm.title = name;
+        titleRow.appendChild(nm);
+        const badge = HOST.document.createElement("span");
+        badge.className = "cfg-chip type";
+        badge.textContent = kind;
+        titleRow.appendChild(badge);
+        const meta = HOST.document.createElement("div");
+        meta.className = "entry-card-meta";
+        meta.textContent = (isObj && val.url ? String(val.url) : isObj && val.command ? String(val.command) : "\u672A\u914D\u7F6E\u542F\u52A8\u547D\u4EE4") + (envCount ? " \xB7 " + envCount + " \u4E2A\u73AF\u5883\u53D8\u91CF" : "");
+        info.appendChild(titleRow);
+        info.appendChild(meta);
+        head.appendChild(info);
+        const act = HOST.document.createElement("div");
+        act.className = "entry-card-act";
+        const reload = entryIconBtn("restart", "\u5237\u65B0\u5230\u5185\u5B58");
+        reload.addEventListener("click", function() {
+          reload.disabled = true;
+          reload.classList.add("spinning");
+          reloadRuntime(key).then(function() {
+            reload.classList.remove("spinning");
+            reload.disabled = false;
+          }).catch(function(e) {
+            reload.classList.remove("spinning");
+            reload.disabled = false;
+            HOST.alert("\u5237\u65B0\u5931\u8D25\uFF1A" + (e && e.message || ""));
+          });
+        });
+        const edit = entryIconBtn("edit", isOpen ? "\u6536\u8D77" : "\u7F16\u8F91");
+        if (isOpen) edit.classList.add("active");
         edit.addEventListener("click", function() {
           if (isOpen) delete cfgState.openKey[key];
           else {
@@ -2003,10 +2086,7 @@
           }
           rerenderConfig(main, key);
         });
-        h.right.appendChild(edit);
-        const del = HOST.document.createElement("button");
-        del.className = "btn cfg-del";
-        del.textContent = "\u5220\u9664";
+        const del = entryIconBtn("trash", "\u5220\u9664", true);
         del.addEventListener("click", function() {
           if (!HOST.confirm('\u5220\u9664 MCP \u670D\u52A1\u5668 "' + name + '"\uFF1F')) return;
           delete servers[name];
@@ -2017,39 +2097,49 @@
             HOST.alert("\u5220\u9664\u5931\u8D25\uFF1A" + (e && e.message || ""));
           });
         });
-        h.right.appendChild(del);
-        if (!isOpen) return;
-        const body = HOST.document.createElement("div");
-        body.className = "cfg-card-body";
-        const ta = HOST.document.createElement("textarea");
-        ta.className = "settings-json";
-        ta.style.minHeight = "150px";
-        ta.value = cfgState.editStr[key + "::" + name] || JSON.stringify(val, null, 2);
-        ta.addEventListener("input", function() {
-          cfgState.editStr[key + "::" + name] = ta.value;
-        });
-        body.appendChild(ta);
-        const save = HOST.document.createElement("button");
-        save.className = "btn cfg-save";
-        save.textContent = "\u4FDD\u5B58\u8BE5\u670D\u52A1\u5668";
-        save.addEventListener("click", function() {
-          let obj;
-          try {
-            obj = JSON.parse(cfgState.editStr[key + "::" + name]);
-          } catch (e) {
-            HOST.alert("JSON \u89E3\u6790\u5931\u8D25\uFF1A" + e.message);
-            return;
-          }
-          servers[name] = obj;
-          delete cfgState.openKey[key];
-          putCfg(key, data).then(function() {
-            rerenderConfig(main, key);
-          }).catch(function(e) {
-            HOST.alert("\u4FDD\u5B58\u5931\u8D25\uFF1A" + (e && e.message || ""));
+        act.appendChild(reload);
+        act.appendChild(edit);
+        act.appendChild(del);
+        head.appendChild(act);
+        card.appendChild(head);
+        if (isOpen) {
+          const body = HOST.document.createElement("div");
+          body.className = "entry-card-body";
+          const ta = HOST.document.createElement("textarea");
+          ta.className = "settings-json";
+          ta.style.minHeight = "150px";
+          ta.value = cfgState.editStr[key + "::" + name] || JSON.stringify(val, null, 2);
+          ta.addEventListener("input", function() {
+            cfgState.editStr[key + "::" + name] = ta.value;
           });
-        });
-        body.appendChild(save);
-        card.appendChild(body);
+          body.appendChild(ta);
+          const save = HOST.document.createElement("button");
+          save.className = "btn cfg-save entry-save";
+          save.textContent = "\u4FDD\u5B58\u5E76\u5237\u65B0";
+          save.addEventListener("click", function() {
+            let obj;
+            try {
+              obj = JSON.parse(cfgState.editStr[key + "::" + name]);
+            } catch (e) {
+              HOST.alert("JSON \u89E3\u6790\u5931\u8D25\uFF1A" + e.message);
+              return;
+            }
+            servers[name] = obj;
+            delete cfgState.openKey[key];
+            save.disabled = true;
+            save.textContent = "\u4FDD\u5B58\u4E2D\u2026";
+            putCfg(key, data).then(function() {
+              rerenderConfig(main, key);
+            }).catch(function(e) {
+              save.disabled = false;
+              save.textContent = "\u4FDD\u5B58\u5E76\u5237\u65B0";
+              HOST.alert("\u4FDD\u5B58\u5931\u8D25\uFF1A" + (e && e.message || ""));
+            });
+          });
+          body.appendChild(save);
+          card.appendChild(body);
+        }
+        grid.appendChild(card);
       });
     });
   }
@@ -2120,8 +2210,10 @@
         return raw;
       };
       if (type === "switch") {
+        const f = HOST.document.createElement("div");
+        f.className = "cfg-field";
         const row = HOST.document.createElement("div");
-        row.className = "cfg-field switch-row";
+        row.className = "switch-row";
         row.appendChild(sensorFieldLabel(label));
         const sw = HOST.document.createElement("label");
         sw.className = "switch";
@@ -2133,7 +2225,14 @@
           on = chk.checked;
         });
         row.appendChild(sw);
-        grid.appendChild(row);
+        f.appendChild(row);
+        if (field.help) {
+          const hint = HOST.document.createElement("div");
+          hint.className = "pk-hint";
+          hint.textContent = field.help;
+          f.appendChild(hint);
+        }
+        grid.appendChild(f);
         read = function() {
           return on ? "true" : "false";
         };
@@ -2365,7 +2464,53 @@
           read = function() {
             return inp.value;
           };
-          f.appendChild(inp);
+          if (type === "password") {
+            const wrap = HOST.document.createElement("div");
+            wrap.className = "cfg-secret";
+            wrap.appendChild(inp);
+            const eye = HOST.document.createElement("button");
+            eye.type = "button";
+            eye.className = "cfg-inline-icon";
+            eye.title = "\u663E\u793A\u660E\u6587";
+            eye.setAttribute("aria-label", "\u663E\u793A\u660E\u6587");
+            eye.innerHTML = EYE_SVG;
+            eye.addEventListener("click", function() {
+              const show = inp.type === "password";
+              inp.type = show ? "text" : "password";
+              eye.innerHTML = show ? EYE_OFF_SVG : EYE_SVG;
+              eye.title = show ? "\u9690\u85CF" : "\u663E\u793A\u660E\u6587";
+            });
+            const copy = HOST.document.createElement("button");
+            copy.type = "button";
+            copy.className = "cfg-inline-icon";
+            copy.title = "\u590D\u5236";
+            copy.setAttribute("aria-label", "\u590D\u5236");
+            copy.innerHTML = COPY_SVG;
+            copy.addEventListener("click", function() {
+              const done = function() {
+                copy.title = "\u5DF2\u590D\u5236";
+                setTimeout(function() {
+                  copy.title = "\u590D\u5236";
+                }, 1200);
+              };
+              if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(inp.value).then(done).catch(function() {
+                  inp.select();
+                  HOST.document.execCommand("copy");
+                  done();
+                });
+              } else {
+                inp.select();
+                HOST.document.execCommand("copy");
+                done();
+              }
+            });
+            wrap.appendChild(eye);
+            wrap.appendChild(copy);
+            f.appendChild(wrap);
+          } else {
+            f.appendChild(inp);
+          }
         }
         if (field.help) {
           const hint = HOST.document.createElement("div");
@@ -2379,8 +2524,8 @@
     });
     body.appendChild(grid);
     const saveBtn = HOST.document.createElement("button");
-    saveBtn.className = "btn cfg-save";
-    saveBtn.textContent = "\u4FDD\u5B58";
+    saveBtn.className = "btn cfg-save entry-save";
+    saveBtn.textContent = "\u4FDD\u5B58\u5E76\u5237\u65B0";
     saveBtn.addEventListener("click", function() {
       const nextEnv = Object.assign({}, env);
       for (var i = 0; i < readers.length; i++) {
@@ -2395,23 +2540,17 @@
       save(nextEnv);
     });
     body.appendChild(saveBtn);
-    const tip = HOST.document.createElement("div");
-    tip.className = "cfg-tip";
-    tip.textContent = "\u4FDD\u5B58\u540E\u4F1A\u81EA\u52A8\u91CD\u8F7D sensor \u8FDB\u7A0B\uFF1B\u82E5\u4ECD\u672A\u751F\u6548\uFF0C\u53EF\u70B9\u9876\u90E8\u300C\u91CD\u8F7D\u5230\u5185\u5B58\u300D\u518D\u8BD5\u3002";
-    body.appendChild(tip);
   }
   function renderGenericCards(main, key) {
-    const isSensor = key === "sensor";
-    Promise.all([cfgData(key), isSensor ? sensorRuntimeMap() : Promise.resolve({})]).then(function(res) {
-      const obj = res[0] || {};
-      const runMap = res[1] || {};
+    cfgData(key).then(function(loaded) {
+      const obj = loaded || {};
       const keys = Object.keys(obj).filter(function(k) {
         return k !== "__ARRAY_WRAPPER__";
       });
       if (keys.length === 0) {
         const e = HOST.document.createElement("div");
-        e.className = "p-tag";
-        e.textContent = "\uFF08\u7A7A\u914D\u7F6E\uFF09";
+        e.className = "cfg-empty";
+        e.textContent = "\u6682\u65E0\u914D\u7F6E\u9879";
         main.appendChild(e);
       }
       keys.forEach(function(k) {
@@ -2419,70 +2558,8 @@
         const isOpen = cfgState.openKey[key] === k;
         const card = cfgCard(main);
         const raw = typeof val === "object" ? JSON.stringify(val) : String(val);
-        const rt = isSensor ? runMap[k] : null;
-        const running = !!(rt && rt.alive);
-        const iconArg = isSensor && val && typeof val === "object" ? val.icon || "" : void 0;
-        const sub = isSensor ? "" : raw.slice(0, 90) + (raw.length > 90 ? "\u2026" : "");
-        const h = cfgCardHead(card, k, Array.isArray(val) ? "array" : typeof val, sub, iconArg);
-        if (isSensor) {
-          const st = HOST.document.createElement("span");
-          st.className = "cfg-chip " + (running ? "on" : "off");
-          st.textContent = running ? "\u8FD0\u884C\u4E2D" : "\u672A\u8FD0\u884C";
-          if (running && rt.pid) st.title = "PID " + rt.pid;
-          h.titleRow.appendChild(st);
-        }
-        if (isSensor && running) {
-          const stopBtn = HOST.document.createElement("button");
-          stopBtn.className = "btn cfg-stop";
-          stopBtn.textContent = "\u505C\u6B62";
-          stopBtn.title = "\u6740\u6B7B\u8BE5 Sensor \u540E\u53F0\u8FDB\u7A0B\uFF0C\u5E76\u5728\u914D\u7F6E\u91CC\u7F6E\u4E3A enabled=false";
-          stopBtn.addEventListener("click", function() {
-            if (!HOST.confirm('\u505C\u6B62 Sensor "' + k + '"\uFF1F\u5C06\u6740\u6B7B\u5176\u540E\u53F0\u8FDB\u7A0B\u5E76\u7F6E\u4E3A enabled=false\u3002')) return;
-            stopBtn.disabled = true;
-            stopBtn.textContent = "\u505C\u6B62\u4E2D\u2026";
-            fetch("/api/config/sensor/" + encodeURIComponent(k) + "/stop", { method: "POST" }).then(function(r) {
-              return r.json().then(function(b) {
-                if (!r.ok) throw new Error(b && b.detail || "HTTP " + r.status);
-                return b;
-              });
-            }).then(function() {
-              delete cfgState.data[key];
-              delete cfgState.openKey[key];
-              rerenderConfig(main, key);
-            }).catch(function(e) {
-              stopBtn.disabled = false;
-              stopBtn.textContent = "\u505C\u6B62";
-              HOST.alert("\u505C\u6B62\u5931\u8D25\uFF1A" + (e && e.message || ""));
-            });
-          });
-          h.right.appendChild(stopBtn);
-        } else if (isSensor) {
-          const restartBtn = HOST.document.createElement("button");
-          restartBtn.className = "btn cfg-restart";
-          restartBtn.textContent = "\u91CD\u542F";
-          restartBtn.title = "\u7F6E\u4E3A enabled=true \u5E76\u91CD\u65B0\u62C9\u8D77\u8BE5 Sensor \u540E\u53F0\u8FDB\u7A0B";
-          restartBtn.addEventListener("click", function() {
-            if (!HOST.confirm('\u91CD\u542F Sensor "' + k + '"\uFF1F\u5C06\u7F6E\u4E3A enabled=true \u5E76\u91CD\u65B0\u62C9\u8D77\u540E\u53F0\u8FDB\u7A0B\u3002')) return;
-            restartBtn.disabled = true;
-            restartBtn.textContent = "\u91CD\u542F\u4E2D\u2026";
-            fetch("/api/config/sensor/" + encodeURIComponent(k) + "/restart", { method: "POST" }).then(function(r) {
-              return r.json().then(function(b) {
-                if (!r.ok) throw new Error(b && b.detail || "HTTP " + r.status);
-                return b;
-              });
-            }).then(function(b) {
-              delete cfgState.data[key];
-              delete cfgState.openKey[key];
-              rerenderConfig(main, key);
-              if (b && b.started === false) HOST.alert("\u91CD\u542F\u672A\u6210\u529F\uFF1A" + (b && b.message || "\u8BF7\u68C0\u67E5\u672C\u5730 <name>.py \u4E0E uv"));
-            }).catch(function(e) {
-              restartBtn.disabled = false;
-              restartBtn.textContent = "\u91CD\u542F";
-              HOST.alert("\u91CD\u542F\u5931\u8D25\uFF1A" + (e && e.message || ""));
-            });
-          });
-          h.right.appendChild(restartBtn);
-        }
+        const sub = raw.slice(0, 90) + (raw.length > 90 ? "\u2026" : "");
+        const h = cfgCardHead(card, k, Array.isArray(val) ? "array" : typeof val, sub);
         const edit = HOST.document.createElement("button");
         edit.className = "btn cfg-edit";
         edit.textContent = isOpen ? "\u5173\u95ED" : "\u7F16\u8F91";
@@ -2509,73 +2586,9 @@
           });
         });
         h.right.appendChild(del);
-        if (isSensor) {
-          const more = HOST.document.createElement("button");
-          more.className = "btn cfg-caret";
-          more.textContent = "\u25BE";
-          more.title = "\u66F4\u591A\u5220\u9664\u9009\u9879";
-          more.addEventListener("click", function(ev) {
-            ev.stopPropagation();
-            const owner = "cfg-" + k;
-            const wasOpen = !!HOST.document.querySelector('.settings-card-menu[data-owner="' + owner + '"]');
-            closeSettingsMenus();
-            if (wasOpen) return;
-            const menu = HOST.document.createElement("div");
-            menu.className = "settings-card-menu";
-            menu.setAttribute("data-owner", owner);
-            const purge = HOST.document.createElement("button");
-            purge.className = "settings-menu-btn danger";
-            purge.textContent = "\u5F7B\u5E95\u5220\u9664\uFF08\u8FDE\u6587\u4EF6\uFF09";
-            purge.addEventListener("click", function() {
-              closeSettingsMenus();
-              if (!HOST.confirm('\u5F7B\u5E95\u5220\u9664 Sensor "' + k + '"\uFF1F\u5C06\u6740\u6B7B\u5176\u8FDB\u7A0B\u3001\u5220\u9664\u6B63\u5F0F\u6587\u4EF6 ' + k + ".py \u5E76\u4ECE\u914D\u7F6E\u79FB\u9664\uFF0C\u4E0D\u53EF\u6062\u590D\u3002")) return;
-              fetch("/api/config/sensor/" + encodeURIComponent(k) + "/purge", { method: "POST" }).then(function(r) {
-                return r.json().then(function(b2) {
-                  if (!r.ok) throw new Error(b2 && b2.detail || "HTTP " + r.status);
-                  return b2;
-                });
-              }).then(function() {
-                delete cfgState.data[key];
-                delete cfgState.openKey[key];
-                rerenderConfig(main, key);
-              }).catch(function(e) {
-                HOST.alert("\u5F7B\u5E95\u5220\u9664\u5931\u8D25\uFF1A" + (e && e.message || ""));
-              });
-            });
-            menu.appendChild(purge);
-            HOST.document.body.appendChild(menu);
-            const b = more.getBoundingClientRect();
-            menu.style.right = HOST.innerWidth - b.right + "px";
-            menu.style.top = b.bottom + 4 + "px";
-            syncNativeCover();
-          });
-          h.right.appendChild(more);
-        }
         if (!isOpen) return;
         const body = HOST.document.createElement("div");
         body.className = "cfg-card-body";
-        const rawModeMap = cfgState.rawSensor || (cfgState.rawSensor = {});
-        const hasSchema = isSensor && val && typeof val === "object" && Array.isArray(val.fields) && val.fields.length > 0;
-        if (hasSchema && !rawModeMap[k]) {
-          renderSensorFields(body, val, function(nextEnv) {
-            val.env = nextEnv;
-            cfgState.editStr[key + "::" + k] = JSON.stringify(val, null, 2);
-            putCfg(key, obj).then(function() {
-              delete cfgState.data[key];
-              HOST.alert("\u5DF2\u4FDD\u5B58");
-              rerenderConfig(main, key);
-            }).catch(function(e) {
-              HOST.alert("\u4FDD\u5B58\u5931\u8D25\uFF1A" + (e && e.message || ""));
-            });
-          });
-          body.appendChild(sensorMiniBtn("\u7F16\u8F91\u539F\u59CB JSON", "\u5B57\u6BB5\u8868\u5355\u8986\u76D6\u4E0D\u5230\u7684\u9AD8\u7EA7\u9879\u53EF\u5207\u5230\u539F\u59CB JSON", function() {
-            cfgState.editStr[key + "::" + k] = JSON.stringify(val, null, 2);
-            rawModeMap[k] = true;
-            rerenderConfig(main, key);
-          }, "sensor-raw"));
-          card.appendChild(body);
-          return;
-        }
         const ta = HOST.document.createElement("textarea");
         ta.className = "settings-json";
         ta.style.minHeight = "140px";
@@ -2604,13 +2617,219 @@
           });
         });
         body.appendChild(save);
-        if (hasSchema) {
-          body.appendChild(sensorMiniBtn("\u8FD4\u56DE\u5B57\u6BB5\u8868\u5355", "", function() {
-            rawModeMap[k] = false;
-            rerenderConfig(main, key);
-          }, "sensor-form"));
-        }
         card.appendChild(body);
+      });
+    });
+  }
+  var ENTRY_ACTION_ICON = {
+    restart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 6.1"/><path d="M20 4v7h-7"/></svg>',
+    stop: '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="7" y="7" width="10" height="10" rx="2"/></svg>',
+    edit: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4l10.5-10.5a2.1 2.1 0 0 0-3-3L5 17v3z"/></svg>',
+    trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M9 7V5h6v2"/><path d="M6 7l1 13h10l1-13"/><path d="M10 11v5M14 11v5"/></svg>'
+  };
+  function entryIconBtn(name, title, danger) {
+    const b = HOST.document.createElement("button");
+    b.type = "button";
+    b.className = "entry-icon-btn" + (danger ? " danger" : "");
+    b.title = title;
+    b.setAttribute("aria-label", title);
+    b.innerHTML = ENTRY_ACTION_ICON[name] || "";
+    return b;
+  }
+  function renderSensorCards(main, key) {
+    Promise.all([cfgData(key), sensorRuntimeMap()]).then(function(res) {
+      const obj = res[0] || {};
+      const runMap = res[1] || {};
+      const names = Object.keys(obj).filter(function(k) {
+        return k !== "__ARRAY_WRAPPER__";
+      });
+      if (names.length === 0) {
+        const empty = HOST.document.createElement("div");
+        empty.className = "cfg-empty";
+        empty.textContent = "\u6682\u65E0\u4F20\u611F\u5668";
+        main.appendChild(empty);
+        return;
+      }
+      const grid = HOST.document.createElement("div");
+      grid.className = "entry-grid";
+      main.appendChild(grid);
+      names.forEach(function(name) {
+        const val = obj[name];
+        const isOpen = cfgState.openKey[key] === name;
+        const rt = runMap[name];
+        const running = !!(rt && rt.alive);
+        const fieldCount = val && Array.isArray(val.fields) ? val.fields.length : 0;
+        const card = HOST.document.createElement("div");
+        card.className = "entry-card" + (isOpen ? " is-open" : "");
+        const head = HOST.document.createElement("div");
+        head.className = "entry-card-head";
+        head.appendChild(cfgIcon(val && typeof val === "object" ? val.icon || "" : ""));
+        const info = HOST.document.createElement("div");
+        info.className = "entry-card-info";
+        const titleRow = HOST.document.createElement("div");
+        titleRow.className = "entry-card-title";
+        const nm = HOST.document.createElement("span");
+        nm.className = "entry-card-name";
+        nm.textContent = name;
+        nm.title = name;
+        const st = HOST.document.createElement("span");
+        st.className = "cfg-chip " + (running ? "on" : "off");
+        st.textContent = running ? "\u8FD0\u884C\u4E2D" : "\u672A\u8FD0\u884C";
+        if (running && rt.pid) st.title = "PID " + rt.pid;
+        titleRow.appendChild(nm);
+        titleRow.appendChild(st);
+        const meta = HOST.document.createElement("div");
+        meta.className = "entry-card-meta";
+        meta.textContent = (val && val.source === "remote" ? "\u8FDC\u7A0B" : "\u672C\u5730") + " \xB7 " + (fieldCount ? fieldCount + " \u4E2A\u914D\u7F6E\u5B57\u6BB5" : "\u65E0\u5B57\u6BB5\u58F0\u660E");
+        info.appendChild(titleRow);
+        info.appendChild(meta);
+        head.appendChild(info);
+        const act = HOST.document.createElement("div");
+        act.className = "entry-card-act";
+        const power = entryIconBtn(running ? "stop" : "restart", running ? "\u505C\u6B62" : "\u91CD\u542F", running);
+        power.addEventListener("click", function() {
+          const verb = running ? "\u505C\u6B62" : "\u91CD\u542F";
+          if (!HOST.confirm(verb + ' Sensor "' + name + '"\uFF1F')) return;
+          power.disabled = true;
+          fetch("/api/config/sensor/" + encodeURIComponent(name) + (running ? "/stop" : "/restart"), { method: "POST" }).then(function(r) {
+            return r.json().then(function(b) {
+              if (!r.ok) throw new Error(b && b.detail || "HTTP " + r.status);
+              return b;
+            });
+          }).then(function(b) {
+            delete cfgState.data[key];
+            delete cfgState.openKey[key];
+            rerenderConfig(main, key);
+            if (!running && b && b.started === false) HOST.alert("\u91CD\u542F\u672A\u6210\u529F\uFF1A" + (b && b.message || "\u8BF7\u68C0\u67E5\u672C\u5730 " + name + ".py \u4E0E uv"));
+          }).catch(function(e) {
+            power.disabled = false;
+            HOST.alert(verb + "\u5931\u8D25\uFF1A" + (e && e.message || ""));
+          });
+        });
+        const edit = entryIconBtn("edit", isOpen ? "\u6536\u8D77" : "\u7F16\u8F91");
+        if (isOpen) edit.classList.add("active");
+        edit.addEventListener("click", function() {
+          if (isOpen) delete cfgState.openKey[key];
+          else {
+            cfgState.openKey[key] = name;
+            cfgState.editStr[key + "::" + name] = val && typeof val === "object" ? JSON.stringify(val, null, 2) : String(val);
+          }
+          rerenderConfig(main, key);
+        });
+        const del = entryIconBtn("trash", "\u5220\u9664", true);
+        del.addEventListener("click", function(ev) {
+          ev.stopPropagation();
+          const owner = "sensor-" + name;
+          const wasOpen = !!HOST.document.querySelector('.settings-card-menu[data-owner="' + owner + '"]');
+          closeSettingsMenus();
+          if (wasOpen) return;
+          const menu = HOST.document.createElement("div");
+          menu.className = "settings-card-menu";
+          menu.setAttribute("data-owner", owner);
+          const conf = HOST.document.createElement("button");
+          conf.className = "settings-menu-btn";
+          conf.textContent = "\u5220\u9664\u914D\u7F6E";
+          conf.addEventListener("click", function() {
+            closeSettingsMenus();
+            if (!HOST.confirm('\u5220\u9664 Sensor "' + name + '" \u7684\u914D\u7F6E\uFF1F')) return;
+            delete obj[name];
+            delete cfgState.openKey[key];
+            putCfg(key, obj).then(function() {
+              delete cfgState.data[key];
+              rerenderConfig(main, key);
+            }).catch(function(e) {
+              HOST.alert("\u5220\u9664\u5931\u8D25\uFF1A" + (e && e.message || ""));
+            });
+          });
+          const purge = HOST.document.createElement("button");
+          purge.className = "settings-menu-btn danger";
+          purge.textContent = "\u5F7B\u5E95\u5220\u9664\uFF08\u542B\u6587\u4EF6\uFF09";
+          purge.addEventListener("click", function() {
+            closeSettingsMenus();
+            if (!HOST.confirm('\u5F7B\u5E95\u5220\u9664 Sensor "' + name + '"\uFF1F\u5C06\u6740\u6B7B\u5176\u8FDB\u7A0B\u3001\u5220\u9664\u6B63\u5F0F\u6587\u4EF6 ' + name + ".py \u5E76\u4ECE\u914D\u7F6E\u79FB\u9664\uFF0C\u4E0D\u53EF\u6062\u590D\u3002")) return;
+            fetch("/api/config/sensor/" + encodeURIComponent(name) + "/purge", { method: "POST" }).then(function(r) {
+              return r.json().then(function(b2) {
+                if (!r.ok) throw new Error(b2 && b2.detail || "HTTP " + r.status);
+                return b2;
+              });
+            }).then(function() {
+              delete cfgState.data[key];
+              delete cfgState.openKey[key];
+              rerenderConfig(main, key);
+            }).catch(function(e) {
+              HOST.alert("\u5F7B\u5E95\u5220\u9664\u5931\u8D25\uFF1A" + (e && e.message || ""));
+            });
+          });
+          menu.appendChild(conf);
+          menu.appendChild(purge);
+          HOST.document.body.appendChild(menu);
+          const b = del.getBoundingClientRect();
+          menu.style.right = HOST.innerWidth - b.right + "px";
+          menu.style.top = b.bottom + 4 + "px";
+          syncNativeCover();
+        });
+        act.appendChild(power);
+        act.appendChild(edit);
+        act.appendChild(del);
+        head.appendChild(act);
+        card.appendChild(head);
+        if (isOpen) {
+          const body = HOST.document.createElement("div");
+          body.className = "entry-card-body";
+          const hasSchema = val && typeof val === "object" && Array.isArray(val.fields) && val.fields.length > 0;
+          const saveCfg = function(next, btn) {
+            obj[name] = next;
+            if (btn) {
+              btn.disabled = true;
+              btn.textContent = "\u4FDD\u5B58\u4E2D\u2026";
+            }
+            putCfg(key, obj).then(function() {
+              return fetch("/api/config/sensor/reload", { method: "POST" });
+            }).then(function(r) {
+              if (!r.ok) throw new Error("HTTP " + r.status);
+              delete cfgState.data[key];
+              rerenderConfig(main, key);
+            }).catch(function(e) {
+              if (btn) {
+                btn.disabled = false;
+                btn.textContent = "\u4FDD\u5B58\u5E76\u5237\u65B0";
+              }
+              HOST.alert("\u4FDD\u5B58\u5931\u8D25\uFF1A" + (e && e.message || ""));
+            });
+          };
+          if (hasSchema) {
+            renderSensorFields(body, val, function(nextEnv) {
+              val.env = nextEnv;
+              cfgState.editStr[key + "::" + name] = JSON.stringify(val, null, 2);
+              saveCfg(val);
+            });
+          } else {
+            const ta = HOST.document.createElement("textarea");
+            ta.className = "settings-json";
+            ta.style.minHeight = "140px";
+            ta.value = cfgState.editStr[key + "::" + name] || (typeof val === "object" ? JSON.stringify(val, null, 2) : String(val));
+            ta.addEventListener("input", function() {
+              cfgState.editStr[key + "::" + name] = ta.value;
+            });
+            body.appendChild(ta);
+            const save = HOST.document.createElement("button");
+            save.className = "btn cfg-save entry-save";
+            save.textContent = "\u4FDD\u5B58\u5E76\u5237\u65B0";
+            save.addEventListener("click", function() {
+              let next;
+              try {
+                next = coerceVal(cfgState.editStr[key + "::" + name], val);
+              } catch (e) {
+                HOST.alert(e.message);
+                return;
+              }
+              saveCfg(next, save);
+            });
+            body.appendChild(save);
+          }
+          card.appendChild(body);
+        }
+        grid.appendChild(card);
       });
     });
   }
@@ -3963,8 +4182,6 @@
   }
   async function boot() {
     wireWindowControls();
-    const settingsClose = HOST.document.getElementById("settingsClose");
-    if (settingsClose) settingsClose.addEventListener("click", () => setSettingsOpen(false));
     HOST.document.addEventListener("click", function() {
       closeSettingsMenus();
       closePanelMenus();

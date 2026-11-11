@@ -230,19 +230,27 @@ body.rail-nosidebar .wm-main { left: calc(var(--wm-rail-w) + var(--wm-sidebar-ga
   overflow: hidden;
 }
 
-/* 设置面板：modal overlay（在白条右侧渲染，左侧白条区域始终专属白条），默认隐藏 */
+/* 设置页：铺满白条右侧整个区域，左侧白条区域始终专属白条，默认隐藏 */
 [data-layer="settings"] {
   position: fixed;
-  top: 0; right: 0; bottom: 0;
+  top: var(--wm-topbar-h); right: 0; bottom: 0;
   left: var(--wm-rail-w); /* 紧随白条；rail-1 展开成 196px 时自动右移，绝不被展开区遮住 */
-  z-index: 50;
+  z-index: 55;
   display: none;
-  background: rgba(15, 17, 21, 0.35);
-  align-items: flex-start;
-  justify-content: center;
-  padding-top: 8vh;
+  background: var(--wm-bg-base);
 }
-body.settings-open [data-layer="settings"] { display: flex; }
+body.settings-open [data-layer="settings"] { display: block; }
+body.settings-open [data-layer="topbar"] { background: var(--wm-bg-base); }
+/* 设置页打开时主界面整体让位，避免底层 iframe / 浮窗穿过页面 */
+body.settings-open [data-layer="sidebar"],
+body.settings-open .wm-main,
+body.settings-open .wm-ppanel,
+body.settings-open [data-slot="panel-container"] > iframe,
+body.settings-open .wm-pbar,
+body.settings-open .wm-pp_menu,
+body.settings-open [data-layer="pet"],
+body.settings-open .wm-float,
+body.settings-open .wm-modal-wrap { display: none !important; }
 
 /* 通用浮层槽（type=float 弹窗，如桌宠；每个插件一个独立实例都用 .wm-float）：
    默认右上角起始，宿主总是注入拖拽/缩放手柄，left/top 可被拖拽覆盖 */
@@ -309,31 +317,41 @@ body.settings-open [data-layer="settings"] { display: flex; }
 /* 模态容器内不注入拖拽/缩放手柄（与设置中心一致：固定居中不可拖） */
 .wm-modal iframe { border: 0; width: 100%; height: 100%; display: block; }
 .settings-panel {
-  width: min(1040px, 96vw);
-  height: 86vh;
+  width: 100%;
+  height: 100%;
   display: flex;
   flex-direction: column;
-  background: var(--wm-bg-panel);
-  border-radius: 14px;
-  box-shadow: var(--wm-shadow);
+  background: var(--wm-bg-base);
   overflow: hidden;
 }
-.settings-head {
-  flex: none;
+.settings-page-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 16px 20px 12px;
+  gap: 8px;
+  margin-bottom: 18px;
 }
-.settings-head .settings-title { font-size: 16px; font-weight: 600; }
-.settings-close {
-  width: 32px; height: 32px;
-  display: flex; align-items: center; justify-content: center;
-  border: none; background: transparent; color: var(--wm-label-2nd);
-  font-size: 15px; line-height: 1; cursor: pointer; border-radius: 8px;
-  transition: background 0.12s ease, color 0.12s ease;
+.settings-page-title {
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.2px;
 }
-.settings-close:hover { background: var(--wm-bg-hover); color: var(--wm-label); }
+.settings-page-refresh {
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--wm-label-2nd);
+  cursor: pointer;
+}
+.settings-page-refresh svg { width: 16px; height: 16px; }
+.settings-page-refresh:hover { background: var(--wm-bg-hover); color: var(--wm-label); }
+.settings-page-refresh.spinning svg,
+.entry-icon-btn.spinning svg { animation: wm-spin 0.8s linear infinite; }
+@keyframes wm-spin { to { transform: rotate(360deg); } }
 .settings-body {
   flex: 1;
   display: flex;
@@ -342,31 +360,33 @@ body.settings-open [data-layer="settings"] { display: flex; }
 }
 .settings-panel h3 { font-size: 15px; font-weight: 600; margin-bottom: 12px; }
 
-/* 设置面板：左导航 + 内容区（宿主固有资产） */
+/* 设置页：左导航 + 内容区（宿主固有资产） */
 .settings-nav {
   flex: none;
-  width: 132px;
+  width: 200px;
   border-right: 1px solid var(--wm-border);
-  padding: 10px 8px;
+  padding: 16px 12px;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 2px;
+  background: var(--wm-bl-50);
 }
 .settings-nav-item {
   text-align: left;
-  padding: 7px 10px;
+  padding: 9px 12px;
   border: none;
   border-radius: 8px;
   background: transparent;
   color: var(--wm-label-2nd);
-  font-size: 13px;
+  font-size: 13.5px;
   cursor: pointer;
   transition: background 0.12s ease, color 0.12s ease;
 }
 .settings-nav-item:hover { background: var(--wm-bg-hover); color: var(--wm-label); }
 .settings-nav-item.active { background: var(--wm-bg-active); color: var(--wm-ink); font-weight: 600; }
-.settings-main { flex: 1; overflow-y: auto; padding: 8px 20px 20px; min-width: 0; }
+.settings-main { flex: 1; overflow-y: auto; padding: 28px 40px 48px; min-width: 0; }
+.settings-main > * { max-width: 1040px; margin-inline: auto; }
 
 /* slot 竖排分组（UI 插件二级分类） */
 .settings-group { margin-bottom: 20px; }
@@ -492,13 +512,118 @@ body.settings-open [data-layer="settings"] { display: flex; }
 .cfg-chip.warn { background: rgba(224, 177, 67, 0.25); color: #9a7a24; }
 .cfg-chip.bad { background: rgba(228, 88, 78, 0.2); color: #b0433b; }
 
-.cfg-edit, .cfg-del, .cfg-stop, .cfg-restart, .cfg-save { font-size: 12.5px; padding: 4px 12px; }
+.cfg-edit, .cfg-del, .cfg-save { font-size: 12.5px; padding: 4px 12px; }
 .cfg-edit { color: var(--wm-ink); }
 .cfg-del { color: #d0453b; border-color: rgba(208, 69, 59, 0.4); }
-.cfg-stop { color: #b0433b; border-color: rgba(208, 69, 59, 0.4); }
-.cfg-restart { color: var(--wm-ink); }
-.cfg-caret { padding: 4px 6px; font-size: 10px; line-height: 1.2; color: var(--wm-label-dim); }
 .cfg-save { background: var(--wm-bg-active); font-weight: 600; }
+
+.cfg-empty {
+  padding: 40px 20px;
+  text-align: center;
+  background: var(--wm-bl-100);
+  border-radius: 12px;
+  color: var(--wm-label-dim);
+  font-size: 13px;
+}
+
+/* 传感器：自适应卡片网格 */
+.entry-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+.entry-card {
+  background: var(--wm-bg-panel);
+  border: 1px solid var(--wm-border);
+  border-radius: 16px;
+  padding: 16px;
+  box-shadow: var(--wm-shadow-sm);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.entry-card:hover { border-color: var(--wm-bl-200); }
+.entry-card.is-open { box-shadow: var(--wm-shadow); }
+.entry-card-head { display: flex; align-items: flex-start; gap: 12px; }
+.entry-card-head .cfg-card-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  flex: none;
+}
+.entry-card-head .cfg-card-icon svg { width: 24px; height: 24px; }
+.entry-card-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding-top: 2px;
+}
+.entry-card-title { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.entry-card-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--wm-ink);
+}
+.entry-card-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--wm-label-dim);
+}
+.entry-card-act { flex: none; display: flex; gap: 2px; }
+.entry-icon-btn {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--wm-label-2nd);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.entry-icon-btn svg { width: 15px; height: 15px; display: block; }
+.entry-icon-btn:hover { background: var(--wm-bg-hover); color: var(--wm-label); }
+.entry-icon-btn.active { background: var(--wm-bg-active); color: var(--wm-ink); }
+.entry-icon-btn.danger:hover { background: #fdf1f0; color: #d0453b; }
+.entry-icon-btn:disabled { opacity: 0.45; cursor: default; }
+.entry-card-body {
+  display: flex;
+  flex-direction: column;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--wm-border);
+}
+.entry-card-body .cfg-grid { grid-template-columns: 1fr; gap: 12px; }
+.entry-card-body .cfg-field { margin: 0; }
+.entry-card-body .switch-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.entry-card-body .entry-save { margin-top: 12px; align-self: flex-end; }
+
+.cfg-secret { display: flex; align-items: center; gap: 4px; }
+.cfg-secret .cfg-input { flex: 1; min-width: 0; }
+.cfg-inline-icon {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--wm-label-dim);
+  cursor: pointer;
+}
+.cfg-inline-icon svg { width: 15px; height: 15px; }
+.cfg-inline-icon:hover { background: var(--wm-bg-hover); color: var(--wm-label); }
 
 .cfg-add-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .cfg-add-row input, .cfg-add-row select { flex: 1; min-width: 120px; }

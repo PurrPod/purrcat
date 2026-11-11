@@ -85,20 +85,22 @@ import { HOST } from './state.js';
       seg.addEventListener('click', function () { cfgState.mode[key] = mode; fn(main, key); });
       tb.appendChild(seg);
     });
-    // 支持刷新：丢弃本地缓存，重新从磁盘拉取该 tab 的配置并重绘
-    const rf = HOST.document.createElement('button');
-    rf.className = 'cfg-seg cfg-reload';
-    rf.textContent = '刷新';
-    rf.title = '丢弃本地缓存，重新从磁盘读取配置并重绘';
-    rf.addEventListener('click', function () {
-      delete cfgState.data[key];
-      cfgState.openKey = cfgState.openKey || {};
-      delete cfgState.openKey[key];
-      fn(main, key);
-    });
-    tb.appendChild(rf);
-    // sensor/mcp：手动强制重载（改了 ~/.purrcat 下的代码或外部配置文件时用）
-    if (RELOAD_EP[key]) {
+    if (key !== 'sensor') {
+      // 支持刷新：丢弃本地缓存，重新从磁盘拉取该 tab 的配置并重绘
+      const rf = HOST.document.createElement('button');
+      rf.className = 'cfg-seg cfg-reload';
+      rf.textContent = '刷新';
+      rf.title = '丢弃本地缓存，重新从磁盘读取配置并重绘';
+      rf.addEventListener('click', function () {
+        delete cfgState.data[key];
+        cfgState.openKey = cfgState.openKey || {};
+        delete cfgState.openKey[key];
+        fn(main, key);
+      });
+      tb.appendChild(rf);
+    }
+    // mcp：手动强制重载（改了 ~/.purrcat 下的代码或外部配置文件时用）
+    if (RELOAD_EP[key] && key !== 'sensor') {
       const rl = HOST.document.createElement('button');
       rl.className = 'cfg-seg cfg-reload';
       rl.textContent = '重载到内存';
@@ -117,17 +119,49 @@ import { HOST } from './state.js';
     return tb;
   }
 
+  export const CONFIG_TITLE: Record<string, string> = { plugins: 'UI 插件设置', model: '模型设置', sensor: '传感器设置', file: '文件设置', mcp: 'MCP 设置', soul: '全局人设设置', acp: 'ACP 设置', deploy: '部署设置' };
+  const REFRESH_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 6.1"/><path d="M20 4v7h-7"/></svg>';
+  const EYE_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
+  const EYE_OFF_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l18 18"/><path d="M10.6 6.3A10.7 10.7 0 0 1 12 6c6.5 0 10 6 10 6a17.6 17.6 0 0 1-2.4 3.1"/><path d="M6.6 6.6C3.6 8.6 2 12 2 12s3.5 6 10 6c1.4 0 2.7-.3 3.9-.7"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>';
+  const COPY_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>';
+
+  export function settingsPageHead(main: HTMLElement, key: string, onRefresh?: () => void) {
+    const head = HOST.document.createElement('div');
+    head.className = 'settings-page-head';
+    const title = HOST.document.createElement('h2');
+    title.className = 'settings-page-title';
+    title.textContent = CONFIG_TITLE[key] || (key + '设置');
+    const rf = HOST.document.createElement('button');
+    rf.type = 'button';
+    rf.className = 'settings-page-refresh';
+    rf.title = '重新读取配置文件';
+    rf.setAttribute('aria-label', '刷新');
+    rf.innerHTML = REFRESH_SVG;
+    rf.addEventListener('click', function () {
+      rf.classList.add('spinning');
+      rf.disabled = true;
+      delete cfgState.data[key];
+      delete cfgState.openKey[key];
+      if (onRefresh) onRefresh();
+      else rerenderConfig(main, key);
+    });
+    head.appendChild(title);
+    head.appendChild(rf);
+    main.appendChild(head);
+  }
+
   export function renderConfigSection(main: HTMLElement, key: string) {
+    settingsPageHead(main, key);
     if (key === 'acp') return renderAcpCard(main);
     if (key === 'deploy') return renderDeployCards(main);
     if (key === 'soul') return renderSoulEditor(main);
+    if (key === 'mcp') return renderMcpCards(main, key);
+    if (key === 'model') return renderModelCards(main, key);
     cfgToolbar(main, key);
     if ((cfgState.mode[key] || 'cards') === 'json') {
       renderRawJson(main, key);
-    } else if (key === 'model') {
-      renderModelCards(main, key);
-    } else if (key === 'mcp') {
-      renderMcpCards(main, key);
+    } else if (key === 'sensor') {
+      renderSensorCards(main, key);
     } else {
       renderGenericCards(main, key);
     }
@@ -312,7 +346,9 @@ import { HOST } from './state.js';
     card.appendChild(body);
   }
 
-  // ---- mcp：服务器卡片（按单服务器拆分）----
+  // ---- mcp：服务器卡片 ----
+  const MCP_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="6" rx="2"/><rect x="3" y="14" width="18" height="6" rx="2"/><path d="M7 7h.01M7 17h.01"/></svg>';
+
   export function renderMcpCards(main: HTMLElement, key: string) {
     cfgData(key).then(function (data) {
       // mcp_config.json 的结构为 { mcpServers: { 服务器名: 配置 } }，需先解包这一层
@@ -322,53 +358,105 @@ import { HOST } from './state.js';
       const servers = data.mcpServers;
       const names = Object.keys(servers);
       if (names.length === 0) {
-        const empty = HOST.document.createElement('div'); empty.className = 'p-tag'; empty.textContent = '（暂无 MCP 服务器）'; main.appendChild(empty);
+        const empty = HOST.document.createElement('div'); empty.className = 'cfg-empty'; empty.textContent = '暂无 MCP 服务器'; main.appendChild(empty);
+        return;
       }
+      const grid = HOST.document.createElement('div');
+      grid.className = 'entry-grid';
+      main.appendChild(grid);
       names.forEach(function (name) {
         const isOpen = cfgState.openKey[key] === name;
         const val = servers[name];
-        const card = cfgCard(main);
-        const preview = JSON.stringify(val);
-        const h = cfgCardHead(card, name, (Array.isArray(val) ? 'array' : typeof val), preview.slice(0, 90) + (preview.length > 90 ? '…' : ''));
-        const edit = HOST.document.createElement('button');
-        edit.className = 'btn cfg-edit';
-        edit.textContent = isOpen ? '关闭' : '编辑';
+        const isObj = !!val && typeof val === 'object' && !Array.isArray(val);
+        const kind = isObj ? (val.url ? 'http' : (val.command ? 'stdio' : 'object')) : (Array.isArray(val) ? 'array' : typeof val);
+        const envCount = isObj && val.env && typeof val.env === 'object' ? Object.keys(val.env).length : 0;
+        const card = HOST.document.createElement('div');
+        card.className = 'entry-card' + (isOpen ? ' is-open' : '');
+
+        const head = HOST.document.createElement('div');
+        head.className = 'entry-card-head';
+        const icon = HOST.document.createElement('span');
+        icon.className = 'cfg-card-icon';
+        icon.innerHTML = MCP_ICON;
+        head.appendChild(icon);
+
+        const info = HOST.document.createElement('div');
+        info.className = 'entry-card-info';
+        const titleRow = HOST.document.createElement('div');
+        titleRow.className = 'entry-card-title';
+        const nm = HOST.document.createElement('span');
+        nm.className = 'entry-card-name';
+        nm.textContent = name;
+        nm.title = name;
+        titleRow.appendChild(nm);
+        const badge = HOST.document.createElement('span');
+        badge.className = 'cfg-chip type';
+        badge.textContent = kind;
+        titleRow.appendChild(badge);
+        const meta = HOST.document.createElement('div');
+        meta.className = 'entry-card-meta';
+        meta.textContent = (isObj && val.url ? String(val.url) : (isObj && val.command ? String(val.command) : '未配置启动命令')) + (envCount ? ' · ' + envCount + ' 个环境变量' : '');
+        info.appendChild(titleRow);
+        info.appendChild(meta);
+        head.appendChild(info);
+
+        const act = HOST.document.createElement('div');
+        act.className = 'entry-card-act';
+        const reload = entryIconBtn('restart', '刷新到内存');
+        reload.addEventListener('click', function () {
+          reload.disabled = true;
+          reload.classList.add('spinning');
+          reloadRuntime(key)
+            .then(function () { reload.classList.remove('spinning'); reload.disabled = false; })
+            .catch(function (e) { reload.classList.remove('spinning'); reload.disabled = false; HOST.alert('刷新失败：' + (e && e.message || '')); });
+        });
+        const edit = entryIconBtn('edit', isOpen ? '收起' : '编辑');
+        if (isOpen) edit.classList.add('active');
         edit.addEventListener('click', function () {
-          if (isOpen) delete cfgState.openKey[key]; else { cfgState.openKey[key] = name; cfgState.editStr[key + '::' + name] = JSON.stringify(val, null, 2); }
+          if (isOpen) delete cfgState.openKey[key];
+          else { cfgState.openKey[key] = name; cfgState.editStr[key + '::' + name] = JSON.stringify(val, null, 2); }
           rerenderConfig(main, key);
         });
-        h.right.appendChild(edit);
-        const del = HOST.document.createElement('button');
-        del.className = 'btn cfg-del';
-        del.textContent = '删除';
+        const del = entryIconBtn('trash', '删除', true);
         del.addEventListener('click', function () {
           if (!HOST.confirm('删除 MCP 服务器 "' + name + '"？')) return;
           delete servers[name];
           delete cfgState.openKey[key];
           putCfg(key, data).then(function () { rerenderConfig(main, key); }).catch(function (e) { HOST.alert('删除失败：' + (e && e.message || '')); });
         });
-        h.right.appendChild(del);
-        if (!isOpen) return;
-        const body = HOST.document.createElement('div');
-        body.className = 'cfg-card-body';
-        const ta = HOST.document.createElement('textarea');
-        ta.className = 'settings-json';
-        ta.style.minHeight = '150px';
-        ta.value = cfgState.editStr[key + '::' + name] || JSON.stringify(val, null, 2);
-        ta.addEventListener('input', function () { cfgState.editStr[key + '::' + name] = ta.value; });
-        body.appendChild(ta);
-        const save = HOST.document.createElement('button');
-        save.className = 'btn cfg-save';
-        save.textContent = '保存该服务器';
-        save.addEventListener('click', function () {
-          let obj;
-          try { obj = JSON.parse(cfgState.editStr[key + '::' + name]); } catch (e) { HOST.alert('JSON 解析失败：' + (e as Error).message); return; }
-          servers[name] = obj;
-          delete cfgState.openKey[key];
-          putCfg(key, data).then(function () { rerenderConfig(main, key); }).catch(function (e) { HOST.alert('保存失败：' + (e && e.message || '')); });
-        });
-        body.appendChild(save);
-        card.appendChild(body);
+        act.appendChild(reload);
+        act.appendChild(edit);
+        act.appendChild(del);
+        head.appendChild(act);
+        card.appendChild(head);
+
+        if (isOpen) {
+          const body = HOST.document.createElement('div');
+          body.className = 'entry-card-body';
+          const ta = HOST.document.createElement('textarea');
+          ta.className = 'settings-json';
+          ta.style.minHeight = '150px';
+          ta.value = cfgState.editStr[key + '::' + name] || JSON.stringify(val, null, 2);
+          ta.addEventListener('input', function () { cfgState.editStr[key + '::' + name] = ta.value; });
+          body.appendChild(ta);
+          const save = HOST.document.createElement('button');
+          save.className = 'btn cfg-save entry-save';
+          save.textContent = '保存并刷新';
+          save.addEventListener('click', function () {
+            let obj;
+            try { obj = JSON.parse(cfgState.editStr[key + '::' + name]); } catch (e) { HOST.alert('JSON 解析失败：' + (e as Error).message); return; }
+            servers[name] = obj;
+            delete cfgState.openKey[key];
+            save.disabled = true;
+            save.textContent = '保存中…';
+            putCfg(key, data)
+              .then(function () { rerenderConfig(main, key); })
+              .catch(function (e) { save.disabled = false; save.textContent = '保存并刷新'; HOST.alert('保存失败：' + (e && e.message || '')); });
+          });
+          body.appendChild(save);
+          card.appendChild(body);
+        }
+        grid.appendChild(card);
       });
     });
   }
@@ -431,8 +519,10 @@ import { HOST } from './state.js';
       let read = function () { return raw; };
 
       if (type === 'switch') {
+        const f = HOST.document.createElement('div');
+        f.className = 'cfg-field';
         const row = HOST.document.createElement('div');
-        row.className = 'cfg-field switch-row';
+        row.className = 'switch-row';
         row.appendChild(sensorFieldLabel(label));
         const sw = HOST.document.createElement('label');
         sw.className = 'switch';
@@ -442,7 +532,14 @@ import { HOST } from './state.js';
         chk.checked = on;
         chk.addEventListener('change', function () { on = chk.checked; });
         row.appendChild(sw);
-        grid.appendChild(row);
+        f.appendChild(row);
+        if (field.help) {
+          const hint = HOST.document.createElement('div');
+          hint.className = 'pk-hint';
+          hint.textContent = field.help;
+          f.appendChild(hint);
+        }
+        grid.appendChild(f);
         read = function () { return on ? 'true' : 'false'; };
       } else {
         const f = HOST.document.createElement('div');
@@ -622,7 +719,47 @@ import { HOST } from './state.js';
           inp.value = raw === '' && field.default != null ? String(field.default) : raw;
           inp.addEventListener('input', function () { read = function () { return inp.value; }; });
           read = function () { return inp.value; };
-          f.appendChild(inp);
+          if (type === 'password') {
+            const wrap = HOST.document.createElement('div');
+            wrap.className = 'cfg-secret';
+            wrap.appendChild(inp);
+            const eye = HOST.document.createElement('button');
+            eye.type = 'button';
+            eye.className = 'cfg-inline-icon';
+            eye.title = '显示明文';
+            eye.setAttribute('aria-label', '显示明文');
+            eye.innerHTML = EYE_SVG;
+            eye.addEventListener('click', function () {
+              const show = inp.type === 'password';
+              inp.type = show ? 'text' : 'password';
+              eye.innerHTML = show ? EYE_OFF_SVG : EYE_SVG;
+              eye.title = show ? '隐藏' : '显示明文';
+            });
+            const copy = HOST.document.createElement('button');
+            copy.type = 'button';
+            copy.className = 'cfg-inline-icon';
+            copy.title = '复制';
+            copy.setAttribute('aria-label', '复制');
+            copy.innerHTML = COPY_SVG;
+            copy.addEventListener('click', function () {
+              const done = function () {
+                copy.title = '已复制';
+                setTimeout(function () { copy.title = '复制'; }, 1200);
+              };
+              if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(inp.value).then(done).catch(function () { inp.select(); HOST.document.execCommand('copy'); done(); });
+              } else {
+                inp.select();
+                HOST.document.execCommand('copy');
+                done();
+              }
+            });
+            wrap.appendChild(eye);
+            wrap.appendChild(copy);
+            f.appendChild(wrap);
+          } else {
+            f.appendChild(inp);
+          }
         }
 
         if (field.help) {
@@ -640,8 +777,8 @@ import { HOST } from './state.js';
     body.appendChild(grid);
 
     const saveBtn = HOST.document.createElement('button');
-    saveBtn.className = 'btn cfg-save';
-    saveBtn.textContent = '保存';
+    saveBtn.className = 'btn cfg-save entry-save';
+    saveBtn.textContent = '保存并刷新';
     saveBtn.addEventListener('click', function () {
       const nextEnv = Object.assign({}, env);
       for (var i = 0; i < readers.length; i++) {
@@ -656,76 +793,21 @@ import { HOST } from './state.js';
       save(nextEnv);
     });
     body.appendChild(saveBtn);
-
-    const tip = HOST.document.createElement('div');
-    tip.className = 'cfg-tip';
-    tip.textContent = '保存后会自动重载 sensor 进程；若仍未生效，可点顶部「重载到内存」再试。';
-    body.appendChild(tip);
   }
 
   export function renderGenericCards(main: HTMLElement, key: string) {
-    const isSensor = key === 'sensor';
-    Promise.all([cfgData(key), isSensor ? sensorRuntimeMap() : Promise.resolve({})]).then(function (res) {
-      const obj: Record<string, any> = res[0] || {};
-      const runMap: Record<string, any> = res[1] || {};
+    cfgData(key).then(function (loaded) {
+      const obj: Record<string, any> = loaded || {};
       const keys = Object.keys(obj).filter(function (k) { return k !== '__ARRAY_WRAPPER__'; });
-      if (keys.length === 0) { const e = HOST.document.createElement('div'); e.className = 'p-tag'; e.textContent = '（空配置）'; main.appendChild(e); }
+      if (keys.length === 0) { const e = HOST.document.createElement('div'); e.className = 'cfg-empty'; e.textContent = '暂无配置项'; main.appendChild(e); }
       keys.forEach(function (k) {
         const val = obj[k];
         const isOpen = cfgState.openKey[key] === k;
         const card = cfgCard(main);
         const raw = (typeof val === 'object') ? JSON.stringify(val) : String(val);
-        const rt = isSensor ? runMap[k] : null;
-        const running = !!(rt && rt.alive);
-        // sensor：卡片头展示 icon（config 里的 icon 链接，留空/失效回退默认图标）
-        const iconArg = (isSensor && val && typeof val === 'object') ? (val.icon || '') : undefined;
-        // 卡片不展示配置内容（env 等含凭证），其值只在展开编辑时才呈现
-        const sub = isSensor ? '' : (raw.slice(0, 90) + (raw.length > 90 ? '…' : ''));
-        const h = cfgCardHead(card, k, (Array.isArray(val) ? 'array' : typeof val), sub, iconArg);
-        if (isSensor) {
-          const st = HOST.document.createElement('span');
-          st.className = 'cfg-chip ' + (running ? 'on' : 'off');
-          st.textContent = running ? '运行中' : '未运行';
-          if (running && rt.pid) st.title = 'PID ' + rt.pid;
-          h.titleRow.appendChild(st);
-        }
-        // 运行中的 sensor 可直接停止：杀进程 + 置 enabled=false
-        if (isSensor && running) {
-          const stopBtn = HOST.document.createElement('button');
-          stopBtn.className = 'btn cfg-stop';
-          stopBtn.textContent = '停止';
-          stopBtn.title = '杀死该 Sensor 后台进程，并在配置里置为 enabled=false';
-          stopBtn.addEventListener('click', function () {
-            if (!HOST.confirm('停止 Sensor "' + k + '"？将杀死其后台进程并置为 enabled=false。')) return;
-            stopBtn.disabled = true;
-            stopBtn.textContent = '停止中…';
-            fetch('/api/config/sensor/' + encodeURIComponent(k) + '/stop', { method: 'POST' })
-              .then(function (r) { return r.json().then(function (b) { if (!r.ok) throw new Error((b && b.detail) || ('HTTP ' + r.status)); return b; }); })
-              .then(function () { delete cfgState.data[key]; delete cfgState.openKey[key]; rerenderConfig(main, key); })
-              .catch(function (e) { stopBtn.disabled = false; stopBtn.textContent = '停止'; HOST.alert('停止失败：' + (e && e.message || '')); });
-          });
-          h.right.appendChild(stopBtn);
-        } else if (isSensor) {
-          // 未运行（被停止或启动失败）时才给「重启」：置 enabled=true 后重新拉起进程
-          const restartBtn = HOST.document.createElement('button');
-          restartBtn.className = 'btn cfg-restart';
-          restartBtn.textContent = '重启';
-          restartBtn.title = '置为 enabled=true 并重新拉起该 Sensor 后台进程';
-          restartBtn.addEventListener('click', function () {
-            if (!HOST.confirm('重启 Sensor "' + k + '"？将置为 enabled=true 并重新拉起后台进程。')) return;
-            restartBtn.disabled = true;
-            restartBtn.textContent = '重启中…';
-            fetch('/api/config/sensor/' + encodeURIComponent(k) + '/restart', { method: 'POST' })
-              .then(function (r) { return r.json().then(function (b) { if (!r.ok) throw new Error((b && b.detail) || ('HTTP ' + r.status)); return b; }); })
-              .then(function (b) {
-                delete cfgState.data[key]; delete cfgState.openKey[key];
-                rerenderConfig(main, key);
-                if (b && b.started === false) HOST.alert('重启未成功：' + ((b && b.message) || '请检查本地 <name>.py 与 uv'));
-              })
-              .catch(function (e) { restartBtn.disabled = false; restartBtn.textContent = '重启'; HOST.alert('重启失败：' + (e && e.message || '')); });
-          });
-          h.right.appendChild(restartBtn);
-        }
+        // 卡片不展示配置内容，其值只在展开编辑时才呈现
+        const sub = raw.slice(0, 90) + (raw.length > 90 ? '…' : '');
+        const h = cfgCardHead(card, k, (Array.isArray(val) ? 'array' : typeof val), sub);
         const edit = HOST.document.createElement('button');
         edit.className = 'btn cfg-edit';
         edit.textContent = isOpen ? '关闭' : '编辑';
@@ -744,66 +826,9 @@ import { HOST } from './state.js';
           putCfg(key, obj).then(function () { rerenderConfig(main, key); }).catch(function (e) { HOST.alert('删除失败：' + (e && e.message || '')); });
         });
         h.right.appendChild(del);
-        // sensor：删除键旁再挂一个箭头，展开下拉提供「彻底删除」（连正式文件一起删）
-        if (isSensor) {
-          const more = HOST.document.createElement('button');
-          more.className = 'btn cfg-caret';
-          more.textContent = '▾';
-          more.title = '更多删除选项';
-          more.addEventListener('click', function (ev) {
-            ev.stopPropagation();   // 别让全局 click 把刚弹出的菜单立刻收掉
-            const owner = 'cfg-' + k;
-            const wasOpen = !!HOST.document.querySelector('.settings-card-menu[data-owner="' + owner + '"]');
-            closeSettingsMenus();
-            if (wasOpen) return;   // 再点一次同一个箭头 = 收起
-            const menu = HOST.document.createElement('div');
-            menu.className = 'settings-card-menu';
-            menu.setAttribute('data-owner', owner);
-            const purge = HOST.document.createElement('button');
-            purge.className = 'settings-menu-btn danger';
-            purge.textContent = '彻底删除（连文件）';
-            purge.addEventListener('click', function () {
-              closeSettingsMenus();
-              if (!HOST.confirm('彻底删除 Sensor "' + k + '"？将杀死其进程、删除正式文件 ' + k + '.py 并从配置移除，不可恢复。')) return;
-              fetch('/api/config/sensor/' + encodeURIComponent(k) + '/purge', { method: 'POST' })
-                .then(function (r) { return r.json().then(function (b) { if (!r.ok) throw new Error((b && b.detail) || ('HTTP ' + r.status)); return b; }); })
-                .then(function () { delete cfgState.data[key]; delete cfgState.openKey[key]; rerenderConfig(main, key); })
-                .catch(function (e) { HOST.alert('彻底删除失败：' + (e && e.message || '')); });
-            });
-            menu.appendChild(purge);
-            HOST.document.body.appendChild(menu);
-            const b = more.getBoundingClientRect();
-            menu.style.right = (HOST.innerWidth - b.right) + 'px';
-            menu.style.top = (b.bottom + 4) + 'px';
-            syncNativeCover();
-          });
-          h.right.appendChild(more);
-        }
         if (!isOpen) return;
         const body = HOST.document.createElement('div');
         body.className = 'cfg-card-body';
-        const rawModeMap = cfgState.rawSensor || (cfgState.rawSensor = {});
-        const hasSchema = isSensor && val && typeof val === 'object'
-          && Array.isArray(val.fields) && val.fields.length > 0;
-
-        // 有 fields 声明：渲染成表单；否则（或切到原始模式）走 JSON 文本域
-        if (hasSchema && !rawModeMap[k]) {
-          renderSensorFields(body, val, function (nextEnv: Record<string, any>) {
-            val.env = nextEnv;
-            cfgState.editStr[key + '::' + k] = JSON.stringify(val, null, 2);
-            putCfg(key, obj)
-              .then(function () { delete cfgState.data[key]; HOST.alert('已保存'); rerenderConfig(main, key); })
-              .catch(function (e) { HOST.alert('保存失败：' + (e && e.message || '')); });
-          });
-          body.appendChild(sensorMiniBtn('编辑原始 JSON', '字段表单覆盖不到的高级项可切到原始 JSON', function () {
-            cfgState.editStr[key + '::' + k] = JSON.stringify(val, null, 2);
-            rawModeMap[k] = true;
-            rerenderConfig(main, key);
-          }, 'sensor-raw'));
-          card.appendChild(body);
-          return;
-        }
-
         const ta = HOST.document.createElement('textarea');
         ta.className = 'settings-json';
         ta.style.minHeight = '140px';
@@ -821,13 +846,198 @@ import { HOST } from './state.js';
           putCfg(key, obj).then(function () { rerenderConfig(main, key); }).catch(function (e) { HOST.alert('保存失败：' + (e && e.message || '')); });
         });
         body.appendChild(save);
-        if (hasSchema) {
-          body.appendChild(sensorMiniBtn('返回字段表单', '', function () {
-            rawModeMap[k] = false;
-            rerenderConfig(main, key);
-          }, 'sensor-form'));
-        }
         card.appendChild(body);
+      });
+    });
+  }
+
+  // ---- sensor：卡片网格 ----
+  const ENTRY_ACTION_ICON: Record<string, string> = {
+    restart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 6.1"/><path d="M20 4v7h-7"/></svg>',
+    stop: '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="7" y="7" width="10" height="10" rx="2"/></svg>',
+    edit: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4l10.5-10.5a2.1 2.1 0 0 0-3-3L5 17v3z"/></svg>',
+    trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M9 7V5h6v2"/><path d="M6 7l1 13h10l1-13"/><path d="M10 11v5M14 11v5"/></svg>',
+  };
+
+  function entryIconBtn(name: string, title: string, danger?: boolean) {
+    const b = HOST.document.createElement('button');
+    b.type = 'button';
+    b.className = 'entry-icon-btn' + (danger ? ' danger' : '');
+    b.title = title;
+    b.setAttribute('aria-label', title);
+    b.innerHTML = ENTRY_ACTION_ICON[name] || '';
+    return b;
+  }
+
+  export function renderSensorCards(main: HTMLElement, key: string) {
+    Promise.all([cfgData(key), sensorRuntimeMap()]).then(function (res) {
+      const obj: Record<string, any> = res[0] || {};
+      const runMap: Record<string, any> = res[1] || {};
+      const names = Object.keys(obj).filter(function (k) { return k !== '__ARRAY_WRAPPER__'; });
+      if (names.length === 0) {
+        const empty = HOST.document.createElement('div');
+        empty.className = 'cfg-empty';
+        empty.textContent = '暂无传感器';
+        main.appendChild(empty);
+        return;
+      }
+      const grid = HOST.document.createElement('div');
+      grid.className = 'entry-grid';
+      main.appendChild(grid);
+
+      names.forEach(function (name) {
+        const val = obj[name];
+        const isOpen = cfgState.openKey[key] === name;
+        const rt = runMap[name];
+        const running = !!(rt && rt.alive);
+        const fieldCount = (val && Array.isArray(val.fields)) ? val.fields.length : 0;
+        const card = HOST.document.createElement('div');
+        card.className = 'entry-card' + (isOpen ? ' is-open' : '');
+
+        const head = HOST.document.createElement('div');
+        head.className = 'entry-card-head';
+        head.appendChild(cfgIcon((val && typeof val === 'object') ? (val.icon || '') : ''));
+
+        const info = HOST.document.createElement('div');
+        info.className = 'entry-card-info';
+        const titleRow = HOST.document.createElement('div');
+        titleRow.className = 'entry-card-title';
+        const nm = HOST.document.createElement('span');
+        nm.className = 'entry-card-name';
+        nm.textContent = name;
+        nm.title = name;
+        const st = HOST.document.createElement('span');
+        st.className = 'cfg-chip ' + (running ? 'on' : 'off');
+        st.textContent = running ? '运行中' : '未运行';
+        if (running && rt.pid) st.title = 'PID ' + rt.pid;
+        titleRow.appendChild(nm);
+        titleRow.appendChild(st);
+        const meta = HOST.document.createElement('div');
+        meta.className = 'entry-card-meta';
+        meta.textContent = (val && val.source === 'remote' ? '远程' : '本地') + ' · ' + (fieldCount ? fieldCount + ' 个配置字段' : '无字段声明');
+        info.appendChild(titleRow);
+        info.appendChild(meta);
+        head.appendChild(info);
+
+        const act = HOST.document.createElement('div');
+        act.className = 'entry-card-act';
+        const power = entryIconBtn(running ? 'stop' : 'restart', running ? '停止' : '重启', running);
+        power.addEventListener('click', function () {
+          const verb = running ? '停止' : '重启';
+          if (!HOST.confirm(verb + ' Sensor "' + name + '"？')) return;
+          power.disabled = true;
+          fetch('/api/config/sensor/' + encodeURIComponent(name) + (running ? '/stop' : '/restart'), { method: 'POST' })
+            .then(function (r) { return r.json().then(function (b) { if (!r.ok) throw new Error((b && b.detail) || ('HTTP ' + r.status)); return b; }); })
+            .then(function (b) {
+              delete cfgState.data[key];
+              delete cfgState.openKey[key];
+              rerenderConfig(main, key);
+              if (!running && b && b.started === false) HOST.alert('重启未成功：' + ((b && b.message) || ('请检查本地 ' + name + '.py 与 uv')));
+            })
+            .catch(function (e) { power.disabled = false; HOST.alert(verb + '失败：' + (e && e.message || '')); });
+        });
+        const edit = entryIconBtn('edit', isOpen ? '收起' : '编辑');
+        if (isOpen) edit.classList.add('active');
+        edit.addEventListener('click', function () {
+          if (isOpen) delete cfgState.openKey[key];
+          else {
+            cfgState.openKey[key] = name;
+            cfgState.editStr[key + '::' + name] = (val && typeof val === 'object') ? JSON.stringify(val, null, 2) : String(val);
+          }
+          rerenderConfig(main, key);
+        });
+        const del = entryIconBtn('trash', '删除', true);
+        del.addEventListener('click', function (ev) {
+          ev.stopPropagation();
+          const owner = 'sensor-' + name;
+          const wasOpen = !!HOST.document.querySelector('.settings-card-menu[data-owner="' + owner + '"]');
+          closeSettingsMenus();
+          if (wasOpen) return;
+          const menu = HOST.document.createElement('div');
+          menu.className = 'settings-card-menu';
+          menu.setAttribute('data-owner', owner);
+          const conf = HOST.document.createElement('button');
+          conf.className = 'settings-menu-btn';
+          conf.textContent = '删除配置';
+          conf.addEventListener('click', function () {
+            closeSettingsMenus();
+            if (!HOST.confirm('删除 Sensor "' + name + '" 的配置？')) return;
+            delete obj[name];
+            delete cfgState.openKey[key];
+            putCfg(key, obj)
+              .then(function () { delete cfgState.data[key]; rerenderConfig(main, key); })
+              .catch(function (e) { HOST.alert('删除失败：' + (e && e.message || '')); });
+          });
+          const purge = HOST.document.createElement('button');
+          purge.className = 'settings-menu-btn danger';
+          purge.textContent = '彻底删除（含文件）';
+          purge.addEventListener('click', function () {
+            closeSettingsMenus();
+            if (!HOST.confirm('彻底删除 Sensor "' + name + '"？将杀死其进程、删除正式文件 ' + name + '.py 并从配置移除，不可恢复。')) return;
+            fetch('/api/config/sensor/' + encodeURIComponent(name) + '/purge', { method: 'POST' })
+              .then(function (r) { return r.json().then(function (b) { if (!r.ok) throw new Error((b && b.detail) || ('HTTP ' + r.status)); return b; }); })
+              .then(function () { delete cfgState.data[key]; delete cfgState.openKey[key]; rerenderConfig(main, key); })
+              .catch(function (e) { HOST.alert('彻底删除失败：' + (e && e.message || '')); });
+          });
+          menu.appendChild(conf);
+          menu.appendChild(purge);
+          HOST.document.body.appendChild(menu);
+          const b = del.getBoundingClientRect();
+          menu.style.right = (HOST.innerWidth - b.right) + 'px';
+          menu.style.top = (b.bottom + 4) + 'px';
+          syncNativeCover();
+        });
+        act.appendChild(power);
+        act.appendChild(edit);
+        act.appendChild(del);
+        head.appendChild(act);
+        card.appendChild(head);
+
+        if (isOpen) {
+          const body = HOST.document.createElement('div');
+          body.className = 'entry-card-body';
+          const hasSchema = val && typeof val === 'object' && Array.isArray(val.fields) && val.fields.length > 0;
+          const saveCfg = function (next: any, btn?: HTMLButtonElement) {
+            obj[name] = next;
+            if (btn) { btn.disabled = true; btn.textContent = '保存中…'; }
+            putCfg(key, obj)
+              .then(function () { return fetch('/api/config/sensor/reload', { method: 'POST' }); })
+              .then(function (r) {
+                if (!r.ok) throw new Error('HTTP ' + r.status);
+                delete cfgState.data[key];
+                rerenderConfig(main, key);
+              })
+              .catch(function (e) {
+                if (btn) { btn.disabled = false; btn.textContent = '保存并刷新'; }
+                HOST.alert('保存失败：' + (e && e.message || ''));
+              });
+          };
+          if (hasSchema) {
+            renderSensorFields(body, val, function (nextEnv: Record<string, any>) {
+              val.env = nextEnv;
+              cfgState.editStr[key + '::' + name] = JSON.stringify(val, null, 2);
+              saveCfg(val);
+            });
+          } else {
+            const ta = HOST.document.createElement('textarea');
+            ta.className = 'settings-json';
+            ta.style.minHeight = '140px';
+            ta.value = cfgState.editStr[key + '::' + name] || (typeof val === 'object' ? JSON.stringify(val, null, 2) : String(val));
+            ta.addEventListener('input', function () { cfgState.editStr[key + '::' + name] = ta.value; });
+            body.appendChild(ta);
+            const save = HOST.document.createElement('button');
+            save.className = 'btn cfg-save entry-save';
+            save.textContent = '保存并刷新';
+            save.addEventListener('click', function () {
+              let next;
+              try { next = coerceVal(cfgState.editStr[key + '::' + name], val); } catch (e) { HOST.alert((e as Error).message); return; }
+              saveCfg(next, save);
+            });
+            body.appendChild(save);
+          }
+          card.appendChild(body);
+        }
+        grid.appendChild(card);
       });
     });
   }

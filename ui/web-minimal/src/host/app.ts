@@ -6,7 +6,6 @@ import { buildSlotIndex, mountAll } from './mount.js';
 import { applyPanelContainerCfg, closePanelMenus, loadPanelShell } from './panel.js';
 import { applyPersistedHidden, applyRailOpacity, applySlotHidden, bindRailToggle, buildRail } from './rail.js';
 import { broadcastSessions, updateEmpty } from './sessions.js';
-import { setSettingsOpen } from './settings-appearance.js';
 import { closeSettingsMenus } from './settings-tabs.js';
 import { HOST, groupState } from './state.js';
 
@@ -25,9 +24,6 @@ import { HOST, groupState } from './state.js';
   // ---- 入口 ----
   export async function boot() {
     wireWindowControls();
-    // 设置面板关闭按钮
-    const settingsClose = HOST.document.getElementById('settingsClose');
-    if (settingsClose) settingsClose.addEventListener('click', () => setSettingsOpen(false));
     // 弹出菜单（设置卡片 ▾ / 面板抽屉 ☰）都挂在 body 上：点界面空白处统一收起。
     // 触发按钮自身的 click 已 stopPropagation，因此不会误关刚打开的菜单。
     HOST.document.addEventListener('click', function () { closeSettingsMenus(); closePanelMenus(); });
