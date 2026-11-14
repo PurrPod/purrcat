@@ -2,9 +2,11 @@
 import { PANEL_CONTAINER_ID, refreshAreaRail } from './areas.js';
 import { syncNativeCover } from './bus.js';
 import { paintIcon, paintPluginIcon } from './icons.js';
+import { panelWindowKey, tileMode } from './layout.js';
 import { buildSlotIndex, mountFrame, notifyUnmount, refreshFixedSlot } from './mount.js';
 import { buildRail, persistActive, persistRail, railHidden } from './rail.js';
-import { HOST, activeBySlot, frames, pluginBySlot, railState, slotMap } from './state.js';
+import { HOST, activeBySlot, frames, groupState, pluginBySlot, railState, slotMap } from './state.js';
+import { scrollTileIntoView, syncTiles } from './tile.js';
 import type { PluginDescriptor, PluginFrame, SlotDef } from './types.js';
 
   // 面板插件条目：p 为插件描述（links 会直接读取 openUrl 等插件自定义能力字段），def 为其 slot 声明
@@ -155,6 +157,8 @@ import type { PluginDescriptor, PluginFrame, SlotDef } from './types.js';
     persistRail().catch(() => {});
   }
   export function hasPanelsDef() {
+    // 平铺模式没有中栏容器实体：面板插件各自成窗口，不再占中栏
+    if (tileMode()) return false;
     // panel-container 区域有插件入驻时（内置容器或容器插件），中栏容器同样存在
     if ((slotMap['panel-container'] || []).length) return true;
     return Object.keys(slotMap).some((sid) => (slotMap[sid][0].slotDef || {}).type === 'panel');
@@ -166,6 +170,7 @@ import type { PluginDescriptor, PluginFrame, SlotDef } from './types.js';
   }
   // 中栏容器是否占位：第三方容器插件生效，或内置容器开关打开。二者互斥，同时只有一个成立
   export function panelContainerVisible() {
+    if (tileMode()) return false;
     return !!thirdPartyContainerPlugin() || !railHidden(PANEL_CONTAINER_ID);
   }
   export function startPanelBarDrag(e: PointerEvent): void {
@@ -326,6 +331,23 @@ import type { PluginDescriptor, PluginFrame, SlotDef } from './types.js';
   }
   // 打开（或聚焦已打开的）标签页并激活
   export function openPanelTab(id: string): void {
+    // 平铺模式：面板插件 = 独立窗口，开/关即窗口的增删
+    if (tileMode()) {
+      const p = groupState.plugins.find((x) => x.id === id && (x.slotDef || {}).type === 'panel');
+      if (!p) return;
+      if (panelTabs.indexOf(id) < 0) panelTabs.push(id);
+      // 曾被白条/设置关闭过的插件：重新打开时清掉隐藏标记，窗口才会真正出现
+      if (railHidden(id)) {
+        if (!railState.hidden) railState.hidden = {};
+        delete railState.hidden[id];
+        persistRail().catch(() => {});
+      }
+      activeBySlot['panel'] = id;
+      savePanelSel();
+      syncTiles();
+      scrollTileIntoView(panelWindowKey(id));
+      return;
+    }
     const st = panelState;
     if (!st || !st.pluginsById[id]) return;
     const added = panelTabs.indexOf(id) < 0;
@@ -338,6 +360,15 @@ import type { PluginDescriptor, PluginFrame, SlotDef } from './types.js';
   }
   // 关闭某标签页：优先激活右邻、其次左邻；空则回到空态
   export function closePanelTab(id: string): void {
+    if (tileMode()) {
+      const at = panelTabs.indexOf(id);
+      if (at < 0) return;
+      panelTabs.splice(at, 1);
+      activeBySlot['panel'] = panelTabs[at] || panelTabs[at - 1] || '__none__';
+      savePanelSel();
+      syncTiles();
+      return;
+    }
     const st = panelState;
     if (!st) return;
     const i = panelTabs.indexOf(id);
@@ -386,6 +417,13 @@ import type { PluginDescriptor, PluginFrame, SlotDef } from './types.js';
   }
   // 挂载 type=panel 插件：无面板插件则不占位；有则建 .wm-ppanel 并点亮抽屉
   export function mountPanels() {
+    // 平铺模式不渲染中栏容器外壳：面板插件由 tile.ts 各自成窗口
+    if (tileMode()) {
+      if (panelState && panelState.el && panelState.el.parentNode) { notifyUnmount(panelState.el); panelState.el.remove(); }
+      panelState = null;
+      closePanelMenus();
+      return;
+    }
     // 若已有第三方容器插件（与内置容器等位、同区域互斥）提供中栏容器，
     // 则由该插件渲染：内置容器让位，不再创建 .wm-ppanel（标签列表保留，便于切回）。
     if (thirdPartyContainerPlugin()) {

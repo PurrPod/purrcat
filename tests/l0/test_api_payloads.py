@@ -187,6 +187,46 @@ def test_normalize_active_filters_empty_values():
     ) == {"a": "x", "b": "0", "c": "1", "e": "True"}
 
 
+def test_sanitize_layout_accepts_only_container_or_tile():
+    """SPEC-024 AC-1：布局模式只接受 container/tile，未知值回落到 container。"""
+    assert webmin_manifest.sanitize_layout({"mode": "tile"})["mode"] == "tile"
+    assert webmin_manifest.sanitize_layout({"mode": "container"})["mode"] == "container"
+    assert webmin_manifest.sanitize_layout({"mode": "grid"})["mode"] == "container"
+    assert webmin_manifest.sanitize_layout({})["mode"] == "container"
+
+
+def test_sanitize_layout_dedupes_order_and_drops_empty():
+    """SPEC-024 AC-1：窗口顺序去重、去空串，保留给定先后关系。"""
+    raw = {
+        "order": ["slot:sidebar", "panel:a", "panel:a", " ", 3, None, "slot:session"]
+    }
+
+    assert webmin_manifest.sanitize_layout(raw)["order"] == [
+        "slot:sidebar",
+        "panel:a",
+        "slot:session",
+    ]
+
+
+def test_sanitize_layout_clamps_widths():
+    """SPEC-024 AC-1：窗口宽度夹紧到 [260, 4000] 的整数。"""
+    raw = {
+        "widths": {
+            "slot:sidebar": "100",
+            "panel:a": 480.4,
+            "slot:session": 9999,
+            "bad": "x",
+            "": 300,
+        }
+    }
+
+    assert webmin_manifest.sanitize_layout(raw)["widths"] == {
+        "slot:sidebar": 260,
+        "panel:a": 480,
+        "slot:session": 4000,
+    }
+
+
 def test_plugin_origin_and_builtin_root(tmp_path):
     """SPEC-014 AC-3：插件实际所在根与内置根判断。"""
     user_root = tmp_path / "user"

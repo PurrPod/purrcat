@@ -244,6 +244,7 @@ body.settings-open [data-layer="topbar"] { background: var(--wm-bg-base); }
 /* 设置页打开时主界面整体让位，避免底层 iframe / 浮窗穿过页面 */
 body.settings-open [data-layer="sidebar"],
 body.settings-open .wm-main,
+body.settings-open .wm-tiles,
 body.settings-open .wm-ppanel,
 body.settings-open [data-slot="panel-container"] > iframe,
 body.settings-open .wm-pbar,
@@ -448,6 +449,7 @@ body.settings-open .wm-modal-wrap { display: none !important; }
 }
 .cfg-seg:hover { background: var(--wm-bg-hover); color: var(--wm-label); }
 .cfg-seg.active { background: var(--wm-bg-active); color: var(--wm-ink); font-weight: 600; }
+.cfg-seg-row { display: flex; gap: 8px; }
 
 .cfg-card {
   border: 1px solid var(--wm-border); border-radius: 12px; margin-bottom: 12px;
@@ -802,3 +804,130 @@ body.rail-nosidebar.has-panels .wm-pbar {
   left: calc(var(--wm-rail-w) + var(--wm-sidebar-gap) + var(--wm-panel-w));
 }
 .wm-pbar:hover { background: var(--wm-accent-weak); }
+
+/* ===== 平铺布局（body.layout-tile）：横向窗口条 ===== */
+body.layout-tile .wm-main { display: none; }
+body.layout-tile .wm-ppanel,
+body.layout-tile .wm-pbar,
+body.layout-tile [data-slot="panel-container"] { display: none !important; }
+.wm-tiles {
+  position: fixed;
+  top: calc(var(--wm-topbar-h) + var(--wm-sidebar-inset));
+  left: calc(var(--wm-rail-w) + var(--wm-sidebar-gap));
+  right: 0;
+  bottom: var(--wm-sidebar-inset);
+  display: flex;
+  align-items: stretch;
+  gap: var(--wm-sidebar-gap);
+  padding-right: var(--wm-sidebar-gap);
+  overflow-x: scroll;
+  overflow-y: hidden;
+  z-index: 6;
+  scrollbar-width: thin;
+  scrollbar-color: var(--wm-border) transparent;
+}
+.wm-tiles::-webkit-scrollbar { height: 8px; }
+.wm-tiles::-webkit-scrollbar-thumb { background: var(--wm-border); border-radius: 999px; }
+.wm-tile {
+  position: relative;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  min-width: 260px;
+  height: 100%;
+  background: var(--wm-bg-panel);
+  border: 1px solid var(--wm-border);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: var(--wm-shadow-sm);
+  /* 松手后由拖拽位移滑回自然位置 */
+  transition: transform 0.18s ease;
+}
+/* 拖拽中：窗口跟手悬浮，换位时不参与过渡，避免拖影 */
+.wm-tile.dragging {
+  z-index: 20;
+  opacity: 0.92;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.2);
+  transition: none;
+  will-change: transform;
+}
+/* Shift 管理模式的透明接收层：平时让事件穿透到 iframe，Shift 按下时由宿主接管 */
+.wm-tile-shield {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+  background: transparent;
+}
+body.wm-shift-mode .wm-tile-shield { pointer-events: auto; cursor: grab; }
+body.wm-shift-mode .wm-tile { outline: 1px dashed var(--wm-accent-weak); outline-offset: -1px; }
+body.wm-shift-mode .wm-tile.dragging .wm-tile-shield { cursor: grabbing; }
+/* Shift 拖拽期间的全屏接收层：跨界拖动时保证事件不落进 iframe */
+.wm-drag-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: transparent;
+  cursor: grabbing;
+}
+/* 向下拖过窗口高度一半：进入待删除状态 */
+.wm-tile.removing { opacity: 0.8; }
+.wm-tile.removing .wm-tile-shield { background: rgba(220, 38, 38, 0.18); }
+.wm-tile.removing { outline: 2px solid rgba(220, 38, 38, 0.7); outline-offset: -2px; }
+.wm-tile.removing::after {
+  content: '松开关闭';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 6;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgba(220, 38, 38, 0.92);
+  color: #fff;
+  font-size: 12px;
+  line-height: 1.2;
+  pointer-events: none;
+}
+.wm-tile-body { position: relative; flex: 1; min-height: 0; overflow: hidden; }
+.wm-tile-body > iframe { display: block; width: 100%; height: 100%; border: 0; }
+.wm-tile-resize {
+  position: absolute; top: 0; right: 0; bottom: 0; width: 7px;
+  cursor: col-resize; z-index: 5;
+}
+.wm-tile-resize:hover { background: var(--wm-accent-weak); }
+.wm-tile-add {
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-style: dashed;
+  background: transparent;
+  color: var(--wm-label-dim);
+  cursor: pointer;
+  font-size: 12px;
+}
+.wm-tile-add:hover { background: var(--wm-bg-hover); color: var(--wm-label); }
+.wm-tile-add-plus {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; border-radius: 50%;
+  background: var(--wm-bg-active); font-size: 18px; line-height: 1;
+}
+.wm-tile-add-plus svg { width: 16px; height: 16px; }
+.wm-tile-menu-head {
+  padding: 6px 10px 2px;
+  font-size: 11px;
+  color: var(--wm-label-dim);
+}
+/* 固定位锚点移入平铺窗口后铺满窗口内容区 */
+body.layout-tile .wm-tiles [data-slot="sidebar"],
+body.layout-tile .wm-tiles [data-slot="session"] {
+  position: absolute;
+  inset: 0;
+  width: auto;
+  height: auto;
+  /* 列表位/会话位锚点自带 z-index，必须压平，否则会盖住 Shift 接收层 */
+  z-index: 0;
+}
+body.layout-tile .wm-tiles [data-slot="sidebar"] iframe,
+body.layout-tile .wm-tiles [data-slot="session"] iframe { width: 100%; height: 100%; }

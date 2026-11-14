@@ -1,7 +1,8 @@
 // 网页链接路由到内置浏览器面板
 import { broadcast } from './bus.js';
+import { tileMode } from './layout.js';
 import { openPanelTab, panelState, thirdPartyContainerPlugin } from './panel.js';
-import { HOST, frames } from './state.js';
+import { HOST, frames, groupState } from './state.js';
 import type { PluginDescriptor, PluginFrame } from './types.js';
 
 // panel.ts 的 panelState 尚未标注类型（被推断为 null），这里按其在 panel.ts 中的真实结构
@@ -29,19 +30,26 @@ export let pendingBrowserUrl: string | null = null;   // 待打开的内置浏�
   // 宿主不硬编码插件 id：能力由插件在自己的 plugin.json 里声明。
   export function browserPanel(): PanelEntry | null {
     const st = panelState as unknown as PanelStateView | null;
-    if (!st) return null;
-    return st.plugins.find((x) => (x.p || {}).openUrl) || null;
+    if (st) return st.plugins.find((x) => (x.p || {}).openUrl) || null;
+    // 平铺模式没有容器 state：直接从插件表里找声明了 openUrl 能力的 panel 插件
+    if (!tileMode()) return null;
+    const p = groupState.plugins.find((x) => (x.slotDef || {}).type === 'panel' && (x as any).openUrl);
+    return p ? { p: p as PanelPluginRef } : null;
   }
   export function deliverPendingBrowserUrl() {
     if (!pendingBrowserUrl) return;
     const hit = browserPanel();
+    if (!hit) return;
     const st = panelState as unknown as PanelStateView | null;
-    if (!hit || !st || st.activeId !== hit.p.id) return;
-    const fr = st.frames && st.frames[hit.p.id];
+    const inTile = !st && tileMode();
+    if (!inTile && (!st || st.activeId !== hit.p.id)) return;
+    const fr = inTile
+      ? (frames['panel'] || []).find((f) => f.pluginId === hit.p.id)
+      : (st && st.frames && st.frames[hit.p.id]);
     if (!fr || !fr.loaded) return;   // 浏览器帧未加载完：等其 load 回调再投
     const url = pendingBrowserUrl;
     pendingBrowserUrl = null;
-    broadcast(hit.p.slot, 'browser.openUrl', { url: url });
+    broadcast(inTile ? 'panel' : hit.p.slot, 'browser.openUrl', { url: url });
   }
   export function openUrlInBrowserPanel(url: string) {
     const u = String(url || '').trim();
@@ -58,7 +66,8 @@ export let pendingBrowserUrl: string | null = null;   // 待打开的内置浏�
     const hit = browserPanel();
     // 中栏容器由插件入驻时宿主内置容器已让位（panelState 为空），此时把地址广播给
     // 该容器插件，由它转交给自己的内置浏览器子插件——与内置容器同样在应用内打开。
-    const hostCont = hit ? null : thirdPartyContainerPlugin();
+    // 平铺模式没有容器实体，第三方容器插件不参与链接转交
+    const hostCont = (hit || tileMode()) ? null : thirdPartyContainerPlugin();
     // 非网页（mailto:/tel:/file: 等）或面板里没有可用内置浏览器 → 退回系统处理
     if (!/^https?:\/\//i.test(u) || (!hit && !hostCont) || !pc || !pc.browserNewTab) {
       if (pc && pc.openExternal && u) pc.openExternal(u);

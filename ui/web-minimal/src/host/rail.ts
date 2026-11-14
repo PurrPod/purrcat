@@ -3,10 +3,12 @@ import { PANEL_CONTAINER_ID, areaLabel, makeAreaRailButton, railAreaList } from 
 import { syncNativeCover } from './bus.js';
 import { reflowFloats } from './float.js';
 import { paintIcon } from './icons.js';
+import { tileMode } from './layout.js';
 import { refreshFixedSlot } from './mount.js';
 import { applyPanelWidth, panelBar, panelContainerVisible, thirdPartyContainerPlugin } from './panel.js';
 import { setSettingsOpen } from './settings-appearance.js';
 import { HOST, activeBySlot, configByPlugin, groupState, railButtons, railState } from './state.js';
+import { syncTiles } from './tile.js';
 import type { PluginDescriptor } from './types.js';
 import { slotOfPlugin } from './utils.js';
 
@@ -84,6 +86,8 @@ import { slotOfPlugin } from './utils.js';
     });
     // 中栏容器：内置容器与入驻插件同属一个区域，谁生效都占位，两个候选全部关闭才让出中栏
     applySlotHidden('panel', !panelContainerVisible());
+    // 平铺模式：显隐变化后窗口条需重算（隐藏的固定位窗口保留 DOM，仅不显示）
+    if (tileMode()) syncTiles();
   }
   export function applyRailStage() {
     HOST.document.body.classList.remove('rail-0', 'rail-1');
@@ -124,6 +128,7 @@ import { slotOfPlugin } from './utils.js';
       if (p && (p.slotDef || {}).type === 'fixed') refreshFixedSlot(slot);
       else applySlotHidden(slot, hidden);
     }
+    if (tileMode()) syncTiles();
     persistRail().catch(() => {});
   }
   export function buildRail() {

@@ -220,6 +220,7 @@ window.parent.postMessage({ type: 'callAction', id: 'req-1', actionId: 'config.g
 | --- | --- | --- | --- |
 | `host.unmount` | 宿主卸载插件 | — | 全体 |
 | `host.nativeCover` | 宿主原生界面覆盖插件的显示区域 | `{ covered }` | 全体 |
+| `host.layoutChanged` | 布局模式切换，或平铺窗口滚动/改宽/重排 | `{ mode }` | 全体 |
 | `session.switched` | 当前会话切换 | `{ session_id }` | 全体 |
 | `branch.switched` | 对话分支切换 | `{ branch_id }` | 全体 |
 | `requests.updated` | 待办请求状态变化 | `{ request_id }` | 全体 |

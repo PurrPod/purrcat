@@ -615,6 +615,8 @@
       syncBounds();
       return;
     }
+    // 布局切换/平铺窗口滚动、改宽、重排后同步原生视图位置
+    if (m.event === 'host.layoutChanged') { syncBounds(); return; }
     if (m.event === 'host.unmount') { cleanup(); return; }
   });
   function onTabEvent(data) {

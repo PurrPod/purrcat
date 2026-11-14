@@ -1,5 +1,6 @@
 // manifest → 宿主内存态装配与刷新
 import { PANEL_CONTAINER_ID } from './areas.js';
+import { applyLayoutFromManifest } from './layout.js';
 import { buildSlotIndex, mountAll } from './mount.js';
 import { applyPanelContainerCfg, loadPanelShell, panelContainerCfg, panelDesiredWidth, panelSavedWidth, panelTabs, setPanelSavedWidth, setPanelDesiredWidth } from './panel.js';
 import { applyPersistedHidden, buildRail, persistActive } from './rail.js';
@@ -11,6 +12,8 @@ import type { WebminManifest } from './types.js';
   // manifest → 宿主内存态的唯一装配点：插件表、全量插件配置、图标栏状态、面板容器配置、单例槽选择
   export function applyManifestState(manifest: WebminManifest): void {
     groupState.plugins = manifest.plugins || [];
+    // 布局模式与平铺窗口顺序/宽度（缺省回落容器式）
+    applyLayoutFromManifest(manifest.layout);
     // 为「全部」插件建立有效配置（schema 默认值 ∪ 已存值）。
     // 关键：未挂载插件（如非当前抽屉选中的面板插件）的已存配置也要进入 configByPlugin，
     // 否则设置面板展示默认值、整体保存时还会把它的已存配置覆写丢失。

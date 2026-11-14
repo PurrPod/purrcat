@@ -1,11 +1,13 @@
 // 区域图标与区域菜单（白条按区域合并）
 import { syncNativeCover } from './bus.js';
 import { paintIcon, paintPluginIcon } from './icons.js';
+import { tileMode } from './layout.js';
 import { refreshFixedSlot } from './mount.js';
 import { closePanelMenus, renderPanel } from './panel.js';
 import { applySlotHidden, buildRail, isRailPlugin, persistRail } from './rail.js';
 import { AREA_LABEL, activateSlotPlugin, pluginVisible, togglePluginOpen } from './settings-tabs.js';
 import { HOST, groupState, pluginBySlot, railButtons, railState, slotMap } from './state.js';
+import { syncTiles } from './tile.js';
 import type { PluginDescriptor } from './types.js';
 
   // ---- 区域图标：白条按「区域」合并，同区域共用一个图标 ----
@@ -28,6 +30,8 @@ import type { PluginDescriptor } from './types.js';
     groupState.plugins.forEach((p) => {
       const def = p.slotDef || {};
       if (def.type === 'panel' || !def.area) return;
+      // 平铺模式没有面板容器实体，白条不再提供该区域的开关
+      if (tileMode() && def.area === 'panel-container') return;
       if (areas.indexOf(def.area) < 0) areas.push(def.area);
     });
     const rank = (a: string) => { const i = RAIL_AREA_ORDER.indexOf(a); return i < 0 ? RAIL_AREA_ORDER.length : i; };
@@ -59,6 +63,8 @@ import type { PluginDescriptor } from './types.js';
       if ((p.slotDef || {}).type !== 'fixed') applySlotHidden(p.slot, true);
     });
     if (slotMap[area]) refreshFixedSlot(area);
+    // 平铺模式：被关闭的固定位窗口要立刻消失，否则会留下空白窗口占位
+    if (tileMode()) syncTiles();
     persistRail().catch(() => {});
     syncNativeCover();
   }

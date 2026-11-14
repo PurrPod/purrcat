@@ -2,6 +2,7 @@
 import { callAction, syncNativeCover } from './bus.js';
 import { saveConfig } from './config-apply.js';
 import { cfgCardHead } from './config-center.js';
+import { type LayoutMode, layoutState, setLayoutMode } from './layout.js';
 import { applyPanelContainerCfg, applyPanelWidth, panelContainerCfg, panelDesiredWidth, panelSavedWidth, setPanelSavedWidth, setPanelDesiredWidth } from './panel.js';
 import { applyRailOpacity, persistRail } from './rail.js';
 import { closeSettingsMenus, renderSettings } from './settings-tabs.js';
@@ -70,6 +71,48 @@ import { HOST, configByPlugin, railState } from './state.js';
       Number((1 - a).toFixed(4)),
       function (t: number) { return label + ' ' + t.toFixed(2); },
       function (t: number) { onAlpha(Number((1 - t).toFixed(4))); });
+  }
+
+  // 布局模式：容器式（现状）/ 平铺式（横向窗口条）。切换即时重建界面
+  export function renderLayoutSettings(container: HTMLElement) {
+    const card = HOST.document.createElement('div');
+    card.className = 'cfg-card';
+    cfgCardHead(card, '布局模式', '宿主', '容器式保持现状；平铺式将窗口横向排列，可滚动、排序与改宽');
+    const body = HOST.document.createElement('div');
+    body.className = 'cfg-card-body';
+    const grid = HOST.document.createElement('div');
+    grid.className = 'cfg-grid one-col';
+    const row = HOST.document.createElement('div');
+    row.className = 'cfg-field';
+    const lb = HOST.document.createElement('label');
+    lb.className = 'cfg-label';
+    lb.textContent = '模式';
+    row.appendChild(lb);
+    const seg = HOST.document.createElement('div');
+    seg.className = 'cfg-seg-row';
+    const modes: Array<[LayoutMode, string]> = [['container', '容器式'], ['tile', '平铺式']];
+    modes.forEach(function ([mode, label]) {
+      const btn = HOST.document.createElement('button');
+      btn.className = 'cfg-seg' + (layoutState.mode === mode ? ' active' : '');
+      btn.textContent = label;
+      btn.addEventListener('click', function () {
+        if (layoutState.mode === mode) return;
+        setLayoutMode(mode);
+        renderSettings();
+      });
+      seg.appendChild(btn);
+    });
+    row.appendChild(seg);
+    grid.appendChild(row);
+    const tip = HOST.document.createElement('div');
+    tip.className = 'cfg-tip';
+    tip.textContent = layoutState.mode === 'tile'
+      ? '平铺模式：列表位、已打开面板、会话位各为独立窗口，按开启时间从左到右排列（重开追加到最右）；最右侧「+」窗口统一开关插件。按住 Shift 左右拖跟手排序、向下拖过窗口一半关闭；拖右缘改宽。'
+      : '容器式：列表位、中栏面板容器（多标签）、会话位。';
+    grid.appendChild(tip);
+    body.appendChild(grid);
+    card.appendChild(body);
+    container.appendChild(card);
   }
 
   // 白条透明度（宿主外观项，不依赖插件）——统一 cfg-card 风格

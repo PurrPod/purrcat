@@ -151,6 +151,8 @@ def api_webmin_manifest():
         "rail": stored_cfg.get("rail") or {"stage": 0, "hidden": {}, "opacity": 1},
         # 宿主固有中栏容器配置（透明度/默认宽度），存于 plugins['panel-container']
         "panelContainer": stored.get("panel-container") or {},
+        # 布局模式（container/tile）+ 平铺窗口顺序与宽度（已归一化）
+        "layout": webmin_manifest.sanitize_layout(stored_cfg.get("layout")),
         # 单例槽当前选中的插件（fixed: {area: plugin_id}；panel 容器: {panel: plugin_id|'__none__'}），
         # 重启后据此恢复用户上次的选择，而不是回退到声明顺序第一个
         "active": stored_cfg.get("active") or {},
@@ -233,6 +235,9 @@ def api_webmin_put_config(body: dict):
     if isinstance(body.get("active"), dict):
         # 单例槽（fixed 各 area 与共享的 panel 容器）当前选中的插件 id
         cfg["active"] = webmin_manifest.normalize_active(body["active"])
+    if isinstance(body.get("layout"), dict):
+        # 布局模式与平铺窗口顺序/宽度
+        cfg["layout"] = webmin_manifest.sanitize_layout(body["layout"])
     _save_webmin_config(cfg)
     return {"status": "ok"}
 

@@ -163,6 +163,45 @@ def normalize_active(raw: dict) -> dict:
     }
 
 
+# 平铺布局：窗口宽度的合法区间（与前端 tile 布局保持一致）
+LAYOUT_WINDOW_MIN_W = 260
+LAYOUT_WINDOW_MAX_W = 4000
+
+
+def sanitize_layout(raw) -> dict:
+    """归一化布局配置：mode 仅接受 container/tile，order 去重去空，宽度夹紧。"""
+    data = raw if isinstance(raw, dict) else {}
+    mode = str(data.get("mode") or "container").strip().lower()
+    if mode not in ("container", "tile"):
+        mode = "container"
+    order = []
+    raw_order = data.get("order")
+    if isinstance(raw_order, list):
+        for item in raw_order:
+            if not isinstance(item, str):
+                continue
+            key = item.strip()
+            if key and key not in order:
+                order.append(key)
+    widths = {}
+    raw_widths = data.get("widths")
+    if isinstance(raw_widths, dict):
+        for key, value in raw_widths.items():
+            name = str(key or "").strip()
+            if not name:
+                continue
+            try:
+                width = float(value)
+            except (TypeError, ValueError):
+                continue
+            if not width == width:  # NaN
+                continue
+            widths[name] = int(
+                max(LAYOUT_WINDOW_MIN_W, min(LAYOUT_WINDOW_MAX_W, round(width)))
+            )
+    return {"mode": mode, "order": order, "widths": widths}
+
+
 def build_manifest_entry(
     p: dict,
     stored_config,

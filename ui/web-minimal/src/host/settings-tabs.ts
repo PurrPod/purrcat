@@ -2,11 +2,13 @@
 import { PANEL_CONTAINER_ID } from './areas.js';
 import { callAction, syncNativeCover } from './bus.js';
 import { cfgState, cfgToolbar, renderConfigSection, settingsPageHead } from './config-center.js';
+import { tileMode } from './layout.js';
 import { reloadManifest } from './manifest.js';
 import { refreshFixedSlot } from './mount.js';
 import { closePanelTab, openPanelTab, panelTabs } from './panel.js';
 import { buildRail, persistActive, persistRail, railHidden, setPluginHidden } from './rail.js';
-import { renderPanelContainerSettings, renderRailAppearance } from './settings-appearance.js';
+import { renderLayoutSettings, renderPanelContainerSettings, renderRailAppearance } from './settings-appearance.js';
+import { syncTiles } from './tile.js';
 import { renderPluginCard } from './settings-cards.js';
 import { HOST, activeBySlot, configByPlugin, groupState, pluginBySlot, railState, slotMap } from './state.js';
 import type { PluginDescriptor } from './types.js';
@@ -65,9 +67,11 @@ import type { PluginDescriptor } from './types.js';
     session: '会话位', 'panel-container': '面板容器', popup: '弹窗类',
     sidebar: '列表位', background: '背景', rail: '左侧白条', panel: '面板', pet: '浮窗类',
     settings: '设置',   // 宿主固有入口，独立归类的伪区域
+    layout: '界面布局',
   };
   // 宿主原生资产（非插件）挂在所属区域内；singleton 标记「同区域同时只能启用一个插件」
   export const UI_GROUPS: Array<{ area: string; singleton?: boolean; host?: (container: HTMLElement) => void }> = [
+    { area: 'layout', host: renderLayoutSettings },
     { area: 'rail', host: renderRailAppearance },
     { area: 'sidebar', singleton: true },
     { area: 'session', singleton: true },
@@ -88,7 +92,11 @@ import type { PluginDescriptor } from './types.js';
       renderWebminJson(main);
       return;
     }
-    UI_GROUPS.forEach(function (grp) { renderPluginGroup(main, grp); });
+    UI_GROUPS.forEach(function (grp) {
+      // 平铺模式没有面板容器实体，设置里也不再提供该区域
+      if (tileMode() && grp.area === 'panel-container') return;
+      renderPluginGroup(main, grp);
+    });
   }
 
   // 整份宿主配置的 JSON 编辑（GET/PUT /api/webmin/config，保存后重建界面立即生效）
@@ -212,8 +220,9 @@ import type { PluginDescriptor } from './types.js';
       return !!cur && cur.id === p.id;
     }
     if (type === 'panel') {
-      if (railHidden(PANEL_CONTAINER_ID)) return false;   // 中栏容器被关闭时，其内标签自然不生效
-      return (panelTabs as string[]).indexOf(p.id) >= 0;   // 多标签：处于已打开标签页即视为生效
+      // 容器式：容器总开关关闭时其内标签自然不生效；平铺式：已打开即生效
+      if (!tileMode() && railHidden(PANEL_CONTAINER_ID)) return false;
+      return (panelTabs as string[]).indexOf(p.id) >= 0;   // 多标签/平铺窗口：处于已打开即视为生效
     }
     return true;   // float：未隐藏即生效
   }
@@ -274,6 +283,7 @@ import type { PluginDescriptor } from './types.js';
       activeBySlot[slot] = p.id;   // 记住该单例槽当前选中的插件
       refreshFixedSlot(slot);
       buildRail();
+      if (tileMode()) syncTiles();
       persistActive();
       persistRail().catch(() => {});
       return;

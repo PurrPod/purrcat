@@ -27,6 +27,98 @@
   var railButtons = {};
   var activeBySlot = {};
 
+  // ui/web-minimal/src/host/layout.ts
+  var LAYOUT_KEY_SIDEBAR = "slot:sidebar";
+  var LAYOUT_KEY_SESSION = "slot:session";
+  var TILE_MIN_W = 260;
+  var TILE_MAX_W = 4e3;
+  var TILE_ADD_W = 132;
+  var layoutState = { mode: "container", order: [], widths: {} };
+  function panelWindowKey(id) {
+    return "panel:" + id;
+  }
+  function tileMode() {
+    return layoutState.mode === "tile";
+  }
+  function defaultWindowWidth(key) {
+    if (key === LAYOUT_KEY_SIDEBAR) return 264;
+    if (key === LAYOUT_KEY_SESSION) return 420;
+    return 480;
+  }
+  function windowWidth(key) {
+    const raw = Number(layoutState.widths[key]);
+    if (!isFinite(raw) || raw < TILE_MIN_W) return defaultWindowWidth(key);
+    return Math.min(TILE_MAX_W, Math.round(raw));
+  }
+  function setWindowWidth(key, width) {
+    if (!isFinite(width)) return;
+    layoutState.widths[key] = Math.max(TILE_MIN_W, Math.min(TILE_MAX_W, Math.round(width)));
+  }
+  function applyLayoutFromManifest(raw) {
+    const data = raw && typeof raw === "object" ? raw : {};
+    layoutState.mode = data.mode === "tile" ? "tile" : "container";
+    const rawOrder = Array.isArray(data.order) ? data.order : [];
+    layoutState.order = rawOrder.filter((k) => typeof k === "string" && !!k.trim()).map((k) => k.trim());
+    const widths = {};
+    const rawWidths = data.widths && typeof data.widths === "object" ? data.widths : {};
+    Object.keys(rawWidths).forEach((k) => {
+      const w = Number(rawWidths[k]);
+      if (k && isFinite(w)) widths[k] = Math.max(TILE_MIN_W, Math.min(TILE_MAX_W, Math.round(w)));
+    });
+    layoutState.widths = widths;
+    applyLayoutClass();
+  }
+  function applyLayoutClass() {
+    const tile = tileMode();
+    HOST.document.body.classList.toggle("layout-tile", tile);
+    if (!tile) HOST.document.body.classList.remove("wm-shift-mode");
+  }
+  function ensureOrder(visibleKeys) {
+    const visible = new Set(visibleKeys);
+    const order = layoutState.order.filter((k) => typeof k === "string" && !!k && visible.has(k));
+    visibleKeys.forEach((key) => {
+      if (order.indexOf(key) < 0) order.push(key);
+    });
+    layoutState.order = order;
+    return order;
+  }
+  function reorderWindows(visibleOrder) {
+    const visible = new Set(visibleOrder);
+    const next = [];
+    let i = 0;
+    layoutState.order.forEach((k) => {
+      if (visible.has(k)) {
+        if (i < visibleOrder.length) next.push(visibleOrder[i++]);
+      } else {
+        next.push(k);
+      }
+    });
+    while (i < visibleOrder.length) next.push(visibleOrder[i++]);
+    layoutState.order = next;
+  }
+  function persistLayout() {
+    return fetch("/api/webmin/config", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ layout: layoutState })
+    }).then((res) => {
+      if (!res.ok) throw new Error(String(res.status));
+    }).catch(() => {
+    });
+  }
+  function setLayoutMode(mode) {
+    if (layoutState.mode === mode) return;
+    layoutState.mode = mode;
+    applyLayoutClass();
+    remountLayout();
+    persistLayout();
+  }
+  var remountLayout = () => {
+  };
+  function bindRemountLayout(fn) {
+    remountLayout = fn;
+  }
+
   // ui/web-minimal/src/host/icons.ts
   var ICON_SVG = {
     list: '<path d="M3 6h.01M3 12h.01M3 18h.01"/><path d="M8 6h13M8 12h13M8 18h13"/>',
@@ -281,1337 +373,6 @@
     r.title = "\u7F29\u653E";
     r.addEventListener("pointerdown", (e) => startFloatResize(el, e));
     el.appendChild(r);
-  }
-
-  // ui/web-minimal/src/host/mount.ts
-  function syncPluginBackend(id, action) {
-    if (!id) return;
-    try {
-      fetch("/api/webmin/plugin-backend/" + encodeURIComponent(id) + "/" + action, {
-        method: "POST",
-        cache: "no-store"
-      }).catch(function() {
-      });
-    } catch (_) {
-    }
-  }
-  function notifyUnmount(rootEl) {
-    if (!rootEl || !rootEl.querySelectorAll) return;
-    rootEl.querySelectorAll("iframe").forEach(function(f) {
-      try {
-        if (f.contentWindow) f.contentWindow.postMessage({ type: "event", event: "host.unmount", data: {} }, "*");
-      } catch (_) {
-      }
-      if (f.dataset && f.dataset.backend === "1" && f.dataset.pid) {
-        syncPluginBackend(f.dataset.pid, "stop");
-      }
-    });
-  }
-  function mountFrame(el, p) {
-    notifyUnmount(el);
-    el.querySelectorAll("iframe").forEach((f) => f.remove());
-    el.querySelectorAll(".wm-fgrab, .wm-fresize").forEach((h) => h.remove());
-    if (!p || !p.entry) return null;
-    const iframe = document.createElement("iframe");
-    iframe.setAttribute("tabindex", "-1");
-    iframe.src = `/api/webmin/plugin/${encodeURIComponent(p.id)}/${p.entry.split("/").map(encodeURIComponent).join("/")}`;
-    iframe.title = p.name || p.id;
-    iframe.dataset.pid = p.id;
-    if (p.backend) {
-      iframe.dataset.backend = "1";
-      syncPluginBackend(p.id, "start");
-    }
-    el.appendChild(iframe);
-    slotByPluginId[p.id] = p.slot;
-    frameByPluginId[p.id] = iframe;
-    const rec = { iframe, pluginId: p.id, el, loaded: false };
-    iframe.addEventListener("load", function onLoad() {
-      rec.loaded = true;
-      applyConfigTo(p.id);
-      if (groupState.activeSessionId) {
-        try {
-          const cw = iframe.contentWindow;
-          if (cw) {
-            cw.postMessage(
-              { type: "event", event: "session.switched", data: { session_id: groupState.activeSessionId } },
-              "*"
-            );
-          }
-        } catch (_) {
-        }
-      }
-      try {
-        const cw = iframe.contentWindow;
-        if (cw) {
-          cw.postMessage(
-            { type: "event", event: "branch.switched", data: { branch_id: groupState.activeBranchId || "main" } },
-            "*"
-          );
-        }
-      } catch (_) {
-      }
-      try {
-        const cw = iframe.contentWindow;
-        if (cw) {
-          cw.postMessage(
-            { type: "event", event: "host.nativeCover", data: { covered: nativeCoverActive() } },
-            "*"
-          );
-        }
-      } catch (_) {
-      }
-      deliverPendingBrowserUrl();
-      iframe.removeEventListener("load", onLoad);
-    });
-    return rec;
-  }
-  function buildSlotIndex() {
-    Object.keys(frames).forEach((k) => {
-      (frames[k] || []).forEach((f) => {
-        if (f.el && f.el.parentNode && !f.el.hasAttribute("data-layer")) {
-          notifyUnmount(f.el);
-          f.el.remove();
-        }
-      });
-    });
-    Object.keys(slotMap).forEach((k) => delete slotMap[k]);
-    Object.keys(pluginBySlot).forEach((k) => delete pluginBySlot[k]);
-    Object.keys(slotByPluginId).forEach((k) => delete slotByPluginId[k]);
-    Object.keys(frameByPluginId).forEach((k) => delete frameByPluginId[k]);
-    Object.keys(frames).forEach((k) => delete frames[k]);
-    groupState.plugins.forEach((p) => {
-      const s = p.slot;
-      if (!s) return;
-      (slotMap[s] = slotMap[s] || []).push(p);
-      slotByPluginId[p.id] = s;
-    });
-  }
-  function refreshFixedSlot(slot) {
-    const list = slotMap[slot] || [];
-    const visible = list.filter((x) => !railHidden(x.id));
-    const chosen = visible.find((x) => x.id === activeBySlot[slot]) || visible[0] || null;
-    if (frames[slot]) {
-      frames[slot].forEach((f) => {
-        if (f.iframe && f.iframe.parentNode) f.iframe.parentNode.removeChild(f.iframe);
-      });
-      frames[slot] = [];
-    }
-    if (!chosen) {
-      delete pluginBySlot[slot];
-      applySlotHidden(slot, true);
-      if (slot === "panel-container") syncPanelContainer();
-      return;
-    }
-    pluginBySlot[slot] = chosen;
-    if (chosen.id === PANEL_CONTAINER_ID) {
-      const anchor2 = HOST.document.querySelector(`[data-slot="${slot}"]`);
-      if (anchor2) anchor2.innerHTML = "";
-      syncPanelContainer();
-      return;
-    }
-    const anchor = HOST.document.querySelector(`[data-slot="${slot}"]`);
-    if (anchor) {
-      anchor.innerHTML = "";
-      const fr = mountFrame(anchor, chosen);
-      if (fr) frames[slot] = [fr];
-    }
-    applySlotHidden(slot, false);
-    if (slot === "panel-container") syncPanelContainer();
-  }
-  function syncPanelContainer() {
-    mountPanels();
-    reconcilePanels();
-    applySlotHidden("panel", !panelContainerVisible());
-  }
-  function mountAll() {
-    Object.keys(slotMap).forEach((sid) => {
-      const list = slotMap[sid];
-      const def = list[0].slotDef || {};
-      if (def.type !== "fixed") return;
-      refreshFixedSlot(sid);
-    });
-    mountPanels();
-    Object.keys(slotMap).forEach((sid) => {
-      const list = slotMap[sid];
-      const def = list[0].slotDef || {};
-      if (def.type !== "float") return;
-      pluginBySlot[sid] = list[0];
-      frames[sid] = [];
-      list.forEach((p, i) => {
-        const el = HOST.document.createElement("div");
-        el.className = "wm-float wm-mount";
-        el.dataset.fslot = sid;
-        el.dataset.finst = String(i);
-        el.style.top = 46 + i * 26 + "px";
-        el.style.left = `calc(100% - ${300 + i * 26}px - 16px)`;
-        applyFloatSize(el, def.size, i);
-        HOST.document.body.appendChild(el);
-        if (def.center) centerFloat(el);
-        slotByPluginId[p.id] = sid;
-        const fr = mountFrame(el, p);
-        if (fr) frames[sid].push(fr);
-        attachFloatHandles(el);
-      });
-    });
-    Object.keys(slotMap).forEach((sid) => {
-      const list = slotMap[sid];
-      const def = list[0].slotDef || {};
-      if (def.type !== "modal") return;
-      pluginBySlot[sid] = list[0];
-      frames[sid] = [];
-      list.forEach((p) => {
-        const wrap = HOST.document.createElement("div");
-        wrap.className = "wm-modal-wrap wm-mount";
-        wrap.dataset.mslot = sid;
-        const box = HOST.document.createElement("div");
-        box.className = "wm-modal";
-        applyModalSize(box, def.size);
-        wrap.appendChild(box);
-        HOST.document.body.appendChild(wrap);
-        slotByPluginId[p.id] = sid;
-        const fr = mountFrame(box, p);
-        if (fr) {
-          fr.el = wrap;
-          frames[sid].push(fr);
-        }
-      });
-    });
-    reconcilePanels();
-  }
-
-  // ui/web-minimal/src/host/panel.ts
-  var panelBar = null;
-  var panelState = null;
-  var panelTabs = [];
-  var PANEL_MIN_W = 260;
-  var panelContainerCfg = { opacity: 0.9 };
-  var panelSavedWidth = null;
-  var panelDesiredWidth = null;
-  function setPanelSavedWidth(v) {
-    panelSavedWidth = v;
-  }
-  function setPanelDesiredWidth(v) {
-    panelDesiredWidth = v;
-  }
-  var panelShellTpl = null;
-  async function loadPanelShell() {
-    if (panelShellTpl) return;
-    try {
-      const res = await fetch("/api/webmin/plugin/" + encodeURIComponent(PANEL_CONTAINER_ID) + "/index.html");
-      if (!res.ok) return;
-      const doc = new DOMParser().parseFromString(await res.text(), "text/html");
-      const src = doc.querySelector("style");
-      if (src) {
-        const el = HOST.document.createElement("style");
-        el.id = "wm-builtin-panel-style";
-        el.textContent = src.textContent;
-        const old = HOST.document.getElementById("wm-builtin-panel-style");
-        if (old) old.remove();
-        HOST.document.head.appendChild(el);
-      }
-      panelShellTpl = doc.body && doc.body.firstElementChild || null;
-    } catch (_) {
-    }
-  }
-  function applyPanelContainerCfg() {
-    const el = HOST.document.querySelector('.wm-ppanel[data-pslot="panel"]');
-    if (!el) return;
-    let o = Number(panelContainerCfg.opacity);
-    if (!(o >= 0)) o = 1;
-    o = Math.min(1, Math.max(0.15, o));
-    el.style.setProperty("--wm-panel-bg", "rgba(255,255,255," + o.toFixed(3) + ")");
-  }
-  function cssNum(name, dflt) {
-    const scope = HOST.document.body || HOST.document.documentElement;
-    const v = HOST.getComputedStyle(scope).getPropertyValue(name);
-    const n = parseFloat(v);
-    return n >= 0 ? n : dflt;
-  }
-  function panelLeftBase() {
-    const rail = cssNum("--wm-rail-w", 48);
-    const gap = cssNum("--wm-sidebar-gap", 8);
-    const side = cssNum("--wm-sidebar-w", 264);
-    const noSidebar = HOST.document.body.classList.contains("rail-nosidebar");
-    return noSidebar ? rail + gap : rail + gap + side + gap;
-  }
-  function slotEnabled(slot) {
-    const cur = pluginBySlot[slot];
-    if (!cur) return false;
-    return !railHidden(cur.id);
-  }
-  function sessionEnabled() {
-    return slotEnabled("session");
-  }
-  function maxPanelWidth() {
-    const gap = cssNum("--wm-sidebar-gap", 8);
-    let chat = sessionEnabled() ? cssNum("--wm-chat-w", 420) : 0;
-    return Math.max(PANEL_MIN_W, Math.floor(HOST.innerWidth - panelLeftBase() - gap - chat));
-  }
-  function panelMaxLimit() {
-    const gap = cssNum("--wm-sidebar-gap", 8);
-    const chatMin = sessionEnabled() ? cssNum("--wm-chat-min-w", 360) : 0;
-    return Math.floor(HOST.innerWidth - panelLeftBase() - gap - chatMin);
-  }
-  function applyPanelWidth() {
-    if (!hasPanelsDef()) return;
-    const gap = cssNum("--wm-sidebar-gap", 8);
-    let limit = panelMaxLimit();
-    const el = HOST.document.querySelector('.wm-ppanel[data-pslot="panel"]') || HOST.document.querySelector('[data-slot="panel-container"] > iframe');
-    if (el) {
-      const left = el.getBoundingClientRect().left;
-      if (isFinite(left)) limit = Math.min(limit, Math.floor(HOST.innerWidth - left - gap));
-    }
-    let raw = panelDesiredWidth != null ? panelDesiredWidth : maxPanelWidth();
-    if (!isFinite(raw)) raw = maxPanelWidth();
-    if (!isFinite(limit)) return;
-    let w = Math.max(PANEL_MIN_W, raw);
-    w = limit < PANEL_MIN_W ? Math.max(0, limit) : Math.min(w, limit);
-    HOST.document.documentElement.style.setProperty("--wm-panel-w", Math.round(w) + "px");
-  }
-  function setContainerHidden(hidden) {
-    if (!railState.hidden) railState.hidden = {};
-    const list = slotMap["panel-container"] || [];
-    if (hidden) {
-      list.forEach((p) => {
-        railState.hidden[p.id] = true;
-      });
-      closePanelMenus();
-    } else {
-      list.forEach((p) => {
-        if (p.id !== PANEL_CONTAINER_ID) railState.hidden[p.id] = true;
-      });
-      delete railState.hidden[PANEL_CONTAINER_ID];
-      activeBySlot["panel-container"] = PANEL_CONTAINER_ID;
-    }
-    refreshFixedSlot("panel-container");
-    refreshAreaRail("panel-container");
-    buildRail();
-    persistActive();
-    persistRail().catch(() => {
-    });
-  }
-  function hasPanelsDef() {
-    if ((slotMap["panel-container"] || []).length) return true;
-    return Object.keys(slotMap).some((sid) => (slotMap[sid][0].slotDef || {}).type === "panel");
-  }
-  function thirdPartyContainerPlugin() {
-    const cur = pluginBySlot["panel-container"];
-    return cur && cur.id !== PANEL_CONTAINER_ID ? cur : null;
-  }
-  function panelContainerVisible() {
-    return !!thirdPartyContainerPlugin() || !railHidden(PANEL_CONTAINER_ID);
-  }
-  function startPanelBarDrag(e) {
-    e.preventDefault();
-    const el = e.currentTarget;
-    const w0 = HOST.document.documentElement.style.getPropertyValue("--wm-panel-w");
-    const base = w0 ? parseFloat(w0) : panelDesiredWidth != null ? panelDesiredWidth : 420;
-    const sx0 = e.clientX;
-    HOST.document.body.classList.add("wm-panel-dragging");
-    const move = (ev) => {
-      panelDesiredWidth = Math.max(PANEL_MIN_W, base + (ev.clientX - sx0));
-      applyPanelWidth();
-    };
-    const up = () => {
-      HOST.document.body.classList.remove("wm-panel-dragging");
-      el.removeEventListener("pointermove", move);
-      el.removeEventListener("pointerup", up);
-      el.removeEventListener("pointercancel", up);
-      try {
-        el.releasePointerCapture(e.pointerId);
-      } catch (_) {
-      }
-    };
-    try {
-      el.setPointerCapture(e.pointerId);
-    } catch (_) {
-    }
-    el.addEventListener("pointermove", move);
-    el.addEventListener("pointerup", up);
-    el.addEventListener("pointercancel", up);
-  }
-  function reconcilePanels() {
-    if (hasPanelsDef()) {
-      HOST.document.body.classList.add("has-panels");
-      applyPanelWidth();
-      if (!panelBar || !panelBar.isConnected) {
-        panelBar = HOST.document.createElement("div");
-        panelBar.className = "wm-pbar";
-        panelBar.title = "\u62D6\u52A8\u4EE5\u8C03\u6574\u4E2D\u680F\u5BBD\u5EA6";
-        panelBar.addEventListener("pointerdown", startPanelBarDrag);
-        HOST.document.body.appendChild(panelBar);
-      }
-    } else {
-      HOST.document.body.classList.remove("has-panels");
-      if (panelBar && panelBar.isConnected) panelBar.remove();
-    }
-  }
-  function closePanelMenus() {
-    HOST.document.querySelectorAll(".wm-pp_menu").forEach((m) => m.remove());
-    syncNativeCover();
-  }
-  function savePanelSel() {
-    activeBySlot["__panelTabs__"] = JSON.stringify(panelTabs);
-    return persistActive();
-  }
-  function makePanelTab(st, id, p) {
-    const tab = HOST.document.createElement("div");
-    tab.className = "wm-pp_tab" + (id === st.activeId ? " active" : "");
-    tab.dataset.pid = id;
-    tab.title = p.name || p.id;
-    const g = HOST.document.createElement("span");
-    g.className = "wm-pp_tabico";
-    paintPluginIcon(g, p);
-    tab.appendChild(g);
-    const nm = HOST.document.createElement("span");
-    nm.className = "wm-pp_tabname";
-    nm.textContent = p.name || p.id;
-    tab.appendChild(nm);
-    const x = HOST.document.createElement("button");
-    x.className = "wm-pp_tabx";
-    x.textContent = "\u2715";
-    x.title = "\u5173\u95ED\u6807\u7B7E\u9875";
-    x.addEventListener("click", (ev) => {
-      ev.stopPropagation();
-      closePanelTab(id);
-    });
-    tab.appendChild(x);
-    tab.addEventListener("click", () => setActivePanelTab(st, id));
-    return tab;
-  }
-  function renderPanel(st) {
-    if (!st.head || !st.head.isConnected) {
-      if (!panelShellTpl) return;
-      const el = panelShellTpl.cloneNode(true);
-      el.dataset.pslot = "panel";
-      el.style.display = "flex";
-      HOST.document.body.appendChild(el);
-      st.el = el;
-      st.head = el.querySelector(".wm-pp_head");
-      st.strip = el.querySelector(".wm-pp_tabs");
-      st.addBtn = el.querySelector(".wm-pp_add");
-      paintIcon(st.addBtn, "plus", "+");
-      st.addBtn.addEventListener("click", (ev) => {
-        ev.stopPropagation();
-        openPanelAddMenu(st, st.addBtn);
-      });
-      st.closeBtn = el.querySelector(".wm-pp_drawer");
-      st.closeBtn.addEventListener("click", () => {
-        setContainerHidden(true);
-        closePanelMenus();
-      });
-      st.body = el.querySelector(".wm-pp_body");
-      st.emptyEl = el.querySelector(".wm-pp_empty");
-      st.views = {};
-      st.frames = {};
-    }
-    panelTabs = panelTabs.filter((id) => {
-      const rec = st.pluginsById[id];
-      return !!rec && (rec.p.slotDef || {}).type === "panel";
-    });
-    if (panelTabs.indexOf(st.activeId) < 0) st.activeId = panelTabs[0] || "";
-    st.strip.innerHTML = "";
-    panelTabs.forEach((id) => st.strip.appendChild(makePanelTab(st, id, st.pluginsById[id].p)));
-    panelTabs.forEach((id) => {
-      const old = st.views[id];
-      if (old && old.isConnected) return;
-      const v = HOST.document.createElement("div");
-      v.className = "wm-pp_view";
-      v.dataset.pid = id;
-      st.body.appendChild(v);
-      st.views[id] = v;
-      st.frames[id] = mountFrame(v, st.pluginsById[id].p);
-    });
-    Object.keys(st.views).forEach((id) => {
-      if (panelTabs.indexOf(id) >= 0) return;
-      notifyUnmount(st.views[id]);
-      st.views[id].remove();
-      delete st.views[id];
-      delete st.frames[id];
-    });
-    if (panelTabs.length) {
-      if (st.emptyEl.parentNode) st.emptyEl.remove();
-    } else if (!st.emptyEl.parentNode) st.body.appendChild(st.emptyEl);
-    frames["panel"] = panelTabs.map((id) => st.frames[id]).filter(Boolean);
-    applyActivePanelTab(st);
-  }
-  function applyActivePanelTab(st) {
-    Object.keys(st.views).forEach((id) => {
-      st.views[id].style.display = id === st.activeId ? "flex" : "none";
-    });
-    st.strip.querySelectorAll(".wm-pp_tab").forEach((t) => {
-      const on = t.dataset.pid === st.activeId;
-      t.classList.toggle("active", on);
-      if (on && t.scrollIntoView) {
-        try {
-          t.scrollIntoView({ block: "nearest", inline: "nearest" });
-        } catch (_) {
-        }
-      }
-    });
-  }
-  function setActivePanelTab(st, id) {
-    if (st.activeId === id) return;
-    st.activeId = id;
-    activeBySlot["panel"] = id;
-    applyActivePanelTab(st);
-    savePanelSel();
-  }
-  function openPanelTab(id) {
-    const st = panelState;
-    if (!st || !st.pluginsById[id]) return;
-    const added = panelTabs.indexOf(id) < 0;
-    if (added) panelTabs.push(id);
-    st.activeId = id;
-    activeBySlot["panel"] = id;
-    if (added) renderPanel(st);
-    else applyActivePanelTab(st);
-    savePanelSel();
-    setContainerHidden(false);
-  }
-  function closePanelTab(id) {
-    const st = panelState;
-    if (!st) return;
-    const i = panelTabs.indexOf(id);
-    if (i < 0) return;
-    panelTabs.splice(i, 1);
-    if (st.activeId === id) st.activeId = panelTabs[i] || panelTabs[i - 1] || "";
-    activeBySlot["panel"] = st.activeId || "__none__";
-    renderPanel(st);
-    savePanelSel();
-  }
-  function openPanelAddMenu(st, anchor) {
-    const wasOpen = HOST.document.getElementById("ppmenu-" + st.area);
-    closePanelMenus();
-    if (wasOpen) return;
-    const menu = HOST.document.createElement("div");
-    menu.className = "wm-pp_menu";
-    menu.id = "ppmenu-" + st.area;
-    st.plugins.forEach(({ p }) => {
-      const isOpen = panelTabs.indexOf(p.id) >= 0;
-      const item = HOST.document.createElement("div");
-      item.className = "wm-pp_menu-item" + (isOpen ? " active" : "");
-      const g = HOST.document.createElement("span");
-      g.className = "wm-pp_menu-ico";
-      paintPluginIcon(g, p);
-      item.appendChild(g);
-      const nm = HOST.document.createElement("span");
-      nm.textContent = p.name || p.id;
-      item.appendChild(nm);
-      if (isOpen) {
-        const tag = HOST.document.createElement("span");
-        tag.className = "wm-pp_menu-tag";
-        tag.textContent = "\u5DF2\u6253\u5F00";
-        item.appendChild(tag);
-      }
-      item.addEventListener("click", () => {
-        openPanelTab(p.id);
-        closePanelMenus();
-      });
-      menu.appendChild(item);
-    });
-    HOST.document.body.appendChild(menu);
-    const r = anchor.getBoundingClientRect();
-    const left = Math.min(r.right - menu.offsetWidth, HOST.innerWidth - menu.offsetWidth - 8);
-    menu.style.right = "auto";
-    menu.style.left = Math.max(8, left) + "px";
-    menu.style.top = r.bottom + 4 + "px";
-    syncNativeCover();
-  }
-  function mountPanels() {
-    if (thirdPartyContainerPlugin()) {
-      if (panelState && panelState.el && panelState.el.parentNode) {
-        notifyUnmount(panelState.el);
-        panelState.el.remove();
-      }
-      panelState = null;
-      closePanelMenus();
-      return;
-    }
-    const byArea = { panel: [] };
-    Object.keys(slotMap).forEach((sid) => {
-      const list = slotMap[sid];
-      const def = list[0].slotDef || {};
-      if (def.type === "panel") {
-        byArea.panel.push(...list.map((p) => ({ p, def })));
-      }
-    });
-    if (!byArea.panel.length) {
-      if (panelState && panelState.el && panelState.el.parentNode) {
-        notifyUnmount(panelState.el);
-        panelState.el.remove();
-      }
-      panelState = null;
-      closePanelMenus();
-      return;
-    }
-    const byId = {};
-    byArea.panel.forEach((x) => {
-      byId[x.p.id] = x;
-    });
-    const valid = (id) => !!byId[id];
-    const hasSavedTabs = Object.prototype.hasOwnProperty.call(activeBySlot, "__panelTabs__");
-    let st = panelState;
-    if (!st) {
-      panelTabs = panelTabs.filter(valid);
-      if (!panelTabs.length && !hasSavedTabs) {
-        const legacy = activeBySlot["panel"];
-        panelTabs = legacy && legacy !== "__none__" && valid(legacy) ? [legacy] : [byArea.panel[0].p.id];
-      }
-      st = panelState = { plugins: byArea.panel, pluginsById: byId, activeId: "", area: "panel", el: null, views: {}, frames: {} };
-    } else {
-      st.plugins = byArea.panel;
-      st.pluginsById = byId;
-      panelTabs = panelTabs.filter(valid);
-      if (!panelTabs.length && !hasSavedTabs) panelTabs = [byArea.panel[0].p.id];
-    }
-    const saved = activeBySlot["panel"];
-    st.activeId = saved && saved !== "__none__" && panelTabs.indexOf(saved) >= 0 ? saved : panelTabs[0] || "";
-    renderPanel(st);
-    activeBySlot["panel"] = st.activeId;
-    activeBySlot["__panelTabs__"] = JSON.stringify(panelTabs);
-    closePanelMenus();
-  }
-
-  // ui/web-minimal/src/host/links.ts
-  var pendingBrowserUrl = null;
-  function browserPanel() {
-    const st = panelState;
-    if (!st) return null;
-    return st.plugins.find((x) => (x.p || {}).openUrl) || null;
-  }
-  function deliverPendingBrowserUrl() {
-    if (!pendingBrowserUrl) return;
-    const hit = browserPanel();
-    const st = panelState;
-    if (!hit || !st || st.activeId !== hit.p.id) return;
-    const fr = st.frames && st.frames[hit.p.id];
-    if (!fr || !fr.loaded) return;
-    const url = pendingBrowserUrl;
-    pendingBrowserUrl = null;
-    broadcast(hit.p.slot, "browser.openUrl", { url });
-  }
-  function openUrlInBrowserPanel(url) {
-    const u = String(url || "").trim();
-    if (/^purrcat:\/\//i.test(u)) {
-      const tid = (/^purrcat:\/\/task\/([^/]+)\/node\//i.exec(u) || [])[1];
-      const art = "/api/tasks/" + encodeURIComponent(tid || "_unknown") + "/artifact?uri=" + encodeURIComponent(u);
-      return openUrlInBrowserPanel(new URL(art, location.origin).href);
-    }
-    const pc = HOST.purrcat;
-    const hit = browserPanel();
-    const hostCont = hit ? null : thirdPartyContainerPlugin();
-    if (!/^https?:\/\//i.test(u) || !hit && !hostCont || !pc || !pc.browserNewTab) {
-      if (pc && pc.openExternal && u) pc.openExternal(u);
-      return { status: "external" };
-    }
-    if (hostCont) {
-      broadcast("panel-container", "browser.openUrl", { url: u });
-      return { status: "ok" };
-    }
-    openPanelTab(hit.p.id);
-    pendingBrowserUrl = u;
-    deliverPendingBrowserUrl();
-    return { status: "ok" };
-  }
-
-  // ui/web-minimal/src/host/utils.ts
-  function effectiveConfig(desc) {
-    const sch = desc.configSchema || [];
-    const stored = desc.config || {};
-    const out = {};
-    sch.forEach((f) => {
-      if (f.default !== void 0) out[f.key] = f.default;
-      else if (f.type === "switch") out[f.key] = false;
-      else if (f.type === "number") out[f.key] = 0;
-      else if (f.type === "select") out[f.key] = f.options && f.options[0] || "";
-      else out[f.key] = "";
-    });
-    Object.assign(out, stored);
-    return out;
-  }
-  function slotOfPlugin(pid) {
-    return slotByPluginId[pid] || null;
-  }
-
-  // ui/web-minimal/src/host/manifest.ts
-  function applyManifestState(manifest) {
-    groupState.plugins = manifest.plugins || [];
-    groupState.plugins.forEach((p) => {
-      configByPlugin[p.id] = effectiveConfig(p);
-    });
-    const railSaved = manifest.rail;
-    if (railSaved && typeof railSaved === "object") {
-      const stage = Number(railSaved.stage);
-      railState.stage = Number.isFinite(stage) && stage >= 2 ? 1 : 0;
-      railState.hidden = railSaved.hidden && typeof railSaved.hidden === "object" ? railSaved.hidden : {};
-      if (Object.prototype.hasOwnProperty.call(railState.hidden, "__panel__")) {
-        if (railState.hidden["__panel__"]) railState.hidden[PANEL_CONTAINER_ID] = true;
-        delete railState.hidden["__panel__"];
-      }
-      railState.opacity = typeof railSaved.opacity === "number" ? railSaved.opacity : 1;
-    }
-    const savedPanel = manifest.panelContainer && typeof manifest.panelContainer === "object" ? manifest.panelContainer : {};
-    setPanelSavedWidth(Number(savedPanel.width) >= 260 ? Number(savedPanel.width) : null);
-    panelContainerCfg.opacity = typeof savedPanel.opacity === "number" ? savedPanel.opacity : 0.9;
-    if (panelSavedWidth != null) setPanelDesiredWidth(panelSavedWidth);
-    configByPlugin["panel-container"] = Object.assign({}, savedPanel);
-    const savedActive = manifest.active && typeof manifest.active === "object" ? manifest.active : {};
-    const ids = new Set(groupState.plugins.map((p) => p.id));
-    Object.keys(activeBySlot).forEach((k) => delete activeBySlot[k]);
-    panelTabs.length = 0;
-    Object.keys(savedActive).forEach((k) => {
-      const v = savedActive[k];
-      if (k === "__panelTabs__") {
-        activeBySlot[k] = String(v);
-        try {
-          const arr = JSON.parse(v);
-          if (Array.isArray(arr)) {
-            panelTabs.length = 0;
-            panelTabs.push.apply(panelTabs, arr.filter((x) => typeof x === "string"));
-          }
-        } catch (_) {
-        }
-        return;
-      }
-      if (v === "__none__" || ids.has(v)) activeBySlot[k] = v;
-    });
-  }
-  async function loadManifest() {
-    const manifest = await (await fetch("/api/webmin/manifest")).json();
-    applyManifestState(manifest);
-  }
-  async function reloadManifest() {
-    await loadManifest();
-    await loadPanelShell();
-    buildSlotIndex();
-    mountAll();
-    applyPersistedHidden();
-    buildRail();
-    applyPanelContainerCfg();
-  }
-
-  // ui/web-minimal/src/host/settings-cards.ts
-  var DEP_KIND_LABEL = { skill: "\u6280\u80FD", plugin: "\u63D2\u4EF6", mcp: "MCP", agentloop: "AgentLoop", sensor: "\u4F20\u611F\u5668", graph: "\u56FE\u8C31" };
-  var ROOT_KIND_LABEL = { builtin: "\u5185\u7F6E", sandbox: "\u6C99\u76D2", user: "\u7528\u6237" };
-  function renderPluginMeta(card, p) {
-    const row = HOST.document.createElement("div");
-    row.className = "cfg-card-meta";
-    const chip = (text, cls) => {
-      const el = HOST.document.createElement("span");
-      el.className = "p-tag" + (cls ? " " + cls : "");
-      el.textContent = text;
-      return el;
-    };
-    if (p.root && p.rootOk === false) {
-      row.appendChild(chip("\u58F0\u660E " + (ROOT_KIND_LABEL[p.root] || p.root), "warn"));
-      row.appendChild(chip("\u26A0 \u653E\u7F6E\u4F4D\u7F6E\u4E0E\u58F0\u660E\u4E0D\u4E00\u81F4", "warn"));
-    }
-    const deps = Array.isArray(p.dependency) ? p.dependency : [];
-    if (deps.length) {
-      const lb = HOST.document.createElement("span");
-      lb.className = "meta-label";
-      lb.textContent = "\u4F9D\u8D56";
-      row.appendChild(lb);
-      deps.forEach((d) => row.appendChild(chip((DEP_KIND_LABEL[d.type] || d.type) + " \xB7 " + d.id)));
-    }
-    if (row.childNodes.length) card.appendChild(row);
-  }
-  function renderPluginCard(container, p, cfg) {
-    const type = (p.slotDef || {}).type || "fixed";
-    const typeName = type === "fixed" ? "\u56FA\u5B9A" : type === "panel" ? "\u9762\u677F" : type === "modal" ? "\u6A21\u6001" : "\u6D6E\u7A97";
-    const vis = pluginVisible(p);
-    const card = HOST.document.createElement("div");
-    card.className = "cfg-card";
-    const h = cfgCardHead(card, p.name || p.id, typeName, p.id);
-    const st = HOST.document.createElement("span");
-    st.className = "cfg-chip " + (vis ? "on" : "off");
-    st.textContent = type === "panel" ? vis ? "\u663E\u793A\u4E2D" : "\u672A\u663E\u793A" : vis ? "\u5DF2\u542F\u7528" : "\u5DF2\u5173\u95ED";
-    h.titleRow.appendChild(st);
-    const originName = ROOT_KIND_LABEL[p.origin || ""] || p.origin || "";
-    if (originName) {
-      const oc = HOST.document.createElement("span");
-      oc.className = "cfg-chip type";
-      oc.textContent = originName;
-      h.titleRow.appendChild(oc);
-    }
-    const tg = HOST.document.createElement("button");
-    tg.className = "btn cfg-edit";
-    tg.textContent = vis ? "\u5173\u95ED" : "\u6253\u5F00";
-    tg.addEventListener("click", function() {
-      togglePluginOpen(p);
-      renderSettings();
-    });
-    h.right.appendChild(tg);
-    const menuBtn = HOST.document.createElement("button");
-    menuBtn.className = "btn icon menu-btn";
-    menuBtn.textContent = "\u25BE";
-    menuBtn.title = "\u66F4\u591A\u64CD\u4F5C";
-    menuBtn.addEventListener("click", function(ev) {
-      openPluginCardMenu(ev, menuBtn, p);
-    });
-    h.right.appendChild(menuBtn);
-    renderPluginMeta(card, p);
-    if (p.configSchema && p.configSchema.length) {
-      const body = HOST.document.createElement("div");
-      body.className = "cfg-card-body";
-      const grid = HOST.document.createElement("div");
-      grid.className = "cfg-grid one-col";
-      renderFields(grid, p, cfg);
-      body.appendChild(grid);
-      card.appendChild(body);
-    } else {
-      const body = HOST.document.createElement("div");
-      body.className = "cfg-card-body";
-      const none = HOST.document.createElement("span");
-      none.className = "p-tag";
-      none.textContent = "\u8BE5\u63D2\u4EF6\u65E0\u914D\u7F6E\u9879";
-      body.appendChild(none);
-      card.appendChild(body);
-    }
-    container.appendChild(card);
-  }
-  function renderFields(grid, p, cfg) {
-    (p.configSchema || []).forEach(function(field) {
-      const key = field.key;
-      const type = field.type || "text";
-      const label = field.label || key;
-      if (type === "switch") {
-        const row = HOST.document.createElement("div");
-        row.className = "cfg-field switch-row";
-        const lb2 = HOST.document.createElement("label");
-        lb2.className = "cfg-label";
-        lb2.textContent = label;
-        row.appendChild(lb2);
-        const sw = HOST.document.createElement("label");
-        sw.className = "switch";
-        sw.innerHTML = '<input type="checkbox"><span class="slider"></span>';
-        const chk = sw.querySelector("input");
-        if (!chk) return;
-        chk.checked = !!cfg[key];
-        chk.addEventListener("change", function() {
-          cfg[key] = chk.checked;
-          settingsSave(p.id, cfg);
-        });
-        row.appendChild(sw);
-        grid.appendChild(row);
-        return;
-      }
-      if (type === "range") {
-        let fv = cfg[key];
-        const initVal = typeof fv === "number" && !isNaN(fv) ? fv : field.default != null ? field.default : field.max != null ? field.max : 1;
-        const min0 = field.min != null ? field.min : 0;
-        const step0 = field.step != null ? field.step : 0.01;
-        const applyVal = function(v) {
-          cfg[key] = v;
-          settingsSave(p.id, cfg);
-        };
-        if (key === "opacity") {
-          transparencyField(grid, label, min0, initVal, step0, applyVal);
-        } else {
-          cfgRangeField(
-            grid,
-            label,
-            min0,
-            field.max != null ? field.max : 1,
-            step0,
-            initVal,
-            function(v) {
-              return label + " " + v.toFixed(2);
-            },
-            applyVal
-          );
-        }
-        return;
-      }
-      if (type === "plugin-multi") {
-        const f2 = HOST.document.createElement("div");
-        f2.className = "cfg-field wide";
-        const lb2 = HOST.document.createElement("label");
-        lb2.className = "cfg-label";
-        lb2.textContent = label;
-        f2.appendChild(lb2);
-        const box = HOST.document.createElement("div");
-        box.className = "plugin-picker";
-        let sel = Array.isArray(cfg[key]) ? cfg[key].slice() : [];
-        const cands = (groupState.plugins || []).filter(function(x) {
-          return x.id !== p.id && x.entry;
-        });
-        if (!cands.length) {
-          const emp = HOST.document.createElement("div");
-          emp.className = "p-tag";
-          emp.textContent = "\u6CA1\u6709\u53EF\u6DFB\u52A0\u7684\u63D2\u4EF6";
-          box.appendChild(emp);
-        }
-        cands.forEach(function(pl) {
-          const row = HOST.document.createElement("div");
-          row.className = "pk-row";
-          const info = HOST.document.createElement("div");
-          info.className = "pk-info";
-          const nm = HOST.document.createElement("div");
-          nm.className = "pk-name";
-          nm.textContent = pl.name || pl.id;
-          info.appendChild(nm);
-          const area = HOST.document.createElement("div");
-          area.className = "pk-area";
-          const slotArea = (pl.slotDef || {}).area || "";
-          const areaName = AREA_LABEL[slotArea] || slotArea;
-          area.textContent = pl.id + (areaName ? " \xB7 " + areaName : "");
-          info.appendChild(area);
-          row.appendChild(info);
-          const sw = HOST.document.createElement("label");
-          sw.className = "switch";
-          sw.innerHTML = '<input type="checkbox"><span class="slider"></span>';
-          const chk = sw.querySelector("input");
-          if (!chk) return;
-          chk.checked = sel.indexOf(pl.id) >= 0;
-          chk.addEventListener("change", function() {
-            if (chk.checked) {
-              if (sel.indexOf(pl.id) < 0) sel.push(pl.id);
-            } else sel = sel.filter(function(x) {
-              return x !== pl.id;
-            });
-            cfg[key] = sel;
-            settingsSave(p.id, cfg);
-          });
-          row.appendChild(sw);
-          box.appendChild(row);
-        });
-        f2.appendChild(box);
-        const hint = HOST.document.createElement("div");
-        hint.className = "pk-hint";
-        hint.textContent = "\u52FE\u9009\u540E\u51FA\u73B0\u5728\u4FA7\u680F\u300C\u5FEB\u6377\u680F\u300D\uFF0C\u70B9\u51FB\u5373\u53EF\u5524\u8D77\u5BF9\u5E94\u63D2\u4EF6\u3002";
-        f2.appendChild(hint);
-        grid.appendChild(f2);
-        return;
-      }
-      const f = HOST.document.createElement("div");
-      f.className = "cfg-field" + (type === "wallpapers" ? " wide" : "");
-      const lb = HOST.document.createElement("label");
-      lb.className = "cfg-label";
-      lb.textContent = label;
-      f.appendChild(lb);
-      if (type === "select") {
-        const sel = HOST.document.createElement("select");
-        sel.className = "cfg-input";
-        (field.options || []).forEach(function(op) {
-          const o2 = HOST.document.createElement("option");
-          o2.value = op;
-          o2.textContent = op;
-          sel.appendChild(o2);
-        });
-        sel.value = cfg[key] || "";
-        sel.addEventListener("change", function() {
-          cfg[key] = sel.value;
-          settingsSave(p.id, cfg);
-        });
-        f.appendChild(sel);
-      } else if (type === "number") {
-        const num = HOST.document.createElement("input");
-        num.type = "number";
-        num.step = "any";
-        num.className = "cfg-input";
-        num.value = cfg[key] == null ? "" : cfg[key];
-        num.addEventListener("change", function() {
-          cfg[key] = num.value === "" ? null : Number(num.value);
-          settingsSave(p.id, cfg);
-        });
-        f.appendChild(num);
-      } else if (type === "wallpapers") {
-        let isV2 = function(url) {
-          return /\.(mp4|webm|mov)(\?|$)/i.test(url);
-        }, draw2 = function() {
-          wallsWrap.innerHTML = "";
-          list.forEach(function(w, i) {
-            const t = HOST.document.createElement("div");
-            t.className = "wall-thumb";
-            if (isV2(w.src || "")) {
-              const v = HOST.document.createElement("video");
-              v.src = w.src;
-              v.muted = true;
-              v.loop = true;
-              t.appendChild(v);
-            } else {
-              const im = HOST.document.createElement("img");
-              im.src = w.src;
-              im.alt = "";
-              t.appendChild(im);
-            }
-            const del = HOST.document.createElement("button");
-            del.className = "wall-del";
-            del.textContent = "\xD7";
-            del.addEventListener("click", function() {
-              list.splice(i, 1);
-              commit2();
-              draw2();
-            });
-            t.appendChild(del);
-            wallsWrap.appendChild(t);
-          });
-          const add = HOST.document.createElement("button");
-          add.className = "btn sm";
-          add.textContent = "+ \u6DFB\u52A0";
-          add.addEventListener("click", function() {
-            callAction("dialog.pickWallpaper", {}).then(function(up) {
-              const r = up;
-              if (!r || !r.url) return;
-              list.push({ src: r.url, type: isV2(r.url) ? "video" : "image", name: r.filename });
-              cfg.mode = "wallpaper";
-              commit2();
-              draw2();
-              scheduleSettingsRender();
-            }).catch(function() {
-            });
-          });
-          wallsWrap.appendChild(add);
-        }, commit2 = function() {
-          cfg[key] = list;
-          settingsSave(p.id, cfg);
-        };
-        var isV = isV2, draw = draw2, commit = commit2;
-        const wallsWrap = HOST.document.createElement("div");
-        wallsWrap.className = "walls";
-        const list = Array.isArray(cfg[key]) ? cfg[key] : [];
-        draw2();
-        f.appendChild(wallsWrap);
-      } else {
-        const txt = HOST.document.createElement("input");
-        txt.type = "text";
-        txt.className = "cfg-input";
-        txt.value = cfg[key] || "";
-        txt.addEventListener("change", function() {
-          cfg[key] = txt.value;
-          settingsSave(p.id, cfg);
-        });
-        f.appendChild(txt);
-      }
-      grid.appendChild(f);
-    });
-  }
-
-  // ui/web-minimal/src/host/settings-tabs.ts
-  var CONFIG_NAV = ["plugins", "model", "sensor", "file", "mcp", "soul", "acp", "deploy"];
-  var CONFIG_LABEL = { plugins: "UI \u63D2\u4EF6", model: "\u6A21\u578B", sensor: "\u4F20\u611F\u5668", file: "\u6587\u4EF6\u6743\u9650", mcp: "MCP", soul: "\u5168\u5C40\u4EBA\u8BBE", acp: "ACP", deploy: "\u90E8\u7F72" };
-  var settingsTab = "plugins";
-  var settingsRenderedTab = "";
-  var deployPollT = null;
-  function setSettingsTab(v) {
-    settingsTab = v;
-  }
-  function setDeployPollT(v) {
-    deployPollT = v;
-  }
-  function renderSettings() {
-    const bodyEl = HOST.document.querySelector('[data-layer="settings"] .settings-body');
-    if (!bodyEl) return;
-    if (deployPollT) {
-      clearInterval(deployPollT);
-      deployPollT = null;
-    }
-    closeSettingsMenus();
-    const prevMain = bodyEl.querySelector(".settings-main");
-    const keepTop = settingsRenderedTab === settingsTab && prevMain ? prevMain.scrollTop : 0;
-    bodyEl.innerHTML = "";
-    const nav = HOST.document.createElement("div");
-    nav.className = "settings-nav";
-    CONFIG_NAV.forEach(function(key) {
-      const it = HOST.document.createElement("button");
-      it.className = "settings-nav-item" + (settingsTab === key ? " active" : "");
-      it.textContent = CONFIG_LABEL[key] || key;
-      it.addEventListener("click", function() {
-        settingsTab = key;
-        renderSettings();
-      });
-      nav.appendChild(it);
-    });
-    bodyEl.appendChild(nav);
-    const main = HOST.document.createElement("div");
-    main.className = "settings-main";
-    bodyEl.appendChild(main);
-    if (settingsTab === "plugins") renderPluginsTab(main);
-    else renderConfigSection(main, settingsTab);
-    settingsRenderedTab = settingsTab;
-    if (keepTop) {
-      main.scrollTop = keepTop;
-      const mo = new MutationObserver(function() {
-        main.scrollTop = keepTop;
-        mo.disconnect();
-      });
-      mo.observe(main, { childList: true, subtree: true });
-      setTimeout(function() {
-        mo.disconnect();
-      }, 2e3);
-    }
-  }
-  var AREA_LABEL = {
-    session: "\u4F1A\u8BDD\u4F4D",
-    "panel-container": "\u9762\u677F\u5BB9\u5668",
-    popup: "\u5F39\u7A97\u7C7B",
-    sidebar: "\u5217\u8868\u4F4D",
-    background: "\u80CC\u666F",
-    rail: "\u5DE6\u4FA7\u767D\u6761",
-    panel: "\u9762\u677F",
-    pet: "\u6D6E\u7A97\u7C7B",
-    settings: "\u8BBE\u7F6E"
-    // 宿主固有入口，独立归类的伪区域
-  };
-  var UI_GROUPS = [
-    { area: "rail", host: renderRailAppearance },
-    { area: "sidebar", singleton: true },
-    { area: "session", singleton: true },
-    { area: "background", singleton: true },
-    { area: "panel-container", singleton: true, host: renderPanelContainerSettings },
-    { area: "panel" },
-    { area: "pet" },
-    { area: "popup" }
-  ];
-  function cfgFor(p) {
-    return Object.assign({}, configByPlugin[p.id] || {});
-  }
-  function renderPluginsTab(main) {
-    settingsPageHead(main, "plugins", function() {
-      reloadManifest().then(function() {
-        renderSettings();
-      });
-    });
-    cfgToolbar(main, "plugins", function(m) {
-      m.innerHTML = "";
-      renderPluginsTab(m);
-    });
-    if ((cfgState.mode["plugins"] || "cards") === "json") {
-      renderWebminJson(main);
-      return;
-    }
-    UI_GROUPS.forEach(function(grp) {
-      renderPluginGroup(main, grp);
-    });
-  }
-  function renderWebminJson(main) {
-    const tip = HOST.document.createElement("div");
-    tip.className = "cfg-tip";
-    tip.textContent = "\u6781\u7B80 UI \u5BBF\u4E3B\u914D\u7F6E\uFF1Aplugins=\u5404\u63D2\u4EF6\u914D\u7F6E \xB7 rail=\u56FE\u6807\u680F\u72B6\u6001 \xB7 active=\u5355\u4F8B\u69FD\u9009\u4E2D\u9879\u3002\u4FDD\u5B58\u540E\u7ACB\u5373\u751F\u6548\u5E76\u91CD\u5EFA\u754C\u9762\u3002";
-    main.appendChild(tip);
-    const tx = HOST.document.createElement("textarea");
-    tx.className = "settings-json";
-    tx.spellcheck = false;
-    tx.placeholder = "\u8BFB\u53D6\u914D\u7F6E\u2026";
-    main.appendChild(tx);
-    const status = HOST.document.createElement("span");
-    status.className = "p-tag";
-    fetch("/api/webmin/config").then(function(r) {
-      return r.json();
-    }).then(function(cfg) {
-      tx.value = JSON.stringify(cfg, null, 2);
-      status.textContent = "\u5DF2\u52A0\u8F7D";
-    }).catch(function() {
-      status.textContent = "\u52A0\u8F7D\u5931\u8D25";
-    });
-    const bar = HOST.document.createElement("div");
-    bar.className = "settings-actions";
-    const save = HOST.document.createElement("button");
-    save.className = "btn cfg-save";
-    save.textContent = "\u4FDD\u5B58\u5E76\u5E94\u7528";
-    save.addEventListener("click", function() {
-      let obj;
-      try {
-        obj = JSON.parse(tx.value);
-      } catch (e) {
-        HOST.alert("JSON \u89E3\u6790\u5931\u8D25\uFF1A" + e.message);
-        return;
-      }
-      if (!obj || typeof obj !== "object" || Array.isArray(obj)) {
-        HOST.alert("\u9876\u5C42\u5FC5\u987B\u662F JSON \u5BF9\u8C61");
-        return;
-      }
-      save.disabled = true;
-      status.textContent = "\u4FDD\u5B58\u4E2D\u2026";
-      fetch("/api/webmin/config", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(obj) }).then(function(r) {
-        if (!r.ok) throw new Error("HTTP " + r.status);
-      }).then(function() {
-        return reloadManifest();
-      }).then(function() {
-        status.textContent = "\u5DF2\u4FDD\u5B58\u5E76\u5E94\u7528";
-        renderSettings();
-      }).catch(function(e) {
-        save.disabled = false;
-        status.textContent = "\u4FDD\u5B58\u5931\u8D25";
-        HOST.alert("\u4FDD\u5B58\u5931\u8D25\uFF1A" + (e && e.message || ""));
-      });
-    });
-    bar.appendChild(save);
-    bar.appendChild(status);
-    main.appendChild(bar);
-  }
-  function renderSoulEditor(main) {
-    const tip = HOST.document.createElement("div");
-    tip.className = "cfg-tip";
-    tip.textContent = "\u5168\u5C40\u4EBA\u8BBE SOUL.md\uFF1A\u53EA\u6709\u5728 AgentLoop / Graph \u7B49\u6D41\u7A0B\u4E2D\u663E\u5F0F\u5F15\u7528 @SOUL \u65F6\uFF0C\u6B64\u5185\u5BB9\u624D\u4F1A\u6CE8\u5165\u5BF9\u5E94 Agent\uFF08\u662F\u5426\u6CE8\u5165\u53D6\u51B3\u4E8E\u5177\u4F53\u5B9E\u73B0\uFF09\uFF0C\u5E76\u975E\u6240\u6709 Agent \u81EA\u52A8\u643A\u5E26\uFF08\u843D\u76D8 ~/.purrcat/core/SOUL.md\uFF09\u3002";
-    main.appendChild(tip);
-    const tx = HOST.document.createElement("textarea");
-    tx.className = "settings-json";
-    tx.spellcheck = false;
-    tx.placeholder = "\u8BFB\u53D6\u4E2D\u2026";
-    main.appendChild(tx);
-    const status = HOST.document.createElement("span");
-    status.className = "p-tag";
-    fetch("/api/config/markdown/SOUL").then(function(r) {
-      return r.json();
-    }).then(function(d) {
-      tx.value = d && d.content || "";
-      status.textContent = "\u5DF2\u52A0\u8F7D";
-    }).catch(function() {
-      status.textContent = "\u52A0\u8F7D\u5931\u8D25";
-    });
-    const bar = HOST.document.createElement("div");
-    bar.className = "settings-actions";
-    const save = HOST.document.createElement("button");
-    save.className = "btn cfg-save";
-    save.textContent = "\u4FDD\u5B58";
-    save.addEventListener("click", function() {
-      save.disabled = true;
-      status.textContent = "\u4FDD\u5B58\u4E2D\u2026";
-      fetch("/api/config/markdown/SOUL", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content: tx.value }) }).then(function(r) {
-        if (!r.ok) throw new Error("HTTP " + r.status);
-      }).then(function() {
-        save.disabled = false;
-        status.textContent = "\u5DF2\u4FDD\u5B58";
-      }).catch(function(e) {
-        save.disabled = false;
-        status.textContent = "\u4FDD\u5B58\u5931\u8D25";
-        HOST.alert("\u4FDD\u5B58\u5931\u8D25\uFF1A" + (e && e.message || ""));
-      });
-    });
-    bar.appendChild(save);
-    bar.appendChild(status);
-    main.appendChild(bar);
-  }
-  function renderPluginGroup(main, grp) {
-    const group = HOST.document.createElement("div");
-    group.className = "settings-group";
-    const gt = HOST.document.createElement("div");
-    gt.className = "settings-group-title";
-    gt.textContent = AREA_LABEL[grp.area] || grp.area;
-    group.appendChild(gt);
-    if (grp.host) grp.host(group);
-    const list = groupState.plugins.filter(function(p) {
-      return ((p.slotDef || {}).area || "") === grp.area;
-    });
-    const multi = grp.singleton && list.length > 1;
-    if (multi) {
-      const sub = HOST.document.createElement("div");
-      sub.className = "settings-subgroup";
-      sub.textContent = "\u540C\u65F6\u53EA\u80FD\u542F\u7528\u4E00\u4E2A\u63D2\u4EF6";
-      group.appendChild(sub);
-    }
-    list.forEach(function(p) {
-      renderPluginCard(group, p, cfgFor(p));
-    });
-    if (!group.querySelector(".cfg-card")) {
-      const none = HOST.document.createElement("div");
-      none.className = "p-tag";
-      none.textContent = "\uFF08\u6682\u65E0\u63D2\u4EF6\uFF09";
-      group.appendChild(none);
-    }
-    main.appendChild(group);
-  }
-  function pluginVisible(p) {
-    if (railHidden(p.id)) return false;
-    const type = (p.slotDef || {}).type;
-    if (type === "fixed") {
-      const cur = pluginBySlot[p.slot || ""];
-      return !!cur && cur.id === p.id;
-    }
-    if (type === "panel") {
-      if (railHidden(PANEL_CONTAINER_ID)) return false;
-      return panelTabs.indexOf(p.id) >= 0;
-    }
-    return true;
-  }
-  function closeSettingsMenus() {
-    HOST.document.querySelectorAll(".settings-card-menu").forEach(function(m) {
-      m.remove();
-    });
-    syncNativeCover();
-  }
-  function openPluginCardMenu(ev, btn, p) {
-    ev.stopPropagation();
-    const wasOpen = !!HOST.document.querySelector('.settings-card-menu[data-owner="' + p.id + '"]');
-    closeSettingsMenus();
-    if (wasOpen) return;
-    const menu = HOST.document.createElement("div");
-    menu.className = "settings-card-menu";
-    menu.setAttribute("data-owner", p.id);
-    if (p.builtin) {
-      const dis = HOST.document.createElement("button");
-      dis.className = "settings-menu-btn disabled";
-      dis.textContent = "\u5185\u7F6E\u63D2\u4EF6 \xB7 \u4E0D\u53EF\u5220\u9664";
-      dis.disabled = true;
-      menu.appendChild(dis);
-    } else {
-      const d = HOST.document.createElement("button");
-      d.className = "settings-menu-btn danger";
-      d.textContent = "\u5220\u9664";
-      d.addEventListener("click", function() {
-        closeSettingsMenus();
-        if (HOST.confirm("\u786E\u5B9A\u5220\u9664\u63D2\u4EF6 \u201C" + (p.name || p.id) + "\u201D \u5417\uFF1F")) {
-          callAction("plugin.delete", { plugin_id: p.id }).then(function() {
-            renderSettings();
-          }).catch(function(e) {
-            HOST.alert("\u5220\u9664\u5931\u8D25\uFF1A" + e.message);
-          });
-        }
-      });
-      menu.appendChild(d);
-    }
-    HOST.document.body.appendChild(menu);
-    const r = btn.getBoundingClientRect();
-    menu.style.right = HOST.innerWidth - r.right + "px";
-    menu.style.top = r.bottom + 4 + "px";
-    syncNativeCover();
-  }
-  function activateSlotPlugin(p) {
-    const slot = p.slot;
-    const type = (p.slotDef || {}).type;
-    if (type === "panel") {
-      openPanelTab(p.id);
-      return;
-    }
-    if (type === "fixed") {
-      if (!railState.hidden) railState.hidden = {};
-      (slotMap[slot] || []).forEach((x) => {
-        if (x.id !== p.id) railState.hidden[x.id] = true;
-      });
-      delete railState.hidden[p.id];
-      if (slot === "panel-container" && p.id !== PANEL_CONTAINER_ID) railState.hidden[PANEL_CONTAINER_ID] = true;
-      activeBySlot[slot] = p.id;
-      refreshFixedSlot(slot);
-      buildRail();
-      persistActive();
-      persistRail().catch(() => {
-      });
-      return;
-    }
-    if (type === "modal") {
-      if (railHidden(p.id)) setPluginHidden(p.id, false);
-      buildRail();
-      return;
-    }
-    if (railHidden(p.id)) setPluginHidden(p.id, false);
-    buildRail();
-  }
-  function togglePluginOpen(p) {
-    const type = (p.slotDef || {}).type;
-    if (type === "panel") {
-      if (pluginVisible(p)) closePanelTab(p.id);
-      else openPanelTab(p.id);
-      return;
-    }
-    if (pluginVisible(p)) {
-      setPluginHidden(p.id, true);
-      buildRail();
-      return;
-    }
-    activateSlotPlugin(p);
   }
 
   // ui/web-minimal/src/host/config-center.ts
@@ -3443,6 +2204,83 @@
     }, 3e3));
   }
 
+  // ui/web-minimal/src/host/utils.ts
+  function effectiveConfig(desc) {
+    const sch = desc.configSchema || [];
+    const stored = desc.config || {};
+    const out = {};
+    sch.forEach((f) => {
+      if (f.default !== void 0) out[f.key] = f.default;
+      else if (f.type === "switch") out[f.key] = false;
+      else if (f.type === "number") out[f.key] = 0;
+      else if (f.type === "select") out[f.key] = f.options && f.options[0] || "";
+      else out[f.key] = "";
+    });
+    Object.assign(out, stored);
+    return out;
+  }
+  function slotOfPlugin(pid) {
+    return slotByPluginId[pid] || null;
+  }
+
+  // ui/web-minimal/src/host/manifest.ts
+  function applyManifestState(manifest) {
+    groupState.plugins = manifest.plugins || [];
+    applyLayoutFromManifest(manifest.layout);
+    groupState.plugins.forEach((p) => {
+      configByPlugin[p.id] = effectiveConfig(p);
+    });
+    const railSaved = manifest.rail;
+    if (railSaved && typeof railSaved === "object") {
+      const stage = Number(railSaved.stage);
+      railState.stage = Number.isFinite(stage) && stage >= 2 ? 1 : 0;
+      railState.hidden = railSaved.hidden && typeof railSaved.hidden === "object" ? railSaved.hidden : {};
+      if (Object.prototype.hasOwnProperty.call(railState.hidden, "__panel__")) {
+        if (railState.hidden["__panel__"]) railState.hidden[PANEL_CONTAINER_ID] = true;
+        delete railState.hidden["__panel__"];
+      }
+      railState.opacity = typeof railSaved.opacity === "number" ? railSaved.opacity : 1;
+    }
+    const savedPanel = manifest.panelContainer && typeof manifest.panelContainer === "object" ? manifest.panelContainer : {};
+    setPanelSavedWidth(Number(savedPanel.width) >= 260 ? Number(savedPanel.width) : null);
+    panelContainerCfg.opacity = typeof savedPanel.opacity === "number" ? savedPanel.opacity : 0.9;
+    if (panelSavedWidth != null) setPanelDesiredWidth(panelSavedWidth);
+    configByPlugin["panel-container"] = Object.assign({}, savedPanel);
+    const savedActive = manifest.active && typeof manifest.active === "object" ? manifest.active : {};
+    const ids = new Set(groupState.plugins.map((p) => p.id));
+    Object.keys(activeBySlot).forEach((k) => delete activeBySlot[k]);
+    panelTabs.length = 0;
+    Object.keys(savedActive).forEach((k) => {
+      const v = savedActive[k];
+      if (k === "__panelTabs__") {
+        activeBySlot[k] = String(v);
+        try {
+          const arr = JSON.parse(v);
+          if (Array.isArray(arr)) {
+            panelTabs.length = 0;
+            panelTabs.push.apply(panelTabs, arr.filter((x) => typeof x === "string"));
+          }
+        } catch (_) {
+        }
+        return;
+      }
+      if (v === "__none__" || ids.has(v)) activeBySlot[k] = v;
+    });
+  }
+  async function loadManifest() {
+    const manifest = await (await fetch("/api/webmin/manifest")).json();
+    applyManifestState(manifest);
+  }
+  async function reloadManifest() {
+    await loadManifest();
+    await loadPanelShell();
+    buildSlotIndex();
+    mountAll();
+    applyPersistedHidden();
+    buildRail();
+    applyPanelContainerCfg();
+  }
+
   // ui/web-minimal/src/host/settings-appearance.ts
   function setSettingsOpen(open) {
     HOST.document.body.classList.toggle("settings-open", !!open);
@@ -3515,6 +2353,44 @@
         onAlpha(Number((1 - t).toFixed(4)));
       }
     );
+  }
+  function renderLayoutSettings(container) {
+    const card = HOST.document.createElement("div");
+    card.className = "cfg-card";
+    cfgCardHead(card, "\u5E03\u5C40\u6A21\u5F0F", "\u5BBF\u4E3B", "\u5BB9\u5668\u5F0F\u4FDD\u6301\u73B0\u72B6\uFF1B\u5E73\u94FA\u5F0F\u5C06\u7A97\u53E3\u6A2A\u5411\u6392\u5217\uFF0C\u53EF\u6EDA\u52A8\u3001\u6392\u5E8F\u4E0E\u6539\u5BBD");
+    const body = HOST.document.createElement("div");
+    body.className = "cfg-card-body";
+    const grid = HOST.document.createElement("div");
+    grid.className = "cfg-grid one-col";
+    const row = HOST.document.createElement("div");
+    row.className = "cfg-field";
+    const lb = HOST.document.createElement("label");
+    lb.className = "cfg-label";
+    lb.textContent = "\u6A21\u5F0F";
+    row.appendChild(lb);
+    const seg = HOST.document.createElement("div");
+    seg.className = "cfg-seg-row";
+    const modes = [["container", "\u5BB9\u5668\u5F0F"], ["tile", "\u5E73\u94FA\u5F0F"]];
+    modes.forEach(function([mode, label]) {
+      const btn = HOST.document.createElement("button");
+      btn.className = "cfg-seg" + (layoutState.mode === mode ? " active" : "");
+      btn.textContent = label;
+      btn.addEventListener("click", function() {
+        if (layoutState.mode === mode) return;
+        setLayoutMode(mode);
+        renderSettings();
+      });
+      seg.appendChild(btn);
+    });
+    row.appendChild(seg);
+    grid.appendChild(row);
+    const tip = HOST.document.createElement("div");
+    tip.className = "cfg-tip";
+    tip.textContent = layoutState.mode === "tile" ? "\u5E73\u94FA\u6A21\u5F0F\uFF1A\u5217\u8868\u4F4D\u3001\u5DF2\u6253\u5F00\u9762\u677F\u3001\u4F1A\u8BDD\u4F4D\u5404\u4E3A\u72EC\u7ACB\u7A97\u53E3\uFF0C\u6309\u5F00\u542F\u65F6\u95F4\u4ECE\u5DE6\u5230\u53F3\u6392\u5217\uFF08\u91CD\u5F00\u8FFD\u52A0\u5230\u6700\u53F3\uFF09\uFF1B\u6700\u53F3\u4FA7\u300C+\u300D\u7A97\u53E3\u7EDF\u4E00\u5F00\u5173\u63D2\u4EF6\u3002\u6309\u4F4F Shift \u5DE6\u53F3\u62D6\u8DDF\u624B\u6392\u5E8F\u3001\u5411\u4E0B\u62D6\u8FC7\u7A97\u53E3\u4E00\u534A\u5173\u95ED\uFF1B\u62D6\u53F3\u7F18\u6539\u5BBD\u3002" : "\u5BB9\u5668\u5F0F\uFF1A\u5217\u8868\u4F4D\u3001\u4E2D\u680F\u9762\u677F\u5BB9\u5668\uFF08\u591A\u6807\u7B7E\uFF09\u3001\u4F1A\u8BDD\u4F4D\u3002";
+    grid.appendChild(tip);
+    body.appendChild(grid);
+    card.appendChild(body);
+    container.appendChild(card);
   }
   function renderRailAppearance(container) {
     const card = HOST.document.createElement("div");
@@ -3594,6 +2470,1784 @@
     body.appendChild(grid);
     card.appendChild(body);
     container.appendChild(card);
+  }
+
+  // ui/web-minimal/src/host/settings-cards.ts
+  var DEP_KIND_LABEL = { skill: "\u6280\u80FD", plugin: "\u63D2\u4EF6", mcp: "MCP", agentloop: "AgentLoop", sensor: "\u4F20\u611F\u5668", graph: "\u56FE\u8C31" };
+  var ROOT_KIND_LABEL = { builtin: "\u5185\u7F6E", sandbox: "\u6C99\u76D2", user: "\u7528\u6237" };
+  function renderPluginMeta(card, p) {
+    const row = HOST.document.createElement("div");
+    row.className = "cfg-card-meta";
+    const chip = (text, cls) => {
+      const el = HOST.document.createElement("span");
+      el.className = "p-tag" + (cls ? " " + cls : "");
+      el.textContent = text;
+      return el;
+    };
+    if (p.root && p.rootOk === false) {
+      row.appendChild(chip("\u58F0\u660E " + (ROOT_KIND_LABEL[p.root] || p.root), "warn"));
+      row.appendChild(chip("\u26A0 \u653E\u7F6E\u4F4D\u7F6E\u4E0E\u58F0\u660E\u4E0D\u4E00\u81F4", "warn"));
+    }
+    const deps = Array.isArray(p.dependency) ? p.dependency : [];
+    if (deps.length) {
+      const lb = HOST.document.createElement("span");
+      lb.className = "meta-label";
+      lb.textContent = "\u4F9D\u8D56";
+      row.appendChild(lb);
+      deps.forEach((d) => row.appendChild(chip((DEP_KIND_LABEL[d.type] || d.type) + " \xB7 " + d.id)));
+    }
+    if (row.childNodes.length) card.appendChild(row);
+  }
+  function renderPluginCard(container, p, cfg) {
+    const type = (p.slotDef || {}).type || "fixed";
+    const typeName = type === "fixed" ? "\u56FA\u5B9A" : type === "panel" ? "\u9762\u677F" : type === "modal" ? "\u6A21\u6001" : "\u6D6E\u7A97";
+    const vis = pluginVisible(p);
+    const card = HOST.document.createElement("div");
+    card.className = "cfg-card";
+    const h = cfgCardHead(card, p.name || p.id, typeName, p.id);
+    const st = HOST.document.createElement("span");
+    st.className = "cfg-chip " + (vis ? "on" : "off");
+    st.textContent = type === "panel" ? vis ? "\u663E\u793A\u4E2D" : "\u672A\u663E\u793A" : vis ? "\u5DF2\u542F\u7528" : "\u5DF2\u5173\u95ED";
+    h.titleRow.appendChild(st);
+    const originName = ROOT_KIND_LABEL[p.origin || ""] || p.origin || "";
+    if (originName) {
+      const oc = HOST.document.createElement("span");
+      oc.className = "cfg-chip type";
+      oc.textContent = originName;
+      h.titleRow.appendChild(oc);
+    }
+    const tg = HOST.document.createElement("button");
+    tg.className = "btn cfg-edit";
+    tg.textContent = vis ? "\u5173\u95ED" : "\u6253\u5F00";
+    tg.addEventListener("click", function() {
+      togglePluginOpen(p);
+      renderSettings();
+    });
+    h.right.appendChild(tg);
+    const menuBtn = HOST.document.createElement("button");
+    menuBtn.className = "btn icon menu-btn";
+    menuBtn.textContent = "\u25BE";
+    menuBtn.title = "\u66F4\u591A\u64CD\u4F5C";
+    menuBtn.addEventListener("click", function(ev) {
+      openPluginCardMenu(ev, menuBtn, p);
+    });
+    h.right.appendChild(menuBtn);
+    renderPluginMeta(card, p);
+    if (p.configSchema && p.configSchema.length) {
+      const body = HOST.document.createElement("div");
+      body.className = "cfg-card-body";
+      const grid = HOST.document.createElement("div");
+      grid.className = "cfg-grid one-col";
+      renderFields(grid, p, cfg);
+      body.appendChild(grid);
+      card.appendChild(body);
+    } else {
+      const body = HOST.document.createElement("div");
+      body.className = "cfg-card-body";
+      const none = HOST.document.createElement("span");
+      none.className = "p-tag";
+      none.textContent = "\u8BE5\u63D2\u4EF6\u65E0\u914D\u7F6E\u9879";
+      body.appendChild(none);
+      card.appendChild(body);
+    }
+    container.appendChild(card);
+  }
+  function renderFields(grid, p, cfg) {
+    (p.configSchema || []).forEach(function(field) {
+      const key = field.key;
+      const type = field.type || "text";
+      const label = field.label || key;
+      if (type === "switch") {
+        const row = HOST.document.createElement("div");
+        row.className = "cfg-field switch-row";
+        const lb2 = HOST.document.createElement("label");
+        lb2.className = "cfg-label";
+        lb2.textContent = label;
+        row.appendChild(lb2);
+        const sw = HOST.document.createElement("label");
+        sw.className = "switch";
+        sw.innerHTML = '<input type="checkbox"><span class="slider"></span>';
+        const chk = sw.querySelector("input");
+        if (!chk) return;
+        chk.checked = !!cfg[key];
+        chk.addEventListener("change", function() {
+          cfg[key] = chk.checked;
+          settingsSave(p.id, cfg);
+        });
+        row.appendChild(sw);
+        grid.appendChild(row);
+        return;
+      }
+      if (type === "range") {
+        let fv = cfg[key];
+        const initVal = typeof fv === "number" && !isNaN(fv) ? fv : field.default != null ? field.default : field.max != null ? field.max : 1;
+        const min0 = field.min != null ? field.min : 0;
+        const step0 = field.step != null ? field.step : 0.01;
+        const applyVal = function(v) {
+          cfg[key] = v;
+          settingsSave(p.id, cfg);
+        };
+        if (key === "opacity") {
+          transparencyField(grid, label, min0, initVal, step0, applyVal);
+        } else {
+          cfgRangeField(
+            grid,
+            label,
+            min0,
+            field.max != null ? field.max : 1,
+            step0,
+            initVal,
+            function(v) {
+              return label + " " + v.toFixed(2);
+            },
+            applyVal
+          );
+        }
+        return;
+      }
+      if (type === "plugin-multi") {
+        const f2 = HOST.document.createElement("div");
+        f2.className = "cfg-field wide";
+        const lb2 = HOST.document.createElement("label");
+        lb2.className = "cfg-label";
+        lb2.textContent = label;
+        f2.appendChild(lb2);
+        const box = HOST.document.createElement("div");
+        box.className = "plugin-picker";
+        let sel = Array.isArray(cfg[key]) ? cfg[key].slice() : [];
+        const cands = (groupState.plugins || []).filter(function(x) {
+          return x.id !== p.id && x.entry;
+        });
+        if (!cands.length) {
+          const emp = HOST.document.createElement("div");
+          emp.className = "p-tag";
+          emp.textContent = "\u6CA1\u6709\u53EF\u6DFB\u52A0\u7684\u63D2\u4EF6";
+          box.appendChild(emp);
+        }
+        cands.forEach(function(pl) {
+          const row = HOST.document.createElement("div");
+          row.className = "pk-row";
+          const info = HOST.document.createElement("div");
+          info.className = "pk-info";
+          const nm = HOST.document.createElement("div");
+          nm.className = "pk-name";
+          nm.textContent = pl.name || pl.id;
+          info.appendChild(nm);
+          const area = HOST.document.createElement("div");
+          area.className = "pk-area";
+          const slotArea = (pl.slotDef || {}).area || "";
+          const areaName = AREA_LABEL[slotArea] || slotArea;
+          area.textContent = pl.id + (areaName ? " \xB7 " + areaName : "");
+          info.appendChild(area);
+          row.appendChild(info);
+          const sw = HOST.document.createElement("label");
+          sw.className = "switch";
+          sw.innerHTML = '<input type="checkbox"><span class="slider"></span>';
+          const chk = sw.querySelector("input");
+          if (!chk) return;
+          chk.checked = sel.indexOf(pl.id) >= 0;
+          chk.addEventListener("change", function() {
+            if (chk.checked) {
+              if (sel.indexOf(pl.id) < 0) sel.push(pl.id);
+            } else sel = sel.filter(function(x) {
+              return x !== pl.id;
+            });
+            cfg[key] = sel;
+            settingsSave(p.id, cfg);
+          });
+          row.appendChild(sw);
+          box.appendChild(row);
+        });
+        f2.appendChild(box);
+        const hint = HOST.document.createElement("div");
+        hint.className = "pk-hint";
+        hint.textContent = "\u52FE\u9009\u540E\u51FA\u73B0\u5728\u4FA7\u680F\u300C\u5FEB\u6377\u680F\u300D\uFF0C\u70B9\u51FB\u5373\u53EF\u5524\u8D77\u5BF9\u5E94\u63D2\u4EF6\u3002";
+        f2.appendChild(hint);
+        grid.appendChild(f2);
+        return;
+      }
+      const f = HOST.document.createElement("div");
+      f.className = "cfg-field" + (type === "wallpapers" ? " wide" : "");
+      const lb = HOST.document.createElement("label");
+      lb.className = "cfg-label";
+      lb.textContent = label;
+      f.appendChild(lb);
+      if (type === "select") {
+        const sel = HOST.document.createElement("select");
+        sel.className = "cfg-input";
+        (field.options || []).forEach(function(op) {
+          const o2 = HOST.document.createElement("option");
+          o2.value = op;
+          o2.textContent = op;
+          sel.appendChild(o2);
+        });
+        sel.value = cfg[key] || "";
+        sel.addEventListener("change", function() {
+          cfg[key] = sel.value;
+          settingsSave(p.id, cfg);
+        });
+        f.appendChild(sel);
+      } else if (type === "number") {
+        const num = HOST.document.createElement("input");
+        num.type = "number";
+        num.step = "any";
+        num.className = "cfg-input";
+        num.value = cfg[key] == null ? "" : cfg[key];
+        num.addEventListener("change", function() {
+          cfg[key] = num.value === "" ? null : Number(num.value);
+          settingsSave(p.id, cfg);
+        });
+        f.appendChild(num);
+      } else if (type === "wallpapers") {
+        let isV2 = function(url) {
+          return /\.(mp4|webm|mov)(\?|$)/i.test(url);
+        }, draw2 = function() {
+          wallsWrap.innerHTML = "";
+          list.forEach(function(w, i) {
+            const t = HOST.document.createElement("div");
+            t.className = "wall-thumb";
+            if (isV2(w.src || "")) {
+              const v = HOST.document.createElement("video");
+              v.src = w.src;
+              v.muted = true;
+              v.loop = true;
+              t.appendChild(v);
+            } else {
+              const im = HOST.document.createElement("img");
+              im.src = w.src;
+              im.alt = "";
+              t.appendChild(im);
+            }
+            const del = HOST.document.createElement("button");
+            del.className = "wall-del";
+            del.textContent = "\xD7";
+            del.addEventListener("click", function() {
+              list.splice(i, 1);
+              commit2();
+              draw2();
+            });
+            t.appendChild(del);
+            wallsWrap.appendChild(t);
+          });
+          const add = HOST.document.createElement("button");
+          add.className = "btn sm";
+          add.textContent = "+ \u6DFB\u52A0";
+          add.addEventListener("click", function() {
+            callAction("dialog.pickWallpaper", {}).then(function(up) {
+              const r = up;
+              if (!r || !r.url) return;
+              list.push({ src: r.url, type: isV2(r.url) ? "video" : "image", name: r.filename });
+              cfg.mode = "wallpaper";
+              commit2();
+              draw2();
+              scheduleSettingsRender();
+            }).catch(function() {
+            });
+          });
+          wallsWrap.appendChild(add);
+        }, commit2 = function() {
+          cfg[key] = list;
+          settingsSave(p.id, cfg);
+        };
+        var isV = isV2, draw = draw2, commit = commit2;
+        const wallsWrap = HOST.document.createElement("div");
+        wallsWrap.className = "walls";
+        const list = Array.isArray(cfg[key]) ? cfg[key] : [];
+        draw2();
+        f.appendChild(wallsWrap);
+      } else {
+        const txt = HOST.document.createElement("input");
+        txt.type = "text";
+        txt.className = "cfg-input";
+        txt.value = cfg[key] || "";
+        txt.addEventListener("change", function() {
+          cfg[key] = txt.value;
+          settingsSave(p.id, cfg);
+        });
+        f.appendChild(txt);
+      }
+      grid.appendChild(f);
+    });
+  }
+
+  // ui/web-minimal/src/host/settings-tabs.ts
+  var CONFIG_NAV = ["plugins", "model", "sensor", "file", "mcp", "soul", "acp", "deploy"];
+  var CONFIG_LABEL = { plugins: "UI \u63D2\u4EF6", model: "\u6A21\u578B", sensor: "\u4F20\u611F\u5668", file: "\u6587\u4EF6\u6743\u9650", mcp: "MCP", soul: "\u5168\u5C40\u4EBA\u8BBE", acp: "ACP", deploy: "\u90E8\u7F72" };
+  var settingsTab = "plugins";
+  var settingsRenderedTab = "";
+  var deployPollT = null;
+  function setSettingsTab(v) {
+    settingsTab = v;
+  }
+  function setDeployPollT(v) {
+    deployPollT = v;
+  }
+  function renderSettings() {
+    const bodyEl = HOST.document.querySelector('[data-layer="settings"] .settings-body');
+    if (!bodyEl) return;
+    if (deployPollT) {
+      clearInterval(deployPollT);
+      deployPollT = null;
+    }
+    closeSettingsMenus();
+    const prevMain = bodyEl.querySelector(".settings-main");
+    const keepTop = settingsRenderedTab === settingsTab && prevMain ? prevMain.scrollTop : 0;
+    bodyEl.innerHTML = "";
+    const nav = HOST.document.createElement("div");
+    nav.className = "settings-nav";
+    CONFIG_NAV.forEach(function(key) {
+      const it = HOST.document.createElement("button");
+      it.className = "settings-nav-item" + (settingsTab === key ? " active" : "");
+      it.textContent = CONFIG_LABEL[key] || key;
+      it.addEventListener("click", function() {
+        settingsTab = key;
+        renderSettings();
+      });
+      nav.appendChild(it);
+    });
+    bodyEl.appendChild(nav);
+    const main = HOST.document.createElement("div");
+    main.className = "settings-main";
+    bodyEl.appendChild(main);
+    if (settingsTab === "plugins") renderPluginsTab(main);
+    else renderConfigSection(main, settingsTab);
+    settingsRenderedTab = settingsTab;
+    if (keepTop) {
+      main.scrollTop = keepTop;
+      const mo = new MutationObserver(function() {
+        main.scrollTop = keepTop;
+        mo.disconnect();
+      });
+      mo.observe(main, { childList: true, subtree: true });
+      setTimeout(function() {
+        mo.disconnect();
+      }, 2e3);
+    }
+  }
+  var AREA_LABEL = {
+    session: "\u4F1A\u8BDD\u4F4D",
+    "panel-container": "\u9762\u677F\u5BB9\u5668",
+    popup: "\u5F39\u7A97\u7C7B",
+    sidebar: "\u5217\u8868\u4F4D",
+    background: "\u80CC\u666F",
+    rail: "\u5DE6\u4FA7\u767D\u6761",
+    panel: "\u9762\u677F",
+    pet: "\u6D6E\u7A97\u7C7B",
+    settings: "\u8BBE\u7F6E",
+    // 宿主固有入口，独立归类的伪区域
+    layout: "\u754C\u9762\u5E03\u5C40"
+  };
+  var UI_GROUPS = [
+    { area: "layout", host: renderLayoutSettings },
+    { area: "rail", host: renderRailAppearance },
+    { area: "sidebar", singleton: true },
+    { area: "session", singleton: true },
+    { area: "background", singleton: true },
+    { area: "panel-container", singleton: true, host: renderPanelContainerSettings },
+    { area: "panel" },
+    { area: "pet" },
+    { area: "popup" }
+  ];
+  function cfgFor(p) {
+    return Object.assign({}, configByPlugin[p.id] || {});
+  }
+  function renderPluginsTab(main) {
+    settingsPageHead(main, "plugins", function() {
+      reloadManifest().then(function() {
+        renderSettings();
+      });
+    });
+    cfgToolbar(main, "plugins", function(m) {
+      m.innerHTML = "";
+      renderPluginsTab(m);
+    });
+    if ((cfgState.mode["plugins"] || "cards") === "json") {
+      renderWebminJson(main);
+      return;
+    }
+    UI_GROUPS.forEach(function(grp) {
+      if (tileMode() && grp.area === "panel-container") return;
+      renderPluginGroup(main, grp);
+    });
+  }
+  function renderWebminJson(main) {
+    const tip = HOST.document.createElement("div");
+    tip.className = "cfg-tip";
+    tip.textContent = "\u6781\u7B80 UI \u5BBF\u4E3B\u914D\u7F6E\uFF1Aplugins=\u5404\u63D2\u4EF6\u914D\u7F6E \xB7 rail=\u56FE\u6807\u680F\u72B6\u6001 \xB7 active=\u5355\u4F8B\u69FD\u9009\u4E2D\u9879\u3002\u4FDD\u5B58\u540E\u7ACB\u5373\u751F\u6548\u5E76\u91CD\u5EFA\u754C\u9762\u3002";
+    main.appendChild(tip);
+    const tx = HOST.document.createElement("textarea");
+    tx.className = "settings-json";
+    tx.spellcheck = false;
+    tx.placeholder = "\u8BFB\u53D6\u914D\u7F6E\u2026";
+    main.appendChild(tx);
+    const status = HOST.document.createElement("span");
+    status.className = "p-tag";
+    fetch("/api/webmin/config").then(function(r) {
+      return r.json();
+    }).then(function(cfg) {
+      tx.value = JSON.stringify(cfg, null, 2);
+      status.textContent = "\u5DF2\u52A0\u8F7D";
+    }).catch(function() {
+      status.textContent = "\u52A0\u8F7D\u5931\u8D25";
+    });
+    const bar = HOST.document.createElement("div");
+    bar.className = "settings-actions";
+    const save = HOST.document.createElement("button");
+    save.className = "btn cfg-save";
+    save.textContent = "\u4FDD\u5B58\u5E76\u5E94\u7528";
+    save.addEventListener("click", function() {
+      let obj;
+      try {
+        obj = JSON.parse(tx.value);
+      } catch (e) {
+        HOST.alert("JSON \u89E3\u6790\u5931\u8D25\uFF1A" + e.message);
+        return;
+      }
+      if (!obj || typeof obj !== "object" || Array.isArray(obj)) {
+        HOST.alert("\u9876\u5C42\u5FC5\u987B\u662F JSON \u5BF9\u8C61");
+        return;
+      }
+      save.disabled = true;
+      status.textContent = "\u4FDD\u5B58\u4E2D\u2026";
+      fetch("/api/webmin/config", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(obj) }).then(function(r) {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+      }).then(function() {
+        return reloadManifest();
+      }).then(function() {
+        status.textContent = "\u5DF2\u4FDD\u5B58\u5E76\u5E94\u7528";
+        renderSettings();
+      }).catch(function(e) {
+        save.disabled = false;
+        status.textContent = "\u4FDD\u5B58\u5931\u8D25";
+        HOST.alert("\u4FDD\u5B58\u5931\u8D25\uFF1A" + (e && e.message || ""));
+      });
+    });
+    bar.appendChild(save);
+    bar.appendChild(status);
+    main.appendChild(bar);
+  }
+  function renderSoulEditor(main) {
+    const tip = HOST.document.createElement("div");
+    tip.className = "cfg-tip";
+    tip.textContent = "\u5168\u5C40\u4EBA\u8BBE SOUL.md\uFF1A\u53EA\u6709\u5728 AgentLoop / Graph \u7B49\u6D41\u7A0B\u4E2D\u663E\u5F0F\u5F15\u7528 @SOUL \u65F6\uFF0C\u6B64\u5185\u5BB9\u624D\u4F1A\u6CE8\u5165\u5BF9\u5E94 Agent\uFF08\u662F\u5426\u6CE8\u5165\u53D6\u51B3\u4E8E\u5177\u4F53\u5B9E\u73B0\uFF09\uFF0C\u5E76\u975E\u6240\u6709 Agent \u81EA\u52A8\u643A\u5E26\uFF08\u843D\u76D8 ~/.purrcat/core/SOUL.md\uFF09\u3002";
+    main.appendChild(tip);
+    const tx = HOST.document.createElement("textarea");
+    tx.className = "settings-json";
+    tx.spellcheck = false;
+    tx.placeholder = "\u8BFB\u53D6\u4E2D\u2026";
+    main.appendChild(tx);
+    const status = HOST.document.createElement("span");
+    status.className = "p-tag";
+    fetch("/api/config/markdown/SOUL").then(function(r) {
+      return r.json();
+    }).then(function(d) {
+      tx.value = d && d.content || "";
+      status.textContent = "\u5DF2\u52A0\u8F7D";
+    }).catch(function() {
+      status.textContent = "\u52A0\u8F7D\u5931\u8D25";
+    });
+    const bar = HOST.document.createElement("div");
+    bar.className = "settings-actions";
+    const save = HOST.document.createElement("button");
+    save.className = "btn cfg-save";
+    save.textContent = "\u4FDD\u5B58";
+    save.addEventListener("click", function() {
+      save.disabled = true;
+      status.textContent = "\u4FDD\u5B58\u4E2D\u2026";
+      fetch("/api/config/markdown/SOUL", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content: tx.value }) }).then(function(r) {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+      }).then(function() {
+        save.disabled = false;
+        status.textContent = "\u5DF2\u4FDD\u5B58";
+      }).catch(function(e) {
+        save.disabled = false;
+        status.textContent = "\u4FDD\u5B58\u5931\u8D25";
+        HOST.alert("\u4FDD\u5B58\u5931\u8D25\uFF1A" + (e && e.message || ""));
+      });
+    });
+    bar.appendChild(save);
+    bar.appendChild(status);
+    main.appendChild(bar);
+  }
+  function renderPluginGroup(main, grp) {
+    const group = HOST.document.createElement("div");
+    group.className = "settings-group";
+    const gt = HOST.document.createElement("div");
+    gt.className = "settings-group-title";
+    gt.textContent = AREA_LABEL[grp.area] || grp.area;
+    group.appendChild(gt);
+    if (grp.host) grp.host(group);
+    const list = groupState.plugins.filter(function(p) {
+      return ((p.slotDef || {}).area || "") === grp.area;
+    });
+    const multi = grp.singleton && list.length > 1;
+    if (multi) {
+      const sub = HOST.document.createElement("div");
+      sub.className = "settings-subgroup";
+      sub.textContent = "\u540C\u65F6\u53EA\u80FD\u542F\u7528\u4E00\u4E2A\u63D2\u4EF6";
+      group.appendChild(sub);
+    }
+    list.forEach(function(p) {
+      renderPluginCard(group, p, cfgFor(p));
+    });
+    if (!group.querySelector(".cfg-card")) {
+      const none = HOST.document.createElement("div");
+      none.className = "p-tag";
+      none.textContent = "\uFF08\u6682\u65E0\u63D2\u4EF6\uFF09";
+      group.appendChild(none);
+    }
+    main.appendChild(group);
+  }
+  function pluginVisible(p) {
+    if (railHidden(p.id)) return false;
+    const type = (p.slotDef || {}).type;
+    if (type === "fixed") {
+      const cur = pluginBySlot[p.slot || ""];
+      return !!cur && cur.id === p.id;
+    }
+    if (type === "panel") {
+      if (!tileMode() && railHidden(PANEL_CONTAINER_ID)) return false;
+      return panelTabs.indexOf(p.id) >= 0;
+    }
+    return true;
+  }
+  function closeSettingsMenus() {
+    HOST.document.querySelectorAll(".settings-card-menu").forEach(function(m) {
+      m.remove();
+    });
+    syncNativeCover();
+  }
+  function openPluginCardMenu(ev, btn, p) {
+    ev.stopPropagation();
+    const wasOpen = !!HOST.document.querySelector('.settings-card-menu[data-owner="' + p.id + '"]');
+    closeSettingsMenus();
+    if (wasOpen) return;
+    const menu = HOST.document.createElement("div");
+    menu.className = "settings-card-menu";
+    menu.setAttribute("data-owner", p.id);
+    if (p.builtin) {
+      const dis = HOST.document.createElement("button");
+      dis.className = "settings-menu-btn disabled";
+      dis.textContent = "\u5185\u7F6E\u63D2\u4EF6 \xB7 \u4E0D\u53EF\u5220\u9664";
+      dis.disabled = true;
+      menu.appendChild(dis);
+    } else {
+      const d = HOST.document.createElement("button");
+      d.className = "settings-menu-btn danger";
+      d.textContent = "\u5220\u9664";
+      d.addEventListener("click", function() {
+        closeSettingsMenus();
+        if (HOST.confirm("\u786E\u5B9A\u5220\u9664\u63D2\u4EF6 \u201C" + (p.name || p.id) + "\u201D \u5417\uFF1F")) {
+          callAction("plugin.delete", { plugin_id: p.id }).then(function() {
+            renderSettings();
+          }).catch(function(e) {
+            HOST.alert("\u5220\u9664\u5931\u8D25\uFF1A" + e.message);
+          });
+        }
+      });
+      menu.appendChild(d);
+    }
+    HOST.document.body.appendChild(menu);
+    const r = btn.getBoundingClientRect();
+    menu.style.right = HOST.innerWidth - r.right + "px";
+    menu.style.top = r.bottom + 4 + "px";
+    syncNativeCover();
+  }
+  function activateSlotPlugin(p) {
+    const slot = p.slot;
+    const type = (p.slotDef || {}).type;
+    if (type === "panel") {
+      openPanelTab(p.id);
+      return;
+    }
+    if (type === "fixed") {
+      if (!railState.hidden) railState.hidden = {};
+      (slotMap[slot] || []).forEach((x) => {
+        if (x.id !== p.id) railState.hidden[x.id] = true;
+      });
+      delete railState.hidden[p.id];
+      if (slot === "panel-container" && p.id !== PANEL_CONTAINER_ID) railState.hidden[PANEL_CONTAINER_ID] = true;
+      activeBySlot[slot] = p.id;
+      refreshFixedSlot(slot);
+      buildRail();
+      if (tileMode()) syncTiles();
+      persistActive2();
+      persistRail().catch(() => {
+      });
+      return;
+    }
+    if (type === "modal") {
+      if (railHidden(p.id)) setPluginHidden(p.id, false);
+      buildRail();
+      return;
+    }
+    if (railHidden(p.id)) setPluginHidden(p.id, false);
+    buildRail();
+  }
+  function togglePluginOpen(p) {
+    const type = (p.slotDef || {}).type;
+    if (type === "panel") {
+      if (pluginVisible(p)) closePanelTab(p.id);
+      else openPanelTab(p.id);
+      return;
+    }
+    if (pluginVisible(p)) {
+      setPluginHidden(p.id, true);
+      buildRail();
+      return;
+    }
+    activateSlotPlugin(p);
+  }
+
+  // ui/web-minimal/src/host/tile.ts
+  var fixedAnchors = {};
+  var tileEls = {};
+  var tileFrames = {};
+  var stripEl = null;
+  var addEl = null;
+  var broadcastT = null;
+  var managing = false;
+  function panelPlugins() {
+    return groupState.plugins.filter((p) => (p.slotDef || {}).type === "panel" && !!p.entry);
+  }
+  function pluginVisibleInSlot(slot) {
+    const cur = pluginBySlot[slot];
+    if (cur) return railHidden(cur.id) ? null : cur;
+    const list = (slotMap[slot] || []).filter((p) => !railHidden(p.id));
+    return list[0] || null;
+  }
+  function broadcastLayout() {
+    if (broadcastT != null) return;
+    broadcastT = HOST.setTimeout(() => {
+      broadcastT = null;
+      broadcastAll("host.layoutChanged", { mode: "tile" });
+    }, 40);
+  }
+  function setShiftMode(on) {
+    const active = on && tileMode();
+    HOST.document.body.classList.toggle("wm-shift-mode", active);
+    if (!active && !managing) {
+      Object.keys(tileEls).forEach((k) => {
+        tileEls[k].classList.remove("dragging", "removing");
+        tileEls[k].style.transform = "";
+      });
+    }
+  }
+  HOST.addEventListener("keydown", (ev) => {
+    if (ev.key === "Shift") setShiftMode(true);
+  });
+  HOST.addEventListener("keyup", (ev) => {
+    if (ev.key === "Shift") setShiftMode(false);
+  });
+  HOST.addEventListener("blur", () => {
+    HOST.document.querySelectorAll(".wm-drag-layer").forEach((el) => el.remove());
+    managing = false;
+    setShiftMode(false);
+    Object.keys(tileEls).forEach((k) => {
+      tileEls[k].classList.remove("dragging", "removing");
+      tileEls[k].style.transform = "";
+    });
+  });
+  function ensureStrip() {
+    if (stripEl && stripEl.isConnected) return stripEl;
+    const el = HOST.document.createElement("div");
+    el.className = "wm-tiles";
+    el.id = "wmTiles";
+    el.addEventListener("wheel", (ev) => {
+      if (!ev.deltaY) return;
+      el.scrollLeft += ev.deltaY;
+    }, { passive: true });
+    el.addEventListener("scroll", broadcastLayout, { passive: true });
+    let panning = false;
+    let panX = 0;
+    let panScroll = 0;
+    el.addEventListener("pointerdown", (ev) => {
+      if (ev.target !== el || ev.button !== 0) return;
+      panning = true;
+      panX = ev.clientX;
+      panScroll = el.scrollLeft;
+      try {
+        el.setPointerCapture(ev.pointerId);
+      } catch (_) {
+      }
+    });
+    el.addEventListener("pointermove", (ev) => {
+      if (!panning) return;
+      el.scrollLeft = panScroll - (ev.clientX - panX);
+    });
+    const endPan = () => {
+      panning = false;
+    };
+    el.addEventListener("pointerup", endPan);
+    el.addEventListener("pointercancel", endPan);
+    HOST.document.body.appendChild(el);
+    stripEl = el;
+    return el;
+  }
+  function tileBody(tile) {
+    return tile.querySelector(".wm-tile-body");
+  }
+  function closeFixedSlot(slot) {
+    const cur = pluginVisibleInSlot(slot);
+    if (cur) setPluginHidden(cur.id, true);
+  }
+  function closeTileByKey(key) {
+    if (key === LAYOUT_KEY_SIDEBAR) closeFixedSlot("sidebar");
+    else if (key === LAYOUT_KEY_SESSION) closeFixedSlot("session");
+    else if (key.indexOf("panel:") === 0) closePanelTab(key.slice("panel:".length));
+    syncTiles();
+    buildRail();
+  }
+  function bindResize(tile, grip, key) {
+    grip.addEventListener("pointerdown", (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      const startX = ev.clientX;
+      const startW = tile.getBoundingClientRect().width;
+      const move = (e2) => {
+        setWindowWidth(key, startW + (e2.clientX - startX));
+        tile.style.width = windowWidth(key) + "px";
+        broadcastLayout();
+      };
+      const up = () => {
+        grip.removeEventListener("pointermove", move);
+        grip.removeEventListener("pointerup", up);
+        grip.removeEventListener("pointercancel", up);
+        try {
+          grip.releasePointerCapture(ev.pointerId);
+        } catch (_) {
+        }
+        persistLayout();
+        broadcastLayout();
+      };
+      try {
+        grip.setPointerCapture(ev.pointerId);
+      } catch (_) {
+      }
+      grip.addEventListener("pointermove", move);
+      grip.addEventListener("pointerup", up);
+      grip.addEventListener("pointercancel", up);
+    });
+  }
+  function sortedVisibleKeys() {
+    return Object.keys(tileEls).filter((k) => tileEls[k].style.display !== "none").sort((a, b) => Number(tileEls[a].style.order || 0) - Number(tileEls[b].style.order || 0));
+  }
+  function bindManageDrag(tile, shield, key) {
+    shield.addEventListener("pointerdown", (ev) => {
+      if (!HOST.document.body.classList.contains("wm-shift-mode") || ev.button !== 0) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      const strip = stripEl;
+      const rect = tile.getBoundingClientRect();
+      const startY = ev.clientY;
+      const removeAt = Math.max(80, rect.height / 2);
+      let removing = false;
+      let done = false;
+      let lastX = ev.clientX;
+      let offsetX = 0;
+      managing = true;
+      tile.classList.add("dragging");
+      const layer = HOST.document.createElement("div");
+      layer.className = "wm-drag-layer";
+      HOST.document.body.appendChild(layer);
+      const setTransform = () => {
+        tile.style.transform = "translate(" + Math.round(offsetX) + "px, 0px)";
+      };
+      const move = (e2) => {
+        offsetX += e2.clientX - lastX;
+        lastX = e2.clientX;
+        const dy = e2.clientY - startY;
+        const willRemove = dy >= removeAt;
+        if (willRemove !== removing) {
+          removing = willRemove;
+          tile.classList.toggle("removing", removing);
+        }
+        if (removing) {
+          tile.style.transform = "translate(" + Math.round(offsetX * 0.15) + "px, " + Math.round(Math.min(dy - removeAt, 40)) + "px)";
+          return;
+        }
+        setTransform();
+        if (strip) {
+          const sr = strip.getBoundingClientRect();
+          if (e2.clientX < sr.left + 56) strip.scrollLeft -= 20;
+          else if (e2.clientX > sr.right - 56) strip.scrollLeft += 20;
+        }
+        const keys = sortedVisibleKeys();
+        const from = keys.indexOf(key);
+        if (from < 0) return;
+        let target = keys.length;
+        for (let i = 0; i < keys.length; i++) {
+          const other = keys[i];
+          if (other === key) continue;
+          const r = tileEls[other].getBoundingClientRect();
+          if (e2.clientX < r.left + r.width / 2) {
+            target = i;
+            break;
+          }
+        }
+        if (target > from) target -= 1;
+        if (target === from) return;
+        const next = keys.slice();
+        next.splice(from, 1);
+        next.splice(Math.max(0, Math.min(next.length, target)), 0, key);
+        const before = tile.getBoundingClientRect().left;
+        reorderWindows(next);
+        applyOrder();
+        offsetX -= tile.getBoundingClientRect().left - before;
+        setTransform();
+        broadcastLayout();
+      };
+      const finish = (commit) => {
+        if (done) return;
+        done = true;
+        managing = false;
+        layer.removeEventListener("pointermove", move);
+        layer.removeEventListener("pointerup", up);
+        layer.removeEventListener("pointercancel", cancel);
+        try {
+          layer.releasePointerCapture(ev.pointerId);
+        } catch (_) {
+        }
+        layer.remove();
+        tile.classList.remove("dragging", "removing");
+        tile.style.transform = "";
+        if (commit) {
+          if (removing) closeTileByKey(key);
+          else persistLayout();
+        }
+        broadcastLayout();
+      };
+      const up = () => finish(true);
+      const cancel = () => finish(false);
+      try {
+        layer.setPointerCapture(ev.pointerId);
+      } catch (_) {
+      }
+      layer.addEventListener("pointermove", move);
+      layer.addEventListener("pointerup", up);
+      layer.addEventListener("pointercancel", cancel);
+    });
+  }
+  function makeTile(key) {
+    const tile = HOST.document.createElement("div");
+    tile.className = "wm-tile";
+    tile.dataset.key = key;
+    const body = HOST.document.createElement("div");
+    body.className = "wm-tile-body";
+    const shield = HOST.document.createElement("div");
+    shield.className = "wm-tile-shield";
+    const grip = HOST.document.createElement("div");
+    grip.className = "wm-tile-resize";
+    grip.title = "\u62D6\u52A8\u8C03\u6574\u5BBD\u5EA6";
+    tile.appendChild(body);
+    tile.appendChild(shield);
+    tile.appendChild(grip);
+    bindManageDrag(tile, shield, key);
+    bindResize(tile, grip, key);
+    return tile;
+  }
+  function moveAnchorInto(body, slot) {
+    const anchor = HOST.document.querySelector(`[data-slot="${slot}"]`);
+    if (!anchor) return;
+    if (!fixedAnchors[slot]) {
+      fixedAnchors[slot] = { el: anchor, parent: anchor.parentNode, next: anchor.nextSibling };
+    }
+    if (anchor.parentNode !== body) body.appendChild(anchor);
+  }
+  function syncFixedTile(strip, key, slot) {
+    let tile = tileEls[key];
+    if (!tile) {
+      tile = makeTile(key);
+      strip.appendChild(tile);
+      tileEls[key] = tile;
+    }
+    moveAnchorInto(tileBody(tile), slot);
+    tile.style.display = pluginVisibleInSlot(slot) ? "" : "none";
+  }
+  function ensureAddTile(strip) {
+    if (addEl && addEl.isConnected) return;
+    const tile = HOST.document.createElement("div");
+    tile.className = "wm-tile wm-tile-add";
+    tile.id = "wmTileAdd";
+    tile.title = "\u9009\u62E9\u8981\u5F00\u542F\u7684\u63D2\u4EF6";
+    tile.style.width = TILE_ADD_W + "px";
+    tile.style.order = "99999";
+    const plus = HOST.document.createElement("span");
+    plus.className = "wm-tile-add-plus";
+    paintIcon(plus, "plus", "+");
+    const label = HOST.document.createElement("span");
+    label.textContent = "\u6DFB\u52A0";
+    tile.appendChild(plus);
+    tile.appendChild(label);
+    tile.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      openTileAddMenu(tile);
+    });
+    strip.appendChild(tile);
+    addEl = tile;
+  }
+  function menuItem(p, on, onclick) {
+    const item = HOST.document.createElement("div");
+    item.className = "wm-pp_menu-item" + (on ? " active" : "");
+    const g = HOST.document.createElement("span");
+    g.className = "wm-pp_menu-ico";
+    paintPluginIcon(g, p);
+    const nm = HOST.document.createElement("span");
+    nm.textContent = p.name || p.id;
+    item.appendChild(g);
+    item.appendChild(nm);
+    if (on) {
+      const tag = HOST.document.createElement("span");
+      tag.className = "wm-pp_menu-tag";
+      tag.textContent = "\u5DF2\u6253\u5F00";
+      item.appendChild(tag);
+    }
+    item.addEventListener("click", onclick);
+    return item;
+  }
+  function menuSection(menu, title) {
+    const head = HOST.document.createElement("div");
+    head.className = "wm-tile-menu-head";
+    head.textContent = title;
+    menu.appendChild(head);
+  }
+  function openTileAddMenu(anchor) {
+    const wasOpen = !!HOST.document.getElementById("tile-add-menu");
+    closePanelMenus();
+    if (wasOpen) return;
+    const menu = HOST.document.createElement("div");
+    menu.className = "wm-pp_menu";
+    menu.id = "tile-add-menu";
+    const toggle = (p) => {
+      closePanelMenus();
+      togglePluginOpen(p);
+      syncTiles();
+      buildRail();
+    };
+    const fixedAreas = [["sidebar", "\u5217\u8868\u4F4D"], ["session", "\u4F1A\u8BDD\u4F4D"]];
+    fixedAreas.forEach(([area, label]) => {
+      const list = groupState.plugins.filter((p) => (p.slotDef || {}).area === area && !!p.entry);
+      if (!list.length) return;
+      menuSection(menu, label);
+      list.forEach((p) => menu.appendChild(menuItem(p, pluginVisible(p), () => toggle(p))));
+    });
+    const panels = panelPlugins();
+    if (panels.length) {
+      menuSection(menu, "\u9762\u677F");
+      panels.forEach((p) => menu.appendChild(menuItem(p, pluginVisible(p), () => toggle(p))));
+    }
+    HOST.document.body.appendChild(menu);
+    const r = anchor.getBoundingClientRect();
+    const left = Math.max(8, r.left - menu.offsetWidth - 8);
+    menu.style.left = left + "px";
+    menu.style.right = "auto";
+    menu.style.top = Math.max(8, Math.min(r.top, HOST.innerHeight - menu.offsetHeight - 8)) + "px";
+    syncNativeCover();
+  }
+  function applyOrder() {
+    const order = layoutState.order;
+    const rank = (k) => {
+      const i = order.indexOf(k);
+      return i < 0 ? order.length : i;
+    };
+    Object.keys(tileEls).forEach((k) => {
+      tileEls[k].style.order = String(rank(k));
+    });
+    if (addEl) addEl.style.order = "99999";
+  }
+  function syncTiles() {
+    if (!tileMode()) {
+      teardownTiles();
+      return;
+    }
+    const strip = ensureStrip();
+    const panels = panelPlugins();
+    const hasSavedTabs = Object.prototype.hasOwnProperty.call(activeBySlot, "__panelTabs__");
+    if (!panelTabs.length && !hasSavedTabs && panels.length) {
+      const legacy = panels.find((p) => p.id === activeBySlot["panel"]);
+      panelTabs.push((legacy || panels[0]).id);
+    }
+    const validPanels = panels.filter(
+      (p) => panelTabs.indexOf(p.id) >= 0 && !railHidden(p.id)
+    );
+    syncFixedTile(strip, LAYOUT_KEY_SIDEBAR, "sidebar");
+    syncFixedTile(strip, LAYOUT_KEY_SESSION, "session");
+    validPanels.forEach((p) => {
+      const key = panelWindowKey(p.id);
+      let tile = tileEls[key];
+      if (!tile) {
+        tile = makeTile(key);
+        strip.appendChild(tile);
+        tileEls[key] = tile;
+      }
+      const body = tileBody(tile);
+      if (!tileFrames[p.id]) tileFrames[p.id] = mountFrame(body, p);
+      tile.style.display = "";
+    });
+    Object.keys(tileEls).forEach((key) => {
+      if (key.indexOf("panel:") !== 0) return;
+      const id = key.slice("panel:".length);
+      if (validPanels.some((p) => p.id === id)) return;
+      notifyUnmount(tileEls[key]);
+      tileEls[key].remove();
+      delete tileEls[key];
+      delete tileFrames[id];
+    });
+    frames["panel"] = validPanels.map((p) => tileFrames[p.id]).filter(Boolean);
+    ensureAddTile(strip);
+    const visible = [LAYOUT_KEY_SIDEBAR].concat(validPanels.map((p) => panelWindowKey(p.id))).concat([LAYOUT_KEY_SESSION]);
+    const orderBefore = layoutState.order.join("\0");
+    ensureOrder(visible);
+    applyOrder();
+    if (orderBefore !== layoutState.order.join("\0")) persistLayout();
+    Object.keys(tileEls).forEach((k) => {
+      tileEls[k].style.width = windowWidth(k) + "px";
+    });
+    broadcastLayout();
+    syncNativeCover();
+  }
+  function scrollTileIntoView(key) {
+    const tile = tileEls[key];
+    if (!tile || !stripEl) return;
+    const left = tile.offsetLeft;
+    const right = left + tile.offsetWidth;
+    if (left < stripEl.scrollLeft) stripEl.scrollLeft = left - 8;
+    else if (right > stripEl.scrollLeft + stripEl.clientWidth) {
+      stripEl.scrollLeft = right - stripEl.clientWidth + 8;
+    }
+  }
+  function teardownTiles() {
+    if (stripEl) {
+      Object.keys(fixedAnchors).forEach((slot) => {
+        const rec = fixedAnchors[slot];
+        if (rec.el.parentNode && rec.parent) {
+          if (rec.next && rec.next.parentNode === rec.parent) rec.parent.insertBefore(rec.el, rec.next);
+          else rec.parent.appendChild(rec.el);
+        }
+        delete fixedAnchors[slot];
+      });
+      notifyUnmount(stripEl);
+      stripEl.remove();
+    }
+    stripEl = null;
+    addEl = null;
+    Object.keys(tileEls).forEach((k) => delete tileEls[k]);
+    Object.keys(tileFrames).forEach((k) => delete tileFrames[k]);
+    delete frames["panel"];
+    setShiftMode(false);
+  }
+
+  // ui/web-minimal/src/host/mount.ts
+  function syncPluginBackend(id, action) {
+    if (!id) return;
+    try {
+      fetch("/api/webmin/plugin-backend/" + encodeURIComponent(id) + "/" + action, {
+        method: "POST",
+        cache: "no-store"
+      }).catch(function() {
+      });
+    } catch (_) {
+    }
+  }
+  function notifyUnmount(rootEl) {
+    if (!rootEl || !rootEl.querySelectorAll) return;
+    rootEl.querySelectorAll("iframe").forEach(function(f) {
+      try {
+        if (f.contentWindow) f.contentWindow.postMessage({ type: "event", event: "host.unmount", data: {} }, "*");
+      } catch (_) {
+      }
+      if (f.dataset && f.dataset.backend === "1" && f.dataset.pid) {
+        syncPluginBackend(f.dataset.pid, "stop");
+      }
+    });
+  }
+  function mountFrame(el, p) {
+    notifyUnmount(el);
+    el.querySelectorAll("iframe").forEach((f) => f.remove());
+    el.querySelectorAll(".wm-fgrab, .wm-fresize").forEach((h) => h.remove());
+    if (!p || !p.entry) return null;
+    const iframe = document.createElement("iframe");
+    iframe.setAttribute("tabindex", "-1");
+    iframe.src = `/api/webmin/plugin/${encodeURIComponent(p.id)}/${p.entry.split("/").map(encodeURIComponent).join("/")}`;
+    iframe.title = p.name || p.id;
+    iframe.dataset.pid = p.id;
+    if (p.backend) {
+      iframe.dataset.backend = "1";
+      syncPluginBackend(p.id, "start");
+    }
+    el.appendChild(iframe);
+    iframe.addEventListener("load", function bridgeShift() {
+      try {
+        const cw = iframe.contentWindow;
+        if (!cw) return;
+        cw.addEventListener("keydown", (ev) => {
+          if (ev.key === "Shift") setShiftMode(true);
+        }, true);
+        cw.addEventListener("keyup", (ev) => {
+          if (ev.key === "Shift") setShiftMode(false);
+        }, true);
+      } catch (_) {
+      }
+    });
+    slotByPluginId[p.id] = p.slot;
+    frameByPluginId[p.id] = iframe;
+    const rec = { iframe, pluginId: p.id, el, loaded: false };
+    iframe.addEventListener("load", function onLoad() {
+      rec.loaded = true;
+      applyConfigTo(p.id);
+      if (groupState.activeSessionId) {
+        try {
+          const cw = iframe.contentWindow;
+          if (cw) {
+            cw.postMessage(
+              { type: "event", event: "session.switched", data: { session_id: groupState.activeSessionId } },
+              "*"
+            );
+          }
+        } catch (_) {
+        }
+      }
+      try {
+        const cw = iframe.contentWindow;
+        if (cw) {
+          cw.postMessage(
+            { type: "event", event: "branch.switched", data: { branch_id: groupState.activeBranchId || "main" } },
+            "*"
+          );
+        }
+      } catch (_) {
+      }
+      try {
+        const cw = iframe.contentWindow;
+        if (cw) {
+          cw.postMessage(
+            { type: "event", event: "host.nativeCover", data: { covered: nativeCoverActive() } },
+            "*"
+          );
+        }
+      } catch (_) {
+      }
+      deliverPendingBrowserUrl();
+      iframe.removeEventListener("load", onLoad);
+    });
+    return rec;
+  }
+  function buildSlotIndex() {
+    Object.keys(frames).forEach((k) => {
+      (frames[k] || []).forEach((f) => {
+        if (f.el && f.el.parentNode && !f.el.hasAttribute("data-layer")) {
+          notifyUnmount(f.el);
+          f.el.remove();
+        }
+      });
+    });
+    Object.keys(slotMap).forEach((k) => delete slotMap[k]);
+    Object.keys(pluginBySlot).forEach((k) => delete pluginBySlot[k]);
+    Object.keys(slotByPluginId).forEach((k) => delete slotByPluginId[k]);
+    Object.keys(frameByPluginId).forEach((k) => delete frameByPluginId[k]);
+    Object.keys(frames).forEach((k) => delete frames[k]);
+    groupState.plugins.forEach((p) => {
+      const s = p.slot;
+      if (!s) return;
+      (slotMap[s] = slotMap[s] || []).push(p);
+      slotByPluginId[p.id] = s;
+    });
+  }
+  function refreshFixedSlot(slot) {
+    if (slot === "panel-container" && tileMode()) {
+      if (frames[slot]) {
+        frames[slot].forEach((f) => {
+          if (f.iframe && f.iframe.parentNode) f.iframe.parentNode.removeChild(f.iframe);
+        });
+        frames[slot] = [];
+      }
+      delete pluginBySlot[slot];
+      const anchor2 = HOST.document.querySelector(`[data-slot="${slot}"]`);
+      if (anchor2) {
+        anchor2.innerHTML = "";
+        anchor2.style.display = "none";
+      }
+      return;
+    }
+    const list = slotMap[slot] || [];
+    const visible = list.filter((x) => !railHidden(x.id));
+    const chosen = visible.find((x) => x.id === activeBySlot[slot]) || visible[0] || null;
+    if (frames[slot]) {
+      frames[slot].forEach((f) => {
+        if (f.iframe && f.iframe.parentNode) f.iframe.parentNode.removeChild(f.iframe);
+      });
+      frames[slot] = [];
+    }
+    if (!chosen) {
+      delete pluginBySlot[slot];
+      applySlotHidden(slot, true);
+      if (slot === "panel-container") syncPanelContainer();
+      return;
+    }
+    pluginBySlot[slot] = chosen;
+    if (chosen.id === PANEL_CONTAINER_ID) {
+      const anchor2 = HOST.document.querySelector(`[data-slot="${slot}"]`);
+      if (anchor2) anchor2.innerHTML = "";
+      syncPanelContainer();
+      return;
+    }
+    const anchor = HOST.document.querySelector(`[data-slot="${slot}"]`);
+    if (anchor) {
+      anchor.innerHTML = "";
+      const fr = mountFrame(anchor, chosen);
+      if (fr) frames[slot] = [fr];
+    }
+    applySlotHidden(slot, false);
+    if (slot === "panel-container") syncPanelContainer();
+  }
+  function syncPanelContainer() {
+    mountPanels();
+    reconcilePanels();
+    applySlotHidden("panel", !panelContainerVisible());
+  }
+  function mountAll() {
+    Object.keys(slotMap).forEach((sid) => {
+      const list = slotMap[sid];
+      const def = list[0].slotDef || {};
+      if (def.type !== "fixed") return;
+      refreshFixedSlot(sid);
+    });
+    mountPanels();
+    Object.keys(slotMap).forEach((sid) => {
+      const list = slotMap[sid];
+      const def = list[0].slotDef || {};
+      if (def.type !== "float") return;
+      pluginBySlot[sid] = list[0];
+      frames[sid] = [];
+      list.forEach((p, i) => {
+        const el = HOST.document.createElement("div");
+        el.className = "wm-float wm-mount";
+        el.dataset.fslot = sid;
+        el.dataset.finst = String(i);
+        el.style.top = 46 + i * 26 + "px";
+        el.style.left = `calc(100% - ${300 + i * 26}px - 16px)`;
+        applyFloatSize(el, def.size, i);
+        HOST.document.body.appendChild(el);
+        if (def.center) centerFloat(el);
+        slotByPluginId[p.id] = sid;
+        const fr = mountFrame(el, p);
+        if (fr) frames[sid].push(fr);
+        attachFloatHandles(el);
+      });
+    });
+    Object.keys(slotMap).forEach((sid) => {
+      const list = slotMap[sid];
+      const def = list[0].slotDef || {};
+      if (def.type !== "modal") return;
+      pluginBySlot[sid] = list[0];
+      frames[sid] = [];
+      list.forEach((p) => {
+        const wrap = HOST.document.createElement("div");
+        wrap.className = "wm-modal-wrap wm-mount";
+        wrap.dataset.mslot = sid;
+        const box = HOST.document.createElement("div");
+        box.className = "wm-modal";
+        applyModalSize(box, def.size);
+        wrap.appendChild(box);
+        HOST.document.body.appendChild(wrap);
+        slotByPluginId[p.id] = sid;
+        const fr = mountFrame(box, p);
+        if (fr) {
+          fr.el = wrap;
+          frames[sid].push(fr);
+        }
+      });
+    });
+    reconcilePanels();
+    if (tileMode()) syncTiles();
+    else teardownTiles();
+  }
+  function remountLayout2() {
+    buildSlotIndex();
+    mountAll();
+    applyPersistedHidden();
+    buildRail();
+    applyPanelContainerCfg();
+    if (tileMode()) syncTiles();
+    else teardownTiles();
+    broadcastAll("host.layoutChanged", { mode: layoutState.mode });
+  }
+  bindRemountLayout(remountLayout2);
+
+  // ui/web-minimal/src/host/panel.ts
+  var panelBar = null;
+  var panelState = null;
+  var panelTabs = [];
+  var PANEL_MIN_W = 260;
+  var panelContainerCfg = { opacity: 0.9 };
+  var panelSavedWidth = null;
+  var panelDesiredWidth3 = null;
+  function setPanelSavedWidth(v) {
+    panelSavedWidth = v;
+  }
+  function setPanelDesiredWidth(v) {
+    panelDesiredWidth3 = v;
+  }
+  var panelShellTpl = null;
+  async function loadPanelShell() {
+    if (panelShellTpl) return;
+    try {
+      const res = await fetch("/api/webmin/plugin/" + encodeURIComponent(PANEL_CONTAINER_ID) + "/index.html");
+      if (!res.ok) return;
+      const doc = new DOMParser().parseFromString(await res.text(), "text/html");
+      const src = doc.querySelector("style");
+      if (src) {
+        const el = HOST.document.createElement("style");
+        el.id = "wm-builtin-panel-style";
+        el.textContent = src.textContent;
+        const old = HOST.document.getElementById("wm-builtin-panel-style");
+        if (old) old.remove();
+        HOST.document.head.appendChild(el);
+      }
+      panelShellTpl = doc.body && doc.body.firstElementChild || null;
+    } catch (_) {
+    }
+  }
+  function applyPanelContainerCfg() {
+    const el = HOST.document.querySelector('.wm-ppanel[data-pslot="panel"]');
+    if (!el) return;
+    let o = Number(panelContainerCfg.opacity);
+    if (!(o >= 0)) o = 1;
+    o = Math.min(1, Math.max(0.15, o));
+    el.style.setProperty("--wm-panel-bg", "rgba(255,255,255," + o.toFixed(3) + ")");
+  }
+  function cssNum(name, dflt) {
+    const scope = HOST.document.body || HOST.document.documentElement;
+    const v = HOST.getComputedStyle(scope).getPropertyValue(name);
+    const n = parseFloat(v);
+    return n >= 0 ? n : dflt;
+  }
+  function panelLeftBase() {
+    const rail = cssNum("--wm-rail-w", 48);
+    const gap = cssNum("--wm-sidebar-gap", 8);
+    const side = cssNum("--wm-sidebar-w", 264);
+    const noSidebar = HOST.document.body.classList.contains("rail-nosidebar");
+    return noSidebar ? rail + gap : rail + gap + side + gap;
+  }
+  function slotEnabled(slot) {
+    const cur = pluginBySlot[slot];
+    if (!cur) return false;
+    return !railHidden(cur.id);
+  }
+  function sessionEnabled() {
+    return slotEnabled("session");
+  }
+  function maxPanelWidth() {
+    const gap = cssNum("--wm-sidebar-gap", 8);
+    let chat = sessionEnabled() ? cssNum("--wm-chat-w", 420) : 0;
+    return Math.max(PANEL_MIN_W, Math.floor(HOST.innerWidth - panelLeftBase() - gap - chat));
+  }
+  function panelMaxLimit() {
+    const gap = cssNum("--wm-sidebar-gap", 8);
+    const chatMin = sessionEnabled() ? cssNum("--wm-chat-min-w", 360) : 0;
+    return Math.floor(HOST.innerWidth - panelLeftBase() - gap - chatMin);
+  }
+  function applyPanelWidth() {
+    if (!hasPanelsDef()) return;
+    const gap = cssNum("--wm-sidebar-gap", 8);
+    let limit = panelMaxLimit();
+    const el = HOST.document.querySelector('.wm-ppanel[data-pslot="panel"]') || HOST.document.querySelector('[data-slot="panel-container"] > iframe');
+    if (el) {
+      const left = el.getBoundingClientRect().left;
+      if (isFinite(left)) limit = Math.min(limit, Math.floor(HOST.innerWidth - left - gap));
+    }
+    let raw = panelDesiredWidth3 != null ? panelDesiredWidth3 : maxPanelWidth();
+    if (!isFinite(raw)) raw = maxPanelWidth();
+    if (!isFinite(limit)) return;
+    let w = Math.max(PANEL_MIN_W, raw);
+    w = limit < PANEL_MIN_W ? Math.max(0, limit) : Math.min(w, limit);
+    HOST.document.documentElement.style.setProperty("--wm-panel-w", Math.round(w) + "px");
+  }
+  function setContainerHidden(hidden) {
+    if (!railState.hidden) railState.hidden = {};
+    const list = slotMap["panel-container"] || [];
+    if (hidden) {
+      list.forEach((p) => {
+        railState.hidden[p.id] = true;
+      });
+      closePanelMenus();
+    } else {
+      list.forEach((p) => {
+        if (p.id !== PANEL_CONTAINER_ID) railState.hidden[p.id] = true;
+      });
+      delete railState.hidden[PANEL_CONTAINER_ID];
+      activeBySlot["panel-container"] = PANEL_CONTAINER_ID;
+    }
+    refreshFixedSlot("panel-container");
+    refreshAreaRail("panel-container");
+    buildRail();
+    persistActive2();
+    persistRail().catch(() => {
+    });
+  }
+  function hasPanelsDef() {
+    if (tileMode()) return false;
+    if ((slotMap["panel-container"] || []).length) return true;
+    return Object.keys(slotMap).some((sid) => (slotMap[sid][0].slotDef || {}).type === "panel");
+  }
+  function thirdPartyContainerPlugin() {
+    const cur = pluginBySlot["panel-container"];
+    return cur && cur.id !== PANEL_CONTAINER_ID ? cur : null;
+  }
+  function panelContainerVisible() {
+    if (tileMode()) return false;
+    return !!thirdPartyContainerPlugin() || !railHidden(PANEL_CONTAINER_ID);
+  }
+  function startPanelBarDrag(e) {
+    e.preventDefault();
+    const el = e.currentTarget;
+    const w0 = HOST.document.documentElement.style.getPropertyValue("--wm-panel-w");
+    const base = w0 ? parseFloat(w0) : panelDesiredWidth3 != null ? panelDesiredWidth3 : 420;
+    const sx0 = e.clientX;
+    HOST.document.body.classList.add("wm-panel-dragging");
+    const move = (ev) => {
+      panelDesiredWidth3 = Math.max(PANEL_MIN_W, base + (ev.clientX - sx0));
+      applyPanelWidth();
+    };
+    const up = () => {
+      HOST.document.body.classList.remove("wm-panel-dragging");
+      el.removeEventListener("pointermove", move);
+      el.removeEventListener("pointerup", up);
+      el.removeEventListener("pointercancel", up);
+      try {
+        el.releasePointerCapture(e.pointerId);
+      } catch (_) {
+      }
+    };
+    try {
+      el.setPointerCapture(e.pointerId);
+    } catch (_) {
+    }
+    el.addEventListener("pointermove", move);
+    el.addEventListener("pointerup", up);
+    el.addEventListener("pointercancel", up);
+  }
+  function reconcilePanels() {
+    if (hasPanelsDef()) {
+      HOST.document.body.classList.add("has-panels");
+      applyPanelWidth();
+      if (!panelBar || !panelBar.isConnected) {
+        panelBar = HOST.document.createElement("div");
+        panelBar.className = "wm-pbar";
+        panelBar.title = "\u62D6\u52A8\u4EE5\u8C03\u6574\u4E2D\u680F\u5BBD\u5EA6";
+        panelBar.addEventListener("pointerdown", startPanelBarDrag);
+        HOST.document.body.appendChild(panelBar);
+      }
+    } else {
+      HOST.document.body.classList.remove("has-panels");
+      if (panelBar && panelBar.isConnected) panelBar.remove();
+    }
+  }
+  function closePanelMenus() {
+    HOST.document.querySelectorAll(".wm-pp_menu").forEach((m) => m.remove());
+    syncNativeCover();
+  }
+  function savePanelSel() {
+    activeBySlot["__panelTabs__"] = JSON.stringify(panelTabs);
+    return persistActive2();
+  }
+  function makePanelTab(st, id, p) {
+    const tab = HOST.document.createElement("div");
+    tab.className = "wm-pp_tab" + (id === st.activeId ? " active" : "");
+    tab.dataset.pid = id;
+    tab.title = p.name || p.id;
+    const g = HOST.document.createElement("span");
+    g.className = "wm-pp_tabico";
+    paintPluginIcon(g, p);
+    tab.appendChild(g);
+    const nm = HOST.document.createElement("span");
+    nm.className = "wm-pp_tabname";
+    nm.textContent = p.name || p.id;
+    tab.appendChild(nm);
+    const x = HOST.document.createElement("button");
+    x.className = "wm-pp_tabx";
+    x.textContent = "\u2715";
+    x.title = "\u5173\u95ED\u6807\u7B7E\u9875";
+    x.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      closePanelTab(id);
+    });
+    tab.appendChild(x);
+    tab.addEventListener("click", () => setActivePanelTab(st, id));
+    return tab;
+  }
+  function renderPanel(st) {
+    if (!st.head || !st.head.isConnected) {
+      if (!panelShellTpl) return;
+      const el = panelShellTpl.cloneNode(true);
+      el.dataset.pslot = "panel";
+      el.style.display = "flex";
+      HOST.document.body.appendChild(el);
+      st.el = el;
+      st.head = el.querySelector(".wm-pp_head");
+      st.strip = el.querySelector(".wm-pp_tabs");
+      st.addBtn = el.querySelector(".wm-pp_add");
+      paintIcon(st.addBtn, "plus", "+");
+      st.addBtn.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        openPanelAddMenu(st, st.addBtn);
+      });
+      st.closeBtn = el.querySelector(".wm-pp_drawer");
+      st.closeBtn.addEventListener("click", () => {
+        setContainerHidden(true);
+        closePanelMenus();
+      });
+      st.body = el.querySelector(".wm-pp_body");
+      st.emptyEl = el.querySelector(".wm-pp_empty");
+      st.views = {};
+      st.frames = {};
+    }
+    panelTabs = panelTabs.filter((id) => {
+      const rec = st.pluginsById[id];
+      return !!rec && (rec.p.slotDef || {}).type === "panel";
+    });
+    if (panelTabs.indexOf(st.activeId) < 0) st.activeId = panelTabs[0] || "";
+    st.strip.innerHTML = "";
+    panelTabs.forEach((id) => st.strip.appendChild(makePanelTab(st, id, st.pluginsById[id].p)));
+    panelTabs.forEach((id) => {
+      const old = st.views[id];
+      if (old && old.isConnected) return;
+      const v = HOST.document.createElement("div");
+      v.className = "wm-pp_view";
+      v.dataset.pid = id;
+      st.body.appendChild(v);
+      st.views[id] = v;
+      st.frames[id] = mountFrame(v, st.pluginsById[id].p);
+    });
+    Object.keys(st.views).forEach((id) => {
+      if (panelTabs.indexOf(id) >= 0) return;
+      notifyUnmount(st.views[id]);
+      st.views[id].remove();
+      delete st.views[id];
+      delete st.frames[id];
+    });
+    if (panelTabs.length) {
+      if (st.emptyEl.parentNode) st.emptyEl.remove();
+    } else if (!st.emptyEl.parentNode) st.body.appendChild(st.emptyEl);
+    frames["panel"] = panelTabs.map((id) => st.frames[id]).filter(Boolean);
+    applyActivePanelTab(st);
+  }
+  function applyActivePanelTab(st) {
+    Object.keys(st.views).forEach((id) => {
+      st.views[id].style.display = id === st.activeId ? "flex" : "none";
+    });
+    st.strip.querySelectorAll(".wm-pp_tab").forEach((t) => {
+      const on = t.dataset.pid === st.activeId;
+      t.classList.toggle("active", on);
+      if (on && t.scrollIntoView) {
+        try {
+          t.scrollIntoView({ block: "nearest", inline: "nearest" });
+        } catch (_) {
+        }
+      }
+    });
+  }
+  function setActivePanelTab(st, id) {
+    if (st.activeId === id) return;
+    st.activeId = id;
+    activeBySlot["panel"] = id;
+    applyActivePanelTab(st);
+    savePanelSel();
+  }
+  function openPanelTab(id) {
+    if (tileMode()) {
+      const p = groupState.plugins.find((x) => x.id === id && (x.slotDef || {}).type === "panel");
+      if (!p) return;
+      if (panelTabs.indexOf(id) < 0) panelTabs.push(id);
+      if (railHidden(id)) {
+        if (!railState.hidden) railState.hidden = {};
+        delete railState.hidden[id];
+        persistRail().catch(() => {
+        });
+      }
+      activeBySlot["panel"] = id;
+      savePanelSel();
+      syncTiles();
+      scrollTileIntoView(panelWindowKey(id));
+      return;
+    }
+    const st = panelState;
+    if (!st || !st.pluginsById[id]) return;
+    const added = panelTabs.indexOf(id) < 0;
+    if (added) panelTabs.push(id);
+    st.activeId = id;
+    activeBySlot["panel"] = id;
+    if (added) renderPanel(st);
+    else applyActivePanelTab(st);
+    savePanelSel();
+    setContainerHidden(false);
+  }
+  function closePanelTab(id) {
+    if (tileMode()) {
+      const at = panelTabs.indexOf(id);
+      if (at < 0) return;
+      panelTabs.splice(at, 1);
+      activeBySlot["panel"] = panelTabs[at] || panelTabs[at - 1] || "__none__";
+      savePanelSel();
+      syncTiles();
+      return;
+    }
+    const st = panelState;
+    if (!st) return;
+    const i = panelTabs.indexOf(id);
+    if (i < 0) return;
+    panelTabs.splice(i, 1);
+    if (st.activeId === id) st.activeId = panelTabs[i] || panelTabs[i - 1] || "";
+    activeBySlot["panel"] = st.activeId || "__none__";
+    renderPanel(st);
+    savePanelSel();
+  }
+  function openPanelAddMenu(st, anchor) {
+    const wasOpen = HOST.document.getElementById("ppmenu-" + st.area);
+    closePanelMenus();
+    if (wasOpen) return;
+    const menu = HOST.document.createElement("div");
+    menu.className = "wm-pp_menu";
+    menu.id = "ppmenu-" + st.area;
+    st.plugins.forEach(({ p }) => {
+      const isOpen = panelTabs.indexOf(p.id) >= 0;
+      const item = HOST.document.createElement("div");
+      item.className = "wm-pp_menu-item" + (isOpen ? " active" : "");
+      const g = HOST.document.createElement("span");
+      g.className = "wm-pp_menu-ico";
+      paintPluginIcon(g, p);
+      item.appendChild(g);
+      const nm = HOST.document.createElement("span");
+      nm.textContent = p.name || p.id;
+      item.appendChild(nm);
+      if (isOpen) {
+        const tag = HOST.document.createElement("span");
+        tag.className = "wm-pp_menu-tag";
+        tag.textContent = "\u5DF2\u6253\u5F00";
+        item.appendChild(tag);
+      }
+      item.addEventListener("click", () => {
+        openPanelTab(p.id);
+        closePanelMenus();
+      });
+      menu.appendChild(item);
+    });
+    HOST.document.body.appendChild(menu);
+    const r = anchor.getBoundingClientRect();
+    const left = Math.min(r.right - menu.offsetWidth, HOST.innerWidth - menu.offsetWidth - 8);
+    menu.style.right = "auto";
+    menu.style.left = Math.max(8, left) + "px";
+    menu.style.top = r.bottom + 4 + "px";
+    syncNativeCover();
+  }
+  function mountPanels() {
+    if (tileMode()) {
+      if (panelState && panelState.el && panelState.el.parentNode) {
+        notifyUnmount(panelState.el);
+        panelState.el.remove();
+      }
+      panelState = null;
+      closePanelMenus();
+      return;
+    }
+    if (thirdPartyContainerPlugin()) {
+      if (panelState && panelState.el && panelState.el.parentNode) {
+        notifyUnmount(panelState.el);
+        panelState.el.remove();
+      }
+      panelState = null;
+      closePanelMenus();
+      return;
+    }
+    const byArea = { panel: [] };
+    Object.keys(slotMap).forEach((sid) => {
+      const list = slotMap[sid];
+      const def = list[0].slotDef || {};
+      if (def.type === "panel") {
+        byArea.panel.push(...list.map((p) => ({ p, def })));
+      }
+    });
+    if (!byArea.panel.length) {
+      if (panelState && panelState.el && panelState.el.parentNode) {
+        notifyUnmount(panelState.el);
+        panelState.el.remove();
+      }
+      panelState = null;
+      closePanelMenus();
+      return;
+    }
+    const byId = {};
+    byArea.panel.forEach((x) => {
+      byId[x.p.id] = x;
+    });
+    const valid = (id) => !!byId[id];
+    const hasSavedTabs = Object.prototype.hasOwnProperty.call(activeBySlot, "__panelTabs__");
+    let st = panelState;
+    if (!st) {
+      panelTabs = panelTabs.filter(valid);
+      if (!panelTabs.length && !hasSavedTabs) {
+        const legacy = activeBySlot["panel"];
+        panelTabs = legacy && legacy !== "__none__" && valid(legacy) ? [legacy] : [byArea.panel[0].p.id];
+      }
+      st = panelState = { plugins: byArea.panel, pluginsById: byId, activeId: "", area: "panel", el: null, views: {}, frames: {} };
+    } else {
+      st.plugins = byArea.panel;
+      st.pluginsById = byId;
+      panelTabs = panelTabs.filter(valid);
+      if (!panelTabs.length && !hasSavedTabs) panelTabs = [byArea.panel[0].p.id];
+    }
+    const saved = activeBySlot["panel"];
+    st.activeId = saved && saved !== "__none__" && panelTabs.indexOf(saved) >= 0 ? saved : panelTabs[0] || "";
+    renderPanel(st);
+    activeBySlot["panel"] = st.activeId;
+    activeBySlot["__panelTabs__"] = JSON.stringify(panelTabs);
+    closePanelMenus();
+  }
+
+  // ui/web-minimal/src/host/links.ts
+  var pendingBrowserUrl = null;
+  function browserPanel() {
+    const st = panelState;
+    if (st) return st.plugins.find((x) => (x.p || {}).openUrl) || null;
+    if (!tileMode()) return null;
+    const p = groupState.plugins.find((x) => (x.slotDef || {}).type === "panel" && x.openUrl);
+    return p ? { p } : null;
+  }
+  function deliverPendingBrowserUrl() {
+    if (!pendingBrowserUrl) return;
+    const hit = browserPanel();
+    if (!hit) return;
+    const st = panelState;
+    const inTile = !st && tileMode();
+    if (!inTile && (!st || st.activeId !== hit.p.id)) return;
+    const fr = inTile ? (frames["panel"] || []).find((f) => f.pluginId === hit.p.id) : st && st.frames && st.frames[hit.p.id];
+    if (!fr || !fr.loaded) return;
+    const url = pendingBrowserUrl;
+    pendingBrowserUrl = null;
+    broadcast(inTile ? "panel" : hit.p.slot, "browser.openUrl", { url });
+  }
+  function openUrlInBrowserPanel(url) {
+    const u = String(url || "").trim();
+    if (/^purrcat:\/\//i.test(u)) {
+      const tid = (/^purrcat:\/\/task\/([^/]+)\/node\//i.exec(u) || [])[1];
+      const art = "/api/tasks/" + encodeURIComponent(tid || "_unknown") + "/artifact?uri=" + encodeURIComponent(u);
+      return openUrlInBrowserPanel(new URL(art, location.origin).href);
+    }
+    const pc = HOST.purrcat;
+    const hit = browserPanel();
+    const hostCont = hit || tileMode() ? null : thirdPartyContainerPlugin();
+    if (!/^https?:\/\//i.test(u) || !hit && !hostCont || !pc || !pc.browserNewTab) {
+      if (pc && pc.openExternal && u) pc.openExternal(u);
+      return { status: "external" };
+    }
+    if (hostCont) {
+      broadcast("panel-container", "browser.openUrl", { url: u });
+      return { status: "ok" };
+    }
+    openPanelTab(hit.p.id);
+    pendingBrowserUrl = u;
+    deliverPendingBrowserUrl();
+    return { status: "ok" };
   }
 
   // ui/web-minimal/src/host/actions.ts
@@ -4143,6 +4797,7 @@
     groupState.plugins.forEach((p) => {
       const def = p.slotDef || {};
       if (def.type === "panel" || !def.area) return;
+      if (tileMode() && def.area === "panel-container") return;
       if (areas.indexOf(def.area) < 0) areas.push(def.area);
     });
     const rank = (a) => {
@@ -4175,6 +4830,7 @@
       if ((p.slotDef || {}).type !== "fixed") applySlotHidden(p.slot, true);
     });
     if (slotMap[area]) refreshFixedSlot(area);
+    if (tileMode()) syncTiles();
     persistRail().catch(() => {
     });
     syncNativeCover();
@@ -4323,7 +4979,7 @@
       if (!res.ok) throw new Error(String(res.status));
     });
   }
-  function persistActive() {
+  function persistActive2() {
     return fetch("/api/webmin/config", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -4344,6 +5000,7 @@
       applySlotHidden(slot, true);
     });
     applySlotHidden("panel", !panelContainerVisible());
+    if (tileMode()) syncTiles();
   }
   function applyRailStage() {
     HOST.document.body.classList.remove("rail-0", "rail-1");
@@ -4382,6 +5039,7 @@
       if (p && (p.slotDef || {}).type === "fixed") refreshFixedSlot(slot);
       else applySlotHidden(slot, hidden);
     }
+    if (tileMode()) syncTiles();
     persistRail().catch(() => {
     });
   }

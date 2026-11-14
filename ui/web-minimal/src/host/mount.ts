@@ -1,12 +1,14 @@
 // iframe 实例挂载、槽集合建立与全量重挂载
 import { PANEL_CONTAINER_ID } from './areas.js';
-import { nativeCoverActive } from './bus.js';
+import { broadcastAll, nativeCoverActive } from './bus.js';
 import { applyConfigTo } from './config-apply.js';
 import { applyFloatSize, applyModalSize, attachFloatHandles, centerFloat } from './float.js';
+import { bindRemountLayout, layoutState, tileMode } from './layout.js';
 import { deliverPendingBrowserUrl } from './links.js';
 import { applyManifestState } from './manifest.js';
-import { mountPanels, panelContainerVisible, reconcilePanels } from './panel.js';
-import { applySlotHidden, railHidden } from './rail.js';
+import { applyPanelContainerCfg, mountPanels, panelContainerVisible, reconcilePanels } from './panel.js';
+import { applyPersistedHidden, applySlotHidden, buildRail, railHidden } from './rail.js';
+import { setShiftMode, syncTiles, teardownTiles } from './tile.js';
 import { HOST, activeBySlot, configByPlugin, frameByPluginId, frames, groupState, pluginBySlot, slotByPluginId, slotMap } from './state.js';
 import type { PluginDescriptor, PluginFrame } from './types.js';
 
@@ -50,6 +52,16 @@ import type { PluginDescriptor, PluginFrame } from './types.js';
       syncPluginBackend(p.id, 'start');
     }
     el.appendChild(iframe);
+    // 焦点在插件 iframe 内时宿主收不到 Shift 按键：把 Shift 状态桥接回宿主，
+    // 平铺模式据此显示窗口管理接收层。每次导航都是新的 contentWindow，重复挂载无副作用。
+    iframe.addEventListener('load', function bridgeShift() {
+      try {
+        const cw = iframe.contentWindow;
+        if (!cw) return;
+        cw.addEventListener('keydown', (ev: KeyboardEvent) => { if (ev.key === 'Shift') setShiftMode(true); }, true);
+        cw.addEventListener('keyup', (ev: KeyboardEvent) => { if (ev.key === 'Shift') setShiftMode(false); }, true);
+      } catch (_) { /* 跨域插件无法桥接，Shift 仅在宿主聚焦时生效 */ }
+    });
     // 注意：configByPlugin 的唯一初始化点是 applyManifestState（覆盖全部插件），
     // 这里不再覆写，避免用 boot 时的 manifest 旧值冲掉运行中的未保存编辑
     slotByPluginId[p.id] = p.slot as string;   // slot 已由后端归一化，entry 存在的插件必然带 slot
@@ -122,6 +134,17 @@ import type { PluginDescriptor, PluginFrame } from './types.js';
   // 否则取声明顺序第一个；全部被关闭时该区域不占位（隐藏锚点、让出宽度）。
   // 同区域天然互斥——任意时刻最多只有一个插件被挂载。
   export function refreshFixedSlot(slot: string): void {
+    // 平铺模式没有面板容器：该区域整体让位，面板插件由 tile.ts 各自成窗口
+    if (slot === 'panel-container' && tileMode()) {
+      if (frames[slot]) {
+        frames[slot].forEach((f) => { if (f.iframe && f.iframe.parentNode) f.iframe.parentNode.removeChild(f.iframe); });
+        frames[slot] = [];
+      }
+      delete pluginBySlot[slot];
+      const anchor = HOST.document.querySelector(`[data-slot="${slot}"]`) as HTMLElement | null;
+      if (anchor) { anchor.innerHTML = ''; anchor.style.display = 'none'; }
+      return;
+    }
     const list = slotMap[slot] || [];
     const visible = list.filter((x) => !railHidden(x.id));
     const chosen = visible.find((x) => x.id === activeBySlot[slot]) || visible[0] || null;
@@ -225,5 +248,19 @@ import type { PluginDescriptor, PluginFrame } from './types.js';
       });
     });
     reconcilePanels();
+    // 平铺模式：把列表位/会话位与面板插件装配成横向窗口条
+    if (tileMode()) syncTiles(); else teardownTiles();
   }
+
+  // 切换布局模式后重建界面（允许 iframe 重挂载），并通知插件同步原生视图
+  export function remountLayout(): void {
+    buildSlotIndex();
+    mountAll();
+    applyPersistedHidden();
+    buildRail();
+    applyPanelContainerCfg();
+    if (tileMode()) syncTiles(); else teardownTiles();
+    broadcastAll('host.layoutChanged', { mode: layoutState.mode });
+  }
+  bindRemountLayout(remountLayout);
 

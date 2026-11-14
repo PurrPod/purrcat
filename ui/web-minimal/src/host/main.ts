@@ -11,6 +11,7 @@
    ============================================================ */
 
 import { HOST } from './state.js';
+import './layout.js';
 import './icons.js';
 import './rail.js';
 import './areas.js';
@@ -26,6 +27,7 @@ import './actions.js';
 import './bus.js';
 import './float.js';
 import './panel.js';
+import './tile.js';
 import './links.js';
 import './mount.js';
 import './manifest.js';

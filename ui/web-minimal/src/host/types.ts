@@ -94,12 +94,19 @@ export interface PanelContainerStored {
   [key: string]: unknown;
 }
 
+export interface WebminLayout {
+  mode?: 'container' | 'tile';
+  order?: string[];
+  widths?: Record<string, number>;
+}
+
 export interface WebminManifest {
   plugins: PluginDescriptor[];
   shared?: Record<string, SharedRuntime>;
   rail?: RailState;
   panelContainer?: PanelContainerStored;
   active?: Record<string, string>;
+  layout?: WebminLayout;
 }
 
 /** iframe 实例：slot -> [ { iframe, pluginId, el } ] */
