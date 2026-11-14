@@ -12,10 +12,20 @@ import { configByPlugin, frameByPluginId, frames, groupState } from './state.js'
     if (!res.ok) throw new Error(await res.text());
   }
   export function applyConfigTo(pid: string) {
-    const iframe = frameByPluginId[pid];
-    if (iframe && iframe.contentWindow) {
-      iframe.contentWindow.postMessage({ type: 'configApply', config: configByPlugin[pid] || {} }, '*');
-    }
+    const data = { type: 'configApply', config: configByPlugin[pid] || {} };
+    const sent: HTMLIFrameElement[] = [];
+    const send = (iframe: HTMLIFrameElement | null | undefined) => {
+      if (!iframe || sent.indexOf(iframe) >= 0) return;
+      sent.push(iframe);
+      try {
+        if (iframe.contentWindow) iframe.contentWindow.postMessage(data, '*');
+      } catch (_) { /* noop */ }
+    };
+    // 同一插件可能同时存在于多行（平铺模式）：配置要下发给全部实例
+    Object.keys(frames).forEach((slot) => {
+      (frames[slot] || []).forEach((f) => { if (f.pluginId === pid) send(f.iframe); });
+    });
+    send(frameByPluginId[pid]);
   }
   // 兼容：frames 用对象，保留原访问方式（值为该 slot 的实例数组）
   export function slots(s: string) { return frames[s]; }

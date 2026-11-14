@@ -245,6 +245,7 @@ body.settings-open [data-layer="topbar"] { background: var(--wm-bg-base); }
 body.settings-open [data-layer="sidebar"],
 body.settings-open .wm-main,
 body.settings-open .wm-tiles,
+body.settings-open .wm-row-nav,
 body.settings-open .wm-ppanel,
 body.settings-open [data-slot="panel-container"] > iframe,
 body.settings-open .wm-pbar,
@@ -816,7 +817,7 @@ body.layout-tile [data-slot="panel-container"] { display: none !important; }
   left: calc(var(--wm-rail-w) + var(--wm-sidebar-gap));
   right: 0;
   bottom: var(--wm-sidebar-inset);
-  display: flex;
+  display: none;
   align-items: stretch;
   gap: var(--wm-sidebar-gap);
   padding-right: var(--wm-sidebar-gap);
@@ -826,6 +827,34 @@ body.layout-tile [data-slot="panel-container"] { display: none !important; }
   scrollbar-width: thin;
   scrollbar-color: var(--wm-border) transparent;
 }
+.wm-tiles.active { display: flex; }
+/* 行切换：挂在顶部细条左侧（只在平铺模式存在），图标按钮无边框 */
+.wm-row-nav {
+  position: absolute;
+  top: 0;
+  left: calc(var(--wm-rail-w) + var(--wm-sidebar-gap) + 12px);
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  pointer-events: auto;          /* 顶栏整体 pointer-events:none */
+  -webkit-app-region: no-drag;   /* 顶栏整体是窗口拖拽区，按钮需可点击 */
+}
+.wm-row-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--wm-label-dim);
+  cursor: pointer;
+}
+.wm-row-btn:hover:not(:disabled) { color: var(--wm-label); }
+.wm-row-btn:disabled { opacity: 0.3; cursor: default; }
+.wm-row-btn svg { width: 15px; height: 15px; }
 .wm-tiles::-webkit-scrollbar { height: 8px; }
 .wm-tiles::-webkit-scrollbar-thumb { background: var(--wm-border); border-radius: 999px; }
 .wm-tile {

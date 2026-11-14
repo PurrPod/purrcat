@@ -198,10 +198,22 @@ def test_sanitize_layout_accepts_only_container_or_tile():
 def test_sanitize_layout_dedupes_order_and_drops_empty():
     """SPEC-024 AC-1：窗口顺序去重、去空串，保留给定先后关系。"""
     raw = {
-        "order": ["slot:sidebar", "panel:a", "panel:a", " ", 3, None, "slot:session"]
+        "rows": [
+            {
+                "order": [
+                    "slot:sidebar",
+                    "panel:a",
+                    "panel:a",
+                    " ",
+                    3,
+                    None,
+                    "slot:session",
+                ]
+            }
+        ]
     }
 
-    assert webmin_manifest.sanitize_layout(raw)["order"] == [
+    assert webmin_manifest.sanitize_layout(raw)["rows"][0]["order"] == [
         "slot:sidebar",
         "panel:a",
         "slot:session",
@@ -211,20 +223,76 @@ def test_sanitize_layout_dedupes_order_and_drops_empty():
 def test_sanitize_layout_clamps_widths():
     """SPEC-024 AC-1：窗口宽度夹紧到 [260, 4000] 的整数。"""
     raw = {
-        "widths": {
-            "slot:sidebar": "100",
-            "panel:a": 480.4,
-            "slot:session": 9999,
-            "bad": "x",
-            "": 300,
-        }
+        "rows": [
+            {
+                "widths": {
+                    "slot:sidebar": "100",
+                    "panel:a": 480.4,
+                    "slot:session": 9999,
+                    "bad": "x",
+                    "": 300,
+                }
+            }
+        ]
     }
 
-    assert webmin_manifest.sanitize_layout(raw)["widths"] == {
+    assert webmin_manifest.sanitize_layout(raw)["rows"][0]["widths"] == {
         "slot:sidebar": 260,
         "panel:a": 480,
         "slot:session": 4000,
     }
+
+
+def test_sanitize_layout_migrates_legacy_order_and_widths():
+    """SPEC-024 AC-2：旧版顶层 order/widths 迁入第一行，构成单行布局。"""
+    result = webmin_manifest.sanitize_layout(
+        {
+            "mode": "tile",
+            "order": ["slot:sidebar", "panel:a"],
+            "widths": {"panel:a": 520},
+        }
+    )
+
+    assert result == {
+        "mode": "tile",
+        "activeRow": 0,
+        "rows": [{"order": ["slot:sidebar", "panel:a"], "widths": {"panel:a": 520}}],
+    }
+
+
+def test_sanitize_layout_keeps_rows_and_clamps_active_row():
+    """SPEC-024 AC-2：多行顺序/宽度各自保留，activeRow 夹到合法下标。"""
+    raw = {
+        "mode": "tile",
+        "activeRow": 9,
+        "rows": [
+            {"order": ["slot:session"], "widths": {"slot:session": 420}},
+            {"order": ["panel:a", "panel:b"], "widths": {"panel:a": 600}},
+        ],
+    }
+
+    result = webmin_manifest.sanitize_layout(raw)
+
+    assert result["activeRow"] == 1
+    assert [row["order"] for row in result["rows"]] == [
+        ["slot:session"],
+        ["panel:a", "panel:b"],
+    ]
+    assert result["rows"][1]["widths"] == {"panel:a": 600}
+
+
+def test_sanitize_layout_defaults_to_one_empty_row():
+    """SPEC-024 AC-2：无配置时至少保留一行，非法行内容回落为空。"""
+    assert webmin_manifest.sanitize_layout({}) == {
+        "mode": "container",
+        "activeRow": 0,
+        "rows": [{"order": [], "widths": {}}],
+    }
+    result = webmin_manifest.sanitize_layout(
+        {"rows": [None, "bad", {}], "activeRow": "x"}
+    )
+    assert result["activeRow"] == 0
+    assert result["rows"] == [{"order": [], "widths": {}}]
 
 
 def test_plugin_origin_and_builtin_root(tmp_path):

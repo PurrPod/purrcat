@@ -2,7 +2,7 @@
 import { PANEL_CONTAINER_ID, refreshAreaRail } from './areas.js';
 import { syncNativeCover } from './bus.js';
 import { paintIcon, paintPluginIcon } from './icons.js';
-import { panelWindowKey, tileMode } from './layout.js';
+import { addKeyToRow, activeRow, isPanelKey, layoutState, panelIdFromKey, panelWindowKey, removeKeyFromRow, tileMode } from './layout.js';
 import { buildSlotIndex, mountFrame, notifyUnmount, refreshFixedSlot } from './mount.js';
 import { buildRail, persistActive, persistRail, railHidden } from './rail.js';
 import { HOST, activeBySlot, frames, groupState, pluginBySlot, railState, slotMap } from './state.js';
@@ -335,16 +335,16 @@ import type { PluginDescriptor, PluginFrame, SlotDef } from './types.js';
     if (tileMode()) {
       const p = groupState.plugins.find((x) => x.id === id && (x.slotDef || {}).type === 'panel');
       if (!p) return;
-      if (panelTabs.indexOf(id) < 0) panelTabs.push(id);
       // 曾被白条/设置关闭过的插件：重新打开时清掉隐藏标记，窗口才会真正出现
       if (railHidden(id)) {
         if (!railState.hidden) railState.hidden = {};
         delete railState.hidden[id];
         persistRail().catch(() => {});
       }
+      addKeyToRow(activeRow(), panelWindowKey(id));
       activeBySlot['panel'] = id;
-      savePanelSel();
       syncTiles();
+      savePanelSel();
       scrollTileIntoView(panelWindowKey(id));
       return;
     }
@@ -361,12 +361,10 @@ import type { PluginDescriptor, PluginFrame, SlotDef } from './types.js';
   // 关闭某标签页：优先激活右邻、其次左邻；空则回到空态
   export function closePanelTab(id: string): void {
     if (tileMode()) {
-      const at = panelTabs.indexOf(id);
-      if (at < 0) return;
-      panelTabs.splice(at, 1);
-      activeBySlot['panel'] = panelTabs[at] || panelTabs[at - 1] || '__none__';
-      savePanelSel();
+      if (!removeKeyFromRow(activeRow(), panelWindowKey(id))) return;
+      activeBySlot['panel'] = id;
       syncTiles();
+      savePanelSel();
       return;
     }
     const st = panelState;
@@ -378,6 +376,17 @@ import type { PluginDescriptor, PluginFrame, SlotDef } from './types.js';
     activeBySlot['panel'] = st.activeId || '__none__';
     renderPanel(st);   // 内部会卸载被关闭标签的视图
     savePanelSel();
+  }
+  // 切回容器式：把各行已打开的面板并入标签页（保留容器式自己的标签）
+  export function adoptLayoutRowsForTabs(): void {
+    const merged: string[] = panelTabs.slice();
+    layoutState.rows.forEach((row) => row.order.forEach((key) => {
+      if (!isPanelKey(key)) return;
+      const id = panelIdFromKey(key);
+      if (merged.indexOf(id) < 0) merged.push(id);
+    }));
+    panelTabs.length = 0;
+    panelTabs.push.apply(panelTabs, merged);
   }
   // + 下拉：列出全部面板插件，已打开者标注并可点击聚焦，未打开者点击新开标签页
   export function openPanelAddMenu(st: PanelState, anchor: HTMLElement): void {

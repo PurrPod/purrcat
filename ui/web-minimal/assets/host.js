@@ -33,39 +33,103 @@
   var TILE_MIN_W = 260;
   var TILE_MAX_W = 4e3;
   var TILE_ADD_W = 132;
-  var layoutState = { mode: "container", order: [], widths: {} };
+  function createRow() {
+    return { order: [], widths: {} };
+  }
+  var layoutState = { mode: "container", rows: [createRow()], activeRow: 0 };
   function panelWindowKey(id) {
     return "panel:" + id;
   }
+  function panelIdFromKey(key) {
+    return key.slice("panel:".length);
+  }
+  function isPanelKey(key) {
+    return key.indexOf("panel:") === 0;
+  }
   function tileMode() {
     return layoutState.mode === "tile";
+  }
+  function activeRowIndex() {
+    const n = layoutState.rows.length;
+    if (!n) return 0;
+    const i = Math.floor(Number(layoutState.activeRow));
+    if (!isFinite(i)) return 0;
+    return Math.max(0, Math.min(n - 1, i));
+  }
+  function activeRow() {
+    const row = layoutState.rows[activeRowIndex()];
+    if (row) return row;
+    const created = createRow();
+    layoutState.rows[0] = created;
+    return created;
+  }
+  function rowIndexOfKey(key) {
+    return layoutState.rows.findIndex((row) => row.order.indexOf(key) >= 0);
+  }
+  function addKeyToRow(row, key) {
+    if (row.order.indexOf(key) < 0) row.order.push(key);
+  }
+  function removeKeyFromRow(row, key) {
+    const i = row.order.indexOf(key);
+    if (i < 0) return false;
+    row.order.splice(i, 1);
+    return true;
   }
   function defaultWindowWidth(key) {
     if (key === LAYOUT_KEY_SIDEBAR) return 264;
     if (key === LAYOUT_KEY_SESSION) return 420;
     return 480;
   }
-  function windowWidth(key) {
-    const raw = Number(layoutState.widths[key]);
+  function windowWidthIn(row, key) {
+    const raw = Number(row.widths[key]);
     if (!isFinite(raw) || raw < TILE_MIN_W) return defaultWindowWidth(key);
     return Math.min(TILE_MAX_W, Math.round(raw));
   }
-  function setWindowWidth(key, width) {
+  function setWindowWidthIn(row, key, width) {
     if (!isFinite(width)) return;
-    layoutState.widths[key] = Math.max(TILE_MIN_W, Math.min(TILE_MAX_W, Math.round(width)));
+    row.widths[key] = Math.max(TILE_MIN_W, Math.min(TILE_MAX_W, Math.round(width)));
+  }
+  function parseOrder(raw) {
+    const list = Array.isArray(raw) ? raw : [];
+    const order = [];
+    list.forEach((item) => {
+      if (typeof item !== "string") return;
+      const key = item.trim();
+      if (key && order.indexOf(key) < 0) order.push(key);
+    });
+    return order;
+  }
+  function parseWidths(raw) {
+    const data = raw && typeof raw === "object" ? raw : {};
+    const widths = {};
+    Object.keys(data).forEach((k) => {
+      const w = Number(data[k]);
+      if (k && isFinite(w)) widths[k] = Math.max(TILE_MIN_W, Math.min(TILE_MAX_W, Math.round(w)));
+    });
+    return widths;
   }
   function applyLayoutFromManifest(raw) {
     const data = raw && typeof raw === "object" ? raw : {};
     layoutState.mode = data.mode === "tile" ? "tile" : "container";
-    const rawOrder = Array.isArray(data.order) ? data.order : [];
-    layoutState.order = rawOrder.filter((k) => typeof k === "string" && !!k.trim()).map((k) => k.trim());
-    const widths = {};
-    const rawWidths = data.widths && typeof data.widths === "object" ? data.widths : {};
-    Object.keys(rawWidths).forEach((k) => {
-      const w = Number(rawWidths[k]);
-      if (k && isFinite(w)) widths[k] = Math.max(TILE_MIN_W, Math.min(TILE_MAX_W, Math.round(w)));
+    const rows = [];
+    const rawRows = Array.isArray(data.rows) ? data.rows : [];
+    rawRows.forEach((item) => {
+      if (!item || typeof item !== "object") return;
+      const r = item;
+      rows.push({ order: parseOrder(r.order), widths: parseWidths(r.widths) });
     });
-    layoutState.widths = widths;
+    if (!rows.length) rows.push({ order: parseOrder(data.order), widths: parseWidths(data.widths) });
+    const prev = layoutState.rows;
+    layoutState.rows = rows.map((row, i) => {
+      const cur = prev[i];
+      if (!cur) return row;
+      cur.order = row.order;
+      cur.widths = row.widths;
+      return cur;
+    });
+    if (!layoutState.rows.length) layoutState.rows.push(createRow());
+    const rawActive = Math.floor(Number(data.activeRow));
+    layoutState.activeRow = isFinite(rawActive) ? Math.max(0, Math.min(layoutState.rows.length - 1, rawActive)) : 0;
     applyLayoutClass();
   }
   function applyLayoutClass() {
@@ -73,20 +137,20 @@
     HOST.document.body.classList.toggle("layout-tile", tile);
     if (!tile) HOST.document.body.classList.remove("wm-shift-mode");
   }
-  function ensureOrder(visibleKeys) {
+  function ensureOrderInRow(row, visibleKeys) {
     const visible = new Set(visibleKeys);
-    const order = layoutState.order.filter((k) => typeof k === "string" && !!k && visible.has(k));
+    const order = row.order.filter((k) => typeof k === "string" && !!k && visible.has(k));
     visibleKeys.forEach((key) => {
       if (order.indexOf(key) < 0) order.push(key);
     });
-    layoutState.order = order;
+    row.order = order;
     return order;
   }
-  function reorderWindows(visibleOrder) {
+  function reorderInRow(row, visibleOrder) {
     const visible = new Set(visibleOrder);
     const next = [];
     let i = 0;
-    layoutState.order.forEach((k) => {
+    row.order.forEach((k) => {
       if (visible.has(k)) {
         if (i < visibleOrder.length) next.push(visibleOrder[i++]);
       } else {
@@ -94,7 +158,7 @@
       }
     });
     while (i < visibleOrder.length) next.push(visibleOrder[i++]);
-    layoutState.order = next;
+    row.order = next;
   }
   function persistLayout() {
     return fetch("/api/webmin/config", {
@@ -130,6 +194,8 @@
     "panel-top": '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/>',
     "layout-panel-left": '<rect width="7" height="18" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/>',
     plus: '<path d="M12 5v14M5 12h14"/>',
+    "chevron-up": '<path d="m18 15-6-6-6 6"/>',
+    "chevron-down": '<path d="m6 9 6 6 6-6"/>',
     settings: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
     // sensor 默认图标（配置项未提供 icon 或图标加载失败时回退）
     sensor: '<path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"/><path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5"/><circle cx="12" cy="12" r="2"/><path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"/><path d="M19.1 4.9C23 8.8 23 15.1 19.1 19"/>'
@@ -193,10 +259,22 @@
     if (!res.ok) throw new Error(await res.text());
   }
   function applyConfigTo(pid) {
-    const iframe = frameByPluginId[pid];
-    if (iframe && iframe.contentWindow) {
-      iframe.contentWindow.postMessage({ type: "configApply", config: configByPlugin[pid] || {} }, "*");
-    }
+    const data = { type: "configApply", config: configByPlugin[pid] || {} };
+    const sent = [];
+    const send = (iframe) => {
+      if (!iframe || sent.indexOf(iframe) >= 0) return;
+      sent.push(iframe);
+      try {
+        if (iframe.contentWindow) iframe.contentWindow.postMessage(data, "*");
+      } catch (_) {
+      }
+    };
+    Object.keys(frames).forEach((slot) => {
+      (frames[slot] || []).forEach((f) => {
+        if (f.pluginId === pid) send(f.iframe);
+      });
+    });
+    send(frameByPluginId[pid]);
   }
   function draftSessionAlias(message) {
     let text = String(message == null ? "" : message).replace(/[\u0000-\u001f\u007f-\u009f\u200b\u200e\u200f\u202a-\u202e\u2066-\u2069\ufeff]/g, " ").replace(/\s+/g, " ").trim();
@@ -2386,7 +2464,7 @@
     grid.appendChild(row);
     const tip = HOST.document.createElement("div");
     tip.className = "cfg-tip";
-    tip.textContent = layoutState.mode === "tile" ? "\u5E73\u94FA\u6A21\u5F0F\uFF1A\u5217\u8868\u4F4D\u3001\u5DF2\u6253\u5F00\u9762\u677F\u3001\u4F1A\u8BDD\u4F4D\u5404\u4E3A\u72EC\u7ACB\u7A97\u53E3\uFF0C\u6309\u5F00\u542F\u65F6\u95F4\u4ECE\u5DE6\u5230\u53F3\u6392\u5217\uFF08\u91CD\u5F00\u8FFD\u52A0\u5230\u6700\u53F3\uFF09\uFF1B\u6700\u53F3\u4FA7\u300C+\u300D\u7A97\u53E3\u7EDF\u4E00\u5F00\u5173\u63D2\u4EF6\u3002\u6309\u4F4F Shift \u5DE6\u53F3\u62D6\u8DDF\u624B\u6392\u5E8F\u3001\u5411\u4E0B\u62D6\u8FC7\u7A97\u53E3\u4E00\u534A\u5173\u95ED\uFF1B\u62D6\u53F3\u7F18\u6539\u5BBD\u3002" : "\u5BB9\u5668\u5F0F\uFF1A\u5217\u8868\u4F4D\u3001\u4E2D\u680F\u9762\u677F\u5BB9\u5668\uFF08\u591A\u6807\u7B7E\uFF09\u3001\u4F1A\u8BDD\u4F4D\u3002";
+    tip.textContent = layoutState.mode === "tile" ? "\u5E73\u94FA\u6A21\u5F0F\uFF1A\u5217\u8868\u4F4D\u3001\u5DF2\u6253\u5F00\u9762\u677F\u3001\u4F1A\u8BDD\u4F4D\u5404\u4E3A\u72EC\u7ACB\u7A97\u53E3\uFF0C\u6309\u5F00\u542F\u65F6\u95F4\u4ECE\u5DE6\u5230\u53F3\u6392\u5217\uFF08\u91CD\u5F00\u8FFD\u52A0\u5230\u6700\u53F3\uFF09\uFF1B\u6700\u53F3\u4FA7\u300C+\u300D\u7A97\u53E3\u7EDF\u4E00\u5F00\u5173\u63D2\u4EF6\u3002\u9876\u90E8\u680F\u5DE6\u4FA7\u4E0A/\u4E0B\u56FE\u6807\u6216 Shift+\u2191/\u2193 \u5207\u6362\u884C\uFF0CShift+\u2190/\u2192 \u6309\u7A97\u53E3\u8FB9\u754C\u6A2A\u5411\u6EDA\u52A8\uFF1B\u6BCF\u884C\u72EC\u7ACB\u7EF4\u62A4\u7A97\u53E3\uFF0C\u9762\u677F\u53EF\u5728\u591A\u884C\u540C\u65F6\u6253\u5F00\u3002\u6309\u4F4F Shift \u5DE6\u53F3\u62D6\u8DDF\u624B\u6392\u5E8F\u3001\u5411\u4E0B\u62D6\u8FC7\u7A97\u53E3\u4E00\u534A\u5173\u95ED\uFF1B\u62D6\u53F3\u7F18\u6539\u5BBD\u3002" : "\u5BB9\u5668\u5F0F\uFF1A\u5217\u8868\u4F4D\u3001\u4E2D\u680F\u9762\u677F\u5BB9\u5668\uFF08\u591A\u6807\u7B7E\uFF09\u3001\u4F1A\u8BDD\u4F4D\u3002";
     grid.appendChild(tip);
     body.appendChild(grid);
     card.appendChild(body);
@@ -3007,6 +3085,7 @@
     }
     if (type === "panel") {
       if (!tileMode() && railHidden(PANEL_CONTAINER_ID)) return false;
+      if (tileMode()) return activeRow().order.indexOf(panelWindowKey(p.id)) >= 0;
       return panelTabs.indexOf(p.id) >= 0;
     }
     return true;
@@ -3101,10 +3180,9 @@
 
   // ui/web-minimal/src/host/tile.ts
   var fixedAnchors = {};
-  var tileEls = {};
-  var tileFrames = {};
-  var stripEl = null;
-  var addEl = null;
+  var fixedTiles = {};
+  var rowViews = [];
+  var navEl = null;
   var broadcastT = null;
   var managing = false;
   function panelPlugins() {
@@ -3120,7 +3198,7 @@
     if (broadcastT != null) return;
     broadcastT = HOST.setTimeout(() => {
       broadcastT = null;
-      broadcastAll("host.layoutChanged", { mode: "tile" });
+      broadcastAll("host.layoutChanged", { mode: "tile", activeRow: activeRowIndex() });
     }, 40);
   }
   function resetTileDrag(tile) {
@@ -3153,11 +3231,58 @@
     if (!active && !managing) {
       hideDropLine();
       HOST.document.querySelectorAll(".wm-tile-placeholder").forEach((el) => el.remove());
-      Object.keys(tileEls).forEach((k) => resetTileDrag(tileEls[k]));
+      Object.keys(fixedTiles).forEach((k) => resetTileDrag(fixedTiles[k]));
+      rowViews.forEach((rv) => Object.keys(rv.tiles).forEach((k) => resetTileDrag(rv.tiles[k])));
     }
+  }
+  function editableTarget(target) {
+    const el = target;
+    if (!el || typeof el.tagName !== "string") return false;
+    const tag = el.tagName.toLowerCase();
+    if (tag === "input" || tag === "textarea" || tag === "select") return true;
+    return el.isContentEditable === true;
+  }
+  function snapScrollRow(dir) {
+    const rv = rowViews[activeRowIndex()];
+    if (!rv) return;
+    const keys = sortedVisibleKeys(rv);
+    if (!keys.length) return;
+    const map = tilesOfRow(rv);
+    const s = rv.strip.scrollLeft;
+    let target = s;
+    if (dir > 0) {
+      for (let i = 0; i < keys.length; i++) {
+        const x = map[keys[i]].offsetLeft;
+        if (x - s > 1) {
+          target = x;
+          break;
+        }
+      }
+    } else {
+      for (let i = keys.length - 1; i >= 0; i--) {
+        const x = map[keys[i]].offsetLeft;
+        if (x - s < -1) {
+          target = x;
+          break;
+        }
+      }
+    }
+    if (target !== s) rv.strip.scrollLeft = target;
+  }
+  function handleRowShortcut(ev) {
+    if (!tileMode()) return false;
+    if (HOST.document.body.classList.contains("settings-open")) return false;
+    if (!ev.shiftKey || ev.altKey || ev.ctrlKey || ev.metaKey) return false;
+    const key = ev.key;
+    if (key !== "ArrowUp" && key !== "ArrowDown" && key !== "ArrowLeft" && key !== "ArrowRight") return false;
+    if (editableTarget(ev.target)) return false;
+    if (key === "ArrowLeft" || key === "ArrowRight") snapScrollRow(key === "ArrowLeft" ? -1 : 1);
+    else switchRow(key === "ArrowUp" ? -1 : 1);
+    return true;
   }
   HOST.addEventListener("keydown", (ev) => {
     if (ev.key === "Shift") setShiftMode(true);
+    if (handleRowShortcut(ev)) ev.preventDefault();
   });
   HOST.addEventListener("keyup", (ev) => {
     if (ev.key === "Shift") setShiftMode(false);
@@ -3168,13 +3293,12 @@
     managing = false;
     hideDropLine();
     setShiftMode(false);
-    Object.keys(tileEls).forEach((k) => resetTileDrag(tileEls[k]));
+    Object.keys(fixedTiles).forEach((k) => resetTileDrag(fixedTiles[k]));
+    rowViews.forEach((rv) => Object.keys(rv.tiles).forEach((k) => resetTileDrag(rv.tiles[k])));
   });
-  function ensureStrip() {
-    if (stripEl && stripEl.isConnected) return stripEl;
+  function makeStrip() {
     const el = HOST.document.createElement("div");
     el.className = "wm-tiles";
-    el.id = "wmTiles";
     el.addEventListener("wheel", (ev) => {
       if (!ev.deltaY) return;
       el.scrollLeft += ev.deltaY;
@@ -3203,11 +3327,124 @@
     el.addEventListener("pointerup", endPan);
     el.addEventListener("pointercancel", endPan);
     HOST.document.body.appendChild(el);
-    stripEl = el;
     return el;
+  }
+  function makeRowView(row) {
+    return { row, strip: makeStrip(), tiles: {}, frames: {}, addEl: null };
+  }
+  function ensureRowViews() {
+    const rows = layoutState.rows;
+    for (let i = rowViews.length - 1; i >= 0; i--) {
+      if (rows.indexOf(rowViews[i].row) >= 0) continue;
+      notifyUnmount(rowViews[i].strip);
+      rowViews[i].strip.remove();
+      rowViews.splice(i, 1);
+    }
+    const next = rows.map((row) => rowViews.find((rv) => rv.row === row) || makeRowView(row));
+    rowViews.length = 0;
+    rowViews.push.apply(rowViews, next);
+    const active = activeRowIndex();
+    rowViews.forEach((rv, i) => rv.strip.classList.toggle("active", i === active));
+  }
+  function navButton(icon, title, dir) {
+    const btn = HOST.document.createElement("button");
+    btn.className = "wm-row-btn";
+    btn.type = "button";
+    btn.title = title;
+    btn.setAttribute("aria-label", title);
+    paintIcon(btn, icon, dir < 0 ? "\u2191" : "\u2193");
+    btn.addEventListener("click", () => switchRow(dir));
+    return btn;
+  }
+  function ensureNav() {
+    if (navEl && navEl.isConnected) return;
+    const el = HOST.document.createElement("div");
+    el.className = "wm-row-nav";
+    el.appendChild(navButton("chevron-up", "\u4E0A\u4E00\u884C\uFF08Shift+\u2191\uFF09", -1));
+    el.appendChild(navButton("chevron-down", "\u4E0B\u4E00\u884C\uFF08Shift+\u2193\uFF09", 1));
+    const bar = HOST.document.querySelector('[data-layer="topbar"]');
+    (bar || HOST.document.body).appendChild(el);
+    navEl = el;
+  }
+  function rowHasWindows(i) {
+    const row = layoutState.rows[i];
+    return !!row && row.order.length > 0;
+  }
+  function nearestNonEmptyRow(from, dir) {
+    for (let i = from + dir; i >= 0 && i < layoutState.rows.length; i += dir) {
+      if (rowHasWindows(i)) return i;
+    }
+    return -1;
+  }
+  function canSwitchRow(dir) {
+    const cur = activeRowIndex();
+    if (!rowHasWindows(cur)) return nearestNonEmptyRow(cur, dir) >= 0;
+    return true;
+  }
+  function updateNav() {
+    if (!navEl) return;
+    const btns = navEl.querySelectorAll(".wm-row-btn");
+    const up = btns[0];
+    const down = btns[1];
+    const cur = activeRowIndex();
+    if (up) {
+      up.disabled = !canSwitchRow(-1);
+      up.title = "\u4E0A\u4E00\u884C\uFF08Shift+\u2191\uFF09 \xB7 \u5F53\u524D\u7B2C " + (cur + 1) + " / " + layoutState.rows.length + " \u884C";
+    }
+    if (down) {
+      down.disabled = !canSwitchRow(1);
+      down.title = "\u4E0B\u4E00\u884C\uFF08Shift+\u2193\uFF09 \xB7 \u5F53\u524D\u7B2C " + (cur + 1) + " / " + layoutState.rows.length + " \u884C";
+    }
+  }
+  function switchRow(dir) {
+    if (!tileMode() || !canSwitchRow(dir)) return;
+    const rows = layoutState.rows;
+    const cur = activeRowIndex();
+    if (rowHasWindows(cur)) {
+      const target = cur + dir;
+      if (target >= 0 && target < rows.length) layoutState.activeRow = target;
+      else if (dir < 0) {
+        rows.unshift(createRow());
+        layoutState.activeRow = 0;
+      } else {
+        rows.push(createRow());
+        layoutState.activeRow = rows.length - 1;
+      }
+    } else {
+      layoutState.activeRow = nearestNonEmptyRow(cur, dir);
+    }
+    syncTiles();
+    persistLayout();
+  }
+  function switchToRow(index) {
+    if (!tileMode()) return;
+    if (index < 0 || index >= layoutState.rows.length) return;
+    if (index === activeRowIndex()) return;
+    layoutState.activeRow = index;
+    syncTiles();
+    persistLayout();
   }
   function tileBody(tile) {
     return tile.querySelector(".wm-tile-body");
+  }
+  function rowViewOfStrip(strip) {
+    if (!strip) return null;
+    return rowViews.find((rv) => rv.strip === strip) || null;
+  }
+  function tilesOfRow(rv) {
+    const out = {};
+    Object.keys(rv.tiles).forEach((key) => {
+      out[key] = rv.tiles[key];
+    });
+    [LAYOUT_KEY_SIDEBAR, LAYOUT_KEY_SESSION].forEach((key) => {
+      const tile = fixedTiles[key];
+      if (tile && tile.parentElement === rv.strip) out[key] = tile;
+    });
+    return out;
+  }
+  function sortedVisibleKeys(rv) {
+    const map = tilesOfRow(rv);
+    return Object.keys(map).filter((k) => map[k].style.display !== "none").sort((a, b) => Number(map[a].style.order || 0) - Number(map[b].style.order || 0));
   }
   function closeFixedSlot(slot) {
     const cur = pluginVisibleInSlot(slot);
@@ -3216,19 +3453,21 @@
   function closeTileByKey(key) {
     if (key === LAYOUT_KEY_SIDEBAR) closeFixedSlot("sidebar");
     else if (key === LAYOUT_KEY_SESSION) closeFixedSlot("session");
-    else if (key.indexOf("panel:") === 0) closePanelTab(key.slice("panel:".length));
+    else if (isPanelKey(key)) closePanelTab(panelIdFromKey(key));
     syncTiles();
     buildRail();
   }
   function bindResize(tile, grip, key) {
     grip.addEventListener("pointerdown", (ev) => {
+      const rv = rowViewOfStrip(tile.parentElement);
+      if (!rv) return;
       ev.preventDefault();
       ev.stopPropagation();
       const startX = ev.clientX;
       const startW = tile.getBoundingClientRect().width;
       const move = (e2) => {
-        setWindowWidth(key, startW + (e2.clientX - startX));
-        tile.style.width = windowWidth(key) + "px";
+        setWindowWidthIn(rv.row, key, startW + (e2.clientX - startX));
+        tile.style.width = windowWidthIn(rv.row, key) + "px";
         broadcastLayout();
       };
       const up = () => {
@@ -3251,15 +3490,14 @@
       grip.addEventListener("pointercancel", up);
     });
   }
-  function sortedVisibleKeys() {
-    return Object.keys(tileEls).filter((k) => tileEls[k].style.display !== "none").sort((a, b) => Number(tileEls[a].style.order || 0) - Number(tileEls[b].style.order || 0));
-  }
   function bindManageDrag(tile, shield, key) {
     shield.addEventListener("pointerdown", (ev) => {
       if (!HOST.document.body.classList.contains("wm-shift-mode") || ev.button !== 0) return;
+      const rv = rowViewOfStrip(tile.parentElement);
+      if (!rv) return;
       ev.preventDefault();
       ev.stopPropagation();
-      const strip = stripEl;
+      const strip = rv.strip;
       const rect = tile.getBoundingClientRect();
       const startY = ev.clientY;
       const removeAt = Math.max(80, rect.height / 2);
@@ -3282,20 +3520,17 @@
       layer.className = "wm-drag-layer";
       HOST.document.body.appendChild(layer);
       let pointerX = ev.clientX;
-      let targetIndex = Math.max(0, sortedVisibleKeys().indexOf(key));
+      let targetIndex = Math.max(0, sortedVisibleKeys(rv).indexOf(key));
       const updateIndicator = (x) => {
-        if (!strip) {
-          hideDropLine();
-          return 0;
-        }
-        const others = sortedVisibleKeys().filter((k) => k !== key);
+        const map = tilesOfRow(rv);
+        const others = sortedVisibleKeys(rv).filter((k) => k !== key);
         if (!others.length) {
           hideDropLine();
           return 0;
         }
         let index = others.length;
         for (let i = 0; i < others.length; i++) {
-          const r = tileEls[others[i]].getBoundingClientRect();
+          const r = map[others[i]].getBoundingClientRect();
           if (x < r.left + r.width / 2) {
             index = i;
             break;
@@ -3303,8 +3538,8 @@
         }
         const sr = strip.getBoundingClientRect();
         let lineX;
-        if (index === 0) lineX = tileEls[others[0]].getBoundingClientRect().left - 4;
-        else lineX = tileEls[others[index - 1]].getBoundingClientRect().right + 4;
+        if (index === 0) lineX = map[others[0]].getBoundingClientRect().left - 4;
+        else lineX = map[others[index - 1]].getBoundingClientRect().right + 4;
         showDropLine(lineX, sr.top + 6, Math.max(40, sr.height - 12));
         return index;
       };
@@ -3324,17 +3559,15 @@
           hideDropLine();
           return;
         }
-        if (strip) {
-          const sr = strip.getBoundingClientRect();
-          if (e2.clientX < sr.left + 56) strip.scrollLeft -= 20;
-          else if (e2.clientX > sr.right - 56) strip.scrollLeft += 20;
-        }
+        const sr = strip.getBoundingClientRect();
+        if (e2.clientX < sr.left + 56) strip.scrollLeft -= 20;
+        else if (e2.clientX > sr.right - 56) strip.scrollLeft += 20;
         targetIndex = updateIndicator(pointerX);
       };
       const onScroll = () => {
         if (!removing) targetIndex = updateIndicator(pointerX);
       };
-      if (strip) strip.addEventListener("scroll", onScroll, { passive: true });
+      strip.addEventListener("scroll", onScroll, { passive: true });
       const finish = (commit) => {
         if (done) return;
         done = true;
@@ -3342,7 +3575,7 @@
         layer.removeEventListener("pointermove", move);
         layer.removeEventListener("pointerup", up);
         layer.removeEventListener("pointercancel", cancel);
-        if (strip) strip.removeEventListener("scroll", onScroll);
+        strip.removeEventListener("scroll", onScroll);
         try {
           layer.releasePointerCapture(ev.pointerId);
         } catch (_) {
@@ -3351,11 +3584,11 @@
         placeholder.remove();
         hideDropLine();
         if (commit && !removing) {
-          const others = sortedVisibleKeys().filter((k) => k !== key);
+          const others = sortedVisibleKeys(rv).filter((k) => k !== key);
           const next = others.slice();
           next.splice(Math.max(0, Math.min(next.length, targetIndex)), 0, key);
-          reorderWindows(next);
-          applyOrder();
+          reorderInRow(rv.row, next);
+          applyOrder(rv);
           persistLayout();
         }
         resetTileDrag(tile);
@@ -3399,23 +3632,73 @@
     }
     if (anchor.parentNode !== body) body.appendChild(anchor);
   }
-  function syncFixedTile(strip, key, slot) {
-    let tile = tileEls[key];
+  function syncFixedWindow(key, slot) {
+    const p = pluginVisibleInSlot(slot);
+    if (!p) {
+      layoutState.rows.forEach((row) => removeKeyFromRow(row, key));
+      const tile2 = fixedTiles[key];
+      if (tile2) tile2.style.display = "none";
+      return;
+    }
+    let owner = rowIndexOfKey(key);
+    if (owner < 0) {
+      owner = activeRowIndex();
+      addKeyToRow(layoutState.rows[owner], key);
+    } else {
+      layoutState.rows.forEach((row, i) => {
+        if (i !== owner) removeKeyFromRow(row, key);
+      });
+    }
+    const rv = rowViews[owner];
+    if (!rv) return;
+    let tile = fixedTiles[key];
     if (!tile) {
       tile = makeTile(key);
-      strip.appendChild(tile);
-      tileEls[key] = tile;
+      fixedTiles[key] = tile;
     }
+    if (tile.parentElement !== rv.strip) rv.strip.appendChild(tile);
     moveAnchorInto(tileBody(tile), slot);
-    const on = !!pluginVisibleInSlot(slot);
-    tile.style.display = on ? "" : "none";
-    return on;
+    tile.style.display = "";
   }
-  function ensureAddTile(strip) {
-    if (addEl && addEl.isConnected) return;
+  function syncRowPanels(rv) {
+    const panels = panelPlugins();
+    const byId = {};
+    panels.forEach((p) => {
+      byId[p.id] = p;
+    });
+    const open = [];
+    rv.row.order.forEach((key) => {
+      if (!isPanelKey(key)) return;
+      const p = byId[panelIdFromKey(key)];
+      if (p && !railHidden(p.id)) open.push(p);
+    });
+    open.forEach((p) => {
+      const key = panelWindowKey(p.id);
+      let tile = rv.tiles[key];
+      if (!tile) {
+        tile = makeTile(key);
+        rv.strip.appendChild(tile);
+        rv.tiles[key] = tile;
+      }
+      const body = tileBody(tile);
+      if (!body.isConnected) tile.appendChild(body);
+      const rec = rv.frames[p.id];
+      if (!rec || !rec.el.isConnected || rec.el !== body) rv.frames[p.id] = mountFrame(body, p);
+      tile.style.display = "";
+    });
+    Object.keys(rv.tiles).forEach((key) => {
+      const id = panelIdFromKey(key);
+      if (open.some((p) => p.id === id)) return;
+      notifyUnmount(rv.tiles[key]);
+      rv.tiles[key].remove();
+      delete rv.tiles[key];
+      delete rv.frames[id];
+    });
+  }
+  function ensureAddTile(rv) {
+    if (rv.addEl && rv.addEl.isConnected) return;
     const tile = HOST.document.createElement("div");
     tile.className = "wm-tile wm-tile-add";
-    tile.id = "wmTileAdd";
     tile.title = "\u9009\u62E9\u8981\u5F00\u542F\u7684\u63D2\u4EF6";
     tile.style.width = TILE_ADD_W + "px";
     tile.style.order = "99999";
@@ -3430,10 +3713,10 @@
       ev.stopPropagation();
       openTileAddMenu(tile);
     });
-    strip.appendChild(tile);
-    addEl = tile;
+    rv.strip.appendChild(tile);
+    rv.addEl = tile;
   }
-  function menuItem(p, on, onclick) {
+  function menuItem(p, on, onclick, tag) {
     const item = HOST.document.createElement("div");
     item.className = "wm-pp_menu-item" + (on ? " active" : "");
     const g = HOST.document.createElement("span");
@@ -3443,11 +3726,12 @@
     nm.textContent = p.name || p.id;
     item.appendChild(g);
     item.appendChild(nm);
-    if (on) {
-      const tag = HOST.document.createElement("span");
-      tag.className = "wm-pp_menu-tag";
-      tag.textContent = "\u5DF2\u6253\u5F00";
-      item.appendChild(tag);
+    const text = tag != null ? tag : on ? "\u5DF2\u6253\u5F00" : "";
+    if (text) {
+      const tagEl = HOST.document.createElement("span");
+      tagEl.className = "wm-pp_menu-tag";
+      tagEl.textContent = text;
+      item.appendChild(tagEl);
     }
     item.addEventListener("click", onclick);
     return item;
@@ -3457,6 +3741,12 @@
     head.className = "wm-tile-menu-head";
     head.textContent = title;
     menu.appendChild(head);
+  }
+  function fixedKeyFor(p) {
+    if ((p.slotDef || {}).type !== "fixed") return "";
+    if (p.slot === "sidebar") return LAYOUT_KEY_SIDEBAR;
+    if (p.slot === "session") return LAYOUT_KEY_SESSION;
+    return "";
   }
   function openTileAddMenu(anchor) {
     const wasOpen = !!HOST.document.getElementById("tile-add-menu");
@@ -3476,7 +3766,17 @@
       const list = groupState.plugins.filter((p) => (p.slotDef || {}).area === area && !!p.entry);
       if (!list.length) return;
       menuSection(menu, label);
-      list.forEach((p) => menu.appendChild(menuItem(p, pluginVisible(p), () => toggle(p))));
+      list.forEach((p) => {
+        const owner = rowIndexOfKey(fixedKeyFor(p));
+        if (pluginVisible(p) && owner >= 0 && owner !== activeRowIndex()) {
+          menu.appendChild(menuItem(p, false, () => {
+            closePanelMenus();
+            switchToRow(owner);
+          }, "\u7B2C " + (owner + 1) + " \u884C"));
+        } else {
+          menu.appendChild(menuItem(p, pluginVisible(p), () => toggle(p)));
+        }
+      });
     });
     const panels = panelPlugins();
     if (panels.length) {
@@ -3491,96 +3791,114 @@
     menu.style.top = Math.max(8, Math.min(r.top, HOST.innerHeight - menu.offsetHeight - 8)) + "px";
     syncNativeCover();
   }
-  function applyOrder() {
-    const order = layoutState.order;
+  function applyOrder(rv) {
+    const order = rv.row.order;
     const rank = (k) => {
       const i = order.indexOf(k);
       return i < 0 ? order.length : i;
     };
-    Object.keys(tileEls).forEach((k) => {
-      tileEls[k].style.order = String(rank(k));
+    const map = tilesOfRow(rv);
+    Object.keys(map).forEach((k) => {
+      map[k].style.order = String(rank(k));
     });
-    if (addEl) addEl.style.order = "99999";
+    if (rv.addEl) rv.addEl.style.order = "99999";
+  }
+  var defaultSeeded = false;
+  function seedDefaultPanel() {
+    if (defaultSeeded) return;
+    defaultSeeded = true;
+    const panels = panelPlugins();
+    if (!panels.length) return;
+    const anyOpen = layoutState.rows.some((row) => row.order.some(isPanelKey));
+    if (anyOpen) return;
+    const hasSavedTabs = Object.prototype.hasOwnProperty.call(activeBySlot, "__panelTabs__");
+    const inherited = panelTabs.filter((id) => panels.some((p) => p.id === id));
+    if (!inherited.length && hasSavedTabs) return;
+    const legacy = panels.find((p) => p.id === activeBySlot["panel"]);
+    const targets = inherited.length ? inherited : [(legacy || panels[0]).id];
+    targets.forEach((id) => addKeyToRow(activeRow(), panelWindowKey(id)));
+  }
+  function syncPanelTabsMirror() {
+    const union = [];
+    layoutState.rows.forEach((row) => row.order.forEach((key) => {
+      if (!isPanelKey(key)) return;
+      const id = panelIdFromKey(key);
+      if (union.indexOf(id) < 0) union.push(id);
+    }));
+    panelTabs.length = 0;
+    panelTabs.push.apply(panelTabs, union);
   }
   function syncTiles() {
     if (!tileMode()) {
       teardownTiles();
       return;
     }
-    const strip = ensureStrip();
-    const panels = panelPlugins();
-    const hasSavedTabs = Object.prototype.hasOwnProperty.call(activeBySlot, "__panelTabs__");
-    if (!panelTabs.length && !hasSavedTabs && panels.length) {
-      const legacy = panels.find((p) => p.id === activeBySlot["panel"]);
-      panelTabs.push((legacy || panels[0]).id);
-    }
-    const validPanels = panels.filter(
-      (p) => panelTabs.indexOf(p.id) >= 0 && !railHidden(p.id)
-    );
-    const sidebarOn = syncFixedTile(strip, LAYOUT_KEY_SIDEBAR, "sidebar");
-    const sessionOn = syncFixedTile(strip, LAYOUT_KEY_SESSION, "session");
-    validPanels.forEach((p) => {
-      const key = panelWindowKey(p.id);
-      let tile = tileEls[key];
-      if (!tile) {
-        tile = makeTile(key);
-        strip.appendChild(tile);
-        tileEls[key] = tile;
-      }
-      const body = tileBody(tile);
-      if (!tileFrames[p.id]) tileFrames[p.id] = mountFrame(body, p);
-      tile.style.display = "";
+    ensureNav();
+    ensureRowViews();
+    seedDefaultPanel();
+    syncFixedWindow(LAYOUT_KEY_SIDEBAR, "sidebar");
+    syncFixedWindow(LAYOUT_KEY_SESSION, "session");
+    rowViews.forEach(syncRowPanels);
+    let orderChanged = false;
+    rowViews.forEach((rv) => {
+      const before = rv.row.order.join("\0");
+      ensureOrderInRow(rv.row, sortedVisibleKeys(rv));
+      if (before !== rv.row.order.join("\0")) orderChanged = true;
+      applyOrder(rv);
+      const map = tilesOfRow(rv);
+      Object.keys(map).forEach((k) => {
+        map[k].style.width = windowWidthIn(rv.row, k) + "px";
+      });
+      ensureAddTile(rv);
     });
-    Object.keys(tileEls).forEach((key) => {
-      if (key.indexOf("panel:") !== 0) return;
-      const id = key.slice("panel:".length);
-      if (validPanels.some((p) => p.id === id)) return;
-      notifyUnmount(tileEls[key]);
-      tileEls[key].remove();
-      delete tileEls[key];
-      delete tileFrames[id];
-    });
-    frames["panel"] = validPanels.map((p) => tileFrames[p.id]).filter(Boolean);
-    ensureAddTile(strip);
-    const visible = (sidebarOn ? [LAYOUT_KEY_SIDEBAR] : []).concat(validPanels.map((p) => panelWindowKey(p.id))).concat(sessionOn ? [LAYOUT_KEY_SESSION] : []);
-    const orderBefore = layoutState.order.join("\0");
-    ensureOrder(visible);
-    applyOrder();
-    if (orderBefore !== layoutState.order.join("\0")) persistLayout();
-    Object.keys(tileEls).forEach((k) => {
-      tileEls[k].style.width = windowWidth(k) + "px";
-    });
+    const panelFrames = [];
+    rowViews.forEach((rv) => Object.keys(rv.frames).forEach((id) => {
+      const frame = rv.frames[id];
+      if (frame) panelFrames.push(frame);
+    }));
+    frames["panel"] = panelFrames;
+    syncPanelTabsMirror();
+    updateNav();
+    if (orderChanged) persistLayout();
     broadcastLayout();
     syncNativeCover();
   }
   function scrollTileIntoView(key) {
-    const tile = tileEls[key];
-    if (!tile || !stripEl) return;
+    const rv = rowViews[activeRowIndex()];
+    if (!rv) return;
+    const tile = rv.tiles[key];
+    if (!tile) return;
     const left = tile.offsetLeft;
     const right = left + tile.offsetWidth;
-    if (left < stripEl.scrollLeft) stripEl.scrollLeft = left - 8;
-    else if (right > stripEl.scrollLeft + stripEl.clientWidth) {
-      stripEl.scrollLeft = right - stripEl.clientWidth + 8;
+    if (left < rv.strip.scrollLeft) rv.strip.scrollLeft = left - 8;
+    else if (right > rv.strip.scrollLeft + rv.strip.clientWidth) {
+      rv.strip.scrollLeft = right - rv.strip.clientWidth + 8;
     }
   }
   function teardownTiles() {
-    if (stripEl) {
-      Object.keys(fixedAnchors).forEach((slot) => {
-        const rec = fixedAnchors[slot];
-        if (rec.el.parentNode && rec.parent) {
-          if (rec.next && rec.next.parentNode === rec.parent) rec.parent.insertBefore(rec.el, rec.next);
-          else rec.parent.appendChild(rec.el);
-        }
-        delete fixedAnchors[slot];
-      });
-      notifyUnmount(stripEl);
-      stripEl.remove();
+    Object.keys(fixedAnchors).forEach((slot) => {
+      const rec = fixedAnchors[slot];
+      if (rec.el.parentNode && rec.parent) {
+        if (rec.next && rec.next.parentNode === rec.parent) rec.parent.insertBefore(rec.el, rec.next);
+        else rec.parent.appendChild(rec.el);
+      }
+      delete fixedAnchors[slot];
+    });
+    rowViews.forEach((rv) => {
+      notifyUnmount(rv.strip);
+      rv.strip.remove();
+    });
+    rowViews.length = 0;
+    Object.keys(fixedTiles).forEach((k) => delete fixedTiles[k]);
+    if (navEl) {
+      navEl.remove();
+      navEl = null;
     }
-    stripEl = null;
-    addEl = null;
-    Object.keys(tileEls).forEach((k) => delete tileEls[k]);
-    Object.keys(tileFrames).forEach((k) => delete tileFrames[k]);
-    delete frames["panel"];
+    if (dropLineEl) {
+      dropLineEl.remove();
+      dropLineEl = null;
+    }
+    defaultSeeded = false;
     setShiftMode(false);
   }
 
@@ -3629,6 +3947,7 @@
         if (!cw) return;
         cw.addEventListener("keydown", (ev) => {
           if (ev.key === "Shift") setShiftMode(true);
+          if (handleRowShortcut(ev)) ev.preventDefault();
         }, true);
         cw.addEventListener("keyup", (ev) => {
           if (ev.key === "Shift") setShiftMode(false);
@@ -3810,6 +4129,7 @@
     else teardownTiles();
   }
   function remountLayout2() {
+    if (!tileMode()) adoptLayoutRowsForTabs();
     buildSlotIndex();
     mountAll();
     applyPersistedHidden();
@@ -3817,7 +4137,7 @@
     applyPanelContainerCfg();
     if (tileMode()) syncTiles();
     else teardownTiles();
-    broadcastAll("host.layoutChanged", { mode: layoutState.mode });
+    broadcastAll("host.layoutChanged", { mode: layoutState.mode, activeRow: activeRowIndex() });
   }
   bindRemountLayout(remountLayout2);
 
@@ -4105,16 +4425,16 @@
     if (tileMode()) {
       const p = groupState.plugins.find((x) => x.id === id && (x.slotDef || {}).type === "panel");
       if (!p) return;
-      if (panelTabs.indexOf(id) < 0) panelTabs.push(id);
       if (railHidden(id)) {
         if (!railState.hidden) railState.hidden = {};
         delete railState.hidden[id];
         persistRail().catch(() => {
         });
       }
+      addKeyToRow(activeRow(), panelWindowKey(id));
       activeBySlot["panel"] = id;
-      savePanelSel();
       syncTiles();
+      savePanelSel();
       scrollTileIntoView(panelWindowKey(id));
       return;
     }
@@ -4131,12 +4451,10 @@
   }
   function closePanelTab(id) {
     if (tileMode()) {
-      const at = panelTabs.indexOf(id);
-      if (at < 0) return;
-      panelTabs.splice(at, 1);
-      activeBySlot["panel"] = panelTabs[at] || panelTabs[at - 1] || "__none__";
-      savePanelSel();
+      if (!removeKeyFromRow(activeRow(), panelWindowKey(id))) return;
+      activeBySlot["panel"] = id;
       syncTiles();
+      savePanelSel();
       return;
     }
     const st = panelState;
@@ -4148,6 +4466,16 @@
     activeBySlot["panel"] = st.activeId || "__none__";
     renderPanel(st);
     savePanelSel();
+  }
+  function adoptLayoutRowsForTabs() {
+    const merged = panelTabs.slice();
+    layoutState.rows.forEach((row) => row.order.forEach((key) => {
+      if (!isPanelKey(key)) return;
+      const id = panelIdFromKey(key);
+      if (merged.indexOf(id) < 0) merged.push(id);
+    }));
+    panelTabs.length = 0;
+    panelTabs.push.apply(panelTabs, merged);
   }
   function openPanelAddMenu(st, anchor) {
     const wasOpen = HOST.document.getElementById("ppmenu-" + st.area);

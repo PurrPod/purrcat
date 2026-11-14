@@ -55,17 +55,22 @@
   "active": { "panel": "builtin-history" },
   "layout": {
     "mode": "container",
-    "order": ["slot:sidebar", "panel:builtin-history", "slot:session"],
-    "widths": { "slot:sidebar": 264, "panel:builtin-history": 480, "slot:session": 420 }
+    "activeRow": 0,
+    "rows": [
+      {
+        "order": ["slot:sidebar", "panel:builtin-history", "slot:session"],
+        "widths": { "slot:sidebar": 264, "panel:builtin-history": 480, "slot:session": 420 }
+      }
+    ]
   }
 }
 ```
 
 每条插件附：`configSchema`（插件自声明）与 `config`（`webminConfig` 中已存值，有效配置 = schema 默认值 ∪ config 覆盖）、`builtin`（是否位于内置根）、`backend`（是否自带后端，有 `server/server.js` 则为 `{ "kind": "npm" }`，否则 `null`）；`root`（声明的期望位置）、`origin`（后端回填的实际所在根）、`rootOk`（两者是否一致）；`dependency` 归一化为 `[{ "type", "id" }]`（类型限定白名单：`skill` / `plugin` / `mcp` / `agentloop` / `sensor` / `graph`）；`requires` 归一化为 `[{ "name", "range", "version", "base", "ok" }]`，其中 `version` / `base` 来自宿主共享运行时清单，缺失时为 `""` 且 `ok=false`；`slot` 归一化为字符串 id，完整语义见 `slotDef`。
 
-顶层另返回 `shared`（共享运行时清单 `{ name: { version, base } }`）、`rail`（最左图标栏状态：`stage`、`hidden`、`opacity`）、`panelContainer`（宿主中栏容器配置）、`active`（单例槽当前选中的插件 id）、`layout`（布局模式与平铺窗口顺序/宽度，见下）。
+顶层另返回 `shared`（共享运行时清单 `{ name: { version, base } }`）、`rail`（最左图标栏状态：`stage`、`hidden`、`opacity`）、`panelContainer`（宿主中栏容器配置）、`active`（单例槽当前选中的插件 id）、`layout`（布局模式、平铺行顺序/宽度与当前行，见下）。
 
-`layout` 归一化规则：`mode` 只接受 `container`（默认）/ `tile`，其他值回落 `container`；`order` 只保留非空字符串并去重（窗口键为 `slot:sidebar`、`slot:session`、`panel:<plugin_id>`，表示窗口从左到右的顺序，默认按开启时间维护：窗口关闭即从表中移除，重新打开时追加到末尾）；`widths` 为窗口键到像素宽度的映射，非法值丢弃，数值夹紧到 `260`–`4000` 的整数。
+`layout` 归一化规则：`mode` 只接受 `container`（默认）/ `tile`，其他值回落 `container`；`activeRow` 为当前行的下标，夹紧到 `0`–`rows.length-1`；`rows` 至少一行，每项 `{ order, widths }`：`order` 只保留非空字符串并去重（窗口键为 `slot:sidebar`、`slot:session`、`panel:<plugin_id>`，表示该行窗口从左到右的顺序，默认按开启时间维护：窗口关闭即从表中移除，重新打开时追加到末尾）；`widths` 为窗口键到像素宽度的映射，非法值丢弃，数值夹紧到 `260`–`4000` 的整数。缺少 `rows` 时把旧版顶层 `order` / `widths` 迁入第一行；行数上限 20。
 
 **示例**
 
@@ -174,7 +179,7 @@ curl 'http://127.0.0.1:8000/api/webmin/config'
 | plugins | body | object | 否 | `{ plugin_id: config }`，整体替换 plugins 分节 |
 | rail | body | object | 否 | `{ stage, opacity, hidden }`；`stage` 归一化到 `0`–`1`（越界取 `0`），`opacity` 收敛到 `0.0`–`1.0` |
 | active | body | object | 否 | `{ area: plugin_id }`，值归一化为字符串，空值项丢弃 |
-| layout | body | object | 否 | `{ mode, order, widths }`；`mode` 仅 `container`/`tile`，`order` 去重去空，`widths` 夹紧到 `260`–`4000` |
+| layout | body | object | 否 | `{ mode, activeRow, rows: [{ order, widths }] }`；`mode` 仅 `container`/`tile`，`activeRow` 夹到合法下标，`order` 去重去空，`widths` 夹紧到 `260`–`4000`；缺 `rows` 时兼容旧版顶层 `order`/`widths` |
 
 **响应**
 
@@ -358,7 +363,7 @@ window.parent.postMessage(
 | --- | --- |
 | `{ type: 'callActionResult', id, ok, data \| error }` | 上一次 `callAction` 的结果，按 `id` 对应 |
 | `{ type: 'configApply', config }` | 用户在设置面板改了配置 → 实时下发全量 config |
-| `{ type: 'event', event, data }` | 宿主广播：`host.unmount`、`host.nativeCover`（`{covered}`）、`host.layoutChanged`（`{mode}`，布局切换/平铺窗口滚动改宽重排后发出）、`layout.empty`（`{empty}`）、`session.switched`、`branch.switched`、`config.updated`、`projects.updated` |
+| `{ type: 'event', event, data }` | 宿主广播：`host.unmount`、`host.nativeCover`（`{covered}`）、`host.layoutChanged`（`{mode, activeRow}`，布局切换/平铺窗口滚动改宽重排/切换行后发出）、`layout.empty`（`{empty}`）、`session.switched`、`branch.switched`、`config.updated`、`projects.updated` |
 
 ### actionId 清单
 

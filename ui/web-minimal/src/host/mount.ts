@@ -3,12 +3,12 @@ import { PANEL_CONTAINER_ID } from './areas.js';
 import { broadcastAll, nativeCoverActive } from './bus.js';
 import { applyConfigTo } from './config-apply.js';
 import { applyFloatSize, applyModalSize, attachFloatHandles, centerFloat } from './float.js';
-import { bindRemountLayout, layoutState, tileMode } from './layout.js';
+import { activeRowIndex, bindRemountLayout, layoutState, tileMode } from './layout.js';
 import { deliverPendingBrowserUrl } from './links.js';
 import { applyManifestState } from './manifest.js';
-import { applyPanelContainerCfg, mountPanels, panelContainerVisible, reconcilePanels } from './panel.js';
+import { applyPanelContainerCfg, adoptLayoutRowsForTabs, mountPanels, panelContainerVisible, reconcilePanels } from './panel.js';
 import { applyPersistedHidden, applySlotHidden, buildRail, railHidden } from './rail.js';
-import { setShiftMode, syncTiles, teardownTiles } from './tile.js';
+import { handleRowShortcut, setShiftMode, syncTiles, teardownTiles } from './tile.js';
 import { HOST, activeBySlot, configByPlugin, frameByPluginId, frames, groupState, pluginBySlot, slotByPluginId, slotMap } from './state.js';
 import type { PluginDescriptor, PluginFrame } from './types.js';
 
@@ -58,7 +58,10 @@ import type { PluginDescriptor, PluginFrame } from './types.js';
       try {
         const cw = iframe.contentWindow;
         if (!cw) return;
-        cw.addEventListener('keydown', (ev: KeyboardEvent) => { if (ev.key === 'Shift') setShiftMode(true); }, true);
+        cw.addEventListener('keydown', (ev: KeyboardEvent) => {
+          if (ev.key === 'Shift') setShiftMode(true);
+          if (handleRowShortcut(ev)) ev.preventDefault();
+        }, true);
         cw.addEventListener('keyup', (ev: KeyboardEvent) => { if (ev.key === 'Shift') setShiftMode(false); }, true);
       } catch (_) { /* 跨域插件无法桥接，Shift 仅在宿主聚焦时生效 */ }
     });
@@ -254,13 +257,15 @@ import type { PluginDescriptor, PluginFrame } from './types.js';
 
   // 切换布局模式后重建界面（允许 iframe 重挂载），并通知插件同步原生视图
   export function remountLayout(): void {
+    // 切回容器式时把各行的面板并入标签页；切到平铺式由 syncTiles 继承已有标签页
+    if (!tileMode()) adoptLayoutRowsForTabs();
     buildSlotIndex();
     mountAll();
     applyPersistedHidden();
     buildRail();
     applyPanelContainerCfg();
     if (tileMode()) syncTiles(); else teardownTiles();
-    broadcastAll('host.layoutChanged', { mode: layoutState.mode });
+    broadcastAll('host.layoutChanged', { mode: layoutState.mode, activeRow: activeRowIndex() });
   }
   bindRemountLayout(remountLayout);
 

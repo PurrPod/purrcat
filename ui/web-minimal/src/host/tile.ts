@@ -1,19 +1,28 @@
-// 平铺式布局：横向窗口条、Shift 拖拽排序/删除、右缘改宽、「+」窗口面板管理
+// 平铺式布局：多行横向窗口条、Shift 拖拽排序/删除、右缘改宽、「+」窗口面板管理
 import { broadcastAll, syncNativeCover } from './bus.js';
 import { paintIcon, paintPluginIcon } from './icons.js';
 import {
   LAYOUT_KEY_SESSION,
   LAYOUT_KEY_SIDEBAR,
   TILE_ADD_W,
-  ensureOrder,
+  activeRow,
+  activeRowIndex,
+  addKeyToRow,
+  createRow,
+  ensureOrderInRow,
+  isPanelKey,
   layoutState,
+  panelIdFromKey,
   panelWindowKey,
   persistLayout,
-  reorderWindows,
-  setWindowWidth,
+  removeKeyFromRow,
+  reorderInRow,
+  rowIndexOfKey,
+  setWindowWidthIn,
   tileMode,
-  windowWidth,
+  windowWidthIn,
 } from './layout.js';
+import type { LayoutRow } from './layout.js';
 import { mountFrame, notifyUnmount } from './mount.js';
 import { closePanelMenus, closePanelTab, panelTabs } from './panel.js';
 import { buildRail, railHidden, setPluginHidden } from './rail.js';
@@ -27,11 +36,19 @@ interface FixedAnchor {
   next: Node | null;
 }
 
+// 一行的工作区视图：DOM 元素与 iframe 都按行独立持有，切行只切换显隐
+interface RowView {
+  row: LayoutRow;
+  strip: HTMLElement;
+  tiles: Record<string, HTMLElement>;          // 面板窗口键 -> 本行窗口元素
+  frames: Record<string, PluginFrame | null>;  // 面板插件 id -> 本行 iframe
+  addEl: HTMLElement | null;
+}
+
 const fixedAnchors: Record<string, FixedAnchor> = {};
-const tileEls: Record<string, HTMLElement> = {};
-const tileFrames: Record<string, PluginFrame | null> = {};
-let stripEl: HTMLElement | null = null;
-let addEl: HTMLElement | null = null;
+const fixedTiles: Record<string, HTMLElement> = {};   // 列表位/会话位窗口：全局唯一，归属某一行
+const rowViews: RowView[] = [];
+let navEl: HTMLElement | null = null;
 let broadcastT: number | null = null;
 let managing = false;   // Shift 拖拽进行中：期间不清理 dragging 状态
 
@@ -46,12 +63,12 @@ function pluginVisibleInSlot(slot: string): PluginDescriptor | null {
   return list[0] || null;
 }
 
-// 滚动/改宽/重排后通知插件（内置浏览器需同步原生视图 bounds）
+// 滚动/改宽/重排/切行后通知插件（内置浏览器需同步原生视图 bounds）
 function broadcastLayout(): void {
   if (broadcastT != null) return;
   broadcastT = HOST.setTimeout(() => {
     broadcastT = null;
-    broadcastAll('host.layoutChanged', { mode: 'tile' });
+    broadcastAll('host.layoutChanged', { mode: 'tile', activeRow: activeRowIndex() });
   }, 40);
 }
 
@@ -91,11 +108,61 @@ export function setShiftMode(on: boolean): void {
   if (!active && !managing) {
     hideDropLine();
     HOST.document.querySelectorAll('.wm-tile-placeholder').forEach((el) => el.remove());
-    Object.keys(tileEls).forEach((k) => resetTileDrag(tileEls[k]));
+    Object.keys(fixedTiles).forEach((k) => resetTileDrag(fixedTiles[k]));
+    rowViews.forEach((rv) => Object.keys(rv.tiles).forEach((k) => resetTileDrag(rv.tiles[k])));
   }
 }
 
-HOST.addEventListener('keydown', (ev) => { if (ev.key === 'Shift') setShiftMode(true); });
+// 输入焦点在可编辑元素上时不抢 Shift+方向键（保留文本选中）
+function editableTarget(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null;
+  if (!el || typeof el.tagName !== 'string') return false;
+  const tag = el.tagName.toLowerCase();
+  if (tag === 'input' || tag === 'textarea' || tag === 'select') return true;
+  return el.isContentEditable === true;
+}
+
+// Shift + ←/→：把当前行横向滚动吸附到相邻窗口的左边界（不改顺序与宽度）。
+// 向右：第一个左缘不在可视区左边界上的窗口；向左：最后一个左缘在左边界左侧的窗口。
+function snapScrollRow(dir: -1 | 1): void {
+  const rv = rowViews[activeRowIndex()];
+  if (!rv) return;
+  const keys = sortedVisibleKeys(rv);
+  if (!keys.length) return;
+  const map = tilesOfRow(rv);
+  const s = rv.strip.scrollLeft;
+  let target = s;
+  if (dir > 0) {
+    for (let i = 0; i < keys.length; i++) {
+      const x = map[keys[i]].offsetLeft;
+      if (x - s > 1) { target = x; break; }
+    }
+  } else {
+    for (let i = keys.length - 1; i >= 0; i--) {
+      const x = map[keys[i]].offsetLeft;
+      if (x - s < -1) { target = x; break; }
+    }
+  }
+  if (target !== s) rv.strip.scrollLeft = target;
+}
+
+// Shift + 方向键：↑/↓ 换行，←/→ 行内按窗口边界横向滚动；返回 true 表示已处理（调用方应 preventDefault）
+export function handleRowShortcut(ev: KeyboardEvent): boolean {
+  if (!tileMode()) return false;
+  if (HOST.document.body.classList.contains('settings-open')) return false;
+  if (!ev.shiftKey || ev.altKey || ev.ctrlKey || ev.metaKey) return false;
+  const key = ev.key;
+  if (key !== 'ArrowUp' && key !== 'ArrowDown' && key !== 'ArrowLeft' && key !== 'ArrowRight') return false;
+  if (editableTarget(ev.target)) return false;
+  if (key === 'ArrowLeft' || key === 'ArrowRight') snapScrollRow(key === 'ArrowLeft' ? -1 : 1);
+  else switchRow(key === 'ArrowUp' ? -1 : 1);
+  return true;
+}
+
+HOST.addEventListener('keydown', (ev) => {
+  if (ev.key === 'Shift') setShiftMode(true);
+  if (handleRowShortcut(ev)) ev.preventDefault();
+});
 HOST.addEventListener('keyup', (ev) => { if (ev.key === 'Shift') setShiftMode(false); });
 HOST.addEventListener('blur', () => {
   // 窗口整体失焦：取消未完成的拖拽，避免接收层与 dragging 样式残留
@@ -104,14 +171,13 @@ HOST.addEventListener('blur', () => {
   managing = false;
   hideDropLine();
   setShiftMode(false);
-  Object.keys(tileEls).forEach((k) => resetTileDrag(tileEls[k]));
+  Object.keys(fixedTiles).forEach((k) => resetTileDrag(fixedTiles[k]));
+  rowViews.forEach((rv) => Object.keys(rv.tiles).forEach((k) => resetTileDrag(rv.tiles[k])));
 });
 
-function ensureStrip(): HTMLElement {
-  if (stripEl && stripEl.isConnected) return stripEl;
+function makeStrip(): HTMLElement {
   const el = HOST.document.createElement('div');
   el.className = 'wm-tiles';
-  el.id = 'wmTiles';
   // 滚轮横向滚动：iframe 内部的滚轮归插件自己，宿主只处理间隙/空白
   el.addEventListener('wheel', (ev) => {
     if (!ev.deltaY) return;
@@ -137,12 +203,137 @@ function ensureStrip(): HTMLElement {
   el.addEventListener('pointerup', endPan);
   el.addEventListener('pointercancel', endPan);
   HOST.document.body.appendChild(el);
-  stripEl = el;
   return el;
+}
+
+function makeRowView(row: LayoutRow): RowView {
+  return { row, strip: makeStrip(), tiles: {}, frames: {}, addEl: null };
+}
+
+// 按行对象身份对齐视图：保留仍在配置里的行（切行/新建行都不重建 iframe）
+function ensureRowViews(): void {
+  const rows = layoutState.rows;
+  for (let i = rowViews.length - 1; i >= 0; i--) {
+    if (rows.indexOf(rowViews[i].row) >= 0) continue;
+    notifyUnmount(rowViews[i].strip);
+    rowViews[i].strip.remove();
+    rowViews.splice(i, 1);
+  }
+  const next = rows.map((row) => rowViews.find((rv) => rv.row === row) || makeRowView(row));
+  rowViews.length = 0;
+  rowViews.push.apply(rowViews, next);
+  const active = activeRowIndex();
+  rowViews.forEach((rv, i) => rv.strip.classList.toggle('active', i === active));
+}
+
+function navButton(icon: string, title: string, dir: -1 | 1): HTMLElement {
+  const btn = HOST.document.createElement('button');
+  btn.className = 'wm-row-btn';
+  btn.type = 'button';
+  btn.title = title;
+  btn.setAttribute('aria-label', title);
+  paintIcon(btn, icon, dir < 0 ? '↑' : '↓');
+  btn.addEventListener('click', () => switchRow(dir));
+  return btn;
+}
+
+function ensureNav(): void {
+  if (navEl && navEl.isConnected) return;
+  const el = HOST.document.createElement('div');
+  el.className = 'wm-row-nav';
+  el.appendChild(navButton('chevron-up', '上一行（Shift+↑）', -1));
+  el.appendChild(navButton('chevron-down', '下一行（Shift+↓）', 1));
+  // 挂到顶部细条：细条整体是窗口拖拽区且不接收指针事件，样式里单独恢复
+  const bar = HOST.document.querySelector('[data-layer="topbar"]');
+  (bar || HOST.document.body).appendChild(el);
+  navEl = el;
+}
+
+function rowHasWindows(i: number): boolean {
+  const row = layoutState.rows[i];
+  return !!row && row.order.length > 0;
+}
+
+function nearestNonEmptyRow(from: number, dir: -1 | 1): number {
+  for (let i = from + dir; i >= 0 && i < layoutState.rows.length; i += dir) {
+    if (rowHasWindows(i)) return i;
+  }
+  return -1;
+}
+
+// 空行只能回到最近的非空行；非空行到边界时新建空行
+function canSwitchRow(dir: -1 | 1): boolean {
+  const cur = activeRowIndex();
+  if (!rowHasWindows(cur)) return nearestNonEmptyRow(cur, dir) >= 0;
+  return true;
+}
+
+function updateNav(): void {
+  if (!navEl) return;
+  const btns = navEl.querySelectorAll('.wm-row-btn');
+  const up = btns[0] as HTMLButtonElement | undefined;
+  const down = btns[1] as HTMLButtonElement | undefined;
+  const cur = activeRowIndex();
+  if (up) {
+    up.disabled = !canSwitchRow(-1);
+    up.title = '上一行（Shift+↑） · 当前第 ' + (cur + 1) + ' / ' + layoutState.rows.length + ' 行';
+  }
+  if (down) {
+    down.disabled = !canSwitchRow(1);
+    down.title = '下一行（Shift+↓） · 当前第 ' + (cur + 1) + ' / ' + layoutState.rows.length + ' 行';
+  }
+}
+
+export function switchRow(dir: -1 | 1): void {
+  if (!tileMode() || !canSwitchRow(dir)) return;
+  const rows = layoutState.rows;
+  const cur = activeRowIndex();
+  if (rowHasWindows(cur)) {
+    const target = cur + dir;
+    if (target >= 0 && target < rows.length) layoutState.activeRow = target;
+    else if (dir < 0) { rows.unshift(createRow()); layoutState.activeRow = 0; }
+    else { rows.push(createRow()); layoutState.activeRow = rows.length - 1; }
+  } else {
+    layoutState.activeRow = nearestNonEmptyRow(cur, dir);
+  }
+  syncTiles();
+  persistLayout();
+}
+
+export function switchToRow(index: number): void {
+  if (!tileMode()) return;
+  if (index < 0 || index >= layoutState.rows.length) return;
+  if (index === activeRowIndex()) return;
+  layoutState.activeRow = index;
+  syncTiles();
+  persistLayout();
 }
 
 function tileBody(tile: HTMLElement): HTMLElement {
   return tile.querySelector('.wm-tile-body') as HTMLElement;
+}
+
+function rowViewOfStrip(strip: HTMLElement | null): RowView | null {
+  if (!strip) return null;
+  return rowViews.find((rv) => rv.strip === strip) || null;
+}
+
+// 本行当前挂着的窗口（面板 + 归属本行的固定位）
+function tilesOfRow(rv: RowView): Record<string, HTMLElement> {
+  const out: Record<string, HTMLElement> = {};
+  Object.keys(rv.tiles).forEach((key) => { out[key] = rv.tiles[key]; });
+  [LAYOUT_KEY_SIDEBAR, LAYOUT_KEY_SESSION].forEach((key) => {
+    const tile = fixedTiles[key];
+    if (tile && tile.parentElement === rv.strip) out[key] = tile;
+  });
+  return out;
+}
+
+function sortedVisibleKeys(rv: RowView): string[] {
+  const map = tilesOfRow(rv);
+  return Object.keys(map)
+    .filter((k) => map[k].style.display !== 'none')
+    .sort((a, b) => Number(map[a].style.order || 0) - Number(map[b].style.order || 0));
 }
 
 function closeFixedSlot(slot: string): void {
@@ -153,20 +344,23 @@ function closeFixedSlot(slot: string): void {
 function closeTileByKey(key: string): void {
   if (key === LAYOUT_KEY_SIDEBAR) closeFixedSlot('sidebar');
   else if (key === LAYOUT_KEY_SESSION) closeFixedSlot('session');
-  else if (key.indexOf('panel:') === 0) closePanelTab(key.slice('panel:'.length));
+  else if (isPanelKey(key)) closePanelTab(panelIdFromKey(key));
   syncTiles();
   buildRail();
 }
 
 function bindResize(tile: HTMLElement, grip: HTMLElement, key: string): void {
   grip.addEventListener('pointerdown', (ev) => {
+    // 行对象在拖拽开始时解析：窗口可能被换到别的行（固定位重开）
+    const rv = rowViewOfStrip(tile.parentElement);
+    if (!rv) return;
     ev.preventDefault();
     ev.stopPropagation();
     const startX = ev.clientX;
     const startW = tile.getBoundingClientRect().width;
     const move = (e2: PointerEvent) => {
-      setWindowWidth(key, startW + (e2.clientX - startX));
-      tile.style.width = windowWidth(key) + 'px';
+      setWindowWidthIn(rv.row, key, startW + (e2.clientX - startX));
+      tile.style.width = windowWidthIn(rv.row, key) + 'px';
       broadcastLayout();
     };
     const up = () => {
@@ -184,20 +378,16 @@ function bindResize(tile: HTMLElement, grip: HTMLElement, key: string): void {
   });
 }
 
-function sortedVisibleKeys(): string[] {
-  return Object.keys(tileEls)
-    .filter((k) => tileEls[k].style.display !== 'none')
-    .sort((a, b) => Number(tileEls[a].style.order || 0) - Number(tileEls[b].style.order || 0));
-}
-
 // Shift + 拖拽：窗口临时脱离文档流跟手（position:fixed），横向移动换位；
 // 向下拖过窗口高度一半标记删除，松开时关闭
 function bindManageDrag(tile: HTMLElement, shield: HTMLElement, key: string): void {
   shield.addEventListener('pointerdown', (ev) => {
     if (!HOST.document.body.classList.contains('wm-shift-mode') || ev.button !== 0) return;
+    const rv = rowViewOfStrip(tile.parentElement);
+    if (!rv) return;
     ev.preventDefault();
     ev.stopPropagation();
-    const strip = stripEl;
+    const strip = rv.strip;
     const rect = tile.getBoundingClientRect();
     const startY = ev.clientY;
     const removeAt = Math.max(80, rect.height / 2);   // 向下拖过窗口高度一半（至少 80px）= 删除
@@ -225,22 +415,22 @@ function bindManageDrag(tile: HTMLElement, shield: HTMLElement, key: string): vo
     HOST.document.body.appendChild(layer);
     let pointerX = ev.clientX;
     // 未移动就松手时保持原位：当前下标即它在其它窗口中的插入位置
-    let targetIndex = Math.max(0, sortedVisibleKeys().indexOf(key));
+    let targetIndex = Math.max(0, sortedVisibleKeys(rv).indexOf(key));
     // 依据指针位置算出插入下标，并把指示线画在对应分界处（不实时重排，松手才落位）
     const updateIndicator = (x: number): number => {
-      if (!strip) { hideDropLine(); return 0; }
-      const others = sortedVisibleKeys().filter((k) => k !== key);
+      const map = tilesOfRow(rv);
+      const others = sortedVisibleKeys(rv).filter((k) => k !== key);
       if (!others.length) { hideDropLine(); return 0; }
       let index = others.length;
       for (let i = 0; i < others.length; i++) {
-        const r = tileEls[others[i]].getBoundingClientRect();
+        const r = map[others[i]].getBoundingClientRect();
         if (x < r.left + r.width / 2) { index = i; break; }
       }
       const sr = strip.getBoundingClientRect();
       let lineX: number;
       // 指示线画在插入槽的前沿：首个槽贴第一个窗口左侧，其余槽贴前一个窗口右侧
-      if (index === 0) lineX = tileEls[others[0]].getBoundingClientRect().left - 4;
-      else lineX = tileEls[others[index - 1]].getBoundingClientRect().right + 4;
+      if (index === 0) lineX = map[others[0]].getBoundingClientRect().left - 4;
+      else lineX = map[others[index - 1]].getBoundingClientRect().right + 4;
       showDropLine(lineX, sr.top + 6, Math.max(40, sr.height - 12));
       return index;
     };
@@ -257,17 +447,15 @@ function bindManageDrag(tile: HTMLElement, shield: HTMLElement, key: string): vo
       tile.style.left = Math.round(rect.left + offsetX) + 'px';
       tile.style.top = Math.round(rect.top + (removing ? Math.min(dy - removeAt, 40) : 0)) + 'px';
       if (removing) { hideDropLine(); return; }
-      if (strip) {
-        // 拖到窗口条左右边缘时自动横向滚动，便于把窗口拖到视口外
-        const sr = strip.getBoundingClientRect();
-        if (e2.clientX < sr.left + 56) strip.scrollLeft -= 20;
-        else if (e2.clientX > sr.right - 56) strip.scrollLeft += 20;
-      }
+      // 拖到窗口条左右边缘时自动横向滚动，便于把窗口拖到视口外
+      const sr = strip.getBoundingClientRect();
+      if (e2.clientX < sr.left + 56) strip.scrollLeft -= 20;
+      else if (e2.clientX > sr.right - 56) strip.scrollLeft += 20;
       targetIndex = updateIndicator(pointerX);
     };
     // 自动滚动会带着其它窗口移动，指示线要跟着重算
     const onScroll = () => { if (!removing) targetIndex = updateIndicator(pointerX); };
-    if (strip) strip.addEventListener('scroll', onScroll, { passive: true });
+    strip.addEventListener('scroll', onScroll, { passive: true });
     const finish = (commit: boolean) => {
       if (done) return;
       done = true;
@@ -275,18 +463,18 @@ function bindManageDrag(tile: HTMLElement, shield: HTMLElement, key: string): vo
       layer.removeEventListener('pointermove', move);
       layer.removeEventListener('pointerup', up);
       layer.removeEventListener('pointercancel', cancel);
-      if (strip) strip.removeEventListener('scroll', onScroll);
+      strip.removeEventListener('scroll', onScroll);
       try { layer.releasePointerCapture(ev.pointerId); } catch (_) {}
       layer.remove();
       placeholder.remove();
       hideDropLine();
       if (commit && !removing) {
         // 落位：按指示线所在分界插入，再让窗口回到文档流
-        const others = sortedVisibleKeys().filter((k) => k !== key);
+        const others = sortedVisibleKeys(rv).filter((k) => k !== key);
         const next = others.slice();
         next.splice(Math.max(0, Math.min(next.length, targetIndex)), 0, key);
-        reorderWindows(next);
-        applyOrder();
+        reorderInRow(rv.row, next);
+        applyOrder(rv);
         persistLayout();
       }
       resetTileDrag(tile);   // 落回文档流，按新顺序归位
@@ -331,24 +519,75 @@ function moveAnchorInto(body: HTMLElement, slot: string): void {
   if (anchor.parentNode !== body) body.appendChild(anchor);
 }
 
-function syncFixedTile(strip: HTMLElement, key: string, slot: string): boolean {
-  let tile = tileEls[key];
+// 固定位是全局单例：只归属一行，其它行不再重复挂载
+function syncFixedWindow(key: string, slot: string): void {
+  const p = pluginVisibleInSlot(slot);
+  if (!p) {
+    layoutState.rows.forEach((row) => removeKeyFromRow(row, key));
+    const tile = fixedTiles[key];
+    if (tile) tile.style.display = 'none';
+    return;
+  }
+  let owner = rowIndexOfKey(key);
+  if (owner < 0) {
+    // 新打开：落在当前行
+    owner = activeRowIndex();
+    addKeyToRow(layoutState.rows[owner], key);
+  } else {
+    layoutState.rows.forEach((row, i) => { if (i !== owner) removeKeyFromRow(row, key); });
+  }
+  const rv = rowViews[owner];
+  if (!rv) return;
+  let tile = fixedTiles[key];
   if (!tile) {
     tile = makeTile(key);
-    strip.appendChild(tile);
-    tileEls[key] = tile;
+    fixedTiles[key] = tile;
   }
+  if (tile.parentElement !== rv.strip) rv.strip.appendChild(tile);
   moveAnchorInto(tileBody(tile), slot);
-  const on = !!pluginVisibleInSlot(slot);
-  tile.style.display = on ? '' : 'none';
-  return on;
+  tile.style.display = '';
 }
 
-function ensureAddTile(strip: HTMLElement): void {
-  if (addEl && addEl.isConnected) return;
+function syncRowPanels(rv: RowView): void {
+  const panels = panelPlugins();
+  const byId: Record<string, PluginDescriptor> = {};
+  panels.forEach((p) => { byId[p.id] = p; });
+  const open: PluginDescriptor[] = [];
+  rv.row.order.forEach((key) => {
+    if (!isPanelKey(key)) return;
+    const p = byId[panelIdFromKey(key)];
+    if (p && !railHidden(p.id)) open.push(p);
+  });
+  open.forEach((p) => {
+    const key = panelWindowKey(p.id);
+    let tile = rv.tiles[key];
+    if (!tile) {
+      tile = makeTile(key);
+      rv.strip.appendChild(tile);
+      rv.tiles[key] = tile;
+    }
+    const body = tileBody(tile);
+    if (!body.isConnected) tile.appendChild(body);   // 重载后挂载点被移出文档时先接回窗口
+    const rec = rv.frames[p.id];
+    // manifest 重载会清掉动态实例的挂载点：记录失效时按当前窗口体重挂
+    if (!rec || !rec.el.isConnected || rec.el !== body) rv.frames[p.id] = mountFrame(body, p);
+    tile.style.display = '';
+  });
+  // 关闭的面板窗口：卸载并移除
+  Object.keys(rv.tiles).forEach((key) => {
+    const id = panelIdFromKey(key);
+    if (open.some((p) => p.id === id)) return;
+    notifyUnmount(rv.tiles[key]);
+    rv.tiles[key].remove();
+    delete rv.tiles[key];
+    delete rv.frames[id];
+  });
+}
+
+function ensureAddTile(rv: RowView): void {
+  if (rv.addEl && rv.addEl.isConnected) return;
   const tile = HOST.document.createElement('div');
   tile.className = 'wm-tile wm-tile-add';
-  tile.id = 'wmTileAdd';
   tile.title = '选择要开启的插件';
   tile.style.width = TILE_ADD_W + 'px';
   tile.style.order = '99999';
@@ -363,11 +602,11 @@ function ensureAddTile(strip: HTMLElement): void {
     ev.stopPropagation();
     openTileAddMenu(tile);
   });
-  strip.appendChild(tile);
-  addEl = tile;
+  rv.strip.appendChild(tile);
+  rv.addEl = tile;
 }
 
-function menuItem(p: PluginDescriptor, on: boolean, onclick: () => void): HTMLElement {
+function menuItem(p: PluginDescriptor, on: boolean, onclick: () => void, tag?: string): HTMLElement {
   const item = HOST.document.createElement('div');
   item.className = 'wm-pp_menu-item' + (on ? ' active' : '');
   const g = HOST.document.createElement('span');
@@ -377,11 +616,12 @@ function menuItem(p: PluginDescriptor, on: boolean, onclick: () => void): HTMLEl
   nm.textContent = p.name || p.id;
   item.appendChild(g);
   item.appendChild(nm);
-  if (on) {
-    const tag = HOST.document.createElement('span');
-    tag.className = 'wm-pp_menu-tag';
-    tag.textContent = '已打开';
-    item.appendChild(tag);
+  const text = tag != null ? tag : (on ? '已打开' : '');
+  if (text) {
+    const tagEl = HOST.document.createElement('span');
+    tagEl.className = 'wm-pp_menu-tag';
+    tagEl.textContent = text;
+    item.appendChild(tagEl);
   }
   item.addEventListener('click', onclick);
   return item;
@@ -394,7 +634,14 @@ function menuSection(menu: HTMLElement, title: string): void {
   menu.appendChild(head);
 }
 
-// 「+」窗口：平铺模式下统一的插件开/关入口
+function fixedKeyFor(p: PluginDescriptor): string {
+  if ((p.slotDef || {}).type !== 'fixed') return '';
+  if (p.slot === 'sidebar') return LAYOUT_KEY_SIDEBAR;
+  if (p.slot === 'session') return LAYOUT_KEY_SESSION;
+  return '';
+}
+
+// 「+」窗口：平铺模式下统一的插件开/关入口（只管理当前行的窗口）
 function openTileAddMenu(anchor: HTMLElement): void {
   const wasOpen = !!HOST.document.getElementById('tile-add-menu');
   closePanelMenus();
@@ -413,7 +660,18 @@ function openTileAddMenu(anchor: HTMLElement): void {
     const list = groupState.plugins.filter((p) => (p.slotDef || {}).area === area && !!p.entry);
     if (!list.length) return;
     menuSection(menu, label);
-    list.forEach((p) => menu.appendChild(menuItem(p, pluginVisible(p), () => toggle(p))));
+    list.forEach((p) => {
+      // 固定位是全局单例：在别的行打开时只标注并跳过去，不重复挂载
+      const owner = rowIndexOfKey(fixedKeyFor(p));
+      if (pluginVisible(p) && owner >= 0 && owner !== activeRowIndex()) {
+        menu.appendChild(menuItem(p, false, () => {
+          closePanelMenus();
+          switchToRow(owner);
+        }, '第 ' + (owner + 1) + ' 行'));
+      } else {
+        menu.appendChild(menuItem(p, pluginVisible(p), () => toggle(p)));
+      }
+    });
   });
   const panels = panelPlugins();
   if (panels.length) {
@@ -429,107 +687,112 @@ function openTileAddMenu(anchor: HTMLElement): void {
   syncNativeCover();
 }
 
-function applyOrder(): void {
-  const order = layoutState.order;
+function applyOrder(rv: RowView): void {
+  const order = rv.row.order;
   const rank = (k: string) => { const i = order.indexOf(k); return i < 0 ? order.length : i; };
-  Object.keys(tileEls).forEach((k) => { tileEls[k].style.order = String(rank(k)); });
-  if (addEl) addEl.style.order = '99999';
+  const map = tilesOfRow(rv);
+  Object.keys(map).forEach((k) => { map[k].style.order = String(rank(k)); });
+  if (rv.addEl) rv.addEl.style.order = '99999';
+}
+
+// 未打开任何面板且从未保存过标签列表时，默认打开第一个（与容器式一致）。
+// 每次进入平铺模式只补开一次：用户主动关光后不再自动补开。
+let defaultSeeded = false;
+function seedDefaultPanel(): void {
+  if (defaultSeeded) return;
+  defaultSeeded = true;
+  const panels = panelPlugins();
+  if (!panels.length) return;
+  const anyOpen = layoutState.rows.some((row) => row.order.some(isPanelKey));
+  if (anyOpen) return;
+  const hasSavedTabs = Object.prototype.hasOwnProperty.call(activeBySlot, '__panelTabs__');
+  const inherited = (panelTabs as string[]).filter((id) => panels.some((p) => p.id === id));
+  if (!inherited.length && hasSavedTabs) return;   // 明确关光过：不再自动补开
+  const legacy = panels.find((p) => p.id === activeBySlot['panel']);
+  const targets = inherited.length ? inherited : [(legacy || panels[0]).id];
+  targets.forEach((id) => addKeyToRow(activeRow(), panelWindowKey(id)));
+}
+
+// 面板窗口列表在各行之间取并集，切回容器式时沿用
+function syncPanelTabsMirror(): void {
+  const union: string[] = [];
+  layoutState.rows.forEach((row) => row.order.forEach((key) => {
+    if (!isPanelKey(key)) return;
+    const id = panelIdFromKey(key);
+    if (union.indexOf(id) < 0) union.push(id);
+  }));
+  (panelTabs as string[]).length = 0;
+  (panelTabs as string[]).push.apply(panelTabs as string[], union);
 }
 
 export function syncTiles(): void {
   if (!tileMode()) { teardownTiles(); return; }
-  const strip = ensureStrip();
-  const panels = panelPlugins();
-  // 与容器式一致：从未保存过标签列表时默认打开第一个面板；用户主动关光后不再自动补开
-  const hasSavedTabs = Object.prototype.hasOwnProperty.call(activeBySlot, '__panelTabs__');
-  if (!panelTabs.length && !hasSavedTabs && panels.length) {
-    const legacy = panels.find((p) => p.id === activeBySlot['panel']);
-    panelTabs.push((legacy || panels[0]).id);
-  }
-  const validPanels = panels.filter(
-    (p) => (panelTabs as string[]).indexOf(p.id) >= 0 && !railHidden(p.id),
-  );
+  ensureNav();
+  ensureRowViews();
+  seedDefaultPanel();
 
-  const sidebarOn = syncFixedTile(strip, LAYOUT_KEY_SIDEBAR, 'sidebar');
-  const sessionOn = syncFixedTile(strip, LAYOUT_KEY_SESSION, 'session');
+  // 固定位：全局单例，只归属一行；面板：每行独立实例
+  syncFixedWindow(LAYOUT_KEY_SIDEBAR, 'sidebar');
+  syncFixedWindow(LAYOUT_KEY_SESSION, 'session');
+  rowViews.forEach(syncRowPanels);
 
-  validPanels.forEach((p) => {
-    const key = panelWindowKey(p.id);
-    let tile = tileEls[key];
-    if (!tile) {
-      tile = makeTile(key);
-      strip.appendChild(tile);
-      tileEls[key] = tile;
-    }
-    const body = tileBody(tile);
-    if (!tileFrames[p.id]) tileFrames[p.id] = mountFrame(body, p);
-    tile.style.display = '';
+  let orderChanged = false;
+  rowViews.forEach((rv) => {
+    const before = rv.row.order.join('\u0000');
+    ensureOrderInRow(rv.row, sortedVisibleKeys(rv));
+    if (before !== rv.row.order.join('\u0000')) orderChanged = true;
+    applyOrder(rv);
+    const map = tilesOfRow(rv);
+    Object.keys(map).forEach((k) => { map[k].style.width = windowWidthIn(rv.row, k) + 'px'; });
+    ensureAddTile(rv);
   });
 
-  // 关闭的面板窗口：卸载并移除
-  Object.keys(tileEls).forEach((key) => {
-    if (key.indexOf('panel:') !== 0) return;
-    const id = key.slice('panel:'.length);
-    if (validPanels.some((p) => p.id === id)) return;
-    notifyUnmount(tileEls[key]);
-    tileEls[key].remove();
-    delete tileEls[key];
-    delete tileFrames[id];
-  });
+  // 广播/链接投递仍以 'panel' 为槽键：汇总所有行的面板帧
+  const panelFrames: PluginFrame[] = [];
+  rowViews.forEach((rv) => Object.keys(rv.frames).forEach((id) => {
+    const frame = rv.frames[id];
+    if (frame) panelFrames.push(frame);
+  }));
+  frames['panel'] = panelFrames;
+  syncPanelTabsMirror();
 
-  // 广播/链接投递仍以 'panel' 为槽键
-  frames['panel'] = validPanels
-    .map((p) => tileFrames[p.id])
-    .filter(Boolean) as PluginFrame[];
-
-  ensureAddTile(strip);
-
-  // 只登记当前真正显示的窗口：关闭的窗口从顺序表移除，重新打开才会追加到最右端。
-  // 已关闭的固定位也留在表里会导致它们重开时回到旧位置（例如一直排在第一个）。
-  const visible = (sidebarOn ? [LAYOUT_KEY_SIDEBAR] : [])
-    .concat(validPanels.map((p) => panelWindowKey(p.id)))
-    .concat(sessionOn ? [LAYOUT_KEY_SESSION] : []);
-  const orderBefore = layoutState.order.join('\u0000');
-  ensureOrder(visible);
-  applyOrder();
-  // 顺序按开启时间维护（关闭即出表、重开追加到最右），变化时落盘
-  if (orderBefore !== layoutState.order.join('\u0000')) persistLayout();
-
-  Object.keys(tileEls).forEach((k) => { tileEls[k].style.width = windowWidth(k) + 'px'; });
+  updateNav();
+  if (orderChanged) persistLayout();
   broadcastLayout();
   syncNativeCover();
 }
 
 export function scrollTileIntoView(key: string): void {
-  const tile = tileEls[key];
-  if (!tile || !stripEl) return;
+  const rv = rowViews[activeRowIndex()];
+  if (!rv) return;
+  const tile = rv.tiles[key];
+  if (!tile) return;
   const left = tile.offsetLeft;
   const right = left + tile.offsetWidth;
-  if (left < stripEl.scrollLeft) stripEl.scrollLeft = left - 8;
-  else if (right > stripEl.scrollLeft + stripEl.clientWidth) {
-    stripEl.scrollLeft = right - stripEl.clientWidth + 8;
+  if (left < rv.strip.scrollLeft) rv.strip.scrollLeft = left - 8;
+  else if (right > rv.strip.scrollLeft + rv.strip.clientWidth) {
+    rv.strip.scrollLeft = right - rv.strip.clientWidth + 8;
   }
 }
 
 export function teardownTiles(): void {
-  if (stripEl) {
-    // 先把固定锚点（连同其 iframe）移回原位，再接续容器式布局；
-    // 再对仍留在窗口条内的面板帧发 unmount，避免误伤刚重建的固定位插件
-    Object.keys(fixedAnchors).forEach((slot) => {
-      const rec = fixedAnchors[slot];
-      if (rec.el.parentNode && rec.parent) {
-        if (rec.next && rec.next.parentNode === rec.parent) rec.parent.insertBefore(rec.el, rec.next);
-        else rec.parent.appendChild(rec.el);
-      }
-      delete fixedAnchors[slot];
-    });
-    notifyUnmount(stripEl);
-    stripEl.remove();
-  }
-  stripEl = null;
-  addEl = null;
-  Object.keys(tileEls).forEach((k) => delete tileEls[k]);
-  Object.keys(tileFrames).forEach((k) => delete tileFrames[k]);
-  delete frames['panel'];
+  // 先把固定锚点（连同其 iframe）移回原位，再接续容器式布局；
+  // 再对仍留在窗口条内的面板帧发 unmount，避免误伤刚重建的固定位插件
+  Object.keys(fixedAnchors).forEach((slot) => {
+    const rec = fixedAnchors[slot];
+    if (rec.el.parentNode && rec.parent) {
+      if (rec.next && rec.next.parentNode === rec.parent) rec.parent.insertBefore(rec.el, rec.next);
+      else rec.parent.appendChild(rec.el);
+    }
+    delete fixedAnchors[slot];
+  });
+  rowViews.forEach((rv) => { notifyUnmount(rv.strip); rv.strip.remove(); });
+  rowViews.length = 0;
+  Object.keys(fixedTiles).forEach((k) => delete fixedTiles[k]);
+  if (navEl) { navEl.remove(); navEl = null; }
+  if (dropLineEl) { dropLineEl.remove(); dropLineEl = null; }
+  defaultSeeded = false;
+  // 不清 frames['panel']：容器式重建时 mountPanels 已先写入本模式的帧，
+  // 在这里删除会让容器里面板收不到广播与动作来源反查。
   setShiftMode(false);
 }

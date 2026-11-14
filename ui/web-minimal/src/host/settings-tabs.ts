@@ -2,7 +2,7 @@
 import { PANEL_CONTAINER_ID } from './areas.js';
 import { callAction, syncNativeCover } from './bus.js';
 import { cfgState, cfgToolbar, renderConfigSection, settingsPageHead } from './config-center.js';
-import { tileMode } from './layout.js';
+import { activeRow, panelWindowKey, tileMode } from './layout.js';
 import { reloadManifest } from './manifest.js';
 import { refreshFixedSlot } from './mount.js';
 import { closePanelTab, openPanelTab, panelTabs } from './panel.js';
@@ -220,9 +220,10 @@ import type { PluginDescriptor } from './types.js';
       return !!cur && cur.id === p.id;
     }
     if (type === 'panel') {
-      // 容器式：容器总开关关闭时其内标签自然不生效；平铺式：已打开即生效
+      // 容器式：容器总开关关闭时其内标签自然不生效；平铺式：以当前行的已打开集合为准
       if (!tileMode() && railHidden(PANEL_CONTAINER_ID)) return false;
-      return (panelTabs as string[]).indexOf(p.id) >= 0;   // 多标签/平铺窗口：处于已打开即视为生效
+      if (tileMode()) return activeRow().order.indexOf(panelWindowKey(p.id)) >= 0;
+      return (panelTabs as string[]).indexOf(p.id) >= 0;   // 多标签：处于已打开即视为生效
     }
     return true;   // float：未隐藏即生效
   }

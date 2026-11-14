@@ -107,7 +107,7 @@ import { HOST, configByPlugin, railState } from './state.js';
     const tip = HOST.document.createElement('div');
     tip.className = 'cfg-tip';
     tip.textContent = layoutState.mode === 'tile'
-      ? '平铺模式：列表位、已打开面板、会话位各为独立窗口，按开启时间从左到右排列（重开追加到最右）；最右侧「+」窗口统一开关插件。按住 Shift 左右拖跟手排序、向下拖过窗口一半关闭；拖右缘改宽。'
+      ? '平铺模式：列表位、已打开面板、会话位各为独立窗口，按开启时间从左到右排列（重开追加到最右）；最右侧「+」窗口统一开关插件。顶部栏左侧上/下图标或 Shift+↑/↓ 切换行，Shift+←/→ 按窗口边界横向滚动；每行独立维护窗口，面板可在多行同时打开。按住 Shift 左右拖跟手排序、向下拖过窗口一半关闭；拖右缘改宽。'
       : '容器式：列表位、中栏面板容器（多标签）、会话位。';
     grid.appendChild(tip);
     body.appendChild(grid);

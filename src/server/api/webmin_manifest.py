@@ -166,40 +166,80 @@ def normalize_active(raw: dict) -> dict:
 # 平铺布局：窗口宽度的合法区间（与前端 tile 布局保持一致）
 LAYOUT_WINDOW_MIN_W = 260
 LAYOUT_WINDOW_MAX_W = 4000
+# 平铺布局：行数上限，防止异常配置无限扩张
+LAYOUT_MAX_ROWS = 20
+
+
+def _sanitize_row_order(raw) -> list:
+    """窗口顺序：只保留非空字符串并去重，保持给定先后关系。"""
+    order = []
+    if not isinstance(raw, list):
+        return order
+    for item in raw:
+        if not isinstance(item, str):
+            continue
+        key = item.strip()
+        if key and key not in order:
+            order.append(key)
+    return order
+
+
+def _sanitize_row_widths(raw) -> dict:
+    """窗口宽度：只保留有限数值，夹紧到 [260, 4000] 的整数。"""
+    widths = {}
+    if not isinstance(raw, dict):
+        return widths
+    for key, value in raw.items():
+        name = str(key or "").strip()
+        if not name:
+            continue
+        try:
+            width = float(value)
+        except (TypeError, ValueError):
+            continue
+        if not width == width:  # NaN
+            continue
+        widths[name] = int(
+            max(LAYOUT_WINDOW_MIN_W, min(LAYOUT_WINDOW_MAX_W, round(width)))
+        )
+    return widths
 
 
 def sanitize_layout(raw) -> dict:
-    """归一化布局配置：mode 仅接受 container/tile，order 去重去空，宽度夹紧。"""
+    """归一化布局配置：模式、平铺行顺序/宽度与当前行。
+
+    rows 缺省时兼容旧版顶层 order/widths（迁入第一行）；activeRow 夹到合法下标。
+    """
     data = raw if isinstance(raw, dict) else {}
     mode = str(data.get("mode") or "container").strip().lower()
     if mode not in ("container", "tile"):
         mode = "container"
-    order = []
-    raw_order = data.get("order")
-    if isinstance(raw_order, list):
-        for item in raw_order:
-            if not isinstance(item, str):
+    rows = []
+    raw_rows = data.get("rows")
+    if isinstance(raw_rows, list):
+        for item in raw_rows:
+            if not isinstance(item, dict):
                 continue
-            key = item.strip()
-            if key and key not in order:
-                order.append(key)
-    widths = {}
-    raw_widths = data.get("widths")
-    if isinstance(raw_widths, dict):
-        for key, value in raw_widths.items():
-            name = str(key or "").strip()
-            if not name:
-                continue
-            try:
-                width = float(value)
-            except (TypeError, ValueError):
-                continue
-            if not width == width:  # NaN
-                continue
-            widths[name] = int(
-                max(LAYOUT_WINDOW_MIN_W, min(LAYOUT_WINDOW_MAX_W, round(width)))
+            rows.append(
+                {
+                    "order": _sanitize_row_order(item.get("order")),
+                    "widths": _sanitize_row_widths(item.get("widths")),
+                }
             )
-    return {"mode": mode, "order": order, "widths": widths}
+    if not rows:
+        rows.append(
+            {
+                "order": _sanitize_row_order(data.get("order")),
+                "widths": _sanitize_row_widths(data.get("widths")),
+            }
+        )
+    rows = rows[:LAYOUT_MAX_ROWS]
+    try:
+        active_row = int(data.get("activeRow"))
+    except (TypeError, ValueError):
+        active_row = 0
+    active_row = max(0, min(len(rows) - 1, active_row))
+    return {"mode": mode, "activeRow": active_row, "rows": rows}
 
 
 def build_manifest_entry(
