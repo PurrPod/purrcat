@@ -973,3 +973,74 @@ body.layout-tile .wm-tiles [data-slot="session"] {
 }
 body.layout-tile .wm-tiles [data-slot="sidebar"] iframe,
 body.layout-tile .wm-tiles [data-slot="session"] iframe { width: 100%; height: 100%; }
+
+/* 配置中心小弹窗（新增 MCP 服务器）：遮罩盖过设置页(55)与白条(60) */
+.cfg-modal-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 130;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(16, 26, 39, 0.28);
+}
+.cfg-modal {
+  width: 520px;
+  max-width: 100%;
+  max-height: 100%;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px;
+  background: var(--wm-bg-panel);
+  border-radius: 16px;
+  box-shadow: 0 18px 48px rgba(16, 26, 39, 0.22);
+}
+.cfg-modal-title { font-size: 15px; font-weight: 700; color: var(--wm-label); }
+.cfg-modal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.cfg-modal-desc { font-size: 12px; color: var(--wm-label-dim); line-height: 1.5; margin-top: -4px; }
+.cfg-modal-view { display: flex; flex-direction: column; gap: 12px; }
+.cfg-modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
+/* 弹窗挂在 body 上，不在 .settings-body 内，需自带按钮基础样式 */
+.cfg-modal .btn {
+  padding: 6px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--wm-border);
+  background: var(--wm-bg-panel);
+  color: var(--wm-label-2nd);
+  font-family: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: border-color 0.12s ease, color 0.12s ease, background 0.12s ease;
+}
+.cfg-modal .btn:hover:not(:disabled) { border-color: var(--wm-accent); color: var(--wm-accent); }
+.cfg-modal .btn:disabled { opacity: 0.5; cursor: default; }
+.cfg-modal .btn.cfg-save { background: var(--wm-bg-active); color: var(--wm-label); font-weight: 600; }
+.cfg-modal .btn.cfg-save:hover:not(:disabled) { background: var(--wm-bl-200); color: var(--wm-label); }
+/* 传输方式下拉：去掉原生箭头，改用统一的手绘箭头 */
+.cfg-modal select.cfg-input {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 30px;
+  cursor: pointer;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5 6 6.5l5-5' fill='none' stroke='%236a6a6a' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 11px 8px;
+}
+.cfg-modal select.cfg-input:hover { border-color: var(--wm-bl-400); }
+.cfg-modal select.cfg-input option { background: var(--wm-bg-panel); color: var(--wm-label); }
+
+
+/* MCP 卡片展开区：工具清单与下方连接配置之间留出明显间距 */
+.entry-tools { display: flex; flex-direction: column; gap: 3px; }
+.entry-tools-title { font-weight: 600; color: var(--wm-label-2nd); margin-bottom: 2px; }
+.entry-json-title { margin-top: 22px; margin-bottom: 8px; font-weight: 600; color: var(--wm-label-2nd); }
+.entry-json-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 22px; margin-bottom: 8px; }
+.entry-json-head .entry-json-title { margin: 0; }
+.entry-json-head .entry-mode-btn { padding: 2px 9px; font-size: 11.5px; }
+.cfg-textarea { font-family: var(--wm-mono); font-size: 12px; line-height: 1.5; resize: vertical; }
+.mcp-fields { gap: 12px; }
+.mcp-fields-host { display: flex; flex-direction: column; }

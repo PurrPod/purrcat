@@ -473,6 +473,8 @@
     // tab -> 处于展开态的顶级 key
     editStr: {},
     // tab+'::'+key -> 编辑区文本
+    jsonMode: {},
+    // tab+'::'+key -> 卡片展开区是否用 JSON 编辑
     deployLogOpen: {},
     diskLogOpen: false,
     rawSensor: {}
@@ -852,13 +854,326 @@
     card.appendChild(body);
   }
   var MCP_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="6" rx="2"/><rect x="3" y="14" width="18" height="6" rx="2"/><path d="M7 7h.01M7 17h.01"/></svg>';
+  var mcpAddMask = null;
+  var mcpAddEsc = null;
+  function closeMcpAddModal() {
+    if (mcpAddEsc) {
+      HOST.document.removeEventListener("keydown", mcpAddEsc);
+      mcpAddEsc = null;
+    }
+    if (mcpAddMask && mcpAddMask.parentNode) mcpAddMask.parentNode.removeChild(mcpAddMask);
+    mcpAddMask = null;
+  }
+  function parseMcpPairs(text) {
+    const out = {};
+    text.split("\n").forEach(function(line) {
+      const s = line.trim();
+      if (!s) return;
+      const i = s.search(/[:=]/);
+      const k = i > 0 ? s.slice(0, i).trim() : "";
+      if (k) out[k] = s.slice(i + 1).trim();
+    });
+    return out;
+  }
+  function formatMcpPairs(obj) {
+    if (!obj || typeof obj !== "object" || Array.isArray(obj)) return "";
+    return Object.keys(obj).map(function(k) {
+      return k + ": " + String(obj[k]);
+    }).join("\n");
+  }
+  function mcpField(label, el) {
+    const f = HOST.document.createElement("div");
+    f.className = "cfg-field";
+    const lb = HOST.document.createElement("label");
+    lb.className = "cfg-label";
+    lb.textContent = label;
+    f.appendChild(lb);
+    f.appendChild(el);
+    return f;
+  }
+  function mcpInput(value, placeholder) {
+    const el = HOST.document.createElement("input");
+    el.type = "text";
+    el.className = "cfg-input";
+    el.spellcheck = false;
+    el.value = value;
+    el.placeholder = placeholder;
+    return el;
+  }
+  function mcpTextarea(value, placeholder, height) {
+    const el = HOST.document.createElement("textarea");
+    el.className = "cfg-input cfg-textarea";
+    el.value = value;
+    el.placeholder = placeholder;
+    el.style.minHeight = height + "px";
+    return el;
+  }
+  function mcpFieldGroup(kind, base) {
+    const src = base && typeof base === "object" && !Array.isArray(base) ? base : {};
+    const wrap = HOST.document.createElement("div");
+    wrap.className = "cfg-grid one-col mcp-fields";
+    if (kind === "stdio") {
+      const command = mcpInput(String(src.command || ""), "\u4F8B\u5982 npx");
+      const args = mcpTextarea(Array.isArray(src.args) ? src.args.join("\n") : "", "\u6BCF\u884C\u4E00\u4E2A\u53C2\u6570\uFF0C\u4F8B\u5982 -y", 62);
+      const env = mcpTextarea(formatMcpPairs(src.env), "\u6BCF\u884C KEY=VALUE", 62);
+      wrap.appendChild(mcpField("\u542F\u52A8\u547D\u4EE4", command));
+      wrap.appendChild(mcpField("\u547D\u4EE4\u53C2\u6570", args));
+      wrap.appendChild(mcpField("\u73AF\u5883\u53D8\u91CF", env));
+      return {
+        el: wrap,
+        read: function() {
+          if (!command.value.trim()) return { error: "\u8BF7\u586B\u5199\u542F\u52A8\u547D\u4EE4" };
+          const value = Object.assign({}, src, { command: command.value.trim() });
+          delete value.url;
+          const argv = args.value.split("\n").map(function(s) {
+            return s.trim();
+          }).filter(Boolean);
+          if (argv.length) value.args = argv;
+          else delete value.args;
+          const envMap = parseMcpPairs(env.value);
+          if (Object.keys(envMap).length) value.env = envMap;
+          else delete value.env;
+          return { value };
+        }
+      };
+    }
+    const url = mcpInput(String(src.url || ""), "\u4F8B\u5982 http://127.0.0.1:3001/mcp");
+    const headers = mcpTextarea(formatMcpPairs(src.headers), "\u6BCF\u884C Key: Value\uFF0C\u53EF\u7559\u7A7A", 62);
+    wrap.appendChild(mcpField("\u670D\u52A1\u5730\u5740\uFF08URL\uFF09", url));
+    const headersField = mcpField("\u8BF7\u6C42\u5934", headers);
+    const tip = HOST.document.createElement("div");
+    tip.className = "cfg-tip";
+    tip.textContent = "\u652F\u6301 Authorization: Bearer\u3001X-API-Key\u3001Basic \u7B49\u8BF7\u6C42\u5934\uFF1BOAuth \u6682\u4E0D\u652F\u6301\u3002";
+    headersField.appendChild(tip);
+    wrap.appendChild(headersField);
+    return {
+      el: wrap,
+      read: function() {
+        if (!url.value.trim()) return { error: "\u8BF7\u586B\u5199\u670D\u52A1\u5730\u5740" };
+        const value = Object.assign({}, src, { url: url.value.trim() });
+        if (!value.type) value.type = "http";
+        delete value.command;
+        delete value.args;
+        delete value.env;
+        const h = parseMcpPairs(headers.value);
+        if (Object.keys(h).length) value.headers = h;
+        else delete value.headers;
+        return { value };
+      }
+    };
+  }
+  function pickImportedConfig(obj) {
+    if (!obj || typeof obj !== "object" || Array.isArray(obj)) return { error: "JSON \u5FC5\u987B\u662F\u5BF9\u8C61" };
+    let name = "";
+    let config = obj;
+    if (obj.mcpServers && typeof obj.mcpServers === "object" && !Array.isArray(obj.mcpServers)) {
+      const keys = Object.keys(obj.mcpServers);
+      if (keys.length === 0) return { error: "mcpServers \u4E3A\u7A7A" };
+      name = keys[0];
+      config = obj.mcpServers[name];
+    } else if (!obj.url && !obj.command) {
+      const keys = Object.keys(obj);
+      const first = keys.length === 1 ? obj[keys[0]] : null;
+      if (!first || typeof first !== "object" || !first.url && !first.command) {
+        return { error: "\u65E0\u6CD5\u8BC6\u522B\u7684\u914D\u7F6E\u7ED3\u6784" };
+      }
+      name = keys[0];
+      config = first;
+    }
+    if (!config || typeof config !== "object" || Array.isArray(config)) return { error: "\u65E0\u6CD5\u8BC6\u522B\u7684\u914D\u7F6E\u7ED3\u6784" };
+    if (!config.url && !config.command) return { error: "\u914D\u7F6E\u7F3A\u5C11 url \u6216 command" };
+    return { name, config };
+  }
+  function openMcpAddModal(main, key, servers, data) {
+    closeMcpAddModal();
+    let kind = "http";
+    const mask = HOST.document.createElement("div");
+    mask.className = "cfg-modal-mask";
+    const panel = HOST.document.createElement("div");
+    panel.className = "cfg-modal";
+    const head = HOST.document.createElement("div");
+    head.className = "cfg-modal-head";
+    const title = HOST.document.createElement("div");
+    title.className = "cfg-modal-title";
+    title.textContent = "\u65B0\u589E MCP \u670D\u52A1\u5668";
+    const importBtn = HOST.document.createElement("button");
+    importBtn.className = "btn";
+    importBtn.textContent = "\u5BFC\u5165 JSON";
+    head.appendChild(title);
+    head.appendChild(importBtn);
+    panel.appendChild(head);
+    const formView = HOST.document.createElement("div");
+    formView.className = "cfg-modal-view";
+    panel.appendChild(formView);
+    const desc = HOST.document.createElement("div");
+    desc.className = "cfg-modal-desc";
+    desc.textContent = "\u586B\u5199\u540D\u79F0\u4E0E\u8FDE\u63A5\u65B9\u5F0F\uFF0C\u4FDD\u5B58\u540E\u81EA\u52A8\u91CD\u8F7D\u5E76\u62C9\u53D6\u5DE5\u5177\u5217\u8868\u3002";
+    formView.appendChild(desc);
+    const importView = HOST.document.createElement("div");
+    importView.className = "cfg-modal-view";
+    importView.style.display = "none";
+    panel.appendChild(importView);
+    const importTa = mcpTextarea("", '\u7C98\u8D34\u670D\u52A1\u5668 JSON\uFF0C\u652F\u6301 {"mcpServers": {"name": {...}}} \u6216\u5355\u4E2A\u914D\u7F6E\u5BF9\u8C61', 220);
+    importView.appendChild(importTa);
+    const importActions = HOST.document.createElement("div");
+    importActions.className = "cfg-modal-actions";
+    const importBack = HOST.document.createElement("button");
+    importBack.className = "btn";
+    importBack.textContent = "\u53D6\u6D88";
+    const importDo = HOST.document.createElement("button");
+    importDo.className = "btn cfg-save";
+    importDo.textContent = "\u89E3\u6790";
+    importActions.appendChild(importBack);
+    importActions.appendChild(importDo);
+    importView.appendChild(importActions);
+    function showImport(on) {
+      formView.style.display = on ? "none" : "flex";
+      importView.style.display = on ? "flex" : "none";
+      importBtn.style.display = on ? "none" : "";
+      title.textContent = on ? "\u5BFC\u5165 MCP \u670D\u52A1\u5668 JSON" : "\u65B0\u589E MCP \u670D\u52A1\u5668";
+      if (on) importTa.focus();
+    }
+    importBtn.addEventListener("click", function() {
+      showImport(true);
+    });
+    importBack.addEventListener("click", function() {
+      showImport(false);
+    });
+    const form = HOST.document.createElement("div");
+    form.className = "cfg-grid";
+    const nameIn = mcpInput("", "\u4F8B\u5982 cesium-map");
+    modelField(form, "\u670D\u52A1\u5668\u540D\u79F0", nameIn);
+    const kindWrap = HOST.document.createElement("div");
+    kindWrap.className = "cfg-field";
+    const kindLabel = HOST.document.createElement("label");
+    kindLabel.className = "cfg-label";
+    kindLabel.textContent = "\u4F20\u8F93\u65B9\u5F0F";
+    kindWrap.appendChild(kindLabel);
+    const kindSel = HOST.document.createElement("select");
+    kindSel.className = "cfg-input";
+    [["http", "HTTP\uFF08url\uFF09"], ["stdio", "stdio\uFF08command\uFF09"]].forEach(function(pair) {
+      const opt = HOST.document.createElement("option");
+      opt.value = pair[0];
+      opt.textContent = pair[1];
+      kindSel.appendChild(opt);
+    });
+    kindSel.value = kind;
+    kindWrap.appendChild(kindSel);
+    form.appendChild(kindWrap);
+    formView.appendChild(form);
+    const fields = HOST.document.createElement("div");
+    fields.className = "mcp-fields-host";
+    formView.appendChild(fields);
+    let group = mcpFieldGroup(kind, {});
+    fields.appendChild(group.el);
+    kindSel.addEventListener("change", function() {
+      kind = kindSel.value;
+      group = mcpFieldGroup(kind, {});
+      fields.innerHTML = "";
+      fields.appendChild(group.el);
+    });
+    importDo.addEventListener("click", function() {
+      let obj;
+      try {
+        obj = JSON.parse(importTa.value);
+      } catch (e) {
+        HOST.alert("JSON \u89E3\u6790\u5931\u8D25\uFF1A" + e.message);
+        return;
+      }
+      const picked = pickImportedConfig(obj);
+      if (picked.error) {
+        HOST.alert(picked.error);
+        return;
+      }
+      kind = picked.config.url ? "http" : "stdio";
+      kindSel.value = kind;
+      group = mcpFieldGroup(kind, picked.config);
+      fields.innerHTML = "";
+      fields.appendChild(group.el);
+      if (picked.name) nameIn.value = picked.name;
+      importTa.value = "";
+      showImport(false);
+    });
+    const actions = HOST.document.createElement("div");
+    actions.className = "cfg-modal-actions";
+    const cancel = HOST.document.createElement("button");
+    cancel.className = "btn";
+    cancel.textContent = "\u53D6\u6D88";
+    cancel.addEventListener("click", closeMcpAddModal);
+    const save = HOST.document.createElement("button");
+    save.className = "btn cfg-save";
+    save.textContent = "\u4FDD\u5B58\u5E76\u5237\u65B0";
+    save.addEventListener("click", function() {
+      const newName = nameIn.value.trim();
+      if (!newName) {
+        HOST.alert("\u8BF7\u586B\u5199\u670D\u52A1\u5668\u540D\u79F0");
+        return;
+      }
+      if (servers[newName]) {
+        HOST.alert('\u670D\u52A1\u5668 "' + newName + '" \u5DF2\u5B58\u5728');
+        return;
+      }
+      const parsed = group.read();
+      if (parsed.error) {
+        HOST.alert(parsed.error);
+        return;
+      }
+      servers[newName] = parsed.value;
+      save.disabled = true;
+      cancel.disabled = true;
+      save.textContent = "\u4FDD\u5B58\u4E2D\u2026";
+      putCfg(key, data).then(function() {
+        closeMcpAddModal();
+        rerenderConfig(main, key);
+        HOST.alert("\u5DF2\u65B0\u589E\u670D\u52A1\u5668\u5E76\u91CD\u8F7D\u3002");
+      }).catch(function(e) {
+        save.disabled = false;
+        cancel.disabled = false;
+        save.textContent = "\u4FDD\u5B58\u5E76\u5237\u65B0";
+        HOST.alert("\u4FDD\u5B58\u5931\u8D25\uFF1A" + (e && e.message || ""));
+      });
+    });
+    actions.appendChild(cancel);
+    actions.appendChild(save);
+    formView.appendChild(actions);
+    mask.appendChild(panel);
+    mask.addEventListener("click", function(ev) {
+      if (ev.target === mask) closeMcpAddModal();
+    });
+    mcpAddEsc = function(ev) {
+      if (ev.key === "Escape") closeMcpAddModal();
+    };
+    HOST.document.addEventListener("keydown", mcpAddEsc);
+    HOST.document.body.appendChild(mask);
+    mcpAddMask = mask;
+    nameIn.focus();
+  }
   function renderMcpCards(main, key) {
-    cfgData(key).then(function(data) {
+    Promise.all([
+      cfgData(key),
+      fetch("/api/config/mcp/tools").then(function(r) {
+        return r.ok ? r.json() : { servers: {} };
+      }).catch(function() {
+        return { servers: {} };
+      })
+    ]).then(function(res) {
+      let data = res[0];
+      const toolsBy = res[1] && res[1].servers || {};
       if (!data || typeof data !== "object" || Array.isArray(data)) data = {};
       if (!data.mcpServers || typeof data.mcpServers !== "object" || Array.isArray(data.mcpServers)) data.mcpServers = {};
       cfgState.data[key] = data;
       const servers = data.mcpServers;
       const names = Object.keys(servers);
+      const tb = HOST.document.createElement("div");
+      tb.className = "cfg-toolbar";
+      const add = HOST.document.createElement("button");
+      add.className = "btn cfg-save";
+      add.textContent = "\uFF0B \u65B0\u589E\u670D\u52A1\u5668";
+      add.addEventListener("click", function() {
+        openMcpAddModal(main, key, servers, data);
+      });
+      tb.appendChild(add);
+      main.appendChild(tb);
       if (names.length === 0) {
         const empty = HOST.document.createElement("div");
         empty.className = "cfg-empty";
@@ -875,6 +1190,7 @@
         const isObj = !!val && typeof val === "object" && !Array.isArray(val);
         const kind = isObj ? val.url ? "http" : val.command ? "stdio" : "object" : Array.isArray(val) ? "array" : typeof val;
         const envCount = isObj && val.env && typeof val.env === "object" ? Object.keys(val.env).length : 0;
+        const toolList = toolsBy[name] || [];
         const card = HOST.document.createElement("div");
         card.className = "entry-card" + (isOpen ? " is-open" : "");
         const head = HOST.document.createElement("div");
@@ -896,11 +1212,26 @@
         badge.className = "cfg-chip type";
         badge.textContent = kind;
         titleRow.appendChild(badge);
+        if (toolList.length > 0) {
+          const chip = HOST.document.createElement("span");
+          chip.className = "cfg-chip";
+          chip.textContent = toolList.length + " \u4E2A\u5DE5\u5177";
+          titleRow.appendChild(chip);
+        }
         const meta = HOST.document.createElement("div");
         meta.className = "entry-card-meta";
         meta.textContent = (isObj && val.url ? String(val.url) : isObj && val.command ? String(val.command) : "\u672A\u914D\u7F6E\u542F\u52A8\u547D\u4EE4") + (envCount ? " \xB7 " + envCount + " \u4E2A\u73AF\u5883\u53D8\u91CF" : "");
         info.appendChild(titleRow);
         info.appendChild(meta);
+        if (toolList.length > 0) {
+          const tnames = toolList.slice(0, 6).map(function(t) {
+            return t.name;
+          }).join("\u3001");
+          const tline = HOST.document.createElement("div");
+          tline.className = "entry-card-meta";
+          tline.textContent = "\u5DE5\u5177\uFF1A" + tnames + (toolList.length > 6 ? " \u7B49 " + toolList.length + " \u4E2A" : "");
+          info.appendChild(tline);
+        }
         head.appendChild(info);
         const act = HOST.document.createElement("div");
         act.className = "entry-card-act";
@@ -921,10 +1252,7 @@
         if (isOpen) edit.classList.add("active");
         edit.addEventListener("click", function() {
           if (isOpen) delete cfgState.openKey[key];
-          else {
-            cfgState.openKey[key] = name;
-            cfgState.editStr[key + "::" + name] = JSON.stringify(val, null, 2);
-          }
+          else cfgState.openKey[key] = name;
           rerenderConfig(main, key);
         });
         const del = entryIconBtn("trash", "\u5220\u9664", true);
@@ -946,26 +1274,75 @@
         if (isOpen) {
           const body = HOST.document.createElement("div");
           body.className = "entry-card-body";
-          const ta = HOST.document.createElement("textarea");
-          ta.className = "settings-json";
-          ta.style.minHeight = "150px";
-          ta.value = cfgState.editStr[key + "::" + name] || JSON.stringify(val, null, 2);
-          ta.addEventListener("input", function() {
-            cfgState.editStr[key + "::" + name] = ta.value;
+          const tools = HOST.document.createElement("div");
+          tools.className = "entry-tools";
+          const toolTitle = HOST.document.createElement("div");
+          toolTitle.className = "entry-card-meta entry-tools-title";
+          toolTitle.textContent = "\u66B4\u9732\u7684\u5DE5\u5177\uFF08" + toolList.length + "\uFF09";
+          tools.appendChild(toolTitle);
+          if (toolList.length === 0) {
+            const none = HOST.document.createElement("div");
+            none.className = "entry-card-meta";
+            none.textContent = "\u6682\u65E0\u5DF2\u52A0\u8F7D\u7684\u5DE5\u5177\uFF0C\u70B9\u53F3\u4E0A\u89D2\u5237\u65B0\u6309\u94AE\u91CD\u65B0\u63E1\u624B\u3002";
+            tools.appendChild(none);
+          } else {
+            toolList.forEach(function(t) {
+              const row = HOST.document.createElement("div");
+              row.className = "entry-card-meta";
+              const desc = String(t.description || "").replace(/\s+/g, " ").trim();
+              row.textContent = "\u2022 " + t.name + (desc ? " \u2014 " + (desc.length > 90 ? desc.slice(0, 90) + "\u2026" : desc) : "");
+              row.title = desc || t.name;
+              tools.appendChild(row);
+            });
+          }
+          body.appendChild(tools);
+          const modeKey = key + "::" + name;
+          const jsonMode = !!cfgState.jsonMode[modeKey];
+          const cfgHead = HOST.document.createElement("div");
+          cfgHead.className = "entry-json-head";
+          const jsonTitle = HOST.document.createElement("div");
+          jsonTitle.className = "entry-card-meta entry-json-title";
+          jsonTitle.textContent = "\u8FDE\u63A5\u914D\u7F6E";
+          const modeBtn = HOST.document.createElement("button");
+          modeBtn.className = "btn entry-mode-btn";
+          modeBtn.textContent = jsonMode ? "\u8868\u5355" : "JSON";
+          modeBtn.addEventListener("click", function() {
+            if (jsonMode) delete cfgState.jsonMode[modeKey];
+            else cfgState.jsonMode[modeKey] = true;
+            rerenderConfig(main, key);
           });
-          body.appendChild(ta);
+          cfgHead.appendChild(jsonTitle);
+          cfgHead.appendChild(modeBtn);
+          body.appendChild(cfgHead);
+          let readConfig;
+          if (!jsonMode && (kind === "http" || kind === "stdio")) {
+            const group = mcpFieldGroup(kind, val);
+            body.appendChild(group.el);
+            readConfig = group.read;
+          } else {
+            const ta = HOST.document.createElement("textarea");
+            ta.className = "settings-json entry-json";
+            ta.style.minHeight = "150px";
+            ta.value = JSON.stringify(val, null, 2);
+            body.appendChild(ta);
+            readConfig = function() {
+              try {
+                return { value: JSON.parse(ta.value) };
+              } catch (e) {
+                return { error: "JSON \u89E3\u6790\u5931\u8D25\uFF1A" + e.message };
+              }
+            };
+          }
           const save = HOST.document.createElement("button");
           save.className = "btn cfg-save entry-save";
           save.textContent = "\u4FDD\u5B58\u5E76\u5237\u65B0";
           save.addEventListener("click", function() {
-            let obj;
-            try {
-              obj = JSON.parse(cfgState.editStr[key + "::" + name]);
-            } catch (e) {
-              HOST.alert("JSON \u89E3\u6790\u5931\u8D25\uFF1A" + e.message);
+            const parsed = readConfig();
+            if (parsed.error) {
+              HOST.alert(parsed.error);
               return;
             }
-            servers[name] = obj;
+            servers[name] = parsed.value;
             delete cfgState.openKey[key];
             save.disabled = true;
             save.textContent = "\u4FDD\u5B58\u4E2D\u2026";

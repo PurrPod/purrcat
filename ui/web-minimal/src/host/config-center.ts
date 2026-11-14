@@ -20,6 +20,7 @@ import { HOST } from './state.js';
     mode: Record<string, string>;
     openKey: Record<string, string>;
     editStr: Record<string, string>;
+    jsonMode: Record<string, boolean>;
     deployLogOpen: Record<string, boolean>;
     diskLogOpen: boolean;
     rawSensor: Record<string, boolean>;
@@ -28,6 +29,7 @@ import { HOST } from './state.js';
     mode: {},         // tab -> 'cards'|'json'
     openKey: {},      // tab -> 处于展开态的顶级 key
     editStr: {},      // tab+'::'+key -> 编辑区文本
+    jsonMode: {},     // tab+'::'+key -> 卡片展开区是否用 JSON 编辑
     deployLogOpen: {},
     diskLogOpen: false,
     rawSensor: {},
@@ -350,14 +352,316 @@ import { HOST } from './state.js';
   // ---- mcp：服务器卡片 ----
   const MCP_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="6" rx="2"/><rect x="3" y="14" width="18" height="6" rx="2"/><path d="M7 7h.01M7 17h.01"/></svg>';
 
+  let mcpAddMask: HTMLElement | null = null;
+  let mcpAddEsc: ((ev: KeyboardEvent) => void) | null = null;
+
+  function closeMcpAddModal(): void {
+    if (mcpAddEsc) { HOST.document.removeEventListener('keydown', mcpAddEsc); mcpAddEsc = null; }
+    if (mcpAddMask && mcpAddMask.parentNode) mcpAddMask.parentNode.removeChild(mcpAddMask);
+    mcpAddMask = null;
+  }
+
+  type McpFieldGroup = { el: HTMLElement; read: () => { error?: string; value?: any } };
+
+  function parseMcpPairs(text: string): Record<string, string> {
+    const out: Record<string, string> = {};
+    text.split('\n').forEach(function (line) {
+      const s = line.trim();
+      if (!s) return;
+      const i = s.search(/[:=]/);
+      const k = i > 0 ? s.slice(0, i).trim() : '';
+      if (k) out[k] = s.slice(i + 1).trim();
+    });
+    return out;
+  }
+
+  function formatMcpPairs(obj: any): string {
+    if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return '';
+    return Object.keys(obj).map(function (k) { return k + ': ' + String(obj[k]); }).join('\n');
+  }
+
+  function mcpField(label: string, el: HTMLElement): HTMLElement {
+    const f = HOST.document.createElement('div');
+    f.className = 'cfg-field';
+    const lb = HOST.document.createElement('label');
+    lb.className = 'cfg-label';
+    lb.textContent = label;
+    f.appendChild(lb);
+    f.appendChild(el);
+    return f;
+  }
+
+  function mcpInput(value: string, placeholder: string): HTMLInputElement {
+    const el = HOST.document.createElement('input');
+    el.type = 'text';
+    el.className = 'cfg-input';
+    el.spellcheck = false;
+    el.value = value;
+    el.placeholder = placeholder;
+    return el;
+  }
+
+  function mcpTextarea(value: string, placeholder: string, height: number): HTMLTextAreaElement {
+    const el = HOST.document.createElement('textarea');
+    el.className = 'cfg-input cfg-textarea';
+    el.value = value;
+    el.placeholder = placeholder;
+    el.style.minHeight = height + 'px';
+    return el;
+  }
+
+  // 按传输方式渲染对应字段；base 为原配置，保留未被表单覆盖的字段
+  function mcpFieldGroup(kind: string, base: any): McpFieldGroup {
+    const src = base && typeof base === 'object' && !Array.isArray(base) ? base : {};
+    const wrap = HOST.document.createElement('div');
+    wrap.className = 'cfg-grid one-col mcp-fields';
+    if (kind === 'stdio') {
+      const command = mcpInput(String(src.command || ''), '例如 npx');
+      const args = mcpTextarea(Array.isArray(src.args) ? src.args.join('\n') : '', '每行一个参数，例如 -y', 62);
+      const env = mcpTextarea(formatMcpPairs(src.env), '每行 KEY=VALUE', 62);
+      wrap.appendChild(mcpField('启动命令', command));
+      wrap.appendChild(mcpField('命令参数', args));
+      wrap.appendChild(mcpField('环境变量', env));
+      return {
+        el: wrap,
+        read: function () {
+          if (!command.value.trim()) return { error: '请填写启动命令' };
+          const value: any = Object.assign({}, src, { command: command.value.trim() });
+          delete value.url;
+          const argv = args.value.split('\n').map(function (s) { return s.trim(); }).filter(Boolean);
+          if (argv.length) value.args = argv; else delete value.args;
+          const envMap = parseMcpPairs(env.value);
+          if (Object.keys(envMap).length) value.env = envMap; else delete value.env;
+          return { value: value };
+        },
+      };
+    }
+    const url = mcpInput(String(src.url || ''), '例如 http://127.0.0.1:3001/mcp');
+    const headers = mcpTextarea(formatMcpPairs(src.headers), '每行 Key: Value，可留空', 62);
+    wrap.appendChild(mcpField('服务地址（URL）', url));
+    const headersField = mcpField('请求头', headers);
+    const tip = HOST.document.createElement('div');
+    tip.className = 'cfg-tip';
+    tip.textContent = '支持 Authorization: Bearer、X-API-Key、Basic 等请求头；OAuth 暂不支持。';
+    headersField.appendChild(tip);
+    wrap.appendChild(headersField);
+    return {
+      el: wrap,
+      read: function () {
+        if (!url.value.trim()) return { error: '请填写服务地址' };
+        const value: any = Object.assign({}, src, { url: url.value.trim() });
+        if (!value.type) value.type = 'http';
+        delete value.command;
+        delete value.args;
+        delete value.env;
+        const h = parseMcpPairs(headers.value);
+        if (Object.keys(h).length) value.headers = h; else delete value.headers;
+        return { value: value };
+      },
+    };
+  }
+
+  function pickImportedConfig(obj: any): { name?: string; config?: any; error?: string } {
+    if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return { error: 'JSON 必须是对象' };
+    let name = '';
+    let config = obj;
+    if (obj.mcpServers && typeof obj.mcpServers === 'object' && !Array.isArray(obj.mcpServers)) {
+      const keys = Object.keys(obj.mcpServers);
+      if (keys.length === 0) return { error: 'mcpServers 为空' };
+      name = keys[0];
+      config = obj.mcpServers[name];
+    } else if (!obj.url && !obj.command) {
+      const keys = Object.keys(obj);
+      const first = keys.length === 1 ? obj[keys[0]] : null;
+      if (!first || typeof first !== 'object' || (!first.url && !first.command)) {
+        return { error: '无法识别的配置结构' };
+      }
+      name = keys[0];
+      config = first;
+    }
+    if (!config || typeof config !== 'object' || Array.isArray(config)) return { error: '无法识别的配置结构' };
+    if (!config.url && !config.command) return { error: '配置缺少 url 或 command' };
+    return { name: name, config: config };
+  }
+
+  // 新增服务器用小弹窗（不占用列表位）：遮罩 + 居中面板，Esc/点遮罩/取消均可关闭
+  function openMcpAddModal(main: HTMLElement, key: string, servers: Record<string, any>, data: any): void {
+    closeMcpAddModal();
+    let kind = 'http';
+
+    const mask = HOST.document.createElement('div');
+    mask.className = 'cfg-modal-mask';
+    const panel = HOST.document.createElement('div');
+    panel.className = 'cfg-modal';
+
+    const head = HOST.document.createElement('div');
+    head.className = 'cfg-modal-head';
+    const title = HOST.document.createElement('div');
+    title.className = 'cfg-modal-title';
+    title.textContent = '新增 MCP 服务器';
+    const importBtn = HOST.document.createElement('button');
+    importBtn.className = 'btn';
+    importBtn.textContent = '导入 JSON';
+    head.appendChild(title);
+    head.appendChild(importBtn);
+    panel.appendChild(head);
+
+    const formView = HOST.document.createElement('div');
+    formView.className = 'cfg-modal-view';
+    panel.appendChild(formView);
+    const desc = HOST.document.createElement('div');
+    desc.className = 'cfg-modal-desc';
+    desc.textContent = '填写名称与连接方式，保存后自动重载并拉取工具列表。';
+    formView.appendChild(desc);
+
+    const importView = HOST.document.createElement('div');
+    importView.className = 'cfg-modal-view';
+    importView.style.display = 'none';
+    panel.appendChild(importView);
+    const importTa = mcpTextarea('', '粘贴服务器 JSON，支持 {"mcpServers": {"name": {...}}} 或单个配置对象', 220);
+    importView.appendChild(importTa);
+    const importActions = HOST.document.createElement('div');
+    importActions.className = 'cfg-modal-actions';
+    const importBack = HOST.document.createElement('button');
+    importBack.className = 'btn';
+    importBack.textContent = '取消';
+    const importDo = HOST.document.createElement('button');
+    importDo.className = 'btn cfg-save';
+    importDo.textContent = '解析';
+    importActions.appendChild(importBack);
+    importActions.appendChild(importDo);
+    importView.appendChild(importActions);
+
+    function showImport(on: boolean): void {
+      formView.style.display = on ? 'none' : 'flex';
+      importView.style.display = on ? 'flex' : 'none';
+      importBtn.style.display = on ? 'none' : '';
+      title.textContent = on ? '导入 MCP 服务器 JSON' : '新增 MCP 服务器';
+      if (on) importTa.focus();
+    }
+    importBtn.addEventListener('click', function () { showImport(true); });
+    importBack.addEventListener('click', function () { showImport(false); });
+
+    const form = HOST.document.createElement('div');
+    form.className = 'cfg-grid';
+    const nameIn = mcpInput('', '例如 cesium-map');
+    modelField(form, '服务器名称', nameIn);
+
+    const kindWrap = HOST.document.createElement('div');
+    kindWrap.className = 'cfg-field';
+    const kindLabel = HOST.document.createElement('label');
+    kindLabel.className = 'cfg-label';
+    kindLabel.textContent = '传输方式';
+    kindWrap.appendChild(kindLabel);
+    const kindSel = HOST.document.createElement('select');
+    kindSel.className = 'cfg-input';
+    [['http', 'HTTP（url）'], ['stdio', 'stdio（command）']].forEach(function (pair) {
+      const opt = HOST.document.createElement('option');
+      opt.value = pair[0];
+      opt.textContent = pair[1];
+      kindSel.appendChild(opt);
+    });
+    kindSel.value = kind;
+    kindWrap.appendChild(kindSel);
+    form.appendChild(kindWrap);
+    formView.appendChild(form);
+
+    const fields = HOST.document.createElement('div');
+    fields.className = 'mcp-fields-host';
+    formView.appendChild(fields);
+    let group = mcpFieldGroup(kind, {});
+    fields.appendChild(group.el);
+    kindSel.addEventListener('change', function () {
+      kind = kindSel.value;
+      group = mcpFieldGroup(kind, {});
+      fields.innerHTML = '';
+      fields.appendChild(group.el);
+    });
+    importDo.addEventListener('click', function () {
+      let obj: any;
+      try { obj = JSON.parse(importTa.value); } catch (e) { HOST.alert('JSON 解析失败：' + (e as Error).message); return; }
+      const picked = pickImportedConfig(obj);
+      if (picked.error) { HOST.alert(picked.error); return; }
+      kind = picked.config.url ? 'http' : 'stdio';
+      kindSel.value = kind;
+      group = mcpFieldGroup(kind, picked.config);
+      fields.innerHTML = '';
+      fields.appendChild(group.el);
+      if (picked.name) nameIn.value = picked.name;
+      importTa.value = '';
+      showImport(false);
+    });
+
+    const actions = HOST.document.createElement('div');
+    actions.className = 'cfg-modal-actions';
+    const cancel = HOST.document.createElement('button');
+    cancel.className = 'btn';
+    cancel.textContent = '取消';
+    cancel.addEventListener('click', closeMcpAddModal);
+    const save = HOST.document.createElement('button');
+    save.className = 'btn cfg-save';
+    save.textContent = '保存并刷新';
+    save.addEventListener('click', function () {
+      const newName = nameIn.value.trim();
+      if (!newName) { HOST.alert('请填写服务器名称'); return; }
+      if (servers[newName]) { HOST.alert('服务器 "' + newName + '" 已存在'); return; }
+      const parsed = group.read();
+      if (parsed.error) { HOST.alert(parsed.error); return; }
+      servers[newName] = parsed.value;
+      save.disabled = true;
+      cancel.disabled = true;
+      save.textContent = '保存中…';
+      putCfg(key, data)
+        .then(function () {
+          closeMcpAddModal();
+          rerenderConfig(main, key);
+          HOST.alert('已新增服务器并重载。');
+        })
+        .catch(function (e) {
+          save.disabled = false;
+          cancel.disabled = false;
+          save.textContent = '保存并刷新';
+          HOST.alert('保存失败：' + (e && e.message || ''));
+        });
+    });
+    actions.appendChild(cancel);
+    actions.appendChild(save);
+    formView.appendChild(actions);
+
+    mask.appendChild(panel);
+    mask.addEventListener('click', function (ev) { if (ev.target === mask) closeMcpAddModal(); });
+    mcpAddEsc = function (ev: KeyboardEvent) { if (ev.key === 'Escape') closeMcpAddModal(); };
+    HOST.document.addEventListener('keydown', mcpAddEsc);
+    HOST.document.body.appendChild(mask);
+    mcpAddMask = mask;
+    nameIn.focus();
+  }
+
   export function renderMcpCards(main: HTMLElement, key: string) {
-    cfgData(key).then(function (data) {
+    Promise.all([
+      cfgData(key),
+      fetch('/api/config/mcp/tools')
+        .then(function (r) { return r.ok ? r.json() : { servers: {} }; })
+        .catch(function () { return { servers: {} }; }),
+    ]).then(function (res) {
+      let data = res[0];
+      const toolsBy: Record<string, Array<{ name: string; description?: string }>> = (res[1] && res[1].servers) || {};
       // mcp_config.json 的结构为 { mcpServers: { 服务器名: 配置 } }，需先解包这一层
       if (!data || typeof data !== 'object' || Array.isArray(data)) data = {};
       if (!data.mcpServers || typeof data.mcpServers !== 'object' || Array.isArray(data.mcpServers)) data.mcpServers = {};
       cfgState.data[key] = data;
       const servers = data.mcpServers;
       const names = Object.keys(servers);
+
+      const tb = HOST.document.createElement('div');
+      tb.className = 'cfg-toolbar';
+      const add = HOST.document.createElement('button');
+      add.className = 'btn cfg-save';
+      add.textContent = '＋ 新增服务器';
+      add.addEventListener('click', function () { openMcpAddModal(main, key, servers, data); });
+      tb.appendChild(add);
+      main.appendChild(tb);
+
       if (names.length === 0) {
         const empty = HOST.document.createElement('div'); empty.className = 'cfg-empty'; empty.textContent = '暂无 MCP 服务器'; main.appendChild(empty);
         return;
@@ -365,12 +669,14 @@ import { HOST } from './state.js';
       const grid = HOST.document.createElement('div');
       grid.className = 'entry-grid';
       main.appendChild(grid);
+
       names.forEach(function (name) {
         const isOpen = cfgState.openKey[key] === name;
         const val = servers[name];
         const isObj = !!val && typeof val === 'object' && !Array.isArray(val);
         const kind = isObj ? (val.url ? 'http' : (val.command ? 'stdio' : 'object')) : (Array.isArray(val) ? 'array' : typeof val);
         const envCount = isObj && val.env && typeof val.env === 'object' ? Object.keys(val.env).length : 0;
+        const toolList = toolsBy[name] || [];
         const card = HOST.document.createElement('div');
         card.className = 'entry-card' + (isOpen ? ' is-open' : '');
 
@@ -394,11 +700,24 @@ import { HOST } from './state.js';
         badge.className = 'cfg-chip type';
         badge.textContent = kind;
         titleRow.appendChild(badge);
+        if (toolList.length > 0) {
+          const chip = HOST.document.createElement('span');
+          chip.className = 'cfg-chip';
+          chip.textContent = toolList.length + ' 个工具';
+          titleRow.appendChild(chip);
+        }
         const meta = HOST.document.createElement('div');
         meta.className = 'entry-card-meta';
         meta.textContent = (isObj && val.url ? String(val.url) : (isObj && val.command ? String(val.command) : '未配置启动命令')) + (envCount ? ' · ' + envCount + ' 个环境变量' : '');
         info.appendChild(titleRow);
         info.appendChild(meta);
+        if (toolList.length > 0) {
+          const tnames = toolList.slice(0, 6).map(function (t) { return t.name; }).join('、');
+          const tline = HOST.document.createElement('div');
+          tline.className = 'entry-card-meta';
+          tline.textContent = '工具：' + tnames + (toolList.length > 6 ? ' 等 ' + toolList.length + ' 个' : '');
+          info.appendChild(tline);
+        }
         head.appendChild(info);
 
         const act = HOST.document.createElement('div');
@@ -415,7 +734,7 @@ import { HOST } from './state.js';
         if (isOpen) edit.classList.add('active');
         edit.addEventListener('click', function () {
           if (isOpen) delete cfgState.openKey[key];
-          else { cfgState.openKey[key] = name; cfgState.editStr[key + '::' + name] = JSON.stringify(val, null, 2); }
+          else cfgState.openKey[key] = name;
           rerenderConfig(main, key);
         });
         const del = entryIconBtn('trash', '删除', true);
@@ -434,19 +753,68 @@ import { HOST } from './state.js';
         if (isOpen) {
           const body = HOST.document.createElement('div');
           body.className = 'entry-card-body';
-          const ta = HOST.document.createElement('textarea');
-          ta.className = 'settings-json';
-          ta.style.minHeight = '150px';
-          ta.value = cfgState.editStr[key + '::' + name] || JSON.stringify(val, null, 2);
-          ta.addEventListener('input', function () { cfgState.editStr[key + '::' + name] = ta.value; });
-          body.appendChild(ta);
+          const tools = HOST.document.createElement('div');
+          tools.className = 'entry-tools';
+          const toolTitle = HOST.document.createElement('div');
+          toolTitle.className = 'entry-card-meta entry-tools-title';
+          toolTitle.textContent = '暴露的工具（' + toolList.length + '）';
+          tools.appendChild(toolTitle);
+          if (toolList.length === 0) {
+            const none = HOST.document.createElement('div');
+            none.className = 'entry-card-meta';
+            none.textContent = '暂无已加载的工具，点右上角刷新按钮重新握手。';
+            tools.appendChild(none);
+          } else {
+            toolList.forEach(function (t) {
+              const row = HOST.document.createElement('div');
+              row.className = 'entry-card-meta';
+              const desc = String(t.description || '').replace(/\s+/g, ' ').trim();
+              row.textContent = '• ' + t.name + (desc ? ' — ' + (desc.length > 90 ? desc.slice(0, 90) + '…' : desc) : '');
+              row.title = desc || t.name;
+              tools.appendChild(row);
+            });
+          }
+          body.appendChild(tools);
+          const modeKey = key + '::' + name;
+          const jsonMode = !!cfgState.jsonMode[modeKey];
+          const cfgHead = HOST.document.createElement('div');
+          cfgHead.className = 'entry-json-head';
+          const jsonTitle = HOST.document.createElement('div');
+          jsonTitle.className = 'entry-card-meta entry-json-title';
+          jsonTitle.textContent = '连接配置';
+          const modeBtn = HOST.document.createElement('button');
+          modeBtn.className = 'btn entry-mode-btn';
+          modeBtn.textContent = jsonMode ? '表单' : 'JSON';
+          modeBtn.addEventListener('click', function () {
+            if (jsonMode) delete cfgState.jsonMode[modeKey];
+            else cfgState.jsonMode[modeKey] = true;
+            rerenderConfig(main, key);
+          });
+          cfgHead.appendChild(jsonTitle);
+          cfgHead.appendChild(modeBtn);
+          body.appendChild(cfgHead);
+          let readConfig: () => { error?: string; value?: any };
+          if (!jsonMode && (kind === 'http' || kind === 'stdio')) {
+            const group = mcpFieldGroup(kind, val);
+            body.appendChild(group.el);
+            readConfig = group.read;
+          } else {
+            const ta = HOST.document.createElement('textarea');
+            ta.className = 'settings-json entry-json';
+            ta.style.minHeight = '150px';
+            ta.value = JSON.stringify(val, null, 2);
+            body.appendChild(ta);
+            readConfig = function () {
+              try { return { value: JSON.parse(ta.value) }; } catch (e) { return { error: 'JSON 解析失败：' + (e as Error).message }; }
+            };
+          }
           const save = HOST.document.createElement('button');
           save.className = 'btn cfg-save entry-save';
           save.textContent = '保存并刷新';
           save.addEventListener('click', function () {
-            let obj;
-            try { obj = JSON.parse(cfgState.editStr[key + '::' + name]); } catch (e) { HOST.alert('JSON 解析失败：' + (e as Error).message); return; }
-            servers[name] = obj;
+            const parsed = readConfig();
+            if (parsed.error) { HOST.alert(parsed.error); return; }
+            servers[name] = parsed.value;
             delete cfgState.openKey[key];
             save.disabled = true;
             save.textContent = '保存中…';
