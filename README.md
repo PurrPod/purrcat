@@ -129,6 +129,7 @@ If you run into installation or configuration problems, open an issue and descri
 - [zhenghuanle](https://github.com/zhenghuanle): tested the installation flow from scratch.
 - [Gaeulczy](https://github.com/Gaeulczy): tested the one-click install and run scripts.
 - [JohnWJ-co](https://github.com/JohnWJ-co): tested the macOS build and helped troubleshoot issues.
+- [starrys147](https://github.com/starrys147): proposed the tiled layout concept for UI plugins.
 - Sponsored by the Smart Agent Development Competition hosted by the Sun Yat-sen University OpenHarmony Technology Club.
 
 ## License

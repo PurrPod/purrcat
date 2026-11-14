@@ -129,6 +129,7 @@ PurrCat 希望提供一个可定制、可扩展、可持续演进的 Agent 底�
 - [zhenghuanle](https://github.com/zhenghuanle)：测试从零开始的安装流程。
 - [Gaeulczy](https://github.com/Gaeulczy)：测试一键安装与运行脚本。
 - [JohnWJ-co](https://github.com/JohnWJ-co)：测试 macOS 版本并协助排查问题。
+- [starrys147](https://github.com/starrys147)：提出 UI 插件平铺布局的思路。
 - 感谢中山大学开放鸿蒙技术俱乐部举办的智能体开发大赛提供奖金赞助。
 
 ## 许可证
