@@ -35,6 +35,25 @@
         "title": "AddCronReq",
         "type": "object"
       },
+      "AppToolCallReq": {
+        "properties": {
+          "arguments": {
+            "additionalProperties": true,
+            "default": {},
+            "title": "Arguments",
+            "type": "object"
+          },
+          "tool": {
+            "title": "Tool",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tool"
+        ],
+        "title": "AppToolCallReq",
+        "type": "object"
+      },
       "Body_acp_upload_file_acp_file_post": {
         "properties": {
           "file": {
@@ -1850,6 +1869,26 @@
         ]
       }
     },
+    "/api/config/mcp/tools": {
+      "get": {
+        "description": "按服务器分组返回 schema 缓存里的 MCP 工具，即当前已暴露给模型的工具。",
+        "operationId": "api_get_mcp_tools_api_config_mcp_tools_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Api Get Mcp Tools",
+        "tags": [
+          "Configuration"
+        ]
+      }
+    },
     "/api/config/meta": {
       "get": {
         "description": "返回当前正在生效的路径常量，便于前端显示给用户做参考。",
@@ -3605,6 +3644,141 @@
           }
         },
         "summary": "Ping"
+      }
+    },
+    "/api/mcp/apps/{app_id}/call": {
+      "post": {
+        "description": "代理 App 的 tools/call：只允许调用该 App 所属 server 的工具。",
+        "operationId": "call_tool_from_app_api_mcp_apps__app_id__call_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "app_id",
+            "required": true,
+            "schema": {
+              "title": "App Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppToolCallReq"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Call Tool From App",
+        "tags": [
+          "MCP Apps"
+        ]
+      }
+    },
+    "/api/mcp/apps/{app_id}/html": {
+      "get": {
+        "description": "返回 App 的单文件 HTML（由 iframe 直接加载）。",
+        "operationId": "get_app_html_api_mcp_apps__app_id__html_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "app_id",
+            "required": true,
+            "schema": {
+              "title": "App Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get App Html",
+        "tags": [
+          "MCP Apps"
+        ]
+      }
+    },
+    "/api/mcp/apps/{app_id}/payload": {
+      "get": {
+        "description": "返回 App 初始化所需的参数与工具调用结果。",
+        "operationId": "get_app_payload_api_mcp_apps__app_id__payload_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "app_id",
+            "required": true,
+            "schema": {
+              "title": "App Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get App Payload",
+        "tags": [
+          "MCP Apps"
+        ]
       }
     },
     "/api/memory/events": {

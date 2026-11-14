@@ -30,17 +30,20 @@ async def _fetch_server_schemas_async(server_name: str, config: dict) -> List[Di
         session = await mcp_manager.get_session(server_name, config)
         tools_response = await session.list_tools()
         for tool in tools_response.tools:
-            schemas.append(
-                {
-                    "server": server_name,
-                    "type": "function",
-                    "function": {
-                        "name": tool.name,
-                        "description": tool.description or "",
-                        "parameters": tool.inputSchema,
-                    },
-                }
-            )
+            entry = {
+                "server": server_name,
+                "type": "function",
+                "function": {
+                    "name": tool.name,
+                    "description": tool.description or "",
+                    "parameters": tool.inputSchema,
+                },
+            }
+            # 保留 _meta（含 ui.resourceUri），MCP Apps 的资源发现依赖它
+            meta = getattr(tool, "meta", None)
+            if isinstance(meta, dict) and meta:
+                entry["_meta"] = meta
+            schemas.append(entry)
     except Exception as e:
         print(f"警告: [MCP] 拉取 {server_name} Schema 失败: {e}")
     return schemas

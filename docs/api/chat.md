@@ -76,6 +76,20 @@ curl -X POST 'http://127.0.0.1:8000/api/sessions/new' -H 'Content-Type: applicat
 
 返回消息对象数组（`role` / `content` 等字段）。当 `branch_id` 为 `main` 且为 Agent 当前活跃会话时，取内存最新历史；否则按 `branch_id` 从磁盘加载对应隔离子分支历史。
 
+工具消息若由带 UI 资源的 MCP 工具产生（MCP Apps），会额外附带 `mcp_app` 字段：
+
+```json
+{
+  "role": "tool",
+  "tool_call_id": "call_xxx",
+  "name": "CallMCP",
+  "content": "...",
+  "mcp_app": { "id": "call_xxx", "server": "cesium-map", "tool": "show-map", "uri": "ui://cesium-map/mcp-app.html" }
+}
+```
+
+前端据此渲染 iframe，资源与调用载荷分别由 `GET /api/mcp/apps/{id}/html`、`GET /api/mcp/apps/{id}/payload` 提供（见 [mcp-apps.md](mcp-apps.md)）。`mcp_app` 只加在 API 响应里，不写入会话文件，也不进入模型上下文。
+
 **示例**
 
 ```bash

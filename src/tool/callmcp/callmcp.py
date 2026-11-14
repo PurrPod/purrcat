@@ -13,7 +13,7 @@ from src.tool.callmcp.schema_manager import (
     refresh_schemas,
 )
 from src.tool.callmcp.session_manager import load_configs
-from src.tool.callmcp.tool_caller import call_mcp_tool
+from src.tool.callmcp.tool_caller import call_mcp_tool, call_mcp_tool_with_ui
 from src.tool.utils.format import error_response, text_response, warning_response
 from src.utils.config import MCP_SCHEMA_CACHE_FILE
 
@@ -134,7 +134,11 @@ def CallMCP(server_name: str, tool_name: str, arguments: dict = None, **kwargs) 
 
         # 4. 调用工具，捕获参数异常
         try:
-            result = call_mcp_tool(server_name, tool_name, args)
+            result, app_saved = call_mcp_tool_with_ui(
+                server_name, tool_name, args, kwargs.get("_tool_call_id")
+            )
+            if app_saved:
+                result = list(result) + ["[MCP App 已渲染在对话中]"]
             return text_response(result, f"✅ {tool_name}成功")
 
         except ToolExecutionError as err:

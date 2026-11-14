@@ -33,6 +33,7 @@ def create_app(port: int | None = None) -> FastAPI:
     from src.server.api.evolve import router as evolve_router
     from src.server.api.filesystem import router as filesystem_router
     from src.server.api.graph import router as graph_router
+    from src.server.api.mcp_apps import router as mcp_apps_router
     from src.server.api.memory import router as memory_router
     from src.server.api.paradigms import router as paradigms_router
     from src.server.api.projects import router as projects_router
@@ -59,6 +60,7 @@ def create_app(port: int | None = None) -> FastAPI:
     app.include_router(config_router)
     app.include_router(memory_router)
     app.include_router(tools_router)
+    app.include_router(mcp_apps_router)
     app.include_router(system_router)
     app.include_router(request_router)
     app.include_router(filesystem_router)

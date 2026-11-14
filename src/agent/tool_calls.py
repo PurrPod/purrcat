@@ -112,6 +112,6 @@ def with_system_arguments(
         prepared["_session_id"] = session_id
         prepared["_request_bytes"] = request_bytes
         prepared["_request_limit_bytes"] = request_limit_bytes
-    if tool_name == "BrainStorm":
+    if tool_name in ("BrainStorm", "CallMCP"):
         prepared["_tool_call_id"] = tool_call_id
     return prepared

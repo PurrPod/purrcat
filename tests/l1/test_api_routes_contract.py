@@ -92,6 +92,7 @@ EXPECTED_ROUTES = {
         ("/api/config/file", "GET", "api_get_file_config"),
         ("/api/config/file", "PUT", "api_update_file_config"),
         ("/api/config/mcp", "GET", "api_get_mcp_config"),
+        ("/api/config/mcp/tools", "GET", "api_get_mcp_tools"),
         ("/api/config/mcp", "PUT", "api_update_mcp_config"),
         ("/api/config/mcp/reload", "POST", "api_reload_mcp_runtime"),
         ("/api/config/acp", "GET", "api_get_acp_status"),

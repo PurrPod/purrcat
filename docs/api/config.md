@@ -330,10 +330,46 @@ curl -X PUT 'http://127.0.0.1:8000/api/config/file' \
 { "mcpServers": {} }
 ```
 
+服务器支持两种传输：stdio 用 `command`/`args`/`env`，HTTP 用 `url`（可带 `headers`）：
+
+```json
+{ "mcpServers": { "cesium-map": { "type": "http", "url": "http://127.0.0.1:3001/mcp" } } }
+```
+
 **示例**
 
 ```bash
 curl 'http://127.0.0.1:8000/api/config/mcp'
+```
+
+---
+
+## GET `/api/config/mcp/tools`
+
+按服务器分组返回 schema 缓存里的 MCP 工具，即当前已暴露给模型、可被 `CallMCP` 调用的工具。
+数据来自最近一次重载的结果，不主动连接服务器。
+
+**请求**
+
+无参数。
+
+**响应**
+
+```json
+{
+  "servers": {
+    "cesium-map": [
+      { "name": "show-map", "description": "Display a globe at the given bounding box" },
+      { "name": "geocode", "description": "" }
+    ]
+  }
+}
+```
+
+**示例**
+
+```bash
+curl 'http://127.0.0.1:8000/api/config/mcp/tools'
 ```
 
 ---

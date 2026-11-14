@@ -114,6 +114,24 @@ def api_get_mcp_config():
     return get_mcp_config()
 
 
+@router.get("/mcp/tools")
+def api_get_mcp_tools():
+    """按服务器分组返回 schema 缓存里的 MCP 工具，即当前已暴露给模型的工具。"""
+    from src.tool.callmcp.schema_manager import load_cached_schemas
+
+    servers: Dict[str, list] = {}
+    for entry in load_cached_schemas():
+        server = str(entry.get("server") or "")
+        fn = entry.get("function") or {}
+        tool_name = str(fn.get("name") or "")
+        if not server or not tool_name:
+            continue
+        servers.setdefault(server, []).append(
+            {"name": tool_name, "description": str(fn.get("description") or "")}
+        )
+    return {"servers": servers}
+
+
 @router.put("/mcp")
 def api_update_mcp_config(config: Dict[str, Any]):
     if _save_json_file(MCP_CONFIG_PATH, config):

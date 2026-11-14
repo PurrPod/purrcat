@@ -795,6 +795,18 @@ ACP 接入状态：relay 部署情况 / 端口 / uv 可用性
 | --- | --- | --- |
 | 200 | Successful Response | - |
 
+### `GET /api/config/mcp/tools`
+
+**标题**：Api Get Mcp Tools
+
+按服务器分组返回 schema 缓存里的 MCP 工具，即当前已暴露给模型的工具。
+
+#### 响应
+
+| 状态码 | 描述 | Schema |
+| --- | --- | --- |
+| 200 | Successful Response | - |
+
 ### `GET /api/config/meta`
 
 **标题**：Api Get Config Meta
@@ -1369,6 +1381,74 @@ ACP 接入状态：relay 部署情况 / 端口 / uv 可用性
 | --- | --- | --- | --- | --- |
 | workplace_id | path | string | 是 |  |
 | type | query | string | 否 |  |
+
+#### 响应
+
+| 状态码 | 描述 | Schema |
+| --- | --- | --- |
+| 200 | Successful Response | - |
+| 422 | Validation Error | HTTPValidationError |
+
+## MCP Apps
+
+### `POST /api/mcp/apps/{app_id}/call`
+
+**标题**：Call Tool From App
+
+代理 App 的 tools/call：只允许调用该 App 所属 server 的工具。
+
+#### 参数
+
+| 名称 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| app_id | path | string | 是 |  |
+
+#### 请求体
+
+**Schema**：`AppToolCallReq`
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| tool | string | 是 |  |
+| arguments | object | 否 |  |
+
+#### 响应
+
+| 状态码 | 描述 | Schema |
+| --- | --- | --- |
+| 200 | Successful Response | - |
+| 422 | Validation Error | HTTPValidationError |
+
+### `GET /api/mcp/apps/{app_id}/html`
+
+**标题**：Get App Html
+
+返回 App 的单文件 HTML（由 iframe 直接加载）。
+
+#### 参数
+
+| 名称 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| app_id | path | string | 是 |  |
+
+#### 响应
+
+| 状态码 | 描述 | Schema |
+| --- | --- | --- |
+| 200 | Successful Response | string |
+| 422 | Validation Error | HTTPValidationError |
+
+### `GET /api/mcp/apps/{app_id}/payload`
+
+**标题**：Get App Payload
+
+返回 App 初始化所需的参数与工具调用结果。
+
+#### 参数
+
+| 名称 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| app_id | path | string | 是 |  |
 
 #### 响应
 

@@ -198,7 +198,10 @@ def get_session_history_api(session_id: str, branch_id: str = "main"):
         _ensure_manager_initialized()
         # 🌟 传入 branch_id 支持子分支读取
         history = get_chat_history(session_id, branch_id=branch_id)
-        return history
+        # 工具消息若挂了 MCP App，附加 mcp_app 标记供前端渲染（不改模型可见结构）
+        from src.tool.callmcp.mcp_apps import attach_history_apps
+
+        return attach_history_apps(history)
     except Exception as e:
         print(f"[ERROR] /api/sessions/{session_id} - 异常: {e}")
         traceback.print_exc()

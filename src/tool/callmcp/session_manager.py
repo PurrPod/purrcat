@@ -81,12 +81,67 @@ class MCPSessionManager:
             self.locks[server_name] = asyncio.Lock()
         return self.locks[server_name]
 
+    async def _serve_session(
+        self, server_name: str, config: dict, read, write, ready_event: asyncio.Event
+    ):
+        """握手成功后注册会话槽位，并阻塞到关闭信号或连接断开。"""
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            close_event = asyncio.Event()
+
+            self.sessions[server_name] = {
+                "session": session,
+                "last_active": time.time(),
+                "close_event": close_event,
+                "fingerprint": _config_fingerprint(config),
+            }
+            ready_event.set()
+            print(f"✅ 连接到 {server_name} MCP服务器")
+            await close_event.wait()
+
     async def _server_lifecycle_task(
+        self, server_name: str, config: dict, ready_event: asyncio.Event
+    ):
+        try:
+            if _shared.is_http_config(config):
+                await self._run_http_session(server_name, config, ready_event)
+            else:
+                await self._run_stdio_session(server_name, config, ready_event)
+
+        except Exception as e:
+            ready_event.set()
+            print(f"⚠️ [MCP 异常] Server '{server_name}' 运行异常或断开连接: {e}")
+        finally:
+            if server_name in self.sessions:
+                del self.sessions[server_name]
+            if server_name in self.lifecycle_tasks:
+                del self.lifecycle_tasks[server_name]
+
+    async def _run_http_session(
+        self, server_name: str, config: dict, ready_event: asyncio.Event
+    ):
+        """Streamable HTTP 传输；trust_env=False 避免系统代理劫持 localhost。"""
+        import httpx
+        from mcp.client.streamable_http import streamable_http_client
+
+        raw_headers = config.get("headers")
+        headers = raw_headers if isinstance(raw_headers, dict) else None
+        timeout = httpx.Timeout(connect=30, read=None, write=30, pool=30)
+
+        async with httpx.AsyncClient(
+            trust_env=False, headers=headers, timeout=timeout
+        ) as client:
+            async with streamable_http_client(
+                str(config.get("url")).strip(), http_client=client
+            ) as (read, write, _get_session_id):
+                await self._serve_session(server_name, config, read, write, ready_event)
+
+    async def _run_stdio_session(
         self, server_name: str, config: dict, ready_event: asyncio.Event
     ):
         raw_command = config.get("command", "")
         if not raw_command:
-            print(f"⚠️ [MCP 异常] Server '{server_name}' 配置缺失 command")
+            print(f"⚠️ [MCP 异常] Server '{server_name}' 配置缺失 command 或 url")
             ready_event.set()
             return
 
@@ -111,30 +166,8 @@ class MCPSessionManager:
             env=safe_env,
         )
 
-        try:
-            async with stdio_client(server_params) as (read, write):
-                async with ClientSession(read, write) as session:
-                    await session.initialize()
-                    close_event = asyncio.Event()
-
-                    self.sessions[server_name] = {
-                        "session": session,
-                        "last_active": time.time(),
-                        "close_event": close_event,
-                        "fingerprint": _config_fingerprint(config),
-                    }
-                    ready_event.set()
-                    print(f"✅ 连接到 {server_name} MCP服务器")
-                    await close_event.wait()
-
-        except Exception as e:
-            ready_event.set()
-            print(f"⚠️ [MCP 异常] Server '{server_name}' 运行异常或断开连接: {e}")
-        finally:
-            if server_name in self.sessions:
-                del self.sessions[server_name]
-            if server_name in self.lifecycle_tasks:
-                del self.lifecycle_tasks[server_name]
+        async with stdio_client(server_params) as (read, write):
+            await self._serve_session(server_name, config, read, write, ready_event)
 
     async def _idle_cleaner_task(self):
         while True:

@@ -17,15 +17,23 @@ PARENT_PYTHON_ENV = (
 
 
 def config_fingerprint(config: dict) -> str:
-    """command/args/env 任一变化即需要重启子进程。"""
+    """command/args/env/url/headers 任一变化即需要重启连接。"""
     env = config.get("env")
+    headers = config.get("headers")
     material = {
         "command": config.get("command", ""),
         "args": config.get("args", []),
         "env": env if isinstance(env, dict) else {},
+        "url": config.get("url", ""),
+        "headers": headers if isinstance(headers, dict) else {},
     }
     raw = json.dumps(material, sort_keys=True, ensure_ascii=False)
     return hashlib.md5(raw.encode("utf-8")).hexdigest()
+
+
+def is_http_config(config: dict) -> bool:
+    """配置里有非空 url 即视为 Streamable HTTP 传输。"""
+    return bool(str(config.get("url") or "").strip())
 
 
 def build_safe_env(custom_env: dict | None, base_env: dict) -> dict:

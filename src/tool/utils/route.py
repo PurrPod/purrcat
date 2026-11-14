@@ -58,7 +58,7 @@ PROCESS_ISOLATED_TOOLS = {
 
 # 系统注入参数：模型不可见，由 Agent / Harness / dispatch 自动补齐。
 # 注入点：agent.py（Bash 的 session_id、Task 的 _session_id/_request_bytes/
-# _request_limit_bytes、BrainStorm 的 _tool_call_id）、harness/agent_node.py
+# _request_limit_bytes、BrainStorm / CallMCP 的 _tool_call_id）、harness/agent_node.py
 # （session_id、_is_sub_branch）、dispatch_tool（Task 的 _vision_mode）。
 SYSTEM_INJECTED_ARGUMENTS = frozenset(
     {

@@ -33,8 +33,9 @@
 | 极简模式插件系统 | `/api/webmin` | 10 | [webmin.md](webmin.md) |
 | 会话与对话 | `/api` | 18 | [chat.md](chat.md) |
 | 项目（会话分类器） | `/api/projects` | 4 | [projects.md](projects.md) |
-| 配置 | `/api/config` | 29 | [config.md](config.md) |
+| 配置 | `/api/config` | 30 | [config.md](config.md) |
 | 工具 | `/api/tools` | 31 | [tools.md](tools.md) |
+| MCP Apps | `/api/mcp/apps` | 3 | [mcp-apps.md](mcp-apps.md) |
 | 文件系统 | `/api/filesystem` | 12 | [filesystem.md](filesystem.md) |
 | 进化工厂 | `/api/evolve` | 12 | [evolve.md](evolve.md) |
 | 系统 | `/api/system` | 10 | [system.md](system.md) |
