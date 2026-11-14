@@ -55,15 +55,43 @@ function broadcastLayout(): void {
   }, 40);
 }
 
+// 复原拖拽期间写入的行内样式。拖拽时窗口临时改为 position:fixed，
+// 脱离横向滚动容器的裁剪，才能真正跟住指针（否则滚过一屏后窗口会被切掉/掉队）。
+function resetTileDrag(tile: HTMLElement): void {
+  tile.classList.remove('dragging', 'removing');
+  tile.style.position = '';
+  tile.style.left = '';
+  tile.style.top = '';
+  tile.style.height = '';
+  tile.style.margin = '';
+  tile.style.transform = '';
+}
+
+// 插入位置指示线：拖拽时提示松手后窗口会落在哪条分界上
+let dropLineEl: HTMLElement | null = null;
+function hideDropLine(): void {
+  if (dropLineEl) dropLineEl.style.display = 'none';
+}
+function showDropLine(x: number, top: number, height: number): void {
+  if (!dropLineEl || !dropLineEl.isConnected) {
+    dropLineEl = HOST.document.createElement('div');
+    dropLineEl.className = 'wm-tile-drop';
+    HOST.document.body.appendChild(dropLineEl);
+  }
+  dropLineEl.style.display = '';
+  dropLineEl.style.left = Math.round(x) + 'px';
+  dropLineEl.style.top = Math.round(top) + 'px';
+  dropLineEl.style.height = Math.round(height) + 'px';
+}
+
 // Shift 按下才允许管理窗口；此时每个窗口盖一层透明接收层，避免事件落进 iframe
 export function setShiftMode(on: boolean): void {
   const active = on && tileMode();
   HOST.document.body.classList.toggle('wm-shift-mode', active);
   if (!active && !managing) {
-    Object.keys(tileEls).forEach((k) => {
-      tileEls[k].classList.remove('dragging', 'removing');
-      tileEls[k].style.transform = '';
-    });
+    hideDropLine();
+    HOST.document.querySelectorAll('.wm-tile-placeholder').forEach((el) => el.remove());
+    Object.keys(tileEls).forEach((k) => resetTileDrag(tileEls[k]));
   }
 }
 
@@ -72,12 +100,11 @@ HOST.addEventListener('keyup', (ev) => { if (ev.key === 'Shift') setShiftMode(fa
 HOST.addEventListener('blur', () => {
   // 窗口整体失焦：取消未完成的拖拽，避免接收层与 dragging 样式残留
   HOST.document.querySelectorAll('.wm-drag-layer').forEach((el) => el.remove());
+  HOST.document.querySelectorAll('.wm-tile-placeholder').forEach((el) => el.remove());
   managing = false;
+  hideDropLine();
   setShiftMode(false);
-  Object.keys(tileEls).forEach((k) => {
-    tileEls[k].classList.remove('dragging', 'removing');
-    tileEls[k].style.transform = '';
-  });
+  Object.keys(tileEls).forEach((k) => resetTileDrag(tileEls[k]));
 });
 
 function ensureStrip(): HTMLElement {
@@ -163,7 +190,8 @@ function sortedVisibleKeys(): string[] {
     .sort((a, b) => Number(tileEls[a].style.order || 0) - Number(tileEls[b].style.order || 0));
 }
 
-// Shift + 拖拽：窗口跟手（transform 位移）；横向移动换位；向下拖过窗口高度一半标记删除，松开时关闭
+// Shift + 拖拽：窗口临时脱离文档流跟手（position:fixed），横向移动换位；
+// 向下拖过窗口高度一半标记删除，松开时关闭
 function bindManageDrag(tile: HTMLElement, shield: HTMLElement, key: string): void {
   shield.addEventListener('pointerdown', (ev) => {
     if (!HOST.document.body.classList.contains('wm-shift-mode') || ev.button !== 0) return;
@@ -176,15 +204,48 @@ function bindManageDrag(tile: HTMLElement, shield: HTMLElement, key: string): vo
     let removing = false;
     let done = false;
     let lastX = ev.clientX;
-    let offsetX = 0;   // 当前视觉位移，窗口始终跟着指针走
+    let offsetX = 0;   // 相对按下位置的横向位移
     managing = true;
+    // 脱离文档流：窗口按视口坐标跟手，不再被横向滚动容器裁剪，
+    // 跨过一屏窗口时也不会和鼠标拉开距离
     tile.classList.add('dragging');
+    tile.style.position = 'fixed';
+    tile.style.left = rect.left + 'px';
+    tile.style.top = rect.top + 'px';
+    tile.style.height = rect.height + 'px';
+    tile.style.margin = '0';
+    // 占位块留在原位：其它窗口不因窗口被拎起而移动，插入判断与指示线才不会跳
+    const placeholder = HOST.document.createElement('div');
+    placeholder.className = 'wm-tile-placeholder';
+    placeholder.style.width = rect.width + 'px';
+    if (tile.parentElement) tile.parentElement.insertBefore(placeholder, tile);
     // 全屏接收层：拖出源窗口后指针仍归宿主（否则事件落进其它 iframe 会丢失）
     const layer = HOST.document.createElement('div');
     layer.className = 'wm-drag-layer';
     HOST.document.body.appendChild(layer);
-    const setTransform = () => { tile.style.transform = 'translate(' + Math.round(offsetX) + 'px, 0px)'; };
+    let pointerX = ev.clientX;
+    // 未移动就松手时保持原位：当前下标即它在其它窗口中的插入位置
+    let targetIndex = Math.max(0, sortedVisibleKeys().indexOf(key));
+    // 依据指针位置算出插入下标，并把指示线画在对应分界处（不实时重排，松手才落位）
+    const updateIndicator = (x: number): number => {
+      if (!strip) { hideDropLine(); return 0; }
+      const others = sortedVisibleKeys().filter((k) => k !== key);
+      if (!others.length) { hideDropLine(); return 0; }
+      let index = others.length;
+      for (let i = 0; i < others.length; i++) {
+        const r = tileEls[others[i]].getBoundingClientRect();
+        if (x < r.left + r.width / 2) { index = i; break; }
+      }
+      const sr = strip.getBoundingClientRect();
+      let lineX: number;
+      // 指示线画在插入槽的前沿：首个槽贴第一个窗口左侧，其余槽贴前一个窗口右侧
+      if (index === 0) lineX = tileEls[others[0]].getBoundingClientRect().left - 4;
+      else lineX = tileEls[others[index - 1]].getBoundingClientRect().right + 4;
+      showDropLine(lineX, sr.top + 6, Math.max(40, sr.height - 12));
+      return index;
+    };
     const move = (e2: PointerEvent) => {
+      pointerX = e2.clientX;
       offsetX += e2.clientX - lastX;
       lastX = e2.clientX;
       const dy = e2.clientY - startY;
@@ -193,43 +254,20 @@ function bindManageDrag(tile: HTMLElement, shield: HTMLElement, key: string): vo
         removing = willRemove;
         tile.classList.toggle('removing', removing);
       }
-      if (removing) {
-        // 待删除：跟随幅度收缩并轻微下沉，给出「正在拖走」的手感
-        tile.style.transform = 'translate(' + Math.round(offsetX * 0.15) + 'px, '
-          + Math.round(Math.min(dy - removeAt, 40)) + 'px)';
-        return;
-      }
-      setTransform();
+      tile.style.left = Math.round(rect.left + offsetX) + 'px';
+      tile.style.top = Math.round(rect.top + (removing ? Math.min(dy - removeAt, 40) : 0)) + 'px';
+      if (removing) { hideDropLine(); return; }
       if (strip) {
         // 拖到窗口条左右边缘时自动横向滚动，便于把窗口拖到视口外
         const sr = strip.getBoundingClientRect();
         if (e2.clientX < sr.left + 56) strip.scrollLeft -= 20;
         else if (e2.clientX > sr.right - 56) strip.scrollLeft += 20;
       }
-      // 以各窗口中心线判定插入位置，指针越过中心即换位
-      const keys = sortedVisibleKeys();
-      const from = keys.indexOf(key);
-      if (from < 0) return;
-      let target = keys.length;
-      for (let i = 0; i < keys.length; i++) {
-        const other = keys[i];
-        if (other === key) continue;
-        const r = tileEls[other].getBoundingClientRect();
-        if (e2.clientX < r.left + r.width / 2) { target = i; break; }
-      }
-      if (target > from) target -= 1;   // 移除自身后目标索引左移
-      if (target === from) return;      // 位置未变：不重排，避免抖动
-      const next = keys.slice();
-      next.splice(from, 1);
-      next.splice(Math.max(0, Math.min(next.length, target)), 0, key);
-      const before = tile.getBoundingClientRect().left;
-      reorderWindows(next);
-      applyOrder();
-      // 换位后窗口的自然位置变了，抵消这段位移，让窗口继续停在指针下
-      offsetX -= tile.getBoundingClientRect().left - before;
-      setTransform();
-      broadcastLayout();
+      targetIndex = updateIndicator(pointerX);
     };
+    // 自动滚动会带着其它窗口移动，指示线要跟着重算
+    const onScroll = () => { if (!removing) targetIndex = updateIndicator(pointerX); };
+    if (strip) strip.addEventListener('scroll', onScroll, { passive: true });
     const finish = (commit: boolean) => {
       if (done) return;
       done = true;
@@ -237,14 +275,22 @@ function bindManageDrag(tile: HTMLElement, shield: HTMLElement, key: string): vo
       layer.removeEventListener('pointermove', move);
       layer.removeEventListener('pointerup', up);
       layer.removeEventListener('pointercancel', cancel);
+      if (strip) strip.removeEventListener('scroll', onScroll);
       try { layer.releasePointerCapture(ev.pointerId); } catch (_) {}
       layer.remove();
-      tile.classList.remove('dragging', 'removing');
-      tile.style.transform = '';   // 落位：由 CSS 过渡滑回自然位置
-      if (commit) {
-        if (removing) closeTileByKey(key);
-        else persistLayout();
+      placeholder.remove();
+      hideDropLine();
+      if (commit && !removing) {
+        // 落位：按指示线所在分界插入，再让窗口回到文档流
+        const others = sortedVisibleKeys().filter((k) => k !== key);
+        const next = others.slice();
+        next.splice(Math.max(0, Math.min(next.length, targetIndex)), 0, key);
+        reorderWindows(next);
+        applyOrder();
+        persistLayout();
       }
+      resetTileDrag(tile);   // 落回文档流，按新顺序归位
+      if (commit && removing) closeTileByKey(key);
       broadcastLayout();
     };
     const up = () => finish(true);
@@ -285,7 +331,7 @@ function moveAnchorInto(body: HTMLElement, slot: string): void {
   if (anchor.parentNode !== body) body.appendChild(anchor);
 }
 
-function syncFixedTile(strip: HTMLElement, key: string, slot: string): void {
+function syncFixedTile(strip: HTMLElement, key: string, slot: string): boolean {
   let tile = tileEls[key];
   if (!tile) {
     tile = makeTile(key);
@@ -293,7 +339,9 @@ function syncFixedTile(strip: HTMLElement, key: string, slot: string): void {
     tileEls[key] = tile;
   }
   moveAnchorInto(tileBody(tile), slot);
-  tile.style.display = pluginVisibleInSlot(slot) ? '' : 'none';
+  const on = !!pluginVisibleInSlot(slot);
+  tile.style.display = on ? '' : 'none';
+  return on;
 }
 
 function ensureAddTile(strip: HTMLElement): void {
@@ -402,8 +450,8 @@ export function syncTiles(): void {
     (p) => (panelTabs as string[]).indexOf(p.id) >= 0 && !railHidden(p.id),
   );
 
-  syncFixedTile(strip, LAYOUT_KEY_SIDEBAR, 'sidebar');
-  syncFixedTile(strip, LAYOUT_KEY_SESSION, 'session');
+  const sidebarOn = syncFixedTile(strip, LAYOUT_KEY_SIDEBAR, 'sidebar');
+  const sessionOn = syncFixedTile(strip, LAYOUT_KEY_SESSION, 'session');
 
   validPanels.forEach((p) => {
     const key = panelWindowKey(p.id);
@@ -436,9 +484,11 @@ export function syncTiles(): void {
 
   ensureAddTile(strip);
 
-  const visible = [LAYOUT_KEY_SIDEBAR]
+  // 只登记当前真正显示的窗口：关闭的窗口从顺序表移除，重新打开才会追加到最右端。
+  // 已关闭的固定位也留在表里会导致它们重开时回到旧位置（例如一直排在第一个）。
+  const visible = (sidebarOn ? [LAYOUT_KEY_SIDEBAR] : [])
     .concat(validPanels.map((p) => panelWindowKey(p.id)))
-    .concat([LAYOUT_KEY_SESSION]);
+    .concat(sessionOn ? [LAYOUT_KEY_SESSION] : []);
   const orderBefore = layoutState.order.join('\u0000');
   ensureOrder(visible);
   applyOrder();

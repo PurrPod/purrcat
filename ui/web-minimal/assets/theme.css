@@ -840,16 +840,19 @@ body.layout-tile [data-slot="panel-container"] { display: none !important; }
   border-radius: 12px;
   overflow: hidden;
   box-shadow: var(--wm-shadow-sm);
-  /* 松手后由拖拽位移滑回自然位置 */
-  transition: transform 0.18s ease;
 }
-/* 拖拽中：窗口跟手悬浮，换位时不参与过渡，避免拖影 */
+/* 拖拽占位：窗口被拎起时仍占住原位置，其它窗口不移动 */
+.wm-tile-placeholder {
+  flex: none;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.045);
+}
+/* 拖拽中：窗口改为视口定位（position:fixed 由脚本写入），悬浮在滚动区之上 */
 .wm-tile.dragging {
-  z-index: 20;
+  z-index: 30;
   opacity: 0.92;
-  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.22);
   transition: none;
-  will-change: transform;
 }
 /* Shift 管理模式的透明接收层：平时让事件穿透到 iframe，Shift 按下时由宿主接管 */
 .wm-tile-shield {
@@ -869,6 +872,16 @@ body.wm-shift-mode .wm-tile.dragging .wm-tile-shield { cursor: grabbing; }
   z-index: 9999;
   background: transparent;
   cursor: grabbing;
+}
+/* 拖拽插入位置指示线：落在将要插入的窗口分界处 */
+.wm-tile-drop {
+  position: fixed;
+  z-index: 9998;
+  width: 3px;
+  border-radius: 3px;
+  background: var(--wm-accent, #16191d);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.7), 0 0 14px rgba(0, 0, 0, 0.25);
+  pointer-events: none;
 }
 /* 向下拖过窗口高度一半：进入待删除状态 */
 .wm-tile.removing { opacity: 0.8; }

@@ -3123,14 +3123,37 @@
       broadcastAll("host.layoutChanged", { mode: "tile" });
     }, 40);
   }
+  function resetTileDrag(tile) {
+    tile.classList.remove("dragging", "removing");
+    tile.style.position = "";
+    tile.style.left = "";
+    tile.style.top = "";
+    tile.style.height = "";
+    tile.style.margin = "";
+    tile.style.transform = "";
+  }
+  var dropLineEl = null;
+  function hideDropLine() {
+    if (dropLineEl) dropLineEl.style.display = "none";
+  }
+  function showDropLine(x, top, height) {
+    if (!dropLineEl || !dropLineEl.isConnected) {
+      dropLineEl = HOST.document.createElement("div");
+      dropLineEl.className = "wm-tile-drop";
+      HOST.document.body.appendChild(dropLineEl);
+    }
+    dropLineEl.style.display = "";
+    dropLineEl.style.left = Math.round(x) + "px";
+    dropLineEl.style.top = Math.round(top) + "px";
+    dropLineEl.style.height = Math.round(height) + "px";
+  }
   function setShiftMode(on) {
     const active = on && tileMode();
     HOST.document.body.classList.toggle("wm-shift-mode", active);
     if (!active && !managing) {
-      Object.keys(tileEls).forEach((k) => {
-        tileEls[k].classList.remove("dragging", "removing");
-        tileEls[k].style.transform = "";
-      });
+      hideDropLine();
+      HOST.document.querySelectorAll(".wm-tile-placeholder").forEach((el) => el.remove());
+      Object.keys(tileEls).forEach((k) => resetTileDrag(tileEls[k]));
     }
   }
   HOST.addEventListener("keydown", (ev) => {
@@ -3141,12 +3164,11 @@
   });
   HOST.addEventListener("blur", () => {
     HOST.document.querySelectorAll(".wm-drag-layer").forEach((el) => el.remove());
+    HOST.document.querySelectorAll(".wm-tile-placeholder").forEach((el) => el.remove());
     managing = false;
+    hideDropLine();
     setShiftMode(false);
-    Object.keys(tileEls).forEach((k) => {
-      tileEls[k].classList.remove("dragging", "removing");
-      tileEls[k].style.transform = "";
-    });
+    Object.keys(tileEls).forEach((k) => resetTileDrag(tileEls[k]));
   });
   function ensureStrip() {
     if (stripEl && stripEl.isConnected) return stripEl;
@@ -3247,13 +3269,47 @@
       let offsetX = 0;
       managing = true;
       tile.classList.add("dragging");
+      tile.style.position = "fixed";
+      tile.style.left = rect.left + "px";
+      tile.style.top = rect.top + "px";
+      tile.style.height = rect.height + "px";
+      tile.style.margin = "0";
+      const placeholder = HOST.document.createElement("div");
+      placeholder.className = "wm-tile-placeholder";
+      placeholder.style.width = rect.width + "px";
+      if (tile.parentElement) tile.parentElement.insertBefore(placeholder, tile);
       const layer = HOST.document.createElement("div");
       layer.className = "wm-drag-layer";
       HOST.document.body.appendChild(layer);
-      const setTransform = () => {
-        tile.style.transform = "translate(" + Math.round(offsetX) + "px, 0px)";
+      let pointerX = ev.clientX;
+      let targetIndex = Math.max(0, sortedVisibleKeys().indexOf(key));
+      const updateIndicator = (x) => {
+        if (!strip) {
+          hideDropLine();
+          return 0;
+        }
+        const others = sortedVisibleKeys().filter((k) => k !== key);
+        if (!others.length) {
+          hideDropLine();
+          return 0;
+        }
+        let index = others.length;
+        for (let i = 0; i < others.length; i++) {
+          const r = tileEls[others[i]].getBoundingClientRect();
+          if (x < r.left + r.width / 2) {
+            index = i;
+            break;
+          }
+        }
+        const sr = strip.getBoundingClientRect();
+        let lineX;
+        if (index === 0) lineX = tileEls[others[0]].getBoundingClientRect().left - 4;
+        else lineX = tileEls[others[index - 1]].getBoundingClientRect().right + 4;
+        showDropLine(lineX, sr.top + 6, Math.max(40, sr.height - 12));
+        return index;
       };
       const move = (e2) => {
+        pointerX = e2.clientX;
         offsetX += e2.clientX - lastX;
         lastX = e2.clientX;
         const dy = e2.clientY - startY;
@@ -3262,41 +3318,23 @@
           removing = willRemove;
           tile.classList.toggle("removing", removing);
         }
+        tile.style.left = Math.round(rect.left + offsetX) + "px";
+        tile.style.top = Math.round(rect.top + (removing ? Math.min(dy - removeAt, 40) : 0)) + "px";
         if (removing) {
-          tile.style.transform = "translate(" + Math.round(offsetX * 0.15) + "px, " + Math.round(Math.min(dy - removeAt, 40)) + "px)";
+          hideDropLine();
           return;
         }
-        setTransform();
         if (strip) {
           const sr = strip.getBoundingClientRect();
           if (e2.clientX < sr.left + 56) strip.scrollLeft -= 20;
           else if (e2.clientX > sr.right - 56) strip.scrollLeft += 20;
         }
-        const keys = sortedVisibleKeys();
-        const from = keys.indexOf(key);
-        if (from < 0) return;
-        let target = keys.length;
-        for (let i = 0; i < keys.length; i++) {
-          const other = keys[i];
-          if (other === key) continue;
-          const r = tileEls[other].getBoundingClientRect();
-          if (e2.clientX < r.left + r.width / 2) {
-            target = i;
-            break;
-          }
-        }
-        if (target > from) target -= 1;
-        if (target === from) return;
-        const next = keys.slice();
-        next.splice(from, 1);
-        next.splice(Math.max(0, Math.min(next.length, target)), 0, key);
-        const before = tile.getBoundingClientRect().left;
-        reorderWindows(next);
-        applyOrder();
-        offsetX -= tile.getBoundingClientRect().left - before;
-        setTransform();
-        broadcastLayout();
+        targetIndex = updateIndicator(pointerX);
       };
+      const onScroll = () => {
+        if (!removing) targetIndex = updateIndicator(pointerX);
+      };
+      if (strip) strip.addEventListener("scroll", onScroll, { passive: true });
       const finish = (commit) => {
         if (done) return;
         done = true;
@@ -3304,17 +3342,24 @@
         layer.removeEventListener("pointermove", move);
         layer.removeEventListener("pointerup", up);
         layer.removeEventListener("pointercancel", cancel);
+        if (strip) strip.removeEventListener("scroll", onScroll);
         try {
           layer.releasePointerCapture(ev.pointerId);
         } catch (_) {
         }
         layer.remove();
-        tile.classList.remove("dragging", "removing");
-        tile.style.transform = "";
-        if (commit) {
-          if (removing) closeTileByKey(key);
-          else persistLayout();
+        placeholder.remove();
+        hideDropLine();
+        if (commit && !removing) {
+          const others = sortedVisibleKeys().filter((k) => k !== key);
+          const next = others.slice();
+          next.splice(Math.max(0, Math.min(next.length, targetIndex)), 0, key);
+          reorderWindows(next);
+          applyOrder();
+          persistLayout();
         }
+        resetTileDrag(tile);
+        if (commit && removing) closeTileByKey(key);
         broadcastLayout();
       };
       const up = () => finish(true);
@@ -3362,7 +3407,9 @@
       tileEls[key] = tile;
     }
     moveAnchorInto(tileBody(tile), slot);
-    tile.style.display = pluginVisibleInSlot(slot) ? "" : "none";
+    const on = !!pluginVisibleInSlot(slot);
+    tile.style.display = on ? "" : "none";
+    return on;
   }
   function ensureAddTile(strip) {
     if (addEl && addEl.isConnected) return;
@@ -3470,8 +3517,8 @@
     const validPanels = panels.filter(
       (p) => panelTabs.indexOf(p.id) >= 0 && !railHidden(p.id)
     );
-    syncFixedTile(strip, LAYOUT_KEY_SIDEBAR, "sidebar");
-    syncFixedTile(strip, LAYOUT_KEY_SESSION, "session");
+    const sidebarOn = syncFixedTile(strip, LAYOUT_KEY_SIDEBAR, "sidebar");
+    const sessionOn = syncFixedTile(strip, LAYOUT_KEY_SESSION, "session");
     validPanels.forEach((p) => {
       const key = panelWindowKey(p.id);
       let tile = tileEls[key];
@@ -3495,7 +3542,7 @@
     });
     frames["panel"] = validPanels.map((p) => tileFrames[p.id]).filter(Boolean);
     ensureAddTile(strip);
-    const visible = [LAYOUT_KEY_SIDEBAR].concat(validPanels.map((p) => panelWindowKey(p.id))).concat([LAYOUT_KEY_SESSION]);
+    const visible = (sidebarOn ? [LAYOUT_KEY_SIDEBAR] : []).concat(validPanels.map((p) => panelWindowKey(p.id))).concat(sessionOn ? [LAYOUT_KEY_SESSION] : []);
     const orderBefore = layoutState.order.join("\0");
     ensureOrder(visible);
     applyOrder();
