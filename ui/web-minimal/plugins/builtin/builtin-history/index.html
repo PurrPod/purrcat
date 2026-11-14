@@ -507,6 +507,25 @@
   .sendBtn:hover { background: var(--wm-accent-hi, #679efe); }
   .sendBtn:disabled { background: var(--wm-bl-200, #dfe4ea); color: #fff; cursor: default; }
   .sendBtn svg { width: 17px; height: 17px; }
+  /* MCP App：MCP Server 通过 ui:// 资源提供的单文件应用，iframe 内独立渲染 */
+  .mcp-app {
+    width: 100%; border: 1px solid var(--wm-border-soft, rgba(15,17,21,.08));
+    border-radius: 10px; overflow: hidden; background: var(--wm-bl-0, #fff);
+  }
+  .mcp-app-head {
+    display: flex; align-items: center; gap: 8px; padding: 6px 10px;
+    font-size: 12px; color: var(--wm-label-2nd, #4c5560);
+    background: var(--wm-bl-100, #f2f4f7);
+    border-bottom: 1px solid var(--wm-border-soft, rgba(15,17,21,.05));
+  }
+  .mcp-app-head .ttl { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mcp-app-head .srv { margin-left: auto; opacity: .7; font-family: var(--wm-mono, ui-monospace, Consolas, monospace); }
+  .mcp-app-head button {
+    border: 0; background: transparent; color: inherit; cursor: pointer;
+    font-size: 12px; padding: 2px 6px; border-radius: 6px;
+  }
+  .mcp-app-head button:hover { background: var(--wm-bg-hover, #e9edf1); }
+  .mcp-app iframe { display: block; width: 100%; height: 420px; border: 0; background: #fff; }
 </style>
 <link rel="stylesheet" href="/minimal/shared/katex/0.16.11/katex.min.css">
 <link rel="stylesheet" href="/minimal/shared/highlight/11.11.1/github.min.css">
@@ -823,6 +842,132 @@
     return wrap;
   }
 
+  // ---------- MCP Apps：ui:// 资源渲染与最小 Host 桥接 ----------
+  // 协议（ext-apps）：App 发 ui/initialize → Host 回 hostInfo/hostContext；
+  // App 发 initialized 后 Host 推 tool-input / tool-result；App 可发 tools/call 与 size-changed。
+  var appPayloads = {};   // appId -> Promise<payload>，避免每次重建重复拉取
+
+  function appTheme() {
+    var dark = false;
+    try {
+      if (window.matchMedia) dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      var bg = getComputedStyle(document.body).backgroundColor.match(/\d+/g);
+      if (bg && bg.length >= 3) dark = (+bg[0] + +bg[1] + +bg[2]) / 3 < 128;
+    } catch (e) {}
+    return dark ? 'dark' : 'light';
+  }
+
+  function fetchAppPayload(id) {
+    if (!appPayloads[id]) {
+      appPayloads[id] = fetch('/api/mcp/apps/' + encodeURIComponent(id) + '/payload')
+        .then(function (r) {
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return r.json();
+        })
+        .catch(function (e) { delete appPayloads[id]; throw e; });
+    }
+    return appPayloads[id];
+  }
+
+  function postToApp(frame, data) {
+    if (frame && frame.contentWindow) frame.contentWindow.postMessage(data, '*');
+  }
+
+  function sendToolPayload(frame, id) {
+    fetchAppPayload(id).then(function (p) {
+      postToApp(frame, { jsonrpc: '2.0', method: 'ui/notifications/tool-input', params: { arguments: p.arguments || {} } });
+      var r = p.result || {};
+      var params = { content: r.content || [], isError: false };
+      if (r.structuredContent != null) params.structuredContent = r.structuredContent;
+      if (r._meta != null) params._meta = r._meta;
+      postToApp(frame, { jsonrpc: '2.0', method: 'ui/notifications/tool-result', params: params });
+    }).catch(function (e) { console.warn('[MCP App] 载荷加载失败', id, e); });
+  }
+
+  function callAppTool(frame, id, msg) {
+    var params = msg.params || {};
+    fetch('/api/mcp/apps/' + encodeURIComponent(id) + '/call', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ tool: params.name || params.tool || '', arguments: params.arguments || {} })
+    }).then(function (r) {
+      return r.json().then(function (d) {
+        if (!r.ok) throw new Error((d && d.detail) || ('HTTP ' + r.status));
+        return d;
+      });
+    }).then(function (d) {
+      postToApp(frame, { jsonrpc: '2.0', id: msg.id, result: d });
+    }).catch(function (e) {
+      postToApp(frame, { jsonrpc: '2.0', id: msg.id, error: { code: -32603, message: String((e && e.message) || e) } });
+    });
+  }
+
+  function handleAppMessage(frame, id, msg) {
+    var method = msg.method || '';
+    if (method === 'ui/initialize' && msg.id != null) {
+      var params = msg.params || {};
+      postToApp(frame, {
+        jsonrpc: '2.0', id: msg.id,
+        result: {
+          protocolVersion: params.protocolVersion || '2026-01-26',
+          hostCapabilities: {},
+          hostInfo: { name: 'PurrCat', version: '1.0.0' },
+          hostContext: { theme: appTheme() }
+        }
+      });
+      return;
+    }
+    if (method === 'ui/notifications/initialized') { sendToolPayload(frame, id); return; }
+    if (method === 'ui/notifications/size-changed') {
+      var h = Number(msg.params && msg.params.height);
+      if (h > 0) frame.style.height = Math.max(160, Math.min(900, h)) + 'px';
+      return;
+    }
+    if (method === 'tools/call' && msg.id != null) { callAppTool(frame, id, msg); return; }
+    if (method === 'ui/open-link' || method === 'ui/notifications/open-link') {
+      var url = msg.params && msg.params.url;
+      if (url) window.open(url, '_blank', 'noopener');
+    }
+  }
+
+  window.addEventListener('message', function (ev) {
+    var frame = null;
+    var nodes = document.querySelectorAll('iframe[data-mcp-app]');
+    for (var i = 0; i < nodes.length; i++) {
+      if (nodes[i].contentWindow === ev.source) { frame = nodes[i]; break; }
+    }
+    if (!frame) return;
+    var msg = ev.data;
+    if (!msg || typeof msg !== 'object') return;
+    handleAppMessage(frame, frame.getAttribute('data-mcp-app'), msg);
+  });
+
+  function buildMcpApp(app) {
+    var id = app.id;
+    var card = document.createElement('div');
+    card.className = 'mcp-app';
+    var head = document.createElement('div');
+    head.className = 'mcp-app-head';
+    head.innerHTML = '<span class="ttl">' + esc(app.tool || 'MCP App') + '</span>'
+      + '<span class="srv">' + esc(app.server || '') + '</span>';
+    var reload = document.createElement('button');
+    reload.type = 'button';
+    reload.textContent = '重新加载';
+    reload.addEventListener('click', function () {
+      var f = card.querySelector('iframe');
+      if (f) f.src = '/api/mcp/apps/' + encodeURIComponent(id) + '/html?t=' + Date.now();
+    });
+    head.appendChild(reload);
+    card.appendChild(head);
+    var frame = document.createElement('iframe');
+    frame.setAttribute('data-mcp-app', id);
+    frame.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-forms allow-popups');
+    frame.setAttribute('allow', 'fullscreen');
+    frame.src = '/api/mcp/apps/' + encodeURIComponent(id) + '/html';
+    card.appendChild(frame);
+    return card;
+  }
+
   // ---------- Markdown 渲染（marked 解析 + KaTeX 公式 + 代码高亮，代码/表格套独立外壳） ----------
   // 兜底：marked 未加载时退化为「转义 + 保留换行」的纯文本，保证内容不丢
   function mdFallback(src) {
@@ -1099,10 +1244,13 @@
       // role === 'tool'
       if (!show.tool) return null;
       col.style.alignItems = 'flex-start';
+      if (m.mcp_app && m.mcp_app.id) {
+        col.appendChild(buildMcpApp(m.mcp_app)); count++;
+      }
       var tb = document.createElement('div');
       tb.className = 'tool-body';
       tb.textContent = toolText(m.content);
-      col.appendChild(makeCollapsible('工具结果', m.name, tb)); count++;
+      col.appendChild(makeCollapsible('工具结果', m.mcp_app ? '' : m.name, tb)); count++;
     }
     return count ? wrap : null;
   }
