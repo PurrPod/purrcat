@@ -90,6 +90,16 @@ curl -X POST 'http://127.0.0.1:8000/api/sessions/new' -H 'Content-Type: applicat
 
 前端据此渲染 iframe，资源与调用载荷分别由 `GET /api/mcp/apps/{id}/html`、`GET /api/mcp/apps/{id}/payload` 提供（见 [mcp-apps.md](mcp-apps.md)）。`mcp_app` 只加在 API 响应里，不写入会话文件，也不进入模型上下文。
 
+没有 UI 资源的 MCP 工具，若返回 `structuredContent`（或正文就是整段 JSON），同一 tool 消息会附带 `mcp_data`，由聊天页用宿主组件兜底渲染：
+
+```json
+{
+  "role": "tool",
+  "tool_call_id": "call_xxx",
+  "mcp_data": { "server": "demo", "tool": "search", "structuredContent": { "items": [] } }
+}
+```
+
 **示例**
 
 ```bash

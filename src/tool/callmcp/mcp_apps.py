@@ -49,6 +49,10 @@ def _html_path(app_id: str) -> str:
     return os.path.join(_apps_dir(), f"{app_id}.html")
 
 
+def _result_path(app_id: str) -> str:
+    return os.path.join(_apps_dir(), f"{app_id}.result.json")
+
+
 def save_app(app_id: str, payload: dict, html: str) -> bool:
     """落盘一个 MCP App；id 非法或写失败返回 False。"""
     if not is_legal_app_id(app_id) or not isinstance(html, str):
@@ -89,24 +93,68 @@ def load_html(app_id: str) -> str | None:
         return None
 
 
+def save_result(tool_call_id: str, payload: dict) -> bool:
+    """落盘无 UI 工具的调用结果，供聊天页用宿主组件兜底渲染。"""
+    if not is_legal_app_id(tool_call_id) or not isinstance(payload, dict):
+        return False
+    try:
+        os.makedirs(_apps_dir(), exist_ok=True)
+        with open(_result_path(tool_call_id), "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False)
+        return True
+    except Exception as e:
+        print(f"[MCP App] 保存结果失败 {tool_call_id}: {e}")
+        return False
+
+
+def load_result(app_id: str) -> dict | None:
+    if not is_legal_app_id(app_id):
+        return None
+    try:
+        with open(_result_path(app_id), "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
+def extract_json_text(text) -> object | None:
+    """整段文本就是一个 JSON 对象/数组时返回解析结果，否则 None。"""
+    if not isinstance(text, str):
+        return None
+    stripped = text.strip()
+    if len(stripped) < 2 or stripped[0] not in "{[" or stripped[-1] not in "}]":
+        return None
+    try:
+        return json.loads(stripped)
+    except Exception:
+        return None
+
+
 def attach_history_apps(messages: list[dict]) -> list[dict]:
-    """给有旁路文件的 tool 消息附加 `mcp_app`，返回新列表（不改入参）。"""
+    """给有旁路文件的 tool 消息附加 `mcp_app` / `mcp_data`，返回新列表（不改入参）。"""
     out = []
     for message in messages or []:
         if message.get("role") != "tool":
             out.append(message)
             continue
         app_id = message.get("tool_call_id")
-        payload = load_payload(app_id) if is_legal_app_id(app_id) else None
-        if not payload:
+        if not is_legal_app_id(app_id):
+            out.append(message)
+            continue
+        payload = load_payload(app_id)
+        data = load_result(app_id)
+        if not payload and not data:
             out.append(message)
             continue
         marked = dict(message)
-        marked["mcp_app"] = {
-            "id": app_id,
-            "server": payload.get("server", ""),
-            "tool": payload.get("tool", ""),
-            "uri": payload.get("uri", ""),
-        }
+        if payload:
+            marked["mcp_app"] = {
+                "id": app_id,
+                "server": payload.get("server", ""),
+                "tool": payload.get("tool", ""),
+                "uri": payload.get("uri", ""),
+            }
+        if data:
+            marked["mcp_data"] = data
         out.append(marked)
     return out

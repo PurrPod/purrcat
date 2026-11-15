@@ -133,3 +133,32 @@ def test_with_system_arguments_injects_tool_call_id_for_callmcp():
     assert with_system_arguments(
         "Bash", {"command": "ls"}, session_id="s1", tool_call_id="call_1"
     ) == {"command": "ls", "session_id": "s1"}
+
+
+def test_save_result_roundtrip_and_attach_data(tmp_path, monkeypatch):
+    """SPEC-025 AC-9：无 UI 工具的结构化结果按 tool_call_id 落盘并附加到历史。"""
+    monkeypatch.setattr(mcp_apps, "BUFFER_DIR", str(tmp_path))
+
+    data = {
+        "server": "demo",
+        "tool": "search",
+        "structuredContent": {"items": [{"id": 1}, {"id": 2}]},
+    }
+    assert mcp_apps.save_result("call_1", data) is True
+    assert mcp_apps.save_result("../x", data) is False
+    assert mcp_apps.load_result("call_1") == data
+    assert mcp_apps.load_result("call_missing") is None
+
+    messages = [{"role": "tool", "tool_call_id": "call_1", "content": "[]"}]
+    out = mcp_apps.attach_history_apps(messages)
+    assert "mcp_app" not in out[0]
+    assert out[0]["mcp_data"] == data
+    assert "mcp_data" not in messages[0]
+
+
+def test_extract_json_text_only_accepts_whole_json():
+    assert mcp_apps.extract_json_text('{"a": 1}') == {"a": 1}
+    assert mcp_apps.extract_json_text("  [1, 2]  ") == [1, 2]
+    assert mcp_apps.extract_json_text('结果如下 {"a": 1}') is None
+    assert mcp_apps.extract_json_text("plain") is None
+    assert mcp_apps.extract_json_text(None) is None

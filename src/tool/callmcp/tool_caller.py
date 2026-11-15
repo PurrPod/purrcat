@@ -130,6 +130,23 @@ async def _invoke_tool_async(
             except Exception as e:
                 print(f"⚠️ [MCP App] 读取 UI 资源失败 {resource_uri}: {e}")
 
+        if not app_saved and mcp_apps.is_legal_app_id(tool_call_id):
+            structured = getattr(result, "structuredContent", None)
+            if structured is None:
+                texts = [c.text for c in result.content if c.type == "text"]
+                structured = (
+                    mcp_apps.extract_json_text(texts[0]) if len(texts) == 1 else None
+                )
+            if structured is not None:
+                mcp_apps.save_result(
+                    tool_call_id,
+                    {
+                        "server": server_name,
+                        "tool": tool_name,
+                        "structuredContent": structured,
+                    },
+                )
+
         return output, app_saved
 
     except RuntimeError as re:

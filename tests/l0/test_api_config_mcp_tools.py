@@ -9,8 +9,14 @@ def test_mcp_tools_grouped_by_server(monkeypatch):
     monkeypatch.setattr(
         "src.tool.callmcp.schema_manager.load_cached_schemas",
         lambda: [
-            {"server": "cesium-map", "function": {"name": "show-map", "description": "展示地图"}},
-            {"server": "cesium-map", "function": {"name": "geocode", "description": ""}},
+            {
+                "server": "cesium-map",
+                "function": {"name": "show-map", "description": "展示地图"},
+            },
+            {
+                "server": "cesium-map",
+                "function": {"name": "geocode", "description": ""},
+            },
             {"server": "", "function": {"name": "orphan"}},
             {"server": "broken", "function": {}},
         ],
