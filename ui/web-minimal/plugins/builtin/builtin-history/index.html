@@ -518,12 +518,17 @@
     background: var(--wm-bl-100, #f2f4f7);
     border-bottom: 1px solid var(--wm-border-soft, rgba(15,17,21,.05));
   }
-  .mcp-app-head .ttl { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .mcp-app-head .srv { margin-left: auto; opacity: .7; font-family: var(--wm-mono, ui-monospace, Consolas, monospace); }
-  .mcp-app-head button {
-    border: 0; background: transparent; color: inherit; cursor: pointer;
-    font-size: 12px; padding: 2px 6px; border-radius: 6px;
+  .mcp-app-head .srv {
+    font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-family: var(--wm-mono, ui-monospace, Consolas, monospace);
   }
+  .mcp-app-acts { margin-left: auto; display: flex; align-items: center; gap: 2px; }
+  .mcp-app-head button {
+    display: flex; align-items: center; justify-content: center;
+    border: 0; background: transparent; color: inherit; cursor: pointer;
+    padding: 4px; border-radius: 6px;
+  }
+  .mcp-app-head button svg { width: 14px; height: 14px; display: block; }
   .mcp-app-head button:hover { background: var(--wm-bg-hover, #e9edf1); }
   .mcp-app iframe { display: block; width: 100%; height: 420px; border: 0; background: #fff; }
   .mcp-app.fullscreen {
@@ -918,13 +923,22 @@
 
   function appCard(frame) { return frame.closest('.mcp-app'); }
 
+  var ICON_FULL = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2H2v4M10 2h4v4M10 14h4v-4M6 14H2v-4"/></svg>';
+  var ICON_BACK = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6h4V2M14 6h-4V2M14 10h-4v4M2 10h4v4"/></svg>';
+  var ICON_RELOAD = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M13 8a5 5 0 1 1-1.6-3.7"/><path d="M13 2v3h-3"/></svg>';
+
   function setAppDisplayMode(frame, mode) {
     var card = appCard(frame);
     var next = mode === 'fullscreen' ? 'fullscreen' : 'inline';
     if (card) {
       card.classList.toggle('fullscreen', next === 'fullscreen');
       var btn = card.querySelector('.mcp-app-mode');
-      if (btn) btn.textContent = next === 'fullscreen' ? '退出全屏' : '全屏';
+      if (btn) {
+        btn.innerHTML = next === 'fullscreen' ? ICON_BACK : ICON_FULL;
+        var label = next === 'fullscreen' ? '退出全屏' : '全屏';
+        btn.title = label;
+        btn.setAttribute('aria-label', label);
+      }
     }
     postToApp(frame, { jsonrpc: '2.0', method: 'ui/notifications/host-context-changed', params: { displayMode: next } });
     return next;
@@ -1029,11 +1043,17 @@
     card.className = 'mcp-app';
     var head = document.createElement('div');
     head.className = 'mcp-app-head';
-    head.innerHTML = '<span class="ttl">' + esc(app.tool || 'MCP App') + '</span>'
-      + '<span class="srv">' + esc(app.server || '') + '</span>';
+    var srv = document.createElement('span');
+    srv.className = 'srv';
+    srv.textContent = app.server || 'MCP App';
+    head.appendChild(srv);
+    var acts = document.createElement('div');
+    acts.className = 'mcp-app-acts';
     var reload = document.createElement('button');
     reload.type = 'button';
-    reload.textContent = '重新加载';
+    reload.innerHTML = ICON_RELOAD;
+    reload.title = '重新加载';
+    reload.setAttribute('aria-label', '重新加载');
     reload.addEventListener('click', function () {
       var f = card.querySelector('iframe');
       if (f) f.src = '/api/mcp/apps/' + encodeURIComponent(id) + '/html?t=' + Date.now();
@@ -1041,13 +1061,16 @@
     var modeBtn = document.createElement('button');
     modeBtn.type = 'button';
     modeBtn.className = 'mcp-app-mode';
-    modeBtn.textContent = '全屏';
+    modeBtn.innerHTML = ICON_FULL;
+    modeBtn.title = '全屏';
+    modeBtn.setAttribute('aria-label', '全屏');
     modeBtn.addEventListener('click', function () {
       var f = card.querySelector('iframe');
       if (f) setAppDisplayMode(f, card.classList.contains('fullscreen') ? 'inline' : 'fullscreen');
     });
-    head.appendChild(modeBtn);
-    head.appendChild(reload);
+    acts.appendChild(modeBtn);
+    acts.appendChild(reload);
+    head.appendChild(acts);
     card.appendChild(head);
     var frame = document.createElement('iframe');
     frame.setAttribute('data-mcp-app', id);
