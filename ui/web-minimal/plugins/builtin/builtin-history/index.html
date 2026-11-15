@@ -526,6 +526,11 @@
   }
   .mcp-app-head button:hover { background: var(--wm-bg-hover, #e9edf1); }
   .mcp-app iframe { display: block; width: 100%; height: 420px; border: 0; background: #fff; }
+  .mcp-app.fullscreen {
+    position: fixed; inset: 10px; z-index: 90; display: flex; flex-direction: column;
+    box-shadow: 0 12px 40px rgba(16, 26, 39, .22);
+  }
+  .mcp-app.fullscreen iframe { flex: 1; height: auto; }
 </style>
 <link rel="stylesheet" href="/minimal/shared/katex/0.16.11/katex.min.css">
 <link rel="stylesheet" href="/minimal/shared/highlight/11.11.1/github.min.css">
@@ -902,6 +907,29 @@
     });
   }
 
+  function contentText(blocks) {
+    var out = [];
+    for (var i = 0; i < (blocks || []).length; i++) {
+      var b = blocks[i];
+      if (b && b.type === 'text' && typeof b.text === 'string') out.push(b.text);
+    }
+    return out.join('\n').trim();
+  }
+
+  function appCard(frame) { return frame.closest('.mcp-app'); }
+
+  function setAppDisplayMode(frame, mode) {
+    var card = appCard(frame);
+    var next = mode === 'fullscreen' ? 'fullscreen' : 'inline';
+    if (card) {
+      card.classList.toggle('fullscreen', next === 'fullscreen');
+      var btn = card.querySelector('.mcp-app-mode');
+      if (btn) btn.textContent = next === 'fullscreen' ? '退出全屏' : '全屏';
+    }
+    postToApp(frame, { jsonrpc: '2.0', method: 'ui/notifications/host-context-changed', params: { displayMode: next } });
+    return next;
+  }
+
   function handleAppMessage(frame, id, msg) {
     var method = msg.method || '';
     if (method === 'ui/initialize' && msg.id != null) {
@@ -910,9 +938,18 @@
         jsonrpc: '2.0', id: msg.id,
         result: {
           protocolVersion: params.protocolVersion || '2026-01-26',
-          hostCapabilities: {},
+          hostCapabilities: {
+            openLinks: {},
+            logging: {},
+            message: { text: {} },
+            updateModelContext: { text: {}, structuredContent: {} }
+          },
           hostInfo: { name: 'PurrCat', version: '1.0.0' },
-          hostContext: { theme: appTheme() }
+          hostContext: {
+            theme: appTheme(),
+            displayMode: 'inline',
+            availableDisplayModes: ['inline', 'fullscreen']
+          }
         }
       });
       return;
@@ -924,9 +961,53 @@
       return;
     }
     if (method === 'tools/call' && msg.id != null) { callAppTool(frame, id, msg); return; }
+    if (method === 'ui/request-display-mode' && msg.id != null) {
+      var mode = setAppDisplayMode(frame, msg.params && msg.params.mode);
+      postToApp(frame, { jsonrpc: '2.0', id: msg.id, result: { mode: mode } });
+      return;
+    }
+    if (method === 'ui/update-model-context' && msg.id != null) {
+      var ctx = msg.params || {};
+      var parts = [];
+      var text = contentText(ctx.content);
+      if (text) parts.push(text);
+      if (ctx.structuredContent && typeof ctx.structuredContent === 'object') parts.push(JSON.stringify(ctx.structuredContent));
+      if (!parts.length) {
+        postToApp(frame, { jsonrpc: '2.0', id: msg.id, result: { isError: true } });
+        return;
+      }
+      var block = '[MCP App 上下文] ' + parts.join('\n');
+      input.value = input.value.trim() ? input.value.replace(/\s+$/, '') + '\n\n' + block : block;
+      input.dispatchEvent(new Event('input'));
+      input.focus();
+      postToApp(frame, { jsonrpc: '2.0', id: msg.id, result: {} });
+      return;
+    }
+    if (method === 'ui/message' && msg.id != null) {
+      var text = contentText(msg.params && msg.params.content);
+      if (!text) {
+        postToApp(frame, { jsonrpc: '2.0', id: msg.id, result: { isError: true } });
+        return;
+      }
+      callAction('chat.send', { session_id: activeSessionId, message: text })
+        .then(function () { postToApp(frame, { jsonrpc: '2.0', id: msg.id, result: {} }); })
+        .catch(function () { postToApp(frame, { jsonrpc: '2.0', id: msg.id, result: { isError: true } }); });
+      return;
+    }
     if (method === 'ui/open-link' || method === 'ui/notifications/open-link') {
       var url = msg.params && msg.params.url;
       if (url) window.open(url, '_blank', 'noopener');
+      if (msg.id != null) {
+        postToApp(frame, { jsonrpc: '2.0', id: msg.id, result: url ? { isError: false } : { isError: true } });
+      }
+      return;
+    }
+    if (method === 'ping' && msg.id != null) {
+      postToApp(frame, { jsonrpc: '2.0', id: msg.id, result: {} });
+      return;
+    }
+    if (msg.id != null) {
+      postToApp(frame, { jsonrpc: '2.0', id: msg.id, error: { code: -32601, message: 'Host 未实现 ' + method } });
     }
   }
 
@@ -957,6 +1038,15 @@
       var f = card.querySelector('iframe');
       if (f) f.src = '/api/mcp/apps/' + encodeURIComponent(id) + '/html?t=' + Date.now();
     });
+    var modeBtn = document.createElement('button');
+    modeBtn.type = 'button';
+    modeBtn.className = 'mcp-app-mode';
+    modeBtn.textContent = '全屏';
+    modeBtn.addEventListener('click', function () {
+      var f = card.querySelector('iframe');
+      if (f) setAppDisplayMode(f, card.classList.contains('fullscreen') ? 'inline' : 'fullscreen');
+    });
+    head.appendChild(modeBtn);
     head.appendChild(reload);
     card.appendChild(head);
     var frame = document.createElement('iframe');
