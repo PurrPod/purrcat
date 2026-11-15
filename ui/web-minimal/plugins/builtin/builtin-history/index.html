@@ -96,6 +96,24 @@
   /* 助手回复：整段文字直接铺在面板白底上，不加气泡容器 */
   .msg.assistant { margin-right: auto; max-width: 100%; padding: 0; background: transparent; border: none; }
 
+  /* Markdown 内联媒体：![]() 指向本地文件时自动展开为图片 / 播放器 / GenUI 卡片 */
+  .media-embed {
+    width: 100%; margin: 8px 0; border: 1px solid var(--wm-border, rgba(15,17,21,.12));
+    border-radius: 12px; background: var(--wm-bl-0, #fff); overflow: hidden;
+  }
+  .media-image { padding: 0; }
+  .media-image img { display: block; width: 100%; max-height: 460px; object-fit: contain; background: var(--wm-bl-100, #f2f4f7); }
+  .media-image figcaption { padding: 6px 10px; font-size: 12px; color: var(--wm-label-dim, #6a6a6a); border-top: 1px solid var(--wm-border, rgba(15,17,21,.08)); }
+  .media-head { display: flex; align-items: center; gap: 8px; padding: 8px 10px; min-width: 0; }
+  .media-ico { display: flex; color: var(--wm-label-2nd, #4c5560); }
+  .media-ico svg { width: 16px; height: 16px; }
+  .media-name { flex: 1; min-width: 0; font-size: 12.5px; color: var(--wm-label, #16191d); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .media-open { flex: none; font-size: 12px; color: var(--wm-label-dim, #6a6a6a); text-decoration: none; }
+  .media-open:hover { color: var(--wm-label, #16191d); }
+  .media-audio audio { display: block; width: calc(100% - 20px); height: 36px; margin: 0 10px 10px; }
+  .media-video video { display: block; width: 100%; max-height: 460px; background: #000; }
+  .genui-file { margin: 8px 0; }
+
   /* 折叠块 */
   /* 折叠块：标题在上、内容展开在下方（纵向，不再挤到右边） */
   .row.fold { flex-direction: column; align-items: stretch; }
@@ -536,9 +554,32 @@
     box-shadow: 0 12px 40px rgba(16, 26, 39, .22);
   }
   .mcp-app.fullscreen iframe { flex: 1; height: auto; }
+  .mcp-data {
+    width: 100%; border: 1px solid var(--wm-border-soft, rgba(15,17,21,.08));
+    border-radius: 10px; overflow: hidden; background: var(--wm-bl-0, #fff);
+  }
+  .mcp-data-head {
+    padding: 6px 10px; font-size: 12px; color: var(--wm-label-2nd, #4c5560);
+    background: var(--wm-bl-100, #f2f4f7);
+    border-bottom: 1px solid var(--wm-border-soft, rgba(15,17,21,.05));
+    font-family: var(--wm-mono, ui-monospace, Consolas, monospace);
+  }
+  .mcp-data-body { padding: 8px 10px; overflow-x: auto; }
+  .mcp-data table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .mcp-data th, .mcp-data td {
+    text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--wm-border-soft, rgba(15,17,21,.05));
+    max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .mcp-data th { font-weight: 600; color: var(--wm-label-2nd, #4c5560); }
+  .mcp-data .kv { display: grid; grid-template-columns: minmax(72px, 30%) 1fr; gap: 4px 12px; font-size: 12px; }
+  .mcp-data .kv b { font-weight: 600; color: var(--wm-label-2nd, #4c5560); overflow-wrap: anywhere; }
+  .mcp-data .kv span { overflow-wrap: anywhere; }
+  .mcp-data pre { margin: 0; font: 11px/1.5 ui-monospace, Consolas, monospace; white-space: pre-wrap; word-break: break-all; }
+  .mcp-data .more { padding-top: 4px; font-size: 11px; color: var(--wm-label-dim, #6a6a6a); }
 </style>
 <link rel="stylesheet" href="/minimal/shared/katex/0.16.11/katex.min.css">
 <link rel="stylesheet" href="/minimal/shared/highlight/11.11.1/github.min.css">
+<link rel="stylesheet" href="/minimal/plugins/builtin/builtin-history/genui/genui.css">
 </head>
 <body>
   <div class="sess-head">
@@ -654,6 +695,17 @@
   <script src="/minimal/shared/marked/12.0.2/marked.min.js"></script>
   <script src="/minimal/shared/katex/0.16.11/katex.min.js"></script>
   <script src="/minimal/shared/highlight/11.11.1/highlight.min.js"></script>
+  <script src="/minimal/plugins/builtin/builtin-history/genui/core.js"></script>
+  <script src="/minimal/plugins/builtin/builtin-history/genui/functions.js"></script>
+  <script src="/minimal/plugins/builtin/builtin-history/genui/render.js"></script>
+  <script src="/minimal/plugins/builtin/builtin-history/genui/media.js"></script>
+  <script src="/minimal/plugins/builtin/builtin-history/genui/components-common.js"></script>
+  <script src="/minimal/plugins/builtin/builtin-history/genui/components-text.js"></script>
+  <script src="/minimal/plugins/builtin/builtin-history/genui/components-input.js"></script>
+  <script src="/minimal/plugins/builtin/builtin-history/genui/components-data.js"></script>
+  <script src="/minimal/plugins/builtin/builtin-history/genui/components-chart.js"></script>
+  <script src="/minimal/plugins/builtin/builtin-history/genui/components-draw.js"></script>
+  <script src="/minimal/plugins/builtin/builtin-history/genui/index.js"></script>
 
 <script>
 (function () {
@@ -1037,6 +1089,179 @@
     handleAppMessage(frame, frame.getAttribute('data-mcp-app'), msg);
   });
 
+  // ---------- GenUI DSL 渲染 ----------
+  var genuiMounts = [];
+  var genuiStates = {};
+  var genuiEpoch = 0;
+  var GENUI_BLOCK_RE = /```(?:openui|genui)\s*\n([\s\S]*?)```/g;
+
+  function genuiKey(source) {
+    var h = 0;
+    for (var i = 0; i < source.length; i++) h = (h * 31 + source.charCodeAt(i)) | 0;
+    return 'g' + (h >>> 0).toString(36) + '_' + source.length;
+  }
+
+  function splitGenUI(src) {
+    var out = [], last = 0, m;
+    GENUI_BLOCK_RE.lastIndex = 0;
+    while ((m = GENUI_BLOCK_RE.exec(src))) {
+      if (m.index > last) out.push({ text: src.slice(last, m.index) });
+      out.push({ text: m[1], genui: true });
+      last = m.index + m[0].length;
+    }
+    if (last < src.length) out.push({ text: src.slice(last) });
+    return out.filter(function (seg) { return seg.genui || seg.text.trim(); });
+  }
+
+  function genuiSource(v) {
+    if (!v || typeof v !== 'object') return '';
+    var kind = String(v.kind || v.type || '');
+    var src = v.source || v.dsl || v.ui || '';
+    if ((kind === 'openui' || kind === 'genui' || kind === 'openui-lang') && typeof src === 'string') return src;
+    return '';
+  }
+
+  function mountGenUI(body, source) {
+    var key = genuiKey(source);
+    var handle = window.PurrCatGenUI.mount(body, source, {
+      state: genuiStates[key] || (genuiStates[key] = {}),
+      onMessage: function (text, context) {
+        var extra = '';
+        if (context && typeof context === 'object' && Object.keys(context).length) {
+          try { extra = '\n\n' + JSON.stringify(context, null, 2); } catch (e) { extra = ''; }
+        }
+        var block = String(text || '') + extra;
+        if (!block) return;
+        input.value = input.value.trim() ? input.value.replace(/\s+$/, '') + '\n\n' + block : block;
+        input.dispatchEvent(new Event('input'));
+        input.focus();
+      },
+      onOpenUrl: function (url) {
+        if (window.purrcat && window.purrcat.openExternal) window.purrcat.openExternal(url);
+        else window.open(url, '_blank', 'noopener');
+      }
+    });
+    if (handle) genuiMounts.push(handle);
+  }
+
+  function genuiBlock(source) {
+    var card = document.createElement('div');
+    card.className = 'genui-card gui-scope';
+    var body = document.createElement('div');
+    body.className = 'genui-body';
+    card.appendChild(body);
+    if (!window.PurrCatGenUI) {
+      body.textContent = 'GenUI 运行时未加载';
+      return card;
+    }
+    mountGenUI(body, source);
+    return card;
+  }
+
+  // ![]() 指向 .genui 文件：消息插入后异步读取并展开
+  function hydrateGenUI(root) {
+    if (!root || !root.querySelectorAll) return;
+    var epoch = genuiEpoch;
+    Array.prototype.slice.call(root.querySelectorAll('[data-genui-file]')).forEach(function (card) {
+      var path = card.getAttribute('data-genui-file');
+      card.removeAttribute('data-genui-file');
+      var body = card.querySelector('.genui-body') || card;
+      if (!window.PurrCatGenUI) { body.textContent = 'GenUI 运行时未加载'; return; }
+      fetch(window.PurrCatGenUI.media.readUrl(path))
+        .then(function (res) {
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          return res.json();
+        })
+        .then(function (data) {
+          if (epoch !== genuiEpoch) return;
+          var source = data && typeof data.content === 'string' ? data.content : '';
+          if (!source.trim()) throw new Error('空文件');
+          body.innerHTML = '';
+          mountGenUI(body, source);
+        })
+        .catch(function () {
+          if (epoch !== genuiEpoch) return;
+          body.className = 'genui-body gui-error';
+          body.textContent = '无法加载 GenUI 文件：' + path;
+        });
+    });
+  }
+
+  function destroyGenUI() {
+    genuiEpoch++;
+    genuiMounts.forEach(function (h) { try { h.destroy(); } catch (e) { /* 忽略销毁异常 */ } });
+    genuiMounts = [];
+  }
+
+  function dataText(v) {
+    if (v == null) return '';
+    if (typeof v === 'string') return v;
+    if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+    try { return JSON.stringify(v); } catch (_) { return String(v); }
+  }
+
+  function buildMcpData(data) {
+    var card = document.createElement('div');
+    card.className = 'mcp-data';
+    var head = document.createElement('div');
+    head.className = 'mcp-data-head';
+    head.textContent = (data.server || '') + (data.tool ? ' · ' + data.tool : '');
+    card.appendChild(head);
+    var body = document.createElement('div');
+    body.className = 'mcp-data-body';
+    var v = data.structuredContent;
+    var rows = Array.isArray(v) ? v : null;
+    if (rows && rows.length && rows.every(function (x) { return x && typeof x === 'object' && !Array.isArray(x); })) {
+      var cols = [];
+      rows.slice(0, 20).forEach(function (row) {
+        Object.keys(row).forEach(function (k) { if (cols.indexOf(k) < 0 && cols.length < 8) cols.push(k); });
+      });
+      var table = document.createElement('table');
+      var thead = document.createElement('thead');
+      var htr = document.createElement('tr');
+      cols.forEach(function (c) { var th = document.createElement('th'); th.textContent = c; htr.appendChild(th); });
+      thead.appendChild(htr);
+      table.appendChild(thead);
+      var tbody = document.createElement('tbody');
+      rows.slice(0, 8).forEach(function (row) {
+        var tr = document.createElement('tr');
+        cols.forEach(function (c) {
+          var td = document.createElement('td');
+          td.textContent = dataText(row[c]);
+          td.title = td.textContent;
+          tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+      });
+      table.appendChild(tbody);
+      body.appendChild(table);
+      if (rows.length > 8) {
+        var more = document.createElement('div');
+        more.className = 'more';
+        more.textContent = '还有 ' + (rows.length - 8) + ' 条';
+        body.appendChild(more);
+      }
+    } else if (v && typeof v === 'object' && !Array.isArray(v)) {
+      var kv = document.createElement('div');
+      kv.className = 'kv';
+      Object.keys(v).slice(0, 30).forEach(function (k) {
+        var b = document.createElement('b');
+        b.textContent = k;
+        var s = document.createElement('span');
+        s.textContent = dataText(v[k]);
+        kv.appendChild(b);
+        kv.appendChild(s);
+      });
+      body.appendChild(kv);
+    } else {
+      var pre = document.createElement('pre');
+      pre.textContent = dataText(v);
+      body.appendChild(pre);
+    }
+    card.appendChild(body);
+    return card;
+  }
+
   function buildMcpApp(app) {
     var id = app.id;
     var card = document.createElement('div');
@@ -1195,6 +1420,11 @@
     });
   }
 
+  // Markdown 里的 ![]()：本地图片/音视频展开为内嵌媒体，.genui 文件替换为占位卡
+  function decorateMedia(holder) {
+    if (window.PurrCatGenUI && window.PurrCatGenUI.media) window.PurrCatGenUI.media.decorate(holder);
+  }
+
   function mdToHtml(src) {
     src = String(src == null ? '' : src).replace(/\r\n/g, '\n');
     var text = src;
@@ -1220,6 +1450,7 @@
     holder.innerHTML = html;
     decorateCodeBlocks(holder);
     decorateTables(holder);
+    decorateMedia(holder);
     return safeLinks(holder.innerHTML);
   }
 
@@ -1325,10 +1556,17 @@
         col.appendChild(makeCollapsible('思考过程', '', rb)); count++;
       }
       if (m.content) {
-        var mb = document.createElement('div');
-        mb.className = 'md';
-        mb.innerHTML = mdToHtml(m.content);
-        col.appendChild(attachCopy(mb, m.content)); count++;
+        splitGenUI(m.content).forEach(function (seg) {
+          if (seg.genui) {
+            col.appendChild(genuiBlock(seg.text)); count++;
+            return;
+          }
+          var mb = document.createElement('div');
+          mb.className = 'md';
+          mb.innerHTML = mdToHtml(seg.text);
+          col.appendChild(attachCopy(mb, seg.text)); count++;
+          hydrateGenUI(mb);
+        });
       }
       if (show.tool && m.tool_calls && m.tool_calls.length) {
         m.tool_calls.forEach(function (tc) {
@@ -1359,6 +1597,10 @@
       col.style.alignItems = 'flex-start';
       if (m.mcp_app && m.mcp_app.id) {
         col.appendChild(buildMcpApp(m.mcp_app)); count++;
+      } else if (m.mcp_data && m.mcp_data.structuredContent !== undefined) {
+        var dsl = genuiSource(m.mcp_data.structuredContent);
+        if (dsl) { col.appendChild(genuiBlock(dsl)); count++; }
+        else { col.appendChild(buildMcpData(m.mcp_data)); count++; }
       }
       var tb = document.createElement('div');
       tb.className = 'tool-body';
@@ -1421,6 +1663,7 @@
       var fb = f.querySelector('.fold-body');
       if (fb && fb.scrollTop > 0) innerTop[fk] = fb.scrollTop;
     });
+    destroyGenUI();
     listEl.innerHTML = '';
     lastRows = rows || [];
     var hasRows = !!(rows && rows.length);

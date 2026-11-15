@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GenUI 预览</title>
+  <link rel="stylesheet" href="/minimal/assets/theme.css">
+  <link rel="stylesheet" href="/minimal/plugins/builtin/builtin-history/genui/genui.css">
+  <style>
+    body { margin: 0; font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; background: #f6f6f7; color: #16191d; }
+    .wrap { max-width: 920px; margin: 0 auto; padding: 28px 20px 80px; }
+    h1 { font-size: 20px; margin: 0 0 4px; }
+    .sub { font-size: 12.5px; color: #6a6a6a; margin-bottom: 18px; }
+    textarea { width: 100%; min-height: 260px; box-sizing: border-box; padding: 12px; border: 1px solid rgba(16,26,39,.14); border-radius: 10px; font: 12.5px/1.6 ui-monospace, Consolas, monospace; resize: vertical; outline: none; background: #fff; }
+    textarea:focus { border-color: #16191d; }
+    .bar { display: flex; gap: 8px; margin: 10px 0 20px; }
+    button { height: 34px; padding: 0 16px; border-radius: 9px; border: 1px solid transparent; background: #16191d; color: #fff; font-size: 13px; cursor: pointer; }
+    button.ghost { background: #fff; border-color: rgba(16,26,39,.14); color: #16191d; }
+    .genui-card { margin-top: 8px; }
+    .msg-log { margin-top: 18px; padding: 10px 12px; border-radius: 10px; background: #fff; border: 1px solid rgba(16,26,39,.14); font: 12px/1.6 ui-monospace, Consolas, monospace; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>GenUI 预览</h1>
+    <div class="sub">输入 DSL，点击渲染；支持全部组件与交互绑定。</div>
+    <textarea id="src" spellcheck="false"></textarea>
+    <div class="bar">
+      <button id="run">渲染</button>
+      <button id="demo2" class="ghost">组件总览</button>
+      <button id="reset" class="ghost">重置状态</button>
+    </div>
+    <div id="out" class="genui-card gui-scope"></div>
+    <pre id="msg" class="msg-log" hidden></pre>
+  </div>
+
+  <script src="/minimal/plugins/builtin/builtin-history/genui/core.js"></script>
+  <script src="/minimal/plugins/builtin/builtin-history/genui/functions.js"></script>
+  <script src="/minimal/plugins/builtin/builtin-history/genui/render.js"></script>
+  <script src="/minimal/plugins/builtin/builtin-history/genui/media.js"></script>
+  <script src="/minimal/plugins/builtin/builtin-history/genui/components-common.js"></script>
+  <script src="/minimal/plugins/builtin/builtin-history/genui/components-text.js"></script>
+  <script src="/minimal/plugins/builtin/builtin-history/genui/components-input.js"></script>
+  <script src="/minimal/plugins/builtin/builtin-history/genui/components-data.js"></script>
+  <script src="/minimal/plugins/builtin/builtin-history/genui/components-chart.js"></script>
+  <script src="/minimal/plugins/builtin/builtin-history/genui/components-draw.js"></script>
+  <script src="/minimal/plugins/builtin/builtin-history/genui/index.js"></script>
+  <script>
+    var DEMO = [
+      '$name = "Ada"',
+      '$plan = "pro"',
+      '$progress = 40',
+      '$spot = "Paris"',
+      '$done = false',
+      '$rows = [{city: "Paris", days: 3, cost: 620}, {city: "Lyon", days: 2, cost: 310}]',
+      'root = Col([',
+      '  Row([Icon("sparkles", "lg", "info"), Col([Title("行程总览", "lg"), Caption("声明式组件渲染示例")], 0)], 2, "center"),',
+      '  Row([Badge("3 天", "info"), Badge("巴黎", "purple"), Badge("已确认", "success")], 1),',
+      '  Card([Row([Text("预算"), Text("$1,240", "md", "ink", "semibold", false, false, true)], 0, "start", "between"), Slider($progress, 0, 100, 1, "完成度", "%")], "soft"),',
+      '  Chart("line", $rows, "city", ["cost"], "currency", "USD", false, 200),',
+      '  Table(["城市", "天数", "花费"], @Each($rows, "r", [r.city, r.days, r.cost])),',
+      '  Map([{label: "Paris", lat: 48.85, lng: 2.35}, {label: "Lyon", lat: 45.76, lng: 4.83}], true, $spot, 240),',
+      '  Form([',
+      '    Input($name, "姓名", "text", "输入姓名"),',
+      '    Select($plan, [{value: "free", label: "Free"}, {value: "pro", label: "Pro"}], "方案"),',
+      '    SegmentedControl($spot, ["Paris", "Lyon"], true),',
+      '    Row([Checkbox($done, "已完成"), Button("发送", @ToAssistant($name + " 选择 " + $plan + " / " + $spot)), Button("重置", @Reset($plan, $spot), "ghost")], 2, "center")',
+      '  ]),',
+      '  Row([Button("复制摘要", Action([@CopyToClipboard("行程：" + $spot)])), Button("完成", Action([@Set($done, true), @ToAssistant("已完成")]), "soft", "success")], 2),',
+      '  Flashcard("法国首都？", "巴黎", "点击查看答案"),',
+      '  Celebration($done),',
+      '  Svg([Circle(30, 30, 20, "chart1"), Rect(70, 10, 40, 40, 8, "chart2"), Line(0, 60, 160, 60, "muted", 2), SvgText("SVG", 20, 70, 12, "ink")], 200, 80),',
+      '  Code("console.log(\'hello\')", "javascript")',
+      '], 3)'
+    ].join('\n');
+
+    var output = document.getElementById('out');
+    var hand = null;
+    document.getElementById('src').value = DEMO;
+
+    var OVERVIEW = [
+      '$q = "hello"',
+      '$mode = "a"',
+      '$date = "2024-03-05"',
+      '$secs = 30',
+      'root = Col([',
+      '  Title("组件总览", "xl"),',
+      '  Grid([',
+      '    Card([Label("Carousel"), Carousel([Badge("A", "info"), Badge("B", "purple"), Badge("C", "success")], 120)], "soft"),',
+      '    Card([Label("Popover"), Popover("点我", Col([Text("悬浮内容"), Icon("info")], 1))], "soft"),',
+      '    Card([Label("RadioGroup"), RadioGroup($mode, [{value: "a", label: "选项 A", description: "说明 A"}, {value: "b", label: "选项 B"}], "选择")], "soft"),',
+      '    Card([Label("DatePicker"), DatePicker($date, "日期")], "soft")',
+      '  ], 2),',
+      '  Row([IconButton("refresh", Action([@ToAssistant("刷新")]), "刷新"), Pressable([Text("Pressable")], @ToAssistant("pressed"), false, 3, "surface", "md"), Timer($secs, "倒计时")], 2, "center", true),',
+      '  Row([Image("https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=mountain%20lake%20at%20sunrise&image_size=landscape_4_3", "示例图", 1.6), SearchImage("mount fuji", 1.2)], 2),',
+      '  SegmentedControl($mode, [{value: "a", label: "分段 A"}, {value: "b", label: "分段 B"}], true),',
+      '  Flashcard("正面", "背面", "点击翻转"),',
+      '  Markdown("### Markdown\\n- **粗体**\\n- `code`"),',
+      '  Math("E = mc^2", false),',
+      '  Quote("简单是可靠的先决条件", "Dijkstra"),',
+      '  TextArea($q, "多行输入", "写点什么"),',
+      '  Audio("https://interactive-examples.mdn.mozilla.net/media/cc0-audio/t-rex-roar.mp3", "示例音频", "Audio 组件"),',
+      '  Video("https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4", null, "示例视频", "16 / 9"),',
+      '  HtmlView("<h3>HtmlView</h3><p>sandbox iframe</p>", 140, "自定义 HTML"),',
+      '  Svg([Ellipse(40, 40, 30, 18, "chart3"), Polygon("70,10 110,10 90,50", "chart4"), Polyline("10,70 40,50 70,72 100,30", null, "ink", 2), Path("M120 60 Q150 20 180 60", null, "chart1")], 200, 90)',
+      '], 3)'
+    ].join('\n');
+
+    function showMessage(text, context) {
+      var log = document.getElementById('msg');
+      log.hidden = false;
+      log.textContent = '发送给助手：' + text + (context ? '\n' + JSON.stringify(context, null, 2) : '');
+    }
+
+    function run() {
+      if (hand) hand.destroy();
+      output.innerHTML = '';
+      hand = PurrCatGenUI.mount(output, document.getElementById('src').value, {
+        onMessage: showMessage,
+        onOpenUrl: function (url) { window.open(url, '_blank', 'noopener'); }
+      });
+    }
+    document.getElementById('run').addEventListener('click', run);
+    document.getElementById('demo2').addEventListener('click', function () {
+      document.getElementById('src').value = OVERVIEW;
+      run();
+    });
+    document.getElementById('reset').addEventListener('click', function () {
+      if (hand) hand.destroy();
+      hand = null;
+      run();
+    });
+    run();
+  </script>
+</body>
+</html>

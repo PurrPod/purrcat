@@ -47,6 +47,48 @@ src/host/main.ts  --esbuild-->  assets/host.js + host.js.map
 - `npm run dev:split` 跳过预构建，要求产物已是最新。
 - 产物入库是为了让 `python main.py` 在没有 Node 的环境也能提供 UI；CI 会重建并比对产物，不一致即失败。
 
+## 生成式 UI（GenUI）
+
+聊天页内置一套声明式组件运行时：模型输出纯文本 DSL，前端解析后渲染成界面，样式与交互都由宿主掌握。
+
+| 文件 | 职责 |
+| --- | --- |
+| `plugins/builtin/builtin-history/genui/core.js` | 词法 / 语法解析、求值器、状态绑定 |
+| `genui/functions.js` | 内置函数库与动作步骤 |
+| `genui/render.js` | VNode → HTML / DOM、颜色与间距映射、动作执行 |
+| `genui/media.js` | 媒体识别、路径转预览地址、内嵌播放器与 `![]()` 展开 |
+| `genui/components-*.js` | 组件实现（布局文本 / 输入 / 数据媒体 / 图表地图 / 绘图） |
+| `genui/index.js` | `PurrCatGenUI.renderHTML(source, state)` / `mount(el, source, options)` |
+| `genui/genui.css` | 组件主题，变量映射自 `--wm-*` |
+| `genui/preview.html` | 调试页：左侧输入 DSL，右侧即时渲染 |
+
+DSL 约定：
+
+- 每行一条语句，`name = Expr` 定义，`$name = value` 声明可交互状态；首个 `root = ...` 为渲染入口。
+- 组件写成 `Name(args)`，函数写成 `@Name(args)`，支持引用、成员访问、索引、数组 / 对象、三元与二元运算，`//` 起注释。
+- 非法语句按行丢弃，不阻塞其余内容；未知组件降级为灰色占位。
+- 动作：`ToAssistant` / `OpenUrl` / `Set` / `Reset` / `CopyToClipboard`，可用 `Action([...])` 组合。
+- 交互模型：组件只修改状态，160ms 后整体重渲染，并按 `data-bind` 恢复焦点与选区。
+
+聊天页识别两种来源：助手消息里语言标记为 `genui` / `openui` 的围栏代码块；MCP 工具返回的 `mcp_data.structuredContent` 中带 `kind` + `dsl`（或 `source` / `ui`）时直接渲染。
+`ToAssistant` 会把文本写回输入框，可附带表单当前值。
+
+### 文件引用与内嵌媒体
+
+除内联代码块，助手也可以用 Markdown 图片语法引用产物文件，宿主自动展开：
+
+| 写法 | 渲染 |
+| --- | --- |
+| `![](/agent_vm/genui/card.genui)` | 读取文件内容并挂载为 GenUI 卡片（`.openui` 等同） |
+| `![](/agent_vm/out/trend.png)` | 内嵌图片（带文件名说明） |
+| `![](/agent_vm/out/voice.mp3)` | 音频播放器 |
+| `![](/agent_vm/out/demo.mp4)` | 视频播放器 |
+
+- 本地路径经 `genui/media.js` 转成 `/api/filesystem/preview?path=...`，沙盒路径自动转换，Range 请求由后端支持，音视频可拖动进度。
+- 远程图片保持原生 `<img>`；远程音视频同样走播放器。
+- `.genui` 引用在消息插入后异步读取、展开，历史重建前由 `destroyGenUI()` 统一销毁定时器与实例。
+- 展开失败显示「无法加载 GenUI 文件」，不影响同一条消息里的其它内容。
+
 ## 模块约定
 
 - `types.ts` 是契约的唯一来源；改字段先改它，再改使用方。
@@ -61,6 +103,7 @@ src/host/main.ts  --esbuild-->  assets/host.js + host.js.map
 | 改动 | 位置 |
 | --- | --- |
 | 聊天渲染 / 输入框 | `plugins/builtin/builtin-history/index.html` |
+| 生成式 UI 组件 / DSL | `plugins/builtin/builtin-history/genui/`（预览 `preview.html`） |
 | 会话列表 | `plugins/builtin/builtin-sessions/index.html` |
 | 设置中心 | `src/host/config-center.ts`、`settings-tabs.ts` |
 | 面板容器 | `src/host/panel.ts` + `plugins/builtin/builtin-panel` |
