@@ -84,4 +84,4 @@ def test_system_injected_arguments_are_frozen():
 
 
 def test_process_isolation_whitelist_is_frozen():
-    assert PROCESS_ISOLATED_TOOLS == {"bash", "fetch", "request", "search"}
+    assert PROCESS_ISOLATED_TOOLS == {"bash", "fetch", "search"}

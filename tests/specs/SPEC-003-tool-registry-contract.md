@@ -14,7 +14,7 @@
 
 - 解析工具的逻辑收敛为一个函数 `resolve_tool(tool_name)`，`dispatch_tool` 与测试共用同一份真相，避免测试重写一套 importlib 规则。
 - 系统注入的参数集合显式声明为 `SYSTEM_INJECTED_ARGUMENTS`，并保持冻结：新增注入点必须同步修改常量与测试。
-- 进程隔离白名单保持当前四项，不得静默扩大（AGENTS 红线 5）。
+- 进程隔离白名单保持当前三项（`bash` / `fetch` / `search`），不得静默扩大（AGENTS 红线 5）；`request` 仅写本地审批队列，改为进程内执行，避免每次调用重启解释器。
 
 ## 验收标准
 
