@@ -1266,6 +1266,28 @@ ACP 接入状态：relay 部署情况 / 端口 / uv 可用性
 | 200 | Successful Response | - |
 | 422 | Validation Error | HTTPValidationError |
 
+### `POST /api/evolve/reveal`
+
+**标题**：Reveal Workplace Api
+
+在系统文件管理器中打开沙盒工作区目录（skill / sensor 详情的「查看文件」）。
+
+#### 请求体
+
+**Schema**：`RevealReq`
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| type | string | 否 |  |
+| workplace_id | string | 是 |  |
+
+#### 响应
+
+| 状态码 | 描述 | Schema |
+| --- | --- | --- |
+| 200 | Successful Response | - |
+| 422 | Validation Error | HTTPValidationError |
+
 ### `POST /api/evolve/rollback`
 
 **标题**：Rollback Skill Api

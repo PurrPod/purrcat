@@ -221,6 +221,7 @@ EXPECTED_ROUTES = {
         ("/api/evolve/file", "PUT", "update_file_api"),
         ("/api/evolve/paradigm", "GET", "get_sandbox_paradigm_api"),
         ("/api/evolve/paradigm", "POST", "save_sandbox_paradigm_api"),
+        ("/api/evolve/reveal", "POST", "reveal_workplace_api"),
         ("/api/evolve/test/run", "POST", "run_evals_api"),
         ("/api/evolve/test/iterations", "GET", "list_iterations_api"),
         ("/api/evolve/test/report", "GET", "get_eval_report_api"),

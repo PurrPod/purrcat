@@ -12,6 +12,7 @@ import re
 import shutil
 import stat
 import subprocess
+import sys
 import traceback
 from datetime import datetime
 from typing import Optional
@@ -60,6 +61,35 @@ def body_root(module_type: str, workplace_id: str, name: str) -> str:
     if module_type in ("sensor", "agentloop"):
         return os.path.join(get_root(module_type), workplace_id)
     return os.path.join(get_root(module_type), workplace_id, name)
+
+
+def resolve_workplace_dir(module_type: str, workplace_id: str) -> str:
+    """沙盒工作区目录（供「查看文件」在系统文件管理器中打开）。"""
+    if not module_type or not workplace_id or "/" in workplace_id or "\\" in workplace_id:
+        raise HTTPException(status_code=400, detail="非法的沙盒标识")
+    return os.path.join(get_root(module_type), workplace_id)
+
+
+def _open_in_file_manager(path: str) -> None:
+    """用系统文件管理器打开目录（Windows / macOS / Linux）。"""
+    if sys.platform.startswith("win"):
+        os.startfile(path)  # type: ignore[attr-defined]
+    elif sys.platform == "darwin":
+        subprocess.Popen(["open", path])
+    else:
+        subprocess.Popen(["xdg-open", path])
+
+
+def reveal_workplace(module_type: str, workplace_id: str) -> dict:
+    """在系统文件管理器中打开沙盒工作区目录。"""
+    path = resolve_workplace_dir(module_type, workplace_id)
+    if not os.path.isdir(path):
+        raise HTTPException(status_code=404, detail="沙盒工作区不存在")
+    try:
+        _open_in_file_manager(path)
+    except Exception as e:  # noqa: BLE001 - 交由上层返回可读错误
+        raise HTTPException(status_code=500, detail=f"无法打开文件管理器：{e}")
+    return {"ok": True, "path": path}
 
 
 # ==========================================

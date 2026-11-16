@@ -647,6 +647,24 @@
         "title": "ResolveRequestReq",
         "type": "object"
       },
+      "RevealReq": {
+        "properties": {
+          "type": {
+            "default": "skill",
+            "title": "Type",
+            "type": "string"
+          },
+          "workplace_id": {
+            "title": "Workplace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "workplace_id"
+        ],
+        "title": "RevealReq",
+        "type": "object"
+      },
       "RollbackReq": {
         "properties": {
           "name": {
@@ -2729,6 +2747,46 @@
           }
         },
         "summary": "Save Sandbox Paradigm Api",
+        "tags": [
+          "Evolution Factory"
+        ]
+      }
+    },
+    "/api/evolve/reveal": {
+      "post": {
+        "description": "在系统文件管理器中打开沙盒工作区目录（skill / sensor 详情的「查看文件」）。",
+        "operationId": "reveal_workplace_api_api_evolve_reveal_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RevealReq"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reveal Workplace Api",
         "tags": [
           "Evolution Factory"
         ]

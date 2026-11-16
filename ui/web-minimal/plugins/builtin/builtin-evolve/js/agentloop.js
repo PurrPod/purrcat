@@ -269,66 +269,6 @@
     }
   }
 
-  async function createFile() {
-    var info = await askNewFile();
-    if (!info) return;
-    var hooks = {};
-    HOOK_KEYS.forEach(function (k) { hooks[k] = []; });
-    var doc = { name: info.name, description: info.description, path: 'agent_vm', hooks: hooks };
-    try {
-      await EV.api.post('/api/paradigms/' + encodeURIComponent(info.name), { data: doc });
-      EV.toast('已新建 ' + info.name + '.yaml');
-      state.dirty = false;
-      await loadFileList();
-      await openFile(info.name);
-    } catch (e) {
-      EV.toast('新建失败：' + e.message, true);
-    }
-  }
-
-  // 新建时只让用户填「名称」与「描述」，其它字段一律使用默认骨架
-  function askNewFile() {
-    return new Promise(function (resolve) {
-      var wrap = EV.el('div');
-
-      var nameField = EV.el('div', 'field');
-      nameField.appendChild(EV.el('label', null, '名称（将创建 ~/.purrcat/paradigms/{名称}.yaml）'));
-      var nameInput = EV.el('input', 'input');
-      nameInput.placeholder = '例如 my_agent_loop';
-      nameField.appendChild(nameInput);
-      wrap.appendChild(nameField);
-
-      var descField = EV.el('div', 'field');
-      descField.appendChild(EV.el('label', null, '描述'));
-      var descInput = EV.el('input', 'input');
-      descInput.placeholder = '简单描述这个主循环的用途';
-      descField.appendChild(descInput);
-      wrap.appendChild(descField);
-
-      var answered = false;
-      EV.modal({
-        title: '新建 Paradigm',
-        width: '440px',
-        node: wrap,
-        actions: [
-          { label: '取消', onClick: function (m) { answered = true; resolve(null); m.close(); } },
-          {
-            label: '创建', kind: 'primary',
-            onClick: function (m) {
-              var nm = nameInput.value.trim();
-              if (!nm) { EV.toast('名称不能为空', true); return; }
-              answered = true;
-              resolve({ name: nm, description: descInput.value.trim() });
-              m.close();
-            }
-          }
-        ],
-        onOpen: function () { setTimeout(function () { nameInput.focus(); }, 30); },
-        onClose: function () { if (!answered) resolve(null); }
-      });
-    });
-  }
-
   async function deleteFile(name) {
     var ok = await EV.confirm({
       title: '删除 Paradigm',
@@ -359,11 +299,12 @@
     sideBodyEl.innerHTML = '';
 
     // 分类一：沙盒内（AgentLoop 工厂加工中的产物）
-    sideBodyEl.appendChild(EV.drawer(
+    var sandboxDrawer = EV.drawer(
       '沙盒内', state.workplaces.length, state.drawers.sandbox,
       function (open) { state.drawers.sandbox = open; },
       function (body) { renderSandboxList(body); }
-    ));
+    );
+    sideBodyEl.appendChild(sandboxDrawer);
 
     // 分类二：正式库（已发布范式）
     sideBodyEl.appendChild(EV.drawer(
@@ -465,33 +406,12 @@
   /* ---------------- 渲染：工具栏 ---------------- */
   function renderToolbar() {
     toolbarEl.innerHTML = '';
-    var nameWrap = EV.el('div', 'row');
-    nameWrap.style.gap = '6px';
-    var label = EV.el('span', 'note');
-    label.textContent = state.activeName ? state.activeName + '.yaml' : '未打开文件';
-    nameWrap.appendChild(label);
-    if (state.sandboxCtx) {
-      var schip = EV.el('span', 'chip', '沙盒编辑 · ' + state.sandboxCtx.workplace_id);
-      schip.title = '当前编辑的是沙盒内产物，保存将回写沙盒 ' + state.sandboxCtx.name + '.yaml';
-      nameWrap.appendChild(schip);
-    }
-    if (state.dirty) {
-      var dot = EV.el('span', 'chip warn', '未保存');
-      nameWrap.appendChild(dot);
-    }
-    toolbarEl.appendChild(nameWrap);
+    if (state.dirty) toolbarEl.appendChild(EV.el('span', 'chip warn', '未保存'));
     toolbarEl.appendChild(EV.el('span', 'spacer'));
 
-    var create = EV.el('button', 'btn');
-    create.innerHTML = EV.icon('plus', 14);
-    create.appendChild(EV.el('span', null, '新建'));
-    create.onclick = createFile;
-    toolbarEl.appendChild(create);
-
-    var refsBtn = EV.el('button', 'btn');
+    var refsBtn = EV.el('button', 'ibtn');
     refsBtn.innerHTML = EV.icon('info', 14);
-    refsBtn.appendChild(EV.el('span', null, '特殊引用说明'));
-    refsBtn.title = '查看 @RULES / @SOUL / @MEMORY / @INFO / @SYS / @USERQUERY 等特殊引用的展开状况';
+    refsBtn.title = '特殊引用说明：查看 @RULES / @SOUL / @MEMORY / @INFO / @SYS / @USERQUERY 等特殊引用的展开状况';
     refsBtn.onclick = showRefsModal;
     toolbarEl.appendChild(refsBtn);
 
@@ -505,7 +425,7 @@
 
     var saveBtn = EV.el('button', 'btn primary');
     saveBtn.innerHTML = EV.icon('save', 14);
-    var saveText = state.sandboxCtx ? '保存到沙盒' : '保存';
+    var saveText = '保存';
     saveBtn.appendChild(EV.el('span', null, state.dirty ? saveText + ' *' : saveText));
     saveBtn.disabled = !state.activeName;
     saveBtn.onclick = save;
@@ -1018,7 +938,7 @@
     if (!state.activeName) {
       var c = EV.el('div', 'center');
       c.innerHTML = EV.icon('loop', 36);
-      c.appendChild(EV.el('div', 'big', '从左侧选择一个 paradigm，或新建一个'));
+      c.appendChild(EV.el('div', 'big', '请从列表选择一个 paradigm'));
       c.appendChild(EV.el('div', 'sub', 'paradigm 定义了 Agent 主循环在各 Hook 上的动作编排（提示注入、文件操作、技能注入、记忆注入、工具检查、命令执行）。'));
       bodyEl.appendChild(c);
       return;
@@ -1105,8 +1025,11 @@
     + 'border:2px dashed rgba(26,26,26,.28);border-radius:6px;'
     + 'font-family:"Comic Sans MS",cursive;font-size:11px;color:rgba(26,26,26,.42)}'
     + '.viz-ck{padding:0 10px 5px;font-size:10px;color:rgba(26,26,26,.35)}'
-    + '.viz-hint{flex:none;padding:8px 14px;border-top:1px solid rgba(15,17,21,.08);'
-    + 'font-size:11.5px;line-height:1.7;color:#8b96a3}';
+    // 画布右下角缩放条
+    + '.viz-bar{position:absolute;right:12px;bottom:12px;z-index:6;display:flex;align-items:center;'
+    + 'padding:3px;background:#fff;border:1px solid rgba(15,17,21,.10);border-radius:9px;'
+    + 'box-shadow:0 2px 8px rgba(15,17,21,.07)}'
+    + '.viz-bar .ibtn{width:26px;height:26px}';
 
   function vizInjectStyle() {
     if (document.getElementById('viz-style')) return;
@@ -1295,7 +1218,7 @@
   }
 
   function openVisualize() {
-    if (!state.activeName) { EV.toast('请先打开或新建一个 paradigm', true); return; }
+    if (!state.activeName) { EV.toast('请先打开一个 paradigm', true); return; }
     vizInjectStyle();
 
     var svg = sEl('svg', { 'class': 'viz-edges' });
@@ -1314,10 +1237,6 @@
     inner.style.flex = '1';
     inner.style.minHeight = '0';
     inner.appendChild(canvas);
-    inner.appendChild(EV.el('div', 'viz-hint',
-      '箭头表示信息流转方向；「有工具调用 / 无工具调用 / 失败 / 成功」为分支条件。'
-      + '「收到输入时」只在收到 type=user 输入时触发（真人输入、传感器推送）；钩子注入与循环打回提示不触发它。'
-      + '拖拽平移、滚轮缩放；该图随当前编辑内容实时生成，保存前后皆可预览。'));
 
     var model = null;
     var view = { x: 20, y: 20, s: 1 };
@@ -1349,9 +1268,8 @@
       applyView();
     }
 
-    var bar = EV.el('div', 'row');
+    var bar = EV.el('div', 'viz-bar');
     bar.style.gap = '2px';
-    bar.style.marginLeft = 'auto';
     var minus = EV.el('button', 'ibtn');
     minus.innerHTML = EV.icon('zoomOut', 14);
     minus.title = '缩小';
@@ -1365,6 +1283,7 @@
     fitBtn.title = '适应窗口';
     fitBtn.onclick = fit;
     bar.appendChild(minus); bar.appendChild(pct); bar.appendChild(plus); bar.appendChild(fitBtn);
+    canvas.appendChild(bar);
 
     // 空白处按下拖拽平移
     canvas.addEventListener('pointerdown', function (e) {
@@ -1397,11 +1316,10 @@
     }, { passive: false });
 
     EV.modal({
-      title: '循环可视化 — ' + state.activeName + '.yaml',
+      title: '循环可视化',
       width: '1180px',
       flush: true,
       node: inner,
-      headExtra: bar,
       onOpen: function () {
         // 卡片先进 DOM 再量高度，坐标与连线锚点才能和实际渲染一致。
         // 量到的值明显偏小时（卡片自带 overflow:hidden，高度一旦被压小就只剩两条
@@ -1449,6 +1367,7 @@
       loadFileList();
       loadWorkplaces();
     },
-    onShow: function () { loadFileList(); loadWorkplaces(); }
+    onShow: function () { loadFileList(); loadWorkplaces(); },
+    openDetail: openSandboxAgentLoop
   });
 })();

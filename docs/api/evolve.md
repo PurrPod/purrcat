@@ -1,6 +1,6 @@
 # 进化工厂 `/api/evolve`
 
-> 源码：`src/server/api/evolve.py` ｜ 前缀：`/api/evolve` ｜ 端点：14 个
+> 源码：`src/server/api/evolve.py` ｜ 前缀：`/api/evolve` ｜ 端点：15 个
 
 进化工厂（Evolution Factory）管理接口。`type` 指定加工厂类型：`skill`（默认）、`mcp`、`sensor`、`agentloop`、`graph`。每个沙盒按 `workplace_id` 组织，位于 `AGENT_VM_DIR/{type}_workplace/{workplace_id}/` 下。
 
@@ -190,6 +190,35 @@ curl 'http://127.0.0.1:8000/api/evolve/paradigm?workplace_id=wp-001&name=my-para
 curl -X POST 'http://127.0.0.1:8000/api/evolve/paradigm?workplace_id=wp-001&name=my-paradigm' \
   -H 'Content-Type: application/json' \
   -d '{"data": {"name": "my-paradigm", "path": "agent_vm", "hooks": {}}}'
+```
+
+---
+
+## POST `/api/evolve/reveal`
+
+在系统文件管理器中打开沙盒工作区目录（Windows 用 `os.startfile`，macOS 用 `open`，Linux 用 `xdg-open`）。
+
+**请求**
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| type | body | string | 否 | 加工厂类型，默认 `skill` |
+| workplace_id | body | string | 是 | 沙盒工作区 ID |
+
+**响应**
+
+```json
+{ "ok": true, "path": "C:\\Users\\me\\.purrcat\\agent_vm\\skill_workplace\\wp-001" }
+```
+
+目录不存在返回 `404`；打开失败返回 `500`；`workplace_id` 含路径分隔符返回 `400`。
+
+**示例**
+
+```bash
+curl -X POST 'http://127.0.0.1:8000/api/evolve/reveal' \
+  -H 'Content-Type: application/json' \
+  -d '{"type": "skill", "workplace_id": "wp-001"}'
 ```
 
 ---

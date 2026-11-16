@@ -51,6 +51,11 @@ class ParadigmSaveReq(BaseModel):
     data: dict
 
 
+class RevealReq(BaseModel):
+    type: str = "skill"
+    workplace_id: str
+
+
 @router.get("/list")
 def list_workplaces(type: str = "skill"):
     """扫描指定加工厂的沙盒列表"""
@@ -88,6 +93,12 @@ def get_sandbox_paradigm_api(workplace_id: str, name: str):
 def save_sandbox_paradigm_api(workplace_id: str, name: str, req: ParadigmSaveReq):
     """把结构化对象序列化回沙盒内 <name>.yaml（面板编辑器的「保存到沙盒」）。"""
     return evolve_service.save_sandbox_paradigm(workplace_id, name, req.data)
+
+
+@router.post("/reveal")
+def reveal_workplace_api(req: RevealReq):
+    """在系统文件管理器中打开沙盒工作区目录（skill / sensor 详情的「查看文件」）。"""
+    return evolve_service.reveal_workplace(req.type, req.workplace_id)
 
 
 @router.post("/test/run")

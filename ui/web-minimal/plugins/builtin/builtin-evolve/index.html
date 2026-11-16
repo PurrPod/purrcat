@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8" />
@@ -274,14 +274,157 @@
   }
   .toast.on { opacity: 1; transform: translateX(-50%) translateY(0); }
   .toast.err { background: rgba(191, 97, 106, .96); }
+
+  /* ---------- 类型总览 ---------- */
+  #list { flex: 1; min-height: 0; display: flex; }
+  .rail {
+    width: 190px; flex: none; display: flex; flex-direction: column;
+    padding: 8px; background: var(--field-soft); border-right: 1px solid var(--line); overflow: hidden;
+  }
+  .types { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 1px; }
+  .type {
+    width: 100%; display: flex; align-items: center; gap: 8px; padding: 7px 9px;
+    text-align: left; background: transparent; border: 1px solid transparent; border-radius: 8px; cursor: pointer;
+  }
+  .type:hover { background: var(--hover); }
+  .type.on { background: var(--field); border-color: var(--line); }
+  .type-ico {
+    width: 24px; height: 24px; flex: none; display: flex; align-items: center; justify-content: center;
+    color: var(--ink-2); background: #fff; border: 1px solid var(--line); border-radius: 7px;
+  }
+  .type.on .type-ico { color: var(--ink); }
+  .type-ico svg { width: 14px; height: 14px; }
+  .type-name { flex: 1; min-width: 0; font-size: 12.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .type-count { flex: none; font-size: 10.5px; color: var(--dim); }
+
+  .list-top { padding: 14px 16px 10px; align-items: flex-end; }
+  .list-title h1 { font-size: 15px; font-weight: 700; }
+  .list-title p { margin-top: 2px; font-size: 11.5px; color: var(--dim); }
+
+  .filter { position: relative; }
+  .filter-btn {
+    height: 30px; padding: 0 10px; display: inline-flex; align-items: center; gap: 6px;
+    font-size: 12px; color: var(--ink-2); background: #fff;
+    border: 1px solid var(--line); border-radius: 8px; cursor: pointer;
+  }
+  .filter-btn:hover { background: var(--hover); color: var(--ink); }
+  .filter-btn .lab { color: var(--dim); }
+  .filter-btn svg { width: 13px; height: 13px; color: var(--dim); transition: transform .15s ease; }
+  .filter.open .filter-btn svg { transform: rotate(180deg); }
+  .menu {
+    position: absolute; right: 0; top: 34px; z-index: 30; width: 168px; padding: 4px;
+    display: none; background: #fff; border: 1px solid var(--line); border-radius: 10px;
+    box-shadow: 0 12px 28px rgba(15, 17, 21, .16);
+  }
+  .filter.open .menu { display: block; }
+  .opt {
+    width: 100%; height: 30px; padding: 0 8px; display: flex; align-items: center; gap: 7px;
+    font-size: 12px; color: var(--ink-2); text-align: left;
+    background: transparent; border: none; border-radius: 7px; cursor: pointer;
+  }
+  .opt:hover { background: var(--hover); color: var(--ink); }
+  .opt .tick { width: 13px; height: 13px; color: var(--ok); opacity: 0; }
+  .opt.on { color: var(--ink); font-weight: 600; }
+  .opt.on .tick { opacity: 1; }
+  .opt .num { margin-left: auto; font-size: 10.5px; color: var(--dim); font-weight: 400; }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; padding: 6px 16px 22px; }
+  .pcard {
+    min-width: 0; padding: 12px; background: #fff; border: 1px solid var(--line);
+    border-radius: 10px; cursor: pointer; transition: background .12s ease, border-color .12s ease;
+  }
+  .pcard:hover { background: var(--field-soft); border-color: rgba(15, 17, 21, .17); }
+  .pcard:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .pcard-top { display: flex; align-items: center; gap: 8px; margin-bottom: 9px; }
+  .pcard-ico {
+    width: 30px; height: 30px; flex: none; display: flex; align-items: center; justify-content: center;
+    color: var(--ink-2); background: var(--field); border-radius: 8px;
+  }
+  .pcard-ico svg { width: 16px; height: 16px; }
+  .pcard-top .chip { margin-left: auto; }
+  .pname { font-size: 13px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pdesc {
+    margin-top: 3px; font-size: 11.5px; line-height: 1.65; color: var(--dim);
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .pcard-foot {
+    display: flex; align-items: center; gap: 6px; margin-top: 10px; padding-top: 8px;
+    border-top: 1px solid var(--line); font-size: 10.5px; color: var(--dim);
+  }
+  .pcard-foot .mono { font-size: 10.5px; line-height: 1.5; color: var(--dim); }
+  .pcard-foot .go { margin-left: auto; display: inline-flex; align-items: center; gap: 1px; font-weight: 600; color: var(--ink-2); }
+  .pcard-foot svg { width: 12px; height: 12px; }
+  .pcard-foot .dot { width: 5px; height: 5px; border-radius: 999px; background: var(--warn); }
+  .pcard-foot .dot.mute { background: #b4bcc6; }
+
+  /* ---------- 详情页（复用模块右侧主区） ---------- */
+  #detail { flex: 1; min-height: 0; display: none; flex-direction: column; }
+  #detail .top { padding: 8px 10px 0; gap: 6px; }
+  /* 详情页只保留内容区，模块顶层的沙盒 / 图谱侧栏一律隐藏 */
+  #detail .stage > .pane > .side { display: none !important; }
+  .back {
+    flex: none; height: 26px; margin-bottom: 8px; padding: 0 8px 0 5px;
+    display: inline-flex; align-items: center; gap: 3px;
+    font-size: 12px; color: var(--ink-2); background: transparent;
+    border: none; border-radius: 7px; cursor: pointer;
+  }
+  .back:hover { background: var(--hover); color: var(--ink); }
+  .back svg { width: 14px; height: 14px; }
+  .detail-title {
+    flex: 1; min-width: 0; display: flex; align-items: center; gap: 7px;
+    margin-bottom: 8px; font-size: 12.5px; font-weight: 600; overflow: hidden;
+  }
+  .detail-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .title-actions { flex: none; display: inline-flex; align-items: center; gap: 4px; }
+  .detail-id { font-family: var(--mono); font-size: 10.5px; font-weight: 400; color: var(--dim); }
+
+  @media (max-width: 560px) {
+    .rail { width: 52px; padding: 8px 6px; }
+    .type-name, .type-count { display: none; }
+    .type { justify-content: center; padding: 6px; }
+    .list-top { padding-left: 10px; padding-right: 10px; }
+    .grid { padding-left: 10px; padding-right: 10px; grid-template-columns: 1fr; }
+  }
 </style>
 </head>
 <body>
-  <div class="top">
-    <div class="tabs" id="tabs"></div>
-    <div class="topright" id="actions"></div>
+  <div id="list">
+    <aside class="rail">
+      <nav class="types" id="types"></nav>
+    </aside>
+    <main class="main">
+      <div class="top list-top">
+        <div class="list-title">
+          <h1 id="wsTitle">技能</h1>
+          <p id="wsDesc"></p>
+        </div>
+        <div class="topright">
+          <div class="filter" id="filter">
+            <button type="button" class="filter-btn" id="filterBtn">
+              <span class="lab">来源</span>
+              <span id="filterLabel">全部</span>
+              <span id="filterChev"></span>
+            </button>
+            <div class="menu" id="filterMenu"></div>
+          </div>
+        </div>
+      </div>
+      <div class="scroll" id="wsBody"></div>
+    </main>
   </div>
-  <div class="stage" id="stage"></div>
+  <div id="detail">
+    <div class="top">
+      <button type="button" class="back" id="detailBack"></button>
+      <div class="detail-title">
+        <span class="detail-name" id="detailName"></span>
+        <span class="title-actions" id="titleActions"></span>
+        <span id="detailMeta"></span>
+      </div>
+      <div class="tabs" id="tabs" style="display:none"></div>
+      <div class="topright" id="actions"></div>
+    </div>
+    <div class="stage" id="stage"></div>
+  </div>
   <div class="toast" id="toast"></div>
   <div id="modals"></div>
 
@@ -341,6 +484,8 @@
     chevron: '<path d="m9 6 6 6-6 6"/>',
     menu: '<path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h16"/>',
     info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 7.5h.01"/>',
+    back: '<path d="m15 18-6-6 6-6"/>',
+    chevronDown: '<path d="m6 9 6 6 6-6"/>',
     dot: '<circle cx="12" cy="12" r="4"/>'
   };
 
@@ -722,6 +867,7 @@
     el: el, icon: icon, escape: escapeHtml, debounce: debounce, fmtTime: fmtTime,
     toast: toast, api: api, qs: qs, modal: modal, confirm: confirm, prompt: prompt,
     md: md, setActions: setActions, register: register, activate: activate,
+    module: function (id) { return registry[id]; },
     attachSideToggle: attachSideToggle, drawer: drawer,
     sandboxList: sandboxList, previewSandboxFile: previewSandboxFile,
     on: function () {}
@@ -756,6 +902,396 @@
 <script src="js/graph.js"></script>
 <script src="js/agentloop.js"></script>
 <script src="js/sensor.js"></script>
-<script>window.EVOLVE_BOOT();</script>
+<script>
+/* ============================================================================
+ * 类型总览 → 卡片列表 → 详情
+ *
+ * 列表层只负责「插件类型 / 来源筛选 / 沙盒卡片」；详情层直接复用各模块原有
+ * 的右侧主区（隐藏模块自带的左列表），因此工具栏、子标签与内容分配保持原样。
+ * ========================================================================== */
+(function () {
+  'use strict';
+
+  var TYPES = [
+    { id: 'skill', label: '技能', icon: 'flask', desc: '可复用的技能包与评测流程' },
+    { id: 'mcp', label: 'MCP', icon: 'server', desc: '工具服务器与语义测试' },
+    { id: 'graph', label: 'Graph', icon: 'graph', desc: '任务编排图与节点调试' },
+    { id: 'agentloop', label: 'Agent Loop', icon: 'loop', desc: '阶段式 Agent 流程编排' },
+    { id: 'sensor', label: '传感器', icon: 'zap', desc: '运行时事件监听与基准测试' }
+  ];
+
+  var state = {
+    type: 'skill',
+    filter: 'all',
+    sandbox: {},
+    formal: {},
+    formalLoading: {},
+    detail: null
+  };
+
+  var typesEl = document.getElementById('types');
+  var wsTitleEl = document.getElementById('wsTitle');
+  var wsDescEl = document.getElementById('wsDesc');
+  var wsBodyEl = document.getElementById('wsBody');
+  var filterEl = document.getElementById('filter');
+  var filterBtnEl = document.getElementById('filterBtn');
+  var filterMenuEl = document.getElementById('filterMenu');
+  var filterLabelEl = document.getElementById('filterLabel');
+  var listEl = document.getElementById('list');
+  var detailEl = document.getElementById('detail');
+  var stageEl = document.getElementById('stage');
+  var detailNameEl = document.getElementById('detailName');
+  var detailMetaEl = document.getElementById('detailMeta');
+  var titleActionsEl = document.getElementById('titleActions');
+  var detailRoots = {};
+
+  function metaOf(id) {
+    for (var i = 0; i < TYPES.length; i += 1) if (TYPES[i].id === id) return TYPES[i];
+    return TYPES[0];
+  }
+  function sandboxList(id) { return state.sandbox[id] || []; }
+  function formalList(id) { return state.formal[id] || []; }
+  function formalLoaded(id) { return Array.isArray(state.formal[id]); }
+
+  async function loadSandboxes(id) {
+    try {
+      var list = await EV.api.get('/api/evolve/list?type=' + encodeURIComponent(id));
+      state.sandbox[id] = Array.isArray(list) ? list : [];
+    } catch (e) {
+      state.sandbox[id] = [];
+    }
+  }
+
+  async function loadFormal(id) {
+    if (formalLoaded(id) || state.formalLoading[id]) return;
+    state.formalLoading[id] = true;
+    if (state.type === id) renderList();
+    var out = [];
+    try {
+      if (id === 'skill') {
+        var skills = await EV.api.get('/api/tools/skills');
+        out = (Array.isArray(skills) ? skills : []).map(function (s) {
+          return { name: s.name || s.dir_name || '', desc: s.description || '' };
+        });
+      } else if (id === 'mcp') {
+        var mcps = await EV.api.get('/api/tools/mcp/list');
+        out = (Array.isArray(mcps) ? mcps : []).map(function (m) {
+          return typeof m === 'string' ? { name: m, desc: '已配置的 MCP 服务器' } : { name: m.name || '', desc: m.description || '' };
+        });
+      } else if (id === 'graph') {
+        var graphs = await EV.api.get('/api/graphs');
+        out = (Array.isArray(graphs) ? graphs : []).map(function (g) {
+          return { name: g.name || '', desc: g.desc || '任务编排图' };
+        });
+      } else if (id === 'agentloop') {
+        var para = await EV.api.get('/api/paradigms');
+        out = ((para && para.files) || []).map(function (f) {
+          return { name: f.name || String(f), desc: f.is_default ? '默认 Agent Loop 范式' : 'Agent Loop 范式' };
+        });
+      } else if (id === 'sensor') {
+        var sensors = await EV.api.get('/api/tools/market/sensors/installed');
+        out = (Array.isArray(sensors) ? sensors : []).map(function (s) {
+          return { name: s.name || '', desc: s.enabled ? '已启用' : '已安装 · 未启用', enabled: !!s.enabled };
+        });
+      }
+    } catch (e) { /* 正式库读取失败按空处理 */ }
+    state.formal[id] = out.filter(function (x) { return x.name; });
+    state.formalLoading[id] = false;
+    if (state.type === id) renderList();
+  }
+
+  /* ---------------- 列表层 ---------------- */
+  function renderRail() {
+    typesEl.innerHTML = '';
+    TYPES.forEach(function (t) {
+      var b = EV.el('button', 'type' + (state.type === t.id ? ' on' : ''));
+      b.type = 'button';
+      var ico = EV.el('span', 'type-ico');
+      ico.innerHTML = EV.icon(t.icon, 14);
+      b.appendChild(ico);
+      b.appendChild(EV.el('span', 'type-name', t.label));
+      b.appendChild(EV.el('span', 'type-count', String(sandboxList(t.id).length)));
+      b.onclick = function () {
+        if (state.type === t.id) return;
+        state.type = t.id;
+        state.filter = 'all';
+        renderList();
+        loadFormal(t.id);
+      };
+      typesEl.appendChild(b);
+    });
+  }
+
+  function filterText(f) {
+    return f === 'sandbox' ? '沙盒内' : f === 'formal' ? '正式库' : '全部';
+  }
+
+  function renderFilter() {
+    var s = sandboxList(state.type).length;
+    var f = formalLoaded(state.type) ? formalList(state.type).length : null;
+    filterLabelEl.textContent = filterText(state.filter);
+    var opts = [
+      { id: 'all', label: '全部', num: f === null ? '…' : s + f },
+      { id: 'sandbox', label: '沙盒内', num: s },
+      { id: 'formal', label: '正式库', num: f === null ? '…' : f }
+    ];
+    filterMenuEl.innerHTML = '';
+    opts.forEach(function (o) {
+      var b = EV.el('button', 'opt' + (state.filter === o.id ? ' on' : ''));
+      b.type = 'button';
+      var tick = EV.el('span', 'tick');
+      tick.innerHTML = EV.icon('check', 13);
+      b.appendChild(tick);
+      b.appendChild(EV.el('span', null, o.label));
+      b.appendChild(EV.el('span', 'num', String(o.num)));
+      b.onclick = function () {
+        state.filter = o.id;
+        filterEl.classList.remove('open');
+        if (o.id !== 'sandbox') loadFormal(state.type);
+        renderList();
+      };
+      filterMenuEl.appendChild(b);
+    });
+  }
+
+  function currentItems() {
+    var t = state.type;
+    var sandbox = sandboxList(t).map(function (w) {
+      return { kind: 'sandbox', type: t, name: w.name, workplace_id: w.workplace_id, status: w.status };
+    });
+    var formal = formalList(t).map(function (w) {
+      return { kind: 'formal', type: t, name: w.name, desc: w.desc, enabled: w.enabled };
+    });
+    if (state.filter === 'sandbox') return sandbox;
+    if (state.filter === 'formal') return formal;
+    return sandbox.concat(formal);
+  }
+
+  function buildCard(item) {
+    var t = metaOf(state.type);
+    var card = EV.el('div', 'pcard');
+    card.tabIndex = 0;
+    var top = EV.el('div', 'pcard-top');
+    var ico = EV.el('span', 'pcard-ico');
+    ico.innerHTML = EV.icon(t.icon, 16);
+    top.appendChild(ico);
+    top.appendChild(EV.el('span', 'chip' + (item.kind === 'sandbox' ? ' warn' : ' mute'), item.kind === 'sandbox' ? '加工中' : '正式库'));
+    card.appendChild(top);
+    card.appendChild(EV.el('div', 'pname', item.name));
+    card.appendChild(EV.el('div', 'pdesc', item.kind === 'sandbox'
+      ? '沙盒工作区，完成评测后可合并回正式库。'
+      : (item.desc || (t.label + ' 正式库条目'))));
+    var foot = EV.el('div', 'pcard-foot');
+    foot.appendChild(EV.el('span', 'dot' + (item.kind === 'formal' ? ' mute' : '')));
+    foot.appendChild(item.kind === 'sandbox'
+      ? EV.el('span', 'mono', item.workplace_id || '')
+      : EV.el('span', null, item.enabled === false ? '已安装 · 未启用' : '已安装'));
+    var go = EV.el('span', 'go');
+    go.appendChild(document.createTextNode(item.kind === 'sandbox' ? '进入' : '查看'));
+    go.insertAdjacentHTML('beforeend', EV.icon('chevron', 12));
+    foot.appendChild(go);
+    card.appendChild(foot);
+    card.onclick = function () { openDetail(item); };
+    card.onkeydown = function (e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDetail(item); }
+    };
+    return card;
+  }
+
+  function renderGrid() {
+    var t = metaOf(state.type);
+    var items = currentItems();
+    wsBodyEl.innerHTML = '';
+    if (state.filter !== 'sandbox' && !formalLoaded(state.type) && items.length === 0) {
+      var loading = EV.el('div', 'center');
+      var li = EV.el('span');
+      li.innerHTML = EV.icon(t.icon, 34);
+      loading.appendChild(li);
+      loading.appendChild(EV.el('div', 'sub', '正在读取' + t.label + '…'));
+      loading.style.minHeight = '300px';
+      wsBodyEl.appendChild(loading);
+      return;
+    }
+    if (!items.length) {
+      var empty = EV.el('div', 'center');
+      var ei = EV.el('span');
+      ei.innerHTML = EV.icon(t.icon, 34);
+      empty.appendChild(ei);
+      empty.appendChild(EV.el('div', 'big', state.filter === 'formal' ? '正式库里还没有' + t.label
+        : state.filter === 'sandbox' ? '没有加工中的' + t.label + '沙盒' : '这里还没有内容'));
+      empty.appendChild(EV.el('div', 'sub', state.filter === 'formal'
+        ? '已安装的条目会出现在这里，也可以让 Agent 先在沙盒中构建。'
+        : '让 Agent 在进化工厂中启动一次构建，沙盒会出现在这里。'));
+      empty.style.minHeight = '320px';
+      wsBodyEl.appendChild(empty);
+      return;
+    }
+    var grid = EV.el('div', 'grid');
+    items.forEach(function (item) { grid.appendChild(buildCard(item)); });
+    wsBodyEl.appendChild(grid);
+  }
+
+  function renderList() {
+    var t = metaOf(state.type);
+    wsTitleEl.textContent = t.label;
+    wsDescEl.textContent = t.desc;
+    renderRail();
+    renderFilter();
+    renderGrid();
+  }
+
+  /* ---------------- 详情层 ---------------- */
+  function renderFormalDetail(item) {
+    var wrap = EV.el('div', 'scroll');
+    var pad = EV.el('div', 'pad');
+    var card = EV.el('div', 'card');
+    var head = EV.el('div', 'card-head');
+    head.appendChild(EV.el('div', 'card-title', '简介'));
+    head.appendChild(EV.el('span', 'chip mute', '正式库'));
+    card.appendChild(head);
+    var desc = EV.el('div', 'hint', item.desc || '该条目已安装，可直接被 Agent 调用。');
+    desc.style.padding = '0';
+    card.appendChild(desc);
+    pad.appendChild(card);
+
+    var src = EV.el('div', 'card');
+    var srcHead = EV.el('div', 'card-head');
+    srcHead.appendChild(EV.el('div', 'card-title', '来源'));
+    src.appendChild(srcHead);
+    var row = EV.el('div', 'row');
+    row.appendChild(EV.el('span', 'chip mute', '已安装'));
+    row.appendChild(EV.el('span', 'mono', item.name));
+    src.appendChild(row);
+    pad.appendChild(src);
+
+    wrap.appendChild(pad);
+    stageEl.appendChild(wrap);
+    EV.setActions([]);
+  }
+
+  function revealSandbox(item) {
+    EV.api.post('/api/evolve/reveal', {
+      type: item.type, workplace_id: item.workplace_id
+    }).then(function () {
+      EV.toast('已在文件管理器中打开沙盒目录');
+    }).catch(function (e) {
+      EV.toast('打开目录失败：' + e.message, true);
+    });
+  }
+
+  function approveSandbox(item) {
+    EV.api.post('/api/evolve/handle', {
+      type: item.type, workplace_id: item.workplace_id, name: item.name,
+      is_approved: true, reject_reason: ''
+    }).then(function (data) {
+      var msg = data.message || '已并入正式库';
+      var blocked = msg.indexOf('❌') >= 0;
+      EV.toast(msg, blocked);
+      if (!blocked) backToList();
+    }).catch(function (e) {
+      EV.toast('操作失败：' + e.message, true);
+    });
+  }
+
+  function revealButton(item) {
+    var b = EV.el('button', 'ibtn');
+    b.innerHTML = EV.icon('folder', 14);
+    b.title = '查看文件';
+    b.onclick = function () { revealSandbox(item); };
+    return b;
+  }
+
+  function bindSandboxActions(item) {
+    var compact = item.type === 'skill' || item.type === 'sensor' || item.type === 'mcp' || item.type === 'graph';
+    if (item.kind !== 'sandbox' || !compact) {
+      EV.setActions([]);
+      return;
+    }
+    var acts = [{ icon: 'check', label: '批准合并', primary: true, onClick: function () { approveSandbox(item); } }];
+    EV.setActions(acts);
+  }
+
+  async function openDetail(item) {
+    state.detail = item;
+    listEl.style.display = 'none';
+    detailEl.style.display = 'flex';
+    detailNameEl.textContent = item.name;
+    detailMetaEl.innerHTML = '';
+    titleActionsEl.innerHTML = '';
+    if (item.kind === 'sandbox') {
+      // 沙盒条目只靠标题区分，不再重复「加工中」与沙盒编号
+      if (item.type === 'skill' || item.type === 'mcp' || item.type === 'sensor') {
+        titleActionsEl.appendChild(revealButton(item));
+      }
+    } else {
+      detailMetaEl.appendChild(EV.el('span', 'chip mute', '正式库'));
+    }
+    stageEl.innerHTML = '';
+
+    if (item.kind === 'formal') {
+      renderFormalDetail(item);
+      return;
+    }
+    var mod = EV.module(item.type);
+    if (!mod) {
+      stageEl.appendChild(EV.el('div', 'center', '模块未加载：' + item.type));
+      return;
+    }
+    var root = detailRoots[item.type];
+    if (!root) {
+      root = EV.el('div', 'pane');
+      detailRoots[item.type] = root;
+      stageEl.appendChild(root);
+      try { mod.mount(root); } catch (e) {
+        root.innerHTML = '';
+        root.appendChild(EV.el('div', 'hint err', '渲染失败：' + e.message));
+      }
+    } else {
+      stageEl.appendChild(root);
+      if (mod.onShow) { try { mod.onShow(); } catch (e) { /* 忽略刷新失败 */ } }
+    }
+    if (mod.openDetail) {
+      try { mod.openDetail(item); } catch (e) { /* 忽略打开失败 */ }
+    }
+    bindSandboxActions(item);
+  }
+
+  function backToList() {
+    state.detail = null;
+    detailEl.style.display = 'none';
+    listEl.style.display = 'flex';
+    stageEl.innerHTML = '';
+    detailMetaEl.innerHTML = '';
+    titleActionsEl.innerHTML = '';
+    EV.setActions([]);
+    var type = state.type;
+    loadSandboxes(type).then(function () {
+      if (state.type === type) renderList();
+    });
+  }
+
+  /* ---------------- 交互 ---------------- */
+  filterBtnEl.onclick = function (e) {
+    e.stopPropagation();
+    var open = filterEl.classList.toggle('open');
+    if (open && !formalLoaded(state.type)) loadFormal(state.type);
+  };
+  document.addEventListener('click', function () { filterEl.classList.remove('open'); });
+  filterMenuEl.addEventListener('click', function (e) { e.stopPropagation(); });
+  document.getElementById('detailBack').onclick = backToList;
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && state.detail) backToList();
+  });
+
+  /* ---------------- 启动 ---------------- */
+  document.getElementById('filterChev').innerHTML = EV.icon('chevronDown', 13);
+  document.getElementById('detailBack').innerHTML = EV.icon('back', 14) + '返回';
+  renderList();
+  Promise.all(TYPES.map(function (t) { return loadSandboxes(t.id); })).then(function () {
+    renderList();
+    loadFormal(state.type);
+  });
+})();
+</script>
 </body>
 </html>

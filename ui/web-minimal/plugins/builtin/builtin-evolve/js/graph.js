@@ -26,6 +26,7 @@
   };
 
   var sideBodyEl, canvasEl, worldEl, svgEl, toolbarEl, hintEl;
+  var palettePanel, paletteBodyEl, zoomPctEl;
   var drag = null;      // {kind:'node'|'pan'|'link', ...}
   var linkPreview = null;
 
@@ -158,6 +159,7 @@
       EV.toast('加载节点目录失败：' + e.message, true);
     }
     renderSide();
+    renderPalette();
   }
 
   async function loadFileList() {
@@ -386,6 +388,7 @@
       state.view = { x: 60, y: 60, s: 1 };
       applyView();
       drawEdges();
+      syncZoomPct();
       return;
     }
     var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -402,6 +405,7 @@
     state.view.y = (ch - (maxY - minY) * s) / 2 - minY * s;
     applyView();
     drawEdges();
+    syncZoomPct();
   }
 
   /* ---------------- 渲染 ---------------- */
@@ -424,11 +428,12 @@
     sideBodyEl.appendChild(newBtn);
 
     // 抽屉 1：沙盒内（Graph 工厂加工中的产物）
-    sideBodyEl.appendChild(EV.drawer(
+    var sandboxDrawer = EV.drawer(
       '沙盒内', state.workplaces.length, state.drawers.sandbox,
       function (open) { state.drawers.sandbox = open; },
       function (body) { renderSandboxList(body); }
-    ));
+    );
+    sideBodyEl.appendChild(sandboxDrawer);
 
     // 抽屉 2：打开已有图谱
     sideBodyEl.appendChild(EV.drawer(
@@ -483,6 +488,43 @@
         });
       }
     ));
+  }
+
+  // 画布左上角的节点面板（默认折叠，展开后可从列表拖节点进画布）
+  function renderPalette() {
+    if (!paletteBodyEl) return;
+    paletteBodyEl.innerHTML = '';
+    if (!state.catalog.length) {
+      paletteBodyEl.appendChild(EV.el('div', 'g-pal-empty', '正在加载节点目录…'));
+      return;
+    }
+    state.catalog.forEach(function (def) {
+      var it = EV.el('div', 'g-pal-item');
+      var dot = EV.el('span', 'g-pal-dot');
+      dot.style.background = def.color || '#9aa5b1';
+      it.appendChild(dot);
+      it.appendChild(EV.el('span', 'nm', def.name));
+      it.title = '点击添加到画布中心，或直接拖拽进画布';
+      it.draggable = true;
+      it.onclick = function () { addNode(def.type); };
+      it.addEventListener('dragstart', function (e) {
+        e.dataTransfer.effectAllowed = 'copy';
+        e.dataTransfer.setData('text/plain', def.type);
+      });
+      paletteBodyEl.appendChild(it);
+    });
+  }
+
+  function togglePalette() {
+    if (!palettePanel) return;
+    var open = palettePanel.style.display === 'none';
+    palettePanel.style.display = open ? 'flex' : 'none';
+    var btn = palettePanel.parentNode.querySelector('.g-pal-toggle');
+    if (btn) btn.classList.toggle('on', open);
+  }
+
+  function syncZoomPct() {
+    if (zoomPctEl) zoomPctEl.textContent = Math.round(state.view.s * 100) + '%';
   }
 
   // 沙盒内：列出 Graph 工厂加工中的产物（点击直接载入可视化画布编辑）
@@ -1025,6 +1067,7 @@
     });
 
     canvasEl.addEventListener('wheel', function (e) {
+      if (e.target.closest && e.target.closest('.g-pal')) return;   // 面板内滚动交给原生
       e.preventDefault();
       var r = canvasEl.getBoundingClientRect();
       var mx = e.clientX - r.left, my = e.clientY - r.top;
@@ -1037,6 +1080,7 @@
       state.view.y = my - wy * ns;
       applyView();
       drawEdges();
+      syncZoomPct();
     }, { passive: false });
 
     window.addEventListener('resize', EV.debounce(function () { drawEdges(); }, 120));
@@ -1211,13 +1255,7 @@
   /* ---------------- 工具栏 ---------------- */
   function renderToolbar() {
     toolbarEl.innerHTML = '';
-    var nm = EV.el('span', 'note', state.graphName ? state.graphName + (state.dirty ? ' *' : '') : '（未命名画布）');
-    toolbarEl.appendChild(nm);
-    if (state.sandboxCtx) {
-      var chip = EV.el('span', 'chip', '沙盒编辑 · ' + state.sandboxCtx.workplace_id);
-      chip.title = '当前编辑的是沙盒内产物，保存将回写沙盒 graph.json';
-      toolbarEl.appendChild(chip);
-    }
+    if (state.dirty) toolbarEl.appendChild(EV.el('span', 'chip warn', '未保存'));
     toolbarEl.appendChild(EV.el('span', 'spacer'));
 
     function tbtn(icon, title, fn, cls) {
@@ -1228,11 +1266,6 @@
       toolbarEl.appendChild(b);
       return b;
     }
-    tbtn('zoomOut', '缩小', function () { zoomBy(1 / 1.2); });
-    var pct = EV.el('span', 'note', Math.round(state.view.s * 100) + '%');
-    toolbarEl.appendChild(pct);
-    tbtn('zoomIn', '放大', function () { zoomBy(1.2); });
-    tbtn('fit', '适应画布', fitView);
     tbtn('layout', '自动布局（拓扑分层）', function () {
       var pos = inferAutoLayout(state.nodes, state.edges);
       state.nodes.forEach(function (n) {
@@ -1249,22 +1282,10 @@
       if (errors.length) errors.forEach(function (e) { EV.toast(e, true); });
       else EV.toast('校验通过！工作流结构合法。');
     });
-    tbtn('trash', '清空画布', function () {
-      EV.confirm({
-        title: '清空画布',
-        message: '确定要清空画布吗？当前画板上未保存的内容将永远丢失！',
-        okLabel: '清空', danger: true
-      }).then(function (ok) {
-        if (!ok) return;
-        state.nodes = []; state.edges = []; state.selectedId = null; state.selectedEdgeId = null;
-        state.dirty = true;
-        renderAll();
-      });
-    }, 'danger');
 
     var save = EV.el('button', 'btn primary');
-    save.innerHTML = EV.icon('upload', 14);
-    save.appendChild(EV.el('span', null, state.sandboxCtx ? '保存到沙盒' : '保存'));
+    save.innerHTML = EV.icon('save', 14);
+    save.appendChild(EV.el('span', null, '保存'));
     save.onclick = saveGraph;
     toolbarEl.appendChild(save);
   }
@@ -1279,7 +1300,7 @@
     state.view.y = ch - wy * ns;
     applyView();
     drawEdges();
-    renderToolbar();
+    syncZoomPct();
   }
 
   async function saveGraph() {
@@ -1412,7 +1433,35 @@
       + '.g-lblock.r .g-port{justify-content:flex-end}'
       + '.g-lrow .nm{font-style:italic}'
       + '.g-ladd{align-self:flex-start;margin-left:6px}'
-      + '.g-lblock.r .g-ladd{align-self:flex-end;margin-left:0;margin-right:6px}';
+      + '.g-lblock.r .g-ladd{align-self:flex-end;margin-left:0;margin-right:6px}'
+      // 画布左上角节点面板（默认折叠）
+      + '.g-pal-toggle{position:absolute;left:10px;top:10px;z-index:6;background:#fff;'
+      + 'border:1px solid rgba(15,17,21,.10);box-shadow:0 1px 2px rgba(15,17,21,.06)}'
+      + '.g-pal-toggle.on{background:#16191d;border-color:#16191d;color:#fff}'
+      + '.g-pal{position:absolute;left:10px;top:46px;bottom:12px;width:208px;z-index:5;display:none;'
+      + 'flex-direction:column;background:#fff;border:1px solid rgba(15,17,21,.10);border-radius:10px;'
+      + 'box-shadow:0 8px 24px rgba(15,17,21,.10);overflow:hidden}'
+      + '.g-pal-h{padding:8px 10px;font-size:10.5px;font-weight:700;letter-spacing:.05em;color:#8b96a3;'
+      + 'text-transform:uppercase;border-bottom:1px solid rgba(15,17,21,.08)}'
+      + '.g-pal-b{flex:1;min-height:0;overflow:auto;padding:6px;display:flex;flex-direction:column;gap:2px}'
+      + '.g-pal-item{display:flex;align-items:center;gap:7px;padding:6px 7px;border-radius:7px;'
+      + 'font-size:12px;color:#16191d;cursor:grab;user-select:none}'
+      + '.g-pal-item:hover{background:#f2f4f7}'
+      + '.g-pal-item .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}'
+      + '.g-pal-dot{width:9px;height:9px;border-radius:3px;flex:none}'
+      + '.g-pal-empty{padding:8px 6px;font-size:11.5px;color:#8b96a3}'
+      // 画布右下角缩放条
+      + '.g-zoom{position:absolute;right:12px;bottom:12px;z-index:6;display:flex;align-items:center;gap:2px;'
+      + 'padding:3px;background:#fff;border:1px solid rgba(15,17,21,.10);border-radius:9px;'
+      + 'box-shadow:0 2px 8px rgba(15,17,21,.07)}'
+      + '.g-zoom .ibtn{width:26px;height:26px}'
+      + '.g-zoom-pct{min-width:42px;text-align:center;font-size:11px;font-weight:700;color:#4c5560;'
+      + 'cursor:pointer;user-select:none}'
+      // 画布右上角操作条（布局 / 校验 / 保存）
+      + '.g-actions{position:absolute;right:12px;top:10px;z-index:6;display:flex;align-items:center;gap:2px;'
+      + 'padding:3px 5px;background:#fff;border:1px solid rgba(15,17,21,.10);border-radius:9px;'
+      + 'box-shadow:0 2px 8px rgba(15,17,21,.07)}'
+      + '.g-actions .btn{height:26px}';
     var st = EV.el('style');
     st.textContent = css;
     document.head.appendChild(st);
@@ -1433,8 +1482,7 @@
       root.appendChild(side);
 
       var main = EV.el('div', 'main');
-      toolbarEl = EV.el('div', 'toolbar');
-      main.appendChild(toolbarEl);
+      toolbarEl = EV.el('div', 'g-actions');
 
       var shell = EV.el('div', 'g-shell');
       canvasEl = EV.el('div', 'g-canvas');
@@ -1443,6 +1491,49 @@
       svgEl.setAttribute('class', 'g-svg');
       worldEl.appendChild(svgEl);
       canvasEl.appendChild(worldEl);
+
+      // 左上角：节点面板开关（默认折叠）
+      var palBtn = EV.el('button', 'ibtn g-pal-toggle');
+      palBtn.innerHTML = EV.icon('menu', 14);
+      palBtn.title = '节点列表';
+      palBtn.onclick = togglePalette;
+      palettePanel = EV.el('div', 'g-pal');
+      palettePanel.style.display = 'none';
+      palettePanel.appendChild(EV.el('div', 'g-pal-h', '节点列表'));
+      paletteBodyEl = EV.el('div', 'g-pal-b');
+      palettePanel.appendChild(paletteBodyEl);
+
+      // 右下角：缩放与定位
+      var zoomDock = EV.el('div', 'g-zoom');
+      var zOut = EV.el('button', 'ibtn');
+      zOut.innerHTML = EV.icon('zoomOut', 14);
+      zOut.title = '缩小';
+      zOut.onclick = function () { zoomBy(1 / 1.2); };
+      zoomDock.appendChild(zOut);
+      zoomPctEl = EV.el('span', 'g-zoom-pct', Math.round(state.view.s * 100) + '%');
+      zoomPctEl.title = '恢复 100%';
+      zoomPctEl.onclick = function () {
+        state.view.s = 1;
+        applyView();
+        drawEdges();
+        syncZoomPct();
+      };
+      zoomDock.appendChild(zoomPctEl);
+      var zIn = EV.el('button', 'ibtn');
+      zIn.innerHTML = EV.icon('zoomIn', 14);
+      zIn.title = '放大';
+      zIn.onclick = function () { zoomBy(1.2); };
+      zoomDock.appendChild(zIn);
+      var zFit = EV.el('button', 'ibtn');
+      zFit.innerHTML = EV.icon('fit', 14);
+      zFit.title = '适应画布';
+      zFit.onclick = fitView;
+      zoomDock.appendChild(zFit);
+
+      canvasEl.appendChild(palBtn);
+      canvasEl.appendChild(palettePanel);
+      canvasEl.appendChild(zoomDock);
+      canvasEl.appendChild(toolbarEl);
       shell.appendChild(canvasEl);
 
       main.appendChild(shell);
@@ -1460,6 +1551,7 @@
       renderToolbar();
       drawEdges();
       loadWorkplaces();
-    }
+    },
+    openDetail: openSandboxGraph
   });
 })();
