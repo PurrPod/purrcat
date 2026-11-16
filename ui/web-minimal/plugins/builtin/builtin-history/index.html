@@ -431,6 +431,68 @@
   .quote span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .quote .x { border: none; background: transparent; color: var(--wm-label-dim, #8b96a3); cursor: pointer; font-size: 12px; line-height: 1; }
 
+  /* ================= 待办 peek（输入框上方）：一行摘要，点击向上展开一条 request ================= */
+  .reqPeek { flex: none; margin-bottom: 8px; }
+  .reqPeek[hidden] { display: none; }
+  .rp-head {
+    display: flex; align-items: center; gap: 6px; width: 100%; min-width: 0;
+    font-family: inherit; font-size: 12px; color: var(--wm-label-2nd, #4c5560);
+    background: var(--wm-bg-input, #f2f4f7);
+    border: none; border-radius: 10px; padding: 5px 10px; cursor: pointer; text-align: left;
+  }
+  .rp-head:hover { background: var(--wm-bg-hover, #e9edf1); }
+  .rp-ic { flex: none; display: flex; width: 14px; height: 14px; color: var(--wm-label-2nd, #4c5560); }
+  .rp-ic svg { width: 14px; height: 14px; }
+  .rp-name { flex: none; font-weight: 600; color: var(--wm-label, #16191d); }
+  .rp-badge {
+    flex: none; min-width: 16px; height: 16px; padding: 0 5px; border-radius: 999px;
+    background: #EBCB8B; color: #16191d; font-size: 10.5px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .rp-chev { flex: none; margin-left: auto; width: 14px; height: 14px; color: var(--wm-label-dim, #8b96a3); transition: transform .15s ease; }
+  .reqPeek.open .rp-chev { transform: rotate(180deg); }
+  .rp-body {
+    display: none; flex-direction: column; gap: 6px;
+    margin-bottom: 6px; padding: 10px 11px 10px;
+    background: var(--wm-bl-0, #fff); border-radius: 14px;
+    box-shadow: var(--wm-shadow, 0 4px 16px rgba(15,17,21,.08));
+    max-height: 220px; overflow-y: auto;
+  }
+  .reqPeek.open .rp-body { display: flex; }
+  .rp-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .rp-type {
+    max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-size: 10.5px; font-weight: 600; line-height: 18px; padding: 0 8px; border-radius: 999px;
+    background: #EBCB8B; color: #16191d;
+  }
+  .rp-type.dep { background: #d08770; color: #fff; }
+  .rp-nav { flex: none; display: flex; align-items: center; gap: 2px; }
+  .rp-navbtn {
+    width: 22px; height: 22px; display: flex; align-items: center; justify-content: center;
+    background: transparent; border: none; border-radius: 6px; padding: 0;
+    color: var(--wm-label-2nd, #4c5560); cursor: pointer;
+  }
+  .rp-navbtn:hover:not(:disabled) { background: var(--wm-bg-hover, #e9edf1); }
+  .rp-navbtn:disabled { opacity: .35; cursor: default; }
+  .rp-navbtn svg { width: 14px; height: 14px; }
+  .rp-pos { min-width: 30px; text-align: center; font-size: 11.5px; color: var(--wm-label-dim, #8b96a3); font-variant-numeric: tabular-nums; }
+  .rp-target { font-size: 13px; font-weight: 600; line-height: 1.4; color: var(--wm-label, #16191d); overflow-wrap: anywhere; }
+  .rp-reason { font-size: 12.5px; line-height: 1.55; color: var(--wm-label-2nd, #4c5560); white-space: pre-wrap; overflow-wrap: anywhere; }
+  .rp-acts { display: flex; align-items: center; gap: 6px; margin-top: 2px; }
+  .rp-btn {
+    flex: 1 1 0; min-width: 0; height: 28px; font: inherit; font-size: 12px; white-space: nowrap;
+    border: 1px solid rgba(15, 17, 21, 0.12); border-radius: 8px; cursor: pointer;
+    background: #fff; color: var(--wm-label-2nd, #4c5560); padding: 0 6px;
+  }
+  .rp-btn:hover { background: var(--wm-bg-hover, #e9edf1); color: var(--wm-label, #16191d); }
+  .rp-btn.ok { border-color: var(--wm-accent, #16191d); background: var(--wm-accent, #16191d); color: #fff; font-weight: 600; }
+  .rp-btn.ok:hover { background: #000; }
+  .rp-btn.no { border-color: rgba(15, 17, 21, 0.2); color: var(--wm-label, #16191d); font-weight: 600; }
+  .rp-btn.no:hover { background: var(--wm-bg-hover, #e9edf1); }
+  .rp-btn.ig { flex: 0 0 28px; width: 28px; padding: 0; display: flex; align-items: center; justify-content: center; }
+  .rp-btn.ig svg { width: 14px; height: 14px; }
+  .rp-body.busy .rp-btn { opacity: .55; pointer-events: none; }
+
   /* 输入条：上下两半——上半写字，下半放＋与纸飞机。白底、无边框、仅轻阴影 */
   .bar {
     display: flex;
@@ -626,6 +688,18 @@
         </div>
       </div>
       <div class="quotes" id="quotes"></div>
+      <!-- 待办 peek：输入框上方一行摘要，点击向上展开查看一条 request -->
+      <div class="reqPeek" id="reqPeek" hidden>
+        <div class="rp-body" id="rpBody"></div>
+        <button class="rp-head" id="rpHead" type="button" aria-expanded="false" aria-controls="rpBody">
+          <span class="rp-ic">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 11 3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>
+          </span>
+          <span class="rp-name">待办</span>
+          <span class="rp-badge" id="rpBadge">0</span>
+          <svg class="rp-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 15-6-6-6 6"></path></svg>
+        </button>
+      </div>
       <div class="bar">
         <textarea id="input" rows="1" placeholder="输入消息，Shift+Enter 换行"></textarea>
         <div class="bar-foot">
@@ -2748,6 +2822,8 @@
       load(activeSessionId);
       resyncEmpty();
       refreshCtx();   // 有消息落地即刷新累计消耗，比 5s 轮询更跟手
+    } else if (m.event === 'requests.updated') {
+      loadReqPeek();
     } else if (m.event === 'conversation.local') {
       ensurePoll();   // 刚发送，后端即将 busy，立即进入快速轮询
       if (currentBranchId !== 'main') return;   // 子代理分支视图只读，乐观消息属于主干，不渲染
@@ -2769,12 +2845,186 @@
     }
   });
 
+  /* ---------- 待办 peek：输入框上方一行摘要，展开后逐条查看 request ---------- */
+  var REQ_TYPE_LABEL = {
+    file_read: '读取文件',
+    file_write: '写入文件',
+    skill_test: '技能盲测',
+    sensor_test: '协议体检',
+    skill_merge: '技能合并',
+    mcp_merge: 'MCP 合并',
+    sensor_merge: 'Sensor 合并',
+    agentloop_merge: '范式合并',
+    graph_merge: '图合并',
+    dependency_check: '依赖检查',
+    computer_use: '电脑操作'
+  };
+  var REQ_IGNORE_ICON = SVG_HEAD + '<path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>';
+  var reqPeekEl = document.getElementById('reqPeek');
+  var reqHeadBtn = document.getElementById('rpHead');
+  var reqBodyEl = document.getElementById('rpBody');
+  var reqBadgeEl = document.getElementById('rpBadge');
+  var reqList = [];          // 当前待办请求（后端按创建时间倒序）
+  var reqIdx = 0;            // 正在查看的请求下标
+  var reqPeekOpen = false;   // 是否向上展开
+  var reqPeekSig = '';       // 内容指纹：没变就不重绘
+  var reqBusy = {};          // req_id -> 是否正在提交裁决
+
+  function reqTypeLabel(t) { return REQ_TYPE_LABEL[t] || (t || '请求'); }
+
+  function reqNavBtn(dir) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'rp-navbtn';
+    b.title = dir < 0 ? '上一条' : '下一条';
+    b.innerHTML = dir < 0
+      ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"></path></svg>'
+      : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"></path></svg>';
+    b.disabled = reqList.length < 2;
+    b.addEventListener('click', function (ev) {
+      ev.stopPropagation();
+      if (reqList.length < 2) return;
+      reqIdx = (reqIdx + dir + reqList.length) % reqList.length;
+      renderReqPeek();
+    });
+    return b;
+  }
+
+  function renderReqPeek() {
+    if (!reqList.length) {
+      reqPeekEl.hidden = true;
+      reqPeekOpen = false;
+      reqHeadBtn.setAttribute('aria-expanded', 'false');
+      reqBodyEl.innerHTML = '';
+      return;
+    }
+    if (reqIdx < 0 || reqIdx >= reqList.length) reqIdx = 0;
+    var req = reqList[reqIdx];
+    var busy = !!reqBusy[req.id];
+    reqPeekEl.hidden = false;
+    reqPeekEl.classList.toggle('open', reqPeekOpen);
+    reqHeadBtn.setAttribute('aria-expanded', reqPeekOpen ? 'true' : 'false');
+    reqBadgeEl.textContent = String(reqList.length);
+
+    reqBodyEl.innerHTML = '';
+    if (!reqPeekOpen) return;
+
+    // 顶行：类型标签 + 右上角左右切换与 n/m
+    var top = document.createElement('div');
+    top.className = 'rp-top';
+    var type = document.createElement('span');
+    type.className = 'rp-type' + (req.type === 'dependency_check' ? ' dep' : '');
+    type.textContent = reqTypeLabel(req.type);
+    type.title = req.type || '';
+    top.appendChild(type);
+    var nav = document.createElement('span');
+    nav.className = 'rp-nav';
+    nav.appendChild(reqNavBtn(-1));
+    var pos = document.createElement('span');
+    pos.className = 'rp-pos';
+    pos.textContent = (reqIdx + 1) + '/' + reqList.length;
+    nav.appendChild(pos);
+    nav.appendChild(reqNavBtn(1));
+    top.appendChild(nav);
+    reqBodyEl.appendChild(top);
+
+    // 目标 + 申请理由
+    var target = document.createElement('div');
+    target.className = 'rp-target';
+    target.textContent = req.target || '(无标题)';
+    target.title = req.target || '';
+    reqBodyEl.appendChild(target);
+    if (req.reason) {
+      var reason = document.createElement('div');
+      reason.className = 'rp-reason';
+      reason.textContent = req.reason;
+      reqBodyEl.appendChild(reason);
+    }
+
+    // 动作：普通请求批准/拒绝；依赖检查直接前往部署
+    reqBodyEl.classList.toggle('busy', busy);
+    var acts = document.createElement('div');
+    acts.className = 'rp-acts';
+    if (req.type === 'dependency_check') {
+      acts.appendChild(reqActBtn('前往部署', 'ok', function () {
+        callAction('settings.open', { tab: 'deploy' }).catch(function () {});
+      }));
+    } else {
+      acts.appendChild(reqActBtn('批准', 'ok', function () { resolveReqPeek(req.id, true, false); }));
+      acts.appendChild(reqActBtn('拒绝', 'no', function () { resolveReqPeek(req.id, false, false); }));
+    }
+    var ig = reqActBtn('', 'ig', function () { resolveReqPeek(req.id, false, true); }, REQ_IGNORE_ICON);
+    ig.title = '忽略（不通知 Agent）';
+    acts.appendChild(ig);
+    reqBodyEl.appendChild(acts);
+  }
+
+  function reqActBtn(label, kind, onClick, icon) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'rp-btn ' + kind;
+    if (icon) b.innerHTML = icon;
+    else b.textContent = label;
+    b.addEventListener('click', function (ev) {
+      ev.stopPropagation();
+      onClick();
+    });
+    return b;
+  }
+
+  // 裁决：批准 / 拒绝 / 忽略后刷新待办，展开态自动切到下一条
+  function resolveReqPeek(id, approved, ignore) {
+    if (reqBusy[id]) return;
+    reqBusy[id] = true;
+    renderReqPeek();
+    callAction('requests.resolve', {
+      request_id: id,
+      approved: !!approved,
+      ignore: !!ignore
+    })
+      .then(function () {
+        delete reqBusy[id];
+        reqPeekSig = null;
+        return loadReqPeek();
+      })
+      .catch(function () {
+        delete reqBusy[id];
+        renderReqPeek();
+      });
+  }
+
+  function loadReqPeek() {
+    return callAction('requests.list')
+      .then(function (list) {
+        var next = Array.isArray(list) ? list : [];
+        var sig = next.map(function (r) {
+          return r.id + ':' + (r.status || '') + ':' + (r.type || '') + ':' + (r.target || '');
+        }).join('|');
+        if (sig === reqPeekSig) return;
+        reqPeekSig = sig;
+        reqList = next;
+        if (reqIdx >= reqList.length) reqIdx = 0;
+        renderReqPeek();
+      })
+      .catch(function () {});
+  }
+
+  reqHeadBtn.addEventListener('click', function (ev) {
+    ev.stopPropagation();
+    if (!reqList.length) return;
+    reqPeekOpen = !reqPeekOpen;
+    renderReqPeek();
+  });
+
   // ---------- 启动 ----------
   refresh();
   buildCats();
   markSel();
   resyncEmpty();
   loadMode();
+  loadReqPeek();
+  // 待办没有推送通道（新请求只在后端落盘），与侧栏待办同频轮询
+  setInterval(loadReqPeek, 3000);
   // 初始化分支视图态与查看中的会话：晚加载时宿主已补推 branch.switched，这里再对账一次兜底
   callAction('state.get').then(function (s) {
     applyBranchState(s && s.activeBranchId);
