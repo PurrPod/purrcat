@@ -5,6 +5,7 @@ import {
   LAYOUT_KEY_SESSION,
   LAYOUT_KEY_SIDEBAR,
   TILE_ADD_W,
+  TILE_PIN_GAP,
   activeRow,
   activeRowIndex,
   addKeyToRow,
@@ -15,9 +16,11 @@ import {
   panelIdFromKey,
   panelWindowKey,
   persistLayout,
+  pinWidthValue,
   removeKeyFromRow,
   reorderInRow,
   rowIndexOfKey,
+  setPinWidth,
   setWindowWidthIn,
   tileMode,
   windowWidthIn,
@@ -49,6 +52,7 @@ const fixedAnchors: Record<string, FixedAnchor> = {};
 const fixedTiles: Record<string, HTMLElement> = {};   // 列表位/会话位窗口：全局唯一，归属某一行
 const rowViews: RowView[] = [];
 let navEl: HTMLElement | null = null;
+let pinBox: HTMLElement | null = null;   // 会话位固定容器（贴应用最左/最右）
 let broadcastT: number | null = null;
 let managing = false;   // Shift 拖拽进行中：期间不清理 dragging 状态
 
@@ -161,7 +165,7 @@ export function handleRowShortcut(ev: KeyboardEvent): boolean {
 
 HOST.addEventListener('keydown', (ev) => {
   if (ev.key === 'Shift') setShiftMode(true);
-  if (handleRowShortcut(ev)) ev.preventDefault();
+  if (handleRowShortcut(ev) || handlePinShortcut(ev)) ev.preventDefault();
 });
 HOST.addEventListener('keyup', (ev) => { if (ev.key === 'Shift') setShiftMode(false); });
 HOST.addEventListener('blur', () => {
@@ -353,14 +357,23 @@ function bindResize(tile: HTMLElement, grip: HTMLElement, key: string): void {
   grip.addEventListener('pointerdown', (ev) => {
     // 行对象在拖拽开始时解析：窗口可能被换到别的行（固定位重开）
     const rv = rowViewOfStrip(tile.parentElement);
-    if (!rv) return;
+    const pinned = tile.classList.contains('wm-tile-pinned');
+    if (!rv && !pinned) return;
     ev.preventDefault();
     ev.stopPropagation();
     const startX = ev.clientX;
     const startW = tile.getBoundingClientRect().width;
+    // 右侧固定时手柄在左缘：往左拖变大，位移方向取反
+    const sign = pinned && layoutState.pin === 'right' ? -1 : 1;
     const move = (e2: PointerEvent) => {
-      setWindowWidthIn(rv.row, key, startW + (e2.clientX - startX));
-      tile.style.width = windowWidthIn(rv.row, key) + 'px';
+      if (pinned) {
+        setPinWidth(startW + (e2.clientX - startX) * sign);
+        tile.style.width = pinWidthValue() + 'px';
+        applyPinMetrics();
+      } else if (rv) {
+        setWindowWidthIn(rv.row, key, startW + (e2.clientX - startX));
+        tile.style.width = windowWidthIn(rv.row, key) + 'px';
+      }
       broadcastLayout();
     };
     const up = () => {
@@ -519,33 +532,124 @@ function moveAnchorInto(body: HTMLElement, slot: string): void {
   if (anchor.parentNode !== body) body.appendChild(anchor);
 }
 
+// 会话位固定：窗口移出窗口条贴到应用最左/最右，窗口条据此让位
+function ensurePinBox(side: 'left' | 'right'): HTMLElement {
+  if (pinBox && pinBox.isConnected) {
+    pinBox.classList.toggle('wm-pin-left', side === 'left');
+    pinBox.classList.toggle('wm-pin-right', side === 'right');
+    return pinBox;
+  }
+  const el = HOST.document.createElement('div');
+  el.className = 'wm-pin ' + (side === 'left' ? 'wm-pin-left' : 'wm-pin-right');
+  HOST.document.body.appendChild(el);
+  pinBox = el;
+  return el;
+}
+
+// 窗口条让位：左侧固定让出左边，右侧固定让出右边（CSS 变量由 body 上的类选择）
+function applyPinMetrics(): void {
+  const body = HOST.document.body;
+  const tile = fixedTiles[LAYOUT_KEY_SESSION];
+  const side = tileMode() && tile && tile.style.display !== 'none' ? layoutState.pin : '';
+  body.classList.toggle('wm-pin-left', side === 'left');
+  body.classList.toggle('wm-pin-right', side === 'right');
+  const w = side ? pinWidthValue() : 0;
+  body.style.setProperty('--wm-pin-w', w ? (w + TILE_PIN_GAP) + 'px' : '0px');
+  if (pinBox) pinBox.style.width = w ? w + 'px' : '0px';
+}
+
+// 首次固定会沿用窗口当前宽度：超过可用空间时收缩到可用宽度
+function clampPinToViewport(): void {
+  const rv = rowViews[activeRowIndex()];
+  const stripW = rv ? rv.strip.getBoundingClientRect().width : HOST.innerWidth - 80;
+  const full = layoutState.pin ? stripW + pinWidthValue() + TILE_PIN_GAP : stripW;
+  setPinWidth(Math.min(pinWidthValue(), Math.max(260, full - TILE_PIN_GAP)));
+}
+
+// 解除固定：会话位回到当前行的窗口条（固定态下它不属于任何行，这里重新登记归属）
+function unpinSession(): void {
+  if (!layoutState.pin) return;
+  layoutState.pin = '';
+  addKeyToRow(activeRow(), LAYOUT_KEY_SESSION);
+  syncTiles();
+  persistLayout();
+}
+
+function togglePin(side: 'left' | 'right'): void {
+  const tile = fixedTiles[LAYOUT_KEY_SESSION];
+  if (!tile || tile.style.display === 'none') return;   // 会话位未打开：不进入固定态
+  const cur = layoutState.pin;
+  if (cur === side) return;                 // 已固定在同一侧：同方向键不再改变
+  if (cur) { unpinSession(); return; }      // 固定在另一侧：按反方向键 = 解除固定
+  const w = Math.round(tile.getBoundingClientRect().width);
+  if (w > 0) setPinWidth(w);
+  clampPinToViewport();
+  // 固定态：会话位不属于任何行，先从所有行的顺序表里摘掉（避免被当成行内窗口）
+  layoutState.rows.forEach((row) => removeKeyFromRow(row, LAYOUT_KEY_SESSION));
+  layoutState.pin = side;
+  syncTiles();
+  persistLayout();
+}
+
+// Ctrl + ←/→：会话位固定到最左/最右；已固定在一侧时按相反方向键解除固定
+export function handlePinShortcut(ev: KeyboardEvent): boolean {
+  if (ev.key !== 'ArrowLeft' && ev.key !== 'ArrowRight') return false;
+  if (!ev.ctrlKey || ev.shiftKey || ev.altKey || ev.metaKey) return false;
+  if (!tileMode()) return false;
+  if (HOST.document.body.classList.contains('settings-open')) return false;
+  if (editableTarget(ev.target)) return false;
+  const tile = fixedTiles[LAYOUT_KEY_SESSION];
+  if (!tile || tile.style.display === 'none') return true;
+  togglePin(ev.key === 'ArrowLeft' ? 'left' : 'right');
+  return true;
+}
+
 // 固定位是全局单例：只归属一行，其它行不再重复挂载
 function syncFixedWindow(key: string, slot: string): void {
   const p = pluginVisibleInSlot(slot);
   if (!p) {
     layoutState.rows.forEach((row) => removeKeyFromRow(row, key));
     const tile = fixedTiles[key];
-    if (tile) tile.style.display = 'none';
+    if (tile) {
+      tile.style.display = 'none';
+      tile.classList.remove('wm-tile-pinned', 'wm-tile-pin-right');
+    }
+    applyPinMetrics();
     return;
   }
-  let owner = rowIndexOfKey(key);
-  if (owner < 0) {
-    // 新打开：落在当前行
-    owner = activeRowIndex();
-    addKeyToRow(layoutState.rows[owner], key);
-  } else {
-    layoutState.rows.forEach((row, i) => { if (i !== owner) removeKeyFromRow(row, key); });
-  }
-  const rv = rowViews[owner];
-  if (!rv) return;
   let tile = fixedTiles[key];
   if (!tile) {
     tile = makeTile(key);
     fixedTiles[key] = tile;
   }
-  if (tile.parentElement !== rv.strip) rv.strip.appendChild(tile);
+  const side = key === LAYOUT_KEY_SESSION ? layoutState.pin : '';
+  if (side) {
+    // 固定窗口脱离窗口条，也不属于任何行：行顺序表里不留它的登记
+    layoutState.rows.forEach((row) => removeKeyFromRow(row, key));
+    const box = ensurePinBox(side);
+    if (tile.parentElement !== box) box.appendChild(tile);
+    tile.classList.add('wm-tile-pinned');
+    tile.classList.toggle('wm-tile-pin-right', side === 'right');
+    tile.style.width = pinWidthValue() + 'px';
+  } else {
+    let owner = rowIndexOfKey(key);
+    if (owner < 0) {
+      // 新打开 / 刚解除固定：落在当前行
+      owner = activeRowIndex();
+      addKeyToRow(layoutState.rows[owner], key);
+    } else {
+      layoutState.rows.forEach((row, i) => { if (i !== owner) removeKeyFromRow(row, key); });
+    }
+    const rv = rowViews[owner];
+    if (!rv) return;
+    if (tile.parentElement !== rv.strip) rv.strip.appendChild(tile);
+    tile.classList.remove('wm-tile-pinned', 'wm-tile-pin-right');
+    tile.style.width = windowWidthIn(rv.row, key) + 'px';
+    if (pinBox && !pinBox.firstChild) { pinBox.remove(); pinBox = null; }
+  }
   moveAnchorInto(tileBody(tile), slot);
   tile.style.display = '';
+  applyPinMetrics();
 }
 
 function syncRowPanels(rv: RowView): void {
@@ -641,6 +745,15 @@ function fixedKeyFor(p: PluginDescriptor): string {
   return '';
 }
 
+// 会话位搬进当前行：先解除固定，再从原归属行摘掉，追加到当前行窗口条末尾
+function moveFixedToActiveRow(key: string): void {
+  if (key === LAYOUT_KEY_SESSION && layoutState.pin) layoutState.pin = '';
+  layoutState.rows.forEach((row) => removeKeyFromRow(row, key));
+  addKeyToRow(activeRow(), key);
+  syncTiles();
+  persistLayout();
+}
+
 // 「+」窗口：平铺模式下统一的插件开/关入口（只管理当前行的窗口）
 function openTileAddMenu(anchor: HTMLElement): void {
   const wasOpen = !!HOST.document.getElementById('tile-add-menu');
@@ -661,15 +774,25 @@ function openTileAddMenu(anchor: HTMLElement): void {
     if (!list.length) return;
     menuSection(menu, label);
     list.forEach((p) => {
+      const key = fixedKeyFor(p);
+      const open = pluginVisible(p);
+      const owner = open ? rowIndexOfKey(key) : -1;
+      // 会话位：处于固定态或挂在别的行时不再跳转，直接搬进当前窗口条末尾
+      if (key === LAYOUT_KEY_SESSION && open && (layoutState.pin !== '' || owner !== activeRowIndex())) {
+        menu.appendChild(menuItem(p, true, () => {
+          closePanelMenus();
+          moveFixedToActiveRow(key);
+        }, '移至本行'));
+        return;
+      }
       // 固定位是全局单例：在别的行打开时只标注并跳过去，不重复挂载
-      const owner = rowIndexOfKey(fixedKeyFor(p));
-      if (pluginVisible(p) && owner >= 0 && owner !== activeRowIndex()) {
+      if (open && owner >= 0 && owner !== activeRowIndex()) {
         menu.appendChild(menuItem(p, false, () => {
           closePanelMenus();
           switchToRow(owner);
         }, '第 ' + (owner + 1) + ' 行'));
       } else {
-        menu.appendChild(menuItem(p, pluginVisible(p), () => toggle(p)));
+        menu.appendChild(menuItem(p, open, () => toggle(p)));
       }
     });
   });
@@ -739,7 +862,8 @@ export function syncTiles(): void {
   let orderChanged = false;
   rowViews.forEach((rv) => {
     const before = rv.row.order.join('\u0000');
-    ensureOrderInRow(rv.row, sortedVisibleKeys(rv));
+    const visible = sortedVisibleKeys(rv);
+    ensureOrderInRow(rv.row, visible);
     if (before !== rv.row.order.join('\u0000')) orderChanged = true;
     applyOrder(rv);
     const map = tilesOfRow(rv);
@@ -789,6 +913,9 @@ export function teardownTiles(): void {
   rowViews.forEach((rv) => { notifyUnmount(rv.strip); rv.strip.remove(); });
   rowViews.length = 0;
   Object.keys(fixedTiles).forEach((k) => delete fixedTiles[k]);
+  if (pinBox) { pinBox.remove(); pinBox = null; }
+  HOST.document.body.classList.remove('wm-pin-left', 'wm-pin-right');
+  HOST.document.body.style.removeProperty('--wm-pin-w');
   if (navEl) { navEl.remove(); navEl = null; }
   if (dropLineEl) { dropLineEl.remove(); dropLineEl = null; }
   defaultSeeded = false;

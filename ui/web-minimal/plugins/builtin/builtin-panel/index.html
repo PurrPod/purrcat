@@ -62,6 +62,9 @@
   }
   .wm-pp_tab:hover { background: var(--wm-bg-hover); color: var(--wm-label); }
   .wm-pp_tab.active { background: var(--wm-bg-active); color: var(--wm-label); }
+  /* 标签可横向拖拽排序：拖拽中半透明占位，禁止选中文本 */
+  .wm-pp_tab { user-select: none; touch-action: none; }
+  .wm-pp_tab.dragging { opacity: 0.55; }
   .wm-pp_tabico { flex: none; display: flex; align-items: center; justify-content: center; width: 15px; height: 15px; }
   .wm-pp_tabico svg { display: block; width: 14px; height: 14px; }
   .wm-pp_tabname { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -84,6 +87,18 @@
   }
   .wm-pp_add svg { display: block; width: 16px; height: 16px; }
   .wm-pp_add:hover { background: var(--wm-bg-hover); color: var(--wm-label); }
+  /* 平铺/标签视图切换按钮（+ 右边、✕ 左边） */
+  .wm-pp_tilebtn {
+    flex: none;
+    width: 26px; height: 26px;
+    display: flex; align-items: center; justify-content: center;
+    border: none; background: transparent; color: var(--wm-label-2nd);
+    cursor: pointer; border-radius: 7px;
+    transition: background 0.12s ease, color 0.12s ease;
+  }
+  .wm-pp_tilebtn svg { display: block; width: 16px; height: 16px; }
+  .wm-pp_tilebtn:hover { background: var(--wm-bg-hover); color: var(--wm-label); }
+  .wm-pp_tilebtn.active { background: var(--wm-bg-active); color: var(--wm-label); }
   /* 每个标签的独立视图：绝对铺满内容区，仅激活标签显示（切换只改 display，不重载 iframe） */
   .wm-pp_view { display: none; position: absolute; inset: 0; }
   .wm-pp_view iframe { border: 0; width: 100%; height: 100%; display: block; }
@@ -100,6 +115,39 @@
   /* 内容区：各标签视图的定位基准 */
   .wm-pp_body { flex: 1; min-height: 0; position: relative; }
   .wm-pp_body iframe { border: 0; width: 100%; height: 100%; display: block; }
+  /* 容器内平铺视图：已打开标签横向平铺成单行，放不下即横向滚动（不换行、无多行） */
+  .wm-pp_body.wm-pp-tiled {
+    display: flex;
+    align-items: stretch;
+    gap: 8px;
+    padding: 8px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: thin;
+    scrollbar-color: var(--wm-border) transparent;
+  }
+  /* 底部细滚动条：方便拖动横向浏览窗口 */
+  .wm-pp_body.wm-pp-tiled::-webkit-scrollbar { height: 6px; }
+  .wm-pp_body.wm-pp-tiled::-webkit-scrollbar-track { background: transparent; }
+  .wm-pp_body.wm-pp-tiled::-webkit-scrollbar-thumb { background: var(--wm-border); border-radius: 999px; }
+  .wm-pp_body.wm-pp-tiled::-webkit-scrollbar-thumb:hover { background: var(--wm-label-dim); }
+  .wm-pp_body.wm-pp-tiled .wm-pp_view {
+    position: relative;
+    inset: auto;
+    flex: 1 0 320px;
+    min-width: 320px;
+    border: 1px solid var(--wm-border);
+    border-radius: 14px;
+    overflow: hidden;
+  }
+  /* 平铺视图窗口右缘调宽手柄：仅平铺模式显示（标签视图下窗口无独立宽度） */
+  .wm-pp_vresize {
+    display: none;
+    position: absolute; top: 0; right: 0; bottom: 0; width: 7px;
+    cursor: col-resize; z-index: 5;
+  }
+  .wm-pp_body.wm-pp-tiled .wm-pp_vresize { display: block; }
+  .wm-pp_vresize:hover { background: var(--wm-accent-weak); }
   .wm-pp_empty {
     height: 100%;
     display: flex; align-items: center; justify-content: center;
@@ -114,6 +162,7 @@
     <div class="wm-pp_head">
       <div class="wm-pp_tabs"></div>
       <button class="wm-pp_add" title="新建标签页"></button>
+      <button class="wm-pp_tilebtn" title="平铺视图"></button>
       <button class="wm-pp_drawer" title="关闭面板">✕</button>
     </div>
     <div class="wm-pp_body">

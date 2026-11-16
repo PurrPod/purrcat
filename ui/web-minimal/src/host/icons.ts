@@ -14,6 +14,7 @@ import type { PluginDescriptor } from './types.js';
     'panel-left': '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/>',
     'panel-top': '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/>',
     'layout-panel-left': '<rect width="7" height="18" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/>',
+    columns: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M12 3v18"/>',
     plus: '<path d="M12 5v14M5 12h14"/>',
     'chevron-up': '<path d="m18 15-6-6-6 6"/>',
     'chevron-down': '<path d="m6 9 6 6 6-6"/>',

@@ -25,6 +25,7 @@ import type { PluginDescriptor, PluginFrame, SlotDef } from './types.js';
     body?: HTMLElement | null;                 // 视图内容区
     strip?: HTMLElement | null;                // 标签按钮条
     addBtn?: HTMLElement | null;               // + 新建标签页按钮
+    tileBtn?: HTMLElement | null;              // 平铺/标签视图切换按钮
     closeBtn?: HTMLElement | null;             // ✕ 关闭整个容器按钮
     emptyEl?: HTMLElement | null;              // 空态占位
     views: Record<string, HTMLDivElement>;
@@ -38,6 +39,21 @@ import type { PluginDescriptor, PluginFrame, SlotDef } from './types.js';
   export let panelBar: HTMLElement | null = null;             // 中栏与聊天区之间的纵向分隔条
   export let panelState: PanelState | null = null;           // 单例：{ plugins, pluginsById, activeId, el, head, body, strip, views:{}, frames:{}, area:'panel' }
   export let panelTabs: string[] = [];              // 打开的标签页（面板插件 id，按打开顺序）；持久化于 active.__panelTabs__
+  export let panelTileView = false;                 // 容器内平铺视图：全部已打开标签横向平铺单行滚动；持久化于 active.__panelTile__
+  let panelTileWidths: Record<string, number> = {}; // 平铺视图下各标签的窗口宽度；持久化于 active.__panelTileW__
+  const PANEL_TILE_MIN_W = 320;                     // 与平铺窗口 CSS min-width 保持一致
+  const PANEL_TILE_MAX_W = 1600;
+  // 恢复持久化的平铺窗口宽度（manifest 重载时调用；非法项丢弃）
+  export function restorePanelTileWidths(raw: unknown): void {
+    const next: Record<string, number> = {};
+    if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+      Object.keys(raw as Record<string, unknown>).forEach((k) => {
+        const n = Number((raw as Record<string, unknown>)[k]);
+        if (isFinite(n)) next[k] = Math.max(PANEL_TILE_MIN_W, Math.min(PANEL_TILE_MAX_W, Math.round(n)));
+      });
+    }
+    panelTileWidths = next;
+  }
   export const PANEL_MIN_W = 260;         // 面板容器拖动下限
   export let panelContainerCfg: Record<string, any> = { opacity: 0.9 }; // 宿主固有中栏容器配置（透明度）
   export let panelSavedWidth: number | null = null;      // 用户显式保存的默认宽度（null=最大舒展，不落盘）
@@ -226,9 +242,10 @@ import type { PluginDescriptor, PluginFrame, SlotDef } from './types.js';
   // 持久化面板容器的标签列表与激活标签：标签列表序列化后与原 active 一并落盘
   export function savePanelSel() {
     activeBySlot['__panelTabs__'] = JSON.stringify(panelTabs);
+    activeBySlot['__panelTileW__'] = JSON.stringify(panelTileWidths);
     return persistActive();
   }
-  // 单个标签页按钮（图标 + 名称 + 关闭 ×）；点击激活，× 关闭该标签
+  // 单个标签页按钮（图标 + 名称 + 关闭 ×）；点击激活，× 关闭该标签；横向拖拽改顺序
   export function makePanelTab(st: PanelState, id: string, p: PluginDescriptor): HTMLElement {
     const tab = HOST.document.createElement('div');
     tab.className = 'wm-pp_tab' + (id === st.activeId ? ' active' : '');
@@ -248,8 +265,123 @@ import type { PluginDescriptor, PluginFrame, SlotDef } from './types.js';
     x.title = '关闭标签页';
     x.addEventListener('click', (ev) => { ev.stopPropagation(); closePanelTab(id); });
     tab.appendChild(x);
-    tab.addEventListener('click', () => setActivePanelTab(st, id));
+    bindTabDrag(st, tab, id);
     return tab;
+  }
+  // 标签拖拽排序：按住标签横向拖动实时换位，松手落序（标签/平铺两种视图共用同一顺序）
+  function bindTabDrag(st: PanelState, tab: HTMLElement, id: string): void {
+    let suppressClick = false;
+    tab.addEventListener('click', () => {
+      if (suppressClick) { suppressClick = false; return; }   // 拖拽结束后的 click 不算激活
+      setActivePanelTab(st, id);
+    });
+    tab.addEventListener('pointerdown', (ev) => {
+      if (ev.button !== 0) return;
+      if ((ev.target as HTMLElement).closest('.wm-pp_tabx')) return;   // ✕ 上按下不触发拖拽
+      const strip = st.strip!;
+      const startX = ev.clientX;
+      let dragging = false;
+      const move = (e2: PointerEvent) => {
+        if (!dragging) {
+          if (Math.abs(e2.clientX - startX) < 6) return;
+          dragging = true;
+          suppressClick = true;
+          tab.classList.add('dragging');
+          try { tab.setPointerCapture(ev.pointerId); } catch (_) {}
+        }
+        // 目标位置：第一个中线在指针右侧的兄弟标签之前，否则排到末尾
+        const next = Array.from(strip.querySelectorAll<HTMLElement>('.wm-pp_tab')).find((t) => {
+          if (t === tab) return false;
+          const r = t.getBoundingClientRect();
+          return e2.clientX < r.left + r.width / 2;
+        });
+        if (next) { if (next.previousElementSibling !== tab) strip.insertBefore(tab, next); }
+        else if (strip.lastElementChild !== tab) strip.appendChild(tab);
+      };
+      const up = () => {
+        window.removeEventListener('pointermove', move);
+        window.removeEventListener('pointerup', up);
+        window.removeEventListener('pointercancel', up);
+        tab.classList.remove('dragging');
+        if (!dragging) return;
+        // 按拖完的 DOM 顺序落序，并同步视图与持久化
+        const order = Array.from(strip.querySelectorAll<HTMLElement>('.wm-pp_tab')).map((t) => t.dataset.pid || '');
+        panelTabs.length = 0;
+        order.forEach((k) => { if (k) panelTabs.push(k); });
+        applyPanelViewMode(st);
+        savePanelSel();
+        window.setTimeout(() => { suppressClick = false; }, 0);
+      };
+      window.addEventListener('pointermove', move);
+      window.addEventListener('pointerup', up);
+      window.addEventListener('pointercancel', up);
+    });
+  }
+  // 容器内视图模式同步：平铺时视图按标签顺序排成单行且全部可见，否则仅激活标签可见
+  export function applyPanelViewMode(st: PanelState): void {
+    const tiled = panelTileView;
+    st.body!.classList.toggle('wm-pp-tiled', tiled);
+    st.tileBtn?.classList.toggle('active', tiled);
+    // 视图 DOM 顺序与标签顺序一致（平铺模式下即窗口排列顺序）
+    panelTabs.forEach((pid) => {
+      const v = st.views[pid];
+      if (v && v.parentNode === st.body) st.body!.appendChild(v);
+      if (v) ensureViewResize(st, v, pid, tiled);
+    });
+    Object.keys(st.views).forEach((pid) => {
+      st.views[pid].style.display = (tiled || pid === st.activeId) ? 'flex' : 'none';
+    });
+    scrollActiveTileIntoView(st);
+  }
+  // 平铺视图窗口右缘调宽手柄：仅平铺模式显示；宽度按标签记忆并持久化
+  function ensureViewResize(st: PanelState, view: HTMLElement, id: string, tiled: boolean): void {
+    let grip = view.querySelector('.wm-pp_vresize') as HTMLElement | null;
+    if (!grip) {
+      grip = HOST.document.createElement('div');
+      grip.className = 'wm-pp_vresize';
+      grip.title = '拖动调整宽度';
+      bindViewResize(view, grip, id);
+      view.appendChild(grip);
+    }
+    const w = panelTileWidths[id];
+    if (tiled && w) { view.style.flex = '0 0 ' + w + 'px'; view.style.width = w + 'px'; }
+    else { view.style.flex = ''; view.style.width = ''; }   // 无记忆宽度时回到 CSS 自适应（1 0 320px）
+  }
+  function bindViewResize(view: HTMLElement, grip: HTMLElement, id: string): void {
+    grip.addEventListener('pointerdown', (ev) => {
+      if (ev.button !== 0 || !panelTileView) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      const startX = ev.clientX;
+      const startW = view.getBoundingClientRect().width;
+      const move = (e2: PointerEvent) => {
+        const w = Math.max(PANEL_TILE_MIN_W, Math.min(PANEL_TILE_MAX_W, Math.round(startW + (e2.clientX - startX))));
+        panelTileWidths[id] = w;
+        view.style.flex = '0 0 ' + w + 'px';
+        view.style.width = w + 'px';
+      };
+      const up = () => {
+        grip.removeEventListener('pointermove', move);
+        grip.removeEventListener('pointerup', up);
+        grip.removeEventListener('pointercancel', up);
+        try { grip.releasePointerCapture(ev.pointerId); } catch (_) {}
+        savePanelSel();
+      };
+      // 指针捕获锁定在手柄上：快速拖动划过插件 iframe 时事件不脱手（与平铺模式窗口调宽一致）
+      try { grip.setPointerCapture(ev.pointerId); } catch (_) {}
+      grip.addEventListener('pointermove', move);
+      grip.addEventListener('pointerup', up);
+      grip.addEventListener('pointercancel', up);
+    });
+  }
+  // 切换容器内「平铺 / 标签」两种视图并持久化（会话位、列表位不受影响）
+  function togglePanelViewMode(): void {
+    const st = panelState;
+    if (!st) return;
+    panelTileView = !panelTileView;
+    activeBySlot['__panelTile__'] = panelTileView ? '1' : '';
+    applyPanelViewMode(st);
+    persistActive();
   }
   // 依据 tabs/activeId 同步：标签条、每个标签的视图（保留已挂载帧）、空态、广播帧集合
   export function renderPanel(st: PanelState): void {
@@ -269,6 +401,10 @@ import type { PluginDescriptor, PluginFrame, SlotDef } from './types.js';
       st.addBtn = el.querySelector('.wm-pp_add') as HTMLElement;
       paintIcon(st.addBtn!, 'plus', '+');   // 与宿主其它图标同风格的线性 SVG 加号
       st.addBtn!.addEventListener('click', (ev) => { ev.stopPropagation(); openPanelAddMenu(st, st.addBtn!); });
+      // 平铺/标签视图切换按钮（+ 右边、✕ 左边）：容器内单行横向平铺全部已打开标签
+      st.tileBtn = el.querySelector('.wm-pp_tilebtn') as HTMLElement;
+      paintIcon(st.tileBtn!, 'columns');
+      st.tileBtn!.addEventListener('click', (ev) => { ev.stopPropagation(); togglePanelViewMode(); });
       // ✕ 关闭按钮：关闭整个面板容器（统一走 setContainerHidden，同步状态并持久化）
       st.closeBtn = el.querySelector('.wm-pp_drawer') as HTMLElement;
       st.closeBtn!.addEventListener('click', () => { setContainerHidden(true); closePanelMenus(); });
@@ -276,6 +412,7 @@ import type { PluginDescriptor, PluginFrame, SlotDef } from './types.js';
       st.emptyEl = el.querySelector('.wm-pp_empty') as HTMLElement;
       st.views = {};
       st.frames = {};
+      bindTileScrollSync(st);
     }
     // 丢弃已卸载或已改挂到固定区域的插件残留标签
     panelTabs = panelTabs.filter((id) => {
@@ -311,15 +448,56 @@ import type { PluginDescriptor, PluginFrame, SlotDef } from './types.js';
     else if (!st.emptyEl!.parentNode) st.body!.appendChild(st.emptyEl!);
     frames['panel'] = panelTabs.map((id) => st.frames[id]).filter(Boolean) as PluginFrame[];
     applyActivePanelTab(st);
+    applyPanelViewMode(st);
   }
-  // 应用激活标签：仅切换视图显隐与标签高亮（iframe 保持挂载）
+  // 平铺视图：把激活标签的窗口横向滚到可视区（标签条不在平铺区上方也对齐）
+  function scrollActiveTileIntoView(st: PanelState): void {
+    if (!panelTileView) return;
+    const v = st.views[st.activeId];
+    const b = st.body!;
+    if (v) b.scrollLeft = Math.max(0, Math.min(v.offsetLeft - 12, b.scrollWidth - b.clientWidth));
+  }
+  let tileScrollSaveTimer: ReturnType<typeof setTimeout> | null = null;
+  // 平铺视图横向滚动跟随：滚到哪扇窗口，高亮标签就转移到哪个（取与可视区交集最大者）；
+  // 只改高亮不回滚窗口条，避免与滚动互相触发；选中态防抖持久化
+  function bindTileScrollSync(st: PanelState): void {
+    const b = st.body;
+    if (!b) return;
+    b.addEventListener('scroll', () => {
+      if (!panelTileView || !st.views[st.activeId]) return;
+      const br = b.getBoundingClientRect();
+      let best = '';
+      let bestArea = -1;
+      panelTabs.forEach((pid) => {
+        const v = st.views[pid];
+        if (!v || v.style.display === 'none') return;
+        const r = v.getBoundingClientRect();
+        const w = Math.min(r.right, br.right) - Math.max(r.left, br.left);
+        const h = Math.min(r.bottom, br.bottom) - Math.max(r.top, br.top);
+        const area = Math.max(0, w) * Math.max(0, h);
+        if (area > bestArea) { bestArea = area; best = pid; }
+      });
+      if (!best || best === st.activeId) return;
+      st.activeId = best;
+      activeBySlot['panel'] = best;
+      st.strip!.querySelectorAll<HTMLElement>('.wm-pp_tab').forEach((t) => {
+        const on = t.dataset.pid === best;
+        t.classList.toggle('active', on);
+        if (on && t.scrollIntoView) { try { t.scrollIntoView({ block: 'nearest', inline: 'nearest' }); } catch (_) {} }
+      });
+      if (tileScrollSaveTimer) clearTimeout(tileScrollSaveTimer);
+      tileScrollSaveTimer = setTimeout(() => { tileScrollSaveTimer = null; savePanelSel(); }, 400);
+    }, { passive: true });
+  }
+  // 应用激活标签：仅切换视图显隐与标签高亮（iframe 保持挂载；平铺视图下全部可见）
   export function applyActivePanelTab(st: PanelState): void {
-    Object.keys(st.views).forEach((id) => { st.views[id].style.display = (id === st.activeId) ? 'flex' : 'none'; });
+    Object.keys(st.views).forEach((id) => { st.views[id].style.display = (panelTileView || id === st.activeId) ? 'flex' : 'none'; });
     st.strip!.querySelectorAll<HTMLElement>('.wm-pp_tab').forEach((t) => {
       const on = t.dataset.pid === st.activeId;
       t.classList.toggle('active', on);
       if (on && t.scrollIntoView) { try { t.scrollIntoView({ block: 'nearest', inline: 'nearest' }); } catch (_) {} }
     });
+    scrollActiveTileIntoView(st);
   }
   // 切换激活标签并持久化
   export function setActivePanelTab(st: PanelState, id: string): void {
@@ -352,6 +530,13 @@ import type { PluginDescriptor, PluginFrame, SlotDef } from './types.js';
     if (!st || !st.pluginsById[id]) return;
     const added = panelTabs.indexOf(id) < 0;
     if (added) panelTabs.push(id);
+    // 曾被白条/设置关闭过的插件：残留 hidden 标记会让它一直显示为关闭（平铺恢复也会跳过），
+    // 与平铺分支一致，打开标签时一并清掉
+    if (railHidden(id)) {
+      if (!railState.hidden) railState.hidden = {};
+      delete railState.hidden[id];
+      persistRail().catch(() => {});
+    }
     st.activeId = id;
     activeBySlot['panel'] = id;
     if (added) renderPanel(st); else applyActivePanelTab(st);
@@ -372,6 +557,7 @@ import type { PluginDescriptor, PluginFrame, SlotDef } from './types.js';
     const i = panelTabs.indexOf(id);
     if (i < 0) return;
     panelTabs.splice(i, 1);
+    delete panelTileWidths[id];   // 关闭的标签不再保留平铺宽度记忆
     if (st.activeId === id) st.activeId = panelTabs[i] || panelTabs[i - 1] || '';
     activeBySlot['panel'] = st.activeId || '__none__';
     renderPanel(st);   // 内部会卸载被关闭标签的视图
@@ -477,6 +663,7 @@ import type { PluginDescriptor, PluginFrame, SlotDef } from './types.js';
       panelTabs = panelTabs.filter(valid);
       if (!panelTabs.length && !hasSavedTabs) panelTabs = [byArea.panel[0].p.id];
     }
+    panelTileView = activeBySlot['__panelTile__'] === '1';   // 恢复容器内平铺/标签视图模式
     const saved = activeBySlot['panel'];
     st.activeId = (saved && saved !== '__none__' && panelTabs.indexOf(saved) >= 0) ? saved : (panelTabs[0] || '');
     renderPanel(st);   // 容器外壳由「内置容器」插件提供，按需在此搭壳

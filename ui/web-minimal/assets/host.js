@@ -27,16 +27,59 @@
   var railButtons = {};
   var activeBySlot = {};
 
+  // ui/web-minimal/src/host/utils.ts
+  function effectiveConfig(desc) {
+    const sch = desc.configSchema || [];
+    const stored = desc.config || {};
+    const out = {};
+    sch.forEach((f) => {
+      if (f.default !== void 0) out[f.key] = f.default;
+      else if (f.type === "switch") out[f.key] = false;
+      else if (f.type === "number") out[f.key] = 0;
+      else if (f.type === "select") out[f.key] = f.options && f.options[0] || "";
+      else out[f.key] = "";
+    });
+    Object.assign(out, stored);
+    return out;
+  }
+  function slotOfPlugin(pid) {
+    return slotByPluginId[pid] || null;
+  }
+  var cfgWrite = Promise.resolve();
+  function saveWebminConfig(payload) {
+    const run = cfgWrite.then(
+      () => fetch("/api/webmin/config", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        keepalive: true
+      }).then((res) => {
+        if (!res.ok) throw new Error(String(res.status));
+      })
+    );
+    cfgWrite = run.catch(() => {
+    });
+    return run;
+  }
+
   // ui/web-minimal/src/host/layout.ts
   var LAYOUT_KEY_SIDEBAR = "slot:sidebar";
   var LAYOUT_KEY_SESSION = "slot:session";
   var TILE_MIN_W = 260;
   var TILE_MAX_W = 4e3;
   var TILE_ADD_W = 132;
+  var TILE_PIN_DEFAULT_W = 420;
+  var TILE_PIN_GAP = 8;
   function createRow() {
     return { order: [], widths: {} };
   }
-  var layoutState = { mode: "container", rows: [createRow()], activeRow: 0 };
+  var layoutState = {
+    mode: "container",
+    rows: [createRow()],
+    activeRow: 0,
+    pin: "",
+    pinWidth: TILE_PIN_DEFAULT_W
+  };
   function panelWindowKey(id) {
     return "panel:" + id;
   }
@@ -130,7 +173,19 @@
     if (!layoutState.rows.length) layoutState.rows.push(createRow());
     const rawActive = Math.floor(Number(data.activeRow));
     layoutState.activeRow = isFinite(rawActive) ? Math.max(0, Math.min(layoutState.rows.length - 1, rawActive)) : 0;
+    layoutState.pin = data.pin === "left" || data.pin === "right" ? data.pin : "";
+    const rawPinW = Number(data.pinWidth);
+    layoutState.pinWidth = isFinite(rawPinW) ? Math.max(TILE_MIN_W, Math.min(TILE_MAX_W, Math.round(rawPinW))) : TILE_PIN_DEFAULT_W;
     applyLayoutClass();
+  }
+  function pinWidthValue() {
+    const raw = Number(layoutState.pinWidth);
+    if (!isFinite(raw)) return TILE_PIN_DEFAULT_W;
+    return Math.max(TILE_MIN_W, Math.min(TILE_MAX_W, Math.round(raw)));
+  }
+  function setPinWidth(width) {
+    if (!isFinite(width)) return;
+    layoutState.pinWidth = Math.max(TILE_MIN_W, Math.min(TILE_MAX_W, Math.round(width)));
   }
   function applyLayoutClass() {
     const tile = tileMode();
@@ -161,13 +216,7 @@
     row.order = next;
   }
   function persistLayout() {
-    return fetch("/api/webmin/config", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ layout: layoutState })
-    }).then((res) => {
-      if (!res.ok) throw new Error(String(res.status));
-    }).catch(() => {
+    return saveWebminConfig({ layout: layoutState }).catch(() => {
     });
   }
   function setLayoutMode(mode) {
@@ -193,6 +242,7 @@
     "panel-left": '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/>',
     "panel-top": '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/>',
     "layout-panel-left": '<rect width="7" height="18" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/>',
+    columns: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M12 3v18"/>',
     plus: '<path d="M12 5v14M5 12h14"/>',
     "chevron-up": '<path d="m18 15-6-6-6 6"/>',
     "chevron-down": '<path d="m6 9 6 6 6-6"/>',
@@ -2659,25 +2709,6 @@
     }, 3e3));
   }
 
-  // ui/web-minimal/src/host/utils.ts
-  function effectiveConfig(desc) {
-    const sch = desc.configSchema || [];
-    const stored = desc.config || {};
-    const out = {};
-    sch.forEach((f) => {
-      if (f.default !== void 0) out[f.key] = f.default;
-      else if (f.type === "switch") out[f.key] = false;
-      else if (f.type === "number") out[f.key] = 0;
-      else if (f.type === "select") out[f.key] = f.options && f.options[0] || "";
-      else out[f.key] = "";
-    });
-    Object.assign(out, stored);
-    return out;
-  }
-  function slotOfPlugin(pid) {
-    return slotByPluginId[pid] || null;
-  }
-
   // ui/web-minimal/src/host/manifest.ts
   function applyManifestState(manifest) {
     groupState.plugins = manifest.plugins || [];
@@ -2707,6 +2738,17 @@
     panelTabs.length = 0;
     Object.keys(savedActive).forEach((k) => {
       const v = savedActive[k];
+      if (k === "__panelTile__") {
+        activeBySlot[k] = String(v);
+        return;
+      }
+      if (k === "__panelTileW__") {
+        try {
+          restorePanelTileWidths(JSON.parse(String(v)));
+        } catch (_) {
+        }
+        return;
+      }
       if (k === "__panelTabs__") {
         activeBySlot[k] = String(v);
         try {
@@ -2841,7 +2883,7 @@
     grid.appendChild(row);
     const tip = HOST.document.createElement("div");
     tip.className = "cfg-tip";
-    tip.textContent = layoutState.mode === "tile" ? "\u5E73\u94FA\u6A21\u5F0F\uFF1A\u5217\u8868\u4F4D\u3001\u5DF2\u6253\u5F00\u9762\u677F\u3001\u4F1A\u8BDD\u4F4D\u5404\u4E3A\u72EC\u7ACB\u7A97\u53E3\uFF0C\u6309\u5F00\u542F\u65F6\u95F4\u4ECE\u5DE6\u5230\u53F3\u6392\u5217\uFF08\u91CD\u5F00\u8FFD\u52A0\u5230\u6700\u53F3\uFF09\uFF1B\u6700\u53F3\u4FA7\u300C+\u300D\u7A97\u53E3\u7EDF\u4E00\u5F00\u5173\u63D2\u4EF6\u3002\u9876\u90E8\u680F\u5DE6\u4FA7\u4E0A/\u4E0B\u56FE\u6807\u6216 Shift+\u2191/\u2193 \u5207\u6362\u884C\uFF0CShift+\u2190/\u2192 \u6309\u7A97\u53E3\u8FB9\u754C\u6A2A\u5411\u6EDA\u52A8\uFF1B\u6BCF\u884C\u72EC\u7ACB\u7EF4\u62A4\u7A97\u53E3\uFF0C\u9762\u677F\u53EF\u5728\u591A\u884C\u540C\u65F6\u6253\u5F00\u3002\u6309\u4F4F Shift \u5DE6\u53F3\u62D6\u8DDF\u624B\u6392\u5E8F\u3001\u5411\u4E0B\u62D6\u8FC7\u7A97\u53E3\u4E00\u534A\u5173\u95ED\uFF1B\u62D6\u53F3\u7F18\u6539\u5BBD\u3002" : "\u5BB9\u5668\u5F0F\uFF1A\u5217\u8868\u4F4D\u3001\u4E2D\u680F\u9762\u677F\u5BB9\u5668\uFF08\u591A\u6807\u7B7E\uFF09\u3001\u4F1A\u8BDD\u4F4D\u3002";
+    tip.textContent = layoutState.mode === "tile" ? "\u5E73\u94FA\u6A21\u5F0F\uFF1A\u5217\u8868\u4F4D\u3001\u5DF2\u6253\u5F00\u9762\u677F\u3001\u4F1A\u8BDD\u4F4D\u5404\u4E3A\u72EC\u7ACB\u7A97\u53E3\uFF0C\u6309\u5F00\u542F\u65F6\u95F4\u4ECE\u5DE6\u5230\u53F3\u6392\u5217\uFF08\u91CD\u5F00\u8FFD\u52A0\u5230\u6700\u53F3\uFF09\uFF1B\u6700\u53F3\u4FA7\u300C+\u300D\u7A97\u53E3\u7EDF\u4E00\u5F00\u5173\u63D2\u4EF6\u3002\u9876\u90E8\u680F\u5DE6\u4FA7\u4E0A/\u4E0B\u56FE\u6807\u6216 Shift+\u2191/\u2193 \u5207\u6362\u884C\uFF0CShift+\u2190/\u2192 \u6309\u7A97\u53E3\u8FB9\u754C\u6A2A\u5411\u6EDA\u52A8\uFF0CCtrl+\u2190/\u2192 \u628A\u4F1A\u8BDD\u4F4D\u56FA\u5B9A\u5230\u6700\u5DE6/\u6700\u53F3\uFF08\u56FA\u5B9A\u65F6\u4E0D\u5360\u4EFB\u4F55\u4E00\u884C\uFF0C\u6309\u53CD\u65B9\u5411\u952E\u89E3\u9664\u56FA\u5B9A\uFF1B\u53F3\u56FA\u5B9A\u7531\u5DE6\u7F18\u6539\u5BBD\uFF09\uFF1B\u6BCF\u884C\u72EC\u7ACB\u7EF4\u62A4\u7A97\u53E3\uFF0C\u9762\u677F\u53EF\u5728\u591A\u884C\u540C\u65F6\u6253\u5F00\u3002\u6309\u4F4F Shift \u5DE6\u53F3\u62D6\u8DDF\u624B\u6392\u5E8F\u3001\u5411\u4E0B\u62D6\u8FC7\u7A97\u53E3\u4E00\u534A\u5173\u95ED\uFF1B\u62D6\u53F3\u7F18\u6539\u5BBD\u3002" : "\u5BB9\u5668\u5F0F\uFF1A\u5217\u8868\u4F4D\u3001\u4E2D\u680F\u9762\u677F\u5BB9\u5668\uFF08\u591A\u6807\u7B7E\uFF09\u3001\u4F1A\u8BDD\u4F4D\u3002\u5BB9\u5668\u5185 + \u53F3\u4FA7\u6309\u94AE\u53EF\u5207\u6362\u5E73\u94FA\u89C6\u56FE\uFF08\u5DF2\u6253\u5F00\u6807\u7B7E\u5355\u884C\u6A2A\u5411\u6392\u5217\u3001\u6A2A\u5411\u6EDA\u52A8\uFF0C\u62D6\u62FD\u7A97\u53E3\u53F3\u7F18\u53EF\u8C03\u5BBD\uFF09\uFF0C\u6807\u7B7E\u4E0A\u5DE6\u53F3\u62D6\u62FD\u53EF\u6539\u987A\u5E8F\u3002";
     grid.appendChild(tip);
     body.appendChild(grid);
     card.appendChild(body);
@@ -3560,6 +3602,7 @@
   var fixedTiles = {};
   var rowViews = [];
   var navEl = null;
+  var pinBox = null;
   var broadcastT = null;
   var managing = false;
   function panelPlugins() {
@@ -3659,7 +3702,7 @@
   }
   HOST.addEventListener("keydown", (ev) => {
     if (ev.key === "Shift") setShiftMode(true);
-    if (handleRowShortcut(ev)) ev.preventDefault();
+    if (handleRowShortcut(ev) || handlePinShortcut(ev)) ev.preventDefault();
   });
   HOST.addEventListener("keyup", (ev) => {
     if (ev.key === "Shift") setShiftMode(false);
@@ -3837,14 +3880,22 @@
   function bindResize(tile, grip, key) {
     grip.addEventListener("pointerdown", (ev) => {
       const rv = rowViewOfStrip(tile.parentElement);
-      if (!rv) return;
+      const pinned = tile.classList.contains("wm-tile-pinned");
+      if (!rv && !pinned) return;
       ev.preventDefault();
       ev.stopPropagation();
       const startX = ev.clientX;
       const startW = tile.getBoundingClientRect().width;
+      const sign = pinned && layoutState.pin === "right" ? -1 : 1;
       const move = (e2) => {
-        setWindowWidthIn(rv.row, key, startW + (e2.clientX - startX));
-        tile.style.width = windowWidthIn(rv.row, key) + "px";
+        if (pinned) {
+          setPinWidth(startW + (e2.clientX - startX) * sign);
+          tile.style.width = pinWidthValue() + "px";
+          applyPinMetrics();
+        } else if (rv) {
+          setWindowWidthIn(rv.row, key, startW + (e2.clientX - startX));
+          tile.style.width = windowWidthIn(rv.row, key) + "px";
+        }
         broadcastLayout();
       };
       const up = () => {
@@ -4009,33 +4060,117 @@
     }
     if (anchor.parentNode !== body) body.appendChild(anchor);
   }
+  function ensurePinBox(side) {
+    if (pinBox && pinBox.isConnected) {
+      pinBox.classList.toggle("wm-pin-left", side === "left");
+      pinBox.classList.toggle("wm-pin-right", side === "right");
+      return pinBox;
+    }
+    const el = HOST.document.createElement("div");
+    el.className = "wm-pin " + (side === "left" ? "wm-pin-left" : "wm-pin-right");
+    HOST.document.body.appendChild(el);
+    pinBox = el;
+    return el;
+  }
+  function applyPinMetrics() {
+    const body = HOST.document.body;
+    const tile = fixedTiles[LAYOUT_KEY_SESSION];
+    const side = tileMode() && tile && tile.style.display !== "none" ? layoutState.pin : "";
+    body.classList.toggle("wm-pin-left", side === "left");
+    body.classList.toggle("wm-pin-right", side === "right");
+    const w = side ? pinWidthValue() : 0;
+    body.style.setProperty("--wm-pin-w", w ? w + TILE_PIN_GAP + "px" : "0px");
+    if (pinBox) pinBox.style.width = w ? w + "px" : "0px";
+  }
+  function clampPinToViewport() {
+    const rv = rowViews[activeRowIndex()];
+    const stripW = rv ? rv.strip.getBoundingClientRect().width : HOST.innerWidth - 80;
+    const full = layoutState.pin ? stripW + pinWidthValue() + TILE_PIN_GAP : stripW;
+    setPinWidth(Math.min(pinWidthValue(), Math.max(260, full - TILE_PIN_GAP)));
+  }
+  function unpinSession() {
+    if (!layoutState.pin) return;
+    layoutState.pin = "";
+    addKeyToRow(activeRow(), LAYOUT_KEY_SESSION);
+    syncTiles();
+    persistLayout();
+  }
+  function togglePin(side) {
+    const tile = fixedTiles[LAYOUT_KEY_SESSION];
+    if (!tile || tile.style.display === "none") return;
+    const cur = layoutState.pin;
+    if (cur === side) return;
+    if (cur) {
+      unpinSession();
+      return;
+    }
+    const w = Math.round(tile.getBoundingClientRect().width);
+    if (w > 0) setPinWidth(w);
+    clampPinToViewport();
+    layoutState.rows.forEach((row) => removeKeyFromRow(row, LAYOUT_KEY_SESSION));
+    layoutState.pin = side;
+    syncTiles();
+    persistLayout();
+  }
+  function handlePinShortcut(ev) {
+    if (ev.key !== "ArrowLeft" && ev.key !== "ArrowRight") return false;
+    if (!ev.ctrlKey || ev.shiftKey || ev.altKey || ev.metaKey) return false;
+    if (!tileMode()) return false;
+    if (HOST.document.body.classList.contains("settings-open")) return false;
+    if (editableTarget(ev.target)) return false;
+    const tile = fixedTiles[LAYOUT_KEY_SESSION];
+    if (!tile || tile.style.display === "none") return true;
+    togglePin(ev.key === "ArrowLeft" ? "left" : "right");
+    return true;
+  }
   function syncFixedWindow(key, slot) {
     const p = pluginVisibleInSlot(slot);
     if (!p) {
       layoutState.rows.forEach((row) => removeKeyFromRow(row, key));
       const tile2 = fixedTiles[key];
-      if (tile2) tile2.style.display = "none";
+      if (tile2) {
+        tile2.style.display = "none";
+        tile2.classList.remove("wm-tile-pinned", "wm-tile-pin-right");
+      }
+      applyPinMetrics();
       return;
     }
-    let owner = rowIndexOfKey(key);
-    if (owner < 0) {
-      owner = activeRowIndex();
-      addKeyToRow(layoutState.rows[owner], key);
-    } else {
-      layoutState.rows.forEach((row, i) => {
-        if (i !== owner) removeKeyFromRow(row, key);
-      });
-    }
-    const rv = rowViews[owner];
-    if (!rv) return;
     let tile = fixedTiles[key];
     if (!tile) {
       tile = makeTile(key);
       fixedTiles[key] = tile;
     }
-    if (tile.parentElement !== rv.strip) rv.strip.appendChild(tile);
+    const side = key === LAYOUT_KEY_SESSION ? layoutState.pin : "";
+    if (side) {
+      layoutState.rows.forEach((row) => removeKeyFromRow(row, key));
+      const box = ensurePinBox(side);
+      if (tile.parentElement !== box) box.appendChild(tile);
+      tile.classList.add("wm-tile-pinned");
+      tile.classList.toggle("wm-tile-pin-right", side === "right");
+      tile.style.width = pinWidthValue() + "px";
+    } else {
+      let owner = rowIndexOfKey(key);
+      if (owner < 0) {
+        owner = activeRowIndex();
+        addKeyToRow(layoutState.rows[owner], key);
+      } else {
+        layoutState.rows.forEach((row, i) => {
+          if (i !== owner) removeKeyFromRow(row, key);
+        });
+      }
+      const rv = rowViews[owner];
+      if (!rv) return;
+      if (tile.parentElement !== rv.strip) rv.strip.appendChild(tile);
+      tile.classList.remove("wm-tile-pinned", "wm-tile-pin-right");
+      tile.style.width = windowWidthIn(rv.row, key) + "px";
+      if (pinBox && !pinBox.firstChild) {
+        pinBox.remove();
+        pinBox = null;
+      }
+    }
     moveAnchorInto(tileBody(tile), slot);
     tile.style.display = "";
+    applyPinMetrics();
   }
   function syncRowPanels(rv) {
     const panels = panelPlugins();
@@ -4125,6 +4260,13 @@
     if (p.slot === "session") return LAYOUT_KEY_SESSION;
     return "";
   }
+  function moveFixedToActiveRow(key) {
+    if (key === LAYOUT_KEY_SESSION && layoutState.pin) layoutState.pin = "";
+    layoutState.rows.forEach((row) => removeKeyFromRow(row, key));
+    addKeyToRow(activeRow(), key);
+    syncTiles();
+    persistLayout();
+  }
   function openTileAddMenu(anchor) {
     const wasOpen = !!HOST.document.getElementById("tile-add-menu");
     closePanelMenus();
@@ -4144,14 +4286,23 @@
       if (!list.length) return;
       menuSection(menu, label);
       list.forEach((p) => {
-        const owner = rowIndexOfKey(fixedKeyFor(p));
-        if (pluginVisible(p) && owner >= 0 && owner !== activeRowIndex()) {
+        const key = fixedKeyFor(p);
+        const open = pluginVisible(p);
+        const owner = open ? rowIndexOfKey(key) : -1;
+        if (key === LAYOUT_KEY_SESSION && open && (layoutState.pin !== "" || owner !== activeRowIndex())) {
+          menu.appendChild(menuItem(p, true, () => {
+            closePanelMenus();
+            moveFixedToActiveRow(key);
+          }, "\u79FB\u81F3\u672C\u884C"));
+          return;
+        }
+        if (open && owner >= 0 && owner !== activeRowIndex()) {
           menu.appendChild(menuItem(p, false, () => {
             closePanelMenus();
             switchToRow(owner);
           }, "\u7B2C " + (owner + 1) + " \u884C"));
         } else {
-          menu.appendChild(menuItem(p, pluginVisible(p), () => toggle(p)));
+          menu.appendChild(menuItem(p, open, () => toggle(p)));
         }
       });
     });
@@ -4219,7 +4370,8 @@
     let orderChanged = false;
     rowViews.forEach((rv) => {
       const before = rv.row.order.join("\0");
-      ensureOrderInRow(rv.row, sortedVisibleKeys(rv));
+      const visible = sortedVisibleKeys(rv);
+      ensureOrderInRow(rv.row, visible);
       if (before !== rv.row.order.join("\0")) orderChanged = true;
       applyOrder(rv);
       const map = tilesOfRow(rv);
@@ -4267,6 +4419,12 @@
     });
     rowViews.length = 0;
     Object.keys(fixedTiles).forEach((k) => delete fixedTiles[k]);
+    if (pinBox) {
+      pinBox.remove();
+      pinBox = null;
+    }
+    HOST.document.body.classList.remove("wm-pin-left", "wm-pin-right");
+    HOST.document.body.style.removeProperty("--wm-pin-w");
     if (navEl) {
       navEl.remove();
       navEl = null;
@@ -4324,7 +4482,7 @@
         if (!cw) return;
         cw.addEventListener("keydown", (ev) => {
           if (ev.key === "Shift") setShiftMode(true);
-          if (handleRowShortcut(ev)) ev.preventDefault();
+          if (handleRowShortcut(ev) || handlePinShortcut(ev)) ev.preventDefault();
         }, true);
         cw.addEventListener("keyup", (ev) => {
           if (ev.key === "Shift") setShiftMode(false);
@@ -4522,6 +4680,20 @@
   var panelBar = null;
   var panelState = null;
   var panelTabs = [];
+  var panelTileView = false;
+  var panelTileWidths = {};
+  var PANEL_TILE_MIN_W = 320;
+  var PANEL_TILE_MAX_W = 1600;
+  function restorePanelTileWidths(raw) {
+    const next = {};
+    if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+      Object.keys(raw).forEach((k) => {
+        const n = Number(raw[k]);
+        if (isFinite(n)) next[k] = Math.max(PANEL_TILE_MIN_W, Math.min(PANEL_TILE_MAX_W, Math.round(n)));
+      });
+    }
+    panelTileWidths = next;
+  }
   var PANEL_MIN_W = 260;
   var panelContainerCfg = { opacity: 0.9 };
   var panelSavedWidth = null;
@@ -4693,6 +4865,7 @@
   }
   function savePanelSel() {
     activeBySlot["__panelTabs__"] = JSON.stringify(panelTabs);
+    activeBySlot["__panelTileW__"] = JSON.stringify(panelTileWidths);
     return persistActive2();
   }
   function makePanelTab(st, id, p) {
@@ -4717,8 +4890,137 @@
       closePanelTab(id);
     });
     tab.appendChild(x);
-    tab.addEventListener("click", () => setActivePanelTab(st, id));
+    bindTabDrag(st, tab, id);
     return tab;
+  }
+  function bindTabDrag(st, tab, id) {
+    let suppressClick = false;
+    tab.addEventListener("click", () => {
+      if (suppressClick) {
+        suppressClick = false;
+        return;
+      }
+      setActivePanelTab(st, id);
+    });
+    tab.addEventListener("pointerdown", (ev) => {
+      if (ev.button !== 0) return;
+      if (ev.target.closest(".wm-pp_tabx")) return;
+      const strip = st.strip;
+      const startX = ev.clientX;
+      let dragging = false;
+      const move = (e2) => {
+        if (!dragging) {
+          if (Math.abs(e2.clientX - startX) < 6) return;
+          dragging = true;
+          suppressClick = true;
+          tab.classList.add("dragging");
+          try {
+            tab.setPointerCapture(ev.pointerId);
+          } catch (_) {
+          }
+        }
+        const next = Array.from(strip.querySelectorAll(".wm-pp_tab")).find((t) => {
+          if (t === tab) return false;
+          const r = t.getBoundingClientRect();
+          return e2.clientX < r.left + r.width / 2;
+        });
+        if (next) {
+          if (next.previousElementSibling !== tab) strip.insertBefore(tab, next);
+        } else if (strip.lastElementChild !== tab) strip.appendChild(tab);
+      };
+      const up = () => {
+        window.removeEventListener("pointermove", move);
+        window.removeEventListener("pointerup", up);
+        window.removeEventListener("pointercancel", up);
+        tab.classList.remove("dragging");
+        if (!dragging) return;
+        const order = Array.from(strip.querySelectorAll(".wm-pp_tab")).map((t) => t.dataset.pid || "");
+        panelTabs.length = 0;
+        order.forEach((k) => {
+          if (k) panelTabs.push(k);
+        });
+        applyPanelViewMode(st);
+        savePanelSel();
+        window.setTimeout(() => {
+          suppressClick = false;
+        }, 0);
+      };
+      window.addEventListener("pointermove", move);
+      window.addEventListener("pointerup", up);
+      window.addEventListener("pointercancel", up);
+    });
+  }
+  function applyPanelViewMode(st) {
+    const tiled = panelTileView;
+    st.body.classList.toggle("wm-pp-tiled", tiled);
+    st.tileBtn?.classList.toggle("active", tiled);
+    panelTabs.forEach((pid) => {
+      const v = st.views[pid];
+      if (v && v.parentNode === st.body) st.body.appendChild(v);
+      if (v) ensureViewResize(st, v, pid, tiled);
+    });
+    Object.keys(st.views).forEach((pid) => {
+      st.views[pid].style.display = tiled || pid === st.activeId ? "flex" : "none";
+    });
+    scrollActiveTileIntoView(st);
+  }
+  function ensureViewResize(st, view, id, tiled) {
+    let grip = view.querySelector(".wm-pp_vresize");
+    if (!grip) {
+      grip = HOST.document.createElement("div");
+      grip.className = "wm-pp_vresize";
+      grip.title = "\u62D6\u52A8\u8C03\u6574\u5BBD\u5EA6";
+      bindViewResize(view, grip, id);
+      view.appendChild(grip);
+    }
+    const w = panelTileWidths[id];
+    if (tiled && w) {
+      view.style.flex = "0 0 " + w + "px";
+      view.style.width = w + "px";
+    } else {
+      view.style.flex = "";
+      view.style.width = "";
+    }
+  }
+  function bindViewResize(view, grip, id) {
+    grip.addEventListener("pointerdown", (ev) => {
+      if (ev.button !== 0 || !panelTileView) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      const startX = ev.clientX;
+      const startW = view.getBoundingClientRect().width;
+      const move = (e2) => {
+        const w = Math.max(PANEL_TILE_MIN_W, Math.min(PANEL_TILE_MAX_W, Math.round(startW + (e2.clientX - startX))));
+        panelTileWidths[id] = w;
+        view.style.flex = "0 0 " + w + "px";
+        view.style.width = w + "px";
+      };
+      const up = () => {
+        grip.removeEventListener("pointermove", move);
+        grip.removeEventListener("pointerup", up);
+        grip.removeEventListener("pointercancel", up);
+        try {
+          grip.releasePointerCapture(ev.pointerId);
+        } catch (_) {
+        }
+        savePanelSel();
+      };
+      try {
+        grip.setPointerCapture(ev.pointerId);
+      } catch (_) {
+      }
+      grip.addEventListener("pointermove", move);
+      grip.addEventListener("pointerup", up);
+      grip.addEventListener("pointercancel", up);
+    });
+  }
+  function togglePanelViewMode() {
+    const st = panelState;
+    if (!st) return;
+    panelTileView = !panelTileView;
+    activeBySlot["__panelTile__"] = panelTileView ? "1" : "";
+    applyPanelViewMode(st);
+    persistActive2();
   }
   function renderPanel(st) {
     if (!st.head || !st.head.isConnected) {
@@ -4736,6 +5038,12 @@
         ev.stopPropagation();
         openPanelAddMenu(st, st.addBtn);
       });
+      st.tileBtn = el.querySelector(".wm-pp_tilebtn");
+      paintIcon(st.tileBtn, "columns");
+      st.tileBtn.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        togglePanelViewMode();
+      });
       st.closeBtn = el.querySelector(".wm-pp_drawer");
       st.closeBtn.addEventListener("click", () => {
         setContainerHidden(true);
@@ -4745,6 +5053,7 @@
       st.emptyEl = el.querySelector(".wm-pp_empty");
       st.views = {};
       st.frames = {};
+      bindTileScrollSync(st);
     }
     panelTabs = panelTabs.filter((id) => {
       const rec = st.pluginsById[id];
@@ -4775,10 +5084,58 @@
     } else if (!st.emptyEl.parentNode) st.body.appendChild(st.emptyEl);
     frames["panel"] = panelTabs.map((id) => st.frames[id]).filter(Boolean);
     applyActivePanelTab(st);
+    applyPanelViewMode(st);
+  }
+  function scrollActiveTileIntoView(st) {
+    if (!panelTileView) return;
+    const v = st.views[st.activeId];
+    const b = st.body;
+    if (v) b.scrollLeft = Math.max(0, Math.min(v.offsetLeft - 12, b.scrollWidth - b.clientWidth));
+  }
+  var tileScrollSaveTimer = null;
+  function bindTileScrollSync(st) {
+    const b = st.body;
+    if (!b) return;
+    b.addEventListener("scroll", () => {
+      if (!panelTileView || !st.views[st.activeId]) return;
+      const br = b.getBoundingClientRect();
+      let best = "";
+      let bestArea = -1;
+      panelTabs.forEach((pid) => {
+        const v = st.views[pid];
+        if (!v || v.style.display === "none") return;
+        const r = v.getBoundingClientRect();
+        const w = Math.min(r.right, br.right) - Math.max(r.left, br.left);
+        const h = Math.min(r.bottom, br.bottom) - Math.max(r.top, br.top);
+        const area = Math.max(0, w) * Math.max(0, h);
+        if (area > bestArea) {
+          bestArea = area;
+          best = pid;
+        }
+      });
+      if (!best || best === st.activeId) return;
+      st.activeId = best;
+      activeBySlot["panel"] = best;
+      st.strip.querySelectorAll(".wm-pp_tab").forEach((t) => {
+        const on = t.dataset.pid === best;
+        t.classList.toggle("active", on);
+        if (on && t.scrollIntoView) {
+          try {
+            t.scrollIntoView({ block: "nearest", inline: "nearest" });
+          } catch (_) {
+          }
+        }
+      });
+      if (tileScrollSaveTimer) clearTimeout(tileScrollSaveTimer);
+      tileScrollSaveTimer = setTimeout(() => {
+        tileScrollSaveTimer = null;
+        savePanelSel();
+      }, 400);
+    }, { passive: true });
   }
   function applyActivePanelTab(st) {
     Object.keys(st.views).forEach((id) => {
-      st.views[id].style.display = id === st.activeId ? "flex" : "none";
+      st.views[id].style.display = panelTileView || id === st.activeId ? "flex" : "none";
     });
     st.strip.querySelectorAll(".wm-pp_tab").forEach((t) => {
       const on = t.dataset.pid === st.activeId;
@@ -4790,6 +5147,7 @@
         }
       }
     });
+    scrollActiveTileIntoView(st);
   }
   function setActivePanelTab(st, id) {
     if (st.activeId === id) return;
@@ -4819,6 +5177,12 @@
     if (!st || !st.pluginsById[id]) return;
     const added = panelTabs.indexOf(id) < 0;
     if (added) panelTabs.push(id);
+    if (railHidden(id)) {
+      if (!railState.hidden) railState.hidden = {};
+      delete railState.hidden[id];
+      persistRail().catch(() => {
+      });
+    }
     st.activeId = id;
     activeBySlot["panel"] = id;
     if (added) renderPanel(st);
@@ -4839,6 +5203,7 @@
     const i = panelTabs.indexOf(id);
     if (i < 0) return;
     panelTabs.splice(i, 1);
+    delete panelTileWidths[id];
     if (st.activeId === id) st.activeId = panelTabs[i] || panelTabs[i - 1] || "";
     activeBySlot["panel"] = st.activeId || "__none__";
     renderPanel(st);
@@ -4948,6 +5313,7 @@
       panelTabs = panelTabs.filter(valid);
       if (!panelTabs.length && !hasSavedTabs) panelTabs = [byArea.panel[0].p.id];
     }
+    panelTileView = activeBySlot["__panelTile__"] === "1";
     const saved = activeBySlot["panel"];
     st.activeId = saved && saved !== "__none__" && panelTabs.indexOf(saved) >= 0 ? saved : panelTabs[0] || "";
     renderPanel(st);
@@ -5723,22 +6089,10 @@
     syncNativeCover();
   }
   function persistRail() {
-    return fetch("/api/webmin/config", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ plugins: configByPlugin, rail: railState })
-    }).then((res) => {
-      if (!res.ok) throw new Error(String(res.status));
-    });
+    return saveWebminConfig({ plugins: configByPlugin, rail: railState });
   }
   function persistActive2() {
-    return fetch("/api/webmin/config", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ active: activeBySlot })
-    }).then((res) => {
-      if (!res.ok) throw new Error(String(res.status));
-    }).catch(() => {
+    return saveWebminConfig({ active: activeBySlot }).catch(() => {
     });
   }
   function applyPersistedHidden() {

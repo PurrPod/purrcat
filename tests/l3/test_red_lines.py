@@ -45,6 +45,29 @@ def test_host_sources_do_not_bypass_typecheck(repo_root):
     assert not offenders, "宿主 TS 禁止绕过类型检查：\n" + "\n".join(offenders)
 
 
+def test_pinned_fixed_slot_fills_its_tiled_window(repo_root):
+    """固定位锚点铺满窗口的规则不能只匹配窗口条：pin 后窗口移到 .wm-pin 里。
+
+    锚点失去这条规则会退回 height: auto，iframe 的 100% 高度退化成固有 150px，
+    会话位被压成顶部一条、下方留出大面积空白。
+    """
+    css = (repo_root / "ui" / "web-minimal" / "assets" / "theme.css").read_text(
+        encoding="utf-8"
+    )
+    fillers = [
+        selector.strip()
+        for head, body in re.findall(r"([^{}]+)\{([^{}]*)\}", css)
+        if re.search(r"inset\s*:\s*0", body)
+        for selector in head.split(",")
+        if '[data-slot="session"]' in selector
+    ]
+
+    assert any(".wm-tiles" not in selector for selector in fillers), (
+        "固定位锚点铺满窗口的规则只匹配 .wm-tiles，"
+        f"Ctrl+←/→ 固定后锚点会掉出规则：{fillers}"
+    )
+
+
 def test_api_docs_match_real_routes(repo_root):
     result = subprocess.run(
         [sys.executable, "scripts/check_api_docs.py"],

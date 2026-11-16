@@ -8,7 +8,7 @@ import { deliverPendingBrowserUrl } from './links.js';
 import { applyManifestState } from './manifest.js';
 import { applyPanelContainerCfg, adoptLayoutRowsForTabs, mountPanels, panelContainerVisible, reconcilePanels } from './panel.js';
 import { applyPersistedHidden, applySlotHidden, buildRail, railHidden } from './rail.js';
-import { handleRowShortcut, setShiftMode, syncTiles, teardownTiles } from './tile.js';
+import { handlePinShortcut, handleRowShortcut, setShiftMode, syncTiles, teardownTiles } from './tile.js';
 import { HOST, activeBySlot, configByPlugin, frameByPluginId, frames, groupState, pluginBySlot, slotByPluginId, slotMap } from './state.js';
 import type { PluginDescriptor, PluginFrame } from './types.js';
 
@@ -60,7 +60,7 @@ import type { PluginDescriptor, PluginFrame } from './types.js';
         if (!cw) return;
         cw.addEventListener('keydown', (ev: KeyboardEvent) => {
           if (ev.key === 'Shift') setShiftMode(true);
-          if (handleRowShortcut(ev)) ev.preventDefault();
+          if (handleRowShortcut(ev) || handlePinShortcut(ev)) ev.preventDefault();
         }, true);
         cw.addEventListener('keyup', (ev: KeyboardEvent) => { if (ev.key === 'Shift') setShiftMode(false); }, true);
       } catch (_) { /* 跨域插件无法桥接，Shift 仅在宿主聚焦时生效 */ }

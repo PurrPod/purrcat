@@ -256,6 +256,8 @@ def test_sanitize_layout_migrates_legacy_order_and_widths():
     assert result == {
         "mode": "tile",
         "activeRow": 0,
+        "pin": "",
+        "pinWidth": 420,
         "rows": [{"order": ["slot:sidebar", "panel:a"], "widths": {"panel:a": 520}}],
     }
 
@@ -286,6 +288,8 @@ def test_sanitize_layout_defaults_to_one_empty_row():
     assert webmin_manifest.sanitize_layout({}) == {
         "mode": "container",
         "activeRow": 0,
+        "pin": "",
+        "pinWidth": 420,
         "rows": [{"order": [], "widths": {}}],
     }
     result = webmin_manifest.sanitize_layout(
@@ -293,6 +297,24 @@ def test_sanitize_layout_defaults_to_one_empty_row():
     )
     assert result["activeRow"] == 0
     assert result["rows"] == [{"order": [], "widths": {}}]
+
+
+def test_sanitize_layout_accepts_pin_side_and_width():
+    """SPEC-024 AC-11：会话位固定方向只接受 left/right，宽度夹紧到窗口区间。"""
+    result = webmin_manifest.sanitize_layout({"pin": "left", "pinWidth": 600})
+
+    assert result["pin"] == "left"
+    assert result["pinWidth"] == 600
+    assert webmin_manifest.sanitize_layout({"pin": "right"})["pin"] == "right"
+
+
+def test_sanitize_layout_drops_unknown_pin_and_clamps_width():
+    """SPEC-024 AC-11：未知固定方向回落为空，pinWidth 缺省/越界夹紧。"""
+    assert webmin_manifest.sanitize_layout({"pin": "up"})["pin"] == ""
+    assert webmin_manifest.sanitize_layout({"pin": 1})["pin"] == ""
+    assert webmin_manifest.sanitize_layout({"pinWidth": 10})["pinWidth"] == 260
+    assert webmin_manifest.sanitize_layout({"pinWidth": 99999})["pinWidth"] == 4000
+    assert webmin_manifest.sanitize_layout({"pinWidth": "x"})["pinWidth"] == 420
 
 
 def test_plugin_origin_and_builtin_root(tmp_path):

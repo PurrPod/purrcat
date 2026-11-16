@@ -1,7 +1,10 @@
 // 布局模式（容器式 / 平铺式）与平铺各行窗口顺序、宽度
 import { HOST } from './state.js';
+import { saveWebminConfig } from './utils.js';
 
 export type LayoutMode = 'container' | 'tile';
+// 会话位固定（pin）方向：空串表示不固定，随窗口条滚动
+export type PinSide = '' | 'left' | 'right';
 
 // 一行（工作区）：独立维护本行打开的窗口顺序与宽度
 export interface LayoutRow {
@@ -13,6 +16,8 @@ export interface LayoutState {
   mode: LayoutMode;
   rows: LayoutRow[];
   activeRow: number;
+  pin: PinSide;
+  pinWidth: number;
 }
 
 // 窗口键：列表位 / 会话位 / 面板插件各用一个稳定键；面板窗口按行各自登记
@@ -21,10 +26,19 @@ export const LAYOUT_KEY_SESSION = 'slot:session';
 export const TILE_MIN_W = 260;
 export const TILE_MAX_W = 4000;
 export const TILE_ADD_W = 132;
+// 固定会话位的默认宽度与固定窗口之间的间隔
+export const TILE_PIN_DEFAULT_W = 420;
+export const TILE_PIN_GAP = 8;
 
 export function createRow(): LayoutRow { return { order: [], widths: {} }; }
 
-export const layoutState: LayoutState = { mode: 'container', rows: [createRow()], activeRow: 0 };
+export const layoutState: LayoutState = {
+  mode: 'container',
+  rows: [createRow()],
+  activeRow: 0,
+  pin: '',
+  pinWidth: TILE_PIN_DEFAULT_W,
+};
 
 export function panelWindowKey(id: string): string { return 'panel:' + id; }
 export function panelIdFromKey(key: string): string { return key.slice('panel:'.length); }
@@ -129,7 +143,24 @@ export function applyLayoutFromManifest(raw: unknown): void {
   layoutState.activeRow = isFinite(rawActive)
     ? Math.max(0, Math.min(layoutState.rows.length - 1, rawActive))
     : 0;
+  layoutState.pin = data.pin === 'left' || data.pin === 'right' ? data.pin : '';
+  const rawPinW = Number(data.pinWidth);
+  layoutState.pinWidth = isFinite(rawPinW)
+    ? Math.max(TILE_MIN_W, Math.min(TILE_MAX_W, Math.round(rawPinW)))
+    : TILE_PIN_DEFAULT_W;
   applyLayoutClass();
+}
+
+// 固定宽度读取（夹紧）与写入：固定窗口的宽度独立于行内宽度持久化
+export function pinWidthValue(): number {
+  const raw = Number(layoutState.pinWidth);
+  if (!isFinite(raw)) return TILE_PIN_DEFAULT_W;
+  return Math.max(TILE_MIN_W, Math.min(TILE_MAX_W, Math.round(raw)));
+}
+
+export function setPinWidth(width: number): void {
+  if (!isFinite(width)) return;
+  layoutState.pinWidth = Math.max(TILE_MIN_W, Math.min(TILE_MAX_W, Math.round(width)));
 }
 
 export function applyLayoutClass(): void {
@@ -168,13 +199,7 @@ export function reorderInRow(row: LayoutRow, visibleOrder: string[]): void {
 }
 
 export function persistLayout(): Promise<void> {
-  return fetch('/api/webmin/config', {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ layout: layoutState }),
-  })
-    .then((res) => { if (!res.ok) throw new Error(String(res.status)); })
-    .catch(() => {});
+  return saveWebminConfig({ layout: layoutState }).catch(() => {});
 }
 
 export function setLayoutMode(mode: LayoutMode): void {

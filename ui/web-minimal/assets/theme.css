@@ -245,6 +245,7 @@ body.settings-open [data-layer="topbar"] { background: var(--wm-bg-base); }
 body.settings-open [data-layer="sidebar"],
 body.settings-open .wm-main,
 body.settings-open .wm-tiles,
+body.settings-open .wm-pin,
 body.settings-open .wm-row-nav,
 body.settings-open .wm-ppanel,
 body.settings-open [data-slot="panel-container"] > iframe,
@@ -811,11 +812,14 @@ body.layout-tile .wm-main { display: none; }
 body.layout-tile .wm-ppanel,
 body.layout-tile .wm-pbar,
 body.layout-tile [data-slot="panel-container"] { display: none !important; }
+/* 会话位固定（Ctrl+←/→）：脱离窗口条贴应用最左/最右，窗口条用下方变量让位 */
+body.wm-pin-left { --wm-pin-left: var(--wm-pin-w); --wm-pin-right: 0px; }
+body.wm-pin-right { --wm-pin-left: 0px; --wm-pin-right: var(--wm-pin-w); }
 .wm-tiles {
   position: fixed;
   top: calc(var(--wm-topbar-h) + var(--wm-sidebar-inset));
-  left: calc(var(--wm-rail-w) + var(--wm-sidebar-gap));
-  right: 0;
+  left: calc(var(--wm-rail-w) + var(--wm-sidebar-gap) + var(--wm-pin-left, 0px));
+  right: var(--wm-pin-right, 0px);
   bottom: var(--wm-sidebar-inset);
   display: none;
   align-items: stretch;
@@ -828,6 +832,20 @@ body.layout-tile [data-slot="panel-container"] { display: none !important; }
   scrollbar-color: var(--wm-border) transparent;
 }
 .wm-tiles.active { display: flex; }
+/* 固定容器：宽度由脚本写入，窗口按整高铺满 */
+.wm-pin {
+  position: fixed;
+  top: calc(var(--wm-topbar-h) + var(--wm-sidebar-inset));
+  bottom: var(--wm-sidebar-inset);
+  display: none;
+  z-index: 6;
+}
+body.layout-tile .wm-pin { display: flex; }
+.wm-pin-left { left: calc(var(--wm-rail-w) + var(--wm-sidebar-gap)); }
+.wm-pin-right { right: 0; }
+.wm-pin .wm-tile { flex: 1 1 auto; height: 100%; }
+/* 右侧固定时改宽手柄落在左缘 */
+.wm-tile-pin-right .wm-tile-resize { right: auto; left: 0; }
 /* 行切换：挂在顶部细条左侧（只在平铺模式存在），图标按钮无边框 */
 .wm-row-nav {
   position: absolute;
@@ -961,9 +979,12 @@ body.wm-shift-mode .wm-tile.dragging .wm-tile-shield { cursor: grabbing; }
   font-size: 11px;
   color: var(--wm-label-dim);
 }
-/* 固定位锚点移入平铺窗口后铺满窗口内容区 */
-body.layout-tile .wm-tiles [data-slot="sidebar"],
-body.layout-tile .wm-tiles [data-slot="session"] {
+/* 固定位锚点移入平铺窗口后铺满窗口内容区。
+   以 .wm-tile 为容器而非 .wm-tiles：会话位固定后窗口移到 .wm-pin 里，
+   锚点若失去这条规则会退回 height:auto，iframe 的 100% 高度退化成固有 150px，
+   表现为会话位被压成顶部一条、下方大面积空白。 */
+body.layout-tile .wm-tile [data-slot="sidebar"],
+body.layout-tile .wm-tile [data-slot="session"] {
   position: absolute;
   inset: 0;
   width: auto;
@@ -971,8 +992,8 @@ body.layout-tile .wm-tiles [data-slot="session"] {
   /* 列表位/会话位锚点自带 z-index，必须压平，否则会盖住 Shift 接收层 */
   z-index: 0;
 }
-body.layout-tile .wm-tiles [data-slot="sidebar"] iframe,
-body.layout-tile .wm-tiles [data-slot="session"] iframe { width: 100%; height: 100%; }
+body.layout-tile .wm-tile [data-slot="sidebar"] iframe,
+body.layout-tile .wm-tile [data-slot="session"] iframe { width: 100%; height: 100%; }
 
 /* 配置中心小弹窗（新增 MCP 服务器）：遮罩盖过设置页(55)与白条(60) */
 .cfg-modal-mask {

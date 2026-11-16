@@ -168,6 +168,9 @@ LAYOUT_WINDOW_MIN_W = 260
 LAYOUT_WINDOW_MAX_W = 4000
 # 平铺布局：行数上限，防止异常配置无限扩张
 LAYOUT_MAX_ROWS = 20
+# 平铺布局：会话位固定（pin）的默认宽度与合法方向
+LAYOUT_PIN_DEFAULT_W = 420
+LAYOUT_PIN_SIDES = ("left", "right")
 
 
 def _sanitize_row_order(raw) -> list:
@@ -239,7 +242,27 @@ def sanitize_layout(raw) -> dict:
     except (TypeError, ValueError):
         active_row = 0
     active_row = max(0, min(len(rows) - 1, active_row))
-    return {"mode": mode, "activeRow": active_row, "rows": rows}
+    pin = str(data.get("pin") or "").strip().lower()
+    if pin not in LAYOUT_PIN_SIDES:
+        pin = ""
+    return {
+        "mode": mode,
+        "activeRow": active_row,
+        "pin": pin,
+        "pinWidth": _sanitize_pin_width(data.get("pinWidth")),
+        "rows": rows,
+    }
+
+
+def _sanitize_pin_width(raw) -> int:
+    """会话位固定宽度：缺省/非法回落到默认值，越界夹紧到窗口区间。"""
+    try:
+        width = float(raw)
+    except (TypeError, ValueError):
+        return LAYOUT_PIN_DEFAULT_W
+    if not width == width:  # NaN
+        return LAYOUT_PIN_DEFAULT_W
+    return int(max(LAYOUT_WINDOW_MIN_W, min(LAYOUT_WINDOW_MAX_W, round(width))))
 
 
 def build_manifest_entry(

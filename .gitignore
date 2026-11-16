@@ -107,3 +107,4 @@ purrcat.toml
 # 本地工具与预览缓存
 .trae-html-share-packages/
 .screenshots/
+.openbitfun/

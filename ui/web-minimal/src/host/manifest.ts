@@ -2,7 +2,7 @@
 import { PANEL_CONTAINER_ID } from './areas.js';
 import { applyLayoutFromManifest } from './layout.js';
 import { buildSlotIndex, mountAll } from './mount.js';
-import { applyPanelContainerCfg, loadPanelShell, panelContainerCfg, panelDesiredWidth, panelSavedWidth, panelTabs, setPanelSavedWidth, setPanelDesiredWidth } from './panel.js';
+import { applyPanelContainerCfg, loadPanelShell, panelContainerCfg, panelDesiredWidth, panelSavedWidth, panelTabs, restorePanelTileWidths, setPanelSavedWidth, setPanelDesiredWidth } from './panel.js';
 import { applyPersistedHidden, buildRail, persistActive } from './rail.js';
 import { activeBySlot, configByPlugin, groupState, railState } from './state.js';
 import { effectiveConfig } from './utils.js';
@@ -48,6 +48,13 @@ import type { WebminManifest } from './types.js';
     panelTabs.length = 0;   // 原地清空：panelTabs 是跨模块共享的 let 绑定，不能整体赋值
     Object.keys(savedActive).forEach((k) => {
       const v = savedActive[k];
+      // 容器内平铺/标签视图模式：保留键原样回存（值非插件 id，不做 ids 校验）
+      if (k === '__panelTile__') { activeBySlot[k] = String(v); return; }
+      // 容器内平铺窗口宽度记忆：JSON 对象，经 restorePanelTileWidths 校验落位
+      if (k === '__panelTileW__') {
+        try { restorePanelTileWidths(JSON.parse(String(v))); } catch (_) {}
+        return;
+      }
       if (k === '__panelTabs__') {
         activeBySlot[k] = String(v);
         try {

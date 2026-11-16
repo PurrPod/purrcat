@@ -10,7 +10,7 @@ import { setSettingsOpen } from './settings-appearance.js';
 import { HOST, activeBySlot, configByPlugin, groupState, railButtons, railState } from './state.js';
 import { syncTiles } from './tile.js';
 import type { PluginDescriptor } from './types.js';
-import { slotOfPlugin } from './utils.js';
+import { saveWebminConfig, slotOfPlugin } from './utils.js';
 
   // ---- 图标栏（固定组件）----
   export const RAIL_STAGES = 2;   // 0=仅图标；1=图标+文字
@@ -54,19 +54,11 @@ import { slotOfPlugin } from './utils.js';
     syncNativeCover();
   }
   export function persistRail() {
-    return fetch('/api/webmin/config', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ plugins: configByPlugin, rail: railState }),
-    }).then((res) => { if (!res.ok) throw new Error(String(res.status)); });
+    return saveWebminConfig({ plugins: configByPlugin, rail: railState });
   }
   // 持久化单例槽选中项（分节更新，不影响 plugins/rail）
   export function persistActive() {
-    return fetch('/api/webmin/config', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ active: activeBySlot }),
-    }).then((res) => { if (!res.ok) throw new Error(String(res.status)); }).catch(() => {});
+    return saveWebminConfig({ active: activeBySlot }).catch(() => {});
   }
   // 应用持久化的隐藏状态（挂载后调用：fixed 锚定区 / float 实例 / panel 容器）
   export function applyPersistedHidden() {

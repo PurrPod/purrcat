@@ -107,8 +107,8 @@ import { HOST, configByPlugin, railState } from './state.js';
     const tip = HOST.document.createElement('div');
     tip.className = 'cfg-tip';
     tip.textContent = layoutState.mode === 'tile'
-      ? '平铺模式：列表位、已打开面板、会话位各为独立窗口，按开启时间从左到右排列（重开追加到最右）；最右侧「+」窗口统一开关插件。顶部栏左侧上/下图标或 Shift+↑/↓ 切换行，Shift+←/→ 按窗口边界横向滚动；每行独立维护窗口，面板可在多行同时打开。按住 Shift 左右拖跟手排序、向下拖过窗口一半关闭；拖右缘改宽。'
-      : '容器式：列表位、中栏面板容器（多标签）、会话位。';
+      ? '平铺模式：列表位、已打开面板、会话位各为独立窗口，按开启时间从左到右排列（重开追加到最右）；最右侧「+」窗口统一开关插件。顶部栏左侧上/下图标或 Shift+↑/↓ 切换行，Shift+←/→ 按窗口边界横向滚动，Ctrl+←/→ 把会话位固定到最左/最右（固定时不占任何一行，按反方向键解除固定；右固定由左缘改宽）；每行独立维护窗口，面板可在多行同时打开。按住 Shift 左右拖跟手排序、向下拖过窗口一半关闭；拖右缘改宽。'
+      : '容器式：列表位、中栏面板容器（多标签）、会话位。容器内 + 右侧按钮可切换平铺视图（已打开标签单行横向排列、横向滚动，拖拽窗口右缘可调宽），标签上左右拖拽可改顺序。';
     grid.appendChild(tip);
     body.appendChild(grid);
     card.appendChild(body);

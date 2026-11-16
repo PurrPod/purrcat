@@ -56,6 +56,8 @@
   "layout": {
     "mode": "container",
     "activeRow": 0,
+    "pin": "",
+    "pinWidth": 420,
     "rows": [
       {
         "order": ["slot:sidebar", "panel:builtin-history", "slot:session"],
@@ -70,7 +72,7 @@
 
 顶层另返回 `shared`（共享运行时清单 `{ name: { version, base } }`）、`rail`（最左图标栏状态：`stage`、`hidden`、`opacity`）、`panelContainer`（宿主中栏容器配置）、`active`（单例槽当前选中的插件 id）、`layout`（布局模式、平铺行顺序/宽度与当前行，见下）。
 
-`layout` 归一化规则：`mode` 只接受 `container`（默认）/ `tile`，其他值回落 `container`；`activeRow` 为当前行的下标，夹紧到 `0`–`rows.length-1`；`rows` 至少一行，每项 `{ order, widths }`：`order` 只保留非空字符串并去重（窗口键为 `slot:sidebar`、`slot:session`、`panel:<plugin_id>`，表示该行窗口从左到右的顺序，默认按开启时间维护：窗口关闭即从表中移除，重新打开时追加到末尾）；`widths` 为窗口键到像素宽度的映射，非法值丢弃，数值夹紧到 `260`–`4000` 的整数。缺少 `rows` 时把旧版顶层 `order` / `widths` 迁入第一行；行数上限 20。
+`layout` 归一化规则：`mode` 只接受 `container`（默认）/ `tile`，其他值回落 `container`；`activeRow` 为当前行的下标，夹紧到 `0`–`rows.length-1`；`rows` 至少一行，每项 `{ order, widths }`：`order` 只保留非空字符串并去重（窗口键为 `slot:sidebar`、`slot:session`、`panel:<plugin_id>`，表示该行窗口从左到右的顺序，默认按开启时间维护：窗口关闭即从表中移除，重新打开时追加到末尾）；`widths` 为窗口键到像素宽度的映射，非法值丢弃，数值夹紧到 `260`–`4000` 的整数。缺少 `rows` 时把旧版顶层 `order` / `widths` 迁入第一行；行数上限 20。`pin` 为会话位固定方向（`left` / `right`，空串表示不固定，其他值回落空串）；`pinWidth` 为固定窗口的像素宽度（缺省/非法回落 420，夹紧到 `260`–`4000`）。
 
 **示例**
 
@@ -179,7 +181,7 @@ curl 'http://127.0.0.1:8000/api/webmin/config'
 | plugins | body | object | 否 | `{ plugin_id: config }`，整体替换 plugins 分节 |
 | rail | body | object | 否 | `{ stage, opacity, hidden }`；`stage` 归一化到 `0`–`1`（越界取 `0`），`opacity` 收敛到 `0.0`–`1.0` |
 | active | body | object | 否 | `{ area: plugin_id }`，值归一化为字符串，空值项丢弃 |
-| layout | body | object | 否 | `{ mode, activeRow, rows: [{ order, widths }] }`；`mode` 仅 `container`/`tile`，`activeRow` 夹到合法下标，`order` 去重去空，`widths` 夹紧到 `260`–`4000`；缺 `rows` 时兼容旧版顶层 `order`/`widths` |
+| layout | body | object | 否 | `{ mode, activeRow, pin, pinWidth, rows: [{ order, widths }] }`；`mode` 仅 `container`/`tile`，`activeRow` 夹到合法下标，`pin` 仅 `left`/`right`，`pinWidth` 夹紧到 `260`–`4000`，`order` 去重去空，`widths` 夹紧到 `260`–`4000`；缺 `rows` 时兼容旧版顶层 `order`/`widths` |
 
 **响应**
 
