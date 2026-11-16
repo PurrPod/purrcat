@@ -177,6 +177,10 @@ async def _bg_heavy_init():
     # 嵌入模型不再启动时自动下载：与部署页并发写同一目录会互相踩踏，
     # 统一由 配置中心 → 部署 页（或安装脚本）单点安装
     def _init_light_tools():
+        # openai 在模型执行器里是懒导入（约 1.5s，全量类型树）；
+        # 此时 uvicorn 已绑定端口，在这里预热，避免用户首条消息承担这段导入
+        import openai  # noqa: F401
+
         from src.tool.callmcp.callmcp import initialize_mcp_sync
         from src.tool.search.mcp_search import MCPSearcher
         from src.tool.search.skill_search import SkillSearcher

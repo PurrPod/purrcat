@@ -1,8 +1,6 @@
 import time
 import traceback
 
-from openai import APIError, OpenAI, RateLimitError
-
 from src.model.core.retry import (
     MAX_RETRIES,
     backoff_seconds,
@@ -19,6 +17,9 @@ class LLMClient:
     """纯粹的执行器，负责 OpenAI Client 的实例化与重试策略"""
 
     def __init__(self, api_key: str, base_url: str):
+        # openai 首次导入约 1.5s（1000+ 个类型模块），只在真正建客户端时承担
+        from openai import OpenAI
+
         self.client = OpenAI(
             api_key=api_key,
             base_url=base_url,
@@ -36,6 +37,8 @@ class LLMClient:
         **kwargs,
     ):
         """执行同步阻塞请求，处理限速和退避；cancel_event 置位时立即中止重试"""
+        from openai import APIError, RateLimitError
+
         model_name = strip_model_prefix(model_name)
         request_params = {"model": model_name, "messages": messages}
         if tools:
