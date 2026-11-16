@@ -17,45 +17,44 @@ from src.tool.filesystem.exceptions import FileSystemError, HostPathNotFoundErro
 from src.tool.utils.format import error_response, text_response, warning_response
 
 
+def _graph_info(data: dict) -> dict:
+    """把 graph.json 归一成列表与参数校验共用的摘要。"""
+    global_schema = data.get("global_schema", {})
+    required_inputs = data.get("required_inputs", {})
+
+    if global_schema:
+        param_schema = global_schema
+    else:
+        param_schema = {
+            k: {"required": True, "description": v} for k, v in required_inputs.items()
+        }
+
+    return {
+        "description": data.get("description", "无描述"),
+        "core": data.get("core", "openai:deepseek-v4-flash"),
+        "param_schema": param_schema,
+    }
+
+
 def _get_all_graphs_info() -> dict:
     """扫描 ~/.purrcat/graph/{name}/graph.json（文件夹架构），获取所有可用工作流图及参数要求"""
     from src.utils.config import GRAPHS_DIR
 
-    graph_root = GRAPHS_DIR
-    if not os.path.exists(graph_root):
-        return {}
-
     graphs = {}
-    for entry in os.listdir(graph_root):
-        graph_file = os.path.join(graph_root, entry, "graph.json")
-        if not os.path.isdir(os.path.join(graph_root, entry)) or not os.path.exists(
-            graph_file
-        ):
-            continue
-        try:
-            with open(graph_file, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            g_name = data.get("name", entry)
+    if os.path.exists(GRAPHS_DIR):
+        for entry in os.listdir(GRAPHS_DIR):
+            graph_file = os.path.join(GRAPHS_DIR, entry, "graph.json")
+            if not os.path.isdir(os.path.join(GRAPHS_DIR, entry)) or not os.path.exists(
+                graph_file
+            ):
+                continue
+            try:
+                with open(graph_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                graphs[data.get("name", entry)] = _graph_info(data)
+            except Exception:
+                pass
 
-            global_schema = data.get("global_schema", {})
-            required_inputs = data.get("required_inputs", {})
-
-            if global_schema:
-                param_schema = global_schema
-            else:
-                param_schema = {
-                    k: {"required": True, "description": v}
-                    for k, v in required_inputs.items()
-                }
-
-            graphs[g_name] = {
-                "description": data.get("description", "无描述"),
-                # 从 JSON 中提取 core，如果没有则提供一个默认兜底
-                "core": data.get("core", "openai:deepseek-v4-flash"),
-                "param_schema": param_schema,
-            }
-        except Exception:
-            pass
     return graphs
 
 
@@ -121,8 +120,10 @@ def Task(action: str, **kwargs) -> str:
 
 
 def _handle_add(**kwargs) -> str:
+    from src.harness.graph_init import DEFAULT_GRAPH_NAME
+
     name = kwargs.get("name")
-    graph_name = kwargs.get("graph_name")
+    graph_name = kwargs.get("graph_name") or DEFAULT_GRAPH_NAME
     inputs = kwargs.get("inputs") or {}
 
     if not name:
@@ -135,13 +136,6 @@ def _handle_add(**kwargs) -> str:
     name_error = _shared.validate_task_name(name)
     if name_error:
         return error_response(name_error, "❌ 名称非法")
-
-    if not graph_name:
-        return error_response(
-            "❌ 缺少必需参数: graph_name。\n"
-            "💡 引导建议：你不应该自己编造图名称。请先调用 action='list_graphs' 查询当前系统有哪些可用的工作流图，然后再执行 add 创建任务！",
-            "❌ 缺少graph_name",
-        )
 
     graphs = _get_all_graphs_info()
 

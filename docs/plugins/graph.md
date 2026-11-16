@@ -16,6 +16,17 @@ graphs/<graph-name>/          # 市场仓库中的单元
 
 **文件夹名 = `graph.json` 内的 `name` 字段**，两者必须严格一致（CI 校验）。
 
+### 默认通用 Worker 图
+
+`graph_name` 省略时使用默认图 `default`。它就是一张普通图，位于 `~/.purrcat/graph/default/graph.json`：启动时若缺失，`ensure_default_graph` 会从 `src/harness/graph_templates/default/graph.json` 复制一份；已存在则不会覆盖，可直接编辑或删除。它只接受一个入参 `prompt`，派发约定：
+
+1. 需要细化任务时，可选：把任务 spec 写成文件；
+2. `prompt` 写清目标与验收要点；有 spec 时附上其绝对路径（没有也能正常派发）；
+3. 有 spec：worker 读取 spec，把执行计划追加进同一文件，并随进度持续回写；没有 spec：直接按 `prompt` 执行，不自行创建 spec；
+4. 完成时把总结写入专属工作目录的 `summary.txt`，由系统自动通知派发方，无需轮询。
+
+用户目录下存在同名 `default/graph.json` 时，以用户图为准。
+
 ---
 
 ## 2. `graph.json` 顶层字段

@@ -21,6 +21,7 @@ from src.utils.config import (
     SOUL_MD_PATH,
     BASE_DIR,
     ACP_RELAY_PATH,
+    GRAPHS_DIR,
     get_acp_token,
 )
 from src.utils.initial_templates import (
@@ -134,6 +135,12 @@ def ensure_initialized():
     if first_run:
         print("[*] 首次运行，正在自动初始化 ~/.purrcat 配置目录...")
     _generate_all_configs()
+
+    # 默认图按普通图落盘到 ~/.purrcat/graph/default/，缺失时补一份，已有内容不覆盖
+    from src.harness.graph_init import ensure_default_graph
+
+    ensure_default_graph(GRAPHS_DIR)
+
     if first_run:
         print(f"[*] 请编辑 {MODEL_CONFIG_PATH} 填入你的 Agent 模型和 API Key")
         print("")
