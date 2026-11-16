@@ -175,7 +175,8 @@ def FileSystem(action: str, path: str = None, destination: str = None, **kwargs)
                 )
             try:
                 result = copy_file(path_from=path, path_to=destination)
-                return text_response(result["message"], "📋 复制成功")
+                title = "📋 覆盖复制成功" if result.get("overwritten") else "📋 复制成功"
+                return text_response(result["message"], title)
             except HostPathNotFoundError:
                 return error_response("源路径不存在", "❌ 路径不存在")
             except FileSystemError as e:
