@@ -76,6 +76,11 @@ EXPECTED_ROUTES = {
         ("/api/tasks/{task_id}/log", "GET", "get_task_log_endpoint"),
         ("/api/tasks/{task_id}/artifact", "GET", "get_task_artifact"),
         ("/api/tasks/{task_id}", "DELETE", "delete_task_endpoint"),
+        (
+            "/api/tasks/{task_id}/nodes/{node_id}/approve",
+            "POST",
+            "approve_node_api",
+        ),
         ("/api/tasks/{task_id}/nodes/{node_id}/reset", "POST", "reset_node_api"),
         ("/api/tasks/{task_id}/stop", "POST", "stop_task_api"),
     ],

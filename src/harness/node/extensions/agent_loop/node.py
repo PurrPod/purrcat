@@ -86,16 +86,19 @@ class Node(AgentNode):
         if skip_upstream:
             upstream = []
 
-        # graph 专属：范式「构建系统提示」的输出不再作为 system 角色插到 0 号位，
-        # 而是转成一条 user 消息、默认追加到「上游输入」的末尾——只追加、不动前缀，
-        # KV Cache 天然安全（主 Agent 仍是 system 头部，见 src/agent/agent.py）。
+        # graph 专属：范式「构建系统提示」的输出与主 Agent 不同——主 Agent 里它是
+        # system 头部；这里只把内容包成一条 role=user、type=system_input 的消息卡片，
+        # 默认追加到「上游输入」的末尾——只追加、不动前缀，KV Cache 天然安全。
         # 只在「从零开始的会话」（本节点记忆尚为空）注入一次，重跑 / 续跑不重复追加。
         sys_msgs = []
         if not memory:
             results = handler.execute("on_build_system_prompt", epoch=0)
             parts = [r["inject_prompt"] for r in results if r.get("inject_prompt")]
             if parts:
-                sys_msgs = [{"role": "user", "content": "\n\n---\n\n".join(parts)}]
+                card = {"type": "system_input", "content": "\n\n---\n\n".join(parts)}
+                sys_msgs = [
+                    {"role": "user", "content": json.dumps(card, ensure_ascii=False)}
+                ]
 
         if upstream:
             newly_user += [m for m in upstream if m.get("role") == "user"]
@@ -111,7 +114,7 @@ class Node(AgentNode):
         messages = self._sanitize_messages(memory + upstream + sys_msgs + fps)
 
         # 4) on_input_received：只对本批新增的 type=user 输入触发
-        # （系统提示 workflow_hint 不计入本批输入，也不触发该钩子）
+        # （系统提示 system_input 不计入本批输入，也不触发该钩子）
         if newly_user:
             await self._fire_hooks(
                 handler,

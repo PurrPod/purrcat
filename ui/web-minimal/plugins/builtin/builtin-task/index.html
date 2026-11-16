@@ -175,26 +175,11 @@
   .node.st-waiting .badge { background: var(--orange); color: #fff; }
   .node.st-skipped .badge { background: var(--field2); color: var(--dim); }
 
-  /* ---------- 人工审核圆环 ---------- */
-  .node.approval {
-    background: transparent; border: 0; box-shadow: none; padding: 0;
-    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
-  }
-  .node.approval:hover { box-shadow: none; transform: none; }
-  .ring {
-    width: 56px; height: 56px; border-radius: 50%; border: 3px solid var(--ink);
-    background: var(--paper); display: flex; align-items: center; justify-content: center;
-    padding: 0; cursor: pointer; transition: background .15s, border-color .15s, box-shadow .15s;
-  }
-  .ring:disabled { cursor: default; opacity: 1; }
-  .ring svg {
-    width: 26px; height: 26px; fill: none; stroke: #fff; stroke-width: 3;
-    stroke-linecap: round; stroke-linejoin: round; display: none;
-  }
-  .node.approval.st-waiting .ring { border-color: var(--orange); box-shadow: 0 0 0 5px rgba(243,176,90,.22); }
-  .node.approval.approved .ring { background: var(--green); border-color: var(--green); }
-  .node.approval.approved .ring svg { display: block; }
-  .hname { font-size: 11px; font-weight: 700; cursor: pointer; }
+  /* ---------- 人工审核节点：普通卡片 + 批准按钮 ---------- */
+  .node .nbtn.approve { background: var(--green); font-weight: 800; }
+  .node .nbtn.approve:disabled { opacity: 1; }
+  .node .nbtn.approve:disabled:not(.done) { background: var(--field2); color: var(--dim); }
+  .node.approved .badge { background: var(--green); }
 
   /* ---------- 单 Agent 会话（worker 形态） ---------- */
   .worker { position: absolute; inset: 0; overflow-y: auto; padding: 16px 20px 28px; background: var(--paper); }
@@ -266,6 +251,7 @@
   }
   .msg.user { background: var(--cream); }
   .msg.assistant { background: var(--paper); }
+  .mcol { width: 100%; max-width: 96%; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
   .msg .who { font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--ink2); margin-bottom: 6px; display: flex; align-items: center; gap: 5px; }
   .msg .who b { background: var(--ink); color: #fff; padding: 1px 5px; border-radius: 4px; }
   .md { font-size: 13px; line-height: 1.55; }
@@ -646,11 +632,9 @@
       return;
     }
     var allNodes = (S.graph.nodes || []).filter(Boolean);
-    // 概览只保留 Agent 与人工审核节点；详情展示完整节点
-    var nodes = S.view === 'detail'
-      ? allNodes
-      : allNodes.filter(function (n) { return KEY_TYPES.indexOf(String(n.type || '')) >= 0; });
-    if (!nodes.length) {
+    // 概览只保留 Agent 与人工审核节点
+    var keyNodes = allNodes.filter(function (n) { return KEY_TYPES.indexOf(String(n.type || '')) >= 0; });
+    if (!keyNodes.length) {
       world.innerHTML = '';
       worker.hidden = true;
       S.workerId = null; S.edges = [];
@@ -658,20 +642,21 @@
       empty.textContent = '该任务暂无关键节点';
       return;
     }
-    // 只有一个 Agent 节点时退化为 worker：直接展示该节点的会话，不再画节点图
-    if (S.view === 'simple' && nodes.length === 1 && String(nodes[0].type || '') === 'agent_loop') {
+    // 只有一个 Agent 节点时整张图退化为 worker：简图看筛选后的会话，详情看全量消息，都不画节点图
+    if (keyNodes.length === 1 && String(keyNodes[0].type || '') === 'agent_loop') {
       world.innerHTML = '';
       empty.hidden = true;
       S.edges = [];
-      S.workerId = nodes[0].id;
+      if (S.workerId !== keyNodes[0].id) S.workerAutoScroll = true;
+      S.workerId = keyNodes[0].id;
       S.workerSig = '';
-      S.workerAutoScroll = true;
       worker.hidden = false;
       renderWorker(true);
       return;
     }
     S.workerId = null;
     worker.hidden = true;
+    var nodes = S.view === 'detail' ? allNodes : keyNodes;
 
     var visible = {};
     nodes.forEach(function (n) { visible[n.id] = 1; });
@@ -699,10 +684,10 @@
       maxY = Math.max(maxY, p.y + NODE_H);
       var label = esc(n.name && String(n.name).trim() ? n.name : n.id);
       if (n.type === 'human_intervention') {
-        h += '<div class="node approval" data-nid="' + esc(n.id) + '" style="left:' + p.x + 'px;top:' + p.y + 'px">'
-          + '<button class="ring" data-approve="' + esc(n.id) + '" title="人工审核：点击批准继续">'
-          + '<svg viewBox="0 0 24 24"><path d="m5 13 4 4L19 7"/></svg></button>'
-          + '<div class="hname" data-log="' + esc(n.id) + '">' + label + '</div>'
+        h += '<div class="node" data-nid="' + esc(n.id) + '" data-human="1" style="left:' + p.x + 'px;top:' + p.y + 'px">'
+          + '<span class="badge">READY</span>'
+          + '<div class="nlabel">' + label + '</div>'
+          + '<div class="nbtns"><button class="nbtn approve" data-approve="' + esc(n.id) + '" title="人工审核：点击批准继续">批准</button></div>'
           + handlesHtml(n.id)
           + '</div>';
         return;
@@ -756,10 +741,11 @@
   function renderWorker(force) {
     if (!S.workerId) return;
     var msgs = ((S.nodeMemory[S.workerId] || {}).messages) || [];
-    var sig = JSON.stringify(msgs);
+    var all = S.view === 'detail';
+    var sig = (all ? 'all|' : 'filter|') + JSON.stringify(msgs);
     if (!force && sig === S.workerSig) return;
     S.workerSig = sig;
-    $('worker-body').innerHTML = messagesHtml(msgs);
+    $('worker-body').innerHTML = messagesHtml(msgs, all);
     if (S.workerAutoScroll) {
       var w = $('worker');
       w.scrollTop = w.scrollHeight;
@@ -771,17 +757,18 @@
     Array.prototype.forEach.call(list, function (el) {
       var id = el.getAttribute('data-nid');
       var st = extractState(S.nodeStates[id]);
-      var isHuman = el.classList.contains('approval');
-      el.className = 'node' + (isHuman ? ' approval' : '') + ' st-' + st + (S.isRunning ? ' live' : '') + (S.resetting === id ? ' resetting' : '');
+      var isHuman = el.getAttribute('data-human') === '1';
+      var approved = isHuman && (!!S.nodeApprovals[id] || st === 'completed');
+      el.className = 'node st-' + st + (S.isRunning ? ' live' : '') + (S.resetting === id ? ' resetting' : '') + (approved ? ' approved' : '');
       var b = el.querySelector('.badge');
       if (b) b.textContent = ST_TEXT[st] || 'READY';
       var rb = el.querySelector('.nbtn.reset');
       if (rb) rb.disabled = S.resetting === id;
-      if (isHuman) {
-        var approved = !!S.nodeApprovals[id] || st === 'completed';
-        if (approved) el.classList.add('approved');
-        var ring = el.querySelector('.ring');
-        if (ring) ring.disabled = !(st === 'waiting' && !approved);
+      var ab = el.querySelector('.nbtn.approve');
+      if (ab) {
+        ab.className = 'nbtn approve' + (approved ? ' done' : '');
+        ab.disabled = approved || st !== 'waiting';
+        ab.textContent = approved ? '✓ 已批准' : '批准';
       }
     });
     drawEdges();
@@ -939,31 +926,70 @@
     return h;
   }
 
-  function messagesHtml(msgs) {
+  // graph 消息卡片：{"type":"workflow_input"|"system_input"|"workflow_hint","content":"..."}
+  function parseCard(m) {
+    if (!m || m.role !== 'user') return null;
+    var s = String(m.content || '').trim();
+    if (s.charAt(0) !== '{') return null;
+    try {
+      var d = JSON.parse(s);
+      if (!d || typeof d !== 'object' || typeof d.content !== 'string') return null;
+      return { type: String(d.type || ''), content: d.content };
+    } catch (e) { return null; }
+  }
+
+  function foldRow(label, text) {
+    return '<div class="mrow"><div class="mcol"><details class="fold" style="margin-top:0">'
+      + '<summary>' + esc(label) + '</summary><div class="fb">' + esc(text) + '</div></details></div></div>';
+  }
+
+  function toolArgs(raw) {
+    if (raw == null || raw === '') return '';
+    try { return JSON.stringify(JSON.parse(raw), null, 2); } catch (e) { return String(raw); }
+  }
+
+  // allTypes=false：只保留 workflow_input 用户输入 + assistant/tool 过程
+  // allTypes=true：system_input / workflow_hint 等其它 type 的消息卡片也一并展示
+  function messagesHtml(msgs, allTypes) {
     if (!msgs.length) return '<div class="log-empty">暂无对话历史</div>';
     var h = '<div class="chat">';
     msgs.forEach(function (m) {
       var role = m.role || 'assistant';
+      var card = parseCard(m);
       if (role === 'user') {
-        h += '<div class="mrow end"><div class="msg user md">' + mdToHtml(m.content || '') + '</div></div>';
-      } else if (role === 'system') {
-        h += '<div class="mrow"><div style="width:100%;max-width:96%">'
-          + '<details class="fold" style="margin-top:0"><summary>系统提示 · System</summary>'
-          + '<div class="fb">' + esc(m.content || '') + '</div></details></div></div>';
-      } else if (role === 'tool') {
-        h += '<div class="mrow"><div class="msg" style="max-width:96%">'
-          + '<details class="fold"><summary>工具结果 · ' + esc(m.name || 'Output') + '</summary>'
-          + '<div class="fb">' + esc(toolText(m.content)) + '</div></details></div></div>';
-      } else {
-        h += '<div class="mrow"><div class="msg assistant" style="max-width:96%">';
-        if (m.content) h += '<div class="who"><b>助手</b></div><div class="md">' + mdToHtml(m.content) + '</div>';
-        (m.tool_calls || []).forEach(function (tc) {
-          var fn = (tc && tc.function) || {};
-          h += '<details class="fold"><summary>调用工具 · ' + esc(fn.name || 'tool') + '</summary>'
-            + '<div class="fb">' + esc(fn.arguments || '{}') + '</div></details>';
-        });
-        h += '</div></div>';
+        if (card && card.type === 'workflow_input') {
+          h += '<div class="mrow end"><div class="msg user md">' + mdToHtml(card.content) + '</div></div>';
+        } else if (!card) {
+          h += '<div class="mrow end"><div class="msg user md">' + mdToHtml(m.content || '') + '</div></div>';
+        } else if (allTypes) {
+          var label = card.type === 'system_input' ? '系统提示 · System Input'
+            : card.type === 'workflow_hint' ? '工作流提示' : '消息 · ' + card.type;
+          h += foldRow(label, card.content);
+        }
+        return;
       }
+      if (role === 'system') {
+        if (allTypes) h += foldRow('系统提示 · System', m.content || '');
+        return;
+      }
+      if (role === 'tool') {
+        h += '<div class="mrow"><div class="mcol"><details class="fold">'
+          + '<summary>工具结果 · ' + esc(m.name || 'Output') + '</summary>'
+          + '<div class="fb">' + esc(toolText(m.content)) + '</div></details></div></div>';
+        return;
+      }
+      // assistant：正文一个气泡，工具调用用独立折叠块，不再套第二层气泡
+      var inner = '';
+      if (m.content) {
+        inner += '<div class="msg assistant"><div class="who"><b>助手</b></div>'
+          + '<div class="md">' + mdToHtml(m.content) + '</div></div>';
+      }
+      (m.tool_calls || []).forEach(function (tc) {
+        var fn = (tc && tc.function) || {};
+        inner += '<details class="fold"><summary>调用工具 · ' + esc(fn.name || 'tool') + '</summary>'
+          + '<div class="fb">' + esc(toolArgs(fn.arguments)) + '</div></details>';
+      });
+      if (inner) h += '<div class="mrow"><div class="mcol">' + inner + '</div></div>';
     });
     return h + '</div>';
   }

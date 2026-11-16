@@ -106,7 +106,7 @@ graphs/<graph-name>/          # 市场仓库中的单元
 | `task_output` | 全局输出 | 定义最终返回的数据 | `target_vars`（dynamic）→ — |
 | `string` | 自定义输入 | 直接书写内容，派生字符串/数字/布尔/JSON 四类输出 | `trigger` → `text`/`number`/`boolean`/`json` |
 | `template_renderer` | 模板渲染器 | 用 Jinja2 把 `{{变量}}` 注入模板 | `template`/`dynamic_vars` → `rendered_text` |
-| `message_card_builder` | 消息卡片构建器 | 把文本+角色包装成标准 MessageList | `content`/`role` → `message_list` |
+| `message_card_builder` | 消息卡片构建器 | 把文本包装成 `role=user`、`type=workflow_input` 的消息卡片 | `content` → `message_list` |
 | `appender` | 列表追加 | 把 `append_list` 追到 `base_list` 后 | `base_list`/`append_list` → `merged_list` |
 | `json_builder` | JSON 构建器 | 按 `kv_pairs` 组装 JSON 字符串 | `kv_pairs`（dynamic）→ `json_string` |
 | `json_extractor` | JSON 提取器 | 按 `extract_keys` 从 JSON 精准取值 | `data` → `extract_keys`（dynamic）|
@@ -168,7 +168,7 @@ graphs/<graph-name>/          # 市场仓库中的单元
     { "id": "tpl_text", "type": "string", "name": "模板内容", "position": [-350, -180],
       "config": { "value": "你好 {{name}}，请做一次自我介绍。" } },
     { "id": "card", "type": "message_card_builder", "name": "构建消息", "position": [200, 0],
-      "config": { "role": "user" } },
+      "config": {} },
     { "id": "loop", "type": "agent_loop", "name": "智能体循环", "position": [500, 0],
       "config": {} },
     { "id": "out", "type": "task_output", "name": "全局输出", "position": [800, 0],

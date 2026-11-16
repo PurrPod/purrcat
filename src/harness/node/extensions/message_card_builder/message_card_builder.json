@@ -1,7 +1,7 @@
 {
     "type": "message_card_builder",
     "name": "消息卡片构建器",
-    "description": "将文本和角色包装成标准 MessageList 格式",
+    "description": "将文本包装为 role=user、type=workflow_input 的消息卡片",
     "color": "#3498DB",
     "inputs": [
         {
@@ -10,13 +10,6 @@
             "port_type": "static",
             "description": "消息内容",
             "required": true
-        },
-        {
-            "name": "role",
-            "type": "string",
-            "port_type": "static",
-            "description": "消息角色 (system/user/assistant)",
-            "required": false
         },
         {
             "name": "trigger",

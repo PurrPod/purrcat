@@ -69,7 +69,7 @@ def _skeleton(name: str, goal: str = "") -> dict:
                 "type": "message_card_builder",
                 "name": "构建消息",
                 "position": [200, 0],
-                "config": {"role": "user"},
+                "config": {},
             },
             {
                 "id": "al_text",

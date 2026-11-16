@@ -83,6 +83,8 @@ def test_default_graph_system_prompt_enforces_spec_workflow(tmp_path):
     assert "没有 Spec" in text
     assert "直接按 prompt 执行" in text
     assert "不要编造或新建 Spec 文件" in text
+    # 系统提示词由 agent_loop 的 on_build_system_prompt 注入为 system_input 卡片
+    assert "on_build_system_prompt" in text
 
 
 def test_default_graph_description_keeps_spec_optional(tmp_path):

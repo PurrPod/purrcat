@@ -62,7 +62,7 @@ STATIC_INPUTS = {
     "json_builder": ["trigger"],
     "json_extractor": ["data"],
     "mcp_info": ["trigger"],
-    "message_card_builder": ["content", "role", "trigger"],
+    "message_card_builder": ["content", "trigger"],
     "skill_info": ["trigger"],
     "string": ["trigger"],
     "task_input": [],

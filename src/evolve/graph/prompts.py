@@ -77,7 +77,7 @@ Graph（任务图 / 工作流）是「任务编排中枢」：用**节点（Node
 | `task_output` | 全局输出 | `dynamic_inputs` → — | `target_vars` |
 | `string` | 自定义输入 | `trigger` → `text`/`number`/`boolean`/`json` | `value` |
 | `template_renderer` | 模板渲染器 | `template`/`dynamic_vars`/`trigger` → `rendered_text` | `template` |
-| `message_card_builder` | 消息卡片构建器 | `content`/`role`/`trigger` → `message_list` | — |
+| `message_card_builder` | 消息卡片构建器 | `content`/`trigger` → `message_list`（固定 role=user、type=workflow_input） | — |
 | `appender` | 列表追加 | `base_list`/`append_list` → `merged_list` | — |
 | `json_builder` | JSON 构建器 | `dynamic_inputs`/`trigger` → `json_string` | `kv_pairs` |
 | `json_extractor` | JSON 提取器 | `data` → `dynamic_outputs` | `extract_keys` |
@@ -183,7 +183,7 @@ Graph（任务图 / 工作流）是「任务编排中枢」：用**节点（Node
 
 * ✅ **只在尾部追加**（`appender` 天然满足）。
 * ✅ **graph 里从不构建 `system` 角色**：`agent_loop` 节点不会再把范式的 `on_build_system_prompt` 输出插到头部，
-  而是把它转成一条 **user** 消息，且**只在「从零开始的会话」（该节点记忆尚为空）时追加到上游输入末尾**一次。
+  而是把它包成一条 **role=user、type=system_input 的消息卡片**，且**只在「从零开始的会话」（该节点记忆尚为空）时追加到上游输入末尾**一次。
   所以角色提示词照旧写在范式里即可；下游直连 `messages` 时会原样沿用上游历史，节点不重排、也不会再插 system，
   会话中途绝不刷新系统提示。
 * ❌ **不要在追加指令里追加 `role=system` 的消息**：历史中途插入 system 会让其后所有 token 的位置整体后移，

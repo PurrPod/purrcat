@@ -7,22 +7,25 @@
 ## 行为
 
 - 任务页默认进入「简图」：只渲染 `agent_loop` 与 `human_intervention` 两类节点；可见节点之间按全图拓扑先后顺序串联，不要求原始边直连。
-- 当简图只剩一个 `agent_loop` 节点时退化为 worker 形态：不画节点图，直接展示该节点的会话内容；仍可用「详情」切回完整节点视图。
-- `human_intervention` 节点渲染为圆环：`waiting` 时黄色，批准后显示绿色对勾；圆环仅在 `waiting` 且未批准时可点击。
-- 点击圆环调用 `POST /api/tasks/{task_id}/nodes/{node_id}/approve`，后端落盘 `nodes/{node_id}/approval.json` 后再返回，刷新后从 `GET /state` 的 `node_approvals` 回显绿色对勾。
-- 节点被重置回 `ready` 时清除其批准记录，圆环恢复为待审核状态。
+- 当简图只剩一个 `agent_loop` 节点时整张图退化为 worker 形态，两种视图都不画节点图：
+  - 简图：会话只保留 `role=user` 且 `type=workflow_input` 的输入气泡，以及 assistant / tool 的执行过程；
+  - 详情：展示所有 `type` 的消息卡片（含 `system_input`、`workflow_hint` 等）。
+- assistant 正文使用一个气泡；工具调用与工具结果使用独立折叠块，不再在折叠块外再套一层消息气泡。
+- `human_intervention` 节点与普通节点同样式渲染，但不提供重置/日志按钮，只保留「批准」按钮：`waiting` 时可点击，批准后按钮变为绿色「✓ 已批准」并禁用。
+- 点击「批准」调用 `POST /api/tasks/{task_id}/nodes/{node_id}/approve`，后端落盘 `nodes/{node_id}/approval.json` 后再返回，刷新后从 `GET /state` 的 `node_approvals` 回显已批准状态。
+- 节点被重置回 `ready` 时清除其批准记录，按钮恢复为待审核状态。
 - 顶部按钮由「看板」改为「详情」，在简图与完整节点视图之间切换；完整视图下按钮显示「简图」。
 - 删除自定义看板功能：任务页不再读取 `graph.dashboard`、不再渲染 iframe 看板；图编辑器移除看板配置入口与 `dashboard` 字段的读写。
 
 ## 验收标准
 
 - [ ] AC-1：简图只出现 Agent 与人工审核节点，且可见节点按拓扑顺序连成先后链。
-- [ ] AC-2：人工审核节点在 `waiting` 时为黄色圆环，批准后为绿色对勾。
+- [ ] AC-2：人工审核节点与普通节点同样式，仅有「批准」按钮；`waiting` 时可点击，批准后变为绿色「✓ 已批准」并禁用。
 - [ ] AC-3：批准记录写入 checkpoint，刷新任务页后仍显示已批准。
 - [ ] AC-4：重置节点后批准记录被清除。
 - [ ] AC-5：「详情」按钮可切换完整视图，且不再出现看板入口/iframe。
 - [ ] AC-6：图编辑器不再读写 `dashboard` 字段。
-- [ ] AC-7：仅含一个 Agent 节点的图在简图下直接展示该节点的会话，不渲染节点图。
+- [ ] AC-7：仅含一个 Agent 节点的图在简图下只展示 `workflow_input` 输入气泡与助手/工具过程，不渲染节点图；详情下展示全量类型消息卡片。
 
 ## 非目标
 

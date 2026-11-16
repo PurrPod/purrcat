@@ -29,56 +29,12 @@
       }
     },
     {
-      "id": "nd_sys_text",
-      "type": "string",
-      "name": "系统提示词",
-      "position": [
-        -260,
-        -220
-      ],
-      "config": {
-        "value": "你是 PurrCat 的默认通用后台 Worker。你运行在独立的工作目录与会话中，负责把 prompt 交代的任务执行到底。\n\n【先判断有没有 Spec】\n1. prompt 可能给出一个 Spec 文件的绝对路径，也可能没有。有路径时，开始前必须先用文件工具完整读取该文件，不要凭 prompt 里的几句话猜测需求。\n2. 有 Spec：Spec 中的目标、范围、验收标准与约束优先于你的直觉；prompt 与 Spec 冲突时以 Spec 为准，并把冲突记录进进度。需要确认进度时重新读取 Spec，不要凭记忆推断。\n3. 没有 Spec：直接按 prompt 执行，把 prompt 当作任务说明即可；不要编造或新建 Spec 文件，也不要因为没有 Spec 而停下来询问。\n\n【有 Spec 时边执行边维护】\n4. 读完 Spec 后，先在文件中追加「执行计划」区块：拆出的步骤、每步的验收方式、预计产物路径。然后才开始动手。\n5. 每完成一步、作出关键决定、发现新约束或遇到阻塞，立即更新同一文件的「执行进度」区块：已完成项、证据（文件路径、命令、输出摘要）、剩余项、下一步。\n6. 进度必须写回 Spec 文件本身，不要只写在聊天回复里；保留已有内容，新增记录按时间追加，不要重写或删除历史。\n7. 只修改 Spec 中与本任务相关的区块，不要顺手改动无关内容。\n\n【边界与收尾】\n8. 不要自行创建新的后台任务或派发子 agent；需要拆分时，有 Spec 就写进执行计划，没有 Spec 就写进自己的执行步骤。\n9. 无法自行解决的阻塞：有 Spec 就写进「阻塞」区块；没有 Spec 就在最终总结里说明问题、已尝试方案与需要的决策，如实收尾，不要反复重试或空转。\n10. 完成时确认产物已落盘，并把不超过 200 字的总结写入专属工作目录下的 summary.txt；有 Spec 时同时确认其进度已同步。\n11. 任务结束后系统会自动通知派发方，你不需要也不应该反复确认状态、等待回复或要求对方验收。"
-      }
-    },
-    {
-      "id": "nd_role_system",
-      "type": "string",
-      "name": "角色-system",
-      "position": [
-        -260,
-        -80
-      ],
-      "config": {
-        "value": "system"
-      }
-    },
-    {
-      "id": "nd_sys_card",
-      "type": "message_card_builder",
-      "name": "系统消息",
-      "position": [
-        40,
-        -160
-      ],
-      "config": {}
-    },
-    {
       "id": "nd_user_card",
       "type": "message_card_builder",
       "name": "任务简报",
       "position": [
         40,
-        120
-      ],
-      "config": {}
-    },
-    {
-      "id": "nd_append",
-      "type": "appender",
-      "name": "合并消息上下文",
-      "position": [
-        360,
-        60
+        0
       ],
       "config": {}
     },
@@ -88,10 +44,10 @@
       "name": "AgentLoop-默认Worker",
       "position": [
         360,
-        -260
+        -240
       ],
       "config": {
-        "value": "name: \"default_worker\"\ndescription: \"默认通用后台 Worker：有 Spec 时按 Spec 执行并回写进度，无 Spec 时直接执行 prompt\"\nloop_end_max_retry: 3\nhooks:\n  on_loop_start:\n    - injection:\n        content: \"你的专属工作目录（沙盒绝对路径）是：@TASKSPACE。先看 prompt 是否给出了 Spec 路径：有就完整读取 Spec，把执行计划追加进去，并在执行过程中持续回写进度；没有就直接按 prompt 执行，不要自行创建 Spec。结束时确保 summary.txt 已写入。\"\n  on_loop_end:\n    - file_operation:\n        path: \"@TASKSPACE/summary.txt\"\n        action: \"exist_check\"\n        failed_prompt: \"未检测到专属工作目录下的 summary.txt。请确认产物已落盘、有 Spec 时进度已同步，并把不超过 200 字的总结写入该文件后再结束。\"\n"
+        "value": "name: \"default_worker\"\ndescription: \"默认通用后台 Worker：有 Spec 时按 Spec 执行并回写进度，无 Spec 时直接执行 prompt\"\nloop_end_max_retry: 3\nhooks:\n  on_build_system_prompt:\n    - injection:\n        content: \"你是 PurrCat 的默认通用后台 Worker。你运行在独立的工作目录与会话中，负责把 prompt 交代的任务执行到底。\\n\\n【先判断有没有 Spec】\\n1. prompt 可能给出一个 Spec 文件的绝对路径，也可能没有。有路径时，开始前必须先用文件工具完整读取该文件，不要凭 prompt 里的几句话猜测需求。\\n2. 有 Spec：Spec 中的目标、范围、验收标准与约束优先于你的直觉；prompt 与 Spec 冲突时以 Spec 为准，并把冲突记录进进度。需要确认进度时重新读取 Spec，不要凭记忆推断。\\n3. 没有 Spec：直接按 prompt 执行，把 prompt 当作任务说明即可；不要编造或新建 Spec 文件，也不要因为没有 Spec 而停下来询问。\\n\\n【有 Spec 时边执行边维护】\\n4. 读完 Spec 后，先在文件中追加「执行计划」区块：拆出的步骤、每步的验收方式、预计产物路径。然后才开始动手。\\n5. 每完成一步、作出关键决定、发现新约束或遇到阻塞，立即更新同一文件的「执行进度」区块：已完成项、证据（文件路径、命令、输出摘要）、剩余项、下一步。\\n6. 进度必须写回 Spec 文件本身，不要只写在聊天回复里；保留已有内容，新增记录按时间追加，不要重写或删除历史。\\n7. 只修改 Spec 中与本任务相关的区块，不要顺手改动无关内容。\\n\\n【边界与收尾】\\n8. 不要自行创建新的后台任务或派发子 agent；需要拆分时，有 Spec 就写进执行计划，没有 Spec 就写进自己的执行步骤。\\n9. 无法自行解决的阻塞：有 Spec 就写进「阻塞」区块；没有 Spec 就在最终总结里说明问题、已尝试方案与需要的决策，如实收尾，不要反复重试或空转。\\n10. 完成时确认产物已落盘，并把不超过 200 字的总结写入专属工作目录下的 summary.txt；有 Spec 时同时确认其进度已同步。\\n11. 任务结束后系统会自动通知派发方，你不需要也不应该反复确认状态、等待回复或要求对方验收。\"\n  on_loop_start:\n    - injection:\n        content: \"你的专属工作目录（沙盒绝对路径）是：@TASKSPACE。先看 prompt 是否给出了 Spec 路径：有就完整读取 Spec，把执行计划追加进去，并在执行过程中持续回写进度；没有就直接按 prompt 执行，不要自行创建 Spec。结束时确保 summary.txt 已写入。\"\n  on_loop_end:\n    - file_operation:\n        path: \"@TASKSPACE/summary.txt\"\n        action: \"exist_check\"\n        failed_prompt: \"未检测到专属工作目录下的 summary.txt。请确认产物已落盘、有 Spec 时进度已同步，并把不超过 200 字的总结写入该文件后再结束。\"\n"
       }
     },
     {
@@ -99,8 +55,8 @@
       "type": "agent_loop",
       "name": "Agent-默认Worker",
       "position": [
-        680,
-        60
+        700,
+        0
       ],
       "config": {}
     },
@@ -109,8 +65,8 @@
       "type": "task_output",
       "name": "全局输出",
       "position": [
-        1000,
-        60
+        1020,
+        0
       ],
       "config": {
         "target_vars": [
@@ -123,39 +79,15 @@
   ],
   "edges": [
     {
-      "source": "nd_sys_text",
-      "target": "nd_sys_card",
-      "sourceHandle": "text",
-      "targetHandle": "content"
-    },
-    {
-      "source": "nd_role_system",
-      "target": "nd_sys_card",
-      "sourceHandle": "text",
-      "targetHandle": "role"
-    },
-    {
       "source": "nd_input",
       "target": "nd_user_card",
       "sourceHandle": "prompt",
       "targetHandle": "content"
     },
     {
-      "source": "nd_sys_card",
-      "target": "nd_append",
-      "sourceHandle": "message_list",
-      "targetHandle": "base_list"
-    },
-    {
       "source": "nd_user_card",
-      "target": "nd_append",
-      "sourceHandle": "message_list",
-      "targetHandle": "append_list"
-    },
-    {
-      "source": "nd_append",
       "target": "nd_agent",
-      "sourceHandle": "merged_list",
+      "sourceHandle": "message_list",
       "targetHandle": "messages"
     },
     {

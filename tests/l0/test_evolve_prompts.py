@@ -33,7 +33,7 @@ def test_guide_outputs_are_byte_identical():
         "f3c087b3e3c7f98fc747464266a7deaa6b068fc40fb60084487687f449a6e636"
     )
     assert _sha(generate_graph_guide("demo")) == (
-        "45add66cf7e181df18ea35619b32c9172b73a7483442fceb8938e1f06afafc8c"
+        "a35426057d6e007e5443df79d12064f49158a109eeb480dac3612b3ffb055849"
     )
     assert _sha(generate_agentloop_guide("demo")) == (
         "0794d6b74284f7692397a080ec2705e2e248141ea29113adcf39d66f308578be"
@@ -77,7 +77,7 @@ def test_generated_scaffolds_are_byte_identical():
     )
     # graph 骨架是 dict，逐字锁用序列化文本。
     assert _sha(str(graph_factory._skeleton("demo"))) == (
-        "bf02c9d7e6507289282e4102a8fada6f1f2a7ed717db79109ba9593d59b20fd8"
+        "67aa0db389b396a94dcc8e9a6dc10373bd1b16b110fd8e297ae5befcf0312e2d"
     )
     assert _sha(ui_plugin_factory.INDEX_HTML_TPL) == (
         "b951e07173b1f80ac23f27db79a72fff43b1e38fd396d4e85420b77575bba0cd"
