@@ -639,19 +639,70 @@
     };
   }
 
-  // 卡片配置区：非列表项逐一渲染为内联控件（列表项由端口区的 listBlock 承担）
+  // 卡片配置区：非列表项逐一渲染为内联控件；未被端口区 watch_config 消费的列表项
+  // （如 skill_info / mcp_info 的知识包）也在卡片内提供条目与「+」新增入口
   function renderCfgInto(nodeEl, node, def) {
     var old = nodeEl.querySelector('.g-cfg');
     if (old) old.remove();
     var cfgEl = EV.el('div', 'g-cfg');
+    var listBacked = {};
+    portList(def, 'in', node).concat(portList(def, 'out', node)).forEach(function (p) {
+      if (p.listBacked && p.field) listBacked[p.field.name] = 1;
+    });
     ((def && def.config) || []).forEach(function (f) {
-      if (f.type === 'list') return;
+      if (f.type === 'list') {
+        if (!listBacked[f.name]) cfgEl.appendChild(configListField(node, f, nodeEl, def));
+        return;
+      }
       cfgEl.appendChild(inlineField(node, f));
     });
     if (!cfgEl.childNodes.length) return;
     var head = nodeEl.querySelector('.g-node-h');
     nodeEl.insertBefore(cfgEl, head.nextSibling);
     Array.prototype.slice.call(cfgEl.querySelectorAll('textarea')).forEach(autoGrow);
+  }
+
+  // 卡片内列表配置：展示已添加条目（可删），「+」复用统一的新增弹层
+  function configListField(node, f, nodeEl, def) {
+    var wrap = EV.el('div', 'g-cfgf g-cfglist');
+    wrap.appendChild(EV.el('span', 'g-cfgl', f.label || f.name));
+    var items = Array.isArray(node.config[f.name]) ? node.config[f.name] : [];
+    if (!items.length) {
+      wrap.appendChild(EV.el('div', 'g-cfgempty', '尚未添加，点击下方 + 新增'));
+    }
+    items.forEach(function (it, idx) {
+      var nm = (it && typeof it === 'object') ? (it.name || it.key) : it;
+      var desc = (it && typeof it === 'object' && it.description) ? String(it.description) : '';
+      var row = EV.el('div', 'g-cfgitem');
+      row.title = desc || String(nm || '');
+      row.appendChild(EV.el('span', 'nm', nm ? String(nm) : '（空）'));
+      var del = EV.el('button', 'ibtn g-cfgdel');
+      del.type = 'button';
+      del.innerHTML = EV.icon('trash', 11);
+      del.title = '删除该条目';
+      del.onclick = function (ev) {
+        ev.stopPropagation();
+        items.splice(idx, 1);
+        state.dirty = true;
+        renderCfgInto(nodeEl, node, def);
+        refreshConfigDeps(node);
+      };
+      row.appendChild(del);
+      wrap.appendChild(row);
+    });
+    var add = EV.el('button', 'ibtn g-ladd');
+    add.type = 'button';
+    add.innerHTML = EV.icon('plus', 12);
+    add.title = '新增一个「' + (f.label || f.name) + '」';
+    add.onclick = function (ev) {
+      ev.stopPropagation();
+      addListItem(node, f, function () {
+        renderCfgInto(nodeEl, node, def);
+        refreshConfigDeps(node);
+      });
+    };
+    wrap.appendChild(add);
+    return wrap;
   }
 
   function inlineField(node, f) {
@@ -1080,7 +1131,7 @@
   }
 
   // 新增列表项 = 新增一个动态端口。按 item_schema 生成表单弹层（自由文本型列表则直接输入内容）
-  function addListItem(node, field) {
+  function addListItem(node, field, onAdded) {
     var schema = field.item_schema || [];
     var vals = {};
     schema.forEach(function (sub) {
@@ -1145,10 +1196,11 @@
             var exists = node.config[field.name].some(function (it) {
               return ((it && typeof it === 'object') ? (it.name || it.key) : it) === portName;
             });
-            if (exists) { EV.toast('已存在同名端口：' + portName, true); return; }
+            if (exists) { EV.toast('已存在同名条目：' + portName, true); return; }
             node.config[field.name].push(item);
             state.dirty = true;
-            refreshSummary(node);
+            if (onAdded) onAdded();
+            else refreshSummary(node);
             h.close();
           }
         }
@@ -1332,6 +1384,12 @@
       + '.g-bigta{width:100%;height:60vh;box-sizing:border-box;font-size:12px;line-height:1.7;padding:10px 12px;'
       + 'border:1px solid rgba(15,17,21,.14);border-radius:8px;background:#fff;color:#16191d;resize:vertical}'
       + '.g-cfg textarea,.g-cfg select,.g-node-rename{user-select:text}'
+      + '.g-cfgitem{display:flex;align-items:center;gap:6px;padding:2px 3px 2px 8px;'
+      + 'background:#f7f8fa;border:1px solid #e3e6ea;border-radius:6px}'
+      + '.g-cfgitem .nm{flex:1;min-width:0;font-family:ui-monospace,Consolas,monospace;'
+      + 'font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}'
+      + '.g-cfgitem .g-cfgdel{flex:none;width:18px;height:18px}'
+      + '.g-cfgempty{font-size:10.5px;color:#9aa5b1}'
       + '.g-node-rename{flex:1;min-width:0;font:inherit;font-size:12px;font-weight:600;color:#16191d;'
       + 'background:#f7f8fa;border:1px solid rgba(15,17,21,.16);border-radius:6px;padding:2px 6px;outline:none}'
       + '.g-node-edit{display:none;flex:none;width:18px;height:18px;align-items:center;justify-content:center;'
