@@ -18,6 +18,7 @@ class NodeState(str, Enum):
     ERROR = "error"  # 执行出错
     COMPLETED = "completed"  # 执行成功
     SKIPPED = "skipped"  # 因路由未命中，被上游短路跳过
+    KILLED = "killed"  # 任务被强制中止时仍在运行的节点
 
 
 class PortState(str, Enum):

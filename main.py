@@ -228,12 +228,28 @@ async def _bg_heavy_init():
     # 后台会话对账 (取代原本开局的耗时操作)
     def _reconcile_sessions():
         from src.agent.session_store import SessionStore
+        from src.harness.process import TASK_INSTANCES
         from src.utils.graph_api import migrate_graphs_to_folders
+        from src.utils.task_store import reconcile_disk_task_states
 
         # 旧单文件 graph → 文件夹结构（幂等）
         migrated = migrate_graphs_to_folders()
         if migrated:
             print(f"✅ [Graph迁移] 已迁移 {len(migrated)} 个 graph 为文件夹结构: {migrated}")
+
+        # 上次进程崩溃/被掐断时留下的 running 一律修正为 interrupted；
+        # 跳过本进程内确实还在跑的任务，避免误改活跃状态。
+        from src.harness.enums import TaskState
+
+        active_ids = {
+            task_id
+            for task_id, task in list(TASK_INSTANCES.items())
+            if getattr(task, "state", None)
+            in (TaskState.RUNNING, TaskState.STARTING)
+        }
+        fixed = reconcile_disk_task_states(skip_ids=active_ids)
+        if fixed:
+            print(f"✅ [任务对账] 已修正 {len(fixed)} 个残留运行态任务: {fixed}")
 
         SessionStore.background_sync_sessions()
 

@@ -12,6 +12,8 @@
 
 程序启动时不加载任务实例，列表只读取任务目录摘要（`meta.json` + `state.json`，旧格式为 `checkpoint.json`），并按目录结构缓存；任务图谱、会话与日志在真正查看或操作时再按需读取。
 
+进程重启后不可能还有任务在运行：磁盘上残留的 `running` / `starting` 统一按中断处理，列表与详情展示为 `interrupted`，残留的 `running` 节点回落到 `ready`。启动后台对账会同步修正新格式 `state.json` 中的错误状态；旧格式 `checkpoint.json` 体积较大，只在读取时归一化。
+
 **请求**
 
 无请求参数。
@@ -306,7 +308,7 @@ curl -X POST 'http://127.0.0.1:8000/api/tasks/tsk_ab12cd34/nodes/node_1/reset'
 
 ## POST `/api/tasks/{task_id}/stop`
 
-优雅终止运行中的任务：与 DELETE 不同，只杀死进程、保留 checkpoint 供后续查看。
+优雅终止运行中的任务：与 DELETE 不同，只杀死进程、保留 checkpoint 供后续查看。终止立即落盘为 `killed`，并取消正在执行的节点协程，把这些节点标记为 `killed`（再次注入或重置后回到 `ready` 可继续跑）。只要还有 `killed` 节点未重新执行，任务恢复运行时保持 `interrupted`，不会被误判为 `completed`。已处于终态（完成/出错/已中止）的任务返回 404。
 
 **请求**
 

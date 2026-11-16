@@ -56,12 +56,14 @@ def set_task_state(task_id, state):
 
 
 def kill_task(task_id):
-    if task_id in TASK_INSTANCES:
-        task = TASK_INSTANCES[task_id]
-        task.kill()
-        set_task_state(task_id, TaskState.KILLED)
-        return True
-    return False
+    task = TASK_INSTANCES.get(task_id)
+    if not task or not task_state.accepts_kill(task.state):
+        return False
+    task.kill()
+    task.state = TaskState.KILLED
+    # 立即落盘：即使引擎协程不在运行，磁盘也不能停留在 running
+    task.save_state()
+    return True
 
 
 def inject_task_instruction(task_id: str, content: str, node_id: str) -> bool:
@@ -192,30 +194,26 @@ class Task:
             return {"status": "error", "message": self.init_error}
 
         self._loop = asyncio.get_running_loop()
-        self.state = TaskState.RUNNING
-        self.running_tasks.clear()
 
         # 🌟 记录运行启动时间
         start_time = time.time()
 
+        # kill 可能发生在引擎启动前（注入后立刻停止）：直接落终态，不再调度
+        if self._killed or self.state == TaskState.KILLED:
+            return self._finalize_killed(start_time)
+
+        self.state = TaskState.RUNNING
+        self.running_tasks.clear()
+
         try:
             while True:
                 if self._killed:
-                    self._cancel_all_tasks()
-                    self.state = TaskState.KILLED
-                    self.execution_time += time.time() - start_time  # 🌟 累加用时
-                    self.save_state()  # 🌟 状态极小，直接同步写
-
-                    # 🌟 修复：明确返回中止的 result，替代隐式的 break 导致返回 None
-                    return {
-                        "status": "killed",
-                        "message": "⛔ 进程已被人工/系统强行中止",
-                    }
+                    return self._finalize_killed(start_time)
 
                 runnable_nodes = self._get_runnable_nodes()
 
                 if not runnable_nodes and not self.running_tasks:
-                    if task_state.any_waiting(self.node_state):
+                    if task_state.any_suspended(self.node_state):
                         self.state = TaskState.INTERRUPTED
                         self.execution_time += time.time() - start_time  # 🌟 累加用时
                         self.save_state()  # 🌟 状态极小，直接同步写
@@ -371,10 +369,13 @@ class Task:
         #    重跑时不能再吸收一次上游 messages，否则上游整段会重复落盘
         task_state.queue_force_push(self.node_memory, node_id, instruction)
 
-        # 4. 触发正确的级联重置 (is_injection=True，保护当前节点的记忆)
+        # 4. 用户重新注入即新的运行意图，必须清掉上一次的停机标记
+        self._killed = False
+
+        # 5. 触发正确的级联重置 (is_injection=True，保护当前节点的记忆)
         self._cascade_reset(node_id, is_injection=True)
 
-        # 5. 唤醒整个任务流：运行中保持 RUNNING，避免 API 误判后重复拉起引擎
+        # 6. 唤醒整个任务流：运行中保持 RUNNING，避免 API 误判后重复拉起引擎
         self.state = task_state.wake_state(self.state)
 
         # 🌟 状态极小，直接同步写
@@ -392,6 +393,9 @@ class Task:
 
         # 🌟 修复：记录重置前的任务状态
         was_running = self.state == TaskState.RUNNING
+
+        # 用户显式重置即新的运行意图，清掉停机标记，否则引擎拉起后会立即退出
+        self._killed = False
 
         # 触发彻底的级联重置 (is_injection=False，连目标节点的记忆一起扬了)
         self._cascade_reset(node_id, is_injection=False)
@@ -462,6 +466,17 @@ class Task:
         self._killed = True
         # 🌟 修复：立即打断所有正在运行的协程，而不是傻等它们跑完当前步骤
         self._cancel_all_tasks()
+        # 运行中的节点不能以 RUNNING 落盘，统一标记为 killed
+        task_state.mark_killed_nodes(self.node_state)
+
+    def _finalize_killed(self, start_time: float) -> dict:
+        """统一落停机终态：取消协程、运行中节点标记 killed、写盘。"""
+        self._cancel_all_tasks()
+        task_state.mark_killed_nodes(self.node_state)
+        self.state = TaskState.KILLED
+        self.execution_time += time.time() - start_time
+        self.save_state()
+        return {"status": "killed", "message": "⛔ 进程已被人工/系统强行中止"}
 
     def _cancel_all_tasks(self):
         for task in list(self.running_tasks.keys()):

@@ -42,7 +42,9 @@ def restore_port_states(raw: dict) -> dict:
 
 def restore_task_state(raw_state) -> TaskState:
     state = TaskState(raw_state)
-    return TaskState.INTERRUPTED if state == TaskState.RUNNING else state
+    if state in (TaskState.RUNNING, TaskState.STARTING):
+        return TaskState.INTERRUPTED
+    return state
 
 
 def serialize_node_state(node_state: dict) -> dict:

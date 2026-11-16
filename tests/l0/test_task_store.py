@@ -123,6 +123,122 @@ def test_load_task_checkpoint_reads_new_format(tmp_path, monkeypatch):
     assert data["outputs"] == {"n1": {"ok": True}}
 
 
+def test_scan_disk_tasks_demotes_stale_running_state(tmp_path):
+    """重启后扫盘不可能还有 running，列表必须展示为 interrupted。"""
+    _write_new_format(
+        tmp_path,
+        "one_t1",
+        {"task_id": "t1", "name": "one"},
+        {"state": "running"},
+    )
+
+    tasks = task_store.scan_disk_tasks(str(tmp_path), log=lambda _: None)
+
+    assert tasks["t1"]["state"] == "interrupted"
+
+
+def test_build_disk_task_demotes_stale_running_state():
+    summary = task_store.build_disk_task(
+        {"task_id": "t1", "name": "legacy", "state": "running"}, "x"
+    )
+
+    assert summary["state"] == "interrupted"
+
+
+def test_load_task_checkpoint_demotes_stale_running_nodes(tmp_path, monkeypatch):
+    """详情里的任务与节点同样不能残留 running，节点回落到 ready。"""
+    monkeypatch.setattr(task_store, "DATA_DIR", str(tmp_path))
+    _write_new_format(
+        tmp_path / "checkpoints" / "task",
+        "one_t1",
+        {"task_id": "t1", "name": "one"},
+        {
+            "state": "running",
+            "dag_state": {"n1": {"state": "running"}, "n2": {"state": "completed"}},
+            "node_state": {"n1": "running", "n2": "completed"},
+        },
+    )
+
+    data = task_store.load_task_checkpoint("t1")
+
+    assert data["state"] == "interrupted"
+    assert data["dag_state"] == {"n1": {"state": "ready"}, "n2": {"state": "completed"}}
+    assert data["node_state"] == {"n1": "ready", "n2": "completed"}
+
+
+def test_load_task_checkpoint_normalizes_legacy_running(tmp_path, monkeypatch):
+    """旧格式详情也不能把残留 running 透给前端。"""
+    monkeypatch.setattr(task_store, "DATA_DIR", str(tmp_path))
+    _write_checkpoint(
+        tmp_path / "checkpoints" / "task",
+        "old_t9",
+        {
+            "task_id": "t9",
+            "name": "old",
+            "state": "running",
+            "dag_state": {"n1": {"state": "running"}},
+        },
+    )
+
+    data = task_store.load_task_checkpoint("t9")
+
+    assert data["state"] == "interrupted"
+    assert data["dag_state"] == {"n1": {"state": "ready"}}
+
+
+def test_reconcile_disk_task_states_rewrites_stale_running(tmp_path):
+    """对账要把磁盘上的残留运行态修好，且不动已结束任务。"""
+    running_dir = _write_new_format(
+        tmp_path,
+        "one_t1",
+        {"task_id": "t1", "name": "one"},
+        {
+            "state": "running",
+            "dag_state": {"n1": {"state": "running"}},
+            "node_state": {"n1": "running"},
+        },
+    )
+    done_dir = _write_new_format(
+        tmp_path,
+        "two_t2",
+        {"task_id": "t2", "name": "two"},
+        {"state": "completed", "node_state": {"n1": "completed"}},
+    )
+    done_before = (done_dir / "state.json").read_text(encoding="utf-8")
+
+    fixed = task_store.reconcile_disk_task_states(str(tmp_path), log=lambda _: None)
+
+    assert fixed == ["t1"]
+    saved = json.loads((running_dir / "state.json").read_text(encoding="utf-8"))
+    assert saved["state"] == "interrupted"
+    assert saved["dag_state"] == {"n1": {"state": "ready"}}
+    assert saved["node_state"] == {"n1": "ready"}
+    assert (done_dir / "state.json").read_text(encoding="utf-8") == done_before
+
+
+def test_reconcile_disk_task_states_skips_active_tasks(tmp_path):
+    _write_new_format(tmp_path, "one_t1", {"task_id": "t1"}, {"state": "running"})
+
+    fixed = task_store.reconcile_disk_task_states(
+        str(tmp_path), skip_ids={"t1"}, log=lambda _: None
+    )
+
+    assert fixed == []
+
+
+def test_reconcile_disk_task_states_leaves_legacy_checkpoint(tmp_path):
+    """旧格式 checkpoint.json 可能很大，启动对账不读不写，由展示层归一化。"""
+    directory = _write_checkpoint(
+        tmp_path, "old_t9", {"task_id": "t9", "state": "running"}
+    )
+
+    fixed = task_store.reconcile_disk_task_states(str(tmp_path), log=lambda _: None)
+
+    assert fixed == []
+    saved = json.loads((directory / "checkpoint.json").read_text(encoding="utf-8"))
+    assert saved["state"] == "running"
+
+
 def test_find_task_dir_prefers_exact_id_suffix(tmp_path, monkeypatch):
     """task_id 是另一个任务目录名的前缀时，不能取错目录。"""
     monkeypatch.setattr(task_store, "DATA_DIR", str(tmp_path))

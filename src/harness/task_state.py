@@ -32,8 +32,24 @@ def accepts_kill(state: TaskState) -> bool:
     return state not in TERMINAL_STATES
 
 
-def any_waiting(node_state: dict) -> bool:
-    return any(state == NodeState.WAITING for state in node_state.values())
+def mark_killed_nodes(node_state: dict) -> None:
+    """把仍在运行的节点标成 KILLED，避免 kill 后残留 RUNNING。"""
+    for node_id, state in node_state.items():
+        if state == NodeState.RUNNING:
+            node_state[node_id] = NodeState.KILLED
+
+
+def any_suspended(node_state: dict) -> bool:
+    """存在等待人工介入或中止后未执行的节点，任务就没跑完。"""
+    return any(
+        state in (NodeState.WAITING, NodeState.KILLED) for state in node_state.values()
+    )
+
+
+def killed_nodes(node_state: dict) -> list[str]:
+    return [
+        node_id for node_id, state in node_state.items() if state == NodeState.KILLED
+    ]
 
 
 def waiting_human_nodes(node_state: dict, node_types: dict) -> list[str]:
@@ -53,5 +69,11 @@ def suspended_message(node_state: dict, node_types: dict) -> str:
             f"任务已在人工干预节点 {waiting_hi} 处挂起，等待人类指令。"
             "你没有对人工干预节点注入指令的权力，"
             "请转告用户：到任务面板对应节点亲自输入指令后，工作流才会继续。"
+        )
+    killed = killed_nodes(node_state)
+    if killed:
+        return (
+            f"任务此前被中止，节点 {killed} 未执行完成，不能视为任务结束。"
+            "请在任务面板向这些节点注入指令后继续。"
         )
     return "任务已挂起，等待人工干预"

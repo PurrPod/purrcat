@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import json
 import threading
 
 import pytest
@@ -17,7 +18,7 @@ from src.harness.node.agent_node import AgentNode
 from src.harness.process import Task
 from src.harness.task_state import (
     accepts_kill,
-    any_waiting,
+    any_suspended,
     queue_force_push,
     suspended_message,
     wake_state,
@@ -181,6 +182,63 @@ def test_kill_task_marks_state_killed(tmp_path, monkeypatch):
     assert process_module.kill_task("missing") is False
 
 
+def test_kill_marks_running_nodes_killed(tmp_path):
+    """SPEC-019 AC-2：kill 后正在运行的节点不能残留 RUNNING。"""
+    task = _make_task(tmp_path)
+    task.node_state = {
+        "a": NodeState.RUNNING,
+        "b": NodeState.READY,
+        "c": NodeState.COMPLETED,
+    }
+
+    task.kill()
+
+    assert task.node_state == {
+        "a": NodeState.KILLED,
+        "b": NodeState.READY,
+        "c": NodeState.COMPLETED,
+    }
+
+
+def test_kill_task_persists_killed_state_and_nodes(tmp_path, monkeypatch):
+    """SPEC-019 AC-2：kill 后立刻落盘，节点同步为 killed，重启不会回退 running。"""
+    task = _make_task(tmp_path, {"n": object()})
+    task.node_state = {"n": NodeState.RUNNING}
+    monkeypatch.setattr(process_module, "TASK_INSTANCES", {"t1": task})
+
+    assert process_module.kill_task("t1") is True
+
+    saved = json.loads((tmp_path / "state.json").read_text(encoding="utf-8"))
+    assert saved["state"] == "killed"
+    assert saved["node_state"] == {"n": "killed"}
+    assert saved["dag_state"] == {"n": {"state": "killed"}}
+
+
+def test_kill_task_rejects_terminal_tasks(tmp_path, monkeypatch):
+    """SPEC-019 AC-2：已完成任务不再被改成 KILLED。"""
+    task = _make_task(tmp_path)
+    task.state = TaskState.COMPLETED
+    monkeypatch.setattr(process_module, "TASK_INSTANCES", {"t1": task})
+
+    assert process_module.kill_task("t1") is False
+    assert task.state == TaskState.COMPLETED
+
+
+def test_inject_after_kill_clears_flag_and_requeues(tmp_path):
+    """SPEC-019 AC-1/AC-2：kill 后再次注入应重新可跑，不能带着停机标记。"""
+    task = _make_task(tmp_path, {"n": _agent_node()})
+    task.state = TaskState.KILLED
+    task._killed = True
+    task.node_state = {"n": NodeState.KILLED}
+
+    result = task.inject_instruction("n", "再来一次")
+
+    assert result["status"] == "success"
+    assert task._killed is False
+    assert task.state == TaskState.READY
+    assert task.node_state["n"] == NodeState.READY
+
+
 def test_queue_force_push_preserves_existing_memory():
     """SPEC-019 AC-1：纯函数入队不覆盖节点其他寄存器。"""
     memory = {"n": {"force_push": ["a"], "other": 1}}
@@ -197,12 +255,22 @@ def test_wake_state_only_keeps_running():
     assert wake_state(TaskState.READY) == TaskState.READY
 
 
+def test_killed_nodes_keep_task_suspended():
+    """SPEC-019 AC-6：被中止未执行的节点不能当成已完成。"""
+    node_state = {"k": NodeState.KILLED, "done": NodeState.COMPLETED}
+
+    assert any_suspended(node_state) is True
+    assert "k" in suspended_message(node_state, {})
+    assert any_suspended({"done": NodeState.COMPLETED}) is False
+    assert suspended_message({"n": NodeState.READY}, {}) == "任务已挂起，等待人工干预"
+
+
 def test_accepts_kill_and_waiting_register():
     """SPEC-019 AC-2：终态判定与等待人工节点文案。"""
     assert accepts_kill(TaskState.READY) is True
     assert accepts_kill(TaskState.KILLED) is False
 
     node_state = {"h": NodeState.WAITING, "n": NodeState.READY}
-    assert any_waiting(node_state) is True
+    assert any_suspended(node_state) is True
     assert "h" in suspended_message(node_state, {"h": "human_intervention"})
     assert suspended_message({"n": NodeState.READY}, {}) == "任务已挂起，等待人工干预"

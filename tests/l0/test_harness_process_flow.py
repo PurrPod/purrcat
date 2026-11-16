@@ -377,6 +377,34 @@ def test_run_suspends_on_waiting_human_node(tmp_path):
     assert saved == ["save"]
 
 
+def test_run_stays_suspended_when_killed_node_remains(tmp_path):
+    """SPEC-019 AC-6：kill 后只续跑一个节点，另一个 killed 节点未执行不得算完成。"""
+    task = _make_task(tmp_path)
+    executed = []
+
+    class FakeNode:
+        def __init__(self, node_id):
+            self.node_id = node_id
+
+        async def execute(self, inputs, context=None):
+            executed.append(self.node_id)
+            return {}
+
+    task.node_list = {"a": FakeNode("a"), "b": FakeNode("b")}
+    task.node_state = {"a": NodeState.READY, "b": NodeState.KILLED}
+    task.node_types = {"a": "string", "b": "string"}
+    task._build_node_inputs = lambda node_id: {}
+    task._save_node_outputs = lambda node_id, result: None
+    task.save_state = lambda: None
+
+    result = asyncio.run(task.run())
+
+    assert executed == ["a"]
+    assert result["status"] == "suspended"
+    assert "b" in result["message"]
+    assert task.state == TaskState.INTERRUPTED
+
+
 def test_run_returns_killed_and_saves_synchronously(tmp_path):
     """SPEC-019 AC-5：停机标记在进入调度前生效，状态置 KILLED 并写盘。"""
     task = _make_task(tmp_path)
@@ -389,6 +417,31 @@ def test_run_returns_killed_and_saves_synchronously(tmp_path):
     assert result["status"] == "killed"
     assert task.state == TaskState.KILLED
     assert task.execution_time >= 1.234
+    assert saved == ["save"]
+
+
+def test_run_after_kill_without_reactivation_stays_killed(tmp_path):
+    """SPEC-019 AC-5：KILLED 任务被误拉起时不得改写成 COMPLETED。"""
+    task = _make_task(tmp_path)
+    executed = []
+
+    class FakeNode:
+        async def execute(self, inputs, context=None):
+            executed.append(True)
+            return {}
+
+    task.node_list = {"a": FakeNode()}
+    task.node_state = {"a": NodeState.KILLED}
+    task.node_types = {"a": "string"}
+    task.state = TaskState.KILLED
+    saved = []
+    task.save_state = lambda: saved.append("save")
+
+    result = asyncio.run(task.run())
+
+    assert result["status"] == "killed"
+    assert task.state == TaskState.KILLED
+    assert executed == []
     assert saved == ["save"]
 
 

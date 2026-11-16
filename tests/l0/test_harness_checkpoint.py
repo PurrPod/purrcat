@@ -33,6 +33,7 @@ def test_restore_node_states_demotes_running_to_ready():
             "a": {"state": "running"},
             "b": "completed",
             "c": {"state": "waiting"},
+            "d": {"state": "killed"},
         }
     )
 
@@ -40,11 +41,13 @@ def test_restore_node_states_demotes_running_to_ready():
         "a": NodeState.READY,
         "b": NodeState.COMPLETED,
         "c": NodeState.WAITING,
+        "d": NodeState.KILLED,
     }
 
 
 def test_restore_task_state_demotes_running_to_interrupted():
     assert restore_task_state("running") == TaskState.INTERRUPTED
+    assert restore_task_state("starting") == TaskState.INTERRUPTED
     assert restore_task_state("completed") == TaskState.COMPLETED
 
 

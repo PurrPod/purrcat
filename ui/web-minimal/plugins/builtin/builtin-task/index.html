@@ -172,6 +172,8 @@
   .node.st-completed .badge { background: var(--green); }
   .node.st-error { border-color: var(--red); }
   .node.st-error .badge { background: var(--red); color: #fff; }
+  .node.st-killed { border-color: var(--red); box-shadow: 3px 3px 0 rgba(231,76,60,.45); }
+  .node.st-killed .badge { background: var(--red); color: #fff; }
   .node.st-waiting .badge { background: var(--orange); color: #fff; }
   .node.st-skipped .badge { background: var(--field2); color: var(--dim); }
 
@@ -448,7 +450,7 @@
   var AGENT_TYPES = ['agent_loop', 'human_intervention'];
   // 简图只呈现 Agent 与人工审核节点；输入/输出等由调度层承担，不再占用视线
   var KEY_TYPES = ['agent_loop', 'human_intervention'];
-  var ST_TEXT = { ready: 'READY', running: 'RUNNING', completed: 'COMPLETED', error: 'ERROR', waiting: 'WAITING', skipped: 'SKIPPED' };
+  var ST_TEXT = { ready: 'READY', running: 'RUNNING', completed: 'COMPLETED', error: 'ERROR', waiting: 'WAITING', skipped: 'SKIPPED', killed: 'KILLED' };
 
   var API = {
     tasks: '/api/tasks',
@@ -518,6 +520,7 @@
     if (s.indexOf('completed') >= 0) return 'completed';
     if (s.indexOf('running') >= 0) return 'running';
     if (s.indexOf('error') >= 0 || s.indexOf('failed') >= 0) return 'error';
+    if (s.indexOf('killed') >= 0) return 'killed';
     if (s.indexOf('waiting') >= 0) return 'waiting';
     if (s.indexOf('skipped') >= 0) return 'skipped';
     return 'ready';
