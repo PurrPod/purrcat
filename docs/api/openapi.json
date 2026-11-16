@@ -5693,7 +5693,7 @@
     },
     "/api/tasks/{task_id}/push": {
       "post": {
-        "description": "精确注入：只向指定 Agent 节点注入（任务必须在内存中处于活跃状态）",
+        "description": "精确注入：只向指定 Agent 节点注入（任务必须处于活跃状态）",
         "operationId": "push_to_task_api_tasks__task_id__push_post",
         "parameters": [
           {
