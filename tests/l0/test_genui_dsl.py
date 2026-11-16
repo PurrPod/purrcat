@@ -371,3 +371,23 @@ def test_audio_and_video_components() -> None:
     assert "gui-media-video" in html
     assert "<video" in html
     assert "https://example.com/demo.mp4" in html
+
+
+def test_inline_color_markup() -> None:
+    html = _render(
+        'root = Text("营收 <green>+12%</green>，成本 <red>+3%</red>，'
+        '<yellow>注意</yellow>，<danger>**重点**</danger>")'
+    )
+    assert html.count("gui-inline-color") == 4
+    assert "var(--gui-success)" in html
+    assert "var(--gui-danger)" in html
+    assert "var(--gui-warning)" in html
+    assert "<strong>重点</strong>" in html
+    assert "<green>" not in html and "<red>" not in html
+
+
+def test_unknown_inline_tag_stays_literal() -> None:
+    html = _render('root = Text("比较 <b>a</b> 与 <red>ok</red>")')
+    assert "&lt;b&gt;a&lt;/b&gt;" in html
+    assert html.count("gui-inline-color") == 1
+    assert "ok" in html

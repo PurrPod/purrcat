@@ -28,16 +28,35 @@
 
   function isNodeValue(v) { return !!(v && typeof v === 'object' && v.__node); }
 
-  /* 轻量内联标记：**粗体**、*斜体*、`代码`、[链接](url) */
+  /* 轻量内联标记：**粗体**、*斜体*、`代码`、[链接](url)、<red>着色</red> */
+  var INLINE_TONES = {
+    red: 'danger', green: 'success', yellow: 'warning', blue: 'info',
+    orange: 'warning', purple: 'purple', pink: 'pink',
+    gray: 'muted', grey: 'muted', ink: 'ink', muted: 'muted', faint: 'faint',
+    info: 'info', success: 'success', warning: 'warning', danger: 'danger'
+  };
+  var TONE_NAMES = Object.keys(INLINE_TONES).join('|');
+
   function inline(text) {
     var src = String(text == null ? '' : text);
     var out = [];
-    var re = /(\*\*[^*]+\*\*|\*[^*\n]+\*|`[^`]+`|\[[^\]]+\]\([^)\s]+\))/g;
+    var re = new RegExp(
+      '(<(' + TONE_NAMES + ')>[\\s\\S]*?<\\/\\2>|' +
+      '\\*\\*[^*]+\\*\\*|\\*[^*\\n]+\\*|`[^`]+`|\\[[^\\]]+\\]\\([^)\\s]+\\))', 'g'
+    );
     var last = 0, m;
     while ((m = re.exec(src))) {
       if (m.index > last) out.push(t(src.slice(last, m.index)));
       var token = m[0];
-      if (token.slice(0, 2) === '**') out.push(h('strong', {}, [t(token.slice(2, -2))]));
+      if (m[2] && token.charAt(0) === '<') {
+        var open = '<' + m[2] + '>';
+        var inner = token.slice(open.length, token.length - m[2].length - 3);
+        out.push(h('span', {
+          cls: 'gui-inline-color',
+          style: { color: G.color(INLINE_TONES[m[2]]) }
+        }, inline(inner)));
+      }
+      else if (token.slice(0, 2) === '**') out.push(h('strong', {}, [t(token.slice(2, -2))]));
       else if (token[0] === '`') out.push(h('code', { cls: 'gui-inline-code' }, [t(token.slice(1, -1))]));
       else if (token[0] === '*') out.push(h('em', {}, [t(token.slice(1, -1))]));
       else {

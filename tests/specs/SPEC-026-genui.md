@@ -77,3 +77,4 @@ MovingAvg Change Histogram Stats`
 - AC-11 `List` 的标记样式只取第二个参数；`ListItem` 第三参为自定义标记文本，写 `none`/`bullet`/`number` 时不显示。
 - AC-12 `![](路径)` 按扩展名识别：本地图片/音频/视频转内嵌媒体，`.genui` 转占位卡并在插入后展开；远程图片保持原生 `<img>`。
 - AC-13 本地路径统一转成 `/api/filesystem/preview?path=...`，远程地址原样使用；`Audio`/`Video` 组件复用同一转换。
+- AC-14 `Text`/`Title`/`Caption`/`ListItem` 的文本参数支持 `<red>文字</red>` 着色，映射到主题色变量且可嵌套粗体；未登记标签按纯文本显示。
