@@ -4,12 +4,24 @@ import shutil
 
 from src.harness.process import TASK_INSTANCES
 from src.harness.process import kill_task as process_kill_task
+from src.harness.process import load_task_instance
 from src.utils import task_store
 
 
+# 磁盘摘要缓存：目录结构不变时不重复解析 meta/state.json。
+# 休眠任务的状态只会被本进程改写（改写时任务在内存里，会覆盖磁盘摘要），
+# 因此仅按目录列表失效即可保持正确。
+_disk_summary_cache = {"signature": None, "tasks": {}}
+
+
 def get_task_list():
-    """🌟 修复：合并磁盘历史任务与内存活跃任务"""
-    tasks_dict = task_store.scan_disk_tasks(task_store.checkpoints_root())
+    """合并磁盘历史任务与内存活跃任务"""
+    base_dir = task_store.checkpoints_root()
+    signature = tuple(sorted(os.listdir(base_dir))) if os.path.isdir(base_dir) else None
+    if signature != _disk_summary_cache["signature"]:
+        _disk_summary_cache["tasks"] = task_store.scan_disk_tasks(base_dir)
+        _disk_summary_cache["signature"] = signature
+    tasks_dict = dict(_disk_summary_cache["tasks"])
 
     # 用内存中的活跃状态进行覆盖，保证实时性
     for task_id, task in TASK_INSTANCES.items():
@@ -116,7 +128,7 @@ def force_push_task(task_id: str, content: str):
     from src.harness.node.agent_node import AgentNode
     from src.harness.enums import TaskState
 
-    task = TASK_INSTANCES.get(task_id)
+    task = load_task_instance(task_id)
     if not task:
         return False
 

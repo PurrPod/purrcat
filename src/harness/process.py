@@ -27,26 +27,26 @@ from .enums import NodeState, TaskState
 TASK_INSTANCES = {}
 
 
-def auto_load_all_tasks():
-    checkpoints_dir = os.path.join(DATA_DIR, "checkpoints", "task")
-    if not os.path.exists(checkpoints_dir):
-        return
+def load_task_instance(task_id: str):
+    """按需把任务从磁盘 checkpoint 加载回内存（幂等）。
 
-    for task_dir in os.listdir(checkpoints_dir):
-        full_path = os.path.join(checkpoints_dir, task_dir)
-        # 🌟 修复：新架构下，只要有 meta.json 就认为是一个有效的任务存档
-        meta_file = os.path.join(full_path, "meta.json")
-        old_checkpoint = os.path.join(full_path, "checkpoint.json")
+    启动时不再全量扫盘实例化；只有在真正操作任务（注入、重置、审批、推送等）
+    时才调用本函数。查看图谱/记录走磁盘读取，不触发实例化。找不到存档时返回 None。
+    """
+    task = TASK_INSTANCES.get(task_id)
+    if task:
+        return task
 
-        if os.path.isdir(full_path) and (
-            os.path.exists(meta_file) or os.path.exists(old_checkpoint)
-        ):
-            try:
-                task = Task.load_checkpoint(full_path)
-                if task:
-                    print(f"✅ 成功从磁盘加载任务到内存: {task.task_id}")
-            except Exception as e:
-                print(f"❌ 加载任务目录 {task_dir} 失败: {e}")
+    from src.utils.task_store import find_task_dir
+
+    task_dir = find_task_dir(task_id)
+    if not task_dir:
+        return None
+
+    task = Task.load_checkpoint(task_dir)
+    if task:
+        print(f"✅ 从磁盘加载任务到内存: {task.task_id}")
+    return task
 
 
 def set_task_state(task_id, state):

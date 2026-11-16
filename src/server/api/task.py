@@ -6,7 +6,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel
 
 # 用于激活运行中任务注入指令
-from src.harness.process import TASK_INSTANCES, Task, kill_task
+from src.harness.process import TASK_INSTANCES, Task, kill_task, load_task_instance
 from src.harness.enums import TaskState
 from src.server.api.task_views import (
     collect_frontend_memory,
@@ -40,22 +40,9 @@ def _load_task_from_checkpoint(task_id: str) -> Task:
 
     程序重启后已结束/挂起任务不在 TASK_INSTANCES，reset/注入等操作先经此激活。
     """
-    task = TASK_INSTANCES.get(task_id)
+    task = load_task_instance(task_id)
     if task:
         return task
-
-    checkpoints_dir = os.path.join(DATA_DIR, "checkpoints", "task")
-    task_dir = None
-    for dir_name in os.listdir(checkpoints_dir):
-        if dir_name.endswith(f"_{task_id}") or dir_name == task_id:
-            task_dir = os.path.join(checkpoints_dir, dir_name)
-            break
-
-    if task_dir and os.path.exists(task_dir):
-        task = Task.load_checkpoint(task_dir)
-        if task:
-            print(f"✅ 从磁盘加载任务到内存: {task.task_id}")
-            return task
 
     raise HTTPException(status_code=404, detail="Task not found or not active")
 
@@ -181,10 +168,8 @@ async def submit_instruction_api(task_id: str, req: SubmitInstructionRequest):
 
 @router.post("/{task_id}/push")
 async def push_to_task(task_id: str, req: TaskPushReq):
-    """精确注入：只向指定 Agent 节点注入（任务必须在内存中处于活跃状态）"""
-    task = TASK_INSTANCES.get(task_id)
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found or not active")
+    """精确注入：只向指定 Agent 节点注入（任务必须处于活跃状态）"""
+    task = _load_task_from_checkpoint(task_id)
 
     if not req.node_id:
         raise HTTPException(

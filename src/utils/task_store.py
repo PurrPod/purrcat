@@ -19,6 +19,13 @@ def _read_json(path: str):
         return json.load(f)
 
 
+def _read_json_safe(path: str):
+    try:
+        return _read_json(path)
+    except (OSError, ValueError):
+        return None
+
+
 def checkpoint_mtime_text(path: str) -> str:
     try:
         mtime = os.path.getmtime(path)
@@ -48,6 +55,30 @@ def build_disk_task(data: dict, fallback_create_time: str) -> dict | None:
     }
 
 
+def build_new_format_task(directory: str) -> dict | None:
+    """meta.json + state.json → 任务列表项；缺少 task_id 时返回 None。"""
+    meta = _read_json_safe(os.path.join(directory, "meta.json"))
+    if not isinstance(meta, dict):
+        return None
+    tid = meta.get("task_id")
+    if not tid:
+        return None
+    state = _read_json_safe(os.path.join(directory, "state.json")) or {}
+    return {
+        "id": tid,
+        "name": meta.get("name", "Unknown"),
+        "graph_name": meta.get("graph_name", "default"),
+        "state": state.get("state", "idle"),
+        "step": 0,
+        "expert_type": "Task",
+        "create_time": meta.get("create_time")
+        or checkpoint_mtime_text(os.path.join(directory, "meta.json")),
+        "token_usage": state.get("total_tokens", 0),
+        "core": meta.get("core", "-"),
+        "checkpoint_dir": directory,
+    }
+
+
 def build_active_task(task) -> dict:
     return {
         "id": task.task_id,
@@ -67,24 +98,52 @@ def sort_task_summaries(items: list) -> list:
 
 
 def scan_disk_tasks(base_dir: str, log=print) -> dict:
-    """扫描 base_dir 下所有 checkpoint.json，返回 {task_id: 列表项}。"""
+    """扫描 base_dir 下的任务目录，返回 {task_id: 列表项}。
+
+    兼容旧格式 checkpoint.json 与新格式 meta.json + state.json。
+    """
     tasks = {}
     if not os.path.exists(base_dir):
         return tasks
     for entry in os.listdir(base_dir):
-        chk_path = os.path.join(base_dir, entry, "checkpoint.json")
-        if not os.path.exists(chk_path):
-            continue
+        directory = os.path.join(base_dir, entry)
+        chk_path = os.path.join(directory, "checkpoint.json")
         try:
-            summary = build_disk_task(
-                _read_json(chk_path), checkpoint_mtime_text(chk_path)
-            )
-            if summary:
-                tasks[summary["id"]] = summary
+            if os.path.exists(chk_path):
+                summary = build_disk_task(
+                    _read_json(chk_path), checkpoint_mtime_text(chk_path)
+                )
+            else:
+                summary = build_new_format_task(directory)
         except Exception as e:
             log(f"读取历史任务 {entry} 失败: {e}")
             continue
+        if summary:
+            tasks[summary["id"]] = summary
     return tasks
+
+
+def find_task_dir(task_id: str) -> str | None:
+    """按目录名匹配任务 id，返回 checkpoint 目录；找不到返回 None。
+
+    目录命名是 `{task_name}_{task_id}`，优先精确后缀匹配，避免 task_id 恰为
+    另一个任务 id 前缀时取错目录。
+    """
+    base_dir = checkpoints_root()
+    if not os.path.isdir(base_dir):
+        return None
+    entries = [
+        entry
+        for entry in os.listdir(base_dir)
+        if os.path.isdir(os.path.join(base_dir, entry))
+    ]
+    for entry in entries:
+        if entry == task_id or entry.endswith(f"_{task_id}"):
+            return os.path.join(base_dir, entry)
+    for entry in entries:
+        if task_id in entry:
+            return os.path.join(base_dir, entry)
+    return None
 
 
 def resolve_checkpoint_dir(task_id: str, task=None) -> str | None:
@@ -94,21 +153,42 @@ def resolve_checkpoint_dir(task_id: str, task=None) -> str | None:
 
 
 def load_task_checkpoint(task_id: str) -> dict | None:
-    """按目录名匹配任务 id 读取 checkpoint.json，坏文件继续找下一个。"""
-    base_dir = checkpoints_root()
-    if not os.path.exists(base_dir):
+    """按目录名匹配任务 id 读取任务详情，坏文件跳过。
+
+    旧格式直接返回 checkpoint.json；新格式由 meta.json（图谱/静态信息）与
+    state.json（运行状态/输出）合并成前端需要的统一结构。
+    """
+    directory = find_task_dir(task_id)
+    if not directory:
         return None
-    for entry in os.listdir(base_dir):
-        if task_id not in entry:
-            continue
-        chk_path = os.path.join(base_dir, entry, "checkpoint.json")
-        if not os.path.exists(chk_path):
-            continue
+
+    old_path = os.path.join(directory, "checkpoint.json")
+    if os.path.exists(old_path):
         try:
-            return _read_json(chk_path)
-        except Exception:
-            continue
-    return None
+            return _read_json(old_path)
+        except (OSError, ValueError):
+            return None
+
+    meta = _read_json_safe(os.path.join(directory, "meta.json"))
+    state = _read_json_safe(os.path.join(directory, "state.json"))
+    if not isinstance(meta, dict) and not isinstance(state, dict):
+        return None
+    meta = meta if isinstance(meta, dict) else {}
+    state = state if isinstance(state, dict) else {}
+
+    return {
+        "task_id": meta.get("task_id") or state.get("task_id") or task_id,
+        "name": meta.get("name", "Unknown"),
+        "graph_name": meta.get("graph_name", "default"),
+        "create_time": meta.get("create_time", ""),
+        "graph": meta.get("graph", {}),
+        "state": state.get("state", "idle"),
+        "dag_state": state.get("dag_state", state.get("node_state", {})),
+        "node_state": state.get("node_state", {}),
+        "outputs": state.get("outputs", {}),
+        "total_tokens": state.get("total_tokens", 0),
+        "execution_time": state.get("execution_time", 0.0),
+    }
 
 
 def find_task_file(task_id: str, filename: str) -> str | None:
@@ -140,16 +220,7 @@ def read_history(task_id: str) -> list:
 
 
 def read_window_token(task_id: str) -> int:
-    base_dir = checkpoints_root()
-    if os.path.isdir(base_dir):
-        for task_dir in os.listdir(base_dir):
-            checkpoint_path = os.path.join(base_dir, task_dir, "checkpoint.json")
-            if not os.path.exists(checkpoint_path):
-                continue
-            try:
-                state = _read_json(checkpoint_path)
-                if state.get("task_id") == task_id:
-                    return state.get("window_token", 0)
-            except Exception:
-                continue
-    return 0
+    data = load_task_checkpoint(task_id)
+    if not data:
+        return 0
+    return data.get("window_token", 0)

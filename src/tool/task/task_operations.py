@@ -73,25 +73,20 @@ def add_task_operation(name: str, inputs: dict, graph_name: str) -> tuple:
 
 
 def list_tasks_operation() -> tuple:
-    """列出所有任务及详细状态"""
-    from src.harness.process import TASK_INSTANCES
+    """列出所有任务及详细状态（磁盘历史 + 内存活跃）"""
+    from src.utils.task_api import get_task_list
 
-    tasks = []
-    for task_id, task in TASK_INSTANCES.items():
-        state_val = getattr(task, "state", "未知")
-        # 兼容 Enum 类型输出
-        state_str = state_val.value if hasattr(state_val, "value") else str(state_val)
-
-        tasks.append(
-            {
-                "task_id": task_id,
-                "name": getattr(task, "task_name", "未知"),
-                "graph_name": getattr(task, "graph_name", "未知"),
-                "state": state_str,
-                "create_time": getattr(task, "create_time", "未知"),
-                "core": getattr(task, "core", "未知"),
-            }
-        )
+    tasks = [
+        {
+            "task_id": item["id"],
+            "name": item.get("name", "未知"),
+            "graph_name": item.get("graph_name", "未知"),
+            "state": item.get("state", "未知"),
+            "create_time": item.get("create_time", "未知"),
+            "core": item.get("core", "未知"),
+        }
+        for item in get_task_list()
+    ]
 
     return {"tasks": tasks, "count": len(tasks)}, None
 
@@ -115,15 +110,14 @@ def kill_task_operation(task_id: str) -> tuple:
 
 def submit_request_operation(task_id: str, content: str, node_id: str) -> tuple:
     """向任务的特定节点注入指令，并在需要时安全地重启物理线程"""
-    from src.harness.process import TASK_INSTANCES, TaskState
+    from src.harness.process import TaskState, load_task_instance
 
     if not node_id:
         return None, "注入失败：必须明确指定 node_id，不支持全局广播。"
 
-    if task_id not in TASK_INSTANCES:
-        return None, f"注入失败：未在内存中找到运行中的任务 (ID: {task_id})。"
-
-    task = TASK_INSTANCES[task_id]
+    task = load_task_instance(task_id)
+    if not task:
+        return None, f"注入失败：未找到任务 (ID: {task_id})。"
 
     # 🌟 核心修复：在注入前（此时状态还未被改写），判断守护线程是否已经结束
     need_restart_thread = task.state in [
@@ -169,15 +163,14 @@ def submit_request_operation(task_id: str, content: str, node_id: str) -> tuple:
 
 def get_task_details_operation(task_id: str) -> tuple:
     """获取任务支持交互的节点详情"""
-    from src.harness.process import TASK_INSTANCES
+    from src.harness.process import load_task_instance
 
     if not task_id:
         return None, "缺少必需参数: task_id"
 
-    if task_id not in TASK_INSTANCES:
-        return None, f"查询失败：未在内存中找到运行中的任务 (ID: {task_id})。"
-
-    task = TASK_INSTANCES[task_id]
+    task = load_task_instance(task_id)
+    if not task:
+        return None, f"查询失败：未找到任务 (ID: {task_id})。"
 
     try:
         nodes_info = task.get_injectable_nodes_info()

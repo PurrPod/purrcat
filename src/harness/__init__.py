@@ -7,16 +7,16 @@ from .enums import LogType, NodeState, PortState, TaskState
 from .process import (
     TASK_INSTANCES,
     Task,
-    auto_load_all_tasks,
     inject_task_instruction,
     kill_task,
+    load_task_instance,
     set_task_state,
 )
 
 __all__ = [
     "Task",
     "TASK_INSTANCES",
-    "auto_load_all_tasks",
+    "load_task_instance",
     "kill_task",
     "inject_task_instruction",
     "set_task_state",

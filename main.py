@@ -224,16 +224,14 @@ async def _bg_heavy_init():
     # 后台会话对账 (取代原本开局的耗时操作)
     def _reconcile_sessions():
         from src.agent.session_store import SessionStore
-        from src.harness.process import auto_load_all_tasks
         from src.utils.graph_api import migrate_graphs_to_folders
 
-        # 旧单文件 graph → 文件夹结构（幂等），必须在任务恢复前完成
+        # 旧单文件 graph → 文件夹结构（幂等）
         migrated = migrate_graphs_to_folders()
         if migrated:
             print(f"✅ [Graph迁移] 已迁移 {len(migrated)} 个 graph 为文件夹结构: {migrated}")
 
         SessionStore.background_sync_sessions()
-        auto_load_all_tasks()
 
     asyncio.create_task(asyncio.to_thread(_reconcile_sessions))
 
