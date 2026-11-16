@@ -15,6 +15,18 @@ from src.utils.paradigm_api import resolve_paradigm_path
 SANDBOX_TASKSPACE_ROOT = "/agent_vm/_taskspace"
 
 
+def taskspace_paths(task_name: str, task_id: str, node_id: str) -> tuple[str, str]:
+    """返回 (宿主机目录, 沙盒视角目录)。
+
+    目录名由任务名与 task_id 共同构成：任务名仅用于可读，task_id 保证同名任务
+    互不覆盖；同一任务（含续跑）的 task_id 不变，目录仍然稳定复用。
+    """
+    segment = f"{task_name}_{task_id}"
+    host_dir = os.path.join(AGENT_VM_DIR, "_taskspace", segment, node_id)
+    sandbox_dir = f"{SANDBOX_TASKSPACE_ROOT}/{segment}/{node_id}"
+    return host_dir, sandbox_dir
+
+
 class Node(AgentNode):
     """范式（agentloop）驱动的智能体循环，与 src/agent 主循环语义对齐。
 
@@ -62,12 +74,12 @@ class Node(AgentNode):
         )
         handler = HookHandler(config_dict=config_dict, paradigm_path=paradigm_path)
 
-        # 2) taskspace（按 (task_name, node_id) 稳定复用，有效防重复）
-        taskspace_host = os.path.join(
-            AGENT_VM_DIR, "_taskspace", context.task_name, self.node_id
+        # 2) taskspace（按 (task_name, task_id, node_id) 稳定复用：同一任务续跑复用，
+        #    同名任务互不覆盖）
+        taskspace_host, sandbox_dir = taskspace_paths(
+            context.task_name, context.task_id, self.node_id
         )
         os.makedirs(taskspace_host, exist_ok=True)
-        sandbox_dir = f"{SANDBOX_TASKSPACE_ROOT}/{context.task_name}/{self.node_id}"
         handler.add_alias("@TASKSPACE", host_path=taskspace_host, content=sandbox_dir)
         self.log(context, "SYSTEM", f"🗂️ [TASKSPACE] 专属工作目录: {sandbox_dir}")
 
