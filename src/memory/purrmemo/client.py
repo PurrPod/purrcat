@@ -7,7 +7,6 @@ from .core.memory_worker.worker_agent import MemoryAgent
 from .core.schema import DEFAULT_SEARCH_TOP_K
 from .core.search_tool import RAGSearchTool
 from .core.utils import SingletonMeta
-from .visualize_graph import GraphVisualizer
 from src.utils.memory_utils import validate_memo_data, write_to_pending
 
 
@@ -108,6 +107,9 @@ class PurrMemoClient(metaclass=SingletonMeta):
     def visualize_graph(self, output_file=None):
         """生成图谱可视化 HTML 文件"""
         try:
+            # pyvis 会连带导入 IPython（约 0.9s），仅在真正出图时加载
+            from .visualize_graph import GraphVisualizer
+
             visualizer = GraphVisualizer()
             visualizer.visualize(output_file=output_file)
             return True

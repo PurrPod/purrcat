@@ -2,25 +2,20 @@ import os
 import traceback
 from fastapi import APIRouter, HTTPException, Body
 
-from src.memory import (
-    get_recent_events,
-    get_recent_experiences,
-    get_memory_graph,
-    search_memory,
-)
-
-from src.memory.purrmemo.core.storage.vector_engine import VectorEngine
-from src.memory.purrmemo.core.storage.event_engine import EventEngine
-from src.memory.purrmemo.core.storage.graph_engine import GraphEngine
-
 from src.utils.config import AGENT_CORE_DIR
 
 router = APIRouter(prefix="/api/memory", tags=["Memory System"])
 
 
+# 🌟 src.memory 会连带导入嵌入模型/记忆 worker（约 1s），全部下沉到各自 handler，
+#    避免为了注册路由把整个记忆栈压在启动路径上。
+
+
 @router.get("/events")
 def get_events():
     try:
+        from src.memory import get_recent_events
+
         return get_recent_events(limit=30)
     except Exception:
         return []
@@ -29,6 +24,8 @@ def get_events():
 @router.get("/experiences")
 def get_experiences():
     try:
+        from src.memory import get_recent_experiences
+
         return get_recent_experiences(limit=30)
     except Exception:
         traceback.print_exc()
@@ -38,6 +35,8 @@ def get_experiences():
 @router.get("/graph")
 def get_graph():
     try:
+        from src.memory import get_memory_graph
+
         return get_memory_graph()
     except Exception:
         traceback.print_exc()
@@ -49,6 +48,8 @@ def search(q: str = ""):
     if not q:
         return {"result": ""}
     try:
+        from src.memory import search_memory
+
         return {"result": search_memory(query=q)}
     except Exception as e:
         return {"result": f"搜索失败: {e}"}
@@ -58,6 +59,8 @@ def search(q: str = ""):
 def delete_experience(exp_id: str):
     """删除工作经验 (VectorDB)"""
     try:
+        from src.memory.purrmemo.core.storage.vector_engine import VectorEngine
+
         engine = VectorEngine()
         if engine.delete_experience(exp_id):
             return {"status": "success", "message": "经验已删除"}
@@ -73,6 +76,8 @@ def delete_experience(exp_id: str):
 def delete_event(event_id: str):
     """删除事件 (SQLite + FTS5)"""
     try:
+        from src.memory.purrmemo.core.storage.event_engine import EventEngine
+
         engine = EventEngine()
         if engine.delete_event(event_id):
             return {"status": "success", "message": "事件已删除"}
@@ -88,6 +93,8 @@ def delete_event(event_id: str):
 def delete_relation(source_node_id: str, target_node_id: str):
     """物理删除图谱关系边"""
     try:
+        from src.memory.purrmemo.core.storage.graph_engine import GraphEngine
+
         engine = GraphEngine()
         if engine.delete_relation(source_node_id, target_node_id):
             return {"status": "success", "message": "关系边已删除"}
