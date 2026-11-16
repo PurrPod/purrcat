@@ -35,7 +35,6 @@ NODE_TYPES = {
     "mcp_info",
     "agent_loop",
     "human_intervention",
-    "command",
     "file_reader",
     "file_writer",
 }
@@ -54,7 +53,6 @@ DEPRECATED_TYPES = {
 STATIC_INPUTS = {
     "agent_loop": ["messages", "agentloop"],
     "appender": ["base_list", "append_list"],
-    "command": ["command", "os", "trigger"],
     "env_loader": [],
     "file_reader": ["trigger", "source"],
     "file_writer": ["trigger", "content", "filename"],
@@ -72,7 +70,6 @@ STATIC_INPUTS = {
 STATIC_OUTPUTS = {
     "agent_loop": ["messages", "summary"],
     "appender": ["merged_list"],
-    "command": ["stdout", "stderr", "exit_code", "skipped"],
     "env_loader": [],
     "file_reader": ["content", "file"],
     "file_writer": ["file"],

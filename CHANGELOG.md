@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Removed
+
+- **Command node**: the `command` graph node was removed because its cross-platform behavior was unreliable; use an `agent_loop` node to run commands instead.
+
 ## [1.1.1]
 
 A follow-up to 1.1.0 with project workspaces, sidebar and chat-header improvements, a graphical installer, a local rendered-fetch path, and a deep internal refactor: the backend packages are split into focused modules, and the HTTP API reference is now generated from the FastAPI schema instead of being maintained by hand.

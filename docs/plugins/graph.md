@@ -115,7 +115,6 @@ graphs/<graph-name>/          # 市场仓库中的单元
 | `mcp_info` | MCP 知识包 | 按 `mcp_servers` 拼装 MCP 工具描述提示词 | `trigger` → `mcp_kit_string` |
 | `agent_loop` | 智能体循环 | 范式驱动的 Agent 大循环（见 [agentloop.md](agentloop.md)）| `messages`/`agentloop` → `messages`/`summary` |
 | `human_intervention` | 人工干预 | 挂起工作流，等人于前端输入指令后放行 | `trigger`/`context_data`/`prompt` → `human_reply`/`context_data` |
-| `command` | 命令执行 | 按目标 OS 在宿主机执行命令行 | `command`/`os` → `stdout`/`stderr`/`exit_code`/`skipped` |
 | `file_reader` | 文件读取/预览 | 读取/预览 string 或 file（图片/文本/HTML/SVG/PDF）| `source` → `content`/`file` |
 | `file_writer` | 文件落盘 | 把文本写入文件，输出 file 信封 | `content`/`filename` → `file` |
 

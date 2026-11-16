@@ -33,7 +33,7 @@ def test_guide_outputs_are_byte_identical():
         "f3c087b3e3c7f98fc747464266a7deaa6b068fc40fb60084487687f449a6e636"
     )
     assert _sha(generate_graph_guide("demo")) == (
-        "a35426057d6e007e5443df79d12064f49158a109eeb480dac3612b3ffb055849"
+        "c3a7b0681fd085b99184a3efbda0a754a348ae5255f0bc9edf66a94283792685"
     )
     assert _sha(generate_agentloop_guide("demo")) == (
         "0794d6b74284f7692397a080ec2705e2e248141ea29113adcf39d66f308578be"

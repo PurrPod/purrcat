@@ -86,7 +86,6 @@ Graph（任务图 / 工作流）是「任务编排中枢」：用**节点（Node
 | `mcp_info` | MCP 知识包 | `trigger` → `mcp_kit_string` | `mcp_servers` |
 | `agent_loop` | 智能体循环 | `messages`/`agentloop` → `messages`/`summary` | 范式靠端口，`config` 可留空 |
 | `human_intervention` | 人工干预 | `trigger`/`context_data`/`prompt` → `human_reply`/`context_data` | — |
-| `command` | 命令执行 | `command`/`os`/`trigger` → `stdout`/`stderr`/`exit_code`/`skipped` | — |
 | `file_reader` | 文件读取/预览 | `trigger`/`source` → `content`/`file` | — |
 | `file_writer` | 文件落盘 | `trigger`/`content`/`filename` → `file` | — |
 
@@ -94,8 +93,8 @@ Graph（任务图 / 工作流）是「任务编排中枢」：用**节点（Node
 
 ### 4.1 `config` 只有少数节点需要填（重点）
 
-**上表 `config` 需填 列为 `—` 的 7 种节点完全不需要 `config`**（写成 `{{}}` 或干脆省略即可）：
-`message_card_builder`、`appender`、`human_intervention`、`command`、`file_reader`、`file_writer`，
+**上表 `config` 需填 列为 `—` 的 6 种节点完全不需要 `config`**（写成 `{{}}` 或干脆省略即可）：
+`message_card_builder`、`appender`、`human_intervention`、`file_reader`、`file_writer`，
 外加 `agent_loop`（它唯一的 `config.summary_file` 有默认值 `summary.txt`，可留空）。
 它们的行为**全靠输入端口**决定，不要凭空臆造 config 字段。
 
@@ -136,7 +135,6 @@ Graph（任务图 / 工作流）是「任务编排中枢」：用**节点（Node
   `Search(route="skill", query="<技能名或用途>")`、`Search(route="mcp", query="<服务器名或工具名>")`，
   或用 `Search(route="local", query="<用途>")` 一次混合搜索技能库与 MCP 工具。
   **搜不到就不写**——宁可不给推荐、或改让 Agent 自行处理，也绝不捏造一个不存在的技能 / MCP 服务器名。
-* **尽量不用命令执行节点**：能交给 Agent 解决的就不要用 `command` 节点，直接把要做的事写进提示词交给 `agent_loop` 即可。
 * **不通用就别单独建 AgentLoop**：若这段 Agent 逻辑只是本图专用、没有复用价值，就不必单独做一个 `agentloop` 范式，直接把提示词写在 `string`（自定义输入）节点里，接到 `agent_loop` 的 `messages` 输入即可；只有通用、可被多处复用的逻辑才值得沉淀成独立范式。
 * **复杂任务拆多个 Agent**：一个 `agent_loop` 只承担单一职责，复杂任务应拆成多个 `agent_loop` 节点，让每个节点的提示词保持聚焦、不臃肿。
 * **独立子任务并行**：彼此独立的子任务拆成并行分支，让多个 `agent_loop` 同时推进，提高整体效率。
