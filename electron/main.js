@@ -290,6 +290,41 @@ function spawnQuitWatchdog() {
   } catch (_) {}
 }
 
+// 🌟 启动等待页：壳一出来就先显示这个本地页面，后端就绪后再 replace 成真正界面。
+//    内联 data URL 不依赖后端，所以窗口能在后端导入/绑定完成之前就出现；
+//    右上角关闭按钮走 preload 的 winClose（preload 对 data URL 同样生效）。
+function buildSplashUrl() {
+  const html = `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><style>
+    html,body{margin:0;height:100%;background:#FAF8F5;color:#5C5347;overflow:hidden;user-select:none;
+      font-family:system-ui,"Segoe UI","Microsoft YaHei",sans-serif}
+    .bar{position:fixed;top:0;left:0;right:0;height:36px;-webkit-app-region:drag}
+    .close{position:fixed;top:6px;right:8px;width:28px;height:28px;border:0;border-radius:8px;
+      background:transparent;color:#8A7F6E;font-size:15px;line-height:1;cursor:pointer;-webkit-app-region:no-drag}
+    .close:hover{background:#EDE6DA;color:#4A4136}
+    .wrap{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px}
+    .spinner{width:38px;height:38px;border:3px solid #E6DCCB;border-top-color:#C89A5B;
+      border-radius:50%;animation:spin .9s linear infinite}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .title{font-size:15px;letter-spacing:.5px}
+    .hint{font-size:12px;color:#A29683}
+  </style></head><body>
+    <div class="bar"></div>
+    <button class="close" id="close" title="关闭">✕</button>
+    <div class="wrap">
+      <div class="spinner"></div>
+      <div class="title">正在启动中…</div>
+      <div class="hint">首次启动需要加载模型与依赖，请稍候</div>
+    </div>
+    <script>
+      document.getElementById('close').addEventListener('click', () => {
+        if (window.purrcat && window.purrcat.winClose) window.purrcat.winClose();
+        else window.close();
+      });
+    </script>
+  </body></html>`;
+  return 'data:text/html;charset=utf-8,' + encodeURIComponent(html);
+}
+
 function createWindow() {
   // 去掉默认菜单栏（File/Edit/View/Help 及 app-name 标签），啥都不要
   Menu.setApplicationMenu(null);
@@ -308,8 +343,8 @@ function createWindow() {
     },
   });
 
-  // 加载极简宿主（纯静态，由后端托管在 /minimal）。恒等后端就绪再加载。
-  mainWindow.loadURL('about:blank');
+  // 先显示本地启动页（不等后端），后端 /api/health 通过后再加载极简宿主
+  mainWindow.loadURL(buildSplashUrl());
   pollBackendAndLoad(getMinimalUrl());
 
   // 重置主窗口页面缩放：Chromium 会按 origin 记住 Ctrl+滚轮/Ctrl+- 的缩放，
