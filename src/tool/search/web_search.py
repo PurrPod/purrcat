@@ -6,9 +6,6 @@ lxml + primp（约 19MB）。Bing 结果页用 curl_cffi 的 chrome 指纹就能
 
 import urllib.parse
 
-from bs4 import BeautifulSoup
-from curl_cffi import requests
-
 DEFAULT_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
@@ -19,6 +16,9 @@ DEFAULT_HEADERS = {
 
 def _bing_search(query: str, max_results: int = 5) -> list:
     """伪装版 Bing 爬虫（使用 chrome 指纹绕过 SSL 拦截）"""
+    from bs4 import BeautifulSoup
+    from curl_cffi import requests
+
     url = f"https://cn.bing.com/search?q={urllib.parse.quote(query)}"
     print(f"[Search Debug] 🌐 正在请求 Bing 搜索: {url}")
 

@@ -1,6 +1,5 @@
 import threading
 
-import jieba
 import numpy as np
 
 from src.utils.config import get_embedding_model
@@ -12,6 +11,9 @@ def hybrid_tokenize(text: str) -> list[str]:
     """
     if not text:
         return []
+
+    # jieba 首次导入约 0.3s，仅在真正分词时加载
+    import jieba
 
     text = text.lower()
     tokens = jieba.cut_for_search(text)

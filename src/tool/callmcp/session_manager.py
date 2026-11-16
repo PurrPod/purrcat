@@ -1,17 +1,19 @@
 """MCP 会话管理器 - 处理 MCP Server 长连接维护"""
 
+from __future__ import annotations
+
 import asyncio
 import atexit
 import shutil
 import threading
 import time
-from typing import Dict
-
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
+from typing import TYPE_CHECKING, Dict
 
 from src.tool.callmcp import _shared
 from src.utils.config import get_enriched_env, get_mcp_config
+
+if TYPE_CHECKING:
+    from mcp import ClientSession
 
 # ── 延迟初始化核心原语 ──
 _mcp_loop = None
@@ -85,6 +87,8 @@ class MCPSessionManager:
         self, server_name: str, config: dict, read, write, ready_event: asyncio.Event
     ):
         """握手成功后注册会话槽位，并阻塞到关闭信号或连接断开。"""
+        from mcp import ClientSession
+
         async with ClientSession(read, write) as session:
             await session.initialize()
             close_event = asyncio.Event()
@@ -159,6 +163,9 @@ class MCPSessionManager:
         resolved_command = (
             shutil.which(raw_command, path=safe_env.get("PATH")) or raw_command
         )
+
+        from mcp import StdioServerParameters
+        from mcp.client.stdio import stdio_client
 
         server_params = StdioServerParameters(
             command=resolved_command,

@@ -1,52 +1,66 @@
 """
-工具总入口，对外暴露路由、Schema、热更新接口和异步初始化方法
+工具总入口，对外暴露路由、Schema、热更新接口和异步初始化方法。
+
+包初始化保持轻量：隔离工具在子进程中只会 import 自己，不能因为父包
+eager import 全部工具而额外背上数秒的解释器启动开销。
 """
 
+import importlib
 import threading
 
-# 导入所有工具的 Schema
-from .bash import BASH_TOOL_SCHEMA
-from .brainstorm import BRAINSTORM_TOOL_SCHEMA
-from .callmcp import MCP_TOOL_SCHEMA
-from .cron import CRON_TOOL_SCHEMA
-from .fetch import FETCH_TOOL_SCHEMA
-from .filesystem import FILESYSTEM_TOOL_SCHEMA
-from .memo import MEMO_TOOL_SCHEMA
-from .request import REQUEST_TOOL_SCHEMA
-from .search import SEARCH_TOOL_SCHEMA
-from .task import TASK_TOOL_SCHEMA
-from .kernelupgrade import KERNELUPGRADE_TOOL_SCHEMA
+# --- 暴露的两套 Schema 列表（首次访问时再构建） ---
 
-# 导入路由模块
-from .utils.route import dispatch_tool
+_SCHEMA_GROUPS = {
+    "AGENT_TOOL_SCHEMA": (
+        ("bash", "BASH_TOOL_SCHEMA"),
+        ("brainstorm", "BRAINSTORM_TOOL_SCHEMA"),
+        ("cron", "CRON_TOOL_SCHEMA"),
+        ("fetch", "FETCH_TOOL_SCHEMA"),
+        ("filesystem", "FILESYSTEM_TOOL_SCHEMA"),
+        ("memo", "MEMO_TOOL_SCHEMA"),
+        ("request", "REQUEST_TOOL_SCHEMA"),
+        ("search", "SEARCH_TOOL_SCHEMA"),
+        ("task", "TASK_TOOL_SCHEMA"),
+        ("callmcp", "MCP_TOOL_SCHEMA"),
+        ("kernelupgrade", "KERNELUPGRADE_TOOL_SCHEMA"),
+    ),
+    "BASE_TASK_TOOL_SCHEMA": (
+        ("bash", "BASH_TOOL_SCHEMA"),
+        ("filesystem", "FILESYSTEM_TOOL_SCHEMA"),
+        ("search", "SEARCH_TOOL_SCHEMA"),
+        ("callmcp", "MCP_TOOL_SCHEMA"),
+        ("fetch", "FETCH_TOOL_SCHEMA"),
+    ),
+}
 
-# 导入所需的热更新接口
-from .search.skill_search import reload_skill_index
-from .callmcp.callmcp import reload_mcp_schema, initialize_mcp_sync
+_LAZY_EXPORTS = {
+    "dispatch_tool": (".utils.route", "dispatch_tool"),
+    "reload_skill_index": (".search.skill_search", "reload_skill_index"),
+    "reload_mcp_schema": (".callmcp.callmcp", "reload_mcp_schema"),
+}
 
-# --- 暴露的两套 Schema 列表 ---
 
-AGENT_TOOL_SCHEMA = [
-    BASH_TOOL_SCHEMA,
-    BRAINSTORM_TOOL_SCHEMA,
-    CRON_TOOL_SCHEMA,
-    FETCH_TOOL_SCHEMA,
-    FILESYSTEM_TOOL_SCHEMA,
-    MEMO_TOOL_SCHEMA,
-    REQUEST_TOOL_SCHEMA,
-    SEARCH_TOOL_SCHEMA,
-    TASK_TOOL_SCHEMA,
-    MCP_TOOL_SCHEMA,
-    KERNELUPGRADE_TOOL_SCHEMA,
-]
+def _load_export(name):
+    if name in _SCHEMA_GROUPS:
+        return [
+            getattr(importlib.import_module(f".{module}", __name__), attr)
+            for module, attr in _SCHEMA_GROUPS[name]
+        ]
+    module_name, attr = _LAZY_EXPORTS[name]
+    return getattr(importlib.import_module(module_name, __name__), attr)
 
-BASE_TASK_TOOL_SCHEMA = [
-    BASH_TOOL_SCHEMA,
-    FILESYSTEM_TOOL_SCHEMA,
-    SEARCH_TOOL_SCHEMA,
-    MCP_TOOL_SCHEMA,
-    FETCH_TOOL_SCHEMA,  # 🌟 修复：移除 Request，加入 Fetch
-]
+
+def __getattr__(name):
+    if name not in _SCHEMA_GROUPS and name not in _LAZY_EXPORTS:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    value = _load_export(name)
+    globals()[name] = value
+    return value
+
+
+def __dir__():
+    return sorted(set(globals()) | set(__all__))
+
 
 # --- 系统重型组件初始化逻辑 ---
 
@@ -60,6 +74,8 @@ def init_tools():
     def _bg_init():
         try:
             # 1. 首先确保 MCP 的 Schema 缓存拉取完毕 (否则检索树无法扫描到内容)
+            from .callmcp.callmcp import initialize_mcp_sync
+
             initialize_mcp_sync()
 
             # 2. 预热本地 Embedding 模型并构建 MCP 检索树
