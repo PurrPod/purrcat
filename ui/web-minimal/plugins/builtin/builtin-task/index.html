@@ -503,6 +503,7 @@
   var S = {
     tasks: [], sel: null, graph: null, graphKey: '', nodeStates: {}, nodeMemory: {}, nodeApprovals: {},
     curState: '', isRunning: false, resetting: null,
+    tasksLoading: true, tasksError: false, stateLoading: false, logsLoading: false,
     inH: {}, outH: {}, geom: {}, edges: [],
     view: 'simple',
     workerId: null, workerSig: '', workerAutoScroll: true,
@@ -530,7 +531,11 @@
   // ---------- 任务列表 ----------
   function renderTasks() {
     var list = $('task-list');
-    if (!S.tasks.length) { list.innerHTML = '<div class="side-empty">暂无任务</div>'; return; }
+    if (!S.tasks.length) {
+      var tip = S.tasksError ? '任务列表加载失败，正在重试…' : (S.tasksLoading ? '正在加载任务…' : '暂无任务');
+      list.innerHTML = '<div class="side-empty">' + tip + '</div>';
+      return;
+    }
     var h = '';
     S.tasks.forEach(function (t) {
       var st = String(t.state || '').toLowerCase();
@@ -551,8 +556,14 @@
   function loadTasks() {
     return jget(API.tasks).then(function (d) {
       S.tasks = Array.isArray(d) ? d : [];
+      S.tasksLoading = false;
+      S.tasksError = false;
       renderTasks();
-    }).catch(function () { /* silent */ });
+    }).catch(function () {
+      S.tasksLoading = false;
+      S.tasksError = true;
+      renderTasks();
+    });
   }
 
   // ---------- 自动分层布局（移植完整模式 inferAutoLayout） ----------
@@ -761,27 +772,16 @@
     if (!S.workerId) return;
     var msgs = ((S.nodeMemory[S.workerId] || {}).messages) || [];
     var all = S.view === 'detail';
-    var sig = (all ? 'all|' : 'filter|') + JSON.stringify(msgs);
+    var sig = (all ? 'all|' : 'filter|') + (S.stateLoading ? 'loading|' : 'ready|') + JSON.stringify(msgs);
     if (!force && sig === S.workerSig) return;
     S.workerSig = sig;
-    $('worker-body').innerHTML = messagesHtml(msgs, all);
+    $('worker-body').innerHTML = messagesHtml(msgs, all, S.stateLoading);
     if (S.workerAutoScroll) {
       var w = $('worker-scroll');
       w.scrollTop = w.scrollHeight;
     }
   }
 
-  function paintStates() {
-    var list = world.querySelectorAll('.node');
-    Array.prototype.forEach.call(list, function (el) {
-      var id = el.getAttribute('data-nid');
-      var st = extractState(S.nodeStates[id]);
-      var isHuman = el.getAttribute('data-human') === '1';
-      var approved = isHuman && (!!S.nodeApprovals[id] || st === 'completed');
-      el.className = 'node st-' + st + (S.isRunning ? ' live' : '') + (S.resetting === id ? ' resetting' : '') + (approved ? ' approved' : '');
-      var b = el.querySelector('.badge');
-      if (b) b.textContent = ST_TEXT[st] || 'READY';
-      var rb = el.querySelector('.nbtn.reset');
   // 向当前 worker 节点注入指令，进入下一轮 agent_loop
   function sendWorker() {
     if (!S.sel || !S.workerId) return;
@@ -802,6 +802,17 @@
     });
   }
 
+  function paintStates() {
+    var list = world.querySelectorAll('.node');
+    Array.prototype.forEach.call(list, function (el) {
+      var id = el.getAttribute('data-nid');
+      var st = extractState(S.nodeStates[id]);
+      var isHuman = el.getAttribute('data-human') === '1';
+      var approved = isHuman && (!!S.nodeApprovals[id] || st === 'completed');
+      el.className = 'node st-' + st + (S.isRunning ? ' live' : '') + (S.resetting === id ? ' resetting' : '') + (approved ? ' approved' : '');
+      var b = el.querySelector('.badge');
+      if (b) b.textContent = ST_TEXT[st] || 'READY';
+      var rb = el.querySelector('.nbtn.reset');
       if (rb) rb.disabled = S.resetting === id;
       var ab = el.querySelector('.nbtn.approve');
       if (ab) {
@@ -835,6 +846,7 @@
     var id = S.sel;
     return jget(API.state(id)).then(function (d) {
       if (S.sel !== id) return;
+      S.stateLoading = false;
       S.nodeMemory = d.node_memory || {};
       S.curState = String(d.state || '').toLowerCase();
       S.isRunning = S.curState === 'running' || S.curState === 'starting';
@@ -860,6 +872,7 @@
     S.sel = id; S.nodeStates = {}; S.nodeMemory = {}; S.nodeApprovals = {}; S.graph = null; S.graphKey = '';
     S.curState = ''; S.isRunning = false;   // 清掉上一个任务的运行态，避免「停止」按钮残留
     S.logs = []; S.logSig = '';
+    S.stateLoading = true; S.logsLoading = false;   // 详情未就绪前展示加载中
     S.view = 'simple';
     S.workerId = null; S.workerSig = ''; S.edges = [];
     closeLog();
@@ -942,9 +955,9 @@
     return '<div class="artbox"><div class="artbar"><i></i><i></i><i></i><span>' + esc(name) + '</span></div>' + inner + '</div>';
   }
 
-  function logsHtml() {
+  function logsHtml(loading) {
     var items = S.logs;
-    if (!items.length) return '<div class="log-empty">暂无日志输出</div>';
+    if (!items.length) return '<div class="log-empty">' + (loading ? '正在加载日志…' : '暂无日志输出') + '</div>';
     var h = '';
     items.forEach(function (log) {
       var t = String(log.type || 'INFO');
@@ -989,8 +1002,8 @@
 
   // allTypes=false：只保留 workflow_input 用户输入 + assistant/tool 过程
   // allTypes=true：system_input / workflow_hint 等其它 type 的消息卡片也一并展示
-  function messagesHtml(msgs, allTypes) {
-    if (!msgs.length) return '<div class="log-empty">暂无对话历史</div>';
+  function messagesHtml(msgs, allTypes, loading) {
+    if (!msgs.length) return '<div class="log-empty">' + (loading ? '正在加载会话…' : '暂无对话历史') + '</div>';
     var h = '<div class="chat">';
     msgs.forEach(function (m) {
       var role = m.role || 'assistant';
@@ -1040,6 +1053,7 @@
     jget(API.log(id)).then(function (d) {
       if (!S.logNode || S.sel !== id || S.logNode.id !== nid) return;
       S.logs = ((d.grouped_logs || {})[nid]) || [];
+      S.logsLoading = false;
       renderLogBody();
     }).catch(function () { /* silent */ });
   }
@@ -1048,11 +1062,12 @@
     if (!S.logNode) return;
     var body = $('log-body');
     var agent = isAgent(S.logNode.type);
+    var loading = agent ? S.stateLoading : S.logsLoading;
     var msgs = agent ? ((S.nodeMemory[S.logNode.id] || {}).messages || []) : null;
-    var sig = agent ? JSON.stringify(msgs) : JSON.stringify(S.logs);
+    var sig = (loading ? 'loading|' : 'ready|') + (agent ? JSON.stringify(msgs) : JSON.stringify(S.logs));
     if (sig === S.logSig) return;
     S.logSig = sig;
-    body.innerHTML = agent ? messagesHtml(msgs) : logsHtml();
+    body.innerHTML = agent ? messagesHtml(msgs, false, loading) : logsHtml(loading);
     if (S.autoScroll) body.scrollTop = body.scrollHeight;
   }
 
@@ -1060,6 +1075,8 @@
     var n = findNode(id) || {};
     S.logNode = { id: id, name: (n.name && String(n.name).trim()) || id, type: n.type || '', state: extractState(S.nodeStates[id]) };
     S.logs = []; S.logSig = ''; S.autoScroll = true;
+    S.logsLoading = !isAgent(S.logNode.type);
+    if (!S.graph) S.stateLoading = true;
     $('log-name').textContent = S.logNode.name;
     $('log-id').textContent = 'ID: ' + id;
     $('log-wait').hidden = S.logNode.state !== 'waiting';
@@ -1070,7 +1087,7 @@
   }
   function closeLog() {
     if (!S.logNode) return;
-    S.logNode = null; S.logs = []; S.logSig = '';
+    S.logNode = null; S.logs = []; S.logSig = ''; S.logsLoading = false;
     $('log-modal').hidden = true;
   }
 
@@ -1271,6 +1288,14 @@
     var w = $('worker-scroll');
     S.workerAutoScroll = (w.scrollHeight - w.scrollTop - w.clientHeight) < 60;
   });
+  $('worker-send').addEventListener('click', sendWorker);
+  $('worker-say').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendWorker(); }
+  });
+  $('worker-say').addEventListener('input', function () {
+    this.style.height = 'auto';
+    this.style.height = Math.min(this.scrollHeight, 140) + 'px';
+  });
 
   $('create-close').addEventListener('click', function () { $('create-modal').hidden = true; });
   $('create-cancel').addEventListener('click', function () { $('create-modal').hidden = true; });
@@ -1288,14 +1313,6 @@
 
   // ---------- 轮询与生命周期 ----------
   var timers = [];
-  $('worker-send').addEventListener('click', sendWorker);
-  $('worker-say').addEventListener('keydown', function (e) {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendWorker(); }
-  });
-  $('worker-say').addEventListener('input', function () {
-    this.style.height = 'auto';
-    this.style.height = Math.min(this.scrollHeight, 140) + 'px';
-  });
   function startPoll() {
     stopPoll();
     timers.push(setInterval(loadTasks, 3000));
@@ -1314,6 +1331,7 @@
   });
   window.addEventListener('pagehide', stopPoll);
 
+  renderTasks();
   loadTasks();
   startPoll();
   updateHead();
