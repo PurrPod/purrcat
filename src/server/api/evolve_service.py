@@ -65,7 +65,12 @@ def body_root(module_type: str, workplace_id: str, name: str) -> str:
 
 def resolve_workplace_dir(module_type: str, workplace_id: str) -> str:
     """沙盒工作区目录（供「查看文件」在系统文件管理器中打开）。"""
-    if not module_type or not workplace_id or "/" in workplace_id or "\\" in workplace_id:
+    if (
+        not module_type
+        or not workplace_id
+        or "/" in workplace_id
+        or "\\" in workplace_id
+    ):
         raise HTTPException(status_code=400, detail="非法的沙盒标识")
     return os.path.join(get_root(module_type), workplace_id)
 
