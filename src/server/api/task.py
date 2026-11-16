@@ -14,6 +14,12 @@ from src.server.api.task_views import (
     locate_checkpoint_dir,
 )
 from src.utils.config import DATA_DIR
+from src.harness.task_persistence import (
+    approval_path,
+    clear_node_approval,
+    mark_node_approved,
+    read_node_approvals,
+)
 
 # 引入统一封装的 API，支持访问休眠与活跃任务
 from src.utils.task_api import (
@@ -143,6 +149,10 @@ def get_task_state_endpoint(task_id: str):
     state_data["node_memory"] = collect_frontend_memory(
         task_id, TASK_INSTANCES, checkpoint_dir
     )
+    # 人工审核节点的批准记录直接从检查点目录读取，刷新后仍然有效
+    state_data["node_approvals"] = (
+        read_node_approvals(checkpoint_dir) if checkpoint_dir else {}
+    )
     # 禁用缓存：reset 后前端必须读到最新节点状态/记忆，避免命中旧 GET 缓存
     from fastapi.responses import JSONResponse
 
@@ -244,6 +254,47 @@ def delete_task_endpoint(task_id: str):
     raise HTTPException(status_code=404, detail="Task not found or delete failed")
 
 
+@router.post("/{task_id}/nodes/{node_id}/approve")
+async def approve_node_api(task_id: str, node_id: str):
+    """批准人工审核节点：注入放行指令，并把批准记录落盘供刷新后回显。"""
+    task = _load_task_from_checkpoint(task_id)
+
+    node_type = next(
+        (
+            node.get("type")
+            for node in (task.graph or {}).get("nodes", [])
+            if node.get("id") == node_id
+        ),
+        None,
+    )
+    if node_type != "human_intervention":
+        raise HTTPException(
+            status_code=400, detail="Only human review nodes can be approved"
+        )
+
+    node_state = getattr(
+        task.node_state.get(node_id), "value", task.node_state.get(node_id)
+    )
+    if node_state != "waiting":
+        raise HTTPException(status_code=400, detail="Node is not waiting for approval")
+
+    if os.path.exists(approval_path(task.checkpoint_dir, node_id)):
+        return {"status": "success", "approved": True, "already_approved": True}
+
+    was_running = task.state == TaskState.RUNNING
+    result = task.inject_instruction(node_id, "批准运行")
+    if result["status"] == "error":
+        raise HTTPException(status_code=400, detail=result["message"])
+
+    # 先写盘再返回，避免刷新后圆环回退成黄色
+    mark_node_approved(task.checkpoint_dir, node_id)
+
+    if not was_running:
+        _restart_task_engine(task)
+
+    return {"status": "success", "approved": True}
+
+
 @router.post("/{task_id}/nodes/{node_id}/reset")
 async def reset_node_api(task_id: str, node_id: str):
     """供前端点击重置节点后调用，触发级联清理及引擎重启。
@@ -255,6 +306,16 @@ async def reset_node_api(task_id: str, node_id: str):
     result = task.reset_node(node_id)
     if result["status"] == "error":
         raise HTTPException(status_code=400, detail=result["message"])
+
+    # 被重置回 READY 的节点不应再显示批准状态
+    for approved_node_id in list(read_node_approvals(task.checkpoint_dir)):
+        state = getattr(
+            task.node_state.get(approved_node_id),
+            "value",
+            task.node_state.get(approved_node_id),
+        )
+        if state == "ready":
+            clear_node_approval(task.checkpoint_dir, approved_node_id)
 
     # reset_node 内部已保护运行中状态；这里仅在引擎确实停了时重启，并兜住异常写入日志
     if task.state != TaskState.RUNNING:

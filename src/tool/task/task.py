@@ -242,7 +242,7 @@ def _handle_get_details(**kwargs) -> str:
             )
         dashboard_text = "\n".join(lines)
 
-    return text_response(dashboard_text, "📊 任务看板")
+    return text_response(dashboard_text, "📋 任务详情")
 
 
 def _handle_vision(**kwargs) -> str:

@@ -8,9 +8,56 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import datetime
 
 from . import checkpoint as checkpoint_io
 from . import state_store
+
+APPROVAL_FILENAME = "approval.json"
+
+
+def approval_path(checkpoint_dir: str, node_id: str) -> str:
+    return os.path.join(checkpoint_dir, "nodes", node_id, APPROVAL_FILENAME)
+
+
+def mark_node_approved(checkpoint_dir: str, node_id: str) -> bool:
+    """记录人工审核节点的批准状态；已存在时返回 False，保持幂等。"""
+    path = approval_path(checkpoint_dir, node_id)
+    if os.path.exists(path):
+        return False
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    data = {
+        "node_id": node_id,
+        "approved_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    }
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    return True
+
+
+def clear_node_approval(checkpoint_dir: str, node_id: str) -> None:
+    path = approval_path(checkpoint_dir, node_id)
+    if os.path.exists(path):
+        os.remove(path)
+
+
+def read_node_approvals(checkpoint_dir: str) -> dict:
+    """读取所有人工审核节点的批准记录，返回 {node_id: approved_at}。"""
+    nodes_dir = os.path.join(checkpoint_dir, "nodes")
+    if not os.path.isdir(nodes_dir):
+        return {}
+
+    approvals = {}
+    for node_id in os.listdir(nodes_dir):
+        path = approval_path(checkpoint_dir, node_id)
+        if not os.path.isfile(path):
+            continue
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                approvals[node_id] = json.load(f).get("approved_at", "")
+        except (OSError, ValueError):
+            continue
+    return approvals
 
 
 def save_meta(task) -> None:

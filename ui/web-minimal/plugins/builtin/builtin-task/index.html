@@ -24,7 +24,7 @@
     --mono: ui-monospace, "SF Mono", Consolas, "Courier New", monospace;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  /* 本插件大量用 [hidden] 控制显隐，而下方选择器（.btn/.empty/.dash…）都声明了 display，
+  /* 本插件大量用 [hidden] 控制显隐，而下方选择器（.btn/.empty…）都声明了 display，
      作者样式优先级高于 UA 的 [hidden]{display:none}，故必须在此显式兜底 */
   [hidden] { display: none !important; }
   html, body { height: 100%; overflow: hidden; }
@@ -175,35 +175,31 @@
   .node.st-waiting .badge { background: var(--orange); color: #fff; }
   .node.st-skipped .badge { background: var(--field2); color: var(--dim); }
 
-  /* ---------- 看板 ---------- */
-  .dash { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-  .dash[hidden] { display: none; }
-  .dhead { flex: none; display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
-  .dtitle { font-weight: 800; letter-spacing: .04em; }
-  .dtabs { display: flex; gap: 5px; flex-wrap: wrap; }
-  .dtab {
-    border: 2px solid var(--ink); border-radius: 6px; background: var(--paper); padding: 2px 8px;
-    font-size: 11px; font-weight: 700;
+  /* ---------- 人工审核圆环 ---------- */
+  .node.approval {
+    background: transparent; border: 0; box-shadow: none; padding: 0;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
   }
-  .dtab.on { background: var(--ink); color: #fff; }
-  .dnav { margin-left: auto; display: flex; gap: 4px; }
-  .dbody { flex: 1; min-height: 0; position: relative; background: var(--paper); }
-  .dbody iframe { border: 0; width: 100%; height: 100%; display: block; background: #fff; }
-  .dnote { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--dim); font-weight: 700; }
-  .agent-list { position: absolute; inset: 0; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
-  .arow {
-    display: flex; align-items: center; gap: 8px; border: 2px solid var(--ink); border-radius: 9px;
-    background: var(--cream); padding: 8px 10px; cursor: pointer;
+  .node.approval:hover { box-shadow: none; transform: none; }
+  .ring {
+    width: 56px; height: 56px; border-radius: 50%; border: 3px solid var(--ink);
+    background: var(--paper); display: flex; align-items: center; justify-content: center;
+    padding: 0; cursor: pointer; transition: background .15s, border-color .15s, box-shadow .15s;
   }
-  .arow:hover { background: var(--yellow); }
-  .arow .aname { font-weight: 700; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .arow .astate { margin-left: auto; flex: none; font-size: 9px; font-weight: 800; letter-spacing: .06em; border: 2px solid var(--ink); border-radius: 5px; padding: 1px 5px; text-transform: uppercase; }
-  .astate.st-running { background: var(--blue); color: #fff; }
-  .astate.st-completed { background: var(--green); }
-  .astate.st-error, .astate.st-failed { background: var(--red); color: #fff; }
-  .astate.st-waiting { background: var(--orange); color: #fff; }
-  .astate.st-skipped { background: var(--field2); color: var(--dim); }
-  .astate.st-ready { background: var(--yellow); }
+  .ring:disabled { cursor: default; opacity: 1; }
+  .ring svg {
+    width: 26px; height: 26px; fill: none; stroke: #fff; stroke-width: 3;
+    stroke-linecap: round; stroke-linejoin: round; display: none;
+  }
+  .node.approval.st-waiting .ring { border-color: var(--orange); box-shadow: 0 0 0 5px rgba(243,176,90,.22); }
+  .node.approval.approved .ring { background: var(--green); border-color: var(--green); }
+  .node.approval.approved .ring svg { display: block; }
+  .hname { font-size: 11px; font-weight: 700; cursor: pointer; }
+
+  /* ---------- 单 Agent 会话（worker 形态） ---------- */
+  .worker { position: absolute; inset: 0; overflow-y: auto; padding: 16px 20px 28px; background: var(--paper); }
+  .worker-inner { max-width: 820px; margin: 0 auto; }
+  .worker .log-empty { height: 50vh; }
 
   /* ---------- 弹层 ---------- */
   .ov {
@@ -333,14 +329,14 @@
       <span class="chip" id="mh-chip" hidden></span>
       <div class="mh-right">
         <button class="btn danger" id="btn-kill" hidden>停止</button>
-        <button class="btn" id="btn-dash" hidden>看板</button>
+        <button class="btn" id="btn-detail" hidden>详情</button>
       </div>
     </div>
     <div class="canvas" id="canvas">
       <div class="empty" id="empty">选择一个任务</div>
+      <div class="worker" id="worker" hidden><div class="worker-inner" id="worker-body"></div></div>
       <div class="world" id="world"></div>
     </div>
-    <div class="dash" id="dash" hidden></div>
   </div>
 </div>
 
@@ -446,6 +442,8 @@
 
   var NODE_W = 200, NODE_H = 96, PAD = 60, ROW = 150, COL = 280;
   var AGENT_TYPES = ['agent_loop', 'human_intervention'];
+  // 简图只呈现 Agent 与人工审核节点；输入/输出等由调度层承担，不再占用视线
+  var KEY_TYPES = ['agent_loop', 'human_intervention'];
   var ST_TEXT = { ready: 'READY', running: 'RUNNING', completed: 'COMPLETED', error: 'ERROR', waiting: 'WAITING', skipped: 'SKIPPED' };
 
   var API = {
@@ -457,6 +455,7 @@
     log: function (id) { return '/api/tasks/' + encodeURIComponent(id) + '/log'; },
     submit: function (id) { return '/api/tasks/' + encodeURIComponent(id) + '/submit'; },
     reset: function (id, n) { return '/api/tasks/' + encodeURIComponent(id) + '/nodes/' + encodeURIComponent(n) + '/reset'; },
+    approve: function (id, n) { return '/api/tasks/' + encodeURIComponent(id) + '/nodes/' + encodeURIComponent(n) + '/approve'; },
     stop: function (id) { return '/api/tasks/' + encodeURIComponent(id) + '/stop'; },
     del: function (id) { return '/api/tasks/' + encodeURIComponent(id); },
     artifact: function (id, uri, mime) {
@@ -497,10 +496,11 @@
 
   // ---------- 状态 ----------
   var S = {
-    tasks: [], sel: null, graph: null, graphKey: '', nodeStates: {}, nodeMemory: {},
+    tasks: [], sel: null, graph: null, graphKey: '', nodeStates: {}, nodeMemory: {}, nodeApprovals: {},
     curState: '', isRunning: false, resetting: null,
-    inH: {}, outH: {}, geom: {},
-    dash: [], dashIdx: 0, view: 'graph',
+    inH: {}, outH: {}, geom: {}, edges: [],
+    view: 'simple',
+    workerId: null, workerSig: '', workerAutoScroll: true,
     logs: [], logNode: null, logSig: '', autoScroll: true,
     graphs: [], delId: null
   };
@@ -594,12 +594,38 @@
   }
 
   function hpct(i, total) { return (100 / (total + 1)) * (i + 1); }
-
   function handlesHtml(id) {
     var ih = S.inH[id] || [], oh = S.outH[id] || [], s = '';
     ih.forEach(function (h, i) { s += '<span class="hdl in" style="top:' + hpct(i, ih.length) + '%"></span>'; });
     oh.forEach(function (h, i) { s += '<span class="hdl out" style="top:' + hpct(i, oh.length) + '%"></span>'; });
     return s;
+  }
+
+  // 简图按拓扑先后顺序串联可见节点：中间节点被隐藏时，两端的先后关系依然能连出来
+  function chainEdges(allNodes, allEdges, nodes) {
+    var indeg = {}, succ = {};
+    allNodes.forEach(function (n) { indeg[n.id] = 0; succ[n.id] = []; });
+    allEdges.forEach(function (e) {
+      if (!e || !e.source || !e.target) return;
+      if (indeg[e.source] === undefined || indeg[e.target] === undefined) return;
+      succ[e.source].push(e.target);
+      indeg[e.target] += 1;
+    });
+    var queue = allNodes.filter(function (n) { return indeg[n.id] === 0; }).map(function (n) { return n.id; });
+    var order = [];
+    while (queue.length) {
+      var id = queue.shift();
+      order.push(id);
+      succ[id].forEach(function (t) { indeg[t] -= 1; if (indeg[t] === 0) queue.push(t); });
+    }
+    // 有环时补上未出队节点，沿用图内原始顺序
+    allNodes.forEach(function (n) { if (order.indexOf(n.id) < 0) order.push(n.id); });
+    var visible = {};
+    nodes.forEach(function (n) { visible[n.id] = 1; });
+    var seq = order.filter(function (id) { return visible[id]; });
+    var out = [];
+    for (var i = 0; i < seq.length - 1; i++) out.push({ source: seq[i], target: seq[i + 1] });
+    return out;
   }
 
   // ---------- 画布视图（平移/缩放） ----------
@@ -609,31 +635,52 @@
     world.style.transform = 'translate(' + view.x + 'px,' + view.y + 'px) scale(' + view.s + ')';
   }
 
-  function buildDash(g) {
-    var raw = g && g.dashboard;
-    function sub(u) { return String(u).split('{task_id}').join(S.sel || ''); }
-    function abs(u) { try { return new URL(u, window.location.origin).href; } catch (e) { return u; } }
-    if (typeof raw === 'string') {
-      S.dash = raw.trim() ? [{ name: '看板', url: abs(sub(raw.trim())) }] : [];
-    } else if (Array.isArray(raw)) {
-      S.dash = raw.map(function (d, i) {
-        if (!d || !d.url) return null;
-        return { name: String(d.name || ('看板' + (raw.length > 1 ? ' ' + (i + 1) : ''))), url: abs(sub(String(d.url))) };
-      }).filter(Boolean);
-    } else { S.dash = []; }
-    S.dashIdx = 0;
-  }
-
   function renderGraph(doFit) {
-    var empty = $('empty');
+    var empty = $('empty'), worker = $('worker');
     if (!S.sel || !S.graph || !(S.graph.nodes || []).length) {
       world.innerHTML = '';
+      worker.hidden = true;
+      S.workerId = null; S.edges = [];
       empty.hidden = false;
       empty.textContent = !S.sel ? '选择一个任务' : (S.graph ? '该任务暂无图谱数据' : '正在加载图谱…');
       return;
     }
-    var nodes = (S.graph.nodes || []).filter(Boolean);
-    var edges = (S.graph.edges || []).filter(function (e) { return e && e.source && e.target; });
+    var allNodes = (S.graph.nodes || []).filter(Boolean);
+    // 概览只保留 Agent 与人工审核节点；详情展示完整节点
+    var nodes = S.view === 'detail'
+      ? allNodes
+      : allNodes.filter(function (n) { return KEY_TYPES.indexOf(String(n.type || '')) >= 0; });
+    if (!nodes.length) {
+      world.innerHTML = '';
+      worker.hidden = true;
+      S.workerId = null; S.edges = [];
+      empty.hidden = false;
+      empty.textContent = '该任务暂无关键节点';
+      return;
+    }
+    // 只有一个 Agent 节点时退化为 worker：直接展示该节点的会话，不再画节点图
+    if (S.view === 'simple' && nodes.length === 1 && String(nodes[0].type || '') === 'agent_loop') {
+      world.innerHTML = '';
+      empty.hidden = true;
+      S.edges = [];
+      S.workerId = nodes[0].id;
+      S.workerSig = '';
+      S.workerAutoScroll = true;
+      worker.hidden = false;
+      renderWorker(true);
+      return;
+    }
+    S.workerId = null;
+    worker.hidden = true;
+
+    var visible = {};
+    nodes.forEach(function (n) { visible[n.id] = 1; });
+    var edges = S.view === 'detail'
+      ? (S.graph.edges || []).filter(function (e) {
+          return e && e.source && e.target && visible[e.source] && visible[e.target];
+        })
+      : chainEdges(allNodes, S.graph.edges || [], nodes);
+    S.edges = edges;
     var pos = autoLayout(nodes, edges);
 
     S.inH = {}; S.outH = {}; S.geom = {};
@@ -650,9 +697,19 @@
       S.geom[n.id] = { x: p.x, y: p.y };
       maxX = Math.max(maxX, p.x + NODE_W);
       maxY = Math.max(maxY, p.y + NODE_H);
+      var label = esc(n.name && String(n.name).trim() ? n.name : n.id);
+      if (n.type === 'human_intervention') {
+        h += '<div class="node approval" data-nid="' + esc(n.id) + '" style="left:' + p.x + 'px;top:' + p.y + 'px">'
+          + '<button class="ring" data-approve="' + esc(n.id) + '" title="人工审核：点击批准继续">'
+          + '<svg viewBox="0 0 24 24"><path d="m5 13 4 4L19 7"/></svg></button>'
+          + '<div class="hname" data-log="' + esc(n.id) + '">' + label + '</div>'
+          + handlesHtml(n.id)
+          + '</div>';
+        return;
+      }
       h += '<div class="node" data-nid="' + esc(n.id) + '" style="left:' + p.x + 'px;top:' + p.y + 'px">'
         + '<span class="badge">READY</span>'
-        + '<div class="nlabel">' + esc(n.name && String(n.name).trim() ? n.name : n.id) + '</div>'
+        + '<div class="nlabel">' + label + '</div>'
         + '<div class="nbtns"><button class="nbtn" data-log="' + esc(n.id) + '">日志</button>'
         + '<button class="nbtn reset" data-reset="' + esc(n.id) + '" title="重置节点并执行下游">重置</button></div>'
         + handlesHtml(n.id)
@@ -678,7 +735,7 @@
   function drawEdges() {
     var svg = world.querySelector('.edges');
     if (!svg) return;
-    var edges = (S.graph && S.graph.edges || []).filter(function (e) {
+    var edges = (S.edges || []).filter(function (e) {
       return e && e.source && e.target && S.geom[e.source] && S.geom[e.target];
     });
     var out = '';
@@ -695,16 +752,37 @@
     svg.innerHTML = out;
   }
 
+  // ---------- 单 Agent 会话 ----------
+  function renderWorker(force) {
+    if (!S.workerId) return;
+    var msgs = ((S.nodeMemory[S.workerId] || {}).messages) || [];
+    var sig = JSON.stringify(msgs);
+    if (!force && sig === S.workerSig) return;
+    S.workerSig = sig;
+    $('worker-body').innerHTML = messagesHtml(msgs);
+    if (S.workerAutoScroll) {
+      var w = $('worker');
+      w.scrollTop = w.scrollHeight;
+    }
+  }
+
   function paintStates() {
     var list = world.querySelectorAll('.node');
     Array.prototype.forEach.call(list, function (el) {
       var id = el.getAttribute('data-nid');
       var st = extractState(S.nodeStates[id]);
-      el.className = 'node st-' + st + (S.isRunning ? ' live' : '') + (S.resetting === id ? ' resetting' : '');
+      var isHuman = el.classList.contains('approval');
+      el.className = 'node' + (isHuman ? ' approval' : '') + ' st-' + st + (S.isRunning ? ' live' : '') + (S.resetting === id ? ' resetting' : '');
       var b = el.querySelector('.badge');
       if (b) b.textContent = ST_TEXT[st] || 'READY';
       var rb = el.querySelector('.nbtn.reset');
       if (rb) rb.disabled = S.resetting === id;
+      if (isHuman) {
+        var approved = !!S.nodeApprovals[id] || st === 'completed';
+        if (approved) el.classList.add('approved');
+        var ring = el.querySelector('.ring');
+        if (ring) ring.disabled = !(st === 'waiting' && !approved);
+      }
     });
     drawEdges();
   }
@@ -721,8 +799,8 @@
       chip.textContent = st;
     } else { chip.hidden = true; }
     $('btn-kill').hidden = !(S.sel && S.curState === 'running');
-    $('btn-dash').hidden = !S.sel;
-    $('btn-dash').textContent = S.view === 'dash' ? '返回图谱' : '看板';
+    $('btn-detail').hidden = !S.sel;
+    $('btn-detail').textContent = S.view === 'detail' ? '简图' : '详情';
   }
 
   // ---------- 状态轮询 ----------
@@ -735,78 +813,45 @@
       S.curState = String(d.state || '').toLowerCase();
       S.isRunning = S.curState === 'running' || S.curState === 'starting';
       S.nodeStates = d.node_state || d.dag_state || d.node_states || d.nodes || {};
+      S.nodeApprovals = d.node_approvals || {};
       var g = d.graph || { nodes: [], edges: [] };
       var key = id + '|' + (g.nodes || []).map(function (n) { return n && n.id; }).join(',') + '|' + ((g.edges || []).length);
       if (key !== S.graphKey) {
         S.graphKey = key;
         S.graph = g;
-        buildDash(g);
         renderGraph(true);
         if (S.logNode) S.logNode.type = (findNode(S.logNode.id) || {}).type || S.logNode.type;
       } else {
         paintStates();
       }
       updateHead();
+      if (S.workerId) renderWorker(false);
       if (S.logNode && (isAgent(S.logNode.type) || S.logNode.state === 'waiting')) loadLogs();
     }).catch(function () { /* silent */ });
   }
 
   function selectTask(id) {
-    S.sel = id; S.nodeStates = {}; S.nodeMemory = {}; S.graph = null; S.graphKey = '';
+    S.sel = id; S.nodeStates = {}; S.nodeMemory = {}; S.nodeApprovals = {}; S.graph = null; S.graphKey = '';
     S.curState = ''; S.isRunning = false;   // 清掉上一个任务的运行态，避免「停止」按钮残留
     S.logs = []; S.logSig = '';
+    S.view = 'simple';
+    S.workerId = null; S.workerSig = ''; S.edges = [];
     closeLog();
-    if (S.view === 'dash') { S.view = 'graph'; $('dash').hidden = true; canvas.hidden = false; }
     renderTasks();
     renderGraph(false);
     updateHead();
     loadState();
   }
 
-  // ---------- 看板 ----------
-  function renderDash() {
-    var d = $('dash');
-    if (S.view !== 'dash') { d.hidden = true; canvas.hidden = false; updateHead(); return; }
-    d.hidden = false; canvas.hidden = true;
-    updateHead();
-    var cur = S.dash[S.dashIdx] || null;
-    var h = '<div class="dhead">';
-    if (S.dash.length > 1) {
-      h += '<div class="dtabs">';
-      S.dash.forEach(function (x, i) {
-        h += '<button class="dtab' + (i === S.dashIdx ? ' on' : '') + '" data-dtab="' + i + '">' + esc(x.name) + '</button>';
-      });
-      h += '</div>';
-    }
-    if (cur) {
-      h += '<div class="dnav">'
-        + '<button class="ibtn" data-dnav="back" title="后退"><svg viewBox="0 0 24 24"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg></button>'
-        + '<button class="ibtn" data-dnav="fwd" title="前进"><svg viewBox="0 0 24 24"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg></button>'
-        + '<button class="ibtn" data-dnav="reload" title="刷新"><svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg></button>'
-        + '<button class="ibtn" data-dnav="ext" title="在外部浏览器打开"><svg viewBox="0 0 24 24"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg></button>'
-        + '</div>';
-    }
-    h += '</div><div class="dbody">';
-    if (cur) {
-      h += '<iframe id="dash-frame" src="' + esc(cur.url) + '" sandbox="allow-scripts allow-same-origin allow-forms allow-popups"></iframe>';
-    } else {
-      var agentNodes = ((S.graph && S.graph.nodes) || []).filter(function (n) { return n && isAgent(n.type); });
-      if (!agentNodes.length) {
-        h += '<div class="dnote">该任务没有可展示的核心节点</div>';
-      } else {
-        h += '<div class="agent-list">';
-        agentNodes.forEach(function (n) {
-          var st = extractState(S.nodeStates[n.id]);
-          h += '<div class="arow" data-log="' + esc(n.id) + '">'
-            + '<span class="aname">' + esc(n.name && String(n.name).trim() ? n.name : n.id) + '</span>'
-            + '<span class="astate st-' + st + '">' + esc(ST_TEXT[st]) + '</span>'
-            + '</div>';
-        });
-        h += '</div>';
-      }
-    }
-    h += '</div>';
-    d.innerHTML = h;
+  // ---------- 人工审核 ----------
+  function approveNode(id) {
+    if (!S.sel) return;
+    jsend('POST', API.approve(S.sel, id)).then(function () {
+      S.nodeApprovals[id] = new Date().toISOString();
+      paintStates();
+      toast('已批准，工作流继续');
+      loadState();
+    }).catch(function (e) { toast(e.message || '批准失败', false); });
   }
 
   // ---------- 日志 ----------
@@ -1077,7 +1122,8 @@
       toast('任务及存档已彻底抹除');
       if (S.sel === id) {
         S.sel = null; S.graph = null; S.graphKey = ''; S.nodeStates = {};
-        S.dash = []; S.view = 'graph'; $('dash').hidden = true; canvas.hidden = false;
+        S.view = 'simple';
+        S.workerId = null; S.workerSig = ''; S.edges = [];
         closeLog();
         renderGraph(false);
         updateHead();
@@ -1096,6 +1142,8 @@
 
   canvas.addEventListener('click', function (e) {
     var t = e.target;
+    var ab = t.closest ? t.closest('[data-approve]') : null;
+    if (ab) { e.stopPropagation(); approveNode(ab.getAttribute('data-approve')); return; }
     var rb = t.closest ? t.closest('[data-reset]') : null;
     if (rb) { e.stopPropagation(); resetNode(rb.getAttribute('data-reset')); return; }
     var lb = t.closest ? t.closest('[data-log]') : null;
@@ -1104,29 +1152,11 @@
     if (node) openLog(node.getAttribute('data-nid'));
   });
 
-  $('dash').addEventListener('click', function (e) {
-    var tab = e.target.closest ? e.target.closest('[data-dtab]') : null;
-    if (tab) { S.dashIdx = parseInt(tab.getAttribute('data-dtab'), 10) || 0; renderDash(); return; }
-    var nav = e.target.closest ? e.target.closest('[data-dnav]') : null;
-    if (nav) {
-      var fr = $('dash-frame');
-      var act = nav.getAttribute('data-dnav');
-      var cur = S.dash[S.dashIdx];
-      try {
-        if (act === 'back' && fr) fr.contentWindow.history.back();
-        else if (act === 'fwd' && fr) fr.contentWindow.history.forward();
-        else if (act === 'reload' && fr) fr.contentWindow.location.reload();
-      } catch (err) { /* 跨域兜底 */ }
-      if (act === 'ext' && cur) window.open(cur.url, '_blank');
-      return;
-    }
-    var row = e.target.closest ? e.target.closest('[data-log]') : null;
-    if (row) openLog(row.getAttribute('data-log'));
-  });
-
   // 画布平移 / 缩放
   var drag = null;
   canvas.addEventListener('wheel', function (e) {
+    // worker 会话区自身可滚动：滚轮交给它，不做画布缩放
+    if (e.target.closest && e.target.closest('.worker')) return;
     e.preventDefault();
     var r = canvas.getBoundingClientRect();
     var mx = e.clientX - r.left, my = e.clientY - r.top;
@@ -1138,7 +1168,7 @@
     applyView();
   }, { passive: false });
   canvas.addEventListener('pointerdown', function (e) {
-    if (e.target.closest && e.target.closest('.node')) return;
+    if (e.target.closest && (e.target.closest('.node') || e.target.closest('.worker'))) return;
     drag = { x: e.clientX, y: e.clientY, vx: view.x, vy: view.y };
     canvas.classList.add('drag');
     try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* noop */ }
@@ -1153,16 +1183,16 @@
     drag = null;
     canvas.classList.remove('drag');
   });
-  window.addEventListener('resize', function () { if (S.graph && S.view === 'graph') drawEdges(); });
+  window.addEventListener('resize', function () { if (S.graph) drawEdges(); });
 
   $('btn-refresh').addEventListener('click', function () { loadTasks().then(function () { loadState(); }); });
   $('btn-new').addEventListener('click', openCreate);
   $('btn-trigger').addEventListener('click', openTrigger);
   $('btn-kill').addEventListener('click', killTask);
-  $('btn-dash').addEventListener('click', function () {
-    S.view = S.view === 'dash' ? 'graph' : 'dash';
-    renderDash();
-    if (S.view === 'graph') drawEdges();
+  $('btn-detail').addEventListener('click', function () {
+    S.view = S.view === 'detail' ? 'simple' : 'detail';
+    renderGraph(true);
+    updateHead();
   });
 
   $('log-close').addEventListener('click', closeLog);
@@ -1171,6 +1201,10 @@
   $('log-body').addEventListener('scroll', function () {
     var b = $('log-body');
     S.autoScroll = (b.scrollHeight - b.scrollTop - b.clientHeight) < 40;
+  });
+  $('worker').addEventListener('scroll', function () {
+    var w = $('worker');
+    S.workerAutoScroll = (w.scrollHeight - w.scrollTop - w.clientHeight) < 60;
   });
 
   $('create-close').addEventListener('click', function () { $('create-modal').hidden = true; });

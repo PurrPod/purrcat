@@ -11,7 +11,7 @@ Graph（任务图 / 工作流）用**节点（Node）+ 边（Edge）**描述多�
 ```text
 graphs/<graph-name>/          # 市场仓库中的单元
 ├── graph.json                # 图定义（必需）
-└── asset/                     # 静态资源：看板 html 等（可选）
+└── asset/                     # 静态资源（可选）
 ```
 
 **文件夹名 = `graph.json` 内的 `name` 字段**，两者必须严格一致（CI 校验）。
@@ -40,8 +40,7 @@ graphs/<graph-name>/          # 市场仓库中的单元
   "core": "openai:deepseek-v4-flash",
   "global_schema": { "prompt": { "type": "string", "required": true, "description": "用户任务描述" } },
   "nodes": [ ... ],
-  "edges": [ ... ],
-  "dashboard": "purrcat://graph/my_graph/asset/dashboard.html"
+  "edges": [ ... ]
 }
 ```
 
@@ -55,7 +54,6 @@ graphs/<graph-name>/          # 市场仓库中的单元
 | `global_schema` | 否 | 全局输入变量的类型声明与必填校验；驱动前端表单 + 运行时参数校验 |
 | `nodes` | 否 | 节点定义数组 |
 | `edges` | 否 | 连边定义数组 |
-| `dashboard` | 否 | 看板地址：单个字符串，或多看板数组 `[{ "name": "...", "url": "..." }]` |
 
 ### `global_schema` 结构
 
@@ -142,18 +140,12 @@ graphs/<graph-name>/          # 市场仓库中的单元
 
 ---
 
-## 6. 看板与 `purrcat://` URI
+## 6. 静态资源与 `purrcat://` URI
 
 任务产出的文件通过 `purrcat://` URI 引用，运行时将其映射到真实路径：
 
-- `purrcat://graph/<name>/asset/<file>` → `{GRAPHS_DIR}/<name>/asset/<file>`（看板/静态资源）
+- `purrcat://graph/<name>/asset/<file>` → `{GRAPHS_DIR}/<name>/asset/<file>`（静态资源）
 - 其他产物按信封协议解析；`GET /api/tasks/{task_id}/artifact?uri=<uri>` 可下载。
-
-`dashboard` 指向 `asset/` 下的 html 时写作：
-
-```json
-"dashboard": "purrcat://graph/my_graph/asset/dashboard.html"
-```
 
 ---
 

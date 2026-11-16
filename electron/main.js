@@ -426,7 +426,7 @@ function isSelfUrl(url) {
     const u = new URL(url.startsWith('http') ? url : 'http://' + url);
     if (u.protocol !== 'http:' && u.protocol !== 'https:') return false;
     // 后端静态/产物接口（/api/...）返回的是文件而非应用 SPA 壳，允许内置浏览器打开，
-    // 用于在 dashboard 里以内部浏览器预览本地看板（同类名不构成 storage 循环）
+    // 用于在内置浏览器里预览本地页面（同类名不构成 storage 循环）
     if (u.pathname.startsWith('/api/')) return false;
     if (!LOOPBACK_HOSTS.has(u.hostname)) return false;
     const port = u.port || (u.protocol === 'https:' ? '443' : '80');
@@ -741,7 +741,7 @@ ipcMain.handle('browser:reload', (_e, tabId) => {
   t.view.webContents.reload();
 });
 
-// 前进 / 后退：走内核历史（看板导航条用）
+// 前进 / 后退：走内核历史（内置浏览器导航用）
 ipcMain.handle('browser:go-back', (_e, tabId) => {
   const t = tabs.get(tabId);
   if (!t) return;

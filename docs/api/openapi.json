@@ -5591,6 +5591,56 @@
         ]
       }
     },
+    "/api/tasks/{task_id}/nodes/{node_id}/approve": {
+      "post": {
+        "description": "批准人工审核节点：注入放行指令，并把批准记录落盘供刷新后回显。",
+        "operationId": "approve_node_api_api_tasks__task_id__nodes__node_id__approve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "node_id",
+            "required": true,
+            "schema": {
+              "title": "Node Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Approve Node Api",
+        "tags": [
+          "Tasks"
+        ]
+      }
+    },
     "/api/tasks/{task_id}/nodes/{node_id}/reset": {
       "post": {
         "description": "供前端点击重置节点后调用，触发级联清理及引擎重启。\n\n任务可能已结束/程序重启后不在内存，先按需从 checkpoint 激活。",

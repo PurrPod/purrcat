@@ -93,11 +93,12 @@ curl -X POST 'http://127.0.0.1:8000/api/tasks/run' \
   "graph": "default",
   "node_states": { "node_1": "running" },
   "outputs": {},
-  "node_memory": { "node_1": { "messages": [] } }
+  "node_memory": { "node_1": { "messages": [] } },
+  "node_approvals": { "review_1": "2026-11-16 10:00:00" }
 }
 ```
 
-`node_states`、`outputs` 与 `node_memory` 的具体结构由任务运行时数据决定，此处为示意。任务不存在返回 404。
+`node_states`、`outputs` 与 `node_memory` 的具体结构由任务运行时数据决定，此处为示意。`node_approvals` 为人工审核节点的批准记录（按 checkpoint 落盘，刷新后仍可回显）；任务不存在返回 404。
 
 **示例**
 
@@ -243,6 +244,33 @@ curl 'http://127.0.0.1:8000/api/tasks/tsk_ab12cd34/artifact?uri=purrcat://output
 
 ```bash
 curl -X DELETE 'http://127.0.0.1:8000/api/tasks/tsk_ab12cd34'
+```
+
+---
+
+## POST `/api/tasks/{task_id}/nodes/{node_id}/approve`
+
+批准人工审核节点：向该节点注入放行指令，并把批准记录写入 checkpoint 的 `nodes/{node_id}/approval.json`，刷新任务页后仍显示为已批准。仅 `human_intervention` 类型且处于 `waiting` 的节点可批准。
+
+**请求**
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| task_id | path | string | 是 | 任务 ID |
+| node_id | path | string | 是 | 人工审核节点 ID |
+
+**响应**
+
+```json
+{ "status": "success", "approved": true }
+```
+
+已批准过则返回 `{"status": "success", "approved": true, "already_approved": true}`。节点类型不符或不在等待审核时返回 400，任务不存在返回 404。
+
+**示例**
+
+```bash
+curl -X POST 'http://127.0.0.1:8000/api/tasks/tsk_ab12cd34/nodes/review_1/approve'
 ```
 
 ---

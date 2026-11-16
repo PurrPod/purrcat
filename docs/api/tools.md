@@ -624,7 +624,7 @@ curl 'http://127.0.0.1:8000/api/tools/market/ui-plugins'
 **响应**
 
 ```json
-["hello", "dashboard"]
+["hello", "notes"]
 ```
 
 **示例**

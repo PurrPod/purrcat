@@ -1992,6 +1992,26 @@ ACP 接入状态：relay 部署情况 / 端口 / uv 可用性
 | 200 | Successful Response | - |
 | 422 | Validation Error | HTTPValidationError |
 
+### `POST /api/tasks/{task_id}/nodes/{node_id}/approve`
+
+**标题**：Approve Node Api
+
+批准人工审核节点：注入放行指令，并把批准记录落盘供刷新后回显。
+
+#### 参数
+
+| 名称 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| task_id | path | string | 是 |  |
+| node_id | path | string | 是 |  |
+
+#### 响应
+
+| 状态码 | 描述 | Schema |
+| --- | --- | --- |
+| 200 | Successful Response | - |
+| 422 | Validation Error | HTTPValidationError |
+
 ### `POST /api/tasks/{task_id}/nodes/{node_id}/reset`
 
 **标题**：Reset Node Api

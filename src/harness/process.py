@@ -137,9 +137,6 @@ class Task:
         # 🌟 只在创建时保存一次元数据，后续不再修改
         self.save_meta()
 
-    # 看板(dashboard)文件直接引用图目录里那份 html（purrcat://graph/{graph_name}/...），
-    # 不做按任务副本，同一张图并发多个任务共享同一份看板文件。
-
     def load_graph(self):
         from src.utils.config import GRAPHS_DIR
 
