@@ -107,7 +107,16 @@ class Node(AgentNode):
         fps = []
         if pending:
             self.log(context, "SYSTEM", f"🔔 [人工指令] 收到 {len(pending)} 条人工指令")
-            fps = [{"role": "user", "content": f"[人工指令] {m}"} for m in pending]
+            fps = [
+                {
+                    "role": "user",
+                    "content": json.dumps(
+                        {"type": "workflow_input", "content": f"[人工指令] {m}"},
+                        ensure_ascii=False,
+                    ),
+                }
+                for m in pending
+            ]
             newly_user += fps
 
         # 最终顺序：记忆 → 上游输入 → 系统提示(user) → 人工指令
