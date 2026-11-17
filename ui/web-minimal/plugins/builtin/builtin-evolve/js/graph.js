@@ -1255,7 +1255,9 @@
   /* ---------------- 工具栏 ---------------- */
   function renderToolbar() {
     toolbarEl.innerHTML = '';
+    var readonly = state.graphName === 'default' && !state.sandboxCtx;
     if (state.dirty) toolbarEl.appendChild(EV.el('span', 'chip warn', '未保存'));
+    if (readonly) toolbarEl.appendChild(EV.el('span', 'chip', '内置图 · 只读'));
     toolbarEl.appendChild(EV.el('span', 'spacer'));
 
     function tbtn(icon, title, fn, cls) {
@@ -1287,6 +1289,10 @@
     save.innerHTML = EV.icon('save', 14);
     save.appendChild(EV.el('span', null, '保存'));
     save.onclick = saveGraph;
+    if (readonly) {
+      save.disabled = true;
+      save.title = 'default 是内置图，不能保存；请修改仓库模板';
+    }
     toolbarEl.appendChild(save);
   }
 
@@ -1304,6 +1310,11 @@
   }
 
   async function saveGraph() {
+    // default 是随包分发的内置图，启动时会按模板修复，画布只读。
+    if (state.graphName === 'default' && !state.sandboxCtx) {
+      EV.toast('default 是内置图，不能保存；请修改仓库模板', true);
+      return;
+    }
     var errors = validate();
     if (errors.length) {
       EV.toast(errors.join('\n'), true);

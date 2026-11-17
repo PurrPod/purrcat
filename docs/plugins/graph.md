@@ -18,7 +18,7 @@ graphs/<graph-name>/          # 市场仓库中的单元
 
 ### 默认通用 Worker 图
 
-`graph_name` 省略时使用默认图 `default`。它就是一张普通图，位于 `~/.purrcat/graph/default/graph.json`：启动时若缺失，`ensure_default_graph` 会从 `src/harness/graph_templates/default/graph.json` 复制一份；已存在则不会覆盖，可直接编辑或删除。它只接受一个入参 `prompt`，派发约定：
+`graph_name` 省略时使用默认图 `default`。它是内置图，位于 `~/.purrcat/graph/default/graph.json`：启动时 `ensure_default_graph` 会与 `src/harness/graph_templates/default/graph.json` 逐字比对，缺失或被改动都会用模板修复；要改派发约定请改仓库里的模板，不要改用户目录副本。进化工厂、画布保存与市场卸载都会拒绝 `default`，需要自定义时请复制成新名字。它只接受一个入参 `prompt`，派发约定：
 
 1. 需要细化任务时，可选：把任务 spec 写成文件；
 2. `prompt` 写清目标与验收要点；有 spec 时附上其绝对路径（没有也能正常派发）；
