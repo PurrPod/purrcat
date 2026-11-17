@@ -17,6 +17,7 @@
     --accent: #746d94;
     --good: #6f8f7c;
     --warn: #a9845f;
+    --run: #c9853f;
     --bad: #a86f6d;
     --star: #b39a6a;
     --task: #5c86b4;
@@ -57,6 +58,7 @@
     --line-soft: #33302c;
     --accent: #a49dc4;
     --good: #8fb39c;
+    --run: #e0a35c;
     --star: #cbb283;
     --task: #7fa6cf;
     --now: #b9bcc4;
@@ -485,8 +487,22 @@
   }
   .pill:hover { background: color-mix(in srgb, var(--task) 12%, transparent); }
   .pill svg { width: 11px; height: 11px; flex: none; }
-  .pill.is-waiting { color: var(--warn); }
-  .pill.is-waiting:hover { background: color-mix(in srgb, var(--warn) 12%, transparent); }
+  .pill.is-waiting { color: var(--event); }
+  .pill.is-waiting:hover { background: color-mix(in srgb, var(--event) 12%, transparent); }
+  .pill.is-running { color: var(--run); }
+  .pill.is-running:hover { background: color-mix(in srgb, var(--run) 12%, transparent); }
+  .pill.is-done { color: var(--good); }
+  .pill.is-done:hover { background: color-mix(in srgb, var(--good) 12%, transparent); }
+  .pill.is-error { color: var(--bad); }
+  .pill.is-error:hover { background: color-mix(in srgb, var(--bad) 12%, transparent); }
+  .pill:disabled { cursor: default; }
+  .pill.is-done:disabled:hover { background: transparent; }
+  .run-letter { display: inline-block; }
+  .pill.is-running .run-letter { animation: run-bounce 1.05s ease-in-out infinite; }
+  @keyframes run-bounce {
+    0%, 55%, 100% { transform: translateY(0); opacity: .5; }
+    25% { transform: translateY(-2px); opacity: 1; }
+  }
   .card-title {
     flex: 0 1 auto;
     min-width: 0;
@@ -514,6 +530,16 @@
   .card-dur.is-short { color: var(--good); }
   .card-dur.is-mid { color: var(--warn); }
   .card-dur.is-long { color: var(--bad); }
+  .card-run {
+    margin-top: 7px;
+    font-size: 10.5px;
+    line-height: 1.4;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .card-run.is-running { color: var(--run); }
+  .card-run.is-done { color: var(--good); }
+  .card-run.is-error { color: var(--bad); }
   .card-desc {
     font-size: 11.5px;
     line-height: 1.55;
@@ -614,6 +640,34 @@
   .btn.primary:hover { filter: brightness(1.06); }
   .btn.small { height: 32px; padding: 0 10px; font-size: 11px; }
 
+  .date-btn {
+    appearance: none;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+    text-align: left;
+  }
+  .date-btn:hover { color: var(--accent); }
+  .archive-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .archive-item {
+    appearance: none;
+    height: 26px;
+    padding: 0 9px;
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    background: var(--surface);
+    color: var(--ink-soft);
+    font-size: 11.5px;
+    font-variant-numeric: tabular-nums;
+    cursor: pointer;
+  }
+  .archive-item:hover { background: var(--surface-2); border-color: var(--accent); }
+  .archive-item.is-current { border-color: var(--accent); color: var(--accent); }
+  .archive-empty { font-size: 11.5px; color: var(--muted); }
+
   .toast {
     position: fixed;
     left: 50%;
@@ -659,9 +713,9 @@
       <div class="drawer-body">
         <header class="topbar">
           <div class="head-left">
-            <div class="kicker">Today</div>
+            <div class="kicker" id="kickerLabel">Today</div>
             <div class="date-row">
-              <span class="date" id="dateLabel"></span>
+              <button class="date date-btn" id="dateLabel" type="button" title="切换日期"></button>
               <span class="weekday" id="weekdayLabel"></span>
               <span class="clock" id="clockLabel"></span>
               <span class="remain" id="remainLabel"></span>
@@ -669,9 +723,6 @@
           </div>
           <div class="tools">
             <span class="save-state" id="saveState"></span>
-            <button class="icon-btn" id="btnPick" title="选择 Markdown 文档">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>
-            </button>
             <button class="icon-btn" id="btnSettings" title="打开设置中心">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
             </button>
@@ -718,12 +769,11 @@
 
   var CORE = window.PurrCatNote;
   var PLUGIN = 'builtin-note';
-  var DEFAULT_DOC = '/agent_vm/notes/note.md';
   var ACTION_TIMEOUT = 12000;
   var ENTRY_COLORS = ['#5c86b4', '#d9a441', '#4ca3b3', '#c8635f', '#9c6496', '#6f8f7c'];
 
   var S = {
-    config: { document: DEFAULT_DOC, wake: '08:00', sleep: '23:00', theme: 'warm' },
+    config: { wake: '08:00', sleep: '23:00', theme: 'warm' },
     source: '',
     savedSource: '',
     lines: [''],
@@ -732,21 +782,24 @@
     loaded: false,
     loadingDoc: false,
     reloadPending: false,
-    graphs: [],
-    sessions: [],
-    entries: [],
+    date: todayKey(),
+    lastToday: todayKey(),
+    lastDate: todayKey(),
+    timerStream: null,
+    runs: {},
+    taskTimers: {},
+    notePath: '',
     swiped: null,
     saveTimer: null,
-    lastDate: '',
     seq: 0
   };
 
   var el = {
+    kicker: document.getElementById('kickerLabel'),
     date: document.getElementById('dateLabel'),
     weekday: document.getElementById('weekdayLabel'),
     clock: document.getElementById('clockLabel'),
     remain: document.getElementById('remainLabel'),
-    pick: document.getElementById('btnPick'),
     saveState: document.getElementById('saveState'),
     drawer: document.getElementById('drawer'),
     drawerHandle: document.getElementById('drawerHandle'),
@@ -795,20 +848,16 @@
 
   function applyConfig(cfg) {
     if (!cfg || typeof cfg !== 'object') return;
-    var doc = String(cfg.document || '').trim() || DEFAULT_DOC;
     var wake = CORE.parseHHMM(cfg.wake) == null ? '08:00' : String(cfg.wake).trim();
     var sleep = CORE.parseHHMM(cfg.sleep) == null ? '23:00' : String(cfg.sleep).trim();
     var theme = String(cfg.theme || '').trim();
     if (theme !== 'light' && theme !== 'dark') theme = 'warm';
-    var docChanged = doc !== S.config.document;
-    S.config.document = doc;
     S.config.wake = wake;
     S.config.sleep = sleep;
     S.config.theme = theme;
     applyTheme();
-    paintChrome();
     renderTimeline();
-    if (!S.loaded || docChanged) loadDoc();
+    if (!S.loaded) loadDoc();
   }
 
   // ---------- 小工具 ----------
@@ -829,10 +878,18 @@
     var day = d.getDate();
     return d.getFullYear() + '-' + (m < 10 ? '0' : '') + m + '-' + (day < 10 ? '0' : '') + day;
   }
-  function dateParts() {
-    var d = new Date();
+  function parseDateKey(value) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value || ''));
+    if (!m) return null;
+    var d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    return isNaN(d.getTime()) ? null : d;
+  }
+  function dateParts(value) {
+    var d = parseDateKey(value) || new Date();
     var wd = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][d.getDay()];
-    return { date: (d.getMonth() + 1) + '月' + d.getDate() + '日', weekday: wd };
+    var label = (d.getMonth() + 1) + '月' + d.getDate() + '日';
+    if (d.getFullYear() !== new Date().getFullYear()) label = d.getFullYear() + '年' + label;
+    return { date: label, weekday: wd };
   }
   function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
   function pad2(n) { return (n < 10 ? '0' : '') + n; }
@@ -853,36 +910,39 @@
       return;
     }
     S.loadingDoc = true;
-    var path = S.config.document;
+    var date = S.date;
     S.active = null;
     S.source = '';
+    S.notePath = '';
     S.lines = [''];
     renderDoc();
-    fetch('/api/filesystem/read?path=' + encodeURIComponent(path) + '&t=' + Date.now(), {
+    fetch('/api/note?date=' + encodeURIComponent(date) + '&t=' + Date.now(), {
       cache: 'no-store'
     })
       .then(function (res) {
-        if (res.status === 400) return { content: '' };
         if (!res.ok) throw new Error('HTTP ' + res.status);
         return res.json();
       })
       .then(function (data) {
+        if (S.date !== date) return;
         S.source = String((data && data.content) || '');
         S.savedSource = S.source;
+        S.notePath = String((data && data.path) || '');
         S.lines = S.source.split('\n');
+        hydrateRunsFromCards();
         renderDoc();
         renderTimeline();
       })
       .catch(function (err) {
-        toast('读取文档失败：' + err.message);
+        toast('读取笔记失败：' + err.message);
         renderDoc();
       })
       .then(function () {
         S.loaded = true;
         S.loadingDoc = false;
-        loadEntries();
         renderTimeline();
-        if (S.reloadPending || S.config.document !== path) {
+        if (S.date === todayKey()) syncTimer();
+        if (S.reloadPending || S.date !== date) {
           S.reloadPending = false;
           loadDoc();
         }
@@ -898,20 +958,543 @@
     clearTimeout(S.saveTimer);
     if (!S.loaded || S.loadingDoc) return Promise.resolve();
     syncSource();
+    var date = S.date;
+    var content = S.source;
     el.saveState.textContent = '保存中';
-    return fetch('/api/filesystem/write', {
-      method: 'POST',
+    return fetch('/api/note', {
+      method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path: S.config.document, content: S.source })
+      body: JSON.stringify({ date: date, content: content })
     }).then(function (res) {
       if (!res.ok) throw new Error('HTTP ' + res.status);
-      S.savedSource = S.source;
+      if (S.date === date && S.source === content) S.savedSource = content;
       var t = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
       el.saveState.textContent = '已保存 ' + t;
+      hydrateRunsFromCards();
+      if (S.date === todayKey()) syncTimer();
     }).catch(function (err) {
       el.saveState.textContent = '保存失败';
       toast('保存失败：' + err.message);
     });
+  }
+
+  // ---------- 卡片执行状态 ----------
+  var RUN_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="9" stroke-dasharray="3.1 2.7"/><circle cx="12" cy="12" r="2.6" fill="currentColor" stroke="none"/></svg>';
+  var DONE_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12.4l2.6 2.6L16.4 9"/></svg>';
+  var ERROR_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.6v5.8"/><circle cx="12" cy="16.8" r=".9" fill="currentColor" stroke="none"/></svg>';
+  var TODO_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="9" stroke-dasharray="3.1 2.7"/></svg>';
+
+  function runStorageKey(date) { return 'purrnote.runs.' + date; }
+
+  function cardKey(card) {
+    var edge = String(card && card.time ? card.time : '').split('~');
+    var start = CORE.edgeMinutes(edge[0]);
+    return (start == null ? '' : start) + '|' + (card && card.title ? card.title : '');
+  }
+
+  function cardPayload(card) {
+    var edge = String(card.time || '').split('~');
+    var start = CORE.edgeMinutes(edge[0]);
+    var end = CORE.edgeMinutes(edge[1]);
+    if (start == null) start = 0;
+    if (end == null || end <= start) end = Math.min(1440, start + 15);
+    var desc = card.description === '无描述' ? '' : String(card.description || '');
+    var prompt = card.title + (desc ? '\n' + desc : '');
+    // 主会话需要知道消息来自哪个插件、笔记文件在哪、该读哪个 skill。
+    var meta = ['', '来源：随手记插件（builtin-note）'];
+    if (S.notePath) meta.push('笔记文件：' + S.notePath);
+    meta.push('技能：purrcat-note');
+    var content = '【随手记 ' + S.date + ' ' + CORE.fmtHHMM(start) + '】' + prompt + '\n' + meta.join('\n');
+    return {
+      date: S.date,
+      title: card.title,
+      start: start,
+      end: end,
+      description: desc,
+      content: content,
+      run_key: cardKey(card),
+      task_name: ('note-' + S.date + '-' + card.title).replace(/[<>:"/\\|?*]/g, '-').slice(0, 80),
+      source: { plugin: 'builtin-note', name: '随手记', file: S.notePath || '', skill: 'purrcat-note' },
+      inputs: { prompt: prompt }
+    };
+  }
+
+  function cardByKey(key) {
+    var found = null;
+    CORE.parseCards(S.source).some(function (card) {
+      if (cardKey(card) !== key) return false;
+      found = card;
+      return true;
+    });
+    return found;
+  }
+
+  // 把执行状态（及可选 task_id）写回 Markdown，两者合并成一次保存。
+  function writeCardMeta(key, state, taskId) {
+    var card = cardByKey(key);
+    if (!card) return;
+    var next = S.source;
+    if (taskId !== undefined) next = CORE.updateCardTaskId(next, card, taskId);
+    next = CORE.setCardState(next, card, state);
+    if (next === S.source) return;
+    S.source = next;
+    S.lines = next.split('\n');
+    S.units = CORE.splitUnits(next).units;
+    // 正在编辑时只改内存，避免抢焦点打断输入。
+    if (!S.active) renderDoc();
+    saveNow();
+  }
+
+  function saveRuns() {
+    try { localStorage.setItem(runStorageKey(S.date), JSON.stringify(S.runs)); } catch (_) {}
+  }
+
+  function stopTaskTimer(key) {
+    if (S.taskTimers[key]) {
+      clearInterval(S.taskTimers[key]);
+      delete S.taskTimers[key];
+    }
+  }
+
+  function stopAllTaskTimers() {
+    Object.keys(S.taskTimers).forEach(function (key) { clearInterval(S.taskTimers[key]); });
+    S.taskTimers = {};
+  }
+
+  function loadRuns(date) {
+    stopAllTaskTimers();
+    S.runs = {};
+    try {
+      var raw = localStorage.getItem(runStorageKey(date));
+      var parsed = raw ? JSON.parse(raw) : null;
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) S.runs = parsed;
+    } catch (_) {
+      S.runs = {};
+    }
+    Object.keys(S.runs).forEach(function (key) {
+      var run = S.runs[key];
+      if (!run || run.state !== 'running') return;
+      if (!run.startedAt) run.startedAt = Date.now();
+      if (run.taskId) watchTask(key, run.taskId);
+    });
+  }
+
+  // 只取一次指标：已完成/失败卡片打开时补齐耗时与 token。
+  function fetchRunMetrics(key) {
+    var run = S.runs[key];
+    if (!run || !run.taskId) return;
+    var taskId = run.taskId;
+    var url = '/api/tasks/' + encodeURIComponent(taskId);
+    Promise.all([
+      fetch(url + '/token', { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }),
+      fetch(url + '/elapsed', { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; })
+    ]).then(function (res) {
+      var current = S.runs[key];
+      if (!current || current.taskId !== taskId) return;
+      if (res[0] && typeof res[0].total_tokens === 'number') current.tokens = res[0].total_tokens;
+      if (res[1] && typeof res[1].elapsed_ms === 'number') current.elapsedMs = res[1].elapsed_ms;
+      current.metricsLoaded = true;
+      saveRuns();
+      updateRunLine(key);
+    });
+  }
+
+  // 以 Markdown 里的 purrcat@target/task_id 为准恢复监听：扫到就轮询状态、耗时与 token。
+  function hydrateRunsFromCards() {
+    CORE.parseCards(S.source).forEach(function (card) {
+      var key = cardKey(card);
+      var run = S.runs[key];
+      // 用户把关键字改回 TODO 表示重新待办：丢掉旧记录、停止监听，让定时与徽章回到初始状态。
+      if (CORE.isRunReset(card)) {
+        delete S.runs[key];
+        stopTaskTimer(key);
+        return;
+      }
+      if (!card.taskId) return;
+      if (!run || run.taskId !== card.taskId) {
+        run = S.runs[key] = {
+          state: 'running',
+          taskId: card.taskId,
+          startedAt: Date.now(),
+          endedAt: null,
+          tokens: 0,
+          elapsedMs: null,
+          title: card.title
+        };
+      }
+      if (card.state === 'done' || card.state === 'error') {
+        run.state = card.state;
+        run.endedAt = run.endedAt || Date.now();
+        stopTaskTimer(key);
+        if (!run.metricsLoaded) fetchRunMetrics(key);
+        return;
+      }
+      run.state = 'running';
+      run.endedAt = null;
+      watchTask(key, card.taskId);
+    });
+    saveRuns();
+  }
+
+  function fmtRunDuration(ms) {
+    var total = Math.floor(Number(ms) / 1000);
+    if (!isFinite(total) || total < 0) total = 0;
+    var h = Math.floor(total / 3600);
+    var m = Math.floor((total % 3600) / 60);
+    var s = total % 60;
+    var pad = function (n) { return n < 10 ? '0' + n : String(n); };
+    return h ? h + ':' + pad(m) + ':' + pad(s) : pad(m) + ':' + pad(s);
+  }
+
+  function fmtTokens(n) {
+    return Number(n || 0).toLocaleString('zh-CN');
+  }
+
+  function runText(run) {
+    var bits = [];
+    if (run.state === 'error') bits.push('失败');
+    // 有任务 ID 时用服务端耗时（运行中实时增长），否则退回本地墙钟。
+    var elapsed = typeof run.elapsedMs === 'number'
+      ? run.elapsedMs
+      : (run.endedAt || Date.now()) - (run.startedAt || Date.now());
+    bits.push('耗时 ' + fmtRunDuration(elapsed));
+    if (run.taskId) bits.push(fmtTokens(run.tokens) + ' tokens');
+    return bits.join(' · ');
+  }
+
+  function bounceWord(word) {
+    return String(word).split('').map(function (ch, i) {
+      return '<span class="run-letter" style="animation-delay:' + (i * 0.08).toFixed(2) + 's">' + ch + '</span>';
+    }).join('');
+  }
+
+  function badgeMarkup(state) {
+    if (state === 'done') return DONE_ICON + 'DONE';
+    if (state === 'error') return ERROR_ICON + 'ERROR';
+    return RUN_ICON + bounceWord('RUNNING');
+  }
+
+  function pillClassForState(state) {
+    if (state === 'waiting') return 'pill is-waiting';
+    if (state === 'running') return 'pill is-running';
+    if (state === 'done') return 'pill is-done';
+    if (state === 'error') return 'pill is-error';
+    return 'pill';
+  }
+
+  function updateRunBadge(key) {
+    var run = S.runs[key];
+    if (!run) return;
+    var nodes = el.doc.querySelectorAll('.pill[data-run-key]');
+    for (var i = 0; i < nodes.length; i++) {
+      if (nodes[i].getAttribute('data-run-key') !== key) continue;
+      nodes[i].className = pillClassForState(run.state);
+      nodes[i].disabled = run.state === 'done';
+      nodes[i].innerHTML = badgeMarkup(run.state);
+      nodes[i].title = run.state === 'running' ? '任务执行中'
+        : run.state === 'done' ? '任务已完成' : '任务失败，点击重新绑定';
+    }
+  }
+
+  function updateRunLine(key) {
+    var run = S.runs[key];
+    if (!run) return;
+    var cards = el.doc.querySelectorAll('.card[data-run-key]');
+    for (var i = 0; i < cards.length; i++) {
+      if (cards[i].getAttribute('data-run-key') !== key) continue;
+      var line = cards[i].querySelector('.card-run');
+      if (!line) {
+        line = document.createElement('div');
+        cards[i].appendChild(line);
+      }
+      line.className = 'card-run is-' + run.state;
+      line.textContent = runText(run);
+    }
+  }
+
+  function updateRunUI(key) {
+    updateRunBadge(key);
+    updateRunLine(key);
+  }
+
+  function updateRunLines() {
+    Object.keys(S.runs).forEach(function (key) {
+      if (S.runs[key] && S.runs[key].state === 'running') updateRunLine(key);
+    });
+  }
+
+  function startRun(key, taskId, data) {
+    stopTaskTimer(key);
+    S.runs[key] = {
+      state: 'running',
+      taskId: taskId || null,
+      startedAt: Date.now(),
+      endedAt: null,
+      tokens: 0,
+      elapsedMs: null,
+      title: data && data.title ? data.title : ''
+    };
+    saveRuns();
+    // undefined 表示暂不改写围栏里的旧 task_id，等拿到新任务后再写。
+    writeCardMeta(key, 'running', taskId === undefined ? undefined : (taskId || ''));
+    updateRunUI(key);
+    if (taskId) watchTask(key, taskId);
+  }
+
+  function attachTask(key, taskId, data) {
+    var run = S.runs[key];
+    if (!run) {
+      startRun(key, taskId, data);
+      return;
+    }
+    run.taskId = taskId;
+    run.state = 'running';
+    run.endedAt = null;
+    if (!run.startedAt) run.startedAt = Date.now();
+    saveRuns();
+    writeCardMeta(key, 'running', taskId);
+    updateRunUI(key);
+    watchTask(key, taskId);
+    syncTimer();
+  }
+
+  function finishRun(key, state, tokens, data) {
+    var run = S.runs[key];
+    if (!run) {
+      run = {
+        state: state,
+        taskId: null,
+        startedAt: Date.now(),
+        endedAt: Date.now(),
+        tokens: 0,
+        title: data && data.title ? data.title : ''
+      };
+      S.runs[key] = run;
+    }
+    run.state = state;
+    run.endedAt = Date.now();
+    if (tokens != null) run.tokens = tokens;
+    if (run.taskId) run.metricsLoaded = true;
+    stopTaskTimer(key);
+    saveRuns();
+    writeCardMeta(key, state === 'done' ? 'done' : 'error', run.taskId || '');
+    updateRunUI(key);
+    // 失败时允许回到原定时（已过点的不会被重新排入）。
+    syncTimer();
+  }
+
+  function clearRun(key) {
+    if (!S.runs[key]) return;
+    delete S.runs[key];
+    stopTaskTimer(key);
+    saveRuns();
+  }
+
+  function watchTask(key, taskId) {
+    stopTaskTimer(key);
+    S.taskTimers[key] = setInterval(function () { pollTask(key); }, 1500);
+    pollTask(key);
+  }
+
+  function pollTask(key) {
+    var run = S.runs[key];
+    if (!run || !run.taskId) {
+      stopTaskTimer(key);
+      return;
+    }
+    var taskId = run.taskId;
+    var url = '/api/tasks/' + encodeURIComponent(taskId);
+    Promise.all([
+      fetch(url + '/state', { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }),
+      fetch(url + '/token', { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }),
+      fetch(url + '/elapsed', { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; })
+    ]).then(function (res) {
+      var current = S.runs[key];
+      if (!current || current.taskId !== taskId) {
+        stopTaskTimer(key);
+        return;
+      }
+      var state = res[0] && res[0].state;
+      var tokens = res[1] && typeof res[1].total_tokens === 'number' ? res[1].total_tokens : current.tokens;
+      if (res[2] && typeof res[2].elapsed_ms === 'number') current.elapsedMs = res[2].elapsed_ms;
+      if (state === 'completed') {
+        finishRun(key, 'done', tokens);
+        return;
+      }
+      if (state === 'error' || state === 'killed' || state === 'interrupted') {
+        finishRun(key, 'error', tokens);
+        return;
+      }
+      current.tokens = tokens || 0;
+      current.misses = state ? 0 : (current.misses || 0) + 1;
+      if (!state && current.misses > 5) {
+        finishRun(key, 'error', current.tokens);
+        return;
+      }
+      saveRuns();
+      updateRunLine(key);
+    });
+  }
+
+  function applyWorkerTarget(card, target, skipSave) {
+    var old = card.target;
+    if (old === target) return;
+    var key = cardKey(card);
+    S.source = CORE.updateCardRef(S.source, card, target);
+    // 绑定后首行关键字同步为 WAITING，取消绑定回到 TODO。
+    S.source = CORE.setCardState(S.source, card, target === 'none' ? 'todo' : 'waiting');
+    S.lines = S.source.split('\n');
+    S.units = CORE.splitUnits(S.source).units;
+    card.target = target;
+    clearRun(key);
+    renderDoc();
+    if (!skipSave) saveNow();
+  }
+
+  function targetLabel(target) {
+    if (target === 'main') return 'main';
+    if (target === 'default') return 'background';
+    return target;
+  }
+
+  function runCardNow(card, target) {
+    var key = cardKey(card);
+    // 未绑定 Worker：不派发任何任务，点击即视为「已完成这件事」（finishRun 会同步取消原定时）。
+    if (!target || target === 'none') {
+      finishRun(key, 'done', 0, cardPayload(card));
+      toast('未绑定 Worker，已标记完成');
+      return;
+    }
+    var payload = cardPayload(card);
+    if (target === 'main') {
+      startRun(key, null, payload);
+      // 手动执行后取消原本的定时，避免到点重复投递。
+      syncTimer();
+      fetch('/api/timer/events', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          source: 'note-run:' + S.date,
+          target: 'main',
+          at: Date.now() / 1000,
+          effect: { signal: 'note_item', payload: payload },
+          catch_up: 'skip',
+          dedupe_key: 'run|' + Date.now() + '|' + key
+        })
+      }).then(function (res) {
+        return res.json().then(function (data) {
+          if (!res.ok) throw new Error(data && data.detail ? data.detail : 'HTTP ' + res.status);
+          return data;
+        });
+      }).catch(function (err) {
+        finishRun(key, 'error', 0, payload);
+        toast('立即执行失败：' + err.message);
+      });
+      return;
+    }
+
+    var graphName = target.indexOf('graph:') === 0 ? target.slice(6) : target;
+    startRun(key, undefined, payload);
+    fetch('/api/tasks/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        task_name: payload.task_name,
+        graph_name: graphName,
+        inputs: payload.inputs
+      })
+    }).then(function (res) {
+      return res.json().then(function (data) {
+        if (!res.ok) throw new Error(data && data.detail ? data.detail : 'HTTP ' + res.status);
+        return data;
+      });
+    }).then(function (data) {
+      var taskId = data && (data.task_id || data.id);
+      if (!taskId) throw new Error('未返回任务 ID');
+      attachTask(key, taskId, payload);
+      toast('已派发任务 ' + taskId);
+    }).catch(function (err) {
+      finishRun(key, 'error', 0, payload);
+      toast('立即执行失败：' + err.message);
+    });
+  }
+
+  // 把当天时间线卡片声明式同步到定时任务中心；历史日期不参与调度。
+  function syncTimer() {
+    if (S.date !== todayKey() || !S.loaded) return Promise.resolve();
+    var base = parseDateKey(S.date);
+    if (!base) return Promise.resolve();
+    var now = Date.now() / 1000;
+    var events = [];
+    CORE.parseCards(S.source).forEach(function (card, index) {
+      if (!card.time) return;
+      var key = cardKey(card);
+      var run = S.runs[key];
+      // 已手动执行或正在执行的事项不再重复定时。
+      if (run && (run.state === 'running' || run.state === 'done')) return;
+      var payload = cardPayload(card);
+      var at = (base.getTime() + payload.start * 60000) / 1000;
+      if (at < now - 60) return;
+      var target = card.target === 'main' ? 'main'
+        : (card.target && card.target !== 'none' ? 'graph:' + card.target : 'ui:note');
+      events.push({
+        id: 'note:' + S.date + ':' + index,
+        target: target,
+        at: at,
+        effect: { signal: 'note_item', payload: payload },
+        catch_up: 'skip',
+        dedupe_key: payload.start + '|' + card.title
+      });
+    });
+    return fetch('/api/timer/sources/' + encodeURIComponent('note:' + S.date), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ events: events })
+    }).catch(function () {});
+  }
+
+  function connectTimerStream() {
+    if (S.timerStream || typeof EventSource !== 'function') return;
+    try {
+      S.timerStream = new EventSource('/api/timer/stream');
+      S.timerStream.addEventListener('timer', function (e) {
+        var payload = null;
+        try { payload = JSON.parse(e.data); } catch (_) { return; }
+        if (!payload || payload.type !== 'fired') return;
+        var event = payload.event || {};
+        var effect = event.effect || {};
+        if (effect.signal !== 'note_item') return;
+        var data = effect.payload || {};
+        if (data.date !== S.date) return;
+        var source = String(event.source || '');
+        if (source.indexOf('note:') !== 0 && source.indexOf('note-run:') !== 0) return;
+        var key = data.run_key || ((Number(data.start) || 0) + '|' + (data.title || ''));
+        var target = String(event.target || '');
+        var result = payload.result || {};
+        var title = data.title || '时间线事项';
+
+        if (target.indexOf('graph:') === 0) {
+          var resultData = result.data || {};
+          if (resultData.task_id) {
+            attachTask(key, resultData.task_id, data);
+            toast('⏰ ' + title + ' · 已派发任务 ' + resultData.task_id);
+          } else {
+            toast('⏰ ' + title);
+          }
+          return;
+        }
+        if (target === 'main' || target === 'agent') {
+          var ok = result.action === 'done';
+          finishRun(key, ok ? 'done' : 'error', 0, data);
+          toast('⏰ ' + title + (ok ? ' · 已投递' : ' · 投递失败'));
+          return;
+        }
+        // 未绑定的事项由宿主弹应用级提醒（dialog.message），插件不重复提示。
+        return;
+      });
+    } catch (_) {
+      S.timerStream = null;
+    }
   }
 
   // ---------- Markdown 渲染 ----------
@@ -1037,14 +1620,29 @@
 
   function cardHtml(unit) {
     var card = CORE.parseCard(unit.raw) || {
-      target: 'none', session: '', title: '未命名事项', time: '', duration: '', description: '无描述'
+      target: 'none', title: '未命名事项', time: '', duration: '', description: '无描述'
     };
+    var key = cardKey(card);
+    var run = S.runs[key];
     var waiting = card.target !== 'none';
+    // 刷新后即使本地执行记录丢失，也以 Markdown 首行关键字为准。
+    var keyword = card.state && card.state !== 'todo' ? card.state : '';
+    var state = run ? run.state : (keyword || (waiting ? 'waiting' : 'todo'));
     var open = S.swiped === unit.start;
-    // 勋章：未绑定是虚线圈 TODO，绑定后是带实心点的橙色 WAITING。
-    var icon = waiting
-      ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="9" stroke-dasharray="3.1 2.7"/><circle cx="12" cy="12" r="2.6" fill="currentColor" stroke="none"/></svg>'
-      : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="9" stroke-dasharray="3.1 2.7"/></svg>';
+    var icon = state === 'running' ? RUN_ICON
+      : state === 'done' ? DONE_ICON
+      : state === 'error' ? ERROR_ICON
+      : waiting
+        ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="9" stroke-dasharray="3.1 2.7"/><circle cx="12" cy="12" r="2.6" fill="currentColor" stroke="none"/></svg>'
+        : TODO_ICON;
+    var label = state === 'running' ? bounceWord('RUNNING')
+      : state === 'done' ? 'DONE'
+      : state === 'error' ? 'ERROR'
+      : waiting ? 'WAITING' : 'TODO';
+    var pillTitle = state === 'running' ? '任务执行中'
+      : state === 'done' ? '任务已完成'
+      : state === 'error' ? '任务失败，点击重新绑定'
+      : waiting ? '已绑定 Worker，点击修改' : '点击绑定 Worker';
 
     return '<div class="card-unit" data-unit="' + unit.start + '" data-kind="card">' +
       '<div class="card-swipe' + (open ? ' is-open' : '') + '">' +
@@ -1052,16 +1650,16 @@
           '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M9 7V5h6v2"/><path d="M6 7l1 13h10l1-13"/><path d="M10 11v6M14 11v6"/></svg>' +
         '</button>' +
         '<div class="card-slide">' +
-          '<div class="card" title="点击卡片编辑源码 · 向左滑动删除">' +
+          '<div class="card" data-run-key="' + esc(key) + '" title="点击卡片编辑源码 · 向左滑动删除">' +
             '<div class="card-head">' +
-              '<button class="pill' + (waiting ? ' is-waiting' : '') + '" data-act="bind" title="' +
-                (waiting ? '已绑定 Worker，点击修改' : '点击绑定 Worker') + '">' +
-                icon + (waiting ? 'WAITING' : 'TODO') +
+              '<button class="' + pillClassForState(state) + '" data-act="bind" data-run-key="' + esc(key) + '" title="' + pillTitle + '"' + (state === 'done' ? ' disabled' : '') + '>' +
+                icon + label +
               '</button>' +
               '<span class="card-title">' + esc(card.title) + '</span>' +
               (card.time ? '<span class="card-time">' + esc(card.time.replace('~', '–')) + '</span>' : '') +
             '</div>' +
             '<div class="card-desc">' + esc(card.description) + '</div>' +
+            (run ? '<div class="card-run is-' + run.state + '" data-run-key="' + esc(key) + '">' + esc(runText(run)) + '</div>' : '') +
             (card.duration ? '<span class="card-dur' + durationClass(card.duration) + '">' + esc(card.duration) + '</span>' : '') +
           '</div>' +
         '</div>' +
@@ -1361,6 +1959,8 @@
     var bind = closestEl(e.target, '[data-act="bind"]');
     if (bind) {
       e.preventDefault();
+      // DONE 不可再点，避免完成后被二次派发。
+      if (bind.disabled || bind.classList.contains('is-done')) return;
       openWorkerModal(bind);
       return;
     }
@@ -1678,60 +2278,41 @@
     if (!unit || unit.kind !== 'card') return;
     var card = CORE.parseCard(unit.raw);
     if (!card) return;
+    // 绑定弹窗用 parseCard 的单卡结果，必须补上源码行号，updateCardRef 才能定位。
+    card.start = unit.start;
+    card.end = unit.end;
 
     var targets = '<option value="none"' + (card.target === 'none' ? ' selected' : '') + '>不绑定</option>' +
-      '<option value="main"' + (card.target === 'main' ? ' selected' : '') + '>main 主会话</option>';
-    S.graphs.forEach(function (g) {
-      targets += '<option value="' + esc(g) + '"' + (card.target === g ? ' selected' : '') + '>' + esc(g) + '</option>';
-    });
-    if (card.target !== 'none' && card.target !== 'main' && S.graphs.indexOf(card.target) < 0) {
-      targets += '<option value="' + esc(card.target) + '" selected>' + esc(card.target) + '</option>';
-    }
-    var sessions = '<option value="">默认会话</option>';
-    var found = false;
-    S.sessions.forEach(function (s) {
-      if (s.id === card.session) found = true;
-      sessions += '<option value="' + esc(s.id) + '"' + (s.id === card.session ? ' selected' : '') + '>' +
-        esc(s.alias || s.id) + '</option>';
-    });
-    if (card.session && !found) {
-      sessions += '<option value="' + esc(card.session) + '" selected>' + esc(card.session) + '</option>';
+      '<option value="main"' + (card.target === 'main' ? ' selected' : '') + '>main 主会话</option>' +
+      '<option value="default"' + (card.target === 'default' ? ' selected' : '') + '>background（默认图）</option>';
+    // 旧笔记里还可能有自定义图名，保留可选项避免静默丢绑定。
+    if (card.target !== 'none' && card.target !== 'main' && card.target !== 'default') {
+      targets += '<option value="' + esc(card.target) + '" selected>' + esc(card.target) + '（旧图）</option>';
     }
 
     openModal({
       title: '绑定 Worker',
       sub: esc(card.title) + (card.time ? ' · ' + esc(card.time.replace('~', '–')) : ''),
-      body: '<div class="field"><label>Worker</label><select id="workerTarget">' + targets + '</select></div>' +
-        '<div class="field"><label>目标会话<span class="hint">仅 main 生效</span></label>' +
-        '<select id="workerSession">' + sessions + '</select></div>',
+      body: '<div class="field"><label>Worker</label><select id="workerTarget">' + targets + '</select></div>',
       okText: '保存',
+      extraText: '立即执行',
       onOk: function (wrap) {
         var target = wrap.querySelector('#workerTarget').value;
-        var session = target === 'main' ? wrap.querySelector('#workerSession').value : '';
-        S.source = CORE.updateCardRef(S.source, card, target, session);
-        S.lines = S.source.split('\n');
-        S.units = CORE.splitUnits(S.source).units;
-        renderDoc();
-        saveNow();
-        toast(target === 'none' ? '已取消绑定' : '已绑定 ' + (target === 'main' ? 'main' : target));
+        applyWorkerTarget(card, target);
+        toast(target === 'none' ? '已取消绑定' : '已绑定 ' + targetLabel(target));
+        return true;
+      },
+      onExtra: function (wrap) {
+        var target = wrap.querySelector('#workerTarget').value;
+        // 不绑定也可以直接完成：不派发任务，把卡片标记为 DONE。
+        applyWorkerTarget(card, target, true);
+        runCardNow(card, target);
         return true;
       }
     });
   }
 
   // ---------- 时间线 ----------
-  function loadEntries() {
-    try {
-      S.entries = JSON.parse(localStorage.getItem('purrnote.timeline.' + todayKey()) || '[]');
-      if (!Array.isArray(S.entries)) S.entries = [];
-    } catch (_) {
-      S.entries = [];
-    }
-  }
-  function saveEntries() {
-    try { localStorage.setItem('purrnote.timeline.' + todayKey(), JSON.stringify(S.entries)); } catch (_) {}
-  }
-
   function setDrawerOpen(open, persist) {
     el.drawer.classList.toggle('is-closed', !open);
     el.drawerHandle.setAttribute('aria-expanded', open ? 'true' : 'false');
@@ -1794,11 +2375,10 @@
 
   function renderEntries() {
     var html = '';
-    S.entries.forEach(function (entry, i) {
+    CORE.timelineEntries(S.source).forEach(function (entry, i) {
       var start = Number(entry.start);
       var end = Number(entry.end);
       if (!isFinite(start) || !isFinite(end)) return;
-      if (end <= start) end = Math.min(1440, start + 15);
       var color = ENTRY_COLORS[i % ENTRY_COLORS.length];
       html += '<div class="tl-entry" style="--c:' + color + ';left:' + (start / 1440 * 100) + '%;width:' +
         Math.max(0.35, (end - start) / 1440 * 100) + '%" title="' +
@@ -1815,19 +2395,20 @@
     el.now.style.left = (mins / 1440 * 100) + '%';
     el.now.title = CORE.fmtHHMM(mins);
     el.rest.style.left = (mins / 1440 * 100) + '%';
-    var parts = dateParts();
+    var today = todayKey();
+    if (S.date === S.lastToday && today !== S.lastToday) {
+      switchDate(today);
+    }
+    S.lastToday = today;
+    var parts = dateParts(S.date);
     el.date.textContent = parts.date;
     el.weekday.textContent = parts.weekday;
+    el.kicker.textContent = S.date === today ? 'Today' : 'Archive';
     el.clock.textContent = CORE.fmtHHMM(mins);
-    if (S.lastDate !== todayKey()) {
-      S.lastDate = todayKey();
-      loadEntries();
+    if (S.lastDate !== S.date) {
+      S.lastDate = S.date;
       renderEntries();
     }
-  }
-
-  function paintChrome() {
-    el.pick.title = '当前文档：' + S.config.document + '（点击选择文件）';
   }
 
   // 时间线拖拽
@@ -1899,10 +2480,8 @@
           end: endMin
         }));
         S.lines = S.source.split('\n');
-        S.entries.push({ start: startMin, end: endMin, title: title });
-        saveEntries();
-        renderEntries();
         renderDoc();
+        renderTimeline();
         saveNow();
         el.sheetWrap.scrollTop = el.sheetWrap.scrollHeight;
         toast('已记录「' + title + '」');
@@ -1930,7 +2509,8 @@
       (opts.body || '') +
       '<div class="modal-foot">' +
         '<button class="btn" data-close>取消</button>' +
-        (opts.onOk ? '<button class="btn primary" data-ok>' + esc(opts.okText || '确定') + '</button>' : '') +
+        (opts.onOk ? '<button class="btn' + (opts.extraText ? '' : ' primary') + '" data-ok>' + esc(opts.okText || '确定') + '</button>' : '') +
+        (opts.extraText ? '<button class="btn primary" data-extra>' + esc(opts.extraText) + '</button>' : '') +
       '</div>' +
     '</div>';
     el.modal.classList.add('show');
@@ -1945,6 +2525,13 @@
         closeModal();
       });
     }
+    var extra = el.modal.querySelector('[data-extra]');
+    if (extra && opts.onExtra) {
+      extra.addEventListener('click', function () {
+        if (opts.onExtra(el.modal) === false) return;
+        closeModal();
+      });
+    }
   }
 
   function closeModal() {
@@ -1952,58 +2539,69 @@
     el.modal.innerHTML = '';
   }
 
-  function pickFile() {
-    saveNow();
-    callAction('dialog.files', {
-      filters: [
-        { name: 'Markdown', extensions: ['md', 'markdown', 'txt'] },
-        { name: '全部文件', extensions: ['*'] }
-      ]
-    }, 0).then(function (paths) {
-      var path = Array.isArray(paths) ? paths[0] : null;
-      if (!path) return;
-      callAction('config.set', {
-        plugin_id: PLUGIN,
-        config: { document: path, wake: S.config.wake, sleep: S.config.sleep, theme: S.config.theme }
-      }).then(function (cfg) {
-        applyConfig(cfg || { document: path, wake: S.config.wake, sleep: S.config.sleep });
-        toast('已切换文档');
-      }).catch(function (err) {
-        toast('保存设置失败：' + err.message);
-      });
-    }).catch(function (err) {
-      toast('选择文件失败：' + err.message);
+  // ---------- 日期归档 ----------
+  function switchDate(value) {
+    if (!value || value === S.date) return;
+    commitActive();
+    saveNow().then(function () {
+      saveRuns();
+      S.date = value;
+      S.loaded = false;
+      S.source = '';
+      S.savedSource = '';
+      S.lines = [''];
+      S.active = null;
+      loadRuns(value);
+      renderDoc();
+      loadDoc();
+      tick();
     });
+  }
+
+  function openDateModal() {
+    openModal({
+      title: '切换日期',
+      body: '<div class="field"><label>查看日期</label><input type="date" id="noteDate" value="' + esc(S.date) + '"></div>' +
+        '<div class="archive-list" id="archiveList"><span class="archive-empty">加载中…</span></div>',
+      okText: '查看',
+      onOk: function (wrap) {
+        var value = wrap.querySelector('#noteDate').value;
+        if (!value) return false;
+        switchDate(value);
+        return true;
+      }
+    });
+    fetch('/api/note/dates?t=' + Date.now(), { cache: 'no-store' })
+      .then(function (res) { return res.ok ? res.json() : []; })
+      .then(function (dates) {
+        var box = el.modal.querySelector('#archiveList');
+        if (!box) return;
+        if (!Array.isArray(dates) || !dates.length) {
+          box.innerHTML = '<span class="archive-empty">还没有历史归档</span>';
+          return;
+        }
+        box.innerHTML = dates.map(function (date) {
+          return '<button type="button" class="archive-item' + (date === S.date ? ' is-current' : '') +
+            '" data-date="' + esc(date) + '">' + esc(date) + '</button>';
+        }).join('');
+        Array.prototype.forEach.call(box.querySelectorAll('[data-date]'), function (btn) {
+          btn.addEventListener('click', function () {
+            var value = btn.getAttribute('data-date');
+            closeModal();
+            switchDate(value);
+          });
+        });
+      })
+      .catch(function () {
+        var box = el.modal.querySelector('#archiveList');
+        if (box) box.innerHTML = '<span class="archive-empty">归档列表加载失败</span>';
+      });
   }
 
   // ---------- 引用数据 ----------
-  function loadGraphs() {
-    return callAction('ref.graphs', {}).then(function (list) {
-      S.graphs = Array.isArray(list) ? list.filter(function (x) { return typeof x === 'string'; }) : [];
-    }).catch(function () {
-      return fetch('/api/graphs').then(function (res) { return res.ok ? res.json() : []; })
-        .then(function (list) {
-          S.graphs = (list || []).map(function (g) { return typeof g === 'string' ? g : g && g.name; })
-            .filter(Boolean);
-        }).catch(function () { S.graphs = []; });
-    });
-  }
-
-  function loadSessions() {
-    return fetch('/api/sessions').then(function (res) {
-      return res.ok ? res.json() : [];
-    }).then(function (list) {
-      S.sessions = (Array.isArray(list) ? list : []).map(function (s) {
-        return { id: s.id, alias: s.alias || s.id };
-      });
-    }).catch(function () { S.sessions = []; });
-  }
-
   function refreshRefs() {
-    Promise.all([loadGraphs(), loadSessions()]).then(function () {
-      if (S.active) return;
-      renderDoc();
-    });
+    if (S.active) return;
+    renderDoc();
   }
 
   // ---------- 启动 ----------
@@ -2016,17 +2614,18 @@
         }
       });
     }
-    S.lastDate = todayKey();
-    paintChrome();
+    S.lastDate = S.date;
     setDrawerOpen(localStorage.getItem('purrnote.drawerOpen') !== '0', false);
     el.drawerHandle.addEventListener('click', function () {
       setDrawerOpen(el.drawer.classList.contains('is-closed'), true);
     });
+    loadRuns(S.date);
     renderTimeline();
     renderDoc();
     loadDoc();
+    connectTimerStream();
 
-    document.getElementById('btnPick').addEventListener('click', pickFile);
+    el.date.addEventListener('click', openDateModal);
     document.getElementById('btnSettings').addEventListener('click', function () {
       callAction('settings.open', { tab: 'plugins' }).catch(function (err) {
         toast('打开设置失败：' + err.message);
@@ -2040,12 +2639,14 @@
     });
 
     window.addEventListener('beforeunload', function () {
+      saveRuns();
+      stopAllTaskTimers();
       if (!S.loaded || S.loadingDoc) return;
       syncSource();
       if (S.source === S.savedSource) return;
       try {
-        navigator.sendBeacon('/api/filesystem/write',
-          new Blob([JSON.stringify({ path: S.config.document, content: S.source })], { type: 'application/json' }));
+        navigator.sendBeacon('/api/note',
+          new Blob([JSON.stringify({ date: S.date, content: S.source })], { type: 'application/json' }));
       } catch (_) {}
     });
 
@@ -2059,6 +2660,12 @@
       }
       if (m.type === 'event' && m.event === 'host.unmount') {
         timers.forEach(function (t) { clearInterval(t); });
+        if (S.timerStream) {
+          S.timerStream.close();
+          S.timerStream = null;
+        }
+        saveRuns();
+        stopAllTaskTimers();
         saveNow();
       }
     });
@@ -2068,6 +2675,7 @@
     });
     refreshRefs();
     timers.push(setInterval(tick, 30000));
+    timers.push(setInterval(updateRunLines, 1000));
     timers.push(setInterval(function () {
       if (S.active) return;
       refreshRefs();

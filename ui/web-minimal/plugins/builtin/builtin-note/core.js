@@ -83,9 +83,7 @@
 
   function buildPurrBlock(opts) {
     opts = opts || {};
-    var target = String(opts.target || 'none').trim() || 'none';
-    var session = String(opts.session || '').trim();
-    var ref = target === 'main' && session ? 'main/' + session : target;
+    var ref = String(opts.target || 'none').trim() || 'none';
     var title = String(opts.title == null ? '' : opts.title).replace(/\s*\n+\s*/g, ' ').trim();
     if (!title) title = '未命名事项';
     var desc = String(opts.description == null ? '无描述' : opts.description).trim();
@@ -253,21 +251,24 @@
     var m = (lines[0] || '').match(/^```purrcat@([^\s]*)\s*$/i);
     if (!m) return null;
     var ref = m[1] || 'none';
-    var slash = ref.indexOf('/');
-    var target = slash >= 0 ? ref.slice(0, slash) : ref;
-    var session = slash >= 0 ? ref.slice(slash + 1) : '';
-    if (!target) target = 'none';
+    // 引用可写成 target/task_id：task_id 存在时 Note 会监听任务耗时与 token。
+    var parts = ref.split('/');
+    var target = parts[0] || 'none';
+    var taskId = parts[1] || '';
     var title = '';
     var time = '';
     var duration = '';
     var desc = [];
+    var state = 'todo';
     var sawTodo = false;
     for (var i = 1; i < lines.length; i++) {
       if (/^```\s*$/.test(lines[i])) continue;
       if (!sawTodo) {
-        var t = lines[i].match(/^\s*-\s*(?:\[[ xX]\]\s*)?TODO[ \t]*(.*)$/i);
+        // 首行关键字跟随执行状态：TODO / WAITING / RUNNING / DONE / ERROR。
+        var t = lines[i].match(/^\s*-\s*(?:\[[ xX]\]\s*)?(TODO|WAITING|RUNNING|DONE|ERROR)(?![A-Za-z])[ \t]*(.*)$/i);
         if (t) {
-          var rest = t[1].trim();
+          state = t[1].toLowerCase();
+          var rest = t[2].trim();
           var span = rest.match(/^(\d{1,2}[:：]\d{2})\s*[~～\-–]\s*(\d{1,2}[:：]\d{2})\s*(.*)$/);
           if (span) {
             time = span[1].replace('：', ':') + '~' + span[2].replace('：', ':');
@@ -299,12 +300,14 @@
     }
     return {
       raw: normalize(raw),
+      ref: ref,
       target: target,
-      session: session,
+      taskId: taskId,
       title: title || '未命名事项',
       time: time,
       duration: duration,
-      description: desc.join('\n').trim() || '无描述'
+      description: desc.join('\n').trim() || '无描述',
+      state: state
     };
   }
 
@@ -319,12 +322,58 @@
       });
   }
 
-  function updateCardRef(source, card, target, session) {
+  function timelineEntries(source) {
+    return parseCards(source)
+      .map(function (card) {
+        if (!card.time) return null;
+        var edge = String(card.time).split('~');
+        var start = edgeMinutes(edge[0]);
+        var end = edgeMinutes(edge[1]);
+        if (start == null || end == null) return null;
+        if (end <= start) end = Math.min(1440, start + 15);
+        return { start: start, end: end, title: card.title };
+      })
+      .filter(function (entry) { return !!entry; });
+  }
+
+  function updateCardRef(source, card, target) {
     var lines = normalize(source).split('\n');
-    var t = String(target || 'none').trim() || 'none';
-    var s = String(session || '').trim();
-    var ref = t === 'main' && s ? 'main/' + s : t;
-    lines[card.start] = '```purrcat@' + ref;
+    var start = card && card.start != null ? Number(card.start) : NaN;
+    // 行号缺失或不是卡片围栏时原样返回，避免写坏别的行。
+    if (!isFinite(start) || start < 0 || start % 1 !== 0 || start >= lines.length) return lines.join('\n');
+    if (!/^```purrcat@/i.test(lines[start])) return lines.join('\n');
+    var ref = String(target || 'none').trim() || 'none';
+    lines[start] = '```purrcat@' + ref;
+    return lines.join('\n');
+  }
+
+  // 把 task_id 写进围栏引用（purrcat@default/<id>），空值则退回纯 target。
+  function updateCardTaskId(source, card, taskId) {
+    var lines = normalize(source).split('\n');
+    var start = card && card.start != null ? Number(card.start) : NaN;
+    if (!isFinite(start) || start < 0 || start % 1 !== 0 || start >= lines.length) return lines.join('\n');
+    var m = lines[start].match(/^```purrcat@([^\s/]*)(?:\/\S*)?\s*$/i);
+    if (!m) return lines.join('\n');
+    var target = m[1] || String((card && card.target) || 'none');
+    var id = String(taskId || '').trim().replace(/[^\w.-]/g, '');
+    lines[start] = '```purrcat@' + target + (id ? '/' + id : '');
+    return lines.join('\n');
+  }
+
+  // 只改卡片首行的状态关键字，保留缩进、复选框、时间段与时长。
+  function setCardState(source, card, state) {
+    var lines = normalize(source).split('\n');
+    var start = card && card.start != null ? Number(card.start) : NaN;
+    if (!isFinite(start) || start < 0 || start % 1 !== 0 || start >= lines.length) return lines.join('\n');
+    if (!/^```purrcat@/i.test(lines[start])) return lines.join('\n');
+    var end = card.end != null ? Math.min(Number(card.end), lines.length) : lines.length;
+    var word = String(state || 'todo').toUpperCase();
+    for (var i = start + 1; i < end; i++) {
+      var m = lines[i].match(/^(\s*-\s*(?:\[[ xX]\]\s*)?)(TODO|WAITING|RUNNING|DONE|ERROR)(?![A-Za-z])([ \t]*[\s\S]*)$/i);
+      if (!m) continue;
+      lines[i] = m[1] + word + m[3];
+      break;
+    }
     return lines.join('\n');
   }
 
@@ -333,6 +382,11 @@
     var next = normalize(raw).split('\n');
     lines.splice(start, Math.max(0, end - start), ...next);
     return lines.join('\n');
+  }
+
+  // Markdown 是状态的最终来源：卡片改回 TODO 视为重新待办，旧的执行记录不再生效。
+  function isRunReset(card) {
+    return !!card && card.state === 'todo';
   }
 
   function escapeHtml(value) {
@@ -357,8 +411,13 @@
     mapRenderedOffset: mapRenderedOffset,
     parseCard: parseCard,
     parseCards: parseCards,
+    timelineEntries: timelineEntries,
+    edgeMinutes: edgeMinutes,
     updateCardRef: updateCardRef,
+    updateCardTaskId: updateCardTaskId,
+    setCardState: setCardState,
     applyBlockEdit: applyBlockEdit,
+    isRunReset: isRunReset,
     escapeHtml: escapeHtml
   };
 });

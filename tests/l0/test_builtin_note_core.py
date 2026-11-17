@@ -89,34 +89,30 @@ def test_build_and_append_purr_block() -> None:
     assert timed == "```purrcat@none\n- TODO 09:00~10:00 60min\n# 喝水\n无描述\n```"
     midnight = _call("buildPurrBlock", {"title": "收尾", "start": 1410, "end": 1440})
     assert "- TODO 23:30~24:00 30min" in midnight
-    main_block = _call(
-        "buildPurrBlock",
-        {"title": "整理 inbox", "target": "main", "session": "session_abc"},
-    )
-    assert main_block.splitlines()[0] == "```purrcat@main/session_abc"
+    main_block = _call("buildPurrBlock", {"title": "整理 inbox", "target": "main"})
+    assert main_block.splitlines()[0] == "```purrcat@main"
 
     assert _call("appendBlock", "", block) == block + "\n"
     assert _call("appendBlock", "# 标题\n", block) == "# 标题\n\n" + block + "\n"
 
 
 def test_parse_cards_and_update_only_fence() -> None:
-    """SPEC-032 AC-3：解析时间段/时长/target/session，改写目标只替换围栏首行。"""
+    """SPEC-032 AC-3：解析时间段/时长/target，改写目标只替换围栏首行。"""
     source = (
-        "# 今天\n\n```purrcat@main/session_abc\n"
-        "- TODO 14:00~15:30 90min\n# 写周报\n下午完成\n```\n"
+        "# 今天\n\n```purrcat@main\n- TODO 14:00~15:30 90min\n# 写周报\n下午完成\n```\n"
     )
     cards = _call("parseCards", source)
     assert len(cards) == 1
     card = cards[0]
     assert card["target"] == "main"
-    assert card["session"] == "session_abc"
+    assert "session" not in card
     assert card["title"] == "写周报"
     assert card["time"] == "14:00~15:30"
     assert card["duration"] == "90min"
     assert card["description"] == "下午完成"
     assert card["start"] == 2 and card["end"] == 7
 
-    updated = _call("updateCardRef", source, card, "daily", "")
+    updated = _call("updateCardRef", source, card, "daily")
     assert "```purrcat@daily\n" in updated
     assert "- TODO 14:00~15:30 90min\n# 写周报\n下午完成" in updated
     assert "purrcat@main" not in updated
@@ -126,6 +122,86 @@ def test_parse_cards_and_update_only_fence() -> None:
     assert none_card["time"] == ""
     assert none_card["duration"] == ""
     assert none_card["description"] == "无描述"
+
+
+def test_card_state_keyword_round_trips() -> None:
+    """SPEC-032 AC-12：首行关键字随执行状态变化，且不影响时间段与标题解析。"""
+    source = "```purrcat@daily\n- WAITING 09:00~10:00 60min\n# 喝水\n无描述\n```"
+    card = _call("parseCards", source)[0]
+    assert card["state"] == "waiting"
+    assert card["time"] == "09:00~10:00"
+    assert card["duration"] == "60min"
+    assert card["title"] == "喝水"
+
+    running = _call("setCardState", source, card, "running")
+    assert "- RUNNING 09:00~10:00 60min" in running
+    assert "WAITING" not in running
+
+    done = _call("setCardState", running, card, "done")
+    assert "- DONE 09:00~10:00 60min" in done
+    assert "```purrcat@daily" in done
+
+    legacy = _call("parseCards", "```purrcat@none\n- TODO 喝水\n# 喝水\n无描述\n```")[0]
+    assert legacy["state"] == "todo"
+
+
+def test_task_id_round_trips_in_fence_ref() -> None:
+    """SPEC-032 AC-12：purrcat@default/<task_id> 可被解析并回写。"""
+    source = "```purrcat@default\n- WAITING 09:00~10:00 60min\n# 喝水\n无描述\n```"
+    card = _call("parseCards", source)[0]
+    assert card["target"] == "default"
+    assert card["taskId"] == ""
+
+    attached = _call("updateCardTaskId", source, card, "tsk_ab12cd34")
+    assert attached.split("\n")[0] == "```purrcat@default/tsk_ab12cd34"
+
+    parsed = _call("parseCards", attached)[0]
+    assert parsed["target"] == "default"
+    assert parsed["taskId"] == "tsk_ab12cd34"
+
+    cleared = _call("updateCardTaskId", attached, parsed, "")
+    assert cleared.split("\n")[0] == "```purrcat@default"
+
+
+def test_todo_keyword_resets_run() -> None:
+    """SPEC-032 AC-12：Markdown 改回 TODO 视为重新待办，丢弃旧执行记录并重新参与定时。"""
+    assert _call("isRunReset", {"state": "todo"}) is True
+    assert _call("isRunReset", {"state": "waiting"}) is False
+    assert _call("isRunReset", {"state": "done"}) is False
+    assert _call("isRunReset", None) is False
+
+
+def test_update_card_ref_ignores_missing_start() -> None:
+    """SPEC-032 AC-3：缺行号或行号不是卡片围栏时原样返回，不能写坏其它行。"""
+    source = "```purrcat@main\n- TODO 14:00~15:30 90min\n# 写周报\n下午完成\n```\n"
+    card = _call("parseCards", source)[0]
+    del card["start"]
+    assert _call("updateCardRef", source, card, "daily") == source
+
+    stale = dict(card, start=99)
+    assert _call("updateCardRef", source, stale, "daily") == source
+
+    not_fence = dict(card, start=1)
+    assert _call("updateCardRef", source, not_fence, "daily") == source
+
+
+def test_timeline_entries_derived_from_cards() -> None:
+    """SPEC-032 AC-3：时间线由文档内带时间段的卡片派生，忽略无时间卡片。"""
+    source = (
+        "# 今天\n\n```purrcat@main\n"
+        "- TODO 09:00~10:00 60min\n# 喝水\n无描述\n```\n\n"
+        "```purrcat@none\n- TODO 写周报\n# 写周报\n无描述\n```\n\n"
+        "```purrcat@daily\n- TODO 23:30~24:00 30min\n# 收尾\n无描述\n```\n"
+    )
+    assert _call("timelineEntries", source) == [
+        {"start": 540, "end": 600, "title": "喝水"},
+        {"start": 1410, "end": 1440, "title": "收尾"},
+    ]
+
+    reversed_card = "```purrcat@none\n- TODO 10:00~09:00\n# 反向\n无描述\n```"
+    assert _call("timelineEntries", reversed_card) == [
+        {"start": 600, "end": 615, "title": "反向"}
+    ]
 
 
 def test_parse_card_keeps_legacy_todo_title() -> None:
