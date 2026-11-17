@@ -1,8 +1,10 @@
 // 宿主入口 boot 与 Electron 窗口控制
+import { dispatch } from './actions.js';
 import { broadcastAll, syncNativeCover } from './bus.js';
 import { openUrlInBrowserPanel } from './links.js';
 import { applyManifestState } from './manifest.js';
 import { buildSlotIndex, mountAll } from './mount.js';
+import { startTimerReminders } from './notice.js';
 import { applyPanelContainerCfg, closePanelMenus, loadPanelShell } from './panel.js';
 import { applyPersistedHidden, applyRailOpacity, applySlotHidden, bindRailToggle, buildRail } from './rail.js';
 import { broadcastSessions, updateEmpty } from './sessions.js';
@@ -59,6 +61,10 @@ import { HOST, groupState } from './state.js';
     // 在各开关点显式调用 syncNativeCover()（见 setSettingsOpen/applySlotHidden/菜单开合），
     // 不用 MutationObserver：浮窗拖拽会高频改内联样式，观察 style 会造成 getComputedStyle 抖动。
     syncNativeCover();
+    // 未绑定 Worker 的随手记事项到点后由宿主弹应用级提醒，不依赖随手记面板是否打开。
+    startTimerReminders(function (pluginId) {
+      dispatch('plugin.activate', { plugin_id: pluginId }).catch(() => {});
+    });
 
     try {
       const list = await (await fetch('/api/sessions')).json();

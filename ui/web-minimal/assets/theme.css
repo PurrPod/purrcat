@@ -319,6 +319,57 @@ body.settings-open .wm-modal-wrap { display: none !important; }
 }
 /* 模态容器内不注入拖拽/缩放手柄（与设置中心一致：固定居中不可拖） */
 .wm-modal iframe { border: 0; width: 100%; height: 100%; display: block; }
+
+/* 应用级提醒（dialog.message）：比插件模态更小的轻量卡片，无 iframe、无拖拽 */
+.wm-notice-wrap { z-index: 46; }
+.wm-notice {
+  width: min(430px, 92vw);
+  max-height: 72vh;
+  overflow: auto;
+  padding: 22px 24px 18px;
+  background: var(--wm-bg-panel);
+  border-radius: 14px;
+  box-shadow: 0 12px 40px rgba(22, 25, 29, 0.22);
+}
+.wm-notice-title {
+  font-size: 16px;
+  font-weight: 650;
+  line-height: 1.45;
+  color: var(--wm-label);
+}
+.wm-notice-desc {
+  margin-top: 8px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--wm-label-2nd);
+  white-space: pre-wrap;
+}
+.wm-notice-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 18px;
+}
+.wm-notice-btn {
+  appearance: none;
+  padding: 7px 14px;
+  border: 1px solid var(--wm-border);
+  border-radius: 8px;
+  background: var(--wm-bl-100);
+  color: var(--wm-label);
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+}
+.wm-notice-btn:hover { background: var(--wm-bg-hover); }
+.wm-notice-btn.is-primary {
+  border-color: transparent;
+  background: var(--wm-accent);
+  color: #fff;
+}
+.wm-notice-btn.is-primary:hover { background: var(--wm-accent-hi); }
+.wm-notice-btn.is-danger { color: #b4372f; border-color: rgba(180, 55, 47, .35); }
+
 .settings-panel {
   width: 100%;
   height: 100%;

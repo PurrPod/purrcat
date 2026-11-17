@@ -181,6 +181,7 @@ window.parent.postMessage({ type: 'callAction', id: id, actionId: 'state.get', p
 | `dialog.folder` | 无 | 同上（文件夹的绝对路径数组） |
 | `dialog.resolveFiles` | `{files: [File]}`（`<input type=file>` 选好的 File） | `{paths: [...]}` |
 | `dialog.pickWallpaper` | 无 | 上传后的后端 JSON；取消 → `null` |
+| `dialog.message` | `{title, description?, options?: [{id, label, kind?}], dismissible?}` | `{option: string \\| null}`：应用级弹窗，返回用户选中的 `id`；取消/关闭 → `null` |
 | `ref.graphs` | 无 | 名称字符串数组 |
 
 **容器（float 插件用；宿主只操作调用方自己的实例）**

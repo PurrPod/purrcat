@@ -5373,6 +5373,116 @@
     return { status: "ok" };
   }
 
+  // ui/web-minimal/src/host/notice.ts
+  function fmtHHMM(minutes) {
+    const m = Math.max(0, Math.floor(minutes));
+    return String(Math.floor(m / 60) % 24).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0");
+  }
+  function showNotice(spec) {
+    const doc = HOST.document;
+    const options = (spec.options || []).filter((o) => o && o.id && o.label);
+    if (!options.length) options.push({ id: "ok", label: "\u77E5\u9053\u4E86" });
+    const wrap = doc.createElement("div");
+    wrap.className = "wm-modal-wrap wm-notice-wrap";
+    wrap.style.display = "flex";
+    const box = doc.createElement("div");
+    box.className = "wm-notice";
+    box.setAttribute("role", "dialog");
+    box.setAttribute("aria-modal", "true");
+    const title = doc.createElement("div");
+    title.className = "wm-notice-title";
+    title.textContent = spec.title || "\u63D0\u9192";
+    box.appendChild(title);
+    if (spec.description) {
+      const desc = doc.createElement("div");
+      desc.className = "wm-notice-desc";
+      desc.textContent = spec.description;
+      box.appendChild(desc);
+    }
+    const actions = doc.createElement("div");
+    actions.className = "wm-notice-actions";
+    box.appendChild(actions);
+    wrap.appendChild(box);
+    return new Promise((resolve) => {
+      let done = false;
+      const onKey = (e) => {
+        if (e.key === "Escape" && spec.dismissible !== false) close(null);
+      };
+      const close = (value) => {
+        if (done) return;
+        done = true;
+        doc.removeEventListener("keydown", onKey, true);
+        wrap.remove();
+        syncNativeCover();
+        resolve(value);
+      };
+      options.forEach((opt) => {
+        const btn = doc.createElement("button");
+        btn.type = "button";
+        btn.className = "wm-notice-btn" + (opt.kind ? " is-" + opt.kind : "");
+        btn.textContent = opt.label;
+        btn.addEventListener("click", () => close(opt.id));
+        actions.appendChild(btn);
+      });
+      if (spec.dismissible !== false) {
+        wrap.addEventListener("click", (e) => {
+          if (e.target === wrap) close(null);
+        });
+        doc.addEventListener("keydown", onKey, true);
+      }
+      doc.body.appendChild(wrap);
+      syncNativeCover();
+      const focusTarget = actions.lastElementChild;
+      if (focusTarget) focusTarget.focus();
+    });
+  }
+  async function remindNote(data) {
+    const start = Number(data.start);
+    const time = Number.isFinite(start) ? fmtHHMM(start) : "";
+    const desc = String(data.description || "").trim();
+    return showNotice({
+      title: "\u23F0 " + (time ? time + " \xB7 " : "") + String(data.title || "\u968F\u624B\u8BB0\u4E8B\u9879"),
+      description: (desc || "\u65F6\u95F4\u5230\u4E86\uFF0C\u8BE5\u505A\u8FD9\u4EF6\u4E8B\u4E86\u3002") + (data.date ? "\n" + data.date : ""),
+      options: [
+        { id: "open", label: "\u6253\u5F00\u968F\u624B\u8BB0" },
+        { id: "ok", label: "\u77E5\u9053\u4E86", kind: "primary" }
+      ]
+    });
+  }
+  function startTimerReminders(openPlugin) {
+    if (typeof EventSource !== "function") return;
+    const seen = /* @__PURE__ */ new Set();
+    let source;
+    try {
+      source = new EventSource("/api/timer/stream");
+    } catch (_) {
+      return;
+    }
+    source.addEventListener("timer", (e) => {
+      let payload;
+      try {
+        payload = JSON.parse(e.data);
+      } catch (_) {
+        return;
+      }
+      if (!payload || payload.type !== "fired") return;
+      const evt = payload.event || {};
+      if (String(evt.target || "") !== "ui:note") return;
+      const effect = evt.effect || {};
+      if (effect.signal && effect.signal !== "note_item") return;
+      const key = String(evt.id || "") + "|" + String(evt.at || "");
+      if (seen.has(key)) return;
+      seen.add(key);
+      if (seen.size > 200) {
+        const oldest = seen.values().next().value;
+        if (oldest) seen.delete(oldest);
+      }
+      remindNote(effect.payload || {}).then((choice) => {
+        if (choice === "open" && openPlugin) openPlugin("builtin-note");
+      });
+    });
+  }
+
   // ui/web-minimal/src/host/actions.ts
   async function dispatch(actionId, payload = {}, origin) {
     payload = payload || {};
@@ -5720,6 +5830,18 @@
         if (!p) return null;
         const up = await (await fetch("/api/webmin/wallpaper", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: p }) })).json();
         return up;
+      }
+      // 应用级弹窗：插件可自定标题、描述与选项；返回用户选中的 id（取消为 null）
+      case "dialog.message": {
+        const raw = Array.isArray(payload.options) ? payload.options : [];
+        const options = raw.map((o) => typeof o === "string" ? { id: o, label: o } : { id: String(o && o.id || ""), label: String(o && o.label || o && o.id || ""), kind: o && o.kind }).filter((o) => o.id && o.label);
+        const option = await showNotice({
+          title: String(payload.title || "\u63D0\u9192"),
+          description: payload.description == null ? "" : String(payload.description),
+          options,
+          dismissible: payload.dismissible !== false
+        });
+        return { option };
       }
       case "plugin.delete": {
         if (!payload.plugin_id) throw new Error("\u7F3A\u5C11 plugin_id");
@@ -6229,6 +6351,10 @@
       });
     }
     syncNativeCover();
+    startTimerReminders(function(pluginId) {
+      dispatch("plugin.activate", { plugin_id: pluginId }).catch(() => {
+      });
+    });
     try {
       const list = await (await fetch("/api/sessions")).json();
       if (Array.isArray(list) && list.length) {

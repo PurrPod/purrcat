@@ -4,6 +4,7 @@ import { activeSessionBusy, applyConfigTo, ensureSessionId, saveConfig } from '.
 import { apiErrorMessage, pickPath } from './dialog.js';
 import { openUrlInBrowserPanel } from './links.js';
 import { reloadManifest } from './manifest.js';
+import { showNotice, type NoticeOption } from './notice.js';
 import { buildRail, setPluginHidden } from './rail.js';
 import { broadcastSessions, refreshSessions, setEmpty, updateEmpty } from './sessions.js';
 import { setSettingsOpen } from './settings-appearance.js';
@@ -377,6 +378,22 @@ import { HOST, activeBySlot, configByPlugin, groupState } from './state.js';
         if (!p) return null;
         const up = await (await fetch('/api/webmin/wallpaper', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: p }) })).json();
         return up;
+      }
+      // 应用级弹窗：插件可自定标题、描述与选项；返回用户选中的 id（取消为 null）
+      case 'dialog.message': {
+        const raw = Array.isArray(payload.options) ? payload.options : [];
+        const options: NoticeOption[] = raw.map((o: any) => (
+          typeof o === 'string'
+            ? { id: o, label: o }
+            : { id: String((o && o.id) || ''), label: String((o && o.label) || (o && o.id) || ''), kind: o && o.kind }
+        )).filter((o: NoticeOption) => o.id && o.label);
+        const option = await showNotice({
+          title: String(payload.title || '提醒'),
+          description: payload.description == null ? '' : String(payload.description),
+          options,
+          dismissible: payload.dismissible !== false,
+        });
+        return { option };
       }
       case 'plugin.delete': {
         if (!payload.plugin_id) throw new Error('缺少 plugin_id');
