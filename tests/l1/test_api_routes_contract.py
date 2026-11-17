@@ -118,7 +118,6 @@ EXPECTED_ROUTES = {
         ("/api/config/sandbox-registry", "PUT", "api_update_sandbox_registry"),
         ("/api/config/markdown/{filename}", "GET", "api_get_markdown_file"),
         ("/api/config/markdown/{filename}", "PUT", "api_update_markdown_file"),
-        ("/api/config/info", "GET", "api_get_info_config"),
         ("/api/config/setup-status", "GET", "api_setup_status"),
         ("/api/config/setup-data-root", "POST", "api_setup_data_root"),
         ("/api/config/change-data-root", "POST", "api_change_data_root"),
@@ -233,6 +232,7 @@ EXPECTED_ROUTES = {
     "terminal": [("/api/terminal/ws", "WEBSOCKET", "terminal_websocket")],
     "paradigms": [
         ("/api/paradigms", "GET", "list_paradigms_api"),
+        ("/api/paradigms/reset", "POST", "reset_paradigm_api"),
         ("/api/paradigms/{name}", "GET", "get_paradigm_api"),
         ("/api/paradigms/{name}", "POST", "save_paradigm_api"),
         ("/api/paradigms/{name}", "DELETE", "delete_paradigm_api"),

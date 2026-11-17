@@ -74,7 +74,6 @@ NATIVE_TOOLS = {
 # 可被 @引用 的符号（injection.content 内）
 REF_ALIASES = {
     "@RULES",
-    "@INFO",
     "@SOUL",
     "@MEMORY",
     "@SYS",

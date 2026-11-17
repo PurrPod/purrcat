@@ -37,7 +37,7 @@
 
   var FIELD_SCHEMA = {
     injection: [
-      { key: 'content', label: '注入内容', kind: 'textarea', ph: '注入给 Agent 的提示文本（可用 @RULES/@SOUL/@MEMORY/@INFO/@SYS/@USERQUERY 直接引用其内容）' }
+      { key: 'content', label: '注入内容', kind: 'textarea', ph: '注入给 Agent 的提示文本（可用 @RULES/@SOUL/@MEMORY/@SYS/@USERQUERY 直接引用其内容）' }
     ],
     // 搜索：用 query 调 Search 工具检索能力/记忆/网络，把结果注入给 Agent
     search: [
@@ -107,7 +107,6 @@
     { k: '@RULES', d: '系统规则指南', to: '内容可引用 · src/agent/system_rules/RULES.md' },
     { k: '@SOUL', d: '人格设定', to: '内容可引用 · ~/.purrcat/core/SOUL.md' },
     { k: '@MEMORY', d: '长期记忆', to: '内容可引用 · ~/.purrcat/core/MEMORY.md' },
-    { k: '@INFO', d: '用户信息', to: '内容可引用 · ~/.purrcat/core/info.json' },
     { k: '@SYS', d: '实时系统信息（不读文件）', to: '内容可引用 · OS / 主机名 / CPU / GPU / AgentVM 路径' },
     { k: '@USERQUERY', d: '本次收到的 type=user 输入，多条按换行拼接', to: '内容可引用 · 仅「收到输入时」钩子' }
   ];
@@ -269,6 +268,24 @@
     }
   }
 
+  // 仅默认 PARADIGM.yaml：恢复为随包模板（用户其它自定义 loop 不受影响）
+  async function resetDefault() {
+    var ok = await EV.confirm({
+      title: '恢复默认 Agent Loop',
+      message: '将把 PARADIGM.yaml 覆盖为随包默认模板，当前修改会丢失。确定恢复吗？',
+      okLabel: '恢复默认', danger: true
+    });
+    if (!ok) return;
+    try {
+      await EV.api.post('/api/paradigms/reset', {});
+      state.dirty = false;
+      await openFile(state.defaultName);
+      EV.toast('已恢复默认 Agent Loop');
+    } catch (e) {
+      EV.toast('恢复失败：' + e.message, true);
+    }
+  }
+
   async function deleteFile(name) {
     var ok = await EV.confirm({
       title: '删除 Paradigm',
@@ -411,7 +428,7 @@
 
     var refsBtn = EV.el('button', 'ibtn');
     refsBtn.innerHTML = EV.icon('info', 14);
-    refsBtn.title = '特殊引用说明：查看 @RULES / @SOUL / @MEMORY / @INFO / @SYS / @USERQUERY 等特殊引用的展开状况';
+    refsBtn.title = '特殊引用说明：查看 @RULES / @SOUL / @MEMORY / @SYS / @USERQUERY 等特殊引用的展开状况';
     refsBtn.onclick = showRefsModal;
     toolbarEl.appendChild(refsBtn);
 
@@ -422,6 +439,16 @@
     vizBtn.disabled = !state.activeName;
     vizBtn.onclick = openVisualize;
     toolbarEl.appendChild(vizBtn);
+
+    // 恢复默认：仅默认 PARADIGM.yaml 页面可见
+    if (!state.sandboxCtx && state.activeName && state.activeName === state.defaultName) {
+      var resetBtn = EV.el('button', 'btn');
+      resetBtn.innerHTML = EV.icon('refresh', 14);
+      resetBtn.appendChild(EV.el('span', null, '恢复默认'));
+      resetBtn.title = '把默认 PARADIGM.yaml 覆盖为随包模板（其它自定义 loop 不受影响）';
+      resetBtn.onclick = resetDefault;
+      toolbarEl.appendChild(resetBtn);
+    }
 
     var saveBtn = EV.el('button', 'btn primary');
     saveBtn.innerHTML = EV.icon('save', 14);

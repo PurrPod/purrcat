@@ -14,13 +14,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **Task elapsed API**: `GET /api/tasks/{id}/elapsed` returns task wall-clock time (live while running, accumulated after finishing), and checkpoint directory names sanitize Windows-reserved characters.
 - **Note dispatch modes**: the worker dialog offers `main` or `background` (the `default` graph); background tasks write `purrcat@default/<task_id>` into the card so the plugin can resume progress tracking from the markdown alone.
 - **Note skill**: the main skill library ships a `purrcat-note` skill describing the plugin, card syntax and how live progress is tracked.
+- **Built-in skills**: `purrcat-note` and `purrcat-genui` live in `src/utils/builtin_skills/` and are copied into `~/.purrcat/skills/` at startup when missing, leaving existing user copies untouched.
 - **App notice dialog**: any UI plugin can raise a host-level modal via `dialog.message` (`title` / `description` / `options`), which returns the selected option id and broadcasts `host.nativeCover` while open.
 - **Note reminders**: unbound note items raise an app-level reminder when their scheduled time arrives, even if the note panel is closed; "run now" on an unbound card marks it `DONE`.
+- **Default paradigm reset**: `POST /api/paradigms/reset` restores the shipped default `PARADIGM.yaml`; the Agent Loop page shows a "恢复默认" button on the default file only.
 
 ### Changed
 
+- **Single paradigm template**: the default AgentLoop template now lives only in `src/agent/system_rules/PARADIGM.yaml` and is read by both first-run seeding and the read fallback, removing the duplicated literal; the now-redundant `exist_check @RULES` step was dropped.
+- **Managed default graph**: the built-in `default` graph is compared byte-for-byte at startup and restored from `src/harness/graph_templates/default/graph.json` when missing or modified; saving, deleting or evolving it is rejected and the canvas shows a read-only badge.
 - **Heartbeat**: scheduling moved to the timer service; `heartbeat.json`, `GOAL.md` and the `/api/tools/heartbeat` contract are unchanged.
 - **Timer feedback**: sink `Signal.data` is persisted as `event.result` and broadcast over SSE; the graph sink returns the dispatched `task_id` so a source (e.g. a plugin) can track the task.
+
+### Removed
+
+- **`@INFO` reference**: dropped the `@INFO` hook alias, the `~/.purrcat/core/info.json` seeding, `GET /api/config/info`, and the sub-agent skills/workshops block — the leftover of the retired user-info feature.
 
 ### Fixed
 

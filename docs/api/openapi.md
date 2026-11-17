@@ -682,18 +682,6 @@ ACP 接入状态：relay 部署情况 / 端口 / uv 可用性
 | 200 | Successful Response | - |
 | 422 | Validation Error | HTTPValidationError |
 
-### `GET /api/config/info`
-
-**标题**：Api Get Info Config
-
-读取 .purrcat/core/info.json，提供 skills 和 workshops 列表
-
-#### 响应
-
-| 状态码 | 描述 | Schema |
-| --- | --- | --- |
-| 200 | Successful Response | - |
-
 ### `GET /api/config/markdown/{filename}`
 
 **标题**：Api Get Markdown File
@@ -1646,6 +1634,18 @@ ACP 接入状态：relay 部署情况 / 端口 / uv 可用性
 **标题**：List Paradigms Api
 
 列出 paradigms 目录下所有可编辑文件。
+
+#### 响应
+
+| 状态码 | 描述 | Schema |
+| --- | --- | --- |
+| 200 | Successful Response | object |
+
+### `POST /api/paradigms/reset`
+
+**标题**：Reset Paradigm Api
+
+把默认 PARADIGM.yaml 覆盖为随包模板（其它自定义 loop 不受影响）。
 
 #### 响应
 

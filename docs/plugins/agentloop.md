@@ -131,7 +131,6 @@ on_input_received:
 | 引用 | 含义 |
 | --- | --- |
 | `@RULES` | 系统规则 |
-| `@INFO` | 环境信息 |
 | `@SOUL` | 人格/灵魂设定 |
 | `@MEMORY` | 记忆 |
 | `@SYS` | 系统提示 |
@@ -171,4 +170,6 @@ hooks:
 - 列出/读取/保存：`GET /api/paradigms`、`GET/POST /api/paradigms/{name}`。
 - 会话热切换：`POST /api/sessions/{session_id}/paradigm`（切换后 KV Cache 前缀保持，冷启动更快）。
 - 默认范式：`~/.purrcat/paradigms/PARADIGM.yaml`；用户未提供时回退到内置 `src/agent/system_rules/PARADIGM.yaml`。
+  该文件同时是首启播种与「恢复默认」的唯一模板来源；进化工厂的 Agent Loop 页仅在默认 `PARADIGM.yaml`
+  页面显示「恢复默认」按钮，调用 `POST /api/paradigms/reset` 覆盖回模板，其它自定义 loop 不受影响。
 

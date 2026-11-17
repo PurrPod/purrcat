@@ -1,45 +1,25 @@
-"""首启默认配置模板（纯常量与构造器，不触碰文件系统）。"""
+"""首启默认配置模板（除默认范式模板外均为纯常量与构造器）。"""
 
-# 默认 Agent Loop（PARADIGM.yaml）模板。
-# 首次需要默认范式时（agent 读取或 paradigms 目录为空），由此模板在
-# ~/.purrcat/paradigms/PARADIGM.yaml 生成后读取。
-DEFAULT_PARADIGM_YAML = """name: "default"
-description: "default system loop"
-path: "agent_vm"
-loop_end_max_retry: 3
-hooks:
-  on_build_system_prompt:
-    - injection:
-        content: "@RULES"
-    - injection:
-        content: "@INFO"
-    - injection:
-        content: "@SOUL"
-    - injection:
-        content: "@MEMORY"
-    - memo_injection:
-        type: "full"
-        count: 10
-    - injection:
-        content: "@SYS"
-  on_loop_start:
-    - injection: 
-        content: "如遇复杂任务，请先编排好主线路的执行计划，先规划TODO后执行"
-  on_loop_epoch:
-    - injection:
-        delay: 5
-        content: "[system regular hint]在执行任务前可使用 Search 工具和 Memo 工具搜索有无对应的能力与历史经验"
-    - injection:
-        interval: 10
-        content: "[system regular hint]请随时按进度更新主路规划或与用户对齐需求，防止跑偏"
-  on_loop_end:
-    # only ALL check passed can exit the loop
-    - tool_use_check:
-        name: "Memo"
-        parameter_check:
-          - action: "add"
-        failed_prompt: "检查到本轮对话你未调用 Memo 工具进行记忆总结，最好总结一下，让你的能力随记忆系统的丰富而增强，如无经验更新，可添加短期记忆以免会话切换时失忆"
-"""
+import os
+
+# 默认 Agent Loop（PARADIGM.yaml）模板与读取兜底共用 src/agent/system_rules 下的
+# 同一份文件：首启播种、恢复默认、兜底读取都从这里取，避免多份文本各自漂移。
+# 该文件由 collect_all('src') 随包分发，打包后仍可按此路径读取。
+PARADIGM_TEMPLATE_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "agent",
+    "system_rules",
+    "PARADIGM.yaml",
+)
+
+
+def read_default_paradigm() -> str:
+    """读取随包默认范式模板文本。"""
+    with open(PARADIGM_TEMPLATE_PATH, "r", encoding="utf-8") as f:
+        return f.read()
+
+
+DEFAULT_PARADIGM_YAML = read_default_paradigm()
 
 # ==========================================
 # 默认配置模板

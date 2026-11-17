@@ -26,6 +26,16 @@ def list_paradigms_api() -> Dict[str, Any]:
     }
 
 
+@router.post("/reset")
+def reset_paradigm_api() -> Dict[str, Any]:
+    """把默认 PARADIGM.yaml 覆盖为随包模板（其它自定义 loop 不受影响）。"""
+    try:
+        path = pa.reset_default_paradigm()
+    except OSError as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+    return {"ok": True, "name": pa.DEFAULT_FILE_BASE, "path": path}
+
+
 @router.get("/{name}")
 def get_paradigm_api(name: str) -> Dict[str, Any]:
     """读取某个 paradigm 的完整结构化内容（含 hooks）。"""

@@ -20,16 +20,23 @@ DEFAULT_FILE_BASE = "PARADIGM"  # 前端展示/路由用的 base 名
 _INVALID_NAME = re.compile(r"[/\\:\x00-\x1f]")
 
 
-def ensure_default_paradigm() -> str:
-    """确保 paradigms 目录与默认 PARADIGM.yaml 存在（缺失时用 initial 里的模板生成），返回其路径。"""
+def reset_default_paradigm() -> str:
+    """把默认 PARADIGM.yaml 覆盖为随包模板，返回路径（用户其它 loop 不受影响）。"""
     os.makedirs(PARADIGMS_DIR, exist_ok=True)
     target = os.path.join(PARADIGMS_DIR, DEFAULT_FILE_NAME)
-    if not os.path.exists(target):
-        # 模板定义在 initial.py（懒加载，避免 import 环）
-        from src.utils.initial import DEFAULT_PARADIGM_YAML
+    # 模板定义在 initial.py（懒加载，避免 import 环）
+    from src.utils.initial import DEFAULT_PARADIGM_YAML
 
-        with open(target, "w", encoding="utf-8") as f:
-            f.write(DEFAULT_PARADIGM_YAML)
+    with open(target, "w", encoding="utf-8") as f:
+        f.write(DEFAULT_PARADIGM_YAML)
+    return target
+
+
+def ensure_default_paradigm() -> str:
+    """确保 paradigms 目录与默认 PARADIGM.yaml 存在（缺失时用随包模板生成），返回其路径。"""
+    target = os.path.join(PARADIGMS_DIR, DEFAULT_FILE_NAME)
+    if not os.path.exists(target):
+        return reset_default_paradigm()
     return target
 
 

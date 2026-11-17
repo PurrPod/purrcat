@@ -1,6 +1,6 @@
 # 配置 `/api/config`
 
-> 源码：`src/server/api/config.py` ｜ 前缀：`/api/config` ｜ 端点：34 个
+> 源码：`src/server/api/config.py` ｜ 前缀：`/api/config` ｜ 端点：33 个
 
 配置文件均落盘在 `~/.purrcat` 下（`settings.json` 为内部全局设置，其余为各模块 JSON）。除 ACP 令牌重置、数据根目录迁移等接口外，均为无鉴权本地接口。
 
@@ -845,28 +845,6 @@ curl 'http://127.0.0.1:8000/api/config/markdown/SOUL'
 curl -X PUT 'http://127.0.0.1:8000/api/config/markdown/SOUL' \
   -H 'Content-Type: application/json' \
   -d '{"content":"## 性格\n\n你是一个内向的程序员……"}'
-```
-
----
-
-## GET `/api/config/info`
-
-读取 `~/.purrcat/core/info.json`，提供 `skills` 与 `workshops` 列表（文件缺失或解析失败时均返回空列表）。
-
-**请求**
-
-无参数。
-
-**响应**
-
-```json
-{ "skills": [], "workshops": [] }
-```
-
-**示例**
-
-```bash
-curl 'http://127.0.0.1:8000/api/config/info'
 ```
 
 ---

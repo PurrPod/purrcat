@@ -1,6 +1,6 @@
 # 范式 `/api/paradigms`
 
-> 源码：`src/server/api/paradigms.py` ｜ 前缀：`/api/paradigms` ｜ 端点：4 个
+> 源码：`src/server/api/paradigms.py` ｜ 前缀：`/api/paradigms` ｜ 端点：5 个
 
 PARADIGM（Agent Loop）配置文件管理接口。所有配置存放于 `~/.purrcat/paradigms/` 下，一个文件一个 loop：`PARADIGM.yaml` 为默认 Agent Loop，其它文件为可切换编辑的备选 loop。
 
@@ -38,6 +38,33 @@ PARADIGM（Agent Loop）配置文件管理接口。所有配置存放于 `~/.pur
 
 ```bash
 curl 'http://127.0.0.1:8000/api/paradigms'
+```
+
+---
+
+## POST `/api/paradigms/reset`
+
+把默认 `PARADIGM.yaml` 覆盖为随包模板 `src/agent/system_rules/PARADIGM.yaml`，用于「恢复默认」。同目录下其它自定义 loop 不受影响。
+
+**请求**
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+
+**响应**
+
+```json
+{
+  "ok": true,
+  "name": "PARADIGM",
+  "path": "/abs/path/paradigms/PARADIGM.yaml"
+}
+```
+
+**示例**
+
+```bash
+curl -X POST 'http://127.0.0.1:8000/api/paradigms/reset'
 ```
 
 ---

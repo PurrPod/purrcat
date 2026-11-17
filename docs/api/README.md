@@ -33,7 +33,7 @@
 | 极简模式插件系统 | `/api/webmin` | 10 | [webmin.md](webmin.md) |
 | 会话与对话 | `/api` | 18 | [chat.md](chat.md) |
 | 项目（会话分类器） | `/api/projects` | 4 | [projects.md](projects.md) |
-| 配置 | `/api/config` | 34 | [config.md](config.md) |
+| 配置 | `/api/config` | 33 | [config.md](config.md) |
 | 工具 | `/api/tools` | 28 | [tools.md](tools.md) |
 | Note 日归档 | `/api/note` | 3 | [note.md](note.md) |
 | 定时任务 | `/api/timer` | 6 | [timer.md](timer.md) |
@@ -44,7 +44,7 @@
 | 任务 | `/api/tasks` | 12 | [task.md](task.md) |
 | 记忆 | `/api/memory` | 9 | [memory.md](memory.md) |
 | 图谱 | `/api/graphs` | 5 | [graph.md](graph.md) |
-| 范式 | `/api/paradigms` | 4 | [paradigms.md](paradigms.md) |
+| 范式 | `/api/paradigms` | 5 | [paradigms.md](paradigms.md) |
 | 待办请求 | `/api/requests` | 4 | [request.md](request.md) |
 | ACP 网关 | `/acp` | 4 | [acp.md](acp.md) |
 | 终端 WebSocket | `/api/terminal` | 1（WS） | [terminal.md](terminal.md) |

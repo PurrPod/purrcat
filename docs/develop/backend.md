@@ -64,13 +64,15 @@ Hook 阶段固定为 `on_build_system_prompt / on_loop_start / on_loop_epoch / o
 ~/.purrcat/
 ├─ settings.json · model.json · mcp_config.json · activate_sensor.json
 ├─ file.json · mcp_schema.json · acp_token
-├─ core/          # SOUL.md / GOAL.md / MEMORY.md / info.json / heartbeat.json
+├─ core/          # SOUL.md / GOAL.md / MEMORY.md / heartbeat.json
 ├─ paradigms/ · skills/ · mcps/ · sensor/ · graph/ · webmin-plugins/
 ├─ data/          # memory · projects · checkpoints/agent · checkpoints/task
 └─ bin/acp_relay.py · logs/backend.log · run/control.json
 ```
 
 `data_root` 可迁移。用户数据不得写入源码目录。
+
+内置技能源在 `src/utils/builtin_skills/`，启动时只把缺失的技能目录补到 `~/.purrcat/skills/`，已存在的目录保留用户修改、不覆盖。
 
 ## 调试
 

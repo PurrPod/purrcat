@@ -27,7 +27,6 @@ PATH_ALIASES = {
     "@RULES": os.path.join(SYSTEM_RULES_DIR, "RULES.md"),
     "@SOUL": SOUL_MD_PATH,
     "@MEMORY": os.path.join(AGENT_CORE_DIR, "MEMORY.md"),
-    "@INFO": os.path.join(AGENT_CORE_DIR, "info.json"),
 }
 
 
@@ -226,7 +225,7 @@ class HookHandler:
         """取 @引用的展开内容（供非 file_operation 的参数直接引用）。
 
         - @USERQUERY：仅带 received_messages 的钩子展开，指代本批 type=user 的消息
-        - @RULES/@SOUL/@MEMORY/@INFO：读取对应文件内容
+        - @RULES/@SOUL/@MEMORY：读取对应文件内容
         - @SYS：现场生成当前系统信息
         - @PLAN：读取当前会话最近一次 BrainStorm 落盘的总计划
 

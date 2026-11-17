@@ -1711,26 +1711,6 @@
         ]
       }
     },
-    "/api/config/info": {
-      "get": {
-        "description": "读取 .purrcat/core/info.json，提供 skills 和 workshops 列表",
-        "operationId": "api_get_info_config_api_config_info_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Api Get Info Config",
-        "tags": [
-          "Configuration"
-        ]
-      }
-    },
     "/api/config/markdown/{filename}": {
       "get": {
         "operationId": "api_get_markdown_file_api_config_markdown__filename__get",
@@ -4270,6 +4250,30 @@
           }
         },
         "summary": "List Paradigms Api",
+        "tags": [
+          "Paradigms"
+        ]
+      }
+    },
+    "/api/paradigms/reset": {
+      "post": {
+        "description": "把默认 PARADIGM.yaml 覆盖为随包模板（其它自定义 loop 不受影响）。",
+        "operationId": "reset_paradigm_api_api_paradigms_reset_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Reset Paradigm Api Api Paradigms Reset Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Reset Paradigm Api",
         "tags": [
           "Paradigms"
         ]

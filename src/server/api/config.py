@@ -323,16 +323,6 @@ def api_update_markdown_file(filename: str, payload: dict = Body(...)):
         raise HTTPException(status_code=500, detail=f"Failed to save {filename}.md")
 
 
-# ── Info Config (Skills & Workshops) ──
-@router.get("/info")
-def api_get_info_config():
-    """读取 .purrcat/core/info.json，提供 skills 和 workshops 列表"""
-    file_path = os.path.join(AGENT_CORE_DIR, "info.json")
-    if not os.path.exists(file_path):
-        return {"skills": [], "workshops": []}
-    return config_validation.load_json_data(file_path, {"skills": [], "workshops": []})
-
-
 # ── 数据根目录（settings.json 内部管理，UI 无全局设置编辑页） ──
 
 

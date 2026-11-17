@@ -36,11 +36,11 @@ def test_guide_outputs_are_byte_identical():
         "c3a7b0681fd085b99184a3efbda0a754a348ae5255f0bc9edf66a94283792685"
     )
     assert _sha(generate_agentloop_guide("demo")) == (
-        "c5eacc554215f483c48a06fbc9b5da32eb246af05ee858f33aa1eeb6b8d241bc"
+        "dbae478cbbb88b931a688e13f02515f10028e2e1e80515769545ab9cef52d21d"
     )
     assert _sha(
         generate_ui_plugin_guide("demo", "Demo", "panel", "D:/vm/ui-plugin/demo")
-    ) == ("4034d15e458c9c3f59fe0ae9925ed825270b42d2e0e0eafe64734f2025f7b839")
+    ) == ("33e875060164d9bc27ad97f5917fb3ff3379f5500089781a8ce631a626930c1f")
 
 
 def test_goal_is_injected_into_every_guide():
