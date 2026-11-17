@@ -236,6 +236,7 @@
   /* 图片/视频按自身比例缩放，只受容器宽度与视口高度约束，不拉伸也不留大片空白 */
   .pv-img { max-width: 100%; max-height: 46vh; object-fit: contain; }
   .pv-video { max-width: 100%; max-height: 46vh; background: #000; }
+  .pv-pdf { width: 100%; height: 58vh; border: 0; background: #fff; }
   .pv-text { align-self: stretch; width: 100%; margin: 0; padding: 12px 14px; font-family: var(--wm-mono, ui-monospace, Consolas, monospace); font-size: 12.5px; line-height: 1.6; color: var(--wm-label, #16191d); white-space: pre-wrap; word-break: break-all; }
   /* 消息里的本地文件链接（点击唤起预览） */
   .filelink { cursor: pointer; text-decoration: underline; text-decoration-style: dotted; }
@@ -748,7 +749,7 @@
       </div>
     </div>
   </div>
-  <!-- 文件预览弹窗：点击消息里的本地文件链接唤起（图片 / 视频 / 文本） -->
+  <!-- 文件预览弹窗：点击消息里的本地文件链接唤起（图片 / 视频 / PDF / 文本） -->
   <div class="pv-mask" id="pvMask">
     <div class="pv">
       <div class="pv-head">
@@ -1966,8 +1967,8 @@
     if (stick) listEl.scrollTop = listEl.scrollHeight;
   }
 
-  // ---------- 文件预览弹窗（图片 / 视频 / 文本）----------
-  // 内容由后端文件接口提供：媒体走 /api/filesystem/preview（FileResponse 带正确 MIME），
+  // ---------- 文件预览弹窗（图片 / 视频 / PDF / 文本）----------
+  // 内容由后端文件接口提供：媒体与 PDF 走 /api/filesystem/preview（FileResponse 带正确 MIME），
   // 文本走 /api/filesystem/read 取原文用 pre 展示（对齐完整模式的链接预览能力）。
   var pvMask = document.getElementById('pvMask');
   var pvBody = document.getElementById('pvBody');
@@ -1975,6 +1976,7 @@
   var pvPath = '';
   var PV_IMG = ['png','jpg','jpeg','gif','webp','svg','bmp','ico'];
   var PV_VIDEO = ['mp4','webm','mov','ogg','avi','mkv'];
+  var PV_PDF = ['pdf'];
   function previewURL(path) { return '/api/filesystem/preview?path=' + encodeURIComponent(path); }
   function fileNameOf(path) { return String(path).replace(/\\/g, '/').split('/').pop() || String(path); }
   function openPreview(path) {
@@ -1992,6 +1994,11 @@
       var v = document.createElement('video');
       v.className = 'pv-video'; v.src = previewURL(path); v.controls = true; v.autoplay = true;
       pvBody.appendChild(v);
+    } else if (PV_PDF.indexOf(ext) >= 0) {
+      // PDF 交给 Chromium 内置查看器渲染，避免按文本读取后展示二进制内容
+      var fr = document.createElement('iframe');
+      fr.className = 'pv-pdf'; fr.title = fileNameOf(path); fr.src = previewURL(path);
+      pvBody.appendChild(fr);
     } else {
       var pre = document.createElement('pre');
       pre.className = 'pv-text'; pre.textContent = '加载中…';
