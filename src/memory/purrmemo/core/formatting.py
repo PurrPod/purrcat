@@ -12,9 +12,12 @@ def format_search_results(events, experiences, graph_results, events_warning="")
 
     if events:
         markdown_parts.append("## 历史事件")
-        markdown_parts.extend(
-            [f"- [{event['timestamp']}] {event['content']}" for event in events]
-        )
+        for event in events:
+            score = event.get("score")
+            prefix = f"[{score:.2f}] " if isinstance(score, (int, float)) else ""
+            markdown_parts.append(
+                f"- {prefix}[{event['timestamp']}] {event['content']}"
+            )
         markdown_parts.append("")
 
     if experiences:

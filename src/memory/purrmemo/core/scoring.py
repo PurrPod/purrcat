@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from .schema import GRAPH_NODE_EXACT_BOOST, GRAPH_NODE_PARTIAL_BOOST
+from .schema import GRAPH_NODE_EXACT_BOOST, GRAPH_NODE_PARTIAL_BOOST, RRF_K
 
 
-def reciprocal_rank_fusion(vector_results, bm25_results, k=60, top_k=5):
+def reciprocal_rank_fusion(vector_results, bm25_results, k=RRF_K, top_k=5):
     """RRF 倒数排名融合。
 
     :param vector_results: 列表，包含 {'id': 'xxx', 'data': {...}, 'score': 0.8}

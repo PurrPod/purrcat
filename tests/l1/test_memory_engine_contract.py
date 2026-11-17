@@ -616,3 +616,45 @@ def test_memory_agent_keeps_file_when_embedding_not_ready(tmp_path, monkeypatch)
     assert agent._process_file(str(file_path)) is False
     assert file_path.exists()
     assert not (archived / file_path.name).exists()
+
+
+def test_search_tool_min_score_filters_events_and_experiences():
+    """SPEC-039 AC-8：memory 路由按 min_score 过滤事件融合分与经验相似度。"""
+    vector = FakeSearchVector()
+    vector.event_results = [
+        {
+            "id": "e1",
+            "data": {"timestamp": "2026-01-01", "content": "双路命中"},
+            "score": 0.9,
+        }
+    ]
+    vector.experience_results = [
+        {"score": 0.55, "content": "高分经验"},
+        {"score": 0.35, "content": "低分经验"},
+    ]
+    tool = RAGSearchTool(
+        event_engine=FakeEventEngine(
+            fts=[
+                {
+                    "id": "e1",
+                    "data": {"timestamp": "2026-01-01", "content": "双路命中"},
+                    "score": 5.0,
+                },
+                {
+                    "id": "e2",
+                    "data": {"timestamp": "2026-01-02", "content": "单路命中"},
+                    "score": 1.0,
+                },
+            ]
+        ),
+        vector_engine=vector,
+        graph_engine=FakeGraphEngine(),
+        max_workers=2,
+    )
+
+    markdown = tool.search_memory_api("苹果", {"top_k": 3, "min_score": 0.5})
+
+    assert "双路命中" in markdown
+    assert "单路命中" not in markdown
+    assert "高分经验" in markdown
+    assert "低分经验" not in markdown

@@ -20,6 +20,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **Default paradigm reset**: `POST /api/paradigms/reset` restores the shipped default `PARADIGM.yaml`; the Agent Loop page shows a "恢复默认" button on the default file only.
 - **Hook search routes**: the `search` action accepts `limit` (1–15 per route), `min_score` (confidence cutoff, default 0.30) and `route: all`, which searches `local` and `memory` in parallel and injects the merged result; the default paradigm now searches `memory` only on every user input.
 - **Search confidence filter**: `skill` / `mcp` / `local` results below `min_score` (default 0.30) are dropped by both the `Search` tool and the hook; the `memory` route uses the same threshold to filter event fusion scores, experience similarity and graph confidence; `web` results carry no similarity score and are left untouched.
+- **Memory score display**: fused event hits now show their normalized relevance (`[0.98] …`) alongside the timestamp, matching the experience section.
 
 ### Changed
 

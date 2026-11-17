@@ -115,6 +115,9 @@ def _handle_search(query: dict = None) -> str:
         filters = {"top_k": top_k}
         if date_filter:
             filters["date"] = date_filter
+        # 记忆三路（事件/经验/图谱）统一置信度阈值；不传则沿用各自的默认策略
+        if query.get("min_score") is not None:
+            filters["min_score"] = query.get("min_score")
 
         print(
             f"🔍 [MemoSearch] 调用 search_memory | query={prompt!r} | filters={filters}"

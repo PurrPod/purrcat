@@ -110,11 +110,11 @@ def test_filter_by_time_range_is_inclusive():
 
 
 def test_filter_experiences_by_score_uses_threshold():
-    """SPEC-012 AC-2：默认阈值 0.35（含边界），可覆盖。"""
-    items = [{"score": 0.2}, {"score": 0.35}, {"score": 0.5}]
+    """SPEC-012 AC-2：默认阈值 0.30（含边界），可覆盖。"""
+    items = [{"score": 0.2}, {"score": 0.30}, {"score": 0.5}]
 
     assert [item["score"] for item in filters.filter_experiences_by_score(items)] == [
-        0.35,
+        0.30,
         0.5,
     ]
     assert filters.filter_experiences_by_score(items, min_score=0.5) == [{"score": 0.5}]
@@ -193,3 +193,10 @@ def test_clock_helpers():
     assert clock.parse_iso(clock.now_iso()) <= datetime.now()
     assert clock.iso_days_ago(7, now=now) == "2026-05-08T12:00:00"
     assert clock.days_since("2026-05-01T00:00:00", now=now) == 14
+
+
+def test_filter_by_min_score_keeps_boundary():
+    """SPEC-039 AC-8：阈值含边界，缺失或非法分数按 0 处理。"""
+    items = [{"score": 0.30}, {"score": 0.29}, {"other": 1}, {"score": "bad"}]
+
+    assert filters.filter_by_min_score(items, "score", 0.30) == [{"score": 0.30}]

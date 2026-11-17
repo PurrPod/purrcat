@@ -8,9 +8,18 @@ from src.memory.config import (
 )
 
 from .clock import days_since
-from .filters import filter_by_time_range, filter_experiences_by_score
+from .filters import (
+    filter_by_min_score,
+    filter_by_time_range,
+    filter_experiences_by_score,
+)
 from .formatting import describe_relation, format_search_results
-from .schema import CANDIDATE_LIMIT, GRAPH_NODE_SEARCH_TOP_K, MIN_EXPERIENCE_SCORE
+from .schema import (
+    CANDIDATE_LIMIT,
+    GRAPH_NODE_SEARCH_TOP_K,
+    MIN_EXPERIENCE_SCORE,
+    RRF_K,
+)
 from .scoring import decayed_confidence, reciprocal_rank_fusion
 from .storage.event_engine import EventEngine
 from .storage.graph_engine import GraphEngine
@@ -88,10 +97,28 @@ class RAGSearchTool:
             except Exception as e:
                 print(f"❌ [RAGSearchTool] 检索 {source} 失败: {e}")
 
+        events_results, experiences_results, graph_results = self._apply_min_score(
+            events_results, experiences_results, graph_results, filters
+        )
         markdown_context = self._format_results(
             events_results, experiences_results, graph_results, events_warning
         )
         return markdown_context
+
+    def _apply_min_score(self, events, experiences, graph, filters):
+        """按 filters.min_score 过滤三路结果（含边界）；未提供阈值时保持原样。"""
+        raw = (filters or {}).get("min_score")
+        if raw is None:
+            return events, experiences, graph
+        try:
+            min_score = max(0.0, min(float(raw), 1.0))
+        except (TypeError, ValueError):
+            return events, experiences, graph
+        return (
+            filter_by_min_score(events, "score", min_score),
+            filter_by_min_score(experiences, "score", min_score),
+            filter_by_min_score(graph, "confidence", min_score),
+        )
 
     def _search_events(self, query: str, filters: dict = None, query_embedding=None):
         """检索事件库 - 混合检索版"""
@@ -121,9 +148,17 @@ class RAGSearchTool:
             )
 
             fused_results = reciprocal_rank_fusion(
-                vector_results_raw, bm25_results_raw, top_k=top_k
+                vector_results_raw, bm25_results_raw, k=RRF_K, top_k=top_k
             )
-            final_events = [item["data"] for item in fused_results]
+            # RRF 分理论最大值为两路都排第一时的 2/(k+1)，据此归一化到 0–1 供展示
+            rrf_ceiling = 2.0 / (RRF_K + 1)
+            final_events = [
+                {
+                    **item["data"],
+                    "score": min(1.0, item["rrf_score"] / rrf_ceiling),
+                }
+                for item in fused_results
+            ]
 
             fallback_warning = ""
             if not final_events and start_time and end_time:

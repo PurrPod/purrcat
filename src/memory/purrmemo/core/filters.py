@@ -24,6 +24,19 @@ def filter_experiences_by_score(items, min_score=MIN_EXPERIENCE_SCORE):
     return [item for item in items if item["score"] >= min_score]
 
 
+def filter_by_min_score(items, key, min_score):
+    """保留 ``key`` 分数不低于阈值（含边界）的条目；缺失或非法分数按 0 处理。"""
+    kept = []
+    for item in items:
+        try:
+            score = float(item.get(key) or 0)
+        except (TypeError, ValueError):
+            score = 0.0
+        if score >= min_score:
+            kept.append(item)
+    return kept
+
+
 def build_fts_query(query: str) -> str | None:
     """把用户查询转为 FTS5 的 AND 前缀查询；无有效词时返回 ``None``。"""
     clean_query = query.replace('"', "").replace("'", "").strip()
