@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8" />
@@ -1229,8 +1229,13 @@
     stageEl.innerHTML = '';
 
     if (item.kind === 'formal') {
-      renderFormalDetail(item);
-      return;
+      // 正式库条目：模块支持按名字打开时直接进入编辑器（如 PARADIGM 编排、Graph 画布），
+      // 否则退回只读简介卡。
+      var formalMod = EV.module(item.type);
+      if (!formalMod || !formalMod.openFormal) {
+        renderFormalDetail(item);
+        return;
+      }
     }
     var mod = EV.module(item.type);
     if (!mod) {
@@ -1250,7 +1255,11 @@
       stageEl.appendChild(root);
       if (mod.onShow) { try { mod.onShow(); } catch (e) { /* 忽略刷新失败 */ } }
     }
-    if (mod.openDetail) {
+    if (item.kind === 'formal') {
+      if (mod.openFormal) {
+        try { mod.openFormal(item); } catch (e) { /* 忽略打开失败 */ }
+      }
+    } else if (mod.openDetail) {
       try { mod.openDetail(item); } catch (e) { /* 忽略打开失败 */ }
     }
     bindSandboxActions(item);

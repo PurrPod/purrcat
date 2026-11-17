@@ -1563,6 +1563,8 @@
       drawEdges();
       loadWorkplaces();
     },
-    openDetail: openSandboxGraph
+    openDetail: openSandboxGraph,
+    // 正式库条目：按名字打开对应图（default 在画布内为只读）
+    openFormal: function (item) { openGraph(item.name); }
   });
 })();

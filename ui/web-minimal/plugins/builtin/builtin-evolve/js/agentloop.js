@@ -42,7 +42,9 @@
     // 搜索：用 query 调 Search 工具检索能力/记忆/网络，把结果注入给 Agent
     search: [
       { key: 'query', label: '搜索内容 query', kind: 'text', ph: '可用 @USERQUERY 等 @引用 拼进搜索内容' },
-      { key: 'route', label: '搜索路由 route（留空=local）', kind: 'select', options: ['local', 'skill', 'mcp', 'memory', 'web'] }
+      { key: 'route', label: '搜索路由 route（留空=local）', kind: 'select', options: ['local', 'skill', 'mcp', 'memory', 'web', 'all'] },
+      { key: 'limit', label: '每条路由返回条数 limit（默认 5）', kind: 'number', ph: '1–15' },
+      { key: 'min_score', label: '置信度阈值 min_score（默认 0.30）', kind: 'number', ph: '0–1；所有路由生效' }
     ],
     file_operation: [
       { key: 'action', label: '操作', kind: 'select', options: ['read', 'exist_check', 'write_in', 'add_in', 'delete'] },
@@ -1395,6 +1397,8 @@
       loadWorkplaces();
     },
     onShow: function () { loadFileList(); loadWorkplaces(); },
-    openDetail: openSandboxAgentLoop
+    openDetail: openSandboxAgentLoop,
+    // 正式库条目：按名字打开对应 paradigm（含 default 的「恢复默认」按钮）
+    openFormal: function (item) { openFile(item.name); }
   });
 })();

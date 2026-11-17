@@ -36,7 +36,7 @@ def test_guide_outputs_are_byte_identical():
         "c3a7b0681fd085b99184a3efbda0a754a348ae5255f0bc9edf66a94283792685"
     )
     assert _sha(generate_agentloop_guide("demo")) == (
-        "dbae478cbbb88b931a688e13f02515f10028e2e1e80515769545ab9cef52d21d"
+        "fad67bd1d52b826bb3766b764a5d1159dd4a969d5a699e058cdacd78aa381175"
     )
     assert _sha(
         generate_ui_plugin_guide("demo", "Demo", "panel", "D:/vm/ui-plugin/demo")

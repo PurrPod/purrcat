@@ -80,6 +80,8 @@ hooks:                             # 阶段 → hook 列表（必填、非空）
 
 > `keyword_check`（in检查）只检查「本批收到的输入」是否含关键词，因此仅在带 `received_messages` 的
 > `on_input_received` 阶段有意义；它不拦截输入，唯一产出就是提示词——两个提示词都留空则等于什么都没做。
+> 注意 `on_input_received` 每轮输入都会执行：写了 `failed_prompt` 就会在未命中时持续注入、消耗 token，
+> 除非「未命中提示」确有价值，否则只写 `successed_prompt` 即可。
 >
 > `on_build_system_prompt` 的**作用域**：主 Agent 会话里它是 system 头部；但在 **graph（任务图）的 `agent_loop` 节点**里，
 > 它的输出会被转成一条 **user** 消息、只在「从零开始的会话」时追加到上游输入末尾（不占 system 位、不破坏 KV Cache）。
@@ -96,7 +98,7 @@ hooks:                             # 阶段 → hook 列表（必填、非空）
 | `injection` | `content` | 直接注入提示文本；`content` 支持 `@引用` |
 | `memo_injection` | — | 注入记忆，参数 `type`（`full`/`light`/自定义 key）、`count` |
 | `skill_info` | `skills` | 拼装指定技能的描述提示；缺失时给 `failed_prompt` |
-| `search` | `query` | 调 Search 检索并注入结果，`route` ∈ `skill`/`mcp`/`memory`/`local`/`web` |
+| `search` | `query` | 调 Search 检索并注入结果，`route` ∈ `skill`/`mcp`/`memory`/`local`/`web`/`all`（并行搜 local 与 memory 后合并）；`limit` 为每条路由返回条数（默认 5，范围 1–15）；`min_score` 为置信度阈值（默认 0.30，范围 0–1，所有路由生效；`memory` 会过滤事件融合分、经验相似度与图谱置信度） |
 | `tool_use_check` | `name` | 检查本轮是否调用**原生工具** `name`（可要求 `parameter_check`），据此放行或回打；检查 MCP 工具须用 `CallMCP` 的参数检查（见下方「工具使用检查的语义」） |
 | `keyword_check` | `keyword` | in检查：看本批输入里有没有 `keyword`，`type` 只检查该类型的消息（留空不限）。只在 `on_input_received` 上有意义，且只做提示注入、不拦截输入（见下方「in检查的语义」）|
 | `file_operation` | `action` | 文件检查/操作，`action` ∈ `read`/`exist_check`/`write_in`/`add_in`/`delete` |
