@@ -1,6 +1,6 @@
 # 任务 `/api/tasks`
 
-> 源码：`src/server/api/task.py` ｜ 前缀：`/api/tasks` ｜ 端点：10 个
+> 源码：`src/server/api/task.py` ｜ 前缀：`/api/tasks` ｜ 端点：12 个
 
 任务的创建、状态查询、指令注入、节点重置与产物读取。状态与记忆同时覆盖内存中的活跃任务与磁盘上的休眠任务。
 
@@ -108,6 +108,35 @@ curl -X POST 'http://127.0.0.1:8000/api/tasks/run' \
 
 ```bash
 curl 'http://127.0.0.1:8000/api/tasks/tsk_ab12cd34/state'
+```
+
+---
+
+## GET `/api/tasks/{task_id}/token`
+
+实时读取任务图的累计 token 消耗。任务在内存中时直接读取运行中的最新值（每次 LLM 调用后累加），适合轮询；任务已休眠或已结束时读取 checkpoint `state.json` 的快照。响应头带 `Cache-Control: no-store`。
+
+**请求**
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| task_id | path | string | 是 | 任务 ID |
+
+**响应**
+
+```json
+{
+  "task_id": "tsk_ab12cd34",
+  "total_tokens": 1234
+}
+```
+
+`total_tokens` 为任务内所有 agent_loop 节点 LLM 调用的 `usage.total_tokens` 累加值。任务不存在返回 404。
+
+**示例**
+
+```bash
+curl 'http://127.0.0.1:8000/api/tasks/tsk_ab12cd34/token'
 ```
 
 ---

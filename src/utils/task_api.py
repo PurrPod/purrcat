@@ -159,5 +159,22 @@ def get_task_window_token(task_id: str):
     return task_store.read_window_token(task_id)
 
 
+def get_task_token_usage(task_id: str):
+    """实时读取任务累计 token 消耗：活跃任务读内存，休眠任务读 state.json。"""
+    task = TASK_INSTANCES.get(task_id)
+    if task is not None:
+        with task._lock:
+            total_tokens = task.total_tokens
+        return {"task_id": task_id, "total_tokens": total_tokens}
+
+    state_data = task_store.load_task_checkpoint(task_id)
+    if state_data is None:
+        return None
+    return {
+        "task_id": task_id,
+        "total_tokens": state_data.get("total_tokens", 0) or 0,
+    }
+
+
 def get_task_max_token():
     return 120000

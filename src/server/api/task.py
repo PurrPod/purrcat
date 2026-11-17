@@ -25,6 +25,7 @@ from src.harness.task_persistence import (
 from src.utils.task_api import (
     get_task_list,
     get_task_state,
+    get_task_token_usage,
     get_task_log_jsonl,
     delete_task,
 )
@@ -144,6 +145,18 @@ def get_task_state_endpoint(task_id: str):
     from fastapi.responses import JSONResponse
 
     return JSONResponse(content=state_data, headers={"Cache-Control": "no-store"})
+
+
+@router.get("/{task_id}/token")
+def get_task_token_usage_endpoint(task_id: str):
+    """实时读取任务图累计 token 消耗（活跃任务读内存，休眠任务读 state.json）"""
+    data = get_task_token_usage(task_id)
+    if data is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    from fastapi.responses import JSONResponse
+
+    return JSONResponse(content=data, headers={"Cache-Control": "no-store"})
 
 
 @router.post("/{task_id}/submit")

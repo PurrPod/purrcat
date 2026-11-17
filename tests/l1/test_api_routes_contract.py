@@ -71,6 +71,7 @@ EXPECTED_ROUTES = {
         ("/api/tasks", "GET", "list_tasks_api"),
         ("/api/tasks/run", "POST", "run_task_api"),
         ("/api/tasks/{task_id}/state", "GET", "get_task_state_endpoint"),
+        ("/api/tasks/{task_id}/token", "GET", "get_task_token_usage_endpoint"),
         ("/api/tasks/{task_id}/submit", "POST", "submit_instruction_api"),
         ("/api/tasks/{task_id}/push", "POST", "push_to_task"),
         ("/api/tasks/{task_id}/log", "GET", "get_task_log_endpoint"),

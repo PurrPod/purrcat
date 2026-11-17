@@ -39,7 +39,7 @@
 | 文件系统 | `/api/filesystem` | 12 | [filesystem.md](filesystem.md) |
 | 进化工厂 | `/api/evolve` | 12 | [evolve.md](evolve.md) |
 | 系统 | `/api/system` | 10 | [system.md](system.md) |
-| 任务 | `/api/tasks` | 10 | [task.md](task.md) |
+| 任务 | `/api/tasks` | 12 | [task.md](task.md) |
 | 记忆 | `/api/memory` | 9 | [memory.md](memory.md) |
 | 图谱 | `/api/graphs` | 5 | [graph.md](graph.md) |
 | 范式 | `/api/paradigms` | 4 | [paradigms.md](paradigms.md) |
