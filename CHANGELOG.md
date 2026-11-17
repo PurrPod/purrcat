@@ -18,6 +18,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **App notice dialog**: any UI plugin can raise a host-level modal via `dialog.message` (`title` / `description` / `options`), which returns the selected option id and broadcasts `host.nativeCover` while open.
 - **Note reminders**: unbound note items raise an app-level reminder when their scheduled time arrives, even if the note panel is closed; "run now" on an unbound card marks it `DONE`.
 - **Default paradigm reset**: `POST /api/paradigms/reset` restores the shipped default `PARADIGM.yaml`; the Agent Loop page shows a "恢复默认" button on the default file only.
+- **Hook search routes**: the `search` action accepts `limit` (1–15 per route), `min_score` (confidence cutoff, default 0.30) and `route: all`, which searches `local` and `memory` in parallel and injects the merged result; the default paradigm now searches `memory` only on every user input.
+- **Search confidence filter**: `skill` / `mcp` / `local` results below `min_score` (default 0.30) are dropped by both the `Search` tool and the hook; the `memory` route uses the same threshold to filter event fusion scores, experience similarity and graph confidence; `web` results carry no similarity score and are left untouched.
 
 ### Changed
 

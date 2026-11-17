@@ -2,6 +2,7 @@ import os
 import re
 import json
 import subprocess
+from concurrent.futures import ThreadPoolExecutor
 
 from src.agent.hook_config import default_paradigm_path, read_paradigm_config
 from src.agent.hook_paths import get_gpu_info, get_system_info, resolve_hook_path
@@ -48,6 +49,30 @@ def _default_paradigm_path() -> str:
     return default_paradigm_path(
         USER_PARADIGM_PATH, PARADIGMS_DIR, DEFAULT_PARADIGM_PATH
     )
+
+
+SEARCH_LIMIT_DEFAULT = 5
+SEARCH_LIMIT_MAX = 15
+# 与 src.tool.search.search.DEFAULT_MIN_SCORE 保持一致（此处不直接 import，避免启动期加载检索依赖）
+SEARCH_MIN_SCORE_DEFAULT = 0.30
+
+
+def _parse_search_limit(raw) -> int:
+    """解析 search 的 limit：非法值回退默认，结果夹紧到 1–15。"""
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return SEARCH_LIMIT_DEFAULT
+    return max(1, min(value, SEARCH_LIMIT_MAX))
+
+
+def _parse_search_min_score(raw) -> float:
+    """解析 search 的 min_score：非法值回退默认，结果夹紧到 0–1。"""
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return SEARCH_MIN_SCORE_DEFAULT
+    return max(0.0, min(value, 1.0))
 
 
 class HookHandler:
@@ -410,36 +435,69 @@ class HookHandler:
 
         参数：
           query  搜索内容（支持 @USERQUERY 占位符）
-          route  搜索路由：skill / mcp / memory / local（技能+MCP）/ web，默认 local
+          route  搜索路由：skill / mcp / memory / local（技能+MCP）/ web / all
+                 （all = 并行搜索 local 与 memory 后合并），默认 local
+          limit  每条路由返回的条数，默认 5，范围 1–15
+          min_score  置信度阈值，默认 0.30，范围 0–1；对 skill / mcp / local / web
+                 以及 memory（事件/经验/图谱三路）均生效
 
         检索结果（含「未找到」与失败原因）统一作为 inject_prompt 注入，
         以便 Agent 判断有无对应能力或历史经验。
         """
         query = str(params.get("query") or "").strip()
         route = str(params.get("route") or "local").strip().lower()
+        limit = _parse_search_limit(params.get("limit"))
+        min_score = _parse_search_min_score(params.get("min_score"))
 
         if not query:
             return {"success": False, "inject_prompt": ""}
 
+        if route == "all":
+            # local 与 memory 并行检索：互不阻塞，两路都失败才算失败
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                local_future = pool.submit(
+                    self._search_one, "local", query, limit, min_score
+                )
+                memory_future = pool.submit(
+                    self._search_one, "memory", query, limit, min_score
+                )
+                local_ok, local_text = local_future.result()
+                memory_ok, memory_text = memory_future.result()
+            return {
+                "success": local_ok or memory_ok,
+                "inject_prompt": "\n\n".join(
+                    text for text in (local_text, memory_text) if text
+                ),
+            }
+
+        ok, text = self._search_one(route, query, limit, min_score)
+        return {"success": ok, "inject_prompt": text}
+
+    def _search_one(self, route, query, limit, min_score=SEARCH_MIN_SCORE_DEFAULT):
+        """按单条路由检索，返回 (是否成功, 注入文本)。"""
         try:
             if route == "memory":
                 from src.tool.memo.memo import Memo
 
-                res = Memo(action="search", query={"prompt": query})
+                res = Memo(
+                    action="search",
+                    query={
+                        "prompt": query,
+                        "top_k": limit,
+                        "min_score": min_score,
+                    },
+                )
             else:
                 from src.tool.search.search import Search
 
-                res = Search(route=route, query=query)
+                res = Search(route=route, query=query, topk=limit, min_score=min_score)
         except Exception as e:
-            return {"success": False, "inject_prompt": f"搜索失败({route}): {e}"}
+            return False, f"搜索失败({route}): {e}"
 
         if not isinstance(res, dict):
-            return {"success": True, "inject_prompt": str(res)}
+            return True, str(res)
         meta_type = (res.get("metadata") or {}).get("type")
-        return {
-            "success": meta_type != "error",
-            "inject_prompt": str(res.get("content") or ""),
-        }
+        return meta_type != "error", str(res.get("content") or "")
 
     def _keyword_check(self, params, **kwargs):
         """in检查（关键词检查）：只检查本批收到的输入里是否包含关键词。

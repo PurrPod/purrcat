@@ -8,8 +8,26 @@ from src.tool.search.skill_search import search_skills
 from src.tool.search.web_search import web_search
 from src.tool.utils.format import error_response, text_response, warning_response
 
+# 本地能力检索的默认置信度阈值：低于该分数的技能/MCP 工具直接丢弃
+DEFAULT_MIN_SCORE = 0.30
 
-def raw_search(route: str, query: str, topk: int = 5, **kwargs) -> Dict[str, Any]:
+
+def parse_min_score(raw) -> float:
+    """解析置信度阈值：非法值回退默认，结果夹紧到 0–1。"""
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return DEFAULT_MIN_SCORE
+    return max(0.0, min(value, 1.0))
+
+
+def raw_search(
+    route: str,
+    query: str,
+    topk: int = 5,
+    min_score: float = DEFAULT_MIN_SCORE,
+    **kwargs,
+) -> Dict[str, Any]:
     """
     底层纯净的搜索 API，返回标准结构化字典（JSON 友好），供项目其他部分直接解析调用。
 
@@ -63,12 +81,25 @@ def raw_search(route: str, query: str, topk: int = 5, **kwargs) -> Dict[str, Any
         # ---- 路由 2, 3, 4: 本地能力搜索 (支持单查与混查) ----
         skill_results, skill_err = [], None
         mcp_results, mcp_err = [], None
+        threshold = parse_min_score(min_score)
 
         if route in ["local", "skill"]:
             skill_results, skill_err = search_skills(query, topk)
 
         if route in ["local", "mcp"]:
             mcp_results, mcp_err = mcp_search(query, topk)
+
+        # 置信度过滤：只保留达到阈值的条目（web 无相似度分数，不参与过滤）
+        skill_results = [
+            item
+            for item in (skill_results or [])
+            if float(item.get("score") or 0) >= threshold
+        ]
+        mcp_results = [
+            item
+            for item in (mcp_results or [])
+            if float(item.get("score") or 0) >= threshold
+        ]
 
         # 检查是否全部失败
         if (
@@ -103,12 +134,19 @@ def raw_search(route: str, query: str, topk: int = 5, **kwargs) -> Dict[str, Any
         }
 
 
-def Search(route: str, query: str, topk: int = 5, **kwargs) -> str:
+def Search(
+    route: str,
+    query: str,
+    topk: int = 5,
+    min_score: float = DEFAULT_MIN_SCORE,
+    **kwargs,
+) -> str:
     """
     面向大模型（LLM）的 Agent 工具接口。
     内部调用 raw_search API，并将结构化 JSON 数据清洗、转换为极限压缩 Token 的 Markdown 文本。
+    min_score 为本地能力（skill/mcp/local）的置信度阈值，默认 0.30。
     """
-    api_response = raw_search(route, query, topk, **kwargs)
+    api_response = raw_search(route, query, topk, min_score=min_score, **kwargs)
 
     status = api_response["status"]
     message = api_response["message"]

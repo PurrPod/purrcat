@@ -34,6 +34,8 @@ hooks:
     - tool_use_check: { name: "finish_task", parameter_check: "summary", successed_prompt: "任务完成。", failed_prompt: "你必须调用 finish_task 并给出 summary 才能结束。" }
 ```
 
+> 上面 `keyword_check` 里的 `failed_prompt` **只是为了展示「未命中」分支**。`on_input_received` 每轮用户输入都会执行，写了 `failed_prompt` 就意味着每次未命中都要注入一条消息、持续消耗 token。实际使用中除非这条「无关提示」确有价值，否则**不必设置 `failed_prompt`**（未命中时什么也不注入）。
+
 ### 顶层字段
 
 | 字段 | 必填 | 说明 |
@@ -80,7 +82,7 @@ hooks:
 | action | 参数 | 说明 |
 | --- | --- | --- |
 | `skill_info` | `skills`、`failed_prompt` | 拼装指定技能的描述提示；缺失时给 `failed_prompt` |
-| `search` | `query`、`route` | 调 Search 工具检索并注入结果；`route` ∈ `skill` / `mcp` / `memory` / `local`（技能+MCP）/ `web`，默认 `local` |
+| `search` | `query`、`route`、`limit`、`min_score` | 调 Search 工具检索并注入结果；`route` ∈ `skill` / `mcp` / `memory` / `local`（技能+MCP）/ `web` / `all`（并行搜 `local` 与 `memory` 后合并），默认 `local`；`limit` 为每条路由返回条数（默认 5，范围 1–15）；`min_score` 为置信度阈值（默认 0.30，范围 0–1，对全部路由生效；`memory` 会依次过滤事件融合分、经验相似度与图谱置信度） |
 
 ### 4.3 检查/反馈类
 

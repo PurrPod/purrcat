@@ -15,6 +15,12 @@ hooks:
         count: 10
     - injection:
         content: "@SYS"
+  on_input_received:
+    # 只检索记忆（事件/经验/图谱）；能力检索交给模型按需调用 Search
+    - search:
+        query: "@USERQUERY"
+        route: "memory"
+        limit: 3
   on_loop_start:
     - injection:
         content: "如遇复杂任务，请先编排好主线路的执行计划，先规划TODO后执行"
