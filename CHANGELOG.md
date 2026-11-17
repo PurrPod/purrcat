@@ -6,9 +6,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **Timer service**: a shared scheduler that dispatches source/target/effect events, sleeps until the next due event instead of polling, and supports repeat, catch-up, dedupe and SSE subscriptions.
+- **Note daily archive**: notes are stored per day under `~/.purrcat/notes`; the date label switches between today and archived days, and timeline cards are synced to the timer service.
+- **Note run state**: cards can be dispatched immediately from the worker dialog, showing `WAITING → RUNNING → DONE/ERROR` with live duration and token usage; the markdown `- TODO` keyword follows the state, and run state is persisted per day.
+- **Task elapsed API**: `GET /api/tasks/{id}/elapsed` returns task wall-clock time (live while running, accumulated after finishing), and checkpoint directory names sanitize Windows-reserved characters.
+- **Note dispatch modes**: the worker dialog offers `main` or `background` (the `default` graph); background tasks write `purrcat@default/<task_id>` into the card so the plugin can resume progress tracking from the markdown alone.
+- **Note skill**: the main skill library ships a `purrcat-note` skill describing the plugin, card syntax and how live progress is tracked.
+- **App notice dialog**: any UI plugin can raise a host-level modal via `dialog.message` (`title` / `description` / `options`), which returns the selected option id and broadcasts `host.nativeCover` while open.
+- **Note reminders**: unbound note items raise an app-level reminder when their scheduled time arrives, even if the note panel is closed; "run now" on an unbound card marks it `DONE`.
+
+### Changed
+
+- **Heartbeat**: scheduling moved to the timer service; `heartbeat.json`, `GOAL.md` and the `/api/tools/heartbeat` contract are unchanged.
+- **Timer feedback**: sink `Signal.data` is persisted as `event.result` and broadcast over SSE; the graph sink returns the dispatched `task_id` so a source (e.g. a plugin) can track the task.
+
+### Fixed
+
+- **Deleted graph tasks**: a task created for a missing graph now ends in `error` instead of silently completing with no nodes; Note cards reset to `- TODO` drop their stale run record so they can be scheduled and re-dispatched again.
+
 ### Removed
 
 - **Command node**: the `command` graph node was removed because its cross-platform behavior was unreliable; use an `agent_loop` node to run commands instead.
+- **Cron tool**: the cron tool, its config/API, the system-clock sensor and the task-page trigger were removed; use the Note timeline for alarms.
 
 ## [1.1.1]
 
@@ -345,7 +366,7 @@ First public beta release.
 - Sandboxed Bash: commands run in isolated Docker containers, with optional directory mounts.
 - FileSystem suite (read / edit / write / search / glob) with PDF/DOCX/XLSX converted to Markdown via MarkItDown.
 - Physical black/white lists for cross-boundary file operations; exports trigger automatic Git snapshots.
-- Native tools: CallMCP, hybrid Search, Fetch, Memo, Cron, Task, BrainStorm, KernelUpgrade. External MCP servers supported.
+- Native tools: CallMCP, hybrid Search, Fetch, Memo, Task, BrainStorm, KernelUpgrade. External MCP servers supported.
 
 **Agent Core**
 
