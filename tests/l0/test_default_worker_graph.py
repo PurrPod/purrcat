@@ -29,13 +29,23 @@ def test_seeds_a_real_graph_json_into_user_graph_dir(tmp_path):
     assert graph["name"] == DEFAULT_GRAPH_NAME
 
 
-def test_seed_never_overwrites_existing_graph(tmp_path):
+def test_seed_restores_modified_default_graph(tmp_path):
+    """内置 default 图要求与模板逐字一致：被改动后启动时修复回模板。"""
     _seed_and_load(tmp_path)
     graph_file = tmp_path / DEFAULT_GRAPH_NAME / "graph.json"
+    template = Path(TEMPLATES_DIR) / DEFAULT_GRAPH_NAME / "graph.json"
     graph_file.write_text('{"name": "default", "user": true}', encoding="utf-8")
 
+    assert ensure_default_graph(str(tmp_path)) is True
+    assert graph_file.read_text(encoding="utf-8") == template.read_text(
+        encoding="utf-8"
+    )
+
+
+def test_seed_skips_when_default_graph_already_matches(tmp_path):
+    _seed_and_load(tmp_path)
+
     assert ensure_default_graph(str(tmp_path)) is False
-    assert json.loads(graph_file.read_text(encoding="utf-8"))["user"] is True
 
 
 def test_seed_skips_gracefully_when_template_missing(tmp_path, monkeypatch):

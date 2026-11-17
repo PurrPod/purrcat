@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from src.utils import initial, initial_templates
 
@@ -47,6 +48,8 @@ def test_generate_all_configs_is_idempotent(tmp_path, monkeypatch):
     monkeypatch.setattr(initial, "MCP_CONFIG_PATH", str(root / "mcp.json"))
     monkeypatch.setattr(initial, "HEARTBEAT_FILE", str(core / "heartbeat.json"))
     monkeypatch.setattr(initial, "SOUL_MD_PATH", str(core / "SOUL.md"))
+    monkeypatch.setattr(initial, "SKILL_DIR", str(root / "skills"))
+    monkeypatch.setattr(initial, "BUILTIN_SKILLS_DIR", str(tmp_path / "no-builtin"))
     monkeypatch.setattr(initial, "get_acp_token", lambda: "token")
     monkeypatch.setattr(initial, "deploy_acp_relay", lambda: True)
 
@@ -61,4 +64,28 @@ def test_generate_all_configs_is_idempotent(tmp_path, monkeypatch):
     assert json.loads((root / "model.json").read_text(encoding="utf-8")) == {
         "custom": True
     }
-    assert (core / "info.json").exists()
+
+
+def test_repo_ships_builtin_skills():
+    """内置技能源随仓库分发，打包时由 collect_all('src') 带进 _internal。"""
+    for name in ("purrcat-note", "purrcat-genui"):
+        assert (Path(initial.BUILTIN_SKILLS_DIR) / name / "SKILL.md").is_file()
+
+
+def test_sync_builtin_skills_copies_missing_and_keeps_user_copy(tmp_path, monkeypatch):
+    source = tmp_path / "builtin"
+    (source / "purrcat-note").mkdir(parents=True)
+    (source / "purrcat-note" / "SKILL.md").write_text(
+        "name: purrcat-note", encoding="utf-8"
+    )
+    target = tmp_path / "skills"
+    monkeypatch.setattr(initial, "BUILTIN_SKILLS_DIR", str(source))
+    monkeypatch.setattr(initial, "SKILL_DIR", str(target))
+
+    assert initial.sync_builtin_skills() == ["purrcat-note"]
+    copied = target / "purrcat-note" / "SKILL.md"
+    assert copied.read_text(encoding="utf-8") == "name: purrcat-note"
+
+    copied.write_text("user edited", encoding="utf-8")
+    assert initial.sync_builtin_skills() == []
+    assert copied.read_text(encoding="utf-8") == "user edited"

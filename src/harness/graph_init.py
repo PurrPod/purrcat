@@ -1,7 +1,7 @@
 """默认图初始化：把随包分发的 default 图播种到用户图目录。
 
-用户图目录中的 default 就是一张普通图，可被编辑、覆盖或删除；
-本模块只在文件缺失时补一份模板，绝不覆盖已有内容。
+default 是内置图，启动时要求与模板逐字一致：
+缺失或内容不一致（被改动、损坏）都会用模板修复，不会被旧副本带走。
 """
 
 from __future__ import annotations
@@ -15,18 +15,31 @@ TEMPLATES_DIR = os.path.join(
 )
 
 
-def ensure_default_graph(graphs_dir: str) -> bool:
-    """graphs_dir 下缺少 default/graph.json 时从模板复制；返回是否新建。"""
-    target = os.path.join(graphs_dir, DEFAULT_GRAPH_NAME, "graph.json")
-    if os.path.exists(target):
-        return False
+def default_graph_template_path() -> str:
+    return os.path.join(TEMPLATES_DIR, DEFAULT_GRAPH_NAME, "graph.json")
 
-    template = os.path.join(TEMPLATES_DIR, DEFAULT_GRAPH_NAME, "graph.json")
+
+def ensure_default_graph(graphs_dir: str) -> bool:
+    """确保 default/graph.json 与模板一致；返回是否写入（新建或修复）。"""
+    template = default_graph_template_path()
     if not os.path.isfile(template):
         print(f"[!] 默认图模板缺失: {template}")
         return False
 
+    target = os.path.join(graphs_dir, DEFAULT_GRAPH_NAME, "graph.json")
+    template_text = _read_text(template)
+    if template_text is not None and _read_text(target) == template_text:
+        return False
+
     os.makedirs(os.path.dirname(target), exist_ok=True)
     shutil.copyfile(template, target)
-    print(f"[+] 默认图已初始化: {target}")
+    print(f"[+] 默认图已同步: {target}")
     return True
+
+
+def _read_text(path: str) -> str | None:
+    try:
+        with open(path, encoding="utf-8") as f:
+            return f.read()
+    except (OSError, UnicodeDecodeError):
+        return None

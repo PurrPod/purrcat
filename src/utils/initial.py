@@ -6,6 +6,7 @@ PurrCat 首次启动自动初始化模块
 """
 
 import os
+import shutil
 
 from src.utils import initial_templates
 from src.utils._fs import write_json, write_text
@@ -21,6 +22,7 @@ from src.utils.config import (
     BASE_DIR,
     ACP_RELAY_PATH,
     GRAPHS_DIR,
+    SKILL_DIR,
     get_acp_token,
 )
 from src.utils.initial_templates import (
@@ -34,7 +36,33 @@ __all__ = [
     "DEFAULT_PARADIGM_YAML",
     "deploy_acp_relay",
     "ensure_initialized",
+    "sync_builtin_skills",
 ]
+
+# 仓库内置技能源目录（开发态=仓库；打包后=_internal/src/utils/builtin_skills）
+BUILTIN_SKILLS_DIR = os.path.join(BASE_DIR, "src", "utils", "builtin_skills")
+
+
+def sync_builtin_skills() -> list[str]:
+    """把仓库内置技能补到 ~/.purrcat/skills。
+
+    - 只补缺失的技能目录，已存在的目录保留用户修改，不覆盖
+    - 返回本次同步的技能名，便于启动日志与测试断言
+    """
+    if not os.path.isdir(BUILTIN_SKILLS_DIR):
+        return []
+    os.makedirs(SKILL_DIR, exist_ok=True)
+    synced = []
+    for name in sorted(os.listdir(BUILTIN_SKILLS_DIR)):
+        src = os.path.join(BUILTIN_SKILLS_DIR, name)
+        dst = os.path.join(SKILL_DIR, name)
+        if not os.path.isdir(src) or os.path.exists(dst):
+            continue
+        shutil.copytree(src, dst)
+        synced.append(name)
+    for name in synced:
+        print(f"[+] 内置技能已同步: {name}")
+    return synced
 
 
 # ==========================================
@@ -68,17 +96,14 @@ def _generate_all_configs():
     deploy_acp_relay()
 
     # core/ 目录文件
-    if not os.path.exists(os.path.join(AGENT_CORE_DIR, "info.json")):
-        write_json(
-            os.path.join(AGENT_CORE_DIR, "info.json"),
-            {"skills": [], "workshops": []},
-        )
     if not os.path.exists(HEARTBEAT_FILE):
         write_text(HEARTBEAT_FILE, HEARTBEAT_CONFIG_TEMPLATE)
     if not os.path.exists(os.path.join(AGENT_CORE_DIR, "MEMORY.md")):
         write_text(os.path.join(AGENT_CORE_DIR, "MEMORY.md"), MEMORY_MD_TEMPLATE)
     if not os.path.exists(SOUL_MD_PATH):
         write_text(SOUL_MD_PATH, SOUL_MD_TEMPLATE)
+
+    sync_builtin_skills()
 
     print(f"[+] 配置目录已就绪: {PURRCAT_DIR}")
 
@@ -131,7 +156,7 @@ def ensure_initialized():
         print("[*] 首次运行，正在自动初始化 ~/.purrcat 配置目录...")
     _generate_all_configs()
 
-    # 默认图按普通图落盘到 ~/.purrcat/graph/default/，缺失时补一份，已有内容不覆盖
+    # 内置 default 图落盘到 ~/.purrcat/graph/default/，缺失或被改动时用模板修复
     from src.harness.graph_init import ensure_default_graph
 
     ensure_default_graph(GRAPHS_DIR)
