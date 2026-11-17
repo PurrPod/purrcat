@@ -314,9 +314,6 @@
       </button>
     </div>
     <div class="side-acts">
-      <button class="ibtn" id="btn-trigger" title="新建后台触发器" style="border:2px solid var(--ink);background:var(--orange);color:#fff">
-        <svg viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2"/><path d="M5 3 2 6"/><path d="m22 6-3-3"/></svg>
-      </button>
       <button class="btn primary wide" id="btn-new" title="运行工作流">
         <svg viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M5 12h14"/></svg>运行
       </button>
@@ -392,38 +389,6 @@
   </div>
 </div>
 
-<!-- 触发器弹层 -->
-<div class="ov" id="trigger-modal" hidden>
-  <div class="card">
-    <div class="card-head">
-      <span class="ct">新建后台触发器</span>
-      <button class="close" id="trigger-close" title="关闭">✕</button>
-    </div>
-    <div class="card-body">
-      <div class="fld">
-        <label>标题</label>
-        <input type="text" id="t-title" placeholder="Trigger Title..." spellcheck="false" />
-      </div>
-      <div class="fld">
-        <label>触发时间 <span class="hint">（HH:MM）</span></label>
-        <input type="text" id="t-time" placeholder="09:30" spellcheck="false" />
-      </div>
-      <div class="fld">
-        <label>目标工作流</label>
-        <select id="t-graph"></select>
-      </div>
-      <div class="fld" style="margin-bottom:0">
-        <label>工作流入参（JSON）</label>
-        <textarea id="t-inputs" rows="6" spellcheck="false">{}</textarea>
-      </div>
-    </div>
-    <div class="card-foot">
-      <button class="btn wide" id="trigger-cancel">取消</button>
-      <button class="btn dark wide" id="trigger-ok">创建</button>
-    </div>
-  </div>
-</div>
-
 <!-- 删除确认弹层 -->
 <div class="ov" id="delete-modal" hidden>
   <div class="card" style="width:min(380px,96%)">
@@ -455,7 +420,6 @@
   var API = {
     tasks: '/api/tasks',
     graphs: '/api/graphs',
-    cron: '/api/tools/cron',
     schema: function (n) { return '/api/graphs/' + encodeURIComponent(n) + '/schema'; },
     state: function (id) { return '/api/tasks/' + encodeURIComponent(id) + '/state'; },
     log: function (id) { return '/api/tasks/' + encodeURIComponent(id) + '/log'; },
@@ -1170,26 +1134,6 @@
     }).catch(function (e) { toast(e.message || '创建失败', false); });
   }
 
-  function openTrigger() {
-    loadGraphOptions('t-graph', 't-inputs').then(function () {
-      $('trigger-modal').hidden = false;
-    }).catch(function () { toast('获取工作流模板失败', false); });
-  }
-
-  function submitTrigger() {
-    var title = $('t-title').value.trim(), graph = $('t-graph').value, time = $('t-time').value.trim();
-    if (!title || !graph) { toast('标题和工作流名称必填', false); return; }
-    var inputs;
-    try { inputs = JSON.parse($('t-inputs').value || '{}'); }
-    catch (e) { toast('JSON 参数格式不合法', false); return; }
-    jsend('POST', API.cron, {
-      title: title, trigger_time: time, repeat_rule: 'none', task_hook: graph, task_inputs: inputs
-    }).then(function () {
-      $('trigger-modal').hidden = true;
-      toast('定时任务已创建');
-    }).catch(function (e) { toast(e.message || '创建失败，请检查时间格式（HH:MM）', false); });
-  }
-
   function confirmDelete(id) {
     S.delId = id;
     var t = null;
@@ -1272,7 +1216,6 @@
 
   $('btn-refresh').addEventListener('click', function () { loadTasks().then(function () { loadState(); }); });
   $('btn-new').addEventListener('click', openCreate);
-  $('btn-trigger').addEventListener('click', openTrigger);
   $('btn-kill').addEventListener('click', killTask);
   $('btn-detail').addEventListener('click', function () {
     S.view = S.view === 'detail' ? 'simple' : 'detail';
@@ -1304,11 +1247,6 @@
   $('create-cancel').addEventListener('click', function () { $('create-modal').hidden = true; });
   $('create-ok').addEventListener('click', submitCreate);
   $('c-graph').addEventListener('change', function () { loadSchemaInto('c-graph', 'c-inputs'); });
-
-  $('trigger-close').addEventListener('click', function () { $('trigger-modal').hidden = true; });
-  $('trigger-cancel').addEventListener('click', function () { $('trigger-modal').hidden = true; });
-  $('trigger-ok').addEventListener('click', submitTrigger);
-  $('t-graph').addEventListener('change', function () { loadSchemaInto('t-graph', 't-inputs'); });
 
   $('delete-close').addEventListener('click', function () { $('delete-modal').hidden = true; });
   $('delete-cancel').addEventListener('click', function () { $('delete-modal').hidden = true; });

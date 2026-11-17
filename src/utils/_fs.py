@@ -2,6 +2,7 @@
 
 import json
 import os
+import time
 
 
 def write_json(path: str, data: dict, indent: int = 2) -> None:
@@ -19,7 +20,19 @@ def write_json_atomic(path: str, data, indent: int | None = 2) -> None:
     tmp_path = f"{path}.{os.getpid()}.tmp"
     with open(tmp_path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=indent, ensure_ascii=False)
-    os.replace(tmp_path, path)
+    _replace(tmp_path, path)
+
+
+def _replace(src: str, dst: str, attempts: int = 5, delay: float = 0.01) -> None:
+    """Windows 上杀软/索引器会瞬时占用目标文件，短暂重试即可恢复。"""
+    for attempt in range(attempts):
+        try:
+            os.replace(src, dst)
+            return
+        except PermissionError:
+            if os.name != "nt" or attempt == attempts - 1:
+                raise
+            time.sleep(delay)
 
 
 def read_jsonl(path: str, on_error=None) -> list:

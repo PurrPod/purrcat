@@ -16,7 +16,6 @@ from src.utils.config import (
     SENSOR_CONFIG_PATH,
     FILE_CONFIG_PATH,
     MCP_CONFIG_PATH,
-    CRON_FILE,
     HEARTBEAT_FILE,
     SOUL_MD_PATH,
     BASE_DIR,
@@ -25,7 +24,6 @@ from src.utils.config import (
     get_acp_token,
 )
 from src.utils.initial_templates import (
-    CRON_CONFIG_TEMPLATE,
     DEFAULT_PARADIGM_YAML,
     HEARTBEAT_CONFIG_TEMPLATE,
     MEMORY_MD_TEMPLATE,
@@ -33,7 +31,6 @@ from src.utils.initial_templates import (
 )
 
 __all__ = [
-    "CRON_CONFIG_TEMPLATE",
     "DEFAULT_PARADIGM_YAML",
     "deploy_acp_relay",
     "ensure_initialized",
@@ -76,8 +73,6 @@ def _generate_all_configs():
             os.path.join(AGENT_CORE_DIR, "info.json"),
             {"skills": [], "workshops": []},
         )
-    if not os.path.exists(CRON_FILE):
-        write_text(CRON_FILE, CRON_CONFIG_TEMPLATE)
     if not os.path.exists(HEARTBEAT_FILE):
         write_text(HEARTBEAT_FILE, HEARTBEAT_CONFIG_TEMPLATE)
     if not os.path.exists(os.path.join(AGENT_CORE_DIR, "MEMORY.md")):

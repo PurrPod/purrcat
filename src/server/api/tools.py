@@ -1,4 +1,4 @@
-"""工具管理 API：MCP / Skill / 闹钟 / 心跳与官方市场安装。
+"""工具管理 API：MCP / Skill / 心跳与官方市场安装。
 
 本模块只做路由声明与薄委托；注册表数据、校验、序列化与安装编排分别位于
 tools_registry / tools_validation / tools_serialization / tools_market。
@@ -17,7 +17,6 @@ from pydantic import BaseModel
 from src.tool.callmcp.schema_manager import load_cached_schemas, refresh_schemas
 from src.tool.search.mcp_search import MCPSearcher, rebuild_vectors_async
 from src.tool.search.skill_search import SkillSearcher, rebuild_skill_vectors_async
-from src.tool.cron.cron_operations import list_crons, add_cron, delete_cron
 
 from src.utils._fs import write_json_atomic
 from src.utils.config import (
@@ -198,19 +197,7 @@ def install_skills_batch_api(req: InstallSkillsBatchReq):
 
 
 # ==========================================
-# 3. Cron 闹钟列表 API
-# ==========================================
-@router.get("/cron")
-def get_crons_api():
-    """读取 cron.json 返回现有闹钟列表"""
-    try:
-        return list_crons()
-    except Exception as e:
-        raise common.unexpected_error("获取闹钟列表失败: ", e)
-
-
-# ==========================================
-# 4. MCP Schema 刷新 API
+# 3. MCP Schema 刷新 API
 # ==========================================
 # single-flight 门闸：刷新进行中时直接返回，防止连点导致全量刷新排队堆积
 _MCP_REFRESH_GATE = threading.Lock()
@@ -320,44 +307,7 @@ def refresh_skills_api():
 
 
 # ==========================================
-# 6. 添加、删除闹钟 API
-# ==========================================
-class AddCronReq(BaseModel):
-    title: str
-    trigger_time: str
-    repeat_rule: str = "none"
-    task_hook: str = "Agent"
-    task_inputs: dict = {}
-
-
-@router.post("/cron")
-def add_cron_api(req: AddCronReq):
-    """添加闹钟"""
-    try:
-        result = add_cron(
-            title=req.title,
-            trigger_time=req.trigger_time,
-            repeat_rule=req.repeat_rule,
-            task_hook=req.task_hook,
-            task_inputs=req.task_inputs,
-        )
-        return {"status": "success", "data": result}
-    except Exception as e:
-        raise common.unexpected_error("添加闹钟失败: ", e, status_code=400)
-
-
-@router.delete("/cron/{identifier}")
-def delete_cron_api(identifier: str):
-    """删除闹钟 (支持传 id 或 title)"""
-    try:
-        result = delete_cron(identifier)
-        return {"status": "success", "data": result}
-    except Exception as e:
-        raise common.unexpected_error("删除闹钟失败: ", e, status_code=400)
-
-
-# ==========================================
-# 7. Agent 心跳 API（GOAL.md 定时注入）
+# 6. Agent 心跳 API（GOAL.md 定时注入）
 # ==========================================
 class HeartbeatReq(BaseModel):
     interval: int  # 秒，最短 60
@@ -381,7 +331,7 @@ def get_heartbeat_api():
 @router.post("/heartbeat")
 def save_heartbeat_api(req: HeartbeatReq):
     """保存心跳配置；开启心跳时必须提交非空 GOAL.md 内容"""
-    from src.agent.heartbeat import MIN_INTERVAL
+    from src.agent.heartbeat import MIN_INTERVAL, get_heartbeat_manager
 
     goal = (req.goal or "").strip()
     if req.active and not goal:
@@ -394,9 +344,10 @@ def save_heartbeat_api(req: HeartbeatReq):
         with open(GOAL_MD_PATH, "w", encoding="utf-8") as f:
             f.write(req.goal or "")
 
-        # 再落盘心跳配置（原子写入）
+        # 再落盘心跳配置（原子写入），并同步到定时任务中心
         cfg = heartbeat_payload(req.interval, req.active, MIN_INTERVAL)
         write_json_atomic(HEARTBEAT_FILE, cfg)
+        get_heartbeat_manager().apply()
         return {"status": "success", "data": cfg}
     except HTTPException:
         raise

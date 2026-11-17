@@ -187,7 +187,7 @@ hooks:                             # 阶段 → hook 列表（必填、非空）
 
 * `name` 只能填**宿主机真实存在的原生工具**——工具集固定，只有下面这几个，模型正是用这些名字调用工具：
 
-  `FileSystem`、`Bash`、`BrainStorm`、`Cron`、`CallMCP`、`Memo`、`Request`、`Search`、`Fetch`、`Task`、`KernelUpgrade`。
+  `FileSystem`、`Bash`、`BrainStorm`、`CallMCP`、`Memo`、`Request`、`Search`、`Fetch`、`Task`、`KernelUpgrade`。
 
 * **外部拓展工具（MCP）不是原生工具**，模型是通过原生工具 `CallMCP(server_name, tool_name, arguments)` 间接调用的。
   所以**要检查「是否用了某个 MCP 工具」，必须检查 `CallMCP` 的入参**，而不是把 MCP 工具名直接写进 `name`（那样永远匹配不到）：

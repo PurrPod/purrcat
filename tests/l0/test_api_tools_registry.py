@@ -19,7 +19,7 @@ def test_tools_router_keeps_expected_endpoint_count_and_names():
     from src.server.api import tools
 
     routes = tools.router.routes
-    assert len(routes) == 31
+    assert len(routes) == 28
     names = {r.name for r in routes}
     assert {
         "get_mcp_tools_api",

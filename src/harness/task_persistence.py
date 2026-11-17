@@ -91,6 +91,8 @@ def save_state_unlocked(task) -> None:
         outputs=task.outputs,
         total_tokens=task.total_tokens,
         execution_time=task.execution_time,
+        started_at=getattr(task, "started_at", None),
+        finished_at=getattr(task, "finished_at", None),
         node_list=task.node_list,
         node_state=task.node_state,
         output_port_states=task.output_port_states,
@@ -134,6 +136,8 @@ def reload(task) -> None:
             task.outputs = state_data.get("outputs", {})
             task.total_tokens = state_data.get("total_tokens", 0)
             task.execution_time = state_data.get("execution_time", 0.0)
+            task.started_at = state_data.get("started_at")
+            task.finished_at = state_data.get("finished_at")
 
         # 过渡格式：state.json + graph.json + mailboxes.json
         elif os.path.exists(state_path) and os.path.exists(graph_path):

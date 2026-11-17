@@ -33,7 +33,6 @@ TOOL_FUNC_MAP = {
     "filesystem": "FileSystem",
     "bash": "Bash",
     "brainstorm": "BrainStorm",
-    "cron": "Cron",
     "callmcp": "CallMCP",
     "memo": "Memo",
     "request": "Request",
@@ -44,7 +43,7 @@ TOOL_FUNC_MAP = {
 }
 
 # 🌟 进程隔离名单：只有这些「易卡死」的工具才丢进子进程执行（可被物理级 terminate）
-# 其余工具（memo/filesystem/cron/task/brainstorm/callmcp/kernelupgrade/request）
+# 其余工具（memo/filesystem/task/brainstorm/callmcp/kernelupgrade/request）
 # 持有进程内状态或仅做本地落盘，保持进程内执行
 # （如 brainstorm/task 会 lazy import AgentManager、callmcp 持有 MCP 长连接），
 # 子进程化会出灾难性后果，保持进程内执行

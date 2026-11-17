@@ -1,8 +1,8 @@
 # 工具 `/api/tools`
 
-> 源码：`src/server/api/tools.py` ｜ 前缀：`/api/tools` ｜ 端点：31 个
+> 源码：`src/server/api/tools.py` ｜ 前缀：`/api/tools` ｜ 端点：28 个
 
-覆盖 Skill、MCP、Cron、心跳（HEARTBEAT）以及市场（sensors / graphs / ui-plugins / agentloops）等接口。市场类接口统一遵循 `registry`（拉取官方注册表）、`installed`（本地已安装列表）、`install`（安装）、`uninstall`（卸载）四类命名。
+覆盖 Skill、MCP、心跳（HEARTBEAT）以及市场（sensors / graphs / ui-plugins / agentloops）等接口。市场类接口统一遵循 `registry`（拉取官方注册表）、`installed`（本地已安装列表）、`install`（安装）、`uninstall`（卸载）四类命名。
 
 ---
 
@@ -266,86 +266,6 @@ curl -X POST 'http://127.0.0.1:8000/api/tools/mcp/uninstall' -H 'Content-Type: a
 
 ```bash
 curl -X POST 'http://127.0.0.1:8000/api/tools/mcp/refresh'
-```
-
----
-
-## GET `/api/tools/cron`
-
-读取 `cron.json` 返回现有闹钟列表。
-
-**请求**
-
-无参数。
-
-**响应**
-
-返回闹钟列表（结构由 `list_crons()` 决定），形如：
-
-```json
-[
-  { "id": "xxxx", "title": "喝水提醒", "trigger_time": "2026-10-14 09:00", "repeat_rule": "none", "task_hook": "Agent" }
-]
-```
-
-**示例**
-
-```bash
-curl 'http://127.0.0.1:8000/api/tools/cron'
-```
-
----
-
-## POST `/api/tools/cron`
-
-**请求**
-
-| 参数 | 位置 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- | --- |
-| `title` | body | string | 是 | 闹钟标题 |
-| `trigger_time` | body | string | 是 | 触发时间 |
-| `repeat_rule` | body | string | 否 | 重复规则，默认 `none` |
-| `task_hook` | body | string | 否 | 到点触发的任务钩子，默认 `Agent` |
-| `task_inputs` | body | object | 否 | 传给任务钩子的参数，默认 `{}` |
-
-**响应**
-
-```json
-{ "status": "success", "data": { "id": "xxxx" } }
-```
-
-添加失败时返回 `400`。
-
-**示例**
-
-```bash
-curl -X POST 'http://127.0.0.1:8000/api/tools/cron' -H 'Content-Type: application/json' -d '{"title":"喝水提醒","trigger_time":"2026-10-14 09:00","repeat_rule":"none","task_hook":"Agent","task_inputs":{}}'
-```
-
----
-
-## DELETE `/api/tools/cron/{identifier}`
-
-删除闹钟，`identifier` 支持传 id 或 title。
-
-**请求**
-
-| 参数 | 位置 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- | --- |
-| `identifier` | path | string | 是 | 闹钟的 id 或 title |
-
-**响应**
-
-```json
-{ "status": "success", "data": { "id": "xxxx" } }
-```
-
-删除失败时返回 `400`。
-
-**示例**
-
-```bash
-curl -X DELETE 'http://127.0.0.1:8000/api/tools/cron/喝水提醒'
 ```
 
 ---

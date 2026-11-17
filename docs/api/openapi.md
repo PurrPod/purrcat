@@ -590,31 +590,6 @@ ACP 接入状态：relay 部署情况 / 端口 / uv 可用性
 | 200 | Successful Response | - |
 | 422 | Validation Error | HTTPValidationError |
 
-### `GET /api/config/cron`
-
-**标题**：Api Get Cron Config
-
-#### 响应
-
-| 状态码 | 描述 | Schema |
-| --- | --- | --- |
-| 200 | Successful Response | - |
-
-### `PUT /api/config/cron`
-
-**标题**：Api Update Cron Config
-
-#### 请求体
-
-**Schema**：`Config`
-
-#### 响应
-
-| 状态码 | 描述 | Schema |
-| --- | --- | --- |
-| 200 | Successful Response | - |
-| 422 | Validation Error | HTTPValidationError |
-
 ### `GET /api/config/deploy`
 
 **标题**：Api Get Deploy Overview
@@ -1615,6 +1590,55 @@ ACP 接入状态：relay 部署情况 / 端口 / uv 可用性
 | 200 | Successful Response | - |
 | 422 | Validation Error | HTTPValidationError |
 
+## Note
+
+### `GET /api/note`
+
+**标题**：Read Note
+
+#### 参数
+
+| 名称 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| date | query | string | 是 |  |
+
+#### 响应
+
+| 状态码 | 描述 | Schema |
+| --- | --- | --- |
+| 200 | Successful Response | object |
+| 422 | Validation Error | HTTPValidationError |
+
+### `PUT /api/note`
+
+**标题**：Write Note
+
+#### 请求体
+
+**Schema**：`NoteWriteReq`
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| date | string | 是 |  |
+| content | string | 否 |  |
+
+#### 响应
+
+| 状态码 | 描述 | Schema |
+| --- | --- | --- |
+| 200 | Successful Response | object |
+| 422 | Validation Error | HTTPValidationError |
+
+### `GET /api/note/dates`
+
+**标题**：List Dates
+
+#### 响应
+
+| 状态码 | 描述 | Schema |
+| --- | --- | --- |
+| 200 | Successful Response | array[string] |
+
 ## Paradigms
 
 ### `GET /api/paradigms`
@@ -1995,6 +2019,25 @@ ACP 接入状态：relay 部署情况 / 端口 / uv 可用性
 | 200 | Successful Response | - |
 | 422 | Validation Error | HTTPValidationError |
 
+### `GET /api/tasks/{task_id}/elapsed`
+
+**标题**：Get Task Elapsed Endpoint
+
+实时读取任务耗时（秒）：运行中按当前会话累加，结束后返回累计值。
+
+#### 参数
+
+| 名称 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| task_id | path | string | 是 |  |
+
+#### 响应
+
+| 状态码 | 描述 | Schema |
+| --- | --- | --- |
+| 200 | Successful Response | - |
+| 422 | Validation Error | HTTPValidationError |
+
 ### `GET /api/tasks/{task_id}/log`
 
 **标题**：Get Task Log Endpoint
@@ -2148,56 +2191,17 @@ ACP 接入状态：relay 部署情况 / 端口 / uv 可用性
 | 200 | Successful Response | - |
 | 422 | Validation Error | HTTPValidationError |
 
-## Tools Management
+### `GET /api/tasks/{task_id}/token`
 
-### `GET /api/tools/cron`
+**标题**：Get Task Token Usage Endpoint
 
-**标题**：Get Crons Api
-
-读取 cron.json 返回现有闹钟列表
-
-#### 响应
-
-| 状态码 | 描述 | Schema |
-| --- | --- | --- |
-| 200 | Successful Response | - |
-
-### `POST /api/tools/cron`
-
-**标题**：Add Cron Api
-
-添加闹钟
-
-#### 请求体
-
-**Schema**：`AddCronReq`
-
-| 字段 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| title | string | 是 |  |
-| trigger_time | string | 是 |  |
-| repeat_rule | string | 否 |  |
-| task_hook | string | 否 |  |
-| task_inputs | object | 否 |  |
-
-#### 响应
-
-| 状态码 | 描述 | Schema |
-| --- | --- | --- |
-| 200 | Successful Response | - |
-| 422 | Validation Error | HTTPValidationError |
-
-### `DELETE /api/tools/cron/{identifier}`
-
-**标题**：Delete Cron Api
-
-删除闹钟 (支持传 id 或 title)
+实时读取任务图累计 token 消耗（活跃任务读内存，休眠任务读 state.json）
 
 #### 参数
 
 | 名称 | 位置 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- | --- |
-| identifier | path | string | 是 |  |
+| task_id | path | string | 是 |  |
 
 #### 响应
 
@@ -2205,6 +2209,116 @@ ACP 接入状态：relay 部署情况 / 端口 / uv 可用性
 | --- | --- | --- |
 | 200 | Successful Response | - |
 | 422 | Validation Error | HTTPValidationError |
+
+## Timer
+
+### `GET /api/timer/events`
+
+**标题**：List Events
+
+#### 参数
+
+| 名称 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| source | query | string \| null | 否 |  |
+| include_finished | query | boolean | 否 |  |
+
+#### 响应
+
+| 状态码 | 描述 | Schema |
+| --- | --- | --- |
+| 200 | Successful Response | array[object] |
+| 422 | Validation Error | HTTPValidationError |
+
+### `POST /api/timer/events`
+
+**标题**：Create Event
+
+#### 请求体
+
+**Schema**：`TimerEventReq`
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| id | string \| null | 否 |  |
+| source | string \| null | 否 |  |
+| target | string | 是 |  |
+| at | number | 是 |  |
+| effect | object | 否 |  |
+| repeat | object \| null | 否 |  |
+| catch_up | string | 否 |  |
+| dedupe_key | string \| null | 否 |  |
+
+#### 响应
+
+| 状态码 | 描述 | Schema |
+| --- | --- | --- |
+| 200 | Successful Response | object |
+| 422 | Validation Error | HTTPValidationError |
+
+### `DELETE /api/timer/events/{event_id}`
+
+**标题**：Delete Event
+
+#### 参数
+
+| 名称 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| event_id | path | string | 是 |  |
+
+#### 响应
+
+| 状态码 | 描述 | Schema |
+| --- | --- | --- |
+| 200 | Successful Response | object |
+| 422 | Validation Error | HTTPValidationError |
+
+### `PUT /api/timer/sources/{source}`
+
+**标题**：Replace Source
+
+#### 参数
+
+| 名称 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| source | path | string | 是 |  |
+
+#### 请求体
+
+**Schema**：`SourceEventsReq`
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| events | array[TimerEventReq] | 否 |  |
+
+#### 响应
+
+| 状态码 | 描述 | Schema |
+| --- | --- | --- |
+| 200 | Successful Response | array[object] |
+| 422 | Validation Error | HTTPValidationError |
+
+### `GET /api/timer/state`
+
+**标题**：Timer State
+
+#### 响应
+
+| 状态码 | 描述 | Schema |
+| --- | --- | --- |
+| 200 | Successful Response | object |
+
+### `GET /api/timer/stream`
+
+**标题**：Timer Stream
+
+#### 响应
+
+| 状态码 | 描述 | Schema |
+| --- | --- | --- |
+| 200 | Successful Response | - |
+
+## Tools Management
 
 ### `GET /api/tools/heartbeat`
 

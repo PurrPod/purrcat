@@ -146,7 +146,7 @@ def test_create_app_route_table_is_port_independent():
 
     assert _routes(offline) == _routes(online)
     assert offline.router.on_startup == []
-    assert len(online.router.on_startup) == 1
+    assert len(online.router.on_startup) == 2
 
 
 def test_real_app_openapi_covers_all_api_routes():

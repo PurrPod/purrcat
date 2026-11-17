@@ -2,6 +2,7 @@ import asyncio
 import datetime
 import json
 import os
+import re
 import threading
 import time
 import uuid
@@ -25,6 +26,12 @@ from . import (
 from .enums import NodeState, TaskState
 
 TASK_INSTANCES = {}
+
+
+def safe_task_dir_name(name: str) -> str:
+    """把任务名清洗成可做目录名的片段（Windows 不允许冒号、斜杠等字符）。"""
+    cleaned = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", str(name or "")).strip().rstrip(".")
+    return cleaned[:80] or "task"
 
 
 def load_task_instance(task_id: str):
@@ -113,13 +120,18 @@ class Task:
         self.state = TaskState.READY
         self.create_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self.checkpoint_dir = os.path.join(
-            DATA_DIR, "checkpoints", "task", f"{self.task_name}_{self.task_id}"
+            DATA_DIR,
+            "checkpoints",
+            "task",
+            f"{safe_task_dir_name(self.task_name)}_{self.task_id}",
         )
 
         # 🌟 新增：统计性能监控指标
         self.total_tokens = 0
         self.execution_time = 0.0
         self._start_time = None
+        self.started_at = None  # 本次运行起点（epoch 秒）
+        self.finished_at = None  # 最近一次终态时间（epoch 秒）
 
         self._lock = threading.Lock()
         self._io_lock = threading.Lock()
@@ -144,10 +156,10 @@ class Task:
 
         graph = graph_spec.load_graph_file(GRAPHS_DIR, self.graph_name)
         if graph is None:
-            return {
-                "status": "error",
-                "message": f"找不到图表定义文件: {self.graph_name}",
-            }
+            message = f"找不到图表定义文件: {self.graph_name}"
+            self.state = TaskState.ERROR
+            self.init_error = message
+            return {"status": "error", "message": message}
         self.graph = graph
 
         error_msg = graph_spec.validate_global_inputs(
@@ -197,6 +209,8 @@ class Task:
 
         # 🌟 记录运行启动时间
         start_time = time.time()
+        self.started_at = start_time
+        self.finished_at = None
 
         # kill 可能发生在引擎启动前（注入后立刻停止）：直接落终态，不再调度
         if self._killed or self.state == TaskState.KILLED:
@@ -215,7 +229,7 @@ class Task:
                 if not runnable_nodes and not self.running_tasks:
                     if task_state.any_suspended(self.node_state):
                         self.state = TaskState.INTERRUPTED
-                        self.execution_time += time.time() - start_time  # 🌟 累加用时
+                        self._finish_run(start_time)
                         self.save_state()  # 🌟 状态极小，直接同步写
                         return {
                             "status": "suspended",
@@ -224,7 +238,7 @@ class Task:
                             ),
                         }
                     self.state = TaskState.COMPLETED
-                    self.execution_time += time.time() - start_time  # 🌟 累加用时
+                    self._finish_run(start_time)
                     self.save_state()  # 🌟 状态极小，直接同步写
                     return {"status": "success", "outputs": self.outputs}
 
@@ -235,15 +249,21 @@ class Task:
                     save_state=self.save_state,
                 )
                 if error:
-                    self.execution_time += time.time() - start_time  # 🌟 累加用时
+                    self._finish_run(start_time)
                     await asyncio.to_thread(self.save_state)
                     return error
 
         except Exception as e:
             self.state = TaskState.ERROR
-            self.execution_time += time.time() - start_time  # 🌟 累加用时
+            self._finish_run(start_time)
             await asyncio.to_thread(self.save_state)
             return {"status": "error", "message": f"引擎异常: {str(e)}"}
+
+    def _finish_run(self, start_time: float) -> None:
+        """累加本次运行耗时，并记录终态时间供耗时接口使用。"""
+        now = time.time()
+        self.execution_time += now - start_time
+        self.finished_at = now
 
     async def _execute_node_wrapper(self, node_id: str, node_instance: Any):
         """核心包装器：隔离重型 I/O，让主循环轻装上阵"""
@@ -474,7 +494,7 @@ class Task:
         self._cancel_all_tasks()
         task_state.mark_killed_nodes(self.node_state)
         self.state = TaskState.KILLED
-        self.execution_time += time.time() - start_time
+        self._finish_run(start_time)
         self.save_state()
         return {"status": "killed", "message": "⛔ 进程已被人工/系统强行中止"}
 

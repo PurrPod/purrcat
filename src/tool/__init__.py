@@ -14,7 +14,6 @@ _SCHEMA_GROUPS = {
     "AGENT_TOOL_SCHEMA": (
         ("bash", "BASH_TOOL_SCHEMA"),
         ("brainstorm", "BRAINSTORM_TOOL_SCHEMA"),
-        ("cron", "CRON_TOOL_SCHEMA"),
         ("fetch", "FETCH_TOOL_SCHEMA"),
         ("filesystem", "FILESYSTEM_TOOL_SCHEMA"),
         ("memo", "MEMO_TOOL_SCHEMA"),

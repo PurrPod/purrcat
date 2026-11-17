@@ -45,20 +45,6 @@ hooks:
 # 默认配置模板
 # ==========================================
 
-CRON_CONFIG_TEMPLATE = """[
-  {
-    "id": "crn_cdbcc1d4",
-    "title": "test-persist",
-    "description": "",
-    "trigger_time": "07:30",
-    "repeat_rule": "weekly_1",
-    "active": true,
-    "task_hook": "Agent",
-    "task_inputs": {}
-  }
-]
-"""
-
 HEARTBEAT_CONFIG_TEMPLATE = """{
   "interval": 1800,
   "active": false

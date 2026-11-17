@@ -1,6 +1,7 @@
 import asyncio
 import os
 import shutil
+import time
 
 from src.harness.process import TASK_INSTANCES
 from src.harness.process import kill_task as process_kill_task
@@ -173,6 +174,43 @@ def get_task_token_usage(task_id: str):
     return {
         "task_id": task_id,
         "total_tokens": state_data.get("total_tokens", 0) or 0,
+    }
+
+
+def get_task_elapsed(task_id: str):
+    """实时读取任务耗时（秒）：运行中累加当前会话，结束后取累计值。
+
+    活跃任务读内存；休眠任务读 state.json（旧档没有 started_at 时只返回累计 execution_time）。
+    """
+    task = TASK_INSTANCES.get(task_id)
+    if task is not None:
+        state = task.state.value if hasattr(task.state, "value") else str(task.state)
+        with task._lock:
+            execution_time = float(getattr(task, "execution_time", 0.0) or 0.0)
+            started_at = getattr(task, "started_at", None)
+            finished_at = getattr(task, "finished_at", None)
+        if state == "running" and started_at:
+            execution_time += max(0.0, time.time() - float(started_at))
+        return {
+            "task_id": task_id,
+            "state": state,
+            "elapsed": round(execution_time, 2),
+            "elapsed_ms": int(execution_time * 1000),
+            "started_at": started_at,
+            "finished_at": finished_at,
+        }
+
+    state_data = task_store.load_task_checkpoint(task_id)
+    if state_data is None:
+        return None
+    execution_time = float(state_data.get("execution_time", 0.0) or 0.0)
+    return {
+        "task_id": task_id,
+        "state": state_data.get("state", "idle"),
+        "elapsed": round(execution_time, 2),
+        "elapsed_ms": int(execution_time * 1000),
+        "started_at": state_data.get("started_at"),
+        "finished_at": state_data.get("finished_at"),
     }
 
 

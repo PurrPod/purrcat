@@ -1,6 +1,6 @@
 """Server API 路由契约（SPEC-014）。
 
-锁定 15 个 router 的路径、方法与端点名，并对若干只读 GET 路由做
+锁定 17 个 router 的路径、方法与端点名，并对若干只读 GET 路由做
 TestClient 级响应字段校验；不联网、不启动真实 Agent。
 """
 
@@ -26,6 +26,8 @@ ROUTERS = {
     "paradigms": "src.server.api.paradigms",
     "acp": "src.server.api.acp",
     "webmin": "src.server.api.webmin",
+    "note": "src.server.api.note",
+    "timer": "src.server.api.timer",
 }
 
 # (path, methods, endpoint name)，顺序即 FastAPI 匹配顺序，必须逐字保持。
@@ -72,6 +74,7 @@ EXPECTED_ROUTES = {
         ("/api/tasks/run", "POST", "run_task_api"),
         ("/api/tasks/{task_id}/state", "GET", "get_task_state_endpoint"),
         ("/api/tasks/{task_id}/token", "GET", "get_task_token_usage_endpoint"),
+        ("/api/tasks/{task_id}/elapsed", "GET", "get_task_elapsed_endpoint"),
         ("/api/tasks/{task_id}/submit", "POST", "submit_instruction_api"),
         ("/api/tasks/{task_id}/push", "POST", "push_to_task"),
         ("/api/tasks/{task_id}/log", "GET", "get_task_log_endpoint"),
@@ -119,8 +122,6 @@ EXPECTED_ROUTES = {
         ("/api/config/setup-status", "GET", "api_setup_status"),
         ("/api/config/setup-data-root", "POST", "api_setup_data_root"),
         ("/api/config/change-data-root", "POST", "api_change_data_root"),
-        ("/api/config/cron", "GET", "api_get_cron_config"),
-        ("/api/config/cron", "PUT", "api_update_cron_config"),
         ("/api/config/meta", "GET", "api_get_config_meta"),
     ],
     "memory": [
@@ -140,14 +141,11 @@ EXPECTED_ROUTES = {
         ("/api/tools/skills/install", "POST", "install_skill_api"),
         ("/api/tools/skills/uninstall", "POST", "uninstall_skill_api"),
         ("/api/tools/skills/install-batch", "POST", "install_skills_batch_api"),
-        ("/api/tools/cron", "GET", "get_crons_api"),
         ("/api/tools/mcp/refresh", "POST", "refresh_mcp_api"),
         ("/api/tools/mcp/install", "POST", "install_mcp_api"),
         ("/api/tools/mcp/uninstall", "POST", "uninstall_mcp_api"),
         ("/api/tools/mcp/list", "GET", "list_configured_mcps_api"),
         ("/api/tools/skills/refresh", "POST", "refresh_skills_api"),
-        ("/api/tools/cron", "POST", "add_cron_api"),
-        ("/api/tools/cron/{identifier}", "DELETE", "delete_cron_api"),
         ("/api/tools/heartbeat", "GET", "get_heartbeat_api"),
         ("/api/tools/heartbeat", "POST", "save_heartbeat_api"),
         ("/api/tools/market/sensors", "GET", "get_sensor_registry_api"),
@@ -269,6 +267,19 @@ EXPECTED_ROUTES = {
             "api_webmin_plugin_dir",
         ),
     ],
+    "note": [
+        ("/api/note", "GET", "read_note"),
+        ("/api/note", "PUT", "write_note"),
+        ("/api/note/dates", "GET", "list_dates"),
+    ],
+    "timer": [
+        ("/api/timer/events", "POST", "create_event"),
+        ("/api/timer/sources/{source}", "PUT", "replace_source"),
+        ("/api/timer/events", "GET", "list_events"),
+        ("/api/timer/events/{event_id}", "DELETE", "delete_event"),
+        ("/api/timer/state", "GET", "timer_state"),
+        ("/api/timer/stream", "GET", "timer_stream"),
+    ],
 }
 
 
@@ -323,7 +334,6 @@ def test_get_tools_readonly_lists(monkeypatch, tmp_path):
     """SPEC-014 AC-4：已安装列表与配置列表的 GET 响应字段保持不变。"""
     from src.server.api import tools
 
-    monkeypatch.setattr(tools, "list_crons", lambda: [{"id": "c1"}])
     monkeypatch.setattr(tools, "get_mcp_config", lambda: {"mcpServers": {"a": {}}})
     monkeypatch.setattr(tools, "get_sensor_config", lambda: {"demo": {"enabled": True}})
     monkeypatch.setattr(tools, "SENSOR_EXTENSION_DIR", str(tmp_path))
@@ -338,7 +348,6 @@ def test_get_tools_readonly_lists(monkeypatch, tmp_path):
 
     client = _client(tools.router)
 
-    assert client.get("/api/tools/cron").json() == [{"id": "c1"}]
     assert client.get("/api/tools/mcp/list").json() == ["a"]
     assert client.get("/api/tools/market/sensors/installed").json() == [
         {"name": "demo", "enabled": True, "has_code": True}
@@ -379,7 +388,6 @@ def test_config_meta_contract():
         "DATA_ROOT",
         "BASE_DIR",
         "settings_path",
-        "cron_path",
     }
 
 
@@ -408,3 +416,29 @@ def test_requests_empty_list_contract(monkeypatch):
     monkeypatch.setattr(request, "kick_pending_sensor_tests", lambda: None)
 
     assert _client(request.router).get("/api/requests").json() == []
+
+
+def test_task_token_usage_contract(monkeypatch):
+    """SPEC-033 AC-2：/api/tasks/{task_id}/token 返回累计消耗且禁用缓存。"""
+    from src.server.api import task
+
+    monkeypatch.setattr(
+        task,
+        "get_task_token_usage",
+        lambda task_id: {"task_id": task_id, "total_tokens": 42},
+    )
+
+    resp = _client(task.router).get("/api/tasks/t1/token")
+
+    assert resp.status_code == 200
+    assert resp.json() == {"task_id": "t1", "total_tokens": 42}
+    assert resp.headers["cache-control"] == "no-store"
+
+
+def test_task_token_usage_missing_contract(monkeypatch):
+    """SPEC-033 AC-2：任务不存在时返回 404。"""
+    from src.server.api import task
+
+    monkeypatch.setattr(task, "get_task_token_usage", lambda _task_id: None)
+
+    assert _client(task.router).get("/api/tasks/missing/token").status_code == 404

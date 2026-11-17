@@ -1,40 +1,6 @@
 {
   "components": {
     "schemas": {
-      "AddCronReq": {
-        "properties": {
-          "repeat_rule": {
-            "default": "none",
-            "title": "Repeat Rule",
-            "type": "string"
-          },
-          "task_hook": {
-            "default": "Agent",
-            "title": "Task Hook",
-            "type": "string"
-          },
-          "task_inputs": {
-            "additionalProperties": true,
-            "default": {},
-            "title": "Task Inputs",
-            "type": "object"
-          },
-          "title": {
-            "title": "Title",
-            "type": "string"
-          },
-          "trigger_time": {
-            "title": "Trigger Time",
-            "type": "string"
-          }
-        },
-        "required": [
-          "title",
-          "trigger_time"
-        ],
-        "title": "AddCronReq",
-        "type": "object"
-      },
       "AppToolCallReq": {
         "properties": {
           "arguments": {
@@ -527,6 +493,24 @@
         "title": "NewSessionReq",
         "type": "object"
       },
+      "NoteWriteReq": {
+        "properties": {
+          "content": {
+            "default": "",
+            "title": "Content",
+            "type": "string"
+          },
+          "date": {
+            "title": "Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "date"
+        ],
+        "title": "NoteWriteReq",
+        "type": "object"
+      },
       "ParadigmSaveReq": {
         "properties": {
           "data": {
@@ -707,6 +691,19 @@
         "title": "RunTaskRequest",
         "type": "object"
       },
+      "SourceEventsReq": {
+        "properties": {
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/TimerEventReq"
+            },
+            "title": "Events",
+            "type": "array"
+          }
+        },
+        "title": "SourceEventsReq",
+        "type": "object"
+      },
       "SubmitInstructionRequest": {
         "properties": {
           "content": {
@@ -768,6 +765,79 @@
           "name"
         ],
         "title": "TestRunReq",
+        "type": "object"
+      },
+      "TimerEventReq": {
+        "properties": {
+          "at": {
+            "title": "At",
+            "type": "number"
+          },
+          "catch_up": {
+            "default": "skip",
+            "title": "Catch Up",
+            "type": "string"
+          },
+          "dedupe_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dedupe Key"
+          },
+          "effect": {
+            "additionalProperties": true,
+            "title": "Effect",
+            "type": "object"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "repeat": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repeat"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "target": {
+            "title": "Target",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target",
+          "at"
+        ],
+        "title": "TimerEventReq",
         "type": "object"
       },
       "UIRollbackReq": {
@@ -1443,64 +1513,6 @@
           }
         },
         "summary": "Api Change Data Root",
-        "tags": [
-          "Configuration"
-        ]
-      }
-    },
-    "/api/config/cron": {
-      "get": {
-        "operationId": "api_get_cron_config_api_config_cron_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Api Get Cron Config",
-        "tags": [
-          "Configuration"
-        ]
-      },
-      "put": {
-        "operationId": "api_update_cron_config_api_config_cron_put",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "additionalProperties": true,
-                "title": "Config",
-                "type": "object"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Api Update Cron Config",
         "tags": [
           "Configuration"
         ]
@@ -4129,6 +4141,116 @@
         ]
       }
     },
+    "/api/note": {
+      "get": {
+        "operationId": "read_note_api_note_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "date",
+            "required": true,
+            "schema": {
+              "title": "Date",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Read Note Api Note Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Note",
+        "tags": [
+          "Note"
+        ]
+      },
+      "put": {
+        "operationId": "write_note_api_note_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NoteWriteReq"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Write Note Api Note Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Write Note",
+        "tags": [
+          "Note"
+        ]
+      }
+    },
+    "/api/note/dates": {
+      "get": {
+        "operationId": "list_dates_api_note_dates_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "title": "Response List Dates Api Note Dates Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Dates",
+        "tags": [
+          "Note"
+        ]
+      }
+    },
     "/api/paradigms": {
       "get": {
         "description": "列出 paradigms 目录下所有可编辑文件。",
@@ -5608,6 +5730,47 @@
         ]
       }
     },
+    "/api/tasks/{task_id}/elapsed": {
+      "get": {
+        "description": "实时读取任务耗时（秒）：运行中按当前会话累加，结束后返回累计值。",
+        "operationId": "get_task_elapsed_endpoint_api_tasks__task_id__elapsed_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Task Elapsed Endpoint",
+        "tags": [
+          "Tasks"
+        ]
+      }
+    },
     "/api/tasks/{task_id}/log": {
       "get": {
         "description": "统一日志读取（直接读纯文本盘，绝不瞎唤醒休眠引擎）",
@@ -5933,75 +6096,17 @@
         ]
       }
     },
-    "/api/tools/cron": {
+    "/api/tasks/{task_id}/token": {
       "get": {
-        "description": "读取 cron.json 返回现有闹钟列表",
-        "operationId": "get_crons_api_api_tools_cron_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Get Crons Api",
-        "tags": [
-          "Tools Management"
-        ]
-      },
-      "post": {
-        "description": "添加闹钟",
-        "operationId": "add_cron_api_api_tools_cron_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AddCronReq"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Add Cron Api",
-        "tags": [
-          "Tools Management"
-        ]
-      }
-    },
-    "/api/tools/cron/{identifier}": {
-      "delete": {
-        "description": "删除闹钟 (支持传 id 或 title)",
-        "operationId": "delete_cron_api_api_tools_cron__identifier__delete",
+        "description": "实时读取任务图累计 token 消耗（活跃任务读内存，休眠任务读 state.json）",
+        "operationId": "get_task_token_usage_endpoint_api_tasks__task_id__token_get",
         "parameters": [
           {
             "in": "path",
-            "name": "identifier",
+            "name": "task_id",
             "required": true,
             "schema": {
-              "title": "Identifier",
+              "title": "Task Id",
               "type": "string"
             }
           }
@@ -6026,9 +6131,257 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Delete Cron Api",
+        "summary": "Get Task Token Usage Endpoint",
         "tags": [
-          "Tools Management"
+          "Tasks"
+        ]
+      }
+    },
+    "/api/timer/events": {
+      "get": {
+        "operationId": "list_events_api_timer_events_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "source",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_finished",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Finished",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response List Events Api Timer Events Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Events",
+        "tags": [
+          "Timer"
+        ]
+      },
+      "post": {
+        "operationId": "create_event_api_timer_events_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TimerEventReq"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Create Event Api Timer Events Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Event",
+        "tags": [
+          "Timer"
+        ]
+      }
+    },
+    "/api/timer/events/{event_id}": {
+      "delete": {
+        "operationId": "delete_event_api_timer_events__event_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Delete Event Api Timer Events  Event Id  Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Event",
+        "tags": [
+          "Timer"
+        ]
+      }
+    },
+    "/api/timer/sources/{source}": {
+      "put": {
+        "operationId": "replace_source_api_timer_sources__source__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source",
+            "required": true,
+            "schema": {
+              "title": "Source",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SourceEventsReq"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response Replace Source Api Timer Sources  Source  Put",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Replace Source",
+        "tags": [
+          "Timer"
+        ]
+      }
+    },
+    "/api/timer/state": {
+      "get": {
+        "operationId": "timer_state_api_timer_state_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Timer State Api Timer State Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Timer State",
+        "tags": [
+          "Timer"
+        ]
+      }
+    },
+    "/api/timer/stream": {
+      "get": {
+        "operationId": "timer_stream_api_timer_stream_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Timer Stream",
+        "tags": [
+          "Timer"
         ]
       }
     },

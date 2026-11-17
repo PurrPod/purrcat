@@ -1,6 +1,6 @@
 # 配置 `/api/config`
 
-> 源码：`src/server/api/config.py` ｜ 前缀：`/api/config` ｜ 端点：29 个
+> 源码：`src/server/api/config.py` ｜ 前缀：`/api/config` ｜ 端点：34 个
 
 配置文件均落盘在 `~/.purrcat` 下（`settings.json` 为内部全局设置，其余为各模块 JSON）。除 ACP 令牌重置、数据根目录迁移等接口外，均为无鉴权本地接口。
 
@@ -964,56 +964,6 @@ curl -X POST 'http://127.0.0.1:8000/api/config/change-data-root' \
 
 ---
 
-## GET `/api/config/cron`
-
-读取定时任务配置（`~/.purrcat/core/cron.json`）。文件缺失或解析失败时返回空任务列表。
-
-**请求**
-
-无参数。
-
-**响应**
-
-```json
-{ "jobs": [] }
-```
-
-**示例**
-
-```bash
-curl 'http://127.0.0.1:8000/api/config/cron'
-```
-
----
-
-## PUT `/api/config/cron`
-
-更新定时任务配置（`~/.purrcat/core/cron.json`），整体覆盖写入。
-
-**请求**
-
-| 参数 | 位置 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- | --- |
-| `config` | body | object | 是 | 完整定时配置对象，整体覆盖写入 |
-
-**响应**
-
-```json
-{ "status": "ok", "message": "Cron config updated successfully" }
-```
-
-保存失败返回 `500`：`{ "detail": "Failed to save cron config" }`
-
-**示例**
-
-```bash
-curl -X PUT 'http://127.0.0.1:8000/api/config/cron' \
-  -H 'Content-Type: application/json' \
-  -d '{"jobs":[]}'
-```
-
----
-
 ## GET `/api/config/meta`
 
 返回当前生效的路径常量。
@@ -1029,8 +979,7 @@ curl -X PUT 'http://127.0.0.1:8000/api/config/cron' \
   "PURRCAT_DIR": "C:\\Users\\<user>\\.purrcat",
   "DATA_ROOT": "D:\\purrcat_data",
   "BASE_DIR": "D:\\cat-in-cup",
-  "settings_path": "C:\\Users\\<user>\\.purrcat\\settings.json",
-  "cron_path": "C:\\Users\\<user>\\.purrcat\\core\\cron.json"
+  "settings_path": "C:\\Users\\<user>\\.purrcat\\settings.json"
 }
 ```
 

@@ -141,6 +141,39 @@ curl 'http://127.0.0.1:8000/api/tasks/tsk_ab12cd34/token'
 
 ---
 
+## GET `/api/tasks/{task_id}/elapsed`
+
+实时读取任务耗时。运行中的任务返回「已累计执行时间 + 本次运行至今」，终态任务返回累计执行时间；任务休眠后读取 checkpoint `state.json`。响应头带 `Cache-Control: no-store`。
+
+**请求**
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| `task_id` | path | string | 是 | 任务 ID |
+
+**响应**
+
+```json
+{
+  "task_id": "tsk_ab12cd34",
+  "state": "running",
+  "elapsed": 12.34,
+  "elapsed_ms": 12340,
+  "started_at": 1763354400.12,
+  "finished_at": null
+}
+```
+
+`elapsed` 单位为秒；`started_at` / `finished_at` 是本次（或最近一次）运行的 Unix 时间戳，旧档可能为 `null`。任务不存在返回 404。
+
+**示例**
+
+```bash
+curl 'http://127.0.0.1:8000/api/tasks/tsk_ab12cd34/elapsed'
+```
+
+---
+
 ## POST `/api/tasks/{task_id}/submit`
 
 注入人工指令。任务须处于活跃状态，否则先按需从磁盘 checkpoint 加载回内存（找不到返回 404）。

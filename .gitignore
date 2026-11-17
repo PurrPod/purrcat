@@ -6,7 +6,6 @@ cicmd.txt
 agent_vm/
 mcp_config.json
 data/checkpoints
-src/agent/core/cron.json
 src/tool/callmcp/mcp_schema.json
 .buffer/
 skills/

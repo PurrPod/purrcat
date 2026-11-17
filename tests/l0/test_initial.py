@@ -29,9 +29,6 @@ def test_model_config_covers_main_task_and_vision():
 
 
 def test_text_templates_are_valid_json():
-    assert json.loads(initial_templates.CRON_CONFIG_TEMPLATE)[0]["id"] == (
-        "crn_cdbcc1d4"
-    )
     assert json.loads(initial_templates.HEARTBEAT_CONFIG_TEMPLATE) == {
         "interval": 1800,
         "active": False,
@@ -48,7 +45,6 @@ def test_generate_all_configs_is_idempotent(tmp_path, monkeypatch):
     monkeypatch.setattr(initial, "SENSOR_CONFIG_PATH", str(root / "sensor.json"))
     monkeypatch.setattr(initial, "FILE_CONFIG_PATH", str(root / "file.json"))
     monkeypatch.setattr(initial, "MCP_CONFIG_PATH", str(root / "mcp.json"))
-    monkeypatch.setattr(initial, "CRON_FILE", str(core / "cron.json"))
     monkeypatch.setattr(initial, "HEARTBEAT_FILE", str(core / "heartbeat.json"))
     monkeypatch.setattr(initial, "SOUL_MD_PATH", str(core / "SOUL.md"))
     monkeypatch.setattr(initial, "get_acp_token", lambda: "token")

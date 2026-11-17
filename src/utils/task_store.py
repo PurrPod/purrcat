@@ -237,6 +237,8 @@ def load_task_checkpoint(task_id: str) -> dict | None:
         "outputs": state.get("outputs", {}),
         "total_tokens": state.get("total_tokens", 0),
         "execution_time": state.get("execution_time", 0.0),
+        "started_at": state.get("started_at"),
+        "finished_at": state.get("finished_at"),
     }
 
 

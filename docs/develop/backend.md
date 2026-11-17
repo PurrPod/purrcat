@@ -64,7 +64,7 @@ Hook 阶段固定为 `on_build_system_prompt / on_loop_start / on_loop_epoch / o
 ~/.purrcat/
 ├─ settings.json · model.json · mcp_config.json · activate_sensor.json
 ├─ file.json · mcp_schema.json · acp_token
-├─ core/          # SOUL.md / GOAL.md / MEMORY.md / info.json / heartbeat.json / cron.json
+├─ core/          # SOUL.md / GOAL.md / MEMORY.md / info.json / heartbeat.json
 ├─ paradigms/ · skills/ · mcps/ · sensor/ · graph/ · webmin-plugins/
 ├─ data/          # memory · projects · checkpoints/agent · checkpoints/task
 └─ bin/acp_relay.py · logs/backend.log · run/control.json

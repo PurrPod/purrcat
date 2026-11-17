@@ -455,3 +455,22 @@ def test_run_returns_init_error_without_scheduling(tmp_path):
 
     assert result == {"status": "error", "message": "入参缺失"}
     assert task.execution_time == 1.234
+
+
+def test_load_graph_missing_marks_task_error(tmp_path, monkeypatch):
+    """删除图表后任务必须落 ERROR，不能因为没有节点而静默完成。"""
+    from src.utils import config as config_mod
+
+    monkeypatch.setattr(config_mod, "GRAPHS_DIR", str(tmp_path))
+    task = Task.__new__(Task)
+    task.graph_name = "deleted-graph"
+    task.inputs = {}
+    task.graph = {}
+    task.state = TaskState.READY
+    task.init_error = None
+
+    result = task.load_graph()
+
+    assert result["status"] == "error"
+    assert task.state == TaskState.ERROR
+    assert "deleted-graph" in task.init_error

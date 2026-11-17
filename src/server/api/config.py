@@ -21,7 +21,6 @@ from src.utils.config import (
     MODEL_CONFIG_PATH,
     AGENT_CORE_DIR,
     GLOBAL_CONFIG_FILE,
-    CRON_FILE,
     get_file_config,
     get_mcp_config,
     get_model_config,
@@ -360,19 +359,6 @@ def api_change_data_root(payload: Dict[str, Any] = Body(default={})):
     return config_services.change_data_root(payload)
 
 
-# ── Cron Config (cron.json) ──
-@router.get("/cron")
-def api_get_cron_config():
-    return config_validation.load_json_data(CRON_FILE, {"jobs": []}, log_prefix="")
-
-
-@router.put("/cron")
-def api_update_cron_config(config: Dict[str, Any]):
-    if _save_json_file(CRON_FILE, config):
-        return {"status": "ok", "message": "Cron config updated successfully"}
-    raise HTTPException(status_code=500, detail="Failed to save cron config")
-
-
 # ── Paths Meta (前端展示用：当前实际生效的各数据目录) ──
 @router.get("/meta")
 def api_get_config_meta():
@@ -382,5 +368,4 @@ def api_get_config_meta():
         "DATA_ROOT": DATA_ROOT,  # 大型数据根目录（读 settings.json data_root，重启生效）
         "BASE_DIR": BASE_DIR,  # 程序只读目录（打包后是 _MEIPASS）
         "settings_path": str(GLOBAL_CONFIG_FILE),
-        "cron_path": CRON_FILE,
     }

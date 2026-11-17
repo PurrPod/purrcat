@@ -23,6 +23,7 @@ from src.harness.task_persistence import (
 
 # 引入统一封装的 API，支持访问休眠与活跃任务
 from src.utils.task_api import (
+    get_task_elapsed,
     get_task_list,
     get_task_state,
     get_task_token_usage,
@@ -151,6 +152,18 @@ def get_task_state_endpoint(task_id: str):
 def get_task_token_usage_endpoint(task_id: str):
     """实时读取任务图累计 token 消耗（活跃任务读内存，休眠任务读 state.json）"""
     data = get_task_token_usage(task_id)
+    if data is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    from fastapi.responses import JSONResponse
+
+    return JSONResponse(content=data, headers={"Cache-Control": "no-store"})
+
+
+@router.get("/{task_id}/elapsed")
+def get_task_elapsed_endpoint(task_id: str):
+    """实时读取任务耗时（秒）：运行中按当前会话累加，结束后返回累计值。"""
+    data = get_task_elapsed(task_id)
     if data is None:
         raise HTTPException(status_code=404, detail="Task not found")
 

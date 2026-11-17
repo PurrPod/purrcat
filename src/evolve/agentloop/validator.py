@@ -62,7 +62,6 @@ NATIVE_TOOLS = {
     "FileSystem",
     "Bash",
     "BrainStorm",
-    "Cron",
     "CallMCP",
     "Memo",
     "Request",

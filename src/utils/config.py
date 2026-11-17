@@ -68,11 +68,12 @@ MCP_SOURCE_DIR = os.path.join(PURRCAT_DIR, "mcps")
 SENSOR_EXTENSION_DIR = os.path.join(PURRCAT_DIR, "sensor")
 
 SCHEDULE_FILE = os.path.join(SCHEDULE_DIR, "schedule.json")
+TIMER_FILE = os.path.join(SCHEDULE_DIR, "timer_events.json")
+NOTES_DIR = os.path.join(PURRCAT_DIR, "notes")
 
 AGENT_DIR = os.path.join(SRC_DIR, "agent")
 AGENT_CORE_DIR = os.path.join(PURRCAT_DIR, "core")
 SOUL_MD_PATH = os.path.join(AGENT_CORE_DIR, "SOUL.md")
-CRON_FILE = os.path.join(AGENT_CORE_DIR, "cron.json")
 HEARTBEAT_FILE = os.path.join(AGENT_CORE_DIR, "heartbeat.json")
 GOAL_MD_PATH = os.path.join(AGENT_CORE_DIR, "GOAL.md")
 SYSTEM_RULES_DIR = os.path.join(AGENT_DIR, "system_rules")
@@ -94,6 +95,7 @@ os.makedirs(SCHEDULE_DIR, exist_ok=True)
 os.makedirs(DATABASE_DIR, exist_ok=True)
 os.makedirs(SESSIONS_DIR, exist_ok=True)
 os.makedirs(PROJECTS_DIR, exist_ok=True)
+os.makedirs(NOTES_DIR, exist_ok=True)
 
 MCP_SCHEMA_CACHE_FILE = os.path.join(PURRCAT_DIR, "mcp_schema.json")
 

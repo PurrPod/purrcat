@@ -35,12 +35,14 @@ def create_app(port: int | None = None) -> FastAPI:
     from src.server.api.graph import router as graph_router
     from src.server.api.mcp_apps import router as mcp_apps_router
     from src.server.api.memory import router as memory_router
+    from src.server.api.note import router as note_router
     from src.server.api.paradigms import router as paradigms_router
     from src.server.api.projects import router as projects_router
     from src.server.api.request import router as request_router
     from src.server.api.system import router as system_router
     from src.server.api.task import router as task_router
     from src.server.api.terminal import router as terminal_router
+    from src.server.api.timer import router as timer_router
     from src.server.api.tools import router as tools_router
     from src.server.api.webmin import router as webmin_router
 
@@ -64,6 +66,8 @@ def create_app(port: int | None = None) -> FastAPI:
     app.include_router(system_router)
     app.include_router(request_router)
     app.include_router(filesystem_router)
+    app.include_router(note_router)
+    app.include_router(timer_router)
     app.include_router(evolve_router)
     app.include_router(terminal_router)
     app.include_router(paradigms_router)
@@ -83,6 +87,18 @@ def create_app(port: int | None = None) -> FastAPI:
         @app.on_event("startup")
         def _publish_runtime_port():
             write_runtime_state(port)
+
+        @app.on_event("startup")
+        async def _start_timer_service():
+            from src.timer import get_timer_service
+
+            await get_timer_service().start()
+
+        @app.on_event("shutdown")
+        async def _stop_timer_service():
+            from src.timer import get_timer_service
+
+            await get_timer_service().stop()
 
         @app.on_event("shutdown")
         def _clear_runtime_port():
