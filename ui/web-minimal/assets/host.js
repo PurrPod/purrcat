@@ -3174,8 +3174,13 @@
         sel.className = "cfg-input";
         (field.options || []).forEach(function(op) {
           const o2 = HOST.document.createElement("option");
-          o2.value = op;
-          o2.textContent = op;
+          if (op && typeof op === "object") {
+            o2.value = String(op.value);
+            o2.textContent = String(op.label || op.value);
+          } else {
+            o2.value = op;
+            o2.textContent = op;
+          }
           sel.appendChild(o2);
         });
         sel.value = cfg[key] || "";
@@ -5685,7 +5690,8 @@
       case "dialog.files": {
         const pc = HOST.purrcat;
         if (!pc || !pc.openDialog) throw new Error("\u672C\u5730\u6587\u4EF6\u9009\u62E9\u4EC5\u5728 Electron \u5185\u53EF\u7528");
-        return pc.openDialog({ directory: false, properties: ["openFile", "multiSelections"] });
+        const filters = Array.isArray(payload.filters) ? payload.filters : void 0;
+        return pc.openDialog({ directory: false, properties: ["openFile", "multiSelections"], filters });
       }
       case "dialog.folder": {
         const pc = HOST.purrcat;

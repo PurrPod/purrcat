@@ -1,0 +1,2081 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --bg: #f6f4ef;
+    --surface: #fffefb;
+    --surface-2: #f1eee7;
+    --ink: #34312b;
+    --ink-soft: #4d483f;
+    --muted: #8c8578;
+    --faint: #b3aca0;
+    --line: #e6e1d7;
+    --line-soft: #efeae1;
+    --accent: #746d94;
+    --good: #6f8f7c;
+    --warn: #a9845f;
+    --bad: #a86f6d;
+    --star: #b39a6a;
+    --task: #5c86b4;
+    --event: #d9a441;
+    --review: #4ca3b3;
+    --prio: #c8635f;
+    --now: #5c6370;
+    --rest: #dcd8d0;
+    --radius: 14px;
+    --shadow: 0 10px 30px rgba(55, 48, 42, .08);
+    --sans: ui-sans-serif, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    --mono: "SF Mono", "JetBrains Mono", ui-monospace, Consolas, monospace;
+  }
+  /* 浅色：纯白纸面，轨道与分隔线用中性灰 */
+  html[data-theme="light"] {
+    --bg: #ffffff;
+    --surface: #ffffff;
+    --surface-2: #f5f5f3;
+    --ink: #2b2a28;
+    --ink-soft: #454340;
+    --muted: #86837e;
+    --faint: #b0ada8;
+    --line: #e5e4e0;
+    --line-soft: #efeeeb;
+    --rest: #e2e1dd;
+    --shadow: 0 10px 30px rgba(0, 0, 0, .06);
+  }
+  /* 暗色：纸面转深，强调色提亮一档 */
+  html[data-theme="dark"] {
+    --bg: #201f1d;
+    --surface: #292724;
+    --surface-2: #302d29;
+    --ink: #e7e2d8;
+    --ink-soft: #c8c2b7;
+    --muted: #9a938a;
+    --faint: #6f6a62;
+    --line: #3a3733;
+    --line-soft: #33302c;
+    --accent: #a49dc4;
+    --good: #8fb39c;
+    --star: #cbb283;
+    --task: #7fa6cf;
+    --now: #b9bcc4;
+    --rest: #423f39;
+    --shadow: 0 10px 30px rgba(0, 0, 0, .35);
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 14px;
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+  }
+  button, input, select, textarea { font-family: inherit; }
+
+  /* ---------- 顶栏 ---------- */
+  .topbar {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 18px;
+    padding: 16px 22px 10px;
+  }
+  .kicker {
+    font-size: 9.5px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--faint);
+  }
+  .date-row { display: flex; align-items: baseline; gap: 8px; margin-top: 4px; }
+  .date { font-size: 17px; font-weight: 650; letter-spacing: -.01em; }
+  .weekday { font-size: 11.5px; color: var(--muted); }
+  .clock { font-size: 11px; color: var(--faint); font-variant-numeric: tabular-nums; }
+
+  .remain { font-size: 10.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+  .tools { display: flex; align-items: center; gap: 3px; padding-top: 1px; }
+  .save-state {
+    font-size: 9.5px;
+    color: var(--faint);
+    margin-right: 5px;
+    min-width: 44px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  .icon-btn {
+    appearance: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    transition: background .15s ease, color .15s ease;
+  }
+  .icon-btn:hover { background: var(--surface-2); color: var(--ink); }
+  .icon-btn svg { width: 15px; height: 15px; }
+
+  /* ---------- 顶部抽屉 ---------- */
+  #app { height: 100%; display: flex; flex-direction: column; }
+  .drawer { flex: 0 0 auto; }
+  .drawer-clip {
+    display: grid;
+    grid-template-rows: 1fr;
+    transition: grid-template-rows .26s cubic-bezier(.2, .7, .2, 1);
+  }
+  .drawer.is-closed .drawer-clip { grid-template-rows: 0fr; }
+  .drawer-body { min-height: 0; overflow: hidden; }
+  .drawer-handle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    width: calc(100% - 44px);
+    height: 17px;
+    margin: 0 22px 6px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--faint);
+    cursor: pointer;
+  }
+  .drawer-grip {
+    width: 46px;
+    height: 4px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--ink) 13%, transparent);
+    transition: width .15s ease, background .15s ease;
+  }
+  .drawer-handle:hover .drawer-grip {
+    width: 60px;
+    background: color-mix(in srgb, var(--ink) 26%, transparent);
+  }
+
+  /* ---------- 时间线 ---------- */
+  .timeline {
+    margin: 0 22px 2px;
+    padding: 6px 14px 7px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+  }
+  .tl {
+    position: relative;
+    height: 24px;
+    overflow: hidden;
+    cursor: crosshair;
+    touch-action: none;
+    user-select: none;
+  }
+  .tl::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 50%;
+    height: 6px;
+    margin-top: -3px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--ink) 18%, transparent);
+  }
+  .tl-zone {
+    position: absolute;
+    top: calc(50% - 3px);
+    height: 6px;
+    display: none;
+    background: var(--rest);
+  }
+  .tl-rest {
+    position: absolute;
+    top: calc(50% - 3px);
+    right: 0;
+    height: 6px;
+    background: var(--rest);
+    pointer-events: none;
+  }
+  .tl-hour { position: absolute; top: 0; bottom: 0; width: 1px; background: color-mix(in srgb, var(--ink) 5%, transparent); }
+  /* 起床/睡觉标记：与当前时刻圆点一样嵌在轨道上 */
+  .tl-mark {
+    position: absolute;
+    top: 50%;
+    width: 12px;
+    height: 12px;
+    margin-left: -6px;
+    transform: translateY(-50%);
+    color: var(--muted);
+    pointer-events: none;
+    filter: drop-shadow(0 0 1px var(--surface)) drop-shadow(0 0 2.5px var(--surface));
+  }
+  .tl-mark svg { display: block; width: 12px; height: 12px; }
+  .tl-mark.is-left { margin-left: 0; }
+  .tl-mark.is-right { margin-left: -12px; }
+  #tlWake { color: var(--star); }
+  #tlSleep { color: var(--accent); }
+  .tl-entries { position: absolute; left: 0; right: 0; top: 0; bottom: 0; }
+  .tl-entry {
+    position: absolute;
+    top: calc(50% - 4px);
+    height: 8px;
+    border-radius: 999px;
+    background: var(--c);
+    cursor: pointer;
+    transition: top .16s cubic-bezier(.2, .7, .2, 1), height .16s cubic-bezier(.2, .7, .2, 1), box-shadow .16s ease;
+  }
+  .tl-entry:hover {
+    top: calc(50% - 5px);
+    height: 10px;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--c) 18%, transparent);
+  }
+  .tl-now {
+    position: absolute;
+    top: 50%;
+    width: 8px;
+    height: 8px;
+    margin: -4px 0 0 -4px;
+    border-radius: 50%;
+    background: var(--now);
+    border: 1.5px solid var(--surface);
+    pointer-events: none;
+    animation: nowPulse 2.6s ease-out infinite;
+  }
+  .tl-drag {
+    position: absolute;
+    top: calc(50% - 5px);
+    height: 10px;
+    display: none;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--task) 22%, transparent);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--task) 45%, transparent);
+    pointer-events: none;
+  }
+  .tl-axis {
+    position: relative;
+    height: 15px;
+    margin-top: 2px;
+    font-size: 9px;
+    color: var(--faint);
+    font-variant-numeric: tabular-nums;
+  }
+  .tl-axis span { position: absolute; top: 2px; transform: translateX(-50%); white-space: nowrap; }
+  .tl-axis span:first-child { transform: none; }
+  .tl-axis span:last-child { transform: translateX(-100%); }
+
+  /* ---------- 笔记纸面 ---------- */
+  .sheet-wrap { position: relative; flex: 1 1 auto; min-height: 0; overflow: auto; }
+  .sheet-wrap::-webkit-scrollbar { width: 10px; }
+  .sheet-wrap::-webkit-scrollbar-thumb {
+    background: var(--line);
+    border-radius: 10px;
+    border: 3px solid var(--bg);
+  }
+  .sheet {
+    max-width: 744px;
+    margin: 0 auto;
+    padding: 20px 34px 140px;
+    font-size: 14.5px;
+    line-height: 1.78;
+    color: var(--ink);
+  }
+
+  .ln {
+    position: relative;
+    padding: 2px 8px;
+    margin: 0 -8px;
+    border-radius: 6px;
+    cursor: text;
+    transition: background .12s ease;
+  }
+  .ln:hover { background: color-mix(in srgb, var(--ink) 3.5%, transparent); }
+  .ln--blank { min-height: 1.78em; }
+  .ln--blank:hover { background: transparent; }
+  .placeholder { color: var(--faint); font-size: 13px; cursor: text; }
+
+  .ln--h1, .ln--h2, .ln--h3, .ln--h4, .ln--h5, .ln--h6 {
+    font-weight: 680;
+    letter-spacing: -.015em;
+    line-height: 1.4;
+  }
+  .ln--h1 { font-size: 25px; margin: 16px -8px 4px; }
+  .ln--h2 { font-size: 20px; margin: 20px -8px 3px; }
+  .ln--h3 { font-size: 16.5px; margin: 16px -8px 2px; }
+  .ln--h4, .ln--h5, .ln--h6 { font-size: 14.5px; margin: 12px -8px 1px; color: var(--ink-soft); }
+
+  .ln--li { display: flex; align-items: baseline; gap: 8px; }
+  .ln-bullet {
+    flex: none;
+    width: 1.1em;
+    color: var(--faint);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+  }
+  .ln-body { flex: 1 1 auto; min-width: 0; }
+  .ln--li .task-box {
+    display: inline-block;
+    width: 11px;
+    height: 11px;
+    margin-right: 6px;
+    border: 1.2px solid var(--faint);
+    border-radius: 3px;
+    vertical-align: -1px;
+  }
+  .ln--li .task-box.is-done { background: var(--good); border-color: var(--good); }
+
+  .ln--quote {
+    padding-left: 13px;
+    border-left: 2px solid color-mix(in srgb, var(--star) 50%, transparent);
+    color: var(--ink-soft);
+  }
+  .ln--rule { padding: 9px 0; }
+  .ln--rule span { display: block; height: 1px; background: var(--line); }
+
+  .unit-code, .unit-table {
+    position: relative;
+    margin: 9px 0;
+    cursor: text;
+  }
+  .unit-code {
+    padding: 11px 14px;
+    border: 1px solid var(--line-soft);
+    border-radius: 10px;
+    background: var(--surface);
+    font-family: var(--mono);
+    font-size: 12.5px;
+    line-height: 1.62;
+    color: var(--ink-soft);
+    overflow: auto;
+  }
+  .unit-code pre { margin: 0; font: inherit; white-space: pre-wrap; }
+  .unit-code .unit-tag {
+    position: absolute;
+    top: 6px;
+    right: 9px;
+    font-size: 9px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--faint);
+  }
+  .unit-table { overflow-x: auto; }
+  .unit-table table { border-collapse: collapse; font-size: 13px; }
+  .unit-table th, .unit-table td { border: 1px solid var(--line); padding: 5px 10px; }
+  .unit-table th { background: var(--surface-2); font-weight: 650; }
+
+  /* 源码编辑行：与渲染行完全一致，只有光标，没有选中框 */
+  .ln.is-src, .ln.is-src:hover { background: transparent; }
+  .ln--li.is-src { display: block; }
+  textarea.src {
+    display: block;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    outline: none;
+    resize: none;
+    overflow: hidden;
+    background: transparent;
+    color: inherit;
+    font-family: inherit;
+    font-size: inherit;
+    font-weight: inherit;
+    line-height: inherit;
+    letter-spacing: inherit;
+    tab-size: 2;
+  }
+  textarea.src--multi { font-family: var(--mono); font-size: 12.8px; line-height: 1.66; }
+
+  /* ---------- purrcat 卡片 ---------- */
+  .card-unit {
+    margin: 11px 0;
+    border-radius: var(--radius);
+    box-shadow: 0 1px 2px rgba(55, 48, 42, .04);
+    cursor: text;
+    transition: transform .15s ease, box-shadow .15s ease;
+  }
+  /* 上浮放在外层：滑动裁剪只作用于内层，阴影与位移都不会被切掉，也不会露出垃圾桶 */
+  .card-unit:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--shadow);
+  }
+  .card-unit:hover .card {
+    border-color: color-mix(in srgb, var(--accent) 28%, var(--line));
+  }
+  .card {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    padding: 10px 12px 11px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    touch-action: pan-y;
+    transition: border-color .15s ease;
+  }
+  /* 卡片可向左滑动露出垃圾桶 */
+  .card-swipe { position: relative; border-radius: var(--radius); overflow: hidden; }
+  .card-slide { transition: transform .22s cubic-bezier(.2, .7, .2, 1); }
+  .card-slide.is-dragging { transition: none; user-select: none; }
+  .card-swipe.is-open .card-slide { transform: translateX(-64px); }
+  .card-trash {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    bottom: 5px;
+    width: 56px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    border-radius: calc(var(--radius) - 4px);
+    background: var(--bad);
+    color: #fff;
+    cursor: pointer;
+  }
+  .card-trash:hover { background: color-mix(in srgb, var(--bad) 84%, #000); }
+  .card-trash svg { width: 17px; height: 17px; }
+  .card.is-striking { pointer-events: none; opacity: .72; }
+  .card.is-striking::after {
+    content: "";
+    position: absolute;
+    left: 10px;
+    right: 10px;
+    top: 50%;
+    height: 1.5px;
+    background: var(--ink);
+    transform: scaleX(0);
+    transform-origin: left center;
+    animation: strikeLine .34s ease forwards;
+  }
+  @keyframes strikeLine { to { transform: scaleX(1); } }
+  .card-head {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+    padding-right: 46px;
+  }
+  /* 勋章沿用 agent-deck 的 Logseq 关键词样式：图标 + 加粗大写词，不加胶囊边框 */
+  .pill {
+    appearance: none;
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 1px 3px 1px 1px;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--task);
+    font-size: 10px;
+    font-weight: 800;
+    line-height: 1.3;
+    letter-spacing: .04em;
+    cursor: pointer;
+    transition: background .15s ease, color .15s ease;
+  }
+  .pill:hover { background: color-mix(in srgb, var(--task) 12%, transparent); }
+  .pill svg { width: 11px; height: 11px; flex: none; }
+  .pill.is-waiting { color: var(--warn); }
+  .pill.is-waiting:hover { background: color-mix(in srgb, var(--warn) 12%, transparent); }
+  .card-title {
+    flex: 0 1 auto;
+    min-width: 0;
+    font-size: 13.5px;
+    font-weight: 650;
+    line-height: 1.5;
+    word-break: break-word;
+  }
+  .card-time {
+    flex: none;
+    color: var(--muted);
+    font-size: 10.5px;
+    font-variant-numeric: tabular-nums;
+  }
+  /* 时长固定在卡片右上角，按长度取绿 / 琥珀 / 红三档告警色 */
+  .card-dur {
+    position: absolute;
+    top: 9px;
+    right: 12px;
+    font-size: 10.5px;
+    font-weight: 650;
+    font-variant-numeric: tabular-nums;
+    color: var(--muted);
+  }
+  .card-dur.is-short { color: var(--good); }
+  .card-dur.is-mid { color: var(--warn); }
+  .card-dur.is-long { color: var(--bad); }
+  .card-desc {
+    font-size: 11.5px;
+    line-height: 1.55;
+    color: var(--muted);
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  /* ---------- 弹窗 ---------- */
+  .modal-mask {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 18px;
+    background: rgba(52, 49, 43, .28);
+  }
+  .modal-mask.show { display: flex; }
+  .modal {
+    width: min(430px, 100%);
+    max-height: 86vh;
+    overflow: auto;
+    padding: 18px 20px 16px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    box-shadow: 0 24px 60px rgba(45, 38, 30, .22);
+    animation: modalIn .18s cubic-bezier(.2, .7, .2, 1);
+  }
+  .modal h3 { margin: 0 0 3px; font-size: 15px; font-weight: 700; letter-spacing: -.01em; }
+  .modal-sub { margin-bottom: 12px; font-size: 11px; line-height: 1.5; color: var(--muted); }
+  .field { margin-top: 12px; }
+  .field > label { display: block; margin-bottom: 5px; font-size: 11.5px; font-weight: 650; color: var(--ink-soft); }
+  .field .hint { display: block; margin-top: 2px; font-size: 10px; font-weight: 400; color: var(--faint); line-height: 1.45; }
+  .field input {
+    width: 100%;
+    height: 32px;
+    padding: 0 9px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--surface);
+    color: var(--ink);
+    font-size: 12.5px;
+    outline: none;
+    transition: border-color .15s ease, box-shadow .15s ease;
+  }
+  .field input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 16%, transparent);
+  }
+  .field select {
+    width: 100%;
+    height: 32px;
+    padding: 0 8px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--surface);
+    color: var(--ink);
+    font-size: 12.5px;
+    outline: none;
+  }
+  .field select:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 16%, transparent);
+  }
+  .row-2 { display: flex; gap: 7px; }
+  .row-2 input { flex: 1 1 auto; }
+  .range-chip {
+    display: inline-flex;
+    align-items: center;
+    height: 26px;
+    padding: 0 10px;
+    border-radius: 999px;
+    border: 1px solid color-mix(in srgb, var(--task) 28%, var(--line));
+    background: color-mix(in srgb, var(--task) 10%, var(--surface));
+    color: color-mix(in srgb, var(--task) 78%, var(--ink));
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+  }
+  .modal-foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+  .btn {
+    appearance: none;
+    height: 30px;
+    padding: 0 13px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--surface);
+    color: var(--ink);
+    font-size: 12px;
+    font-weight: 650;
+    cursor: pointer;
+    transition: background .15s ease, border-color .15s ease, filter .15s ease;
+  }
+  .btn:hover { background: var(--surface-2); }
+  .btn.primary { background: var(--accent); border-color: transparent; color: #fff; }
+  .btn.primary:hover { filter: brightness(1.06); }
+  .btn.small { height: 32px; padding: 0 10px; font-size: 11px; }
+
+  .toast {
+    position: fixed;
+    left: 50%;
+    bottom: 20px;
+    z-index: 60;
+    max-width: 80%;
+    padding: 7px 13px;
+    border-radius: 9px;
+    background: #3a352c;
+    color: #fdfaf2;
+    font-size: 12px;
+    opacity: 0;
+    transform: translate(-50%, 8px);
+    pointer-events: none;
+    transition: opacity .18s ease, transform .18s ease;
+  }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+  @keyframes nowPulse {
+    0% { box-shadow: 0 0 0 0 rgba(92, 99, 112, .38); }
+    70%, 100% { box-shadow: 0 0 0 9px transparent; }
+  }
+  @keyframes modalIn {
+    from { opacity: 0; transform: translateY(6px) scale(.99); }
+  }
+
+  @media (max-width: 640px) {
+    .topbar { flex-wrap: wrap; padding: 13px 16px 8px; }
+    .head-right { width: 100%; justify-content: space-between; }
+    .timeline { margin: 0 16px 6px; }
+    .sheet { padding: 16px 20px 120px; }
+    .card-head { flex-wrap: wrap; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="drawer" id="drawer">
+    <div class="drawer-clip">
+      <div class="drawer-body">
+        <header class="topbar">
+          <div class="head-left">
+            <div class="kicker">Today</div>
+            <div class="date-row">
+              <span class="date" id="dateLabel"></span>
+              <span class="weekday" id="weekdayLabel"></span>
+              <span class="clock" id="clockLabel"></span>
+              <span class="remain" id="remainLabel"></span>
+            </div>
+          </div>
+          <div class="tools">
+            <span class="save-state" id="saveState"></span>
+            <button class="icon-btn" id="btnPick" title="选择 Markdown 文档">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>
+            </button>
+            <button class="icon-btn" id="btnSettings" title="打开设置中心">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+            </button>
+            <button class="icon-btn" id="btnReload" title="重新载入文档">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>
+            </button>
+          </div>
+        </header>
+
+        <section class="timeline">
+          <div class="tl" id="tl">
+            <div class="tl-zone" id="zoneA"></div>
+            <div class="tl-zone right" id="zoneB"></div>
+            <div id="tlHours"></div>
+            <div class="tl-rest" id="tlRest"></div>
+            <div class="tl-entries" id="tlEntries"></div>
+            <div class="tl-now" id="tlNow"></div>
+            <div class="tl-drag" id="tlDrag"></div>
+            <span class="tl-mark" id="tlWake"></span>
+            <span class="tl-mark" id="tlSleep"></span>
+          </div>
+          <div class="tl-axis" id="tlAxis"></div>
+        </section>
+      </div>
+    </div>
+    <button class="drawer-handle" id="drawerHandle" type="button" aria-expanded="true" title="收起 / 展开顶部信息">
+      <span class="drawer-grip"></span>
+    </button>
+  </div>
+
+  <div class="sheet-wrap" id="sheetWrap">
+    <article class="sheet" id="doc"></article>
+  </div>
+</div>
+
+<div class="modal-mask" id="modalMask"></div>
+<div class="toast" id="toast"></div>
+
+<script src="/minimal/shared/marked/12.0.2/marked.min.js"></script>
+<script src="./core.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  var CORE = window.PurrCatNote;
+  var PLUGIN = 'builtin-note';
+  var DEFAULT_DOC = '/agent_vm/notes/note.md';
+  var ACTION_TIMEOUT = 12000;
+  var ENTRY_COLORS = ['#5c86b4', '#d9a441', '#4ca3b3', '#c8635f', '#9c6496', '#6f8f7c'];
+
+  var S = {
+    config: { document: DEFAULT_DOC, wake: '08:00', sleep: '23:00', theme: 'warm' },
+    source: '',
+    savedSource: '',
+    lines: [''],
+    units: [],
+    active: null,
+    loaded: false,
+    loadingDoc: false,
+    reloadPending: false,
+    graphs: [],
+    sessions: [],
+    entries: [],
+    swiped: null,
+    saveTimer: null,
+    lastDate: '',
+    seq: 0
+  };
+
+  var el = {
+    date: document.getElementById('dateLabel'),
+    weekday: document.getElementById('weekdayLabel'),
+    clock: document.getElementById('clockLabel'),
+    remain: document.getElementById('remainLabel'),
+    pick: document.getElementById('btnPick'),
+    saveState: document.getElementById('saveState'),
+    drawer: document.getElementById('drawer'),
+    drawerHandle: document.getElementById('drawerHandle'),
+    tl: document.getElementById('tl'),
+    zoneA: document.getElementById('zoneA'),
+    zoneB: document.getElementById('zoneB'),
+    hours: document.getElementById('tlHours'),
+    wakeMark: document.getElementById('tlWake'),
+    sleepMark: document.getElementById('tlSleep'),
+    rest: document.getElementById('tlRest'),
+    entries: document.getElementById('tlEntries'),
+    now: document.getElementById('tlNow'),
+    drag: document.getElementById('tlDrag'),
+    sheetWrap: document.getElementById('sheetWrap'),
+    doc: document.getElementById('doc'),
+    modal: document.getElementById('modalMask'),
+    toast: document.getElementById('toast')
+  };
+
+  // ---------- 宿主通信 ----------
+  // timeoutMs 传 0 表示不设超时：文件对话框会一直等用户操作，不能按普通调用计时。
+  function callAction(actionId, payload, timeoutMs) {
+    return new Promise(function (resolve, reject) {
+      var id = ++S.seq;
+      var wait = timeoutMs == null ? ACTION_TIMEOUT : timeoutMs;
+      var timer = wait > 0 ? setTimeout(function () {
+        window.removeEventListener('message', onMsg);
+        reject(new Error('宿主响应超时'));
+      }, wait) : null;
+      function onMsg(e) {
+        var m = e.data;
+        if (!m || m.type !== 'callActionResult' || m.id !== id) return;
+        window.removeEventListener('message', onMsg);
+        clearTimeout(timer);
+        if (m.ok) resolve(m.data); else reject(new Error(m.error || '调用失败'));
+      }
+      window.addEventListener('message', onMsg);
+      window.parent.postMessage({ type: 'callAction', id: id, actionId: actionId, payload: payload || {} }, '*');
+    });
+  }
+
+  function applyTheme() {
+    var theme = S.config.theme === 'light' || S.config.theme === 'dark' ? S.config.theme : 'warm';
+    document.documentElement.dataset.theme = theme;
+  }
+
+  function applyConfig(cfg) {
+    if (!cfg || typeof cfg !== 'object') return;
+    var doc = String(cfg.document || '').trim() || DEFAULT_DOC;
+    var wake = CORE.parseHHMM(cfg.wake) == null ? '08:00' : String(cfg.wake).trim();
+    var sleep = CORE.parseHHMM(cfg.sleep) == null ? '23:00' : String(cfg.sleep).trim();
+    var theme = String(cfg.theme || '').trim();
+    if (theme !== 'light' && theme !== 'dark') theme = 'warm';
+    var docChanged = doc !== S.config.document;
+    S.config.document = doc;
+    S.config.wake = wake;
+    S.config.sleep = sleep;
+    S.config.theme = theme;
+    applyTheme();
+    paintChrome();
+    renderTimeline();
+    if (!S.loaded || docChanged) loadDoc();
+  }
+
+  // ---------- 小工具 ----------
+  function esc(v) { return CORE.escapeHtml(v); }
+  function toast(msg) {
+    el.toast.textContent = String(msg || '');
+    el.toast.classList.add('show');
+    clearTimeout(toast._t);
+    toast._t = setTimeout(function () { el.toast.classList.remove('show'); }, 2400);
+  }
+  function nowMinutes() {
+    var d = new Date();
+    return d.getHours() * 60 + d.getMinutes();
+  }
+  function todayKey() {
+    var d = new Date();
+    var m = d.getMonth() + 1;
+    var day = d.getDate();
+    return d.getFullYear() + '-' + (m < 10 ? '0' : '') + m + '-' + (day < 10 ? '0' : '') + day;
+  }
+  function dateParts() {
+    var d = new Date();
+    var wd = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][d.getDay()];
+    return { date: (d.getMonth() + 1) + '月' + d.getDate() + '日', weekday: wd };
+  }
+  function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+  function pad2(n) { return (n < 10 ? '0' : '') + n; }
+  function closestEl(node, sel) {
+    var n = node;
+    while (n && n.nodeType !== 1) n = n.parentNode;
+    return n && n.closest ? n.closest(sel) : null;
+  }
+  function fmtDayMinutes(minutes) {
+    return minutes >= 1440 ? '24:00' : CORE.fmtHHMM(minutes);
+  }
+  function syncSource() { S.source = S.lines.join('\n'); }
+
+  // ---------- 文档读写 ----------
+  function loadDoc() {
+    if (S.loadingDoc) {
+      S.reloadPending = true;
+      return;
+    }
+    S.loadingDoc = true;
+    var path = S.config.document;
+    S.active = null;
+    S.source = '';
+    S.lines = [''];
+    renderDoc();
+    fetch('/api/filesystem/read?path=' + encodeURIComponent(path) + '&t=' + Date.now(), {
+      cache: 'no-store'
+    })
+      .then(function (res) {
+        if (res.status === 400) return { content: '' };
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        return res.json();
+      })
+      .then(function (data) {
+        S.source = String((data && data.content) || '');
+        S.savedSource = S.source;
+        S.lines = S.source.split('\n');
+        renderDoc();
+        renderTimeline();
+      })
+      .catch(function (err) {
+        toast('读取文档失败：' + err.message);
+        renderDoc();
+      })
+      .then(function () {
+        S.loaded = true;
+        S.loadingDoc = false;
+        loadEntries();
+        renderTimeline();
+        if (S.reloadPending || S.config.document !== path) {
+          S.reloadPending = false;
+          loadDoc();
+        }
+      });
+  }
+
+  function scheduleSave() {
+    clearTimeout(S.saveTimer);
+    S.saveTimer = setTimeout(saveNow, 700);
+  }
+
+  function saveNow() {
+    clearTimeout(S.saveTimer);
+    if (!S.loaded || S.loadingDoc) return Promise.resolve();
+    syncSource();
+    el.saveState.textContent = '保存中';
+    return fetch('/api/filesystem/write', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: S.config.document, content: S.source })
+    }).then(function (res) {
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      S.savedSource = S.source;
+      var t = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+      el.saveState.textContent = '已保存 ' + t;
+    }).catch(function (err) {
+      el.saveState.textContent = '保存失败';
+      toast('保存失败：' + err.message);
+    });
+  }
+
+  // ---------- Markdown 渲染 ----------
+  function inline(text) {
+    try {
+      return window.marked.parseInline(String(text == null ? '' : text), { gfm: true });
+    } catch (_) {
+      return esc(text);
+    }
+  }
+  function block(text) {
+    try {
+      return window.marked.parse(String(text == null ? '' : text), { gfm: true, breaks: true });
+    } catch (_) {
+      return '<pre>' + esc(text) + '</pre>';
+    }
+  }
+  function lineClass(unit) {
+    var raw = unit.raw || '';
+    switch (unit.kind) {
+      case 'heading': {
+        var m = raw.match(/^(#{1,6})\s+/);
+        return 'ln--h' + (m ? m[1].length : 1);
+      }
+      case 'list': return 'ln--li';
+      case 'quote': return 'ln--quote';
+      case 'rule': return 'ln--rule';
+      case 'blank': return 'ln--blank';
+      default: return '';
+    }
+  }
+
+  function renderDoc() {
+    var split = CORE.splitUnits(S.source);
+    S.lines = split.lines;
+    S.units = split.units;
+    if (S.active) {
+      if (S.active.start >= S.lines.length) S.active.start = Math.max(0, S.lines.length - 1);
+      if (S.active.start + S.active.count > S.lines.length) {
+        S.active.count = Math.max(1, S.lines.length - S.active.start);
+      }
+    }
+    var scroll = el.sheetWrap.scrollTop;
+    var activeStart = S.active ? S.active.start : -1;
+    var activeEnd = S.active ? S.active.start + S.active.count : -1;
+    var empty = !S.source.trim();
+    var html = '';
+    for (var i = 0; i < S.units.length; i++) {
+      var unit = S.units[i];
+      if (activeStart >= 0 && unit.start === activeStart) {
+        html += srcEditor(unit);
+        continue;
+      }
+      if (activeStart >= 0 && unit.start > activeStart && unit.start < activeEnd) continue;
+      html += unitHtml(unit, empty);
+    }
+    el.doc.innerHTML = html;
+    el.sheetWrap.scrollTop = scroll;
+    hydrateEditor();
+  }
+
+  function unitHtml(unit, empty) {
+    switch (unit.kind) {
+      case 'card': return cardHtml(unit);
+      case 'code': return codeHtml(unit);
+      case 'table': return '<div class="unit-table" data-unit="' + unit.start + '">' + block(unit.raw) + '</div>';
+      case 'blank':
+        return '<div class="ln ln--blank" data-line="' + unit.start + '">' +
+          (empty ? '<span class="placeholder">开始写 Markdown 笔记，或按住上方时间线记录一个事项</span>' : '') +
+          '</div>';
+      case 'heading': {
+        var m = unit.raw.match(/^(#{1,6})\s+(.*)$/);
+        var level = m ? m[1].length : 1;
+        return '<div class="ln ln--h' + level + '" data-line="' + unit.start + '">' +
+          inline(m ? m[2] : unit.raw) + '</div>';
+      }
+      case 'list': return listHtml(unit);
+      case 'quote':
+        return '<div class="ln ln--quote" data-line="' + unit.start + '">' +
+          inline(unit.raw.replace(/^>\s?/, '')) + '</div>';
+      case 'rule':
+        return '<div class="ln ln--rule" data-line="' + unit.start + '"><span></span></div>';
+      default:
+        return '<div class="ln" data-line="' + unit.start + '">' + inline(unit.raw) + '</div>';
+    }
+  }
+
+  function listHtml(unit) {
+    var m = unit.raw.match(/^(\s*)([-*+]|\d+[.)])\s+(.*)$/);
+    if (!m) return '<div class="ln" data-line="' + unit.start + '">' + inline(unit.raw) + '</div>';
+    var marker = /^\d/.test(m[2]) ? m[2] : '•';
+    var body = m[3];
+    var box = '';
+    var task = body.match(/^\[([ xX])\]\s*(.*)$/);
+    if (task) {
+      box = '<span class="task-box' + (task[1].toLowerCase() === 'x' ? ' is-done' : '') + '"></span>';
+      body = task[2];
+    }
+    return '<div class="ln ln--li" data-line="' + unit.start + '">' +
+      '<span class="ln-bullet">' + esc(marker) + '</span>' +
+      '<span class="ln-body">' + box + inline(body) + '</span>' +
+      '</div>';
+  }
+
+  function codeHtml(unit) {
+    var lines = unit.raw.split('\n');
+    var lang = (lines[0] || '').replace(/^```/, '').trim();
+    var body = lines.slice(1);
+    if (/^```\s*$/.test(body[body.length - 1] || '')) body.pop();
+    return '<div class="unit-code" data-unit="' + unit.start + '">' +
+      (lang ? '<span class="unit-tag">' + esc(lang) + '</span>' : '') +
+      '<pre>' + esc(body.join('\n')) + '</pre>' +
+      '</div>';
+  }
+
+  function durationClass(duration) {
+    var minutes = parseInt(String(duration || '').replace(/[^\d]/g, ''), 10);
+    if (!minutes) return '';
+    if (minutes <= 30) return ' is-short';
+    if (minutes <= 60) return ' is-mid';
+    return ' is-long';
+  }
+
+  function cardHtml(unit) {
+    var card = CORE.parseCard(unit.raw) || {
+      target: 'none', session: '', title: '未命名事项', time: '', duration: '', description: '无描述'
+    };
+    var waiting = card.target !== 'none';
+    var open = S.swiped === unit.start;
+    // 勋章：未绑定是虚线圈 TODO，绑定后是带实心点的橙色 WAITING。
+    var icon = waiting
+      ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="9" stroke-dasharray="3.1 2.7"/><circle cx="12" cy="12" r="2.6" fill="currentColor" stroke="none"/></svg>'
+      : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="9" stroke-dasharray="3.1 2.7"/></svg>';
+
+    return '<div class="card-unit" data-unit="' + unit.start + '" data-kind="card">' +
+      '<div class="card-swipe' + (open ? ' is-open' : '') + '">' +
+        '<button class="card-trash" data-act="delete" title="删除这条事项">' +
+          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M9 7V5h6v2"/><path d="M6 7l1 13h10l1-13"/><path d="M10 11v6M14 11v6"/></svg>' +
+        '</button>' +
+        '<div class="card-slide">' +
+          '<div class="card" title="点击卡片编辑源码 · 向左滑动删除">' +
+            '<div class="card-head">' +
+              '<button class="pill' + (waiting ? ' is-waiting' : '') + '" data-act="bind" title="' +
+                (waiting ? '已绑定 Worker，点击修改' : '点击绑定 Worker') + '">' +
+                icon + (waiting ? 'WAITING' : 'TODO') +
+              '</button>' +
+              '<span class="card-title">' + esc(card.title) + '</span>' +
+              (card.time ? '<span class="card-time">' + esc(card.time.replace('~', '–')) + '</span>' : '') +
+            '</div>' +
+            '<div class="card-desc">' + esc(card.description) + '</div>' +
+            (card.duration ? '<span class="card-dur' + durationClass(card.duration) + '">' + esc(card.duration) + '</span>' : '') +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+  }
+
+  // ---------- 行内源码编辑 ----------
+  function srcEditor(unit) {
+    var act = S.active;
+    // 只有整段结构（卡片/代码块/表格）用等宽小字号；
+    // 普通多行选区保持正文排版，不能套用首行的标题样式。
+    var structural = act.count > 1 && unit && unit.end - unit.start === act.count;
+    var mod = (act.count > 1 && !structural) ? '' : lineClass(unit) + ' ';
+    var cls = 'ln ' + mod + 'is-src';
+    return '<div class="' + cls + '" data-edit="' + act.start + '">' +
+      '<textarea class="src' + (structural ? ' src--multi' : '') + '" rows="' + act.count + '" spellcheck="false"></textarea>' +
+      '</div>';
+  }
+
+  function hydrateEditor() {
+    if (!S.active) return;
+    var ta = el.doc.querySelector('textarea.src');
+    if (!ta) return;
+    ta.value = S.lines.slice(S.active.start, S.active.start + S.active.count).join('\n');
+    autosize(ta);
+    ta.addEventListener('input', function () { onSrcInput(ta); });
+    ta.addEventListener('keydown', onSrcKeydown);
+    try {
+      ta.focus({ preventScroll: true });
+      var start = Math.min(S.active.selStart, ta.value.length);
+      var end = Math.min(S.active.selEnd, ta.value.length);
+      ta.setSelectionRange(start, end);
+      var rect = ta.getBoundingClientRect();
+      var box = el.sheetWrap.getBoundingClientRect();
+      if (rect.top < box.top + 8) el.sheetWrap.scrollTop -= (box.top + 8 - rect.top);
+      if (rect.bottom > box.bottom - 8) el.sheetWrap.scrollTop += (rect.bottom - box.bottom + 8);
+    } catch (_) {}
+  }
+
+  function autosize(ta) {
+    ta.style.height = 'auto';
+    ta.style.height = Math.max(20, ta.scrollHeight) + 'px';
+  }
+
+  function onSrcInput(ta) {
+    if (!S.active) return;
+    var act = S.active;
+    var oldCount = act.count;
+    var next = ta.value.split('\n');
+    S.lines.splice(act.start, oldCount, ...next);
+    var delta = next.length - oldCount;
+    act.count = next.length;
+    act.selStart = ta.selectionStart;
+    act.selEnd = ta.selectionEnd;
+    syncSource();
+    S.units = CORE.splitUnits(S.source).units;
+    if (delta) shiftRenderedIndices(delta, act.start);
+    autosize(ta);
+    scheduleSave();
+  }
+
+  // 编辑中的行数变化后，把下方已渲染单元的 data-line / data-unit 平移，
+  // 保证接着点击其它行或卡片时命中的还是同一段源码。
+  function shiftRenderedIndices(delta, afterLine) {
+    var nodes = el.doc.querySelectorAll('[data-line], [data-unit]');
+    for (var i = 0; i < nodes.length; i++) {
+      var node = nodes[i];
+      if (node.querySelector('textarea.src')) continue;
+      ['data-line', 'data-unit'].forEach(function (attr) {
+        var v = node.getAttribute(attr);
+        if (v == null) return;
+        var n = Number(v);
+        if (n > afterLine) node.setAttribute(attr, n + delta);
+      });
+    }
+  }
+
+  function onSrcKeydown(e) {
+    var ta = e.currentTarget;
+    var act = S.active;
+    if (!act) return;
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+      e.preventDefault();
+      saveNow();
+      return;
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      commitActive();
+      return;
+    }
+    if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) {
+      e.preventDefault();
+      if (act.count === 1) {
+        // 单行单元：在光标处一分为二，回车一次就落到新行行首。
+        var split = CORE.splitLine(S.lines, act.start, ta.selectionStart, ta.selectionEnd);
+        S.lines = split.lines;
+        syncSource();
+        S.units = CORE.splitUnits(S.source).units;
+        S.active = { start: split.start, count: split.count, selStart: 0, selEnd: 0 };
+        scheduleSave();
+        renderDoc();
+        return;
+      }
+      // 多行结构（卡片 / 代码块 / 表格）：在结构内部插入一行，保持焦点。
+      var s0 = ta.selectionStart;
+      var s1 = ta.selectionEnd;
+      ta.value = ta.value.slice(0, s0) + '\n' + ta.value.slice(s1);
+      ta.setSelectionRange(s0 + 1, s0 + 1);
+      onSrcInput(ta);
+      return;
+    }
+    if (act.count > 1) {
+      // 多行结构内部：光标到边界时用上下键走出卡片/代码块，避免被困住。
+      var atTop = ta.selectionStart === 0 && ta.selectionEnd === 0;
+      var atBottom = ta.selectionStart === ta.value.length && ta.selectionEnd === ta.value.length;
+      if (e.key === 'ArrowUp' && atTop && act.start > 0) {
+        e.preventDefault();
+        setActive(act.start - 1, 1, (S.lines[act.start - 1] || '').length);
+        return;
+      }
+      if (e.key === 'ArrowDown' && atBottom && act.start + act.count < S.lines.length) {
+        e.preventDefault();
+        setActive(act.start + act.count, 1, 0);
+        return;
+      }
+    }
+    if (e.key === 'ArrowUp' && act.count === 1 && ta.selectionStart === 0 && ta.selectionEnd === 0 && act.start > 0) {
+      e.preventDefault();
+      var prev = S.lines[act.start - 1] || '';
+      setActive(act.start - 1, 1, Math.min(prev.length, act.selStart));
+      return;
+    }
+    if (e.key === 'ArrowDown' && act.count === 1 &&
+        ta.selectionStart === ta.value.length && ta.selectionEnd === ta.value.length &&
+        act.start < S.lines.length - 1) {
+      e.preventDefault();
+      var next = S.lines[act.start + 1] || '';
+      setActive(act.start + 1, 1, Math.min(next.length, act.selStart));
+      return;
+    }
+    if (e.key === 'Backspace' && act.count === 1 && act.start > 0 &&
+        ta.selectionStart === 0 && ta.selectionEnd === 0) {
+      var aboveUnit = findUnitAt(act.start - 1);
+      if (aboveUnit && aboveUnit.end - aboveUnit.start > 1) {
+        // 上一行属于卡片/代码块/表格，合并会破坏结构，忽略。
+        e.preventDefault();
+        return;
+      }
+      e.preventDefault();
+      var cur = S.lines[act.start] || '';
+      var above = S.lines[act.start - 1] || '';
+      S.lines.splice(act.start - 1, 2, above + cur);
+      syncSource();
+      scheduleSave();
+      setActive(act.start - 1, 1, above.length);
+    }
+  }
+
+  function findUnit(start) {
+    for (var i = 0; i < S.units.length; i++) {
+      if (S.units[i].start === start) return S.units[i];
+    }
+    return null;
+  }
+
+  function findUnitAt(line) {
+    return CORE.unitAt(S.units, line);
+  }
+
+  function setActive(start, count, caret) {
+    // 多行结构（卡片 / 代码块 / 表格）必须整段进入源码编辑，
+    // 否则只编辑围栏首行会把结构拆坏，回车后光标也会丢。
+    var unit = findUnitAt(start);
+    if (unit && count === 1 && unit.end - unit.start > 1) {
+      start = unit.start;
+      count = unit.end - unit.start;
+      if (unit.kind === 'card') caret = cardTitleEnd(unit.raw);
+    }
+    S.active = {
+      start: start,
+      count: Math.max(1, count),
+      selStart: Math.max(0, caret || 0),
+      selEnd: Math.max(0, caret || 0)
+    };
+    S.swiped = null;
+    syncSource();
+    renderDoc();
+  }
+
+  function commitActive() {
+    if (!S.active) return;
+    S.active = null;
+    syncSource();
+    renderDoc();
+  }
+
+  // 多行选区被单击收起后，只让光标所在行保留源码态，其余行回到渲染态。
+  function releaseMultiSelection(ta) {
+    var act = S.active;
+    if (!act || act.count <= 1) return;
+    // 卡片/代码块/表格必须整段编辑，不能拆行。
+    var first = findUnitAt(act.start);
+    var structural = first && first.end - first.start === act.count &&
+      (first.kind === 'card' || first.kind === 'code' || first.kind === 'table');
+    if (structural) return;
+    var s = ta.selectionStart;
+    var before = ta.value.slice(0, s);
+    var line = act.start + (before.match(/\n/g) || []).length;
+    var local = s - (before.lastIndexOf('\n') + 1);
+    var unit = findUnitAt(line);
+    if (unit && unit.end - unit.start > 1) {
+      activateUnit(unit.start);
+      return;
+    }
+    var raw = S.lines[line] || '';
+    setActive(line, 1, clamp(local, 0, raw.length));
+  }
+
+  function activateLine(lineEl, e) {
+    var line = Number(lineEl.getAttribute('data-line'));
+    var raw = S.lines[line] || '';
+    var body = lineEl.querySelector('.ln-body') || lineEl;
+    var caret = raw.length;
+    var range = null;
+    if (document.caretRangeFromPoint) range = document.caretRangeFromPoint(e.clientX, e.clientY);
+    else if (document.caretPositionFromPoint) {
+      var pos = document.caretPositionFromPoint(e.clientX, e.clientY);
+      if (pos && pos.offsetNode) range = { startContainer: pos.offsetNode, startOffset: pos.offset };
+    }
+    if (range && body.contains(range.startContainer)) {
+      var rendered = body.textContent || '';
+      var roff = textOffset(body, range.startContainer, range.startOffset);
+      caret = CORE.mapRenderedOffset(raw, rendered, roff);
+    }
+    setActive(line, 1, clamp(caret, 0, raw.length));
+  }
+
+  function activateUnit(start) {
+    var unit = findUnit(start);
+    if (!unit) return;
+    var caret;
+    if (unit.kind === 'card') caret = cardTitleEnd(unit.raw);
+    else caret = unit.raw.length;
+    setActive(unit.start, unit.end - unit.start, caret);
+  }
+
+  function cardTitleEnd(raw) {
+    var lines = String(raw || '').split('\n');
+    var off = 0;
+    for (var i = 0; i < lines.length; i++) {
+      if (/^\s*-\s*(?:\[[ xX]\]\s*)?TODO/i.test(lines[i])) return off + lines[i].length;
+      off += lines[i].length + 1;
+    }
+    return raw.length;
+  }
+
+  function textOffset(root, node, offset) {
+    if (!node) return 0;
+    // 元素节点：offset 是子节点下标，用 Range 量出它之前的文本长度，
+    // 这样拖选落在行首/行尾的元素边界时也能得到准确偏移。
+    if (node.nodeType !== 3) {
+      if (!root.contains(node)) return 0;
+      try {
+        var r = document.createRange();
+        r.setStart(root, 0);
+        r.setEnd(node, Math.min(offset, node.childNodes.length));
+        return r.toString().length;
+      } catch (_) { return 0; }
+    }
+    var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
+    var total = 0;
+    var n;
+    while ((n = walker.nextNode())) {
+      if (n === node) return total + offset;
+      total += n.nodeValue.length;
+    }
+    return total;
+  }
+
+  // ---------- 文档交互 ----------
+  document.addEventListener('mousedown', function (e) {
+    if (!S.active) return;
+    if (el.doc.contains(e.target) || el.modal.contains(e.target)) return;
+    if (closestEl(e.target, '.toast')) return;
+    commitActive();
+  }, true);
+
+  el.doc.addEventListener('click', function (e) {
+    // 选区提交会重建 DOM，此时 click 的目标已脱离文档，直接忽略，
+    // 否则会把刚选好的选区重置成编辑态。
+    if (!el.doc.contains(e.target)) return;
+    // 拖选结束时的 click 不触发编辑或卡片动作，保留刚建立的选区。
+    var sel = window.getSelection();
+    if (sel && !sel.isCollapsed) return;
+    var bind = closestEl(e.target, '[data-act="bind"]');
+    if (bind) {
+      e.preventDefault();
+      openWorkerModal(bind);
+      return;
+    }
+    var del = closestEl(e.target, '[data-act="delete"]');
+    if (del) {
+      e.preventDefault();
+      strikeCard(del);
+      return;
+    }
+    var cardHost = closestEl(e.target, '[data-kind="card"]');
+    if (cardHost) {
+      e.preventDefault();
+      if (swipeMoved) { swipeMoved = false; return; }
+      var start = Number(cardHost.getAttribute('data-unit'));
+      if (S.swiped === start) { setSwiped(null); return; }
+      activateUnit(start);
+      return;
+    }
+    var link = closestEl(e.target, 'a');
+    if (link) {
+      e.preventDefault();
+      var href = link.getAttribute('href') || '';
+      if (href) toast(href);
+      return;
+    }
+    var unitHost = closestEl(e.target, '[data-unit]');
+    if (unitHost) {
+      e.preventDefault();
+      activateUnit(Number(unitHost.getAttribute('data-unit')));
+      return;
+    }
+    var lineEl = closestEl(e.target, '[data-line]');
+    if (lineEl) {
+      e.preventDefault();
+      activateLine(lineEl, e);
+    }
+  });
+
+  // ---------- 跨行选区 ----------
+  // 渲染态下拖拽/双击走浏览器原生选区，可以正常跨标题选中并复制；
+  // 松开鼠标（或直接在选区上输入）时把这段选区映射回 Markdown 源码，
+  // 让选区落在 textarea 里，后续输入、IME、复制都走原生行为；
+  // 复制统一输出 Markdown 源码（跨行时会补全整行，保留标题与围栏标记）。
+  function sourcePointAt(node, offset) {
+    var elNode = node && node.nodeType === 1 ? node : (node && node.parentNode);
+    if (!elNode || !el.doc.contains(elNode)) return null;
+    var unitHost = closestEl(elNode, '[data-unit]');
+    if (unitHost) {
+      var unit = findUnit(Number(unitHost.getAttribute('data-unit')));
+      if (!unit) return null;
+      return {
+        line: unit.start,
+        endLine: unit.end - 1,
+        offset: 0,
+        coarse: true
+      };
+    }
+    var lineEl = closestEl(elNode, '[data-line]');
+    if (!lineEl) return null;
+    var line = Number(lineEl.getAttribute('data-line'));
+    var raw = S.lines[line] || '';
+    var body = lineEl.querySelector('.ln-body') || lineEl;
+    var rendered = body.textContent || '';
+    var caret = CORE.mapRenderedOffset(raw, rendered, textOffset(body, node, offset));
+    return { line: line, endLine: line, offset: clamp(caret, 0, raw.length), coarse: false };
+  }
+
+  function activateRange(startLine, startOffset, endLine, endOffset) {
+    var first = S.lines[startLine] || '';
+    var last = S.lines[endLine] || '';
+    var selStart = clamp(startOffset, 0, first.length);
+    var selEnd = 0;
+    for (var i = startLine; i < endLine; i++) selEnd += (S.lines[i] || '').length + 1;
+    selEnd += clamp(endOffset, 0, last.length);
+    S.swiped = null;
+    S.active = {
+      start: startLine,
+      count: endLine - startLine + 1,
+      selStart: selStart,
+      selEnd: Math.max(selStart, selEnd)
+    };
+    syncSource();
+    renderDoc();
+  }
+
+  // 把当前渲染态的选区换成源码编辑态，返回对应的 textarea
+  function commitRenderedSelection() {
+    var sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return null;
+    var range = sel.getRangeAt(0);
+    if (!el.doc.contains(range.startContainer) || !el.doc.contains(range.endContainer)) return null;
+    var a = sourcePointAt(range.startContainer, range.startOffset);
+    var b = sourcePointAt(range.endContainer, range.endOffset);
+    if (!a || !b) return null;
+    // 卡片/代码块/表格内部的选区保持原生，避免整块被放大成一行源码。
+    if (a.coarse && b.coarse && a.line === b.line) return null;
+    var start = (a.line < b.line || (a.line === b.line && a.offset <= b.offset)) ? a : b;
+    var end = start === a ? b : a;
+    var endLine = end.coarse ? end.endLine : end.line;
+    // 跨行选区对齐到整行：高亮范围与复制出来的 Markdown 源码完全一致。
+    var multi = start.line !== endLine;
+    // 单行时若整行都被选中（如三击），也补上行首标记。
+    var lineEl = multi ? null : el.doc.querySelector('[data-line="' + start.line + '"]');
+    var whole = !multi && lineEl && coversNode(range, lineEl.querySelector('.ln-body') || lineEl);
+    activateRange(
+      start.line,
+      multi || whole ? 0 : start.offset,
+      endLine,
+      end.coarse ? (S.lines[end.endLine] || '').length : (multi || whole ? (S.lines[endLine] || '').length : end.offset)
+    );
+    return el.doc.querySelector('textarea.src');
+  }
+
+  // 复制始终按 Markdown 源码输出：跨行选区补全整行，标题、列表、围栏标记都保留。
+  function selectionMarkdown() {
+    var ta = el.doc.querySelector('textarea.src');
+    if (ta && document.activeElement === ta) return textareaMarkdown(ta);
+    var sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return null;
+    var range = sel.getRangeAt(0);
+    if (!el.doc.contains(range.startContainer) || !el.doc.contains(range.endContainer)) return null;
+    var a = sourcePointAt(range.startContainer, range.startOffset);
+    var b = sourcePointAt(range.endContainer, range.endOffset);
+    if (!a || !b) return null;
+    // 卡片/代码块/表格内部：选中整块时给出整块源码，局部选中保持原生文本。
+    if (a.coarse && b.coarse && a.line === b.line) {
+      var unit = findUnit(a.line);
+      var host = el.doc.querySelector('[data-unit="' + a.line + '"]');
+      var body = host && (host.querySelector('pre') || host.querySelector('table') || host);
+      return unit && body && coversNode(range, body) ? unit.raw : null;
+    }
+    var start = (a.line < b.line || (a.line === b.line && a.offset <= b.offset)) ? a : b;
+    var end = start === a ? b : a;
+    var endLine = end.coarse ? end.endLine : end.line;
+    if (start.line !== endLine) return S.lines.slice(start.line, endLine + 1).join('\n');
+    // 单行：整行选中时给出整行源码，局部选中只给对应的源码片段。
+    var lineEl = el.doc.querySelector('[data-line="' + start.line + '"]');
+    if (lineEl && coversNode(range, lineEl.querySelector('.ln-body') || lineEl)) return S.lines[start.line] || '';
+    return (S.lines[start.line] || '').slice(Math.min(start.offset, end.offset), Math.max(start.offset, end.offset));
+  }
+
+  function textareaMarkdown(ta) {
+    var v = ta.value;
+    var s = ta.selectionStart;
+    var t = ta.selectionEnd;
+    if (s === t) return null;
+    var lineStart = v.lastIndexOf('\n', s - 1) + 1;
+    var lineEnd = v.indexOf('\n', t);
+    if (lineEnd < 0) lineEnd = v.length;
+    if (v.slice(s, t).indexOf('\n') >= 0) return v.slice(lineStart, lineEnd);
+    if (s === lineStart && t === lineEnd) return v.slice(lineStart, lineEnd);
+    return v.slice(s, t);
+  }
+
+  function coversNode(range, node) {
+    var full = document.createRange();
+    full.selectNodeContents(node);
+    return range.compareBoundaryPoints(Range.START_TO_START, full) <= 0 &&
+      range.compareBoundaryPoints(Range.END_TO_END, full) >= 0;
+  }
+
+  document.addEventListener('copy', function (e) {
+    var text = selectionMarkdown();
+    if (text == null) return;
+    e.preventDefault();
+    if (e.clipboardData) e.clipboardData.setData('text/plain', text);
+  }, true);
+
+  document.addEventListener('mouseup', function (e) {
+    if (e.button !== 0) return;
+    var edit = closestEl(e.target, '[data-edit]');
+    if (edit && el.doc.contains(edit)) {
+      var ta = edit.querySelector('textarea.src');
+      var inTa = ta && (e.target === ta || ta.contains(e.target));
+      if (inTa) {
+        // 单击收起多行选区、又没继续编辑时，退回只编辑光标所在行
+        if (ta.selectionStart === ta.selectionEnd) releaseMultiSelection(ta);
+      } else {
+        // 点在编辑块的内边距上视为取消，直接回到渲染态
+        commitActive();
+      }
+      return;
+    }
+    commitRenderedSelection();
+  });
+
+  // 键盘直接输入时兜底：选区还在渲染态就先换成源码选区，再执行这次输入。
+  document.addEventListener('keydown', function (e) {
+    if (S.active) return;
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    var key = e.key;
+    var printable = key.length === 1;
+    if (!printable && key !== 'Backspace' && key !== 'Delete' && key !== 'Enter') return;
+    var ta = commitRenderedSelection();
+    if (!ta) return;
+    e.preventDefault();
+    var s = ta.selectionStart;
+    var t = ta.selectionEnd;
+    if (key === 'Backspace' || key === 'Delete') {
+      if (s === t) {
+        if (key === 'Backspace' && s > 0) s -= 1;
+        else if (key === 'Delete' && t < ta.value.length) t += 1;
+        else return;
+      }
+      ta.setRangeText('', s, t, 'end');
+    } else {
+      ta.setRangeText(key === 'Enter' ? '\n' : key, s, t, 'end');
+    }
+    onSrcInput(ta);
+  }, true);
+
+  // ---------- 卡片左滑露出垃圾桶 ----------
+  var swipe = null;
+  var swipeMoved = false;
+
+  el.doc.addEventListener('pointerdown', function (e) {
+    if (e.button !== 0) return;
+    swipeMoved = false;
+    var card = closestEl(e.target, '.card');
+    if (!card || closestEl(e.target, 'button, a')) return;
+    var host = closestEl(card, '[data-unit]');
+    if (!host) return;
+    swipe = {
+      host: host,
+      wrap: closestEl(card, '.card-swipe'),
+      slide: card.parentNode,
+      startX: e.clientX,
+      startY: e.clientY,
+      dx: 0,
+      dragging: false
+    };
+  });
+
+  el.doc.addEventListener('pointermove', function (e) {
+    if (!swipe) return;
+    var dx = e.clientX - swipe.startX;
+    var dy = e.clientY - swipe.startY;
+    if (!swipe.dragging) {
+      if (Math.abs(dx) < 8) return;
+      // 纵向为主时让浏览器滚动，不接管
+      if (Math.abs(dx) <= Math.abs(dy)) { swipe = null; return; }
+      swipe.dragging = true;
+      e.preventDefault();
+      swipe.slide.classList.add('is-dragging');
+      try { swipe.host.setPointerCapture(e.pointerId); } catch (_) {}
+    }
+    var base = swipe.wrap.classList.contains('is-open') ? -64 : 0;
+    swipe.dx = clamp(dx + base, -72, 0);
+    swipe.slide.style.transform = 'translateX(' + swipe.dx + 'px)';
+  });
+
+  function endSwipe(cancelled) {
+    if (!swipe) return;
+    var s = swipe;
+    swipe = null;
+    if (!s.dragging) return;
+    s.slide.classList.remove('is-dragging');
+    s.slide.style.transform = '';
+    if (cancelled) return;
+    swipeMoved = true;
+    // 左滑过程中可能顺带选中了卡片文字，清掉以免松开时误转成源码编辑。
+    var gsel = window.getSelection();
+    if (gsel) gsel.removeAllRanges();
+    setSwiped(s.dx < -36 ? Number(s.host.getAttribute('data-unit')) : null);
+  }
+
+  el.doc.addEventListener('pointerup', function () { endSwipe(false); });
+  el.doc.addEventListener('pointercancel', function () { endSwipe(true); });
+
+  function setSwiped(start) {
+    S.swiped = start;
+    el.doc.querySelectorAll('.card-swipe.is-open').forEach(function (n) { n.classList.remove('is-open'); });
+    if (start == null) return;
+    var host = el.doc.querySelector('[data-unit="' + start + '"][data-kind="card"]');
+    var wrap = host && host.querySelector('.card-swipe');
+    if (wrap) wrap.classList.add('is-open');
+  }
+
+  // 删除：先在卡片上划一道线，动画结束后再从这个 Markdown 块里移除
+  function strikeCard(btn) {
+    var host = closestEl(btn, '[data-unit]');
+    if (!host) return;
+    var start = Number(host.getAttribute('data-unit'));
+    var card = host.querySelector('.card');
+    if (!card || card.classList.contains('is-striking')) return;
+    card.classList.add('is-striking');
+    setTimeout(function () {
+      var unit = findUnit(start);
+      if (!unit) return;
+      if (S.active) S.active = null;
+      S.lines.splice(unit.start, unit.end - unit.start);
+      if (!S.lines.length) S.lines = [''];
+      syncSource();
+      S.units = CORE.splitUnits(S.source).units;
+      S.swiped = null;
+      renderDoc();
+      saveNow();
+      toast('已删除这条事项');
+    }, 380);
+  }
+
+  // ---------- 卡片绑定 Worker ----------
+  function openWorkerModal(btn) {
+    var host = closestEl(btn, '[data-unit]');
+    if (!host) return;
+    var start = Number(host.getAttribute('data-unit'));
+    if (S.active) {
+      S.active = null;
+      syncSource();
+      renderDoc();
+    }
+    S.lines = S.source.split('\n');
+    S.units = CORE.splitUnits(S.source).units;
+    var unit = findUnit(start);
+    if (!unit || unit.kind !== 'card') return;
+    var card = CORE.parseCard(unit.raw);
+    if (!card) return;
+
+    var targets = '<option value="none"' + (card.target === 'none' ? ' selected' : '') + '>不绑定</option>' +
+      '<option value="main"' + (card.target === 'main' ? ' selected' : '') + '>main 主会话</option>';
+    S.graphs.forEach(function (g) {
+      targets += '<option value="' + esc(g) + '"' + (card.target === g ? ' selected' : '') + '>' + esc(g) + '</option>';
+    });
+    if (card.target !== 'none' && card.target !== 'main' && S.graphs.indexOf(card.target) < 0) {
+      targets += '<option value="' + esc(card.target) + '" selected>' + esc(card.target) + '</option>';
+    }
+    var sessions = '<option value="">默认会话</option>';
+    var found = false;
+    S.sessions.forEach(function (s) {
+      if (s.id === card.session) found = true;
+      sessions += '<option value="' + esc(s.id) + '"' + (s.id === card.session ? ' selected' : '') + '>' +
+        esc(s.alias || s.id) + '</option>';
+    });
+    if (card.session && !found) {
+      sessions += '<option value="' + esc(card.session) + '" selected>' + esc(card.session) + '</option>';
+    }
+
+    openModal({
+      title: '绑定 Worker',
+      sub: esc(card.title) + (card.time ? ' · ' + esc(card.time.replace('~', '–')) : ''),
+      body: '<div class="field"><label>Worker</label><select id="workerTarget">' + targets + '</select></div>' +
+        '<div class="field"><label>目标会话<span class="hint">仅 main 生效</span></label>' +
+        '<select id="workerSession">' + sessions + '</select></div>',
+      okText: '保存',
+      onOk: function (wrap) {
+        var target = wrap.querySelector('#workerTarget').value;
+        var session = target === 'main' ? wrap.querySelector('#workerSession').value : '';
+        S.source = CORE.updateCardRef(S.source, card, target, session);
+        S.lines = S.source.split('\n');
+        S.units = CORE.splitUnits(S.source).units;
+        renderDoc();
+        saveNow();
+        toast(target === 'none' ? '已取消绑定' : '已绑定 ' + (target === 'main' ? 'main' : target));
+        return true;
+      }
+    });
+  }
+
+  // ---------- 时间线 ----------
+  function loadEntries() {
+    try {
+      S.entries = JSON.parse(localStorage.getItem('purrnote.timeline.' + todayKey()) || '[]');
+      if (!Array.isArray(S.entries)) S.entries = [];
+    } catch (_) {
+      S.entries = [];
+    }
+  }
+  function saveEntries() {
+    try { localStorage.setItem('purrnote.timeline.' + todayKey(), JSON.stringify(S.entries)); } catch (_) {}
+  }
+
+  function setDrawerOpen(open, persist) {
+    el.drawer.classList.toggle('is-closed', !open);
+    el.drawerHandle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (persist) {
+      try { localStorage.setItem('purrnote.drawerOpen', open ? '1' : '0'); } catch (_) {}
+    }
+  }
+
+  function renderTimeline() {
+    var win = CORE.dayWindow(S.config.wake, S.config.sleep);
+    if (!win.crossing) {
+      placeZone(el.zoneA, 0, win.wake / 1440 * 100, false);
+      placeZone(el.zoneB, win.sleep / 1440 * 100, 100 - win.sleep / 1440 * 100, true);
+    } else {
+      placeZone(el.zoneA, win.sleep / 1440 * 100, (win.wake - win.sleep) / 1440 * 100, false);
+      placeZone(el.zoneB, 0, 0, true);
+    }
+    renderHours();
+    renderMarks(win);
+    renderEntries();
+    tick();
+  }
+
+  var SUN_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4"/></svg>';
+  var MOON_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>';
+
+  // 起床时间标太阳、睡觉时间标月亮，贴边时改变对齐方向避免被裁掉。
+  function renderMarks(win) {
+    markAt(el.wakeMark, win.wake, '起床 ' + CORE.fmtHHMM(win.wake), SUN_SVG);
+    markAt(el.sleepMark, win.sleep, '睡觉 ' + CORE.fmtHHMM(win.sleep), MOON_SVG);
+  }
+
+  function markAt(node, minutes, title, svg) {
+    var p = clamp(minutes / 1440 * 100, 0, 100);
+    node.innerHTML = svg;
+    node.title = title;
+    node.style.left = p + '%';
+    node.classList.toggle('is-left', p < 4);
+    node.classList.toggle('is-right', p > 96);
+  }
+
+  function placeZone(node, left, width, right) {
+    node.style.left = clamp(left, 0, 100) + '%';
+    node.style.width = clamp(width, 0, 100) + '%';
+    node.style.display = width > 0.01 ? 'block' : 'none';
+    node.classList.toggle('right', !!right);
+  }
+
+  function renderHours() {
+    var ticks = '';
+    var axis = '';
+    for (var h = 0; h <= 24; h += 3) {
+      var p = h / 24 * 100;
+      ticks += '<div class="tl-hour" style="left:' + p + '%"></div>';
+      axis += '<span style="left:' + p + '%">' + (h === 24 ? '24' : pad2(h)) + '</span>';
+    }
+    el.hours.innerHTML = ticks;
+    document.getElementById('tlAxis').innerHTML = axis;
+  }
+
+  function renderEntries() {
+    var html = '';
+    S.entries.forEach(function (entry, i) {
+      var start = Number(entry.start);
+      var end = Number(entry.end);
+      if (!isFinite(start) || !isFinite(end)) return;
+      if (end <= start) end = Math.min(1440, start + 15);
+      var color = ENTRY_COLORS[i % ENTRY_COLORS.length];
+      html += '<div class="tl-entry" style="--c:' + color + ';left:' + (start / 1440 * 100) + '%;width:' +
+        Math.max(0.35, (end - start) / 1440 * 100) + '%" title="' +
+        esc(CORE.fmtHHMM(start) + ' – ' + CORE.fmtHHMM(end) + ' · ' + entry.title) + '">' +
+        '</div>';
+    });
+    el.entries.innerHTML = html;
+  }
+
+  function tick() {
+    var mins = nowMinutes();
+    var p = CORE.dayProgress(mins, S.config.wake, S.config.sleep);
+    el.remain.textContent = '剩余 ' + Math.round(100 - p.percent) + '%';
+    el.now.style.left = (mins / 1440 * 100) + '%';
+    el.now.title = CORE.fmtHHMM(mins);
+    el.rest.style.left = (mins / 1440 * 100) + '%';
+    var parts = dateParts();
+    el.date.textContent = parts.date;
+    el.weekday.textContent = parts.weekday;
+    el.clock.textContent = CORE.fmtHHMM(mins);
+    if (S.lastDate !== todayKey()) {
+      S.lastDate = todayKey();
+      loadEntries();
+      renderEntries();
+    }
+  }
+
+  function paintChrome() {
+    el.pick.title = '当前文档：' + S.config.document + '（点击选择文件）';
+  }
+
+  // 时间线拖拽
+  var dragState = null;
+  function ratioFromEvent(e) {
+    var rect = el.tl.getBoundingClientRect();
+    return clamp((e.clientX - rect.left) / Math.max(1, rect.width), 0, 1);
+  }
+  function ratioToDayMinutes(ratio) {
+    return Math.round(clamp(ratio, 0, 1) * 1440);
+  }
+  function paintDrag() {
+    if (!dragState) {
+      el.drag.style.display = 'none';
+      return;
+    }
+    var a = Math.min(dragState.start, dragState.end);
+    var b = Math.max(dragState.start, dragState.end);
+    el.drag.style.display = 'block';
+    el.drag.style.left = (a * 100) + '%';
+    el.drag.style.width = Math.max(0, (b - a) * 100) + '%';
+  }
+
+  el.tl.addEventListener('pointerdown', function (e) {
+    if (e.button !== 0) return;
+    dragState = { start: ratioFromEvent(e), end: ratioFromEvent(e), downX: e.clientX, moved: false };
+    try { el.tl.setPointerCapture(e.pointerId); } catch (_) {}
+    e.preventDefault();
+  });
+  el.tl.addEventListener('pointermove', function (e) {
+    if (!dragState) return;
+    dragState.end = ratioFromEvent(e);
+    if (!dragState.moved && Math.abs(e.clientX - dragState.downX) > 3) dragState.moved = true;
+    if (dragState.moved) paintDrag();
+  });
+  el.tl.addEventListener('pointerup', function (e) {
+    if (!dragState) return;
+    dragState.end = ratioFromEvent(e);
+    var a = Math.min(dragState.start, dragState.end);
+    var b = Math.max(dragState.start, dragState.end);
+    var moved = dragState.moved;
+    dragState = null;
+    paintDrag();
+    if (!moved) return;
+    var startMin = Math.round(ratioToDayMinutes(a) / 5) * 5;
+    var endMin = Math.round(ratioToDayMinutes(b) / 5) * 5;
+    if (endMin - startMin < 5) return;
+    openItemModal(startMin, endMin);
+  });
+  el.tl.addEventListener('pointercancel', function () {
+    dragState = null;
+    paintDrag();
+  });
+
+  function openItemModal(startMin, endMin) {
+    openModal({
+      title: '记录事项',
+      body: '<div class="range-chip">' + esc(fmtDayMinutes(startMin) + ' – ' + fmtDayMinutes(endMin)) + '</div>' +
+        '<div class="field"><label>事项名称</label><input id="itemTitle" placeholder="例如：写周报"></div>',
+      okText: '记录',
+      onOk: function (wrap) {
+        var input = wrap.querySelector('#itemTitle');
+        var title = input.value.trim();
+        if (!title) { input.focus(); return false; }
+        if (S.active) { S.active = null; syncSource(); }
+        S.source = CORE.appendBlock(S.source, CORE.buildPurrBlock({
+          title: title,
+          start: startMin,
+          end: endMin
+        }));
+        S.lines = S.source.split('\n');
+        S.entries.push({ start: startMin, end: endMin, title: title });
+        saveEntries();
+        renderEntries();
+        renderDoc();
+        saveNow();
+        el.sheetWrap.scrollTop = el.sheetWrap.scrollHeight;
+        toast('已记录「' + title + '」');
+        return true;
+      }
+    });
+    var input = el.modal.querySelector('#itemTitle');
+    if (input) {
+      input.focus();
+      input.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          var ok = el.modal.querySelector('[data-ok]');
+          if (ok) ok.click();
+        }
+      });
+    }
+  }
+
+  // ---------- 通用弹窗 ----------
+  function openModal(opts) {
+    el.modal.innerHTML = '<div class="modal">' +
+      '<h3>' + esc(opts.title || '') + '</h3>' +
+      (opts.sub ? '<div class="modal-sub">' + opts.sub + '</div>' : '') +
+      (opts.body || '') +
+      '<div class="modal-foot">' +
+        '<button class="btn" data-close>取消</button>' +
+        (opts.onOk ? '<button class="btn primary" data-ok>' + esc(opts.okText || '确定') + '</button>' : '') +
+      '</div>' +
+    '</div>';
+    el.modal.classList.add('show');
+    el.modal.querySelector('[data-close]').addEventListener('click', closeModal);
+    el.modal.onmousedown = function (e) {
+      if (e.target === el.modal) closeModal();
+    };
+    var ok = el.modal.querySelector('[data-ok]');
+    if (ok && opts.onOk) {
+      ok.addEventListener('click', function () {
+        if (opts.onOk(el.modal) === false) return;
+        closeModal();
+      });
+    }
+  }
+
+  function closeModal() {
+    el.modal.classList.remove('show');
+    el.modal.innerHTML = '';
+  }
+
+  function pickFile() {
+    saveNow();
+    callAction('dialog.files', {
+      filters: [
+        { name: 'Markdown', extensions: ['md', 'markdown', 'txt'] },
+        { name: '全部文件', extensions: ['*'] }
+      ]
+    }, 0).then(function (paths) {
+      var path = Array.isArray(paths) ? paths[0] : null;
+      if (!path) return;
+      callAction('config.set', {
+        plugin_id: PLUGIN,
+        config: { document: path, wake: S.config.wake, sleep: S.config.sleep, theme: S.config.theme }
+      }).then(function (cfg) {
+        applyConfig(cfg || { document: path, wake: S.config.wake, sleep: S.config.sleep });
+        toast('已切换文档');
+      }).catch(function (err) {
+        toast('保存设置失败：' + err.message);
+      });
+    }).catch(function (err) {
+      toast('选择文件失败：' + err.message);
+    });
+  }
+
+  // ---------- 引用数据 ----------
+  function loadGraphs() {
+    return callAction('ref.graphs', {}).then(function (list) {
+      S.graphs = Array.isArray(list) ? list.filter(function (x) { return typeof x === 'string'; }) : [];
+    }).catch(function () {
+      return fetch('/api/graphs').then(function (res) { return res.ok ? res.json() : []; })
+        .then(function (list) {
+          S.graphs = (list || []).map(function (g) { return typeof g === 'string' ? g : g && g.name; })
+            .filter(Boolean);
+        }).catch(function () { S.graphs = []; });
+    });
+  }
+
+  function loadSessions() {
+    return fetch('/api/sessions').then(function (res) {
+      return res.ok ? res.json() : [];
+    }).then(function (list) {
+      S.sessions = (Array.isArray(list) ? list : []).map(function (s) {
+        return { id: s.id, alias: s.alias || s.id };
+      });
+    }).catch(function () { S.sessions = []; });
+  }
+
+  function refreshRefs() {
+    Promise.all([loadGraphs(), loadSessions()]).then(function () {
+      if (S.active) return;
+      renderDoc();
+    });
+  }
+
+  // ---------- 启动 ----------
+  var timers = [];
+  function boot() {
+    if (window.marked && typeof window.marked.use === 'function') {
+      window.marked.use({
+        renderer: {
+          html: function (html) { return esc(html); }
+        }
+      });
+    }
+    S.lastDate = todayKey();
+    paintChrome();
+    setDrawerOpen(localStorage.getItem('purrnote.drawerOpen') !== '0', false);
+    el.drawerHandle.addEventListener('click', function () {
+      setDrawerOpen(el.drawer.classList.contains('is-closed'), true);
+    });
+    renderTimeline();
+    renderDoc();
+    loadDoc();
+
+    document.getElementById('btnPick').addEventListener('click', pickFile);
+    document.getElementById('btnSettings').addEventListener('click', function () {
+      callAction('settings.open', { tab: 'plugins' }).catch(function (err) {
+        toast('打开设置失败：' + err.message);
+      });
+    });
+    document.getElementById('btnReload').addEventListener('click', function () {
+      commitActive();
+      loadDoc();
+      refreshRefs();
+      toast('已重新载入');
+    });
+
+    window.addEventListener('beforeunload', function () {
+      if (!S.loaded || S.loadingDoc) return;
+      syncSource();
+      if (S.source === S.savedSource) return;
+      try {
+        navigator.sendBeacon('/api/filesystem/write',
+          new Blob([JSON.stringify({ path: S.config.document, content: S.source })], { type: 'application/json' }));
+      } catch (_) {}
+    });
+
+    window.addEventListener('message', function (e) {
+      var m = e.data;
+      if (!m || typeof m !== 'object') return;
+      if (m.type === 'configApply') { applyConfig(m.config || {}); return; }
+      if (m.type === 'event' && m.event === 'config.updated') {
+        callAction('config.get', { plugin_id: PLUGIN }).then(applyConfig).catch(function () {});
+        return;
+      }
+      if (m.type === 'event' && m.event === 'host.unmount') {
+        timers.forEach(function (t) { clearInterval(t); });
+        saveNow();
+      }
+    });
+
+    callAction('config.get', { plugin_id: PLUGIN }).then(applyConfig).catch(function () {
+      applyConfig({});
+    });
+    refreshRefs();
+    timers.push(setInterval(tick, 30000));
+    timers.push(setInterval(function () {
+      if (S.active) return;
+      refreshRefs();
+    }, 60000));
+  }
+
+  boot();
+})();
+</script>
+</body>
+</html>

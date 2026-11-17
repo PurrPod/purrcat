@@ -4,7 +4,7 @@ import { cfgCardHead } from './config-center.js';
 import { cfgRangeField, scheduleSettingsRender, settingsSave, transparencyField } from './settings-appearance.js';
 import { AREA_LABEL, openPluginCardMenu, pluginVisible, renderSettings, togglePluginOpen } from './settings-tabs.js';
 import { HOST, groupState } from './state.js';
-import type { ConfigField, PluginDescriptor, PluginDependency } from './types.js';
+import type { ConfigField, ConfigFieldOption, PluginDescriptor, PluginDependency } from './types.js';
 
   export const DEP_KIND_LABEL: Record<string, string> = { skill: '技能', plugin: '插件', mcp: 'MCP', agentloop: 'AgentLoop', sensor: '传感器', graph: '图谱' };
   export const ROOT_KIND_LABEL: Record<string, string> = { builtin: '内置', sandbox: '沙盒', user: '用户' };
@@ -200,10 +200,15 @@ import type { ConfigField, PluginDescriptor, PluginDependency } from './types.js
       if (type === 'select') {
         const sel = HOST.document.createElement('select');
         sel.className = 'cfg-input';
-        ((field.options || []) as string[]).forEach(function (op) {
+        ((field.options || []) as Array<string | ConfigFieldOption>).forEach(function (op) {
           const o2 = HOST.document.createElement('option');
-          o2.value = op;
-          o2.textContent = op;
+          if (op && typeof op === 'object') {
+            o2.value = String(op.value);
+            o2.textContent = String(op.label || op.value);
+          } else {
+            o2.value = op;
+            o2.textContent = op;
+          }
           sel.appendChild(o2);
         });
         sel.value = cfg[key] || '';

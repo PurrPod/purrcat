@@ -108,6 +108,7 @@ DSL 约定：
 | 设置中心 | `src/host/config-center.ts`、`settings-tabs.ts` |
 | 面板容器 | `src/host/panel.ts` + `plugins/builtin/builtin-panel` |
 | 内置浏览器 | `plugins/builtin/builtin-browser/index.html` + `electron/main.js` 的 `browser:*` IPC |
+| Markdown 笔记插件 | `plugins/builtin/builtin-note/`（`core.js` 纯逻辑 + 行级实时预览；规范 `tests/specs/SPEC-032-note-plugin.md`） |
 | 新增 UI 插件 | `~/.purrcat/webmin-plugins/<id>/` 或 `plugins/builtin/<id>/` |
 
 ## 调试

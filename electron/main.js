@@ -444,7 +444,11 @@ ipcMain.handle('dialog:open', async (_e, opts) => {
   const properties = Array.isArray(o.properties) && o.properties.length
     ? o.properties
     : (directory ? ['openDirectory', 'multiSelections'] : ['openFile', 'multiSelections']);
-  const r = await dialog.showOpenDialog(mainWindow, { properties });
+  // filters 由调用方决定（如 Markdown）；缺省不传，保持系统默认「全部文件」
+  const filters = Array.isArray(o.filters)
+    ? o.filters.filter(f => f && Array.isArray(f.extensions) && f.extensions.length)
+    : [];
+  const r = await dialog.showOpenDialog(mainWindow, filters.length ? { properties, filters } : { properties });
   return r.canceled ? [] : r.filePaths;
 });
 

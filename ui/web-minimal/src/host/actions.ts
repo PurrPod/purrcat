@@ -350,7 +350,9 @@ import { HOST, activeBySlot, configByPlugin, groupState } from './state.js';
       case 'dialog.files': {
         const pc = HOST.purrcat;
         if (!pc || !pc.openDialog) throw new Error('本地文件选择仅在 Electron 内可用');
-        return pc.openDialog({ directory: false, properties: ['openFile', 'multiSelections'] });
+        // 插件可传 filters 限定类型（如只选 Markdown）；不传则保持全部可选。
+        const filters = Array.isArray(payload.filters) ? payload.filters : undefined;
+        return pc.openDialog({ directory: false, properties: ['openFile', 'multiSelections'], filters });
       }
       case 'dialog.folder': {
         const pc = HOST.purrcat;
