@@ -10,7 +10,9 @@ from src.utils import task_api, task_store
 
 
 class _FakeTask:
-    def __init__(self, state: str, execution_time: float, started_at=None, finished_at=None):
+    def __init__(
+        self, state: str, execution_time: float, started_at=None, finished_at=None
+    ):
         self.task_id = "t1"
         self.state = type("S", (), {"value": state})()
         self.execution_time = execution_time
@@ -33,7 +35,9 @@ def test_running_task_adds_current_session(monkeypatch):
 
 def test_completed_task_returns_accumulated_time(monkeypatch):
     """SPEC-035 AC-1：终态不再叠加当前时刻。"""
-    task = _FakeTask("completed", 42.5, started_at=time.time() - 100, finished_at=time.time())
+    task = _FakeTask(
+        "completed", 42.5, started_at=time.time() - 100, finished_at=time.time()
+    )
     monkeypatch.setattr(task_api, "TASK_INSTANCES", {"t1": task})
     monkeypatch.setattr(task_store, "load_task_checkpoint", lambda _tid: None)
 
