@@ -82,7 +82,7 @@ MEMO_TOOL_SCHEMA = {
                 },
                 "query": {
                     "type": "object",
-                    "description": "搜索参数（action=search时使用）。如果不传，则直接返回最近五次写入的缓存记忆。如果传，必须包含 prompt 或 date 其中之一。搜索结果会附带经验 ID 与置信度。",
+                    "description": "搜索参数（action=search时使用）。如果不传，则直接返回最近三次写入的缓存记忆。如果传，必须包含 prompt 或 date 其中之一。搜索结果会附带经验 ID 与置信度。",
                     "properties": {
                         "prompt": {
                             "type": "string",

@@ -90,10 +90,10 @@ def _handle_add(memo_data: dict = None) -> str:
 def _handle_search(query: dict = None) -> str:
     """处理搜索记忆：支持空参数直接获取全局常驻缓存"""
 
-    # 1. 如果不传 query 参数，直接返回全局最新的缓存记忆 (self.memo内容)
+    # 1. 如果不传 query 参数，直接返回全局最新的缓存记忆（只取最近 3 份）
     if not query:
         memo_list = SessionStore.load_global_memo()
-        cache_str = format_cached_memo(memo_list)
+        cache_str = format_cached_memo((memo_list or [])[-3:])
         return text_response(f"最新缓存记忆：\n{cache_str}", "🔍 缓存记忆")
 
     if isinstance(query, str):

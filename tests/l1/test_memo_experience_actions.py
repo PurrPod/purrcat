@@ -93,3 +93,15 @@ def test_delete_reports_success_and_missing(monkeypatch):
     assert "未找到经验" in _content(
         memo_module.Memo(action="delete", experience_id="exp_missing")
     )
+
+
+def test_search_without_query_returns_only_latest_cache(monkeypatch):
+    entries = [{"short_term": f"cache-{i}"} for i in range(7)]
+    monkeypatch.setattr(memo_module.SessionStore, "load_global_memo", lambda: entries)
+
+    result = _content(memo_module.Memo(action="search"))
+
+    for entry in entries[:-3]:
+        assert entry["short_term"] not in result
+    for entry in entries[-3:]:
+        assert entry["short_term"] in result
