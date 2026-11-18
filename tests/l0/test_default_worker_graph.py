@@ -8,13 +8,13 @@ from pathlib import Path
 from src.harness.graph_init import (
     DEFAULT_GRAPH_NAME,
     TEMPLATES_DIR,
-    ensure_default_graph,
+    ensure_builtin_graphs,
 )
 from src.harness.graph_spec import build_node_instances, load_graph_file
 
 
 def _seed_and_load(tmp_path) -> dict:
-    assert ensure_default_graph(str(tmp_path)) is True
+    assert DEFAULT_GRAPH_NAME in ensure_builtin_graphs(str(tmp_path))
     graph = load_graph_file(str(tmp_path), DEFAULT_GRAPH_NAME)
     assert graph is not None
     return graph
@@ -36,7 +36,7 @@ def test_seed_restores_modified_default_graph(tmp_path):
     template = Path(TEMPLATES_DIR) / DEFAULT_GRAPH_NAME / "graph.json"
     graph_file.write_text('{"name": "default", "user": true}', encoding="utf-8")
 
-    assert ensure_default_graph(str(tmp_path)) is True
+    assert DEFAULT_GRAPH_NAME in ensure_builtin_graphs(str(tmp_path))
     assert graph_file.read_text(encoding="utf-8") == template.read_text(
         encoding="utf-8"
     )
@@ -45,7 +45,7 @@ def test_seed_restores_modified_default_graph(tmp_path):
 def test_seed_skips_when_default_graph_already_matches(tmp_path):
     _seed_and_load(tmp_path)
 
-    assert ensure_default_graph(str(tmp_path)) is False
+    assert ensure_builtin_graphs(str(tmp_path)) == []
 
 
 def test_seed_skips_gracefully_when_template_missing(tmp_path, monkeypatch):
@@ -53,7 +53,7 @@ def test_seed_skips_gracefully_when_template_missing(tmp_path, monkeypatch):
         "src.harness.graph_init.TEMPLATES_DIR", str(tmp_path / "missing")
     )
 
-    assert ensure_default_graph(str(tmp_path / "graphs")) is False
+    assert ensure_builtin_graphs(str(tmp_path / "graphs")) == []
 
 
 def test_default_graph_schema_has_only_prompt(tmp_path):
@@ -122,7 +122,7 @@ def test_load_graph_file_returns_none_before_seed(tmp_path):
 def test_list_graphs_includes_default_after_seed(monkeypatch, tmp_path):
     from src.tool.task import task as task_module
 
-    ensure_default_graph(str(tmp_path))
+    ensure_builtin_graphs(str(tmp_path))
     monkeypatch.setattr("src.utils.config.GRAPHS_DIR", str(tmp_path))
 
     assert DEFAULT_GRAPH_NAME in task_module._get_all_graphs_info()

@@ -16,7 +16,7 @@ from src.evolve.common.git import commit_paths, ensure_git_repo
 from src.evolve.common.names import safe_name
 from src.evolve.common.templates import write_goal_and_guide, write_sandbox_validator
 from src.evolve.common.validation import validation_summary
-from src.harness.graph_init import DEFAULT_GRAPH_NAME
+from src.harness.graph_init import builtin_graph_template_path, is_builtin_graph
 from src.utils.config import GRAPHS_DIR, AGENT_VM_DIR
 
 from . import validator as _validator
@@ -161,10 +161,10 @@ def graph_factory_init(name: str, is_upgrade: bool, goal: str = "") -> tuple[str
     except ValueError as e:
         return f"❌ {e}", ""
 
-    if base == DEFAULT_GRAPH_NAME:
+    if is_builtin_graph(base):
         return (
             f"❌ '{base}' 是随包分发的内置图，不能在进化工厂中编辑或新建。"
-            "如需调整派发约定，请修改仓库模板 src/harness/graph_templates/default/graph.json。"
+            f"如需调整，请修改仓库模板 {builtin_graph_template_path(base)}。"
         ), ""
 
     short_uuid = uuid.uuid4().hex[:5]
@@ -226,7 +226,7 @@ def graph_request_handle(workplace_root: str, name: str, is_approved: bool) -> s
     except ValueError as e:
         return f"❌ 合并失败：{e}"
 
-    if base == DEFAULT_GRAPH_NAME:
+    if is_builtin_graph(base):
         return f"❌ '{base}' 是内置图，不能通过进化工厂合并覆盖。"
 
     # 0. 宿主侧权威校验：格式/功能/关键词汇必须全绿

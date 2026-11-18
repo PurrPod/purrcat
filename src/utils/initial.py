@@ -173,10 +173,10 @@ def ensure_initialized():
     except Exception as e:
         print(f"[!] 配置结构检测失败: {e}")
 
-    # 内置 default 图落盘到 ~/.purrcat/graph/default/，缺失或被改动时用模板修复
-    from src.harness.graph_init import ensure_default_graph
+    # 内置图（default / skill_eval）落盘到用户图目录，缺失或被改动时用模板修复
+    from src.harness.graph_init import ensure_builtin_graphs
 
-    ensure_default_graph(GRAPHS_DIR)
+    ensure_builtin_graphs(GRAPHS_DIR)
 
     if first_run:
         print(f"[*] 请编辑 {MODEL_CONFIG_PATH} 填入你的 Agent 模型和 API Key")

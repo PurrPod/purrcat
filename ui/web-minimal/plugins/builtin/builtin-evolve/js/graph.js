@@ -8,6 +8,13 @@
 
   var PORT_W = 11;
 
+  // 与 src/harness/graph_init.py 的 BUILTIN_GRAPH_NAMES 保持一致：随包分发且只读
+  var BUILTIN_GRAPHS = ['default', 'skill_eval'];
+
+  function isBuiltinGraph(name) {
+    return BUILTIN_GRAPHS.indexOf(name) >= 0;
+  }
+
   var state = {
     catalog: [],
     files: [],
@@ -1255,7 +1262,7 @@
   /* ---------------- 工具栏 ---------------- */
   function renderToolbar() {
     toolbarEl.innerHTML = '';
-    var readonly = state.graphName === 'default' && !state.sandboxCtx;
+    var readonly = isBuiltinGraph(state.graphName) && !state.sandboxCtx;
     if (state.dirty) toolbarEl.appendChild(EV.el('span', 'chip warn', '未保存'));
     if (readonly) toolbarEl.appendChild(EV.el('span', 'chip', '内置图 · 只读'));
     toolbarEl.appendChild(EV.el('span', 'spacer'));
@@ -1291,7 +1298,7 @@
     save.onclick = saveGraph;
     if (readonly) {
       save.disabled = true;
-      save.title = 'default 是内置图，不能保存；请修改仓库模板';
+      save.title = state.graphName + ' 是内置图，不能保存；请修改仓库模板';
     }
     toolbarEl.appendChild(save);
   }
@@ -1310,9 +1317,9 @@
   }
 
   async function saveGraph() {
-    // default 是随包分发的内置图，启动时会按模板修复，画布只读。
-    if (state.graphName === 'default' && !state.sandboxCtx) {
-      EV.toast('default 是内置图，不能保存；请修改仓库模板', true);
+    // 内置图随包分发，启动时会按模板修复，画布只读。
+    if (isBuiltinGraph(state.graphName) && !state.sandboxCtx) {
+      EV.toast(state.graphName + ' 是内置图，不能保存；请修改仓库模板', true);
       return;
     }
     var errors = validate();

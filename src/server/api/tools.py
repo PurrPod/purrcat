@@ -14,7 +14,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 # 引入底层工具操作
-from src.harness.graph_init import DEFAULT_GRAPH_NAME
+from src.harness.graph_init import is_builtin_graph
 from src.tool.callmcp.schema_manager import load_cached_schemas, refresh_schemas
 from src.tool.search.mcp_search import MCPSearcher, rebuild_vectors_async
 from src.tool.search.skill_search import SkillSearcher, rebuild_skill_vectors_async
@@ -472,8 +472,10 @@ def uninstall_graph_api(req: UninstallGraphReq):
     try:
         safe_name = safe_install_name(req.name, "缺少 graph name", "非法 graph name")
 
-        if safe_name == DEFAULT_GRAPH_NAME:
-            raise HTTPException(status_code=400, detail="default 是内置图，不能删除")
+        if is_builtin_graph(safe_name):
+            raise HTTPException(
+                status_code=400, detail=f"{safe_name} 是内置图，不能删除"
+            )
 
         target_dir = os.path.join(GRAPHS_DIR, safe_name)
         if not os.path.isdir(target_dir):

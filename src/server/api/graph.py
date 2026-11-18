@@ -2,7 +2,10 @@ from typing import Any, Dict
 
 from fastapi import APIRouter, HTTPException
 
-from src.harness.graph_init import DEFAULT_GRAPH_NAME
+from src.harness.graph_init import (
+    builtin_graph_template_path,
+    is_builtin_graph,
+)
 from src.utils.graph_api import get_all_nodes, get_graph, list_graphs, save_graph
 
 router = APIRouter(prefix="/api/graphs", tags=["DAG Graphs"])
@@ -43,9 +46,10 @@ def get_graph_schema_api(name: str):
 
 @router.post("/{name}")
 def save_graph_api(name: str, graph_data: Dict[str, Any]):
-    if name == DEFAULT_GRAPH_NAME:
+    if is_builtin_graph(name):
+        template = builtin_graph_template_path(name).replace("\\", "/")
         raise HTTPException(
             status_code=400,
-            detail="default 是内置图，不能编辑；请修改仓库模板 src/harness/graph_templates/default/graph.json",
+            detail=f"{name} 是内置图，不能编辑；请修改仓库模板 {template}",
         )
     return save_graph(name, graph_data)

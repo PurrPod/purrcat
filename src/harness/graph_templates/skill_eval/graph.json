@@ -1,0 +1,320 @@
+{
+  "version": "2.0",
+  "name": "skill_eval",
+  "description": "Automated blind skill evaluation in a sandbox: supports fine-grained assertion-level grading and statistics against official grading standards.",
+  "description-zh": "自动化技能沙盒盲测：支持断言级 (Assertion) 的细粒度评判与官方 grading 标准统计。",
+  "global_schema": {
+    "host_skill_md_path": {
+      "type": "string",
+      "required": true,
+      "description": "待测技能 SKILL.md 的绝对路径（通常位于 workplace_dir 下）"
+    },
+    "workplace_dir": {
+      "type": "string",
+      "required": true,
+      "description": "沙盒工作目录的绝对路径，测试工人的所有产出必须落在这里"
+    },
+    "prompt": {
+      "type": "string",
+      "required": true,
+      "description": "交给测试工人的任务描述"
+    },
+    "expected_output": {
+      "type": "string",
+      "required": true,
+      "description": "期望结果与断言清单，由评测器拼装后传入"
+    }
+  },
+  "nodes": [
+    {
+      "id": "nd_input",
+      "type": "task_input",
+      "name": "全局输入",
+      "position": [
+        -500,
+        100
+      ],
+      "config": {
+        "global_vars": [
+          {
+            "name": "host_skill_md_path",
+            "required": true,
+            "description": "待测技能 SKILL.md 的绝对路径（通常位于 workplace_dir 下）"
+          },
+          {
+            "name": "workplace_dir",
+            "required": true,
+            "description": "沙盒工作目录的绝对路径，测试工人的所有产出必须落在这里"
+          },
+          {
+            "name": "prompt",
+            "required": true,
+            "description": "交给测试工人的任务描述"
+          },
+          {
+            "name": "expected_output",
+            "required": true,
+            "description": "期望结果与断言清单，由评测器拼装后传入"
+          }
+        ]
+      }
+    },
+    {
+      "id": "nd_tpl_sys",
+      "type": "template_renderer",
+      "name": "组装执行指令",
+      "position": [
+        100,
+        -50
+      ],
+      "config": {}
+    },
+    {
+      "id": "nd_msg_sys",
+      "type": "message_card_builder",
+      "name": "构建执行指令卡片",
+      "position": [
+        400,
+        -50
+      ],
+      "config": {}
+    },
+    {
+      "id": "nd_msg_user",
+      "type": "message_card_builder",
+      "name": "构建User卡片",
+      "position": [
+        400,
+        200
+      ],
+      "config": {}
+    },
+    {
+      "id": "nd_append_msgs",
+      "type": "appender",
+      "name": "合并消息上下文",
+      "position": [
+        700,
+        50
+      ],
+      "config": {}
+    },
+    {
+      "id": "nd_agent_exec",
+      "type": "agent_loop",
+      "name": "Agent-测试工人",
+      "position": [
+        1000,
+        50
+      ],
+      "config": {}
+    },
+    {
+      "id": "nd_tpl_eval",
+      "type": "template_renderer",
+      "name": "组装QA裁判指令",
+      "position": [
+        1400,
+        150
+      ],
+      "config": {}
+    },
+    {
+      "id": "nd_msg_eval",
+      "type": "message_card_builder",
+      "name": "构建裁判指令卡片",
+      "position": [
+        1700,
+        150
+      ],
+      "config": {}
+    },
+    {
+      "id": "nd_agent_eval",
+      "type": "agent_loop",
+      "name": "Agent-QA裁判",
+      "position": [
+        2000,
+        150
+      ],
+      "config": {}
+    },
+    {
+      "id": "nd_out",
+      "type": "task_output",
+      "name": "全局输出",
+      "position": [
+        2800,
+        100
+      ],
+      "config": {
+        "target_vars": [
+          {
+            "name": "exec_summary"
+          },
+          {
+            "name": "eval_result"
+          }
+        ]
+      }
+    },
+    {
+      "id": "string_tpl_nd_tpl_sys",
+      "type": "string",
+      "name": "模板-组装执行指令",
+      "position": [
+        -280,
+        -170
+      ],
+      "config": {
+        "value": "【你的专属隔离工作目录】\n{{workplace_dir}}\n注意：所有的操作必须在这个目录下进行！\n\n【待测试技能 SOP】\n源码位于 {{host_skill_md_path}}（通常即 {{workplace_dir}}/SKILL.md）。请先用 Bash 读取其内容，理解要测试的标准化流程 (SOP) 并严格执行，切勿编造技能内容。\n\n💡 严格要求：你所有的测试产出和文件修改，必须真实地保存在你的工作目录内！不要仅仅在聊天中用文字回复结果。完成最终产出后，请把简要总结写入你专属工作目录下的 summary.txt（路径见系统提示）。"
+      }
+    },
+    {
+      "id": "string_tpl_nd_tpl_eval",
+      "type": "string",
+      "name": "模板-组装QA裁判指令",
+      "position": [
+        1020,
+        30
+      ],
+      "config": {
+        "value": "以下是测试工人在沙盒中执行任务后的情况。\n\n【我们期望达成的核心结果与断言清单 (Assertions)】\n{{expected_output}}\n\n【执行工人的自我总结】\n{{summary}}\n\n【任务发生的工作目录】\n{{workplace_dir}}\n\n请使用 Bash 工具检查该目录下的实际产出文件，严格逐条核对上述【硬性断言检查清单】中的每一项！\n\n💡 格式强制要求：\n核对完毕后，请把下列 JSON 字典写入你专属工作目录下的 summary.txt（路径见系统提示），必须同时包含 `assertion_results` 数组与 `summary` 统计字典。请严格参考以下示例：\n{\n  \"assertion_results\": [\n    {\"text\": \"The bar chart has labeled axes\", \"passed\": false, \"evidence\": \"Y-axis is labeled 'Revenue' but X-axis has no label.\"}\n  ],\n  \"summary\": {\n    \"passed\": 0,\n    \"failed\": 1,\n    \"total\": 1,\n    \"pass_rate\": 0.0\n  }\n}"
+      }
+    },
+    {
+      "id": "string_agentloop_exec",
+      "type": "string",
+      "name": "AgentLoop-测试工人",
+      "position": [
+        700,
+        -320
+      ],
+      "config": {
+        "value": "name: \"skill_exec\"\ndescription: \"skill_eval exec worker\"\nloop_end_max_retry: 3\nhooks:\n  on_build_system_prompt:\n    - injection:\n        content: \"你是沙盒环境中的技能测试执行专家。严格按用户消息中的 SOP 与产出要求执行，必须真实读写 @TASKSPACE 内的文件，不要把结果只写在聊天里。\"\n  on_loop_start:\n    - injection:\n        content: \"你的专属隔离工作目录（沙盒绝对路径）是：@TASKSPACE。所有产出必须真实写入该目录；完成全部产出后，请把简要总结写入 @TASKSPACE/summary.txt 。\"\n  on_loop_end:\n    - file_operation:\n        path: \"@TASKSPACE/summary.txt\"\n        action: \"exist_check\"\n        failed_prompt: \"未检测到你专属工作目录下的 summary.txt。请先完成全部真实产出，并把简要总结写入该文件后再结束。\"\n"
+      }
+    },
+    {
+      "id": "string_agentloop_eval",
+      "type": "string",
+      "name": "AgentLoop-QA裁判",
+      "position": [
+        1700,
+        -120
+      ],
+      "config": {
+        "value": "name: \"skill_eval_judge\"\ndescription: \"skill_eval judge\"\nloop_end_max_retry: 5\nhooks:\n  on_build_system_prompt:\n    - injection:\n        content: \"你是严格的 QA 评估专家。必须用 Bash 实际检查工作目录中的产出，逐条核对断言，并把结构化 JSON 结果写入 @TASKSPACE/summary.txt。\"\n  on_loop_start:\n    - injection:\n        content: \"你的专属工作目录（沙盒绝对路径）是：@TASKSPACE。核对完断言后，必须把结构化的 JSON 结果写入 @TASKSPACE/summary.txt 。\"\n  on_loop_end:\n    - file_operation:\n        path: \"@TASKSPACE/summary.txt\"\n        action: \"exist_check\"\n        failed_prompt: \"未检测到你专属工作目录下的 summary.txt。请把结构化 JSON 结果写入该文件后再结束。\"\n"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "source": "nd_input",
+      "target": "nd_tpl_sys",
+      "sourceHandle": "workplace_dir",
+      "targetHandle": "workplace_dir"
+    },
+    {
+      "source": "nd_tpl_sys",
+      "target": "nd_msg_sys",
+      "sourceHandle": "rendered_text",
+      "targetHandle": "content"
+    },
+    {
+      "source": "nd_input",
+      "target": "nd_msg_user",
+      "sourceHandle": "prompt",
+      "targetHandle": "content"
+    },
+    {
+      "source": "nd_msg_sys",
+      "target": "nd_append_msgs",
+      "sourceHandle": "message_list",
+      "targetHandle": "base_list"
+    },
+    {
+      "source": "nd_msg_user",
+      "target": "nd_append_msgs",
+      "sourceHandle": "message_list",
+      "targetHandle": "append_list"
+    },
+    {
+      "source": "nd_append_msgs",
+      "target": "nd_agent_exec",
+      "sourceHandle": "merged_list",
+      "targetHandle": "messages"
+    },
+    {
+      "source": "nd_input",
+      "target": "nd_tpl_eval",
+      "sourceHandle": "expected_output",
+      "targetHandle": "expected_output"
+    },
+    {
+      "source": "nd_input",
+      "target": "nd_tpl_eval",
+      "sourceHandle": "workplace_dir",
+      "targetHandle": "workplace_dir"
+    },
+    {
+      "source": "nd_agent_exec",
+      "target": "nd_tpl_eval",
+      "sourceHandle": "summary",
+      "targetHandle": "summary"
+    },
+    {
+      "source": "nd_tpl_eval",
+      "target": "nd_msg_eval",
+      "sourceHandle": "rendered_text",
+      "targetHandle": "content"
+    },
+    {
+      "source": "nd_msg_eval",
+      "target": "nd_agent_eval",
+      "sourceHandle": "message_list",
+      "targetHandle": "messages"
+    },
+    {
+      "source": "nd_agent_exec",
+      "target": "nd_out",
+      "sourceHandle": "summary",
+      "targetHandle": "exec_summary"
+    },
+    {
+      "source": "nd_input",
+      "sourceHandle": "host_skill_md_path",
+      "target": "nd_tpl_sys",
+      "targetHandle": "host_skill_md_path"
+    },
+    {
+      "source": "nd_agent_eval",
+      "sourceHandle": "summary",
+      "target": "nd_out",
+      "targetHandle": "eval_result"
+    },
+    {
+      "source": "string_tpl_nd_tpl_sys",
+      "sourceHandle": "text",
+      "target": "nd_tpl_sys",
+      "targetHandle": "template"
+    },
+    {
+      "source": "string_tpl_nd_tpl_eval",
+      "sourceHandle": "text",
+      "target": "nd_tpl_eval",
+      "targetHandle": "template"
+    },
+    {
+      "source": "string_agentloop_exec",
+      "sourceHandle": "text",
+      "target": "nd_agent_exec",
+      "targetHandle": "agentloop"
+    },
+    {
+      "source": "string_agentloop_eval",
+      "sourceHandle": "text",
+      "target": "nd_agent_eval",
+      "targetHandle": "agentloop"
+    }
+  ]
+}

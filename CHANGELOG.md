@@ -21,6 +21,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **Hook search routes**: the `search` action accepts `limit` (1–15 per route), `min_score` (confidence cutoff, default 0.30) and `route: all`, which searches `local` and `memory` in parallel and injects the merged result; the default paradigm now searches `memory` only on every user input.
 - **Search confidence filter**: `skill` / `mcp` / `local` results below `min_score` (default 0.30) are dropped by both the `Search` tool and the hook; the `memory` route uses the same threshold to filter event fusion scores, experience similarity and graph confidence; `web` results carry no similarity score and are left untouched.
 - **Memory score display**: fused event hits now show their normalized relevance (`[0.98] …`) alongside the timestamp, matching the experience section.
+- **Builtin skill_eval graph**: `skill_eval` now ships in `src/harness/graph_templates/` next to `default` and is kept byte-for-byte in sync at startup; both builtin graphs are rejected by the factory, canvas saves and market uninstall, and the canvas marks them read-only. Its worker/judge personas now go through `on_build_system_prompt`, and the obsolete `role` card wiring was dropped.
 
 ### Changed
 

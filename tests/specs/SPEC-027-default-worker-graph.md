@@ -4,11 +4,11 @@
 
 Task 工具派发任务时必须显式提供 `graph_name`，且系统没有一张通用后台 worker 图。主 Agent 在收到大量任务时缺少一个「默认容器」：先写 spec、再派发、由 worker 按 spec 执行并回写进度。
 
-默认图应当是一张普通图，落在用户图目录 `~/.purrcat/graph/default/`，可被查看、编辑、覆盖或删除；随包只携带模板，启动时缺失才补齐。
+默认图应当是一张普通图，落在用户图目录 `~/.purrcat/graph/default/`，随包只携带模板，启动时与模板逐字对齐（写保护见 SPEC-037）。
 
 ## 行为
 
-- 启动初始化（`ensure_initialized`）时调用 `ensure_default_graph`：`~/.purrcat/graph/default/graph.json` 不存在则从内置模板复制，已存在则绝不覆盖。
+- 启动初始化（`ensure_initialized`）时调用 `ensure_builtin_graphs`：`~/.purrcat/graph/default/graph.json` 不存在则从内置模板复制，已存在则逐字比对，不一致时按模板修复（SPEC-040 扩展为同时同步 `skill_eval`）。
 - `Task(action="add")` 未传 `graph_name` 时使用 `default`；传入未知图名仍然报错。
 - `Task(action="list_graphs")` 直接扫描用户图目录，因此初始化后能看到 `default`；其 description 说明这是默认通用后台 worker，以及「spec 可选 → 有 spec 时 worker 读取并回写计划与进度，没有则直接按 prompt 执行 → 完成后自动通知」的派发约定。
 - `default` 图的 `global_schema` 只有 `prompt` 一项，spec 路径不在 schema 中，只能作为 prompt 内容可选提供。

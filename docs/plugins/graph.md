@@ -16,16 +16,18 @@ graphs/<graph-name>/          # 市场仓库中的单元
 
 **文件夹名 = `graph.json` 内的 `name` 字段**，两者必须严格一致（CI 校验）。
 
-### 默认通用 Worker 图
+### 内置图（`default` / `skill_eval`）
 
-`graph_name` 省略时使用默认图 `default`。它是内置图，位于 `~/.purrcat/graph/default/graph.json`：启动时 `ensure_default_graph` 会与 `src/harness/graph_templates/default/graph.json` 逐字比对，缺失或被改动都会用模板修复；要改派发约定请改仓库里的模板，不要改用户目录副本。进化工厂、画布保存与市场卸载都会拒绝 `default`，需要自定义时请复制成新名字。它只接受一个入参 `prompt`，派发约定：
+`default` 与 `skill_eval` 是随包分发的内置图，模板位于 `src/harness/graph_templates/<name>/graph.json`。启动时 `ensure_builtin_graphs` 会把两者同步到 `~/.purrcat/graph/<name>/graph.json`，逐字比对，缺失或被改动都会用模板修复；要改图请改仓库模板，不要改用户目录副本。进化工厂（新建/升级/合并）、画布保存与市场卸载都会拒绝内置图，画布上显示「内置图 · 只读」；需要自定义时请复制成新名字。同理，用户直接改用户目录里的内置图副本会在下次启动时被覆盖。
+
+`graph_name` 省略时使用 `default`，它只接受一个入参 `prompt`，派发约定：
 
 1. 需要细化任务时，可选：把任务 spec 写成文件；
 2. `prompt` 写清目标与验收要点；有 spec 时附上其绝对路径（没有也能正常派发）；
 3. 有 spec：worker 读取 spec，把执行计划追加进同一文件，并随进度持续回写；没有 spec：直接按 `prompt` 执行，不自行创建 spec；
 4. 完成时把总结写入专属工作目录的 `summary.txt`，由系统自动通知派发方，无需轮询。
 
-用户目录下存在同名 `default/graph.json` 时，以用户图为准。
+`skill_eval` 供技能盲测使用，接受 `host_skill_md_path`、`workplace_dir`、`prompt`、`expected_output` 四个必填入参，输出 `exec_summary` 与 `eval_result`。执行工人与 QA 裁判的人设分别由各自 `agent_loop` 的 `on_build_system_prompt` 注入（graph 里会包成 `system_input` 卡片），消息卡片只承载任务上下文。
 
 ---
 
