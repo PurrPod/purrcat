@@ -27,11 +27,6 @@ from src.utils.config import (
     save_global_setting,
 )
 
-# 数据根目录下需要整体搬迁的大型数据子目录
-# ⚠️ agent_vm 不搬迁：它挂载进沙盒容器，路径绑定容器生命周期，
-# 换根后旧容器即失效（销毁重建），新位置直接建全新空目录即可
-LARGE_DATA_SUBDIRS = ("embedding",)
-
 
 def _save_sensor_config(config: Dict[str, Any]) -> bool:
     return common.save_json_file(SENSOR_CONFIG_PATH, config, log_prefix="[Config API]")
@@ -206,7 +201,7 @@ def setup_data_root(payload: Dict[str, Any]) -> dict:
 
 
 def change_data_root(payload: Dict[str, Any]) -> dict:
-    """随时更改数据根目录：搬迁可迁移数据到新位置，落盘配置，销毁旧沙盒容器，前端随后重启生效"""
+    """更换数据根目录：把当前目录整体复制到空目标，旧数据保留，重启后生效。"""
     new_root = validate_data_root((payload or {}).get("data_root", ""))
     old_root = os.path.normpath(DATA_ROOT)
 
@@ -215,58 +210,60 @@ def change_data_root(payload: Dict[str, Any]) -> dict:
             status_code=400, detail=f"新目录与当前数据根目录相同：{old_root}"
         )
 
-    # 新旧目录互为父子时搬迁会自嵌套，直接拒绝
+    # 新旧目录互为父子时复制会自嵌套，直接拒绝
     if old_root.startswith(new_root + os.sep) or new_root.startswith(old_root + os.sep):
         raise HTTPException(
             status_code=400,
             detail="新目录不能位于当前数据根目录内部，也不能是它的父目录",
         )
 
-    # 搬迁大型数据子目录（embedding 等；agent_vm 不搬，见下方）
-    moved = []
-    try:
-        os.makedirs(new_root, exist_ok=True)
-        for name in LARGE_DATA_SUBDIRS:
-            src = os.path.join(old_root, name)
-            if not os.path.exists(src):
-                continue
-            dst = os.path.join(new_root, name)
-            if os.path.exists(dst):
-                raise HTTPException(
-                    status_code=409,
-                    detail=f"目标位置已存在同名子目录：{dst}，请先清理后重试",
-                )
-            shutil.move(src, dst)
-            moved.append(name)
+    # 目标必须是空目录（不存在则创建），避免与已有数据混在一起
+    if os.path.exists(new_root):
+        if not os.path.isdir(new_root):
+            raise HTTPException(status_code=400, detail=f"目标路径不是文件夹：{new_root}")
+        if os.listdir(new_root):
+            raise HTTPException(
+                status_code=409,
+                detail=f"目标文件夹必须为空：{new_root}（请清空后重试）",
+            )
+    else:
+        try:
+            os.makedirs(new_root, exist_ok=True)
+        except OSError as e:
+            raise HTTPException(status_code=500, detail=f"无法创建目标目录: {e}")
 
-        # agent_vm 不搬迁：旧位置数据保留在旧盘（用户自行处置），
-        # 新位置直接创建全新空目录（已存在则跳过，不影响其中数据）
-        new_agent_vm = os.path.join(new_root, "agent_vm")
-        os.makedirs(new_agent_vm, exist_ok=True)
-    except HTTPException:
-        _rollback_moved_dirs(new_root, old_root, moved)
-        raise
-    except Exception as e:
-        _rollback_moved_dirs(new_root, old_root, moved)
-        raise HTTPException(status_code=500, detail=f"数据搬迁失败: {str(e)}")
+    # 整目录复制（agent_vm / embedding / memory 等全部带走），旧数据原样保留
+    copied_files = 0
+    if os.path.isdir(old_root):
+        try:
+            copied_files = sum(len(files) for _, _, files in os.walk(old_root))
+            shutil.copytree(old_root, new_root, dirs_exist_ok=True)
+        except Exception as e:
+            raise HTTPException(
+                status_code=500,
+                detail=f"复制数据失败: {e}（目标目录不会被当作有效数据，清空后可重试）",
+            )
 
     if not save_global_setting("data_root", new_root):
-        _rollback_moved_dirs(new_root, old_root, moved)
-        raise HTTPException(status_code=500, detail="保存数据盘配置失败")
+        raise HTTPException(
+            status_code=500,
+            detail="保存数据盘配置失败（数据已复制，修复权限后可重试）",
+        )
 
-    # 🌟 销毁旧沙盒容器：其 /agent_vm 挂载绑定的是旧根目录路径，
-    # 换根后必然读写错位，保留只会造成"沙盒写了、宿主看不到"的幽灵文件问题
+    # 🌟 挂载路径已变化：销毁旧沙盒容器，重启后按新数据根自动重建，
+    # 避免容器继续读写旧路径造成"沙盒写了、宿主看不到"的幽灵文件
     _destroy_sandbox_container()
 
     print(
         f"[Config API] 数据根目录已切换: {old_root} -> {new_root}"
-        f"（搬迁: {', '.join(moved) if moved else '无'}，重启后生效）"
+        f"（复制 {copied_files} 个文件，旧数据保留，重启后生效）"
     )
     return {
         "status": "ok",
         "data_root": new_root,
-        "moved": moved,
-        "message": "数据已就绪（agent_vm 已在新位置全新初始化，沙盒容器已销毁，重启后自动重建）",
+        "old_data_root": old_root,
+        "copied_files": copied_files,
+        "message": "全部数据已复制到新位置（旧数据保留），沙盒容器已销毁，重启后生效",
     }
 
 
@@ -291,18 +288,6 @@ def _destroy_sandbox_container():
     except Exception as e:
         # docker 未装/引擎未启动：忽略，重启后 get_docker_manager 会按新 AGENT_VM_DIR 创建
         print(f"[Config API] 销毁旧沙盒容器失败(忽略，重启后重建): {e}")
-
-
-def _rollback_moved_dirs(new_root: str, old_root: str, moved: list):
-    """搬迁中途失败时，把已搬走的子目录挪回旧根目录，避免半迁移状态"""
-    for name in moved:
-        src = os.path.join(new_root, name)
-        dst = os.path.join(old_root, name)
-        try:
-            if os.path.exists(src) and not os.path.exists(dst):
-                shutil.move(src, dst)
-        except Exception:
-            pass
 
 
 # ── 部署与磁盘维护 ──

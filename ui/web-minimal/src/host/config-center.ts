@@ -1749,6 +1749,68 @@ import { HOST } from './state.js';
     const diskWrap = HOST.document.createElement('div');
     sec.appendChild(diskWrap);
 
+    // 数据根目录：一行当前路径 + 文件夹图标「更换」，点击系统选择器选空目录
+    const rootTitle = HOST.document.createElement('div');
+    rootTitle.className = 'settings-subgroup';
+    rootTitle.textContent = '数据根目录';
+    sec.appendChild(rootTitle);
+
+    const rootCard = cfgCard(sec);
+    const rootBody = HOST.document.createElement('div');
+    rootBody.className = 'cfg-card-body';
+    const rootRow = HOST.document.createElement('div');
+    rootRow.style.display = 'flex';
+    rootRow.style.alignItems = 'center';
+    rootRow.style.justifyContent = 'space-between';
+    rootRow.style.gap = '12px';
+    const rootPath = HOST.document.createElement('div');
+    rootPath.className = 'cfg-card-sub';
+    rootPath.style.fontFamily = 'ui-monospace, SFMono-Regular, Consolas, monospace';
+    rootPath.style.wordBreak = 'break-all';
+    rootPath.style.flex = '1';
+    rootPath.textContent = '读取中…';
+    rootRow.appendChild(rootPath);
+    rootBody.appendChild(rootRow);
+    rootCard.appendChild(rootBody);
+
+    const changeBtn = HOST.document.createElement('button');
+    changeBtn.type = 'button';
+    changeBtn.className = 'btn';
+    changeBtn.style.display = 'inline-flex';
+    changeBtn.style.alignItems = 'center';
+    changeBtn.style.flexShrink = '0';
+    changeBtn.innerHTML = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="margin-right:6px"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg><span>更换</span>';
+    rootRow.appendChild(changeBtn);
+
+    function loadDataRoot() {
+      fetch('/api/config/meta')
+        .then(function (r) { return r.json(); })
+        .then(function (d) { rootPath.textContent = d.DATA_ROOT || '未配置'; })
+        .catch(function () { rootPath.textContent = '读取失败'; });
+    }
+    changeBtn.addEventListener('click', function () {
+      const pc = HOST.purrcat;
+      if (!pc || !pc.openDialog) { HOST.alert('文件夹选择仅在桌面端可用'); return; }
+      changeBtn.disabled = true;
+      pc.openDialog({ directory: true, properties: ['openDirectory'] }).then(function (picked) {
+        const target = Array.isArray(picked) ? String(picked[0] || '') : '';
+        if (!target) return null;
+        return fetch('/api/config/change-data-root', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ data_root: target }),
+        }).then(function (r) {
+          if (!r.ok) return r.json().then(function (d) { throw new Error(d.detail || ('HTTP ' + r.status)); });
+          return r.json();
+        }).then(function (d) {
+          rootPath.textContent = d.data_root || target;
+          HOST.alert(d.message || '数据根目录已切换，重启后生效');
+        });
+      }).catch(function (e) {
+        HOST.alert('更换失败：' + (e && e.message || ''));
+      }).then(function () { changeBtn.disabled = false; });
+    });
+    loadDataRoot();
     function fmtBytes(n: any) {
       n = Number(n) || 0;
       const units = ['B', 'KB', 'MB', 'GB', 'TB'];
