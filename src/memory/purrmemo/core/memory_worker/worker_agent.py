@@ -230,12 +230,12 @@ class MemoryAgent:
 
             # ================= 新增解耦逻辑 =================
             # 触发 MEMORY.md 的文本归档更新 (由于是阻塞调用，文件会排队更新，非常安全)
-            if work_exp or user_profile:
+            if user_profile:
                 try:
                     from src.tool.memo.memo_operations import _smart_update_memory_md
 
-                    print("⏳ [Worker] 检测到经验更新，正在后台重建 MEMORY.md ...")
-                    _smart_update_memory_md(work_exp, user_profile)
+                    print("⏳ [Worker] 检测到画像更新，正在后台重建 MEMORY.md ...")
+                    _smart_update_memory_md(user_profile)
                 except Exception as e:
                     print(f"❌ [Worker] 重建 MEMORY.md 异常: {e}")
             # ===============================================

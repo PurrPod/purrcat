@@ -30,9 +30,9 @@ OVERWRITE_MEMORY_MD_TOOL_SCHEMA = {
 }
 
 
-def _smart_update_memory_md(work_exp: list, user_profile: list):
+def _smart_update_memory_md(user_profile: list):
     """通过 AgentModel 智能更新 MEMORY.md (同步阻塞方法，供 Worker 排队调用)"""
-    if not work_exp and not user_profile:
+    if not user_profile:
         return
 
     with MEMORY_MD_LOCK:
@@ -43,7 +43,7 @@ def _smart_update_memory_md(work_exp: list, user_profile: list):
 
         model = AgentModel(task_id="memory_writer")
         system_prompt, user_prompt = build_memory_update_prompts(
-            current_md, work_exp, user_profile
+            current_md, user_profile
         )
 
         messages = [{"role": "system", "content": system_prompt}]

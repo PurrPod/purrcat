@@ -19,24 +19,22 @@ def test_validate_date_format_requires_real_calendar_date():
 
 
 def test_build_memory_update_prompts_contains_both_sections():
-    """SPEC-022 AC-3：MEMORY.md 提示词包含现有档案与新增内容。"""
-    system, user = memo_shared.build_memory_update_prompts(
-        "# 现有", ["经验 A"], ["画像 B"]
-    )
+    """SPEC-022 AC-3：MEMORY.md 提示词包含现有档案与新增用户画像。"""
+    system, user = memo_shared.build_memory_update_prompts("# 现有", ["画像 B"])
 
     assert "overwrite_memory_md" in system
     assert "≤ 15 条" in system
+    assert "工作经验" in system
     assert "【现有长期记忆档案】\n# 现有" in user
-    assert "【本次新增工作经验】\n['经验 A']" in user
     assert "【本次新增用户画像】\n['画像 B']" in user
 
 
 def test_build_memory_update_prompts_marks_empty_sections():
     """SPEC-022 AC-3：空档案/空输入使用括号占位，不产生空行歧义。"""
-    _, user = memo_shared.build_memory_update_prompts("", [], [])
+    _, user = memo_shared.build_memory_update_prompts("", [])
 
     assert "（暂无）" in user
-    assert user.count("（无）") == 2
+    assert user.count("（无）") == 1
 
 
 def test_extract_overwrite_content_reads_tool_arguments():
