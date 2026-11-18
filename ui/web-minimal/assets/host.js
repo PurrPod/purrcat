@@ -563,7 +563,12 @@
   async function putCfg(tab, obj) {
     cfgState.data[tab] = obj;
     const r = await fetch("/api/config/" + tab, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(obj) });
-    if (!r.ok) throw new Error("HTTP " + r.status);
+    if (!r.ok) {
+      const body = await r.json().catch(function() {
+        return {};
+      });
+      throw new Error(body && body.detail || "HTTP " + r.status);
+    }
     if (RELOAD_EP[tab]) {
       try {
         await reloadRuntime(tab);
@@ -625,7 +630,7 @@
     main.appendChild(tb);
     return tb;
   }
-  var CONFIG_TITLE = { plugins: "UI \u63D2\u4EF6\u8BBE\u7F6E", model: "\u6A21\u578B\u8BBE\u7F6E", sensor: "\u4F20\u611F\u5668\u8BBE\u7F6E", file: "\u6587\u4EF6\u6743\u9650\u8BBE\u7F6E", mcp: "MCP \u8BBE\u7F6E", soul: "\u5168\u5C40\u4EBA\u8BBE\u8BBE\u7F6E", acp: "ACP \u8BBE\u7F6E", deploy: "\u90E8\u7F72\u8BBE\u7F6E" };
+  var CONFIG_TITLE = { plugins: "UI \u63D2\u4EF6\u8BBE\u7F6E", model: "\u6A21\u578B\u8BBE\u7F6E", sensor: "\u4F20\u611F\u5668\u8BBE\u7F6E", file: "\u6587\u4EF6\u6743\u9650\u8BBE\u7F6E", mcp: "MCP \u8BBE\u7F6E", memory: "\u8BB0\u5FC6\u8BBE\u7F6E", soul: "\u5168\u5C40\u4EBA\u8BBE\u8BBE\u7F6E", acp: "ACP \u8BBE\u7F6E", deploy: "\u90E8\u7F72\u8BBE\u7F6E" };
   var REFRESH_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 6.1"/><path d="M20 4v7h-7"/></svg>';
   var EYE_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
   var EYE_OFF_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l18 18"/><path d="M10.6 6.3A10.7 10.7 0 0 1 12 6c6.5 0 10 6 10 6a17.6 17.6 0 0 1-2.4 3.1"/><path d="M6.6 6.6C3.6 8.6 2 12 2 12s3.5 6 10 6c1.4 0 2.7-.3 3.9-.7"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>';
@@ -659,6 +664,7 @@
     if (key === "acp") return renderAcpCard(main);
     if (key === "deploy") return renderDeployCards(main);
     if (key === "soul") return renderSoulEditor(main);
+    if (key === "memory") return renderMemoryCards(main, key);
     if (key === "mcp") return renderMcpCards(main, key);
     if (key === "model") return renderModelCards(main, key);
     if (key === "file") return renderFilePermissions(main, key);
@@ -2481,6 +2487,74 @@
     sec.appendChild(diskTitle);
     const diskWrap = HOST.document.createElement("div");
     sec.appendChild(diskWrap);
+    const rootTitle = HOST.document.createElement("div");
+    rootTitle.className = "settings-subgroup";
+    rootTitle.textContent = "\u6570\u636E\u6839\u76EE\u5F55";
+    sec.appendChild(rootTitle);
+    const rootCard = cfgCard(sec);
+    const rootBody = HOST.document.createElement("div");
+    rootBody.className = "cfg-card-body";
+    const rootRow = HOST.document.createElement("div");
+    rootRow.style.display = "flex";
+    rootRow.style.alignItems = "center";
+    rootRow.style.justifyContent = "space-between";
+    rootRow.style.gap = "12px";
+    const rootPath = HOST.document.createElement("div");
+    rootPath.className = "cfg-card-sub";
+    rootPath.style.fontFamily = "ui-monospace, SFMono-Regular, Consolas, monospace";
+    rootPath.style.wordBreak = "break-all";
+    rootPath.style.flex = "1";
+    rootPath.textContent = "\u8BFB\u53D6\u4E2D\u2026";
+    rootRow.appendChild(rootPath);
+    rootBody.appendChild(rootRow);
+    rootCard.appendChild(rootBody);
+    const changeBtn = HOST.document.createElement("button");
+    changeBtn.type = "button";
+    changeBtn.className = "btn";
+    changeBtn.style.display = "inline-flex";
+    changeBtn.style.alignItems = "center";
+    changeBtn.style.flexShrink = "0";
+    changeBtn.innerHTML = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="margin-right:6px"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg><span>\u66F4\u6362</span>';
+    rootRow.appendChild(changeBtn);
+    function loadDataRoot() {
+      fetch("/api/config/meta").then(function(r) {
+        return r.json();
+      }).then(function(d) {
+        rootPath.textContent = d.DATA_ROOT || "\u672A\u914D\u7F6E";
+      }).catch(function() {
+        rootPath.textContent = "\u8BFB\u53D6\u5931\u8D25";
+      });
+    }
+    changeBtn.addEventListener("click", function() {
+      const pc = HOST.purrcat;
+      if (!pc || !pc.openDialog) {
+        HOST.alert("\u6587\u4EF6\u5939\u9009\u62E9\u4EC5\u5728\u684C\u9762\u7AEF\u53EF\u7528");
+        return;
+      }
+      changeBtn.disabled = true;
+      pc.openDialog({ directory: true, properties: ["openDirectory"] }).then(function(picked) {
+        const target = Array.isArray(picked) ? String(picked[0] || "") : "";
+        if (!target) return null;
+        return fetch("/api/config/change-data-root", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ data_root: target })
+        }).then(function(r) {
+          if (!r.ok) return r.json().then(function(d) {
+            throw new Error(d.detail || "HTTP " + r.status);
+          });
+          return r.json();
+        }).then(function(d) {
+          rootPath.textContent = d.data_root || target;
+          HOST.alert(d.message || "\u6570\u636E\u6839\u76EE\u5F55\u5DF2\u5207\u6362\uFF0C\u91CD\u542F\u540E\u751F\u6548");
+        });
+      }).catch(function(e) {
+        HOST.alert("\u66F4\u6362\u5931\u8D25\uFF1A" + (e && e.message || ""));
+      }).then(function() {
+        changeBtn.disabled = false;
+      });
+    });
+    loadDataRoot();
     function fmtBytes(n) {
       n = Number(n) || 0;
       const units = ["B", "KB", "MB", "GB", "TB"];
@@ -2707,6 +2781,101 @@
       if (HOST.document.activeElement && list.contains(HOST.document.activeElement)) return;
       draw();
     }, 3e3));
+  }
+  var MEMORY_FIELDS = [
+    { key: "event_retention_days", label: "\u4E8B\u4EF6\u4FDD\u7559\u5929\u6570", hint: "\u8D85\u8FC7\u8BE5\u5929\u6570\u7684\u4E8B\u4EF6\u4F1A\u88AB\u6E05\u7406\uFF0C0 \u8868\u793A\u6C38\u4E45\u4FDD\u7559", step: "1", min: 0, max: 3650 },
+    { key: "decay_half_life_days", label: "\u7F6E\u4FE1\u5EA6\u534A\u8870\u671F\uFF08\u5929\uFF09", hint: "\u7ECF\u9A8C\u4E0E\u56FE\u8C31\u7F6E\u4FE1\u5EA6\u6BCF\u8FC7\u4E00\u4E2A\u534A\u8870\u671F\u8870\u51CF\u4E00\u534A", step: "1", min: 1, max: 3650 }
+  ];
+  function renderMemoryCards(main, key) {
+    const card = cfgCard(main);
+    cfgData(key).then(function(data) {
+      const h = cfgCardHead(card, "\u8BB0\u5FC6\u53C2\u6570", "memory", "\u4FDD\u5B58\u540E\u7ACB\u5373\u751F\u6548\uFF08~/.purrcat/memory.json\uFF09");
+      const body = HOST.document.createElement("div");
+      body.className = "cfg-card-body";
+      const grid = HOST.document.createElement("div");
+      grid.className = "cfg-grid";
+      const inputs = {};
+      MEMORY_FIELDS.forEach(function(f) {
+        const el = HOST.document.createElement("input");
+        el.type = "number";
+        el.className = "cfg-input";
+        el.step = f.step;
+        el.min = String(f.min);
+        el.max = String(f.max);
+        el.value = data[f.key] != null ? String(data[f.key]) : "";
+        inputs[f.key] = el;
+        const field = HOST.document.createElement("div");
+        field.className = "cfg-field";
+        const lb = HOST.document.createElement("label");
+        lb.className = "cfg-label";
+        lb.textContent = f.label;
+        const hint = HOST.document.createElement("div");
+        hint.className = "cfg-card-sub";
+        hint.textContent = f.hint;
+        field.appendChild(lb);
+        field.appendChild(el);
+        field.appendChild(hint);
+        grid.appendChild(field);
+      });
+      body.appendChild(grid);
+      card.appendChild(body);
+      const save = HOST.document.createElement("button");
+      save.className = "btn cfg-save";
+      save.textContent = "\u4FDD\u5B58";
+      save.addEventListener("click", function() {
+        const obj = {};
+        MEMORY_FIELDS.forEach(function(f) {
+          obj[f.key] = inputs[f.key].value;
+        });
+        save.disabled = true;
+        putCfg(key, obj).then(function() {
+          delete cfgState.data[key];
+          rerenderConfig(main, key);
+        }).catch(function(e) {
+          save.disabled = false;
+          HOST.alert("\u4FDD\u5B58\u5931\u8D25\uFF1A" + (e && e.message || ""));
+        });
+      });
+      h.right.appendChild(save);
+    });
+    renderMemoryStats(main);
+  }
+  function renderMemoryStats(main) {
+    const card = cfgCard(main);
+    cfgCardHead(card, "\u8BB0\u5FC6\u5E93\u72B6\u6001", "stats", "\u5F53\u524D\u4E8B\u4EF6 / \u7ECF\u9A8C / \u56FE\u8C31\u89C4\u6A21");
+    const body = HOST.document.createElement("div");
+    body.className = "cfg-card-body";
+    const grid = HOST.document.createElement("div");
+    grid.className = "cfg-grid";
+    const values = {};
+    [["events", "\u4E8B\u4EF6"], ["experiences", "\u7ECF\u9A8C"], ["graph_nodes", "\u56FE\u8C31\u8282\u70B9"], ["graph_edges", "\u56FE\u8C31\u8FB9"]].forEach(function(pair) {
+      const field = HOST.document.createElement("div");
+      field.className = "cfg-field";
+      const lb = HOST.document.createElement("label");
+      lb.className = "cfg-label";
+      lb.textContent = pair[1];
+      const val = HOST.document.createElement("div");
+      val.className = "cfg-card-sub";
+      val.textContent = "\u2026";
+      values[pair[0]] = val;
+      field.appendChild(lb);
+      field.appendChild(val);
+      grid.appendChild(field);
+    });
+    body.appendChild(grid);
+    card.appendChild(body);
+    fetch("/api/config/memory/stats").then(function(r) {
+      return r.json();
+    }).then(function(d) {
+      values.events.textContent = String(d.events);
+      values.experiences.textContent = String(d.experiences);
+      values.graph_nodes.textContent = String(d.graph_nodes);
+      values.graph_edges.textContent = String(d.graph_edges);
+    }).catch(function() {
+      Object.keys(values).forEach(function(k) {
+        values[k].textContent = "\u2014";
+      });
+    });
   }
 
   // ui/web-minimal/src/host/manifest.ts
@@ -3273,8 +3442,8 @@
   }
 
   // ui/web-minimal/src/host/settings-tabs.ts
-  var CONFIG_NAV = ["plugins", "model", "sensor", "file", "mcp", "soul", "acp", "deploy"];
-  var CONFIG_LABEL = { plugins: "UI \u63D2\u4EF6", model: "\u6A21\u578B", sensor: "\u4F20\u611F\u5668", file: "\u6587\u4EF6\u6743\u9650", mcp: "MCP", soul: "\u5168\u5C40\u4EBA\u8BBE", acp: "ACP", deploy: "\u90E8\u7F72" };
+  var CONFIG_NAV = ["plugins", "model", "sensor", "file", "mcp", "memory", "soul", "acp", "deploy"];
+  var CONFIG_LABEL = { plugins: "UI \u63D2\u4EF6", model: "\u6A21\u578B", sensor: "\u4F20\u611F\u5668", file: "\u6587\u4EF6\u6743\u9650", mcp: "MCP", memory: "\u8BB0\u5FC6", soul: "\u5168\u5C40\u4EBA\u8BBE", acp: "ACP", deploy: "\u90E8\u7F72" };
   var settingsTab = "plugins";
   var settingsRenderedTab = "";
   var deployPollT = null;
