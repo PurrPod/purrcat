@@ -426,6 +426,111 @@ curl -X POST 'http://127.0.0.1:8000/api/config/mcp/reload'
 
 ---
 
+## GET `/api/config/memory`
+
+读取记忆系统用户配置（`~/.purrcat/memory.json`）。文件不存在或字段缺失时返回默认值。
+
+| 字段 | 默认 | 范围 | 说明 |
+| --- | --- | --- | --- |
+| `event_retention_days` | `90` | 0–3650 | 事件保留天数，`0` 表示永久保留 |
+| `decay_half_life_days` | `90.0` | 1–3650 | 置信度艾宾浩斯衰减半衰期（天） |
+
+**响应**
+
+```json
+{
+  "event_retention_days": 90,
+  "decay_half_life_days": 90.0
+}
+```
+
+**示例**
+
+```bash
+curl 'http://127.0.0.1:8000/api/config/memory'
+```
+
+---
+
+## PUT `/api/config/memory`
+
+校验后原子写入 `~/.purrcat/memory.json`，保存后立即生效（无需重启）。
+
+**请求**
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| body | body | object | 是 | 上表字段的任意子集，缺失字段保持默认 |
+
+**响应**
+
+```json
+{
+  "status": "ok",
+  "config": { "event_retention_days": 90, "decay_half_life_days": 60 }
+}
+```
+
+非法值返回 `400`：`{ "detail": "decay_half_life_days 必须在 1 到 3650 之间" }`
+
+**示例**
+
+```bash
+curl -X PUT 'http://127.0.0.1:8000/api/config/memory' \
+  -H 'Content-Type: application/json' \
+  -d '{"event_retention_days": 30, "decay_half_life_days": 60}'
+```
+
+---
+
+## GET `/api/config/memory/stats`
+
+统计当前记忆库规模（SQLite 事实源 + 图谱）。
+
+**响应**
+
+```json
+{ "events": 480, "experiences": 558, "graph_nodes": 42, "graph_edges": 96 }
+```
+
+---
+
+## POST `/api/config/memory/cleanup`
+
+按 `event_retention_days` 清理过期事件（`0` 表示跳过），并立即处理向量索引 outbox。
+
+**响应**
+
+```json
+{
+  "status": "ok",
+  "retention_days": 90,
+  "deleted_events": 0,
+  "synced": { "events": 0, "experiences": 0 }
+}
+```
+
+---
+
+## POST `/api/config/memory/reconcile`
+
+对账 SQLite 与向量库：删除孤儿向量、为缺失记录补投任务，随后立即执行一次 outbox。
+
+**响应**
+
+```json
+{
+  "status": "ok",
+  "reconcile": {
+    "events": { "orphans": 0, "missing": 0 },
+    "experiences": { "orphans": 0, "missing": 0 }
+  },
+  "synced": { "events": 0, "experiences": 0 }
+}
+```
+
+---
+
 ## GET `/api/config/acp`
 
 读取 ACP 接入状态：relay 部署情况、端口与 `uv` 可用性。

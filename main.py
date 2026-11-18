@@ -201,6 +201,15 @@ async def _bg_heavy_init():
     except Exception as e:
         print(f"[!] 启动依赖检查失败: {e}")
 
+    # 🌟 记忆系统健康检查：配置版本 / SQLite 结构 / FTS / 向量 collection
+    # 有问题时自动迁移（写前备份），仍有未修复项只记录日志
+    try:
+        from src.memory.health import run_startup_check
+
+        await asyncio.to_thread(run_startup_check)
+    except Exception as e:
+        print(f"[!] 记忆系统检查失败: {e}")
+
     # 3. 释放一下事件循环，防卡顿
     await asyncio.sleep(0.1)
 

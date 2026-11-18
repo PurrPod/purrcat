@@ -66,7 +66,10 @@ import { HOST } from './state.js';
   export async function putCfg(tab: string, obj: Record<string, any>) {
     cfgState.data[tab] = obj;
     const r = await fetch('/api/config/' + tab, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(obj) });
-    if (!r.ok) throw new Error('HTTP ' + r.status);
+    if (!r.ok) {
+      const body = await r.json().catch(function () { return {}; });
+      throw new Error((body && body.detail) || ('HTTP ' + r.status));
+    }
     // 对齐完整模式：切换开关保存后自动重载。重载失败不阻断保存（可点「重载到内存」重试）
     if (RELOAD_EP[tab]) {
       try { await reloadRuntime(tab); } catch (e) { /* 见上 */ }
@@ -121,7 +124,7 @@ import { HOST } from './state.js';
     return tb;
   }
 
-  export const CONFIG_TITLE: Record<string, string> = { plugins: 'UI 插件设置', model: '模型设置', sensor: '传感器设置', file: '文件权限设置', mcp: 'MCP 设置', soul: '全局人设设置', acp: 'ACP 设置', deploy: '部署设置' };
+  export const CONFIG_TITLE: Record<string, string> = { plugins: 'UI 插件设置', model: '模型设置', sensor: '传感器设置', file: '文件权限设置', mcp: 'MCP 设置', memory: '记忆设置', soul: '全局人设设置', acp: 'ACP 设置', deploy: '部署设置' };
   const REFRESH_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 6.1"/><path d="M20 4v7h-7"/></svg>';
   const EYE_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
   const EYE_OFF_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l18 18"/><path d="M10.6 6.3A10.7 10.7 0 0 1 12 6c6.5 0 10 6 10 6a17.6 17.6 0 0 1-2.4 3.1"/><path d="M6.6 6.6C3.6 8.6 2 12 2 12s3.5 6 10 6c1.4 0 2.7-.3 3.9-.7"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>';
@@ -157,6 +160,7 @@ import { HOST } from './state.js';
     if (key === 'acp') return renderAcpCard(main);
     if (key === 'deploy') return renderDeployCards(main);
     if (key === 'soul') return renderSoulEditor(main);
+    if (key === 'memory') return renderMemoryCards(main, key);
     if (key === 'mcp') return renderMcpCards(main, key);
     if (key === 'model') return renderModelCards(main, key);
     if (key === 'file') return renderFilePermissions(main, key);
@@ -1744,6 +1748,7 @@ import { HOST } from './state.js';
     sec.appendChild(diskTitle);
     const diskWrap = HOST.document.createElement('div');
     sec.appendChild(diskWrap);
+
     function fmtBytes(n: any) {
       n = Number(n) || 0;
       const units = ['B', 'KB', 'MB', 'GB', 'TB'];
@@ -1954,5 +1959,101 @@ import { HOST } from './state.js';
       if (HOST.document.activeElement && list.contains(HOST.document.activeElement)) return;
       draw();
     }, 3000));
+  }
+
+  // ---- memory：记忆参数 + 记忆库状态 ----
+  const MEMORY_FIELDS: Array<{ key: string; label: string; hint: string; step: string; min: number; max: number }> = [
+    { key: 'event_retention_days', label: '事件保留天数', hint: '超过该天数的事件会被清理，0 表示永久保留', step: '1', min: 0, max: 3650 },
+    { key: 'decay_half_life_days', label: '置信度半衰期（天）', hint: '经验与图谱置信度每过一个半衰期衰减一半', step: '1', min: 1, max: 3650 },
+  ];
+
+  export function renderMemoryCards(main: HTMLElement, key: string) {
+    const card = cfgCard(main);
+    cfgData(key).then(function (data) {
+      const h = cfgCardHead(card, '记忆参数', 'memory', '保存后立即生效（~/.purrcat/memory.json）');
+      const body = HOST.document.createElement('div');
+      body.className = 'cfg-card-body';
+      const grid = HOST.document.createElement('div');
+      grid.className = 'cfg-grid';
+      const inputs: Record<string, HTMLInputElement> = {};
+      MEMORY_FIELDS.forEach(function (f) {
+        const el = HOST.document.createElement('input');
+        el.type = 'number';
+        el.className = 'cfg-input';
+        el.step = f.step;
+        el.min = String(f.min);
+        el.max = String(f.max);
+        el.value = data[f.key] != null ? String(data[f.key]) : '';
+        inputs[f.key] = el;
+        const field = HOST.document.createElement('div');
+        field.className = 'cfg-field';
+        const lb = HOST.document.createElement('label');
+        lb.className = 'cfg-label';
+        lb.textContent = f.label;
+        const hint = HOST.document.createElement('div');
+        hint.className = 'cfg-card-sub';
+        hint.textContent = f.hint;
+        field.appendChild(lb);
+        field.appendChild(el);
+        field.appendChild(hint);
+        grid.appendChild(field);
+      });
+      body.appendChild(grid);
+      card.appendChild(body);
+
+      const save = HOST.document.createElement('button');
+      save.className = 'btn cfg-save';
+      save.textContent = '保存';
+      save.addEventListener('click', function () {
+        const obj: Record<string, any> = {};
+        MEMORY_FIELDS.forEach(function (f) { obj[f.key] = inputs[f.key].value; });
+        save.disabled = true;
+        putCfg(key, obj)
+          .then(function () { delete cfgState.data[key]; rerenderConfig(main, key); })
+          .catch(function (e) { save.disabled = false; HOST.alert('保存失败：' + (e && e.message || '')); });
+      });
+      h.right.appendChild(save);
+    });
+
+    renderMemoryStats(main);
+  }
+
+  // 记忆库规模：只展示统计
+  export function renderMemoryStats(main: HTMLElement) {
+    const card = cfgCard(main);
+    cfgCardHead(card, '记忆库状态', 'stats', '当前事件 / 经验 / 图谱规模');
+    const body = HOST.document.createElement('div');
+    body.className = 'cfg-card-body';
+    const grid = HOST.document.createElement('div');
+    grid.className = 'cfg-grid';
+    const values: Record<string, HTMLElement> = {};
+    [['events', '事件'], ['experiences', '经验'], ['graph_nodes', '图谱节点'], ['graph_edges', '图谱边']].forEach(function (pair) {
+      const field = HOST.document.createElement('div');
+      field.className = 'cfg-field';
+      const lb = HOST.document.createElement('label');
+      lb.className = 'cfg-label';
+      lb.textContent = pair[1];
+      const val = HOST.document.createElement('div');
+      val.className = 'cfg-card-sub';
+      val.textContent = '…';
+      values[pair[0]] = val;
+      field.appendChild(lb);
+      field.appendChild(val);
+      grid.appendChild(field);
+    });
+    body.appendChild(grid);
+    card.appendChild(body);
+
+    fetch('/api/config/memory/stats')
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        values.events.textContent = String(d.events);
+        values.experiences.textContent = String(d.experiences);
+        values.graph_nodes.textContent = String(d.graph_nodes);
+        values.graph_edges.textContent = String(d.graph_edges);
+      })
+      .catch(function () {
+        Object.keys(values).forEach(function (k) { values[k].textContent = '—'; });
+      });
   }
 

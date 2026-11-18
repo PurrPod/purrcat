@@ -157,6 +157,116 @@ def api_reload_mcp_runtime():
         raise HTTPException(status_code=500, detail=f"MCP 重载失败: {str(e)}")
 
 
+# ── Memory Config ──
+@router.get("/memory")
+def api_get_memory_config():
+    from src.memory.settings import get_memory_settings
+
+    return get_memory_settings()
+
+
+@router.put("/memory")
+def api_update_memory_config(config: Dict[str, Any]):
+    from src.memory.settings import save_memory_settings
+
+    try:
+        normalized = save_memory_settings(config)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"status": "ok", "config": normalized}
+
+
+_experience_engine = None
+
+
+def _memory_runtime():
+    """取得当前进程的记忆引擎；向量库不可用时降级为 None。"""
+    global _experience_engine
+
+    from src.memory.purrmemo.core.storage.event_engine import EventEngine
+    from src.memory.purrmemo.core.storage.experience_engine import ExperienceEngine
+    from src.memory.purrmemo.core.storage.vector_engine import VectorEngine
+
+    if _experience_engine is None:
+        _experience_engine = ExperienceEngine()
+    try:
+        vector_engine = VectorEngine()
+    except Exception:
+        vector_engine = None
+    return EventEngine(), _experience_engine, vector_engine
+
+
+@router.get("/memory/stats")
+def api_get_memory_stats():
+    from src.memory.purrmemo.core.storage.graph_engine import GraphEngine
+
+    event_engine, experience_engine, _ = _memory_runtime()
+    graph = GraphEngine().get_graph_stats()
+    return {
+        "events": event_engine.count(),
+        "experiences": experience_engine.count(),
+        "graph_nodes": graph["nodes"],
+        "graph_edges": graph["edges"],
+    }
+
+
+@router.get("/memory/health")
+def api_get_memory_health():
+    """记忆系统结构与版本检测（配置 / SQLite / 向量库 / 图谱）。"""
+    from src.memory.health import inspect_memory
+
+    return inspect_memory()
+
+
+@router.post("/memory/migrate")
+def api_migrate_memory():
+    """自动迁移记忆系统：配置版本、SQLite 结构、FTS 与向量 collection。"""
+    from src.memory.health import inspect_memory, migrate_memory
+
+    migration = migrate_memory()
+    return {
+        "status": "ok",
+        "migration": migration,
+        "health": inspect_memory(),
+    }
+
+
+@router.post("/memory/cleanup")
+def api_cleanup_memory_events():
+    """按配置的保留天数清理过期事件，并立即同步向量索引。"""
+    from src.memory.purrmemo.core.index_worker import process_outbox_once
+    from src.memory.settings import get_memory_settings
+
+    retention_days = get_memory_settings()["event_retention_days"]
+    event_engine, experience_engine, vector_engine = _memory_runtime()
+    deleted = (
+        event_engine.cleanup_old_events(days_threshold=retention_days)
+        if retention_days > 0
+        else 0
+    )
+    synced = process_outbox_once(event_engine, experience_engine, vector_engine)
+    return {
+        "status": "ok",
+        "retention_days": retention_days,
+        "deleted_events": deleted,
+        "synced": synced,
+    }
+
+
+@router.post("/memory/reconcile")
+def api_reconcile_memory_index():
+    """对账 SQLite 与向量库：删除孤儿向量、补齐缺失向量。"""
+    from src.memory.purrmemo.core.index_worker import (
+        process_outbox_once,
+        reconcile,
+    )
+
+    event_engine, experience_engine, vector_engine = _memory_runtime()
+    report = reconcile(event_engine, experience_engine, vector_engine)
+    synced = process_outbox_once(event_engine, experience_engine, vector_engine)
+    return {"status": "ok", "reconcile": report, "synced": synced}
+
+
 # ── ACP 编辑器接入（任意 ACP 客户端：编辑器 / IDE 等）──
 
 
