@@ -92,8 +92,13 @@ class PurrMemoClient(metaclass=SingletonMeta):
             return []
 
     def get_recent_experiences(self, limit: int = 30):
-        """获取最近的经验（从向量库）"""
+        """获取最近的经验（SQLite 事实源，带有效置信度）。"""
         try:
+            experience_engine = getattr(self.search_tool, "experience_engine", None)
+            if experience_engine is not None:
+                return experience_engine.list_recent(limit)
+
+            # 兼容没有经验库的检索工具（测试替身）
             vector_engine = self.search_tool.vector_engine
             if not vector_engine or not getattr(vector_engine, "collection", None):
                 return []

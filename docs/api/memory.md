@@ -2,7 +2,7 @@
 
 > 源码：`src/server/api/memory.py` ｜ 前缀：`/api/memory` ｜ 端点：9 个
 
-记忆系统接口：事件（SQLite + FTS5）、工作经验（VectorDB）、记忆图谱（GraphEngine）的读取与删除，以及 `MEMORY.md` 的读写。
+记忆系统接口：事件（SQLite + FTS5）、工作经验（SQLite 事实源 + Chroma 向量索引）、记忆图谱（GraphEngine）的读取与删除，以及 `MEMORY.md` 的读写。
 
 ---
 
@@ -34,7 +34,7 @@ curl 'http://127.0.0.1:8000/api/memory/events'
 
 ## GET `/api/memory/experiences`
 
-获取最近工作经验列表（VectorDB），固定取最近 30 条；读取异常时返回空数组。
+获取最近工作经验列表（SQLite 事实源），固定取最近 30 条；`confidence` 为按衰减锚点惰性计算出的有效置信度；读取异常时返回空数组。
 
 **请求**
 
@@ -44,11 +44,16 @@ curl 'http://127.0.0.1:8000/api/memory/events'
 
 ```json
 [
-  { "id": "exp_x9y8z7", "title": "示例经验", "content": "……" }
+  {
+    "exp_id": "exp_x9y8z7",
+    "content": "……",
+    "confidence": 0.6,
+    "timestamp": "2026-10-14T10:00:00"
+  }
 ]
 ```
 
-经验字段结构由向量引擎决定，此处为示意；无数据时为 `[]`。
+无数据时为 `[]`。
 
 **示例**
 
@@ -113,7 +118,7 @@ curl 'http://127.0.0.1:8000/api/memory/search?q=项目配置'
 
 ## DELETE `/api/memory/experiences/{exp_id}`
 
-删除一条工作经验（VectorDB）。
+删除一条工作经验：SQLite 硬删除并写入可恢复快照，同时登记向量删除，由索引器异步清理 Chroma。
 
 **请求**
 

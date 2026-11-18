@@ -295,8 +295,8 @@ class GraphEngine(metaclass=SingletonMeta):
 
                     if self.graph.has_edge(source_node_id, target_node_id):
                         edge_data = self.graph[source_node_id][target_node_id]
+                        # 衰减不刷新 updated_at，否则每天都会把衰减锚点重置
                         edge_data["confidence"] = new_confidence
-                        edge_data["updated_at"] = now_iso()
                         updated_count += 1
 
                 # 如果成功更新了边，将图谱持久化到磁盘

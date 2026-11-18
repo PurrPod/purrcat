@@ -36,8 +36,30 @@ def get_recent_events(limit: int = 30):
 
 
 def get_recent_experiences(limit: int = 30):
-    """获取最近的经验（从向量库）"""
+    """获取最近的经验（从经验库）"""
     return _get_memory_client().get_recent_experiences(limit=limit)
+
+
+def _experience_engine():
+    engine = getattr(_get_memory_client().search_tool, "experience_engine", None)
+    if engine is None:
+        raise RuntimeError("经验库不可用")
+    return engine
+
+
+def reinforce_experience(experience_id: str):
+    """提升一条经验的置信度（+0.2）。"""
+    return _experience_engine().reinforce(experience_id)
+
+
+def replace_experience(experience_id: str, content: str):
+    """覆盖经验内容并重置置信度。"""
+    return _experience_engine().replace(experience_id, content)
+
+
+def delete_experience(experience_id: str):
+    """硬删除一条经验（保留可恢复快照）。"""
+    return _experience_engine().delete(experience_id)
 
 
 def visualize_graph(output_file=None):
@@ -52,5 +74,8 @@ __all__ = [
     "get_memory_graph",
     "get_recent_events",
     "get_recent_experiences",
+    "reinforce_experience",
+    "replace_experience",
+    "delete_experience",
     "visualize_graph",
 ]

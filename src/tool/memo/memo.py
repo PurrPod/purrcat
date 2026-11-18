@@ -5,7 +5,13 @@ import os
 import traceback
 
 from src.agent.session_store import SessionStore
-from src.memory import search_memory, add_memory
+from src.memory import (
+    add_memory,
+    delete_experience,
+    reinforce_experience,
+    replace_experience,
+    search_memory,
+)
 from src.tool.memo._shared import (
     format_cached_memo,
     format_search_results,
@@ -15,7 +21,12 @@ from src.tool.utils.format import error_response, text_response
 
 
 def Memo(
-    action: str = None, memo_data: dict = None, query: dict = None, **kwargs
+    action: str = None,
+    memo_data: dict = None,
+    query: dict = None,
+    experience_id: str = None,
+    content: str = None,
+    **kwargs,
 ) -> str:
     """
     统一记忆工具，支持写入记忆或搜索记忆
@@ -35,18 +46,22 @@ def Memo(
 
         action = action.strip().lower()
 
-        if action not in ["add", "search"]:
+        if action not in ["add", "search", "reinforce", "replace", "delete"]:
             return error_response(
-                f"无效的 action 值: {action}。支持的 action: add, search",
+                f"无效的 action 值: {action}。支持的 action: add, search, "
+                "reinforce, replace, delete",
                 "❌ 无效的action",
             )
 
         if action == "add":
             return _handle_add(memo_data)
-        elif action == "search":
+        if action == "search":
             return _handle_search(query)
-
-        return error_response("未知错误", "❌ 系统错误")
+        if action == "reinforce":
+            return _handle_reinforce(experience_id)
+        if action == "replace":
+            return _handle_replace(experience_id, content)
+        return _handle_delete(experience_id)
 
     except Exception as e:
         traceback.print_exc()
@@ -134,3 +149,78 @@ def _handle_search(query: dict = None) -> str:
         print(f"❌ [MemoSearch] 异常: {e}")
         traceback.print_exc()
         return error_response(f"记忆检索异常: {str(e)}", "❌ MemoSearch执行异常")
+
+
+def _require_experience_id(experience_id: str):
+    if not experience_id or not str(experience_id).strip():
+        return None, error_response(
+            "参数缺失: 该操作需要提供 experience_id（形如 exp_xxx）",
+            "❌ 参数缺失",
+        )
+    return str(experience_id).strip(), None
+
+
+def _handle_reinforce(experience_id: str = None) -> str:
+    """提升一条经验的置信度。"""
+    experience_id, error = _require_experience_id(experience_id)
+    if error:
+        return error
+
+    result = reinforce_experience(experience_id)
+    if not result:
+        return error_response(
+            f"未找到经验: {experience_id}", "❌ 经验不存在"
+        )
+
+    return text_response(
+        f"已强化经验 {experience_id}\n"
+        f"置信度：{result['old_confidence']:.2f} → {result['new_confidence']:.2f}",
+        "✅ 经验已强化",
+    )
+
+
+def _handle_replace(experience_id: str = None, content: str = None) -> str:
+    """覆盖经验内容并重置置信度。"""
+    experience_id, error = _require_experience_id(experience_id)
+    if error:
+        return error
+
+    if not content or not str(content).strip():
+        return error_response(
+            "参数缺失: replace 需要提供新的 content",
+            "❌ 参数缺失",
+        )
+
+    try:
+        result = replace_experience(experience_id, str(content).strip())
+    except ValueError as e:
+        return error_response(str(e), "❌ 经验替换失败")
+
+    if not result:
+        return error_response(
+            f"未找到经验: {experience_id}", "❌ 经验不存在"
+        )
+
+    return text_response(
+        f"已更新经验 {experience_id}\n"
+        f"置信度：{result['confidence']:.2f}",
+        "✅ 经验已更新",
+    )
+
+
+def _handle_delete(experience_id: str = None) -> str:
+    """硬删除一条经验。"""
+    experience_id, error = _require_experience_id(experience_id)
+    if error:
+        return error
+
+    result = delete_experience(experience_id)
+    if not result:
+        return error_response(
+            f"未找到经验: {experience_id}", "❌ 经验不存在"
+        )
+
+    return text_response(
+        f"已删除经验 {experience_id}",
+        "✅ 经验已删除",
+    )

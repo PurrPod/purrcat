@@ -4,8 +4,9 @@ import sqlite3
 from src.memory.config import EVENTDB_PATH, EVENTDB_TABLE_NAME
 
 from ..clock import iso_days_ago, now_iso
-from ..filters import build_fts_query
+from ..filters import build_fts_query, build_fts_query_or, tokenize_for_fts
 from ..utils import SingletonMeta
+from .outbox import enqueue, ensure_outbox
 
 
 class EventEngine(metaclass=SingletonMeta):
@@ -45,6 +46,17 @@ class EventEngine(metaclass=SingletonMeta):
             content
         )
         """)
+
+        # 结构版本：供启动健康检测判断事件库是否已升级到当前结构
+        cursor.execute(
+            "CREATE TABLE IF NOT EXISTS schema_meta ("
+            "key TEXT PRIMARY KEY, value TEXT NOT NULL)"
+        )
+        cursor.execute(
+            "INSERT OR REPLACE INTO schema_meta (key, value) VALUES ('version', '2')"
+        )
+
+        ensure_outbox(self.conn)
         self.conn.commit()
 
     def insert_event(self, event_id, content, timestamp=None, source=None):
@@ -53,32 +65,29 @@ class EventEngine(metaclass=SingletonMeta):
             timestamp = now_iso()
 
         try:
-            cursor = self.conn.cursor()
-            cursor.execute(
-                f"""
-            INSERT OR REPLACE INTO {self.table_name} 
-            (event_id, content, timestamp, source) 
-            VALUES (?, ?, ?, ?)
-            """,
-                (event_id, content, timestamp, source),
-            )
-
-            cursor.execute(
-                f"DELETE FROM {self.table_name}_fts WHERE event_id = ?", (event_id,)
-            )
-            cursor.execute(
-                f"""
-            INSERT INTO {self.table_name}_fts (event_id, content) 
-            VALUES (?, ?)
-            """,
-                (event_id, content),
-            )
-
-            self.conn.commit()
+            with self.conn:
+                self.conn.execute(
+                    f"""
+                    INSERT OR REPLACE INTO {self.table_name}
+                    (event_id, content, timestamp, source)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (event_id, content, timestamp, source),
+                )
+                self.conn.execute(
+                    f"DELETE FROM {self.table_name}_fts WHERE event_id = ?", (event_id,)
+                )
+                self.conn.execute(
+                    f"""
+                    INSERT INTO {self.table_name}_fts (event_id, content)
+                    VALUES (?, ?)
+                    """,
+                    (event_id, tokenize_for_fts(content)),
+                )
+                enqueue(self.conn, event_id, "upsert")
             return True
         except Exception as e:
             print(f"插入事件失败: {e}")
-            self.conn.rollback()
             return False
 
     def get_event_by_id(self, event_id):
@@ -113,14 +122,7 @@ class EventEngine(metaclass=SingletonMeta):
         # 因为启用了 sqlite3.Row，直接推导式返回即可
         return [dict(row) for row in cursor.fetchall()]
 
-    def search_fts_bm25(self, query, start_time=None, end_time=None, limit=50):
-        """利用 SQLite FTS5 执行 BM25 检索"""
-        cursor = self.conn.cursor()
-
-        fts_query_str = build_fts_query(query)
-        if not fts_query_str:
-            return []
-
+    def _run_fts_query(self, fts_query_str, start_time, end_time, limit):
         sql = f"""
         SELECT e.event_id, e.content, e.timestamp, e.source, fts.rank as bm25_score
         FROM {self.table_name}_fts fts
@@ -136,7 +138,7 @@ class EventEngine(metaclass=SingletonMeta):
         sql += " ORDER BY fts.rank LIMIT ?"
         params.append(limit)
 
-        cursor.execute(sql, tuple(params))
+        cursor = self.conn.execute(sql, tuple(params))
         return [
             {
                 "id": r[0],
@@ -151,58 +153,85 @@ class EventEngine(metaclass=SingletonMeta):
             for r in cursor.fetchall()
         ]
 
+    def search_fts_bm25(self, query, start_time=None, end_time=None, limit=50):
+        """利用 SQLite FTS5 执行 BM25 检索；AND 零结果时用 OR 重试。"""
+        fts_query_str = build_fts_query(query)
+        if not fts_query_str:
+            return []
+
+        results = self._run_fts_query(fts_query_str, start_time, end_time, limit)
+        if results:
+            return results
+
+        or_query_str = build_fts_query_or(query)
+        if or_query_str and or_query_str != fts_query_str:
+            return self._run_fts_query(or_query_str, start_time, end_time, limit)
+        return []
+
     def close(self):
         """关闭数据库连接"""
         if self.conn:
             self.conn.close()
 
     def delete_event(self, event_id):
-        """彻底删除单条事件（包含全文索引）"""
+        """彻底删除单条事件（包含全文索引），并登记向量删除。"""
         try:
-            cursor = self.conn.cursor()
-            cursor.execute(
-                f"DELETE FROM {self.table_name}_fts WHERE event_id = ?", (event_id,)
-            )
-            cursor.execute(
-                f"DELETE FROM {self.table_name} WHERE event_id = ?", (event_id,)
-            )
-
-            if cursor.rowcount > 0:
-                self.conn.commit()
-                return True
-            else:
-                self.conn.rollback()
-                return False
+            with self.conn:
+                cursor = self.conn.execute(
+                    f"DELETE FROM {self.table_name} WHERE event_id = ?", (event_id,)
+                )
+                self.conn.execute(
+                    f"DELETE FROM {self.table_name}_fts WHERE event_id = ?", (event_id,)
+                )
+                if cursor.rowcount > 0:
+                    enqueue(self.conn, event_id, "delete")
+                    return True
+            return False
         except Exception as e:
             print(f"删除事件失败: {e}")
-            self.conn.rollback()
             return False
+
+    def count(self):
+        """当前事件总数（配置中心展示用）。"""
+        return self.conn.execute(f"SELECT COUNT(*) FROM {self.table_name}").fetchone()[0]
+
+    def list_existing_ids(self):
+        """列出 SQLite 中现有的事件 ID，供索引对账使用。"""
+        cursor = self.conn.execute(f"SELECT event_id FROM {self.table_name}")
+        return [row[0] for row in cursor.fetchall()]
+
+    def list_outbox(self, limit=100, now=None):
+        """读取待同步操作（索引器使用）。"""
+        from .outbox import fetch_pending
+
+        return fetch_pending(self.conn, limit=limit, now=now)
 
     def cleanup_old_events(self, days_threshold=90):
         """清理超过 N 天的陈旧事件"""
         cutoff_date = iso_days_ago(days_threshold)
 
         try:
-            cursor = self.conn.cursor()
-            cursor.execute(
-                f"SELECT event_id FROM {self.table_name} WHERE timestamp < ?",
-                (cutoff_date,),
-            )
-            old_ids = [row[0] for row in cursor.fetchall()]
+            with self.conn:
+                cursor = self.conn.execute(
+                    f"SELECT event_id FROM {self.table_name} WHERE timestamp < ?",
+                    (cutoff_date,),
+                )
+                old_ids = [row[0] for row in cursor.fetchall()]
 
-            if not old_ids:
-                return 0
+                if not old_ids:
+                    return 0
 
-            cursor.execute(
-                f"DELETE FROM {self.table_name}_fts WHERE event_id IN (SELECT event_id FROM {self.table_name} WHERE timestamp < ?)",
-                (cutoff_date,),
-            )
-            cursor.execute(
-                f"DELETE FROM {self.table_name} WHERE timestamp < ?", (cutoff_date,)
-            )
-            self.conn.commit()
+                self.conn.execute(
+                    f"DELETE FROM {self.table_name}_fts WHERE event_id IN "
+                    f"(SELECT event_id FROM {self.table_name} WHERE timestamp < ?)",
+                    (cutoff_date,),
+                )
+                self.conn.execute(
+                    f"DELETE FROM {self.table_name} WHERE timestamp < ?", (cutoff_date,)
+                )
+                for event_id in old_ids:
+                    enqueue(self.conn, event_id, "delete")
             return len(old_ids)
         except Exception as e:
             print(f"清理陈旧事件失败: {e}")
-            self.conn.rollback()
             return 0

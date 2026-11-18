@@ -57,12 +57,14 @@ def search(q: str = ""):
 
 @router.delete("/experiences/{exp_id}")
 def delete_experience(exp_id: str):
-    """删除工作经验 (VectorDB)"""
+    """删除工作经验（SQLite 硬删 + 快照，向量由索引器异步清理）"""
     try:
-        from src.memory.purrmemo.core.storage.vector_engine import VectorEngine
+        from src.memory.purrmemo.core.storage.experience_engine import (
+            ExperienceEngine,
+        )
 
-        engine = VectorEngine()
-        if engine.delete_experience(exp_id):
+        engine = ExperienceEngine()
+        if engine.delete(exp_id):
             return {"status": "success", "message": "经验已删除"}
         raise HTTPException(status_code=404, detail="经验不存在")
     except HTTPException:

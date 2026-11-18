@@ -22,9 +22,18 @@ def format_search_results(events, experiences, graph_results, events_warning="")
 
     if experiences:
         markdown_parts.append("## 工作经验")
-        markdown_parts.extend(
-            [f"- [{exp['score']:.2f}] {exp['content']}" for exp in experiences]
-        )
+        for exp in experiences:
+            exp_id = exp.get("exp_id", "")
+            confidence = exp.get("confidence")
+            id_prefix = f"[{exp_id}] " if exp_id else ""
+            confidence_prefix = (
+                f"[置信度 {confidence:.2f}] "
+                if isinstance(confidence, (int, float))
+                else ""
+            )
+            markdown_parts.append(
+                f"- {id_prefix}{confidence_prefix}{exp['content']}"
+            )
         markdown_parts.append("")
 
     if graph_results:

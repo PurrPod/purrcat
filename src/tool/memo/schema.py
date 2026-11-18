@@ -8,8 +8,12 @@ MEMO_TOOL_SCHEMA = {
             "properties": {
                 "action": {
                     "type": "string",
-                    "enum": ["add", "search"],
-                    "description": "操作类型：add=写入记忆，search=搜索记忆",
+                    "enum": ["add", "search", "reinforce", "replace", "delete"],
+                    "description": (
+                        "操作类型：add=写入记忆，search=搜索记忆，"
+                        "reinforce=提升某条经验的置信度，replace=覆盖某条经验内容，"
+                        "delete=删除某条经验"
+                    ),
                 },
                 "memo_data": {
                     "type": "object",
@@ -57,9 +61,17 @@ MEMO_TOOL_SCHEMA = {
                         },
                     },
                 },
+                "experience_id": {
+                    "type": "string",
+                    "description": "经验 ID（action=reinforce/replace/delete 时必填），形如 exp_xxx；搜索结果中会返回。",
+                },
+                "content": {
+                    "type": "string",
+                    "description": "新的经验内容（action=replace 时必填）。",
+                },
                 "query": {
                     "type": "object",
-                    "description": "搜索参数（action=search时使用）。如果不传，则直接返回最近五次写入的缓存记忆。如果传，必须包含 prompt 或 date 其中之一。",
+                    "description": "搜索参数（action=search时使用）。如果不传，则直接返回最近五次写入的缓存记忆。如果传，必须包含 prompt 或 date 其中之一。搜索结果会附带经验 ID 与置信度。",
                     "properties": {
                         "prompt": {
                             "type": "string",

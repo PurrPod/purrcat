@@ -29,7 +29,9 @@ def test_format_search_results_warning_only():
 def test_format_search_results_full_sections_and_order():
     """SPEC-012 AC-3：三类结果分节、顺序与数值格式稳定。"""
     events = [{"timestamp": "2026-01-01T10:00:00", "content": "开会"}]
-    experiences = [{"score": 0.8, "content": "先检查网络"}]
+    experiences = [
+        {"exp_id": "exp_1", "confidence": 0.8, "content": "先检查网络"}
+    ]
     graph_results = [
         {
             "description": "用户 喜欢 苹果",
@@ -48,7 +50,7 @@ def test_format_search_results_full_sections_and_order():
         "- [2026-01-01T10:00:00] 开会\n"
         "\n"
         "## 工作经验\n"
-        "- [0.80] 先检查网络\n"
+        "- [exp_1] [置信度 0.80] 先检查网络\n"
         "\n"
         "## 知识图谱\n"
         "- 用户 喜欢 苹果 (置信度: 0.90)\n"

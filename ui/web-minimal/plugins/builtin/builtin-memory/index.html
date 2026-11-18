@@ -214,6 +214,12 @@
   .xcard:hover { transform: translateY(-3px); box-shadow: 7px 8px 0 rgba(26,26,26,1); }
   .xcard .q { width: 18px; height: 18px; color: var(--blue); fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; margin-bottom: 7px; }
   .xcard .xb { font-weight: 700; font-size: 13px; line-height: 1.6; word-break: break-word; }
+  .xcard .xmeta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 9px; }
+  .xcard .xconf {
+    border: 2px solid var(--ink); border-radius: 7px; background: var(--yellow);
+    padding: 1px 6px; font-size: 10px; font-weight: 800;
+  }
+  .xcard .xid { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; font-weight: 700; color: var(--dim); }
   .xcard .xt {
     margin-top: 11px; padding-top: 9px; border-top: 3px dashed var(--line); display: flex; align-items: center; gap: 5px;
     font-size: 11px; font-weight: 700; color: var(--dim);
@@ -545,10 +551,15 @@
   function renderExperiences() {
     var h = '';
     S.experiences.forEach(function (exp) {
+      var conf = typeof exp.confidence === 'number' ? exp.confidence : null;
+      var confBadge = conf === null ? '' : '<span class="xconf">置信度 ' + conf.toFixed(2) + '</span>';
+      var idText = exp.exp_id ? String(exp.exp_id).slice(0, 14) : '';
       h += '<div class="xcard">'
         + '<button class="del" data-del-exp="' + esc(exp.exp_id) + '" title="Forget Experience">' + TRASH + '</button>'
         + QUOTE
         + '<div class="xb">' + esc(exp.content) + '</div>'
+        + '<div class="xmeta">' + confBadge
+        + (idText ? '<span class="xid">' + esc(idText) + '</span>' : '') + '</div>'
         + '<div class="xt">' + CLOCK + '<span>' + esc(fmtStamp(exp.timestamp, 'Unknown')) + '</span></div>'
         + '</div>';
     });

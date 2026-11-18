@@ -16,9 +16,14 @@ def event_id_for(content: str) -> str:
     return f"evt_{hashlib.md5(content.encode()).hexdigest()}"
 
 
+def content_hash_for(content: str) -> str:
+    """由内容生成 MD5 摘要，用于唯一约束与去重。"""
+    return hashlib.md5(content.encode()).hexdigest()
+
+
 def experience_id_for(content: str) -> str:
     """由经验内容生成稳定的经验 ID。"""
-    return f"exp_{hashlib.md5(content.encode()).hexdigest()}"
+    return f"exp_{content_hash_for(content)}"
 
 
 def edge_id_for(source_node_id: str, target_node_id: str, relation_meaning: str) -> str:

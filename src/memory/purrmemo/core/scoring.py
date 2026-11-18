@@ -1,8 +1,17 @@
-"""检索打分与衰减计算（SPEC-012）。"""
+"""检索打分与衰减计算（SPEC-012 / SPEC-020）。"""
 
 from __future__ import annotations
 
-from .schema import GRAPH_NODE_EXACT_BOOST, GRAPH_NODE_PARTIAL_BOOST, RRF_K
+from datetime import datetime
+
+from .clock import parse_iso
+from .schema import (
+    CONFIDENCE_FLOOR,
+    DECAY_HALF_LIFE_DAYS,
+    GRAPH_NODE_EXACT_BOOST,
+    GRAPH_NODE_PARTIAL_BOOST,
+    RRF_K,
+)
 
 
 def reciprocal_rank_fusion(vector_results, bm25_results, k=RRF_K, top_k=5):
@@ -35,6 +44,33 @@ def reciprocal_rank_fusion(vector_results, bm25_results, k=RRF_K, top_k=5):
 def similarity_from_distance(distance: float) -> float:
     """ChromaDB 余弦距离转相似度。"""
     return 1.0 - distance
+
+
+def ebbinghaus_confidence(
+    confidence: float,
+    days: float,
+    floor: float = CONFIDENCE_FLOOR,
+    half_life_days: float = DECAY_HALF_LIFE_DAYS,
+) -> float:
+    """艾宾浩斯指数衰减，结果不低于 ``floor``（SPEC-020 AC-10）。"""
+    decayed = confidence * (0.5 ** (max(0.0, days) / half_life_days))
+    return max(floor, decayed)
+
+
+def effective_confidence(
+    base: float,
+    updated_at: str,
+    now: datetime | None = None,
+    half_life_days: float = DECAY_HALF_LIFE_DAYS,
+) -> float:
+    """按锚点惰性计算有效置信度；锚点非法时只做下限夹紧。"""
+    current = now or datetime.now()
+    try:
+        anchor = parse_iso(updated_at)
+    except (TypeError, ValueError):
+        return max(CONFIDENCE_FLOOR, base)
+    days = max(0.0, (current - anchor).total_seconds() / 86400)
+    return ebbinghaus_confidence(base, days, half_life_days=half_life_days)
 
 
 def graph_node_boost(query: str, node_name: str) -> float:

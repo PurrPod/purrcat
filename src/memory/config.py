@@ -13,6 +13,9 @@ CHROMADB_EVENTS_COLLECTION_NAME = "events"
 EVENTDB_PATH = os.path.join(MEMORY_DIR, "events.db")
 EVENTDB_TABLE_NAME = "events"
 
+# ── 经验数据库 (SQLite，事实源) ──
+EXPERIENCES_DB_PATH = os.path.join(MEMORY_DIR, "experiences.db")
+
 # ── 图谱数据库 ──
 GRAPHDB_PATH = os.path.join(MEMORY_DIR, "graph.pkl")
 GRAPHDB_MIN_CONFIDENCE = 0.3

@@ -9,7 +9,8 @@ from src.utils.config import MEMORY_DIR, MEMORY_PENDING_DIR
 from src.memory.config import MEMORY_AGENT_POLLING_INTERVAL
 
 from ..clock import now_iso
-from ..ids import event_id_for, experience_id_for
+from ..ids import event_id_for
+from ..index_worker import process_outbox_once, reconcile
 from ..search_tool import start_forgetfulness_scheduler
 from ..storage.event_engine import EventEngine
 from ..storage.graph_engine import GraphEngine
@@ -35,9 +36,11 @@ class MemoryAgent:
         graph_engine=None,
         start_scheduler=True,
         model_factory=None,
+        experience_engine=None,
     ):
         self.history = []
         self.event_engine = event_engine if event_engine is not None else EventEngine()
+        self._experience_engine = experience_engine
         self._model_factory = model_factory
 
         if vector_engine is not None:
@@ -66,6 +69,15 @@ class MemoryAgent:
             except Exception:
                 self.graph_engine = None
                 print("GraphEngine 不可用，将无法处理图谱相关操作")
+
+    @property
+    def experience_engine(self):
+        """懒加载经验库，避免仅处理事件时创建真实数据库。"""
+        if self._experience_engine is None:
+            from ..storage.experience_engine import ExperienceEngine
+
+            self._experience_engine = ExperienceEngine()
+        return self._experience_engine
 
     def _create_model(self):
         """构造记忆工人的模型；未注入工厂时保持原有的懒加载行为。"""
@@ -208,14 +220,13 @@ class MemoryAgent:
                         event_id, event_content, event_time
                     )
 
-            # 2. 处理 work_exp 和 user_profile (存入向量库的经验池)
-            experiences = work_exp + user_profile
-            if self.vector_engine and experiences:
-                for exp_text in experiences:
-                    exp_id = experience_id_for(exp_text)
-                    self.vector_engine.insert_experience(
-                        exp_id=exp_id, content=exp_text, timestamp=timestamp
-                    )
+            # 2. 处理 work_exp 和 user_profile（SQLite 事实源，向量由索引器异步写入）
+            if work_exp or user_profile:
+                engine = self.experience_engine
+                for exp_text in work_exp:
+                    engine.add(exp_text, timestamp=timestamp)
+                for exp_text in user_profile:
+                    engine.add(exp_text, timestamp=timestamp)
 
             # ================= 新增解耦逻辑 =================
             # 触发 MEMORY.md 的文本归档更新 (由于是阻塞调用，文件会排队更新，非常安全)
@@ -255,6 +266,14 @@ class MemoryAgent:
 
     def run(self):
         polling_interval = MEMORY_AGENT_POLLING_INTERVAL
+        try:
+            stats = reconcile(
+                self.event_engine, self.experience_engine, self.vector_engine
+            )
+            print(f"🧭 [MemoryAgent] 启动对账完成: {stats}")
+        except Exception as exc:
+            print(f"⚠️ [MemoryAgent] 启动对账失败: {exc}")
+
         while True:
             try:
                 files = [
@@ -266,6 +285,10 @@ class MemoryAgent:
                     file_path = os.path.join(MEMORY_PENDING_DIR, file_name)
                     if os.path.exists(file_path):
                         self._process_file(file_path)
+
+                process_outbox_once(
+                    self.event_engine, self.experience_engine, self.vector_engine
+                )
                 time.sleep(polling_interval)
             except Exception:
                 time.sleep(polling_interval)

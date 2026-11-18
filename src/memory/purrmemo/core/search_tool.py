@@ -6,13 +6,10 @@ from src.memory.config import (
     RAG_TOP_K_EXPERIENCES,
     RAG_TOP_K_GRAPH_NODES,
 )
+from src.memory.settings import get_memory_settings
 
 from .clock import days_since
-from .filters import (
-    filter_by_min_score,
-    filter_by_time_range,
-    filter_experiences_by_score,
-)
+from .filters import filter_by_min_score, filter_by_time_range
 from .formatting import describe_relation, format_search_results
 from .schema import (
     CANDIDATE_LIMIT,
@@ -20,17 +17,24 @@ from .schema import (
     MIN_EXPERIENCE_SCORE,
     RRF_K,
 )
-from .scoring import decayed_confidence, reciprocal_rank_fusion
+from .scoring import ebbinghaus_confidence, reciprocal_rank_fusion
 from .storage.event_engine import EventEngine
+from .storage.experience_engine import ExperienceEngine
 from .storage.graph_engine import GraphEngine
 from .storage.vector_engine import VectorEngine
 
 
 class RAGSearchTool:
     def __init__(
-        self, event_engine=None, vector_engine=None, graph_engine=None, max_workers=10
+        self,
+        event_engine=None,
+        vector_engine=None,
+        graph_engine=None,
+        experience_engine=None,
+        max_workers=10,
     ):
         self.event_engine = event_engine if event_engine is not None else EventEngine()
+        self._experience_engine = experience_engine
 
         if vector_engine is not None:
             self.vector_engine = vector_engine
@@ -114,11 +118,19 @@ class RAGSearchTool:
             min_score = max(0.0, min(float(raw), 1.0))
         except (TypeError, ValueError):
             return events, experiences, graph
+        # 经验阈值已在向量候选阶段生效，BM25-only 候选不得被丢弃（SPEC-020 4.3）
         return (
             filter_by_min_score(events, "score", min_score),
-            filter_by_min_score(experiences, "score", min_score),
+            experiences,
             filter_by_min_score(graph, "confidence", min_score),
         )
+
+    @property
+    def experience_engine(self):
+        """懒加载经验库，避免只检索事件时创建数据库。"""
+        if self._experience_engine is None:
+            self._experience_engine = ExperienceEngine()
+        return self._experience_engine
 
     def _search_events(self, query: str, filters: dict = None, query_embedding=None):
         """检索事件库 - 混合检索版"""
@@ -172,24 +184,44 @@ class RAGSearchTool:
     def _search_experiences(
         self, query: str, filters: dict = None, query_embedding=None
     ):
-        """检索经验库"""
+        """检索经验库：向量 + BM25 融合后回 SQLite 取正文与置信度。"""
         try:
-            if not self.vector_engine:
+            filters = filters or {}
+            if not query:
                 return []
 
-            top_k = (
-                filters.get("top_k", RAG_TOP_K_EXPERIENCES)
-                if filters
-                else RAG_TOP_K_EXPERIENCES
-            )
-            raw_experiences = self.vector_engine.search_experiences(
-                query=query,
-                top_k=top_k,
-                filters=filters,
-                query_embedding=query_embedding,
-            )
+            top_k = filters.get("top_k", RAG_TOP_K_EXPERIENCES)
 
-            return filter_experiences_by_score(raw_experiences, MIN_EXPERIENCE_SCORE)
+            vector_results = []
+            if self.vector_engine:
+                raw = self.vector_engine.search_experience_vectors(
+                    query=query,
+                    top_k=CANDIDATE_LIMIT,
+                    query_embedding=query_embedding,
+                )
+                threshold = filters.get("min_score", MIN_EXPERIENCE_SCORE)
+                try:
+                    threshold = float(threshold)
+                except (TypeError, ValueError):
+                    threshold = MIN_EXPERIENCE_SCORE
+                vector_results = [
+                    {**item, "data": {}}
+                    for item in raw
+                    if item.get("score", 0) >= threshold
+                ]
+
+            bm25_results = [
+                {**item, "data": {}}
+                for item in self.experience_engine.search_bm25(
+                    query, limit=CANDIDATE_LIMIT
+                )
+            ]
+
+            fused = reciprocal_rank_fusion(
+                vector_results, bm25_results, k=RRF_K, top_k=top_k
+            )
+            # SQLite 不存在的 id 直接丢弃，避免向量删除延迟暴露已删数据
+            return self.experience_engine.get_many([item["id"] for item in fused])
         except Exception as e:
             print(f"检索经验失败: {e}")
             return []
@@ -281,8 +313,9 @@ class ForgetfulnessManager:
         self.decay_rate = decay_rate
         self.event_engine = event_engine
 
-    def decay_unreinforced_edges(self, days_threshold=7):
-        """衰减长时间未强化的边"""
+    def decay_unreinforced_edges(self, days_threshold=1):
+        """按艾宾浩斯曲线衰减长时间未强化的边（SPEC-020 AC-10）。"""
+        half_life_days = get_memory_settings()["decay_half_life_days"]
         edges_to_update = []
 
         for source_node_id, target_node_id, edge_data in self.graph_engine.graph.edges(
@@ -291,15 +324,16 @@ class ForgetfulnessManager:
             if "updated_at" in edge_data:
                 try:
                     days_since_update = days_since(edge_data["updated_at"])
-                    new_confidence = decayed_confidence(
+                    if days_since_update < days_threshold:
+                        continue
+                    new_confidence = ebbinghaus_confidence(
                         edge_data["confidence"],
                         days_since_update,
-                        days_threshold,
-                        self.decay_rate,
-                        self.min_confidence,
+                        floor=self.min_confidence,
+                        half_life_days=half_life_days,
                     )
 
-                    if new_confidence is not None:
+                    if new_confidence < edge_data["confidence"]:
                         edges_to_update.append(
                             {
                                 "source_node_id": source_node_id,
@@ -317,15 +351,23 @@ class ForgetfulnessManager:
 
     def run_daily_task(self):
         """每日任务入口"""
-        self.decay_unreinforced_edges(days_threshold=7)
+        self.decay_unreinforced_edges(days_threshold=1)
+
+        retention_days = get_memory_settings()["event_retention_days"]
+        if retention_days <= 0:
+            return  # 0 = 永久保留
 
         try:
             event_engine = (
                 self.event_engine if self.event_engine is not None else EventEngine()
             )
-            deleted_count = event_engine.cleanup_old_events(days_threshold=90)
+            deleted_count = event_engine.cleanup_old_events(
+                days_threshold=retention_days
+            )
             if deleted_count > 0:
-                print(f"🧹 [遗忘机制] 已清理 {deleted_count} 条超过90天的陈旧事件")
+                print(
+                    f"🧹 [遗忘机制] 已清理 {deleted_count} 条超过{retention_days}天的陈旧事件"
+                )
         except Exception as e:
             print(f"执行事件清理任务失败: {e}")
 

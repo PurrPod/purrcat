@@ -200,3 +200,48 @@ def test_filter_by_min_score_keeps_boundary():
     items = [{"score": 0.30}, {"score": 0.29}, {"other": 1}, {"score": "bad"}]
 
     assert filters.filter_by_min_score(items, "score", 0.30) == [{"score": 0.30}]
+
+
+def test_ebbinghaus_confidence_half_life_and_floor():
+    """SPEC-020 AC-10：90 天半衰，且不低于 0.3。"""
+    assert scoring.ebbinghaus_confidence(1.0, 0) == pytest.approx(1.0)
+    assert scoring.ebbinghaus_confidence(1.0, 90) == pytest.approx(0.5)
+    assert scoring.ebbinghaus_confidence(1.0, 900) == pytest.approx(0.3)
+
+
+def test_effective_confidence_uses_anchor_and_floor():
+    """SPEC-020 AC-10：按锚点惰性衰减，非法锚点只夹紧下限。"""
+    now = datetime(2026, 4, 1, 0, 0, 0)
+
+    assert scoring.effective_confidence(
+        0.6, "2026-04-01T00:00:00", now=now
+    ) == pytest.approx(0.6)
+    assert scoring.effective_confidence(
+        0.6, "2026-01-01T00:00:00", now=now
+    ) == pytest.approx(0.3)
+    assert scoring.effective_confidence(0.1, "bad-anchor", now=now) == pytest.approx(
+        0.3
+    )
+
+
+def test_tokenize_for_fts_splits_chinese_with_jieba():
+    """SPEC-020 AC-7：中文按 jieba 分词写入 FTS token。"""
+    tokens = filters.tokenize_for_fts("路径包含空格导致启动失败").split()
+
+    assert "路径" in tokens
+    assert "启动" in tokens
+    assert "失败" in tokens
+    assert '"路径"*' in filters.build_fts_query("路径 空格 启动失败")
+
+
+def test_build_fts_query_or_degrades_by_tokens():
+    """SPEC-020 4.4：零结果时使用 OR 降级查询。"""
+    assert filters.build_fts_query_or("苹果 香蕉") == '"苹果"* OR "香蕉"*'
+    assert filters.build_fts_query_or("   ") is None
+
+
+def test_content_hash_matches_experience_id_suffix():
+    """SPEC-020 3.1：内容哈希与 exp_id 同源。"""
+    assert ids.experience_id_for("先检查网络") == (
+        "exp_" + ids.content_hash_for("先检查网络")
+    )

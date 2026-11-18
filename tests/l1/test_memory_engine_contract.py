@@ -315,6 +315,27 @@ class FakeSearchVector:
     def search_experiences(self, query, top_k=5, filters=None, query_embedding=None):
         return self.experience_results
 
+    def search_experience_vectors(self, query, top_k=200, query_embedding=None):
+        return self.experience_results
+
+
+class FakeExperienceEngine:
+    """经验 SQLite 事实源的测试替身。"""
+
+    def __init__(self, records=None, bm25=None):
+        self.records = {record["exp_id"]: record for record in records or []}
+        self.bm25 = bm25 or []
+        self.queries = []
+
+    def search_bm25(self, query, limit=50):
+        self.queries.append(query)
+        return self.bm25
+
+    def get_many(self, exp_ids):
+        return [
+            self.records[exp_id] for exp_id in exp_ids if exp_id in self.records
+        ]
+
 
 class FakeGraphEngine:
     def __init__(self):
@@ -378,7 +399,7 @@ def test_search_tool_query_fuses_and_formats_all_sections():
             "score": 0.9,
         }
     ]
-    vector.experience_results = [{"score": 0.5, "content": "经验"}]
+    vector.experience_results = [{"id": "exp_x", "score": 0.5, "content": "经验"}]
     tool = RAGSearchTool(
         event_engine=FakeEventEngine(
             fts=[
@@ -391,6 +412,11 @@ def test_search_tool_query_fuses_and_formats_all_sections():
         ),
         vector_engine=vector,
         graph_engine=graph,
+        experience_engine=FakeExperienceEngine(
+            records=[
+                {"exp_id": "exp_x", "content": "经验", "confidence": 0.5}
+            ]
+        ),
         max_workers=2,
     )
 
@@ -400,7 +426,7 @@ def test_search_tool_query_fuses_and_formats_all_sections():
     assert "## 历史事件" in markdown
     assert "向量事件" in markdown
     assert "BM25 事件" in markdown
-    assert "## 工作经验\n- [0.50] 经验" in markdown
+    assert "## 工作经验\n- [exp_x] [置信度 0.50] 经验" in markdown
     assert "## 知识图谱\n- 用户 喜欢 苹果 (置信度: 0.80)" in markdown
 
 
@@ -629,8 +655,8 @@ def test_search_tool_min_score_filters_events_and_experiences():
         }
     ]
     vector.experience_results = [
-        {"score": 0.55, "content": "高分经验"},
-        {"score": 0.35, "content": "低分经验"},
+        {"id": "x-high", "score": 0.55, "content": "高分经验"},
+        {"id": "x-low", "score": 0.35, "content": "低分经验"},
     ]
     tool = RAGSearchTool(
         event_engine=FakeEventEngine(
@@ -649,6 +675,12 @@ def test_search_tool_min_score_filters_events_and_experiences():
         ),
         vector_engine=vector,
         graph_engine=FakeGraphEngine(),
+        experience_engine=FakeExperienceEngine(
+            records=[
+                {"exp_id": "x-high", "content": "高分经验", "confidence": 0.6},
+                {"exp_id": "x-low", "content": "低分经验", "confidence": 0.6},
+            ]
+        ),
         max_workers=2,
     )
 

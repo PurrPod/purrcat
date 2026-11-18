@@ -19,6 +19,10 @@ SENSOR_CONFIG_PATH = os.path.join(PURRCAT_DIR, "activate_sensor.json")
 FILE_CONFIG_PATH = os.path.join(PURRCAT_DIR, "file.json")
 MCP_CONFIG_PATH = os.path.join(PURRCAT_DIR, "mcp_config.json")
 
+# 托管配置文件的元数据键与当前结构版本（结构迁移见 src/utils/config_migration.py）
+CONFIG_VERSION_KEY = "_version"
+LATEST_CONFIG_VERSION = 1
+
 
 def _read_settings() -> Dict[str, Any]:
     """读取 settings.json；缺失、损坏或非对象结构一律返回空 dict。"""

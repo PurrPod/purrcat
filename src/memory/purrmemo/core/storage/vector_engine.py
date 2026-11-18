@@ -286,6 +286,62 @@ class VectorEngine(metaclass=SingletonMeta):
             print(f"删除经验失败: {e}")
             return False
 
+    def delete_event_vectors(self, event_ids):
+        """批量删除事件向量（SPEC-020 对账使用）。"""
+        try:
+            ids = [event_id for event_id in event_ids if event_id]
+            if ids:
+                self.events_collection.delete(ids=ids)
+            return True
+        except Exception as e:
+            print(f"删除事件向量失败: {e}")
+            return False
+
+    def list_event_ids(self):
+        """列出向量库中的事件 ID，供索引对账使用。"""
+        try:
+            return list(self.events_collection.get()["ids"])
+        except Exception as e:
+            print(f"列出事件向量失败: {e}")
+            return []
+
+    def list_experience_ids(self):
+        """列出向量库中的经验 ID，供索引对账使用。"""
+        try:
+            return list(self.collection.get()["ids"])
+        except Exception as e:
+            print(f"列出经验向量失败: {e}")
+            return []
+
+    def search_experience_vectors(self, query, top_k=200, query_embedding=None):
+        """经验向量召回，不内置置信度阈值（阈值由检索层决定）。"""
+        try:
+            if not query:
+                return []
+            if not query_embedding:
+                query_embedding = self._get_embedding(query)
+            if not query_embedding:
+                return []
+
+            actual_top_k = clamp_top_k(top_k, self.collection.count())
+            if actual_top_k == 0:
+                return []
+
+            results = self.collection.query(
+                query_embeddings=[query_embedding], n_results=actual_top_k
+            )
+            return [
+                {
+                    "id": results["ids"][0][i],
+                    "content": results["documents"][0][i],
+                    "score": similarity_from_distance(results["distances"][0][i]),
+                }
+                for i in range(len(results["ids"][0]))
+            ]
+        except Exception as e:
+            print(f"经验向量检索失败: {e}")
+            return []
+
     def get_collection_stats(self):
         """获取集合统计信息"""
         try:
