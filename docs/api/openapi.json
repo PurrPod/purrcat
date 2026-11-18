@@ -1899,6 +1899,163 @@
         ]
       }
     },
+    "/api/config/memory": {
+      "get": {
+        "operationId": "api_get_memory_config_api_config_memory_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Api Get Memory Config",
+        "tags": [
+          "Configuration"
+        ]
+      },
+      "put": {
+        "operationId": "api_update_memory_config_api_config_memory_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Config",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Update Memory Config",
+        "tags": [
+          "Configuration"
+        ]
+      }
+    },
+    "/api/config/memory/cleanup": {
+      "post": {
+        "description": "按配置的保留天数清理过期事件，并立即同步向量索引。",
+        "operationId": "api_cleanup_memory_events_api_config_memory_cleanup_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Api Cleanup Memory Events",
+        "tags": [
+          "Configuration"
+        ]
+      }
+    },
+    "/api/config/memory/health": {
+      "get": {
+        "description": "记忆系统结构与版本检测（配置 / SQLite / 向量库 / 图谱）。",
+        "operationId": "api_get_memory_health_api_config_memory_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Api Get Memory Health",
+        "tags": [
+          "Configuration"
+        ]
+      }
+    },
+    "/api/config/memory/migrate": {
+      "post": {
+        "description": "自动迁移记忆系统：配置版本、SQLite 结构、FTS 与向量 collection。",
+        "operationId": "api_migrate_memory_api_config_memory_migrate_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Api Migrate Memory",
+        "tags": [
+          "Configuration"
+        ]
+      }
+    },
+    "/api/config/memory/reconcile": {
+      "post": {
+        "description": "对账 SQLite 与向量库：删除孤儿向量、补齐缺失向量。",
+        "operationId": "api_reconcile_memory_index_api_config_memory_reconcile_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Api Reconcile Memory Index",
+        "tags": [
+          "Configuration"
+        ]
+      }
+    },
+    "/api/config/memory/stats": {
+      "get": {
+        "operationId": "api_get_memory_stats_api_config_memory_stats_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Api Get Memory Stats",
+        "tags": [
+          "Configuration"
+        ]
+      }
+    },
     "/api/config/meta": {
       "get": {
         "description": "返回当前正在生效的路径常量，便于前端显示给用户做参考。",
@@ -3912,7 +4069,7 @@
     },
     "/api/memory/experiences/{exp_id}": {
       "delete": {
-        "description": "删除工作经验 (VectorDB)",
+        "description": "删除工作经验（SQLite 硬删 + 快照，向量由索引器异步清理）",
         "operationId": "delete_experience_api_memory_experiences__exp_id__delete",
         "parameters": [
           {

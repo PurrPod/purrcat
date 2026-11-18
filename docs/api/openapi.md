@@ -770,6 +770,89 @@ ACP 接入状态：relay 部署情况 / 端口 / uv 可用性
 | --- | --- | --- |
 | 200 | Successful Response | - |
 
+### `GET /api/config/memory`
+
+**标题**：Api Get Memory Config
+
+#### 响应
+
+| 状态码 | 描述 | Schema |
+| --- | --- | --- |
+| 200 | Successful Response | - |
+
+### `PUT /api/config/memory`
+
+**标题**：Api Update Memory Config
+
+#### 请求体
+
+**Schema**：`Config`
+
+#### 响应
+
+| 状态码 | 描述 | Schema |
+| --- | --- | --- |
+| 200 | Successful Response | - |
+| 422 | Validation Error | HTTPValidationError |
+
+### `POST /api/config/memory/cleanup`
+
+**标题**：Api Cleanup Memory Events
+
+按配置的保留天数清理过期事件，并立即同步向量索引。
+
+#### 响应
+
+| 状态码 | 描述 | Schema |
+| --- | --- | --- |
+| 200 | Successful Response | - |
+
+### `GET /api/config/memory/health`
+
+**标题**：Api Get Memory Health
+
+记忆系统结构与版本检测（配置 / SQLite / 向量库 / 图谱）。
+
+#### 响应
+
+| 状态码 | 描述 | Schema |
+| --- | --- | --- |
+| 200 | Successful Response | - |
+
+### `POST /api/config/memory/migrate`
+
+**标题**：Api Migrate Memory
+
+自动迁移记忆系统：配置版本、SQLite 结构、FTS 与向量 collection。
+
+#### 响应
+
+| 状态码 | 描述 | Schema |
+| --- | --- | --- |
+| 200 | Successful Response | - |
+
+### `POST /api/config/memory/reconcile`
+
+**标题**：Api Reconcile Memory Index
+
+对账 SQLite 与向量库：删除孤儿向量、补齐缺失向量。
+
+#### 响应
+
+| 状态码 | 描述 | Schema |
+| --- | --- | --- |
+| 200 | Successful Response | - |
+
+### `GET /api/config/memory/stats`
+
+**标题**：Api Get Memory Stats
+
+#### 响应
+
+| 状态码 | 描述 | Schema |
+| --- | --- | --- |
+| 200 | Successful Response | - |
+
 ### `GET /api/config/meta`
 
 **标题**：Api Get Config Meta
@@ -1487,7 +1570,7 @@ ACP 接入状态：relay 部署情况 / 端口 / uv 可用性
 
 **标题**：Delete Experience
 
-删除工作经验 (VectorDB)
+删除工作经验（SQLite 硬删 + 快照，向量由索引器异步清理）
 
 #### 参数
 
