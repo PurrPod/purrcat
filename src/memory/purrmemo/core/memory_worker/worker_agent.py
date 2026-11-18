@@ -56,7 +56,7 @@ class MemoryAgent:
             self.graph_engine = graph_engine
             try:
                 if start_scheduler:
-                    start_forgetfulness_scheduler(self.graph_engine, interval_hours=24)
+                    start_forgetfulness_scheduler(self.graph_engine)
             except Exception:
                 self.graph_engine = None
                 print("GraphEngine 不可用，将无法处理图谱相关操作")
@@ -65,7 +65,7 @@ class MemoryAgent:
             try:
                 self.graph_engine = GraphEngine()
                 if start_scheduler:
-                    start_forgetfulness_scheduler(self.graph_engine, interval_hours=24)
+                    start_forgetfulness_scheduler(self.graph_engine)
             except Exception:
                 self.graph_engine = None
                 print("GraphEngine 不可用，将无法处理图谱相关操作")

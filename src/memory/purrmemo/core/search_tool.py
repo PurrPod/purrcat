@@ -1,5 +1,6 @@
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime
 
 from src.memory.config import (
     RAG_TOP_K_EVENTS,
@@ -8,7 +9,7 @@ from src.memory.config import (
 )
 from src.memory.settings import get_memory_settings
 
-from .clock import days_since
+from .clock import parse_iso
 from .filters import filter_by_min_score, filter_by_time_range
 from .formatting import describe_relation, format_search_results
 from .schema import (
@@ -313,36 +314,53 @@ class ForgetfulnessManager:
         self.decay_rate = decay_rate
         self.event_engine = event_engine
 
-    def decay_unreinforced_edges(self, days_threshold=1):
-        """按艾宾浩斯曲线衰减长时间未强化的边（SPEC-020 AC-10）。"""
+    def decay_unreinforced_edges(self, days_threshold=1, since=None, now=None):
+        """按艾宾浩斯曲线衰减长时间未强化的边（SPEC-020 AC-10）。
+
+        ``since`` 为上次遗忘任务的时间；边的实际衰减区间从
+        ``max(边 updated_at, since)`` 起算，避免重复衰减。
+        """
         half_life_days = get_memory_settings()["decay_half_life_days"]
+        current = now or datetime.now()
+        since_time = None
+        if since:
+            try:
+                since_time = parse_iso(since)
+            except (TypeError, ValueError):
+                since_time = None
+
         edges_to_update = []
 
         for source_node_id, target_node_id, edge_data in self.graph_engine.graph.edges(
             data=True
         ):
-            if "updated_at" in edge_data:
-                try:
-                    days_since_update = days_since(edge_data["updated_at"])
-                    if days_since_update < days_threshold:
-                        continue
-                    new_confidence = ebbinghaus_confidence(
-                        edge_data["confidence"],
-                        days_since_update,
-                        floor=self.min_confidence,
-                        half_life_days=half_life_days,
-                    )
+            if "updated_at" not in edge_data:
+                continue
+            try:
+                anchor = parse_iso(edge_data["updated_at"])
+                if since_time and since_time > anchor:
+                    anchor = since_time
+                elapsed_days = max(0.0, (current - anchor).total_seconds() / 86400)
 
-                    if new_confidence < edge_data["confidence"]:
-                        edges_to_update.append(
-                            {
-                                "source_node_id": source_node_id,
-                                "target_node_id": target_node_id,
-                                "new_confidence": new_confidence,
-                            }
-                        )
-                except Exception as e:
-                    print(f"处理边 {source_node_id} -> {target_node_id} 失败: {e}")
+                if elapsed_days < days_threshold:
+                    continue
+                new_confidence = ebbinghaus_confidence(
+                    edge_data["confidence"],
+                    elapsed_days,
+                    floor=self.min_confidence,
+                    half_life_days=half_life_days,
+                )
+
+                if new_confidence < edge_data["confidence"]:
+                    edges_to_update.append(
+                        {
+                            "source_node_id": source_node_id,
+                            "target_node_id": target_node_id,
+                            "new_confidence": new_confidence,
+                        }
+                    )
+            except (TypeError, ValueError) as e:
+                print(f"处理边 {source_node_id} -> {target_node_id} 失败: {e}")
 
         if edges_to_update:
             return self.graph_engine.decay_edges(edges_to_update)
@@ -350,8 +368,23 @@ class ForgetfulnessManager:
         return 0
 
     def run_daily_task(self):
-        """每日任务入口"""
-        self.decay_unreinforced_edges(days_threshold=1)
+        """每日任务入口；距上次成功衰减不足 24 小时则跳过。"""
+        from src.memory.settings import read_memory_state, update_memory_state
+
+        current = datetime.now()
+        last_run_at = read_memory_state().get("last_decay_at")
+        if last_run_at:
+            try:
+                elapsed = (current - parse_iso(last_run_at)).total_seconds()
+            except (TypeError, ValueError):
+                elapsed = None
+            if elapsed is not None and 0 <= elapsed < 24 * 3600:
+                return
+
+        self.decay_unreinforced_edges(
+            days_threshold=1, since=last_run_at, now=current
+        )
+        update_memory_state({"last_decay_at": current.isoformat()})
 
         retention_days = get_memory_settings()["event_retention_days"]
         if retention_days <= 0:
@@ -372,8 +405,12 @@ class ForgetfulnessManager:
             print(f"执行事件清理任务失败: {e}")
 
 
-def start_forgetfulness_scheduler(graph_engine, interval_hours=24):
-    """启动遗忘调度器"""
+def start_forgetfulness_scheduler(graph_engine):
+    """启动遗忘调度器。
+
+    是否到期待执行由 ``run_daily_task`` 依据 ``memory.json`` 里的
+    ``last_decay_at`` 判断；这里只负责定期唤醒，避免重启后顺延一天。
+    """
     manager = ForgetfulnessManager(graph_engine)
 
     def scheduler_loop():
@@ -384,7 +421,7 @@ def start_forgetfulness_scheduler(graph_engine, interval_hours=24):
                 manager.run_daily_task()
             except Exception as e:
                 print(f"遗忘调度器出错: {e}")
-            time.sleep(interval_hours * 3600)
+            time.sleep(3600)
 
     scheduler_thread = threading.Thread(target=scheduler_loop, daemon=True)
     scheduler_thread.start()

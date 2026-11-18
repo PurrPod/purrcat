@@ -89,3 +89,43 @@ def test_save_invalid_value_leaves_file_untouched(tmp_path):
         settings.save_memory_settings({"event_retention_days": -1}, path=str(path))
 
     assert json.loads(path.read_text(encoding="utf-8")) == {"event_retention_days": 30}
+
+
+def test_save_preserves_runtime_state(tmp_path):
+    path = tmp_path / "memory.json"
+    path.write_text(
+        json.dumps(
+            {
+                "event_retention_days": 30,
+                "_version": 1,
+                "_state": {"last_decay_at": "2026-01-01T00:00:00"},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    settings.save_memory_settings({"event_retention_days": 7}, path=str(path))
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert payload["event_retention_days"] == 7
+    assert payload["_state"] == {"last_decay_at": "2026-01-01T00:00:00"}
+
+
+def test_update_state_keeps_user_settings(tmp_path):
+    path = tmp_path / "memory.json"
+    path.write_text(
+        json.dumps(
+            {"event_retention_days": 30, "decay_half_life_days": 20, "_version": 1}
+        ),
+        encoding="utf-8",
+    )
+
+    settings.update_memory_state(
+        {"last_decay_at": "2026-01-02T00:00:00"}, path=str(path)
+    )
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert payload["event_retention_days"] == 30
+    assert payload["decay_half_life_days"] == 20
+    assert payload["_state"] == {"last_decay_at": "2026-01-02T00:00:00"}
+    assert payload["_version"] == 1

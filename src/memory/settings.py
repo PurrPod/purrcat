@@ -29,9 +29,13 @@ RANGES = {
 DEFAULT_KEYS = tuple(DEFAULTS)
 DEPRECATED_KEYS = ("search_top_k", "min_experience_score")
 
+# 运行时状态（如上次遗忘衰减时间）与用户配置同文件，单独分组避免被当成设置项
+STATE_KEY = "_state"
+
 _INT_KEYS = {"event_retention_days"}
 
 _cache_lock = threading.Lock()
+_file_lock = threading.Lock()
 _cache_mtime = None
 _cache_value = None
 
@@ -115,24 +119,69 @@ def get_memory_settings(path: str | None = None) -> dict:
         return dict(value)
 
 
-def save_memory_settings(raw, path: str | None = None) -> dict:
-    """校验后原子写入配置文件，返回归一化结果。"""
-    global _cache_mtime, _cache_value
+def _read_raw(path: str) -> dict:
+    try:
+        with open(path, "r", encoding="utf-8") as file:
+            raw = json.load(file)
+    except (OSError, ValueError):
+        return {}
+    return raw if isinstance(raw, dict) else {}
 
-    normalized = validate_memory_settings(raw)
-    target = path or MEMORY_CONFIG_PATH
+
+def _atomic_write(target: str, payload: dict) -> None:
     directory = os.path.dirname(target)
     if directory:
         os.makedirs(directory, exist_ok=True)
-
     temp_path = f"{target}.tmp"
-    payload = {**normalized, CONFIG_VERSION_KEY: LATEST_CONFIG_VERSION}
     with open(temp_path, "w", encoding="utf-8") as file:
         json.dump(payload, file, ensure_ascii=False, indent=2)
     os.replace(temp_path, target)
 
+
+def _reset_cache() -> None:
+    global _cache_mtime, _cache_value
+    with _cache_lock:
+        _cache_mtime = None
+        _cache_value = None
+
+
+def read_memory_state(path: str | None = None) -> dict:
+    """读取 ``memory.json`` 里的运行时状态分组，缺失或损坏时返回空字典。"""
+    raw = _read_raw(path or MEMORY_CONFIG_PATH)
+    state = raw.get(STATE_KEY)
+    return dict(state) if isinstance(state, dict) else {}
+
+
+def update_memory_state(values: dict, path: str | None = None) -> dict:
+    """合并写入运行时状态，保留用户配置与版本号。"""
+    target = path or MEMORY_CONFIG_PATH
+    with _file_lock:
+        _, current = _read_file(target)
+        state = read_memory_state(target)
+        state.update(values)
+        payload = {
+            **current,
+            CONFIG_VERSION_KEY: LATEST_CONFIG_VERSION,
+            STATE_KEY: state,
+        }
+        _atomic_write(target, payload)
     if path is None:
-        with _cache_lock:
-            _cache_mtime = None
-            _cache_value = None
+        _reset_cache()
+    return dict(state)
+
+
+def save_memory_settings(raw, path: str | None = None) -> dict:
+    """校验后原子写入配置文件，返回归一化结果。"""
+    normalized = validate_memory_settings(raw)
+    target = path or MEMORY_CONFIG_PATH
+
+    with _file_lock:
+        state = read_memory_state(target)
+        payload = {**normalized, CONFIG_VERSION_KEY: LATEST_CONFIG_VERSION}
+        if state:
+            payload[STATE_KEY] = state
+        _atomic_write(target, payload)
+
+    if path is None:
+        _reset_cache()
     return normalized
