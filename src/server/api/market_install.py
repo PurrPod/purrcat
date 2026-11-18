@@ -124,9 +124,11 @@ def install_mcp_config(config_json: str, repo: str = "") -> tuple[int, str]:
         existing_config["mcpServers"][srv_name] = srv_conf
 
     # 3. 落盘保存配置文件 mcp_config.json
+    from src.utils.config_migration import apply_version
+
     os.makedirs(os.path.dirname(MCP_CONFIG_PATH), exist_ok=True)
     with open(MCP_CONFIG_PATH, "w", encoding="utf-8") as f:
-        json.dump(existing_config, f, indent=2, ensure_ascii=False)
+        json.dump(apply_version(MCP_CONFIG_PATH, existing_config), f, indent=2, ensure_ascii=False)
 
     # 4. 官方 MCP：下载源码到 ~/.purrcat/mcps/（失败不阻断配置安装）
     source_note = ""
@@ -153,8 +155,10 @@ def uninstall_mcp(name: str) -> None:
     """从 mcp_config.json 移除 Server，清理官方源码目录并热更新 Schema。"""
     existing = get_mcp_config()
     drop_mcp_server(existing, name)
+    from src.utils.config_migration import apply_version
+
     with open(MCP_CONFIG_PATH, "w", encoding="utf-8") as f:
-        json.dump(existing, f, indent=2, ensure_ascii=False)
+        json.dump(apply_version(MCP_CONFIG_PATH, existing), f, indent=2, ensure_ascii=False)
 
     # 清理官方源码目录（若有）
     src_dir = os.path.join(MCP_SOURCE_DIR, name)
@@ -187,9 +191,11 @@ def ensure_graph_mcp_deps(mcp_names) -> list:
     # 合并配置落盘
     existing_config = get_mcp_config()
     existing_config.setdefault("mcpServers", {}).update(merged_servers)
+    from src.utils.config_migration import apply_version
+
     os.makedirs(os.path.dirname(MCP_CONFIG_PATH), exist_ok=True)
     with open(MCP_CONFIG_PATH, "w", encoding="utf-8") as f:
-        json.dump(existing_config, f, indent=2, ensure_ascii=False)
+        json.dump(apply_version(MCP_CONFIG_PATH, existing_config), f, indent=2, ensure_ascii=False)
 
     # 官方源码下载（失败不阻断配置安装）
     for repo, server_names in repo_server_pairs:

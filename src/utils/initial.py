@@ -156,6 +156,23 @@ def ensure_initialized():
         print("[*] 首次运行，正在自动初始化 ~/.purrcat 配置目录...")
     _generate_all_configs()
 
+    # 🌟 文件级版本/结构检测：缺失补模板、旧版删废弃字段并迁移、损坏文件备份后重建；
+    # 全部自动执行，改写前备份到 ~/.purrcat/backups/config-<ts>/
+    try:
+        from src.utils.config_migration import migrate_configs
+
+        report = migrate_configs()
+        if report["changed"]:
+            print(
+                f"[+] 配置结构已迁移 {report['changed']} 项"
+                + (f"（备份: {report['backup_dir']}）" if report["backup_dir"] else "")
+            )
+        for item in report["files"]:
+            if item.get("error"):
+                print(f"[!] 配置迁移失败 {item['path']}: {item['error']}")
+    except Exception as e:
+        print(f"[!] 配置结构检测失败: {e}")
+
     # 内置 default 图落盘到 ~/.purrcat/graph/default/，缺失或被改动时用模板修复
     from src.harness.graph_init import ensure_default_graph
 

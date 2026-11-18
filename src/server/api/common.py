@@ -18,6 +18,10 @@ from src.utils._fs import read_json
 def save_json_file(path: str, data: Any, log_prefix: str = "[Config API]") -> bool:
     """写入缩进 JSON；失败时只记录日志并返回 False。"""
     try:
+        # 托管配置：写回时保留/补齐 _version，避免配置页保存把版本信息冲掉
+        from src.utils.config_migration import apply_version
+
+        data = apply_version(path, data)
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)

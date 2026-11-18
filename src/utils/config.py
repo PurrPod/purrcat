@@ -145,6 +145,10 @@ def _load_json_file(file_path: str) -> dict:
 
 def _save_json_file(file_path: str, data: dict) -> bool:
     try:
+        # 托管配置：写回时保留/补齐 _version，避免配置页保存把版本信息冲掉
+        from src.utils.config_migration import apply_version
+
+        data = apply_version(file_path, data)
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
         with open(file_path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
@@ -212,8 +216,18 @@ def get_engine_preference() -> str:
 def _read_json_if_exists(file_path: str) -> Dict[str, Any]:
     """配置文件存在才读取，缺失时返回空 dict（不打印错误）。"""
     if os.path.exists(file_path):
-        return _load_json_file(file_path)
+        return _strip_meta(_load_json_file(file_path))
     return {}
+
+
+def _strip_meta(data: Any) -> Dict[str, Any]:
+    """去掉版本元数据键，业务侧只看到用户配置本身。"""
+    if not isinstance(data, dict):
+        return {}
+    if CONFIG_VERSION_KEY in data:
+        data = dict(data)
+        data.pop(CONFIG_VERSION_KEY, None)
+    return data
 
 
 def get_model_config() -> Dict[str, Any]:
