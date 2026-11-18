@@ -220,7 +220,9 @@ def change_data_root(payload: Dict[str, Any]) -> dict:
     # 目标必须是空目录（不存在则创建），避免与已有数据混在一起
     if os.path.exists(new_root):
         if not os.path.isdir(new_root):
-            raise HTTPException(status_code=400, detail=f"目标路径不是文件夹：{new_root}")
+            raise HTTPException(
+                status_code=400, detail=f"目标路径不是文件夹：{new_root}"
+            )
         if os.listdir(new_root):
             raise HTTPException(
                 status_code=409,

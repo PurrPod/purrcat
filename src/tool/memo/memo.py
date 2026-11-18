@@ -168,9 +168,7 @@ def _handle_reinforce(experience_id: str = None) -> str:
 
     result = reinforce_experience(experience_id)
     if not result:
-        return error_response(
-            f"未找到经验: {experience_id}", "❌ 经验不存在"
-        )
+        return error_response(f"未找到经验: {experience_id}", "❌ 经验不存在")
 
     return text_response(
         f"已强化经验 {experience_id}\n"
@@ -197,13 +195,10 @@ def _handle_replace(experience_id: str = None, content: str = None) -> str:
         return error_response(str(e), "❌ 经验替换失败")
 
     if not result:
-        return error_response(
-            f"未找到经验: {experience_id}", "❌ 经验不存在"
-        )
+        return error_response(f"未找到经验: {experience_id}", "❌ 经验不存在")
 
     return text_response(
-        f"已更新经验 {experience_id}\n"
-        f"置信度：{result['confidence']:.2f}",
+        f"已更新经验 {experience_id}\n置信度：{result['confidence']:.2f}",
         "✅ 经验已更新",
     )
 
@@ -216,9 +211,7 @@ def _handle_delete(experience_id: str = None) -> str:
 
     result = delete_experience(experience_id)
     if not result:
-        return error_response(
-            f"未找到经验: {experience_id}", "❌ 经验不存在"
-        )
+        return error_response(f"未找到经验: {experience_id}", "❌ 经验不存在")
 
     return text_response(
         f"已删除经验 {experience_id}",

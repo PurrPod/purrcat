@@ -144,7 +144,9 @@ def _clean_orphan_experiences(
     return orphans
 
 
-def migrate(vector_engine, experience_engine, event_engine, dry_run: bool = False) -> dict:
+def migrate(
+    vector_engine, experience_engine, event_engine, dry_run: bool = False
+) -> dict:
     """执行迁移；返回统计信息。"""
     records = _read_chroma_experiences(vector_engine)
     orphans = _clean_orphan_events(event_engine, vector_engine, dry_run)
@@ -179,9 +181,7 @@ def migrate(vector_engine, experience_engine, event_engine, dry_run: bool = Fals
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="记忆系统 v2 迁移")
-    parser.add_argument(
-        "--dry-run", action="store_true", help="只统计，不写入任何数据"
-    )
+    parser.add_argument("--dry-run", action="store_true", help="只统计，不写入任何数据")
     args = parser.parse_args(argv)
 
     from .purrmemo.core.storage.event_engine import EventEngine

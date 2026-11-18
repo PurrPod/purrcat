@@ -65,9 +65,7 @@ def process_outbox_once(
     events = _drain(
         event_engine.conn,
         event_rows,
-        lambda memory_id, op: _apply_event(
-            vector_engine, event_engine, memory_id, op
-        ),
+        lambda memory_id, op: _apply_event(vector_engine, event_engine, memory_id, op),
     )
     experiences = _drain(
         experience_engine.conn,

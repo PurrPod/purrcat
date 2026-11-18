@@ -50,7 +50,9 @@ def _create_experiences_db(path):
             " new_confidence REAL, snapshot TEXT, created_at TEXT NOT NULL)"
         )
         conn.execute("CREATE TABLE index_outbox (id INTEGER PRIMARY KEY)")
-        conn.execute("CREATE TABLE schema_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+        conn.execute(
+            "CREATE TABLE schema_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
+        )
         conn.execute("INSERT INTO schema_meta VALUES ('version', '2')")
     conn.close()
 
@@ -66,7 +68,9 @@ def _create_events_db(path, rows=0):
             "CREATE VIRTUAL TABLE events_fts USING fts5(event_id UNINDEXED, content)"
         )
         conn.execute("CREATE TABLE index_outbox (id INTEGER PRIMARY KEY)")
-        conn.execute("CREATE TABLE schema_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+        conn.execute(
+            "CREATE TABLE schema_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
+        )
         conn.execute("INSERT INTO schema_meta VALUES ('version', '2')")
         for index in range(rows):
             event_id = f"e{index}"
@@ -146,7 +150,9 @@ def test_outdated_experiences_db_is_migrated(tmp_path):
     conn.close()
 
     before = health.inspect_memory(paths)
-    assert any(item["code"] == "experiences_schema_outdated" for item in before["issues"])
+    assert any(
+        item["code"] == "experiences_schema_outdated" for item in before["issues"]
+    )
 
     result = health.migrate_memory(paths)
     assert not any("经验库迁移失败" in e for e in result["errors"])
@@ -169,6 +175,4 @@ def test_out_of_sync_event_fts_is_rebuilt(tmp_path):
     result = health.migrate_memory(paths)
 
     assert result["events_db"]["rebuilt_fts"] == 2
-    assert health.inspect_memory(paths)[
-        "events_db"
-    ]["fts_in_sync"] is True
+    assert health.inspect_memory(paths)["events_db"]["fts_in_sync"] is True

@@ -70,12 +70,8 @@ class FakeVectorEngine:
 
 @pytest.fixture()
 def setup(tmp_path):
-    event_engine = EventEngine(
-        db_path=str(tmp_path / "events.db"), table_name="events"
-    )
-    experience_engine = ExperienceEngine(
-        db_path=str(tmp_path / "experiences.db")
-    )
+    event_engine = EventEngine(db_path=str(tmp_path / "events.db"), table_name="events")
+    experience_engine = ExperienceEngine(db_path=str(tmp_path / "experiences.db"))
     event_engine.insert_event("e1", "真实事件", timestamp="2026-01-01T00:00:00")
     collection = FakeCollection(
         ids=["exp_a", "exp_b"],

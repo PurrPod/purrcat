@@ -179,7 +179,9 @@ def _merge_mcp_servers(servers: dict):
 
     os.makedirs(os.path.dirname(MCP_CONFIG_PATH), exist_ok=True)
     with open(MCP_CONFIG_PATH, "w", encoding="utf-8") as f:
-        json.dump(apply_version(MCP_CONFIG_PATH, config), f, indent=2, ensure_ascii=False)
+        json.dump(
+            apply_version(MCP_CONFIG_PATH, config), f, indent=2, ensure_ascii=False
+        )
 
 
 def _refresh_mcp(m) -> str:

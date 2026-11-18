@@ -119,7 +119,9 @@ def test_inspect_reports_statuses(tmp_path):
     assert cm.inspect_config(spec)["status"] == "legacy"
 
     path.write_text(json.dumps({"a": 1, "old": 2, "_version": 1}), encoding="utf-8")
-    spec_old = cm.ConfigSpec("demo", str(path), lambda: {"a": 1}, deprecated=("old",), required=("a",))
+    spec_old = cm.ConfigSpec(
+        "demo", str(path), lambda: {"a": 1}, deprecated=("old",), required=("a",)
+    )
     assert cm.inspect_config(spec_old)["status"] == "outdated"
 
     report = cm.inspect_configs([spec])

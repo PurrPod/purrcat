@@ -31,9 +31,7 @@ def format_search_results(events, experiences, graph_results, events_warning="")
                 if isinstance(confidence, (int, float))
                 else ""
             )
-            markdown_parts.append(
-                f"- {id_prefix}{confidence_prefix}{exp['content']}"
-            )
+            markdown_parts.append(f"- {id_prefix}{confidence_prefix}{exp['content']}")
         markdown_parts.append("")
 
     if graph_results:

@@ -30,8 +30,10 @@ def test_reinforce_returns_old_and_new_confidence(monkeypatch):
     monkeypatch.setattr(
         memo_module,
         "reinforce_experience",
-        lambda exp_id: calls.append(exp_id)
-        or {"exp_id": exp_id, "old_confidence": 0.6, "new_confidence": 0.8},
+        lambda exp_id: (
+            calls.append(exp_id)
+            or {"exp_id": exp_id, "old_confidence": 0.6, "new_confidence": 0.8}
+        ),
     )
 
     result = _content(memo_module.Memo(action="reinforce", experience_id="exp_1"))
@@ -50,9 +52,7 @@ def test_reinforce_rejects_missing_id():
 def test_reinforce_reports_unknown_experience(monkeypatch):
     monkeypatch.setattr(memo_module, "reinforce_experience", lambda exp_id: None)
 
-    result = _content(
-        memo_module.Memo(action="reinforce", experience_id="exp_missing")
-    )
+    result = _content(memo_module.Memo(action="reinforce", experience_id="exp_missing"))
 
     assert "未找到经验" in result
 
@@ -75,9 +75,7 @@ def test_replace_returns_new_confidence(monkeypatch):
     )
 
     result = _content(
-        memo_module.Memo(
-            action="replace", experience_id="exp_1", content="新的做法"
-        )
+        memo_module.Memo(action="replace", experience_id="exp_1", content="新的做法")
     )
 
     assert "exp_1" in result
@@ -91,9 +89,7 @@ def test_delete_reports_success_and_missing(monkeypatch):
         lambda exp_id: {"exp_id": exp_id} if exp_id == "exp_1" else None,
     )
 
-    assert "exp_1" in _content(
-        memo_module.Memo(action="delete", experience_id="exp_1")
-    )
+    assert "exp_1" in _content(memo_module.Memo(action="delete", experience_id="exp_1"))
     assert "未找到经验" in _content(
         memo_module.Memo(action="delete", experience_id="exp_missing")
     )

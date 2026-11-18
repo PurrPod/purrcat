@@ -56,9 +56,7 @@ def fetch_pending(conn, limit: int = 100, now: str | None = None) -> list[dict]:
         """,
         (ts, limit),
     ).fetchall()
-    return [
-        {"memory_id": row[0], "op": row[1], "attempts": row[2]} for row in rows
-    ]
+    return [{"memory_id": row[0], "op": row[1], "attempts": row[2]} for row in rows]
 
 
 def remove(conn, memory_id: str) -> None:

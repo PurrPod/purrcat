@@ -184,7 +184,11 @@ def inspect_config(spec: ConfigSpec) -> Dict[str, Any]:
         entry["status"] = "legacy"
     elif entry["version"] > LATEST_VERSION:
         entry["status"] = "newer"
-    elif entry["deprecated"] or entry["missing_fields"] or entry["version"] < LATEST_VERSION:
+    elif (
+        entry["deprecated"]
+        or entry["missing_fields"]
+        or entry["version"] < LATEST_VERSION
+    ):
         entry["status"] = "outdated"
     else:
         entry["status"] = "ok"
@@ -303,7 +307,11 @@ def migrate_configs(
                 continue
 
             version = data.get(CONFIG_VERSION_KEY)
-            if isinstance(version, int) and not isinstance(version, bool) and version > LATEST_VERSION:
+            if (
+                isinstance(version, int)
+                and not isinstance(version, bool)
+                and version > LATEST_VERSION
+            ):
                 item["action"] = "skipped_newer"
                 results.append(item)
                 continue

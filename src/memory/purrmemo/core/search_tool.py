@@ -381,9 +381,7 @@ class ForgetfulnessManager:
             if elapsed is not None and 0 <= elapsed < 24 * 3600:
                 return
 
-        self.decay_unreinforced_edges(
-            days_threshold=1, since=last_run_at, now=current
-        )
+        self.decay_unreinforced_edges(days_threshold=1, since=last_run_at, now=current)
         update_memory_state({"last_decay_at": current.isoformat()})
 
         retention_days = get_memory_settings()["event_retention_days"]

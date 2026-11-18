@@ -332,9 +332,7 @@ class FakeExperienceEngine:
         return self.bm25
 
     def get_many(self, exp_ids):
-        return [
-            self.records[exp_id] for exp_id in exp_ids if exp_id in self.records
-        ]
+        return [self.records[exp_id] for exp_id in exp_ids if exp_id in self.records]
 
 
 class FakeGraphEngine:
@@ -413,9 +411,7 @@ def test_search_tool_query_fuses_and_formats_all_sections():
         vector_engine=vector,
         graph_engine=graph,
         experience_engine=FakeExperienceEngine(
-            records=[
-                {"exp_id": "exp_x", "content": "经验", "confidence": 0.5}
-            ]
+            records=[{"exp_id": "exp_x", "content": "经验", "confidence": 0.5}]
         ),
         max_workers=2,
     )

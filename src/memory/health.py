@@ -237,12 +237,18 @@ def inspect_memory(paths: Dict[str, Any] | None = None) -> Dict[str, Any]:
 
     if experiences["exists"]:
         if experiences.get("error"):
-            add("experiences_db_unreadable", f"experiences.db 无法读取：{experiences['error']}", experiences["path"], "error")
+            add(
+                "experiences_db_unreadable",
+                f"experiences.db 无法读取：{experiences['error']}",
+                experiences["path"],
+                "error",
+            )
         else:
             if experiences["missing_tables"]:
                 add(
                     "experiences_schema_incomplete",
-                    "experiences.db 缺少表：" + ", ".join(experiences["missing_tables"]),
+                    "experiences.db 缺少表："
+                    + ", ".join(experiences["missing_tables"]),
                     experiences["path"],
                 )
             if (experiences["schema_version"] or 0) < MEMORY_SCHEMA_VERSION:
@@ -260,7 +266,12 @@ def inspect_memory(paths: Dict[str, Any] | None = None) -> Dict[str, Any]:
 
     if events["exists"]:
         if events.get("error"):
-            add("events_db_unreadable", f"events.db 无法读取：{events['error']}", events["path"], "error")
+            add(
+                "events_db_unreadable",
+                f"events.db 无法读取：{events['error']}",
+                events["path"],
+                "error",
+            )
         else:
             if events["missing_tables"]:
                 add(
@@ -363,9 +374,7 @@ def _ensure_experiences_db(path: str) -> Dict[str, Any]:
             )
             conn.execute(_META_DDL)
             ensure_outbox(conn)
-            columns = {
-                row[1] for row in conn.execute("PRAGMA table_info(experiences)")
-            }
+            columns = {row[1] for row in conn.execute("PRAGMA table_info(experiences)")}
             if "kind" in columns:
                 conn.execute("ALTER TABLE experiences DROP COLUMN kind")
             conn.execute(
@@ -465,7 +474,8 @@ def migrate_memory(
                 required=DEFAULT_KEYS,
             )
             result["config"] = migrate_configs(
-                [spec], backup_dir=os.path.join(os.path.dirname(p["memory_json"]), "backups")
+                [spec],
+                backup_dir=os.path.join(os.path.dirname(p["memory_json"]), "backups"),
             )
     except Exception as e:
         result["errors"].append(f"配置迁移失败: {e}")

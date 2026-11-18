@@ -193,7 +193,9 @@ class EventEngine(metaclass=SingletonMeta):
 
     def count(self):
         """当前事件总数（配置中心展示用）。"""
-        return self.conn.execute(f"SELECT COUNT(*) FROM {self.table_name}").fetchone()[0]
+        return self.conn.execute(f"SELECT COUNT(*) FROM {self.table_name}").fetchone()[
+            0
+        ]
 
     def list_existing_ids(self):
         """列出 SQLite 中现有的事件 ID，供索引对账使用。"""

@@ -332,9 +332,7 @@ class ExperienceEngine:
                 self.conn.execute(
                     "DELETE FROM experiences_fts WHERE exp_id = ?", (exp_id,)
                 )
-                self.conn.execute(
-                    "DELETE FROM experiences WHERE exp_id = ?", (exp_id,)
-                )
+                self.conn.execute("DELETE FROM experiences WHERE exp_id = ?", (exp_id,))
                 self._write_event(
                     self.conn,
                     exp_id,
@@ -407,9 +405,7 @@ class ExperienceEngine:
             """,
             (query_str, limit),
         ).fetchall()
-        return [
-            {"id": row[0], "content": row[1], "score": abs(row[2])} for row in rows
-        ]
+        return [{"id": row[0], "content": row[1], "score": abs(row[2])} for row in rows]
 
     def search_bm25(self, query: str, limit: int = 50) -> list[dict]:
         """FTS5 检索；AND 零结果时用 OR 降级重试一次。"""

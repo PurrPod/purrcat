@@ -56,12 +56,8 @@ class FakeVectorEngine:
 
 @pytest.fixture()
 def engines(tmp_path):
-    event_engine = EventEngine(
-        db_path=str(tmp_path / "events.db"), table_name="events"
-    )
-    experience_engine = ExperienceEngine(
-        db_path=str(tmp_path / "experiences.db")
-    )
+    event_engine = EventEngine(db_path=str(tmp_path / "events.db"), table_name="events")
+    experience_engine = ExperienceEngine(db_path=str(tmp_path / "experiences.db"))
     yield event_engine, experience_engine
     experience_engine.close()
 
