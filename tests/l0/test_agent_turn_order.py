@@ -69,9 +69,6 @@ def _agent(model, hooks, events):
     )
     agent._get_tool_schema = lambda: []
     agent._set_live_phase = lambda phase: events.append(f"phase:{phase}")
-    agent._spawn_hint_search = lambda merged, task_id: events.append(
-        "spawn_hint_search"
-    )
     return agent
 
 
@@ -85,7 +82,6 @@ def test_plain_reply_keeps_epoch_order():
 
     assert events == [
         "on_loop_start",
-        "spawn_hint_search",
         "on_loop_epoch",
         "on_input_received",
         "phase:thinking",
@@ -138,7 +134,6 @@ def test_tool_batch_runs_after_assistant_is_persisted(monkeypatch):
 
     assert events == [
         "on_loop_start",
-        "spawn_hint_search",
         "on_loop_epoch",
         "on_input_received",
         "phase:thinking",

@@ -5,7 +5,7 @@ import os
 import threading
 import time
 
-from src.agent import epoch, hint_search, lifecycle, memory_ops, tool_batch
+from src.agent import epoch, lifecycle, memory_ops, tool_batch
 from src.agent.history import repair_toolchain
 from src.agent.hook_handler import HookHandler
 from src.agent.session_store import SessionStore
@@ -289,15 +289,6 @@ class Agent:
 
     def _begin_interaction(self) -> int:
         return lifecycle.begin_interaction(self)
-
-    def _merged_user_input(self) -> str:
-        return lifecycle.merged_user_input(self)
-
-    def _spawn_hint_search(self, merged_input: str, task_id: int):
-        hint_search.spawn_hint_search(self, merged_input, task_id)
-
-    def _background_hint_check(self, merged_input: str, task_id: int):
-        hint_search.background_check(self, merged_input, task_id)
 
     def _run_agent_loop(self, interaction_id: int) -> bool:
         return lifecycle.run_agent_loop(self, interaction_id)

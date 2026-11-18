@@ -8,7 +8,6 @@ def process_message(agent) -> None:
     merged_input = merged_user_input(agent)
     if merged_input:
         agent._inject_hook_results("on_loop_start", epoch=0)
-        agent._spawn_hint_search(merged_input, interaction_id)
 
     turn_ended = run_agent_loop(agent, interaction_id)
     finish_turn(agent, turn_ended)
@@ -16,7 +15,6 @@ def process_message(agent) -> None:
 
 def begin_interaction(agent) -> int:
     current_interaction_id = agent._increment_interaction_id()
-    agent._bg_search_task_id = current_interaction_id
     # 清理上一轮遗留的打断信号，避免新交互的工具被误杀
     agent._tool_interrupt_event.clear()
     return current_interaction_id
