@@ -1068,7 +1068,7 @@
       return;
     }
     requests.forEach(function (req) {
-      var isDep = req.type === 'dependency_check';
+      var isAlert = req.type === 'dependency_check';
       var busy = !!reqBusy[req.id];
       var card = document.createElement('div');
       card.className = 'req' + (busy ? ' busy' : '');
@@ -1078,7 +1078,7 @@
       var top = document.createElement('div');
       top.className = 'req-top';
       var chip = document.createElement('span');
-      chip.className = 'req-type' + (isDep ? ' dep' : '');
+      chip.className = 'req-type' + (isAlert ? ' dep' : '');
       chip.textContent = REQ_TYPE_LABEL[req.type] || (req.type || '请求');
       chip.title = req.type || '';
       top.appendChild(chip);
@@ -1103,10 +1103,10 @@
         card.appendChild(reason);
       }
 
-      // 动作：普通请求为批准/拒绝；依赖检查只提供「前往部署」
+      // 动作：普通请求为批准/拒绝；依赖检查只提供前往部署
       var acts = document.createElement('div');
       acts.className = 'req-acts';
-      if (isDep) {
+      if (isAlert) {
         var go = document.createElement('button');
         go.type = 'button';
         go.className = 'rbtn ok';
