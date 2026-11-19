@@ -2118,67 +2118,189 @@ import { HOST } from './state.js';
         ['events', 'experiences', 'graph_nodes', 'graph_edges'].forEach(function (k) { values[k].textContent = '—'; });
       });
 
-    // 向量库版本：旧模型（11.18 前）生成的向量与新模型不兼容，需要重建
-    fetch('/api/config/memory/health')
-      .then(function (r) { return r.json(); })
-      .then(function (h) {
-        const v = h && h.index_version;
-        if (!v) { values.vector_model.textContent = '—'; return; }
-        const models = (v.models && v.models.length) ? v.models.join(', ') : '无标记';
-        if (v.status === 'current') {
-          values.vector_model.textContent = v.model_name + '（一致）';
-          return;
-        }
-        if (v.status === 'empty') {
-          values.vector_model.textContent = v.model_name + '（尚无向量）';
-          return;
-        }
-        if (v.status === 'missing') {
-          values.vector_model.textContent = v.model_name + '（向量库未创建）';
-          return;
-        }
-        if (v.status === 'unreadable') {
-          values.vector_model.textContent = '向量库不可读';
-          return;
-        }
-        values.vector_model.textContent = '需重建（旧模型：' + models + '）';
+    // 向量库版本 + 嵌入模型状态：旧模型（11.18 前）生成的向量与新模型不兼容
+    function addTip(text: string): HTMLElement {
+      const tip = HOST.document.createElement('div');
+      tip.className = 'cfg-tip';
+      tip.style.margin = '0';
+      tip.textContent = text;
+      body.appendChild(tip);
+      return tip;
+    }
 
-        const tip = HOST.document.createElement('div');
-        tip.className = 'cfg-tip';
-        tip.style.margin = '0';
-        tip.textContent = '向量库由 11.18 之前的旧嵌入模型生成，与当前 ' + v.model_name +
-          ' 不在同一语义空间，检索结果不可用。重建会清空事件 / 经验 / 图谱三组向量并按当前模型重新计算，期间向量检索短暂不可用。';
-        body.appendChild(tip);
+    function addAction(label: string): HTMLButtonElement {
+      const btn = HOST.document.createElement('button');
+      btn.className = 'btn cfg-save';
+      btn.style.marginTop = '8px';
+      btn.textContent = label;
+      body.appendChild(btn);
+      return btn;
+    }
 
-        const btn = HOST.document.createElement('button');
-        btn.className = 'btn cfg-save';
-        btn.style.marginTop = '8px';
-        btn.textContent = '重建向量库';
-        btn.addEventListener('click', function () {
-          if (!HOST.confirm('重建向量库？旧模型（' + models + '）生成的向量会被全部清除并按当前模型重新计算。数据量较大时可能需要几分钟。')) return;
-          btn.disabled = true;
-          btn.textContent = '重建中…';
-          fetch('/api/config/memory/reindex', { method: 'POST' })
-            .then(function (r) {
-              if (!r.ok) throw new Error('HTTP ' + r.status);
-              return r.json();
-            })
-            .then(function (d) {
-              const counts = (d.rebuild && d.rebuild.counts) || {};
-              values.vector_model.textContent = v.model_name + '（一致）';
-              btn.textContent = '已重建（事件 ' + (counts.events || 0) + ' / 经验 ' +
+    const phaseText: Record<string, string> = {
+      checking: '检查模型',
+      downloading: '下载嵌入模型',
+      rebuilding: '重建向量库',
+    };
+    let updateTimer: number | null = null;
+    function stopPolling() {
+      if (updateTimer !== null) {
+        window.clearInterval(updateTimer);
+        updateTimer = null;
+      }
+    }
+
+    function watchUpdate(btn: HTMLButtonElement, tip: HTMLElement, modelName: string) {
+      btn.disabled = true;
+      btn.textContent = '更新中…';
+      tip.textContent = '更新正在后台进行：先下载并替换嵌入模型，再重建事件 / 经验 / 图谱向量。' +
+        '期间请不要退出应用；若中途退出，重新进入后可再次点击更新继续。';
+      updateTimer = window.setInterval(function () {
+        if (!btn.isConnected) {
+          stopPolling();
+          return;
+        }
+        fetch('/api/config/memory/embedding')
+          .then(function (r) { return r.json(); })
+          .then(function (d) {
+            const u = (d && d.update) || {};
+            if (u.state === 'running') {
+              btn.textContent = '更新中…（' + (phaseText[u.phase] || '处理中') + '）';
+              return;
+            }
+            stopPolling();
+            if (u.state === 'done') {
+              values.vector_model.textContent = modelName + '（一致）';
+              const counts = (u.report && u.report.counts) || {};
+              btn.textContent = '已更新（事件 ' + (counts.events || 0) + ' / 经验 ' +
                 (counts.experiences || 0) + ' / 节点 ' + (counts.graph_nodes || 0) + '）';
               btn.disabled = true;
               if (tip.parentNode) tip.parentNode.removeChild(tip);
-            })
-            .catch(function (e) {
+            } else if (u.state === 'error') {
               btn.disabled = false;
-              btn.textContent = '重建向量库';
-              HOST.alert('重建失败：' + (e && e.message || ''));
-            });
+              btn.textContent = '重试更新嵌入模型';
+              tip.textContent = '更新失败：' + (u.error || '未知错误') +
+                '。原模型与可重试状态已保留，可再次点击更新。';
+            } else {
+              btn.disabled = false;
+              btn.textContent = '更新嵌入模型并重建';
+            }
+          })
+          .catch(function () {
+            btn.textContent = '更新中…';
+          });
+      }, 2000);
+    }
+
+    function startEmbeddingUpdate(btn: HTMLButtonElement, tip: HTMLElement, modelName: string) {
+      btn.disabled = true;
+      btn.textContent = '启动更新…';
+      fetch('/api/config/memory/embedding/update', { method: 'POST' })
+        .then(function (r) {
+          if (r.status === 409) return null;
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return r.json();
+        })
+        .then(function () {
+          watchUpdate(btn, tip, modelName);
+        })
+        .catch(function (e) {
+          btn.disabled = false;
+          btn.textContent = '更新嵌入模型并重建';
+          HOST.alert('启动更新失败：' + (e && e.message || ''));
         });
-        body.appendChild(btn);
-      })
-      .catch(function () { values.vector_model.textContent = '—'; });
+    }
+
+    Promise.all([
+      fetch('/api/config/memory/health')
+        .then(function (r) { return r.json(); })
+        .catch(function () { return null; }),
+      fetch('/api/config/memory/embedding')
+        .then(function (r) { return r.json(); })
+        .catch(function () { return null; }),
+    ]).then(function (res) {
+      const h = res[0];
+      const emb = res[1] || {};
+      const model = emb.model || { status: 'current', model: '' };
+      const update = emb.update || {};
+      const v = h && h.index_version;
+      const modelName = (v && v.model_name) || model.model || '';
+      const models = (v && v.models && v.models.length) ? v.models.join(', ') : '无标记';
+
+      // 更新任务运行中：刷新页面后按钮仍保持禁用并继续轮询
+      if (update.state === 'running') {
+        values.vector_model.textContent = '更新中（' + (phaseText[update.phase] || '处理中') + '）';
+        const tip = addTip('');
+        const btn = addAction('更新中…');
+        watchUpdate(btn, tip, modelName);
+        return;
+      }
+
+      // 模型目录不是当前版本：只允许「更新模型 + 重建」，不能单独重建向量
+      if (model.status !== 'current') {
+        values.vector_model.textContent =
+          model.status === 'outdated' ? '嵌入模型过时（检测到其它版本）'
+            : model.status === 'partial' ? '嵌入模型下载不完整'
+              : '嵌入模型缺失';
+        const tip = addTip(
+          (update.interrupted ? '上次更新未完成。' : '') +
+          '更新会下载 ' + modelName + ' 并重建事件 / 经验 / 图谱三组向量，期间向量检索短暂不可用。'
+        );
+        const btn = addAction(update.interrupted ? '重试更新嵌入模型' : '更新嵌入模型并重建');
+        btn.addEventListener('click', function () {
+          if (!HOST.confirm('更新嵌入模型并重建向量库？更新期间请不要退出应用。')) return;
+          startEmbeddingUpdate(btn, tip, modelName);
+        });
+        return;
+      }
+
+      if (!v) { values.vector_model.textContent = '—'; return; }
+      if (v.status === 'current') {
+        values.vector_model.textContent = v.model_name + '（一致）';
+        return;
+      }
+      if (v.status === 'empty') {
+        values.vector_model.textContent = v.model_name + '（尚无向量）';
+        return;
+      }
+      if (v.status === 'missing') {
+        values.vector_model.textContent = v.model_name + '（向量库未创建）';
+        return;
+      }
+      if (v.status === 'unreadable') {
+        values.vector_model.textContent = '向量库不可读';
+        return;
+      }
+      values.vector_model.textContent = '需重建（旧模型：' + models + '）';
+
+      const tip = addTip(
+        '向量库由旧嵌入模型生成，与当前 ' + v.model_name +
+        ' 不在同一语义空间，检索结果不可用。重建会清空事件 / 经验 / 图谱三组向量并按当前模型重新计算，期间向量检索短暂不可用。'
+      );
+      const btn = addAction('重建向量库');
+      btn.addEventListener('click', function () {
+        if (!HOST.confirm('重建向量库？旧模型（' + models + '）生成的向量会被全部清除并按当前模型重新计算。数据量较大时可能需要几分钟。')) return;
+        btn.disabled = true;
+        btn.textContent = '重建中…';
+        fetch('/api/config/memory/reindex', { method: 'POST' })
+          .then(function (r) {
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return r.json();
+          })
+          .then(function (d) {
+            const counts = (d.rebuild && d.rebuild.counts) || {};
+            values.vector_model.textContent = v.model_name + '（一致）';
+            btn.textContent = '已重建（事件 ' + (counts.events || 0) + ' / 经验 ' +
+              (counts.experiences || 0) + ' / 节点 ' + (counts.graph_nodes || 0) + '）';
+            btn.disabled = true;
+            if (tip.parentNode) tip.parentNode.removeChild(tip);
+          })
+          .catch(function (e) {
+            btn.disabled = false;
+            btn.textContent = '重建向量库';
+            HOST.alert('重建失败：' + (e && e.message || ''));
+          });
+      });
+    }).catch(function () { values.vector_model.textContent = '—'; });
   }
 

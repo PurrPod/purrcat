@@ -2876,15 +2876,128 @@
         values[k].textContent = "\u2014";
       });
     });
-    fetch("/api/config/memory/health").then(function(r) {
-      return r.json();
-    }).then(function(h) {
+    function addTip(text) {
+      const tip = HOST.document.createElement("div");
+      tip.className = "cfg-tip";
+      tip.style.margin = "0";
+      tip.textContent = text;
+      body.appendChild(tip);
+      return tip;
+    }
+    function addAction(label) {
+      const btn = HOST.document.createElement("button");
+      btn.className = "btn cfg-save";
+      btn.style.marginTop = "8px";
+      btn.textContent = label;
+      body.appendChild(btn);
+      return btn;
+    }
+    const phaseText = {
+      checking: "\u68C0\u67E5\u6A21\u578B",
+      downloading: "\u4E0B\u8F7D\u5D4C\u5165\u6A21\u578B",
+      rebuilding: "\u91CD\u5EFA\u5411\u91CF\u5E93"
+    };
+    let updateTimer = null;
+    function stopPolling() {
+      if (updateTimer !== null) {
+        window.clearInterval(updateTimer);
+        updateTimer = null;
+      }
+    }
+    function watchUpdate(btn, tip, modelName) {
+      btn.disabled = true;
+      btn.textContent = "\u66F4\u65B0\u4E2D\u2026";
+      tip.textContent = "\u66F4\u65B0\u6B63\u5728\u540E\u53F0\u8FDB\u884C\uFF1A\u5148\u4E0B\u8F7D\u5E76\u66FF\u6362\u5D4C\u5165\u6A21\u578B\uFF0C\u518D\u91CD\u5EFA\u4E8B\u4EF6 / \u7ECF\u9A8C / \u56FE\u8C31\u5411\u91CF\u3002\u671F\u95F4\u8BF7\u4E0D\u8981\u9000\u51FA\u5E94\u7528\uFF1B\u82E5\u4E2D\u9014\u9000\u51FA\uFF0C\u91CD\u65B0\u8FDB\u5165\u540E\u53EF\u518D\u6B21\u70B9\u51FB\u66F4\u65B0\u7EE7\u7EED\u3002";
+      updateTimer = window.setInterval(function() {
+        if (!btn.isConnected) {
+          stopPolling();
+          return;
+        }
+        fetch("/api/config/memory/embedding").then(function(r) {
+          return r.json();
+        }).then(function(d) {
+          const u = d && d.update || {};
+          if (u.state === "running") {
+            btn.textContent = "\u66F4\u65B0\u4E2D\u2026\uFF08" + (phaseText[u.phase] || "\u5904\u7406\u4E2D") + "\uFF09";
+            return;
+          }
+          stopPolling();
+          if (u.state === "done") {
+            values.vector_model.textContent = modelName + "\uFF08\u4E00\u81F4\uFF09";
+            const counts = u.report && u.report.counts || {};
+            btn.textContent = "\u5DF2\u66F4\u65B0\uFF08\u4E8B\u4EF6 " + (counts.events || 0) + " / \u7ECF\u9A8C " + (counts.experiences || 0) + " / \u8282\u70B9 " + (counts.graph_nodes || 0) + "\uFF09";
+            btn.disabled = true;
+            if (tip.parentNode) tip.parentNode.removeChild(tip);
+          } else if (u.state === "error") {
+            btn.disabled = false;
+            btn.textContent = "\u91CD\u8BD5\u66F4\u65B0\u5D4C\u5165\u6A21\u578B";
+            tip.textContent = "\u66F4\u65B0\u5931\u8D25\uFF1A" + (u.error || "\u672A\u77E5\u9519\u8BEF") + "\u3002\u539F\u6A21\u578B\u4E0E\u53EF\u91CD\u8BD5\u72B6\u6001\u5DF2\u4FDD\u7559\uFF0C\u53EF\u518D\u6B21\u70B9\u51FB\u66F4\u65B0\u3002";
+          } else {
+            btn.disabled = false;
+            btn.textContent = "\u66F4\u65B0\u5D4C\u5165\u6A21\u578B\u5E76\u91CD\u5EFA";
+          }
+        }).catch(function() {
+          btn.textContent = "\u66F4\u65B0\u4E2D\u2026";
+        });
+      }, 2e3);
+    }
+    function startEmbeddingUpdate(btn, tip, modelName) {
+      btn.disabled = true;
+      btn.textContent = "\u542F\u52A8\u66F4\u65B0\u2026";
+      fetch("/api/config/memory/embedding/update", { method: "POST" }).then(function(r) {
+        if (r.status === 409) return null;
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      }).then(function() {
+        watchUpdate(btn, tip, modelName);
+      }).catch(function(e) {
+        btn.disabled = false;
+        btn.textContent = "\u66F4\u65B0\u5D4C\u5165\u6A21\u578B\u5E76\u91CD\u5EFA";
+        HOST.alert("\u542F\u52A8\u66F4\u65B0\u5931\u8D25\uFF1A" + (e && e.message || ""));
+      });
+    }
+    Promise.all([
+      fetch("/api/config/memory/health").then(function(r) {
+        return r.json();
+      }).catch(function() {
+        return null;
+      }),
+      fetch("/api/config/memory/embedding").then(function(r) {
+        return r.json();
+      }).catch(function() {
+        return null;
+      })
+    ]).then(function(res) {
+      const h = res[0];
+      const emb = res[1] || {};
+      const model = emb.model || { status: "current", model: "" };
+      const update = emb.update || {};
       const v = h && h.index_version;
+      const modelName = v && v.model_name || model.model || "";
+      const models = v && v.models && v.models.length ? v.models.join(", ") : "\u65E0\u6807\u8BB0";
+      if (update.state === "running") {
+        values.vector_model.textContent = "\u66F4\u65B0\u4E2D\uFF08" + (phaseText[update.phase] || "\u5904\u7406\u4E2D") + "\uFF09";
+        const tip2 = addTip("");
+        const btn2 = addAction("\u66F4\u65B0\u4E2D\u2026");
+        watchUpdate(btn2, tip2, modelName);
+        return;
+      }
+      if (model.status !== "current") {
+        values.vector_model.textContent = model.status === "outdated" ? "\u5D4C\u5165\u6A21\u578B\u8FC7\u65F6\uFF08\u68C0\u6D4B\u5230\u5176\u5B83\u7248\u672C\uFF09" : model.status === "partial" ? "\u5D4C\u5165\u6A21\u578B\u4E0B\u8F7D\u4E0D\u5B8C\u6574" : "\u5D4C\u5165\u6A21\u578B\u7F3A\u5931";
+        const tip2 = addTip(
+          (update.interrupted ? "\u4E0A\u6B21\u66F4\u65B0\u672A\u5B8C\u6210\u3002" : "") + "\u66F4\u65B0\u4F1A\u4E0B\u8F7D " + modelName + " \u5E76\u91CD\u5EFA\u4E8B\u4EF6 / \u7ECF\u9A8C / \u56FE\u8C31\u4E09\u7EC4\u5411\u91CF\uFF0C\u671F\u95F4\u5411\u91CF\u68C0\u7D22\u77ED\u6682\u4E0D\u53EF\u7528\u3002"
+        );
+        const btn2 = addAction(update.interrupted ? "\u91CD\u8BD5\u66F4\u65B0\u5D4C\u5165\u6A21\u578B" : "\u66F4\u65B0\u5D4C\u5165\u6A21\u578B\u5E76\u91CD\u5EFA");
+        btn2.addEventListener("click", function() {
+          if (!HOST.confirm("\u66F4\u65B0\u5D4C\u5165\u6A21\u578B\u5E76\u91CD\u5EFA\u5411\u91CF\u5E93\uFF1F\u66F4\u65B0\u671F\u95F4\u8BF7\u4E0D\u8981\u9000\u51FA\u5E94\u7528\u3002")) return;
+          startEmbeddingUpdate(btn2, tip2, modelName);
+        });
+        return;
+      }
       if (!v) {
         values.vector_model.textContent = "\u2014";
         return;
       }
-      const models = v.models && v.models.length ? v.models.join(", ") : "\u65E0\u6807\u8BB0";
       if (v.status === "current") {
         values.vector_model.textContent = v.model_name + "\uFF08\u4E00\u81F4\uFF09";
         return;
@@ -2902,15 +3015,10 @@
         return;
       }
       values.vector_model.textContent = "\u9700\u91CD\u5EFA\uFF08\u65E7\u6A21\u578B\uFF1A" + models + "\uFF09";
-      const tip = HOST.document.createElement("div");
-      tip.className = "cfg-tip";
-      tip.style.margin = "0";
-      tip.textContent = "\u5411\u91CF\u5E93\u7531 11.18 \u4E4B\u524D\u7684\u65E7\u5D4C\u5165\u6A21\u578B\u751F\u6210\uFF0C\u4E0E\u5F53\u524D " + v.model_name + " \u4E0D\u5728\u540C\u4E00\u8BED\u4E49\u7A7A\u95F4\uFF0C\u68C0\u7D22\u7ED3\u679C\u4E0D\u53EF\u7528\u3002\u91CD\u5EFA\u4F1A\u6E05\u7A7A\u4E8B\u4EF6 / \u7ECF\u9A8C / \u56FE\u8C31\u4E09\u7EC4\u5411\u91CF\u5E76\u6309\u5F53\u524D\u6A21\u578B\u91CD\u65B0\u8BA1\u7B97\uFF0C\u671F\u95F4\u5411\u91CF\u68C0\u7D22\u77ED\u6682\u4E0D\u53EF\u7528\u3002";
-      body.appendChild(tip);
-      const btn = HOST.document.createElement("button");
-      btn.className = "btn cfg-save";
-      btn.style.marginTop = "8px";
-      btn.textContent = "\u91CD\u5EFA\u5411\u91CF\u5E93";
+      const tip = addTip(
+        "\u5411\u91CF\u5E93\u7531\u65E7\u5D4C\u5165\u6A21\u578B\u751F\u6210\uFF0C\u4E0E\u5F53\u524D " + v.model_name + " \u4E0D\u5728\u540C\u4E00\u8BED\u4E49\u7A7A\u95F4\uFF0C\u68C0\u7D22\u7ED3\u679C\u4E0D\u53EF\u7528\u3002\u91CD\u5EFA\u4F1A\u6E05\u7A7A\u4E8B\u4EF6 / \u7ECF\u9A8C / \u56FE\u8C31\u4E09\u7EC4\u5411\u91CF\u5E76\u6309\u5F53\u524D\u6A21\u578B\u91CD\u65B0\u8BA1\u7B97\uFF0C\u671F\u95F4\u5411\u91CF\u68C0\u7D22\u77ED\u6682\u4E0D\u53EF\u7528\u3002"
+      );
+      const btn = addAction("\u91CD\u5EFA\u5411\u91CF\u5E93");
       btn.addEventListener("click", function() {
         if (!HOST.confirm("\u91CD\u5EFA\u5411\u91CF\u5E93\uFF1F\u65E7\u6A21\u578B\uFF08" + models + "\uFF09\u751F\u6210\u7684\u5411\u91CF\u4F1A\u88AB\u5168\u90E8\u6E05\u9664\u5E76\u6309\u5F53\u524D\u6A21\u578B\u91CD\u65B0\u8BA1\u7B97\u3002\u6570\u636E\u91CF\u8F83\u5927\u65F6\u53EF\u80FD\u9700\u8981\u51E0\u5206\u949F\u3002")) return;
         btn.disabled = true;
@@ -2930,7 +3038,6 @@
           HOST.alert("\u91CD\u5EFA\u5931\u8D25\uFF1A" + (e && e.message || ""));
         });
       });
-      body.appendChild(btn);
     }).catch(function() {
       values.vector_model.textContent = "\u2014";
     });

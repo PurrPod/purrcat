@@ -807,6 +807,30 @@ ACP 接入状态：relay 部署情况 / 端口 / uv 可用性
 | --- | --- | --- |
 | 200 | Successful Response | - |
 
+### `GET /api/config/memory/embedding`
+
+**标题**：Api Get Memory Embedding
+
+嵌入模型状态与更新任务状态（供记忆设置页判断按钮是否可用）。
+
+#### 响应
+
+| 状态码 | 描述 | Schema |
+| --- | --- | --- |
+| 200 | Successful Response | - |
+
+### `POST /api/config/memory/embedding/update`
+
+**标题**：Api Update Memory Embedding
+
+更新嵌入模型并重建向量库；任务在后台执行，运行中返回 409。
+
+#### 响应
+
+| 状态码 | 描述 | Schema |
+| --- | --- | --- |
+| 200 | Successful Response | - |
+
 ### `GET /api/config/memory/health`
 
 **标题**：Api Get Memory Health

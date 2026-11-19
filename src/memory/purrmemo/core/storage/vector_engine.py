@@ -117,6 +117,10 @@ class VectorEngine(metaclass=SingletonMeta):
             print("[*] ONNX 嵌入模型加载完毕。")
         return self._embedding_model
 
+    def reset_embedding_model(self) -> None:
+        """释放已加载的编码器，替换模型权重后由更新任务调用。"""
+        self._embedding_model = None
+
     def _get_embedding(self, text, is_query=False):
         """获取文本的向量表示；查询与文档两侧前缀必须区分。"""
         if not text:

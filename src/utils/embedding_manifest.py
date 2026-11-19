@@ -48,6 +48,28 @@ def is_model_dir_complete(local_dir: str) -> bool:
     return any(os.path.exists(os.path.join(local_dir, f)) for f in ONNX_FILES)
 
 
+def read_model_tag(local_dir: str) -> str:
+    """读取目录里的模型身份标记；缺失时返回空串。"""
+    return _read_tag(local_dir)
+
+
+def model_dir_state(local_dir: str) -> str:
+    """目录状态：missing / current / partial / outdated。
+
+    - missing：目录不存在或为空，需要自动下载
+    - current：标记与文件都匹配当前模型
+    - partial：标记是当前模型但文件不全（下载中断），可自动补齐
+    - outdated：标记缺失或属于其它模型，交由用户显式更新，不自动覆盖
+    """
+    if not os.path.isdir(local_dir) or not os.listdir(local_dir):
+        return "missing"
+    if is_model_dir_complete(local_dir):
+        return "current"
+    if _read_tag(local_dir) == MODEL_TAG:
+        return "partial"
+    return "outdated"
+
+
 def _read_tag(local_dir: str) -> str:
     try:
         with open(os.path.join(local_dir, TAG_FILE), "r", encoding="utf-8") as f:

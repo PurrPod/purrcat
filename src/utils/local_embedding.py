@@ -161,3 +161,9 @@ def get_local_embedder(model_dir: str) -> LocalEmbedder:
             embedder = LocalEmbedder(model_dir)
             _EMBEDDER_CACHE[key] = embedder
         return embedder
+
+
+def reset_embedder_cache() -> None:
+    """清空已加载的编码器，替换模型权重后必须调用。"""
+    with _EMBEDDER_LOCK:
+        _EMBEDDER_CACHE.clear()

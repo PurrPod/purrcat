@@ -302,7 +302,7 @@ def install_embedding(item: str) -> bool:
         EMBEDDING_DIR,
         MODEL_NAME,
         _model_exists,
-        download_model,
+        install_embedding_model,
     )
 
     if not is_data_root_configured():
@@ -319,8 +319,9 @@ def install_embedding(item: str) -> bool:
         append_log(
             item, f"[*] 下载嵌入模型 {MODEL_NAME}（int8 约 113MB，自动多源回退）..."
         )
-        download_model(log=log)
+        install_embedding_model(log=log)
         append_log(item, "[+] 嵌入模型下载完成")
+        append_log(item, "[*] 若替换了旧版本模型，请到 配置中心 → 记忆 页重建向量库")
     except Exception as e:
         append_log(item, f"[!] 嵌入模型下载失败: {e}")
         return False

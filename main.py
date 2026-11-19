@@ -174,7 +174,7 @@ async def _bg_heavy_init():
     print("[*] API/UI已就绪，开始后台预热服务...")
 
     # 2. 沙盒镜像 & MCP/Skill 元数据（不阻塞前台）
-    # 嵌入模型：缺失或不是当前 e5-small（旧 MiniLM 等）时后台重新下载；
+    # 嵌入模型只在目录缺失/为空时后台下载；旧版本留给记忆设置页显式更新；
     # 与部署页共用 embedding_setup 的下载锁，避免并发写同一目录
     def _init_light_tools():
         # openai 在模型执行器里是懒导入（约 1.5s，全量类型树）；
@@ -201,7 +201,7 @@ async def _bg_heavy_init():
     except Exception as e:
         print(f"[!] 启动依赖检查失败: {e}")
 
-    # 嵌入模型版本检查：不完整或不是当前 e5-small 时自动重新下载
+    # 嵌入模型版本检查：缺失或为空时自动下载；旧版本不自动替换
     try:
         from src.utils.embedding_setup import ensure_embedding_model
 

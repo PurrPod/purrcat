@@ -1977,6 +1977,46 @@
         ]
       }
     },
+    "/api/config/memory/embedding": {
+      "get": {
+        "description": "嵌入模型状态与更新任务状态（供记忆设置页判断按钮是否可用）。",
+        "operationId": "api_get_memory_embedding_api_config_memory_embedding_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Api Get Memory Embedding",
+        "tags": [
+          "Configuration"
+        ]
+      }
+    },
+    "/api/config/memory/embedding/update": {
+      "post": {
+        "description": "更新嵌入模型并重建向量库；任务在后台执行，运行中返回 409。",
+        "operationId": "api_update_memory_embedding_api_config_memory_embedding_update_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Api Update Memory Embedding",
+        "tags": [
+          "Configuration"
+        ]
+      }
+    },
     "/api/config/memory/health": {
       "get": {
         "description": "记忆系统结构与版本检测（配置 / SQLite / 向量库 / 图谱）。",

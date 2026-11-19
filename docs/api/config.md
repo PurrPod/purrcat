@@ -535,6 +535,7 @@ curl -X PUT 'http://127.0.0.1:8000/api/config/memory' \
 
 按当前嵌入模型全量重建向量库：清空并重编码事件、经验、图谱节点，完成后写入模型版本标记。
 用于更换嵌入模型后（旧向量与新模型不兼容）的一次性重建；数据量大时会阻塞请求数分钟。
+嵌入模型更新任务运行中、或模型目录不是当前版本时返回 409。
 
 **响应**
 
@@ -548,6 +549,52 @@ curl -X PUT 'http://127.0.0.1:8000/api/config/memory' \
     "elapsed_seconds": 42.5
   },
   "health": { "ok": true, "index_version": { "status": "current" } }
+}
+```
+
+---
+
+## GET `/api/config/memory/embedding`
+
+读取嵌入模型目录状态与更新任务状态。`model.status` 为 `current` / `outdated` /
+`partial` / `missing`；`update.state` 为 `idle` / `running` / `done` / `error`，
+`update.phase` 为 `checking` / `downloading` / `rebuilding`。`update.interrupted`
+表示上次更新在进程退出前没有完成。
+
+**响应**
+
+```json
+{
+  "model": {
+    "status": "outdated",
+    "dir": "D:/purrcat/embedding",
+    "model": "Xenova/multilingual-e5-small",
+    "tag": "xenova-multilingual-e5-small-int8-v1"
+  },
+  "update": {
+    "state": "idle",
+    "phase": "",
+    "error": "",
+    "report": null,
+    "interrupted": false
+  }
+}
+```
+
+---
+
+## POST `/api/config/memory/embedding/update`
+
+更新嵌入模型并重建向量库。任务在后台线程执行：模型不是当前版本时先下载到暂存目录并
+原子替换，再重建事件 / 经验 / 图谱向量；模型已是最新时只重建向量。运行中重复调用
+返回 409。
+
+**响应**
+
+```json
+{
+  "status": "started",
+  "update": { "state": "running", "phase": "checking" }
 }
 ```
 

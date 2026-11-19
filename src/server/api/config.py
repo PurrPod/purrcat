@@ -270,8 +270,16 @@ def api_reconcile_memory_index():
 @router.post("/memory/reindex")
 def api_reindex_memory():
     """按当前嵌入模型全量重建事件 / 经验 / 图谱向量。"""
+    from src.memory.embedding_update import embedding_model_state, update_status
     from src.memory.health import inspect_memory
     from src.memory.reindex import rebuild_vector_index
+
+    if update_status()["state"] == "running":
+        raise HTTPException(status_code=409, detail="嵌入模型更新进行中，请稍后重试")
+    if embedding_model_state()["status"] != "current":
+        raise HTTPException(
+            status_code=409, detail="嵌入模型不是当前版本，请先更新模型"
+        )
 
     try:
         report = rebuild_vector_index()
@@ -281,6 +289,25 @@ def api_reindex_memory():
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"重建向量库失败: {e}")
     return {"status": "ok", "rebuild": report, "health": inspect_memory()}
+
+
+@router.get("/memory/embedding")
+def api_get_memory_embedding():
+    """嵌入模型状态与更新任务状态（供记忆设置页判断按钮是否可用）。"""
+    from src.memory.embedding_update import embedding_model_state, update_status
+
+    return {"model": embedding_model_state(), "update": update_status()}
+
+
+@router.post("/memory/embedding/update")
+def api_update_memory_embedding():
+    """更新嵌入模型并重建向量库；任务在后台执行，运行中返回 409。"""
+    from src.memory.embedding_update import start_update
+
+    result = start_update()
+    if not result.get("started"):
+        raise HTTPException(status_code=409, detail="嵌入模型更新进行中")
+    return {"status": "started", "update": result["status"]}
 
 
 # ── ACP 编辑器接入（任意 ACP 客户端：编辑器 / IDE 等）──

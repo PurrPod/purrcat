@@ -33,6 +33,21 @@ def test_model_dir_with_stale_tag_is_incomplete(tmp_path):
     assert embedding_manifest.is_model_dir_complete(str(tmp_path)) is False
 
 
+def test_model_dir_state_separates_missing_partial_and_outdated(tmp_path):
+    assert embedding_manifest.model_dir_state(str(tmp_path)) == "missing"
+
+    (tmp_path / embedding_manifest.TAG_FILE).write_text("old-model", encoding="utf-8")
+    assert embedding_manifest.model_dir_state(str(tmp_path)) == "outdated"
+
+    embedding_manifest.write_model_tag(str(tmp_path))
+    assert embedding_manifest.model_dir_state(str(tmp_path)) == "partial"
+
+    (tmp_path / "tokenizer.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "onnx").mkdir()
+    (tmp_path / "onnx" / "model.onnx").write_bytes(b"model")
+    assert embedding_manifest.model_dir_state(str(tmp_path)) == "current"
+
+
 def test_expected_files_merges_profile_and_shared():
     files = embedding_manifest.expected_files({"onnx/model.onnx": "abc"})
 

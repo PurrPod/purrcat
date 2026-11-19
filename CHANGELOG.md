@@ -23,7 +23,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **Memory score display**: fused event hits now show their normalized relevance (`[0.98] …`) alongside the timestamp, matching the experience section.
 - **Builtin skill_eval graph**: `skill_eval` now ships in `src/harness/graph_templates/` next to `default` and is kept byte-for-byte in sync at startup; both builtin graphs are rejected by the factory, canvas saves and market uninstall, and the canvas marks them read-only. Its worker/judge personas now go through `on_build_system_prompt`, and the obsolete `role` card wiring was dropped.
 - **Vector index rebuild**: collections record their `embedding_model`; `scripts/reindex_memory.py`, `POST /api/config/memory/reindex` and a memory settings button rebuild all vectors, and stale 11.18-era vectors are flagged in the health check until rebuilt.
-- **Startup embedding check**: the backend verifies the configured embedder is the e5 model and re-downloads it serially when the old weights or a partial download are found.
+- **Startup embedding check**: the backend only auto-downloads when the model directory is missing or empty; an older model is left untouched and reported as "outdated" instead of being silently replaced.
+- **Embedding model update**: the memory settings page can update an outdated model; the update downloads into a staging directory, swaps it atomically, then rebuilds all vectors in a background job whose button stays disabled across refreshes, and an interrupted run is reported and retryable.
 - **Event recall rejection**: event search rejects a whole query when its top-1 cosine is below 0.80 (e5-calibrated) instead of filtering each candidate, keeping secondary matches and BM25 hits for matching queries.
 
 ### Changed
