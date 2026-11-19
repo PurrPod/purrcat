@@ -32,7 +32,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **Managed default graph**: the built-in `default` graph is compared byte-for-byte at startup and restored from `src/harness/graph_templates/default/graph.json` when missing or modified; saving, deleting or evolving it is rejected and the canvas shows a read-only badge.
 - **Heartbeat**: scheduling moved to the timer service; `heartbeat.json`, `GOAL.md` and the `/api/tools/heartbeat` contract are unchanged.
 - **Timer feedback**: sink `Signal.data` is persisted as `event.result` and broadcast over SSE; the graph sink returns the dispatched `task_id` so a source (e.g. a plugin) can track the task.
-- **Event ranking**: hybrid event search now keeps the weighted RRF order (vector 0.6 / BM25 0.4, `k=10`) instead of re-sorting by cosine, lifting R@3 from 72.3% to 74.5% and R@5 from 77.2% to 79.6% across scifact, fiqa and EcomRetrieval; returned scores remain cosine, and the default rejection gate uses the best candidate cosine.
+- **Event ranking**: hybrid event search now keeps the weighted RRF order (vector 0.5 / BM25 0.5, `k=10`) instead of re-sorting by cosine; the even split matches the generic BEIR scores of the previous vector-heavy tuning while ranking the Agent memory corpus better; returned scores remain cosine, and the default rejection gate uses the best candidate cosine.
 
 ### Removed
 
