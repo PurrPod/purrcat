@@ -2083,13 +2083,13 @@ import { HOST } from './state.js';
   // 记忆库规模：只展示统计
   export function renderMemoryStats(main: HTMLElement) {
     const card = cfgCard(main);
-    cfgCardHead(card, '记忆库状态', 'stats', '当前事件 / 经验 / 图谱规模');
+    cfgCardHead(card, '记忆库状态', 'stats', '当前事件 / 经验 / 图谱规模与向量模型');
     const body = HOST.document.createElement('div');
     body.className = 'cfg-card-body';
     const grid = HOST.document.createElement('div');
     grid.className = 'cfg-grid';
     const values: Record<string, HTMLElement> = {};
-    [['events', '事件'], ['experiences', '经验'], ['graph_nodes', '图谱节点'], ['graph_edges', '图谱边']].forEach(function (pair) {
+    [['events', '事件'], ['experiences', '经验'], ['graph_nodes', '图谱节点'], ['graph_edges', '图谱边'], ['vector_model', '向量模型']].forEach(function (pair) {
       const field = HOST.document.createElement('div');
       field.className = 'cfg-field';
       const lb = HOST.document.createElement('label');
@@ -2115,7 +2115,70 @@ import { HOST } from './state.js';
         values.graph_edges.textContent = String(d.graph_edges);
       })
       .catch(function () {
-        Object.keys(values).forEach(function (k) { values[k].textContent = '—'; });
+        ['events', 'experiences', 'graph_nodes', 'graph_edges'].forEach(function (k) { values[k].textContent = '—'; });
       });
+
+    // 向量库版本：旧模型（11.18 前）生成的向量与新模型不兼容，需要重建
+    fetch('/api/config/memory/health')
+      .then(function (r) { return r.json(); })
+      .then(function (h) {
+        const v = h && h.index_version;
+        if (!v) { values.vector_model.textContent = '—'; return; }
+        const models = (v.models && v.models.length) ? v.models.join(', ') : '无标记';
+        if (v.status === 'current') {
+          values.vector_model.textContent = v.model_name + '（一致）';
+          return;
+        }
+        if (v.status === 'empty') {
+          values.vector_model.textContent = v.model_name + '（尚无向量）';
+          return;
+        }
+        if (v.status === 'missing') {
+          values.vector_model.textContent = v.model_name + '（向量库未创建）';
+          return;
+        }
+        if (v.status === 'unreadable') {
+          values.vector_model.textContent = '向量库不可读';
+          return;
+        }
+        values.vector_model.textContent = '需重建（旧模型：' + models + '）';
+
+        const tip = HOST.document.createElement('div');
+        tip.className = 'cfg-tip';
+        tip.style.margin = '0';
+        tip.textContent = '向量库由 11.18 之前的旧嵌入模型生成，与当前 ' + v.model_name +
+          ' 不在同一语义空间，检索结果不可用。重建会清空事件 / 经验 / 图谱三组向量并按当前模型重新计算，期间向量检索短暂不可用。';
+        body.appendChild(tip);
+
+        const btn = HOST.document.createElement('button');
+        btn.className = 'btn cfg-save';
+        btn.style.marginTop = '8px';
+        btn.textContent = '重建向量库';
+        btn.addEventListener('click', function () {
+          if (!HOST.confirm('重建向量库？旧模型（' + models + '）生成的向量会被全部清除并按当前模型重新计算。数据量较大时可能需要几分钟。')) return;
+          btn.disabled = true;
+          btn.textContent = '重建中…';
+          fetch('/api/config/memory/reindex', { method: 'POST' })
+            .then(function (r) {
+              if (!r.ok) throw new Error('HTTP ' + r.status);
+              return r.json();
+            })
+            .then(function (d) {
+              const counts = (d.rebuild && d.rebuild.counts) || {};
+              values.vector_model.textContent = v.model_name + '（一致）';
+              btn.textContent = '已重建（事件 ' + (counts.events || 0) + ' / 经验 ' +
+                (counts.experiences || 0) + ' / 节点 ' + (counts.graph_nodes || 0) + '）';
+              btn.disabled = true;
+              if (tip.parentNode) tip.parentNode.removeChild(tip);
+            })
+            .catch(function (e) {
+              btn.disabled = false;
+              btn.textContent = '重建向量库';
+              HOST.alert('重建失败：' + (e && e.message || ''));
+            });
+        });
+        body.appendChild(btn);
+      })
+      .catch(function () { values.vector_model.textContent = '—'; });
   }
 

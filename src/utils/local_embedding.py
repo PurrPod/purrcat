@@ -13,14 +13,18 @@ from typing import Iterable, List, Sequence
 
 import numpy as np
 
-from src.utils.embedding_manifest import read_max_seq_length
+from src.utils.embedding_manifest import (
+    PASSAGE_PREFIX,
+    QUERY_PREFIX,
+    read_max_seq_length,
+)
 
 _EMBEDDER_CACHE: dict[str, "LocalEmbedder"] = {}
 _EMBEDDER_LOCK = threading.Lock()
 
 _ONNX_CANDIDATES = (
+    os.path.join("onnx", "model_quantized.onnx"),
     os.path.join("onnx", "model.onnx"),
-    os.path.join("onnx", "model_quint8_avx2.onnx"),
     "model.onnx",
 )
 
@@ -124,6 +128,28 @@ class LocalEmbedder:
         matrix = np.vstack(vectors)
         self._dim = int(matrix.shape[1])
         return matrix[0] if single else matrix
+
+    def encode_query(
+        self,
+        texts: str | Iterable[str],
+        batch_size: int = 32,
+    ) -> np.ndarray:
+        """e5 系查询侧编码，统一加 ``query:`` 前缀。"""
+        return self.encode(_add_prefix(texts, QUERY_PREFIX), batch_size)
+
+    def encode_passage(
+        self,
+        texts: str | Iterable[str],
+        batch_size: int = 32,
+    ) -> np.ndarray:
+        """e5 系文档侧编码，统一加 ``passage:`` 前缀。"""
+        return self.encode(_add_prefix(texts, PASSAGE_PREFIX), batch_size)
+
+
+def _add_prefix(texts: str | Iterable[str], prefix: str) -> str | list[str]:
+    if isinstance(texts, str):
+        return prefix + texts
+    return [prefix + text for text in texts]
 
 
 def get_local_embedder(model_dir: str) -> LocalEmbedder:

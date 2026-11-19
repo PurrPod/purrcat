@@ -151,6 +151,14 @@ class ExperienceEngine:
             rows = self.conn.execute("SELECT exp_id FROM experiences").fetchall()
         return [row[0] for row in rows]
 
+    def list_all(self) -> list[dict]:
+        """列出全部经验，供向量库重建使用。"""
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT * FROM experiences ORDER BY created_at"
+            ).fetchall()
+        return [self._row_to_record(row) for row in rows]
+
     def count(self) -> int:
         with self._lock:
             return self.conn.execute("SELECT COUNT(*) FROM experiences").fetchone()[0]

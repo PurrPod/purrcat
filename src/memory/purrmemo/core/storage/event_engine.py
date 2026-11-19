@@ -202,6 +202,14 @@ class EventEngine(metaclass=SingletonMeta):
         cursor = self.conn.execute(f"SELECT event_id FROM {self.table_name}")
         return [row[0] for row in cursor.fetchall()]
 
+    def list_events(self):
+        """按时间升序列出全部事件，供向量库重建使用。"""
+        cursor = self.conn.execute(
+            f"SELECT event_id, content, timestamp FROM {self.table_name} "
+            "ORDER BY timestamp"
+        )
+        return [dict(row) for row in cursor.fetchall()]
+
     def list_outbox(self, limit=100, now=None):
         """读取待同步操作（索引器使用）。"""
         from .outbox import fetch_pending

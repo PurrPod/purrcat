@@ -267,6 +267,22 @@ def api_reconcile_memory_index():
     return {"status": "ok", "reconcile": report, "synced": synced}
 
 
+@router.post("/memory/reindex")
+def api_reindex_memory():
+    """按当前嵌入模型全量重建事件 / 经验 / 图谱向量。"""
+    from src.memory.health import inspect_memory
+    from src.memory.reindex import rebuild_vector_index
+
+    try:
+        report = rebuild_vector_index()
+    except Exception as e:
+        import traceback
+
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"重建向量库失败: {e}")
+    return {"status": "ok", "rebuild": report, "health": inspect_memory()}
+
+
 # ── ACP 编辑器接入（任意 ACP 客户端：编辑器 / IDE 等）──
 
 

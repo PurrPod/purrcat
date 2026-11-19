@@ -3,8 +3,8 @@
 检查 get_embedding_model() 指向的位置：
   - 是本地目录且包含 ONNX 模型与 tokenizer → 跳过
   - 否则 → 下载到 DATA_ROOT/embedding/
-应用内不再启动时自动下载（与部署页并发写会互相踩踏），
-下载入口：安装脚本（ensure_embedding_model）与 配置中心 → 部署 页（deploy_manager）
+应用启动时由 ``ensure_embedding_model`` 后台检查：缺失或不是当前模型
+（例如旧版 MiniLM 残留）时自动重新下载；部署页与安装脚本复用同一下载入口。
 
 注意：下载的是原 sentence-transformers 模型的 ONNX 导出（同一份权重、同一个
 tokenizer），运行时用 onnxruntime 推理，不再需要 torch / transformers。
@@ -31,6 +31,7 @@ from src.utils.embedding_manifest import (
     is_model_dir_complete,
     resolve_sources,
     sha256_file,
+    write_model_tag,
 )
 
 EMBEDDING_DIR = os.path.join(DATA_ROOT, "embedding")
@@ -43,6 +44,7 @@ __all__ = [
 ]
 
 _download_lock = threading.Lock()
+_download_guard = threading.Lock()
 _downloading_flag = threading.Event()
 
 
@@ -96,6 +98,12 @@ def _download_profile(source: str, profile: dict, log) -> None:
 
 
 def download_model(endpoint: str | None = None, log=print) -> None:
+    """下载入口：写盘串行化，避免启动自动下载与部署页同时写同一目录。"""
+    with _download_guard:
+        _download_model(endpoint, log)
+
+
+def _download_model(endpoint: str | None = None, log=print) -> None:
     """同步下载嵌入模型到 EMBEDDING_DIR。
 
     endpoint=None 时按「自托管镜像 → hf-mirror → huggingface.co」依次尝试；
@@ -116,6 +124,7 @@ def download_model(endpoint: str | None = None, log=print) -> None:
         for source in sources:
             try:
                 _download_profile(source, profile, log)
+                write_model_tag(EMBEDDING_DIR)
                 if _model_exists(EMBEDDING_DIR):
                     log(f"    ✓ 下载完成（来源: {source}）")
                     return
@@ -154,6 +163,10 @@ def ensure_embedding_model() -> None:
     if _model_exists(EMBEDDING_DIR):
         return
 
+    # 目录里有文件但判定不完整：通常是旧模型（如 MiniLM）或下载中断
+    if os.path.isdir(target) and os.listdir(target):
+        print(f"[!] 嵌入模型不是当前版本（需要 {MODEL_NAME}），将重新下载并覆盖旧权重")
+
     if _downloading_flag.is_set():
         return
 
@@ -164,9 +177,13 @@ def ensure_embedding_model() -> None:
 
     def _do_download():
         try:
-            print("[*] 首次运行，正在后台下载嵌入模型（int8 约 113MB）...")
+            print("[*] 正在后台下载嵌入模型（int8 约 135MB）...")
             download_model()
             print("[+] 嵌入模型下载完成！")
+            # 依赖检查可能已写入「嵌入模型未就绪」请求，下载完成后重新核对并清除
+            from src.utils.dependency_check import check_and_warn_dependencies
+
+            check_and_warn_dependencies()
         except Exception as e:
             print(f"[!] 嵌入模型下载失败: {e}")
             print("    可稍后在应用内 配置中心 → 部署 页重试")

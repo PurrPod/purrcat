@@ -843,6 +843,18 @@ ACP 接入状态：relay 部署情况 / 端口 / uv 可用性
 | --- | --- | --- |
 | 200 | Successful Response | - |
 
+### `POST /api/config/memory/reindex`
+
+**标题**：Api Reindex Memory
+
+按当前嵌入模型全量重建事件 / 经验 / 图谱向量。
+
+#### 响应
+
+| 状态码 | 描述 | Schema |
+| --- | --- | --- |
+| 200 | Successful Response | - |
+
 ### `GET /api/config/memory/stats`
 
 **标题**：Api Get Memory Stats

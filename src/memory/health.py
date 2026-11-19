@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from src.memory import config as memory_config
+from src.memory.purrmemo.core.index_version import read_index_version
 from src.utils.config import MEMORY_DIR
 
 MEMORY_SCHEMA_VERSION = 2
@@ -219,6 +220,7 @@ def inspect_memory(paths: Dict[str, Any] | None = None) -> Dict[str, Any]:
     experiences = _inspect_experiences(p["experiences_db"])
     events = _inspect_events(p["events_db"], p["events_table"])
     chroma = _inspect_chroma(p["chroma_dir"])
+    index_version = read_index_version(p["chroma_dir"])
 
     issues: List[Dict[str, Any]] = []
 
@@ -299,6 +301,15 @@ def inspect_memory(paths: Dict[str, Any] | None = None) -> Dict[str, Any]:
             chroma["path"],
         )
 
+    if index_version["needs_rebuild"]:
+        models = ", ".join(index_version["models"]) or "无模型标记"
+        add(
+            "vector_index_stale",
+            f"向量库由旧嵌入模型生成（{models}），当前模型为 "
+            f"{index_version['model_name']}，需重建向量库",
+            index_version["path"],
+        )
+
     return {
         "version": config["version"],
         "latest_version": config["latest"],
@@ -308,6 +319,7 @@ def inspect_memory(paths: Dict[str, Any] | None = None) -> Dict[str, Any]:
         "experiences_db": experiences,
         "events_db": events,
         "chroma": chroma,
+        "index_version": index_version,
         "graph": {"path": p["graph"], "exists": os.path.exists(p["graph"])},
         "buffer": _buffer_stats(p["buffer"]),
         "issues": issues,

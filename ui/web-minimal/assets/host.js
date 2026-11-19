@@ -2842,13 +2842,13 @@
   }
   function renderMemoryStats(main) {
     const card = cfgCard(main);
-    cfgCardHead(card, "\u8BB0\u5FC6\u5E93\u72B6\u6001", "stats", "\u5F53\u524D\u4E8B\u4EF6 / \u7ECF\u9A8C / \u56FE\u8C31\u89C4\u6A21");
+    cfgCardHead(card, "\u8BB0\u5FC6\u5E93\u72B6\u6001", "stats", "\u5F53\u524D\u4E8B\u4EF6 / \u7ECF\u9A8C / \u56FE\u8C31\u89C4\u6A21\u4E0E\u5411\u91CF\u6A21\u578B");
     const body = HOST.document.createElement("div");
     body.className = "cfg-card-body";
     const grid = HOST.document.createElement("div");
     grid.className = "cfg-grid";
     const values = {};
-    [["events", "\u4E8B\u4EF6"], ["experiences", "\u7ECF\u9A8C"], ["graph_nodes", "\u56FE\u8C31\u8282\u70B9"], ["graph_edges", "\u56FE\u8C31\u8FB9"]].forEach(function(pair) {
+    [["events", "\u4E8B\u4EF6"], ["experiences", "\u7ECF\u9A8C"], ["graph_nodes", "\u56FE\u8C31\u8282\u70B9"], ["graph_edges", "\u56FE\u8C31\u8FB9"], ["vector_model", "\u5411\u91CF\u6A21\u578B"]].forEach(function(pair) {
       const field = HOST.document.createElement("div");
       field.className = "cfg-field";
       const lb = HOST.document.createElement("label");
@@ -2872,9 +2872,67 @@
       values.graph_nodes.textContent = String(d.graph_nodes);
       values.graph_edges.textContent = String(d.graph_edges);
     }).catch(function() {
-      Object.keys(values).forEach(function(k) {
+      ["events", "experiences", "graph_nodes", "graph_edges"].forEach(function(k) {
         values[k].textContent = "\u2014";
       });
+    });
+    fetch("/api/config/memory/health").then(function(r) {
+      return r.json();
+    }).then(function(h) {
+      const v = h && h.index_version;
+      if (!v) {
+        values.vector_model.textContent = "\u2014";
+        return;
+      }
+      const models = v.models && v.models.length ? v.models.join(", ") : "\u65E0\u6807\u8BB0";
+      if (v.status === "current") {
+        values.vector_model.textContent = v.model_name + "\uFF08\u4E00\u81F4\uFF09";
+        return;
+      }
+      if (v.status === "empty") {
+        values.vector_model.textContent = v.model_name + "\uFF08\u5C1A\u65E0\u5411\u91CF\uFF09";
+        return;
+      }
+      if (v.status === "missing") {
+        values.vector_model.textContent = v.model_name + "\uFF08\u5411\u91CF\u5E93\u672A\u521B\u5EFA\uFF09";
+        return;
+      }
+      if (v.status === "unreadable") {
+        values.vector_model.textContent = "\u5411\u91CF\u5E93\u4E0D\u53EF\u8BFB";
+        return;
+      }
+      values.vector_model.textContent = "\u9700\u91CD\u5EFA\uFF08\u65E7\u6A21\u578B\uFF1A" + models + "\uFF09";
+      const tip = HOST.document.createElement("div");
+      tip.className = "cfg-tip";
+      tip.style.margin = "0";
+      tip.textContent = "\u5411\u91CF\u5E93\u7531 11.18 \u4E4B\u524D\u7684\u65E7\u5D4C\u5165\u6A21\u578B\u751F\u6210\uFF0C\u4E0E\u5F53\u524D " + v.model_name + " \u4E0D\u5728\u540C\u4E00\u8BED\u4E49\u7A7A\u95F4\uFF0C\u68C0\u7D22\u7ED3\u679C\u4E0D\u53EF\u7528\u3002\u91CD\u5EFA\u4F1A\u6E05\u7A7A\u4E8B\u4EF6 / \u7ECF\u9A8C / \u56FE\u8C31\u4E09\u7EC4\u5411\u91CF\u5E76\u6309\u5F53\u524D\u6A21\u578B\u91CD\u65B0\u8BA1\u7B97\uFF0C\u671F\u95F4\u5411\u91CF\u68C0\u7D22\u77ED\u6682\u4E0D\u53EF\u7528\u3002";
+      body.appendChild(tip);
+      const btn = HOST.document.createElement("button");
+      btn.className = "btn cfg-save";
+      btn.style.marginTop = "8px";
+      btn.textContent = "\u91CD\u5EFA\u5411\u91CF\u5E93";
+      btn.addEventListener("click", function() {
+        if (!HOST.confirm("\u91CD\u5EFA\u5411\u91CF\u5E93\uFF1F\u65E7\u6A21\u578B\uFF08" + models + "\uFF09\u751F\u6210\u7684\u5411\u91CF\u4F1A\u88AB\u5168\u90E8\u6E05\u9664\u5E76\u6309\u5F53\u524D\u6A21\u578B\u91CD\u65B0\u8BA1\u7B97\u3002\u6570\u636E\u91CF\u8F83\u5927\u65F6\u53EF\u80FD\u9700\u8981\u51E0\u5206\u949F\u3002")) return;
+        btn.disabled = true;
+        btn.textContent = "\u91CD\u5EFA\u4E2D\u2026";
+        fetch("/api/config/memory/reindex", { method: "POST" }).then(function(r) {
+          if (!r.ok) throw new Error("HTTP " + r.status);
+          return r.json();
+        }).then(function(d) {
+          const counts = d.rebuild && d.rebuild.counts || {};
+          values.vector_model.textContent = v.model_name + "\uFF08\u4E00\u81F4\uFF09";
+          btn.textContent = "\u5DF2\u91CD\u5EFA\uFF08\u4E8B\u4EF6 " + (counts.events || 0) + " / \u7ECF\u9A8C " + (counts.experiences || 0) + " / \u8282\u70B9 " + (counts.graph_nodes || 0) + "\uFF09";
+          btn.disabled = true;
+          if (tip.parentNode) tip.parentNode.removeChild(tip);
+        }).catch(function(e) {
+          btn.disabled = false;
+          btn.textContent = "\u91CD\u5EFA\u5411\u91CF\u5E93";
+          HOST.alert("\u91CD\u5EFA\u5931\u8D25\uFF1A" + (e && e.message || ""));
+        });
+      });
+      body.appendChild(btn);
+    }).catch(function() {
+      values.vector_model.textContent = "\u2014";
     });
   }
 

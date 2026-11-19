@@ -111,6 +111,7 @@ EXPECTED_ROUTES = {
         ("/api/config/memory/migrate", "POST", "api_migrate_memory"),
         ("/api/config/memory/cleanup", "POST", "api_cleanup_memory_events"),
         ("/api/config/memory/reconcile", "POST", "api_reconcile_memory_index"),
+        ("/api/config/memory/reindex", "POST", "api_reindex_memory"),
         ("/api/config/acp", "GET", "api_get_acp_status"),
         ("/api/config/acp", "PUT", "api_update_acp_config"),
         ("/api/config/acp/redeploy", "POST", "api_redeploy_acp_relay"),

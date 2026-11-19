@@ -15,6 +15,7 @@ npm run build:ui     # 改 src/host/*.ts 后执行
 npm run watch:ui     # 增量重建
 npm run typecheck    # tsc --noEmit，strict
 uv run python main.py --api --headless --api-port 8000   # 只起后端
+uv run python scripts/reindex_memory.py                 # 换嵌入模型后重建向量库（先停后端）
 uv run pyinstaller main.spec   # 后端打包
 npm run dist                   # 桌面安装包
 npm run installer:dev          # 独立安装器

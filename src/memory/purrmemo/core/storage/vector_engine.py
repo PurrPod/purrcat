@@ -457,6 +457,110 @@ class VectorEngine(metaclass=SingletonMeta):
             print(f"获取图谱节点集合统计信息失败: {e}")
             return 0
 
+    # ── 全量重建（更换嵌入模型后使用）──
+
+    def reset_collections(self):
+        """删除并重建三个 collection，清空旧模型生成的向量。"""
+        names = (
+            self.events_collection_name,
+            self.collection_name,
+            self.graph_collection_name,
+        )
+        # 先触发懒加载：client 属性内部会取同一把不可重入锁
+        client = self.client
+        with self._db_lock:
+            for name in names:
+                try:
+                    client.delete_collection(name)
+                except Exception:
+                    pass
+            self._collection = None
+            self._graph_collection = None
+            self._events_collection = None
+        return True
+
+    def _embed_passages(self, texts, batch_size=32):
+        """批量编码文档侧文本；兼容返回 ndarray 或 list 的编码器。"""
+        if not texts:
+            return []
+        try:
+            vectors = self.embedding_model.encode_passage(
+                list(texts), batch_size=batch_size
+            )
+        except TypeError:
+            # 只支持单条编码的编码器（如旧测试替身）
+            vectors = [self.embedding_model.encode_passage(text) for text in texts]
+        if hasattr(vectors, "tolist"):
+            return vectors.tolist()
+        return [list(vector) for vector in vectors]
+
+    def _rebuild_collection(self, collection, items, documents, metadatas, batch_size):
+        count = 0
+        for start in range(0, len(items), batch_size):
+            batch = items[start : start + batch_size]
+            embeddings = self._embed_passages(
+                [documents[item["id"]] for item in batch], batch_size
+            )
+            collection.upsert(
+                ids=[item["id"] for item in batch],
+                embeddings=embeddings,
+                documents=[documents[item["id"]] for item in batch],
+                metadatas=[metadatas[item["id"]] for item in batch],
+            )
+            count += len(batch)
+        return count
+
+    def rebuild_event_vectors(self, items, batch_size=32):
+        """按 SQLite 事件重写事件向量；``items`` 含 id/content/timestamp。"""
+        items = [item for item in items if item.get("id") and item.get("content")]
+        documents = {item["id"]: item["content"] for item in items}
+        metadatas = {
+            item["id"]: {"timestamp": item.get("timestamp") or now_iso()}
+            for item in items
+        }
+        return self._rebuild_collection(
+            self.events_collection, items, documents, metadatas, batch_size
+        )
+
+    def rebuild_experience_vectors(self, items, batch_size=32):
+        """按 SQLite 经验重写经验向量；``items`` 含 exp_id/content/timestamp。"""
+        records = [
+            {
+                "id": item["exp_id"],
+                "content": item["content"],
+                "timestamp": item.get("timestamp"),
+            }
+            for item in items
+            if item.get("exp_id") and item.get("content")
+        ]
+        documents = {item["id"]: item["content"] for item in records}
+        metadatas = {
+            item["id"]: {"timestamp": item.get("timestamp") or now_iso()}
+            for item in records
+        }
+        return self._rebuild_collection(
+            self.collection, records, documents, metadatas, batch_size
+        )
+
+    def rebuild_graph_vectors(self, items, batch_size=32):
+        """按图谱结构重写节点向量；``items`` 含 node_id/name。"""
+        nodes = [
+            {"id": item["node_id"], "name": item["name"]}
+            for item in items
+            if item.get("node_id") and item.get("name")
+        ]
+        documents = {item["id"]: item["name"] for item in nodes}
+        metadatas = {item["id"]: {"node_name": item["name"]} for item in nodes}
+        return self._rebuild_collection(
+            self.graph_collection, nodes, documents, metadatas, batch_size
+        )
+
+    def mark_index_model(self):
+        """重建完成后把当前模型 tag 写入 collection metadata。"""
+        from ..index_version import mark_index_model
+
+        return mark_index_model(self)
+
     def cleanup_old_experiences(self, days_threshold=30, min_access_count=2):
         """清理过期或不常用的经验"""
         try:

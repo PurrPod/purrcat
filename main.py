@@ -174,8 +174,8 @@ async def _bg_heavy_init():
     print("[*] API/UI已就绪，开始后台预热服务...")
 
     # 2. 沙盒镜像 & MCP/Skill 元数据（不阻塞前台）
-    # 嵌入模型不再启动时自动下载：与部署页并发写同一目录会互相踩踏，
-    # 统一由 配置中心 → 部署 页（或安装脚本）单点安装
+    # 嵌入模型：缺失或不是当前 e5-small（旧 MiniLM 等）时后台重新下载；
+    # 与部署页共用 embedding_setup 的下载锁，避免并发写同一目录
     def _init_light_tools():
         # openai 在模型执行器里是懒导入（约 1.5s，全量类型树）；
         # 此时 uvicorn 已绑定端口，在这里预热，避免用户首条消息承担这段导入
@@ -200,6 +200,14 @@ async def _bg_heavy_init():
         check_and_warn_dependencies()
     except Exception as e:
         print(f"[!] 启动依赖检查失败: {e}")
+
+    # 嵌入模型版本检查：不完整或不是当前 e5-small 时自动重新下载
+    try:
+        from src.utils.embedding_setup import ensure_embedding_model
+
+        ensure_embedding_model()
+    except Exception as e:
+        print(f"[!] 嵌入模型检查失败: {e}")
 
     # 🌟 记忆系统健康检查：配置版本 / SQLite 结构 / FTS / 向量 collection
     # 有问题时自动迁移（写前备份），仍有未修复项只记录日志

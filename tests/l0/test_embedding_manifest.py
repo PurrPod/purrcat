@@ -9,7 +9,7 @@ import numpy as np
 from src.utils import embedding_manifest, local_embedding
 
 
-def test_model_dir_complete_requires_tokenizer_and_onnx(tmp_path):
+def test_model_dir_complete_requires_tokenizer_onnx_and_tag(tmp_path):
     assert embedding_manifest.is_model_dir_complete(str(tmp_path)) is False
 
     (tmp_path / "tokenizer.json").write_text("{}", encoding="utf-8")
@@ -18,16 +18,35 @@ def test_model_dir_complete_requires_tokenizer_and_onnx(tmp_path):
     onnx_dir = tmp_path / "onnx"
     onnx_dir.mkdir()
     (onnx_dir / "model.onnx").write_bytes(b"model")
+    assert embedding_manifest.is_model_dir_complete(str(tmp_path)) is False
 
+    embedding_manifest.write_model_tag(str(tmp_path))
     assert embedding_manifest.is_model_dir_complete(str(tmp_path)) is True
+
+
+def test_model_dir_with_stale_tag_is_incomplete(tmp_path):
+    (tmp_path / "tokenizer.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "onnx").mkdir()
+    (tmp_path / "onnx" / "model.onnx").write_bytes(b"model")
+    (tmp_path / embedding_manifest.TAG_FILE).write_text("old-model", encoding="utf-8")
+
+    assert embedding_manifest.is_model_dir_complete(str(tmp_path)) is False
 
 
 def test_expected_files_merges_profile_and_shared():
     files = embedding_manifest.expected_files({"onnx/model.onnx": "abc"})
 
     assert files["onnx/model.onnx"] == "abc"
-    assert "tokenizer.json" in files
-    assert files["config.json"].startswith("6300193")
+    assert files["tokenizer.json"].startswith("0b44a9d7")
+    assert "config.json" not in files
+
+
+def test_prefix_helpers_apply_query_and_passage_prefix():
+    assert local_embedding._add_prefix("a", "query: ") == "query: a"
+    assert local_embedding._add_prefix(["a", "b"], "passage: ") == [
+        "passage: a",
+        "passage: b",
+    ]
 
 
 def test_resolve_sources_prefers_endpoint_then_env_then_defaults():

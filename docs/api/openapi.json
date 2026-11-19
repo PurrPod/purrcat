@@ -2037,6 +2037,26 @@
         ]
       }
     },
+    "/api/config/memory/reindex": {
+      "post": {
+        "description": "按当前嵌入模型全量重建事件 / 经验 / 图谱向量。",
+        "operationId": "api_reindex_memory_api_config_memory_reindex_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Api Reindex Memory",
+        "tags": [
+          "Configuration"
+        ]
+      }
+    },
     "/api/config/memory/stats": {
       "get": {
         "operationId": "api_get_memory_stats_api_config_memory_stats_get",

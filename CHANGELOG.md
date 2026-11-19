@@ -22,6 +22,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **Search confidence filter**: `skill` / `mcp` / `local` results below `min_score` (default 0.30) are dropped by both the `Search` tool and the hook; the `memory` route uses the same threshold to filter event fusion scores, experience similarity and graph confidence; `web` results carry no similarity score and are left untouched.
 - **Memory score display**: fused event hits now show their normalized relevance (`[0.98] …`) alongside the timestamp, matching the experience section.
 - **Builtin skill_eval graph**: `skill_eval` now ships in `src/harness/graph_templates/` next to `default` and is kept byte-for-byte in sync at startup; both builtin graphs are rejected by the factory, canvas saves and market uninstall, and the canvas marks them read-only. Its worker/judge personas now go through `on_build_system_prompt`, and the obsolete `role` card wiring was dropped.
+- **Vector index rebuild**: collections record their `embedding_model`; `scripts/reindex_memory.py`, `POST /api/config/memory/reindex` and a memory settings button rebuild all vectors, and stale 11.18-era vectors are flagged in the health check until rebuilt.
+- **Startup embedding check**: the backend verifies the configured embedder is the e5 model and re-downloads it serially when the old weights or a partial download are found.
 - **Event recall rejection**: event search rejects a whole query when its top-1 cosine is below 0.80 (e5-calibrated) instead of filtering each candidate, keeping secondary matches and BM25 hits for matching queries.
 
 ### Changed
@@ -39,6 +41,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Fixed
 
 - **Deleted graph tasks**: a task created for a missing graph now ends in `error` instead of silently completing with no nodes; Note cards reset to `- TODO` drop their stale run record so they can be scheduled and re-dispatched again.
+- **Vector rebuild correctness**: the rebuild script no longer drops every event (`event_id` is mapped to the batch key), no longer deadlocks on the non-reentrant lock, and writes the model tag without resending `hnsw:*` index settings that Chroma refuses to modify.
 
 ### Removed
 

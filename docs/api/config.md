@@ -531,6 +531,28 @@ curl -X PUT 'http://127.0.0.1:8000/api/config/memory' \
 
 ---
 
+## POST `/api/config/memory/reindex`
+
+按当前嵌入模型全量重建向量库：清空并重编码事件、经验、图谱节点，完成后写入模型版本标记。
+用于更换嵌入模型后（旧向量与新模型不兼容）的一次性重建；数据量大时会阻塞请求数分钟。
+
+**响应**
+
+```json
+{
+  "status": "ok",
+  "rebuild": {
+    "model": "xenova-multilingual-e5-small-int8-v1",
+    "counts": { "events": 1200, "experiences": 80, "graph_nodes": 300 },
+    "marked_collections": ["events", "experiences", "graph_nodes"],
+    "elapsed_seconds": 42.5
+  },
+  "health": { "ok": true, "index_version": { "status": "current" } }
+}
+```
+
+---
+
 ## GET `/api/config/acp`
 
 读取 ACP 接入状态：relay 部署情况、端口与 `uv` 可用性。
