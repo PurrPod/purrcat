@@ -82,7 +82,7 @@ hooks:
 | action | 参数 | 说明 |
 | --- | --- | --- |
 | `skill_info` | `skills`、`failed_prompt` | 拼装指定技能的描述提示；缺失时给 `failed_prompt` |
-| `search` | `query`、`route`、`limit`、`min_score` | 调 Search 工具检索并注入结果；`route` ∈ `skill` / `mcp` / `memory` / `local`（技能+MCP）/ `web` / `all`（并行搜 `local` 与 `memory` 后合并），默认 `local`；`limit` 为每条路由返回条数（默认 5，范围 1–15）；`min_score` 为置信度阈值（默认 0.30，范围 0–1，对全部路由生效；`memory` 会依次过滤事件融合分、经验相似度与图谱置信度） |
+| `search` | `query`、`route`、`limit`、`min_score` | 调 Search 工具检索并注入结果；`route` ∈ `skill` / `mcp` / `memory` / `local`（技能+MCP）/ `web` / `all`（并行搜 `local` 与 `memory` 后合并），默认 `local`；`limit` 为每条路由返回条数（默认 5，范围 1–15）；`min_score` 为置信度阈值（默认 0.30，范围 0–1，对全部路由生效；`memory` 会依次过滤事件向量相似度、经验向量相似度与图谱节点相似度） |
 
 ### 4.3 检查/反馈类
 

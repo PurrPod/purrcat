@@ -10,12 +10,15 @@ from src.memory.config import (
 from src.memory.settings import get_memory_settings
 
 from .clock import parse_iso
-from .filters import filter_by_min_score, filter_by_time_range
+from .filters import filter_by_time_range
 from .formatting import describe_relation, format_search_results
 from .schema import (
     CANDIDATE_LIMIT,
+    EVENT_RRF_K,
+    EVENT_RRF_VECTOR_WEIGHT,
     GRAPH_NODE_SEARCH_TOP_K,
-    MIN_EXPERIENCE_SCORE,
+    MIN_EVENT_VECTOR_SCORE,
+    MIN_VECTOR_SCORE,
     RRF_K,
 )
 from .scoring import ebbinghaus_confidence, reciprocal_rank_fusion
@@ -67,7 +70,7 @@ class RAGSearchTool:
         query_embedding = None
         if self.vector_engine and query:
             try:
-                query_embedding = self.vector_engine._get_embedding(query)
+                query_embedding = self.vector_engine.embed_query(query)
             except Exception as e:
                 print(f"❌ [RAGSearchTool] Embedding 计算失败: {e}")
 
@@ -102,29 +105,10 @@ class RAGSearchTool:
             except Exception as e:
                 print(f"❌ [RAGSearchTool] 检索 {source} 失败: {e}")
 
-        events_results, experiences_results, graph_results = self._apply_min_score(
-            events_results, experiences_results, graph_results, filters
-        )
         markdown_context = self._format_results(
             events_results, experiences_results, graph_results, events_warning
         )
         return markdown_context
-
-    def _apply_min_score(self, events, experiences, graph, filters):
-        """按 filters.min_score 过滤三路结果（含边界）；未提供阈值时保持原样。"""
-        raw = (filters or {}).get("min_score")
-        if raw is None:
-            return events, experiences, graph
-        try:
-            min_score = max(0.0, min(float(raw), 1.0))
-        except (TypeError, ValueError):
-            return events, experiences, graph
-        # 经验阈值已在向量候选阶段生效，BM25-only 候选不得被丢弃（SPEC-020 4.3）
-        return (
-            filter_by_min_score(events, "score", min_score),
-            experiences,
-            filter_by_min_score(graph, "confidence", min_score),
-        )
 
     @property
     def experience_engine(self):
@@ -160,18 +144,56 @@ class RAGSearchTool:
                 query, start_time, end_time, limit=CANDIDATE_LIMIT
             )
 
+            if not self.vector_engine or not query_embedding:
+                # 无向量能力时退回 BM25 结果，避免事件检索整体失效
+                final_events = [{**item["data"]} for item in bm25_results_raw[:top_k]]
+                return {"events": final_events, "warning": ""}
+
+            # 加权 RRF 决定最终顺序；对外分数仍用向量余弦，便于阈值与展示
+            vector_scores = {item["id"]: item["score"] for item in vector_results_raw}
             fused_results = reciprocal_rank_fusion(
-                vector_results_raw, bm25_results_raw, k=RRF_K, top_k=top_k
+                vector_results_raw,
+                bm25_results_raw,
+                k=EVENT_RRF_K,
+                top_k=CANDIDATE_LIMIT,
+                vector_weight=EVENT_RRF_VECTOR_WEIGHT,
             )
-            # RRF 分理论最大值为两路都排第一时的 2/(k+1)，据此归一化到 0–1 供展示
-            rrf_ceiling = 2.0 / (RRF_K + 1)
-            final_events = [
-                {
-                    **item["data"],
-                    "score": min(1.0, item["rrf_score"] / rrf_ceiling),
-                }
-                for item in fused_results
+
+            missing_ids = [
+                item["id"] for item in fused_results if item["id"] not in vector_scores
             ]
+            if missing_ids:
+                vector_scores.update(
+                    self.vector_engine.event_similarities(missing_ids, query_embedding)
+                )
+
+            # 候选下限只剔除明显无关项，顺序保留融合结果
+            ranked_events = [
+                {**item["data"], "score": vector_scores[item["id"]]}
+                for item in fused_results
+                if vector_scores.get(item["id"], -1.0) >= MIN_VECTOR_SCORE
+            ]
+
+            if "min_score" in filters:
+                # 显式阈值保留逐条过滤语义，供评测与调用方自行控制
+                try:
+                    threshold = float(filters["min_score"])
+                except (TypeError, ValueError):
+                    threshold = MIN_EVENT_VECTOR_SCORE
+                final_events = [
+                    event for event in ranked_events if event["score"] >= threshold
+                ]
+            elif (
+                ranked_events
+                and max(event["score"] for event in ranked_events)
+                >= MIN_EVENT_VECTOR_SCORE
+            ):
+                # 默认策略是查询级拒识：候选中最高余弦达标就返回，不削掉次级事件
+                final_events = ranked_events
+            else:
+                final_events = []
+
+            final_events = final_events[:top_k]
 
             fallback_warning = ""
             if not final_events and start_time and end_time:
@@ -200,11 +222,11 @@ class RAGSearchTool:
                     top_k=CANDIDATE_LIMIT,
                     query_embedding=query_embedding,
                 )
-                threshold = filters.get("min_score", MIN_EXPERIENCE_SCORE)
+                threshold = filters.get("min_score", MIN_VECTOR_SCORE)
                 try:
                     threshold = float(threshold)
                 except (TypeError, ValueError):
-                    threshold = MIN_EXPERIENCE_SCORE
+                    threshold = MIN_VECTOR_SCORE
                 vector_results = [
                     {**item, "data": {}}
                     for item in raw
@@ -251,9 +273,22 @@ class RAGSearchTool:
             else:
                 return []
 
+            threshold = (
+                filters.get("min_score", MIN_VECTOR_SCORE)
+                if filters
+                else MIN_VECTOR_SCORE
+            )
+            try:
+                threshold = float(threshold)
+            except (TypeError, ValueError):
+                threshold = MIN_VECTOR_SCORE
+            similar_nodes = [
+                node for node in similar_nodes if node.get("score", 0.0) >= threshold
+            ]
+
             for node_info in similar_nodes:
                 relations = self.graph_engine.get_relations_by_node(
-                    node_info["node_id"], direction="all"
+                    node_info["node_id"], direction="all", min_confidence=0.0
                 )
                 for relation in relations:
                     edge_id = relation.get("edge_id")
@@ -262,30 +297,25 @@ class RAGSearchTool:
                     if edge_id:
                         seen_edges.add(edge_id)
 
-                    if relation["confidence"] >= self.graph_engine.min_confidence:
-                        target_node = self.graph_engine.get_node(
-                            relation["target_node_id"]
-                        )
-                        source_node = self.graph_engine.get_node(
-                            relation["source_node_id"]
-                        )
+                    target_node = self.graph_engine.get_node(relation["target_node_id"])
+                    source_node = self.graph_engine.get_node(relation["source_node_id"])
 
-                        source_name = source_node["name"] if source_node else "未知"
-                        target_name = target_node["name"] if target_node else "未知"
+                    source_name = source_node["name"] if source_node else "未知"
+                    target_name = target_node["name"] if target_node else "未知"
 
-                        results.append(
-                            {
-                                "source": source_name,
-                                "relation": relation["relation_meaning"],
-                                "target": target_name,
-                                "confidence": relation["confidence"],
-                                "description": describe_relation(
-                                    source_name,
-                                    relation["relation_meaning"],
-                                    target_name,
-                                ),
-                            }
-                        )
+                    results.append(
+                        {
+                            "source": source_name,
+                            "relation": relation["relation_meaning"],
+                            "target": target_name,
+                            "confidence": relation["confidence"],
+                            "description": describe_relation(
+                                source_name,
+                                relation["relation_meaning"],
+                                target_name,
+                            ),
+                        }
+                    )
 
             results.sort(key=lambda x: x["confidence"], reverse=True)
             top_k = (

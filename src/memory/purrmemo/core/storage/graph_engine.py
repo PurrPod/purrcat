@@ -227,13 +227,15 @@ class GraphEngine(metaclass=SingletonMeta):
             print(f"获取关系失败: {e}")
             return None
 
-    def get_relations_by_node(self, node_id, direction="out"):
+    def get_relations_by_node(self, node_id, direction="out", min_confidence=None):
         """获取节点的关系
 
         Args:
             node_id: 节点 ID
             direction: 方向 ('out' 出边, 'in' 入边, 'all' 所有边)
+            min_confidence: 置信度下限；None 时用图谱默认阈值，0.0 表示不过滤
         """
+        threshold = self.min_confidence if min_confidence is None else min_confidence
         try:
             relations = []
 
@@ -248,7 +250,7 @@ class GraphEngine(metaclass=SingletonMeta):
                 # 统一处理字典组装，消灭重复块
                 for u, v in edges_to_check:
                     edge_data = self.graph[u][v]
-                    if edge_data.get("confidence", 0) >= self.min_confidence:
+                    if edge_data.get("confidence", 0) >= threshold:
                         relations.append(relation_to_dict(u, v, edge_data))
 
             return relations
@@ -275,6 +277,14 @@ class GraphEngine(metaclass=SingletonMeta):
         except Exception as e:
             print(f"获取图谱统计信息失败: {e}")
             return {"nodes": 0, "edges": 0}
+
+    def list_nodes(self):
+        """列出全部节点，供向量库重建使用。"""
+        with self._rw_lock:
+            return [
+                {"node_id": node_id, "name": data.get("name") or node_id}
+                for node_id, data in self.graph.nodes(data=True)
+            ]
 
     def decay_edges(self, edges_to_update):
         """批量衰减边的置信度

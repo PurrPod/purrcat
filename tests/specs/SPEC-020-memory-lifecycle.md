@@ -116,9 +116,10 @@ def effective_confidence(base: float, updated_at: str, now: datetime) -> float:
 
 ### 4.3 检索
 
-- 事件：向量 + BM25 并发，RRF 融合；BM25 使用 jieba 分词。
+- 事件：向量 + BM25 并发，RRF 只用于合并候选；BM25 使用 jieba 分词；返回分数统一为向量余弦相似度，低于 `MIN_VECTOR_SCORE` 的事件不返回，BM25-only 候选补算向量相似度后参与同一阈值。
 - 经验：向量 + BM25 并发，RRF 融合；BM25 使用 jieba 分词；融合后按 `exp_id` 回 SQLite 取 `content/confidence`。
-- `min_score` 只过滤向量候选，不得丢弃 BM25-only 候选。
+- 经验检索中 `min_score` 只过滤向量候选，不得丢弃 BM25-only 候选。
+- 图谱：先按节点向量相似度过滤节点（`min_score`，默认 `MIN_VECTOR_SCORE`），再展开关系；关系置信度只用于展示与排序，不参与过滤。
 - 经验结果格式化：
 
 ```text
@@ -179,6 +180,8 @@ def effective_confidence(base: float, updated_at: str, now: datetime) -> float:
 - **AC-10** 图谱边 90 天衰减到约 0.3，且不低于 0.3；`days < 1` 不写入。
 - **AC-11** 迁移脚本 `--dry-run` 输出待迁移经验数、画像数、事件 FTS 行数、孤儿向量数；正式执行可重复运行且不产生重复数据。
 - **AC-12** 现有 SPEC-012/SPEC-039 中未被本 Spec 修改的行为仍然通过测试。
+- **AC-13** 事件检索的 RRF 分只用于合并候选与截断；对外 `score` 为向量余弦相似度，低于 `MIN_VECTOR_SCORE` 的事件不返回；BM25-only 候选补算向量相似度后参与排序与阈值。
+- **AC-14** 图谱检索按节点相似度分数过滤，关系置信度不参与过滤；`min_score` 同时作用于事件、经验与图谱节点的向量分数。
 
 ## 6. 迁移
 

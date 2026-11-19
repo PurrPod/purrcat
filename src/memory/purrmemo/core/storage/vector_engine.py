@@ -12,7 +12,7 @@ from src.memory.config import (
 
 from ..clock import days_since, now_iso
 from ..filters import clamp_top_k
-from ..schema import GRAPH_NODE_CANDIDATE_FACTOR, MIN_EXPERIENCE_SCORE
+from ..schema import GRAPH_NODE_CANDIDATE_FACTOR, MIN_VECTOR_SCORE
 from ..scoring import graph_node_boost, similarity_from_distance
 from ..utils import SingletonMeta
 
@@ -117,11 +117,17 @@ class VectorEngine(metaclass=SingletonMeta):
             print("[*] ONNX 嵌入模型加载完毕。")
         return self._embedding_model
 
-    def _get_embedding(self, text):
-        """获取文本的向量表示"""
+    def _get_embedding(self, text, is_query=False):
+        """获取文本的向量表示；查询与文档两侧前缀必须区分。"""
         if not text:
             return None
-        return self.embedding_model.encode(text).tolist()
+        if is_query:
+            return self.embedding_model.encode_query(text).tolist()
+        return self.embedding_model.encode_passage(text).tolist()
+
+    def embed_query(self, text):
+        """检索侧向量，供 RAGSearchTool 统一查询编码。"""
+        return self._get_embedding(text, is_query=True)
 
     def insert_experience(self, exp_id, content, timestamp=None, source_event_id=None):
         """插入或更新工作经验"""
@@ -198,7 +204,7 @@ class VectorEngine(metaclass=SingletonMeta):
         """利用 ChromaDB 高效检索事件向量"""
         try:
             if not query_embedding:
-                query_embedding = self._get_embedding(query)
+                query_embedding = self._get_embedding(query, is_query=True)
             if not query_embedding:
                 return []
 
@@ -229,6 +235,41 @@ class VectorEngine(metaclass=SingletonMeta):
             print(f"ChromaDB 检索事件失败: {e}")
             return []
 
+    def event_similarities(self, event_ids, query_embedding):
+        """批量计算事件的余弦相似度，为 BM25-only 候选补齐可比较的分数。"""
+        ids = list(dict.fromkeys(event_ids))
+        if not ids or not query_embedding:
+            return {}
+        try:
+            results = self.events_collection.get(ids=ids, include=["embeddings"])
+        except Exception as e:
+            print(f"ChromaDB 批量读取事件向量失败: {e}")
+            return {}
+
+        embeddings = results.get("embeddings")
+        if embeddings is None:
+            return {}
+
+        query = [float(value) for value in query_embedding]
+        query_norm = sum(value * value for value in query) ** 0.5
+        if query_norm == 0:
+            return {}
+
+        similarities = {}
+        for event_id, embedding in zip(results.get("ids") or [], embeddings):
+            if embedding is None:
+                continue
+            vector = [float(value) for value in embedding]
+            if len(vector) != len(query):
+                continue
+            vector_norm = sum(value * value for value in vector) ** 0.5
+            if vector_norm == 0:
+                continue
+            similarities[event_id] = sum(
+                left * right for left, right in zip(query, vector)
+            ) / (query_norm * vector_norm)
+        return similarities
+
     def search_experiences(self, query, top_k=5, filters=None, query_embedding=None):
         """搜索相关工作经验"""
         try:
@@ -236,7 +277,7 @@ class VectorEngine(metaclass=SingletonMeta):
                 return []
 
             if not query_embedding:
-                query_embedding = self._get_embedding(query)
+                query_embedding = self._get_embedding(query, is_query=True)
             if not query_embedding:
                 return []
 
@@ -258,7 +299,7 @@ class VectorEngine(metaclass=SingletonMeta):
                 )
 
                 similarity = similarity_from_distance(distance)
-                if similarity >= MIN_EXPERIENCE_SCORE:
+                if similarity >= MIN_VECTOR_SCORE:
                     experiences.append(
                         {
                             "exp_id": exp_id,
@@ -319,7 +360,7 @@ class VectorEngine(metaclass=SingletonMeta):
             if not query:
                 return []
             if not query_embedding:
-                query_embedding = self._get_embedding(query)
+                query_embedding = self._get_embedding(query, is_query=True)
             if not query_embedding:
                 return []
 
@@ -372,7 +413,7 @@ class VectorEngine(metaclass=SingletonMeta):
         """【混合检索版】图谱节点搜索"""
         try:
             if not query_embedding:
-                query_embedding = self._get_embedding(query)
+                query_embedding = self._get_embedding(query, is_query=True)
             if not query_embedding:
                 return []
 

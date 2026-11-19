@@ -14,21 +14,30 @@ from .schema import (
 )
 
 
-def reciprocal_rank_fusion(vector_results, bm25_results, k=RRF_K, top_k=5):
+def reciprocal_rank_fusion(
+    vector_results, bm25_results, k=RRF_K, top_k=5, vector_weight=0.5
+):
     """RRF 倒数排名融合。
 
     :param vector_results: 列表，包含 {'id': 'xxx', 'data': {...}, 'score': 0.8}
     :param bm25_results: 列表，包含 {'id': 'xxx', 'data': {...}, 'score': 15.2}
+    :param vector_weight: 向量一路的权重，BM25 取 1 - vector_weight
     """
+    bm25_weight = 1.0 - vector_weight
     fused_scores = {}
     fused_data = {}
 
-    for result_list in (vector_results, bm25_results):
+    for weight, result_list in (
+        (vector_weight, vector_results),
+        (bm25_weight, bm25_results),
+    ):
         for rank, item in enumerate(
             sorted(result_list, key=lambda x: x["score"], reverse=True)
         ):
             item_id = item["id"]
-            fused_scores[item_id] = fused_scores.get(item_id, 0) + 1.0 / (k + rank + 1)
+            fused_scores[item_id] = fused_scores.get(item_id, 0) + weight / (
+                k + rank + 1
+            )
             fused_data[item_id] = item["data"]
 
     reranked = [

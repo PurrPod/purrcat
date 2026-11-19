@@ -15,10 +15,10 @@
 - [ ] AC-5：默认范式 `on_input_received` 用 `@USERQUERY` 只检索 `memory`。
 - [ ] AC-6：`Search` / `raw_search` 的 `skill` / `mcp` / `local` 结果按 `min_score`（默认 0.30）过滤，非法值回退默认并夹紧到 0–1。
 - [ ] AC-7：`web` 路由无相似度分数，不参与置信度过滤。
-- [ ] AC-8：`search` hook 支持 `min_score`，默认 0.30 且与 `Search` 一致；`memory` 路由用它过滤事件融合分、经验相似度与图谱置信度（含边界）。
+- [ ] AC-8：`search` hook 支持 `min_score`，默认 0.30 且与 `Search` 一致；`memory` 路由用它过滤事件向量相似度、经验向量相似度与图谱节点相似度（含边界），不过滤关系置信度。
 
 ## 非目标
 
 - 不改变 `local` / `skill` / `mcp` / `web` 原有的检索实现。
-- 不改变记忆检索（事件/经验/图谱）的排序与召回逻辑，只在输出前按 `min_score` 过滤。
+- 不改变记忆检索（事件/经验/图谱）的排序与召回逻辑，只在输出前按 `min_score` 过滤；事件分数语义由 SPEC-020 AC-13 定义。
 - 不新增 hook 阶段。

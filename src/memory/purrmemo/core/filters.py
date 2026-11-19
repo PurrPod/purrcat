@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from .schema import MIN_EXPERIENCE_SCORE
+from .schema import MIN_VECTOR_SCORE
 
 _jieba_module = None
 
@@ -31,22 +31,9 @@ def filter_by_time_range(items, start_time, end_time):
     ]
 
 
-def filter_experiences_by_score(items, min_score=MIN_EXPERIENCE_SCORE):
+def filter_experiences_by_score(items, min_score=MIN_VECTOR_SCORE):
     """按相似度阈值过滤经验结果。"""
     return [item for item in items if item["score"] >= min_score]
-
-
-def filter_by_min_score(items, key, min_score):
-    """保留 ``key`` 分数不低于阈值（含边界）的条目；缺失或非法分数按 0 处理。"""
-    kept = []
-    for item in items:
-        try:
-            score = float(item.get(key) or 0)
-        except (TypeError, ValueError):
-            score = 0.0
-        if score >= min_score:
-            kept.append(item)
-    return kept
 
 
 def tokenize_for_fts(text: str) -> str:

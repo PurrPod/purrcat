@@ -36,6 +36,12 @@ class FakeEmbedding:
     def encode(self, text):
         return _Vector([float(len(text)), 1.0])
 
+    def encode_query(self, text):
+        return self.encode(text)
+
+    def encode_passage(self, text):
+        return self.encode(text)
+
 
 class FakeCollection:
     def __init__(self):
@@ -73,6 +79,7 @@ class FakeCollection:
             "ids": [self.ids[i] for i in selected],
             "documents": [self.documents[i] for i in selected],
             "metadatas": [self.metadatas[i] for i in selected],
+            "embeddings": [self.embeddings[i] for i in selected],
         }
 
     def query(self, query_embeddings, n_results):
@@ -266,6 +273,22 @@ def test_vector_engine_event_and_graph_contract(tmp_path):
     assert engine.search_graph_nodes("", top_k=2) == []
 
 
+def test_vector_engine_event_similarities_for_bm25_only(tmp_path):
+    """SPEC-020 AC-13：为两端合并后的 BM25-only 候选补算余弦相似度。"""
+    engine = build_vector_engine(tmp_path)
+    engine.insert_event_vector("evt1", "开会")
+    engine.insert_event_vector("evt2", "苹果 香蕉")
+
+    similarities = engine.event_similarities(
+        ["evt1", "evt2", "missing"], engine._get_embedding("开会")
+    )
+
+    assert similarities["evt1"] == pytest.approx(1.0)
+    assert similarities["evt2"] == pytest.approx(11 / ((5**0.5) * (26**0.5)))
+    assert "missing" not in similarities
+    assert engine.event_similarities([], [1.0]) == {}
+
+
 def test_vector_engine_cleanup_old_experiences(tmp_path):
     """SPEC-012 AC-4：按 last_accessed 与访问次数清理经验。"""
     engine = build_vector_engine(tmp_path)
@@ -304,13 +327,24 @@ class FakeSearchVector:
         self.event_results = []
         self.experience_results = []
         self.embedded = []
+        self.event_scores = {}
 
     def _get_embedding(self, text):
         self.embedded.append(text)
         return [1.0]
 
+    def embed_query(self, text):
+        return self._get_embedding(text)
+
     def search_events_vector(self, query, top_k=200, query_embedding=None):
         return self.event_results
+
+    def event_similarities(self, event_ids, query_embedding):
+        return {
+            event_id: self.event_scores[event_id]
+            for event_id in event_ids
+            if event_id in self.event_scores
+        }
 
     def search_experiences(self, query, top_k=5, filters=None, query_embedding=None):
         return self.experience_results
@@ -337,21 +371,23 @@ class FakeExperienceEngine:
 
 class FakeGraphEngine:
     def __init__(self):
+        self.node_results = [{"node_id": "n1", "score": 0.9}]
         self.vector_engine = SimpleNamespace(
-            search_graph_nodes=lambda query, top_k=5, query_embedding=None: [
-                {"node_id": "n1"}
-            ]
+            search_graph_nodes=lambda query, top_k=5, query_embedding=None: list(
+                self.node_results
+            )
         )
         self.graph = nx.DiGraph()
         self.min_confidence = 0.3
         self.relations = []
+        self.relations_by_node = {}
         self.nodes = {}
 
     def get_graph_stats(self):
         return {"nodes": len(self.nodes), "edges": len(self.relations)}
 
-    def get_relations_by_node(self, node_id, direction="out"):
-        return list(self.relations)
+    def get_relations_by_node(self, node_id, direction="out", min_confidence=None):
+        return list(self.relations_by_node.get(node_id, self.relations))
 
     def get_node(self, node_id):
         return self.nodes.get(node_id)
@@ -397,6 +433,7 @@ def test_search_tool_query_fuses_and_formats_all_sections():
             "score": 0.9,
         }
     ]
+    vector.event_scores = {"e2": 0.7}
     vector.experience_results = [{"id": "exp_x", "score": 0.5, "content": "经验"}]
     tool = RAGSearchTool(
         event_engine=FakeEventEngine(
@@ -640,8 +677,99 @@ def test_memory_agent_keeps_file_when_embedding_not_ready(tmp_path, monkeypatch)
     assert not (archived / file_path.name).exists()
 
 
+def test_search_tool_event_score_is_vector_similarity_with_threshold():
+    """SPEC-020 AC-13：RRF 只合并候选，事件分数与阈值都基于向量相似度。"""
+    vector = FakeSearchVector()
+    vector.event_results = [
+        {
+            "id": "e-high",
+            "data": {"timestamp": "2026-01-01", "content": "相关事件"},
+            "score": 0.8,
+        },
+        {
+            "id": "e-low",
+            "data": {"timestamp": "2026-01-02", "content": "弱相关事件"},
+            "score": 0.1,
+        },
+        {
+            "id": "e-boundary",
+            "data": {"timestamp": "2026-01-04", "content": "边界事件"},
+            "score": 0.30,
+        },
+    ]
+    vector.event_scores = {"e-bm25": 0.7}
+    tool = RAGSearchTool(
+        event_engine=FakeEventEngine(
+            fts=[
+                {
+                    "id": "e-bm25",
+                    "data": {"timestamp": "2026-01-03", "content": "字面命中"},
+                    "score": 9.0,
+                }
+            ]
+        ),
+        vector_engine=vector,
+        graph_engine=FakeGraphEngine(),
+        max_workers=2,
+    )
+
+    markdown = tool.search_memory_api("苹果", {"top_k": 5})
+
+    assert "[0.80] [2026-01-01] 相关事件" in markdown
+    assert "[0.70] [2026-01-03] 字面命中" in markdown
+    assert "[0.30] [2026-01-04] 边界事件" in markdown
+    assert markdown.index("相关事件") < markdown.index("字面命中")
+    assert "弱相关事件" not in markdown
+
+
+def test_search_graph_filters_by_node_similarity_not_confidence():
+    """SPEC-020 AC-14：图谱按节点相似度过滤，关系置信度只展示不过滤。"""
+    graph = FakeGraphEngine()
+    graph.node_results = [
+        {"node_id": "n-good", "score": 0.5},
+        {"node_id": "n-bad", "score": 0.1},
+    ]
+    graph.nodes = {
+        "n-good": {"node_id": "n-good", "name": "用户"},
+        "n-bad": {"node_id": "n-bad", "name": "无关"},
+        "n-target": {"node_id": "n-target", "name": "苹果"},
+    }
+    graph.relations_by_node = {
+        "n-good": [
+            {
+                "edge_id": "e-good",
+                "source_node_id": "n-good",
+                "target_node_id": "n-target",
+                "relation_meaning": "喜欢",
+                "confidence": 0.01,
+            }
+        ],
+        "n-bad": [
+            {
+                "edge_id": "e-bad",
+                "source_node_id": "n-bad",
+                "target_node_id": "n-target",
+                "relation_meaning": "无关关系",
+                "confidence": 0.99,
+            }
+        ],
+    }
+    tool = RAGSearchTool(
+        event_engine=FakeEventEngine(),
+        vector_engine=FakeSearchVector(),
+        graph_engine=graph,
+        experience_engine=FakeExperienceEngine(),
+        max_workers=2,
+    )
+
+    markdown = tool.search_memory_api("苹果", {"top_k": 3})
+
+    assert "用户 喜欢 苹果 (置信度: 0.01)" in markdown
+    assert "无关关系" not in markdown
+
+
 def test_search_tool_min_score_filters_events_and_experiences():
-    """SPEC-039 AC-8：memory 路由按 min_score 过滤事件融合分与经验相似度。"""
+    """SPEC-039 AC-8：memory 路由按 min_score 过滤事件相似度与经验相似度。"""
     vector = FakeSearchVector()
     vector.event_results = [
         {

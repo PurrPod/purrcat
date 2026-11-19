@@ -22,6 +22,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **Search confidence filter**: `skill` / `mcp` / `local` results below `min_score` (default 0.30) are dropped by both the `Search` tool and the hook; the `memory` route uses the same threshold to filter event fusion scores, experience similarity and graph confidence; `web` results carry no similarity score and are left untouched.
 - **Memory score display**: fused event hits now show their normalized relevance (`[0.98] …`) alongside the timestamp, matching the experience section.
 - **Builtin skill_eval graph**: `skill_eval` now ships in `src/harness/graph_templates/` next to `default` and is kept byte-for-byte in sync at startup; both builtin graphs are rejected by the factory, canvas saves and market uninstall, and the canvas marks them read-only. Its worker/judge personas now go through `on_build_system_prompt`, and the obsolete `role` card wiring was dropped.
+- **Event recall rejection**: event search rejects a whole query when its top-1 cosine is below 0.80 (e5-calibrated) instead of filtering each candidate, keeping secondary matches and BM25 hits for matching queries.
 
 ### Changed
 
@@ -29,6 +30,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **Managed default graph**: the built-in `default` graph is compared byte-for-byte at startup and restored from `src/harness/graph_templates/default/graph.json` when missing or modified; saving, deleting or evolving it is rejected and the canvas shows a read-only badge.
 - **Heartbeat**: scheduling moved to the timer service; `heartbeat.json`, `GOAL.md` and the `/api/tools/heartbeat` contract are unchanged.
 - **Timer feedback**: sink `Signal.data` is persisted as `event.result` and broadcast over SSE; the graph sink returns the dispatched `task_id` so a source (e.g. a plugin) can track the task.
+- **Event ranking**: hybrid event search now keeps the weighted RRF order (vector 0.6 / BM25 0.4, `k=10`) instead of re-sorting by cosine, lifting R@3 from 72.3% to 74.5% and R@5 from 77.2% to 79.6% across scifact, fiqa and EcomRetrieval; returned scores remain cosine, and the default rejection gate uses the best candidate cosine.
 
 ### Removed
 

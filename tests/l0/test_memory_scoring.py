@@ -195,13 +195,6 @@ def test_clock_helpers():
     assert clock.days_since("2026-05-01T00:00:00", now=now) == 14
 
 
-def test_filter_by_min_score_keeps_boundary():
-    """SPEC-039 AC-8：阈值含边界，缺失或非法分数按 0 处理。"""
-    items = [{"score": 0.30}, {"score": 0.29}, {"other": 1}, {"score": "bad"}]
-
-    assert filters.filter_by_min_score(items, "score", 0.30) == [{"score": 0.30}]
-
-
 def test_ebbinghaus_confidence_half_life_and_floor():
     """SPEC-020 AC-10：90 天半衰，且不低于 0.3。"""
     assert scoring.ebbinghaus_confidence(1.0, 0) == pytest.approx(1.0)
