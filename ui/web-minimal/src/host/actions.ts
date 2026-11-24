@@ -66,39 +66,86 @@ import { HOST, activeBySlot, configByPlugin, groupState } from './state.js';
       case 'sessions.list': {
         const list = await (await fetch('/api/sessions')).json();
         groupState.sessions = list || [];
+        // 后端已把活跃草稿转正（例如随手记投递 main 产生首条消息）：同步清除宿主草稿标记，
+        // 否则页面会一直停在欢迎页，后续发送也会被误判为草稿而重复重命名。
+        if (groupState.draft) {
+          const cur = groupState.activeSessionId
+            ? groupState.sessions.find((s) => s.id === groupState.activeSessionId)
+            : undefined;
+          if (cur && !cur.draft) {
+            groupState.draft = false;
+            groupState.draftParadigm = '';
+            groupState.draftProjectId = '';
+          }
+        }
         updateEmpty();
         return groupState.sessions;
       }
       case 'sessions.new': {
         // Agent 忙碌时禁止新建并切走，避免打断正在进行的任务
         if (await activeSessionBusy()) return { status: 'busy' };
-        // 纯前端草稿态：不落盘、不进列表。会话延迟到首条消息时由 ensureSessionId 创建，
-        // 届时按 draftParadigm 生成系统提示词；从项目内新建时携带 draftProjectId。
+        // 已在草稿态：停留在当前草稿，不重复创建
+        const current = groupState.activeSessionId
+          ? groupState.sessions.find((s) => s.id === groupState.activeSessionId)
+          : undefined;
+        if (groupState.draft && groupState.activeSessionId && (!current || current.draft)) {
+          return { status: 'ok', draft: true, session_id: groupState.activeSessionId };
+        }
+        // 草稿即真实会话：先落盘进列表，系统提示词延迟到首条消息到达时构建
+        const res = await fetch('/api/sessions/new', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            alias: '新建会话',
+            draft: true,
+            project_id: String(payload.project_id || ''),
+          }),
+        });
+        if (!res.ok) throw new Error(await apiErrorMessage(res, '新建会话失败'));
+        const data = await res.json();
         groupState.draft = true;
         groupState.draftParadigm = '';
         groupState.draftProjectId = String(payload.project_id || '');
-        groupState.activeSessionId = '';
+        groupState.activeSessionId = String(data.id || '');
         await refreshSessions();
         updateEmpty();
-        broadcastSessions('session.switched', { session_id: '' });
-        return { status: 'ok', draft: true };
+        broadcastSessions('session.switched', { session_id: groupState.activeSessionId });
+        return { status: 'ok', draft: true, session_id: groupState.activeSessionId };
       }
       case 'session.switch': {
         const target = String(payload.session_id || '');
+        const from = groupState.activeSessionId;
         // 切到「同一个」会话无需拦截；切到不同会话时若 Agent 忙碌则拒绝（对齐原 UI：等待任务完成再切换）
-        if (target && target !== groupState.activeSessionId && (await activeSessionBusy())) return { status: 'busy' };
-        // 切到已有会话即退出草稿态（放弃未发送的新会话占位与项目草稿归属）
-        if (target) {
-          groupState.draft = false;
-          groupState.draftProjectId = '';
-        }
+        if (target && target !== from && (await activeSessionBusy())) return { status: 'busy' };
+        // 删除草稿前先拉最新列表：后台注入（如随手记投递 main）可能已让该草稿产生消息并转正，
+        // 用缓存会把这种会话误判为空草稿而删掉，导致注入的消息丢失。
+        await refreshSessions();
+        // 切走的若是未发送的空草稿，检出目标后把它删掉，避免残留。
+        // 必须同时满足宿主草稿态（首条消息发出后会立即清除），避免误删刚发送的会话。
+        const leaving = from && from !== target ? groupState.sessions.find((s) => s.id === from) : undefined;
+        const discardDraft = !!(
+          groupState.draft &&
+          leaving &&
+          leaving.draft &&
+          Number(leaving.messages_count || 0) === 0
+        );
         if (target) {
           // 关键：把后端「当前活跃会话」一并检出。后端 Agent 只挂载一个活跃会话，
           // 未指定 session_id 的外部事件会路由到它；只改前端状态不 checkout，
           // 新事件仍会落进上一个会话。
           const res = await fetch('/api/sessions/' + encodeURIComponent(target) + '/checkout', { method: 'POST' });
           if (!res.ok) throw new Error((await res.text()) || '切换会话失败');
+          if (discardDraft) {
+            try {
+              await fetch('/api/sessions/' + encodeURIComponent(from), { method: 'DELETE' });
+            } catch (_) { /* 残留草稿交给启动对账兜底 */ }
+          }
           groupState.activeSessionId = target;
+          // 切入的若仍是草稿（如重启后恢复），同步草稿态与项目归属
+          const info = groupState.sessions.find((s) => s.id === target);
+          groupState.draft = !!(info && info.draft);
+          groupState.draftProjectId = groupState.draft && info ? String(info.project_id || '') : '';
+          groupState.draftParadigm = '';
           await refreshSessions();
           updateEmpty();
           broadcastSessions('session.switched', { session_id: target });
@@ -139,7 +186,11 @@ import { HOST, activeBySlot, configByPlugin, groupState } from './state.js';
         const res = await fetch('/api/sessions/' + encodeURIComponent(sid), { method: 'DELETE' });
         if (!res.ok) throw new Error((await res.text()) || '删除失败');
         // 删掉的正是当前会话：清空活动会话（回到欢迎态），并让各 slot 重新对账
-        if (wasActive) groupState.activeSessionId = '';
+        if (wasActive) {
+          groupState.activeSessionId = '';
+          groupState.draft = false;
+          groupState.draftProjectId = '';
+        }
         await refreshSessions();
         updateEmpty();
         // 只有当前会话被删才需要切换事件；删其它会话不打断正在进行的会话（避免清空乐观消息缓冲）
@@ -504,8 +555,19 @@ import { HOST, activeBySlot, configByPlugin, groupState } from './state.js';
       // 与 session.* 系列同属宿主对外契约，插件无需感知彼此即可热插拔。
       case 'session.setDraftParadigm': {
         if (!groupState.draft) return { status: 'noop' };
-        groupState.draftParadigm = String(payload.paradigm || '');
-        return { status: 'ok', paradigm: groupState.draftParadigm };
+        const sid = groupState.activeSessionId;
+        const paradigm = String(payload.paradigm || '');
+        groupState.draftParadigm = paradigm;
+        // 草稿已是真实会话：同步后端绑定，首条消息构建提示词时生效
+        if (sid) {
+          const res = await fetch('/api/sessions/' + encodeURIComponent(sid) + '/paradigm', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ paradigm }),
+          });
+          if (!res.ok) throw new Error(await apiErrorMessage(res, '切换范式失败'));
+        }
+        return { status: 'ok', paradigm };
       }
       case 'state.get':
         return { ...groupState, plugins: undefined, activeBySlot: { ...activeBySlot } };

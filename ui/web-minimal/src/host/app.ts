@@ -71,6 +71,9 @@ import { HOST, groupState } from './state.js';
       if (Array.isArray(list) && list.length) {
         groupState.sessions = list;
         groupState.activeSessionId = list[0].id || '';
+        // 重启后恢复草稿态：最近会话仍是未发送的「新建会话」
+        groupState.draft = !!list[0].draft;
+        groupState.draftProjectId = groupState.draft ? String(list[0].project_id || '') : '';
         // 修复：已加载完成的插件此刻才拿到 activeSessionId，必须补一次广播，
         // 否则聊天历史等插件会一直停在空态，直到用户手动点一次别的会话
         broadcastSessions('session.switched', { session_id: groupState.activeSessionId });

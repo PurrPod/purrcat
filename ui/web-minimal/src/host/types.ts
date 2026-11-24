@@ -121,6 +121,7 @@ export interface SessionSummary {
   id: string;
   title?: string;
   project_id?: string;
+  draft?: boolean;
   branch_id?: string;
   updated_at?: string;
   [key: string]: unknown;

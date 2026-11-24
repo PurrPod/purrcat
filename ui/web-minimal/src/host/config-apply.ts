@@ -1,5 +1,5 @@
 // 配置保存、下发与会话草稿（ensureSessionId）
-import { broadcastSessions, refreshSessions, updateEmpty } from './sessions.js';
+import { refreshSessions } from './sessions.js';
 import { configByPlugin, frameByPluginId, frames, groupState } from './state.js';
 
   // ---- 配置持久化与下发 ----
@@ -44,26 +44,27 @@ import { configByPlugin, frameByPluginId, frames, groupState } from './state.js'
   }
 
   export async function ensureSessionId(sessionId: string, firstMessage: string): Promise<string> {
-    if (sessionId) return sessionId;
-    // 草稿态下首个消息到此：此刻才真正建会话，并把用户选的范式一并带入，
-    // 保证系统提示词用「所选范式」生成（而非默认范式）。
-    // draftProjectId 非空 = 在某个项目里点「新建会话」：后端会把该项目 MEMORY.md 的路径与维护约定注入系统提示
-    // 首条消息同时作为会话名（最多 10 个字），之后仍可手动重命名
-    const body: Record<string, any> = { paradigm: groupState.draftParadigm || '', project_id: groupState.draftProjectId || '' };
-    const alias = draftSessionAlias(firstMessage);
-    if (alias) body.alias = alias;
-    const created = await (await fetch('/api/sessions/new', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })).json();
-    if (created && created.id) {
-      groupState.activeSessionId = created.id;
+    const sid = sessionId || groupState.activeSessionId;
+    if (!sid) return '';
+    // 草稿已是真实会话：首条消息只需按内容命名并退出草稿态，
+    // 系统提示词由后端在首条消息到达时按会话绑定的范式与项目构建。
+    if (groupState.draft) {
+      const alias = draftSessionAlias(firstMessage);
+      if (alias) {
+        try {
+          await fetch('/api/sessions/' + encodeURIComponent(sid) + '/rename', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ alias }),
+          });
+        } catch (_) { /* 命名失败不阻断发送 */ }
+      }
       groupState.draft = false;
       groupState.draftParadigm = '';
       groupState.draftProjectId = '';
       await refreshSessions();
-      updateEmpty();
-      broadcastSessions('session.switched', { session_id: created.id });
-      return created.id;
     }
-    return '';
+    return sid;
   }
 
   // 当前活动会话的后台 Agent 是否仍在工作（/status 的 is_thinking，与历史面板同源）。

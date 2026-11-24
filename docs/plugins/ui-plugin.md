@@ -134,13 +134,13 @@ window.parent.postMessage({ type: 'callAction', id: 'req-1', actionId: 'config.g
 | actionId | payload | data（返回） |
 | --- | --- | --- |
 | `state.get` | 无 | 宿主群状态副本 `{activeSessionId, sessions, draft, draftParadigm, activeBranchId, ...}`（其中 `plugins` 为 `undefined`） |
-| `chat.send` | `{session_id?, message}` | 后端 `/api/chat` 的 JSON body（含 `processed_message`）；会话为空且处于草稿态时先用 `message` 建会话，并把首条消息截断为前 10 个字作为会话名 |
-| `chat.sendBatch` | `{session_id?, events: [...]}` | 后端 `/api/chat/batch` 的 JSON body（含 `processed_events`） |
+| `chat.send` | `{session_id?, message}` | 后端 `/api/chat` 的 JSON body（含 `processed_message`）；草稿会话的首条消息会触发后端构建系统提示词，并把消息截断为前 10 个字作为会话名 |
+| `chat.sendBatch` | `{session_id?, events: [...]}` | 后端 `/api/chat/batch` 的 JSON body（含 `processed_events`）；草稿会话按批次里的首条用户文本命名 |
 | `chat.interrupt` | `{session_id?}` | 后端 `/api/chat/interrupt` 的 JSON body |
 | `chat.traceToSkill` | `{session_id?, name, goal, is_upgrade?}` | `{status:"ok"}`（`name` / `goal` 为空会抛错） |
-| `sessions.list` | 无 | 会话数组（含 `project_id`，空串表示未分类） |
-| `sessions.new` | `{project_id?}` | `{status:"ok", draft:true}`；Agent 忙碌时 `{status:"busy"}`（不新建）。`project_id` 非空表示在该项目内新建，后端会注入该项目 `MEMORY.md` 的路径与维护约定 |
-| `session.switch` | `{session_id}` | `{status:"ok"}`；忙碌且切到别的会话时 `{status:"busy"}` |
+| `sessions.list` | 无 | 会话数组（含 `project_id` 与 `draft`；`project_id` 空串表示未分类，`draft:true` 表示未发送的草稿） |
+| `sessions.new` | `{project_id?}` | `{status:"ok", draft:true, session_id}`；立即落盘真实会话并进入草稿态，系统提示词延迟到首条消息构建；已在草稿态时停留在当前草稿；Agent 忙碌时 `{status:"busy"}`（不新建）。`project_id` 非空表示在该项目内新建，后端会注入该项目 `MEMORY.md` 的路径与维护约定 |
+| `session.switch` | `{session_id}` | `{status:"ok"}`；忙碌且切到别的会话时 `{status:"busy"}`。切走未发送的空草稿会先检出目标再删除草稿 |
 | `session.rename` | `{session_id, alias}` | `{status:"ok", alias}` |
 | `session.delete` | `{session_id}` | `{status:"ok"}` |
 | `session.branch` | `{session_id?, alias?}` | 后端返回的会话对象（含 `id`）；忙碌时 `{status:"busy"}` |
@@ -149,7 +149,7 @@ window.parent.postMessage({ type: 'callAction', id: 'req-1', actionId: 'config.g
 | `projects.create` | `{name}` | 后端创建的项目对象 |
 | `projects.update` | `{project_id, name?}` | 后端返回的项目对象 |
 | `projects.delete` | `{project_id, delete_sessions?}` | `{status:"ok", deleted_sessions}` |
-| `session.setDraftParadigm` | `{paradigm}` | `{status:"ok", paradigm}`；非草稿态 `{status:"noop"}` |
+| `session.setDraftParadigm` | `{paradigm}` | `{status:"ok", paradigm}`；非草稿态 `{status:"noop"}`。草稿已是真实会话，会同步写入其后端绑定 |
 | `branch.select` | `{branch_id?}`（默认 `main`） | `{status:"ok"}` |
 | `requests.list` | 无 | 待审批请求数组 |
 | `requests.resolve` | `{request_id, approved, feedback?, ignore?, duration?}` | 后端请求 JSON |

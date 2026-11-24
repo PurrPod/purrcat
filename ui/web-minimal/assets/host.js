@@ -275,13 +275,14 @@
   }
   function updateEmpty() {
     const activeId = groupState.activeSessionId;
-    let empty = !activeId;
-    if (activeId) {
-      const s = groupState.sessions.find((x) => x.id === activeId);
-      const count = s ? Number(s.messages_count) || 0 : 0;
-      empty = count === 0;
+    if (!activeId) {
+      setEmpty(true);
+      return;
     }
-    setEmpty(empty);
+    const s = groupState.sessions.find((x) => x.id === activeId);
+    const count = s ? Number(s.messages_count) || 0 : 0;
+    const draft = groupState.draft && (s ? !!s.draft : false);
+    setEmpty(draft && count === 0);
   }
   async function refreshSessions() {
     try {
@@ -334,22 +335,26 @@
     return alias.replace(/[\u200c\u200d]+$/, "").trim();
   }
   async function ensureSessionId(sessionId, firstMessage) {
-    if (sessionId) return sessionId;
-    const body = { paradigm: groupState.draftParadigm || "", project_id: groupState.draftProjectId || "" };
-    const alias = draftSessionAlias(firstMessage);
-    if (alias) body.alias = alias;
-    const created = await (await fetch("/api/sessions/new", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })).json();
-    if (created && created.id) {
-      groupState.activeSessionId = created.id;
+    const sid = sessionId || groupState.activeSessionId;
+    if (!sid) return "";
+    if (groupState.draft) {
+      const alias = draftSessionAlias(firstMessage);
+      if (alias) {
+        try {
+          await fetch("/api/sessions/" + encodeURIComponent(sid) + "/rename", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ alias })
+          });
+        } catch (_) {
+        }
+      }
       groupState.draft = false;
       groupState.draftParadigm = "";
       groupState.draftProjectId = "";
       await refreshSessions();
-      updateEmpty();
-      broadcastSessions("session.switched", { session_id: created.id });
-      return created.id;
     }
-    return "";
+    return sid;
   }
   async function activeSessionBusy() {
     const sid = groupState.activeSessionId;
@@ -513,7 +518,7 @@
   var DEPLOY_ITEMS = ["uv", "node", "sandbox", "embedding"];
   var DEPLOY_LABEL = { uv: "uv", node: "node", sandbox: "Docker \u6C99\u76D2", embedding: "embedding" };
   var DEPLOY_DESC = { uv: "Python \u4F9D\u8D56\u4E0E\u8FD0\u884C\u73AF\u5883", node: "\u524D\u7AEF\u5BBF\u4E3B\u4E0E\u63D2\u4EF6\u6784\u5EFA", sandbox: "Docker \u9694\u79BB\u6267\u884C\u73AF\u5883", embedding: "\u672C\u5730\u5411\u91CF\u5316\u6A21\u578B" };
-  var DEPLOY_CHIP = { missing: "\u672A\u5B89\u88C5", failed: "\u5931\u8D25", running: "\u90E8\u7F72\u4E2D", installed: "\u5F85\u91CD\u542F", ready: "\u5DF2\u5C31\u7EEA" };
+  var DEPLOY_CHIP = { detecting: "\u68C0\u6D4B\u4E2D", missing: "\u672A\u5B89\u88C5", failed: "\u5931\u8D25", running: "\u90E8\u7F72\u4E2D", installed: "\u5F85\u91CD\u542F", ready: "\u5DF2\u5C31\u7EEA" };
   var cfgState = {
     data: {},
     // tab -> 已加载的配置对象（GET /api/config/{tab}）
@@ -2459,6 +2464,7 @@
     sec.appendChild(card);
   }
   function deployState(it, ov) {
+    if (!ov || !ov.items) return { state: "detecting", clickable: false, text: "\u68C0\u6D4B\u4E2D\u2026", item: null, task: null };
     const item = ov && ov.items ? ov.items[it] : null;
     const task = ov && ov.tasks ? ov.tasks[it] : null;
     const running = task && task.state === "running";
@@ -2585,7 +2591,33 @@
     }
     function renderDisk(d) {
       diskWrap.innerHTML = "";
-      if (!d) return;
+      if (!d) {
+        const card2 = HOST.document.createElement("div");
+        card2.className = "cfg-card";
+        const head2 = HOST.document.createElement("div");
+        head2.className = "cfg-card-head";
+        const left2 = HOST.document.createElement("div");
+        left2.className = "cfg-card-head-l";
+        const title2 = HOST.document.createElement("div");
+        title2.className = "cfg-card-title";
+        const nm2 = HOST.document.createElement("div");
+        nm2.className = "cfg-card-name";
+        nm2.textContent = "Docker \u6570\u636E\u76D8";
+        const chip2 = HOST.document.createElement("span");
+        chip2.className = "cfg-chip off";
+        chip2.textContent = "\u68C0\u6D4B\u4E2D";
+        title2.appendChild(nm2);
+        title2.appendChild(chip2);
+        left2.appendChild(title2);
+        const sub2 = HOST.document.createElement("div");
+        sub2.className = "cfg-card-sub";
+        sub2.textContent = "\u6B63\u5728\u68C0\u6D4B\u78C1\u76D8\u7A7A\u6D1E\u4E0E\u6C99\u76D2\u72B6\u6001\u2026";
+        left2.appendChild(sub2);
+        head2.appendChild(left2);
+        card2.appendChild(head2);
+        diskWrap.appendChild(card2);
+        return;
+      }
       const card = HOST.document.createElement("div");
       card.className = "cfg-card";
       const head = HOST.document.createElement("div");
@@ -2687,89 +2719,94 @@
       }
       diskWrap.appendChild(card);
     }
-    function draw() {
-      cfgData("deploy").then(function(ov) {
-        list.innerHTML = "";
-        DEPLOY_ITEMS.forEach(function(it) {
-          const st = deployState(it, ov);
-          const card = HOST.document.createElement("div");
-          card.className = "cfg-card cfg-deploy-card";
-          const head = HOST.document.createElement("div");
-          head.className = "cfg-card-head";
-          const left = HOST.document.createElement("div");
-          left.className = "cfg-card-head-l";
-          const title = HOST.document.createElement("div");
-          title.className = "cfg-card-title";
-          const nm = HOST.document.createElement("div");
-          nm.className = "cfg-card-name";
-          nm.textContent = DEPLOY_LABEL[it];
-          let chipText = DEPLOY_CHIP[st.state];
-          let chipTone = st.state === "ready" ? "ok" : st.state === "failed" || st.state === "missing" ? "bad" : "warn";
-          if (it === "sandbox" && st.item && st.state !== "running" && st.state !== "failed") {
-            if (!st.item.docker_installed) {
-              chipText = "Docker \u7F3A";
-              chipTone = "bad";
-            } else if (!st.item.image_ready) {
-              chipText = "\u955C\u50CF\u7F3A";
-              chipTone = "warn";
-            } else {
-              chipText = "\u5DF2\u5C31\u7EEA";
-              chipTone = "ok";
-            }
+    function paint(ov) {
+      list.innerHTML = "";
+      DEPLOY_ITEMS.forEach(function(it) {
+        const st = deployState(it, ov);
+        const card = HOST.document.createElement("div");
+        card.className = "cfg-card cfg-deploy-card";
+        const head = HOST.document.createElement("div");
+        head.className = "cfg-card-head";
+        const left = HOST.document.createElement("div");
+        left.className = "cfg-card-head-l";
+        const title = HOST.document.createElement("div");
+        title.className = "cfg-card-title";
+        const nm = HOST.document.createElement("div");
+        nm.className = "cfg-card-name";
+        nm.textContent = DEPLOY_LABEL[it];
+        let chipText = DEPLOY_CHIP[st.state];
+        let chipTone = st.state === "ready" ? "ok" : st.state === "failed" || st.state === "missing" ? "bad" : st.state === "detecting" ? "off" : "warn";
+        if (it === "sandbox" && st.item && st.state !== "running" && st.state !== "failed") {
+          if (!st.item.docker_installed) {
+            chipText = "Docker \u7F3A";
+            chipTone = "bad";
+          } else if (!st.item.image_ready) {
+            chipText = "\u955C\u50CF\u7F3A";
+            chipTone = "warn";
+          } else {
+            chipText = "\u5DF2\u5C31\u7EEA";
+            chipTone = "ok";
           }
-          const chip = HOST.document.createElement("span");
-          chip.className = "cfg-chip " + chipTone;
-          chip.textContent = chipText;
-          title.appendChild(nm);
-          title.appendChild(chip);
-          left.appendChild(title);
-          const sub = HOST.document.createElement("div");
-          sub.className = "cfg-card-sub";
-          sub.textContent = st.item && st.item.detail || DEPLOY_DESC[it];
-          left.appendChild(sub);
-          const act = HOST.document.createElement("div");
-          act.className = "cfg-card-act";
-          const btn = HOST.document.createElement("button");
-          btn.className = "btn cfg-deploy-btn " + st.state;
-          btn.disabled = !st.clickable;
-          btn.textContent = (st.state === "running" ? "\xB7\xB7\xB7 " : "") + st.text;
-          btn.addEventListener("click", function() {
-            if (!st.clickable) return;
-            fetch("/api/config/deploy/" + it, { method: "POST" }).then(function(r) {
-              if (!r.ok) return r.json().then(function(d2) {
-                throw new Error(d2.detail || "\u90E8\u7F72\u51B2\u7A81");
-              });
-            }).then(function() {
-              delete cfgState.data.deploy;
-              draw();
-            }).catch(function(e) {
-              HOST.alert("\u5931\u8D25\uFF1A" + (e && e.message || ""));
+        }
+        const chip = HOST.document.createElement("span");
+        chip.className = "cfg-chip " + chipTone;
+        chip.textContent = chipText;
+        title.appendChild(nm);
+        title.appendChild(chip);
+        left.appendChild(title);
+        const sub = HOST.document.createElement("div");
+        sub.className = "cfg-card-sub";
+        sub.textContent = st.item && st.item.detail || DEPLOY_DESC[it];
+        left.appendChild(sub);
+        const act = HOST.document.createElement("div");
+        act.className = "cfg-card-act";
+        const btn = HOST.document.createElement("button");
+        btn.className = "btn cfg-deploy-btn " + st.state;
+        btn.disabled = !st.clickable;
+        btn.textContent = (st.state === "running" ? "\xB7\xB7\xB7 " : "") + st.text;
+        btn.addEventListener("click", function() {
+          if (!st.clickable) return;
+          fetch("/api/config/deploy/" + it, { method: "POST" }).then(function(r) {
+            if (!r.ok) return r.json().then(function(d2) {
+              throw new Error(d2.detail || "\u90E8\u7F72\u51B2\u7A81");
             });
-          });
-          act.appendChild(btn);
-          head.appendChild(left);
-          head.appendChild(act);
-          card.appendChild(head);
-          const foot = HOST.document.createElement("div");
-          foot.className = "cfg-deploy-card-foot";
-          const lgToggle = HOST.document.createElement("button");
-          lgToggle.className = "cfg-log-toggle";
-          lgToggle.textContent = cfgState.deployLogOpen[it] ? "\u6536\u8D77\u65E5\u5FD7 \u25BE" : "\u67E5\u770B\u65E5\u5FD7 \u25B8";
-          lgToggle.addEventListener("click", function() {
-            cfgState.deployLogOpen[it] = !cfgState.deployLogOpen[it];
+          }).then(function() {
+            delete cfgState.data.deploy;
             draw();
+          }).catch(function(e) {
+            HOST.alert("\u5931\u8D25\uFF1A" + (e && e.message || ""));
           });
-          foot.appendChild(lgToggle);
-          card.appendChild(foot);
-          if (cfgState.deployLogOpen[it]) {
-            const lgr = HOST.document.createElement("pre");
-            lgr.className = "settings-log cfg-deploy-log";
-            lgr.style.minHeight = "80px";
-            lgr.textContent = st.task && st.task.log && st.task.log.length ? st.task.log.join("\n") : "\uFF08\u6682\u65E0\u65E5\u5FD7\uFF09";
-            card.appendChild(lgr);
-          }
-          list.appendChild(card);
         });
+        act.appendChild(btn);
+        head.appendChild(left);
+        head.appendChild(act);
+        card.appendChild(head);
+        const foot = HOST.document.createElement("div");
+        foot.className = "cfg-deploy-card-foot";
+        const lgToggle = HOST.document.createElement("button");
+        lgToggle.className = "cfg-log-toggle";
+        lgToggle.textContent = cfgState.deployLogOpen[it] ? "\u6536\u8D77\u65E5\u5FD7 \u25BE" : "\u67E5\u770B\u65E5\u5FD7 \u25B8";
+        lgToggle.addEventListener("click", function() {
+          cfgState.deployLogOpen[it] = !cfgState.deployLogOpen[it];
+          draw();
+        });
+        foot.appendChild(lgToggle);
+        card.appendChild(foot);
+        if (cfgState.deployLogOpen[it]) {
+          const lgr = HOST.document.createElement("pre");
+          lgr.className = "settings-log cfg-deploy-log";
+          lgr.style.minHeight = "80px";
+          lgr.textContent = st.task && st.task.log && st.task.log.length ? st.task.log.join("\n") : "\uFF08\u6682\u65E0\u65E5\u5FD7\uFF09";
+          card.appendChild(lgr);
+        }
+        list.appendChild(card);
+      });
+    }
+    function draw() {
+      if (!list.childElementCount) paint(null);
+      if (!diskWrap.childElementCount) renderDisk(null);
+      cfgData("deploy").then(function(ov) {
+        paint(ov);
         renderDisk(ov && ov.disk);
       });
     }
@@ -5863,31 +5900,64 @@
       case "sessions.list": {
         const list = await (await fetch("/api/sessions")).json();
         groupState.sessions = list || [];
+        if (groupState.draft) {
+          const cur = groupState.activeSessionId ? groupState.sessions.find((s) => s.id === groupState.activeSessionId) : void 0;
+          if (cur && !cur.draft) {
+            groupState.draft = false;
+            groupState.draftParadigm = "";
+            groupState.draftProjectId = "";
+          }
+        }
         updateEmpty();
         return groupState.sessions;
       }
       case "sessions.new": {
         if (await activeSessionBusy()) return { status: "busy" };
+        const current = groupState.activeSessionId ? groupState.sessions.find((s) => s.id === groupState.activeSessionId) : void 0;
+        if (groupState.draft && groupState.activeSessionId && (!current || current.draft)) {
+          return { status: "ok", draft: true, session_id: groupState.activeSessionId };
+        }
+        const res = await fetch("/api/sessions/new", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            alias: "\u65B0\u5EFA\u4F1A\u8BDD",
+            draft: true,
+            project_id: String(payload.project_id || "")
+          })
+        });
+        if (!res.ok) throw new Error(await apiErrorMessage(res, "\u65B0\u5EFA\u4F1A\u8BDD\u5931\u8D25"));
+        const data = await res.json();
         groupState.draft = true;
         groupState.draftParadigm = "";
         groupState.draftProjectId = String(payload.project_id || "");
-        groupState.activeSessionId = "";
+        groupState.activeSessionId = String(data.id || "");
         await refreshSessions();
         updateEmpty();
-        broadcastSessions("session.switched", { session_id: "" });
-        return { status: "ok", draft: true };
+        broadcastSessions("session.switched", { session_id: groupState.activeSessionId });
+        return { status: "ok", draft: true, session_id: groupState.activeSessionId };
       }
       case "session.switch": {
         const target = String(payload.session_id || "");
-        if (target && target !== groupState.activeSessionId && await activeSessionBusy()) return { status: "busy" };
-        if (target) {
-          groupState.draft = false;
-          groupState.draftProjectId = "";
-        }
+        const from = groupState.activeSessionId;
+        if (target && target !== from && await activeSessionBusy()) return { status: "busy" };
+        await refreshSessions();
+        const leaving = from && from !== target ? groupState.sessions.find((s) => s.id === from) : void 0;
+        const discardDraft = !!(groupState.draft && leaving && leaving.draft && Number(leaving.messages_count || 0) === 0);
         if (target) {
           const res = await fetch("/api/sessions/" + encodeURIComponent(target) + "/checkout", { method: "POST" });
           if (!res.ok) throw new Error(await res.text() || "\u5207\u6362\u4F1A\u8BDD\u5931\u8D25");
+          if (discardDraft) {
+            try {
+              await fetch("/api/sessions/" + encodeURIComponent(from), { method: "DELETE" });
+            } catch (_) {
+            }
+          }
           groupState.activeSessionId = target;
+          const info = groupState.sessions.find((s) => s.id === target);
+          groupState.draft = !!(info && info.draft);
+          groupState.draftProjectId = groupState.draft && info ? String(info.project_id || "") : "";
+          groupState.draftParadigm = "";
           await refreshSessions();
           updateEmpty();
           broadcastSessions("session.switched", { session_id: target });
@@ -5925,7 +5995,11 @@
         }
         const res = await fetch("/api/sessions/" + encodeURIComponent(sid), { method: "DELETE" });
         if (!res.ok) throw new Error(await res.text() || "\u5220\u9664\u5931\u8D25");
-        if (wasActive) groupState.activeSessionId = "";
+        if (wasActive) {
+          groupState.activeSessionId = "";
+          groupState.draft = false;
+          groupState.draftProjectId = "";
+        }
         await refreshSessions();
         updateEmpty();
         broadcastSessions(wasActive ? "session.switched" : "conversation.updated", { session_id: groupState.activeSessionId });
@@ -6290,8 +6364,18 @@
       // 与 session.* 系列同属宿主对外契约，插件无需感知彼此即可热插拔。
       case "session.setDraftParadigm": {
         if (!groupState.draft) return { status: "noop" };
-        groupState.draftParadigm = String(payload.paradigm || "");
-        return { status: "ok", paradigm: groupState.draftParadigm };
+        const sid = groupState.activeSessionId;
+        const paradigm = String(payload.paradigm || "");
+        groupState.draftParadigm = paradigm;
+        if (sid) {
+          const res = await fetch("/api/sessions/" + encodeURIComponent(sid) + "/paradigm", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ paradigm })
+          });
+          if (!res.ok) throw new Error(await apiErrorMessage(res, "\u5207\u6362\u8303\u5F0F\u5931\u8D25"));
+        }
+        return { status: "ok", paradigm };
       }
       case "state.get":
         return { ...groupState, plugins: void 0, activeBySlot: { ...activeBySlot } };
@@ -6694,6 +6778,8 @@
       if (Array.isArray(list) && list.length) {
         groupState.sessions = list;
         groupState.activeSessionId = list[0].id || "";
+        groupState.draft = !!list[0].draft;
+        groupState.draftProjectId = groupState.draft ? String(list[0].project_id || "") : "";
         broadcastSessions("session.switched", { session_id: groupState.activeSessionId });
       }
     } catch (_) {

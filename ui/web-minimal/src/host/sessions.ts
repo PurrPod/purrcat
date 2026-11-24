@@ -9,13 +9,14 @@ import { groupState } from './state.js';
   }
   export function updateEmpty() {
     const activeId = groupState.activeSessionId;
-    let empty = !activeId;
-    if (activeId) {
-      const s = groupState.sessions.find((x) => x.id === activeId);
-      const count = s ? Number(s.messages_count) || 0 : 0;
-      empty = count === 0;
-    }
-    setEmpty(empty);
+    if (!activeId) { setEmpty(true); return; }
+    const s = groupState.sessions.find((x) => x.id === activeId);
+    const count = s ? Number(s.messages_count) || 0 : 0;
+    // 只有「宿主仍处于草稿态」且「后端也仍是草稿」时才算空态欢迎页。
+    // 首条消息发出后宿主草稿标记立即清除；后台注入（如随手记投递 main）产生的首条消息
+    // 由列表刷新清除。否则处理中的会话会因 messages_count 暂为 0 而退回欢迎页。
+    const draft = groupState.draft && (s ? !!s.draft : false);
+    setEmpty(draft && count === 0);
   }
   // 重新拉取会话列表，保证 empty 判定与侧栏高亮基于最新数据
   export async function refreshSessions() {
