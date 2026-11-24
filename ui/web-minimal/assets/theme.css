@@ -426,6 +426,25 @@ body.settings-open .wm-modal-wrap { display: none !important; }
   gap: 2px;
   background: var(--wm-bl-50);
 }
+/* 返回主界面：左导航顶部，关闭设置页 */
+.settings-nav-back {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  margin: -4px 0 10px;
+  border: none;
+  border-bottom: 1px solid var(--wm-border);
+  border-radius: 8px 8px 0 0;
+  background: transparent;
+  color: var(--wm-label-2nd);
+  font-size: 13.5px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.settings-nav-back:hover { background: var(--wm-bg-hover); color: var(--wm-label); }
+.settings-nav-back svg { width: 16px; height: 16px; flex: none; }
 .settings-nav-item {
   text-align: left;
   padding: 9px 12px;

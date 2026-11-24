@@ -7,7 +7,7 @@ import { reloadManifest } from './manifest.js';
 import { refreshFixedSlot } from './mount.js';
 import { closePanelTab, openPanelTab, panelTabs } from './panel.js';
 import { buildRail, persistActive, persistRail, railHidden, setPluginHidden } from './rail.js';
-import { renderLayoutSettings, renderPanelContainerSettings, renderRailAppearance } from './settings-appearance.js';
+import { renderLayoutSettings, renderPanelContainerSettings, renderRailAppearance, setSettingsOpen } from './settings-appearance.js';
 import { syncTiles } from './tile.js';
 import { renderPluginCard } from './settings-cards.js';
 import { HOST, activeBySlot, configByPlugin, groupState, pluginBySlot, railState, slotMap } from './state.js';
@@ -37,6 +37,12 @@ import type { PluginDescriptor } from './types.js';
     // 左导航
     const nav = HOST.document.createElement('div');
     nav.className = 'settings-nav';
+    // 返回主界面：关闭设置页
+    const back = HOST.document.createElement('button');
+    back.className = 'settings-nav-back';
+    back.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg><span>返回主界面</span>';
+    back.addEventListener('click', function () { setSettingsOpen(false); });
+    nav.appendChild(back);
     CONFIG_NAV.forEach(function (key) {
       const it = HOST.document.createElement('button');
       it.className = 'settings-nav-item' + (settingsTab === key ? ' active' : '');
