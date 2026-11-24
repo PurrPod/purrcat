@@ -14,7 +14,7 @@ import { HOST } from './state.js';
   export const DEPLOY_ITEMS = ['uv', 'node', 'sandbox', 'embedding'];
   export const DEPLOY_LABEL: Record<string, string> = { uv: 'uv', node: 'node', sandbox: 'Docker 沙盒', embedding: 'embedding' };
   const DEPLOY_DESC: Record<string, string> = { uv: 'Python 依赖与运行环境', node: '前端宿主与插件构建', sandbox: 'Docker 隔离执行环境', embedding: '本地向量化模型' };
-  const DEPLOY_CHIP: Record<string, string> = { missing: '未安装', failed: '失败', running: '部署中', installed: '待重启', ready: '已就绪' };
+  const DEPLOY_CHIP: Record<string, string> = { detecting: '检测中', missing: '未安装', failed: '失败', running: '部署中', installed: '待重启', ready: '已就绪' };
   export const cfgState: {
     data: Record<string, any>;
     mode: Record<string, string>;
@@ -1719,6 +1719,8 @@ import { HOST } from './state.js';
 
   // ---- deploy：四步线性列表 + 状态指示灯 ----
   export function deployState(it: string, ov: any) {
+    // 数据未到达时先展示占位卡片，避免整页空白直到检测完成
+    if (!ov || !ov.items) return { state: 'detecting', clickable: false, text: '检测中…', item: null, task: null };
     const item = (ov && ov.items) ? ov.items[it] : null;
     const task = (ov && ov.tasks) ? ov.tasks[it] : null;
     const running = task && task.state === 'running';
@@ -1831,7 +1833,34 @@ import { HOST } from './state.js';
     }
     function renderDisk(d: any) {
       diskWrap.innerHTML = '';
-      if (!d) return;
+      if (!d) {
+        // 数据未到达时先展示占位卡片，避免检测期间整块空白
+        const card = HOST.document.createElement('div');
+        card.className = 'cfg-card';
+        const head = HOST.document.createElement('div');
+        head.className = 'cfg-card-head';
+        const left = HOST.document.createElement('div');
+        left.className = 'cfg-card-head-l';
+        const title = HOST.document.createElement('div');
+        title.className = 'cfg-card-title';
+        const nm = HOST.document.createElement('div');
+        nm.className = 'cfg-card-name';
+        nm.textContent = 'Docker 数据盘';
+        const chip = HOST.document.createElement('span');
+        chip.className = 'cfg-chip off';
+        chip.textContent = '检测中';
+        title.appendChild(nm);
+        title.appendChild(chip);
+        left.appendChild(title);
+        const sub = HOST.document.createElement('div');
+        sub.className = 'cfg-card-sub';
+        sub.textContent = '正在检测磁盘空洞与沙盒状态…';
+        left.appendChild(sub);
+        head.appendChild(left);
+        card.appendChild(head);
+        diskWrap.appendChild(card);
+        return;
+      }
       const card = HOST.document.createElement('div');
       card.className = 'cfg-card';
       const head = HOST.document.createElement('div');
@@ -1936,79 +1965,85 @@ import { HOST } from './state.js';
       }
       diskWrap.appendChild(card);
     }
-    function draw() {
-      cfgData('deploy').then(function (ov) {
-        list.innerHTML = '';
-        DEPLOY_ITEMS.forEach(function (it) {
-          const st = deployState(it, ov);
-          const card = HOST.document.createElement('div');
-          card.className = 'cfg-card cfg-deploy-card';
-          const head = HOST.document.createElement('div');
-          head.className = 'cfg-card-head';
-          const left = HOST.document.createElement('div');
-          left.className = 'cfg-card-head-l';
-          const title = HOST.document.createElement('div');
-          title.className = 'cfg-card-title';
-          const nm = HOST.document.createElement('div');
-          nm.className = 'cfg-card-name';
-          nm.textContent = DEPLOY_LABEL[it];
-          let chipText = DEPLOY_CHIP[st.state];
-          let chipTone = st.state === 'ready' ? 'ok' : st.state === 'failed' || st.state === 'missing' ? 'bad' : 'warn';
-          if (it === 'sandbox' && st.item && st.state !== 'running' && st.state !== 'failed') {
-            if (!st.item.docker_installed) {
-              chipText = 'Docker 缺';
-              chipTone = 'bad';
-            } else if (!st.item.image_ready) {
-              chipText = '镜像缺';
-              chipTone = 'warn';
-            } else {
-              chipText = '已就绪';
-              chipTone = 'ok';
-            }
+    function paint(ov: any) {
+      list.innerHTML = '';
+      DEPLOY_ITEMS.forEach(function (it) {
+        const st = deployState(it, ov);
+        const card = HOST.document.createElement('div');
+        card.className = 'cfg-card cfg-deploy-card';
+        const head = HOST.document.createElement('div');
+        head.className = 'cfg-card-head';
+        const left = HOST.document.createElement('div');
+        left.className = 'cfg-card-head-l';
+        const title = HOST.document.createElement('div');
+        title.className = 'cfg-card-title';
+        const nm = HOST.document.createElement('div');
+        nm.className = 'cfg-card-name';
+        nm.textContent = DEPLOY_LABEL[it];
+        let chipText = DEPLOY_CHIP[st.state];
+        let chipTone = st.state === 'ready' ? 'ok' : st.state === 'failed' || st.state === 'missing' ? 'bad' : st.state === 'detecting' ? 'off' : 'warn';
+        if (it === 'sandbox' && st.item && st.state !== 'running' && st.state !== 'failed') {
+          if (!st.item.docker_installed) {
+            chipText = 'Docker 缺';
+            chipTone = 'bad';
+          } else if (!st.item.image_ready) {
+            chipText = '镜像缺';
+            chipTone = 'warn';
+          } else {
+            chipText = '已就绪';
+            chipTone = 'ok';
           }
-          const chip = HOST.document.createElement('span');
-          chip.className = 'cfg-chip ' + chipTone;
-          chip.textContent = chipText;
-          title.appendChild(nm);
-          title.appendChild(chip);
-          left.appendChild(title);
-          const sub = HOST.document.createElement('div');
-          sub.className = 'cfg-card-sub';
-          sub.textContent = (st.item && st.item.detail) || DEPLOY_DESC[it];
-          left.appendChild(sub);
+        }
+        const chip = HOST.document.createElement('span');
+        chip.className = 'cfg-chip ' + chipTone;
+        chip.textContent = chipText;
+        title.appendChild(nm);
+        title.appendChild(chip);
+        left.appendChild(title);
+        const sub = HOST.document.createElement('div');
+        sub.className = 'cfg-card-sub';
+        sub.textContent = (st.item && st.item.detail) || DEPLOY_DESC[it];
+        left.appendChild(sub);
 
-          const act = HOST.document.createElement('div');
-          act.className = 'cfg-card-act';
-          const btn = HOST.document.createElement('button');
-          btn.className = 'btn cfg-deploy-btn ' + st.state;
-          btn.disabled = !st.clickable;
-          btn.textContent = (st.state === 'running' ? '··· ' : '') + st.text;
-          btn.addEventListener('click', function () {
-            if (!st.clickable) return;
-            fetch('/api/config/deploy/' + it, { method: 'POST' }).then(function (r) { if (!r.ok) return r.json().then(function (d2) { throw new Error(d2.detail || '部署冲突'); }); }).then(function () { delete cfgState.data.deploy; draw(); }).catch(function (e) { HOST.alert('失败：' + (e && e.message || '')); });
-          });
-          act.appendChild(btn);
-          head.appendChild(left);
-          head.appendChild(act);
-          card.appendChild(head);
-
-          const foot = HOST.document.createElement('div');
-          foot.className = 'cfg-deploy-card-foot';
-          const lgToggle = HOST.document.createElement('button');
-          lgToggle.className = 'cfg-log-toggle';
-          lgToggle.textContent = (cfgState.deployLogOpen[it] ? '收起日志 ▾' : '查看日志 ▸');
-          lgToggle.addEventListener('click', function () { cfgState.deployLogOpen[it] = !cfgState.deployLogOpen[it]; draw(); });
-          foot.appendChild(lgToggle);
-          card.appendChild(foot);
-          if (cfgState.deployLogOpen[it]) {
-            const lgr = HOST.document.createElement('pre');
-            lgr.className = 'settings-log cfg-deploy-log';
-            lgr.style.minHeight = '80px';
-            lgr.textContent = (st.task && st.task.log && st.task.log.length) ? st.task.log.join('\n') : '（暂无日志）';
-            card.appendChild(lgr);
-          }
-          list.appendChild(card);
+        const act = HOST.document.createElement('div');
+        act.className = 'cfg-card-act';
+        const btn = HOST.document.createElement('button');
+        btn.className = 'btn cfg-deploy-btn ' + st.state;
+        btn.disabled = !st.clickable;
+        btn.textContent = (st.state === 'running' ? '··· ' : '') + st.text;
+        btn.addEventListener('click', function () {
+          if (!st.clickable) return;
+          fetch('/api/config/deploy/' + it, { method: 'POST' }).then(function (r) { if (!r.ok) return r.json().then(function (d2) { throw new Error(d2.detail || '部署冲突'); }); }).then(function () { delete cfgState.data.deploy; draw(); }).catch(function (e) { HOST.alert('失败：' + (e && e.message || '')); });
         });
+        act.appendChild(btn);
+        head.appendChild(left);
+        head.appendChild(act);
+        card.appendChild(head);
+
+        const foot = HOST.document.createElement('div');
+        foot.className = 'cfg-deploy-card-foot';
+        const lgToggle = HOST.document.createElement('button');
+        lgToggle.className = 'cfg-log-toggle';
+        lgToggle.textContent = (cfgState.deployLogOpen[it] ? '收起日志 ▾' : '查看日志 ▸');
+        lgToggle.addEventListener('click', function () { cfgState.deployLogOpen[it] = !cfgState.deployLogOpen[it]; draw(); });
+        foot.appendChild(lgToggle);
+        card.appendChild(foot);
+        if (cfgState.deployLogOpen[it]) {
+          const lgr = HOST.document.createElement('pre');
+          lgr.className = 'settings-log cfg-deploy-log';
+          lgr.style.minHeight = '80px';
+          lgr.textContent = (st.task && st.task.log && st.task.log.length) ? st.task.log.join('\n') : '（暂无日志）';
+          card.appendChild(lgr);
+        }
+        list.appendChild(card);
+      });
+    }
+    function draw() {
+      // 首次进入立即渲染「检测中」占位卡片，数据返回后再填充；轮询期间保留旧内容避免闪烁
+      if (!list.childElementCount) paint(null);
+      if (!diskWrap.childElementCount) renderDisk(null);
+      cfgData('deploy').then(function (ov) {
+        paint(ov);
         renderDisk(ov && ov.disk);
       });
     }

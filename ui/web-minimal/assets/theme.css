@@ -712,7 +712,7 @@ body.settings-open .wm-modal-wrap { display: none !important; }
 .cfg-deploy-btn { font-size: 12.5px; padding: 5px 14px; }
 .cfg-deploy-btn.missing { color: var(--wm-ink); font-weight: 600; }
 .cfg-deploy-btn.failed { color: #d0453b; }
-.cfg-deploy-btn.running, .cfg-deploy-btn.installed, .cfg-deploy-btn.ready { opacity: 0.6; cursor: default; }
+.cfg-deploy-btn.running, .cfg-deploy-btn.installed, .cfg-deploy-btn.ready, .cfg-deploy-btn.detecting { opacity: 0.6; cursor: default; }
 .cfg-deploy-btn:disabled { pointer-events: none; }
 .cfg-log-toggle {
   margin-top: 8px; border: none; background: transparent; color: var(--wm-label-dim);
