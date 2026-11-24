@@ -29,9 +29,10 @@
     padding: 8px 12px 8px 20px; border-bottom: 1px solid var(--wm-border);
   }
   .sess-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
-  /* 草稿态（尚未发送）：保留标题与最近会话入口，隐藏会话 ID 与分支按钮 */
+  /* 草稿态（尚未发送）：保留标题与最近会话（时钟）入口，隐藏会话 ID、分支与新建会话按钮 */
   body.sess-draft .sess-id,
-  body.sess-draft #sessBranch { display: none; }
+  body.sess-draft #sessBranch,
+  body.sess-draft #sessNewBtn { display: none; }
   .sess-title {
     max-width: 100%; font-size: 14px; font-weight: 600;
     color: var(--wm-label, #16191d); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
