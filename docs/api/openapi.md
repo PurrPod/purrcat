@@ -281,6 +281,7 @@ SSE：按 ACP session 订阅对应 purrcat 会话的事件流
 | alias | string | 否 |  |
 | paradigm | string | 否 |  |
 | project_id | string | 否 |  |
+| draft | boolean | 否 |  |
 
 #### 响应
 

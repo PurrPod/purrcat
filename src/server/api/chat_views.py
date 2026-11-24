@@ -17,6 +17,7 @@ def build_session_list(sessions_dict: dict) -> list:
                 "messages_count": info.get("messages_count", 0),
                 "updated_at": info.get("updated_at", ""),
                 "project_id": info.get("project_id", ""),
+                "draft": bool(info.get("draft", False)),
             }
         )
     sess_list.sort(key=lambda x: str(x.get("updated_at") or ""), reverse=True)

@@ -402,6 +402,7 @@ def test_build_session_list_defaults_and_sorts():
             "messages_count": 0,
             "updated_at": "2026-02-01",
             "project_id": "proj",
+            "draft": False,
         },
         {
             "id": "s1",
@@ -409,6 +410,7 @@ def test_build_session_list_defaults_and_sorts():
             "messages_count": 2,
             "updated_at": "2026-01-01",
             "project_id": "",
+            "draft": False,
         },
     ]
 

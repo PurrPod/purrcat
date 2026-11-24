@@ -33,6 +33,7 @@ class NewSessionReq(BaseModel):
     project_id: str = (
         ""  # 非空表示在项目内新建：把该项目的 MEMORY.md 路径与维护约定注入系统提示
     )
+    draft: bool = False  # 草稿会话：先落盘空会话，首条消息到达后再构建系统提示
 
 
 class ParadigmSwitchReq(BaseModel):
@@ -234,6 +235,7 @@ def create_new_session(req: NewSessionReq):
             branch_alias=req.alias,
             paradigm=req.paradigm.strip() or None,
             project_id=req.project_id.strip() or None,
+            draft=req.draft,
         )
         return {"id": session_id, "alias": req.alias or session_id}
     except Exception as e:

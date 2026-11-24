@@ -116,14 +116,19 @@ class SessionStore:
                 print(f"Error updating index: {e}")
 
     @classmethod
-    def background_sync_sessions(cls):
-        """🌟 新增：由后台低优任务调用的对账方法，用于修复索引和文件夹不同步的问题"""
+    def background_sync_sessions(cls, skip_ids=None):
+        """🌟 新增：由后台低优任务调用的对账方法，用于修复索引和文件夹不同步的问题。
+
+        skip_ids 内的会话不参与「空草稿」清理（通常是当前活跃会话）。
+        """
+        skip_ids = set(skip_ids or ())
         with cls._index_lock:
             index_data = cls.get_all_sessions()
             if not os.path.exists(SESSIONS_DIR):
                 return
 
             needs_save = False
+            stale_drafts = set()
             for item in os.listdir(SESSIONS_DIR):
                 if not item.startswith("session_"):
                     continue
@@ -145,6 +150,7 @@ class SessionStore:
                         updated_at = created_at
                         alias = session_id
                         project_id = ""
+                        m_data = {}
                         if os.path.exists(meta_file):
                             try:
                                 m_data = read_json(meta_file)
@@ -165,6 +171,8 @@ class SessionStore:
                         }
                         if project_id:
                             index_data[session_id]["project_id"] = project_id
+                        if m_data.get("draft"):
+                            index_data[session_id]["draft"] = True
                         needs_save = True
                     else:
                         index_data[session_id]["messages_count"] = msg_count
@@ -178,14 +186,39 @@ class SessionStore:
                                 ):
                                     index_data[session_id]["alias"] = m_data["alias"]
                                     needs_save = True
+                                if bool(m_data.get("draft")) != bool(
+                                    index_data[session_id].get("draft")
+                                ):
+                                    if m_data.get("draft"):
+                                        index_data[session_id]["draft"] = True
+                                    else:
+                                        index_data[session_id].pop("draft", None)
+                                    needs_save = True
                             except Exception:
                                 pass
+
+                    if (
+                        msg_count == 0
+                        and session_id not in skip_ids
+                        and os.path.exists(meta_file)
+                    ):
+                        try:
+                            if read_json(meta_file).get("draft") is True:
+                                stale_drafts.add(session_id)
+                        except Exception:
+                            pass
 
             if needs_save:
                 try:
                     write_json(SESSION_INDEX_PATH, index_data)
                 except Exception:
                     pass
+
+        for session_id in stale_drafts:
+            try:
+                cls.delete_session(session_id)
+            except Exception as e:
+                print(f"[Warn] 清理残留草稿会话失败 {session_id}: {e}")
 
     @classmethod
     def get_session_window_token(cls, session_id):
@@ -341,6 +374,65 @@ class SessionStore:
         return cls.get_all_sessions().get(session_id, {}).get("project_id")
 
     @classmethod
+    def set_session_draft(cls, session_id, draft):
+        """设置/清除会话草稿标记（meta.json 为准，同步索引供列表渲染）。"""
+        directory = session_dir(SESSIONS_DIR, session_id)
+        os.makedirs(directory, exist_ok=True)
+        meta_file = meta_path(SESSIONS_DIR, session_id)
+
+        with cls._get_file_lock(f"{session_id}_meta"):
+            meta_data = {}
+            if os.path.exists(meta_file):
+                try:
+                    meta_data = read_json(meta_file) or {}
+                except Exception:
+                    meta_data = {}
+            meta_data.setdefault("session_id", session_id)
+            if draft:
+                meta_data["draft"] = True
+            else:
+                meta_data.pop("draft", None)
+            try:
+                write_json(meta_file, meta_data)
+            except Exception as e:
+                print(f"[Warn] 写入会话草稿标记失败: {e}")
+
+        with cls._index_lock:
+            index_data = cls.get_all_sessions()
+            session_info = index_data.get(session_id)
+            if session_info is None:
+                if not draft:
+                    return
+                timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+                session_info = {
+                    "id": session_id,
+                    "alias": session_id,
+                    "created_at": timestamp,
+                    "updated_at": timestamp,
+                    "messages_count": 0,
+                }
+            if draft:
+                session_info["draft"] = True
+            else:
+                session_info.pop("draft", None)
+            index_data[session_id] = session_info
+            try:
+                write_json(SESSION_INDEX_PATH, index_data)
+            except Exception as e:
+                print(f"[Warn] 更新会话索引失败: {e}")
+
+    @classmethod
+    def is_session_draft(cls, session_id):
+        """会话是否为未发送的草稿：以 meta.json 为准，读取失败才回退索引。"""
+        if not session_id:
+            return False
+        try:
+            meta = read_json(meta_path(SESSIONS_DIR, session_id)) or {}
+            return bool(meta.get("draft"))
+        except Exception:
+            return bool(cls.get_all_sessions().get(session_id, {}).get("draft"))
+
+    @classmethod
     def save_session(
         cls,
         session_id,
@@ -354,8 +446,12 @@ class SessionStore:
         action=None,
         consumed_tokens=None,
         project_id=None,
+        draft=None,
     ):
-        """🌟 重构：线程安全地进行多文件分支隔离归档，并追溯分叉拓扑"""
+        """🌟 重构：线程安全地进行多文件分支隔离归档，并追溯分叉拓扑
+
+        draft=None 表示不改变既有草稿标记（checkpoint 保存必须用默认值）。
+        """
         directory = session_dir(SESSIONS_DIR, session_id)
         os.makedirs(directory, exist_ok=True)
 
@@ -395,6 +491,10 @@ class SessionStore:
                 meta_data["parent_id"] = parent_id
             if project_id:
                 meta_data["project_id"] = project_id
+            if draft is True:
+                meta_data["draft"] = True
+            elif draft is False:
+                meta_data.pop("draft", None)
 
             if "branches" not in meta_data:
                 meta_data["branches"] = {}
@@ -449,6 +549,10 @@ class SessionStore:
             )
             if project_id:
                 session_info["project_id"] = project_id
+            if draft is True:
+                session_info["draft"] = True
+            elif draft is False:
+                session_info.pop("draft", None)
             index_data[session_id] = session_info
             try:
                 write_json(SESSION_INDEX_PATH, index_data)

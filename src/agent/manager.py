@@ -60,6 +60,7 @@ class AgentManager:
             name=name,
             save_callback=self._notify_save,
             paradigm_path=paradigm_path,
+            defer_system_prompt=SessionStore.is_session_draft(session_id),
         )
 
         # 恢复 Token 进度（权威来源为会话 meta.json，而非不含该字段的 index.json）
@@ -111,13 +112,19 @@ class AgentManager:
         history: list,
         window_token: int,
         consumed_tokens: int,
+        draft=None,
     ) -> None:
-        """在历史锁内一次性切换当前会话的上下文与配额。"""
+        """在历史锁内一次性切换当前会话的上下文与配额。
+
+        draft 非 None 时同步草稿待构建状态；None 表示调用方不需要改动它。
+        """
         with self._agent._history_lock:
             self._agent.session_id = session_id
             self._agent.current_history = history
             self._agent.window_token = window_token
             self._agent.consumed_tokens = consumed_tokens
+            if draft is not None:
+                self._agent._prompt_pending = bool(draft) and not history
 
     # ==========================================
     # 2. 交互与通信 (Interaction)
@@ -170,6 +177,7 @@ class AgentManager:
             new_history,
             SessionStore.get_session_window_token(target_session_id),
             SessionStore.get_session_consumed_tokens(target_session_id)["main"],
+            draft=SessionStore.is_session_draft(target_session_id),
         )
 
         # 载入该会话绑定的范式（未绑定则回落默认 PARADIGM.yaml）
@@ -182,11 +190,15 @@ class AgentManager:
         print(f"[Switch] 检出成功: {target_session_id}")
         return True
 
-    def new_session(self, branch_alias=None, paradigm=None, project_id=None):
+    def new_session(
+        self, branch_alias=None, paradigm=None, project_id=None, draft=False
+    ):
         """原 create_clean_session：开启一个全新的空白会话（可指定范式与所属项目）。
 
         project_id 非空时，把该项目的 MEMORY.md 路径与维护约定追加进系统提示词——只在此刻（项目内
         新建会话）注入一次；把旧会话拖进项目不会改动其既有系统提示。
+
+        draft=True 时只落盘空会话并标记 draft，系统提示词延迟到首条有效消息到达时构建。
         """
         if not self._agent:
             self.init_agent()
@@ -198,6 +210,23 @@ class AgentManager:
         from src.utils.paradigm_api import resolve_paradigm_path
 
         paradigm_path = resolve_paradigm_path(paradigm)
+
+        if draft:
+            new_id = SessionStore._generate_id()
+            SessionStore.save_session(
+                session_id=new_id,
+                history=[],
+                parent_id=None,
+                alias=branch_alias or "新建会话",
+                paradigm=paradigm,
+                project_id=project_id or None,
+                draft=True,
+            )
+            self._adopt_session(new_id, [], 0, 0, draft=True)
+            self._agent.hook_handler.load_config(paradigm_path)
+            self._agent.model.bind_task(new_id, "AgentMain")
+            print(f"[Create] 成功创建草稿会话: {new_id}")
+            return new_id
 
         from src.agent.agent import Agent as TempAgent
 
@@ -227,7 +256,7 @@ class AgentManager:
             project_id=project_id or None,
         )
 
-        self._adopt_session(new_id, clean_history, 0, 0)
+        self._adopt_session(new_id, clean_history, 0, 0, draft=False)
 
         # 新会话立刻按所选范式工作（未选则默认 PARADIGM.yaml）
         self._agent.hook_handler.load_config(paradigm_path)
@@ -308,7 +337,9 @@ class AgentManager:
 
         new_history = SessionStore.load_session_history(new_id)
 
-        self._adopt_session(new_id, new_history, current_token, current_consumed)
+        self._adopt_session(
+            new_id, new_history, current_token, current_consumed, draft=False
+        )
 
         self._agent.model.bind_task(new_id, "AgentMain")
         print(f"[Branch] 成功拉取新分支并检出: {new_id} ({branch_alias})")

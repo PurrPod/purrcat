@@ -20,12 +20,14 @@
     "alias": "New Session",
     "messages_count": 12,
     "updated_at": "2026-10-14T10:00:00",
-    "project_id": ""
+    "project_id": "",
+    "draft": false
   }
 ]
 ```
 
 `project_id` 为所属项目 id；空串表示未归入任何项目（「未分类」）。
+`draft` 为 `true` 表示尚未发送任何消息的草稿会话：系统提示词延迟到首条消息到达时才构建；切走时宿主会删除该会话，启动对账也会清理异常残留的空草稿。
 
 **示例**
 
@@ -44,8 +46,11 @@ curl 'http://127.0.0.1:8000/api/sessions'
 | `alias` | body | string | 否 | 会话别名，默认 `New Session` |
 | `paradigm` | body | string | 否 | `paradigms/` 下的文件名（不带 `.yaml`）；为空则用默认 `PARADIGM.yaml` |
 | `project_id` | body | string | 否 | 项目 id；非空时把该项目 `MEMORY.md` 的路径与维护约定注入系统提示，并写入会话归属 |
+| `draft` | body | boolean | 否 | `true` 时先落盘一个空会话并标记 `draft`，系统提示词延迟到首条消息到达时构建；默认 `false`（立即构建） |
 
 > 项目记忆**只在新建时**注入一次（只给 `MEMORY.md` 的路径与维护约定，不注入正文）。把已有会话移入项目（见下方 `PUT /api/sessions/{session_id}/project`）不会改写其系统提示。
+>
+> `draft: true` 的会话在首条有效消息（输入框、ACP、sensor、timer 等）到达时构建一次系统提示词，随后清除 `draft`；hook 无输出时同样视为完成。
 
 **响应**
 

@@ -99,6 +99,7 @@ def test_build_session_list_normalizes_and_sorts_payload():
             "messages_count": 3,
             "updated_at": "2026-02-03",
             "project_id": "p1",
+            "draft": False,
         },
         {
             "id": "a",
@@ -106,6 +107,7 @@ def test_build_session_list_normalizes_and_sorts_payload():
             "messages_count": 1,
             "updated_at": "2026-01-02",
             "project_id": "",
+            "draft": False,
         },
         {
             "id": "b",
@@ -113,6 +115,7 @@ def test_build_session_list_normalizes_and_sorts_payload():
             "messages_count": 0,
             "updated_at": "",
             "project_id": "",
+            "draft": False,
         },
     ]
 

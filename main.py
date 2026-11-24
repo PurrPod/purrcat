@@ -268,7 +268,11 @@ async def _bg_heavy_init():
         if fixed:
             print(f"✅ [任务对账] 已修正 {len(fixed)} 个残留运行态任务: {fixed}")
 
-        SessionStore.background_sync_sessions()
+        from src.agent.manager import manager
+
+        active_agent = manager.get_agent()
+        skip_ids = {active_agent.session_id} if active_agent else set()
+        SessionStore.background_sync_sessions(skip_ids=skip_ids)
 
     asyncio.create_task(asyncio.to_thread(_reconcile_sessions))
 

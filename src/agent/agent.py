@@ -34,6 +34,7 @@ class Agent:
         hook_handler=None,
         tracker=None,
         memo=None,
+        defer_system_prompt=False,
     ):
         self.name = name or get_agent_model()
         self.session_id = session_id
@@ -73,9 +74,14 @@ class Agent:
         self.hook_handler = (
             hook_handler if hook_handler is not None else HookHandler(paradigm_path)
         )
+        # 🌟 草稿会话：首条有效消息到达前不构建系统提示词（见 _ensure_system_prompt）
+        self._prompt_pending = False
         if not self.current_history:
-            fresh_prompt = self._build_system_prompt()
-            self.current_history = [{"role": "system", "content": fresh_prompt}]
+            if defer_system_prompt:
+                self._prompt_pending = True
+            else:
+                fresh_prompt = self._build_system_prompt()
+                self.current_history = [{"role": "system", "content": fresh_prompt}]
 
     def dump_agent_state(self):
         with self._history_lock:
@@ -99,6 +105,27 @@ class Agent:
             res["inject_prompt"] for res in results if res.get("inject_prompt")
         ]
         return "\n\n---\n\n".join(prompt_parts)
+
+    def _ensure_system_prompt(self):
+        """草稿会话在首条有效消息到达时构建一次系统提示词。
+
+        hook 空输出是合法状态：仍然标记完成，之后不再重建。项目记忆块不依赖
+        hook，按会话归属追加在 hook 提示词之后。
+        """
+        if not self._prompt_pending:
+            return
+        fresh_prompt = self._build_system_prompt()
+        project_id = SessionStore.get_session_project(self.session_id)
+        if project_id:
+            from src.agent.project_store import ProjectStore
+
+            block = ProjectStore.prompt_block(project_id)
+            if block:
+                fresh_prompt = f"{fresh_prompt}\n\n---\n\n{block}"
+        with self._history_lock:
+            self.current_history.insert(0, {"role": "system", "content": fresh_prompt})
+        self._prompt_pending = False
+        SessionStore.set_session_draft(self.session_id, False)
 
     def _inject_hook_results(self, stage_name, epoch=0, **kwargs):
         """统一的钩子执行与历史记录注入封装，返回 True 表示全部成功"""
@@ -275,6 +302,7 @@ class Agent:
                 local_push = self.pending_force_push.copy()
                 self.pending_force_push.clear()
         if local_push:
+            self._ensure_system_prompt()
             self._check_and_fix_toolchain()
             batch_data = {"events": local_push}
             self._append_history(
