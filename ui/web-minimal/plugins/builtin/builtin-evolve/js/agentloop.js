@@ -56,7 +56,7 @@
       { key: 'failed_prompt', label: '失败提示 failed_prompt', kind: 'text' }
     ],
     memo_injection: [
-      { key: 'type', label: '记忆类型', kind: 'text', ph: 'full / light / 其它键名' },
+      { key: 'type', label: '记忆类型', kind: 'text', ph: 'full / light / short_term / 其它键名' },
       { key: 'count', label: '条数 count', kind: 'number' }
     ],
     tool_use_check: [

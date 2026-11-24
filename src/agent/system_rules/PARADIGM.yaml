@@ -11,8 +11,8 @@ hooks:
     - injection:
         content: "@MEMORY"
     - memo_injection:
-        type: "full"
-        count: 10
+        type: "short_term"
+        count: 5
     - injection:
         content: "@SYS"
   on_input_received:

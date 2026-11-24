@@ -75,7 +75,7 @@ hooks:
 | action | 参数 | 说明 |
 | --- | --- | --- |
 | `injection` | `content` | 直接注入提示文本；`content` 支持 `@引用` |
-| `memo_injection` | `type`、`count` | 注入记忆 `type` 取 `full` / `light` / `<自定义 key>`；`count` 为条目数 |
+| `memo_injection` | `type`、`count` | 注入记忆 `type` 取 `full` / `light` / `short_term` / `<自定义 key>`；`count` 为条目数。`short_term` 只取各条缓存的短期记忆，按纯文本列表注入 |
 
 ### 4.2 知识包/检索类
 

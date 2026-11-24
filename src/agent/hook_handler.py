@@ -546,6 +546,18 @@ class HookHandler:
         count = min(int(params.get("count", 10)), 30)
         recent = memo[-count:] if count > 0 else []
 
+        if memo_type == "short_term":
+            # 短期记忆是整段文本，直接平铺成列表，避免 JSON 包裹影响阅读
+            lines = [
+                str(m["short_term"]).strip()
+                for m in recent
+                if isinstance(m, dict) and m.get("short_term")
+            ]
+            if not lines:
+                return {"success": True, "inject_prompt": ""}
+            content = "【短期记忆缓存】\n" + "\n".join(f"- {line}" for line in lines)
+            return {"success": True, "inject_prompt": content}
+
         if memo_type == "full":
             filtered = recent
         elif memo_type == "light":

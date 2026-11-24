@@ -96,7 +96,7 @@ hooks:                             # 阶段 → hook 列表（必填、非空）
 | action | 必填参数 | 说明 |
 | --- | --- | --- |
 | `injection` | `content` | 直接注入提示文本；`content` 支持 `@引用` |
-| `memo_injection` | — | 注入记忆，参数 `type`（`full`/`light`/自定义 key）、`count` |
+| `memo_injection` | — | 注入记忆，参数 `type`（`full`/`light`/`short_term`/自定义 key）、`count`；`short_term` 按纯文本列表注入 |
 | `skill_info` | `skills` | 拼装指定技能的描述提示；缺失时给 `failed_prompt` |
 | `search` | `query` | 调 Search 检索并注入结果，`route` ∈ `skill`/`mcp`/`memory`/`local`/`web`/`all`（并行搜 local 与 memory 后合并）；`limit` 为每条路由返回条数（默认 5，范围 1–15）；`min_score` 为置信度阈值（默认 0.30，范围 0–1，所有路由生效；`memory` 会过滤事件融合分、经验相似度与图谱置信度） |
 | `tool_use_check` | `name` | 检查本轮是否调用**原生工具** `name`（可要求 `parameter_check`），据此放行或回打；检查 MCP 工具须用 `CallMCP` 的参数检查（见下方「工具使用检查的语义」） |
