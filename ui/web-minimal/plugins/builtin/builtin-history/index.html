@@ -29,8 +29,9 @@
     padding: 8px 12px 8px 20px; border-bottom: 1px solid var(--wm-border);
   }
   .sess-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
-  /* 草稿态（尚未产生会话）不显示顶部信息条 */
-  body.sess-draft .sess-head { display: none; }
+  /* 草稿态（尚未发送）：保留标题与最近会话入口，隐藏会话 ID 与分支按钮 */
+  body.sess-draft .sess-id,
+  body.sess-draft #sessBranch { display: none; }
   .sess-title {
     max-width: 100%; font-size: 14px; font-weight: 600;
     color: var(--wm-label, #16191d); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -2111,25 +2112,29 @@
 
   // 顶部信息条：展示当前会话标题与 ID
   var headerSid = '';
-  function setSessHeader(sid, alias) {
+  var headerDraft = false;
+  function setSessHeader(sid, alias, isDraft) {
     var t = document.getElementById('sessTitle');
     var i = document.getElementById('sessId');
     if (!t || !i) return;
-    if (document.body) document.body.classList.toggle('sess-draft', !sid);
+    var draft = !!isDraft || !sid;
+    headerDraft = draft;
+    if (document.body) document.body.classList.toggle('sess-draft', draft);
     if (!sid) { t.textContent = '新会话'; t.title = ''; i.textContent = ''; i.title = ''; return; }
+    if (draft) { t.textContent = '新会话'; t.title = ''; i.textContent = ''; i.title = ''; return; }
     i.textContent = sid;
     i.title = sid;
     t.textContent = alias || '未命名会话';
     t.title = t.textContent;
   }
-  function updateSessHeader(sid) {
+  function updateSessHeader(sid, isDraft) {
     headerSid = sid || '';
-    if (!sid) { setSessHeader('', ''); return; }
-    setSessHeader(sid, '');
+    if (!sid) { setSessHeader('', '', true); return; }
+    setSessHeader(sid, '', isDraft);
     callAction('sessions.list').then(function (list) {
       if (headerSid !== sid) return;
       var s = (Array.isArray(list) ? list : []).filter(function (x) { return x.id === sid; })[0];
-      if (s) setSessHeader(sid, s.alias || s.title);
+      if (s) setSessHeader(sid, s.alias || s.title, headerDraft);
     }).catch(function () {});
   }
 
@@ -2201,11 +2206,11 @@
   function refresh() {
     callAction('state.get').then(function (st) {
       activeSessionId = (st && st.activeSessionId) || activeSessionId || '';
-      updateSessHeader(activeSessionId);
+      updateSessHeader(activeSessionId, !!(st && st.draft));
       load(activeSessionId);
       loadBranches(activeSessionId);
       ensurePoll();
-    }).catch(function () { load(activeSessionId); loadBranches(activeSessionId); ensurePoll(); });
+    }).catch(function () { updateSessHeader(activeSessionId, headerDraft); load(activeSessionId); loadBranches(activeSessionId); ensurePoll(); });
   }
 
   // ---------- 轻量轮询刷新（与原 UI 一致的机制）----------
@@ -2225,6 +2230,22 @@
     if (!activeSessionId) { stopPoll(); return; }
     setPoll(POLL_SLOW);
   }
+  // 后台驱动的首条消息（如随手记投递 main）不经过输入框发送，宿主草稿标记不会自动清除。
+  // 草稿态下低频核对会话列表：后端已转正就退出草稿态、恢复列表并重新判定空态。
+  function reconcileDraft() {
+    callAction('sessions.list').then(function (list) {
+      var arr = Array.isArray(list) ? list : [];
+      var s = arr.filter(function (x) { return x.id === activeSessionId; })[0];
+      if (!s || s.draft) return;
+      if (headerDraft) {
+        updateSessHeader(activeSessionId, false);
+        ensurePoll();
+        load(activeSessionId);
+      }
+      resyncEmpty();
+    }).catch(function () {});
+  }
+
   function pollTick() {
     if (!activeSessionId) { stopPoll(); return; }
     tick += 1;
@@ -2240,6 +2261,8 @@
         live.text = t ? String((st && st.live_reasoning) || '') : '';
         live.phase = t ? String((st && st.phase) || 'thinking') : 'idle';
         setPoll(t ? POLL_FAST : POLL_SLOW);
+        // 草稿态轮询低频核对后端是否已把会话转正（后台注入路径不刷新宿主草稿标记）
+        if (headerDraft && tick % 6 === 0) reconcileDraft();
         if (pollHistory) { load(activeSessionId); loadBranches(activeSessionId); }
         else updateLiveOnly();
       })
@@ -2813,7 +2836,7 @@
       refresh();
       resyncEmpty(); loadMode(); refreshCtx();
     } else if (m.event === 'session.renamed') {
-      if (d.session_id === headerSid) setSessHeader(headerSid, d.alias || '');
+      if (d.session_id === headerSid) setSessHeader(headerSid, d.alias || '', headerDraft);
     } else if (m.event === 'branch.switched') {
       // 宿主回推当前分支视图（含晚加载补推）：与本插件本地态对账，必要时重载；同时切换输入只读
       var bid = d.branch_id || 'main';
@@ -2825,6 +2848,8 @@
         load(activeSessionId);
       }
     } else if (m.event === 'conversation.updated') {
+      // 首条消息发出后草稿已转正：header 立即退出草稿态
+      if (headerDraft) updateSessHeader(activeSessionId, false);
       ensurePoll();
       load(activeSessionId);
       resyncEmpty();
