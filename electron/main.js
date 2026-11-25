@@ -63,8 +63,8 @@ app.on('second-instance', () => {
   }
 });
 
-// 应用图标（exe/安装包已由 electron-builder 打上 icon.ico，这里给窗口/任务栏用）
-const APP_ICON = path.join(__dirname, 'icon.ico');
+// 应用图标（exe/安装包已由 electron-builder 打上 app.ico，这里给窗口/任务栏用）
+const APP_ICON = path.join(__dirname, 'app.ico');
 
 let mainWindow = null;
 let backendProcess = null;

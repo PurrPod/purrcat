@@ -1,5 +1,7 @@
 data/config/
 website2/
+website3/
+.workbuddy/
 .agent_history/
 .agent_locks/
 cicmd.txt

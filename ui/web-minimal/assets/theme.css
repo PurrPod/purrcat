@@ -144,6 +144,7 @@ body.electron .win-controls { display: flex; }
 }
 .rail-brand { display: none; align-items: center; gap: 6px; min-width: 0; overflow: hidden; }
 body.rail-1 .rail-brand { display: flex; }
+.rail-brand .brand-logo { flex: none; display: block; width: 18px; height: 18px; border-radius: 5px; }
 .rail-brand .brand-name { font-size: 14px; font-weight: 700; color: var(--wm-label); white-space: nowrap; }
 .rail-brand .brand-beta {
   flex: none; font-size: 9.5px; font-weight: 700; line-height: 1;
