@@ -1,6 +1,6 @@
 <div align="center">
 
-# PurrCat
+# <img src="purrcat-logo.png" width="36" height="36" alt="" align="middle" /> PurrCat
 
 一个基于信息论理念设计的 Agent 底座
 
@@ -13,8 +13,6 @@
 </div>
 
 ***
-
-<img src="purrcat-logo.png" width="220" height="220" alt="PurrCat" align="right" />
 
 ## 快速开始
 

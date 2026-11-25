@@ -1,6 +1,6 @@
 <div align="center">
 
-# PurrCat
+# <img src="purrcat-logo.png" width="36" height="36" alt="" align="middle" /> PurrCat
 
 An Agent foundation designed around information theory
 
@@ -13,8 +13,6 @@ Let expression no longer be a lossy compression — let the Agent work your way.
 </div>
 
 ***
-
-<img src="purrcat-logo.png" width="220" height="220" alt="PurrCat" align="right" />
 
 ## Quickstart
 
