@@ -26,11 +26,9 @@ ui-plugins/<id>/               # 市场仓库中的单元
   "id": "doodle-chat",
   "name": "涂鸦聊天",
   "description": "English one-liner.",
-  "description-en": "English one-liner.",
   "icon": "🖍️",
   "slot": { "area": "panel" },
   "entry": "index.html",
-  "image": "cover.png",
   "root": "user",
   "builtin": false,
   "dependency": [],
@@ -47,11 +45,10 @@ ui-plugins/<id>/               # 市场仓库中的单元
 | --- | --- | --- |
 | `id` | 是 | 插件标识，与文件夹名一致 |
 | `name` | 是 | 展示名 |
-| `description` / `description-en` | 是 | 中/英文一句话描述 |
-| `icon` | 是 | 图标（emoji 或图片路径）|
+| `description` | 否 | 一句话描述 |
+| `icon` | 否 | 宿主图标栏/设置面板显示的图标（emoji 或图片路径）|
 | `slot` | 是 | 入驻区域，见第 3 节。旧写法 `slotDef: { "type": "panel", "area": "panel" }` 亦可，`slot` 直接写区域对象即为新版 |
-| `entry` | 是 | 入口 html（默认 `index.html`）|
-| `image` | 否 | 市场封面图 |
+| `entry` | 否 | 入口 html（默认 `index.html`）|
 | `root` | 否 | 来源标记：`user` / `sandbox` / `builtin`（同 id 冲突时优先级 **用户 > 沙盒 > 内置**）|
 | `builtin` | 否 | 是否随宿主内置（内置插件不受用户删除影响）|
 | `dependency` | 否 | 依赖数组，见 [README.md](README.md#依赖机制dependency) |
@@ -247,7 +244,6 @@ window.parent.postMessage({ type: 'callAction', id: 'req-1', actionId: 'config.g
   "id": "hello-panel",
   "name": "Hello 面板",
   "description": "A minimal panel plugin.",
-  "description-en": "A minimal panel plugin.",
   "icon": "🐾",
   "slot": { "area": "panel" },
   "entry": "index.html",

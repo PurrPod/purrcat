@@ -34,6 +34,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **Heartbeat**: scheduling moved to the timer service; `heartbeat.json`, `GOAL.md` and the `/api/tools/heartbeat` contract are unchanged.
 - **Timer feedback**: sink `Signal.data` is persisted as `event.result` and broadcast over SSE; the graph sink returns the dispatched `task_id` so a source (e.g. a plugin) can track the task.
 - **Event ranking**: hybrid event search now keeps the weighted RRF order (vector 0.5 / BM25 0.5, `k=10`) instead of re-sorting by cosine; the even split matches the generic BEIR scores of the previous vector-heavy tuning while ranking the Agent memory corpus better; returned scores remain cosine, and the default rejection gate uses the best candidate cosine.
+- **Single description field**: plugin manifests use one `description`; `description-zh` / `description-en` / `desc-zh` and their upload-validation requirements are removed. The market no longer promises automatic dependency installation, while `dependency` stays available for the host.
 
 ### Removed
 

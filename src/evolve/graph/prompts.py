@@ -31,7 +31,6 @@ Graph（任务图 / 工作流）是「任务编排中枢」：用**节点（Node
   "version": "2.0",
   "name": "{name}",
   "description": "One-line English description.",
-  "description-zh": "一句话中文描述。",
   "core": "openai:deepseek-v4-flash",
   "global_schema": {{ "prompt": {{ "type": "string", "required": true, "description": "用户任务描述" }} }},
   "nodes": [ ... ],
@@ -42,8 +41,7 @@ Graph（任务图 / 工作流）是「任务编排中枢」：用**节点（Node
 | 字段 | 必填 | 说明 |
 | --- | --- | --- |
 | `name` | 是 | 必须与文件夹名一致 |
-| `description` | 是 | 英文描述（市场展示）|
-| `description-zh` | 是 | 中文描述 |
+| `description` | 是 | 一句话描述 |
 | `version` | 建议 | 规范版本（当前 `"2.0"`）|
 | `core` | 否 | 该图执行所用模型，缺省 `openai:deepseek-v4-flash` |
 | `global_schema` | 否 | 全局输入变量声明 `{{ 变量名: {{ type, required, description }} }}`，驱动前端表单与运行时校验 |
@@ -205,7 +203,7 @@ Graph（任务图 / 工作流）是「任务编排中枢」：用**节点（Node
 
 沙盒内置自测脚本 `evals/validate.py`，做三重校验：
 
-* **格式**：`graph.json` 可解析；顶层为对象；`name` 与文件夹名一致；`description`/`description-zh` 非空。
+* **格式**：`graph.json` 可解析；顶层为对象；`name` 与文件夹名一致；`description` 非空。
 * **关键词汇**：每个节点的 `type` 必须属于白名单（已废弃类型直接判错）；节点 `id` 唯一。
 * **功能**：边的 `source`/`target` 必须指向已定义节点；端口名与类型匹配性复核（动态端口仅告警）；
   检出**孤立节点**（既无连边又无 trigger，开局不会执行）；`global_schema` 必填键与 `task_input` 声明的一致性。

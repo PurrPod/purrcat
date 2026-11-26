@@ -33,10 +33,10 @@ def test_guide_outputs_are_byte_identical():
         "f3c087b3e3c7f98fc747464266a7deaa6b068fc40fb60084487687f449a6e636"
     )
     assert _sha(generate_graph_guide("demo")) == (
-        "c3a7b0681fd085b99184a3efbda0a754a348ae5255f0bc9edf66a94283792685"
+        "fbe202083b5afab6a316f12498ed8202df5f87b6549ca1df3993adf0888fddbe"
     )
     assert _sha(generate_agentloop_guide("demo")) == (
-        "d436a6c973d464c088dd43affd10d16cc3ebea59559a6b6ce507e47a04eea5cf"
+        "5222a536fb0d355e44be8d23871e716ecbfcd78d0ff72864adf02c359f61ed1f"
     )
     assert _sha(
         generate_ui_plugin_guide("demo", "Demo", "panel", "D:/vm/ui-plugin/demo")
@@ -73,11 +73,11 @@ def test_generated_scaffolds_are_byte_identical():
         "2447e17cf7b7fc99d0e613fca143afaf98e23342f2e0407805e03e276d07f605"
     )
     assert _sha(agentloop_factory._skeleton("demo")) == (
-        "66485f74fa9d76d04f8710dd79994b0ff30de1e085b62715e51ee84a26e43731"
+        "0dda0ffc7e0dea436f965f2a8bd135b7b649da06a6e7b031372914324ad0a4c2"
     )
     # graph 骨架是 dict，逐字锁用序列化文本。
     assert _sha(str(graph_factory._skeleton("demo"))) == (
-        "67aa0db389b396a94dcc8e9a6dc10373bd1b16b110fd8e297ae5befcf0312e2d"
+        "f0e416310b3362e5aa8254c4a1d5f0e6db55a6e107ae954b8e4756d31d00d51e"
     )
     assert _sha(ui_plugin_factory.INDEX_HTML_TPL) == (
         "b951e07173b1f80ac23f27db79a72fff43b1e38fd396d4e85420b77575bba0cd"

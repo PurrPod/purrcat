@@ -27,7 +27,7 @@ PurrCat 除通用的 **Skill**（技能包）与 **MCP**（外部工具服务）
 - 元素固定形如 `{ "type": "<类型>", "id": "<安装标识>" }`。
 - `type` 白名单：`skill` / `plugin` / `mcp` / `agentloop` / `sensor` / `graph`。
 - 无依赖时写 `[]`。
-- 从市场安装插件时，`dependency` 中的依赖会被**自动一并安装**；典型用法是 UI 插件依赖配套的 AgentLoop / Graph / Sensor。
+- `dependency` 仍保留在清单中供宿主使用；市场上传不解析它，也不会自动安装依赖。
 
 > `dependency` 只描述“插件类型依赖”。UI 插件引用宿主共享的前端库（marked / KaTeX / highlight.js 等）用 `requires`，两者互不替代，详见 [ui-plugin.md](ui-plugin.md#31-共享运行时requires)。
 
@@ -61,5 +61,5 @@ AgentLoop（主循环范式）── 决策/调工具 ──▶ Graph（多步�
 ## 通用开发约定
 
 - **命名一致性**：安装标识（`id` / `name`）必须与文件夹名或文件名（去掉扩展名）严格一致，CI 会校验。
-- **必填元数据**：每个清单文件都要有英文 `description` 与中文 `description-zh`（AgentLoop 为 `description` / `description-en`），供市场中英展示。
+- **描述字段**：清单里统一只写一句话 `description`，不再使用 `description-zh` / `description-en`；市场展示信息（简介、图标、版本、链接等）在发布页填写，不从包里读取。
 - **热更新**：插件安装/更新后一般无需重启——Sensor 走 `/api/config/sensor/reload`；UI 插件与 Graph/范式走内存热更新或前端 `Ctrl+R`（详见各文档）。

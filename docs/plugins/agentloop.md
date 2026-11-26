@@ -20,7 +20,6 @@ AgentLoop（范式 / PARADIGM）用一份 YAML 声明**每轮循环在各阶段�
 ```yaml
 name: my-paradigm
 description: 中文一句话描述
-description-en: One-line English description.
 path: agent_vm                # 执行环境标识（保持默认即可）
 loop_end_max_retry: 3         # on_loop_end 检查未通过时的最大重试轮数
 hooks:
@@ -41,8 +40,7 @@ hooks:
 | 字段 | 必填 | 说明 |
 | --- | --- | --- |
 | `name` | 是 | 安装标识，与文件名一致 |
-| `description` | 是 | 中文描述（市场展示）|
-| `description-en` | 是 | 英文描述 |
+| `description` | 建议 | 一句话描述 |
 | `path` | 是 | 执行环境，保持 `agent_vm` |
 | `loop_end_max_retry` | 否 | `on_loop_end` 检查未通过时的最大重试轮数 |
 | `hooks` | 是 | 阶段 → hook 列表的映射 |
@@ -147,7 +145,6 @@ on_input_received:
 ```yaml
 name: strict-finish
 description: 强制 Agent 调用 finish_task 并提供 summary 才允许结束
-description-en: Force the agent to call finish_task with a summary before ending.
 path: agent_vm
 loop_end_max_retry: 3
 hooks:

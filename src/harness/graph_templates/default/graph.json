@@ -2,7 +2,6 @@
   "version": "2.0",
   "name": "default",
   "description": "Default general-purpose background worker, used when graph_name is omitted. Dispatch contract: optionally write a task spec file first and pass its absolute path in prompt. When a spec path is present, the worker reads that spec, appends its plan and progress, keeps updating the progress section, and re-reads the spec to confirm status when needed. When no spec is provided, the worker simply executes the prompt. In both cases it notifies the dispatcher automatically on completion, so no manual polling is required.",
-  "description-zh": "默认通用后台 Worker，未指定 graph_name 时使用。派发约定：可以先把任务 Spec 写成文件，并在 prompt 中给出它的绝对路径；有 Spec 时 worker 读该 Spec、追加执行计划并持续回写进度、必要时按 Spec 复核；没有 Spec 时直接按 prompt 执行。完成后自动通知派发方，无需自行确认。",
   "global_schema": {
     "prompt": {
       "type": "string",

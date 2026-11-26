@@ -30,16 +30,12 @@ def _safe_name(name: str) -> str:
     return safe_name(name, "Graph")
 
 
-def _skeleton(name: str, goal: str = "") -> dict:
+def _skeleton(name: str) -> dict:
     """全新 Graph 的最小可用骨架（渲染问候语并交给智能体循环）"""
-    zh = (
-        goal.strip().splitlines()[0] if goal.strip() else "渲染问候语并交给智能体循环。"
-    )
     return {
         "version": "2.0",
         "name": name,
         "description": f"Render a greeting and hand it to an agent loop. ({name})",
-        "description-zh": zh,
         "global_schema": {
             "name": {"type": "string", "required": True, "description": "称呼"}
         },
@@ -190,7 +186,7 @@ def graph_factory_init(name: str, is_upgrade: bool, goal: str = "") -> tuple[str
         with open(
             os.path.join(graph_dir, "graph.json"), "w", encoding="utf-8", newline="\n"
         ) as f:
-            json.dump(_skeleton(base, goal), f, ensure_ascii=False, indent=2)
+            json.dump(_skeleton(base), f, ensure_ascii=False, indent=2)
         action_msg = f"已为你搭建了全新的 '{base}' 图骨架（含最小可用示例）"
 
     _write_sandbox(workplace_root, graph_dir, base, goal)

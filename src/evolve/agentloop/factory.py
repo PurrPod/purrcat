@@ -33,7 +33,6 @@ def _skeleton(name: str, goal: str = "") -> str:
     desc = goal.strip().splitlines()[0] if goal.strip() else f"{name} 自定义主循环"
     return f"""name: "{name}"
 description: "{desc}"
-description-en: "A custom agent loop paradigm."
 path: agent_vm
 loop_end_max_retry: 3
 hooks:

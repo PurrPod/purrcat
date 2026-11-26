@@ -38,7 +38,6 @@ graphs/<graph-name>/          # 市场仓库中的单元
   "version": "2.0",
   "name": "my_graph",
   "description": "One-line English description.",
-  "description-zh": "一句话中文描述。",
   "core": "openai:deepseek-v4-flash",
   "global_schema": { "prompt": { "type": "string", "required": true, "description": "用户任务描述" } },
   "nodes": [ ... ],
@@ -49,8 +48,7 @@ graphs/<graph-name>/          # 市场仓库中的单元
 | 字段 | 必填 | 说明 |
 | --- | --- | --- |
 | `name` | 是 | 安装标识，必须与文件夹名一致 |
-| `description` | 是 | 英文描述（市场展示）|
-| `description-zh` | 是 | 中文描述（市场中文展示）|
+| `description` | 是 | 一句话描述 |
 | `version` | 否 | Graph 规范版本（当前 `"2.0"`）|
 | `core` | 否 | 该图执行所用模型，缺省 `openai:deepseek-v4-flash` |
 | `global_schema` | 否 | 全局输入变量的类型声明与必填校验；驱动前端表单 + 运行时参数校验 |
@@ -157,7 +155,6 @@ graphs/<graph-name>/          # 市场仓库中的单元
   "version": "2.0",
   "name": "hello_graph",
   "description": "Render a greeting and hand it to an agent loop.",
-  "description-zh": "渲染问候语并交给智能体循环。",
   "global_schema": {
     "name": { "type": "string", "required": true, "description": "称呼" }
   },

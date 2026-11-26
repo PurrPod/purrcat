@@ -30,8 +30,7 @@ sensors/<sensor-name>/          # 市场仓库中的单元
 | 字段 | 必填 | 说明 |
 | --- | --- | --- |
 | `name` | 是 | 安装标识，与文件夹名、代码文件名一致 |
-| `description` | 是 | 英文描述，一句话说明用途 |
-| `description-zh` | 是 | 中文描述，用于市场中文展示 |
+| `description` | 是 | 一句话描述 |
 | `enabled` | 是 | 是否启用；registry 占位默认 `false`，安装后由用户在前端启用 |
 | `env` | 是 | 环境变量键值对，注入到 Sensor 运行时（`{ "FEISHU_APP_SECRET": "" }` 形式，默认留空占位） |
 | `icon` | 否 | 配置页卡片头像的图标链接；留空或加载失败都会回退默认图标 |

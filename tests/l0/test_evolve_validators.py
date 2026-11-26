@@ -13,7 +13,6 @@ def _graph_doc(**overrides):
     doc = {
         "name": "demo",
         "description": "demo graph",
-        "description-zh": "演示图",
         "nodes": [
             {"id": "in", "type": "task_input", "name": "输入"},
             {"id": "out", "type": "task_output", "name": "输出"},
@@ -57,6 +56,12 @@ def test_graph_non_object_doc_is_an_error():
     assert validate_graph_doc([])["errors"] == 1
 
 
+def test_graph_missing_description_is_an_error():
+    doc = _graph_doc()
+    doc.pop("description")
+    assert validate_graph_doc(doc)["ok"] is False
+
+
 def test_graph_folder_missing_file_is_an_error(tmp_path):
     report = validate_graph_folder(str(tmp_path), expected_name="demo")
     assert report["ok"] is False
@@ -67,7 +72,6 @@ def _agentloop_doc(**overrides):
     doc = {
         "name": "demo",
         "description": "demo loop",
-        "description-en": "demo loop",
         "path": "agent_vm",
         "hooks": {
             "on_build_system_prompt": [{"injection": {"content": "@RULES"}}],
@@ -83,6 +87,11 @@ def test_agentloop_valid_doc_is_green():
     assert report["warnings"] == 0
     assert report["ok"] is True
     assert any(c["title"] == "hooks 为非空映射" and c["ok"] for c in report["checks"])
+
+
+def test_agentloop_does_not_require_description_en():
+    report = validate_agentloop_doc(_agentloop_doc(), expected_name="demo")
+    assert not any("description-en" in c["title"] for c in report["checks"])
 
 
 def test_agentloop_unknown_stage_and_action_are_errors():

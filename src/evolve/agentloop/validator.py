@@ -85,7 +85,7 @@ REF_ALIASES = {
 # 顶层必填字段（硬性）：缺失直接判 error
 REQUIRED_TOP = ["name", "hooks"]
 # 顶层建议字段（软性）：缺失只判 warn
-RECOMMENDED_TOP = ["description", "description-en", "path"]
+RECOMMENDED_TOP = ["description", "path"]
 
 
 def _check(checks, title, ok, level, detail=""):

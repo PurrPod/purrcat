@@ -88,7 +88,7 @@ STATIC_OUTPUTS = {
 DYNAMIC_INPUT_TYPES = {"task_output", "json_builder", "template_renderer"}
 DYNAMIC_OUTPUT_TYPES = {"task_input", "env_loader", "json_extractor"}
 
-REQUIRED_TOP = ["name", "description", "description-zh"]
+REQUIRED_TOP = ["name", "description"]
 
 
 def _check(checks, title, ok, level, detail=""):
