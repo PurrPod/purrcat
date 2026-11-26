@@ -1,6 +1,6 @@
 <div align="center">
 
-# <img src="purrcat-logo.png" width="36" height="36" alt="" align="middle" /> PurrCat
+<img src="asset/purrcat-banner.png" alt="PurrCat" width="720">
 
 An Agent foundation designed around information theory
 
