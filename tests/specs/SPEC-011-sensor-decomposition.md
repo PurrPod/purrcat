@@ -9,20 +9,19 @@
 - `sensor/file_refs.py` 负责文本 → 宿主路径：markdown 链接、裸 `/agent_vm/...`、`./`/`../` 前缀、`file://`、Windows 盘符路径；行尾中英文标点剥除；重复路径去重；不存在的文件与目录过滤；`/agent_vm_backup/...` 等相似前缀不被误判。
 - `sensor/processes.py` 负责子进程低层控制：构造 `uv run <script>` 命令；从父进程环境剔除 `PYTHONHOME/PYTHONPATH/VIRTUAL_ENV/PYTHONSTARTUP/PYTHONUSERBASE` 后合并传感器自定义 env，并强制 `PYTHONIOENCODING=utf-8`；Windows 走 `taskkill /T /F` 整树击杀，POSIX 走 `terminate`；关闭 stdin 写端且吞掉已关闭/缺失管道的异常。
 - `SensorManager` 与 `AcpSensorBridge` 的公开行为、日志文案与调用顺序保持不变；`bridge.extract_file_paths` 继续可用（重新导出）。
-- 官方下载地址仍指向 `PurrPod/sensors`，候选 URL 顺序保持「包目录布局优先、单文件其次」。
 
 ## 验收标准
 
 - [ ] AC-1：`normalize_candidate` 对 8 种合法形态返回规范化路径，5 种非法形态返回 `None`。
 - [ ] AC-2：`extract_file_paths` 能从 markdown 链接与裸路径提取、去重、过滤不存在项与非文件项，并返回宿主绝对路径。
 - [ ] AC-3：`build_sensor_env` 清除父进程 Python 变量、合并 cfg、不修改入参。
-- [ ] AC-4：`sensor_command` / `candidate_urls` 的输出顺序与内容稳定。
+- [ ] AC-4：`sensor_command` 的输出内容稳定。
 - [ ] AC-5：`kill_process_tree` 在 Windows/POSIX 下分别调用 `taskkill`/`terminate`，并总是关闭 stdin。
 - [ ] AC-6：`SensorManager` 现有公开方法与 `AcpSensorBridge` 行为不变（现有测试全绿）。
 
 ## 非目标
 
-- 不改 watchdog 的轮询周期、下载线程模型与 ACP 桥的事件翻译。
+- 不改 watchdog 的轮询周期与 ACP 桥的事件翻译。
 - 不新增传感器协议字段或配置项。
 
 ## 测试矩阵

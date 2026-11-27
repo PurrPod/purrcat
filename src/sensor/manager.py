@@ -2,15 +2,11 @@ import json
 import subprocess
 import threading
 import os
-import urllib.request
-import urllib.error
 import atexit
 import sys
 from .bridge import AcpSensorBridge
 from .processes import (
-    DOWNLOAD_BASE,
     build_sensor_env,
-    candidate_urls,
     close_stdin,
     kill_process_tree,
     sensor_command,
@@ -27,41 +23,9 @@ class SensorManager:
         # 用户扩展传感器目录：~/.purrcat/sensor（内置传感器已移除，仅支持外部扩展）
         self.extension_dir = SENSOR_EXTENSION_DIR
         self.processes = {}
-        # 官方传感器仓库 PurrPod/sensors，代码位于 sensors/ 子目录下
-        self.github_repo_base = DOWNLOAD_BASE
         self._watchdog_started = False
 
         os.makedirs(self.extension_dir, exist_ok=True)
-
-    def _download_and_start_sensor_bg(
-        self, sensor_name: str, urls: list, local_path: str, cfg: dict
-    ):
-        """🌟 后台下载逻辑：依次尝试候选 URL（仓库结构 sensors/<name>/<name>.py 或 sensors/<name>.py）"""
-        try:
-            last_err = None
-            for url in urls:
-                try:
-                    urllib.request.urlretrieve(url, local_path)
-                    print(f"✅ [Manager] {sensor_name} 云端下载完成！")
-                    break
-                except Exception as e:
-                    last_err = e
-                    # 清理下载失败的半成品文件，避免被误认为已安装
-                    if os.path.exists(local_path):
-                        try:
-                            os.remove(local_path)
-                        except Exception:
-                            pass
-            else:
-                raise last_err or RuntimeError("所有候选 URL 均下载失败")
-            # 下载完毕后再启动
-            self._start_sensor(sensor_name, local_path, cfg)
-        except urllib.error.HTTPError as e:
-            print(
-                f"❌ [Manager] 下载失败，云端仓库找不到 {sensor_name}.py (HTTP {e.code})"
-            )
-        except Exception as e:
-            print(f"❌ [Manager] 下载 {sensor_name} 失败: {e}")
 
     def load_and_start_all(self):
         print("🔍 [SensorManager] 正在读取 .purrcat/activate_sensor.json 配置...")
@@ -85,14 +49,10 @@ class SensorManager:
             if os.path.exists(local_path):
                 self._start_sensor(name, local_path, cfg)
             else:
-                # 🌟 重构：开启子线程去下载，绝不阻塞当前循环
-                print(f"🔄 [Manager] 本地无 {name}.py，已派发后台下载任务...")
-                urls = candidate_urls(self.github_repo_base, name)
-                threading.Thread(
-                    target=self._download_and_start_sensor_bg,
-                    args=(name, urls, local_path, cfg),
-                    daemon=True,
-                ).start()
+                print(
+                    f"❌ [Manager] 本地缺少 {name}.py，Sensor '{name}' 启动失败"
+                    f"（不再自动下载，请先安装代码到 {self.extension_dir}）"
+                )
 
         if not self._watchdog_started:
             threading.Thread(target=self._watchdog_loop, daemon=True).start()

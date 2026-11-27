@@ -18,14 +18,14 @@ Sensor 把外部事件（飞书/微信消息、RSS 更新、闹钟等）推给 A
 ## 2. 目录与命名约定
 
 ```text
-sensors/<sensor-name>/          # 市场仓库中的单元
+sensors/<sensor-name>/          # 市场仓库中的单元（与进化工厂沙盒结构一致）
 ├── <sensor-name>.py            # 单文件脚本，名称 = 文件夹名
-└── config.json                 # 市场/配置清单
+└── sensor_config.json          # 市场/配置清单
 ```
 
-**文件夹名 = `config.json` 的 `name` = 代码文件名（去掉 `.py`）**，三者必须严格一致（CI 校验）。
+**文件夹名 = `sensor_config.json` 的 `name` = 代码文件名（去掉 `.py`）**，三者必须严格一致（CI 校验）。
 
-### `config.json` 字段（市场清单）
+### `sensor_config.json` 字段（市场清单）
 
 | 字段 | 必填 | 说明 |
 | --- | --- | --- |
@@ -33,7 +33,6 @@ sensors/<sensor-name>/          # 市场仓库中的单元
 | `description` | 是 | 一句话描述 |
 | `enabled` | 是 | 是否启用；registry 占位默认 `false`，安装后由用户在前端启用 |
 | `env` | 是 | 环境变量键值对，注入到 Sensor 运行时（`{ "FEISHU_APP_SECRET": "" }` 形式，默认留空占位） |
-| `icon` | 否 | 配置页卡片头像的图标链接；留空或加载失败都会回退默认图标 |
 | `tool_detail` | 是 | 是否向该 Sensor 推送工具调用细节，默认 `false`（只推回复正文） |
 
 ### `env` 与凭证铁律
@@ -165,7 +164,7 @@ _REAL_STDOUT = sys.stdout
 sys.stdout = sys.stderr
 
 SENSOR_NAME = "my-sensor"
-MY_TOKEN = os.environ.get("MY_TOKEN", "")   # 必须在 config.json 的 env 里声明
+MY_TOKEN = os.environ.get("MY_TOKEN", "")   # 必须在 sensor_config.json 的 env 里声明
 
 _SID = ""
 _SID_READY = threading.Event()
@@ -239,7 +238,8 @@ for line in sys.stdin:                              # 主线程只跑 stdin 读�
 ### 8.1 本地手测
 
 ```bash
-# 观察单条下发消息的处理
+# 观察单条下发消息的处理（在插件包目录内执行）
+cd /agent_vm/sensor_workplace/<uuid>/my-sensor
 echo '{"jsonrpc":"2.0","method":"session/update","params":{"update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"hello"}}}}' | uv run my-sensor.py
 ```
 
@@ -271,13 +271,13 @@ uv run evals/gateway_probe.py
 
 ## 9. 安装与启用
 
-- 安装：市场接口 `/api/tools/market/sensors/install`（下载 `config.json` + `<name>.py` 到 `~/.purrcat/sensor/`，并把条目合并进 `~/.purrcat/activate_sensor.json`）。
+- 安装：市场接口 `/api/tools/market/sensors/install`（下载 `<name>.py` 到 `~/.purrcat/sensor/`，并把 `sensor_config.json` 的条目合并进 `~/.purrcat/activate_sensor.json`）。
 - 启用/禁用与填 `env`：写 `activate_sensor.json` 对应条目的 `enabled` / `env`。
 - 重载：`POST /api/config/sensor/reload`（停掉全部旧进程，按配置重新拉起启用项）。
 - 运行状态：`GET /api/config/sensor/runtime` 列出运行中的 Sensor（`name` / `pid` / `alive`）。
 - 停止单个：`POST /api/config/sensor/{name}/stop` 杀死指定 Sensor 进程，并把它在 `activate_sensor.json` 里置为 `enabled=false`（不会被 watchdog 再拉起）。
 - 重启单个：`POST /api/config/sensor/{name}/restart` 用于「启动失败」或「已被停止」的 Sensor——先把它在 `activate_sensor.json` 里置回 `enabled=true`，再整树击杀旧进程并按当前配置重新拉起。配置页卡片仅在该项显示「未运行」时提供「重启」按钮，运行中只显示「停止」。
 - 彻底删除：`POST /api/config/sensor/{name}/purge` 从配置移除 + 杀进程 + 删除正式 `<name>.py`（不可恢复）；普通删除只移除注册项，文件与运行中进程都会保留。
-- 本地无 `<name>.py` 时，主进程会后台按官方仓库地址自动下载后拉起。
+- 本地无 `<name>.py` 时，该 Sensor 直接启动失败并打印日志，不再自动下载。
 
 接口细节见 [../api/config.md](../api/config.md)、[../api/tools.md](../api/tools.md)。

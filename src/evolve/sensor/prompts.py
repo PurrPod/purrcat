@@ -152,9 +152,10 @@ Agent 发的文件（Agent 消息里含本地文件链接时网关自动追加�
 * 缺凭证或连接失败时用 session/prompt **上报失败详情**（含缺失/出错的凭证名），并保持进程存活待命；
 * 连上成功、事件处理成功时**保持静默**，不要推送任何成功调试信息。
 
-## 4. 单文件骨架
+## 4. 插件包与骨架
 
-依赖用 PEP 723 内联声明（uv 会自动建环境）。沙盒初始化时已生成可运行的
+Sensor 插件包是 `<name>/` 文件夹，内含 `<name>.py`（PEP 723 内联依赖，uv 会自动建环境）
+与 `sensor_config.json`；市场包与沙盒结构一致，可整体打包上传。沙盒初始化时已生成可运行的
 ACP 骨架（initialize → session/new → 凭证校验 → update 消费循环），
 按 TODO 注释替换真实外部服务逻辑即可。
 
@@ -170,21 +171,21 @@ uv run evals/gateway_probe.py
 
 失败项的排查线索在 `evals/probe_stderr.log`（sensor 的 stderr 全量日志）。
 
-需要观察单条下发消息的处理时，也可以直接用 echo 手测：
+需要观察单条下发消息的处理时，也可以直接用 echo 手测（在插件包目录内）：
 
 ```bash
+cd /agent_vm/sensor_workplace/<uuid>/{sensor_name}
 echo '{{"jsonrpc":"2.0","method":"session/update","params":{{"update":{{"sessionUpdate":"agent_message_chunk","content":{{"type":"text","text":"hello"}}}}}}}}' | uv run {sensor_name}.py
 ```
 
 ## 6. sensor_config.json（合并注册的唯一依据）
 
-沙盒根目录维护 `sensor_config.json`，合并时系统只认它：
+插件目录 `<name>/sensor_config.json` 是合并注册的唯一依据：
 
 ```json
 {{
   "name": "{sensor_name}",
   "env": {{ "MY_TOKEN": "" }},
-  "icon": "",
   "tool_detail": false,
   "source": "remote"
 }}
@@ -193,7 +194,6 @@ echo '{{"jsonrpc":"2.0","method":"session/update","params":{{"update":{{"session
 * `env`：声明全部所需凭证。**开发阶段由 Agent 引导用户获取后在此填真实值**，合并即完成配置；
   留空的键会保留正式配置里的旧值（不会清空用户已填的凭证）。代码里 `os.environ.get("X")`
   读到的每个键都**必须**在此声明——协议体检会做双向交叉校验，漏声明会导致合并后用户无从配置
-* `icon`：配置页卡片头像的图标链接（可留空；留空或加载失败都会回退默认图标）
 * `tool_detail`：true 时 Agent 的工具调用细节（工具名/结果片段）也会推送到本 sensor；false（默认）时只推送回复正文
 * `source`：`"remote"`（默认，外部源在远程平台）或 `"local"`（外部源是可本地构造的文件/本地服务）。
   标 `local` 的 sensor 有机会把"外部事件 → 注入会话"这一段也纳入自动化闭环
@@ -434,7 +434,6 @@ def build_sensor_config_template(sensor_name: str) -> str:
         {
             "name": sensor_name,
             "env": {"MY_TOKEN": ""},
-            "icon": "",
             "tool_detail": False,
             "source": "remote",
         },
@@ -451,7 +450,7 @@ def build_sensor_gateway_probe() -> str:
 用法（在沙盒根目录执行）:
     uv run evals/gateway_probe.py
 
-它扮演网关拉起同级目录里的 sensor，验证：握手顺序 / 缺凭证失败上报 / sessionId 回填 /
+它扮演网关拉起插件包目录（<name>/）里的 sensor，验证：握手顺序 / 缺凭证失败上报 / sessionId 回填 /
 stdout 纯净 / 空转存活。宿主侧的正式体检（含 L0 静态契约）由 KernelUpgrade(action="test", type="sensor") 触发。
 """
 
@@ -463,8 +462,22 @@ import threading
 import time
 
 SID = "SID_SELFTEST"
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-STDERR_LOG = os.path.join(ROOT, "evals", "probe_stderr.log")
+WORKPLACE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+STDERR_LOG = os.path.join(WORKPLACE, "evals", "probe_stderr.log")
+
+
+def _resolve_plugin_dir():
+    """定位插件包目录：workplace 下含 <name>/<name>.py 与 sensor_config.json 的子目录。"""
+    for item in sorted(os.listdir(WORKPLACE)):
+        candidate = os.path.join(WORKPLACE, item)
+        if os.path.isdir(candidate) and os.path.isfile(
+            os.path.join(candidate, "%s.py" % item)
+        ):
+            return candidate
+    return WORKPLACE
+
+
+ROOT = _resolve_plugin_dir()
 
 
 def find_sensor():

@@ -221,8 +221,9 @@ def _render_report(
 
 def _run_protocol_eval(workplace_id: str, sensor_name: str) -> str:
     workplace_root = os.path.join(AGENT_VM_DIR, "sensor_workplace", workplace_id)
-    script_path = os.path.join(workplace_root, f"{sensor_name}.py")
-    config_path = os.path.join(workplace_root, "sensor_config.json")
+    plugin_dir = os.path.join(workplace_root, sensor_name)
+    script_path = os.path.join(plugin_dir, f"{sensor_name}.py")
+    config_path = os.path.join(plugin_dir, "sensor_config.json")
 
     if not workplace_root or not os.path.exists(script_path):
         return f"❌ 协议体检失败：未找到沙盒脚本 `{script_path}`"
@@ -242,7 +243,7 @@ def _run_protocol_eval(workplace_id: str, sensor_name: str) -> str:
 
     static_cases = _static_checks(script_text, config, config_error, sensor_name)
     runtime_cases, trace = _runtime_checks(
-        script_path, workplace_root, declared, iteration_dir
+        script_path, plugin_dir, declared, iteration_dir
     )
     cases = static_cases + runtime_cases
 

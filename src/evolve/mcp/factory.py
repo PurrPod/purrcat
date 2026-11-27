@@ -135,19 +135,25 @@ def _remove_dir_retry(path: str, attempts: int = 8):
             time.sleep(0.75)
 
 
-MCP_SERVER_CONFIG_FILE = "mcp_server_config.json"
+MCP_SERVER_CONFIG_FILE = "mcp_config.json"
 
 
-def _ensure_server_config_template(mcp_dir: str):
-    """确保沙盒中存在标准配置模板（全新创建时生成，升级时保留原有）"""
+def _ensure_server_config_template(mcp_dir: str, mcp_name: str):
+    """确保沙盒中存在标准配置模板（全新创建时生成，升级时保留原有）。
+
+    结构与市场包一致：`{"mcpServers": {<name>: {command, args, env}}}`。
+    """
     config_path = os.path.join(mcp_dir, MCP_SERVER_CONFIG_FILE)
     if os.path.exists(config_path):
         return
-    # 模板与合并注册逻辑配套：uv run --directory "." 由系统在合并时定位到正式目录
     default_config = {
-        "command": "uv",
-        "args": ["run", "--directory", ".", "server.py"],
-        "env": {},
+        "mcpServers": {
+            mcp_name: {
+                "command": "uv",
+                "args": ["run", "--directory", ".", "server.py"],
+                "env": {},
+            }
+        }
     }
     with open(config_path, "w", encoding="utf-8", newline="\n") as f:
         json.dump(default_config, f, indent=4, ensure_ascii=False)
@@ -429,7 +435,7 @@ if __name__ == "__main__": asyncio.run(main())
         f.write(evaluation_script)
 
     # 10. 生成标准配置模板（合并注册的唯一依据，Agent 须按实际情况维护）
-    _ensure_server_config_template(workplace_mcp_dir)
+    _ensure_server_config_template(workplace_mcp_dir, mcp_name)
 
     # 11. 生成构建目标与单文件指南
     _write_goal_and_guide(workplace_root, mcp_name, goal)
@@ -456,7 +462,7 @@ def mcp_upgrade_init(mcp_name: str, goal: str = "") -> tuple[str, str]:
     )
     shutil.copytree(target_dir, workplace_mcp_dir, ignore=ignore)
     # 老版本 MCP 没有配置文件，补齐模板（已有则保留 Agent/原版维护的内容）
-    _ensure_server_config_template(workplace_mcp_dir)
+    _ensure_server_config_template(workplace_mcp_dir, mcp_name)
     _write_goal_and_guide(workplace_root, mcp_name, goal)
     return (
         f"【MCP 升级派发成功】工作区路径：/agent_vm/mcp_workplace/{short_uuid}（workplace_id: {short_uuid}）。\n"
@@ -474,7 +480,7 @@ def mcp_request_handle(workplace_root: str, mcp_name: str, is_approved: bool) ->
     target_dir = abs_target_dir
     is_upgrade = os.path.exists(target_dir)
 
-    # 1. 强校验：读取 Agent 维护的 mcp_server_config.json（合并注册的唯一依据）
+    # 1. 强校验：读取 Agent 维护的 mcp_config.json（合并注册的唯一依据）
     sandbox_config_path = os.path.join(source_dir, MCP_SERVER_CONFIG_FILE)
     if not os.path.exists(sandbox_config_path):
         return (
@@ -490,12 +496,21 @@ def mcp_request_handle(workplace_root: str, mcp_name: str, is_approved: bool) ->
             f"请 Agent 修复后再申请合并。"
         )
 
+    # 结构：{"mcpServers": {<name>: {command, args, env}}}，只认当前 MCP 名对应的那一项
+    servers = sandbox_config.get("mcpServers")
+    server_conf = servers.get(mcp_name) if isinstance(servers, dict) else None
+    if not isinstance(server_conf, dict):
+        return (
+            f"❌ 合并失败：`{MCP_SERVER_CONFIG_FILE}` 中缺少 "
+            f"`mcpServers.{mcp_name}` 配置对象，请补齐后再申请合并。"
+        )
+
     # 只提取合法键，过滤掉 Agent 可能乱加的废数据
-    env_data = sandbox_config.get("env", {})
+    env_data = server_conf.get("env", {})
     if not isinstance(env_data, dict):
         env_data = {}
-    command = sandbox_config.get("command", "uv")
-    args = sandbox_config.get("args", [])
+    command = server_conf.get("command", "uv")
+    args = server_conf.get("args", [])
     if not isinstance(args, list):
         args = []
 

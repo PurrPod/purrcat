@@ -229,13 +229,13 @@ def resolve_request(
                 elif req_type == "sensor_merge":
                     from src.evolve import sensor_request_handle
 
-                    # sensor 沙盒结构：sensor_workplace/<uuid>/<name>.py（单文件而非目录）
+                    # sensor 插件包：sensor_workplace/<uuid>/<name>/<name>.py
                     workplace_id, name = _split_merge_target(target)
                     workplace_root = os.path.join(
                         AGENT_VM_DIR, "sensor_workplace", workplace_id
                     )
                     if name and os.path.isfile(
-                        os.path.join(workplace_root, f"{name}.py")
+                        os.path.join(workplace_root, name, f"{name}.py")
                     ):
                         sys_note = sensor_request_handle(
                             workplace_root, name, is_approved=True

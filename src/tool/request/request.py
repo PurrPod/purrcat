@@ -38,7 +38,7 @@ def _validate_skill_test(target: str) -> tuple[str, str] | None:
 
 
 def _validate_sensor_test(target: str) -> tuple[str, str] | None:
-    """sensor_test 前置校验：沙盒单文件与 sensor_config.json 是否齐备"""
+    """sensor_test 前置校验：插件包 <name>/ 内的 py 与 sensor_config.json 是否齐备"""
     parts = target.split("/")
     if len(parts) != 2 or not all(parts):
         return (
@@ -47,14 +47,16 @@ def _validate_sensor_test(target: str) -> tuple[str, str] | None:
         )
 
     workplace_id, sensor_name = parts
-    workplace_root = os.path.join(AGENT_VM_DIR, "sensor_workplace", workplace_id)
+    plugin_dir = os.path.join(
+        AGENT_VM_DIR, "sensor_workplace", workplace_id, sensor_name
+    )
 
-    if not os.path.exists(os.path.join(workplace_root, f"{sensor_name}.py")):
+    if not os.path.exists(os.path.join(plugin_dir, f"{sensor_name}.py")):
         return (
             f"执行被拒绝：未找到沙盒传感器 '{sensor_name}.py'，请确认 workplace_id 与传感器名无误。",
             "❌ 沙盒不存在",
         )
-    if not os.path.exists(os.path.join(workplace_root, "sensor_config.json")):
+    if not os.path.exists(os.path.join(plugin_dir, "sensor_config.json")):
         return (
             f"执行被拒绝：沙盒 '{target}' 内未找到 sensor_config.json（合并注册的唯一依据），"
             "请先按 GUIDE.md 第 6 节补齐。",

@@ -1,8 +1,8 @@
 """
 Sensor 进化工厂核心逻辑 (evolve/sensor/factory.py)
 
-单文件沙盒模式：Sensor 本体是单个 <name>.py（PEP 723 内联依赖），
-沙盒内配套 sensor_config.json 作为合并注册的唯一依据。
+文件夹沙盒模式：Sensor 插件包是 <name>/ 文件夹（<name>.py + sensor_config.json），
+与市场包格式一致，可整体打包上传；sensor_config.json 是合并注册的唯一依据。
 """
 
 import json
@@ -50,7 +50,7 @@ def _write_goal_and_guide(workplace_root: str, sensor_name: str, goal: str):
 def _sandbox_sensor_names() -> set:
     """扫描全部进化沙盒，返回沙盒里已有 sensor 的名称集合。
 
-    沙盒本体是各自根目录下单个 <name>.py（evals/、__pycache__ 等子目录天然被跳过），
+    插件包是各自根目录下的 <name>/ 文件夹（内含 <name>/<name>.py），
     与 list_workplaces 的识别口径保持一致。
     """
     names: set = set()
@@ -62,8 +62,11 @@ def _sandbox_sensor_names() -> set:
         if not os.path.isdir(w_path):
             continue
         for item in os.listdir(w_path):
-            if item.endswith(".py") and os.path.isfile(os.path.join(w_path, item)):
-                names.add(item[:-3])
+            plugin_dir = os.path.join(w_path, item)
+            if os.path.isdir(plugin_dir) and os.path.isfile(
+                os.path.join(plugin_dir, f"{item}.py")
+            ):
+                names.add(item)
     return names
 
 
@@ -73,7 +76,9 @@ def sensor_factory_init(
     """初始化 Sensor 进化沙盒，返回 (系统提示, workplace_id)"""
     short_uuid = uuid.uuid4().hex[:5]
     workplace_root = os.path.join(AGENT_VM_DIR, "sensor_workplace", short_uuid)
-    script_path = os.path.join(workplace_root, f"{sensor_name}.py")
+    plugin_dir = os.path.join(workplace_root, sensor_name)
+    script_path = os.path.join(plugin_dir, f"{sensor_name}.py")
+    config_path = os.path.join(plugin_dir, "sensor_config.json")
 
     # 同名唯一：新建时若正式目录/注册配置/任意进化沙盒里已有同名 sensor，直接拦回，
     # 避免同名多份互相抢占
@@ -94,26 +99,25 @@ def sensor_factory_init(
 
     if os.path.exists(workplace_root):
         shutil.rmtree(workplace_root, ignore_errors=True)
-    os.makedirs(workplace_root, exist_ok=True)
+    os.makedirs(plugin_dir, exist_ok=True)
 
     if is_upgrade:
         source = os.path.join(SENSOR_EXTENSION_DIR, f"{sensor_name}.py")
         if not os.path.exists(source):
             return f"❌ 无法执行升级：正式目录中未找到 '{sensor_name}.py'。", ""
         shutil.copy2(source, script_path)
-        # 沿用现有注册配置（env/icon 已填的值不丢），缺则补模板
+        # 沿用现有注册配置（env/tool_detail/source 已填的值不丢），缺则补模板
         from src.utils.config import get_sensor_config
 
         cfg = (get_sensor_config() or {}).get(sensor_name, {})
         config = {
             "name": sensor_name,
             "env": cfg.get("env") or {"MY_TOKEN": ""},
-            "icon": cfg.get("icon", ""),
             "tool_detail": cfg.get("tool_detail", False),
             "source": cfg.get("source", "remote"),
         }
         with open(
-            os.path.join(workplace_root, "sensor_config.json"),
+            config_path,
             "w",
             encoding="utf-8",
             newline="\n",
@@ -124,7 +128,7 @@ def sensor_factory_init(
         with open(script_path, "w", encoding="utf-8", newline="\n") as f:
             f.write(_skeleton(sensor_name))
         with open(
-            os.path.join(workplace_root, "sensor_config.json"),
+            config_path,
             "w",
             encoding="utf-8",
             newline="\n",
@@ -146,6 +150,7 @@ def sensor_factory_init(
     sandbox_root = f"/agent_vm/sensor_workplace/{short_uuid}"
     return (
         f"【Sensor 工厂分配成功】工作区路径：{sandbox_root}（workplace_id: {short_uuid}）。\n"
+        f"插件包目录：{sandbox_root}/{sensor_name}/（含 {sensor_name}.py 与 sensor_config.json）。\n"
         f"{action_msg}。\n"
         f"💡 提示：系统已在沙盒根目录为你生成了官方说明文档 GUIDE.md"
         f"（覆盖 stdio 协议/凭证与配置/失败上报/文件收发/提交全流程），动手前请先通读。"
@@ -193,13 +198,15 @@ def _latest_protocol_verdict(workplace_root: str) -> tuple[bool, str]:
     if errors:
         return False, f"iteration-{latest_idx} 仍有 {errors} 项硬伤未修复"
 
-    script_path = os.path.join(workplace_root, f"{bench.get('sensor', '')}.py")
+    sensor_name_in_bench = bench.get("sensor", "")
+    plugin_dir = os.path.join(workplace_root, sensor_name_in_bench)
+    script_path = os.path.join(plugin_dir, f"{sensor_name_in_bench}.py")
     if os.path.exists(script_path):
         newer = [
             item
-            for item in os.listdir(workplace_root)
+            for item in os.listdir(plugin_dir)
             if item.endswith(".py")
-            and os.path.getmtime(os.path.join(workplace_root, item))
+            and os.path.getmtime(os.path.join(plugin_dir, item))
             > os.path.getmtime(bench_path)
         ]
         if newer:
@@ -221,7 +228,8 @@ def sensor_request_handle(
     if not is_approved:
         return f"人类拒绝了 {sensor_name} 的合并请求，已保留当前工作区供调整。"
 
-    source_path = os.path.join(workplace_root, f"{sensor_name}.py")
+    plugin_dir = os.path.join(workplace_root, sensor_name)
+    source_path = os.path.join(plugin_dir, f"{sensor_name}.py")
     if not os.path.exists(source_path):
         return f"❌ 合并失败：沙盒中未找到 '{sensor_name}.py'，请补齐后再申请合并。"
 
@@ -230,7 +238,7 @@ def sensor_request_handle(
     verdict_ok, verdict_text = _latest_protocol_verdict(workplace_root)
 
     # 1. 强校验：读取 Agent 维护的 sensor_config.json（注册唯一依据）
-    config_path = os.path.join(workplace_root, "sensor_config.json")
+    config_path = os.path.join(plugin_dir, "sensor_config.json")
     if not os.path.exists(config_path):
         return (
             "❌ 合并失败：沙盒中丢失了必需的 `sensor_config.json`，"

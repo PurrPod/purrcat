@@ -4,7 +4,7 @@ PurrCat 除通用的 **Skill**（技能包）与 **MCP**（外部工具服务）
 
 | 类型 | Install ID 字段 | 定位 | 形态 | 落地目录 | 开发文档 |
 | --- | --- | --- | --- | --- | --- |
-| **Sensor** | `sensor` | 感官中枢：把外部世界的事件推给 Agent，并把回复送回外部渠道 | 单文件 Python 常驻子进程 | `~/.purrcat/sensor/` | [sensor.md](sensor.md) |
+| **Sensor** | `sensor` | 感官中枢：把外部世界的事件推给 Agent，并把回复送回外部渠道 | 文件夹（`<name>.py` + `sensor_config.json`） | `~/.purrcat/sensor/` | [sensor.md](sensor.md) |
 | **Graph** | `graph` | 任务编排中枢：用节点 + 边描述多步骤工作流 | 文件夹（`graph.json` + `asset/`） | `~/.purrcat/graph/<name>/` | [graph.md](graph.md) |
 | **AgentLoop** | `agentloop` | 主循环范式：声明每轮循环在哪些阶段注入什么、检查什么 | 单个 YAML 文件 | `~/.purrcat/paradigms/` | [agentloop.md](agentloop.md) |
 | **UI Plugin** | `plugin` | 极简模式（`web-minimal`）的界面插件，以 iframe 入驻宿主各区域 | 文件夹（`plugin.json` + `index.html`） | `~/.purrcat/webmin-plugins/` | [ui-plugin.md](ui-plugin.md) |

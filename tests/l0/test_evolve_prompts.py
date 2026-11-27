@@ -24,13 +24,13 @@ def _sha(text: str) -> str:
 def test_guide_outputs_are_byte_identical():
     # 重构只允许搬动模板，不允许改写内容；哈希即逐字锁。
     assert _sha(generate_sensor_guide("demo")) == (
-        "c831924671039b27f365b6fc8c2bdd8f2c2df0a5e9c17e701877b8d84975932f"
+        "fe4ff3967e1059d440f665f468b02235de2b5bd069d66077317fe014b07fbc9f"
     )
     assert _sha(generate_skill_guide("demo")) == (
         "dac1839b391234533b4537d3bd1f749b8fea326e59e861d33649e59361c044d9"
     )
     assert _sha(generate_mcp_guide("demo", "", "D:/vm")) == (
-        "f3c087b3e3c7f98fc747464266a7deaa6b068fc40fb60084487687f449a6e636"
+        "cc23cc9d3c187d4a89c8d4d1ea845e6dd13ff490dee7435c77a44cdfc545a2e6"
     )
     assert _sha(generate_graph_guide("demo")) == (
         "fbe202083b5afab6a316f12498ed8202df5f87b6549ca1df3993adf0888fddbe"
@@ -67,10 +67,10 @@ def test_generated_scaffolds_are_byte_identical():
         "8b556b1ff1ff3c6410495052414159231a86ad8e40f17e8a4e5b1c7740267e91"
     )
     assert _sha(sensor_factory._config_template("demo")) == (
-        "0f68a0a0b14b13811f486901c53b354e06030cd0c0b134fb36ba4a5d275182cb"
+        "67c1934f7afdc97a7fd13d8ef5b284ca81a45c10e77b0d3dc77955be68c7574e"
     )
     assert _sha(sensor_factory._gateway_probe()) == (
-        "2447e17cf7b7fc99d0e613fca143afaf98e23342f2e0407805e03e276d07f605"
+        "b8d6b119452ac10b21e0cf30de5201d153c3c74f2941a1f414dc61f1d451c5b1"
     )
     assert _sha(agentloop_factory._skeleton("demo")) == (
         "0dda0ffc7e0dea436f965f2a8bd135b7b649da06a6e7b031372914324ad0a4c2"

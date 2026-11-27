@@ -54,9 +54,10 @@ MCP 合并后将在**宿主机**上运行（宿主机读取 mcp_config.json 并�
   优先使用相对路径（如 `--directory "."`，系统合并时自动定位到正式目录）；
   确需绝对路径时，必须通过上述映射换算为宿主机真实路径。
 
-## 6. 配置文件（mcp_server_config.json）🚨 必读
-系统已在沙盒根目录为你生成标准配置文件 `mcp_server_config.json`。
+## 6. 配置文件（mcp_config.json）🚨 必读
+系统已在沙盒根目录为你生成标准配置文件 `mcp_config.json`。
 开发完成后你**必须**根据实际情况修改它，合并时系统将**完全依赖该文件**注册你的 MCP！
+结构固定为 `{{"mcpServers": {{"<mcp 名>": {{command, args, env}}}}}}`（与市场包一致），系统只读取当前 MCP 名对应的那一项。
 1. **启动命令**：入口文件不是 `server.py`，或通过 `uvx` 等指令启动时，务必修改 `command` 和 `args`
    （`uv run` 的 `--directory` 可写相对路径 `.`，合并时系统会自动定位到正式目录）。
 2. **环境变量 (env)**：依赖外部 API Key 或参数时，**必须**在 `env` 字典中显式声明。
@@ -75,6 +76,6 @@ MCP 合并后将在**宿主机**上运行（宿主机读取 mcp_config.json 并�
 ① 编写 `tools/`、`core/` → ② 建环境（Windows 跑 `powershell -ExecutionPolicy Bypass -File setup.ps1`，macOS/Linux 跑 `bash setup.sh`）→ ③ `scripts/` 真实链路自测 →
 ④ `python scripts/evaluation.py` 生成 schema_dump 与执行产物 →
 ⑤ `KernelUpgrade(action="test", type="mcp", target="uuid/{mcp_name}")` 呼叫宿主机盲测 →
-⑥ 检查并修正 `mcp_server_config.json` →
+⑥ 检查并修正 `mcp_config.json` →
 ⑦ 测试全绿后通过 `KernelUpgrade(action="merge", type="mcp", target="uuid/{mcp_name}")` 申请合并（uuid 为沙盒目录名）。
 """

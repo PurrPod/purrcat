@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import subprocess
 
-import pytest
-
 from src.sensor import processes
 
 
@@ -41,15 +39,6 @@ def test_sensor_command_uses_uv_run():
         "uv",
         "run",
         "C:/sensors/a.py",
-    ]
-
-
-def test_candidate_urls_prefers_package_layout():
-    urls = processes.candidate_urls("https://repo/sensors", "clock")
-
-    assert urls == [
-        "https://repo/sensors/clock/clock.py",
-        "https://repo/sensors/clock.py",
     ]
 
 
@@ -109,13 +98,3 @@ def test_kill_process_tree_swallows_errors():
             raise RuntimeError("pid unavailable")
 
     processes.kill_process_tree(_Broken())
-
-
-@pytest.mark.parametrize("name", ["clock", "feishu"])
-def test_download_base_is_official_repo(name):
-    urls = processes.candidate_urls(processes.DOWNLOAD_BASE, name)
-
-    assert all(
-        url.startswith("https://raw.githubusercontent.com/PurrPod/sensors/")
-        for url in urls
-    )

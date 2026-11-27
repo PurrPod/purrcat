@@ -12,7 +12,7 @@ from src.utils.config import AGENT_VM_DIR
 from .shared import MERGE_REQUEST_TYPES, parse_workplace_target
 
 # 合并前必须齐备的产物（缺一即会在审批通过后合并失败，故本地先拦截）。
-_MCP_CONFIG_FILE = "mcp_server_config.json"
+_MCP_CONFIG_FILE = "mcp_config.json"
 _SENSOR_CONFIG_FILE = "sensor_config.json"
 
 
@@ -49,17 +49,17 @@ def _audit(t: str, workplace_id: str, name: str) -> str | None:
     if t == "mcp":
         if not os.path.isdir(os.path.join(root, name)):
             return _missing_error(t, target, name)
-        # 合并唯一注册依据：<name>/mcp_server_config.json
+        # 合并唯一注册依据：<name>/mcp_config.json
         if not os.path.isfile(os.path.join(root, name, _MCP_CONFIG_FILE)):
             return _artifact_error(t, target, f"{name}/{_MCP_CONFIG_FILE}")
         return None
 
     if t == "sensor":
-        # 本体是单文件 <name>.py，注册配置 sensor_config.json 位于工作区根
-        if not os.path.isfile(os.path.join(root, f"{name}.py")):
+        # 插件包是 <name>/ 文件夹：内含 <name>/<name>.py 与 <name>/sensor_config.json
+        if not os.path.isfile(os.path.join(root, name, f"{name}.py")):
             return _missing_error(t, target, name)
-        if not os.path.exists(os.path.join(root, _SENSOR_CONFIG_FILE)):
-            return _artifact_error(t, target, _SENSOR_CONFIG_FILE)
+        if not os.path.exists(os.path.join(root, name, _SENSOR_CONFIG_FILE)):
+            return _artifact_error(t, target, f"{name}/{_SENSOR_CONFIG_FILE}")
         return None
 
     if t == "agentloop":

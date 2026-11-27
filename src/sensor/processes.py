@@ -19,8 +19,6 @@ PYTHON_ENV_KEYS = (
     "PYTHONUSERBASE",
 )
 
-DOWNLOAD_BASE = "https://raw.githubusercontent.com/PurrPod/sensors/main/sensors"
-
 
 def sensor_command(script_path: str) -> list[str]:
     return ["uv", "run", script_path]
@@ -34,11 +32,6 @@ def build_sensor_env(base_env: dict, cfg: dict) -> dict:
     env.update(cfg.get("env", {}))
     env["PYTHONIOENCODING"] = "utf-8"
     return env
-
-
-def candidate_urls(repo_base: str, name: str) -> list[str]:
-    """官方仓库两种布局：sensors/<name>/<name>.py 与 sensors/<name>.py。"""
-    return [f"{repo_base}/{name}/{name}.py", f"{repo_base}/{name}.py"]
 
 
 def close_stdin(process) -> None:

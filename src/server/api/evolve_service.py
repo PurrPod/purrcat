@@ -53,12 +53,10 @@ def get_root(module_type: str) -> str:
 def body_root(module_type: str, workplace_id: str, name: str) -> str:
     """沙盒内「本体」所在目录。
 
-    skill/mcp 的本体是 workplace 下的同名子目录；sensor 的本体是 workplace
-    根目录下的单个 <name>.py（没有独立子目录），故直接返回工作区根；
-    graph 的本体是 workplace 下的同名文件夹；agentloop 的本体是 workplace
-    根目录下的单个 <name>.yaml，同样直接返回工作区根。
+    skill/mcp/sensor/graph 的本体是 workplace 下的同名子目录；agentloop 的本体是
+    workplace 根目录下的单个 <name>.yaml，故直接返回工作区根。
     """
-    if module_type in ("sensor", "agentloop"):
+    if module_type == "agentloop":
         return os.path.join(get_root(module_type), workplace_id)
     return os.path.join(get_root(module_type), workplace_id, name)
 
@@ -102,9 +100,9 @@ def reveal_workplace(module_type: str, workplace_id: str) -> dict:
 # ==========================================
 def unified_generate_diff(name: str, workplace_root: str, module_type: str) -> str:
     if module_type == "sensor":
-        # sensor 本体是单文件：正式库 <name>.py ↔ 沙盒 <name>.py
+        # sensor 插件包是 <name>/ 文件夹：正式库 <name>.py ↔ 沙盒 <name>/<name>.py
         source_dir = os.path.join(SENSOR_EXTENSION_DIR, f"{name}.py")
-        target_dir = os.path.join(workplace_root, f"{name}.py")
+        target_dir = os.path.join(workplace_root, name, f"{name}.py")
         label = "Sensor"
     elif module_type == "agentloop":
         # agentloop 本体是单文件：正式库 paradigms/<name>.yaml ↔ 沙盒 <name>.yaml
@@ -204,13 +202,14 @@ def scan_workplaces(module_type: str) -> list:
                 continue
 
             if module_type == "sensor":
-                # sensor 工厂：本体是工作区根目录下的单个 <name>.py（不是同名子目录）
+                # sensor 工厂：插件包是工作区下的 <name>/ 文件夹（内含 <name>/<name>.py）
                 item_name = "unknown"
                 for item in sorted(os.listdir(w_path)):
-                    if item.endswith(".py") and os.path.isfile(
-                        os.path.join(w_path, item)
+                    plugin_dir = os.path.join(w_path, item)
+                    if os.path.isdir(plugin_dir) and os.path.isfile(
+                        os.path.join(plugin_dir, f"{item}.py")
                     ):
-                        item_name = item[:-3]
+                        item_name = item
                         break
                 if item_name != "unknown":
                     workplaces.append(
