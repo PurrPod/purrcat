@@ -1,4 +1,4 @@
-"""KernelUpgrade 工具主入口：按 action 分发到 create / upgrade / install / merge / test"""
+"""KernelUpgrade 工具主入口：按 action 分发到 create / upgrade / merge / test"""
 
 import traceback
 
@@ -6,7 +6,6 @@ from src.tool.utils.format import error_response
 from .shared import ACTIONS, TYPES
 from .create import create_module
 from .upgrade import upgrade_module
-from .install import install_module
 from .merge import merge_module
 from .test import test_module
 
@@ -17,12 +16,11 @@ def KernelUpgrade(action: str, type: str, target: str, **kwargs) -> dict:
 
     - action="create" : 在隔离沙盒中搭建某 type 的全新骨架
     - action="upgrade": 把正式区里已存在的该 type 对象（含配置）搬进沙盒
-    - action="install": 从官方市场 / URL 安装到正式区（仅 install 的 target 可为名字或 URL）
     - action="merge"  : 代发合并审批请求（相当于原 Request 的 *_merge）
     - action="test"   : 代发架构级测试（skill/sensor 走审批队列，mcp 直接后台评测）
 
     type ∈ {skill, mcp, sensor, graph, agentloop, ui-plugin}
-    target: 一般为名字；install 时为名字 / URL / MCP 配置串
+    target: 一般为名字；merge/test 时为沙盒前缀 "uuid/名字"
     """
     try:
         act = (action or "").strip()
@@ -46,8 +44,6 @@ def KernelUpgrade(action: str, type: str, target: str, **kwargs) -> dict:
             return create_module(t, tgt)
         if act == "upgrade":
             return upgrade_module(t, tgt)
-        if act == "install":
-            return install_module(t, tgt)
         if act == "merge":
             return merge_module(t, tgt)
         return test_module(t, tgt)
