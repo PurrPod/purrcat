@@ -7,7 +7,7 @@ PurrCat 除通用的 **Skill**（技能包）与 **MCP**（外部工具服务）
 | **Sensor** | `sensor` | 感官中枢：把外部世界的事件推给 Agent，并把回复送回外部渠道 | 文件夹（`<name>.py` + `sensor_config.json`） | `~/.purrcat/sensor/` | [sensor.md](sensor.md) |
 | **Graph** | `graph` | 任务编排中枢：用节点 + 边描述多步骤工作流 | 文件夹（`graph.json` + `asset/`） | `~/.purrcat/graph/<name>/` | [graph.md](graph.md) |
 | **AgentLoop** | `agentloop` | 主循环范式：声明每轮循环在哪些阶段注入什么、检查什么 | 单个 YAML 文件 | `~/.purrcat/paradigms/` | [agentloop.md](agentloop.md) |
-| **UI Plugin** | `plugin` | 极简模式（`web-minimal`）的界面插件，以 iframe 入驻宿主各区域 | 文件夹（`plugin.json` + `index.html`） | `~/.purrcat/webmin-plugins/` | [ui-plugin.md](ui-plugin.md) |
+| **UI Plugin** | `ui-plugin` | 极简模式（`web-minimal`）的界面插件，以 iframe 入驻宿主各区域 | 文件夹（`plugin.json` + `index.html`） | `~/.purrcat/webmin-plugins/` | [ui-plugin.md](ui-plugin.md) |
 
 ## 依赖机制（`dependency`）
 
@@ -19,13 +19,13 @@ PurrCat 除通用的 **Skill**（技能包）与 **MCP**（外部工具服务）
   { "type": "agentloop", "id": "my-loop" },
   { "type": "graph",     "id": "my-graph" },
   { "type": "sensor",    "id": "my-sensor" },
-  { "type": "plugin",    "id": "my-ui-plugin" },
+  { "type": "ui-plugin",    "id": "my-ui-plugin" },
   { "type": "mcp",       "id": "my-mcp" }
 ]
 ```
 
 - 元素固定形如 `{ "type": "<类型>", "id": "<安装标识>" }`。
-- `type` 白名单：`skill` / `plugin` / `mcp` / `agentloop` / `sensor` / `graph`。
+- `type` 白名单：`skill` / `ui-plugin` / `mcp` / `agentloop` / `sensor` / `graph`。
 - 无依赖时写 `[]`。
 - `dependency` 仍保留在清单中供宿主使用；市场上传不解析它，也不会自动安装依赖。
 

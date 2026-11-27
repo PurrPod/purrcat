@@ -47,7 +47,7 @@ ROOT_TO_DIR = {
     "builtin": BUILTIN_PLUGIN_ROOT,
 }
 # dependency 允许的依赖类型：技能 / 其它 UI 插件 / MCP / AgentLoop(paradigm) / 传感器 / 图谱
-DEP_TYPES = ("skill", "plugin", "mcp", "agentloop", "sensor", "graph")
+DEP_TYPES = ("skill", "ui-plugin", "mcp", "agentloop", "sensor", "graph")
 # 后台壁纸托管目录（用户选择的本地壁纸复制进来后自此统一静态托管）
 WALLPAPER_DIR = os.path.join(PURRCAT_DIR, "webmin-wallpapers")
 # 允许托管的壁纸扩展名

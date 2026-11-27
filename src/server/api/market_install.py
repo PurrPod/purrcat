@@ -574,7 +574,7 @@ def ensure_market_dep(dep_type: str, dep_id: str, notes: list, seen: set) -> Non
                 install_graph_by_name(dep_id).get("message")
                 or f"Graph '{dep_id}' 已安装"
             )
-        elif dep_type == "plugin":
+        elif dep_type == "ui-plugin":
             notes.append(
                 install_ui_plugin_by_name(dep_id, notes, seen).get("message")
                 or f"UI 插件 '{dep_id}' 已处理"
