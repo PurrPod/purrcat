@@ -34,3 +34,21 @@ _controller = ConcurrencyController()
 def get_key_semaphore(api_key: str, max_concurrency: int = 1) -> threading.Semaphore:
     """便捷函数：获取指定 API Key 的信号量"""
     return _controller.get_semaphore(api_key, max_concurrency)
+
+
+def resolve_concurrency(model_cfg: dict | None, default: int = 1) -> int:
+    """读取模型并发上限：model.json 顶层 concurrency 优先，兼容旧的 limits.concurrency。"""
+    if not isinstance(model_cfg, dict):
+        return default
+
+    value = model_cfg.get("concurrency")
+    if value is None:
+        limits = model_cfg.get("limits")
+        if isinstance(limits, dict):
+            value = limits.get("concurrency")
+
+    try:
+        resolved = int(value)
+    except (TypeError, ValueError):
+        return default
+    return resolved if resolved > 0 else default

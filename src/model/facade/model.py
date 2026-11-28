@@ -1,5 +1,5 @@
 from src.model.core.llm_client import LLMClient
-from src.model.manager.concurrency import get_key_semaphore
+from src.model.manager.concurrency import get_key_semaphore, resolve_concurrency
 from src.model.manager.key_manager import key_manager
 from src.model.manager.usage_tracer import usage_tracer
 from src.utils.config import get_main_model_config, get_model_config
@@ -35,8 +35,7 @@ class Model:
         self.api_key = key_manager.allocate_key(valid_keys, recovered_key_prefix)
         self.key_prefix = self.api_key[:15]
 
-        limits = model_info.get("limits", {})
-        max_concurrency = limits.get("concurrency", 1)
+        max_concurrency = resolve_concurrency(model_info)
         self.semaphore = get_key_semaphore(self.api_key, max_concurrency)
 
         self._client = LLMClient(api_key=self.api_key, base_url=self.base_url)
@@ -175,8 +174,7 @@ class AgentModel(Model):
 
     def _init_client(self, model_cfg: dict):
         self.key_prefix = self.api_key[:15]
-        limits = model_cfg.get("limits", {})
-        max_concurrency = limits.get("concurrency", 1)
+        max_concurrency = resolve_concurrency(model_cfg)
         self.semaphore = get_key_semaphore(self.api_key, max_concurrency)
         self._client = LLMClient(api_key=self.api_key, base_url=self.base_url)
         log(
