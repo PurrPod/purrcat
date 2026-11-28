@@ -44,6 +44,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - **Deleted graph tasks**: a task created for a missing graph now ends in `error` instead of silently completing with no nodes; Note cards reset to `- TODO` drop their stale run record so they can be scheduled and re-dispatched again.
 - **Vector rebuild correctness**: the rebuild script no longer drops every event (`event_id` is mapped to the batch key), no longer deadlocks on the non-reentrant lock, and writes the model tag without resending `hnsw:*` index settings that Chroma refuses to modify.
+- **Web search results**: the Bing session is warmed from `cn.bing.com` so `_EDGE_S` carries `mkt=zh-CN`; warming `www.bing.com` left the global index, which collapsed multi-word Chinese queries into head-term hits (e.g. `开源 AI Agent 框架 对比` returned generic 开源 hub pages). Requests also go direct first with a system-proxy fallback, `ck/a` redirect links are decoded to real URLs, and results sharing no term with the query trigger a retry.
 
 ### Removed
 
