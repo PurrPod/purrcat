@@ -86,3 +86,49 @@ def test_session_store_delete_is_idempotent_for_missing_session(tmp_path, monkey
     SessionStore.delete_session("session_missing")
 
     assert json.loads(index_path.read_text(encoding="utf-8")) == {}
+
+
+def _make_notify_manager(history):
+    manager = object.__new__(AgentManager)
+    manager._last_saved_sig = None
+    manager._agent = SimpleNamespace(
+        get_history=lambda: history,
+        session_id="session_a",
+        window_token=1,
+        consumed_tokens=2,
+    )
+    return manager
+
+
+def test_notify_save_skips_write_when_history_unchanged(monkeypatch):
+    """切会话/启动时内容没变就不落盘，避免刷新旧会话的 updated_at 把它顶到列表最前。"""
+    calls = []
+    monkeypatch.setattr(
+        "src.agent.manager.SessionStore.save_session",
+        lambda *a, **kw: calls.append((a, kw)),
+    )
+    manager = _make_notify_manager([{"role": "user", "content": "hi"}])
+
+    manager._notify_save()
+    manager._notify_save()
+
+    assert len(calls) == 1
+
+
+def test_notify_save_writes_again_after_history_changes(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        "src.agent.manager.SessionStore.save_session",
+        lambda *a, **kw: calls.append((a, kw)),
+    )
+    history = [{"role": "user", "content": "hi"}]
+    manager = _make_notify_manager(history)
+
+    manager._notify_save()
+    history.append({"role": "assistant", "content": "ok"})
+    manager._notify_save()
+    # 长度不变但最后一条内容变化（流式覆盖）同样要落盘
+    history[-1]["content"] = "ok!"
+    manager._notify_save()
+
+    assert len(calls) == 3

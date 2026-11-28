@@ -1,9 +1,26 @@
 import os
+import hashlib
 import threading
 import time
 
 from src.agent.agent import Agent
 from src.agent.session_store import SessionStore
+
+
+def _history_sig(history) -> tuple:
+    """轻量历史签名：只比对长度与最后一条消息，用于跳过无变化的落盘。"""
+    if not history:
+        return (0, "")
+    last = history[-1] or {}
+    payload = "\x1f".join(
+        [
+            str(last.get("role") or ""),
+            str(last.get("tool_call_id") or ""),
+            str(len(last.get("tool_calls") or [])),
+            str(last.get("content") or ""),
+        ]
+    )
+    return (len(history), hashlib.sha1(payload.encode("utf-8", "ignore")).hexdigest())
 
 
 class AgentManager:
@@ -16,6 +33,7 @@ class AgentManager:
                 cls._instance = super(AgentManager, cls).__new__(cls)
                 cls._instance._agent = None
                 cls._instance._sensor_thread = None
+                cls._instance._last_saved_sig = None
         return cls._instance
 
     # ==========================================
@@ -125,6 +143,7 @@ class AgentManager:
             self._agent.consumed_tokens = consumed_tokens
             if draft is not None:
                 self._agent._prompt_pending = bool(draft) and not history
+            self._last_saved_sig = _history_sig(history)
 
     # ==========================================
     # 2. 交互与通信 (Interaction)
@@ -410,12 +429,17 @@ class AgentManager:
     def _notify_save(self):
         if self._agent:
             safe_history = self._agent.get_history()
+            sig = _history_sig(safe_history)
+            # 内容没变时不再落盘：避免切会话/启动时刷新 updated_at，把旧会话顶到列表最前面
+            if sig == self._last_saved_sig:
+                return
             SessionStore.save_session(
                 self._agent.session_id,
                 safe_history,
                 window_token=self._agent.window_token,
                 consumed_tokens=self._agent.consumed_tokens,
             )
+            self._last_saved_sig = sig
 
 
 # 全局单例和兼容形式导出
