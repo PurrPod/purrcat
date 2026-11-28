@@ -179,4 +179,3 @@ def test_brainstorm_deliverable_permission_maps_sandbox_path(monkeypatch):
     assert os.path.normcase(seen["path"]) == os.path.normcase(
         os.path.join(AGENT_VM_DIR, "out", "probe.txt")
     )
-
