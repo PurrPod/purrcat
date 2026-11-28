@@ -100,7 +100,7 @@ class MCPSessionManager:
                 "fingerprint": _config_fingerprint(config),
             }
             ready_event.set()
-            print(f"✅ 连接到 {server_name} MCP服务器")
+            print(f"连接到 {server_name} MCP服务器")
             await close_event.wait()
 
     async def _server_lifecycle_task(
@@ -114,7 +114,7 @@ class MCPSessionManager:
 
         except Exception as e:
             ready_event.set()
-            print(f"⚠️ [MCP 异常] Server '{server_name}' 运行异常或断开连接: {e}")
+            print(f"[MCP 异常] Server '{server_name}' 运行异常或断开连接: {e}")
         finally:
             if server_name in self.sessions:
                 del self.sessions[server_name]
@@ -145,12 +145,12 @@ class MCPSessionManager:
     ):
         raw_command = config.get("command", "")
         if not raw_command:
-            print(f"⚠️ [MCP 异常] Server '{server_name}' 配置缺失 command 或 url")
+            print(f"[MCP 异常] Server '{server_name}' 配置缺失 command 或 url")
             ready_event.set()
             return
 
-        # 【核心修复】：安全处理 env，防止值为 null/None 导致 {**os.environ, **None} 崩溃
-        # 🌟 合并注册表最新 PATH：用户中途安装 node/npx 后无需重启程序即可连上 MCP
+        # 核心修复：安全处理 env，防止值为 null/None 导致 {**os.environ, **None} 崩溃
+        # 合并注册表最新 PATH：用户中途安装 node/npx 后无需重启程序即可连上 MCP
         custom_env = config.get("env")
         if not isinstance(custom_env, dict):
             custom_env = {}
@@ -217,7 +217,7 @@ class MCPSessionManager:
         async with lock:
             if server_name in self.sessions:
                 ctx = self.sessions[server_name]
-                # 指纹一致 → 复用长连接
+                # 指纹一致复用长连接
                 if ctx.get("fingerprint") == _config_fingerprint(config):
                     ctx["last_active"] = time.time()
                     return ctx["session"]
@@ -225,7 +225,7 @@ class MCPSessionManager:
                 # 配置已变化（如用户补填了 env / 修改了启动命令）：
                 # env 在子进程 spawn 时固化，必须重启进程才能生效
                 print(
-                    f"🔄 [MCP] '{server_name}' 启动配置已变化，正在重启子进程以应用新配置…"
+                    f"[MCP] '{server_name}' 启动配置已变化，正在重启子进程以应用新配置…"
                 )
                 await self._close_session(server_name)
                 old_task = self.lifecycle_tasks.get(server_name)

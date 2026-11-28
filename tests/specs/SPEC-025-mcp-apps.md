@@ -22,7 +22,7 @@ PurrCat 的 MCP 网关只支持 stdio 传输，且丢弃 `tools/list` 返回的 
 - [ ] AC-6：`POST /api/mcp/apps/{id}/call` 只允许调用该 App 所属 server 的工具。
 - [ ] AC-7：`GET /api/config/mcp/tools` 按 server 分组返回 schema 缓存中的工具，跳过缺 server/工具名的条目。
 - [ ] AC-8：设置中心 MCP 标签可直接新增 stdio / http 服务器，并在卡片上展示该服务器暴露的工具。
-- [ ] AC-9：没有 UI 资源的工具若返回 `structuredContent`（或正文是整段 JSON），按 `tool_call_id` 落盘并在历史消息上附加 `mcp_data`，供宿主兜底渲染。
+- [ ] AC-9：没有 UI 资源的工具若在协议里返回 `structuredContent`，按 `tool_call_id` 落盘并在历史消息上附加 `mcp_data`，供宿主兜底渲染；普通 JSON 文本不算结构化结果。
 
 ## 非目标
 

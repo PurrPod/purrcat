@@ -154,11 +154,3 @@ def test_save_result_roundtrip_and_attach_data(tmp_path, monkeypatch):
     assert "mcp_app" not in out[0]
     assert out[0]["mcp_data"] == data
     assert "mcp_data" not in messages[0]
-
-
-def test_extract_json_text_only_accepts_whole_json():
-    assert mcp_apps.extract_json_text('{"a": 1}') == {"a": 1}
-    assert mcp_apps.extract_json_text("  [1, 2]  ") == [1, 2]
-    assert mcp_apps.extract_json_text('结果如下 {"a": 1}') is None
-    assert mcp_apps.extract_json_text("plain") is None
-    assert mcp_apps.extract_json_text(None) is None

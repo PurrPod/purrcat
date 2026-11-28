@@ -69,7 +69,7 @@ async def _invoke_tool_async(
 
     try:
         session = await mcp_manager.get_session(server_name, config)
-        # ⏱️ callmcp 已改为进程内执行以维持 MCP 长连接（不能靠杀子进程防卡死），
+        # callmcp 已改为进程内执行以维持 MCP 长连接（不能靠杀子进程防卡死），
         # 用 wait_for 超时兜底；超时会走下方异常分支清理并重建会话
         call_timeout = config.get("call_timeout", 300)
         result = await asyncio.wait_for(
@@ -102,9 +102,9 @@ async def _invoke_tool_async(
                     with open(file_path, "wb") as f:
                         f.write(raw_data)
 
-                    output.append(f"🖼️ [截图/图片已生成并保存至宿主机]: {file_path}")
+                    output.append(f"[截图/图片已生成并保存至宿主机]: {file_path}")
                 except Exception as e:
-                    output.append(f"❌ [{content.type} 类型解析失败: {str(e)}]")
+                    output.append(f"[{content.type} 类型解析失败: {str(e)}]")
             else:
                 output.append(
                     f"[{content.type} 类型内容]: {str(getattr(content, '__dict__', content))}"
@@ -128,15 +128,11 @@ async def _invoke_tool_async(
                         html,
                     )
             except Exception as e:
-                print(f"⚠️ [MCP App] 读取 UI 资源失败 {resource_uri}: {e}")
+                print(f"[MCP App] 读取 UI 资源失败 {resource_uri}: {e}")
 
         if not app_saved and mcp_apps.is_legal_app_id(tool_call_id):
+            # 只认协议显式返回的 structuredContent；纯 JSON 文本是普通结果，避免被误当 UI 数据
             structured = getattr(result, "structuredContent", None)
-            if structured is None:
-                texts = [c.text for c in result.content if c.type == "text"]
-                structured = (
-                    mcp_apps.extract_json_text(texts[0]) if len(texts) == 1 else None
-                )
             if structured is not None:
                 mcp_apps.save_result(
                     tool_call_id,
@@ -152,7 +148,7 @@ async def _invoke_tool_async(
     except RuntimeError as re:
         raise re
     except Exception as e:
-        print(f"⚠️ [MCP 异常] 检测到进程崩溃或连接断开: {e}，正在强制清理缓存池...")
+        print(f"[MCP 异常] 检测到进程崩溃或连接断开: {e}，正在强制清理缓存池...")
         await mcp_manager._close_session(server_name)
         raise ServerConnectionError(server_name, str(e))
 
@@ -187,7 +183,7 @@ async def _list_tools_async(server_name: str = None) -> List[Dict]:
                     }
                 )
         except Exception as e:
-            print(f"❌ [MCP] 获取 {name} 工具列表失败: {e}")
+            print(f"[MCP] 获取 {name} 工具列表失败: {e}")
 
     return tools_index
 

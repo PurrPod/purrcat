@@ -117,19 +117,6 @@ def load_result(app_id: str) -> dict | None:
         return None
 
 
-def extract_json_text(text) -> object | None:
-    """整段文本就是一个 JSON 对象/数组时返回解析结果，否则 None。"""
-    if not isinstance(text, str):
-        return None
-    stripped = text.strip()
-    if len(stripped) < 2 or stripped[0] not in "{[" or stripped[-1] not in "}]":
-        return None
-    try:
-        return json.loads(stripped)
-    except Exception:
-        return None
-
-
 def attach_history_apps(messages: list[dict]) -> list[dict]:
     """给有旁路文件的 tool 消息附加 `mcp_app` / `mcp_data`，返回新列表（不改入参）。"""
     out = []
