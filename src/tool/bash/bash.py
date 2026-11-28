@@ -19,6 +19,7 @@ def Bash(command: str, timeout: int = 30, session_id: str = "default", **kwarg) 
     Args:
         command: 要执行的 Shell 命令（支持连串命令和多行文本，请注意正确的引号转义）
         timeout: 命令执行的超时时间（秒），默认 30 秒
+        snip: 命令用途的一句话说明（仅用于前端展示，不参与执行）
         session_id: 会话 ID（由系统注入，模型无需关注）
     Returns:
         格式化后的 JSON 字符串，包含 timestamp, type, content, snip 字段

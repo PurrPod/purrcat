@@ -10,6 +10,10 @@ BASH_TOOL_SCHEMA = {
                     "type": "string",
                     "description": "要执行的 Shell 命令（支持连串命令和多行文本，请注意正确的引号转义）",
                 },
+                "snip": {
+                    "type": "string",
+                    "description": "用一句简短中文说明这条命令的用途（例如「运行 TypeScript 类型检查」），供前端展示；请始终填写，不要复述命令本身",
+                },
                 "timeout": {
                     "type": "integer",
                     "description": "命令执行的超时时间（秒），如果不确定请不要传，默认 30 秒；长耗时任务（测试、构建、网络下载）请显式传入更大值或用 nohup 放后台",
