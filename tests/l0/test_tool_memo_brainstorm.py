@@ -158,3 +158,25 @@ def test_build_tool_reply_is_openai_tool_message():
         "name": "BrainStorm",
         "content": "内容",
     }
+
+
+def test_brainstorm_deliverable_permission_maps_sandbox_path(monkeypatch):
+    """deliverable 的 /agent_vm 路径必须先映射成宿主机路径再判写权限。"""
+    import os
+
+    from src.tool.brainstorm import brainstorm
+    from src.utils.config import AGENT_VM_DIR
+
+    seen = {}
+
+    def fake_can_write(path):
+        seen["path"] = path
+        return True
+
+    monkeypatch.setattr(brainstorm, "can_write", fake_can_write)
+
+    assert brainstorm._has_write_permission("/agent_vm/out/probe.txt")
+    assert os.path.normcase(seen["path"]) == os.path.normcase(
+        os.path.join(AGENT_VM_DIR, "out", "probe.txt")
+    )
+

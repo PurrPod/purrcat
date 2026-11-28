@@ -1,5 +1,6 @@
 import asyncio
 from src.tool.filesystem.utils import can_write
+from src.utils.path import convert_sandbox_path
 from src.tool.brainstorm._shared import (
     build_create_message,
     build_tool_reply,
@@ -18,7 +19,8 @@ from src.agent.sub_runner import (
 
 
 def _has_write_permission(target_path: str) -> bool:
-    return can_write(target_path)
+    # deliverable 是 Agent 视角路径（/agent_vm/...），权限判定必须用宿主机真实路径
+    return can_write(convert_sandbox_path(target_path))
 
 
 def BrainStorm(
