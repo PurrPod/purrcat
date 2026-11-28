@@ -118,6 +118,13 @@
   var ICON_TERM = SVG_HEAD + '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3"/><path d="M13 15h4"/></svg>';
   var ICON_GENERIC = SVG_HEAD + '<rect x="3" y="3" width="18" height="18" rx="3"/><path d="M8 12h8"/><path d="M12 8v8"/></svg>';
   var ICON_ASK = SVG_HEAD + '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
+  var ICON_GLOBE = SVG_HEAD + '<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>';
+  var ICON_PLUG = SVG_HEAD + '<path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"/></svg>';
+  var ICON_SPARK = SVG_HEAD + '<path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3z"/>';
+  var ICON_SENSOR = SVG_HEAD + '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>';
+  var ICON_GRAPH = SVG_HEAD + '<rect x="16" y="16" width="6" height="6" rx="1"/><rect x="2" y="16" width="6" height="6" rx="1"/><rect x="9" y="2" width="6" height="6" rx="1"/><path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3"/><path d="M12 12V8"/>';
+  var ICON_LOOP = SVG_HEAD + '<path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/>';
+  var ICON_UI = SVG_HEAD + '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/>';
   function fallbackCopy(text) {
     var ta = document.createElement('textarea');
     ta.value = String(text == null ? '' : text);
@@ -841,10 +848,6 @@
     var s = String(p || '').replace(/\\/g, '/');
     return s.split('/').filter(Boolean).pop() || s;
   }
-  // 去掉结果摘要前面的状态 emoji，只留可读文案（图标由前端统一渲染）
-  function plainSnip(s) {
-    return String(s || '').replace(/^[^\u4e00-\u9fa5A-Za-z0-9]+/, '').trim();
-  }
   function countLines(s) { return s ? String(s).split('\n').length : 0; }
   function firstLine(s) { return String(s || '').split('\n')[0].trim(); }
   function normName(n) { return String(n || '').replace(/[^a-z]/gi, '').toLowerCase(); }
@@ -857,10 +860,10 @@
       + (FILE_GLYPHS[g] || FILE_GLYPHS.file) + '</span>';
   }
   // 文件名蓝链：复用消息里的文件预览委托（data-fpath → openPreview）。不带 href，避免 iframe 跳走
-  function fileLink(path) {
+  function fileLink(path, label) {
     var p = String(path || '');
     return '<a class="filelink" data-fpath="' + esc(p) + '" title="' + esc(p) + '">'
-      + esc(baseName(p) || '文件') + '</a>';
+      + esc(label || baseName(p) || '文件') + '</a>';
   }
 
   function toolNameOf(tc) {
@@ -876,9 +879,9 @@
     }
     return {};
   }
-  // 工具结果里 content / metadata.snip / metadata.type 的拆分（与后端 text_response 一致）
+  // 工具结果里 content / metadata.type 的拆分（与后端 text_response 一致）
   function resultInfo(row) {
-    var text = '', snip = '', type = '';
+    var text = '', type = '';
     var c = row && row.content;
     var o = null;
     if (typeof c === 'string') {
@@ -890,11 +893,10 @@
       text = typeof o.content === 'string' ? o.content : extractFrom(o);
       var md = o.metadata;
       if (md && typeof md === 'object') {
-        snip = typeof md.snip === 'string' ? md.snip : '';
         type = typeof md.type === 'string' ? md.type : '';
       }
     }
-    return { text: text || '', snip: snip, type: type };
+    return { text: text || '', type: type };
   }
 
   // ---- 时间：用户事件 time 为 MM-DD HH:MM:SS，按当前年份推断 ----
@@ -962,7 +964,7 @@
 
   // ---- 统计摘要：把一组步骤压成一行可读文字，并按工具构成选择图标 ----
   function traceCounts(steps) {
-    var c = { created: 0, edited: 0, read: 0, listed: 0, searched: 0, globbed: 0, modified: 0, commands: 0, asked: 0, fetched: 0, memoAdd: 0, memoSearch: 0, memoOther: 0, plans: 0, planOps: 0, images: 0, subtasks: 0, taskOps: 0, other: 0, think: 0 };
+    var c = { created: 0, edited: 0, read: 0, listed: 0, searched: 0, globbed: 0, modified: 0, commands: 0, asked: 0, fetched: 0, memoAdd: 0, memoSearch: 0, memoOther: 0, plans: 0, planOps: 0, images: 0, subtasks: 0, taskOps: 0, kernel: 0, mcpCalls: 0, other: 0, think: 0 };
     steps.forEach(function (st) {
       if (st.kind === 'ref' || st.kind === 'reply') return;
       if (st.kind === 'think') { c.think++; return; }
@@ -995,7 +997,9 @@
         if (ta === 'vision') c.images += (Array.isArray(st.args.attachment_paths) ? st.args.attachment_paths.length : 0) || 1;
         else if (ta === 'add') c.subtasks++;
         else c.taskOps++;
-      } else c.other++;
+      } else if (n === 'kernelupgrade') c.kernel++;
+      else if (n === 'callmcp') c.mcpCalls++;
+      else c.other++;
     });
     return c;
   }
@@ -1020,6 +1024,8 @@
     if (c.subtasks) parts.push('派发 ' + c.subtasks + ' 个子任务');
     if (c.taskOps) parts.push('任务操作 ' + c.taskOps + ' 次');
     if (c.asked) parts.push(c.asked > 1 ? '对用户提问 ' + c.asked + ' 次' : '对用户提问');
+    if (c.kernel) parts.push('进化 ' + c.kernel + ' 次');
+    if (c.mcpCalls) parts.push('调用 MCP 工具 ' + c.mcpCalls + ' 次');
     if (c.other) parts.push('调用 ' + c.other + ' 次工具');
     if (!parts.length) parts.push('思考过程');
     return parts.join('，');
@@ -1034,6 +1040,8 @@
     if (c.images) return ICON_IMAGE;
     if (c.plans || c.planOps || c.subtasks || c.taskOps) return ICON_BRANCH;
     if (c.memoAdd || c.memoSearch || c.memoOther) return ICON_BOOK;
+    if (c.kernel) return ICON_SPARK;
+    if (c.mcpCalls) return ICON_PLUG;
     if (c.think) return ICON_BRAIN;
     return ICON_TOOL;
   }
@@ -1114,46 +1122,157 @@
     return wrap;
   }
 
-  function renderFileOpStep(st) {
+  function renderFileOpStep(st, key) {
     var labels = { move: '移动', copy: '复制', delete: '删除', undo: '回滚' };
     var act = String(st.args.action || '').toLowerCase();
     var path = st.args.path || st.args.destination || '';
     var info = st.result ? resultInfo(st.result) : null;
     var label = (info && info.type === 'error') ? (labels[act] || '修改') + '失败' : '已' + (labels[act] || '修改') + ' 1 个文件';
-    var el = document.createElement('div');
-    el.className = 'step';
-    el.innerHTML = '<span class="s-ico">' + ICON_PENCIL + '</span><span class="s-main">' + esc(label) + '</span>';
+    var wrap = document.createElement('div');
+    wrap.className = 'cmd-step' + (openMap[key] ? ' open' : '');
+    var head = document.createElement('button');
+    head.type = 'button'; head.className = 'step-head';
+    head.innerHTML = '<span class="s-ico">' + ICON_PENCIL + '</span><span class="s-main">' + esc(label)
+      + '</span>' + (path ? '<span class="s-chev">›</span>' : '');
+    wrap.appendChild(head);
     if (path) {
-      var files = document.createElement('div');
-      files.className = 'step-files';
-      files.innerHTML = '<div class="step-file">' + fileBadge(path) + fileLink(path) + '</div>';
-      var frag = document.createDocumentFragment();
-      frag.appendChild(el); frag.appendChild(files);
-      return frag;
+      var panel = document.createElement('div');
+      panel.className = 'file-panel';
+      panel.innerHTML = '<div class="step-files"><div class="step-file">' + fileBadge(path) + fileLink(path) + '</div></div>';
+      wrap.appendChild(panel);
+      head.addEventListener('click', function () {
+        var open = !wrap.classList.contains('open');
+        wrap.classList.toggle('open', open);
+        openMap[key] = open;
+      });
     }
-    return el;
+    return wrap;
   }
 
-  function renderSearchStep(st) {
-    var info = st.result ? resultInfo(st.result) : null;
-    var label = !info ? '搜索文件' : (info.type === 'error' ? '搜索失败' : (plainSnip(info.snip) || '搜索文件'));
-    var pat = st.args.pattern || '';
-    var el = document.createElement('div');
-    el.className = 'step';
-    el.innerHTML = '<span class="s-ico">' + ICON_SEARCH + '</span><span class="s-main">' + esc(label)
-      + (pat ? ' <span class="s-mono s-dim">' + esc(pat) + '</span>' : '') + '</span>';
-    return el;
+  // 搜索结果正文的目录行：`在目录 <dir> 中搜索正则/匹配模式`
+  function searchDirOf(text) {
+    var m = /在目录 (.+?) 中(?:搜索正则|匹配模式)/.exec(String(text || ''));
+    return m ? m[1] : '';
+  }
+  // rel 是相对目录的路径：拼成可直接预览的绝对路径
+  function joinPath(dir, rel) {
+    var r = String(rel || '');
+    if (!dir || /^[A-Za-z]:[\\/]/.test(r) || r.charAt(0) === '/') return r;
+    return String(dir).replace(/[\\/]+$/, '') + '/' + r.replace(/^[\\/]+/, '');
   }
 
-  function renderGlobStep(st) {
+  function renderSearchStep(st, key) {
     var info = st.result ? resultInfo(st.result) : null;
-    var label = !info ? '匹配文件' : (info.type === 'error' ? '匹配失败' : (plainSnip(info.snip) || '匹配文件'));
+    var label = info && info.type === 'error' ? '搜索失败' : '搜索文件';
     var pat = st.args.pattern || '';
-    var el = document.createElement('div');
-    el.className = 'step';
-    el.innerHTML = '<span class="s-ico">' + ICON_SEARCH + '</span><span class="s-main">' + esc(label)
-      + (pat ? ' <span class="s-mono s-dim">' + esc(pat) + '</span>' : '') + '</span>';
-    return el;
+    if (!info || info.type === 'error' || !String(info.text || '').trim()) {
+      var el = document.createElement('div');
+      el.className = 'step';
+      el.innerHTML = '<span class="s-ico">' + ICON_SEARCH + '</span><span class="s-main">' + esc(label)
+        + (pat ? ' <span class="s-mono s-dim">' + esc(pat) + '</span>' : '') + '</span>';
+      return el;
+    }
+    // 点开看命中的文件与行（正文即 `相对路径:行号:内容`）
+    return detailStep(st, key, ICON_SEARCH, label, pat, info.text);
+  }
+
+  function renderGlobStep(st, key) {
+    var info = st.result ? resultInfo(st.result) : null;
+    var failed = !!info && info.type === 'error';
+    var label = failed ? '匹配失败' : '匹配文件';
+    var pat = st.args.pattern || '';
+    var dir = searchDirOf(info && info.text);
+    var files = [];
+    if (info && !failed) {
+      var started = false;
+      String(info.text || '').split(/\r?\n/).forEach(function (ln) {
+        var s = ln.trim();
+        if (!started) { if (/^找到文件/.test(s)) started = true; return; }
+        if (!s || s.indexOf('...') === 0) return;
+        files.push(s);
+      });
+    }
+    if (!files.length) {
+      var el = document.createElement('div');
+      el.className = 'step';
+      el.innerHTML = '<span class="s-ico">' + ICON_SEARCH + '</span><span class="s-main">' + esc(label)
+        + (pat ? ' <span class="s-mono s-dim">' + esc(pat) + '</span>' : '') + '</span>';
+      return el;
+    }
+    var wrap = document.createElement('div');
+    wrap.className = 'cmd-step' + (openMap[key] ? ' open' : '');
+    wrap.setAttribute('data-fk', key);
+    var headLabel = '匹配文件 ' + files.length + ' 个';
+    var head = document.createElement('button');
+    head.type = 'button'; head.className = 'step-head';
+    head.innerHTML = '<span class="s-ico">' + ICON_SEARCH + '</span><span class="s-main">' + esc(headLabel)
+      + (pat ? ' <span class="s-mono s-dim">' + esc(pat) + '</span>' : '') + '</span><span class="s-chev">›</span>';
+    var panel = document.createElement('div');
+    panel.className = 'file-panel';
+    panel.innerHTML = '<div class="step-files">' + files.map(function (rel) {
+      var full = joinPath(dir, rel);
+      return '<div class="step-file">' + fileBadge(full) + fileLink(full, rel) + '</div>';
+    }).join('') + '</div>';
+    head.addEventListener('click', function () {
+      var open = !wrap.classList.contains('open');
+      wrap.classList.toggle('open', open);
+      openMap[key] = open;
+    });
+    wrap.appendChild(head); wrap.appendChild(panel);
+    return wrap;
+  }
+
+  // 联网搜索结果：后端返回结构化 JSON，渲染成链接卡片
+  function parseWebResults(text) {
+    try {
+      var o = JSON.parse(String(text || ''));
+      if (o && Array.isArray(o.results)) return o;
+    } catch (e) {}
+    return null;
+  }
+  function webHost(u) {
+    try { return new URL(u).host; } catch (e) { return ''; }
+  }
+  function renderWebSearchStep(st, key) {
+    var info = st.result ? resultInfo(st.result) : null;
+    var failed = !!info && info.type === 'error';
+    var label = failed ? '联网搜索失败' : '联网搜索';
+    var query = String(st.args.query || '');
+    var data = !failed && info ? parseWebResults(info.text) : null;
+    var results = data ? data.results : [];
+    if (!results.length) {
+      return detailStep(st, key, ICON_GLOBE, label, query, info ? info.text : '');
+    }
+    var wrap = document.createElement('div');
+    wrap.className = 'cmd-step' + (openMap[key] ? ' open' : '');
+    wrap.setAttribute('data-fk', key);
+    var head = document.createElement('button');
+    head.type = 'button'; head.className = 'step-head';
+    head.innerHTML = '<span class="s-ico">' + ICON_GLOBE + '</span><span class="s-main">' + esc(label)
+      + (query ? ' <span class="s-mono s-dim">' + esc(query) + '</span>' : '')
+      + '</span><span class="s-count s-dim">' + results.length + ' 条</span><span class="s-chev">›</span>';
+    var panel = document.createElement('div');
+    panel.className = 'web-panel';
+    panel.innerHTML = results.map(function (r) {
+      var url = String(r.url || '');
+      var host = webHost(url);
+      var title = String(r.title || host || '未命名结果');
+      var snippet = String(r.snippet || '').trim();
+      var href = /^https?:/i.test(url)
+        ? ' href="' + esc(url) + '" target="_blank" rel="noopener noreferrer"' : '';
+      return '<div class="web-result">'
+        + '<a class="web-title"' + href + '>' + esc(title) + '</a>'
+        + (host ? '<span class="web-host">' + esc(host) + '</span>' : '')
+        + (snippet ? '<div class="web-snippet">' + esc(snippet) + '</div>' : '')
+        + '</div>';
+    }).join('');
+    head.addEventListener('click', function () {
+      var open = !wrap.classList.contains('open');
+      wrap.classList.toggle('open', open);
+      openMap[key] = open;
+    });
+    wrap.appendChild(head); wrap.appendChild(panel);
+    return wrap;
   }
 
   function renderBashStep(st, key) {
@@ -1200,38 +1319,76 @@
   }
 
   function renderAskStep(st) {
-    var info = st.result ? resultInfo(st.result) : null;
-    var snip = info ? plainSnip(info.snip) : '';
     var el = document.createElement('div');
     el.className = 'step';
-    el.innerHTML = '<span class="s-ico">' + ICON_ASK + '</span><span class="s-main">对用户提问'
-      + (snip ? ' <span class="s-dim">' + esc(snip) + '</span>' : '') + '</span>';
+    el.innerHTML = '<span class="s-ico">' + ICON_ASK + '</span><span class="s-main">对用户提问</span>';
     return el;
   }
 
-  function renderFetchStep(st) {
-    var url = st.args.url || st.args.path || st.args.query || '';
-    var el = document.createElement('div');
-    el.className = 'step';
-    el.innerHTML = '<span class="s-ico">' + ICON_SEARCH + '</span><span class="s-main">检索资料'
-      + (url ? ' <span class="s-mono s-dim">' + esc(String(url).slice(0, 120)) + '</span>' : '') + '</span>';
-    return el;
+  // 联网搜索 / 资料获取：可展开查看结果正文；web 路由用地球图标
+  function renderFetchStep(st, key) {
+    var n = normName(st.name);
+    var a = st.args || {};
+    var route = String(a.route || a.source || '').toLowerCase();
+    var isWeb = route === 'web';
+    var label;
+    if (n === 'fetch') {
+      label = isWeb ? '读取网页' : (route === 'skill' ? '获取技能' : (route === 'mcp' ? '获取工具' : '获取资料'));
+    } else {
+      label = isWeb ? '联网搜索' : '检索能力';
+    }
+    var detail = a.query || a.url || a.name || a.tool_name || '';
+    var info = st.result ? resultInfo(st.result) : null;
+    return detailStep(st, key, isWeb ? ICON_GLOBE : ICON_SEARCH, label, detail, info ? info.text : '');
+  }
+
+  // KernelUpgrade：按 type 换图标与文案，展开看沙盒目标与执行结果
+  var KERNEL_TYPES = {
+    skill: { icon: ICON_SPARK, label: '技能' },
+    mcp: { icon: ICON_PLUG, label: 'MCP' },
+    sensor: { icon: ICON_SENSOR, label: '传感器' },
+    graph: { icon: ICON_GRAPH, label: '任务图' },
+    agentloop: { icon: ICON_LOOP, label: 'AgentLoop' },
+    'ui-plugin': { icon: ICON_UI, label: 'UI 插件' }
+  };
+  var KERNEL_ACTIONS = { create: '创建', upgrade: '升级', merge: '合并', test: '测试' };
+  function renderKernelStep(st, key) {
+    var a = st.args || {};
+    var type = String(a.type || '').toLowerCase();
+    var meta = KERNEL_TYPES[type] || { icon: ICON_TOOL, label: type || '对象' };
+    var action = String(a.action || '').toLowerCase();
+    var verb = KERNEL_ACTIONS[action] || '操作';
+    var label = verb + meta.label + (action === 'create' || action === 'upgrade' ? '沙盒' : '');
+    var info = st.result ? resultInfo(st.result) : null;
+    return detailStep(st, key, meta.icon, label, String(a.target || ''), info ? info.text : '');
+  }
+
+  // CallMCP：不暴露工具名，展示为「调用 xxx 工具」，展开看参数与结果
+  function renderMcpStep(st, key) {
+    var a = st.args || {};
+    var tool = String(a.tool_name || a.tool || '');
+    var server = String(a.server_name || a.server || '');
+    var label = tool ? '调用 ' + tool + ' 工具' : '调用 MCP 工具';
+    var info = st.result ? resultInfo(st.result) : null;
+    var text = '';
+    if (a.arguments && typeof a.arguments === 'object') {
+      try { text += '参数\n' + JSON.stringify(a.arguments, null, 2) + '\n\n'; } catch (e) {}
+    }
+    text += info ? info.text : '';
+    return detailStep(st, key, ICON_PLUG, label, server, text);
   }
 
   function renderGenericStep(st) {
-    var info = st.result ? resultInfo(st.result) : null;
     var label = st.name || '工具';
-    var snip = info ? plainSnip(info.snip) : '';
     var el = document.createElement('div');
     el.className = 'step';
-    el.innerHTML = '<span class="s-ico">' + ICON_GENERIC + '</span><span class="s-main">' + esc(label)
-      + (snip ? ' <span class="s-dim">' + esc(snip) + '</span>' : '') + '</span>';
+    el.innerHTML = '<span class="s-ico">' + ICON_GENERIC + '</span><span class="s-main">' + esc(label) + '</span>';
     return el;
   }
 
   function renderResultStep(st) {
     var info = resultInfo(st.row);
-    var label = plainSnip(info.snip) || '工具结果';
+    var label = info.type === 'error' ? '工具结果错误' : '工具结果';
     var el = document.createElement('div');
     el.className = 'step';
     el.innerHTML = '<span class="s-ico">' + ICON_GENERIC + '</span><span class="s-main">' + esc(label) + '</span>';
@@ -1391,33 +1548,81 @@
     if (n === 'filesystem') {
       if (act === 'edit') return renderFileChange(st, false, key);
       if (act === 'write') return renderFileChange(st, true, key);
-      if (act === 'search') return renderSearchStep(st);
-      if (act === 'glob') return renderGlobStep(st);
+      if (act === 'search') return renderSearchStep(st, key);
+      if (act === 'glob') return renderGlobStep(st, key);
       if (act === 'read') return renderReadStep(st);
       if (act === 'list') return renderListStep(st);
-      if (act === 'move' || act === 'copy' || act === 'delete' || act === 'undo') return renderFileOpStep(st);
+      if (act === 'move' || act === 'copy' || act === 'delete' || act === 'undo') return renderFileOpStep(st, key);
     }
     if (n === 'bash') return renderBashStep(st, key);
     if (n === 'memo') return renderMemoStep(st, key);
     if (n === 'task') return renderTaskStep(st, key);
     if (n === 'brainstorm') return renderPlanStep(st, key);
     if (n === 'request') return renderAskStep(st);
-    if (n === 'fetch' || n === 'search') return renderFetchStep(st);
+    if (n === 'kernelupgrade') return renderKernelStep(st, key);
+    if (n === 'callmcp') return renderMcpStep(st, key);
+    if (n === 'search') {
+      if (String(st.args.route || '').toLowerCase() === 'web') return renderWebSearchStep(st, key);
+      return renderFetchStep(st, key);
+    }
+    if (n === 'fetch') return renderFetchStep(st, key);
     return renderGenericStep(st);
   }
 
-  // ---- 回合耗时：相邻两次用户输入的墙钟差 ----
+  // mcp_data 卡片去重：单字段结构化结果、且工具文本里已包含同一值时，不再重复渲染卡片
+  function mcpDataDuplicatesText(row) {
+    var data = row && row.mcp_data;
+    if (!data || data.structuredContent === undefined) return false;
+    var sc = data.structuredContent;
+    if (!sc || typeof sc !== 'object' || Array.isArray(sc)) return false;
+    var keys = Object.keys(sc);
+    if (keys.length !== 1) return false;
+    var val = sc[keys[0]];
+    if (val && typeof val === 'object') return false;
+    var text = resultInfo(row).text;
+    var s = String(val == null ? '' : val);
+    return !!text && !!s && text.indexOf(s) >= 0;
+  }
+
+  // ---- 回合耗时：完成时刻（本地缓存）优先，其次用下一条用户输入的墙钟差 ----
+  var TURN_END_KEY = 'purrcat.history.turnEnds';
+  function loadTurnEnds() {
+    try {
+      var o = JSON.parse(localStorage.getItem(TURN_END_KEY) || '{}');
+      return (o && typeof o === 'object') ? o : {};
+    } catch (e) { return {}; }
+  }
+  function rememberTurnEnd(sid, userTime, endedAt) {
+    if (!sid || !userTime || !endedAt) return;
+    var all = loadTurnEnds();
+    all[sid + '|' + userTime] = endedAt;
+    var keys = Object.keys(all);
+    if (keys.length > 1500) {
+      keys.sort(function (a, b) { return all[a] - all[b]; });
+      keys.slice(0, keys.length - 1500).forEach(function (k) { delete all[k]; });
+    }
+    try { localStorage.setItem(TURN_END_KEY, JSON.stringify(all)); } catch (e) {}
+  }
+  function storedTurnEnd(sid, userTime) {
+    if (!sid || !userTime) return 0;
+    var v = loadTurnEnds()[sid + '|' + userTime];
+    return typeof v === 'number' ? v : 0;
+  }
+
   function elapsedLabel(turn, opts) {
-    if (turn.userTime && opts.nextTime) {
-      var a = parseStamp(turn.userTime), b = parseStamp(opts.nextTime);
-      if (a && b) return '任务耗时 ' + fmtElapsed(b - a);
+    if (!turn.userTime) return '';
+    var start = parseStamp(turn.userTime);
+    if (!start) return '';
+    // 插件观测到的完成时刻（已落本地缓存，刷新/切会话后仍在）；没有就看下一条用户输入
+    var ended = (opts.last && lastTurnEndedAt && lastTurnEndedTime === turn.userTime)
+      ? lastTurnEndedAt
+      : storedTurnEnd(activeSessionId, turn.userTime);
+    if (!ended && opts.nextTime) {
+      var b = parseStamp(opts.nextTime);
+      if (b) ended = b.getTime();
     }
-    // 最新回合没有「下一条用户输入」可参照，用插件观测到的完成时刻计算
-    if (opts.last && turn.userTime && lastTurnEndedAt && lastTurnEndedTime === turn.userTime) {
-      var start = parseStamp(turn.userTime);
-      if (start) return '任务耗时 ' + fmtElapsed(lastTurnEndedAt - start);
-    }
-    return '';
+    if (!ended || ended < start.getTime()) return '';
+    return '任务耗时 ' + fmtElapsed(ended - start.getTime());
   }
 
   // 一级：固定的回合状态行，不参与展开收起
@@ -1425,7 +1630,7 @@
     var head = document.createElement('div');
     head.className = 'turn-head';
     var running = !!(opts.last && opts.thinking);
-    var elapsed = elapsedLabel(turn, opts);
+    var elapsed = running ? '' : elapsedLabel(turn, opts);
     head.innerHTML = '<img class="turn-avatar" src="' + AVATAR_SRC + '" alt="">'
       + (running ? '<span class="spin">' + ICON_SPIN + '</span>' : '')
       + '<span class="turn-time">' + (running ? '正在执行中' : '任务已完成') + '</span>'
@@ -1531,8 +1736,8 @@
         }
       } else if (row.role === 'tool') {
         if (!show.tool) return;
-        // MCP App / GenUI 卡片始终以独立块呈现，不塞进收起的工具链里
-        if (row.mcp_app || (row.mcp_data && row.mcp_data.structuredContent !== undefined)) {
+        // MCP App / GenUI 卡片始终以独立块呈现；结构化结果与文本重复时不再重复出卡片
+        if (row.mcp_app || (row.mcp_data && row.mcp_data.structuredContent !== undefined && !mcpDataDuplicatesText(row))) {
           events.push({ kind: 'special', row: row });
           return;
         }
@@ -2223,6 +2428,7 @@
           if (!t) {
             lastTurnEndedAt = Date.now();
             lastTurnEndedTime = lastRenderedTurnUserTime || '';
+            rememberTurnEnd(activeSessionId, lastTurnEndedTime, lastTurnEndedAt);
             collapseLastTurn();   // 任务完成：收起最后回合已展开的工具链细节
           }
           thinking = t; rerenderActions(); pollHistory = true;
