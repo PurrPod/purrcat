@@ -55,7 +55,7 @@ hooks:
 | --- | --- | --- |
 | `on_build_system_prompt` | 构建系统提示时 | `injection`、`memo_injection` |
 | `on_input_received` | 收到用户输入时（携带本批 `received_messages`） | `keyword_check`、`injection`、`search` |
-| `on_loop_start` | 一轮循环开始时 | `injection`、`skill_info`、`file_operation` |
+| `on_loop_start` | 本轮用户输入落盘后、主循环开始前 | `injection`、`skill_info`、`file_operation` |
 | `on_loop_epoch` | 循环内每一 epoch（每次模型调用）前 | `injection`、`file_operation`、`command_run` |
 | `on_tool_calling` | 即将调用工具时 | `tool_use_check`、`injection` |
 | `on_loop_end` | 一轮循环结束判定时 | `tool_use_check`、`file_operation` |

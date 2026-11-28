@@ -296,6 +296,7 @@ class Agent:
             )
 
     def _checker(self):
+        """把待注入事件落盘并触发「收到输入时」钩子，返回本批落盘的事件。"""
         local_push = []
         with self._push_lock:
             if self.pending_force_push:
@@ -311,6 +312,7 @@ class Agent:
             # 🌟 强制注入 / 消费队列：整批（1 条或多条）交给「收到输入时」钩子，
             # 由 _fire_input_received 内部只保留 type=user 的消息（system 等注入不算）
             self._fire_input_received(local_push)
+        return local_push
 
     def process_message(self):
         lifecycle.process_message(self)

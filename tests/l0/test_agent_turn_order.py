@@ -81,9 +81,9 @@ def test_plain_reply_keeps_epoch_order():
     agent.process_message()
 
     assert events == [
+        "on_input_received",
         "on_loop_start",
         "on_loop_epoch",
-        "on_input_received",
         "phase:thinking",
         "model:stream",
         "on_loop_end",
@@ -95,6 +95,26 @@ def test_plain_reply_keeps_epoch_order():
         "assistant",
     ]
     assert agent.current_history[-1]["content"] == "完成"
+
+
+def test_loop_start_runs_after_user_input_is_persisted():
+    """on_loop_start 必须在 force_push 事件落盘之后触发，钩子才能看到本轮输入。"""
+    events = []
+    captured = {}
+
+    class _SnapshotHooks(_RecordingHooks):
+        def execute(self, stage_name, **kwargs):
+            if stage_name == "on_loop_start":
+                captured["roles"] = [m["role"] for m in kwargs["agent"].current_history]
+            return super().execute(stage_name, **kwargs)
+
+    model = _RecordingModel(events, [[chunk(delta=delta(content="完成"))]])
+    agent = _agent(model, _SnapshotHooks(events), events)
+    agent.force_push("你好", type="user")
+
+    agent.process_message()
+
+    assert captured["roles"] == ["system", "user"]
 
 
 def test_tool_batch_runs_after_assistant_is_persisted(monkeypatch):
@@ -133,9 +153,9 @@ def test_tool_batch_runs_after_assistant_is_persisted(monkeypatch):
     agent.process_message()
 
     assert events == [
+        "on_input_received",
         "on_loop_start",
         "on_loop_epoch",
-        "on_input_received",
         "phase:thinking",
         "model:stream",
         "phase:processing",

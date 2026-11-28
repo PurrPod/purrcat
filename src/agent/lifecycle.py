@@ -5,8 +5,10 @@ from __future__ import annotations
 
 def process_message(agent) -> None:
     interaction_id = begin_interaction(agent)
-    merged_input = merged_user_input(agent)
-    if merged_input:
+    # 先把 force_push 队列落盘（并触发 on_input_received），再执行 on_loop_start：
+    # 循环开始钩子需要看到本轮用户输入，注入的提示也应排在用户消息之后。
+    pushed = agent._checker()
+    if any(msg.get("type") == "user" for msg in pushed):
         agent._inject_hook_results("on_loop_start", epoch=0)
 
     turn_ended = run_agent_loop(agent, interaction_id)
@@ -18,13 +20,6 @@ def begin_interaction(agent) -> int:
     # 清理上一轮遗留的打断信号，避免新交互的工具被误杀
     agent._tool_interrupt_event.clear()
     return current_interaction_id
-
-
-def merged_user_input(agent) -> str:
-    user_texts = [
-        msg["content"] for msg in agent.pending_force_push if msg.get("type") == "user"
-    ]
-    return " ".join(user_texts).strip()
 
 
 def run_agent_loop(agent, interaction_id: int) -> bool:
