@@ -1,9 +1,11 @@
 import atexit
+import contextlib
 import multiprocessing
 import os
 import shutil
 import sys
 import threading
+import time
 import uuid
 from typing import Optional
 
@@ -11,7 +13,8 @@ import docker
 import pexpect
 from docker.errors import DockerException, ImageNotFound, NotFound
 
-from src.utils.config import AGENT_VM_DIR
+from src.utils import sandbox_mounts
+from src.utils.config import AGENT_VM_DIR, PURRCAT_DIR
 from . import _shared
 from .exceptions import (
     BashTimeoutError,
@@ -20,6 +23,7 @@ from .exceptions import (
 )
 
 if sys.platform == "win32":
+    import msvcrt
     from pexpect.popen_spawn import PopenSpawn
 
     SpawnClass = PopenSpawn
@@ -41,6 +45,8 @@ if sys.platform == "win32":
 
 
 else:
+    import fcntl
+
     SpawnClass = pexpect.spawn
 
     def check_alive(p):
@@ -84,6 +90,43 @@ SANDBOX_CONTAINER_NAME = "agent_computer"
 # 旧容器标签不匹配时自动销毁重建（工作目录是 bind mount，文件不受影响）
 SANDBOX_ENV_REVISION = "2"
 ENV_REVISION_LABEL = "purrcat.env_rev"
+
+# 挂载变更时先把当前容器提交为快照镜像再重建，保留 pip/npm/apt 安装环境
+STATE_IMAGE_REPO = "purrcat-sandbox"
+STATE_IMAGE_TAG = "state"
+STATE_IMAGE_REF = f"{STATE_IMAGE_REPO}:{STATE_IMAGE_TAG}"
+
+
+@contextlib.contextmanager
+def _sandbox_file_lock():
+    """跨进程互斥：API 进程应用挂载与 Bash 子进程启动/重建容器串行执行。"""
+    lock_path = os.path.join(PURRCAT_DIR, "sandbox.lock")
+    os.makedirs(os.path.dirname(lock_path), exist_ok=True)
+    handle = open(lock_path, "w")
+    try:
+        if sys.platform == "win32":
+            # LK_LOCK 只重试约 10 秒，快照提交可能更久，这里自行轮询
+            deadline = time.time() + 600
+            while True:
+                try:
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+                    break
+                except OSError:
+                    if time.time() > deadline:
+                        raise RuntimeError("等待沙盒锁超时，请稍后重试") from None
+                    time.sleep(0.1)
+        else:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        yield
+    finally:
+        try:
+            if sys.platform == "win32":
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        except Exception:
+            pass
+        handle.close()
 
 
 def _stop_sandbox_on_exit():
@@ -148,6 +191,8 @@ class DockerManager:
         self.container = None
         self.shell_pool = {}
         self.pool_lock = threading.Lock()
+        # 容器生命周期锁：start / 快照重建 / 挂载应用互斥，避免并发改写容器
+        self._lifecycle_lock = threading.Lock()
         self._started = False
 
     def _get_container_mount_source(self, container) -> str | None:
@@ -167,6 +212,10 @@ class DockerManager:
         return _shared.normalize_mount_path(p)
 
     def start(self):
+        with self._lifecycle_lock, _sandbox_file_lock():
+            self._start_locked()
+
+    def _start_locked(self):
         if self._started and self.container is not None:
             try:
                 self.container.reload()
@@ -235,12 +284,50 @@ class DockerManager:
 
         env_vars = _get_container_env()
 
+        try:
+            print(f"🚀 正在基于镜像 {self.image} 创建全新沙盒...")
+            self.container = self._run_container(self.image, self._build_volumes())
+
+            if env_vars.get("HTTP_PROXY"):
+                proxy_url = env_vars["HTTP_PROXY"]
+                print(
+                    f"🌐 检测到代理环境，正在为容器内部 apt 注入代理配置: {proxy_url}"
+                )
+                apt_cmd = f'sh -c \'echo "Acquire::http::Proxy \\"{proxy_url}\\";\\nAcquire::https::Proxy \\"{proxy_url}\\";" > /etc/apt/apt.conf.d/99proxy\''
+                self.container.exec_run(apt_cmd, user="root")
+
+            self._run_setup_script()
+            self._started = True
+            print("✅ 全新沙盒环境启动就绪！")
+        except ImageNotFound:
+            raise DockerImageNotFoundError(f"找不到镜像: {self.image}")
+        except DockerException as e:
+            raise DockerImageNotFoundError(f"容器启动异常: {e}")
+
+    def _build_volumes(self, mounts: list[dict] | None = None) -> dict:
+        """工作目录 + 用户挂载（/mount/<别名>）的 bind mount 表。"""
+        volumes = {}
+        if self.workspace_dir is not None:
+            os.makedirs(self.workspace_dir, exist_ok=True)
+            volumes[os.path.abspath(self.workspace_dir)] = {
+                "bind": self.container_workspace,
+                "mode": "rw",
+            }
+        for item in sandbox_mounts.container_mounts(mounts):
+            volumes[os.path.abspath(item["source"])] = {
+                "bind": item["destination"],
+                "mode": "rw",
+            }
+        return volumes
+
+    def _run_container(self, image_ref: str, volumes: dict):
+        """按固定运行参数创建容器（首次创建与快照重建共用）。"""
         run_kwargs = {
             "name": self.container_name,
             "command": "sleep infinity",
             "detach": True,
             "working_dir": self.container_workspace,
-            "environment": env_vars,
+            "environment": _get_container_env(),
             "extra_hosts": {"host.docker.internal": "host-gateway"},
             "shm_size": "2gb",
             # 标签用于下次启动校验运行参数版本（不匹配则重建容器）
@@ -260,37 +347,9 @@ class DockerManager:
                 "5173/tcp": ("0.0.0.0", 15173),  # Vite 默认端口
                 "8080/tcp": ("0.0.0.0", 18080),  # Vue CLI / Webpack 默认端口
             },
+            "volumes": volumes,
         }
-
-        volumes = {}
-        if self.workspace_dir is not None:
-            os.makedirs(self.workspace_dir, exist_ok=True)
-            volumes[os.path.abspath(self.workspace_dir)] = {
-                "bind": self.container_workspace,
-                "mode": "rw",
-            }
-
-        run_kwargs["volumes"] = volumes
-
-        try:
-            print(f"🚀 正在基于镜像 {self.image} 创建全新沙盒...")
-            self.container = self.client.containers.run(self.image, **run_kwargs)
-
-            if env_vars.get("HTTP_PROXY"):
-                proxy_url = env_vars["HTTP_PROXY"]
-                print(
-                    f"🌐 检测到代理环境，正在为容器内部 apt 注入代理配置: {proxy_url}"
-                )
-                apt_cmd = f'sh -c \'echo "Acquire::http::Proxy \\"{proxy_url}\\";\\nAcquire::https::Proxy \\"{proxy_url}\\";" > /etc/apt/apt.conf.d/99proxy\''
-                self.container.exec_run(apt_cmd, user="root")
-
-            self._run_setup_script()
-            self._started = True
-            print("✅ 全新沙盒环境启动就绪！")
-        except ImageNotFound:
-            raise DockerImageNotFoundError(f"找不到镜像: {self.image}")
-        except DockerException as e:
-            raise DockerImageNotFoundError(f"容器启动异常: {e}")
+        return self.client.containers.run(image_ref, **run_kwargs)
 
     def _run_setup_script(self):
         """重建容器后执行工作目录里的 .agent_env/setup.sh
@@ -320,20 +379,167 @@ class DockerManager:
             print(f"[!] setup.sh 执行失败(忽略): {e}")
 
     def stop(self):
+        with self._lifecycle_lock, _sandbox_file_lock():
+            with self.pool_lock:
+                active_session_ids = list(self.shell_pool.keys())
+            for sid in active_session_ids:
+                self.close_shell(sid)
+
+            if self.container:
+                try:
+                    print(f"[-] 正在让沙盒 ({self.container_name}) 休眠...")
+                    self.container.stop(timeout=2)
+                    print("[*] 沙盒已休眠，所有的依赖安装和系统变更已被保留")
+                except Exception as e:
+                    print(f"[*] 休眠沙盒失败: {e}")
+
+            self.container = None
+
+    def _state_image_id(self) -> str | None:
+        try:
+            return self.client.images.get(STATE_IMAGE_REF).id
+        except Exception:
+            return None
+
+    def _mounted_paths(self) -> dict[str, str]:
+        """当前容器 /mount/* 的 {容器路径: 宿主路径}。"""
+        result: dict[str, str] = {}
+        if self.container is None:
+            return result
+        try:
+            self.container.reload()
+            for mount in self.container.attrs.get("Mounts") or []:
+                destination = str(mount.get("Destination") or "")
+                if destination.startswith(sandbox_mounts.CONTAINER_MOUNT_ROOT + "/"):
+                    result[destination] = str(mount.get("Source") or "")
+        except Exception:
+            pass
+        return result
+
+    def _mounts_match(self, desired: list[dict], actual: dict[str, str]) -> bool:
+        if len(desired) != len(actual):
+            return False
+        for item in desired:
+            source = actual.get(item["destination"])
+            if source is None or self._norm_mount_path(source) != self._norm_mount_path(
+                item["source"]
+            ):
+                return False
+        return True
+
+    def _close_all_shells(self):
         with self.pool_lock:
-            active_session_ids = list(self.shell_pool.keys())
-        for sid in active_session_ids:
-            self.close_shell(sid)
-
-        if self.container:
+            session_ids = list(self.shell_pool.keys())
+        for session_id in session_ids:
             try:
-                print(f"[-] 正在让沙盒 ({self.container_name}) 休眠...")
-                self.container.stop(timeout=2)
-                print("[*] 沙盒已休眠，所有的依赖安装和系统变更已被保留")
-            except Exception as e:
-                print(f"[*] 休眠沙盒失败: {e}")
+                self.close_shell(session_id)
+            except Exception:
+                pass
 
-        self.container = None
+    def _remove_container_if_exists(self, name: str):
+        try:
+            container = self.client.containers.get(name)
+        except NotFound:
+            return
+        except Exception:
+            return
+        try:
+            if container.status == "running":
+                container.stop(timeout=2)
+            container.remove(force=True)
+        except Exception as e:
+            print(f"[!] 清理容器 {name} 失败(忽略): {e}")
+
+    def _preflight_mounts(self, desired: list[dict]):
+        """提交快照前先用一次性容器验证宿主目录确实可被 Docker 挂载。"""
+        if not desired or self.container is None:
+            return
+        volumes = {
+            os.path.abspath(item["source"]): {
+                "bind": item["destination"],
+                "mode": "rw",
+            }
+            for item in desired
+        }
+        try:
+            self.client.containers.run(
+                self.container.image.id,
+                command="true",
+                remove=True,
+                detach=False,
+                volumes=volumes,
+            )
+        except Exception as e:
+            raise RuntimeError(
+                f"挂载目录无法被 Docker 访问，请检查 Docker Desktop 的文件共享设置: {e}"
+            ) from e
+
+    def _recreate_with_mounts(self, desired: list[dict]):
+        """commit 当前容器 → 用快照镜像 + 新挂载重建，失败回滚旧容器。"""
+        old = self.container
+        if old is None:
+            try:
+                old = self.client.containers.get(self.container_name)
+            except NotFound as e:
+                raise RuntimeError("沙盒尚未创建，无法应用挂载") from e
+        old.reload()
+        self._close_all_shells()
+        self._preflight_mounts(desired)
+
+        previous_state_id = self._state_image_id()
+        try:
+            snapshot = old.commit(
+                repository=STATE_IMAGE_REPO, tag=STATE_IMAGE_TAG, pause=True
+            )
+        except Exception as e:
+            raise RuntimeError(f"沙盒环境快照失败，已取消挂载变更: {e}") from e
+
+        if old.status == "running":
+            old.stop(timeout=3)
+
+        self._remove_container_if_exists(self.container_name + "_prev")
+        old.rename(self.container_name + "_prev")
+        try:
+            new_container = self._run_container(
+                snapshot.id, self._build_volumes(desired)
+            )
+        except Exception:
+            # 新容器创建失败：清理残留并重启旧容器，避免沙盒不可用
+            self._remove_container_if_exists(self.container_name)
+            old.rename(self.container_name)
+            old.start()
+            self.container = old
+            self._started = True
+            raise
+
+        self.container = new_container
+        self._started = True
+        self._remove_container_if_exists(self.container_name + "_prev")
+        if previous_state_id and previous_state_id != snapshot.id:
+            try:
+                self.client.images.remove(previous_state_id, force=True)
+            except Exception:
+                pass
+        print("[*] 沙盒已按挂载配置重建，容器内已安装环境已保留")
+
+    def apply_mounts(self) -> dict:
+        """把当前挂载配置应用到沙盒（必要时快照重建）。"""
+        with self._lifecycle_lock, _sandbox_file_lock():
+            configured = sandbox_mounts.load_mounts()
+            missing = [
+                item["name"] for item in configured if not os.path.isdir(item["source"])
+            ]
+            if missing:
+                raise RuntimeError("以下挂载源不存在，无法应用：" + "、".join(missing))
+
+            self._start_locked()
+            desired = sandbox_mounts.container_mounts(configured)
+            if not self._mounts_match(desired, self._mounted_paths()):
+                print("[*] 应用挂载配置：正在快照重建沙盒（容器环境保留）...")
+                self._recreate_with_mounts(desired)
+            if not self._mounts_match(desired, self._mounted_paths()):
+                raise RuntimeError("沙盒挂载未能应用，请检查 Docker 与挂载源")
+            return {"status": "ok", "mounts": desired}
 
     def _spawn_shell_process(self):
         """创建一条新的 docker exec bash 会话，并完成就绪握手。"""

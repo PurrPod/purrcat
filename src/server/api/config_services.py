@@ -358,3 +358,113 @@ def update_sandbox_registry(value: Any) -> dict:
     if not save_global_setting("sandbox_registry", normalized):
         raise HTTPException(status_code=500, detail="保存 sandbox_registry 失败")
     return {"status": "ok"}
+
+
+# ── 沙盒目录挂载（SPEC-045） ──
+def _inspect_sandbox_mounts() -> tuple[bool, bool, Dict[str, str]]:
+    """(docker 可用, 容器存在, {容器路径: 宿主路径})，只读不启动容器。"""
+    from src.utils import sandbox_mounts
+
+    try:
+        import docker
+    except Exception:
+        return False, False, {}
+    try:
+        client = docker.from_env(timeout=3)
+        client.ping()
+    except Exception:
+        return False, False, {}
+    try:
+        container = client.containers.get("agent_computer")
+        container.reload()
+    except Exception:
+        return True, False, {}
+
+    actual: Dict[str, str] = {}
+    try:
+        for mount in container.attrs.get("Mounts") or []:
+            destination = str(mount.get("Destination") or "")
+            if destination.startswith(sandbox_mounts.CONTAINER_MOUNT_ROOT + "/"):
+                actual[destination] = str(mount.get("Source") or "")
+    except Exception:
+        return True, True, {}
+    return True, True, actual
+
+
+def list_sandbox_mounts() -> dict:
+    from src.tool.filesystem.utils import get_path_permission
+    from src.utils import sandbox_mounts
+
+    docker_ok, container_present, actual = _inspect_sandbox_mounts()
+    items = []
+    for item in sandbox_mounts.load_mounts():
+        container_path = f"{sandbox_mounts.CONTAINER_MOUNT_ROOT}/{item['name']}"
+        if not os.path.isdir(item["source"]):
+            status = "missing"
+        elif get_path_permission(item["source"]) == "blocked":
+            status = "blocked"
+        elif actual.get(container_path) and os.path.normcase(
+            os.path.abspath(actual[container_path])
+        ) == os.path.normcase(os.path.abspath(item["source"])):
+            status = "active"
+        else:
+            status = "pending"
+        items.append(
+            {
+                "name": item["name"],
+                "source": item["source"],
+                "container_path": container_path,
+                "status": status,
+            }
+        )
+    return {
+        "docker_ok": docker_ok,
+        "container_present": container_present,
+        "mounts": items,
+    }
+
+
+def add_sandbox_mount(source: str, name: str | None = None) -> dict:
+    from src.tool.filesystem.utils import get_path_permission
+    from src.utils import sandbox_mounts
+
+    mounts = sandbox_mounts.load_mounts()
+    try:
+        item = sandbox_mounts.validate_new_mount(source, name, mounts)
+    except sandbox_mounts.MountError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    if get_path_permission(item["source"]) == "blocked":
+        raise HTTPException(status_code=400, detail="该目录被文件权限规则禁止访问")
+    if not sandbox_mounts.save_mounts(mounts + [item]):
+        raise HTTPException(status_code=500, detail="保存挂载配置失败")
+    return {"status": "ok", "mount": item, **list_sandbox_mounts()}
+
+
+def rename_sandbox_mount(name: str, new_name: str) -> dict:
+    from src.utils import sandbox_mounts
+
+    try:
+        item = sandbox_mounts.rename_mount(name, new_name)
+    except sandbox_mounts.MountError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return {"status": "ok", "mount": item, **list_sandbox_mounts()}
+
+
+def delete_sandbox_mount(name: str) -> dict:
+    from src.utils import sandbox_mounts
+
+    try:
+        sandbox_mounts.remove_mount(name)
+    except sandbox_mounts.MountError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    return {"status": "ok", **list_sandbox_mounts()}
+
+
+def apply_sandbox_mounts() -> dict:
+    from src.tool.bash.docker_env import get_docker_manager
+
+    try:
+        get_docker_manager().apply_mounts()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"应用挂载失败：{e}") from e
+    return {"status": "ok", **list_sandbox_mounts()}

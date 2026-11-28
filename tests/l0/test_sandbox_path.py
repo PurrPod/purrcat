@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
@@ -53,6 +54,24 @@ def test_other_paths_are_only_absolutized(tmp_path):
     assert sandbox_path.convert_sandbox_path(str(tmp_path / "a.txt")) == str(
         tmp_path / "a.txt"
     )
+
+
+def test_maps_mount_alias_to_host_dir(tmp_path, monkeypatch):
+    """SPEC-045 AC-1：/mount/<别名> 按挂载配置映射回宿主路径。"""
+    from src.utils import sandbox_mounts
+
+    root = tmp_path / "proj"
+    (root / "src").mkdir(parents=True)
+    cfg = tmp_path / "mounts.json"
+    cfg.write_text(
+        json.dumps({"mounts": [{"name": "proj", "source": str(root)}]}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(sandbox_mounts, "MOUNTS_CONFIG_PATH", str(cfg))
+
+    result = sandbox_path.convert_sandbox_path("/mount/proj/src/a.txt")
+
+    assert Path(result) == (root / "src" / "a.txt").resolve()
 
 
 def _hook_path(tmp_path, monkeypatch, path):

@@ -2,7 +2,7 @@
 
 > 源码：`src/server/api/filesystem.py` ｜ 前缀：`/api/filesystem` ｜ 端点：12 个
 
-面向 IDE Panel / 前端 UI 的文件直连操作（浏览器端降级用）。路径以 `/agent_vm` 沙盒路径为主，服务端会通过 `convert_sandbox_path` 自动映射为宿主真实绝对路径，并含沙盒层缺失时的回退查找。
+面向 IDE Panel / 前端 UI 的文件直连操作（浏览器端降级用）。路径以 `/agent_vm` 沙盒路径为主，服务端会通过 `convert_sandbox_path` 自动映射为宿主真实绝对路径，并含沙盒层缺失时的回退查找。用户在设置页配置的挂载目录同样支持 `/mount/<别名>/...` 形式，映射规则见 [文件挂载配置](config.md#get-apiconfigmounts)。
 文件改动以备份快照（`backup_id`）+ 未确认变更（diff）为核心：`undo` 回滚、`ack`/`ack_all` 确认清理备份。
 
 ---

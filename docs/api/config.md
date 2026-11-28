@@ -316,6 +316,141 @@ curl -X PUT 'http://127.0.0.1:8000/api/config/file' \
 
 ---
 
+## GET `/api/config/mounts`
+
+读取沙盒目录挂载配置（`~/.purrcat/mounts.json`）及生效状态。挂载会把宿主文件夹映射到容器 `/mount/<name>`。
+
+**响应**
+
+```json
+{
+  "docker_ok": true,
+  "container_present": true,
+  "mounts": [
+    {
+      "name": "src",
+      "source": "D:\\work\\src",
+      "container_path": "/mount/src",
+      "status": "active"
+    }
+  ]
+}
+```
+
+`status`：`active`（已生效）、`pending`（待应用）、`missing`（源目录不存在）、`blocked`（被文件权限规则拦截）。
+
+**示例**
+
+```bash
+curl 'http://127.0.0.1:8000/api/config/mounts'
+```
+
+---
+
+## POST `/api/config/mounts`
+
+新增挂载。别名缺省时取文件夹名，大小写不敏感去重，冲突自动追加 `-2`、`-3`。源目录必须存在、可写，且不能与 `agent_vm` 或已有挂载互为父子目录。
+
+**请求**
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| `source` | body | string | 是 | 宿主文件夹绝对路径 |
+| `name` | body | string | 否 | 容器内别名，只允许字母、数字、下划线、短横线 |
+
+**响应**
+
+```json
+{
+  "status": "ok",
+  "mount": { "name": "src", "source": "D:\\work\\src" },
+  "docker_ok": true,
+  "container_present": true,
+  "mounts": []
+}
+```
+
+非法路径 / 重复 / 名称冲突返回 `400`。
+
+**示例**
+
+```bash
+curl -X POST 'http://127.0.0.1:8000/api/config/mounts' \
+  -H 'Content-Type: application/json' \
+  -d '{"source":"D:\\\\work\\\\src"}'
+```
+
+---
+
+## POST `/api/config/mounts/apply`
+
+把当前挂载配置应用到沙盒。Docker 不支持给运行中的容器追加挂载，因此会先把当前容器提交为 `purrcat-sandbox:state` 快照，再用相同运行参数加新挂载重建同名容器；pip/npm/apt 安装内容保留，容器内运行中的进程与 shell 会话会中断。失败时回滚旧容器。
+
+请求无参数；响应结构同 `GET /api/config/mounts`，应用失败返回 `500`。
+
+**示例**
+
+```bash
+curl -X POST 'http://127.0.0.1:8000/api/config/mounts/apply'
+```
+
+---
+
+## PUT `/api/config/mounts/{name}`
+
+重命名挂载别名，容器路径随之变化。新名称必须唯一且符合命名规则。
+
+**请求**
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| `name` | path | string | 是 | 原别名 |
+| `name` | body | string | 是 | 新别名 |
+
+**响应**
+
+```json
+{ "status": "ok", "mount": { "name": "renamed", "source": "D:\\work\\src" } }
+```
+
+不存在、名称冲突或格式非法返回 `400`。
+
+**示例**
+
+```bash
+curl -X PUT 'http://127.0.0.1:8000/api/config/mounts/src' \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"renamed"}'
+```
+
+---
+
+## DELETE `/api/config/mounts/{name}`
+
+移除挂载配置（不删除宿主目录）。容器需再次应用或重建后才会取消挂载。
+
+**请求**
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| `name` | path | string | 是 | 挂载别名 |
+
+**响应**
+
+```json
+{ "status": "ok", "docker_ok": true, "container_present": true, "mounts": [] }
+```
+
+别名不存在返回 `404`。
+
+**示例**
+
+```bash
+curl -X DELETE 'http://127.0.0.1:8000/api/config/mounts/src'
+```
+
+---
+
 ## GET `/api/config/mcp`
 
 读取 MCP 配置（`~/.purrcat/mcp_config.json`），标准 `mcpServers` 结构。

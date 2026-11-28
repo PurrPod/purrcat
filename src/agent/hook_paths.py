@@ -89,4 +89,11 @@ def get_system_info(agent_vm_dir: str) -> str:
         f"- GPU: {get_gpu_info()}",
         f"- AgentVM 沙箱目录（绝对路径）: {agent_vm_dir}",
     ]
+    # 延迟导入：本模块保持纯函数，不参与配置模块的初始化
+    from src.utils.sandbox_mounts import mounts_prompt_lines
+
+    mounts = mounts_prompt_lines()
+    if mounts:
+        lines.append("- 沙盒挂载（容器路径 -> 宿主机路径）:")
+        lines.extend(f"  - {item}" for item in mounts)
     return "\n".join(lines)

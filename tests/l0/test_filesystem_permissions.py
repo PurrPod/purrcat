@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from src.tool.filesystem.exceptions import PermissionDeniedError
@@ -80,3 +82,21 @@ def test_require_helpers_follow_effective_permission(tmp_path, file_perms):
     with pytest.raises(PermissionDeniedError):
         require_read(str(target))
     assert require_write(str(target)) == str(target)
+
+
+def test_mounted_source_is_readwrite_unless_blocked(tmp_path, file_perms, monkeypatch):
+    """SPEC-045 AC-2：挂载即授权读写，但 blocked 规则优先。"""
+    source = tmp_path / "proj"
+    source.mkdir()
+    cfg = tmp_path / "mounts.json"
+    cfg.write_text(
+        json.dumps({"mounts": [{"name": "proj", "source": str(source)}]}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("src.utils.sandbox_mounts.MOUNTS_CONFIG_PATH", str(cfg))
+
+    file_perms("readonly")
+    assert get_path_permission(str(source / "a.txt")) == "readwrite"
+
+    file_perms("blocked", blocked=[str(source)])
+    assert get_path_permission(str(source / "a.txt")) == "blocked"

@@ -1517,6 +1517,202 @@
     sec.appendChild(group);
     wrap.appendChild(sec);
   }
+  function mountFetch(path, init) {
+    return fetch(path, init).then(function(r) {
+      return r.json().catch(function() {
+        return {};
+      }).then(function(d) {
+        if (!r.ok) throw new Error(d && d.detail || "\u8BF7\u6C42\u5931\u8D25");
+        return d;
+      });
+    });
+  }
+  function mountStatusText(status) {
+    if (status === "active") return "\u5DF2\u751F\u6548";
+    if (status === "missing") return "\u8DEF\u5F84\u4E0D\u5B58\u5728";
+    if (status === "blocked") return "\u6743\u9650\u5DF2\u62E6\u622A";
+    return "\u5F85\u5E94\u7528";
+  }
+  function pickSingleFolder() {
+    const pc = HOST.purrcat;
+    if (!pc || !pc.openDialog) return Promise.reject(new Error("\u6587\u4EF6\u5939\u9009\u62E9\u4EC5\u5728\u684C\u9762\u7AEF\u53EF\u7528"));
+    return pc.openDialog({ directory: true, properties: ["openDirectory"] }).then(function(r) {
+      const picked = Array.isArray(r) ? r : r ? [r] : [];
+      return String(picked[0] || "");
+    });
+  }
+  function confirmMountApply() {
+    return HOST.confirm(
+      "\u5E94\u7528\u6302\u8F7D\u9700\u8981\u91CD\u5EFA\u6C99\u76D2\uFF1A\u5BB9\u5668\u5185\u6B63\u5728\u8FD0\u884C\u7684\u8FDB\u7A0B\uFF08\u5982 dev server\uFF09\u4F1A\u505C\u6B62\uFF0Cshell \u4F1A\u8BDD\u4F1A\u91CD\u7F6E\uFF1B\u5DF2\u5B89\u88C5\u7684 pip/npm \u73AF\u5883\u4E0E /agent_vm \u6587\u4EF6\u4F1A\u4FDD\u7559\u3002\u73B0\u5728\u5E94\u7528\uFF1F"
+    );
+  }
+  function postMountApply() {
+    return mountFetch("/api/config/mounts/apply", { method: "POST" });
+  }
+  function addMountSection(wrap, key) {
+    const sec = HOST.document.createElement("section");
+    sec.className = "perm-section";
+    wrap.appendChild(sec);
+    function refresh() {
+      mountFetch("/api/config/mounts").then(function(data) {
+        draw(data || {});
+      }).catch(function(e) {
+        HOST.alert("\u8BFB\u53D6\u6302\u8F7D\u914D\u7F6E\u5931\u8D25\uFF1A" + (e && e.message || ""));
+      });
+    }
+    function applyChanges() {
+      postMountApply().then(function() {
+        refresh();
+      }).catch(function(e) {
+        HOST.alert("\u5E94\u7528\u5931\u8D25\uFF1A" + (e && e.message || ""));
+      });
+    }
+    function askApply() {
+      if (!confirmMountApply()) return;
+      applyChanges();
+    }
+    function buildRow(item) {
+      const row = HOST.document.createElement("div");
+      row.className = "perm-row";
+      const text = HOST.document.createElement("div");
+      text.className = "perm-row-text";
+      const label = HOST.document.createElement("div");
+      label.className = "perm-row-label";
+      label.textContent = item.container_path;
+      const desc = HOST.document.createElement("div");
+      desc.className = "perm-row-desc";
+      desc.textContent = mountStatusText(item.status) + " \xB7 " + item.source;
+      desc.title = item.source;
+      text.appendChild(label);
+      text.appendChild(desc);
+      const actions = HOST.document.createElement("div");
+      actions.className = "perm-actions";
+      const edit = entryIconBtn("edit", "\u91CD\u547D\u540D");
+      edit.addEventListener("click", function() {
+        const input = HOST.document.createElement("input");
+        input.className = "cfg-input";
+        input.value = item.name;
+        input.style.width = "160px";
+        label.textContent = "";
+        label.appendChild(input);
+        input.focus();
+        input.select();
+        let done = false;
+        const commit = function() {
+          if (done) return;
+          done = true;
+          const next = input.value.trim();
+          if (!next || next === item.name) {
+            refresh();
+            return;
+          }
+          mountFetch("/api/config/mounts/" + encodeURIComponent(item.name), {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name: next })
+          }).then(function() {
+            refresh();
+            if (confirmMountApply()) applyChanges();
+          }).catch(function(e) {
+            HOST.alert("\u91CD\u547D\u540D\u5931\u8D25\uFF1A" + (e && e.message || ""));
+            refresh();
+          });
+        };
+        input.addEventListener("keydown", function(ev) {
+          if (ev.key === "Enter") {
+            ev.preventDefault();
+            commit();
+          }
+          if (ev.key === "Escape") {
+            done = true;
+            refresh();
+          }
+        });
+        input.addEventListener("blur", commit);
+      });
+      const del = entryIconBtn("trash", "\u79FB\u9664", true);
+      del.addEventListener("click", function() {
+        if (!HOST.confirm('\u79FB\u9664\u6302\u8F7D "' + item.container_path + '"\uFF1F')) return;
+        mountFetch("/api/config/mounts/" + encodeURIComponent(item.name), { method: "DELETE" }).then(function() {
+          refresh();
+          if (confirmMountApply()) applyChanges();
+        }).catch(function(e) {
+          HOST.alert("\u79FB\u9664\u5931\u8D25\uFF1A" + (e && e.message || ""));
+        });
+      });
+      actions.appendChild(edit);
+      actions.appendChild(del);
+      row.appendChild(text);
+      row.appendChild(actions);
+      return row;
+    }
+    function draw(data) {
+      sec.innerHTML = "";
+      const head = HOST.document.createElement("div");
+      head.className = "perm-section-head";
+      const txt = HOST.document.createElement("div");
+      txt.className = "perm-section-text";
+      const title = HOST.document.createElement("h3");
+      title.className = "perm-section-title";
+      title.textContent = "\u6C99\u76D2\u6302\u8F7D";
+      const desc = HOST.document.createElement("p");
+      desc.className = "perm-section-desc";
+      desc.textContent = "\u628A\u5BBF\u4E3B\u6587\u4EF6\u5939\u6620\u5C04\u5230\u6C99\u76D2 /mount/<\u522B\u540D>\uFF0CBash \u4E0E FileSystem \u53EF\u76F4\u63A5\u8BFB\u5199";
+      txt.appendChild(title);
+      txt.appendChild(desc);
+      const actions = HOST.document.createElement("div");
+      actions.className = "perm-actions";
+      const add = entryIconBtn("folderPlus", "\u6DFB\u52A0\u6587\u4EF6\u5939");
+      add.addEventListener("click", function() {
+        pickSingleFolder().then(function(source) {
+          if (!source) return;
+          return mountFetch("/api/config/mounts", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ source })
+          });
+        }).then(function(result) {
+          if (!result) return;
+          refresh();
+          if (confirmMountApply()) applyChanges();
+        }).catch(function(e) {
+          HOST.alert("\u6DFB\u52A0\u5931\u8D25\uFF1A" + (e && e.message || ""));
+        });
+      });
+      const apply = HOST.document.createElement("button");
+      apply.type = "button";
+      apply.className = "btn cfg-deploy-btn";
+      apply.textContent = "\u5E94\u7528\u6302\u8F7D";
+      apply.disabled = !(data.mounts && data.mounts.length);
+      apply.addEventListener("click", askApply);
+      actions.appendChild(add);
+      actions.appendChild(apply);
+      head.appendChild(txt);
+      head.appendChild(actions);
+      sec.appendChild(head);
+      const group = HOST.document.createElement("div");
+      group.className = "perm-group";
+      const items = Array.isArray(data.mounts) ? data.mounts : [];
+      if (!items.length) {
+        const empty = HOST.document.createElement("div");
+        empty.className = "perm-empty";
+        empty.textContent = "\u6682\u65E0\u6302\u8F7D";
+        group.appendChild(empty);
+      } else {
+        items.forEach(function(item) {
+          group.appendChild(buildRow(item));
+        });
+      }
+      sec.appendChild(group);
+      if (data.docker_ok === false) {
+        const tip = HOST.document.createElement("p");
+        tip.className = "perm-section-desc";
+        tip.textContent = "\u672A\u68C0\u6D4B\u5230\u53EF\u7528\u7684 Docker\uFF0C\u6302\u8F7D\u4F1A\u5728\u6C99\u76D2\u4E0B\u6B21\u542F\u52A8\u65F6\u751F\u6548\u3002";
+        sec.appendChild(tip);
+      }
+    }
+    refresh();
+  }
   function renderFilePermissions(main, key) {
     cfgData(key).then(function(raw) {
       const data = normalizeFilePerm(raw);
@@ -1633,6 +1829,7 @@
           saveFilePerm(main, key, data);
         }
       });
+      addMountSection(wrap, key);
       main.appendChild(wrap);
     });
   }

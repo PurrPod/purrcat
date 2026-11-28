@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 from src.tool.filesystem.exceptions import PermissionDeniedError
+from src.utils import sandbox_mounts
 from src.utils.config import AGENT_VM_DIR, PROJECTS_DIR
 from src.utils.path import convert_sandbox_path
 
@@ -94,6 +95,10 @@ def get_path_permission(target_path: str) -> str:
     for rule in perms.get("blocked", []) or []:
         if _rule_matches(target_norm, target_path_obj, str(rule)):
             return "blocked"
+
+    # 已挂载的目录由用户在设置页显式授权，读写直接放行（blocked 已优先判定）
+    if sandbox_mounts.is_in_mount_source(target_path):
+        return "readwrite"
 
     default = _default_permission(config)
     allow_read = default in ("readonly", "readwrite")

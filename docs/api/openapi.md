@@ -927,6 +927,79 @@ ACP 接入状态：relay 部署情况 / 端口 / uv 可用性
 | 200 | Successful Response | - |
 | 422 | Validation Error | HTTPValidationError |
 
+### `GET /api/config/mounts`
+
+**标题**：Api List Sandbox Mounts
+
+#### 响应
+
+| 状态码 | 描述 | Schema |
+| --- | --- | --- |
+| 200 | Successful Response | - |
+
+### `POST /api/config/mounts`
+
+**标题**：Api Add Sandbox Mount
+
+#### 请求体
+
+**Schema**：`Payload`
+
+#### 响应
+
+| 状态码 | 描述 | Schema |
+| --- | --- | --- |
+| 200 | Successful Response | - |
+| 422 | Validation Error | HTTPValidationError |
+
+### `POST /api/config/mounts/apply`
+
+**标题**：Api Apply Sandbox Mounts
+
+#### 响应
+
+| 状态码 | 描述 | Schema |
+| --- | --- | --- |
+| 200 | Successful Response | - |
+
+### `PUT /api/config/mounts/{name}`
+
+**标题**：Api Rename Sandbox Mount
+
+#### 参数
+
+| 名称 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| name | path | string | 是 |  |
+
+#### 请求体
+
+**Schema**：`Payload`
+
+#### 响应
+
+| 状态码 | 描述 | Schema |
+| --- | --- | --- |
+| 200 | Successful Response | - |
+| 422 | Validation Error | HTTPValidationError |
+
+### `DELETE /api/config/mounts/{name}`
+
+**标题**：Api Delete Sandbox Mount
+
+#### 参数
+
+| 名称 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| name | path | string | 是 |  |
+
+#### 响应
+
+| 状态码 | 描述 | Schema |
+| --- | --- | --- |
+| 200 | Successful Response | - |
+| 422 | Validation Error | HTTPValidationError |
+
 ### `GET /api/config/sandbox-registry`
 
 **标题**：Api Get Sandbox Registry

@@ -2199,6 +2199,173 @@
         ]
       }
     },
+    "/api/config/mounts": {
+      "get": {
+        "operationId": "api_list_sandbox_mounts_api_config_mounts_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Api List Sandbox Mounts",
+        "tags": [
+          "Configuration"
+        ]
+      },
+      "post": {
+        "operationId": "api_add_sandbox_mount_api_config_mounts_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Payload",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Add Sandbox Mount",
+        "tags": [
+          "Configuration"
+        ]
+      }
+    },
+    "/api/config/mounts/apply": {
+      "post": {
+        "operationId": "api_apply_sandbox_mounts_api_config_mounts_apply_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Api Apply Sandbox Mounts",
+        "tags": [
+          "Configuration"
+        ]
+      }
+    },
+    "/api/config/mounts/{name}": {
+      "delete": {
+        "operationId": "api_delete_sandbox_mount_api_config_mounts__name__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Delete Sandbox Mount",
+        "tags": [
+          "Configuration"
+        ]
+      },
+      "put": {
+        "operationId": "api_rename_sandbox_mount_api_config_mounts__name__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Payload",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Rename Sandbox Mount",
+        "tags": [
+          "Configuration"
+        ]
+      }
+    },
     "/api/config/sandbox-registry": {
       "get": {
         "operationId": "api_get_sandbox_registry_api_config_sandbox_registry_get",

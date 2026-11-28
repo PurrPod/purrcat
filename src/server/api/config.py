@@ -107,6 +107,34 @@ def api_update_file_config(config: Dict[str, Any]):
     raise HTTPException(status_code=500, detail="Failed to save file config")
 
 
+# ── Sandbox Mounts（SPEC-045） ──
+@router.get("/mounts")
+def api_list_sandbox_mounts():
+    return config_services.list_sandbox_mounts()
+
+
+@router.post("/mounts")
+def api_add_sandbox_mount(payload: Dict[str, Any] = Body(...)):
+    return config_services.add_sandbox_mount(
+        str(payload.get("source") or ""), payload.get("name")
+    )
+
+
+@router.post("/mounts/apply")
+def api_apply_sandbox_mounts():
+    return config_services.apply_sandbox_mounts()
+
+
+@router.put("/mounts/{name}")
+def api_rename_sandbox_mount(name: str, payload: Dict[str, Any] = Body(...)):
+    return config_services.rename_sandbox_mount(name, str(payload.get("name") or ""))
+
+
+@router.delete("/mounts/{name}")
+def api_delete_sandbox_mount(name: str):
+    return config_services.delete_sandbox_mount(name)
+
+
 # ── MCP Config ──
 @router.get("/mcp")
 def api_get_mcp_config():

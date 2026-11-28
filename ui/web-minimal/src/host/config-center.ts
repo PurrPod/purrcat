@@ -929,6 +929,210 @@ import { HOST } from './state.js';
     wrap.appendChild(sec);
   }
 
+  // ---- 沙盒挂载（SPEC-045） ----
+  function mountFetch(path: string, init?: any): Promise<any> {
+    return fetch(path, init).then(function (r) {
+      return r.json()
+        .catch(function () { return {}; })
+        .then(function (d: any) {
+          if (!r.ok) throw new Error((d && d.detail) || '请求失败');
+          return d;
+        });
+    });
+  }
+
+  function mountStatusText(status: string) {
+    if (status === 'active') return '已生效';
+    if (status === 'missing') return '路径不存在';
+    if (status === 'blocked') return '权限已拦截';
+    return '待应用';
+  }
+
+  function pickSingleFolder(): Promise<string> {
+    const pc = HOST.purrcat;
+    if (!pc || !pc.openDialog) return Promise.reject(new Error('文件夹选择仅在桌面端可用'));
+    return pc.openDialog({ directory: true, properties: ['openDirectory'] }).then(function (r: any) {
+      const picked = Array.isArray(r) ? r : (r ? [r] : []);
+      return String(picked[0] || '');
+    });
+  }
+
+  function confirmMountApply() {
+    return HOST.confirm(
+      '应用挂载需要重建沙盒：容器内正在运行的进程（如 dev server）会停止，shell 会话会重置；' +
+      '已安装的 pip/npm 环境与 /agent_vm 文件会保留。现在应用？'
+    );
+  }
+
+  function postMountApply(): Promise<any> {
+    return mountFetch('/api/config/mounts/apply', { method: 'POST' });
+  }
+
+  function addMountSection(wrap: HTMLElement, key: string) {
+    const sec = HOST.document.createElement('section');
+    sec.className = 'perm-section';
+    wrap.appendChild(sec);
+
+    function refresh() {
+      mountFetch('/api/config/mounts')
+        .then(function (data) {
+          draw(data || {});
+        })
+        .catch(function (e) {
+          HOST.alert('读取挂载配置失败：' + (e && e.message || ''));
+        });
+    }
+
+    function applyChanges() {
+      postMountApply()
+        .then(function () { refresh(); })
+        .catch(function (e) { HOST.alert('应用失败：' + (e && e.message || '')); });
+    }
+
+    function askApply() {
+      if (!confirmMountApply()) return;
+      applyChanges();
+    }
+
+    function buildRow(item: any) {
+      const row = HOST.document.createElement('div');
+      row.className = 'perm-row';
+      const text = HOST.document.createElement('div');
+      text.className = 'perm-row-text';
+      const label = HOST.document.createElement('div');
+      label.className = 'perm-row-label';
+      label.textContent = item.container_path;
+      const desc = HOST.document.createElement('div');
+      desc.className = 'perm-row-desc';
+      desc.textContent = mountStatusText(item.status) + ' · ' + item.source;
+      desc.title = item.source;
+      text.appendChild(label);
+      text.appendChild(desc);
+
+      const actions = HOST.document.createElement('div');
+      actions.className = 'perm-actions';
+      const edit = entryIconBtn('edit', '重命名');
+      edit.addEventListener('click', function () {
+        const input = HOST.document.createElement('input');
+        input.className = 'cfg-input';
+        input.value = item.name;
+        input.style.width = '160px';
+        label.textContent = '';
+        label.appendChild(input);
+        input.focus();
+        input.select();
+        let done = false;
+        const commit = function () {
+          if (done) return;
+          done = true;
+          const next = input.value.trim();
+          if (!next || next === item.name) { refresh(); return; }
+          mountFetch('/api/config/mounts/' + encodeURIComponent(item.name), {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: next }),
+          })
+            .then(function () {
+              refresh();
+              if (confirmMountApply()) applyChanges();
+            })
+            .catch(function (e) { HOST.alert('重命名失败：' + (e && e.message || '')); refresh(); });
+        };
+        input.addEventListener('keydown', function (ev: any) {
+          if (ev.key === 'Enter') { ev.preventDefault(); commit(); }
+          if (ev.key === 'Escape') { done = true; refresh(); }
+        });
+        input.addEventListener('blur', commit);
+      });
+      const del = entryIconBtn('trash', '移除', true);
+      del.addEventListener('click', function () {
+        if (!HOST.confirm('移除挂载 "' + item.container_path + '"？')) return;
+        mountFetch('/api/config/mounts/' + encodeURIComponent(item.name), { method: 'DELETE' })
+          .then(function () {
+            refresh();
+            if (confirmMountApply()) applyChanges();
+          })
+          .catch(function (e) { HOST.alert('移除失败：' + (e && e.message || '')); });
+      });
+      actions.appendChild(edit);
+      actions.appendChild(del);
+
+      row.appendChild(text);
+      row.appendChild(actions);
+      return row;
+    }
+
+    function draw(data: any) {
+      sec.innerHTML = '';
+      const head = HOST.document.createElement('div');
+      head.className = 'perm-section-head';
+      const txt = HOST.document.createElement('div');
+      txt.className = 'perm-section-text';
+      const title = HOST.document.createElement('h3');
+      title.className = 'perm-section-title';
+      title.textContent = '沙盒挂载';
+      const desc = HOST.document.createElement('p');
+      desc.className = 'perm-section-desc';
+      desc.textContent = '把宿主文件夹映射到沙盒 /mount/<别名>，Bash 与 FileSystem 可直接读写';
+      txt.appendChild(title);
+      txt.appendChild(desc);
+
+      const actions = HOST.document.createElement('div');
+      actions.className = 'perm-actions';
+      const add = entryIconBtn('folderPlus', '添加文件夹');
+      add.addEventListener('click', function () {
+        pickSingleFolder()
+          .then(function (source) {
+            if (!source) return;
+            return mountFetch('/api/config/mounts', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ source: source }),
+            });
+          })
+          .then(function (result) {
+            if (!result) return;
+            refresh();
+            if (confirmMountApply()) applyChanges();
+          })
+          .catch(function (e) { HOST.alert('添加失败：' + (e && e.message || '')); });
+      });
+      const apply = HOST.document.createElement('button');
+      apply.type = 'button';
+      apply.className = 'btn cfg-deploy-btn';
+      apply.textContent = '应用挂载';
+      apply.disabled = !(data.mounts && data.mounts.length);
+      apply.addEventListener('click', askApply);
+      actions.appendChild(add);
+      actions.appendChild(apply);
+
+      head.appendChild(txt);
+      head.appendChild(actions);
+      sec.appendChild(head);
+
+      const group = HOST.document.createElement('div');
+      group.className = 'perm-group';
+      const items = Array.isArray(data.mounts) ? data.mounts : [];
+      if (!items.length) {
+        const empty = HOST.document.createElement('div');
+        empty.className = 'perm-empty';
+        empty.textContent = '暂无挂载';
+        group.appendChild(empty);
+      } else {
+        items.forEach(function (item: any) { group.appendChild(buildRow(item)); });
+      }
+      sec.appendChild(group);
+      if (data.docker_ok === false) {
+        const tip = HOST.document.createElement('p');
+        tip.className = 'perm-section-desc';
+        tip.textContent = '未检测到可用的 Docker，挂载会在沙盒下次启动时生效。';
+        sec.appendChild(tip);
+      }
+    }
+
+    refresh();
+  }
+
   export function renderFilePermissions(main: HTMLElement, key: string) {
     cfgData(key).then(function (raw) {
       const data = normalizeFilePerm(raw);
@@ -1032,6 +1236,7 @@ import { HOST } from './state.js';
         },
       });
 
+      addMountSection(wrap, key);
       main.appendChild(wrap);
     });
   }
