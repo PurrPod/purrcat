@@ -89,12 +89,12 @@ def _smart_update_memory_md(user_profile: list):
                                 with open(temp_path, "w", encoding="utf-8") as f:
                                     f.write(new_md_content)
                                 os.replace(temp_path, MEMORY_MD_PATH)
-                                print("✅ 后台模型已智能更新 MEMORY.md")
+                                print("后台模型已智能更新 MEMORY.md")
                                 has_write_operation = True
                             except json.JSONDecodeError as e:
-                                print(f"❌ 工具参数解析失败，转义错误: {e}")
+                                print(f"工具参数解析失败，转义错误: {e}")
                             except Exception as e:
-                                print(f"❌ 写入 MEMORY.md 失败: {e}")
+                                print(f"写入 MEMORY.md 失败: {e}")
                             break
 
                     if has_write_operation:
@@ -108,8 +108,8 @@ def _smart_update_memory_md(user_profile: list):
                         )
 
             except Exception as e:
-                print(f"❌ reAct 循环异常: {e}")
+                print(f"reAct 循环异常: {e}")
                 break
 
         if not has_write_operation:
-            print("⚠️ 警告：reAct 循环结束但未检测到 overwrite_memory_md 调用")
+            print("警告：reAct 循环结束但未检测到 overwrite_memory_md 调用")

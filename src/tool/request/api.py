@@ -289,7 +289,7 @@ def resolve_request(
         elif not approved and not ignore:
             feedback = _shared.format_rejection_feedback(req_type, feedback)
 
-        # 🌟 dependency_check 类型为系统启动检查，与 Agent 任务无关，不需要回调通知 Agent
+        # dependency_check 类型为系统启动检查，与 Agent 任务无关，不需要回调通知 Agent
         if not ignore and req_type != "dependency_check":
             callback_msg = _shared.build_decision_callback(
                 req_id, target, approved, req_type, feedback

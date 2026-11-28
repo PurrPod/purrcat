@@ -53,27 +53,20 @@ def build_create_message(
     main_plan: list = None, sub_branches: list = None, plan_error: str | None = None
 ) -> str:
     """拼接 create 动作的回执文案；plan_error 落在支线信息之后。"""
-    msg_lines = ["🚀 [系统] 脑暴大纲与任务排期已成功落盘生效！"]
+    msg_lines = ["脑暴计划已生效。"]
 
     if main_plan:
-        msg_lines.append("\n### 📌 【主干 Main 分支后续执行大纲】")
+        msg_lines.append("\n### 主计划")
         for i, step in enumerate(main_plan, 1):
-            msg_lines.append(f"**Step {i}**. {step}")
+            msg_lines.append(f"{i}. {step}")
 
     if sub_branches:
-        msg_lines.append(
-            f"\n后台支线任务 ({len(sub_branches)}个) 已成功递交底层引擎，"
-            "在暗中开辟独立线程快马加鞭运转中。"
-        )
+        msg_lines.append(f"\n后台支线任务 {len(sub_branches)} 个，结果出来后自动通知。")
 
     if plan_error:
-        msg_lines.append(f"\n⚠️ 总计划落盘失败：{plan_error}")
+        msg_lines.append(f"\n总计划落盘失败：{plan_error}")
 
-    msg_lines.append(
-        "\n💡 指示：工具已闭环，你不需要进行任何循环查询。"
-        "请立即按照你刚才定下的 Main 主线计划第一步去沙盒开展工作。"
-        "子任务结果出来后系统会自动通知。"
-    )
+    msg_lines.append("\n按主计划继续执行。")
     return "\n".join(msg_lines)
 
 

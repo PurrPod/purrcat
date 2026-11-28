@@ -18,7 +18,7 @@ _SENSOR_CONFIG_FILE = "sensor_config.json"
 
 def _missing_error(t: str, target: str, name: str) -> str:
     return (
-        f"❌ 未在沙盒工作区找到 {t} '{target}'（type / uuid / 名字可能有误）。\n"
+        f"未在沙盒工作区找到 {t} '{target}'（type / uuid / 名字可能有误）。\n"
         f"请先用 KernelUpgrade(action='create'|'upgrade', type='{t}', target='{name}') "
         "建立沙盒并完成开发后再申请合并。"
     )
@@ -26,7 +26,7 @@ def _missing_error(t: str, target: str, name: str) -> str:
 
 def _artifact_error(t: str, target: str, artifact: str) -> str:
     return (
-        f"❌ 沙盒中 {t} '{target}' 缺少合并必需产物 `{artifact}`：审批通过后也会合并失败，故此处直接拦截。\n"
+        f"沙盒中 {t} '{target}' 缺少合并必需产物 `{artifact}`：审批通过后也会合并失败，故此处直接拦截。\n"
         "请按沙盒内 GUIDE.md 补齐后重试。"
     )
 
@@ -85,33 +85,33 @@ def merge_module(t: str, target: str) -> dict:
     if not req_type:
         return error_response(
             "ui-plugin 直接写盘即生效，无合并审批环节。",
-            "❌ 无需合并",
+            "无需合并",
         )
 
     tgt = (target or "").strip()
     if not tgt:
         return error_response(
             "执行失败：target 不能为空，应填 'uuid/名字'。",
-            "❌ 参数错误",
+            "参数错误",
         )
     pair = parse_workplace_target(tgt, strip=True)
     if not pair:
         return error_response(
             f"执行失败：target 格式不正确，应为 'uuid/名字'（工作区前缀 + 对象名）。当前输入为: '{target}'",
-            "❌ 路径格式错误",
+            "路径格式错误",
         )
     workplace_id, obj_name = pair
     audit_error = _audit(t, workplace_id, obj_name)
     if audit_error:
-        return error_response(audit_error, "❌ 无法合并")
+        return error_response(audit_error, "无法合并")
 
     result = submit_request(request_type=req_type, target=tgt, reason="")
     msg = (
-        f"✅ 合并申请已提交给用户审批 (请求ID: {result['id']})。\n"
+        f"合并申请已提交给用户审批 (请求ID: {result['id']})。\n"
         f"申请类型: {req_type} | 目标: {target}\n\n"
-        f"💡 系统指示：\n"
+        f"系统指示：\n"
         f"1. 该合并需要用户 Yes/No 审批，请勿反复调用本工具催促。\n"
         f"2. 请挂起当前合并相关任务，等待系统通知（审批通过/拒绝）。\n"
         f"3. 若当前有其他无关联的独立任务，可继续执行。"
     )
-    return text_response(msg, f"⏳ 合并申请已提交: {result['id']}")
+    return text_response(msg, f"合并申请已提交: {result['id']}")

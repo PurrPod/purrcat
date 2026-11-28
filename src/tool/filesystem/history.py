@@ -100,7 +100,7 @@ def save_backup_meta(target_path: str, backup_id: str, diff: str):
     meta_data = {
         "id": f"diff_{backup_id}",
         "path": display_path,
-        "host_path": target_path,  # 🌟 修复：额外保存宿主机绝对路径，方便后面读取真实文件
+        "host_path": target_path,  # 修复：额外保存宿主机绝对路径，方便后面读取真实文件
         "backup_id": backup_id,
         "diff": diff,
         "time": time.strftime("%H:%M:%S", time.localtime(int(backup_id) / 1000)),
@@ -110,7 +110,7 @@ def save_backup_meta(target_path: str, backup_id: str, diff: str):
 
 
 def get_all_diffs() -> list:
-    """🌟 终极改造：精准识别文件的 [创建 / 修改 / 删除] 状态"""
+    """终极改造：精准识别文件的 [创建 / 修改 / 删除] 状态"""
     if not os.path.exists(HISTORY_DIR):
         return []
 
@@ -150,7 +150,7 @@ def get_all_diffs() -> list:
         history_file = _get_history_path(host_path)
         oldest_backup_path = f"{history_file}@{oldest_id}"
 
-        # 🌟 核心 1：物理状态机判定
+        # 核心 1：物理状态机判定
         is_created_here = os.path.exists(oldest_backup_path + ".empty")
         is_deleted_now = not os.path.exists(host_path)
 
@@ -174,7 +174,7 @@ def get_all_diffs() -> list:
             except UnicodeDecodeError:
                 current_content = "[二进制文件或富文本，无法提供差异对比]\n"
 
-        # 🌟 核心 2：计算 Diff，自带防空兜底
+        # 核心 2：计算 Diff，自带防空兜底
         diff_text = _build_history_diff(old_content, current_content, path, change_type)
 
         consolidated_diffs.append(
@@ -186,7 +186,7 @@ def get_all_diffs() -> list:
                 "edit_count": len(items),
                 "time": newest_meta.get("time", ""),
                 "diff": diff_text,
-                "change_type": change_type,  # 👈 把状态丢给前端
+                "change_type": change_type,  # 把状态丢给前端
             }
         )
 
@@ -230,7 +230,7 @@ def purge_change_record(display_path: str) -> int:
 
 
 def ack_backup(target_path: str, backup_id: str) -> int:
-    """用户确认更改，释放磁盘空间。执行【向前截断】：清理当前及更旧的备份。
+    """用户确认更改，释放磁盘空间。执行向前截断：清理当前及更旧的备份。
 
     返回实际清理的文件数；返回 0 表示当前解析路径下没有任何备份
     （记录可能指向已被外部迁移或销毁的位置）。
@@ -255,7 +255,7 @@ def ack_backup(target_path: str, backup_id: str) -> int:
 
 
 def rewind_file_by_id(target_path: str, backup_id: str) -> str:
-    """【重写】精确回滚，并解决非线性撤销导致的状态错乱"""
+    """重写精确回滚，并解决非线性撤销导致的状态错乱"""
     if not backup_id:
         raise FileSystemError("精确回滚必须提供 backup_id。")
 

@@ -45,49 +45,49 @@ def FileSystem(action: str, path: str = None, destination: str = None, **kwargs)
 
         if action not in allowed_actions:
             return error_response(
-                f"无效的操作: {action}。支持: {allowed_actions}", "❌ 参数错误"
+                f"无效的操作: {action}。支持: {allowed_actions}", "参数错误"
             )
 
         if not path:
-            return error_response(f"{action} 操作必须提供 path 参数", "❌ 参数缺失")
+            return error_response(f"{action} 操作必须提供 path 参数", "参数缺失")
 
         if action == "read":
             result = read_file(path, kwargs.get("offset", 0), kwargs.get("limit", 2000))
-            # 🌟 改造：直接把组装好的带行号的字符串作为 content
+            # 改造：直接把组装好的带行号的字符串作为 content
             read_text = f"文件路径: {result['path']}\n总行数: {result['total_lines']}\n\n{result['content']}"
 
-            # 🌟 前置 token 超限拦截：上限与工具路由共用同一函数（少 READ_TOKEN_BUFFER
+            # 前置 token 超限拦截：上限与工具路由共用同一函数（少 READ_TOKEN_BUFFER
             # 作缓冲），在 route.py 全局落盘机制拦截前给出更友好的分批读取提示
             max_read_tokens = get_output_token_limit() - READ_TOKEN_BUFFER
             read_token_count = count_tokens(read_text)
             if read_token_count > max_read_tokens:
                 return error_response(
                     f"返回内容约 {read_token_count} token，超出 {max_read_tokens} token 上限，请缩小 limit 行数参数重新分批读取。",
-                    "❌ 文本超限",
+                    "文本超限",
                 )
 
-            return text_response(read_text, f"📄 读取了 {result['showing_lines']} 行")
+            return text_response(read_text, f"读取了 {result['showing_lines']} 行")
 
         if action == "edit":
             old_str, new_str = kwargs.get("old_string"), kwargs.get("new_string")
             if old_str is None or new_str is None:
                 return error_response(
-                    "edit 操作需提供 old_string 和 new_string", "❌ 参数缺失"
+                    "edit 操作需提供 old_string 和 new_string", "参数缺失"
                 )
             result = edit_file(path, old_str, new_str, kwargs.get("replace_all", False))
 
             diff_text = result.get("diff", "")
             diff_summary = _shared.summarize_diff(diff_text)
             response_text = (
-                f"✂️ 修改成功！{diff_summary}。\n"
-                f"💡 提示：如果误删了重要代码，你可以随时使用 `action='undo'` 进行回溯。\n\n"
+                f"修改成功！{diff_summary}。\n"
+                f"提示：如果误删了重要代码，你可以随时使用 `action='undo'` 进行回溯。\n\n"
                 f"{result.get('message', '')}"
             )
-            return text_response(response_text, "✂️ 修改成功")
+            return text_response(response_text, "修改成功")
 
         if action == "undo":
             if not path:
-                return error_response("undo 操作必须提供 path 参数", "❌ 参数缺失")
+                return error_response("undo 操作必须提供 path 参数", "参数缺失")
             try:
                 # 终极修复：加入 require_write 进行路径映射和权限校验
                 # 把 /agent_vm/... 映射为真实的 D:\cat-in-cup\agent_vm\...
@@ -96,7 +96,7 @@ def FileSystem(action: str, path: str = None, destination: str = None, **kwargs)
                 # Agent 调用 undo 时，回滚该文件的最新一次操作
                 result_msg = rewind_file(resolved_path)
                 return text_response(
-                    f"文件 {resolved_path} 回滚情况：\n{result_msg}", f"↩️ {result_msg}"
+                    f"文件 {resolved_path} 回滚情况：\n{result_msg}", f"{result_msg}"
                 )
 
             except FileSystemError as e:
@@ -105,96 +105,94 @@ def FileSystem(action: str, path: str = None, destination: str = None, **kwargs)
                 if "未找到" in error_msg or "可回滚" in error_msg:
                     return error_response(
                         f"{error_msg}\n"
-                        f"💡 系统提示：备份文件已不存在。这可能是因为用户已为你执行了回滚，"
+                        f"系统提示：备份文件已不存在。这可能是因为用户已为你执行了回滚，"
                         f"或者修改已被人类确认并固化。请不要继续尝试 undo，直接使用 read 工具查看该文件的最新状态！",
-                        "❌ 回滚取消",
+                        "回滚取消",
                     )
-                return error_response(error_msg, "❌ 回滚失败")
+                return error_response(error_msg, "回滚失败")
 
         if action == "write":
             content = kwargs.get("content")
             if content is None:
-                return error_response("write 操作需提供 content", "❌ 参数缺失")
+                return error_response("write 操作需提供 content", "参数缺失")
             result = write_file(path, content)
 
             diff_text = result.get("diff", "")
             diff_summary = _shared.summarize_diff(diff_text)
             response_text = (
                 f"{result['message']}\n\n"
-                f"📊 变更统计：{diff_summary}。\n"
-                f"� 提示：如果覆盖导致重要代码丢失，你可以使用 `action='undo'` 恢复到上一版本。"
+                f"变更统计：{diff_summary}。\n"
+                f"提示：如果覆盖导致重要代码丢失，你可以使用 `action='undo'` 恢复到上一版本。"
             )
-            return text_response(response_text, "📝 写入成功")
+            return text_response(response_text, "写入成功")
 
         if action == "search":
             if not kwargs.get("pattern"):
-                return error_response("缺少 pattern", "❌ 参数缺失")
+                return error_response("缺少 pattern", "参数缺失")
             result = search_file(path, kwargs.get("pattern"))
-            search_txt = f"🎯 在目录 {result['search_dir']} 中搜索正则 `{result['pattern']}`\n匹配结果 ({result['match_count']}处):\n{result['results']}"
-            return text_response(search_txt, f"🔍 找到 {result['match_count']} 处匹配")
+            search_txt = f"在目录 {result['search_dir']} 中搜索正则 `{result['pattern']}`\n匹配结果 ({result['match_count']}处):\n{result['results']}"
+            return text_response(search_txt, f"找到 {result['match_count']} 处匹配")
 
         if action == "glob":
             if not kwargs.get("pattern"):
-                return error_response("缺少 pattern", "❌ 参数缺失")
+                return error_response("缺少 pattern", "参数缺失")
             result = glob_file(path, kwargs.get("pattern"))
             glob_txt = (
-                f"🎯 在目录 {result['search_dir']} 中匹配模式 `{result['pattern']}`\n找到文件 ({result['total_matches']}个):\n"
+                f"在目录 {result['search_dir']} 中匹配模式 `{result['pattern']}`\n找到文件 ({result['total_matches']}个):\n"
                 + "\n".join(result["files_sorted_by_mtime"])
             )
-            return text_response(glob_txt, f"🌐 找到 {result['total_matches']} 个文件")
+            return text_response(glob_txt, f"找到 {result['total_matches']} 个文件")
 
         if action == "list":
             try:
                 result = list_filesystem(path=path)
                 return text_response(
                     result["tree"],
-                    f"📂 📁{result['dir_count']} 📄{result['file_count']}",
+                    f"{result['dir_count']}{result['file_count']}",
                 )
             except HostPathNotFoundError:
-                return error_response("路径不存在", "❌ 路径不存在")
+                return error_response("路径不存在", "路径不存在")
             except FileSystemError as e:
-                return error_response(str(e), "❌ 列表失败")
+                return error_response(str(e), "列表失败")
 
         if action == "move":
             if not destination:
                 return error_response(
-                    "move 操作需提供 destination 目标路径", "❌ 参数缺失"
+                    "move 操作需提供 destination 目标路径", "参数缺失"
                 )
             try:
                 result = move_file(path_from=path, path_to=destination)
-                return text_response(result["message"], "🚚 移动/导入导出成功")
+                return text_response(result["message"], "移动/导入导出成功")
             except HostPathNotFoundError:
-                return error_response("源路径不存在", "❌ 路径不存在")
+                return error_response("源路径不存在", "路径不存在")
             except FileSystemError as e:
-                return error_response(str(e), "❌ 移动失败")
+                return error_response(str(e), "移动失败")
 
         if action == "copy":
             if not destination:
                 return error_response(
-                    "copy 操作需提供 destination 目标路径", "❌ 参数缺失"
+                    "copy 操作需提供 destination 目标路径", "参数缺失"
                 )
             try:
                 result = copy_file(path_from=path, path_to=destination)
-                title = (
-                    "📋 覆盖复制成功" if result.get("overwritten") else "📋 复制成功"
-                )
+                title = "覆盖复制成功" if result.get("overwritten") else "复制成功"
                 return text_response(result["message"], title)
             except HostPathNotFoundError:
-                return error_response("源路径不存在", "❌ 路径不存在")
+                return error_response("源路径不存在", "路径不存在")
             except FileSystemError as e:
-                return error_response(str(e), "❌ 复制失败")
+                return error_response(str(e), "复制失败")
 
         if action == "delete":
             try:
                 result = delete_file(path=path)
-                return text_response(result["message"], "🗑️ 删除成功")
+                return text_response(result["message"], "删除成功")
             except HostPathNotFoundError:
-                return error_response("要删除的路径不存在", "❌ 路径不存在")
+                return error_response("要删除的路径不存在", "路径不存在")
             except FileSystemError as e:
-                return error_response(str(e), "❌ 删除失败")
+                return error_response(str(e), "删除失败")
 
-        return error_response("未知错误", "❌ 系统错误")
+        return error_response("未知错误", "系统错误")
 
     except Exception as e:
         traceback.print_exc()
-        return error_response(f"系统异常: {str(e)}", "❌ 异常")
+        return error_response(f"系统异常: {str(e)}", "异常")

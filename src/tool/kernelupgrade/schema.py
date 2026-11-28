@@ -13,8 +13,8 @@ KERNELUPGRADE_TOOL_SCHEMA = {
             "- upgrade：把正式区中已存在的该 type 对象（必要时连带配置）搬进沙盒再改；"
             "注意：MCP 只有源码落在受管 mcps 目录里的才能升级，外部自行下载、仅注册在 mcp_config.json 的 MCP 会报错；\n"
             "- merge：代发合并审批请求（等同原 Request 的 *_merge，仍需用户 Yes/No）；\n"
-            "- test：代发/直跑架构级测试（skill→Trigger+盲测审批、sensor→协议体检、mcp→后台并发评测、"
-            "agentloop/graph→宿主侧静态三重校验，均免审）；ui-plugin 无架构级测试，需你自行在沙盒自测。"
+            "- test：代发/直跑架构级测试（skillTrigger+盲测审批、sensor协议体检、mcp后台并发评测、"
+            "agentloop/graph宿主侧静态三重校验，均免审）；ui-plugin 无架构级测试，需你自行在沙盒自测。"
         ),
         "parameters": {
             "type": "object",

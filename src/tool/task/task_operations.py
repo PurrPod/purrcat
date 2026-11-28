@@ -42,15 +42,15 @@ def add_task_operation(name: str, inputs: dict, graph_name: str) -> tuple:
                 result = asyncio.run(single_task.run())
                 task_id = single_task.task_id
 
-                # 🌟 修复：通过判断任务最终的精确状态，分发不同的 push 话术
+                # 修复：通过判断任务最终的精确状态，分发不同的 push 话术
                 if single_task.state == TaskState.KILLED:
                     notify_msg = (
-                        f"⛔ 任务 '{name}' (ID: {task_id}) 的后台进程已被人工强行终止。"
+                        f"任务 '{name}' (ID: {task_id}) 的后台进程已被人工强行终止。"
                     )
                 elif isinstance(result, dict) and "message" in result:
                     notify_msg = result["message"]
                 else:
-                    notify_msg = f"✅ 任务 '{name}' (ID: {task_id}) 已执行完毕。"
+                    notify_msg = f"任务 '{name}' (ID: {task_id}) 已执行完毕。"
 
                 agent_force_push(notify_msg, type="task_message")
             except Exception as e:
@@ -119,7 +119,7 @@ def submit_request_operation(task_id: str, content: str, node_id: str) -> tuple:
     if not task:
         return None, f"注入失败：未找到任务 (ID: {task_id})。"
 
-    # 🌟 核心修复：在注入前（此时状态还未被改写），判断守护线程是否已经结束
+    # 核心修复：在注入前（此时状态还未被改写），判断守护线程是否已经结束
     need_restart_thread = task.state in [
         TaskState.INTERRUPTED,
         TaskState.ERROR,
@@ -136,7 +136,7 @@ def submit_request_operation(task_id: str, content: str, node_id: str) -> tuple:
         success = result.get("status") == "success"
 
         if success:
-            # 🌟 如果原线程已死寂，重新拉起新的物理线程
+            # 如果原线程已死寂，重新拉起新的物理线程
             if need_restart_thread:
                 import asyncio
 

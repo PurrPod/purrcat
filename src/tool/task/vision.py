@@ -10,13 +10,13 @@ from src.utils.config import get_model_config
 
 VISION_SYSTEM_PROMPT = """你是视觉顾问，按附件场景给出专业分析：
 
-【网页/前端/设计稿分析】：
+网页/前端/设计稿分析：
 - 检查溢出、错位、重叠、遮挡
 - 评估字体搭配与字号层级
 - 评估配色协调性与文字对比度
 - 检查对齐、留白、视觉层次
 
-【音视频分析】：描述关键画面/音频内容，尽量标注时间点。
+音视频分析：描述关键画面/音频内容，尽量标注时间点。
 
 要求：回答具体、指向明确（给坐标或具体位置），避免空泛评价，回答用户 prompt 关心的问题。"""
 
@@ -85,7 +85,7 @@ def _get_vision_config():
 
 
 def vision_inline(paths: list, session_id: str | None = None) -> dict:
-    """🌟 vision 直注模式：直接读取图片附件构造 OpenAI 多模态 content 列表。
+    """vision 直注模式：直接读取图片附件构造 OpenAI 多模态 content 列表。
 
     调用方模型自身支持视觉（model.json 配置 vision=true）时，Task 的 vision
     action 不再走视觉顾问模型+prompt 分析，而是把图片本体直接塞回对话历史
@@ -147,7 +147,6 @@ def vision_inline(paths: list, session_id: str | None = None) -> dict:
         "metadata": {
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
             "type": "text",
-            "snip": f"查看了 {len(resolved_paths)} 张图片",
         },
     }
 

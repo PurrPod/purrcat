@@ -2,9 +2,9 @@
 
 拆分说明：
 - 工具解析与隔离名单留在本模块（注册契约与文档锚点）
-- 媒体落盘 / vision 直注 → media.py
-- 线程与子进程执行 → execution.py
-- 超长输出落盘与预览 → output_limit.py
+- 媒体落盘 / vision 直注media.py
+- 线程与子进程执行execution.py
+- 超长输出落盘与预览output_limit.py
 """
 
 from __future__ import annotations
@@ -39,17 +39,17 @@ TOOL_FUNC_MAP = {
     "search": "Search",
     "fetch": "Fetch",
     "task": "Task",
-    "kernelupgrade": "KernelUpgrade",  # 🌟 新增注册
+    "kernelupgrade": "KernelUpgrade",  # 新增注册
 }
 
-# 🌟 进程隔离名单：只有这些「易卡死」的工具才丢进子进程执行（可被物理级 terminate）
+# 进程隔离名单：只有这些「易卡死」的工具才丢进子进程执行（可被物理级 terminate）
 # 其余工具（memo/filesystem/task/brainstorm/callmcp/kernelupgrade/request）
 # 持有进程内状态或仅做本地落盘，保持进程内执行
 # （如 brainstorm/task 会 lazy import AgentManager、callmcp 持有 MCP 长连接），
 # 子进程化会出灾难性后果，保持进程内执行
-# ⚠️ callmcp 曾被隔离导致 MCP 连接随子进程退出被销毁（Chrome 等被连带关闭），
+# callmcp 曾被隔离导致 MCP 连接随子进程退出被销毁（Chrome 等被连带关闭），
 # 防卡死改由 tool_caller 中的 asyncio.wait_for 超时兜底
-# ⚠️ request 只写 requests.json 入队，隔离执行会每次重启解释器（约 5s），故保持进程内
+# request 只写 requests.json 入队，隔离执行会每次重启解释器（约 5s），故保持进程内
 PROCESS_ISOLATED_TOOLS = {
     "bash",  # 长时命令 / 死循环
     "fetch",  # 网络抓取
@@ -98,18 +98,11 @@ def _unpack_result(result_obj: Any) -> tuple[Any, dict]:
     return result_obj, {
         "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
         "type": "text",
-        "snip": "",
     }
 
 
 def _pack_vision_parts(content_data: list, metadata: dict) -> str:
-    """vision 直注结果跳过截断与格式化，只把 snip 并入文本 part。"""
-    snip = str(metadata.get("snip") or "").strip()
-    if snip:
-        for part in content_data:
-            if part.get("type") == "text":
-                part["text"] = f"{part['text']}\n{snip}"
-                break
+    """vision 直注结果跳过截断与格式化，parts 原样返回。"""
     metadata = dict(metadata)
     metadata["type"] = "text"
     return json.dumps(
@@ -148,7 +141,6 @@ def _apply_output_limit(
         preview=safe_truncate(content_data, max_output_tokens),
     )
     metadata["type"] = "warning"
-    metadata["snip"] = "字数超长已被截断并落盘"
     return content_data
 
 
@@ -168,7 +160,7 @@ def dispatch_tool(
     try:
         tool_name_lower = tool_name.lower()
 
-        # 🌟 vision 直注模式下，告知 Task 工具调用方支持视觉
+        # vision 直注模式下，告知 Task 工具调用方支持视觉
         # （action=vision 时直接返回图片本体，不再走视觉顾问模型）
         if vision_mode and tool_name_lower == "task":
             arguments["_vision_mode"] = True
@@ -182,6 +174,9 @@ def dispatch_tool(
         )
 
         content_data, metadata = _unpack_result(result_obj)
+        # 工具结果不再携带 snip 摘要，任何直接返回 metadata 的旧工具也在此统一剔除
+        metadata = dict(metadata)
+        metadata.pop("snip", None)
 
         # 多媒体字典退化为路径提示；vision 模式下图片直接变成 OpenAI parts
         content_data = handle_media_content(
@@ -191,7 +186,7 @@ def dispatch_tool(
             vision_mode=vision_mode,
         )
 
-        # 🌟 vision 直注结果：base64 不能被 token 截断/yaml 转换污染
+        # vision 直注结果：base64 不能被 token 截断/yaml 转换污染
         if is_openai_content_parts(content_data):
             return _pack_vision_parts(content_data, metadata)
 
@@ -210,7 +205,7 @@ def dispatch_tool(
             content_data = yaml.dump(
                 content_data, allow_unicode=True, default_flow_style=False
             )
-            content_data = f"【系统格式化输出】\n{content_data}"
+            content_data = f"系统格式化输出：\n{content_data}"
 
         return json.dumps(
             {"content": str(content_data), "metadata": metadata}, ensure_ascii=False
@@ -218,14 +213,13 @@ def dispatch_tool(
 
     except Exception as e:
         traceback.print_exc()
-        err_msg = f"❌ 工具 [{tool_name}] 调度/执行发生异常: {str(e)}"
+        err_msg = f"工具 [{tool_name}] 调度/执行发生异常: {str(e)}"
         return json.dumps(
             {
                 "content": err_msg,
                 "metadata": {
                     "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
                     "type": "error",
-                    "snip": "❌ 执行异常",
                 },
             },
             ensure_ascii=False,
@@ -233,12 +227,12 @@ def dispatch_tool(
 
 
 # ==========================================
-# 🌟 vision 直注结果的调用方辅助函数
+# vision 直注结果的调用方辅助函数
 # ==========================================
 
 
 def extract_tool_message_content(result: Any) -> Any:
-    """dispatch_tool 返回值 → tool 消息的 content。
+    """dispatch_tool 返回值tool 消息的 content。
 
     vision 直注结果（{"content": [OpenAI parts], "metadata": ...}）解包为
     多模态 parts 列表（符合 OpenAI tool 消息 content 数组规范）；
@@ -255,7 +249,7 @@ def extract_tool_message_content(result: Any) -> Any:
 
 
 def build_display_result(result: Any) -> str:
-    """dispatch_tool 返回值 → 前端/ACP 总线展示用结果。
+    """dispatch_tool 返回值前端/ACP 总线展示用结果。
 
     vision 直注结果剥离 image_url parts（base64 不外泄），只保留文本占位。
     """

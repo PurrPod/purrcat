@@ -63,18 +63,16 @@ def _get_graphs_help_text(graphs: dict) -> str:
     if not graphs:
         return "当前没有任何可用的工作流图 (Graph) 配置。"
 
-    lines = ["💡 当前所有可用的工作流配置 (graph_name) 及其所需 inputs 如下："]
+    lines = ["当前所有可用的工作流配置 (graph_name) 及其所需 inputs 如下："]
     for g_name, info in graphs.items():
         schema = info["param_schema"]
         # 展示信息时附加上它使用的模型，让大模型心中有数
-        lines.append(
-            f"\n▶ 【{g_name}】: {info['description']} (驱动核心: {info['core']})"
-        )
+        lines.append(f"\n- {g_name}: {info['description']} (驱动核心: {info['core']})")
         if schema:
             lines.append("   需要的 inputs 参数:")
             for k, v in schema.items():
                 is_req = v.get("required", True)
-                req_mark = "✅ 必填" if is_req else "⭕ 可选"
+                req_mark = "必填" if is_req else "可选"
                 param_type = v.get("type", "any")
                 desc = v.get("description", "无描述")
                 lines.append(f"     - {k} ({param_type}, {req_mark}): {desc}")
@@ -95,12 +93,12 @@ def Task(action: str, **kwargs) -> str:
             "get_details",
             "vision",
         ]:
-            return error_response(f"无效的操作: {action}", "❌ 无效action")
+            return error_response(f"无效的操作: {action}", "无效action")
 
         if action == "list_graphs":
-            # 🌟 改造：把 _get_graphs_help_text 的结果直接作为 content
+            # 改造：把 _get_graphs_help_text 的结果直接作为 content
             return text_response(
-                _get_graphs_help_text(_get_all_graphs_info()), "📂 可用图列表"
+                _get_graphs_help_text(_get_all_graphs_info()), "可用图列表"
             )
         if action == "list_tasks":
             return _handle_list_tasks()
@@ -116,7 +114,7 @@ def Task(action: str, **kwargs) -> str:
             return _handle_vision(**kwargs)
     except Exception as e:
         traceback.print_exc()
-        return error_response(f"任务异常: {str(e)}", "❌ Task执行异常")
+        return error_response(f"任务异常: {str(e)}", "Task执行异常")
 
 
 def _handle_add(**kwargs) -> str:
@@ -128,22 +126,22 @@ def _handle_add(**kwargs) -> str:
 
     if not name:
         return error_response(
-            "❌ 缺少必需参数: name。请为任务起一个简短的名称。", "❌ 缺少name"
+            "缺少必需参数: name。请为任务起一个简短的名称。", "缺少name"
         )
 
-    # 🌟 新增：清洗并校验任务名称，防止路径非法字符和目录穿越
+    # 新增：清洗并校验任务名称，防止路径非法字符和目录穿越
     name = str(name).strip()
     name_error = _shared.validate_task_name(name)
     if name_error:
-        return error_response(name_error, "❌ 名称非法")
+        return error_response(name_error, "名称非法")
 
     graphs = _get_all_graphs_info()
 
     if graph_name not in graphs:
         return error_response(
-            f"❌ 未找到指定的工作流图: '{graph_name}'。\n"
-            "💡 引导建议：请先调用 action='list_graphs' 获取正确的图列表和参数要求，请勿随意编造 graph_name！",
-            "❌ 图不存在",
+            f"未找到指定的工作流图: '{graph_name}'。\n"
+            "引导建议：请先调用 action='list_graphs' 获取正确的图列表和参数要求，请勿随意编造 graph_name！",
+            "图不存在",
         )
 
     graph_info = graphs[graph_name]
@@ -155,24 +153,24 @@ def _handle_add(**kwargs) -> str:
         missing_required, extra_keys, graph_name
     )
     if param_error:
-        return error_response(param_error, "❌ 参数错误")
+        return error_response(param_error, "参数错误")
 
     try:
         result, error = add_task_operation(name, inputs, graph_name)
         if error:
-            return warning_response(error, "⚠️ 任务创建失败")
+            return warning_response(error, "任务创建失败")
         return text_response(
             f"任务ID: {result['task_id']}\n信息: {result['message']}",
-            "🚀 任务已创建",
+            "任务已创建",
         )
     except Exception as e:
-        return error_response(f"任务创建异常: {e}", "❌ 创建任务异常")
+        return error_response(f"任务创建异常: {e}", "创建任务异常")
 
 
 def _handle_list_tasks() -> str:
     result, error = list_tasks_operation()
     if error:
-        return warning_response(error, "⚠️ 获取失败")
+        return warning_response(error, "获取失败")
     # {"tasks": result["tasks"]} 转为平文本
     tasks_str = "\n".join(
         [
@@ -180,20 +178,18 @@ def _handle_list_tasks() -> str:
             for t in result["tasks"]
         ]
     )
-    return text_response(
-        tasks_str or "当前无任务。", f"📋 发现 {result['count']} 个任务"
-    )
+    return text_response(tasks_str or "当前无任务。", f"发现 {result['count']} 个任务")
 
 
 def _handle_kill(**kwargs) -> str:
     task_id = kwargs.get("task_id")
     if not task_id:
-        return error_response("缺少必需参数: task_id", "❌ 缺少task_id")
+        return error_response("缺少必需参数: task_id", "缺少task_id")
     result, error = kill_task_operation(task_id)
     return (
-        warning_response(error, "⚠️ 终止失败")
+        warning_response(error, "终止失败")
         if error
-        else text_response(result["message"], "⛔ 任务已终止")
+        else text_response(result["message"], "任务已终止")
     )
 
 
@@ -203,30 +199,30 @@ def _handle_submit_request(**kwargs) -> str:
     node_id = kwargs.get("node_id")
 
     if not task_id:
-        return error_response("缺少必需参数: task_id", "❌ 缺少task_id")
+        return error_response("缺少必需参数: task_id", "缺少task_id")
     if not content:
-        return error_response("缺少必需参数: content", "❌ 缺少content")
+        return error_response("缺少必需参数: content", "缺少content")
     if not node_id:
         return error_response(
             "缺少必需参数: node_id。必须精确指定要向哪个节点注入指令，不支持广播！",
-            "❌ 缺少node_id",
+            "缺少node_id",
         )
 
     result, error = submit_request_operation(task_id, content, node_id)
 
     if error:
-        return warning_response(error, "⚠️ 注入失败")
-    return text_response(result["message"], "💬 指令已成功注入")
+        return warning_response(error, "注入失败")
+    return text_response(result["message"], "指令已成功注入")
 
 
 def _handle_get_details(**kwargs) -> str:
     task_id = kwargs.get("task_id")
     if not task_id:
-        return error_response("缺少必需参数: task_id", "❌ 缺少task_id")
+        return error_response("缺少必需参数: task_id", "缺少task_id")
 
     result, error = get_task_details_operation(task_id)
     if error:
-        return warning_response(error, "⚠️ 获取详情失败")
+        return warning_response(error, "获取详情失败")
 
     # ===== 在此层进行 LLM 友好的平文本渲染 =====
     nodes_info = result.get("nodes", [])
@@ -234,7 +230,7 @@ def _handle_get_details(**kwargs) -> str:
         dashboard_text = "当前任务没有任何可交互的挂起节点。"
     else:
         lines = [
-            "💡 以下是当前等待/正在运行的交互节点，你可以使用 submit_request 注入指令）："
+            "以下是当前等待/正在运行的交互节点，你可以使用 submit_request 注入指令）："
         ]
         for node in nodes_info:
             lines.append(
@@ -242,7 +238,7 @@ def _handle_get_details(**kwargs) -> str:
             )
         dashboard_text = "\n".join(lines)
 
-    return text_response(dashboard_text, "📋 任务详情")
+    return text_response(dashboard_text, "任务详情")
 
 
 def _handle_vision(**kwargs) -> str:
@@ -251,10 +247,10 @@ def _handle_vision(**kwargs) -> str:
     if not attachment_paths:
         return error_response(
             "vision 操作必须提供 attachment_paths 参数（附件路径数组，支持图片/视频/音频）",
-            "❌ 参数缺失",
+            "参数缺失",
         )
 
-    # 🌟 vision 直注模式：调用方模型自身支持视觉（model.json vision=true），
+    # vision 直注模式：调用方模型自身支持视觉（model.json vision=true），
     # 直接把图片塞回对话（相当于读取图片），无需 prompt 描述、不调视觉顾问
     if kwargs.pop("_vision_mode", False):
         session_id = kwargs.get("_session_id")
@@ -281,10 +277,10 @@ def _handle_vision(**kwargs) -> str:
                 content = result.get("analysis_result") or str(result)
                 return text_response(
                     content,
-                    f"👁️ 请求体积超限，已由视觉顾问分析 {len(attachment_paths)} 个附件",
+                    f"请求体积超限，已由视觉顾问分析 {len(attachment_paths)} 个附件",
                 )
             except Exception as e:
-                return error_response(f"图片读取失败: {e}", "❌ 读取失败")
+                return error_response(f"图片读取失败: {e}", "读取失败")
 
         try:
             return vision_inline(attachment_paths, session_id=session_id)
@@ -292,12 +288,12 @@ def _handle_vision(**kwargs) -> str:
             # require_read 只查权限不查存在性，open() 会抛内建 FileNotFoundError
             return error_response(
                 f"附件路径不存在: {e}，请先确认文件已生成（如截图需等待工具执行完成）",
-                "❌ 路径不存在",
+                "路径不存在",
             )
         except HostPathNotFoundError as e:
-            return error_response(str(e), "❌ 路径不存在")
+            return error_response(str(e), "路径不存在")
         except FileSystemError as e:
-            return error_response(str(e), "❌ 附件读取失败")
+            return error_response(str(e), "附件读取失败")
 
     try:
         result = vision(
@@ -306,10 +302,8 @@ def _handle_vision(**kwargs) -> str:
         )
         # 直接把顾问的分析结论作为正文返回，让 agent 拿到纯净的顾问回答
         content = result.get("analysis_result") or str(result)
-        return text_response(
-            content, f"👁️ 视觉顾问已分析 {len(attachment_paths)} 个附件"
-        )
+        return text_response(content, f"视觉顾问已分析 {len(attachment_paths)} 个附件")
     except HostPathNotFoundError as e:
-        return error_response(str(e), "❌ 路径不存在")
+        return error_response(str(e), "路径不存在")
     except FileSystemError as e:
-        return error_response(str(e), "❌ 附件读取失败")
+        return error_response(str(e), "附件读取失败")

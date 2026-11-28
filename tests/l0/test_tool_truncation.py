@@ -34,8 +34,8 @@ def test_long_output_is_buffered_truncated_and_wrapped(tmp_path, monkeypatch):
     payload = json.loads(route.dispatch_tool("Echo", {}, available_tokens=1000))
 
     assert payload["metadata"]["type"] == "warning"
-    assert "落盘" in payload["metadata"]["snip"]
-    assert payload["content"].startswith("⚠️ [系统拦截]")
+    assert "snip" not in payload["metadata"]
+    assert payload["content"].startswith("[输出超限]")
     assert "沙盒内路径: /agent_vm/.buffer/echo/" in payload["content"]
 
     files = list((tmp_path / "echo").iterdir())
@@ -51,10 +51,11 @@ def test_short_output_passes_through_without_buffer(tmp_path, monkeypatch):
 
     assert payload["content"] == "ok"
     assert payload["metadata"]["type"] == "text"
+    assert "snip" not in payload["metadata"]
     assert not (tmp_path / "echo").exists()
 
 
-def test_vision_parts_skip_truncation_and_merge_snip(tmp_path, monkeypatch):
+def test_vision_parts_skip_truncation(tmp_path, monkeypatch):
     monkeypatch.setattr(route, "BUFFER_DIR", str(tmp_path))
     parts = [
         {"type": "text", "text": "图片如下"},
@@ -72,7 +73,8 @@ def test_vision_parts_skip_truncation_and_merge_snip(tmp_path, monkeypatch):
 
     assert isinstance(payload["content"], list)
     assert payload["metadata"]["type"] == "text"
-    assert payload["content"][0]["text"] == "图片如下\n关键提示"
+    assert "snip" not in payload["metadata"]
+    assert payload["content"][0]["text"] == "图片如下"
     assert not any(tmp_path.iterdir())
 
 

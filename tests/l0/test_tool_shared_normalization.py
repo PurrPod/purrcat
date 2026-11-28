@@ -93,7 +93,7 @@ def test_rejection_feedback_matches_request_type():
     )
     merge_text = request_shared.format_rejection_feedback("graph_merge", "非法节点")
     assert "代码合并请求" in merge_text
-    assert "【拒绝理由】: 非法节点" in merge_text
+    assert "拒绝理由: 非法节点" in merge_text
     assert request_shared.format_rejection_feedback("file_read", "x") == "x"
 
 
@@ -106,7 +106,7 @@ def test_decision_callback_marks_auto_permission_only_for_plain_types():
         "r2", "u/n", True, "graph_merge", "ok"
     )
 
-    assert "【同意并已生效】" in granted
+    assert "同意并已生效" in granted
     assert "自动下发权限" in granted
     assert "自动下发权限" not in merged
 

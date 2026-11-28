@@ -48,8 +48,8 @@ def overflow_prompt(
 ) -> str:
     """超长输出的模型可读提示（含落盘路径与预览）。"""
     return (
-        f"⚠️ [系统拦截] {tool_name} 输出总长约 {content_token_count} token，超出当前安全余量阈值（{max_output_tokens} token）。完整结果已落盘：\n"
-        f"🐳 沙盒内路径: /agent_vm/.buffer/{tool_name}/{file_name}\n"
+        f"[输出超限] {tool_name} 输出总长约 {content_token_count} token，超出当前安全余量阈值（{max_output_tokens} token）。完整结果已落盘：\n"
+        f"沙盒内路径: /agent_vm/.buffer/{tool_name}/{file_name}\n"
         f"如果你需要查看剩余的内容，请务必使用 Bash (cat/grep/sed/tail) 工具去上述缓存文件里分批阅读！\n"
         f"\n--- 内容预览 (前 {max_output_tokens} token) ---\n"
         f"{preview}"

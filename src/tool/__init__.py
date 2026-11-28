@@ -81,20 +81,20 @@ def init_tools():
             # 触发单例的 __new__ 初始化，这会在后台加载 ONNX 嵌入模型并执行向量化
             from src.tool.search.mcp_search import MCPSearcher
 
-            print("🚀 正在后台初始化 [MCP] 内存检索树...")
+            print("正在后台初始化 [MCP] 内存检索树...")
             MCPSearcher()
 
             # 3. 扫描 skill_dir 结构并构建 Skill 检索树
             from src.tool.search.skill_search import SkillSearcher
 
-            print("🚀 正在后台初始化 [Skill] 内存检索树...")
+            print("正在后台初始化 [Skill] 内存检索树...")
             SkillSearcher()
 
-            print("✅ 所有重型工具组件后台初始化完毕！")
+            print("所有重型工具组件后台初始化完毕！")
         except Exception as e:
             import traceback
 
-            print(f"❌ 工具后台初始化异常: {e}")
+            print(f"工具后台初始化异常: {e}")
             traceback.print_exc()
 
     t = threading.Thread(target=_bg_init, daemon=True, name="InitToolsThread")

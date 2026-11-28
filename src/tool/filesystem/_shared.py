@@ -124,12 +124,12 @@ def replace_occurrences(
     occurrences = content.count(old_string)
     if occurrences == 0:
         raise FileSystemError(
-            "⚠️ Edit 失败: old_string 在文件中未找到。文件已被其他 Agent 抢占修改！\n"
+            "Edit 失败: old_string 在文件中未找到。文件已被其他 Agent 抢占修改！\n"
             "解决：请重新 read 文件获取最新内容后再进行 edit。"
         )
     if occurrences > 1 and not replace_all:
         raise FileSystemError(
-            f"⚠️ Edit 失败: old_string 出现了 {occurrences} 次，无法精确定位。"
+            f"Edit 失败: old_string 出现了 {occurrences} 次，无法精确定位。"
         )
 
     if replace_all:

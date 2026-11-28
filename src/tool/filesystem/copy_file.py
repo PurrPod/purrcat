@@ -6,7 +6,7 @@ from src.tool.filesystem.exceptions import FileSystemError, HostPathNotFoundErro
 from src.tool.filesystem.history import track_edit, save_backup_meta
 from src.tool.filesystem.utils import require_read, require_write
 
-_UNDO_HINT = "💡 提示：如需恢复覆盖前的内容，可对被覆盖路径使用 `action='undo'` 回溯。"
+_UNDO_HINT = "提示：如需恢复覆盖前的内容，可对被覆盖路径使用 `action='undo'` 回溯。"
 
 
 def _backup_single_file(target_path: str):
@@ -45,7 +45,7 @@ def _backup_before_overwrite(src_path: str, dst_path: str) -> str:
             return (
                 f"目录 {os.path.basename(dst_path)}（合并覆盖其中 {count} 个同名文件）"
             )
-        # 文件 → 已存在目录：copy2 会复制进目录，实际被覆盖的是同名文件
+        # 文件已存在目录：copy2 会复制进目录，实际被覆盖的是同名文件
         target = os.path.join(dst_path, os.path.basename(src_path))
         if os.path.isfile(target):
             _backup_single_file(target)
@@ -54,7 +54,7 @@ def _backup_before_overwrite(src_path: str, dst_path: str) -> str:
 
     if os.path.isdir(src_path):
         raise FileSystemError(
-            f"⚠️ 复制失败: 目标位置 '{os.path.basename(dst_path)}' 已是文件，无法将目录复制到文件位置。\n"
+            f"复制失败: 目标位置 '{os.path.basename(dst_path)}' 已是文件，无法将目录复制到文件位置。\n"
             "解决：请为 path_to 提供一个新的目录路径。"
         )
 
@@ -93,7 +93,7 @@ def copy_file(path_from: str, path_to: str) -> dict:
 
     message = f"成功将{type_str} {os.path.basename(src_path)} 复制为 {os.path.basename(dst_path)}"
     if overwritten:
-        message = f"⚠️ 已覆盖：{overwritten}\n{message}\n{_UNDO_HINT}"
+        message = f"已覆盖：{overwritten}\n{message}\n{_UNDO_HINT}"
 
     return {
         "path_from": src_path,

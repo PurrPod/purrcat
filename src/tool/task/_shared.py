@@ -11,8 +11,8 @@ def validate_task_name(name: str) -> str | None:
     """非法字符（路径分隔符/小数点等）会破坏落盘，返回引导文案。"""
     if INVALID_NAME_RE.search(name):
         return (
-            "❌ 任务名称(name)包含非法字符。\n"
-            '💡 引导建议：为了保障底层落盘和文件系统安全，任务名称不能包含斜杠、小数点及冒号等特殊字符（如 \\ / : * ? " < > | .）。请修改名称后重试！'
+            "任务名称(name)包含非法字符。\n"
+            '引导建议：为了保障底层落盘和文件系统安全，任务名称不能包含斜杠、小数点及冒号等特殊字符（如 \\ / : * ? " < > | .）。请修改名称后重试！'
         )
     return None
 
@@ -45,18 +45,18 @@ def build_param_error_text(
                 for p in missing_required
             ]
         )
-        validation_errors.append(f"❌ 缺少必填参数:\n{miss_str}")
+        validation_errors.append(f"缺少必填参数:\n{miss_str}")
 
     if extra_keys:
         extra_str = ", ".join(f"'{key}'" for key in extra_keys)
-        validation_errors.append(f"⚠️ 传入了未知参数: {extra_str}")
+        validation_errors.append(f"传入了未知参数: {extra_str}")
 
     if not validation_errors:
         return ""
 
     help_text = "\n".join(validation_errors)
     help_text += (
-        f"\n\n💡 引导建议：你不确定参数时，请先调用 action='list_graphs' "
+        f"\n\n引导建议：你不确定参数时，请先调用 action='list_graphs' "
         f"仔细查看 '{graph_name}' 需要的 inputs 参数格式后再试！"
     )
     return help_text

@@ -32,7 +32,7 @@ def BrainStorm(
     **kwargs,
 ) -> str:
     try:
-        # 🚫 核心拦截：打工仔分支没有决策和裁员权限
+        # 核心拦截：打工仔分支没有决策和裁员权限
         if kwargs.get("_is_sub_branch"):
             return error_response(
                 "越权被拒：后台子分支无权调用 BrainStorm 工具进行递归派发或强制取消操作！"
@@ -46,8 +46,8 @@ def BrainStorm(
             # （{batch}_b1），并在并发多批次下跨批次匹配同名分支全部斩杀。
             if cancel_sub_branch(target_branch_id):
                 return text_response(
-                    f"✅ 斩杀信号已成功下发！后台分支 `{target_branch_id}` 已被强制终止。",
-                    "🛑 分支已终止",
+                    f"已终止后台分支 `{target_branch_id}`。",
+                    "分支已终止",
                 )
             else:
                 return error_response(
@@ -55,7 +55,7 @@ def BrainStorm(
                 )
 
         elif action == "create":
-            # 🌟 新增：事前独立校验多文件的写入权限
+            # 新增：事前独立校验多文件的写入权限
             if sub_branches:
                 for branch in sub_branches:
                     deliverables = branch.get("deliverable", [])
@@ -67,11 +67,11 @@ def BrainStorm(
                     for target_file in deliverables:
                         if not _has_write_permission(target_file):
                             return error_response(
-                                f"✋ 派发失败：分支 `{branch.get('branch_id')}` 的交付物路径 `{target_file}` 缺乏写入权限。\n"
+                                f"派发失败：分支 `{branch.get('branch_id')}` 的交付物路径 `{target_file}` 缺乏写入权限。\n"
                                 f"安全策略拦截：系统拒绝派发此任务。请先调用 Request 工具为该路径申请 file_write 权限，或修改目标路径为沙盒内(/agent_vm)路径。"
                             )
 
-            # 📄 把本次计划整体刷新到当前会话的 plan.md，供范式 @PLAN 引用
+            # 把本次计划整体刷新到当前会话的 plan.md，供范式 @PLAN 引用
             from src.agent.manager import AgentManager
 
             manager = AgentManager()
@@ -93,7 +93,7 @@ def BrainStorm(
             if sub_branches:
                 main_history = manager._agent.get_history()
 
-                # 🌟 从尾部往前定位本批次的 assistant 消息（带 tool_calls）。
+                # 从尾部往前定位本批次的 assistant 消息（带 tool_calls）。
                 # BS 被调度器延后到批次末尾执行，此刻其后可能已跟了同批次
                 # 其它工具的返回结果（这些结果会随快照进入子代理上下文），
                 # 因此不能只看 history[-1]。
@@ -114,9 +114,7 @@ def BrainStorm(
                     # 1) 塞入 BS 自己的伪造结果（绝对安全的纯字符串）
                     if own_tc:
                         # 拿取原始响应
-                        raw_resp = text_response(
-                            final_response_text, "🚀 脑暴计划已生效"
-                        )
+                        raw_resp = text_response(final_response_text, "脑暴计划已生效")
                         # 模拟 dispatch_tool 的安全策略，如果是字典就转 JSON 字符串
                         safe_content = (
                             json.dumps(raw_resp, ensure_ascii=False)
@@ -136,7 +134,7 @@ def BrainStorm(
                         main_history.append(
                             build_tool_reply(
                                 tc,
-                                "【系统提示】该工具调用与 BrainStorm 同批次发出，"
+                                "系统提示：该工具调用与 BrainStorm 同批次发出，"
                                 "其返回结果未注入本子代理上下文，请勿依赖此占位内容。",
                             )
                         )
@@ -147,7 +145,7 @@ def BrainStorm(
                     loop,
                 )
 
-            return text_response(final_response_text, "🚀 脑暴计划已生效")
+            return text_response(final_response_text, "脑暴计划已生效")
 
         return error_response("无效的 action 指令")
 

@@ -25,8 +25,8 @@ def test_build_memory_update_prompts_contains_both_sections():
     assert "overwrite_memory_md" in system
     assert "≤ 15 条" in system
     assert "工作经验" in system
-    assert "【现有长期记忆档案】\n# 现有" in user
-    assert "【本次新增用户画像】\n['画像 B']" in user
+    assert "现有长期记忆档案：\n# 现有" in user
+    assert "本次新增用户画像：\n['画像 B']" in user
 
 
 def test_build_memory_update_prompts_marks_empty_sections():
@@ -102,17 +102,17 @@ def test_render_plan_markdown_marks_empty_sections():
 
 
 def test_build_create_message_keeps_order_and_plan_error():
-    """SPEC-022 AC-3：创建回执的顺序与落盘失败提示逐字保持。"""
+    """SPEC-022 AC-3：创建回执的段落顺序与落盘失败提示。"""
     text = brainstorm_shared.build_create_message(
         ["第一步"], [{"branch_id": "b1"}], plan_error="磁盘只读"
     )
 
-    assert text.startswith("🚀 [系统]")
-    assert "### 📌 【主干 Main 分支后续执行大纲】" in text
-    assert "**Step 1**. 第一步" in text
-    assert "后台支线任务 (1个)" in text
-    assert "⚠️ 总计划落盘失败：磁盘只读" in text
-    assert text.endswith("子任务结果出来后系统会自动通知。")
+    assert text.startswith("脑暴计划已生效。")
+    assert "### 主计划" in text
+    assert "1. 第一步" in text
+    assert "后台支线任务 1 个" in text
+    assert "总计划落盘失败：磁盘只读" in text
+    assert text.endswith("按主计划继续执行。")
 
 
 def test_find_assistant_batch_and_unanswered_calls():

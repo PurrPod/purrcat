@@ -46,11 +46,10 @@ def process_worker(target_func, kwargs, result_queue):
 def interrupted_result() -> dict:
     """伪造的打断结果：返回给 LLM，告知执行已被人类打断"""
     return {
-        "content": "【系统强制打断】工具执行已被人类打断，请停下你的工作接收新指令。",
+        "content": "系统强制打断：工具执行已被人类打断，请停下你的工作接收新指令。",
         "metadata": {
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
             "type": "warning",
-            "snip": "⚡ 执行被人类打断",
         },
     }
 
@@ -107,13 +106,12 @@ def execute_isolated(target_func, arguments: dict, cancel_event) -> Any:
             _terminate(p)
             return {
                 "content": (
-                    f"⚠️ 工具执行已超过 {HARD_WALL_LIMIT_SECONDS // 60} 分钟硬上限，已被系统强制终止。"
+                    f"工具执行已超过 {HARD_WALL_LIMIT_SECONDS // 60} 分钟硬上限，已被系统强制终止。"
                     "如果是长时任务请改用 Bash + nohup/后台启动，并通过日志文件跟进结果。"
                 ),
                 "metadata": {
                     "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
                     "type": "error",
-                    "snip": "⏱️ 工具执行超时",
                 },
             }
 
@@ -129,11 +127,10 @@ def execute_isolated(target_func, arguments: dict, cancel_event) -> Any:
                     break
                 except queue.Empty:
                     return {
-                        "content": "⚠️ 工具子进程意外终止，未能返回结果。",
+                        "content": "工具子进程意外终止，未能返回结果。",
                         "metadata": {
                             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
                             "type": "error",
-                            "snip": "💥 进程崩溃",
                         },
                     }
 

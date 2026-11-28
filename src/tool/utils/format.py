@@ -8,7 +8,7 @@ def format_tool_response(msg_type: str, content: str, snip: str = "") -> dict:
     Args:
         msg_type: 消息类型，如 'text', 'warning', 'error'
         content: 工具返回的核心纯净内容，必须是字符串类型
-        snip: 内容摘要（可选）
+        snip: 仅为兼容旧调用保留，已不再写入返回值
 
     Returns:
         包含 content 和 metadata 的字典
@@ -22,7 +22,6 @@ def format_tool_response(msg_type: str, content: str, snip: str = "") -> dict:
         "metadata": {
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
             "type": msg_type,
-            "snip": snip,
         },
     }
 

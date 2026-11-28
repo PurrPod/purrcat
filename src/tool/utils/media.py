@@ -39,7 +39,7 @@ def is_openai_content_parts(data: Any) -> bool:
 
 
 def image_data_url(base64_str: str, ext: str, mime_type: str | None = None) -> str:
-    """图片 base64 → data URL；mcp_media 场景直接用工具给的 mimeType"""
+    """图片 base64data URL；mcp_media 场景直接用工具给的 mimeType"""
     if not mime_type:
         mime_type = mimetypes.guess_type(f"file{ext}")[0] or "image/png"
     return f"data:{mime_type};base64,{base64_str}"
@@ -89,8 +89,8 @@ def build_vision_inline_parts(
     text_part = {
         "type": "text",
         "text": (
-            "🖼️ [vision直注] 图片未落盘，已直接注入本轮对话。\n"
-            f"📂 占位路径: /agent_vm/.buffer/{placeholder_name}"
+            "[vision直注] 图片未落盘，已直接注入本轮对话。\n"
+            f"占位路径: /agent_vm/.buffer/{placeholder_name}"
         ),
     }
     image_part = {"type": "image_url", "image_url": {"url": data_url}}
@@ -109,7 +109,7 @@ def _save_url(buffer_dir: str, filename: str, url: str) -> str:
     import urllib.request
 
     filepath = os.path.join(buffer_dir, filename)
-    # 🌟 带超时的流式下载（urlretrieve 无超时，卡死时同样无法打断）
+    # 带超时的流式下载（urlretrieve 无超时，卡死时同样无法打断）
     with urllib.request.urlopen(url, timeout=60) as r, open(filepath, "wb") as f:
         shutil.copyfileobj(r, f)
     return filepath
@@ -165,21 +165,21 @@ def handle_media_content(
 
         sandbox_path = f"/agent_vm/.buffer/{filename}"
         media_desc = {
-            "image": "🖼️ 图片",
-            "video": "📹 视频",
-            "audio": "🎵 音频",
-            "pdf": "📄 PDF",
-            "mcp_media": "📦 媒体",
-            "media_url": "🔗 下载文件",
-            "media_base64": "📦 Base64 文件",
-        }.get(media_type, "📦 文件")
+            "image": "图片",
+            "video": "视频",
+            "audio": "音频",
+            "pdf": "PDF",
+            "mcp_media": "媒体",
+            "media_url": "下载文件",
+            "media_base64": "Base64 文件",
+        }.get(media_type, "文件")
 
         return (
             f"{media_desc}已成功保存至本地:\n"
-            f"📂 宿主机路径: {filepath}\n"
-            f"🐳 沙盒内路径: {sandbox_path}"
+            f"宿主机路径: {filepath}\n"
+            f"沙盒内路径: {sandbox_path}"
         )
 
     except Exception as e:
-        print(f"⚠️ [多媒体处理异常] {e}")
+        print(f"[多媒体处理异常] {e}")
         return content_data

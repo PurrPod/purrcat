@@ -160,9 +160,9 @@ def read_file(path_from: str, offset: int = 0, limit: int = MAX_LINES_TO_READ) -
 
     content = "".join(formatted_lines)
 
-    msg = f"📄 读取了 {start + 1} to {end} 行"
+    msg = f"读取了 {start + 1} to {end} 行"
     if is_converted:
-        msg = "🔄 [已自动转为Markdown] " + msg
+        msg = "[已自动转为Markdown] " + msg
 
     return {
         "path": target_path,
@@ -190,7 +190,7 @@ def edit_file(
 
     try:
         with lock:
-            # 🌟 字节级读取：检测原始行尾风格，杜绝 Windows 文本模式把 LF 改写成 CRLF
+            # 字节级读取：检测原始行尾风格，杜绝 Windows 文本模式把 LF 改写成 CRLF
             with open(target_path, "rb") as f:
                 raw_content = f.read()
             dominant_nl = _shared.detect_dominant_newline(raw_content)
@@ -215,11 +215,11 @@ def edit_file(
     except Timeout:
         raise FileSystemError("文件正被其他 Agent 锁定修改，请稍后重试！")
 
-    # 🌟 修复点：在 Diff 头中注入完整的相对/沙盒路径，不要用 basename
+    # 修复点：在 Diff 头中注入完整的相对/沙盒路径，不要用 basename
     diff_text = _shared.build_diff(content, new_content, path_from)
     save_backup_meta(
         target_path, backup_id, diff_text
-    )  # 🌟 核心：保存 metadata 供全局读取
+    )  # 核心：保存 metadata 供全局读取
 
     check_result = run_code_check(target_path)
     msg = f"成功更新文件 {os.path.basename(target_path)}"
@@ -227,7 +227,7 @@ def edit_file(
         report_path = _save_check_report(target_path, check_result)
         issue_count = count_code_check_issues(check_result)
         msg += (
-            f"\n\n🔎 代码检查到 {issue_count} 条问题，"
+            f"\n\n代码检查到 {issue_count} 条问题，"
             f"完整 lint 报告见（可自行 read 查看）：{report_path}"
         )
 
@@ -253,7 +253,7 @@ def write_file(path_from: str, content: str) -> dict:
 
     try:
         with lock:
-            # 🌟 1. 在覆盖前，先字节级读取旧文件（如存在）：检测行尾风格供写回适配
+            # 1. 在覆盖前，先字节级读取旧文件（如存在）：检测行尾风格供写回适配
             old_content = ""
             dominant_nl = "\n"
             if os.path.exists(target_path):
@@ -274,11 +274,11 @@ def write_file(path_from: str, content: str) -> dict:
     except Timeout:
         raise FileSystemError("文件正被其他 Agent 锁定修改，请稍后重试！")
 
-    # 🌟 2. 使用 difflib 计算全量覆盖的真实 Diff
+    # 2. 使用 difflib 计算全量覆盖的真实 Diff
     diff_text = _shared.build_diff(old_content, norm_content, path_from)
     save_backup_meta(
         target_path, backup_id, diff_text
-    )  # 🌟 核心：保存 metadata 供全局读取
+    )  # 核心：保存 metadata 供全局读取
 
     msg = f"成功写入文件 {os.path.basename(target_path)} (长度: {len(content)})"
 

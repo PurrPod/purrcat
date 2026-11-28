@@ -8,7 +8,7 @@ FILESYSTEM_TOOL_SCHEMA = {
             "文件级管理：移动/重命名(move)、复制(copy)与安全删除(delete)。\n"
             "强大的代码操作能力：读取(read)、编辑(edit)、复写(write)、文本搜索(search)与文件模式匹配(glob)。\n"
             "支持防冲突校验。任何编辑或删除错误均可通过 action='undo' 将文件安全回滚至上一状态。\n"
-            "【特殊能力】：Read 操作内置了 MarkItDown，你可以直接使用 read 操作读取 .pdf, .docx, .xlsx, .pptx 等富文本和表格文件，它们会被自动解析为 Markdown 文本返回！"
+            "特殊能力：Read 操作内置了 MarkItDown，你可以直接使用 read 操作读取 .pdf, .docx, .xlsx, .pptx 等富文本和表格文件，它们会被自动解析为 Markdown 文本返回！"
         ),
         "parameters": {
             "type": "object",

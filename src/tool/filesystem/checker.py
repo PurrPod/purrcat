@@ -97,20 +97,20 @@ def _check_python(file_path: str) -> str:
             ast.parse(f.read())
         # 成功时不添加任何提示
     except SyntaxError as e:
-        return f"❌ Python 致命语法错误 (SyntaxError): {e.msg} at line {e.lineno}, offset {e.offset}"
+        return f"Python 致命语法错误 (SyntaxError): {e.msg} at line {e.lineno}, offset {e.offset}"
     except Exception as e:
-        return f"❌ Python 文件解析失败: {str(e)}"
+        return f"Python 文件解析失败: {str(e)}"
 
     # 2. 静态分析：调用 ruff
     try:
         result = _run_tool(["ruff", "check", file_path])
         if result.returncode != 0:
-            messages.append(f"⚠️ Ruff 发现问题:\n{_strip_ansi(result.stdout).strip()}")
+            messages.append(f"Ruff 发现问题:\n{_strip_ansi(result.stdout).strip()}")
         # 成功时不添加任何提示
     except FileNotFoundError:
-        messages.append("⚠️ 宿主机未安装 ruff，已跳过深度静态检查 (仅完成基础语法检查)")
+        messages.append("宿主机未安装 ruff，已跳过深度静态检查 (仅完成基础语法检查)")
     except subprocess.TimeoutExpired:
-        messages.append("⚠️ Ruff 检查超时，已跳过")
+        messages.append("Ruff 检查超时，已跳过")
 
     # 如果 messages 为空（即一切正常），join 后会返回空字符串
     return "\n".join(messages).strip()
@@ -122,7 +122,7 @@ def _check_json(file_path: str) -> str:
             json.load(f)
         return ""  # 成功时返回空
     except json.JSONDecodeError as e:
-        return f"❌ JSON 格式错误: {str(e)}"
+        return f"JSON 格式错误: {str(e)}"
 
 
 def _check_yaml(file_path: str) -> str:
@@ -131,7 +131,7 @@ def _check_yaml(file_path: str) -> str:
             yaml.safe_load(f)
         return ""  # 成功时返回空
     except yaml.YAMLError as e:
-        return f"❌ YAML 格式错误:\n{str(e)}"
+        return f"YAML 格式错误:\n{str(e)}"
 
 
 def _check_frontend(file_path: str) -> str:
@@ -142,12 +142,12 @@ def _check_frontend(file_path: str) -> str:
             error_output = (
                 _strip_ansi(result.stderr).strip() or _strip_ansi(result.stdout).strip()
             )
-            return f"⚠️ Biome (前端) 发现问题:\n{error_output}"
+            return f"Biome (前端) 发现问题:\n{error_output}"
         return ""  # 成功时返回空
     except FileNotFoundError:
-        return "⚠️ 宿主机未安装 biome，已跳过前端代码检查。提示：如需开启检查，请在宿主机运行 `npm install -g @biomejs/biome`"
+        return "宿主机未安装 biome，已跳过前端代码检查。提示：如需开启检查，请在宿主机运行 `npm install -g @biomejs/biome`"
     except subprocess.TimeoutExpired:
-        return "⚠️ Biome 检查超时，已跳过"
+        return "Biome 检查超时，已跳过"
 
 
 def _check_shell(file_path: str) -> str:
@@ -155,9 +155,9 @@ def _check_shell(file_path: str) -> str:
     try:
         result = _run_tool(["shellcheck", file_path])
         if result.returncode != 0:
-            return f"⚠️ ShellCheck 发现问题:\n{_strip_ansi(result.stdout).strip()}"
+            return f"ShellCheck 发现问题:\n{_strip_ansi(result.stdout).strip()}"
         return ""  # 成功时返回空
     except FileNotFoundError:
-        return "⚠️ 宿主机未安装 shellcheck，已跳过 Shell 脚本检查。"
+        return "宿主机未安装 shellcheck，已跳过 Shell 脚本检查。"
     except subprocess.TimeoutExpired:
-        return "⚠️ ShellCheck 检查超时，已跳过"
+        return "ShellCheck 检查超时，已跳过"

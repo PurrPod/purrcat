@@ -30,15 +30,15 @@ def KernelUpgrade(action: str, type: str, target: str, **kwargs) -> dict:
         if act not in ACTIONS:
             return error_response(
                 f"不支持的 action: {action}（可选：{'、'.join(ACTIONS)}）",
-                "❌ 参数错误",
+                "参数错误",
             )
         if t not in TYPES:
             return error_response(
                 f"不支持的 type: {type}（可选：{'、'.join(TYPES)}）",
-                "❌ 参数错误",
+                "参数错误",
             )
         if not tgt:
-            return error_response("target 不能为空", "❌ 参数错误")
+            return error_response("target 不能为空", "参数错误")
 
         if act == "create":
             return create_module(t, tgt)
@@ -50,4 +50,4 @@ def KernelUpgrade(action: str, type: str, target: str, **kwargs) -> dict:
 
     except Exception as e:
         traceback.print_exc()
-        return error_response(f"KernelUpgrade 执行异常: {str(e)}", "❌ 执行失败")
+        return error_response(f"KernelUpgrade 执行异常: {str(e)}", "执行失败")

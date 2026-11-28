@@ -21,7 +21,7 @@ def move_file(path_from: str, path_to: str) -> dict:
 
     if os.path.exists(dst_path):
         raise FileSystemError(
-            f"⚠️ 移动失败: 目标路径已存在文件或目录 '{os.path.basename(dst_path)}'。\n"
+            f"移动失败: 目标路径已存在文件或目录 '{os.path.basename(dst_path)}'。\n"
             "安全策略拦截：禁止移动操作覆盖已有文件，以防数据丢失。\n"
             "解决：请为 path_to 提供一个新的文件名或路径。"
         )

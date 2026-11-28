@@ -41,7 +41,7 @@ def Memo(
         if action is None:
             return error_response(
                 "缺少必需参数: action（操作类型）\naction=add 时：写入记忆，需要 memo_data\naction=search 时：搜索记忆，可选传 query",
-                "❌ 参数错误：缺少action",
+                "参数错误：缺少action",
             )
 
         action = action.strip().lower()
@@ -50,7 +50,7 @@ def Memo(
             return error_response(
                 f"无效的 action 值: {action}。支持的 action: add, search, "
                 "reinforce, replace, delete",
-                "❌ 无效的action",
+                "无效的action",
             )
 
         if action == "add":
@@ -65,13 +65,13 @@ def Memo(
 
     except Exception as e:
         traceback.print_exc()
-        return error_response(f"记忆工具运行时异常: {str(e)}", "❌ Memo执行异常")
+        return error_response(f"记忆工具运行时异常: {str(e)}", "Memo执行异常")
 
 
 def _handle_add(memo_data: dict = None) -> str:
     """处理写入记忆：完成后返回统计量而非全量JSON内容"""
     if not isinstance(memo_data, dict):
-        return error_response("参数类型错误: memo_data 必须是对象", "❌ 参数类型错误")
+        return error_response("参数类型错误: memo_data 必须是对象", "参数类型错误")
 
     try:
         filepath = add_memory(memo_data)
@@ -79,12 +79,12 @@ def _handle_add(memo_data: dict = None) -> str:
 
         return text_response(
             f"已归档（{filename}）",
-            f"🧠 记忆归档成功：{filename}",
+            f"记忆归档成功：{filename}",
         )
     except ValueError as e:
-        return error_response(f"参数校验失败: {str(e)}", "❌ 参数校验失败")
+        return error_response(f"参数校验失败: {str(e)}", "参数校验失败")
     except Exception as e:
-        return error_response(f"记忆写入异常: {str(e)}", "❌ 记忆写入异常")
+        return error_response(f"记忆写入异常: {str(e)}", "记忆写入异常")
 
 
 def _handle_search(query: dict = None) -> str:
@@ -94,7 +94,7 @@ def _handle_search(query: dict = None) -> str:
     if not query:
         memo_list = SessionStore.load_global_memo()
         cache_str = format_cached_memo((memo_list or [])[-3:])
-        return text_response(f"最新缓存记忆：\n{cache_str}", "🔍 缓存记忆")
+        return text_response(f"最新缓存记忆：\n{cache_str}", "缓存记忆")
 
     if isinstance(query, str):
         try:
@@ -104,7 +104,7 @@ def _handle_search(query: dict = None) -> str:
 
     if not isinstance(query, dict):
         return error_response(
-            "参数错误: query 参数必须是 JSON 对象格式", "❌ 参数类型错误"
+            "参数错误: query 参数必须是 JSON 对象格式", "参数类型错误"
         )
 
     prompt = query.get("prompt", "")
@@ -115,17 +115,17 @@ def _handle_search(query: dict = None) -> str:
     if not prompt and not date_filter:
         return error_response(
             "参数缺失: search 操作如果您想全局检索，请在 query 中提供 `prompt` 或 `date`。如果您想获取最近缓存记忆，请不要传递任何 `query` 字段。",
-            "❌ 搜索参数校验失败",
+            "搜索参数校验失败",
         )
 
     if date_filter and not validate_date_format(date_filter):
         return error_response(
-            "参数格式错误: date 日期格式不正确，应为 YYYY-MM-DD", "❌ 参数格式错误"
+            "参数格式错误: date 日期格式不正确，应为 YYYY-MM-DD", "参数格式错误"
         )
 
     try:
         print(
-            f"🔍 [MemoSearch] 开始检索 | prompt={prompt!r} | date={date_filter} | top_k={top_k}"
+            f"[MemoSearch] 开始检索 | prompt={prompt!r} | date={date_filter} | top_k={top_k}"
         )
         filters = {"top_k": top_k}
         if date_filter:
@@ -134,28 +134,26 @@ def _handle_search(query: dict = None) -> str:
         if query.get("min_score") is not None:
             filters["min_score"] = query.get("min_score")
 
-        print(
-            f"🔍 [MemoSearch] 调用 search_memory | query={prompt!r} | filters={filters}"
-        )
+        print(f"[MemoSearch] 调用 search_memory | query={prompt!r} | filters={filters}")
         result = search_memory(query=prompt, filters=filters)
         print(
-            f"🔍 [MemoSearch] search_memory 返回 | result长度={len(result) if result else 0}"
+            f"[MemoSearch] search_memory 返回 | result长度={len(result) if result else 0}"
         )
 
         # 底层可能直接返回组装好的文本，也可能是字典列表
-        return text_response(format_search_results(result), "🔍 记忆检索成功")
+        return text_response(format_search_results(result), "记忆检索成功")
 
     except Exception as e:
-        print(f"❌ [MemoSearch] 异常: {e}")
+        print(f"[MemoSearch] 异常: {e}")
         traceback.print_exc()
-        return error_response(f"记忆检索异常: {str(e)}", "❌ MemoSearch执行异常")
+        return error_response(f"记忆检索异常: {str(e)}", "MemoSearch执行异常")
 
 
 def _require_experience_id(experience_id: str):
     if not experience_id or not str(experience_id).strip():
         return None, error_response(
             "参数缺失: 该操作需要提供 experience_id（形如 exp_xxx）",
-            "❌ 参数缺失",
+            "参数缺失",
         )
     return str(experience_id).strip(), None
 
@@ -168,12 +166,12 @@ def _handle_reinforce(experience_id: str = None) -> str:
 
     result = reinforce_experience(experience_id)
     if not result:
-        return error_response(f"未找到经验: {experience_id}", "❌ 经验不存在")
+        return error_response(f"未找到经验: {experience_id}", "经验不存在")
 
     return text_response(
         f"已强化经验 {experience_id}\n"
-        f"置信度：{result['old_confidence']:.2f} → {result['new_confidence']:.2f}",
-        "✅ 经验已强化",
+        f"置信度：{result['old_confidence']:.2f}{result['new_confidence']:.2f}",
+        "经验已强化",
     )
 
 
@@ -186,20 +184,20 @@ def _handle_replace(experience_id: str = None, content: str = None) -> str:
     if not content or not str(content).strip():
         return error_response(
             "参数缺失: replace 需要提供新的 content",
-            "❌ 参数缺失",
+            "参数缺失",
         )
 
     try:
         result = replace_experience(experience_id, str(content).strip())
     except ValueError as e:
-        return error_response(str(e), "❌ 经验替换失败")
+        return error_response(str(e), "经验替换失败")
 
     if not result:
-        return error_response(f"未找到经验: {experience_id}", "❌ 经验不存在")
+        return error_response(f"未找到经验: {experience_id}", "经验不存在")
 
     return text_response(
         f"已更新经验 {experience_id}\n置信度：{result['confidence']:.2f}",
-        "✅ 经验已更新",
+        "经验已更新",
     )
 
 
@@ -211,9 +209,9 @@ def _handle_delete(experience_id: str = None) -> str:
 
     result = delete_experience(experience_id)
     if not result:
-        return error_response(f"未找到经验: {experience_id}", "❌ 经验不存在")
+        return error_response(f"未找到经验: {experience_id}", "经验不存在")
 
     return text_response(
         f"已删除经验 {experience_id}",
-        "✅ 经验已删除",
+        "经验已删除",
     )
