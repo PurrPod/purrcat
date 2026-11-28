@@ -664,6 +664,85 @@
     head.appendChild(rf);
     main.appendChild(head);
   }
+  function openActionModal(opts) {
+    const mask = HOST.document.createElement("div");
+    mask.className = "cfg-modal-mask";
+    const panel = HOST.document.createElement("div");
+    panel.className = "cfg-modal";
+    panel.style.width = "380px";
+    const title = HOST.document.createElement("div");
+    title.className = "cfg-modal-title";
+    title.textContent = opts.title;
+    panel.appendChild(title);
+    const desc = HOST.document.createElement("div");
+    desc.className = "cfg-modal-desc";
+    desc.textContent = opts.desc;
+    panel.appendChild(desc);
+    const row = HOST.document.createElement("div");
+    row.style.display = "none";
+    row.style.alignItems = "center";
+    row.style.gap = "12px";
+    row.style.padding = "4px 0";
+    const spin = HOST.document.createElement("div");
+    spin.style.width = "20px";
+    spin.style.height = "20px";
+    spin.style.flex = "0 0 auto";
+    spin.style.border = "2px solid rgba(128,128,128,0.25)";
+    spin.style.borderTopColor = "currentColor";
+    spin.style.borderRadius = "50%";
+    spin.style.animation = "wm-spin 0.8s linear infinite";
+    const msg = HOST.document.createElement("div");
+    msg.className = "cfg-modal-desc";
+    row.appendChild(spin);
+    row.appendChild(msg);
+    panel.appendChild(row);
+    const actions = HOST.document.createElement("div");
+    actions.className = "cfg-modal-actions";
+    const cancel = HOST.document.createElement("button");
+    cancel.type = "button";
+    cancel.className = "btn";
+    cancel.textContent = "\u53D6\u6D88";
+    const go = HOST.document.createElement("button");
+    go.type = "button";
+    go.className = "btn cfg-save";
+    go.textContent = opts.action || "\u6267\u884C";
+    if (opts.danger) {
+      go.style.color = "#b4372f";
+      go.style.borderColor = "rgba(180, 55, 47, 0.4)";
+      go.style.background = "rgba(180, 55, 47, 0.08)";
+    }
+    actions.appendChild(cancel);
+    actions.appendChild(go);
+    panel.appendChild(actions);
+    mask.appendChild(panel);
+    HOST.document.body.appendChild(mask);
+    let busy = false;
+    function setText(text) {
+      msg.textContent = text || "\u5904\u7406\u4E2D\u2026";
+    }
+    function setBusy(on) {
+      busy = on;
+      cancel.disabled = on;
+      go.disabled = on;
+      go.textContent = on ? "\u5904\u7406\u4E2D\u2026" : opts.action || "\u6267\u884C";
+      row.style.display = on ? "flex" : "none";
+      if (on && !msg.textContent) setText("\u5904\u7406\u4E2D\u2026");
+    }
+    cancel.addEventListener("click", function() {
+      if (!busy) mask.remove();
+    });
+    go.addEventListener("click", function() {
+      if (busy) return;
+      setBusy(true);
+      opts.run(setText).then(function() {
+        mask.remove();
+        if (opts.onDone) opts.onDone();
+      }).catch(function(e) {
+        mask.remove();
+        HOST.alert("\u64CD\u4F5C\u5931\u8D25\uFF1A" + (e && e.message || "\u672A\u77E5\u9519\u8BEF"));
+      });
+    });
+  }
   function renderConfigSection(main, key) {
     settingsPageHead(main, key);
     if (key === "acp") return renderAcpCard(main);
@@ -1541,11 +1620,6 @@
       return String(picked[0] || "");
     });
   }
-  function confirmMountApply() {
-    return HOST.confirm(
-      "\u5E94\u7528\u6302\u8F7D\u9700\u8981\u91CD\u5EFA\u6C99\u76D2\uFF1A\u5BB9\u5668\u5185\u6B63\u5728\u8FD0\u884C\u7684\u8FDB\u7A0B\uFF08\u5982 dev server\uFF09\u4F1A\u505C\u6B62\uFF0Cshell \u4F1A\u8BDD\u4F1A\u91CD\u7F6E\uFF1B\u5DF2\u5B89\u88C5\u7684 pip/npm \u73AF\u5883\u4E0E /agent_vm \u6587\u4EF6\u4F1A\u4FDD\u7559\u3002\u73B0\u5728\u5E94\u7528\uFF1F"
-    );
-  }
   function postMountApply() {
     return mountFetch("/api/config/mounts/apply", { method: "POST" });
   }
@@ -1560,16 +1634,36 @@
         HOST.alert("\u8BFB\u53D6\u6302\u8F7D\u914D\u7F6E\u5931\u8D25\uFF1A" + (e && e.message || ""));
       });
     }
-    function applyChanges() {
-      postMountApply().then(function() {
-        refresh();
-      }).catch(function(e) {
-        HOST.alert("\u5E94\u7528\u5931\u8D25\uFF1A" + (e && e.message || ""));
+    let checkingApply = false;
+    function openApplyModal() {
+      openActionModal({
+        title: "\u5E94\u7528\u6302\u8F7D",
+        desc: "\u5C06\u91CD\u5EFA\u6C99\u76D2\uFF1A\u5BB9\u5668\u5185\u6B63\u5728\u8FD0\u884C\u7684\u8FDB\u7A0B\u4F1A\u505C\u6B62\uFF0C\u5DF2\u5B89\u88C5\u73AF\u5883\u4E0E /agent_vm \u6587\u4EF6\u4F1A\u4FDD\u7559\u3002",
+        action: "\u5E94\u7528",
+        run: function(setText) {
+          setText("\u6B63\u5728\u91CD\u5EFA\u6C99\u76D2\uFF0C\u53EF\u80FD\u9700\u8981 1~2 \u5206\u949F\u2026");
+          return postMountApply();
+        },
+        onDone: refresh
       });
     }
-    function askApply() {
-      if (!confirmMountApply()) return;
-      applyChanges();
+    function openApplyDialog() {
+      if (checkingApply) return;
+      checkingApply = true;
+      fetch("/api/config/deploy/disk").then(function(r) {
+        return r.json();
+      }).catch(function() {
+        return null;
+      }).then(function(d) {
+        checkingApply = false;
+        const task = d && d.task || {};
+        if (task.state === "running") {
+          const label = task.kind === "compact" ? "\u4E00\u952E\u56DE\u6536" : task.kind === "flatten" ? "\u540E\u53F0\u538B\u7F29" : "\u78C1\u76D8\u7EF4\u62A4";
+          HOST.alert("\u540E\u53F0\u4EFB\u52A1\u8FDB\u884C\u4E2D\uFF08" + label + "\uFF09\uFF0C\u8BF7\u5B8C\u6210\u540E\u518D\u5E94\u7528\u6302\u8F7D\u3002");
+          return;
+        }
+        openApplyModal();
+      });
     }
     function buildRow(item) {
       const row = HOST.document.createElement("div");
@@ -1612,7 +1706,6 @@
             body: JSON.stringify({ name: next })
           }).then(function() {
             refresh();
-            if (confirmMountApply()) applyChanges();
           }).catch(function(e) {
             HOST.alert("\u91CD\u547D\u540D\u5931\u8D25\uFF1A" + (e && e.message || ""));
             refresh();
@@ -1635,7 +1728,6 @@
         if (!HOST.confirm('\u79FB\u9664\u6302\u8F7D "' + item.container_path + '"\uFF1F')) return;
         mountFetch("/api/config/mounts/" + encodeURIComponent(item.name), { method: "DELETE" }).then(function() {
           refresh();
-          if (confirmMountApply()) applyChanges();
         }).catch(function(e) {
           HOST.alert("\u79FB\u9664\u5931\u8D25\uFF1A" + (e && e.message || ""));
         });
@@ -1674,7 +1766,6 @@
         }).then(function(result) {
           if (!result) return;
           refresh();
-          if (confirmMountApply()) applyChanges();
         }).catch(function(e) {
           HOST.alert("\u6DFB\u52A0\u5931\u8D25\uFF1A" + (e && e.message || ""));
         });
@@ -1682,9 +1773,15 @@
       const apply = HOST.document.createElement("button");
       apply.type = "button";
       apply.className = "btn cfg-deploy-btn";
-      apply.textContent = "\u5E94\u7528\u6302\u8F7D";
-      apply.disabled = !(data.mounts && data.mounts.length);
-      apply.addEventListener("click", askApply);
+      const items = Array.isArray(data.mounts) ? data.mounts : [];
+      const stale = Array.isArray(data.stale) ? data.stale : [];
+      const hasPending = data.dirty === true || items.some(function(m) {
+        return m.status === "pending";
+      });
+      apply.textContent = hasPending ? "\u5E94\u7528\u6302\u8F7D *" : "\u5E94\u7528\u6302\u8F7D";
+      apply.title = hasPending ? "\u6709\u672A\u5E94\u7528\u7684\u6302\u8F7D\u53D8\u66F4" : "";
+      apply.disabled = !hasPending;
+      apply.addEventListener("click", openApplyDialog);
       actions.appendChild(add);
       actions.appendChild(apply);
       head.appendChild(txt);
@@ -1692,7 +1789,6 @@
       sec.appendChild(head);
       const group = HOST.document.createElement("div");
       group.className = "perm-group";
-      const items = Array.isArray(data.mounts) ? data.mounts : [];
       if (!items.length) {
         const empty = HOST.document.createElement("div");
         empty.className = "perm-empty";
@@ -1704,6 +1800,12 @@
         });
       }
       sec.appendChild(group);
+      if (stale.length) {
+        const tip = HOST.document.createElement("p");
+        tip.className = "perm-section-desc";
+        tip.textContent = "\u6C99\u76D2\u5185\u4ECD\u6709 " + stale.length + " \u4E2A\u5DF2\u4ECE\u914D\u7F6E\u79FB\u9664\u7684\u6302\u8F7D\uFF0C\u70B9\u51FB\u300C\u5E94\u7528\u6302\u8F7D\u300D\u540E\u751F\u6548\u3002";
+        sec.appendChild(tip);
+      }
       if (data.docker_ok === false) {
         const tip = HOST.document.createElement("p");
         tip.className = "perm-section-desc";
@@ -1759,6 +1861,7 @@
       defSec.appendChild(defTitle);
       defSec.appendChild(defGroup);
       wrap.appendChild(defSec);
+      addMountSection(wrap, key);
       if (!writeAllowed) {
         appendPermSection(wrap, {
           title: "\u53EF\u5199\u767D\u540D\u5355",
@@ -1829,7 +1932,6 @@
           saveFilePerm(main, key, data);
         }
       });
-      addMountSection(wrap, key);
       main.appendChild(wrap);
     });
   }
@@ -2768,22 +2870,27 @@
       }
       return (i === 0 ? Math.round(n) : n.toFixed(2)) + " " + units[i];
     }
-    function diskAction(path, btn) {
-      btn.disabled = true;
-      fetch("/api/config/" + path, { method: "POST" }).then(function(r) {
-        if (!r.ok) return r.json().then(function(d) {
-          throw new Error(d.detail || "\u64CD\u4F5C\u51B2\u7A81");
-        });
-        return r.json().catch(function() {
-          return {};
-        });
-      }).then(function(d) {
-        delete cfgState.data.deploy;
-        draw();
-        if (d && d.message) HOST.alert(d.message);
-      }).catch(function(e) {
-        btn.disabled = false;
-        HOST.alert("\u5931\u8D25\uFF1A" + (e && e.message || ""));
+    function diskAction(path, opts) {
+      openActionModal({
+        title: opts.title,
+        desc: opts.desc,
+        action: "\u6267\u884C",
+        danger: opts.danger,
+        run: function() {
+          return fetch("/api/config/" + path, { method: "POST" }).then(function(r) {
+            if (!r.ok) return r.json().then(function(d) {
+              throw new Error(d.detail || "\u64CD\u4F5C\u51B2\u7A81");
+            });
+            return r.json().catch(function() {
+              return {};
+            });
+          });
+        },
+        // 后台任务：提交成功即关闭弹窗，进度由部署页的任务状态展示
+        onDone: function() {
+          delete cfgState.data.deploy;
+          draw();
+        }
       });
     }
     function renderDisk(d) {
@@ -2860,26 +2967,38 @@
       cp.textContent = taskRunning && d.task.kind === "compact" ? "\u56DE\u6536\u4E2D\u2026" : "\u4E00\u952E\u56DE\u6536";
       cp.title = "\u505C\u6B62 Docker/WSL \u540E\u7528 diskpart \u538B\u7F29 vhdx\uFF0C\u9700\u8981\u4E00\u6B21\u7BA1\u7406\u5458\u6388\u6743\uFF08UAC\uFF09";
       cp.addEventListener("click", function() {
-        if (!HOST.confirm("\u4E00\u952E\u56DE\u6536\u4F1A\u77ED\u6682\u505C\u6B62 Docker \u4E0E WSL\uFF0C\u5E76\u5F39\u51FA\u4E00\u6B21\u7BA1\u7406\u5458\u6388\u6743\uFF08UAC\uFF09\u3002\u73B0\u5728\u6267\u884C\uFF1F")) return;
-        diskAction("deploy/disk/compact", cp);
+        diskAction("deploy/disk/compact", {
+          title: "\u4E00\u952E\u56DE\u6536",
+          desc: "\u5148\u6E05\u7406\u6784\u5EFA\u7F13\u5B58\uFF0C\u518D\u505C\u6B62 Docker/WSL \u538B\u7F29 vhdx\uFF1B\u9700\u8981\u4E00\u6B21\u7BA1\u7406\u5458\u6388\u6743\uFF08UAC\uFF09\uFF0C\u4EFB\u52A1\u5728\u540E\u53F0\u6267\u884C\u3002"
+        });
       });
       act.appendChild(cp);
-      const pr = HOST.document.createElement("button");
-      pr.className = "btn cfg-deploy-btn missing";
-      pr.disabled = !d.docker_running || taskRunning;
-      pr.textContent = taskRunning && d.task.kind === "prune" ? "\u6E05\u7406\u4E2D\u2026" : "\u6E05\u7406\u6784\u5EFA\u7F13\u5B58";
-      pr.addEventListener("click", function() {
-        diskAction("deploy/disk/prune", pr);
+      const fl = HOST.document.createElement("button");
+      fl.className = "btn cfg-deploy-btn missing";
+      fl.disabled = !d.docker_running || taskRunning;
+      fl.textContent = taskRunning && d.task.kind === "flatten" ? "\u538B\u7F29\u4E2D\u2026" : "\u540E\u53F0\u538B\u7F29";
+      fl.title = "\u628A\u6C99\u76D2\u6587\u4EF6\u7CFB\u7EDF\u538B\u6210\u5355\u5C42\u955C\u50CF\uFF0C\u56DE\u6536 docker commit \u7D2F\u79EF\u7684\u5386\u53F2\u5C42";
+      fl.addEventListener("click", function() {
+        diskAction("deploy/disk/flatten", {
+          title: "\u540E\u53F0\u538B\u7F29\u955C\u50CF",
+          desc: "\u63D0\u4EA4\u540E\u7ACB\u5373\u5728\u540E\u53F0\u6267\u884C\uFF0C\u6C99\u76D2\u4F1A\u77ED\u6682\u505C\u6B62\uFF1B\u8FDB\u5EA6\u89C1\u4E0B\u65B9\u4EFB\u52A1\u72B6\u6001\u3002"
+        });
       });
-      act.appendChild(pr);
+      act.appendChild(fl);
       const rb = HOST.document.createElement("button");
       rb.className = "btn cfg-deploy-btn failed";
+      rb.style.color = "#b4372f";
+      rb.style.borderColor = "rgba(180, 55, 47, 0.4)";
+      rb.style.background = "rgba(180, 55, 47, 0.08)";
       rb.disabled = !d.docker_running || taskRunning;
       rb.textContent = "\u91CD\u5EFA\u6C99\u76D2";
       rb.title = "\u5220\u9664\u6C99\u76D2\u5BB9\u5668\uFF08\u53EF\u5199\u5C42\u4E0E\u5BB9\u5668\u5185\u7F13\u5B58\u6E05\u7A7A\uFF09\uFF0C\u4E0B\u6B21\u5DE5\u5177\u8C03\u7528\u81EA\u52A8\u91CD\u5EFA";
       rb.addEventListener("click", function() {
-        if (!HOST.confirm("\u91CD\u5EFA\u6C99\u76D2\u5BB9\u5668\uFF1F\u5BB9\u5668\u5185 apt/pip \u88C5\u8FC7\u7684\u4F9D\u8D56\u4E0E\u7F13\u5B58\u4F1A\u4E22\u5931\uFF0C\u5DE5\u4F5C\u76EE\u5F55\u5185\u7684\u6587\u4EF6\u4E0D\u53D7\u5F71\u54CD\u3002")) return;
-        diskAction("deploy/disk/rebuild", rb);
+        diskAction("deploy/disk/rebuild", {
+          title: "\u91CD\u5EFA\u6C99\u76D2\u5BB9\u5668",
+          desc: "\u4F1A\u6E05\u7A7A\u5BB9\u5668\u5185\u6240\u6709 pip/npm/apt \u5B89\u88C5\uFF08\u542B\u5DF2\u5FEB\u7167\u8FDB\u955C\u50CF\u7684\u73AF\u5883\uFF09\u548C\u7CFB\u7EDF\u6539\u52A8\uFF1B/agent_vm \u6587\u4EF6\u4E0D\u53D7\u5F71\u54CD\u3002",
+          danger: true
+        });
       });
       act.appendChild(rb);
       head.appendChild(act);
@@ -3175,19 +3294,33 @@
         });
       }, 2e3);
     }
-    function startEmbeddingUpdate(btn, tip, modelName) {
-      btn.disabled = true;
-      btn.textContent = "\u542F\u52A8\u66F4\u65B0\u2026";
-      fetch("/api/config/memory/embedding/update", { method: "POST" }).then(function(r) {
-        if (r.status === 409) return null;
-        if (!r.ok) throw new Error("HTTP " + r.status);
-        return r.json();
-      }).then(function() {
-        watchUpdate(btn, tip, modelName);
-      }).catch(function(e) {
-        btn.disabled = false;
-        btn.textContent = "\u66F4\u65B0\u5D4C\u5165\u6A21\u578B\u5E76\u91CD\u5EFA";
-        HOST.alert("\u542F\u52A8\u66F4\u65B0\u5931\u8D25\uFF1A" + (e && e.message || ""));
+    function waitEmbeddingUpdate(setText) {
+      return new Promise(function(resolve, reject) {
+        const started = Date.now();
+        const tick = function() {
+          if (Date.now() - started > 15 * 60 * 1e3) {
+            reject(new Error("\u7B49\u5F85\u8D85\u65F6\uFF0C\u8BF7\u5237\u65B0\u9875\u9762\u67E5\u770B\u66F4\u65B0\u72B6\u6001"));
+            return;
+          }
+          fetch("/api/config/memory/embedding").then(function(r) {
+            return r.json();
+          }).then(function(d) {
+            const u = d && d.update || {};
+            if (u.state === "done") {
+              resolve();
+              return;
+            }
+            if (u.state === "error") {
+              reject(new Error(u.error || "\u66F4\u65B0\u5931\u8D25"));
+              return;
+            }
+            setText("\u66F4\u65B0\u4E2D\u2026\uFF08" + (phaseText[u.phase] || "\u5904\u7406\u4E2D") + "\uFF09");
+            setTimeout(tick, 2e3);
+          }).catch(function() {
+            setTimeout(tick, 2e3);
+          });
+        };
+        setTimeout(tick, 1200);
       });
     }
     Promise.all([
@@ -3223,8 +3356,24 @@
         );
         const btn2 = addAction(update.interrupted ? "\u91CD\u8BD5\u66F4\u65B0\u5D4C\u5165\u6A21\u578B" : "\u66F4\u65B0\u5D4C\u5165\u6A21\u578B\u5E76\u91CD\u5EFA");
         btn2.addEventListener("click", function() {
-          if (!HOST.confirm("\u66F4\u65B0\u5D4C\u5165\u6A21\u578B\u5E76\u91CD\u5EFA\u5411\u91CF\u5E93\uFF1F\u66F4\u65B0\u671F\u95F4\u8BF7\u4E0D\u8981\u9000\u51FA\u5E94\u7528\u3002")) return;
-          startEmbeddingUpdate(btn2, tip2, modelName);
+          openActionModal({
+            title: "\u66F4\u65B0\u5D4C\u5165\u6A21\u578B\u5E76\u91CD\u5EFA\u5411\u91CF\u5E93",
+            desc: "\u5C06\u4E0B\u8F7D\u5E76\u66FF\u6362\u5D4C\u5165\u6A21\u578B\uFF0C\u518D\u91CD\u5EFA\u4E8B\u4EF6 / \u7ECF\u9A8C / \u56FE\u8C31\u5411\u91CF\uFF1B\u671F\u95F4\u8BF7\u4E0D\u8981\u9000\u51FA\u5E94\u7528\u3002",
+            action: "\u5F00\u59CB\u66F4\u65B0",
+            run: function(setText) {
+              setText("\u6B63\u5728\u542F\u52A8\u66F4\u65B0\u2026");
+              return fetch("/api/config/memory/embedding/update", { method: "POST" }).then(function(r) {
+                if (r.status === 409) return null;
+                if (!r.ok) throw new Error("HTTP " + r.status);
+                return r.json();
+              }).then(function() {
+                return waitEmbeddingUpdate(setText);
+              });
+            },
+            onDone: function() {
+              rerenderConfig(main, "memory");
+            }
+          });
         });
         return;
       }
@@ -3254,22 +3403,20 @@
       );
       const btn = addAction("\u91CD\u5EFA\u5411\u91CF\u5E93");
       btn.addEventListener("click", function() {
-        if (!HOST.confirm("\u91CD\u5EFA\u5411\u91CF\u5E93\uFF1F\u65E7\u6A21\u578B\uFF08" + models + "\uFF09\u751F\u6210\u7684\u5411\u91CF\u4F1A\u88AB\u5168\u90E8\u6E05\u9664\u5E76\u6309\u5F53\u524D\u6A21\u578B\u91CD\u65B0\u8BA1\u7B97\u3002\u6570\u636E\u91CF\u8F83\u5927\u65F6\u53EF\u80FD\u9700\u8981\u51E0\u5206\u949F\u3002")) return;
-        btn.disabled = true;
-        btn.textContent = "\u91CD\u5EFA\u4E2D\u2026";
-        fetch("/api/config/memory/reindex", { method: "POST" }).then(function(r) {
-          if (!r.ok) throw new Error("HTTP " + r.status);
-          return r.json();
-        }).then(function(d) {
-          const counts = d.rebuild && d.rebuild.counts || {};
-          values.vector_model.textContent = v.model_name + "\uFF08\u4E00\u81F4\uFF09";
-          btn.textContent = "\u5DF2\u91CD\u5EFA\uFF08\u4E8B\u4EF6 " + (counts.events || 0) + " / \u7ECF\u9A8C " + (counts.experiences || 0) + " / \u8282\u70B9 " + (counts.graph_nodes || 0) + "\uFF09";
-          btn.disabled = true;
-          if (tip.parentNode) tip.parentNode.removeChild(tip);
-        }).catch(function(e) {
-          btn.disabled = false;
-          btn.textContent = "\u91CD\u5EFA\u5411\u91CF\u5E93";
-          HOST.alert("\u91CD\u5EFA\u5931\u8D25\uFF1A" + (e && e.message || ""));
+        openActionModal({
+          title: "\u91CD\u5EFA\u5411\u91CF\u5E93",
+          desc: "\u65E7\u6A21\u578B\uFF08" + models + "\uFF09\u751F\u6210\u7684\u5411\u91CF\u4F1A\u88AB\u5168\u90E8\u6E05\u9664\u5E76\u6309\u5F53\u524D\u6A21\u578B\u91CD\u65B0\u8BA1\u7B97\uFF0C\u6570\u636E\u91CF\u8F83\u5927\u65F6\u53EF\u80FD\u9700\u8981\u51E0\u5206\u949F\u3002",
+          action: "\u5F00\u59CB\u91CD\u5EFA",
+          run: function(setText) {
+            setText("\u6B63\u5728\u91CD\u5EFA\u5411\u91CF\u5E93\u2026");
+            return fetch("/api/config/memory/reindex", { method: "POST" }).then(function(r) {
+              if (!r.ok) throw new Error("HTTP " + r.status);
+              return r.json();
+            });
+          },
+          onDone: function() {
+            rerenderConfig(main, "memory");
+          }
         });
       });
     }).catch(function() {

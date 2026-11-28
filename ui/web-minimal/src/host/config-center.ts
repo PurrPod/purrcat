@@ -155,8 +155,106 @@ import { HOST } from './state.js';
     main.appendChild(head);
   }
 
-  export function renderConfigSection(main: HTMLElement, key: string) {
-    settingsPageHead(main, key);
+  type ActionModalOptions = {
+    title: string;
+    desc: string;
+    action?: string;
+    danger?: boolean;
+    run: (setText: (text: string) => void) => Promise<unknown>;
+    onDone?: () => void;
+  };
+
+  /** 确认 + 执行 + 转圈等待的统一弹窗；挂到 body 上才能盖住设置导航与白条。 */
+  function openActionModal(opts: ActionModalOptions) {
+    const mask = HOST.document.createElement('div');
+    mask.className = 'cfg-modal-mask';
+    const panel = HOST.document.createElement('div');
+    panel.className = 'cfg-modal';
+    panel.style.width = '380px';
+
+    const title = HOST.document.createElement('div');
+    title.className = 'cfg-modal-title';
+    title.textContent = opts.title;
+    panel.appendChild(title);
+
+    const desc = HOST.document.createElement('div');
+    desc.className = 'cfg-modal-desc';
+    desc.textContent = opts.desc;
+    panel.appendChild(desc);
+
+    const row = HOST.document.createElement('div');
+    row.style.display = 'none';
+    row.style.alignItems = 'center';
+    row.style.gap = '12px';
+    row.style.padding = '4px 0';
+    const spin = HOST.document.createElement('div');
+    spin.style.width = '20px';
+    spin.style.height = '20px';
+    spin.style.flex = '0 0 auto';
+    spin.style.border = '2px solid rgba(128,128,128,0.25)';
+    spin.style.borderTopColor = 'currentColor';
+    spin.style.borderRadius = '50%';
+    spin.style.animation = 'wm-spin 0.8s linear infinite';
+    const msg = HOST.document.createElement('div');
+    msg.className = 'cfg-modal-desc';
+    row.appendChild(spin);
+    row.appendChild(msg);
+    panel.appendChild(row);
+
+    const actions = HOST.document.createElement('div');
+    actions.className = 'cfg-modal-actions';
+    const cancel = HOST.document.createElement('button');
+    cancel.type = 'button';
+    cancel.className = 'btn';
+    cancel.textContent = '取消';
+    const go = HOST.document.createElement('button');
+    go.type = 'button';
+    go.className = 'btn cfg-save';
+    go.textContent = opts.action || '执行';
+    if (opts.danger) {
+      go.style.color = '#b4372f';
+      go.style.borderColor = 'rgba(180, 55, 47, 0.4)';
+      go.style.background = 'rgba(180, 55, 47, 0.08)';
+    }
+    actions.appendChild(cancel);
+    actions.appendChild(go);
+    panel.appendChild(actions);
+
+    mask.appendChild(panel);
+    HOST.document.body.appendChild(mask);
+
+    let busy = false;
+    function setText(text: string) {
+      msg.textContent = text || '处理中…';
+    }
+    function setBusy(on: boolean) {
+      busy = on;
+      cancel.disabled = on;
+      go.disabled = on;
+      go.textContent = on ? '处理中…' : (opts.action || '执行');
+      row.style.display = on ? 'flex' : 'none';
+      if (on && !msg.textContent) setText('处理中…');
+    }
+
+    cancel.addEventListener('click', function () {
+      if (!busy) mask.remove();
+    });
+    go.addEventListener('click', function () {
+      if (busy) return;
+      setBusy(true);
+      opts.run(setText)
+        .then(function () {
+          mask.remove();
+          if (opts.onDone) opts.onDone();
+        })
+        .catch(function (e) {
+          mask.remove();
+          HOST.alert('操作失败：' + ((e && e.message) || '未知错误'));
+        });
+    });
+  }
+
+  export function renderConfigSection(main: HTMLElement, key: string) {    settingsPageHead(main, key);
     if (key === 'acp') return renderAcpCard(main);
     if (key === 'deploy') return renderDeployCards(main);
     if (key === 'soul') return renderSoulEditor(main);
@@ -957,13 +1055,6 @@ import { HOST } from './state.js';
     });
   }
 
-  function confirmMountApply() {
-    return HOST.confirm(
-      '应用挂载需要重建沙盒：容器内正在运行的进程（如 dev server）会停止，shell 会话会重置；' +
-      '已安装的 pip/npm 环境与 /agent_vm 文件会保留。现在应用？'
-    );
-  }
-
   function postMountApply(): Promise<any> {
     return mountFetch('/api/config/mounts/apply', { method: 'POST' });
   }
@@ -983,15 +1074,39 @@ import { HOST } from './state.js';
         });
     }
 
-    function applyChanges() {
-      postMountApply()
-        .then(function () { refresh(); })
-        .catch(function (e) { HOST.alert('应用失败：' + (e && e.message || '')); });
+    let checkingApply = false;
+
+    function openApplyModal() {
+      openActionModal({
+        title: '应用挂载',
+        desc: '将重建沙盒：容器内正在运行的进程会停止，已安装环境与 /agent_vm 文件会保留。',
+        action: '应用',
+        run: function (setText) {
+          setText('正在重建沙盒，可能需要 1~2 分钟…');
+          return postMountApply();
+        },
+        onDone: refresh,
+      });
     }
 
-    function askApply() {
-      if (!confirmMountApply()) return;
-      applyChanges();
+    function openApplyDialog() {
+      if (checkingApply) return;
+      checkingApply = true;
+      fetch('/api/config/deploy/disk')
+        .then(function (r) { return r.json(); })
+        .catch(function () { return null; })
+        .then(function (d) {
+          checkingApply = false;
+          const task = (d && d.task) || {};
+          if (task.state === 'running') {
+            const label = task.kind === 'compact'
+              ? '一键回收'
+              : task.kind === 'flatten' ? '后台压缩' : '磁盘维护';
+            HOST.alert('后台任务进行中（' + label + '），请完成后再应用挂载。');
+            return;
+          }
+          openApplyModal();
+        });
     }
 
     function buildRow(item: any) {
@@ -1034,7 +1149,6 @@ import { HOST } from './state.js';
           })
             .then(function () {
               refresh();
-              if (confirmMountApply()) applyChanges();
             })
             .catch(function (e) { HOST.alert('重命名失败：' + (e && e.message || '')); refresh(); });
         };
@@ -1050,7 +1164,6 @@ import { HOST } from './state.js';
         mountFetch('/api/config/mounts/' + encodeURIComponent(item.name), { method: 'DELETE' })
           .then(function () {
             refresh();
-            if (confirmMountApply()) applyChanges();
           })
           .catch(function (e) { HOST.alert('移除失败：' + (e && e.message || '')); });
       });
@@ -1093,16 +1206,21 @@ import { HOST } from './state.js';
           .then(function (result) {
             if (!result) return;
             refresh();
-            if (confirmMountApply()) applyChanges();
           })
           .catch(function (e) { HOST.alert('添加失败：' + (e && e.message || '')); });
       });
       const apply = HOST.document.createElement('button');
       apply.type = 'button';
       apply.className = 'btn cfg-deploy-btn';
-      apply.textContent = '应用挂载';
-      apply.disabled = !(data.mounts && data.mounts.length);
-      apply.addEventListener('click', askApply);
+      const items = Array.isArray(data.mounts) ? data.mounts : [];
+      const stale = Array.isArray(data.stale) ? data.stale : [];
+      const hasPending = data.dirty === true || items.some(function (m: any) {
+        return m.status === 'pending';
+      });
+      apply.textContent = hasPending ? '应用挂载 *' : '应用挂载';
+      apply.title = hasPending ? '有未应用的挂载变更' : '';
+      apply.disabled = !hasPending;
+      apply.addEventListener('click', openApplyDialog);
       actions.appendChild(add);
       actions.appendChild(apply);
 
@@ -1112,7 +1230,6 @@ import { HOST } from './state.js';
 
       const group = HOST.document.createElement('div');
       group.className = 'perm-group';
-      const items = Array.isArray(data.mounts) ? data.mounts : [];
       if (!items.length) {
         const empty = HOST.document.createElement('div');
         empty.className = 'perm-empty';
@@ -1122,6 +1239,12 @@ import { HOST } from './state.js';
         items.forEach(function (item: any) { group.appendChild(buildRow(item)); });
       }
       sec.appendChild(group);
+      if (stale.length) {
+        const tip = HOST.document.createElement('p');
+        tip.className = 'perm-section-desc';
+        tip.textContent = '沙盒内仍有 ' + stale.length + ' 个已从配置移除的挂载，点击「应用挂载」后生效。';
+        sec.appendChild(tip);
+      }
       if (data.docker_ok === false) {
         const tip = HOST.document.createElement('p');
         tip.className = 'perm-section-desc';
@@ -1181,6 +1304,8 @@ import { HOST } from './state.js';
       defSec.appendChild(defGroup);
       wrap.appendChild(defSec);
 
+      addMountSection(wrap, key);
+
       if (!writeAllowed) {
         appendPermSection(wrap, {
           title: '可写白名单',
@@ -1236,7 +1361,6 @@ import { HOST } from './state.js';
         },
       });
 
-      addMountSection(wrap, key);
       main.appendChild(wrap);
     });
   }
@@ -2025,16 +2149,21 @@ import { HOST } from './state.js';
       while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
       return (i === 0 ? Math.round(n) : n.toFixed(2)) + ' ' + units[i];
     }
-    function diskAction(path: string, btn: HTMLButtonElement) {
-      btn.disabled = true;
-      fetch('/api/config/' + path, { method: 'POST' }).then(function (r) {
-        if (!r.ok) return r.json().then(function (d) { throw new Error(d.detail || '操作冲突'); });
-        return r.json().catch(function () { return {}; });
-      }).then(function (d) {
-        delete cfgState.data.deploy;
-        draw();
-        if (d && d.message) HOST.alert(d.message);
-      }).catch(function (e) { btn.disabled = false; HOST.alert('失败：' + (e && e.message || '')); });
+    function diskAction(path: string, opts: { title: string; desc: string; danger?: boolean }) {
+      openActionModal({
+        title: opts.title,
+        desc: opts.desc,
+        action: '执行',
+        danger: opts.danger,
+        run: function () {
+          return fetch('/api/config/' + path, { method: 'POST' }).then(function (r) {
+            if (!r.ok) return r.json().then(function (d) { throw new Error(d.detail || '操作冲突'); });
+            return r.json().catch(function () { return {}; });
+          });
+        },
+        // 后台任务：提交成功即关闭弹窗，进度由部署页的任务状态展示
+        onDone: function () { delete cfgState.data.deploy; draw(); },
+      });
     }
     function renderDisk(d: any) {
       diskWrap.innerHTML = '';
@@ -2114,26 +2243,40 @@ import { HOST } from './state.js';
       cp.textContent = (taskRunning && d.task.kind === 'compact') ? '回收中…' : '一键回收';
       cp.title = '停止 Docker/WSL 后用 diskpart 压缩 vhdx，需要一次管理员授权（UAC）';
       cp.addEventListener('click', function () {
-        if (!HOST.confirm('一键回收会短暂停止 Docker 与 WSL，并弹出一次管理员授权（UAC）。现在执行？')) return;
-        diskAction('deploy/disk/compact', cp);
+        diskAction('deploy/disk/compact', {
+          title: '一键回收',
+          desc: '先清理构建缓存，再停止 Docker/WSL 压缩 vhdx；需要一次管理员授权（UAC），任务在后台执行。',
+        });
       });
       act.appendChild(cp);
 
-      const pr = HOST.document.createElement('button');
-      pr.className = 'btn cfg-deploy-btn missing';
-      pr.disabled = !d.docker_running || taskRunning;
-      pr.textContent = (taskRunning && d.task.kind === 'prune') ? '清理中…' : '清理构建缓存';
-      pr.addEventListener('click', function () { diskAction('deploy/disk/prune', pr); });
-      act.appendChild(pr);
+      const fl = HOST.document.createElement('button');
+      fl.className = 'btn cfg-deploy-btn missing';
+      fl.disabled = !d.docker_running || taskRunning;
+      fl.textContent = (taskRunning && d.task.kind === 'flatten') ? '压缩中…' : '后台压缩';
+      fl.title = '把沙盒文件系统压成单层镜像，回收 docker commit 累积的历史层';
+      fl.addEventListener('click', function () {
+        diskAction('deploy/disk/flatten', {
+          title: '后台压缩镜像',
+          desc: '提交后立即在后台执行，沙盒会短暂停止；进度见下方任务状态。',
+        });
+      });
+      act.appendChild(fl);
 
       const rb = HOST.document.createElement('button');
       rb.className = 'btn cfg-deploy-btn failed';
+      rb.style.color = '#b4372f';
+      rb.style.borderColor = 'rgba(180, 55, 47, 0.4)';
+      rb.style.background = 'rgba(180, 55, 47, 0.08)';
       rb.disabled = !d.docker_running || taskRunning;
       rb.textContent = '重建沙盒';
       rb.title = '删除沙盒容器（可写层与容器内缓存清空），下次工具调用自动重建';
       rb.addEventListener('click', function () {
-        if (!HOST.confirm('重建沙盒容器？容器内 apt/pip 装过的依赖与缓存会丢失，工作目录内的文件不受影响。')) return;
-        diskAction('deploy/disk/rebuild', rb);
+        diskAction('deploy/disk/rebuild', {
+          title: '重建沙盒容器',
+          desc: '会清空容器内所有 pip/npm/apt 安装（含已快照进镜像的环境）和系统改动；/agent_vm 文件不受影响。',
+          danger: true,
+        });
       });
       act.appendChild(rb);
 
@@ -2432,23 +2575,27 @@ import { HOST } from './state.js';
       }, 2000);
     }
 
-    function startEmbeddingUpdate(btn: HTMLButtonElement, tip: HTMLElement, modelName: string) {
-      btn.disabled = true;
-      btn.textContent = '启动更新…';
-      fetch('/api/config/memory/embedding/update', { method: 'POST' })
-        .then(function (r) {
-          if (r.status === 409) return null;
-          if (!r.ok) throw new Error('HTTP ' + r.status);
-          return r.json();
-        })
-        .then(function () {
-          watchUpdate(btn, tip, modelName);
-        })
-        .catch(function (e) {
-          btn.disabled = false;
-          btn.textContent = '更新嵌入模型并重建';
-          HOST.alert('启动更新失败：' + (e && e.message || ''));
-        });
+    function waitEmbeddingUpdate(setText: (t: string) => void): Promise<void> {
+      return new Promise(function (resolve, reject) {
+        const started = Date.now();
+        const tick = function () {
+          if (Date.now() - started > 15 * 60 * 1000) {
+            reject(new Error('等待超时，请刷新页面查看更新状态'));
+            return;
+          }
+          fetch('/api/config/memory/embedding')
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+              const u = (d && d.update) || {};
+              if (u.state === 'done') { resolve(); return; }
+              if (u.state === 'error') { reject(new Error(u.error || '更新失败')); return; }
+              setText('更新中…（' + (phaseText[u.phase] || '处理中') + '）');
+              setTimeout(tick, 2000);
+            })
+            .catch(function () { setTimeout(tick, 2000); });
+        };
+        setTimeout(tick, 1200);
+      });
     }
 
     Promise.all([
@@ -2488,8 +2635,22 @@ import { HOST } from './state.js';
         );
         const btn = addAction(update.interrupted ? '重试更新嵌入模型' : '更新嵌入模型并重建');
         btn.addEventListener('click', function () {
-          if (!HOST.confirm('更新嵌入模型并重建向量库？更新期间请不要退出应用。')) return;
-          startEmbeddingUpdate(btn, tip, modelName);
+          openActionModal({
+            title: '更新嵌入模型并重建向量库',
+            desc: '将下载并替换嵌入模型，再重建事件 / 经验 / 图谱向量；期间请不要退出应用。',
+            action: '开始更新',
+            run: function (setText) {
+              setText('正在启动更新…');
+              return fetch('/api/config/memory/embedding/update', { method: 'POST' })
+                .then(function (r) {
+                  if (r.status === 409) return null;
+                  if (!r.ok) throw new Error('HTTP ' + r.status);
+                  return r.json();
+                })
+                .then(function () { return waitEmbeddingUpdate(setText); });
+            },
+            onDone: function () { rerenderConfig(main, 'memory'); },
+          });
         });
         return;
       }
@@ -2519,27 +2680,20 @@ import { HOST } from './state.js';
       );
       const btn = addAction('重建向量库');
       btn.addEventListener('click', function () {
-        if (!HOST.confirm('重建向量库？旧模型（' + models + '）生成的向量会被全部清除并按当前模型重新计算。数据量较大时可能需要几分钟。')) return;
-        btn.disabled = true;
-        btn.textContent = '重建中…';
-        fetch('/api/config/memory/reindex', { method: 'POST' })
-          .then(function (r) {
-            if (!r.ok) throw new Error('HTTP ' + r.status);
-            return r.json();
-          })
-          .then(function (d) {
-            const counts = (d.rebuild && d.rebuild.counts) || {};
-            values.vector_model.textContent = v.model_name + '（一致）';
-            btn.textContent = '已重建（事件 ' + (counts.events || 0) + ' / 经验 ' +
-              (counts.experiences || 0) + ' / 节点 ' + (counts.graph_nodes || 0) + '）';
-            btn.disabled = true;
-            if (tip.parentNode) tip.parentNode.removeChild(tip);
-          })
-          .catch(function (e) {
-            btn.disabled = false;
-            btn.textContent = '重建向量库';
-            HOST.alert('重建失败：' + (e && e.message || ''));
-          });
+        openActionModal({
+          title: '重建向量库',
+          desc: '旧模型（' + models + '）生成的向量会被全部清除并按当前模型重新计算，数据量较大时可能需要几分钟。',
+          action: '开始重建',
+          run: function (setText) {
+            setText('正在重建向量库…');
+            return fetch('/api/config/memory/reindex', { method: 'POST' })
+              .then(function (r) {
+                if (!r.ok) throw new Error('HTTP ' + r.status);
+                return r.json();
+              });
+          },
+          onDone: function () { rerenderConfig(main, 'memory'); },
+        });
       });
     }).catch(function () { values.vector_model.textContent = '—'; });
   }
