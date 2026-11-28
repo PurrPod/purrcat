@@ -29,7 +29,7 @@ class MCPSearcher:
         return cls._instance
 
     def _initialize(self):
-        """🌟 重构：仅加载元数据，速度极快"""
+        """重构：仅加载元数据，速度极快"""
         temp_tools = []
         temp_corpus = []
 
@@ -55,16 +55,14 @@ class MCPSearcher:
         self.tools = temp_tools
         self.corpus = temp_corpus
         # 不在这里算向量！
-        print(f"✅ MCPSearcher 元数据已加载 (共 {len(self.tools)} 个工具)")
+        print(f"MCPSearcher 元数据已加载 (共 {len(self.tools)} 个工具)")
 
     def build_vectors_in_background(self):
-        """🌟 新增：由后台事件循环触发的缓慢操作"""
+        """新增：由后台事件循环触发的缓慢操作"""
         with self._lock:
             if not self.corpus:
                 return
-            print(
-                f"⏳ [Background] 正在为 {len(self.tools)} 个 MCP 工具构建向量矩阵..."
-            )
+            print(f"[Background] 正在为 {len(self.tools)} 个 MCP 工具构建向量矩阵...")
             self.corpus_matrix, self.bm25 = _shared.build_hybrid_index(
                 self.embedding_searcher, self.corpus
             )
@@ -73,29 +71,29 @@ class MCPSearcher:
     def reload_index(self):
         """暴露给外部调用的热更新接口"""
         with self._lock:
-            print("🔄 正在从本地缓存重载 MCPSearcher 内存索引...")
+            print("正在从本地缓存重载 MCPSearcher 内存索引...")
             self._initialize()
 
     def search(self, query: str, max_results: int = 5) -> List[Dict]:
-        # 【修复】加锁防止查询时遭遇热更新导致数据结构断裂
+        # 修复加锁防止查询时遭遇热更新导致数据结构断裂
         # 使用局部变量快照，将计算密集型操作移到锁外
         with self._lock:
             if not self.corpus:
                 return []
 
             if self.corpus_matrix is None or self.bm25 is None:
-                print("⏳ [JIT] 检测到索引未就绪，正在强制同步构建...")
+                print("[JIT] 检测到索引未就绪，正在强制同步构建...")
                 self.corpus_matrix, self.bm25 = _shared.build_hybrid_index(
                     self.embedding_searcher, self.corpus
                 )
-                print("✅ [JIT] 同步构建完成！")
+                print("[JIT] 同步构建完成！")
 
             # 获取引用快照以防止后续计算时被修改
             current_matrix = self.corpus_matrix
             current_bm25 = self.bm25
             current_tools = self.tools
 
-        # 【优化】相似度计算可以在锁外执行（使用局部变量快照）
+        # 优化相似度计算可以在锁外执行（使用局部变量快照）
         final_scores, top_k_indices = _shared.score_top_k(
             self.embedding_searcher,
             query,

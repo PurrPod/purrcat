@@ -31,7 +31,7 @@ class SkillSearcher:
         return cls._instance
 
     def _initialize(self, skill_dir: str):
-        """🌟 重构：仅加载元数据，速度极快"""
+        """重构：仅加载元数据，速度极快"""
         temp_skills = []
         temp_corpus = []
 
@@ -57,10 +57,10 @@ class SkillSearcher:
         self.skills = temp_skills
         self.corpus = temp_corpus
         # 不在这里算向量！
-        print(f"✅ SkillSearcher 元数据已加载 (共 {len(self.skills)} 个技能)")
+        print(f"SkillSearcher 元数据已加载 (共 {len(self.skills)} 个技能)")
 
     def build_vectors_in_background(self):
-        """🌟 新增：由后台事件循环触发的缓慢操作"""
+        """新增：由后台事件循环触发的缓慢操作"""
         with self._lock:
             if not self.corpus:
                 return
@@ -78,7 +78,7 @@ class SkillSearcher:
 
     def search(self, query: str, top_k: int = 3) -> List[Dict]:
         """执行搜索并返回匹配度最高的前 K 个技能"""
-        # 【修复】加锁防止查询时遭遇热更新导致数据结构断裂
+        # 修复加锁防止查询时遭遇热更新导致数据结构断裂
         with self._lock:
             if not self.corpus:
                 return []
@@ -95,7 +95,7 @@ class SkillSearcher:
             current_bm25 = self.bm25
             current_skills = self.skills
 
-        # 【优化】相似度计算可以在锁外执行（使用局部变量快照）
+        # 优化相似度计算可以在锁外执行（使用局部变量快照）
         final_scores, top_k_indices = _shared.score_top_k(
             self.embedding_searcher,
             query,

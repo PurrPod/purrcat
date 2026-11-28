@@ -16,6 +16,7 @@
 - [ ] AC-6：`Search` / `raw_search` 的 `skill` / `mcp` / `local` 结果按 `min_score`（默认 0.30）过滤，非法值回退默认并夹紧到 0–1。
 - [ ] AC-7：`web` 路由无相似度分数，不参与置信度过滤。
 - [ ] AC-8：`search` hook 支持 `min_score`，默认 0.30 且与 `Search` 一致；`memory` 路由用它过滤事件向量相似度、经验向量相似度与图谱节点相似度（含边界），不过滤关系置信度。
+- [ ] AC-9：`Search(route='web')` 返回结构化 JSON（`query` / `results[title,url,snippet]` / `hint`），供前端渲染链接卡片。
 
 ## 非目标
 

@@ -21,7 +21,7 @@ def hybrid_tokenize(text: str) -> list[str]:
 
 
 class LocalEmbeddingSearcher:
-    """🌟 重构：懒加载本地大模型"""
+    """重构：懒加载本地大模型"""
 
     _instance = None
     _lock = threading.Lock()
@@ -37,12 +37,12 @@ class LocalEmbeddingSearcher:
     def model(self):
         # 真正需要计算向量时，才去加载本地 ONNX 模型
         if self._model is None:
-            print("⏳ [LazyLoad] 正在加载 ONNX 嵌入模型入内存...")
+            print("[LazyLoad] 正在加载 ONNX 嵌入模型入内存...")
             # 局部导入，防止阻塞整个文件加载
             from src.utils.local_embedding import get_local_embedder
 
             self._model = get_local_embedder(get_embedding_model())
-            print("✅ [LazyLoad] 模型加载完毕。")
+            print("[LazyLoad] 模型加载完毕。")
         return self._model
 
     def encode(self, texts: list[str]) -> np.ndarray:

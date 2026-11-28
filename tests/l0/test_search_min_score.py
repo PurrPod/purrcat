@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import src.tool.search.search as search_mod
 from src.tool.search.search import (
     DEFAULT_MIN_SCORE,
@@ -84,3 +86,23 @@ def test_web_route_is_not_filtered(monkeypatch):
     data = raw_search("web", "q", min_score=0.99)["data"]
 
     assert len(data["results"]) == 1
+
+
+def test_web_route_returns_structured_json(monkeypatch):
+    """SPEC-039 AC-9：web 路由返回结构化 JSON，供前端渲染链接卡片。"""
+    monkeypatch.setattr(
+        search_mod,
+        "web_search",
+        lambda q, k: (
+            [{"title": "标题", "url": "https://example.com/a", "snippet": "摘要"}],
+            None,
+        ),
+    )
+
+    payload = json.loads(Search("web", "q", topk=3)["content"])
+
+    assert payload["query"] == "q"
+    assert payload["results"] == [
+        {"title": "标题", "url": "https://example.com/a", "snippet": "摘要"}
+    ]
+    assert payload["hint"]

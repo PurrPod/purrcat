@@ -1,5 +1,6 @@
 """Search 工具主入口 - 统一调度 web/local/skill/mcp (API 与渲染完全解耦版)"""
 
+import json
 import traceback
 from typing import Dict, Any
 
@@ -143,7 +144,8 @@ def Search(
 ) -> str:
     """
     面向大模型（LLM）的 Agent 工具接口。
-    内部调用 raw_search API，并将结构化 JSON 数据清洗、转换为极限压缩 Token 的 Markdown 文本。
+    内部调用 raw_search API，将结构化数据转为模型可读内容：web 路由返回结构化 JSON，
+    其余路由返回压缩 Markdown 文本。
     min_score 为本地能力（skill/mcp/local）的置信度阈值，默认 0.30。
     """
     api_response = raw_search(route, query, topk, min_score=min_score, **kwargs)
@@ -154,19 +156,29 @@ def Search(
     if status == "error":
         return error_response(message, "参数错误" if "参数" in message else "系统错误")
     if status == "warning":
-        return warning_response(message, f"⚠️ {api_response['route']}搜索失败")
+        return warning_response(message, f"{api_response['route']}搜索失败")
 
     route_type = api_response["route"]
     response_data = api_response["data"]
 
-    # ---- 渲染 Web 结果 ----
+    # ---- 渲染 Web 结果：返回结构化 JSON，供模型引用与前端渲染链接卡片 ----
     if route_type == "web":
         results = response_data["results"]
-        md = f"# Result: {query}\n\n"
-        for i, res in enumerate(results, 1):
-            md += f"## {i}. {res['title']}\n**URL:** {res['url']}\n\n**Snip:** {res['snippet']}\n\n---\n\n"
-        md += "Tips：如果需要阅读完整详情，请使用 `Fetch` 工具 (source='web') 并传入对应的 URL。**"
-        return text_response(md, f"🌐 Web | {len(results)}条结果")
+        payload = {
+            "query": query,
+            "results": [
+                {
+                    "title": str(res.get("title") or "").strip(),
+                    "url": str(res.get("url") or "").strip(),
+                    "snippet": str(res.get("snippet") or "").strip(),
+                }
+                for res in results
+            ],
+            "hint": "需要阅读完整详情时，用 Fetch(source='web', url=...) 获取正文。",
+        }
+        return text_response(
+            json.dumps(payload, ensure_ascii=False), f"Web | {len(results)}条结果"
+        )
 
     # ---- 渲染 Local/Skill/MCP 结果 ----
     skills = response_data.get("skills", [])
@@ -199,5 +211,5 @@ def Search(
 
     total_hits = len(skills) + len(mcp_tools)
     return text_response(
-        "\n".join(lines), f"🔧 {route_type.capitalize()} | 命中{total_hits}个能力"
+        "\n".join(lines), f"{route_type.capitalize()} | 命中{total_hits}个能力"
     )
