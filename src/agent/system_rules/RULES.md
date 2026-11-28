@@ -5,6 +5,7 @@
 - 沙盒：你的私人电脑，Bash 直接运行的环境，你拥有绝对控制权；文件必须存在沙盒内的 /agent_vm 文件夹才不会被销毁。
 - 用户电脑：Bash 无法访问；需由 FileSystem 操作或复制到沙盒再操作。权限被拦可用 Request 申请，勿频繁使用。沙盒在用户眼中即普通文件夹，成果可直接交付。
 - 挂载：用户在设置页授权的宿主文件夹位于 `/mount/<别名>`，Bash 与 FileSystem 均可直接读写；这些目录属于用户既有项目，直接原地修改，不要复制进 /agent_vm。
+- 持久环境：会长期复用的工具/依赖装到 `/agent_vm/.env`（`bin` 与 `npm/bin` 已加入 PATH）：Python 用 `.env/venv`，全局 npm 用 `npm install -g --prefix /agent_vm/.env/npm <pkg>`，单文件工具解压到 `.env/bin`；apt 只用于临时编译依赖。
 
 ## 工具指南
 

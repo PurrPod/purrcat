@@ -621,6 +621,16 @@ ACP 接入状态：relay 部署情况 / 端口 / uv 可用性
 | --- | --- | --- |
 | 200 | Successful Response | - |
 
+### `POST /api/config/deploy/disk/flatten`
+
+**标题**：Api Flatten Sandbox Image
+
+#### 响应
+
+| 状态码 | 描述 | Schema |
+| --- | --- | --- |
+| 200 | Successful Response | - |
+
 ### `POST /api/config/deploy/disk/prune`
 
 **标题**：Api Prune Disk

@@ -17,6 +17,8 @@ Docker 不支持给运行中的容器追加挂载，但可以把当前容器 `do
 - 应用挂载时：关闭现有 shell 会话 → 将当前容器提交为 `purrcat-sandbox:state` 快照 → 用相同运行参数
   （环境变量、tmpfs、端口、labels）加全部有效挂载重建同名容器 → 成功后删除旧容器。失败时回滚并重启旧容器。
 - 容器不存在或未运行时，下次启动按配置自动创建/重建，无需额外操作。
+- Docker 引擎重启导致命名管道断开（WinError 232/109、broken pipe）时自动重连并重试，
+  重建中断留下的 `agent_computer_prev` 在下次启动时优先恢复为正式容器。
 - 配置中的挂载源缺失时不阻断沙盒启动：新建容器跳过该挂载，已有容器保留现状并提示。
 - FileSystem 工具识别 `/mount/<别名>/...` 并映射回宿主路径；该路径视为读写授权（blocked 规则仍然优先）。
 - `@SYS` 输出当前可用挂载（容器路径 → 宿主路径），供 Agent 了解可用目录。
@@ -42,6 +44,7 @@ Docker 不支持给运行中的容器追加挂载，但可以把当前容器 `do
 | 层级 | 位置 | 覆盖的验收标准 |
 | --- | --- | --- |
 | L0 | `tests/l0/test_sandbox_mounts.py` | AC-1、AC-3、AC-5（挂载参数构造）、AC-6 |
+| L0 | `tests/l0/test_bash_docker_env.py` | AC-5（引擎重启后连接自愈） |
 | L0 | `tests/l0/test_filesystem_permissions.py` | AC-2 |
 | L0 | `tests/l0/test_sandbox_path.py` | AC-1 |
 | L1 | `tests/l1/test_api_config_mounts.py` | AC-4 |

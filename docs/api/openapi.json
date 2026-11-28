@@ -1580,6 +1580,25 @@
         ]
       }
     },
+    "/api/config/deploy/disk/flatten": {
+      "post": {
+        "operationId": "api_flatten_sandbox_image_api_config_deploy_disk_flatten_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Api Flatten Sandbox Image",
+        "tags": [
+          "Configuration"
+        ]
+      }
+    },
     "/api/config/deploy/disk/prune": {
       "post": {
         "operationId": "api_prune_disk_api_config_deploy_disk_prune_post",

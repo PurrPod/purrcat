@@ -333,11 +333,16 @@ curl -X PUT 'http://127.0.0.1:8000/api/config/file' \
       "container_path": "/mount/src",
       "status": "active"
     }
-  ]
+  ],
+  "stale": [
+    { "container_path": "/mount/old", "source": "D:\\work\\old" }
+  ],
+  "dirty": true
 }
 ```
 
 `status`：`active`（已生效）、`pending`（待应用）、`missing`（源目录不存在）、`blocked`（被文件权限规则拦截）。
+`stale`：容器里仍存在、但已从配置移除的挂载；`dirty` 为 `true` 表示配置与运行中的容器不一致（含 `stale` 非空或存在 `pending`），此时应提示用户应用挂载。
 
 **示例**
 
@@ -366,7 +371,9 @@ curl 'http://127.0.0.1:8000/api/config/mounts'
   "mount": { "name": "src", "source": "D:\\work\\src" },
   "docker_ok": true,
   "container_present": true,
-  "mounts": []
+  "mounts": [],
+  "stale": [],
+  "dirty": false
 }
 ```
 
@@ -438,7 +445,7 @@ curl -X PUT 'http://127.0.0.1:8000/api/config/mounts/src' \
 **响应**
 
 ```json
-{ "status": "ok", "docker_ok": true, "container_present": true, "mounts": [] }
+{ "status": "ok", "docker_ok": true, "container_present": true, "mounts": [], "stale": [], "dirty": false }
 ```
 
 别名不存在返回 `404`。
@@ -985,7 +992,7 @@ curl 'http://127.0.0.1:8000/api/config/deploy/disk'
 
 ## POST `/api/config/deploy/disk/compact`
 
-一键回收 vhdx 空洞。后台线程依次停止沙盒容器、停止 Docker Desktop、执行 `wsl --shutdown`，再提权（一次 UAC）执行 `diskpart compact vdisk`，完成后按需重新拉起 Docker。进度通过 `GET /api/config/deploy/disk` 的 `task` 字段查看。
+一键回收 vhdx 空洞。后台线程先清理 Docker 构建缓存，再依次停止沙盒容器、停止 Docker Desktop、执行 `wsl --shutdown`，最后提权（一次 UAC）执行 `diskpart compact vdisk`，完成后按需重新拉起 Docker。任务在后台执行，进度通过 `GET /api/config/deploy/disk` 的 `task` 字段查看。
 
 **请求**
 
@@ -1051,6 +1058,32 @@ curl -X POST 'http://127.0.0.1:8000/api/config/deploy/disk/prune'
 
 ```bash
 curl -X POST 'http://127.0.0.1:8000/api/config/deploy/disk/rebuild'
+```
+
+---
+
+## POST `/api/config/deploy/disk/flatten`
+
+把沙盒容器的文件系统导出后再导入为单层镜像，回收 `docker commit` 累积的历史层。操作会短暂停止沙盒；容器内已安装环境与 `/agent_vm` 文件都会保留，导入时自动回填原镜像的 `CMD`/`ENTRYPOINT`/`ENV`/`WORKDIR`/`USER`。
+
+后台执行，进度通过 `GET /api/config/deploy/disk` 的 `task` 字段轮询。
+
+**请求**
+
+无参数（无请求体）。
+
+**响应**
+
+```json
+{ "status": "ok", "message": "已开始压缩沙盒镜像，沙盒会短暂停止" }
+```
+
+已有磁盘维护任务在运行时返回 `409`。
+
+**示例**
+
+```bash
+curl -X POST 'http://127.0.0.1:8000/api/config/deploy/disk/flatten'
 ```
 
 ---

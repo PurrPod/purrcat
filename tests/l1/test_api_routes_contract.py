@@ -129,6 +129,7 @@ EXPECTED_ROUTES = {
         ("/api/config/deploy/disk/compact", "POST", "api_compact_disk"),
         ("/api/config/deploy/disk/prune", "POST", "api_prune_disk"),
         ("/api/config/deploy/disk/rebuild", "POST", "api_rebuild_sandbox"),
+        ("/api/config/deploy/disk/flatten", "POST", "api_flatten_sandbox_image"),
         ("/api/config/sandbox-registry", "GET", "api_get_sandbox_registry"),
         ("/api/config/sandbox-registry", "PUT", "api_update_sandbox_registry"),
         ("/api/config/markdown/{filename}", "GET", "api_get_markdown_file"),

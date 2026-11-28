@@ -123,6 +123,12 @@ def _compact_worker() -> None:
         before = allocated_size(vhdx)
         _log(f"[*] 当前占盘 {human_size(before)}: {vhdx}")
 
+        _log("[*] 清理构建缓存 ...")
+        try:
+            prune_build_cache(_log)
+        except Exception as e:
+            _log(f"[!] 清理构建缓存失败(忽略): {e}")
+
         stop_docker(_log)
         ok, message = compact_vhdx(vhdx)
         if not ok:
@@ -205,3 +211,24 @@ def maybe_weekly_prune() -> None:
 def rebuild_sandbox() -> tuple[bool, str]:
     """删除沙盒容器（薄委托，保留原入口）。"""
     return _rebuild_sandbox()
+
+
+def start_flatten() -> tuple[bool, str]:
+    """把沙盒文件系统压成单层镜像（export/import），回收历史层。"""
+    first_line = f"[{time.strftime('%H:%M:%S')}] 开始压缩沙盒镜像"
+    if not _begin("flatten", first_line):
+        return False, "磁盘维护任务正在执行中，请稍候"
+
+    def _worker():
+        ok = False
+        try:
+            from src.tool.bash.docker_env import get_docker_manager
+
+            get_docker_manager().flatten_sandbox(log=_log)
+            ok = True
+        except Exception as e:
+            _log(f"[!] 压缩沙盒镜像失败: {e}")
+        _finish("success" if ok else "failed")
+
+    threading.Thread(target=_worker, daemon=True).start()
+    return True, "已开始压缩沙盒镜像，沙盒会短暂停止"

@@ -347,6 +347,16 @@ def rebuild_sandbox() -> dict:
     return {"status": "ok", "message": message}
 
 
+def flatten_sandbox_image() -> dict:
+    """把沙盒文件系统压成单层镜像，回收 docker commit 累积的历史层"""
+    from src.utils.disk_maintenance import start_flatten
+
+    ok, message = start_flatten()
+    if not ok:
+        raise HTTPException(status_code=409, detail=message)
+    return {"status": "ok", "message": message}
+
+
 def get_sandbox_registry() -> dict:
     return {
         "sandbox_registry": str(get_global_settings().get("sandbox_registry") or "")
@@ -383,6 +393,9 @@ def _inspect_sandbox_mounts() -> tuple[bool, bool, Dict[str, str]]:
     actual: Dict[str, str] = {}
     try:
         for mount in container.attrs.get("Mounts") or []:
+            # 忽略 commit 产生的匿名卷（Type=volume），只认真实 bind 挂载
+            if str(mount.get("Type") or "") != "bind":
+                continue
             destination = str(mount.get("Destination") or "")
             if destination.startswith(sandbox_mounts.CONTAINER_MOUNT_ROOT + "/"):
                 actual[destination] = str(mount.get("Source") or "")
@@ -397,8 +410,10 @@ def list_sandbox_mounts() -> dict:
 
     docker_ok, container_present, actual = _inspect_sandbox_mounts()
     items = []
+    desired: dict[str, str] = {}
     for item in sandbox_mounts.load_mounts():
         container_path = f"{sandbox_mounts.CONTAINER_MOUNT_ROOT}/{item['name']}"
+        desired[container_path] = item["source"]
         if not os.path.isdir(item["source"]):
             status = "missing"
         elif get_path_permission(item["source"]) == "blocked":
@@ -417,10 +432,21 @@ def list_sandbox_mounts() -> dict:
                 "status": status,
             }
         )
+    # 容器里存在但配置已移除的挂载：列表里看不到，但必须能触发应用
+    stale = []
+    for container_path, source in actual.items():
+        configured = desired.get(container_path)
+        if configured and os.path.normcase(
+            os.path.abspath(configured)
+        ) == os.path.normcase(os.path.abspath(source)):
+            continue
+        stale.append({"container_path": container_path, "source": source})
     return {
         "docker_ok": docker_ok,
         "container_present": container_present,
         "mounts": items,
+        "stale": stale,
+        "dirty": bool(stale) or any(i["status"] == "pending" for i in items),
     }
 
 
@@ -466,5 +492,6 @@ def apply_sandbox_mounts() -> dict:
     try:
         get_docker_manager().apply_mounts()
     except Exception as e:
+        print(f"[!] 应用沙盒挂载失败: {e}")
         raise HTTPException(status_code=500, detail=f"应用挂载失败：{e}") from e
     return {"status": "ok", **list_sandbox_mounts()}

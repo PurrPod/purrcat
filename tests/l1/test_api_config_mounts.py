@@ -35,6 +35,8 @@ def test_mount_crud_flow(client, tmp_path):
     assert body["docker_ok"] is False
     assert [m["name"] for m in body["mounts"]] == ["proj"]
     assert body["mounts"][0]["status"] == "pending"
+    assert body["dirty"] is True
+    assert body["stale"] == []
 
     renamed = client.put("/api/config/mounts/proj", json={"name": "renamed"})
     assert renamed.status_code == 200
@@ -43,6 +45,23 @@ def test_mount_crud_flow(client, tmp_path):
     deleted = client.delete("/api/config/mounts/renamed")
     assert deleted.status_code == 200
     assert client.get("/api/config/mounts").json()["mounts"] == []
+    assert client.get("/api/config/mounts").json()["dirty"] is False
+
+
+def test_list_mounts_reports_stale_container_mounts(monkeypatch, tmp_path):
+    """配置为空但容器里仍有挂载时，必须标记 dirty，否则无法触发移除。"""
+    monkeypatch.setattr(sm, "MOUNTS_CONFIG_PATH", str(tmp_path / "mounts.json"))
+    monkeypatch.setattr(
+        config_services,
+        "_inspect_sandbox_mounts",
+        lambda: (True, True, {"/mount/old": "D:/old"}),
+    )
+    app = FastAPI()
+    app.include_router(config_api.router)
+    body = TestClient(app).get("/api/config/mounts").json()
+    assert body["mounts"] == []
+    assert body["dirty"] is True
+    assert body["stale"] == [{"container_path": "/mount/old", "source": "D:/old"}]
 
 
 def test_mount_add_rejects_missing_directory(client, tmp_path):

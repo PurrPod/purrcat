@@ -456,6 +456,11 @@ def api_rebuild_sandbox():
     return config_services.rebuild_sandbox()
 
 
+@router.post("/deploy/disk/flatten")
+def api_flatten_sandbox_image():
+    return config_services.flatten_sandbox_image()
+
+
 # ── 沙盒镜像源（部署页自定义，写入 settings.json 的 sandbox_registry）──
 @router.get("/sandbox-registry")
 def api_get_sandbox_registry():
