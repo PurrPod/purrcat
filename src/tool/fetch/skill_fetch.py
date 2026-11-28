@@ -19,9 +19,13 @@ def _force_rmtree(path: str, max_retries: int = 3, retry_delay: float = 0.1):
         retry_delay: 重试间隔（秒）
     """
 
-    def _on_exc(exc):
-        os.chmod(exc.filename, stat.S_IWRITE)
-        return True
+    def _on_exc(func, path, exc):
+        # onexc 回调签名为 (func, path, exc)：去掉只读属性后重试失败的那一步
+        try:
+            os.chmod(path, stat.S_IWRITE)
+        except OSError:
+            pass
+        func(path)
 
     for attempt in range(max_retries):
         try:

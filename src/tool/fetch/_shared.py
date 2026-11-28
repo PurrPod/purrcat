@@ -65,7 +65,7 @@ def looks_like_raw_text_url(url: str) -> bool:
 
 
 def html_to_markdown(html: str, url: str) -> Tuple[str, str]:
-    """HTML → 正文 markdown：去噪、优先 main/article、正文过短时退化为全文本。"""
+    """HTML正文 markdown：去噪、优先 main/article、正文过短时退化为全文本。"""
     soup = BeautifulSoup(html, "html.parser")
     doc_title = soup.title.string if soup.title and soup.title.string else url
 

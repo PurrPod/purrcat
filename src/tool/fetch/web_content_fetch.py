@@ -131,10 +131,10 @@ def _render_via_host(url: str, timeout: int = 20) -> Optional[str]:
 def web_content_fetch(url: str) -> Tuple[Optional[Dict], Optional[str]]:
     """FETCH(source='web') 的同步入口。
 
-    1. 纯文本地址（.md/.txt/.json 等）→ urllib 直读，不渲染
-    2. 普通网页 → 优先让桌面端 Electron 渲染后取 DOM（懒加载、评论区等
+    1. 纯文本地址（.md/.txt/.json 等）urllib 直读，不渲染
+    2. 普通网页优先让桌面端 Electron 渲染后取 DOM（懒加载、评论区等
        JS 内容也能拿到），HTTP 直抓只作为兜底
-    3. 无宿主（服务端/容器）或渲染失败 → curl_cffi 抓原始 HTML + 正文抽取
+    3. 无宿主（服务端/容器）或渲染失败curl_cffi 抓原始 HTML + 正文抽取
     """
     if looks_like_raw_text_url(url):
         return _fast_fetch_raw_text(url, timeout=20)
