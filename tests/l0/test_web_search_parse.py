@@ -9,8 +9,10 @@ from src.tool.search.web_search import (
     _bing_search,
     _build_search_url,
     _decode_bing_url,
-    _has_query_overlap,
     _parse_bing_html,
+    _query_terms,
+    _relevance,
+    web_search,
 )
 
 
@@ -64,12 +66,11 @@ def test_decode_keeps_wrapper_when_payload_invalid():
     assert _decode_bing_url(broken) == broken
 
 
-def test_build_search_url_avoids_cn_market():
-    """cn.bing.com 会 302 到 mkt=zh-CN 兜底页，必须直连 www.bing.com。"""
+def test_build_search_url_matches_browser_shape():
+    """与浏览器一致：cn.bing.com、只有 q 参数。"""
     url = _build_search_url("2025年 开源大模型排行")
 
-    assert url.startswith("https://www.bing.com/search?")
-    assert "cn.bing.com" not in url
+    assert url.startswith("https://cn.bing.com/search?q=")
     assert "mkt=" not in url
     assert "2025%E5%B9%B4" in url
 
@@ -77,7 +78,7 @@ def test_build_search_url_avoids_cn_market():
 def test_overlap_detects_relevant_results():
     results = [{"title": "PurrCat Agent 框架", "url": "", "snippet": ""}]
 
-    assert _has_query_overlap(results, "PurrCat Agent 框架") is True
+    assert _relevance(results, "PurrCat Agent 框架") >= 0.5
 
 
 def test_overlap_flags_bing_fallback_page():
@@ -91,13 +92,40 @@ def test_overlap_flags_bing_fallback_page():
         {"title": "抖音-记录美好生活", "url": "https://www.douyin.com/", "snippet": ""},
     ]
 
-    assert _has_query_overlap(results, "开源大模型排行") is False
+    assert _relevance(results, "开源大模型排行") < 0.5
 
 
 def test_overlap_skips_single_char_terms():
     results = [{"title": "任意结果", "url": "https://example.com", "snippet": ""}]
 
-    assert _has_query_overlap(results, "a 的") is True
+    assert _relevance(results, "a 的") == 1.0
+
+
+def test_query_terms_split_unspaced_cjk_query():
+    terms = _query_terms("langgraph和crewai的区别")
+
+    assert "langgraph" in terms
+    assert "crewai" in terms
+    assert "区别" in terms
+
+
+def test_head_term_results_are_low_relevance():
+    """头词降级页：query 里只有 langgraph 出现在结果中。"""
+    results = [
+        {
+            "title": "LangGraph - LangChain 框架",
+            "url": "https://langgraph.com.cn",
+            "snippet": "",
+        },
+        {
+            "title": "LangGraph 入门教程 | 菜鸟教程",
+            "url": "https://runoob.com",
+            "snippet": "",
+        },
+    ]
+
+    assert _relevance(results, "langgraph 和 crewai 区别") < 0.5
+    assert _relevance(results, "langgraph 和 crewai 区别") < 0.5
 
 
 GOOD_HTML = """
@@ -116,40 +144,61 @@ BAD_HTML = """
 """
 
 
+PROXY = "http://127.0.0.1:7897"
+
+
 def test_bing_search_uses_direct_route_first(monkeypatch):
     calls = []
 
-    def fake_fetch(url, use_proxy):
-        calls.append(use_proxy)
+    def fake_fetch(url, proxy):
+        calls.append(proxy)
         return GOOD_HTML
 
+    monkeypatch.setattr(ws, "_detect_proxy", lambda: PROXY)
     monkeypatch.setattr(ws, "_fetch_html", fake_fetch)
 
     results = _bing_search("PurrCat Agent 框架", 5)
 
-    assert calls == [False]
+    assert calls == [""]
     assert results[0]["url"] == "https://github.com/PurrPod/purrcat"
 
 
-def test_bing_search_falls_back_to_proxy_when_results_are_degraded(monkeypatch):
+def test_bing_search_retries_through_proxy_when_direct_degrades(monkeypatch):
     calls = []
 
-    def fake_fetch(url, use_proxy):
-        calls.append(use_proxy)
-        return BAD_HTML if use_proxy is False else GOOD_HTML
+    def fake_fetch(url, proxy):
+        calls.append(proxy)
+        return GOOD_HTML if proxy else BAD_HTML
 
+    monkeypatch.setattr(ws, "_detect_proxy", lambda: PROXY)
     monkeypatch.setattr(ws, "_fetch_html", fake_fetch)
 
     results = _bing_search("PurrCat Agent 框架", 5)
 
-    assert calls == [False, True]
+    assert calls == ["", PROXY]
     assert results[0]["title"] == "PurrCat Agent 框架"
 
 
-def test_bing_search_returns_direct_results_when_both_routes_are_off(monkeypatch):
-    def fake_fetch(url, use_proxy):
+def test_bing_search_skips_proxy_when_none_is_available(monkeypatch):
+    calls = []
+
+    def fake_fetch(url, proxy):
+        calls.append(proxy)
         return BAD_HTML
 
+    monkeypatch.setattr(ws, "_detect_proxy", lambda: "")
+    monkeypatch.setattr(ws, "_fetch_html", fake_fetch)
+
+    _bing_search("PurrCat Agent 框架", 5)
+
+    assert calls == [""]
+
+
+def test_bing_search_returns_best_attempt_when_every_route_degrades(monkeypatch):
+    def fake_fetch(url, proxy):
+        return BAD_HTML
+
+    monkeypatch.setattr(ws, "_detect_proxy", lambda: PROXY)
     monkeypatch.setattr(ws, "_fetch_html", fake_fetch)
 
     results = _bing_search("PurrCat Agent 框架", 5)
@@ -158,3 +207,12 @@ def test_bing_search_returns_direct_results_when_both_routes_are_off(monkeypatch
         "抖音-记录美好生活",
         "万年历2025年日历表",
     ]
+
+
+def test_web_search_returns_error_when_nothing_is_parsed(monkeypatch):
+    monkeypatch.setattr(ws, "_bing_search", lambda q, n: [])
+
+    results, error = web_search("PurrCat Agent 框架", 5)
+
+    assert results == []
+    assert error

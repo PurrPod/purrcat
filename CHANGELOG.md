@@ -44,7 +44,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - **Deleted graph tasks**: a task created for a missing graph now ends in `error` instead of silently completing with no nodes; Note cards reset to `- TODO` drop their stale run record so they can be scheduled and re-dispatched again.
 - **Vector rebuild correctness**: the rebuild script no longer drops every event (`event_id` is mapped to the batch key), no longer deadlocks on the non-reentrant lock, and writes the model tag without resending `hnsw:*` index settings that Chroma refuses to modify.
-- **Web search results**: the Bing session is warmed from `cn.bing.com` so `_EDGE_S` carries `mkt=zh-CN`; warming `www.bing.com` left the global index, which collapsed multi-word Chinese queries into head-term hits (e.g. `开源 AI Agent 框架 对比` returned generic 开源 hub pages). Requests also go direct first with a system-proxy fallback, `ck/a` redirect links are decoded to real URLs, and results sharing no term with the query trigger a retry.
+- **Web search results**: Bing serves its CN "domestic" index to direct connections, which collapses multi-entity queries into first-term hits (`langgraph 和 crewai 区别` returned only LangGraph pages); the same query over a foreign egress returns the international index with normal comparison articles. The tool now requests direct first and, when a query-term coverage score drops below 0.5, retries through the local proxy (`PURRCAT_SEARCH_PROXY` / `HTTPS_PROXY` / Windows proxy settings / common local ports). `ck/a` redirect links are decoded to real URLs.
 
 ### Removed
 
