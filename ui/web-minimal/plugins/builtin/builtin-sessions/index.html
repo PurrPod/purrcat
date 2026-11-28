@@ -431,6 +431,8 @@
   var requests = [];                                  // 待办：请求 / 依赖检查通知
   var projects = [];
   var activeId = '';                                  // 当前活动会话（由宿主 state 对账）
+  var pendingActiveId = '';                           // 点击后等待宿主确认的活动会话
+  var loadSeq = 0;                                    // 列表加载序号，丢弃过期结果避免旧状态覆盖新选中
   var editingId = '', editingVal = '', confirmingId = '';   // 行内重命名 / 行内删除确认
   var searchQuery = '';                               // 搜索关键词（小写，空串表示不过滤）
   var pluginCfg = {};                                 // 本插件配置（含 quickPlugins）
@@ -500,6 +502,29 @@
   document.getElementById('busyOk').addEventListener('click', hideBusy);
   busyMask.addEventListener('click', function (ev) { if (ev.target === busyMask) hideBusy(); });
   function handleBusy(res) { if (res && res.status === 'busy') { showBusy(); return true; } return false; }
+
+  /* ---------------- 会话切换 ---------------- */
+  // 点击即标记，避免等宿主事件回来才高亮；失败或忙碌再回滚，不整表重渲染。
+  function markActive(id) {
+    activeId = id || '';
+    var rows = document.querySelectorAll('.item[data-sid]');
+    for (var i = 0; i < rows.length; i++) {
+      rows[i].classList.toggle('active', rows[i].getAttribute('data-sid') === activeId);
+    }
+    for (var j = 0; j < sessions.length; j++) sessions[j].active = sessions[j].id === activeId;
+  }
+
+  function switchTo(id) {
+    var prev = activeId;
+    pendingActiveId = id;
+    markActive(id);
+    callAction('session.switch', { session_id: id })
+      .then(function (res) {
+        if (handleBusy(res)) { pendingActiveId = ''; markActive(prev); }
+        // 成功时等宿主 session.switched 事件触发 load 对账
+      })
+      .catch(function () { pendingActiveId = ''; markActive(prev); });
+  }
 
   /* ---------------- 项目 / 会话列表 ---------------- */
   function findSession(id) {
@@ -727,10 +752,12 @@
 
     var card = document.createElement('div');
     card.className = 'item' + (s.id === activeId ? ' active' : '') + (editingId === s.id ? ' editing' : '') + (dragSessionId === s.id ? ' dragging' : '');
+    card.dataset.sid = s.id;
     card.draggable = editingId !== s.id;
     card.addEventListener('click', function () {
       // 点行内按钮/确认条时不切换会话（由子元素自行 stopPropagation）
-      callAction('session.switch', { session_id: s.id }).then(handleBusy).catch(function () {});
+      if (s.id === activeId) return;
+      switchTo(s.id);
     });
     card.addEventListener('dragstart', function (ev) {
       dragSessionId = s.id;
@@ -1166,25 +1193,30 @@
   }
 
   function load() {
-    return callAction('projects.list')
-      .then(function (list) { projects = Array.isArray(list) ? list : []; })
-      .catch(function () { projects = []; })
-      .then(function () {
-        return callAction('sessions.list').then(function (list) {
-          return callAction('state.get').then(function (st) {
-            activeId = (st && st.activeSessionId) || '';
-            sessions = (list || []).map(function (s) { s.active = s.id === activeId; return s; });
-            // 刷新后清掉指向已消失会话/项目的编辑、确认、菜单态
-            if (editingId && !findSession(editingId)) editingId = '';
-            if (confirmingId && !findSession(confirmingId)) confirmingId = '';
-            if (moveMenuId && !findSession(moveMenuId)) moveMenuId = '';
-            if (pEditing && !findProject(pEditing)) pEditing = '';
-            if (pDeleting && !findProject(pDeleting)) pDeleting = '';
-            renderList();
-          });
-        });
-      })
-      .catch(function () {});
+    var seq = ++loadSeq;
+    // 三个请求互不依赖，并行发出；任一失败用空值兜底，避免整表不渲染
+    return Promise.all([
+      callAction('projects.list').catch(function () { return []; }),
+      callAction('sessions.list').catch(function () { return []; }),
+      callAction('state.get').catch(function () { return null; }),
+    ]).then(function (res) {
+      if (seq !== loadSeq) return;   // 已有更新的加载，丢弃过期结果
+      projects = Array.isArray(res[0]) ? res[0] : [];
+      var list = Array.isArray(res[1]) ? res[1] : [];
+      var st = res[2] || null;
+      var hostActive = (st && st.activeSessionId) || '';
+      // 宿主确认切换完成后清掉乐观态；切换还在途时保留点击选中
+      if (hostActive === pendingActiveId) pendingActiveId = '';
+      activeId = pendingActiveId || hostActive;
+      sessions = list.map(function (s) { s.active = s.id === activeId; return s; });
+      // 刷新后清掉指向已消失会话/项目的编辑、确认、菜单态
+      if (editingId && !findSession(editingId)) editingId = '';
+      if (confirmingId && !findSession(confirmingId)) confirmingId = '';
+      if (moveMenuId && !findSession(moveMenuId)) moveMenuId = '';
+      if (pEditing && !findProject(pEditing)) pEditing = '';
+      if (pDeleting && !findProject(pDeleting)) pDeleting = '';
+      renderList();
+    });
   }
 
   /* ---------------- 搜索 ---------------- */
