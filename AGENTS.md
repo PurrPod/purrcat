@@ -100,7 +100,7 @@ uv run pytest -m l3             # 静态红线
 | 会话/聊天接口 | `src/server/api/chat.py` |
 | DAG 节点 | `src/harness/node/extensions/<type>/` |
 | DAG 调度 / 检查点 | `src/harness/task_scheduler.py`、`src/harness/task_persistence.py` |
-| 聊天渲染 / 输入框 | `plugins/builtin/builtin-history/index.html` |
+| 聊天渲染 / 输入框 | `plugins/builtin/builtin-history/`（`index.html` + `history.js`） |
 | 会话列表 | `plugins/builtin/builtin-sessions/index.html` |
 | 设置中心 | `src/host/config-center.ts`、`settings-tabs.ts` |
 | 面板容器 | `src/host/panel.ts` + `plugins/builtin/builtin-panel` |

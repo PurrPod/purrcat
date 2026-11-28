@@ -102,7 +102,7 @@ DSL 约定：
 
 | 改动 | 位置 |
 | --- | --- |
-| 聊天渲染 / 输入框 | `plugins/builtin/builtin-history/index.html` |
+| 聊天渲染 / 输入框 | `plugins/builtin/builtin-history/`（`index.html` + `history.js` / `history.css`） |
 | 生成式 UI 组件 / DSL | `plugins/builtin/builtin-history/genui/`（预览 `preview.html`） |
 | 会话列表 | `plugins/builtin/builtin-sessions/index.html` |
 | 设置中心 | `src/host/config-center.ts`、`settings-tabs.ts` |
